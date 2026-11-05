@@ -26,12 +26,23 @@ func main() {
 	if os.Getenv("FIXTURE_INDEX_METHODS") != "off" {
 		features = append(features, provider.IndexMethodsFeature)
 	}
+	// FIXTURE_INDEX_FACETS=off leaves out schema.observed-index-facets, while
+	// the read still reports a facet on the index of table index_facet, so a
+	// test can show that the host refuses what it did not negotiate.
+	if os.Getenv("FIXTURE_INDEX_FACETS") != "off" {
+		features = append(features, provider.ObservedIndexFacetsFeature)
+	}
 	description.Features = append(description.Features, features...)
 	engine := description.Engines[0]
 	engine.Aliases = append(engine.Aliases, "fixture-columns")
 	engine.Features = slices.DeleteFunc(engine.Features, func(feature string) bool { return feature == provider.CommonTableIdentityFeature })
 	engine.Features = append(engine.Features, features...)
-	owner := &columns{Provider: &backend.Provider{}}
+	owner := &columns{Provider: &backend.Provider{}, description: description}
+	for _, model := range engine.ValueModels {
+		if model.GetKind() == "example.org/fixture/retention" && model.GetRepresentation() == protocol.ValueInput_OBSERVED {
+			owner.retention = model
+		}
+	}
 	if err := runtime.Serve(runtime.Server{Description: description, Sessions: owner, Inspector: owner, Renderer: owner, Executor: owner, SQLAnalyzer: owner,
 		ValueNormalizer: owner, SourceDecoder: owner, ValueConverter: owner, SchemaValidator: owner, TablePreparer: owner, TableCreations: owner, Columns: owner}); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -39,7 +50,13 @@ func main() {
 	}
 }
 
-type columns struct{ *backend.Provider }
+type columns struct {
+	*backend.Provider
+	// description is the provider's own, which a session negotiates with the
+	// host, and retention the observed model of the facet an index carries.
+	description *protocol.Description
+	retention   *protocol.ValueModel
+}
 
 func (*columns) ValidateSchema(ctx context.Context, _ *protocol.ValidateSchemaRequest) (*protocol.SchemaValidation, error) {
 	if err := ctx.Err(); err != nil {

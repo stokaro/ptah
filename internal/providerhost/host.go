@@ -159,6 +159,10 @@ var hostFeatures = []string{
 	// An offline command plans an engine with the capabilities its provider
 	// states for it; see registerDefaultCapabilities.
 	provider.DefaultCapabilitiesFeature,
+	// Inspection reads the facets of a provider table's indexes, which the
+	// comparison compares with the facets a source declares on the index;
+	// see reader.tables and observedIndexRules.
+	provider.ObservedIndexFacetsFeature,
 	// A filtered read reports the objects of the kinds an engine names
 	// database kinds, such as resource pools, beside its scope, and the
 	// comparison reads them as it reads an unfiltered read's.

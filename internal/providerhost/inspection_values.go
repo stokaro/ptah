@@ -8,6 +8,7 @@ import (
 	"github.com/stokaro/ptah/provider-sdk/provider"
 
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 )
 
@@ -81,7 +82,7 @@ func observedFacets(values []observedValue, engine string) (schemaext.Facets, er
 // database: its scope names an object within that database. The captured value
 // retains the database binding as inspection evidence.
 func (r reader) observedIdentity(source, normalized *protocol.Reference) (objectidentity.ID, error) {
-	if source.GetKind() != "table" && source.GetKind() != "column" {
+	if source.GetKind() != "table" && source.GetKind() != "column" && source.GetKind() != "index" {
 		return r.observedNativeIdentity(source, normalized)
 	}
 	if source.GetDatabase() != r.session.remote.GetDatabase() || normalized.GetDatabase() != source.GetDatabase() ||
@@ -89,16 +90,11 @@ func (r reader) observedIdentity(source, normalized *protocol.Reference) (object
 		return objectidentity.ID{}, unsupported("common observed facet database, catalog, or overload identity")
 	}
 	semantics := r.session.info.IdentifierSemantics
-	builder := objectidentity.NewBuilder(semantics)
-	tableName := source.GetName()
-	if source.GetKind() == "column" {
-		if len(source.GetPath()) != 1 || len(normalized.GetPath()) != 1 || normalized.GetPath()[0] != semantics.TableIdentityKey(source.GetPath()[0]) {
-			return objectidentity.ID{}, unsupported("common observed column parent identity")
-		}
-		tableName = source.GetPath()[0]
-	} else if len(source.GetPath()) != 0 || len(normalized.GetPath()) != 0 {
-		return objectidentity.ID{}, unsupported("common observed table namespace")
+	tableName, err := observedTableName(source, normalized, semantics)
+	if err != nil {
+		return objectidentity.ID{}, err
 	}
+	builder := objectidentity.NewBuilder(semantics)
 	result := builder.TablePartsVerbatim(source.GetSchema(), tableName)
 	normalizedSchema := normalized.GetSchema()
 	if normalizedSchema == "" {
@@ -107,14 +103,40 @@ func (r reader) observedIdentity(source, normalized *protocol.Reference) (object
 	if normalizedSchema != result.Schema.Normalized {
 		return objectidentity.ID{}, unsupported("common observed facet schema normalization")
 	}
-	if source.GetKind() == "column" {
+	switch source.GetKind() {
+	case "column":
 		result.Kind, result.Parent = objectidentity.KindColumn, result.Name
 		result.Name = objectidentity.Part{Source: source.GetName(), Normalized: semantics.ColumnIdentityKey(source.GetName())}
+	case "index":
+		// The index is named as the comparison names it, with the table as its
+		// parent only where index names are scoped to the table.
+		index := builder.IndexParts(source.GetSchema(), tableName, source.GetName())
+		if index.Parent != (objectidentity.Part{}) {
+			index.Parent = result.Name
+		}
+		index.Schema = result.Schema
+		result = index
 	}
 	if normalized.GetName() != result.Name.Normalized {
 		return objectidentity.ID{}, unsupported("common observed facet name normalization")
 	}
 	return result, nil
+}
+
+// observedTableName is the table a common observed facet belongs to: the
+// owner itself, or the only path component of a column or an index, which the
+// normalized owner must name by the table's identity key.
+func observedTableName(source, normalized *protocol.Reference, semantics identifier.Semantics) (string, error) {
+	if source.GetKind() == "column" || source.GetKind() == "index" {
+		if len(source.GetPath()) != 1 || len(normalized.GetPath()) != 1 || normalized.GetPath()[0] != semantics.TableIdentityKey(source.GetPath()[0]) {
+			return "", unsupported("common observed " + source.GetKind() + " parent identity")
+		}
+		return source.GetPath()[0], nil
+	}
+	if len(source.GetPath()) != 0 || len(normalized.GetPath()) != 0 {
+		return "", unsupported("common observed table namespace")
+	}
+	return source.GetName(), nil
 }
 
 func (r reader) observedNativeIdentity(source, normalized *protocol.Reference) (objectidentity.ID, error) {
