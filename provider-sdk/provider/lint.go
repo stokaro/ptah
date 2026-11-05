@@ -310,7 +310,9 @@ func ValidateAnnotatedLint(description *protocol.Description, request *protocol.
 	return nil
 }
 
-// ValidateCheckLintRequest checks that every enabled code is a rule the engine declares.
+// ValidateCheckLintRequest checks that every enabled code is a rule the engine
+// declares, and that a transaction owner is one the contract names and the
+// engine negotiated.
 func ValidateCheckLintRequest(description *protocol.Description, request *protocol.CheckLintRequest) error {
 	if request == nil {
 		return fmt.Errorf("%w: lint check request is missing", ErrProtocol)
@@ -323,6 +325,9 @@ func ValidateCheckLintRequest(description *protocol.Description, request *protoc
 		if slices.Contains(request.Codes[:i], code) || !slices.ContainsFunc(engine.GetLintRules(), func(rule *protocol.LintRule) bool { return rule.GetCode() == code }) {
 			return fmt.Errorf("%w: lint check enables a repeated code or a rule the engine does not declare", ErrProtocol)
 		}
+	}
+	if err := validateLintTransactionOwner(engine, request.GetTransactionOwner()); err != nil {
+		return err
 	}
 	for _, file := range request.Files {
 		if file.GetName() == "" {

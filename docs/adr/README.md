@@ -82,6 +82,7 @@ a new record that names it, and its own status line is updated to point there.
 | [0070](0070-a-provider-states-the-capabilities-its-engine-is-planned-with-offline.md) | A provider states the capabilities its engine is planned with offline | Proposed |
 | [0071](0071-a-declared-password-travels-as-an-execution-input.md) | A declared password travels as an execution input | Proposed |
 | [0072](0072-a-provider-claims-the-platform-group-of-a-table.md) | A provider claims the platform group of a table | Proposed |
+| [0073](0073-a-lint-check-says-who-opens-each-files-transaction.md) | A lint check says who opens each file's transaction | Proposed |
 
 ## Writing one
 

@@ -192,13 +192,16 @@ func validateEngineAdditions(description *protocol.Description, engine *protocol
 		}
 	}
 	for _, feature := range []string{TextUnitsFeature, PlanningPolicyFeature, PlanningStatementStyleFeature, EntryKeysFeature, StatementsFeature, SensitiveInputsFeature,
-		ComparisonCountsFeature, UnreadTablesFeature, SchemaSubtreeCoverageFeature, PasswordInputsFeature} {
+		ComparisonCountsFeature, UnreadTablesFeature, SchemaSubtreeCoverageFeature, PasswordInputsFeature, LintTransactionOwnerFeature} {
 		if slices.Contains(engine.GetFeatures(), feature) && !slices.Contains(description.GetFeatures(), feature) {
 			return fmt.Errorf("%w: engine %s requires the provider's", ErrProtocol, feature)
 		}
 	}
 	if slices.Contains(engine.GetFeatures(), LintStatementFactsFeature) && !slices.Contains(engine.GetFeatures(), LintFeature) {
 		return fmt.Errorf("%w: lint statement facts require engine lint", ErrProtocol)
+	}
+	if slices.Contains(engine.GetFeatures(), LintTransactionOwnerFeature) && !slices.Contains(engine.GetFeatures(), LintFeature) {
+		return fmt.Errorf("%w: %s requires engine lint", ErrProtocol, LintTransactionOwnerFeature)
 	}
 	if slices.Contains(engine.GetFeatures(), PlanningStatementStyleFeature) && !slices.Contains(engine.GetFeatures(), PlanningPolicyFeature) {
 		return fmt.Errorf("%w: %s requires %s", ErrProtocol, PlanningStatementStyleFeature, PlanningPolicyFeature)
