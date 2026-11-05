@@ -845,11 +845,17 @@ message TransactionResult {
   Outcome outcome = 1;
   string diagnostic_code = 2;
   // Provider-authored, redacted text. Never include credentials or raw URLs.
+  // No host prints it; a reason the host shows is in diagnostic.
   string message = 3;
   // ROLLED_BACK in answer to COMMIT only: the engine aborted the transaction
   // for a conflict, applied nothing, and a new attempt may succeed. Sent only
   // when both sides list units.migration-split. Contract 25.12.
   bool aborted = 4;
+  // Why the transaction has an outcome its action does not succeed with:
+  // never set with COMMITTED in answer to COMMIT, or with ROLLED_BACK or
+  // NOT_STARTED in answer to ROLLBACK. Sent only when both sides list
+  // errors.reasons. Contract 25.18.
+  ProviderDiagnostic diagnostic = 5;
 }
 message Execution {
   enum Outcome {
@@ -867,6 +873,7 @@ message Execution {
   uint32 applied_count = 2;
   string diagnostic_code = 3;
   // Provider-authored, redacted text. Never include credentials or raw URLs.
+  // No host prints it; a reason the host shows is in diagnostic.
   string message = 4;
   // The unit after the confirmed prefix stopped at the request's statement
   // timeout. Only a request with a timeout can set it, and only with
@@ -878,6 +885,9 @@ message Execution {
   // applied nothing, and a new attempt may succeed. Sent only when both sides
   // list units.migration-split. Contract 25.12.
   bool transaction_aborted = 6;
+  // Why the units did not all apply: never set with APPLIED. Sent only when
+  // both sides list errors.reasons. Contract 25.18.
+  ProviderDiagnostic diagnostic = 7;
 }
 
 // AnalyzeSQL keeps statement boundaries and safety knowledge with the owner.
@@ -2241,13 +2251,14 @@ message LockResult {
 }
 
 // ProviderDiagnostic is the reason a provider gives for a failure: in the
-// details of a failed call's gRPC status, at most one of them, or in a lock
-// receipt. The provider writes the reason itself. It names what failed and
+// details of a failed call's gRPC status, at most one of them, in a lock
+// receipt, or in an execution or transaction result. The provider writes the reason itself. It names what failed and
 // why, and never quotes statement text, a value, an address or a credential:
 // the host shows it, and nothing else of the status, to the operator. It is
 // one line of at most 512 bytes of valid UTF-8 with no control character and
 // no surrounding white space. Sent only when both sides list errors.reasons.
-// Contract 25.16.
+// Contract 25.16; the execution and transaction results carry it from
+// contract 25.18.
 message ProviderDiagnostic {
   string reason = 1;
 }

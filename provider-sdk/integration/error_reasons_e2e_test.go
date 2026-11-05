@@ -27,8 +27,10 @@ func reasonsOptions(c *qt.C, hostFeatures ...string) transport.Options {
 
 // An independent provider's reasons reach a host that lists the feature:
 // the reason for a refused inspection, and nothing of the status message that
-// quotes the database, and the reason for a busy lock. A host that does not
-// list it reads the code and the outcome alone.
+// quotes the database, the reason for a busy lock, and the reasons for an
+// execution that applied nothing and a commit that rolled back, and nothing
+// of their messages. A host that does not list it reads the code and the
+// outcome alone.
 func TestIndependentProviderReasons(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -36,13 +38,19 @@ func TestIndependentProviderReasons(t *testing.T) {
 		listed       bool
 		wantInspect  string
 		wantLock     string
+		wantExecute  string
+		wantCommit   string
 	}{
 		{name: "a host that lists the feature", hostFeatures: []string{provider.ErrorReasonsFeature}, listed: true,
 			wantInspect: "provider inspect failed (FailedPrecondition): the fixture refuses to read this database",
-			wantLock:    "provider lock outcome is BUSY: another session holds the lock"},
+			wantLock:    "provider lock outcome is BUSY: another session holds the lock",
+			wantExecute: "provider execution: NOT_APPLIED (0 units confirmed applied): the fixture refuses to run this unit",
+			wantCommit:  "provider transaction outcome is ROLLED_BACK: the fixture refuses to commit"},
 		{name: "a host that does not list it", listed: false,
 			wantInspect: "provider inspect failed (FailedPrecondition)",
-			wantLock:    "provider lock outcome is BUSY"},
+			wantLock:    "provider lock outcome is BUSY",
+			wantExecute: "provider execution: NOT_APPLIED (0 units confirmed applied)",
+			wantCommit:  "provider transaction outcome is ROLLED_BACK"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -56,6 +64,19 @@ func TestIndependentProviderReasons(t *testing.T) {
 			c.Assert(schema, qt.IsNil)
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(err.Error(), qt.Equals, test.wantInspect)
+
+			executed, err := client.Execute(c.Context(), execution(refused.GetId()))
+			c.Assert(err, qt.ErrorIs, provider.ErrExecution)
+			c.Assert(err.Error(), qt.Equals, test.wantExecute)
+			c.Assert(executed.GetOutcome(), qt.Equals, protocol.Execution_NOT_APPLIED)
+			_, err = client.BeginTransaction(c.Context(), &protocol.BeginTransactionRequest{SessionId: refused.GetId(), TransactionId: "refused",
+				Isolation: protocol.TransactionIsolation_DEFAULT})
+			c.Assert(err, qt.IsNil)
+			finished, err := client.FinishTransaction(c.Context(), &protocol.FinishTransactionRequest{SessionId: refused.GetId(), TransactionId: "refused",
+				Action: protocol.FinishTransactionRequest_COMMIT})
+			c.Assert(err, qt.ErrorIs, provider.ErrExecution)
+			c.Assert(err.Error(), qt.Equals, test.wantCommit)
+			c.Assert(finished.GetOutcome(), qt.Equals, protocol.TransactionResult_ROLLED_BACK)
 
 			holder := open(c, client, "")
 			_, err = client.TryLock(c.Context(), lockRequest(holder, "holder", "migration"))

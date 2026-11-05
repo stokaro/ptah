@@ -239,6 +239,12 @@ func (c *Client) Render(ctx context.Context, request *protocol.RenderRequest) (*
 // transaction may set transaction_aborted: the engine aborted the
 // transaction for a conflict and applied nothing. Any other use of the flag
 // is an unknown outcome and returns no result.
+//
+// Under provider.ErrorReasonsFeature, a result other than APPLIED may carry
+// the provider's reason in its diagnostic, and the returned
+// provider.ExecutionError carries it in Reason and in its text. A malformed
+// reason reads as a sentence of the SDK's own, and a reason the description
+// does not list is removed from the returned result.
 func (c *Client) Execute(ctx context.Context, request *protocol.ExecuteRequest) (*protocol.Execution, error) {
 	request = proto.CloneOf(request)
 	if request.GetTransactionId() != "" {
@@ -258,6 +264,7 @@ func (c *Client) Execute(ctx context.Context, request *protocol.ExecuteRequest) 
 	if err != nil {
 		return nil, errors.Join(&provider.ExecutionError{Outcome: protocol.Execution_UNKNOWN}, remoteError(call, c.description, "execute", err))
 	}
+	result = negotiatedExecution(c.description, result)
 	if err := provider.ValidateExecutionAbort(c.description, request, result); err != nil {
 		// The flag invites a retry, so a reply that misuses it is exposed to
 		// no caller.

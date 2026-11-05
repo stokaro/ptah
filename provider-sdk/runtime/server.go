@@ -371,7 +371,7 @@ func (s *serverAdapter) Execute(ctx context.Context, request *protocol.ExecuteRe
 	if err := provider.ValidateExecutionAbort(s.negotiated(), request, result); err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	return result, nil
+	return negotiatedExecution(s.negotiated(), result), nil
 }
 
 // nilService refuses typed-nil implementations before the server starts.

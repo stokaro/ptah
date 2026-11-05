@@ -106,7 +106,7 @@ func main() {
 		added := []string{provider.CommonObjectsFeature, provider.ObservedColumnsFeature, provider.ObservedIndexesFeature, provider.PlanningLifecycleFeature}
 		d.Features = append(d.Features, added...)
 		d.Engines[0].Features = append(d.Engines[0].Features, added...)
-		d.Engines[0].CommonObjects = &protocol.CommonObjectSupport{Kinds: []protocol.CommonObjectSupport_Kind{protocol.CommonObjectSupport_COMMENT}}
+		d.Engines[0].CommonObjects = &protocol.CommonObjectSupport{Kinds: []protocol.CommonObjectSupport_Kind{protocol.CommonObjectSupport_COMMENT, protocol.CommonObjectSupport_GRANT}}
 	}
 	indexProperty := ""
 	if mode == "owned-renames" {
