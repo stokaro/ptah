@@ -140,6 +140,11 @@ func withKeyReplacements(builder objectidentity.Builder, nodes []ast.Node, effec
 				}
 				subject := builder.IndexParts(table.Schema.Source, table.Name.Source, operation.Index.Name)
 				effects[i] = append(effects[i], plangraph.Effect{Subject: subject, Action: plangraph.Alter})
+				for _, drop := range operation.Drops {
+					effects[i] = append(effects[i], plangraph.Effect{
+						Subject: builder.IndexParts(table.Schema.Source, table.Name.Source, drop), Action: plangraph.Drop,
+					})
+				}
 			case *ast.DropConstraintOperation:
 				droppedKey = droppedKey || operation.PrimaryKey
 			case *ast.AddConstraintOperation:

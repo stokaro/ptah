@@ -2939,6 +2939,12 @@ type IndexChange struct {
 	Index schemamodel.Index
 	// TableName is the relation it belongs to, resolved.
 	TableName string
+	// Replaces names the removed indexes of the table this addition takes over
+	// from, each also listed in [SchemaDiff.IndexesRemoved]. A planner writes the
+	// removals and the addition as one statement: the server may drop an index it
+	// built for a foreign key by itself once the addition covers the key, and it
+	// refuses the removal ahead of the addition.
+	Replaces []IndexRef
 }
 
 // IndexDeclarationsOf pairs every declared index with its resolved owner.
