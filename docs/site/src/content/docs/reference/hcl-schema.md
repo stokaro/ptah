@@ -379,9 +379,13 @@ data {
 
 Embedded Go annotations export as finalized concrete columns and foreign keys.
 Go struct and field names are provenance rather than schema semantics and are
-intentionally not written to HCL. Role passwords are written as string
-literals, and Ptah forces generated files containing them to owner-only `0600`
-permissions. Treat those files as sensitive.
+intentionally not written to HCL. A role password, or a password hash, is
+never written: the export writes `password = "$PTAH_SECRET_PASSWORD_<ROLE>"`,
+the variable the password is read from when the schema is applied (see
+[Role passwords](../../databases/postgresql/#role-passwords)), and reports
+that the value is not in the document. A cleanup of the Go annotations is
+refused while one of them holds a password as a value, since it holds the only
+copy; write the password as `$PTAH_SECRET_<NAME>` there first.
 
 ## PostgreSQL include columns
 

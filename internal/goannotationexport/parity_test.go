@@ -56,6 +56,12 @@ func TestExport_HappyPath_PreservesGoAnnotationSemantics(t *testing.T) {
 		},
 		{
 			Severity: atlashclrender.SeverityWarning,
+			Path:     `roles["app_user"].password`,
+			Message: "role app_user: the password is written as $PTAH_SECRET_PASSWORD_APP_USER, the variable it is read from when " +
+				"the schema is applied; the value is not in this document",
+		},
+		{
+			Severity: atlashclrender.SeverityWarning,
 			Path:     `triggers["app.users"]["users_touch"]`,
 			Message:  "raw SQL body is emitted as opaque HCL text and cannot be structurally interpreted; review it before treating the export as semantically complete",
 		},
@@ -73,7 +79,8 @@ func TestExport_HappyPath_PreservesGoAnnotationSemantics(t *testing.T) {
 	c.Assert(hclText, qt.Contains, `domain "email_address"`)
 	c.Assert(hclText, qt.Contains, `composite "postal_address"`)
 	c.Assert(hclText, qt.Contains, `range "price_range"`)
-	c.Assert(hclText, qt.Contains, `password = "SCRAM-SHA-256$fixture"`)
+	c.Assert(hclText, qt.Contains, `password = "$PTAH_SECRET_PASSWORD_APP_USER"`)
+	c.Assert(hclText, qt.Not(qt.Contains), "SCRAM-SHA-256")
 	// The annotation writes on_sequence="app.order_seq" and the export writes
 	// `for = sequence.order_seq`, for the same reason `ref_columns` below drops
 	// its schema: an HCL reference names a BLOCK, and the block is named by its
@@ -101,7 +108,10 @@ func TestExport_HappyPath_PreservesGoAnnotationSemantics(t *testing.T) {
 	c.Assert(declaredRanges(after), qt.DeepEquals, declaredRanges(before))
 	c.Assert(declaredRanges(before), qt.HasLen, 1)
 	c.Assert(after.Roles, qt.HasLen, 1)
-	c.Assert(after.Roles[0].Password, qt.Equals, before.Roles[0].Password)
+	// A declared password reads back as the variable it is read from, never
+	// the value (ADR 0071).
+	c.Assert(after.Roles[0].Password, qt.Equals, "$PTAH_SECRET_PASSWORD_APP_USER")
+	c.Assert(before.Roles[0].Password, qt.Not(qt.Equals), after.Roles[0].Password)
 	c.Assert(after.Functions, qt.HasLen, 1)
 	c.Assert(after.Functions[0].Parameters, qt.Equals, before.Functions[0].Parameters)
 	c.Assert(after.Functions[0].Returns, qt.Equals, before.Functions[0].Returns)
