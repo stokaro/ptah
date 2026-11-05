@@ -189,13 +189,13 @@ func TestAtlasCompatExcludeProtectsATypeObjectE2E(t *testing.T) {
 	plan := runExcludeUnmatchedDiff(c, sourceURL, devURL,
 		[]string{"positive_int", "order_seq", "addr", "intrange"})
 
-	c.Assert(plan, qt.Not(qt.Contains), `DROP DOMAIN IF EXISTS "positive_int"`)
-	c.Assert(plan, qt.Not(qt.Contains), `DROP SEQUENCE IF EXISTS "order_seq"`)
-	c.Assert(plan, qt.Not(qt.Contains), `DROP TYPE IF EXISTS "addr"`)
-	c.Assert(plan, qt.Not(qt.Contains), `DROP TYPE IF EXISTS "intrange"`)
+	c.Assert(plan, qt.Not(qt.Contains), `"positive_int"`)
+	c.Assert(plan, qt.Not(qt.Contains), `"order_seq"`)
+	c.Assert(plan, qt.Not(qt.Contains), `"addr"`)
+	c.Assert(plan, qt.Not(qt.Contains), `"intrange"`)
 	// The control: an object no selector named is still planned for removal, so
 	// the assertions above measure the exclusion rather than an empty plan.
-	c.Assert(plan, qt.Contains, `DROP TYPE IF EXISTS "mood"`)
+	c.Assert(plan, qt.Contains, `DROP TYPE "mood"`)
 }
 
 // excludeSchemaSeed adds a second schema holding objects of its own, so a
@@ -257,12 +257,12 @@ func TestAtlasCompatExcludeSchemaSelectorE2E(t *testing.T) {
 	// alone.
 	plan := runExcludeScopedDiff(c, sourceURL, devURL, scope, []string{"app"})
 	c.Assert(plan, qt.Not(qt.Contains), `"app"."orders"`)
-	c.Assert(plan, qt.Not(qt.Contains), `DROP TYPE IF EXISTS "color"`)
+	c.Assert(plan, qt.Not(qt.Contains), `"color"`)
 	// Controls in the same run: objects no selector named are still planned for
 	// removal, so the assertions above measure the exclusion rather than an
 	// empty plan.
-	c.Assert(plan, qt.Contains, `DROP TABLE IF EXISTS "users"`)
-	c.Assert(plan, qt.Contains, `DROP TYPE IF EXISTS "mood"`)
+	c.Assert(plan, qt.Contains, `DROP TABLE "users"`)
+	c.Assert(plan, qt.Contains, `"mood"`)
 
 	// The negative direction, in the same scope: a selector naming no schema and
 	// no object still refuses, so "ask the schemas" did not become "mark

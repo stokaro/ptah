@@ -57,11 +57,8 @@ func TestPostgreSQLCoverageSurvivesSplitWriteIntegration(t *testing.T) {
 	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
 
 	wantRecord := suppressedBlocks(coverage.Extension, coverage.Policy, coverage.Sequence)
-	wantDrops := []string{
-		`DROP POLICY "p" ON "guarded"`,
-		`DROP SEQUENCE IF EXISTS "order_seq"`,
-		`DROP EXTENSION IF EXISTS "pgcrypto"`,
-	}
+	dropPolicy, dropTable := `DROP POLICY "p" ON "guarded"`, `DROP TABLE "guarded"`
+	dropSequence, dropExtension := `DROP SEQUENCE "order_seq"`, `DROP EXTENSION "pgcrypto"`
 
 	modes := []struct {
 		name  string
@@ -92,11 +89,15 @@ func TestPostgreSQLCoverageSurvivesSplitWriteIntegration(t *testing.T) {
 					// A member describes only part of the schema, so it can
 					// legitimately plan to drop what a sibling holds; what it
 					// must never plan is a drop of the three kinds it declared
-					// it does not describe.
+					// it does not describe. The policy is the exception that
+					// proves it: a member that leaves the table out drops the
+					// table, the policy goes with it in any style, and the
+					// plan names it first to release what it reads. A member
+					// that keeps the table keeps the policy.
 					planned := boundaryApplyBack(c, conn, string(document), true)
-					for _, drop := range wantDrops {
-						c.Assert(planned, qt.Not(qt.Contains), drop)
-					}
+					c.Assert(slices.Contains(planned, dropPolicy), qt.Equals, slices.Contains(planned, dropTable))
+					c.Assert(planned, qt.Not(qt.Contains), dropSequence)
+					c.Assert(planned, qt.Not(qt.Contains), dropExtension)
 				})
 			}
 		})
@@ -118,7 +119,7 @@ func TestPostgreSQLCoverageSurvivesSplitWriteIntegration(t *testing.T) {
 		stripped := coverageStripDirectives(string(document))
 		c.Assert(coverageDirectiveLines(stripped), qt.HasLen, 0)
 
-		c.Assert(boundaryApplyBack(c, conn, stripped, true), qt.DeepEquals, wantDrops)
+		c.Assert(boundaryApplyBack(c, conn, stripped, true), qt.DeepEquals, []string{dropPolicy, dropSequence, dropExtension})
 	})
 }
 

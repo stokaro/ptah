@@ -72,8 +72,8 @@ func TestPostgreSQLCoverageStillPlansAGenuineRemovalIntegration(t *testing.T) {
 		c := qt.New(t)
 		c.Assert(boundaryApplyBack(c, conn, authored, true), qt.DeepEquals, []string{
 			`DROP POLICY "p" ON "guarded"`,
-			`DROP SEQUENCE IF EXISTS "order_seq"`,
-			`DROP EXTENSION IF EXISTS "pgcrypto"`,
+			`DROP SEQUENCE "order_seq"`,
+			`DROP EXTENSION "pgcrypto"`,
 		})
 	})
 

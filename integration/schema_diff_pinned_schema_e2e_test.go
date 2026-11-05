@@ -61,8 +61,8 @@ func TestSchemaDiffPairsAFileWithAPostgresSchemaItNamesE2E(t *testing.T) {
 	diff := runPtahIn(c, "schema", "diff", "--from", "file://"+file, "--to", planE2ESearchPath(c, database, "app"))
 
 	c.Assert(diff.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", diff.Stdout, diff.Stderr))
-	c.Assert(diff.Stdout, qt.Contains, `DROP TABLE IF EXISTS "app"."t2" CASCADE;`)
+	c.Assert(diff.Stdout, qt.Contains, `DROP TABLE "app"."t2";`)
 	c.Assert(diff.Stdout, qt.Contains, `CREATE TABLE "t3"`)
 	c.Assert(diff.Stdout, qt.Not(qt.Contains), `CREATE TABLE "t1"`)
-	c.Assert(diff.Stdout, qt.Not(qt.Contains), `DROP TABLE IF EXISTS "app"."t1"`)
+	c.Assert(diff.Stdout, qt.Not(qt.Contains), `"app"."t1"`)
 }

@@ -55,7 +55,7 @@ func TestReverseViewLikeObjects_DownRoundTrip_Integration(t *testing.T) {
 			name:      "up creates the view, materialized view and trigger",
 			prior:     func() *schemamodel.Database { return revIntSchema(revIntOptions{}) },
 			target:    func() *schemamodel.Database { return revIntSchema(revIntOptions{objects: true}) },
-			downHas:   []string{"DROP VIEW IF EXISTS", "DROP MATERIALIZED VIEW IF EXISTS", "DROP TRIGGER IF EXISTS"},
+			downHas:   []string{"DROP VIEW ", "DROP MATERIALIZED VIEW ", "DROP TRIGGER "},
 			downLacks: []string{"DROP TABLE"},
 		},
 		{
@@ -76,7 +76,7 @@ func TestReverseViewLikeObjects_DownRoundTrip_Integration(t *testing.T) {
 			},
 			// Taking the column away again is what PostgreSQL refuses with
 			// "cannot drop columns from view", so the rollback must not replace.
-			downHas:   []string{"DROP VIEW IF EXISTS " + revIntView + " CASCADE"},
+			downHas:   []string{"DROP VIEW " + revIntView + ";"},
 			downLacks: []string{"CREATE OR REPLACE VIEW"},
 		},
 		{
@@ -104,7 +104,7 @@ func TestReverseViewLikeObjects_DownRoundTrip_Integration(t *testing.T) {
 				})
 			},
 			downHas: []string{
-				"DROP MATERIALIZED VIEW IF EXISTS " + revIntMatView + " CASCADE",
+				"DROP MATERIALIZED VIEW " + revIntMatView + ";",
 				"CREATE MATERIALIZED VIEW " + revIntMatView,
 				"CREATE OR REPLACE TRIGGER " + revIntTrigger,
 			},
@@ -128,9 +128,9 @@ func TestReverseViewLikeObjects_DownRoundTrip_Integration(t *testing.T) {
 				})
 			},
 			upLacks: []string{"DROP VIEW"},
-			// The rollback cannot afford the undecidable answer, so it drops --
-			// and then rebuilds the dependent the CASCADE took with it.
-			downHas:   []string{"DROP VIEW IF EXISTS " + revIntView + " CASCADE", "VIEW " + revIntDepView + " AS"},
+			// The rollback cannot afford the undecidable answer, so it drops the
+			// dependent and the view, and then rebuilds both.
+			downHas:   []string{"DROP VIEW " + revIntDepView + ";", "DROP VIEW " + revIntView + ";", "VIEW " + revIntDepView + " AS"},
 			downLacks: []string{"DROP TABLE"},
 		},
 		{
@@ -158,7 +158,7 @@ func TestReverseViewLikeObjects_DownRoundTrip_Integration(t *testing.T) {
 					noTrigger: true,
 				})
 			},
-			downHas:   []string{"DROP VIEW IF EXISTS " + revIntView + " CASCADE"},
+			downHas:   []string{"DROP VIEW " + revIntView + ";"},
 			downLacks: []string{"CREATE OR REPLACE VIEW"},
 		},
 		{
@@ -180,7 +180,7 @@ func TestReverseViewLikeObjects_DownRoundTrip_Integration(t *testing.T) {
 					matViewBody: revIntLabelMatViewBody,
 				})
 			},
-			downHas:   []string{"DROP VIEW IF EXISTS " + revIntView + " CASCADE"},
+			downHas:   []string{"DROP VIEW " + revIntView + ";"},
 			downLacks: []string{"MATERIALIZED VIEW " + revIntMatView},
 		},
 	}

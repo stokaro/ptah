@@ -79,17 +79,17 @@ func TestCockroachDBRoutinesStillChangeE2E_HappyPath(t *testing.T) {
 		{
 			name:     "a changed body",
 			declared: strings.Replace(cockroachRoutineSpelling, "SELECT count(*) FROM public.items $$", "SELECT count(*) + 1 FROM public.items $$", 1),
-			want:     []string{"-- Modify function public.item_count: body"},
+			want:     []string{`CREATE OR REPLACE FUNCTION "public"."item_count"()`},
 		},
 		{
 			name:     "a set that becomes a row",
 			declared: strings.Replace(cockroachRoutineSpelling, "RETURNS SETOF public.items", "RETURNS public.items", 1),
-			want:     []string{"-- Drop function public.all_items to recreate it: its return type changed"},
+			want:     []string{`DROP FUNCTION "public"."all_items"();`, `CREATE OR REPLACE FUNCTION "public"."all_items"() RETURNS public.items`},
 		},
 		{
 			name:     "a column added under a star",
 			declared: strings.Replace(cockroachRoutineSpelling, "title TEXT);", "title TEXT, price INT8);", 1),
-			want:     []string{`ADD COLUMN "price"`, "-- Modify function public.all_items: body"},
+			want:     []string{`ADD COLUMN "price"`, `CREATE OR REPLACE FUNCTION "public"."all_items"()`},
 		},
 	}
 	for _, test := range tests {
@@ -107,8 +107,8 @@ func TestCockroachDBRoutinesStillChangeE2E_HappyPath(t *testing.T) {
 			for _, want := range test.want {
 				c.Assert(out, qt.Contains, want)
 			}
-			c.Assert(out, qt.Not(qt.Contains), "-- Modify function public.plp")
-			c.Assert(out, qt.Not(qt.Contains), "-- Modify function public.tab")
+			c.Assert(out, qt.Not(qt.Contains), `"public"."plp"`)
+			c.Assert(out, qt.Not(qt.Contains), `"public"."tab"`)
 		})
 	}
 }

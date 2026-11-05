@@ -115,8 +115,8 @@ CREATE PROCEDURE p(a int, b text) LANGUAGE sql AS $$SELECT 2$$;`
 	out := runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", schema, "--auto-approve")
 
 	c.Assert(dropStatements(out), qt.DeepEquals, []string{
-		`DROP FUNCTION IF EXISTS "f"(a text);`,
-		`DROP PROCEDURE IF EXISTS "p"(IN a integer);`,
+		`DROP FUNCTION "f"(a text);`,
+		`DROP PROCEDURE "p"(IN a integer);`,
 	})
 	c.Assert(routinesIn(c, target), qt.DeepEquals, []string{"f(integer)", "f(integer,text)", "p(integer,text)"})
 }

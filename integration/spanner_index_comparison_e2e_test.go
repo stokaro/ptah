@@ -36,25 +36,25 @@ func TestSpannerIndexComparisonE2E_HappyPath(t *testing.T) {
 			name:     "uniqueness",
 			from:     "CREATE INDEX t_i ON t (a);",
 			to:       "CREATE UNIQUE INDEX t_i ON t (a);",
-			wantPlan: "DROP INDEX IF EXISTS \"t_i\";\nCREATE UNIQUE INDEX IF NOT EXISTS \"t_i\" ON \"t\" (\"a\");\n",
+			wantPlan: "DROP INDEX \"t_i\";\nCREATE UNIQUE INDEX \"t_i\" ON \"t\" (\"a\");\n",
 		},
 		{
 			name:     "the order of the keys",
 			from:     "CREATE INDEX t_i ON t (a, b);",
 			to:       "CREATE INDEX t_i ON t (b, a);",
-			wantPlan: "DROP INDEX IF EXISTS \"t_i\";\nCREATE INDEX IF NOT EXISTS \"t_i\" ON \"t\" (\"b\", \"a\");\n",
+			wantPlan: "DROP INDEX \"t_i\";\nCREATE INDEX \"t_i\" ON \"t\" (\"b\", \"a\");\n",
 		},
 		{
 			name:     "a key's direction",
 			from:     "CREATE INDEX t_i ON t (a);",
 			to:       "CREATE INDEX t_i ON t (a DESC);",
-			wantPlan: "DROP INDEX IF EXISTS \"t_i\";\nCREATE INDEX IF NOT EXISTS \"t_i\" ON \"t\" (\"a\" DESC);\n",
+			wantPlan: "DROP INDEX \"t_i\";\nCREATE INDEX \"t_i\" ON \"t\" (\"a\" DESC);\n",
 		},
 		{
 			name:     "a key's NULLS ordering",
 			from:     "CREATE INDEX t_i ON t (b);",
 			to:       "CREATE INDEX t_i ON t (b ASC NULLS FIRST);",
-			wantPlan: "DROP INDEX IF EXISTS \"t_i\";\nCREATE INDEX IF NOT EXISTS \"t_i\" ON \"t\" (\"b\" NULLS FIRST);\n",
+			wantPlan: "DROP INDEX \"t_i\";\nCREATE INDEX \"t_i\" ON \"t\" (\"b\" NULLS FIRST);\n",
 		},
 		{
 			// Spanner reports this key as DESC NULLS LAST, which read as
@@ -62,7 +62,7 @@ func TestSpannerIndexComparisonE2E_HappyPath(t *testing.T) {
 			name:     "a descending key's NULLS ordering",
 			from:     "CREATE INDEX t_i ON t (b DESC);",
 			to:       "CREATE INDEX t_i ON t (b DESC NULLS LAST);",
-			wantPlan: "DROP INDEX IF EXISTS \"t_i\";\nCREATE INDEX IF NOT EXISTS \"t_i\" ON \"t\" (\"b\" DESC NULLS LAST);\n",
+			wantPlan: "DROP INDEX \"t_i\";\nCREATE INDEX \"t_i\" ON \"t\" (\"b\" DESC NULLS LAST);\n",
 		},
 	}
 	for _, test := range tests {

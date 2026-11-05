@@ -111,7 +111,7 @@ func TestMigrationsPlanIgnoreExtensionE2E(t *testing.T) {
 		got := plan(c)
 
 		c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", got.Stderr))
-		c.Assert(got.Stdout, qt.Contains, `DROP EXTENSION IF EXISTS "pg_trgm";`)
+		c.Assert(got.Stdout, qt.Contains, `DROP EXTENSION "pg_trgm";`)
 		c.Assert(got.Stdout, qt.Contains, `CREATE TABLE "notes"`)
 	})
 

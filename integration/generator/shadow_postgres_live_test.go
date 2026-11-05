@@ -121,11 +121,11 @@ func TestGenerateMigration_ConcurrentIndexApplyAndRollbackWithRealPostgres(t *te
 	upSQL, err := os.ReadFile(concurrentPair.UpFile)
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(upSQL), qt.Contains, "-- +ptah no_transaction")
-	c.Assert(string(upSQL), qt.Contains, `CREATE INDEX CONCURRENTLY IF NOT EXISTS "idx_users_email" ON "users" ("email");`)
+	c.Assert(string(upSQL), qt.Contains, `CREATE INDEX CONCURRENTLY "idx_users_email" ON "users" ("email");`)
 	downSQL, err := os.ReadFile(concurrentPair.DownFile)
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(downSQL), qt.Contains, "-- +ptah no_transaction")
-	c.Assert(string(downSQL), qt.Contains, `DROP INDEX CONCURRENTLY IF EXISTS "idx_users_email";`)
+	c.Assert(string(downSQL), qt.Contains, `DROP INDEX CONCURRENTLY "idx_users_email";`)
 
 	provider, err := migrator.NewFSMigrationProvider(os.DirFS(migrationsDir))
 	c.Assert(err, qt.IsNil)

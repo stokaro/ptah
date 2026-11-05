@@ -38,37 +38,37 @@ func TestCockroachDBIndexComparisonE2E_HappyPath(t *testing.T) {
 			name:     "uniqueness",
 			from:     "CREATE INDEX t_i ON t (a);",
 			to:       "CREATE UNIQUE INDEX t_i ON t (a);",
-			wantPlan: "DROP INDEX IF EXISTS \"t\"@\"t_i\";\nCREATE UNIQUE INDEX IF NOT EXISTS \"t_i\" ON \"t\" (\"a\");\n",
+			wantPlan: "DROP INDEX \"t\"@\"t_i\";\nCREATE UNIQUE INDEX \"t_i\" ON \"t\" (\"a\");\n",
 		},
 		{
 			name:     "a key column",
 			from:     "CREATE INDEX t_i ON t (a);",
 			to:       "CREATE INDEX t_i ON t (b);",
-			wantPlan: "DROP INDEX IF EXISTS \"t\"@\"t_i\";\nCREATE INDEX IF NOT EXISTS \"t_i\" ON \"t\" (\"b\");\n",
+			wantPlan: "DROP INDEX \"t\"@\"t_i\";\nCREATE INDEX \"t_i\" ON \"t\" (\"b\");\n",
 		},
 		{
 			name:     "the order of the keys",
 			from:     "CREATE INDEX t_i ON t (a, b);",
 			to:       "CREATE INDEX t_i ON t (b, a);",
-			wantPlan: "DROP INDEX IF EXISTS \"t\"@\"t_i\";\nCREATE INDEX IF NOT EXISTS \"t_i\" ON \"t\" (\"b\", \"a\");\n",
+			wantPlan: "DROP INDEX \"t\"@\"t_i\";\nCREATE INDEX \"t_i\" ON \"t\" (\"b\", \"a\");\n",
 		},
 		{
 			name:     "a key's direction",
 			from:     "CREATE INDEX t_i ON t (a);",
 			to:       "CREATE INDEX t_i ON t (a DESC);",
-			wantPlan: "DROP INDEX IF EXISTS \"t\"@\"t_i\";\nCREATE INDEX IF NOT EXISTS \"t_i\" ON \"t\" (\"a\" DESC);\n",
+			wantPlan: "DROP INDEX \"t\"@\"t_i\";\nCREATE INDEX \"t_i\" ON \"t\" (\"a\" DESC);\n",
 		},
 		{
 			name:     "a key's expression",
 			from:     "CREATE INDEX t_i ON t (lower(a));",
 			to:       "CREATE INDEX t_i ON t (upper(a));",
-			wantPlan: "DROP INDEX IF EXISTS \"t\"@\"t_i\";\nCREATE INDEX IF NOT EXISTS \"t_i\" ON \"t\" ((upper(a)));\n",
+			wantPlan: "DROP INDEX \"t\"@\"t_i\";\nCREATE INDEX \"t_i\" ON \"t\" ((upper(a)));\n",
 		},
 		{
 			name:     "the access method",
 			from:     "CREATE INDEX t_i ON t (j);",
 			to:       "CREATE INDEX t_i ON t USING GIN (j);",
-			wantPlan: "DROP INDEX IF EXISTS \"t\"@\"t_i\";\nCREATE INDEX IF NOT EXISTS \"t_i\" ON \"t\" USING GIN (\"j\");\n",
+			wantPlan: "DROP INDEX \"t\"@\"t_i\";\nCREATE INDEX \"t_i\" ON \"t\" USING GIN (\"j\");\n",
 		},
 	}
 	for _, test := range tests {
@@ -131,7 +131,7 @@ func TestCockroachDBIndexReadE2E_HappyPath(t *testing.T) {
 		"schema", "apply", "--schema-file", described, "--db-url", targetURL, "--auto-approve",
 	})
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied, appliedErr))
-	c.Assert(applied, qt.Contains, `CREATE INDEX IF NOT EXISTS "t_ab" ON "t" ("a", "b" DESC);`)
+	c.Assert(applied, qt.Contains, `CREATE INDEX "t_ab" ON "t" ("a", "b" DESC);`)
 
 	compared, comparedErr, err := runPtahSplitStreams(ctx, []string{
 		"schema", "apply", "--schema-file", source, "--db-url", targetURL, "--auto-approve",

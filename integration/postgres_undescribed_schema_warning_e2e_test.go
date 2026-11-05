@@ -28,8 +28,8 @@ const (
 	// undescribedAnyWarning is the part of the warning every schema's line
 	// carries.
 	undescribedAnyWarning = "declares nothing in schema"
-	undescribedDropFirst  = `DROP TABLE IF EXISTS "crm"."customers" CASCADE;`
-	undescribedDropSecond = `DROP TABLE IF EXISTS "crm"."orders" CASCADE;`
+	undescribedDropFirst  = `DROP TABLE "crm"."customers";`
+	undescribedDropSecond = `DROP TABLE "crm"."orders";`
 )
 
 // undescribedRun is one verb run against the fixture database.

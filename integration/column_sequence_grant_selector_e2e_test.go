@@ -221,7 +221,7 @@ func TestSchemaDiffExclusionKeepsSequenceOwnedByExcludedTableE2E(t *testing.T) {
 				output, err := run(pinnedDevURL(c, target.url, "public"), pinnedDevURL(c, dev.url, "public"), file, test.selectors)
 
 				c.Assert(err, qt.IsNil, qt.Commentf("%s", output))
-				c.Assert(strings.Contains(output, `DROP SEQUENCE IF EXISTS "lifecycle_seq"`), qt.Equals, test.dropped,
+				c.Assert(strings.Contains(output, `"lifecycle_seq"`), qt.Equals, test.dropped,
 					qt.Commentf("%s", output))
 			})
 		}
