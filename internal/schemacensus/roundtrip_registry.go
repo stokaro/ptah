@@ -274,6 +274,12 @@ var roundTripGaps = []Unreached{
 		Directions: nil,
 		Reason:     gapComparison,
 	},
+	{
+		Field:      "schemamodel.Field.IdentityGeneration",
+		Dialects:   []string{"cockroachdb", "postgres"},
+		Directions: []Direction{ToCatalog},
+		Reason:     gapComparison,
+	},
 	{Field: "schemamodel.Field.IdentityIncrement", Dialects: []string{"sqlserver"}, Directions: nil, Reason: gapComparison},
 	{
 		Field:      "schemamodel.Field.IdentityOptions",
