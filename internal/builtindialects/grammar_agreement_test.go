@@ -163,7 +163,8 @@ var oldParserSwitches = map[string]descriptor.Grammar{
 				LoneInitiallyRefusal: "SQLite takes it only after [NOT] DEFERRABLE",
 			},
 		},
-		Keys: descriptor.KeyGrammar{IndexKeywords: []string{"INDEX"}},
+		Keys:    descriptor.KeyGrammar{IndexKeywords: []string{"INDEX"}},
+		Columns: descriptor.ColumnGrammar{CurrentTimeKeywords: true},
 	},
 	platform.SQLServer: {
 		Columns:    descriptor.ColumnGrammar{IdentityProperty: true},
