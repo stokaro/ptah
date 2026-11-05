@@ -39,7 +39,6 @@
   &nbsp;&nbsp;
   <a href="https://docs.ptah.run/edge/databases/distributed/" title="Spanner"><img src="docs/assets/engines/spanner.svg" alt="Spanner" height="32" width="32"></a>
   &nbsp;&nbsp;
-  <a href="https://docs.ptah.run/edge/databases/ydb/" title="YDB"><img src="docs/assets/engines/ydb.svg" alt="YDB" height="32" width="32"></a>
 </p>
 
 Ptah gère les modifications des schémas de bases de données et de l’état
@@ -106,6 +105,15 @@ irm https://ptah.run/install.ps1 | iex
 Le [guide d’installation](https://docs.ptah.run/edge/start/install/)
 couvre le choix d’une version précise, la vérification des
 signatures, le téléchargement sans exécution et la compilation des sources.
+
+YDB est servi par un fournisseur exécutable, qui s’installe séparément :
+
+```bash
+ptah providers install ydb
+```
+
+Une commande qui nomme une URL `ydb://` l’utilise ensuite ; voir
+[Configurer le fournisseur YDB](https://docs.ptah.run/edge/extend/providers/ydb/).
 
 ## Essayer Ptah avec SQLite
 

@@ -1,10 +1,8 @@
 // Package accessscope refuses the access-control declarations a target cannot
 // hold, before anything is rendered, compared or planned: a group declared as
 // a principal of its own kind, a membership of one role in another, a grant on
-// the database itself, and a grant on a scheme object such as a YDB topic.
-// Each is gated by its capability key, and on
-// YDB the declaration is held to what YDB's users, groups and permissions can
-// carry through [ydbacl.ValidateDeclared].
+// the database itself, and a grant on a scheme object such as a topic. Each is
+// gated by its capability key.
 //
 // The renderer and the schema comparison both call [ValidateDeclared], so a
 // declaration one accepts the other cannot refuse.
@@ -20,7 +18,6 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/ydbacl"
 )
 
 // ValidateDeclared refuses a schema declaring what the target's access model
@@ -61,13 +58,30 @@ func ValidateDeclared(dialect string, caps capability.Capabilities, database *sc
 				"unavailable on this %s target", first, gate.key, normalized),
 		}
 	}
-	if err := objectGrants(dialect, caps, database); err != nil {
-		return err
-	}
-	if err := ydbacl.ValidateDeclared(dialect, database); err != nil {
-		return fmt.Errorf("%w: %w", ptaherr.ErrUnsupportedFeature, err)
-	}
-	return nil
+	return objectGrants(dialect, caps, database)
+}
+
+// ObjectCapability returns the capability under which a target holds objects
+// of kind, a kind a grant names by [schemamodel.Grant.OnObject] such as TOPIC,
+// matched without regard to case or spacing, and false for any other kind.
+func ObjectCapability(kind string) (capability.Capability, bool) {
+	key, known := objectCapabilities[strings.Join(strings.Fields(strings.ToUpper(kind)), " ")]
+	return key, known
+}
+
+// objectCapabilities maps each kind of object a grant names by
+// [schemamodel.Grant.OnObject] to the capability a target holds the kind
+// under.
+var objectCapabilities = map[string]capability.Capability{
+	schemamodel.GrantObjectTopic:              capability.Topics,
+	schemamodel.GrantObjectCoordinationNode:   capability.CoordinationNodes,
+	schemamodel.GrantObjectSecret:             capability.Secrets,
+	schemamodel.GrantObjectExternalDataSource: capability.ExternalDataSources,
+	schemamodel.GrantObjectExternalTable:      capability.ExternalDataSources,
+	schemamodel.GrantObjectAsyncReplication:   capability.AsyncReplication,
+	schemamodel.GrantObjectTransfer:           capability.Transfers,
+	schemamodel.GrantObjectStreamingQuery:     capability.StreamingQueries,
+	schemamodel.GrantObjectResourcePool:       capability.ResourcePools,
 }
 
 // objectGrants refuses a grant or revoke on a scheme object of a kind the
@@ -88,7 +102,7 @@ func objectGrants(dialect string, caps capability.Capabilities, database *schema
 		}
 		subject := fmt.Sprintf("the schema grants or revokes a privilege on %s %q to %q",
 			strings.ToLower(grant.ObjectKind), grant.OnObject, grant.Role)
-		key, known := ydbacl.ObjectCapability(grant.ObjectKind)
+		key, known := ObjectCapability(grant.ObjectKind)
 		if !known {
 			return fmt.Errorf("%w: %s, and no target holds an object of kind %q", ptaherr.ErrUnsupportedFeature,
 				subject, grant.ObjectKind)

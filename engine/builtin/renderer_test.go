@@ -18,7 +18,7 @@ func TestSupportedDialects(t *testing.T) {
 	c := qt.New(t)
 
 	dialects := builtin.SupportedDialects()
-	expected := []string{"postgresql", "postgres", "mysql", "mariadb", "clickhouse", "sqlite", "sqlite3", "sqlserver", "mssql", "cockroachdb", "yugabytedb", "spanner", "oracle", "ydb"}
+	expected := []string{"postgresql", "postgres", "mysql", "mariadb", "clickhouse", "sqlite", "sqlite3", "sqlserver", "mssql", "cockroachdb", "yugabytedb", "spanner", "oracle"}
 
 	c.Assert(dialects, qt.DeepEquals, expected)
 }
@@ -207,42 +207,6 @@ func TestRenderSQL_UnsupportedDialect(t *testing.T) {
 	var renderErr *ptaherr.RenderError
 	c.Assert(err, qt.ErrorAs, &renderErr)
 	c.Assert(renderErr.Dialect, qt.Equals, "db2")
-}
-
-// Every spelling of YDB reaches the YDB renderer: `ydbs` names the TLS
-// scheme, and a dialect written in capitals is the same dialect. Each renders
-// a table byte for byte as `ydb` does.
-func TestRenderSQL_EveryYDBSpellingRendersAsYDB(t *testing.T) {
-	table := ast.NewCreateTable("users").
-		AddColumn(ast.NewColumn("id", "BIGINT").SetPrimary()).
-		AddColumn(ast.NewColumn("name", "VARCHAR(80)"))
-	want := "CREATE TABLE `users` (\n    `id` Int64 NOT NULL,\n    `name` Utf8,\n    PRIMARY KEY (`id`)\n);\n"
-
-	for _, dialect := range []string{"ydb", "ydbs", "YDB"} {
-		t.Run(dialect, func(t *testing.T) {
-			c := qt.New(t)
-
-			sql, err := builtin.RenderSQL(dialect, table)
-
-			c.Assert(err, qt.IsNil)
-			c.Assert(sql, qt.Equals, want)
-		})
-	}
-}
-
-// An upsert node is a MERGE in pieces, and YDB's UPSERT INTO holds none of
-// them, so the node is refused with the statement that does exist.
-func TestRenderSQL_UpsertRefusedOnYDB(t *testing.T) {
-	c := qt.New(t)
-	node := ast.NewUpsert("users").AddInsertValue("id", "?").SetMatchColumns("id")
-
-	sql, err := builtin.RenderSQL("ydb", node)
-
-	c.Assert(sql, qt.Equals, "")
-	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(err, qt.ErrorMatches, `upsert into users: YDB's UPSERT INTO matches on the primary key and `+
-		`writes the inserted values, so it holds no match columns, update assignments or predicates; `+
-		`build the statement with core/query's UpsertInto`)
 }
 
 func TestRenderSQL_UpsertUnsupportedDialects(t *testing.T) {

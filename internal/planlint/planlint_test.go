@@ -71,20 +71,6 @@ func TestAnalyze_HappyPath(t *testing.T) {
 			dialect:   "sqlite",
 			wantRules: nil,
 		},
-		{
-			// A plan with no server version is judged against the newest
-			// YDB line, which adds no unique index to an existing table.
-			name:      "a YDB plan is read as YQL and judged by the YD rules",
-			sql:       "ALTER TABLE `shop/users` ADD INDEX users_email GLOBAL UNIQUE SYNC ON (email);\n",
-			dialect:   "ydbs",
-			wantRules: []string{"YD101"},
-		},
-		{
-			name:      "a YQL string holding a semicolon and DROP is one literal",
-			sql:       "UPSERT INTO notes (id, body) VALUES (1, \"x\\\"; DROP TABLE users;\"u);\n",
-			dialect:   "ydb",
-			wantRules: nil,
-		},
 	}
 
 	for _, test := range tests {

@@ -21,8 +21,6 @@ import (
 	"ptah.run/migration/schemadiff"
 )
 
-const ydbTable = "CREATE TABLE items (id Int64 NOT NULL, PRIMARY KEY (id));"
-
 // TestRehearsalBaselineRefusesAPlannedBaseline drives the guard with what the
 // planner writes for a target holding a routine, a trigger and a changed
 // comment on an extension, on a dev database the run does not own. The whole baseline is
@@ -82,26 +80,9 @@ func TestRehearsalBaselineRefusesAPlannedBaseline(t *testing.T) {
 	}
 }
 
-// TestRehearsalBaselineRefusesARealmRootGrant drives the guard with a grant on
-// a YDB dev realm's root, which a baseline never writes: the rebuild leaves
-// the database root's permissions out, because the realm's root survives a
-// reset in the middle of a run and would carry them to the next target.
-func TestRehearsalBaselineRefusesARealmRootGrant(t *testing.T) {
-	c := qt.New(t)
-	realm := catalog.ServerInfo{Dialect: "ydb", URL: "ydb://localhost:2136/local?dev_realm=abc"}
-
-	err := guardRehearsalBaseline([]string{
-		ydbTable,
-		"GRANT 'ydb.access.grant' ON `/local/ptah_dev/abc` TO `ACCESS-ADMINS`;",
-	}, devclean.NewBaselineGuard(realm), realm.Dialect)
-
-	c.Assert(err, qt.ErrorMatches, `baseline statement 2 \(GRANT .*\) cannot be rehearsed: ydb rehearsal baseline refuses GRANT permission change .*`)
-}
-
 // TestStatementExcerpt pins what a refusal quotes: the first line that is not
-// a comment, cut to 80 runes. A YDB translation setting is not a comment, and
-// the guard refuses it, so it is quoted; on another dialect the same line is a
-// comment. A statement of comments alone is quoted by its first line, cut too.
+// a comment, cut to 80 runes. A `--!` line is a comment on every built-in
+// dialect. A statement of comments alone is quoted by its first line, cut too.
 func TestStatementExcerpt(t *testing.T) {
 	long := "CREATE TABLE a_table_whose_name_and_columns_run_past_the_limit_of_the_excerpt (id bigint PRIMARY KEY)"
 	tests := []struct {
@@ -110,12 +91,10 @@ func TestStatementExcerpt(t *testing.T) {
 		dialect   string
 		want      string
 	}{
-		{"a statement", "CREATE USER `reader`;", "ydb", "CREATE USER `reader`;"},
-		{"a comment line", "-- Recreates the user.\nCREATE USER `reader`;", "ydb", "CREATE USER `reader`;"},
-		{"a YDB translation setting", "--!syntax_v1\nCREATE USER `reader`;", "ydb", "--!syntax_v1"},
-		{"the same line elsewhere", "--!syntax_v1\nCREATE ROLE reader;", "postgres", "CREATE ROLE reader;"},
-		{"the same line where -- needs a space", "--!syntax_v1\nCREATE ROLE reader;", "mysql", "CREATE ROLE reader;"},
-		{"a setting after a comment", "-- Recreates the user.\n--!syntax_v1\nCREATE USER `reader`;", "ydb", "--!syntax_v1"},
+		{"a statement", "CREATE USER `reader`;", "mysql", "CREATE USER `reader`;"},
+		{"a comment line", "-- Recreates the user.\nCREATE USER `reader`;", "mysql", "CREATE USER `reader`;"},
+		{"a --! line", "--!syntax_v1\nCREATE ROLE reader;", "postgres", "CREATE ROLE reader;"},
+		{"a --! line where -- needs a space", "--!syntax_v1\nCREATE ROLE reader;", "mysql", "CREATE ROLE reader;"},
 		{"a long line", long, "postgres", long[:80] + "..."},
 		{"comments alone", "-- " + long + "\n-- second", "postgres", ("-- " + long)[:80] + "..."},
 	}

@@ -482,42 +482,6 @@ var launchers = map[string]launcher{
 			"runs in the tagged integration contour against the same image, and this cell adds the " +
 			"capability-probe half (stokaro/ptah#1875)",
 	},
-	platform.YDB: {
-		// The recipe go-integration-tests.yml uses for its YDB service, with
-		// the monitoring port published too. local-ydb advertises its node
-		// through discovery under the container's host name, so the container
-		// is named localhost and the runner reaches the advertised address
-		// through the published port. Measured on every line from 25.1.4.7 to
-		// 26.2.1.14: the server answers a query and takes a CREATE TABLE in
-		// about five seconds, which the probe's wait covers.
-		flags: []string{
-			"--publish", "2136:2136",
-			"--publish", "8765:8765",
-			"--hostname", "localhost",
-			"--env", "GRPC_PORT=2136",
-			"--env", "MON_PORT=8765",
-			"--env", "YDB_USE_IN_MEMORY_PDISKS=true",
-			// local-ydb leaves the replication API out of the services it
-			// starts, and the reader describes an async replication and a
-			// transfer through it; a cluster whose configuration names no
-			// services starts it with the rest.
-			"--env", "YDB_GRPC_SERVICES=replication",
-		},
-		// local-ydb serves the one database /local. The monitoring parameter
-		// makes the connection read the cluster's feature flags, which the
-		// container leaves at the line's defaults. The rows compare the
-		// server with the set those flags refine the preset into, and
-		// Report.Err fails the cell on any key where that set and the preset
-		// disagree, so a default that moved in a new build turns the cell red
-		// instead of being measured in the preset's place.
-		url: "ydb://localhost:2136/local?monitoring=http://localhost:8765",
-		// The runner's YDB target, with the URL go-integration-tests.yml gives
-		// it: the scenarios that opted in through YDBCompatible run, and the
-		// runner skips every other one on YDB.
-		suiteDatabase: "ydb",
-		suiteURLEnv:   "YDB_URL",
-		suiteURL:      "ydb://localhost:2136/local",
-	},
 }
 
 // CIMatrix derives the pipeline's fan-out from the declared matrix.

@@ -10,10 +10,6 @@ import (
 	"ptah.run/internal/devclean"
 )
 
-// baselineRealm is a YDB dev connection to the realm abc of the database
-// /local, whose absolute path is /local/ptah_dev/abc.
-var baselineRealm = catalog.ServerInfo{Dialect: platform.YDB, URL: "ydb://localhost:2136/local?dev_realm=abc"}
-
 // provisionedServerRemedy is the end of a refusal that only a server the run
 // provisions lifts.
 const provisionedServerRemedy = `; use a docker:// or docker\+<driver>:// dev URL, since a server declared disposable keeps this after the run`
@@ -76,44 +72,6 @@ func TestBaselineGuard_RefusesOnASharedDevServer(t *testing.T) {
 			statement: `CREATE ROLE "reader" WITH NOLOGIN`,
 			wantErr:   `postgres rehearsal baseline refuses CREATE ROLE because its effects cannot be confined to the dev database realm` + ownedServerRemedy,
 		},
-		{
-			name:      "a YDB user",
-			info:      baselineRealm,
-			statement: "CREATE USER `reader`;",
-			wantErr:   `ydb rehearsal baseline refuses a user of the whole database because its effects cannot be confined to the dev database realm` + ownedServerRemedy,
-		},
-		{
-			name:      "a YDB resource pool",
-			info:      baselineRealm,
-			statement: "CREATE RESOURCE POOL batch WITH (concurrent_query_limit = 10);",
-			wantErr:   `ydb rehearsal baseline refuses a resource pool of the whole database because its effects cannot be confined to the dev database realm` + ownedServerRemedy,
-		},
-		{
-			name:      "a YDB resource pool change",
-			info:      baselineRealm,
-			statement: "ALTER RESOURCE POOL default WITH (resource_weight = 50);",
-			wantErr:   `ydb rehearsal baseline refuses a resource pool of the whole database because its effects cannot be confined to the dev database realm` + ownedServerRemedy,
-		},
-		{
-			name:      "a YDB resource pool classifier",
-			info:      baselineRealm,
-			statement: "CREATE RESOURCE POOL CLASSIFIER etl WITH (resource_pool = 'batch', rank = 1);",
-			wantErr:   `ydb rehearsal baseline refuses a resource pool of the whole database because its effects cannot be confined to the dev database realm` + ownedServerRemedy,
-		},
-		{
-			// The realm's root survives a reset in the middle of a run, so a
-			// permission on it would reach the next target rehearsed there.
-			name:      "a YDB grant on the realm's root",
-			info:      baselineRealm,
-			statement: "GRANT 'ydb.access.grant' ON `/local/ptah_dev/abc` TO `ACCESS-ADMINS`;",
-			wantErr:   `ydb rehearsal baseline refuses GRANT permission change because its effects cannot be confined to the dev database realm` + ownedServerRemedy,
-		},
-		{
-			name:      "a YDB grant on a relative path",
-			info:      baselineRealm,
-			statement: "GRANT 'ydb.generic.read' ON `items` TO `reader`;",
-			wantErr:   `ydb rehearsal baseline refuses GRANT permission change because its effects cannot be confined to the dev database realm` + ownedServerRemedy,
-		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -138,7 +96,6 @@ func TestBaselineGuard_OwnedServer(t *testing.T) {
 			"CREATE FUNCTION item_count() RETURNS bigint LANGUAGE sql AS $$ SELECT count(*) FROM items $$"},
 		{"a MySQL trigger", catalog.ServerInfo{Dialect: platform.MySQL, Schema: "ptah_dev", URL: "mysql://dev@owned-baseline-mysql:3306/ptah_dev"},
 			"CREATE TRIGGER items_touch BEFORE INSERT ON items FOR EACH ROW SET NEW.n = 1"},
-		{"a YDB user", catalog.ServerInfo{Dialect: platform.YDB, URL: "ydb://owned-baseline-ydb:2136/local"}, "CREATE USER `reader`;"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -205,29 +162,4 @@ func TestBaselineGuard_OwnedServerKeepsOtherComments(t *testing.T) {
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})
 	}
-}
-
-// TestBaselineGuard_OwnedServerKeepsWhatReachesPastIt pins that owning the
-// server lifts nothing that reaches past it: a replication pulls from
-// whatever its connection string names, wherever the dev server runs.
-func TestBaselineGuard_OwnedServerKeepsWhatReachesPastIt(t *testing.T) {
-	c := qt.New(t)
-	owned := catalog.ServerInfo{Dialect: platform.YDB, URL: "ydb://owned-baseline-replication:2136/local"}
-	declareDisposable(c, owned.URL)
-
-	err := devclean.NewBaselineGuard(owned).ValidateStatement(
-		"CREATE ASYNC REPLICATION `r` FOR `items` AS `copy` WITH (CONNECTION_STRING = 'grpcs://prod.example:2135/?database=/prod');")
-
-	c.Assert(err, qt.ErrorMatches, `ydb rehearsal baseline refuses async replication because its effects cannot be confined to the dev database realm`)
-}
-
-// TestReplayGuard_RefusesAGrantInsideTheRealm pins that the realm grant is the
-// baseline's alone: a migration file that grants on the realm's root is
-// refused, as every grant in a realm is, in the replay's words.
-func TestReplayGuard_RefusesAGrantInsideTheRealm(t *testing.T) {
-	c := qt.New(t)
-
-	err := devclean.NewDevReplayGuard(baselineRealm).ValidateStatement("GRANT 'ydb.access.grant' ON `/local/ptah_dev/abc` TO `ACCESS-ADMINS`;")
-
-	c.Assert(err, qt.ErrorMatches, `ydb migration replay rejects GRANT permission change because its effects cannot be confined to the disposable database realm`+ownedServerRemedy)
 }

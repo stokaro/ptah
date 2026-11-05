@@ -16,14 +16,6 @@ import (
 	"ptah.run/dialect/spanner/spannerschema"
 	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/dialect/timescaledb/tsschema"
-	"ptah.run/dialect/ydb/ydbcoordination"
-	"ptah.run/dialect/ydb/ydbexternal"
-	"ptah.run/dialect/ydb/ydbreplication"
-	"ptah.run/dialect/ydb/ydbschema"
-	"ptah.run/dialect/ydb/ydbsecret"
-	"ptah.run/dialect/ydb/ydbstreaming"
-	"ptah.run/dialect/ydb/ydbtopic"
-	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/feature/oratype"
 	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/feature/pgextension"
@@ -42,14 +34,6 @@ func featureCodecs() []schemaext.OwnedCodec {
 		owner  string
 		codecs []schemaext.Codec
 	}{
-		{owner: "ptah.run/ydb", codecs: ydbschema.Codecs()},
-		{owner: "ptah.run/ydb", codecs: ydbcoordination.Codecs()},
-		{owner: "ptah.run/ydb", codecs: ydbstreaming.Codecs()},
-		{owner: "ptah.run/ydb", codecs: ydbworkload.Codecs()},
-		{owner: "ptah.run/ydb", codecs: ydbsecret.Codecs()},
-		{owner: "ptah.run/ydb", codecs: ydbtopic.Codecs()},
-		{owner: "ptah.run/ydb", codecs: ydbexternal.Codecs()},
-		{owner: "ptah.run/ydb", codecs: ydbreplication.Codecs()},
 		{owner: "ptah.run/clickhouse", codecs: chschema.Codecs()},
 		{owner: "ptah.run/clickhouse", codecs: chschema.IndexCodecs()},
 		{owner: "ptah.run/clickhouse", codecs: chschema.RefreshCodecs()},
@@ -78,12 +62,6 @@ func featureCodecs() []schemaext.OwnedCodec {
 		{owner: pgtable.Owner, codecs: pgtable.DeleteColumnsCodecs()},
 		{owner: tsschema.Owner, codecs: tsschema.Codecs()},
 		{owner: spannerschema.Owner, codecs: spannerschema.Codecs()},
-		{owner: ydbschema.Owner, codecs: ydbschema.TTLCodecs()},
-		{owner: ydbschema.Owner, codecs: ydbschema.ColumnFamiliesCodecs()},
-		{owner: ydbschema.Owner, codecs: ydbschema.TablePartitioningCodecs()},
-		{owner: ydbschema.Owner, codecs: ydbschema.ColumnStoreCodecs()},
-		{owner: ydbschema.Owner, codecs: ydbschema.VectorIndexCodecs()},
-		{owner: ydbschema.Owner, codecs: ydbschema.IndexPartitioningCodecs()},
 	} {
 		for _, codec := range provider.codecs {
 			if codec.Representation == schemaext.Desired {

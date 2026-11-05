@@ -553,15 +553,15 @@ func (s Set) EnsureDevDatabase(devURL string) error {
 // recognizable database name would come back true and refuse every legitimate
 // run with a sentence about an alias that does not exist.
 //
-// A YDB devURL is not asked either: its dev database is a dev realm the run
-// creates, which is not the database the URL names (see
-// [devdocker.ResolvedPerRun]). Every caller hands [Set.DevProtected] to the
-// reset, which compares the connections.
-func (s Set) EnsureDevIsolation(devURL string) error {
+// A devURL whose provider in ctx creates dev realms is not asked either: its
+// dev database is a realm the run creates, which is not the database the URL
+// names (see [devdocker.ResolvedPerRun]). Every caller hands [Set.DevProtected]
+// to the reset, which compares the connections.
+func (s Set) EnsureDevIsolation(ctx context.Context, devURL string) error {
 	if s.Kind != KindDatabase || len(s.Sources) == 0 || strings.TrimSpace(devURL) == "" {
 		return nil
 	}
-	if devdocker.ResolvedPerRun(devURL) {
+	if devdocker.ResolvedPerRun(ctx, devURL) {
 		return nil
 	}
 	// A URL naming no MySQL-family database is a whole server, and every

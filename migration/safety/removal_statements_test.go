@@ -98,7 +98,6 @@ func TestAssessRendered_RatesEachRemovalPerEngine(t *testing.T) {
 		{dialect: "sqlite", node: ast.NewDropView("active_users").SetIfExists(), want: []verdict{{safety.Destructive, dropViewReason}}},
 		{dialect: "sqlserver", node: ast.NewDropView("active_users").SetIfExists(), want: []verdict{{safety.Destructive, dropViewReason}}},
 		{dialect: "clickhouse", node: ast.NewDropView("active_users").SetIfExists(), want: []verdict{{safety.Destructive, dropViewReason}}},
-		{dialect: "ydb", node: ast.NewDropView("active_users").SetIfExists(), want: []verdict{{safety.Destructive, dropViewReason}}},
 		{dialect: "postgres", node: ast.NewDropMaterializedView("daily").SetIfExists(), want: []verdict{{safety.Destructive, dropMaterializedViewReason}}},
 		{dialect: "cockroachdb", node: ast.NewDropMaterializedView("daily").SetIfExists(), want: []verdict{{safety.Destructive, dropMaterializedViewReason}}},
 		// ClickHouse drops a materialized view with DROP VIEW, and the node
@@ -114,8 +113,6 @@ func TestAssessRendered_RatesEachRemovalPerEngine(t *testing.T) {
 		{dialect: "mysql", node: ast.NewRevokePrivilege("reader", "TABLE", "users", []string{"SELECT"}), want: []verdict{{safety.Warning, revokeReason}}},
 		{dialect: "mariadb", node: ast.NewRevokePrivilege("reader", "TABLE", "users", []string{"SELECT"}), want: []verdict{{safety.Warning, revokeReason}}},
 		{dialect: "sqlserver", node: ast.NewRevokePrivilege("reader", "TABLE", "users", []string{"SELECT"}), want: []verdict{{safety.Warning, revokeReason}}},
-		{dialect: "ydb", node: ast.NewRevokePrivilege("reader", "TABLE", "users", []string{"SELECT"}), want: []verdict{{safety.Warning, revokeReason}}},
-		{dialect: "ydb", node: ast.NewRevokeRoleMembership("readers", "app"), want: []verdict{{safety.Warning, revokeMembershipReason}}},
 	}
 	runtime := must.Must(builtin.New())
 
@@ -146,7 +143,6 @@ func TestAssessSQL_RatesEachRemovalPerEngine(t *testing.T) {
 		{dialect: "mysql", statement: "DROP VIEW IF EXISTS `active_users`", want: verdict{safety.Destructive, dropViewReason}},
 		{dialect: "sqlite", statement: `DROP VIEW IF EXISTS "active_users"`, want: verdict{safety.Destructive, dropViewReason}},
 		{dialect: "clickhouse", statement: "DROP VIEW IF EXISTS app.active_users", want: verdict{safety.Destructive, dropViewReason}},
-		{dialect: "ydb", statement: "DROP VIEW `active_users`", want: verdict{safety.Destructive, dropViewReason}},
 		{dialect: "postgres", statement: `DROP MATERIALIZED VIEW IF EXISTS "daily" CASCADE`, want: verdict{safety.Destructive, dropMaterializedViewReason}},
 		{dialect: "postgres", statement: `DROP TRIGGER IF EXISTS "audit" ON "users" CASCADE`, want: verdict{safety.Destructive, dropTriggerReason}},
 		{dialect: "mysql", statement: "DROP TRIGGER IF EXISTS `audit`", want: verdict{safety.Destructive, dropTriggerReason}},
@@ -157,8 +153,6 @@ func TestAssessSQL_RatesEachRemovalPerEngine(t *testing.T) {
 		{dialect: "postgres", statement: `REVOKE "readers" FROM "app"`, want: verdict{safety.Warning, revokeReason}},
 		{dialect: "postgres", statement: `ALTER GROUP "readers" DROP USER "app"`, want: verdict{safety.Warning, revokeMembershipReason}},
 		{dialect: "mysql", statement: "REVOKE SELECT ON `app`.`users` FROM `reader`", want: verdict{safety.Warning, revokeReason}},
-		{dialect: "ydb", statement: "REVOKE 'ydb.generic.read' ON `/local/users` FROM `reader`", want: verdict{safety.Warning, revokeReason}},
-		{dialect: "ydb", statement: "ALTER GROUP `readers` DROP USER `app`", want: verdict{safety.Warning, revokeMembershipReason}},
 	}
 	runtime := must.Must(builtin.New())
 
@@ -363,9 +357,6 @@ var removalRows = []changeRow{
 	{dialect: "postgres", category: "grant_options_removed",
 		both:    func(d *schemamodel.Database) { withReader(d); withGrant(false)(d) },
 		current: func(d *schemamodel.Database) { d.Grants[0].WithOption = true }},
-	{dialect: "ydb", category: "role_memberships_removed",
-		both:    func(d *schemamodel.Database) { d.Roles = []schemamodel.Role{{Name: "readers"}, {Name: "app"}} },
-		current: func(d *schemamodel.Database) { d.Roles[1].MemberOf = []string{"readers"} }},
 }
 
 // modificationRows are the changes a plan makes by replacing a trigger or a
@@ -394,6 +385,7 @@ var modificationRows = []changeRow{
 // the reason a document comparison cannot reach it.
 var unplannedRemovals = map[string]string{
 	"roles_removed":              "the comparison never removes a role the declaration does not name",
+	"role_memberships_removed":   "the comparison records memberships only on a target with role_membership, which no built-in engine has",
 	"schemas_removed":            "only a comparison of a whole MySQL or MariaDB server removes a database",
 	"rls_policies_removed":       "row-level security is planned by its feature owner on every engine that has it",
 	"rls_enabled_tables_removed": "row-level security is planned by its feature owner on every engine that has it",

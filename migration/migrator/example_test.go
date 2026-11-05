@@ -12,7 +12,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/dbschema"
-	"ptah.run/examples/migrator"
+	examplemigrations "ptah.run/examples/migrator"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
 )

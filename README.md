@@ -39,7 +39,6 @@
   &nbsp;&nbsp;
   <a href="https://docs.ptah.run/edge/databases/distributed/" title="Spanner"><img src="docs/assets/engines/spanner.svg" alt="Spanner" height="32" width="32"></a>
   &nbsp;&nbsp;
-  <a href="https://docs.ptah.run/edge/databases/ydb/" title="YDB"><img src="docs/assets/engines/ydb.svg" alt="YDB" height="32" width="32"></a>
 </p>
 
 Ptah manages database change across schemas and persistent inference state. For
@@ -103,6 +102,15 @@ irm https://ptah.run/install.ps1 | iex
 The [installation guide](https://docs.ptah.run/edge/start/install/)
 covers version pinning, signature verification, download-without-execution,
 and building from source.
+
+YDB is served by an executable provider, which is installed separately:
+
+```bash
+ptah providers install ydb
+```
+
+A command that names a `ydb://` URL then uses it; see
+[Configure the YDB provider](https://docs.ptah.run/edge/extend/providers/ydb/).
 
 <!-- ptah:readme-example -->
 ## Try Ptah with SQLite

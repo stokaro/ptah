@@ -25,7 +25,6 @@ import (
 	"ptah.run/internal/planner/dialects/clickhouse"
 	"ptah.run/internal/planner/dialects/mysql"
 	"ptah.run/internal/planner/dialects/postgres"
-	"ptah.run/internal/planner/dialects/ydb"
 )
 
 const contextOwner = "example.org/type-context"
@@ -119,7 +118,6 @@ func TestMigrationHostsSupplyUnchangedTypes(t *testing.T) {
 		{platform.Postgres, postgres.New()},
 		{platform.CockroachDB, postgres.NewForDialect(platform.CockroachDB, capability.ForDialect(platform.CockroachDB))},
 		{platform.ClickHouse, clickhouse.New()},
-		{platform.YDB, ydb.New()},
 	} {
 		t.Run(test.target, func(t *testing.T) {
 			c := qt.New(t)
@@ -161,7 +159,6 @@ func TestTableHostsSupplyUnchangedTypes(t *testing.T) {
 		planner contextPlanner
 	}{
 		{platform.CockroachDB, postgres.NewForDialect(platform.CockroachDB, capability.ForDialect(platform.CockroachDB))},
-		{platform.YDB, ydb.New()},
 	} {
 		t.Run(test.target, func(t *testing.T) {
 			c := qt.New(t)

@@ -5,13 +5,9 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
-	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/dialect/ydb/ydbreplication"
-	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/internal/atlasreport"
 )
 
@@ -69,26 +65,4 @@ func TestSchemaInspectReport_MarshalDBML_SaysNothingWhenNothingIsLeftOut(t *test
 	c.Assert(err, qt.IsNil)
 	c.Assert(diagnostics.String(), qt.Equals, "")
 	c.Assert(document, qt.Contains, `Table "t" {`)
-}
-
-func TestSchemaInspectReport_DBMLReportsYDBObjectsOnDiagnostics(t *testing.T) {
-	c := qt.New(t)
-	var diagnostics bytes.Buffer
-	db := &schemamodel.Database{
-		Tables: []schemamodel.Table{{StructName: "T", Name: "t"}},
-		FeatureObjects: must.Must(schemaext.NewObjects(ydbsecret.DesiredObject("", "credentials", "", "PTAH_SECRET_CREDENTIALS"),
-			ydbreplication.DesiredReplicationObject("", "mirror", "", ydbreplication.ReplicationSpec{Connection: ydbreplication.Connection{ConnectionString: "grpc://h:2136/?database=/prod"}, Items: []ydbreplication.Item{{Source: "t", Target: "r"}}}))),
-	}
-	report := newInspectReport(c,
-		db, &catalog.Database{}, catalog.ServerInfo{Dialect: "ydb"}, &diagnostics,
-		atlasreport.SchemaInspectReportOptions{},
-	)
-
-	output, err := atlasreport.RenderSchemaInspect(`{{ dbml . }}`, report)
-
-	c.Assert(err, qt.IsNil)
-	c.Assert(output.Text, qt.Equals, "Table \"t\" {\n}\n")
-	c.Assert(diagnostics.String(), qt.Equals,
-		"warning: DBML cannot express async replications (1); the export leaves them out\n"+
-			"warning: DBML cannot express secrets (1); the export leaves them out\n")
 }

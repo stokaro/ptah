@@ -122,10 +122,9 @@ The file is what a reviewer reads:
 
 A statement that a feature owner's operation renders is marked `owned` and
 records the owner's verdict when it is higher than what the SQL text says,
-because the text of such a statement says little about its effect. A YDB
-`DROP CHANGEFEED` is saved as destructive, and so is a ClickHouse sorting key
-that loses an expression on an engine that merges rows by it, such as
-`ReplacingMergeTree`. A ClickHouse storage change such as a TTL change, and a
+because the text of such a statement says little about its effect. A ClickHouse
+sorting key that loses an expression on an engine that merges rows by it, such
+as `ReplacingMergeTree`, is saved as destructive. A ClickHouse storage change such as a TTL change, and a
 skipping-index addition, are saved as a warning. The text of each reads as
 safe. When the owner assesses what the statement does to access, the
 statement also carries `access` -- `widens`, `narrows`, `unchanged` or

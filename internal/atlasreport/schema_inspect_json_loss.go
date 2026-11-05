@@ -6,6 +6,7 @@ import (
 	"io"
 
 	"ptah.run/catalog"
+	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/schemaexportloss"
 )
@@ -59,11 +60,13 @@ func (i atlasSchemaInspectJSONIndex) MarshalJSON() ([]byte, error) {
 }
 
 // attachExtensionJSONLoss gives the JSON document of an inspection what it leaves
-// out, on an engine no Atlas edition has a driver for, such as YDB
-// (descriptor.Atlas.Extension): no Atlas document of that engine exists whose
-// silence the warnings would depart from.
+// out, on an engine no Atlas edition has a driver for: one whose descriptor
+// says so (descriptor.Atlas.Extension), or one an executable provider serves,
+// such as YDB, which no descriptor describes. No Atlas document of that engine
+// exists whose silence the warnings would depart from.
 func attachExtensionJSONLoss(realm *atlasSchemaInspectJSONRealm, db *schemamodel.Database, described *catalog.Database, info catalog.ServerInfo, writer io.Writer) {
-	if db == nil || writer == nil || !atlasFacts.Get(info.Dialect).extension {
+	_, builtIn := platform.Lookup(info.Dialect)
+	if db == nil || writer == nil || builtIn && !atlasFacts.Get(info.Dialect).extension || !builtIn && info.Provider.IsZero() {
 		return
 	}
 	realm.loss = &inspectJSONLoss{writer: writer, omitted: schemaexportloss.CommonFamilies(db)}

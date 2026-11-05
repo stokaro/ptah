@@ -2,7 +2,7 @@ package migrator
 
 // White-box testing required: how a lost migration lock and a failed release
 // combine with the run's own outcome is decided by unexported functions, and
-// live YDB and independent provider process tests exercise reachable paths.
+// independent provider process tests exercise reachable paths.
 // These tests pin combinations of execution, ownership, and release failures
 // whose ordering is not controlled through the public migrator API.
 

@@ -14,14 +14,17 @@ import (
 	"ptah.run/internal/cli/atlas"
 )
 
-// compatYDBURL names a YDB database with a parameter Ptah's YDB connector
-// refuses, so a run that reaches the connector fails there at once, offline,
-// and names the parameter. Nothing is dialed.
-const compatYDBURL = "ydb://127.0.0.1:1/local?bogus=1"
+// compatYDBURL names a YDB database on a port nothing listens on. Only the
+// official YDB provider serves the engine, so a run that hands the URL on asks
+// for that provider, and with none installed it stops there at once, offline,
+// naming the provider. Nothing is dialed.
+const compatYDBURL = "ydb://127.0.0.1:1/local"
 
-// compatYDBConnectorRefusal is what the connector answers for compatYDBURL. A
-// run that prints it got past every refusal on the compatibility surface.
-const compatYDBConnectorRefusal = `invalid YDB URL: parameter "bogus" is not one Ptah reads on a YDB URL`
+// compatYDBProviderMissing is what the provider selection answers for
+// compatYDBURL with no YDB provider installed. A run that prints it got past
+// every refusal on the compatibility surface.
+const compatYDBProviderMissing = `YDB is supported through the official Ptah YDB plugin, which is installed separately, ` +
+	`and no installation was found\..* Plugin repository: https://github\.com/stokaro/ptah-ydb-plugin\.`
 
 // compatYDBUnknownDriver is what the pinned community binary answers for a
 // ydb:// URL, and what the strict profile answers with it.
@@ -128,9 +131,11 @@ func TestStrictCompatRefusesADataSourceThatNamesYDB(t *testing.T) {
 	c.Assert(stderr, qt.Equals, "Error: data.sql.tenants: opening database: "+compatYDBUnknownDriver+"\n")
 }
 
-// The default profile keeps YDB: the same project files reach the connector,
-// for an env's URL, a value read through getenv and a data source.
-func TestCompatHandsAYDBURLFromTheProjectFileToTheConnector(t *testing.T) {
+// The default profile keeps YDB: the same project files reach the YDB
+// provider, for an env's URL, a value read through getenv and a data source.
+// The user cache directory, where installed providers live, is an empty one,
+// so the missing provider is what the run reports.
+func TestCompatHandsAYDBURLFromTheProjectFileToTheProvider(t *testing.T) {
 	tests := []struct {
 		name    string
 		project string
@@ -157,11 +162,15 @@ func TestCompatHandsAYDBURLFromTheProjectFileToTheConnector(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			c.Setenv("PTAH_TEST_TENANT_DATABASE", compatYDBURL)
+			cache := c.TempDir()
+			c.Setenv("HOME", cache)
+			c.Setenv("XDG_CACHE_HOME", cache)
+			c.Setenv("LocalAppData", cache)
 			dir := writeProject(c, test.project)
 
 			stdout, stderr, err := runCompatIn(c, dir, atlascompatpolicy.Full(), test.args...)
 
-			c.Assert(err, qt.ErrorMatches, `(?s).*`+compatYDBConnectorRefusal+`.*`)
+			c.Assert(err, qt.ErrorMatches, `(?s).*`+compatYDBProviderMissing+`.*`)
 			c.Assert(stdout, qt.Equals, "")
 			c.Assert(stderr, qt.Not(qt.Contains), "unknown driver")
 		})

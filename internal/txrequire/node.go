@@ -7,6 +7,8 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/plangraph"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/internal/ddltx"
 	"ptah.run/internal/descriptortable"
@@ -37,7 +39,10 @@ import (
 // splitting a mixed plan; Kind keeps such operations unsplittable. On a
 // dialect whose migrator opens no transaction (ddltx.NoTransaction) there is
 // no transactional file to leave, so the requirement holds where the operation
-// already is.
+// already is. An engine an executable provider serves has no descriptor; it
+// runs every statement unwrapped where the capabilities its provider states
+// for offline planning establish transactional_ddl false
+// (capability.ForDialect).
 //
 // For common operations, the engine's descriptor states: a
 // concurrent index build or drop where its grammar has one
@@ -46,7 +51,8 @@ import (
 // online grammar is NOT VALID (OnlineAlter).
 func NodeRequiresAutocommit(dialect string, node ast.Node) bool {
 	rules := autocommitRules.Get(dialect)
-	if !rules.noTransaction && slices.Contains(ast.OwnerTransactions(node), plangraph.TransactionForbidden) {
+	if !rules.noTransaction && slices.Contains(ast.OwnerTransactions(node), plangraph.TransactionForbidden) &&
+		!providedWithoutTransactionalDDL(dialect) {
 		return true
 	}
 	switch typed := node.(type) {
@@ -92,6 +98,19 @@ var autocommitRules = descriptortable.New(func(described descriptor.Dialect) aut
 		noTransaction:        ddltx.Class(described.DDLTransactions) == ddltx.NoTransaction,
 	}
 })
+
+// providedWithoutTransactionalDDL reports whether dialect is an engine no
+// descriptor describes whose provider states, for offline planning, that it
+// runs no schema change inside a transaction. Its migrator then opens no
+// transaction a statement would have to leave, as on a descriptor that states
+// ddltx.NoTransaction.
+func providedWithoutTransactionalDDL(dialect string) bool {
+	if _, described := platform.Lookup(dialect); described {
+		return false
+	}
+	caps := capability.ForDialect(dialect)
+	return caps.Established(capability.TransactionalDDL) && !caps.Has(capability.TransactionalDDL)
+}
 
 // validatesConstraint reports whether the ALTER completes a constraint added
 // NOT VALID.

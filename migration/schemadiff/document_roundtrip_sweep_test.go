@@ -19,11 +19,6 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/dialect/timescaledb/tsschema"
-	"ptah.run/dialect/ydb/ydbexternal"
-	"ptah.run/dialect/ydb/ydbreplication"
-	"ptah.run/dialect/ydb/ydbsecret"
-	"ptah.run/dialect/ydb/ydbtopic"
-	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/engine/builtin"
 	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/feature/pgpolicy"
@@ -220,17 +215,6 @@ var yamlUnwritableFields = map[string]coverage.Kind{
 	"Sequences": coverage.Sequence,
 }
 
-// The YAML surface has a topics key, so a YAML document that leaves a topic
-// out is asking for it to go: unlike the HCL one, it claims the topic
-// namespace.
-func TestYAMLDocument_DescribesTopics(t *testing.T) {
-	c := qt.New(t)
-
-	parsed := loadYAMLDocument(c)
-
-	c.Assert(parsed.FeatureCoverage.Lookup(ydbtopic.Kind, ydbtopic.Ref("", "undeclared")).State, qt.Equals, schemaext.Complete)
-}
-
 // TestYAMLDocument_RecordsExactlyWhatTheSurfaceCannotName is the same rule as
 // the round-trip sweep, for the format that has no renderer.
 //
@@ -411,87 +395,6 @@ func TestRoundTrip_TypesSurvive(t *testing.T) {
 	yaml := loadYAMLDocument(c)
 	c.Assert(yamlRecordsKind(yaml, coverage.Domain), qt.IsTrue)
 	c.Assert(yamlRecordsKind(yaml, coverage.Composite), qt.IsTrue)
-}
-
-// TestRoundTrip_UnwritableFamiliesAreRecordedNotDropped is the round trip of
-// the feature objects the HCL document cannot carry: the document leaves each
-// out and makes no claim about its namespace, so applying it back to a YDB
-// database plans no removal -- for a replication, no `DROP ASYNC REPLICATION
-// ... CASCADE` of its replica tables. The control is the same document's
-// silence about a sequence, which it could have named and so still removes.
-func TestRoundTrip_UnwritableFamiliesAreRecordedNotDropped(t *testing.T) {
-	c := qt.New(t)
-	db := roundTripFixture()
-	db.FeatureObjects = must.Must(schemaext.NewObjects(
-		ydbworkload.DesiredPoolObject("batch", "", ydbworkload.PoolSpec{}),
-		ydbworkload.DesiredClassifierObject("batch_users", "", ydbworkload.ClassifierSpec{ResourcePool: "batch", Rank: 1}),
-		ydbsecret.DesiredObject("", "pg_password", "", "PTAH_SECRET_PG"),
-		ydbtopic.DesiredObject("public", "events", "", ydbtopic.Spec{}),
-		ydbreplication.DesiredReplicationObject("public", "mirror", "", mirrorRead),
-		ydbreplication.DesiredTransferObject("public", "ingest", "", ingestRead),
-	))
-	live := &catalog.Database{
-		Schemas:         []catalog.Schema{{Name: "public"}},
-		Tables:          []catalog.Table{{Schema: "public", Name: "users"}},
-		Sequences:       []catalog.Sequence{{Schema: "public", Name: "s1"}},
-		FeatureCoverage: must.Must(pgpolicy.CompleteCoverage(schemaext.Observed)),
-	}
-
-	live.FeatureCoverage = must.Must(live.FeatureCoverage.Combine(must.Must(pgtable.PersistenceCoverage(
-		schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil))))
-	live.FeatureCoverage = must.Must(live.FeatureCoverage.Combine(must.Must(pgtable.PartitionCoverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil))))
-
-	parsed := loadPostgresDocument(c, renderPostgresDocument(c, db))
-	diff := must.Must(schemadiff.CompareWithDatabaseInfo(t.Context(), parsed, live, catalog.ServerInfo{Dialect: "postgres"}, nil, must.Must(builtin.New())))
-
-	// Only the fixture's row-level security policies are objects the
-	// document can carry.
-	c.Assert(parsed.FeatureObjects.Select(func(ref objectidentity.ID) bool {
-		return ref.Kind != objectidentity.Kind(pgpolicy.PolicyKind)
-	}).Len(), qt.Equals, 0)
-	c.Assert(parsed.FeatureCoverage.Lookup(ydbworkload.PoolKind, objectidentity.ID{}).State, qt.Equals, schemaext.Uninspected)
-	c.Assert(parsed.FeatureCoverage.Lookup(ydbworkload.ClassifierKind, objectidentity.ID{}).State, qt.Equals, schemaext.Uninspected)
-	c.Assert(parsed.FeatureCoverage.Lookup(ydbtopic.Kind, objectidentity.ID{}).State, qt.Equals, schemaext.Uninspected)
-	c.Assert(parsed.FeatureCoverage.Lookup(ydbreplication.ReplicationKind, objectidentity.ID{}).State, qt.Equals, schemaext.Uninspected)
-	c.Assert(parsed.FeatureCoverage.Lookup(ydbreplication.TransferKind, objectidentity.ID{}).State, qt.Equals, schemaext.Uninspected)
-	c.Assert(parsed.FeatureCoverage.Lookup(ydbsecret.Kind, objectidentity.ID{}).State, qt.Equals, schemaext.Uninspected)
-	c.Assert(diff.SequencesRemoved.Names(), qt.HasLen, 1)
-}
-
-// The YAML surface has a secrets key, so a YAML document that leaves a secret
-// out is asking for it to go: unlike the HCL one, it claims the namespace.
-func TestYAMLDocument_DescribesSecrets(t *testing.T) {
-	c := qt.New(t)
-
-	parsed := loadYAMLDocument(c)
-
-	c.Assert(parsed.FeatureCoverage.Lookup(ydbsecret.Kind, objectidentity.ID{}).State, qt.Equals, schemaext.Complete)
-}
-
-// The same holds for YDB's external objects: the HCL document leaves both out
-// and makes no claim about either namespace, so applying it back plans no drop
-// of either, while the YAML surface has keys for both and claims them.
-func TestRoundTrip_ExternalObjectsMakeNoHCLClaim(t *testing.T) {
-	c := qt.New(t)
-	db := roundTripFixture()
-	db.FeatureObjects = must.Must(schemaext.NewObjects(
-		ydbexternal.DesiredSourceObject("", "s3", "", ydbexternal.DataSource{SourceType: "ObjectStorage", AuthMethod: "NONE"}),
-		ydbexternal.DesiredTableObject("", "events", "", ydbexternal.Table{DataSource: "s3", Location: "e/",
-			Columns: []ydbexternal.Column{{Name: "id", Type: "Int64"}}}),
-	))
-
-	parsed := loadPostgresDocument(c, renderPostgresDocument(c, db))
-	yaml := loadYAMLDocument(c)
-
-	// Only the fixture's row-level security policies are objects the
-	// document can carry.
-	c.Assert(parsed.FeatureObjects.Select(func(ref objectidentity.ID) bool {
-		return ref.Kind != objectidentity.Kind(pgpolicy.PolicyKind)
-	}).Len(), qt.Equals, 0)
-	c.Assert(parsed.FeatureCoverage.Lookup(ydbexternal.SourceKind, objectidentity.ID{}).State, qt.Equals, schemaext.Uninspected)
-	c.Assert(parsed.FeatureCoverage.Lookup(ydbexternal.TableKind, objectidentity.ID{}).State, qt.Equals, schemaext.Uninspected)
-	c.Assert(yaml.FeatureCoverage.Lookup(ydbexternal.SourceKind, ydbexternal.SourceRef("", "undeclared")).State, qt.Equals, schemaext.Complete)
-	c.Assert(yaml.FeatureCoverage.Lookup(ydbexternal.TableKind, ydbexternal.TableRef("", "undeclared")).State, qt.Equals, schemaext.Complete)
 }
 
 // TestRoundTrip_SweepCoversEveryObjectFamily is the guard that makes the test

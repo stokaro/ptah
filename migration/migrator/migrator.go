@@ -1236,9 +1236,6 @@ func (m *Migrator) inspectDryRunMetadata(ctx context.Context) (available, legacy
 }
 
 func (m *Migrator) ensureMigrationsRevisionColumns(ctx context.Context) error {
-	if m.usesDescribedMetadata() {
-		return m.requireYDBRevisionColumns(ctx)
-	}
 	columns := []struct {
 		name       string
 		definition string
@@ -1287,13 +1284,6 @@ func (m *Migrator) migrationsRevisionColumnDefinition(name, fallback string) str
 }
 
 func (m *Migrator) migrationsColumnExists(ctx context.Context, name string) (bool, error) {
-	if m.usesDescribedMetadata() {
-		columns, _, err := m.describeMetadataTable(ctx, m.migrationsTableName())
-		if err != nil {
-			return false, err
-		}
-		return slices.Contains(columns, name), nil
-	}
 	table := m.metadataTable(m.migrationsTableName())
 	if metadataCatalog := m.services().Catalog; metadataCatalog != nil {
 		return metadataCatalog.ColumnExists(ctx, m.conn, table, name)

@@ -29,7 +29,9 @@ built from the development source. The schema and the `ptah-ls` language
 server also list the directives an official provider claims for an engine the
 binary does not serve, read from a copy recorded from a provider build, so an
 editor completes them without the provider installed. Ptah reads such a
-directive in a model only when the command selects the provider.
+directive in a model only when the command selects the provider. Every
+directive and attribute below that declares a YDB object or setting is such a
+directive: the [YDB provider](../../databases/ydb/) claims it.
 For the workflow — modeling, rendering, and generating migrations from
 annotated structs — see [Go annotations](../../schema/go-annotations/).
 
@@ -201,7 +203,7 @@ An `extension` scope may name only targets that can host an extension:
 other target is a parse error, because it asks for an extension where none can
 exist. An extension declared without `dialects` reaches every target, and a
 target that cannot host it leaves it out with a note, as a shared schema
-needs; YDB refuses it instead.
+needs.
 
 A `domain` or `composite` declaration is PostgreSQL's unless its scope names
 another target. One without `dialects`, or scoped only to `postgres`,
@@ -260,14 +262,14 @@ and each engine reads the interval in its own spelling. The bare names are not
 attributes of the directive, and nothing turns one engine's policy into the
 other's. See
 [Spanner row deletion policy](../../databases/distributed/#spanner-row-deletion-policy)
-and [YDB TTL](../../databases/ydb/#ttl).
+and [YDB TTL](https://github.com/stokaro/ptah-ydb-plugin#ttl).
 
 A YDB row table also takes its partitioning, its read replicas and its key bloom
 filter, in attributes spelled as YDB names the settings, in lower case. A
 setting the table leaves out keeps what the table holds. Every other dialect
 refuses a table that declares one, rather than build it with the server's
 defaults. See
-[table partitioning](../../databases/ydb/#table-partitioning-read-replicas-and-key-bloom-filter).
+[table partitioning](https://github.com/stokaro/ptah-ydb-plugin#partitioning-settings-read-replicas-and-key-bloom-filter).
 
 | Attribute | Value |
 | --- | --- |
@@ -386,7 +388,7 @@ dialect rejects `include` before emitting SQL.
 A YDB global index also takes its partitioning, in attributes spelled as YDB
 names the settings, in lower case. Every other dialect refuses an index that
 declares one, rather than build it with the server's defaults. See
-[index partitioning](../../databases/ydb/#index-partitioning).
+[index partitioning](https://github.com/stokaro/ptah-ydb-plugin#index-alteration).
 
 | Attribute | Value |
 | --- | --- |
@@ -400,7 +402,7 @@ declares one, rather than build it with the server's defaults. See
 A YDB vector index, `type="vector_kmeans_tree"`, takes its settings in
 attributes spelled as YDB names them. It names one of `distance` and
 `similarity`, and every other one. Every other dialect refuses an index that
-declares them. See [vector indexes](../../databases/ydb/#vector-indexes).
+declares them. See [vector indexes](https://github.com/stokaro/ptah-ydb-plugin#vector-and-full-text-indexes).
 
 | Attribute | Value |
 | --- | --- |
@@ -514,7 +516,7 @@ Declares a YDB column family: columns a row table stores together, with a
 storage pool, a compression and a cache mode of their own. It belongs to the
 table of the struct it is on, or to the one `table` names, which the same file
 declares. Every other dialect refuses a table that declares one. See
-[column families](../../databases/ydb/#column-families).
+[column families](https://github.com/stokaro/ptah-ydb-plugin#column-families).
 
 | Attribute | Required | Description |
 | --- | --- | --- |
@@ -531,7 +533,7 @@ Declares a YDB changefeed: a stream of a table's changes, which YDB keeps in a
 topic at `<table>/<name>`. It belongs to the table of the struct it is on, or
 to the one `table` names, which the same file declares. Every other dialect
 refuses a table that declares one. See
-[changefeeds](../../databases/ydb/#changefeeds).
+[changefeeds](https://github.com/stokaro/ptah-ydb-plugin#changefeeds).
 
 | Attribute | Required | Description |
 | --- | --- | --- |
@@ -699,13 +701,13 @@ closed coverage vocabulary; an unknown token is refused. For example,
 `reason="not-inspected" provenance="observed"` preserves an unread family
 reported by an inspection.
 
-The source parser recognizes common kinds and the YDB kinds `coordination_node`,
-`streaming_query`, `resource_pool`, `resource_pool_classifier`, `secret`,
-`topic`, `external_data_source` and `external_table`. Dots in pool and
-classifier names are literal characters. It also recognizes the kinds an owner
-registers for state its read records and does not model: the YDB kinds
-`changefeed`, `column_table`, `table_option` and `ttl`, and the Spanner kind
-`change_stream`. A run that does not select the owner refuses its kinds by
+The source parser recognizes common kinds and, when a command selects the YDB
+provider, the YDB kinds `coordination_node`, `streaming_query`, `resource_pool`,
+`resource_pool_classifier`, `secret`, `topic`, `external_data_source` and
+`external_table`. Dots in pool and classifier names are literal characters. It
+also recognizes the kinds an owner registers for state its read records and
+does not model: the YDB provider's kinds `changefeed`, `column_table`,
+`table_option` and `ttl`, and the Spanner kind `change_stream`. A run that does not select the owner refuses its kinds by
 name, here and in a document's `ptah:not-described` header.
 
 A secret, a topic, an external data source or an external table is named by
@@ -924,7 +926,7 @@ a misspelling.
 
 Declares a YDB topic: a persistent message queue at a path of the database. A
 setting left out stands for the value YDB gives a new topic. Every target but
-YDB refuses a topic. See [Topics](../../databases/ydb/#topics) for what a plan
+YDB refuses a topic. See [Topics](https://github.com/stokaro/ptah-ydb-plugin#topics) for what a plan
 does with one.
 
 | Attribute | Required | Description |
@@ -962,7 +964,7 @@ read position of its own.
 Declares a YDB resource pool, which limits the queries that run in it. A pool
 belongs to the whole database, and a setting left out has no limit. YDB keeps
 pools behind the `EnableResourcePools` flag; see
-[resource pools](../../databases/ydb/#resource-pools-and-classifiers).
+[resource pools](https://github.com/stokaro/ptah-ydb-plugin#resource-pools-and-classifiers).
 
 | Attribute | Required | Description |
 | --- | --- | --- |
@@ -1010,7 +1012,7 @@ type Locks struct{}
 
 A coordination node is YDB's own object, and every other target refuses the
 declaration. `ptah_locks` at the database root is Ptah's lock node and is
-refused. [Coordination nodes](../../databases/ydb/#coordination-nodes) says how
+refused. [Coordination nodes](https://github.com/stokaro/ptah-ydb-plugin#native-coordination-planning-and-execution) says how
 Ptah applies one.
 ### `//ptah:schema:async_replication`
 
@@ -1019,7 +1021,7 @@ read-only replica tables YDB creates and keeps current. The tables it copies
 are declared with `//ptah:schema:async_replication:item` in the same file, and
 the replica tables are not declared as tables. A credential names a secret and
 never holds a value. Every target but YDB refuses a replication. See
-[Async replications and transfers](../../databases/ydb/#async-replications-and-transfers)
+[Async replications and transfers](https://github.com/stokaro/ptah-ydb-plugin#async-replications-and-transfers)
 for what a plan does with one.
 
 | Attribute | Required | Description |
@@ -1113,7 +1115,7 @@ takes `login` and `password`; a group takes neither. `member_of` names the
 groups a user or a group joins, a group of the cluster's own such as
 `DATA-READERS` included. The other attributes are refused, and so is a name
 holding anything but lower-case letters and digits. See
-[YDB users, groups and permissions](../../databases/ydb/#users-groups-and-permissions).
+[YDB users, groups and permissions](https://github.com/stokaro/ptah-ydb-plugin#common-objects).
 
 ### `//ptah:schema:grant`
 
@@ -1350,7 +1352,7 @@ Declares a YDB secret: a scheme object whose value the server keeps and never
 returns, which an external data source reads a password or a key from. The
 declaration names the environment variable that holds the value, and never the
 value itself. Every other dialect refuses a secret. See
-[secrets](../../databases/ydb/#secrets).
+[secrets](https://github.com/stokaro/ptah-ydb-plugin#secrets).
 
 | Attribute | Required | Description |
 | --- | --- | --- |
@@ -1368,7 +1370,7 @@ Declares a YDB external data source: another system YDB reads from, such as an
 object storage bucket or a PostgreSQL database, and how YDB authenticates to
 it. A credential is named by the secret that holds it, never written. Every
 other dialect refuses one. See
-[external data sources](../../databases/ydb/#external-data-sources-and-external-tables).
+[external data sources](https://github.com/stokaro/ptah-ydb-plugin#external-data-sources-and-external-tables).
 
 | Attribute | Required | Description |
 | --- | --- | --- |
