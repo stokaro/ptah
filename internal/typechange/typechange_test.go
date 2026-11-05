@@ -15,6 +15,10 @@ func TestIsWidening(t *testing.T) {
 		newType string
 		want    bool
 	}{
+		// A type whose width the comparison strips before it compares spellings.
+		{"nvarchar length up", "nvarchar(50)", "nvarchar(70)", true},
+		{"nvarchar length down is not widening", "nvarchar(70)", "nvarchar(50)", false},
+
 		// Integer width increases (the core INTEGER -> BIGINT gap).
 		{"smallint to integer", "smallint", "integer", true},
 		{"integer to bigint", "integer", "bigint", true},
@@ -90,6 +94,10 @@ func TestIsNarrowing(t *testing.T) {
 		newType string
 		want    bool
 	}{
+		// A type whose width the comparison strips before it compares spellings.
+		{"nvarchar length down", "nvarchar(70)", "nvarchar(50)", true},
+		{"nvarchar length up is not narrowing", "nvarchar(50)", "nvarchar(70)", false},
+
 		// Existing behavior stays intact.
 		{"integer range down", "bigint", "integer", true},
 		{"integer range up is not narrowing", "integer", "bigint", false},
