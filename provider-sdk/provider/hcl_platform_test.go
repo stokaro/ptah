@@ -251,3 +251,23 @@ func TestHCLPlatformPartialLoss_FailurePath(t *testing.T) {
 		})
 	}
 }
+
+// A platform claim's model is one no HCL header narrows: the document never
+// claims more of it than the tables it writes, so a request that knows it less
+// needs no limit, while one that knows a model HCL describes less still does.
+func TestHCLPlatformModelNeedsNoLimit(t *testing.T) {
+	c := qt.New(t)
+	d, request, result := hclPlatformEncodeExchange()
+	d.Features = append(d.Features, provider.SourceLimitsFeature)
+	d.Engines[0].Features = append(d.Engines[0].Features, provider.SourceLimitsFeature)
+	uninspected := &protocol.ModelKnowledge{State: protocol.ModelKnowledge_UNINSPECTED, Reason: "the read did not inspect it"}
+	request.Coverage = &protocol.ModelCoverage{Representation: protocol.ValueInput_DESIRED, Kinds: []*protocol.ModelKindCoverage{
+		{Model: proto.CloneOf(d.Engines[0].ValueModels[0]), Knowledge: &protocol.ModelKnowledge{State: protocol.ModelKnowledge_COMPLETE}},
+		{Model: proto.CloneOf(d.Engines[0].ValueModels[1]), Knowledge: uninspected},
+	}}
+
+	c.Assert(provider.ValidateDescription(d, nil), qt.IsNil)
+	c.Assert(provider.ValidateEncodedSource(d, request, result), qt.IsNil)
+	request.Coverage.Kinds[0].Knowledge = uninspected
+	c.Assert(provider.ValidateEncodedSource(d, request, result), qt.ErrorMatches, `.*narrowed coverage requires a claimed source limit`)
+}

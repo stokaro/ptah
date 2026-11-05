@@ -90,7 +90,8 @@ the groups it keeps. An `override` the claim does not list is refused at its
 block, naming the keys the claim lists, and one that differs only in case
 names the listed key. A claimed group leaves `Table.Overrides`; every other
 group stays there for its readers. The fragment is bound to the table, has no
-subject, and carries the overrides as a mapping in the order written.
+subject, and carries the overrides as a mapping in the order the claim lists
+them.
 
 ### What a document states
 
@@ -122,6 +123,11 @@ HCL reply may name a value a `TABLE_PLATFORM` part writes. The value is written
 in part, and the loss says what the document does not hold of it. The host
 reports it where it writes the table, as it reports a value it does not write.
 
+A document never claims more of a model that lists no HCL than the tables it
+writes, so no header narrows it: a request that knows such a model less, as a
+read of selected directories does, needs no `ptah:not-described` limit. A
+model that lists HCL keeps the rule `source.limits` sets for it.
+
 ### What the SDK enforces
 
 The SDK refuses a `TABLE_PLATFORM` claim on an engine that does not list the
@@ -131,8 +137,10 @@ attribute on it. Both transport boundaries refuse a fragment of the site that
 is not bound to a table, that has a subject, or whose content is not a mapping
 of the claim's attributes. A loss that names a written value is refused unless
 the format is HCL, the feature is negotiated and a `TABLE_PLATFORM` part writes
-the value. Without the feature negotiated, the SDK removes the engine's
-`TABLE_PLATFORM` claims from the description the host receives.
+the value. Under `source.limits`, an encoding request whose knowledge is
+narrowed needs a limit only for a model that lists the request's format.
+Without the feature negotiated, the SDK removes the engine's `TABLE_PLATFORM`
+claims from the description the host receives.
 
 ## Alternatives considered
 
