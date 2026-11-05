@@ -112,6 +112,13 @@ type IndexGuard interface {
 	// SameDefinition reports whether the usable index state names has the
 	// definition the CREATE INDEX statement declares.
 	SameDefinition(ctx context.Context, q RowsQueryer, statement string, state IndexState) (bool, error)
+	// ExplainBuildFailure returns failure, the error a statement of sqlText
+	// answered with, naming the unusable index when the server refused one of
+	// its unconditional builds because such an index holds the name. It reads
+	// the catalog through q, on the session the statement ran on, after the
+	// server has refused, so nothing is inferred from the file alone. Any other
+	// failure, and a read that fails, returns failure unchanged.
+	ExplainBuildFailure(ctx context.Context, q RowsQueryer, sqlText string, failure error) error
 	// ApplyError refuses to apply migration version over unsafe.
 	ApplyError(version int64, unsafe []IndexState) error
 	// RepairError refuses to record migration version over unsafe.

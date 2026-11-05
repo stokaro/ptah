@@ -117,8 +117,11 @@ view "order_report" {
 }
 ```
 
-A view without the block declares no options, so the plan removes one the
-database holds.
+A view without the block states no options, and the plan
+[refuses to remove](../../databases/postgresql/#a-security-option-the-declaration-leaves-out)
+a security option the view holds on. Set `invoker = false` or `barrier = false`
+to remove it. `schema inspect` writes the block for a view that holds these
+options, so a document it wrote plans nothing for them.
 
 A `materialized` block has no attribute for storage parameters such as
 `fillfactor`, as Atlas's has none, so an HCL schema cannot set or change them.

@@ -99,8 +99,10 @@ matviews:
     options: [fillfactor=70]
 ```
 
-A bare name is `true`. An entry without `options` declares none, so the plan
-removes an option the database holds. See
+A bare name is `true`. The plan removes a storage parameter or a false option
+the database holds and the entry leaves out, and [refuses to
+remove](../../databases/postgresql/#a-security-option-the-declaration-leaves-out)
+a security option the view holds on: write `security_invoker=false` for that. See
 [View options and storage parameters](../../databases/postgresql/#view-options-and-storage-parameters).
 
 ## Top-level objects

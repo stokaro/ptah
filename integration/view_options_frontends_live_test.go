@@ -139,8 +139,8 @@ func TestViewOptionsFromEveryFrontendLive(t *testing.T) {
 
 // TestViewOptionsFromHCLLive applies an HCL schema to a PostgreSQL database
 // whose view holds security_invoker and whose materialized view holds
-// fillfactor. The view's security block states security_barrier instead, so
-// the plan sets one and resets the other. The materialized view's body
+// fillfactor. The view's security block sets security_barrier and turns
+// security_invoker off, which is how a document removes it. The materialized view's body
 // changes, which drops it and creates it again, and the HCL block has no
 // attribute for storage parameters, so it is created again with the one the
 // database held. A second comparison finds nothing to do.
@@ -168,6 +168,7 @@ view "report" {
   schema = schema.public
   as     = "SELECT id, amount FROM orders"
   security {
+    invoker = false
     barrier = true
   }
 }
@@ -185,6 +186,6 @@ materialized "totals" {
 	c.Logf("up:\n%s", strings.Join(up, ";\n"))
 	runRebuildStatements(c, db, up)
 
-	c.Assert(heldViewOptions(c, db), qt.DeepEquals, []string{"report security_barrier=true", "totals fillfactor=70"})
+	c.Assert(heldViewOptions(c, db), qt.DeepEquals, []string{"report security_invoker=false,security_barrier=true", "totals fillfactor=70"})
 	c.Assert(compareDeclaredLive(c, url, desired).HasChanges(), qt.IsFalse)
 }

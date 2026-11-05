@@ -1853,10 +1853,7 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// which may leave a change out: only the drops the plan makes can take a
 	// policy with them.
 	rebuild := planViewRebuild(diff)
-	if err := p.refusePoliciesLostToCascade(diff, rebuild); err != nil {
-		return nil, err
-	}
-	if err := refuseUnrebuildable(diff, rebuild, semantics); err != nil {
+	if err := p.refuseViewChanges(diff, rebuild, semantics); err != nil {
 		return nil, err
 	}
 	// Hand-built diffs may lack identities. Resolve them before either the
@@ -2761,7 +2758,8 @@ func (p *Planner) modifyExistingViews(result []ast.Node, diff *difftypes.SchemaD
 // ALTER [MATERIALIZED] VIEW ... SET for each option declared and not held as
 // declared, and RESET for each option held and not declared. The view keeps
 // its definition, what depends on it and its privileges, and a materialized
-// view keeps its rows.
+// view keeps its rows. A security option held on reaches the RESET only in a
+// rollback; see [refuseLostViewSecurity].
 //
 // An object the rebuild drops or replaces is left out: its CREATE or CREATE OR
 // REPLACE VIEW states the declared options, which sets them and clears the

@@ -952,9 +952,11 @@ parameter "security_invoker"`.
 
 The declaration states every option the object holds. The comparison reads
 `pg_class.reloptions` and plans a change when the two differ, also for an
-option the database holds and the declaration leaves out: a view declared
-without options is a view without them, as a view declared without `WITH CHECK
-OPTION` is a view without a check option. To keep an option, declare it. The
+option the database holds and the declaration leaves out: a materialized view
+declared without `fillfactor` is a materialized view without it, as a view
+declared without `WITH CHECK OPTION` is a view without a check option. A
+security option the view holds on is the exception, and
+[refused](#a-security-option-the-declaration-leaves-out). The
 Go annotations and YAML state them in `options`
 ([Go annotations](../../reference/go-annotations/#ptahschemaview),
 [YAML](../../reference/yaml-schema/#view-options-and-storage-parameters)). HCL
@@ -981,12 +983,13 @@ stores a value as written, so a database that holds `security_invoker=on` or
 `fillfactor=070` matches a declaration of `true` or `70`.
 
 A change to the options alone keeps the object. The plan writes `ALTER VIEW
-... SET (...)` for each option declared and `ALTER VIEW ... RESET (...)` for
-each option left out, or `ALTER MATERIALIZED VIEW`, so a view keeps what
-depends on it and a materialized view keeps its rows. Where the plan writes the
-object anyway, as a `CREATE OR REPLACE VIEW` for a changed body or a `CREATE`
-after a drop, that statement states the declared options. The rollback
-migration gives back the options the database held.
+... SET (...)` for each option declared and `ALTER VIEW ... RESET (...)` for an
+option held off and left out, or `ALTER MATERIALIZED VIEW ... SET` and `RESET`
+for storage parameters, so a view keeps what depends on it and a materialized
+view keeps its rows. Where the plan writes the object anyway, as a `CREATE OR
+REPLACE VIEW` for a changed body or a `CREATE` after a drop, that statement
+states the declared options. The rollback migration gives back the options the
+database held.
 
 Ptah refuses `check_option` in the list, because a view declares it with `WITH
 CHECK OPTION`, and a `toast.` option, which PostgreSQL keeps on the TOAST table
@@ -1006,6 +1009,39 @@ The other engines of the PostgreSQL family differ:
 
 Every other target refuses a view or a materialized view that declares
 options.
+
+### A security option the declaration leaves out
+
+When a view holds `security_invoker` or `security_barrier` with a true value
+and the declaration does not state that option, the plan refuses before the
+server changes. Removing the option fails no statement and widens what the
+view's readers see, and a view altered by hand holds an option no schema states:
+
+```text
+unsupported feature: view my_docs holds security_invoker=true and the schema does not state it. Without it the view runs with its owner's rights, not the rights of the user who queries it. Declare security_invoker=true to keep it, or security_invoker=false to remove it. An HCL schema states these options in the view's security block, as invoker and barrier
+```
+
+Declare the option to keep it, and the plan leaves the view alone. Declare it
+false to remove it, as `security_invoker = false` in the `WITH` list or `options`,
+or `invoker = false` in the `security` block. That plan runs as usual, and the
+reader's rows change as they would for any other removal. The declaration may
+leave out an option held false, because removing it changes nothing a reader
+sees. A storage parameter plans as declared.
+
+The refusal covers each statement that would lose the option: `ALTER VIEW ...
+RESET`, a `CREATE OR REPLACE VIEW` for a changed body, which clears what it does
+not state, and a drop and create. It is the same on `schema apply`, `schema
+compare` and `migrations generate`, and on `ptah-compat schema apply`, `schema
+diff` and `migrate diff`. `schema drift` plans nothing, so it reports the
+difference under `views_modified` and does not refuse. A rollback migration is
+not refused either: a down file that removes an option its up file added
+restores the earlier state.
+
+PostgreSQL 18, CockroachDB v26.3 and YugabyteDB 2026.1 give the same answer for
+a reader the row-level security policy limits to one row of two: one row through
+a `security_invoker` view, two once the option is gone. A materialized view
+cannot hold these options: PostgreSQL and YugabyteDB answer `unrecognized
+parameter`, and CockroachDB answers a syntax error.
 
 ## What a view rebuild keeps
 

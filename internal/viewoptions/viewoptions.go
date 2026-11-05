@@ -173,6 +173,55 @@ func Changes(held, declared []string) (set, reset []string) {
 	return set, reset
 }
 
+// SecurityLoss is a security option a view holds on, and that a declaration
+// does not state; see [LostSecurity].
+type SecurityLoss struct {
+	// Name is the option: security_invoker or security_barrier.
+	Name string
+	// Held is the value the view holds, as the server stores it.
+	Held string
+	// Effect says what the view does without the option, as a clause.
+	Effect string
+}
+
+// securityEffects holds the options that decide what a view's reader can see,
+// and what the view does without each. A materialized view has neither:
+// PostgreSQL answers `unrecognized parameter`.
+var securityEffects = map[string]string{
+	"security_barrier": "the view loses its barrier, and a function in a query can see rows the view's condition hides",
+	"security_invoker": "the view runs with its owner's rights, not the rights of the user who queries it",
+}
+
+// LostSecurity returns each security option held on that declared does not
+// state, sorted by name. Every other held option is left out: a storage
+// parameter, and a security option held off, whose removal changes nothing a
+// reader can see. A held value that is not a boolean counts as on, because a
+// wrong answer here removes a control. A declaration [Normalize] refuses yields
+// nothing: the comparison refuses it before a plan asks.
+func LostSecurity(held, declared []string) []SecurityLoss {
+	stated, err := byName(declared)
+	if err != nil {
+		return nil
+	}
+	var lost []SecurityLoss
+	for _, option := range held {
+		name, value, err := split(option)
+		if err != nil {
+			continue
+		}
+		effect, security := securityEffects[name]
+		if _, isStated := stated[name]; !security || isStated {
+			continue
+		}
+		if on, isBool := Bool(value); isBool && !on {
+			continue
+		}
+		lost = append(lost, SecurityLoss{Name: name, Held: value, Effect: effect})
+	}
+	slices.SortFunc(lost, func(a, b SecurityLoss) int { return strings.Compare(a.Name, b.Name) })
+	return lost
+}
+
 // Describe spells options for a change message: sorted, joined by commas, and
 // `(none)` for an empty list, so a message reads as a sentence rather than as
 // an arrow with nothing on one side.
