@@ -600,3 +600,42 @@ func TestCommonPlannerKeepsDependentPhaseBetweenCommonChanges(t *testing.T) {
 		})
 	}
 }
+
+// The compatibility verbs plan every target in the catalog statement shape,
+// which leaves a provider's statements as they are, so the provider planner
+// accepts it; an option it cannot honor is still refused. Without "Shape" in
+// the planner's accepted options, every ptah-compat schema apply, schema diff
+// and migrate diff through a provider failed with "does not support
+// Options.Shape".
+func TestCommonPlannerTakesTheCatalogShape(t *testing.T) {
+	c := qt.New(t)
+	semantics := identifier.Semantics{DefaultSchema: "main", TableNames: identifier.ComparisonExact, ColumnNames: identifier.ComparisonExact, IndexNames: identifier.ComparisonExact, IndexNamespace: identifier.IndexNamespaceTable}
+	modified := difftypes.TableDiff{TableName: "main.items",
+		Desired:      schemacapture.TableDeclaration{Table: schemamodel.Table{Name: "items", Schema: "main"}, Fields: []schemamodel.Field{{Name: "added", Type: "INTEGER"}}},
+		Current:      schemacapture.TableObservation{Table: catalog.Table{Name: "items", Schema: "main"}},
+		ColumnsAdded: difftypes.ColumnChanges{{Name: "added", Type: "INTEGER"}},
+	}
+	diff := &difftypes.SchemaDiff{IdentifierSemantics: &semantics, TablesModified: []difftypes.TableDiff{modified}}
+	base, err := engine.New()
+	c.Assert(err, qt.IsNil)
+	shaped := commonPlanner{target: "fixture", options: planext.Options{Shape: planext.StatementShapeCatalog}, assessParents: true, commonTables: true}
+
+	nodes, err := shaped.GenerateMigrationAST(c.Context(), &commonPlanRecorder{Runtime: base}, diff)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(nodes, qt.HasLen, 1)
+	c.Assert(nodes[0].(*ast.AlterTableNode).Operations[0], qt.Satisfies, func(op ast.AlterOperation) bool { _, ok := op.(*ast.AddColumnOperation); return ok })
+}
+
+func TestCommonPlannerTakesTheCatalogShape_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	runtime, err := engine.New()
+	c.Assert(err, qt.IsNil)
+	skipping := commonPlanner{target: "fixture", options: planext.Options{Shape: planext.StatementShapeCatalog, SkipChangeKinds: []planext.ChangeKind{planext.DropTable}},
+		assessParents: true, commonTables: true}
+
+	nodes, err := skipping.GenerateMigrationAST(c.Context(), runtime, &difftypes.SchemaDiff{})
+
+	c.Assert(err, qt.ErrorMatches, `.*the experimental provider contract does not support Options\.SkipChangeKinds`)
+	c.Assert(nodes, qt.IsNil)
+}
