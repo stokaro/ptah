@@ -122,6 +122,9 @@ type DiffOptions struct {
 	// IgnoreUnknownHCLNames selects the desired-state HCL unknown-name policy;
 	// see [ptah.run/internal/atlassource.ResolveOptions].
 	IgnoreUnknownHCLNames bool
+	// RefuseUnrequestedSchemas holds an HCL desired state to Schemas; see
+	// [ptah.run/internal/schemafile.Options.RequestedSchemas].
+	RefuseUnrequestedSchemas bool
 	// OmitNullBackfill plans SET NOT NULL without filling the column's NULL
 	// rows from its declared default first; see
 	// [ptah.run/migration/planext.Options]. The caller selects it from its
@@ -596,6 +599,8 @@ func resolveDesiredState(
 		DevURL:                    devURL,
 		SchemaScope:               schemaScope,
 		SchemaScopeFlag:           schemaScopeFlag,
+		RequestedSchemas:          opts.Schemas,
+		RefuseUnrequestedSchemas:  opts.RefuseUnrequestedSchemas,
 		ConnectTimeout:            opts.SourceConnectTimeout,
 		DevLockHeld:               true,
 		IgnoreUnknownHCLNames:     opts.IgnoreUnknownHCLNames,

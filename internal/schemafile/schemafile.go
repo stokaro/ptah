@@ -173,6 +173,16 @@ type Options struct {
 	// a script may be matching on. Ignored when SchemaScope is empty.
 	SchemaScopeFlag string
 
+	// RequestedSchemas names the schemas a run selected, each value holding one
+	// name or several separated by commas. RefuseUnrequestedSchemas holds an HCL
+	// desired state to them: a top-level `schema` block outside them is refused in
+	// the pinned Atlas community binary's words, measured on v1.3.0. A default
+	// compatibility run narrows the document to the selection instead, which is
+	// the capability strict mode leaves out. A SQL document is not held to it, on
+	// either binary. An empty selection refuses nothing.
+	RequestedSchemas         []string
+	RefuseUnrequestedSchemas bool
+
 	// collect gathers the top-level `schema` blocks of every HCL file one load
 	// reached, so the [Options.SchemaScope] gate counts the whole desired state
 	// -- a directory of HCL files, or several --to files -- rather than one file
@@ -240,7 +250,7 @@ func ScopeFromURLs(devURL, targetURL, targetFlag string) (scope, flag string) {
 // A nested load -- a directory entry, or one of several --to files -- finds the
 // collector already set and just contributes to it, so the count is the desired
 // state's and the refusal is reported once.
-func gateSchemaScope(ctx context.Context, opts Options, load func(Options) (*schemamodel.Database, error)) (*schemamodel.Database, error) {
+func gateSchemaScope(ctx context.Context, opts Options, paths []string, load func(Options) (*schemamodel.Database, error)) (*schemamodel.Database, error) {
 	if opts.Contexts != nil && opts.Dialect != "" {
 		selected, err := opts.Contexts.ResolveTarget(opts.Dialect)
 		if err != nil {
@@ -264,11 +274,35 @@ func gateSchemaScope(ctx context.Context, opts Options, load func(Options) (*sch
 		if err := valuecontext.BindSource(ctx, opts.Contexts, opts.Dialect, opts.DatabaseURL, db); err != nil {
 			return nil, err
 		}
+		if err := opts.checkRequestedSchemas(opts.collect.blocks, paths); err != nil {
+			return nil, err
+		}
 		if err := opts.checkSchemaScope(opts.collect.blocks); err != nil {
 			return nil, err
 		}
 	}
 	return db, nil
+}
+
+// checkRequestedSchemas refuses a top-level `schema` block outside
+// [Options.RequestedSchemas], on a run that holds the document to them. paths are
+// the sources the run named, as the community binary lists them.
+func (o Options) checkRequestedSchemas(blocks []atlashcl.SchemaBlock, paths []string) error {
+	if !o.RefuseUnrequestedSchemas || len(o.RequestedSchemas) == 0 {
+		return nil
+	}
+	var requested []string
+	for _, schema := range o.RequestedSchemas {
+		for name := range strings.SplitSeq(schema, ",") {
+			requested = append(requested, strings.TrimSpace(name))
+		}
+	}
+	for _, block := range blocks {
+		if !slices.Contains(requested, block.Name) {
+			return fmt.Errorf("schema %q from paths %q is not requested (all schemas in HCL must be requested)", block.Name, paths)
+		}
+	}
+	return nil
 }
 
 // checkSchemaScope refuses a desired state that declares more schemas than the
@@ -324,7 +358,7 @@ func LoadPath(ctx context.Context, path string, opts Options) (*schemamodel.Data
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	return gateSchemaScope(ctx, opts, func(opts Options) (*schemamodel.Database, error) {
+	return gateSchemaScope(ctx, opts, []string{path}, func(opts Options) (*schemamodel.Database, error) {
 		resolved, isDir, err := statSchemaPath(path)
 		if err != nil {
 			return nil, err
@@ -814,7 +848,15 @@ func LoadSources(ctx context.Context, sources []Source, opts Options) (*schemamo
 		return nil, fmt.Errorf("at least one schema file URL is required")
 	}
 
-	return gateSchemaScope(ctx, opts, func(opts Options) (*schemamodel.Database, error) {
+	paths := make([]string, 0, len(sources))
+	for _, source := range sources {
+		path, err := LocalFilePath(source.URL)
+		if err != nil {
+			return nil, err
+		}
+		paths = append(paths, path)
+	}
+	return gateSchemaScope(ctx, opts, paths, func(opts Options) (*schemamodel.Database, error) {
 		if readsAsLoad(opts) {
 			return loadSourcesAsLoad(ctx, sources, opts)
 		}

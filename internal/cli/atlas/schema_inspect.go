@@ -249,8 +249,9 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 		SuppressRoleCoverageNote: opts.policy.IsStrictCE(),
 
 		// Atlas-compatible surface; see internal/cli/atlas/schema_apply.go.
-		IgnoreUnknownHCLNames: opts.policy.IgnoreUnknownHCLNames(),
-		ValidateDesiredSchema: opts.policy.ValidateDesiredSchema,
+		IgnoreUnknownHCLNames:    opts.policy.IgnoreUnknownHCLNames(),
+		RefuseUnrequestedSchemas: opts.policy.IsStrictCE(),
+		ValidateDesiredSchema:    opts.policy.ValidateDesiredSchema,
 		PrepareInspectedSchema: func(ctx context.Context, current *catalog.Database, info catalog.ServerInfo) (*catalog.Database, error) {
 			return opts.policy.PrepareInspectedSchema(ctx, current, info.Dialect, runtime)
 		},

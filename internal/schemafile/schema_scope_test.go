@@ -323,3 +323,103 @@ func TestLoadPath_OneSchemaBlockAndAURL_FailurePath(t *testing.T) {
 		})
 	}
 }
+
+// TestLoadPath_RequestedSchemas_HappyPath loads what the selection holds: a block it
+// names, every block with no selection, and a SQL document, which neither binary
+// holds to one.
+func TestLoadPath_RequestedSchemas_HappyPath(t *testing.T) {
+	tests := []struct {
+		name, file, body string
+		requested        []string
+	}{
+		{name: "a block it names", file: "schema.hcl", body: "schema \"app\" {\n}\n", requested: []string{"app"}},
+		{name: "one name among several in one value", file: "schema.hcl", body: "schema \"app\" {\n}\n", requested: []string{"public, app"}},
+		{name: "no selection", file: "schema.hcl", body: "schema \"app\" {\n}\n"},
+		{name: "a SQL document", file: "schema.sql", body: "CREATE SCHEMA app;\n", requested: []string{"public"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			path := filepath.Join(c.TempDir(), test.file)
+			c.Assert(os.WriteFile(path, []byte(test.body), 0o600), qt.IsNil)
+			runtime := builtintest.Runtime()
+
+			got, err := schemafile.LoadPath(c.Context(), path, schemafile.Options{
+				YAML: runtime.YAML(), SQL: runtime.SQL(), HCL: runtime.HCL(), Dialect: "postgres",
+				RequestedSchemas: test.requested, RefuseUnrequestedSchemas: true,
+			})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.IsNotNil)
+		})
+	}
+}
+
+// TestLoadPath_RequestedSchemas_FailurePath refuses a block the selection leaves
+// out, in the community binary's words, and spells the name exactly: the binary
+// refuses `public` under --schema PUBLIC.
+func TestLoadPath_RequestedSchemas_FailurePath(t *testing.T) {
+	tests := []struct {
+		name, body string
+		requested  []string
+		wantSchema string
+	}{
+		{name: "the only block", body: "schema \"app\" {\n}\n", requested: []string{"public"}, wantSchema: "app"},
+		{name: "one block of two", body: "schema \"public\" {\n}\nschema \"app\" {\n}\n", requested: []string{"public"}, wantSchema: "app"},
+		{name: "another spelling", body: "schema \"public\" {\n}\n", requested: []string{"PUBLIC"}, wantSchema: "public"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			path := filepath.Join(c.TempDir(), "schema.hcl")
+			c.Assert(os.WriteFile(path, []byte(test.body), 0o600), qt.IsNil)
+			runtime := builtintest.Runtime()
+
+			got, err := schemafile.LoadPath(c.Context(), path, schemafile.Options{
+				YAML: runtime.YAML(), SQL: runtime.SQL(), HCL: runtime.HCL(), Dialect: "postgres",
+				RequestedSchemas: test.requested, RefuseUnrequestedSchemas: true,
+			})
+
+			c.Assert(err, qt.ErrorMatches, `schema "`+test.wantSchema+`" from paths \[".*schema\.hcl"\] is not requested \(all schemas in HCL must be requested\)`)
+			c.Assert(got, qt.IsNil)
+		})
+	}
+}
+
+// TestLoadSources_RequestedSchemas_NamesEverySource lists the sources the run
+// named, as the community binary does, and counts the blocks of all of them.
+func TestLoadSources_RequestedSchemas_NamesEverySource(t *testing.T) {
+	c := qt.New(t)
+	dir := c.TempDir()
+	first := filepath.Join(dir, "first.hcl")
+	second := filepath.Join(dir, "second.hcl")
+	c.Assert(os.WriteFile(first, []byte("schema \"public\" {\n}\n"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(second, []byte("schema \"app\" {\n}\n"), 0o600), qt.IsNil)
+	runtime := builtintest.Runtime()
+
+	got, err := schemafile.LoadSources(c.Context(), []schemafile.Source{{URL: first}, {URL: second}}, schemafile.Options{
+		YAML: runtime.YAML(), SQL: runtime.SQL(), HCL: runtime.HCL(), Dialect: "postgres",
+		RequestedSchemas: []string{"public"}, RefuseUnrequestedSchemas: true,
+	})
+
+	c.Assert(err, qt.ErrorMatches, `schema "app" from paths \[".*first\.hcl" ".*second\.hcl"\] is not requested .*`)
+	c.Assert(got, qt.IsNil)
+}
+
+// TestLoadPath_RequestedSchemas_ARunThatDoesNotRefuse loads a block the selection
+// leaves out, which is what keeps a default compatibility run's selection a
+// narrowing.
+func TestLoadPath_RequestedSchemas_ARunThatDoesNotRefuse(t *testing.T) {
+	c := qt.New(t)
+	path := filepath.Join(c.TempDir(), "schema.hcl")
+	c.Assert(os.WriteFile(path, []byte("schema \"app\" {\n}\n"), 0o600), qt.IsNil)
+	runtime := builtintest.Runtime()
+
+	got, err := schemafile.LoadPath(c.Context(), path, schemafile.Options{
+		YAML: runtime.YAML(), SQL: runtime.SQL(), HCL: runtime.HCL(), Dialect: "postgres",
+		RequestedSchemas: []string{"public"},
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.IsNotNil)
+}
