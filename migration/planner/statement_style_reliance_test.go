@@ -8,6 +8,8 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/planext"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/feature/pgpolicy"
@@ -668,4 +670,18 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_ExactStyleReliance_HappyPath
 			c.Assert(got, qt.DeepEquals, tt.want)
 		})
 	}
+}
+
+// TestGenerateSchemaDiffSQLStatementsWithOptions_AnnotatedStyleKeepsTypeHoldersInPlace
+// is the control for the exact style's order: this style writes CASCADE on every table
+// drop, and keeps a table that uses a removed type with the other tables.
+func TestGenerateSchemaDiffSQLStatementsWithOptions_AnnotatedStyleKeepsTypeHoldersInPlace(t *testing.T) {
+	c := qt.New(t)
+	change := removedTableBesideComposite("archive", styleTable("ledger", styleKey("id"),
+		catalog.Column{Name: "w", DataType: "USER-DEFINED", UDTName: "wrap", UDTSchema: "public", IsNullable: "YES"}))
+	change.opts = planext.Options{Capabilities: capability.ForDialect(platform.Postgres), Statements: planext.StatementStyleAnnotated}
+
+	got := stylePlan(c, change.declared, change.held, change.opts)
+
+	c.Assert(got[0], qt.Contains, `DROP TABLE IF EXISTS "public"."archive" CASCADE`)
 }
