@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"ptah.run/core/difftypes"
+	"ptah.run/core/schemamodel"
 	"ptah.run/internal/columnkey"
 	"ptah.run/internal/constraintscope"
 	"ptah.run/internal/indexscope"
@@ -133,6 +134,50 @@ func UnderAddedForeignKeys(diff *difftypes.SchemaDiff, dialect string) Releases 
 		}
 	}
 	return released
+}
+
+// PrimaryKeysUnderColumnChanges answers the removed primary keys of diff that a
+// column change of their own table cannot run under, which a planner drops ahead of
+// the column changes. On PostgreSQL, measured on 18.6, `ALTER COLUMN id DROP NOT NULL`
+// answers `column "id" is in a primary key` while the key holds the column, and
+// `ADD COLUMN code bigint PRIMARY KEY` answers `multiple primary keys for table
+// "parent" are not allowed` while the table holds one. On MySQL and MariaDB the first
+// statement runs and the column stays NOT NULL, so the next comparison plans it again.
+// A primary key the plan adds back is one of these too: its drop only moves ahead of
+// the column changes.
+func PrimaryKeysUnderColumnChanges(diff *difftypes.SchemaDiff, dialect string) Releases {
+	if diff == nil {
+		return Releases{}
+	}
+	semantics := diff.EffectiveIdentifierSemantics(dialect)
+	held := make(map[string]bool)
+	for _, table := range diff.TablesModified {
+		if columnChangesRequireNoPrimaryKey(table) {
+			held[semantics.QualifiedTableIdentityKey(table.TableName)] = true
+		}
+	}
+	var released Releases
+	for _, info := range diff.ConstraintsRemoved {
+		if strings.EqualFold(info.Type, "PRIMARY KEY") && held[semantics.QualifiedTableIdentityKey(info.TableName)] {
+			info.Identity = constraintscope.Identity(semantics, info.TableName, info.Name)
+			released.Constraints = append(released.Constraints, info)
+		}
+	}
+	return released
+}
+
+// columnChangesRequireNoPrimaryKey reports whether table adds a column that declares
+// a primary key, or changes a column of its key to allow NULL.
+func columnChangesRequireNoPrimaryKey(table difftypes.TableDiff) bool {
+	if slices.ContainsFunc(table.ColumnsAdded, func(field schemamodel.Field) bool { return field.Primary }) {
+		return true
+	}
+	return slices.ContainsFunc(table.ColumnsModified, func(column difftypes.ColumnDiff) bool {
+		// MySQL refuses to drop the key under a column that still has AUTO_INCREMENT,
+		// so a column giving up both stays behind its own MODIFY COLUMN.
+		_, autoIncrement := column.Changes["auto_increment"]
+		return !autoIncrement && strings.HasPrefix(column.Changes["nullable"], "false ->") && strings.HasPrefix(column.Changes["primary_key"], "true ->")
+	})
 }
 
 // With is r and the removals of other that r does not hold, in that order.

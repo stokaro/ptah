@@ -234,7 +234,7 @@ func ExampleGenerateCheckpointFromShadow() {
 	//   "id" INTEGER PRIMARY KEY,
 	//   "email" TEXT
 	// );
-	// DROP TABLE IF EXISTS "users";
+	// DROP TABLE "users";
 }
 
 // ExamplePlanBidirectionalSchemaDiff is the lower-level, fully offline

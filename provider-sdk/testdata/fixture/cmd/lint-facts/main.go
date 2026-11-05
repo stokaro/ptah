@@ -3,10 +3,11 @@
 // provider's split through an independent process.
 //
 // FIXTURE_LINT_ENGINE=ydb serves the lint under the identity of the official
-// YDB provider, engine ydb, as the ydb-lint fixture does, so a run reaches the
-// capabilities Ptah resolves for a YDB server version. Otherwise the process
-// is the fixture provider, engine fixture, of which Ptah knows no release
-// line.
+// YDB provider, engine ydb, as the ydb-lint fixture does, and states the
+// capabilities of two YDB release lines, so a run resolves a server version
+// through the lines the provider declares. YDB 25.1 has no parameterized
+// DECIMAL and 26.2 has one. Otherwise the process is the fixture provider,
+// engine fixture, which declares no release line.
 package main
 
 import (
@@ -41,8 +42,13 @@ func main() {
 		server.Description = &protocol.Description{Revision: description.Revision, ProviderId: "github.com/stokaro/ptah-ydb-plugin",
 			Version: description.Version, SemanticIdentity: description.SemanticIdentity,
 			Engines: []*protocol.Engine{{Id: "ydb", DefaultSchema: engine.DefaultSchema, Identifiers: engine.Identifiers, LintRules: engine.LintRules,
-				Features: []string{"tables", "columns", provider.LintFeature, provider.LintStatementFactsFeature}}},
-			Features: []string{provider.InspectFeature, provider.RenderFeature, provider.ExecuteFeature, provider.AnalyzeSQLFeature, provider.LintFeature}}
+				Features:            []string{"tables", "columns", provider.LintFeature, provider.LintStatementFactsFeature, provider.DefaultCapabilitiesFeature},
+				DefaultCapabilities: map[string]bool{"parameterized_decimal": true},
+				ReleaseLines: []*protocol.ReleaseLine{
+					{Line: "25.1", Label: "YDB 25.1", Support: protocol.ReleaseLine_BEST_EFFORT, Unprobed: "a fixture line", Capabilities: map[string]bool{"parameterized_decimal": false}},
+					{Line: "26.2", Label: "YDB 26.2", Support: protocol.ReleaseLine_BEST_EFFORT, Unprobed: "a fixture line", Capabilities: map[string]bool{"parameterized_decimal": true}},
+				}}},
+			Features: []string{provider.InspectFeature, provider.RenderFeature, provider.ExecuteFeature, provider.AnalyzeSQLFeature, provider.LintFeature, provider.DefaultCapabilitiesFeature}}
 		server.ValueNormalizer, server.SourceDecoder, server.ValueConverter = nil, nil, nil
 	}
 	if err := runtime.Serve(server); err != nil {

@@ -115,3 +115,44 @@ func TestCategoryCountAndNames(t *testing.T) {
 	c.Assert(categories[1].Count(), qt.Equals, 1)
 	c.Assert(diffreport.Names(categories), qt.DeepEquals, []string{"tables_added", "rls_enabled_tables_added"})
 }
+
+// The old and new values of a changed column reach the report under the table, in
+// the order of the kinds' names whatever order a map hands them in. A comment and a
+// constraint name are not in that map, and an empty one still reads as a value.
+func TestCategories_ListsTheValuesOfAChangedColumn_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	diff := &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{
+		{
+			TableName: "app.t",
+			ColumnsModified: []difftypes.ColumnDiff{
+				{ColumnName: "k", Changes: map[string]string{"type": "int8 -> int4", "default": "1 -> 2", "nullable": "false -> true"}},
+				{ColumnName: "note", CommentChange: &difftypes.CommentChange{Desired: "new"}},
+				{ColumnName: "n", NotNullConstraintNameChange: &difftypes.NotNullConstraintNameChange{Current: "a", Desired: "b"}},
+				{ColumnName: "nothing"},
+			},
+		},
+		{TableName: "added_only", ColumnsAdded: difftypes.ColumnChanges{{Name: "x"}}},
+	}}
+
+	categories := diffreport.Categories(diff)
+
+	c.Assert(categories, qt.HasLen, 1)
+	c.Assert(categories[0].Name, qt.Equals, "tables_modified")
+	c.Assert(categories[0].Objects, qt.DeepEquals, []string{"app.t", "added_only"})
+	c.Assert(categories[0].Values, qt.DeepEquals, []string{
+		"app.t.k: default: 1 -> 2, nullable: false -> true, type: int8 -> int4",
+		`app.t.note: comment: "" -> "new"`,
+		`app.t.n: not_null_constraint_name: "a" -> "b"`,
+	})
+}
+
+// A category that is not a list of modified tables has no column values.
+func TestCategories_ListsNoValuesOutsideModifiedTables_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	diff := &difftypes.SchemaDiff{TablesAdded: difftypes.TableChanges{{Name: "fresh"}}}
+
+	categories := diffreport.Categories(diff)
+
+	c.Assert(categories, qt.HasLen, 1)
+	c.Assert(categories[0].Values, qt.IsNil)
+}

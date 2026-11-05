@@ -26,6 +26,11 @@ type Comparison struct {
 	// exists. A plan that removes the key drops the foreign key first and adds
 	// it back once a key is there to reference.
 	ForeignKeyHoldsItsKey bool `json:"foreign_key_holds_its_key,omitempty"`
+	// ColumnPrimaryKeyIsTheTablesKey reports that a primary key a column declares
+	// is compared as the table's key where the table holds another key or none:
+	// the planner has a statement for a change of the key, in both directions, and
+	// none that a column's primary_key flag can say on its own.
+	ColumnPrimaryKeyIsTheTablesKey bool `json:"column_primary_key_is_the_tables_key,omitempty"`
 	// InternalIndexPrefix begins the name of an index the engine builds for
 	// itself and no statement can name, such as SQLite's autoindexes.
 	InternalIndexPrefix string `json:"internal_index_prefix,omitempty"`

@@ -137,17 +137,18 @@ func mariaDB() descriptor.Dialect {
 		IndexesBeforeForeignKeys: true,
 		// Comparison: what comparing a declaration with a catalog reads.
 		Comparison: descriptor.Comparison{
-			ForeignKeysOutside:       true,
-			ForeignKeyBackingIndex:   true,
-			DefaultGeneratedKind:     "VIRTUAL",
-			DoubleQuotedStrings:      true,
-			RestrictIsNoAction:       true,
-			PrimaryKeyName:           "PRIMARY",
-			ConstraintComments:       true,
-			RoutineNamesFold:         true,
-			RoutineTypeAliases:       "mysqlroutine",
-			ViewPredicatesAsIntegers: true,
-			AutoIncrementFlag:        true,
+			ColumnPrimaryKeyIsTheTablesKey: true,
+			ForeignKeysOutside:             true,
+			ForeignKeyBackingIndex:         true,
+			DefaultGeneratedKind:           "VIRTUAL",
+			DoubleQuotedStrings:            true,
+			RestrictIsNoAction:             true,
+			PrimaryKeyName:                 "PRIMARY",
+			ConstraintComments:             true,
+			RoutineNamesFold:               true,
+			RoutineTypeAliases:             "mysqlroutine",
+			ViewPredicatesAsIntegers:       true,
+			AutoIncrementFlag:              true,
 			// A whole server compares its databases too.
 			ServerDatabases: true,
 		},
@@ -194,8 +195,10 @@ func mariaDB() descriptor.Dialect {
 		// and its dev database (stokaro/ptah#3756).
 		URLs: descriptor.URLs{DefaultPort: 3306, ComparedAs: "mysql", Grammar: descriptor.URLGrammarGoSQLDriver},
 		Atlas: descriptor.Atlas{
+			CatalogForm:   descriptor.MariaDBCatalogForm,
 			DockerImages:  []string{"maria", "mariadb"},
 			DockerDrivers: []string{"maria", "mariadb"},
+			ChangeWords:   descriptor.MySQLDriverChangeWords,
 			HCL:           mysqlFamilyAtlasHCL(),
 		},
 

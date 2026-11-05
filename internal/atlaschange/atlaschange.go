@@ -45,6 +45,7 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/plangraph"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/feature/pgtype"
 	"ptah.run/internal/planner/sqliterebuild"
@@ -73,10 +74,10 @@ func For(dialect string) Words {
 	if !ok {
 		return Words{}
 	}
-	switch {
-	case target.Family == platform.MySQL:
+	switch target.Atlas.ChangeWords {
+	case descriptor.MySQLDriverChangeWords:
 		return Words{family: mysqlWords}
-	case target.Name == platform.SQLite:
+	case descriptor.SQLiteDriverChangeWords:
 		return Words{family: sqliteWords}
 	default:
 		return Words{}

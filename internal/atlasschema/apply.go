@@ -50,6 +50,8 @@ import (
 type ApplyOptions struct {
 	// Runtime selects feature services and codecs for this operation. It is required.
 	Runtime engine.SchemaRuntime
+	// Shape is the statement shape of the plan; see [planext.Options.Shape].
+	Shape   planext.StatementShape
 	ToURLs  []string
 	Exclude []string
 	// ProjectRoot bounds the files a desired state may make this process read.
@@ -175,6 +177,8 @@ type ApplyPlan struct {
 
 // ApplyRuntimeOptions configures Atlas schema apply planning and execution.
 type ApplyRuntimeOptions struct {
+	// Shape is the statement shape of the plan; see [planext.Options.Shape].
+	Shape planext.StatementShape
 	// Runtime selects feature services and codecs for this operation. It is required.
 	Runtime engine.SchemaRuntime
 	DevURL  string
@@ -567,6 +571,7 @@ func computeApplyPlan(
 			TableRebuildRequest: opts.Policy.TableRebuildRequest,
 			SkipChangeKinds:     opts.Policy.SkipChangeKinds,
 			Statements:          planstyle.Statements,
+			Shape:               opts.Shape,
 		}
 		plan, err := planner.GenerateSchemaDiffRenderedPlan(
 			ctx, opts.Runtime,
@@ -1010,6 +1015,7 @@ func PrepareApply(
 
 	planning := ApplyOptions{
 		Runtime:                   opts.Runtime,
+		Shape:                     opts.Shape,
 		ProjectRoot:               opts.ProjectRoot,
 		ToURLs:                    opts.ToURLs,
 		Exclude:                   opts.Exclude,

@@ -149,11 +149,15 @@ func postgres() descriptor.Dialect {
 			// parent because other objects depend on it`, measured on 18.6.
 			// The rest of the family has not been measured.
 			ForeignKeyHoldsItsKey: true,
-			ExpressionProbes:      "pg-catalog",
-			RolePasswords:         true,
-			DefaultGeneratedKind:  "STORED",
-			RoutineTypeAliases:    "pg-aliases",
-			QualifiedTypeNames:    true,
+			// Without this `code bigint PRIMARY KEY` on a table that holds
+			// another key, or none, plans no key and reads as synced, measured
+			// on 18.6. The rest of the family has not been measured.
+			ColumnPrimaryKeyIsTheTablesKey: true,
+			ExpressionProbes:               "pg-catalog",
+			RolePasswords:                  true,
+			DefaultGeneratedKind:           "STORED",
+			RoutineTypeAliases:             "pg-aliases",
+			QualifiedTypeNames:             true,
 			// YugabyteDB leaves this off: a routine created in pg_temp
 			// outlives the rollback there, and a copy whose body reads a
 			// table would hold it.
@@ -204,6 +208,7 @@ func postgres() descriptor.Dialect {
 		// projects' PostgreSQL images (stokaro/ptah#4066).
 		URLs: descriptor.URLs{DefaultPort: 5432},
 		Atlas: descriptor.Atlas{
+			CatalogForm:   descriptor.PostgresCatalogForm,
 			DockerImages:  []string{"postgres", "postgis", "pgvector"},
 			DockerDrivers: []string{"postgres"},
 			HCL: descriptor.AtlasHCL{

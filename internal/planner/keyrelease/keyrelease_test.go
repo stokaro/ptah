@@ -408,3 +408,106 @@ func TestReleasesWith_HoldsEachRemovalOnce(t *testing.T) {
 
 	c.Assert(released(merged), qt.DeepEquals, []string{"constraint t.k", "constraint t.m", "index t.i"})
 }
+
+// losesNotNull is a change of column x that leaves the table's key and allows NULL.
+var losesNotNull = difftypes.ColumnDiff{ColumnName: "x", Changes: map[string]string{
+	"primary_key": "true -> false",
+	"nullable":    "false -> true",
+}}
+
+// TestPrimaryKeysUnderColumnChanges_HappyPath pins the column changes a removed
+// primary key has to leave ahead of, whether or not the plan adds another key.
+func TestPrimaryKeysUnderColumnChanges_HappyPath(t *testing.T) {
+	tests := []struct {
+		name  string
+		table difftypes.TableDiff
+		added []difftypes.ConstraintAdditionInfo
+	}{
+		{
+			name:  "a column of the key allows NULL",
+			table: difftypes.TableDiff{TableName: "t", ColumnsModified: []difftypes.ColumnDiff{losesNotNull}},
+		},
+		{
+			name:  "the plan adds another key as well",
+			table: difftypes.TableDiff{TableName: "t", ColumnsModified: []difftypes.ColumnDiff{losesNotNull}},
+			added: []difftypes.ConstraintAdditionInfo{{Name: "t_pkey", TableName: "t", Type: "PRIMARY KEY", Columns: []string{"y"}}},
+		},
+		{
+			name:  "an added column declares the key",
+			table: difftypes.TableDiff{TableName: "t", ColumnsAdded: difftypes.ColumnChanges{{Name: "y", Type: "BIGINT", Primary: true}}},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			diff := &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{test.table},
+				ConstraintsRemoved: removed("t", "t_pkey", "PRIMARY KEY"), ConstraintsAdded: test.added}
+			c.Assert(released(keyrelease.PrimaryKeysUnderColumnChanges(diff, platform.Postgres)), qt.DeepEquals, []string{"constraint t.t_pkey"})
+		})
+	}
+}
+
+// TestPrimaryKeysUnderColumnChanges_ReleasesNothing pins what stays where its step
+// puts it.
+func TestPrimaryKeysUnderColumnChanges_ReleasesNothing(t *testing.T) {
+	tests := []struct {
+		name string
+		diff *difftypes.SchemaDiff
+	}{
+		{name: "no diff"},
+		{
+			name: "the column stays NOT NULL",
+			diff: &difftypes.SchemaDiff{
+				TablesModified: []difftypes.TableDiff{{TableName: "t", ColumnsModified: []difftypes.ColumnDiff{
+					{ColumnName: "x", Changes: map[string]string{"primary_key": "true -> false"}},
+				}}},
+				ConstraintsRemoved: removed("t", "t_pkey", "PRIMARY KEY"),
+			},
+		},
+		{
+			name: "the column also gives up AUTO_INCREMENT",
+			diff: &difftypes.SchemaDiff{
+				TablesModified: []difftypes.TableDiff{{TableName: "t", ColumnsModified: []difftypes.ColumnDiff{
+					{ColumnName: "x", Changes: map[string]string{"primary_key": "true -> false", "nullable": "false -> true", "auto_increment": "true -> false"}},
+				}}},
+				ConstraintsRemoved: removed("t", "t_pkey", "PRIMARY KEY"),
+			},
+		},
+		{
+			name: "a column outside the key allows NULL",
+			diff: &difftypes.SchemaDiff{
+				TablesModified: []difftypes.TableDiff{{TableName: "t", ColumnsModified: []difftypes.ColumnDiff{
+					{ColumnName: "x", Changes: map[string]string{"nullable": "false -> true"}},
+				}}},
+				ConstraintsRemoved: removed("t", "t_pkey", "PRIMARY KEY"),
+			},
+		},
+		{
+			name: "another table's key",
+			diff: &difftypes.SchemaDiff{
+				TablesModified:     []difftypes.TableDiff{{TableName: "t", ColumnsModified: []difftypes.ColumnDiff{losesNotNull}}},
+				ConstraintsRemoved: removed("other", "other_pkey", "PRIMARY KEY"),
+			},
+		},
+		{
+			name: "a UNIQUE",
+			diff: &difftypes.SchemaDiff{
+				TablesModified:     []difftypes.TableDiff{{TableName: "t", ColumnsModified: []difftypes.ColumnDiff{losesNotNull}}},
+				ConstraintsRemoved: removed("t", "t_x_key", "UNIQUE"),
+			},
+		},
+		{
+			name: "an added column that declares no key",
+			diff: &difftypes.SchemaDiff{
+				TablesModified:     []difftypes.TableDiff{{TableName: "t", ColumnsAdded: difftypes.ColumnChanges{{Name: "y", Type: "BIGINT"}}}},
+				ConstraintsRemoved: removed("t", "t_pkey", "PRIMARY KEY"),
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(released(keyrelease.PrimaryKeysUnderColumnChanges(test.diff, platform.Postgres)), qt.HasLen, 0)
+		})
+	}
+}

@@ -114,11 +114,18 @@ func TestPostgresLiveConstraintProjectionAndRollback(t *testing.T) {
 }
 
 // CHECK expression text is rewritten by the server; key constraints have no
-// expression text and their entire captured definition must match.
+// expression text and their captured definition must match, except the index a
+// foreign key depends on. The server picks that index when it creates the
+// foreign key, and the reader records it. A projection is built from a
+// description, which names no such index, and the comparison then reads the
+// foreign key's columns instead.
 func projectedKeyConstraints(constraints []catalog.Constraint) []catalog.Constraint {
 	result := slices.DeleteFunc(slices.Clone(constraints), func(constraint catalog.Constraint) bool {
 		return constraint.Type == "CHECK"
 	})
+	for i := range result {
+		result[i].ReferencedIndex = ""
+	}
 	slices.SortFunc(result, func(left, right catalog.Constraint) int { return strings.Compare(left.Name, right.Name) })
 	return result
 }

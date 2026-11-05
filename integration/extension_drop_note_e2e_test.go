@@ -8,9 +8,12 @@ import (
 	qt "github.com/frankban/quicktest"
 )
 
-// extensionDropNote is the sentence a plan writes above DROP EXTENSION. The
-// control and the refusal below measure each half of it on the server.
-const extensionDropNote = "DROP EXTENSION removes the objects the extension owns, and the server refuses it while another object depends on them"
+// An annotated plan writes a note above DROP EXTENSION: "DROP EXTENSION
+// removes the objects the extension owns, and the server refuses it while
+// another object depends on them". `schema apply` plans in the exact style,
+// which leaves descriptive notes out, so the run prints the statement alone.
+// The control and the refusal below run that statement and measure each half
+// of the note on the server.
 
 // extensionPresent counts the installed extension the rows below remove.
 const extensionPresent = "SELECT count(*) FROM pg_extension WHERE extname = 'pg_trgm'"
@@ -26,7 +29,6 @@ func TestSchemaApplyExtensionDropE2E_HappyPath(t *testing.T) {
 		"CREATE TABLE keep (id bigint PRIMARY KEY);\n")
 
 	c.Assert(run.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", run.Stdout, run.Stderr))
-	c.Assert(run.Stdout, qt.Contains, extensionDropNote)
 	c.Assert(run.Stdout, qt.Contains, `DROP EXTENSION "pg_trgm";`)
 	c.Assert(run.Stdout, qt.Not(qt.Contains), "cascade")
 	c.Assert(readInt(c, target, extensionPresent), qt.Equals, 0)
@@ -47,7 +49,7 @@ func TestSchemaApplyExtensionDropE2E_ADependentStopsTheDrop(t *testing.T) {
 		"CREATE TABLE keep (id bigint PRIMARY KEY);\n")
 
 	c.Assert(run.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", run.Stdout, run.Stderr))
-	c.Assert(run.Stdout, qt.Contains, extensionDropNote)
+	c.Assert(run.Stdout, qt.Contains, `DROP EXTENSION "pg_trgm";`)
 	c.Assert(run.Stderr, qt.Contains, "cannot drop extension pg_trgm because other objects depend on it")
 	c.Assert(readInt(c, target, extensionPresent), qt.Equals, 1)
 	c.Assert(readInt(c, target, "SELECT count(*) FROM pg_class WHERE relname = 'docs_trgm'"), qt.Equals, 1)

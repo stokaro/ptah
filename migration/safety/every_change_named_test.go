@@ -24,6 +24,7 @@ var notChanges = map[string]string{
 	"IdentifierSemantics":          "the identifier rules the comparison ran under",
 	"RLSPolicyIdentityConflicts":   "two declared policies with one identity, a defect in the declaration a planner refuses",
 	"DeclaredTables":               "a planner input off the wire: every table the declaration holds",
+	"HeldSchemas":                  "a planner input off the wire: the schemas the read of the current database found",
 	"DeclaredSchemas":              "a planner input off the wire: every schema the declaration holds",
 	"DeclaredForeignKeys":          "a planner input off the wire: every foreign key of the schema the plan runs against",
 	"DeclaredConstraintHosts":      "a planner input off the wire: the tables a constraint change names",

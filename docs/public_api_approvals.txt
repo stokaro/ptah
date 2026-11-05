@@ -931,3 +931,11 @@ v0.21.0 ptah.run/core/platform/capability
 # second answer to the same question, so it and its type ViewLikeOptions are
 # removed. Pre-v1, so no compatibility is owed.
 v0.21.0 ptah.run/core/difftypes
+
+# A DROP FUNCTION node now carries the other routines one statement drops
+# (DropFunctionNode.Others), so a removed routine is dropped ahead of the
+# functions it calls in one statement. The slice field makes the node type no
+# longer comparable with ==; nothing in Ptah compares nodes by value, and the
+# node is read through its fields and Targets. Pre-v1, so no compatibility is
+# owed.
+v0.21.0 ptah.run/core/ast

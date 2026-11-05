@@ -455,6 +455,11 @@ on both tables and validates every row. A foreign key that depends on a key the
 plan keeps stays untouched. A foreign key in a schema the run leaves out is not
 read, so the server's refusal stops that plan and its transaction undoes it.
 
+A primary key the plan removes or replaces leaves ahead of the column changes
+when one of them needs it gone: a column of the key that stops being `NOT NULL`,
+which PostgreSQL refuses with `column "id" is in a primary key`, or a new column
+that declares `PRIMARY KEY`. Otherwise the key is replaced after them.
+
 A column-level `UNIQUE` is compared by the name PostgreSQL gives it,
 `<table>_<column>_key`, numbered `1` and on where another relation or
 constraint of the schema already holds that name. When the database holds the
@@ -1631,6 +1636,17 @@ FORCE is compared on its own as well. A table that stays enabled while your
 schema adds or drops FORCE gets `ALTER TABLE ... FORCE ROW LEVEL SECURITY` or
 `ALTER TABLE ... NO FORCE ROW LEVEL SECURITY`. FORCE survives `DISABLE`, so a
 table that is enabled again without it also gets `NO FORCE`.
+
+The server rewrites a policy's clauses when it stores them, so a comparison needs
+the server's spelling of what you declared. Ptah asks by creating the policy on a
+temporary copy of the table, in a transaction it rolls back. CockroachDB refuses
+that, as can a read-only session. A clause there is compared by what it means: a
+type annotation, `current_user` written with or without `()`, the table's own name
+as a prefix, and the parentheses around a condition do not count as a change, and
+a different column, constant, operator, grouping or operand order does. A clause
+this cannot reconcile, such as `n = 1 + 1`, which CockroachDB stores as `n =
+(1:::INT8 + 1:::INT8)`, plans `ALTER POLICY` on every run. Declaring it as the
+server stores it plans nothing.
 
 Changes to a policy's roles, or additions and edits of its `USING` and
 `WITH CHECK` clauses, use `ALTER POLICY`. This step needs no transaction and

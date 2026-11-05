@@ -41,16 +41,16 @@ import (
 	"ptah.run/internal/indexscope"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/planner/columnchange"
+	"ptah.run/internal/planner/guards"
 	"ptah.run/internal/planner/schemaprecondition"
 )
 
 // Planner implements the migration planner interface for ClickHouse.
 type Planner struct {
 	caps capability.Capabilities
-	// statements is the statement style. This planner reads it for one
-	// decision: whether a dropped table carries the line comment that only
-	// describes it, which the renderer writes and a descriptive comment node
-	// cannot stand in for.
+	// statements is the statement style. This planner reads it for two
+	// decisions: whether a dropped table carries the line comment that only
+	// describes it, and whether a guard no earlier statement needs stays.
 	statements planext.StatementStyle
 }
 
@@ -166,7 +166,17 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	indexes = p.removeIndexes(indexes, diff)
 	last := p.removeTables(nil, diff)
 
-	return p.scheduleStorage(ctx, runtime, diff, storagePhases{before: before, drops: replacementDrops, columns: columns, after: after, indexes: indexes, last: last})
+	nodes, err := p.scheduleStorage(ctx, runtime, diff, storagePhases{before: before, drops: replacementDrops, columns: columns, after: after, indexes: indexes, last: last})
+	if err != nil {
+		return nil, err
+	}
+	if p.statements == planext.StatementStyleExact {
+		// An owner statement here changes a table's storage, a skipping index or
+		// a row policy, and none of them removes a table or a view a later drop
+		// names.
+		guards.Settle(nodes, guards.Options{HarmlessOwner: func(ast.Node) bool { return true }})
+	}
+	return nodes, nil
 }
 
 // addNewTables emits CREATE TABLE for every declared table the diff creates.

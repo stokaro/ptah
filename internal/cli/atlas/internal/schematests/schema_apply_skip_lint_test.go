@@ -94,21 +94,21 @@ func TestSchemaApplySkipLint(t *testing.T) {
 			policy:  destructiveLintPolicy,
 			extra:   []string{"--skip-lint"},
 			wantErr: false,
-			want:    `DROP TABLE IF EXISTS "users"`,
+			want:    `DROP TABLE "users"`,
 			absent:  "DS101",
 		},
 		{
 			name:    "warning policy does not block",
 			policy:  warningLintPolicy,
 			wantErr: false,
-			want:    `DROP TABLE IF EXISTS "users"`,
+			want:    `DROP TABLE "users"`,
 			absent:  "DS101",
 		},
 		{
 			name:    "no policy is no lint pass",
 			policy:  "",
 			wantErr: false,
-			want:    `DROP TABLE IF EXISTS "users"`,
+			want:    `DROP TABLE "users"`,
 			absent:  "DS101",
 		},
 		{
@@ -116,7 +116,7 @@ func TestSchemaApplySkipLint(t *testing.T) {
 			policy:  "",
 			extra:   []string{"--skip-lint"},
 			wantErr: false,
-			want:    `DROP TABLE IF EXISTS "users"`,
+			want:    `DROP TABLE "users"`,
 			absent:  "DS101",
 		},
 	}

@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/config/projectconfig"
+	"ptah.run/core/planext"
 	"ptah.run/core/selectext"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlascompatpolicy"
@@ -233,6 +234,7 @@ func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 	report, changes, err := atlasschema.DiffReportingChanges(cmd.Context(), atlasschema.DiffOptions{
 		Runtime:        runtime,
 		ChangeComments: true,
+		Shape:          planext.StatementShapeCatalog,
 		FromURLs:       opts.fromURLs,
 		ToURLs:         opts.toURLs,
 		DevURL:         opts.devURL,

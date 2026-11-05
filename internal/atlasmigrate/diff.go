@@ -203,6 +203,8 @@ type BidirectionalPlanInput struct {
 	// Statements is the statement style both directions are planned in; see
 	// [planstyle.Statements].
 	Statements planext.StatementStyle
+	// Shape is the statement shape both directions are planned in.
+	Shape planext.StatementShape
 }
 
 // BidirectionalPlan is the primitive output internal migrate-diff rendering
@@ -648,6 +650,7 @@ func planDiffFileContents(
 				AllowTableRebuild:    opts.Policy.AllowTableRebuild,
 				TableRebuildRequest:  opts.Policy.TableRebuildRequest,
 				Statements:           planstyle.Statements,
+				Shape:                planext.StatementShapeCatalog,
 			},
 		)
 
@@ -669,6 +672,7 @@ func planDiffFileContents(
 			AllowTableRebuild:     opts.Policy.AllowTableRebuild,
 			TableRebuildRequest:   opts.Policy.TableRebuildRequest,
 			Statements:            planstyle.Statements,
+			Shape:                 planext.StatementShapeCatalog,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("generate migration plan: %w", err)

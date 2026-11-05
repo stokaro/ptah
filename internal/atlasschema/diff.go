@@ -52,10 +52,12 @@ type DiffOptions struct {
 	// Atlas contract of this verb: `-- Create "users" table`. See
 	// [ptah.run/internal/atlaschange].
 	ChangeComments bool
-	FromURLs       []string
-	ToURLs         []string
-	DevURL         string
-	Exclude        []string
+	// Shape is the statement shape of the plan; see [planext.Options.Shape].
+	Shape    planext.StatementShape
+	FromURLs []string
+	ToURLs   []string
+	DevURL   string
+	Exclude  []string
 	// Schemas restricts both comparison sides to the named schema scopes.
 	Schemas []string
 	// Include restricts both comparison sides to resources matched by
@@ -481,7 +483,6 @@ func diffResolvedStates(
 		ReportOmitted(opts.Diagnostics, omitted)
 	}
 	changes, err := plannedDiffChanges(ctx, opts, compared, diff, dialect, planext.Options{
-
 		Capabilities:         capabilities,
 		ConcurrentIndexes:    opts.Policy.ConcurrentIndexCreate,
 		OnlineAlter:          opts.Policy.OnlineAlter,
@@ -494,6 +495,7 @@ func diffResolvedStates(
 		TableRebuildRequest: opts.Policy.TableRebuildRequest,
 		SkipChangeKinds:     opts.Policy.SkipChangeKinds,
 		Statements:          planstyle.Statements,
+		Shape:               opts.Shape,
 	})
 	if err != nil {
 		return atlasreport.SchemaDiff{}, nil, err

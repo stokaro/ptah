@@ -18,6 +18,7 @@ import (
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/envbool"
+	"ptah.run/internal/migrateclean"
 	"ptah.run/internal/migrationlintreport"
 	"ptah.run/internal/providerurl"
 	migrationlint "ptah.run/migration/lint"
@@ -314,6 +315,12 @@ func runAtlasMigrateLint(
 	}
 	lintOptions.Runtime = runtime
 	report, err := migrationlintreport.Build(cmd.Context(), lintOptions, projectCfg)
+	// The check above opens no provider's connection, so a provider's dev
+	// database reaches the reset's refusal instead. The words are this surface's
+	// on every engine.
+	if notClean, ok := errors.AsType[*migrateclean.NotCleanError](err); ok {
+		err = devsnapshot.Lint.Wrap(notClean)
+	}
 	if err != nil {
 		// Before the error goes out, whichever way it goes: a run that
 		// analyzed against a release line nobody named still analyzed against

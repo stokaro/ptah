@@ -13,9 +13,9 @@ sourceOfTruth:
 generated: true
 generator: internal/cmd/capmatrix
 editSource: internal/capabilityprobe/cells.go
-lastVerified: "2026-11-02"
+lastVerified: "2026-11-05"
 evidence:
-  - "https://github.com/stokaro/ptah/actions/runs/41388005834"
+  - "https://github.com/stokaro/ptah/actions/runs/42046604672"
 searchAliases:
   - database capability status
   - which database versions pass
@@ -31,11 +31,11 @@ What the tier 2 capability matrix measured, one row per declared
 release line, in the run named below. Regenerate it with `capmatrix status`
 over that run's cell results.
 
-- Measured: 2026-11-02T04:21:29Z
-- Commit: `7b0d5c1ac4866628c7d130f5c7cf34166c082796`
-- Run: [41388005834](https://github.com/stokaro/ptah/actions/runs/41388005834)
-- Declared release lines: 33. Runnable cells: 30. Results received: 30.
-- 30 passed, 0 capability disagreements, 0 suite failures, 0 missing.
+- Measured: 2026-11-05T14:36:14Z
+- Commit: `21a3a31d36920742978bf9058860199b1db896c4`
+- Run: [42046604672](https://github.com/stokaro/ptah/actions/runs/42046604672)
+- Declared release lines: 34. Runnable cells: 31. Results received: 31.
+- 31 passed, 0 capability disagreements, 0 suite failures, 0 missing.
 
 | Cell | Engine | Line | Verdict |
 | --- | --- | --- | --- |
@@ -52,6 +52,7 @@ over that run's cell results.
 | `mariadb-11-8` | mariadb | 11.8 | PASS |
 | `mariadb-11-4` | mariadb | 11.4 | PASS |
 | `mariadb-10-11` | mariadb | 10.11 | PASS |
+| `clickhouse-26-10` | clickhouse | 26.10 | PASS |
 | `clickhouse-26-9` | clickhouse | 26.9 | PASS |
 | `clickhouse-26-8` | clickhouse | 26.8 | PASS |
 | `clickhouse-26-3` | clickhouse | 26.3 | PASS |

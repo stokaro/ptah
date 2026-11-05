@@ -229,7 +229,7 @@ func TestSchemaDiffWithoutDevURLEnvVar_HappyPath(t *testing.T) {
 		{
 			name:       "a SQL file on --from",
 			args:       func(fx schemaDiffDevURLFixture) []string { return []string{"--from", fx.sqlFile, "--to", fx.db} },
-			wantInPlan: `DROP TABLE IF EXISTS "gadgets"`,
+			wantInPlan: `DROP TABLE "gadgets"`,
 		},
 		{
 			name:       "an HCL file on --to",
@@ -239,7 +239,7 @@ func TestSchemaDiffWithoutDevURLEnvVar_HappyPath(t *testing.T) {
 		{
 			name:       "a directory of HCL files",
 			args:       func(fx schemaDiffDevURLFixture) []string { return []string{"--from", fx.hclDir, "--to", fx.db} },
-			wantInPlan: `DROP TABLE IF EXISTS "main"."gadgets"`,
+			wantInPlan: `DROP TABLE "main"."gadgets"`,
 		},
 	}
 

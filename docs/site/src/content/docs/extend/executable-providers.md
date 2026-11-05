@@ -411,11 +411,16 @@ the engine. The work is split this way:
   the plan. The provider renders each change as one unit.
 - A view whose query changed is replaced in place when the session reports
   `create_or_replace_view`. Otherwise Ptah drops the view, creates it again and
-  grants again each permission the view held, which the drop took with it.
-- A table or a view the plan drops takes its permissions with it, so Ptah
-  revokes none of them first, including one the declaration leaves out of a
-  view it drops to create again. A view replaced in place keeps its
-  permissions, and Ptah revokes one the declaration leaves out.
+  grants again each permission the view held, which the drop took with it. A
+  materialized view that changed is always dropped and created again, with its
+  permissions granted again the same way.
+- A table, a view or a materialized view the plan drops takes its permissions
+  with it, so Ptah revokes none of them first, including one the declaration
+  leaves out of a view it drops to create again. A view replaced in place keeps
+  its permissions, and Ptah revokes one the declaration leaves out.
+- A permission the declaration grants on a view or a materialized view the plan
+  drops could only run after the drop, so Ptah refuses the plan before it runs
+  anything, naming the permission and the view.
 - On an engine with `schema.common-table-identity.v1`, the comment of a table
   Ptah creates is a step of its own after the table. A declaration is validated
   by rendering it, so the provider refuses there an object it cannot hold, and
@@ -430,7 +435,9 @@ of its models contributes to, such as a topic and the number of its consumers.
 each value, because only the provider reads the value's content. Ptah counts
 the common objects, such as tables and columns, from the read. An engine that
 names no metric adds no gauge, and a metric named like a common one, such as
-`tables`, makes the command fail.
+`tables`, makes the command fail. The exception is `indexes` with the help
+`Indexes`: an engine counts there the indexes it holds outside the common
+model, such as a YDB vector index, and the count adds to the indexes Ptah read.
 
 An engine can declare its release lines in the description. Each line names a
 support level and, for a line that claims testing, the image that runs it. A line

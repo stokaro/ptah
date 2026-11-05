@@ -30,9 +30,56 @@ type Atlas struct {
 	// template prints, and of a table a JSON inspection reports. Empty names
 	// none.
 	Schema string `json:"schema,omitempty"`
+	// CatalogForm is the form the pinned community binary's driver writes the
+	// engine's planned statements in. The zero value says it has no driver for
+	// the engine, so a plan keeps the planner's own statements.
+	CatalogForm CatalogForm `json:"catalog_form,omitempty"`
 	// HCL states the parts of an Atlas HCL schema that belong to the engine.
 	HCL AtlasHCL `json:"hcl,omitzero"`
+	// ChangeWords is the driver wording the pinned community binary names the
+	// engine's changes in, in a migrate diff file's comments and a plan's
+	// summary. The zero value is the PostgreSQL driver's wording.
+	ChangeWords ChangeWords `json:"change_words,omitempty"`
 }
+
+// ChangeWords names whose words the pinned community binary uses for an
+// engine's changes. Its drivers word one change differently: the MySQL driver
+// writes a schema's sentences in lower case and names a dropped database, and
+// the SQLite driver names each step of a table rebuild and a column's own
+// change. An engine with no driver of its own takes the zero value.
+type ChangeWords int
+
+const (
+	// PostgresDriverChangeWords is the PostgreSQL driver's wording, the zero
+	// value.
+	PostgresDriverChangeWords ChangeWords = iota
+	// MySQLDriverChangeWords is the MySQL driver's wording.
+	MySQLDriverChangeWords
+	// SQLiteDriverChangeWords is the SQLite driver's wording.
+	SQLiteDriverChangeWords
+)
+
+// CatalogForm names the driver whose statements a compatibility plan follows
+// for an engine. Each driver writes a schema the way a read of its catalog prints
+// one: its spelling of a type, the keys inside CREATE TABLE, and the action a server
+// reports for a foreign key that declares none.
+type CatalogForm int
+
+const (
+	// NoCatalogForm says the community binary has no driver for the engine, the
+	// zero value.
+	NoCatalogForm CatalogForm = iota
+	// PostgresCatalogForm is the PostgreSQL driver's form.
+	PostgresCatalogForm
+	// MySQLCatalogForm is the MySQL driver's form on a server that reports NO
+	// ACTION for a foreign key that declares no action.
+	MySQLCatalogForm
+	// MariaDBCatalogForm is the MySQL driver's form on a server that reports
+	// RESTRICT for a foreign key that declares no action.
+	MariaDBCatalogForm
+	// SQLiteCatalogForm is the SQLite driver's form.
+	SQLiteCatalogForm
+)
 
 // AtlasHCL states the parts of an Atlas HCL schema that belong to one engine.
 // internal/atlashcl and internal/atlashclrender read it. Every name uses the

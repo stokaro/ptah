@@ -40,6 +40,7 @@ var nonCategoryFields = map[string]string{
 	"IdentifierSemantics":        "records the live catalog identifier rules the diff was produced under, not a difference between the two schemas",
 	"DeclaredTables":             "every table the declaration holds, carried so a foreign key can be resolved to the table it references; like the vocabulary below it is an input to rendering rather than a difference, and reporting it would print the whole document's tables as though they had changed (stokaro/ptah#2315)",
 	"DeclaredUserTypes":          "the declaration's type vocabulary, carried so a planner can resolve a created column's type to the user type it names; it is an input to rendering rather than a difference between the two schemas, and reporting it would print the whole document's domains and enums as though they had changed (stokaro/ptah#2315)",
+	"HeldSchemas":                "the schemas the read of the current database found, a planner input with no change of its own to report",
 	"DeclaredSchemas":            "every schema the declaration holds, carried so a CREATE SCHEMA the plan emits can carry the comment, character set and collation the author wrote for it. Like the two above it is an input to rendering rather than a difference, and reporting it would print every schema in the document as though it had changed (stokaro/ptah#2618)",
 	"DeclaredViewLikes":          "every declared view and materialized view, carried so a DROP that cascades can be resolved to the views it reaches -- usually views this diff does not touch. Like the two above it is an input to rendering rather than a difference, and reporting it would print the whole document's views as though they had changed (stokaro/ptah#2315)",
 	"DeclaredForeignKeys":        "every foreign key the schema the plan runs against holds, carried so a column type change can drop its keys and put them back -- keys this diff does not touch, under a column it does. Like the three above it is an input to rendering rather than a difference, and reporting it would print the whole document's foreign keys as though they had changed (stokaro/ptah#2315)",
@@ -177,6 +178,31 @@ Reconciling SQL:
 ALTER TABLE "other"."secured" ENABLE ROW LEVEL SECURITY;
 `)
 	c.Assert(stderr.String(), qt.Equals, "")
+}
+
+// The old and new values of a column go under the category that names its table, and
+// the statements stay as the planner wrote them.
+func TestWriteComparison_WritesAColumnsValuesUnderItsTable(t *testing.T) {
+	c := qt.New(t)
+	var stdout, stderr bytes.Buffer
+	diff := &difftypes.SchemaDiff{
+		TablesAdded: difftypes.TableChanges{{Name: "fresh"}},
+		TablesModified: []difftypes.TableDiff{{
+			TableName:       "t",
+			ColumnsModified: []difftypes.ColumnDiff{{ColumnName: "k", Changes: map[string]string{"type": "int8 -> int4"}}},
+		}},
+	}
+
+	writeComparison(c.Context(), &stdout, &stderr, diff, schemadiff.Diagnostics{}, "ALTER TABLE \"t\" ALTER COLUMN \"k\" TYPE int4;\n", "postgres")
+
+	c.Assert(stdout.String(), qt.Equals, `Differences detected (2 categories):
+  tables_added (1): fresh
+  tables_modified (1): t
+    t.k: type: int8 -> int4
+
+Reconciling SQL:
+ALTER TABLE "t" ALTER COLUMN "k" TYPE int4;
+`)
 }
 
 // diffCategoryFields returns the SchemaDiff fields that carry changes, asking

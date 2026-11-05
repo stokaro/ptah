@@ -23,10 +23,10 @@ import (
 
 // TestPlanGeneratedMigrationSpecs_PlansInTheExactStatementStyle generates the
 // removal of one table on each kind of planner. Every planner leaves out the
-// comment that only describes the drop. The PostgreSQL family also settles its
-// guards and CASCADE, and the others keep their guard. Planned in the annotated
-// style, the PostgreSQL row writes `DROP TABLE IF EXISTS "gone" CASCADE;` and
-// every row writes a `-- WARNING` comment.
+// comment that only describes the drop and the guard no earlier statement needs.
+// Planned in the annotated style, the PostgreSQL row writes `DROP TABLE IF
+// EXISTS "gone" CASCADE;`, every other row writes its guard, and every row writes
+// a `-- WARNING` comment.
 func TestPlanGeneratedMigrationSpecs_PlansInTheExactStatementStyle(t *testing.T) {
 	const comment = "-- WARNING"
 	tests := []struct {
@@ -35,10 +35,10 @@ func TestPlanGeneratedMigrationSpecs_PlansInTheExactStatementStyle(t *testing.T)
 		wantUp  string
 	}{
 		{name: "PostgreSQL", dialect: platform.Postgres, wantUp: `DROP TABLE "gone";`},
-		{name: "MySQL", dialect: platform.MySQL, wantUp: "DROP TABLE IF EXISTS `gone`;"},
-		{name: "SQLite", dialect: platform.SQLite, wantUp: `DROP TABLE IF EXISTS "gone";`},
-		{name: "SQL Server", dialect: platform.SQLServer, wantUp: `DROP TABLE IF EXISTS [gone];`},
-		{name: "Oracle", dialect: platform.Oracle, wantUp: `DROP TABLE IF EXISTS gone PURGE;`},
+		{name: "MySQL", dialect: platform.MySQL, wantUp: "DROP TABLE `gone`;"},
+		{name: "SQLite", dialect: platform.SQLite, wantUp: `DROP TABLE "gone";`},
+		{name: "SQL Server", dialect: platform.SQLServer, wantUp: `DROP TABLE [gone];`},
+		{name: "Oracle", dialect: platform.Oracle, wantUp: `DROP TABLE gone PURGE;`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

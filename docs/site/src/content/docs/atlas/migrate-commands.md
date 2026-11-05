@@ -1450,14 +1450,15 @@ Such a `CASCADE` also drops a reader the declaration does not hold, such as a
 view in a schema the run leaves out, and the file applies without an error.
 
 A guard stays where an earlier statement of the same file may already have
-removed the object: a view a `CASCADE` above it may have taken, a constraint
-of a table whose column the file drops before it, an index on a view the file
-drops before it. `CREATE SCHEMA IF NOT EXISTS` stays as well, because the plan
-writes it for every schema an added object names, whether or not that schema
-exists. The exception is the schema the connection resolves unqualified names
-to, usually `public`: it exists, so `public.users` gets no more of a
-precondition than `users` does, and a role that may create tables in it does
-not need `CREATE` on the database.
+removed the object: a view a `CASCADE` above it may have taken, or an index on a
+view the file drops before it. A constraint of a kept table is dropped before the
+columns, so it needs none. `CREATE SCHEMA IF NOT EXISTS` stays for a schema the
+read of the dev database did not find, because a read limited to the connection's
+schema cannot say that one is absent. A schema the read found gets no statement,
+and neither does the schema the connection resolves unqualified names to, usually
+`public`: it exists, so `public.users` gets no more of a precondition than `users`
+does, and a role that may create tables in it does not need `CREATE` on the
+database.
 
 In the exact style, the PostgreSQL type and extension owners omit `IF EXISTS`
 from drops, and type drops omit `CASCADE`. PostgreSQL refuses a domain or
@@ -1467,17 +1468,50 @@ plan is returned, on the native commands too. A drop after another owner
 operation may keep its guard when that operation can remove objects the common
 planner cannot name.
 
-Every planner leaves out its descriptive comments. The MySQL-family, SQLite,
-SQL Server and ClickHouse planners keep their guards. Every other Ptah command
-that plans a change uses the same statement style: `schema apply`, `schema plan`
-and `schema diff` here, and native `ptah migrations generate` and `ptah schema
-apply`. The three `schema` verbs here write the same change comments, with the
-first letter in upper case as the community binary writes them on `schema diff`
-and `schema apply`: `-- Create "owners" table`. Native verbs write none. The
+The MySQL-family, SQLite, SQL Server, Oracle and ClickHouse planners settle their
+guards the same way: `DROP TABLE`, `DROP VIEW` and `DROP INDEX` carry no `IF
+EXISTS` unless an earlier statement of the file may have removed the object, and
+SQLite's `CREATE INDEX` carries no `IF NOT EXISTS`. Those engines have no
+`CASCADE` to settle. Every planner leaves out its descriptive comments.
+
+Every other Ptah command that plans a change uses the same statement style: `schema
+apply`, `schema plan` and `schema diff` here, and native `ptah migrations generate`
+and `ptah schema apply`. The three `schema` verbs here write the same change comments,
+with the first letter in upper case as the community binary writes them on `schema
+diff` and `schema apply`: `-- Create "owners" table`. Native verbs write none. The
 community binary does not have `schema plan`. The files
 still differ from the community binary's in how statements are grouped and
-ordered, in type spelling, and in where the keys of a new table are written;
-[stokaro/ptah#4960](https://github.com/stokaro/ptah/issues/4960) tracks those.
+ordered; [stokaro/ptah#4960](https://github.com/stokaro/ptah/issues/4960) tracks
+those.
+
+On `migrate diff`, `schema diff` and `schema apply`, a plan on PostgreSQL, MySQL,
+MariaDB or SQLite is spelled the way a read of the catalog prints a schema, as the
+community binary writes it. Native verbs keep the planner's statements.
+
+```sql
+-- create "items" table
+CREATE TABLE "items" (
+  "id" bigint NOT NULL,
+  "owner_id" bigint NOT NULL,
+  "note" character varying NULL DEFAULT 'a',
+  PRIMARY KEY ("id"),
+  CONSTRAINT "items_owner_id_fkey" FOREIGN KEY ("owner_id") REFERENCES "owners" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
+  CONSTRAINT "items_note_len" CHECK (length(note) < 100)
+);
+```
+
+A type takes the name the catalog reports, such as `integer` for `int` and
+`character varying` for `varchar`, and a nullable column says `NULL`. The primary
+key, the unique constraints, the foreign keys and the checks of a new table sit
+inside its `CREATE TABLE`, in that order. A foreign key stays in a statement of its
+own when the table it names comes later or the plan changes that table.
+
+Three differences stay, on purpose. An expression keeps the text the author wrote,
+such as `WHERE b > 0`, where the binary writes what the server prints, `WHERE (b >
+0)`. On MySQL and MariaDB the file names no `CHARSET` or `COLLATE` the author did
+not declare, because the binary's are the dev server's defaults: on MariaDB 11.8 it
+writes `COLLATE utf8mb4_uca1400_ai_ci`, which MySQL refuses. On SQLite a `varchar(200)`
+keeps its length, which the binary writes as `varchar`.
 
 A file names no dev database. On MySQL, MariaDB and ClickHouse a read of one
 database records that database on its views, routines and sequences, and the
