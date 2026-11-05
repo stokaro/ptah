@@ -329,7 +329,10 @@ a declaration of any other kind before it sends anything, naming the kind and
 the engine. The work is split this way:
 
 - The provider reads every object of a kind it carries, or says that it did not
-  read the kind, and Ptah then plans no removal of it.
+  read the kind, and Ptah then plans no removal of it. A role the server holds
+  outside the read's scope, such as a database's user in a YDB dev realm, is
+  named without its attributes: Ptah plans no creation of it and no change to
+  its attributes.
 - Before a comparison, the provider spells the declared objects as its engine
   reports them, such as a view's query as the engine stores it.
 - Ptah compares and orders the changes, and keeps each object as declared in

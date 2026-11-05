@@ -304,7 +304,7 @@ func TestCommonObjectRead_HappyPath(t *testing.T) {
 	c.Assert(result.MatViews, qt.DeepEquals, []catalog.MaterializedView{{Name: "totals", Body: "SELECT 2", Comment: "totals"}})
 	c.Assert(result.Roles, qt.DeepEquals, []catalog.Role{{Name: "reader", Login: true, PasswordState: catalog.RolePasswordPresent, Comment: "reads"}})
 	c.Assert(result.RoleMemberships, qt.DeepEquals, []catalog.RoleMembership{{Role: "readers", Member: "reader"}})
-	c.Assert(result.RolesOutOfScope, qt.DeepEquals, []catalog.Role{{Name: "admin"}})
+	c.Assert(result.RolesOutOfScope, qt.DeepEquals, []catalog.Role{{Name: "admin", AttributesUnknown: true}})
 	c.Assert(result.Grants, qt.DeepEquals, []catalog.Grant{
 		{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "items", Column: "id", WithOption: true},
 		{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "items", Column: "name", WithOption: true},
