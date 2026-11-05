@@ -31,9 +31,12 @@
 // and the effect its plan step has on that object, in the wording of the same
 // object's statement: `create "orders" table` for a step that creates the
 // table, `drop "orders" table` for one that drops it, and `modify "orders"
-// table` for any other step on it, such as one that adds an index or a
-// changefeed. An operation on an object of a kind of the provider's own, or
-// one that carries no effects, is not named.
+// table` for any other step on it, such as one that adds a column or a
+// changefeed. A step that only reads its table and creates or drops one index
+// of it is that index's change, `create index "orders_by_total" to table:
+// "orders"`, as the built-in YDB engine named its `ALTER TABLE ... ADD INDEX`.
+// An operation on an object of a kind of the provider's own, or one that
+// carries no effects, is not named.
 package atlaschange
 
 import (
@@ -633,7 +636,9 @@ var nativeKinds = map[objectidentity.Kind]string{
 // describeNative names an operation a provider planned by its subject. The
 // step's effect on the subject itself decides the verb: a creation creates it,
 // a removal drops it, and anything else, such as an alteration or a change to
-// an index or a changefeed of the subject, modifies it.
+// a column or a changefeed of the subject, modifies it. A step on a table that
+// only reads it and creates or drops one of its indexes is named for that
+// index (see indexOfTable).
 func describeNative(payload ast.ExtensionPayload) (change, bool) {
 	operation, ok := payload.(nativeOperation)
 	if !ok {
@@ -643,6 +648,9 @@ func describeNative(payload ast.ExtensionPayload) (change, bool) {
 	kind, ok := nativeKinds[subject.Kind]
 	if !ok || len(effects) == 0 {
 		return change{}, false
+	}
+	if index, ok := indexOfTable(subject, effects); ok {
+		return index, true
 	}
 	c := change{verb: modify, kind: kind, name: partName(subject.Name)}
 	if kind == kindIndex {
@@ -661,6 +669,48 @@ func describeNative(payload ast.ExtensionPayload) (change, bool) {
 		}
 	}
 	return c, true
+}
+
+// indexOfTable names the change a step on table makes when its effects only
+// read the table and create or drop one index of it: the index's creation or
+// removal, the change the built-in YDB engine named above its `ALTER TABLE
+// ... ADD INDEX` and `ALTER TABLE ... DROP INDEX`. Any other footprint, such
+// as one that also alters the table or touches a second object, is not one.
+func indexOfTable(table objectidentity.ID, effects []plangraph.Effect) (change, bool) {
+	if table.Kind != objectidentity.KindTable {
+		return change{}, false
+	}
+	var found *plangraph.Effect
+	for i, effect := range effects {
+		switch {
+		case effect.Subject.Key() == table.Key() && effect.Action == plangraph.Read:
+		case found == nil && effect.Subject.Kind == objectidentity.KindIndex && indexOf(effect.Subject, table):
+			found = &effects[i]
+		default:
+			return change{}, false
+		}
+	}
+	if found == nil {
+		return change{}, false
+	}
+	c := change{kind: kindIndex, name: partName(found.Subject.Name), table: partName(table.Name)}
+	switch found.Action {
+	case plangraph.Create:
+		c.verb = create
+	case plangraph.Drop:
+		c.verb = drop
+	default:
+		return change{}, false
+	}
+	return c, true
+}
+
+// indexOf reports whether the index identity names an index of table: one in
+// the table's schema whose parent is the table.
+func indexOf(index, table objectidentity.ID) bool {
+	parent := objectidentity.ID{Kind: objectidentity.KindTable, Database: index.Database, Catalog: index.Catalog, Schema: index.Schema,
+		Namespace: index.Namespace, Name: index.Parent}
+	return parent.Key() == table.Key()
 }
 
 // partName is the name of one component of an identity as its source spelled
