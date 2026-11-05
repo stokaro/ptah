@@ -442,6 +442,13 @@ func commonObjectMetadata(builder objectidentity.Builder, parents map[objectiden
 			return step, true, nil
 		}
 	}
+	if table, granted := tableGrant(builder, node); granted {
+		step.Effects = tableGrantEffects(table)
+		if parent, captured := parents[table.Key()]; captured {
+			step.Parent = parent
+		}
+		return step, true, nil
+	}
 	for _, family := range []func(objectidentity.Builder, ast.Node) (objectidentity.ID, plangraph.Action, bool){relationEffect, principalEffect, accessEffect} {
 		subject, action, matched := family(builder, node)
 		if !matched {
@@ -453,6 +460,39 @@ func commonObjectMetadata(builder objectidentity.Builder, parents map[objectiden
 		return step, true, nil
 	}
 	return featureplan.CommonStep{}, false, nil
+}
+
+// tableGrant is the table a grant or revocation on a table changes the
+// privileges of, and reports whether node is one.
+func tableGrant(builder objectidentity.Builder, node ast.Node) (objectidentity.ID, bool) {
+	var objectType, objectName string
+	switch typed := node.(type) {
+	case *ast.GrantPrivilegeNode:
+		objectType, objectName = typed.ObjectType, typed.ObjectName
+	case *ast.RevokePrivilegeNode:
+		objectType, objectName = typed.ObjectType, typed.ObjectName
+	default:
+		return objectidentity.ID{}, false
+	}
+	if !strings.EqualFold(objectType, "TABLE") {
+		return objectidentity.ID{}, false
+	}
+	return grantedObject(builder, objectType, objectName)
+}
+
+// tableGrantEffects is the footprint of a grant or revocation on table: the
+// step reads the table and changes its access, a resource of its own. Altering
+// the table itself would make the step a second writer of a table the plan
+// creates or alters through the owner of the table lifecycle, and the plan
+// graph refuses two writers of one subject. The resource is not a native
+// object's object_access, which a provider reads as a grant on an object it
+// selected. A grant on a schema or a sequence keeps its alteration of the
+// object, the footprint a provider reads it by.
+func tableGrantEffects(table objectidentity.ID) []plangraph.Effect {
+	access := table
+	access.Kind = "access"
+	access.Namespace = objectidentity.NewParts(objectidentity.Part{Source: string(table.Kind), Normalized: string(table.Kind)})
+	return []plangraph.Effect{{Subject: table, Action: plangraph.Read}, {Subject: access, Action: plangraph.Alter}}
 }
 
 // tableCommentMetadata describes a comment on a table or one of its columns.
@@ -549,8 +589,9 @@ func principalEffect(builder objectidentity.Builder, node ast.Node) (objectident
 }
 
 // accessEffect is the footprint of a grant, revocation or comment step on the
-// object it changes. One whose object no common identity names has none, and
-// keeps its place in the sequence.
+// object it changes, other than a grant on a table (tableGrantEffects). One
+// whose object no common identity names has none, and keeps its place in the
+// sequence.
 func accessEffect(builder objectidentity.Builder, node ast.Node) (objectidentity.ID, plangraph.Action, bool) {
 	var subject objectidentity.ID
 	known := false

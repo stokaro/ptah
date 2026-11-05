@@ -42,3 +42,17 @@ func renderComment(comment *protocol.ObjectComment) (string, error) {
 	}
 	return "COMMENT ON " + target + " IS " + text + ";", nil
 }
+
+// renderGrant writes a grant, or a revocation when revoke is set, of
+// privileges on a table to a role as one statement. The fixture renders these
+// for the plan to be read and runs none of them.
+func renderGrant(grant, revoke *protocol.SQLGrant) (string, error) {
+	verb, change, preposition := "GRANT", grant, "TO"
+	if revoke != nil {
+		verb, change, preposition = "REVOKE", revoke, "FROM"
+	}
+	if change.GetTarget().GetKind() != "table" {
+		return "", fmt.Errorf("the fixture grants on tables only")
+	}
+	return verb + " " + strings.Join(change.GetPrivileges(), ", ") + " ON TABLE " + quote(change.GetTarget().GetName()) + " " + preposition + " " + quote(change.GetRole()) + ";", nil
+}
