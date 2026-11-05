@@ -598,7 +598,7 @@ func applyDeclaredSerial(colDiff *difftypes.ColumnDiff, genCol schemamodel.Field
 	if genCol.IdentityGeneration != "" || dbCol.IdentityGeneration != "" || genCol.Default != "" || genCol.DefaultExpr != "" || !declaresColumnSequence(genCol) {
 		return
 	}
-	if dbCol.OwnedSequence != "" {
+	if dbCol.IsAutoIncrement || dbCol.OwnedSequence != "" {
 		return
 	}
 	live := ""
