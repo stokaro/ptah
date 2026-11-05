@@ -7,7 +7,6 @@ import (
 	"github.com/stokaro/ptah/provider-sdk/provider"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 )
 
 // DecodeSource validates a complete offline batch. Cancellation, refusal,
@@ -20,7 +19,7 @@ func (c *Client) DecodeSource(ctx context.Context, request *protocol.DecodeSourc
 // offline. Every value of a valid reply is written or lost once; an invalid
 // reply and cancellation expose nothing.
 func (c *Client) EncodeSource(ctx context.Context, request *protocol.EncodeSourceRequest) (*protocol.EncodedSource, error) {
-	return callOffline(ctx, c.description, proto.CloneOf(request), "encode source", provider.ValidateEncodeSourceRequest, provider.ValidateEncodedSource, c.rpc.EncodeSource)
+	return callOffline(ctx, c.description, provider.CloneSharingModels(request), "encode source", provider.ValidateEncodeSourceRequest, provider.ValidateEncodedSource, c.rpc.EncodeSource)
 }
 
 func (s *serverAdapter) EncodeSource(ctx context.Context, request *protocol.EncodeSourceRequest) (*protocol.EncodedSource, error) {

@@ -132,8 +132,9 @@ returns to 0.
   Contract 25.24 adds [index kinds](#index-kinds).
   Contract 25.25 adds [model predecessors](#model-predecessors).
   Contract 25.26 adds [role scope reasons](#role-scope-reasons),
-  [Go placements](#go-placements) and
-  [primary key changes](#primary-key-changes).
+  [Go placements](#go-placements),
+  [primary key changes](#primary-key-changes) and
+  [model references and large messages](#model-references-and-large-messages).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -169,10 +170,11 @@ does not oblige a peer to use it.
   `schema.subtree-coverage`, `schema.password-inputs`, `source.hcl-platform`,
   `engine.default-capabilities`, `lint.transaction-owner`,
   `source.index-kinds`, `models.predecessors`, `schema.role-scope-reasons`,
-  `source.go-placements` and `planning.primary-key-changes`. The embedding
-  store's calls, `PrepareCommonObjects`, `ReverseChanges` and `ReportValues`
-  are new, and each comes with an addition to `Engine`, so a host lists the
-  feature to receive any of them. `SplitMigration` is new too, and comes with the abort flags of
+  `source.go-placements`, `planning.primary-key-changes`, `models.references`
+  and `transport.large-messages`. The embedding store's calls,
+  `PrepareCommonObjects`, `ReverseChanges` and `ReportValues` are new, and each
+  comes with an addition to `Engine`, so a host lists the feature to receive
+  any of them. `SplitMigration` is new too, and comes with the abort flags of
   `Execution` and `TransactionResult`, so a host lists `units.migration-split`
   to call it.
 - Both transport boundaries validate with the description negotiated this way,
@@ -525,7 +527,9 @@ they are not a security sandbox.
 
 Mutual TLS authenticates the local gRPC connection. The bootstrap cookie only
 identifies the expected launch protocol. Messages are limited to 4 MiB in each
-direction. Startup defaults to ten seconds; service calls are limited to thirty
+direction, and to 64 MiB between a host and a provider that both list
+`transport.large-messages` ([large messages](#model-references-and-large-messages)).
+Startup defaults to ten seconds; service calls are limited to thirty
 seconds or the caller's earlier deadline. Raw provider logs and RPC error text
 are discarded because they may contain credentials.
 
@@ -1796,6 +1800,41 @@ A Go placement belongs to a Go `DOCUMENT` directive only, and an HCL value to an
 HCL block of the owner's only. The provider lists the feature, and so does each
 engine that places its directives, beside `source.encode`. A reply that places
 a directive for a host that did not list the feature is refused.
+
+## Model references and large messages
+
+[ADR 0079](../docs/adr/0079-a-described-model-travels-by-reference.md) decides
+these two transport features. Each is a feature of the provider alone, which
+the provider lists in `Description.features` and the host in its host
+features.
+
+`models.references` sends a described model by reference. A coverage record
+names the model it covers with a `ValueModel`, and the host captures a
+coverage for each state of each table, so a request repeated every model's
+definition once per table. Where both sides list the feature, the SDK replaces
+each `ValueModel` outside `Describe` that equals a model of the negotiated
+description with `provider.ModelReference`: the `kind`, `representation`,
+`schema_version` and `definition_sha256` alone. A model the description does
+not declare, or declares differently in two engines, travels whole. The
+receiving SDK replaces each reference with the described model before a
+service or a validator reads the message, so neither a host adapter nor a
+provider service sees one. A server answers a reference it cannot resolve
+with `InvalidArgument`; a client reports such a reply as malformed. Without
+the feature a reference is not resolved, and validation refuses it as a model
+the description does not declare.
+
+`transport.large-messages` raises the bound on one message from 4 MiB
+(`runtime.MaxMessageBytes`) to 64 MiB (`runtime.LargeMessageBytes`). The SDK
+server receives and sends up to 64 MiB with any host. The SDK client sends
+more than 4 MiB only where both sides list the feature, so a provider of an
+earlier contract meets the refusal it meets without the feature. A host keeps
+an embedding batch within 4 MiB whatever it negotiated.
+
+`provider.ReferenceModels` and `provider.ResolveModelReferences` are the two
+steps, for a peer that does not use the SDK's runtime.
+`provider.CloneSharingModels` copies a message so that each model message it
+holds is copied once: the SDK copies a request with it before it sends the
+request and before it hands the request to a service.
 
 ## Source encoding
 

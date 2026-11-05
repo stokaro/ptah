@@ -104,8 +104,54 @@ var canonicalDefinitions = struct {
 
 const maxCanonicalDefinitions = 4096
 
+// verifiedDefinitions holds the definitions found to be canonical and to
+// match the digest their model claims, by the address and length of their
+// bytes and that digest. A request names the engine whose models it checks,
+// and a validator reaches that engine for every table of a request, so
+// hashing each definition again on every visit made a request of 500 tables
+// spend seconds in SHA-256 alone. A description is validated once per
+// process for each copy of its bytes; a model whose bytes were replaced, or
+// that claims another digest, is checked again. The set holds the bytes it
+// names alive and stops growing at maxCanonicalDefinitions.
+var verifiedDefinitions = struct {
+	sync.RWMutex
+	held map[verifiedDefinition]struct{}
+}{held: make(map[verifiedDefinition]struct{})}
+
+type verifiedDefinition struct {
+	data   *byte
+	length int
+	digest string
+}
+
 func validateModelDefinition(model *protocol.ValueModel) error {
 	definition := model.GetDefinitionJson()
+	var verified verifiedDefinition
+	if len(definition) != 0 {
+		verified = verifiedDefinition{data: &definition[0], length: len(definition), digest: model.GetDefinitionSha256()}
+		verifiedDefinitions.RLock()
+		_, held := verifiedDefinitions.held[verified]
+		verifiedDefinitions.RUnlock()
+		if held {
+			return nil
+		}
+	}
+	if err := checkModelDefinition(model, definition); err != nil {
+		return err
+	}
+	if verified.data != nil {
+		verifiedDefinitions.Lock()
+		if len(verifiedDefinitions.held) < maxCanonicalDefinitions {
+			verifiedDefinitions.held[verified] = struct{}{}
+		}
+		verifiedDefinitions.Unlock()
+	}
+	return nil
+}
+
+// checkModelDefinition checks that definition is a canonical nonempty JSON
+// object whose digest is the one model claims.
+func checkModelDefinition(model *protocol.ValueModel, definition []byte) error {
 	digest := sha256.Sum256(definition)
 	canonicalDefinitions.RLock()
 	_, known := canonicalDefinitions.digests[digest]

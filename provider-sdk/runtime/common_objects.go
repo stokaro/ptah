@@ -5,14 +5,13 @@ import (
 
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"github.com/stokaro/ptah/provider-sdk/provider"
-	"google.golang.org/protobuf/proto"
 )
 
 // PrepareCommonObjects returns a declaration of common objects in the
 // engine's spelling, offline. The input is copied before dispatch; an invalid
 // reply and cancellation expose no prefix.
 func (c *Client) PrepareCommonObjects(ctx context.Context, request *protocol.PrepareCommonObjectsRequest) (*protocol.PreparedCommonObjects, error) {
-	return callOffline(ctx, c.description, proto.CloneOf(request), "prepare common objects",
+	return callOffline(ctx, c.description, provider.CloneSharingModels(request), "prepare common objects",
 		provider.ValidatePrepareCommonObjectsRequest, provider.ValidatePreparedCommonObjects, c.rpc.PrepareCommonObjects)
 }
 
