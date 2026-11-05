@@ -188,6 +188,9 @@ func NegotiatedDescription(description *protocol.Description, hostFeatures []str
 		}
 		if !slices.Contains(hostFeatures, DefaultCapabilitiesFeature) {
 			engine.DefaultCapabilities = nil
+			for _, line := range engine.GetReleaseLines() {
+				line.Capabilities = nil
+			}
 		}
 		if len(engine.GetGoHeaderKinds())+len(engine.GetHclSource().GetHeaderKinds()) == 0 {
 			engine.Features = slices.DeleteFunc(engine.Features, func(feature string) bool { return feature == SourceLimitsFeature })

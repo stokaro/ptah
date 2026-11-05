@@ -2243,10 +2243,14 @@ for a host that does not list the feature.
 `Engine.default_capabilities` holds the capability facts the host plans the
 engine with when no session states the server's: an offline render, a
 generation without a database, an export. They are the facts of the release
-line a command assumes without a server. A present false is an established
-answer, and an absent key is unknown, as in `Session.capabilities`. A command
-that connects plans with the session's facts.
+line a command assumes without a server. `ReleaseLine.capabilities` holds each
+line's, which the host plans with for a `--server-version` that names the
+line: one equal to `line`, or the longest line it starts with followed by a
+dot. A present false is an established answer, and an absent key is unknown,
+as in `Session.capabilities`. A command that connects plans with the session's
+facts.
 
-`ValidateDescription` refuses the field on an engine that does not list the
-feature, the feature on an engine with no facts or without the provider's
-feature, and a name a session could not state.
+`ValidateDescription` refuses the fields on an engine that does not list the
+feature, the feature on an engine with no default facts, on one with a
+release line that has none, or without the provider's feature, and a name a
+session could not state.
