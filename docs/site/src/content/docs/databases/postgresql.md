@@ -455,6 +455,11 @@ on both tables and validates every row. A foreign key that depends on a key the
 plan keeps stays untouched. A foreign key in a schema the run leaves out is not
 read, so the server's refusal stops that plan and its transaction undoes it.
 
+A primary key the plan removes or replaces leaves ahead of the column changes
+when one of them needs it gone: a column of the key that stops being `NOT NULL`,
+which PostgreSQL refuses with `column "id" is in a primary key`, or a new column
+that declares `PRIMARY KEY`. Otherwise the key is replaced after them.
+
 A column-level `UNIQUE` is compared by the name PostgreSQL gives it,
 `<table>_<column>_key`, numbered `1` and on where another relation or
 constraint of the schema already holds that name. When the database holds the
