@@ -128,7 +128,8 @@ func TestExport_HappyPath_TightensPermissionsForRolePasswords(t *testing.T) {
 	assertOwnerOnly(c, info.Mode())
 	content, err := os.ReadFile(output)
 	c.Assert(err, qt.IsNil)
-	c.Assert(string(content), qt.Contains, `password = "SCRAM-SHA-256$fixture"`)
+	c.Assert(string(content), qt.Contains, `password = "$PTAH_SECRET_PASSWORD_APP_USER"`)
+	c.Assert(string(content), qt.Not(qt.Contains), "SCRAM-SHA-256")
 }
 
 func TestExport_HappyPath_DiffWritesOutputWithoutChangingSource(t *testing.T) {

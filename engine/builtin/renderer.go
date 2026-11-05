@@ -80,6 +80,7 @@ import (
 	"ptah.run/internal/pgreservedrole"
 	"ptah.run/internal/pgsystemschema"
 	"ptah.run/internal/renderdiag"
+	"ptah.run/internal/rolepassword"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/tablelookup"
@@ -1826,6 +1827,12 @@ func validateDeclaredRoleNames(
 	}
 	if err := mysqllike.ValidateDeclaredRoles(dialect, caps, database.Roles); err != nil {
 		return err
+	}
+	// A statement names a declared password by a variable its role's name
+	// derives (see [rolepassword.Variable]), so two roles that share one would
+	// be set to one password wherever the statements run.
+	if _, err := rolepassword.Values(database.Roles); err != nil {
+		return &ptaherr.RenderError{Dialect: dialect, Err: err, Message: err.Error()}
 	}
 	return postgres.ValidateDeclaredRoles(dialect, database.Roles)
 }

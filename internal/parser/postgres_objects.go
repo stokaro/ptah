@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/rolepassword"
 )
 
 // This file holds the statement grammar for the PostgreSQL schema objects that
@@ -293,7 +294,18 @@ func applyRoleFlag(role *ast.CreateRoleNode, keyword string) bool {
 	return true
 }
 
+// applyRolePassword reads a password: a string constant, or the reference to
+// the variable Ptah writes the password from, `$PTAH_SECRET_...`, which a
+// migration file Ptah generated holds in its place (see
+// [rolepassword.Statement]). The reference is kept as the declared password,
+// so a schema read from such a file names the same variable.
 func (p *Parser) applyRolePassword(role *ast.CreateRoleNode) error {
+	p.skipWhitespace()
+	if _, named := rolepassword.Named(p.current.Value); named && p.current.Type == lexer.TokenIdentifier {
+		role.SetPassword(p.current.Value)
+		p.advance()
+		return nil
+	}
 	password, err := p.stringConstant("the password")
 	if err != nil {
 		return err

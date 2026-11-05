@@ -23,6 +23,7 @@ import (
 	"ptah.run/internal/notnullfill"
 	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/rlspolicy"
+	"ptah.run/internal/rolepassword"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/sqlident"
 )
@@ -3243,12 +3244,7 @@ func (r *Renderer) renderCreateRole(node *ast.CreateRoleNode) error {
 	}
 
 	if node.Password != "" {
-		// Validate password appears to be encrypted
-		if !looksEncrypted(node.Password) {
-			// Add a comment warning about potential plaintext password
-			r.w.WriteLinef("-- WARNING: Password may not be encrypted - ensure passwords are properly hashed")
-		}
-		attributes = append(attributes, fmt.Sprintf("PASSWORD %s", r.escapeValue(node.Password)))
+		attributes = append(attributes, r.passwordClause(node.Name, node.Password))
 	}
 
 	// CockroachDB has neither SUPERUSER nor INHERIT; see cockroach_roles.go.
@@ -3486,12 +3482,7 @@ func (r *Renderer) renderRoleOperation(roleName string, operation ast.RoleOperat
 
 	switch op := operation.(type) {
 	case *ast.SetPasswordOperation:
-		// Validate password appears to be encrypted
-		if !looksEncrypted(op.Password) {
-			// Add a comment warning about potential plaintext password
-			r.w.WriteLinef("-- WARNING: Password may not be encrypted - ensure passwords are properly hashed")
-		}
-		parts = append(parts, fmt.Sprintf("PASSWORD %s", r.escapeValue(op.Password)))
+		parts = append(parts, r.passwordClause(roleName, op.Password))
 
 	case *ast.SetLoginOperation:
 		if op.Login {
@@ -3549,52 +3540,16 @@ func (r *Renderer) renderRoleOperation(roleName string, operation ast.RoleOperat
 	return nil
 }
 
-// looksEncrypted checks if a password appears to be encrypted/hashed
-// This is a heuristic check to help detect potential plaintext passwords
-func looksEncrypted(password string) bool {
-	// Empty passwords are considered "encrypted" (no warning needed)
+// passwordClause sets the password declared for role. A declared password,
+// or a password hash, is never written: the clause names the variable the
+// PostgreSQL writer reads it from when the statement runs (see
+// [rolepassword.Statement]), and PostgreSQL takes a hash in the same clause.
+// An empty password is no secret, and is written as the empty string.
+func (r *Renderer) passwordClause(role, password string) string {
 	if password == "" {
-		return true
+		return "PASSWORD " + r.escapeValue(password)
 	}
-
-	// Check for common PostgreSQL password hash prefixes
-	if strings.HasPrefix(password, "md5") ||
-		strings.HasPrefix(password, "SCRAM-SHA-256$") ||
-		strings.HasPrefix(password, "$2a$") || // bcrypt
-		strings.HasPrefix(password, "$2b$") || // bcrypt
-		strings.HasPrefix(password, "$2y$") || // bcrypt
-		strings.HasPrefix(password, "$5$") || // SHA-256
-		strings.HasPrefix(password, "$6$") { // SHA-512
-		return true
-	}
-
-	// Check if it looks like a hash (long, contains mix of chars/numbers)
-	if len(password) >= 32 {
-		hasLower := strings.ContainsAny(password, "abcdefghijklmnopqrstuvwxyz")
-		hasUpper := strings.ContainsAny(password, "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
-		hasDigit := strings.ContainsAny(password, "0123456789")
-		hasSpecial := strings.ContainsAny(password, "!@#$%^&*()_+-=[]{}|;:,.<>?/")
-
-		// If it has a good mix of character types and is long, likely encrypted
-		charTypeCount := 0
-		if hasLower {
-			charTypeCount++
-		}
-		if hasUpper {
-			charTypeCount++
-		}
-		if hasDigit {
-			charTypeCount++
-		}
-		if hasSpecial {
-			charTypeCount++
-		}
-
-		return charTypeCount >= 3
-	}
-
-	// If none of the above, likely plaintext
-	return false
+	return "PASSWORD " + rolepassword.Statement(role, password)
 }
 
 // uniqueConstraintUnsupported is the refusal a target without

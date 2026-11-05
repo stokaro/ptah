@@ -1415,6 +1415,13 @@ type Role struct {
 	Dialects []string `json:",omitempty"`
 }
 
+// String names the role. It leaves every other attribute out, the password
+// first of all, so a role printed with %v or %s, or listed in a report of
+// changes, never shows its password.
+func (r Role) String() string {
+	return r.Name
+}
+
 // Grant represents a PostgreSQL privilege grant parsed from Go annotations.
 //
 // Grants are defined using //ptah:schema:grant annotations and are used to

@@ -106,6 +106,10 @@ var hostFeatures = []string{
 	// target.commonObjectChange.
 	provider.CommonObjectsFeature,
 	provider.CommonAccessFeature,
+	// A declared role password reaches a provider as an execution input it
+	// renders a reference to, and its value only as an execution binding; see
+	// target.passwordInput and session.bindExecutionInputs.
+	provider.PasswordInputsFeature,
 	// A provider's YAML keys of column and index entries, and the common
 	// keys and attributes of an entry its claim reads with its own; see
 	// Host.yamlExtension and claimedExtension.

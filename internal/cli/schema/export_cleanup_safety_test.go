@@ -12,6 +12,7 @@ import (
 
 	"ptah.run/internal/cli/schema"
 	"ptah.run/internal/goannotationcleanup"
+	"ptah.run/internal/goannotationexport"
 )
 
 // cliSecret is the credential planted in the compiled-command tests. Assertions
@@ -57,10 +58,16 @@ func runSchemaExportCleanup(c *qt.C, args ...string) (stdout, stderr string, err
 	return out.String(), errOut.String(), err
 }
 
-func TestSchemaExportCleanupDiffRedactsRolePassword(t *testing.T) {
+// The HCL names a declared password by its variable and holds no value
+// (ADR 0071), so the Go annotation holds the only copy, and a cleanup that
+// would delete it is refused. Nothing the run prints holds the password, and
+// the source keeps it.
+func TestSchemaExportCleanupKeepsTheOnlyCopyOfARolePassword_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	writeRoleModel(c, dir, cliSecret)
+	modelPath := writeRoleModel(c, dir, cliSecret)
+	before, err := os.ReadFile(modelPath)
+	c.Assert(err, qt.IsNil)
 	outPath := filepath.Join(dir, "schema.hcl")
 
 	stdout, stderr, err := runSchemaExportCleanup(c,
@@ -70,12 +77,38 @@ func TestSchemaExportCleanupDiffRedactsRolePassword(t *testing.T) {
 		"--cleanup-diff",
 	)
 
-	c.Assert(err, qt.IsNil)
+	c.Assert(err, qt.ErrorIs, goannotationexport.ErrLossyCleanup)
 	c.Assert(secretLeaked(stdout, cliSecret), qt.IsFalse)
 	c.Assert(secretLeaked(stderr, cliSecret), qt.IsFalse)
-	// Asserting the exact line means a partial mask cannot pass, and the
-	// expectation holds no fixture bytes.
+	c.Assert(secretLeaked(err.Error(), cliSecret), qt.IsFalse)
+	c.Assert(err.Error(), qt.Contains, "role app_user: the password is written as $PTAH_SECRET_PASSWORD_APP_USER")
+	after, err := os.ReadFile(modelPath)
+	c.Assert(err, qt.IsNil)
+	c.Assert(bytes.Equal(after, before), qt.IsTrue)
+}
+
+// A password the source already names by its variable is no value, so the
+// cleanup removes the annotation and the HCL names the same variable; the diff
+// masks the attribute all the same.
+func TestSchemaExportCleanupDiffRedactsRolePassword_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	writeRoleModel(c, dir, "$PTAH_SECRET_APP_USER_PASSWORD")
+	outPath := filepath.Join(dir, "schema.hcl")
+
+	stdout, _, err := runSchemaExportCleanup(c,
+		"--root-dir", dir,
+		"--out", outPath,
+		"--cleanup-go-annotations",
+		"--cleanup-diff",
+	)
+
+	c.Assert(err, qt.IsNil)
+	// Asserting the exact line means a partial mask cannot pass.
 	c.Assert(stdout, qt.Contains, `-//ptah:schema:role name="app_user" login="true" password=***`)
+	exported, err := os.ReadFile(outPath)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(exported), qt.Contains, `password = "$PTAH_SECRET_APP_USER_PASSWORD"`)
 }
 
 func TestSchemaExportRefusesCleanupOnNonNFCValue(t *testing.T) {

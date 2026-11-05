@@ -60,8 +60,10 @@ func TestGenerateDownMigration_RolledBackPasswordChangeSetsNoPassword(t *testing
 	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(up, qt.Contains, "ALTER ROLE \"app_user\" CREATEDB;")
-	c.Assert(up, qt.Contains, declaredPassword,
-		qt.Commentf("the forward direction sets the password the declaration carries"))
+	c.Assert(up, qt.Contains, "ALTER ROLE \"app_user\" PASSWORD $PTAH_SECRET_PASSWORD_APP_USER;",
+		qt.Commentf("the forward direction sets the password the declaration carries, by its variable"))
+	c.Assert(up, qt.Not(qt.Contains), declaredPassword,
+		qt.Commentf("a migration file never holds the password itself (ADR 0071)"))
 
 	down, err := downMigrationSQL(t.Context(), must.Must(builtin.New()),
 		upDiff, desired, database, platform.Postgres, caps)

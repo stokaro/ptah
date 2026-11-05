@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
 	"ptah.run/dbschema"
+	"ptah.run/internal/rolepassword"
 	"ptah.run/internal/sqliterebuild"
 	"ptah.run/internal/txrequire"
 	"ptah.run/migration/migrator"
@@ -71,6 +72,7 @@ func (p ApplyRuntimePlan) PreflightExecution(sqlText string) error {
 // assess. It repeats preflight at the execution boundary. An unchanged plan
 // retains its statement boundaries, including provider execution units.
 func (p ApplyRuntimePlan) ExecuteSQL(ctx context.Context, sqlText string) error {
+	ctx = rolepassword.With(ctx, p.passwords)
 	if err := p.PreflightExecution(sqlText); err != nil {
 		return err
 	}

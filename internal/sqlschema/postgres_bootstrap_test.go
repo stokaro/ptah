@@ -139,3 +139,29 @@ func TestPostgresRoleBootstrapDuplicateBoundaries(t *testing.T) {
 		})
 	}
 }
+
+// A migration file Ptah generated names a role's password by its variable, and
+// a SQL schema read from it keeps the reference, so the schema names the same
+// variable and never a value (ADR 0071).
+func TestPostgresRolePasswordNamedByItsVariable_HappyPath(t *testing.T) {
+	c := qt.New(t)
+
+	database, _, err := sqlschema.Read([]byte(`CREATE ROLE "app" WITH LOGIN PASSWORD $PTAH_SECRET_PASSWORD_APP NOSUPERUSER;`), "postgres")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(database.Roles, qt.HasLen, 1)
+	c.Assert(database.Roles[0].Password, qt.Equals, "$PTAH_SECRET_PASSWORD_APP")
+	c.Assert(database.Roles[0].Login, qt.IsTrue)
+}
+
+// A reference outside the PTAH_SECRET_ prefix's exact spelling is no password
+// Ptah writes, and the statement is refused as one whose password is not a
+// string.
+func TestPostgresRolePasswordNamedByItsVariable_FailurePath(t *testing.T) {
+	c := qt.New(t)
+
+	database, _, err := sqlschema.Read([]byte(`CREATE ROLE app PASSWORD $ptah_secret_password_app;`), "postgres")
+
+	c.Assert(err, qt.ErrorMatches, `.*expected a string constant for the password.*`)
+	c.Assert(database.Roles, qt.IsNil)
+}

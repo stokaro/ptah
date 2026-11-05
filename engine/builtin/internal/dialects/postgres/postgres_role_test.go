@@ -23,7 +23,7 @@ func TestPostgreSQLRenderer_VisitCreateRole(t *testing.T) {
 		c.Assert(sql, qt.Not(qt.Contains), "duplicate_object")
 	})
 
-	t.Run("role with login and password", func(t *testing.T) {
+	t.Run("role with login and password, which the statement names by its variable", func(t *testing.T) {
 		c := qt.New(t)
 		renderer := postgres.New()
 
@@ -33,8 +33,9 @@ func TestPostgreSQLRenderer_VisitCreateRole(t *testing.T) {
 		sql, err := renderer.Render(role)
 
 		c.Assert(err, qt.IsNil)
-		c.Assert(legacyPostgresSQL(sql), qt.Contains, "CREATE ROLE app_user WITH LOGIN PASSWORD 'encrypted_password'")
+		c.Assert(legacyPostgresSQL(sql), qt.Contains, "CREATE ROLE app_user WITH LOGIN PASSWORD $PTAH_SECRET_PASSWORD_APP_USER")
 		c.Assert(sql, qt.Contains, "NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT NOREPLICATION")
+		c.Assert(sql, qt.Not(qt.Contains), "encrypted_password")
 	})
 
 	t.Run("superuser role", func(t *testing.T) {
@@ -82,7 +83,8 @@ func TestPostgreSQLRenderer_VisitCreateRole(t *testing.T) {
 	})
 }
 
-func TestPostgreSQLRenderer_VisitCreateRoleKeepsPasswordDollarTagLiteral(t *testing.T) {
+// A hash is named by its variable too, and no DO block wraps the statement.
+func TestPostgreSQLRenderer_VisitCreateRoleNamesAHashByItsVariable(t *testing.T) {
 	c := qt.New(t)
 	renderer := postgres.New()
 	role := ast.NewCreateRole("app_user").SetPassword("SCRAM-SHA-256$ptah_role$collision")
@@ -90,7 +92,8 @@ func TestPostgreSQLRenderer_VisitCreateRoleKeepsPasswordDollarTagLiteral(t *test
 	sql, err := renderer.Render(role)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(sql, qt.Contains, "PASSWORD 'SCRAM-SHA-256$ptah_role$collision'")
+	c.Assert(sql, qt.Contains, "PASSWORD $PTAH_SECRET_PASSWORD_APP_USER")
+	c.Assert(sql, qt.Not(qt.Contains), "SCRAM-SHA-256")
 	c.Assert(sql, qt.Not(qt.Contains), "DO $ptah_role$")
 }
 
@@ -159,7 +162,7 @@ func TestPostgreSQLRenderer_VisitAlterRole(t *testing.T) {
 		lines := strings.Split(strings.TrimSpace(legacyPostgresSQL(sql)), "\n")
 		c.Assert(lines, qt.HasLen, 3)
 		c.Assert(lines[0], qt.Equals, "ALTER ROLE test_role LOGIN;")
-		c.Assert(lines[1], qt.Equals, "ALTER ROLE test_role PASSWORD 'md5a1b2c3d4e5f6789012345678901234';")
+		c.Assert(lines[1], qt.Equals, "ALTER ROLE test_role PASSWORD $PTAH_SECRET_PASSWORD_TEST_ROLE;")
 		c.Assert(lines[2], qt.Equals, "ALTER ROLE test_role CREATEDB;")
 	})
 
@@ -181,7 +184,7 @@ func TestPostgreSQLRenderer_VisitAlterRole(t *testing.T) {
 		lines := strings.Split(strings.TrimSpace(legacyPostgresSQL(sql)), "\n")
 		c.Assert(lines, qt.HasLen, 7)
 		c.Assert(lines[0], qt.Equals, "ALTER ROLE test_role NOLOGIN;")
-		c.Assert(lines[1], qt.Equals, "ALTER ROLE test_role PASSWORD 'SCRAM-SHA-256$4096:abcd1234$hash:signature';")
+		c.Assert(lines[1], qt.Equals, "ALTER ROLE test_role PASSWORD $PTAH_SECRET_PASSWORD_TEST_ROLE;")
 		c.Assert(lines[2], qt.Equals, "ALTER ROLE test_role SUPERUSER;")
 		c.Assert(lines[3], qt.Equals, "ALTER ROLE test_role NOCREATEDB;")
 		c.Assert(lines[4], qt.Equals, "ALTER ROLE test_role CREATEROLE;")

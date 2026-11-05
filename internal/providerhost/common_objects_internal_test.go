@@ -18,16 +18,23 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/rolepassword"
 )
 
 // commonObjectTarget is a target whose engine carries kinds on a negotiated
-// common-object wire, with common table identity.
+// common-object wire, with common table identity, and takes a declared
+// password as an execution input.
 func commonObjectTarget(kinds ...protocol.CommonObjectSupport_Kind) *target {
 	return &target{
-		engine: &protocol.Engine{Id: "fixture", DefaultSchema: "main", Features: []string{provider.CommonObjectsFeature, provider.CommonTableIdentityFeature},
-			CommonObjects: &protocol.CommonObjectSupport{Kinds: kinds}},
-		host: &Host{description: &protocol.Description{Features: []string{provider.CommonObjectsFeature}}},
+		engine: &protocol.Engine{Id: "fixture", DefaultSchema: "main", Features: []string{provider.CommonObjectsFeature, provider.CommonTableIdentityFeature,
+			provider.PasswordInputsFeature}, CommonObjects: &protocol.CommonObjectSupport{Kinds: kinds}},
+		host: &Host{description: &protocol.Description{Features: []string{provider.CommonObjectsFeature, provider.PasswordInputsFeature}}},
 	}
+}
+
+// passwordInput is the input the wire names for the password of role.
+func passwordInput(role string) *protocol.ExecutionInput {
+	return &protocol.ExecutionInput{Source: protocol.ExecutionInput_ENVIRONMENT, Name: rolepassword.Variable(role)}
 }
 
 var everyCommonKind = []protocol.CommonObjectSupport_Kind{
@@ -68,14 +75,14 @@ func TestCommonObjectChange_HappyPath(t *testing.T) {
 			want: &protocol.Change{Object: ref("sequence", "app", "counter"), Operation: &protocol.Change_CommonObject{CommonObject: &protocol.CommonObjectChange{
 				Operation: &protocol.CommonObjectChange_AlterSequence{AlterSequence: &protocol.SequenceAlteration{Sequence: ref("sequence", "app", "counter"),
 					Desired: &protocol.SQLSequence{Schema: "app", Name: "counter", Start: new(int64(5)), Cycle: true}, Changed: []string{"start", "cycle"}}}}}}},
-		{name: "a role with a password", node: ast.NewCreateRole("reader").SetLogin(true).SetPassword("secret"),
+		{name: "a role with a password names its input and carries no value", node: ast.NewCreateRole("reader").SetLogin(true).SetPassword("secret"),
 			want: &protocol.Change{Object: ref("role", "", "reader"), Operation: &protocol.Change_CommonObject{CommonObject: &protocol.CommonObjectChange{
 				Operation: &protocol.CommonObjectChange_CreateRole{CreateRole: &protocol.RoleCreation{
-					Role: &protocol.SQLRole{Name: "reader", Login: true, Inherit: true, PasswordDeclared: true}, Password: "secret"}}}}}},
-		{name: "a role alteration carries the password it sets", node: alterRole,
+					Role: &protocol.SQLRole{Name: "reader", Login: true, Inherit: true, PasswordDeclared: true}, PasswordInput: passwordInput("reader")}}}}}},
+		{name: "a role alteration names the input of the password it sets", node: alterRole,
 			want: &protocol.Change{Object: ref("role", "", "reader"), Operation: &protocol.Change_CommonObject{CommonObject: &protocol.CommonObjectChange{
 				Operation: &protocol.CommonObjectChange_AlterRole{AlterRole: &protocol.RoleAlteration{
-					Desired: &protocol.SQLRole{Name: "reader", PasswordDeclared: true}, Changed: []string{"login", "password"}, Password: "secret"}}}}}},
+					Desired: &protocol.SQLRole{Name: "reader", PasswordDeclared: true}, Changed: []string{"login", "password"}, PasswordInput: passwordInput("reader")}}}}}},
 		{name: "a dropped group", node: ast.NewDropRole("readers").SetGroup(true),
 			want: &protocol.Change{Object: ref("group", "", "readers"), Operation: &protocol.Change_CommonObject{CommonObject: &protocol.CommonObjectChange{
 				Operation: &protocol.CommonObjectChange_DropRole{DropRole: ref("group", "", "readers")}}}}},
@@ -115,9 +122,18 @@ type renameRole struct{}
 
 func (renameRole) GetOperationType() string { return "RENAME" }
 
+// withoutPasswordInputs is target with schema.password-inputs taken off its
+// engine, as a provider that predates the feature describes it.
+func withoutPasswordInputs(target *target) *target {
+	target.engine.Features = []string{provider.CommonObjectsFeature, provider.CommonTableIdentityFeature}
+	return target
+}
+
 func TestCommonObjectChange_FailurePath(t *testing.T) {
 	unknownOperation := ast.NewAlterRole("reader")
 	unknownOperation.AddOperation(renameRole{})
+	alterRole := ast.NewAlterRole("reader")
+	alterRole.AddOperation(ast.NewSetPasswordOperation("pw-SENTINEL"))
 	tests := []struct {
 		name    string
 		target  *target
@@ -130,6 +146,12 @@ func TestCommonObjectChange_FailurePath(t *testing.T) {
 			node: ast.NewObjectComment(ast.CommentedFunction, "f", "x"), wantErr: `.*a comment on function f`},
 		{name: "a role operation the wire has no name for", target: commonObjectTarget(everyCommonKind...),
 			node: unknownOperation, wantErr: `.*role operation providerhost.renameRole`},
+		{name: "a password for a provider that takes no password input", target: withoutPasswordInputs(commonObjectTarget(everyCommonKind...)),
+			node: ast.NewCreateRole("reader").SetLogin(true).SetPassword("pw-SENTINEL"), wantErr: `unsupported feature: role reader declares a password, ` +
+				`and the provider of the fixture engine does not take a password as an execution input \(schema\.password-inputs\), so the ` +
+				`password would be written into the plan; use a provider release that lists the feature`},
+		{name: "a changed password for a provider that takes no password input", target: withoutPasswordInputs(commonObjectTarget(everyCommonKind...)),
+			node: alterRole, wantErr: `unsupported feature: role reader declares a password, .*`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -139,6 +161,7 @@ func TestCommonObjectChange_FailurePath(t *testing.T) {
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(err, qt.Not(qt.ErrorMatches), `.*SENTINEL.*`)
 			c.Assert(common, qt.IsTrue)
 			c.Assert(change, qt.IsNil)
 		})
