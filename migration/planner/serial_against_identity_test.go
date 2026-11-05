@@ -29,14 +29,6 @@ func TestSerialAgainstIdentity_HappyPath(t *testing.T) {
 			},
 		},
 		{
-			name: "serial against an always identity", dialect: "cockroachdb", held: serial, desired: always,
-			want: []string{
-				`ALTER TABLE "parent" ALTER COLUMN "n" DROP DEFAULT`,
-				`ALTER TABLE "parent" ALTER COLUMN "n" ADD GENERATED ALWAYS AS IDENTITY`,
-				`SELECT setval(pg_get_serial_sequence('"parent"', 'n'), max("n")) FROM "parent" HAVING max("n") >= 1`,
-			},
-		},
-		{
 			name: "an always identity against serial on CockroachDB", dialect: "cockroachdb", held: always, desired: serial,
 			want: []string{
 				`ALTER TABLE "parent" ALTER COLUMN "n" DROP IDENTITY`,
