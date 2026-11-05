@@ -163,9 +163,20 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 	if err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
 	}
+	// The runtime a provider selection installed, or the bundled one. A
+	// selected provider owns its engine's split, rules and annotations here as
+	// it owns every other service of that engine. It is resolved before the
+	// options are prepared, because preparing them resolves --dialect, and an
+	// engine only a provider serves is a dialect only that runtime knows.
+	runtime, err := engineruntime.Resolve(cmd.Context())
+	if err != nil {
+		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
+	}
+	requested := reportOptions(cmd, opts)
+	requested.Runtime = runtime
 	reportOpts, provenance, err := prepareReportOptions(
 		cmd,
-		reportOptions(cmd, opts),
+		requested,
 		projectCfg,
 		sourceOptions{
 			attach:    opts.attach,
@@ -197,14 +208,6 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 	); err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
 	}
-	// The runtime a provider selection installed, or the bundled one. A
-	// selected provider owns its engine's split, rules and annotations here as
-	// it owns every other service of that engine.
-	runtime, err := engineruntime.Resolve(cmd.Context())
-	if err != nil {
-		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
-	}
-	reportOpts.Runtime = runtime
 	report, err := migrationlintreport.Build(cmd.Context(), reportOpts, projectCfg)
 	if err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())

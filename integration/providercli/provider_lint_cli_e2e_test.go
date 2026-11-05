@@ -118,31 +118,29 @@ func TestMigrationsLintThroughAProviderWithoutADialect(t *testing.T) {
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"BC103", "DS101", "DS107"})
 }
 
-// TestMigrationsLintThroughAProviderOfTheNamedDialect names the ydb dialect,
-// which the ydb-lint fixture serves under the official provider's identity.
-// The provider splits and judges the files, and FX102 repeats the target it
-// was asked about: the host resolved the server version to the capabilities
-// of that YDB release line before it asked, and the provider received them.
-// YDB 25.1 has no parameterized DECIMAL and 26.2 has one.
-func TestMigrationsLintThroughAProviderOfTheNamedDialect(t *testing.T) {
+// TestMigrationsLintThroughAProviderOfTheNamedDialect_FailurePath names the
+// ydb dialect, which the ydb-lint fixture serves under the official
+// provider's identity, with a server version. The release lines of an engine
+// a provider serves are the provider's, and Ptah holds no capabilities for
+// one offline, so the run is refused before the provider is asked, rather
+// than linting against a target the version did not select.
+func TestMigrationsLintThroughAProviderOfTheNamedDialect_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	f := newLintProvider(c, "ydb-lint", ydbProviderID, "ydb")
 	dir := lintDirectory(c, "CREATE TABLE records (id Uint64, PRIMARY KEY (id));\n", "ALTER TABLE records ADD COLUMN note Utf8;\n")
-	for _, row := range []struct{ version, decimal string }{
-		{"25.1", "parameterized_decimal=false"},
-		{"26.2", "parameterized_decimal=true"},
-	} {
-		t.Run(row.version, func(t *testing.T) {
-			c := qt.New(t)
 
-			findings, diagnostics, code := f.lint(c, dir, "--dialect", "ydb", "--server-version", row.version)
+	out, diagnostics, code := executeProviderCLI(c.Context(), []string{"migrations", "lint", "--provider-config", f.manifest,
+		"--dir", dir, "--format", "json", "--dialect", "ydb", "--server-version", "26.2"})
 
-			c.Assert(code, qt.Equals, 0, qt.Commentf("%s", diagnostics))
-			c.Assert(rulesOf(findings), qt.DeepEquals, []string{"FX102"})
-			c.Assert(findings[0].Message, qt.Contains, `checked against ydb server "`+row.version+`" with `)
-			c.Assert(findings[0].Message, qt.Contains, " "+row.decimal)
-		})
+	c.Assert(code, qt.Equals, 2, qt.Commentf("%s", diagnostics))
+	var report struct {
+		Findings []lintedFinding `json:"findings"`
+		Error    string          `json:"error"`
 	}
+	c.Assert(json.Unmarshal([]byte(out+diagnostics), &report), qt.IsNil, qt.Commentf("stdout %q, stderr %q", out, diagnostics))
+	c.Assert(report.Error, qt.Equals, `lint server-version "26.2" cannot be resolved against dialect "ydb": Ptah holds no `+
+		`release-line capabilities for an engine its provider serves; lint against a --dev-url, whose session states them`)
+	c.Assert(report.Findings, qt.HasLen, 0)
 }
 
 // TestMigrationsLintOfTheNamedDialectReportsTheProvidersFindings is the

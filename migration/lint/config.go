@@ -15,6 +15,7 @@ import (
 	yaml "go.yaml.in/yaml/v3"
 
 	"ptah.run/core/lintext"
+	"ptah.run/core/schemaext"
 	"ptah.run/internal/lintdialect"
 )
 
@@ -110,7 +111,7 @@ func LoadConfig(runtime lintext.Runtime, configPath string) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read lint config %s: %w", configPath, err)
 	}
-	cfg, err := parseConfig(raw, configPath, rules)
+	cfg, err := parseConfig(raw, configPath, rules, servedBy(runtime))
 	if err != nil {
 		return nil, err
 	}
@@ -132,10 +133,10 @@ func LoadConfigFS(runtime lintext.Runtime, fsys fs.FS, name string) (*Config, er
 	if err != nil {
 		return nil, fmt.Errorf("failed to read lint config %s: %w", name, err)
 	}
-	return parseConfig(raw, name, rules)
+	return parseConfig(raw, name, rules, servedBy(runtime))
 }
 
-func parseConfig(raw []byte, name string, rules []Rule) (*Config, error) {
+func parseConfig(raw []byte, name string, rules []Rule, served schemaext.TargetResolver) (*Config, error) {
 	var cfg Config
 	decoder := yaml.NewDecoder(bytes.NewReader(raw))
 	decoder.KnownFields(true)
@@ -153,7 +154,7 @@ func parseConfig(raw []byte, name string, rules []Rule) (*Config, error) {
 			return nil, fmt.Errorf("failed to parse lint config %s: multiple YAML documents are not supported", name)
 		}
 	}
-	if err := validateConfig(&cfg, rules); err != nil {
+	if err := validateConfig(&cfg, rules, served); err != nil {
 		return nil, fmt.Errorf("failed to parse lint config %s: %w", name, err)
 	}
 	return &cfg, nil
@@ -165,10 +166,20 @@ func parseConfig(raw []byte, name string, rules []Rule) (*Config, error) {
 // documented alias: everything downstream matches Rule.Dialects and the lexer
 // mode by exact string comparison, so an alias left in place would select no
 // dialect-specific rule at all instead of failing.
-func validateConfig(cfg *Config, rules []Rule) error {
-	canonical, ok := lintdialect.Canonical(cfg.Dialect)
+//
+// A dialect the runtime serves through an executable provider is accepted
+// under the target name it selects. Ptah holds no release-line capabilities
+// for such an engine, so a server version beside it is refused rather than
+// dropped.
+func validateConfig(cfg *Config, rules []Rule, served schemaext.TargetResolver) error {
+	canonical, ok := lintdialect.CanonicalIn(cfg.Dialect, served)
 	if !ok {
 		return fmt.Errorf("unsupported lint dialect %q: expected %s", cfg.Dialect, lintdialect.Expected)
+	}
+	_, builtIn := lintdialect.Canonical(canonical)
+	if !builtIn && cfg.ServerVersion != "" {
+		return fmt.Errorf("lint server-version %q cannot be resolved against dialect %q: Ptah holds no release-line "+
+			"capabilities for an engine its provider serves", cfg.ServerVersion, canonical)
 	}
 	cfg.Dialect = canonical
 	// Only where the configuration names its own dialect. A policy may leave
@@ -176,7 +187,7 @@ func validateConfig(cfg *Config, rules []Rule) error {
 	// version here, and refusing that pair would refuse a configuration that
 	// is complete by the time it is used. What wins is resolved once, against
 	// the effective dialect, by the caller that knows it.
-	if cfg.Dialect != "" {
+	if cfg.Dialect != "" && builtIn {
 		if _, err := ResolveTarget(cfg.Dialect, cfg.ServerVersion); err != nil {
 			return err
 		}
@@ -397,4 +408,12 @@ func validateRuleSelectors(selectors []string) error {
 
 func invalidRuleSelectorError(selector string) error {
 	return fmt.Errorf("rule selector %q must start with an uppercase ASCII letter and contain only uppercase ASCII letters and digits", selector)
+}
+
+// servedBy is the target resolver of a lint runtime that serves targets, such
+// as an engine runtime with an executable provider's engines, and nil for one
+// that does not.
+func servedBy(runtime lintext.Runtime) schemaext.TargetResolver {
+	served, _ := runtime.(schemaext.TargetResolver)
+	return served
 }

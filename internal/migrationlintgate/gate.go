@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"ptah.run/core/lintext"
+	"ptah.run/core/schemaext"
 	"ptah.run/internal/lintdialect"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/risk"
@@ -91,7 +92,8 @@ func LoadPolicy(runtime lintext.Runtime, fsys fs.FS, databaseDialect string) (Po
 	// nothing about the analysis. So the comparison is lintdialect's, shared
 	// with the standalone lint command's --dev-url check so the two commands
 	// accept exactly the same policy files (stokaro/ptah#270).
-	if !lintdialect.Compatible(cfg.Dialect, databaseDialect) {
+	served, _ := runtime.(schemaext.TargetResolver)
+	if !lintdialect.CompatibleIn(cfg.Dialect, databaseDialect, served) {
 		return Policy{}, fmt.Errorf(
 			"lint dialect %q does not match database dialect %q",
 			cfg.Dialect,
@@ -103,7 +105,7 @@ func LoadPolicy(runtime lintext.Runtime, fsys fs.FS, databaseDialect string) (Po
 	// validates neither, so an alias here would run clean while selecting the
 	// wrong scanner. A dialect this package cannot resolve is passed through
 	// rather than blanked, because blanking would turn every rule back on.
-	if canonical, ok := lintdialect.Canonical(databaseDialect); ok {
+	if canonical, ok := lintdialect.CanonicalIn(databaseDialect, served); ok {
 		databaseDialect = canonical
 	}
 	families := cfg.GateFamilies()
