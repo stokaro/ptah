@@ -34,6 +34,7 @@ func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 	want := map[string]descriptor.Comparison{
 		"postgres": {
 			ForeignKeysOutside:      true,
+			ForeignKeyHoldsItsKey:   true,
 			ExpressionProbes:        "pg-catalog",
 			RolePasswords:           true,
 			RoutineTypeAliases:      "pg-aliases",

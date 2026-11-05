@@ -80,6 +80,78 @@ func Find(diff *difftypes.SchemaDiff, dialect string) Releases {
 	}
 }
 
+// UnderAddedForeignKeys answers the removals in diff that a foreign key the plan
+// adds could otherwise bind to, on a server where a foreign key depends on one
+// index and keeps it; see
+// [ptah.run/core/platform/descriptor.Comparison.ForeignKeyHoldsItsKey].
+//
+// A planner adds foreign keys before it drops the keys the desired state leaves
+// out. The server binds the new foreign key to the oldest index over its columns,
+// which is the removed one while it is still there, so the drop that follows
+// answers `cannot drop constraint parent_code_old on table parent because other
+// objects depend on it`. These go ahead of the additions instead: every removed
+// PRIMARY KEY and UNIQUE constraint and every removed index of a table such a
+// foreign key references. A removal the plan adds again, and a primary key the plan
+// replaces, is already dropped ahead of its addition, and is left out.
+func UnderAddedForeignKeys(diff *difftypes.SchemaDiff, dialect string) Releases {
+	if diff == nil {
+		return Releases{}
+	}
+	semantics := diff.EffectiveIdentifierSemantics(dialect)
+	referenced := make(map[string]bool)
+	gainsPrimaryKey := make(map[string]bool)
+	added := make(map[difftypes.ConstraintIdentity]bool)
+	for _, add := range diff.ConstraintsAdded {
+		added[constraintscope.Identity(semantics, add.TableName, add.Name)] = true
+		switch {
+		case strings.EqualFold(add.Type, "FOREIGN KEY"):
+			referenced[semantics.QualifiedTableIdentityKey(add.ForeignTable)] = true
+		case strings.EqualFold(add.Type, "PRIMARY KEY"):
+			gainsPrimaryKey[semantics.QualifiedTableIdentityKey(add.TableName)] = true
+		}
+	}
+	if len(referenced) == 0 {
+		return Releases{}
+	}
+	var released Releases
+	for _, info := range diff.ConstraintsRemoved {
+		table := semantics.QualifiedTableIdentityKey(info.TableName)
+		primaryKey := strings.EqualFold(info.Type, "PRIMARY KEY")
+		if !referenced[table] || (!primaryKey && !strings.EqualFold(info.Type, "UNIQUE")) ||
+			(primaryKey && gainsPrimaryKey[table]) || added[constraintscope.Identity(semantics, info.TableName, info.Name)] {
+			continue
+		}
+		info.Identity = constraintscope.Identity(semantics, info.TableName, info.Name)
+		released.Constraints = append(released.Constraints, info)
+	}
+	replacements := indexscope.NewConflictSetWithSemantics(semantics, diff.IndexAdditions())
+	rebuilt := diff.IndexRemovalsRebuiltAsUniqueConstraints()
+	for _, ref := range diff.IndexRemovals() {
+		_, rebuiltAsConstraint := rebuilt[ref]
+		if referenced[semantics.QualifiedTableIdentityKey(ref.TableName)] && !replacements.Contains(ref) && !rebuiltAsConstraint {
+			released.Indexes = append(released.Indexes, ref)
+		}
+	}
+	return released
+}
+
+// With is r and the removals of other that r does not hold, in that order.
+func (r Releases) With(other Releases) Releases {
+	constraints, indexes := r.ConstraintSet(), r.IndexSet()
+	merged := Releases{Constraints: slices.Clone(r.Constraints), Indexes: slices.Clone(r.Indexes)}
+	for _, info := range other.Constraints {
+		if _, held := constraints[info.Identity]; !held {
+			merged.Constraints = append(merged.Constraints, info)
+		}
+	}
+	for _, ref := range other.Indexes {
+		if _, held := indexes[ref]; !held {
+			merged.Indexes = append(merged.Indexes, ref)
+		}
+	}
+	return merged
+}
+
 // keyNames answers whether a name on a table is one a column of that table
 // gains its own UNIQUE under, and nil where no column gains one.
 func keyNames(diff *difftypes.SchemaDiff, dialect string) func(table, name string) bool {

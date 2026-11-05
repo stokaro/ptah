@@ -1922,6 +1922,11 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// otherwise answers that the name exists, and ADD COLUMN x int UNIQUE names
 	// the key c_x_key1. Steps 11 and 12.5 skip what this drops.
 	released := keyrelease.Find(diff, p.targetDialect())
+	// A foreign key the plan adds would bind to a removed key still there, and
+	// that key's drop would then stop at it.
+	if described, _ := platform.Lookup(p.targetDialect()); described.Comparison.ForeignKeyHoldsItsKey {
+		released = released.With(keyrelease.UnderAddedForeignKeys(diff, p.targetDialect()))
+	}
 	// Removed foreign keys must release referenced keys before any column or
 	// constraint replacement. The same identity set suppresses later re-drops,
 	// including the drop half of a foreign-key replacement.

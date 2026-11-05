@@ -29,11 +29,11 @@ func commentedConstraintCatalog(comment string) dbtest.QueryHandler {
 				Columns: []string{
 					"table_schema", "table_name", "constraint_name", "constraint_type", "columns",
 					"foreign_schema", "foreign_table", "foreign_columns", "delete_rule", "update_rule",
-					"deferrable", "deferred", "check_clause", "definition", "comment",
+					"deferrable", "deferred", "check_clause", "definition", "comment", "referenced_index",
 				},
 				Rows: [][]driver.Value{{
 					"public", "orders", "ck_total", "CHECK", "total", "", "", "", "", "",
-					false, false, "total > 0", "CHECK ((total > 0))", comment,
+					false, false, "total > 0", "CHECK ((total > 0))", comment, "",
 				}},
 			}, nil
 		case strings.Contains(query, "c.contype IN ('x')"):

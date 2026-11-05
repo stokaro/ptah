@@ -59,17 +59,17 @@ func TestReadBasicConstraintsForSchema_ReadsNotValid(t *testing.T) {
 	columns := []string{
 		"table_schema", "table_name", "constraint_name", "constraint_type", "columns", "foreign_schema",
 		"foreign_table", "foreign_columns", "delete_rule", "update_rule", "deferrable", "deferred",
-		"check_clause", "definition", "comment",
+		"check_clause", "definition", "comment", "referenced_index",
 	}
 	// The constraint read sends one query, so every query gets these rows.
 	db := dbtest.Open(c, func(string, []driver.NamedValue) (dbtest.QueryResult, error) {
 		return dbtest.QueryResult{Columns: columns, Rows: [][]driver.Value{
 			{"public", "c", "c_a", "CHECK", "a", "", "", "", "", "", false, false, "(a < 100)",
-				"CHECK ((a < 100)) NOT VALID", ""},
+				"CHECK ((a < 100)) NOT VALID", "", ""},
 			{"public", "c", "c_b", "CHECK", "b", "", "", "", "", "", false, false, "(b > 0)",
-				"CHECK ((b > 0))", ""},
+				"CHECK ((b > 0))", "", ""},
 			{"public", "c", "c_p", "FOREIGN KEY", "p", "public", "p", "id", "NO ACTION", "NO ACTION", false, false, "",
-				"FOREIGN KEY (p) REFERENCES p(id) NOT VALID", ""},
+				"FOREIGN KEY (p) REFERENCES p(id) NOT VALID", "", ""},
 		}}, nil
 	})
 	reader := NewPostgreSQLReaderWithCapabilities(db.SQL, "public", capability.Postgres18())

@@ -2325,7 +2325,8 @@ func (r *Reader) basicConstraintsQuery() string {
 				COALESCE(bool_or(pc.condeferred), false),
 				` + r.constraintCheckExpr() + `,
 				` + r.constraintDefinitionExpr() + `,
-				COALESCE(max(obj_description(pc.oid, 'pg_constraint')), '')
+				COALESCE(max(obj_description(pc.oid, 'pg_constraint')), ''),
+				` + r.referencedIndexExpr() + `
 		FROM information_schema.table_constraints AS tc
 		JOIN pg_namespace AS constraint_schema
 			ON constraint_schema.nspname = tc.table_schema
@@ -2351,6 +2352,7 @@ func (r *Reader) basicConstraintsQuery() string {
 		LEFT JOIN pg_attribute AS foreign_column
 			ON foreign_column.attrelid = pc.confrelid
 			AND foreign_column.attnum = foreign_key_columns.foreign_attnum
+		` + r.referencedIndexJoin() + `
 		WHERE tc.table_schema = $1
 		AND tc.table_name NOT IN (` + revisiontable.NativeSQLNames + `)
 		-- A NOT NULL is the column's, and its name is read with the column; see
@@ -2372,6 +2374,30 @@ func (r *Reader) basicConstraintsQuery() string {
 			tc.constraint_type
 		` + r.hiddenKeyFilter() + `
 		ORDER BY tc.table_name, tc.constraint_type, tc.constraint_name`
+}
+
+// readsReferencedIndex reports whether the read of the constraints asks which
+// index a foreign key depends on. Only a dialect whose comparison uses the answer
+// asks, so the query other targets run keeps its joins.
+func (r *Reader) readsReferencedIndex() bool {
+	described, _ := platform.Lookup(r.dialect)
+	return described.Comparison.ForeignKeyHoldsItsKey
+}
+
+func (r *Reader) referencedIndexExpr() string {
+	if !r.readsReferencedIndex() {
+		return "''"
+	}
+	return "COALESCE(max(referenced_index.relname), '')"
+}
+
+func (r *Reader) referencedIndexJoin() string {
+	if !r.readsReferencedIndex() {
+		return ""
+	}
+	return `LEFT JOIN pg_class AS referenced_index
+			ON referenced_index.oid = pc.conindid
+			AND pc.contype = 'f'`
 }
 
 func (r *Reader) readBasicConstraintsForSchema(ctx context.Context, schemaName string) ([]catalog.Constraint, error) {
@@ -2405,6 +2431,7 @@ func (r *Reader) readBasicConstraintsForSchema(ctx context.Context, schemaName s
 			&checkClause,
 			&constraintDefinition,
 			&constraint.Comment,
+			&constraint.ReferencedIndex,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan constraint: %w", err)
