@@ -39,11 +39,11 @@ func SupportsPersistence(target string) bool {
 }
 
 // PersistenceTargets returns the targets with a defined persistence policy.
-// PostgreSQL supports the setting. Other targets omit it with a diagnostic,
-// except YDB, which refuses an unlogged declaration. The returned slice is independent.
+// PostgreSQL supports the setting. Other targets omit it with a diagnostic.
+// The returned slice is independent.
 func PersistenceTargets() []string {
 	return []string{platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner,
-		platform.MySQL, platform.MariaDB, platform.SQLite, platform.SQLServer, platform.Oracle, platform.ClickHouse, platform.YDB}
+		platform.MySQL, platform.MariaDB, platform.SQLite, platform.SQLServer, platform.Oracle, platform.ClickHouse}
 }
 
 // Kind returns the owned persistence identity.

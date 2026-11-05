@@ -24,7 +24,8 @@ func TestLazyServes(t *testing.T) {
 		{"an upper-case scheme", "FIXTURE", true},
 		{"an official engine with no built-in implementation", "duckdb", true},
 		{"a built-in engine", "sqlite", false},
-		{"an official engine that is still built in", "ydb", false},
+		{"an official engine only its provider serves", "ydb", true},
+		{"an official engine that is still built in", "spanner", false},
 		{"a scheme nothing claims", "nothing", false},
 		{"an empty scheme", "", false},
 	}
@@ -45,8 +46,9 @@ func TestLazyListsWhatItServesWithoutStartingAnything(t *testing.T) {
 	c := qt.New(t)
 	lazy := newLazy(c)
 
-	c.Assert(lazy.NativeSchemes(), qt.DeepEquals, map[string]string{"fixture": "fixture", "fix": "fixture", "duckdb": "duckdb"})
-	c.Assert(lazy.DevEngines(), qt.DeepEquals, []string{"duckdb", "fix", "fixture"})
+	c.Assert(lazy.NativeSchemes(), qt.DeepEquals, map[string]string{"fixture": "fixture", "fix": "fixture", "duckdb": "duckdb",
+		"ydb": "ydb", "ydbs": "ydb"})
+	c.Assert(lazy.DevEngines(), qt.DeepEquals, []string{"duckdb", "fix", "fixture", "ydb", "ydbs"})
 }
 
 func TestLazyNativeRegistration_HappyPath(t *testing.T) {
@@ -158,9 +160,12 @@ func TestLazyProvisionDev_FailurePath(t *testing.T) {
 	})
 }
 
+// The realm schemes are the manifest's engines and the URL schemes of every
+// official engine no built-in implementation serves, whose provider the
+// selection order resolves from the store.
 func TestLazyListsRealmSchemesWithoutStartingAnything(t *testing.T) {
 	c := qt.New(t)
-	c.Assert(newLazy(c).RealmSchemes(), qt.DeepEquals, []string{"fix", "fixture"})
+	c.Assert(newLazy(c).RealmSchemes(), qt.DeepEquals, []string{"duckdb", "fix", "fixture", "ydb", "ydbs"})
 }
 
 func TestLazyEnterRealm_FailurePath(t *testing.T) {

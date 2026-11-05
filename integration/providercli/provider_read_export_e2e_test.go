@@ -10,6 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/goschema"
+	"ptah.run/core/schemaext"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/providerhost"
@@ -69,7 +70,11 @@ func TestProviderIntrospect_ReadNarrowedBySchemas_HappyPath(t *testing.T) {
 
 // TestProviderInspectHCL_ReadNarrowedBySchemas_HappyPath writes the HCL of a
 // provider read that --schemas narrowed, the retention as the provider's block
-// in the table, and reads it back.
+// in the table, and reads it back. The read knows retention in every namespace
+// it listed, so the document's captured feature coverage header claims it
+// completely, with no namespace region: the document is complete for the
+// selection a later plan applies it to, as the other formats write such a
+// read.
 func TestProviderInspectHCL_ReadNarrowedBySchemas_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	f := readExportProvider(c)
@@ -82,6 +87,10 @@ func TestProviderInspectHCL_ReadNarrowedBySchemas_HappyPath(t *testing.T) {
 	db, err := atlashcl.ParseWithOptions(c.Context(), []byte(stdout), "schema.hcl", atlashcl.Options{HCL: runtime.HCL()})
 	c.Assert(err, qt.IsNil)
 	c.Assert(scopedRetentions(c, runtime, *db), qt.DeepEquals, []string{`table records {"seconds":30}`})
+	kinds := db.FeatureCoverage.KindRecords()
+	c.Assert(kinds, qt.HasLen, 1, qt.Commentf("%s", stdout))
+	c.Assert(kinds[0].Knowledge.HasNamespaceScopes(), qt.IsFalse, qt.Commentf("%s", stdout))
+	c.Assert(kinds[0].Knowledge.Unscoped(), qt.DeepEquals, schemaext.Knowledge{State: schemaext.Complete})
 }
 
 // TestProviderIntrospect_ReadOfEverySchema_HappyPath is the control for the

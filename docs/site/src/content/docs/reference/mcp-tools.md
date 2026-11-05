@@ -117,6 +117,43 @@ The token is single-use and expires after fifteen minutes. Apply compares the
 artifact digest again, runs the configured gates, and either keeps the result or
 restores the prior bytes.
 
+## Warnings a call raises
+
+A call reports the warnings its own work raised, such as names PostgreSQL cuts
+to 63 bytes in the schema `validate_schema` read. Each call is reported on its
+own: a second call that reads the same file reports the same warnings again.
+The result carries them twice, after the answer, and neither changes the
+response a tool documents:
+
+- A text content item follows the answer, one `warning:` line per kind of
+  warning. A model reads it with the answer.
+- The result's `_meta` lists them under `ptah.run/warnings`, each with
+  `category`, `count`, `message` and `objects`, the line of every object it
+  counts. A client program reads them there.
+
+```json
+{
+  "_meta": {
+    "ptah.run/warnings": [
+      {
+        "category": "truncated-name",
+        "count": 3,
+        "message": "3 names are longer than 63 bytes; the server keeps their first 63 bytes, and they are read that way; the result's _meta lists them under ptah.run/warnings",
+        "objects": [
+          "schema file schema.sql: index \"axxx…_idx\" in schema \"public\" is 68 bytes; the server keeps its first 63: \"axxx…\"",
+          "schema file schema.sql: index \"bxxx…_idx\" …",
+          "schema file schema.sql: index \"cxxx…_idx\" …"
+        ]
+      }
+    ]
+  }
+}
+```
+
+A call that raises no warning carries neither. The server writes nothing about
+a call's warnings on its standard error; set `PTAH_LOG_LEVEL=debug` when
+starting it to list the objects in its log as well.
+
 ## Operations deliberately absent
 
 `schema inspect`, `schema diff`, and `migrations lint` need a scratch database

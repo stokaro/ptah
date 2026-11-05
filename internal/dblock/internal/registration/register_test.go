@@ -27,7 +27,7 @@ import (
 )
 
 // builtinLocks are the dialects whose locks Ptah ships, in registry order.
-var builtinLocks = []string{"postgres", "mysql", "mariadb", "sqlserver", "yugabytedb", "ydb"}
+var builtinLocks = []string{"postgres", "mysql", "mariadb", "sqlserver", "yugabytedb"}
 
 func described(name string, aliases ...string) descriptor.Dialect {
 	return descriptor.Dialect{

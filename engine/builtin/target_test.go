@@ -26,7 +26,7 @@ func TestRegisteredTargetSpellingsPreserveDeclarationScope(t *testing.T) {
 		})
 	}
 	// Transport aliases previously missed by the renderer's advertised subset.
-	for _, spelling := range []string{"ydbs", "mysql+unix", "maria+unix", "libsql+ws", "pgx"} {
+	for _, spelling := range []string{"mysql+unix", "maria+unix", "libsql+ws", "pgx"} {
 		selected := must.Must(runtime.ResolveTarget(spelling))
 		c.Assert(selected.Includes([]string{spelling}), qt.IsTrue)
 	}

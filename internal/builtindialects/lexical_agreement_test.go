@@ -55,7 +55,6 @@ func TestDescriptors_LexicalFactsAgreeWithTheSwitchesTheyReplace(t *testing.T) {
 		platform.SQLite:    {BracketIdentifiers: true},
 		platform.SQLServer: {BracketIdentifiers: true, HashNames: true},
 		platform.Oracle:    {AlternativeQuoting: true},
-		platform.YDB:       {Lexer: descriptor.LexerYQL},
 	}
 	described := builtindialects.Descriptors()
 	c := qt.New(t)
@@ -78,7 +77,6 @@ func TestDescriptors_BodiesAgreeWithTheSwitchTheyReplace(t *testing.T) {
 	want := map[string]descriptor.Bodies{
 		platform.SQLServer: descriptor.BodiesTransactSQL,
 		platform.Oracle:    descriptor.BodiesPLSQL,
-		platform.YDB:       descriptor.BodiesYQL,
 	}
 	for _, dialect := range builtindialects.Descriptors() {
 		t.Run(dialect.Name, func(t *testing.T) {

@@ -30,6 +30,7 @@ import (
 	"ptah.run/internal/schemaselection"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/internal/timescale"
+	"ptah.run/internal/unreadtables"
 )
 
 // InspectRuntime supplies conversion, reporting, and schema rendering through
@@ -155,6 +156,9 @@ func Inspect(ctx context.Context, conn *dbschema.DatabaseConnection, opts Inspec
 	if !opts.SuppressRoleCoverageNote {
 		rolescope.ReportUndescribed(opts.Diagnostics, conn.Info().Dialect, schema)
 	}
+	// A table the read found and left out is in no rendered document, as
+	// through the built-in engines; the note is the only place it shows.
+	unreadtables.Report(opts.Diagnostics, schema)
 	validatedOpts := opts
 	validatedOpts.PrepareSchema = nil
 	validatedOpts.ValidateSchema = nil

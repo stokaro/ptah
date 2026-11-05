@@ -43,7 +43,6 @@ func TestCleanCheck_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 		"sqlserver":  {check: descriptor.CleanCheck{Dev: true}, tables: true, refused: true},
 		"clickhouse": {check: descriptor.CleanCheck{Dev: true}, tables: true, refused: true},
 		"oracle":     {check: descriptor.CleanCheck{Dev: true}, tables: true},
-		"ydb":        {check: descriptor.CleanCheck{Dev: true, ResetListing: true}, refused: true},
 	}
 	c := qt.New(t)
 	c.Assert(builtindialects.Descriptors(), qt.HasLen, len(want))

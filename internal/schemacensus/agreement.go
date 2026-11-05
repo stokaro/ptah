@@ -12,13 +12,6 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/mssql/mssqlschema"
 	"ptah.run/dialect/timescaledb/tsschema"
-	"ptah.run/dialect/ydb/ydbcoordination"
-	"ptah.run/dialect/ydb/ydbexternal"
-	"ptah.run/dialect/ydb/ydbreplication"
-	"ptah.run/dialect/ydb/ydbsecret"
-	"ptah.run/dialect/ydb/ydbstreaming"
-	"ptah.run/dialect/ydb/ydbtopic"
-	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/engine"
 	"ptah.run/feature/oratype"
 	"ptah.run/feature/pgdefaultprivilege"
@@ -128,48 +121,6 @@ func emptyCatalogForCell(cell capabilityprobe.Cell) (*catalog.Database, error) {
 			return nil, err
 		}
 		current.FeatureCoverage = known
-	}
-	if cell.Dialect != platform.YDB {
-		return current, nil
-	}
-	// This fixture explicitly represents an empty database. Enroll the
-	// standalone namespaces it knows are empty; an ordinary empty object
-	// collection would correctly leave that namespace uninspected.
-	// Keep enrollment explicit rather than deriving authority from runtime
-	// growth when another provider model is registered.
-	complete := schemaext.Knowledge{State: schemaext.Complete}
-	for _, enroll := range []func() (schemaext.Coverage, error){
-		func() (schemaext.Coverage, error) { return ydbcoordination.Coverage(schemaext.Observed, complete, nil) },
-		func() (schemaext.Coverage, error) { return ydbstreaming.Coverage(schemaext.Observed, complete, nil) },
-		func() (schemaext.Coverage, error) { return ydbsecret.Coverage(schemaext.Observed, complete, nil) },
-		func() (schemaext.Coverage, error) { return ydbtopic.Coverage(schemaext.Observed, complete, nil) },
-		func() (schemaext.Coverage, error) {
-			return ydbexternal.SourceCoverage(schemaext.Observed, complete, nil)
-		},
-		func() (schemaext.Coverage, error) {
-			return ydbexternal.TableCoverage(schemaext.Observed, complete, nil)
-		},
-		func() (schemaext.Coverage, error) {
-			return ydbreplication.ReplicationCoverage(schemaext.Observed, complete, nil)
-		},
-		func() (schemaext.Coverage, error) {
-			return ydbreplication.TransferCoverage(schemaext.Observed, complete, nil)
-		},
-		func() (schemaext.Coverage, error) {
-			return ydbworkload.Coverage(ydbworkload.PoolKind, schemaext.Observed, complete, nil)
-		},
-		func() (schemaext.Coverage, error) {
-			return ydbworkload.Coverage(ydbworkload.ClassifierKind, schemaext.Observed, complete, nil)
-		},
-	} {
-		known, err := enroll()
-		if err != nil {
-			return nil, err
-		}
-		current.FeatureCoverage, err = current.FeatureCoverage.Combine(known)
-		if err != nil {
-			return nil, err
-		}
 	}
 	return current, nil
 }

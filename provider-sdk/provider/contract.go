@@ -15,7 +15,7 @@ import (
 // counts the compatible additions within the major Revision. A host built
 // with this SDK announces Revision.ContractMinor, and a provider built with it
 // may require at most that minor from its host.
-const ContractMinor uint32 = 19
+const ContractMinor uint32 = 22
 
 // The features below each enable an addition to an existing message. An
 // addition is used only when both sides list its feature: the provider in its
@@ -48,7 +48,8 @@ func TwoWayFeatures() []string {
 		EncodeGroupsFeature, CommonAccessFeature, SchemaDeclarationsFeature, SourceLimitsFeature, PlanningLifecycleFeature, SensitiveInputsFeature, ColumnsFeature,
 		DatabaseContextFeature, ValueContextFeature, CommonViewFacetsFeature, ObservedColumnsFeature, ObservedPrimaryKeysFeature, ObservedIndexesFeature, PlanningObjectContextFeature,
 		PlanningContextInventoryFeature, MigrationSplitFeature, ComparisonCountsFeature, IndexMethodsFeature, TypedArgumentsFeature, ErrorReasonsFeature,
-		IndexRenamesFeature, ReverseChangesFeature}
+		IndexRenamesFeature, ReverseChangesFeature, UnreadTablesFeature, DatabaseKindsFeature, SQLFacetsFeature, ReportCountsFeature,
+		ObservedIndexFacetsFeature, SchemaSubtreeCoverageFeature, PasswordInputsFeature, HCLPlatformFeature, DefaultCapabilitiesFeature}
 }
 
 // ContractError reports a host and a provider that cannot work together:
@@ -140,8 +141,15 @@ func ValidateHostFeatures(features []string) error {
 // QueryDialectFeature, the embedding store declarations unless it lists
 // EmbeddingStoreFeature, the common-object declarations unless it lists
 // CommonObjectsFeature, the HCL claims unless it lists HCLSourceFeature, the
-// scope selections unless it lists ScopeSelectionsFeature, and the reversal
-// services unless it lists ReverseChangesFeature. Without
+// claims of a table's platform group unless it lists HCLPlatformFeature, the
+// scope selections unless it lists ScopeSelectionsFeature, the reversal
+// services unless it lists ReverseChangesFeature, the database kinds unless
+// it lists DatabaseKindsFeature, the model reports unless it lists
+// ReportCountsFeature, the schema separator of each engine's identifier rules
+// unless it lists SchemaSubtreeCoverageFeature, and the offline capability
+// facts unless it lists DefaultCapabilitiesFeature. A model keeps its
+// source formats without HCLPlatformFeature: a platform claim's models need
+// not list HCL. Without
 // EntryKeysFeature, the YAML claims of a COLUMN or INDEX scope and the
 // YAML and Go claims that inherit common attributes are removed, since their
 // owner needs what the host would not send, and a model left with no YAML
@@ -167,9 +175,7 @@ func NegotiatedDescription(description *protocol.Description, hostFeatures []str
 		}
 		negotiateCommonObjects(engine, hostFeatures)
 		negotiatePlanningObjects(engine, hostFeatures)
-		if !slices.Contains(hostFeatures, HCLSourceFeature) {
-			engine.HclSource = nil
-		}
+		negotiateHCLSource(engine, hostFeatures)
 		if !slices.Contains(hostFeatures, ScopeSelectionsFeature) {
 			engine.ScopeSelections = nil
 		}
@@ -182,9 +188,7 @@ func NegotiatedDescription(description *protocol.Description, hostFeatures []str
 		if !slices.Contains(hostFeatures, SourceLimitsFeature) {
 			engine.GoHeaderKinds = nil
 		}
-		if !slices.Contains(hostFeatures, ReverseChangesFeature) {
-			engine.Reversals = nil
-		}
+		negotiateLaterAdditions(engine, hostFeatures)
 		if len(engine.GetGoHeaderKinds())+len(engine.GetHclSource().GetHeaderKinds()) == 0 {
 			engine.Features = slices.DeleteFunc(engine.Features, func(feature string) bool { return feature == SourceLimitsFeature })
 		}
@@ -193,6 +197,45 @@ func NegotiatedDescription(description *protocol.Description, hostFeatures []str
 		}
 	}
 	return negotiated
+}
+
+// negotiateLaterAdditions removes the engine fields of contracts 25.19 and
+// later whose features the host does not list: the reversal services, the
+// database kinds, the model reports, the schema separator and the offline
+// capability facts of the engine and of its release lines.
+func negotiateLaterAdditions(engine *protocol.Engine, hostFeatures []string) {
+	if !slices.Contains(hostFeatures, ReverseChangesFeature) {
+		engine.Reversals = nil
+	}
+	if !slices.Contains(hostFeatures, DatabaseKindsFeature) {
+		engine.DatabaseKinds = nil
+	}
+	if !slices.Contains(hostFeatures, ReportCountsFeature) {
+		engine.Reports = nil
+	}
+	if !slices.Contains(hostFeatures, SchemaSubtreeCoverageFeature) && engine.GetIdentifiers() != nil {
+		engine.Identifiers.SchemaSeparator = ""
+	}
+	if !slices.Contains(hostFeatures, DefaultCapabilitiesFeature) {
+		engine.DefaultCapabilities = nil
+		for _, line := range engine.GetReleaseLines() {
+			line.Capabilities = nil
+		}
+	}
+}
+
+// negotiateHCLSource removes the HCL claims unless the host lists
+// HCLSourceFeature, and the claims of a table's platform group unless it lists
+// HCLPlatformFeature.
+func negotiateHCLSource(engine *protocol.Engine, hostFeatures []string) {
+	if !slices.Contains(hostFeatures, HCLSourceFeature) {
+		engine.HclSource = nil
+	}
+	if !slices.Contains(hostFeatures, HCLPlatformFeature) && engine.HclSource != nil {
+		engine.HclSource.Blocks = slices.DeleteFunc(engine.HclSource.Blocks, func(block *protocol.HCLSourceBlock) bool {
+			return block.GetSite() == protocol.HCLSourceBlock_TABLE_PLATFORM
+		})
+	}
 }
 
 // withoutEntryKeys removes the source claims that need EntryKeysFeature, and

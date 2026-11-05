@@ -33,9 +33,9 @@ type queryKeySpelling struct {
 	// column n.
 	table func(name string) string
 	// uniqueTable spells the same table with a unique index on n. It is the
-	// shape the RETURNING question is asked on, because YDB 25.1 and 25.2
-	// run `UPDATE ... RETURNING` on a table without one and fail it on a
-	// table with one.
+	// shape the RETURNING question is asked on, because a line can run
+	// `UPDATE ... RETURNING` on a table without one and fail it on a table
+	// with one, as YDB 25.1 and 25.2 do.
 	uniqueTable func(name string) []string
 }
 
@@ -58,16 +58,6 @@ func queryKeySpellingFor(dialect string) (queryKeySpelling, bool) {
 			return fmt.Sprintf("CREATE TABLE %s (id Int32, n Int32) ENGINE=MergeTree ORDER BY id", name)
 		}
 		return queryKeySpelling{table: table, uniqueTable: func(name string) []string { return []string{table(name)} }}, true
-	case platform.YDB:
-		// YDB declares an index inside CREATE TABLE; there is no CREATE INDEX.
-		return queryKeySpelling{
-			table: keyed("Int64"),
-			uniqueTable: func(name string) []string {
-				return []string{fmt.Sprintf(
-					"CREATE TABLE %s (id Int64 NOT NULL, n Int64, PRIMARY KEY (id), INDEX %s_n GLOBAL UNIQUE SYNC ON (n))",
-					name, name)}
-			},
-		}, true
 	case platform.Oracle:
 		table := keyed("NUMBER(10)")
 		return queryKeySpelling{table: table, uniqueTable: withUniqueIndex(table)}, true

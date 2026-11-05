@@ -125,16 +125,19 @@ get, so each has its own:
 - On Spanner the statement is the portable one with two types changed:
   `checksum` is `TEXT` and `applied_at` is `TIMESTAMPTZ`. Its PostgreSQL
   interface has neither `CHAR(64)`, which arrives as `bpchar`, nor `TIMESTAMP`.
-- On YDB the key is declared in a `PRIMARY KEY` clause of its own, every text
-  column is `Utf8`, because YDB has no length-limited string, and `applied_at`
-  is a `Timestamp`. The table sits at the database root, and a seed is recorded
-  with `UPSERT` in the transaction the seed runs in.
+- On YDB the provider creates the table: the key is declared in a
+  `PRIMARY KEY` clause of its own, every text column is `Utf8`, because YDB has
+  no length-limited string, and `applied_at` is a `Timestamp`. The table sits
+  at the database root, and a seed is recorded with `UPSERT` in the transaction
+  the seed runs in.
 
-On YDB a seed file runs as one serializable transaction with the row that
-records it, and is run again when YDB aborts it for a conflicting transaction.
-A seed file holding a schema statement, or a `BATCH UPDATE` or `BATCH DELETE`,
-is refused before it runs, because YDB runs those only outside a transaction.
-[YDB](../../databases/ydb/#seeds) has the details.
+On YDB the provider runs a seed file as one serializable transaction with the
+row that records it, and runs it again when YDB aborts it for a conflicting
+transaction. A seed file holding a schema statement, or a `BATCH UPDATE` or
+`BATCH DELETE`, is refused before it runs, because YDB runs those only outside
+a transaction.
+[Rows, row writes and seeds](https://github.com/stokaro/ptah-ydb-plugin#rows-row-writes-and-seeds)
+in the provider's documentation has the details.
 
 ## Protect production-like environments
 

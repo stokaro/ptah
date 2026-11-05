@@ -156,9 +156,7 @@ func withStatementBound(ctx context.Context, conn *dbschema.DatabaseConnection, 
 // after the last statement, and the pinned session is discarded afterward
 // either way.
 //
-// The returned context is the one the migration's statements run under. On a
-// target that bounds each query itself rather than through a session setting
-// (see [boundsEachQuery]) it carries the statement timeout to the executor.
+// The returned context is the one the migration's statements run under.
 func (m *Migrator) applySessionTimeouts(
 	ctx context.Context,
 	migration *Migration,
@@ -167,9 +165,6 @@ func (m *Migrator) applySessionTimeouts(
 	restore, err := m.applyTimeoutsWithRestore(ctx, m.noTransactionConnection(), timeouts, timeoutScopeSession)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to apply timeouts for migration %d: %w", migration.Version, err)
-	}
-	if boundsEachQuery(m.conn) {
-		ctx = withQueryTimeout(ctx, timeouts)
 	}
 	return withStatementBound(ctx, m.noTransactionConnection(), timeouts), restore, nil
 }
@@ -212,10 +207,8 @@ func (m *Migrator) restoreTimeoutsAfterFailure(ctx context.Context, version int6
 //
 // The SPELLING still comes from the dialect, because it differs: PostgreSQL
 // sets two transaction-local GUCs, the MySQL family sets and restores two
-// session variables, and YDB has no setting at all -- the executor puts a
-// deadline on each query instead (see [boundsEachQuery]). A target that
-// carries a key and has no spelling here is a programming error rather than
-// an unsupported engine, and it says so.
+// session variables. A target that carries a key and has no spelling here is
+// a programming error rather than an unsupported engine, and it says so.
 //
 // The scope matters only to the PostgreSQL family. `SET LOCAL` outside a
 // transaction block is a warning and changes nothing -- measured on PostgreSQL

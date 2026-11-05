@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemasource"
 	"ptah.run/dbschema"
+	"ptah.run/engine"
 	"ptah.run/internal/atlasmigrate"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
@@ -258,6 +259,9 @@ type generateReplayOptions struct {
 	// loadDesired reads the desired schema in the dialect the dev server
 	// reports.
 	loadDesired func(dialect, databaseURL string) (*schemamodel.Database, error)
+	// loadShadowDesired reads the desired schema the shadow verification
+	// compares with, given the address the plan was made against.
+	loadShadowDesired func(dialect, plannedURL string) (*schemamodel.Database, error)
 }
 
 // generateAgainstTarget plans and writes the next migration from the target
@@ -274,6 +278,7 @@ func generateAgainstTarget(
 	targetURL string,
 	connectTimeout time.Duration,
 	loadDesired func(dialect, databaseURL string) (*schemamodel.Database, error),
+	loadShadowDesired func(dialect, plannedURL string) (*schemamodel.Database, error),
 ) (*generator.MigrationFiles, error) {
 	connectCtx, cancelConnect := dbcli.ConnectContext(ctx, connectTimeout)
 	conn, err := dbschema.ConnectToDatabase(connectCtx, targetURL)
@@ -283,6 +288,10 @@ func generateAgainstTarget(
 	}
 	defer dbschema.CloseAndWarn(conn)
 	generateOpts.Generated, err = loadDesired(conn.Info().Dialect, conn.Info().URL)
+	if err != nil {
+		return nil, err
+	}
+	generateOpts.ShadowGenerated, err = loadShadowDesired(conn.Info().Dialect, conn.Info().URL)
 	if err != nil {
 		return nil, err
 	}
@@ -349,6 +358,10 @@ func planGeneratedMigrationByReplay(
 						return err
 					}
 					replayOpts.Generated = desired
+					replayOpts.ShadowGenerated, err = opts.loadShadowDesired(replayConn.Info().Dialect, replayConn.Info().URL)
+					if err != nil {
+						return err
+					}
 					replayOpts.DBConn = replayConn
 					replayOpts.PriorMigrationsFS = priorMigrations
 					var planErr error
@@ -627,9 +640,7 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	// The desired schema is read once a connection says which dialect the
 	// server speaks, and after the integrity gate, which refuses a drifted
 	// directory before any database is reached (stokaro/ptah#3952).
-	loadDesired := func(dialect, databaseURL string) (*schemamodel.Database, error) {
-		return loadGenerateSchema(cmd, runtime, rootDirs, schemaFiles, commands, dialect, databaseURL)
-	}
+	loadDesired, loadShadowDesired := desiredLoaders(cmd, runtime, rootDirs, schemaFiles, commands, shadowDB)
 
 	ignoreExtensions, err := cmd.Flags().GetStringArray(dbcli.IgnoreExtensionFlagName)
 	if err != nil {
@@ -662,12 +673,13 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 		outcome.current = "the replayed migration directory"
 		var plan *generator.MigrationPlan
 		plan, err = planGeneratedMigrationByReplay(cmd, generateOpts, generateReplayOptions{
-			migrationsDir:  migrationsDir,
-			devURL:         devURL,
-			dirFormat:      dirFormat,
-			connectTimeout: connectTimeout,
-			policy:         integrityPolicy,
-			loadDesired:    loadDesired,
+			migrationsDir:     migrationsDir,
+			devURL:            devURL,
+			dirFormat:         dirFormat,
+			connectTimeout:    connectTimeout,
+			policy:            integrityPolicy,
+			loadDesired:       loadDesired,
+			loadShadowDesired: loadShadowDesired,
 		})
 		// Planning can succeed and the surrounding replay still fail, which
 		// leaves a plan nobody will publish. It holds the migration directory
@@ -680,7 +692,7 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 			files, err = plan.WriteFilesContext(cmd.Context())
 		}
 	} else {
-		files, err = generateAgainstTarget(cmd.Context(), generateOpts, targetURL, connectTimeout, loadDesired)
+		files, err = generateAgainstTarget(cmd.Context(), generateOpts, targetURL, connectTimeout, loadDesired, loadShadowDesired)
 	}
 	return outcome.report(cmd, targetURL, files, err)
 }
@@ -707,7 +719,7 @@ func (o *generateOutcome) report(
 	files *generator.MigrationFiles,
 	err error,
 ) error {
-	undecidednote.Report(cmd.ErrOrStderr(), o.undecided, o.current, "the desired schema")
+	undecidednote.Report(cmd.Context(), cmd.ErrOrStderr(), o.undecided, o.current, "the desired schema")
 	if err != nil {
 		return err
 	}
@@ -750,6 +762,25 @@ func reportGeneratedMigrationFiles(out io.Writer, targetURL string, files *gener
 			fmt.Fprintf(out, "REPORT: %s\n", pair.ReportFile)
 		}
 	}
+}
+
+// desiredLoaders returns the loader of the desired schema bound to a
+// database URL, and the loader of the desired schema the shadow verification
+// compares with, given the URL the plan was made against.
+func desiredLoaders(
+	cmd *cobra.Command,
+	runtime *engine.Runtime,
+	rootDirs, schemaFiles []string,
+	commands []schemasource.Command,
+	shadowDB string,
+) (load, loadShadow func(dialect, databaseURL string) (*schemamodel.Database, error)) {
+	load = func(dialect, databaseURL string) (*schemamodel.Database, error) {
+		return loadGenerateSchema(cmd, runtime, rootDirs, schemaFiles, commands, dialect, databaseURL)
+	}
+	loadShadow = func(dialect, plannedURL string) (*schemamodel.Database, error) {
+		return shadowDesired(cmd.Context(), runtime, dialect, plannedURL, shadowDB, load)
+	}
+	return load, loadShadow
 }
 
 // loadGenerateSchema reads the desired schema for `migrations generate`.

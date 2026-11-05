@@ -25,7 +25,7 @@ func TestDescriptors_NameTheConstants(t *testing.T) {
 
 	c.Assert(names, qt.DeepEquals, []string{
 		platform.Postgres, platform.MySQL, platform.MariaDB, platform.ClickHouse, platform.SQLite, platform.SQLServer,
-		platform.CockroachDB, platform.YugabyteDB, platform.Spanner, platform.Oracle, platform.YDB,
+		platform.CockroachDB, platform.YugabyteDB, platform.Spanner, platform.Oracle,
 	})
 }
 

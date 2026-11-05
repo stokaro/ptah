@@ -11,8 +11,8 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/dialect/ydb/ydbdiff"
-	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/clickhouse/chdiff"
+	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/planner/dialects/postgres"
 )
@@ -50,7 +50,7 @@ var supplementalDiffCategories = map[string]string{
 	"CurrentGrants":                   "every grant the read of the database reported, carried for a target that rebuilds a table and has to give the new one the grants the old one held. PostgreSQL changes its tables in place and never rebuilds one, so this planner reads the field nowhere",
 	"CurrentNotDescribed":             "what the read of the database declined to describe, carried for a target that rebuilds a table and must not drop a setting the read left out. PostgreSQL changes its tables in place and never rebuilds one, so this planner reads the field nowhere; a fixture here would assert that a coverage set plans nothing",
 	"CurrentDatabasePath":             "the absolute path of the database the read describes, carried for a target that names a Serial column's sequence, and some objects of a GRANT, by an absolute path. PostgreSQL addresses every object relative to the connection, so this planner reads the field nowhere; a fixture here would assert that a path plans nothing",
-	"Features":                        "every named feature object on each side, carried for a planner whose rule about one object depends on others the change set does not name, such as the YDB planner keeping the tables an async replication owns. It is an INPUT to a planner rather than a change: the changes are FeatureChanges, and a fixture here would assert that a context plans nothing",
+	"Features":                        "every named feature object on each side, carried for a planner whose rule about one object depends on others the change set does not name, such as a planner keeping the tables an owner's object holds. It is an INPUT to a planner rather than a change: the changes are FeatureChanges, and a fixture here would assert that a context plans nothing",
 	"ForeignKeysRemovedWithTables":    "supplements matching ConstraintsRemoved entries with column identities for MySQL/MariaDB drop ordering; it creates no operation by itself and PostgreSQL deliberately ignores it",
 	"FunctionsRemovedWithSignatures":  "the same removals FunctionsRemoved names, with the argument list that makes each one addressable; the planner reads this list and falls back to the bare names, so it creates no operation of its own and a fixture would exercise the same DROP twice (stokaro/ptah#2296)",
 	"ProceduresRemovedWithSignatures": "ProceduresRemoved with signatures, supplemental for the same reason",
@@ -66,8 +66,9 @@ var supplementalDiffCategories = map[string]string{
 // prevent one level down.
 var refusedDiffCategories = map[string]refusedFixture{
 	"FeatureChanges": {
-		why:  "a named feature change requires an owning planning handler; PostgreSQL refuses a YDB changefeed instead of dropping it",
-		diff: &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{{Subject: ydbschema.ChangefeedRef("", "events", "feed"), Value: &ydbdiff.Changefeed{After: &ydbschema.DesiredChangefeed{Spec: ydbschema.ChangefeedSpec{Name: "feed", Mode: "UPDATES", Format: "JSON"}}}}}},
+		why: "a named feature change requires an owning planning handler; PostgreSQL refuses a ClickHouse row policy instead of dropping it",
+		diff: &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{{Subject: chschema.RowPolicyRef("", "orders", "tenant"),
+			Value: chdiff.NewRowPolicy(nil, &chschema.DesiredRowPolicy{Filter: new("tenant = 1"), Roles: chschema.RoleSelection{All: true}})}}},
 	},
 	"SchemasAdded": {
 		why:  "the comparison records a created database only for a whole MySQL or MariaDB server (stokaro/ptah#3789), so a PostgreSQL plan reaches one only through a diff built by hand, and planning nothing would call the two sides equal",

@@ -104,6 +104,14 @@ type GenerateMigrationOptions struct {
 	// applies the candidate migration, re-introspects the result, and aborts if
 	// it differs from the Go schema.
 	ShadowDatabaseURL string
+	// ShadowGenerated is the desired schema the shadow verification compares
+	// with, for a target that binds a declared value to the database it names.
+	// A value bound to the database the plan reads cannot be bound again, so a
+	// shadow database that interprets values in another context, such as a
+	// dev realm of the target, needs the sources bound for it. Nil compares
+	// with the plan's own desired schema, which is right wherever the two
+	// databases share a context.
+	ShadowGenerated *schemamodel.Database
 	// PriorMigrationsFS supplies the immutable, already-authorized migration
 	// history used by shadow verification or another replay-based caller. When
 	// set, publication also refuses if OutputDir no longer matches this snapshot,

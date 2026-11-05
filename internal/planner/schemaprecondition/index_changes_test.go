@@ -29,7 +29,7 @@ func TestRefuseIndexChangesInPlace_FailurePath(t *testing.T) {
 			name: "an index comment",
 			diff: &difftypes.SchemaDiff{IndexCommentsChanged: []difftypes.IndexCommentChange{{TableName: "users", Name: "a", Desired: "x"}}},
 			wantErr: `unsupported feature: the diff writes the comment of index "a" of table "users" apart from the index, ` +
-				`which only a YDB or a PostgreSQL-family plan does; the postgres planner plans none`,
+				`which only a PostgreSQL-family plan or an executable provider's does; the postgres planner plans none`,
 		},
 	}
 

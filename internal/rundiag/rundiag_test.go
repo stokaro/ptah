@@ -283,6 +283,128 @@ func TestUseLogger_KeepsTheStrictListing(t *testing.T) {
 	c.Assert(stream.String(), qt.Equals, "warning: ww widgets; PTAH_LOG_LEVEL=debug lists them when PTAH_ATLAS_STRICT_COMPAT is off\n")
 }
 
+// Settle writes a category's warning at once, as the end of the run would,
+// and the end of the run does not write it again: a warning a confirmation
+// depends on precedes the confirmation.
+func TestSettle_WritesTheCategoryAtOnce(t *testing.T) {
+	c := qt.New(t)
+	report := rundiag.New(rundiag.Options{Listing: rundiag.ListedAtDebugLevel})
+	ctx := rundiag.With(context.Background(), report)
+	var out bytes.Buffer
+
+	c.Assert(rundiag.Warn(ctx, &out, widgets, record("a")), qt.IsNil)
+	c.Assert(rundiag.Warn(ctx, &out, widgets, record("b")), qt.IsNil)
+	rundiag.Settle(ctx, widgets)
+
+	c.Assert(out.String(), qt.Equals, "warning: ww widgets; PTAH_LOG_LEVEL=debug lists them\n")
+	report.Flush()
+	c.Assert(out.String(), qt.Equals, "warning: ww widgets; PTAH_LOG_LEVEL=debug lists them\n")
+}
+
+// An object Settle wrote is not raised again in the run, and one raised after
+// it is written when the run ends.
+func TestSettle_WritesEachObjectOnce(t *testing.T) {
+	c := qt.New(t)
+	report := rundiag.New(rundiag.Options{Listing: rundiag.ListedAtDebugLevel})
+	ctx := rundiag.With(context.Background(), report)
+	var out bytes.Buffer
+
+	c.Assert(rundiag.Warn(ctx, &out, widgets, record("a")), qt.IsNil)
+	rundiag.Settle(ctx, widgets)
+	c.Assert(rundiag.Warn(ctx, &out, widgets, record("a")), qt.IsNil)
+	c.Assert(rundiag.Warn(ctx, &out, widgets, record("b")), qt.IsNil)
+	report.Flush()
+
+	c.Assert(out.String(), qt.Equals, "warning: widget a\nwarning: widget b\n")
+}
+
+// Settle writes the category it names and leaves the others to the end of the
+// run.
+func TestSettle_LeavesOtherCategoriesToTheEnd(t *testing.T) {
+	c := qt.New(t)
+	report := rundiag.New(rundiag.Options{Listing: rundiag.ListedAtDebugLevel})
+	ctx := rundiag.With(context.Background(), report)
+	var out bytes.Buffer
+	gadgets := &rundiag.Category{Name: "gadget", Summary: func(records []rundiag.Record) string { return "gadgets" }}
+
+	c.Assert(rundiag.Warn(ctx, &out, gadgets, rundiag.Record{Key: "g", Line: "gadget g"}), qt.IsNil)
+	c.Assert(rundiag.Warn(ctx, &out, widgets, record("a")), qt.IsNil)
+	rundiag.Settle(ctx, widgets)
+
+	c.Assert(out.String(), qt.Equals, "warning: widget a\n")
+	report.Flush()
+	c.Assert(out.String(), qt.Equals, "warning: widget a\nwarning: gadget g\n")
+}
+
+// Without a run Warn has written each object, and Settle adds nothing.
+func TestSettle_WithoutARunWritesNothingMore(t *testing.T) {
+	c := qt.New(t)
+	var out bytes.Buffer
+
+	c.Assert(rundiag.Warn(context.Background(), &out, widgets, record("a")), qt.IsNil)
+	c.Assert(rundiag.Warn(context.Background(), &out, widgets, record("b")), qt.IsNil)
+	rundiag.Settle(context.Background(), widgets)
+
+	c.Assert(out.String(), qt.Equals, "warning: widget a\nwarning: widget b\n")
+}
+
+// A settled warning of a run whose log is JSON is a record too, with the
+// category and the number of objects.
+func TestSettle_WritesARecordWhenTheLogIsJSON(t *testing.T) {
+	c := qt.New(t)
+	report := rundiag.New(rundiag.Options{Records: true})
+	ctx := rundiag.With(context.Background(), report)
+	var out bytes.Buffer
+
+	c.Assert(rundiag.Warn(ctx, &out, widgets, record("a")), qt.IsNil)
+	c.Assert(rundiag.Warn(ctx, &out, widgets, record("b")), qt.IsNil)
+	rundiag.Settle(ctx, widgets)
+
+	c.Assert(jsonRecords(c, out.String()), qt.DeepEquals, []map[string]any{
+		{"level": "WARN", "msg": "ww widgets; PTAH_LOG_LEVEL=debug lists them", "category": "widget", "count": float64(2)},
+	})
+}
+
+// Drain hands each category's warning to the caller instead of writing it:
+// the message a line would carry, how many objects, and each object's line,
+// the categories in the order they were raised. It empties the report, so the
+// end of the run writes nothing, and it logs the objects at debug level as the
+// end of the run does.
+func TestDrain_ReturnsTheWarningsInsteadOfWritingThem(t *testing.T) {
+	c := qt.New(t)
+	var logged bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logged, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	c.Cleanup(func() { slog.SetDefault(previous) })
+	report := rundiag.New(rundiag.Options{Listing: rundiag.ListedInToolResult})
+	ctx := rundiag.With(context.Background(), report)
+	var out bytes.Buffer
+	gadgets := &rundiag.Category{Name: "gadget", Summary: func(records []rundiag.Record) string { return "gadgets" }}
+
+	c.Assert(rundiag.Warn(ctx, &out, gadgets, rundiag.Record{Key: "g", Line: "gadget g"}), qt.IsNil)
+	c.Assert(rundiag.Warn(ctx, &out, widgets, record("a")), qt.IsNil)
+	c.Assert(rundiag.Warn(ctx, &out, widgets, record("b")), qt.IsNil)
+	warnings := report.Drain()
+	report.Flush()
+
+	c.Assert(warnings, qt.DeepEquals, []rundiag.Warning{
+		{Category: "gadget", Count: 1, Message: "gadget g", Objects: []string{"gadget g"}},
+		{
+			Category: "widget", Count: 2, Message: "ww widgets; the result's _meta lists them under ptah.run/warnings",
+			Objects: []string{"widget a", "widget b"},
+		},
+	})
+	c.Assert(out.String(), qt.Equals, "")
+	c.Assert(strings.Count(logged.String(), "level=DEBUG"), qt.Equals, 3)
+}
+
+// A report nothing was raised in drains to no warning.
+func TestDrain_ReturnsNothingForAnEmptyReport(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(rundiag.New(rundiag.Options{}).Drain(), qt.HasLen, 0)
+}
+
 // jsonRecords is the JSON lines of written, without their time.
 func jsonRecords(c *qt.C, written string) []map[string]any {
 	c.Helper()
@@ -329,3 +451,52 @@ func TestTruncatedNames_SummaryNamesTheLimitTheRecordsShare(t *testing.T) {
 type failingWriter struct{ err error }
 
 func (w failingWriter) Write([]byte) (int, error) { return 0, w.err }
+
+// The undecided objects are named, those that share a cause together and
+// followed by it, the causes in the order they were first raised.
+func TestUndecidedObjects_SummaryNamesEachObjectByItsCause(t *testing.T) {
+	c := qt.New(t)
+	undecided := func(object, cause string) rundiag.Record {
+		return rundiag.Record{Attrs: []slog.Attr{slog.String("object", object), slog.String("cause", cause)}}
+	}
+
+	summary := rundiag.UndecidedObjects.Summary([]rundiag.Record{
+		undecided(`role "a"`, "roles were not read"),
+		undecided(`sequence "s"`, "sequences were not read"),
+		undecided(`role "b"`, "roles were not read"),
+	})
+
+	c.Assert(summary, qt.Equals, `3 objects get no planned change because the comparison could not decide them: `+
+		`role "a", role "b" (roles were not read); sequence "s" (sequences were not read)`)
+}
+
+// The omitted blocks name the variable that keeps them, which the records
+// carry, so the summary keeps the remedy each object's line gives.
+func TestAtlasOmittedBlocks_SummaryNamesTheVariableTheRecordsShare(t *testing.T) {
+	tests := []struct {
+		name    string
+		records []rundiag.Record
+		want    string
+	}{
+		{
+			name: "every record names it",
+			records: []rundiag.Record{
+				{Attrs: []slog.Attr{slog.String("variable", "KEEP_ALL")}},
+				{Attrs: []slog.Attr{slog.String("variable", "KEEP_ALL")}},
+			},
+			want: "2 blocks the Atlas community CLI refuses are omitted from the document; KEEP_ALL=1 keeps every block Ptah models",
+		},
+		{
+			name:    "no record names it",
+			records: []rundiag.Record{{}, {}},
+			want:    "2 blocks the Atlas community CLI refuses are omitted from the document",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(rundiag.AtlasOmittedBlocks.Summary(test.records), qt.Equals, test.want)
+		})
+	}
+}

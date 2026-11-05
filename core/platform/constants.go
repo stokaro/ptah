@@ -17,11 +17,6 @@ const (
 	YugabyteDB  = "yugabytedb"
 	Spanner     = "spanner"
 	Oracle      = "oracle"
-	// YDB is the YDB database, read and written in its own query language,
-	// YQL, over gRPC. It is not in the PostgreSQL family: YDB serves no
-	// PostgreSQL wire protocol or syntax, and in YQL a double-quoted "x" is a
-	// string rather than a name.
-	YDB = "ydb"
 )
 
 // NormalizeDialect folds every spelling of a target onto the one canonical

@@ -518,6 +518,17 @@ server skips the second statement or lets it replace the first: the file names
 two objects, and the server would keep one of them without an error. Ptah is
 stricter than the server here.
 
+Lint reports the same names without a database. `ptah sql lint` reports each
+cut name as `DDL003`, a warning, and each cut name the server refuses as already
+in use as `DDL004`, an error, at the line and column where the name is written.
+`ptah migrations lint` reports them as `PG401P` and `PG402P` at the line of the
+statement, and follows the names across the directory in the order its
+versions apply. A guarded statement whose cut name lands on a name in use is
+reported as `DDL003` or `PG401P`, with a note that the server keeps one of the
+two objects, because the server accepts the statement. Both commands read
+`.ptah-lint.yaml`, so a project can promote `DDL003` to an error or disable it
+like any other rule; see [Lint rules](../../reference/lint-rules/).
+
 The same namespaces decide a name written twice. A table created again without
 `IF NOT EXISTS`, a second index of one name, an index, view or sequence named
 like a table, or a constraint added under a name the table already uses is

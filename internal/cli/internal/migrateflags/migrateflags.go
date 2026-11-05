@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"ptah.run/core/lintext"
+	"ptah.run/internal/atlasmigrateimport"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
 )
@@ -77,6 +79,53 @@ func ParseMigrationTxMode(value string) (migrator.MigrationTxMode, error) {
 	default:
 		return "", fmt.Errorf("invalid tx-mode %q: expected file, all, or none", value)
 	}
+}
+
+// RunnerFlag is the flag `migrations lint` and `migrations up` read a
+// [Runner] from, and RunnerUsage its help; `migration.runner` in ptah.yaml is
+// its project default.
+const (
+	RunnerFlag  = "runner"
+	RunnerUsage = "Tool the migration directory is written for: ptah, which runs each file in a transaction of its own, " +
+		"or golang-migrate, which opens none and runs the transactions a file opens itself"
+)
+
+// Runner is the tool a migration directory is written for, which decides who
+// opens the transaction each of its files runs in. `migrations lint` judges a
+// file's transaction control against it, and `migrations up` applies each file
+// the way it runs one.
+type Runner string
+
+const (
+	// RunnerPtah is Ptah's migrator, which runs each file in a transaction it
+	// opens unless the file opts out. Atlas runs files the same way. It is the
+	// default.
+	RunnerPtah Runner = "ptah"
+	// RunnerGolangMigrate is golang-migrate, which opens no transaction around
+	// a file, so a file runs in the transactions it opens itself.
+	RunnerGolangMigrate Runner = "golang-migrate"
+)
+
+// ParseRunner parses a --runner value. Empty is [RunnerPtah].
+func ParseRunner(value string) (Runner, error) {
+	switch runner := Runner(strings.ToLower(strings.TrimSpace(value))); runner {
+	case "", RunnerPtah:
+		return RunnerPtah, nil
+	case RunnerGolangMigrate:
+		return runner, nil
+	default:
+		return "", fmt.Errorf("invalid runner %q: expected ptah or golang-migrate", value)
+	}
+}
+
+// TransactionOwner is who opens the transaction a file runs in under r. It
+// is read from the import layout of the same name, which holds the
+// measurement of what golang-migrate opens, so the native surface and the
+// compatibility surface cannot come to disagree about one tool. Ptah is no
+// import layout, and the layouts answer a migrator that wraps each file for
+// every tool but golang-migrate.
+func (r Runner) TransactionOwner() lintext.TransactionOwner {
+	return atlasmigrateimport.Format(r).TransactionOwner()
 }
 
 // ParseRevisionTableFormat normalizes a revision table format value.

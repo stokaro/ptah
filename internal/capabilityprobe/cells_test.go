@@ -230,14 +230,6 @@ func TestCells_CoverEveryVersionMeasuredFromALiveServer(t *testing.T) {
 		{platform.CockroachDB, "26.2.5"},
 		{platform.YugabyteDB, "2026.1.0.0"},
 		{platform.SQLServer, "17.0.4065.4"},
-		// What `SELECT Version()` answered on each local-ydb image the YDB
-		// cells start; 25.4.1.15 answers with its branch name.
-		{platform.YDB, "26.2.1.14"},
-		{platform.YDB, "26.1.1.22"},
-		{platform.YDB, "stable-25-4-1"},
-		{platform.YDB, "25.3.1.25"},
-		{platform.YDB, "25.2.1.24"},
-		{platform.YDB, "25.1.4.7"},
 	} {
 		t.Run(fmt.Sprintf("%s %s", tc.dialect, tc.version), func(t *testing.T) {
 			c := qt.New(t)
@@ -340,9 +332,6 @@ var databaseImages = map[string]string{
 	// gvenzl/oracle-xe ships Express Edition, so neither cell is Emulated.
 	"gvenzl/oracle-free": platform.Oracle,
 	"gvenzl/oracle-xe":   platform.Oracle,
-	// YDB's own single-node image, which runs the server rather than an
-	// emulator of it.
-	"ydbplatform/local-ydb": platform.YDB,
 }
 
 // notADatabase lists the images these files start that no capability preset
@@ -684,15 +673,6 @@ func TestCells_BestEffortLinesAreExactlyTheUnmeasuredOnes(t *testing.T) {
 	// (stokaro/ptah#3190).
 	c.Assert(bestEffort, qt.ContentEquals, []string{
 		"spanner-0",
-		// The YDB lines between 25.1 and 26.2. Each has a preset, a launch
-		// recipe and a statement table, and declares in Unprobed why no job
-		// runs it: YDB publishes no support period for its open-source lines,
-		// so the matrix probes the current release and 25.1, the one line
-		// with a published support date.
-		"ydb-26-1",
-		"ydb-25-4",
-		"ydb-25-3",
-		"ydb-25-2",
 		// ClickHouse 25.8 came back, and by the other route: not a line that
 		// lost a recipe, but one whose vendor stopped patching it. Upstream
 		// support ended on 2026-08-29, and end of life lowers what Ptah
@@ -904,121 +884,6 @@ func ruleDisablingCellsFile(c *qt.C) renovatePackageRule {
 			"manager pattern is the only thing standing between a bot and the release lines",
 			renovateConfig, cellsFile))
 	return matching[0]
-}
-
-// ydbImage is the image repository whose release lines wait on the
-// Dependency Dashboard; see TestRenovate_HoldsANewYDBLineForApproval.
-const ydbImage = "ydbplatform/local-ydb"
-
-// TestRenovate_HoldsANewYDBLineForApproval keeps a YDB line change out of the
-// pull request queue.
-//
-// local-ydb tags a pre-release line exactly as it tags a released one, and the
-// integration workflow pins a four-part version, so a move to another line
-// reaches Renovate as a minor update and reads like a patch. Merged as one, it
-// replaced the certified line with a line YDB had not released
-// (stokaro/ptah#4076). The rule holds major and minor updates for approval and
-// leaves a patch inside the pinned line to arrive as a pull request.
-func TestRenovate_HoldsANewYDBLineForApproval(t *testing.T) {
-	c := qt.New(t)
-
-	c.Assert(declaredImageRepositories(), qt.Contains, ydbImage,
-		qt.Commentf("no cell declares %q, so the rule below guards an image nothing runs", ydbImage))
-
-	rules := rulesHoldingForApproval(c, ydbImage)
-	c.Assert(rules, qt.HasLen, 1,
-		qt.Commentf("%s must carry exactly one rule that holds %q updates for approval; without it "+
-			"a new YDB line arrives as an ordinary pull request", renovateConfig, ydbImage))
-	c.Assert(rules[0].MatchUpdateTypes, qt.ContentEquals, []string{"major", "minor"},
-		qt.Commentf("a line change is a major or minor update; holding a patch as well would stop "+
-			"the pinned line from receiving its fixes"))
-}
-
-// TestRenovate_KeepsTheYDB251ServiceOnItsLine keeps a bot from moving the
-// integration workflow's second YDB server off 25.1.
-//
-// The workflow pins local-ydb twice, once per certified line, and when a new
-// line appears Renovate files both pins in one branch: the 26.2 pin moves to
-// it as a minor update and the 25.1 pin as a major one. Approving the first
-// on the Dependency Dashboard would then move the second, and the YDB live
-// tests would stop running on 25.1. The rule matches the 25.1 pin alone and
-// allows it a patch inside its line and nothing else.
-func TestRenovate_KeepsTheYDB251ServiceOnItsLine(t *testing.T) {
-	c := qt.New(t)
-
-	tags := tagsStarted(c, integrationWorkflow, ydbImage)
-	c.Assert(tags, qt.HasLen, 2,
-		qt.Commentf("%s starts %v from %s; this test reads one pin per certified YDB line",
-			integrationWorkflow, tags, ydbImage))
-
-	rules := rulesPinningTheCurrentLine(c, ydbImage)
-	c.Assert(rules, qt.HasLen, 1,
-		qt.Commentf("%s must carry exactly one rule that keeps a %s pin on its line", renovateConfig, ydbImage))
-	c.Assert(rules[0].AllowedVersions, qt.Equals, rules[0].MatchCurrentValue)
-	current, err := regexp.Compile(strings.TrimSuffix(strings.TrimPrefix(rules[0].MatchCurrentValue, "/"), "/"))
-	c.Assert(err, qt.IsNil)
-	matched := slices.DeleteFunc(slices.Clone(tags), func(tag string) bool { return !current.MatchString(tag) })
-	c.Assert(matched, qt.HasLen, 1, qt.Commentf("the rule matches %v of the pins %v", matched, tags))
-	c.Assert(matched[0], qt.Matches, regexp.QuoteMeta(capabilityline.YDB251)+`\..+`)
-}
-
-// tagsStarted returns the tag of every container a file starts from the
-// repository.
-func tagsStarted(c *qt.C, path, repository string) []string {
-	c.Helper()
-
-	var tags []string
-	for _, ref := range startedImages(c, path) {
-		if started, tag := splitImageRef(ref); started == repository {
-			tags = append(tags, tag)
-		}
-	}
-	return tags
-}
-
-// rulesPinningTheCurrentLine returns the rules that cover the package and
-// restrict the versions a pin matching their current value may move to.
-func rulesPinningTheCurrentLine(c *qt.C, name string) []renovatePackageRule {
-	c.Helper()
-
-	body, err := os.ReadFile(renovateConfig)
-	c.Assert(err, qt.IsNil)
-
-	var config struct {
-		PackageRules []renovatePackageRule `json:"packageRules"`
-	}
-	c.Assert(json.Unmarshal(body, &config), qt.IsNil)
-
-	var matching []renovatePackageRule
-	for _, rule := range config.PackageRules {
-		if rule.MatchCurrentValue != "" && rule.AllowedVersions != "" && renovateRuleCovers(c, rule, name) {
-			matching = append(matching, rule)
-		}
-	}
-	return matching
-}
-
-// rulesHoldingForApproval returns the rules that cover the package and make
-// its updates wait for approval on the Dependency Dashboard.
-func rulesHoldingForApproval(c *qt.C, name string) []renovatePackageRule {
-	c.Helper()
-
-	body, err := os.ReadFile(renovateConfig)
-	c.Assert(err, qt.IsNil)
-
-	var config struct {
-		PackageRules []renovatePackageRule `json:"packageRules"`
-	}
-	c.Assert(json.Unmarshal(body, &config), qt.IsNil)
-
-	var matching []renovatePackageRule
-	for _, rule := range config.PackageRules {
-		if rule.DependencyDashboardApproval != nil && *rule.DependencyDashboardApproval &&
-			renovateRuleCovers(c, rule, name) {
-			matching = append(matching, rule)
-		}
-	}
-	return matching
 }
 
 // renovateRuleCovers reports whether the rule's package selectors match name.
@@ -1319,12 +1184,10 @@ func TestCells_EveryDeclaredUnderstatementIsStillOne(t *testing.T) {
 		}
 	}
 
-	// No cell declares an understatement: YDB's views, users and groups and
-	// TTL policy are rendered, read and planned, so each YDB preset claims
-	// what the server does. Spanner declared one once and earned it away: the
-	// endpoint's sequences turned out to be readable through the quoted
-	// spelling of the catalog view, so the preset claims the key now
-	// (stokaro/ptah#1856).
+	// No cell declares an understatement. Spanner declared one once and
+	// earned it away: the endpoint's sequences turned out to be readable
+	// through the quoted spelling of the catalog view, so the preset claims
+	// the key now (stokaro/ptah#1856).
 	//
 	// The rule is exercised on a declaration built here, so it is seen to
 	// catch a stale one whatever the cells declare.

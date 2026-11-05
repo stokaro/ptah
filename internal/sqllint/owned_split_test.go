@@ -3,6 +3,7 @@ package sqllint_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -67,11 +68,27 @@ var (
 		kind(lintext.ClassCreateTable, "CREATE TABLE", "a"), {Fact: lintext.FactMissingPrimaryKey, Table: "a"}}}
 )
 
+// withDecimal and withoutDecimal answer the one capability the fixture's
+// statements require.
+var (
+	withDecimal    = capability.Capabilities{}.With(capability.ParameterizedDecimal, true)
+	withoutDecimal = capability.Capabilities{}.With(capability.ParameterizedDecimal, false)
+)
+
+// findingLines writes each finding as its position, rule and message.
+func findingLines(findings []sqllint.Finding) []string {
+	var out []string
+	for _, finding := range findings {
+		out = append(out, fmt.Sprintf("%d:%d %s %s", finding.Line, finding.Column, finding.Rule, finding.Message))
+	}
+	return out
+}
+
 func lintOwned(c *qt.C, owner splittingOwner, caps capability.Capabilities) []string {
 	c.Helper()
 	findings, err := sqllint.LintSource(c.Context(), owner.source(), sqllint.Options{Dialect: "fixture", Capabilities: caps, Owner: owner})
 	c.Assert(err, qt.IsNil)
-	return yqlFindings(findings)
+	return findingLines(findings)
 }
 
 // A source an owner splits is read from the facts of the split: what each
@@ -90,15 +107,15 @@ func TestLintSource_OwnedSplit_HappyPath(t *testing.T) {
 			want:  []string{"1:1 SQL002 ptah sql lint does not lint UPSERT statements yet"}},
 		{name: "a table without a primary key", judged: everyStatement, owned: []ownedStatement{createWithoutPK},
 			want: []string{`1:1 DDL001 table "a" has no primary key`}},
-		{name: "a capability the target refuses", judged: everyStatement, caps: capability.YDB251(), owned: []ownedStatement{createPrice},
+		{name: "a capability the target refuses", judged: everyStatement, caps: withoutDecimal, owned: []ownedStatement{createPrice},
 			want: []string{"1:1 CAP001 COLUMN price of table a requires target capability parameterized_decimal, unavailable on this target"}},
-		{name: "a capability the target has", judged: everyStatement, caps: capability.YDB262(), owned: []ownedStatement{createPrice}},
+		{name: "a capability the target has", judged: everyStatement, caps: withDecimal, owned: []ownedStatement{createPrice}},
 		{name: "a capability the target does not answer", judged: everyStatement, owned: []ownedStatement{createPrice},
 			want: []string{"1:1 SQL004 no rule examined the parameterized_decimal requirement of COLUMN price of table a in this file"}},
 		{name: "a schema statement no fact examines", judged: everyStatement,
 			owned: []ownedStatement{createWithoutPK, {sql: "DROP TABLE a", effects: []lintext.Effect{kind(lintext.ClassSchema, "DROP TABLE", "a")}}},
 			want:  []string{`1:1 DDL001 table "a" has no primary key`, "1:1 SQL004 no rule examined DROP TABLE in this file"}},
-		{name: "a schema statement with a requirement", judged: everyStatement, caps: capability.YDB251(),
+		{name: "a schema statement with a requirement", judged: everyStatement, caps: withoutDecimal,
 			owned: []ownedStatement{{sql: "CREATE INDEX v ON a (price)", effects: []lintext.Effect{kind(lintext.ClassSchema, "CREATE INDEX", "v"), decimalPrice}}},
 			want:  []string{"1:1 CAP001 COLUMN price of table a requires target capability parameterized_decimal, unavailable on this target"}},
 		{name: "a table when only kinds are judged", judged: kindsOnly,
@@ -214,7 +231,7 @@ func TestOwnerCatalogIDs_EachIsEmitted(t *testing.T) {
 			owner := splittingOwner{judged: everyStatement, statements: []ownedStatement{emission}}
 
 			findings, err := sqllint.LintSource(c.Context(), owner.source(),
-				sqllint.Options{Dialect: "fixture", Capabilities: capability.YDB251(), Owner: owner})
+				sqllint.Options{Dialect: "fixture", Capabilities: withoutDecimal, Owner: owner})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(findings, qt.HasLen, 1)

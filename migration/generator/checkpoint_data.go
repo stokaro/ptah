@@ -106,11 +106,13 @@ func renderBootstrapTable(
 }
 
 // bootstrapColumnTypes answers, on an engine whose descriptor asks for typed
-// rows (descriptor.ManagedData.TypedRows), the type of each column of the
+// rows (descriptor.ManagedData.TypedRows), or on an engine with no descriptor
+// whose provider types rows (dataext.Rows), the type of each column of the
 // table as the shadow database holds it, and the rows in the form the owner's
 // row service gives them; every other engine renders a value from its Go value
-// alone, and gets rows back as they are. renderBootstrapData has refused such
-// an engine when its runtime registered no row service, so typer is set.
+// alone, and gets rows back as they are. renderBootstrapData has refused a
+// described engine that asks for typed rows when its runtime registered no
+// row service, so typer is set there.
 //
 // YQL types every literal, so on YDB a statement that inserts a row writes each
 // value in its column's YDB type, and the replayed table is where that type is:
@@ -124,8 +126,8 @@ func bootstrapColumnTypes(
 	tableSchema, table string,
 	rows []map[string]any,
 ) (map[string]string, []map[string]any, error) {
-	described, _ := platform.Lookup(conn.Info().Dialect)
-	if !described.ManagedData.TypedRows {
+	described, found := platform.Lookup(conn.Info().Dialect)
+	if found && !described.ManagedData.TypedRows || !found && typer == nil {
 		return nil, rows, nil
 	}
 	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{tableSchema})

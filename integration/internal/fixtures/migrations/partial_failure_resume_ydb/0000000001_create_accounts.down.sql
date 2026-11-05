@@ -1,2 +1,0 @@
-DROP TABLE IF EXISTS ledger;
-DROP TABLE IF EXISTS accounts;

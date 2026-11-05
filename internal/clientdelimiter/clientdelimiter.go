@@ -1,11 +1,10 @@
 // Package clientdelimiter recognizes a client delimiter directive: the MySQL
 // client's `DELIMITER $$` line and Atlas's `-- atlas:delimiter $$` comment.
 //
-// It is one recognizer because two callers have to agree on the same set of
-// lines. core/sqlutil honors a directive when it splits a script for every
-// dialect but YDB, and internal/yqlquery refuses one in YQL, which has no
-// client delimiter. A second copy of the rules would refuse a line the
-// splitter does not honor, or let through a line it does.
+// core/sqlutil honors a directive when it splits a script. The recognizer is a
+// package of its own so that a splitter for a language with no client
+// delimiter refuses the same set of lines: a second copy of the rules would
+// refuse a line the splitter does not honor, or let through a line it does.
 package clientdelimiter
 
 import "strings"

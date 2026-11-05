@@ -10,7 +10,6 @@ import (
 	"ptah.run/internal/planner/dialects/oracle"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/internal/planner/dialects/sqlite"
-	ydbplanner "ptah.run/internal/planner/dialects/ydb"
 )
 
 // plannerFactory is the planner of a bundled dialect. A dialect of the
@@ -19,10 +18,6 @@ import (
 func plannerFactory(dialect descriptor.Dialect) (planext.Factory, bool) {
 	name := dialect.Name
 	switch {
-	case name == platform.YDB:
-		return func(opts planext.Options) planext.Planner {
-			return ydbplanner.NewWithCapabilities(opts.CapabilitiesFor(name)).WithTableRebuild(opts.AllowTableRebuild).WithTableRebuildRequest(opts.TableRebuildRequest)
-		}, true
 	case dialect.Family == platform.Postgres:
 		return func(opts planext.Options) planext.Planner {
 			plan := postgres.NewForDialect(name, opts.CapabilitiesFor(name)).

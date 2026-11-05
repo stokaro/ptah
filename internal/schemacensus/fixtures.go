@@ -6,7 +6,6 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
-	"ptah.run/core/platform/capability"
 	platformidentifier "ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -16,18 +15,9 @@ import (
 	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/dialect/timescaledb/tsschema"
-	"ptah.run/dialect/ydb/ydbcoordination"
-	"ptah.run/dialect/ydb/ydbexternal"
-	"ptah.run/dialect/ydb/ydbreplication"
-	"ptah.run/dialect/ydb/ydbschema"
-	"ptah.run/dialect/ydb/ydbsecret"
-	"ptah.run/dialect/ydb/ydbstreaming"
-	"ptah.run/dialect/ydb/ydbtopic"
-	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/feature/pgextension"
 	"ptah.run/feature/synonym"
-	"ptah.run/internal/capabilityprobe"
 )
 
 // Fixture is one named desired schema the census ablates fields out of.
@@ -40,39 +30,10 @@ import (
 type Fixture struct {
 	Name   string
 	Schema schemamodel.Database
-	// Flags are capabilities a YDB cluster turns on with a feature flag,
-	// off on every YDB preset, that the fixture's objects need. Every YDB
-	// cell renders the fixture with them on, as a cluster that turned the
-	// flags on would; a fixture without them would be refused on every cell,
-	// and no field of it could be measured.
-	Flags []capability.Capability
 
 	// populated is every field path the schema declares, from
 	// [PopulatedFields]; nil on a fixture [Fixtures] did not build.
 	populated map[string]bool
-}
-
-// Cells returns cells with the fixture's flags turned on in the preset of
-// every YDB cell. The other cells are returned as they are.
-func (f Fixture) Cells(cells []capabilityprobe.Cell) []capabilityprobe.Cell {
-	if len(f.Flags) == 0 {
-		return cells
-	}
-	flagged := make([]capabilityprobe.Cell, 0, len(cells))
-	for _, cell := range cells {
-		if cell.Dialect == platform.YDB && cell.Preset != nil {
-			preset := cell.Preset
-			cell.Preset = func() capability.Capabilities {
-				caps := preset()
-				for _, flag := range f.Flags {
-					caps = caps.With(flag, true)
-				}
-				return caps
-			}
-		}
-		flagged = append(flagged, cell)
-	}
-	return flagged
 }
 
 // oneTable is the smallest schema every target accepts: one table with a
@@ -150,12 +111,6 @@ func corpus() []Fixture {
 		{Name: "table-override", Schema: tableOverrideFixture()},
 		{Name: "table-rowttl", Schema: tableRowTTLFixture()},
 		{Name: "table-row-deletion", Schema: tableRowDeletionFixture()},
-		{Name: "table-ydb-ttl", Schema: tableYDBTTLFixture()},
-		{Name: "table-column-families", Schema: tableColumnFamiliesFixture()},
-		{Name: "table-column-store", Schema: tableColumnStoreFixture(), Flags: []capability.Capability{capability.TieredTTL}},
-		{Name: "table-changefeed", Schema: tableChangefeedFixture()},
-		{Name: "table-changefeed-disabled", Schema: tableChangefeedDisabledFixture()},
-		{Name: "table-row-deletion-epoch", Schema: tableRowDeletionEpochFixture()},
 		{Name: "fk-field", Schema: foreignKeyFieldFixture()},
 		{Name: "fk-field-deferrable", Schema: foreignKeyDeferrableFixture()},
 		{Name: "fk-table", Schema: foreignKeyTableFixture()},
@@ -181,18 +136,6 @@ func corpus() []Fixture {
 		{Name: "index-hash", Schema: indexHashFixture()},
 		{Name: "index-invisible", Schema: indexInvisibleFixture()},
 		{Name: "index-key-block-size", Schema: indexKeyBlockSizeFixture()},
-		{Name: "index-partitioning", Schema: indexPartitioningFixture()},
-		{Name: "index-partitioning-unsplit", Schema: indexPartitioningUnsplitFixture()},
-		{Name: "index-vector", Schema: indexVectorFixture(&ydbschema.DesiredVectorIndex{
-			Distance: "cosine", VectorType: "float", Dimension: 3, Levels: 2, Clusters: 128,
-		})},
-		{Name: "index-vector-similarity", Schema: indexVectorFixture(&ydbschema.DesiredVectorIndex{
-			Similarity: "inner_product", VectorType: "int8", Dimension: 3, Levels: 1, Clusters: 2,
-		})},
-		{Name: "table-partitioning", Schema: tablePartitioningFixture()},
-		{Name: "table-partitioning-unsplit", Schema: tablePartitioningUnsplitFixture()},
-		{Name: "table-uniform-partitions", Schema: tableUniformPartitionsFixture()},
-		{Name: "table-partition-at-keys", Schema: tablePartitionAtKeysFixture()},
 		{Name: "enum", Schema: enumFixture()},
 		{Name: "sequence", Schema: sequenceFixture()},
 		{Name: "view", Schema: viewFixture()},
@@ -208,13 +151,6 @@ func corpus() []Fixture {
 		{Name: "hypertable", Schema: hypertableFixture()},
 		{Name: "continuous-aggregate", Schema: continuousAggregateFixture()},
 		{Name: "synonym", Schema: synonymFixture()},
-		{Name: "topic", Schema: topicFixture()},
-		{Name: "resource-pool", Schema: resourcePoolFixture()},
-		{Name: "async-replication", Schema: asyncReplicationFixture()},
-		{Name: "async-replication-token", Schema: asyncReplicationTokenFixture()},
-		{Name: "transfer", Schema: transferFixture()},
-		{Name: "owned-coordination-node", Schema: ownedCoordinationNodeFixture()},
-		{Name: "secret", Schema: secretFixture()},
 		{Name: "security-policy", Schema: securityPolicyFixture()},
 		{Name: "routine-options", Schema: routineOptionsFixture()},
 		{Name: "pgpolicy-policy", Schema: tablePolicyFixture()},
@@ -223,15 +159,13 @@ func corpus() []Fixture {
 		{Name: "pgextension-extension", Schema: ownedExtensionFixture()},
 		{Name: "pgtype-types", Schema: ownedTypeFixture()},
 		{Name: "oratype-types", Schema: ownedOracleTypeFixture()},
-		{Name: "streaming-query", Schema: streamingQueryFixture(), Flags: []capability.Capability{capability.StreamingQueries}},
-		{Name: "external-objects", Schema: externalObjectsFixture(),
-			Flags: []capability.Capability{capability.ExternalDataSources}},
 		{Name: "extended-property", Schema: extendedPropertyFixture()},
 		{Name: "role", Schema: roleFixture()},
 		{Name: "role-cockroachdb", Schema: cockroachRoleFixture()},
-		{Name: "ydb-group-membership", Schema: ydbGroupMembershipFixture()},
-		{Name: "ydb-grant-database", Schema: ydbGrantDatabaseFixture()},
-		{Name: "ydb-grant-topic", Schema: ydbGrantTopicFixture()},
+		{Name: "role-group", Schema: roleGroupFixture()},
+		{Name: "role-membership", Schema: roleMembershipFixture()},
+		{Name: "grant-database", Schema: grantDatabaseFixture()},
+		{Name: "grant-object", Schema: grantObjectFixture()},
 		{Name: "grant-table", Schema: grantTableFixture()},
 		{Name: "grant-schema", Schema: grantSchemaFixture()},
 		{Name: "grant-sequence", Schema: grantSequenceFixture()},
@@ -329,8 +263,8 @@ func indexHostTableTwoTablesFixture() schemamodel.Database {
 }
 
 // twoIndexedTables is [twoNamedTables] with a column outside the key on each
-// table. An index needs one on YDB, and moving the index to the other table
-// needs it there too.
+// table, which an index reads, and moving the index to the other table needs
+// it there too.
 func twoIndexedTables() schemamodel.Database {
 	db := twoNamedTables()
 	db.Fields = append(db.Fields,
@@ -901,49 +835,6 @@ func tableOverrideFixture() schemamodel.Database {
 	})
 }
 
-// tableColumnFamiliesFixture sets every setting of a YDB column family, on a
-// family holding a column, beside a default family with a setting of its own.
-func tableColumnFamiliesFixture() schemamodel.Database {
-	families := &ydbschema.DesiredColumnFamilies{Families: []ydbschema.ColumnFamily{
-		{Name: "default", Compression: "lz4"},
-		{Name: "cold", Data: "hdd", Compression: "lz4", CacheMode: "in_memory", Columns: []string{"payload"}},
-	}}
-	return oneTable("T", schemamodel.Table{
-		Name: "t", Facets: must.Must(schemaext.NewFacets(families)),
-	}, schemamodel.Field{StructName: "T", FieldName: "Payload", Name: "payload", Type: "TEXT", Nullable: true})
-}
-
-// tableChangefeedFixture sets every option of a YDB changefeed and every
-// setting of a consumer, on two consumers since YDB refuses one that is both
-// important and limited by an availability period. Its starting partition
-// count needs a Uint64 key, which an unsigned BIGINT maps to.
-func tableChangefeedFixture() schemamodel.Database {
-	db := oneTable("T", schemamodel.Table{Name: "t"})
-	db.FeatureObjects = must.Must(schemaext.NewObjects(ydbschema.DesiredObject("", "t", ydbschema.ChangefeedSpec{
-		Name: "updates", Mode: "NEW_IMAGE", Format: "JSON", VirtualTimestamps: true,
-		ResolvedTimestamps: "PT10S", InitialScan: true, UserSIDs: true, SchemaChanges: true,
-		TopicMinActivePartitions: 2, TopicAutoPartitioning: true, RetentionPeriod: "PT12H",
-		Consumers: []ydbtopic.ConsumerSpec{
-			{Name: "audit", Important: true, ReadFrom: "2026-01-01T00:00:00Z", SupportedCodecs: []string{"raw"}},
-			{Name: "late", AvailabilityPeriod: "PT1H"},
-		},
-	})))
-	db.FeatureCoverage = must.Must(ydbschema.ChangefeedCoverage(schemaext.Desired, nil))
-	db.Fields[0].Type = "BIGINT UNSIGNED"
-	return db
-}
-
-// tableChangefeedDisabledFixture is a changefeed only a reader reports, which
-// every target refuses to write: YDB has no statement that disables one.
-func tableChangefeedDisabledFixture() schemamodel.Database {
-	db := oneTable("T", schemamodel.Table{Name: "t"})
-	db.FeatureObjects = must.Must(schemaext.NewObjects(ydbschema.DesiredObject("", "t", ydbschema.ChangefeedSpec{
-		Name: "updates", Mode: "UPDATES", Format: "JSON", Disabled: true,
-	})))
-	db.FeatureCoverage = must.Must(ydbschema.ChangefeedCoverage(schemaext.Desired, nil))
-	return db
-}
-
 func twoTables() schemamodel.Database {
 	return schemamodel.Database{
 		Tables: []schemamodel.Table{
@@ -1197,80 +1088,6 @@ func indexStorageFixture() schemamodel.Database {
 	return db
 }
 
-// indexPartitioningFixture sets every partitioning setting of a YDB global
-// index but the switch that turns splitting by size off, which a partition
-// size cannot share an index with; indexPartitioningUnsplitFixture sets that.
-func indexPartitioningFixture() schemamodel.Database {
-	db := indexedTable()
-	db.Indexes = []schemamodel.Index{{
-		StructName: "T", Name: "idx_t_s", TableName: "t", Fields: []string{"s"},
-		Facets: indexSettings(ydbschema.IndexPartitioning{
-			PartitionSizeMB: 512, ByLoad: new(true), MinPartitions: 3, MaxPartitions: 9, ReadReplicas: "PER_AZ:1",
-		}),
-	}}
-	return db
-}
-
-func indexPartitioningUnsplitFixture() schemamodel.Database {
-	db := indexedTable()
-	db.Indexes = []schemamodel.Index{{
-		StructName: "T", Name: "idx_t_s", TableName: "t", Fields: []string{"s"},
-		Facets: indexSettings(ydbschema.IndexPartitioning{BySize: new(false)}),
-	}}
-	return db
-}
-
-// indexVectorFixture declares a YDB vector index with settings over a vector
-// column of the dimension the settings name.
-func indexVectorFixture(settings *ydbschema.DesiredVectorIndex) schemamodel.Database {
-	db := oneTable("T", schemamodel.Table{Name: "t"},
-		schemamodel.Field{StructName: "T", FieldName: "Emb", Name: "emb", Type: "vector(3)", Nullable: true},
-	)
-	db.Indexes = []schemamodel.Index{{
-		StructName: "T", Name: "idx_t_emb", TableName: "t", Fields: []string{"emb"}, Type: "vector_kmeans_tree",
-		Facets: must.Must(schemaext.NewFacets(settings)),
-	}}
-	return db
-}
-
-// tablePartitioningFixture sets every setting of a YDB row table but the
-// switch that turns splitting by size off, which a partition size cannot share
-// a table with, and the two starting layouts, which cannot share a table with
-// each other; the three fixtures after it set those.
-func tablePartitioningFixture() schemamodel.Database {
-	return oneTable("T", schemamodel.Table{Name: "t", Facets: tableSettings(ydbschema.TablePartitioning{
-		PartitionSizeMB: 512, ByLoad: new(true), MinPartitions: 3, MaxPartitions: 9, ReadReplicas: "PER_AZ:1",
-		KeyBloomFilter: new(true),
-	})})
-}
-
-func tablePartitioningUnsplitFixture() schemamodel.Database {
-	return oneTable("T", schemamodel.Table{Name: "t", Facets: tableSettings(ydbschema.TablePartitioning{BySize: new(false)})})
-}
-
-// tableUniformPartitionsFixture keys the table on an unsigned column, the
-// only kind whose range YDB splits evenly.
-func tableUniformPartitionsFixture() schemamodel.Database {
-	db := oneTable("T", schemamodel.Table{Name: "t", Facets: tableSettings(ydbschema.TablePartitioning{UniformPartitions: 4})})
-	db.Fields[0].Type = "BIGINT UNSIGNED"
-	return db
-}
-
-func tablePartitionAtKeysFixture() schemamodel.Database {
-	return oneTable("T", schemamodel.Table{Name: "t",
-		Facets: tableSettings(ydbschema.TablePartitioning{PartitionAtKeys: [][]string{{"10"}, {"20"}}})})
-}
-
-// tableSettings is a YDB row table's settings as the YDB owner's facet.
-func tableSettings(settings ydbschema.TablePartitioning) schemaext.Facets {
-	return must.Must(schemaext.NewFacets(&ydbschema.DesiredTablePartitioning{TablePartitioning: settings}))
-}
-
-// indexSettings is a YDB global index's settings as the YDB owner's facet.
-func indexSettings(settings ydbschema.IndexPartitioning) schemaext.Facets {
-	return must.Must(schemaext.NewFacets(&ydbschema.DesiredIndexPartitioning{IndexPartitioning: settings}))
-}
-
 func indexConcurrentFixture() schemamodel.Database {
 	db := indexedTable()
 	db.Indexes = []schemamodel.Index{{
@@ -1483,167 +1300,6 @@ func synonymFixture() schemamodel.Database {
 	return db
 }
 
-// topicFixture declares a YDB topic that sets every setting and two consumers
-// that set every consumer setting between them: important and an
-// availability period are one consumer each, because YDB refuses a consumer
-// holding both.
-func topicFixture() schemamodel.Database {
-	db := oneTable("T", schemamodel.Table{Name: "t"})
-	db.FeatureObjects = must.Must(schemaext.NewObjects(ydbtopic.DesiredObject("app", "events", "TO", ydbtopic.Spec{
-		MinActivePartitions: 2, MaxActivePartitions: 6, AutoPartitioningStrategy: "scale_up",
-		AutoPartitioningUpUtilizationPercent: 70, AutoPartitioningDownUtilizationPercent: 10,
-		AutoPartitioningStabilizationWindow: "PT2M", RetentionPeriod: "PT36H",
-		PartitionWriteSpeedBytesPerSecond: 2097152, PartitionWriteBurstBytes: 3145728,
-		SupportedCodecs: []string{"raw", "gzip"},
-		Consumers: []ydbtopic.ConsumerSpec{
-			{Name: "billing", Important: true},
-			{Name: "audit", ReadFrom: "2026-01-01T00:00:00Z", SupportedCodecs: []string{"raw", "gzip"},
-				AvailabilityPeriod: "PT2H"},
-		},
-	})))
-	db.FeatureCoverage = must.Must(ydbtopic.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
-	return db
-}
-
-// resourcePoolFixture declares a YDB resource pool that sets every setting,
-// and a classifier that sends a member's queries to it.
-func resourcePoolFixture() schemamodel.Database {
-	db := oneTable("T", schemamodel.Table{Name: "t"})
-	db.FeatureObjects = must.Must(schemaext.NewObjects(
-		ydbworkload.DesiredPoolObject("reporting", "RP", ydbworkload.PoolSpec{
-			ConcurrentQueryLimit: new(int32(10)), QueueSize: new(int32(20)),
-			DatabaseLoadCPUThreshold: new(80.5), QueryMemoryLimitPercentPerNode: new(25.0),
-			QueryCPULimitPercentPerNode: new(30.0), TotalCPULimitPercentPerNode: new(70.0),
-			ResourceWeight: new(5.0),
-		}),
-		ydbworkload.DesiredClassifierObject("reporting_group", "RP", ydbworkload.ClassifierSpec{ResourcePool: "reporting", MemberName: "reporters", Rank: 100}),
-	))
-	pools := must.Must(ydbworkload.Coverage(ydbworkload.PoolKind, schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
-	classifiers := must.Must(ydbworkload.Coverage(ydbworkload.ClassifierKind, schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
-	db.FeatureCoverage = must.Must(pools.Combine(classifiers))
-	return db
-}
-
-// asyncReplicationFixture declares a YDB async replication that sets every
-// setting a replication of a user with a password secret takes, and two items,
-// one naming its source by an absolute path.
-func asyncReplicationFixture() schemamodel.Database {
-	db := oneTable("T", schemamodel.Table{Name: "t"})
-	db.FeatureObjects = must.Must(schemaext.NewObjects(ydbreplication.DesiredReplicationObject("app", "mirror", "AR", mirrorReplicationSpec())))
-	db.FeatureCoverage = must.Must(ydbreplication.ReplicationCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
-	return db
-}
-
-func mirrorReplicationSpec() ydbreplication.ReplicationSpec {
-	return ydbreplication.ReplicationSpec{
-		Connection: ydbreplication.Connection{
-			ConnectionString:   "grpcs://primary.example.com:2135/?database=/prod",
-			User:               "replicator",
-			PasswordSecretPath: "secrets/replicator",
-		},
-		Items: []ydbreplication.Item{
-			{Source: "accounts", Target: "replica/accounts"},
-			{Source: "/prod/ledger", Target: "replica/ledger"},
-		},
-		ConsistencyLevel: "global",
-		CommitInterval:   "PT30S",
-	}
-}
-
-// asyncReplicationTokenFixture declares the two token credentials, one
-// replication each, since a connection takes one credential.
-func asyncReplicationTokenFixture() schemamodel.Database {
-	db := oneTable("T", schemamodel.Table{Name: "t"})
-	byName, byPath := tokenReplicationSpecs()
-	db.FeatureObjects = must.Must(schemaext.NewObjects(
-		ydbreplication.DesiredReplicationObject("", "by_name", "AN", byName),
-		ydbreplication.DesiredReplicationObject("", "by_path", "AP", byPath),
-	))
-	db.FeatureCoverage = must.Must(ydbreplication.ReplicationCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
-	return db
-}
-
-func tokenReplicationSpecs() (byName, byPath ydbreplication.ReplicationSpec) {
-	connection := "grpc://primary.example.com:2136/?database=/prod"
-	byName = ydbreplication.ReplicationSpec{
-		Connection: ydbreplication.Connection{ConnectionString: connection, TokenSecretName: "token"},
-		Items:      []ydbreplication.Item{{Source: "orders", Target: "orders_by_name"}},
-	}
-	byPath = ydbreplication.ReplicationSpec{
-		Connection: ydbreplication.Connection{ConnectionString: connection, TokenSecretPath: "secrets/token"},
-		Items:      []ydbreplication.Item{{Source: "orders", Target: "orders_by_path"}},
-	}
-	return byName, byPath
-}
-
-// transferFixture declares a YDB transfer of a topic in another database into
-// a declared table, setting every setting a transfer takes, its credential a
-// user with a password secret named by name.
-func transferFixture() schemamodel.Database {
-	db := oneTable("T", schemamodel.Table{Name: "t"})
-	db.FeatureObjects = must.Must(schemaext.NewObjects(ydbreplication.DesiredTransferObject("app", "ingest", "TF", ingestTransferSpec())))
-	db.FeatureCoverage = must.Must(ydbreplication.TransferCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
-	return db
-}
-
-func ingestTransferSpec() ydbreplication.TransferSpec {
-	return ydbreplication.TransferSpec{
-		Connection: ydbreplication.Connection{
-			ConnectionString:   "grpc://primary.example.com:2136/?database=/prod",
-			User:               "reader",
-			PasswordSecretName: "reader_password",
-		},
-		Source:         "events",
-		Target:         "t",
-		Lambda:         "($msg) -> { return [<| id: $msg._offset |>]; }",
-		Consumer:       "ingest",
-		BatchSizeBytes: 1048576,
-		FlushInterval:  "PT10S",
-	}
-}
-
-func ownedCoordinationNodeFixture() schemamodel.Database {
-	db := oneTable("T", schemamodel.Table{Name: "t"})
-	db.FeatureObjects = must.Must(schemaext.NewObjects(schemaext.Object{Ref: ydbcoordination.Ref("app", "locks"),
-		Value: &ydbcoordination.Desired{Spec: ydbcoordination.Spec{
-			SelfCheckPeriodMillis: 2000, SessionGracePeriodMillis: 15000,
-			ReadConsistencyMode: "strict", AttachConsistencyMode: "relaxed", RateLimiterCountersMode: "detailed",
-		}},
-	}))
-	db.FeatureCoverage = must.Must(ydbcoordination.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
-	return db
-}
-
-// secretFixture declares a YDB secret in a directory, naming the variable its
-// value comes from.
-func secretFixture() schemamodel.Database {
-	db := oneTable("T", schemamodel.Table{Name: "t"})
-	db.FeatureObjects = must.Must(schemaext.NewObjects(ydbsecret.DesiredObject("ext", "pg_password", "SE", "PTAH_SECRET_PG_PASSWORD")))
-	db.FeatureCoverage = must.Must(ydbsecret.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
-	return db
-}
-
-// externalObjectsFixture declares a YDB external data source whose password a
-// secret holds, an object storage source, and an external table over the
-// second with every part a declaration writes.
-func externalObjectsFixture() schemamodel.Database {
-	db := oneTable("T", schemamodel.Table{Name: "t"})
-	db.FeatureObjects = must.Must(schemaext.NewObjects(
-		ydbexternal.DesiredSourceObject("ext", "warehouse", "ES", ydbexternal.DataSource{SourceType: "PostgreSQL", Location: "pg:5432",
-			AuthMethod: "BASIC", Options: map[string]string{"DATABASE_NAME": "app", "LOGIN": "reader",
-				"PASSWORD_SECRET_PATH": "ext/pg_password"}}),
-		ydbexternal.DesiredSourceObject("ext", "bucket", "ES", ydbexternal.DataSource{SourceType: "ObjectStorage",
-			Location: "https://s3.example.test/b/", AuthMethod: "NONE"}),
-		ydbexternal.DesiredTableObject("ext", "events", "ET", ydbexternal.Table{DataSource: "ext/bucket", Location: "events/",
-			Columns: []ydbexternal.Column{{Name: "id", Type: "Int64", NotNull: true}},
-			Options: map[string]string{"FORMAT": "json_each_row"}}),
-	))
-	sources := must.Must(ydbexternal.SourceCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
-	tables := must.Must(ydbexternal.TableCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
-	db.FeatureCoverage = must.Must(sources.Combine(tables))
-	return db
-}
-
 func extendedPropertyFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
 	db.FeatureObjects = must.Must(schemaext.NewObjects(mssqlproperty.DeclaredObject(mssqlproperty.DesiredProperty{
@@ -1677,38 +1333,46 @@ func cockroachRoleFixture() schemamodel.Database {
 	return db
 }
 
-// ydbGroupMembershipFixture declares a YDB group and a user that is a member
-// of it, which only a target with groups and memberships renders.
-func ydbGroupMembershipFixture() schemamodel.Database {
+// roleGroupFixture declares a group, a principal of its own kind. No built-in
+// target holds one, so each refuses it by capability; the YDB provider renders
+// it as CREATE GROUP.
+func roleGroupFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	db.Roles = []schemamodel.Role{{StructName: "RO", Name: "readers", Group: true, Inherit: true}}
+	return db
+}
+
+// roleMembershipFixture declares a role that is a member of another. No
+// built-in target plans a membership, so each refuses it by capability; the
+// YDB provider renders it as ALTER GROUP ... ADD USER.
+func roleMembershipFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
 	db.Roles = []schemamodel.Role{
-		{StructName: "RO", Name: "readers", Group: true, Inherit: true, Dialects: []string{"ydb"}},
-		{StructName: "RO", Name: "app", Login: true, Inherit: true, MemberOf: []string{"readers"}, Dialects: []string{"ydb"}},
+		{StructName: "RO", Name: "readers", Inherit: true},
+		{StructName: "RO", Name: "app", Login: true, Inherit: true, MemberOf: []string{"readers"}},
 	}
 	return db
 }
 
-// ydbGrantDatabaseFixture grants a permission on the database itself, which a
-// YDB render names by the path of the database a read was made from. A
-// declaration is not about one database, so the census renders it without a
-// path, and a YDB render refuses the grant.
-func ydbGrantDatabaseFixture() schemamodel.Database {
+// grantDatabaseFixture grants a permission on the database itself. No built-in
+// target plans one, so each refuses it by capability; the YDB provider renders
+// it on the database root.
+func grantDatabaseFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
-	db.Roles = []schemamodel.Role{{StructName: "RO", Name: "app", Login: true, Inherit: true, Dialects: []string{"ydb"}}}
-	db.Grants = []schemamodel.Grant{{
-		StructName: "G", Role: "app", Privileges: []string{"CONNECT"}, OnDatabase: true, Dialects: []string{"ydb"},
-	}}
+	db.Roles = []schemamodel.Role{{StructName: "RO", Name: "app", Login: true, Inherit: true}}
+	db.Grants = []schemamodel.Grant{{StructName: "G", Role: "app", Privileges: []string{"CONNECT"}, OnDatabase: true}}
 	return db
 }
 
-// ydbGrantTopicFixture grants a permission on a topic it declares, a scheme
-// object whose kind no other field of a grant names.
-func ydbGrantTopicFixture() schemamodel.Database {
-	db := topicFixture()
-	db.Roles = []schemamodel.Role{{StructName: "RO", Name: "app", Login: true, Inherit: true, Dialects: []string{"ydb"}}}
+// grantObjectFixture grants a permission on a topic, a scheme object whose
+// kind no other field of a grant names. No built-in target holds a topic, so
+// each refuses the grant by capability; the YDB provider renders it.
+func grantObjectFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	db.Roles = []schemamodel.Role{{StructName: "RO", Name: "app", Login: true, Inherit: true}}
 	db.Grants = []schemamodel.Grant{{
 		StructName: "G", Role: "app", Privileges: []string{"SELECT ROW"}, OnObject: "app.events",
-		ObjectKind: schemamodel.GrantObjectTopic, Dialects: []string{"ydb"},
+		ObjectKind: schemamodel.GrantObjectTopic,
 	}}
 	return db
 }
@@ -1976,22 +1640,6 @@ func primaryKeyConstraintOptionsFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
 	db.Constraints = []schemamodel.Constraint{{StructName: "T", Table: "t", Name: "PRIMARY", Type: "PRIMARY KEY", Columns: []string{"id"}, Comment: "lookup",
 		Facets: must.Must(schemaext.NewFacets(&mysqlschema.DesiredIndexBlockSize{KeyBlockSize: 8}))}}
-	return db
-}
-
-func streamingQueryFixture() schemamodel.Database {
-	db := oneTable("T", schemamodel.Table{Name: "t"})
-	db.FeatureObjects = must.Must(schemaext.NewObjects(ydbstreaming.DesiredObject("streams", "copy", "Streaming",
-		ydbstreaming.Spec{Text: "INSERT INTO output SELECT * FROM input;", Run: new(false), ResourcePool: "reporting"}, true)))
-	db.FeatureCoverage = must.Must(ydbstreaming.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
-	return db
-}
-
-func tableColumnStoreFixture() schemamodel.Database {
-	store := &ydbschema.DesiredColumnStore{ColumnStore: ydbschema.ColumnStore{HashColumns: []string{"id"}, Partitions: 8,
-		TTL: &ydbschema.TieredTTL{Column: "id", Unit: "SECONDS", Tiers: []ydbschema.TTLTier{{Interval: "P1D", ExternalSource: "/local/archive"}, {Interval: "P7D"}}}}}
-	db := oneTable("T", schemamodel.Table{Name: "t", Facets: must.Must(schemaext.NewFacets(store))})
-	db.Fields[0].Type = "BIGINT UNSIGNED"
 	return db
 }
 

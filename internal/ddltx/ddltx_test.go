@@ -78,8 +78,6 @@ func TestClassOf_AssignsTheMeasuredClass(t *testing.T) {
 		{name: "clickhouse alias ch", dialect: "ch", want: ddltx.NoTransaction},
 		{name: "spanner", dialect: platform.Spanner, want: ddltx.NoTransaction},
 		{name: "oracle", dialect: platform.Oracle, want: ddltx.NoTransaction},
-		{name: "ydb", dialect: platform.YDB, want: ddltx.NoTransaction},
-		{name: "ydb alias ydbs", dialect: "ydbs", want: ddltx.NoTransaction},
 	}
 
 	for _, test := range tests {

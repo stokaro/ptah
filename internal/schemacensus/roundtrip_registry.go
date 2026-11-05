@@ -63,12 +63,6 @@ const (
 		"fixture that sets it names one. The selection's names and exceptions are reached"
 	exemptCoupledPredicateType = "the fixture's other predicate is a BLOCK for every operation, and a second BLOCK beside " +
 		"it is refused, so no single change of the type is valid there. The predicate's other fields are reached"
-	exemptCoupledConsistency = "the fixture declares a commit interval, which belongs to the global level alone, so no " +
-		"other level is valid beside it. The commit interval is reached"
-	exemptCoupledChangefeedFormat = "the fixture's changefeed asks for virtual timestamps, which YDB writes only in JSON, " +
-		"so no other format is valid beside them. The timestamps are reached"
-	exemptChangefeedIdentity = "repeats the changefeed's identity, which its subject key holds; a definition that " +
-		"disagrees with its key is refused, and a changefeed under another key is another object"
 	exemptRoleKeyword = "a role keyword such as CURRENT_USER has no observation until a server resolves it, and the " +
 		"conversion refuses it; a connected comparison reads the server's resolution from pgpolicy.NormalizedPolicy.Roles"
 	exemptClickHouseKey = "every fixture's only key column is its primary one, and a ClickHouse MergeTree table " +
@@ -94,13 +88,7 @@ const (
 	exemptRoleSelection = "removing the selection either changes nothing, on a target the role is selected for, or puts " +
 		"on the converted side a role the declaration does not name, and the comparison never removes such a role " +
 		"(compare.TestRolesComparison)"
-	exemptGrantSelection = "removing the selection puts on the converted side a grant to a role the declaration does " +
-		"not manage on that target, and the comparison removes grants only from the roles it manages"
 	exemptPassword    = "a catalog holds no readable password, so a declaration converted back from one has none"
-	exemptSecretValue = "names the environment variable a secret's value is read from when it is applied; YDB never " +
-		"shows a secret's value"
-	exemptStateReset = "permits a plan to reset a streaming query's state when its body changes; the permission is " +
-		"not stored in the database"
 	exemptWholeServer = "a MySQL-family schema is a database, and only a whole-server comparison compares databases " +
 		"(stokaro/ptah#3789); this comparison reads one database"
 	exemptVirtualTable = "the comparison refuses any change of a SQLite virtual table, because rebuilding it destroys " +
@@ -133,6 +121,8 @@ const (
 func RoundTripUnmeasured() []UnmeasuredEntry {
 	const unknownFacet = "declared only by the census's unknown-facet fixture, which every target refuses"
 	const noServerSpelling = "no census fixture declares a server's spelling; a connected comparison attaches one"
+	const providerOnly = "every built-in target refuses it by capability, so no pair is in scope; the YDB " +
+		"provider, which the census does not run, plans it"
 	return []UnmeasuredEntry{
 		{Field: "pgtable.DesiredPartition.Normalized", Reason: noServerSpelling},
 		{Field: "pgtable.DesiredExclusion.Normalized", Reason: noServerSpelling},
@@ -152,8 +142,11 @@ func RoundTripUnmeasured() []UnmeasuredEntry {
 		{Field: "schemamodel.Sequence.Facets", Reason: unknownFacet},
 		{Field: "tsschema.DesiredContinuousAggregate.Normalized", Reason: noServerSpelling},
 		{Field: "tsschema.NormalizedBody.Body", Reason: noServerSpelling},
-		{Field: "ydbschema.ChangefeedSpec.Disabled", Reason: "every target refuses it: YDB has no statement that disables a changefeed"},
-		{Field: "ydbschema.ColumnFamily.KeepInMemory", Reason: "only a read sets it; no declaration carries it"},
+		{Field: "schemamodel.Grant.ObjectKind", Reason: providerOnly},
+		{Field: "schemamodel.Grant.OnDatabase", Reason: providerOnly},
+		{Field: "schemamodel.Grant.OnObject", Reason: providerOnly},
+		{Field: "schemamodel.Role.Group", Reason: providerOnly},
+		{Field: "schemamodel.Role.MemberOf", Reason: providerOnly},
 	}
 }
 
@@ -178,16 +171,9 @@ func alternates() map[string][]any {
 		"schemamodel.Index.Overrides": {map[string]map[string]string{"clickhouse": {"type": "minmax", "granularity": "4"}}},
 		// Another host string names no table, so the index moves to the other
 		// table of the two-table fixtures instead.
-		"schemamodel.Index.StructName":            {"A"},
-		"schemamodel.Index.TableName":             {"a"},
-		"spannerschema.Policy.Interval":           {"7 days"},
-		"ydbschema.ChangefeedSpec.Mode":           {"UPDATES"},
-		"ydbschema.DesiredVectorIndex.Distance":   {"euclidean"},
-		"ydbschema.DesiredVectorIndex.Similarity": {"cosine"},
-		"ydbschema.DesiredVectorIndex.VectorType": {"uint8"},
-		"ydbschema.TTL.Interval":                  {"PT12H"},
-		"ydbschema.TTLTier.Interval":              {"PT12H", "P3D"},
-		"ydbtopic.Spec.AutoPartitioningStrategy":  {"scale_up_and_down"},
+		"schemamodel.Index.StructName":  {"A"},
+		"schemamodel.Index.TableName":   {"a"},
+		"spannerschema.Policy.Interval": {"7 days"},
 	}
 }
 
@@ -270,13 +256,13 @@ var roundTripGaps = []Unreached{
 	{Field: "schemamodel.Field.Collate", Dialects: []string{"mariadb", "mysql"}, Directions: nil, Reason: gapComparison},
 	{
 		Field:      "schemamodel.Field.DefaultSet",
-		Dialects:   []string{"clickhouse", "cockroachdb", "mariadb", "mysql", "oracle", "postgres", "spanner", "sqlite", "sqlserver", "ydb", "yugabytedb"},
+		Dialects:   []string{"clickhouse", "cockroachdb", "mariadb", "mysql", "oracle", "postgres", "spanner", "sqlite", "sqlserver", "yugabytedb"},
 		Directions: []Direction{FromCatalog},
 		Reason:     gapFromCatalog,
 	},
 	{
 		Field:      "schemamodel.Field.DefaultSet",
-		Dialects:   []string{"clickhouse", "cockroachdb", "mariadb", "mysql", "oracle", "postgres", "spanner", "sqlite", "sqlserver", "ydb", "yugabytedb"},
+		Dialects:   []string{"clickhouse", "cockroachdb", "mariadb", "mysql", "oracle", "postgres", "spanner", "sqlite", "sqlserver", "yugabytedb"},
 		Directions: []Direction{ToCatalog},
 		Reason:     gapComparison,
 	},
@@ -302,7 +288,7 @@ var roundTripGaps = []Unreached{
 	{Field: "schemamodel.Function.Dialects", Dialects: []string{"clickhouse", "oracle", "spanner", "sqlite"}, Directions: nil, Reason: gapToCatalog},
 	{
 		Field:      "schemamodel.Function.Dialects",
-		Dialects:   []string{"cockroachdb", "mariadb", "mysql", "sqlserver", "ydb", "yugabytedb"},
+		Dialects:   []string{"cockroachdb", "mariadb", "mysql", "sqlserver", "yugabytedb"},
 		Directions: []Direction{ToCatalog},
 		Reason:     gapComparison,
 	},
@@ -357,7 +343,7 @@ var roundTripGaps = []Unreached{
 	},
 	{
 		Field:      "schemamodel.MaterializedView.Dialects",
-		Dialects:   []string{"clickhouse", "mariadb", "mysql", "oracle", "sqlite", "sqlserver", "ydb"},
+		Dialects:   []string{"clickhouse", "mariadb", "mysql", "oracle", "sqlite", "sqlserver"},
 		Directions: []Direction{ToCatalog},
 		Reason:     gapComparison,
 	},
@@ -380,7 +366,7 @@ var roundTripGaps = []Unreached{
 	},
 	{
 		Field:      "schemamodel.Sequence.Dialects",
-		Dialects:   []string{"cockroachdb", "mariadb", "oracle", "spanner", "sqlserver", "ydb", "yugabytedb"},
+		Dialects:   []string{"cockroachdb", "mariadb", "oracle", "spanner", "sqlserver", "yugabytedb"},
 		Directions: []Direction{ToCatalog},
 		Reason:     gapComparison,
 	},
@@ -400,14 +386,14 @@ var roundTripGaps = []Unreached{
 	{Field: "schemamodel.Trigger.Dialects", Dialects: []string{"clickhouse", "spanner"}, Directions: nil, Reason: gapToCatalog},
 	{
 		Field:      "schemamodel.Trigger.Dialects",
-		Dialects:   []string{"cockroachdb", "mariadb", "mysql", "oracle", "sqlite", "sqlserver", "ydb", "yugabytedb"},
+		Dialects:   []string{"cockroachdb", "mariadb", "mysql", "oracle", "sqlite", "sqlserver", "yugabytedb"},
 		Directions: []Direction{ToCatalog},
 		Reason:     gapComparison,
 	},
 	{Field: "schemamodel.Trigger.ExecuteFunction", Dialects: []string{"cockroachdb", "postgres", "yugabytedb"}, Directions: nil, Reason: gapToCatalog},
 	{
 		Field:      "schemamodel.View.Dialects",
-		Dialects:   []string{"clickhouse", "mariadb", "mysql", "oracle", "spanner", "sqlite", "ydb"},
+		Dialects:   []string{"clickhouse", "mariadb", "mysql", "oracle", "spanner", "sqlite"},
 		Directions: []Direction{ToCatalog},
 		Reason:     gapComparison,
 	},
@@ -459,18 +445,6 @@ var roundTripExemptions = []Unreached{
 	{Field: "schemamodel.Database.NotDescribed", Dialects: nil, Directions: nil, Reason: exemptNotDescribed},
 	{Field: "schemamodel.Field.Primary", Dialects: []string{"clickhouse"}, Directions: nil, Reason: exemptClickHouseKey},
 	{Field: "schemamodel.Function.Body", Dialects: []string{"mariadb", "mysql"}, Directions: []Direction{FromCatalog}, Reason: exemptForeignDefiner},
-	{
-		Field:      "schemamodel.Grant.Dialects",
-		Dialects:   []string{"clickhouse", "mariadb", "mysql", "oracle", "postgres", "spanner", "sqlite", "sqlserver"},
-		Directions: nil,
-		Reason:     exemptGrantSelection,
-	},
-	{
-		Field:      "schemamodel.Grant.Dialects",
-		Dialects:   []string{"cockroachdb", "yugabytedb"},
-		Directions: []Direction{ToCatalog},
-		Reason:     exemptGrantSelection,
-	},
 	{Field: "schemamodel.Index.Operator", Dialects: []string{"cockroachdb"}, Directions: nil, Reason: exemptCockroachOperatorClass},
 	{Field: "schemamodel.Index.StorageParams", Dialects: []string{"cockroachdb"}, Directions: nil, Reason: exemptCockroachIndexStorage},
 	{Field: "schemamodel.IndexPart.NullsOrder", Dialects: []string{"cockroachdb"}, Directions: nil, Reason: exemptCockroachNullsOrder},
@@ -484,7 +458,7 @@ var roundTripExemptions = []Unreached{
 	{Field: "schemamodel.RLSPolicy.Comment", Dialects: nil, Directions: nil, Reason: exemptSharedRowSecurity},
 	{
 		Field:      "schemamodel.Role.Dialects",
-		Dialects:   []string{"clickhouse", "cockroachdb", "mariadb", "mysql", "oracle", "postgres", "spanner", "sqlite", "sqlserver", "ydb", "yugabytedb"},
+		Dialects:   []string{"clickhouse", "cockroachdb", "mariadb", "mysql", "oracle", "postgres", "spanner", "sqlite", "sqlserver", "yugabytedb"},
 		Directions: nil,
 		Reason:     exemptRoleSelection,
 	},
@@ -504,7 +478,7 @@ var roundTripExemptions = []Unreached{
 	},
 	{
 		Field:      "schemamodel.Table.CustomSQL",
-		Dialects:   []string{"clickhouse", "cockroachdb", "mariadb", "mysql", "oracle", "postgres", "spanner", "sqlite", "sqlserver", "ydb", "yugabytedb"},
+		Dialects:   []string{"clickhouse", "cockroachdb", "mariadb", "mysql", "oracle", "postgres", "spanner", "sqlite", "sqlserver", "yugabytedb"},
 		Directions: nil,
 		Reason:     exemptCustomSQL,
 	},
@@ -517,9 +491,4 @@ var roundTripExemptions = []Unreached{
 		Directions: nil,
 		Reason:     exemptIfNotExists,
 	},
-	{Field: "ydbreplication.ReplicationSpec.ConsistencyLevel", Dialects: []string{"ydb"}, Directions: nil, Reason: exemptCoupledConsistency},
-	{Field: "ydbschema.ChangefeedSpec.Format", Dialects: []string{"ydb"}, Directions: nil, Reason: exemptCoupledChangefeedFormat},
-	{Field: "ydbschema.ChangefeedSpec.Name", Dialects: []string{"ydb"}, Directions: nil, Reason: exemptChangefeedIdentity},
-	{Field: "ydbsecret.Desired.ValueEnv", Dialects: []string{"ydb"}, Directions: nil, Reason: exemptSecretValue},
-	{Field: "ydbstreaming.Desired.AllowStateReset", Dialects: []string{"ydb"}, Directions: nil, Reason: exemptStateReset},
 }

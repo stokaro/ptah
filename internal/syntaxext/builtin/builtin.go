@@ -5,14 +5,13 @@ package builtin
 
 import (
 	"ptah.run/internal/syntaxext"
-	"ptah.run/internal/syntaxext/yql"
 )
 
 // services maps each lexer a built-in service serves to it. It is built once
-// from the list below and never written again.
-var services = index(
-	yql.Services(),
-)
+// from the list below and never written again. Every built-in dialect reads
+// the shared lexer, so the list is empty: a lexer of its own belongs to an
+// engine's provider.
+var services = index()
 
 func index(all ...syntaxext.Services) map[string]syntaxext.Services {
 	byLexer := make(map[string]syntaxext.Services)

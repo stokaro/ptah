@@ -37,13 +37,9 @@ func ValidateSourceRequest(description *protocol.Description, request *protocol.
 		return err
 	}
 	for _, document := range request.GetDocuments() {
-		kinds := make(map[string]bool)
-		for _, model := range document.GetModels() {
-			declared := findValueModel(description, request.GetEngine(), model.GetKind(), protocol.ValueInput_DESIRED)
-			if model == nil || declared == nil || !proto.Equal(model, declared) || kinds[model.GetKind()] || !slices.Contains(model.GetSourceFormats(), document.GetFormat()) {
-				return sourceError("unknown, changed, duplicate, or unsupported source model")
-			}
-			kinds[model.GetKind()] = true
+		kinds, err := sourceDocumentModels(description, request.GetEngine(), document)
+		if err != nil {
+			return err
 		}
 		if err := validateYAMLSourceFragments(description, request.GetEngine(), document, kinds); err != nil {
 			return err
@@ -62,6 +58,30 @@ func ValidateSourceRequest(description *protocol.Description, request *protocol.
 		}
 	}
 	return nil
+}
+
+// sourceDocumentModels returns the kinds of the models a document enrolls,
+// each a desired model of the engine as the description declares it, enrolled
+// once, that takes the document's format. A table platform claim brings its
+// models into an HCL document whatever their source formats.
+func sourceDocumentModels(description *protocol.Description, engine string, document *protocol.SourceDocument) (map[string]bool, error) {
+	var declaring *protocol.Engine
+	for _, declared := range description.GetEngines() {
+		if declared.GetId() == engine {
+			declaring = declared
+		}
+	}
+	kinds := make(map[string]bool)
+	for _, model := range document.GetModels() {
+		declared := findValueModel(description, engine, model.GetKind(), protocol.ValueInput_DESIRED)
+		formatted := slices.Contains(model.GetSourceFormats(), document.GetFormat()) ||
+			document.GetFormat() == protocol.SourceDocument_HCL && hclPlatformModel(declaring, model.GetKind())
+		if model == nil || declared == nil || !proto.Equal(model, declared) || kinds[model.GetKind()] || !formatted {
+			return nil, sourceError("unknown, changed, duplicate, or unsupported source model")
+		}
+		kinds[model.GetKind()] = true
+	}
+	return kinds, nil
 }
 
 // ValidateDecodedSource requires a complete ordered result with preserved scope,
