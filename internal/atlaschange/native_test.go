@@ -50,12 +50,15 @@ func planned(subject objectidentity.ID, effects ...plangraph.Effect) ast.Node {
 }
 
 // An operation a provider planned is named in the wording of the same change's
-// statement, from its subject and its step's effect on that subject, and the
-// comment a rollback statement of that kind carries is the forward change it
-// undoes.
+// statement, from its subject and its step's effect on that subject, or for a
+// step that only adds or drops one index of the table it reads, from that
+// index, and the comment a rollback statement of that kind carries is the
+// forward change it undoes.
 func TestOfAndUndoneOfAProviderOperation_HappyPath(t *testing.T) {
 	orders := object(objectidentity.KindTable, "orders")
 	index := objectidentity.ID{Kind: objectidentity.KindIndex, Schema: part("app"), Parent: part("orders"), Name: part("orders_by_total")}
+	other := objectidentity.ID{Kind: objectidentity.KindIndex, Schema: part("app"), Parent: part("orders"), Name: part("orders_by_note")}
+	elsewhere := objectidentity.ID{Kind: objectidentity.KindIndex, Schema: part("app"), Parent: part("lines"), Name: part("lines_by_qty")}
 	tests := []struct {
 		name   string
 		node   ast.Node
@@ -81,8 +84,40 @@ func TestOfAndUndoneOfAProviderOperation_HappyPath(t *testing.T) {
 			undone: `modify "orders" table`,
 		},
 		{
-			name:   "an index the step adds to a table it reads",
+			name:   "an index the step adds to a table it reads, named as the built-in YDB engine named it",
 			node:   planned(orders, plangraph.Effect{Subject: orders, Action: plangraph.Read}, plangraph.Effect{Subject: index, Action: plangraph.Create}),
+			of:     `create index "orders_by_total" to table: "orders"`,
+			undone: `drop index "orders_by_total" from table: "orders"`,
+		},
+		{
+			name:   "an index the step drops from a table it reads",
+			node:   planned(orders, plangraph.Effect{Subject: orders, Action: plangraph.Read}, plangraph.Effect{Subject: index, Action: plangraph.Drop}),
+			of:     `drop index "orders_by_total" from table: "orders"`,
+			undone: `create index "orders_by_total" to table: "orders"`,
+		},
+		{
+			name:   "an index the step changes on a table it reads",
+			node:   planned(orders, plangraph.Effect{Subject: orders, Action: plangraph.Read}, plangraph.Effect{Subject: index, Action: plangraph.Alter}),
+			of:     `modify "orders" table`,
+			undone: `modify "orders" table`,
+		},
+		{
+			name: "an index the step adds to a table it also alters",
+			node: planned(orders, plangraph.Effect{Subject: orders, Action: plangraph.Alter},
+				plangraph.Effect{Subject: index, Action: plangraph.Create}),
+			of:     `modify "orders" table`,
+			undone: `modify "orders" table`,
+		},
+		{
+			name: "two indexes the step adds",
+			node: planned(orders, plangraph.Effect{Subject: orders, Action: plangraph.Read}, plangraph.Effect{Subject: index, Action: plangraph.Create},
+				plangraph.Effect{Subject: other, Action: plangraph.Create}),
+			of:     `modify "orders" table`,
+			undone: `modify "orders" table`,
+		},
+		{
+			name:   "an index of another table",
+			node:   planned(orders, plangraph.Effect{Subject: orders, Action: plangraph.Read}, plangraph.Effect{Subject: elsewhere, Action: plangraph.Create}),
 			of:     `modify "orders" table`,
 			undone: `modify "orders" table`,
 		},
