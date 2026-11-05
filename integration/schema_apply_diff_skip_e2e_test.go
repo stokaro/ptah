@@ -180,6 +180,79 @@ func TestSchemaApplyHonorsDiffSkipOnSQLiteE2E(t *testing.T) {
 		c.Assert(countIn(c, url, "SELECT count(*) FROM t WHERE a = 7 AND b = 'kept'"), qt.Equals, 1)
 	})
 
+	// Dropping b rebuilds t, and DROP TABLE takes its indexes along. The
+	// community binary v1.3.0 loses t_a and says nothing, measured on SQLite;
+	// here the plan keeps what it says it keeps.
+	for _, row := range []struct {
+		name, desired string
+	}{
+		{"a dropped column", "CREATE TABLE t (id INTEGER PRIMARY KEY, a TEXT);\n"},
+		{"an added constraint", "CREATE TABLE t (id INTEGER PRIMARY KEY, a TEXT, b TEXT, CONSTRAINT a_set CHECK (a <> ''));\n"},
+	} {
+		t.Run("native keeps a skipped index through a rebuild for "+row.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := diffSkipProjectDir(c, "ptah.yaml", "diff:\n  skip: [drop_index]\n")
+			c.Assert(os.WriteFile(filepath.Join(dir, "schema.sql"), []byte(row.desired), 0o600), qt.IsNil)
+			url := diffSkipSQLite(c, dir)
+			args := []string{"schema", "apply", "--db-url", url, "--schema-file", "schema.sql", "--config", "ptah.yaml", "--auto-approve"}
+
+			stdout, stderr, err := runCLIProcess(ctx, dir, binaries.native, args...)
+
+			c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+			c.Assert(stdout, qt.Contains, "-- "+skippedIndexTA+"\n")
+			c.Assert(stdout, qt.Contains, `ALTER TABLE "new_t" RENAME TO "t";`)
+			c.Assert(stdout, qt.Contains, "CREATE INDEX t_a ON t (a);\n")
+			c.Assert(countIn(c, url, sqliteIndexTA), qt.Equals, 1)
+
+			stdout, stderr, err = runCLIProcess(ctx, dir, binaries.native, args...)
+
+			c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+			c.Assert(stdout, qt.Not(qt.Contains), "CREATE")
+			c.Assert(countIn(c, url, sqliteIndexTA), qt.Equals, 1)
+		})
+	}
+
+	t.Run("compat keeps a skipped index through a rebuild", func(t *testing.T) {
+		c := qt.New(t)
+		dir := c.TempDir()
+		url := diffSkipSQLite(c, dir)
+		diffSkipProjectDirAt(c, dir, "atlas.hcl", `env "local" {
+  url = "`+url+`"
+  dev = "sqlite://file?mode=memory"
+  src = "file://schema.sql"
+  diff {
+    skip {
+      drop_index = true
+    }
+  }
+}
+`)
+		c.Assert(os.WriteFile(filepath.Join(dir, "schema.sql"), []byte("CREATE TABLE t (id INTEGER PRIMARY KEY, a TEXT);\n"), 0o600), qt.IsNil)
+
+		stdout, stderr, err := runCLIProcess(ctx, dir, binaries.compat, "schema", "apply", "--env", "local", "--auto-approve")
+
+		c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+		c.Assert(stdout, qt.Contains, "-- "+skippedIndexTA+"\n")
+		c.Assert(countIn(c, url, sqliteColumnB), qt.Equals, 0)
+		c.Assert(countIn(c, url, sqliteIndexTA), qt.Equals, 1)
+	})
+
+	// The rebuilt table has no a, so t_a cannot be kept. Nothing runs.
+	t.Run("native refuses to keep an index over a column the rebuild drops", func(t *testing.T) {
+		c := qt.New(t)
+		dir := diffSkipProjectDir(c, "ptah.yaml", "diff:\n  skip: [drop_index]\n")
+		c.Assert(os.WriteFile(filepath.Join(dir, "schema.sql"), []byte("CREATE TABLE t (id INTEGER PRIMARY KEY, b TEXT);\n"), 0o600), qt.IsNil)
+		url := diffSkipSQLite(c, dir)
+
+		stdout, stderr, err := runCLIProcess(ctx, dir, binaries.native, "schema", "apply",
+			"--db-url", url, "--schema-file", "schema.sql", "--config", "ptah.yaml", "--auto-approve")
+
+		c.Assert(err, qt.IsNotNil, qt.Commentf("stdout:\n%s", stdout))
+		c.Assert(stderr, qt.Contains, "rebuilding table t cannot keep index t_a: the rebuilt table has no column a")
+		c.Assert(countIn(c, url, "SELECT count(*) FROM pragma_table_info('t') WHERE name = 'a'"), qt.Equals, 1)
+		c.Assert(countIn(c, url, sqliteIndexTA), qt.Equals, 1)
+	})
+
 	t.Run("native without the policy", func(t *testing.T) {
 		c := qt.New(t)
 		dir := diffSkipProjectDir(c, "ptah.yaml", "diff:\n  skip: []\n")

@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/featureplan"
@@ -586,7 +587,7 @@ func (p *Planner) modifyTables(
 	emitted := make(map[string]bool, len(rebuilds.order))
 	for _, tableDiff := range diff.TablesModified {
 		if target, ok := rebuilds.target(tableDiff.TableName); ok {
-			nodes, err := p.rebuildTable(target, tableDiff.Desired, diff)
+			nodes, err := p.rebuildTable(target, tableDiff.Desired, tableDiff.Current, diff)
 			if err != nil {
 				return nil, err
 			}
@@ -615,7 +616,7 @@ func (p *Planner) modifyTables(
 		// that is stokaro/ptah#2315's constraint cluster -- so this path
 		// still assembles it from the declaration.
 		declared := declarationForRebuild(diff, tableName)
-		nodes, err := p.rebuildTable(rebuilds.targets[tableName], declared, diff)
+		nodes, err := p.rebuildTable(rebuilds.targets[tableName], declared, observationForRebuild(diff, tableName), diff)
 		if err != nil {
 			return nil, err
 		}
@@ -640,6 +641,7 @@ func (p *Planner) modifyTables(
 func (p *Planner) rebuildTable(
 	target rebuildTarget,
 	declared schemacapture.TableDeclaration,
+	observed schemacapture.TableObservation,
 	diff *difftypes.SchemaDiff,
 ) ([]ast.Node, error) {
 	if !declared.HasTable() {
@@ -681,6 +683,11 @@ func (p *Planner) rebuildTable(
 		ast.NewRawSQL(rebuild.Rename()),
 	}
 	nodes = append(nodes, p.recreateTableIndexes(*table, declared.Indexes)...)
+	kept, err := recreateKeptIndexes(declared, observed, diff)
+	if err != nil {
+		return nil, err
+	}
+	nodes = append(nodes, kept...)
 	triggers, err := p.recreateTableTriggers(*table, declared.Triggers)
 	if err != nil {
 		return nil, err
@@ -871,6 +878,69 @@ func (p *Planner) recreateTableIndexes(table schemamodel.Table, indexes []schema
 		nodes = append(nodes, modelast.FromIndexWithTableMapping(index, tableMap))
 	}
 	return nodes
+}
+
+// recreateKeptIndexes puts back the indexes the plan leaves in place: observed,
+// not declared, and not removed, as with an index `diff.skip: [drop_index]`
+// keeps. DROP TABLE takes them with it, and the plan has said they stay.
+//
+// The catalog's own text is the statement, because it is the only form that
+// holds everything a SQLite index can say, such as a collation or an expression
+// key. A constraint's automatic index has no text, and the rebuilt table's
+// declaration creates it.
+//
+// An index over a column the rebuilt table leaves out cannot be kept, so the
+// plan refuses it by name. An expression key is left to the server, since the
+// columns an expression reads are not recorded.
+func recreateKeptIndexes(
+	declared schemacapture.TableDeclaration,
+	observed schemacapture.TableObservation,
+	diff *difftypes.SchemaDiff,
+) ([]ast.Node, error) {
+	semantics := diff.EffectiveIdentifierSemantics(DialectName)
+	leaving := make(map[string]bool, len(declared.Indexes))
+	for _, index := range declared.Indexes {
+		leaving[semantics.IndexIdentityKey(index.Name)] = true
+	}
+	for _, ref := range diff.IndexRemovals() {
+		leaving[semantics.IndexIdentityKey(ref.Name)] = true
+	}
+	columns := make(map[string]bool, len(declared.Fields))
+	for _, field := range declared.Fields {
+		if field.StructName == declared.Table.StructName {
+			columns[semantics.ColumnIdentityKey(field.Name)] = true
+		}
+	}
+
+	var nodes []ast.Node
+	for _, index := range observed.Indexes {
+		if index.Definition == "" || leaving[semantics.IndexIdentityKey(index.Name)] {
+			continue
+		}
+		for _, column := range indexKeyColumns(index) {
+			if !columns[semantics.ColumnIdentityKey(column)] {
+				return nil, unsupportedFeaturef(
+					"rebuilding table %s cannot keep index %s: the rebuilt table has no column %s. "+
+						"Keep the column, or remove the index in a separate migration first",
+					declared.Table.QualifiedName(), index.Name, column)
+			}
+		}
+		nodes = append(nodes, ast.NewRawSQL(strings.TrimRight(index.Definition, "; \t\r\n")+";"))
+	}
+	return nodes, nil
+}
+
+// indexKeyColumns lists the plain columns of an index's key. Without Parts the
+// reader could not pair the key's texts with their kinds, and Columns may hold
+// an expression's text, so nothing can be said about them.
+func indexKeyColumns(index catalog.Index) []string {
+	var columns []string
+	for _, part := range index.Parts {
+		if part.Expr == "" {
+			columns = append(columns, part.Name)
+		}
+	}
+	return columns
 }
 
 // recreateTableTriggers renders the triggers the rebuild has to put back.
@@ -1203,4 +1273,18 @@ func declarationForRebuild(
 		return schemacapture.TableDeclaration{}
 	}
 	return *declared
+}
+
+// observationForRebuild is the observed side of [declarationForRebuild] for a
+// table reached only through a constraint change.
+func observationForRebuild(diff *difftypes.SchemaDiff, tableName string) schemacapture.TableObservation {
+	semantics := diff.EffectiveIdentifierSemantics(DialectName)
+	observed := objectlookup.Find(
+		diff.ObservedConstraintHosts, tableName, semantics,
+		func(host schemacapture.TableObservation) string { return host.Table.QualifiedName() },
+	)
+	if observed == nil {
+		return schemacapture.TableObservation{}
+	}
+	return *observed
 }
