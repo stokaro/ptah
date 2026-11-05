@@ -55,7 +55,7 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.19. `provider-sdk/v0.17.0` speaks 25.18.
+speaks contract 25.26. `provider-sdk/v0.17.0` speaks 25.18.
 `provider-sdk/v0.16.0` speaks 25.17.
 `provider-sdk/v0.15.0` speaks 25.16.
 `provider-sdk/v0.14.0` speaks 25.15.
@@ -108,6 +108,7 @@ returns to 0.
   Contract 25.17 adds [index renames](#index-renames).
   Contract 25.18 adds [the reasons of execution and transaction results](#error-reasons).
   Contract 25.19 adds [change reversal](#change-reversal).
+  Contract 25.26 adds [SQL scanning](#sql-scanning).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -2167,3 +2168,33 @@ a reason beside a `read_only` verdict, or none without one; and either abort
 flag on another outcome or without the feature. A client that receives a
 misused abort flag returns no reply and reports an unknown outcome, so no
 caller reads the flag and tries again.
+
+## SQL scanning
+
+[ADR 0069](../docs/adr/0069-a-provider-scans-the-sql-text-of-its-engine.md)
+defines `sql.scan`. The provider and each engine that scans its SQL list it. It
+adds an RPC and nothing to an existing message, so it is one-way: a host that
+does not know `ScanSQL` never calls it.
+
+`ScanSQL` returns the tokens of one text of the engine's SQL. It reads the text
+alone: the request names the engine and carries the text, and no session,
+server version or database. `head` is set when the text begins where the server
+reads settings ahead of a query, and cleared for a range that starts inside a
+text. The tokens are the token types of the host's lexer: `UNKNOWN` for text
+the server reads that is no other kind, `STRING`, `COMMENT`, `SEMICOLON`,
+`WHITESPACE`, `IDENTIFIER` for a name, a keyword or a number, and `OPERATOR`.
+They cover the text with no gap and no overlap, so each token carries only the
+byte offset at which it ends. A `STRING` carries the text the literal stands
+for, and an `IDENTIFIER` the name with its quoting undone, where the scanner
+reads one.
+
+The host uses the tokens wherever it reads the engine's text without parsing
+it: view lineage, the indentation of the `sql` template function, placeholder
+rewriting, statement splitting and the other scans of migration bodies.
+
+Both transport boundaries refuse a request for an engine that does not list
+the feature, or whose text is not UTF-8; and a reply whose tokens do not reach
+the end of the text, with an empty token, a token that ends past the text or
+inside a UTF-8 sequence, a token of no known kind, or a value on a token that
+is neither a string nor an identifier. `Server.Validate` refuses the feature
+without `Server.SQLScanner`, and the scanner without the feature.

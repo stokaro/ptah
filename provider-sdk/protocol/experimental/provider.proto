@@ -97,6 +97,8 @@ service Provider {
   rpc SplitMigration(SplitMigrationRequest) returns (MigrationSplit);
   // Contract 25.19. Used only when both sides list models.reverse.
   rpc ReverseChanges(ReverseChangesRequest) returns (ReversedChanges);
+  // Contract 25.26. A host calls it only for an engine that lists sql.scan.
+  rpc ScanSQL(ScanSQLRequest) returns (SQLScan);
 }
 
 message Empty {}
@@ -4126,4 +4128,51 @@ message ColumnDefaultReceipt {
   enum Kind { KIND_UNSPECIFIED = 0; ABSENT = 1; LITERAL = 2; EXPRESSION = 3; }
   Kind kind = 2;
   string value = 3;
+}
+
+// ScanSQLRequest asks the owner for the tokens of one text of its engine's
+// SQL. The scan reads the text alone: no session, no server version and no
+// database. Contract 25.26, under sql.scan.
+message ScanSQLRequest {
+  string engine = 1;
+  // The text, UTF-8. Every offset of the reply is a byte offset into it.
+  string text = 2;
+  // head reports that the text begins where the server reads settings ahead
+  // of a query, as YQL reads a --! translation setting before its first
+  // token. A host sets it for a whole text and clears it for a range that
+  // starts inside one.
+  bool head = 3;
+}
+// SQLScan is every token of the text in order. The tokens cover the text with
+// no gap and no overlap, so an empty text has none.
+message SQLScan {
+  repeated SQLToken tokens = 1;
+}
+// SQLToken is one token of a scanned text. It starts where the token before it
+// ends, and the first one starts at 0.
+message SQLToken {
+  // The token types of the host's lexer.
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    // Text the server reads that is no other kind, such as a translation
+    // setting or an executable comment. A reader that removes comments keeps
+    // it.
+    UNKNOWN = 1;
+    STRING = 2;
+    COMMENT = 3;
+    // The separator between two statements.
+    SEMICOLON = 4;
+    WHITESPACE = 5;
+    // A name, a keyword or a number.
+    IDENTIFIER = 6;
+    OPERATOR = 7;
+  }
+  Kind kind = 1;
+  // The byte offset in the text at which the token ends, past its last byte.
+  uint32 end = 2;
+  // STRING: the text the literal stands for. IDENTIFIER: the name it stands
+  // for, with its quoting undone. Absent where the scanner reads no such
+  // value: a string whose escape the server refuses, or text that is not one
+  // whole name. Never present on another kind.
+  optional string value = 3;
 }
