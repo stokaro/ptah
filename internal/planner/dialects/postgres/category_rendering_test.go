@@ -70,14 +70,6 @@ var refusedDiffCategories = map[string]refusedFixture{
 		diff: &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{{Subject: chschema.RowPolicyRef("", "orders", "tenant"),
 			Value: chdiff.NewRowPolicy(nil, &chschema.DesiredRowPolicy{Filter: new("tenant = 1"), Roles: chschema.RoleSelection{All: true}})}}},
 	},
-	"SchemasAdded": {
-		why:  "the comparison records a created database only for a whole MySQL or MariaDB server (stokaro/ptah#3789), so a PostgreSQL plan reaches one only through a diff built by hand, and planning nothing would call the two sides equal",
-		diff: &difftypes.SchemaDiff{SchemasAdded: []schemamodel.Schema{{Name: "app"}}},
-	},
-	"SchemasRemoved": {
-		why:  "a dropped database is a whole-server MySQL-family change for the same reason",
-		diff: &difftypes.SchemaDiff{SchemasRemoved: []string{"app"}},
-	},
 	"SchemasModified": {
 		why:  "a database's character set and collation are a whole-server MySQL-family change for the same reason",
 		diff: &difftypes.SchemaDiff{SchemasModified: []difftypes.SchemaChange{{Name: "app", Collate: "C"}}},
@@ -238,6 +230,8 @@ func diffCategoryFixtures() []categoryFixture {
 
 	return []categoryFixture{
 		{"TablesAdded", &difftypes.SchemaDiff{TablesAdded: difftypes.TableCreationsFor(oneTable, identifier.ForDialect("postgres"), "t")}, oneTable},
+		{"SchemasAdded", &difftypes.SchemaDiff{SchemasAdded: []schemamodel.Schema{{Name: "app"}}}, nil},
+		{"SchemasRemoved", &difftypes.SchemaDiff{SchemasRemoved: []string{"app"}}, nil},
 		{"TablesRemoved", &difftypes.SchemaDiff{TablesRemoved: difftypes.TableRemovals{{Name: "t"}}}, &schemamodel.Database{}},
 		{
 			"TablesModified",

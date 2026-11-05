@@ -106,6 +106,7 @@ func spanner() descriptor.Dialect {
 		// Comparison: what comparing a declaration with a catalog reads.
 		// Spanner reports a backing index for a foreign key.
 		Comparison: descriptor.Comparison{
+			DeclaredSchemas:        true,
 			ForeignKeyBackingIndex: true,
 			RolePasswords:          true,
 			RoutineTypeAliases:     "pg-aliases",

@@ -31,6 +31,7 @@ import (
 	"ptah.run/internal/planner/keyrelease"
 	"ptah.run/internal/planner/schemaprecondition"
 	"ptah.run/internal/schemaprep"
+	"ptah.run/internal/sqlident"
 	"ptah.run/internal/tablelookup"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/viewoptions"
@@ -512,28 +513,29 @@ func (p *Planner) addSchemaPreconditions(
 		names = append(names, trigger.TableName)
 	}
 	seen := make(map[string]struct{}, len(names))
-	schemas := make([]string, 0, len(names))
-	for _, name := range names {
-		ref, ok := tableref.Parse(name)
-		if !ok || !ref.Qualified {
-			continue
-		}
-		schema := strings.TrimSpace(ref.Schema)
-		if schema == "" {
-			continue
-		}
+	schemas := make([]string, 0, len(names)+len(diff.SchemasAdded))
+	add := func(schema string) {
 		// A schema the target owns is reached without a precondition. On
 		// PostgreSQL that spares a statement nobody needs; on Spanner it is
 		// what makes the migration run at all, because `public` there is
 		// implicit and CREATE SCHEMA for it is refused by name.
-		if pgsystemschema.IsUncreatableSchema(p.dialect, schema) || schema == connected {
-			continue
+		if schema == "" || pgsystemschema.IsUncreatableSchema(p.dialect, schema) || schema == connected {
+			return
 		}
 		if _, ok := seen[schema]; ok {
-			continue
+			return
 		}
 		seen[schema] = struct{}{}
 		schemas = append(schemas, schema)
+	}
+	for _, name := range names {
+		if ref, ok := tableref.Parse(name); ok && ref.Qualified {
+			add(strings.TrimSpace(ref.Schema))
+		}
+	}
+	// A schema the comparison adds is created whether or not an object names it.
+	for _, schema := range diff.SchemasAdded {
+		add(strings.TrimSpace(schema.Name))
 	}
 	for _, schema := range p.placedSchemas(diff) {
 		if schema == "" || pgsystemschema.IsUncreatableSchema(p.dialect, schema) {
@@ -583,6 +585,23 @@ func connectedSchema(diff *difftypes.SchemaDiff, dialect string) string {
 		return ""
 	}
 	return strings.TrimSpace(diff.EffectiveIdentifierSemantics(dialect).DefaultSchema)
+}
+
+// dropRemovedSchemas ends the plan with a DROP SCHEMA for each schema a rollback
+// removes, after every other statement, the owners' included, because what the
+// plan drops first may be in it. It has no CASCADE in either statement style: the
+// comparison added the schema because the database did not hold it, so whatever
+// it holds by the time this runs was put there by something the plan does not
+// know, and the server refusing the drop is the right answer.
+func (p *Planner) dropRemovedSchemas(nodes []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	guard := " IF EXISTS"
+	if p.exact() {
+		guard = ""
+	}
+	for _, name := range diff.SchemasRemoved {
+		nodes = append(nodes, ast.NewRawSQL("DROP SCHEMA"+guard+" "+sqlident.Quote(platform.Postgres, name)))
+	}
+	return nodes
 }
 
 // placedSchemas are the schemas the plan puts owners' objects into, such as
@@ -1804,6 +1823,7 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	if err != nil {
 		return nil, err
 	}
+	nodes = p.dropRemovedSchemas(nodes, diff)
 	if p.exact() {
 		// Over the scheduled plan, owner operations included, because what a
 		// guard is for depends on every statement before it.
@@ -1813,7 +1833,7 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 }
 
 func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff, windows *featurehost.Windows) ([]ast.Node, error) {
-	if err := schemaprecondition.RefuseServerSchemas(DialectName, diff); err != nil {
+	if err := schemaprecondition.RefuseDatabaseChanges(DialectName, diff); err != nil {
 		return nil, err
 	}
 	// No owner on this family plans a setting attached to a materialized view,

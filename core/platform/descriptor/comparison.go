@@ -17,6 +17,12 @@ type Comparison struct {
 	// constraint: the two are separate objects, or the engine has no UNIQUE
 	// constraint at all.
 	UniqueIndexStandsAlone bool `json:"unique_index_stands_alone,omitempty"`
+	// DeclaredSchemas reports that a schema the desired state declares and the
+	// read does not hold is planned for creation, whether or not anything is in
+	// it. It holds where a schema is a namespace inside one database and the
+	// reader reports the schemas a comparison reads. ServerDatabases is the same
+	// question where a schema is a database of a server.
+	DeclaredSchemas bool `json:"declared_schemas,omitempty"`
 	// ForeignKeyBackingIndex reports that the server creates and reports an
 	// index for every foreign key.
 	ForeignKeyBackingIndex bool `json:"foreign_key_backing_index,omitempty"`
