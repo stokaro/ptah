@@ -86,3 +86,41 @@ func TestLintEffectsRoundTrip(t *testing.T) {
 		})
 	}
 }
+
+// The owner a run names reaches the wire as the contract spells it. An engine
+// that does not list the feature is sent the zero value, since both transport
+// boundaries refuse the other for it.
+func TestWireTransactionOwner_HappyPath(t *testing.T) {
+	listed := []string{provider.LintFeature, provider.LintTransactionOwnerFeature}
+	for _, test := range []struct {
+		name     string
+		features []string
+		owner    lintext.TransactionOwner
+		want     protocol.LintTransactionOwner
+	}{
+		{"the migrator wraps each file", listed, lintext.TransactionOwnerMigrator, protocol.LintTransactionOwner_LINT_TRANSACTION_OWNER_MIGRATOR},
+		{"a tool opens no transaction", listed, lintext.TransactionOwnerFile, protocol.LintTransactionOwner_LINT_TRANSACTION_OWNER_FILE},
+		{"an engine that does not list the feature", []string{provider.LintFeature}, lintext.TransactionOwnerFile, protocol.LintTransactionOwner_LINT_TRANSACTION_OWNER_MIGRATOR},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			service := lintService{target: &target{engine: &protocol.Engine{Id: "fixture", Features: test.features}}}
+
+			got, err := service.wireTransactionOwner(test.owner)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.Equals, test.want)
+		})
+	}
+}
+
+func TestWireTransactionOwner_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	service := lintService{target: &target{engine: &protocol.Engine{Id: "fixture"}}}
+
+	got, err := service.wireTransactionOwner(lintext.TransactionOwner("savepoint"))
+
+	c.Assert(err, qt.ErrorIs, lintext.ErrInvalid)
+	c.Assert(err, qt.ErrorMatches, `.*lint transaction owner "savepoint"`)
+	c.Assert(got, qt.Equals, protocol.LintTransactionOwner(0))
+}

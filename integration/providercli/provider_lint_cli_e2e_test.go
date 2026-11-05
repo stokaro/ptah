@@ -158,6 +158,35 @@ func TestMigrationsLintOfTheNamedDialectReportsTheProvidersFindings(t *testing.T
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"BC103", "DS101", "DS107", "FX101", "FX102"})
 }
 
+// A provider's rule about transaction control learns who opens each file's
+// transaction, from the --runner the run names. An engine that does not list
+// the feature judges every file as one its migrator wraps, whatever the runner.
+func TestMigrationsLintTellsAProviderWhoOpensEachFilesTransaction(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		environment []string
+		runner      string
+		want        []string
+		wantCode    int
+	}{
+		{name: "a migrator that wraps each file", runner: "ptah", want: []string{"FX301"}, wantCode: 1},
+		{name: "a tool that opens no transaction", runner: "golang-migrate", want: make([]string, 0)},
+		{name: "an engine that does not list the feature", environment: []string{"FIXTURE_LINT_OWNER_UNLISTED=1"},
+			runner: "golang-migrate", want: []string{"FX301"}, wantCode: 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			f := newLintProvider(c, "lint-transaction-owner", "example.org/fixture", "fixture", test.environment...)
+			dir := lintDirectory(c, "BEGIN;\nCREATE TABLE records (id INTEGER);\nCOMMIT;\n", "SELECT 1;\n")
+
+			findings, diagnostics, code := f.lint(c, dir, "--dialect", "fixture", "--runner", test.runner)
+
+			c.Assert(code, qt.Equals, test.wantCode, qt.Commentf("%s", diagnostics))
+			c.Assert(slices.DeleteFunc(rulesOf(findings), func(rule string) bool { return rule != "FX301" }), qt.DeepEquals, test.want)
+		})
+	}
+}
+
 // TestMigrationsLintReportsAProviderThatDoesNotStart keeps the command's own
 // error report when the selected provider cannot run.
 func TestMigrationsLintReportsAProviderThatDoesNotStart(t *testing.T) {

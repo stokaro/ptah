@@ -74,6 +74,9 @@ var hostFeatures = []string{
 	// `ptah sql lint` reads a provider's statement facts; see
 	// sqllint.Options.Owner.
 	provider.LintStatementFactsFeature,
+	// A provider's lint rules learn who opens each file's transaction, as the
+	// bundled owners do; see lintService.CheckMigrations.
+	provider.LintTransactionOwnerFeature,
 	// The query builder renders an engine from the spelling its provider
 	// declares; see registerQueryDialects.
 	provider.QueryDialectFeature,

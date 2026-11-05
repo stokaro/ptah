@@ -187,9 +187,8 @@ type lintService struct {
 // through AnnotateStatements, which is how a run that names no target learns
 // the facts only the owner recognizes.
 //
-// The wire request has no field for [lintext.CheckRequest.TransactionOwner],
-// so the owner judges every file as one its migrator wraps, which is the
-// request's zero value (stokaro/ptah#4956).
+// An engine that does not list lint.transaction-owner is sent the request's
+// zero value, and judges every file as one its migrator wraps.
 func (s lintService) CheckMigrations(ctx context.Context, request lintext.CheckRequest) (lintext.CheckResult, error) {
 	name := s.target.engine.GetId()
 	if request.Target.Name == "" {
@@ -201,8 +200,12 @@ func (s lintService) CheckMigrations(ctx context.Context, request lintext.CheckR
 	if err := request.Target.Capabilities.Validate(); err != nil {
 		return lintext.CheckResult{}, err
 	}
+	owner, err := s.wireTransactionOwner(request.TransactionOwner)
+	if err != nil {
+		return lintext.CheckResult{}, err
+	}
 	wire := &protocol.CheckLintRequest{Engine: name, ServerVersion: request.Target.Version, Capabilities: make(map[string]bool),
-		Codes: slices.Clone(request.Codes), Compatibility: request.Compatibility}
+		Codes: slices.Clone(request.Codes), Compatibility: request.Compatibility, TransactionOwner: owner}
 	for key, value := range request.Target.Capabilities.All() {
 		wire.Capabilities[string(key)] = value
 	}
@@ -239,4 +242,22 @@ func (s lintService) untargeted(ctx context.Context, request lintext.CheckReques
 		return lintext.CheckResult{}, err
 	}
 	return lintext.CheckResult{Complete: true}, nil
+}
+
+// wireTransactionOwner is the owner a check names on the wire. Only an engine
+// that lists lint.transaction-owner may receive a tool that opens no transaction.
+// Both transport boundaries refuse that value for any other engine, and such an
+// engine's rules do not read the field.
+func (s lintService) wireTransactionOwner(owner lintext.TransactionOwner) (protocol.LintTransactionOwner, error) {
+	switch owner {
+	case lintext.TransactionOwnerMigrator:
+		return protocol.LintTransactionOwner_LINT_TRANSACTION_OWNER_MIGRATOR, nil
+	case lintext.TransactionOwnerFile:
+		if !slices.Contains(s.target.engine.GetFeatures(), provider.LintTransactionOwnerFeature) {
+			return protocol.LintTransactionOwner_LINT_TRANSACTION_OWNER_MIGRATOR, nil
+		}
+		return protocol.LintTransactionOwner_LINT_TRANSACTION_OWNER_FILE, nil
+	default:
+		return 0, fmt.Errorf("%w: lint transaction owner %q", lintext.ErrInvalid, owner)
+	}
 }
