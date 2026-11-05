@@ -9,10 +9,15 @@
 //
 // Two spellings are refused. A repository-relative path to one of the protected
 // core documents, and any link into `blob/master/docs/` on GitHub, which is the
-// same handoff written as a URL.
+// same handoff written as a URL. A link to a page in a declared provider's
+// `docs/` folder on GitHub is the third: the site imports that folder and
+// publishes each page under extend/providers/<engine>/ (src/lib/provider-docs.mjs).
+
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, extname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { declaredProviders } from '../src/lib/provider-docs.mjs';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const siteRoot = join(scriptDir, '..');
@@ -64,7 +69,11 @@ function withoutFrontmatter(source) {
 // prints the same success it prints on a clean tree. The count in that success
 // line was the protected-reference count, which is a constant: it read as
 // evidence of work done while the corpus was empty.
-export function analyze(pages) {
+export function analyze(pages, { providerRepositories = declaredProviders().map((provider) => provider.repository) } = {}) {
+  const providerPage = providerRepositories.map((repository) => ({
+    repository,
+    pattern: new RegExp(`github\\.com/${repository.replace(/\./g, '\\.')}/(?:blob|tree)/[^/\\s)]+/docs/[^\\s)#]*\\.md\\b`),
+  }));
   if (pages.length === 0) {
     return ['no documentation pages were scanned; a gate that read nothing reports the same success as one that found nothing'];
   }
@@ -82,6 +91,11 @@ export function analyze(pages) {
     for (const target of forbidden) {
       if (source.includes(target)) {
         problems.push(`${page.path}: links to ${target}; use the published site reference page instead`);
+      }
+    }
+    for (const { repository, pattern } of providerPage) {
+      if (pattern.test(source)) {
+        problems.push(`${page.path}: links to a page of ${repository}/docs on GitHub; the site publishes it under extend/providers/, so link that route`);
       }
     }
   }
@@ -132,6 +146,19 @@ function selftest() {
   assert(
     analyze(page('docs/public_api.md and https://github.com/stokaro/ptah/blob/master/docs/sqlite.md\n')).length >= 2,
     'every violation on a page is reported, not only the first',
+  );
+
+  // A provider page on GitHub, at any ref, is the same handoff: the site
+  // publishes it. A file of that folder that is not a page is not.
+  const providerOptions = { providerRepositories: ['example/demo-plugin'] };
+  assert(
+    analyze(page('See [usage](https://github.com/example/demo-plugin/blob/v1.0.0/docs/usage.md#connecting).\n'), providerOptions)[0]
+      ?.includes('extend/providers/'),
+    'a GitHub link to a provider page is refused',
+  );
+  assert(
+    analyze(page('See [the diagram](https://github.com/example/demo-plugin/blob/v1.0.0/docs/flow.svg).\n'), providerOptions).length === 0,
+    'a GitHub link to a provider file that is not a page is accepted',
   );
 
   // The floor. This is the failure the count in the success line used to hide.

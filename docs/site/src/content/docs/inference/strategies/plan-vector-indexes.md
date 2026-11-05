@@ -48,7 +48,7 @@ what its author asked for.
 
 YDB has one vector index, `vector_kmeans_tree`, which takes its `levels` and
 `clusters` options. What it can do depends on the YDB line. The YDB provider's
-[Embedding generations on YDB](https://github.com/stokaro/ptah-ydb-plugin/blob/master/docs/inference.md#the-vector-index)
+[Embedding generations on YDB](../../../extend/providers/ydb/inference/#the-vector-index)
 gives the options, their bounds and what each line supports.
 
 ## Build it after the backfill, not before

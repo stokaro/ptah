@@ -132,7 +132,7 @@ The directives that declare an object only YDB has, from
 `ptah:schema:columnfamily` and `ptah:schema:changefeed` to `ptah:schema:topic`,
 `ptah:schema:coordinationnode` and `ptah:schema:externaltable`, are claimed by
 the YDB provider and listed in its
-[Declaring YDB objects](https://github.com/stokaro/ptah-ydb-plugin/blob/master/docs/declarations.md#go-annotations).
+[Declaring YDB objects](../../extend/providers/ydb/declarations/#go-annotations).
 
 Placement is semantic, not cosmetic. A struct directive belongs in the doc
 comment of a Go struct declaration; a field directive belongs in the doc comment

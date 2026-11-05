@@ -1456,7 +1456,7 @@ matches it, so `POSTGRES` is refused. A `postgis` dev database is created empty;
 the image's extensions are created by a migration that needs them.
 
 `docker://ydb` asks the YDB provider to start a YDB server for the run (see
-[YDB](https://github.com/stokaro/ptah-ydb-plugin/blob/master/docs/ptah.md#dev-shadow-and-scratch-databases)). It is a Ptah
+[YDB](../../extend/providers/ydb/usage/#dev-shadow-and-scratch-databases)). It is a Ptah
 extension here, and strict compatibility refuses it as Atlas CE does, with
 `unsupported docker image "ydb"`.
 

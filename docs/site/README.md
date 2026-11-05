@@ -208,6 +208,120 @@ does:
   the slugifier is not available to them, and an unmodeled route is reported
   loudly rather than recorded wrongly. Rename the file.
 
+The one exception to `git ls-files` is the provider pages, which git ignores;
+see the next section.
+
+## Provider documentation
+
+A provider's pages live in the provider's repository, in its `docs/` folder,
+beside the code they describe. The site publishes them with its own pages, so a
+reader has one site and a provider has one pull request for a change and its
+documentation. `scripts/data/provider-docs.json` declares which providers the
+site imports and at which release:
+
+```json
+{
+  "engine": "ydb",
+  "name": "YDB",
+  "repository": "stokaro/ptah-ydb-plugin",
+  "release": "v0.3.0",
+  "ref": "<full commit>",
+  "refReason": "v0.3.0 predates the provider's docs/ folder. ..."
+}
+```
+
+`release` is the provider release this Ptah installs: the newest release whose
+minimum contract this Ptah meets, which is what `ptah providers install
+<engine>` chooses. `ref` is a full commit imported in place of the release,
+allowed only with a `refReason`, for a release that predates the provider's
+`docs/` folder. The import refuses a `ref` once the release carries the folder.
+A released version of this site shows the provider pages its own declaration
+names.
+
+`scripts/import-provider-docs.mjs` fetches the folder at that commit, through a
+blobless clone cached in `.cache/provider-docs/`, and writes every page but the
+folder's `README.md` to `src/content/docs/_providers/<engine>/`, with the route
+`extend/providers/<engine>/<page>/`. `npm run build` and `npm run dev` run it
+first; a gate run directly needs `npm run providers:import` once. The directory
+is ignored by git, and the binaries do not carry it: `docs/docs.go` embeds the
+content collection, and `go:embed` leaves out a name starting with `_`.
+
+Every gate reads the import through `src/lib/provider-docs.mjs`.
+`scripts/lib/docroutes.mjs` and the terminology corpus add its pages to what git
+lists, the walking checks find them under the content root, and the sidebar
+gives each provider a subgroup after the official providers' pages, in the
+order the pages declare with `sidebar.order`. A missing or stale import, an
+import of a provider nothing declares, and a page edited where the import wrote
+it are refused rather than read around. The page actions of an imported page
+view, edit and report it in the provider repository.
+
+The import turns a GitHub page into a site page:
+
+- a link to another page of the folder becomes that page's route, and a link to
+  the folder's `README.md` becomes the provider's host page;
+- a link to any other file of the provider repository, and a repository path in
+  `sourceOfTruth` or `evidence`, become a GitHub address at the imported commit;
+- an address on the site's edge version becomes a relative route, so a released
+  version links within itself and `check-links` reads it;
+- a leading `# Title` that repeats `title` is dropped;
+- it adds `slug`, `lastUpdated` (the last commit that changed the file) and the
+  `providerRepository`, `providerCommit` and `providerSource` fields the page
+  actions read.
+
+It refuses an MDX page, a relative image, a link to a path the commit does not
+hold, a second `#` title, and a frontmatter key that would move the route or
+claim a host gate's input: `slug`, `lastUpdated`, `owns`, `quickstart`,
+`quickstartContinues`, `faqVerdicts` and the three `provider*` fields. A page
+declares `generated: false`.
+
+`extend/providers/<engine>.md` is this site's own page for the provider:
+installing and selecting it, its refusals, and a table that links the imported
+pages. The import refuses a provider without one.
+
+### Move to a newer provider release
+
+1. Set `release` to the new tag, and drop `ref` and `refReason`.
+2. Run `node scripts/import-provider-docs.mjs`.
+3. Run `node scripts/check-route-retirement.mjs --write` to record a page the
+   release adds. A page it removes or renames needs a `redirectRoutes` entry in
+   `astro.config.mjs`.
+4. Update the provider's host page when its pages changed, and run the
+   documentation suite.
+
+### Add a provider
+
+1. Give the provider's `docs/` pages the site's frontmatter; the YDB provider's
+   `docs/README.md` shows the shape.
+2. Add its entry to `scripts/data/provider-docs.json`. The provider needs a
+   catalog entry in `internal/providercatalog` and a host page at
+   `extend/providers/<engine>.md`, which links the imported pages.
+3. Import, record the routes with `--write`, and run the suite.
+4. In the provider repository, add a workflow that calls this repository's
+   checks on every pull request:
+
+   ```yaml
+   jobs:
+     pages:
+       uses: stokaro/ptah/.github/workflows/provider-docs.yml@master
+       with:
+         engine: <engine>
+   ```
+
+`.github/workflows/provider-docs.yml` checks out this repository at its own
+commit, imports the caller's checkout with `--source`, and runs the content
+checks, the command-line test and a build of the whole site. A route the
+provider's change would retire is reported and does not fail its pull request,
+because only this repository can add the redirect. `check-skill-suite.mjs`
+refuses a check there that `docs.yml` does not run. To read a provider's pages
+here before a release declares them:
+
+```bash
+node scripts/import-provider-docs.mjs --source ydb=../../../ptah-ydb-plugin
+npm run dev
+```
+
+`--force` imports the declared release again in place of a local checkout.
+
 ## Navigation
 
 The sidebar is `src/sidebar.mjs`, a module `astro.config.mjs` imports. It lives

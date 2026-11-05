@@ -38,7 +38,7 @@ provider engine. A YDB database needs the YDB provider, which
 A refusal particular to YDB, such as an outbox the engine cannot capture
 changes for, `key_fields` other than the primary key, or a vector index the line
 cannot build or keep current, is listed in the YDB provider's
-[Embedding generations on YDB](https://github.com/stokaro/ptah-ydb-plugin/blob/master/docs/inference.md#troubleshooting).
+[Embedding generations on YDB](../../extend/providers/ydb/inference/#troubleshooting).
 
 ## `preprocessing.null_policy "" is not one this build acts on`
 

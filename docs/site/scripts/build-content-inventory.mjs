@@ -226,6 +226,9 @@ export function buildContentInventory({
       sourceMode: metadata.sourceMode ?? null,
       overlaps: metadata.overlaps,
       disposition: metadata.disposition,
+      provider: metadata.providerRepository
+        ? { repository: metadata.providerRepository, commit: metadata.providerCommit, source: metadata.providerSource }
+        : null,
       outboundLinks: outbound,
       inboundLinks: [],
       visibleWords: visibleWordCount(page.source),

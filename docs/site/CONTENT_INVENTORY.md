@@ -220,3 +220,14 @@ codes. Engine-specific setup pages answer catalog errors for YDB, DuckDB, and
 Spanner. They link to the shared procedure instead of copying it. Each page
 separates the reserved official identity and distribution policy from available
 release artifacts. The experimental fixture is not evidence of engine support.
+
+## Provider-owned pages
+
+What an engine does in Ptah through an executable provider is the provider's to
+document, and its pages live in the provider repository's `docs/` folder. The
+site imports them at the release `scripts/data/provider-docs.json` declares and
+publishes them under `extend/providers/<engine>/`, in a sidebar subgroup of
+their own. The host page for the engine, `extend/providers/<engine>`, stays
+here: it covers installing and selecting the provider, the host's refusals, and
+a table that sends the reader to the provider's pages. A host page that needs a
+provider detail links the imported route; it does not repeat the detail.

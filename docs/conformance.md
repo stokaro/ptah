@@ -301,7 +301,7 @@ one the manifest `PTAH_PROVIDER_CONFIG` names. The strict profile refuses a YDB 
 `atlas.hcl`, and from any connection the run would open, a data source
 included; a `PTAH_*` variable is refused as a variable before that. The data
 source row differs in its middle words on every engine, not only on YDB. What
-each verb does on YDB is on the [YDB provider's page](https://github.com/stokaro/ptah-ydb-plugin/blob/master/docs/ptah.md#ptah-compat),
+each verb does on YDB is on the [YDB provider's page](https://docs.ptah.run/edge/extend/providers/ydb/usage/#ptah-compat),
 and the divergence is recorded under
 [Compatibility differences](./site/src/content/docs/atlas/retained-divergences.md#a-ydb-database-url).
 

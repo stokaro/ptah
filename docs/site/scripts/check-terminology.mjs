@@ -48,8 +48,10 @@
 // runs it from a bare checkout for changes that touch no site page.
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { contentRoot, importedPageFiles } from '../src/lib/provider-docs.mjs';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(scriptDir, '..', '..', '..');
@@ -139,6 +141,11 @@ const matchesAny = (path, patterns) => patterns.some((pattern) => globToRegExp(p
  * and reports files belonging to a different checkout. `--others
  * --exclude-standard` so a page added but not yet committed is governed too.
  *
+ * The pages a provider repository publishes here are added from the import's
+ * manifests when `root` is this repository: git ignores the directory the
+ * import writes, and a provider page is held to the same vocabulary as a page
+ * written here. That read refuses a missing or stale import.
+ *
  * Throws when git cannot answer. An empty answer is not a result.
  */
 export function repositoryFiles(root = repoRoot) {
@@ -153,7 +160,10 @@ export function repositoryFiles(root = repoRoot) {
     const detail = String(cause.stderr ?? cause.message ?? cause).trim().split('\n')[0];
     throw new Error(`check-terminology: git could not enumerate ${root}: ${detail}`, { cause });
   }
-  const files = [...new Set(output.split('\n').map((line) => line.replace(/\r$/, '')).filter(Boolean))].sort();
+  const imported = resolve(root) === resolve(repoRoot)
+    ? importedPageFiles().map((file) => relative(repoRoot, join(contentRoot, file)).split(sep).join('/'))
+    : [];
+  const files = [...new Set([...output.split('\n').map((line) => line.replace(/\r$/, '')).filter(Boolean), ...imported])].sort();
   if (files.length === 0) {
     throw new Error('check-terminology: git reports no files; refusing to check an empty tree');
   }

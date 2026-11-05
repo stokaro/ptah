@@ -214,7 +214,7 @@ three take the same lock on the same history.
 
 On YDB the provider takes the lock on a coordination node, and the server can
 take it away while the run goes on; see
-[The migration lock](https://github.com/stokaro/ptah-ydb-plugin/blob/master/docs/migrations.md#the-migration-lock).
+[The migration lock](../../extend/providers/ydb/migrations/#the-migration-lock).
 
 On a built-in engine the lock belongs to a database session the run opens for
 the lock alone, and the migrations run on other connections. The server
@@ -737,7 +737,7 @@ and pipelines share a directory:
   outside a transaction changes nothing. That session belongs to the one
   migration, so the settings end with it. YDB has no such setting, and its
   provider bounds each query with the statement timeout; see
-  [Statement timeouts on YDB](https://github.com/stokaro/ptah-ydb-plugin/blob/master/docs/migrations.md#statement-timeouts). On a target with no
+  [Statement timeouts on YDB](../../extend/providers/ydb/migrations/#statement-timeouts). On a target with no
   way to honor a timeout, a migration that declares one is refused in every
   transaction mode, before any SQL runs or the revision row changes.
   SQL-backed non-transactional migrations record a durable progress marker
@@ -827,7 +827,7 @@ reproduces the schema it was pointed at.
 A YDB migration runs through the YDB provider, which splits it into the queries
 YDB runs, takes the migration lock on a coordination node and bounds each query
 by the statement timeout. Its
-[Migrations on YDB](https://github.com/stokaro/ptah-ydb-plugin/blob/master/docs/migrations.md)
+[Migrations on YDB](../../extend/providers/ydb/migrations/)
 page describes each of them and the files it refuses.
 
 ## Operational hooks

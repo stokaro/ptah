@@ -423,7 +423,7 @@ the statement, which the builder does not know for a table, so use
 On a table with a unique index, name every column. YDB 26.2 fails an `UPSERT`
 that names no column a synchronous index is keyed on with `INTERNAL_ERROR`, and
 the builder cannot see the table's indexes to refuse it; see
-[YDB](https://github.com/stokaro/ptah-ydb-plugin/blob/master/docs/README.md).
+[YDB](../providers/ydb/).
 
 ### INSERT
 

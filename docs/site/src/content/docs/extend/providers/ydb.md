@@ -118,17 +118,18 @@ saved plans, application, and its protocol limitations.
 
 ## Where the provider documents YDB
 
-The provider's [documentation](https://github.com/stokaro/ptah-ydb-plugin/blob/master/docs/README.md) is the reference for what YDB
-does in Ptah: which YQL a plan renders, which changes it plans in place and which
-it refuses, the capabilities each release line and feature flag gives, and what
-is not supported yet. Its pages start from these questions:
+What YDB does in Ptah is the provider's to document: which YQL a plan renders,
+which changes it plans in place and which it refuses, the capabilities each
+release line and feature flag gives, and what is not supported yet. The pages
+below live in the provider's repository and are published here with the release
+of the provider this documentation describes. They start from these questions:
 
 | Question | Provider page |
 | --- | --- |
-| How do a `ydb://` URL, a dev database and `ptah-compat` reach YDB? | [Using the provider with Ptah](https://github.com/stokaro/ptah-ydb-plugin/blob/master/docs/ptah.md) |
-| Which directives and YAML keys declare YDB objects? | [Declaring YDB objects](https://github.com/stokaro/ptah-ydb-plugin/blob/master/docs/declarations.md) |
-| How is a YDB migration split, locked and timed out? | [Migrations on YDB](https://github.com/stokaro/ptah-ydb-plugin/blob/master/docs/migrations.md) |
-| How is an embedding generation indexed on YDB? | [Embedding generations on YDB](https://github.com/stokaro/ptah-ydb-plugin/blob/master/docs/inference.md) |
+| How do a `ydb://` URL, a dev database and `ptah-compat` reach YDB? | [Using the provider with Ptah](usage/) |
+| Which directives and YAML keys declare YDB objects? | [Declaring YDB objects](declarations/) |
+| How is a YDB migration split, locked and timed out? | [Migrations on YDB](migrations/) |
+| How is an embedding generation indexed on YDB? | [Embedding generations on YDB](inference/) |
 
 The Go annotation, YAML and HCL attributes YDB adds to a directive or key every
 engine has are listed with that directive in the
@@ -137,4 +138,6 @@ engine has are listed with that directive in the
 [HCL schema reference](../../../reference/hcl-schema/). Ptah's
 [support matrix](../../../databases/support-matrix/) lists the engines Ptah
 builds in; YDB's release lines and capabilities are the provider's to declare,
-and its release publishes them in `release-lines.json`.
+and its release publishes them in `release-lines.json`. The provider's
+[README](https://github.com/stokaro/ptah-ydb-plugin#readme) holds the rest of
+its reference.

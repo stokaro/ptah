@@ -53,6 +53,13 @@ worktree="$(mktemp -d "${TMPDIR:-/tmp}/ptah-gate-selftest.XXXXXX")"
 rmdir "$worktree"
 git worktree add --detach "$worktree" HEAD >/dev/null 2>&1
 
+# The provider pages are not in git: the import step writes them from the
+# declaration the worktree holds, and the route and prose gates below refuse a
+# tree without them. The clones are cached beside this checkout's own, and
+# restore_worktree keeps the import because `git clean` leaves ignored files.
+node "$worktree/docs/site/scripts/import-provider-docs.mjs" \
+	--cache "$repo_root/docs/site/.cache/provider-docs" >/dev/null
+
 failures=0
 checked=0
 # fixtured accumulates the gates a shell case was given, so the coverage guard at
@@ -385,6 +392,13 @@ run_node_selftest_case check-terminology.mjs \
 run_node_selftest_case lib/docroutes.mjs \
 	"the unmodeled-segment refusal removed from routeFor" \
 	"perl -0pi -e 's/^  assertSlugStable\\(withoutExtension.*\\n//m' docs/site/scripts/lib/docroutes.mjs"
+
+# The provider import rewrites a provider page's links for the site. Without
+# the sibling-page rewrite a provider page links a .md file the site does not
+# serve, so the import's self-test has to notice the rule going.
+run_node_selftest_case import-provider-docs.mjs \
+	"the sibling-page link rewrite removed from transformPage" \
+	"perl -0pi -e 's/if \\(pageSet\\.has\\(resolved\\)\\) return withFragment\\(relativeRoute\\(route, routeOf\\(provider\\.engine, resolved\\)\\)\\);//' docs/site/scripts/import-provider-docs.mjs"
 
 # What this harness does NOT cover, and why. A data table rather than a
 # paragraph, because the guard at the end of this file reads it: a coverage list

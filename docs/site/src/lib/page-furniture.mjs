@@ -8,7 +8,7 @@
  * each see the same route data; deriving everything here keeps the split
  * button in the rail and the links in the footer pointing at the same URLs.
  */
-import { pageActionsForSource, resolveSourceContext, sourceCommitForBuild } from './source-context.mjs';
+import { pageActionsForSource, providerPageSource, resolveSourceContext, sourceCommitForBuild } from './source-context.mjs';
 import releaseUiOverlay from '../../scripts/data/release-ui-overlay.json';
 
 /** Page types that render no badge: a landing is the section, not a kind of page. */
@@ -45,15 +45,29 @@ export function pageSourceActions(entry, { pageUrl, baseUrl }) {
   if (!hasPageSource(entry)) return { hasSource: false };
 
   const legacyGeneratedPage = releaseUiOverlay.legacyGeneratedPages[entry.id];
+  // A page a provider repository publishes is viewed, edited and reported
+  // there; the file under docs/site is only what the import wrote.
+  const provider = entry.data.providerRepository
+    ? providerPageSource({
+      repository: entry.data.providerRepository,
+      commit: entry.data.providerCommit,
+      source: entry.data.providerSource,
+    })
+    : undefined;
   const sourceContext = resolveSourceContext({
     documentationVersion: process.env.DOCS_VERSION?.trim() || 'edge',
-    sourceCommit: sourceCommitForBuild(),
-    renderedSourcePath: `docs/site/${entry.filePath}`,
+    sourceCommit: provider?.sourceCommit ?? sourceCommitForBuild(),
+    renderedSourcePath: provider?.renderedSourcePath ?? `docs/site/${entry.filePath}`,
+    viewRef: provider?.viewRef,
     generated: entry.data.generated ?? Boolean(legacyGeneratedPage),
     generator: entry.data.generator ?? legacyGeneratedPage?.generator,
     editSource: entry.data.editSource ?? legacyGeneratedPage?.editSource,
   });
-  const pageActions = pageActionsForSource(sourceContext, { pageUrl, title: entry.data.title });
+  const pageActions = pageActionsForSource(sourceContext, {
+    pageUrl,
+    title: entry.data.title,
+    repositoryUrl: provider?.repositoryUrl,
+  });
 
   return {
     hasSource: true,
