@@ -93,9 +93,11 @@ read sends no subtree region: its regions must fit inside the namespaces its
 selectors bind, and a binding names one exact schema. Absence and requested
 defaults stay refused for every region, as before.
 
-The SDK exports the match as one function. The host's coverage lookup and a
-provider's comparison both call it, so the two cannot disagree about which
-subjects a region covers.
+The SDK exports the match as one function, `provider.SchemaWithin`, and a
+provider's comparison calls it. The host's coverage lookup lives in a package
+that does not import the SDK, so it states the same rule in its own code, and
+a host test runs both over the same cases, so the two cannot disagree about
+which subjects a region covers unnoticed.
 
 ### What the host does with a subtree region
 
@@ -144,9 +146,7 @@ inspection request instead of one in the region. Rejected.
 ## Consequences
 
 - Contract 25.22 adds two namespace fields, one identifier rule and a two-way
-  feature. It is numbered after contract 25.21, which carries the additions of
-  ADR 0065 to ADR 0068. The number is provisional: the SDK change that merges
-  first takes the lowest free minor.
+  feature. The same minor carries the additions of ADR 0069 to ADR 0072.
 - The SDK release comes first. The host and the providers adopt it in their
   own changes.
 - Without the feature nothing changes: the provider sends exact regions, and
