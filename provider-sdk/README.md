@@ -55,7 +55,8 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.18. `provider-sdk/v0.16.0` speaks 25.17.
+speaks contract 25.19. `provider-sdk/v0.17.0` speaks 25.18.
+`provider-sdk/v0.16.0` speaks 25.17.
 `provider-sdk/v0.15.0` speaks 25.16.
 `provider-sdk/v0.14.0` speaks 25.15.
 `provider-sdk/v0.13.0` speaks 25.14.
@@ -106,6 +107,7 @@ returns to 0.
   Contract 25.16 adds [error reasons](#error-reasons).
   Contract 25.17 adds [index renames](#index-renames).
   Contract 25.18 adds [the reasons of execution and transaction results](#error-reasons).
+  Contract 25.19 adds [change reversal](#change-reversal).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -135,10 +137,10 @@ does not oblige a peer to use it.
   `schema.observed-primary-keys`, `schema.observed-indexes`,
   `planning.object-context`, `planning.context-inventory`,
   `units.migration-split`, `models.compare-counts`, `schema.index-methods`,
-  `sessions.typed-arguments`, `errors.reasons` and `planning.index-renames`.
-  The embedding store's
-  calls and `PrepareCommonObjects` are new, and each comes with an addition to
-  `Engine`, so a host lists the feature to receive either. `SplitMigration` is new too,
+  `sessions.typed-arguments`, `errors.reasons`, `planning.index-renames` and
+  `models.reverse`. The embedding store's calls, `PrepareCommonObjects` and
+  `ReverseChanges` are new, and each comes with an addition to `Engine`, so a
+  host lists the feature to receive any of them. `SplitMigration` is new too,
   and comes with the abort flags of `Execution` and `TransactionResult`, so a
   host lists `units.migration-split` to call it.
 - Both transport boundaries validate with the description negotiated this way,
@@ -1988,6 +1990,45 @@ drop and a create. A comment on a renamed index moves with it through the
 held name and sets it under the new one.
 [ADR 0060](../docs/adr/0060-a-table-owner-renames-an-index-in-place.md) records
 the decision.
+
+## Change reversal
+
+`models.reverse` lets the owner of a change kind undo an accepted change of
+that kind. `ptah migrations generate` writes a reverse plan beside the
+forward one, and a change a provider's comparison returned is an owner's
+payload the host cannot invert. An engine declares one `ModelReversal` per
+service in `Engine.reversals`, each naming the CHANGE models it reverses; a
+change kind belongs to at most one service.
+
+`ReverseChanges` is offline: no session, no database, no source document. The
+host sends the accepted changes of one service in plan order, each as the
+comparison returned it, and the provider returns one `ReversedChange` per
+change, in order:
+
+- `value` is a CHANGE value of the same kind whose operands describe the
+  reverse direction. It is absent when the reverse has nothing to run, such
+  as a value the server never returns, and then at least one limitation says
+  what the rollback leaves as the forward change left it.
+- `forward_state` is what the forward change leaves at the subject, as the
+  owner predicts it: the subject itself (`OBJECT`, of the subject's kind) or a
+  facet attached to it (`FACET`), each a complete OBSERVED value or, without
+  one, the absence of one. The host plans the reverse against these
+  predictions, which are never inspection evidence.
+- `strategy` says how the reverse restores the prior definition, and
+  `limitations` what it cannot recover, such as deleted rows or consumed
+  messages. Each is one line, and the host writes them into the reverse
+  migration as comments.
+
+The provider and the engine list this two-way feature beside `models.plan` and
+`models.compare`; a host lists it to receive the declarations and to call the
+service. Both transport boundaries refuse a request whose changes are not
+valid CHANGE values of the service's kinds, a result that changes its
+subject or the change kind, a reverse without a change or a limitation, and a
+forward state without a placement, of a kind with no OBSERVED model, of an
+object of another kind than its subject, or named twice.
+[ADR 0062](../docs/adr/0062-a-provider-reverses-the-changes-its-comparison-returned.md)
+records why the owner reverses its changes rather than the host comparing
+again.
 
 ## Comparison counts
 
