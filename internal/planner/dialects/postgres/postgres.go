@@ -1303,9 +1303,35 @@ func appendTableComment(result []ast.Node, tableDiff difftypes.TableDiff) []ast.
 	})
 }
 
+// columnsLeavingTheirKeyToTheTable is the columns tableDiff adds, without their own
+// PRIMARY KEY where the plan adds the table's primary key as a constraint. A key
+// declared on the table carries that flag on its column too, and written twice the
+// second answers `multiple primary keys for table "parent" are not allowed`, measured
+// on PostgreSQL 18.6. The rest of the family has not been measured.
+func (p *Planner) columnsLeavingTheirKeyToTheTable(tableDiff difftypes.TableDiff, diff *difftypes.SchemaDiff, semantics identifier.Semantics) difftypes.ColumnChanges {
+	if p.targetDialect() != platform.Postgres {
+		return tableDiff.ColumnsAdded
+	}
+	table := semantics.QualifiedTableIdentityKey(tableDiff.TableName)
+	addsKey := slices.ContainsFunc(diff.ConstraintsAdded, func(add difftypes.ConstraintAdditionInfo) bool {
+		return strings.EqualFold(add.Type, "PRIMARY KEY") && semantics.QualifiedTableIdentityKey(add.TableName) == table
+	})
+	if !addsKey {
+		return tableDiff.ColumnsAdded
+	}
+	columns := slices.Clone(tableDiff.ColumnsAdded)
+	for i := range columns {
+		if columns[i].Primary {
+			columns[i].Primary, columns[i].Nullable = false, false
+		}
+	}
+	return columns
+}
+
 func (p *Planner) addAndModifyTableColumns(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, tableDiff := range diff.TablesModified {
+		tableDiff.ColumnsAdded = p.columnsLeavingTheirKeyToTheTable(tableDiff, diff, semantics)
 		// The table's own comment
 		// are emitted before its columns' changes, so a table whose only
 		// difference is its comment still produces a statement: the condition
@@ -1498,6 +1524,24 @@ func (p *Planner) dropIndexNode(diff *difftypes.SchemaDiff, ref difftypes.IndexR
 		dropIndexNode.SetConcurrently()
 	}
 	return dropIndexNode
+}
+
+// keysDroppedAhead answers the removed keys the plan drops ahead of its column
+// changes: each one that holds the name a column's own key takes, and what a
+// foreign key or a column change the plan makes cannot run over.
+func (p *Planner) keysDroppedAhead(diff *difftypes.SchemaDiff) keyrelease.Releases {
+	released := keyrelease.Find(diff, p.targetDialect())
+	// A foreign key the plan adds would bind to a removed key still there, and
+	// that key's drop would then stop at it.
+	if described, _ := platform.Lookup(p.targetDialect()); described.Comparison.ForeignKeyHoldsItsKey {
+		released = released.With(keyrelease.UnderAddedForeignKeys(diff, p.targetDialect()))
+	}
+	// PostgreSQL refuses a column change that a primary key it replaces or removes
+	// still stands in the way of. The rest of the family has not been measured.
+	if p.targetDialect() == platform.Postgres {
+		released = released.With(keyrelease.PrimaryKeysUnderColumnChanges(diff, p.targetDialect()))
+	}
+	return released
 }
 
 // releaseKeyNames drops the removed keys released holds, each as its removal
@@ -1886,17 +1930,15 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// before the column changes below add that key. ADD CONSTRAINT c_x_key
 	// otherwise answers that the name exists, and ADD COLUMN x int UNIQUE names
 	// the key c_x_key1. Steps 11 and 12.5 skip what this drops.
-	released := keyrelease.Find(diff, p.targetDialect())
-	// A foreign key the plan adds would bind to a removed key still there, and
-	// that key's drop would then stop at it.
-	if described, _ := platform.Lookup(p.targetDialect()); described.Comparison.ForeignKeyHoldsItsKey {
-		released = released.With(keyrelease.UnderAddedForeignKeys(diff, p.targetDialect()))
-	}
+	released := p.keysDroppedAhead(diff)
 	// Removed foreign keys must release referenced keys before any column or
 	// constraint replacement. The same identity set suppresses later re-drops,
 	// including the drop half of a foreign-key replacement.
 	result, foreignKeysReleased := p.releaseRemovedForeignKeys(result, diff)
 	result = p.releaseKeyNames(result, diff, released)
+	// Whatever went ahead is not dropped again where a replacement is added.
+	droppedAhead := maps.Clone(foreignKeysReleased)
+	maps.Copy(droppedAhead, released.ConstraintSet())
 
 	// 5c. Views that read a column whose type changes leave first: PostgreSQL
 	// refuses ALTER COLUMN TYPE under a view. A materialized view that changes,
@@ -1973,7 +2015,7 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	result = changeIndexComments(result, diff)
 
 	// 10.5. Add new constraints (must be done after tables and columns exist)
-	result, err = p.addNewConstraints(result, diff, foreignKeysReleased)
+	result, err = p.addNewConstraints(result, diff, droppedAhead)
 	if err != nil {
 		return nil, err
 	}
