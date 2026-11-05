@@ -6,12 +6,14 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/ast"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/builtintest"
@@ -36,6 +38,36 @@ func TestFeatureRendering_RefusesFacetsAtEveryCommonScope(t *testing.T) {
 		c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 		c.Assert(files, qt.IsNil)
 	}
+}
+
+// TestFeatureRendering_RefusesOrphanAndWrongParent hands a PostgreSQL EXCLUDE
+// constraint of table missing, which the schema does not declare, to the
+// create statements and to the Go export, and the same constraint to the
+// rendering of table items. Each refuses rather than write the constraint
+// without its table or on another one.
+func TestFeatureRendering_RefusesOrphanAndWrongParent(t *testing.T) {
+	c := qt.New(t)
+	exclusion := &pgtable.DesiredExclusion{Exclusion: pgtable.Exclusion{UsingMethod: "gist", Elements: "during WITH &&"}}
+	objects, err := schemaext.NewObjects(schemaext.Object{Ref: pgtable.ExclusionRef("missing", "no_overlap", identifier.ForDialect("postgres")), Value: exclusion})
+	c.Assert(err, qt.IsNil)
+	database := &schemamodel.Database{FeatureObjects: objects}
+
+	statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(database, "postgres", capability.Postgres18())
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+	c.Assert(err, qt.ErrorMatches, `.*feature object .*missing\.no_overlap has no declared parent table`)
+	c.Assert(statements, qt.IsNil)
+
+	files, err := goschematogo.Render(c.Context(), database, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true})
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorMatches, `.*EXCLUDE .*missing\.no_overlap names a table the export does not declare`)
+	c.Assert(files, qt.IsNil)
+
+	table := ast.NewCreateTable("items").AddColumn(ast.NewColumn("id", "BIGINT").SetPrimary())
+	table.OwnedObjects = objects
+	sql, err := builtin.RenderSQLWithCapabilities("postgres", capability.Postgres18(), table)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+	c.Assert(err, qt.ErrorMatches, `.*EXCLUDE constraint names another table`)
+	c.Assert(sql, qt.Equals, "")
 }
 
 func TestHCLExport_ReportsOpaqueFeatureLoss(t *testing.T) {
