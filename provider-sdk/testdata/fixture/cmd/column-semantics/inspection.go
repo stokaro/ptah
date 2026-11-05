@@ -5,6 +5,7 @@ import (
 
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"github.com/stokaro/ptah/provider-sdk/provider"
+	"google.golang.org/protobuf/proto"
 )
 
 func (c *columns) Open(ctx context.Context, request *protocol.OpenRequest) (*protocol.Session, error) {
@@ -13,6 +14,9 @@ func (c *columns) Open(ctx context.Context, request *protocol.OpenRequest) (*pro
 		return nil, err
 	}
 	session.Features = []string{provider.ObservedColumnsFeature, provider.ObservedIndexesFeature}
+	if provider.EngineOffers(provider.NegotiatedDescription(c.description, provider.HostFeatures(ctx)), "fixture", provider.ObservedIndexFacetsFeature) {
+		session.Features = append(session.Features, provider.ObservedIndexFacetsFeature)
+	}
 	return session, nil
 }
 
@@ -22,8 +26,23 @@ func (c *columns) Inspect(ctx context.Context, request *protocol.InspectRequest)
 		return nil, err
 	}
 	snapshot.TargetFeatures = []string{provider.ObservedColumnsFeature, provider.ObservedIndexesFeature}
+	if provider.EngineOffers(provider.NegotiatedDescription(c.description, provider.HostFeatures(ctx)), "fixture", provider.ObservedIndexFacetsFeature) {
+		snapshot.TargetFeatures = append(snapshot.TargetFeatures, provider.ObservedIndexFacetsFeature)
+	}
 	for _, table := range snapshot.Tables {
 		switch table.Identity.Name {
+		case "index_facet":
+			// The index carries a retention of 30 seconds as its own facet,
+			// owned by the index, as a provider reports an index's settings.
+			index := &protocol.ObservedIndex{Name: "index_facet_id", TableName: table.Identity.Name, Schema: table.Identity.Schema, Columns: []string{"Id"}}
+			facet := &protocol.Envelope{ProviderId: "example.org/fixture", Kind: "example.org/fixture/retention", SchemaVersion: 1, Encoding: "json",
+				DefinitionSha256: c.retention.GetDefinitionSha256(), Owner: provider.IndexReference(table.Identity, index.Name), Payload: []byte(`{"seconds":30}`)}
+			index.Facets = []*protocol.Envelope{facet}
+			table.Indexes = []*protocol.ObservedIndex{index}
+			snapshot.Coverage.Kinds = append(snapshot.Coverage.Kinds, &protocol.ModelKindCoverage{Model: proto.CloneOf(c.retention),
+				Knowledge: &protocol.ModelKnowledge{State: protocol.ModelKnowledge_UNINSPECTED, Reason: "the read describes the index it reports"}})
+			snapshot.Coverage.Subjects = append(snapshot.Coverage.Subjects, &protocol.ModelSubjectCoverage{Kind: facet.Kind, Subject: proto.CloneOf(facet.Owner),
+				NormalizedSubject: proto.CloneOf(facet.Owner), Knowledge: &protocol.ModelKnowledge{State: protocol.ModelKnowledge_COMPLETE}})
 		case "column_indexed":
 			table.Indexes = []*protocol.ObservedIndex{{Name: "column_indexed_id", TableName: table.Identity.Name, Schema: table.Identity.Schema,
 				Columns: []string{"Id"}, Unique: true, Method: "global", Comment: "captured index"}}

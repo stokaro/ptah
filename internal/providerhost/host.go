@@ -145,6 +145,10 @@ var hostFeatures = []string{
 	// reaches the table's owner as one rename step; see
 	// commonPlanner.indexChanges.
 	provider.IndexRenamesFeature,
+	// Inspection reads the facets of a provider table's indexes, which the
+	// comparison compares with the facets a source declares on the index;
+	// see reader.tables and observedIndexRules.
+	provider.ObservedIndexFacetsFeature,
 }
 
 // Start verifies the selected artifact and negotiates experimental services.

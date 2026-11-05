@@ -356,3 +356,22 @@ func TestPreparedIndexMethods(t *testing.T) {
 	c.Assert(preparedIndexMethods([]*protocol.PreparedIndex{{Name: "by_state", Method: "async"}, {Name: "by_id"}}), qt.DeepEquals,
 		map[string]string{"by_state": "async", "by_id": ""})
 }
+
+// An engine that negotiates schema.observed-index-facets keeps its indexes'
+// facets through its own rename step, so the comparison pairs a renamed index
+// that carries one. Without the feature no rule says a rename keeps a facet.
+func TestObservedIndexRulesRenameCarries(t *testing.T) {
+	for _, row := range []struct {
+		name  string
+		rules observedIndexRules
+		want  bool
+	}{
+		{"with index facets", observedIndexRules{facets: true}, true},
+		{"without them", observedIndexRules{methods: true}, false},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(row.rules.RenameCarries("example.org/fixture/retention"), qt.Equals, row.want)
+		})
+	}
+}

@@ -136,6 +136,16 @@ reports `index_rename` only to a host that lists the feature, and the host
 refuses a session that reports it from an engine without the feature. Without
 the capability, a renamed index is a drop and a create.
 
+With `schema.observed-index-facets` as well, inspection reports an index's own
+settings, such as a YDB index's partitioning, as facets of the index. A source
+states the same settings as a facet of the index its index directive, index
+entry or index block declares, so the host compares one owner's facet on both
+sides and plans a difference as a change of the index's table. The host treats
+every facet of such an index as one the provider's rename keeps, and compares a
+renamed index's facets under the name the declaration gives it. An HCL export
+writes an index facet into the index block, and a whole number a provider
+writes for a text attribute is written bare, as the reader reads it back.
+
 An engine that reports its indexes and whose session states
 `unique_constraints` as `false` holds a declared UNIQUE constraint, and a
 column's UNIQUE, as a global unique index, as YDB does. The host then reads

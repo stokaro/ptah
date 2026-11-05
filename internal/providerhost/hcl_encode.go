@@ -318,13 +318,18 @@ func hclEncodedAttributes(shapes []*protocol.HCLSourceAttribute, mapping *protoc
 }
 
 // hclEncodedValue is the value the writer writes for an attribute the claim
-// reads as kind: text as a quoted string, SQL in an sql() call, a bool bare,
-// and references as references.
+// reads as kind: text as a quoted string, a whole number for a text attribute
+// bare, SQL in an sql() call, a bool bare, and references as references. The
+// reader reads a bare number back as its text.
 func hclEncodedValue(kind hclext.Kind, value *protocol.SourceValue) (hclext.Value, error) {
 	switch content := value.GetValue().(type) {
 	case *protocol.SourceValue_Text:
 		if kind == hclext.String || kind == hclext.Text || kind == hclext.TypeName {
 			return hclext.Value{Kind: hclext.String, Text: content.Text}, nil
+		}
+	case *protocol.SourceValue_Number:
+		if kind == hclext.Text && content.Number != "" && strings.Trim(content.Number, "0123456789") == "" {
+			return hclext.Value{Kind: hclext.Number, Text: content.Number}, nil
 		}
 	case *protocol.SourceValue_Sql:
 		if kind == hclext.SQL {

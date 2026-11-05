@@ -91,7 +91,7 @@ func (t *target) registration() engine.Target {
 		result.Comparison.ColumnService = columnService{target: t}
 	}
 	if t.offers(provider.ObservedIndexesFeature) {
-		result.Comparison.Indexes = observedIndexRules{methods: t.offers(provider.IndexMethodsFeature)}
+		result.Comparison.Indexes = observedIndexRules{methods: t.offers(provider.IndexMethodsFeature), facets: t.offers(provider.ObservedIndexFacetsFeature)}
 		result.Lowering = uniqueIndexLowering{}
 	}
 	if t.supportsLint() {
