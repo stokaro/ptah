@@ -955,8 +955,11 @@ The declaration states every option the object holds. The comparison reads
 option the database holds and the declaration leaves out: a view declared
 without options is a view without them, as a view declared without `WITH CHECK
 OPTION` is a view without a check option. To keep an option, declare it. The
-Go annotations, YAML and HCL have no attribute for options yet
-(stokaro/ptah#5017), so a view declared through them is a view without options.
+Go annotations and YAML state them in `options`
+([Go annotations](../../reference/go-annotations/#ptahschemaview),
+[YAML](../../reference/yaml-schema/#view-options-and-storage-parameters)). HCL
+has no attribute for them yet (stokaro/ptah#5017), so a view declared in HCL is
+a view without options.
 
 A value is compared by what it means, not by how it is spelled. The server
 stores a value as written, so a database that holds `security_invoker=on` or

@@ -445,8 +445,11 @@ rendered for MySQL/MariaDB with dialect-specific trigger bodies.
 - `extensions`: `name`, `schema`, `if_not_exists`, `version`, `comment`
 - `functions`: `name`, `params` or `parameters`, `returns`, `language`,
   `security`, `volatility`, `body`, `comment`
-- `views`: `name`, `body`, `with_check`, `comment`
-- `matviews`: `name`, `body`, `comment`
+- `views`: `name`, `body`, `with_check`, `options`, `comment`. `options` is a
+  list of PostgreSQL view options, each `name=value`, such as
+  `security_invoker=true`.
+- `matviews`: `name`, `body`, `options`, `comment`. `options` is a list of
+  PostgreSQL storage parameters, such as `fillfactor=70`.
 - `triggers`: `name`, `table`, `timing`, `event`, `for`, `body`, `comment`
 - `rls_enabled_tables` or `rls_enabled`: map of tables with optional `table`,
   `struct_name`, `comment` and `dialects`

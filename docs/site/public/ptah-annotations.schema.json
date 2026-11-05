@@ -1436,6 +1436,10 @@
               "description": "Materialized view name.",
               "type": "string"
             },
+            "options": {
+              "description": "Comma-separated PostgreSQL storage parameters, `name=value`, such as `fillfactor=70`. PostgreSQL family.",
+              "type": "string"
+            },
             "refresh": {
               "description": "ClickHouse refresh schedule, as ClickHouse spells it: `every 1 hour`, `after 30 minute`, `every 1 day offset 2 hour`. Omitted leaves the view maintained by inserts into its source.",
               "type": "string"
@@ -2383,6 +2387,10 @@
             },
             "name": {
               "description": "View name.",
+              "type": "string"
+            },
+            "options": {
+              "description": "Comma-separated PostgreSQL view options, `name=value`, such as `security_invoker=true`; a bare name is true. PostgreSQL family.",
               "type": "string"
             },
             "schema": {

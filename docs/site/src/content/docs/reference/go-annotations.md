@@ -808,8 +808,19 @@ Declares a database view.
 | `comment` | No | View comment. |
 | `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
 | `name` | Yes | View name. |
+| `options` | No | Comma-separated PostgreSQL view options, `name=value`, such as `security_invoker=true`; a bare name is true. PostgreSQL family. |
 | `schema` | No | Target schema/namespace. |
 | `with_check` | No | Controls WITH CHECK OPTION where supported. `true`/`false`. |
+
+`options` states every option the view holds, so a view declared without it
+is a view without options, and the plan removes an option the database holds.
+See [View options and storage parameters](../../databases/postgresql/#view-options-and-storage-parameters)
+for how they are compared and which engines take them.
+
+```go
+//ptah:schema:view name="order_report" body="SELECT id, amount FROM orders" options="security_invoker=true,security_barrier"
+type OrderReport struct{}
+```
 
 ### `//ptah:schema:matview`
 
@@ -822,8 +833,13 @@ Declares a materialized view.
 | `comment` | No | Materialized view comment. |
 | `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
 | `name` | Yes | Materialized view name. |
+| `options` | No | Comma-separated PostgreSQL storage parameters, `name=value`, such as `fillfactor=70`. PostgreSQL family. |
 | `schema` | No | Target schema/namespace. |
 | `refresh` | No | ClickHouse refresh schedule, as ClickHouse spells it. See below. |
+
+`options` states the materialized view's storage parameters as a view's
+`options` states its options. A change to them alone is made in place, and the
+view keeps its rows.
 
 `refresh` carries a ClickHouse **scheduled** materialized view's schedule, in
 the engine's own words: `every 1 hour`, `after 30 minute`,
