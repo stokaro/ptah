@@ -139,8 +139,8 @@ td.stmt pre { color: var(--text-dim); }
 <h1>Migration safety report</h1>
 <div class="lede">Planned statements, classified by what they remove or tighten</div>
 <div class="stats">
-<div class="stat"><div class="stat-n">10</div><div class="stat-l">statements</div></div>
-<div class="stat"><div class="stat-n">7</div><div class="stat-l">safe</div></div>
+<div class="stat"><div class="stat-n">7</div><div class="stat-l">statements</div></div>
+<div class="stat"><div class="stat-n">4</div><div class="stat-l">safe</div></div>
 <div class="stat"><div class="stat-n">1</div><div class="stat-l">warning</div></div>
 <div class="stat"><div class="stat-n">2</div><div class="stat-l">destructive</div></div>
 </div>
@@ -152,29 +152,13 @@ td.stmt pre { color: var(--text-dim); }
 <tr>
 <td class="num">1</td>
 <td><span class="tag safe">safe</span></td>
-<td class="name">*ast.CommentNode</td>
-<td class="comment">does not remove data or tighten constraints</td>
-<td class="stmt"><pre>-- Disable foreign-key enforcement for the table rebuild below</pre></td>
-</tr>
-
-<tr>
-<td class="num">2</td>
-<td><span class="tag safe">safe</span></td>
 <td class="name">*ast.RawSQLNode</td>
 <td class="comment">does not remove data or tighten constraints</td>
 <td class="stmt"><pre>PRAGMA foreign_keys = off</pre></td>
 </tr>
 
 <tr>
-<td class="num">3</td>
-<td><span class="tag safe">safe</span></td>
-<td class="name">*ast.CommentNode</td>
-<td class="comment">does not remove data or tighten constraints</td>
-<td class="stmt"><pre>-- SQLite table rebuild for changes ALTER TABLE cannot express on products</pre></td>
-</tr>
-
-<tr>
-<td class="num">4</td>
+<td class="num">2</td>
 <td><span class="tag safe">safe</span></td>
 <td class="name">*ast.CreateTableNode</td>
 <td class="comment">does not remove data or tighten constraints</td>
@@ -187,7 +171,7 @@ td.stmt pre { color: var(--text-dim); }
 </tr>
 
 <tr>
-<td class="num">5</td>
+<td class="num">3</td>
 <td><span class="tag safe">safe</span></td>
 <td class="name">*ast.RawSQLNode</td>
 <td class="comment">does not remove data or tighten constraints</td>
@@ -195,7 +179,7 @@ td.stmt pre { color: var(--text-dim); }
 </tr>
 
 <tr>
-<td class="num">6</td>
+<td class="num">4</td>
 <td><span class="tag destructive">destructive</span></td>
 <td class="name">products</td>
 <td class="comment">DROP TABLE removes the table and all rows</td>
@@ -203,7 +187,7 @@ td.stmt pre { color: var(--text-dim); }
 </tr>
 
 <tr>
-<td class="num">7</td>
+<td class="num">5</td>
 <td><span class="tag warning">warning</span></td>
 <td class="name">*ast.RawSQLNode</td>
 <td class="comment">rename can break deployed readers and writers</td>
@@ -211,24 +195,15 @@ td.stmt pre { color: var(--text-dim); }
 </tr>
 
 <tr>
-<td class="num">8</td>
+<td class="num">6</td>
 <td><span class="tag destructive">destructive</span></td>
 <td class="name">legacy_inventory</td>
 <td class="comment">DROP TABLE removes the table and all rows</td>
-<td class="stmt"><pre>-- WARNING: This will delete all data!
-DROP TABLE IF EXISTS &#34;legacy_inventory&#34;</pre></td>
+<td class="stmt"><pre>DROP TABLE IF EXISTS &#34;legacy_inventory&#34;</pre></td>
 </tr>
 
 <tr>
-<td class="num">9</td>
-<td><span class="tag safe">safe</span></td>
-<td class="name">*ast.CommentNode</td>
-<td class="comment">does not remove data or tighten constraints</td>
-<td class="stmt"><pre>-- Restore foreign-key enforcement after the table rebuild</pre></td>
-</tr>
-
-<tr>
-<td class="num">10</td>
+<td class="num">7</td>
 <td><span class="tag safe">safe</span></td>
 <td class="name">*ast.RawSQLNode</td>
 <td class="comment">does not remove data or tighten constraints</td>
