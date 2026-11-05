@@ -3,12 +3,16 @@
 package integration_test
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"ptah.run/internal/atlascompatpolicy"
+	"ptah.run/internal/cli/atlas"
 )
 
 const (
@@ -197,21 +201,27 @@ func TestMigrationsDeclaredSerialE2E_TheRollbackRestoresThePlainColumn(t *testin
 func TestMigrateDiffDeclaredSerialE2E(t *testing.T) {
 	const creates = `CREATE SEQUENCE "parent_c_seq" AS integer`
 	tests := []struct {
-		name, strict string
-		wantSetval   bool
+		name       string
+		policy     atlascompatpolicy.Policy
+		wantSetval bool
 	}{
-		{name: "the default surface", strict: "0", wantSetval: true},
-		{name: "strict mode", strict: "1"},
+		{name: "the default surface", policy: atlascompatpolicy.Full(), wantSetval: true},
+		{name: "strict mode", policy: atlascompatpolicy.StrictCE()},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Setenv("PTAH_ATLAS_STRICT_COMPAT", test.strict)
 			dir, schema := writeRewrittenMigrationProject(c, "CREATE TABLE parent (id bigint PRIMARY KEY, c int);\n",
 				"CREATE TABLE parent (id bigint PRIMARY KEY, c serial);\n")
 
-			plan, err := runCompatVerb("migrate", "diff", "--dir", "file://"+dir,
-				"--to", "file://"+schema, "--dev-url", postgresUniqueEngine.emptyDB(c), "--dry-run")
+			var out bytes.Buffer
+			cmd := atlas.NewCompatCommandWithPolicy("atlas", test.policy)
+			cmd.SetOut(&out)
+			cmd.SetErr(&out)
+			cmd.SetArgs([]string{"migrate", "diff", "--dir", "file://" + dir,
+				"--to", "file://" + schema, "--dev-url", postgresUniqueEngine.emptyDB(c), "--dry-run"})
+			err := cmd.Execute()
+			plan := out.String()
 
 			c.Assert(err, qt.IsNil, qt.Commentf("%s", plan))
 			c.Assert(plan, qt.Contains, creates)
