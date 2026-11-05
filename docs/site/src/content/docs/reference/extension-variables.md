@@ -191,8 +191,8 @@ database is not affected. See
 By default, `ptah-compat schema apply`, `schema diff`, `schema plan new` and
 `migrate diff` refuse a change the target cannot make in place: on YDB, a
 primary key change, a column type change and `SET NOT NULL`. The refusal names
-this variable. Set it to `1` and the change is planned as a
-[table rebuild](../../databases/ydb/#table-rebuilds): a new table, a copy of the
+this variable. Set it to `1` and the YDB provider plans the change as a
+[table rebuild](https://github.com/stokaro/ptah-ydb-plugin#native-table-rebuild): a new table, a copy of the
 rows and a swap, whose steps are not atomic and lose rows written during them.
 It matches the native `--allow-table-rebuild` flag, which reads no variable. The
 community CLI has no YDB driver and plans no rebuild.

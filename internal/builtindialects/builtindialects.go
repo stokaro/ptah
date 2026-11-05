@@ -28,6 +28,5 @@ func Descriptors() []descriptor.Dialect {
 		yugabyteDB(),
 		spanner(),
 		oracle(),
-		ydb(),
 	}
 }

@@ -69,11 +69,6 @@ func TestDescriptors_DataAgreesWithTheRetiredSwitches(t *testing.T) {
 			seeds:       descriptor.Seeds{Transactional: true},
 			savepoint:   descriptor.Savepoint{Create: "SAVEPOINT", Rollback: "ROLLBACK TO SAVEPOINT"},
 		},
-		platform.YDB: {
-			literals:    descriptor.Literals{ByOwner: true},
-			managedData: descriptor.ManagedData{TypedRows: true},
-			seeds:       descriptor.Seeds{Transactional: true, ByOwner: true},
-		},
 	}
 
 	described := builtindialects.Descriptors()
@@ -105,7 +100,6 @@ func TestDescriptors_TrackerStatements(t *testing.T) {
 		platform.SQLServer:  "IF OBJECT_ID(N'schema_seeds', N'U') IS NULL",
 		platform.Spanner:    "applied_at TIMESTAMPTZ NOT NULL",
 		platform.Oracle:     "IF SQLCODE != -955 THEN",
-		platform.YDB:        "PRIMARY KEY (seed_path)",
 	}
 	for _, dialect := range builtindialects.Descriptors() {
 		t.Run(dialect.Name, func(t *testing.T) {

@@ -37,7 +37,7 @@ uses them internally.
 | Need | Stable package(s) | What it gives you |
 | --- | --- | --- |
 | Build SQL DDL programmatically | `core/ast`, `core/astbuilder`, `engine/builtin` | Dialect-aware SQL from structured AST nodes, written as struct literals or as builder chains. |
-| Build parameterized DML statements | `core/query` | Fluent, dialect-aware SELECT, INSERT, UPDATE, DELETE and YDB's UPSERT with bound parameters. See [Query builder](../query-builder/). |
+| Build parameterized DML statements | `core/query` | Fluent, dialect-aware SELECT, INSERT, UPDATE, DELETE and, for an engine that spells one, UPSERT with bound parameters. See [Query builder](../query-builder/). |
 | Parse Go schema annotations | `core/goschema` | Go source comments to Ptah's schema IR. |
 | Parse Atlas HCL schema files | `atlascompat` | Atlas-style HCL schema files to Ptah's schema IR through a stable compatibility wrapper. |
 | Parse YAML schema files | `core/yamlschema` | Ptah's YAML authoring format to the schema IR, from bytes or from a path. |
@@ -90,7 +90,8 @@ where supported. It is not a full SQL parser for every dialect-specific
 sub-language.
 
 DML lives in `core/query`. It builds parameterized `SELECT`, `INSERT`,
-`UPDATE` and `DELETE` statements, and YDB's `UPSERT INTO`, and renders them with
+`UPDATE` and `DELETE` statements, and `UPSERT INTO` for an engine that spells
+one, and renders them with
 `query.RenderSelect`, `query.RenderInsert`, `query.RenderUpdate` and
 `query.RenderDelete` for a named dialect. A statement can carry joins, `GROUP BY`
 and `HAVING`, subqueries, common table expressions, window functions,
@@ -403,9 +404,7 @@ for assessment, forward SQL, and rollback SQL.
 `migration/safety.ClassifySchemaDiff` also accounts for owned changes before
 planning. It reads the change owner's `schemaext.EffectSource` metadata and
 reports each kind under `feature_changes:<kind>`. Missing or invalid metadata
-requires the strongest review. Removing a coordination node is destructive
-because it also removes application semaphores and rate limiter resources.
-Removing a YDB secret is destructive because nothing can read its value back.
+requires the strongest review.
 
 An owner whose changes affect what roles may read or write also implements
 `schemaext.AccessEffectSource` on its change and operation payloads. The verb
@@ -425,11 +424,6 @@ holds one beside other work with `migration/planner.ErrInvalidPlan`, because a
 report could not tell which statements the operation wrote. Each statement of
 a saved plan keeps the node that rendered it, so an owner's verdict reaches its
 own statements and no others.
-
-YDB inspection records unknown coordination settings as incomplete subject
-coverage. Go and HCL export refuse those limits before writing output, because
-these formats cannot carry the captured inspection limit. Exporting an empty
-node list would otherwise turn unknown configuration into declared absence.
 
 Offline target-aware comparison requires `schemadiff.TargetRuntime`, including
 its selected validation service. Live comparison requires
@@ -622,8 +616,8 @@ statement an owner declined because its own lexing splits the text
 differently.
 
 The runtime also holds the rules the engine owners check, such as the
-PostgreSQL owner's PG and TX families, the MySQL owner's MY family and the YDB
-owner's YD family. `lint.Rules(runtime)` lists them after
+PostgreSQL owner's PG and TX families, the MySQL owner's MY family and the
+rules an executable provider publishes, such as the YDB provider's YD family. `lint.Rules(runtime)` lists them after
 the rules the lint package checks itself, and a run asks the owners for their
 findings through `Runtime.CheckMigrations`, once per run, then applies the
 same policy to them as to every other finding. The configuration loaders take

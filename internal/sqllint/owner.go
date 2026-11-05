@@ -14,8 +14,7 @@ import (
 // is how a source of an executable provider's engine is read: the parser has
 // no grammar for it, and the provider's split carries what the statement is.
 //
-// The rules are those [lintYQL] runs, reading the owner's facts instead of
-// the YQL reading:
+// The rules read the owner's facts:
 //
 //   - SQL002 for a statement of class [lintext.ClassOther], which this linter
 //     does not lint, named by the owner's kind;

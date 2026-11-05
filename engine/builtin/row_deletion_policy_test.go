@@ -15,7 +15,6 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/spanner/spannerschema"
-	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/sqlschema"
@@ -42,7 +41,7 @@ type Event struct {
 // TestRowDeletionPolicy_PlatformPropertiesFollowTheTarget pins the source
 // spelling: each target's properties render on that target in its own
 // spelling, and are scoped away from every other target, as every platform
-// property is. Nothing translates a Spanner interval into a YDB one.
+// property is, a target no built-in engine serves included.
 func TestRowDeletionPolicy_PlatformPropertiesFollowTheTarget(t *testing.T) {
 	database := policySource(`platform.spanner.row_deletion_column="created_at" platform.spanner.row_deletion_interval="30 days" ` +
 		`platform.ydb.row_deletion_column="expires" platform.ydb.row_deletion_interval="PT1H" platform.ydb.row_deletion_unit="seconds"`)
@@ -52,7 +51,6 @@ func TestRowDeletionPolicy_PlatformPropertiesFollowTheTarget(t *testing.T) {
 		want    string
 	}{
 		{dialect: platform.Spanner, caps: capability.SpannerPostgres(), want: `) TTL INTERVAL '30 days' ON "created_at";`},
-		{dialect: platform.YDB, caps: capability.YDB262(), want: "WITH (TTL = Interval(\"PT1H\") ON `expires` AS SECONDS)"},
 		{dialect: platform.Postgres, caps: capability.Postgres18(), want: ""},
 		{dialect: platform.CockroachDB, caps: capability.CockroachDB26(), want: ""},
 		{dialect: platform.MySQL, caps: capability.MySQL84(), want: ""},
@@ -81,12 +79,8 @@ func TestRowDeletionPolicy_AnUnboundPolicyIsRefusedElsewhere(t *testing.T) {
 	}{
 		{name: "Spanner policy on PostgreSQL", dialect: platform.Postgres, wantErr: `(?s).*ptah.run/spanner/row-deletion-policy.*`,
 			value: &spannerschema.DesiredRowDeletion{Policy: spannerschema.Policy{Column: "created_at", Interval: "30 days"}}},
-		{name: "Spanner policy on YDB", dialect: platform.YDB, wantErr: `(?s).*ptah.run/spanner/row-deletion-policy.*`,
+		{name: "Spanner policy on MySQL", dialect: platform.MySQL, wantErr: `(?s).*ptah.run/spanner/row-deletion-policy.*`,
 			value: &spannerschema.DesiredRowDeletion{Policy: spannerschema.Policy{Column: "created_at", Interval: "30 days"}}},
-		{name: "YDB TTL on Spanner", dialect: platform.Spanner, wantErr: `(?s).*ptah.run/ydb/ttl.*`,
-			value: &ydbschema.DesiredTTL{Policy: ydbschema.TTL{Column: "created_at", Interval: "P30D"}}},
-		{name: "YDB TTL on MySQL", dialect: platform.MySQL, wantErr: `(?s).*ptah.run/ydb/ttl.*`,
-			value: &ydbschema.DesiredTTL{Policy: ydbschema.TTL{Column: "created_at", Interval: "P30D"}}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -106,9 +100,8 @@ func TestRowDeletionPolicy_AnUnboundPolicyIsRefusedElsewhere(t *testing.T) {
 	}
 }
 
-// TestRowDeletionPolicy_ATargetWithoutTheCapabilityRefuses pins the owners'
-// capability refusals: a policy on a target without row_deletion_policy, and a
-// YDB TTL on an integer column on one without row_deletion_policy_epoch_column.
+// TestRowDeletionPolicy_ATargetWithoutTheCapabilityRefuses pins the owner's
+// capability refusal: a policy on a target without row_deletion_policy.
 // Rendered without the setting, the server would keep every row the
 // declaration said to delete.
 func TestRowDeletionPolicy_ATargetWithoutTheCapabilityRefuses(t *testing.T) {
@@ -123,17 +116,6 @@ func TestRowDeletionPolicy_ATargetWithoutTheCapabilityRefuses(t *testing.T) {
 			name: "Spanner", dialect: platform.Spanner, caps: capability.SpannerPostgres().With(capability.RowDeletionPolicy, false),
 			attributes: `platform.spanner.row_deletion_column="created_at" platform.spanner.row_deletion_interval="30 days"`,
 			wantErr:    `(?s)spanner: table "events" declares a row deletion policy, which requires target capability row_deletion_policy; .*`,
-		},
-		{
-			name: "YDB", dialect: platform.YDB, caps: capability.YDB262().With(capability.RowDeletionPolicyEpochColumn, false).With(capability.RowDeletionPolicy, false),
-			attributes: `platform.ydb.row_deletion_column="created_at" platform.ydb.row_deletion_interval="P30D"`,
-			wantErr:    `the TTL of table "events", which requires target capability row_deletion_policy, unavailable on this ydb target`,
-		},
-		{
-			name: "YDB on an integer column", dialect: platform.YDB, caps: capability.YDB251().With(capability.RowDeletionPolicyEpochColumn, false),
-			attributes: `platform.ydb.row_deletion_column="expires" platform.ydb.row_deletion_interval="PT1H" platform.ydb.row_deletion_unit="SECONDS"`,
-			wantErr: `the TTL of table "events" reads an integer column counting SECONDS, which requires target capability ` +
-				`row_deletion_policy_epoch_column, unavailable on this ydb target`,
 		},
 	}
 	for _, test := range tests {
@@ -159,9 +141,9 @@ func TestRowDeletionPolicy_AMisspelledPropertyIsRefused(t *testing.T) {
 		wantErr    string
 	}{
 		{
-			name: "a misspelled name", dialect: platform.YDB,
-			attributes: `platform.ydb.row_deletion_column="created_at" platform.ydb.row_deletion_intervall="P30D"`,
-			wantErr:    `(?s).*unknown row deletion property "row_deletion_intervall": the policy takes row_deletion_column, row_deletion_interval, row_deletion_unit.*`,
+			name: "a misspelled name", dialect: platform.Spanner,
+			attributes: `platform.spanner.row_deletion_column="created_at" platform.spanner.row_deletion_intervall="30 days"`,
+			wantErr:    `(?s).*unknown row deletion property "row_deletion_intervall": the policy takes row_deletion_column, row_deletion_interval.*`,
 		},
 		{
 			name: "an upper-case name", dialect: platform.Spanner,
@@ -174,14 +156,9 @@ func TestRowDeletionPolicy_AMisspelledPropertyIsRefused(t *testing.T) {
 			wantErr:    `(?s).*unknown row deletion property "row_deletion_unit": the policy takes row_deletion_column, row_deletion_interval.*`,
 		},
 		{
-			name: "a YDB interval on Spanner", dialect: platform.Spanner,
+			name: "an ISO 8601 interval on Spanner", dialect: platform.Spanner,
 			attributes: `platform.spanner.row_deletion_column="created_at" platform.spanner.row_deletion_interval="P30D"`,
 			wantErr:    `(?s).*interval "P30D" is not a number of months, weeks, days or hours, such as 30 days.*`,
-		},
-		{
-			name: "a Spanner interval on YDB", dialect: platform.YDB,
-			attributes: `platform.ydb.row_deletion_column="created_at" platform.ydb.row_deletion_interval="30 days"`,
-			wantErr:    `(?s).*interval "30 days" is not an ISO 8601 duration YDB takes.*`,
 		},
 	}
 	for _, test := range tests {

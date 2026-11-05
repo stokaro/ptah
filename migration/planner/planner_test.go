@@ -166,33 +166,6 @@ func TestGenerateSchemaDiffSQL_UnsupportedDialectReturnsError(t *testing.T) {
 	c.Assert(planErr.Dialect, qt.Equals, "db2")
 }
 
-// Every spelling of YDB plans through the YDB planner and renders YQL: an
-// added table is one CREATE TABLE with a backticked path and a table-level key.
-func TestGenerateSchemaDiffSQL_PlansYDB(t *testing.T) {
-	diff := &difftypes.SchemaDiff{TablesAdded: difftypes.TableChanges{{
-		Name:  "items",
-		Table: schemamodel.Table{StructName: "Item", Name: "items"},
-		Fields: []schemamodel.Field{
-			{StructName: "Item", Name: "id", Type: "BIGINT", Primary: true},
-			{StructName: "Item", Name: "label", Type: "TEXT", Nullable: true},
-		},
-	}}}
-	want := "CREATE TABLE `items` (\n    `id` Int64 NOT NULL,\n    `label` Utf8,\n    PRIMARY KEY (`id`)\n);"
-	for _, dialect := range []string{"ydb", "ydbs"} {
-		t.Run(dialect, func(t *testing.T) {
-			c := qt.New(t)
-
-			sql, err := planner.GenerateSchemaDiffSQL(
-				context.Background(), must.Must(builtin.New()),
-				diff, dialect,
-			)
-
-			c.Assert(err, qt.IsNil)
-			c.Assert(sql, qt.Contains, want)
-		})
-	}
-}
-
 func TestGenerateSchemaDiffAST_WrapsPlannerFailures(t *testing.T) {
 	c := qt.New(t)
 

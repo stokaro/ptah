@@ -208,9 +208,9 @@ func trackedPackageDirs(root string) (map[string]bool, error) {
 const bundlePrefix = "builtin"
 
 // engineAbbreviations are the stems package names use for an engine that
-// NormalizeDialect does not accept as a spelling: internal/pgname,
-// internal/oratypesource and internal/yqlparse each serve one engine.
-var engineAbbreviations = []string{"pg", "ora", "yql"}
+// NormalizeDialect does not accept as a spelling: internal/pgname and
+// internal/oratypesource each serve one engine.
+var engineAbbreviations = []string{"pg", "ora"}
 
 // sharedPackageSet chooses the shared set from the tracked packages.
 //

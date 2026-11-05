@@ -85,8 +85,8 @@ const (
 // the invocation reading it happens to be configured for.
 //
 // An explicitly configured table name is deliberately absent. The dbschema
-// readers leave out [NativeNames], and the SQL Server and YDB readers all of
-// these, so only these can go missing from a schema snapshot; a custom name is
+// readers leave out [NativeNames], and the SQL Server reader all of these, so
+// only these can go missing from a schema snapshot; a custom name is
 // read back as an ordinary table and needs no restoring.
 func DefaultNames() []string {
 	return []string{Atlas, Ptah, PtahLog, Tags}
@@ -118,9 +118,9 @@ func IsNative(name string) bool {
 	return slices.Contains(NativeNames(), name)
 }
 
-// IsDefault reports whether name is one of [DefaultNames]. The SQL Server and
-// YDB readers leave all of them out, since the community binary has no such
-// dialect whose `schema inspect` they would have to match.
+// IsDefault reports whether name is one of [DefaultNames]. The SQL Server
+// reader leaves all of them out, since the community binary has no such
+// dialect whose `schema inspect` it would have to match.
 func IsDefault(name string) bool {
 	return slices.Contains(DefaultNames(), name)
 }

@@ -234,6 +234,11 @@ func refuseInspectDevURLForm(ctx context.Context, devURL string) error {
 	if !devdocker.IsURL(devURL) {
 		return nil
 	}
+	// A docker URL of an engine a provider provisions is the provider's to
+	// read: the host's parser knows the images of the built-in engines only.
+	if _, provided := devdocker.ExternalEngine(ctx, devURL); provided {
+		return nil
+	}
 	_, err := devdocker.Parse(devURL)
 	return err
 }

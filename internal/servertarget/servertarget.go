@@ -8,6 +8,7 @@ package servertarget
 
 import (
 	"fmt"
+	"strings"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
@@ -35,6 +36,28 @@ type UnrecognizedVersionError struct {
 	Dialect string
 	// Version is the string that named no server.
 	Version string
+}
+
+// UndeclaredLineError reports a version of an engine an executable provider
+// serves that names none of the release lines the provider declares. It is
+// refused rather than planned with the engine's default for the reason
+// [UnrecognizedVersionError] gives.
+type UndeclaredLineError struct {
+	// Dialect is the engine the version was resolved against.
+	Dialect string
+	// Version is the string that named no declared line.
+	Version string
+	// Lines are the release lines the provider declares, sorted.
+	Lines []string
+}
+
+func (e *UndeclaredLineError) Error() string {
+	if len(e.Lines) == 0 {
+		return fmt.Sprintf("%q names no release line of %s: Ptah holds no release-line capabilities for an engine its "+
+			"provider serves, and the provider declares none", e.Version, e.Dialect)
+	}
+	return fmt.Sprintf("%q names no release line the %s provider declares: expected %s, or a version that starts with one "+
+		"followed by a dot", e.Version, e.Dialect, strings.Join(e.Lines, ", "))
 }
 
 func (e *UnrecognizedVersionError) Error() string {
@@ -99,9 +122,26 @@ type Target struct {
 // names no server is refused with an *UnrecognizedVersionError, and one that
 // names a different server product than the dialect with a
 // *DialectMismatchError.
+//
+// An engine an executable provider serves resolves a version to the release
+// line its provider declares facts for (capability.ProvidedReleaseLine), and
+// a version that names none of its lines is refused with an
+// *UndeclaredLineError.
 func Resolve(dialect, version string) (Target, error) {
 	if version == "" {
 		return Target{Capabilities: capability.ForDialect(dialect)}, nil
+	}
+	if line, registered := capability.ProvidedReleaseLine(dialect, version); registered {
+		if !line.Found() {
+			return Target{}, &UndeclaredLineError{Dialect: dialect, Version: version, Lines: line.Declared}
+		}
+		return Target{Capabilities: line.Capabilities}, nil
+	}
+	if engine := strings.TrimSpace(dialect); engine != "" && platform.NormalizeDialect(dialect) == "" {
+		// An engine no descriptor describes has no ladder here, and its
+		// provider declared no line: the version would select nothing and be
+		// dropped in silence.
+		return Target{}, &UndeclaredLineError{Dialect: engine, Version: version}
 	}
 
 	normalized := platform.NormalizeDialect(dialect)

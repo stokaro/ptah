@@ -145,13 +145,12 @@ const (
 // every one of those is a census field too.
 //
 // The dialects are the matrix's, each on the declared preset with the most
-// capabilities and every YDB feature flag on, and the comparison is
-// [schemadiff.CompareWithDatabaseInfo] given that preset: the comparison a
-// command connected to such a server runs. The offline entry points read the
-// dialect's default preset, which turns no YDB flag on, so a declaration a
-// flag or a newer line gates could not be asked about through them. Pairs and
-// fields run in parallel; the answer does not depend on the order they finish
-// in.
+// capabilities, and the comparison is [schemadiff.CompareWithDatabaseInfo]
+// given that preset: the comparison a command connected to such a server
+// runs. The offline entry points read the dialect's default preset, so a
+// declaration a newer line gates could not be asked about through them.
+// Pairs and fields run in parallel; the answer does not depend on the order
+// they finish in.
 func MeasureRoundTrip(ctx context.Context, runtime engine.SchemaRuntime) (RoundTrip, error) {
 	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
 		return RoundTrip{}, err
@@ -595,12 +594,11 @@ func (t *roundTrip) statements(schema schemamodel.Database, dialect string) (str
 }
 
 // richestPresets is, for each dialect, the declared release line whose preset
-// holds the most capabilities, with every YDB feature flag Ptah reads turned
-// on as [measuredCells] turns them on. A declaration one release line or one
-// flag gates is then in scope wherever the matrix says some server accepts it.
+// holds the most capabilities. A declaration one release line gates is then
+// in scope wherever the matrix says some server accepts it.
 func richestPresets(dialects []string) map[string]capability.Capabilities {
 	presets := make(map[string]capability.Capabilities, len(dialects))
-	for _, cell := range measuredCells() {
+	for _, cell := range capabilityprobe.Cells {
 		if cell.Preset == nil {
 			continue
 		}

@@ -13,7 +13,6 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemaproperties"
 	"ptah.run/dialect/mysql/mysqlschema"
-	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/goschematogo"
 )
@@ -142,26 +141,6 @@ func TestRender_MySQLSettingsRoundTrip(t *testing.T) {
 	c.Assert(string(files[0].Data), qt.Contains,
 		`//ptah:schema:constraint name="pk_tags" type="PRIMARY KEY" table="tags" columns="id" key_block_size="16"`+"\n")
 	c.Assert(mysqlSettings(exported), qt.DeepEquals, want)
-}
-
-// TestRender_AnIndexHintPrecedesYDBPartitioning pins the order of an index's
-// attributes that two owners add: the MySQL hint with the index's own
-// attributes, then the YDB partitioning this package still writes.
-func TestRender_AnIndexHintPrecedesYDBPartitioning(t *testing.T) {
-	c := qt.New(t)
-	db := &schemamodel.Database{
-		Tables: []schemamodel.Table{{StructName: "Doc", Name: "docs"}},
-		Fields: []schemamodel.Field{{StructName: "Doc", FieldName: "Bio", Name: "bio", Type: "TEXT"}},
-		Indexes: []schemamodel.Index{{StructName: "Doc", Name: "ix_bio", Fields: []string{"bio"}, TableName: "docs",
-			Facets: must.Must(schemaext.NewFacets(&mysqlschema.DesiredIndexBlockSize{KeyBlockSize: 8},
-				&ydbschema.DesiredIndexPartitioning{IndexPartitioning: ydbschema.IndexPartitioning{MinPartitions: 2}}))}},
-	}
-
-	files, err := goschematogo.Render(c.Context(), db, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true})
-
-	c.Assert(err, qt.IsNil)
-	c.Assert(string(files[0].Data), qt.Contains,
-		`//ptah:schema:index name="ix_bio" fields="bio" table="docs" key_block_size="8" auto_partitioning_min_partitions_count="2"`+"\n")
 }
 
 // TestRender_WritesTheBlockSizeOfAPrimaryKeyConstraint pins that a PRIMARY KEY

@@ -103,7 +103,7 @@ func TestIndexIncludeUnsupportedDialectsFailClosed(t *testing.T) {
 				qt.ErrorMatches,
 				fmt.Sprintf(
 					`%s does not support INCLUDE columns on index "idx_accounts_email"; `+
-						`target cockroachdb, postgres, spanner, sqlserver, ydb, or yugabytedb`,
+						`target cockroachdb, postgres, spanner, sqlserver, or yugabytedb`,
 					dialect,
 				),
 			)
@@ -209,10 +209,6 @@ func TestIndexIncludeUnsupportedAccessMethodsFailClosed(t *testing.T) {
 		// as lost, and the payload is not carried on it.
 		{name: "sqlserver gin", dialect: platform.SQLServer, method: "GIN", supported: "the default or BTREE access method"},
 		{name: "sqlserver hash", dialect: platform.SQLServer, method: "HASH", supported: "the default or BTREE access method"},
-		// YDB's COVER belongs to a global index; any other access method is
-		// not an index YDB has, covering or not.
-		{name: "ydb hash", dialect: platform.YDB, method: "HASH", supported: "a global index, synchronous or asynchronous"},
-		{name: "ydb gin", dialect: platform.YDB, method: "GIN", supported: "a global index, synchronous or asynchronous"},
 	}
 
 	for _, test := range tests {

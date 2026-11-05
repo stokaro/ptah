@@ -449,14 +449,14 @@ func TestDatabaseConnectionWithSession_KeepsTheConnectionRefinement(t *testing.T
 	newWriter := func(runner sqlrunner.Runner, _ *sql.Conn) catalog.SchemaWriter {
 		return &connectionSessionWriter{runner: runner}
 	}
-	refined := capability.YDB262().With(capability.UniqueIndexOnExistingTable, true)
+	refined := capability.Postgres18().With(capability.UniqueIndexOnExistingTable, true)
 	rootRunner := sqlrunner.Runner(db.SQL)
 	conn := &DatabaseConnection{
 		db:     db.SQL,
 		runner: rootRunner,
 		info: catalog.ServerInfo{
-			Dialect:      platform.YDB,
-			Version:      "26.2.1.14",
+			Dialect:      platform.Postgres,
+			Version:      "18.1",
 			Capabilities: refined,
 		},
 		reader:    newReader(rootRunner),

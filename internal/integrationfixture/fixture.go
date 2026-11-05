@@ -67,8 +67,6 @@ func MigrationPath(dialect, migrationType string) string {
 		return "migrations/" + migrationType + "_clickhouse"
 	case platform.SQLServer:
 		return "migrations/" + migrationType + "_sqlserver"
-	case platform.YDB:
-		return "migrations/" + migrationType + "_ydb"
 	default:
 		return "migrations/" + migrationType
 	}

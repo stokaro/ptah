@@ -13,13 +13,12 @@ import (
 )
 
 // TestCanIsolate_HappyPath pins the engines a case can get a database of its
-// own on: a file on SQLite, a dev realm on YDB, and a database the server
-// creates on the PostgreSQL and MySQL families.
+// own on: a file on SQLite, and a database the server creates on the
+// PostgreSQL and MySQL families.
 func TestCanIsolate_HappyPath(t *testing.T) {
 	for _, baseURL := range []string{
 		"",
 		"sqlite://file.db",
-		"ydb://localhost:2136/local",
 		"postgres://localhost:5432/app",
 		"cockroachdb://localhost:26257/app",
 		"yugabytedb://localhost:5433/app",
@@ -100,15 +99,15 @@ func TestCanIsolateWithAProviderRealm_FailurePath(t *testing.T) {
 // the deadline ends that attempt rather than the test's own timeout.
 func TestProvisionAProviderRealm_HappyPath(t *testing.T) {
 	c := qt.New(t)
-	owner := &realmOwner{schemes: []string{"ydb"}, realm: "ydb://localhost:2136/local?dev_realm=one"}
+	owner := &realmOwner{schemes: []string{"postgres"}, realm: "postgres://localhost:5432/app?dev_realm=one"}
 	ctx, cancel := context.WithTimeout(devdocker.WithExternal(c.Context(), owner), 5*time.Second)
 	defer cancel()
 
-	scratch, err := scratchdb.Provision(ctx, "ydb://localhost:2136/local")
+	scratch, err := scratchdb.Provision(ctx, "postgres://localhost:5432/app")
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(scratch.URL(), qt.Equals, "ydb://localhost:2136/local?dev_realm=one")
-	c.Assert(owner.entered, qt.DeepEquals, []string{"ydb://localhost:2136/local"})
+	c.Assert(scratch.URL(), qt.Equals, "postgres://localhost:5432/app?dev_realm=one")
+	c.Assert(owner.entered, qt.DeepEquals, []string{"postgres://localhost:5432/app"})
 	c.Assert(scratch.Close(c.Context()), qt.IsNil)
 	c.Assert(scratch.Close(c.Context()), qt.IsNil)
 	c.Assert(owner.released, qt.Equals, 1)

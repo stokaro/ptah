@@ -9,18 +9,16 @@ readerQuestion: "Which inference migration guarantees are measured, unsupported,
 goal: "Distinguish measured, unsupported, and operator-owned inference guarantees."
 sourceOfTruth:
   - "internal/cli/inference"
-  - "internal/embedydb"
   - "internal/embedrpc"
   - "integration/inference_cli_e2e_test.go"
-  - "integration/inference_ydb_cli_e2e_test.go"
   - "integration/providercli/provider_inference_e2e_test.go"
   - "integration/providercli/provider_inference_mcp_e2e_test.go"
+  - "github:stokaro/ptah-ydb-plugin"
 generated: false
 lastVerified: "2026-10-25"
 evidence:
   - "internal/cli/inference"
   - "integration/inference_cli_e2e_test.go"
-  - "integration/inference_ydb_cli_e2e_test.go"
   - "integration/providercli/provider_inference_e2e_test.go"
   - "integration/providercli/provider_inference_mcp_e2e_test.go"
 overlaps: []
@@ -29,9 +27,9 @@ disposition: keep
 
 ## What is supported
 
-| | PostgreSQL | YDB | Provider engine |
+| | PostgreSQL | YDB, through its provider | Another provider engine |
 | --- | --- | --- | --- |
-| Database | PostgreSQL with the pgvector extension | YDB, through its own vector functions and indexes | An engine whose executable provider keeps an embedding store |
+| Database | PostgreSQL with the pgvector extension | YDB, through its own vector functions and indexes, in the YDB provider's embedding store | An engine whose executable provider keeps an embedding store |
 | Provider API | OpenAI-compatible `/v1/embeddings` | OpenAI-compatible `/v1/embeddings` | OpenAI-compatible `/v1/embeddings` |
 | Vector types | `vector`, `halfvec`, `sparsevec` | `float` | The provider's |
 | Metrics | `cosine`, `l2`, `inner_product` | `cosine`, `l2`, `inner_product` | `cosine`, `l2`, `inner_product` |
@@ -40,14 +38,15 @@ disposition: keep
 | Target layouts | source columns, own table | source columns, own table | source columns, own table |
 
 The `--db-url` scheme decides the engine: a `postgres://` URL, or a
-keyword/value DSN with no scheme, is PostgreSQL, a `ydb://` or `ydbs://` URL is
-YDB, and a scheme an executable provider serves is that provider's engine. Every
+keyword/value DSN with no scheme, is PostgreSQL, and a scheme an executable
+provider serves, `ydb://` and `ydbs://` among them, is that provider's engine. Every
 verb runs the same lifecycle on each. The `inference_plan` and
 `inference_status` tools of `ptah mcp` reach the same engines for the database
 the operator configured.
 
-**A provider engine.** `--provider-config` or `--provider-engine` selects the
-provider, as for every native command; see [Test an executable
+**A provider engine.** A URL of an engine an installed official provider serves
+selects that provider, and `--provider-config` or `--provider-engine` selects
+one explicitly, as for every native command; see [Test an executable
 provider](../../../extend/executable-providers/). Its engine has to declare the
 `embeddings.store` feature, which contract 25.2 adds, and a provider without it
 is refused by name. The provider keeps the run state in a layout of its own and
@@ -63,10 +62,12 @@ argument names a manifest, an engine or an executable, and a call that adds one
 is refused; see [Configure agent
 permissions](../../../operate/ai-agent-permissions/#serve-a-database-through-a-provider).
 
-**YDB through its provider.** Without a provider flag, `ydb://` uses the YDB
-engine built into Ptah. With `--provider-engine ydb`, the provider that
-`ptah providers install ydb` installed serves the URL instead, and inference
-then needs a provider release that keeps an embedding store.
+**YDB through its provider.** A `ydb://` or `ydbs://` URL is served by the
+provider that `ptah providers install ydb` installed, and inference needs a
+provider release that keeps an embedding store. The provider keeps the run state
+in row tables named `ptah_embedding_*` and stores each vector as the bytes YDB's
+float vector functions read; see
+[Embedding store](https://github.com/stokaro/ptah-ydb-plugin#embedding-store).
 
 ## What is not
 
@@ -75,10 +76,10 @@ the rest are not supported, and a URL naming one is refused by name:
 
 ```console
 $ ptah inference plan --spec spec.yaml --db-url "mysql://localhost:3306/db"
-error: ptah inference works against PostgreSQL with pgvector, against YDB, and
-against a provider engine with an embedding store, and "mysql://" names another
-engine: a generation's run state and its vectors need one of those, so there is
-nothing here to run against mysql
+error: ptah inference works against PostgreSQL with pgvector and against a
+provider engine with an embedding store, such as YDB, and "mysql://" names
+another engine: a generation's run state and its vectors need one of those, so
+there is nothing here to run against mysql
 ```
 
 The PostgreSQL family is refused too. CockroachDB, YugabyteDB and Spanner speak
@@ -88,16 +89,10 @@ The `inference_plan` and `inference_status` tools of `ptah mcp` give the same
 answers for a configured target, before they connect to it.
 
 **No outbox on YDB.** The outbox records each source change with a row trigger
-in the transaction that makes it, and YDB has no triggers. `plan` reports it as
-a blocker and `prepare` refuses it before anything is created:
-
-```console
-$ ptah inference prepare --spec spec.yaml --db-url "ydb://localhost:2136/local" --run-id r1
-error: not supported on YDB: YDB 26.2.1.14 has no triggers, and the outbox
-consistency mode records each source change with a row trigger in the
-transaction that makes it; use consistency mode immutable, which is the mode a
-YDB generation supports
-```
+in the transaction that makes it, and YDB has no triggers. The YDB provider
+declares `immutable` as its only consistency mode, so `plan` reports `outbox`
+as a blocker and `prepare` refuses it before anything is created, naming the
+mode the engine declares.
 
 A YDB source that can change is migrated as a paused source; see [Migrate a
 paused source](../../guides/migrate-a-paused-source/).
@@ -151,9 +146,8 @@ schedule a GPU, store model weights, or answer a search query.
   sequence together, so a page that fills partway through a transaction resumes
   inside that transaction rather than past it.
 - A vector and its checkpoint are written in one transaction, so there is no
-  state in which the work landed and the record of it did not. On YDB it is one
-  serializable transaction, and a conflict with another transaction aborts it
-  and runs it again on what is there now. On a provider engine it is one atomic
+  state in which the work landed and the record of it did not. On a provider
+  engine, YDB included, it is one atomic
   compare-and-write in the provider; a commit whose state changed after it was
   read writes nothing, and Ptah reads and decides again.
 - A write never crosses generations: a row belonging to another generation is
@@ -196,9 +190,6 @@ schedule a GPU, store model weights, or answer a search query.
 
 - Two triggers and one companion-table insert per changed row, under `outbox`,
   for the length of the migration.
-- On YDB, a lifecycle operation reads the whole run-state registry inside its
-  transaction, so two operations on different generations can abort each other
-  and run again. A batch checkpoint reads only its own run.
 - On a provider engine, a lifecycle decision is two calls, a read and a
   compare-and-write, and so is a batch commit. A decision over the whole run
   state conflicts with every concurrent batch commit and is decided again.

@@ -10,7 +10,7 @@
 //   - PG — PostgreSQL-specific hazards, which the PostgreSQL owner checks
 //   - MY — MySQL/MariaDB-specific hazards, which the MySQL owner checks
 //   - YD — YDB statements the server refuses, or runs with an effect the
-//     statement does not state, which the YDB owner checks
+//     statement does not state, which the YDB provider checks
 //
 // # How statements are matched
 //
@@ -19,8 +19,8 @@
 // # line comments and /*!...*/ executable comments) and PostgreSQL
 // dollar-quoted bodies never confuse the splitter, and Options.Dialect
 // selects which of those syntaxes apply. A run that names a dialect asks its
-// owner to split the files, which on YDB reads them with the YQL lexer the
-// migrator splits them with. Every statement is then checked through the token
+// owner to split the files, which on YDB is the provider's YQL split, the one
+// its migration units come from. Every statement is then checked through the token
 // form exposed to rules:
 //
 //   - Statement.Words — the token-word sequence rules scan,
@@ -41,7 +41,7 @@
 // An engine owner may publish rules of its own through the runtime a run is
 // given, as [ptah.run/core/lintext] data. The PostgreSQL owner publishes the
 // PG and TX families and the online rules ON101 and ON103 that way, the MySQL
-// owner the MY family and ON102, and the YDB owner the YD family. [Rules]
+// owner the MY family and ON102, and the YDB provider the YD family. [Rules]
 // lists them after this package's own. A run asks the owners for their
 // findings once, over every file, and applies the same policy to them as to
 // every other finding: suppression directives, severity overrides, excluded
@@ -276,9 +276,9 @@ type Options struct {
 	// Dialect gates dialect-specific rules — "postgres" enables PG rules,
 	// "mysql"/"mariadb" enable MY rules, "ydb" enables YD rules — and selects
 	// the dialect's lexing behavior (comment forms, string escape rules,
-	// dollar quotes, YQL). Empty runs every rule under a hybrid lexer —
-	// maximum visibility when the target is unknown — except the YD rules,
-	// which read YQL and say nothing about text the hybrid lexer read.
+	// dollar quotes). Empty runs every rule under a hybrid lexer — maximum
+	// visibility when the target is unknown — except the YD rules, which
+	// read YQL and say nothing about text the hybrid lexer read.
 	//
 	// The value must be a canonical dialect name. [AnalyzeFS] and [LintFS]
 	// take it as given rather than alias-folding it, so a spelling such as

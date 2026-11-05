@@ -57,7 +57,9 @@ jobs:
     timeout-minutes: 20
 
     # YDB is the one engine the smoke reaches over a network: every other run
-    # here uses a SQLite file. local-ydb advertises its node under the
+    # here uses a SQLite file. Ptah reaches it through the official provider,
+    # which the YDB steps install as the action's README tells a workflow
+    # to. local-ydb advertises its node under the
     # container's host name, so the container is named localhost and the SDK's
     # default balancer reaches it through the published port, as in
     # go-integration-tests.yml.
@@ -152,10 +154,17 @@ jobs:
           console.log(`lint report: failed, ${report.findings.length} finding(s)`);
           NODE
 
+      # The YDB provider is installed separately from Ptah: the newest release
+      # whose minimum provider contract this build meets, checked against the
+      # release's checksums.txt. Every command that names a ydb:// URL then
+      # selects it with no flag.
+      - name: Install the YDB provider
+        run: '"$RUNNER_TEMP/ptah" providers install ydb'
+
       # A YDB URL takes the same path through the action as any other: plan,
-      # safety report, generated migration files and a lint of them as YQL.
-      # The model declares a unique index rather than a UNIQUE column, which
-      # YDB has no constraint for.
+      # safety report, generated migration files and a lint of them as YQL,
+      # which the provider splits and judges. The model declares a unique
+      # index rather than a UNIQUE column, which YDB has no constraint for.
       - name: Create YDB smoke schema source
         run: |
           mkdir -p "$RUNNER_TEMP/ptah-action-ydb-models"

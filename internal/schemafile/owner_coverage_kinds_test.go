@@ -3,14 +3,12 @@ package schemafile_test
 import (
 	"os"
 	"path/filepath"
-	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/coverage"
 	"ptah.run/dialect/spanner/spannerschema"
-	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemafile"
 )
@@ -18,7 +16,7 @@ import (
 // ownerCoverageKinds is every coverage kind an owner registers for a document
 // header, which the bundled runtime selects.
 func ownerCoverageKinds() []coverage.Kind {
-	return slices.Concat(ydbschema.CoverageKinds(), spannerschema.CoverageKinds())
+	return spannerschema.CoverageKinds()
 }
 
 // ownerKindDocument writes one named record of kind, encoded the way

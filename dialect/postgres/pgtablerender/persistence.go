@@ -85,9 +85,6 @@ func PrepareTableFacets(target string, facets schemaext.Facets) (schemaext.Facet
 	if pgtable.SupportsPersistence(target) {
 		return facets, nil
 	}
-	if platform.NormalizeDialect(target) == platform.YDB && value.Unlogged {
-		return schemaext.Facets{}, fmt.Errorf("%w: UNLOGGED is PostgreSQL's; YDB has no unlogged table", ptaherr.ErrUnsupportedFeature)
-	}
 	return facets.Without(pgtable.PersistenceKind), nil
 }
 

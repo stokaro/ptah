@@ -82,7 +82,6 @@ func TestCompareSchemas_ADocumentAgainstItselfCountsEveryKindAlike(t *testing.T)
 		{dialect: platform.Postgres, want: inventoryWithEnums},
 		{dialect: platform.CockroachDB, want: inventoryWithEnums},
 		{dialect: platform.YugabyteDB, want: inventoryWithEnums},
-		{dialect: platform.YDB, want: inventoryWithEnums},
 		{dialect: platform.MySQL, want: inventoryWithoutEnums},
 		{dialect: platform.MariaDB, want: inventoryWithoutEnums},
 		{dialect: platform.SQLite, want: inventoryWithoutEnums},

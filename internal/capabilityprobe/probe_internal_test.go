@@ -31,7 +31,6 @@ var probedDialects = []string{
 	platform.Oracle,
 	platform.SQLServer,
 	platform.SQLite,
-	platform.YDB,
 }
 
 // TestPlans_AnswerEveryRegisteredCapabilityExactlyOnce is the guard that keeps
@@ -131,13 +130,13 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.BackupCollections,
 			capability.CatalogVectorInfo,
 			// CommentAttributes names YDB table attributes, which no engine
-			// but YDB has; the engines here keep comments in their own catalog.
+			// here has; they keep comments in their own catalog.
 			capability.CommentAttributes,
 			capability.ContinuousAggregates,
 			capability.CoordinationNodes,
 			// DatabaseGrants, GroupPrincipals, RelativeGrantPaths and
-			// RoleMembership name what Ptah's planner plans, which only the
-			// YDB planner does, as IndexRename below does.
+			// RoleMembership name what Ptah's planner plans, which no built-in
+			// planner does, as IndexRename below does.
 			capability.DatabaseGrants,
 			capability.DDLInsideTransaction,
 			capability.GroupPrincipals,
@@ -147,7 +146,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			// and recording that refusal would answer a question about the
 			// image instead of the key (stokaro/ptah#1026).
 			capability.Hypertables,
-			// IndexRename names what Ptah's planner plans, and only the YDB
+			// IndexRename names what Ptah's planner plans, and no built-in
 			// planner plans a rename; the server's answer would not decide it.
 			// CoordinationNodes above is the same kind of key: it names what
 			// Ptah manages on YDB, which no statement can ask this engine.
@@ -162,7 +161,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			// family has a spelling of.
 			capability.RowDeletionPolicyEpochColumn,
 			// The two serial sequence keys name what Ptah's planner plans,
-			// and only the YDB planner plans a serial's sequence; the
+			// and no built-in planner plans a serial's sequence; the
 			// server's answer would not decide them.
 			capability.SerialSequenceKeepsRange,
 			capability.SerialSequenceOptions,
@@ -337,32 +336,6 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.TypeComments,
 			capability.ViewComments,
 		},
-	}, {
-		dialect: platform.YDB,
-		// The PostgreSQL set, for the PostgreSQL reasons: YDB is asked in its
-		// own spelling or in the standard one everywhere else, and what is
-		// left is a property of the probe, of the migrator or of an extension
-		// no YDB has. A data source's secret path is a YDB key besides: its
-		// statement needs a flag that is off on every line the probe runs. An
-		// index's comment is another: YDB keeps it as a table attribute, which
-		// comment_attributes names, so no statement asks about one kept apart.
-		// Tiered TTL also needs an authenticated external source; its live
-		// integration fixture supplies one while the default matrix does not.
-		want: []capability.Capability{
-			capability.BackupCollections,
-			capability.CatalogVectorInfo,
-			capability.ContinuousAggregates,
-			capability.DDLInsideTransaction,
-			capability.ExternalDataSourceSecretPaths,
-			capability.Hypertables,
-			capability.IndexComments,
-			capability.MigrationLockTimeout,
-			capability.MigrationStatementTimeout,
-			capability.RoutineReplacementResetsDefiner,
-			capability.ShowRoutinePrivilege,
-			capability.TieredTTL,
-			capability.TransactionalDDL,
-		},
 	}} {
 		t.Run(tc.dialect, func(t *testing.T) {
 			c := qt.New(t)
@@ -515,27 +488,6 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 		},
 		caps: capability.CockroachDB25(),
 		want: registered - 24,
-	}, {
-		name: "ydb 26.2 owes every row but the thirteen it declares and the seven whose prerequisite the preset lacks: " +
-			"guarded DROP CONSTRAINT, CREATE OR REPLACE TRIGGER, SET EXPRESSION, the three reference policies " +
-			"and the sequence grammar restriction",
-		cell: Cell{
-			Dialect: platform.YDB, Line: "26.2",
-			Preset: capability.YDB262, PresetName: "YDB262",
-			Refinement: RefinedByVersion,
-		},
-		caps: capability.YDB262(),
-		want: registered - 20,
-	}, {
-		name: "ydb 25.1 owes two rows fewer than 26.2: the vector index's writes and its bit vectors, whose " +
-			"prerequisite the line keeps behind a flag that is off by default",
-		cell: Cell{
-			Dialect: platform.YDB, Line: "25.1",
-			Preset: capability.YDB251, PresetName: "YDB251",
-			Refinement: RefinedByVersion,
-		},
-		caps: capability.YDB251(),
-		want: registered - 22,
 	}, {
 		name: "a banner-refined line owes nothing because no observation can be credited to it",
 		cell: Cell{
@@ -770,15 +722,6 @@ func TestReportErr(t *testing.T) {
 			return report
 		},
 		want: `(?s).*ACCEPTED the nonsense control.*`,
-	}, {
-		name: "a run that left what it created on the server fails",
-		build: func() *Report {
-			report := decidedReport(measuredCell, true)
-			report.Leftovers = []string{"group ptahcapprobe00", "2 table(s) under /local/ptah_capprobe_00"}
-			return report
-		},
-		want: `(?s).*the run left objects it created on the server: group ptahcapprobe00; ` +
-			`2 table\(s\) under /local/ptah_capprobe_00.*`,
 	}, {
 		name: "a dialect with no statement table fails rather than reporting agreement",
 		build: func() *Report {
@@ -1331,29 +1274,6 @@ func TestClickHousePlan_AsksTheShapeTheKeyNames(t *testing.T) {
 	}
 }
 
-// TestYDBNamespaceStatements pins the statements that locate the YDB
-// namespace: a key in a clause of its own, absolute paths into the system
-// views (a relative `.sys` would resolve inside the namespace the pragma
-// names), and an occupancy count that leaves out only the server's
-// dot-directories. Nothing is executed to enter the namespace or to leave it:
-// the pragma travels with every statement and the scheme service removes the
-// directory.
-func TestYDBNamespaceStatements(t *testing.T) {
-	c := qt.New(t)
-
-	enter, leave := namespaceSQL(platform.YDB, "ptah_capprobe_ab")
-
-	c.Assert(enter, qt.HasLen, 0)
-	c.Assert(leave, qt.Equals, "")
-	c.Assert(sentinelTableSQL(platform.YDB), qt.Equals,
-		"CREATE TABLE ptah_capprobe_sentinel (n Int64 NOT NULL, PRIMARY KEY (n))")
-	c.Assert(sentinelLocationSQL(platform.YDB, "/local", "ptah_capprobe_ab"), qt.Equals,
-		"SELECT COUNT(DISTINCT Path) FROM `/local/.sys/partition_stats` "+
-			"WHERE Path = '/local/ptah_capprobe_ab/ptah_capprobe_sentinel'")
-	c.Assert(occupancySQLFor(platform.YDB, "/local"), qt.Equals,
-		"SELECT COUNT(DISTINCT Path) FROM `/local/.sys/partition_stats` WHERE NOT StartsWith(Path, '/local/.')")
-}
-
 // understatementReport is a fully decided run on a cell that declares its
 // preset understates hypertables, against a server measured to do it or not.
 func understatementReport(serverDoes bool) *Report {
@@ -1400,14 +1320,6 @@ func TestReportErr_AnUnderstatementIsAClaimAboutTheServerToo_FailurePath(t *test
 		`not to do it either, so the declaration is stale`)
 }
 
-// ydb262Cell is the YDB 26.2 cell as cells.go declares it, with the fields the
-// report reads.
-var ydb262Cell = Cell{
-	Dialect: platform.YDB, Line: "26.2",
-	Preset: capability.YDB262, PresetName: "YDB262",
-	Refinement: RefinedByVersion,
-}
-
 var mysql84Cell = Cell{
 	Dialect: platform.MySQL, Line: "8.4",
 	Preset: capability.MySQL84, PresetName: "MySQL84",
@@ -1436,10 +1348,9 @@ func refinedReport(cell Cell, connection, session capability.Capabilities) *Repo
 	return report
 }
 
-// What the connection reads about a server only fails a cell where it moves a
-// YDB cluster's set off the preset. A TimescaleDB extension and a MySQL session
-// variable each change the set Ptah plans with and say nothing about the line,
-// so a run that measured either still passes.
+// What the connection reads about a server fails no cell. A TimescaleDB
+// extension and a MySQL session variable each change the set Ptah plans with
+// and say nothing about the line, so a run that measured either still passes.
 func TestReportErr_ConnectionRefinement_HappyPath(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
@@ -1447,11 +1358,6 @@ func TestReportErr_ConnectionRefinement_HappyPath(t *testing.T) {
 		connection capability.Capabilities
 		session    capability.Capabilities
 	}{{
-		name:       "YDB flags at the line's defaults",
-		cell:       ydb262Cell,
-		connection: capability.YDB262(),
-		session:    capability.YDB262(),
-	}, {
 		name: "a TimescaleDB extension on a PostgreSQL line",
 		cell: measuredCell,
 		connection: capability.Postgres17().
@@ -1475,49 +1381,6 @@ func TestReportErr_ConnectionRefinement_HappyPath(t *testing.T) {
 			report := refinedReport(tc.cell, tc.connection, tc.session)
 
 			c.Assert(report.Err(), qt.IsNil)
-		})
-	}
-}
-
-// A 26.2 cluster whose flags say EnableTableDatetime64=false refuses a 64-bit
-// date column, and the connection plans without one, so every row agrees. The
-// preset says the line has them, and nothing in the run measured that: the
-// cell fails on the key the flags moved.
-func TestReportErr_ConnectionRefinement_FailurePath(t *testing.T) {
-	c := qt.New(t)
-	flagged := capability.YDB262().With(capability.WideDateTimeTypes, false)
-
-	report := refinedReport(ydb262Cell, flagged, flagged)
-
-	c.Assert(report.Mismatches(), qt.HasLen, 0)
-	c.Assert(report.Err(), qt.ErrorMatches, `wide_date_time_types: the cluster's feature flags make it false `+
-		`where preset YDB262 says true; the rows compared the server with the flags' set, so this run `+
-		`measured nothing about the YDB262 preset for that key`)
-}
-
-// TestReadBack_AnswersFromTheStatementAndTheRead pins how a YDB access key is
-// answered: a statement the server refused is false and names the statement,
-// one the reader did not report is false and names what it missed, and one it
-// reported is true. The refusal and the missing read both read false, so only
-// the note tells an operator which of the two happened.
-func TestReadBack_AnswersFromTheStatementAndTheRead(t *testing.T) {
-	tests := []struct {
-		name string
-		back readBack
-		want observation
-	}{
-		{name: "refused", back: readBack{statement: "GRANT x", what: "the grant"},
-			want: observation{note: `the server refused "GRANT x"`}},
-		{name: "not read back", back: readBack{accepted: true, statement: "GRANT x", what: "the grant"},
-			want: observation{note: "Ptah's YDB reader does not report the grant"}},
-		{name: "read back", back: readBack{accepted: true, found: true, statement: "GRANT x", what: "the grant"},
-			want: observation{does: true}},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			c.Assert(test.back.observation(), qt.Equals, test.want)
 		})
 	}
 }

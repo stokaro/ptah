@@ -77,18 +77,18 @@ func TestRenderBatchReportsOmissionsWithoutLeakingBetweenCalls(t *testing.T) {
 		Name: "accounts",
 		Columns: []*ast.ColumnNode{
 			ast.NewColumn("id", "BIGINT").SetPrimary(),
-			{Name: "email", Type: "VARCHAR(255)", Nullable: true},
+			{Name: "email", Type: "VARCHAR(255)", Nullable: true, Collate: "utf8mb4_bin"},
 		},
 	}
-	request := renderer.Request{Target: "ydb", Capabilities: capability.YDB262(), Nodes: []ast.Node{table}}
+	request := renderer.Request{Target: "postgres", Capabilities: capability.Postgres18(), Nodes: []ast.Node{table}}
 	result, err := runtime.Render(t.Context(), request)
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Omissions, qt.HasLen, 1)
-	c.Assert(result.Omissions[0].Dialect, qt.Equals, "ydb")
+	c.Assert(result.Omissions[0].Dialect, qt.Equals, "postgres")
 	c.Assert(result.Omissions[0].Name, qt.Equals, "accounts.email")
-	c.Assert(result.Omissions[0].Property, qt.Equals, "type modifier")
-	c.Assert(result.Omissions[0].Detail, qt.Equals, "VARCHAR(255): length 255")
-	c.Assert(must.Must(result.SQL()), qt.Contains, "`email` Utf8")
+	c.Assert(result.Omissions[0].Property, qt.Equals, "collation")
+	c.Assert(result.Omissions[0].Detail, qt.Equals, "utf8mb4_bin")
+	c.Assert(must.Must(result.SQL()), qt.Contains, `"email" VARCHAR(255)`)
 
 	sql, omissions, err := builtin.RenderSQLReportingOmissions(request.Target, request.Capabilities, table)
 	c.Assert(err, qt.IsNil)

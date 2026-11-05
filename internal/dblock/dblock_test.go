@@ -34,8 +34,6 @@ func TestSupported(t *testing.T) {
 		{name: "cockroachdb", dialect: "cockroachdb", want: false},
 		{name: "yugabytedb", dialect: "yugabytedb", want: true},
 		{name: "spanner", dialect: "spanner", want: false},
-		{name: "ydb", dialect: "ydb", want: true},
-		{name: "ydbs alias", dialect: "ydbs", want: true},
 		{name: "unknown", dialect: "not-a-dialect", want: false},
 	}
 
@@ -58,7 +56,7 @@ func TestSupportedDialects_HappyPath(t *testing.T) {
 	dialects := dblock.SupportedDialects()
 
 	// The order is the dialect registry's, which a refusal prints.
-	c.Assert(dialects, qt.DeepEquals, []string{"postgres", "mysql", "mariadb", "sqlserver", "yugabytedb", "ydb"})
+	c.Assert(dialects, qt.DeepEquals, []string{"postgres", "mysql", "mariadb", "sqlserver", "yugabytedb"})
 	for _, dialect := range dialects {
 		c.Assert(dblock.Supported(dialect), qt.IsTrue, qt.Commentf("dialect %q", dialect))
 	}

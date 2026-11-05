@@ -8,13 +8,14 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/planext"
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/dialect/ydb/ydbdiff"
-	"ptah.run/dialect/ydb/ydbschema"
-	"ptah.run/dialect/ydb/ydbtopic"
+	"ptah.run/dialect/clickhouse/chdiff"
+	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/engine"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/goschematodb"
@@ -23,102 +24,118 @@ import (
 	"ptah.run/migration/schemadiff"
 )
 
-func declaration(c *qt.C, streams ...ydbschema.ChangefeedSpec) *schemamodel.Database {
+// declaration is table orders on ClickHouse, with the row policy named by
+// each of policies.
+func declaration(c *qt.C, policies ...string) *schemamodel.Database {
 	c.Helper()
 	var objects []schemaext.Object
-	for _, stream := range streams {
-		objects = append(objects, ydbschema.DesiredObject("", "items", stream))
+	for _, name := range policies {
+		objects = append(objects, schemaext.Object{Ref: chschema.RowPolicyRef("", "orders", name),
+			Value: &chschema.DesiredRowPolicy{Filter: new("tenant = 1"), Roles: chschema.RoleSelection{All: true}}})
 	}
 	owned, err := schemaext.NewObjects(objects...)
 	c.Assert(err, qt.IsNil)
-	coverage, err := ydbschema.ChangefeedCoverage(schemaext.Desired, nil)
+	coverage, err := chschema.RowPolicyCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)
 	c.Assert(err, qt.IsNil)
 	return &schemamodel.Database{
-		Tables:         []schemamodel.Table{{Name: "items", StructName: "Item"}},
-		Fields:         []schemamodel.Field{{Name: "id", StructName: "Item", Type: "uint64", Primary: true}},
+		Tables:         []schemamodel.Table{{Name: "orders", StructName: "Order", Engine: "MergeTree"}},
+		Fields:         []schemamodel.Field{{Name: "id", StructName: "Order", Type: "UInt64", Primary: true}},
 		FeatureObjects: owned, FeatureCoverage: coverage,
 	}
 }
 
-func options(c *qt.C, runtime generator.Runtime, before, after *schemamodel.Database) generator.BidirectionalSchemaPlanOptions {
+// options plans after against the database before describes, on dialect.
+func options(c *qt.C, runtime generator.Runtime, dialect string, before, after *schemamodel.Database) generator.BidirectionalSchemaPlanOptions {
 	c.Helper()
-	current, err := goschematodb.ToDBSchema(c.Context(), before, "ydb", runtime)
+	current, err := goschematodb.ToDBSchema(c.Context(), before, dialect, runtime)
 	c.Assert(err, qt.IsNil)
-	caps := capability.YDB262()
-	diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), after, current, catalog.ServerInfo{Dialect: "ydb", Capabilities: caps}, nil, runtime)
+	caps := capability.ForDialect(dialect)
+	diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), after, current, catalog.ServerInfo{Dialect: dialect, Capabilities: caps}, nil, runtime)
 	c.Assert(err, qt.IsNil)
-	return generator.BidirectionalSchemaPlanOptions{Runtime: runtime, Diff: diff, DesiredSchema: after, CurrentSchema: current, Dialect: "ydb", Capabilities: caps}
+	return generator.BidirectionalSchemaPlanOptions{Runtime: runtime, Diff: diff, DesiredSchema: after, CurrentSchema: current, Dialect: dialect, Capabilities: caps}
 }
 
+// TestGeneratorUsesOwnerReversalAndReportsRecoveryLimits plans, on
+// ClickHouse table orders, the creation of row policy fresh and the drop of
+// gone, beside retained, which the declaration leaves undescribed and so keeps.
+// The rollback is the ClickHouse owner's: it drops fresh and creates gone
+// again, leaves retained alone, and states what it cannot undo. The captured
+// state the rollback starts from holds fresh and retained; the forward diff's
+// capture is not changed.
 func TestGeneratorUsesOwnerReversalAndReportsRecoveryLimits(t *testing.T) {
 	c := qt.New(t)
 	runtime, err := builtin.New()
 	c.Assert(err, qt.IsNil)
-	fresh := ydbschema.ChangefeedSpec{Name: "fresh", Mode: "KEYS_ONLY", Format: "JSON"}
-	gone := ydbschema.ChangefeedSpec{Name: "gone", Mode: "UPDATES", Format: "JSON", Consumers: []ydbtopic.ConsumerSpec{{Name: "reader"}}}
-	retained := ydbschema.ChangefeedSpec{Name: "retained", Mode: "UPDATES", Format: "JSON", Disabled: true}
-	after := declaration(c, fresh)
-	// Omission preserves this inspected sibling. Explicit absence still asks
-	// to remove gone; a disabled declaration would ask for unsupported creation.
-	after.FeatureCoverage, err = ydbschema.ChangefeedCoverage(schemaext.Desired, []schemaext.SubjectCoverage{
-		{Kind: ydbschema.ChangefeedKind, Subject: ydbschema.ChangefeedRef("", "items", "retained"), Knowledge: schemaext.Knowledge{State: schemaext.Uninspected, Reason: "this source does not declare the retained stream"}},
+	after := declaration(c, "fresh")
+	after.FeatureCoverage, err = chschema.RowPolicyCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, []schemaext.SubjectCoverage{
+		{Kind: chschema.RowPolicyKind, Subject: chschema.RowPolicyRef("", "orders", "retained"), Knowledge: schemaext.Knowledge{State: schemaext.Uninspected, Reason: "this source does not declare the retained policy"}},
 	})
 	c.Assert(err, qt.IsNil)
-	opts := options(c, runtime, declaration(c, gone, retained), after)
+	opts := options(c, runtime, platform.ClickHouse, declaration(c, "gone", "retained"), after)
 	plan, err := generator.PlanBidirectionalSchemaDiff(t.Context(), opts)
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.Reverse.Recovery, qt.HasLen, 2)
 	c.Assert(plan.Reverse.Diff.TablesModified, qt.HasLen, 1)
 	reverse := plan.Reverse.Diff.TablesModified[0]
 	c.Assert(reverse.FeatureChanges, qt.HasLen, 2)
-	c.Assert(reverse.Current.OwnedObjects.Len(), qt.Equals, 2)
-	object, found, err := reverse.Current.OwnedObjects.Get(ydbschema.ChangefeedRef("", "items", "retained"))
-	c.Assert(err, qt.IsNil)
-	c.Assert(found, qt.IsTrue)
-	c.Assert(object.Value.(*ydbschema.ObservedChangefeed).Spec.Disabled, qt.IsTrue)
-	sql, err := builtin.RenderSQLWithCapabilities("ydb", opts.Capabilities, plan.Reverse.Nodes...)
+	c.Assert(reverse.Current.OwnedObjects.Refs(), qt.DeepEquals, []objectidentity.ID{
+		chschema.RowPolicyRef("", "orders", "fresh"), chschema.RowPolicyRef("", "orders", "retained"),
+	})
+	sql, err := builtin.RenderSQLWithCapabilities(platform.ClickHouse, opts.Capabilities, plan.Reverse.Nodes...)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "Recovery limit:")
-	c.Assert(sql, qt.Contains, "original stream was dropped")
-	c.Assert(sql, qt.Contains, "DROP CHANGEFEED `fresh`")
-	c.Assert(sql, qt.Contains, "ADD CHANGEFEED `gone`")
-	c.Assert(sql, qt.Not(qt.Contains), "CHANGEFEED `retained`")
+	c.Assert(sql, qt.Contains, "cannot undo rows they read while the forward plan applied")
+	c.Assert(sql, qt.Contains, "DROP ROW POLICY `fresh` ON `orders`;")
+	c.Assert(sql, qt.Contains, "CREATE ROW POLICY `gone` ON `orders` USING (tenant = 1) AS PERMISSIVE TO ALL;")
+	c.Assert(sql, qt.Not(qt.Contains), "retained")
 	c.Assert(plan.PriorSchema.FeatureObjects.Equal(opts.DesiredSchema.FeatureObjects), qt.IsFalse)
-	c.Assert(opts.Diff.TablesModified[0].Current.OwnedObjects.Equal(reverse.Current.OwnedObjects), qt.IsFalse)
+	c.Assert(opts.Diff.TablesModified[0].Current.OwnedObjects.Refs(), qt.DeepEquals, []objectidentity.ID{
+		chschema.RowPolicyRef("", "orders", "gone"), chschema.RowPolicyRef("", "orders", "retained"),
+	})
 }
 
+// TestGeneratorProjectsImplicitStateFromTheOwner changes a restrictive
+// ClickHouse row policy to one whose declaration leaves the composition to the
+// server's default. The rollback starts from the policy as the owner predicts
+// the forward plan leaves it, permissive with the new filter, and not from the
+// declaration, which names no composition, or from the policy as it was.
 func TestGeneratorProjectsImplicitStateFromTheOwner(t *testing.T) {
 	c := qt.New(t)
 	runtime, err := builtin.New()
 	c.Assert(err, qt.IsNil)
-	before := ydbschema.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON", TopicMinActivePartitions: 4}
-	after := before.Clone()
-	after.TopicMinActivePartitions, after.RetentionPeriod = 0, "PT12H"
-	opts := options(c, runtime, declaration(c, before), declaration(c, after))
+	declared := func(policy *chschema.DesiredRowPolicy) *schemamodel.Database {
+		database := declaration(c)
+		database.FeatureObjects, err = schemaext.NewObjects(schemaext.Object{Ref: chschema.RowPolicyRef("", "orders", "tenant"), Value: policy})
+		c.Assert(err, qt.IsNil)
+		return database
+	}
+	before := declared(&chschema.DesiredRowPolicy{Filter: new("tenant = 1"), Composition: chschema.Restrictive, Roles: chschema.RoleSelection{All: true}})
+	after := declared(&chschema.DesiredRowPolicy{Filter: new("tenant = 2"), Roles: chschema.RoleSelection{All: true}})
+	opts := options(c, runtime, platform.ClickHouse, before, after)
 	plan, err := generator.PlanBidirectionalSchemaDiff(t.Context(), opts)
 	c.Assert(err, qt.IsNil)
 	reverse := plan.Reverse.Diff.TablesModified[0]
-	change := reverse.FeatureChanges[0].Value.(*ydbdiff.Changefeed)
-	c.Assert(change.Before.Spec.TopicMinActivePartitions, qt.Equals, uint64(4))
+	c.Assert(reverse.FeatureChanges, qt.HasLen, 1)
+	change := reverse.FeatureChanges[0].Value.(*chdiff.RowPolicy)
+	c.Assert(change.Before.Composition, qt.Equals, chschema.Permissive)
 	object, found, err := reverse.Current.OwnedObjects.Get(reverse.FeatureChanges[0].Subject)
 	c.Assert(err, qt.IsNil)
 	c.Assert(found, qt.IsTrue)
-	c.Assert(object.Value.(*ydbschema.ObservedChangefeed).Spec.TopicMinActivePartitions, qt.Equals, uint64(4))
+	projected := object.Value.(*chschema.ObservedRowPolicy)
+	c.Assert(projected.Composition, qt.Equals, chschema.Permissive)
+	c.Assert(*projected.Filter, qt.Equals, "tenant = 2")
 }
 
 func TestGeneratorProjectsOnlyAcceptedColumnChanges(t *testing.T) {
 	c := qt.New(t)
 	runtime, err := builtin.New()
 	c.Assert(err, qt.IsNil)
-	stream := ydbschema.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON"}
-	before := declaration(c, stream)
-	before.Fields = append(before.Fields, schemamodel.Field{StructName: "Item", Name: "retained", Type: "string", Nullable: true})
-	changed := stream.Clone()
-	changed.RetentionPeriod = "PT12H"
-	after := declaration(c, changed)
-	after.Fields = append(after.Fields, schemamodel.Field{StructName: "Item", Name: "added", Type: "string", Nullable: true})
-	opts := options(c, runtime, before, after)
-	filtered, skipped := diffpolicy.ApplyForDialect(opts.Diff, diffpolicy.NewSkipSet(planext.DropColumn), "ydb")
+	before := declaration(c, "tenant")
+	before.Fields = append(before.Fields, schemamodel.Field{StructName: "Order", Name: "retained", Type: "String", Nullable: true})
+	after := declaration(c, "tenant")
+	after.Fields = append(after.Fields, schemamodel.Field{StructName: "Order", Name: "added", Type: "String", Nullable: true})
+	opts := options(c, runtime, platform.ClickHouse, before, after)
+	filtered, skipped := diffpolicy.ApplyForDialect(opts.Diff, diffpolicy.NewSkipSet(planext.DropColumn), platform.ClickHouse)
 	c.Assert(skipped, qt.HasLen, 1)
 	opts.Diff, opts.Policy.AllowTableRebuild = filtered, true
 	plan, err := generator.PlanBidirectionalSchemaDiff(t.Context(), opts)
@@ -153,13 +170,12 @@ func TestGeneratorPropagatesContextAndSelectedReversalFailure(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	failure := errors.New("owner transport failed")
 	selected := &failingReverser{Runtime: runtime, err: failure}
-	after := ydbschema.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON"}
-	opts := options(c, selected, declaration(c), declaration(c, after))
+	opts := options(c, selected, platform.ClickHouse, declaration(c), declaration(c, "tenant"))
 	plan, err := generator.PlanBidirectionalSchemaDiff(t.Context(), opts)
 	c.Assert(err, qt.ErrorIs, failure)
 	c.Assert(plan, qt.IsNil)
 	c.Assert(selected.ctx, qt.Equals, t.Context())
-	c.Assert(selected.request.Target, qt.Equals, "ydb")
+	c.Assert(selected.request.Target, qt.Equals, platform.ClickHouse)
 	c.Assert(selected.request.Changes, qt.HasLen, 1)
 }
 
