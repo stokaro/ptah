@@ -39,19 +39,19 @@ func plannerFactory(dialect descriptor.Dialect) (planext.Factory, bool) {
 		}, true
 	case name == platform.SQLServer:
 		return func(opts planext.Options) planext.Planner {
-			return mssql.NewWithCapabilities(opts.CapabilitiesFor(name))
+			return mssql.NewWithCapabilities(opts.CapabilitiesFor(name)).WithStatementStyle(opts.Statements)
 		}, true
 	case name == platform.Oracle:
 		return func(opts planext.Options) planext.Planner {
-			return oracle.NewWithCapabilities(opts.CapabilitiesFor(name))
+			return oracle.NewWithCapabilities(opts.CapabilitiesFor(name)).WithStatementStyle(opts.Statements)
 		}, true
 	case name == platform.ClickHouse:
 		return func(opts planext.Options) planext.Planner {
-			return clickhouse.NewWithCapabilities(opts.CapabilitiesFor(name))
+			return clickhouse.NewWithCapabilities(opts.CapabilitiesFor(name)).WithStatementStyle(opts.Statements)
 		}, true
 	case name == platform.SQLite:
 		return func(opts planext.Options) planext.Planner {
-			return sqlite.NewWithCapabilities(opts.CapabilitiesFor(name))
+			return sqlite.NewWithCapabilities(opts.CapabilitiesFor(name)).WithStatementStyle(opts.Statements)
 		}, true
 	default:
 		return nil, false

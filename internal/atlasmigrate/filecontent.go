@@ -130,7 +130,7 @@ func BuildMigrationFileContents(
 		}
 		return []MigrationFileContent{content}, nil
 	}
-	transactionalSQL, err := renderMigrationStatements(ctx, service, dialect, caps, transactional, atlaschange.Of)
+	transactionalSQL, err := renderMigrationStatements(ctx, service, dialect, caps, transactional, atlaschange.For(dialect).Forward(transactional))
 	if err != nil {
 		return nil, err
 	}
@@ -233,7 +233,7 @@ func renderMigrationFileContent(
 	format FileFormat,
 	nodes []ast.Node,
 ) (MigrationFileContent, error) {
-	statements, err := renderMigrationStatements(ctx, service, dialect, caps, nodes, atlaschange.Of)
+	statements, err := renderMigrationStatements(ctx, service, dialect, caps, nodes, atlaschange.For(dialect).Forward(nodes))
 	if err != nil {
 		return MigrationFileContent{}, err
 	}
@@ -443,7 +443,8 @@ func withTxModeNoneDirective(content MigrationFileContent) MigrationFileContent 
 }
 
 // renderMigrationStatements renders nodes and returns their statements, each
-// under the change comment name gives the node that rendered it.
+// under the change comment names holds for the node that rendered it, at that
+// node's index.
 //
 // The comment heads the first statement a node renders, and the node's other
 // statements follow under it, as the community binary writes the statements
@@ -463,7 +464,7 @@ func renderMigrationStatements(
 	dialect string,
 	caps capability.Capabilities,
 	nodes []ast.Node,
-	name func(ast.Node) (string, bool),
+	names []string,
 ) ([]Statement, error) {
 	target := platform.NormalizeDialect(dialect)
 	if target == "" {
@@ -492,7 +493,7 @@ func renderMigrationStatements(
 				statement.SQL = rest
 			}
 			named = piece.Node
-			statement.Change, _ = name(nodes[piece.Node])
+			statement.Change = names[piece.Node]
 		}
 		statements = append(statements, statement)
 	}
@@ -525,18 +526,17 @@ func cutCarriedNote(sql string, between []string) (note, rest string, ok bool) {
 	return note, rest, true
 }
 
-// reverseChange returns the namer for the statements of a rollback planned
-// against forward: the forward change each statement undoes, written the way
-// the community binary writes a rollback file.
-func reverseChange(forward []ast.Node) func(ast.Node) (string, bool) {
-	undone := atlaschange.Rollback(forward)
-	return func(node ast.Node) (string, bool) {
-		change, ok := undone(node)
-		if !ok {
-			return "", false
+// reverseChange names the statements of plan, a rollback planned against
+// forward: the forward change each statement undoes, written the way the
+// community binary writes a rollback file.
+func reverseChange(dialect string, forward, plan []ast.Node) []string {
+	names := atlaschange.For(dialect).Rollback(forward, plan)
+	for i, name := range names {
+		if name != "" {
+			names[i] = "reverse: " + name
 		}
-		return "reverse: " + change, true
 	}
+	return names
 }
 
 // splitNoTransactionPlanNodes partitions the planned nodes into statements

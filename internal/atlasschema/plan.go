@@ -581,12 +581,9 @@ func classifyPlanStatements(
 // Keeping the comments is what makes an edit round-trip lossless.
 // [SplitApplyStatements] strips them, which is right for text about to be
 // executed but wrong for text about to be *saved*: the statements
-// [PreparePlanFile] records carry their generated comments, and the Atlas
-// `.plan.hcl` shape has no severity field, so for a plan written in that shape
-// the "-- WARNING: This will delete all data" line is the only in-artifact
-// signal that the plan destroys data. Stripping it would let an operator who
-// opened the editor and quit without typing anything turn a plan that warns
-// into one that does not.
+// [PreparePlanFile] records carry a planner's report of what it left out, and an
+// operator who opened the editor and quit without typing anything must not lose
+// it.
 func splitPlanStatements(sqlText, dialect string) []string {
 	raw := sqlutil.SplitSQLStatementsForDialect(sqlText, dialect)
 	statements := make([]string, 0, len(raw))

@@ -55,11 +55,11 @@ const (
 	// remove an object nobody named.
 	//
 	// A comment that reports what the plan left out or cannot do is written
-	// in this style too. The PostgreSQL-family and MySQL-family planners mark
-	// their descriptive comments, and the PostgreSQL-family planner also
-	// settles guards and CASCADE; the other built-in planners plan as in the
-	// annotated style. Feature owners that negotiate planning.statement-style
-	// receive this choice and set their own guards and CASCADE accordingly.
+	// in this style too. Every built-in planner marks its descriptive
+	// comments. The PostgreSQL-family planner also settles guards and CASCADE;
+	// the other built-in planners keep their guards as in the annotated style.
+	// Feature owners that negotiate planning.statement-style receive this
+	// choice and set their own guards and CASCADE accordingly.
 	StatementStyleExact
 )
 

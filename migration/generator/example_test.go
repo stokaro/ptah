@@ -234,7 +234,6 @@ func ExampleGenerateCheckpointFromShadow() {
 	//   "id" INTEGER PRIMARY KEY,
 	//   "email" TEXT
 	// );
-	// -- WARNING: This will delete all data!
 	// DROP TABLE IF EXISTS "users";
 }
 

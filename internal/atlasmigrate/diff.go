@@ -702,7 +702,7 @@ func planDiffFileContents(
 	if err := opts.Qualifier.ApplyToPlan(info.Dialect, priorSchema, planned.ReverseNodes); err != nil {
 		return nil, err
 	}
-	reverse, err := renderMigrationStatements(ctx, opts.Runtime, info.Dialect, info.Capabilities, planned.ReverseNodes, reverseChange(planned.ForwardNodes))
+	reverse, err := renderMigrationStatements(ctx, opts.Runtime, info.Dialect, info.Capabilities, planned.ReverseNodes, reverseChange(info.Dialect, planned.ForwardNodes, planned.ReverseNodes))
 	if err != nil {
 		return nil, fmt.Errorf("generate rollback SQL: %w", err)
 	}

@@ -212,10 +212,10 @@ func TestPlannerRebuildsTableWhenDroppingColumn(t *testing.T) {
 	)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(sql, qt.Contains, `CREATE TABLE "__ptah_rebuild_users"`)
-	c.Assert(sql, qt.Contains, `INSERT INTO "__ptah_rebuild_users" ("id", "email") SELECT "id", "email" FROM "users";`)
+	c.Assert(sql, qt.Contains, `CREATE TABLE "new_users"`)
+	c.Assert(sql, qt.Contains, `INSERT INTO "new_users" ("id", "email") SELECT "id", "email" FROM "users";`)
 	c.Assert(sql, qt.Contains, `DROP TABLE "users";`)
-	c.Assert(sql, qt.Contains, `ALTER TABLE "__ptah_rebuild_users" RENAME TO "users";`)
+	c.Assert(sql, qt.Contains, `ALTER TABLE "new_users" RENAME TO "users";`)
 	c.Assert(sql, qt.Contains, `CREATE INDEX IF NOT EXISTS "idx_users_email" ON "users" ("email");`)
 	c.Assert(sql, qt.Contains, `CREATE TRIGGER "trg_users_email" AFTER UPDATE ON "users" FOR EACH ROW BEGIN SELECT NEW.email; END;`)
 	c.Assert(sql, qt.Not(qt.Contains), "DROP COLUMN")
@@ -223,7 +223,7 @@ func TestPlannerRebuildsTableWhenDroppingColumn(t *testing.T) {
 
 // TestPlannerRebuildStepsAsideFromADeclaredTableName covers stokaro/ptah#1707.
 //
-// __ptah_rebuild_users is an ordinary identifier and a schema is allowed to
+// new_users is an ordinary identifier and a schema is allowed to
 // contain a table by that name. Refusing asked the operator to rename their own
 // table so that a name Ptah chose was free; the collision is Ptah's to resolve,
 // so the scratch table takes the next free name instead.
@@ -233,7 +233,7 @@ func TestPlannerRebuildStepsAsideFromADeclaredTableName(t *testing.T) {
 	desired := &schemamodel.Database{
 		Tables: []schemamodel.Table{
 			{Name: "users", StructName: "User"},
-			{Name: "__ptah_rebuild_users", StructName: "RebuildUser"},
+			{Name: "new_users", StructName: "RebuildUser"},
 		},
 		Fields: []schemamodel.Field{{Name: "id", Type: "INTEGER", StructName: "User", Primary: true}},
 	}
@@ -243,7 +243,7 @@ func TestPlannerRebuildStepsAsideFromADeclaredTableName(t *testing.T) {
 			ColumnsRemoved: difftypes.ColumnChanges{{Name: "name"}},
 		}},
 		// The declared tables a comparison fills. The rebuild asks this list
-		// which names are taken, and the operator's own `__ptah_rebuild_users`
+		// which names are taken, and the operator's own `new_users`
 		// being in it is the whole subject of this test.
 		DeclaredTables: desired.Tables,
 	}
@@ -254,11 +254,11 @@ func TestPlannerRebuildStepsAsideFromADeclaredTableName(t *testing.T) {
 	)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(sql, qt.Contains, `CREATE TABLE "__ptah_rebuild_users_1"`)
-	c.Assert(sql, qt.Contains, `ALTER TABLE "__ptah_rebuild_users_1" RENAME TO "users"`)
+	c.Assert(sql, qt.Contains, `CREATE TABLE "new_users_1"`)
+	c.Assert(sql, qt.Contains, `ALTER TABLE "new_users_1" RENAME TO "users"`)
 	// The operator's own table is untouched by the rebuild that stepped around
 	// it: nothing drops it and nothing renames over it.
-	c.Assert(sql, qt.Not(qt.Contains), `DROP TABLE "__ptah_rebuild_users"`)
+	c.Assert(sql, qt.Not(qt.Contains), `DROP TABLE "new_users"`)
 }
 
 func TestPlannerRejectsUnsafeTableRebuildPreconditions(t *testing.T) {
@@ -395,7 +395,7 @@ func TestPlannerRebuildStepsAsideFromARemovedTableName(t *testing.T) {
 		Fields: []schemamodel.Field{{Name: "id", Type: "INTEGER", StructName: "User", Primary: true}},
 	}
 	diff := &difftypes.SchemaDiff{
-		TablesRemoved: difftypes.TableRemovals{{Name: "__ptah_rebuild_users"}},
+		TablesRemoved: difftypes.TableRemovals{{Name: "new_users"}},
 		TablesModified: []difftypes.TableDiff{{
 			TableName:      "users",
 			ColumnsRemoved: difftypes.ColumnChanges{{Name: "name"}},
@@ -408,9 +408,9 @@ func TestPlannerRebuildStepsAsideFromARemovedTableName(t *testing.T) {
 	)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(sql, qt.Contains, `CREATE TABLE "__ptah_rebuild_users_1"`)
-	c.Assert(sql, qt.Not(qt.Contains), `CREATE TABLE "__ptah_rebuild_users"`)
-	c.Assert(sql, qt.Contains, `ALTER TABLE "__ptah_rebuild_users_1" RENAME TO "users"`)
+	c.Assert(sql, qt.Contains, `CREATE TABLE "new_users_1"`)
+	c.Assert(sql, qt.Not(qt.Contains), `CREATE TABLE "new_users"`)
+	c.Assert(sql, qt.Contains, `ALTER TABLE "new_users_1" RENAME TO "users"`)
 }
 
 // TestPlannerRebuildsForAddColumnShapesAlterCannotExpress covers
@@ -474,9 +474,9 @@ func TestPlannerRebuildsForAddColumnShapesAlterCannotExpress(t *testing.T) {
 			)
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(sql, qt.Contains, `CREATE TABLE "__ptah_rebuild_users"`)
+			c.Assert(sql, qt.Contains, `CREATE TABLE "new_users"`)
 			c.Assert(sql, qt.Contains, `DROP TABLE "users"`)
-			c.Assert(sql, qt.Contains, `ALTER TABLE "__ptah_rebuild_users" RENAME TO "users"`)
+			c.Assert(sql, qt.Contains, `ALTER TABLE "new_users" RENAME TO "users"`)
 			// The new column has to reach the new table's definition. Copying it
 			// out of the old table instead is the shape stokaro/ptah#930 names,
 			// where SQLite reads the unknown identifier as a string literal and
@@ -718,7 +718,7 @@ func TestPlannerRebuildsTableForChangesAlterTableCannotExpress(t *testing.T) {
 			}}},
 			wantSQL: []string{
 				`"nickname" TEXT`,
-				`INSERT INTO "__ptah_rebuild_users" ("id") SELECT "id" FROM "users";`,
+				`INSERT INTO "new_users" ("id") SELECT "id" FROM "users";`,
 			},
 		},
 	}
@@ -733,10 +733,10 @@ func TestPlannerRebuildsTableForChangesAlterTableCannotExpress(t *testing.T) {
 			)
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(sql, qt.Contains, `CREATE TABLE "__ptah_rebuild_users"`)
-			c.Assert(sql, qt.Contains, `INSERT INTO "__ptah_rebuild_users"`)
+			c.Assert(sql, qt.Contains, `CREATE TABLE "new_users"`)
+			c.Assert(sql, qt.Contains, `INSERT INTO "new_users"`)
 			c.Assert(sql, qt.Contains, `DROP TABLE "users";`)
-			c.Assert(sql, qt.Contains, `ALTER TABLE "__ptah_rebuild_users" RENAME TO "users";`)
+			c.Assert(sql, qt.Contains, `ALTER TABLE "new_users" RENAME TO "users";`)
 			for _, want := range test.wantSQL {
 				c.Assert(sql, qt.Contains, want)
 			}
@@ -751,7 +751,7 @@ func TestPlannerRebuildsTableForChangesAlterTableCannotExpress(t *testing.T) {
 // from emitting a copy that cannot execute: the added column is absent from the
 // INSERT list, so SQLite would fill it with NULL and abort on the first row.
 // Reverting the guard prints a plan containing
-// `INSERT INTO "__ptah_rebuild_users" ("id") SELECT "id" FROM "users";` and a
+// `INSERT INTO "new_users" ("id") SELECT "id" FROM "users";` and a
 // nil error instead of the refusal.
 func TestPlannerRebuildRefusesAddedNotNullColumnWithoutDefault(t *testing.T) {
 	c := qt.New(t)
@@ -972,9 +972,9 @@ func TestPlannerRebuildExcludesColumnsAddedBesideAConstraintChange(t *testing.T)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains,
-		`INSERT INTO "__ptah_rebuild_users" ("id", "name") SELECT "id", "name" FROM "users";`)
+		`INSERT INTO "new_users" ("id", "name") SELECT "id", "name" FROM "users";`)
 	c.Assert(sql, qt.Not(qt.Contains), `SELECT "id", "name", "note"`)
-	c.Assert(sql, qt.Contains, `CREATE TABLE "__ptah_rebuild_users"`)
+	c.Assert(sql, qt.Contains, `CREATE TABLE "new_users"`)
 	c.Assert(sql, qt.Contains, `"note" TEXT`)
 }
 

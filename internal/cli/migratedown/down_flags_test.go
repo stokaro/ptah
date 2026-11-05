@@ -347,7 +347,7 @@ func TestMigrateDownPlanDerivesOnlyWhatChanged(t *testing.T) {
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, "Derived rollback plan: 1 statements")
-	c.Assert(out, qt.Not(qt.Contains), "__ptah_rebuild_parent")
+	c.Assert(out, qt.Not(qt.Contains), "new_parent")
 }
 
 // TestMigrateDownPlanRequiresADevDatabase covers the refusal.

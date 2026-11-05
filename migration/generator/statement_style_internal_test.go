@@ -6,7 +6,6 @@ package generator
 // drives it against PostgreSQL.
 
 import (
-	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -23,27 +22,23 @@ import (
 )
 
 // TestPlanGeneratedMigrationSpecs_PlansInTheExactStatementStyle generates the
-// removal of one table on each kind of planner. The PostgreSQL family settles
-// its guards and CASCADE and leaves out the comment that only describes the
-// drop, the MySQL family leaves out the comment and keeps its guard, and SQLite
-// does not honor the style. Planned in the annotated style, the PostgreSQL row
-// writes `DROP TABLE IF EXISTS "gone" CASCADE;` and the MySQL row writes the
-// comment.
+// removal of one table on each kind of planner. Every planner leaves out the
+// comment that only describes the drop. The PostgreSQL family also settles its
+// guards and CASCADE, and the others keep their guard. Planned in the annotated
+// style, the PostgreSQL row writes `DROP TABLE IF EXISTS "gone" CASCADE;` and
+// every row writes a `-- WARNING` comment.
 func TestPlanGeneratedMigrationSpecs_PlansInTheExactStatementStyle(t *testing.T) {
-	const comment = "-- WARNING: This will delete all data!"
+	const comment = "-- WARNING"
 	tests := []struct {
-		name         string
-		dialect      string
-		capabilities capability.Capabilities
-		wantUp       string
-		wantComment  bool
+		name    string
+		dialect string
+		wantUp  string
 	}{
-		{name: "PostgreSQL", dialect: platform.Postgres, capabilities: capability.Postgres16(), wantUp: `DROP TABLE "gone";`},
-		{name: "MySQL", dialect: platform.MySQL, capabilities: capability.ForDialect(platform.MySQL), wantUp: "DROP TABLE IF EXISTS `gone`;"},
-		{
-			name: "SQLite", dialect: platform.SQLite, capabilities: capability.ForDialect(platform.SQLite),
-			wantUp: `DROP TABLE IF EXISTS "gone";`, wantComment: true,
-		},
+		{name: "PostgreSQL", dialect: platform.Postgres, wantUp: `DROP TABLE "gone";`},
+		{name: "MySQL", dialect: platform.MySQL, wantUp: "DROP TABLE IF EXISTS `gone`;"},
+		{name: "SQLite", dialect: platform.SQLite, wantUp: `DROP TABLE IF EXISTS "gone";`},
+		{name: "SQL Server", dialect: platform.SQLServer, wantUp: `DROP TABLE IF EXISTS [gone];`},
+		{name: "Oracle", dialect: platform.Oracle, wantUp: `DROP TABLE IF EXISTS gone PURGE;`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -55,7 +50,7 @@ func TestPlanGeneratedMigrationSpecs_PlansInTheExactStatementStyle(t *testing.T)
 				diff,
 				&schemamodel.Database{},
 				&catalog.Database{Tables: []catalog.Table{gone}},
-				catalog.ServerInfo{Dialect: test.dialect, Capabilities: test.capabilities},
+				catalog.ServerInfo{Dialect: test.dialect, Capabilities: capability.ForDialect(test.dialect)},
 				100,
 				"remove_gone",
 				DiffPolicy{},
@@ -65,7 +60,7 @@ func TestPlanGeneratedMigrationSpecs_PlansInTheExactStatementStyle(t *testing.T)
 			c.Assert(err, qt.IsNil)
 			c.Assert(specs, qt.HasLen, 1)
 			c.Assert(specs[0].UpSQL, qt.Contains, test.wantUp)
-			c.Assert(strings.Contains(specs[0].UpSQL, comment), qt.Equals, test.wantComment, qt.Commentf("%s", specs[0].UpSQL))
+			c.Assert(specs[0].UpSQL, qt.Not(qt.Contains), comment)
 		})
 	}
 }

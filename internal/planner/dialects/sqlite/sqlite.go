@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/featureplan"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
@@ -26,13 +27,25 @@ import (
 	"ptah.run/internal/planner/sqliterebuild"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/sqliteforeignkeys"
-	"ptah.run/internal/tableref"
 )
 
 const DialectName = platform.SQLite
 
 type Planner struct {
 	caps capability.Capabilities
+	// statements is the statement style. This planner reads it for one
+	// decision: whether a dropped table carries the line comment that only
+	// describes it, which the renderer writes and a descriptive comment node
+	// cannot stand in for.
+	statements planext.StatementStyle
+}
+
+// WithStatementStyle returns a copy of the planner that spells its statements
+// in style. The receiver is not modified.
+func (p *Planner) WithStatementStyle(style planext.StatementStyle) *Planner {
+	cp := *p
+	cp.statements = style
+	return &cp
 }
 
 func New() *Planner {
@@ -155,12 +168,12 @@ func withRebuildForeignKeySession(plan []ast.Node, rebuilds tableRebuilds) []ast
 	}
 	wrapped := make([]ast.Node, 0, len(plan)+4)
 	wrapped = append(wrapped,
-		ast.NewComment("Disable foreign-key enforcement for the table rebuild below"),
+		ast.NewDescriptiveComment("Disable foreign-key enforcement for the table rebuild below"),
 		ast.NewRawSQL(sqliteforeignkeys.DisableStatement),
 	)
 	wrapped = append(wrapped, plan...)
 	return append(wrapped,
-		ast.NewComment("Restore foreign-key enforcement after the table rebuild"),
+		ast.NewDescriptiveComment("Restore foreign-key enforcement after the table rebuild"),
 		ast.NewRawSQL(sqliteforeignkeys.EnableStatement),
 	)
 }
@@ -653,15 +666,13 @@ func (p *Planner) rebuildTable(
 			table.QualifiedName())
 	}
 
+	rebuild := sqliterebuild.CopyStatement{New: createNode.Name, Old: table.QualifiedName()}
 	nodes := []ast.Node{
-		ast.NewComment("SQLite table rebuild for changes ALTER TABLE cannot express on " + table.QualifiedName()),
+		ast.NewDescriptiveComment("SQLite table rebuild for changes ALTER TABLE cannot express on " + table.QualifiedName()),
 		createNode,
-		ast.NewRawSQL("INSERT INTO " + quoteQualifiedIdentifier(createNode.Name) +
-			" (" + quoteIdentifierList(copiedColumnNames(columns)) + ") SELECT " + copiedColumnSelectList(columns) +
-			" FROM " + quoteQualifiedIdentifier(table.QualifiedName()) + ";"),
+		ast.NewRawSQL(rebuild.CopyRows(quoteIdentifierList(copiedColumnNames(columns)), copiedColumnSelectList(columns))),
 		ast.NewDropTable(table.QualifiedName()),
-		ast.NewRawSQL("ALTER TABLE " + quoteQualifiedIdentifier(createNode.Name) +
-			" RENAME TO " + quoteIdentifier(table.Name) + ";"),
+		ast.NewRawSQL(rebuild.Rename()),
 	}
 	nodes = append(nodes, p.recreateTableIndexes(*table, declared.Indexes)...)
 	triggers, err := p.recreateTableTriggers(*table, declared.Triggers)
@@ -673,19 +684,19 @@ func (p *Planner) rebuildTable(
 }
 
 // rebuildTableNameAttempts bounds the search below. A schema holding
-// __ptah_rebuild_t and every numbered variant up to this many is not a schema
+// new_t and every numbered variant up to this many is not a schema
 // this planner should keep guessing at, and an unbounded loop over a name it
 // controls is a hang rather than a diagnostic.
 const rebuildTableNameAttempts = 100
 
 // availableRebuildTableName picks the scratch table the rebuild moves through.
 //
-// The obvious name is __ptah_rebuild_<table>, and a schema is allowed to
-// contain a table by that name -- it is an ordinary identifier, and Ptah does
-// not own the namespace. Refusing that asks the operator to rename their own
-// table so a name Ptah chose is free. The collision is
-// Ptah's to resolve, so the search continues into __ptah_rebuild_<table>_1 and
-// upward until a name nothing declares and nothing is dropping is found
+// The obvious name is new_<table>, the one the community binary writes, and a
+// schema is allowed to contain a table by that name -- it is an ordinary
+// identifier, and Ptah does not own the namespace. Refusing that asks the
+// operator to rename their own table so a name Ptah chose is free. The collision
+// is Ptah's to resolve, so the search continues into new_<table>_1 and upward
+// until a name nothing declares and nothing is dropping is found
 // (stokaro/ptah#1707).
 //
 // Both sources have to be asked. A name the diff DROPS is unusable even though
@@ -695,7 +706,7 @@ func availableRebuildTableName(
 	table schemamodel.Table,
 	diff *difftypes.SchemaDiff,
 ) (string, error) {
-	base := "__ptah_rebuild_" + table.Name
+	base := "new_" + table.Name
 	for attempt := range rebuildTableNameAttempts {
 		candidate := base
 		if attempt > 0 {
@@ -889,17 +900,6 @@ func quoteIdentifierList(names []string) string {
 	return strings.Join(quoted, ", ")
 }
 
-func quoteQualifiedIdentifier(name string) string {
-	ref, ok := tableref.Parse(name)
-	if !ok {
-		return quoteIdentifier(name)
-	}
-	if !ref.Qualified {
-		return quoteIdentifier(ref.Name)
-	}
-	return quoteIdentifier(ref.Schema) + "." + quoteIdentifier(ref.Name)
-}
-
 func quoteIdentifier(name string) string {
 	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 }
@@ -1011,7 +1011,11 @@ func (p *Planner) removeIndexes(diff *difftypes.SchemaDiff, rebuilds tableRebuil
 func (p *Planner) removeTables(diff *difftypes.SchemaDiff) []ast.Node {
 	result := make([]ast.Node, 0, len(diff.TablesRemoved))
 	for _, tableName := range diff.TablesRemoved.Names() {
-		result = append(result, ast.NewDropTable(tableName).SetIfExists().SetComment("WARNING: This will delete all data!"))
+		drop := ast.NewDropTable(tableName).SetIfExists()
+		if p.statements != planext.StatementStyleExact {
+			drop.SetComment("WARNING: This will delete all data!")
+		}
+		result = append(result, drop)
 	}
 	return result
 }

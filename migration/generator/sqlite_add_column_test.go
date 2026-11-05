@@ -49,7 +49,7 @@ func TestGenerateMigration_SQLiteAddColumnHasApplicableDownMigration(t *testing.
 	c.Assert(files.Files, qt.HasLen, 1)
 	downSQL, err := os.ReadFile(files.Files[0].DownFile)
 	c.Assert(err, qt.IsNil)
-	c.Assert(string(downSQL), qt.Contains, `CREATE TABLE "__ptah_rebuild_users"`)
+	c.Assert(string(downSQL), qt.Contains, `CREATE TABLE "new_users"`)
 	c.Assert(string(downSQL), qt.Not(qt.Contains), "DROP COLUMN")
 
 	mig, err := migrator.NewFSMigrator(conn, os.DirFS(migrationsDir))
@@ -161,7 +161,7 @@ func TestGenerateMigration_SQLiteAddColumnRebuildsATableOtherTablesReferTo(t *te
 			// refers to. That is the direction a refusal fires in.
 			downSQL, err := os.ReadFile(files.Files[0].DownFile)
 			c.Assert(err, qt.IsNil)
-			c.Assert(string(downSQL), qt.Contains, `CREATE TABLE "__ptah_rebuild_users"`)
+			c.Assert(string(downSQL), qt.Contains, `CREATE TABLE "new_users"`)
 			c.Assert(string(downSQL), qt.Contains, "PRAGMA foreign_keys = off;")
 			c.Assert(string(downSQL), qt.Contains, "PRAGMA foreign_keys = on;")
 

@@ -1351,6 +1351,17 @@ drops and creates again, such as a view the forward plan changes with
 `CREATE OR REPLACE VIEW`: both rollback statements carry
 `-- reverse: modify "v" view`.
 
+The words follow the engine, as the binary's do. On MySQL and MariaDB a schema
+reads `add new schema named "s"` and `drop schema named "s"`, in lower case. On
+SQLite an added column reads `add column "c" to table: "t"`, and a table rebuild
+names each step: `disable the enforcement of foreign-keys constraints`,
+`create "new_t" table`, `copy rows from old table "t" to new temporary table
+"new_t"`, `drop "t" table after copying rows`, `rename temporary table "new_t"
+to "t"` and `enable back the enforcement of foreign-keys constraints`. A rollback
+that rebuilds a table writes the same words under `reverse: `. The binary has no
+driver for SQL Server, ClickHouse or Oracle, so those engines take the PostgreSQL
+words.
+
 In a native Atlas directory the `sql` template helper writes the comment with
 its first letter in upper case, `-- Create "owners" table`, as the community
 binary's helper does. A `--format` template reads the comment as `.Comment`,
@@ -1453,11 +1464,11 @@ plan is returned, on the native commands too. A drop after another owner
 operation may keep its guard when that operation can remove objects the common
 planner cannot name.
 
-The MySQL-family planner leaves out its descriptive comments and keeps its
-guards. The SQLite, SQL Server and ClickHouse planners keep both. Every other
-Ptah command that plans a change uses the same statement style, without the
-change comments: `schema apply`, `schema plan` and `schema diff` here, and
-native `ptah migrations generate` and `ptah schema apply`. The files
+Every planner leaves out its descriptive comments. The MySQL-family, SQLite,
+SQL Server and ClickHouse planners keep their guards. Every other Ptah command
+that plans a change uses the same statement style, without the change comments:
+`schema apply`, `schema plan` and `schema diff` here, and native
+`ptah migrations generate` and `ptah schema apply`. The files
 still differ from the community binary's in how statements are grouped and
 ordered, in type spelling, and in where the keys of a new table are written;
 [stokaro/ptah#4960](https://github.com/stokaro/ptah/issues/4960) tracks those.

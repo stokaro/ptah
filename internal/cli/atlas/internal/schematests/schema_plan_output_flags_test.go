@@ -694,16 +694,11 @@ func TestSchemaPlanEditThatChangesNothingProducesTheSamePlan(t *testing.T) {
 	outWith, errWith := runSchemaPlan(atlas.NewCompatCommand("atlas"),
 		fixture.args("--output", planPath, "--name", "fixed", "--edit")...)
 
-	// An editor that changes nothing must change nothing. The .plan.hcl shape
-	// has no severity field, so the generated "-- WARNING: This will delete all
-	// data" comment is the ONLY in-artifact signal that this plan is
-	// destructive; a round-trip that strips comments would silently turn a plan
-	// that warns into one that does not, and a reviewer would see a bare DROP.
+	// An editor that changes nothing must change nothing.
 	c.Assert(errWith, qt.IsNil, qt.Commentf("%s", outWith))
 	withDocument, err := os.ReadFile(planPath)
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(withDocument), qt.Equals, string(withoutDocument))
-	c.Assert(string(withDocument), qt.Contains, "WARNING")
 	c.Assert(string(withDocument), qt.Contains, "DROP TABLE")
 }
 

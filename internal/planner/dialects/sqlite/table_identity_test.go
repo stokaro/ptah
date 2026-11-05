@@ -162,7 +162,7 @@ func TestConstraintOnACreatedTableIsNotAlsoRebuilt(t *testing.T) {
 			)
 			c.Assert(err, qt.IsNil)
 			plan := strings.Join(statements, "\n")
-			c.Assert(plan, qt.Not(qt.Contains), "__ptah_rebuild_notes")
+			c.Assert(plan, qt.Not(qt.Contains), "new_notes")
 			c.Assert(plan, qt.Contains, `CREATE TABLE "notes"`)
 		})
 	}
