@@ -248,7 +248,7 @@ func TestGenerateCheckpointWithDatabaseInfo_SQLServerCaseSensitiveVariants(t *te
 	c.Assert(up, qt.Contains, "CREATE INDEX [idx_email]")
 	c.Assert(up, qt.Contains, "CREATE INDEX [IDX_Email]")
 	c.Assert(down, qt.Contains, "DROP INDEX IF EXISTS [idx_email]")
-	c.Assert(down, qt.Contains, "DROP INDEX IF EXISTS [IDX_Email]")
+	c.Assert(down, qt.Contains, "DROP INDEX [IDX_Email]")
 }
 
 func TestGenerateCheckpoint_SQLServerUnknownRejectsCaseVariants(t *testing.T) {

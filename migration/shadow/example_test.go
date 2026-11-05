@@ -223,5 +223,5 @@ func ExamplePlanDynamicRollback() {
 	}
 
 	// Output:
-	// DROP TABLE IF EXISTS "posts"
+	// DROP TABLE "posts"
 }

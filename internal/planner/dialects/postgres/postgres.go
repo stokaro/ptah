@@ -547,6 +547,9 @@ func (p *Planner) addSchemaPreconditions(
 	slices.Sort(schemas)
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, schema := range schemas {
+		if p.exact() && slices.Contains(diff.HeldSchemas, schema) {
+			continue
+		}
 		result = append(result, schemaprecondition.Node(schema, diff.DeclaredSchemas, semantics))
 	}
 	return result
@@ -3559,7 +3562,7 @@ func (p *Planner) removeConstraints(
 		}
 		namesWithHost[info.Name] = struct{}{}
 		_, tableRemoved := droppedTables[state.semantics.QualifiedTableIdentityKey(info.TableName)]
-		if (p.exact() && strings.EqualFold(strings.TrimSpace(info.Type), "CHECK") && !tableRemoved) != earlyChecks {
+		if (p.exact() && !tableRemoved) != earlyChecks {
 			continue
 		}
 		if skipConstraintRemoval(info, state.semantics, replacedKeys, droppedTables,

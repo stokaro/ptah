@@ -178,6 +178,13 @@ func assertReverseCoverageField(
 		// what holds that, since this gate structurally cannot.
 		return
 	}
+	if field.Name == "HeldSchemas" {
+		// A rollback is planned with no read of its own, so it says nothing
+		// about which schemas the database holds when it runs. Carrying the
+		// forward value would take a CREATE SCHEMA a rollback that puts a table
+		// back needs.
+		return
+	}
 	if field.Name == "DeclaredSchemas" {
 		// An OUTPUT of the reverse, for the reason the four above are. A
 		// rollback that puts a table back puts its schema back too, so the

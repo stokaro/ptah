@@ -76,7 +76,7 @@ func TestSchemaDiffComparesAFileWithADatabaseWithoutADevDatabase(t *testing.T) {
 		fileSide   string
 		wantInPlan string
 	}{
-		{name: "a SQL file on --from", fileSide: "--from", wantInPlan: `DROP TABLE IF EXISTS "orders"`},
+		{name: "a SQL file on --from", fileSide: "--from", wantInPlan: `DROP TABLE "orders"`},
 		{name: "a SQL file on --to", fileSide: "--to", wantInPlan: `CREATE TABLE "orders"`},
 	}
 

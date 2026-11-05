@@ -23,6 +23,7 @@ import (
 	"ptah.run/internal/indexscope"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/objectlookup"
+	"ptah.run/internal/planner/guards"
 	"ptah.run/internal/planner/schemaprecondition"
 	"ptah.run/internal/planner/sqliterebuild"
 	"ptah.run/internal/schemaprep"
@@ -33,10 +34,9 @@ const DialectName = platform.SQLite
 
 type Planner struct {
 	caps capability.Capabilities
-	// statements is the statement style. This planner reads it for one
-	// decision: whether a dropped table carries the line comment that only
-	// describes it, which the renderer writes and a descriptive comment node
-	// cannot stand in for.
+	// statements is the statement style. This planner reads it for two
+	// decisions: whether a dropped table carries the line comment that only
+	// describes it, and whether a guard no earlier statement needs stays.
 	statements planext.StatementStyle
 }
 
@@ -139,7 +139,13 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	result = append(result, p.removeTriggers(diff)...)
 	result = append(result, p.removeViews(diff)...)
 	result = append(result, p.removeTables(diff)...)
-	return withRebuildForeignKeySession(result, rebuilds), nil
+	result = withRebuildForeignKeySession(result, rebuilds)
+	if p.statements == planext.StatementStyleExact {
+		// A raw statement here is a pragma, a copy of a table's rows or a rename
+		// of the copy, and none of them removes an object a later drop names.
+		guards.Settle(result, guards.Options{HarmlessRaw: func(*ast.RawSQLNode) bool { return true }})
+	}
+	return result, nil
 }
 
 // withRebuildForeignKeySession wraps a plan that rebuilds a table in the

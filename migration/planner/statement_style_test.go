@@ -1,6 +1,7 @@
 package planner_test
 
 import (
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -302,6 +303,9 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_ExactStyleOnMySQL_HappyPath(
 		{Name: "archive", Type: "BASE TABLE", Columns: []catalog.Column{
 			{Name: "id", DataType: "int", ColumnType: "int", IsNullable: "NO", IsPrimaryKey: true, OrdinalPosition: 1},
 		}},
+		{Name: "logs", Type: "BASE TABLE", Columns: []catalog.Column{
+			{Name: "id", DataType: "int", ColumnType: "int", IsNullable: "NO", IsPrimaryKey: true, OrdinalPosition: 1},
+		}},
 	}}
 	diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), declared, held,
 		catalog.ServerInfo{Dialect: platform.MySQL, Schema: "app"}, nil, runtime)
@@ -311,5 +315,57 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_ExactStyleOnMySQL_HappyPath(
 		planext.Options{Statements: planext.StatementStyleExact})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(got, qt.DeepEquals, []string{"ALTER TABLE `owners` DROP COLUMN `email`", "DROP TABLE IF EXISTS `archive`"})
+	c.Assert(got, qt.DeepEquals, []string{"ALTER TABLE `owners` DROP COLUMN `email`", "DROP TABLE `archive`", "DROP TABLE `logs`"})
+}
+
+// TestPlanner_ExactStyleCreatesNoSchemaTheDatabaseHolds plans a table in a schema
+// on the planners that create one. A schema the read found gets no statement in
+// the exact style, where a creation would read as a new schema. A schema it did
+// not find keeps the guard, because a read limited to the connection's schema
+// cannot say that one is absent. The annotated style creates it either way.
+func TestPlanner_ExactStyleCreatesNoSchemaTheDatabaseHolds(t *testing.T) {
+	declared := func() *schemamodel.Database {
+		return &schemamodel.Database{
+			Tables: []schemamodel.Table{{StructName: "Item", Name: "items", Schema: "app"}},
+			Fields: []schemamodel.Field{{StructName: "Item", Name: "id", Type: "int", Primary: true}},
+		}
+	}
+	tests := []struct {
+		name    string
+		dialect string
+		style   planext.StatementStyle
+		held    []catalog.Schema
+		want    string
+	}{
+		{name: "PostgreSQL, a schema the read found", dialect: platform.Postgres, style: planext.StatementStyleExact, held: []catalog.Schema{{Name: "app"}}, want: ""},
+		{name: "PostgreSQL, a schema it did not find", dialect: platform.Postgres, style: planext.StatementStyleExact, want: `CREATE SCHEMA IF NOT EXISTS "app"`},
+		{name: "PostgreSQL, annotated", dialect: platform.Postgres, style: planext.StatementStyleAnnotated, held: []catalog.Schema{{Name: "app"}}, want: `CREATE SCHEMA IF NOT EXISTS "app"`},
+		{name: "SQL Server, a schema the read found", dialect: platform.SQLServer, style: planext.StatementStyleExact, held: []catalog.Schema{{Name: "app"}}, want: ""},
+		{name: "SQL Server, a schema it did not find", dialect: platform.SQLServer, style: planext.StatementStyleExact, want: "CREATE SCHEMA"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			runtime := must.Must(builtin.New())
+			diff, err := schemadiff.CompareWithDialect(c.Context(), declared(), &catalog.Database{Schemas: test.held}, test.dialect, runtime)
+			c.Assert(err, qt.IsNil)
+
+			statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(c.Context(), runtime, diff, test.dialect, planext.Options{Statements: test.style})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(schemaCreation(statements), qt.Contains, test.want)
+			c.Assert(schemaCreation(statements) == "", qt.Equals, test.want == "")
+		})
+	}
+}
+
+// schemaCreation is the statement that creates a schema among statements, or
+// empty when there is none.
+func schemaCreation(statements []string) string {
+	for _, statement := range statements {
+		if strings.Contains(statement, "CREATE SCHEMA") {
+			return statement
+		}
+	}
+	return ""
 }
