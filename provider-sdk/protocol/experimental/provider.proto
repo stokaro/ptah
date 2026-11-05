@@ -735,15 +735,26 @@ message SequenceAlteration {
 // repeat it.
 message RoleCreation {
   SQLRole role = 1;
+  // The declared password, when schema.password-inputs is not negotiated.
   string password = 2;
+  // The execution input that holds the declared password. Contract 25.22,
+  // under schema.password-inputs: a declared password, or a password hash,
+  // travels only here, and password is empty. The unit names the input and
+  // never the value, and DescribeExecutionInputs reports it.
+  ExecutionInput password_input = 3;
 }
 message RoleAlteration {
   SQLRole desired = 1;
   // The attributes that change: login, password, superuser, create_db,
   // create_role, inherit or replication.
   repeated string changed = 2;
-  // The new password, when changed lists password. Empty removes it.
+  // The new password, when changed lists password and schema.password-inputs
+  // is not negotiated. Empty removes it.
   string password = 3;
+  // The execution input that holds the new password, when changed lists
+  // password. Contract 25.22, under schema.password-inputs, as in
+  // RoleCreation.
+  ExecutionInput password_input = 4;
 }
 message RoleMembership {
   string group = 1;

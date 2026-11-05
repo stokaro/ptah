@@ -114,7 +114,8 @@ returns to 0.
   [the facets of a SQL schema reading](#facets-of-a-sql-schema-reading),
   [report counts](#report-counts) and
   [index facets on inspected indexes](#index-facets-on-inspected-indexes).
-  Contract 25.22 adds [subtree coverage](#subtree-coverage).
+  Contract 25.22 adds [subtree coverage](#subtree-coverage) and
+  [password inputs](#password-inputs).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -1757,6 +1758,36 @@ never fall back to inherited process environment values.
 statement that needs inputs uses `Execute` units. A query or result-bearing
 statement that needs such inputs refuses; it cannot borrow process environment
 values or silently discard its result contract.
+
+## Password inputs
+
+`schema.password-inputs` lets a declared role password travel as an
+execution input instead of as a value. The provider and each engine that
+takes such inputs list it, beside `schema.common-objects` and
+`units.sensitive-inputs`, and the host lists it. With it negotiated, a
+`RoleCreation` or a `RoleAlteration` that sets a password carries
+`password_input`, an `ExecutionInput` the host names, and `password` stays
+empty. That holds for a password and for a password hash alike, because the
+host cannot tell an engine's hash form from a password. Without the feature,
+`password` carries the value, as contract 25.3 sends it, and no input is
+named.
+
+The provider renders a unit that names the input and never a value, and
+`DescribeExecutionInputs` reports it for that unit, so a plan, a migration file
+and a saved plan hold the reference. The value reaches the provider only as an
+execution binding, under the rules of
+[sensitive execution inputs](#sensitive-execution-inputs). Where the engine
+takes a password hash in another clause, the provider chooses the clause from
+the bound value.
+
+Both transport boundaries refuse, in a render request and in a planning step,
+an input the session did not negotiate, a value once it did, a change that
+carries both, an input with an unknown source or a name the environment
+grammar refuses, an input for a role that declares no password, and an input
+for an alteration that does not change the password. Their messages never
+repeat a value.
+[ADR 0071](../docs/adr/0071-a-declared-password-travels-as-an-execution-input.md)
+records why a value on the wire is not kept.
 
 ## Operator statements
 
