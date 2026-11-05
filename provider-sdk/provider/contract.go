@@ -141,8 +141,8 @@ func ValidateHostFeatures(features []string) error {
 // EmbeddingStoreFeature, the common-object declarations unless it lists
 // CommonObjectsFeature, the HCL claims unless it lists HCLSourceFeature, the
 // scope selections unless it lists ScopeSelectionsFeature, the reversal
-// services unless it lists ReverseChangesFeature, and the metrics of every
-// value model unless it lists ReportCountsFeature. Without
+// services unless it lists ReverseChangesFeature, and the model reports unless
+// it lists ReportCountsFeature. Without
 // EntryKeysFeature, the YAML claims of a COLUMN or INDEX scope and the
 // YAML and Go claims that inherit common attributes are removed, since their
 // owner needs what the host would not send, and a model left with no YAML
@@ -187,9 +187,7 @@ func NegotiatedDescription(description *protocol.Description, hostFeatures []str
 			engine.Reversals = nil
 		}
 		if !slices.Contains(hostFeatures, ReportCountsFeature) {
-			for _, model := range engine.GetValueModels() {
-				model.Metrics = nil
-			}
+			engine.Reports = nil
 		}
 		if len(engine.GetGoHeaderKinds())+len(engine.GetHclSource().GetHeaderKinds()) == 0 {
 			engine.Features = slices.DeleteFunc(engine.Features, func(feature string) bool { return feature == SourceLimitsFeature })

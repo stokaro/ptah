@@ -141,8 +141,8 @@ does not oblige a peer to use it.
   `sessions.typed-arguments`, `errors.reasons`, `planning.index-renames`,
   `models.reverse` and `models.report-counts`. The embedding store's calls,
   `PrepareCommonObjects`, `ReverseChanges` and `ReportValues` are new, and each
-  comes with an addition to `Engine` or `ValueModel`, so a host lists the
-  feature to receive any of them. `SplitMigration` is new too,
+  comes with an addition to `Engine`, so a host lists the feature to receive
+  any of them. `SplitMigration` is new too,
   and comes with the abort flags of `Execution` and `TransactionResult`, so a
   host lists `units.migration-split` to call it.
 - Both transport boundaries validate with the description negotiated this way,
@@ -252,7 +252,7 @@ this SDK, and a host of this SDK against a provider of contract 25.0.
 | `ReadStatementRows` | The next bounded page of an open result, or an error and no rows. |
 | `CloseStatement` | Release of an open result. A result already released succeeds. |
 | `SplitMigration` | Offline: the units one migration body runs as, in run order, each with the text to execute, its own source and a placement, or a refusal of the whole body; and a read-only verdict for each check assertion. |
-| `ReportValues` | Offline: one count for each metric a value's model declares, for every value of the request, in order. |
+| `ReportValues` | Offline: one count for each metric of a value's model report, for every value of the request, in order. |
 
 Session capabilities preserve presence: an explicit `false` is an established
 answer, while an absent key remains unknown. The SDK validates names and the host
@@ -986,8 +986,8 @@ The official YDB provider still needs native reservation classification under
 Desired and observed models may declare a plural `display_name` for omission
 reports. It must be trimmed single-line text and agree across engines that share
 a model representation. The host freezes this label in the contract and reports
-captured values locally, without interpreting payloads. A model declares count
-metrics only under [report counts](#report-counts). An absent label does not get
+captured values locally, without interpreting payloads. An engine declares a
+model's count metrics only under [report counts](#report-counts). An absent label does not get
 a host-invented substitute.
 
 Native `schema inspect --format json` returns common schema data and warns about
@@ -2036,31 +2036,33 @@ again.
 
 ## Report counts
 
-`models.report-counts` lets a model declare the object-count metrics its
-values contribute to, in `ValueModel.metrics`, and lets the owner count
+`models.report-counts` lets an engine declare the object-count metrics each
+value of a model contributes to, in `Engine.reports`, and lets the owner count
 captured values with `ReportValues`. It is the host's reporting service carried
 across the boundary: `ptah schema stats` writes one gauge per metric, and the
 host cannot count a provider's values itself, because only the owner reads a
 payload. A YDB topic value, for example, counts one topic and the number of its
 consumers.
 
-A metric has a `name`, lowercase ASCII letters, digits and underscores that
-start with a letter, and a one-line `help`. Only a desired or observed model
-with a `display_name` declares metrics, each name once and at most 64. Models
-of one representation that declare one name give it one help text, and engines
-that share a model declare the same metrics for it. A name the host counts
-itself, such as `tables`, makes `schema stats` refuse.
+A `ModelReport` names one desired or observed model of the engine that has a
+`display_name`, and one to 64 metrics. A metric has a `name`, lowercase ASCII
+letters, digits and underscores that start with a letter, and a one-line
+`help`. A report names each metric once, reports of one representation give a
+name one help text, and engines that share a model report the same metrics for
+it. A name the host counts itself, such as `tables`, makes `schema stats`
+refuse. The reports sit on the engine rather than on the model, so a model's
+copy in coverage or a request is the same whether or not the host counts.
 
 `ReportValues` is offline: no session, no database. The host sends the values
-of one engine and one representation, each of a model that declares metrics,
-and the provider answers each value under its ID, in request order, with one
-count for each of its model's metrics in the declared order. A count is at most
+of one engine and one representation, each of a reported model, and the
+provider answers each value under its ID, in request order, with one count for
+each metric of its model's report in the declared order. A count is at most
 the largest signed 64-bit integer.
 
-The provider and each engine whose models declare metrics list the feature,
-and the host lists it to receive the metrics and to call the service; without
-it the negotiated description carries no metric. Both transport boundaries
-refuse an unnegotiated call, a value of a model without metrics, values of two
+The provider and each engine that declares reports list the feature, and the
+host lists it to receive the reports and to call the service; without it the
+negotiated description carries no report. Both transport boundaries refuse an
+unnegotiated call, a value of a model the engine does not report, values of two
 representations, and a reply that is incomplete, answers in another order, or
 counts a metric the model does not declare, twice, or not at all.
 [ADR 0067](../docs/adr/0067-a-provider-counts-what-its-values-hold.md)

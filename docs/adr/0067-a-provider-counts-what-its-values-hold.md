@@ -47,16 +47,21 @@ YDB engine.
 
 ## Decision
 
-### A model declares its metrics
+### An engine declares its models' metrics
 
-`models.report-counts` is a two-way feature: the provider and each engine whose
-models declare metrics list it, and the host lists it in its host features.
-Contract 25.24 adds one field, one RPC and four messages:
+`models.report-counts` is a two-way feature: the provider and each engine that
+declares reports list it, and the host lists it in its host features. Contract
+25.24 adds one field, one RPC and five messages:
 
 ```proto
-message ValueModel {
+message Engine {
   // ...
-  repeated ModelMetric metrics = 10;
+  repeated ModelReport reports = 22;
+}
+message ModelReport {
+  string kind = 1;
+  ValueInput.Representation representation = 2;
+  repeated ModelMetric metrics = 3;
 }
 message ModelMetric {
   string name = 1;
@@ -82,41 +87,48 @@ message MetricCount {
 }
 ```
 
-A metric means what `schemaext.MetricDefinition` means: `name` is the gauge's
-suffix, lowercase ASCII letters, digits and underscores starting with a letter,
-and `help` is one line. A desired or observed model with a display name may
-declare metrics, each name once. Two models of one representation that declare
-one name give it one help text, since the scrape shows one help line per name,
-and an engine that shares a model with another declares the same metrics for it.
-Without the feature the host receives no metrics: the negotiated description
-removes them.
+A report names one desired or observed model of the engine that has a display
+name, and the metrics a value of that model contributes to, in order. A metric
+means what `schemaext.MetricDefinition` means: `name` is the gauge's suffix,
+lowercase ASCII letters, digits and underscores starting with a letter, and
+`help` is one line. A report names each metric once. Two reports of one
+representation that name one metric give it one help text, since the scrape
+shows one help line per name, and engines that share a model report the same
+metrics for it. Without the feature the host receives no report: the
+negotiated description removes them.
+
+The reports live on the engine, not on the model, because a model's
+declaration travels: coverage records and source requests carry a copy of it,
+and both sides compare the copy with the negotiated description. A field that
+negotiation removes from the model would make the copy a provider builds differ
+from the description its host holds.
 
 ### The provider counts
 
 `ReportValues` is offline: no session, no database. The host sends values of
-models that declare metrics, of one engine and one representation, and the
-provider answers each, in order and under its `id`, with one count for each
-metric its model declares, in the declared order. A count is what the value
+reported models, of one engine and one representation, and the provider
+answers each, in order and under its `id`, with one count for each metric of
+its model's report, in the declared order. A count is what the value
 holds, as a built-in owner's report states it: one topic and the number of its
 consumers, not what the server would say about the topic's partitions.
 
-Both transport boundaries refuse an unnegotiated call, a value of a model
-without metrics, values of mixed representations, an incomplete reply, a reply
+Both transport boundaries refuse an unnegotiated call, a value of a model the
+engine does not report, values of mixed representations, an incomplete reply, a reply
 in another order or of another length, a count of a metric the model does not
 declare, a metric counted twice or left out, and a count above the largest
 signed 64-bit integer.
 
 ### What the host does
 
-The host registers each provider model that declares metrics with them, and
+The host registers each reported provider model with its metrics, and
 dispatches the reporting batch of that model to `ReportValues`, one request per
-engine and target. The counts then reach every consumer of the reporting
-service, `schema stats` among them, exactly as a built-in owner's do. A model
-without metrics keeps its label-only registration.
+engine and captured target profile. The counts then reach every consumer of the
+reporting service, `schema stats` among them, as a built-in owner's do. A model
+no engine reports keeps its label-only registration.
 
 ### What the YDB provider counts
 
-The provider declares on its desired and observed models the metric names and
+The provider reports its desired and observed models under the metric names and
 help texts the built-in YDB engine declares, so a scrape through either engine
 has the same lines for these kinds:
 
@@ -145,13 +157,19 @@ values decoded from a source, which no read produced. Rejected.
 keep counts it never uses with every captured value, and a value's normalized
 form would change meaning by contract version. Rejected.
 
+**Metrics on the model.** `ValueModel.metrics` would sit beside the display
+name. But negotiation has to remove them for a host that does not count, and a
+provider then has to build every copy of a model it sends, in coverage and
+elsewhere, from the negotiated description, or the copies stop matching.
+Rejected.
+
 **An unnegotiated field.** A host that does not know the RPC would never call
-it, so the call itself is safe. But the metrics in a description would reach a
+it, so the call itself is safe. But the reports in a description would reach a
 host whose runtime registers them without a service that answers. Rejected.
 
 ## Consequences
 
-- Contract 25.24 adds a field, an RPC, four messages and a two-way feature. It
+- Contract 25.24 adds a field, an RPC, five messages and a two-way feature. It
   is numbered after contract 25.21, which ADR 0064 proposes, and the two
   numbers between them, which other open records of
   [stokaro/ptah#4204](https://github.com/stokaro/ptah/issues/4204) hold. The
@@ -169,10 +187,10 @@ host whose runtime registers them without a service that answers. Rejected.
 
 ## Acceptance evidence
 
-- SDK tests accept a negotiated model with metrics and a complete report, and
-  refuse metrics on an engine or provider that does not list the feature, each
-  malformed metric declaration above, an unnegotiated or malformed request, and
-  each reply the checks above refuse.
+- SDK tests accept a negotiated report and a complete reply, and refuse reports
+  on an engine or provider that does not list the feature, each malformed
+  report above, an unnegotiated or malformed request, and each reply the checks
+  above refuse.
 - Through the SDK fixture provider, the host counts a fixture model's values in
   `schema stats` for a host that lists the feature, and a provider without the
   feature behaves as today.

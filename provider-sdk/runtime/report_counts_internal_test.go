@@ -18,14 +18,15 @@ import (
 )
 
 // reportingDescription offers report counts on the normalization exchange's
-// engine, whose model declares one metric.
+// engine, which reports one metric of its model.
 func reportingDescription() *protocol.Description {
 	d, _, _ := normalizationExchange()
 	d.Features = append(d.Features, provider.ReportCountsFeature)
 	engine := d.Engines[0]
 	engine.Features = append(engine.Features, provider.ReportCountsFeature)
-	engine.ValueModels[0].DisplayName = "values"
-	engine.ValueModels[0].Metrics = []*protocol.ModelMetric{{Name: "values", Help: "Values"}}
+	model := engine.ValueModels[0]
+	model.DisplayName = "values"
+	engine.Reports = []*protocol.ModelReport{{Kind: model.Kind, Representation: model.Representation, Metrics: []*protocol.ModelMetric{{Name: "values", Help: "Values"}}}}
 	return d
 }
 

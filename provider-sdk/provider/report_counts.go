@@ -13,26 +13,27 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// ReportCountsFeature enables ValueModel.metrics and ReportValues: a model
-// declares the object-count metrics its values contribute to, and the owner
-// counts captured values offline, as a built-in feature owner's reporting
-// service does (ADR 0067). The host cannot count a value itself, because only
-// the owner reads its payload. The provider and each engine whose models
-// declare metrics list it, and the host lists it in its host features.
-// Contract 25.24.
+// ReportCountsFeature enables Engine.reports and ReportValues: an engine
+// declares the object-count metrics each value of a model contributes to, and
+// the owner counts captured values offline, as a built-in feature owner's
+// reporting service does (ADR 0067). The host cannot count a value itself,
+// because only the owner reads its payload. The metrics live on the engine
+// rather than on the model, so a model's identity is the same whether or not
+// a host negotiates them. The provider and each engine that declares reports
+// list it, and the host lists it in its host features. Contract 25.24.
 const ReportCountsFeature = "models.report-counts"
 
 // ValueReporter counts captured values offline.
 type ValueReporter interface {
 	// ReportValues returns one report per value of the request, in order and
-	// under its ID: one count for each metric the value's model declares, in
-	// the declared order. It reads no database. A value it cannot count fails
-	// the whole call.
+	// under its ID: one count for each metric the engine's report of the
+	// value's model declares, in the declared order. It reads no database. A
+	// value it cannot count fails the whole call.
 	ReportValues(context.Context, *protocol.ReportValuesRequest) (*protocol.ValueReports, error)
 }
 
-// maxModelMetrics bounds the metrics one model declares, and maxMetricHelp
-// the bytes of one help text.
+// maxModelMetrics bounds the metrics one report declares, and maxMetricHelp
+// the bytes of one name or help text.
 const (
 	maxModelMetrics = 64
 	maxMetricHelp   = 256
@@ -42,63 +43,83 @@ func reportCountsError(reason string) error {
 	return fmt.Errorf("%w: report counts: %s", ErrProtocol, reason)
 }
 
-// validateModelMetrics checks the metrics an engine's models declare: the
-// feature listed by the provider and the engine, each metric on a desired or
-// observed model with a display name, a valid name once per model and one help
-// line, one help per name among the engine's models of one representation, and
-// the same metrics as every other engine that declares the model.
-func validateModelMetrics(description *protocol.Description, engine *protocol.Engine) error {
-	declared := slices.ContainsFunc(engine.GetValueModels(), func(model *protocol.ValueModel) bool { return len(model.GetMetrics()) != 0 })
+// modelReport returns the report an engine declares for one of its models,
+// or nil.
+func modelReport(engine *protocol.Engine, kind string, representation protocol.ValueInput_Representation) *protocol.ModelReport {
+	for _, report := range engine.GetReports() {
+		if report.GetKind() == kind && report.GetRepresentation() == representation {
+			return report
+		}
+	}
+	return nil
+}
+
+// validateModelReports checks the reports an engine declares: the feature
+// listed by the provider and the engine, each report naming one desired or
+// observed model of the engine that has a display name, once, with one to
+// maxModelMetrics metrics, each a valid name once and one help line, one help
+// per name among the engine's reports of one representation, and the same
+// report for a model as every other engine that declares the model.
+func validateModelReports(description *protocol.Description, engine *protocol.Engine) error {
 	listed := slices.Contains(engine.GetFeatures(), ReportCountsFeature)
 	switch {
-	case !listed && declared:
-		return reportCountsError("a model declares metrics without the feature")
+	case !listed && len(engine.GetReports()) != 0:
+		return reportCountsError("the engine declares reports without the feature")
 	case !listed:
 		return nil
 	case !slices.Contains(description.GetFeatures(), ReportCountsFeature):
 		return reportCountsError("the engine requires the provider's feature")
-	case !declared:
-		return reportCountsError("the engine lists the feature and no model declares a metric")
+	case len(engine.GetReports()) == 0:
+		return reportCountsError("the engine lists the feature and reports no model")
 	}
 	helps := make(map[protocol.ValueInput_Representation]map[string]string)
-	for _, model := range engine.GetValueModels() {
-		if len(model.GetMetrics()) == 0 {
-			continue
+	for _, report := range engine.GetReports() {
+		if modelReport(engine, report.GetKind(), report.GetRepresentation()) != report {
+			return reportCountsError("the engine reports a model twice")
 		}
-		if err := validateMetricDeclaration(model); err != nil {
+		if err := validateModelReport(description, engine, report); err != nil {
 			return err
 		}
-		if helps[model.GetRepresentation()] == nil {
-			helps[model.GetRepresentation()] = make(map[string]string)
+		if helps[report.GetRepresentation()] == nil {
+			helps[report.GetRepresentation()] = make(map[string]string)
 		}
-		for _, metric := range model.GetMetrics() {
-			if help, found := helps[model.GetRepresentation()][metric.GetName()]; found && help != metric.GetHelp() {
-				return reportCountsError("two models give one metric two help texts")
+		for _, metric := range report.GetMetrics() {
+			if help, found := helps[report.GetRepresentation()][metric.GetName()]; found && help != metric.GetHelp() {
+				return reportCountsError("two reports give one metric two help texts")
 			}
-			helps[model.GetRepresentation()][metric.GetName()] = metric.GetHelp()
+			helps[report.GetRepresentation()][metric.GetName()] = metric.GetHelp()
 		}
+	}
+	for _, model := range engine.GetValueModels() {
 		for _, other := range description.GetEngines() {
-			shared := findValueModel(description, other.GetId(), model.GetKind(), model.GetRepresentation())
-			if other.GetId() != engine.GetId() && shared != nil && !sameMetrics(shared.GetMetrics(), model.GetMetrics()) {
-				return reportCountsError("engines that share a model declare other metrics for it")
+			if other.GetId() == engine.GetId() || findValueModel(description, other.GetId(), model.GetKind(), model.GetRepresentation()) == nil {
+				continue
+			}
+			mine, theirs := modelReport(engine, model.GetKind(), model.GetRepresentation()), modelReport(other, model.GetKind(), model.GetRepresentation())
+			if !sameMetrics(mine.GetMetrics(), theirs.GetMetrics()) {
+				return reportCountsError("engines that share a model report other metrics for it")
 			}
 		}
 	}
 	return nil
 }
 
-func validateMetricDeclaration(model *protocol.ValueModel) error {
-	if model.GetRepresentation() != protocol.ValueInput_DESIRED && model.GetRepresentation() != protocol.ValueInput_OBSERVED {
-		return reportCountsError("only a desired or observed model declares metrics")
+func validateModelReport(description *protocol.Description, engine *protocol.Engine, report *protocol.ModelReport) error {
+	if report.GetRepresentation() != protocol.ValueInput_DESIRED && report.GetRepresentation() != protocol.ValueInput_OBSERVED {
+		return reportCountsError("only a desired or observed model is reported")
+	}
+	model := findValueModel(description, engine.GetId(), report.GetKind(), report.GetRepresentation())
+	if model == nil {
+		return reportCountsError("a report names no model of the engine")
 	}
 	if model.GetDisplayName() == "" {
-		return reportCountsError("a model that declares metrics needs a display name")
+		return reportCountsError("a reported model needs a display name")
 	}
-	if len(model.GetMetrics()) > maxModelMetrics {
-		return reportCountsError("a model declares too many metrics")
+	if len(report.GetMetrics()) == 0 || len(report.GetMetrics()) > maxModelMetrics {
+		return reportCountsError("a report declares no metric or too many")
 	}
-	seen := make(map[string]bool, len(model.GetMetrics()))
-	for _, metric := range model.GetMetrics() {
+	seen := make(map[string]bool, len(report.GetMetrics()))
+	for _, metric := range report.GetMetrics() {
 		if !metricName(metric.GetName()) || seen[metric.GetName()] {
 			return reportCountsError("a metric name is invalid or repeated")
 		}
@@ -134,7 +155,7 @@ func sameMetrics(left, right []*protocol.ModelMetric) bool {
 // ValidateReportValuesRequest refuses a request the negotiated description
 // does not list ReportCountsFeature for, one for an engine that does not list
 // it, and one whose values are not valid inputs of one desired or observed
-// representation, each of a model that declares metrics.
+// representation, each of a model the engine reports.
 func ValidateReportValuesRequest(description *protocol.Description, request *protocol.ReportValuesRequest) error {
 	if request == nil || !slices.Contains(description.GetFeatures(), ReportCountsFeature) {
 		return reportCountsError("the feature was not negotiated")
@@ -143,7 +164,7 @@ func ValidateReportValuesRequest(description *protocol.Description, request *pro
 	if err != nil {
 		return err
 	}
-	if err := validateModelMetrics(description, engine); err != nil {
+	if err := validateModelReports(description, engine); err != nil {
 		return err
 	}
 	if !slices.Contains(engine.GetFeatures(), ReportCountsFeature) || !slices.Contains(request.GetTargetFeatures(), ReportCountsFeature) {
@@ -164,8 +185,8 @@ func ValidateReportValuesRequest(description *protocol.Description, request *pro
 		if input.GetRepresentation() != representation {
 			return reportCountsError("the values have two representations")
 		}
-		if len(findValueModel(description, request.GetEngine(), input.GetValue().GetKind(), representation).GetMetrics()) == 0 {
-			return reportCountsError("a value's model declares no metric")
+		if modelReport(engine, input.GetValue().GetKind(), representation) == nil {
+			return reportCountsError("the engine reports no model of a value")
 		}
 	}
 	return nil
@@ -173,10 +194,14 @@ func ValidateReportValuesRequest(description *protocol.Description, request *pro
 
 // ValidateValueReports refuses a reply that is incomplete, answers another
 // number of values or answers them in another order, or whose counts for a
-// value are not exactly its model's metrics in the declared order, each at
-// most math.MaxInt64.
+// value are not exactly the metrics of its model's report in the declared
+// order, each at most math.MaxInt64.
 func ValidateValueReports(description *protocol.Description, request *protocol.ReportValuesRequest, reply *protocol.ValueReports) error {
 	if err := ValidateReportValuesRequest(description, request); err != nil {
+		return err
+	}
+	engine, _, err := valueTarget(description, request.GetEngine(), request.GetTargetFeatures())
+	if err != nil {
 		return err
 	}
 	if reply == nil || !reply.GetComplete() || len(reply.GetValues()) != len(request.GetValues()) {
@@ -187,7 +212,7 @@ func ValidateValueReports(description *protocol.Description, request *protocol.R
 		if report.GetId() != input.GetId() {
 			return reportCountsError("the reply answers the values in another order")
 		}
-		metrics := findValueModel(description, request.GetEngine(), input.GetValue().GetKind(), input.GetRepresentation()).GetMetrics()
+		metrics := modelReport(engine, input.GetValue().GetKind(), input.GetRepresentation()).GetMetrics()
 		if len(report.GetCounts()) != len(metrics) {
 			return reportCountsError("a report leaves a metric out or counts one twice")
 		}

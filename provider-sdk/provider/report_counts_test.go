@@ -12,7 +12,7 @@ import (
 )
 
 // reportDescription offers report counts on the value exchange's engine,
-// whose retention model declares two metrics.
+// which reports two metrics of its retention model.
 func reportDescription() *protocol.Description {
 	d, _ := valueInputs()
 	d.Features = append(d.Features, provider.ReportCountsFeature)
@@ -20,9 +20,14 @@ func reportDescription() *protocol.Description {
 	engine.Features = append(engine.Features, provider.ReportCountsFeature)
 	model := engine.ValueModels[0]
 	model.DisplayName = "retention settings"
-	model.Metrics = []*protocol.ModelMetric{{Name: "retained_tables", Help: "Tables with a retention"}, {Name: "retention_days", Help: "Days of retention across tables"}}
+	engine.Reports = []*protocol.ModelReport{{Kind: model.Kind, Representation: model.Representation, Metrics: []*protocol.ModelMetric{
+		{Name: "retained_tables", Help: "Tables with a retention"}, {Name: "retention_days", Help: "Days of retention across tables"},
+	}}}
 	return d
 }
+
+// metrics are the metrics the engine reports for its first model.
+func metrics(d *protocol.Description) []*protocol.ModelMetric { return d.Engines[0].Reports[0].Metrics }
 
 // reportRequest asks for the counts of the value exchange's one value.
 func reportRequest() *protocol.ReportValuesRequest {
@@ -37,12 +42,18 @@ func valueReports(counts ...uint64) *protocol.ValueReports {
 }
 
 // secondModel adds a model of another kind to the engine, a clone of the
-// retention model, and returns it.
+// retention model that the engine does not report, and returns it.
 func secondModel(d *protocol.Description) *protocol.ValueModel {
 	model := proto.CloneOf(d.Engines[0].ValueModels[0])
 	model.Kind = "example.org/fixture/archive"
 	d.Engines[0].ValueModels = append(d.Engines[0].ValueModels, model)
 	return model
+}
+
+// report reports the model with the metrics, beside the engine's other
+// reports.
+func report(d *protocol.Description, model *protocol.ValueModel, metrics ...*protocol.ModelMetric) {
+	d.Engines[0].Reports = append(d.Engines[0].Reports, &protocol.ModelReport{Kind: model.Kind, Representation: model.Representation, Metrics: metrics})
 }
 
 func TestReportCounts_HappyPath(t *testing.T) {
@@ -58,7 +69,7 @@ func TestReportCounts_HappyPath(t *testing.T) {
 	t.Run("two models that share a metric and its help", func(t *testing.T) {
 		c := qt.New(t)
 		d := reportDescription()
-		secondModel(d).Metrics = []*protocol.ModelMetric{{Name: "retained_tables", Help: "Tables with a retention"}}
+		report(d, secondModel(d), &protocol.ModelMetric{Name: "retained_tables", Help: "Tables with a retention"})
 		c.Assert(provider.ValidateDescription(d, nil), qt.IsNil)
 	})
 	t.Run("an observed model that names a desired model's metric with another help", func(t *testing.T) {
@@ -66,8 +77,8 @@ func TestReportCounts_HappyPath(t *testing.T) {
 		d := reportDescription()
 		observed := proto.CloneOf(d.Engines[0].ValueModels[0])
 		observed.Representation = protocol.ValueInput_OBSERVED
-		observed.Metrics[0].Help = "Tables a read found with a retention"
 		d.Engines[0].ValueModels = append(d.Engines[0].ValueModels, observed)
+		report(d, observed, &protocol.ModelMetric{Name: "retained_tables", Help: "Tables a read found with a retention"})
 		c.Assert(provider.ValidateDescription(d, nil), qt.IsNil)
 	})
 	t.Run("a host that does not list the feature", func(t *testing.T) {
@@ -75,10 +86,11 @@ func TestReportCounts_HappyPath(t *testing.T) {
 		negotiated := provider.NegotiatedDescription(reportDescription(), nil)
 		c.Assert(negotiated.Features, qt.Not(qt.Contains), provider.ReportCountsFeature)
 		c.Assert(negotiated.Engines[0].Features, qt.Not(qt.Contains), provider.ReportCountsFeature)
-		c.Assert(negotiated.Engines[0].ValueModels[0].Metrics, qt.HasLen, 0)
+		c.Assert(negotiated.Engines[0].Reports, qt.HasLen, 0)
+		c.Assert(proto.Equal(negotiated.Engines[0].ValueModels[0], reportDescription().Engines[0].ValueModels[0]), qt.IsTrue)
 		c.Assert(provider.ValidateDescription(negotiated, nil), qt.IsNil)
 		listed := provider.NegotiatedDescription(reportDescription(), []string{provider.ReportCountsFeature})
-		c.Assert(listed.Engines[0].ValueModels[0].Metrics, qt.HasLen, 2)
+		c.Assert(listed.Engines[0].Reports, qt.HasLen, 1)
 	})
 }
 
@@ -88,58 +100,78 @@ func TestReportCountsDescription_FailurePath(t *testing.T) {
 		change  func(*protocol.Description)
 		wantErr string
 	}{
-		{"metrics on an engine that does not list the feature", func(d *protocol.Description) {
+		{"reports on an engine that does not list the feature", func(d *protocol.Description) {
 			d.Engines[0].Features = []string{"retention"}
-		}, `.*report counts: a model declares metrics without the feature`},
+		}, `.*report counts: the engine declares reports without the feature`},
 		{"an engine whose provider does not list the feature", func(d *protocol.Description) {
 			d.Features = d.Features[:len(d.Features)-1]
 		}, `.*report counts: the engine requires the provider's feature`},
-		{"an engine that lists the feature and declares no metric", func(d *protocol.Description) {
-			d.Engines[0].ValueModels[0].Metrics = nil
-		}, `.*report counts: the engine lists the feature and no model declares a metric`},
-		{"metrics on a change model", func(d *protocol.Description) {
+		{"an engine that lists the feature and reports no model", func(d *protocol.Description) {
+			d.Engines[0].Reports = nil
+		}, `.*report counts: the engine lists the feature and reports no model`},
+		{"a report of a change model", func(d *protocol.Description) {
 			d.Engines[0].ValueModels[0].Representation = protocol.ValueInput_CHANGE
 			d.Engines[0].ValueModels[0].DisplayName = ""
-		}, `.*report counts: only a desired or observed model declares metrics`},
-		{"metrics without a display name", func(d *protocol.Description) {
+			d.Engines[0].Reports[0].Representation = protocol.ValueInput_CHANGE
+		}, `.*report counts: only a desired or observed model is reported`},
+		{"a report of a model the engine lacks", func(d *protocol.Description) {
+			d.Engines[0].Reports[0].Kind = "example.org/fixture/archive"
+		}, `.*report counts: a report names no model of the engine`},
+		{"a report of another representation", func(d *protocol.Description) {
+			d.Engines[0].Reports[0].Representation = protocol.ValueInput_OBSERVED
+		}, `.*report counts: a report names no model of the engine`},
+		{"a model reported twice", func(d *protocol.Description) {
+			d.Engines[0].Reports = append(d.Engines[0].Reports, proto.CloneOf(d.Engines[0].Reports[0]))
+		}, `.*report counts: the engine reports a model twice`},
+		{"a report without metrics", func(d *protocol.Description) {
+			d.Engines[0].Reports[0].Metrics = nil
+		}, `.*report counts: a report declares no metric or too many`},
+		{"a report of a model without a display name", func(d *protocol.Description) {
 			d.Engines[0].ValueModels[0].DisplayName = ""
-		}, `.*report counts: a model that declares metrics needs a display name`},
-		{"an uppercase name", func(d *protocol.Description) { d.Engines[0].ValueModels[0].Metrics[0].Name = "Retained" },
+		}, `.*report counts: a reported model needs a display name`},
+		{"an uppercase name", func(d *protocol.Description) { metrics(d)[0].Name = "Retained" },
 			`.*report counts: a metric name is invalid or repeated`},
-		{"a name that starts with a digit", func(d *protocol.Description) { d.Engines[0].ValueModels[0].Metrics[0].Name = "1tables" },
+		{"a name that starts with a digit", func(d *protocol.Description) { metrics(d)[0].Name = "1tables" },
 			`.*report counts: a metric name is invalid or repeated`},
-		{"a name that starts with an underscore", func(d *protocol.Description) { d.Engines[0].ValueModels[0].Metrics[0].Name = "_tables" },
+		{"a name that starts with an underscore", func(d *protocol.Description) { metrics(d)[0].Name = "_tables" },
 			`.*report counts: a metric name is invalid or repeated`},
-		{"an empty name", func(d *protocol.Description) { d.Engines[0].ValueModels[0].Metrics[0].Name = "" },
+		{"an empty name", func(d *protocol.Description) { metrics(d)[0].Name = "" },
 			`.*report counts: a metric name is invalid or repeated`},
 		{"a repeated name", func(d *protocol.Description) {
-			d.Engines[0].ValueModels[0].Metrics[1].Name = "retained_tables"
+			metrics(d)[1].Name = "retained_tables"
 		}, `.*report counts: a metric name is invalid or repeated`},
-		{"an empty help", func(d *protocol.Description) { d.Engines[0].ValueModels[0].Metrics[0].Help = "" },
+		{"an empty help", func(d *protocol.Description) { metrics(d)[0].Help = "" },
 			`.*report counts: a metric's help is not one line`},
 		{"a help of two lines", func(d *protocol.Description) {
-			d.Engines[0].ValueModels[0].Metrics[0].Help = "Tables\nwith a retention"
+			metrics(d)[0].Help = "Tables\nwith a retention"
 		},
 			`.*report counts: a metric's help is not one line`},
-		{"a help with white space around it", func(d *protocol.Description) { d.Engines[0].ValueModels[0].Metrics[0].Help = " Tables" },
+		{"a help with white space around it", func(d *protocol.Description) { metrics(d)[0].Help = " Tables" },
 			`.*report counts: a metric's help is not one line`},
-		{"a help above 256 bytes", func(d *protocol.Description) { d.Engines[0].ValueModels[0].Metrics[0].Help = strings.Repeat("h", 257) },
+		{"a help above 256 bytes", func(d *protocol.Description) { metrics(d)[0].Help = strings.Repeat("h", 257) },
 			`.*report counts: a metric's help is not one line`},
 		{"too many metrics", func(d *protocol.Description) {
-			model := d.Engines[0].ValueModels[0]
+			report := d.Engines[0].Reports[0]
 			for i := range 63 {
-				model.Metrics = append(model.Metrics, &protocol.ModelMetric{Name: "metric_" + strings.Repeat("x", i+1), Help: "A metric"})
+				report.Metrics = append(report.Metrics, &protocol.ModelMetric{Name: "metric_" + strings.Repeat("x", i+1), Help: "A metric"})
 			}
-		}, `.*report counts: a model declares too many metrics`},
-		{"two models that give one metric two help texts", func(d *protocol.Description) {
-			secondModel(d).Metrics = []*protocol.ModelMetric{{Name: "retained_tables", Help: "Archived tables"}}
-		}, `.*report counts: two models give one metric two help texts`},
-		{"engines that share a model and declare other metrics for it", func(d *protocol.Description) {
+		}, `.*report counts: a report declares no metric or too many`},
+		{"two reports that give one metric two help texts", func(d *protocol.Description) {
+			report(d, secondModel(d), &protocol.ModelMetric{Name: "retained_tables", Help: "Archived tables"})
+		}, `.*report counts: two reports give one metric two help texts`},
+		{"engines that share a model and report other metrics for it", func(d *protocol.Description) {
 			other := proto.CloneOf(d.Engines[0])
 			other.Id = "fixture2"
-			other.ValueModels[0].Metrics = other.ValueModels[0].Metrics[:1]
+			other.Reports[0].Metrics = other.Reports[0].Metrics[:1]
 			d.Engines = append(d.Engines, other)
-		}, `.*report counts: engines that share a model declare other metrics for it`},
+		}, `.*report counts: engines that share a model report other metrics for it`},
+		{"engines that share a model and one reports it", func(d *protocol.Description) {
+			other := proto.CloneOf(d.Engines[0])
+			other.Id = "fixture2"
+			other.Features = []string{"retention"}
+			other.Reports = nil
+			d.Engines = append(d.Engines, other)
+		}, `.*report counts: engines that share a model report other metrics for it`},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -171,21 +203,22 @@ func TestReportValuesRequest_FailurePath(t *testing.T) {
 		{"a repeated value ID", func(_ *protocol.Description, r *protocol.ReportValuesRequest) {
 			r.Values = append(r.Values, proto.CloneOf(r.Values[0]))
 		}, `.*missing or duplicate value ID`},
-		{"a value of a model without metrics", func(d *protocol.Description, r *protocol.ReportValuesRequest) {
-			secondModel(d).Metrics = nil
+		{"a value of a model the engine does not report", func(d *protocol.Description, r *protocol.ReportValuesRequest) {
+			secondModel(d)
 			r.Values[0].Value.Kind = "example.org/fixture/archive"
-		}, `.*report counts: a value's model declares no metric`},
+		}, `.*report counts: the engine reports no model of a value`},
 		{"two representations", func(d *protocol.Description, r *protocol.ReportValuesRequest) {
 			observed := proto.CloneOf(d.Engines[0].ValueModels[0])
 			observed.Representation = protocol.ValueInput_OBSERVED
 			d.Engines[0].ValueModels = append(d.Engines[0].ValueModels, observed)
+			report(d, observed, metrics(d)...)
 			second := proto.CloneOf(r.Values[0])
 			second.Id, second.Representation = "second", protocol.ValueInput_OBSERVED
 			r.Values = append(r.Values, second)
 		}, `.*report counts: the values have two representations`},
 		{"a change value", func(d *protocol.Description, r *protocol.ReportValuesRequest) {
 			change := proto.CloneOf(d.Engines[0].ValueModels[0])
-			change.Representation, change.DisplayName, change.Metrics = protocol.ValueInput_CHANGE, "", nil
+			change.Representation, change.DisplayName = protocol.ValueInput_CHANGE, ""
 			d.Engines[0].ValueModels = append(d.Engines[0].ValueModels, change)
 			r.Values[0].Representation = protocol.ValueInput_CHANGE
 		}, `.*report counts: only desired or observed values are counted`},
