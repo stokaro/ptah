@@ -29,9 +29,14 @@ func TestMeets(t *testing.T) {
 	}
 }
 
-func TestHostContractIsTheSDKRevisionAtMinorZero(t *testing.T) {
+// The host compares a release's minimum with the contract it announces to the
+// providers it starts. Measured with minor 0 in its place: an installed YDB
+// provider that needs 25.7 was refused with "this Ptah speaks contract 25.0"
+// by a host that announces 25.22.
+func TestHostContractIsTheContractTheHostAnnounces(t *testing.T) {
 	c := qt.New(t)
-	c.Assert(providerrelease.HostContract(), qt.Equals, providerrelease.Contract{Major: provider.Revision, Minor: 0})
+	c.Assert(providerrelease.HostContract(), qt.Equals, providerrelease.Contract{Major: provider.Revision, Minor: provider.ContractMinor})
+	c.Assert(providerrelease.Meets(providerrelease.HostContract(), providerrelease.Contract{Major: provider.Revision, Minor: provider.ContractMinor}), qt.IsTrue)
 }
 
 func TestContractWording(t *testing.T) {
