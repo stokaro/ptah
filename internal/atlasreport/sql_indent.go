@@ -40,8 +40,10 @@ const renderIndent = "  "
 // escape and PostgreSQL does not, for example, so `'a\'` ends the literal on
 // one and not on the other.
 //
-// Every report a command renders names its dialect. An empty or unknown one is
-// read under the dialect-neutral rules [dialectlexer.Options] answers with.
+// Every report a command renders names its dialect. An engine an executable
+// provider serves is read with the provider's scanner where the provider
+// scans its text (lexerext.Provide). An empty or unknown one is read under the
+// dialect-neutral rules [dialectlexer.Options] answers with.
 func indentSQL(dialect, sql, indent string) string {
 	protected := quotedNewlines(dialect, sql)
 	var output strings.Builder
