@@ -430,7 +430,10 @@ the engine. The work is split this way:
   read the kind, and Ptah then plans no removal of it. A role the server holds
   outside the read's scope, such as a database's user in a YDB dev realm, is
   named without its attributes: Ptah plans no creation of it and no change to
-  its attributes.
+  its attributes. Ptah counts such roles in a note on the diagnostics stream.
+  With `schema.role-scope-reasons` the read says why it left them out, and the
+  note gives that reason; without it the note says that nothing in the
+  inspected schemas refers to them.
 - Before a comparison, the provider spells the declared objects as its engine
   reports them, such as a view's query as the engine stores it.
 - Ptah compares and orders the changes, and keeps each object as declared in
@@ -1293,6 +1296,11 @@ annotations. Ptah preserves their reason and provenance, checks the closed
 evidence vocabulary, and sends each header to its owner when reading the
 source back. Unclaimed limits and limits returned without negotiation refuse
 the export.
+
+A directive of the provider's own among the standalone objects stands after
+the views. With `source.go-placements`, its part may name another group of the
+writer's: after the schemas, after the views, or after the default privileges.
+Ptah keeps the order of the provider's parts within a group.
 
 A native Go object reads back in the engine that owns its directive. An export
 preserves that scope implicitly and refuses another target scope. An unscoped

@@ -80,6 +80,12 @@ var hostFeatures = []string{
 	// The query builder renders an engine from the spelling its provider
 	// declares; see registerQueryDialects.
 	provider.QueryDialectFeature,
+	// The note that counts the roles a read leaves out names the reason the
+	// provider gives; see rolescope.ReportUndescribed.
+	provider.RoleScopeReasonsFeature,
+	// A provider's Go directive of the document stands in the group its
+	// encoded part names; see goEncoding.fragment.
+	provider.GoPlacementsFeature,
 	// `ptah inference` keeps a generation's run state and vectors in a
 	// provider's embedding store; see EmbeddingSession.
 	provider.EmbeddingStoreFeature,

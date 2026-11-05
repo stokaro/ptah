@@ -83,7 +83,7 @@ func (g goEncoder) EncodeAnnotations(ctx context.Context, request annotation.Enc
 			g.host.description.GetProviderId(), encoded.GetLimits()[0].GetKind())
 	}
 	for _, part := range provider.EncodedSourceParts(encoded) {
-		if err := encoding.fragment(part.GetFragment()); err != nil {
+		if err := encoding.fragment(part.GetFragment(), part.GetPlacement()); err != nil {
 			return annotation.EncodeResult{}, err
 		}
 	}
@@ -161,10 +161,20 @@ var goDirectiveSlots = map[protocol.GoSourceDirective_Scope]string{
 	protocol.GoSourceDirective_INDEX:  "ptah:schema:index",
 }
 
+// goPlacements are the writer's groups a provider's directive of the document
+// may name. One that names none stands after the views.
+var goPlacements = map[protocol.EncodedFragment_Placement]annotation.Placement{
+	protocol.EncodedFragment_PLACEMENT_UNSPECIFIED: annotation.AfterViews,
+	protocol.EncodedFragment_GO_AFTER_SCHEMAS:      annotation.AfterSchemas,
+	protocol.EncodedFragment_GO_AFTER_VIEWS:        annotation.AfterViews,
+	protocol.EncodedFragment_GO_AFTER_PRIVILEGES:   annotation.AfterPrivileges,
+}
+
 // fragment turns one fragment into a directive of the provider's own, the
 // attributes of one of the frontend's declarations, or an index directive the
-// provider writes whole.
-func (e *goEncoding) fragment(fragment *protocol.SourceFragment) error {
+// provider writes whole. placement is where the part says a directive of the
+// document stands; the SDK refuses one on any other part.
+func (e *goEncoding) fragment(fragment *protocol.SourceFragment, placement protocol.EncodedFragment_Placement) error {
 	if fragment.GetIndexKind() != nil {
 		return e.index(fragment)
 	}
@@ -188,7 +198,12 @@ func (e *goEncoding) fragment(fragment *protocol.SourceFragment) error {
 	directive := annotation.EncodedDirective{Directive: claim.GetDirective(), Attributes: attributes}
 	switch claim.GetScope() {
 	case protocol.GoSourceDirective_DOCUMENT:
-		directive.Placement = annotation.AfterViews
+		group, known := goPlacements[placement]
+		if !known {
+			return fmt.Errorf("%w: the provider placed its %s directive %s, which the Go writer has no place for", ptaherr.ErrUnsupportedFeature,
+				claim.GetScope(), claim.GetDirective())
+		}
+		directive.Placement = group
 	case protocol.GoSourceDirective_TABLE:
 		table, bound := e.tables[fragment.GetBindingId()]
 		if !bound {

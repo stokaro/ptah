@@ -61,6 +61,7 @@ func (r reader) commonObjects(result *catalog.Database, observed *protocol.Obser
 	for _, name := range observed.GetRolesOutOfScope() {
 		result.RolesOutOfScope = append(result.RolesOutOfScope, catalog.Role{Name: name, AttributesUnknown: true})
 	}
+	result.RolesOutOfScopeReason = observed.GetRolesOutOfScopeReason()
 	for _, membership := range observed.GetMemberships() {
 		result.RoleMemberships = append(result.RoleMemberships, catalog.RoleMembership{Role: membership.GetGroup(), Member: membership.GetMember()})
 	}
