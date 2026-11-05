@@ -10,6 +10,7 @@ import (
 	"ptah.run/internal/annotationmeta"
 	"ptah.run/internal/annotationschema"
 	"ptah.run/internal/builtintest"
+	"ptah.run/internal/providerpublished"
 )
 
 func TestGenerateMatchesCommittedSchema(t *testing.T) {
@@ -165,9 +166,14 @@ func TestGenerateRefusesRetiredAttributesAndSaysWhy(t *testing.T) {
 
 // bundledCatalog is the catalog the `ptah schema annotations` command renders:
 // the frontend's own directives and those of every bundled owner.
+// bundledCatalog is the catalog `ptah schema annotations` writes the
+// committed schema from: the bundled owners' directives, and those the
+// official providers published for the engines the bundle does not serve.
 func bundledCatalog(c *qt.C) annotationmeta.Catalog {
 	c.Helper()
-	catalog, err := annotationmeta.NewCatalog(builtintest.Annotations())
+	published, err := providerpublished.AnnotationSet(builtintest.Runtime())
+	c.Assert(err, qt.IsNil)
+	catalog, err := annotationmeta.NewCatalog(builtintest.Annotations(), published)
 	c.Assert(err, qt.IsNil)
 	return catalog
 }

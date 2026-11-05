@@ -182,13 +182,13 @@ func TestPushTo_WritesOnlyTheTagItWasGiven(t *testing.T) {
 }
 
 // TestCapture_KeepsAnOwnersLimitInTheHeader captures a description's record
-// of a YDB changefeed it did not describe in the artifact's header, through
+// of a change stream it did not describe in the artifact's header, through
 // the runtime's coverage vocabulary, so the published schema does not read as
 // complete.
 func TestCapture_KeepsAnOwnersLimitInTheHeader(t *testing.T) {
 	c := qt.New(t)
 	db := usersDatabase()
-	db.NotDescribed = coverage.Set{}.With(coverage.Object{Kind: "changefeed", Name: "app.users", Reason: coverage.Unsupported,
+	db.NotDescribed = coverage.Set{}.With(coverage.Object{Kind: "change_stream", Name: "app.users", Reason: coverage.Unsupported,
 		Provenance: coverage.Observed})
 
 	snapshot, err := schemaartifact.Capture(t.Context(), db, nil, builtintest.Runtime().CoverageVocabulary(), builtintest.Runtime().HCL())
@@ -196,5 +196,5 @@ func TestCapture_KeepsAnOwnersLimitInTheHeader(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	data, err := fs.ReadFile(snapshot, schemaartifact.FileName)
 	c.Assert(err, qt.IsNil)
-	c.Assert(string(data), qt.Contains, `// ptah:not-described changefeed reason=unsupported provenance=observed "app.users"`+"\n")
+	c.Assert(string(data), qt.Contains, `// ptah:not-described change_stream reason=unsupported provenance=observed "app.users"`+"\n")
 }

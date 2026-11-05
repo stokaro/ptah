@@ -58,7 +58,7 @@ var notCommands = []exemption{
 	{"docs/conformance.md", "ptah-compat cloud database list", "shows the compatibility binary refusing the cloud group, as the pinned Atlas binary does"},
 	{"docs/conformance.md", "ptah-compat exits 0 where Atlas CE exits 1", "names a class of measured difference"},
 	{"docs/adr/0004-constrained-artifact-mutation.md", "ptah - ptah_apply_patch", "quotes how a heading renders"},
-	{"docs/site/src/content/docs/inference/troubleshooting.md", "ptah inference works against PostgreSQL with pgvector, against YDB, and against a provider engine", quoted},
+	{"docs/site/src/content/docs/inference/troubleshooting.md", "ptah inference works against PostgreSQL with pgvector and against a provider engine", quoted},
 }
 
 // trees are the two binaries' command trees.

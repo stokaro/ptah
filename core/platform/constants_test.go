@@ -79,21 +79,13 @@ func TestNormalizeDialect_SQLServerAliases(t *testing.T) {
 	}
 }
 
-// ydbs is the TLS URL scheme of a YDB server, accepted for the reason
-// libsql+ws is. grpc and grpcs are the YDB SDK's schemes and stay unknown:
-// they name a protocol, and every gRPC URL would read as a database URL.
-func TestNormalizeDialect_YDBAliases_HappyPath(t *testing.T) {
+// ydb and ydbs name the engine the official YDB provider serves, and no
+// built-in dialect answers to them. grpc and grpcs are the YDB SDK's schemes
+// and name a protocol, so every gRPC URL would read as a database URL.
+func TestNormalizeDialect_YDBSpellings_FailurePath(t *testing.T) {
 	c := qt.New(t)
 
-	for _, dialect := range []string{"ydb", "ydbs", " YDB ", "YDBS"} {
-		c.Assert(platform.NormalizeDialect(dialect), qt.Equals, platform.YDB, qt.Commentf("dialect %q", dialect))
-	}
-}
-
-func TestNormalizeDialect_YDBAliases_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
-	for _, dialect := range []string{"grpc", "grpcs", "ydb+grpc", "yql", "ydbsql"} {
+	for _, dialect := range []string{"ydb", "ydbs", " YDB ", "grpc", "grpcs", "ydb+grpc", "yql", "ydbsql"} {
 		c.Assert(platform.NormalizeDialect(dialect), qt.Equals, "", qt.Commentf("dialect %q", dialect))
 	}
 }
@@ -104,7 +96,7 @@ func TestIsPostgresFamily(t *testing.T) {
 	for _, dialect := range []string{"postgres", "pgx", "cockroachdb", "yugabytedb", "spanner"} {
 		c.Assert(platform.IsPostgresFamily(dialect), qt.IsTrue, qt.Commentf("dialect %q", dialect))
 	}
-	for _, dialect := range []string{"mysql", "mariadb", "clickhouse", "sqlite", "sqlserver", "oracle", "ydb"} {
+	for _, dialect := range []string{"mysql", "mariadb", "clickhouse", "sqlite", "sqlserver", "oracle"} {
 		c.Assert(platform.IsPostgresFamily(dialect), qt.IsFalse, qt.Commentf("dialect %q", dialect))
 	}
 }
@@ -118,7 +110,7 @@ func TestGrantOptionIsPerObject(t *testing.T) {
 		c.Assert(platform.GrantOptionIsPerObject(dialect), qt.IsTrue, qt.Commentf("dialect %q", dialect))
 	}
 	for _, dialect := range []string{
-		"postgres", "cockroachdb", "yugabytedb", "spanner", "clickhouse", "sqlite", "sqlserver", "oracle", "ydb", "bogus",
+		"postgres", "cockroachdb", "yugabytedb", "spanner", "clickhouse", "sqlite", "sqlserver", "oracle", "bogus",
 	} {
 		c.Assert(platform.GrantOptionIsPerObject(dialect), qt.IsFalse, qt.Commentf("dialect %q", dialect))
 	}

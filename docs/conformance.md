@@ -279,25 +279,25 @@ and send a reader looking for the other half.
 ### `ydb://` and `ydbs://` are a Ptah extension
 
 No Atlas edition has a YDB driver ([atlasgo.io/features](https://atlasgo.io/features)).
-Measured on 2026-10-04 against Atlas CE v1.3.0 (`ptah-atlas-conformance/bin/atlas`)
-and `ptah-compat` on local-ydb 26.2.1.14 and 25.1.4.7, every exit status read
-from an unpiped invocation:
+Measured against Atlas CE v1.3.0 (`ptah-atlas-conformance/bin/atlas`) on
+local-ydb 26.2.1.14 and 25.1.4.7, every exit status read from an unpiped
+invocation:
 
-| Invocation | Atlas CE v1.3.0 | `ptah-compat` | `ptah-compat`, strict |
-| --- | --- | --- | --- |
-| `schema inspect`, `schema apply`, `schema diff`, `schema clean`, `migrate apply`, `migrate status`, `migrate set` on `ydb://...` | 1, `sql/sqlclient: unknown driver "ydb". See: https://atlasgo.io/url` | 0 | 1, byte-identical |
-| the same on `ydbs://...` | 1, the same with `"ydbs"` | dials over TLS | 1, byte-identical |
-| `migrate validate --dev-url ydb://...` on a hashed directory | 1, `unknown driver "ydb"` | 0, replayed in a dev realm | 1, byte-identical, after the integrity gate as on CE |
-| `migrate validate --dev-url ydb://...` on an unhashed directory | 1, `checksum file not found` | 1, the same | 1, the same |
-| an `atlas.hcl` env whose `url`, `dev` or `src` names YDB | 1, `unknown driver "ydb"` | 0 | 1, byte-identical |
-| a `data "sql"` source on `ydb://...` | 1, `data.sql.tenants: opening connection: sql/sqlclient: unknown driver "ydb"…` | 0 | 1, `data.sql.tenants: opening database: sql/sqlclient: unknown driver "ydb"…` |
-| `--dev-url docker://ydb/26.2.1.14/local` | 1, `unsupported docker image "ydb"` | 0, on a local-ydb container started for the run | 1, byte-identical |
+| Invocation | Atlas CE v1.3.0 | `ptah-compat`, strict |
+| --- | --- | --- |
+| `schema inspect`, `schema apply`, `schema diff`, `schema clean`, `migrate apply`, `migrate status`, `migrate set` on `ydb://...` | 1, `sql/sqlclient: unknown driver "ydb". See: https://atlasgo.io/url` | 1, byte-identical |
+| the same on `ydbs://...` | 1, the same with `"ydbs"` | 1, byte-identical |
+| `migrate validate --dev-url ydb://...` on a hashed directory | 1, `unknown driver "ydb"` | 1, byte-identical, after the integrity gate as on CE |
+| `migrate validate --dev-url ydb://...` on an unhashed directory | 1, `checksum file not found` | 1, the same |
+| an `atlas.hcl` env whose `url`, `dev` or `src` names YDB | 1, `unknown driver "ydb"` | 1, byte-identical |
+| a `data "sql"` source on `ydb://...` | 1, `data.sql.tenants: opening connection: sql/sqlclient: unknown driver "ydb"…` | 1, `data.sql.tenants: opening database: sql/sqlclient: unknown driver "ydb"…` |
+| `--dev-url docker://ydb/26.2.1.14/local` | 1, `unsupported docker image "ydb"` | 1, byte-identical |
 
-The default profile serves YDB with no `PTAH_*` variable, because a YDB URL asks
-for an engine the binary lacks rather than making a mistake the binary catches.
-Each verb runs the native capability behind it. `schema inspect` writes YDB's
-own type names in HCL, which no Atlas binary reads: a Ptah extension that Ptah's
-own parser reads back. The strict profile refuses a YDB URL from a flag, from
+The default profile serves YDB through the
+[YDB provider](./site/src/content/docs/databases/ydb.md) with no `PTAH_*`
+variable to turn it on, because a YDB URL asks for an engine the binary lacks
+rather than making a mistake the binary catches: the installed provider, or the
+one the manifest `PTAH_PROVIDER_CONFIG` names. The strict profile refuses a YDB URL from a flag, from
 `atlas.hcl`, and from any connection the run would open, a data source
 included; a `PTAH_*` variable is refused as a variable before that. The data
 source row differs in its middle words on every engine, not only on YDB. What
@@ -306,20 +306,17 @@ and the divergence is recorded under
 [Compatibility differences](./site/src/content/docs/atlas/retained-divergences.md#a-ydb-database-url).
 
 A primary key change, a column type change or `SET NOT NULL` on YDB is refused
-on this surface unless `PTAH_ALLOW_TABLE_REBUILD=1` asks for a table rebuild,
-the variable twin of the native `--allow-table-rebuild` flag; the refusal names
-the variable. Measured on the same servers, `schema apply` of an `Int32` column
-widened to `Int64` without it exits 1 and leaves the column `Int32`, and with
-it rebuilds the table, keeps its rows and then reports the schema synced. The
-community binary plans no rebuild, so strict mode refuses the variable:
+on this surface unless `PTAH_ALLOW_TABLE_REBUILD=1` asks the provider for a
+table rebuild, the variable twin of the native `--allow-table-rebuild` flag; the
+refusal names the variable. The community binary plans no rebuild, so strict
+mode refuses the variable:
 `PTAH_ATLAS_STRICT_COMPAT does not allow PTAH_ALLOW_TABLE_REBUILD`.
 
 A `docker://ydb` dev URL is checked before its dialect, so strict mode answers
 it as the pinned binary answers an image it does not start, not as it answers a
-`ydb://` URL. `internal/atlascompatpolicy/policy_test.go` and
-`internal/cli/atlas/compat_ydb_url_test.go` pin that answer. A YDB dev URL in
-the default profile gets a dev realm, as on the native commands, on the target's
-server or on another one.
+`ydb://` URL. `internal/atlascompatpolicy/policy_test.go` pins that answer. A
+YDB dev URL in the default profile gets a dev realm from the YDB provider, as on
+the native commands, on the target's server or on another one.
 
 ## Never a Copied Defect
 
@@ -1491,7 +1488,7 @@ which drops the parameter.
 `ptah introspect` therefore refuses an index whose storage parameters the
 directive cannot write, and names them, rather than writing a declaration that
 would drop them when applied. The options of a YDB full-text or local index are
-the exception: the YDB owner adds attributes for them to the directive.
+the exception: the YDB provider adds attributes for them to the directive.
 
 `include` is outside this loss class: a model can
 declare `include="b"`, and PostgreSQL, YugabyteDB, CockroachDB, the Spanner

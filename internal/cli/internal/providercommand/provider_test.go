@@ -139,17 +139,19 @@ func newProbe(calls *int) *cobra.Command {
 	return cmd
 }
 
-// The YDB provider is selectable only by asking for it. A URL alone keeps the
-// built-in engine and never reads the store.
-func TestOfficialEngineWithABuiltInImplementationIgnoresTheStoreWithoutAnExplicitRequest(t *testing.T) {
+// No built-in engine serves YDB, so a ydb:// URL alone selects the provider
+// the store holds, with no --provider-engine: a stored copy that does not
+// match its install record is refused before the command runs.
+func TestOfficialEngineServedOnlyByItsProviderReadsTheStoreForAURL(t *testing.T) {
 	c := qt.New(t)
 	isolateStore(c)
 	corruptStoreCopy(c)
 	calls := 0
 	cmd := newProbe(&calls)
 	cmd.SetArgs([]string{"--db-url", "ydb://localhost:2136/local"})
-	c.Assert(cmd.ExecuteContext(c.Context()), qt.IsNil)
-	c.Assert(calls, qt.Equals, 1)
+	c.Assert(cmd.ExecuteContext(c.Context()), qt.ErrorMatches,
+		"The installed provider executable does not match the SHA-256 digest its install record holds; .*")
+	c.Assert(calls, qt.Equals, 0)
 }
 
 func TestExplicitProviderEngineWithNothingInstalledReportsTheInstallInstruction(t *testing.T) {

@@ -97,6 +97,10 @@ service Provider {
   rpc SplitMigration(SplitMigrationRequest) returns (MigrationSplit);
   // Contract 25.19. Used only when both sides list models.reverse.
   rpc ReverseChanges(ReverseChangesRequest) returns (ReversedChanges);
+  // Contract 25.21. Used only when both sides list models.report-counts.
+  rpc ReportValues(ReportValuesRequest) returns (ValueReports);
+  // Contract 25.22. A host calls it only for an engine that lists sql.scan.
+  rpc ScanSQL(ScanSQLRequest) returns (SQLScan);
 }
 
 message Empty {}
@@ -177,6 +181,23 @@ message Engine {
   // Non-empty only when the engine lists models.reverse, and sent only to a
   // host that lists it. Contract 25.19.
   repeated ModelReversal reversals = 21;
+  // The kinds of the OBSERVED models whose objects belong to the session's
+  // database rather than to a namespace of it, such as resource pools. A
+  // filtered read reports them beside its scope, named at the database.
+  // Non-empty exactly when the engine lists schema.database-kinds, and sent
+  // only to a host that lists it. Contract 25.21.
+  repeated string database_kinds = 22;
+  // The count metrics of the engine's models, one entry per model that
+  // declares any. Non-empty only when the engine lists models.report-counts,
+  // and sent only to a host that lists it. Contract 25.21.
+  repeated ModelReport reports = 23;
+  // The capability facts the host plans the engine with when no session
+  // states the server's: those of the release line a command assumes without
+  // a server. A present false is an established answer; an absent key is
+  // unknown. Non-empty exactly when the engine lists
+  // engine.default-capabilities, and sent only to a host that lists it.
+  // Contract 25.22.
+  map<string, bool> default_capabilities = 24;
 }
 // ScopeSelection is how the --include, --exclude and --schema selectors name
 // the engine's objects of one model kind. The host reads a selector's name
@@ -243,7 +264,9 @@ message HCLSourceDeclaration {
 // HCLSourceBlock is one block shape, with the meaning of the host's HCL
 // extension contract. At TOP_LEVEL and IN_TABLE the owner reads a block of its
 // own; at the attribute sites it adds attributes to the frontend's table,
-// index, routine or materialized view block, whose type the claim names.
+// index, routine or materialized view block, whose type the claim names. At
+// TABLE_PLATFORM it reads the overrides of a table's platform block of its
+// engine.
 message HCLSourceBlock {
   enum Site {
     SITE_UNSPECIFIED = 0;
@@ -253,6 +276,12 @@ message HCLSourceBlock {
     INDEX_ATTRIBUTES = 4;
     ROUTINE_ATTRIBUTES = 5;
     MATERIALIZED_VIEW_ATTRIBUTES = 6;
+    // The `platform` block of a `table` whose label is the claim's type, the
+    // engine's ID. Each `override` label is an attribute name, and the
+    // override's `value` the attribute's STRING value. The models need not
+    // list HCL: a table that writes no such block states nothing about them.
+    // Contract 25.22, under source.hcl-platform.
+    TABLE_PLATFORM = 7;
   }
   // How the labels of a TOP_LEVEL block name the object it declares. Every
   // other site takes none.
@@ -275,7 +304,8 @@ message HCLSourceBlock {
   // only.
   string grant_kind = 7;
   string selector = 8;
-  // DESIRED models whose source formats include HCL.
+  // DESIRED models whose source formats include HCL. The models of a
+  // TABLE_PLATFORM claim need not include it.
   repeated string models = 9;
   // Common attributes of the frontend's block the owner reads too, sent in
   // SourceFragment.inherited_attributes. Attribute sites only.
@@ -370,6 +400,13 @@ message ReleaseLine {
   string image = 4;
   string unprobed = 5;
   string note = 6;
+  // The capability facts of a server of the line with its default settings,
+  // which the host plans with for a --server-version that names the line: one
+  // equal to line, or starting with line and a dot. A present false is an
+  // established answer; an absent key is unknown. Non-empty exactly when the
+  // engine lists engine.default-capabilities, and sent only to a host that
+  // lists it. Contract 25.22.
+  map<string, bool> capabilities = 7;
 }
 // YAMLSourceKey is an explicit owner claim on shared YAML frontend syntax.
 // The host refuses collisions with common keys or other selected owners.
@@ -425,6 +462,10 @@ message IdentifierRules {
   Comparison column_names = 2;
   Comparison index_names = 3;
   IndexNamespace index_namespace = 4;
+  // The one character that separates nested schemas in a normalized schema
+  // spelling, or empty when schemas do not nest. No schema component contains
+  // it. Contract 25.22, under schema.subtree-coverage.
+  string schema_separator = 5;
 }
 // Reference keeps identity components separate. Display spelling does not
 // replace normalized identity. No component is folded by the transport.
@@ -719,15 +760,26 @@ message SequenceAlteration {
 // repeat it.
 message RoleCreation {
   SQLRole role = 1;
+  // The declared password, when schema.password-inputs is not negotiated.
   string password = 2;
+  // The execution input that holds the declared password. Contract 25.22,
+  // under schema.password-inputs: a declared password, or a password hash,
+  // travels only here, and password is empty. The unit names the input and
+  // never the value, and DescribeExecutionInputs reports it.
+  ExecutionInput password_input = 3;
 }
 message RoleAlteration {
   SQLRole desired = 1;
   // The attributes that change: login, password, superuser, create_db,
   // create_role, inherit or replication.
   repeated string changed = 2;
-  // The new password, when changed lists password. Empty removes it.
+  // The new password, when changed lists password and schema.password-inputs
+  // is not negotiated. Empty removes it.
   string password = 3;
+  // The execution input that holds the new password, when changed lists
+  // password. Contract 25.22, under schema.password-inputs, as in
+  // RoleCreation.
+  ExecutionInput password_input = 4;
 }
 message RoleMembership {
   string group = 1;
@@ -1135,9 +1187,53 @@ message ValueModel {
   // Full owner definition, canonicalized with modeljson.Canonical. Its exact
   // SHA-256 must match definition_sha256. It is a nonempty JSON object.
   bytes definition_json = 8;
-  // Optional plural label for omission reports. This declares no count metrics.
-  // Only desired and observed models may supply a trimmed, single-line label.
+  // Optional plural label for omission reports. This declares no count
+  // metrics; Engine.reports does. Only desired and observed models may supply
+  // a trimmed, single-line label.
   string display_name = 9;
+}
+// ModelReport declares the count metrics a value of one desired or observed
+// model of the engine contributes to, in the order a report lists them. The
+// model has a display name. Contract 25.21, under models.report-counts.
+message ModelReport {
+  string kind = 1;
+  ValueInput.Representation representation = 2;
+  repeated ModelMetric metrics = 3;
+}
+// ModelMetric is one object-count metric: name is a lowercase ASCII suffix of
+// letters, digits and underscores that starts with a letter, and help is one
+// line. The metrics of one representation give a name one help.
+// Contract 25.21, under models.report-counts.
+message ModelMetric {
+  string name = 1;
+  string help = 2;
+}
+// ReportValuesRequest asks the owner for the counts of captured values of one
+// engine and one representation, each of a model the engine reports. It is
+// offline: it opens no session and reads no database. Contract 25.21, under
+// models.report-counts.
+message ReportValuesRequest {
+  string engine = 1;
+  repeated string target_features = 2;
+  repeated ValueInput values = 3;
+}
+// ValueReports answers every value of the request, in order. Contract 25.21,
+// under models.report-counts.
+message ValueReports {
+  bool complete = 1;
+  repeated ValueReport values = 2;
+}
+// ValueReport counts one value: one count for each metric its model's report
+// declares, in the declared order.
+message ValueReport {
+  string id = 1;
+  repeated MetricCount counts = 2;
+}
+// MetricCount is what one value contributes to one metric. It is at most the
+// largest signed 64-bit integer.
+message MetricCount {
+  string name = 1;
+  uint64 value = 2;
 }
 message ModelKnowledge {
   enum State {
@@ -1164,6 +1260,10 @@ message ModelNamespace {
   NamespaceComponent catalog = 2;
   NamespaceComponent schema = 3;
   repeated NamespaceComponent path_prefix = 4;
+  // With a schema, the region also covers every schema nested below it under
+  // the engine's schema separator. Contract 25.22, under
+  // schema.subtree-coverage.
+  bool schema_subtree = 5;
 }
 message ModelNamespaceKnowledge {
   ModelNamespace scope = 1;
@@ -1273,6 +1373,12 @@ message SQLSchema {
   repeated SQLGrant grants = 12;
   // Exactly one trace for every object of the collections above.
   repeated SQLObjectTrace traces = 13;
+  // DESIRED facet values of provider-owned models whose source formats
+  // include SQL, each owned by a table of tables or by a column or an index
+  // of one, named below its table as provider.ColumnReference names a
+  // column. At most one value of a kind for an owner. Contract 25.21, under
+  // schema.sql-facets.
+  repeated Envelope facets = 14;
 }
 message SQLView {
   string schema = 1;
@@ -1374,6 +1480,8 @@ message SQLObjectTrace {
     SEQUENCES = 6;
     ROLES = 7;
     GRANTS = 8;
+    // Contract 25.21, under schema.sql-facets.
+    FACETS = 9;
   }
   Collection collection = 1;
   uint32 index = 2;
@@ -1478,6 +1586,10 @@ message ComparisonNamespace {
   ComparisonPart parent = 6;
   repeated ComparisonPart path_prefix = 7;
   bool path_exact = 8;
+  // With a schema, the region also covers every schema nested below it under
+  // the comparison's schema separator. Contract 25.22, under
+  // schema.subtree-coverage.
+  bool schema_subtree = 9;
 }
 message ComparisonRegion {
   ComparisonNamespace scope = 1;
@@ -2146,6 +2258,11 @@ message ObservedIndex {
   repeated ComparisonIdentity requires = 18;
   bool partition_attached = 19;
   int64 hash_shard_buckets = 20;
+  // The settings of the index the engine reads into its own models, each owned
+  // by the index: kind "index", the table's database and schema, the table as
+  // the only path component, and the index's name. Contract 25.21, negotiated
+  // under schema.observed-index-facets.
+  repeated Envelope facets = 21;
 }
 message ObservedConstraint {
   string name = 1;
@@ -3832,7 +3949,10 @@ message EncodedFragment {
   Placement placement = 3;
 }
 // EncodeLoss is a value the format cannot say, in one line that names it and
-// never its content.
+// never its content. Under source.hcl-platform, a loss of an HCL reply may
+// also name a value a TABLE_PLATFORM part writes: the value is written in
+// part, and the line says what the document does not hold of it. Contract
+// 25.22.
 message EncodeLoss {
   string value_id = 1;
   string message = 2;
@@ -4137,4 +4257,51 @@ message ColumnDefaultReceipt {
   enum Kind { KIND_UNSPECIFIED = 0; ABSENT = 1; LITERAL = 2; EXPRESSION = 3; }
   Kind kind = 2;
   string value = 3;
+}
+
+// ScanSQLRequest asks the owner for the tokens of one text of its engine's
+// SQL. The scan reads the text alone: no session, no server version and no
+// database. Contract 25.22, under sql.scan.
+message ScanSQLRequest {
+  string engine = 1;
+  // The text, UTF-8. Every offset of the reply is a byte offset into it.
+  string text = 2;
+  // head reports that the text begins where the server reads settings ahead
+  // of a query, as YQL reads a --! translation setting before its first
+  // token. A host sets it for a whole text and clears it for a range that
+  // starts inside one.
+  bool head = 3;
+}
+// SQLScan is every token of the text in order. The tokens cover the text with
+// no gap and no overlap, so an empty text has none.
+message SQLScan {
+  repeated SQLToken tokens = 1;
+}
+// SQLToken is one token of a scanned text. It starts where the token before it
+// ends, and the first one starts at 0.
+message SQLToken {
+  // The token types of the host's lexer.
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    // Text the server reads that is no other kind, such as a translation
+    // setting or an executable comment. A reader that removes comments keeps
+    // it.
+    UNKNOWN = 1;
+    STRING = 2;
+    COMMENT = 3;
+    // The separator between two statements.
+    SEMICOLON = 4;
+    WHITESPACE = 5;
+    // A name, a keyword or a number.
+    IDENTIFIER = 6;
+    OPERATOR = 7;
+  }
+  Kind kind = 1;
+  // The byte offset in the text at which the token ends, past its last byte.
+  uint32 end = 2;
+  // STRING: the text the literal stands for. IDENTIFIER: the name it stands
+  // for, with its quoting undone. Absent where the scanner reads no such
+  // value: a string whose escape the server refuses, or text that is not one
+  // whole name. Never present on another kind.
+  optional string value = 3;
 }

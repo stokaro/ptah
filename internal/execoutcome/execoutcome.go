@@ -18,8 +18,6 @@ import (
 	"syscall"
 
 	"github.com/go-sql-driver/mysql"
-	ydbsdk "github.com/ydb-platform/ydb-go-sdk/v3"
-	"github.com/ydb-platform/ydb-go-sdk/v3/retry"
 
 	"ptah.run/core/ptaherr"
 )
@@ -33,13 +31,8 @@ import (
 // What it recognizes:
 //
 //   - an explicit [ptaherr.ErrOutcomeUnknown] from a native execution
-//     adapter, including an uncertain result wrapping a transport error;
-//   - a YDB error, as ydb-go-sdk classifies it: a transport error the SDK
-//     would retry only for an idempotent operation (Unavailable, Internal,
-//     Canceled, DeadlineExceeded), an operation status of the same kind
-//     (UNDETERMINED, TIMEOUT, SESSION_EXPIRED), and a stream the connection
-//     ended under may have been applied. YDB is asked first, because its
-//     database/sql driver reports a transport error as a bad connection;
+//     adapter, including an uncertain result wrapping a transport error, as
+//     an executable provider's session reports one;
 //   - driver.ErrBadConn otherwise means the statement was not sent: drivers
 //     return it only then, and database/sql retries on it;
 //   - a connection that ended mid-statement (io.EOF, io.ErrUnexpectedEOF,
@@ -55,32 +48,10 @@ func Unknown(err error) bool {
 	if errors.Is(err, ptaherr.ErrOutcomeUnknown) {
 		return true
 	}
-	if unknown, ok := ydbUnknown(err); ok {
-		return unknown
-	}
 	if errors.Is(err, driver.ErrBadConn) {
 		return false
 	}
 	return brokenConnection(err)
-}
-
-// ydbUnknown answers for an error ydb-go-sdk returned, and reports false for
-// ok when err is not one.
-func ydbUnknown(err error) (unknown, ok bool) {
-	checked := err
-	switch {
-	case ydbsdk.IsTransportError(err):
-		// The SDK's own transport error, also for a gRPC status it did not
-		// wrap, which its classification does not read otherwise.
-		checked = ydbsdk.TransportError(err)
-	case !ydbsdk.IsOperationError(err):
-		return false, false
-	}
-	mode := retry.Check(checked)
-	// A failure the SDK would retry for any operation left nothing applied;
-	// one it retries only for an idempotent operation may have, and so may a
-	// stream the connection ended under, whatever code the SDK gave it.
-	return (mode.MustRetry(true) && !mode.MustRetry(false)) || brokenConnection(err), true
 }
 
 // brokenConnection reports whether err says the connection ended after the

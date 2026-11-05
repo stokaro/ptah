@@ -570,7 +570,7 @@ func resolveDesiredState(
 	if err := opts.Desired.EnsureDevDatabase(devURL); err != nil {
 		return atlassource.State{}, err
 	}
-	if err := opts.Desired.EnsureDevIsolation(devURL); err != nil {
+	if err := opts.Desired.EnsureDevIsolation(ctx, devURL); err != nil {
 		return atlassource.State{}, err
 	}
 	// `migrate diff` has no target URL, so --dev-url is the only URL that can

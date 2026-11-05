@@ -337,7 +337,7 @@ func measuredLines() map[string]measuredLine {
 				capability.RowDeletionPolicy: "the key names a table clause only Spanner and YDB have, and PostgreSQL 18 answers `syntax error` to a construct that is not in its grammar -- which measures the grammar, not this line. " +
 					"What decides the key is Spanner STORING the clause and reading it back from information_schema.tables.row_deletion_policy_expression, which is asked on the Spanner cells (stokaro/ptah#2236)",
 				capability.RowDeletionPolicyEpochColumn: "this run predates the key and sent no TTL statement. The key presupposes row_deletion_policy, which PostgreSQL does not have, " +
-					"so what decides it is YDB taking `TTL = Interval(...) ON col AS SECONDS` on an integer column, which internal/capabilityprobe asks on the YDB cells",
+					"so what decides it is YDB taking `TTL = Interval(...) ON col AS SECONDS` on an integer column, which the YDB provider measures on its own lines",
 				capability.CheckGrantStatement:             "the key names ClickHouse's CHECK GRANT, which this server has no spelling of; its answer would be to a different question. What decides the key is ClickHouse accepting the statement on one declared line and refusing it as a syntax error on another, which internal/capabilityprobe asks on the ClickHouse cells (stokaro/ptah#916)",
 				capability.CatalogViewDependencies:         "the key names information_schema.VIEW_TABLE_USAGE, a MySQL catalog view. PostgreSQL answers view dependencies through pg_depend and pg_rewrite instead, which is a different catalog and a different question",
 				capability.CatalogRecursiveCTE:             "this run asked no recursive-CTE question. What decides the key is whether the server accepts a WITH RECURSIVE query that also reads the pg catalogs, which every real PostgreSQL-family server does; only Cloud Spanner's PostgreSQL interface refuses, and for a reason in the interface rather than the engine",
@@ -804,8 +804,8 @@ const routineCommentCarried = "this run predates the key and sent no COMMENT ON 
 const schemaChangeCarried = "this run predates the key and sent no schema-change experiment; the probe " +
 	"asks it on every run through those experiments, and the value here is the preset's"
 
-// typeKeyCarried is why the keys the YDB type map and renderer read are
-// carried on every measured line: the run named there predates them. The probe
+// typeKeyCarried is why the keys about YDB's column types and asynchronous
+// indexes are carried on every measured line: the run named there predates them. The probe
 // asks them on every run through its type experiments, and the value here is
 // the preset's.
 const typeKeyCarried = "this run predates the key and sent no type experiment; the probe asks it " +
@@ -879,10 +879,10 @@ const changefeedKeyCarried = "this run predates the key and sent no changefeed e
 // accessKeyCarried is why the keys about role membership, groups, grants on
 // the database and relative grant paths are carried on every measured line:
 // the run named there predates them. Each describes what Ptah's planner plans,
-// which only the YDB planner does, so the probe declares them undecided on
+// which no built-in planner does, so the probe declares them undecided on
 // these engines, and the value here is the preset's.
 const accessKeyCarried = "this run predates the key; the probe declares it undecided on this engine, " +
-	"because only the YDB planner plans it, and the value here is the preset's"
+	"because no built-in planner plans it, and the value here is the preset's"
 
 // replicationKeyCarried is why the keys about a YDB async replication and a
 // transfer are carried on these lines: the run predates them. The probe asks

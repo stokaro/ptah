@@ -9,9 +9,8 @@ readerQuestion: "When should I build each type of vector index?"
 goal: "Choose a vector index type and when to build it."
 sourceOfTruth:
   - "internal/cli/inference"
-  - "internal/embedydb"
+  - "github:stokaro/ptah-ydb-plugin"
   - "integration/inference_cli_e2e_test.go"
-  - "integration/inference_ydb_cli_e2e_test.go"
 generated: false
 overlaps: []
 disposition: keep

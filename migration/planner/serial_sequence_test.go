@@ -2,14 +2,12 @@ package planner_test
 
 import (
 	"context"
-	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/difftypes"
-	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemamodel"
@@ -17,19 +15,15 @@ import (
 	"ptah.run/migration/planner"
 )
 
-// TestEveryPlannerButYDBRefusesSerialSequenceChanges drives a hand-built diff
+// TestEveryBuiltInPlannerRefusesSerialSequenceChanges drives a hand-built diff
 // that changes the start of a Serial's sequence through every registered
-// planner but YDB's. The comparison records the change only on a target with
-// capability.SerialSequenceOptions, so only such a diff reaches them, and a
-// planner that read nothing of it would plan nothing and report the column
-// synced.
-func TestEveryPlannerButYDBRefusesSerialSequenceChanges(t *testing.T) {
+// planner. The comparison records the change only on a target with
+// capability.SerialSequenceOptions, which no built-in engine has, so only such
+// a diff reaches them, and a planner that read nothing of it would plan
+// nothing and report the column synced.
+func TestEveryBuiltInPlannerRefusesSerialSequenceChanges(t *testing.T) {
 	c := qt.New(t)
 	dialects := must.Must(builtin.New()).Targets()
-	// Only this runtime owns the planners considered here.
-	dialects = slices.DeleteFunc(dialects, func(dialect string) bool {
-		return dialect == platform.YDB
-	})
 	c.Assert(len(dialects) >= 8, qt.IsTrue, qt.Commentf("registered dialects: %v", dialects))
 
 	id := schemamodel.Field{StructName: "User", Name: "id", Type: "BIGSERIAL", Primary: true, AutoInc: true,

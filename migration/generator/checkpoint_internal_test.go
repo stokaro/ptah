@@ -25,8 +25,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/dialect/ydb/ydbcoordination"
-	"ptah.run/dialect/ydb/ydbstreaming"
+	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/migrationfile"
 )
@@ -205,56 +204,24 @@ func TestGenerateCheckpoint_NilAndEmpty(t *testing.T) {
 	c.Assert(down, qt.Equals, "")
 }
 
-func TestGenerateCheckpoint_YDBEmptyBaselineHasKnownFeatureAbsence(t *testing.T) {
-	c := qt.New(t)
-	schema := &schemamodel.Database{FeatureCoverage: checkpointYDBFeatureCoverage()}
-	up, down, err := generateCheckpoint(t.Context(), must.Must(builtin.New()), schema, "ydb")
-	c.Assert(err, qt.IsNil)
-	c.Assert(up, qt.Equals, "")
-	c.Assert(down, qt.Equals, "")
-}
-
-func TestGenerateCheckpoint_YDBStandaloneFeaturesUseSelectedOwners(t *testing.T) {
-	c := qt.New(t)
-	schema := &schemamodel.Database{
-		FeatureCoverage: checkpointYDBFeatureCoverage(),
-		FeatureObjects: must.Must(schemaext.NewObjects(
-			ydbcoordination.DesiredObject("", "locks", "Locks", ydbcoordination.Spec{}),
-			ydbstreaming.DesiredObject("", "query", "Query", ydbstreaming.Spec{Text: "SELECT 1;", Run: new(false)}, false),
-		)),
-	}
-	caps := capability.YDB262()
-	caps = caps.With(capability.StreamingQueries, true)
-	up, down, err := generateCheckpointWithDatabaseInfo(t.Context(), must.Must(builtin.New()), schema,
-		catalog.ServerInfo{Dialect: "ydb", Capabilities: caps})
-	c.Assert(err, qt.IsNil)
-	c.Assert(up, qt.Contains, "CREATE COORDINATION NODE `locks`")
-	c.Assert(up, qt.Contains, "CREATE STREAMING QUERY `query`")
-	c.Assert(down, qt.Contains, "DROP COORDINATION NODE `locks`")
-	c.Assert(down, qt.Contains, "DROP STREAMING QUERY `query`")
-}
-
-func checkpointYDBFeatureCoverage() schemaext.Coverage {
-	coordination := must.Must(ydbcoordination.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
-	streaming := must.Must(ydbstreaming.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
-	return must.Must(schemaext.NewCoverage(schemaext.Desired, append(coordination.KindRecords(), streaming.KindRecords()...), nil))
-}
-
 func TestGenerateCheckpoint_DoesNotTreatIncompleteFeatureSourceAsEmpty(t *testing.T) {
 	c := qt.New(t)
-	ref := ydbcoordination.Ref("", "locks")
+	ref := chschema.RowPolicyRef("", "orders", "tenant")
 	limited := schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "settings were not readable"}
 	schema := &schemamodel.Database{
-		FeatureCoverage: must.Must(ydbcoordination.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete},
-			[]schemaext.SubjectCoverage{{Kind: ydbcoordination.Kind, Subject: ref, Knowledge: limited}})),
-		FeatureObjects: must.Must(schemaext.NewObjects(ydbcoordination.DesiredObject("", "locks", "Locks", ydbcoordination.Spec{}))),
+		Tables: []schemamodel.Table{{StructName: "Order", Name: "orders", Engine: "MergeTree"}},
+		Fields: []schemamodel.Field{{StructName: "Order", Name: "id", Type: "UInt64", Primary: true}},
+		FeatureCoverage: must.Must(chschema.RowPolicyCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete},
+			[]schemaext.SubjectCoverage{{Kind: chschema.RowPolicyKind, Subject: ref, Knowledge: limited}})),
+		FeatureObjects: must.Must(schemaext.NewObjects(schemaext.Object{Ref: ref,
+			Value: &chschema.DesiredRowPolicy{Filter: new("tenant = 1"), Roles: chschema.RoleSelection{All: true}}})),
 	}
-	up, down, err := generateCheckpoint(t.Context(), must.Must(builtin.New()), schema, "ydb")
+	up, down, err := generateCheckpoint(t.Context(), must.Must(builtin.New()), schema, "clickhouse")
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(err, qt.ErrorMatches, `.*requires owner lowering for "unrepresentable" knowledge`)
 	c.Assert(up, qt.Equals, "")
 	c.Assert(down, qt.Equals, "")
-	c.Assert(schema.FeatureCoverage.Lookup(ydbcoordination.Kind, ref), qt.DeepEquals, limited)
+	c.Assert(schema.FeatureCoverage.Lookup(chschema.RowPolicyKind, ref), qt.DeepEquals, limited)
 }
 
 func TestGenerateCheckpointWithDatabaseInfo_SQLServerCaseSensitiveVariants(t *testing.T) {

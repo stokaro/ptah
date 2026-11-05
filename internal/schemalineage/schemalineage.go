@@ -64,9 +64,10 @@ func Derive(db *schemamodel.Database) Result {
 	return DeriveForDialect(db, "")
 }
 
-// DeriveForDialect is [Derive] for bodies written in dialect's SQL, which
-// matters on YDB alone: a YQL body is read by the YQL lexer, where a
-// double-quoted text is a string rather than a name, and a YDB table is a
+// DeriveForDialect is [Derive] for bodies written in dialect's SQL. It
+// matters for a dialect with a lexer of its own, such as an engine whose
+// provider scans its text, and for one that names a table by one path. On
+// YDB a double-quoted text is a string rather than a name, and a table is a
 // path, `dir/sub/t`, which a FROM names as one quoted identifier. The source
 // of an edge is then the table's Ptah name, `dir/sub.t`, the name a view in
 // that directory goes by too, so a view over a view links up. Every other

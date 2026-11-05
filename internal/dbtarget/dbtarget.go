@@ -128,33 +128,6 @@ const (
 	// covered by the servers the other engines name (stokaro/ptah#3885).
 	MySQLDevServer
 	MariaDBDevServer
-	// YDB is a YDB database, reached over gRPC through a ydb:// or ydbs://
-	// URL that names the database. The URL names the server's monitoring
-	// endpoint too, in its monitoring parameter, because that is where the
-	// connection reads the cluster's feature flags, and a server's monitoring
-	// port is as much its own as its gRPC port.
-	//
-	// It has no dev or admin variant, unlike MySQL and Oracle. local-ydb
-	// serves the one database /local and SQL cannot create another, so a
-	// YDB dev, shadow or scratch database is a dev realm the run creates in
-	// the database its URL names (internal/ydbrealm). A test hands this same
-	// address as the dev URL, and the run works in a realm the target's reads
-	// and resets leave alone. A realm is a directory, which needs the
-	// ydb.granular.create_directory right on the database; local-ydb's
-	// anonymous account holds every right, so no second account is needed
-	// either.
-	YDB
-	// YDB251 is a YDB database on a second server, one that runs the 25.1
-	// release line.
-	//
-	// It is an engine of its own because the line is what it is for. 25.1 is
-	// the one YDB line with a published support date, and it lacks what the
-	// current line has: the 64-bit date and time types, a Decimal other than
-	// Decimal(22,9), a default on a 16-bit integer, and vector indexes without
-	// a feature flag. Nothing in an address says which line the server runs,
-	// so a test pointed at YDB_TEST_URL alone would report 25.1 as covered by
-	// a server that is not on it.
-	YDB251
 )
 
 // source is where one engine's address comes from.
@@ -281,14 +254,6 @@ var sources = map[Engine]source{
 		canonical: "MARIADB_DEV_SERVER_URL",
 		scheme:    []string{"mariadb", "mysql"},
 	},
-	YDB: {
-		canonical: "YDB_TEST_URL",
-		scheme:    []string{"ydb", "ydbs"},
-	},
-	YDB251: {
-		canonical: "YDB251_TEST_URL",
-		scheme:    []string{"ydb", "ydbs"},
-	},
 }
 
 // String names the engine as its canonical variable does.
@@ -407,8 +372,6 @@ var engineNames = map[Engine]string{
 	PostgreSQLAlias:   "PostgreSQL database reached through the pooler under another name",
 	MySQLDevServer:    "second MySQL server",
 	MariaDBDevServer:  "second MariaDB server",
-	YDB:               "YDB",
-	YDB251:            "YDB 25.1",
 }
 
 // DriverDSN returns the address in the form a raw database/sql driver parses,
@@ -501,10 +464,6 @@ func driverForm(engine Engine, address string) string {
 		// wire protocol, and a raw pgx caller handed `spanner://` cannot parse
 		// it (stokaro/ptah#1719).
 		return postgresWireURL(address)
-	case YDB, YDB251:
-		// ydb-go-sdk reads grpc:// and grpcs://, the two transports ydb:// and
-		// ydbs:// name.
-		return ydbSDKURL(address)
 	}
 	// Every other engine's driver reads the address as it stands: pgx parses
 	// postgres:// and postgresql://, go-mssqldb parses sqlserver://, and
@@ -526,21 +485,6 @@ func postgresWireURL(address string) string {
 	switch scheme {
 	case "cockroachdb", "yugabytedb", "spanner":
 		return "postgres://" + rest
-	}
-	return address
-}
-
-// ydbSDKURL rewrites a YDB URL to the scheme ydb-go-sdk reads.
-func ydbSDKURL(address string) string {
-	scheme, rest, found := strings.Cut(address, "://")
-	if !found {
-		return address
-	}
-	switch scheme {
-	case "ydb":
-		return "grpc://" + rest
-	case "ydbs":
-		return "grpcs://" + rest
 	}
 	return address
 }
@@ -577,7 +521,7 @@ func Engines() []Engine {
 		PostgreSQL, MySQL, MySQLAdmin, MariaDB, MariaDBAdmin,
 		ClickHouse, SQLServer, CockroachDB, YugabyteDB,
 		MySQLSocket, MariaDBSocket, PostgreSQLAliased, PostgreSQLAlias,
-		MySQLDevServer, MariaDBDevServer, YDB, YDB251,
+		MySQLDevServer, MariaDBDevServer,
 	}
 }
 

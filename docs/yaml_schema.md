@@ -21,6 +21,11 @@ all inputs into one desired schema, deduplicates identical named objects, and
 rejects conflicting definitions. If `--dialect` is omitted, Ptah renders every
 supported dialect. This page documents Ptah's YAML format only.
 
+The keys below that declare a YDB object or setting are claimed by the YDB
+provider, stokaro/ptah-ydb-plugin. Ptah reads them only when a command selects
+the provider; see
+[YDB](site/src/content/docs/databases/ydb.md).
+
 Relative schema-file inputs are confined to the process working directory after
 symbolic-link resolution; pass an absolute pathname for an intentional source
 outside it.
@@ -334,7 +339,7 @@ A YDB table's column families sit under `tables.<table>.column_families`, keyed
 by name. The keys are the attributes of `//ptah:schema:columnfamily`, with the
 same values; `fields` is a list of the columns the family holds. Every other
 dialect refuses a table that declares a column family. See
-[column families](site/src/content/docs/databases/ydb.md#column-families).
+[column families](https://github.com/stokaro/ptah-ydb-plugin#column-families).
 
 ```yaml
 tables:
@@ -355,7 +360,7 @@ name, and each changefeed's consumers under its `consumers` map, keyed by
 name. The keys are the attributes of `//ptah:schema:changefeed` and
 `//ptah:schema:changefeed:consumer`, with the same values; `supported_codecs`
 is a list. Every other dialect refuses a table that declares a changefeed. See
-[changefeeds](site/src/content/docs/databases/ydb.md#changefeeds).
+[changefeeds](https://github.com/stokaro/ptah-ydb-plugin#changefeeds).
 
 ```yaml
 tables:
@@ -532,11 +537,11 @@ rendered for MySQL/MariaDB with dialect-specific trigger bodies.
 - `secrets`: YDB secrets, keyed by name, with `name`, `schema` and
   `value_env`, the environment variable the value comes from. A `value` key is
   refused, so a document never holds a secret's value. See
-  [secrets](site/src/content/docs/databases/ydb.md#secrets).
+  [secrets](https://github.com/stokaro/ptah-ydb-plugin#secrets).
 - `external_data_sources`: YDB external data sources, keyed by name, with
   `name`, `schema`, `source_type`, `location`, `auth_method` and `options`, a
   map of the statement's other options. See
-  [external data sources](site/src/content/docs/databases/ydb.md#external-data-sources-and-external-tables).
+  [external data sources](https://github.com/stokaro/ptah-ydb-plugin#external-data-sources-and-external-tables).
 - `external_tables`: YDB external tables, keyed by name, with `name`,
   `schema`, `data_source`, `location`, `columns` (each a `name`, a `type` and
   `not_null`) and `options`.
@@ -592,5 +597,5 @@ platform group instead.
 Local indexes use `type: bloom_filter`, `bloom_ngram_filter`, or `min_max`.
 Bloom methods accept `false_positive_probability`; the n-gram method also
 accepts `ngram_size` and `case_sensitive`. See the
-[YDB reference](site/src/content/docs/databases/ydb.md#column-tables-and-local-indexes)
+[YDB provider's documentation](https://github.com/stokaro/ptah-ydb-plugin#column-tables)
 for limits, cluster flags and examples.

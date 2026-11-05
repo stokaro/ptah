@@ -102,3 +102,43 @@ func TestResolveEntersNoRealmOutsideItsSchemes(t *testing.T) {
 		})
 	}
 }
+
+// A docker URL, and a URL of an engine whose owner in the context creates
+// dev realms, each get a database Resolve hands out per run, so neither is
+// compared by its text.
+func TestResolvedPerRun_HappyPath(t *testing.T) {
+	for _, rawURL := range []string{
+		"docker://postgres/16/dev",
+		"docker+postgres://_/postgres:17/dev",
+		"owned://host/db",
+		"OWNED://host/db",
+	} {
+		t.Run(rawURL, func(t *testing.T) {
+			c := qt.New(t)
+			owner := &realmOwner{fakeOwner: fakeOwner{engines: []string{"owned"}}, schemes: []string{"owned"}}
+			ctx := devdocker.WithExternal(c.Context(), owner)
+			c.Assert(devdocker.ResolvedPerRun(ctx, rawURL), qt.IsTrue)
+		})
+	}
+}
+
+// Every other URL names the dev database it is: one of a built-in engine, and
+// one of a scheme no owner in the context creates realms for.
+func TestResolvedPerRun_FailurePath(t *testing.T) {
+	for _, rawURL := range []string{"postgres://localhost/dev", "mysql://root@tcp(localhost:3306)/dev", "sqlite://dev.db", "other://host/db", ""} {
+		t.Run(rawURL, func(t *testing.T) {
+			c := qt.New(t)
+			owner := &realmOwner{fakeOwner: fakeOwner{engines: []string{"owned"}}, schemes: []string{"owned"}}
+			ctx := devdocker.WithExternal(c.Context(), owner)
+			c.Assert(devdocker.ResolvedPerRun(ctx, rawURL), qt.IsFalse)
+		})
+	}
+}
+
+// Without an owner in the context no URL but a docker one is resolved per
+// run: the scheme alone says nothing about realms.
+func TestResolvedPerRun_NoOwnerInTheContext(t *testing.T) {
+	c := qt.New(t)
+	c.Assert(devdocker.ResolvedPerRun(c.Context(), "owned://host/db"), qt.IsFalse)
+	c.Assert(devdocker.ResolvedPerRun(c.Context(), "docker://postgres/16/dev"), qt.IsTrue)
+}

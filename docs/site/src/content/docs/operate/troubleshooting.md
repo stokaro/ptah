@@ -373,6 +373,9 @@ and `command` fields, and under `--log-format json` on the stream the command
 writes its log to. Their warning ends with
 `PTAH_LOG_LEVEL=debug or --log-level debug lists them`.
 
+`ptah mcp` reports each tool call's warnings in that call's result rather than
+on stderr; see [MCP tools](../../reference/mcp-tools/#warnings-a-call-raises).
+
 The strict compatibility profile, `PTAH_ATLAS_STRICT_COMPAT=1`, refuses both
 variables, as the community binary has neither, and its warning says where the
 list is:

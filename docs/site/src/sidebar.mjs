@@ -66,6 +66,7 @@ export const sidebar = [
     collapsed: true,
     items: [
       { slug: 'start/overview', label: 'Overview' },
+      { slug: 'start/ecosystem' },
       { slug: 'start/install' },
       { slug: 'start/install-options' },
       { slug: 'start/quick-start' },

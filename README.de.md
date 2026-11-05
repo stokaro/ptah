@@ -39,7 +39,6 @@
   &nbsp;&nbsp;
   <a href="https://docs.ptah.run/edge/databases/distributed/" title="Spanner"><img src="docs/assets/engines/spanner.svg" alt="Spanner" height="32" width="32"></a>
   &nbsp;&nbsp;
-  <a href="https://docs.ptah.run/edge/databases/ydb/" title="YDB"><img src="docs/assets/engines/ydb.svg" alt="YDB" height="32" width="32"></a>
 </p>
 
 Ptah verwaltet Änderungen an Datenbankschemas und persistentem Inferenzzustand.
@@ -105,6 +104,15 @@ irm https://ptah.run/install.ps1 | iex
 Die [Installationsanleitung](https://docs.ptah.run/edge/start/install/)
 erklärt feste Versionsauswahl, Signaturprüfung, Download ohne
 Ausführung und den Build aus dem Quellcode.
+
+YDB wird von einem ausführbaren Provider bedient, der separat installiert wird:
+
+```bash
+ptah providers install ydb
+```
+
+Ein Befehl, der eine `ydb://`-URL nennt, verwendet ihn danach; siehe
+[YDB-Provider konfigurieren](https://docs.ptah.run/edge/extend/providers/ydb/).
 
 ## Ptah mit SQLite ausprobieren
 
@@ -176,6 +184,8 @@ Die folgenden Anleitungen sind auf Englisch:
 
 - [Einen Ablauf wählen](https://docs.ptah.run/edge/start/choose-a-workflow/):
   versionierte Migrationen und direkte Schemaänderungen vergleichen.
+- [Das Ptah-Ökosystem ansehen](https://docs.ptah.run/edge/start/ecosystem/):
+  herausfinden, welche öffentlichen Repositories ein Ablauf braucht.
 - [Eine laufende Datenbank untersuchen](https://docs.ptah.run/edge/direct/inspect/)
   oder [Schemas vergleichen und Drift erkennen](https://docs.ptah.run/edge/direct/compare-and-drift/).
 - [Migrationsintegrität prüfen](https://docs.ptah.run/edge/versioned/integrity-and-safety/)

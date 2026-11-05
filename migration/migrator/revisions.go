@@ -2253,9 +2253,6 @@ func (m *Migrator) failMigrationRevisionWithMode(
 	if handled, err := m.failProviderRevision(recordCtx, failed, applied, txMode); handled {
 		return err
 	}
-	if m.grammar().hasUnits() {
-		return m.ydbFailureRecord(failed, applied).run(recordCtx)
-	}
 	query, args := m.failedRevisionStatement(failed, applied)
 	return executeSQLOn(recordCtx, m.conn, query, args...)
 }
@@ -3514,7 +3511,7 @@ func (m *Migrator) resumeStatementsOnSession(
 		if err := m.markMigrationStatementInFlight(ctx, migration, startedAt, event, direction); err != nil {
 			return fmt.Errorf("failed to record resumed %s %d at statement %d: %w", operation, migration.Version, event.Index, err)
 		}
-		if err := executeBoundedStatement(ctx, executionConn, stmt); err != nil {
+		if err := executeSQLOn(ctx, executionConn, stmt); err != nil {
 			return m.failResumedMigrationDirection(ctx, migration, startedAt, err, event, direction)
 		}
 		if err := m.checkpointMigrationRevision(ctx, migration, startedAt, event, direction); err != nil {

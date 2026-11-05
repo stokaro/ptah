@@ -2,9 +2,9 @@
 //
 // The URL's scheme decides the engine, the way it decides the dialect for
 // every other command. A scheme an executable provider the invocation selected
-// serves opens that provider's embedding store (ADR 0032). Otherwise a
-// PostgreSQL URL, or a keyword/value DSN with no scheme, opens the pgvector
-// backend, and a ydb:// or ydbs:// URL opens the YDB backend. `ptah inference`
+// serves opens that provider's embedding store (ADR 0032), as a ydb:// URL
+// opens the YDB provider's. Otherwise a PostgreSQL URL, or a keyword/value DSN
+// with no scheme, opens the pgvector backend. `ptah inference`
 // and the inference tools of `ptah mcp` both open their database here, so the
 // two surfaces accept and refuse the same URLs in the same words.
 package embedconnect
@@ -22,7 +22,6 @@ import (
 	"ptah.run/internal/embedgen"
 	"ptah.run/internal/embedpg"
 	"ptah.run/internal/embedrpc"
-	"ptah.run/internal/embedydb"
 	"ptah.run/internal/providerhost"
 	"ptah.run/internal/providerselect"
 )
@@ -47,15 +46,15 @@ func RefuseAnotherEngine(ctx context.Context, dbURL string) error {
 	}
 	dialect, scheme := dialectOf(dbURL)
 	switch dialect {
-	case "", platform.Postgres, platform.YDB:
+	case "", platform.Postgres:
 		return nil
 	}
 	// The dialect is named once. Saying it mid-sentence as well would put the
 	// same answer in two places, and neither could then be measured.
 	return fmt.Errorf(
-		"ptah inference works against PostgreSQL with pgvector, against YDB, and against a provider engine "+
-			"with an embedding store, and %q names another engine: a generation's run state and its vectors "+
-			"need one of those, so there is nothing here to run against %s",
+		"ptah inference works against PostgreSQL with pgvector and against a provider engine with an "+
+			"embedding store, such as YDB, and %q names another engine: a generation's run state and its "+
+			"vectors need one of those, so there is nothing here to run against %s",
 		scheme+"://", dialect)
 }
 
@@ -68,13 +67,6 @@ func Open(ctx context.Context, dbURL string) (embedbackend.Backend, error) {
 	// the interface is not a nil interface.
 	if providerServes(ctx, dbURL) {
 		backend, err := openProvider(ctx, dbURL)
-		if err != nil {
-			return nil, err
-		}
-		return backend, nil
-	}
-	if dialect, _ := dialectOf(dbURL); dialect == platform.YDB {
-		backend, err := embedydb.Open(ctx, dbURL)
 		if err != nil {
 			return nil, err
 		}
@@ -123,10 +115,8 @@ func providerServes(ctx context.Context, dbURL string) bool {
 //
 // A provider the invocation selected answers for its engine, and is the only
 // way to describe an engine that only a provider serves. Without one, the
-// representation decides the engine, because each built-in engine names a type
-// only it has: `vector`, `halfvec` and `sparsevec` are pgvector's, and `float`
-// is YDB's element type. A specification naming neither is refused by the
-// PostgreSQL derivation, which names the types it knows.
+// PostgreSQL derivation answers, and refuses a representation other than
+// pgvector's `vector`, `halfvec` and `sparsevec`, naming the types it knows.
 func TargetObjects(ctx context.Context, spec embedgen.Spec) (embedgen.TargetObjects, error) {
 	if started := providerselect.StartedFrom(ctx); started != nil {
 		store, err := started.EmbeddingStore()
@@ -134,9 +124,6 @@ func TargetObjects(ctx context.Context, spec embedgen.Spec) (embedgen.TargetObje
 			return embedgen.TargetObjects{}, err
 		}
 		return embedrpc.TargetObjects(ctx, store.Client, store.Engine, spec)
-	}
-	if strings.EqualFold(strings.TrimSpace(spec.Target.Representation), embedydb.FloatRepresentation) {
-		return embedydb.TargetObjects(spec)
 	}
 	return spec.TargetObjects()
 }

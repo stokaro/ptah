@@ -8,7 +8,6 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/postgres/pgtable"
@@ -57,18 +56,6 @@ func TestGetOrderedCreateStatements_ALoggedTableRendersNoKeyword(t *testing.T) {
 			c.Assert(rendered, qt.Not(qt.Contains), "UNLOGGED")
 		})
 	}
-}
-
-// TestGetOrderedCreateStatements_UnloggedTableOnYDB_FailurePath refuses the
-// declaration on YDB, whose renderer refuses what it cannot hold.
-func TestGetOrderedCreateStatements_UnloggedTableOnYDB_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
-	statements, err := builtin.GetOrderedCreateStatements(unloggedDatabase(true), "ydb")
-
-	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(err, qt.ErrorMatches, `.*UNLOGGED is PostgreSQL's; YDB has no unlogged table.*`)
-	c.Assert(statements, qt.IsNil)
 }
 
 // TestGetOrderedCreateStatements_ADialectWithoutUnloggedTablesOmitsTheKeyword

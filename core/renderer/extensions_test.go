@@ -167,7 +167,7 @@ func TestExtensions_RefuseIdentityMutation(t *testing.T) {
 
 func TestExtensions_EmptyRegistryRefusesClaimedCapabilities(t *testing.T) {
 	c := qt.New(t)
-	_, err := (renderer.Extensions{}).Render(renderer.ExtensionContext{Target: "other", Capabilities: capability.YDB262()}, ast.AlterExtension, &samplePayload{ID: sampleKind})
+	_, err := (renderer.Extensions{}).Render(renderer.ExtensionContext{Target: "other", Capabilities: capability.Postgres18()}, ast.AlterExtension, &samplePayload{ID: sampleKind})
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 }
 

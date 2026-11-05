@@ -76,13 +76,12 @@ type DataDiff struct {
 	// otherwise take: declared text for an Oracle DATE or TIMESTAMP column. A
 	// column the map does not name renders from its Go value alone.
 	//
-	// On YDB it holds the column's YDB type as the table has it on the target
-	// -- Utf8, Int32, Timestamp64, Decimal(10,2) -- because YQL types every
-	// literal, and [Render] writes each value in that type. The type a
-	// declaration lands on depends on the target's release line, so the caller
-	// resolves it: from the live table where it exists, and otherwise through
-	// the target's capabilities. On YDB a column the map does not name is an
-	// error.
+	// For an owner that writes typed literals, as an engine that types every
+	// literal needs, it holds each column's type as the table has it on the
+	// target, and [Render] writes each value in that type. The type a
+	// declaration lands on can depend on the target's release line, so the
+	// caller resolves it: from the live table where it exists, and otherwise
+	// through the target's capabilities.
 	ColumnTypes map[string]string
 	Inserts     []Row
 	Updates     []RowUpdate

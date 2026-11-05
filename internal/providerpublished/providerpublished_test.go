@@ -1,8 +1,8 @@
 package providerpublished_test
 
 import (
-	"fmt"
 	"slices"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -20,21 +20,23 @@ import (
 // ydbProvider is the official provider the YDB record was taken from.
 const ydbProvider = "github.com/stokaro/ptah-ydb-plugin"
 
-// withoutYDB is the bundled runtime as it is once the bundle no longer
-// carries the YDB engine: it resolves neither YDB spelling and publishes none
-// of the YDB owner's rules. Every other answer is the bundle's.
-type withoutYDB struct{ *engine.Runtime }
+// servingYDB is a runtime that serves the ydb target itself, under both
+// spellings, and publishes one rule of its own for it: the shape of a runtime
+// a started YDB provider extends.
+type servingYDB struct{ *engine.Runtime }
 
-func (w withoutYDB) ResolveTarget(name string) (schemaext.TargetSelection, error) {
-	if name == "ydb" || name == "ydbs" {
-		return schemaext.TargetSelection{}, fmt.Errorf("%w: %q", ptaherr.ErrUnsupportedDialect, name)
-	}
-	return w.Runtime.ResolveTarget(name)
+func newServingYDB(c *qt.C) servingYDB {
+	c.Helper()
+	runtime, err := engine.New(engine.Provider{
+		ID:      ydbProvider,
+		Targets: []engine.Target{{Name: "ydb", Aliases: []string{"ydbs"}}},
+	})
+	c.Assert(err, qt.IsNil)
+	return servingYDB{runtime}
 }
 
-func (w withoutYDB) LintRules(target string) ([]lintext.Rule, error) {
-	rules, err := w.Runtime.LintRules(target)
-	return slices.DeleteFunc(rules, func(rule lintext.Rule) bool { return slices.Equal(rule.Targets, []string{"ydb"}) }), err
+func (servingYDB) LintRules(target string) ([]lintext.Rule, error) {
+	return []lintext.Rule{{Code: "YD101", Title: "served by the runtime", Severity: lintext.Error, Targets: []string{"ydb"}}}, nil
 }
 
 // published is what a rule list says on the documentation page.
@@ -68,56 +70,61 @@ func TestDescriptions_RecordTheOfficialYDBProvider(t *testing.T) {
 	c.Assert(descriptions[0].GetEngines()[0].GetAliases(), qt.DeepEquals, []string{"ydbs"})
 }
 
-// The record speaks for YDB only where the runtime does not serve it. While
-// the bundle carries the YDB owner, the record and the owner publish the same
-// rule catalog, so the page reads the same whichever is its source.
-func TestLintRules_RecordAgreesWithTheBundledYDBOwner(t *testing.T) {
+// The record speaks for YDB, which the bundle does not serve: every rule it
+// lists targets ydb. Over a runtime that serves YDB it speaks for nothing.
+func TestLintRules_RecordSpeaksForAnEngineTheBundleDoesNotServe(t *testing.T) {
 	c := qt.New(t)
-	bundled := builtintest.Runtime()
-	own, err := bundled.LintRules("ydb")
+
+	recorded, err := providerpublished.LintRules(builtintest.Runtime())
+	c.Assert(err, qt.IsNil)
+	served, err := providerpublished.LintRules(newServingYDB(c))
 	c.Assert(err, qt.IsNil)
 
-	served, err := providerpublished.LintRules(bundled)
-	c.Assert(err, qt.IsNil)
-	recorded, err := providerpublished.LintRules(withoutYDB{bundled})
-	c.Assert(err, qt.IsNil)
-
-	c.Assert(served, qt.HasLen, 0)
 	c.Assert(recorded, qt.Not(qt.HasLen), 0)
-	c.Assert(publishedOf(recorded), qt.DeepEquals, publishedOf(own))
+	for _, rule := range recorded {
+		c.Assert(rule.Targets, qt.DeepEquals, []string{"ydb"}, qt.Commentf("%s", rule.Code))
+	}
+	c.Assert(served, qt.HasLen, 0)
 }
 
-// A runtime without the YDB owner, documented through the record, lists the
-// rules the bundle lists today, under either YDB spelling as well as in the
-// whole catalog.
+// The bundle, documented through the record, lists the recorded rules under
+// either YDB spelling, and its own rules with the recorded ones in the whole
+// catalog, ordered by code.
 func TestLintRuntime_RestoresTheRulesOfAnEngineTheRuntimeDoesNotServe(t *testing.T) {
 	bundled := builtintest.Runtime()
-	for _, row := range []struct{ name, target, bundledTarget string }{
-		{"every rule", "", ""}, {"the engine ID", "ydb", "ydb"}, {"an alias", "ydbs", "ydb"},
+	recorded, err := providerpublished.LintRules(bundled)
+	qt.New(t).Assert(err, qt.IsNil)
+	own, err := bundled.LintRules("")
+	qt.New(t).Assert(err, qt.IsNil)
+	every := append(slices.Clone(own), recorded...)
+	slices.SortFunc(every, func(a, b lintext.Rule) int { return strings.Compare(a.Code, b.Code) })
+	for _, row := range []struct {
+		name, target string
+		want         []lintext.Rule
+	}{
+		{"every rule", "", every}, {"the engine ID", "ydb", recorded}, {"an alias", "ydbs", recorded},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
-			want, err := bundled.LintRules(row.bundledTarget)
-			c.Assert(err, qt.IsNil)
-			runtime, err := providerpublished.LintRuntime(withoutYDB{bundled}, withoutYDB{bundled})
+			runtime, err := providerpublished.LintRuntime(bundled, bundled)
 			c.Assert(err, qt.IsNil)
 
 			got, err := runtime.LintRules(row.target)
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(publishedOf(got), qt.DeepEquals, publishedOf(want))
+			c.Assert(publishedOf(got), qt.DeepEquals, publishedOf(row.want))
 		})
 	}
 }
 
-// Over a runtime that serves YDB the record adds nothing, so the bundle's own
+// Over a runtime that serves YDB the record adds nothing, so the runtime's own
 // registration stays the source.
 func TestLintRuntime_AddsNothingWhereTheRuntimeServesTheEngine(t *testing.T) {
 	c := qt.New(t)
-	bundled := builtintest.Runtime()
-	want, err := bundled.LintRules("")
+	serving := newServingYDB(c)
+	want, err := serving.LintRules("")
 	c.Assert(err, qt.IsNil)
-	runtime, err := providerpublished.LintRuntime(bundled, bundled)
+	runtime, err := providerpublished.LintRuntime(serving, serving)
 	c.Assert(err, qt.IsNil)
 
 	got, err := runtime.LintRules("")
@@ -127,12 +134,11 @@ func TestLintRuntime_AddsNothingWhereTheRuntimeServesTheEngine(t *testing.T) {
 }
 
 // A rule the runtime publishes under a code the record publishes too is
-// refused rather than listed twice: here the runtime keeps the YDB owner's
-// rules while saying it does not serve YDB.
+// refused rather than listed twice: here the runtime publishes a YD rule while
+// the resolver says nothing serves YDB.
 func TestLintRuntime_FailurePath_ACodeBothPublish(t *testing.T) {
 	c := qt.New(t)
-	bundled := builtintest.Runtime()
-	runtime, err := providerpublished.LintRuntime(bundled, withoutYDB{bundled})
+	runtime, err := providerpublished.LintRuntime(newServingYDB(c), builtintest.Runtime())
 	c.Assert(err, qt.IsNil)
 
 	rules, err := runtime.LintRules("")
@@ -142,20 +148,15 @@ func TestLintRuntime_FailurePath_ACodeBothPublish(t *testing.T) {
 	c.Assert(rules, qt.IsNil)
 }
 
-// Over a runtime that serves YDB the record claims no directive. Over one
-// that does not, every directive and attribute it claims is one the bundled
-// catalog accepts: the record names nothing the bundle does not, so the
-// annotation schema and the language server lose a YDB directive at the flip
-// only where the provider does not claim it.
-func TestAnnotationSet_ClaimsWhatTheBundledCatalogAccepts(t *testing.T) {
+// Over a runtime that serves YDB the record claims no directive. Over the
+// bundle, which does not, the record claims directives of its own, each owned
+// by the YDB provider.
+func TestAnnotationSet_ClaimsTheDirectivesOfAnEngineTheBundleDoesNotServe(t *testing.T) {
 	c := qt.New(t)
-	bundled := builtintest.Runtime()
-	own, err := annotationmeta.NewCatalog(bundled.Annotations())
-	c.Assert(err, qt.IsNil)
 
-	served, err := providerpublished.AnnotationSet(bundled)
+	served, err := providerpublished.AnnotationSet(newServingYDB(c))
 	c.Assert(err, qt.IsNil)
-	recorded, err := providerpublished.AnnotationSet(withoutYDB{bundled})
+	recorded, err := providerpublished.AnnotationSet(builtintest.Runtime())
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(served.Selected(), qt.IsTrue)
@@ -164,27 +165,17 @@ func TestAnnotationSet_ClaimsWhatTheBundledCatalogAccepts(t *testing.T) {
 	c.Assert(recorded.Directives(), qt.Not(qt.HasLen), 0)
 	for _, directive := range recorded.Directives() {
 		owner, _ := recorded.Owner(directive.Name)
-		c.Assert(owner, qt.Equals, ydbProvider)
-		_, declared := own.Lookup(directive.Name)
-		c.Assert(declared, qt.IsTrue, qt.Commentf("%s", directive.Name))
-		for _, attribute := range directive.Attributes {
-			c.Assert(own.AllowsAttribute(directive.Name, attribute.Name), qt.IsTrue, qt.Commentf("%s %s", directive.Name, attribute.Name))
-		}
+		c.Assert(owner, qt.Equals, ydbProvider, qt.Commentf("%s", directive.Name))
 	}
 	c.Assert(recorded.AttributedDirectives(), qt.Not(qt.HasLen), 0)
-	for _, name := range recorded.AttributedDirectives() {
-		for _, attribute := range recorded.Attributes(name) {
-			c.Assert(own.AllowsAttribute(name, attribute.Name), qt.IsTrue, qt.Commentf("%s %s", name, attribute.Name))
-		}
-	}
 }
 
-// A catalog of a runtime without the YDB owner, beside the record, knows the
-// directives the record claims, as `ptah schema annotations` and the language
-// server build theirs.
+// A catalog of the bundle, which does not serve YDB, beside the record, knows
+// the directives the record claims, as `ptah schema annotations` and the
+// language server build theirs.
 func TestAnnotationSet_JoinsTheCatalogOfARuntimeWithoutTheEngine(t *testing.T) {
 	c := qt.New(t)
-	recorded, err := providerpublished.AnnotationSet(withoutYDB{builtintest.Runtime()})
+	recorded, err := providerpublished.AnnotationSet(builtintest.Runtime())
 	c.Assert(err, qt.IsNil)
 
 	catalog, err := annotationmeta.NewCatalog(annotation.None(), recorded)
@@ -202,7 +193,7 @@ func TestAnnotationSet_JoinsTheCatalogOfARuntimeWithoutTheEngine(t *testing.T) {
 // provider to select: only a started provider reads its own directives.
 func TestAnnotationSet_FailurePath_ReadingADeclaration(t *testing.T) {
 	c := qt.New(t)
-	recorded, err := providerpublished.AnnotationSet(withoutYDB{builtintest.Runtime()})
+	recorded, err := providerpublished.AnnotationSet(builtintest.Runtime())
 	c.Assert(err, qt.IsNil)
 
 	contributions, err := recorded.Reader().Decode(annotation.Declaration{Directive: recorded.Directives()[0].Name})

@@ -605,8 +605,12 @@ func principalChangeSubject(engine string, kinds commonKinds, change *protocol.C
 		if err := validateDeclaredRole(kinds, role); err != nil {
 			return nil, true, err
 		}
-		if (operation.CreateRole.GetPassword() != "") != role.GetPasswordDeclared() {
+		creation := operation.CreateRole
+		if (creation.GetPassword() != "" || creation.GetPasswordInput() != nil) != role.GetPasswordDeclared() {
 			return nil, true, commonObjectError("a role carries a password exactly when it declares one")
+		}
+		if creation.GetPassword() != "" && creation.GetPasswordInput() != nil {
+			return nil, true, commonObjectError("a password travels as a value or as an input, not as both")
 		}
 		return named(engine, roleReferenceKind(role), "", role.GetName()), true, nil
 	case *protocol.CommonObjectChange_AlterRole:
@@ -660,8 +664,11 @@ func roleAlterationSubject(engine string, kinds commonKinds, alteration *protoco
 	if err := validateChangedAttributes(alteration.GetChanged(), roleAttributes); err != nil {
 		return nil, err
 	}
-	if alteration.GetPassword() != "" && !slices.Contains(alteration.GetChanged(), "password") {
+	if (alteration.GetPassword() != "" || alteration.GetPasswordInput() != nil) && !slices.Contains(alteration.GetChanged(), "password") {
 		return nil, commonObjectError("a password travels only when it changes")
+	}
+	if alteration.GetPassword() != "" && alteration.GetPasswordInput() != nil {
+		return nil, commonObjectError("a password travels as a value or as an input, not as both")
 	}
 	return named(engine, roleReferenceKind(role), "", role.GetName()), nil
 }
