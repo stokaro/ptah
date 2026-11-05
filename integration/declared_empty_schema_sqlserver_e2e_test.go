@@ -225,7 +225,7 @@ func TestDeclaredEmptySchemaSurvivesASQLDescriptionOnSQLServerE2E(t *testing.T) 
 			target, db := declaredSQLServerDatabase(c)
 			declaredSQLServerExec(c, db, "CREATE SCHEMA es_app")
 
-			read := runPtahIn(c, append([]string{"schema", "inspect", "--db-url", target, "--format", "sql"}, test.selection...)...)
+			read := runPtahIn(c, append([]string{"db", "read", "--db-url", target}, test.selection...)...)
 
 			c.Assert(read.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", read.Stderr))
 			c.Assert(read.Stdout, qt.Contains, test.want)
