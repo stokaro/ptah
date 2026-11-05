@@ -19,6 +19,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/dbreset"
 	"ptah.run/internal/pgdefaultacl"
+	"ptah.run/internal/pgschemastate"
 	"ptah.run/internal/pgsystemschema"
 	"ptah.run/internal/serverobjects"
 	"ptah.run/internal/sqlident"
@@ -547,18 +548,11 @@ func postgresDatabaseCleanupScope(
 	}
 }
 
-type postgresSchemaPrivilege struct {
-	grantee     string
-	privilege   string
-	grantOption bool
-}
-
+// postgresSchemaMetadata is a schema's owner, access list and comment, and
+// whether the schema exists.
 type postgresSchemaMetadata struct {
-	exists           bool
-	owner            string
-	aclIsDefault     bool
-	commentStatement string
-	privileges       []postgresSchemaPrivilege
+	exists bool
+	state  dbreset.SchemaState
 }
 
 type postgresDatabaseCleanupPlan struct {
@@ -568,8 +562,12 @@ type postgresDatabaseCleanupPlan struct {
 	// the root schema: the owner, grants and comment the cleanup restores if it
 	// drops the schema. See [PostgreSQLWriter.executeDatabaseRealmCleanup].
 	publicMetadata postgresSchemaMetadata
-	schemas        []string
-	objects        []postgresCleanupObject
+	// claimed are the schema states the dev database's claim recorded; see
+	// [dbreset.Kept]. A schema the cleanup empties in place is returned to its
+	// state, and one it drops is created again with it.
+	claimed []dbreset.SchemaState
+	schemas []string
+	objects []postgresCleanupObject
 	// keptExtensions are the extensions the cleanup leaves installed: the
 	// server's own and the ones the caller asked to keep.
 	keptExtensions []string
@@ -1818,7 +1816,7 @@ func (w *PostgreSQLWriter) DropAllTables(ctx context.Context) error {
 //
 // kept.DefaultPrivileges are returned to what they were, the global ones
 // included; see [PostgreSQLWriter.collectDefaultPrivilegeStatements].
-// kept.Schemas is a realm cleanup's and is not read.
+// kept.Schemas and kept.SchemaStates are a realm cleanup's and are not read.
 //
 // A dev database is the caller, as for [PostgreSQLWriter.DropDatabaseRealmKeeping]:
 // an extension it held before the run is its environment, and the pinned
@@ -1864,6 +1862,13 @@ func (w *PostgreSQLWriter) DropDatabaseRealm(ctx context.Context) error {
 // it would drop every default set in it, and setting them again needs the
 // rights of each grantor.
 //
+// kept.SchemaStates are what the root schema and "public" held at the claim.
+// A schema the cleanup drops is created again with its state, and one it
+// empties in place is returned to it, so what a run changed on the schema
+// itself -- its owner, a privilege, its comment -- does not reach the next
+// run. A schema the claim recorded nothing for is created again as it was
+// when the cleanup started.
+//
 // kept.Server says whose server the database is on. A cleanup on a
 // [dbreset.NamedServer], the zero value, refuses the server's default user
 // database; one on a [dbreset.OwnedServer] cleans it too. A template or a
@@ -1885,6 +1890,36 @@ func (w *PostgreSQLWriter) DropDatabaseRealmKeeping(ctx context.Context, kept db
 		return w.returnToStartingPoint(ctx, kept)
 	}
 	return w.dropDatabaseRealm(ctx, kept)
+}
+
+// SchemaStates reads the owner, access list and comment of the schemas a
+// realm cleanup keeps: the configured root schema and "public", whichever of
+// them exist. A dev database's claim records them, and every cleanup of the
+// run returns the schemas to them; see [dbreset.Kept].
+//
+// It reads nothing, and answers no states, on a connection without
+// [capability.PostgresCatalogFunctions], whose catalog has PostgreSQL's shape
+// but not its functions. The Spanner emulator behind PGAdapter 0.56.1 answers
+// pg_get_userbyid with SQLSTATE 42883, so without this check the claim fails
+// there on a dev database it takes on every other engine.
+func (w *PostgreSQLWriter) SchemaStates(ctx context.Context) ([]dbreset.SchemaState, error) {
+	if w.db == nil {
+		return nil, fmt.Errorf("no database connection")
+	}
+	if !w.caps.Has(capability.PostgresCatalogFunctions) {
+		return nil, nil
+	}
+	var states []dbreset.SchemaState
+	for _, schema := range slices.Compact([]string{w.schema, "public"}) {
+		metadata, err := capturePostgresSchemaMetadata(ctx, w.db, schema)
+		if err != nil {
+			return nil, err
+		}
+		if metadata.exists {
+			states = append(states, metadata.state)
+		}
+	}
+	return states, nil
 }
 
 // DefaultPrivilegeBaseline reads the default privileges scope names, for a
@@ -2487,13 +2522,13 @@ func (w *PostgreSQLWriter) planDatabaseRealmCleanup(
 			return postgresDatabaseCleanupPlan{}, err
 		}
 	}
-	rootMetadata, err := capturePostgresSchemaMetadata(ctx, tx, w.schema)
+	rootMetadata, err := claimedPostgresSchemaMetadata(ctx, tx, kept.SchemaStates, w.schema)
 	if err != nil {
 		return postgresDatabaseCleanupPlan{}, err
 	}
 	var publicMetadata postgresSchemaMetadata
 	if w.schema != "public" {
-		publicMetadata, err = capturePostgresSchemaMetadata(ctx, tx, "public")
+		publicMetadata, err = claimedPostgresSchemaMetadata(ctx, tx, kept.SchemaStates, "public")
 		if err != nil {
 			return postgresDatabaseCleanupPlan{}, err
 		}
@@ -2539,6 +2574,7 @@ func (w *PostgreSQLWriter) planDatabaseRealmCleanup(
 		capabilities:          capabilities,
 		rootMetadata:          rootMetadata,
 		publicMetadata:        publicMetadata,
+		claimed:               kept.SchemaStates,
 		schemas:               schemas,
 		objects:               objects,
 		keptExtensions:        keptExtensions,
@@ -2594,6 +2630,13 @@ func (w *PostgreSQLWriter) executeDatabaseRealmCleanup(
 	}
 	if !slices.Contains(inPlace, w.schema) {
 		if err := restorePostgresSchema(ctx, tx, w.schema, plan.rootMetadata); err != nil {
+			return nil, err
+		}
+	}
+	// A schema emptied in place keeps what the run changed on it unless it is
+	// returned to its claimed state, as one dropped is created again with it.
+	for _, schema := range inPlace {
+		if err := returnPostgresSchema(ctx, tx, plan.claimed, schema); err != nil {
 			return nil, err
 		}
 	}
@@ -2704,27 +2747,38 @@ func queryUserSchemas(ctx context.Context, tx cleanupConn, query string) ([]stri
 	return schemas, nil
 }
 
-func capturePostgresSchemaMetadata(
+// claimedPostgresSchemaMetadata is schema as the dev database's claim recorded
+// it in claimed, and as it is now when the claim recorded nothing for it: a
+// cleanup with no claim behind it, or a schema the claim did not find.
+func claimedPostgresSchemaMetadata(
 	ctx context.Context,
-	tx *sql.Tx,
+	q cleanupConn,
+	claimed []dbreset.SchemaState,
 	schema string,
 ) (postgresSchemaMetadata, error) {
-	var metadata postgresSchemaMetadata
-	err := tx.QueryRowContext(ctx, `
+	if position := slices.IndexFunc(claimed, func(state dbreset.SchemaState) bool { return state.Name == schema }); position >= 0 {
+		return postgresSchemaMetadata{exists: true, state: claimed[position]}, nil
+	}
+	return capturePostgresSchemaMetadata(ctx, q, schema)
+}
+
+func capturePostgresSchemaMetadata(
+	ctx context.Context,
+	q cleanupConn,
+	schema string,
+) (postgresSchemaMetadata, error) {
+	state := dbreset.SchemaState{Name: schema}
+	err := q.QueryRowContext(ctx, `
 		SELECT
 			pg_get_userbyid(n.nspowner),
 			n.nspacl IS NULL,
-			format(
-				'COMMENT ON SCHEMA %I IS %L',
-				n.nspname,
-				obj_description(n.oid, 'pg_namespace')
-			)
+			COALESCE(obj_description(n.oid, 'pg_namespace'), '')
 		FROM pg_namespace n
 		WHERE n.nspname = $1
 	`, schema).Scan(
-		&metadata.owner,
-		&metadata.aclIsDefault,
-		&metadata.commentStatement,
+		&state.Owner,
+		&state.DefaultAccess,
+		&state.Comment,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return postgresSchemaMetadata{}, nil
@@ -2736,12 +2790,11 @@ func capturePostgresSchemaMetadata(
 			err,
 		)
 	}
-	metadata.exists = true
-	if metadata.aclIsDefault {
-		return metadata, nil
+	if state.DefaultAccess {
+		return postgresSchemaMetadata{exists: true, state: state}, nil
 	}
 
-	rows, err := tx.QueryContext(ctx, `
+	rows, err := q.QueryContext(ctx, `
 		SELECT
 			CASE acl.grantee
 				WHEN 0 THEN 'PUBLIC'
@@ -2764,15 +2817,15 @@ func capturePostgresSchemaMetadata(
 	defer rows.Close()
 
 	for rows.Next() {
-		var privilege postgresSchemaPrivilege
-		if err := rows.Scan(&privilege.grantee, &privilege.privilege, &privilege.grantOption); err != nil {
+		var privilege dbreset.SchemaPrivilege
+		if err := rows.Scan(&privilege.Grantee, &privilege.Privilege, &privilege.GrantOption); err != nil {
 			return postgresSchemaMetadata{}, fmt.Errorf(
 				"failed to scan root schema %q privilege: %w",
 				schema,
 				err,
 			)
 		}
-		metadata.privileges = append(metadata.privileges, privilege)
+		state.Privileges = append(state.Privileges, privilege)
 	}
 	if err := rows.Err(); err != nil {
 		return postgresSchemaMetadata{}, fmt.Errorf(
@@ -2781,10 +2834,10 @@ func capturePostgresSchemaMetadata(
 			err,
 		)
 	}
-	if err := validatePostgresSchemaPrivileges(metadata.privileges); err != nil {
+	if err := validatePostgresSchemaPrivileges(state.Privileges); err != nil {
 		return postgresSchemaMetadata{}, err
 	}
-	return metadata, nil
+	return postgresSchemaMetadata{exists: true, state: state}, nil
 }
 
 func dropPostgresUserSchemas(ctx context.Context, tx *sql.Tx, schemas []string) error {
@@ -2827,76 +2880,47 @@ func restorePostgresSchema(
 	schema string,
 	metadata postgresSchemaMetadata,
 ) error {
-	// #nosec G202 -- Schema and owner identifiers are quoted through sqlident.
-	statement := "CREATE SCHEMA " + quoteIdent(schema)
-	if metadata.exists {
-		statement += " AUTHORIZATION " + quoteIdent(metadata.owner)
-	}
-	if _, err := tx.ExecContext(ctx, statement); err != nil {
-		return fmt.Errorf("failed to recreate schema %q: %w", schema, err)
-	}
 	if !metadata.exists {
+		// #nosec G202 -- The schema identifier is quoted through sqlident.
+		if _, err := tx.ExecContext(ctx, "CREATE SCHEMA "+quoteIdent(schema)); err != nil {
+			return fmt.Errorf("failed to recreate schema %q: %w", schema, err)
+		}
 		return nil
 	}
-	if !metadata.aclIsDefault {
-		if err := restorePostgresSchemaPrivileges(ctx, tx, schema, metadata); err != nil {
-			return err
-		}
-	}
-	if _, err := tx.ExecContext(ctx, metadata.commentStatement); err != nil {
-		return fmt.Errorf("failed to restore schema %q comment: %w", schema, err)
-	}
-	return nil
-}
-
-func restorePostgresSchemaPrivileges(
-	ctx context.Context,
-	tx *sql.Tx,
-	schema string,
-	metadata postgresSchemaMetadata,
-) error {
-	grantees := []string{"PUBLIC", metadata.owner}
-	for _, privilege := range metadata.privileges {
-		grantees = appendUniqueString(grantees, privilege.grantee)
-	}
-	for _, grantee := range grantees {
-		// #nosec G202 -- Schema and role identifiers are quoted through sqlident.
-		statement := "REVOKE ALL PRIVILEGES ON SCHEMA " + quoteIdent(schema) +
-			" FROM " + quotePostgresRole(grantee)
+	for _, statement := range pgschemastate.Create(metadata.state) {
 		if _, err := tx.ExecContext(ctx, statement); err != nil {
-			return fmt.Errorf(
-				"failed to reset schema %q privileges for %q: %w",
-				schema,
-				grantee,
-				err,
-			)
-		}
-	}
-	for _, privilege := range metadata.privileges {
-		// #nosec G202 -- Privilege is allow-listed; identifiers are quoted through sqlident.
-		statement := "GRANT " + privilege.privilege + " ON SCHEMA " +
-			quoteIdent(schema) + " TO " + quotePostgresRole(privilege.grantee)
-		if privilege.grantOption {
-			statement += " WITH GRANT OPTION"
-		}
-		if _, err := tx.ExecContext(ctx, statement); err != nil {
-			return fmt.Errorf(
-				"failed to restore schema %q privilege for %q: %w",
-				schema,
-				privilege.grantee,
-				err,
-			)
+			return fmt.Errorf("failed to recreate schema %q: %w", schema, err)
 		}
 	}
 	return nil
 }
 
-func validatePostgresSchemaPrivileges(privileges []postgresSchemaPrivilege) error {
+// returnPostgresSchema gives schema, which a cleanup emptied in place, the
+// owner, access list and comment claimed records for it. A schema the claim
+// recorded nothing for is left as it is.
+func returnPostgresSchema(ctx context.Context, tx *sql.Tx, claimed []dbreset.SchemaState, schema string) error {
+	position := slices.IndexFunc(claimed, func(state dbreset.SchemaState) bool { return state.Name == schema })
+	if position < 0 {
+		return nil
+	}
+	current, err := capturePostgresSchemaMetadata(ctx, tx, schema)
+	if err != nil {
+		return err
+	}
+	for _, statement := range pgschemastate.Return(claimed[position], current.state) {
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("failed to return schema %q to its claimed state: %w", schema, err)
+		}
+	}
+	return nil
+}
+
+func validatePostgresSchemaPrivileges(privileges []dbreset.SchemaPrivilege) error {
 	for _, privilege := range privileges {
-		if privilege.privilege != "CREATE" && privilege.privilege != "USAGE" {
+		if privilege.Privilege != "CREATE" && privilege.Privilege != "USAGE" {
 			return fmt.Errorf(
 				"refusing to restore unsupported PostgreSQL schema privilege %q",
-				privilege.privilege,
+				privilege.Privilege,
 			)
 		}
 	}
@@ -3133,13 +3157,6 @@ func (w *PostgreSQLWriter) systemSchemaDialect() string {
 		return pgsystemschema.AnyMember
 	}
 	return w.dialect
-}
-
-func quotePostgresRole(role string) string {
-	if role == "PUBLIC" {
-		return role
-	}
-	return quoteIdent(role)
 }
 
 func appendUniqueString(values []string, value string) []string {

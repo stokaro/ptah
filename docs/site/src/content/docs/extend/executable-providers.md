@@ -139,13 +139,17 @@ the capability, a renamed index is a drop and a create.
 A service that declares parent assessment
 also receives changes to existing columns in the complete table capture. It
 must return a parent receipt, including when its own rules find no change.
-Missing receipts and refusals discard the plan. Common-object support carries
-table, column and index comments. A provider that owns the table lifecycle and
+Missing receipts and refusals discard the plan.
+
+Common-object support carries table, column and index comments. A provider that owns the table lifecycle and
 lists the `COMMENT` kind receives the comment of a table it creates, of a
 column it adds and of an index it creates as a comment step after its own
 creation, and a changed index comment as one comment step with the comment the
 index ends with. A comment step reads its table and changes the comment alone.
-These services do not grant common SQL rendering.
+A provider that lists the `GRANT` kind receives a grant or revocation on a
+table it creates or alters as a step after its own change, and the step reads
+the table and changes the table's access alone. These services do not grant
+common SQL rendering.
 
 The common steps of a planning request include ordering markers beside the steps
 that change a table. A marker has no parent, no effects and no added column. It
@@ -929,11 +933,21 @@ provider compare models failed (InvalidArgument): streaming query capability was
 ```
 
 A lock outcome reads `provider lock outcome is BUSY`, followed by the
-provider's reason in the same way. Ptah never prints the rest of a provider's
-error: a driver's error can quote a connection address, a credential or a
-statement with its values, so only text the provider wrote as a reason
-reaches the output. The JSON documents carry the same sentence in their error
-message.
+provider's reason in the same way. So does a statement the engine refused,
+and a commit the provider rolled back, when the provider speaks contract 25.18
+or later:
+
+```text
+provider execution: NOT_APPLIED (0 units confirmed applied): <reason>
+provider transaction outcome is ROLLED_BACK: <reason>
+```
+
+Ptah never prints the rest of a provider's error, or the message of an
+execution or transaction result: a driver's error can quote a connection
+address, a credential or a statement with its values, so only text the
+provider wrote as a reason reaches the output. The JSON documents carry the
+same sentence in their error message, and the revision of a migration whose
+statement failed records it.
 
 Missing official providers include an engine ID, provider ID, repository URL,
 and setup URL in the error. JSON schema reports and migration setup failures

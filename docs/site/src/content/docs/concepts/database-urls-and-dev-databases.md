@@ -156,8 +156,11 @@ cases run in a dev realm in that database.
   [YDB](../../databases/ydb/#dev-shadow-and-scratch-databases).
 - **PostgreSQL cleanup gives back the schema it empties.** The schema the dev
   URL selects, `public` when it selects none, comes back after the cleanup
-  with the owner, grants and comment it had. A role created on the server
-  afterwards can use `public` as it could before.
+  with the owner, grants and comment it had when the run started. A role
+  created on the server afterwards can use `public` as it could before. A run
+  that revokes `USAGE` on `public` or comments it does not hand the change to
+  the next run, and neither does one whose dev database keeps an extension in
+  `public`, where the schema is emptied in place.
 - **MySQL-family cleanup needs global catalog visibility.** MySQL cleanup
   credentials require global `SELECT`, `DROP`, `ALTER`, `ALTER ROUTINE`,
   `EVENT`, `LOCK TABLES`, and `PROCESS`. MySQL also requires global `TRIGGER`

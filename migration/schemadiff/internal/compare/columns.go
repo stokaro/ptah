@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemacomparison"
@@ -27,6 +28,7 @@ import (
 	"ptah.run/internal/exprkey"
 	"ptah.run/internal/normalize"
 	"ptah.run/internal/oracletype"
+	"ptah.run/internal/pgname"
 	"ptah.run/internal/sqlitekey"
 	"ptah.run/internal/typechange"
 	"ptah.run/migration/internal/generatedschema"
@@ -262,11 +264,48 @@ func tableColumnsWithSemantics(
 // other optional attributes: removing a previously managed name by deleting it
 // from the declaration is not supported. Deleting it makes the name unmanaged;
 // it does not request a rename back to a generated one (stokaro/ptah#2161).
-func notNullConstraintNameChange(desired, current string) *difftypes.NotNullConstraintNameChange {
+//
+// generated is the name the server gives this column's NOT NULL when nothing
+// names it, or "" on a target that gives none. A desired side naming exactly
+// that, beside a current side with no name, is the same constraint: the current
+// side is a document that left the name to the server, and the server would
+// give it the desired name. This is the rule above seen from the other side. A
+// diff from a schema file to a PostgreSQL 18 database reads the database as the
+// desired side, which names every NOT NULL, and the file as the current side,
+// which names none. Without the second guard that diff warns, measured on
+// PostgreSQL 18, that column t1.id declares the NOT NULL name "t1_id_not_null"
+// for a column nobody named, while the reverse diff reports nothing.
+//
+// A live PostgreSQL 18 read never has an empty name here, so the guard reaches
+// one other case: a document against a release that keeps no name, where a
+// declared name equal to the generated one asks for nothing a release that
+// keeps names would not give the constraint anyway. A name the server numbered
+// because another constraint held the plain one differs from generated, and is
+// still compared.
+func notNullConstraintNameChange(desired, current, generated string) *difftypes.NotNullConstraintNameChange {
 	if desired == "" || desired == current {
 		return nil
 	}
+	if current == "" && desired == generated {
+		return nil
+	}
 	return &difftypes.NotNullConstraintNameChange{Current: current, Desired: desired}
+}
+
+// notNullLabel is the label PostgreSQL ends the name of an unnamed NOT NULL
+// with.
+const notNullLabel = "not_null"
+
+// generatedNotNullName answers the name the server of dialect gives a NOT NULL
+// on column of table that nothing names, and "" for a dialect whose descriptor
+// states no such naming. PostgreSQL 18 names it as it names an unnamed CHECK
+// or UNIQUE, `<table>_<column>_not_null` fitted into 63 bytes, which is the
+// descriptor's ConstraintNaming.
+func generatedNotNullName(dialect, table, column string) string {
+	if constraintNamingOf(dialect) != descriptor.ConstraintNamingTableColumnsSuffix {
+		return ""
+	}
+	return pgname.Object(table, column, notNullLabel)
 }
 
 func commentChange(desired, current string) *difftypes.CommentChange {
@@ -442,7 +481,8 @@ func columnsWithDesiredDomains(
 		Changes:       make(map[string]string),
 		CommentChange: storedCommentChange(dialect, genCol.Comment, dbCol.Comment),
 		NotNullConstraintNameChange: notNullConstraintNameChange(
-			genCol.NotNullConstraintName, dbCol.NotNullConstraintName),
+			genCol.NotNullConstraintName, dbCol.NotNullConstraintName,
+			generatedNotNullName(dialect, ctx.table, genCol.Name)),
 	}
 
 	// ClickHouse-only guard: older goschema models cannot express
