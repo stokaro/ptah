@@ -252,11 +252,17 @@ func toDBColumns(table schemamodel.Table, fields []schemamodel.Field, dialect st
 	out := make([]catalog.Column, 0, len(fields))
 	for i, field := range fields {
 		if sqlitekey.KeyColumnIsNotNull(dialect, table, keyColumns, field) ||
-			described.Columns.IdentityNotNull && field.IdentityGeneration != "" {
+			described.Columns.IdentityNotNull && field.IdentityGeneration != "" ||
+			described.Columns.SerialNotNull && autoincrement.SerialType(field.Type) {
 			field.Nullable = false
 		}
 		column := toDBColumn(field, i+1)
 		column.IsAutoIncrement = autoincrement.DeclaredOn(field, dialect)
+		// A read reports the default a serial column holds where it owns no sequence,
+		// and a description of the column says the same.
+		if described.Comparison.SerialDefault != "" && autoincrement.SerialType(field.Type) && column.ColumnDefault == nil {
+			column.ColumnDefault = new(described.Comparison.SerialDefault)
+		}
 		// A target that stores a declared type as another reports the one it
 		// stores: Oracle a TEXT column as a CLOB, CockroachDB an INT column at
 		// its integer width. The comparison folds the declared side the same

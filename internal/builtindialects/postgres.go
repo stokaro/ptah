@@ -159,6 +159,7 @@ func postgres() descriptor.Dialect {
 			ColumnPrimaryKeyIsTheTablesKey: true,
 			PrimaryKeyRenames:              true,
 			IdentityColumns:                true,
+			SerialOwnsSequence:             true,
 			ExpressionProbes:               "pg-catalog",
 			RolePasswords:                  true,
 			DefaultGeneratedKind:           "STORED",

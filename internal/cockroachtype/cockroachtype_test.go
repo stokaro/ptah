@@ -27,6 +27,12 @@ func TestResolve(t *testing.T) {
 		{name: "a named width", declared: "INT4", defaultIntSize: 8, want: "INT4"},
 		{name: "bigint", declared: "BIGINT", want: "BIGINT"},
 		{name: "another type", declared: "VARCHAR(32)", want: "VARCHAR(32)"},
+		{name: "serial", declared: "SERIAL", want: "int8"},
+		{name: "smallserial", declared: "smallserial", want: "int8"},
+		{name: "bigserial in a four-byte session", declared: "bigserial", defaultIntSize: 4, want: "int8"},
+		{name: "serial2", declared: "serial2", want: "int8"},
+		{name: "serial4", declared: "serial4", defaultIntSize: 4, want: "int8"},
+		{name: "serial8", declared: "serial8", want: "int8"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

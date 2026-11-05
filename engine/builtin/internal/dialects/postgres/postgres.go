@@ -2124,6 +2124,9 @@ func (r *Renderer) renderPostgreSQLModifyColumn(tableName string, op *ast.Modify
 	if changed.Identity && !identityLeaves {
 		r.writeColumnIdentityChange(tableName, op)
 	}
+	if op.SeedsSequence != "" && !op.OmitNullBackfill {
+		r.writeSequenceSeed(tableName, column.Name, op.SeedsSequence)
+	}
 }
 
 // writeColumnIdentityChange writes the clause that gives a column its identity. A
@@ -2158,6 +2161,16 @@ func (r *Renderer) writeColumnIdentityChange(tableName string, op *ast.ModifyCol
 	}
 	r.w.WriteLinef("SELECT setval(pg_get_serial_sequence(%s, %s), max(%s)) FROM %s HAVING max(%s) >= %s;",
 		r.escapeValue(table), r.escapeValue(column.Name), name, table, name, start)
+}
+
+// writeSequenceSeed moves a column's new sequence past the values the column holds. A
+// sequence starts at the beginning, and the next insert would collide with a row the
+// table holds. A table with no row at or past the first value has nothing to collide
+// with, and takes no statement's effect.
+func (r *Renderer) writeSequenceSeed(tableName, column, sequence string) {
+	name := r.escapeIdentifier(column)
+	r.w.WriteLinef("SELECT setval(%s, max(%s)) FROM %s HAVING max(%s) >= 1;",
+		r.escapeValue(r.escapeQualifiedIdentifier(sequence)), name, r.escapeQualifiedIdentifier(tableName), name)
 }
 
 // writeColumnTypeChange writes the TYPE clause of a column modification, and

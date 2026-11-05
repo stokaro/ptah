@@ -1812,6 +1812,11 @@ func (d *TableDiff) HasChanges() bool {
 //		},
 //	}
 type ColumnDiff struct {
+	// SerialSequence names the sequence the plan creates for a plain column the
+	// declaration makes serial. A planner moves it past the values the column
+	// holds once it owns the column, and the next insert collides with none.
+	SerialSequence string `json:"serial_sequence,omitempty"`
+
 	// ColumnName is the name of the column being modified
 	ColumnName string `json:"column_name"`
 

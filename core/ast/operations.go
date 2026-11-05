@@ -112,11 +112,14 @@ type ModifyColumnOperation struct {
 	// operation restates the column: a renderer that alters one property per
 	// clause writes a clause for every property it can alter.
 	HasChanged bool
+	// SeedsSequence names the sequence a plain column takes as its default, which
+	// the PostgreSQL family moves past the values the column holds.
+	SeedsSequence string
 	// OmitNullBackfill asks for SET NOT NULL without filling the column's
 	// NULL rows from its declared default first, so the statement fails on a
 	// NULL row as it does when the column declares no default. It leaves out the
-	// statement that moves a new identity's sequence past the column's values too:
-	// both write more than the statements the change asked for.
+	// statement that moves a new identity's or serial column's sequence past the
+	// column's values too: both write more than the statements the change asked for.
 	//
 	// It is read only by a renderer that fills those rows, which the
 	// PostgreSQL family does; the zero value keeps the fill. ClickHouse does

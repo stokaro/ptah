@@ -578,8 +578,53 @@ func columnsWithDesiredDomains(
 		colDiff.Changes[key] = change
 	}
 	maps.Copy(colDiff.Changes, autoIncrementChange(genCol, dbCol, dialect))
+	applyDeclaredSerial(&colDiff, genCol, dbCol, dialect, ctx)
 
 	return colDiff
+}
+
+// applyDeclaredSerial records the default a column of a serial type takes where the
+// live column draws its values from nothing, on a target that compares it. The
+// default comparison above leaves a serial declaration alone, so `id bigint` against a
+// declared `id bigserial` read as synced, and a declared column that fills itself went
+// on taking no value. A column that owns a sequence, or holds an identity, draws from
+// one already and is another question. A default that draws from a sequence the column
+// does not own is replaced, and the sequence stays or leaves as the declaration says.
+func applyDeclaredSerial(colDiff *difftypes.ColumnDiff, genCol schemamodel.Field, dbCol catalog.Column, dialect string, ctx columnContext) {
+	facts := comparisonOf(dialect)
+	if !facts.SerialOwnsSequence && facts.SerialDefault == "" {
+		return
+	}
+	if genCol.IdentityGeneration != "" || dbCol.IdentityGeneration != "" || genCol.Default != "" || genCol.DefaultExpr != "" || !declaresColumnSequence(genCol) {
+		return
+	}
+	if dbCol.IsAutoIncrement || dbCol.OwnedSequence != "" || autoincrement.SerialType(dbCol.RawType()) {
+		return
+	}
+	live := ""
+	if dbCol.ColumnDefault != nil {
+		live = strings.TrimSpace(*dbCol.ColumnDefault)
+	}
+	if facts.SerialDefault != "" && strings.EqualFold(live, facts.SerialDefault) {
+		return
+	}
+	expression := facts.SerialDefault
+	if facts.SerialOwnsSequence {
+		colDiff.SerialSequence = pgname.Sequence(ctx.table, genCol.Name)
+		expression = "nextval('" + quotedSequence(ctx.schema, colDiff.SerialSequence) + "')"
+	}
+	delete(colDiff.Changes, "default")
+	colDiff.Changes["default_expr"] = live + " -> " + expression
+	colDiff.Desired.DefaultExpr = expression
+}
+
+// quotedSequence spells a sequence's name for a nextval argument.
+func quotedSequence(schema, name string) string {
+	quoted := `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
+	if schema == "" {
+		return quoted
+	}
+	return `"` + strings.ReplaceAll(schema, `"`, `""`) + `".` + quoted
 }
 
 // autoIncrementChange returns the auto_increment change of a column whose

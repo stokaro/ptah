@@ -37,6 +37,7 @@ func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 		"postgres": {
 			DeclaredSchemas:                true,
 			TimePrecision:                  descriptor.TimePrecision{Compared: true, Default: 6},
+			SerialOwnsSequence:             true,
 			ForeignKeysOutside:             true,
 			ForeignKeyMatchesKeyInAnyOrder: true,
 			ForeignKeyHoldsItsKey:          true,
@@ -55,6 +56,7 @@ func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 			TimePrecision:                  descriptor.TimePrecision{Compared: true, Default: 6},
 			PrimaryKeyRenames:              true,
 			IdentityColumns:                true,
+			SerialDefault:                  "unique_rowid()",
 			ForeignKeysOutside:             true,
 			ForeignKeyMatchesKeyInAnyOrder: true,
 			ColumnPrimaryKeyIsTheTablesKey: true,

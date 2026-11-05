@@ -237,6 +237,58 @@ func ColumnSequencesLeaving(database *catalog.Database, diff *difftypes.SchemaDi
 	})
 }
 
+// ColumnSequencesArriving adds to the sequences the plan creates the one each plain
+// column takes where the comparison makes it serial; see
+// [difftypes.ColumnDiff.SerialSequence]. A sequence of that name the declaration leaves
+// out stays and becomes the column's, as dropping it and building it again would
+// answer that the name exists. It runs after the sequences are compared.
+func ColumnSequencesArriving(database *catalog.Database, diff *difftypes.SchemaDiff, semantics identifier.Semantics) {
+	if database == nil {
+		return
+	}
+	for _, tableDiff := range diff.TablesModified {
+		table := objectlookup.Qualified(database.Tables, tableDiff.TableName, semantics)
+		if table == nil {
+			continue
+		}
+		for _, columnDiff := range tableDiff.ColumnsModified {
+			if columnDiff.SerialSequence == "" {
+				continue
+			}
+			owner := table.QualifiedName() + "." + columnDiff.ColumnName
+			sequence := schemamodel.Sequence{Name: columnDiff.SerialSequence, Schema: table.Schema, OwnedBy: owner, AsType: serialSequenceType(columnDiff.Desired.Type)}
+			position := slices.IndexFunc(diff.SequencesRemoved, func(removed schemamodel.Sequence) bool {
+				return semantics.IndexIdentityKey(removed.Name) == semantics.IndexIdentityKey(sequence.Name) &&
+					semantics.TableIdentityKey(removed.Schema) == semantics.TableIdentityKey(sequence.Schema)
+			})
+			if position < 0 {
+				diff.SequencesAdded = append(diff.SequencesAdded, sequence)
+				continue
+			}
+			diff.SequencesRemoved = slices.Delete(diff.SequencesRemoved, position, position+1)
+			diff.SequencesModified = append(diff.SequencesModified, difftypes.SequenceDiff{
+				SequenceName: sequence.QualifiedName(),
+				Changes:      map[string]string{"owned_by": " -> " + owner},
+				Desired:      sequence,
+			})
+		}
+	}
+	sortSequences(diff.SequencesAdded)
+}
+
+// serialSequenceType is the type of the sequence a column of the serial type declared
+// draws from.
+func serialSequenceType(declared string) string {
+	switch strings.ToUpper(strings.TrimSpace(declared)) {
+	case "SMALLSERIAL", "SERIAL2":
+		return "smallint"
+	case "SERIAL", "SERIAL4", "AUTO_INCREMENT":
+		return "integer"
+	default:
+		return "bigint"
+	}
+}
+
 // defaultLeaves reports whether change takes the column's default away.
 func defaultLeaves(change difftypes.ColumnDiff) bool {
 	for _, key := range []string{"default", "default_expr"} {

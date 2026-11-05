@@ -925,6 +925,7 @@ func (p *Planner) modifyExistingTableColumns(
 					PreviousNullable:    previousColumnNullable(colDiff.Changes["nullable"]),
 					HasPreviousNullable: colDiff.Changes["nullable"] != "",
 					PreviousIdentity:    previousColumnType(colDiff.Changes["identity"]),
+					SeedsSequence:       serialSequencePath(tableDiff.TableName, colDiff.SerialSequence),
 					Changed:             changed,
 					HasChanged:          true,
 				}},
@@ -935,6 +936,18 @@ func (p *Planner) modifyExistingTableColumns(
 		}
 	}
 	return result
+}
+
+// serialSequencePath qualifies the sequence a plain column takes with its table's
+// schema, and is empty for a column that takes none.
+func serialSequencePath(table, sequence string) string {
+	if sequence == "" {
+		return ""
+	}
+	if ref, ok := tableref.Parse(table); ok && ref.Schema != "" {
+		return tableref.Canonical(ref.Schema, sequence)
+	}
+	return sequence
 }
 
 // restatesDefault reports whether a column whose type changes away from a

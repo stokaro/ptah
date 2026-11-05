@@ -212,6 +212,7 @@ func compareReportingUndecidedAdditions(
 	// Compare PostgreSQL standalone sequences (PostgreSQL-specific feature)
 	compare.SequencesWithSemantics(desired, database, diff, cov, identifierSemantics)
 	compare.ColumnSequencesLeaving(database, diff, identifierSemantics)
+	compare.ColumnSequencesArriving(database, diff, identifierSemantics)
 	compare.OwnedDefaultSequences(database, diff, identifierSemantics)
 
 	// Compare views, materialized views, and triggers
