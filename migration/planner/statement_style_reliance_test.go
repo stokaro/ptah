@@ -396,18 +396,16 @@ func matviewUnderViewDroppedWithCascade() styleChange {
 // pins one row for each reason the exact style keeps CASCADE or a guard, each
 // beside a row where the reason is absent.
 //
-// A removed routine that takes or returns the row type of the one relation the
-// plan drops, a removed one, is dropped just ahead of it, so neither drop
-// relies on CASCADE. One that another removed view calls, or that names two
-// dropped relations, is removed only after every relation, so the relation's
-// drop relies on CASCADE and the routine's drop keeps IF EXISTS; one that only
-// names the relation in a quoted body holds nothing back. A routine with a
+// A removed routine that takes or returns the row type of a relation the plan
+// removes is dropped ahead of the first such relation, so no drop relies on
+// CASCADE; one that only names the relation in a quoted body holds nothing back. A
+// routine with a
 // SQL-standard body that reads a table holds the table's columns. A policy of
 // a removed table that reads another removed table puts its own table first,
 // two that read each other's tables put both tables in one DROP TABLE, and one
 // that reads a removed view, which goes before every table, makes the view's
-// drop rely on CASCADE. A domain or a composite type the plan removes holds a
-// table back only when it names the table's row type.
+// drop rely on CASCADE. A domain or a composite type the plan removes leaves ahead
+// of a table whose row type it names, and what uses it leaves ahead of it.
 // A removed trigger and a generated column leave before the column they read.
 // A column that leaves an enum takes its declared default again, so the enum's
 // drop finds nothing that uses it; one that becomes an enum drops its default
@@ -569,25 +567,24 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_ExactStyleReliance_HappyPath
 				"DROP TYPE \"public\".\"wrap\"",
 				`DROP TABLE IF EXISTS "public"."archive"`,
 			}},
-		// A removed table whose column is the type is dropped after the
-		// tables, so the type stays after it, and the table whose row type it
-		// names relies on CASCADE to strip the attribute.
+		// A removed table whose column is the type leaves ahead of the type, and
+		// the type ahead of the table whose row type it names, so no drop relies
+		// on CASCADE.
 		{name: "a table removed beside a composite type over its row type that another removed table uses",
 			change: removedTableBesideComposite("archive", styleTable("ledger", styleKey("id"),
 				catalog.Column{Name: "w", DataType: "USER-DEFINED", UDTName: "wrap", UDTSchema: "public", IsNullable: "YES"})),
 			want: []string{
-				`DROP TABLE "public"."archive" CASCADE`,
-				`DROP TABLE IF EXISTS "public"."ledger"`,
+				`DROP TABLE "public"."ledger"`,
 				"DROP TYPE \"public\".\"wrap\"",
+				`DROP TABLE IF EXISTS "public"."archive"`,
 			}},
-		// A removed routine that takes the type is dropped after the tables,
-		// so the type stays after it, as it does for a removed table's column.
+		// A removed routine that takes the type leaves ahead of it the same way.
 		{name: "a table removed beside a composite type over its row type that a removed routine takes",
 			change: removedTableBesideCompositeAndRoutine(styleRoutine("wrap_n", "w wrap", "integer", "SELECT w.n")),
 			want: []string{
-				`DROP TABLE "public"."archive" CASCADE`,
-				`DROP FUNCTION IF EXISTS "public"."wrap_n"(w wrap)`,
+				`DROP FUNCTION "public"."wrap_n"(w wrap)`,
 				"DROP TYPE \"public\".\"wrap\"",
+				`DROP TABLE IF EXISTS "public"."archive"`,
 			}},
 		{name: "a column dropped under a trigger the declaration removes", change: droppedColumnUnderTrigger(), want: []string{
 			`DROP TRIGGER "owners_email_audit" ON "public"."owners"`,

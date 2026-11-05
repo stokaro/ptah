@@ -109,6 +109,8 @@ type routinesAhead struct {
 	viewsAfter map[string][]string
 	// tablesAfter is the same for removed tables.
 	tablesAfter map[string][]string
+	// tablesDropped is the removed tables the plan has written a drop for so far.
+	tablesDropped map[string]bool
 }
 
 // columnsLeavingEarly is the generated columns the exact style drops ahead of
@@ -161,6 +163,8 @@ func (p *Planner) routinesAheadOf(diff *difftypes.SchemaDiff, rebuild viewRebuil
 		byColumn:    make(map[string][]removedRoutineGroup),
 		viewsAfter:  make(map[string][]string),
 		tablesAfter: make(map[string][]string),
+
+		tablesDropped: make(map[string]bool),
 	}
 	groups := p.removedRoutineGroups(diff, rebuild)
 	if !p.exact() {
@@ -228,6 +232,7 @@ const (
 	viewPoint    = "view"
 	matviewPoint = "materialized view"
 	tablePoint   = "table"
+	typePoint    = "type"
 	domainPoint  = "domain"
 )
 
@@ -277,14 +282,94 @@ func (p *Planner) removalSteps(diff *difftypes.SchemaDiff, rebuild viewRebuild, 
 			}
 		}
 	}
-	for _, group := range p.removedTableGroups(diff, ahead) {
-		step := make([]removalPoint, 0, len(group))
-		for _, name := range group {
-			step = append(step, removalPoint{kind: tablePoint, relation: name})
+	holding, later := p.removedTablesAroundTypes(diff, ahead)
+	addTables := func(groups [][]string) {
+		for _, group := range groups {
+			step := make([]removalPoint, 0, len(group))
+			for _, name := range group {
+				step = append(step, removalPoint{kind: tablePoint, relation: name})
+			}
+			steps = append(steps, step)
 		}
-		steps = append(steps, step)
 	}
+	addTables(holding)
+	for _, name := range typesOverRemovedRows(diff) {
+		steps = append(steps, []removalPoint{{kind: typePoint, relation: name}})
+	}
+	addTables(later)
 	return steps
+}
+
+// typesOverRemovedRows names the types the plan removes that name the row type of a
+// table it removes, directly or through another such type. The type owner drops one
+// ahead of the tables, unless a drop that comes later still uses it; see
+// [typeorder.DroppedBeforeTables].
+func typesOverRemovedRows(diff *difftypes.SchemaDiff) []string {
+	semantics := relationSemantics(diff)
+	readers := removedTypeReaders(diff)
+	over := diff.TablesRemoved.Names()
+	var names []string
+	for changed := true; changed; {
+		changed = false
+		for _, typ := range readers {
+			name := typeReaderName(typ)
+			if !slices.Contains(names, name) && slices.ContainsFunc(over, func(relation string) bool {
+				return schemaext.ReadsRelationIn(typ.reader, relation, semantics)
+			}) {
+				names = append(names, name)
+				over = append(over, name)
+				changed = true
+			}
+		}
+	}
+	return names
+}
+
+// typeReaderName is the name a definition spells typ with.
+func typeReaderName(typ removedTypeReader) string {
+	if typ.id.Schema.Source == "" {
+		return typ.id.Name.Source
+	}
+	return typ.id.Schema.Source + "." + typ.id.Name.Source
+}
+
+// tableHoldsType reports whether a column of removal has the type name, in any
+// spelling the catalog records it.
+func tableHoldsType(diff *difftypes.SchemaDiff, removal difftypes.TableRemoval, name string) bool {
+	return slices.ContainsFunc(removedTableTypes(diff, []string{removal.Name}), func(spelled string) bool {
+		return typeNamesRelation(spelled, name, relationSemantics(diff))
+	})
+}
+
+// removedTablesAroundTypes splits the removed tables' groups: those a type in
+// [typesOverRemovedRows] is the column type of, which leave ahead of the feature
+// removal window so the type can leave in it, and the rest. A type left behind them
+// would hold its own table's drop until a CASCADE, which also takes a reader nobody
+// declared. The annotated style keeps its order.
+func (p *Planner) removedTablesAroundTypes(diff *difftypes.SchemaDiff, ahead routinesAhead) (holding, later [][]string) {
+	groups := p.removedTableGroups(diff, ahead)
+	if !p.exact() {
+		return nil, groups
+	}
+	types := typesOverRemovedRows(diff)
+	if len(types) == 0 {
+		return nil, groups
+	}
+	for _, group := range groups {
+		holds := slices.ContainsFunc(group, func(table string) bool {
+			return slices.ContainsFunc(diff.TablesRemoved, func(removal difftypes.TableRemoval) bool {
+				return removal.Name == table && slices.ContainsFunc(types, func(name string) bool {
+					return tableHoldsType(diff, removal, name)
+				})
+			})
+		})
+		if holds {
+			holding = append(holding, group)
+		} else {
+			later = append(later, group)
+		}
+	}
+	return holding, later
 }
 
 // routineGroupReads is, for each group, what its routines depend on among the
@@ -655,9 +740,8 @@ func policiesDroppedBeforeRelations(nodes []ast.Node, diff *difftypes.SchemaDiff
 //
 // A type the change removes is left out: a composite type that names a
 // table's row type in an attribute, and a domain or a range type over one,
-// is dropped ahead of the table unless something dropped after the tables
-// still uses it, which only the scheduled plan shows.
-// [Planner.cascadeForLaterTypeDrops] decides those table drops there.
+// is dropped ahead of the table, and what uses it leaves ahead of it; see
+// [Planner.removedTablesAroundTypes].
 func removedFeatureReads(diff *difftypes.SchemaDiff, relation string) bool {
 	return removedFeatureMatches(diff, func(object schemaext.Value) bool {
 		if _, defines := object.(schemaext.TypeDefiner); defines {

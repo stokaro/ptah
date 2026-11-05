@@ -105,7 +105,7 @@ func (p *Planner) scheduleFeatures(ctx context.Context, runtime featureplan.Runt
 		// A statement whose own footprint is unknown stays unknown: a read
 		// beside it would claim to describe it.
 		if effects != nil {
-			effects = append(effects, typeReads(diff, nodes[i], request.Types)...)
+			effects = append(effects, typeReads(diff, nodes[i], request.Types, i < windows.Removal)...)
 		}
 		metadata[i].Effects = effects
 	}
@@ -122,7 +122,6 @@ func (p *Planner) scheduleFeatures(ctx context.Context, runtime featureplan.Runt
 	if err != nil {
 		return nil, err
 	}
-	p.cascadeForLaterTypeDrops(diff, steps)
 	var scheduled []ast.Node
 	for _, step := range steps {
 		scheduled = append(scheduled, step.Payload...)

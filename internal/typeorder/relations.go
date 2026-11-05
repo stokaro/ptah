@@ -87,12 +87,13 @@ func CreatedAfterRelations(types []deporder.UserType, steps []featureplan.Common
 //
 // A type is left out while a common step that drops an object reads it, such
 // as the DROP TABLE of a table whose column the type is, or a DROP FUNCTION
-// whose signature names it: the host drops such an object after its tables,
-// and the type has to outlive it. So is every type a type left out names,
+// whose signature names it: a host that drops such an object after its tables
+// reports the read, and the type has to outlive it. A host that drops it ahead of
+// the window a type leaves in reports none. So is every type a type left out names,
 // since that type is dropped first. A type that names a view's row type is
 // not one either: the host removes views before the window a type dropped
 // ahead of its tables joins. A type left out is dropped after the tables, and
-// a table whose row type it names relies on CASCADE.
+// the server stops the drop of a table whose row type it names.
 func DroppedBeforeTables(types []deporder.UserType, removed []string, steps []featureplan.CommonStep, semantics identifier.Semantics) map[string][]RelationStep {
 	reached := reachedRelations(types, relationSteps(steps, plangraph.Drop, objectidentity.KindTable), semantics)
 	isRemoved := make(map[string]bool, len(removed))
