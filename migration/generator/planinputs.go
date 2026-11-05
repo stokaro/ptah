@@ -37,6 +37,9 @@ func verifyPlannedShadowMigration(
 	if opts.ShadowDatabaseURL == "" {
 		return nil
 	}
+	if opts.ShadowGenerated != nil {
+		desired = opts.ShadowGenerated
+	}
 	return shadow.VerifyMigration(ctx, shadow.MigrationVerifyOptions{
 		Runtime:           opts.Runtime,
 		ShadowDatabaseURL: opts.ShadowDatabaseURL,
