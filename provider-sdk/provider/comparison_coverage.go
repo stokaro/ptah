@@ -23,7 +23,7 @@ func validateComparisonCoverage(description *protocol.Description, request *prot
 			return fmt.Errorf("%w: unknown, changed, or duplicate comparison coverage model", ErrProtocol)
 		}
 		kinds[model.GetKind()] = true
-		if err := validateComparisonKnowledge(representation, record.GetSources()); err != nil {
+		if err := validateComparisonKnowledge(representation, record.GetSources(), comparisonSubtreeRefusal(description, request)); err != nil {
 			return err
 		}
 	}
@@ -58,10 +58,15 @@ func compareComparisonCoverageSubjects(a, b *protocol.ComparisonSubjectCoverage)
 	return CompareIdentities(a.GetSubject(), b.GetSubject())
 }
 
-func validateComparisonNamespace(scope *protocol.ComparisonNamespace) error {
+// validateComparisonNamespace checks one region's scope; subtrees is the
+// error a subtree region meets, nil where subtrees were negotiated.
+func validateComparisonNamespace(scope *protocol.ComparisonNamespace, subtrees error) error {
 	if scope == nil || (len(scope.GetTargets()) == 0 && len(scope.GetSubjectKinds()) == 0 && scope.GetDatabase() == nil && scope.GetCatalog() == nil &&
 		scope.GetSchema() == nil && scope.GetParent() == nil && len(scope.GetPathPrefix()) == 0 && !scope.GetPathExact()) {
 		return fmt.Errorf("%w: comparison namespace has no boundary", ErrProtocol)
+	}
+	if err := comparisonSubtreeError(scope, subtrees); err != nil {
+		return err
 	}
 	for _, names := range [][]string{scope.GetTargets(), scope.GetSubjectKinds()} {
 		if err := validateComparisonNames(names); err != nil {
@@ -84,7 +89,7 @@ func validateComparisonNamespace(scope *protocol.ComparisonNamespace) error {
 	return nil
 }
 
-func validateComparisonKnowledge(representation protocol.ValueInput_Representation, sources []*protocol.ComparisonKnowledgeSource) error {
+func validateComparisonKnowledge(representation protocol.ValueInput_Representation, sources []*protocol.ComparisonKnowledgeSource, subtrees error) error {
 	if len(sources) > maxComparisonKnowledgeSources {
 		return fmt.Errorf("%w: too many comparison knowledge sources", ErrProtocol)
 	}
@@ -96,7 +101,7 @@ func validateComparisonKnowledge(representation protocol.ValueInput_Representati
 			return fmt.Errorf("%w: too many comparison knowledge regions", ErrProtocol)
 		}
 		for _, region := range source.GetRegions() {
-			if err := validateComparisonNamespace(region.GetScope()); err != nil {
+			if err := validateComparisonNamespace(region.GetScope(), subtrees); err != nil {
 				return err
 			}
 			if err := validateNamespaceKnowledge(representation, region.GetKnowledge()); err != nil {

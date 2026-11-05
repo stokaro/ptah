@@ -563,6 +563,10 @@
       "name": "choose-workflow"
     },
     {
+      "route": "/start/ecosystem/",
+      "name": "ecosystem"
+    },
+    {
       "route": "/inference/overview/",
       "name": "inference-overview"
     },

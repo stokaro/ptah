@@ -22,6 +22,11 @@ import (
 // statement, at error severity; every kind below is modeled exactly as intended
 // -- CREATE POLICY has its own test asserting it lints clean -- and simply has
 // no rule looking at it.
+//
+// The rows read as CockroachDB, whose server keeps long names whole. On
+// PostgreSQL, DDL003 and DDL004 judge the names a view, a sequence or an ALTER
+// TABLE declares; TestLintSource_DeclaredNamesAreAnalyzedWhereTheServerCutsThem
+// holds that.
 func TestLintSource_AFileOfUnanalyzedStatementsIsNotClean(t *testing.T) {
 	rows := []struct {
 		name string
@@ -47,7 +52,7 @@ func TestLintSource_AFileOfUnanalyzedStatementsIsNotClean(t *testing.T) {
 
 			findings, err := sqllint.LintSource(t.Context(),
 				sqllint.Source{Name: "t.sql", SQL: row.sql},
-				sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: "postgres"},
+				sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: "cockroachdb"},
 			)
 
 			c.Assert(err, qt.IsNil)
@@ -75,7 +80,7 @@ func TestLintSource_TheUnanalyzedFindingIsOnePerFile(t *testing.T) {
 			"CREATE VIEW b AS SELECT 2;\n" +
 			"CREATE SEQUENCE s;\n" +
 			"DROP TABLE t;\n",
-	}, sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: "postgres"})
+	}, sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: "cockroachdb"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(findings, qt.HasLen, 1)

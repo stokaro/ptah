@@ -460,7 +460,7 @@ func diffResolvedStates(
 	if opts.Diagnostics == nil && !undecided.Empty() {
 		return atlasreport.SchemaDiff{}, nil, undecided.Err()
 	}
-	undecidednote.Report(opts.Diagnostics, undecided, "--from", "--to")
+	undecidednote.Report(ctx, opts.Diagnostics, undecided, "--from", "--to")
 	// Apply the planned-change half of target validation to offline comparisons
 	// as well. A table both sides name and describe
 	// differently is rebuilt by the SQLite planner, which destroys a module's

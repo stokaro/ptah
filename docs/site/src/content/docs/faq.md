@@ -744,7 +744,8 @@ documentation, releases, and support matrix.
 
 ### We use versioned migrations. Can the operator run `up` for us? {#operator-and-versioned-migrations}
 
-No. `PtahSchema` reconciles a desired schema, and no resource applies a
-migration directory. Deploy a versioned workflow with `ptah migrations up`
-against a pinned artifact from your pipeline or a Job of your own. See
-[Kubernetes operator](../operate/kubernetes-operator/#what-it-does-not-deploy).
+Yes. `PtahMigration` runs a sequence of numbered SQL files from an OCI artifact
+and holds it to the database's own revision table. Without the operator, run
+`ptah migrations up` against a pinned artifact from your pipeline or a Job of
+your own. See
+[Kubernetes operator](../operate/kubernetes-operator/#what-it-reconciles).

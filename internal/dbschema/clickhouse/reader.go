@@ -178,8 +178,9 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	return schema, nil
 }
 
-// materializedViewInnerTablesSubquery names the storage tables ClickHouse
-// creates for the materialized views in one database.
+// materializedViewInnerTablesSubquery names the tables ClickHouse creates for
+// the materialized views in one database: each view's storage, and the
+// temporary table a refresh writes.
 //
 // A materialized view declared with a storage clause rather than a TO target
 // owns a real MergeTree table, and that table is in the same database with the
@@ -229,22 +230,34 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 // not have turns a working read into an error. An Atomic database is unaffected
 // -- the derived name carries the view's own UUID.
 //
+// A refreshable view adds one more table while a refresh runs. The refresh
+// writes into ".tmp.inner_id.<the view's uuid>" and then exchanges it with the
+// view's target. The view's storage and a TO target both get this table.
+// Measured on 26.9.21.9 and 24.10.4.191, the table is a MergeTree table with
+// its own UUID, and it exists only for the duration of the refresh. A read that
+// meets it reports a table nobody declared, and a read that catches it while it
+// is being created refuses its empty engine. So the set holds that name too,
+// derived from the view's UUID like the storage name. An Ordinary database
+// needs no such name: both servers refuse a refreshable view there unless it
+// is APPEND, and an APPEND refresh inserts into the target directly.
+//
 // DropAllTables derives nothing: it takes its table inventory after
 // the views are dropped, so the guess above cannot make the reset leave a table
 // behind.
 const materializedViewInnerTablesSubquery = `
-		SELECT ` + innerTableNameExpression + `
+		SELECT arrayJoin(` + innerTableNamesExpression + `)
 		FROM system.tables
 		WHERE database = ? AND engine = 'MaterializedView'
 `
 
-// innerTableNameExpression names the storage table of the materialized-view row
-// it is evaluated over, choosing the spelling the row's own database engine
-// uses.
-const innerTableNameExpression = `if(
+// innerTableNamesExpression names the tables ClickHouse keeps for the
+// materialized-view row it is evaluated over, choosing the spelling the row's
+// own database engine uses: the view's storage, and in an Atomic database the
+// temporary table a refresh writes.
+const innerTableNamesExpression = `if(
 		         uuid = toUUID('00000000-0000-0000-0000-000000000000'),
-		         concat('.inner.', name),
-		         concat('.inner_id.', toString(uuid))
+		         [concat('.inner.', name)],
+		         [concat('.inner_id.', toString(uuid)), concat('.tmp.inner_id.', toString(uuid))]
 		       )`
 
 func (r *Reader) resolveDatabaseName(ctx context.Context) (string, error) {

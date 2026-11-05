@@ -156,6 +156,10 @@ var hostFeatures = []string{
 	// reaches the table's owner as one rename step; see
 	// commonPlanner.indexChanges.
 	provider.IndexRenamesFeature,
+	// A read names the tables it found and does not describe, and the
+	// comparison refuses a declaration at one in the provider's words; see
+	// reader.unreadTables.
+	provider.UnreadTablesFeature,
 	// An offline command plans an engine with the capabilities its provider
 	// states for it; see registerDefaultCapabilities.
 	provider.DefaultCapabilitiesFeature,

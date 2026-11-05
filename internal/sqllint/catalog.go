@@ -30,6 +30,8 @@ var catalogRules = []CatalogRule{
 		Title:    "index names a column the schema does not declare",
 		Severity: SeverityError,
 	},
+	{ID: RuleIdentifierTruncated, Title: identifierTruncatedTitle, Severity: SeverityWarning},
+	{ID: RuleIdentifierCollision, Title: identifierCollisionTitle, Severity: SeverityError},
 	{ID: RuleUnsupportedCapability, Title: "Statement requires unsupported capability", Severity: SeverityError},
 	{ID: RuleDynamicSQL, Title: "Dynamic SQL limits static analysis", Severity: SeverityInfo},
 	{ID: RuleStatementsNotAnalyzed, Title: "Statements no rule analyzed", Severity: SeverityInfo},

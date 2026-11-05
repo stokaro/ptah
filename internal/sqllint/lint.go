@@ -153,6 +153,10 @@ type Context struct {
 	// bodies are the owner's readings of the routine bodies the file
 	// defines, by the node that defines each.
 	bodies map[ast.Node]routineext.Reading
+	// namesJudged are the nodes whose declared names DDL003 and DDL004
+	// judged, which is every node that declares a name on a dialect whose
+	// server cuts long names, and none elsewhere.
+	namesJudged map[ast.Node]bool
 }
 
 func DefaultRules() []Rule {
@@ -210,13 +214,17 @@ func LintSource(ctx context.Context, source Source, opts Options) ([]Finding, er
 	var findings []Finding
 	var unanalyzedKinds []string
 	fileTables := declaredTablesIn(source, opts, caps)
-	for _, item := range items {
+	nameFindings, namesJudged := storedNameFindings(source, items, opts)
+	for i, item := range items {
 		if item.findings != nil {
 			findings = append(findings, item.findings...)
 			continue
 		}
-		statementFindings, unanalyzed := lintParsedStatement(source, item, fileTables, bodies, opts, caps)
+		statementFindings, unanalyzed := lintParsedStatement(source, item, fileTables, bodies, namesJudged, opts, caps)
 		findings = append(findings, statementFindings...)
+		if nameFindings != nil {
+			findings = append(findings, nameFindings[i]...)
+		}
 		unanalyzedKinds = appendUnanalyzed(unanalyzedKinds, unanalyzed)
 	}
 	if len(unanalyzedKinds) > 0 {
@@ -460,6 +468,7 @@ func lintParsedStatement(
 	item sourceItem,
 	fileTables map[string]map[string]bool,
 	bodies map[ast.Node]routineext.Reading,
+	namesJudged map[ast.Node]bool,
 	opts Options,
 	caps capability.Capabilities,
 ) ([]Finding, []string) {
@@ -472,6 +481,7 @@ func lintParsedStatement(
 		Schema:       opts.Schema,
 		fileTables:   fileTables,
 		bodies:       bodies,
+		namesJudged:  namesJudged,
 	}
 	findings := make([]Finding, 0)
 	var unanalyzed []string
@@ -497,7 +507,7 @@ func lintParsedStatement(
 // this linter has anything to say about it; silencing the rule that says so
 // must not manufacture a different complaint about the same statement.
 func unanalyzedStatementLabel(ctx Context, stmt ast.Node) (string, bool) {
-	if _, analyzed := analyzedStatementKinds[reflect.TypeOf(stmt)]; analyzed {
+	if _, analyzed := analyzedStatementKinds[reflect.TypeOf(stmt)]; analyzed || ctx.namesJudged[stmt] {
 		return "", false
 	}
 	// A kind the unsupported rule already names is reported by SQL002, whose
@@ -738,10 +748,11 @@ func (unsupportedRoutineRule) CheckStatement(ctx Context, stmt ast.Node) []Findi
 }
 
 // analyzedStatementKinds are the statement kinds a rule in this package
-// actually examines. It is the ONLY way a statement reaches the end of a lint
-// run without being reported, and the direction is the whole point: a node kind
-// added to core/ast joins the reported set by default rather than the silent
-// one.
+// examines on every dialect. Beside the nodes whose names DDL003 and DDL004
+// judged, which depend on the dialect (Context.namesJudged), it is the only way
+// a statement reaches the end of a lint run without being reported, and the
+// direction is the whole point: a node kind added to core/ast joins the
+// reported set by default rather than the silent one.
 //
 // It was the other way around, behind a `default: return nil`, and the cost was
 // measured rather than argued. On postgres, `ptah sql lint` answered

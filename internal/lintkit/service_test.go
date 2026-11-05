@@ -3,6 +3,7 @@ package lintkit_test
 import (
 	"context"
 	"slices"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -92,6 +93,44 @@ func TestRules_CheckMigrations_StatementAndFileRules(t *testing.T) {
 	c.Assert(lintext.ValidateCheck(renameRequest("XY101", "XY102", "XY103"), result), qt.IsNil)
 }
 
+// directoryRule reports, on the first statement of each up file, the files
+// before it that hold a DROP, which no single file can say.
+func directoryRule() lintkit.Rule {
+	return lintkit.Rule{
+		Rule: lintext.Rule{Code: "XY104", Title: "t", Severity: lintext.Info, Targets: []string{"postgres"}},
+		Directory: func(files []lintkit.File) [][]lintext.Violation {
+			violations := make([][]lintext.Violation, len(files))
+			var dropped []string
+			for i, file := range files {
+				if !file.IsUp {
+					continue
+				}
+				violations[i] = []lintext.Violation{{Statement: 0, Message: "dropped before: " + strings.Join(dropped, ",")}}
+				if slices.ContainsFunc(file.Statements, func(statement lintext.Statement) bool { return slices.Contains(statement.Words, "DROP") }) {
+					dropped = append(dropped, file.Name)
+				}
+			}
+			return violations[:len(violations)-1]
+		},
+	}
+}
+
+// A directory rule is called once with every file, in request order, and its
+// answer for each file is reported as that file's; a file its answer stops
+// short of gets nothing.
+func TestRules_CheckMigrations_DirectoryRule(t *testing.T) {
+	c := qt.New(t)
+
+	result, err := lintkit.Rules{directoryRule()}.CheckMigrations(c.Context(), renameRequest("XY104"))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result, qt.DeepEquals, lintext.CheckResult{Complete: true, Findings: []lintext.Finding{
+		{Code: "XY104", File: 0, Statement: 0, Message: "dropped before: "},
+		{Code: "XY104", File: 2, Statement: 0, Message: "dropped before: 2.up.sql"},
+	}})
+	c.Assert(lintext.ValidateCheck(renameRequest("XY104"), result), qt.IsNil)
+}
+
 // A baseline rule names its statements on an up file with a version where it
 // wants any, on every call; the state a file rule reads is the one its file's version
 // starts from, and it resolves nothing on the call that carries none.
@@ -157,13 +196,16 @@ func TestRules_Validate_FailurePath(t *testing.T) {
 	textWithSubjects := wordRule("XY101", "DROP", false)
 	textWithSubjects.BaselineSubjects = func(*lintkit.File) []int { return nil }
 	invalid := wordRule("xy101", "DROP", false)
+	fileAndDirectory := directoryRule()
+	fileAndDirectory.File = func(*lintkit.File) []lintext.Violation { return nil }
 	for _, test := range []struct {
 		name    string
 		rules   lintkit.Rules
 		wantErr string
 	}{
-		{"both functions", lintkit.Rules{both}, `.*rule XY101 must set exactly one of Statement and File`},
-		{"no function", lintkit.Rules{neither}, `.*rule XY101 must set exactly one of Statement and File`},
+		{"both functions", lintkit.Rules{both}, `.*rule XY101 must set exactly one of Statement, File and Directory`},
+		{"a file and a directory function", lintkit.Rules{fileAndDirectory}, `.*rule XY104 must set exactly one of Statement, File and Directory`},
+		{"no function", lintkit.Rules{neither}, `.*rule XY101 must set exactly one of Statement, File and Directory`},
 		{"a baseline rule naming no subjects", lintkit.Rules{withoutSubjects}, `.*rule XY301 sets BaselineSubjects exactly when its input reads a baseline`},
 		{"a text rule naming subjects", lintkit.Rules{textWithSubjects}, `.*rule XY101 sets BaselineSubjects exactly when its input reads a baseline`},
 		{"two rules of one code", lintkit.Rules{wordRule("XY101", "DROP", false), wordRule("XY101", "TRUNCATE", false)}, `.*two rules of code XY101`},

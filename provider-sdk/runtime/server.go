@@ -84,6 +84,7 @@ type Server struct {
 	MigrationSplits  provider.MigrationSplitter
 	ChangeReverser   provider.ChangeReverser
 	ValueReporter    provider.ValueReporter
+	SQLScanner       provider.SQLScanner
 }
 
 // Validate refuses a malformed description or a false service advertisement.
@@ -134,6 +135,7 @@ func (s Server) Validate() error {
 		{provider.MigrationSplitFeature, !nilService(s.MigrationSplits)},
 		{provider.ReverseChangesFeature, !nilService(s.ChangeReverser)},
 		{provider.ReportCountsFeature, !nilService(s.ValueReporter)},
+		{provider.ScanSQLFeature, !nilService(s.SQLScanner)},
 	} {
 		if slices.Contains(s.Description.GetFeatures(), service.feature) != service.present {
 			return fmt.Errorf("%w: %s advertisement differs from implementation", provider.ErrProtocol, service.feature)

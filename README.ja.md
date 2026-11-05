@@ -178,6 +178,8 @@ No schema drift detected.
 
 - [ワークフローを選ぶ](https://docs.ptah.run/edge/start/choose-a-workflow/)では、
   バージョン管理マイグレーションと直接のスキーマ変更を比較します。
+- [Ptah のエコシステムを見る](https://docs.ptah.run/edge/start/ecosystem/)では、
+  ワークフローに必要な公開リポジトリを確認します。
 - [稼働中のデータベースを調べる](https://docs.ptah.run/edge/direct/inspect/)、
   [比較してドリフトを検出する](https://docs.ptah.run/edge/direct/compare-and-drift/)。
 - [マイグレーションの整合性を検証する](https://docs.ptah.run/edge/versioned/integrity-and-safety/)、

@@ -43,11 +43,11 @@ const undecidedRoleName = "ptah_undecided_reporter"
 
 // undecidedRoleWarning is the whole of what the native verbs print on standard
 // error for the withheld role.
-const undecidedRoleWarning = `Warning: role "` + undecidedRoleName + `" is declared by the desired schema` +
+const undecidedRoleWarning = `warning: role "` + undecidedRoleName + `" is declared by the desired schema` +
 	` but no change was planned for it: the database does not describe role objects because` +
 	` the read was refused the catalog that would have listed them, so this comparison` +
 	` cannot tell it apart from one that already exists, and the creation Ptah renders` +
-	` for it cannot safely converge from an unknown current state.
+	` for it cannot safely converge from an unknown current state
 `
 
 // undecidedTableSchema is the part of the desired schema the account can see,

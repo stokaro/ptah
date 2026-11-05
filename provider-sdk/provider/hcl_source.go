@@ -15,6 +15,13 @@ import (
 // accepting HCL fragments without one. Contract 25.3.
 const HCLSourceFeature = "source.hcl"
 
+// HCLPlatformFeature enables the TABLE_PLATFORM site of an HCL claim, which
+// reads the overrides of a table's platform block of the engine, and a loss
+// that names a value such a part writes in part. It is a two-way feature: a
+// provider lists it, and so does each engine that declares such a claim, beside
+// HCLSourceFeature. Contract 25.22.
+const HCLPlatformFeature = "source.hcl-platform"
+
 // The type of the frontend's own block each attribute site extends. An
 // IN_TABLE and a TOP_LEVEL claim name a block of the owner's.
 var hclSiteTypes = map[protocol.HCLSourceBlock_Site][]string{
@@ -25,7 +32,8 @@ var hclSiteTypes = map[protocol.HCLSourceBlock_Site][]string{
 }
 
 // hclOwnBlock reports whether a site reads a block of the owner's own rather
-// than attributes of the frontend's block.
+// than attributes of the frontend's block. A TABLE_PLATFORM claim reads the
+// overrides of the frontend's platform block as attributes.
 func hclOwnBlock(site protocol.HCLSourceBlock_Site) bool {
 	return site == protocol.HCLSourceBlock_TOP_LEVEL || site == protocol.HCLSourceBlock_IN_TABLE
 }
@@ -48,6 +56,9 @@ func validateHCLSource(description *protocol.Description, engine *protocol.Engin
 	if listed && (!slices.Contains(description.GetFeatures(), HCLSourceFeature) || !slices.Contains(description.GetFeatures(), DecodeSourceFeature)) {
 		return sourceError("HCL claims need the provider's " + HCLSourceFeature + " and source decoding")
 	}
+	if slices.Contains(engine.GetFeatures(), HCLPlatformFeature) && (!listed || !slices.Contains(description.GetFeatures(), HCLPlatformFeature)) {
+		return sourceError("HCL platform claims need the provider's " + HCLPlatformFeature + " and the engine's " + HCLSourceFeature)
+	}
 	declaration := engine.GetHclSource()
 	if listed != (declaration != nil) {
 		return sourceError("an engine declares HCL claims exactly when it lists " + HCLSourceFeature)
@@ -62,7 +73,7 @@ func validateHCLSource(description *protocol.Description, engine *protocol.Engin
 	claimed := make(map[claimKey]bool)
 	covered := make(map[string]bool)
 	for _, block := range declaration.GetBlocks() {
-		if err := validateHCLBlock(description, engine.GetId(), block); err != nil {
+		if err := validateHCLBlock(description, engine, block); err != nil {
 			return err
 		}
 		key := claimKey{block.GetSite(), block.GetType()}
@@ -70,8 +81,10 @@ func validateHCLSource(description *protocol.Description, engine *protocol.Engin
 			return sourceError("duplicate HCL block claim")
 		}
 		claimed[key] = true
+		// A platform claim describes a model only for the tables that
+		// write the group, so a model that lists HCL needs another claim.
 		for _, kind := range block.GetModels() {
-			covered[kind] = true
+			covered[kind] = covered[kind] || block.GetSite() != protocol.HCLSourceBlock_TABLE_PLATFORM
 		}
 	}
 	for _, model := range engine.GetValueModels() {
@@ -87,10 +100,16 @@ func validateHCLSource(description *protocol.Description, engine *protocol.Engin
 	return nil
 }
 
-func validateHCLBlock(description *protocol.Description, engine string, block *protocol.HCLSourceBlock) error {
+func validateHCLBlock(description *protocol.Description, engine *protocol.Engine, block *protocol.HCLSourceBlock) error {
 	site := block.GetSite()
 	if _, known := protocol.HCLSourceBlock_Site_name[int32(site)]; !known || site == protocol.HCLSourceBlock_SITE_UNSPECIFIED {
 		return sourceError("unknown HCL block site")
+	}
+	platform := site == protocol.HCLSourceBlock_TABLE_PLATFORM
+	if platform {
+		if err := validateHCLPlatformBlock(engine, block); err != nil {
+			return err
+		}
 	}
 	if !validHCLName(block.GetType()) || strings.TrimSpace(block.GetSelector()) == "" || len(block.GetModels()) == 0 {
 		return sourceError("incomplete HCL block claim")
@@ -109,13 +128,41 @@ func validateHCLBlock(description *protocol.Description, engine string, block *p
 	}
 	seen := make(map[string]bool)
 	for _, kind := range block.GetModels() {
-		model := findValueModel(description, engine, kind, protocol.ValueInput_DESIRED)
-		if !slices.Contains(model.GetSourceFormats(), protocol.SourceDocument_HCL) || seen[kind] {
+		model := findValueModel(description, engine.GetId(), kind, protocol.ValueInput_DESIRED)
+		if model == nil || !platform && !slices.Contains(model.GetSourceFormats(), protocol.SourceDocument_HCL) || seen[kind] {
 			return sourceError("HCL block names an unknown, duplicate, or unsupported desired model")
 		}
 		seen[kind] = true
 	}
 	return nil
+}
+
+// validateHCLPlatformBlock checks what a TABLE_PLATFORM claim takes beyond the
+// shape of an attribute claim: the engine's feature, the engine's ID as its
+// type, STRING attributes, and no inherited attribute, since an override is
+// all the group holds.
+func validateHCLPlatformBlock(engine *protocol.Engine, block *protocol.HCLSourceBlock) error {
+	if !slices.Contains(engine.GetFeatures(), HCLPlatformFeature) {
+		return sourceError("an HCL platform claim needs the engine's " + HCLPlatformFeature)
+	}
+	if block.GetType() != engine.GetId() {
+		return sourceError("an HCL platform claim names its engine's group")
+	}
+	if len(block.GetInherited()) != 0 || slices.ContainsFunc(block.GetAttributes(), func(attribute *protocol.HCLSourceAttribute) bool {
+		return attribute.GetKind() != protocol.HCLSourceAttribute_STRING
+	}) {
+		return sourceError("an HCL platform claim reads string overrides and inherits nothing")
+	}
+	return nil
+}
+
+// hclPlatformModel reports whether a TABLE_PLATFORM claim of the engine names
+// the model, which brings it into an HCL document's scope whatever its source
+// formats.
+func hclPlatformModel(engine *protocol.Engine, kind string) bool {
+	return slices.ContainsFunc(engine.GetHclSource().GetBlocks(), func(block *protocol.HCLSourceBlock) bool {
+		return block.GetSite() == protocol.HCLSourceBlock_TABLE_PLATFORM && slices.Contains(block.GetModels(), kind)
+	})
 }
 
 // validateHCLBlockShape checks what only some sites take: a naming at the top
@@ -274,9 +321,9 @@ func hclMappingWithin(mapping *protocol.SourceMapping, names []string) error {
 }
 
 // validateHCLBinding requires what each site attaches to: nothing at the top
-// level, the table for a block in a table and for table attributes, the table
-// and the index for index attributes, and the routine or the view for their
-// attributes.
+// level, the table for a block in a table, for table attributes and for a
+// table's platform group, the table and the index for index attributes, and
+// the routine or the view for their attributes.
 func validateHCLBinding(document *protocol.SourceDocument, claim *protocol.HCLSourceBlock, fragment *protocol.SourceFragment) error {
 	tableBound := slices.ContainsFunc(document.GetBindings(), func(binding *protocol.SourceBinding) bool {
 		return binding.GetId() == fragment.GetBindingId() && binding.GetObject().GetKind() == "table"
@@ -286,7 +333,7 @@ func validateHCLBinding(document *protocol.SourceDocument, claim *protocol.HCLSo
 	switch claim.GetSite() {
 	case protocol.HCLSourceBlock_TOP_LEVEL:
 		valid = fragment.GetBindingId() == "" && subject == nil
-	case protocol.HCLSourceBlock_IN_TABLE, protocol.HCLSourceBlock_TABLE_ATTRIBUTES:
+	case protocol.HCLSourceBlock_IN_TABLE, protocol.HCLSourceBlock_TABLE_ATTRIBUTES, protocol.HCLSourceBlock_TABLE_PLATFORM:
 		valid = tableBound && subject == nil
 	case protocol.HCLSourceBlock_INDEX_ATTRIBUTES:
 		valid = tableBound && subject.GetKind() == "index" && len(subject.GetPath()) == 1

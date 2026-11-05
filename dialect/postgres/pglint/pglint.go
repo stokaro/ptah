@@ -48,6 +48,7 @@ func rules() lintkit.Rules {
 		postgresOnlineTransactionRule(),
 	}
 	all = append(all, postgresRules()...)
+	all = append(all, identifierRules()...)
 	all = append(all, postgresCostRules()...)
 	all = append(all, atlasGapPostgresRules()...)
 	all = append(all, transactionRules()...)

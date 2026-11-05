@@ -38,7 +38,7 @@ Each normalized dialect maps
 to an implementation family, and several engines deliberately share one —
 MySQL and MariaDB share a planner family that SQL Server and Oracle also ride,
 and CockroachDB, YugabyteDB, and Spanner ride the PostgreSQL family. An engine
-an executable provider serves, such as [YDB](../../databases/ydb/), rides none:
+an executable provider serves, such as [YDB](../../extend/providers/ydb/), rides none:
 its provider renders, plans, reads and writes for it. Sharing a
 family is not sharing a dialect: each member keeps its own renderer and its own
 capability set, which is what lets Oracle write bare identifiers while the rest

@@ -7,12 +7,14 @@ import { fileURLToPath } from 'node:url';
 import AxeBuilder from '@axe-core/playwright';
 import { loadChromium, startBuiltSite } from './lib/built-site.mjs';
 import { WCAG_TAGS } from './lib/wcag.mjs';
+import { components, relationships } from '../src/ecosystem.mjs';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const siteRoot = join(scriptDir, '..');
 const routes = [
   '/',
   '/start/quick-start/',
+  '/start/ecosystem/',
   '/databases/support-matrix/',
   '/reference/native-commands/',
   '/schema/document/',
@@ -138,6 +140,174 @@ async function keyboardChecks(page, origin, base) {
   return problems;
 }
 
+// The ecosystem map's behavior, against the declaration it is drawn from. An
+// axe run reads the page at rest and cannot see whether selecting a component
+// does anything, so these drive it the three ways a reader can arrive: keyboard
+// on the drawing, touch on the narrow layout, and no JavaScript at all.
+const ecosystemRoute = '/start/ecosystem/';
+const expectedEdges = (id) =>
+  relationships.filter(({ from, to }) => from === id || to === id).map((relationship) => relationship.id).sort();
+
+async function ecosystemDrawingChecks(page, url) {
+  const problems = [];
+  await page.goto(url, { waitUntil: 'load' });
+  const prefix = `${ecosystemRoute} [drawing]`;
+  const map = page.locator('ptah-ecosystem-map');
+  const drawn = page.locator('svg.eco-svg [data-eco-node]');
+  if (await drawn.count() !== components.length) problems.push(`${prefix} draws ${await drawn.count()} of ${components.length} components`);
+  if (!await page.locator('svg.eco-svg').isVisible()) problems.push(`${prefix} the drawing is not shown at desktop width`);
+  if (await page.locator('[data-eco-cards]').isVisible()) problems.push(`${prefix} the narrow layout is shown at desktop width`);
+
+  // Tab reaches a component, and the focus ring is visible on it.
+  await page.locator('[data-eco-reset]').evaluate((reset) => {
+    reset.disabled = false;
+    reset.focus();
+    reset.disabled = true;
+  });
+  await drawn.first().focus();
+  await page.keyboard.press('Tab');
+  const ring = await page.evaluate(() => {
+    const active = document.activeElement;
+    const focus = active?.querySelector?.('.eco-node__focus');
+    return { id: active?.dataset?.ecoNode, stroke: focus ? getComputedStyle(focus).stroke : null };
+  });
+  if (!ring.id) problems.push(`${prefix} Tab did not move to the next component`);
+  if (!ring.stroke || ring.stroke === 'transparent' || ring.stroke === 'rgba(0, 0, 0, 0)') problems.push(`${prefix} a focused component shows no focus ring (${ring.stroke})`);
+
+  const id = 'ptah-operator';
+  const node = page.locator(`svg.eco-svg [data-eco-node="${id}"]`);
+  await node.focus();
+  await page.keyboard.press('Enter');
+  if (await node.getAttribute('aria-pressed') !== 'true') problems.push(`${prefix} Enter did not select ${id}`);
+  const active = (await page.locator('[data-eco-edge].is-active').evaluateAll((edges) => edges.map((edge) => edge.dataset.ecoEdge))).sort();
+  if (JSON.stringify(active) !== JSON.stringify(expectedEdges(id))) problems.push(`${prefix} highlighted ${active} for ${id}, want ${expectedEdges(id)}`);
+  const labels = await page.locator('[data-eco-edge-label].is-active').count();
+  if (labels !== expectedEdges(id).length) problems.push(`${prefix} ${labels} relationship labels stayed highlighted, want ${expectedEdges(id).length}`);
+  if (!await page.locator(`[data-eco-detail="${id}"]`).isVisible()) problems.push(`${prefix} the details panel does not show ${id}`);
+  const shown = await page.locator('[data-eco-details] .eco-detail:visible').count();
+  if (shown !== 1) problems.push(`${prefix} the details panel shows ${shown} sections, want 1`);
+  const links = await page.locator(`[data-eco-detail="${id}"] a[href*="github.com/stokaro/${id}"]`).count();
+  if (links !== 1) problems.push(`${prefix} the details panel has ${links} repository links for ${id}, want 1`);
+  const status = await page.locator('[data-eco-status]').innerText();
+  if (!status.includes(id)) problems.push(`${prefix} the selection was not announced: ${JSON.stringify(status)}`);
+  if (new URL(page.url()).pathname !== new URL(url).pathname) problems.push(`${prefix} selecting a component navigated away`);
+
+  // A related component can be reached from the panel, and focus survives the
+  // section it was in being hidden.
+  await page.locator(`[data-eco-detail="${id}"] [data-eco-select="ptah"]`).click();
+  if (await page.locator('svg.eco-svg [data-eco-node="ptah"]').getAttribute('aria-pressed') !== 'true') problems.push(`${prefix} the panel did not select ptah`);
+  const focusInPanel = await page.evaluate(() => document.activeElement?.id);
+  if (focusInPanel !== 'ptah-ecosystem-detail-ptah') problems.push(`${prefix} focus went to ${focusInPanel} after selecting from the panel`);
+
+  // Escape clears, from inside the panel, and returns focus to the map.
+  await page.keyboard.press('Escape');
+  if (await map.getAttribute('data-selection') !== null) problems.push(`${prefix} Escape did not clear the selection`);
+  const afterEscape = await page.evaluate(() => document.activeElement?.dataset?.ecoNode);
+  if (afterEscape !== 'ptah') problems.push(`${prefix} focus went to ${afterEscape} after Escape`);
+
+  // A usage path highlights the whole path, and Show all restores the map.
+  const path = page.locator('[data-eco-path="kubernetes"]');
+  await path.click();
+  if (await path.getAttribute('aria-pressed') !== 'true') problems.push(`${prefix} the Kubernetes path was not selected`);
+  if (await page.locator('[data-eco-edge].is-active').count() === 0) problems.push(`${prefix} the Kubernetes path highlighted nothing`);
+  if (!await page.locator('[data-eco-path-detail="kubernetes"]').isVisible()) problems.push(`${prefix} the panel does not show the Kubernetes path`);
+  const reset = page.locator('[data-eco-reset]');
+  await reset.click();
+  if (await page.locator('[data-eco-edge].is-active, .eco-node[aria-pressed="true"], .eco-node.is-related').count() !== 0) problems.push(`${prefix} Show all left something highlighted`);
+  if (!await page.locator('[data-eco-intro]').isVisible()) problems.push(`${prefix} Show all did not restore the panel`);
+  if (await page.evaluate(() => document.activeElement === document.body)) problems.push(`${prefix} Show all dropped focus to the page`);
+
+  // Full size and Download follow the theme and resolve.
+  const figure = page.locator('[data-visual-id="ptah-ecosystem"]');
+  for (const theme of ['light', 'dark']) {
+    await page.evaluate((value) => { document.documentElement.dataset.theme = value; }, theme);
+    await page.waitForFunction(
+      (value) => document.querySelector('[data-preview-action="full-size"][data-eco-themed]').href.includes(`-${value}.svg`),
+      theme,
+      { timeout: 2_000 },
+    ).catch(() => problems.push(`${prefix} Full size does not follow the ${theme} theme`));
+    for (const action of ['full-size', 'download', 'source']) {
+      const href = await figure.locator(`[data-preview-action="${action}"]`).evaluate((link) => link.href);
+      const response = await page.request.get(href);
+      if (!response.ok()) problems.push(`${prefix} ${action} ${href} returned ${response.status()}`);
+    }
+  }
+  return problems;
+}
+
+async function ecosystemTouchChecks(browser, url) {
+  const problems = [];
+  const prefix = `${ecosystemRoute} [touch, 390px]`;
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  const page = await context.newPage();
+  await page.goto(url, { waitUntil: 'load' });
+  if (await page.locator('svg.eco-svg').isVisible()) problems.push(`${prefix} the drawing is shown at phone width`);
+  const cards = page.locator('[data-eco-cards]');
+  if (!await cards.isVisible()) problems.push(`${prefix} the narrow layout is not shown`);
+  // Each relationship is written on the card it leaves, with nothing selected.
+  const lines = await page.locator('[data-eco-line]:visible').count();
+  if (lines !== relationships.length) problems.push(`${prefix} ${lines} of ${relationships.length} relationships are written out at rest`);
+  const card = page.locator('.eco-card[data-eco-node="homebrew-ptah"]');
+  await card.tap();
+  if (await card.getAttribute('aria-pressed') !== 'true') problems.push(`${prefix} a tap did not select homebrew-ptah`);
+  // Visibility first: innerText reads the text of a hidden element too.
+  const note = page.locator('.eco-card[data-eco-node="ptah"] [data-eco-note]');
+  if (!await note.isVisible() || !(await note.innerText()).includes('homebrew-ptah')) {
+    problems.push(`${prefix} the related card does not say how it is related`);
+  }
+  const geometry = await page.evaluate(() => ({
+    cardsBottom: document.querySelector('[data-eco-cards]').getBoundingClientRect().bottom,
+    detailsTop: document.querySelector('[data-eco-details]').getBoundingClientRect().top,
+    overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  }));
+  if (geometry.detailsTop < geometry.cardsBottom) problems.push(`${prefix} the details are not below the map`);
+  if (geometry.overflow > 1) problems.push(`${prefix} the page overflows by ${geometry.overflow}px after a selection`);
+  if (!await page.locator('[data-eco-detail="homebrew-ptah"]').isVisible()) problems.push(`${prefix} the details panel does not show homebrew-ptah`);
+  await context.close();
+  return problems;
+}
+
+async function ecosystemNoScriptChecks(browser, url) {
+  const problems = [];
+  for (const viewport of viewports) {
+    const prefix = `${ecosystemRoute} [no JavaScript, ${viewport.name}]`;
+    const context = await browser.newContext({ viewport, javaScriptEnabled: false });
+    const page = await context.newPage();
+    await page.goto(url, { waitUntil: 'load' });
+    const diagram = page.locator(viewport.name === 'mobile' ? '[data-eco-cards]' : 'svg.eco-svg');
+    if (!await diagram.isVisible()) problems.push(`${prefix} no readable diagram is shown`);
+    for (const selector of ['[data-eco-toolbar]', '[data-eco-details]']) {
+      if (await page.locator(selector).isVisible()) problems.push(`${prefix} ${selector} is shown with nothing to drive it`);
+    }
+    if (await page.locator('[data-eco-node][role="button"]').count() !== 0) problems.push(`${prefix} a component claims to be a button`);
+    const article = page.locator('.sl-markdown-content');
+    for (const component of components.filter(({ kind }) => kind === 'repository')) {
+      const repository = component.links.find(({ label }) => label === 'Repository').href;
+      const row = article.locator(`.eco-table tr:has(a[href="${repository}"])`);
+      if (await row.count() !== 1) problems.push(`${prefix} the repository table has ${await row.count()} rows for ${component.name}`);
+    }
+    await context.close();
+  }
+  return problems;
+}
+
+async function ecosystemSelectedAxe(browser, origin, base) {
+  const problems = [];
+  for (const scheme of colorSchemes) {
+    for (const viewport of viewports) {
+      const context = await browser.newContext({ viewport, colorScheme: scheme });
+      const page = await context.newPage();
+      await page.goto(`${origin}${base}${ecosystemRoute}`, { waitUntil: 'load' });
+      await page.locator('[data-eco-node="ptah-operator"]:visible').click();
+      const violations = await axeViolations(page);
+      problems.push(...violations.map((violation) =>
+        formatViolation(`${ecosystemRoute} with a selection`, viewport.name, scheme, 'any', violation)));
+      await context.close();
+    }
+  }
+  return problems;
+}
+
 async function main() {
   const chromium = await loadChromium('check-accessibility.mjs');
   if (!chromium) return;
@@ -181,7 +351,12 @@ async function main() {
 
     const keyboardPage = await browser.newPage({ viewport: viewports[1] });
     problems.push(...await keyboardChecks(keyboardPage, origin, built.base));
+    const ecosystemUrl = `${origin}${built.base}${ecosystemRoute}`;
+    problems.push(...await ecosystemDrawingChecks(keyboardPage, ecosystemUrl));
     await keyboardPage.close();
+    problems.push(...await ecosystemTouchChecks(browser, ecosystemUrl));
+    problems.push(...await ecosystemNoScriptChecks(browser, ecosystemUrl));
+    problems.push(...await ecosystemSelectedAxe(browser, origin, built.base));
   } finally {
     await browser.close();
     await new Promise((resolve) => built.server.close(resolve));
@@ -196,7 +371,7 @@ async function main() {
   console.log(
     `check-accessibility.mjs: OK (${routes.length} routes x ${viewports.length} viewports x ` +
     `${colorSchemes.join(' and ')} x ${platforms.map((platform) => platform.name).join(' and ')} shortcut hints ` +
-    'plus keyboard controls)',
+    'plus keyboard controls and the ecosystem map by keyboard, touch and without JavaScript)',
   );
 }
 

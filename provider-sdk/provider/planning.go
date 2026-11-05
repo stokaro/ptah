@@ -106,6 +106,9 @@ func validatePlanningCommonObjects(description *protocol.Description, engine *pr
 		if current != nil && !slices.ContainsFunc(request.GetCurrentCommon().GetViews(), func(view *protocol.ObservedView) bool { return proto.Equal(view, current) }) {
 			return commonObjectError("replacement operand is not the captured current view")
 		}
+		if err := validateRolePassword(description, engine, request.GetTargetFeatures(), step.GetCommonObject()); err != nil {
+			return err
+		}
 		if _, err := commonChangeSubject(engine.GetId(), kinds, step.GetCommonObject()); err != nil {
 			return err
 		}
@@ -145,8 +148,11 @@ func validatePlanningChanges(description *protocol.Description, request *protoco
 	return validateComparisonValues(description, planningValueContext(request), protocol.ValueInput_CHANGE, values)
 }
 
+// planningValueContext is the comparison context the captured state of a
+// planning request is checked in. It carries the request's identifiers, whose
+// schema separator decides a subtree region of that state.
 func planningValueContext(request *protocol.PlanFeaturesRequest) *protocol.CompareModelsRequest {
-	return &protocol.CompareModelsRequest{Engine: request.GetEngine(), TargetFeatures: request.GetTargetFeatures()}
+	return &protocol.CompareModelsRequest{Engine: request.GetEngine(), TargetFeatures: request.GetTargetFeatures(), Identifiers: request.GetIdentifiers()}
 }
 
 // ValidatePlannedFeatures refuses incomplete replies, unowned operations, missing
