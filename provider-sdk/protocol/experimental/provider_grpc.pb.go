@@ -195,6 +195,7 @@ type ProviderClient interface {
 	// Contract 25.19. Used only when both sides list models.reverse.
 	ReverseChanges(ctx context.Context, in *ReverseChangesRequest, opts ...grpc.CallOption) (*ReversedChanges, error)
 	// Contract 25.26. A host calls it only for an engine that lists sql.scan.
+	// Contract 25.27 adds Engine.default_capabilities and no RPC.
 	ScanSQL(ctx context.Context, in *ScanSQLRequest, opts ...grpc.CallOption) (*SQLScan, error)
 }
 
@@ -1064,6 +1065,7 @@ type ProviderServer interface {
 	// Contract 25.19. Used only when both sides list models.reverse.
 	ReverseChanges(context.Context, *ReverseChangesRequest) (*ReversedChanges, error)
 	// Contract 25.26. A host calls it only for an engine that lists sql.scan.
+	// Contract 25.27 adds Engine.default_capabilities and no RPC.
 	ScanSQL(context.Context, *ScanSQLRequest) (*SQLScan, error)
 	mustEmbedUnimplementedProviderServer()
 }

@@ -98,6 +98,7 @@ service Provider {
   // Contract 25.19. Used only when both sides list models.reverse.
   rpc ReverseChanges(ReverseChangesRequest) returns (ReversedChanges);
   // Contract 25.26. A host calls it only for an engine that lists sql.scan.
+  // Contract 25.27 adds Engine.default_capabilities and no RPC.
   rpc ScanSQL(ScanSQLRequest) returns (SQLScan);
 }
 
@@ -179,6 +180,13 @@ message Engine {
   // Non-empty only when the engine lists models.reverse, and sent only to a
   // host that lists it. Contract 25.19.
   repeated ModelReversal reversals = 21;
+  // The capability facts the host plans the engine with when no session
+  // states the server's: those of the release line a command assumes without
+  // a server. A present false is an established answer; an absent key is
+  // unknown. Non-empty exactly when the engine lists
+  // engine.default-capabilities, and sent only to a host that lists it.
+  // Contract 25.27.
+  map<string, bool> default_capabilities = 22;
 }
 // ScopeSelection is how the --include, --exclude and --schema selectors name
 // the engine's objects of one model kind. The host reads a selector's name
