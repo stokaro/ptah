@@ -1567,6 +1567,10 @@ and a `pg_` name because the prefix is reserved (`role name "pg_monitor" is
 reserved`, SQLSTATE 42939). The prefix is matched literally, so `pgbouncer`,
 `pgadmin` and `pgpool` are ordinary roles and are planned as before.
 
+A grant to a `pg_` role is read and compared like any other, so `GRANT SELECT
+ON t TO pg_monitor` is planned once. A source cannot declare the role, so Ptah
+never revokes a grant it holds.
+
 One thing the refusal costs, so it stays reachable rather than being removed:
 on a cluster bootstrapped under another name, `CREATE ROLE "postgres"` succeeds.
 Measured on PostgreSQL 17.10, a cluster whose superuser is `admin` accepts the
