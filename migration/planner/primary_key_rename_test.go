@@ -52,21 +52,21 @@ func TestPrimaryKeyRename_HappyPath(t *testing.T) {
 			dialect: "postgres",
 			held:    keyedParent,
 			desired: `CREATE TABLE parent (id bigint NOT NULL, PRIMARY KEY (id));`,
-			want:    []string{},
+			want:    make([]string, 0),
 		},
 		{
 			name:    "the live name declared",
 			dialect: "postgres",
 			held:    keyedParent,
 			desired: `CREATE TABLE parent (id bigint NOT NULL, CONSTRAINT parent_pkey PRIMARY KEY (id));`,
-			want:    []string{},
+			want:    make([]string, 0),
 		},
 		{
 			name:    "a key the server names itself",
 			dialect: "mysql",
 			held:    keyedParent,
 			desired: `CREATE TABLE parent (id bigint NOT NULL, CONSTRAINT parent_custom PRIMARY KEY (id));`,
-			want:    []string{},
+			want:    make([]string, 0),
 		},
 	}
 	for _, test := range tests {

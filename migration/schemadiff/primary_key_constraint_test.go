@@ -71,9 +71,8 @@ func TestCompare_DeclaredPrimaryKey_Synced(t *testing.T) {
 }
 
 // TestCompare_DeclaredPrimaryKey_Renamed plans a PostgreSQL key declared under
-// another name than the database's as a replacement: the old key is dropped,
-// once, before the new one is added under its declared name. A table holds one
-// primary key, so the other order fails.
+// another name than the database's, over the columns the live key holds, as a
+// rename: the key's index stays, and so does a foreign key over it.
 func TestCompare_DeclaredPrimaryKey_Renamed(t *testing.T) {
 	c := qt.New(t)
 	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), declaredKeyDesired("hk_pk", ""), liveKeyCurrent("hk_pkey"), platform.Postgres, must.Must(builtin.New())))
@@ -84,10 +83,7 @@ func TestCompare_DeclaredPrimaryKey_Renamed(t *testing.T) {
 	)
 
 	c.Assert(err, qt.IsNil)
-	joined := strings.Join(plan, "\n")
-	c.Assert(strings.Count(joined, `DROP CONSTRAINT IF EXISTS "hk_pkey"`), qt.Equals, 1, qt.Commentf("%s", joined))
-	c.Assert(strings.Index(joined, `DROP CONSTRAINT IF EXISTS "hk_pkey"`) <
-		strings.Index(joined, `ADD CONSTRAINT "hk_pk" PRIMARY KEY ("id")`), qt.IsTrue, qt.Commentf("%s", joined))
+	c.Assert(plan, qt.DeepEquals, []string{`ALTER TABLE "hk" RENAME CONSTRAINT "hk_pkey" TO "hk_pk"`})
 }
 
 // TestCompare_DeclaredPrimaryKey_DefaultNameWritesNone adds a PostgreSQL key
