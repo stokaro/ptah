@@ -162,6 +162,12 @@ type Started struct {
 // Close stops the provider process.
 func (s *Started) Close() { s.host.Close() }
 
+// ReleaseLines returns the release lines the provider declares for the engine
+// the invocation selected, in the order it declared them.
+func (s *Started) ReleaseLines() []providerhost.ReleaseLine {
+	return s.host.ReleaseLines(s.target)
+}
+
 // EmbeddingStore returns the embedding store of the engine the invocation
 // selected, for the requests that need no session, or refuses an engine whose
 // provider keeps none.
