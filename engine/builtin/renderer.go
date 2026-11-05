@@ -3697,7 +3697,7 @@ func tableHasUniqueKey(database schemamodel.Database, dialect string, table sche
 func referencedKeyMatcher(dialect string) func(key, referenced []string) bool {
 	described, found := platform.Lookup(dialect)
 	if !found || !described.Comparison.ForeignKeyMatchesKeyInAnyOrder {
-		return func(key, referenced []string) bool { return slices.Equal(key, referenced) }
+		return slices.Equal[[]string]
 	}
 	return func(key, referenced []string) bool {
 		return len(key) == len(referenced) && !slices.ContainsFunc(referenced, func(column string) bool {
