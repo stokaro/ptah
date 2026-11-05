@@ -29,8 +29,10 @@ import (
 	"ptah.run/internal/devlock"
 	"ptah.run/internal/featureselect"
 	"ptah.run/internal/pgsystemschema"
+	"ptah.run/internal/planstyle"
 	"ptah.run/internal/protectedtable"
 	"ptah.run/internal/providerurl"
+	"ptah.run/internal/rolepassword"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/schemascope"
 	"ptah.run/internal/schemaselection"
@@ -160,6 +162,11 @@ type ApplyPlan struct {
 	annotations  []renderer.Annotation
 	transactions [][]plangraph.Transaction
 	owned        []safety.StatementAssessment
+	// texts is, for each unit, the text its owner writes the operation as,
+	// where the unit is native and the owner has a text form for it, and
+	// "" otherwise. It is a display projection, as a migration file holds the
+	// operation: execution dispatches the captured unit, never this text.
+	texts []string
 }
 
 // ApplyRuntimeOptions configures Atlas schema apply planning and execution.
@@ -249,6 +256,11 @@ type ApplyRuntimePlan struct {
 	// rehearsal is what a rehearsal of a plan that holds a native operation
 	// plans again on its dev database; see [ApplyRuntimePlan.SimulateOnDev].
 	rehearsal nativeRehearsal
+	// passwords are the passwords the desired schema declares, by the
+	// variables the plan's statements name in their place. The plan's
+	// executions read them before the environment; no output holds them.
+	// See [ptah.run/internal/rolepassword].
+	passwords map[string]string
 }
 
 func (p ApplyPlan) HasChanges() bool {
@@ -493,7 +505,7 @@ func computeApplyPlan(
 	// nothing about it quietly does less than the desired schema asks for. The
 	// wording names neither surface's flags: native `schema apply` and the
 	// compatibility one both come through here.
-	undecidednote.Report(opts.Diagnostics, undecided, "the database", "the desired schema")
+	undecidednote.Report(ctx, opts.Diagnostics, undecided, "the database", "the desired schema")
 	computation.undecided = undecided
 	diff = applyDiffPolicy(diff, opts.Policy)
 	// After the policy, which deletes the table drops a configuration skips:
@@ -523,6 +535,7 @@ func computeApplyPlan(
 			OmitNullBackfill:    opts.OmitNullBackfill,
 			AllowTableRebuild:   opts.Policy.AllowTableRebuild,
 			TableRebuildRequest: opts.Policy.TableRebuildRequest,
+			Statements:          planstyle.Statements,
 		}
 		plan, err := planner.GenerateSchemaDiffRenderedPlan(
 			ctx, opts.Runtime,
@@ -531,7 +544,7 @@ func computeApplyPlan(
 		if err != nil {
 			return applyComputation{}, fmt.Errorf("generate schema apply operations: %w", err)
 		}
-		if err := computation.captureRenderedUnits(info, plan); err != nil {
+		if err := computation.captureRenderedUnits(ctx, opts.Runtime, info, plan); err != nil {
 			return applyComputation{}, err
 		}
 	}
@@ -998,7 +1011,12 @@ func PrepareApply(
 	if err := refuseOnlineAlterInOneTransaction(opts.Policy, opts.TxMode, conn.Info().Dialect); err != nil {
 		return ApplyRuntimePlan{}, err
 	}
+	passwords, err := rolepassword.Declared(computation.desired)
+	if err != nil {
+		return ApplyRuntimePlan{}, err
+	}
 	return ApplyRuntimePlan{
+		passwords: passwords,
 		runtime:   opts.Runtime,
 		plan:      computation.executionPlan(),
 		dryRun:    opts.DryRun,
@@ -1112,6 +1130,7 @@ func (p ApplyRuntimePlan) Preflight(ctx context.Context) error {
 // Execute applies the prepared operations under the captured transaction mode.
 // Dry runs validate the whole batch without changing the database.
 func (p ApplyRuntimePlan) Execute(ctx context.Context) error {
+	ctx = rolepassword.With(ctx, p.passwords)
 	if err := p.Preflight(ctx); err != nil {
 		return err
 	}
@@ -1235,5 +1254,15 @@ func (c applyComputation) executionPlan() ApplyPlan {
 	plan := c.ApplyPlan
 	plan.units, plan.transactions, plan.owned = c.executionUnits(), c.executionTransactions(), c.executionAssessments()
 	plan.annotations = c.executionAnnotations()
+	plan.texts = c.executionTexts()
 	return plan
+}
+
+// executionTexts aligns the native units' texts with executionUnits: the
+// data statements are SQL and have none.
+func (c applyComputation) executionTexts() []string {
+	if len(c.texts) == 0 {
+		return nil
+	}
+	return slices.Insert(slices.Clone(c.texts), c.dataIndex(), make([]string, len(c.dataStatements))...)
 }

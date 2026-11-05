@@ -81,9 +81,10 @@ engines that have it and fail when the two ratings differ:
   `triggers_modified` are, and so is a `CREATE OR REPLACE` of either.
 - A drop with `CASCADE` stays destructive even when the object is created
   again: `CASCADE` also drops every object that depends on it, and creating it
-  again does not bring them back. A PostgreSQL view whose column list changes
-  is dropped that way, so the plan check refuses a plan that changes one while
-  the drift report counts a modified view.
+  again does not bring them back. A PostgreSQL plan writes `CASCADE` only where
+  it relies on it, so a view whose column list changes is dropped without it,
+  and the plan check rates the drop a warning, as the drift report counts a
+  modified view.
 - A sequence and a materialized view lose their position or their rows when
   they are dropped, so a drop of either is destructive whatever follows it.
 

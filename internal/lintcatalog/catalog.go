@@ -475,6 +475,14 @@ var migrationRuleMeta = map[string]ruleMeta{
 	"PG312P": {
 		Summary: "a SECURITY DEFINER routine that does not pin search_path resolves unqualified names through the caller's",
 	},
+	"PG401P": {
+		Summary:    "a name longer than the 63 bytes PostgreSQL keeps, which the server cuts with a notice and stores under its first bytes",
+		NativeOnly: true,
+	},
+	"PG402P": {
+		Summary:    "a name PostgreSQL cuts to a name already in use where it refuses the second declaration, so the migration fails when it runs",
+		NativeOnly: true,
+	},
 	"PG311": {
 		Summary:   "changing a table's access method rewrites the table",
 		AtlasCode: "PG311",
@@ -688,6 +696,12 @@ var migrationRuleMeta = map[string]ruleMeta{
 var sqlRuleMeta = map[string]ruleMeta{
 	"DDL002": {
 		Summary: "an index names a column the schema does not declare",
+	},
+	"DDL003": {
+		Summary: "a name longer than the identifier limit of a server that cuts long names, which stores the object under its first bytes",
+	},
+	"DDL004": {
+		Summary: "a name the server cuts to a name already in use where it refuses the second declaration",
 	},
 	"SQL001": {
 		Summary: "the SQL parser could not build an AST, so no rule could inspect the statement",

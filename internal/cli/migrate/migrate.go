@@ -23,6 +23,7 @@ import (
 	"ptah.run/internal/cli/internal/tablerebuild"
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/planartifact"
+	"ptah.run/internal/planstyle"
 	"ptah.run/internal/providerurl"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/schemaload"
@@ -245,7 +246,7 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return fmt.Errorf("error comparing schemas: %w", err)
 	}
-	undecidednote.Report(cmd.ErrOrStderr(), undecided, "the database", "the desired schema")
+	undecidednote.Report(cmd.Context(), cmd.ErrOrStderr(), undecided, "the database", "the desired schema")
 	undescribed, err := schemascope.UndescribedRemovals(info, requested, result, diff)
 	if err != nil {
 		return fmt.Errorf("error comparing schemas: %w", err)
@@ -262,6 +263,7 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 		diff, info.Dialect, planext.Options{
 			Capabilities:      info.Capabilities,
 			AllowTableRebuild: rebuild,
+			Statements:        planstyle.Statements,
 		},
 	)
 

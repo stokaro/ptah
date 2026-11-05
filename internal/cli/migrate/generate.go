@@ -219,6 +219,7 @@ func recoverAndCaptureGeneratePriorMigrations(
 			return fmt.Errorf("recover migration publication before shadow verification: %w", err)
 		}
 		captured, captureErr := captureAndAuthorizeGeneratePriorMigrations(
+			ctx,
 			notice,
 			migrationsDir,
 			dirFormat,
@@ -231,6 +232,7 @@ func recoverAndCaptureGeneratePriorMigrations(
 }
 
 func captureAndAuthorizeGeneratePriorMigrations(
+	ctx context.Context,
 	notice io.Writer,
 	migrationsDir string,
 	dirFormat migrationfile.DirFormat,
@@ -241,7 +243,7 @@ func captureAndAuthorizeGeneratePriorMigrations(
 		return nil, fmt.Errorf("capture migration directory before replay: %w", err)
 	}
 	if _, err := migrationintegrity.GateWithPolicy(
-		notice, priorSnapshot, dirFormat, policy, migrationintegrity.Options{},
+		ctx, notice, priorSnapshot, dirFormat, policy, migrationintegrity.Options{},
 	); err != nil {
 		return nil, err
 	}
@@ -330,6 +332,7 @@ func planGeneratedMigrationByReplay(
 				return fmt.Errorf("recover migration publication before replay: %w", err)
 			}
 			priorMigrations, err := captureAndAuthorizeGeneratePriorMigrations(
+				lockedCtx,
 				cmd.ErrOrStderr(),
 				opts.migrationsDir,
 				opts.dirFormat,
@@ -719,7 +722,7 @@ func (o *generateOutcome) report(
 	files *generator.MigrationFiles,
 	err error,
 ) error {
-	undecidednote.Report(cmd.ErrOrStderr(), o.undecided, o.current, "the desired schema")
+	undecidednote.Report(cmd.Context(), cmd.ErrOrStderr(), o.undecided, o.current, "the desired schema")
 	if err != nil {
 		return err
 	}

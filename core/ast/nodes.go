@@ -1663,12 +1663,11 @@ type CreateViewNode struct {
 	// pg_class.reloptions, each `name=value`, such as security_invoker=true or
 	// security_barrier=true. The check option is not one of them: it is
 	// WithCheck. Only the PostgreSQL renderer writes them, as WITH (...) before
-	// AS, and every other renderer refuses a view that carries any.
+	// AS, on a target with [ptah.run/core/platform/capability.ViewOptions];
+	// every other target refuses a view that carries any.
 	//
-	// No declaration sets them. A planner that creates or replaces a view the
-	// database holds sets the ones the database holds, because CREATE OR
-	// REPLACE VIEW replaces the options with the ones it states, and a view
-	// created again starts with none.
+	// CREATE OR REPLACE VIEW replaces the options the view holds with the ones
+	// it states, so a replace that states none clears them.
 	Options []string
 }
 
@@ -1759,10 +1758,9 @@ type CreateMaterializedViewNode struct {
 	// Options is the materialized view's storage parameters as PostgreSQL
 	// holds them in pg_class.reloptions, each `name=value`, such as
 	// fillfactor=70. Only the PostgreSQL renderer writes them, as WITH (...)
-	// before AS, and every other renderer refuses a materialized view that
-	// carries any. No declaration sets them: a planner that creates a
-	// materialized view the database holds again sets the ones the database
-	// holds; see [CreateViewNode.Options].
+	// before AS, on a target with
+	// [ptah.run/core/platform/capability.MaterializedViewOptions]; every other
+	// target refuses a materialized view that carries any.
 	Options []string
 }
 
@@ -1845,6 +1843,54 @@ func (n *RefreshMaterializedViewNode) SetComment(comment string) *RefreshMateria
 }
 
 func (n *RefreshMaterializedViewNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
+
+// AlterViewOptionsNode changes the PostgreSQL options a view or a materialized
+// view holds, in place: ALTER [MATERIALIZED] VIEW name SET (...) for the
+// options it sets and RESET (...) for the ones it removes. The view keeps its
+// definition, its dependents and its privileges, and a materialized view keeps
+// its rows, which is why an option change alone is not written as a
+// replacement.
+//
+// Only the PostgreSQL renderer writes it, on a target with
+// [ptah.run/core/platform/capability.ViewOptions] or, for a materialized
+// view, [ptah.run/core/platform/capability.MaterializedViewOptions]; every
+// other target refuses it.
+type AlterViewOptionsNode struct {
+	// Name is the view's name, written as an identifier and quoted by the
+	// renderer.
+	Name string
+	// Materialized reports that the object is a materialized view.
+	Materialized bool
+	// Set is each option the statement sets, `name=value`.
+	Set []string
+	// Reset is the name of each option the statement removes.
+	Reset []string
+}
+
+// NewAlterViewOptions starts an option change for a named view, or a
+// materialized view when materialized is true. The options to set and remove
+// are given through [AlterViewOptionsNode.SetOptions] and
+// [AlterViewOptionsNode.ResetOptions].
+func NewAlterViewOptions(name string, materialized bool) *AlterViewOptionsNode {
+	return &AlterViewOptionsNode{Name: name, Materialized: materialized}
+}
+
+// SetOptions sets the options the statement sets, each `name=value`, and
+// returns the node for chaining.
+func (n *AlterViewOptionsNode) SetOptions(options []string) *AlterViewOptionsNode {
+	n.Set = options
+	return n
+}
+
+// ResetOptions sets the names of the options the statement removes and
+// returns the node for chaining.
+func (n *AlterViewOptionsNode) ResetOptions(names []string) *AlterViewOptionsNode {
+	n.Reset = names
+	return n
+}
+
+// Accept implements the Node interface for AlterViewOptionsNode.
+func (n *AlterViewOptionsNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // CreateTriggerNode represents a CREATE TRIGGER statement.
 type CreateTriggerNode struct {

@@ -53,6 +53,9 @@ func reverseViewDiffs(
 			// reapply the very body it is undoing (stokaro/ptah#2315).
 			Desired:  priorView(prior, viewDiff.ViewName, semantics),
 			Rollback: true,
+			// The options the up migration leaves, which are the ones the
+			// view holds when the rollback runs, as PreviousBody is its body.
+			PreviousOptions: slices.Clone(viewDiff.Desired.Options),
 		}
 	}
 	return reversed
@@ -109,6 +112,9 @@ func reverseMaterializedViewDiffs(
 			// restores them; its feature changes are reversed by their owners
 			// afterwards (stokaro/ptah#2418).
 			Desired: priorMaterializedView(prior, viewDiff.ViewName, semantics),
+			// The storage parameters the forward change leaves, for the same
+			// reason as PreviousBody.
+			PreviousOptions: slices.Clone(viewDiff.Desired.Options),
 		}
 	}
 	return reversed

@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/rolepassword"
 )
 
 // This file holds the statement grammar for the PostgreSQL schema objects that
@@ -293,7 +294,18 @@ func applyRoleFlag(role *ast.CreateRoleNode, keyword string) bool {
 	return true
 }
 
+// applyRolePassword reads a password: a string constant, or the reference to
+// the variable Ptah writes the password from, `$PTAH_SECRET_...`, which a
+// migration file Ptah generated holds in its place (see
+// [rolepassword.Statement]). The reference is kept as the declared password,
+// so a schema read from such a file names the same variable.
 func (p *Parser) applyRolePassword(role *ast.CreateRoleNode) error {
+	p.skipWhitespace()
+	if _, named := rolepassword.Named(p.current.Value); named && p.current.Type == lexer.TokenIdentifier {
+		role.SetPassword(p.current.Value)
+		p.advance()
+		return nil
+	}
 	password, err := p.stringConstant("the password")
 	if err != nil {
 		return err
@@ -647,9 +659,10 @@ func (p *Parser) parseRevokeGrantOptionForPrefix() (bool, error) {
 }
 
 // parseCreateMaterializedView parses
-// CREATE MATERIALIZED VIEW [IF NOT EXISTS] name AS <query>, and the owners'
-// clauses between the name and AS, such as ClickHouse's REFRESH schedule and
-// storage clause.
+// CREATE MATERIALIZED VIEW [IF NOT EXISTS] name [WITH (...)] AS <query>, and
+// the owners' clauses between the name and AS, such as ClickHouse's REFRESH
+// schedule and storage clause. The WITH list is PostgreSQL's storage
+// parameters; see [Parser.parseRelationOptions].
 func (p *Parser) parseCreateMaterializedView() (*ast.CreateMaterializedViewNode, error) {
 	if err := p.expect(lexer.TokenIdentifier, "MATERIALIZED"); err != nil {
 		return nil, err
@@ -673,6 +686,9 @@ func (p *Parser) parseCreateMaterializedView() (*ast.CreateMaterializedViewNode,
 	node := ast.NewCreateMaterializedView(name)
 	node.IfNotExists = ifNotExists
 	p.claimOwnerViewClauses(node)
+	if node.Options, err = p.parseRelationOptions("materialized view"); err != nil {
+		return nil, err
+	}
 	if err := p.expect(lexer.TokenIdentifier, "AS"); err != nil {
 		return nil, fmt.Errorf("expected AS after materialized view name: %w", err)
 	}

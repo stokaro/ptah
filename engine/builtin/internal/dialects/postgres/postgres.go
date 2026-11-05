@@ -23,6 +23,7 @@ import (
 	"ptah.run/internal/notnullfill"
 	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/rlspolicy"
+	"ptah.run/internal/rolepassword"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/sqlident"
 )
@@ -370,6 +371,8 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return r.renderDropMaterializedView(n)
 	case *ast.RefreshMaterializedViewNode:
 		return r.renderRefreshMaterializedView(n)
+	case *ast.AlterViewOptionsNode:
+		return r.renderAlterViewOptions(n)
 
 	// Functions and triggers.
 	case *ast.CreateFunctionNode:
@@ -2880,7 +2883,7 @@ func (r *Renderer) renderCreateView(node *ast.CreateViewNode) error {
 	if node.Replace {
 		create = "CREATE OR REPLACE VIEW"
 	}
-	options, err := r.relationOptionsClause("view", node.Name, node.Options)
+	options, err := r.relationOptionsClause(capability.ViewOptions, "view", node.Name, node.Options)
 	if err != nil {
 		return err
 	}
@@ -2897,27 +2900,91 @@ func (r *Renderer) renderCreateView(node *ast.CreateViewNode) error {
 
 // relationOptionsClause is the WITH clause that gives a view or a materialized
 // view the options it carries, each `name=value` as pg_class.reloptions holds
-// it, or empty for none.
-//
-// Each value is written as a string literal, which the server takes for every
-// option and stores as written: `security_barrier='on'` reads back as
-// security_barrier=on, so the options the database held come back unchanged.
-// A name that is not a plain option name is refused rather than written into
-// the statement.
-func (r *Renderer) relationOptionsClause(kind, name string, options []string) (string, error) {
+// it, or empty for none. A target without key refuses options rather than
+// writing the object without them.
+func (r *Renderer) relationOptionsClause(key capability.Capability, kind, name string, options []string) (string, error) {
 	if len(options) == 0 {
 		return "", nil
 	}
+	written, err := r.relationOptionList(key, kind, name, options)
+	if err != nil {
+		return "", err
+	}
+	return " WITH (" + written + ")", nil
+}
+
+// relationOptionList spells options for a WITH clause or an ALTER ... SET,
+// each `name=value` with the value written by [relationOptionValue].
+//
+// A name that is not a plain option name is refused rather than written into
+// the statement, and so is every option on a target without key: the object
+// written without them is not the one declared, and a comparison would find
+// the option missing on every run.
+func (r *Renderer) relationOptionList(key capability.Capability, kind, name string, options []string) (string, error) {
+	if err := r.requireRelationOptions(key, kind, name, options); err != nil {
+		return "", err
+	}
 	written := make([]string, 0, len(options))
 	for _, option := range options {
-		key, value, found := strings.Cut(option, "=")
-		if !found || !isRelationOptionName(key) {
+		optionName, value, found := strings.Cut(option, "=")
+		if !found || !isRelationOptionName(optionName) {
 			return "", fmt.Errorf("%w: postgres: %s %s carries the option %q, which is not name=value",
 				ptaherr.ErrInvalidSchemaDiff, kind, name, option)
 		}
-		written = append(written, key+"="+r.escapeValue(value))
+		written = append(written, optionName+"="+r.relationOptionValue(value))
 	}
-	return " WITH (" + strings.Join(written, ", ") + ")", nil
+	return strings.Join(written, ", "), nil
+}
+
+// requireRelationOptions refuses options on a target without key.
+func (r *Renderer) requireRelationOptions(key capability.Capability, kind, name string, options []string) error {
+	if r.capabilities().Has(key) {
+		return nil
+	}
+	return &ptaherr.CapabilityError{Dialect: r.dialect, Feature: string(key), Err: ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf("%s: %s %s carries the options %s, which require target capability %s, unavailable on this %s target",
+			r.dialect, kind, name, strings.Join(options, ", "), key, r.dialect)}
+}
+
+// relationOptionValue spells one option value: bare when it is a number in the
+// spelling PostgreSQL stores for it or a word, and as a string literal
+// otherwise.
+//
+// PostgreSQL stores a string literal as written, so `security_barrier='on'`
+// and `fillfactor='070'` come back unchanged, and a bare number as the number
+// it reads, so a bare 070 would come back as 70. CockroachDB takes only the
+// bare spelling: measured on v26.2.11 and v26.3.2, `security_invoker='true'`
+// is a syntax error where `security_invoker=true` is accepted.
+func (r *Renderer) relationOptionValue(value string) string {
+	if isBareOptionValue(value) {
+		return value
+	}
+	return r.escapeValue(value)
+}
+
+// isBareOptionValue reports whether value can be written without quotes and
+// read back as written: an unsigned decimal number without a leading zero
+// before its digits, or a word of letters, digits and underscores that starts
+// with a letter.
+func isBareOptionValue(value string) bool {
+	if value == "" {
+		return false
+	}
+	if whole, fraction, decimal := strings.Cut(value, "."); isDigits(whole) && (!decimal || isDigits(fraction)) {
+		return whole == "0" || !strings.HasPrefix(whole, "0")
+	}
+	for i, c := range value {
+		letter := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'
+		if !letter && (i == 0 || c < '0' || c > '9') {
+			return false
+		}
+	}
+	return true
+}
+
+// isDigits reports whether text is one or more decimal digits.
+func isDigits(text string) bool {
+	return text != "" && strings.Trim(text, "0123456789") == ""
 }
 
 // isRelationOptionName reports whether name is spelled like a relation option:
@@ -2933,6 +3000,42 @@ func isRelationOptionName(name string) bool {
 		}
 	}
 	return true
+}
+
+// renderAlterViewOptions changes the options a view or a materialized view
+// holds in place: one ALTER ... SET for the options it sets and one ALTER ...
+// RESET for the ones it removes. A RESET of an option the view does not hold
+// is accepted and does nothing, so the statement does not depend on the
+// options the view holds when it runs.
+func (r *Renderer) renderAlterViewOptions(node *ast.AlterViewOptionsNode) error {
+	kind, key, statement := "view", capability.ViewOptions, "ALTER VIEW"
+	if node.Materialized {
+		kind, key, statement = "materialized view", capability.MaterializedViewOptions, "ALTER MATERIALIZED VIEW"
+	}
+	if len(node.Set) == 0 && len(node.Reset) == 0 {
+		return fmt.Errorf("%w: postgres: the option change of %s %s sets and resets nothing", ptaherr.ErrInvalidSchemaDiff, kind, node.Name)
+	}
+	target := r.escapeQualifiedIdentifier(node.Name)
+	if len(node.Set) > 0 {
+		set, err := r.relationOptionList(key, kind, node.Name, node.Set)
+		if err != nil {
+			return err
+		}
+		r.w.WriteLinef("%s %s SET (%s);", statement, target, set)
+	}
+	if len(node.Reset) > 0 {
+		if err := r.requireRelationOptions(key, kind, node.Name, node.Reset); err != nil {
+			return err
+		}
+		for _, option := range node.Reset {
+			if !isRelationOptionName(option) {
+				return fmt.Errorf("%w: postgres: %s %s resets %q, which is not an option name",
+					ptaherr.ErrInvalidSchemaDiff, kind, node.Name, option)
+			}
+		}
+		r.w.WriteLinef("%s %s RESET (%s);", statement, target, strings.Join(node.Reset, ", "))
+	}
+	return nil
 }
 
 // renderDropView renders a DROP VIEW statement.
@@ -2963,7 +3066,7 @@ func (r *Renderer) renderCreateMaterializedView(node *ast.CreateMaterializedView
 		return nil
 	}
 
-	options, err := r.relationOptionsClause("materialized view", node.Name, node.Options)
+	options, err := r.relationOptionsClause(capability.MaterializedViewOptions, "materialized view", node.Name, node.Options)
 	if err != nil {
 		return err
 	}
@@ -3243,12 +3346,7 @@ func (r *Renderer) renderCreateRole(node *ast.CreateRoleNode) error {
 	}
 
 	if node.Password != "" {
-		// Validate password appears to be encrypted
-		if !looksEncrypted(node.Password) {
-			// Add a comment warning about potential plaintext password
-			r.w.WriteLinef("-- WARNING: Password may not be encrypted - ensure passwords are properly hashed")
-		}
-		attributes = append(attributes, fmt.Sprintf("PASSWORD %s", r.escapeValue(node.Password)))
+		attributes = append(attributes, r.passwordClause(node.Name, node.Password))
 	}
 
 	// CockroachDB has neither SUPERUSER nor INHERIT; see cockroach_roles.go.
@@ -3486,12 +3584,7 @@ func (r *Renderer) renderRoleOperation(roleName string, operation ast.RoleOperat
 
 	switch op := operation.(type) {
 	case *ast.SetPasswordOperation:
-		// Validate password appears to be encrypted
-		if !looksEncrypted(op.Password) {
-			// Add a comment warning about potential plaintext password
-			r.w.WriteLinef("-- WARNING: Password may not be encrypted - ensure passwords are properly hashed")
-		}
-		parts = append(parts, fmt.Sprintf("PASSWORD %s", r.escapeValue(op.Password)))
+		parts = append(parts, r.passwordClause(roleName, op.Password))
 
 	case *ast.SetLoginOperation:
 		if op.Login {
@@ -3549,52 +3642,16 @@ func (r *Renderer) renderRoleOperation(roleName string, operation ast.RoleOperat
 	return nil
 }
 
-// looksEncrypted checks if a password appears to be encrypted/hashed
-// This is a heuristic check to help detect potential plaintext passwords
-func looksEncrypted(password string) bool {
-	// Empty passwords are considered "encrypted" (no warning needed)
+// passwordClause sets the password declared for role. A declared password,
+// or a password hash, is never written: the clause names the variable the
+// PostgreSQL writer reads it from when the statement runs (see
+// [rolepassword.Statement]), and PostgreSQL takes a hash in the same clause.
+// An empty password is no secret, and is written as the empty string.
+func (r *Renderer) passwordClause(role, password string) string {
 	if password == "" {
-		return true
+		return "PASSWORD " + r.escapeValue(password)
 	}
-
-	// Check for common PostgreSQL password hash prefixes
-	if strings.HasPrefix(password, "md5") ||
-		strings.HasPrefix(password, "SCRAM-SHA-256$") ||
-		strings.HasPrefix(password, "$2a$") || // bcrypt
-		strings.HasPrefix(password, "$2b$") || // bcrypt
-		strings.HasPrefix(password, "$2y$") || // bcrypt
-		strings.HasPrefix(password, "$5$") || // SHA-256
-		strings.HasPrefix(password, "$6$") { // SHA-512
-		return true
-	}
-
-	// Check if it looks like a hash (long, contains mix of chars/numbers)
-	if len(password) >= 32 {
-		hasLower := strings.ContainsAny(password, "abcdefghijklmnopqrstuvwxyz")
-		hasUpper := strings.ContainsAny(password, "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
-		hasDigit := strings.ContainsAny(password, "0123456789")
-		hasSpecial := strings.ContainsAny(password, "!@#$%^&*()_+-=[]{}|;:,.<>?/")
-
-		// If it has a good mix of character types and is long, likely encrypted
-		charTypeCount := 0
-		if hasLower {
-			charTypeCount++
-		}
-		if hasUpper {
-			charTypeCount++
-		}
-		if hasDigit {
-			charTypeCount++
-		}
-		if hasSpecial {
-			charTypeCount++
-		}
-
-		return charTypeCount >= 3
-	}
-
-	// If none of the above, likely plaintext
-	return false
+	return "PASSWORD " + rolepassword.Statement(role, password)
 }
 
 // uniqueConstraintUnsupported is the refusal a target without

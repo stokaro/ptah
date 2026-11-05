@@ -34,7 +34,7 @@ link here instead of redefining them.
 | YugabyteDB | `yugabytedb://user:pass@localhost:5433/app` |
 | Spanner (PostgreSQL interface) | `spanner://user:pass@localhost:5432/app` |
 | Oracle | `oracle://user:pass@localhost:1521/service` (renders, plans, reads a live catalog, and runs versioned migrations) |
-| YDB, through its provider | `ydb://localhost:2136/local`, or `ydbs://` over TLS (see [YDB](../../databases/ydb/#connecting)) |
+| YDB, through its provider | `ydb://localhost:2136/local`, or `ydbs://` over TLS (see [YDB](https://github.com/stokaro/ptah-ydb-plugin/blob/master/docs/ptah.md#connecting)) |
 
 Scheme aliases normalize to the canonical dialect (`postgresql://`,
 `sqlite3://`, `mssql://`, `crdb://`, `ysql://`, `ch://`, and more) — the full
@@ -154,7 +154,7 @@ provider runs the cases in a dev realm in that database.
   which the run treats as its whole database and the provider removes at the
   end. A run against the database itself leaves `ptah_dev` out, so the URL may
   name the target; see
-  [YDB](../../databases/ydb/#dev-shadow-and-scratch-databases).
+  [YDB](https://github.com/stokaro/ptah-ydb-plugin/blob/master/docs/ptah.md#dev-shadow-and-scratch-databases).
 - **PostgreSQL cleanup gives back the schema it empties.** The schema the dev
   URL selects, `public` when it selects none, comes back after the cleanup
   with the owner, grants and comment it had when the run started. A role
@@ -292,7 +292,8 @@ whole file is refused, with the statement named, when it:
 
 This holds for PostgreSQL only, and only where Ptah replays an existing
 migration directory. Elsewhere in a replay each of these statements is refused
-on its own. In a golang-migrate directory, replay runs a file the way
+on its own. In a golang-migrate directory, and in one that `--runner
+golang-migrate` or `migration.runner` names, replay runs a file the way
 `ptah-compat migrate apply` runs it, which is how golang-migrate's default mode
 runs it: a file that opens its own transaction runs in the transactions the
 file sent as one query runs in, and a file of one statement runs without one.

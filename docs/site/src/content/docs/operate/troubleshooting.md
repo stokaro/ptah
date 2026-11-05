@@ -346,12 +346,27 @@ same source twice counts each object once, and a `PRIMARY KEY` or `UNIQUE`
 constraint counts once, although the server stores its index under the same
 name. A warning that concerns one object is printed as that object's own line.
 `ptah` and `ptah-compat` follow the same rule on every command that reads such
-an object, whatever the command prints on stdout. It covers names a
-PostgreSQL-family server cuts to 63 bytes, constraints a SQL file drops and
-adds again with another definition, `atlas.hcl` settings Atlas compatibility
-ignores, and schema-file constructs that are accepted and dropped. On
-`ptah-compat` it also covers SQL files in an Atlas migration directory that
-`atlas.sum` does not cover.
+an object, whatever the command prints on stdout. The rule covers these
+warnings:
+
+- names a PostgreSQL-family server cuts to 63 bytes;
+- constraints a SQL file drops and adds again with another definition;
+- `atlas.hcl` settings Atlas compatibility ignores;
+- schema-file constructs that are accepted and dropped;
+- details of an inspected schema that `schema inspect` cannot write as HCL,
+  such as the grantor of a permission;
+- SQL files in an Atlas migration directory that `atlas.sum` does not cover;
+- on `ptah-compat`, the blocks `schema inspect` omits, or keeps, although the
+  Atlas community CLI refuses them.
+
+Objects a comparison could not decide are reported the same way, except that
+each is a change the plan leaves out. So their warning names every object,
+grouped by why it was not decided, and it is written before the plan, the
+confirmation or the error that follows, not when the run ends:
+
+```text
+warning: 2 objects get no planned change because the comparison could not decide them: role "reporter", role "auditor" (the database does not describe role objects because the read was refused the catalog that would have listed them); PTAH_LOG_LEVEL=debug lists them
+```
 
 A refusal is never folded into such a line. Two different names that the server
 would store as one still fail the command and name both, also under
@@ -391,7 +406,9 @@ default profile reads the same objects and lists them.
 
 Nothing is wrong when the objects are expected, such as the long names an ORM
 writes. Otherwise, act on the listed objects as each warning's own section
-describes.
+describes. For cut names, `ptah sql lint` reports each one as `DDL003` at the
+line and column where it is written, and `ptah migrations lint` reports each
+one as `PG401P` in a migration directory, without a database.
 
 **Verify**
 

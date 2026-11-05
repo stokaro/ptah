@@ -183,6 +183,39 @@ const (
 	// key that requires Views.
 	MaterializedViews Capability = "materialized_views"
 
+	// ViewOptions marks a target where a view takes PostgreSQL's options in
+	// CREATE VIEW ... WITH (...) and in ALTER VIEW ... SET and RESET, and
+	// reports the ones it holds in pg_class.reloptions: security_barrier, and
+	// security_invoker from PostgreSQL 15. The renderer refuses a view that
+	// carries options on a target without it, because the view it would write
+	// is not the one declared.
+	//
+	// Measured 2026-11-05. PostgreSQL 14.24, 15.19 and 18.6 keep and report
+	// security_barrier; 15.19 and 18.6 keep and report security_invoker, and
+	// 14.24 answers `unrecognized parameter "security_invoker"`, which refuses
+	// the option rather than the clause. YugabyteDB 2026.1.2.0 keeps and
+	// reports both, and 2024.2.11.0 refuses security_invoker as 14.24 does.
+	// CockroachDB v26.2 and v26.3.2 keep and report security_invoker and answer
+	// a syntax error to security_barrier; v25.4.20 answers `security invoker
+	// views are not supported`. The Spanner emulator behind PGAdapter 0.56.1
+	// accepts `WITH (security_invoker = true)` and reports nothing in
+	// reloptions, so a declared option there would never read back.
+	ViewOptions Capability = "view_options"
+
+	// MaterializedViewOptions marks a target where a materialized view takes
+	// storage parameters in CREATE MATERIALIZED VIEW ... WITH (...) and in
+	// ALTER MATERIALIZED VIEW ... SET and RESET, and reports the ones it holds
+	// in pg_class.reloptions.
+	//
+	// Measured 2026-11-05. PostgreSQL 14.24, 15.19 and 18.6 keep and report
+	// fillfactor and autovacuum_enabled. YugabyteDB 2026.1.2.0 and 2024.2.11.0
+	// keep and report them as well, and answer ALTER MATERIALIZED VIEW ... SET
+	// with a NOTICE that the storage parameter is ignored: DocDB stores the
+	// rows, so the catalog keeps a value nothing reads. CockroachDB v25.4.20,
+	// v26.2 and v26.3.2 answer a syntax error to the clause in both
+	// statements.
+	MaterializedViewOptions Capability = "materialized_view_options"
+
 	// DomainTypes marks support for CREATE DOMAIN: a base type carrying its
 	// own NOT NULL, DEFAULT and CHECK. Measured 2026-08-19: PostgreSQL 18.4
 	// and YugabyteDB 2026.1.1.1 accept it; CockroachDB v26.2.5 answers "not
@@ -1924,6 +1957,14 @@ var registry = map[Capability]spec{
 		doc:      "CREATE MATERIALIZED VIEW: a view whose query result is stored",
 		requires: []Capability{Views},
 	},
+	ViewOptions: {
+		doc:      "a view's PostgreSQL options: CREATE VIEW ... WITH (security_invoker, security_barrier), ALTER VIEW ... SET and RESET, read back from pg_class.reloptions",
+		requires: []Capability{Views},
+	},
+	MaterializedViewOptions: {
+		doc:      "a materialized view's storage parameters: CREATE MATERIALIZED VIEW ... WITH (fillfactor, ...), ALTER MATERIALIZED VIEW ... SET and RESET, read back from pg_class.reloptions",
+		requires: []Capability{MaterializedViews},
+	},
 	DomainTypes: {
 		doc: "CREATE DOMAIN: a base type carrying its own NOT NULL, DEFAULT and CHECK",
 	},
@@ -2573,6 +2614,8 @@ func buildMySQL84() Capabilities {
 		Views:                           true,
 		CreateOrReplaceView:             true,
 		MaterializedViews:               false,
+		ViewOptions:                     false,
+		MaterializedViewOptions:         false,
 		Functions:                       true,
 		Procedures:                      true,
 		RoutineReplacementResetsDefiner: true,
@@ -2867,6 +2910,8 @@ func buildMariaDB1011() Capabilities {
 		Views:                           true,
 		CreateOrReplaceView:             true,
 		MaterializedViews:               false,
+		ViewOptions:                     false,
+		MaterializedViewOptions:         false,
 		Functions:                       true,
 		Procedures:                      true,
 		RoutineReplacementResetsDefiner: true,
@@ -3100,6 +3145,8 @@ func buildPostgres16() Capabilities {
 		Views:                           true,
 		CreateOrReplaceView:             true,
 		MaterializedViews:               true,
+		ViewOptions:                     true,
+		MaterializedViewOptions:         true,
 		DomainTypes:                     true,
 		CompositeTypes:                  true,
 		RangeTypes:                      true,
@@ -3436,6 +3483,8 @@ func buildClickHouse24() Capabilities {
 		Views:                    true,
 		CreateOrReplaceView:      true,
 		MaterializedViews:        true,
+		ViewOptions:              false,
+		MaterializedViewOptions:  false,
 		// NOT the lambda alias `CREATE FUNCTION fn AS (x) -> x + 1`, which
 		// ClickHouse accepts. This key names the object ast.CreateFunctionNode
 		// describes -- a return type, a language and a body -- and that shape is
@@ -3692,6 +3741,8 @@ func buildSQLite3() Capabilities {
 		Views:                           true,
 		CreateOrReplaceView:             false,
 		MaterializedViews:               false,
+		ViewOptions:                     false,
+		MaterializedViewOptions:         false,
 		Functions:                       false,
 		Procedures:                      false,
 		RoutineReplacementResetsDefiner: false,
@@ -3952,6 +4003,8 @@ func buildSQLServer2022() Capabilities {
 		Views:                    true,
 		CreateOrReplaceView:      true,
 		MaterializedViews:        false,
+		ViewOptions:              false,
+		MaterializedViewOptions:  false,
 		// Functions is on because all three halves the key requires exist: the
 		// renderer emits CREATE FUNCTION, the reader recovers one from the
 		// catalog, and the planner compares it. A key that promises a create
@@ -4305,7 +4358,13 @@ func buildCockroachDB23() Capabilities {
 		// as a synonym. A primary key is refused: `primary index cannot be
 		// invisible` (SQLSTATE 0A000).
 		With(InvisibleIndexes, true).
-		With(RowLevelTTL, true)
+		With(RowLevelTTL, true).
+		// Measured 2026-11-05: v25.4.20 answers `security invoker views are
+		// not supported` to security_invoker and a syntax error to
+		// security_barrier, and every line answers a syntax error to a
+		// materialized view's WITH clause. CockroachDB26 has the first.
+		With(ViewOptions, false).
+		With(MaterializedViewOptions, false)
 }
 
 // CockroachDB25 is the preset measured on CockroachDB 25.4. The line refuses
@@ -4375,7 +4434,14 @@ func buildCockroachDB26() Capabilities {
 		// such function. This line prints a WHEN condition without the
 		// parentheses PostgreSQL writes -- `WHEN (new).a > 0:::INT8` -- which
 		// the reader takes as it comes (stokaro/ptah#3707).
-		With(CatalogTriggerDefinitions, true)
+		With(CatalogTriggerDefinitions, true).
+		// Measured 2026-11-05 on v26.2.11 and v26.3.2: CREATE VIEW ... WITH
+		// (security_invoker = true), ALTER VIEW ... SET and RESET are taken and
+		// pg_class.reloptions reports the option. security_barrier is a syntax
+		// error, which refuses the option before anything runs. A value written
+		// as a string literal is a syntax error too, so the renderer writes a
+		// bare word.
+		With(ViewOptions, true)
 }
 
 // CockroachDB263 is the first CockroachDB line that carries CREATE DOMAIN.
@@ -4532,6 +4598,13 @@ var presetSpannerPostgres = sync.OnceValue(buildSpannerPostgres)
 // buildSpannerPostgres builds the [SpannerPostgres] set; the preset builds it once and shares it.
 func buildSpannerPostgres() Capabilities {
 	return Postgres16().
+		// Measured 2026-11-05 on the emulator behind PGAdapter 0.56.1: CREATE
+		// VIEW ... WITH (security_invoker = true) is taken and
+		// pg_class.reloptions reports nothing for the view, security_barrier
+		// is refused by name, and ALTER VIEW is `Object type is not supported`.
+		// A declared option would never read back, so the renderer refuses it.
+		With(ViewOptions, false).
+		With(MaterializedViewOptions, false).
 		// Unmeasured against a live emulator and false on the conservative
 		// side: the emulator refuses ALTER TABLE ... VALIDATE CONSTRAINT, and
 		// an unvalidated constraint nothing can complete is worse than the
@@ -4771,6 +4844,8 @@ func buildOracle23() Capabilities {
 		Views:                   true,
 		CreateOrReplaceView:     true,
 		MaterializedViews:       true,
+		ViewOptions:             false,
+		MaterializedViewOptions: false,
 		// A standalone function and a standalone procedure are rendered, read
 		// back from ALL_PROCEDURES, ALL_ARGUMENTS and ALL_SOURCE, and planned
 		// (stokaro/ptah#1920). The body IS PL/SQL rather than the SQL the other

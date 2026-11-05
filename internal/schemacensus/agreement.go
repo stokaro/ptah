@@ -18,6 +18,7 @@ import (
 	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgtype"
 	"ptah.run/internal/capabilityprobe"
+	"ptah.run/internal/planstyle"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -88,7 +89,7 @@ func planOne(ctx context.Context, runtime engine.SchemaRuntime, schema schemamod
 		ctx, runtime,
 		diff,
 		cell.Dialect,
-		planext.Options{Capabilities: cell.Preset()},
+		planext.Options{Capabilities: cell.Preset(), Statements: planstyle.Statements},
 	)
 	if err != nil {
 		return measuredRefusal(err)

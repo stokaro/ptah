@@ -17,6 +17,7 @@ sourceOfTruth:
   - "provider-sdk"
   - "integration/providercli/provider_cli_integration_test.go"
   - "integration/providercli/provider_error_reasons_e2e_test.go"
+  - "integration/providercli/provider_report_counts_e2e_test.go"
   - "integration/providercli/provider_native_verbs_e2e_test.go"
   - "integration/providercli/provider_migrations_e2e_test.go"
   - "integration/providercli/provider_migration_units_e2e_test.go"
@@ -136,6 +137,16 @@ reports `index_rename` only to a host that lists the feature, and the host
 refuses a session that reports it from an engine without the feature. Without
 the capability, a renamed index is a drop and a create.
 
+With `schema.observed-index-facets` as well, inspection reports an index's own
+settings, such as a YDB index's partitioning, as facets of the index. A source
+states the same settings as a facet of the index its index directive, index
+entry or index block declares, so the host compares one owner's facet on both
+sides and plans a difference as a change of the index's table. The host treats
+every facet of such an index as one the provider's rename keeps, and compares a
+renamed index's facets under the name the declaration gives it. An HCL export
+writes an index facet into the index block, and a whole number a provider
+writes for a text attribute is written bare, as the reader reads it back.
+
 An engine that reports its indexes and whose session states
 `unique_constraints` as `false` holds a declared UNIQUE constraint, and a
 column's UNIQUE, as a global unique index, as YDB does. The host then reads
@@ -253,6 +264,11 @@ has no preset for an engine only a provider serves, so without the facts every
 fact is unknown offline, and a provider that refuses to plan against an
 unknown fact refuses the command. A command that connects plans with the facts
 the session states.
+
+For a provider that states no offline facts, the facts of the first session
+that states any stand in for them for the rest of the command. The conversion
+of a source after the connection and the routing of a provider statement in
+`migrations generate` then read the server's answers.
 
 `sql.scan` lets a provider scan the SQL text of its engine. Ptah reads SQL text
 without parsing it in many places: the lineage of view bodies, the indentation
@@ -397,6 +413,14 @@ the engine. The work is split this way:
 
 A planning request does not carry the declared and observed objects as
 context.
+
+`models.report-counts` lets an engine name the count metrics each value of one
+of its models contributes to, such as a topic and the number of its consumers.
+`ptah schema stats` then writes one gauge per metric, and the provider counts
+each value, because only the provider reads the value's content. Ptah counts
+the common objects, such as tables and columns, from the read. An engine that
+names no metric adds no gauge, and a metric named like a common one, such as
+`tables`, makes the command fail.
 
 An engine can declare its release lines in the description. Each line names a
 support level and, for a line that claims testing, the image that runs it. A line
@@ -640,6 +664,14 @@ the kinds its selection lists, unless an exclusion names them. A read that
 reports an object of a selected kind under an identity its naming cannot read
 is refused.
 
+Such a grant also follows what the desired source says about its object. A
+source that neither declares the object nor describes its kind, through a
+`ptah:not-described topic` header or a format that claims nothing about
+topics, says nothing about who may use it, so Ptah plans no removal of the
+grant. A source that describes the kind and leaves the object out drops it,
+and the grant goes with the object. A revoke the source writes out is planned
+either way.
+
 `migrations checkpoint`, and the rollback `migrations down --shadow-db`
 verifies or plans, replay the directory on a database the provider provisions
 or names, and Ptah runs no SQL of its own there. The provider reports its
@@ -718,6 +750,26 @@ ptah schema inspect --provider-config providers.json \
 
 A new fixture database reports its `main` schema without tables. An incomplete
 inspection fails; it never represents an empty authoritative database.
+
+A read can find a table it does not describe, such as a YDB replica table no
+replication writes any more. With `schema.unread-tables` the provider names
+each such table in its read, with a one-line reason in its own words. No
+document made from the read names the table, and `schema inspect` and `db read`
+print a note instead: `note: 1 table this read does not describe: dir.rep:
+<reason>`. A plan that declares a table there, or a foreign key that references
+one, is refused before any step with `table dir.rep: <reason>`. A filter, such
+as `--exclude`, keeps the entry, since narrowing a read cannot make the
+database lose a table. Without the feature, the provider leaves the table out
+silently, and a declared table there fails when its creation runs.
+
+Some objects belong to a database rather than to a namespace of it, such as
+YDB's resource pools. An engine that lists `schema.database-kinds` names their
+kinds, and a read filtered with `--schemas` reports them beside the selected
+namespaces, named at the database. The comparison reads them as it reads an
+unfiltered read's, so a run scoped to one schema plans the database's objects
+its source declares. Everything else a filtered read reports stays inside the
+selected namespaces. Without the feature, such a read leaves those kinds
+uninspected.
 
 ## Plan and apply
 
@@ -915,13 +967,18 @@ or [maintaining revision metadata](../../versioned/maintain-history/).
 A provider can return native operations alongside SQL when its declared models
 and planning service support the requested change. `ptah schema apply` keeps
 these operations intact from planning through confirmation and execution.
-The confirmation output shows the operation's kind, subject, and captured
-impact and access assessments. A conflicting transaction requirement refuses
-the whole plan before any operation runs.
+Where the provider lists `render.text-units` and writes every operation of the
+plan as text, the confirmation output shows each operation as that statement,
+the one a migration file holds; the apply still runs the native operation.
+Otherwise it shows the operation's kind, subject, and captured impact and
+access assessments. A conflicting transaction requirement refuses the whole
+plan before any operation runs.
 
 Apply JSON reports use contract version `4` and an ordered `units` list.
 Each entry contains `sql` or a `native` summary. Native summaries omit opaque
-provider payloads and are reports, not execution plans.
+provider payloads and are reports, not execution plans. A summary's `text`
+holds the provider's statement for the operation where the confirmation output
+shows one.
 
 Planner notes stay in the host as ordered annotations. They do not enter the
 provider's rendering or execution batch and do not count as operations.
@@ -1082,10 +1139,16 @@ checks and evaluates each block as it does its own, then sends the provider the
 values, never HCL text, with the index's `type` or `ops` where an index claim
 inherits them. A value belongs to what its block is about: the index, the
 table, the routine or the view. A top-level block's value is a setting of the
-table it names. The provider also states what the document holds of its models,
-from the claims and from the `ptah:not-described` entries of the kinds the
-engine lists in `header_kinds`. A captured `ptah:feature-coverage` header is
-read by Ptah with the provider's model definitions.
+table it names.
+
+For a document whose header holds a `ptah:not-described` entry
+of a kind the engine lists in `header_kinds`, the provider also states what the
+document holds of its models, from the claims and from those entries. A
+document without such an entry is an ordinary Atlas file, which names none of
+the objects it leaves out, so it claims nothing of the provider's models and a
+plan from it drops none of their objects. Ptah reads a captured
+`ptah:feature-coverage` header with the provider's model definitions; the
+provider takes no part in it.
 
 With negotiated
 `source.limits`, claimed headers can narrow the model's or a subject's
@@ -1096,13 +1159,16 @@ its bounds. Without this feature, a header cannot narrow a decode reply's
 coverage, so the provider must refuse a source whose limit it cannot preserve.
 
 `source.encode` lets the provider write its values back when Ptah writes HCL,
-as `ptah schema export --to hcl` does. Ptah sends the values and what the
-document knows of them, and the provider answers with the blocks and
-attributes its claims read, which Ptah writes. A value the provider cannot
-write is reported as a loss where Ptah writes its block. A facet of a column, a
-key, a routine or a materialized view has no place in an encoding request and is
-reported as a loss too. The `ptah:not-described` entries the provider returns
-are written in the document's header.
+as `ptah schema export --to hcl` does. Ptah sends the values, and the provider
+answers with the blocks and attributes its claims read, which Ptah writes. A
+value the provider cannot write is reported as a loss where Ptah writes its
+block. A facet of a column, a key, a routine or a materialized view has no place
+in an encoding request and is reported as a loss too. Ptah writes what the
+document knows of the provider's models itself, as a captured
+`ptah:feature-coverage` header, so the document read back makes the claim the
+export had. It sends the provider no coverage for HCL and refuses a reply that
+carries `ptah:not-described` entries. Splitting the output repeats the header
+in every file.
 
 A schema read through the provider is written as complete for what the read
 listed, such as the directories a `--schemas` read named, as the built-in
@@ -1111,7 +1177,8 @@ selection completely. Where the read knows a model less inside what it listed,
 Ptah sends the namespace regions the provider's `Inspect` reported, with the
 bounds they were read with, and refuses the export, naming the model, when it
 cannot. A table's binding names the database the table's read facets name. The
-provider decides whether the format can keep that knowledge.
+provider decides whether the format can keep that knowledge. An HCL export
+writes it in the header, regions included, without asking the provider.
 
 With negotiated `source.encode-groups`, one model value can require several
 ordered declarations. Each group accounts for its values once; each part must
@@ -1244,6 +1311,9 @@ reply as follows:
 - Tables, namespaces, enums, views, sequences, roles and grants enter the
   common model.
 - The provider's own objects are normalized by the provider.
+- Under `schema.sql-facets`, the facets of a table, a column or an index, such
+  as a YDB table's changefeeds, are normalized by the provider and placed
+  where a YAML source places the same facet.
 - Each file's declarations feed the schema-directory check.
 - The reading's claim is the load's coverage.
 
@@ -1254,8 +1324,8 @@ The JSON documents of `schema plan` and `schema apply` list every diagnostic in
 `schema_diagnostics`, with its code (`syntax`, `unsupported`, `invalid` or
 `incomplete`), severity, path and span. Ptah also refuses a reply the SDK's
 checks refuse, a complete reply with a warning, which it does not report yet,
-and a table that carries facets or owned objects, which a reading cannot place
-yet. A command that selects a provider for the engine fails with
+and a declared table that carries captured comparison features, since a
+reading carries a table's facets in its own collection. A command that selects a provider for the engine fails with
 `provider_missing` before it reads the file when none is installed.
 
 The execution adapter does not support managed data or isolated execution of

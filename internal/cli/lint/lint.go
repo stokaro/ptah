@@ -14,6 +14,7 @@ import (
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/cli/internal/exitcode"
+	"ptah.run/internal/cli/internal/migrateflags"
 	"ptah.run/internal/cli/internal/migrationsource"
 	"ptah.run/internal/cli/internal/serverversion"
 	"ptah.run/internal/devdocker"
@@ -48,6 +49,7 @@ var errLintFindings = errors.New("lint findings exceed the failure threshold")
 func NewLintCommand() *cobra.Command {
 	var dir string
 	var dirFormat string
+	var runner string
 	var dialect string
 	var serverVersion string
 	var format string
@@ -83,6 +85,7 @@ Rules can be disabled per code or family via --disable or .ptah-lint.yaml.`,
 			return runLint(cmd, runOptions{
 				dir:           dir,
 				dirFormat:     dirFormat,
+				runner:        runner,
 				dialect:       dialect,
 				serverVersion: serverVersion,
 				format:        format,
@@ -103,6 +106,7 @@ Rules can be disabled per code or family via --disable or .ptah-lint.yaml.`,
 
 	cmd.Flags().StringVar(&dir, "dir", "./migrations", "Local directory or oci:// reference containing migration files")
 	cmd.Flags().StringVar(&dirFormat, "dir-format", string(migrationfile.DirFormatAuto), "Migration directory format: auto, ptah, or atlas")
+	cmd.Flags().StringVar(&runner, migrateflags.RunnerFlag, string(migrateflags.RunnerPtah), migrateflags.RunnerUsage)
 	cmd.Flags().StringVar(&dialect, "dialect", "", "Target dialect gating dialect-specific rules: "+lintdialect.Expected+" (empty runs every rule)")
 	serverversion.Register(cmd.Flags(), &serverVersion)
 	cmd.Flags().StringVar(&format, "format", formatText, "Output format: text, json, github-actions, sarif, gitlab")
@@ -126,6 +130,7 @@ Rules can be disabled per code or family via --disable or .ptah-lint.yaml.`,
 type runOptions struct {
 	dir           string
 	dirFormat     string
+	runner        string
 	dialect       string
 	serverVersion string
 	format        string
@@ -174,6 +179,13 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 	}
 	requested := reportOptions(cmd, opts)
 	requested.Runtime = runtime
+	// The transaction rules judge a file by the tool that applies the
+	// directory, which the directory's layout does not say.
+	runner, err := migrateflags.ParseRunner(dbcli.EffectiveString(
+		cmd, migrateflags.RunnerFlag, opts.runner, projectCfg.StringValue(projectconfig.StringMigrationRunner)))
+	if err != nil {
+		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
+	}
 	reportOpts, provenance, err := prepareReportOptions(
 		cmd,
 		requested,
@@ -187,6 +199,7 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
 	}
 	reportOpts.DevServerDisposable = devServerDisposable
+	reportOpts.TransactionOwner = runner.TransactionOwner()
 	// The shared integrity gate. Lint belongs to the class through --dev-url:
 	// migrationlintreport.Build replays the directory's migrations on that
 	// database to validate execution semantics and read baseline schema state.
@@ -200,6 +213,7 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 	// deliberate on both surfaces: linting a directory nobody has hashed is how
 	// you inspect one before adopting it, and the gate keeps that.
 	if _, err := migrationintegrity.GateWithPolicy(
+		cmd.Context(),
 		cmd.ErrOrStderr(),
 		reportOpts.FS,
 		migrationfile.DirFormat(reportOpts.DirFormat),

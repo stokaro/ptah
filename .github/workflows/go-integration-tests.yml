@@ -216,7 +216,7 @@ jobs:
           - 3317:3306
 
       clickhouse:
-        image: clickhouse/clickhouse-server:26.9
+        image: clickhouse/clickhouse-server:26.10
         env:
           CLICKHOUSE_DB: ptah_test
           CLICKHOUSE_USER: ptah_user
@@ -270,7 +270,7 @@ jobs:
       # endpoint a container can provide. It holds its data in memory and
       # starts empty, so it needs no volume (stokaro/ptah#1719).
       spanner:
-        image: gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:v0.56.1
+        image: gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:v0.56.2
         ports:
           - 5434:5432
 
@@ -325,7 +325,7 @@ jobs:
           # renovate: datasource=docker depName=cockroachdb/cockroach
           docker run --detach --name ptah-cockroachdb \
             --publish 26257:26257 \
-            cockroachdb/cockroach:v26.3.2 \
+            cockroachdb/cockroach:v26.3.5 \
             start-single-node --insecure --advertise-addr=localhost:26257
 
           # renovate: datasource=docker depName=yugabytedb/yugabyte

@@ -373,7 +373,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 	// escape hatch is decided once for the whole invocation rather than read
 	// again here.
 	if err := migrationsource.Verify(
-		cmd.ErrOrStderr(), emit, runtime, source, dirFormat, integrityPolicy,
+		cmd.Context(), cmd.ErrOrStderr(), emit, runtime, source, dirFormat, integrityPolicy,
 		migrationsource.VerifyOptions{RequireSum: opts.verifySum, Verbose: opts.verbose},
 	); err != nil {
 		return err

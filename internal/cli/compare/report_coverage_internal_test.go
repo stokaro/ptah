@@ -54,7 +54,6 @@ var nonCategoryFields = map[string]string{
 	"DeclaredIndexes":            "every declared index, carried so a plan that drops a materialized view and creates it again can create its indexes again -- usually indexes this diff does not touch. It is an input to planning rather than a difference, and reporting it would print every index in the document as though it had changed",
 	"DeclaredTriggers":           "every declared trigger, carried so a plan that drops a view and creates it again can create its triggers again. It is an input to planning rather than a difference, and reporting it would print every trigger in the document as though it had changed",
 	"RoutinesKept":               "the declared routines the database holds unchanged, carried so a plan that drops a view and creates it again can do the same with a routine that uses the view's row type. They are what did not change, and reporting them would print them as though they had",
-	"CurrentViewOptions":         "the options the read reported on views and materialized views, carried so a plan that replaces a view or creates one again keeps them. Ptah declares none of them, so none is a difference",
 	"SkippedFeatures":            "the objects the comparison left out because the target does not serve their model and their owner skips them there. They are not differences: the report writes one line for each beside its result, and the diff does not count them as changes",
 	"Matched":                    "how many objects of each kind the comparison paired, whether or not they differ. It is a count of what both sides hold rather than a difference, and the drift report prints it as its inventory; reporting it here would print every paired object as though it had changed",
 	"FeatureCounts":              "how many objects of each change kind the feature owners compared, whether or not they differ. Like Matched it is a count of what both sides hold rather than a difference, and the drift report prints it in its inventory; the changes among those objects are the feature changes this report already prints",
@@ -89,7 +88,7 @@ func TestWriteComparisonReportsEveryDiffCategory(t *testing.T) {
 			stdout := &bytes.Buffer{}
 			stderr := &bytes.Buffer{}
 
-			writeComparison(stdout, stderr, diff, schemadiff.Diagnostics{}, "", "postgres")
+			writeComparison(c.Context(), stdout, stderr, diff, schemadiff.Diagnostics{}, "", "postgres")
 
 			c.Assert(stdout.String(), qt.Contains, diffCategoryJSONName(field)+" (1):")
 			c.Assert(stdout.String(), qt.Contains, "Reconciling SQL: none.")
@@ -150,7 +149,7 @@ func TestWriteComparisonReportsNoDifferences(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	writeComparison(stdout, stderr, &difftypes.SchemaDiff{}, schemadiff.Diagnostics{}, "", "postgres")
+	writeComparison(c.Context(), stdout, stderr, &difftypes.SchemaDiff{}, schemadiff.Diagnostics{}, "", "postgres")
 
 	c.Assert(stdout.String(), qt.Equals, "No schema differences detected.\n")
 	c.Assert(stderr.String(), qt.Equals, "")
@@ -168,7 +167,7 @@ func TestWriteComparisonPrintsCategoriesAndSQL(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	writeComparison(stdout, stderr, diff, schemadiff.Diagnostics{}, "ALTER TABLE \"other\".\"secured\" ENABLE ROW LEVEL SECURITY;\n", "postgres")
+	writeComparison(c.Context(), stdout, stderr, diff, schemadiff.Diagnostics{}, "ALTER TABLE \"other\".\"secured\" ENABLE ROW LEVEL SECURITY;\n", "postgres")
 
 	c.Assert(stdout.String(), qt.Equals, `Differences detected (2 categories):
   rls_enabled_tables_added (1): other.secured
@@ -249,7 +248,7 @@ func TestWriteComparisonWritesASkippedObjectBesideNoDifferences(t *testing.T) {
 		Subject: objectidentity.ID{Kind: "example.org/extension", Name: objectidentity.Part{Source: "pg_trgm", Normalized: "pg_trgm"}},
 		Label:   "PostgreSQL extension", Target: "mysql"}}}
 
-	writeComparison(stdout, stderr, diff, schemadiff.Diagnostics{}, "", "mysql")
+	writeComparison(c.Context(), stdout, stderr, diff, schemadiff.Diagnostics{}, "", "mysql")
 
 	c.Assert(stdout.String(), qt.Equals, "No schema differences detected.\n")
 	c.Assert(stderr.String(), qt.Equals, "MYSQL: PostgreSQL extension pg_trgm is not supported by this target; skipped.\n")

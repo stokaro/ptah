@@ -28,7 +28,8 @@ func (h *Host) Provider() engine.Provider {
 		contract := h.models[modelKey{kind: codec.Prototype.Kind(), representation: codec.Representation}]
 		if contract.displayName != "" {
 			result.Reporting = append(result.Reporting, engine.Reporting{Representation: contract.key.representation,
-				Definitions: []schemaext.ReportDefinition{{Kind: contract.key.kind, DisplayName: contract.displayName}}, Service: modelReporter{contract: contract}})
+				Definitions: []schemaext.ReportDefinition{{Kind: contract.key.kind, DisplayName: contract.displayName, Metrics: contract.metricDefinitions()}},
+				Service:     modelReporter{host: h, contract: contract}})
 		}
 	}
 	for i := range result.Codecs {
@@ -92,7 +93,7 @@ func (t *target) registration() engine.Target {
 		result.Comparison.ColumnService = columnService{target: t}
 	}
 	if t.offers(provider.ObservedIndexesFeature) {
-		result.Comparison.Indexes = observedIndexRules{methods: t.offers(provider.IndexMethodsFeature)}
+		result.Comparison.Indexes = observedIndexRules{methods: t.offers(provider.IndexMethodsFeature), facets: t.offers(provider.ObservedIndexFacetsFeature)}
 		result.Lowering = uniqueIndexLowering{}
 	}
 	if t.offers(provider.IndexMethodsFeature) {

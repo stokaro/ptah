@@ -1,6 +1,7 @@
 package compare
 
 import (
+	"slices"
 	"sort"
 
 	"ptah.run/catalog"
@@ -425,6 +426,7 @@ func viewFromCatalog(reported catalog.View) schemamodel.View {
 		WithCheck:  sqlutil.CheckOptionRequestsCheck(reported.CheckOption),
 		Comment:    reported.Comment,
 		Attributes: reported.Attributes,
+		Options:    slices.Clone(reported.Options),
 	}
 }
 
@@ -441,5 +443,6 @@ func matViewFromCatalog(reported catalog.MaterializedView) schemamodel.Materiali
 		Name:    reported.QualifiedName(),
 		Body:    reported.Body,
 		Comment: reported.Comment,
+		Options: slices.Clone(reported.Options),
 	}
 }

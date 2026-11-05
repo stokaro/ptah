@@ -62,6 +62,9 @@ type Policy struct {
 	families []string
 	// online is the online mode, selected by the policy's `online` key.
 	online bool
+	// transactionOwner is who opens the transaction each file runs in, as
+	// the apply runs the files.
+	transactionOwner lintext.TransactionOwner
 }
 
 // ServerVersionNote is what the policy's declared server version resolved to
@@ -224,13 +227,23 @@ func (p Policy) gatesOn(rule string) bool {
 
 func (p Policy) options(pathPrefix string) lint.Options {
 	return lint.Options{
-		Dialect:       p.dialect,
-		Target:        p.target,
-		Disabled:      p.disabled,
-		PathPrefix:    pathPrefix,
-		RuleConfigs:   p.rules,
-		RequireOnline: p.online,
+		Dialect:          p.dialect,
+		Target:           p.target,
+		Disabled:         p.disabled,
+		PathPrefix:       pathPrefix,
+		RuleConfigs:      p.rules,
+		RequireOnline:    p.online,
+		TransactionOwner: p.transactionOwner,
 	}
+}
+
+// WithTransactionOwner returns the policy judging transaction control for
+// files that run in transactions owner opens, as the apply runs them: a gate
+// that judged a golang-migrate file for a migrator that wraps it would refuse
+// the transaction control the apply runs as written.
+func (p Policy) WithTransactionOwner(owner lintext.TransactionOwner) Policy {
+	p.transactionOwner = owner
+	return p
 }
 
 // RequiresOnline reports whether the policy selected the online mode.

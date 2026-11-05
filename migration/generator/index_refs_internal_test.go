@@ -117,8 +117,8 @@ func TestPlanGeneratedMigrationSpecs_SkipDropIndexPreservesPostgresSchemaMove(t 
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(specs, qt.HasLen, 1)
-	c.Assert(specs[0].UpSQL, qt.Contains, `DROP INDEX IF EXISTS "app"."idx_shared"`)
-	c.Assert(specs[0].UpSQL, qt.Contains, `CREATE INDEX IF NOT EXISTS "idx_shared" ON "app"."orders"`)
+	c.Assert(specs[0].UpSQL, qt.Contains, `DROP INDEX "app"."idx_shared"`)
+	c.Assert(specs[0].UpSQL, qt.Contains, `CREATE INDEX "idx_shared" ON "app"."orders"`)
 	c.Assert(
 		strings.Index(specs[0].UpSQL, "DROP INDEX") < strings.Index(specs[0].UpSQL, "CREATE INDEX"),
 		qt.IsTrue,

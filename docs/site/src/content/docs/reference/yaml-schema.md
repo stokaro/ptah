@@ -27,7 +27,7 @@ Use YAML when a project wants a compact Ptah-owned schema file without tying the
 schema to Go structs or HCL syntax.
 
 The keys below that declare a YDB object or setting are claimed by the
-[YDB provider](../../databases/ydb/). Ptah reads them only when a command
+[YDB provider](../../extend/providers/ydb/). Ptah reads them only when a command
 selects the provider.
 
 ## Command
@@ -82,6 +82,27 @@ and `APPEND`. Omitting `refresh` or writing `refresh: ""` declares no schedule.
 Removing a schedule replaces the view and discards its stored rows. The
 schedule applies only to ClickHouse; see its [refresh rules](../../databases/clickhouse/#views-and-materialized-views).
 
+## View options and storage parameters
+
+A `views` entry takes `options`, a list of PostgreSQL view options, and a
+`matviews` entry takes `options`, a list of storage parameters, each
+`name=value` as a routine's `settings` are:
+
+```yaml
+views:
+  order_report:
+    body: SELECT id, amount FROM orders
+    options: [security_invoker=true, security_barrier]
+matviews:
+  order_totals:
+    body: SELECT sum(amount) AS total FROM orders
+    options: [fillfactor=70]
+```
+
+A bare name is `true`. An entry without `options` declares none, so the plan
+removes an option the database holds. See
+[View options and storage parameters](../../databases/postgresql/#view-options-and-storage-parameters).
+
 ## Top-level objects
 
 Top-level objects are maps. Their keys are used as default object names when a
@@ -93,8 +114,8 @@ Top-level objects are maps. Their keys are used as default object names when a
 | `enums` | Standalone enum types and values. |
 | `extensions` | PostgreSQL extension declarations. |
 | `functions` | PostgreSQL-style function metadata and SQL bodies. |
-| `views` | View definitions. |
-| `matviews` / `materialized_views` | Materialized view definitions, with a ClickHouse `refresh` clause. |
+| `views` | View definitions, with PostgreSQL `options`. |
+| `matviews` / `materialized_views` | Materialized view definitions, with PostgreSQL storage parameters in `options` and a ClickHouse `refresh` clause. |
 | `triggers` | Trigger definitions. |
 | `rls_policies` | Row-level security policies, with the attributes of `//ptah:schema:rls:policy`, `as` included. An entry and an `rls_enabled_tables` entry take `dialects`: without it, or scoped to the PostgreSQL family, it is PostgreSQL row-level security and other targets refuse it. An entry scoped to ClickHouse is refused. |
 | `row_policies` | ClickHouse row policies, keyed by name, with the attributes of `//ptah:schema:rowpolicy`; `struct_name` may name the table instead. See [row policies](../../databases/clickhouse/#row-policies). |
@@ -106,12 +127,12 @@ Top-level objects are maps. Their keys are used as default object names when a
 | `streaming_queries` | YDB streaming queries, keyed by name: `schema`, `text`, `run`, `resource_pool` and `allow_state_reset`. See [streaming queries](https://github.com/stokaro/ptah-ydb-plugin#streaming-queries). |
 | `resource_pools` | YDB resource pools, keyed by name, with the settings of `//ptah:schema:resourcepool`. See [resource pools](https://github.com/stokaro/ptah-ydb-plugin#resource-pools-and-classifiers). |
 | `resource_pool_classifiers` | YDB resource pool classifiers, keyed by name, with `resource_pool`, `member_name` and `rank`. |
-| `coordination_nodes` | YDB coordination nodes: `schema` and the settings of [`//ptah:schema:coordinationnode`](../go-annotations/#ptahschemacoordinationnode). |
+| `coordination_nodes` | YDB coordination nodes: `schema` and the settings of [`//ptah:schema:coordinationnode`](https://github.com/stokaro/ptah-ydb-plugin/blob/master/docs/declarations.md#ptahschemacoordinationnode). |
 | `async_replications` | YDB async replications: the connection and consistency settings their annotation takes, and `items`, a list of `source` and `target` pairs. See [Async replications and transfers](https://github.com/stokaro/ptah-ydb-plugin#async-replications-and-transfers). |
 | `transfers` | YDB transfers: `source`, `target`, `using` and the settings their annotation takes. |
-| `secrets` | YDB secrets, each by its directory and the environment variable its value comes from; see [Secrets](#secrets). |
-| `external_data_sources` | YDB external data sources; see [External data sources and tables](#external-data-sources-and-tables). |
-| `external_tables` | YDB external tables over files in object storage; see [External data sources and tables](#external-data-sources-and-tables). |
+| `secrets` | YDB secrets, each by its directory and the environment variable its value comes from; see [Secrets](https://github.com/stokaro/ptah-ydb-plugin/blob/master/docs/declarations.md#secrets). |
+| `external_data_sources` | YDB external data sources; see [External data sources and tables](https://github.com/stokaro/ptah-ydb-plugin/blob/master/docs/declarations.md#external-data-sources-and-tables). |
+| `external_tables` | YDB external tables over files in object storage; see [External data sources and tables](https://github.com/stokaro/ptah-ydb-plugin/blob/master/docs/declarations.md#external-data-sources-and-tables). |
 
 Unknown keys fail. Ptah does not silently ignore fields that look meaningful but
 are outside the supported schema.
@@ -238,8 +259,8 @@ Each entry under `tables` declares one table.
 | `columns` / `fields` | Ordered column map. Use one or the other. |
 | `indexes` | Ordered table-local index map. |
 | `constraints` | Ordered table-local constraint map. |
-| `column_families` | Ordered map of a YDB table's column families; see [Column families](#column-families). |
-| `changefeeds` | Ordered map of a YDB table's changefeeds; see [Changefeeds](#changefeeds). |
+| `column_families` | Ordered map of a YDB table's column families; see [Column families](https://github.com/stokaro/ptah-ydb-plugin/blob/master/docs/declarations.md#column-families). |
+| `changefeeds` | Ordered map of a YDB table's changefeeds; see [Changefeeds](https://github.com/stokaro/ptah-ydb-plugin/blob/master/docs/declarations.md#changefeeds). |
 | `rls_enabled` | Enables row-level security for the table. |
 | `platform` / `overrides` | Dialect-specific override map. A [Spanner row deletion policy](../../databases/distributed/#spanner-row-deletion-policy) sits in its `spanner` group and a [YDB TTL](https://github.com/stokaro/ptah-ydb-plugin#ttl) in its `ydb` group, as `row_deletion_column`, `row_deletion_interval` and, on YDB, `row_deletion_unit`. |
 | `auto_partitioning_by_size`, `auto_partitioning_partition_size_mb`, `auto_partitioning_by_load`, `auto_partitioning_min_partitions_count`, `auto_partitioning_max_partitions_count`, `read_replicas_settings`, `key_bloom_filter`, `uniform_partitions`, `partition_at_keys` | A YDB row table's [partitioning, read replicas and key bloom filter](https://github.com/stokaro/ptah-ydb-plugin#partitioning-settings-read-replicas-and-key-bloom-filter), with the values the annotation attributes of the same names take. Every other dialect refuses them. |
@@ -325,95 +346,6 @@ map with a `table` key.
 | `comment` | Index comment. |
 | `auto_partitioning_by_size`, `auto_partitioning_partition_size_mb`, `auto_partitioning_by_load`, `auto_partitioning_min_partitions_count`, `auto_partitioning_max_partitions_count`, `read_replicas_settings` | A YDB global index's [partitioning](https://github.com/stokaro/ptah-ydb-plugin#index-alteration), with the values the annotation attributes of the same names take. Every other dialect refuses them. |
 | `distance`, `similarity`, `vector_type`, `vector_dimension`, `levels`, `clusters` | A YDB [vector index](https://github.com/stokaro/ptah-ydb-plugin#vector-and-full-text-indexes)'s settings, with the values the annotation attributes of the same names take. Every other dialect refuses them. |
-
-## Column families
-
-A YDB table's column families sit under `tables.<table>.column_families`, keyed
-by name. The keys are the attributes of `//ptah:schema:columnfamily`, with the
-same values; `fields` is a list of the columns the family holds. Every other
-dialect refuses a table that declares a column family. See
-[column families](https://github.com/stokaro/ptah-ydb-plugin#column-families).
-
-```yaml
-tables:
-  documents:
-    column_families:
-      default:
-        compression: lz4
-      cold:
-        data: hdd
-        compression: lz4
-        fields: [body, attachment]
-```
-
-## Changefeeds
-
-A YDB table's changefeeds sit under `tables.<table>.changefeeds`, keyed by
-name, and each changefeed's consumers under its `consumers` map, keyed by
-name. The keys are the attributes of `//ptah:schema:changefeed` and
-`//ptah:schema:changefeed:consumer`, with the same values; `supported_codecs`
-is a list. Every other dialect refuses a table that declares a changefeed. See
-[changefeeds](https://github.com/stokaro/ptah-ydb-plugin#changefeeds).
-
-```yaml
-tables:
-  orders:
-    changefeeds:
-      updates:
-        mode: NEW_AND_OLD_IMAGES
-        format: JSON
-        retention_period: PT12H
-        consumers:
-          billing:
-            important: true
-          search:
-            supported_codecs: [raw, gzip]
-```
-
-## Secrets
-
-A YDB secret sits under `secrets`, keyed by name, with the attributes of
-`//ptah:schema:secret`: `name` when the key is not the name, `schema` for its
-directory, and `value_env` for the environment variable that holds the value,
-whose name starts with `PTAH_SECRET_`. A document never holds the value: a
-`value` key is refused, and the error names the key and not what it held. A
-dot is part of the name, and a slash in it is refused. Every other dialect
-refuses a secret. See [secrets](https://github.com/stokaro/ptah-ydb-plugin#secrets).
-
-```yaml
-secrets:
-  pg_password:
-    schema: ext
-    value_env: PTAH_SECRET_PG_PASSWORD
-```
-
-## External data sources and tables
-
-A YDB external data source sits under `external_data_sources` and an external
-table under `external_tables`, each keyed by name, with the attributes of
-`//ptah:schema:externaldatasource` and `//ptah:schema:externaltable`. `options`
-is a map of option names, in any letter case, to values, and each column of a
-table has a `name`, a `type` and `not_null`. Every other dialect refuses both.
-See [external data sources](https://github.com/stokaro/ptah-ydb-plugin#external-data-sources-and-external-tables).
-
-```yaml
-external_data_sources:
-  events_bucket:
-    schema: ext
-    source_type: ObjectStorage
-    location: https://storage.example.test/events/
-    auth_method: NONE
-external_tables:
-  events:
-    schema: ext
-    data_source: ext/events_bucket
-    location: 2026/
-    columns:
-      - {name: id, type: Int64, not_null: true}
-      - {name: kind, type: Utf8}
-    options:
-      FORMAT: json_each_row
-```
 
 ## Platform overrides
 

@@ -101,6 +101,24 @@ func TestAnnotationsPreserveExecutionInputPreview(t *testing.T) {
 	c.Assert(out.String(), qt.Equals, "-- review\nExecution input: environment TOKEN\nSELECT 1;\n-- done\n")
 }
 
+// A native unit is written as its owner's text form where the report carries
+// one, as an SQL unit is, and by kind, subject and assessment where it does
+// not.
+func TestUnitReportsWriteANativeUnitAsItsTextForm(t *testing.T) {
+	c := qt.New(t)
+	units := []atlasschema.ApplyUnitReport{
+		{Native: &atlasschema.NativeUnitReport{Kind: "example.org/fixture/table-operation", Subject: "items", Severity: "safe", Reason: "Adds a column",
+			Access: "unchanged", AccessReason: "No grant changes", Text: `ALTER TABLE "items" ADD COLUMN "added" REAL;`}},
+		{Native: &atlasschema.NativeUnitReport{Kind: "example.org/fixture/table-operation", Subject: "items", Severity: "destructive", Reason: "Rebuilds the table"}},
+	}
+	var out bytes.Buffer
+
+	atlasschema.WriteUnitReports(&out, units, []renderer.Annotation{{Before: 1, Text: "rebuild"}})
+
+	c.Assert(out.String(), qt.Equals, "ALTER TABLE \"items\" ADD COLUMN \"added\" REAL;\n-- rebuild\n"+
+		"Native operation: example.org/fixture/table-operation\n  items: Rebuilds the table (destructive)\n")
+}
+
 func TestSavedAnnotationsRefuseInvalidPositions(t *testing.T) {
 	for _, test := range []struct {
 		name  string

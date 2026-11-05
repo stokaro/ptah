@@ -125,7 +125,7 @@ func TestProviderReplayApprovesTheInputsAMigrationReads_HappyPath(t *testing.T) 
 // database here declares a second column the target's plan does not add.
 func TestProviderNativeRehearsalRefusesAPlanThatIsNotTheTargets_FailurePath(t *testing.T) {
 	c := qt.New(t)
-	host, runtime := yamlProviderEnvironment(c, "operation-models", []string{"FIXTURE_RENDER_MODE=native", "FIXTURE_DEV_SERVICES=1"})
+	host, runtime := yamlProviderEnvironment(c, "operation-models", []string{"FIXTURE_RENDER_MODE=native", "FIXTURE_DEV_SERVICES=1", "FIXTURE_STATEMENT_STYLE=honored"})
 	ctx, err := dbschema.WithNativeConnections(c.Context(), host.Connections())
 	c.Assert(err, qt.IsNil)
 	conn := observedConnection(c, host, "planned")

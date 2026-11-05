@@ -37,6 +37,7 @@ import (
 	"ptah.run/internal/migrationreplay"
 	"ptah.run/internal/migrationsnapshot"
 	"ptah.run/internal/pathguard"
+	"ptah.run/internal/planstyle"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/schemascope"
 	"ptah.run/internal/schemaselection"
@@ -200,7 +201,7 @@ type BidirectionalPlanInput struct {
 	AllowTableRebuild   bool
 	TableRebuildRequest string
 	// Statements is the statement style both directions are planned in; see
-	// [migrateDiffStatements].
+	// [planstyle.Statements].
 	Statements planext.StatementStyle
 }
 
@@ -618,15 +619,6 @@ func resolveDesiredState(
 	return state, nil
 }
 
-// migrateDiffStatements is the statement style of a migration `migrate diff`
-// writes. The community binary writes a migration with no IF EXISTS or IF NOT
-// EXISTS, no CASCADE, and a comment naming each change in place of Ptah's own
-// descriptive ones, and the files this one writes sit beside the files that
-// binary wrote. A migration run against a database in another state than the
-// one it was planned against then stops where a guard would let it do nothing
-// and CASCADE would remove an object nobody named.
-const migrateDiffStatements = planext.StatementStyleExact
-
 // planDiffFileContents plans the migration AST, applies the typed qualifier,
 // and renders the migration file contents for one diff run — both directions.
 func planDiffFileContents(
@@ -650,7 +642,7 @@ func planDiffFileContents(
 				OmitNullBackfill:     opts.OmitNullBackfill,
 				AllowTableRebuild:    opts.Policy.AllowTableRebuild,
 				TableRebuildRequest:  opts.Policy.TableRebuildRequest,
-				Statements:           migrateDiffStatements,
+				Statements:           planstyle.Statements,
 			},
 		)
 
@@ -671,7 +663,7 @@ func planDiffFileContents(
 			OmitNullBackfill:      opts.OmitNullBackfill,
 			AllowTableRebuild:     opts.Policy.AllowTableRebuild,
 			TableRebuildRequest:   opts.Policy.TableRebuildRequest,
-			Statements:            migrateDiffStatements,
+			Statements:            planstyle.Statements,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("generate migration plan: %w", err)
@@ -825,6 +817,7 @@ func compareReplayedState(
 		return nil, nil, fmt.Errorf("compare dev database schema: %w", err)
 	}
 	undecidednote.Report(
+		ctx,
 		diagnostics,
 		undecided,
 		"the replayed migration directory",

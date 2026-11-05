@@ -294,14 +294,14 @@ invocation:
 | `--dev-url docker://ydb/26.2.1.14/local` | 1, `unsupported docker image "ydb"` | 1, byte-identical |
 
 The default profile serves YDB through the
-[YDB provider](./site/src/content/docs/databases/ydb.md) with no `PTAH_*`
+[YDB provider](./site/src/content/docs/extend/providers/ydb.md) with no `PTAH_*`
 variable to turn it on, because a YDB URL asks for an engine the binary lacks
 rather than making a mistake the binary catches: the installed provider, or the
 one the manifest `PTAH_PROVIDER_CONFIG` names. The strict profile refuses a YDB URL from a flag, from
 `atlas.hcl`, and from any connection the run would open, a data source
 included; a `PTAH_*` variable is refused as a variable before that. The data
 source row differs in its middle words on every engine, not only on YDB. What
-each verb does on YDB is on the [YDB page](./site/src/content/docs/databases/ydb.md#ptah-compat),
+each verb does on YDB is on the [YDB provider's page](https://github.com/stokaro/ptah-ydb-plugin/blob/master/docs/ptah.md#ptah-compat),
 and the divergence is recorded under
 [Compatibility differences](./site/src/content/docs/atlas/retained-divergences.md#a-ydb-database-url).
 
@@ -1479,8 +1479,8 @@ The consequence is measured. Against a database holding
 declaring `//ptah:schema:index name="i" fields="ts" type="BRIN"` plans:
 
 ```text
-DROP INDEX IF EXISTS "i";
-CREATE INDEX IF NOT EXISTS "i" ON "t" USING BRIN ("ts");
+DROP INDEX "i";
+CREATE INDEX "i" ON "t" USING BRIN ("ts");
 ```
 
 which drops the parameter.

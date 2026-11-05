@@ -1,7 +1,7 @@
 // Package main serves the fixture engine as an engine that renders only
 // against an established answer for transactional_ddl, as the YDB provider
 // renders a table only against established nontransactional DDL. It states
-// that answer for offline planning (contract 25.27,
+// that answer for offline planning (contract 25.22,
 // engine.default-capabilities), false by default and on release line 2.1 and
 // true on line 1.4, unless FIXTURE_NO_DEFAULTS is set, which is the control:
 // without the stated facts an offline render is refused.

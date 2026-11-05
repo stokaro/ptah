@@ -194,7 +194,9 @@ literal `# EOF` line, which lets a collector identify a complete scrape.
 
 An unavailable feature reporter or an invalid count fails the command before it
 writes the scrape. An embedding application can select additional model
-reporters through the [public Go API](../../extend/public-api/).
+reporters through the [public Go API](../../extend/public-api/). Through an
+[executable provider](../../extend/executable-providers/), the families are
+those the provider's engine names, and the provider counts its own values.
 
 Through the YDB provider, the common counters cover YDB's tables, columns,
 indexes and views. Topics, changefeeds, coordination nodes and YDB's other

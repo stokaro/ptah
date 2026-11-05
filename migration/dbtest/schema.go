@@ -19,6 +19,7 @@ import (
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
 	"ptah.run/engine"
+	"ptah.run/internal/planstyle"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -223,7 +224,7 @@ func applyDesiredSchema(
 		diff,
 
 		info.Dialect,
-		planext.Options{Capabilities: info.Capabilities},
+		planext.Options{Capabilities: info.Capabilities, Statements: planstyle.Statements},
 	)
 
 	if err != nil {

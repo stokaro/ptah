@@ -26,12 +26,12 @@ import (
 // object and the change the drop is for. An object the plan removes too is not
 // lost, so it is not a reason to refuse.
 //
-// A view rebuild drops a view or a materialized view with CASCADE in Ptah's own
-// style. The exact style drops it without CASCADE unless the drop relies on
-// it, which takes the policy as Ptah's own style does, so its error names both
-// outcomes. A routine is dropped without CASCADE in both styles. A view the
-// plan replaces in place is not dropped and is not a reason; see
-// [viewRebuild.replaceFirst].
+// A view rebuild drops a view or a materialized view with CASCADE in the
+// annotated style. The exact style drops it without CASCADE unless the drop
+// relies on it, which takes the policy as the annotated style does, so its
+// error names both outcomes. A routine is dropped without CASCADE in both
+// styles. A view the plan replaces in place is not dropped and is not a
+// reason; see [viewRebuild.replaceFirst].
 //
 // The objects answer for themselves through [schemaext.RelationReader], so
 // this planner names no owner. A diff built without a comparison carries no

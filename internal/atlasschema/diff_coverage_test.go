@@ -47,8 +47,8 @@ extension "citext" {
 	c.Assert(err, qt.IsNil)
 	c.Assert(report.Changes, qt.HasLen, 0)
 	c.Assert(diagnostics.String(), qt.Matches,
-		`Warning: PostgreSQL extension citext could not be compared between --from and --to: `+
-			"whether the extension is installed was not established: the description does not describe extension\\.\n")
+		`warning: PostgreSQL extension citext could not be compared between --from and --to: `+
+			"whether the extension is installed was not established: the description does not describe extension\n")
 }
 
 func TestDiffPlansGuardedExtensionPlacementWhenCurrentIsAuthoritative(t *testing.T) {
@@ -92,8 +92,8 @@ sequence "order_seq" {
 	c.Assert(err, qt.IsNil)
 	c.Assert(report.Changes, qt.HasLen, 0)
 	c.Assert(diagnostics.String(), qt.Matches,
-		`Warning: sequence "public\.order_seq" is declared by --to but no change was planned for it:`+
-			" --from records `ptah:not-described sequence`.*cannot safely converge from an unknown current state\\.\n")
+		`warning: sequence "public\.order_seq" is declared by --to but no change was planned for it:`+
+			" --from records `ptah:not-described sequence`.*cannot safely converge from an unknown current state\n")
 }
 
 // TestDiffPlansAnUnguardedCreationWithoutTheRecord is the control for the test
@@ -150,7 +150,7 @@ extension "pgcrypto" {
 		c.Assert(err, qt.IsNil)
 		sql, err := report.MarshalSQL()
 		c.Assert(err, qt.IsNil)
-		c.Assert(sql, qt.Contains, `DROP EXTENSION IF EXISTS "pgcrypto";`)
+		c.Assert(sql, qt.Contains, `DROP EXTENSION "pgcrypto";`)
 	})
 }
 

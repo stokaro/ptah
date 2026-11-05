@@ -60,7 +60,7 @@ services:
       retries: 5
 
   clickhouse:
-    image: clickhouse/clickhouse-server:26.9
+    image: clickhouse/clickhouse-server:26.10
     environment:
       CLICKHOUSE_DB: ptah_test
       CLICKHOUSE_USER: ptah_user
@@ -79,7 +79,7 @@ services:
       retries: 10
 
   cockroachdb:
-    image: cockroachdb/cockroach:v26.3.2
+    image: cockroachdb/cockroach:v26.3.5
     command:
       - start-single-node
       - --insecure
@@ -134,7 +134,7 @@ services:
   # for a managed product rather than running the product itself, so a plain
   # `docker compose up` should not imply Spanner coverage (stokaro/ptah#1719).
   spanner:
-    image: gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:v0.56.1
+    image: gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:v0.56.2
     profiles:
       - spanner
     ports:

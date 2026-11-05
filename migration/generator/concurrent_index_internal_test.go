@@ -41,13 +41,13 @@ func TestPlanGeneratedMigrationSpecs_ConcurrentIndexForPopulatedPostgresTable(t 
 	c.Assert(len(assessments) > 0, qt.IsTrue)
 	c.Assert(specs[0].NoTransaction, qt.IsTrue)
 	c.Assert(specs[0].UpSQL, qt.Contains, "-- +ptah no_transaction")
-	c.Assert(specs[0].UpSQL, qt.Contains, `CREATE INDEX CONCURRENTLY IF NOT EXISTS "idx_users_email" ON "users" ("email");`)
+	c.Assert(specs[0].UpSQL, qt.Contains, `CREATE INDEX CONCURRENTLY "idx_users_email" ON "users" ("email");`)
 	c.Assert(specs[0].UpSQL, qt.Not(qt.Contains), "+ptah lock_timeout")
 	c.Assert(specs[0].DownSQL, qt.Contains, "-- +ptah no_transaction")
 	// Reverting the concurrent-drop wiring prints
-	// `DROP INDEX IF EXISTS "idx_users_email";` here: the rollback of a
+	// `DROP INDEX "idx_users_email";` here: the rollback of a
 	// non-blocking build would take the very write lock the build avoided.
-	c.Assert(specs[0].DownSQL, qt.Contains, `DROP INDEX CONCURRENTLY IF EXISTS "idx_users_email";`)
+	c.Assert(specs[0].DownSQL, qt.Contains, `DROP INDEX CONCURRENTLY "idx_users_email";`)
 }
 
 func TestPlanGeneratedMigrationSpecs_ReverseOnlyNoTransactionMarksPair(t *testing.T) {
@@ -109,9 +109,9 @@ func TestPlanGeneratedMigrationSpecs_YugabyteConcurrentCreateUsesBlockingRollbac
 	c.Assert(specs[0].NoTransaction, qt.IsTrue)
 	c.Assert(specs[0].UpSQL, qt.Contains, "-- +ptah no_transaction")
 	c.Assert(specs[0].UpSQL, qt.Contains,
-		`CREATE INDEX CONCURRENTLY IF NOT EXISTS "idx_users_email" ON "users" ("email");`)
+		`CREATE INDEX CONCURRENTLY "idx_users_email" ON "users" ("email");`)
 	c.Assert(specs[0].DownSQL, qt.Not(qt.Contains), "-- +ptah no_transaction")
-	c.Assert(specs[0].DownSQL, qt.Contains, `DROP INDEX IF EXISTS "idx_users_email";`)
+	c.Assert(specs[0].DownSQL, qt.Contains, `DROP INDEX "idx_users_email";`)
 	c.Assert(specs[0].DownSQL, qt.Not(qt.Contains), "CONCURRENTLY")
 }
 
@@ -150,7 +150,7 @@ func TestPlanGeneratedMigrationSpecs_ConcurrentIndexRequiresPopulatedCapablePost
 			c.Assert(specs[0].NoTransaction, qt.IsFalse)
 			c.Assert(specs[0].UpSQL, qt.Not(qt.Contains), "CONCURRENTLY")
 			c.Assert(specs[0].UpSQL, qt.Not(qt.Contains), "-- +ptah no_transaction")
-			c.Assert(specs[0].UpSQL, qt.Contains, `CREATE INDEX IF NOT EXISTS "idx_users_email" ON "users" ("email");`)
+			c.Assert(specs[0].UpSQL, qt.Contains, `CREATE INDEX "idx_users_email" ON "users" ("email");`)
 		})
 	}
 }
@@ -195,10 +195,10 @@ func TestPlanGeneratedMigrationSpecs_SplitsTransactionalAndConcurrentIndex(t *te
 	c.Assert(specs[1].Name, qt.Equals, "add_posts_and_user_index_concurrent_indexes")
 	c.Assert(specs[1].NoTransaction, qt.IsTrue)
 	c.Assert(specs[1].UpSQL, qt.Contains, "-- +ptah no_transaction")
-	c.Assert(specs[1].UpSQL, qt.Contains, `CREATE INDEX CONCURRENTLY IF NOT EXISTS "idx_users_email" ON "users" ("email");`)
+	c.Assert(specs[1].UpSQL, qt.Contains, `CREATE INDEX CONCURRENTLY "idx_users_email" ON "users" ("email");`)
 	// Reverting the concurrent-drop wiring prints
-	// `DROP INDEX IF EXISTS "idx_users_email";` here.
-	c.Assert(specs[1].DownSQL, qt.Contains, `DROP INDEX CONCURRENTLY IF EXISTS "idx_users_email";`)
+	// `DROP INDEX "idx_users_email";` here.
+	c.Assert(specs[1].DownSQL, qt.Contains, `DROP INDEX CONCURRENTLY "idx_users_email";`)
 }
 
 func TestPlanGeneratedMigrationSpecs_SplitsPopulatedAndEmptyTableIndexes(t *testing.T) {
@@ -229,10 +229,10 @@ func TestPlanGeneratedMigrationSpecs_SplitsPopulatedAndEmptyTableIndexes(t *test
 	c.Assert(err, qt.IsNil)
 	c.Assert(specs, qt.HasLen, 2)
 	c.Assert(specs[0].NoTransaction, qt.IsFalse)
-	c.Assert(specs[0].UpSQL, qt.Contains, `CREATE INDEX IF NOT EXISTS "idx_posts_title" ON "posts" ("title");`)
+	c.Assert(specs[0].UpSQL, qt.Contains, `CREATE INDEX "idx_posts_title" ON "posts" ("title");`)
 	c.Assert(specs[0].UpSQL, qt.Not(qt.Contains), "idx_users_email")
 	c.Assert(specs[1].NoTransaction, qt.IsTrue)
-	c.Assert(specs[1].UpSQL, qt.Contains, `CREATE INDEX CONCURRENTLY IF NOT EXISTS "idx_users_email" ON "users" ("email");`)
+	c.Assert(specs[1].UpSQL, qt.Contains, `CREATE INDEX CONCURRENTLY "idx_users_email" ON "users" ("email");`)
 	c.Assert(specs[1].UpSQL, qt.Not(qt.Contains), "idx_posts_title")
 }
 
@@ -322,7 +322,7 @@ func TestPublishPlannedMigration_WritesAllPairs(t *testing.T) {
 // DROP INDEX CONCURRENTLY inside a transaction block.
 //
 // With the change reverted the "policy on" row prints
-// `DROP INDEX IF EXISTS "idx_users_email";` with NoTransaction false, so it
+// `DROP INDEX "idx_users_email";` with NoTransaction false, so it
 // becomes indistinguishable from the "policy off" row.
 func TestPlanGeneratedMigrationSpecs_ConcurrentIndexDropPolicy(t *testing.T) {
 	tests := []struct {
@@ -338,16 +338,16 @@ func TestPlanGeneratedMigrationSpecs_ConcurrentIndexDropPolicy(t *testing.T) {
 			policy:            DiffPolicy{},
 			info:              postgresInfo(capability.Postgres16()),
 			wantNoTransaction: false,
-			wantUpSQL:         `DROP INDEX IF EXISTS "idx_users_email";`,
-			wantDownSQL:       `CREATE INDEX IF NOT EXISTS "idx_users_email" ON "users" ("email");`,
+			wantUpSQL:         `DROP INDEX "idx_users_email";`,
+			wantDownSQL:       `CREATE INDEX "idx_users_email" ON "users" ("email");`,
 		},
 		{
 			name:              "policy on drops concurrently and rebuilds concurrently",
 			policy:            DiffPolicy{ConcurrentIndexDrop: true},
 			info:              postgresInfo(capability.Postgres16()),
 			wantNoTransaction: true,
-			wantUpSQL:         `DROP INDEX CONCURRENTLY IF EXISTS "idx_users_email";`,
-			wantDownSQL:       `CREATE INDEX CONCURRENTLY IF NOT EXISTS "idx_users_email" ON "users" ("email");`,
+			wantUpSQL:         `DROP INDEX CONCURRENTLY "idx_users_email";`,
+			wantDownSQL:       `CREATE INDEX CONCURRENTLY "idx_users_email" ON "users" ("email");`,
 		},
 	}
 
@@ -436,7 +436,7 @@ func TestPlanGeneratedMigrationSpecs_ConcurrentIndexDropSplitsFromTransactional(
 	c.Assert(specs[1].Name, qt.Equals, "add_posts_drop_index_concurrent_indexes")
 	c.Assert(specs[1].NoTransaction, qt.IsTrue)
 	c.Assert(specs[1].UpSQL, qt.Contains, "-- +ptah no_transaction")
-	c.Assert(specs[1].UpSQL, qt.Contains, `DROP INDEX CONCURRENTLY IF EXISTS "idx_users_email";`)
+	c.Assert(specs[1].UpSQL, qt.Contains, `DROP INDEX CONCURRENTLY "idx_users_email";`)
 	c.Assert(specs[1].UpSQL, qt.Not(qt.Contains), `CREATE TABLE "posts"`)
 }
 

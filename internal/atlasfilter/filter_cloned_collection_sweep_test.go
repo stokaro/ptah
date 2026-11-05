@@ -194,6 +194,18 @@ func clonedCollectionRows() []clonedCollectionRow {
 					catalog.VirtualTable{Name: "legacy_docs", Module: "fts4"})
 			},
 		},
+		{
+			// Not filtered, as reserved storage is not: the read found the
+			// table and left it out, so it is outside the description, and
+			// the comparison refusal reads this list. It is still ASKED, so an
+			// exclusion that names it is not reported as matching nothing.
+			field: "UnreadTables", present: "orphan_replica", absent: "nosuch_unread_table",
+			seed: func(s *catalog.Database) {
+				s.UnreadTables = append(s.UnreadTables, catalog.UnreadTable{
+					Identity: objectidentity.NewBuilder(identifier.ForDialect("postgres")).TableParts("", "orphan_replica"),
+					Reason:   "orphan_replica is a replica table"})
+			},
+		},
 	}
 }
 

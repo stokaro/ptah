@@ -23,6 +23,7 @@ import (
 	"ptah.run/internal/routinebody"
 	"ptah.run/internal/routinesetting"
 	"ptah.run/internal/tableref"
+	"ptah.run/internal/viewoptions"
 )
 
 // Functions performs PostgreSQL function comparison between generated and database schemas.
@@ -838,10 +839,22 @@ func viewDefinitions(genView schemamodel.View, dbView catalog.View, dialect stri
 		// The planner needs it to decide whether CREATE OR REPLACE VIEW is legal
 		// for the change, which is not derivable from the target body alone.
 		PreviousBody: strings.TrimSpace(dbView.Body),
+		// The options in force until this change runs, which an option change
+		// made in place resets where the declaration leaves them out.
+		PreviousOptions: slices.Clone(dbView.Options),
 	}
 
 	if !declaredBodyEqual(genView.Body, dbView.Body, dialect, dbView.Schema, bodies) {
 		viewDiff.Changes["body"] = fmt.Sprintf("%s -> %s", strings.TrimSpace(dbView.Body), strings.TrimSpace(genView.Body))
+	}
+
+	// The declaration states every option the view holds, so an option the
+	// database holds and the declaration leaves out is a change, as a body or
+	// a check option it leaves out is. Two spellings of one value are the same
+	// option: the server stores `security_invoker = on` as written.
+	if !viewoptions.Equal(genView.Options, dbView.Options) {
+		viewDiff.Changes[difftypes.OptionsChange] = fmt.Sprintf("%s -> %s",
+			viewoptions.Describe(dbView.Options), viewoptions.Describe(genView.Options))
 	}
 
 	// The third place this rule was written, and the one #2315's view
@@ -949,12 +962,20 @@ func materializedViewDefinitions(
 		Changes:  make(map[string]string),
 		Desired:  genView,
 		// What the view reads until the plan drops it, which orders that drop.
-		PreviousBody: strings.TrimSpace(dbView.Body),
+		PreviousBody:    strings.TrimSpace(dbView.Body),
+		PreviousOptions: slices.Clone(dbView.Options),
 	}
 
 	declared, stored := MaterializedViewQuery(genView.Body), MaterializedViewQuery(dbView.Body)
 	if !declaredBodyEqual(declared, stored, dialect, dbView.Schema, bodies) {
 		viewDiff.Changes["body"] = fmt.Sprintf("%s -> %s", strings.TrimSpace(dbView.Body), strings.TrimSpace(genView.Body))
+	}
+
+	// Storage parameters are compared as a view's options are; see
+	// viewDefinitions. A change to them alone keeps the view and its rows.
+	if !viewoptions.Equal(genView.Options, dbView.Options) {
+		viewDiff.Changes[difftypes.OptionsChange] = fmt.Sprintf("%s -> %s",
+			viewoptions.Describe(dbView.Options), viewoptions.Describe(genView.Options))
 	}
 
 	return viewDiff

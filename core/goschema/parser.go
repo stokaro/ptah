@@ -27,6 +27,7 @@ import (
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/routinesetting"
 	"ptah.run/internal/tableref"
+	"ptah.run/internal/viewoptions"
 )
 
 // annotationErrorContext locates one annotation in the source being parsed, so
@@ -1628,12 +1629,17 @@ func (s *schemaParseState) parseViewComment(comment *ast.Comment, structName str
 	if err != nil {
 		return err
 	}
+	options, err := parseViewOptions(kv, ctx)
+	if err != nil {
+		return err
+	}
 	s.views = append(s.views, schemamodel.View{
 		StructName: structName,
 		Name:       qualifiedObjectName(kv),
 		Body:       kv["body"],
 		WithCheck:  kv["with_check"] == "true",
 		Comment:    kv["comment"],
+		Options:    options,
 		DependsOn:  splitDependsOn(kv["depends_on"]),
 		Dialects:   scope,
 	})
@@ -1662,12 +1668,17 @@ func (s *schemaParseState) parseMaterializedViewComment(comment *ast.Comment, st
 	if err != nil {
 		return ownerAttributeError(ctx, err)
 	}
+	options, err := parseViewOptions(kv, ctx)
+	if err != nil {
+		return err
+	}
 	s.materializedViews = append(s.materializedViews, schemamodel.MaterializedView{
 		Facets:     owned,
 		StructName: structName,
 		Name:       qualifiedObjectName(kv),
 		Body:       kv["body"],
 		Comment:    kv["comment"],
+		Options:    options,
 		DependsOn:  splitDependsOn(kv["depends_on"]),
 		Dialects:   scope,
 	})
@@ -2089,6 +2100,26 @@ func splitDependsOn(value string) []string {
 		}
 	}
 	return names
+}
+
+// parseViewOptions reads the options attribute of a view or a materialized
+// view: `name=value` pairs separated by commas, as the WITH list of CREATE
+// VIEW spells them, held as [viewoptions.Normalize] holds them. An absent
+// attribute declares none, and so does an empty one.
+func parseViewOptions(kv map[string]string, ctx annotationErrorContext) ([]string, error) {
+	raw := kv["options"]
+	options, err := viewoptions.Normalize(splitDependsOn(raw))
+	if err != nil {
+		return nil, &ptaherr.ParseError{
+			File:      ctx.file,
+			Line:      ctx.line,
+			Directive: strings.TrimPrefix(ctx.directive, "//"),
+			Attribute: "options",
+			Err:       ptaherr.ErrInvalidAttributeValue,
+			Message:   fmt.Sprintf("invalid %q value %q on %s at %s: %s", "options", raw, ctx.directive, ctx.location, err.Error()),
+		}
+	}
+	return options, nil
 }
 
 func splitRoutineSettings(value string) []string {

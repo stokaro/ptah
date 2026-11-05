@@ -82,6 +82,7 @@ func TestPlanningStatementStyleNeedsOwnerNegotiation(t *testing.T) {
 	exact.Statements = featureplan.StatementStyleExact
 	wire, err = service.target.planningPolicy(exact)
 	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+	c.Assert(err, qt.ErrorMatches, `.*does not list `+provider.PlanningStatementStyleFeature+`; upgrade the provider`)
 	c.Assert(wire, qt.IsNil)
 
 	service.target.host.description.Features = append(service.target.host.description.Features, provider.PlanningStatementStyleFeature)

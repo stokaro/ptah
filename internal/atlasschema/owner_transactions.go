@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
 	"ptah.run/dbschema"
+	"ptah.run/internal/rolepassword"
 	"ptah.run/internal/sqliterebuild"
 	"ptah.run/internal/txrequire"
 	"ptah.run/migration/migrator"
@@ -71,6 +72,7 @@ func (p ApplyRuntimePlan) PreflightExecution(sqlText string) error {
 // assess. It repeats preflight at the execution boundary. An unchanged plan
 // retains its statement boundaries, including provider execution units.
 func (p ApplyRuntimePlan) ExecuteSQL(ctx context.Context, sqlText string) error {
+	ctx = rolepassword.With(ctx, p.passwords)
 	if err := p.PreflightExecution(sqlText); err != nil {
 		return err
 	}
@@ -131,9 +133,14 @@ func (p PlanFile) Execute(ctx context.Context, conn *dbschema.DatabaseConnection
 	return ApplyStatements(ctx, conn, mode, p.StatementSQL())
 }
 
-// captureRenderedUnits snapshots the same operation contract used by execution.
-func (c *applyComputation) captureRenderedUnits(info catalog.ServerInfo, plan planner.RenderedPlan) error {
-	captured, err := CaptureApplyPlan(info, plan)
+// captureRenderedUnits snapshots the same operation contract used by execution,
+// and the text form of its native units for display (see nativeTextForm).
+func (c *applyComputation) captureRenderedUnits(ctx context.Context, service renderer.Service, info catalog.ServerInfo, plan planner.RenderedPlan) error {
+	text, err := nativeTextForm(ctx, service, plan)
+	if err != nil {
+		return fmt.Errorf("generate schema apply operations: %w", err)
+	}
+	captured, err := captureApplyPlan(info, plan, text)
 	if err != nil {
 		return err
 	}

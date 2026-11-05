@@ -714,7 +714,10 @@ func appendFamilyStatement(
 	if handled, err := appendPrivilegeDeclaration(database, stmt, sourcePlatform); handled {
 		return true, err
 	}
-	if appendView(database, document, stmt, sourcePlatform) || appendNamespace(database, stmt, sourcePlatform) {
+	if handled, err := appendView(database, document, stmt, sourcePlatform); handled {
+		return true, err
+	}
+	if appendNamespace(database, stmt, sourcePlatform) {
 		return true, nil
 	}
 	return changeDeclared(ctx, database, document, stmt, sourcePlatform)

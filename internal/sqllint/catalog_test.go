@@ -228,6 +228,21 @@ func TestCatalogRowsMatchTheEmittedFindings(t *testing.T) {
 			code:    "DDL002",
 		},
 		{
+			name: "a name PostgreSQL cuts",
+			source: sqllint.Source{Name: "index.sql", SQL: "CREATE TABLE users (id INT PRIMARY KEY);\n" +
+				"CREATE INDEX " + strings.Repeat("i", 64) + " ON users (id);"},
+			options: sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: platform.Postgres},
+			code:    "DDL003",
+		},
+		{
+			name: "two names PostgreSQL stores as one",
+			source: sqllint.Source{Name: "index.sql", SQL: "CREATE TABLE users (id INT PRIMARY KEY, email TEXT);\n" +
+				"CREATE INDEX " + strings.Repeat("i", 63) + "_a ON users (id);\n" +
+				"CREATE INDEX " + strings.Repeat("i", 63) + "_b ON users (email);"},
+			options: sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: platform.Postgres},
+			code:    "DDL004",
+		},
+		{
 			name:    "table without a primary key",
 			source:  sqllint.Source{Name: "schema.sql", SQL: "CREATE TABLE users (email TEXT NOT NULL);"},
 			options: sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: platform.Postgres},

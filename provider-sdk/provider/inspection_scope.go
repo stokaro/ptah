@@ -91,6 +91,9 @@ func validateInspectionRegions(engine *protocol.Engine, targetFeatures []string,
 		}
 		database := databaseKind(engine, targetFeatures, record.GetModel().GetKind())
 		for _, region := range record.GetRegions() {
+			if region.GetScope().GetSchemaSubtree() {
+				return fmt.Errorf("%w: a filtered inspection sends no subtree region", ErrProtocol)
+			}
 			if database && databaseNamespace(region.GetScope()) {
 				continue
 			}

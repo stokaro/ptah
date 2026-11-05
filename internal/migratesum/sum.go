@@ -73,7 +73,7 @@ func ComputeWithFormat(fsys fs.FS, format migrationfile.DirFormat) (*SumFile, er
 		return nil, err
 	}
 
-	useAtlasHash, err := shouldUseAtlasHash(fsys, normalized)
+	useAtlasHash, err := AtlasGoverns(fsys, normalized)
 	if err != nil {
 		return nil, err
 	}
@@ -196,7 +196,17 @@ func dirHash(entries []Entry) string {
 	return hashPrefix + base64.StdEncoding.EncodeToString(h.Sum(nil))
 }
 
-func shouldUseAtlasHash(fsys fs.FS, format migrationfile.DirFormat) (bool, error) {
+// AtlasGoverns reports whether atlas.sum is the integrity file of a directory
+// read in format: the Atlas format always, the Ptah format never, and the
+// automatic one when the directory holds atlas.sum at its root. The Atlas
+// hasher covers top-level *.sql files only, so it is also the condition on
+// which [migrationfile.Discover] narrows what runs to the files atlas.sum
+// covers.
+func AtlasGoverns(fsys fs.FS, format migrationfile.DirFormat) (bool, error) {
+	format, err := migrationfile.ParseDirFormat(string(format))
+	if err != nil {
+		return false, err
+	}
 	switch format {
 	case migrationfile.DirFormatAtlas:
 		return true, nil

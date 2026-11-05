@@ -125,7 +125,7 @@ for the message and the flag it names.
 | `continuous_aggregate` | TimescaleDB continuous aggregate: `as` for the `SELECT` it materializes, and optionally `materialized_only`, a comment and the `schema` holding it. |
 | `synonym` | SQL Server alias: `target`, plus the `schema` the alias lives in and a comment. |
 | `extended_property` | SQL Server named value: `value`, and the object it is attached to as `schema`, `table` and `column`. |
-| `coordination_node` | A block the [YDB provider](../../databases/ydb/) claims: a YDB coordination node, with `schema` and the settings of the [`//ptah:schema:coordinationnode`](../go-annotations/#ptahschemacoordinationnode) annotation as strings. Ptah reads it only when a command selects the provider. |
+| `coordination_node` | A block the [YDB provider](../../extend/providers/ydb/) claims: a YDB coordination node, with `schema` and the settings of the [`//ptah:schema:coordinationnode`](https://github.com/stokaro/ptah-ydb-plugin/blob/master/docs/declarations.md#ptahschemacoordinationnode) annotation as strings. Ptah reads it only when a command selects the provider. |
 | `data` | Ptah managed-data declaration with a table reference, key columns, and a file path relative to the HCL file. |
 
 The YDB provider claims the `coordination_node` block and no attribute of a
@@ -379,9 +379,13 @@ data {
 
 Embedded Go annotations export as finalized concrete columns and foreign keys.
 Go struct and field names are provenance rather than schema semantics and are
-intentionally not written to HCL. Role passwords are written as string
-literals, and Ptah forces generated files containing them to owner-only `0600`
-permissions. Treat those files as sensitive.
+intentionally not written to HCL. A role password, or a password hash, is
+never written: the export writes `password = "$PTAH_SECRET_PASSWORD_<ROLE>"`,
+the variable the password is read from when the schema is applied (see
+[Role passwords](../../databases/postgresql/#role-passwords)), and reports
+that the value is not in the document. A cleanup of the Go annotations is
+refused while one of them holds a password as a value, since it holds the only
+copy; write the password as `$PTAH_SECRET_<NAME>` there first.
 
 ## PostgreSQL include columns
 

@@ -79,12 +79,12 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-477 fields are reachable from the desired schema, and each one carries
+479 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 383 | reaches rendered SQL on at least one target |
+| `ddl` | 385 | reaches rendered SQL on at least one target |
 | `comparison` | 33 | read when two schemas are compared, and written into no statement |
 | `planning` | 6 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
@@ -620,6 +620,7 @@ migration nobody asked for.
 | `schemamodel.MaterializedView.Dialects` | `ddl` | — |
 | `schemamodel.MaterializedView.Facets` | `ddl` | — |
 | `schemamodel.MaterializedView.Name` | `ddl` | — |
+| `schemamodel.MaterializedView.Options` | `ddl` | — |
 | `schemamodel.MaterializedView.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
 | `schemamodel.PrimaryKeyPart.Desc` | `ddl` | — |
 | `schemamodel.PrimaryKeyPart.Name` | `ddl` | — |
@@ -724,6 +725,7 @@ migration nobody asked for.
 | `schemamodel.View.Dialects` | `ddl` | — |
 | `schemamodel.View.Facets` | `ddl` | — |
 | `schemamodel.View.Name` | `ddl` | — |
+| `schemamodel.View.Options` | `ddl` | — |
 | `schemamodel.View.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
 | `schemamodel.View.WithCheck` | `ddl` | — |
 | `spannerschema.DesiredRowDeletion.Policy` | `ddl` | — |

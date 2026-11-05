@@ -6,8 +6,11 @@ import (
 	"strings"
 
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	"github.com/stokaro/ptah/provider-sdk/provider"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/ptaherr"
+	"ptah.run/internal/rolepassword"
 	"ptah.run/internal/tableref"
 )
 
@@ -49,6 +52,11 @@ func (t *target) relationOperation(node ast.Node) (*protocol.CommonObjectChange,
 	engine := t.engine.GetId()
 	switch typed := node.(type) {
 	case *ast.CreateViewNode:
+		// The common view carries no PostgreSQL options, so a view that
+		// declares some is refused rather than created without them.
+		if len(typed.Options) > 0 {
+			return nil, nil, unsupported(fmt.Sprintf("the options %s of view %q", strings.Join(typed.Options, ", "), typed.Name))
+		}
 		object := t.relation("view", typed.Name)
 		view := &protocol.SQLView{Schema: object.GetSchema(), Name: object.GetName(), Body: typed.Body, WithCheck: typed.WithCheck, Comment: typed.Comment,
 			Attributes: slices.Clone(typed.Attributes)}
@@ -57,9 +65,14 @@ func (t *target) relationOperation(node ast.Node) (*protocol.CommonObjectChange,
 		if !typed.Facets.IsZero() {
 			return nil, nil, unsupported(fmt.Sprintf("settings of materialized view %q", typed.Name))
 		}
+		if len(typed.Options) > 0 {
+			return nil, nil, unsupported(fmt.Sprintf("the storage parameters %s of materialized view %q", strings.Join(typed.Options, ", "), typed.Name))
+		}
 		object := t.relation("materialized_view", typed.Name)
 		view := &protocol.SQLView{Schema: object.GetSchema(), Name: object.GetName(), Body: typed.Body, Materialized: true, Comment: typed.Comment}
 		return &protocol.CommonObjectChange{Operation: &protocol.CommonObjectChange_CreateView{CreateView: &protocol.ViewCreation{View: view}}}, object, nil
+	case *ast.AlterViewOptionsNode:
+		return nil, nil, unsupported(fmt.Sprintf("changing the options of %q", typed.Name))
 	case *ast.DropViewNode:
 		object := t.relation("view", typed.Name)
 		return &protocol.CommonObjectChange{Operation: &protocol.CommonObjectChange_DropView{DropView: object}}, object, nil
@@ -87,9 +100,13 @@ func (t *target) principalOperation(node ast.Node) (*protocol.CommonObjectChange
 		role := &protocol.SQLRole{Name: typed.Name, Login: typed.Login, Superuser: typed.Superuser, CreateDb: typed.CreateDB, CreateRole: typed.CreateRole,
 			Inherit: typed.Inherit, Replication: typed.Replication, Comment: typed.Comment, Group: typed.Group, PasswordDeclared: typed.Password != ""}
 		object := &protocol.Reference{Engine: engine, Kind: principalKinds[typed.Group], Name: typed.Name}
-		return &protocol.CommonObjectChange{Operation: &protocol.CommonObjectChange_CreateRole{CreateRole: &protocol.RoleCreation{Role: role, Password: typed.Password}}}, object, nil
+		input, err := t.passwordInput(typed.Name, typed.Password)
+		if err != nil {
+			return nil, nil, err
+		}
+		return &protocol.CommonObjectChange{Operation: &protocol.CommonObjectChange_CreateRole{CreateRole: &protocol.RoleCreation{Role: role, PasswordInput: input}}}, object, nil
 	case *ast.AlterRoleNode:
-		alteration, err := roleAlteration(typed)
+		alteration, err := t.roleAlteration(typed)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -193,9 +210,28 @@ func sequenceAlteration(object *protocol.Reference, node *ast.AlterSequenceNode)
 	return &protocol.SequenceAlteration{Sequence: object, Desired: desired, Changed: changed}
 }
 
+// passwordInput is the execution input that carries the password declared
+// for role, nil for none. The wire never carries the value: the input names
+// the variable the value is bound from at execution (see
+// [rolepassword.Variable]), and the provider renders a reference to it. A
+// provider engine that does not take a password as an input is refused,
+// since it would write the value into a unit a plan and a migration file
+// print; the refusal names the role and never the password.
+func (t *target) passwordInput(role, password string) (*protocol.ExecutionInput, error) {
+	if password == "" {
+		return nil, nil
+	}
+	if !t.negotiated(provider.PasswordInputsFeature) {
+		return nil, fmt.Errorf("%w: role %s declares a password, and the provider of the %s engine does not take a password "+
+			"as an execution input (%s), so the password would be written into the plan; use a provider release that "+
+			"lists the feature", ptaherr.ErrUnsupportedFeature, role, t.engine.GetId(), provider.PasswordInputsFeature)
+	}
+	return &protocol.ExecutionInput{Source: protocol.ExecutionInput_ENVIRONMENT, Name: rolepassword.Statement(role, password)[1:]}, nil
+}
+
 // roleAlteration names the attributes the node sets. The desired role holds
 // their values; an attribute it does not name is unchanged.
-func roleAlteration(node *ast.AlterRoleNode) (*protocol.RoleAlteration, error) {
+func (t *target) roleAlteration(node *ast.AlterRoleNode) (*protocol.RoleAlteration, error) {
 	alteration := &protocol.RoleAlteration{Desired: &protocol.SQLRole{Name: node.Name}}
 	desired := alteration.Desired
 	for _, operation := range node.Operations {
@@ -203,7 +239,11 @@ func roleAlteration(node *ast.AlterRoleNode) (*protocol.RoleAlteration, error) {
 		case *ast.SetLoginOperation:
 			desired.Login, alteration.Changed = typed.Login, append(alteration.Changed, "login")
 		case *ast.SetPasswordOperation:
-			alteration.Password, alteration.Changed = typed.Password, append(alteration.Changed, "password")
+			input, err := t.passwordInput(node.Name, typed.Password)
+			if err != nil {
+				return nil, err
+			}
+			alteration.PasswordInput, alteration.Changed = input, append(alteration.Changed, "password")
 			desired.PasswordDeclared = typed.Password != ""
 		case *ast.SetSuperuserOperation:
 			desired.Superuser, alteration.Changed = typed.Superuser, append(alteration.Changed, "superuser")

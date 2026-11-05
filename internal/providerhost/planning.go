@@ -148,7 +148,8 @@ func (t *target) planningPolicy(policy featureplan.Policy) (*protocol.PlanningPo
 		return nil, fmt.Errorf("%w: unknown statement style %d", schemaext.ErrInvalidValue, policy.Statements)
 	}
 	if policy.Statements == featureplan.StatementStyleExact && !t.negotiated(provider.PlanningStatementStyleFeature) {
-		return nil, fmt.Errorf("%w: exact planning needs %s", schemaext.ErrInvalidValue, provider.PlanningStatementStyleFeature)
+		return nil, fmt.Errorf("%w: provider %s cannot plan in the exact statement style every Ptah command uses, because it does not list %s; upgrade the provider",
+			schemaext.ErrInvalidValue, t.host.description.GetProviderId(), provider.PlanningStatementStyleFeature)
 	}
 	if !t.negotiated(provider.PlanningPolicyFeature) {
 		return nil, nil

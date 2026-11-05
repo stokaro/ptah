@@ -19,6 +19,7 @@ import (
 	"ptah.run/internal/capabilityprobe"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/convert/goschematodb"
+	"ptah.run/internal/planstyle"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -679,7 +680,7 @@ func (t *roundTrip) describe(result answer, dialect string) string {
 		return "refused: " + result.err.Error()
 	}
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(t.ctx, t.runtime, result.diff, dialect,
-		planext.Options{Capabilities: t.presets[dialect]})
+		planext.Options{Capabilities: t.presets[dialect], Statements: planstyle.Statements})
 	if err != nil {
 		return "planned a change the planner refused: " + err.Error()
 	}
