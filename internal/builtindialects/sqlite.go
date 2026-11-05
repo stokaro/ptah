@@ -129,7 +129,8 @@ func sqlite() descriptor.Dialect {
 		// names a server, so its schemes are no file schemes.
 		URLs: descriptor.URLs{FileSchemes: []string{"sqlite", "sqlite3", "file"}},
 		Atlas: descriptor.Atlas{
-			Schema: "main",
+			Schema:      "main",
+			ChangeWords: descriptor.SQLiteDriverChangeWords,
 			HCL: descriptor.AtlasHCL{
 				TableProperties: []string{"strict", "without_rowid"},
 				ColumnTypes:     sqliteAtlasColumnTypes(),
