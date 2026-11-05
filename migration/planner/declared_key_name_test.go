@@ -54,7 +54,7 @@ func TestDeclaredKeyName_HappyPath(t *testing.T) {
 			held:    "CREATE TABLE parent (id bigint NOT NULL);",
 			desired: "CREATE TABLE parent (id bigint NOT NULL, CONSTRAINT parent_pk PRIMARY KEY (id));",
 			liveKey: []string{"id"},
-			want:    []string{},
+			want:    make([]string, 0),
 		},
 		{
 			name:    "a name of the spelling the server would choose writes none",
