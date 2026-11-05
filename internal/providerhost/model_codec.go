@@ -114,6 +114,11 @@ func (m *modelContract) codec() schemaext.Codec {
 			if err != nil {
 				return nil, err
 			}
+			if operation, ok := payload.(*resolvedOperation); ok {
+				// The model does not hold the footprint of the operation's
+				// plan step, so a copy takes it from the operation.
+				return &resolvedOperation{model: value.cloneModel(), effects: slices.Clone(operation.effects)}, nil
+			}
 			return m.payload(value.cloneModel()), nil
 		},
 		Encode: func(payload schemaext.Payload) (json.RawMessage, error) {

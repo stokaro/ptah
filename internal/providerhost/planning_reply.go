@@ -20,11 +20,12 @@ func (t *target) planningReply(request *protocol.PlanFeaturesRequest, reply *pro
 	for _, contribution := range reply.GetContributions() {
 		bound := plangraph.Contribution[featureplan.Operation]{Owner: contribution.GetOwner()}
 		for _, step := range contribution.GetSteps() {
-			operation, err := t.planningOperation(request, step.GetOperation())
+			metadata := step.GetMetadata()
+			effects := boundPlanningEffects(metadata.GetEffects())
+			operation, err := t.planningOperation(request, step.GetOperation(), effects)
 			if err != nil {
 				return featureplan.Result{}, err
 			}
-			metadata := step.GetMetadata()
 			transaction := map[protocol.PlanningMetadata_Transaction]plangraph.Transaction{
 				protocol.PlanningMetadata_UNKNOWN:   plangraph.TransactionUnknown,
 				protocol.PlanningMetadata_ALLOWED:   plangraph.TransactionAllowed,
@@ -38,7 +39,7 @@ func (t *target) planningReply(request *protocol.PlanFeaturesRequest, reply *pro
 			bound.Steps = append(bound.Steps, plangraph.Step[featureplan.Operation]{
 				ID:          boundPlanningStepID(step.GetId()),
 				Payload:     operation,
-				Effects:     boundPlanningEffects(metadata.GetEffects()),
+				Effects:     effects,
 				Transaction: transaction,
 				Impact:      boundPlanningImpact(metadata.GetImpact(), metadata.GetReason()),
 				Placement:   placement,
@@ -79,7 +80,10 @@ func (t *target) planningReply(request *protocol.PlanFeaturesRequest, reply *pro
 	return result, nil
 }
 
-func (t *target) planningOperation(request *protocol.PlanFeaturesRequest, operation *protocol.PlanningOperation) (featureplan.Operation, error) {
+// planningOperation binds the operation of one plan step. The operation keeps
+// a copy of the step's effects, so a consumer that receives only the operation,
+// such as the namer of a migration file's statements, can say what it does.
+func (t *target) planningOperation(request *protocol.PlanFeaturesRequest, operation *protocol.PlanningOperation, effects []plangraph.Effect) (featureplan.Operation, error) {
 	contract := t.host.models[modelKey{kind: schemaext.Kind(operation.GetValue().GetValue().GetKind()), representation: schemaext.Operation}]
 	if contract == nil || contract.engines[request.GetEngine()] == nil {
 		return featureplan.Operation{}, fmt.Errorf("%w: planning operation model is unavailable", schemaext.ErrInvalidValue)
@@ -99,7 +103,7 @@ func (t *target) planningOperation(request *protocol.PlanFeaturesRequest, operat
 	return featureplan.Operation{
 		Role:    roles[operation.GetRole()],
 		Parent:  boundIdentity(operation.GetParent()),
-		Payload: &resolvedOperation{model: model},
+		Payload: &resolvedOperation{model: model, effects: slices.Clone(effects)},
 		Notes:   slices.Clone(operation.GetNotes()),
 		Phase:   phases[operation.GetPhase()],
 	}, nil

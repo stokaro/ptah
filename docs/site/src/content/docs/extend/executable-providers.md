@@ -1002,7 +1002,11 @@ writes each change as one statement its executor runs read back from a file,
 and refuses a change it performs only through a native call; Ptah then names
 the operation and writes nothing. A provider without the feature keeps its
 native units, and those commands refuse them. `schema plan`, `schema apply` and
-saved plans keep native operations. `--edit` refuses native plans.
+saved plans keep native operations. `--edit` refuses native plans. In a file
+the compatibility `migrate diff` writes, the comment above each statement names
+its change from the operation's subject and the effects of its planning step;
+[the statements of a generated file](../../atlas/migrate-commands/#the-statements-of-a-generated-file)
+gives the wording.
 
 A native operation is bound to the database it was planned for, so
 `schema apply --dev-url` does not send the target's operations to the dev

@@ -1374,6 +1374,15 @@ warnings above a drop, are left out. A comment that reports what the plan left
 out or cannot do stays, such as a change a `diff` policy skips or a step a
 person has to take.
 
+A statement an executable provider plans is named from the object the
+provider plans it for and from what the provider says the step does to that
+object. A step that creates the table `orders` writes `create "orders" table`,
+a step that drops it writes `drop "orders" table`, and any other change to it,
+a new column, index or changefeed included, writes `modify "orders" table`.
+Tables, views, materialized views and indexes are named this way. A statement
+for an object of a kind the provider defines itself, a YDB topic for example,
+has no change comment, because the community binary has no words for it.
+
 On a PostgreSQL-family dev database the statements carry no `IF EXISTS` or
 `IF NOT EXISTS`, and a drop carries `CASCADE` only where the plan relies on it.
 A file run against a database in another state than the one it was planned

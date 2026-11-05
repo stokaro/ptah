@@ -9,18 +9,30 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/plangraph"
 	"ptah.run/core/schemaext"
 )
 
 // resolvedOperation contains captured safety facts and typed owner input. Its
 // local interfaces never render SQL or reach the provider process.
-type resolvedOperation struct{ model *resolvedModel }
+//
+// effects is the footprint of the plan step that carries the operation, which
+// the step's metadata states beside it; an operation decoded from a model
+// alone, or rendered, has none.
+type resolvedOperation struct {
+	model   *resolvedModel
+	effects []plangraph.Effect
+}
 
 func (v *resolvedOperation) Subject() objectidentity.ID { return v.model.subject }
 
+// Effects returns the effect of the operation's plan step on each object the
+// step touches, or nil for an operation no plan step carries.
+func (v *resolvedOperation) Effects() []plangraph.Effect { return slices.Clone(v.effects) }
+
 func (v *resolvedOperation) Kind() schemaext.Kind { return v.model.Kind() }
 func (v *resolvedOperation) CloneExtension() ast.ExtensionPayload {
-	return &resolvedOperation{model: v.model.cloneModel()}
+	return &resolvedOperation{model: v.model.cloneModel(), effects: slices.Clone(v.effects)}
 }
 func (v *resolvedOperation) Effect() schemaext.Effect {
 	facts := v.model.normalized.GetOperationSemantics()
