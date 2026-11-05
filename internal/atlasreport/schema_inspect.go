@@ -499,11 +499,26 @@ func (r *SchemaInspectReport) MarshalSQL(indent ...string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("render SQL: %w", err)
 	}
-	sql := strings.Join(rendered.Statements, "")
+	sql := statementLines(rendered.Statements)
 	if sql == "" || len(indent) == 0 || indent[0] == "" {
 		return sql, nil
 	}
 	return indentSQL(r.info.Dialect, sql, indent[0]), nil
+}
+
+// statementLines writes each statement on lines of its own. A built-in
+// renderer ends a statement with a newline and a provider's statement ends at
+// its semicolon, so joining them as written would run one provider statement
+// into the next.
+func statementLines(statements []string) string {
+	var out strings.Builder
+	for _, statement := range statements {
+		out.WriteString(statement)
+		if !strings.HasSuffix(statement, "\n") {
+			out.WriteString("\n")
+		}
+	}
+	return out.String()
 }
 
 func (r *SchemaInspectReport) MarshalJSON() ([]byte, error) {
