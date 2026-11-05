@@ -102,7 +102,10 @@ Both transport boundaries refuse:
 
 While a provider is selected, the host registers each engine's facts under the
 engine's ID and its aliases. `capability.ForDialect` answers them for a name no
-descriptor describes, so every offline command plans with them. The host also
+descriptor describes, so every offline command plans with them. A connected
+command reads the session's facts where it plans with the session, and
+`capability.ForDialect` everywhere else, so the registered facts reach a
+connected plan too. The host also
 registers the facts of each release line, and resolves a `--server-version`
 of the engine by the rule above for `schema render`, `schema validate`, `sql
 lint` and `migrations lint`. A registration lasts for the life of the
@@ -113,8 +116,12 @@ is refused, because two answers for one engine cannot both be its default.
 
 The provider lists the feature for `ydb`, states the facts its session states
 for a 26.2 server with default feature flags, and states each line's facts the
-same way. These are the facts of the built-in engine's presets, restricted to
-the keys the provider reads.
+same way. To them it adds every other key of the built-in engine's presets,
+with the presets' values: the host reads keys no session states, such as
+`index_covering_columns`, which decides whether a changed list of covered
+columns is a change of the index. Without it every index with covered columns
+compares as changed, and a second apply of an unchanged schema drops the index
+and creates it again.
 
 ## Alternatives considered
 
