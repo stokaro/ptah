@@ -334,6 +334,9 @@ the engine. The work is split this way:
   reports them, such as a view's query as the engine stores it.
 - Ptah compares and orders the changes, and keeps each object as declared in
   the plan. The provider renders each change as one unit.
+- A view whose query changed is replaced in place when the session reports
+  `create_or_replace_view`. Otherwise Ptah drops the view, creates it again and
+  grants again each permission the view held, which the drop took with it.
 - On an engine with `schema.common-table-identity.v1`, the comment of a table
   Ptah creates is a step of its own after the table. A declaration is validated
   by rendering it, so the provider refuses there an object it cannot hold, and

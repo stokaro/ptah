@@ -230,6 +230,10 @@ func apply(ctx context.Context, access backend.Access, read statement) error {
 			return err
 		}
 		held.setComment(stateComment{Kind: "view", Name: read.Name})
+		// A view's grants go with it, as an engine that keeps them in the
+		// view's own access list drops them; a replacement in place keeps
+		// them.
+		held.Grants = slices.DeleteFunc(held.Grants, func(grant stateGrant) bool { return grant.Kind == "table" && grant.Name == read.Name })
 	case "create_role":
 		if held.role(read.Name) >= 0 {
 			return fmt.Errorf("role %s exists", read.Name)

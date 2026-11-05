@@ -184,7 +184,7 @@ func commonObjectCreations(schema *schemamodel.Database) (before, after []ast.No
 	for _, sequence := range schema.Sequences {
 		before = append(before, modelast.FromSequence(sequence))
 	}
-	after = createdViews(&difftypes.SchemaDiff{ViewsAdded: schema.Views})
+	after = viewReplacement{}.created(&difftypes.SchemaDiff{ViewsAdded: schema.Views})
 	for _, view := range schema.MaterializedViews {
 		after = append(after, modelast.FromMaterializedView(view))
 	}
