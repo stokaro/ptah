@@ -166,3 +166,15 @@ host's planning as any other change does. Rejected.
   refuse a description, a request and a reply in each malformed shape above,
   and a host or a provider that does not list the feature, at both transport
   boundaries.
+- Through the YDB provider on 26.2.1.14, with a host that lists the feature,
+  `migrations generate` writes the down file the built-in engine writes for a
+  created secret (`DROP SECRET`), a created coordination node
+  (`DROP COORDINATION NODE` with the semaphore limitation) and an altered one
+  (`ALTER COORDINATION NODE ... SET` with the prior setting), each with its
+  strategy as a comment; `migrations up` and `migrations down` run both files
+  and `schema compare` finds the prior declaration again. The provider's
+  rollback tests of object access, resource pools and coordination node
+  migrations pass on 26.2.1.14 and 25.1.4.7, and those of a secret and a
+  streaming query's text on 26.2.1.14, which has them. With a host that does
+  not list the feature each of them fails with `no reversal for` its change
+  kind.
