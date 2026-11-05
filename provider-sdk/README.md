@@ -170,10 +170,9 @@ does not oblige a peer to use it.
   `engine.default-capabilities`, `lint.transaction-owner`,
   `source.index-kinds`, `models.predecessors`, `schema.role-scope-reasons`,
   `source.go-placements` and `planning.primary-key-changes`. The embedding
-  store's calls,
-  `PrepareCommonObjects`, `ReverseChanges` and `ReportValues` are new, and each
-  comes with an addition to `Engine`, so a host lists the feature to receive
-  any of them. `SplitMigration` is new too, and comes with the abort flags of
+  store's calls, `PrepareCommonObjects`, `ReverseChanges` and `ReportValues`
+  are new, and each comes with an addition to `Engine`, so a host lists the
+  feature to receive any of them. `SplitMigration` is new too, and comes with the abort flags of
   `Execution` and `TransactionResult`, so a host lists `units.migration-split`
   to call it.
 - Both transport boundaries validate with the description negotiated this way,

@@ -87,6 +87,7 @@ a new record that names it, and its own status line is updated to point there.
 | [0075](0075-a-provider-names-the-identities-its-models-had-before.md) | A provider names the identities its models had before | Proposed |
 | [0076](0076-a-provider-says-why-a-read-leaves-roles-out.md) | A provider says why a read leaves roles out | Proposed |
 | [0077](0077-a-provider-says-where-its-go-directives-stand.md) | A provider says where its Go directives stand | Proposed |
+| [0078](0078-a-provider-plans-the-change-of-a-primary-key.md) | A provider plans the change of a primary key | Proposed |
 
 ## Writing one
 
