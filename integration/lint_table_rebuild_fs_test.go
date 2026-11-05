@@ -40,7 +40,9 @@ func TestMigrationsLintReadsAGeneratedSQLiteRebuildFS(t *testing.T) {
 	c.Assert(ups, qt.HasLen, 1)
 	body, err := os.ReadFile(ups[0])
 	c.Assert(err, qt.IsNil)
-	c.Assert(string(body), qt.Contains, "SQLite table rebuild")
+	c.Assert(string(body), qt.Contains,
+		`INSERT INTO "new_items" ("id", "n", "label") SELECT "id", "n", "label" FROM "items";`)
+	c.Assert(string(body), qt.Contains, `ALTER TABLE "new_items" RENAME TO "items";`)
 
 	linted, lintErr := runPtahNativeWithError("migrations", "lint", "--dir", migrations, "--dialect", "sqlite")
 
