@@ -252,15 +252,15 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	}
 	keepColumnSequencesOnly(schema.Tables, schema.Sequences)
 
-	if r.caps.Has(capability.RowLevelSecurity) {
-		if err := r.readRowSecurity(ctx, schema); err != nil {
-			return nil, err
-		}
-	} else {
-		clearRowSecuritySwitches(schema.Tables)
+	if err := r.readRowSecurityWhereItExists(ctx, schema); err != nil {
+		return nil, err
 	}
 
 	if err := r.readRoleManagedObjects(ctx, schema); err != nil {
+		return nil, err
+	}
+
+	if err := r.leaveOutExtensionOwnedRelations(ctx, schema); err != nil {
 		return nil, err
 	}
 
