@@ -2531,8 +2531,10 @@ exclusions. Key expressions stay in common index fields and parts.
 The shared comparator consumes prepared column flags
 without reading ClickHouse clauses. Tables sharing a Go struct retain separate
 captures. `SchemaDiff.TablePreparation` stores source and prepared captures;
-filtering, cloning, and reversal preserve independent copies of this provenance.
-It is not reverse intent or evidence that a migration ran. Report JSON omits it;
+filtering and cloning preserve independent copies of this provenance. A reverse
+plan prepares its own copy: a table it leaves alone is the table the forward
+plan leaves, moved to the declaration the database held. The capture is not
+reverse intent or evidence that a migration ran. Report JSON omits it;
 durable plan serialization requires an explicit capture codec.
 
 `core/ast.ExtensionStatement` and `ExtensionAlterOperation` carry typed,
