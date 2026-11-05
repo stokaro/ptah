@@ -55,7 +55,7 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.22. `provider-sdk/v0.20.0` speaks 25.22.
+speaks contract 25.23. `provider-sdk/v0.20.0` speaks 25.22.
 `provider-sdk/v0.19.0` speaks 25.21.
 `provider-sdk/v0.18.0` speaks 25.19.
 `provider-sdk/v0.17.0` speaks 25.18.
@@ -120,6 +120,7 @@ returns to 0.
   [SQL scanning](#sql-scanning), [offline capabilities](#offline-capabilities),
   [password inputs](#password-inputs) and
   [HCL platform groups](#hcl-platform-groups).
+  Contract 25.23 adds [the transaction owner of a lint check](#transaction-owner-of-a-lint-check).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -152,8 +153,8 @@ does not oblige a peer to use it.
   `sessions.typed-arguments`, `errors.reasons`, `planning.index-renames`,
   `models.reverse`, `schema.unread-tables`, `schema.database-kinds`,
   `schema.sql-facets`, `models.report-counts`, `schema.observed-index-facets`,
-  `schema.subtree-coverage`, `schema.password-inputs`, `source.hcl-platform`
-  and `engine.default-capabilities`. The embedding store's calls,
+  `schema.subtree-coverage`, `schema.password-inputs`, `source.hcl-platform`,
+  `engine.default-capabilities` and `lint.transaction-owner`. The embedding store's calls,
   `PrepareCommonObjects`, `ReverseChanges` and `ReportValues` are new, and each
   comes with an addition to `Engine`, so a host lists the feature to receive
   any of them. `SplitMigration` is new too, and comes with the abort flags of
@@ -1360,6 +1361,27 @@ Rule identifiers stay with the host. `statement_class` and `capability` belong
 to their fact alone, and a statement with two kinds is refused. An engine offers
 these facts with `lint.statement-facts`, beside `lint.migrations`, and a split
 or an annotation uses them only when the host lists the same feature.
+
+## Transaction owner of a lint check
+
+`CheckLintRequest.transaction_owner` says who opens the transaction each file
+of a lint run runs in, so a rule about transaction control can tell a `BEGIN`
+that would nest inside a migrator's transaction from a file's only transaction.
+
+- `LINT_TRANSACTION_OWNER_MIGRATOR`, the zero value, is a migrator that wraps
+  each file unless the file opts out (`LintFile.no_transaction`). It is what a
+  host that does not know the tool sends, and what a request from an earlier
+  minor means.
+- `LINT_TRANSACTION_OWNER_FILE` is a tool that opens no transaction around a
+  file, such as golang-migrate.
+
+The provider lists `lint.transaction-owner` beside `lint.migrations`, and so
+does each engine whose rules read the field. Both transport boundaries refuse
+an owner the contract does not name, and `LINT_TRANSACTION_OWNER_FILE` for an
+engine or a host that does not list the feature. Such an engine judges every
+file as one its migrator wraps.
+[ADR 0073](../docs/adr/0073-a-lint-check-says-who-opens-each-files-transaction.md)
+records why the owner is negotiated.
 
 ## Embedding store
 

@@ -2860,6 +2860,21 @@ message AnnotatedLint {
   repeated LintAnnotations files = 1;
 }
 
+// LintTransactionOwner is who opens the transaction a migration file runs in.
+// Contract 25.23.
+enum LintTransactionOwner {
+  // A migrator that opens a transaction around each file and commits it after
+  // the file's last statement, unless the file opts out
+  // (LintFile.no_transaction). Ptah's migrator and Atlas's run files this way.
+  // It is what a host that does not know the tool sends, and what a request
+  // from an earlier minor means.
+  LINT_TRANSACTION_OWNER_MIGRATOR = 0;
+  // A migrator that opens no transaction around a file. The file runs in a
+  // transaction it opens itself, in the one the server opens around a single
+  // query, or in none. golang-migrate runs files this way.
+  LINT_TRANSACTION_OWNER_FILE = 1;
+}
+
 // CheckLintRequest asks the owner for the findings of the enabled rules over
 // every file of a lint run, in the order the migrator applies them.
 message CheckLintRequest {
@@ -2871,6 +2886,10 @@ message CheckLintRequest {
   // compatibility is empty for Ptah's own surface and "atlas" for the
   // Atlas-compatible one.
   string compatibility = 6;
+  // transaction_owner says who opens the transaction each file of the run
+  // runs in. A rule about transaction control reads it. Contract 25.23,
+  // negotiated under lint.transaction-owner.
+  LintTransactionOwner transaction_owner = 7;
 }
 message LintSubject {
   enum Kind {
