@@ -10,7 +10,6 @@ import (
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
-	"ptah.run/internal/lexerext/yql"
 )
 
 // switchAnswers is what the dialect switch Options replaced answered for each
@@ -43,7 +42,6 @@ var switchAnswers = map[string]lexer.Options{
 	platform.SQLite:     {StandardStrings: true, BracketIdentifiers: true},
 	platform.SQLServer:  {StandardStrings: true, BracketIdentifiers: true, DisableHashComments: true},
 	platform.Oracle:     {StandardStrings: true},
-	platform.YDB:        {Scanner: yql.Scanner{}},
 }
 
 // TestOptions_AgreesWithTheSwitchItReplaces pins Options for every spelling
@@ -118,16 +116,18 @@ func TestFromDescriptor_HappyPath(t *testing.T) {
 			want:    lexer.Options{StandardStrings: true, ExecutableComments: lexer.ExecutableCommentsMySQL},
 		},
 		{
-			// Neither the shared lexer nor the YQL one reads these two; the
-			// body scanner of internal/deporder does.
+			// The shared lexer does not read these two; the body scanner of
+			// internal/deporder does.
 			name:    "facts only the body scanner reads",
 			lexical: descriptor.Lexical{LineComments: []string{"#"}, IdentifierBackslashEscapes: true},
 			want:    lexer.Options{StandardStrings: true},
 		},
 		{
-			name:    "the YQL lexer",
+			// YQL is read by its engine's provider, so no built-in service
+			// serves the lexer and its text falls to the shared rules.
+			name:    "the YQL lexer, which no built-in service serves",
 			lexical: descriptor.Lexical{Lexer: descriptor.LexerYQL},
-			want:    lexer.Options{Scanner: yql.Scanner{}},
+			want:    lexer.Options{StandardStrings: true},
 		},
 		{
 			// A registry refuses a lexer the descriptor package does not

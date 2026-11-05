@@ -333,9 +333,9 @@ those keys, so it moves with them — `unique` on a default server, `indexed`
 here.
 
 A YDB cluster's feature flags decide some keys the same way. When the `ydb://`
-URL names the cluster's monitoring endpoint, the connection reads the flags
-([YDB feature flags](../../databases/ydb/#feature-flags) list the keys
-they decide). A 26.2 server started with the `enable_add_unique_index` flag
+URL names the cluster's monitoring endpoint, the YDB provider reads the flags
+([Feature flags](https://github.com/stokaro/ptah-ydb-plugin#feature-flags) in
+the provider's documentation list the keys they decide). A 26.2 server started with the `enable_add_unique_index` flag
 reports:
 
 ```text

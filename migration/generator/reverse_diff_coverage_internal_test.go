@@ -427,7 +427,7 @@ func reverseCoverageDiff() *difftypes.SchemaDiff {
 		}
 	}
 	for i := range diff.TablesModified {
-		// Typed child changes have their own real YDB control. The generic
+		// Typed child changes are tested with their owners. The generic
 		// common-field fixture cannot invent a valid owner payload.
 		diff.TablesModified[i].FeatureChanges = nil
 	}

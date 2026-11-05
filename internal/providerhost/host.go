@@ -46,6 +46,9 @@ type Host struct {
 	// splits keeps the provider's split of each migration body it was asked
 	// for; see session.SplitMigration.
 	splits migrationSplits
+	// releases end the registrations the host made for its engines, such as
+	// their scanners; see provideScanners.
+	releases []func()
 }
 
 type target struct {
@@ -149,6 +152,9 @@ var hostFeatures = []string{
 	// reaches the table's owner as one rename step; see
 	// commonPlanner.indexChanges.
 	provider.IndexRenamesFeature,
+	// An offline command plans an engine with the capabilities its provider
+	// states for it; see registerDefaultCapabilities.
+	provider.DefaultCapabilitiesFeature,
 }
 
 // Start verifies the selected artifact and negotiates experimental services.
@@ -195,16 +201,27 @@ func Start(ctx context.Context, spec Spec) (*Host, error) {
 		client.Close()
 		return nil, err
 	}
+	if err = registerDefaultCapabilities(host.description.GetEngines()); err != nil {
+		client.Close()
+		return nil, err
+	}
 	if host.selections, err = newScopeSelections(host.description); err != nil {
 		client.Close()
 		return nil, err
 	}
+	host.releases = host.provideScanners()
 	return host, nil
 }
 
-// Close terminates the process. Repeated calls are harmless and never imply
-// that an interrupted database operation rolled back.
-func (h *Host) Close() { h.client.Close() }
+// Close ends the registrations the host made for its engines and terminates
+// the process. Repeated calls are harmless and never imply that an
+// interrupted database operation rolled back.
+func (h *Host) Close() {
+	for _, release := range h.releases {
+		release()
+	}
+	h.client.Close()
+}
 
 // Connections returns private scheme bindings for every declared target and
 // alias. The application combines these with its selected engine runtime.

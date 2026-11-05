@@ -78,6 +78,13 @@ func admitted(
 ) (connector.Request, connector.Service, error) {
 	dialect, err := connectionDialect(parsedURL)
 	if err != nil {
+		// A scheme no built-in engine connects to can still be one a surface
+		// refuses by name: the strict compatibility profile refuses an engine
+		// only a provider serves in the pinned binary's words. That refusal
+		// answers before the generic one.
+		if refused := connectgate.Check(ctx, strings.ToLower(parsedURL.Scheme)); parsedURL.Scheme != "" && refused != nil {
+			return connector.Request{}, nil, refused
+		}
 		return connector.Request{}, nil, err
 	}
 	if err := connectgate.Check(ctx, dialect); err != nil {

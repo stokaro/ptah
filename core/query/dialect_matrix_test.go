@@ -272,29 +272,6 @@ func dmlMatrixRows() []dmlMatrixRow {
 		dollarCells("yugabytedb"),
 		dollarCells("spanner"),
 		oracleCells("oracle"),
-		ydbCells("ydb"),
-	}
-}
-
-// ydbCells is the YDB row: backtick quoting, YQL's named parameters $p1 and
-// $p2, and arguments that carry those names, because a YDB connection binds a
-// parameter by name. The LIMIT is bound as a uint64, the type YQL reads it as.
-func ydbCells(dialect string) dmlMatrixRow {
-	return dmlMatrixRow{
-		dialect: dialect,
-		sel: dmlCell{
-			sql:  "SELECT `id`, `name` FROM `users` WHERE `id` = $p1 LIMIT $p2",
-			args: []any{sql.Named("p1", int64(1)), sql.Named("p2", uint64(10))},
-		},
-		ins: dmlCell{
-			sql:  "INSERT INTO `users` (`id`, `name`) VALUES ($p1, $p2)",
-			args: []any{sql.Named("p1", int64(1)), sql.Named("p2", "a")},
-		},
-		upd: dmlCell{
-			sql:  "UPDATE `users` SET `name` = $p1 WHERE `id` = $p2",
-			args: []any{sql.Named("p1", "a"), sql.Named("p2", int64(1))},
-		},
-		del: dmlCell{sql: "DELETE FROM `users` WHERE `id` = $p1", args: []any{sql.Named("p1", int64(1))}},
 	}
 }
 
@@ -526,7 +503,6 @@ func TestDMLPlaceholderAgreesWithRebind(t *testing.T) {
 		{dialect: "yugabytedb"},
 		{dialect: "spanner"},
 		{dialect: "oracle"},
-		{dialect: "ydb"},
 	}
 
 	names := make([]string, 0, len(rows))

@@ -32,23 +32,8 @@ import (
 	"ptah.run/dialect/timescaledb/tsast"
 	"ptah.run/dialect/timescaledb/tsdiff"
 	"ptah.run/dialect/timescaledb/tsschema"
-	"ptah.run/dialect/ydb/ydbast"
-	"ptah.run/dialect/ydb/ydbcoordination"
-	"ptah.run/dialect/ydb/ydbdiff"
-	"ptah.run/dialect/ydb/ydbexternal"
-	"ptah.run/dialect/ydb/ydbreplication"
-	"ptah.run/dialect/ydb/ydbschema"
-	"ptah.run/dialect/ydb/ydbstreaming"
-	"ptah.run/dialect/ydb/ydbtopic"
-	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/engine/builtin"
 	"ptah.run/engine/builtin/internal/dialects/clickhouse"
-	"ptah.run/engine/builtin/internal/dialects/mssql"
-	"ptah.run/engine/builtin/internal/dialects/mysql"
-	"ptah.run/engine/builtin/internal/dialects/oracle"
-	"ptah.run/engine/builtin/internal/dialects/postgres"
-	"ptah.run/engine/builtin/internal/dialects/sqlite"
-	"ptah.run/engine/builtin/internal/dialects/ydb"
 	"ptah.run/feature/oratype"
 	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/feature/pgextension"
@@ -61,35 +46,6 @@ import (
 type extensionFixture struct {
 	payload ast.ExtensionPayload
 	wantSQL string
-}
-
-func extensionFixtures() []extensionFixture {
-	feed := ydbschema.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON"}
-	grown := feed.Clone()
-	grown.RetentionPeriod = "PT2H"
-	return []extensionFixture{
-		{payload: &ydbast.AddChangefeed{Changefeed: feed}, wantSQL: "ALTER TABLE `items` ADD CHANGEFEED `updates` WITH (MODE = 'UPDATES', FORMAT = 'JSON');\n"},
-		{payload: &ydbast.DropChangefeed{Name: "updates"}, wantSQL: "ALTER TABLE `items` DROP CHANGEFEED `updates`;\n"},
-		{payload: &ydbast.AlterChangefeedTopic{Changefeed: grown, Previous: feed}, wantSQL: "ALTER TOPIC `items/updates` SET (retention_period = Interval('PT2H'));\n"},
-		{payload: &ydbast.AlterTTL{Change: ydbdiff.TTL{After: &ydbschema.DesiredTTL{Policy: ydbschema.TTL{Column: "created_at", Interval: "P30D"}}}},
-			wantSQL: "ALTER TABLE `items` SET (TTL = Interval(\"P30D\") ON `created_at`);\n"},
-		{payload: &ydbast.AlterColumnFamilies{Change: ydbdiff.ColumnFamilies{After: &ydbschema.DesiredColumnFamilies{
-			Families: []ydbschema.ColumnFamily{{Name: "cold", Compression: "lz4", Columns: []string{"body"}}},
-		}}}, wantSQL: "ALTER TABLE `items` ADD FAMILY `cold` (COMPRESSION = 'lz4'), ALTER COLUMN `body` SET FAMILY `cold`;\n"},
-		{payload: &ydbast.AlterTablePartitioning{Change: ydbdiff.TablePartitioning{After: &ydbschema.DesiredTablePartitioning{
-			TablePartitioning: ydbschema.TablePartitioning{KeyBloomFilter: new(true)},
-		}}}, wantSQL: "ALTER TABLE `items` SET (KEY_BLOOM_FILTER = ENABLED);\n"},
-		{payload: &ydbast.AlterColumnStoreTTL{}, wantSQL: "ALTER TABLE `items` RESET (TTL);\n"},
-		{payload: &ydbast.DropVectorIndex{Name: "by_emb"}, wantSQL: "ALTER TABLE `items` DROP INDEX `by_emb`;\n"},
-		{payload: &ydbast.AddVectorIndex{Name: "by_emb", Columns: []string{"gen", "emb"}, Cover: []string{"body"},
-			Settings: ydbschema.VectorSettings{Distance: "cosine", VectorType: "float", Dimension: 3, Levels: 1, Clusters: 2}},
-			wantSQL: "ALTER TABLE `items` ADD INDEX `by_emb` GLOBAL USING vector_kmeans_tree ON (`gen`, `emb`) COVER (`body`) " +
-				"WITH (distance=cosine, vector_type=float, vector_dimension=3, levels=1, clusters=2);\n"},
-		{payload: &ydbast.AlterIndexPartitioning{Index: "by_name", Change: ydbdiff.IndexPartitioning{After: &ydbschema.DesiredIndexPartitioning{
-			IndexPartitioning: ydbschema.IndexPartitioning{MinPartitions: 3},
-		}}}, wantSQL: "ALTER TABLE `items` ALTER INDEX `by_name` SET (AUTO_PARTITIONING_BY_SIZE = ENABLED, " +
-			"AUTO_PARTITIONING_PARTITION_SIZE_MB = 2048, AUTO_PARTITIONING_BY_LOAD = DISABLED, AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 3);\n"},
-	}
 }
 
 func clickhouseTTLFixture() extensionFixture {
@@ -147,57 +103,6 @@ func clickhouseRowPolicyCommandFixture() extensionFixture {
 		wantSQL: "ALTER ROW POLICY `tenant` ON `app`.`orders` TO `reader`;\n"}
 }
 
-func coordinationFixture() extensionFixture {
-	return extensionFixture{payload: &ydbast.CoordinationNode{Schema: "app", Name: "locks", Change: ydbdiff.CoordinationNode{After: &ydbcoordination.Desired{}}}, wantSQL: "CREATE COORDINATION NODE `app/locks`;\n"}
-}
-
-func streamingFixture() extensionFixture {
-	return extensionFixture{payload: &ydbast.StreamingQuery{Operation: ydbast.StreamingCreate, Schema: "jobs.daily", Name: "copy.events",
-		Spec: ydbstreaming.Spec{Text: "SELECT 1;", Run: new(false)}},
-		wantSQL: "CREATE STREAMING QUERY `jobs.daily/copy.events` WITH (RUN = FALSE, RESOURCE_POOL = `default`) AS DO BEGIN\nSELECT 1;\nEND DO;\n"}
-}
-
-func secretFixture() extensionFixture {
-	return extensionFixture{payload: &ydbast.Secret{Operation: ydbast.SecretCreate, Schema: "ext", Name: "pg.password", ValueEnv: "PTAH_SECRET_PG"},
-		wantSQL: "CREATE SECRET `ext/pg.password` WITH (value = $PTAH_SECRET_PG);\n"}
-}
-
-func topicFixture() extensionFixture {
-	return extensionFixture{payload: &ydbast.Topic{Schema: "ext", Name: "events.v1", Change: ydbdiff.Topic{
-		After: &ydbtopic.Desired{Spec: ydbtopic.Spec{Consumers: []ydbtopic.ConsumerSpec{{Name: "billing", Important: true}}}}}},
-		wantSQL: "CREATE TOPIC `ext/events.v1` (CONSUMER `billing` WITH (important = TRUE));\n"}
-}
-
-func topicConsumerFixture() extensionFixture {
-	return extensionFixture{payload: &ydbast.TopicConsumer{Schema: "ext", Name: "events.v1", Consumer: ydbtopic.ConsumerSpec{Name: "audit"}},
-		wantSQL: "ALTER TOPIC `ext/events.v1` ADD CONSUMER `audit`;\n"}
-}
-
-func externalSourceFixture() extensionFixture {
-	return extensionFixture{payload: &ydbast.ExternalDataSource{Operation: ydbast.ExternalCreate, Schema: "ext", Name: "s3.v1",
-		Spec: ydbexternal.DataSource{SourceType: "ObjectStorage", AuthMethod: "NONE"}},
-		wantSQL: "CREATE EXTERNAL DATA SOURCE `ext/s3.v1` WITH (\n    SOURCE_TYPE = 'ObjectStorage',\n    AUTH_METHOD = 'NONE'\n);\n"}
-}
-
-func externalTableFixture() extensionFixture {
-	return extensionFixture{payload: &ydbast.ExternalTable{Operation: ydbast.ExternalDrop, Schema: "ext", Name: "events.v1"},
-		wantSQL: "DROP EXTERNAL TABLE `ext/events.v1`;\n"}
-}
-
-func asyncReplicationFixture() extensionFixture {
-	return extensionFixture{payload: &ydbast.AsyncReplication{Schema: "app", Name: "mirror.v1", Change: ydbdiff.AsyncReplication{
-		Before: &ydbreplication.ObservedReplication{Spec: ydbreplication.ReplicationSpec{
-			Connection: ydbreplication.Connection{ConnectionString: "grpc://primary:2136/?database=/prod"},
-			Items:      []ydbreplication.Item{{Source: "a", Target: "ra"}}}, State: ydbreplication.StateRunning}}},
-		wantSQL: "DROP ASYNC REPLICATION `app/mirror.v1` CASCADE;\n"}
-}
-
-func transferFixture() extensionFixture {
-	return extensionFixture{payload: &ydbast.Transfer{Schema: "etl", Name: "ingest", Change: ydbdiff.Transfer{
-		After: &ydbreplication.DesiredTransfer{Spec: ydbreplication.TransferSpec{Source: "tp", Target: "t", Lambda: "($m) -> { return []; }"}}}},
-		wantSQL: "CREATE TRANSFER `etl/ingest` FROM `tp` TO `t` USING ($m) -> { return []; };\n"}
-}
-
 func hypertableFixture() extensionFixture {
 	return extensionFixture{payload: &tsast.CreateHypertable{Table: "items", Hypertable: tsschema.DesiredHypertable{Column: "ts", ChunkInterval: "1 day"}},
 		wantSQL: "SELECT create_hypertable('\"items\"', by_range('ts', INTERVAL '1 day'), create_default_indexes => FALSE);\n"}
@@ -218,11 +123,12 @@ func mysqlReplaceIndexFixture() extensionFixture {
 }
 
 func allExtensionFixtures() []extensionFixture {
-	return append(extensionFixtures(), exclusionFixture(), extensionFixture{payload: &pgtable.ReplaceDeleteColumns{Name: "fk_parent", Columns: []string{"parent_id"}, ForeignTable: "parents", ForeignColumns: []string{"id"}, OnDelete: "SET NULL", DeleteColumns: []string{"parent_id"}}}, extensionFixture{payload: &pgtable.AlterPersistence{Change: pgtable.PersistenceChange{After: &pgtable.DesiredPersistence{Unlogged: true}}}}, mysqlReplaceIndexFixture(), clickhouseTTLFixture(), clickhouseIndexFixture(), clickhouseDropIndexFixture(), clickhouseRefreshFixture(), clickhouseRowPolicyFixture(), clickhouseRowPolicyCommandFixture(), cockroachDBRowTTLFixture(), spannerRowDeletionFixture(), coordinationFixture(), streamingFixture(), poolFixture(), classifierFixture(), defaultPoolFixture(), secretFixture(), topicFixture(), topicConsumerFixture(),
-		externalSourceFixture(), externalTableFixture(), asyncReplicationFixture(), transferFixture(), hypertableFixture(), continuousAggregateFixture(), policyFixture(), policyCommentFixture(), tableStateFixture(), securityPolicyFixture(), extendedPropertyFixture(), synonymFixture(),
+	return []extensionFixture{exclusionFixture(), {payload: &pgtable.ReplaceDeleteColumns{Name: "fk_parent", Columns: []string{"parent_id"}, ForeignTable: "parents", ForeignColumns: []string{"id"}, OnDelete: "SET NULL", DeleteColumns: []string{"parent_id"}}}, {payload: &pgtable.AlterPersistence{Change: pgtable.PersistenceChange{After: &pgtable.DesiredPersistence{Unlogged: true}}}}, mysqlReplaceIndexFixture(), clickhouseTTLFixture(), clickhouseIndexFixture(), clickhouseDropIndexFixture(), clickhouseRefreshFixture(), clickhouseRowPolicyFixture(), clickhouseRowPolicyCommandFixture(), cockroachDBRowTTLFixture(), spannerRowDeletionFixture(),
+		hypertableFixture(), continuousAggregateFixture(), policyFixture(), policyCommentFixture(), tableStateFixture(), securityPolicyFixture(), extendedPropertyFixture(), synonymFixture(),
 		defaultPrivilegeFixture(), pgExtensionFixture(), pgExtensionCommentFixture(), pgTypeCreateDomainFixture(), pgTypeAlterDomainFixture(), pgTypeCreateCompositeFixture(),
 		pgTypeAlterCompositeFixture(), pgTypeCreateRangeFixture(), pgTypeDropFixture(), pgTypeCommentFixture(),
-		oraTypeCreateDomainFixture(), oraTypeReplaceObjectTypeFixture(), oraTypeDropFixture())
+		oraTypeCreateDomainFixture(), oraTypeReplaceObjectTypeFixture(), oraTypeDropFixture(),
+	}
 }
 
 // oraTypeCreateDomainFixture creates an Oracle domain with every clause.
@@ -345,11 +251,6 @@ func pgTypeCommentFixture() extensionFixture {
 		wantSQL: "COMMENT ON TYPE \"fr\" IS 'it''s a range';\n"}
 }
 
-func defaultPoolFixture() extensionFixture {
-	return extensionFixture{payload: &ydbast.DefaultPoolSettings{Spec: ydbworkload.PoolSpec{ResourceWeight: new(20.0)}},
-		wantSQL: "ALTER RESOURCE POOL `default` SET (RESOURCE_WEIGHT = 20);\n"}
-}
-
 // The source inventory is independent of both owner registration and fixtures.
 // Moving a concrete node out of core cannot remove its routing evidence: every
 // payload a departed node kind names is in the inventory, every payload in the
@@ -403,32 +304,6 @@ func TestExtensionPayloads_AllEntryPoints(t *testing.T) {
 	}
 }
 
-func TestExtensionPayloads_OwnerRendersAndRequiresParent(t *testing.T) {
-	for _, fixture := range extensionFixtures() {
-		t.Run(string(fixture.payload.Kind()), func(t *testing.T) {
-			c := qt.New(t)
-			fragment := &ast.ExtensionAlterOperation{Payload: fixture.payload}
-			parent := &ast.AlterTableNode{Name: "items", Operations: []ast.AlterOperation{fragment}}
-			for _, visitor := range []renderer.RenderVisitor{ydb.NewWithCapabilities(capability.YDB262()), mustYDBRenderer(c)} {
-				sql, err := visitor.Render(parent)
-				c.Assert(err, qt.IsNil)
-				c.Assert(sql, qt.Equals, fixture.wantSQL)
-				sql, err = visitor.Render(fragment)
-				c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
-				c.Assert(err, qt.ErrorMatches, `extension .* requires an ALTER TABLE parent`)
-				c.Assert(sql, qt.Equals, "")
-			}
-		})
-	}
-}
-
-func mustYDBRenderer(c *qt.C) renderer.RenderVisitor {
-	c.Helper()
-	r, err := builtin.NewRendererWithCapabilities("ydb", capability.YDB262())
-	c.Assert(err, qt.IsNil)
-	return r
-}
-
 func TestClickHouseExtensionOwnerRendersAndNonownersRefuse(t *testing.T) {
 	for _, fixture := range []extensionFixture{clickhouseTTLFixture(), clickhouseIndexFixture()} {
 		for _, dialect := range renderedDialects() {
@@ -444,7 +319,7 @@ func TestClickHouseExtensionOwnerRendersAndNonownersRefuse(t *testing.T) {
 		sql, err := builtin.RenderSQL("clickhouse", &ast.AlterTableNode{Name: "items", Operations: []ast.AlterOperation{&ast.ExtensionAlterOperation{Payload: fixture.payload}}})
 		c.Assert(err, qt.IsNil)
 		c.Assert(sql, qt.Equals, fixture.wantSQL)
-		for _, dialect := range []string{"postgres", "mysql", "sqlite", "sqlserver", "oracle", "ydb"} {
+		for _, dialect := range []string{"postgres", "mysql", "sqlite", "sqlserver", "oracle"} {
 			sql, err := builtin.RenderSQL(dialect, &ast.AlterTableNode{Name: "items", Operations: []ast.AlterOperation{&ast.ExtensionAlterOperation{Payload: fixture.payload}}})
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(sql, qt.Equals, "")
@@ -471,7 +346,7 @@ func TestMySQLExtensionOwnerRendersAndNonownersRefuse(t *testing.T) {
 			c.Assert(sql, qt.Equals, "")
 		})
 	}
-	for _, dialect := range []string{"postgres", "cockroachdb", "yugabytedb", "spanner", "sqlite", "sqlserver", "oracle", "clickhouse", "ydb"} {
+	for _, dialect := range []string{"postgres", "cockroachdb", "yugabytedb", "spanner", "sqlite", "sqlserver", "oracle", "clickhouse"} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 			sql, err := builtin.RenderSQL(dialect, parent())
@@ -496,7 +371,7 @@ func TestCockroachDBExtensionOwnerRendersAndNonownersRefuse(t *testing.T) {
 		c.Assert(err, qt.IsNil)
 		c.Assert(sql, qt.Equals, fixture.wantSQL)
 	})
-	for _, dialect := range []string{"postgres", "yugabytedb", "spanner", "mysql", "sqlite", "sqlserver", "oracle", "clickhouse", "ydb"} {
+	for _, dialect := range []string{"postgres", "yugabytedb", "spanner", "mysql", "sqlite", "sqlserver", "oracle", "clickhouse"} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 			sql, err := builtin.RenderSQL(dialect, parent())
@@ -526,7 +401,7 @@ func TestSQLServerExtensionOwnerRendersAndNonownersRefuse(t *testing.T) {
 		c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 		c.Assert(sql, qt.Equals, "")
 	})
-	for _, dialect := range []string{"postgres", "cockroachdb", "yugabytedb", "spanner", "mysql", "mariadb", "sqlite", "oracle", "clickhouse", "ydb"} {
+	for _, dialect := range []string{"postgres", "cockroachdb", "yugabytedb", "spanner", "mysql", "mariadb", "sqlite", "oracle", "clickhouse"} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 			sql, err := builtin.RenderSQL(dialect, &ast.ExtensionStatement{Payload: fixture.payload})
@@ -555,7 +430,7 @@ func TestTimescaleExtensionOwnerRendersAndNonownersRefuse(t *testing.T) {
 			sql, err := builtin.RenderSQL("postgres", node)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Matches, `-- POSTGRES: (hypertable items|continuous aggregate hourly) is not supported by this target; skipped.\n`)
-			for _, dialect := range []string{"mysql", "mariadb", "sqlite", "sqlserver", "oracle", "clickhouse", "ydb"} {
+			for _, dialect := range []string{"mysql", "mariadb", "sqlite", "sqlserver", "oracle", "clickhouse"} {
 				sql, err := builtin.RenderSQL(dialect, node)
 				c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 				c.Assert(sql, qt.Equals, "")
@@ -583,7 +458,7 @@ func TestRowSecurityExtensionOwnerRendersAndNonownersRefuse(t *testing.T) {
 			sql, err := builtin.RenderSQL("spanner", node)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Matches, `-- SPANNER: (policy tenant on app.orders|policy comment tenant on app.orders|row-level security on app.orders) is not supported by this target; skipped.\n`)
-			for _, dialect := range []string{"mysql", "mariadb", "sqlite", "sqlserver", "oracle", "clickhouse", "ydb"} {
+			for _, dialect := range []string{"mysql", "mariadb", "sqlite", "sqlserver", "oracle", "clickhouse"} {
 				sql, err := builtin.RenderSQL(dialect, node)
 				c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 				c.Assert(sql, qt.Equals, "")
@@ -609,7 +484,7 @@ func TestPostgreSQLExtensionOwnerRendersAndNonownersRefuse(t *testing.T) {
 				c.Assert(err, qt.IsNil)
 				c.Assert(sql, qt.Equals, fixture.wantSQL)
 			}
-			for _, dialect := range []string{"mysql", "mariadb", "sqlite", "sqlserver", "oracle", "clickhouse", "ydb"} {
+			for _, dialect := range []string{"mysql", "mariadb", "sqlite", "sqlserver", "oracle", "clickhouse"} {
 				sql, err := builtin.RenderSQL(dialect, node)
 				c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 				c.Assert(sql, qt.Equals, "")
@@ -652,7 +527,7 @@ func TestPostgreSQLTypeOwnerRendersAndNonownersRefuse(t *testing.T) {
 				c.Assert(err, qt.IsNil)
 				c.Assert(sql, qt.Equals, fixture.wantSQL)
 			}
-			for _, dialect := range []string{"mysql", "mariadb", "sqlite", "sqlserver", "oracle", "clickhouse", "ydb"} {
+			for _, dialect := range []string{"mysql", "mariadb", "sqlite", "sqlserver", "oracle", "clickhouse"} {
 				sql, err := builtin.RenderSQL(dialect, node)
 				c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 				c.Assert(sql, qt.Equals, "")
@@ -744,7 +619,7 @@ func TestSpannerExtensionOwnerRendersAndNonownersRefuse(t *testing.T) {
 		c.Assert(err, qt.IsNil)
 		c.Assert(sql, qt.Equals, fixture.wantSQL)
 	})
-	for _, dialect := range []string{"postgres", "yugabytedb", "cockroachdb", "mysql", "sqlite", "sqlserver", "oracle", "clickhouse", "ydb"} {
+	for _, dialect := range []string{"postgres", "yugabytedb", "cockroachdb", "mysql", "sqlite", "sqlserver", "oracle", "clickhouse"} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 			sql, err := builtin.RenderSQL(dialect, parent())
@@ -752,48 +627,6 @@ func TestSpannerExtensionOwnerRendersAndNonownersRefuse(t *testing.T) {
 			c.Assert(fmt.Sprint(err), qt.Contains, string(spannerast.AlterRowDeletionKind))
 			c.Assert(sql, qt.Equals, "")
 		})
-	}
-}
-
-func TestExtensionPayloads_RefuseMalformedDrop(t *testing.T) {
-	for _, name := range []string{"", " ", "table/feed"} {
-		t.Run(name, func(t *testing.T) {
-			c := qt.New(t)
-			op := &ast.ExtensionAlterOperation{Payload: &ydbast.DropChangefeed{Name: name}}
-			for _, visitor := range []renderer.RenderVisitor{ydb.NewWithCapabilities(capability.YDB262()), mustYDBRenderer(c)} {
-				for _, node := range []ast.Node{op, &ast.AlterTableNode{Name: "items", Operations: []ast.AlterOperation{op}}} {
-					sql, err := visitor.Render(node)
-					c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
-					c.Assert(err, qt.ErrorMatches, "a changefeed needs a name without a slash")
-					c.Assert(sql, qt.Equals, "")
-				}
-			}
-		})
-	}
-}
-
-func TestExtensionPayloads_NonownersRefuseClaimedCapabilities(t *testing.T) {
-	caps := capability.YDB262()
-	visitors := []renderer.RenderVisitor{
-		clickhouse.NewWithCapabilities(caps), mssql.NewWithCapabilities(caps), mysql.NewWithCapabilities(caps),
-		oracle.NewWithCapabilities(caps), postgres.NewWithCapabilities(caps, "postgres"), sqlite.NewWithCapabilities(caps),
-	}
-	for _, visitor := range visitors {
-		for _, fixture := range extensionFixtures() {
-			t.Run(visitor.Dialect()+"/"+string(fixture.payload.Kind()), func(t *testing.T) {
-				c := qt.New(t)
-				for _, node := range []ast.Node{
-					&ast.ExtensionStatement{Payload: fixture.payload},
-					&ast.ExtensionAlterOperation{Payload: fixture.payload},
-					&ast.AlterTableNode{Name: "items", Operations: []ast.AlterOperation{&ast.AddColumnOperation{Column: ast.NewColumn("extra", "INTEGER")}, &ast.ExtensionAlterOperation{Payload: fixture.payload}}},
-				} {
-					sql, err := visitor.Render(node)
-					c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-					c.Assert(fmt.Sprint(err), qt.Contains, string(fixture.payload.Kind()))
-					c.Assert(sql, qt.Equals, "")
-				}
-			})
-		}
 	}
 }
 
@@ -825,38 +658,6 @@ func mustClickHouseRenderer(c *qt.C) renderer.RenderVisitor {
 	r, err := builtin.NewRenderer("clickhouse")
 	c.Assert(err, qt.IsNil)
 	return r
-}
-
-func TestStreamingExtensionRendersAfterSelectedCodecRoundTrip(t *testing.T) {
-	c := qt.New(t)
-	fixture := streamingFixture()
-	runtime, err := builtin.New()
-	c.Assert(err, qt.IsNil)
-	data, err := runtime.Codecs().Marshal(c.Context(), schemaext.Operation, []schemaext.Payload{fixture.payload})
-	c.Assert(err, qt.IsNil)
-	values, err := runtime.Codecs().Unmarshal(c.Context(), data)
-	c.Assert(err, qt.IsNil)
-	node := &ast.ExtensionStatement{Payload: values[0].(ast.ExtensionPayload)}
-	caps := capability.YDB262().With(capability.StreamingQueries, true)
-	visitor, err := builtin.NewRendererWithCapabilities("ydb", caps)
-	c.Assert(err, qt.IsNil)
-	visited, err := visitor.Render(node)
-	c.Assert(err, qt.IsNil)
-	c.Assert(visited, qt.Equals, fixture.wantSQL)
-	rendered, err := builtin.RenderSQLWithCapabilities("ydb", caps, node)
-	c.Assert(err, qt.IsNil)
-	c.Assert(rendered, qt.Equals, fixture.wantSQL)
-	result, err := runtime.Render(c.Context(), renderer.Request{Target: "ydb", Capabilities: caps, Nodes: []ast.Node{node}})
-	c.Assert(err, qt.IsNil)
-	c.Assert(must.Must(result.SQLFragments()), qt.DeepEquals, []string{fixture.wantSQL})
-}
-
-func poolFixture() extensionFixture {
-	return extensionFixture{payload: &ydbast.ResourcePool{Operation: ydbast.PoolCreate, Name: "batch", Spec: &ydbworkload.PoolSpec{}}, wantSQL: "CREATE RESOURCE POOL `batch` WITH (CONCURRENT_QUERY_LIMIT = \"-1\");\n"}
-}
-
-func classifierFixture() extensionFixture {
-	return extensionFixture{payload: &ydbast.ResourcePoolClassifier{Operation: ydbast.PoolCreate, Name: "route", Spec: &ydbworkload.ClassifierSpec{ResourcePool: "default", Rank: 0}}, wantSQL: "CREATE RESOURCE POOL CLASSIFIER `route` WITH (RESOURCE_POOL = 'default', RANK = 0);\n"}
 }
 
 // TestRowSecurityPayloadsRenderAfterTheRuntimeRoundTrip drives each

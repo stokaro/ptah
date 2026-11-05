@@ -82,7 +82,6 @@ func TestConfiguredDatabaseConnectionsIncludesDistributedSQLAndSQLServer(t *test
 	t.Setenv("COCKROACHDB_URL", "cockroachdb://cockroach.example/defaultdb")
 	t.Setenv("YUGABYTEDB_URL", "yugabytedb://yugabyte.example/yugabyte")
 	t.Setenv("SQLSERVER_URL", "sqlserver://sqlserver.example/db")
-	t.Setenv("YDB_URL", "ydb://ydb.example:2136/local")
 
 	connections := configuredDatabaseConnections()
 
@@ -102,10 +101,8 @@ func TestConfiguredDatabaseConnectionsIncludesDistributedSQLAndSQLServer(t *test
 		connectionURL: "mysql://mysql.example/db",
 		cleanupURL:    "mysql://root@mysql.example/db",
 	})
-	c.Assert(connections["ydb"], qt.Equals, databaseTarget{
-		connectionURL: "ydb://ydb.example:2136/local",
-		cleanupURL:    "ydb://ydb.example:2136/local",
-	})
+	_, ydb := connections["ydb"]
+	c.Assert(ydb, qt.IsFalse)
 }
 
 func TestRequestedDatabaseConnectionsRejectsMissingRequestedURL(t *testing.T) {
@@ -183,5 +180,4 @@ func TestDefaultDatabasesIncludeOSSDistributedSQLButNotSQLServer(t *testing.T) {
 	c.Assert(defaultDatabases, qt.Contains, "cockroachdb")
 	c.Assert(defaultDatabases, qt.Contains, "yugabytedb")
 	c.Assert(defaultDatabases, qt.Not(qt.Contains), "sqlserver")
-	c.Assert(defaultDatabases, qt.Not(qt.Contains), "ydb")
 }

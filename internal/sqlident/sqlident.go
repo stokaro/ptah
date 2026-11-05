@@ -33,11 +33,15 @@ type spelling struct {
 // cached, since a later platform.Register may describe it.
 var spellings sync.Map
 
-// spellingOf returns how dialect writes an identifier. A dialect no
-// descriptor describes, the empty name among them, writes the SQL standard's
-// spelling: double quotes, and a plain name bare only where one is recorded
-// bare.
+// spellingOf returns how dialect writes an identifier: by the quoting a
+// provider declared for it ([RegisterQuoting]), or by its descriptor. A
+// dialect neither describes, the empty name among them, writes the SQL
+// standard's spelling: double quotes, and a plain name bare only where one is
+// recorded bare.
 func spellingOf(dialect string) spelling {
+	if written, ok := declaredSpelling(dialect); ok {
+		return written
+	}
 	if cached, ok := spellings.Load(dialect); ok {
 		if written, ok := cached.(spelling); ok {
 			return written

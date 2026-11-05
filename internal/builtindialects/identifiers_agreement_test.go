@@ -39,7 +39,6 @@ func TestDescriptors_IdentifiersAgreeWithTheSwitchesTheyReplace(t *testing.T) {
 		{dialect: platform.YugabyteDB, style: descriptor.QuoteDouble},
 		{dialect: platform.Spanner, style: descriptor.QuoteDouble},
 		{dialect: platform.Oracle, style: descriptor.QuoteDouble, bare: descriptor.BareEverywhere},
-		{dialect: platform.YDB, style: descriptor.QuoteYQL, bare: descriptor.BareNever, paths: true},
 	}
 	c := qt.New(t)
 	// Every built-in dialect has a row, so a new one cannot go unpinned.
@@ -108,7 +107,6 @@ func TestDescriptors_KeywordsAgreeWithTheListsTheyReplace(t *testing.T) {
 		{dialect: platform.YugabyteDB},
 		{dialect: platform.Spanner},
 		{dialect: platform.Oracle, keywords: oracle},
-		{dialect: platform.YDB},
 	}
 	c := qt.New(t)
 	c.Assert(builtindialects.Descriptors(), qt.HasLen, len(tests))

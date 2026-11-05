@@ -13,8 +13,6 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/dialect/timescaledb/tsschema"
-	"ptah.run/dialect/ydb/ydbschema"
-	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemafile"
 )
@@ -36,17 +34,13 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 	}{
 		{
 			// HCL has the synonym and extended_property blocks
-			// (stokaro/ptah#1031), and their owners' coverage says so. It
-			// carries a TTL as the YDB owner's platform properties, and it
-			// cannot name a changefeed or a column-oriented table. A secret, a
-			// topic, a resource pool or classifier, an external object, an
-			// async replication, a transfer, a column family and a SQLite
-			// virtual table are owned features the format makes no claim
-			// about.
-			name:     "HCL cannot name a changefeed or a column table",
+			// (stokaro/ptah#1031), and their owners' coverage says so, and it
+			// names every common family. A SQLite virtual table is an owned
+			// feature the format makes no claim about.
+			name:     "HCL names every common family",
 			file:     "schema.hcl",
 			contents: "schema \"main\" {\n}\n",
-			want:     unsupportedRecords(ydbschema.CoverageChangefeed, ydbschema.CoverageColumnTable),
+			want:     nil,
 		},
 		{
 			// The control on the common families. Synonyms, extended
@@ -58,11 +52,7 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			want:     nil,
 		},
 		{
-			// YAML expresses the fewest common families of the three. It has
-			// keys for a row deletion policy, a changefeed and a column
-			// family, as `.sql` has Spanner's policy clause, so both rows are
-			// the control on the changefeed, column table and TTL records HCL
-			// and DBML carry.
+			// YAML expresses the fewest common families of the three.
 			name:     "YAML cannot name four families",
 			file:     "schema.yaml",
 			contents: "tables:\n  users:\n    fields:\n      id:\n        type: INTEGER\n",
@@ -82,10 +72,8 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			file:     "schema.dbml",
 			contents: "Table users {\n  id integer [pk]\n}\n",
 			want: unsupportedRecords(
-				ydbschema.CoverageChangefeed, ydbschema.CoverageColumnTable, coverage.Composite,
-				coverage.Domain, coverage.Extension,
-				coverage.Policy, coverage.Range, coverage.Role, coverage.Sequence,
-				ydbschema.CoverageTTL),
+				coverage.Composite, coverage.Domain, coverage.Extension,
+				coverage.Policy, coverage.Range, coverage.Role, coverage.Sequence),
 		},
 	}
 
@@ -107,10 +95,9 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 }
 
 // An owner's kinds a format cannot spell come from the owner, through the
-// vocabulary the load is given. A load whose vocabulary does not select the
-// YDB owner records the common limits of its format and none of the YDB
-// kinds: no comparison of that run reads them, and the HCL writer refuses a
-// record its vocabulary cannot name.
+// vocabulary the load is given. A load given no vocabulary records the common
+// limits of its format alone: no comparison of that run reads an owner's
+// kinds, and the HCL writer refuses a record its vocabulary cannot name.
 func TestAFormatRecordsNoKindOfAnOwnerTheLoadDidNotSelect(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -156,40 +143,6 @@ func unsupportedRecords(kinds ...coverage.Kind) []coverage.Object {
 		})
 	}
 	return records
-}
-
-// TestOnlyAFormatThatDeclaresSecretsClaimsTheirNamespace holds the secret
-// namespace to the formats that can declare a secret. YAML and YQL claim it
-// complete, so a secret only the database holds is planned for removal; HCL,
-// DBML and SQL of another dialect make no claim, so applying one keeps every
-// secret the database holds instead of planning DROP SECRET, which loses a
-// value nothing can read back.
-func TestOnlyAFormatThatDeclaresSecretsClaimsTheirNamespace(t *testing.T) {
-	tests := []struct {
-		name     string
-		file     string
-		dialect  string
-		contents string
-		want     schemaext.KnowledgeState
-	}{
-		{name: "YAML", file: "schema.yaml", contents: "secrets:\n  pw:\n    value_env: PTAH_SECRET_PW\n", want: schemaext.Complete},
-		{name: "YQL", file: "schema.sql", dialect: "ydb", contents: "CREATE TABLE t (id Int64 NOT NULL, PRIMARY KEY (id));\n", want: schemaext.Complete},
-		{name: "HCL", file: "schema.hcl", contents: "schema \"main\" {\n}\n", want: schemaext.Uninspected},
-		{name: "DBML", file: "schema.dbml", contents: "Table users {\n  id integer [pk]\n}\n", want: schemaext.Uninspected},
-		{name: "SQL", file: "schema.sql", contents: "CREATE TABLE users (id INTEGER PRIMARY KEY);\n", want: schemaext.Uninspected},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			path := filepath.Join(t.TempDir(), test.file)
-			c.Assert(os.WriteFile(path, []byte(test.contents), 0o600), qt.IsNil)
-
-			database, err := schemafile.LoadPath(t.Context(), path, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: test.dialect})
-
-			c.Assert(err, qt.IsNil)
-			c.Assert(database.FeatureCoverage.Lookup(ydbsecret.Kind, ydbsecret.Ref("", "held")).State, qt.Equals, test.want)
-		})
-	}
 }
 
 // TestOnlyASQLiteSQLDocumentDescribesVirtualTables holds the virtual table

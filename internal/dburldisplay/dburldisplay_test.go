@@ -119,7 +119,7 @@ func TestFormat(t *testing.T) {
 			expected: "ydb://localhost:2136/?database=%2Flocal&token=redacted",
 		},
 		{
-			// internal/ydburl refuses a user in the monitoring endpoint, and
+			// The YDB provider refuses a user in the monitoring endpoint, and
 			// a command prints the URL before it is parsed: the line naming
 			// the target must not carry the password the refusal is about.
 			name:     "YDB URL with credentials in its monitoring endpoint",

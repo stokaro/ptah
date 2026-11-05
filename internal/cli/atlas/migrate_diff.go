@@ -641,7 +641,7 @@ func prepareAtlasMigrateDiffSource(
 	if err := toSet.EnsureDevDatabase(opts.devURL); err != nil {
 		return atlassource.Set{}, err
 	}
-	if err := toSet.EnsureDevIsolation(opts.devURL); err != nil {
+	if err := toSet.EnsureDevIsolation(ctx, opts.devURL); err != nil {
 		return atlassource.Set{}, err
 	}
 	if _, _, err := atlassource.PinDialect(ctx, opts.devURL, toSet); err != nil {

@@ -21,10 +21,7 @@ var sqlReaderRoots = []string{"internal/parser", "internal/sqlschema"}
 // sqlReaderOwnerLinks reports each concrete owner the shared SQL reader links,
 // directly or through any chain of imports, once per owner family.
 //
-// The count is zero. YQL reaches neither root: the YDB owner parses it and
-// hands the shared conversion what it parsed, through
-// sqlschema.ConvertScript, and a syntax consumer reads it through
-// internal/sqlsyntax.
+// The count is zero.
 func sqlReaderOwnerLinks(pkg *packages.Package) []finding {
 	self := relative(pkg.PkgPath)
 	if !slices.Contains(sqlReaderRoots, self) {

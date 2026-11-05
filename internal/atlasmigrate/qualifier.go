@@ -102,8 +102,11 @@ func (q Qualifier) ValidateScope(dialect string, schemas []string) error {
 // qualifierDialectRefusal returns why the qualifier does not rewrite a plan for
 // the dialect, its descriptor's QualifierRefusal, so that "why not mine?" is
 // answered in the same declaration as "which ones?" (stokaro/ptah#1714). An
-// empty answer means the qualifier rewrites for it, as it does for a dialect
-// the process registry does not know.
+// empty answer means the qualifier rewrites for it. A dialect the process
+// registry does not describe, an engine an executable provider serves such as
+// YDB, is refused: its names follow its provider's rules, which this package
+// has not measured, and a qualified name it reads differently would be
+// written into every migration file.
 //
 // Every reason is about what THIS package has established, not about what the
 // engine can do. The qualifier rewrites planned nodes -- table names, index
@@ -113,7 +116,11 @@ func (q Qualifier) ValidateScope(dialect string, schemas []string) error {
 // so none of them is enabled, and each reason says what enabling it would
 // take.
 func qualifierDialectRefusal(dialect string) string {
-	described, _ := platform.Lookup(dialect)
+	described, found := platform.Lookup(dialect)
+	if !found {
+		return "the engine is not built in, and the qualifier rewrites planned names only for the built-in dialects " +
+			"it was measured on; an executable provider names its engine's objects by rules of its own"
+	}
 	return described.QualifierRefusal
 }
 

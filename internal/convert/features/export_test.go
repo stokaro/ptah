@@ -7,36 +7,18 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
-	"ptah.run/core/goschema"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/dialect/ydb/ydbschema"
-	"ptah.run/dialect/ydb/ydbtopic"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/goschematogo"
 )
-
-func TestNamedChangefeeds_GoExportRoundTrip(t *testing.T) {
-	c := qt.New(t)
-	feed := ydbschema.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON", Consumers: []ydbtopic.ConsumerSpec{{Name: "audit", SupportedCodecs: []string{"raw", "gzip"}}}}
-	objects, err := schemaext.NewObjects(ydbschema.DesiredObject("shop", "items", feed))
-	c.Assert(err, qt.IsNil)
-	database := &schemamodel.Database{FeatureObjects: objects, Tables: []schemamodel.Table{{Name: "items", Schema: "shop", StructName: "Item"}}, Fields: []schemamodel.Field{{StructName: "Item", Name: "id", FieldName: "ID", Type: "BIGINT", Primary: true}}}
-	files, err := goschematogo.Render(c.Context(), database, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true})
-	c.Assert(err, qt.IsNil)
-	c.Assert(files, qt.HasLen, 1)
-	parsed, err := goschema.ParseSource(builtintest.Annotations(), "schema.go", string(files[0].Data))
-	c.Assert(err, qt.IsNil)
-	feeds, err := ydbschema.DesiredChangefeeds(parsed.FeatureObjects, "shop", "items")
-	c.Assert(err, qt.IsNil)
-	c.Assert(feeds, qt.DeepEquals, []ydbschema.ChangefeedSpec{feed})
-}
 
 func TestFeatureRendering_RefusesFacetsAtEveryCommonScope(t *testing.T) {
 	c := qt.New(t)
@@ -58,48 +40,34 @@ func TestFeatureRendering_RefusesFacetsAtEveryCommonScope(t *testing.T) {
 	}
 }
 
+// TestFeatureRendering_RefusesOrphanAndWrongParent hands a PostgreSQL EXCLUDE
+// constraint of table missing, which the schema does not declare, to the
+// create statements and to the Go export, and the same constraint to the
+// rendering of table items. Each refuses rather than write the constraint
+// without its table or on another one.
 func TestFeatureRendering_RefusesOrphanAndWrongParent(t *testing.T) {
 	c := qt.New(t)
-	objects, err := schemaext.NewObjects(ydbschema.DesiredObject("", "missing", ydbschema.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON"}))
+	exclusion := &pgtable.DesiredExclusion{Exclusion: pgtable.Exclusion{UsingMethod: "gist", Elements: "during WITH &&"}}
+	objects, err := schemaext.NewObjects(schemaext.Object{Ref: pgtable.ExclusionRef("missing", "no_overlap", identifier.ForDialect("postgres")), Value: exclusion})
 	c.Assert(err, qt.IsNil)
 	database := &schemamodel.Database{FeatureObjects: objects}
-	_, err = builtin.GetOrderedCreateStatementsWithCapabilities(database, "ydb", capability.YDB262())
-	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
-	_, err = goschematogo.Render(c.Context(), database, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true})
-	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
-	table := ast.NewCreateTable("items").AddColumn(ast.NewColumn("id", "Int64").SetPrimary())
-	table.OwnedObjects = objects
-	_, err = builtin.RenderSQLWithCapabilities("ydb", capability.YDB262(), table)
-	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
-}
 
-func TestGoExport_RefusesDisabledChangefeed(t *testing.T) {
-	c := qt.New(t)
-	objects, err := schemaext.NewObjects(ydbschema.DesiredObject("", "items", ydbschema.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON", Disabled: true}))
-	c.Assert(err, qt.IsNil)
-	files, err := goschematogo.Render(c.Context(), &schemamodel.Database{FeatureObjects: objects, Tables: []schemamodel.Table{{Name: "items"}}}, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true})
-	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(files, qt.IsNil)
-}
+	statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(database, "postgres", capability.Postgres18())
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+	c.Assert(err, qt.ErrorMatches, `.*feature object .*missing\.no_overlap has no declared parent table`)
+	c.Assert(statements, qt.IsNil)
 
-func TestExportRefusesToRecreateRetainedReplicationState(t *testing.T) {
-	c := qt.New(t)
-	value := &ydbschema.DesiredChangefeed{Spec: ydbschema.ChangefeedSpec{Name: "stream", Mode: "UPDATES", Format: "JSON"},
-		RetainedReplication: &ydbschema.ReplicationBinding{DestinationPath: "/remote/replica", ItemID: "1"}}
-	objects, err := schemaext.NewObjects(schemaext.Object{Ref: ydbschema.ChangefeedRef("", "items", "stream"), Value: value})
-	c.Assert(err, qt.IsNil)
-	database := &schemamodel.Database{FeatureObjects: objects,
-		Tables: []schemamodel.Table{{Name: "items", StructName: "Item"}},
-		Fields: []schemamodel.Field{{StructName: "Item", Name: "id", Type: "BIGINT", Primary: true}}}
-	// Complete-schema validation checks the same creation contract as export.
-	c.Assert(builtin.ValidateSchemaWithCapabilities(database, "ydb", capability.YDB262()), qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	files, err := goschematogo.Render(c.Context(), database, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true})
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(err, qt.ErrorMatches, "(?s).*cannot preserve the retained replication binding.*")
+	c.Assert(err, qt.ErrorMatches, `.*EXCLUDE .*missing\.no_overlap names a table the export does not declare`)
 	c.Assert(files, qt.IsNil)
-	statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(database, "ydb", capability.YDB262())
-	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(statements, qt.IsNil)
+
+	table := ast.NewCreateTable("items").AddColumn(ast.NewColumn("id", "BIGINT").SetPrimary())
+	table.OwnedObjects = objects
+	sql, err := builtin.RenderSQLWithCapabilities("postgres", capability.Postgres18(), table)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+	c.Assert(err, qt.ErrorMatches, `.*EXCLUDE constraint names another table`)
+	c.Assert(sql, qt.Equals, "")
 }
 
 func TestHCLExport_ReportsOpaqueFeatureLoss(t *testing.T) {

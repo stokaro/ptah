@@ -98,10 +98,6 @@ func Test_migrationTablePresenceQuery_FailurePath(t *testing.T) {
 	}{
 		{name: "a dialect it does not know", dialect: "unsupported",
 			wantErr: `unsupported migration metadata dialect "unsupported"`},
-		// YDB has no catalog SQL could ask, and its tables are described
-		// through the reader instead, so it has no catalog service.
-		{name: "ydb is described, not queried", dialect: platform.YDB,
-			wantErr: `unsupported migration metadata dialect "ydb"`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

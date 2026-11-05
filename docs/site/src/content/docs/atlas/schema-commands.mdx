@@ -681,8 +681,7 @@ DROP EXTENSION IF EXISTS "pgcrypto";
 because a document that omits no block type describes every one. Native
 `ptah schema inspect` omits none either; its separate generated-code marker is
 unchanged. Both still write what the read itself did not describe, such as a
-role catalog the server refused, a YDB changefeed, a YDB TTL run interval or a
-Spanner change stream: that limit belongs to the description rather than to the
+role catalog the server refused or a Spanner change stream: that limit belongs to the description rather than to the
 rendering, and a document without it would hand the next plan a silence that
 reads as complete. The same directive grammar
 is read out of the leading comments of a `.sql` desired state, spelled
@@ -1349,7 +1348,7 @@ a duration, an empty one included, is refused by the flag parser with Atlas's
 fails the apply before the locked target reinspection; a strict target-policy
 refusal happens before the timeout is consulted. PostgreSQL and YugabyteDB (`pg_advisory_lock`),
 MySQL and MariaDB (`GET_LOCK`), and SQL Server (`sp_getapplock`) use real
-database locks, and YDB takes a semaphore on its coordination node
+database locks, and the YDB provider takes a semaphore on its coordination node
 `ptah_locks`.
 
 Every other dialect has no advisory-lock semantics: the apply proceeds without

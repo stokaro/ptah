@@ -23,7 +23,6 @@ var lockAgreement = map[string]string{
 	platform.MySQL:      "get-lock",
 	platform.MariaDB:    "get-lock",
 	platform.SQLServer:  "app-lock",
-	platform.YDB:        "coordination-semaphore",
 }
 
 // protocol names the shape of the services the way the descriptor named the
@@ -72,7 +71,7 @@ func TestLookup_MySQLAndMariaDBDifferByTheUnboundedWait(t *testing.T) {
 func TestLookup_FoldsSpellings(t *testing.T) {
 	c := qt.New(t)
 	c.Assert(builtin.Lookup(" PGX ").Dialects, qt.DeepEquals, builtin.Lookup(platform.Postgres).Dialects)
-	c.Assert(builtin.Lookup("ydbs").Dialects, qt.DeepEquals, []string{platform.YDB})
+	c.Assert(builtin.Lookup("maria").Dialects, qt.DeepEquals, []string{platform.MariaDB})
 }
 
 func TestLookup_UnknownDialectTakesNoLock(t *testing.T) {

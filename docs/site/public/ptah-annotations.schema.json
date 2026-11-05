@@ -71,197 +71,62 @@
       ],
       "type": "object"
     },
-    "ptah.schema.async_replication": {
-      "additionalProperties": false,
-      "description": "Declares a YDB async replication: tables of another database copied into read-only replica tables YDB creates and keeps current. Its tables are declared with ptah:schema:async_replication:item in the same file, and the replica tables are not declared as tables.",
-      "properties": {
-        "attributes": {
-          "additionalProperties": false,
-          "properties": {
-            "commit_interval": {
-              "description": "How often a global replication commits, an ISO 8601 duration; ten seconds when omitted.",
-              "type": "string"
-            },
-            "connection_string": {
-              "description": "The other database: grpc://host:port/?database=/path or grpcs://...",
-              "type": "string"
-            },
-            "consistency_level": {
-              "description": "Consistency of the replica: row or global; row when omitted.",
-              "type": "string"
-            },
-            "name": {
-              "description": "Replication name, the last segment of its path.",
-              "type": "string"
-            },
-            "password_secret_name": {
-              "description": "Object secret holding the user's password.",
-              "type": "string"
-            },
-            "password_secret_path": {
-              "description": "Path of a secret holding the user's password, relative to the database root (YDB 25.4 and later).",
-              "type": "string"
-            },
-            "schema": {
-              "description": "Directory that holds it, relative to the database root.",
-              "type": "string"
-            },
-            "token_secret_name": {
-              "description": "Object secret holding an access token.",
-              "type": "string"
-            },
-            "token_secret_path": {
-              "description": "Path of a secret holding an access token, relative to the database root (YDB 25.4 and later).",
-              "type": "string"
-            },
-            "user": {
-              "description": "User a password secret signs in as.",
-              "type": "string"
-            }
-          },
-          "required": [
-            "connection_string",
-            "name"
-          ],
-          "type": "object"
-        },
-        "directive": {
-          "const": "ptah:schema:async_replication"
-        }
-      },
-      "required": [
-        "directive",
-        "attributes"
-      ],
-      "type": "object"
-    },
-    "ptah.schema.async_replication.item": {
-      "additionalProperties": false,
-      "description": "Declares one table, or directory of tables, an async replication copies, and where its replica is created. The replication is declared in the same file.",
-      "properties": {
-        "attributes": {
-          "additionalProperties": false,
-          "properties": {
-            "replication": {
-              "description": "Replication the item belongs to.",
-              "type": "string"
-            },
-            "schema": {
-              "description": "Directory of the replication, when it has one.",
-              "type": "string"
-            },
-            "source": {
-              "description": "Path in the source database, relative to its root or absolute.",
-              "type": "string"
-            },
-            "target": {
-              "description": "Path of the replica in this database, relative to its root.",
-              "type": "string"
-            }
-          },
-          "required": [
-            "replication",
-            "source",
-            "target"
-          ],
-          "type": "object"
-        },
-        "directive": {
-          "const": "ptah:schema:async_replication:item"
-        }
-      },
-      "required": [
-        "directive",
-        "attributes"
-      ],
-      "type": "object"
-    },
     "ptah.schema.changefeed": {
       "additionalProperties": false,
-      "description": "Declares a YDB changefeed: a stream of a table's changes, kept in a topic at <table>/<name>. It belongs to the struct's table, or to the table it names.",
+      "description": "Directive owned by provider github.com/stokaro/ptah-ydb-plugin.",
       "properties": {
         "attributes": {
           "additionalProperties": false,
           "properties": {
             "format": {
-              "description": "How a record is written: JSON or DEBEZIUM_JSON.",
+              "description": "Attribute of ptah:schema:changefeed, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "initial_scan": {
-              "description": "The stream opens with a record for every row the table holds.",
-              "enum": [
-                "true",
-                "false"
-              ],
-              "type": "string",
-              "x-ptah-bare-boolean": true
+              "description": "Attribute of ptah:schema:changefeed, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
             },
             "mode": {
-              "description": "What a record carries: KEYS_ONLY, UPDATES, NEW_IMAGE, OLD_IMAGE or NEW_AND_OLD_IMAGES.",
+              "description": "Attribute of ptah:schema:changefeed, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "name": {
-              "description": "Changefeed name, unique among the table's changefeeds and indexes.",
+              "description": "Attribute of ptah:schema:changefeed, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "resolved_timestamps": {
-              "description": "Interval of the barrier records, an ISO 8601 duration such as PT10S.",
+              "description": "Attribute of ptah:schema:changefeed, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "retention_period": {
-              "description": "How long the topic keeps a record, an ISO 8601 duration; 24 hours when omitted.",
+              "description": "Attribute of ptah:schema:changefeed, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "schema_changes": {
-              "description": "The stream carries a record for each schema change.",
-              "enum": [
-                "true",
-                "false"
-              ],
-              "type": "string",
-              "x-ptah-bare-boolean": true
+              "description": "Attribute of ptah:schema:changefeed, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
             },
             "table": {
-              "description": "Table the changefeed belongs to, when not the struct's own.",
+              "description": "Attribute of ptah:schema:changefeed, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "topic_auto_partitioning": {
-              "description": "The topic gains partitions as writes grow.",
-              "enum": [
-                "true",
-                "false"
-              ],
-              "type": "string",
-              "x-ptah-bare-boolean": true
+              "description": "Attribute of ptah:schema:changefeed, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
             },
             "topic_min_active_partitions": {
-              "description": "Partitions the topic starts with.",
+              "description": "Attribute of ptah:schema:changefeed, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "user_sids": {
-              "description": "Each record names the user who made the change.",
-              "enum": [
-                "true",
-                "false"
-              ],
-              "type": "string",
-              "x-ptah-bare-boolean": true
+              "description": "Attribute of ptah:schema:changefeed, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
             },
             "virtual_timestamps": {
-              "description": "Each record carries the virtual timestamp of its change.",
-              "enum": [
-                "true",
-                "false"
-              ],
-              "type": "string",
-              "x-ptah-bare-boolean": true
+              "description": "Attribute of ptah:schema:changefeed, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
             }
           },
-          "required": [
-            "format",
-            "mode",
-            "name"
-          ],
           "type": "object"
         },
         "directive": {
@@ -276,49 +141,40 @@
     },
     "ptah.schema.changefeed.consumer": {
       "additionalProperties": false,
-      "description": "Declares a consumer of a YDB changefeed's topic: a named reader that keeps its own position in the stream.",
+      "description": "Directive owned by provider github.com/stokaro/ptah-ydb-plugin.",
       "properties": {
         "attributes": {
           "additionalProperties": false,
           "properties": {
             "availability_period": {
-              "description": "How long the topic keeps a record this consumer has not read past the retention period, an ISO 8601 duration.",
+              "description": "Attribute of ptah:schema:changefeed:consumer, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "changefeed": {
-              "description": "Changefeed whose topic the consumer reads.",
+              "description": "Attribute of ptah:schema:changefeed:consumer, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "important": {
-              "description": "The topic keeps a record this consumer has not read past the retention period.",
-              "enum": [
-                "true",
-                "false"
-              ],
-              "type": "string",
-              "x-ptah-bare-boolean": true
+              "description": "Attribute of ptah:schema:changefeed:consumer, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
             },
             "name": {
-              "description": "Consumer name, unique within the topic.",
+              "description": "Attribute of ptah:schema:changefeed:consumer, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "read_from": {
-              "description": "RFC 3339 time a partition this consumer has not read is read from.",
+              "description": "Attribute of ptah:schema:changefeed:consumer, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "supported_codecs": {
-              "description": "Codecs the consumer reads: raw, gzip, lzop, zstd, custom.",
+              "description": "Attribute of ptah:schema:changefeed:consumer, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "table": {
-              "description": "Table of the changefeed, when not the struct's own.",
+              "description": "Attribute of ptah:schema:changefeed:consumer, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             }
           },
-          "required": [
-            "changefeed",
-            "name"
-          ],
           "type": "object"
         },
         "directive": {
@@ -333,39 +189,36 @@
     },
     "ptah.schema.columnfamily": {
       "additionalProperties": false,
-      "description": "Declares a YDB column family: columns stored together, with a storage pool, compression and cache mode of their own. It belongs to the struct's table, or to the table it names.",
+      "description": "Directive owned by provider github.com/stokaro/ptah-ydb-plugin.",
       "properties": {
         "attributes": {
           "additionalProperties": false,
           "properties": {
             "cache_mode": {
-              "description": "Cache mode: regular or in_memory.",
+              "description": "Attribute of ptah:schema:columnfamily, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "compression": {
-              "description": "Compression: off or lz4.",
+              "description": "Attribute of ptah:schema:columnfamily, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "data": {
-              "description": "Kind of storage pool the family's columns are kept in, such as ssd.",
+              "description": "Attribute of ptah:schema:columnfamily, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "fields": {
-              "description": "Columns the family holds. The default family lists none.",
+              "description": "Attribute of ptah:schema:columnfamily, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "name": {
-              "description": "Family name; default is the family holding the key and every column no other family names.",
+              "description": "Attribute of ptah:schema:columnfamily, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "table": {
-              "description": "Table the family belongs to, when not the struct's own.",
+              "description": "Attribute of ptah:schema:columnfamily, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             }
           },
-          "required": [
-            "name"
-          ],
           "type": "object"
         },
         "directive": {
@@ -550,57 +403,6 @@
         },
         "directive": {
           "const": "ptah:schema:continuousaggregate"
-        }
-      },
-      "required": [
-        "directive",
-        "attributes"
-      ],
-      "type": "object"
-    },
-    "ptah.schema.coordinationnode": {
-      "additionalProperties": false,
-      "description": "Declares a YDB coordination node, which holds an application's semaphores and rate limiter resources. A setting left out takes YDB's default.",
-      "properties": {
-        "attributes": {
-          "additionalProperties": false,
-          "properties": {
-            "attach_consistency_mode": {
-              "description": "`strict` or `relaxed`. YDB's default is `strict`.",
-              "type": "string"
-            },
-            "name": {
-              "description": "Node name.",
-              "type": "string"
-            },
-            "rate_limiter_counters_mode": {
-              "description": "`aggregated` or `detailed`. YDB's default is `aggregated`.",
-              "type": "string"
-            },
-            "read_consistency_mode": {
-              "description": "`strict` or `relaxed`. YDB's default is `relaxed`.",
-              "type": "string"
-            },
-            "schema": {
-              "description": "Directory holding the node, relative to the database root.",
-              "type": "string"
-            },
-            "self_check_period": {
-              "description": "How often the node checks it is alive, as an ISO 8601 duration from `PT0.5S` to `PT10S`. YDB's default is `PT1S`.",
-              "type": "string"
-            },
-            "session_grace_period": {
-              "description": "How long a session keeps its semaphores while the node changes its leader, as an ISO 8601 duration from the self-check period plus one second to `PT30S`. YDB's default is `PT10S`.",
-              "type": "string"
-            }
-          },
-          "required": [
-            "name"
-          ],
-          "type": "object"
-        },
-        "directive": {
-          "const": "ptah:schema:coordinationnode"
         }
       },
       "required": [
@@ -965,105 +767,6 @@
         },
         "directive": {
           "const": "ptah:schema:extension"
-        }
-      },
-      "required": [
-        "directive",
-        "attributes"
-      ],
-      "type": "object"
-    },
-    "ptah.schema.externaldatasource": {
-      "additionalProperties": false,
-      "description": "Declares a YDB external data source: another system YDB reads from, such as an object storage bucket or a PostgreSQL database, and how YDB authenticates to it. A credential is named by the secret that holds it, never written.",
-      "properties": {
-        "attributes": {
-          "additionalProperties": false,
-          "properties": {
-            "auth_method": {
-              "description": "AUTH_METHOD, such as NONE, BASIC or SERVICE_ACCOUNT.",
-              "type": "string"
-            },
-            "location": {
-              "description": "LOCATION: the bucket's address or the server's host and port.",
-              "type": "string"
-            },
-            "name": {
-              "description": "Data source name, the last segment of its path.",
-              "type": "string"
-            },
-            "options": {
-              "description": "Every other option, `NAME=value` separated by `;`, such as `DATABASE_NAME=app;LOGIN=reader;PASSWORD_SECRET_PATH=ext/pg_password`.",
-              "type": "string"
-            },
-            "schema": {
-              "description": "Directory that holds the data source, relative to the database root.",
-              "type": "string"
-            },
-            "source_type": {
-              "description": "SOURCE_TYPE, such as ObjectStorage, PostgreSQL or ClickHouse.",
-              "type": "string"
-            }
-          },
-          "required": [
-            "auth_method",
-            "name",
-            "source_type"
-          ],
-          "type": "object"
-        },
-        "directive": {
-          "const": "ptah:schema:externaldatasource"
-        }
-      },
-      "required": [
-        "directive",
-        "attributes"
-      ],
-      "type": "object"
-    },
-    "ptah.schema.externaltable": {
-      "additionalProperties": false,
-      "description": "Declares a YDB external table: columns over files that an external data source of type ObjectStorage holds. YDB stores no row of it.",
-      "properties": {
-        "attributes": {
-          "additionalProperties": false,
-          "properties": {
-            "columns": {
-              "description": "Columns, `name Type [NOT NULL]` separated by commas, such as `id Int64 NOT NULL, amount Decimal(22,9)`.",
-              "type": "string"
-            },
-            "data_source": {
-              "description": "Path of the data source the table reads, relative to the database root.",
-              "type": "string"
-            },
-            "location": {
-              "description": "LOCATION: the files' path under the data source.",
-              "type": "string"
-            },
-            "name": {
-              "description": "External table name, the last segment of its path.",
-              "type": "string"
-            },
-            "options": {
-              "description": "Every other option, `NAME=value` separated by `;`, such as `FORMAT=json_each_row;COMPRESSION=gzip`.",
-              "type": "string"
-            },
-            "schema": {
-              "description": "Directory that holds the external table, relative to the database root.",
-              "type": "string"
-            }
-          },
-          "required": [
-            "columns",
-            "data_source",
-            "location",
-            "name"
-          ],
-          "type": "object"
-        },
-        "directive": {
-          "const": "ptah:schema:externaltable"
         }
       },
       "required": [
@@ -1514,31 +1217,31 @@
           },
           "properties": {
             "auto_partitioning_by_load": {
-              "description": "YDB: whether the index's table splits a busy partition, ENABLED or DISABLED.",
+              "description": "Attribute of ptah:schema:index, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "auto_partitioning_by_size": {
-              "description": "YDB: whether the index's table splits a partition that grows past its size, ENABLED or DISABLED.",
+              "description": "Attribute of ptah:schema:index, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "auto_partitioning_max_partitions_count": {
-              "description": "YDB: the most partitions the index's table splits into.",
+              "description": "Attribute of ptah:schema:index, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "auto_partitioning_min_partitions_count": {
-              "description": "YDB: the fewest partitions the index's table keeps.",
+              "description": "Attribute of ptah:schema:index, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "auto_partitioning_partition_size_mb": {
-              "description": "YDB: the size in MB at which the index's table splits a partition.",
+              "description": "Attribute of ptah:schema:index, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "case_sensitive": {
-              "description": "YDB local n-gram index: case-sensitive matching.",
+              "description": "Attribute of ptah:schema:index, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "clusters": {
-              "description": "YDB vector index: the clusters each level splits into, 2 to 2048.",
+              "description": "Attribute of ptah:schema:index, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "columns": {
@@ -1555,11 +1258,11 @@
               "type": "string"
             },
             "distance": {
-              "description": "YDB vector index: the distance it orders by, cosine, euclidean or manhattan.",
+              "description": "Attribute of ptah:schema:index, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "false_positive_probability": {
-              "description": "YDB local Bloom index: false-positive probability between zero and one.",
+              "description": "Attribute of ptah:schema:index, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "fields": {
@@ -1567,19 +1270,19 @@
               "type": "string"
             },
             "filter_length_max": {
-              "description": "YDB full-text index: filter length max.",
+              "description": "Attribute of ptah:schema:index, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "filter_length_min": {
-              "description": "YDB full-text index: filter length min.",
+              "description": "Attribute of ptah:schema:index, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "filter_ngram_max_length": {
-              "description": "YDB full-text index: filter ngram max length.",
+              "description": "Attribute of ptah:schema:index, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "filter_ngram_min_length": {
-              "description": "YDB full-text index: filter ngram min length.",
+              "description": "Attribute of ptah:schema:index, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "include": {
@@ -1600,11 +1303,11 @@
               "type": "string"
             },
             "language": {
-              "description": "YDB full-text index: language.",
+              "description": "Attribute of ptah:schema:index, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "levels": {
-              "description": "YDB vector index: the depth of its k-means tree, 1 to 16.",
+              "description": "Attribute of ptah:schema:index, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "name": {
@@ -1612,7 +1315,7 @@
               "type": "string"
             },
             "ngram_size": {
-              "description": "YDB local n-gram index: token length.",
+              "description": "Attribute of ptah:schema:index, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "nulls_distinct": {
@@ -1628,11 +1331,11 @@
               "type": "string"
             },
             "read_replicas_settings": {
-              "description": "YDB: the index's read replicas, PER_AZ:<n> or ANY_AZ:<n>.",
+              "description": "Attribute of ptah:schema:index, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "similarity": {
-              "description": "YDB vector index: the similarity it orders by, inner_product or cosine.",
+              "description": "Attribute of ptah:schema:index, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "table": {
@@ -1640,7 +1343,7 @@
               "type": "string"
             },
             "tokenizer": {
-              "description": "YDB full-text index: tokenizer.",
+              "description": "Attribute of ptah:schema:index, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "type": {
@@ -1657,35 +1360,35 @@
               "x-ptah-bare-boolean": true
             },
             "use_filter_edge_ngram": {
-              "description": "YDB full-text index: use filter edge ngram.",
+              "description": "Attribute of ptah:schema:index, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "use_filter_length": {
-              "description": "YDB full-text index: use filter length.",
+              "description": "Attribute of ptah:schema:index, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "use_filter_lowercase": {
-              "description": "YDB full-text index: use filter lowercase.",
+              "description": "Attribute of ptah:schema:index, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "use_filter_ngram": {
-              "description": "YDB full-text index: use filter ngram.",
+              "description": "Attribute of ptah:schema:index, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "use_filter_snowball": {
-              "description": "YDB full-text index: use filter snowball.",
+              "description": "Attribute of ptah:schema:index, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "use_filter_stopwords": {
-              "description": "YDB full-text index: use filter stopwords.",
+              "description": "Attribute of ptah:schema:index, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "vector_dimension": {
-              "description": "YDB vector index: the number of elements in a vector, 1 to 16384.",
+              "description": "Attribute of ptah:schema:index, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "vector_type": {
-              "description": "YDB vector index: the element type, float, uint8, int8 or bit.",
+              "description": "Attribute of ptah:schema:index, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "where": {
@@ -1910,102 +1613,6 @@
         },
         "directive": {
           "const": "ptah:schema:range"
-        }
-      },
-      "required": [
-        "directive",
-        "attributes"
-      ],
-      "type": "object"
-    },
-    "ptah.schema.resourcepool": {
-      "additionalProperties": false,
-      "description": "Declares a YDB resource pool, which limits the queries that run in it. It belongs to the whole database; a setting left out has no limit.",
-      "properties": {
-        "attributes": {
-          "additionalProperties": false,
-          "properties": {
-            "concurrent_query_limit": {
-              "description": "Most queries that run at once.",
-              "type": "string"
-            },
-            "database_load_cpu_threshold": {
-              "description": "Database CPU load in percent above which new queries wait.",
-              "type": "string"
-            },
-            "name": {
-              "description": "Pool name; `default` changes the pool YDB creates.",
-              "type": "string"
-            },
-            "query_cpu_limit_percent_per_node": {
-              "description": "Share of a node's CPU one query may take.",
-              "type": "string"
-            },
-            "query_memory_limit_percent_per_node": {
-              "description": "Share of a node's memory one query may take.",
-              "type": "string"
-            },
-            "queue_size": {
-              "description": "Most queries that wait; needs concurrent_query_limit or database_load_cpu_threshold.",
-              "type": "string"
-            },
-            "resource_weight": {
-              "description": "The pool's share of the CPU when pools compete for it.",
-              "type": "string"
-            },
-            "total_cpu_limit_percent_per_node": {
-              "description": "Share of a node's CPU the pool's queries may take together.",
-              "type": "string"
-            }
-          },
-          "required": [
-            "name"
-          ],
-          "type": "object"
-        },
-        "directive": {
-          "const": "ptah:schema:resourcepool"
-        }
-      },
-      "required": [
-        "directive",
-        "attributes"
-      ],
-      "type": "object"
-    },
-    "ptah.schema.resourcepool.classifier": {
-      "additionalProperties": false,
-      "description": "Declares a YDB resource pool classifier, which sends a user's or a group's queries to a resource pool. It belongs to the whole database.",
-      "properties": {
-        "attributes": {
-          "additionalProperties": false,
-          "properties": {
-            "member_name": {
-              "description": "User or group whose queries the classifier matches; every query when omitted.",
-              "type": "string"
-            },
-            "name": {
-              "description": "Classifier name.",
-              "type": "string"
-            },
-            "rank": {
-              "description": "Order among the classifiers, lowest first; unique, from 0.",
-              "type": "string"
-            },
-            "resource_pool": {
-              "description": "Pool the classifier sends queries to: a declared pool or `default`.",
-              "type": "string"
-            }
-          },
-          "required": [
-            "name",
-            "rank",
-            "resource_pool"
-          ],
-          "type": "object"
-        },
-        "directive": {
-          "const": "ptah:schema:resourcepool:classifier"
         }
       },
       "required": [
@@ -2411,47 +2018,6 @@
       ],
       "type": "object"
     },
-    "ptah.schema.secret": {
-      "additionalProperties": false,
-      "description": "Declares a YDB secret: a scheme object whose value the server keeps and never returns. The value comes from an environment variable when the statement that creates the secret runs, and a declaration never writes it.",
-      "properties": {
-        "attributes": {
-          "additionalProperties": false,
-          "properties": {
-            "name": {
-              "description": "Secret name, the last segment of its path.",
-              "type": "string"
-            },
-            "schema": {
-              "description": "Directory that holds the secret, relative to the database root.",
-              "type": "string"
-            },
-            "value": {
-              "description": "Refused when the annotation is parsed: a secret's value is never written in a schema file; name the environment variable that holds it with value_env.",
-              "not": {},
-              "x-ptah-retired": "a secret's value is never written in a schema file; name the environment variable that holds it with value_env"
-            },
-            "value_env": {
-              "description": "Environment variable that holds the value; its name starts with PTAH_SECRET_.",
-              "type": "string"
-            }
-          },
-          "required": [
-            "name",
-            "value_env"
-          ],
-          "type": "object"
-        },
-        "directive": {
-          "const": "ptah:schema:secret"
-        }
-      },
-      "required": [
-        "directive",
-        "attributes"
-      ],
-      "type": "object"
-    },
     "ptah.schema.sequence": {
       "additionalProperties": false,
       "description": "Declares a standalone PostgreSQL sequence.",
@@ -2535,62 +2101,6 @@
       ],
       "type": "object"
     },
-    "ptah.schema.streamingquery": {
-      "additionalProperties": false,
-      "description": "Declares a YDB query that continuously processes topic messages.",
-      "properties": {
-        "attributes": {
-          "additionalProperties": false,
-          "properties": {
-            "allow_state_reset": {
-              "description": "Permit a changed body to reset aggregation state while retaining topic offsets.",
-              "enum": [
-                "true",
-                "false"
-              ],
-              "type": "string"
-            },
-            "name": {
-              "description": "Query name, the final path segment.",
-              "type": "string"
-            },
-            "resource_pool": {
-              "description": "Execution pool; omitted means default.",
-              "type": "string"
-            },
-            "run": {
-              "description": "Start the query; omitted means true.",
-              "enum": [
-                "true",
-                "false"
-              ],
-              "type": "string"
-            },
-            "schema": {
-              "description": "Database-relative directory.",
-              "type": "string"
-            },
-            "text": {
-              "description": "YQL body inside DO BEGIN ... END DO.",
-              "type": "string"
-            }
-          },
-          "required": [
-            "name",
-            "text"
-          ],
-          "type": "object"
-        },
-        "directive": {
-          "const": "ptah:schema:streamingquery"
-        }
-      },
-      "required": [
-        "directive",
-        "attributes"
-      ],
-      "type": "object"
-    },
     "ptah.schema.synonym": {
       "additionalProperties": false,
       "description": "Declares a synonym, an alias for another object, on SQL Server and Oracle.",
@@ -2649,23 +2159,23 @@
               "type": "string"
             },
             "auto_partitioning_by_load": {
-              "description": "YDB: whether the table splits a busy partition, ENABLED or DISABLED.",
+              "description": "Attribute of ptah:schema:table, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "auto_partitioning_by_size": {
-              "description": "YDB: whether the table splits a partition that grows past its size, ENABLED or DISABLED.",
+              "description": "Attribute of ptah:schema:table, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "auto_partitioning_max_partitions_count": {
-              "description": "YDB: the most partitions the table splits into.",
+              "description": "Attribute of ptah:schema:table, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "auto_partitioning_min_partitions_count": {
-              "description": "YDB: the fewest partitions the table keeps.",
+              "description": "Attribute of ptah:schema:table, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "auto_partitioning_partition_size_mb": {
-              "description": "YDB: the size in MB at which the table splits a partition.",
+              "description": "Attribute of ptah:schema:table, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "checks": {
@@ -2673,11 +2183,11 @@
               "type": "string"
             },
             "column_shards": {
-              "description": "YDB column table: initial shard count.",
+              "description": "Attribute of ptah:schema:table, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "column_ttl": {
-              "description": "YDB column table: JSON retention policy with column, optional unit and tiers.",
+              "description": "Attribute of ptah:schema:table, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "comment": {
@@ -2701,7 +2211,7 @@
               "type": "string"
             },
             "key_bloom_filter": {
-              "description": "YDB: whether the table keeps a bloom filter of its keys, ENABLED or DISABLED.",
+              "description": "Attribute of ptah:schema:table, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "name": {
@@ -2713,11 +2223,23 @@
               "type": "string"
             },
             "partition_at_keys": {
-              "description": "YDB: the keys a new table starts split before, such as `10, 20` or `(10, 'a'), (20)`.",
+              "description": "Attribute of ptah:schema:table, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "partition_by_hash": {
-              "description": "YDB column table: hash-partitioning columns, separated by commas.",
+              "description": "Attribute of ptah:schema:table, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "platform.ydb.row_deletion_column": {
+              "description": "Attribute of ptah:schema:table, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "platform.ydb.row_deletion_interval": {
+              "description": "Attribute of ptah:schema:table, read by provider github.com/stokaro/ptah-ydb-plugin.",
+              "type": "string"
+            },
+            "platform.ydb.row_deletion_unit": {
+              "description": "Attribute of ptah:schema:table, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "primary_key": {
@@ -2737,7 +2259,7 @@
               "type": "string"
             },
             "read_replicas_settings": {
-              "description": "YDB: the table's read replicas, PER_AZ:<n> or ANY_AZ:<n>.",
+              "description": "Attribute of ptah:schema:table, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "schema": {
@@ -2745,11 +2267,11 @@
               "type": "string"
             },
             "store": {
-              "description": "YDB table storage: ROW or COLUMN.",
+              "description": "Attribute of ptah:schema:table, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
             "uniform_partitions": {
-              "description": "YDB: the partitions a new table starts with, splitting a Uint32 or Uint64 first key evenly.",
+              "description": "Attribute of ptah:schema:table, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             }
           },
@@ -2757,216 +2279,6 @@
         },
         "directive": {
           "const": "ptah:schema:table"
-        }
-      },
-      "required": [
-        "directive",
-        "attributes"
-      ],
-      "type": "object"
-    },
-    "ptah.schema.topic": {
-      "additionalProperties": false,
-      "description": "Declares a YDB topic: a persistent message queue at a path of the scheme tree. Its consumers are declared with ptah:schema:topic:consumer in the same file.",
-      "properties": {
-        "attributes": {
-          "additionalProperties": false,
-          "properties": {
-            "auto_partitioning_down_utilization_percent": {
-              "description": "Share of a partition's write speed below which partitions merge, 1 to 100.",
-              "type": "string"
-            },
-            "auto_partitioning_stabilization_window": {
-              "description": "How long a load lasts before the partition count follows it, an ISO 8601 duration.",
-              "type": "string"
-            },
-            "auto_partitioning_strategy": {
-              "description": "Auto-partitioning: disabled, scale_up, scale_up_and_down or paused.",
-              "type": "string"
-            },
-            "auto_partitioning_up_utilization_percent": {
-              "description": "Share of a partition's write speed above which it splits, 1 to 100.",
-              "type": "string"
-            },
-            "max_active_partitions": {
-              "description": "Most partitions auto-partitioning splits the topic into; needs a strategy other than disabled.",
-              "type": "string"
-            },
-            "min_active_partitions": {
-              "description": "Partitions writers write to; the count only grows.",
-              "type": "string"
-            },
-            "name": {
-              "description": "Topic name, the last segment of its path.",
-              "type": "string"
-            },
-            "partition_write_burst_bytes": {
-              "description": "Burst a partition takes above its quota, in bytes; the write speed when omitted.",
-              "type": "string"
-            },
-            "partition_write_speed_bytes_per_second": {
-              "description": "Write quota of one partition in bytes per second.",
-              "type": "string"
-            },
-            "retention_period": {
-              "description": "How long the topic keeps a message, an ISO 8601 duration; 24 hours when omitted.",
-              "type": "string"
-            },
-            "schema": {
-              "description": "Directory that holds the topic, relative to the database root.",
-              "type": "string"
-            },
-            "supported_codecs": {
-              "description": "Codecs a writer may use: raw, gzip, lzop, zstd, custom.",
-              "type": "string"
-            }
-          },
-          "required": [
-            "name"
-          ],
-          "type": "object"
-        },
-        "directive": {
-          "const": "ptah:schema:topic"
-        }
-      },
-      "required": [
-        "directive",
-        "attributes"
-      ],
-      "type": "object"
-    },
-    "ptah.schema.topic.consumer": {
-      "additionalProperties": false,
-      "description": "Declares a consumer of a YDB topic: a named reader that keeps its own position in the topic. The topic is declared in the same file.",
-      "properties": {
-        "attributes": {
-          "additionalProperties": false,
-          "properties": {
-            "availability_period": {
-              "description": "How long the topic keeps a message this consumer has not read past the retention period, an ISO 8601 duration.",
-              "type": "string"
-            },
-            "important": {
-              "description": "The topic keeps a message this consumer has not read past the retention period.",
-              "enum": [
-                "true",
-                "false"
-              ],
-              "type": "string",
-              "x-ptah-bare-boolean": true
-            },
-            "name": {
-              "description": "Consumer name, unique within the topic.",
-              "type": "string"
-            },
-            "read_from": {
-              "description": "RFC 3339 time a partition this consumer has not read is read from.",
-              "type": "string"
-            },
-            "schema": {
-              "description": "Directory of the topic, when it has one.",
-              "type": "string"
-            },
-            "supported_codecs": {
-              "description": "Codecs the consumer reads: raw, gzip, lzop, zstd, custom.",
-              "type": "string"
-            },
-            "topic": {
-              "description": "Topic the consumer reads.",
-              "type": "string"
-            }
-          },
-          "required": [
-            "name",
-            "topic"
-          ],
-          "type": "object"
-        },
-        "directive": {
-          "const": "ptah:schema:topic:consumer"
-        }
-      },
-      "required": [
-        "directive",
-        "attributes"
-      ],
-      "type": "object"
-    },
-    "ptah.schema.transfer": {
-      "additionalProperties": false,
-      "description": "Declares a YDB transfer: messages of a topic turned into rows of a table through a YQL lambda.",
-      "properties": {
-        "attributes": {
-          "additionalProperties": false,
-          "properties": {
-            "batch_size_bytes": {
-              "description": "Bytes the transfer gathers before a write; 8 MiB when omitted.",
-              "type": "string"
-            },
-            "connection_string": {
-              "description": "The other database: grpc://host:port/?database=/path or grpcs://...",
-              "type": "string"
-            },
-            "consumer": {
-              "description": "Existing topic consumer the transfer reads through; YDB creates one when omitted.",
-              "type": "string"
-            },
-            "flush_interval": {
-              "description": "Longest wait before a write, an ISO 8601 duration of whole seconds; a minute when omitted.",
-              "type": "string"
-            },
-            "name": {
-              "description": "Transfer name, the last segment of its path.",
-              "type": "string"
-            },
-            "password_secret_name": {
-              "description": "Object secret holding the user's password.",
-              "type": "string"
-            },
-            "password_secret_path": {
-              "description": "Path of a secret holding the user's password, relative to the database root (YDB 25.4 and later).",
-              "type": "string"
-            },
-            "schema": {
-              "description": "Directory that holds it, relative to the database root.",
-              "type": "string"
-            },
-            "source": {
-              "description": "Topic the transfer reads, relative to the database root; for a topic of another database, relative to its root or absolute.",
-              "type": "string"
-            },
-            "target": {
-              "description": "Table the transfer writes, relative to the database root.",
-              "type": "string"
-            },
-            "token_secret_name": {
-              "description": "Object secret holding an access token.",
-              "type": "string"
-            },
-            "token_secret_path": {
-              "description": "Path of a secret holding an access token, relative to the database root (YDB 25.4 and later).",
-              "type": "string"
-            },
-            "user": {
-              "description": "User a password secret signs in as.",
-              "type": "string"
-            },
-            "using": {
-              "description": "The YQL lambda, written inline: ($msg) -> { ... }.",
-              "type": "string"
-            }
-          },
-          "required": [
-            "name",
-            "source",
-            "target",
-            "using"
-          ],
-          "type": "object"
-        },
-        "directive": {
-          "const": "ptah:schema:transfer"
         }
       },
       "required": [
@@ -3177,25 +2489,7 @@
       "$ref": "#/$defs/ptah.schema.data"
     },
     {
-      "$ref": "#/$defs/ptah.schema.async_replication"
-    },
-    {
-      "$ref": "#/$defs/ptah.schema.async_replication.item"
-    },
-    {
-      "$ref": "#/$defs/ptah.schema.changefeed"
-    },
-    {
-      "$ref": "#/$defs/ptah.schema.changefeed.consumer"
-    },
-    {
-      "$ref": "#/$defs/ptah.schema.columnfamily"
-    },
-    {
       "$ref": "#/$defs/ptah.schema.continuousaggregate"
-    },
-    {
-      "$ref": "#/$defs/ptah.schema.coordinationnode"
     },
     {
       "$ref": "#/$defs/ptah.schema.defaultprivilege"
@@ -3207,43 +2501,25 @@
       "$ref": "#/$defs/ptah.schema.extendedproperty"
     },
     {
-      "$ref": "#/$defs/ptah.schema.externaldatasource"
-    },
-    {
-      "$ref": "#/$defs/ptah.schema.externaltable"
-    },
-    {
       "$ref": "#/$defs/ptah.schema.hypertable"
     },
     {
       "$ref": "#/$defs/ptah.schema.range"
     },
     {
-      "$ref": "#/$defs/ptah.schema.resourcepool"
-    },
-    {
-      "$ref": "#/$defs/ptah.schema.resourcepool.classifier"
-    },
-    {
       "$ref": "#/$defs/ptah.schema.rowpolicy"
-    },
-    {
-      "$ref": "#/$defs/ptah.schema.secret"
-    },
-    {
-      "$ref": "#/$defs/ptah.schema.streamingquery"
     },
     {
       "$ref": "#/$defs/ptah.schema.synonym"
     },
     {
-      "$ref": "#/$defs/ptah.schema.topic"
+      "$ref": "#/$defs/ptah.schema.changefeed"
     },
     {
-      "$ref": "#/$defs/ptah.schema.topic.consumer"
+      "$ref": "#/$defs/ptah.schema.changefeed.consumer"
     },
     {
-      "$ref": "#/$defs/ptah.schema.transfer"
+      "$ref": "#/$defs/ptah.schema.columnfamily"
     }
   ],
   "title": "Ptah Go Annotation Directives"

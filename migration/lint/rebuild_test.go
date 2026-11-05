@@ -12,9 +12,8 @@ import (
 	"ptah.run/migration/lint"
 )
 
-// A table rebuild as Ptah's planners write it: SQLite drops the old table and
-// renames the copy over it; YDB moves the old table aside, moves the copy in
-// and drops the old one under its new name.
+// A table rebuild as Ptah's SQLite planner writes it: it drops the old table
+// and renames the copy over it.
 const (
 	sqliteItems = "CREATE TABLE items (id INTEGER PRIMARY KEY, n INTEGER, label TEXT);\n"
 
@@ -25,36 +24,6 @@ const (
 		"DROP TABLE \"items\";\n" +
 		"ALTER TABLE \"__ptah_rebuild_items\" RENAME TO \"items\";\n" +
 		"PRAGMA foreign_keys = on;\n"
-
-	ydbItems = "CREATE TABLE `app/items` (\n    `id` Int64 NOT NULL,\n    `n` Int32,\n    `label` Utf8,\n" +
-		"    PRIMARY KEY (`id`)\n);\n"
-
-	ydbRebuild = "CREATE TABLE `app/__ptah_rebuild_items` (\n    `id` Int64 NOT NULL,\n    `n` Int64,\n" +
-		"    `label` Utf8,\n    PRIMARY KEY (`id`)\n);\n" +
-		"INSERT INTO `app/__ptah_rebuild_items` (`id`, `n`, `label`) SELECT " +
-		"Unwrap(`id`, 'rebuilding table app.items: column id holds NULL'u) AS `id`, " +
-		"IF(`n` IS NULL, NULL, Unwrap(CAST(`n` AS Int64), 'rebuilding table app.items: column n does not convert'u)) AS `n`, " +
-		"`label` AS `label` FROM `app/items`;\n" +
-		"ALTER TABLE `app/items` RENAME TO `app/__ptah_replaced_items`;\n" +
-		"ALTER TABLE `app/__ptah_rebuild_items` RENAME TO `app/items`;\n" +
-		"DROP TABLE `app/__ptah_replaced_items`;\n"
-
-	// ydbRebuildWithChangefeeds is ydbRebuild of a table that holds a
-	// changefeed and an index with settings, as the built-in YDB planner and
-	// the YDB provider write it: the copy's index settings after its
-	// creation, the changefeed dropped before the old table moves, since YDB
-	// moves no table that carries one, and added with its consumer once the
-	// copy holds the name.
-	ydbRebuildWithChangefeeds = "CREATE TABLE `app/__ptah_rebuild_items` (\n    `id` Int64 NOT NULL,\n    `n` Int64,\n" +
-		"    `label` Utf8,\n    PRIMARY KEY (`id`),\n    INDEX `items_label` GLOBAL SYNC ON (`label`)\n);\n" +
-		"ALTER TABLE `app/__ptah_rebuild_items` ALTER INDEX `items_label` SET (AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 1);\n" +
-		"INSERT INTO `app/__ptah_rebuild_items` (`id`, `n`, `label`) SELECT `id` AS `id`, CAST(`n` AS Int64) AS `n`, `label` AS `label` FROM `app/items`;\n" +
-		"ALTER TABLE `app/items` DROP CHANGEFEED `updates`;\n" +
-		"ALTER TABLE `app/items` RENAME TO `app/__ptah_replaced_items`;\n" +
-		"ALTER TABLE `app/__ptah_rebuild_items` RENAME TO `app/items`;\n" +
-		"ALTER TABLE `app/items` ADD CHANGEFEED `updates` WITH (MODE = 'UPDATES', FORMAT = 'JSON');\n" +
-		"ALTER TOPIC `app/items/updates` ADD CONSUMER `audit` WITH (important = TRUE);\n" +
-		"DROP TABLE `app/__ptah_replaced_items`;\n"
 )
 
 // rebuildCase is a directory whose second version is the statement sequence
@@ -77,11 +46,6 @@ func destructiveSites(c *qt.C, test rebuildCase) []string {
 	for _, name := range test.baseline {
 		opts.Baseline = append(opts.Baseline, lintext.BaselineColumn{Version: 2, Table: "items", Name: name})
 	}
-	if test.dialect == "ydb" {
-		target, err := lint.ResolveTarget("ydb", "")
-		c.Assert(err, qt.IsNil)
-		opts.Target = target
-	}
 	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{
 		"0000000001_items.up.sql":  test.first,
 		"0000000002_change.up.sql": test.second,
@@ -101,12 +65,6 @@ func TestTableRebuild_IsNotADrop(t *testing.T) {
 		{
 			name: "SQLite, with the dev database's columns", dialect: "sqlite", first: sqliteItems, second: sqliteRebuild,
 			baseline: []string{"id", "n", "label"},
-		},
-		{name: "YDB, with the table's history in the directory", dialect: "ydb", first: ydbItems, second: ydbRebuild},
-		{name: "YDB, of a table that holds a changefeed and index settings", dialect: "ydb", first: ydbItems, second: ydbRebuildWithChangefeeds},
-		{
-			name: "YDB, with a table the directory did not create", dialect: "ydb",
-			first: "CREATE TABLE `app/other` (`id` Int64 NOT NULL, PRIMARY KEY (`id`));\n", second: ydbRebuild,
 		},
 	}
 	for _, test := range tests {
@@ -137,14 +95,6 @@ func TestTableRebuild_ReportsWhatIsNotARebuild(t *testing.T) {
 			want: []string{"0000000002_change.up.sql:9:BC103", "0000000002_change.up.sql:9:DS101"},
 		},
 		{
-			rebuildCase: rebuildCase{name: "a copy that leaves out a column the directory created", dialect: "ydb",
-				first: ydbItems, second: strings.NewReplacer("(`id`, `n`, `label`) SELECT", "(`id`, `n`) SELECT",
-					", `label` AS `label` FROM", " FROM").Replace(ydbRebuild)},
-			want: []string{
-				"0000000002_change.up.sql:8:BC101", "0000000002_change.up.sql:10:BC103", "0000000002_change.up.sql:10:DS101",
-			},
-		},
-		{
 			rebuildCase: rebuildCase{name: "a copy that keeps some rows", dialect: "sqlite", first: sqliteItems,
 				second: strings.Replace(sqliteRebuild, `FROM "items";`, `FROM "items" WHERE "id" > 10;`, 1)},
 			want: []string{"0000000002_change.up.sql:9:BC103", "0000000002_change.up.sql:9:DS101"},
@@ -159,14 +109,6 @@ func TestTableRebuild_ReportsWhatIsNotARebuild(t *testing.T) {
 				first: sqliteItems, second: strings.Replace(sqliteRebuild, "DROP TABLE \"items\";\n",
 					"INSERT INTO items (id, n) VALUES (99, 1);\nDROP TABLE \"items\";\n", 1)},
 			want: []string{"0000000002_change.up.sql:10:BC103", "0000000002_change.up.sql:10:DS101"},
-		},
-		{
-			rebuildCase: rebuildCase{name: "a write to the old table beside the changefeed statements", dialect: "ydb", first: ydbItems,
-				second: strings.Replace(ydbRebuildWithChangefeeds, "ALTER TABLE `app/items` DROP CHANGEFEED `updates`;\n",
-					"ALTER TABLE `app/items` DROP CHANGEFEED `updates`;\nUPSERT INTO `app/items` (`id`) VALUES (99);\n", 1)},
-			want: []string{
-				"0000000002_change.up.sql:12:BC101", "0000000002_change.up.sql:16:BC103", "0000000002_change.up.sql:16:DS101",
-			},
 		},
 		{
 			rebuildCase: rebuildCase{name: "a copy of another table", dialect: "sqlite",
@@ -199,8 +141,7 @@ func TestTableRebuild_ReportsWhatIsNotARebuild(t *testing.T) {
 }
 
 // Without a dev database the copy is not checked against the old table's
-// columns, and the run says so. YDB reads the directory's history instead and
-// asks for nothing.
+// columns, and the run says so.
 func TestTableRebuild_AsksForTheStartingStateItCannotRead(t *testing.T) {
 	tests := []struct {
 		rebuildCase
@@ -214,7 +155,6 @@ func TestTableRebuild_AsksForTheStartingStateItCannotRead(t *testing.T) {
 			rebuildCase: rebuildCase{name: "SQLite with the dev database's columns", dialect: "sqlite", first: sqliteItems,
 				second: sqliteRebuild, baseline: []string{"id", "n", "label"}},
 		},
-		{rebuildCase: rebuildCase{name: "YDB", dialect: "ydb", first: ydbItems, second: ydbRebuild}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

@@ -723,17 +723,12 @@ func columnDefaultChange(
 // WITHOUT ROWID halves, where SQLite does enforce NOT NULL on a key column, and
 // the caller applies both.
 //
-// YDB answers true for a different reason than the SQL engines. Its key does
-// not imply NOT NULL -- a key column declared without it is nullable and takes
-// one row whose key is NULL -- but the YDB renderer writes NOT NULL on every key
-// column, because no Ptah declaration can ask for a nullable key and every
-// other engine makes a key NOT NULL. Normalizing the declared side to that
-// rendering is what keeps a key column declared without not_null from
-// differing from the column Ptah built; and a catalog key the server reports
+// A dialect the process registry does not describe, such as an engine an
+// executable provider serves, answers true as well: no Ptah declaration can
+// ask for a nullable key, so a key column declared without not_null compares
+// as the NOT NULL column a plan builds, and a catalog key the server reports
 // as nullable, built outside Ptah, still differs from the declaration and is
-// reported. Measured on 26.2.1.14: `ALTER COLUMN id DROP NOT NULL` on a key
-// column is accepted, so a comparison that treated the declared key as
-// nullable would plan exactly that on the second apply.
+// reported.
 func primaryKeyImpliesNotNull(dialect string) bool {
 	return !comparisonOf(dialect).PrimaryKeyNullable
 }

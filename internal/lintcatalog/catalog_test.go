@@ -17,6 +17,7 @@ import (
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/lintcatalog"
 	"ptah.run/internal/migrationlintgate"
+	"ptah.run/internal/providerpublished"
 	"ptah.run/internal/sqllint"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
@@ -41,7 +42,8 @@ func codesOf(entries []lintcatalog.Entry) []string {
 
 // registeredMigrationCodes is what migration lint would report a finding under.
 func registeredMigrationCodes() []string {
-	rules := must.Must(lint.Rules(builtintest.Runtime()))
+	runtime := builtintest.Runtime()
+	rules := must.Must(lint.Rules(must.Must(providerpublished.LintRuntime(runtime, runtime))))
 	codes := make([]string, 0, len(rules))
 	for _, rule := range rules {
 		codes = append(codes, rule.Code)

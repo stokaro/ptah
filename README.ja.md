@@ -39,7 +39,6 @@
   &nbsp;&nbsp;
   <a href="https://docs.ptah.run/edge/databases/distributed/" title="Spanner"><img src="docs/assets/engines/spanner.svg" alt="Spanner" height="32" width="32"></a>
   &nbsp;&nbsp;
-  <a href="https://docs.ptah.run/edge/databases/ydb/" title="YDB"><img src="docs/assets/engines/ydb.svg" alt="YDB" height="32" width="32"></a>
 </p>
 
 Ptah はスキーマと永続的な推論状態の両方について、データベースの変更を管理します。
@@ -100,6 +99,15 @@ irm https://ptah.run/install.ps1 | iex
 
 [インストールガイド](https://docs.ptah.run/edge/start/install/)では、バージョンの固定、
 署名の検証、実行せずにダウンロードする方法、ソースからのビルドを扱っています。
+
+YDB は実行可能プロバイダーが扱い、プロバイダーは別途インストールします:
+
+```bash
+ptah providers install ydb
+```
+
+インストール後は、`ydb://` URL を指定するコマンドがこのプロバイダーを使います。
+[YDB プロバイダーの設定](https://docs.ptah.run/edge/extend/providers/ydb/)を参照してください。
 
 ## SQLite で Ptah を試す
 

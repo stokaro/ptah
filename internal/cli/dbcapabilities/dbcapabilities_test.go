@@ -798,15 +798,14 @@ func refinementSection(text string) string {
 }
 
 // Each refined key names where it was read. The connection reads TimescaleDB's
-// keys from pg_extension and a YDB cluster's flags from its monitoring
-// endpoint; only MySQL's foreign-key policy comes from a session setting. The
+// keys from pg_extension; MySQL's foreign-key policy comes from a session
+// setting. The
 // readings are the ones the command takes, so the reasons are the sentences an
 // operator is shown.
 func TestWriteProfile_RefinementsNameTheirSource(t *testing.T) {
 	timescale := capability.Postgres17().
 		With(capability.Hypertables, true).
 		With(capability.ContinuousAggregates, true)
-	flagged := capability.YDB262().With(capability.UniqueIndexOnExistingTable, true)
 	restricted := capability.MySQL84().
 		With(capability.ForeignKeysRequireUniqueReference, false).
 		With(capability.ForeignKeysRequireIndexedReference, true)
@@ -826,14 +825,6 @@ func TestWriteProfile_RefinementsNameTheirSource(t *testing.T) {
 		want: "  continuous_aggregates  supported  (the release line answers unsupported)\n" +
 			"  hypertables            supported  (the release line answers unsupported)\n" +
 			"  read from the extensions installed in this database (pg_extension), not from its release line",
-	}, {
-		name:       "a YDB cluster started with enable_add_unique_index",
-		dialect:    platform.YDB,
-		banner:     "26.2.1.14",
-		connection: flagged,
-		session:    flagged,
-		want: "  unique_index_on_existing_table  supported  (the release line answers unsupported)\n" +
-			"  read from this cluster's feature flags at its monitoring endpoint, not from its release line",
 	}, {
 		name:       "a MySQL 8.4 server started with restrict_fk_on_non_standard_key off",
 		dialect:    platform.MySQL,

@@ -29,7 +29,6 @@ func TestLint_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 		"yugabytedb":  {analyzed: true},
 		"spanner":     {analyzed: true},
 		"oracle":      {},
-		"ydb":         {analyzed: true, scanner: "yql"},
 	}
 	described := builtindialects.Descriptors()
 	c := qt.New(t)

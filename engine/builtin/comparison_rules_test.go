@@ -43,7 +43,6 @@ func TestComparisonRules_EachTargetRegistersItsOwnersRules(t *testing.T) {
 		"yugabytedb":  {"Indexes", "Routines"},
 		"spanner":     {"Indexes", "ForeignKeyIndexes", "Routines"},
 		"oracle":      {"Routines"},
-		"ydb":         {"Columns", "Indexes", "Views"},
 	}
 	runtime := must.Must(builtin.New())
 	described := builtindialects.Descriptors()

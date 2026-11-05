@@ -46,7 +46,6 @@ var routedOut = map[string][]string{
 	platform.SQLite:      nil,
 	platform.SQLServer:   nil,
 	platform.Oracle:      nil,
-	platform.YDB:         nil,
 }
 
 // TestNodeRequiresAutocommit_AgreesWithTheRetiredFamilySwitch asks every
@@ -86,7 +85,6 @@ func TestNodeRequiresAutocommit_NoDialect(t *testing.T) {
 func TestOwnerForbiddenTransactionLeavesOnlyATransactionalFile(t *testing.T) {
 	node := &ast.ExtensionStatement{Transaction: plangraph.TransactionForbidden}
 	for dialect, want := range map[string]bool{
-		platform.YDB:        false,
 		platform.ClickHouse: false,
 		platform.Spanner:    false,
 		platform.Postgres:   true,

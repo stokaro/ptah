@@ -12,7 +12,6 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/lintext"
-	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/routineext"
@@ -190,10 +189,6 @@ func LintSource(ctx context.Context, source Source, opts Options) ([]Finding, er
 		}
 		return applySeverities(keepEnabled(findings, opts.DisabledRules), opts.Severities), nil
 	}
-	if platform.NormalizeDialect(opts.Dialect) == platform.YDB {
-		return applySeverities(keepEnabled(lintYQL(source, opts, caps), opts.DisabledRules), opts.Severities), nil
-	}
-
 	var items []sourceItem
 	for _, statement := range splitSourceStatements(source, opts.Dialect) {
 		keyword, keywordOffset := firstKeyword(statement.sql)

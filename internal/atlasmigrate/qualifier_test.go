@@ -106,14 +106,16 @@ func TestQualifierValidateScope_FailurePath(t *testing.T) {
 			`(?s)atlas migrate diff --qualifier is not supported for dialect "sqlite": SQLite.s qualified form names an ATTACHed database.*`)
 	})
 
-	t.Run("ydb", func(t *testing.T) {
+	// An engine only an executable provider serves names its objects by its
+	// provider's rules, which the qualifier was never measured against.
+	t.Run("an engine a provider serves", func(t *testing.T) {
 		c := qt.New(t)
 		qualifier, err := atlasmigrate.ParseQualifier("tenant")
 		c.Assert(err, qt.IsNil)
-		c.Assert(qualifier.ValidateScope(platform.YDB, nil), qt.ErrorMatches,
-			`(?s)atlas migrate diff --qualifier is not supported for dialect "ydb": a YDB schema is a directory .*`)
-		c.Assert(qualifier.ApplyToPlan(platform.YDB, &schemamodel.Database{}, []ast.Node{ast.NewCreateTable("users")}),
-			qt.ErrorMatches, `(?s)atlas migrate diff --qualifier is not supported for dialect "ydb": a YDB schema is a directory .*`)
+		c.Assert(qualifier.ValidateScope("ydb", nil), qt.ErrorMatches,
+			`(?s)atlas migrate diff --qualifier is not supported for dialect "ydb": the engine is not built in, .*`)
+		c.Assert(qualifier.ApplyToPlan("ydb", &schemamodel.Database{}, []ast.Node{ast.NewCreateTable("users")}),
+			qt.ErrorMatches, `(?s)atlas migrate diff --qualifier is not supported for dialect "ydb": the engine is not built in, .*`)
 	})
 
 	t.Run("multiple schema scope", func(t *testing.T) {
