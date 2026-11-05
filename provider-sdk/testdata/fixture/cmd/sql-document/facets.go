@@ -62,7 +62,8 @@ func retentionModel() *protocol.ValueModel {
 // the table or the column each statement names, traced to it, and claims the
 // retention model, so a table declared without one holds none. For a request
 // that does not list schema.sql-facets a retention statement is refused by
-// name, since the reply could not carry it.
+// name, since the reply could not carry it. A view named `tuned` carries
+// settings; see tuneViews.
 func (p *documentProvider) ReadSQLSchema(ctx context.Context, request *protocol.ReadSQLSchemaRequest) (*protocol.SQLSchema, error) {
 	stripped := proto.CloneOf(request)
 	var declared []declaredFacet
@@ -83,8 +84,12 @@ func (p *documentProvider) ReadSQLSchema(ctx context.Context, request *protocol.
 		return facetRefusal(declared[0], protocol.SQLDiagnostic_UNSUPPORTED, "a retention of a table needs "+provider.SQLFacetsFeature), nil
 	}
 	result, err := p.Provider.ReadSQLSchema(ctx, stripped)
-	if err != nil || !result.GetComplete() || len(declared) == 0 {
-		return result, err
+	if err != nil {
+		return nil, err
+	}
+	tuneViews(result)
+	if !result.GetComplete() || len(declared) == 0 {
+		return result, nil
 	}
 	model := retentionModel()
 	for _, facet := range declared {
