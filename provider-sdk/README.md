@@ -130,6 +130,7 @@ returns to 0.
   Contract 25.23 adds [the transaction owner of a lint check](#transaction-owner-of-a-lint-check).
   Contract 25.24 adds [index kinds](#index-kinds).
   Contract 25.25 adds [model predecessors](#model-predecessors).
+  Contract 25.26 adds [primary key changes](#primary-key-changes).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -164,7 +165,8 @@ does not oblige a peer to use it.
   `schema.sql-facets`, `models.report-counts`, `schema.observed-index-facets`,
   `schema.subtree-coverage`, `schema.password-inputs`, `source.hcl-platform`,
   `engine.default-capabilities`, `lint.transaction-owner`,
-  `source.index-kinds` and `models.predecessors`. The embedding store's calls,
+  `source.index-kinds`, `models.predecessors` and
+  `planning.primary-key-changes`. The embedding store's calls,
   `PrepareCommonObjects`, `ReverseChanges` and `ReportValues` are new, and each
   comes with an addition to `Engine`, so a host lists the feature to receive
   any of them. `SplitMigration` is new too, and comes with the abort flags of
@@ -2129,6 +2131,27 @@ its members or inventing a name. The common source declaration owns the
 writable key; native observations can retain independent evidence.
 [ADR 0051](../docs/adr/0051-inspected-primary-keys-retain-their-common-order.md)
 defines the ownership and export controls.
+
+## Primary key changes
+
+[ADR 0078](../docs/adr/0078-a-provider-plans-the-change-of-a-primary-key.md)
+decides this feature. `planning.primary-key-changes` states that an engine
+plans the change of the primary key of a table whose lifecycle it owns. The
+provider and the engine list it. The engine needs
+`schema.observed-primary-keys` and a planning service with parent kinds, and
+it does not list `schema.common-table-identity.v1`, under which the host plans
+a table's operations itself. `ValidateDescription` refuses any other
+declaration.
+
+With the feature negotiated, a host that finds a declared key different from
+the key a read reports, in its members or in their order, hands the change to
+the engine as an `ALTER` of the table in `PlanFeatures`. The table's
+`desired` declaration carries the declared key in `primary_key`, its
+`current` observation carries the held key as a `PRIMARY KEY` entry of
+`constraints` with its columns in key order, and no common step stands for
+the change. The engine plans it, for example as a table rebuild, or refuses
+the request in its own words. A host that has not negotiated the feature
+refuses a plan with such a change before it plans, naming the table.
 
 ## Common index observations
 
