@@ -198,6 +198,26 @@ message Engine {
   // engine.default-capabilities, and sent only to a host that lists it.
   // Contract 25.22.
   map<string, bool> default_capabilities = 24;
+  // The index types whose declarations the engine reads in place of the
+  // frontend's common index. Non-empty only when the engine lists
+  // source.index-kinds, and sent only to a host that lists it. Contract 25.24.
+  repeated SourceIndexKind index_kinds = 25;
+}
+// SourceIndexKind is an engine's claim on the frontend's index declarations
+// of the types it names: a Go ptah:schema:index directive, a YAML index entry
+// and an HCL index block whose type is one of them. The frontend builds no
+// common index for such a declaration and sends the whole declaration as one
+// fragment that carries this claim. Contract 25.24, under source.index-kinds.
+message SourceIndexKind {
+  // The index types, each as a declaration's type matches it: in ASCII lower
+  // case, without leading or trailing white space, with single spaces between
+  // words. The host lowers a written type the same way before it compares.
+  // A type is claimed once in an engine.
+  repeated string types = 1;
+  string selector = 2;
+  // DESIRED models a fragment of the claim declares, each a facet owned by
+  // the table the index is on.
+  repeated string models = 3;
 }
 // ScopeSelection is how the --include, --exclude and --schema selectors name
 // the engine's objects of one model kind. The host reads a selector's name
@@ -1111,6 +1131,18 @@ message SourceFragment {
   // Frozen negotiated block claim, required for the HCL fragments of an
   // engine that declares HCL claims. Contract 25.3, under source.hcl.
   HCLSourceBlock hcl_block = 12;
+  // Frozen negotiated index-kind claim of a declaration the engine reads in
+  // place of the frontend's common index, in a document of any format but
+  // SQL. Such a fragment carries no other claim. Its binding is the index's
+  // table and its subject the index. Its inherited_attributes hold the
+  // frontend's own part of the declaration, each entry present only when the
+  // declaration writes it: type, as written; columns and include, sequences of
+  // column names; unique, true; comment and ops, text. Its content is a
+  // mapping of the attributes the declaration writes that the engine claims
+  // on the format's index declaration: those of its INDEX-scope Go claim on
+  // ptah:schema:index, its INDEX-scope YAML keys, or its INDEX_ATTRIBUTES HCL
+  // claim. Contract 25.24, under source.index-kinds.
+  SourceIndexKind index_kind = 13;
   string id = 1;
   string selector = 2;
   // The shared frontend's attachment context, if already known. An owner may
@@ -3971,7 +4003,8 @@ message EncodedFragment {
 // never its content. Under source.hcl-platform, a loss of an HCL reply may
 // also name a value a TABLE_PLATFORM part writes: the value is written in
 // part, and the line says what the document does not hold of it. Contract
-// 25.22.
+// 25.22. Under source.index-kinds, a loss may likewise name a value a part
+// with an index-kind claim writes in part. Contract 25.24.
 message EncodeLoss {
   string value_id = 1;
   string message = 2;

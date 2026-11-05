@@ -50,6 +50,9 @@ func ValidateSourceRequest(description *protocol.Description, request *protocol.
 		if err := validateHCLSourceFragments(description, request.GetEngine(), document, kinds); err != nil {
 			return err
 		}
+		if err := validateIndexKindFragments(description, request.GetEngine(), document, kinds); err != nil {
+			return err
+		}
 		if err := validateSourceLimits(description, request.GetEngine(), document); err != nil {
 			return err
 		}
@@ -159,13 +162,19 @@ func validateSourceModelValue(
 ) error {
 	normalized := value.GetValue()
 	envelope := normalized.GetValue()
-	if document.GetFormat() == protocol.SourceDocument_YAML && !slices.Contains(fragment.GetYamlKey().GetModels(), envelope.GetKind()) {
+	switch {
+	case fragment.GetIndexKind() != nil:
+		if !slices.Contains(fragment.GetIndexKind().GetModels(), envelope.GetKind()) {
+			return sourceError("decoded value is outside its index-kind claim")
+		}
+		if err := validateIndexKindValue(document, fragment, value); err != nil {
+			return err
+		}
+	case document.GetFormat() == protocol.SourceDocument_YAML && !slices.Contains(fragment.GetYamlKey().GetModels(), envelope.GetKind()):
 		return sourceError("decoded YAML value is outside its key claim")
-	}
-	if fragment.GetGoDirective() != nil && !slices.Contains(fragment.GetGoDirective().GetModels(), envelope.GetKind()) {
+	case fragment.GetGoDirective() != nil && !slices.Contains(fragment.GetGoDirective().GetModels(), envelope.GetKind()):
 		return sourceError("decoded Go value is outside its directive claim")
-	}
-	if fragment.GetHclBlock() != nil && !slices.Contains(fragment.GetHclBlock().GetModels(), envelope.GetKind()) {
+	case fragment.GetHclBlock() != nil && !slices.Contains(fragment.GetHclBlock().GetModels(), envelope.GetKind()):
 		return sourceError("decoded HCL value is outside its block claim")
 	}
 	switch value.GetPlacement() {

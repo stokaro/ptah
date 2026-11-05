@@ -251,6 +251,10 @@ func validateHCLSourceFragments(description *protocol.Description, engine string
 		}
 	}
 	for _, fragment := range document.GetFragments() {
+		if fragment.GetIndexKind() != nil {
+			// See validateIndexKindFragments.
+			continue
+		}
 		claim := fragment.GetHclBlock()
 		if declaration == nil {
 			if claim != nil {

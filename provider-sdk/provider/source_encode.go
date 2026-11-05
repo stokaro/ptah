@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -181,6 +182,9 @@ func ValidateEncodedSource(description *protocol.Description, request *protocol.
 		func(engine string, document *protocol.SourceDocument, kinds map[string]bool) error {
 			return validateHCLSourceFragments(description, engine, document, kinds)
 		},
+		func(engine string, document *protocol.SourceDocument, kinds map[string]bool) error {
+			return validateIndexKindFragments(description, engine, document, kinds)
+		},
 	} {
 		if err := check(engine.GetId(), document, kinds); err != nil {
 			return err
@@ -190,11 +194,14 @@ func ValidateEncodedSource(description *protocol.Description, request *protocol.
 	for _, value := range request.GetValues() {
 		values[value.GetValue().GetId()] = value
 	}
-	platform := make(map[string]bool)
+	partial := make(map[string]bool)
 	if request.GetFormat() == protocol.SourceDocument_HCL && slices.Contains(engine.GetFeatures(), HCLPlatformFeature) {
-		platform = platformWritten(result, values)
+		partial = platformWritten(result, values)
 	}
-	if err := validateEncodedAccount(values, result, platform); err != nil {
+	if slices.Contains(engine.GetFeatures(), IndexKindsFeature) {
+		maps.Copy(partial, indexKindWritten(result, values))
+	}
+	if err := validateEncodedAccount(values, result, partial); err != nil {
 		return err
 	}
 	return validateEncodedExtras(engine, request, result)
@@ -216,7 +223,7 @@ func encodedDocument(engine *protocol.Engine, request *protocol.EncodeSourceRequ
 			protocol.SourceDocument_YAML:           fragment.GetYamlKey() != nil,
 			protocol.SourceDocument_GO_ANNOTATIONS: fragment.GetGoDirective() != nil,
 			protocol.SourceDocument_HCL:            fragment.GetHclBlock() != nil,
-		}[request.GetFormat()]
+		}[request.GetFormat()] || fragment.GetIndexKind() != nil
 		if !claimed {
 			return nil, nil, encodeError("an encoded fragment carries its format's claim")
 		}
@@ -228,6 +235,8 @@ func encodedDocument(engine *protocol.Engine, request *protocol.EncodeSourceRequ
 // fragmentModels returns the models a fragment's claim names.
 func fragmentModels(fragment *protocol.SourceFragment) []string {
 	switch {
+	case fragment.GetIndexKind() != nil:
+		return fragment.GetIndexKind().GetModels()
 	case fragment.GetYamlKey() != nil:
 		return fragment.GetYamlKey().GetModels()
 	case fragment.GetGoDirective() != nil:
@@ -240,9 +249,9 @@ func fragmentModels(fragment *protocol.SourceFragment) []string {
 // validateEncodedAccount requires every value to be written once or lost once,
 // a written value to be of a model its fragment's claim names, and an HCL
 // block to say where it stands. A value of a model no claim names is a loss.
-// A value platform holds, one a TABLE_PLATFORM part writes, may also be lost
-// once: a platform group spells part of it.
-func validateEncodedAccount(values map[string]*protocol.EncodeSourceValue, result *protocol.EncodedSource, platform map[string]bool) error {
+// A value partial holds, one a TABLE_PLATFORM part or an index-kind part
+// writes, may also be lost once: the part spells some of it.
+func validateEncodedAccount(values map[string]*protocol.EncodeSourceValue, result *protocol.EncodedSource, partial map[string]bool) error {
 	accounted := make(map[string]bool, len(values))
 	for _, encoded := range result.GetFragments() {
 		if len(encoded.GetValueIds()) == 0 {
@@ -270,7 +279,7 @@ func validateEncodedAccount(values map[string]*protocol.EncodeSourceValue, resul
 	lost := make(map[string]bool, len(values))
 	for _, loss := range result.GetLosses() {
 		id := loss.GetValueId()
-		if values[id] == nil || lost[id] || accounted[id] && !platform[id] || !diagnosticLine(loss.GetMessage()) {
+		if values[id] == nil || lost[id] || accounted[id] && !partial[id] || !diagnosticLine(loss.GetMessage()) {
 			return encodeError("a loss names a value of the request once, in one line")
 		}
 		accounted[id], lost[id] = true, true
@@ -300,6 +309,30 @@ func platformWritten(result *protocol.EncodedSource, values map[string]*protocol
 		for _, part := range group.GetParts() {
 			for _, id := range group.GetValueIds() {
 				if platform(part.GetFragment()) && values[id] != nil && encodedPartOwns(part.GetFragment(), values[id]) {
+					written[id] = true
+				}
+			}
+		}
+	}
+	return written
+}
+
+// indexKindWritten returns the values an index-kind part of the reply writes:
+// the values of such a flat fragment, and the values of a group that such a
+// part owns.
+func indexKindWritten(result *protocol.EncodedSource, values map[string]*protocol.EncodeSourceValue) map[string]bool {
+	written := make(map[string]bool)
+	for _, encoded := range result.GetFragments() {
+		if encoded.GetFragment().GetIndexKind() != nil {
+			for _, id := range encoded.GetValueIds() {
+				written[id] = true
+			}
+		}
+	}
+	for _, group := range result.GetGroups() {
+		for _, part := range group.GetParts() {
+			for _, id := range group.GetValueIds() {
+				if part.GetFragment().GetIndexKind() != nil && values[id] != nil && encodedPartOwns(part.GetFragment(), values[id]) {
 					written[id] = true
 				}
 			}
@@ -356,6 +389,10 @@ func validateEncodedGroup(group *protocol.EncodedSourceGroup, values map[string]
 func encodedPartOwns(fragment *protocol.SourceFragment, value *protocol.EncodeSourceValue) bool {
 	if !slices.Contains(fragmentModels(fragment), value.GetValue().GetValue().GetKind()) || fragment.GetBindingId() != value.GetBindingId() {
 		return false
+	}
+	if fragment.GetIndexKind() != nil {
+		// The subject is the index, and the value a facet of its table.
+		return value.GetPlacement() == protocol.SourceModelValue_FACET && value.GetValue().GetValue().GetOwner().GetKind() == "table"
 	}
 	if subject := fragment.GetSubject(); subject != nil {
 		return compareReferences(subject, value.GetValue().GetNormalizedOwner()) == 0

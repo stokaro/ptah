@@ -15,7 +15,7 @@ import (
 // counts the compatible additions within the major Revision. A host built
 // with this SDK announces Revision.ContractMinor, and a provider built with it
 // may require at most that minor from its host.
-const ContractMinor uint32 = 23
+const ContractMinor uint32 = 24
 
 // The features below each enable an addition to an existing message. An
 // addition is used only when both sides list its feature: the provider in its
@@ -49,7 +49,8 @@ func TwoWayFeatures() []string {
 		DatabaseContextFeature, ValueContextFeature, CommonViewFacetsFeature, ObservedColumnsFeature, ObservedPrimaryKeysFeature, ObservedIndexesFeature, PlanningObjectContextFeature,
 		PlanningContextInventoryFeature, MigrationSplitFeature, ComparisonCountsFeature, IndexMethodsFeature, TypedArgumentsFeature, ErrorReasonsFeature,
 		IndexRenamesFeature, ReverseChangesFeature, UnreadTablesFeature, DatabaseKindsFeature, SQLFacetsFeature, ReportCountsFeature,
-		ObservedIndexFacetsFeature, SchemaSubtreeCoverageFeature, PasswordInputsFeature, HCLPlatformFeature, DefaultCapabilitiesFeature, LintTransactionOwnerFeature}
+		ObservedIndexFacetsFeature, SchemaSubtreeCoverageFeature, PasswordInputsFeature, HCLPlatformFeature, DefaultCapabilitiesFeature, LintTransactionOwnerFeature,
+		IndexKindsFeature}
 }
 
 // ContractError reports a host and a provider that cannot work together:
@@ -146,8 +147,9 @@ func ValidateHostFeatures(features []string) error {
 // services unless it lists ReverseChangesFeature, the database kinds unless
 // it lists DatabaseKindsFeature, the model reports unless it lists
 // ReportCountsFeature, the schema separator of each engine's identifier rules
-// unless it lists SchemaSubtreeCoverageFeature, and the offline capability
-// facts unless it lists DefaultCapabilitiesFeature. A model keeps its
+// unless it lists SchemaSubtreeCoverageFeature, the offline capability facts
+// unless it lists DefaultCapabilitiesFeature, and the index-kind claims unless
+// it lists IndexKindsFeature. A model keeps its
 // source formats without HCLPlatformFeature: a platform claim's models need
 // not list HCL. Without
 // EntryKeysFeature, the YAML claims of a COLUMN or INDEX scope and the
@@ -176,6 +178,7 @@ func NegotiatedDescription(description *protocol.Description, hostFeatures []str
 		negotiateCommonObjects(engine, hostFeatures)
 		negotiatePlanningObjects(engine, hostFeatures)
 		negotiateHCLSource(engine, hostFeatures)
+		negotiateIndexKinds(engine, hostFeatures)
 		if !slices.Contains(hostFeatures, ScopeSelectionsFeature) {
 			engine.ScopeSelections = nil
 		}
