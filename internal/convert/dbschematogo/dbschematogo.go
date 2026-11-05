@@ -108,12 +108,40 @@ func ConvertDBSchemaToGoSchema(ctx context.Context, dbSchema *catalog.Database, 
 	if err := features.RequireFacetPreservation(dbSchema.FacetSlots(), database.FacetSlots()); err != nil {
 		return nil, err
 	}
-	objects, coverage, err := features.Convert(ctx, runtime, dialect, schemaext.Observed, schemaext.Desired, dbSchema.FeatureObjects, dbSchema.FeatureCoverage, database.FacetSlots())
+	read, err := withoutReservedSubjects(dbSchema.FeatureCoverage, dbSchema.ReservedNames)
+	if err != nil {
+		return nil, err
+	}
+	objects, coverage, err := features.Convert(ctx, runtime, dialect, schemaext.Observed, schemaext.Desired, dbSchema.FeatureObjects, read, database.FacetSlots())
 	if err != nil {
 		return nil, err
 	}
 	database.FeatureObjects, database.FeatureCoverage = objects, coverage
 	return database, nil
+}
+
+// withoutReservedSubjects is coverage without what it says of a name the read
+// reserved for provider-owned operational storage, such as a revision table
+// or a lock node. The reserved names themselves do not become declarations,
+// and the knowledge a provider records at them, that no object of its kinds
+// can be there, is about that storage, not about anything a declaration
+// manages: the next read reserves the names again. Kept, it reaches a source's
+// not-described header as an object of the provider's kind the source left
+// out, such as a coordination node named atlas_schema_revisions.
+func withoutReservedSubjects(coverage schemaext.Coverage, reserved []catalog.ReservedName) (schemaext.Coverage, error) {
+	if len(reserved) == 0 || coverage.IsZero() {
+		return coverage, nil
+	}
+	names := make(map[objectidentity.Key]bool, len(reserved))
+	for _, name := range reserved {
+		names[name.Identity.Key()] = true
+	}
+	subjects := coverage.SubjectRecords()
+	kept := slices.DeleteFunc(slices.Clone(subjects), func(subject schemaext.SubjectCoverage) bool { return names[subject.Subject.Key()] })
+	if len(kept) == len(subjects) {
+		return coverage, nil
+	}
+	return schemaext.NewCoverage(coverage.Representation(), coverage.KindRecords(), kept)
 }
 
 // Runtime selects the feature conversion and the comparison rules of the
