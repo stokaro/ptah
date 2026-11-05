@@ -515,6 +515,17 @@ message Schema {
   // The planning context a filtered read leaves out of its scope. Contract
   // 25.11, under planning.context-inventory.
   PlanningContextInventory planning_context = 11;
+  // The tables the read found and does not describe. A table absent from
+  // tables says nothing about the database when it is named here. Contract
+  // 25.20, under schema.unread-tables.
+  repeated UnreadTable unread_tables = 12;
+}
+// UnreadTable is a table the read found and does not describe, with the
+// provider's reason, which the host shows whenever it names the table.
+// Contract 25.20, under schema.unread-tables.
+message UnreadTable {
+  Reference table = 1;
+  ProviderDiagnostic diagnostic = 2;
 }
 // PlanningContextInventory is the observed values of the engine's planning
 // context kinds outside a filtered read's scope, and their coverage, which may
