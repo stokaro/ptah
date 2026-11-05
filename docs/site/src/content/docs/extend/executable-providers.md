@@ -136,6 +136,16 @@ reports `index_rename` only to a host that lists the feature, and the host
 refuses a session that reports it from an engine without the feature. Without
 the capability, a renamed index is a drop and a create.
 
+An engine that reports its indexes and whose session states
+`unique_constraints` as `false` holds a declared UNIQUE constraint, and a
+column's UNIQUE, as a global unique index, as YDB does. The host then reads
+each one as that index before it compares and plans, under the name the
+host's YDB renderer gives it: the constraint's name, or
+`<table>_<columns>_key`. A UNIQUE over the table's key folds into the key. The
+provider receives the index in the table it creates or alters, and never the
+constraint. A session that does not state the key leaves a UNIQUE a
+constraint.
+
 A service that declares parent assessment
 also receives changes to existing columns in the complete table capture. It
 must return a parent receipt, including when its own rules find no change.
