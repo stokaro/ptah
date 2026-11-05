@@ -21,6 +21,7 @@ import (
 	"ptah.run/core/schemapreparation"
 	"ptah.run/core/schemaproperties"
 	"ptah.run/core/schemavalidation"
+	"ptah.run/core/selectext"
 	"ptah.run/internal/clickhouserbac"
 	"ptah.run/internal/foreignkeyscope"
 	"ptah.run/internal/pgreservedrole"
@@ -133,6 +134,10 @@ func compareReportingUndecidedAdditions(
 	}
 	desired, diff.TablePreparation = prepared.desired, prepared.capture
 
+	// What the source itself says about the owners' objects, before the
+	// owners make an effective desired state of it: the grant comparison
+	// reads it to tell an object the source leaves undescribed.
+	authoredFeatures := schemaext.FeatureState{Objects: desired.FeatureObjects, Coverage: desired.FeatureCoverage}
 	featureResult, desired, err := compareEffectiveFeatures(ctx, desired, prepared.owners, opts.Dialect, identifierSemantics, caps, prepared.parents, opts, runtime)
 	if err != nil {
 		return nil, Diagnostics{}, err
@@ -228,8 +233,10 @@ func compareReportingUndecidedAdditions(
 	// one.
 	compare.RoleMemberships(desired, database, diff, caps)
 
-	// Compare role privilege grants (PostgreSQL-specific feature)
-	compare.GrantsWithSemantics(desired, database, diff, identifierSemantics)
+	// Compare role privilege grants. A grant on an object an owner manages,
+	// such as a YDB topic, rides the object: the source's silence about the
+	// object is silence about its grants.
+	compare.GrantsWithObjects(desired, database, diff, identifierSemantics, compare.OwnedObjects{Names: grantObjectNames(runtime), Desired: authoredFeatures})
 
 	// Compare common table constraints (CHECK, UNIQUE, PRIMARY KEY, FOREIGN KEY).
 	compare.ConstraintsWithSemantics(desired, database, diff, opts, identifierSemantics)
@@ -519,6 +526,23 @@ type targetInputs struct {
 // comparison alone; see [ptah.run/engine.Target.Spelling].
 type desiredSpeller interface {
 	SpellDesired(context.Context, schemapreparation.LoweringRequest) (*schemamodel.Database, error)
+}
+
+// selectionRuntime is a runtime that knows its owners' scope selections,
+// which say how a grant names an object an owner manages.
+// *ptah.run/engine.Runtime is one.
+type selectionRuntime interface {
+	Selections() selectext.Set
+}
+
+// grantObjectNames reads the owner's object a grant names through the
+// selections of runtime, and names none for a runtime without them.
+func grantObjectNames(runtime schemapreparation.Runtime) compare.GrantObjects {
+	selecting, selects := runtime.(selectionRuntime)
+	if !selects {
+		return nil
+	}
+	return selecting.Selections()
 }
 
 // targetComparisonInputs prepares the [targetInputs] of a comparison for

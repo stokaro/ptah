@@ -636,6 +636,14 @@ the kinds its selection lists, unless an exclusion names them. A read that
 reports an object of a selected kind under an identity its naming cannot read
 is refused.
 
+Such a grant also follows what the desired source says about its object. A
+source that neither declares the object nor describes its kind, through a
+`ptah:not-described topic` header or a format that claims nothing about
+topics, says nothing about who may use it, so Ptah plans no removal of the
+grant. A source that describes the kind and leaves the object out drops it,
+and the grant goes with the object. A revoke the source writes out is planned
+either way.
+
 `migrations checkpoint`, and the rollback `migrations down --shadow-db`
 verifies or plans, replay the directory on a database the provider provisions
 or names, and Ptah runs no SQL of its own there. The provider reports its
