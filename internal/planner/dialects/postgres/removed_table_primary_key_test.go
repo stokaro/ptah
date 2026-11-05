@@ -69,5 +69,5 @@ func TestPlanner_DropsOtherConstraintsOfARemovedTable(t *testing.T) {
 
 	c.Assert(sql, qt.Not(qt.Contains), `"sessions_pkey"`)
 	c.Assert(sql, qt.Contains, `DROP CONSTRAINT IF EXISTS "sessions_user_fk"`)
-	c.Assert(sql, qt.Contains, `DROP CONSTRAINT IF EXISTS "accounts_pkey"`)
+	c.Assert(sql, qt.Contains, `DROP CONSTRAINT "accounts_pkey"`)
 }
