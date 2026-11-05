@@ -383,7 +383,8 @@ return `ResolvedFacets` records keyed by declared table or index identities.
 Duplicate owners, undeclared kinds, and new target scopes are refused. Source
 facets, bindings, observations, and knowledge stay unchanged. Incomplete replies return
 no diff. `SchemaDiff.TablePreparation` retains independent source and prepared
-captures as comparison provenance, including through reversal.
+captures as comparison provenance. A reverse plan prepares its own copy from the
+tables the forward plan leaves.
 
 `Target.Lowering` selects `schemapreparation.Lowering`, which rewrites the
 whole desired schema into the shape the target's reader reports it in, before
