@@ -323,6 +323,22 @@ func TestPlanningCarriesTheContextOutsideTheScope(t *testing.T) {
 	c.Assert(result.Objects, qt.HasLen, 0)
 }
 
+// completeObservedCoverage claims every object of the kinds given known, in
+// the observed representation a planning context carries.
+func completeObservedCoverage(c *qt.C, registry schemaext.Registry, kinds ...schemaext.Kind) schemaext.Coverage {
+	c.Helper()
+	var records []schemaext.KindCoverage
+	for _, model := range registry.Definitions() {
+		if slices.Contains(kinds, model.Kind) && model.Representation == schemaext.Observed {
+			records = append(records, schemaext.KindCoverage{Model: model, Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Complete})})
+		}
+	}
+	c.Assert(records, qt.HasLen, len(kinds))
+	coverage, err := schemaext.NewCoverage(schemaext.Observed, records, nil)
+	c.Assert(err, qt.IsNil)
+	return coverage
+}
+
 // Two services that assess context share one planning context, and each
 // receives only the records and coverage of the kinds it assesses. The other
 // service's records are no context of its own, and a provider refuses them.
@@ -338,18 +354,9 @@ func TestPlanningContextReachesOnlyTheServiceThatAssessesItsKinds(t *testing.T) 
 	p := objectPlanningProvider(recording("first"))
 	p.Planning = append(p.Planning, engine.Planning{Target: "custom", ContextKinds: []schemaext.Kind{conversionSecond}, Service: recording("second")})
 	runtime := mustRuntime(c, p)
-	var records []schemaext.KindCoverage
-	for _, model := range runtime.Codecs().Definitions() {
-		if (model.Kind == conversionFirst || model.Kind == conversionSecond) && model.Representation == schemaext.Observed {
-			records = append(records, schemaext.KindCoverage{Model: model, Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Complete})})
-		}
-	}
-	c.Assert(records, qt.HasLen, 2)
-	coverage, err := schemaext.NewCoverage(schemaext.Observed, records, nil)
-	c.Assert(err, qt.IsNil)
 	inventory := comparisonRequest(c).Desired
-	inventory.Coverage = coverage
-	_, err = runtime.PlanFeatures(t.Context(), featureplan.Request{Target: "custom", Objects: featureplan.ObjectContext{Context: inventory}})
+	inventory.Coverage = completeObservedCoverage(c, runtime.Codecs(), conversionFirst, conversionSecond)
+	_, err := runtime.PlanFeatures(t.Context(), featureplan.Request{Target: "custom", Objects: featureplan.ObjectContext{Context: inventory}})
 	c.Assert(err, qt.IsNil)
 	for _, test := range []struct {
 		service string
