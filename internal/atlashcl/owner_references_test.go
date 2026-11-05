@@ -287,7 +287,7 @@ func TestParseWithOptions_ClaimsATableBlockForTheOwner(t *testing.T) {
 	db, requests, err := parseRules(t.Context(), switchedTables)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(requests, qt.DeepEquals, []hclext.Request{{Claims: []hclext.Claim{{Block: "switch",
+	c.Assert(requests, qt.DeepEquals, []hclext.Request{{Claims: []hclext.Claim{{Site: hclext.InTable, Block: "switch",
 		Attributes: map[string]hclext.Value{"on": {Kind: hclext.Bool, Bool: true}}, At: "schema.hcl:7",
 		Table: &hclext.Table{Schema: "app", Name: "users", Struct: "app.users"}}}}})
 	c.Assert(db.Tables, qt.HasLen, 2)

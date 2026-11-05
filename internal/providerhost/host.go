@@ -118,6 +118,11 @@ var hostFeatures = []string{
 	// blocks, read by the frontend and decoded by the provider; see
 	// Host.hclExtensions.
 	provider.HCLSourceFeature,
+	// A provider's claim of a table's platform group of its engine, whose
+	// models an HCL document describes only for a table that writes the
+	// group, and the loss of a value such a group writes in part; see
+	// Host.hclExtensions and hclEncoding.fragment.
+	provider.HCLPlatformFeature,
 	// Source groups retain exact value accounting across ordered syntax parts;
 	// claimed headers retain the owner's narrowed source coverage.
 	provider.EncodeGroupsFeature,

@@ -135,3 +135,45 @@ func TestCheckHCLSource_FailurePath(t *testing.T) {
 		})
 	}
 }
+
+// hclPlatformEngine claims the example engine's table platform group, naming a
+// model that lists no HCL beside the one hclEngine's claims name.
+func hclPlatformEngine() *protocol.Engine {
+	engine := hclEngine()
+	engine.ValueModels = append(engine.ValueModels, &protocol.ValueModel{Kind: platformModel, Representation: protocol.ValueInput_DESIRED,
+		SourceFormats: []protocol.SourceDocument_Format{protocol.SourceDocument_YAML}})
+	engine.HclSource.Blocks = append(engine.HclSource.Blocks, &protocol.HCLSourceBlock{Site: protocol.HCLSourceBlock_TABLE_PLATFORM, Type: "example",
+		Selector: "platform", Models: []string{platformModel}, Attributes: []*protocol.HCLSourceAttribute{{Name: "ttl", Kind: protocol.HCLSourceAttribute_STRING}}})
+	return engine
+}
+
+const platformModel = "example.org/platform"
+
+// TestHCL_PlatformGroup sends a table's platform group bound to its table,
+// with no subject, under the platform claim, which the claim's site selects;
+// and brings the claim's model into the document's scope, which the model's
+// source formats do not.
+func TestHCL_PlatformGroup(t *testing.T) {
+	c := qt.New(t)
+	claims := []hclext.Claim{{Site: hclext.TablePlatform, Block: "example", Range: hclRange(0, 30), Table: &hclext.Table{Schema: "app", Name: "items"},
+		Attributes: map[string]hclext.Value{"ttl": {Kind: hclext.String, Text: "P1D"}}}}
+
+	request, err := providersource.HCL(c.Context(), hclPlatformEngine(), claims, nil)
+
+	c.Assert(err, qt.IsNil)
+	document := request.GetDocuments()[0]
+	var models []string
+	for _, model := range document.GetModels() {
+		models = append(models, model.GetKind())
+	}
+	c.Assert(models, qt.DeepEquals, []string{retentionModel, platformModel})
+	fragment := document.GetFragments()[0]
+	c.Assert(fragment.GetHclBlock().GetSite(), qt.Equals, protocol.HCLSourceBlock_TABLE_PLATFORM)
+	c.Assert(fragment.GetBindingId(), qt.Equals, "table-0")
+	c.Assert(fragment.GetSubject(), qt.IsNil)
+	c.Assert(fragment.GetValue().GetMapping().GetEntries()[0].GetKey(), qt.Equals, "ttl")
+	c.Assert(fragment.GetValue().GetMapping().GetEntries()[0].GetValue().GetText(), qt.Equals, "P1D")
+	c.Assert(providersource.HCLClaimSite(claims[0]), qt.Equals, protocol.HCLSourceBlock_TABLE_PLATFORM)
+	c.Assert(providersource.HCLPlatformModel(hclPlatformEngine(), platformModel), qt.IsTrue)
+	c.Assert(providersource.HCLPlatformModel(hclPlatformEngine(), retentionModel), qt.IsFalse)
+}

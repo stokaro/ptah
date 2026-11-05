@@ -24,6 +24,7 @@ var HCLSites = map[protocol.HCLSourceBlock_Site]hclext.Site{
 	protocol.HCLSourceBlock_INDEX_ATTRIBUTES:             hclext.IndexAttributes,
 	protocol.HCLSourceBlock_ROUTINE_ATTRIBUTES:           hclext.RoutineAttributes,
 	protocol.HCLSourceBlock_MATERIALIZED_VIEW_ATTRIBUTES: hclext.MaterializedViewAttributes,
+	protocol.HCLSourceBlock_TABLE_PLATFORM:               hclext.TablePlatform,
 }
 
 // HCLNamings maps each naming of a provider's top-level block onto the
@@ -84,13 +85,17 @@ func CheckHCLSource(engine *protocol.Engine) error {
 	return nil
 }
 
-// HCLClaimSite is the site of a claim the frontend made: an index's
-// attributes, a table's, a block in a table, a routine's attributes, a
-// materialized view's, or a top-level block. A provider's own block never
+// HCLClaimSite is the site of a claim the frontend made: a table's platform
+// group, an index's attributes, a table's, a block in a table, a routine's
+// attributes, a materialized view's, or a top-level block. A provider's own block never
 // takes the type of one of the frontend's, so the type and what the claim is
 // about tell them apart.
 func HCLClaimSite(claim hclext.Claim) protocol.HCLSourceBlock_Site {
 	switch {
+	case claim.Site == hclext.TablePlatform:
+		// A platform group's type is the engine's ID, which no structure
+		// tells from a block in the table.
+		return protocol.HCLSourceBlock_TABLE_PLATFORM
 	case claim.Index != nil:
 		return protocol.HCLSourceBlock_INDEX_ATTRIBUTES
 	case claim.Table != nil && claim.Block == "table":
@@ -110,7 +115,8 @@ func HCLClaimSite(claim hclext.Claim) protocol.HCLSourceBlock_Site {
 // kinds as its limits. A fragment carries the frozen claim, its content as the
 // frontend evaluated it, a block at the sites that read the owner's own block
 // and an attribute mapping at the others, and what its site attaches to: the
-// table of a block in a table and of table attributes, the table and the index
+// table of a block in a table, of table attributes and of a table's platform
+// group, the table and the index
 // of index attributes, the routine or the view of their attributes, and
 // nothing at the top level. The frontend records where a block stands, not
 // each attribute, so every span is the block's. The document's length is the
@@ -119,7 +125,8 @@ func HCLClaimSite(claim hclext.Claim) protocol.HCLSourceBlock_Site {
 func HCL(ctx context.Context, engine *protocol.Engine, claims []hclext.Claim, limits []coverage.Object) (*protocol.DecodeSourceRequest, error) {
 	document := &protocol.SourceDocument{Id: "document", Format: protocol.SourceDocument_HCL, File: "<unnamed HCL>"}
 	for _, model := range engine.GetValueModels() {
-		if model.GetRepresentation() == protocol.ValueInput_DESIRED && slices.Contains(model.GetSourceFormats(), protocol.SourceDocument_HCL) {
+		if model.GetRepresentation() == protocol.ValueInput_DESIRED &&
+			(slices.Contains(model.GetSourceFormats(), protocol.SourceDocument_HCL) || HCLPlatformModel(engine, model.GetKind())) {
 			document.Models = append(document.Models, proto.CloneOf(model))
 		}
 	}
@@ -160,6 +167,15 @@ func HCL(ctx context.Context, engine *protocol.Engine, claims []hclext.Claim, li
 		return nil, err
 	}
 	return request, nil
+}
+
+// HCLPlatformModel reports whether a claim of the engine at a table's platform
+// group names the model. Such a claim brings the model into an HCL document's
+// scope whatever its source formats.
+func HCLPlatformModel(engine *protocol.Engine, kind string) bool {
+	return slices.ContainsFunc(engine.GetHclSource().GetBlocks(), func(block *protocol.HCLSourceBlock) bool {
+		return block.GetSite() == protocol.HCLSourceBlock_TABLE_PLATFORM && slices.Contains(block.GetModels(), kind)
+	})
 }
 
 // HCLBlockClaim is the engine's claim of the block a claim matched, or nil.
@@ -229,7 +245,7 @@ func hclFragment(engine *protocol.Engine, claim hclext.Claim, bind func(schema, 
 // and an index fragment the inherited attributes of its index.
 func hclAttachment(engine string, shape *protocol.HCLSourceBlock, claim hclext.Claim, fragment *protocol.SourceFragment, bind func(schema, name string) string) error {
 	switch shape.GetSite() {
-	case protocol.HCLSourceBlock_IN_TABLE, protocol.HCLSourceBlock_TABLE_ATTRIBUTES:
+	case protocol.HCLSourceBlock_IN_TABLE, protocol.HCLSourceBlock_TABLE_ATTRIBUTES, protocol.HCLSourceBlock_TABLE_PLATFORM:
 		fragment.BindingId = bind(claim.Table.Schema, claim.Table.Name)
 	case protocol.HCLSourceBlock_INDEX_ATTRIBUTES:
 		table, valid := tableref.Parse(claim.Index.Table)

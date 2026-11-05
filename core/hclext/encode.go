@@ -116,11 +116,28 @@ type SlotAttributes struct {
 	// and refuses one it writes itself, such as `columns`. Any other block
 	// refuses an attribute it has no place for.
 	Attributes []EncodedAttribute
+	// Overrides are what the owner writes in a table's `platform` blocks, as
+	// the frontend reads them at [TablePlatform]. Only a [SlotTable] takes
+	// them. The writer writes them among the table's other `platform` blocks,
+	// by label and key in the order it writes its own, and refuses one whose
+	// label and key the table's own overrides hold.
+	Overrides []PlatformOverride
 	// Losses are what the document cannot say about the block's object. The
 	// writer reports each where it writes the block, at the path it names the
 	// block with in its own diagnostics, such as `indexes["t"]["i"]`: the
 	// block is the writer's, and so is its name.
 	Losses []string
+}
+
+// PlatformOverride is one `override` of a table's `platform` block an owner
+// writes.
+type PlatformOverride struct {
+	// Platform is the block's label: the Type of one of the owner's
+	// [TablePlatform] shapes.
+	Platform string
+	// Key is the override's label, one of the shape's attributes, and Value
+	// its value.
+	Key, Value string
 }
 
 // TableFacets is a table of a document and facets it holds.
@@ -307,8 +324,10 @@ func (s Set) Encodes(kind schemaext.Kind) bool {
 // attribute refused as a block's is, a block that writes an object of a kind
 // its extension does not claim, a header line that is empty or holds a line
 // break, attributes for a block of the writer's the extension was not handed
-// or written for one block twice, and an attribute two extensions write to
-// one block. The header lines are returned in the order of the extensions.
+// or written for one block twice, an attribute two extensions write to one
+// block, and a platform override of a block that is no table, under a label
+// and key no [TablePlatform] shape of the extension takes, or twice: a label
+// has one owner, so no other extension writes the override. The header lines are returned in the order of the extensions.
 // An encoder's own error is returned as it is: it refuses the document, as a
 // value the owner cannot write would otherwise be written wrong.
 func (s Set) Encode(ctx context.Context, document EncodeRequest) (EncodeResult, error) {
@@ -489,6 +508,9 @@ func (r EncodeRequest) hands(slot Slot) bool {
 // checkSlotAttributes refuses an attribute without a name or written twice,
 // and a value the writer cannot write.
 func checkSlotAttributes(extension Extension, slot SlotAttributes) error {
+	if err := checkSlotOverrides(extension, slot); err != nil {
+		return err
+	}
 	names := make(map[string]bool, len(slot.Attributes))
 	for _, attribute := range slot.Attributes {
 		if strings.TrimSpace(attribute.Name) == "" || names[attribute.Name] {
@@ -500,6 +522,27 @@ func checkSlotAttributes(extension Extension, slot SlotAttributes) error {
 			return fmt.Errorf("%w: HCL encoder of %s wrote attribute %q of %s as %q, which the writer cannot write",
 				schemaext.ErrInvalidValue, extension.Owner, attribute.Name, slot.Slot, attribute.Value.Kind)
 		}
+	}
+	return nil
+}
+
+// checkSlotOverrides refuses an override of a block that is no table, one
+// under a label that is the Type of none of the extension's [TablePlatform]
+// shapes or with a key that shape does not take, and one written twice.
+func checkSlotOverrides(extension Extension, slot SlotAttributes) error {
+	written := make(map[[2]string]bool, len(slot.Overrides))
+	for _, override := range slot.Overrides {
+		shape := slices.IndexFunc(extension.Blocks, func(block Block) bool {
+			return block.Site == TablePlatform && block.Type == override.Platform && slices.ContainsFunc(block.Attributes, func(attribute Attribute) bool {
+				return attribute.Name == override.Key
+			})
+		})
+		key := [2]string{override.Platform, override.Key}
+		if slot.Slot.Kind != SlotTable || shape < 0 || written[key] {
+			return fmt.Errorf("%w: HCL encoder of %s wrote platform %q override %q of %s, which no platform block of its own takes there, or twice",
+				schemaext.ErrInvalidValue, extension.Owner, override.Platform, override.Key, slot.Slot)
+		}
+		written[key] = true
 	}
 	return nil
 }

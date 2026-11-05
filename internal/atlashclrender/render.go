@@ -267,6 +267,9 @@ func render(db *schemamodel.Database, opts Options, defaultSchema string, omitAt
 	if r.slots, err = collectSlots(encoded.Attributes); err != nil {
 		return Result{}, err
 	}
+	if r.overrides, err = r.joinTableOverrides(); err != nil {
+		return Result{}, err
+	}
 	r.render()
 	return Result{
 		Data:         []byte(r.builder.String()),
@@ -331,6 +334,9 @@ type renderer struct {
 	ownerRequirements map[objectidentity.Key][]objectidentity.ID
 	ownerHeader       []string
 	slots             map[hclext.Slot]ownerSlot
+	// overrides are the platform overrides of each table its owners write
+	// some of, joined with the table's own.
+	overrides map[hclext.Slot]map[string]map[string]string
 	// target is the one target the document is written for; see
 	// [Options.Target].
 	target string
@@ -841,7 +847,11 @@ func (r *renderer) renderTable(
 		r.rawAttr(1, "checks", stringList(table.Checks))
 	}
 	r.stringAttr(1, "custom", table.CustomSQL)
-	r.renderPlatformOverrides(1, table.Overrides)
+	overrides := table.Overrides
+	if joined, found := r.overrides[hclext.Slot{Kind: hclext.SlotTable, Table: owner}]; found {
+		overrides = joined
+	}
+	r.renderPlatformOverrides(1, overrides)
 	r.renderRowSecurity(rlsEnabled)
 	r.renderOwnerBlocks(hclext.WithinTable, &owner)
 
