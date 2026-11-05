@@ -59,13 +59,6 @@ func TestDescriptors_QueryAgreesWithTheRetiredSwitches(t *testing.T) {
 				"a different statement with its own source, join condition and match clauses",
 		}, descriptor.Scripts{BatchSeparator: "GO", ClientDelimiters: true}},
 		platform.Oracle: {descriptor.Query{OffsetFetch: true}, delimiters},
-		platform.YDB: {descriptor.Query{
-			ChecksCapabilities: true,
-			UnsignedBounds:     true,
-			Upsert:             descriptor.UpsertInto,
-			UpsertRefusal: "YDB has no ON CONFLICT: UpsertInto writes each row over the row with the same " +
-				"primary key, and the server refuses INSERT OR IGNORE",
-		}, descriptor.Scripts{}},
 	}
 
 	described := builtindialects.Descriptors()

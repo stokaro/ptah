@@ -42,6 +42,7 @@ env:
       migration_lock_timeout: 15s
       exec_order: linear
       tx_mode: file
+      runner: ptah
       pre_up_hook: ./scripts/backup-before-up
       pre_down_hook: ./scripts/backup-before-down
       pg_dump_to: ./backups/postgres
@@ -99,11 +100,12 @@ env:
 | `migration.revisions_table` | Migration metadata table |
 | `migration.revision_format` | Revision table layout: `ptah` or `atlas` |
 | `migration.lock_timeout` | Default per-migration lock timeout; on MySQL and MariaDB it bounds row-lock and metadata-lock waits; refused on YDB, where no statement waits for a lock |
-| `migration.statement_timeout` | Default per-migration statement timeout; on YDB a deadline on each query of the migration |
+| `migration.statement_timeout` | Default per-migration statement timeout; on YDB the provider puts it as a deadline on each query of the migration |
 | `migration.connect_timeout` | Initial database connection timeout |
 | `migration.migration_lock_timeout` | Session-level migration advisory lock timeout |
 | `migration.exec_order` | Pending migration execution policy |
 | `migration.tx_mode` | Migration transaction mode: `file`, `all`, or `none` |
+| `migration.runner` | Tool the directory is written for, read by `migrations lint` and `migrations up`: `ptah` (default), whose migrator wraps each file in a transaction, or `golang-migrate`, which opens none and runs a file's own transactions |
 | `migration.pre_up_hook` | Shell command that must succeed before `migrations up` changes the schema |
 | `migration.pre_down_hook` | Shell command that must succeed before `migrations down` changes the schema |
 | `migration.pg_dump_to` | Directory for a PostgreSQL-compatible pre-migration custom-format dump |

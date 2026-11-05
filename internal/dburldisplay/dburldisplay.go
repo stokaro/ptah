@@ -197,13 +197,17 @@ func redactRawQuery(rawQuery string, urlValued func(key string) bool) string {
 
 // urlValuedParameter reports, for a URL of the given scheme, which query
 // parameters hold a URL of their own: the ones the scheme's dialect
-// descriptor names. A YDB URL names the cluster's monitoring endpoint that
-// way, and a command prints the URL before internal/ydburl parses it and
-// refuses a user in that endpoint, so the display has to hide the user
-// itself. The parameter name is matched in any case: the display may hide
-// more than the parser reads, never less.
+// descriptor names, matched in any case. A scheme the process registry does
+// not describe belongs to an engine an executable provider serves, whose
+// parameters this package does not know, so every parameter of it is read as
+// one that may hold a URL: a YDB URL names the cluster's monitoring endpoint
+// that way, and a command prints the URL before the provider parses it. The
+// display may hide more than the parser reads, never less.
 func urlValuedParameter(scheme string) func(key string) bool {
-	described, _ := platform.Lookup(scheme)
+	described, found := platform.Lookup(scheme)
+	if !found {
+		return everyParameter
+	}
 	if len(described.URLValuedParameters) == 0 {
 		return noURLValuedParameter
 	}
@@ -217,6 +221,10 @@ func urlValuedParameter(scheme string) func(key string) bool {
 // noURLValuedParameter is the answer for a scheme whose parameters hold no
 // URL.
 func noURLValuedParameter(string) bool { return false }
+
+// everyParameter is the answer for a scheme whose parameters this package does
+// not know.
+func everyParameter(string) bool { return true }
 
 // redactUserInfo hides the user info of a URL held in a parameter, the user
 // name included: the endpoint takes no credential of its own, so none of it is

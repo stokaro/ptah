@@ -77,14 +77,13 @@ func TestAcceptedSpellings_DeclarationControls(t *testing.T) {
 	spellings := acceptedSpellings(c)
 
 	// Positive control: representative aliases from each engine family.
-	for _, alias := range []string{"pgx", "postgresql", "ch", "sqlite3", "mssql", "tsql", "sql-server", "crdb", "cockroach", "ysql", "yugabyte", "cloudspanner", "google_spanner", "google-spanner", "sql_server", "ydbs"} {
+	for _, alias := range []string{"pgx", "postgresql", "ch", "sqlite3", "mssql", "tsql", "sql-server", "crdb", "cockroach", "ysql", "yugabyte", "cloudspanner", "google_spanner", "google-spanner", "sql_server"} {
 		c.Assert(spellings, qt.Contains, alias)
 	}
 	// Positive control: canonical names are accepted spellings too.
 	for _, canonical := range []string{
 		platform.Postgres, platform.MySQL, platform.MariaDB, platform.ClickHouse,
 		platform.SQLite, platform.SQLServer, platform.CockroachDB, platform.YugabyteDB, platform.Spanner,
-		platform.YDB,
 	} {
 		c.Assert(spellings, qt.Contains, canonical)
 	}
@@ -93,8 +92,8 @@ func TestAcceptedSpellings_DeclarationControls(t *testing.T) {
 		c.Assert(platform.NormalizeDialect(spelling), qt.Not(qt.Equals), "", qt.Commentf("collected %q, which is not an accepted spelling", spelling))
 	}
 	// The engine count is what the exhaustive sweeps below depend on.
-	c.Assert(canonicalDialects(c), qt.HasLen, 10)
-	c.Assert(platformCanonicalDialects(c), qt.HasLen, 11)
+	c.Assert(canonicalDialects(c), qt.HasLen, 9)
+	c.Assert(platformCanonicalDialects(c), qt.HasLen, 10)
 }
 
 // TestCanonical_RefusesEveryEngineLintCannotAnalyzeYet is the other side of the
@@ -311,18 +310,6 @@ func TestCompatible(t *testing.T) {
 			name:     "ClickHouse stands alone",
 			policy:   platform.ClickHouse,
 			database: platform.MySQL,
-			want:     false,
-		},
-		{
-			name:     "YDB matches its TLS spelling",
-			policy:   "ydbs",
-			database: platform.YDB,
-			want:     true,
-		},
-		{
-			name:     "YDB stands alone",
-			policy:   platform.Postgres,
-			database: platform.YDB,
 			want:     false,
 		},
 		{

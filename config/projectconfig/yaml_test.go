@@ -51,6 +51,7 @@ env:
       migration_lock_timeout: 8s
       exec_order: non-linear
       tx_mode: all
+      runner: golang-migrate
       pre_up_hook: prod-backup
       pre_down_hook: prod-rollback-backup
       pg_dump_to: ./prod-pg-dumps
@@ -79,6 +80,7 @@ env:
 	c.Assert(cfg.Migration.MigrationLockTimeout, qt.Equals, "8s")
 	c.Assert(cfg.Migration.ExecOrder, qt.Equals, "non-linear")
 	c.Assert(cfg.Migration.TxMode, qt.Equals, "all")
+	c.Assert(cfg.Migration.Runner, qt.Equals, "golang-migrate")
 	c.Assert(cfg.Migration.PreUpHook, qt.Equals, "prod-backup")
 	c.Assert(cfg.Migration.PreDownHook, qt.Equals, "prod-rollback-backup")
 	c.Assert(cfg.Migration.PostgresDumpTo, qt.Equals, "./prod-pg-dumps")
@@ -236,7 +238,7 @@ func TestParsePtahProjectConfigRejectsUnknownMigrationPreflightKeys(t *testing.T
   pg_dumpto: ./backups
 `), "ptah.yaml", "")
 
-	c.Assert(err, qt.ErrorMatches, `failed to parse ptah config ptah\.yaml: line 2: unknown ptah\.yaml key "pg_dumpto" under migration; supported keys are dir, format, revisions_schema, revisions_table, revision_format, lock_timeout, statement_timeout, connect_timeout, migration_lock_timeout, exec_order, tx_mode, pre_up_hook, pre_down_hook, pg_dump_to, mysqldump_to, webhook, log`)
+	c.Assert(err, qt.ErrorMatches, `failed to parse ptah config ptah\.yaml: line 2: unknown ptah\.yaml key "pg_dumpto" under migration; supported keys are dir, format, revisions_schema, revisions_table, revision_format, lock_timeout, statement_timeout, connect_timeout, migration_lock_timeout, exec_order, tx_mode, runner, pre_up_hook, pre_down_hook, pg_dump_to, mysqldump_to, webhook, log`)
 	c.Assert(err.Error(), qt.Not(qt.Contains), "projectconfig")
 }
 

@@ -44,7 +44,6 @@ func TestDescriptors_EverywhereAgreesWithTheRulesItReplaces(t *testing.T) {
 			"OPENDATASOURCE",
 		},
 		platform.Oracle: nil,
-		platform.YDB:    nil,
 	}
 	described := builtindialects.Descriptors()
 	c := qt.New(t)

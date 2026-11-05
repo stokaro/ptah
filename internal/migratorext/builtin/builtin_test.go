@@ -38,7 +38,6 @@ func TestLookup_UnknownDialectTakesTheGenericBehavior(t *testing.T) {
 	c.Assert(services.Dialects, qt.IsNil)
 	c.Assert(services.Catalog, qt.IsNil)
 	c.Assert(services.Timeouts, qt.IsNil)
-	c.Assert(services.Units, qt.IsNil)
 }
 
 func TestDialects_AreCanonicalNames(t *testing.T) {
@@ -106,7 +105,6 @@ func TestTimeouts_Statements(t *testing.T) {
 				"SET SESSION innodb_lock_wait_timeout = @ptah_prev_innodb_lock_wait_timeout",
 			},
 		},
-		{name: "ydb sends nothing", dialect: platform.YDB},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -158,18 +156,6 @@ func TestCatalog_PresenceQueryBindsItsNames(t *testing.T) {
 			c.Assert(args, qt.DeepEquals, test.wantArgs)
 		})
 	}
-}
-
-func TestUnits_SplitYQL(t *testing.T) {
-	c := qt.New(t)
-	units := builtin.Lookup(platform.YDB).Units
-
-	split, err := units.Split("CREATE TABLE a (id Int64, PRIMARY KEY (id));\nUPSERT INTO a (id) VALUES (1l);\n")
-
-	c.Assert(err, qt.IsNil)
-	c.Assert(split, qt.HasLen, 2)
-	c.Assert(units.IsData(split[0].Text), qt.IsFalse)
-	c.Assert(units.IsData(split[1].Text), qt.IsTrue)
 }
 
 func TestChecks_ValidateRefusesASequenceAdvance(t *testing.T) {

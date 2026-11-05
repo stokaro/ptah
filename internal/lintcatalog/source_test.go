@@ -10,21 +10,25 @@ import (
 	"ptah.run/engine"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/lintcatalog"
+	"ptah.run/internal/providerpublished"
 )
 
-// TestCatalogFromARuntime_HappyPath hands the catalog the bundled runtime
-// explicitly and gets the catalog the documentation renders.
+// TestCatalogFromARuntime_HappyPath hands the catalog the bundled runtime with
+// the official providers' records explicitly and gets the catalog the
+// documentation renders.
 func TestCatalogFromARuntime_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	want := must.Must(lintcatalog.Entries())
 	var page bytes.Buffer
 	c.Assert(lintcatalog.WriteMarkdown(&page), qt.IsNil)
+	bundled := builtintest.Runtime()
+	documented := must.Must(providerpublished.LintRuntime(bundled, bundled))
 
-	got, err := lintcatalog.EntriesFrom(builtintest.Runtime())
+	got, err := lintcatalog.EntriesFrom(documented)
 	c.Assert(err, qt.IsNil)
 	c.Assert(got, qt.DeepEquals, want)
 	var from bytes.Buffer
-	c.Assert(lintcatalog.WriteMarkdownFrom(&from, builtintest.Runtime()), qt.IsNil)
+	c.Assert(lintcatalog.WriteMarkdownFrom(&from, documented), qt.IsNil)
 	c.Assert(from.String(), qt.Equals, page.String())
 }
 

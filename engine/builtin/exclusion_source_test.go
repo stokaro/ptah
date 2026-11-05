@@ -87,7 +87,7 @@ func TestOwnedExclusion_SourceRenderingKeepsNameCollision(t *testing.T) {
 }
 
 func TestOwnedExclusion_SourceRenderingRefusesOtherTargets(t *testing.T) {
-	for _, target := range []string{"mysql", "clickhouse", "cockroachdb", "yugabytedb", "spanner", "sqlite", "sqlserver", "oracle", "ydb"} {
+	for _, target := range []string{"mysql", "clickhouse", "cockroachdb", "yugabytedb", "spanner", "sqlite", "sqlserver", "oracle"} {
 		t.Run(target, func(t *testing.T) {
 			c := qt.New(t)
 			runtime := must.Must(builtin.New())

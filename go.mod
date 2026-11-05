@@ -34,11 +34,8 @@ require (
 	github.com/sijms/go-ora/v3 v3.0.1
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
-	github.com/stokaro/ptah/provider-sdk v0.17.1-0.20261105053415-00cd95ca0040
+	github.com/stokaro/ptah/provider-sdk v0.20.0
 	github.com/tursodatabase/libsql-client-go v0.0.0-20260528064733-9d5d30a29a60
-	github.com/ydb-platform/ydb-go-genproto v0.0.0-20260810123728-f0c151ab31b9
-	github.com/ydb-platform/ydb-go-sdk-auth-environ v0.5.3
-	github.com/ydb-platform/ydb-go-sdk/v3 v3.156.1
 	github.com/zclconf/go-cty v1.19.0
 	github.com/zclconf/go-cty-yaml v1.2.0
 	go.opentelemetry.io/otel v1.47.0
@@ -55,7 +52,6 @@ require (
 	golang.org/x/term v0.47.0
 	golang.org/x/text v0.43.0
 	golang.org/x/tools v0.52.0
-	google.golang.org/grpc v1.86.0-dev
 	google.golang.org/protobuf v1.36.12
 	modernc.org/sqlite v1.61.1
 	oras.land/oras-go/v2 v2.7.0
@@ -123,7 +119,6 @@ require (
 	github.com/go-git/go-billy/v5 v5.9.2 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
-	github.com/golang-jwt/jwt/v4 v4.5.2 // indirect
 	github.com/golang-sql/civil v0.0.0-20220223132316-b832511892a9 // indirect
 	github.com/golang-sql/sqlexp v0.1.0 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
@@ -144,7 +139,6 @@ require (
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.3 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
-	github.com/jonboulle/clockwork v0.5.0 // indirect
 	github.com/kevinburke/ssh_config v1.6.0 // indirect
 	github.com/klauspost/compress v1.20.3 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
@@ -172,9 +166,6 @@ require (
 	github.com/stokaro/teststyle v0.2.0 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	github.com/xo/terminfo v1.3.1 // indirect
-	github.com/yandex-cloud/go-genproto v0.135.0 // indirect
-	github.com/ydb-platform/ydb-go-yc v0.12.5 // indirect
-	github.com/ydb-platform/ydb-go-yc-metadata v0.6.2 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	github.com/yuin/goldmark v1.8.7 // indirect
 	github.com/yuin/goldmark-emoji v1.0.6 // indirect
@@ -193,9 +184,10 @@ require (
 	golang.org/x/vuln v1.9.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	google.golang.org/api v0.311.0 // indirect
-	google.golang.org/genproto v0.0.0-20261026165753-2ffab32bce7e // indirect
+	google.golang.org/genproto v0.0.0-20261104224025-d1e00e9f33ab // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20261104224025-d1e00e9f33ab // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20261026165753-2ffab32bce7e // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20261104224025-d1e00e9f33ab // indirect
+	google.golang.org/grpc v1.86.0-dev // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	modernc.org/libc v1.80.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect

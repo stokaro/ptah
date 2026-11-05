@@ -94,11 +94,12 @@ func RefuseServerSchemas(dialect string, diff *difftypes.SchemaDiff) error {
 // RefuseIndexChangesInPlace refuses a diff that renames an index or writes an
 // index's comment in place, for a planner of dialect that plans neither. The
 // comparison records a rename only on a target with capability.IndexRename,
-// which only YDB has, and a comment only on a target with
-// capability.CommentAttributes or capability.IndexComments, which only YDB and
-// the PostgreSQL family have, so another planner reaches one only through a
-// diff built by hand, and planning nothing would leave the index as it was and
-// report the two sides equal.
+// which no built-in engine has, and a comment only on a target with
+// capability.CommentAttributes or capability.IndexComments, which of the
+// built-in engines only the PostgreSQL family has, so another planner reaches
+// one only through a diff built by hand, and planning nothing would leave the
+// index as it was and report the two sides equal. An executable provider's
+// engine that holds either plans it through its provider.
 func RefuseIndexChangesInPlace(dialect string, diff *difftypes.SchemaDiff) error {
 	if err := RefuseIndexRenames(dialect, diff); err != nil {
 		return err
@@ -108,7 +109,7 @@ func RefuseIndexChangesInPlace(dialect string, diff *difftypes.SchemaDiff) error
 	}
 	change := diff.IndexCommentsChanged[0]
 	return fmt.Errorf("%w: the diff writes the comment of index %q of table %q apart from the index, which only "+
-		"a YDB or a PostgreSQL-family plan does; the %s planner plans none",
+		"a PostgreSQL-family plan or an executable provider's does; the %s planner plans none",
 		ptaherr.ErrUnsupportedFeature, change.Name, change.TableName, dialect)
 }
 
@@ -126,9 +127,9 @@ func RefuseIndexRenames(dialect string, diff *difftypes.SchemaDiff) error {
 // RefuseSerialSequenceChanges refuses a diff that changes the start or the
 // increment of a Serial column's sequence, for a planner of dialect that plans
 // no such change. The comparison records one only on a target with
-// capability.SerialSequenceOptions, which only YDB has, so another planner
-// reaches one only through a diff built by hand, and planning nothing would
-// leave the sequence as it was and report the two sides equal.
+// capability.SerialSequenceOptions, which no built-in engine has, so a built-in
+// planner reaches one only through a diff built by hand, and planning nothing
+// would leave the sequence as it was and report the two sides equal.
 func RefuseSerialSequenceChanges(dialect string, diff *difftypes.SchemaDiff) error {
 	if diff == nil {
 		return nil
@@ -137,8 +138,8 @@ func RefuseSerialSequenceChanges(dialect string, diff *difftypes.SchemaDiff) err
 		for _, column := range table.ColumnsModified {
 			for _, key := range []string{"identity_start", "identity_increment"} {
 				if change, changed := column.Changes[key]; changed {
-					return fmt.Errorf("%w: the diff changes %s of column %q of table %q (%s), which only a YDB plan "+
-						"does; the %s planner plans none", ptaherr.ErrUnsupportedFeature, key, column.ColumnName,
+					return fmt.Errorf("%w: the diff changes %s of column %q of table %q (%s), which only an "+
+						"executable provider's plan does; the %s planner plans none", ptaherr.ErrUnsupportedFeature, key, column.ColumnName,
 						table.TableName, change, dialect)
 				}
 			}
@@ -150,9 +151,9 @@ func RefuseSerialSequenceChanges(dialect string, diff *difftypes.SchemaDiff) err
 // RefuseRoleMemberships refuses a diff that adds or removes the membership of
 // a role in another, for a planner of dialect that plans none. The comparison
 // records memberships only on a target with capability.RoleMembership, which
-// only YDB has, so another planner reaches one only through a diff built by
-// hand, and planning nothing would leave the member holding what it held and
-// report the two sides equal.
+// no built-in engine has, so a built-in planner reaches one only through a
+// diff built by hand, and planning nothing would leave the member holding what
+// it held and report the two sides equal.
 func RefuseRoleMemberships(dialect string, diff *difftypes.SchemaDiff) error {
 	switch {
 	case diff == nil:

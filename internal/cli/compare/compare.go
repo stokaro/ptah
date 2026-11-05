@@ -253,7 +253,7 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return fmt.Errorf("error generating schema diff SQL: %w", err)
 	}
-	writeComparison(out, cmd.ErrOrStderr(), diff, undecided, output, info.Dialect)
+	writeComparison(cmd.Context(), out, cmd.ErrOrStderr(), diff, undecided, output, info.Dialect)
 
 	if opts.exitOnDiff {
 		return nonEmptyDiffExitCode(diff, undecided)
@@ -278,12 +278,13 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 // "No schema differences detected." about a database the comparison could not
 // check (stokaro/ptah#3834).
 func writeComparison(
+	ctx context.Context,
 	out, errOut io.Writer,
 	diff *difftypes.SchemaDiff,
 	undecided schemadiff.Diagnostics,
 	sql, dialect string,
 ) {
-	undecidednote.Report(errOut, undecided, "the database", "the desired schema")
+	undecidednote.Report(ctx, errOut, undecided, "the database", "the desired schema")
 	reportSkipped(errOut, diff)
 	categories := diffreport.Categories(diff)
 	if len(categories) == 0 && !undecided.Empty() {

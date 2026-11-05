@@ -708,9 +708,9 @@ plain session, so there the guarantee rests on the static shape check alone.
 On YDB the assertion runs in a read-only transaction, which does not stop a
 read from leaving the database: measured on 25.1 and 26.2, a `SELECT` over an
 external table, or over a view that reads one, fetches the table's files from
-the object storage its data source names. So before a YDB assertion runs, Ptah
-describes every object it reads, following views into the queries they store,
-and refuses one that reads an external table or an object it cannot follow.
+the object storage its data source names. So before a YDB assertion runs, the
+provider proves that it reads local tables or views alone, and refuses one that
+reads an external table, a view that reaches one, or code it evaluates.
 
 Checks are rejected under `--tx-mode all` on a real apply (a
 pooled read cannot see the batch's uncommitted state) -- see

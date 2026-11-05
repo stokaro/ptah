@@ -90,7 +90,6 @@ func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 			ArgumentModeAfterName:        true,
 			MapsDeclaredTypes:            true,
 		},
-		"ydb": {UniqueIndexStandsAlone: true},
 	}
 	described := builtindialects.Descriptors()
 	c := qt.New(t)

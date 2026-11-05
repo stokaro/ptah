@@ -214,14 +214,22 @@ func (l *Lazy) ProvisionDev(ctx context.Context, rawURL string) (string, func(),
 }
 
 // RealmSchemes implements [devdocker.ExternalRealms]. It lists the URL
-// schemes of the engines a provider serves by this Lazy's configuration,
-// without starting any: whether an engine creates dev realms is known only
-// once its provider runs, and [Lazy.EnterRealm] asks it then.
+// schemes of the engines a provider serves by this Lazy's configuration, and
+// those of the official engines no built-in implementation serves, which the
+// selection order resolves to an installed provider, without starting any:
+// whether an engine creates dev realms is known only once its provider runs,
+// and [Lazy.EnterRealm] asks it then. An official engine whose provider is
+// absent is refused there, before anything runs on the URL's database.
 func (l *Lazy) RealmSchemes() []string {
 	var schemes []string
 	for _, installation := range l.config.Providers {
 		for name := range installation.Claims() {
 			schemes = append(schemes, strings.ToLower(name))
+		}
+	}
+	for _, entry := range providercatalog.Entries() {
+		if !servedBuiltIn(l.config, entry.EngineID, false) {
+			schemes = append(schemes, entry.URLSchemes...)
 		}
 	}
 	slices.Sort(schemes)

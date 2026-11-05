@@ -9,7 +9,7 @@ readerQuestion: "Which target layout fits my query and lifecycle needs?"
 goal: "Choose a vector target layout for the query and lifecycle needs."
 sourceOfTruth:
   - "internal/cli/inference"
-  - "internal/embedydb"
+  - "github:stokaro/ptah-ydb-plugin"
   - "integration/inference_cli_e2e_test.go"
 generated: false
 overlaps: []

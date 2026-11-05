@@ -104,8 +104,9 @@ func cloneBoolPtr(value *bool) *bool {
 	return new(*value)
 }
 
-// cloneTablePreparation preserves comparison provenance in both plan directions.
-// It does not reinterpret forward captures as reverse declarations or observations.
+// cloneTablePreparation copies comparison provenance so that the two plan
+// directions share none of it. reverseTablePreparation turns the reverse
+// plan's copy into the parents that plan reads.
 func cloneTablePreparation(capture *schemapreparation.Capture) *schemapreparation.Capture {
 	if capture == nil {
 		return nil

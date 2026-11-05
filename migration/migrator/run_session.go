@@ -21,11 +21,9 @@ import (
 // migration's does, is qualified with the connection's schema, so a setting a
 // migration leaves cannot move it.
 //
-// A dry run executes nothing. An engine that splits a body into query units
-// keeps no session state between queries (see migratorext.Units), and one
-// whose services ask for the pool's sessions keeps them (see
-// migratorext.Services.PoolSessions): SQLite, where a migration in a
-// transaction runs on the pool's connection.
+// A dry run executes nothing. An engine whose services ask for the pool's
+// sessions keeps them (see migratorext.Services.PoolSessions): SQLite, where a
+// migration in a transaction runs on the pool's connection.
 //
 // On a provider's connection the run's session is the connection's own, where
 // the provider holds the migration lock, because the provider guards the
@@ -34,8 +32,7 @@ import (
 // run.
 func (m *Migrator) withRunSession(ctx context.Context, use func(*Migrator) error) error {
 	services := m.services()
-	if m.runSession != nil || m.conn == nil || m.conn.Writer().IsDryRun() ||
-		services.Units != nil || services.PoolSessions {
+	if m.runSession != nil || m.conn == nil || m.conn.Writer().IsDryRun() || services.PoolSessions {
 		return use(m)
 	}
 	if locked := migrationLockSession(ctx); locked != nil {

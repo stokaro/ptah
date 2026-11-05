@@ -53,6 +53,7 @@ func TestRules(t *testing.T) {
 		"PG101", "PG102", "PG103", "PG103P", "PG104", "PG105", "PG106", "PG108", "PG109", "PG110",
 		"PG301", "PG301P", "PG302", "PG303", "PG304", "PG305", "PG306", "PG307", "PG308", "PG309", "PG310", "PG311",
 		"PG312", "PG312P", "PG314", "PG320",
+		"PG401P", "PG402P",
 		"TX101", "TX201",
 	})
 	c.Assert(again[0].Targets, qt.DeepEquals, []string{"postgres"})

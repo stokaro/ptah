@@ -351,19 +351,43 @@ func commentNodes(diff *difftypes.SchemaDiff) ([]ast.Node, error) {
 	return nodes, nil
 }
 
-// changedComments are the comment steps of diff: those of commentNodes, and
-// for a provider that owns the indexes of its tables and carries comments on
-// the wire, those of indexCommentNodes.
+// changedComments are the comment steps of diff: those of commentNodes; for
+// a provider that owns the lifecycle of its tables and carries comments on
+// the wire, those of removedColumnComments; and for one that also owns the
+// indexes of its tables, those of indexCommentNodes.
 func (p commonPlanner) changedComments(diff *difftypes.SchemaDiff) ([]ast.Node, error) {
 	nodes, err := commentNodes(diff)
-	if err != nil || !p.comments || !p.ownsIndexes() {
+	if err != nil || !p.comments || !p.ownsColumns() {
 		return nodes, err
+	}
+	nodes = append(nodes, removedColumnComments(diff)...)
+	if !p.ownsIndexes() {
+		return nodes, nil
 	}
 	indexes, err := p.indexCommentNodes(diff)
 	if err != nil {
 		return nil, err
 	}
 	return append(nodes, indexes...), nil
+}
+
+// removedColumnComments removes the comment of each column a table the plan
+// keeps drops, which an engine that keeps comments apart from the column, as
+// YDB keeps them in its table's attributes, would otherwise keep under the
+// column's name, and give to a column added under that name later. The step
+// is a comment step like any other, so it runs in the plan's comment window,
+// before the removals.
+func removedColumnComments(diff *difftypes.SchemaDiff) []ast.Node {
+	var nodes []ast.Node
+	for _, table := range diff.TablesModified {
+		for _, column := range table.ColumnsRemoved {
+			if column.Comment != "" {
+				nodes = append(nodes, &ast.AlterTableNode{Name: table.TableName, Operations: []ast.AlterOperation{
+					&ast.SetCommentOperation{Column: column.Name, HasCurrent: true}}})
+			}
+		}
+	}
+	return nodes
 }
 
 // indexCommentNodes sets the comment of each index of a table the plan keeps

@@ -17,7 +17,7 @@ import (
 )
 
 // TestVisitNode_RefusesASerialSequenceOnEveryOtherTarget drives each dialect
-// renderer but YDB's with a change to a Serial's sequence. The public renderer
+// renderer with a change to a Serial's sequence. The public renderer
 // refuses the node before a dialect sees it; this holds the dialect's own arm,
 // which answers a caller that reaches the renderer some other way, to a
 // refusal rather than a statement for some other object or a comment that

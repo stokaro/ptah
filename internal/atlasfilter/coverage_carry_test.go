@@ -8,6 +8,8 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/timescaledb/tsschema"
@@ -54,6 +56,9 @@ func TestScopeDatabaseKeepsCoverage(t *testing.T) {
 				DatabasePath:            "/local",
 				PlanningContextObjects:  contextObjects,
 				PlanningContextCoverage: context,
+				// No selection keeps the table, and the filter keeps the record.
+				UnreadTables: []catalog.UnreadTable{{Identity: objectidentity.NewBuilder(identifier.ForDialect("postgres")).TablePartsVerbatim("public", "rep"),
+					Reason: "rep is a replica table"}},
 			}
 
 			got, err := atlasfilter.ScopeDatabase(schema, test.scope)
@@ -64,6 +69,7 @@ func TestScopeDatabaseKeepsCoverage(t *testing.T) {
 			c.Assert(got.DatabasePath, qt.Equals, "/local")
 			c.Assert(got.PlanningContextObjects.Equal(contextObjects), qt.IsTrue)
 			c.Assert(got.PlanningContextCoverage.Equal(context), qt.IsTrue)
+			c.Assert(got.UnreadTables, qt.DeepEquals, schema.UnreadTables)
 		})
 	}
 }

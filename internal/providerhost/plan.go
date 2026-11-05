@@ -168,7 +168,7 @@ func (p commonPlanner) commonObjectSteps(diff *difftypes.SchemaDiff) (commonObje
 
 func (p commonPlanner) alterations(table difftypes.TableDiff) (nodes, removals []ast.Node, err error) {
 	fields := []string{"TableName", "ColumnsAdded", "ColumnsRemoved", "Desired", "Current", "ColumnKeyNames", "FeatureChanges"}
-	ownedColumns := !p.commonTables && p.assessParents
+	ownedColumns := p.ownsColumns()
 	if ownedColumns {
 		// The owner receives complete captured columns and must account for
 		// the parent change. Shared column spellings cannot preempt that decision.

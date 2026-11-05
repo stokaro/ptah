@@ -213,11 +213,15 @@ func generateCommand(cmd *cobra.Command, opts *options) error {
 }
 
 // refuseProviderServerVersion refuses --server-version for an engine a
-// provider serves. The version selects a capability preset of a built-in
-// dialect, and a provider's engine has none, so the value would describe
-// nothing and be dropped in silence.
+// provider serves whose provider declares no release-line facts
+// (ReleaseLine.capabilities). The version selects a capability preset of a
+// built-in dialect or a declared line of a provider's engine; with neither the
+// value would describe nothing and be dropped in silence.
 func refuseProviderServerVersion(opts *options, target string) error {
 	if opts.serverVersion == "" || platform.NormalizeDialect(target) != "" {
+		return nil
+	}
+	if _, declared := capability.ProvidedReleaseLine(target, opts.serverVersion); declared {
 		return nil
 	}
 	return fmt.Errorf("--%s selects a capability preset of a built-in dialect, and the %s engine is served by a provider, which declares none",
@@ -277,6 +281,11 @@ func resolveServerTarget(opts *options) (servertarget.Target, error) {
 			serverversion.FlagName, dialectFlag)
 	}
 	dialect := platform.NormalizeDialect(opts.dialect)
+	if _, declared := capability.ProvidedReleaseLine(opts.dialect, opts.serverVersion); dialect == "" && declared {
+		// An engine an executable provider serves resolves the version to a
+		// release line its provider declares facts for.
+		dialect = strings.TrimSpace(opts.dialect)
+	}
 	if dialect == "" {
 		// The dialect names no platform, so there is nothing to resolve the
 		// version against. Reporting nothing here hands the diagnosis to the

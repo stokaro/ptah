@@ -48,16 +48,6 @@ func TestForDialect(t *testing.T) {
 			},
 		},
 		{
-			name:    "ydb is case-sensitive and has no default schema",
-			dialect: "ydb",
-			want: identifier.Semantics{
-				IndexNamespace: identifier.IndexNamespaceTable,
-				IndexNames:     identifier.ComparisonExact,
-				TableNames:     identifier.ComparisonExact,
-				ColumnNames:    identifier.ComparisonExact,
-			},
-		},
-		{
 			name:    "yugabytedb through an alias",
 			dialect: "ysql",
 			want: identifier.Semantics{

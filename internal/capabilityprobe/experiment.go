@@ -3,7 +3,6 @@ package capabilityprobe
 import (
 	"context"
 	"fmt"
-	"slices"
 
 	"ptah.run/core/platform/capability"
 )
@@ -60,19 +59,6 @@ type experiment struct {
 	// capability.
 	setup []string
 
-	// runs holds the statements decide runs that the experiment carries as
-	// data, and creates the paths, relative to the run's namespace, that
-	// decide creates in statements it builds at run time. Neither changes
-	// what the run does. Together with setup they say which paths the
-	// experiment creates: on YDB every experiment of a run shares one
-	// namespace directory, so a second experiment creating a path the first
-	// one made is refused for the path, and the refusal reads as an answer
-	// about the key (measured on 26.2.1.14: `CREATE TRANSFER tpk` after the
-	// topic experiment's `CREATE TOPIC tpk` answered `unexpected path type
-	// ... EPathTypePersQueueGroup`).
-	runs    []string
-	creates []string
-
 	decide decider
 }
 
@@ -103,7 +89,6 @@ func acceptanceNote(key capability.Capability, setup []string, statement, note s
 	return experiment{
 		decides: []capability.Capability{key},
 		setup:   setup,
-		runs:    []string{statement},
 		decide: func(ctx context.Context, s *session) (verdicts, []Attempt) {
 			attempt := s.exec(ctx, statement)
 			return verdicts{key: annotated(attempt.Accepted, note)}, []Attempt{attempt}
@@ -118,7 +103,6 @@ func all(key capability.Capability, setup []string, statements ...string) experi
 	return experiment{
 		decides: []capability.Capability{key},
 		setup:   setup,
-		runs:    statements,
 		decide: func(ctx context.Context, s *session) (verdicts, []Attempt) {
 			attempts, ok := s.runAll(ctx, statements)
 			return verdicts{key: decided(ok)}, attempts
@@ -137,7 +121,6 @@ func guarded(key capability.Capability, setup, guardedStmts []string, unguarded 
 	return experiment{
 		decides: []capability.Capability{key},
 		setup:   setup,
-		runs:    append(slices.Clone(guardedStmts), unguarded),
 		decide: func(ctx context.Context, s *session) (verdicts, []Attempt) {
 			attempts, accepted := s.runAll(ctx, guardedStmts)
 			control := s.exec(ctx, unguarded)
@@ -167,7 +150,6 @@ func enforced(key capability.Capability, setup []string, accept, reject string) 
 	return experiment{
 		decides: []capability.Capability{key},
 		setup:   setup,
-		runs:    []string{accept, reject},
 		decide: func(ctx context.Context, s *session) (verdicts, []Attempt) {
 			control := s.exec(ctx, accept)
 			violation := s.exec(ctx, reject)
@@ -196,7 +178,6 @@ func concurrentIndex(key capability.Capability, setup []string, standalone, insi
 	return experiment{
 		decides: []capability.Capability{key},
 		setup:   setup,
-		runs:    []string{standalone, insideTx},
 		decide: func(ctx context.Context, s *session) (verdicts, []Attempt) {
 			first := s.exec(ctx, standalone)
 			attempts := []Attempt{first}

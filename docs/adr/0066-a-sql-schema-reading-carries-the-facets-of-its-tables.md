@@ -2,7 +2,7 @@
 
 Status: Proposed
 
-Contract: 25.23
+Contract: 25.21
 
 Deciders: Ptah maintainers
 
@@ -56,7 +56,7 @@ provider becomes the only reader of a YQL schema.
 
 `schema.sql-facets` is a two-way feature. An engine that declares the
 `DOCUMENT` mode lists it beside `schema.read-sql`, the provider lists it, and
-the host lists it in its host features. Contract 25.23 adds one field and one
+the host lists it in its host features. Contract 25.21 adds one field and one
 trace collection:
 
 ```proto
@@ -144,9 +144,8 @@ cannot read the dialect. Rejected.
 
 ## Consequences
 
-- Contract 25.23 adds a field, a trace collection and a two-way feature. The
-  number is provisional: contracts 25.20 to 25.22 are proposed by other open
-  changes, and whichever change merges first takes the lowest free number.
+- Contract 25.21 adds a field, a trace collection and a two-way feature. The
+  same minor carries the additions of ADR 0065, ADR 0067 and ADR 0068.
 - The SDK release comes first. The host and the providers adopt it in their
   own changes.
 - Without the feature nothing changes: a provider refuses the construct as it

@@ -142,11 +142,8 @@ func requestDockerHubTags(ctx context.Context, client *http.Client, pageURL stri
 // numericPatchTag returns a sortable numeric version for a release tag on line.
 //
 // Two shapes are patch tags. A YugabyteDB tag carries a build number,
-// `2025.2.5.1-b1`, which sorts after the version it builds. A YDB tag is the
-// release alone, `25.1.4.7`: local-ydb publishes `25.1` too, but that tag is a
-// stale build of the line rather than its newest patch (26.2 is a June build
-// while 26.2.1.14 is the release), which is why a YDB cell resolves the patch
-// rather than trusting the line's own tag. The release line itself is required
+// `2025.2.5.1-b1`, which sorts after the version it builds, and a tag can be
+// the release alone, `25.1.4.7`. The release line itself is required
 // as an exact component prefix and at least one component more; preview,
 // floating, hotfix and other suffixed tags (`26.2.1.14.ic2.1`,
 // `24.3.11-hotfix.9`) are ignored, because a component that is not a number

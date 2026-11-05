@@ -1,11 +1,11 @@
 ---
 title: Configure the YDB provider
-description: Diagnose an absent or unusable YDB executable provider and verify an explicitly trusted installation.
+description: Install, select and verify the YDB executable provider, diagnose an absent or unusable installation, and find where the provider documents what YDB does in Ptah.
 type: how-to
 audience:
   - database-engineer
-readerQuestion: "How do I configure and verify the YDB executable provider?"
-goal: "Verify an explicitly trusted YDB provider installation."
+readerQuestion: "How do I install, configure and verify the YDB executable provider?"
+goal: "Install the YDB provider and verify that Ptah selects it."
 sourceOfTruth:
   - internal/providercatalog
   - internal/providerconfig
@@ -13,13 +13,22 @@ sourceOfTruth:
   - internal/cli/providers
   - stokaro/ptah#4204
 generated: false
+searchAliases:
+  - "YDB"
+  - "YDB support"
+  - "YQL"
 overlaps: []
 disposition: keep
 ---
 
-Use this page when an explicit YDB provider selection reports a missing or
-unusable installation. You need a trusted executable artifact, its checksum, and
-a host that supports the artifact's protocol.
+Ptah serves YDB only through this provider. The `ptah`, `ptah-compat` and
+`ptah-ls` binaries hold no YDB implementation: the provider renders YQL,
+compares and plans, reads a live database, applies changes, keeps the migration
+history and the migration lock, lints YQL migrations, writes data and runs
+embedding generations. Use this page to install it, to select a reviewed build
+with a manifest, and to correct a selection that reports a missing or unusable
+installation. What YDB does in Ptah is the provider's to document; see
+[Where the provider documents YDB](#where-the-provider-documents-ydb).
 
 ## Check availability
 
@@ -27,13 +36,12 @@ The official provider ID is `github.com/stokaro/ptah-ydb-plugin`. Its designated
 is [stokaro/ptah-ydb-plugin](https://github.com/stokaro/ptah-ydb-plugin).
 The catalog recognizes `ydb` and `ydbs` as engine names.
 
-The provider is installed separately from Ptah, on every installation channel.
-Install the newest release this Ptah can run with
-`ptah providers install ydb`, or a chosen one with `--version`. A command that
-asks for the provider with `--provider-engine ydb` then selects the installed
-copy without a manifest; a manifest entry, described below, overrides it.
-Without `--provider-engine ydb`, a `ydb://` address is served by the engine
-built into `ptah` in this documentation version.
+The provider is the only implementation of YDB that Ptah runs, and it is
+installed separately from Ptah, on every installation channel. Install the
+newest release this Ptah can run with `ptah providers install ydb`, or a chosen
+one with `--version`. A command that names a `ydb://` or `ydbs://` URL or the
+`ydb` dialect then selects the installed copy without a flag or a manifest; a
+manifest entry, described below, overrides it.
 The [install procedure](../../executable-providers/#install-an-official-provider)
 covers how a release is chosen, the checks, and where the file is stored.
 Remaining work on official providers is tracked in
@@ -91,11 +99,42 @@ correct the reported installation state, then repeat the check above.
 
 ## Use the selected provider
 
-Pass `--provider-config providers.json --provider-engine ydb` to supported
-native schema commands. This explicitly requires the executable provider;
-an absent or failed installation cannot select an embedded implementation.
-Without `--provider-config`, the flag selects the installed provider.
+A native command that names a YDB URL or the `ydb` dialect selects the
+installed provider. Pass `--provider-config providers.json` to select a manifest
+entry instead. `--provider-engine ydb` asks for the executable provider
+explicitly, and the command then refuses every URL scheme the provider does not
+serve. An absent or failed installation is reported; nothing else serves YDB in
+its place.
+
+`ptah-compat` selects the installed provider in the same way, or the entry of
+the manifest that `PTAH_PROVIDER_CONFIG` names; see
+[Use a provider from ptah-compat](../../executable-providers/#use-a-provider-from-ptah-compat).
+`PTAH_ATLAS_STRICT_COMPAT=1` refuses a YDB URL in the community binary's words.
+The language server starts no provider: it completes the directives the
+provider claims from a copy recorded from a provider build.
 
 The [native provider workflow](../../executable-providers/) describes inspection,
-saved plans, application, and its protocol limitations. The catalog does not add
-provider selection to Atlas-compatible commands or the language server.
+saved plans, application, and its protocol limitations.
+
+## Where the provider documents YDB
+
+The provider's [documentation](https://github.com/stokaro/ptah-ydb-plugin/blob/master/docs/README.md) is the reference for what YDB
+does in Ptah: which YQL a plan renders, which changes it plans in place and which
+it refuses, the capabilities each release line and feature flag gives, and what
+is not supported yet. Its pages start from these questions:
+
+| Question | Provider page |
+| --- | --- |
+| How do a `ydb://` URL, a dev database and `ptah-compat` reach YDB? | [Using the provider with Ptah](https://github.com/stokaro/ptah-ydb-plugin/blob/master/docs/ptah.md) |
+| Which directives and YAML keys declare YDB objects? | [Declaring YDB objects](https://github.com/stokaro/ptah-ydb-plugin/blob/master/docs/declarations.md) |
+| How is a YDB migration split, locked and timed out? | [Migrations on YDB](https://github.com/stokaro/ptah-ydb-plugin/blob/master/docs/migrations.md) |
+| How is an embedding generation indexed on YDB? | [Embedding generations on YDB](https://github.com/stokaro/ptah-ydb-plugin/blob/master/docs/inference.md) |
+
+The Go annotation, YAML and HCL attributes YDB adds to a directive or key every
+engine has are listed with that directive in the
+[Go annotation reference](../../../reference/go-annotations/), the
+[YAML schema reference](../../../reference/yaml-schema/) and the
+[HCL schema reference](../../../reference/hcl-schema/). Ptah's
+[support matrix](../../../databases/support-matrix/) lists the engines Ptah
+builds in; YDB's release lines and capabilities are the provider's to declare,
+and its release publishes them in `release-lines.json`.

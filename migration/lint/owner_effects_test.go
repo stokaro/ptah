@@ -2,42 +2,18 @@ package lint_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/lintext"
-	"ptah.run/dialect/ydb/ydblint"
 	"ptah.run/engine"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/lintscan"
 	"ptah.run/migration/lint"
 )
-
-// A run that names no dialect still reports a dropped topic: the YDB owner
-// judges the drop over the dialect-blind split, and that judgment does not
-// depend on the YD family running, so disabling it leaves DS107 in place.
-func TestLintFS_NoDialect_DS107ReadsTheOwnersDrops(t *testing.T) {
-	for _, test := range []struct {
-		name     string
-		disabled []string
-	}{
-		{name: "every rule"},
-		{name: "the YD family disabled", disabled: []string{"YD"}},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-
-			findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{
-				"0001_t.up.sql": "CREATE TABLE notes (id int);\nDROP TOPIC t;\n",
-			}), lint.Options{Disabled: test.disabled})
-
-			c.Assert(err, qt.IsNil)
-			c.Assert(dsSites(findingSites(findings)), qt.DeepEquals, []string{"0001_t.up.sql:2:DS107"})
-		})
-	}
-}
 
 // countingAnnotator counts the calls an annotator answers.
 type countingAnnotator struct {
@@ -50,15 +26,40 @@ func (a countingAnnotator) AnnotateStatements(ctx context.Context, request linte
 	return a.Annotator.AnnotateStatements(ctx, request)
 }
 
-// annotatedRuntime registers postgres with the bundled splitter, and ydb with
-// nothing but the YDB owner's annotator, counting its calls.
+// dropAnnotator is a fixture owner's annotator. It reports a DROP TOPIC or a
+// DROP TRANSFER as a drop that loses state, and declines the statement after
+// one that holds a backslash: its own lexing reads the backslash as an escape,
+// so the string goes on into that statement, and it would split the text
+// elsewhere than the dialect-blind scanner does.
+type dropAnnotator struct{}
+
+func (dropAnnotator) AnnotateStatements(_ context.Context, request lintext.AnnotateRequest) (lintext.AnnotateResult, error) {
+	result := lintext.AnnotateResult{Files: make([][]lintext.Annotation, len(request.Files))}
+	for i, statements := range request.Files {
+		result.Files[i] = make([]lintext.Annotation, len(statements))
+		for j, statement := range statements {
+			switch {
+			case j > 0 && strings.Contains(statements[j-1].SQL, `\`):
+				result.Files[i][j].Declined = true
+			case len(statement.Words) > 2 && statement.Words[0] == "DROP" &&
+				(statement.Words[1] == "TOPIC" || statement.Words[1] == "TRANSFER"):
+				result.Files[i][j].Effects = []lintext.Effect{{Fact: lintext.FactStatefulDrop,
+					Object: statement.SourceWords[2], Kind: statement.Words[1]}}
+			}
+		}
+	}
+	return result, nil
+}
+
+// annotatedRuntime registers postgres with the bundled splitter, and a
+// fixture engine with nothing but the drop annotator, counting its calls.
 func annotatedRuntime(c *qt.C, calls *int) *engine.Runtime {
 	c.Helper()
 	return must.Must(engine.New(
 		engine.Provider{ID: "example.org/postgres", Targets: []engine.Target{{Name: "postgres",
 			Splitter: lintscan.Splitter{Dialect: "postgres"}}}},
-		engine.Provider{ID: "example.org/ydb", Targets: []engine.Target{{Name: "ydb",
-			Annotator: countingAnnotator{calls: calls, Annotator: ydblint.Annotator{}}}}},
+		engine.Provider{ID: "example.org/fixture", Targets: []engine.Target{{Name: "fixture",
+			Annotator: countingAnnotator{calls: calls, Annotator: dropAnnotator{}}}}},
 	))
 }
 
@@ -91,10 +92,10 @@ func TestLintFS_AnnotatesOnlyARunThatNamesNoDialect(t *testing.T) {
 	}
 }
 
-// A statement the YDB owner splits differently is not judged, and the
-// analysis names it rather than reading it as a statement that drops nothing:
-// the dialect-blind scanner ends the first string at the backslash, while YQL
-// reads the backslash as an escape and the DROP TOPIC as part of the string.
+// A statement an owner splits differently is not judged, and the analysis
+// names it rather than reading it as a statement that drops nothing: the
+// dialect-blind scanner ends the first string at the backslash, while the
+// fixture owner reads the backslash as an escape and declines the statement.
 // A file the run does not select is not named, as it reports no finding.
 func TestAnalyzeFS_NoDialect_NamesWhatAnOwnerDeclined(t *testing.T) {
 	for _, test := range []struct {
@@ -103,7 +104,7 @@ func TestAnalyzeFS_NoDialect_NamesWhatAnOwnerDeclined(t *testing.T) {
 		want      []lint.UnjudgedStatement
 		wantSites []string
 	}{
-		{name: "every file", want: []lint.UnjudgedStatement{{Target: "ydb", File: "0001_t.up.sql", Line: 2}},
+		{name: "every file", want: []lint.UnjudgedStatement{{Target: "fixture", File: "0001_t.up.sql", Line: 2}},
 			wantSites: []string{"0002_u.up.sql:1:DS107"}},
 		{name: "the second file selected", selection: lint.VersionSelection{Versions: []int64{2}, Restricted: true},
 			want: nil, wantSites: []string{"0002_u.up.sql:1:DS107"}},
@@ -111,7 +112,8 @@ func TestAnalyzeFS_NoDialect_NamesWhatAnOwnerDeclined(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{
+			calls := 0
+			analysis, err := lint.AnalyzeFS(c.Context(), annotatedRuntime(c, &calls), fixture(map[string]string{
 				"0001_t.up.sql": "SELECT 'a\\';\nDROP TOPIC t;\nSELECT '';\n",
 				"0002_u.up.sql": "DROP TOPIC u;\n",
 			}), lint.Options{Selection: test.selection})

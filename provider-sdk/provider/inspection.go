@@ -32,13 +32,7 @@ func InspectionValues(description *protocol.Description, request *protocol.Inspe
 	if err != nil {
 		return nil, err
 	}
-	if err := validateInspectedColumns(description, engine, snapshot); err != nil {
-		return nil, err
-	}
-	if err := validateInspectedPrimaryKeys(description, engine, snapshot); err != nil {
-		return nil, err
-	}
-	if err := validateInspectedIndexes(description, engine, snapshot); err != nil {
+	if err := validateInspectedTables(description, engine, snapshot); err != nil {
 		return nil, err
 	}
 	if err := validateInspectedPlanningContext(description, engine, request, snapshot); err != nil {
@@ -60,7 +54,7 @@ func InspectionValues(description *protocol.Description, request *protocol.Inspe
 	if err := validateReservedModels(description, snapshot); err != nil {
 		return nil, err
 	}
-	if err := validateInspectionScope(request, snapshot); err != nil {
+	if err := validateInspectionScope(engine, request, snapshot); err != nil {
 		return nil, err
 	}
 	values, err := inspectionValues(snapshot)
@@ -82,6 +76,20 @@ func InspectionValues(description *protocol.Description, request *protocol.Inspe
 	return result, nil
 }
 
+// validateInspectedTables checks what a snapshot says about its tables beyond
+// their facets: the common columns, primary keys and indexes it observed, and
+// the tables it found and does not describe.
+func validateInspectedTables(description *protocol.Description, engine *protocol.Engine, snapshot *protocol.Schema) error {
+	for _, check := range []func(*protocol.Description, *protocol.Engine, *protocol.Schema) error{
+		validateInspectedColumns, validateInspectedPrimaryKeys, validateInspectedIndexes, validateUnreadTables,
+	} {
+		if err := check(description, engine, snapshot); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func inspectionValues(snapshot *protocol.Schema) ([]*protocol.Envelope, error) {
 	values := slices.Clone(snapshot.GetNativeObjects())
 	for _, value := range values {
@@ -90,24 +98,11 @@ func inspectionValues(snapshot *protocol.Schema) ([]*protocol.Envelope, error) {
 		}
 	}
 	for _, table := range snapshot.GetTables() {
-		if err := validateInspectedTableIdentity(table, snapshot.GetEngine()); err != nil {
+		owned, err := tableValues(table, snapshot.GetEngine())
+		if err != nil {
 			return nil, err
 		}
-		for _, value := range table.GetFacets() {
-			if value == nil || compareReferences(value.GetOwner(), table.GetIdentity()) != 0 {
-				return nil, fmt.Errorf("%w: inspected facet belongs to another table", ErrProtocol)
-			}
-			values = append(values, value)
-		}
-		for _, column := range table.GetColumns() {
-			owner := ColumnReference(table.GetIdentity(), column.GetName())
-			for _, value := range column.GetFacets() {
-				if value == nil || compareReferences(value.GetOwner(), owner) != 0 {
-					return nil, fmt.Errorf("%w: inspected facet belongs to another column", ErrProtocol)
-				}
-				values = append(values, value)
-			}
-		}
+		values = append(values, owned...)
 	}
 	for _, view := range snapshot.GetCommonObjects().GetViews() {
 		values = append(values, view.GetFacets()...)
@@ -123,6 +118,36 @@ func inspectionValues(snapshot *protocol.Schema) ([]*protocol.Envelope, error) {
 		if ordered[i-1].GetKind() == ordered[i].GetKind() && compareReferences(ordered[i-1].GetOwner(), ordered[i].GetOwner()) == 0 {
 			return nil, fmt.Errorf("%w: duplicate inspected model value", ErrProtocol)
 		}
+	}
+	return values, nil
+}
+
+// tableValues are the facets of one inspected table in the order the host reads
+// them: the table's own, its columns', and its indexes', in the order the
+// indexes are listed. validateInspectedIndexes checks the owners of the index
+// facets.
+func tableValues(table *protocol.Table, engine string) ([]*protocol.Envelope, error) {
+	if err := validateInspectedTableIdentity(table, engine); err != nil {
+		return nil, err
+	}
+	var values []*protocol.Envelope
+	for _, value := range table.GetFacets() {
+		if value == nil || compareReferences(value.GetOwner(), table.GetIdentity()) != 0 {
+			return nil, fmt.Errorf("%w: inspected facet belongs to another table", ErrProtocol)
+		}
+		values = append(values, value)
+	}
+	for _, column := range table.GetColumns() {
+		owner := ColumnReference(table.GetIdentity(), column.GetName())
+		for _, value := range column.GetFacets() {
+			if value == nil || compareReferences(value.GetOwner(), owner) != 0 {
+				return nil, fmt.Errorf("%w: inspected facet belongs to another column", ErrProtocol)
+			}
+			values = append(values, value)
+		}
+	}
+	for _, index := range table.GetIndexes() {
+		values = append(values, index.GetFacets()...)
 	}
 	return values, nil
 }

@@ -21,7 +21,6 @@ func TestPresets_NoCallerChangesAnotherCallersSet(t *testing.T) {
 	}{
 		{name: "Postgres16", preset: capability.Postgres16},
 		{name: "CockroachDB23", preset: capability.CockroachDB23},
-		{name: "YDB251", preset: capability.YDB251},
 		{name: "MySQL8013", preset: capability.MySQL8013},
 	}
 	for _, tc := range tests {
@@ -55,18 +54,18 @@ func TestPresets_NoCallerChangesAnotherCallersSet(t *testing.T) {
 // sync.OnceValue owns that guarantee.
 func TestPresets_ConcurrentCallsShareTheSetSafely(t *testing.T) {
 	c := qt.New(t)
-	want := capability.YDB252().Map()
+	want := capability.MySQL8016().Map()
 	results := make([]capability.Capabilities, 8)
 	var wg sync.WaitGroup
 	for i := range results {
 		wg.Go(func() {
-			results[i] = capability.YDB252().With("test.invented", true)
+			results[i] = capability.MySQL8016().With("test.invented", true)
 		})
 	}
 	wg.Wait()
 	for _, result := range results {
 		c.Assert(result.Has("test.invented"), qt.IsTrue)
-		c.Assert(capability.YDB252().Map(), qt.DeepEquals, want)
+		c.Assert(capability.MySQL8016().Map(), qt.DeepEquals, want)
 	}
 }
 

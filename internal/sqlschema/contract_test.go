@@ -31,6 +31,11 @@ import (
 // an owner's grammar reads, every file of a load in one call to the owner, and
 // ReadsAsLoad says which dialects take it.
 //
+// NameFollower, with NewNameFollower, the StatementNames and NameCollision it
+// reports and LocateName, is the read's analysis of the names a server cuts,
+// followed one statement at a time for a linter, so lint reports the names the
+// read records objects under rather than a second reading of them.
+//
 // ConvertScript is the exception, and it is plugin debt: the YDB owner parses
 // YQL itself and converts its tables, columns, indexes and views through it,
 // handing over its own statements with a Converter and reading names and
@@ -48,7 +53,7 @@ func TestPackageContract_OutsideCallersUseReadOnly(t *testing.T) {
 	// of Read's failure contract.
 	used := referencedSymbolsOutsidePackage(c, root)
 
-	c.Assert(used, qt.DeepEquals, []string{"ConvertScript", "Document", "ErrNameInUse", "ErrStoredNameCollision", "ErrUnmodeledStatement", "Load", "NewDocument", "Options", "Read", "ReadLoad", "ReadOnto", "ReadWith", "ReadsAsLoad", "Redeclaration", "RedeclarationRecord", "Scope", "StoredName", "StoredNameRecord", "Table", "WithNotValidAllowances"},
+	c.Assert(used, qt.DeepEquals, []string{"ConvertScript", "Document", "ErrNameInUse", "ErrStoredNameCollision", "ErrUnmodeledStatement", "Load", "LocateName", "NameCollision", "NameFollower", "NewDocument", "NewNameFollower", "Options", "Read", "ReadLoad", "ReadOnto", "ReadWith", "ReadsAsLoad", "Redeclaration", "RedeclarationRecord", "Scope", "StatementNames", "StoredName", "StoredNameRecord", "Table", "WithNotValidAllowances"},
 		qt.Commentf("another package reached past Read into the conversion internals; "+
 			"either it wants SQL read into the model, which Read does, or it wants a "+
 			"conversion service, which this package deliberately is not"))

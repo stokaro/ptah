@@ -73,13 +73,28 @@ func sourceLimitsAvailable(description *protocol.Description, engine string, doc
 	return false
 }
 
-func sourceCoverageRequiresLimits(coverage *protocol.ModelCoverage) bool {
+// sourceCoverageRequiresLimits reports whether the knowledge of coverage
+// that a document of format holds kind-wide is narrowed: a kind whose model
+// lists format, other than complete, or a subject of such a kind, other than
+// known. A model that lists no format a document holds kind-wide, such as one
+// a table platform claim alone brings into an HCL document, needs no header to
+// be narrowed: the document never claims more of it than the tables it
+// writes.
+func sourceCoverageRequiresLimits(coverage *protocol.ModelCoverage, format protocol.SourceDocument_Format) bool {
+	described := make(map[string]bool)
 	for _, kind := range coverage.GetKinds() {
+		if !slices.Contains(kind.GetModel().GetSourceFormats(), format) {
+			continue
+		}
+		described[kind.GetModel().GetKind()] = true
 		if kind.GetKnowledge().GetState() != protocol.ModelKnowledge_COMPLETE || len(kind.GetRegions()) != 0 {
 			return true
 		}
 	}
 	for _, subject := range coverage.GetSubjects() {
+		if !described[subject.GetKind()] {
+			continue
+		}
 		switch subject.GetKnowledge().GetState() {
 		case protocol.ModelKnowledge_COMPLETE, protocol.ModelKnowledge_ABSENT, protocol.ModelKnowledge_DEFAULTED:
 		default:
@@ -92,7 +107,7 @@ func sourceCoverageRequiresLimits(coverage *protocol.ModelCoverage) bool {
 func validateEncodedLimits(engine *protocol.Engine, request *protocol.EncodeSourceRequest, result *protocol.EncodedSource) error {
 	if slices.Contains(engine.GetFeatures(), SourceLimitsFeature) &&
 		(request.GetFormat() == protocol.SourceDocument_GO_ANNOTATIONS || request.GetFormat() == protocol.SourceDocument_HCL) {
-		if sourceCoverageRequiresLimits(request.GetCoverage()) && len(result.GetLimits()) == 0 {
+		if sourceCoverageRequiresLimits(request.GetCoverage(), request.GetFormat()) && len(result.GetLimits()) == 0 {
 			return encodeError("narrowed coverage requires a claimed source limit")
 		}
 		var kinds []string

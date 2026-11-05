@@ -17,7 +17,7 @@ import (
 // sites. Targeted documents describe absence as well as present declarations;
 // an untargeted document adds no target-wide coverage.
 func SQL() []sqlext.Extension {
-	foreign := slices.DeleteFunc(pgtable.PersistenceTargets(), func(target string) bool { return target == platform.Postgres || target == platform.YDB })
+	foreign := slices.DeleteFunc(pgtable.PersistenceTargets(), func(target string) bool { return target == platform.Postgres })
 	return []sqlext.Extension{exclusionSQL(), deleteColumnsSQL(),
 		{Owner: pgtable.Owner, Targets: []string{platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner},
 			Facets: []schemaext.Kind{pgtable.PartitionKind}, Patterns: []sqlext.Pattern{{Name: "partition", Site: sqlext.TableOption,

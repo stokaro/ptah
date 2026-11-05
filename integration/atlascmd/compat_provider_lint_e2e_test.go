@@ -93,10 +93,11 @@ func sqliteTables(c *qt.C, path string) []string {
 // TestCompatMigrateLintSelectsTheProviderOfTheDevURL runs `migrate lint` with
 // a manifest naming a provider for ydb, the engine the dev URL names. The
 // compatibility surface resolves it through the native pipeline and starts it
-// to build the runtime the run lints with. The bundled YDB engine is still
-// registered beside it, so the two claims on the ydb target are refused
-// rather than resolved by precedence: the run is not linted by the bundled
-// engine instead, and the provider process ends with the command.
+// to build the runtime the run lints with. No built-in engine claims the ydb
+// target, so the provider's registration is the only one and its session
+// opens the dev database: the run fails there, at a database the fixture
+// cannot open, rather than at a registration two owners claim, and the
+// provider process ends with the command.
 func TestCompatMigrateLintSelectsTheProviderOfTheDevURL(t *testing.T) {
 	c := qt.New(t)
 	f := newCompatLintFixture(c, "ydb-lint", "github.com/stokaro/ptah-ydb-plugin", "ydb")
@@ -105,7 +106,8 @@ func TestCompatMigrateLintSelectsTheProviderOfTheDevURL(t *testing.T) {
 
 	c.Assert(code, qt.Equals, 1)
 	c.Assert(out, qt.Equals, "")
-	c.Assert(stderr, qt.Equals, `Error: invalid provider registration: target name "ydb" is claimed by "ptah.run/ydb" and "github.com/stokaro/ptah-ydb-plugin"`+"\n")
+	c.Assert(stderr, qt.Equals, "Error: error validating migration SQL on dev database: error connecting to dev database: "+
+		"provider open session failed (Unknown)\n")
 	f.assertStopped(c)
 }
 

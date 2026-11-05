@@ -11,7 +11,7 @@ import (
 // such as a YDB table's changefeeds, which a YAML or Go source of the same
 // engine carries as facets too (ADR 0066). An engine that declares the DOCUMENT mode
 // lists it beside ReadSQLSchemaFeature, the provider lists it, and the host
-// lists it in its host features. Contract 25.23.
+// lists it in its host features. Contract 25.21.
 //
 // A facet is an Envelope of a DESIRED model whose source formats include SQL.
 // Its owner is a table of SQLSchema.tables, named by kind "table", the

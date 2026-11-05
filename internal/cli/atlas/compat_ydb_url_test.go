@@ -12,15 +12,30 @@ import (
 	"ptah.run/internal/cli/atlas"
 )
 
-// ydbConnectorRefusedURL names a YDB database with a parameter Ptah's YDB
-// connector refuses. A run that reaches the connector fails there, offline and
-// at once, naming the parameter. That failure is the proof that the
+// ydbProviderURL names a YDB database on a port nothing listens on. Only the
+// official YDB provider serves the engine, so a run that hands the URL on
+// asks for that provider, and with none installed it stops there, offline and
+// at once, naming the provider. That refusal is the proof that the
 // compatibility surface handed the URL on: a refusal on this surface would
-// answer before the connector is asked.
-const ydbConnectorRefusedURL = "ydb://127.0.0.1:1/local?bogus=1"
+// answer before the provider is looked for.
+const ydbProviderURL = "ydb://127.0.0.1:1/local"
 
-// ydbConnectorRefusal is what the connector answers for ydbConnectorRefusedURL.
-const ydbConnectorRefusal = `invalid YDB URL: parameter "bogus" is not one Ptah reads on a YDB URL`
+// ydbProviderMissing is what the provider selection answers for
+// ydbProviderURL when no YDB provider is installed or configured.
+const ydbProviderMissing = `YDB is supported through the official Ptah YDB plugin, which is installed separately, ` +
+	`and no installation was found\. Run ` + "`ptah providers install ydb`" + `.* Plugin repository: ` +
+	`https://github\.com/stokaro/ptah-ydb-plugin\.`
+
+// isolateProviderStore points the user cache directory, where
+// `ptah providers install` stores providers, at an empty directory, so no
+// provider installed on the machine running the test answers.
+func isolateProviderStore(c *qt.C) {
+	c.Helper()
+	dir := c.TempDir()
+	c.Setenv("HOME", dir)
+	c.Setenv("XDG_CACHE_HOME", dir)
+	c.Setenv("LocalAppData", dir)
+}
 
 // ydbUnknownDriver is what the pinned community binary answers for a ydb://
 // URL on every verb, and what the strict profile answers with it.
@@ -76,33 +91,35 @@ script "exec" "fix" {
 
 // A YDB URL on this surface is a Ptah extension, since no Atlas edition has a
 // YDB driver, and the default policy keeps it: every verb that takes a database
-// URL hands it to the connector, whichever flag carries it. The rows run
-// offline, and the connector's own refusal of the URL is what they read.
-func TestCompatHandsAYDBURLToTheConnector(t *testing.T) {
+// URL hands it to the YDB provider, whichever flag carries it. The rows run
+// offline with no provider installed, and the missing-provider refusal is what
+// they read.
+func TestCompatHandsAYDBURLToTheProvider(t *testing.T) {
 	c := qt.New(t)
 	migrations, schema, script := ydbCompatFixture(c)
+	isolateProviderStore(c)
 	dir := "file://" + filepath.ToSlash(migrations)
 	to := "file://" + filepath.ToSlash(schema)
 	tests := []struct {
 		name string
 		args []string
 	}{
-		{name: "schema inspect --url", args: []string{"schema", "inspect", "--url", ydbConnectorRefusedURL}},
-		{name: "schema apply --url", args: []string{"schema", "apply", "--url", ydbConnectorRefusedURL,
+		{name: "schema inspect --url", args: []string{"schema", "inspect", "--url", ydbProviderURL}},
+		{name: "schema apply --url", args: []string{"schema", "apply", "--url", ydbProviderURL,
 			"--to", to, "--dry-run"}},
-		{name: "schema diff --from", args: []string{"schema", "diff", "--from", ydbConnectorRefusedURL, "--to", to,
-			"--dev-url", ydbConnectorRefusedURL}},
-		{name: "schema clean --url", args: []string{"schema", "clean", "--url", ydbConnectorRefusedURL, "--dry-run"}},
+		{name: "schema diff --from", args: []string{"schema", "diff", "--from", ydbProviderURL, "--to", to,
+			"--dev-url", ydbProviderURL}},
+		{name: "schema clean --url", args: []string{"schema", "clean", "--url", ydbProviderURL, "--dry-run"}},
 		{name: "schema stats inspect --db-url", args: []string{"schema", "stats", "inspect", "--db-url",
-			ydbConnectorRefusedURL}},
-		{name: "migrate apply --url", args: []string{"migrate", "apply", "--url", ydbConnectorRefusedURL, "--dir", dir}},
-		{name: "migrate status --url", args: []string{"migrate", "status", "--url", ydbConnectorRefusedURL, "--dir", dir}},
-		{name: "migrate set --url", args: []string{"migrate", "set", "--url", ydbConnectorRefusedURL, "--dir", dir,
+			ydbProviderURL}},
+		{name: "migrate apply --url", args: []string{"migrate", "apply", "--url", ydbProviderURL, "--dir", dir}},
+		{name: "migrate status --url", args: []string{"migrate", "status", "--url", ydbProviderURL, "--dir", dir}},
+		{name: "migrate set --url", args: []string{"migrate", "set", "--url", ydbProviderURL, "--dir", dir,
 			"20260101000000"}},
-		{name: "migrate down --url", args: []string{"migrate", "down", "--url", ydbConnectorRefusedURL, "--dir", dir}},
-		{name: "script query --url", args: []string{"script", "query", "--url", ydbConnectorRefusedURL,
+		{name: "migrate down --url", args: []string{"migrate", "down", "--url", ydbProviderURL, "--dir", dir}},
+		{name: "script query --url", args: []string{"script", "query", "--url", ydbProviderURL,
 			"--file", script}},
-		{name: "script exec --url", args: []string{"script", "exec", "--url", ydbConnectorRefusedURL,
+		{name: "script exec --url", args: []string{"script", "exec", "--url", ydbProviderURL,
 			"--file", script}},
 	}
 
@@ -112,7 +129,7 @@ func TestCompatHandsAYDBURLToTheConnector(t *testing.T) {
 
 			stdout, stderr, err := runCompatWithPolicy(atlascompatpolicy.Full(), test.args...)
 
-			c.Assert(err, qt.ErrorMatches, `(?s).*`+ydbConnectorRefusal+`.*`)
+			c.Assert(err, qt.ErrorMatches, `(?s).*`+ydbProviderMissing+`.*`)
 			c.Assert(stderr, qt.Not(qt.Contains), "unknown driver")
 			c.Assert(stdout, qt.Not(qt.Contains), "CREATE")
 		})
@@ -133,28 +150,28 @@ func TestStrictCompatRefusesAYDBURL(t *testing.T) {
 		args []string
 		want string
 	}{
-		{name: "schema inspect --url", args: []string{"schema", "inspect", "--url", ydbConnectorRefusedURL},
+		{name: "schema inspect --url", args: []string{"schema", "inspect", "--url", ydbProviderURL},
 			want: ydbUnknownDriver},
 		{name: "schema inspect --url over TLS", args: []string{"schema", "inspect", "--url", "ydbs://127.0.0.1:1/local"},
 			want: "Error: sql/sqlclient: unknown driver \"ydbs\". See: https://atlasgo.io/url\n"},
-		{name: "schema apply --url", args: []string{"schema", "apply", "--url", ydbConnectorRefusedURL,
+		{name: "schema apply --url", args: []string{"schema", "apply", "--url", ydbProviderURL,
 			"--to", to, "--dry-run"}, want: ydbUnknownDriver},
 		{name: "schema apply --dev-url", args: []string{"schema", "apply", "--url", "sqlite://target?mode=memory",
-			"--to", to, "--dev-url", ydbConnectorRefusedURL}, want: ydbUnknownDriver},
-		{name: "schema diff --from", args: []string{"schema", "diff", "--from", ydbConnectorRefusedURL, "--to", to,
+			"--to", to, "--dev-url", ydbProviderURL}, want: ydbUnknownDriver},
+		{name: "schema diff --from", args: []string{"schema", "diff", "--from", ydbProviderURL, "--to", to,
 			"--dev-url", "sqlite://dev?mode=memory"}, want: ydbUnknownDriver},
-		{name: "schema clean --url", args: []string{"schema", "clean", "--url", ydbConnectorRefusedURL, "--dry-run"},
+		{name: "schema clean --url", args: []string{"schema", "clean", "--url", ydbProviderURL, "--dry-run"},
 			want: ydbUnknownDriver},
-		{name: "migrate apply --url", args: []string{"migrate", "apply", "--url", ydbConnectorRefusedURL, "--dir", dir},
+		{name: "migrate apply --url", args: []string{"migrate", "apply", "--url", ydbProviderURL, "--dir", dir},
 			want: ydbUnknownDriver},
-		{name: "migrate status --url", args: []string{"migrate", "status", "--url", ydbConnectorRefusedURL,
+		{name: "migrate status --url", args: []string{"migrate", "status", "--url", ydbProviderURL,
 			"--dir", dir}, want: ydbUnknownDriver},
-		{name: "migrate set --url", args: []string{"migrate", "set", "--url", ydbConnectorRefusedURL, "--dir", dir,
+		{name: "migrate set --url", args: []string{"migrate", "set", "--url", ydbProviderURL, "--dir", dir,
 			"20260101000000"}, want: ydbUnknownDriver},
 		// After the integrity gate, as the binary orders it: the directory is
 		// hashed, so the dev URL is what this run answers.
 		{name: "migrate validate --dev-url", args: []string{"migrate", "validate", "--dir", dir,
-			"--dev-url", ydbConnectorRefusedURL}, want: ydbUnknownDriver},
+			"--dev-url", ydbProviderURL}, want: ydbUnknownDriver},
 	}
 
 	for _, test := range tests {

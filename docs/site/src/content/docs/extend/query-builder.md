@@ -18,7 +18,8 @@ owns:
 Ptah's `core/query` package is a fluent builder for parameterized `SELECT`
 statements. It is the DML counterpart to the DDL AST: a builder produces an
 `*query.SelectStatement`, and `query.RenderSelect` turns that into a SQL string
-plus its arguments for every dialect Ptah renders, YDB included. See
+plus its arguments for every dialect Ptah renders, and for an engine whose
+executable provider declares a query dialect, such as YDB. See
 [Dialect coverage](#dialect-coverage) for how each dialect is written and for
 what each one refuses.
 
@@ -75,9 +76,9 @@ that list of names:
 | `sqlite` `sqlite3` | `?` | `"id"` | `LIMIT ? OFFSET ?` |
 | `sqlserver` `mssql` | `@p1`, `@p2`, … | `[id]` | `OFFSET 0 ROWS FETCH NEXT @pn ROWS ONLY` |
 | `oracle` | `:1`, `:2`, … | bare `id` | `OFFSET 0 ROWS FETCH NEXT :n ROWS ONLY` |
-| `ydb` | `$p1`, `$p2`, … | `` `id` `` | `LIMIT $pn OFFSET $pn` |
 
-Four of those rows carry a decision worth stating:
+These rows carry a decision worth stating, and so does a dialect an executable
+provider registers:
 
 - **SQL Server** writes its row limit as T-SQL's row-limiting clause, which
   requires an `OFFSET` before the `FETCH` and an `ORDER BY` before either — a
@@ -97,16 +98,19 @@ Four of those rows carry a decision worth stating:
   [support matrix](../../databases/support-matrix/) caveat applies — review the
   generated SQL before relying on it.
 
-- **YDB** has no positional parameter, so the builder writes YQL's named
-  parameters, `$p1`, `$p2`, …, and returns each argument as a `sql.NamedArg`
-  of that name. A YDB connection binds a parameter by name, Ptah's own and the
+- **YDB** renders while its [provider](../providers/ydb/) is selected,
+  with the spelling the provider declares, which the builder registers for the
+  run: `` `id` `` quoting and `LIMIT $pn OFFSET $pn`. YQL has no positional
+  parameter, so the builder writes YQL's named parameters, `$p1`, `$p2`, …,
+  and returns each argument as a `sql.NamedArg` of that name. A YDB connection binds a parameter by name, Ptah's own and the
   YDB SDK's alike. YQL types every value, and a bound value's Go type is the
   type it binds as: an `int64` is `Int64`, so an `Int32` column takes an
   `int32`. `LIMIT` and `OFFSET` bind as `uint64`, the type YQL reads them as,
   and a negative one is refused. A table in a directory is one name,
   `` `app/users` ``.
 
-YDB lacks constructs the other dialects render, and the builder refuses each
+YDB lacks constructs the other dialects render. Its provider's spelling has the
+builder read the target's capabilities for each, and the builder refuses one
 before it writes anything, with the capability key the target lacks: a `WITH`
 clause (`common_table_expressions`), a subquery that reads a column of the query
 around it (`correlated_subqueries`), a join condition other than equalities
@@ -128,9 +132,9 @@ four render functions — one cell per (dialect, verb) pair, each pinned to an
 exact SQL string or an exact error — in `core/query/dialect_matrix_test.go`, so
 the builder cannot acquire or lose a dialect without that table saying so. What
 each dialect renders is also executed against a live server for SQL Server and
-ClickHouse in `integration/gonative/dml_execution_integration_test.go`, and for
-YDB in `integration/dbschema/ydb/data_live_test.go`: a renderer test proves the
-string, and only the server proves the SQL.
+ClickHouse in `integration/gonative/dml_execution_integration_test.go`: a
+renderer test proves the string, and only the server proves the SQL. YDB is not
+among those dialect names; its spelling is the provider's declaration.
 
 ### Release lines
 
@@ -143,9 +147,9 @@ They decide `RETURNING` on every dialect, and on YDB the constructs above.
 
 ```go
 stmt := query.Update("users").Set("plan", "paid").Where(query.Eq("id", int64(7))).Returning("id").Build()
-sql, args, err := query.RenderUpdateWithCapabilities(stmt, platform.YDB, capability.YDB251())
+sql, args, err := query.RenderUpdateWithCapabilities(stmt, platform.MariaDB, capability.MariaDB1011())
 // err: renderer: RETURNING, which requires target capability returning_clause,
-//      unavailable on this ydb target
+//      unavailable on this mariadb target
 ```
 
 ## Safety model
@@ -394,7 +398,8 @@ builder call never fails and `Build` never returns an error.
 
 ### UPSERT
 
-`UpsertInto` builds YDB's `UPSERT INTO`. It writes each row over the row with
+`UpsertInto` builds `UPSERT INTO` for an engine whose spelling has one, such as
+YDB while its provider is selected. It writes each row over the row with
 the same primary key, keeps the columns the statement does not name, and
 inserts the row where there is none. `Columns`, `Values`, `FromSelect` and
 `Returning` work as they do for `InsertInto`.
@@ -406,7 +411,7 @@ stmt := query.UpsertInto("users").
 	Values(int64(2), "bob").
 	Build()
 
-sql, args, err := query.RenderInsert(stmt, platform.YDB)
+sql, args, err := query.RenderInsert(stmt, "ydb")
 // UPSERT INTO `users` (`id`, `name`) VALUES ($p1, $p2), ($p3, $p4)
 // args: sql.Named("p1", int64(1)), sql.Named("p2", "alice"), ...
 ```
@@ -418,7 +423,7 @@ the statement, which the builder does not know for a table, so use
 On a table with a unique index, name every column. YDB 26.2 fails an `UPSERT`
 that names no column a synchronous index is keyed on with `INTERNAL_ERROR`, and
 the builder cannot see the table's indexes to refuse it; see
-[YDB](../../databases/ydb/#query-builder).
+[YDB](https://github.com/stokaro/ptah-ydb-plugin/blob/master/docs/README.md).
 
 ### INSERT
 
@@ -511,7 +516,7 @@ execution time.
 | --- | --- |
 | PostgreSQL family (incl. CockroachDB, YugabyteDB, Spanner) | yes |
 | SQLite | yes (since 3.35, 2021) |
-| YDB | yes from 25.3 (see note) |
+| YDB | as its provider states (see note) |
 | MySQL | no |
 | MariaDB | no (see note) |
 | SQL Server, Azure SQL | no (see note) |
@@ -527,10 +532,10 @@ execution time.
 - **SQLite** gained `RETURNING` in 3.35 (2021). `RenderInsert` emits it for the
   current SQLite line; `RenderInsertWithCapabilities` with `capability.SQLite324()`
   refuses it.
-- **YDB** 25.1 and 25.2 run `INSERT`, `DELETE` and `UPSERT` with `RETURNING`
-  and fail `UPDATE … RETURNING` on a table with a unique index (`INTERNAL_ERROR
-  … wrong returning expr type`). The same one rule holds, so those lines are
-  refused and 25.3 and later render it.
+- **YDB** takes `returning_clause` from its provider's session. YDB 25.1 and
+  25.2 run `INSERT`, `DELETE` and `UPSERT` with `RETURNING` and fail
+  `UPDATE … RETURNING` on a table with a unique index (`INTERNAL_ERROR … wrong
+  returning expr type`).
 - **SQL Server** has `OUTPUT`, which is a different clause in a different
   position, not a spelling of this one. Mapping `Returning` onto it would change
   what the statement means, so a non-empty `Returning` is rejected.
@@ -566,7 +571,7 @@ Write builders:
 | Function | Result |
 | --- | --- |
 | `InsertInto(table)` | Start an `INSERT`. |
-| `UpsertInto(table)` | Start a YDB `UPSERT`. |
+| `UpsertInto(table)` | Start an `UPSERT`, for an engine that spells one. |
 | `.Columns(cols ...string)` | Declare the inserted column list. |
 | `.Values(vals ...any)` | Append one row of bound values; call once per row. |
 | `Update(table)` | Start an `UPDATE`. |

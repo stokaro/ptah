@@ -11,9 +11,7 @@ import (
 	"ptah.run/core/annotation"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/cockroachdb/crdbschema"
-	"ptah.run/dialect/spanner/spannersource"
 	"ptah.run/internal/annotationmeta"
-	"ptah.run/internal/ydbsource"
 )
 
 func sourceComments(file *ast.File) []*ast.Comment {
@@ -196,32 +194,6 @@ func TestTableDirectiveSpellsRowTTLAsCockroachDBProperties(t *testing.T) {
 			c.Assert(annotationmeta.Common().AllowsAttribute("ptah:schema:table", "platform.cockroachdb."+parameter), qt.IsTrue)
 			c.Assert(annotationmeta.Common().AllowsAttribute("ptah:schema:table", parameter), qt.IsFalse)
 		})
-	}
-}
-
-// TestTableDirectiveSpellsRowDeletionAsPlatformProperties is the same tie for
-// the row deletion policies of Spanner and YDB: each owner's property is
-// written as platform.<dialect>.<property>, and the bare spelling a single
-// shared attribute once had is not an attribute of the directive, so it cannot
-// reach both targets at once.
-func TestTableDirectiveSpellsRowDeletionAsPlatformProperties(t *testing.T) {
-	owners := []struct {
-		dialect     string
-		definitions []schemaext.PropertyDefinition
-	}{
-		{dialect: "spanner", definitions: spannersource.Definitions()},
-		{dialect: "ydb", definitions: ydbsource.TTLDefinitions()},
-	}
-	for _, owner := range owners {
-		for _, definition := range owner.definitions {
-			for _, property := range definition.Keys {
-				t.Run(owner.dialect+"."+property, func(t *testing.T) {
-					c := qt.New(t)
-					c.Assert(annotationmeta.Common().AllowsAttribute("ptah:schema:table", "platform."+owner.dialect+"."+property), qt.IsTrue)
-					c.Assert(annotationmeta.Common().AllowsAttribute("ptah:schema:table", property), qt.IsFalse)
-				})
-			}
-		}
 	}
 }
 
