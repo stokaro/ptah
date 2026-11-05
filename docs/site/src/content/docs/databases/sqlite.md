@@ -119,6 +119,7 @@ cannot, each refused before any SQL runs and each naming what to do instead.
 | A trigger whose body is itself a `CREATE TRIGGER` statement | Recreating it would nest one trigger inside another | Declare the body as the statements the trigger runs, without the `CREATE TRIGGER` header |
 | An `EXCLUDE` constraint | SQLite has no such constraint | Express the rule as a `UNIQUE` index when it compares whole values for equality, or as a `CHECK` constraint or trigger when it does not |
 | A constraint change the comparison cannot attribute to a table | The rebuild does not know which table to rebuild | Declare the constraint on its table |
+| An index `diff.skip: [drop_index]` keeps over a column the rebuild removes | The rebuilt table has no column for the index to cover | Keep the column, or remove the index in a separate migration first |
 
 A table already holding `new_<name>` is **not** refused. That name is
 an ordinary identifier and a schema is allowed to use it, so the rebuild's
@@ -127,6 +128,9 @@ a name nothing declares and nothing is dropping.
 
 Triggers on a rebuilt table are recreated, not refused; only the nested-body
 case above is turned away.
+
+An index `diff.skip: [drop_index]` keeps goes back on the rebuilt table in the
+text the catalog holds, so a collation or an expression key stays as written.
 
 Introspection ignores SQLite system objects (names starting with `sqlite_`)
 and Ptah's own revision table.

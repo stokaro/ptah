@@ -213,10 +213,13 @@ for example:
 Supported kinds: `drop_table`, `drop_column`, `drop_index`, `drop_enum`.
 Skipping `drop_index` also preserves the retained index's comment. A replacement
 that drops and recreates an index still runs, including its comment changes.
+
 Skipping `drop_table` also omits the dependent removals (indexes, constraints,
 triggers, RLS policies, table-level grants) that a kept table must retain, so the
 plan stays consistent. A skipped column stays in its table's declaration, so a
-SQLite table rebuilt for another change keeps it and its rows. Every planner
+SQLite table rebuilt for another change keeps it and its rows. A skipped index
+goes back on the rebuilt table in the catalog's own words, and the plan refuses
+an index over a column the rebuild removes. Every planner
 honors the list, a provider's included: `migrations generate`, `schema apply`,
 `schema plan` and `schema diff` apply the same filter. A plan opens with the
 `-- SKIP:` comment for each omitted change, and a run left with nothing to
