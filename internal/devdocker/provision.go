@@ -508,7 +508,7 @@ func Resolve(ctx context.Context, rawURL string, opts Options) (string, func(), 
 	}
 	if !IsURL(rawURL) {
 		if !opts.DeclaredDisposable {
-			if owner := externalRealmFor(ctx, rawURL); owner != nil {
+			if owner := RealmOwner(ctx, rawURL); owner != nil {
 				return enterExternalRealm(ctx, owner, rawURL)
 			}
 			if ydbrealm.Applies(rawURL) {

@@ -126,12 +126,30 @@ held one from the current table. A removal comes before the additions, so a
 changed index is dropped before it is created again under the same name.
 Without the feature, index changes are refused.
 
+With `planning.index-renames` as well, a provider renames an index in place.
+When its session reports `index_rename`, the comparison pairs an index the
+table holds with one the declaration states under another name and with one
+definition. The pair reaches the provider as one step that names both names in
+`renamed_index`, reads the table, drops the held name and creates the declared
+one; the provider claims it with an operation that keeps the index. A provider
+reports `index_rename` only to a host that lists the feature, and the host
+refuses a session that reports it from an engine without the feature. Without
+the capability, a renamed index is a drop and a create.
+
 A service that declares parent assessment
 also receives changes to existing columns in the complete table capture. It
 must return a parent receipt, including when its own rules find no change.
-Missing receipts and refusals discard the plan. Common-object support carries
-table and column comments. These services do not
-grant common SQL rendering.
+Missing receipts and refusals discard the plan.
+
+Common-object support carries table, column and index comments. A provider that owns the table lifecycle and
+lists the `COMMENT` kind receives the comment of a table it creates, of a
+column it adds and of an index it creates as a comment step after its own
+creation, and a changed index comment as one comment step with the comment the
+index ends with. A comment step reads its table and changes the comment alone.
+A provider that lists the `GRANT` kind receives a grant or revocation on a
+table it creates or alters as a step after its own change, and the step reads
+the table and changes the table's access alone. These services do not grant
+common SQL rendering.
 
 The common steps of a planning request include ordering markers beside the steps
 that change a table. A marker has no parent, no effects and no added column. It
@@ -242,7 +260,9 @@ request is unsupported or its runtime is unavailable. The host releases the leas
 when it is done, and the provider removes the leases it still holds when its
 process ends. An engine that also declares `database.dev-realms` gets a realm of
 the run's own inside the database a `--dev-url` names, created and removed by
-the provider, for a database the operator cannot create.
+the provider, for a database the operator cannot create. A `parallel` case of
+`ptah migrations test` or `ptah schema test` gets a realm of its own the same
+way, removed when the case ends.
 
 A provider's dev database is cleaned and guarded by the provider, so
 `schema apply --dev-url` rehearses a plan on it, `migrations lint --dev-url`

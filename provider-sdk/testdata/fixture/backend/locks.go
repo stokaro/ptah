@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"strings"
+	"time"
 
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"github.com/stokaro/ptah/provider-sdk/provider"
@@ -16,6 +17,9 @@ import (
 	"modernc.org/sqlite"
 	sqlite3 "modernc.org/sqlite/lib"
 )
+
+// slowLockDelay is how long an acquisition takes under the fault "slow-lock".
+const slowLockDelay = 400 * time.Millisecond
 
 // A private sidecar write transaction provides real process exclusion without
 // blocking the schema database. It never commits. Checking its uncommitted row
@@ -76,6 +80,15 @@ func (p *Provider) TryLock(ctx context.Context, request *protocol.LockRequest) (
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+	if s.fault == "slow-lock" {
+		// The attempt takes a round trip longer than a short lock wait, so a
+		// host whose wait ends during it decides without its answer.
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(slowLockDelay):
+		}
 	}
 	if err := record.acquire(ctx, s.path); err != nil {
 		if record.outcome == protocol.LockResult_BUSY {

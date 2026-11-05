@@ -65,6 +65,17 @@ func nativePreviewLock(conn Connection, dialect, name string) (*Lock, bool, erro
 	return &Lock{name: name, dialect: dialect}, true, nil
 }
 
+// waitForNativeLock asks service for the lock until it is acquired, the
+// timeout passes or ctx ends. A negative timeout asks once, and zero waits
+// until ctx ends.
+//
+// The timeout bounds the wait between attempts, never an attempt. An attempt
+// runs on ctx, so the caller's cancellation still stops it, and the service
+// bounds the call itself. A provider attempt cut short by the wait's deadline
+// would have no answer: its outcome would be unknown, the session's lock
+// marked lost, and the run would report that rather than the timeout. Once
+// the deadline has passed, a busy answer is the timeout, and an acquisition
+// is released and reported as the timeout too.
 func waitForNativeLock(ctx context.Context, service dbschema.SessionLocker, dialect, name string, timeout time.Duration) (dbschema.SessionLock, error) {
 	waiting := ctx
 	if timeout > 0 {
@@ -76,7 +87,7 @@ func waitForNativeLock(ctx context.Context, service dbschema.SessionLocker, dial
 		if err := waiting.Err(); err != nil {
 			return nil, nativeWaitError(ctx, err, dialect, name, timeout)
 		}
-		held, err := service.TryLock(waiting, name)
+		held, err := service.TryLock(ctx, name)
 		if err == nil {
 			if held == nil || reflect.ValueOf(held).Kind() == reflect.Pointer && reflect.ValueOf(held).IsNil() {
 				return nil, fmt.Errorf("%w: provider returned a nil acquired lock", ptaherr.ErrOutcomeUnknown)

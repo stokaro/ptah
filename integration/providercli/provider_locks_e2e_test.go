@@ -4,6 +4,7 @@ package providercli_test
 
 import (
 	"context"
+	"net/url"
 	"testing"
 	"time"
 
@@ -67,6 +68,40 @@ func TestProviderMigrationLockExcludesAnotherProcess(t *testing.T) {
 	defer cancel()
 	_, err = dblock.Acquire(ctx, other, "ptah_migrate", 0)
 	c.Assert(err, qt.ErrorIs, context.DeadlineExceeded)
+	c.Assert(held.Release(c.Context()), qt.IsNil)
+	// A caller's deadline may end during an attempt, which then has no
+	// answer, and the session that made it refuses to lock again. A new
+	// connection of the same process asks with a clean session.
+	fresh := connectTransactionAddress(c, contender, address)
+	c.Assert(lockedProviderMigrator(fresh).MigrateUp(c.Context()), qt.IsNil)
+	c.Assert(providerTablePresent(c, fresh, "records"), qt.IsTrue)
+}
+
+// A wait that ends while the provider is still answering an attempt reports
+// the timeout, as a wait that ends between attempts does. The attempt is not
+// cut short, so its answer is busy rather than unknown, and the session keeps
+// its lock service: the same connection takes the lock once it is free.
+func TestProviderMigrationLockTimeoutDuringAnAttempt_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	owner, _ := yamlProviderCommand(c, "locks")
+	contender, _ := yamlProviderCommand(c, "locks")
+	conn, address := transactionConnection(c, owner, "")
+	slow, err := url.Parse(address)
+	c.Assert(err, qt.IsNil)
+	slow.RawQuery = url.Values{"fault": {"slow-lock"}}.Encode()
+	other := connectTransactionAddress(c, contender, slow.String())
+	service, err := conn.SessionLocker()
+	c.Assert(err, qt.IsNil)
+	held, err := service.TryLock(c.Context(), "ptah_migrate")
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { _ = held.Release(context.Background()) })
+
+	err = lockedProviderMigrator(other).WithMigrationLockTimeout(50 * time.Millisecond).MigrateUp(c.Context())
+
+	c.Assert(migrator.IsMigrationLockTimeout(err), qt.IsTrue, qt.Commentf("error: %v", err))
+	c.Assert(err, qt.Not(qt.ErrorIs), ptaherr.ErrOutcomeUnknown)
+	c.Assert(err, qt.ErrorMatches, `.*timed out acquiring migration lock "ptah_migrate" for \S+ after 50ms.*`)
+	c.Assert(providerTablePresent(c, other, "records"), qt.IsFalse)
 	c.Assert(held.Release(c.Context()), qt.IsNil)
 	c.Assert(lockedProviderMigrator(other).MigrateUp(c.Context()), qt.IsNil)
 	c.Assert(providerTablePresent(c, other, "records"), qt.IsTrue)

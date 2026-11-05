@@ -21,10 +21,20 @@ func (p *owner) planColumnRewrites(request *protocol.PlanFeaturesRequest, table 
 	var rewrites []*protocol.PlanningRewrite
 	for i, common := range request.GetCommonSteps() {
 		column := common.GetAddedColumn()
-		if !proto.Equal(common.GetParent(), table.GetSubject()) {
+		if !proto.Equal(common.GetParent(), table.GetSubject()) || common.GetCommonObject() != nil {
+			// A comment of the table is the host's step, which the fixture
+			// orders after its own (see commentDependencies).
 			continue
 		}
 		if column == nil {
+			if rename := common.GetRenamedIndex(); p.renames && rename != nil {
+				step, rewrite, err := p.planIndexRename(request, table, common, rename, i)
+				if err != nil {
+					return nil, nil, err
+				}
+				steps, rewrites = append(steps, step), append(rewrites, rewrite)
+				continue
+			}
 			if p.ownedLifecycle && table.GetAction() == protocol.PlanningTable_CREATE {
 				step, rewrite, err := p.planAuthoredParent(request, table, common, i)
 				if err != nil {
@@ -225,4 +235,31 @@ func (p *owner) planRebuild(request *protocol.PlanFeaturesRequest, table *protoc
 		Operation: &protocol.PlanningOperation{Value: value, Role: protocol.NativeOperation_STATEMENT}}
 	rewrite.Replacement = proto.CloneOf(step.Id)
 	return []*protocol.PlanningStep{step}, []*protocol.PlanningRewrite{rewrite}, nil
+}
+
+// planIndexRename claims the host's step that renames an index of table in
+// place, with an operation that keeps the index.
+func (p *owner) planIndexRename(request *protocol.PlanFeaturesRequest, table *protocol.PlanningTable, common *protocol.CommonPlanningStep, rename *protocol.CommonIndexRename,
+	index int) (*protocol.PlanningStep, *protocol.PlanningRewrite, error) {
+	if table.GetAction() != protocol.PlanningTable_ALTER || table.GetDesired() == nil {
+		return nil, nil, fmt.Errorf("index rename requires an altered table declaration")
+	}
+	payload, err := json.Marshal(operation{Action: "rename-index", Index: rename.GetFrom(), To: new(rename.GetTo())})
+	if err != nil {
+		return nil, nil, err
+	}
+	id := "index-rename/" + strconv.Itoa(index)
+	envelope := proto.CloneOf(p.operationEnvelope)
+	envelope.Payload = payload
+	envelope.Owner = &protocol.Reference{Engine: request.GetEngine(), Kind: "table", Schema: table.GetDesired().GetSchema(), Name: table.GetDesired().GetName()}
+	value, err := normalize(&protocol.ValueInput{Id: id, Representation: protocol.ValueInput_OPERATION, Value: envelope})
+	if err != nil {
+		return nil, nil, err
+	}
+	metadata := proto.CloneOf(common.GetMetadata())
+	metadata.Transaction = protocol.PlanningMetadata_FORBIDDEN
+	metadata.Impact, metadata.Reason = value.GetOperationSemantics().GetImpact(), value.GetOperationSemantics().GetReason()
+	step := &protocol.PlanningStep{Id: &protocol.StepIdentity{Owner: "example.org/fixture", Name: id}, Metadata: metadata,
+		Operation: &protocol.PlanningOperation{Value: value, Role: protocol.NativeOperation_ALTER_TABLE, Parent: proto.CloneOf(table.GetSubject())}}
+	return step, &protocol.PlanningRewrite{Sources: []*protocol.StepIdentity{proto.CloneOf(common.GetId())}, Replacement: proto.CloneOf(step.Id)}, nil
 }

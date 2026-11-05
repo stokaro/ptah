@@ -184,7 +184,7 @@ func validateEngineAdditions(description *protocol.Description, engine *protocol
 	for _, check := range []func(*protocol.Description, *protocol.Engine) error{
 		validateCommonObjectSupport, validateContextFeatures, validateViewFacetFeature, validateObservedColumnsFeature, validateObservedPrimaryKeysFeature, validateObservedIndexesFeature,
 		validateHCLSource, validateEncodeEngine, validateScopeSelections, validateModelDeclarations, validateSourceLimitsEngine, validatePlanningLifecycleEngine,
-		validateMigrationSplitEngine, validateIndexMethodsFeature,
+		validateMigrationSplitEngine, validateIndexMethodsFeature, validateIndexRenamesFeature,
 	} {
 		if err := check(description, engine); err != nil {
 			return err
@@ -429,21 +429,30 @@ func ValidateUnit(unit *protocol.Unit) error {
 }
 
 // ExecutionError records the last confirmed prefix and terminal outcome. Its
-// text excludes provider messages, which may contain connection secrets.
+// text excludes Execution.message, which may contain connection secrets.
 // TimedOut reports that the unit after the prefix stopped at the request's
-// statement timeout; such an error also matches ErrStatementTimeout.
+// statement timeout; such an error also matches ErrStatementTimeout. Reason
+// is the provider's reason for the outcome, from the result's diagnostic, and
+// is empty when the result gave none, ErrorReasonsFeature was not negotiated,
+// or the reply was malformed and the outcome is therefore unknown.
 type ExecutionError struct {
 	Outcome  protocol.Execution_Outcome
 	Applied  uint32
 	TimedOut bool
+	Reason   string
 }
 
-// Error returns an outcome summary without provider-authored text.
+// Error returns an outcome summary, followed by the provider's reason when
+// there is one. It never includes Execution.message.
 func (e *ExecutionError) Error() string {
+	summary := fmt.Sprintf("provider execution: %s (%d units confirmed applied)", e.Outcome, e.Applied)
 	if e.TimedOut {
-		return fmt.Sprintf("provider execution: %s at the statement timeout (%d units confirmed applied)", e.Outcome, e.Applied)
+		summary = fmt.Sprintf("provider execution: %s at the statement timeout (%d units confirmed applied)", e.Outcome, e.Applied)
 	}
-	return fmt.Sprintf("provider execution: %s (%d units confirmed applied)", e.Outcome, e.Applied)
+	if e.Reason != "" {
+		return summary + ": " + e.Reason
+	}
+	return summary
 }
 
 // Is reports a stop at the statement timeout as ErrStatementTimeout.
@@ -461,7 +470,12 @@ func (e *ExecutionError) Unwrap() error {
 
 // CheckExecution validates a terminal result and reports any non-success as an
 // ExecutionError. Malformed replies are unknown outcomes, never proof of a
-// rollback. Empty execution batches must be refused before sending a request.
+// rollback, and carry no reason. The error of a well-formed failure carries
+// the result's diagnostic in ExecutionError.Reason when ValidateDiagnostic
+// accepts it. Whether ErrorReasonsFeature was negotiated is not checked here:
+// the SDK removes a diagnostic the description does not list on both sides of
+// the transport. Empty execution batches must be refused before sending a
+// request.
 func CheckExecution(units int, result *protocol.Execution) error {
 	unknown := &ExecutionError{Outcome: protocol.Execution_UNKNOWN}
 	if result == nil || units <= 0 || uint64(result.GetAppliedCount()) > uint64(units) {
@@ -486,7 +500,17 @@ func CheckExecution(units int, result *protocol.Execution) error {
 	default:
 		return unknown
 	}
-	return &ExecutionError{Outcome: result.GetOutcome(), Applied: count}
+	return &ExecutionError{Outcome: result.GetOutcome(), Applied: count, Reason: resultReason(result.GetDiagnostic())}
+}
+
+// resultReason is the reason a result's diagnostic gives, or empty for none
+// and for one ValidateDiagnostic refuses. The SDK client puts its own
+// sentence in place of a malformed diagnostic before a check reads it.
+func resultReason(diagnostic *protocol.ProviderDiagnostic) string {
+	if diagnostic == nil || ValidateDiagnostic(diagnostic) != nil {
+		return ""
+	}
+	return diagnostic.GetReason()
 }
 
 // ValidateExecuteRequest refuses a request without a session, a request ID or

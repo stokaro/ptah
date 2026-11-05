@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/difftypes"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/planext"
+	"ptah.run/core/schemamodel"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/tableref"
@@ -32,7 +33,10 @@ type commonPlanner struct {
 	// indexes plans the common indexes of the tables a provider owns: the
 	// provider reports the indexes a table holds, so the comparison has a
 	// current side, and claims the steps that add and drop them.
-	indexes    bool
+	indexes bool
+	// renames plans an index the comparison pairs with one declared under
+	// another name as one step the owner claims, which keeps the index.
+	renames    bool
 	selections *scopeSelections
 }
 
@@ -74,14 +78,16 @@ func (p commonPlanner) GenerateMigrationAST(ctx context.Context, runtime feature
 	if err != nil {
 		return nil, err
 	}
-	indexRemovals, indexAdditions, err := p.indexChanges(diff)
+	indexes, err := p.indexChanges(diff)
 	if err != nil {
 		return nil, err
 	}
 	// An index is dropped before the tables and columns change, so a
 	// replacement drops the held index before it creates the declared one
-	// under the same name, and is added once its columns exist.
-	nodes := slices.Concat(common.before, indexRemovals, common.prepared)
+	// under the same name, and is added once its columns exist. A rename
+	// neither frees nor takes a name another index change uses: the
+	// comparison pairs only names the other side does not hold.
+	nodes := slices.Concat(common.before, indexes.removals, indexes.renames, common.prepared)
 	var columnRemovals []ast.Node
 	ordered := diff.TablesAdded.InDependencyOrder()
 	if len(ordered) != len(diff.TablesAdded) {
@@ -102,7 +108,7 @@ func (p commonPlanner) GenerateMigrationAST(ctx context.Context, runtime feature
 		nodes = append(nodes, additions...)
 		columnRemovals = append(columnRemovals, removals...)
 	}
-	nodes = append(nodes, indexAdditions...)
+	nodes = append(nodes, indexes.additions...)
 	creationStart := len(nodes)
 	nodes = append(nodes, common.after...)
 	removalStart := len(nodes)
@@ -141,6 +147,15 @@ func (p commonPlanner) commonObjectSteps(diff *difftypes.SchemaDiff) (commonObje
 		// table it creates or alters; planningContext refuses an index of any
 		// other table.
 		fields = append(fields, "IndexesAdded", "IndexesRemoved", "DeclaredIndexes")
+		if p.renames {
+			// A paired index travels as a rename step; see indexChanges.
+			fields = append(fields, "IndexesRenamed")
+		}
+		if p.comments {
+			// The comment of such an index travels on the common-object
+			// wire; see indexCommentNodes.
+			fields = append(fields, "IndexCommentsChanged")
+		}
 	}
 	if err := onlyFields(*diff, fields...); err != nil {
 		return commonObjectPlan{}, err
@@ -186,12 +201,11 @@ func (p commonPlanner) alterations(table difftypes.TableDiff) (nodes, removals [
 	}
 	for _, field := range table.ColumnsAdded {
 		if !p.commonTables {
-			// The owner interprets the whole declaration, so the operand keeps
-			// every property the field carries.
-			if field.Name == "" || field.Type == "" {
-				return nil, nil, fmt.Errorf("provider column requires a name and type")
+			added, err := p.ownedColumnAddition(name, field)
+			if err != nil {
+				return nil, nil, err
 			}
-			nodes = append(nodes, &pendingColumnChange{table: name, column: field.Name, added: modelast.FromField(field, nil, p.target)})
+			nodes = append(nodes, added...)
 			continue
 		}
 		comment := ""
@@ -208,6 +222,22 @@ func (p commonPlanner) alterations(table difftypes.TableDiff) (nodes, removals [
 		}
 	}
 	return nodes, removals, nil
+}
+
+// ownedColumnAddition is the step that adds field to the table name for an
+// owner of the table lifecycle. The owner interprets the whole declaration, so
+// the operand keeps every property the field carries. Its comment is also set
+// with a step of its own on an engine that carries comments on the
+// common-object wire, as for a common column.
+func (p commonPlanner) ownedColumnAddition(name string, field schemamodel.Field) ([]ast.Node, error) {
+	if field.Name == "" || field.Type == "" {
+		return nil, fmt.Errorf("provider column requires a name and type")
+	}
+	nodes := []ast.Node{&pendingColumnChange{table: name, column: field.Name, added: modelast.FromField(field, nil, p.target)}}
+	if p.comments && field.Comment != "" {
+		nodes = append(nodes, commentStep(name, field.Name, field.Comment))
+	}
+	return nodes, nil
 }
 
 // commentOnly reports a column change that changes the column's comment and

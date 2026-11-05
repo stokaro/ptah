@@ -18,6 +18,7 @@ import (
 	"ptah.run/core/featureplan"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/plangraph"
+	"ptah.run/core/platform/identifier"
 )
 
 func TestCommonAccessPreservesOwnersAndIndependentMemberships(t *testing.T) {
@@ -69,6 +70,43 @@ func TestNativeGrantPreservesNamingBindingAndAccessFootprint(t *testing.T) {
 	c.Assert(metadata[0].Effects[1].Action, qt.Equals, plangraph.Alter)
 	c.Assert(metadata[0].Effects[1].Subject.Kind, qt.Equals, objectidentity.Kind("object_access"))
 	c.Assert(metadata[0].Effects[1].Subject.Namespace, qt.DeepEquals, objectidentity.NewParts(scopePart("example.org/pool")))
+}
+
+// A grant or revocation on a table reads the table and changes the table's
+// access, so it follows the owner of the table lifecycle creating or altering
+// the table rather than writing the table a second time. One on a schema or a
+// sequence alters the object alone, the footprint a provider reads a
+// directory's access list by.
+func TestCommonGrantFootprints(t *testing.T) {
+	rules := identifier.Semantics{DefaultSchema: "main", TableNames: identifier.ComparisonExact}
+	builder := objectidentity.NewBuilder(rules)
+	table := builder.TableParts("main", "users")
+	access := table
+	access.Kind = "access"
+	access.Namespace = objectidentity.NewParts(objectidentity.Part{Source: string(table.Kind), Normalized: string(table.Kind)})
+	tableEffects := []plangraph.Effect{{Subject: table, Action: plangraph.Read}, {Subject: access, Action: plangraph.Alter}}
+	for _, tc := range []struct {
+		name string
+		node ast.Node
+		want []plangraph.Effect
+	}{
+		{"a grant on a table", ast.NewGrantPrivilege("app", "TABLE", "main.users", []string{"SELECT"}), tableEffects},
+		{"a revocation on a table", ast.NewRevokePrivilege("app", "table", "main.users", []string{"SELECT"}), tableEffects},
+		{"a grant on a schema", ast.NewGrantPrivilege("app", "SCHEMA", "reports", []string{"USAGE"}), []plangraph.Effect{
+			{Subject: builder.SchemaScopedParts(objectidentity.KindSchema, "", "reports"), Action: plangraph.Alter},
+		}},
+		{"a grant on a sequence", ast.NewGrantPrivilege("app", "SEQUENCE", "main.ids", []string{"USAGE"}), []plangraph.Effect{
+			{Subject: builder.SchemaScopedParts(objectidentity.KindSequence, "main", "ids"), Action: plangraph.Alter},
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+			metadata, err := commonPlanningMetadata(featureplan.Request{Identifiers: rules}, []ast.Node{tc.node}, nil)
+			c.Assert(err, qt.IsNil)
+			c.Assert(metadata, qt.HasLen, 1)
+			c.Assert(metadata[0].Effects, qt.DeepEquals, tc.want)
+		})
+	}
 }
 
 func TestNativeDropAccountsForTheRevokedAccessResource(t *testing.T) {
