@@ -296,7 +296,11 @@ A run that names no dialect is split by the host without one. The host answers
 the check for the provider, with no finding of its rules, because the request
 cannot tell the provider that the SQL may be another engine's. The provider
 still annotates that split. A lint run takes an engine the selected provider
-serves as its `--dialect`, and reads it from a dev URL the provider serves. It
+serves as its `--dialect`, and reads it from a dev URL the provider serves.
+A dialect the lint policy names, in `.ptah-lint.yaml` or in the project
+file, selects the engine's provider as `--dialect` would, an installed one
+included, so the policy is read and the run linted with that provider's
+rules; `sql lint` reads the policy in the working directory the same way. It
 replays the migrations on that dev database when the engine declares the dev
 database services below, and refuses the dev database at the clean check when
 it declares no `database.dev-cleanup`.

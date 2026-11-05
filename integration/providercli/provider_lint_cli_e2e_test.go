@@ -30,6 +30,12 @@ import (
 // fixture serves under so that a run naming the ydb dialect reaches it.
 const ydbProviderID = "github.com/stokaro/ptah-ydb-plugin"
 
+// fixtureAliases are the engine aliases a fixture command declares, by
+// command: the ydb-lint fixture declares ydbs, as the official YDB provider
+// does, and a manifest must name the engines exactly as the process declares
+// them.
+var fixtureAliases = map[string][]string{"ydb-lint": {"ydbs"}}
+
 // lintProvider is a manifest naming one fixture lint provider and the file
 // that provider records its process ID in.
 type lintProvider struct{ manifest, pidPath string }
@@ -47,7 +53,7 @@ func newLintProvider(c *qt.C, command, providerID, engineID string, environment 
 	spec := providerhost.Spec{Executable: executable, SHA256: hex.EncodeToString(digest[:]), ProviderID: providerID,
 		Environment: append(environment, "PTAH_FIXTURE_PID_FILE="+f.pidPath)}
 	manifest, err := json.Marshal(providerconfig.Configuration{FormatVersion: providerconfig.FormatVersion,
-		Providers: []providerconfig.Installation{{Spec: spec, Engines: []providerconfig.Engine{{ID: engineID}}}}})
+		Providers: []providerconfig.Installation{{Spec: spec, Engines: []providerconfig.Engine{{ID: engineID, Aliases: fixtureAliases[command]}}}}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(os.WriteFile(f.manifest, manifest, 0o600), qt.IsNil)
 	return f

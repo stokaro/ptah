@@ -22,6 +22,11 @@ import (
 	"ptah.run/internal/testutils"
 )
 
+// compatFixtureAliases are the engine aliases a fixture command declares, by
+// command, which its manifest names exactly: the ydb-lint fixture declares
+// ydbs, as the official YDB provider does.
+var compatFixtureAliases = map[string][]string{"ydb-lint": {"ydbs"}}
+
 // newCompatLintFixture is a private directory holding a manifest that names
 // the fixture command as the provider of engine under providerID, and a
 // hashed migration directory whose second version drops the table the first
@@ -40,7 +45,7 @@ func newCompatLintFixture(c *qt.C, command, providerID, engine string) compatPro
 	manifest, err := json.Marshal(providerconfig.Configuration{FormatVersion: providerconfig.FormatVersion, Providers: []providerconfig.Installation{{
 		Spec: providerhost.Spec{Executable: binaries.provider, SHA256: hex.EncodeToString(digest[:]), ProviderID: providerID,
 			Environment: []string{"PTAH_FIXTURE_PID_FILE=" + f.pidFile}},
-		Engines: []providerconfig.Engine{{ID: engine}},
+		Engines: []providerconfig.Engine{{ID: engine, Aliases: compatFixtureAliases[command]}},
 	}}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(os.WriteFile(f.manifest, manifest, 0o600), qt.IsNil)
