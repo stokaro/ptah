@@ -164,14 +164,33 @@ func TestProviderNativePreparedPlanRefusesSQLProjection(t *testing.T) {
 	c.Assert(statements, qt.IsNil)
 }
 
-func TestProviderNativePreparedPlanRefusesSQLRehearsalBeforeConnect(t *testing.T) {
-	c := qt.New(t)
-	host, runtime := yamlProviderEnvironment(c, "operation-models", []string{"FIXTURE_RENDER_MODE=native"})
-	conn := observedConnection(c, host, "planned")
-	plan, err := atlasschema.PrepareApply(c.Context(), conn, atlasschema.ApplyRuntimeOptions{Runtime: runtime, Desired: desiredProviderColumn(), TxMode: migrator.MigrationTxModeNone})
-	c.Assert(err, qt.IsNil)
-	c.Assert(plan.SimulateOnDev(c.Context(), atlasschema.SimulateOptions{DevURL: "unsupported://must-not-connect"}), qt.ErrorIs, renderer.ErrNativeSQL)
-	observed, err := conn.Reader().ReadSchema()
-	c.Assert(err, qt.IsNil)
-	c.Assert(observed.Tables[0].Columns, qt.HasLen, 1)
+// A rehearsal of a native plan refuses before it connects to anything when
+// the dev URL names no engine the run serves, or when edited SQL is offered in
+// place of the plan's operations.
+func TestProviderNativePreparedPlanRefusesARehearsalBeforeConnect_FailurePath(t *testing.T) {
+	for _, row := range []struct {
+		name    string
+		opts    atlasschema.SimulateOptions
+		wantErr string
+	}{
+		{"a dev URL of no engine", atlasschema.SimulateOptions{DevURL: "unsupported://must-not-connect"},
+			`unsupported --dev-url dialect "unsupported://must-not-connect"`},
+		{"edited SQL", atlasschema.SimulateOptions{DevURL: "unsupported://must-not-connect", Statements: []string{`ALTER TABLE "planned" ADD COLUMN "added" REAL;`}},
+			`unsupported feature: edited SQL cannot stand in for a plan that holds native operations or approved inputs`},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+			host, runtime := yamlProviderEnvironment(c, "operation-models", []string{"FIXTURE_RENDER_MODE=native"})
+			conn := observedConnection(c, host, "planned")
+			plan, err := atlasschema.PrepareApply(c.Context(), conn, atlasschema.ApplyRuntimeOptions{Runtime: runtime, Desired: desiredProviderColumn(), TxMode: migrator.MigrationTxModeNone})
+			c.Assert(err, qt.IsNil)
+
+			err = plan.SimulateOnDev(c.Context(), row.opts)
+
+			c.Assert(err, qt.ErrorMatches, row.wantErr)
+			observed, err := conn.Reader().ReadSchema()
+			c.Assert(err, qt.IsNil)
+			c.Assert(observed.Tables[0].Columns, qt.HasLen, 1)
+		})
+	}
 }

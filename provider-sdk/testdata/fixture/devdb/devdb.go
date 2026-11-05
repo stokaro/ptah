@@ -176,11 +176,35 @@ func storage(name string) bool {
 // ListDevObjects lists every table, view and trigger of the database. The
 // fixture removes tables and refuses a view, for which it has no statement.
 func (p *Provider) ListDevObjects(ctx context.Context, request *protocol.ListDevObjectsRequest) (*protocol.DevObjects, error) {
+	return Cleaner{Sessions: &p.Provider}.ListDevObjects(ctx, request)
+}
+
+// CleanDevDatabase is [Cleaner.CleanDevDatabase] over the provider's sessions.
+func (p *Provider) CleanDevDatabase(ctx context.Context, request *protocol.CleanDevRequest) (*protocol.DevCleanup, error) {
+	return Cleaner{Sessions: &p.Provider}.CleanDevDatabase(ctx, request)
+}
+
+// GuardReplay is [Cleaner.GuardReplay].
+func (p *Provider) GuardReplay(ctx context.Context, request *protocol.GuardReplayRequest) (*protocol.GuardedReplay, error) {
+	return Cleaner{Sessions: &p.Provider}.GuardReplay(ctx, request)
+}
+
+// Cleaner serves the dev cleanup and the replay guard over the sessions of a
+// fixture backend, so a fixture program that is not a [Provider] can clean
+// and guard its dev databases the same way.
+type Cleaner struct {
+	// Sessions holds the sessions the requests name.
+	Sessions *backend.Provider
+}
+
+// ListDevObjects lists every table, view and trigger of the database. The
+// fixture removes tables and refuses a view, for which it has no statement.
+func (c Cleaner) ListDevObjects(ctx context.Context, request *protocol.ListDevObjectsRequest) (*protocol.DevObjects, error) {
 	if err := mainOnly(request.GetSchemas()); err != nil {
 		return nil, err
 	}
 	result := &protocol.DevObjects{Complete: true}
-	err := p.WithSession(ctx, request.GetSessionId(), "", func(access backend.Access) error {
+	err := c.Sessions.WithSession(ctx, request.GetSessionId(), "", func(access backend.Access) error {
 		var err error
 		result.Objects, err = objects(ctx, access.Querier)
 		return err
@@ -227,13 +251,13 @@ func objects(ctx context.Context, queries backend.Querier) ([]*protocol.DevObjec
 // CleanDevDatabase drops every table in one transaction, or removes nothing
 // and names what stopped it. The fault lost-cleanup drops the tables and then
 // loses the reply.
-func (p *Provider) CleanDevDatabase(ctx context.Context, request *protocol.CleanDevRequest) (*protocol.DevCleanup, error) {
+func (c Cleaner) CleanDevDatabase(ctx context.Context, request *protocol.CleanDevRequest) (*protocol.DevCleanup, error) {
 	if err := mainOnly(request.GetSchemas()); err != nil {
 		return nil, err
 	}
 	result := &protocol.DevCleanup{RequestId: request.GetRequestId(), Outcome: protocol.DevCleanup_CLEANED}
 	lost := false
-	err := p.WithSession(ctx, request.GetSessionId(), "", func(access backend.Access) error {
+	err := c.Sessions.WithSession(ctx, request.GetSessionId(), "", func(access backend.Access) error {
 		lost = access.Fault == "lost-cleanup"
 		found, err := objects(ctx, access.Querier)
 		if err != nil {
@@ -277,7 +301,7 @@ func dropTables(ctx context.Context, db *sql.DB, found []*protocol.DevObject) er
 
 // GuardReplay refuses a statement that reaches past the database file, or
 // that changes the replay session's own settings, and accepts the rest.
-func (*Provider) GuardReplay(_ context.Context, request *protocol.GuardReplayRequest) (*protocol.GuardedReplay, error) {
+func (Cleaner) GuardReplay(_ context.Context, request *protocol.GuardReplayRequest) (*protocol.GuardedReplay, error) {
 	result := &protocol.GuardedReplay{}
 	for _, statement := range request.GetStatements() {
 		verdict := &protocol.ReplayVerdict{}

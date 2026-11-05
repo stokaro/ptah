@@ -3,7 +3,6 @@ package atlas
 import (
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -29,6 +28,18 @@ func applyAtlasNativeSchemaPlan(cmd *cobra.Command, opts atlasSchemaApplyOptions
 		return "", err
 	}
 	if err := displayAtlasNativeApplyPlan(cmd, conn, units, plan.Annotations(), mode); err != nil {
+		return "", err
+	}
+	// The rehearsal precedes the --dry-run exit, as it does for a plan of SQL
+	// text, so a dry run reports the refusal a real run would meet. A native
+	// plan is made again for the dev database; see
+	// [atlasschema.ApplyRuntimePlan.SimulateOnDev].
+	if err := plan.SimulateOnDev(cmd.Context(), atlasschema.SimulateOptions{
+		DevURL:              opts.devURL,
+		TargetURL:           opts.url,
+		DesiredURLs:         opts.toURLs,
+		DevServerDisposable: opts.devServerDisposable,
+	}); err != nil {
 		return "", err
 	}
 	if opts.dryRun {
@@ -90,8 +101,6 @@ func validateAtlasNativeApplyOptions(opts atlasSchemaApplyOptions, units []atlas
 		return fmt.Errorf("%w: %s cannot be edited as SQL; edit the desired schema and plan again", ptaherr.ErrUnsupportedFeature, subject)
 	case opts.formatOutput:
 		return fmt.Errorf("%w: the Atlas SQL report format cannot represent %s", ptaherr.ErrUnsupportedFeature, plural)
-	case strings.TrimSpace(opts.devURL) != "":
-		return fmt.Errorf("%w: %s cannot be rehearsed as SQL on --dev-url", ptaherr.ErrUnsupportedFeature, plural)
 	case !opts.skipLint && len(opts.lintPolicy.RuleConfigs) != 0:
 		return fmt.Errorf("%w: the atlas.hcl SQL lint policy cannot judge %s; review the owner assessments and use --skip-lint", ptaherr.ErrUnsupportedFeature, plural)
 	default:

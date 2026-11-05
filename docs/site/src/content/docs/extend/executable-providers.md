@@ -886,16 +886,26 @@ writes each change as one statement its executor runs read back from a file,
 and refuses a change it performs only through a native call; Ptah then names
 the operation and writes nothing. A provider without the feature keeps its
 native units, and those commands refuse them. `schema plan`, `schema apply` and
-saved plans keep native operations. `--edit` and dev-database rehearsal refuse
-native plans.
+saved plans keep native operations. `--edit` refuses native plans.
+
+A native operation is bound to the database it was planned for, so
+`schema apply --dev-url` does not send the target's operations to the dev
+database. It recreates the target's current schema there, plans the same
+desired schema again for the dev database, and runs that plan through the
+provider, as the apply runs the target's. A plan whose operations are not the
+target's, one by one, refuses the apply: the rehearsal would pass on changes
+the apply does not make. `ptah-compat schema apply` rehearses the same way.
 
 With `units.sensitive-inputs`, the provider declares environment variable names
 for exact execution units before approval. Native and compatibility schema
 plans retain these references, and JSON plan digests cover them. Input values
 are resolved only at dispatch and never enter plans or provider process
 environments. Dry runs need no values. A missing value or changed reference
-set refuses execution before the batch starts. SQL editing, report templates,
-and dev-database rehearsal refuse input-bearing plans.
+set refuses execution before the batch starts. SQL editing and report
+templates refuse input-bearing plans. A dev-database rehearsal of one binds
+each value when its unit is dispatched on the dev database, and so does a
+migration replayed on a dev database, which approves the inputs each statement
+reads before the first statement runs, as `migrations up` does.
 
 `--dry-run` lists the planned operations, decodes and preflights a saved plan,
 and writes nothing. The protocol does not establish a lock acquisition that

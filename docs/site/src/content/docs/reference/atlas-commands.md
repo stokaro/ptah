@@ -1229,14 +1229,18 @@ complete batch and writes nothing.
 
 Execution input references are shown before approval and retained with their
 exact units. Values are read from the host environment only at dispatch. A
-missing value refuses the batch before its first statement. SQL editing,
-report templates, and dev-database rehearsal refuse these references because
-those paths cannot preserve the approved input binding.
+missing value refuses the batch before its first statement. SQL editing and
+report templates refuse these references because those paths cannot preserve
+the approved input binding.
 
-Native operations cannot enter a SQL editor, an Atlas SQL report template, or
-a SQL rehearsal on `--dev-url`. These options refuse before execution. An
-explicit `atlas.hcl` SQL lint policy also refuses native operations unless
-`--skip-lint` is selected after reviewing the owner assessments.
+Native operations cannot enter a SQL editor or an Atlas SQL report template.
+These options refuse before execution. An explicit `atlas.hcl` SQL lint policy
+also refuses native operations unless `--skip-lint` is selected after
+reviewing the owner assessments. With `--dev-url`, a plan that holds native
+operations or input references is planned again for the dev database, after
+the target's current schema is recreated there, and runs there through the
+provider before the target is touched. Its operations must be the target
+plan's, one by one, or the apply is refused.
 
 **Desired state (`--to`)** accepts one of:
 
