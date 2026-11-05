@@ -367,6 +367,10 @@ without local replacements. Official-engine qualification remains required under
 `sessions.locks` advertises the optional `Locks` service globally and for each
 supporting engine. The provider owns the database exclusion mechanism. The host
 owns the wait policy, cancellation, and the decision to run under the lock.
+The host's wait timeout ends the wait between attempts and never cancels an
+attempt in flight, so a `BUSY` answer that arrives after it is reported as the
+timeout. An attempt ends with its answer, the call timeout or the run's
+cancellation.
 
 Every attempt names a session, exact lock name, and single-use lock ID. Every RPC
 has a separate request ID. Receipts must echo the full scope and request identity.
