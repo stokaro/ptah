@@ -230,9 +230,11 @@ site imports and at which release:
 }
 ```
 
-`release` is the provider release this Ptah installs: the newest release whose
-minimum contract this Ptah meets, which is what `ptah providers install
-<engine>` chooses. `ref` is a full commit imported in place of the release,
+`release` names the provider release this Ptah installs: the newest release
+whose minimum contract this Ptah meets, which is what `ptah providers install
+<engine>` chooses at run time. Nothing derives the one from the other, so a
+change that moves this Ptah's provider contract past a release moves `release`
+too. `ref` is a full commit imported in place of the release,
 allowed only with a `refReason`, for a release that predates the provider's
 `docs/` folder. The import refuses a `ref` once the release carries the folder.
 A released version of this site shows the provider pages its own declaration
