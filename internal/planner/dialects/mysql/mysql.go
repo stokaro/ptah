@@ -1213,9 +1213,15 @@ func (p *Planner) addNewIndexes(
 	replacements := indexscope.NewConflictSetWithSemantics(semantics, diff.IndexRemovals())
 	guardedDrops := p.capabilities().Has(capability.DropIndexIfExists)
 	constraintBacked := diff.ConstraintBackedIndexRemovalSet()
+	namedByForeignKeys := indexesNamedByForeignKeys(diff, p.targetDialect())
 	// The declaration travels WITH the addition (stokaro/ptah#2315).
 	for _, change := range diff.IndexesAdded {
 		ref := difftypes.IndexRef{Name: change.Index.Name, TableName: change.TableName}
+		// A rollback restores the index the key it adds back builds for itself. Written
+		// here the index comes ahead of the key's drop, which the index still serves.
+		if _, named := namedByForeignKeys[ref]; named && foreignKeyBuildsIndex(diff, change) {
+			continue
+		}
 		indexNode := modelast.FromIndex(change.Index)
 		indexNode.Table = ref.TableName
 		indexNode.IfNotExists = false
@@ -2201,6 +2207,15 @@ func indexesNamedByForeignKeys(diff *difftypes.SchemaDiff, dialect string) map[d
 		}
 	}
 	return named
+}
+
+// foreignKeyBuildsIndex reports whether a foreign key the plan adds under the name of
+// the index change adds covers the columns of that index, so the server builds it.
+func foreignKeyBuildsIndex(diff *difftypes.SchemaDiff, change difftypes.IndexChange) bool {
+	return slices.ContainsFunc(diff.ConstraintsAdded, func(add difftypes.ConstraintAdditionInfo) bool {
+		return strings.EqualFold(add.Type, "FOREIGN KEY") && add.Name == change.Index.Name &&
+			add.TableName == change.TableName && slices.Equal(add.Columns, change.Index.Fields)
+	})
 }
 
 // dropIndexRebuiltAsConstraint drops the key this UNIQUE constraint addition is
