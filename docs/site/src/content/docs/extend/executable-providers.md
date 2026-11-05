@@ -429,7 +429,9 @@ of its models contributes to, such as a topic and the number of its consumers.
 each value, because only the provider reads the value's content. Ptah counts
 the common objects, such as tables and columns, from the read. An engine that
 names no metric adds no gauge, and a metric named like a common one, such as
-`tables`, makes the command fail.
+`tables`, makes the command fail. The exception is `indexes` with the help
+`Indexes`: an engine counts there the indexes it holds outside the common
+model, such as a YDB vector index, and the count adds to the indexes Ptah read.
 
 An engine can declare its release lines in the description. Each line names a
 support level and, for a line that claims testing, the image that runs it. A line

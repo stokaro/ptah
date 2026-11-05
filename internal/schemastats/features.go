@@ -15,19 +15,25 @@ import (
 // of the types each counts. The types are owners' objects, so each starts at
 // zero and keeps its place in the report for every target; an owner's metric
 // of the same name and help, such as the PostgreSQL type owner's "domains",
-// adds its count to the common one. No other common metric takes an owner's
-// count: nothing says the two would count the same thing.
+// adds its count to the common one.
 var typeMetrics = map[string]objectidentity.Kind{
 	"domains":         objectidentity.KindDomain,
 	"composite_types": objectidentity.KindComposite,
 }
 
+// indexesMetric is the common metric of indexes. An index its engine holds
+// outside the common model, such as a YDB vector index, is in no common
+// index the read returns, so the owner that holds it counts it, under the
+// common metric's name and help, and the count adds to the common one.
+const indexesMetric = "indexes"
+
 // joinsCommon reports whether an owner's metric adds to the common metric of
-// its name: a type metric, where the two mean the same thing, which the help
-// says.
+// its name: a type metric or the indexes, where the two mean the same thing,
+// which the help says. No other common metric takes an owner's count: nothing
+// says the two would count the same thing.
 func joinsCommon(common Metric, owner schemaext.MetricDefinition) bool {
 	_, counts := typeMetrics[common.Name]
-	return counts && common.Help == owner.Help
+	return (counts || common.Name == indexesMetric) && common.Help == owner.Help
 }
 
 func appendFeatureMetrics(ctx context.Context, db *schemamodel.Database, target string, runtime schemaext.ReportingRuntime, metrics []Metric) ([]Metric, error) {
