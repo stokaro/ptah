@@ -55,7 +55,7 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.20. `provider-sdk/v0.18.0` speaks 25.19.
+speaks contract 25.21. `provider-sdk/v0.18.0` speaks 25.19.
 `provider-sdk/v0.17.0` speaks 25.18.
 `provider-sdk/v0.16.0` speaks 25.17.
 `provider-sdk/v0.15.0` speaks 25.16.
@@ -110,6 +110,7 @@ returns to 0.
   Contract 25.18 adds [the reasons of execution and transaction results](#error-reasons).
   Contract 25.19 adds [change reversal](#change-reversal).
   Contract 25.20 adds [unread tables](#unread-tables).
+  Contract 25.21 adds [database kinds](#database-kinds).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -139,8 +140,9 @@ does not oblige a peer to use it.
   `schema.observed-primary-keys`, `schema.observed-indexes`,
   `planning.object-context`, `planning.context-inventory`,
   `units.migration-split`, `models.compare-counts`, `schema.index-methods`,
-  `sessions.typed-arguments`, `errors.reasons`, `planning.index-renames` and
-  `models.reverse`. The embedding store's calls, `PrepareCommonObjects` and
+  `sessions.typed-arguments`, `errors.reasons`, `planning.index-renames`,
+  `models.reverse`, `schema.unread-tables` and `schema.database-kinds`. The
+  embedding store's calls, `PrepareCommonObjects` and
   `ReverseChanges` are new, and each comes with an addition to `Engine`, so a
   host lists the feature to receive any of them. `SplitMigration` is new too,
   and comes with the abort flags of `Execution` and `TransactionResult`, so a
@@ -956,7 +958,8 @@ in request order. Each entry maps that selector to structured owner namespaces.
 An empty namespace list means an empty selection, not global authority. Bindings
 never grant coverage. Every returned table has a `normalized_identity`, even
 without facets. Tables, coverage subjects, and whole coverage regions must fit
-inside the bound namespaces. Filtered replies cannot claim global completeness
+inside the bound namespaces, except the objects of a negotiated
+[database kind](#database-kinds), which are named at the database. Filtered replies cannot claim global completeness
 or include dispositions without normalized identities. Requests and bindings
 are limited to 4,096 entries, with at most 4,096 namespaces across all bindings.
 
@@ -2156,6 +2159,28 @@ observed `ComparisonState` disjoint from `desired_objects` and
 service returns no receipt for them. A plan saved by `ptah schema plan
 --output` records a source fingerprint that covers the inventory, so the plan
 is stale against a read whose planning context differs.
+
+## Database kinds
+
+[ADR 0065](../docs/adr/0065-a-filtered-read-reports-the-objects-of-its-database.md)
+defines `schema.database-kinds`. Some objects belong to a database rather than
+to a namespace of it, such as YDB's resource pools, and a read filtered to
+namespaces would otherwise have to leave them uninspected. An engine lists the
+kinds of such objects in `Engine.database_kinds`: each the kind of one of its
+OBSERVED models, named once, and none a kind a planning service assesses as
+context. The list is non-empty exactly when the engine lists the feature,
+which the provider lists too, and a host that does not list it receives none.
+
+An object of a database kind is named at the database: its reference has the
+database and no catalog, schema, path or overload. On a filtered read the scope
+rule gives way for a coverage subject of a database kind whose subject and
+normalized subject are such references of the subject's own kind, and for a
+coverage region of a database kind whose scope is the database namespace (the
+database, an empty catalog and an empty schema, no path prefix). Everything
+else a filtered read names stays inside its bound namespaces, and a database
+kind cannot claim global completeness either. The host binds these subjects
+and regions to the session's database and reads them as it reads an
+unfiltered read's.
 
 ## Migration splits
 
