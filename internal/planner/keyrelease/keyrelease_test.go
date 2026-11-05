@@ -267,3 +267,144 @@ func TestDroppedWithColumns_FindsNothing(t *testing.T) {
 		})
 	}
 }
+
+// addedKey is a foreign key the plan adds on child, referencing parent.
+func addedKey(parent string) difftypes.ConstraintAdditionInfo {
+	return difftypes.ConstraintAdditionInfo{Name: "child_fk", TableName: "child", Type: "FOREIGN KEY",
+		Columns: []string{"p"}, ForeignTable: parent, ForeignColumns: []string{"id"}}
+}
+
+// TestUnderAddedForeignKeys_HappyPath pins what goes ahead of a foreign key the plan
+// adds: every removed key and index of the table it references, whichever spelling
+// names that table.
+func TestUnderAddedForeignKeys_HappyPath(t *testing.T) {
+	tests := []struct {
+		name string
+		diff *difftypes.SchemaDiff
+		want []string
+	}{
+		{
+			name: "a UNIQUE replaced under another name",
+			diff: &difftypes.SchemaDiff{
+				ConstraintsAdded:   []difftypes.ConstraintAdditionInfo{addedKey("parent")},
+				ConstraintsRemoved: removed("parent", "parent_code_old", "UNIQUE"),
+			},
+			want: []string{"constraint parent.parent_code_old"},
+		},
+		{
+			name: "a PRIMARY KEY the plan does not replace",
+			diff: &difftypes.SchemaDiff{
+				ConstraintsAdded:   []difftypes.ConstraintAdditionInfo{addedKey("parent")},
+				ConstraintsRemoved: removed("parent", "parent_pkey", "PRIMARY KEY"),
+			},
+			want: []string{"constraint parent.parent_pkey"},
+		},
+		{
+			name: "an index",
+			diff: &difftypes.SchemaDiff{
+				ConstraintsAdded: []difftypes.ConstraintAdditionInfo{addedKey("parent")},
+				IndexesRemoved:   []difftypes.IndexRef{{Name: "parent_code_ui", TableName: "parent"}},
+			},
+			want: []string{"index parent.parent_code_ui"},
+		},
+		{
+			name: "the table qualified on one side",
+			diff: &difftypes.SchemaDiff{
+				ConstraintsAdded:   []difftypes.ConstraintAdditionInfo{addedKey("public.parent")},
+				ConstraintsRemoved: removed("parent", "parent_code_old", "UNIQUE"),
+			},
+			want: []string{"constraint parent.parent_code_old"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(released(keyrelease.UnderAddedForeignKeys(test.diff, platform.Postgres)), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestUnderAddedForeignKeys_ReleasesNothing pins what stays where its own step puts
+// it: a foreign key no removal sits under, a key another step drops ahead of its
+// addition, and what is no key.
+func TestUnderAddedForeignKeys_ReleasesNothing(t *testing.T) {
+	tests := []struct {
+		name string
+		diff *difftypes.SchemaDiff
+	}{
+		{name: "no diff"},
+		{
+			name: "no foreign key added",
+			diff: &difftypes.SchemaDiff{ConstraintsRemoved: removed("parent", "parent_code_old", "UNIQUE")},
+		},
+		{
+			name: "another table's key",
+			diff: &difftypes.SchemaDiff{
+				ConstraintsAdded:   []difftypes.ConstraintAdditionInfo{addedKey("parent")},
+				ConstraintsRemoved: removed("other", "other_code_old", "UNIQUE"),
+			},
+		},
+		{
+			name: "a primary key the plan replaces",
+			diff: &difftypes.SchemaDiff{
+				ConstraintsAdded: []difftypes.ConstraintAdditionInfo{
+					addedKey("parent"),
+					{Name: "parent_pkey2", TableName: "parent", Type: "PRIMARY KEY", Columns: []string{"code"}},
+				},
+				ConstraintsRemoved: removed("parent", "parent_pkey", "PRIMARY KEY"),
+			},
+		},
+		{
+			name: "a key the plan adds again under its name",
+			diff: &difftypes.SchemaDiff{
+				ConstraintsAdded: []difftypes.ConstraintAdditionInfo{
+					addedKey("parent"),
+					{Name: "parent_code_key", TableName: "parent", Type: "UNIQUE", Columns: []string{"code"}},
+				},
+				ConstraintsRemoved: removed("parent", "parent_code_key", "UNIQUE"),
+			},
+		},
+		{
+			name: "a CHECK",
+			diff: &difftypes.SchemaDiff{
+				ConstraintsAdded:   []difftypes.ConstraintAdditionInfo{addedKey("parent")},
+				ConstraintsRemoved: removed("parent", "parent_code_positive", "CHECK"),
+			},
+		},
+		{
+			name: "the foreign key itself",
+			diff: &difftypes.SchemaDiff{
+				ConstraintsAdded:   []difftypes.ConstraintAdditionInfo{addedKey("parent")},
+				ConstraintsRemoved: removed("child", "child_fk", "FOREIGN KEY"),
+			},
+		},
+		{
+			name: "an index the plan creates again",
+			diff: &difftypes.SchemaDiff{
+				ConstraintsAdded: []difftypes.ConstraintAdditionInfo{addedKey("parent")},
+				IndexesRemoved:   []difftypes.IndexRef{{Name: "parent_code_ui", TableName: "parent"}},
+				IndexesAdded:     difftypes.IndexChanges{{TableName: "parent", Index: schemamodel.Index{Name: "parent_code_ui"}}},
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(released(keyrelease.UnderAddedForeignKeys(test.diff, platform.Postgres)), qt.HasLen, 0)
+		})
+	}
+}
+
+// TestReleasesWith_HoldsEachRemovalOnce merges the two reasons a removal may have
+// to go first, keeping the order of the first.
+func TestReleasesWith_HoldsEachRemovalOnce(t *testing.T) {
+	c := qt.New(t)
+	shared := difftypes.ConstraintRemovalInfo{Name: "k", TableName: "t", Type: "UNIQUE", Identity: difftypes.ConstraintIdentity{Table: "t", Name: "k"}}
+	other := difftypes.ConstraintRemovalInfo{Name: "m", TableName: "t", Type: "UNIQUE", Identity: difftypes.ConstraintIdentity{Table: "t", Name: "m"}}
+	index := difftypes.IndexRef{Name: "i", TableName: "t"}
+
+	merged := keyrelease.Releases{Constraints: []difftypes.ConstraintRemovalInfo{shared}, Indexes: []difftypes.IndexRef{index}}.
+		With(keyrelease.Releases{Constraints: []difftypes.ConstraintRemovalInfo{other, shared}, Indexes: []difftypes.IndexRef{index}})
+
+	c.Assert(released(merged), qt.DeepEquals, []string{"constraint t.k", "constraint t.m", "index t.i"})
+}

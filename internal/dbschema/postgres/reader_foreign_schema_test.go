@@ -25,16 +25,16 @@ func foreignSchemaCatalog() dbtest.QueryHandler {
 			Columns: []string{
 				"table_schema", "table_name", "constraint_name", "constraint_type", "columns",
 				"foreign_schema", "foreign_table", "foreign_columns", "delete_rule", "update_rule",
-				"deferrable", "deferred", "check_clause", "definition", "comment",
+				"deferrable", "deferred", "check_clause", "definition", "comment", "referenced_index",
 			},
 			Rows: [][]driver.Value{
 				{
 					"public", "orders", "orders_customer", "FOREIGN KEY", "customer_id",
-					"crm", "customers", "id", "NO ACTION", "NO ACTION", false, false, "", "", "",
+					"crm", "customers", "id", "NO ACTION", "NO ACTION", false, false, "", "", "", "",
 				},
 				{
 					"public", "orders", "orders_line", "FOREIGN KEY", "line_id",
-					"public", "lines", "id", "NO ACTION", "NO ACTION", false, false, "", "", "",
+					"public", "lines", "id", "NO ACTION", "NO ACTION", false, false, "", "", "", "",
 				},
 			},
 		},

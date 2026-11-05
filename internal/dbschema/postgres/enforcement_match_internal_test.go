@@ -93,15 +93,15 @@ func TestReadBasicConstraintsForSchema_ReadsEnforcementAndMatch(t *testing.T) {
 	columns := []string{
 		"table_schema", "table_name", "constraint_name", "constraint_type", "columns", "foreign_schema",
 		"foreign_table", "foreign_columns", "delete_rule", "update_rule", "deferrable", "deferred",
-		"check_clause", "definition", "comment",
+		"check_clause", "definition", "comment", "referenced_index",
 	}
 	// The constraint read sends one query, so every query gets these rows.
 	db := dbtest.Open(c, func(string, []driver.NamedValue) (dbtest.QueryResult, error) {
 		return dbtest.QueryResult{Columns: columns, Rows: [][]driver.Value{
 			{"public", "c", "c_a_check", "CHECK", "a", "", "", "", "", "", false, false, "(a > 0)",
-				"CHECK ((a > 0)) NOT ENFORCED", ""},
+				"CHECK ((a > 0)) NOT ENFORCED", "", ""},
 			{"public", "c", "c_p_fkey", "FOREIGN KEY", "p", "public", "p", "id", "NO ACTION", "NO ACTION", true, false, "",
-				"FOREIGN KEY (p) REFERENCES p(id) MATCH FULL DEFERRABLE NOT ENFORCED", ""},
+				"FOREIGN KEY (p) REFERENCES p(id) MATCH FULL DEFERRABLE NOT ENFORCED", "", ""},
 		}}, nil
 	})
 	reader := NewPostgreSQLReaderWithCapabilities(db.SQL, "public", capability.Postgres18())

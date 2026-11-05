@@ -446,6 +446,15 @@ they reference and before changing their columns. Replacement foreign keys are
 added after the referenced keys. This order also applies to reverse migrations
 and self-references.
 
+A foreign key depends on one index of the table it references, and PostgreSQL
+refuses to drop that index while the foreign key exists. It does not move the
+foreign key to another key over the same columns. Ptah reads the index from
+`pg_constraint.conindid`. When a plan removes or replaces that key, it drops the
+foreign key, changes the key, and adds the foreign key back, which takes a lock
+on both tables and validates every row. A foreign key that depends on a key the
+plan keeps stays untouched. A foreign key in a schema the run leaves out is not
+read, so the server's refusal stops that plan and its transaction undoes it.
+
 A column-level `UNIQUE` is compared by the name PostgreSQL gives it,
 `<table>_<column>_key`, numbered `1` and on where another relation or
 constraint of the schema already holds that name. When the database holds the

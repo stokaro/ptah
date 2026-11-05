@@ -20,6 +20,12 @@ type Comparison struct {
 	// ForeignKeyBackingIndex reports that the server creates and reports an
 	// index for every foreign key.
 	ForeignKeyBackingIndex bool `json:"foreign_key_backing_index,omitempty"`
+	// ForeignKeyHoldsItsKey reports that a foreign key depends on the one index
+	// that enforces the key it references, whatever else covers those columns,
+	// and that the server refuses to drop that index while the foreign key
+	// exists. A plan that removes the key drops the foreign key first and adds
+	// it back once a key is there to reference.
+	ForeignKeyHoldsItsKey bool `json:"foreign_key_holds_its_key,omitempty"`
 	// InternalIndexPrefix begins the name of an index the engine builds for
 	// itself and no statement can name, such as SQLite's autoindexes.
 	InternalIndexPrefix string `json:"internal_index_prefix,omitempty"`

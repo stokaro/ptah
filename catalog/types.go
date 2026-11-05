@@ -819,6 +819,12 @@ type Constraint struct {
 	IncludeColumns []string `json:"include_columns,omitempty"`
 	// UsingMethod is the index access method of a PRIMARY KEY, when reported.
 	UsingMethod *string `json:"using_method"`
+	// ReferencedIndex is the index a foreign key depends on, on its referenced
+	// table, where a reader records it: pg_constraint.conindid on PostgreSQL.
+	// Empty where the reader records none. It is a reader-only execution fact:
+	// two keys may cover the referenced columns, and only this says which of
+	// them the server refuses to drop while the foreign key exists.
+	ReferencedIndex string `json:"-"`
 
 	// Requires names the objects the index backing this constraint cannot be
 	// built without, read from that index exactly as [Index.Requires] is.

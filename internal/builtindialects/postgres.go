@@ -143,12 +143,17 @@ func postgres() descriptor.Dialect {
 		GeneratedColumnDefault: "STORED",
 		// Comparison: what comparing a declaration with a catalog reads.
 		Comparison: descriptor.Comparison{
-			ForeignKeysOutside:   true,
-			ExpressionProbes:     "pg-catalog",
-			RolePasswords:        true,
-			DefaultGeneratedKind: "STORED",
-			RoutineTypeAliases:   "pg-aliases",
-			QualifiedTypeNames:   true,
+			ForeignKeysOutside: true,
+			// pg_constraint.conindid names the index, and `DROP CONSTRAINT`
+			// on it answers `cannot drop constraint parent_pkey on table
+			// parent because other objects depend on it`, measured on 18.6.
+			// The rest of the family has not been measured.
+			ForeignKeyHoldsItsKey: true,
+			ExpressionProbes:      "pg-catalog",
+			RolePasswords:         true,
+			DefaultGeneratedKind:  "STORED",
+			RoutineTypeAliases:    "pg-aliases",
+			QualifiedTypeNames:    true,
 			// YugabyteDB leaves this off: a routine created in pg_temp
 			// outlives the rollback there, and a copy whose body reads a
 			// table would hold it.

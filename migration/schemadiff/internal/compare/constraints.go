@@ -116,9 +116,10 @@ func ConstraintsWithSemantics(
 	}
 
 	// Find modified constraints (constraints that exist in both but have different definitions)
+	underRemovedKey := foreignKeysOverRemovedKeys(genConstraints, dbConstraints, database, diff, dialect, semantics, opts)
 	for constraintKey, genConstraint := range genConstraints {
 		if dbConstraint, exists := dbConstraints[constraintKey]; exists {
-			if constraintDefinitionsChanged(genConstraint, dbConstraint, dialect, semantics, opts) {
+			if constraintDefinitionsChanged(genConstraint, dbConstraint, dialect, semantics, opts) || underRemovedKey[constraintKey] {
 				// For now, treat modified constraints as removed + added
 				// In the future, we could add a ConstraintsModified field to SchemaDiff
 				diff.ConstraintsRemoved = appendConstraintRemoval(diff.ConstraintsRemoved, dbConstraint, semantics)
