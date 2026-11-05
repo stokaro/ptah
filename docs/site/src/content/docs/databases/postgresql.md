@@ -1632,6 +1632,17 @@ schema adds or drops FORCE gets `ALTER TABLE ... FORCE ROW LEVEL SECURITY` or
 `ALTER TABLE ... NO FORCE ROW LEVEL SECURITY`. FORCE survives `DISABLE`, so a
 table that is enabled again without it also gets `NO FORCE`.
 
+The server rewrites a policy's clauses when it stores them, so a comparison needs
+the server's spelling of what you declared. Ptah asks by creating the policy on a
+temporary copy of the table, in a transaction it rolls back. CockroachDB refuses
+that, as can a read-only session. A clause there is compared by what it means: a
+type annotation, `current_user` written with or without `()`, the table's own name
+as a prefix, and the parentheses around a condition do not count as a change, and
+a different column, constant, operator, grouping or operand order does. A clause
+this cannot reconcile, such as `n = 1 + 1`, which CockroachDB stores as `n =
+(1:::INT8 + 1:::INT8)`, plans `ALTER POLICY` on every run. Declaring it as the
+server stores it plans nothing.
+
 Changes to a policy's roles, or additions and edits of its `USING` and
 `WITH CHECK` clauses, use `ALTER POLICY`. This step needs no transaction and
 preserves the policy's identity and comment. A comment change gets its own
