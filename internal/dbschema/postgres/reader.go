@@ -962,12 +962,12 @@ func (r *Reader) readColumnsForSchema(ctx context.Context, schemaName string) (m
 		col.IdentityGeneration = postgresIdentityGeneration(identityKind)
 		col.FormattedType = cockroachSizedString(r.dialect, col)
 
+		col.OwnedSequence = sequenceInSchema(ownedSequenceName, schemaName)
 		if col.ColumnDefault != nil {
 			defaultVal := *col.ColumnDefault
-			col.IsAutoIncrement = ownedSequenceName != "" &&
+			col.IsAutoIncrement = col.OwnedSequence != "" &&
 				strings.Contains(strings.ToLower(defaultVal), "nextval(")
 		}
-		col.OwnedSequence = sequenceInSchema(ownedSequenceName, schemaName)
 
 		columnsByTable[tableName] = append(columnsByTable[tableName], col)
 	}
@@ -990,14 +990,18 @@ func sequenceInSchema(reported, schema string) string {
 	return ref.Name
 }
 
-// keepColumnSequencesOnly clears a column's OwnedSequence where the sequence
-// is described on its own, in sequences.
+// keepColumnSequencesOnly clears a column's OwnedSequence and IsAutoIncrement
+// where the sequence is described on its own, in sequences.
 //
-// pg_get_serial_sequence names every sequence a column owns, and the read of
+// pg_get_serial_sequence names every sequence a column owns, and on CockroachDB
+// every sequence a column draws from as well, measured on v26.3.2. The read of
 // the sequences decides which of them is part of its column. That read is the
 // one answer: a sequence OWNED BY a column that does not draw from it, or by a
-// domain column, is described as a sequence of its own, and a grant on it
-// belongs to that sequence rather than to a column.
+// domain column, or one a CockroachDB column only draws from, is described as a
+// sequence of its own, and a grant on it belongs to that sequence rather than
+// to a column. A default on such a sequence is an ordinary default. Read as the
+// column's own, the comparison leaves it alone, and the plan drops the sequence
+// under it, which the server refuses.
 func keepColumnSequencesOnly(tables []catalog.Table, sequences []catalog.Sequence) {
 	described := make(map[string]bool, len(sequences))
 	for _, sequence := range sequences {
@@ -1010,6 +1014,7 @@ func keepColumnSequencesOnly(tables []catalog.Table, sequences []catalog.Sequenc
 			if column.OwnedSequence != "" &&
 				described[catalog.QualifyTableName(table.Schema, column.OwnedSequence)] {
 				column.OwnedSequence = ""
+				column.IsAutoIncrement = false
 			}
 		}
 	}

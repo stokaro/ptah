@@ -70,3 +70,21 @@ func TestKeepColumnSequencesOnly(t *testing.T) {
 	c.Assert(tables[0].Columns[1].OwnedSequence, qt.Equals, "")
 	c.Assert(tables[0].Columns[2].OwnedSequence, qt.Equals, "")
 }
+
+// TestKeepColumnSequencesOnly_ADescribedSequenceIsAnOrdinaryDefault reads the flag
+// the comparison skips a default by. A column that draws from a sequence described
+// on its own holds an ordinary default. CockroachDB reports such a sequence through
+// pg_get_serial_sequence as well, measured on v26.3.2, so the read of the sequences
+// is what tells the two apart.
+func TestKeepColumnSequencesOnly_ADescribedSequenceIsAnOrdinaryDefault(t *testing.T) {
+	c := qt.New(t)
+	tables := []catalog.Table{{Schema: "app", Name: "items", Columns: []catalog.Column{
+		{Name: "id", OwnedSequence: "items_id_seq", IsAutoIncrement: true},
+		{Name: "n", OwnedSequence: "lifecycle_seq", IsAutoIncrement: true},
+	}}}
+
+	keepColumnSequencesOnly(tables, []catalog.Sequence{{Schema: "app", Name: "lifecycle_seq"}})
+
+	c.Assert(tables[0].Columns[0].IsAutoIncrement, qt.IsTrue)
+	c.Assert(tables[0].Columns[1].IsAutoIncrement, qt.IsFalse)
+}

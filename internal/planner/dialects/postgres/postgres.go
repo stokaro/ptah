@@ -1942,6 +1942,10 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	ahead := p.routinesAheadOf(diff, rebuild, earlyColumns)
 	result = p.dropRebuiltViewLikes(result, diff, rebuild)
 
+	// 5d. A removed sequence leaves its owner before the column changes that
+	// take its default away; see [Planner.releaseRemovedSequenceOwners].
+	result = p.releaseRemovedSequenceOwners(result, diff)
+
 	// 6. Add and modify table columns (must be done before creating RLS policies that depend on columns)
 	result = p.addAndModifyTableColumns(result, diff)
 
@@ -2582,6 +2586,29 @@ func alterSequenceFromDiff(target schemamodel.Sequence, changes map[string]strin
 // changed options for use as a SQL comment.
 func summarizeSequenceChanges(sequenceDiff difftypes.SequenceDiff) string {
 	return strings.Join(slices.Sorted(maps.Keys(sequenceDiff.Changes)), ", ")
+}
+
+// releaseRemovedSequenceOwners detaches each sequence the plan removes from the
+// column that owns it, on CockroachDB. There ALTER COLUMN DROP DEFAULT on a column
+// that owns the sequence its default draws from stops at an internal error,
+// `relation "s": depended-on-by relation "t" has no reference to this sequence in
+// column "n"` (SQLSTATE XX000), and it runs without one once the sequence has no
+// owner, measured on v26.3.2. PostgreSQL takes the default away either way.
+func (p *Planner) releaseRemovedSequenceOwners(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	if p.targetDialect() != platform.CockroachDB {
+		return result
+	}
+	for _, sequence := range diff.SequencesRemoved {
+		if sequence.OwnedBy == "" {
+			continue
+		}
+		node := ast.NewAlterSequence(sequence.Name).SetOwnedBy("NONE")
+		if sequence.Schema != "" {
+			node.SetSchema(sequence.Schema)
+		}
+		result = append(result, node)
+	}
+	return result
 }
 
 // removeSequences emits DROP SEQUENCE for sequences no longer present in the
