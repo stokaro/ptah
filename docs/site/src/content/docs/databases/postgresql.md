@@ -1166,7 +1166,7 @@ such as `$PTAH_SECRET_APP_PASSWORD`, names that variable instead of holding a
 value. The statements name it, and every run reads it from the environment,
 so the schema holds no password at all. A SQL schema read from a migration
 file Ptah generated keeps the reference it holds. The same rules hold on
-[YDB](../ydb/), where a user's password is named the same way.
+[YDB](../../extend/providers/ydb/), where a user's password is named the same way.
 
 A plan that removes a table revokes the privileges of the roles the schema
 manages and leaves the others to `DROP TABLE`. The rollback of that plan
