@@ -17,6 +17,7 @@ sourceOfTruth:
   - "provider-sdk"
   - "integration/providercli/provider_cli_integration_test.go"
   - "integration/providercli/provider_error_reasons_e2e_test.go"
+  - "integration/providercli/provider_report_counts_e2e_test.go"
   - "integration/providercli/provider_native_verbs_e2e_test.go"
   - "integration/providercli/provider_migrations_e2e_test.go"
   - "integration/providercli/provider_migration_units_e2e_test.go"
@@ -409,6 +410,14 @@ the engine. The work is split this way:
 A planning request does not carry the declared and observed objects as
 context.
 
+`models.report-counts` lets an engine name the count metrics each value of one
+of its models contributes to, such as a topic and the number of its consumers.
+`ptah schema stats` then writes one gauge per metric, and the provider counts
+each value, because only the provider reads the value's content. Ptah counts
+the common objects, such as tables and columns, from the read. An engine that
+names no metric adds no gauge, and a metric named like a common one, such as
+`tables`, makes the command fail.
+
 An engine can declare its release lines in the description. Each line names a
 support level and, for a line that claims testing, the image that runs it. A line
 the provider keeps without running it is best effort and carries the reason. The
@@ -740,6 +749,15 @@ one, is refused before any step with `table dir.rep: <reason>`. A filter, such
 as `--exclude`, keeps the entry, since narrowing a read cannot make the
 database lose a table. Without the feature, the provider leaves the table out
 silently, and a declared table there fails when its creation runs.
+
+Some objects belong to a database rather than to a namespace of it, such as
+YDB's resource pools. An engine that lists `schema.database-kinds` names their
+kinds, and a read filtered with `--schemas` reports them beside the selected
+namespaces, named at the database. The comparison reads them as it reads an
+unfiltered read's, so a run scoped to one schema plans the database's objects
+its source declares. Everything else a filtered read reports stays inside the
+selected namespaces. Without the feature, such a read leaves those kinds
+uninspected.
 
 ## Plan and apply
 
@@ -1281,6 +1299,9 @@ reply as follows:
 - Tables, namespaces, enums, views, sequences, roles and grants enter the
   common model.
 - The provider's own objects are normalized by the provider.
+- Under `schema.sql-facets`, the facets of a table, a column or an index, such
+  as a YDB table's changefeeds, are normalized by the provider and placed
+  where a YAML source places the same facet.
 - Each file's declarations feed the schema-directory check.
 - The reading's claim is the load's coverage.
 
@@ -1291,8 +1312,8 @@ The JSON documents of `schema plan` and `schema apply` list every diagnostic in
 `schema_diagnostics`, with its code (`syntax`, `unsupported`, `invalid` or
 `incomplete`), severity, path and span. Ptah also refuses a reply the SDK's
 checks refuse, a complete reply with a warning, which it does not report yet,
-and a table that carries facets or owned objects, which a reading cannot place
-yet. A command that selects a provider for the engine fails with
+and a declared table that carries captured comparison features, since a
+reading carries a table's facets in its own collection. A command that selects a provider for the engine fails with
 `provider_missing` before it reads the file when none is installed.
 
 The execution adapter does not support managed data or isolated execution of
