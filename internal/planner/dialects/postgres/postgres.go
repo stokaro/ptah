@@ -924,6 +924,7 @@ func (p *Planner) modifyExistingTableColumns(
 					PreviousType:        previousColumnType(colDiff.Changes["type"]),
 					PreviousNullable:    previousColumnNullable(colDiff.Changes["nullable"]),
 					HasPreviousNullable: colDiff.Changes["nullable"] != "",
+					PreviousIdentity:    previousColumnType(colDiff.Changes["identity"]),
 					Changed:             changed,
 					HasChanged:          true,
 				}},

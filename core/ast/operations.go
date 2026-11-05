@@ -93,6 +93,11 @@ type ModifyColumnOperation struct {
 	PreviousDefault string
 	// HasPreviousDefault reports whether PreviousDefault was populated.
 	HasPreviousDefault bool
+	// PreviousIdentity is the identity generation the column holds before the
+	// modification, empty when it has none. The PostgreSQL family reads it where
+	// [ColumnProperties.Identity] is named: a column with one takes SET GENERATED,
+	// and a column without one takes ADD GENERATED.
+	PreviousIdentity string
 	// Changed names the properties the modification changes. It is read only
 	// when HasChanged is set.
 	//
@@ -127,11 +132,14 @@ type ColumnProperties struct {
 	Nullability bool
 	// Default is set when the column's default is set, replaced or dropped.
 	Default bool
+	// Identity is set when the column gains or loses an identity, or its
+	// generation changes.
+	Identity bool
 }
 
 // Any reports whether at least one property is named.
 func (p ColumnProperties) Any() bool {
-	return p.Type || p.Nullability || p.Default
+	return p.Type || p.Nullability || p.Default || p.Identity
 }
 
 // Accept hands the visitor this operation.

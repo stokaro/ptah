@@ -292,6 +292,7 @@ func toDBColumn(field schemamodel.Field, ordinal int) catalog.Column {
 		NotNullConstraintName: field.NotNullConstraintName,
 		OrdinalPosition:       ordinal,
 		IsAutoIncrement:       autoincrement.Declared(field),
+		IdentityGeneration:    strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(field.IdentityGeneration), " ", "_")),
 		IsPrimaryKey:          field.Primary,
 		IsUnique:              field.Unique,
 		Collate:               field.Collate,

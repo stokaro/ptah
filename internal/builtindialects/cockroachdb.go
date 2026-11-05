@@ -121,6 +121,8 @@ func cockroachDB() descriptor.Dialect {
 		// materialized view or sequence of its name; the guarded sequence
 		// without a notice. Indexes are not in that namespace; see Identifiers.
 		Statements: descriptor.Statements{ViewsBlockDropTable: true, RelationsShareNames: true},
+		// Measured on v26.3.5: a serial and an identity column read back NOT NULL.
+		Columns: descriptor.Columns{IdentityNotNull: true, SerialNotNull: true},
 
 		// Dev databases. The server takes no advisory lock Ptah can hold, so runs on
 		// one dev database are serialized with a lock file, which only serializes
@@ -143,6 +145,7 @@ func cockroachDB() descriptor.Dialect {
 			DeclaredSchemas:    true,
 			TimePrecision:      descriptor.TimePrecision{Compared: true, Default: 6},
 			PrimaryKeyRenames:  true,
+			IdentityColumns:    true,
 			ForeignKeysOutside: true,
 			// Measured on v26.3.5.
 			ForeignKeyMatchesKeyInAnyOrder: true,

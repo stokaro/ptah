@@ -2103,6 +2103,12 @@ func (r *Renderer) renderPostgreSQLModifyColumn(tableName string, op *ast.Modify
 	if enumDefault {
 		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s DROP DEFAULT;", r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name))
 	}
+	// A column with an identity takes no default, so the identity leaves ahead of
+	// the default that replaces it and arrives after the default it replaces.
+	identityLeaves := changed.Identity && column.IdentityGeneration == ""
+	if identityLeaves {
+		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s DROP IDENTITY;", r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name))
+	}
 	if changed.Type && !r.writeColumnTypeChange(tableName, column) {
 		return
 	}
@@ -2115,6 +2121,42 @@ func (r *Renderer) renderPostgreSQLModifyColumn(tableName string, op *ast.Modify
 	case changed.Default && !enumDefault:
 		r.writeColumnDefaultChange(tableName, column)
 	}
+	if changed.Identity && !identityLeaves {
+		r.writeColumnIdentityChange(tableName, column, op.PreviousIdentity)
+	}
+}
+
+// writeColumnIdentityChange writes the clause that gives a column its identity. A
+// column that gains one draws from a sequence that starts at the beginning, and the
+// next row would collide with one the table holds, so the statement after it moves
+// the sequence past them. A table with no row at or past the start has nothing to
+// collide with, and an identity that counts down starts below the values it holds.
+func (r *Renderer) writeColumnIdentityChange(tableName string, column *ast.ColumnNode, previous string) {
+	table, name := r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name)
+	if previous != "" {
+		generation, err := renderIdentityGeneration(column.IdentityGeneration)
+		if err != nil {
+			r.w.WriteLinef("-- %s: %s", r.dialectUpper, err.Error())
+			return
+		}
+		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s SET GENERATED %s;", table, name, generation)
+		return
+	}
+	identity, err := r.renderIdentity(column)
+	if err != nil {
+		r.w.WriteLinef("-- %s: %s", r.dialectUpper, err.Error())
+		return
+	}
+	r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s ADD %s;", table, name, identity)
+	if strings.HasPrefix(strings.TrimSpace(column.IdentityIncrement), "-") {
+		return
+	}
+	start := strings.TrimSpace(column.IdentityStart)
+	if start == "" {
+		start = "1"
+	}
+	r.w.WriteLinef("SELECT setval(pg_get_serial_sequence(%s, %s), max(%s)) FROM %s HAVING max(%s) >= %s;",
+		r.escapeValue(table), r.escapeValue(column.Name), name, table, name, start)
 }
 
 // writeColumnTypeChange writes the TYPE clause of a column modification, and
