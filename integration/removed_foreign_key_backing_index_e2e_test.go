@@ -9,6 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/clirun"
 	"ptah.run/internal/dbtarget"
 )
 
@@ -30,12 +31,11 @@ const (
 )
 
 // removedForeignKeyApply runs `schema apply` of desired over the database at target.
-func removedForeignKeyApply(c *qt.C, target, desired string) (int, string, string) {
+func removedForeignKeyApply(c *qt.C, target, desired string) clirun.Result {
 	c.Helper()
 	schema := filepath.Join(c.TempDir(), "schema.sql")
 	c.Assert(os.WriteFile(schema, []byte(desired), 0o600), qt.IsNil)
-	run := runPtahIn(c, "schema", "apply", "--db-url", target, "--schema-file", schema, "--auto-approve")
-	return run.ExitCode, run.Stdout, run.Stderr
+	return runPtahIn(c, "schema", "apply", "--db-url", target, "--schema-file", schema, "--auto-approve")
 }
 
 // TestSchemaApplyRemovedForeignKeyE2E_HappyPath removes a foreign key on MySQL and
@@ -100,12 +100,12 @@ func TestSchemaApplyRemovedForeignKeyE2E_HappyPath(t *testing.T) {
 				_, target := newMySQLFamilyScratch(c, engine.engine).builtFrom(c, removedForeignKeyParent+test.built)
 				desired := removedForeignKeyParent + test.desired
 
-				exit, stdout, stderr := removedForeignKeyApply(c, target, desired)
+				run := removedForeignKeyApply(c, target, desired)
 
-				c.Assert(exit, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+				c.Assert(run.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", run.Stdout, run.Stderr))
 				c.Assert(columnKeyString(c, target, removedForeignKeyIndexes), qt.Equals, test.want)
-				_, again, _ := removedForeignKeyApply(c, target, desired)
-				c.Assert(again, qt.Contains, "Schema is synced")
+				again := removedForeignKeyApply(c, target, desired)
+				c.Assert(again.Stdout, qt.Contains, "Schema is synced")
 			})
 		}
 	}
@@ -135,8 +135,8 @@ func TestMigrationsRemovedForeignKeyE2E_TheRollbackRestoresTheKey(t *testing.T) 
 
 			c.Assert(down.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", down.Stdout, down.Stderr))
 			c.Assert(columnKeyString(c, target, removedForeignKeyIndexes), qt.Equals, "child_fk")
-			_, again, _ := removedForeignKeyApply(c, target, withKey)
-			c.Assert(again, qt.Contains, "Schema is synced")
+			again := removedForeignKeyApply(c, target, withKey)
+			c.Assert(again.Stdout, qt.Contains, "Schema is synced")
 		})
 	}
 }

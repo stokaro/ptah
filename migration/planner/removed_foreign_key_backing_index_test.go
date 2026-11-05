@@ -1,6 +1,7 @@
 package planner_test
 
 import (
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -98,6 +99,19 @@ func TestRemovedForeignKeyBackingIndex_HappyPath(t *testing.T) {
 			},
 		},
 		{
+			name: "the plan changes the key under its name",
+			change: func(d *schemamodel.Database) {
+				d.Constraints = []schemamodel.Constraint{{
+					StructName: "Child", Name: "child_fk", Type: "FOREIGN KEY", Table: "child", Columns: []string{"pid"},
+					ForeignTable: "parent", ForeignColumns: []string{"id"}, OnDelete: "CASCADE",
+				}}
+			},
+			want: []string{
+				dropKey,
+				"ALTER TABLE `child` ADD CONSTRAINT `child_fk` FOREIGN KEY (`pid`) REFERENCES `parent`(`id`) ON DELETE CASCADE",
+			},
+		},
+		{
 			name: "the index leaves with its column",
 			change: func(d *schemamodel.Database) {
 				d.Fields = d.Fields[:2]
@@ -127,5 +141,5 @@ func TestRemovedForeignKeyBackingIndex_HappyPath(t *testing.T) {
 func TestRemovedForeignKeyBackingIndex_AServerThatDropsItWithTheKey(t *testing.T) {
 	c := qt.New(t)
 	got := backedForeignKeyPlan(c, platform.Spanner, declaredWithoutForeignKey(func(*schemamodel.Database) {}))
-	c.Assert(drops(got), qt.Not(qt.Contains), "DROP INDEX `child_fk` ON `child`")
+	c.Assert(strings.Join(got, "\n"), qt.Not(qt.Contains), "DROP INDEX")
 }
