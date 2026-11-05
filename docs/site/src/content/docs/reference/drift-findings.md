@@ -113,7 +113,7 @@ gives it. An owner that assesses the change's effect on access adds
 `feature_access_widened:<change kind>`, `feature_access_narrowed:<change kind>`,
 `feature_access_unchanged:<change kind>` or `feature_access_unknown:<change kind>`.
 The JSON report's inventory counts an owner's objects under the same change
-kind; see
+kind, and a provider's where the provider counts them; see
 [How much each side holds](../../direct/compare-and-drift/#how-much-each-side-holds).
 A declared object the read could not check is counted under one `undecided`
 finding at `warning` severity; see

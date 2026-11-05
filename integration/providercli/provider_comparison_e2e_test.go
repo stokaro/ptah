@@ -25,11 +25,19 @@ func comparisonRules() identifier.Semantics {
 
 func comparisonModel(c *qt.C, runtime *engine.Runtime, representation schemaext.Representation, kind schemaext.Kind, subject objectidentity.ID, payload string) schemaext.Value {
 	c.Helper()
+	return profiledModel(c, runtime, make([]string, 0), representation, kind, subject, payload)
+}
+
+// profiledModel is comparisonModel captured under the target profile features,
+// as the host captures a value it decoded or read.
+func profiledModel(c *qt.C, runtime *engine.Runtime, features []string, representation schemaext.Representation, kind schemaext.Kind, subject objectidentity.ID, payload string) schemaext.Value {
+	c.Helper()
 	definition, found := runtime.Codecs().Identity(kind, representation)
 	c.Assert(found, qt.IsTrue)
 	envelope := providerModelEnvelope(c, definition, payload)
 	var wire map[string]any
 	c.Assert(json.Unmarshal(envelope.Payload, &wire), qt.IsNil)
+	wire["features"] = features
 	path := make([]string, 0)
 	for _, part := range subject.Namespace.Values() {
 		path = append(path, part.Source)
@@ -71,9 +79,8 @@ func TestProviderComparesNativeModelsAndCapturesChangeFacts(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Complete, qt.IsTrue)
 	c.Assert(result.Changes, qt.HasLen, 1)
-	// The protocol carries no count of the objects a provider compared, so a
-	// provider's kinds are left out of a drift inventory rather than counted
-	// as zero.
+	// This provider offers no counts, so its kinds are left out of a drift
+	// inventory rather than counted as zero.
 	c.Assert(result.Counts, qt.IsNil)
 	change := result.Changes[0]
 	c.Assert(change.Subject, qt.DeepEquals, subject)

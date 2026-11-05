@@ -27,7 +27,12 @@ func (s modelComparer) request(target string, rules identifier.Semantics, capabi
 	if err := capabilities.Validate(); err != nil {
 		return nil, err
 	}
-	result := &protocol.CompareModelsRequest{Engine: target, ComparisonId: s.declaration.GetId(), Identifiers: identifiers, Capabilities: make(map[string]bool), Kinds: comparisonKinds(kinds)}
+	// The target features start as the engine's, and the first captured value
+	// sets them to its own profile. A batch that captures no value keeps them,
+	// so its service can still count what a coverage claim says it holds:
+	// nothing would otherwise keep the kind's other owners' counts in a report.
+	result := &protocol.CompareModelsRequest{Engine: target, ComparisonId: s.declaration.GetId(), TargetFeatures: featureSet(s.target.engine.GetFeatures()),
+		Identifiers: identifiers, Capabilities: make(map[string]bool), Kinds: comparisonKinds(kinds)}
 	for name, value := range capabilities.All() {
 		result.Capabilities[string(name)] = value
 	}

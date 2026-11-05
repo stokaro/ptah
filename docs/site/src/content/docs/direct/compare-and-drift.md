@@ -322,8 +322,8 @@ satisfy counts on both sides.
 
 An owner that does not count its objects has no entry, though its changes are
 still findings. A setting that stands for no object, such as a ClickHouse
-table's TTL, has no entry either. A provider installed separately counts
-nothing yet.
+table's TTL, has no entry either. A provider counts only with
+`models.compare-counts`.
 
 ### An extension the schema does not describe
 

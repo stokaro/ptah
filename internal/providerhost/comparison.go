@@ -63,7 +63,23 @@ func (s modelComparer) CompareObjects(ctx context.Context, request schemaext.Obj
 	for i, answer := range result.GetResolvedRequests() {
 		resolved[i] = schemaext.ResolvedRequest{Request: sent[answer.GetRequest()], Subject: boundIdentity(answer.GetSubject())}
 	}
-	return schemaext.ObjectComparisonResult{Complete: true, Desired: desired, Changes: changes, Undecided: boundUndecided(result.GetUndecided()), Resolved: resolved}, nil
+	return schemaext.ObjectComparisonResult{Complete: true, Desired: desired, Changes: changes, Undecided: boundUndecided(result.GetUndecided()), Resolved: resolved,
+		Counts: boundCounts(result.GetCounts())}, nil
+}
+
+// boundCounts converts the counts a provider's comparison stated. The SDK
+// checked them against the reply, and the engine runtime checks them against
+// its own capture of it. A provider that does not count sends none, so its
+// kinds have no count and no inventory entry.
+func boundCounts(counts []*protocol.ComparisonCount) []schemaext.ObjectCount {
+	if len(counts) == 0 {
+		return nil
+	}
+	result := make([]schemaext.ObjectCount, len(counts))
+	for i, count := range counts {
+		result[i] = schemaext.ObjectCount{Kind: schemaext.Kind(count.GetKind()), Matched: int(count.GetMatched()), Added: int(count.GetAdded()), Removed: int(count.GetRemoved())}
+	}
+	return result
 }
 
 // writtenRequests returns the indexes of the requests the provider receives,
@@ -109,7 +125,7 @@ func (s modelComparer) CompareFacets(ctx context.Context, request schemaext.Face
 	if err != nil {
 		return schemaext.FacetComparisonResult{}, err
 	}
-	reply := schemaext.FacetComparisonResult{Complete: true, Desired: desired, Undecided: boundUndecided(result.GetUndecided())}
+	reply := schemaext.FacetComparisonResult{Complete: true, Desired: desired, Undecided: boundUndecided(result.GetUndecided()), Counts: boundCounts(result.GetCounts())}
 	for i, change := range changes {
 		reply.Changes = append(reply.Changes, schemaext.FacetChange{Kind: schemaext.Kind(result.GetChanges()[i].GetKind()), Change: change})
 	}
