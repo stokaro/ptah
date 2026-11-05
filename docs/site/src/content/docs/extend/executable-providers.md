@@ -129,6 +129,15 @@ held one from the current table. A removal comes before the additions, so a
 changed index is dropped before it is created again under the same name.
 Without the feature, index changes are refused.
 
+With `schema.observed-primary-keys`, a read reports each table's primary key in
+key order, and the host compares it with the declared key, members and order.
+A provider that owns its tables and lists `planning.primary-key-changes`
+receives a key change as an altered table: the desired table carries the
+declared key and the current table the held one as its `PRIMARY KEY`
+constraint, and no common step stands for the change. The provider plans it,
+for example as a rebuild, or refuses it in its own words. Without the feature
+the host refuses a key change before it plans, naming the table.
+
 With `planning.index-renames` as well, a provider renames an index in place.
 When its session reports `index_rename`, the comparison pairs an index the
 table holds with one the declaration states under another name and with one
@@ -1118,6 +1127,13 @@ or later:
 provider execution: NOT_APPLIED (0 units confirmed applied): <reason>
 provider transaction outcome is ROLLED_BACK: <reason>
 ```
+
+A request or a reply larger than one message holds fails with
+`ResourceExhausted`. A message holds 4 MiB, or 64 MiB with a provider that lists
+`transport.large-messages`. With `models.references` the host and the provider
+send a model the provider describes by its reference rather than its whole
+definition, which a request otherwise repeats for every table; a schema of a
+few thousand tables then fits one message.
 
 Ptah never prints the rest of a provider's error, or the message of an
 execution or transaction result: a driver's error can quote a connection
