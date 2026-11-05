@@ -55,8 +55,14 @@ func declaredWithoutForeignKey(change func(*schemamodel.Database)) *schemamodel.
 // backedForeignKeyPlan plans declared over heldBackedForeignKey on dialect.
 func backedForeignKeyPlan(c *qt.C, dialect string, declared *schemamodel.Database) []string {
 	c.Helper()
+	return plannedOverHeld(c, dialect, declared, heldBackedForeignKey())
+}
+
+// plannedOverHeld plans declared over held on dialect in the exact style.
+func plannedOverHeld(c *qt.C, dialect string, declared *schemamodel.Database, held *catalog.Database) []string {
+	c.Helper()
 	runtime := must.Must(builtin.New())
-	diff, err := schemadiff.CompareWithDialect(c.Context(), declared, heldBackedForeignKey(), dialect, runtime)
+	diff, err := schemadiff.CompareWithDialect(c.Context(), declared, held, dialect, runtime)
 	c.Assert(err, qt.IsNil)
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(c.Context(), runtime, diff, dialect,
 		planext.Options{Capabilities: capability.ForDialect(dialect), Statements: planext.StatementStyleExact})
@@ -140,6 +146,10 @@ func TestRemovedForeignKeyBackingIndex_HappyPath(t *testing.T) {
 // would answer that it does not exist.
 func TestRemovedForeignKeyBackingIndex_AServerThatDropsItWithTheKey(t *testing.T) {
 	c := qt.New(t)
-	got := backedForeignKeyPlan(c, platform.Spanner, declaredWithoutForeignKey(func(*schemamodel.Database) {}))
+	held := heldBackedForeignKey()
+	held.Indexes[0].Name = "IDX_child_pid_FBF4366D73F2084A"
+
+	got := plannedOverHeld(c, platform.Spanner, declaredWithoutForeignKey(func(*schemamodel.Database) {}), held)
+
 	c.Assert(strings.Join(got, "\n"), qt.Not(qt.Contains), "DROP INDEX")
 }
