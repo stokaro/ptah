@@ -21,8 +21,8 @@ type plainSetting struct{}
 func (*plainSetting) Kind() schemaext.Kind               { return "example.org/plain-setting" }
 func (*plainSetting) CloneChange() schemaext.ChangeValue { return &plainSetting{} }
 
-// Every modification replaces the view except one whose only changes are
-// attached settings their owner applies in place.
+// Every modification replaces the view except one whose only changes are its
+// options and attached settings their owner applies in place.
 func TestMaterializedViewDiffReplaces(t *testing.T) {
 	subject := objectidentity.ID{Kind: objectidentity.KindMatView, Name: objectidentity.Part{Source: "daily", Normalized: "daily"}}
 	inPlace := schemaext.ChangeRecord{Subject: subject, Value: &viewSetting{}}
@@ -39,6 +39,12 @@ func TestMaterializedViewDiffReplaces(t *testing.T) {
 		{name: "a setting applied in place", diff: difftypes.MaterializedViewDiff{FeatureChanges: []schemaext.ChangeRecord{inPlace}}, want: false},
 		{name: "a setting without the contract", diff: difftypes.MaterializedViewDiff{FeatureChanges: []schemaext.ChangeRecord{plain}}, want: false},
 		{name: "one setting that replaces the view", diff: difftypes.MaterializedViewDiff{FeatureChanges: []schemaext.ChangeRecord{inPlace, replacing}}, want: true},
+		{name: "options alone", diff: difftypes.MaterializedViewDiff{Changes: map[string]string{difftypes.OptionsChange: "a -> b"}}, want: false},
+		{name: "options and a definition", diff: difftypes.MaterializedViewDiff{Changes: map[string]string{difftypes.OptionsChange: "a -> b", "body": "a -> b"}}, want: true},
+		{name: "options and a setting applied in place", diff: difftypes.MaterializedViewDiff{Changes: map[string]string{difftypes.OptionsChange: "a -> b"},
+			FeatureChanges: []schemaext.ChangeRecord{inPlace}}, want: false},
+		{name: "options and a setting that replaces the view", diff: difftypes.MaterializedViewDiff{Changes: map[string]string{difftypes.OptionsChange: "a -> b"},
+			FeatureChanges: []schemaext.ChangeRecord{replacing}}, want: true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

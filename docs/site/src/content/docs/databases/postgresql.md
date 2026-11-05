@@ -930,6 +930,65 @@ plan that creates the view again creates it `WITH NO DATA`, so it is empty until
 a `REFRESH MATERIALIZED VIEW`. The read reports a view the server holds without
 rows, so the rollback migration creates such a view `WITH NO DATA` too.
 
+## View options and storage parameters
+
+A view takes the options `security_invoker` and `security_barrier`, and a
+materialized view takes storage parameters such as `fillfactor` and
+`autovacuum_enabled`. A SQL schema file declares them in the `WITH` list
+before `AS`:
+
+```sql
+CREATE VIEW order_report WITH (security_invoker = true, security_barrier) AS
+  SELECT id, amount FROM orders;
+
+CREATE MATERIALIZED VIEW order_totals WITH (fillfactor = 70) AS
+  SELECT sum(amount) AS total FROM orders;
+```
+
+With `security_invoker`, PostgreSQL checks privileges and row-level security
+policies as the user who queries the view, not as the view's owner.
+PostgreSQL 15 and later have it; 13 and 14 refuse it with `unrecognized
+parameter "security_invoker"`.
+
+The declaration states every option the object holds. The comparison reads
+`pg_class.reloptions` and plans a change when the two differ, also for an
+option the database holds and the declaration leaves out: a view declared
+without options is a view without them, as a view declared without `WITH CHECK
+OPTION` is a view without a check option. To keep an option, declare it. The
+Go annotations, YAML and HCL have no attribute for options yet
+(stokaro/ptah#5017), so a view declared through them is a view without options.
+
+A value is compared by what it means, not by how it is spelled. The server
+stores a value as written, so a database that holds `security_invoker=on` or
+`fillfactor=070` matches a declaration of `true` or `70`.
+
+A change to the options alone keeps the object. The plan writes `ALTER VIEW
+... SET (...)` for each option declared and `ALTER VIEW ... RESET (...)` for
+each option left out, or `ALTER MATERIALIZED VIEW`, so a view keeps what
+depends on it and a materialized view keeps its rows. Where the plan writes the
+object anyway, as a `CREATE OR REPLACE VIEW` for a changed body or a `CREATE`
+after a drop, that statement states the declared options. The rollback
+migration gives back the options the database held.
+
+Ptah refuses `check_option` in the list, because a view declares it with `WITH
+CHECK OPTION`, and a `toast.` option, which PostgreSQL keeps on the TOAST table
+rather than on the object and drops without a word when there is none.
+
+The other engines of the PostgreSQL family differ:
+
+- CockroachDB v26.2 and later take `security_invoker` and answer a syntax error
+  to `security_barrier` and to storage parameters. v25.4 refuses both view
+  options.
+- YugabyteDB takes both kinds. It records a materialized view's storage
+  parameters, and its `ALTER MATERIALIZED VIEW ... SET` answers with a notice
+  that it ignores them, since its storage layer does not use them. YugabyteDB
+  2024.2 refuses `security_invoker`, as PostgreSQL 14 does.
+- The Spanner PostgreSQL interface takes `security_invoker` and does not report
+  it back, so Ptah refuses view options there before anything runs.
+
+Every other target refuses a view or a materialized view that declares
+options.
+
 ## What a view rebuild keeps
 
 Three changes drop a view or a materialized view and create it again: a column
@@ -960,9 +1019,8 @@ declaration. Right after each object it creates again, it writes:
   also those of a role the schema does not manage. A routine that `PUBLIC`
   could not execute has that privilege revoked again, since a new routine is
   executable by `PUBLIC`;
-- the options the database held it with: `security_invoker` and
-  `security_barrier` on a view, storage parameters such as `fillfactor` on a
-  materialized view.
+- the options its declaration states, in the `WITH` list of the `CREATE`;
+  see [View options and storage parameters](#view-options-and-storage-parameters).
 
 A comment is part of each `CREATE`, and a routine keeps its language,
 volatility, `SECURITY DEFINER`, `STRICT`, `LEAKPROOF`, `PARALLEL` and `SET`
@@ -973,9 +1031,8 @@ A view the plan changes with `CREATE OR REPLACE VIEW` is not dropped. When its
 definition in the database reads a dropped object and its new one does not, the
 plan replaces it before the drops; when only its new one does, after the
 object is back. The view keeps its policies and privileges either way. Every
-`CREATE OR REPLACE VIEW` Ptah writes for a view the database holds states the
-options it holds, because the replace sets the options it states and clears the
-others.
+`CREATE OR REPLACE VIEW` Ptah writes states the options the view's declaration
+holds, because the replace sets the options it states and clears the others.
 
 What a rebuild does not keep:
 

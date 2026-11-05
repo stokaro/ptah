@@ -84,6 +84,8 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return r.renderDropMaterializedView(n)
 	case *ast.RefreshMaterializedViewNode:
 		return r.renderRefreshMaterializedView(n)
+	case *ast.AlterViewOptionsNode:
+		return nodedispatch.RefuseViewOptions(DialectName, n)
 
 	// Routines and triggers. ClickHouse has user-defined functions with a
 	// syntax these nodes cannot express, and no triggers at all.

@@ -509,6 +509,7 @@ func convertViews(database *schemamodel.Database, dbViews []catalog.View) {
 			WithCheck:  sqlutil.CheckOptionRequestsCheck(dbView.CheckOption),
 			Comment:    dbView.Comment,
 			Attributes: dbView.Attributes,
+			Options:    slices.Clone(dbView.Options),
 		})
 	}
 }
@@ -520,6 +521,7 @@ func convertMaterializedViews(database *schemamodel.Database, dbViews []catalog.
 			Name:    dbView.QualifiedName(),
 			Body:    materializedViewBody(dbView),
 			Comment: dbView.Comment,
+			Options: slices.Clone(dbView.Options),
 		}
 		database.MaterializedViews = append(database.MaterializedViews, materializedView)
 	}

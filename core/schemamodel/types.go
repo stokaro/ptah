@@ -967,6 +967,19 @@ type View struct {
 	// than its body's (stokaro/ptah#2125).
 	Attributes []string `json:",omitempty"`
 
+	// Options is the view's PostgreSQL options, each `name=value`, such as
+	// security_invoker=true or security_barrier=true: what CREATE VIEW writes
+	// as WITH (...) and pg_class.reloptions holds. The check option is not one
+	// of them; it is WithCheck.
+	//
+	// The list is the whole of what the view holds. A view declared without
+	// options is a view without them, so a comparison plans the removal of an
+	// option the database holds and the declaration leaves out, as it does for
+	// a body or a check option the declaration leaves out. Only targets with
+	// [ptah.run/core/platform/capability.ViewOptions] render a view that
+	// carries options; every other target refuses it.
+	Options []string `json:",omitempty"`
+
 	// DependsOn names objects this view must be created after, beyond the ones
 	// its body mentions. See [ptah.run/internal/deporder.ViewLike] for what a
 	// declared edge answers that a scan of the body cannot.
@@ -1000,6 +1013,16 @@ type MaterializedView struct {
 	Name       string           // Materialized view name
 	Body       string           // SELECT query used as the materialized view body
 	Comment    string           // Optional comment for documentation
+
+	// Options is the materialized view's PostgreSQL storage parameters, each
+	// `name=value`, such as fillfactor=70 or autovacuum_enabled=false: what
+	// CREATE MATERIALIZED VIEW writes as WITH (...) and pg_class.reloptions
+	// holds. As for [View.Options], the list is the whole of what the view
+	// holds, and a change to it alone is made in place rather than by
+	// replacing the view. Only targets with
+	// [ptah.run/core/platform/capability.MaterializedViewOptions] render a
+	// materialized view that carries options.
+	Options []string `json:",omitempty"`
 
 	// DependsOn names objects this view must be created after, beyond the ones
 	// its body mentions. See [ptah.run/internal/deporder.ViewLike] for what a

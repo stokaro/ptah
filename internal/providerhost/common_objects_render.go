@@ -52,6 +52,11 @@ func (t *target) relationOperation(node ast.Node) (*protocol.CommonObjectChange,
 	engine := t.engine.GetId()
 	switch typed := node.(type) {
 	case *ast.CreateViewNode:
+		// The common view carries no PostgreSQL options, so a view that
+		// declares some is refused rather than created without them.
+		if len(typed.Options) > 0 {
+			return nil, nil, unsupported(fmt.Sprintf("the options %s of view %q", strings.Join(typed.Options, ", "), typed.Name))
+		}
 		object := t.relation("view", typed.Name)
 		view := &protocol.SQLView{Schema: object.GetSchema(), Name: object.GetName(), Body: typed.Body, WithCheck: typed.WithCheck, Comment: typed.Comment,
 			Attributes: slices.Clone(typed.Attributes)}
@@ -60,9 +65,14 @@ func (t *target) relationOperation(node ast.Node) (*protocol.CommonObjectChange,
 		if !typed.Facets.IsZero() {
 			return nil, nil, unsupported(fmt.Sprintf("settings of materialized view %q", typed.Name))
 		}
+		if len(typed.Options) > 0 {
+			return nil, nil, unsupported(fmt.Sprintf("the storage parameters %s of materialized view %q", strings.Join(typed.Options, ", "), typed.Name))
+		}
 		object := t.relation("materialized_view", typed.Name)
 		view := &protocol.SQLView{Schema: object.GetSchema(), Name: object.GetName(), Body: typed.Body, Materialized: true, Comment: typed.Comment}
 		return &protocol.CommonObjectChange{Operation: &protocol.CommonObjectChange_CreateView{CreateView: &protocol.ViewCreation{View: view}}}, object, nil
+	case *ast.AlterViewOptionsNode:
+		return nil, nil, unsupported(fmt.Sprintf("changing the options of %q", typed.Name))
 	case *ast.DropViewNode:
 		object := t.relation("view", typed.Name)
 		return &protocol.CommonObjectChange{Operation: &protocol.CommonObjectChange_DropView{DropView: object}}, object, nil

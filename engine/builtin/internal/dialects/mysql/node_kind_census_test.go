@@ -269,6 +269,11 @@ func mysqlRefusedKinds() []mysqlCensusRow {
 				"supported by MySQL or MariaDB; remove matview definitions for this target",
 		},
 		{
+			kind: "AlterViewOptionsNode",
+			node: ast.NewAlterViewOptions("v1", false).SetOptions([]string{"security_invoker=true"}),
+			want: `changing the options of view "v1", which requires target capability view_options, unavailable on this mysql target`,
+		},
+		{
 			kind: "UpsertNode",
 			node: &ast.UpsertNode{
 				Table: "users", InsertColumns: []string{"id"}, Values: []string{"1"}, MatchColumns: []string{"id"},

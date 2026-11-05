@@ -1271,6 +1271,7 @@ func FromView(view schemamodel.View) *ast.CreateViewNode {
 		SetWithCheck(view.WithCheck).
 		SetComment(view.Comment)
 	viewNode.Attributes = view.Attributes
+	viewNode.Options = slices.Clone(view.Options)
 	return viewNode
 }
 
@@ -1283,6 +1284,7 @@ func FromMaterializedView(view schemamodel.MaterializedView) *ast.CreateMaterial
 	// Facets keep immutable value ownership, so the node holds the same
 	// collection; the selected renderer interprets or refuses it.
 	node.Facets = view.Facets
+	node.Options = slices.Clone(view.Options)
 	return node
 }
 

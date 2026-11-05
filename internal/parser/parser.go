@@ -1775,6 +1775,10 @@ func (p *Parser) parseCreateViewNode() (*ast.CreateViewNode, error) {
 	if err != nil {
 		return nil, err
 	}
+	options, err := p.parseRelationOptions("view")
+	if err != nil {
+		return nil, err
+	}
 
 	if err := p.expect(lexer.TokenIdentifier, "AS"); err != nil {
 		return nil, fmt.Errorf("expected AS after view name: %w", err)
@@ -1793,7 +1797,103 @@ func (p *Parser) parseCreateViewNode() (*ast.CreateViewNode, error) {
 		return nil, fmt.Errorf("view %s: %w", viewName, err)
 	}
 
-	return ast.NewCreateView(viewName).SetBody(body), nil
+	view := ast.NewCreateView(viewName).SetBody(body)
+	view.Options = options
+	return view, nil
+}
+
+// parseRelationOptions reads the option list PostgreSQL takes between a view's
+// name and AS: WITH (name [= value] [, ...]). It reads nothing and returns nil
+// unless the current token is WITH and the next one opens a parenthesis, so a
+// WITH that opens another clause is left to its own reader.
+//
+// Each option comes back as written, `name=value` or a bare name, with a
+// string literal still in its quotes; the SQL frontend normalizes them. label
+// names the object in an error.
+func (p *Parser) parseRelationOptions(label string) ([]string, error) {
+	if !p.current.MatchIdentifierValue("WITH") {
+		return nil, nil
+	}
+	if next := p.peekSignificantToken(); !next.MatchOperatorValue("(") {
+		return nil, nil
+	}
+	p.advance()
+	p.skipWhitespace()
+	p.advance()
+
+	var options []string
+	for {
+		p.skipWhitespace()
+		option, err := p.parseRelationOption(label)
+		if err != nil {
+			return nil, err
+		}
+		options = append(options, option)
+		p.skipWhitespace()
+		switch {
+		case p.current.MatchOperatorValue(","):
+			p.advance()
+		case p.current.MatchOperatorValue(")"):
+			p.advance()
+			p.skipWhitespace()
+			return options, nil
+		default:
+			return nil, fmt.Errorf("expected ',' or ')' in the %s options at position %d", label, p.current.Start)
+		}
+	}
+}
+
+// parseRelationOption reads one option of a WITH list: its name, and the value
+// after an equals sign where it has one. A double-quoted name is read without
+// its quotes.
+func (p *Parser) parseRelationOption(label string) (string, error) {
+	name := p.collectRelationOptionPart(endsRelationOptionName)
+	if len(name) > 1 && strings.HasPrefix(name, `"`) && strings.HasSuffix(name, `"`) {
+		name = strings.ReplaceAll(name[1:len(name)-1], `""`, `"`)
+	}
+	if name == "" {
+		return "", fmt.Errorf("expected an option name in the %s options at position %d", label, p.current.Start)
+	}
+	p.skipWhitespace()
+	if !p.current.MatchOperatorValue("=") {
+		return name, nil
+	}
+	p.advance()
+	p.skipWhitespace()
+	value := p.collectRelationOptionPart(endsRelationOption)
+	if value == "" {
+		return "", fmt.Errorf("expected a value after %s= in the %s options at position %d", name, label, p.current.Start)
+	}
+	return name + "=" + value, nil
+}
+
+// endsRelationOption reports whether token ends an option of a WITH list.
+func endsRelationOption(token *lexer.Token) bool {
+	return token.MatchOperatorValue(",") || token.MatchOperatorValue(")")
+}
+
+// endsRelationOptionName reports whether token ends an option's name: the end
+// of the option, or the equals sign before its value.
+func endsRelationOptionName(token *lexer.Token) bool {
+	return endsRelationOption(token) || token.MatchOperatorValue("=")
+}
+
+// collectRelationOptionPart joins the tokens up to the one ends answers true
+// for, leaving out whitespace and comments. A value is several tokens where it
+// is a negative number, `-` and `1`, or a string literal with a doubled quote,
+// which the lexer reads as two adjacent literals.
+func (p *Parser) collectRelationOptionPart(ends func(*lexer.Token) bool) string {
+	var part strings.Builder
+	for !p.isAtEnd() && p.current.Type != lexer.TokenSemicolon {
+		if ends(&p.current) {
+			break
+		}
+		if p.current.Type != lexer.TokenWhitespace && p.current.Type != lexer.TokenComment {
+			part.WriteString(p.current.Value)
+		}
+		p.advance()
+	}
+	return part.String()
 }
 
 // parseViewColumnAliases reads the optional column name list that follows a

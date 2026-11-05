@@ -354,13 +354,25 @@ CREATE VIEW rows_a AS SELECT a, id FROM rows_b;
 `
 )
 
+// withViewOptions is schema with the WITH list options added to the CREATE
+// statement of the object header names, such as "VIEW big_orders". The object
+// is declared with its options on both sides of a change, since a
+// declaration states every option the object holds.
+func withViewOptions(schema, header, options string) string {
+	target := "CREATE " + header + " AS"
+	if strings.Count(schema, target) != 1 {
+		panic("the fixture does not create " + header + " once")
+	}
+	return strings.Replace(schema, target, "CREATE "+header+" WITH ("+options+") AS", 1)
+}
+
 // viewRebuildCase is one change a view rebuild plans.
 type viewRebuildCase struct {
 	name string
 	// live is the schema the database holds, and the declaration the
 	// rollback returns to. setup runs after it and declares nothing: a
-	// view's options, or a privilege of a role the schema does not manage.
-	// {role} in either stands for a role of the test's own.
+	// privilege of a role the schema does not manage. {role} in either
+	// stands for a role of the test's own.
 	live, setup string
 	declared    string
 	// want and held are the views and materialized views the database holds
@@ -457,9 +469,9 @@ CREATE VIEW order_mix AS SELECT l.id, t.total FROM order_list l, order_totals t;
 	},
 	{
 		name:     "a view replaced in place that stops reading a changed materialized view, with a policy that reads it",
-		live:     orderTotalsSchema + bigOrdersReading + auditOfBigOrders,
-		setup:    "ALTER VIEW big_orders SET (security_invoker = true);\nGRANT SELECT ON big_orders TO {role};\n",
-		declared: orderTotalsChangedSchema + bigOrdersPlain + auditOfBigOrders,
+		live:     orderTotalsSchema + withViewOptions(bigOrdersReading, "VIEW big_orders", "security_invoker = true") + auditOfBigOrders,
+		setup:    "GRANT SELECT ON big_orders TO {role};\n",
+		declared: orderTotalsChangedSchema + withViewOptions(bigOrdersPlain, "VIEW big_orders", "security_invoker = true") + auditOfBigOrders,
 		want:     []string{"matview/order_totals", "view/big_orders"},
 		held:     []string{"matview/order_totals", "view/big_orders"},
 		after: []string{
@@ -471,9 +483,8 @@ CREATE VIEW order_mix AS SELECT l.id, t.total FROM order_list l, order_totals t;
 	},
 	{
 		name:     "a view replaced in place that starts reading a changed materialized view, with a policy that reads it",
-		live:     orderTotalsSchema + bigOrdersPlain + auditOfBigOrders,
-		setup:    "ALTER VIEW big_orders SET (security_barrier = true);\n",
-		declared: orderTotalsChangedSchema + bigOrdersReading + auditOfBigOrders,
+		live:     orderTotalsSchema + withViewOptions(bigOrdersPlain, "VIEW big_orders", "security_barrier = true") + auditOfBigOrders,
+		declared: orderTotalsChangedSchema + withViewOptions(bigOrdersReading, "VIEW big_orders", "security_barrier = true") + auditOfBigOrders,
 		want:     []string{"matview/order_totals", "view/big_orders"},
 		held:     []string{"matview/order_totals", "view/big_orders"},
 		after: []string{
@@ -525,12 +536,13 @@ CREATE VIEW order_mix AS SELECT l.id, t.total FROM order_list l, order_totals t;
 		},
 	},
 	{
-		name:     "an index, a trigger, privileges, comments and options of rebuilt objects",
-		live:     orderTotalsSchema + orderReport + reportInstead + totalsIndexed,
-		setup:    "ALTER VIEW order_report SET (security_invoker = true);\nALTER MATERIALIZED VIEW order_totals SET (fillfactor = 70);\n",
-		declared: orderTotalsChangedSchema + orderReport + reportInstead + totalsIndexed,
-		want:     []string{"matview/order_totals", "view/order_report"},
-		held:     []string{"matview/order_totals", "view/order_report"},
+		name: "an index, a trigger, privileges, comments and options of rebuilt objects",
+		live: withViewOptions(orderTotalsSchema, "MATERIALIZED VIEW order_totals", "fillfactor = 70") +
+			withViewOptions(orderReport, "VIEW order_report", "security_invoker = true") + reportInstead + totalsIndexed,
+		declared: withViewOptions(orderTotalsChangedSchema, "MATERIALIZED VIEW order_totals", "fillfactor = 70") +
+			withViewOptions(orderReport, "VIEW order_report", "security_invoker = true") + reportInstead + totalsIndexed,
+		want: []string{"matview/order_totals", "view/order_report"},
+		held: []string{"matview/order_totals", "view/order_report"},
 		after: []string{
 			"relation order_report options=security_invoker=true acl={role}=r/{owner} comment=report",
 			"relation order_totals options=fillfactor=70 acl={role}=r/{owner} comment=",
@@ -634,9 +646,8 @@ CREATE MATERIALIZED VIEW order_totals AS SELECT sum(amount) AS total, count(*) A
 	},
 	{
 		name:     "an INSTEAD OF trigger on a view a column type change rebuilds",
-		live:     itemSkusTable + strings.ReplaceAll(reportInstead, "order_report", "item_skus"),
-		setup:    "ALTER VIEW item_skus SET (security_barrier = true);\n",
-		declared: itemSkusWidened + strings.ReplaceAll(reportInstead, "order_report", "item_skus"),
+		live:     withViewOptions(itemSkusTable, "VIEW item_skus", "security_barrier = true") + strings.ReplaceAll(reportInstead, "order_report", "item_skus"),
+		declared: withViewOptions(itemSkusWidened, "VIEW item_skus", "security_barrier = true") + strings.ReplaceAll(reportInstead, "order_report", "item_skus"),
 		want:     []string{"view/item_skus"},
 		held:     []string{"view/item_skus"},
 		after: []string{

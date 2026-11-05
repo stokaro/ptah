@@ -214,6 +214,7 @@ func nodeKindZeroValues() map[string]ast.Node {
 		"RawSQLNode":                              &ast.RawSQLNode{},
 		"RoutineNode":                             &ast.RoutineNode{},
 		"RefreshMaterializedViewNode":             &ast.RefreshMaterializedViewNode{},
+		"AlterViewOptionsNode":                    &ast.AlterViewOptionsNode{},
 		"RenameColumnOperation":                   &ast.RenameColumnOperation{},
 		"RenameConstraintOperation":               &ast.RenameConstraintOperation{},
 		"RenameEnumValueOperation":                &ast.RenameEnumValueOperation{},
