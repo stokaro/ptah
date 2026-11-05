@@ -145,6 +145,9 @@ var hostFeatures = []string{
 	// reaches the table's owner as one rename step; see
 	// commonPlanner.indexChanges.
 	provider.IndexRenamesFeature,
+	// A provider model's count metrics join the reporting runtime, and the
+	// provider counts the model's values; see modelReporter.
+	provider.ReportCountsFeature,
 }
 
 // Start verifies the selected artifact and negotiates experimental services.

@@ -22,6 +22,9 @@
 // owes it: complete, for a read that knows every namespace it listed, and the
 // read's regions, for one that also reports a namespace it did not read
 // (FIXTURE_READ_HIDDEN=1).
+//
+// With FIXTURE_REPORT_COUNTS=1 the retention models declare the count metrics
+// of backend.RetentionMetrics and the program counts their values.
 package main
 
 import (
@@ -43,8 +46,12 @@ const retentionKind = "example.org/fixture/retention"
 
 func main() {
 	owner := &hclClaims{Provider: &backend.Provider{}}
-	err := runtime.Serve(runtime.Server{Description: description(), Sessions: owner, Inspector: owner, Renderer: owner, Executor: owner, SQLAnalyzer: owner,
-		ValueNormalizer: owner, SourceDecoder: owner, ValueConverter: owner, SourceEncoder: owner})
+	server := runtime.Server{Description: description(), Sessions: owner, Inspector: owner, Renderer: owner, Executor: owner, SQLAnalyzer: owner,
+		ValueNormalizer: owner, SourceDecoder: owner, ValueConverter: owner, SourceEncoder: owner}
+	if reportCountsEnabled() {
+		server.ValueReporter = owner
+	}
+	err := runtime.Serve(server)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -68,6 +75,15 @@ func description() *protocol.Description {
 		description.Features = append(description.Features, provider.EncodeGroupsFeature)
 		engine.Features = append(engine.Features, provider.EncodeGroupsFeature)
 	}
+	if reportCountsEnabled() {
+		description.Features = append(description.Features, provider.ReportCountsFeature)
+		engine.Features = append(engine.Features, provider.ReportCountsFeature)
+		for _, model := range engine.GetValueModels() {
+			if model.GetKind() == retentionKind {
+				engine.Reports = append(engine.Reports, &protocol.ModelReport{Kind: retentionKind, Representation: model.GetRepresentation(), Metrics: backend.RetentionMetrics()})
+			}
+		}
+	}
 	engine.GoSourceDirectives = append(engine.GoSourceDirectives, backend.ScopedGoSourceDirectives()...)
 	seconds := []*protocol.HCLSourceAttribute{{Name: "seconds", Kind: protocol.HCLSourceAttribute_TEXT}}
 	models := []string{retentionKind}
@@ -80,6 +96,10 @@ func description() *protocol.Description {
 	}}
 	return description
 }
+
+// reportCountsEnabled reports whether the program declares and counts the
+// retention metrics.
+func reportCountsEnabled() bool { return os.Getenv("FIXTURE_REPORT_COUNTS") == "1" }
 
 type hclClaims struct{ *backend.Provider }
 

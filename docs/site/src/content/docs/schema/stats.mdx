@@ -242,7 +242,9 @@ literal `# EOF` line, which lets a collector identify a complete scrape.
 
 An unavailable feature reporter or an invalid count fails the command before it
 writes the scrape. An embedding application can select additional model
-reporters through the [public Go API](../../extend/public-api/).
+reporters through the [public Go API](../../extend/public-api/). Through an
+[executable provider](../../extend/executable-providers/), the families are
+those the provider's engine names, and the provider counts its own values.
 
 On YDB, standalone topics and their consumers are separate from table
 changefeeds and their consumers. Disabled changefeeds still contribute to the
