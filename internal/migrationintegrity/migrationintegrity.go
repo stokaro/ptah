@@ -207,7 +207,30 @@ func Resolve() (Policy, error) {
 // notice receives the override announcement, and receives it only when an
 // override actually suppressed a refusal: a clean directory skips nothing, so
 // it says nothing. Pass the command's stderr.
+//
+// A directory the gate lets through and atlas.sum governs also has the SQL
+// files the run will skip, because atlas.sum cannot cover them, raised on
+// notice for the run ctx carries; see [ReportUncoveredIn]. A refused
+// directory raises nothing: the refusal has already said the directory does
+// not run.
 func GateWithPolicy(
+	ctx context.Context,
+	notice io.Writer,
+	fsys fs.FS,
+	format migrationfile.DirFormat,
+	policy Policy,
+	opts Options,
+) (string, error) {
+	verified, err := gate(notice, fsys, format, policy, opts)
+	if err != nil {
+		return "", err
+	}
+	ReportUncoveredIn(ctx, notice, fsys, format)
+	return verified, nil
+}
+
+// gate is the refusal half of [GateWithPolicy].
+func gate(
 	notice io.Writer,
 	fsys fs.FS,
 	format migrationfile.DirFormat,

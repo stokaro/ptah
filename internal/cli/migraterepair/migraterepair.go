@@ -140,7 +140,7 @@ func migrateRepairCommand(cmd *cobra.Command, opts *options) error {
 	// elsewhere.
 	if resumeFrom > 0 {
 		if _, err := migrationintegrity.GateWithPolicy(
-			cmd.ErrOrStderr(), source.FileSystem, dirFormat, integrityPolicy, migrationintegrity.Options{},
+			cmd.Context(), cmd.ErrOrStderr(), source.FileSystem, dirFormat, integrityPolicy, migrationintegrity.Options{},
 		); err != nil {
 			return err
 		}

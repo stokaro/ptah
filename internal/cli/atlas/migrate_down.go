@@ -199,6 +199,7 @@ func runAtlasMigrateDownFormat(
 			return err
 		}
 	} else if _, err := migrationintegrity.GateWithPolicy(
+		cmd.Context(),
 		cmd.ErrOrStderr(),
 		source.FileSystem,
 		migrationfile.DirFormatAtlas,
