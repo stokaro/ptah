@@ -236,6 +236,9 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 
 	// 3. Compare schemas (dialect-aware: MySQL/MariaDB RESTRICT == NO ACTION)
 	info := conn.Info()
+	if err := schemascope.RefuseOutsideTargetDatabase(info, result); err != nil {
+		return err
+	}
 	compareOpts := dbcli.CompareOptionsIgnoringExtensions(cmd, opts.ignoreExtensions, projectCfg, nil)
 	if err := secretrotation.Apply(cmd, compareOpts); err != nil {
 		return err

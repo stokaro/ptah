@@ -18,6 +18,13 @@ type Schemas struct {
 	// false where only the connection can name that schema, and where the
 	// rule has not been measured. It requires DefaultSchema.
 	Implicit bool `json:"implicit,omitempty"`
+	// ConnectedDatabaseOnly reports that a schema is a database of the server
+	// and a run reaches the one the connection selected, with no URL that
+	// reaches a wider scope. A document that puts anything in another database
+	// is refused, since the read cannot find it there and the plan creates no
+	// database. It excludes SchemaSelectionDatabase, whose URL can name a whole
+	// server.
+	ConnectedDatabaseOnly bool `json:"connected_database_only,omitempty"`
 }
 
 // SchemaSelection is how a database URL limits a run to one schema.
@@ -84,6 +91,10 @@ func (d Dialect) validateScope() error {
 	}
 	if d.DefaultSchema == "" && (d.Schemas.Implicit || d.Schemas.Selection == SchemaSelectionSingle) {
 		return fmt.Errorf("%w: dialect %q: an implicit or single schema needs a default schema",
+			ErrInvalidDescriptor, d.Name)
+	}
+	if d.Schemas.ConnectedDatabaseOnly && d.Schemas.Selection == SchemaSelectionDatabase {
+		return fmt.Errorf("%w: dialect %q: a URL that selects a database can name a whole server, so a run is not limited to the connected database",
 			ErrInvalidDescriptor, d.Name)
 	}
 	if d.Roles.OutOfScope != "" && !slices.Contains(RoleScopes(), d.Roles.OutOfScope) {

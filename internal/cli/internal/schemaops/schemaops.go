@@ -190,6 +190,9 @@ func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
 	}
 
 	info := conn.Info()
+	if err := schemascope.RefuseOutsideTargetDatabase(info, desired); err != nil {
+		return nil, err
+	}
 	compareOpts := config.DefaultCompareOptions()
 	compareOpts.IgnoredExtensions = append(compareOpts.IgnoredExtensions, opts.IgnoredExtensions...)
 	diff, undecided, err := schemadiff.CompareWithDatabaseReportingUndecidedAdditions(

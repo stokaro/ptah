@@ -438,6 +438,9 @@ func compareForPlan(
 	dbSchema *catalog.Database,
 	opts GenerateMigrationOptions,
 ) (*difftypes.SchemaDiff, schemadiff.Diagnostics, error) {
+	if err := schemascope.RefuseOutsideTargetDatabase(conn.Info(), desired); err != nil {
+		return nil, schemadiff.Diagnostics{}, err
+	}
 	compareOpts := compareOptionsWithDiffPolicy(opts.CompareOptions, opts.DiffPolicy)
 	compareOpts.FeatureRequests = append(compareOpts.FeatureRequests, schemaext.WrittenRequests(schemaext.RotateAction, opts.DiffPolicy.RotateSecrets)...)
 	diff, undecided, err := schemadiff.CompareWithDatabaseReportingUndecidedAdditions(
