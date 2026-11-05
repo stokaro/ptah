@@ -116,6 +116,23 @@ func TestValidateSQLServerReplayStatement_HappyPath(t *testing.T) {
 			statement: "CREATE XML SCHEMA COLLECTION dbo.documents AS N'<schema />';",
 		},
 		{
+			name:      "a schema's comment",
+			statement: "EXEC sp_addextendedproperty @name = N'MS_Description', @value = N'x', @level0type = N'SCHEMA', @level0name = N'app';",
+		},
+		{
+			name:      "a schema's comment changed, in the system schema's spelling",
+			statement: "EXECUTE sys.sp_updateextendedproperty @name = N'MS_Description', @value = N'x', @level0type = N'SCHEMA', @level0name = N'app';",
+		},
+		{
+			name:      "a schema's comment removed",
+			statement: "EXEC sp_dropextendedproperty @name = N'MS_Description', @level0type = N'SCHEMA', @level0name = N'app';",
+		},
+		{
+			name: "a property on a table, which goes with the table",
+			statement: "EXEC sp_addextendedproperty @name = N'owner', @value = N'x', @level0type = N'SCHEMA', @level0name = N'dbo', " +
+				"@level1type = N'TABLE', @level1name = N't';",
+		},
+		{
 			name:      "local schema with authorization",
 			statement: "CREATE SCHEMA app AUTHORIZATION dbo;",
 		},
@@ -157,6 +174,21 @@ func TestValidateSQLServerReplayStatement_FailurePath(t *testing.T) {
 		{
 			name:          "dynamic exec",
 			statement:     "EXEC(N'CREATE LOGIN escaped WITH PASSWORD = ''secret''');",
+			wantOperation: "EXEC/EXECUTE sublanguage",
+		},
+		{
+			name:          "another property on a schema, which outlives the cleanup",
+			statement:     "EXEC sp_addextendedproperty @name = N'owner', @value = N'x', @level0type = N'SCHEMA', @level0name = N'dbo';",
+			wantOperation: "EXEC/EXECUTE sublanguage",
+		},
+		{
+			name:          "a property on the database",
+			statement:     "EXEC sp_addextendedproperty @name = N'MS_Description', @value = N'x';",
+			wantOperation: "EXEC/EXECUTE sublanguage",
+		},
+		{
+			name:          "another procedure",
+			statement:     "EXEC sp_rename @objname = N'a', @newname = N'b', @level0type = N'SCHEMA';",
 			wantOperation: "EXEC/EXECUTE sublanguage",
 		},
 		{

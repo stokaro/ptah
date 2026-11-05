@@ -212,14 +212,18 @@ func (r *Reader) recordFunctions(ctx context.Context, schema *catalog.Database) 
 }
 
 // readSchemas reads the schemas of the read's scope that the database holds, each
-// spelled as the catalog spells it. The comparison reads a declared schema missing
-// from them as one the database lacks, so an empty schema has to appear here. The
-// connected schema does not: the comparison knows it exists, and a description
-// that declared it would open every document with a statement nobody wrote.
+// spelled as the catalog spells it, with the comment an MS_Description extended
+// property gives it. The comparison reads a declared schema missing from them as
+// one the database lacks, so an empty schema has to appear here.
 func (r *Reader) readSchemas(ctx context.Context) ([]catalog.Schema, error) {
 	query := `
-		SELECT s.name
+		SELECT s.name, COALESCE(CAST(ep.value AS nvarchar(max)), N'')
 		FROM sys.schemas AS s
+		LEFT JOIN sys.extended_properties AS ep
+		  ON ep.class = 3
+		 AND ep.major_id = s.schema_id
+		 AND ep.minor_id = 0
+		 AND ep.name = 'MS_Description'
 		WHERE (` + schemaPredicatePlaceholder + `)
 		ORDER BY s.name`
 	rows, err := r.db.QueryContext(ctx, r.queryWithSchemaPredicate(query), r.schemaArgs()...)
@@ -231,12 +235,10 @@ func (r *Reader) readSchemas(ctx context.Context) ([]catalog.Schema, error) {
 	var schemas []catalog.Schema
 	for rows.Next() {
 		var schema catalog.Schema
-		if err := rows.Scan(&schema.Name); err != nil {
+		if err := rows.Scan(&schema.Name, &schema.Comment); err != nil {
 			return nil, err
 		}
-		if schema.Name != r.schema {
-			schemas = append(schemas, schema)
-		}
+		schemas = append(schemas, schema)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

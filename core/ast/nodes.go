@@ -1398,6 +1398,9 @@ type ObjectCommentNode struct {
 	Arguments *string
 	// Comment is what the comment should become. Empty removes it.
 	Comment string
+	// HasCurrent reports that the object holds a comment now, which a dialect
+	// that sets a new comment and replaces one with different statements reads.
+	HasCurrent bool
 }
 
 // NewObjectComment creates a node that sets the comment of the object of kind
@@ -1418,6 +1421,13 @@ func (n *ObjectCommentNode) SetTable(table string) *ObjectCommentNode {
 // for why an empty list is not the same as none.
 func (n *ObjectCommentNode) SetArguments(arguments string) *ObjectCommentNode {
 	n.Arguments = &arguments
+	return n
+}
+
+// SetHasCurrent records that the object holds a comment now and returns the node
+// for chaining. See [ObjectCommentNode.HasCurrent].
+func (n *ObjectCommentNode) SetHasCurrent(hasCurrent bool) *ObjectCommentNode {
+	n.HasCurrent = hasCurrent
 	return n
 }
 

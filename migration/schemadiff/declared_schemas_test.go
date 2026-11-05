@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
@@ -137,6 +138,41 @@ func TestCompareDeclaredSchemas_ByEngine(t *testing.T) {
 			got := compareDeclaredSchemas(c, test.dialect, "default_schema",
 				&schemamodel.Database{Schemas: []schemamodel.Schema{app}})
 			c.Assert(got, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestCompareSchemaComment_OnSQLServer pins what a comparison records for a schema's
+// comment on an engine that keeps one as an extended property: a declared comment
+// the read does not hold, and nothing where the declaration states none, since a
+// block that only names a schema says nothing about its comment.
+func TestCompareSchemaComment_OnSQLServer(t *testing.T) {
+	tests := []struct {
+		name, declared, held string
+		want                 []difftypes.ObjectCommentChange
+	}{
+		{
+			name: "a schema that holds none", declared: "new",
+			want: []difftypes.ObjectCommentChange{{Kind: difftypes.CommentedSchema, Name: "app", Desired: "new"}},
+		},
+		{
+			name: "a schema that holds another", declared: "new", held: "old",
+			want: []difftypes.ObjectCommentChange{{Kind: difftypes.CommentedSchema, Name: "app", Current: "old", Desired: "new"}},
+		},
+		{name: "the same comment", declared: "same", held: "same"},
+		{name: "a declaration that states none", held: "old"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			semantics := identifier.ForDialect(platform.SQLServer)
+			diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(),
+				&schemamodel.Database{Schemas: []schemamodel.Schema{{Name: "app", Comment: test.declared}}},
+				&catalog.Database{Schemas: []catalog.Schema{{Name: "app", Comment: test.held}}},
+				catalog.ServerInfo{Dialect: platform.SQLServer, Schema: "dbo", IdentifierSemantics: semantics}, nil, must.Must(builtin.New()))
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(diff.ObjectCommentsChanged, qt.DeepEquals, test.want)
 		})
 	}
 }

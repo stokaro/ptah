@@ -1783,6 +1783,7 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 		return nil, err
 	}
 	result = p.planSchemaPreconditions(result, diff, created)
+	result = p.changeSchemaComments(result, diff)
 	result = p.dropRemovedSchemas(result, diff)
 	if !p.describes() {
 		guards.Settle(result, guards.Options{HarmlessRaw: harmlessSessionStatement})
