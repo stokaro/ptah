@@ -67,12 +67,10 @@ func retentionObjectModels() []*protocol.ValueModel {
 // compare without regard to ASCII case, as the engine's identifier rules say.
 // Documents run in order, so a later one alters what an earlier one declared.
 //
-// Three table names and a view name select a reply shape for the host's tests:
-// `warned` adds a warning to a complete reading, `malformed` leaves its table
-// without the trace the protocol requires, `stalled` waits for cancellation,
-// and a view named `tuned` carries a desired facet collection in
-// SQLView.features, which only a host that negotiated schema.common-view-facets
-// receives. This fixture demonstrates the protocol, not an engine's grammar.
+// Three table names select a reply shape for the host's tests: `warned` adds
+// a warning to a complete reading, `malformed` leaves its table without the
+// trace the protocol requires, and `stalled` waits for cancellation. This
+// fixture demonstrates the protocol, not an engine's grammar.
 func (*Provider) ReadSQLSchema(ctx context.Context, request *protocol.ReadSQLSchemaRequest) (*protocol.SQLSchema, error) {
 	load := &sqlLoad{}
 	declarations := make([]*protocol.SQLDocumentDeclarations, 0, len(request.GetDocuments()))
@@ -334,8 +332,7 @@ func (l *sqlLoad) retention(document *protocol.SQLDocument, declared *protocol.S
 	declared.Objects = append(declared.Objects, &protocol.SQLDeclaration{Kind: "retention", Name: name})
 }
 
-// view declares a view whose query is the statement's text after AS. A view
-// named `tuned` carries a desired facet collection in its features.
+// view declares a view whose query is the statement's text after AS.
 func (l *sqlLoad) view(document *protocol.SQLDocument, declared *protocol.SQLDocumentDeclarations, place sqlPlace, name string) {
 	if l.find(name) >= 0 || slices.ContainsFunc(l.views, func(entry *sqlView) bool {
 		return NormalizeCommonIdentifier(entry.view.GetName()) == NormalizeCommonIdentifier(name)
@@ -344,11 +341,7 @@ func (l *sqlLoad) view(document *protocol.SQLDocument, declared *protocol.SQLDoc
 		return
 	}
 	statement := document.GetText()[place.span.GetStart().GetByteOffset():place.span.GetEnd().GetByteOffset()]
-	view := &protocol.SQLView{Name: name, Body: afterWords(statement, 4)}
-	if NormalizeCommonIdentifier(name) == "tuned" {
-		view.Features = &protocol.CapturedFeatures{Facets: &protocol.ComparisonState{Representation: protocol.ValueInput_DESIRED}}
-	}
-	l.views = append(l.views, &sqlView{view: view, declared: place})
+	l.views = append(l.views, &sqlView{view: &protocol.SQLView{Name: name, Body: afterWords(statement, 4)}, declared: place})
 	declared.Objects = append(declared.Objects, &protocol.SQLDeclaration{Kind: "view", Name: name})
 }
 
