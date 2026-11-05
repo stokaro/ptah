@@ -146,9 +146,7 @@ inspection request instead of one in the region. Rejected.
 ## Consequences
 
 - Contract 25.22 adds two namespace fields, one identifier rule and a two-way
-  feature. It is numbered after contract 25.21, which carries the additions of
-  ADR 0065 to ADR 0068. The number is provisional: the SDK change that merges
-  first takes the lowest free minor.
+  feature. The same minor carries the additions of ADR 0069 to ADR 0072.
 - The SDK release comes first. The host and the providers adopt it in their
   own changes.
 - Without the feature nothing changes: the provider sends exact regions, and
