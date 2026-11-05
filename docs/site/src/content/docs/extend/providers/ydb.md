@@ -1,6 +1,6 @@
 ---
 title: Configure the YDB provider
-description: Install, select and verify the YDB executable provider, diagnose an absent or unusable installation, and make a lock node strict.
+description: Install, select and verify the YDB executable provider, and diagnose an absent or unusable installation.
 type: how-to
 audience:
   - database-engineer
@@ -107,30 +107,3 @@ provider claims from a copy recorded from a provider build.
 
 The [native provider workflow](../../executable-providers/) describes inspection,
 saved plans, application, and its protocol limitations.
-
-## Make a lock node strict
-
-The provider takes the migration lock as a semaphore on the `ptah_locks`
-coordination node at the database root. It creates a missing node with strict
-read and attach consistency, and it refuses an existing node whose two settings
-are not both strict. The refusal is a `NOT_ACQUIRED` lock receipt that holds
-nothing, and its reason names the node and its two settings. The node is left
-as it is.
-
-YDB's CLI and YQL have no command for a coordination node, so the fix goes
-through the coordination service. With
-[ydb-go-sdk](https://github.com/ydb-platform/ydb-go-sdk), alter the node in
-place:
-
-```go
-err := driver.Coordination().AlterNode(ctx, path.Join(driver.Name(), "ptah_locks"), coordination.NodeConfig{
-	ReadConsistencyMode:   coordination.ConsistencyModeStrict,
-	AttachConsistencyMode: coordination.ConsistencyModeStrict,
-})
-```
-
-`DropNode` on the same path removes the node instead, and the next lock creates
-it strict. Drop it only while no run holds a lock there: dropping the node ends
-every lock session on it. See
-[Coordination locks](https://github.com/stokaro/ptah-ydb-plugin#coordination-locks)
-in the provider's documentation.

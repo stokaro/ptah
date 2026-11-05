@@ -217,7 +217,9 @@ on the coordination node `ptah_locks` at the database root, one semaphore per
 lock name. It is exclusive and ephemeral: the server releases it when the
 session that holds it ends, whether the run released it or died. The provider
 creates a missing node with strict consistency and refuses a node that is not
-strict; see [Make a lock node strict](../../extend/providers/ydb/#make-a-lock-node-strict).
+strict, as its
+[Coordination locks](https://github.com/stokaro/ptah-ydb-plugin#coordination-locks)
+documentation describes.
 The node holds no data, so dropping it while no run is active is safe, and the
 next run creates it again. The provider's read leaves it out, so a plan never
 drops it. Like every advisory lock, it keeps Ptah runs apart; it does not stop a
