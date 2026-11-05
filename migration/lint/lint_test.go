@@ -302,6 +302,16 @@ func TestLintFS_OptionalKeywordForms(t *testing.T) {
 		{"drop not null attribute", "ALTER TABLE users ALTER COLUMN a DROP NOT NULL;", []string{"DS104"}},
 		{"drop identity attribute", "ALTER TABLE users ALTER COLUMN a DROP IDENTITY IF EXISTS;", nil},
 		{"drop key", "ALTER TABLE users DROP KEY idx_email;", nil},
+		// YDB drops a changefeed, an index and a topic's consumer by name, and
+		// none is a column. A column named changefeed dropped without the
+		// COLUMN keyword has no name after it, and stays a column drop.
+		{"drop changefeed", "ALTER TABLE `app/items` DROP CHANGEFEED `updates`;", nil},
+		{"drop changefeed with an unquoted name", "ALTER TABLE items DROP CHANGEFEED updates;", nil},
+		{"drop changefeed beside a column", "ALTER TABLE items DROP CHANGEFEED updates, DROP COLUMN note;", []string{"BC104", "DS102"}},
+		{"drop index by name", "ALTER TABLE `app/items` DROP INDEX `by_label`;", nil},
+		{"drop consumer", "ALTER TOPIC `app/items/updates` DROP CONSUMER `audit`;", nil},
+		{"column named changefeed", "ALTER TABLE items DROP changefeed;", []string{"BC104", "DS102"}},
+		{"column named changefeed with cascade", "ALTER TABLE items DROP changefeed CASCADE;", []string{"BC104", "DS102"}},
 		{"drop partition", "ALTER TABLE metrics DROP PARTITION p2024;", nil},
 		// Not a column drop, which is what this block is about, but a hazard of
 		// its own: the history goes with the versioning.
