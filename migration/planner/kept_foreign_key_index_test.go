@@ -103,7 +103,7 @@ func TestKeptForeignKeyIndex_FailurePath(t *testing.T) {
 			name:     "the server builds its own for the key",
 			declared: declaredKeptForeignKey(),
 			indexes:  []catalog.Index{{Name: "a_fk", TableName: "child", Columns: []string{"pid"}}},
-			want:     []string{},
+			want:     make([]string, 0),
 		},
 	}
 	for _, test := range tests {
