@@ -1044,7 +1044,9 @@ count these changes under `feature_access_widened:<kind>`,
 replayed history against the target, `VerifyRollback` rehearses a rollback plan,
 and `PlanDynamicRollback` derives rollback statements from the schema a version
 defines rather than from a down body. `migration/generator` calls the first of
-these when `ShadowDatabaseURL` is set.
+these when `ShadowDatabaseURL` is set, comparing with `ShadowGenerated` where a
+provider binds declared values to another database context on the shadow than
+on the target.
 
 When candidate or baseline shadow verification fails,
 `generator.PlanMigration`, `generator.GenerateMigration`, and
