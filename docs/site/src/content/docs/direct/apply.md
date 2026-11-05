@@ -539,7 +539,8 @@ components preserve catalog, schema, parent, and name separately, so a dot in a
 name cannot become a qualification boundary.
 
 The report omits `undecided` when neither collection has a limit. Standard
-error explains every limit. The field is independent of the outcome: next to
+error names every limit and why, before the plan: one limit is its own line,
+and several are one warning that names each. The field is independent of the outcome: next to
 `changes` or `applied` it names state the comparison could not establish, and
 next to `no-changes` it means the database is not shown to match.
 A caller that decides "in sync" from the outcome reads `undecided` too. A plan

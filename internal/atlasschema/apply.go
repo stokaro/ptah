@@ -498,7 +498,7 @@ func computeApplyPlan(
 	// nothing about it quietly does less than the desired schema asks for. The
 	// wording names neither surface's flags: native `schema apply` and the
 	// compatibility one both come through here.
-	undecidednote.Report(opts.Diagnostics, undecided, "the database", "the desired schema")
+	undecidednote.Report(ctx, opts.Diagnostics, undecided, "the database", "the desired schema")
 	computation.undecided = undecided
 	diff = applyDiffPolicy(diff, opts.Policy)
 	// After the policy, which deletes the table drops a configuration skips:
