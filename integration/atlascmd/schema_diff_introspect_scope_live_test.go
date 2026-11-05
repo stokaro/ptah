@@ -188,7 +188,7 @@ func TestSchemaDiffIntrospectsRequestedSchemaLivePostgres(t *testing.T) {
 			name:  "non-default schema is introspected",
 			scope: func() string { return scoped },
 			wantContains: func() []string {
-				return []string{`ALTER TABLE "` + scoped + `"."users" ADD COLUMN "extra" TEXT;`}
+				return []string{`ALTER TABLE "` + scoped + `"."users" ADD COLUMN "extra" text NULL;`}
 			},
 			wantAbsent: func() []string {
 				return []string{"CREATE TABLE", "Schemas are synced"}
@@ -202,7 +202,7 @@ func TestSchemaDiffIntrospectsRequestedSchemaLivePostgres(t *testing.T) {
 			name:  "default schema control",
 			scope: func() string { return "public" },
 			wantContains: func() []string {
-				return []string{`ALTER TABLE "` + defaultTable + `" ADD COLUMN "extra" TEXT;`}
+				return []string{`ALTER TABLE "` + defaultTable + `" ADD COLUMN "extra" text NULL;`}
 			},
 			wantAbsent: func() []string {
 				return []string{"CREATE TABLE", "Schemas are synced", scoped}
@@ -262,7 +262,7 @@ func TestSchemaDiffDatabaseToDatabaseIntrospectsRequestedSchemaLivePostgres(t *t
 
 	// Both sides are introspected, so the added column carries the type
 	// spelling PostgreSQL reports rather than the one a schema file declared.
-	c.Assert(out, qt.Contains, `ALTER TABLE "`+scoped+`"."users" ADD COLUMN "extra" text;`)
+	c.Assert(out, qt.Contains, `ALTER TABLE "`+scoped+`"."users" ADD COLUMN "extra" text NULL;`)
 	c.Assert(out, qt.Contains, `CREATE TABLE "`+scoped+`"."blatant"`)
 	c.Assert(out, qt.Not(qt.Contains), "Schemas are synced")
 }
@@ -503,7 +503,7 @@ func TestSchemaDiffMigrationDirReplayIntrospectsRequestedSchemaLivePostgres(t *t
 				"--schema", test.scope(),
 			)
 
-			c.Assert(out, qt.Contains, `ALTER TABLE "`+scoped+`"."users" ADD COLUMN "extra" text;`)
+			c.Assert(out, qt.Contains, `ALTER TABLE "`+scoped+`"."users" ADD COLUMN "extra" text NULL;`)
 			c.Assert(out, qt.Not(qt.Contains), "Schemas are synced")
 			c.Assert(out, qt.Not(qt.Contains), "atlas_schema_revisions")
 		})
