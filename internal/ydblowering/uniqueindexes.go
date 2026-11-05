@@ -13,8 +13,23 @@ import (
 
 // UniqueConstraintsAsIndexesFor returns database with its UNIQUE constraints and
 // UNIQUE columns written as the global unique indexes the YDB renderer builds
-// for them, on a YDB target without [capability.UniqueConstraints]. Every
-// other target, and a YDB target that has the key, gets database itself.
+// for them ([UniqueConstraintsAsIndexes]), on a YDB target without
+// [capability.UniqueConstraints]. Every other target, and a YDB target that
+// has the key, gets database itself.
+func UniqueConstraintsAsIndexesFor(
+	database *schemamodel.Database,
+	dialect string,
+	caps capability.Capabilities,
+) *schemamodel.Database {
+	if database == nil || platform.NormalizeDialect(dialect) != platform.YDB || caps.Has(capability.UniqueConstraints) {
+		return database
+	}
+	return UniqueConstraintsAsIndexes(database)
+}
+
+// UniqueConstraintsAsIndexes returns database with its UNIQUE constraints and
+// UNIQUE columns written as global unique indexes, for an engine that has
+// unique indexes and no UNIQUE constraint, as YDB has.
 //
 // YDB has unique indexes and no UNIQUE constraint, so a database a plan
 // applied holds an index where the declaration says constraint, and the reader
@@ -30,14 +45,10 @@ import (
 // an index method or a block size -- is left a constraint, so the refusal that
 // reaches the author is the renderer's, which names what YDB cannot hold. A
 // constraint's comment becomes the index's, as the renderer writes it.
-// database is not changed.
-func UniqueConstraintsAsIndexesFor(
-	database *schemamodel.Database,
-	dialect string,
-	caps capability.Capabilities,
-) *schemamodel.Database {
-	if database == nil || platform.NormalizeDialect(dialect) != platform.YDB || caps.Has(capability.UniqueConstraints) {
-		return database
+// database is not changed, and a nil database is returned as it is.
+func UniqueConstraintsAsIndexes(database *schemamodel.Database) *schemamodel.Database {
+	if database == nil {
+		return nil
 	}
 	lowered := *database
 	lowered.Fields = slices.Clone(database.Fields)

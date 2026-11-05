@@ -94,6 +94,11 @@ type DefaultPrivileges struct {
 // every schema and putting back each privilege the run changed. Artifacts
 // still applies. Server does not: such a reset removes only what the run
 // added, so it cannot empty a database someone else filled.
+//
+// SchemaStates, which only a PostgreSQL-family realm reset reads, are the
+// owner, access list and comment the schemas such a reset creates again or
+// empties where they stand held at the claim. The reset returns each schema to
+// its state rather than to what the run left on it.
 type Kept struct {
 	Extensions        []string
 	Schemas           []string
@@ -101,6 +106,35 @@ type Kept struct {
 	Artifacts         []Object
 	Server            Server
 	StartingPoint     *pgsnapshot.Snapshot
+	SchemaStates      []SchemaState
+}
+
+// SchemaState is one PostgreSQL-family schema as a dev database's claim found
+// it: who owns it, who may use it, and its comment.
+type SchemaState struct {
+	// Name is the schema.
+	Name string
+	// Owner is the role that owns the schema.
+	Owner string
+	// DefaultAccess reports that the schema held no access list of its own,
+	// which gives its owner every privilege on it and no other role any.
+	// Privileges is empty then.
+	DefaultAccess bool
+	// Privileges is the schema's access list, one entry per privilege of one
+	// grantee, when DefaultAccess is false.
+	Privileges []SchemaPrivilege
+	// Comment is the schema's comment, empty for none.
+	Comment string
+}
+
+// SchemaPrivilege is one entry of a schema's access list.
+type SchemaPrivilege struct {
+	// Grantee is the role the privilege is granted to, PUBLIC for every role.
+	Grantee string
+	// Privilege is USAGE or CREATE.
+	Privilege string
+	// GrantOption reports that the grantee may grant the privilege on.
+	GrantOption bool
 }
 
 // Server says whose server a reset of a PostgreSQL-family database realm runs

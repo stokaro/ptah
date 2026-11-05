@@ -144,3 +144,34 @@ func TestFingerprintRefusesMissingContextRuntimeAndCodecs(t *testing.T) {
 	c.Assert(values, qt.HasLen, 1)
 	c.Assert(values[0].(*facet).Number, qt.Equals, 3)
 }
+
+// A filtered read carries the planning context outside its scope beside its
+// feature objects. The fingerprint encodes it through the registry, as it does
+// the feature objects, and binds it: a plan made over one context does not
+// match a read whose context changed, and context objects are not mistaken
+// for feature objects.
+func TestObservedFingerprintBindsThePlanningContext(t *testing.T) {
+	c := qt.New(t)
+	runtime := must.Must(builtin.New())
+	a := ydbschema.ObservedObject("", "events", ydbschema.ChangefeedSpec{Name: "a", Mode: "UPDATES", Format: "JSON"})
+	b := ydbschema.ObservedObject("", "events", ydbschema.ChangefeedSpec{Name: "b", Mode: "KEYS_ONLY", Format: "JSON"})
+	known := must.Must(ydbschema.ChangefeedCoverage(schemaext.Observed, nil))
+	without := must.Must(schemafingerprint.Observed(t.Context(), runtime, &catalog.Database{}))
+	read := &catalog.Database{PlanningContextObjects: must.Must(schemaext.NewObjects(a, b)), PlanningContextCoverage: known}
+
+	first, err := schemafingerprint.Observed(t.Context(), runtime, read)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(first, qt.Not(qt.Equals), without)
+	c.Assert(read.PlanningContextObjects.Len(), qt.Equals, 2)
+	c.Assert(read.PlanningContextCoverage.IsZero(), qt.IsFalse)
+	reordered := &catalog.Database{PlanningContextObjects: must.Must(schemaext.NewObjects(b, a)), PlanningContextCoverage: known}
+	c.Assert(must.Must(schemafingerprint.Observed(t.Context(), runtime, reordered)), qt.Equals, first)
+	unknown := &catalog.Database{PlanningContextObjects: must.Must(schemaext.NewObjects(a, b))}
+	c.Assert(must.Must(schemafingerprint.Observed(t.Context(), runtime, unknown)), qt.Not(qt.Equals), first)
+	features := &catalog.Database{FeatureObjects: must.Must(schemaext.NewObjects(a, b)), FeatureCoverage: known}
+	c.Assert(must.Must(schemafingerprint.Observed(t.Context(), runtime, features)), qt.Not(qt.Equals), first)
+	changed := ydbschema.ObservedObject("", "events", ydbschema.ChangefeedSpec{Name: "a", Mode: "NEW_IMAGE", Format: "JSON"})
+	altered := &catalog.Database{PlanningContextObjects: must.Must(schemaext.NewObjects(changed, b)), PlanningContextCoverage: known}
+	c.Assert(must.Must(schemafingerprint.Observed(t.Context(), runtime, altered)), qt.Not(qt.Equals), first)
+}

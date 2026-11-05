@@ -1162,7 +1162,9 @@ const (
 	// with the same value is refused, and rows whose value is NULL are not.
 	// So where the key is false the YDB renderer writes a declared UNIQUE as
 	// that index and the comparison reads it as one (stokaro/ptah#4015,
-	// decision 7), where Spanner refuses the declaration.
+	// decision 7), where Spanner refuses the declaration. A provider engine
+	// that reports its indexes and whose session states the key false gets
+	// the same reading.
 	//
 	// True everywhere else: PostgreSQL, CockroachDB, YugabyteDB, MySQL, MariaDB,
 	// SQLite, SQL Server and Oracle all take the constraint spelling.

@@ -219,7 +219,6 @@ func TestWriterDropDatabaseRealm_RecreatesRootSchemaWithMetadata(t *testing.T) {
 	c.Assert(catalogQueries[2], qt.Contains, "slot.datoid =")
 	c.Assert(catalogQueries[2], qt.Contains, "FROM pg_event_trigger")
 	c.Assert(catalogQueries[3], qt.Contains, "obj_description")
-	c.Assert(catalogQueries[3], qt.Contains, "COMMENT ON SCHEMA %I IS %L")
 	c.Assert(catalogQueries[4], qt.Contains, "aclexplode")
 	c.Assert(catalogQueries[5], qt.Contains, "n.nspname NOT LIKE 'pg\\_%'")
 	c.Assert(catalogQueries[5], qt.Not(qt.Contains), "n.nspname NOT LIKE 'yb\\_%'")
@@ -404,7 +403,7 @@ func TestWriterDropDatabaseRealm_CreatesAbsentRootSchema(t *testing.T) {
 		`GRANT USAGE ON SCHEMA "public" TO PUBLIC`,
 		`GRANT CREATE ON SCHEMA "public" TO "pg_database_owner"`,
 		`GRANT USAGE ON SCHEMA "public" TO "pg_database_owner"`,
-		`COMMENT ON SCHEMA public IS 'standard public schema'`,
+		`COMMENT ON SCHEMA "public" IS 'standard public schema'`,
 	})
 	c.Assert(db.BeginCount(), qt.Equals, 1)
 	c.Assert(db.QueryCount(), qt.Equals, 14)
@@ -1119,7 +1118,7 @@ func newPostgresRealmMetadataQuery() *postgresRealmQuery {
 		metadata: [][]driver.Value{{
 			"app_owner",
 			false,
-			`COMMENT ON SCHEMA "public" IS 'application root'`,
+			"application root",
 		}},
 		privileges: [][]driver.Value{
 			{"app_owner", "CREATE", false},
@@ -1157,7 +1156,7 @@ func newPostgresRealmAbsentRootQuery() *postgresRealmQuery {
 		version:  "PostgreSQL 18.0",
 		database: "ptah_test",
 		schemaMetadata: map[string][][]driver.Value{
-			"public": {{"pg_database_owner", false, `COMMENT ON SCHEMA public IS 'standard public schema'`}},
+			"public": {{"pg_database_owner", false, `standard public schema`}},
 		},
 		schemaPrivileges: map[string][][]driver.Value{
 			"public": {
@@ -1184,7 +1183,7 @@ func newPostgresRealmCockroachQuery() *postgresRealmQuery {
 	return &postgresRealmQuery{
 		version:        "CockroachDB CCL v26.2.4",
 		database:       "ptah_test",
-		metadata:       [][]driver.Value{{"root", true, `COMMENT ON SCHEMA "public" IS NULL`}},
+		metadata:       [][]driver.Value{{"root", true, ""}},
 		initialSchemas: [][]driver.Value{{"audit"}, {"public"}},
 		finalSchemas:   [][]driver.Value{{"public"}},
 		publicObjects: [][]driver.Value{{
@@ -1200,7 +1199,7 @@ func newPostgresRealmResidualQuery() *postgresRealmQuery {
 	return &postgresRealmQuery{
 		version:         "PostgreSQL 18.0",
 		database:        "ptah_test",
-		metadata:        [][]driver.Value{{"app_owner", true, `COMMENT ON SCHEMA "public" IS NULL`}},
+		metadata:        [][]driver.Value{{"app_owner", true, ""}},
 		initialSchemas:  [][]driver.Value{{"public"}},
 		finalSchemas:    [][]driver.Value{{"public"}},
 		residualObjects: [][]driver.Value{{"collation", "public", "stale_collation"}},
@@ -1211,7 +1210,7 @@ func newPostgresRealmResidualExtensionQuery() *postgresRealmQuery {
 	return &postgresRealmQuery{
 		version:           "PostgreSQL 18.0",
 		database:          "ptah_test",
-		metadata:          [][]driver.Value{{"app_owner", true, `COMMENT ON SCHEMA "public" IS NULL`}},
+		metadata:          [][]driver.Value{{"app_owner", true, ""}},
 		initialSchemas:    [][]driver.Value{{"public"}},
 		finalSchemas:      [][]driver.Value{{"public"}},
 		residualExtension: [][]driver.Value{{"hstore"}},
@@ -1222,7 +1221,7 @@ func newPostgresRealmUnsupportedPrivilegeQuery() *postgresRealmQuery {
 	return &postgresRealmQuery{
 		version:    "YugabyteDB 2026.1",
 		database:   "ptah_test",
-		metadata:   [][]driver.Value{{"yugabyte", false, `COMMENT ON SCHEMA "public" IS NULL`}},
+		metadata:   [][]driver.Value{{"yugabyte", false, ""}},
 		privileges: [][]driver.Value{{"yugabyte", "TEMPORARY", false}},
 	}
 }

@@ -144,9 +144,16 @@ func tlsFor(c *qt.C, behavior serverBehavior) (config *tls.Config, rootFile stri
 
 // completeTLS runs the server's half of a handshake and holds the connection
 // open, so an alert the server sends after it reaches the client.
+//
+// A handshake the server refuses holds it open too. Under TLS 1.3 the client
+// finishes first and sends its startup message before it reads the server's
+// alert, and closing with that message unread resets the connection. Windows
+// then discards the alert the client has not read yet, and the client reports
+// the reset instead of the TLS failure.
 func completeTLS(conn net.Conn, config *tls.Config) {
 	server := tls.Server(conn, config)
 	if server.Handshake() != nil {
+		waitForClose(conn)
 		return
 	}
 	waitForClose(server)

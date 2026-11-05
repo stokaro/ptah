@@ -128,6 +128,7 @@ func TestRewriteCannotConsumeAnInvalidSelfDependency(t *testing.T) {
 	common.Dependencies = append(common.Dependencies, edge("change", "change"))
 	plan, err := plangraph.ScheduleRewritten(t.Context(), common, rewrites, feature)
 	c.Assert(err, qt.ErrorIs, plangraph.ErrCycle)
+	c.Assert(err, qt.ErrorMatches, `plan dependency cycle: "example.org/common"/"change" depends on itself`)
 	c.Assert(plan, qt.DeepEquals, plangraph.Plan[string]{})
 }
 

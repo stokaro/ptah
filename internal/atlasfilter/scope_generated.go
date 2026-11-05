@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/tableref"
 )
 
 // projectGenerated applies the schema universe and include selectors to the
@@ -158,7 +159,8 @@ func enumIdentity(schema, name string) (resolvedSchema, resolvedName string) {
 }
 
 // generatedGrantSelected keeps grants whose target survives the selection.
-// Table and sequence grants ride along with their kept target, and a grant on
+// Table and sequence grants ride along with their kept target, a table grant
+// naming a kept view or materialized view included, and a grant on
 // the sequence that is part of a column with the column's table, as
 // columnSequences answers; see [scopeSelection.generatedColumnSequences].
 // Schema-level grants ride along with the schema universe; when include
@@ -173,7 +175,7 @@ func (s *scopeSelection) generatedGrantSelected(
 	case grant.OnDatabase:
 		return s.selectedNames(typeList("role"), grant.Role)
 	case grant.OnTable != "":
-		return generatedTableNameKept(out.Tables, grant.OnTable)
+		return generatedTableNameKept(out.Tables, grant.OnTable) || generatedViewNameKept(out, grant.OnTable)
 	case grant.OnSequence != "":
 		schema, name := splitQualified(grant.OnSequence)
 		return generatedSequenceNameKept(out.Sequences, grant.OnSequence) ||
@@ -255,6 +257,30 @@ func generatedTableNameKept(tables []schemamodel.Table, name string) bool {
 		}
 	}
 	return false
+}
+
+// generatedViewNameKept reports whether name, the target a grant names as a
+// table, is a kept view or materialized view. A privilege names a view as it
+// names a table, and without this the selection keeps the view and drops
+// every grant on it, so a declared one is never planned. A view carries its
+// schema in its name; an unqualified target matches a view's bare name, as
+// [tableMatchesName] matches a table's.
+func generatedViewNameKept(out *schemamodel.Database, name string) bool {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return false
+	}
+	matches := func(spelled string) bool {
+		spelled = strings.TrimSpace(spelled)
+		if spelled == name {
+			return true
+		}
+		_, bare := splitQualified(spelled)
+		ref, ok := tableref.Parse(name)
+		return ok && !ref.Qualified && ref.Name == bare
+	}
+	return slices.ContainsFunc(out.Views, func(view schemamodel.View) bool { return matches(view.Name) }) ||
+		slices.ContainsFunc(out.MaterializedViews, func(view schemamodel.MaterializedView) bool { return matches(view.Name) })
 }
 
 // sequenceOwnerReference resolves an OWNED BY association ("table.column" or

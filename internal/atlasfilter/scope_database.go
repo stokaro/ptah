@@ -145,8 +145,17 @@ func (s *scopeSelection) databaseGrantSelected(
 	case s.vocabulary.selections.OwnsGrantType(grant.ObjectType):
 		return s.vocabulary.objectGrantKept(out.FeatureObjects, grant.ObjectType, grant.QualifiedTarget())
 	default:
-		return s.tableKept(keptTables, grant.Schema, grant.ObjectName)
+		return s.tableKept(keptTables, grant.Schema, grant.ObjectName) || s.viewKept(out, grant.Schema, grant.ObjectName)
 	}
+}
+
+// viewKept reports whether the projection keeps the view or materialized view
+// named schema and name: a reader reports a grant on a view as a grant on a
+// table, and the grant rides the view as a table's rides its table.
+func (s *scopeSelection) viewKept(out *catalog.Database, schema, name string) bool {
+	key := s.tableIdentity(schema, name)
+	return slices.ContainsFunc(out.Views, func(view catalog.View) bool { return s.tableIdentity(view.Schema, view.Name) == key }) ||
+		slices.ContainsFunc(out.MatViews, func(view catalog.MaterializedView) bool { return s.tableIdentity(view.Schema, view.Name) == key })
 }
 
 // objectGrantKept reports whether the projection keeps the owner's object a

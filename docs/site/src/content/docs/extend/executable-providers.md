@@ -136,16 +136,30 @@ reports `index_rename` only to a host that lists the feature, and the host
 refuses a session that reports it from an engine without the feature. Without
 the capability, a renamed index is a drop and a create.
 
+An engine that reports its indexes and whose session states
+`unique_constraints` as `false` holds a declared UNIQUE constraint, and a
+column's UNIQUE, as a global unique index, as YDB does. The host then reads
+each one as that index before it compares and plans, under the name the
+host's YDB renderer gives it: the constraint's name, or
+`<table>_<columns>_key`. A UNIQUE over the table's key folds into the key. The
+provider receives the index in the table it creates or alters, and never the
+constraint. A session that does not state the key leaves a UNIQUE a
+constraint.
+
 A service that declares parent assessment
 also receives changes to existing columns in the complete table capture. It
 must return a parent receipt, including when its own rules find no change.
-Missing receipts and refusals discard the plan. Common-object support carries
-table, column and index comments. A provider that owns the table lifecycle and
+Missing receipts and refusals discard the plan.
+
+Common-object support carries table, column and index comments. A provider that owns the table lifecycle and
 lists the `COMMENT` kind receives the comment of a table it creates, of a
 column it adds and of an index it creates as a comment step after its own
 creation, and a changed index comment as one comment step with the comment the
 index ends with. A comment step reads its table and changes the comment alone.
-These services do not grant common SQL rendering.
+A provider that lists the `GRANT` kind receives a grant or revocation on a
+table it creates or alters as a step after its own change, and the step reads
+the table and changes the table's access alone. These services do not grant
+common SQL rendering.
 
 The common steps of a planning request include ordering markers beside the steps
 that change a table. A marker has no parent, no effects and no added column. It
@@ -329,11 +343,17 @@ a declaration of any other kind before it sends anything, naming the kind and
 the engine. The work is split this way:
 
 - The provider reads every object of a kind it carries, or says that it did not
-  read the kind, and Ptah then plans no removal of it.
+  read the kind, and Ptah then plans no removal of it. A role the server holds
+  outside the read's scope, such as a database's user in a YDB dev realm, is
+  named without its attributes: Ptah plans no creation of it and no change to
+  its attributes.
 - Before a comparison, the provider spells the declared objects as its engine
   reports them, such as a view's query as the engine stores it.
 - Ptah compares and orders the changes, and keeps each object as declared in
   the plan. The provider renders each change as one unit.
+- A view whose query changed is replaced in place when the session reports
+  `create_or_replace_view`. Otherwise Ptah drops the view, creates it again and
+  grants again each permission the view held, which the drop took with it.
 - On an engine with `schema.common-table-identity.v1`, the comment of a table
   Ptah creates is a step of its own after the table. A declaration is validated
   by rendering it, so the provider refuses there an object it cannot hold, and
@@ -886,16 +906,26 @@ writes each change as one statement its executor runs read back from a file,
 and refuses a change it performs only through a native call; Ptah then names
 the operation and writes nothing. A provider without the feature keeps its
 native units, and those commands refuse them. `schema plan`, `schema apply` and
-saved plans keep native operations. `--edit` and dev-database rehearsal refuse
-native plans.
+saved plans keep native operations. `--edit` refuses native plans.
+
+A native operation is bound to the database it was planned for, so
+`schema apply --dev-url` does not send the target's operations to the dev
+database. It recreates the target's current schema there, plans the same
+desired schema again for the dev database, and runs that plan through the
+provider, as the apply runs the target's. A plan whose operations are not the
+target's, one by one, refuses the apply: the rehearsal would pass on changes
+the apply does not make. `ptah-compat schema apply` rehearses the same way.
 
 With `units.sensitive-inputs`, the provider declares environment variable names
 for exact execution units before approval. Native and compatibility schema
 plans retain these references, and JSON plan digests cover them. Input values
 are resolved only at dispatch and never enter plans or provider process
 environments. Dry runs need no values. A missing value or changed reference
-set refuses execution before the batch starts. SQL editing, report templates,
-and dev-database rehearsal refuse input-bearing plans.
+set refuses execution before the batch starts. SQL editing and report
+templates refuse input-bearing plans. A dev-database rehearsal of one binds
+each value when its unit is dispatched on the dev database, and so does a
+migration replayed on a dev database, which approves the inputs each statement
+reads before the first statement runs, as `migrations up` does.
 
 `--dry-run` lists the planned operations, decodes and preflights a saved plan,
 and writes nothing. The protocol does not establish a lock acquisition that
@@ -926,11 +956,21 @@ provider compare models failed (InvalidArgument): streaming query capability was
 ```
 
 A lock outcome reads `provider lock outcome is BUSY`, followed by the
-provider's reason in the same way. Ptah never prints the rest of a provider's
-error: a driver's error can quote a connection address, a credential or a
-statement with its values, so only text the provider wrote as a reason
-reaches the output. The JSON documents carry the same sentence in their error
-message.
+provider's reason in the same way. So does a statement the engine refused,
+and a commit the provider rolled back, when the provider speaks contract 25.18
+or later:
+
+```text
+provider execution: NOT_APPLIED (0 units confirmed applied): <reason>
+provider transaction outcome is ROLLED_BACK: <reason>
+```
+
+Ptah never prints the rest of a provider's error, or the message of an
+execution or transaction result: a driver's error can quote a connection
+address, a credential or a statement with its values, so only text the
+provider wrote as a reason reaches the output. The JSON documents carry the
+same sentence in their error message, and the revision of a migration whose
+statement failed records it.
 
 Missing official providers include an engine ID, provider ID, repository URL,
 and setup URL in the error. JSON schema reports and migration setup failures

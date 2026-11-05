@@ -2121,7 +2121,9 @@ The host never compares the inventory. It passes it to the planning service
 that assesses those kinds as `PlanFeaturesRequest.context_inventory`, an
 observed `ComparisonState` disjoint from `desired_objects` and
 `current_objects`. Its subjects are outside the assessment inventory, so the
-service returns no receipt for them.
+service returns no receipt for them. A plan saved by `ptah schema plan
+--output` records a source fingerprint that covers the inventory, so the plan
+is stale against a read whose planning context differs.
 
 ## Migration splits
 

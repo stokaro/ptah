@@ -117,6 +117,12 @@ a routine body, is refused before anything runs unless the dev server is the
 run's own; see
 [the baseline a rehearsal writes](../../concepts/database-urls-and-dev-databases/#the-baseline-a-rehearsal-writes).
 
+A plan that holds a provider's native operations is bound to the target, so
+the rehearsal plans the same desired schema again for the dev database and runs
+that plan through the provider. A plan whose operations differ from the
+target's refuses the apply; see
+[executable providers](../../extend/executable-providers/).
+
 Saved-plan rehearsal and post-apply verification require complete comparison
 evidence. An empty diff with an unknown feature state does not establish that
 the plan reached its desired schema. If verification after apply lacks that

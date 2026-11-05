@@ -53,7 +53,7 @@ type commonObjects struct{ *backend.Provider }
 
 // Open adds the capabilities the comparison reads to compare the objects the
 // program carries: views and their comments, roles, their memberships and
-// their comments.
+// their comments, and whether a view is replaced in place.
 func (p *commonObjects) Open(ctx context.Context, request *protocol.OpenRequest) (*protocol.Session, error) {
 	session, err := p.Provider.Open(ctx, request)
 	if err != nil {
@@ -65,5 +65,9 @@ func (p *commonObjects) Open(ctx context.Context, request *protocol.OpenRequest)
 	for _, capability := range []string{"views", "view_comments", "role_management", "role_membership", "role_comments"} {
 		session.Capabilities[capability] = true
 	}
+	// FIXTURE_CREATE_OR_REPLACE_VIEW=true reports that the engine replaces a
+	// view in place, keeping its grants; without it a changed view is
+	// dropped and created again, as on an engine that has no such statement.
+	session.Capabilities["create_or_replace_view"] = os.Getenv("FIXTURE_CREATE_OR_REPLACE_VIEW") == "true"
 	return session, nil
 }

@@ -129,10 +129,16 @@ func Roles(
 	// be dangerous and break authentication/authorization.
 	// If role removal is needed, it should be done explicitly by the DBA.
 
-	// Detect role attribute modifications
+	// Detect role attribute modifications. A role whose attributes the reader
+	// did not read exists and is matched, and nothing says its attributes
+	// differ: comparing their zero values would plan an ALTER for every
+	// attribute the desired role sets.
 	for roleName, generatedRole := range generatedRoleMap {
 		if databaseRole, roleExists := databaseRoleMap[roleName]; roleExists {
 			diff.Matched.Roles++
+			if databaseRole.AttributesUnknown {
+				continue
+			}
 			roleComparison := RoleDefinitions(generatedRole, databaseRole)
 			if len(roleComparison.Changes) > 0 {
 				diff.RolesModified = append(diff.RolesModified, roleComparison)

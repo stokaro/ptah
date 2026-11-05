@@ -57,8 +57,9 @@ func (r reader) commonObjects(result *catalog.Database, observed *protocol.Obser
 			result.RoleMemberships = append(result.RoleMemberships, catalog.RoleMembership{Role: group, Member: role.GetName()})
 		}
 	}
+	// The wire names a role out of scope and carries none of its attributes.
 	for _, name := range observed.GetRolesOutOfScope() {
-		result.RolesOutOfScope = append(result.RolesOutOfScope, catalog.Role{Name: name})
+		result.RolesOutOfScope = append(result.RolesOutOfScope, catalog.Role{Name: name, AttributesUnknown: true})
 	}
 	for _, membership := range observed.GetMemberships() {
 		result.RoleMemberships = append(result.RoleMemberships, catalog.RoleMembership{Role: membership.GetGroup(), Member: membership.GetMember()})
