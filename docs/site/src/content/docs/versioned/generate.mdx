@@ -192,7 +192,6 @@ up file:
 -- Migration rollback
 -- Direction: DOWN
 
--- WARNING: This will delete all data!
 DROP TABLE IF EXISTS "users";
 ```
 
@@ -204,8 +203,8 @@ where the file relies on it. That file then stops at the first statement that
 does not fit the database it runs on: a drop of a table that is gone, an index
 whose name is taken, or a drop an object the schema does not declare holds back.
 `migrations up` runs it in one transaction there unless the file opts out, so
-nothing of it stays applied. The MySQL family leaves out the comment and keeps
-its guards, and the SQLite planner above keeps both.
+nothing of it stays applied. The MySQL family and the SQLite planner above
+leave out the comment and keep their guards.
 
 On MySQL and MariaDB, `migrations up` runs a file inside a transaction unless
 the file opts out, and refuses one whose statements it cannot tie to that
