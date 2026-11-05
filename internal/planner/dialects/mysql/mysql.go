@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
@@ -1015,13 +1016,16 @@ func collectColumnTypeForeignKeyActions(
 			continue
 		}
 		hostKey := info.Identity
-		if _, added := addedHosts[hostKey]; added {
-			continue // MODIFY: handled from the schema above
-		}
 		if _, done := seen[hostKey]; done {
 			continue
 		}
 		details, detailed := foreignKeyRemovalDetails[info.Identity]
+		// A MODIFY is handled from the schema above, which reads the columns the key
+		// moves to. The columns it holds now may be the ones that change, and only the
+		// removal knows them.
+		if _, added := addedHosts[hostKey]; added && !detailed {
+			continue
+		}
 		if detailed && !foreignKeyRemovalTouchesBlockingChange(details, typeChanged, semantics) {
 			continue
 		}
@@ -1287,6 +1291,7 @@ func (p *Planner) removeIndexes(
 		diff.IndexAdditions(),
 	)
 	rebuiltAsConstraint := diff.IndexRemovalsRebuiltAsUniqueConstraints()
+	namedByForeignKeys := indexesNamedByForeignKeys(diff, p.targetDialect())
 	for _, ref := range diff.IndexRemovals() {
 		if replacements.Contains(ref) {
 			continue
@@ -1298,7 +1303,8 @@ func (p *Planner) removeIndexes(
 		// changes, for the same reason.
 		_, rebuilt := rebuiltAsConstraint[ref]
 		_, dropped := released[ref]
-		if rebuilt || dropped {
+		_, named := namedByForeignKeys[ref]
+		if rebuilt || dropped || named {
 			continue
 		}
 		result = append(result, p.dropIndexNode(diff, ref))
@@ -1861,6 +1867,7 @@ func (p *Planner) addNewConstraints(
 	bracketDropped map[constraintHostKey]struct{},
 ) ([]ast.Node, error) {
 	state := newConstraintPlanState(diff, diff.EffectiveIdentifierSemantics(p.targetDialect()))
+	state.indexesNamedByForeignKeys = indexesNamedByForeignKeys(diff, p.targetDialect())
 
 	// A foreign key whose column also changes type was already dropped before
 	// the column modifications (issue #694, step 4). Seeding those (table, name)
@@ -1900,13 +1907,15 @@ const (
 )
 
 type constraintPlanState struct {
-	semantics          identifier.Semantics
-	removedNames       map[string]struct{}
-	removalByTableName map[constraintHostKey]difftypes.ConstraintRemovalInfo
-	removalsByName     map[string][]difftypes.ConstraintRemovalInfo
-	addedHostsByName   map[string]map[string]struct{}
-	handled            map[string]struct{}
-	droppedForModify   map[constraintHostKey]struct{}
+	// indexesNamedByForeignKeys is what [indexesNamedByForeignKeys] answers.
+	indexesNamedByForeignKeys map[difftypes.IndexRef]struct{}
+	semantics                 identifier.Semantics
+	removedNames              map[string]struct{}
+	removalByTableName        map[constraintHostKey]difftypes.ConstraintRemovalInfo
+	removalsByName            map[string][]difftypes.ConstraintRemovalInfo
+	addedHostsByName          map[string]map[string]struct{}
+	handled                   map[string]struct{}
+	droppedForModify          map[constraintHostKey]struct{}
 }
 
 func newConstraintPlanState(
@@ -2105,6 +2114,9 @@ func (p *Planner) addForeignKeyConstraintsWithTables(
 		if info, modified := state.removalByTableName[key]; modified {
 			result = p.appendScopedDrop(result, info, state.droppedForModify, state.semantics)
 		}
+		if _, held := state.indexesNamedByForeignKeys[difftypes.IndexRef{Name: add.Name, TableName: add.TableName}]; held {
+			result = append(result, ast.NewDropIndex(add.Name).SetTable(add.TableName))
+		}
 		result = append(result, p.foreignKeyAdditionNode(add))
 		state.handled[state.semantics.IndexIdentityKey(add.Name)] = struct{}{}
 	}
@@ -2162,6 +2174,33 @@ func (p *Planner) addNonForeignKeyConstraintsWithTables(
 		handled[semantics.IndexIdentityKey(add.Name)] = struct{}{}
 	}
 	return result
+}
+
+// indexesNamedByForeignKeys answers the removed indexes under the name of a foreign key
+// the plan adds on their table. The server builds a key an index of its name, so ADD
+// CONSTRAINT answers `Error 1061: Duplicate key name` while the old index is there,
+// measured on MySQL 8.4 and MariaDB 12.3, and the plan's index removals come after the
+// additions. A key that starts with the old index's columns stands on it and builds
+// none, and the comparison keeps such an index. The drop goes with the addition, after
+// the DROP FOREIGN KEY of a key moved under its own name, which the index still serves
+// until then, and [Planner.removeIndexes] leaves it alone.
+func indexesNamedByForeignKeys(diff *difftypes.SchemaDiff, dialect string) map[difftypes.IndexRef]struct{} {
+	// SQL Server, which this planner serves too, builds a key no index.
+	if described, _ := platform.Lookup(dialect); described.ForeignKeyNaming != descriptor.ForeignKeyNamingTableNumbered {
+		return nil
+	}
+	removed := make(map[difftypes.IndexRef]struct{}, len(diff.IndexesRemoved))
+	for _, ref := range diff.IndexesRemoved {
+		removed[ref] = struct{}{}
+	}
+	named := make(map[difftypes.IndexRef]struct{})
+	for _, add := range diff.ConstraintsAdded {
+		ref := difftypes.IndexRef{Name: add.Name, TableName: add.TableName}
+		if _, held := removed[ref]; held && strings.EqualFold(add.Type, "FOREIGN KEY") {
+			named[ref] = struct{}{}
+		}
+	}
+	return named
 }
 
 // dropIndexRebuiltAsConstraint drops the key this UNIQUE constraint addition is
