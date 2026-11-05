@@ -1974,6 +1974,11 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 
 	// Feature operations that stand in the way of a column change join the plan
 	// here.
+	features, err := p.planTableFeatures(ctx, runtime, diff)
+	if err != nil {
+		return nil, err
+	}
+	result = append(result, features.aheadOfColumns...)
 	windows.Lifecycle = &featurehost.Span{Start: len(result), End: len(result)}
 
 	// 6. Add and modify table columns (must be done before creating RLS policies that depend on columns)
@@ -2070,12 +2075,8 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// names cannot be dropped while the policy still points at it. A plan that
 	// moved an expression off a column and dropped it once emitted `DROP
 	// COLUMN … CASCADE` first (stokaro/ptah#1027, stokaro/ptah#2236).
-	beforeTableFeatures := len(result)
-	result, err = p.planTableFeatures(ctx, runtime, result, diff)
-	if err != nil {
-		return nil, err
-	}
-	droppedPolicies := policiesDroppedBeforeRelations(result[beforeTableFeatures:], diff)
+	result = append(result, features.afterColumns...)
+	droppedPolicies := policiesDroppedBeforeRelations(slices.Concat(features.aheadOfColumns, features.afterColumns), diff)
 	earlyColumns := p.columnsLeavingEarly(diff)
 	ahead, err := p.routinesAheadOf(diff, rebuild, earlyColumns, droppedPolicies)
 	if err != nil {
