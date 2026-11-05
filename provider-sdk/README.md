@@ -55,7 +55,7 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.20. `provider-sdk/v0.18.0` speaks 25.19.
+speaks contract 25.21. `provider-sdk/v0.18.0` speaks 25.19.
 `provider-sdk/v0.17.0` speaks 25.18.
 `provider-sdk/v0.16.0` speaks 25.17.
 `provider-sdk/v0.15.0` speaks 25.16.
@@ -110,6 +110,10 @@ returns to 0.
   Contract 25.18 adds [the reasons of execution and transaction results](#error-reasons).
   Contract 25.19 adds [change reversal](#change-reversal).
   Contract 25.20 adds [unread tables](#unread-tables).
+  Contract 25.21 adds [database kinds](#database-kinds),
+  [the facets of a SQL schema reading](#facets-of-a-sql-schema-reading),
+  [report counts](#report-counts) and
+  [index facets on inspected indexes](#index-facets-on-inspected-indexes).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -139,10 +143,13 @@ does not oblige a peer to use it.
   `schema.observed-primary-keys`, `schema.observed-indexes`,
   `planning.object-context`, `planning.context-inventory`,
   `units.migration-split`, `models.compare-counts`, `schema.index-methods`,
-  `sessions.typed-arguments`, `errors.reasons`, `planning.index-renames` and
-  `models.reverse`. The embedding store's calls, `PrepareCommonObjects` and
-  `ReverseChanges` are new, and each comes with an addition to `Engine`, so a
-  host lists the feature to receive any of them. `SplitMigration` is new too,
+  `sessions.typed-arguments`, `errors.reasons`, `planning.index-renames`,
+  `models.reverse`, `schema.unread-tables`, `schema.database-kinds`,
+  `schema.sql-facets`, `models.report-counts` and
+  `schema.observed-index-facets`. The embedding store's calls,
+  `PrepareCommonObjects`, `ReverseChanges` and `ReportValues` are new, and each
+  comes with an addition to `Engine`, so a host lists the feature to receive
+  any of them. `SplitMigration` is new too,
   and comes with the abort flags of `Execution` and `TransactionResult`, so a
   host lists `units.migration-split` to call it.
 - Both transport boundaries validate with the description negotiated this way,
@@ -252,6 +259,7 @@ this SDK, and a host of this SDK against a provider of contract 25.0.
 | `ReadStatementRows` | The next bounded page of an open result, or an error and no rows. |
 | `CloseStatement` | Release of an open result. A result already released succeeds. |
 | `SplitMigration` | Offline: the units one migration body runs as, in run order, each with the text to execute, its own source and a placement, or a refusal of the whole body; and a read-only verdict for each check assertion. |
+| `ReportValues` | Offline: one count for each metric of a value's model report, for every value of the request, in order. |
 
 Session capabilities preserve presence: an explicit `false` is an established
 answer, while an absent key remains unknown. The SDK validates names and the host
@@ -705,6 +713,9 @@ A complete reply (`complete=true`) holds:
   because a REVOKE asserts absence, which differs from an unlisted grant.
 - `native_objects`, the DESIRED values of provider-owned models whose source
   formats include `SQL`.
+- `facets`, the DESIRED facets of the declared tables and of their columns and
+  indexes, under `schema.sql-facets`; see
+  [Facets of a SQL schema reading](#facets-of-a-sql-schema-reading).
 - `declarations`, one entry per requested document in request order, for the
   host's check that a later file of a schema directory does not declare again
   what an earlier one did: objects left declared, objects declared under a
@@ -748,9 +759,39 @@ refused by name:
 | Sequences | `sequences` |
 | Roles | `roles` |
 | Grants, revoked grants | `grants` (`revoked` flag) |
-| Facets and feature objects owned by the provider | `native_objects` |
+| Feature objects owned by the provider | `native_objects` |
+| Facets of a table, a column or an index, owned by the provider | `facets` (contract 25.21) |
 | What the header says is not described | `coverage` |
 | Functions, row-level security policies and enabled tables, managed data, embedded fields | None. The provider reports `UNSUPPORTED` and names the construct. |
+
+### Facets of a SQL schema reading
+
+`schema.sql-facets` lets a reading carry what a YAML or Go source of the same
+engine carries as a facet: a setting or a set of children that belongs to a
+table, a column or an index, such as a YDB table's changefeeds or its TTL.
+[ADR 0066](../docs/adr/0066-a-sql-schema-reading-carries-the-facets-of-its-tables.md)
+records the decision.
+
+Each entry of `SQLSchema.facets` is an `Envelope` of a DESIRED model whose
+source formats include `SQL`. Its owner is a table of `tables`, named by kind
+`table`, its schema and its name, or a column or an index of one, named by kind
+`column` or `index` with the table as the only path component, as
+`provider.ColumnReference` names a column. An owner holds at most one facet of a
+kind. The reply's `coverage` covers each facet's kind, so a kind the load
+claims and a table it declares without the facet say that the table has none.
+Each facet has one `SQLObjectTrace` of collection `FACETS`, which points at the
+statement that declares it.
+
+The engine lists the two-way feature beside `schema.read-sql`, in the
+`DOCUMENT` mode, and so does the provider; the host lists it, and a request
+carries it in its target features. Both transport boundaries refuse facets the
+request did not negotiate, a facet of a model the engine does not offer in
+SQL or the reply does not cover, an owner that is not a declared table, column
+or index of the engine, two facets of one kind on one owner, and a facet
+without a trace. A refused load carries no facets. The host normalizes each
+facet with its owner and places it where a YAML source places it. Without the
+feature a provider cannot say a facet, and reports the construct that needs one
+as `UNSUPPORTED`.
 
 The SDK conformance tests in `runtime` read a small table dialect through both
 transport boundaries: load order, a later document that alters an earlier one,
@@ -956,9 +997,11 @@ in request order. Each entry maps that selector to structured owner namespaces.
 An empty namespace list means an empty selection, not global authority. Bindings
 never grant coverage. Every returned table has a `normalized_identity`, even
 without facets. Tables, coverage subjects, and whole coverage regions must fit
-inside the bound namespaces. Filtered replies cannot claim global completeness
-or include dispositions without normalized identities. Requests and bindings
-are limited to 4,096 entries, with at most 4,096 namespaces across all bindings.
+inside the bound namespaces, except the objects of a negotiated
+[database kind](#database-kinds), which are named at the database. Filtered
+replies cannot claim global completeness or include dispositions without
+normalized identities. Requests and bindings are limited to 4,096 entries, with
+at most 4,096 namespaces across all bindings.
 
 `Schema.reserved_objects` records positively identified provider-owned history,
 lock, log, or tag storage. Providers validate native ownership and layout before
@@ -985,8 +1028,9 @@ The official YDB provider still needs native reservation classification under
 Desired and observed models may declare a plural `display_name` for omission
 reports. It must be trimmed single-line text and agree across engines that share
 a model representation. The host freezes this label in the contract and reports
-captured values locally, without interpreting payloads or declaring count metrics.
-An absent label does not get a host-invented substitute.
+captured values locally, without interpreting payloads. An engine declares a
+model's count metrics only under [report counts](#report-counts). An absent
+label does not get a host-invented substitute.
 
 Native `schema inspect --format json` returns common schema data and warns about
 omitted objects and facets using these labels. It is not a lossless model export.
@@ -1941,6 +1985,29 @@ The host compares an index's uniqueness, key columns and covered columns with
 the held index. Without [prepared index kinds](#prepared-index-kinds) it
 compares no kind, so a change of kind alone plans nothing.
 
+## Index facets on inspected indexes
+
+`schema.observed-index-facets` lets inspection report the settings of a common
+index a table holds as facets of that index, in `ObservedIndex.facets`. A
+source states the same settings as a facet of the index its index directive
+or entry declares, so the host compares one owner's facet on both sides, as it
+compares a table's or a column's. Each facet is owned by its index:
+`provider.IndexReference` builds the owner from the table's identity, with
+kind `index`, the table as the only path component and the index's name. The
+SDK places the facets of a table's indexes after its columns' facets in the
+values the host normalizes, in the order the indexes are listed.
+
+The provider and the engine both declare this two-way feature, which requires
+`schema.observed-indexes` on the engine. A read carries index facets only when
+its `target_features` list the feature, and a peer refuses one owned by
+another index, by the table or by a column. With the feature negotiated, the
+host treats every facet such an index carries as one an
+[index rename](#index-renames) keeps: the rename is the owner's step, and the
+host compares a renamed index's facets under the name the declaration gives
+it.
+[ADR 0068](../docs/adr/0068-an-inspected-index-carries-its-own-facets.md)
+records the decision.
+
 ## Prepared index kinds
 
 `schema.index-methods` lets table preparation state the kind of each common
@@ -2062,6 +2129,40 @@ note naming each unread table and its reason.
 [ADR 0063](../docs/adr/0063-a-read-names-the-tables-it-leaves-out.md)
 records why none of the existing channels of a read carries this.
 
+## Report counts
+
+`models.report-counts` lets an engine declare the object-count metrics each
+value of a model contributes to, in `Engine.reports`, and lets the owner count
+captured values with `ReportValues`. It is the host's reporting service carried
+across the boundary: `ptah schema stats` writes one gauge per metric, and the
+host cannot count a provider's values itself, because only the owner reads a
+payload. A YDB topic value, for example, counts one topic and the number of its
+consumers.
+
+A `ModelReport` names one desired or observed model of the engine that has a
+`display_name`, and one to 64 metrics. A metric has a `name`, lowercase ASCII
+letters, digits and underscores that start with a letter, and a one-line
+`help`. A report names each metric once, reports of one representation give a
+name one help text, and engines that share a model report the same metrics for
+it. A name the host counts itself, such as `tables`, makes `schema stats`
+refuse. The reports sit on the engine rather than on the model, so a model's
+copy in coverage or a request is the same whether or not the host counts.
+
+`ReportValues` is offline: no session, no database. The host sends the values
+of one engine and one representation, each of a reported model, and the
+provider answers each value under its ID, in request order, with one count for
+each metric of its model's report in the declared order. A count is at most
+the largest signed 64-bit integer.
+
+The provider and each engine that declares reports list the feature, and the
+host lists it to receive the reports and to call the service; without it the
+negotiated description carries no report. Both transport boundaries refuse an
+unnegotiated call, a value of a model the engine does not report, values of two
+representations, and a reply that is incomplete, answers in another order, or
+counts a metric the model does not declare, twice, or not at all.
+[ADR 0067](../docs/adr/0067-a-provider-counts-what-its-values-hold.md)
+records why the owner counts, and why the counts are not part of a read.
+
 ## Comparison counts
 
 `models.compare-counts` lets a comparison service say how many objects it
@@ -2156,6 +2257,28 @@ observed `ComparisonState` disjoint from `desired_objects` and
 service returns no receipt for them. A plan saved by `ptah schema plan
 --output` records a source fingerprint that covers the inventory, so the plan
 is stale against a read whose planning context differs.
+
+## Database kinds
+
+[ADR 0065](../docs/adr/0065-a-filtered-read-reports-the-objects-of-its-database.md)
+defines `schema.database-kinds`. Some objects belong to a database rather than
+to a namespace of it, such as YDB's resource pools, and a read filtered to
+namespaces would otherwise have to leave them uninspected. An engine lists the
+kinds of such objects in `Engine.database_kinds`: each the kind of one of its
+OBSERVED models, named once, and none a kind a planning service assesses as
+context. The list is non-empty exactly when the engine lists the feature,
+which the provider lists too, and a host that does not list it receives none.
+
+An object of a database kind is named at the database: its reference has the
+database and no catalog, schema, path or overload. On a filtered read the scope
+rule gives way for a coverage subject of a database kind whose subject and
+normalized subject are such references of the subject's own kind, and for a
+coverage region of a database kind whose scope is the database namespace (the
+database, an empty catalog and an empty schema, no path prefix). Everything
+else a filtered read names stays inside its bound namespaces, and a database
+kind cannot claim global completeness either. The host binds these subjects
+and regions to the session's database and reads them as it reads an
+unfiltered read's.
 
 ## Migration splits
 
