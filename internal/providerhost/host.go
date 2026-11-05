@@ -163,6 +163,13 @@ var hostFeatures = []string{
 	// database kinds, such as resource pools, beside its scope, and the
 	// comparison reads them as it reads an unfiltered read's.
 	provider.DatabaseKindsFeature,
+	// A SQL schema reading carries the facets of its tables, columns and
+	// indexes, which the host places where a YAML source places them; see
+	// target.sqlFacets.
+	provider.SQLFacetsFeature,
+	// A provider model's count metrics join the reporting runtime, and the
+	// provider counts the model's values; see modelReporter.
+	provider.ReportCountsFeature,
 }
 
 // Start verifies the selected artifact and negotiates experimental services.
