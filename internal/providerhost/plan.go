@@ -71,9 +71,10 @@ func (p commonPlanner) GenerateMigrationAST(ctx context.Context, runtime feature
 		"ConcurrentIndexes", "ConcurrentIndexRefs", "ConcurrentIndexDrops", "ConcurrentIndexDropRefs", "OmitNullBackfill"); err != nil {
 		return nil, err
 	}
-	// Matched counts the pairs a comparison made, for the drift report. It is
-	// not a change, and a plan that refused it would refuse every diff that
-	// keeps a table.
+	// Matched and FeatureCounts count the objects a comparison paired and an
+	// owner compared, for the drift report. They are not changes, and a plan
+	// that refused them would refuse every diff that keeps a table or that a
+	// provider's comparison counted.
 	common, err := p.commonObjectSteps(diff)
 	if err != nil {
 		return nil, err
@@ -138,7 +139,7 @@ func (p commonPlanner) GenerateMigrationAST(ctx context.Context, runtime feature
 func (p commonPlanner) commonObjectSteps(diff *difftypes.SchemaDiff) (commonObjectPlan, error) {
 	fields := []string{"TablePreparation", "IdentifierSemantics", "TablesAdded", "TablesRemoved", "TablesModified",
 		"DeclaredTables", "DeclaredSchemas", "DeclaredConstraintHosts", "ObservedConstraintHosts",
-		"DeclaredTableDependencies", "Features", "FeatureChanges", "CurrentDatabasePath", "CurrentNotDescribed", "Matched"}
+		"DeclaredTableDependencies", "Features", "FeatureChanges", "CurrentDatabasePath", "CurrentNotDescribed", "Matched", "FeatureCounts"}
 	if p.commonObjects {
 		fields = append(fields, commonObjectFields...)
 	}

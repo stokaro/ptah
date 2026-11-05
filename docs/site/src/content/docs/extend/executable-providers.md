@@ -373,6 +373,14 @@ wait.
 `units.migration-split` lets the provider divide a migration body into the
 units its engine runs; see [Run versioned migrations](#run-versioned-migrations).
 
+`models.compare-counts` lets a provider's comparison say how many objects it
+compared, so a drift report's inventory lists its kinds beside the ones Ptah
+counts. A comparison counts only for a request whose `target_features` list the
+feature. Ptah lists it for every comparison of an engine that offers it, also for
+a batch that captures no value. A provider without the feature has no entry for
+its kinds, and the report never counts them as zero. `provider-sdk/README.md`
+says what each count means.
+
 `planning.policy` hands the provider's planner the operator's planning policy:
 whether to rebuild a table, with the words a refusal names to say how to ask
 (`--allow-table-rebuild`, or `PTAH_ALLOW_TABLE_REBUILD=1` on `ptah-compat`),

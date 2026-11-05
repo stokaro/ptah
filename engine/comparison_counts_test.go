@@ -6,7 +6,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
+	"ptah.run/engine"
 )
 
 // countingComparison is an object comparison that changes nothing and counts
@@ -149,4 +152,76 @@ func TestFacetComparison_RejectsCountsItsChangesContradict(t *testing.T) {
 
 	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
 	c.Assert(result.Counts, qt.IsNil)
+}
+
+// sharedKindProvider has an object service and a facet service that own one
+// change kind.
+func sharedKindProvider(object schemaext.ObjectComparisonService, facet schemaext.FacetComparisonService) engine.Provider {
+	provider := comparisonProvider(object)
+	provider.Comparisons[0].Kinds = []schemaext.Kind{conversionFirst}
+	provider.FacetComparisons = []engine.FacetComparison{{Target: "custom", OwnerKinds: []objectidentity.Kind{objectidentity.KindTable},
+		Kinds: []schemaext.Kind{conversionSecond}, ChangeKinds: []schemaext.Kind{comparedKind}, Service: facet}}
+	return provider
+}
+
+// sharedKindRequest holds an object for the object service and a facet for the
+// facet service.
+func sharedKindRequest(c *qt.C) schemaext.ComparisonRequest {
+	c.Helper()
+	owner := objectidentity.NewBuilder(identifier.ForDialect("postgres")).TableParts("", "orders")
+	objects, err := schemaext.NewObjects(schemaext.Object{Ref: comparedRef(conversionFirst, "first"), Value: &conversionValue{ID: conversionFirst, Number: 1}})
+	c.Assert(err, qt.IsNil)
+	facets, err := schemaext.NewFacets(&conversionValue{ID: conversionSecond, Number: 2})
+	c.Assert(err, qt.IsNil)
+	return schemaext.ComparisonRequest{Target: "alternate", Owners: []schemaext.ParentState{{Subject: owner, Desired: true, Current: true}},
+		Desired: schemaext.FeatureState{Objects: objects, Facets: []schemaext.FacetRecord{{Subject: owner, Values: facets}}}}
+}
+
+// countingFacets is a facet comparison that changes nothing and counts with
+// counts.
+func countingFacets(counts ...schemaext.ObjectCount) schemaext.FacetComparisonService {
+	return facetComparisonFunc(func(_ context.Context, request schemaext.FacetComparisonRequest) (schemaext.FacetComparisonResult, error) {
+		return schemaext.FacetComparisonResult{Complete: true, Desired: request.Desired, Counts: counts}, nil
+	})
+}
+
+// TestFeatureComparison_JoinsTheCountsOfBothPlacements sums what an object owner
+// and a facet owner of one change kind count, since each counts only its batch.
+func TestFeatureComparison_JoinsTheCountsOfBothPlacements(t *testing.T) {
+	c := qt.New(t)
+	runtime := mustRuntime(c, sharedKindProvider(
+		countingComparison(schemaext.ObjectCount{Kind: comparedKind, Matched: 1}),
+		countingFacets(schemaext.ObjectCount{Kind: comparedKind, Matched: 2}),
+	))
+
+	result, err := runtime.CompareFeatures(t.Context(), sharedKindRequest(c))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Counts, qt.DeepEquals, []schemaext.ObjectCount{{Kind: comparedKind, Matched: 3}})
+}
+
+// TestFeatureComparison_LeavesOutAKindOnePlacementDidNotCount reports nothing
+// for a change kind one of its owners left uncounted, whichever placement it
+// has: the other owner's count covers only part of the kind's objects.
+func TestFeatureComparison_LeavesOutAKindOnePlacementDidNotCount(t *testing.T) {
+	counted := schemaext.ObjectCount{Kind: comparedKind, Matched: 1}
+	tests := []struct {
+		name   string
+		object schemaext.ObjectComparisonService
+		facet  schemaext.FacetComparisonService
+	}{
+		{name: "the facet owner did not count", object: countingComparison(counted), facet: countingFacets()},
+		{name: "the object owner did not count", object: countingComparison(), facet: countingFacets(counted)},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			runtime := mustRuntime(c, sharedKindProvider(test.object, test.facet))
+
+			result, err := runtime.CompareFeatures(t.Context(), sharedKindRequest(c))
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(result.Counts, qt.IsNil)
+		})
+	}
 }

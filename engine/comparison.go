@@ -80,15 +80,26 @@ func (r *Runtime) ownsCodec(owner string, kind schemaext.Kind, representation sc
 // concrete objects and explicit default requests are errors, even on an otherwise
 // empty target. Empty codec namespaces alone do not assert target support.
 func (r *Runtime) CompareObjects(ctx context.Context, request schemaext.ObjectComparisonRequest) (schemaext.ObjectComparisonResult, error) {
+	result, counts, err := r.compareObjects(ctx, request)
+	if err != nil {
+		return schemaext.ObjectComparisonResult{}, err
+	}
+	result.Counts = counts.result()
+	return result, nil
+}
+
+// compareObjects is [Runtime.CompareObjects] with the counts of its services
+// apart from the result, for a caller that joins them with another comparison's.
+func (r *Runtime) compareObjects(ctx context.Context, request schemaext.ObjectComparisonRequest) (schemaext.ObjectComparisonResult, objectCounts, error) {
 	if ctx == nil {
-		return schemaext.ObjectComparisonResult{}, fmt.Errorf("%w: comparison requires a context", schemaext.ErrInvalidValue)
+		return schemaext.ObjectComparisonResult{}, objectCounts{}, fmt.Errorf("%w: comparison requires a context", schemaext.ErrInvalidValue)
 	}
 	if err := ctx.Err(); err != nil {
-		return schemaext.ObjectComparisonResult{}, err
+		return schemaext.ObjectComparisonResult{}, objectCounts{}, err
 	}
 	target, found := r.lookup(request.Target)
 	if !found {
-		return schemaext.ObjectComparisonResult{}, fmt.Errorf("%w: %q", ptaherr.ErrUnsupportedDialect, request.Target)
+		return schemaext.ObjectComparisonResult{}, objectCounts{}, fmt.Errorf("%w: %q", ptaherr.ErrUnsupportedDialect, request.Target)
 	}
 	request.Target = target.name
 	// A resolution names a request by its place in the caller's list, which
@@ -96,11 +107,11 @@ func (r *Runtime) CompareObjects(ctx context.Context, request schemaext.ObjectCo
 	asked := slices.Clone(request.Requests)
 	request, err := r.snapshotComparison(ctx, request)
 	if err != nil {
-		return schemaext.ObjectComparisonResult{}, err
+		return schemaext.ObjectComparisonResult{}, objectCounts{}, err
 	}
 	batches, inactive, err := r.comparisonBatches(request)
 	if err != nil {
-		return schemaext.ObjectComparisonResult{}, err
+		return schemaext.ObjectComparisonResult{}, objectCounts{}, err
 	}
 	result := schemaext.ObjectComparisonResult{Complete: true, Desired: selectObjectState(request.Desired, inactive)}
 	var counts objectCounts
@@ -116,23 +127,23 @@ func (r *Runtime) CompareObjects(ctx context.Context, request schemaext.ObjectCo
 		// The host's validation copy never aliases service-owned slices or maps.
 		sent, err := r.snapshotComparison(ctx, batch)
 		if err != nil {
-			return schemaext.ObjectComparisonResult{}, err
+			return schemaext.ObjectComparisonResult{}, objectCounts{}, err
 		}
 		reply, err := r.comparisonServices[service].Service.CompareObjects(ctx, sent)
 		if err != nil {
-			return schemaext.ObjectComparisonResult{}, err
+			return schemaext.ObjectComparisonResult{}, objectCounts{}, err
 		}
 		reply, err = r.validateComparisonReply(ctx, service, batch, reply)
 		if err != nil {
-			return schemaext.ObjectComparisonResult{}, err
+			return schemaext.ObjectComparisonResult{}, objectCounts{}, err
 		}
 		result.Desired.Objects, err = result.Desired.Objects.Merge(reply.Desired.Objects)
 		if err != nil {
-			return schemaext.ObjectComparisonResult{}, err
+			return schemaext.ObjectComparisonResult{}, objectCounts{}, err
 		}
 		result.Desired.Coverage, err = result.Desired.Coverage.Combine(reply.Desired.Coverage)
 		if err != nil {
-			return schemaext.ObjectComparisonResult{}, err
+			return schemaext.ObjectComparisonResult{}, objectCounts{}, err
 		}
 		result.Changes = append(result.Changes, reply.Changes...)
 		result.Undecided = append(result.Undecided, reply.Undecided...)
@@ -146,18 +157,17 @@ func (r *Runtime) CompareObjects(ctx context.Context, request schemaext.ObjectCo
 		}
 	}
 	if err := ctx.Err(); err != nil {
-		return schemaext.ObjectComparisonResult{}, err
+		return schemaext.ObjectComparisonResult{}, objectCounts{}, err
 	}
 	if err := requireResolved(request.Target, asked, result.Resolved); err != nil {
-		return schemaext.ObjectComparisonResult{}, err
+		return schemaext.ObjectComparisonResult{}, objectCounts{}, err
 	}
-	result.Counts = counts.result()
 	slices.SortFunc(result.Resolved, func(a, b schemaext.ResolvedRequest) int { return cmp.Compare(a.Request, b.Request) })
 	slices.SortFunc(result.Changes, func(a, b schemaext.ChangeRecord) int { return schemaext.CompareRefs(a.Subject, b.Subject) })
 	slices.SortFunc(result.Undecided, func(a, b schemaext.UndecidedChange) int {
 		return cmp.Or(cmp.Compare(a.Kind, b.Kind), schemaext.CompareRefs(a.Subject, b.Subject))
 	})
-	return result, nil
+	return result, counts, nil
 }
 
 func (r *Runtime) snapshotComparison(ctx context.Context, request schemaext.ObjectComparisonRequest) (schemaext.ObjectComparisonRequest, error) {

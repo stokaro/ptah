@@ -8,6 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	"github.com/stokaro/ptah/provider-sdk/provider"
 	"google.golang.org/protobuf/proto"
 
 	"ptah.run/core/objectidentity"
@@ -33,6 +34,44 @@ func TestComparisonContextRetainsEstablishedFalseAndIdentifierFacts(t *testing.T
 	rules.TableNames = identifier.ComparisonCatalogResolved
 	_, err = service.request("fixture", rules, capability.Capabilities{}, nil)
 	c.Assert(err, qt.IsNotNil)
+}
+
+// TestComparisonRequestStartsWithTheEngineProfile sends a request the engine's
+// features, in their set order, before any value sets a profile: a batch that
+// captures no value still tells its service what the host reads.
+func TestComparisonRequestStartsWithTheEngineProfile(t *testing.T) {
+	c := qt.New(t)
+	target := yamlIdentityTarget()
+	target.engine.Features = []string{provider.ComparisonCountsFeature, provider.CompareModelsFeature, provider.ComparisonCountsFeature}
+	service := modelComparer{target: target, declaration: &protocol.ModelComparison{Id: "compare"}}
+
+	request, err := service.request("fixture", identifier.Semantics{TableNames: identifier.ComparisonExact, ColumnNames: identifier.ComparisonExact, IndexNames: identifier.ComparisonExact, IndexNamespace: identifier.IndexNamespaceTable}, capability.Capabilities{}, nil)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(request.GetTargetFeatures(), qt.DeepEquals, []string{provider.CompareModelsFeature, provider.ComparisonCountsFeature})
+}
+
+// TestBoundCounts keeps a provider that sent no counts apart from one that
+// counted nothing: the first has no entry to report, and the second says the
+// batch held none of the kind.
+func TestBoundCounts(t *testing.T) {
+	tests := []struct {
+		name  string
+		input []*protocol.ComparisonCount
+		want  []schemaext.ObjectCount
+	}{
+		{name: "no counts"},
+		{name: "a kind counted with zeros", input: []*protocol.ComparisonCount{{Kind: "change"}}, want: []schemaext.ObjectCount{{Kind: "change"}}},
+		{name: "each field keeps its meaning", input: []*protocol.ComparisonCount{{Kind: "change", Matched: 1, Added: 2, Removed: 3}},
+			want: []schemaext.ObjectCount{{Kind: "change", Matched: 1, Added: 2, Removed: 3}}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(boundCounts(test.input), qt.DeepEquals, test.want)
+		})
+	}
 }
 
 func TestComparisonNamespaceRoundTripPreservesIndependentSources(t *testing.T) {

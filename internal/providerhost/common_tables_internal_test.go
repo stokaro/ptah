@@ -16,6 +16,7 @@ import (
 	"ptah.run/core/planext"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemapreparation"
 	"ptah.run/core/schemaprojection"
@@ -85,19 +86,33 @@ func TestCommonTablePlannerRequiresEngineContract(t *testing.T) {
 	}
 }
 
-// TestCommonTablePlannerIgnoresMatchedCounts plans a diff that changes nothing
-// and keeps a table. The counts of what the comparison paired are for the
-// drift report; a planner that read them as a change it cannot carry refused
-// every plan that keeps a table.
-func TestCommonTablePlannerIgnoresMatchedCounts(t *testing.T) {
-	c := qt.New(t)
-	selected := &target{engine: &protocol.Engine{Id: "fixture", Features: []string{provider.CommonTableIdentityFeature}}, host: &Host{description: &protocol.Description{}}}
-	runtime, err := engine.New(engine.Provider{ID: "example.org/fixture", Targets: []engine.Target{selected.registration()}})
-	c.Assert(err, qt.IsNil)
-	planner := selected.registration().Planner(planext.Options{})
-	nodes, err := planner.GenerateMigrationAST(c.Context(), runtime, &difftypes.SchemaDiff{Matched: difftypes.MatchedCounts{Tables: 1, Columns: 1}})
-	c.Assert(err, qt.IsNil)
-	c.Assert(nodes, qt.HasLen, 0)
+// TestCommonTablePlannerIgnoresCounts plans a diff that changes nothing and
+// says how much each side holds. The counts of what the comparison paired and
+// what an owner compared are for the drift report; a planner that read them as
+// a change it cannot carry would refuse every plan that keeps a table or that a
+// provider's comparison counted.
+func TestCommonTablePlannerIgnoresCounts(t *testing.T) {
+	tests := []struct {
+		name string
+		diff *difftypes.SchemaDiff
+	}{
+		{name: "the pairs of the comparison", diff: &difftypes.SchemaDiff{Matched: difftypes.MatchedCounts{Tables: 1, Columns: 1}}},
+		{name: "the counts of an owner", diff: &difftypes.SchemaDiff{FeatureCounts: []schemaext.ObjectCount{{Kind: "example.org/fixture/change", Matched: 1}}}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			selected := &target{engine: &protocol.Engine{Id: "fixture", Features: []string{provider.CommonTableIdentityFeature}}, host: &Host{description: &protocol.Description{}}}
+			runtime, err := engine.New(engine.Provider{ID: "example.org/fixture", Targets: []engine.Target{selected.registration()}})
+			c.Assert(err, qt.IsNil)
+			planner := selected.registration().Planner(planext.Options{})
+
+			nodes, err := planner.GenerateMigrationAST(c.Context(), runtime, test.diff)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(nodes, qt.HasLen, 0)
+		})
+	}
 }
 
 func commonTableCoverageFixture(c *qt.C) (*target, *engine.Runtime, *difftypes.SchemaDiff) {
