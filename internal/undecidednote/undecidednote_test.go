@@ -75,13 +75,13 @@ func TestUndecidedWarningExplainsWhyTheCurrentSideCouldNotDecide(t *testing.T) {
 			var diagnostics strings.Builder
 
 			undecidednote.Report(
-				&diagnostics, schemadiff.Diagnostics{Common: []coverage.Object{test.object}}, "--from", "--to")
+				c.Context(), &diagnostics, schemadiff.Diagnostics{Common: []coverage.Object{test.object}}, "--from", "--to")
 
 			c.Assert(diagnostics.String(), qt.Contains, test.want)
 			c.Assert(diagnostics.String(), qt.Contains,
-				`Warning: extension "citext" is declared by --to but no change was planned for it:`)
+				`warning: extension "citext" is declared by --to but no change was planned for it:`)
 			c.Assert(diagnostics.String(), qt.Contains,
-				"cannot safely converge from an unknown current state.\n")
+				"cannot safely converge from an unknown current state\n")
 		})
 	}
 }
@@ -117,7 +117,7 @@ func TestUndecidedWarningsAreDistinctPerReason(t *testing.T) {
 	for _, limit := range limits {
 		var diagnostics strings.Builder
 		undecidednote.Report(
-			&diagnostics, schemadiff.Diagnostics{Common: []coverage.Object{withheldExtension(limit)}}, "--from", "--to")
+			c.Context(), &diagnostics, schemadiff.Diagnostics{Common: []coverage.Object{withheldExtension(limit)}}, "--from", "--to")
 		warnings[diagnostics.String()] = struct{}{}
 	}
 

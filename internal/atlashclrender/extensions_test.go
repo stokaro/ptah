@@ -121,7 +121,7 @@ func TestRenderInspectedForAtlasCLI_KeepsAnOwnedExtensionTheDocumentNeeds(t *tes
 			c.Assert(err, qt.IsNil)
 			c.Assert(string(result.Data), qt.Contains, test.want)
 			c.Assert(result.Diagnostics, qt.DeepEquals, []atlashclrender.Diagnostic{
-				{Severity: "warning", Path: "extensions." + test.extension, Message: test.warning},
+				{Severity: "warning", Path: "extensions." + test.extension, Message: test.warning, AtlasBlock: atlashclrender.AtlasBlockKept},
 			})
 		})
 	}
@@ -143,6 +143,7 @@ func TestRenderInspectedForAtlasCLI_LeavesOutAnOwnedExtensionNothingNeeds(t *tes
 		Message: "omitted from Atlas-compatible schema inspect output: the Atlas community CLI refuses a postgres schema file" +
 			" that declares any extension block, and one of them makes the whole document unreadable to it;" +
 			" set PTAH_ATLAS_INSPECT_ALL_BLOCKS=1 to keep every block Ptah models",
+		AtlasBlock: atlashclrender.AtlasBlockOmitted,
 	}})
 }
 

@@ -176,6 +176,7 @@ func TestRenderInspectedForAtlasCLIReportsEveryOmission(t *testing.T) {
 			Message: "omitted from Atlas-compatible schema inspect output: the Atlas community CLI refuses" +
 				" a postgres schema file that declares any extension block, and one of them makes the whole" +
 				" document unreadable to it; set PTAH_ATLAS_INSPECT_ALL_BLOCKS=1 to keep every block Ptah models",
+			AtlasBlock: atlashclrender.AtlasBlockOmitted,
 		},
 		{
 			Severity: atlashclrender.SeverityWarning,
@@ -183,6 +184,7 @@ func TestRenderInspectedForAtlasCLIReportsEveryOmission(t *testing.T) {
 			Message: "omitted from Atlas-compatible schema inspect output: the Atlas community CLI refuses" +
 				" a postgres schema file that declares any sequence block, and one of them makes the whole" +
 				" document unreadable to it; set PTAH_ATLAS_INSPECT_ALL_BLOCKS=1 to keep every block Ptah models",
+			AtlasBlock: atlashclrender.AtlasBlockOmitted,
 		},
 		{
 			Severity: atlashclrender.SeverityWarning,
@@ -190,6 +192,7 @@ func TestRenderInspectedForAtlasCLIReportsEveryOmission(t *testing.T) {
 			Message: "omitted from Atlas-compatible schema inspect output: the Atlas community CLI refuses" +
 				" a postgres schema file that declares any policy block, and one of them makes the whole" +
 				" document unreadable to it; set PTAH_ATLAS_INSPECT_ALL_BLOCKS=1 to keep every block Ptah models",
+			AtlasBlock: atlashclrender.AtlasBlockOmitted,
 		},
 	})
 }

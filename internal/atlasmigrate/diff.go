@@ -825,6 +825,7 @@ func compareReplayedState(
 		return nil, nil, fmt.Errorf("compare dev database schema: %w", err)
 	}
 	undecidednote.Report(
+		ctx,
 		diagnostics,
 		undecided,
 		"the replayed migration directory",

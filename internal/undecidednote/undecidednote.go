@@ -15,13 +15,16 @@ package undecidednote
 
 import (
 	"cmp"
+	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"slices"
 	"strings"
 
 	"ptah.run/core/coverage"
 	"ptah.run/core/objectidentity"
+	"ptah.run/internal/rundiag"
 	"ptah.run/migration/safety"
 	"ptah.run/migration/schemadiff"
 )
@@ -73,7 +76,15 @@ func Summary(undecided schemadiff.Diagnostics) string {
 // because the CURRENT side's coverage record says it does not describe that
 // kind and the creation Ptah would emit cannot safely converge from an unknown
 // current state. That includes an unguarded creation, and a guarded PostgreSQL
-// extension whose existing installation may be in another schema.
+// extension whose existing installation may be in another schema. It names
+// every feature object the comparison could not compare as well.
+//
+// The objects are raised for the run ctx carries as
+// [rundiag.UndecidedObjects], and its warning is written at once (see
+// [rundiag.Settle]), before the plan, the confirmation or the error that
+// follows it: one object is its own line, and several are one line naming
+// each, grouped by why it was not decided. Without a run each object is its
+// own line.
 //
 // currentDescription and desiredDescription name the two command-specific
 // inputs in prose, so `schema diff` can say `--from`, `migrate diff` can name
@@ -81,6 +92,7 @@ func Summary(undecided schemadiff.Diagnostics) string {
 // database can say so without producing a misleading diagnostic. diagnostics
 // may be nil, which drops the report.
 func Report(
+	ctx context.Context,
 	diagnostics io.Writer,
 	undecided schemadiff.Diagnostics,
 	currentDescription,
@@ -90,17 +102,29 @@ func Report(
 		return
 	}
 	for _, object := range undecided.Common {
-		_, _ = fmt.Fprintf(diagnostics,
-			"Warning: %s %q is declared by %s but no change was planned for it:"+
+		display := fmt.Sprintf("%s %q", object.Kind, object.Name)
+		cause := Cause(object, currentDescription)
+		raise(ctx, diagnostics, display, cause, fmt.Sprintf(
+			"%s is declared by %s but no change was planned for it:"+
 				" %s, so this comparison cannot tell it apart from one that already exists,"+
-				" and the creation Ptah renders for it cannot safely converge from an unknown current state.\n",
-			object.Kind, object.Name, desiredDescription,
-			Cause(object, currentDescription))
+				" and the creation Ptah renders for it cannot safely converge from an unknown current state",
+			display, desiredDescription, cause))
 	}
 	for _, entry := range Entries(schemadiff.Diagnostics{Features: undecided.Features}, currentDescription) {
-		_, _ = fmt.Fprintf(diagnostics, "Warning: %s %s could not be compared between %s and %s: %s.\n",
-			entry.Kind, entry.Name, currentDescription, desiredDescription, entry.Reason)
+		display := entry.Kind + " " + entry.Name
+		raise(ctx, diagnostics, display, entry.Reason, fmt.Sprintf("%s could not be compared between %s and %s: %s",
+			display, currentDescription, desiredDescription, entry.Reason))
 	}
+	rundiag.Settle(ctx, rundiag.UndecidedObjects)
+}
+
+// raise raises one undecided object, keyed by its whole line, so a second
+// comparison in the run that withholds it for the same reason does not
+// report it again.
+func raise(ctx context.Context, diagnostics io.Writer, object, cause, line string) {
+	_ = rundiag.Warn(ctx, diagnostics, rundiag.UndecidedObjects, rundiag.Record{
+		Key: line, Line: line, Attrs: []slog.Attr{slog.String("object", object), slog.String("cause", cause)},
+	})
 }
 
 // Entry is a display-only row. Machine reports retain [schemadiff.Diagnostics]
