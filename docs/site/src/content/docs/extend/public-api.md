@@ -300,7 +300,8 @@ schemas, knowledge limits, and source snapshots and rejects colliding claims.
 `GlobalKnowledge` describes an unrestricted namespace. `NewScopedKnowledge`
 bounds knowledge by target, database, catalog, schema, or structured path prefix.
 `SubjectKinds` selects identity kinds, `Parent` selects a column's owning table,
-and `PathExact` requires the complete path to match.
+and `PathExact` requires the complete path to match. `SchemaSubtree` extends
+`Schema` to every schema nested below it under `SchemaSeparator`.
 A nil qualifier matches every value; an empty qualifier matches only an empty
 component. Select the target before lookup. Merging sources requires both to
 establish completeness at the requested identity.

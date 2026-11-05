@@ -1507,7 +1507,11 @@ states an unrestricted claim. `NewScopedKnowledge` records an outside claim and
 bounded `NamespaceKnowledge` regions. `NamespaceScope` selects target names,
 database, catalog, schema, and whole namespace path components. `SubjectKinds`
 limits identity kinds, `Parent` limits a column's owning table, and `PathExact`
-requires the whole path to match. A nil qualifier
+requires the whole path to match. `SchemaSubtree` extends `Schema` to every
+schema nested below it under `SchemaSeparator`, the one character the target
+separates nested schemas with, which `identifier.Semantics.SchemaSeparator`
+carries for an executable provider's engine; the empty root schema then covers
+every schema. A nil qualifier
 is unrestricted; a present empty qualifier matches only the empty component.
 Source spelling is preserved; matching uses owner-normalized components.
 

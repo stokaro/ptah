@@ -11,6 +11,11 @@ import (
 	"ptah.run/core/schemaext"
 )
 
+// schemaSeparator is the separator of nested schemas the engine declares in
+// its negotiated description, empty where schemas do not nest or the host and
+// the provider did not negotiate schema.subtree-coverage.
+func (t *target) schemaSeparator() string { return t.engine.GetIdentifiers().GetSchemaSeparator() }
+
 func (t *target) comparisonCoverage(representation schemaext.Representation, coverage schemaext.Coverage) (*protocol.ComparisonCoverage, error) {
 	result := &protocol.ComparisonCoverage{}
 	for _, record := range coverage.KindRecords() {
@@ -58,7 +63,7 @@ func (t *target) boundCoverage(representation schemaext.Representation, coverage
 		if contract == nil {
 			return schemaext.Coverage{}, fmt.Errorf("%w: comparison returned an unregistered coverage model", schemaext.ErrIncompatibleCodec)
 		}
-		domain, err := boundKnowledgeDomain(record.GetSources())
+		domain, err := boundKnowledgeDomain(record.GetSources(), t.schemaSeparator())
 		if err != nil {
 			return schemaext.Coverage{}, err
 		}
@@ -71,12 +76,14 @@ func (t *target) boundCoverage(representation schemaext.Representation, coverage
 	return schemaext.NewCoverage(representation, kinds, subjects)
 }
 
-func boundKnowledgeDomain(sources []*protocol.ComparisonKnowledgeSource) (schemaext.KnowledgeDomain, error) {
+// boundKnowledgeDomain is the host's form of the sources a comparison
+// returned; a subtree region takes the engine's schema separator.
+func boundKnowledgeDomain(sources []*protocol.ComparisonKnowledgeSource, separator string) (schemaext.KnowledgeDomain, error) {
 	var domain schemaext.KnowledgeDomain
 	for i, source := range sources {
 		regions := make([]schemaext.NamespaceKnowledge, 0, len(source.GetRegions()))
 		for _, region := range source.GetRegions() {
-			regions = append(regions, schemaext.NamespaceKnowledge{Scope: boundNamespace(region.GetScope()), Knowledge: boundKnowledge(region.GetKnowledge())})
+			regions = append(regions, schemaext.NamespaceKnowledge{Scope: boundNamespace(region.GetScope(), separator), Knowledge: boundKnowledge(region.GetKnowledge())})
 		}
 		captured, err := schemaext.NewScopedKnowledge(boundKnowledge(source.GetOutside()), regions...)
 		if err != nil {
@@ -113,7 +120,8 @@ func boundKnowledge(knowledge *protocol.ModelKnowledge) schemaext.Knowledge {
 }
 
 func comparisonNamespace(scope schemaext.NamespaceScope) *protocol.ComparisonNamespace {
-	result := &protocol.ComparisonNamespace{Targets: slices.Clone(scope.Targets), PathPrefix: comparisonParts(scope.PathPrefix), PathExact: scope.PathExact}
+	result := &protocol.ComparisonNamespace{Targets: slices.Clone(scope.Targets), PathPrefix: comparisonParts(scope.PathPrefix), PathExact: scope.PathExact,
+		SchemaSubtree: scope.SchemaSubtree}
 	for _, kind := range scope.SubjectKinds {
 		result.SubjectKinds = append(result.SubjectKinds, string(kind))
 	}
@@ -131,8 +139,11 @@ func comparisonNamespace(scope schemaext.NamespaceScope) *protocol.ComparisonNam
 	return result
 }
 
-func boundNamespace(scope *protocol.ComparisonNamespace) schemaext.NamespaceScope {
+func boundNamespace(scope *protocol.ComparisonNamespace, separator string) schemaext.NamespaceScope {
 	result := schemaext.NamespaceScope{Targets: slices.Clone(scope.GetTargets()), PathPrefix: boundParts(scope.GetPathPrefix()), PathExact: scope.GetPathExact()}
+	if scope.GetSchemaSubtree() {
+		result.SchemaSubtree, result.SchemaSeparator = true, separator
+	}
 	for _, kind := range scope.GetSubjectKinds() {
 		result.SubjectKinds = append(result.SubjectKinds, objectidentity.Kind(kind))
 	}

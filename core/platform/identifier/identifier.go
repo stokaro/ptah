@@ -115,6 +115,11 @@ type Semantics struct {
 	ColumnNames      Comparison     `json:"column_names,omitempty"`
 	CatalogCollation string         `json:"catalog_collation,omitempty"`
 	ResolvedNames    []ResolvedName `json:"resolved_names,omitempty"`
+	// SchemaSeparator is the one character that separates nested schemas in
+	// a normalized schema spelling, or empty where schemas do not nest. An
+	// executable provider's engine declares it, such as / for a YDB directory
+	// path, so a coverage region can cover a schema and the schemas below it.
+	SchemaSeparator string `json:"schema_separator,omitempty"`
 }
 
 // ResolvedName maps one raw identifier to a deterministic catalog-equivalence
@@ -276,7 +281,8 @@ func (s Semantics) IsZero() bool {
 		s.TableNames == "" &&
 		s.ColumnNames == "" &&
 		s.CatalogCollation == "" &&
-		len(s.ResolvedNames) == 0
+		len(s.ResolvedNames) == 0 &&
+		s.SchemaSeparator == ""
 }
 
 // Equal reports whether two semantics values carry the same rules and resolved
@@ -289,7 +295,8 @@ func (s Semantics) Equal(other Semantics) bool {
 		s.IndexNames == other.IndexNames &&
 		s.TableNames == other.TableNames &&
 		s.ColumnNames == other.ColumnNames &&
-		slices.Equal(s.ResolvedNames, other.ResolvedNames)
+		slices.Equal(s.ResolvedNames, other.ResolvedNames) &&
+		s.SchemaSeparator == other.SchemaSeparator
 }
 
 // Normalize returns a deep copy of s when it is complete and internally

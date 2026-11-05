@@ -229,7 +229,7 @@ func (b *encodeBatch) regions(kind schemaext.Kind, source schemaext.KnowledgeSou
 			continue
 		}
 		scope := &protocol.ModelNamespace{Database: namespaceComponent(region.Scope.Database), Catalog: namespaceComponent(region.Scope.Catalog),
-			Schema: namespaceComponent(region.Scope.Schema)}
+			Schema: namespaceComponent(region.Scope.Schema), SchemaSubtree: region.Scope.SchemaSubtree}
 		for _, part := range region.Scope.PathPrefix.Values() {
 			scope.PathPrefix = append(scope.PathPrefix, &protocol.NamespaceComponent{Source: part.Source, Normalized: part.Normalized})
 		}
