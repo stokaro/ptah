@@ -110,7 +110,8 @@ returns to 0.
   Contract 25.18 adds [the reasons of execution and transaction results](#error-reasons).
   Contract 25.19 adds [change reversal](#change-reversal).
   Contract 25.20 adds [unread tables](#unread-tables).
-  Contract 25.21 adds [database kinds](#database-kinds).
+  Contract 25.21 adds [database kinds](#database-kinds)
+  and [the facets of a SQL schema reading](#facets-of-a-sql-schema-reading).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -141,8 +142,8 @@ does not oblige a peer to use it.
   `planning.object-context`, `planning.context-inventory`,
   `units.migration-split`, `models.compare-counts`, `schema.index-methods`,
   `sessions.typed-arguments`, `errors.reasons`, `planning.index-renames`,
-  `models.reverse`, `schema.unread-tables` and `schema.database-kinds`. The
-  embedding store's calls, `PrepareCommonObjects` and
+  `models.reverse`, `schema.unread-tables`, `schema.database-kinds` and
+  `schema.sql-facets`. The embedding store's calls, `PrepareCommonObjects` and
   `ReverseChanges` are new, and each comes with an addition to `Engine`, so a
   host lists the feature to receive any of them. `SplitMigration` is new too,
   and comes with the abort flags of `Execution` and `TransactionResult`, so a
@@ -707,6 +708,9 @@ A complete reply (`complete=true`) holds:
   because a REVOKE asserts absence, which differs from an unlisted grant.
 - `native_objects`, the DESIRED values of provider-owned models whose source
   formats include `SQL`.
+- `facets`, the DESIRED facets of the declared tables and of their columns and
+  indexes, under `schema.sql-facets`; see
+  [Facets of a SQL schema reading](#facets-of-a-sql-schema-reading).
 - `declarations`, one entry per requested document in request order, for the
   host's check that a later file of a schema directory does not declare again
   what an earlier one did: objects left declared, objects declared under a
@@ -750,9 +754,39 @@ refused by name:
 | Sequences | `sequences` |
 | Roles | `roles` |
 | Grants, revoked grants | `grants` (`revoked` flag) |
-| Facets and feature objects owned by the provider | `native_objects` |
+| Feature objects owned by the provider | `native_objects` |
+| Facets of a table, a column or an index, owned by the provider | `facets` (contract 25.21) |
 | What the header says is not described | `coverage` |
 | Functions, row-level security policies and enabled tables, managed data, embedded fields | None. The provider reports `UNSUPPORTED` and names the construct. |
+
+### Facets of a SQL schema reading
+
+`schema.sql-facets` lets a reading carry what a YAML or Go source of the same
+engine carries as a facet: a setting or a set of children that belongs to a
+table, a column or an index, such as a YDB table's changefeeds or its TTL.
+[ADR 0066](../docs/adr/0066-a-sql-schema-reading-carries-the-facets-of-its-tables.md)
+records the decision.
+
+Each entry of `SQLSchema.facets` is an `Envelope` of a DESIRED model whose
+source formats include `SQL`. Its owner is a table of `tables`, named by kind
+`table`, its schema and its name, or a column or an index of one, named by kind
+`column` or `index` with the table as the only path component, as
+`provider.ColumnReference` names a column. An owner holds at most one facet of a
+kind. The reply's `coverage` covers each facet's kind, so a kind the load
+claims and a table it declares without the facet say that the table has none.
+Each facet has one `SQLObjectTrace` of collection `FACETS`, which points at the
+statement that declares it.
+
+The engine lists the two-way feature beside `schema.read-sql`, in the
+`DOCUMENT` mode, and so does the provider; the host lists it, and a request
+carries it in its target features. Both transport boundaries refuse facets the
+request did not negotiate, a facet of a model the engine does not offer in
+SQL or the reply does not cover, an owner that is not a declared table, column
+or index of the engine, two facets of one kind on one owner, and a facet
+without a trace. A refused load carries no facets. The host normalizes each
+facet with its owner and places it where a YAML source places it. Without the
+feature a provider cannot say a facet, and reports the construct that needs one
+as `UNSUPPORTED`.
 
 The SDK conformance tests in `runtime` read a small table dialect through both
 transport boundaries: load order, a later document that alters an earlier one,

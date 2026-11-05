@@ -1279,6 +1279,12 @@ message SQLSchema {
   repeated SQLGrant grants = 12;
   // Exactly one trace for every object of the collections above.
   repeated SQLObjectTrace traces = 13;
+  // DESIRED facet values of provider-owned models whose source formats
+  // include SQL, each owned by a table of tables or by a column or an index
+  // of one, named below its table as provider.ColumnReference names a
+  // column. At most one value of a kind for an owner. Contract 25.21, under
+  // schema.sql-facets.
+  repeated Envelope facets = 14;
 }
 message SQLView {
   string schema = 1;
@@ -1380,6 +1386,8 @@ message SQLObjectTrace {
     SEQUENCES = 6;
     ROLES = 7;
     GRANTS = 8;
+    // Contract 25.21, under schema.sql-facets.
+    FACETS = 9;
   }
   Collection collection = 1;
   uint32 index = 2;
