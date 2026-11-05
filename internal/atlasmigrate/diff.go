@@ -32,6 +32,7 @@ import (
 	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/internal/devclean"
 	"ptah.run/internal/devlock"
+	"ptah.run/internal/devqualifier"
 	"ptah.run/internal/fsnapshot"
 	"ptah.run/internal/migratesum"
 	"ptah.run/internal/migrationreplay"
@@ -788,6 +789,7 @@ func compareReplayedState(
 	if err != nil {
 		return nil, nil, err
 	}
+	devqualifier.Remove(replayed, defaultSchema, readNames)
 	// The extensions the dev database held before the replay are its
 	// environment, not something the directory built; see
 	// [devclean.Baseline.WithoutEnvironment].
