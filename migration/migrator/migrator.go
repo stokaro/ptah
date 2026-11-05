@@ -3117,6 +3117,21 @@ func migrationFailureAfterRollback(version int64, failure, rollbackErr error, tx
 	return &migrationTransactionRolledBackError{version: version, cause: failure}
 }
 
+// migrationFailureAfterCommit marks a failed commit as a rolled-back migration
+// when the transaction's owner confirms that the commit rolled the transaction
+// back (see [catalog.CommitRollback]). The failure is then recorded as a
+// migration that applied nothing, as a rollback after a failed statement is,
+// instead of keeping the mark of a statement whose outcome is unknown.
+// Explicit uncertainty in the failure, which the cleanup rollback joins to it,
+// keeps the mark.
+func migrationFailureAfterCommit(version int64, failure error, tx catalog.SchemaTransaction) error {
+	evidence, ok := tx.(catalog.CommitRollback)
+	if !ok || !evidence.RolledBackAtCommit() || errors.Is(failure, ptaherr.ErrOutcomeUnknown) {
+		return failure
+	}
+	return &migrationTransactionRolledBackError{version: version, cause: failure}
+}
+
 // cancellationEndedTheTransaction reports whether a failed rollback still
 // leaves the migration transaction rolled back.
 //

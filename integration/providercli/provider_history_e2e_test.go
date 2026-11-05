@@ -324,6 +324,8 @@ func TestProviderHistoryRecordsConfirmedAndUnconfirmedRollback(t *testing.T) {
 		{"confirmed refusal", "reject", `CREATE TABLE "recovery" ("id" INTEGER);`, "failed", false},
 		{"confirmed rollback after partial execution", "", `CREATE TABLE "recovery" ("id" INTEGER); CREATE TABLE "recovery" ("id" INTEGER);`, "failed", false},
 		{"lost rollback receipt", "reject-rollback", `CREATE TABLE "recovery" ("id" INTEGER); DROP TABLE refused;`, "pending", true},
+		{"commit answered with ROLLED_BACK", "rollback-commit", `CREATE TABLE "recovery" ("id" INTEGER);`, "failed", false},
+		{"lost commit request", "lost-before-commit", `CREATE TABLE "recovery" ("id" INTEGER);`, "pending", true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -342,6 +344,37 @@ func TestProviderHistoryRecordsConfirmedAndUnconfirmedRollback(t *testing.T) {
 			c.Assert(rows[0].StatementOutcomeUnknown(), qt.Equals, test.unknown)
 		})
 	}
+}
+
+// A rollback whose commit the provider answers with ROLLED_BACK undid
+// nothing: the table stays, and the revision records a failed rollback that
+// applied nothing rather than a statement whose outcome is unknown.
+func TestProviderHistoryRecordsARollbackWhoseCommitRolledBack(t *testing.T) {
+	c := qt.New(t)
+	host, _ := yamlProviderCommand(c, "transactions")
+	conn, address := transactionConnection(c, host, "")
+	migration := migrator.CreateMigrationFromSQL(1, "kept", `CREATE TABLE "kept" ("id" INTEGER);`, `DROP TABLE "kept";`)
+	migrations := migrator.NewRegisteredMigrationProvider(migration)
+	runner := migrator.NewMigrator(conn, migrations).WithMigrationsTable("main", "_revisions").
+		WithTransactionMode(migrator.MigrationTxModeFile).WithMigrationLog(false).WithoutMigrationLock()
+	c.Assert(runner.MigrateUp(c.Context()), qt.IsNil)
+	faultAddress, err := url.Parse(address)
+	c.Assert(err, qt.IsNil)
+	faultAddress.RawQuery = url.Values{"fault": {"rollback-commit"}}.Encode()
+	faulty := connectTransactionAddress(c, host, faultAddress.String())
+	rollback := migrator.NewMigrator(faulty, migrations).WithMigrationsTable("main", "_revisions").
+		WithTransactionMode(migrator.MigrationTxModeFile).WithMigrationLog(false).WithoutMigrationLock()
+
+	err = rollback.MigrateDown(c.Context())
+
+	c.Assert(err, qt.ErrorIs, provider.ErrExecution)
+	c.Assert(err, qt.Not(qt.ErrorIs), ptaherr.ErrOutcomeUnknown)
+	c.Assert(providerTablePresent(c, conn, "kept"), qt.IsTrue)
+	rows, err := runner.GetRevisions(c.Context())
+	c.Assert(err, qt.IsNil)
+	c.Assert(rows, qt.HasLen, 1)
+	c.Assert([]any{rows[0].State, rows[0].Direction, rows[0].Applied}, qt.DeepEquals, []any{"failed", migrator.MigrationDirectionDown, 0})
+	c.Assert(rows[0].StatementOutcomeUnknown(), qt.IsFalse)
 }
 
 func TestProviderHistoryRetriesAConfirmedNonTransactionalRefusal(t *testing.T) {

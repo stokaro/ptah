@@ -171,7 +171,7 @@ func (p *Provider) FinishTransaction(ctx context.Context, request *protocol.Fini
 	if s.fault == "lost-before-commit" && request.GetAction() == protocol.FinishTransactionRequest_COMMIT {
 		return nil, fmt.Errorf("fixture lost commit request before execution")
 	}
-	record.outcome = finishDatabaseTransaction(record.tx, request.GetAction())
+	record.outcome = finishDatabaseTransaction(record.tx, s.finishAction(request.GetAction()))
 	record.tx, s.active = nil, ""
 	s.closeTransactionMetadata(request.GetTransactionId())
 	if s.fault == "lost-commit" && request.GetAction() == protocol.FinishTransactionRequest_COMMIT {
@@ -181,6 +181,16 @@ func (p *Provider) FinishTransaction(ctx context.Context, request *protocol.Fini
 		return nil, fmt.Errorf("fixture lost rollback reply")
 	}
 	return &protocol.TransactionResult{Outcome: record.outcome}, nil
+}
+
+// finishAction is what the fixture does for a finish request. Under the fault
+// "rollback-commit" it answers a commit by rolling the transaction back, as an
+// engine does for a constraint it checks at commit.
+func (s *session) finishAction(action protocol.FinishTransactionRequest_Action) protocol.FinishTransactionRequest_Action {
+	if s.fault == "rollback-commit" && action == protocol.FinishTransactionRequest_COMMIT {
+		return protocol.FinishTransactionRequest_ROLLBACK
+	}
+	return action
 }
 
 func finishDatabaseTransaction(tx *sql.Tx, action protocol.FinishTransactionRequest_Action) protocol.TransactionResult_Outcome {

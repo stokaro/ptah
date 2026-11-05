@@ -1088,6 +1088,19 @@ type CancellationRollback interface {
 	RolledBackByCancellation() bool
 }
 
+// CommitRollback reports evidence from the transaction's own lifetime, after
+// Commit has failed. A true result means the transaction's owner confirmed that
+// the commit ended the transaction by rolling it back, so nothing it executed
+// took effect: a provider answered the commit with ROLLED_BACK. A commit whose
+// outcome is unknown never reports true.
+//
+// Transactions without this interface provide no such evidence; callers must
+// then treat a failed commit by its error alone.
+type CommitRollback interface {
+	SchemaTransaction
+	RolledBackAtCommit() bool
+}
+
 // Function represents a custom function read from the database.
 type Function struct {
 	// Facets carries typed settings owned by feature providers.
