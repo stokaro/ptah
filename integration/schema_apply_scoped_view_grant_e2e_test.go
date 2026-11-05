@@ -55,3 +55,54 @@ func TestSchemaApplyAnswersForAGrantOnADroppedViewE2E(t *testing.T) {
 		})
 	}
 }
+
+// TestSchemaApplyConvergesAGrantOnAnUnreadRelationE2E declares a grant on a
+// relation the read does not report and whose grants it does. The first run grants
+// and the next has nothing to do, and selecting the relation's schema changes none
+// of that. Kept on the source's side alone, the second run plans the grant again.
+func TestSchemaApplyConvergesAGrantOnAnUnreadRelationE2E(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Minute)
+	t.Cleanup(cancel)
+	binaries := buildDiffSkipBinaries(c, ctx, e2eRepoRoot(t))
+
+	const (
+		table   = "CREATE TABLE t (id integer PRIMARY KEY);\n"
+		foreign = "CREATE FOREIGN DATA WRAPPER unread_wrapper;\nCREATE SERVER unread_server FOREIGN DATA WRAPPER unread_wrapper;\n" +
+			"CREATE FOREIGN TABLE unread (id integer) SERVER unread_server;\n"
+		revision = "CREATE TABLE schema_migrations (version bigint PRIMARY KEY);\n"
+	)
+	relations := []struct{ name, current, relation string }{
+		{name: "a foreign table", current: table + foreign, relation: "unread"},
+		{name: "the revision table", current: table + revision, relation: "schema_migrations"},
+	}
+	scopes := []struct {
+		name  string
+		scope []string
+	}{
+		{name: "unscoped"},
+		{name: "with its schema selected", scope: []string{"--schemas", "public"}},
+	}
+	for _, relation := range relations {
+		for _, scope := range scopes {
+			t.Run(relation.name+" "+scope.name, func(t *testing.T) {
+				c := qt.New(t)
+				dir := c.TempDir()
+				desired := table + "GRANT SELECT ON " + relation.relation + " TO PUBLIC;\n"
+				c.Assert(os.WriteFile(filepath.Join(dir, "schema.sql"), []byte(desired), 0o600), qt.IsNil)
+				url := databaseBuiltFrom(c, relation.current)
+				args := append([]string{"schema", "apply", "--db-url", url, "--schema-file", "schema.sql", "--auto-approve"}, scope.scope...)
+
+				stdout, stderr, err := runCLIProcess(ctx, dir, binaries.native, args...)
+
+				c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+				c.Assert(stdout, qt.Contains, "GRANT SELECT ON TABLE \""+relation.relation+"\" TO PUBLIC;\n")
+
+				stdout, stderr, err = runCLIProcess(ctx, dir, binaries.native, args...)
+
+				c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+				c.Assert(stdout, qt.Not(qt.Contains), "GRANT")
+			})
+		}
+	}
+}

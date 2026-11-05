@@ -1184,6 +1184,9 @@ it out.
 
 A plan refuses a grant on a table, a view or a materialized view it removes,
 with `--schemas` as without it: declare the object, or leave the grant out.
+`--schemas` compares the grants on every relation in a selected schema, including
+one Ptah does not read, such as a foreign table or the revision table. So a run
+with the flag grants and revokes there as a run without it does.
 
 ### Role passwords
 
