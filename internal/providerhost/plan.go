@@ -68,8 +68,9 @@ func (p commonPlanner) GenerateMigrationAST(ctx context.Context, runtime feature
 	// spelling. Skipped change kinds are not a request a provider can honor:
 	// the planning entry in migration/planner removes those changes before
 	// this planner is built and passes no kinds, so options that still carry
-	// them are refused.
-	if err := onlyFields(p.options, "TableRebuildRequest", "Capabilities", "Statements", "AllowTableRebuild", "OnlineAlter",
+	// them are refused. The shape is the entry's too: it rewrites what this planner
+	// returns, and an engine that states no catalog form keeps it as it is.
+	if err := onlyFields(p.options, "Shape", "TableRebuildRequest", "Capabilities", "Statements", "AllowTableRebuild", "OnlineAlter",
 		"ConcurrentIndexes", "ConcurrentIndexRefs", "ConcurrentIndexDrops", "ConcurrentIndexDropRefs", "OmitNullBackfill"); err != nil {
 		return nil, err
 	}
