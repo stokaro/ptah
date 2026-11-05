@@ -15,7 +15,7 @@ import (
 // counts the compatible additions within the major Revision. A host built
 // with this SDK announces Revision.ContractMinor, and a provider built with it
 // may require at most that minor from its host.
-const ContractMinor uint32 = 24
+const ContractMinor uint32 = 25
 
 // The features below each enable an addition to an existing message. An
 // addition is used only when both sides list its feature: the provider in its
@@ -50,7 +50,7 @@ func TwoWayFeatures() []string {
 		PlanningContextInventoryFeature, MigrationSplitFeature, ComparisonCountsFeature, IndexMethodsFeature, TypedArgumentsFeature, ErrorReasonsFeature,
 		IndexRenamesFeature, ReverseChangesFeature, UnreadTablesFeature, DatabaseKindsFeature, SQLFacetsFeature, ReportCountsFeature,
 		ObservedIndexFacetsFeature, SchemaSubtreeCoverageFeature, PasswordInputsFeature, HCLPlatformFeature, DefaultCapabilitiesFeature, LintTransactionOwnerFeature,
-		IndexKindsFeature}
+		IndexKindsFeature, ModelPredecessorsFeature}
 }
 
 // ContractError reports a host and a provider that cannot work together:
@@ -148,8 +148,9 @@ func ValidateHostFeatures(features []string) error {
 // it lists DatabaseKindsFeature, the model reports unless it lists
 // ReportCountsFeature, the schema separator of each engine's identifier rules
 // unless it lists SchemaSubtreeCoverageFeature, the offline capability facts
-// unless it lists DefaultCapabilitiesFeature, and the index-kind claims unless
-// it lists IndexKindsFeature. A model keeps its
+// unless it lists DefaultCapabilitiesFeature, the index-kind claims unless
+// it lists IndexKindsFeature, and the model predecessors unless it lists
+// ModelPredecessorsFeature. A model keeps its
 // source formats without HCLPlatformFeature: a platform claim's models need
 // not list HCL. Without
 // EntryKeysFeature, the YAML claims of a COLUMN or INDEX scope and the
@@ -179,6 +180,7 @@ func NegotiatedDescription(description *protocol.Description, hostFeatures []str
 		negotiatePlanningObjects(engine, hostFeatures)
 		negotiateHCLSource(engine, hostFeatures)
 		negotiateIndexKinds(engine, hostFeatures)
+		negotiateModelPredecessors(engine, hostFeatures)
 		if !slices.Contains(hostFeatures, ScopeSelectionsFeature) {
 			engine.ScopeSelections = nil
 		}
