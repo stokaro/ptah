@@ -40,10 +40,110 @@ func ownedSequencePlan(c *qt.C, dialect, ownedBy, declared string) []string {
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(c.Context(), runtime, diff, dialect,
 		planext.Options{Capabilities: capability.ForDialect(dialect), Statements: planext.StatementStyleExact})
 	c.Assert(err, qt.IsNil)
-	// The fixture spells other columns as PostgreSQL reads them, which is no concern
-	// of these rows on CockroachDB.
+	return ownedSequenceStatements(statements)
+}
+
+// ownedSequenceStatements leaves out the statements about other columns: the fixture
+// spells them as PostgreSQL reads them, which is no concern of these rows on
+// CockroachDB.
+func ownedSequenceStatements(statements []string) []string {
 	return slices.DeleteFunc(statements, func(statement string) bool {
-		return !strings.Contains(statement, `"code"`) && !strings.Contains(statement, "ALTER SEQUENCE")
+		return !strings.Contains(statement, `"code"`) && !strings.Contains(statement, " SEQUENCE ")
+	})
+}
+
+// TestOwnedSequenceDefault_ARemovedSequenceLeavesOnce removes the sequence with the
+// default. The sequence is detached once, ahead of the change, and is not attached
+// again.
+func TestOwnedSequenceDefault_ARemovedSequenceLeavesOnce(t *testing.T) {
+	c := qt.New(t)
+	runtime := must.Must(builtin.New())
+	desired := styleDeclaredWith(func(d *schemamodel.Database) {
+		d.Fields = append(d.Fields, schemamodel.Field{StructName: "Owner", Name: "code", Type: "bigint", Nullable: true})
+	})
+	held := styleHeldWith(func(h *catalog.Database) {
+		h.Tables[0].Columns = append(h.Tables[0].Columns, catalog.Column{
+			Name: "code", DataType: "bigint", UDTName: "int8", IsNullable: "YES", ColumnDefault: new("nextval('s'::regclass)"),
+		})
+		h.Sequences = []catalog.Sequence{{Name: "s", Schema: "public", OwnedBy: "owners.code"}}
+	})
+	diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), desired, held,
+		catalog.ServerInfo{Dialect: platform.CockroachDB, Schema: "public"}, nil, runtime)
+	c.Assert(err, qt.IsNil)
+
+	got, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(c.Context(), runtime, diff, platform.CockroachDB,
+		planext.Options{Capabilities: capability.ForDialect(platform.CockroachDB), Statements: planext.StatementStyleExact})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(ownedSequenceStatements(got), qt.DeepEquals, []string{
+		`ALTER SEQUENCE "public"."s" OWNED BY NONE`,
+		`ALTER TABLE "owners" ALTER COLUMN "code" DROP DEFAULT`,
+		`DROP SEQUENCE "public"."s"`,
+	})
+}
+
+// TestOwnedSequenceDefault_AColumnChangeThatKeepsTheDefault changes the column and
+// not its default, which CockroachDB takes with the owner in place.
+func TestOwnedSequenceDefault_AColumnChangeThatKeepsTheDefault(t *testing.T) {
+	c := qt.New(t)
+	runtime := must.Must(builtin.New())
+	desired := styleDeclaredWith(func(d *schemamodel.Database) {
+		d.Fields = append(d.Fields, schemamodel.Field{StructName: "Owner", Name: "code", Type: "bigint", DefaultExpr: "nextval('s')"})
+		d.Sequences = []schemamodel.Sequence{{Name: "s", Schema: "public"}}
+	})
+	held := styleHeldWith(func(h *catalog.Database) {
+		h.Tables[0].Columns = append(h.Tables[0].Columns, catalog.Column{
+			Name: "code", DataType: "bigint", UDTName: "int8", IsNullable: "YES", ColumnDefault: new("nextval('s'::regclass)"),
+		})
+		h.Sequences = []catalog.Sequence{{Name: "s", Schema: "public", OwnedBy: "owners.code"}}
+	})
+	diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), desired, held,
+		catalog.ServerInfo{Dialect: platform.CockroachDB, Schema: "public"}, nil, runtime)
+	c.Assert(err, qt.IsNil)
+
+	got, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(c.Context(), runtime, diff, platform.CockroachDB,
+		planext.Options{Capabilities: capability.ForDialect(platform.CockroachDB), Statements: planext.StatementStyleExact})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(ownedSequenceStatements(got), qt.DeepEquals, []string{
+		`UPDATE "owners" SET "code" = nextval('s') WHERE "code" IS NULL`,
+		`ALTER TABLE "owners" ALTER COLUMN "code" SET NOT NULL`,
+	})
+}
+
+// TestOwnedSequenceDefault_AnotherSchema reads a sequence and its table in a schema
+// other than the default. The reader writes the owner without the schema it shares
+// with the sequence.
+func TestOwnedSequenceDefault_AnotherSchema(t *testing.T) {
+	c := qt.New(t)
+	runtime := must.Must(builtin.New())
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Owner", Name: "owners", Schema: "app"}},
+		Fields: []schemamodel.Field{
+			{StructName: "Owner", Name: "id", Type: "bigint", Primary: true},
+			{StructName: "Owner", Name: "code", Type: "bigint", Nullable: true},
+		},
+		Sequences: []schemamodel.Sequence{{Name: "s", Schema: "app"}},
+	}
+	held := &catalog.Database{
+		Tables: []catalog.Table{{Name: "owners", Schema: "app", Type: "BASE TABLE", Columns: []catalog.Column{
+			{Name: "id", DataType: "bigint", UDTName: "int8", IsNullable: "NO", IsPrimaryKey: true},
+			{Name: "code", DataType: "bigint", UDTName: "int8", IsNullable: "YES", ColumnDefault: new("nextval('app.s'::regclass)")},
+		}}},
+		Sequences: []catalog.Sequence{{Name: "s", Schema: "app", OwnedBy: "owners.code"}},
+	}
+	diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), desired, held,
+		catalog.ServerInfo{Dialect: platform.CockroachDB, Schema: "public"}, nil, runtime)
+	c.Assert(err, qt.IsNil)
+
+	got, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(c.Context(), runtime, diff, platform.CockroachDB,
+		planext.Options{Capabilities: capability.ForDialect(platform.CockroachDB), Statements: planext.StatementStyleExact})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(ownedSequenceStatements(got), qt.DeepEquals, []string{
+		`ALTER SEQUENCE "app"."s" OWNED BY NONE`,
+		`ALTER TABLE "app"."owners" ALTER COLUMN "code" DROP DEFAULT`,
+		`ALTER SEQUENCE "app"."s" OWNED BY "app"."owners"."code"`,
 	})
 }
 

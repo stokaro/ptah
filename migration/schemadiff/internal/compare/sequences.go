@@ -167,7 +167,7 @@ func ownedDefaultSequence(
 		if drawn == nil {
 			return ""
 		}
-		sequence := objectlookup.Qualified(database.Sequences, catalog.QualifyTableName(table.Schema, drawn[1]), semantics)
+		sequence := objectlookup.Qualified(database.Sequences, drawn[1], semantics)
 		if sequence == nil || !sequenceOwnedBy(*sequence, table, column.Name, semantics) ||
 			objectlookup.Qualified([]schemamodel.Sequence(diff.SequencesRemoved), sequence.QualifiedName(), semantics) != nil {
 			return ""
