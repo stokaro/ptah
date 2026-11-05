@@ -213,7 +213,7 @@ env "dev" {
 		migrationSQL := readFirstMatchingFile(c, migrationsDir, "*_add_database_items.sql")
 		c.Assert(migrationSQL, qt.Contains, "CREATE TABLE")
 		c.Assert(migrationSQL, qt.Contains, "desired_database_items")
-		c.Assert(migrationSQL, qt.Contains, "BIGSERIAL")
+		c.Assert(migrationSQL, qt.Contains, "bigserial")
 		c.Assert(migrationSQL, qt.Contains, "CREATE SEQUENCE")
 		c.Assert(migrationSQL, qt.Contains, "shared_ids")
 		c.Assert(migrationSQL, qt.Contains, "nextval")
