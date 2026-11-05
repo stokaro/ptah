@@ -175,7 +175,8 @@ func (s *scopeSelection) generatedGrantSelected(
 	case grant.OnDatabase:
 		return s.selectedNames(typeList("role"), grant.Role)
 	case grant.OnTable != "":
-		return generatedTableNameKept(out.Tables, grant.OnTable) || generatedViewNameKept(out, grant.OnTable)
+		return generatedTableNameKept(out.Tables, grant.OnTable) || generatedViewNameKept(out, grant.OnTable) ||
+			s.undeclaredRelationSelected(grant.OnTable)
 	case grant.OnSequence != "":
 		schema, name := splitQualified(grant.OnSequence)
 		return generatedSequenceNameKept(out.Sequences, grant.OnSequence) ||
@@ -200,6 +201,20 @@ func (s *scopeSelection) generatedGrantSelected(
 	default:
 		return false
 	}
+}
+
+// undeclaredRelationSelected reports whether the selection covers a relation
+// the source grants on and does not declare: --schema names its schema, and no
+// include selector narrows the selection. The plan answers for that grant as it
+// does on an unscoped run. Left out here, the plan drops a view a source stopped
+// declaring, reports nothing about the grant on it, and the next run says the
+// schema is synced.
+func (s *scopeSelection) undeclaredRelationSelected(name string) bool {
+	if len(s.selectors) > 0 {
+		return false
+	}
+	schema, _ := splitQualified(name)
+	return s.schemaAllowed(schema)
 }
 
 // keepGeneratedSchemas keeps schema declarations that own selected objects,

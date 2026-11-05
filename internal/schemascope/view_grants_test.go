@@ -53,3 +53,30 @@ func TestFilterScopesViewGrantsOnBothSidesTheSameWay(t *testing.T) {
 	c.Assert(generated.RevokedGrants, qt.DeepEquals, desired.RevokedGrants[:1])
 	c.Assert(read.Grants, qt.DeepEquals, database.Grants[:2])
 }
+
+// A grant on a relation the source does not declare stays when its schema is
+// selected, so the plan answers for it as on an unscoped run: it refuses a
+// grant on a view it drops, or the server refuses the grant. Without this the
+// plan drops the view and says nothing about the grant, and the next run reports
+// the schema synced while the source still names a grant that does not exist
+// (stokaro/ptah#5371). A grant in a schema the selection leaves out goes.
+func TestFilterKeepsAGrantOnAnUndeclaredRelationInASelectedSchema(t *testing.T) {
+	c := qt.New(t)
+	desired := &schemamodel.Database{
+		Grants: []schemamodel.Grant{
+			{Role: "PUBLIC", Privileges: []string{"SELECT"}, OnTable: "gone"},
+			{Role: "reader", Privileges: []string{"SELECT"}, OnTable: "public.gone"},
+			{Role: "reader", Privileges: []string{"SELECT"}, OnTable: "other.gone"},
+		},
+		RevokedGrants: []schemamodel.Grant{
+			{Role: "reader", Privileges: []string{"INSERT"}, OnTable: "public.gone"},
+			{Role: "reader", Privileges: []string{"INSERT"}, OnTable: "other.gone"},
+		},
+	}
+
+	generated, err := schemascope.FilterGeneratedWithDefaultSchema(t.Context(), selectext.None(), desired, []string{"public"}, "public")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(generated.Grants, qt.DeepEquals, desired.Grants[:2])
+	c.Assert(generated.RevokedGrants, qt.DeepEquals, desired.RevokedGrants[:1])
+}

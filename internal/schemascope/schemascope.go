@@ -383,8 +383,12 @@ func grantAllowed(
 	}
 	if grant.OnTable != "" {
 		// OnTable names a view or a materialized view as well as a table; see
-		// [relations].
-		return keptRelations.holds(grant.OnTable)
+		// [relations]. A selected schema also keeps a grant on a relation the
+		// source does not declare there: the plan answers for it as it does on
+		// an unscoped run, and leaving it out here applies the rest of the source
+		// and reports nothing about the grant.
+		return keptRelations.holds(grant.OnTable) ||
+			schemaAllowed(allowed, effectiveSchema(schemaFromQualifiedName(grant.OnTable), defaultSchema))
 	}
 	if grant.OnRoutine != "" {
 		// A routine is kept by its schema, and its grants ride it.

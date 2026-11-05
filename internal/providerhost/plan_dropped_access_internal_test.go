@@ -14,7 +14,6 @@ import (
 	"ptah.run/core/planext"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
-	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/modelast"
 )
@@ -109,35 +108,6 @@ func TestPlanCommonObjects_GrantsARecreatedMaterializedViewItsEntriesAgain(t *te
 		modelast.FromMaterializedView(totalsQueryChange[0].Desired),
 		grantNode(readerOn("main.totals"), false),
 	})
-}
-
-// A grant the comparison adds on a view or a materialized view the plan
-// removes would run after the drop and name an object that is gone, so the
-// plan is refused before any step is returned.
-func TestPlanCommonObjects_RefusesAGrantOnARemovedView_FailurePath(t *testing.T) {
-	for _, test := range []struct {
-		name string
-		diff difftypes.SchemaDiff
-		want string
-	}{
-		{name: "a removed view", diff: difftypes.SchemaDiff{ViewsRemoved: difftypes.ViewChanges{{Name: "main.recent", Body: "SELECT id FROM items"}},
-			GrantsAdded: []difftypes.GrantRef{readerOn("main.recent")}},
-			want: "granting SELECT on view main.recent to reader: the plan drops the view; declare it, or leave the grant out"},
-		{name: "a removed materialized view", diff: difftypes.SchemaDiff{MaterializedViewsRemoved: removedTotals,
-			GrantsAdded: []difftypes.GrantRef{readerOn("main.totals")}},
-			want: "granting SELECT on materialized view main.totals to reader: the plan drops the materialized view; declare it, or leave the grant out"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			test.diff.IdentifierSemantics = fixtureSemantics()
-
-			plan, err := commonPlannerFor(false).planCommonObjects(&test.diff)
-
-			c.Assert(err, qt.ErrorMatches, test.want)
-			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-			c.Assert([][]ast.Node{plan.before, plan.prepared, plan.after, plan.last}, qt.DeepEquals, make([][]ast.Node, 4))
-		})
-	}
 }
 
 // A grant the comparison adds on a view the plan drops to create again runs

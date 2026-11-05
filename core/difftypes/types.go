@@ -3311,3 +3311,9 @@ type GrantRef struct {
 	// WithOption records whether the grant has WITH GRANT OPTION.
 	WithOption bool `json:"with_option"`
 }
+
+// OnRelation reports a grant on a table or a view: an engine names a view as
+// either in its access model.
+func (g GrantRef) OnRelation() bool {
+	return strings.EqualFold(g.ObjectType, "TABLE") || strings.EqualFold(g.ObjectType, "VIEW")
+}

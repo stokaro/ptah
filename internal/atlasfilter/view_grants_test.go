@@ -60,3 +60,38 @@ func TestScopeKeepsTheGrantsOfAKeptView(t *testing.T) {
 		})
 	}
 }
+
+// A grant on a relation the source does not declare stays when --schema names
+// the relation's schema and no include selector narrows the selection, so the
+// plan answers for it as on an unscoped run (stokaro/ptah#5371). Outside that
+// selection it goes.
+func TestScopeKeepsAGrantOnAnUndeclaredRelation(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		scope    atlasfilter.Scope
+		tables   []schemamodel.Table
+		onTable  string
+		declared int
+	}{
+		{name: "in a selected schema", scope: atlasfilter.Scope{Selections: ownerSelections(), Schemas: []string{"shop"}},
+			onTable: "shop.recent", declared: 1},
+		{name: "named without its schema, which is selected", scope: atlasfilter.Scope{Selections: ownerSelections(), Schemas: []string{"main"}, DefaultSchema: "main"},
+			onTable: "recent", declared: 1},
+		{name: "in a schema the selection leaves out", scope: atlasfilter.Scope{Selections: ownerSelections(), Schemas: []string{"public"}},
+			onTable: "shop.recent", declared: 0},
+		{name: "named without its schema, which is left out", scope: atlasfilter.Scope{Selections: ownerSelections(), Schemas: []string{"shop"}, DefaultSchema: "main"},
+			onTable: "recent", declared: 0},
+		{name: "outside an include selector", scope: atlasfilter.Scope{Selections: ownerSelections(), Schemas: []string{"shop"}, Include: []string{"shop.items"}},
+			tables: []schemamodel.Table{{Schema: "shop", Name: "items"}}, onTable: "shop.recent", declared: 0},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			desired := &schemamodel.Database{Tables: test.tables, Grants: []schemamodel.Grant{{Role: "app", OnTable: test.onTable, Privileges: []string{"SELECT"}}}}
+
+			got, err := atlasfilter.ScopeGenerated(desired, test.scope)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(got.Grants, qt.HasLen, test.declared)
+		})
+	}
+}
