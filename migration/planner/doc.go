@@ -149,8 +149,10 @@
 // The planner includes several safety mechanisms:
 //
 //   - Destructive operations include warning comments
-//   - DROP operations use IF EXISTS clauses when possible
-//   - CASCADE options are explicitly noted for review
+//   - The statement style decides what a DROP carries; see
+//     [ptah.run/core/planext.StatementStyle]. A plan a Ptah command makes uses
+//     CASCADE only where it relies on it, and IF EXISTS only where an earlier
+//     statement may already have removed the object.
 //   - Proper dependency ordering to avoid constraint violations
 //
 // # SQL Statement Splitting

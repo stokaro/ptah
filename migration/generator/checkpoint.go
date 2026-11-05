@@ -17,6 +17,7 @@ import (
 	"ptah.run/internal/atlasmigrate"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/convert/dbschematogo"
+	"ptah.run/internal/planstyle"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/migration/internal/shadowdb"
 	"ptah.run/migration/migrationfile"
@@ -138,8 +139,9 @@ func generateCheckpointFromDiff(
 		Dialect:       info.Dialect,
 		Capabilities:  capabilities,
 		Policy: BidirectionalPlanPolicy{
-			Create: ConcurrentIndexAutomatic,
-			Drop:   ConcurrentIndexDisabled,
+			Create:     ConcurrentIndexAutomatic,
+			Drop:       ConcurrentIndexDisabled,
+			Statements: planstyle.Statements,
 		},
 	})
 	if err != nil {

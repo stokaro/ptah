@@ -1479,8 +1479,8 @@ The consequence is measured. Against a database holding
 declaring `//ptah:schema:index name="i" fields="ts" type="BRIN"` plans:
 
 ```text
-DROP INDEX IF EXISTS "i";
-CREATE INDEX IF NOT EXISTS "i" ON "t" USING BRIN ("ts");
+DROP INDEX "i";
+CREATE INDEX "i" ON "t" USING BRIN ("ts");
 ```
 
 which drops the parameter.

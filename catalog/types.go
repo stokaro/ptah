@@ -233,6 +233,12 @@ type Schema struct {
 // Type cannot carry it, and the distinction decides which statements are legal:
 // PostgreSQL rejects CREATE INDEX CONCURRENTLY and DROP INDEX CONCURRENTLY on
 // a partitioned relation with SQLSTATE 0A000.
+//
+// Parents names the tables this one is a partition of or inherits from, each
+// as [QualifyTableName] spells it. A plan that removes both drops this table
+// first: a DROP TABLE of a partitioned parent takes its partitions, so a later
+// drop of one finds nothing, and a parent of plain inheritance cannot be dropped
+// while a child holds it. A reader that does not ask leaves it empty.
 type Table struct {
 	// Facets carries typed settings owned by feature providers.
 	Facets  schemaext.Facets `json:"facets,omitzero"`
@@ -249,6 +255,7 @@ type Table struct {
 	EstimatedRows   int64    `json:"estimated_rows,omitempty"`    // Best-effort planner estimate from database statistics
 	RowStatsUnknown bool     `json:"row_stats_unknown,omitempty"` // The database reports no usable row statistics; EstimatedRows is not a row count
 	Partitioned     bool     `json:"partitioned,omitempty"`       // PostgreSQL declaratively partitioned parent (pg_class.relkind = 'p')
+	Parents         []string `json:"parents,omitempty"`           // Tables this one is a partition of or inherits from; see the type's comment
 	RLSEnabled      bool     `json:"rls_enabled"`                 // Whether RLS is enabled on this table (PostgreSQL)
 	// RLSForced reports pg_class.relforcerowsecurity: the table's policies
 	// apply to its owner as well. It is independent of RLSEnabled, which

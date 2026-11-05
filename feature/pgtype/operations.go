@@ -486,8 +486,12 @@ func (v *CreateRange) Effect() schemaext.Effect {
 }
 
 // Effect is the statement's effect: a drop removes the type, and with
-// CASCADE every column of it.
+// CASCADE every column of it. Without CASCADE the server refuses the drop
+// while anything uses the type.
 func (v *Drop) Effect() schemaext.Effect {
+	if v != nil && !v.Cascade {
+		return effectOf(v, schemaext.Destructive, "DROP removes the type, and the server refuses it while a column or another object uses the type")
+	}
 	return effectOf(v, schemaext.Destructive, "DROP removes the type, and with CASCADE the columns and objects that use it")
 }
 

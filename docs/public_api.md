@@ -2990,7 +2990,8 @@ domain whose only differences are its CHECK, default or NOT NULL changes in
 place, and so does a composite type with an attribute delta
 (`AttributeDelta`); everything else is a non-CASCADE drop and a creation, and
 so is a changed type that names a rebuilt one. A type nothing declares is
-dropped with CASCADE in that phase's removal window, and the comment of a type
+dropped in that phase's removal window, with `IF EXISTS` and CASCADE only in
+the annotated statement style, and the comment of a type
 that survives joins `featureplan.PhaseDependent`. A type the target cannot
 create is refused with the scope advice the common refusal gives.
 

@@ -1597,7 +1597,9 @@ a two-way feature an engine lists beside planning or comparison:
   engine. `ANNOTATED` is the zero value; `EXACT` asks a feature owner to omit
   guards and cascading drops where its operation does not rely on them. An
   exact request is refused unless both sides advertise the feature, so an
-  older owner cannot silently ignore the field. Unknown enum values are
+  older owner cannot silently ignore the field. Every Ptah command that plans a
+  change asks for `EXACT`, so a provider that plans lists this feature, or those
+  commands refuse it before anything runs. Unknown enum values are
   refused. [ADR 0050](../docs/adr/0050-statement-style-reaches-feature-owners.md)
   defines the owner behavior and safety boundary.
 - `RequestedChange.written` carries an object as the operator wrote it, such as

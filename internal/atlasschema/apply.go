@@ -29,6 +29,7 @@ import (
 	"ptah.run/internal/devlock"
 	"ptah.run/internal/featureselect"
 	"ptah.run/internal/pgsystemschema"
+	"ptah.run/internal/planstyle"
 	"ptah.run/internal/protectedtable"
 	"ptah.run/internal/providerurl"
 	"ptah.run/internal/schemafile"
@@ -528,6 +529,7 @@ func computeApplyPlan(
 			OmitNullBackfill:    opts.OmitNullBackfill,
 			AllowTableRebuild:   opts.Policy.AllowTableRebuild,
 			TableRebuildRequest: opts.Policy.TableRebuildRequest,
+			Statements:          planstyle.Statements,
 		}
 		plan, err := planner.GenerateSchemaDiffRenderedPlan(
 			ctx, opts.Runtime,

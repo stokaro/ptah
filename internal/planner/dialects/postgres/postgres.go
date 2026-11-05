@@ -117,8 +117,8 @@ type Planner struct {
 	// emitting a clearly-marked comment in their place. See diffpolicy.
 	skip diffpolicy.SkipSet
 	// statements is the statement style the plan is spelled in. The zero
-	// value is Ptah's own; see statementstyle.go for what the exact style
-	// leaves out and why.
+	// value is the annotated style; see statementstyle.go for what the exact
+	// style leaves out and why.
 	statements planext.StatementStyle
 }
 
@@ -1644,14 +1644,16 @@ func (p *Planner) removedTableGroups(diff *difftypes.SchemaDiff, ahead routinesA
 }
 
 // removedTableOrder is the order the removed tables are dropped in: children
-// before the tables their foreign keys reference, and a table whose captured
-// object reads another removed table before that table.
+// before the tables their foreign keys reference, a partition or an inheriting
+// table before its parent, and a table whose captured object reads another
+// removed table before that table.
 func removedTableOrder(diff *difftypes.SchemaDiff) []string {
 	names := deporder.TableDropOrderWithDependencies(diff.TablesRemoved.Names(), diff.DeclaredTables, diff.DeclaredTableDependencies)
 	readers := make(map[string][]string)
 	for _, removal := range diff.TablesRemoved {
 		for _, name := range names {
-			if name != removal.Name && capturedReads(removal.Current.OwnedObjects, name, relationSemantics(diff)) {
+			if name != removal.Name && (capturedReads(removal.Current.OwnedObjects, name, relationSemantics(diff)) ||
+				slices.Contains(removal.Current.Table.Parents, name)) {
 				readers[removal.Name] = append(readers[removal.Name], name)
 			}
 		}
@@ -2706,8 +2708,8 @@ func (p *Planner) addNewViewLikeObjects(
 // use its row type, and the indexes, triggers and privileges on them. Without
 // that the plan silently left the database short of the schema it was
 // generated from, and re-planning did not converge (issue #1287). What CASCADE
-// removes in Ptah's own style and nothing can rebuild is anything Ptah does not
-// declare -- a hand-made view, a rule -- which is why the drop is taken only
+// removes in the annotated style and nothing can rebuild is anything Ptah does
+// not declare -- a hand-made view, a rule -- which is why the drop is taken only
 // where it buys something.
 //
 // A view on the drop path is rebuilt, with everything that depends on it; see

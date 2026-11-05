@@ -1101,10 +1101,17 @@ marker sits on the first statement, where the row records no completed
 statement at all: zero says no checkpoint was written, not that nothing ran.
 
 **A concurrent index build failed on PostgreSQL** (exit `2`). The invalid index
-left behind keeps the name, so re-issuing the generated `IF NOT EXISTS`
-statement is skipped rather than retried and reports no error. Ptah refuses to
-run the migration while an index a conditional create expects is unusable, and
-names the `REINDEX INDEX CONCURRENTLY` that rebuilds it:
+left behind keeps the name. The build `generate` writes has no `IF NOT EXISTS`,
+so `up --allow-dirty` stops at it with `relation "idx_members_email" already
+exists` (SQLSTATE `42P07`). Drop the index so the statement can build it, then
+run the migration again, or rebuild it with `REINDEX INDEX CONCURRENTLY` and
+record the migration with `migrations repair --force`. `up` cannot run past a
+rebuilt index, which still holds the name.
+
+A build written with `IF NOT EXISTS` skips the name rather than retrying it and
+reports no error. Ptah refuses to run the migration while an index such a
+conditional create expects is unusable, and names the `REINDEX INDEX
+CONCURRENTLY` that rebuilds it:
 
 ```text illustration
 error: error running migrations: migration 1785756328 cannot be applied: PostgreSQL reports index "public"."idx_members_email" (indisvalid=false, indisready=false) unusable, and CREATE INDEX ... IF NOT EXISTS finds the name taken and skips it rather than rebuilding it, so this run would record the migration applied over a constraint that is not enforced; run REINDEX INDEX CONCURRENTLY "public"."idx_members_email", or drop the index, then run the migration again

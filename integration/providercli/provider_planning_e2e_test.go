@@ -333,7 +333,7 @@ func desiredProviderColumn() *schemamodel.Database {
 
 func TestProviderPreparedApplyPreservesLiveFactsAndTransactionRequirements(t *testing.T) {
 	c := qt.New(t)
-	host, runtime := yamlProviderCommand(c, "operation-models")
+	host, runtime := yamlProviderEnvironment(c, "operation-models", []string{"FIXTURE_STATEMENT_STYLE=honored"})
 	connection := observedConnection(c, host, "planned")
 	caps := connection.Info().Capabilities
 	c.Assert(caps.Established(capability.TransactionalDDL), qt.IsTrue)
@@ -361,7 +361,7 @@ func TestProviderPreparedApplyPreservesLiveFactsAndTransactionRequirements(t *te
 
 func TestProviderSavedApplyPreservesTransactionRequirements(t *testing.T) {
 	c := qt.New(t)
-	host, runtime := yamlProviderCommand(c, "operation-models")
+	host, runtime := yamlProviderEnvironment(c, "operation-models", []string{"FIXTURE_STATEMENT_STYLE=honored"})
 	connection := observedConnection(c, host, "planned")
 	plan, err := atlasschema.PreparePlanFile(c.Context(), connection, atlasschema.PlanFileOptions{Runtime: runtime, Desired: desiredProviderColumn()})
 	c.Assert(err, qt.IsNil)

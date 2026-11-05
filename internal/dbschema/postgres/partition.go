@@ -8,12 +8,54 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/internal/pgtablesource"
 	"ptah.run/internal/sqlident"
 )
+
+// readTableParents records on each inspected table the tables it is a partition
+// of or inherits from, which only pg_inherits holds. A parent outside the read
+// is recorded too: nothing the plan does depends on it, and it says what the
+// catalog says.
+func (r *Reader) readTableParents(ctx context.Context, database *catalog.Database) error {
+	if !r.caps.Has(capability.CatalogPartitions) {
+		return nil
+	}
+	tables := make(map[string]*catalog.Table, len(database.Tables))
+	for i := range database.Tables {
+		table := &database.Tables[i]
+		tables[catalog.QualifyTableName(table.Schema, table.Name)] = table
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT child_namespace.nspname, child.relname, parent_namespace.nspname, parent.relname
+		FROM pg_inherits inheritance
+		JOIN pg_class child ON child.oid = inheritance.inhrelid
+		JOIN pg_namespace child_namespace ON child_namespace.oid = child.relnamespace
+		JOIN pg_class parent ON parent.oid = inheritance.inhparent
+		JOIN pg_namespace parent_namespace ON parent_namespace.oid = parent.relnamespace
+		WHERE child.relkind IN ('r', 'p')
+		ORDER BY 1, 2, 3, 4`)
+	if err != nil {
+		return fmt.Errorf("read table parents: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var childSchema, childName, parentSchema, parentName string
+		if err := rows.Scan(&childSchema, &childName, &parentSchema, &parentName); err != nil {
+			return fmt.Errorf("read table parents: %w", err)
+		}
+		if table, read := tables[catalog.QualifyTableName(r.outputSchema(childSchema), childName)]; read {
+			table.Parents = append(table.Parents, catalog.QualifyTableName(r.outputSchema(parentSchema), parentName))
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("read table parents: %w", err)
+	}
+	return nil
+}
 
 // readPartitions captures keys only for inspected partitioned parents. Ordinary
 // tables have complete absence coverage. The execution-facing parent flag stays

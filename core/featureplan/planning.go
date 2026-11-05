@@ -88,8 +88,8 @@ type Request struct {
 // has the meaning of the planext.Options field of the same name.
 type Policy struct {
 	// Statements is the spelling of generated statements. Its zero value is
-	// Ptah's annotated style; exact style leaves out guards and CASCADE that
-	// the plan does not rely on.
+	// the annotated style; the exact style, which Ptah's commands select,
+	// leaves out guards and CASCADE that the plan does not rely on.
 	Statements StatementStyle
 	// AllowTableRebuild plans a change the target cannot make in place as an
 	// explicit rebuild of its table, rather than refuse it.
