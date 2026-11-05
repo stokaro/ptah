@@ -242,10 +242,14 @@ func collectDatabaseConstraints(
 		if _, owned := ownedByColumns[key]; owned {
 			continue
 		}
-		if isFieldLevelConstraint(constraint, desired, semantics) {
+		_, declaredAsConstraint := genConstraints[key]
+		// A primary key compared as the table's stays in the comparison though
+		// its first column declares itself primary: a key over more columns than
+		// that one is not the column's.
+		if isFieldLevelConstraint(constraint, desired, semantics) && (!declaredAsConstraint || constraint.Type != "PRIMARY KEY") {
 			continue
 		}
-		if _, declaredAsConstraint := genConstraints[key]; !declaredAsConstraint &&
+		if !declaredAsConstraint &&
 			uniqueConstraintOwnedByDeclaredIndex(
 				constraint,
 				dialect,
