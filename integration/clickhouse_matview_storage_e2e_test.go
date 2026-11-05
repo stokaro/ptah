@@ -108,6 +108,6 @@ func TestClickHouseDescribedViewStoragePlansAReplacementE2E(t *testing.T) {
 	apply := clirun.Run(c, clirun.Ptah, clirun.Options{}, "schema", "apply", "--db-url", url, "--schema-file", schema, "--dry-run")
 
 	c.Assert(apply.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", apply.Stdout, apply.Stderr))
-	c.Assert(apply.Stdout, qt.Contains, "DROP VIEW IF EXISTS `"+database+"`.`plain`;")
-	c.Assert(apply.Stdout, qt.Not(qt.Contains), "DROP VIEW IF EXISTS `"+database+"`.`keyed`")
+	c.Assert(apply.Stdout, qt.Contains, "DROP VIEW `"+database+"`.`plain`;")
+	c.Assert(apply.Stdout, qt.Not(qt.Contains), "`"+database+"`.`keyed`")
 }

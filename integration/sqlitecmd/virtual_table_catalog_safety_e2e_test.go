@@ -55,6 +55,6 @@ CREATE VIRTUAL TABLE " docs " USING fts5(body);
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))
-	c.Assert(out.String(), qt.Contains, `DROP TABLE IF EXISTS " docs ";`)
-	c.Assert(out.String(), qt.Not(qt.Contains), `DROP TABLE IF EXISTS "docs";`)
+	c.Assert(out.String(), qt.Contains, `DROP TABLE " docs ";`)
+	c.Assert(out.String(), qt.Not(qt.Contains), `DROP TABLE "docs";`)
 }
