@@ -73,3 +73,43 @@ func TestReverseTablePreparationLeavesAnAlteredTable(t *testing.T) {
 	c.Assert(reverse.TablePreparation.Prepared[0].Current.Indexes, qt.HasLen, 0)
 	c.Assert(reverse.TablePreparation.Prepared[0].Desired.Indexes, qt.HasLen, 1)
 }
+
+// keyedPreparation is a forward plan that changes the key of the table items
+// from (b, a) to (a, b), which it otherwise leaves alone, with the prepared
+// capture of the table as the forward comparison takes it: declared with the
+// new key, held with the old one. prior is the table as the database held it.
+func keyedPreparation() (forward, reverse *difftypes.SchemaDiff, prior *schemamodel.Database) {
+	held := catalog.Constraint{Name: "items_pkey", TableName: "items", Type: "PRIMARY KEY", ColumnName: "b", ColumnNames: []string{"b", "a"}}
+	fields := []schemamodel.Field{{StructName: "Item", Name: "a", Type: "INTEGER"}, {StructName: "Item", Name: "b", Type: "TEXT"}}
+	prior = &schemamodel.Database{Tables: []schemamodel.Table{{StructName: "Item", Name: "items", PrimaryKey: []string{"b", "a"}}}, Fields: fields}
+	current := schemacapture.TableObservation{Table: catalog.Table{Name: "items", Columns: []catalog.Column{
+		{Name: "a", DataType: "INTEGER", ColumnType: "INTEGER", IsNullable: "NO", IsPrimaryKey: true, OrdinalPosition: 1},
+		{Name: "b", DataType: "TEXT", ColumnType: "TEXT", IsNullable: "NO", IsPrimaryKey: true, OrdinalPosition: 2},
+	}}, Constraints: []catalog.Constraint{held}}
+	declared := schemacapture.TableDeclaration{Table: schemamodel.Table{StructName: "Item", Name: "items", PrimaryKey: []string{"a", "b"}}, Fields: fields}
+	preparation := &schemapreparation.Capture{Prepared: []schemapreparation.Table{{Desired: declared, Current: current}}}
+	forward = &difftypes.SchemaDiff{TablePreparation: preparation,
+		ConstraintsAdded:   difftypes.ConstraintAdditions{{Name: "items_pkey", TableName: "items", Type: "PRIMARY KEY", Columns: []string{"a", "b"}}},
+		ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "items_pkey", TableName: "items", Type: "PRIMARY KEY"}}}
+	reverse = &difftypes.SchemaDiff{TablePreparation: cloneTablePreparation(preparation),
+		ConstraintsAdded:   difftypes.ConstraintAdditions{{Name: "items_pkey", TableName: "items", Type: "PRIMARY KEY", Columns: []string{"b", "a"}}},
+		ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "items_pkey", TableName: "items", Type: "PRIMARY KEY"}}}
+	return forward, reverse, prior
+}
+
+// The reverse plan reads a table whose only change is its key as the forward
+// plan leaves it, with the new key, and moves it to the key the database held,
+// so the owner restores that key rather than find it already held.
+func TestReverseTablePreparationProjectsTheForwardKeyChange(t *testing.T) {
+	c := qt.New(t)
+	forward, reverse, prior := keyedPreparation()
+
+	err := reverseTablePreparation(t.Context(), forward, reverse, prior, "sqlite", builtintest.Runtime())
+
+	c.Assert(err, qt.IsNil)
+	prepared := reverse.TablePreparation.Prepared[0]
+	c.Assert(prepared.Current.Constraints, qt.HasLen, 1)
+	c.Assert(prepared.Current.Constraints[0].ColumnNames, qt.DeepEquals, []string{"a", "b"})
+	c.Assert(prepared.Desired.Table.PrimaryKey, qt.DeepEquals, []string{"b", "a"})
+	c.Assert(forward.TablePreparation.Prepared[0].Current.Constraints[0].ColumnNames, qt.DeepEquals, []string{"b", "a"})
+}
