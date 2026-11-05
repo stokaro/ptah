@@ -44,34 +44,31 @@ func ForeignKeyBackingIndexesLeaving(
 		removed[info.Identity] = true
 	}
 	declared := generatedIndexIdentities(desired, semantics)
-	var leaving []difftypes.IndexRef
-	kept := make(map[difftypes.IndexRef]bool)
 	for _, constraint := range database.Constraints {
-		if !strings.EqualFold(constraint.Type, "FOREIGN KEY") {
+		if !strings.EqualFold(constraint.Type, "FOREIGN KEY") || !removed[constraintIdentity(constraint.QualifiedTableName(), constraint.Name, semantics)] {
 			continue
 		}
 		for _, backing := range foreignKeys.BackingIndexes(database, constraint, semantics) {
 			ref := difftypes.IndexRef{Name: backing.Name, TableName: backing.QualifiedTableName()}
-			if removed[constraintIdentity(constraint.QualifiedTableName(), constraint.Name, semantics)] {
-				leaving = append(leaving, ref)
-			} else {
-				kept[indexscope.IdentityKeyWithSemantics(semantics, ref)] = true
+			identity := indexscope.IdentityKeyWithSemantics(semantics, ref)
+			_, isDeclared := declared[identity]
+			if isDeclared || tableLeaves(diff, ref.TableName, semantics) ||
+				foreignKeyStaysOn(database, removed, backing, semantics) || addedForeignKeyUses(diff, backing, semantics) ||
+				columnsLeave(diff, backing, semantics) ||
+				slices.ContainsFunc(diff.IndexesRemoved, func(other difftypes.IndexRef) bool {
+					return indexscope.IdentityKeyWithSemantics(semantics, other) == identity
+				}) {
+				continue
 			}
+			diff.IndexesRemoved = append(diff.IndexesRemoved, ref)
 		}
 	}
-	for _, ref := range leaving {
-		identity := indexscope.IdentityKeyWithSemantics(semantics, ref)
-		_, isDeclared := declared[identity]
-		columns := indexColumns(database, ref, semantics)
-		if isDeclared || kept[identity] || tableLeaves(diff, ref.TableName, semantics) ||
-			addedForeignKeyUses(diff, columns, ref, semantics) || columnsLeave(diff, columns, ref, semantics) ||
-			slices.ContainsFunc(diff.IndexesRemoved, func(other difftypes.IndexRef) bool {
-				return indexscope.IdentityKeyWithSemantics(semantics, other) == identity
-			}) {
-			continue
-		}
-		diff.IndexesRemoved = append(diff.IndexesRemoved, ref)
-	}
+}
+
+// startsWith reports whether columns lead index, so a foreign key over them can
+// stand on it.
+func startsWith(index catalog.Index, columns []string) bool {
+	return len(columns) > 0 && len(columns) <= len(index.Columns) && slices.Equal(index.Columns[:len(columns)], columns)
 }
 
 // tableLeaves reports whether the plan removes table.
@@ -81,36 +78,39 @@ func tableLeaves(diff *difftypes.SchemaDiff, table string, semantics identifier.
 	})
 }
 
-// indexColumns is the columns of the index ref, in key order.
-func indexColumns(database *catalog.Database, ref difftypes.IndexRef, semantics identifier.Semantics) []string {
-	for _, index := range database.Indexes {
-		if index.Name == ref.Name && semantics.QualifiedTableIdentityKey(index.QualifiedTableName()) == semantics.QualifiedTableIdentityKey(ref.TableName) {
-			return index.Columns
-		}
-	}
-	return nil
-}
-
-// addedForeignKeyUses reports whether a foreign key the plan adds starts with
-// columns, those of the index ref. The server builds it on that index rather than a
-// new one, so the index's drop would answer that a foreign key needs it.
-func addedForeignKeyUses(diff *difftypes.SchemaDiff, columns []string, ref difftypes.IndexRef, semantics identifier.Semantics) bool {
-	return slices.ContainsFunc(diff.ConstraintsAdded, func(add difftypes.ConstraintAdditionInfo) bool {
-		return strings.EqualFold(add.Type, "FOREIGN KEY") &&
-			semantics.QualifiedTableIdentityKey(add.TableName) == semantics.QualifiedTableIdentityKey(ref.TableName) &&
-			len(add.Columns) <= len(columns) && slices.Equal(columns[:len(add.Columns)], add.Columns)
+// foreignKeyStaysOn reports whether a foreign key the plan keeps can stand on
+// index. The server names one index for two keys over a column, whichever key it
+// builds it for, so the name does not say which of them needs it. Its drop would
+// answer that a foreign key needs it.
+func foreignKeyStaysOn(database *catalog.Database, removed map[difftypes.ConstraintIdentity]bool, index catalog.Index, semantics identifier.Semantics) bool {
+	return slices.ContainsFunc(database.Constraints, func(constraint catalog.Constraint) bool {
+		return strings.EqualFold(constraint.Type, "FOREIGN KEY") &&
+			!removed[constraintIdentity(constraint.QualifiedTableName(), constraint.Name, semantics)] &&
+			semantics.QualifiedTableIdentityKey(constraint.QualifiedTableName()) == semantics.QualifiedTableIdentityKey(index.QualifiedTableName()) &&
+			startsWith(index, constraint.ColumnNamesOrDefault())
 	})
 }
 
-// columnsLeave reports whether the plan drops every one of columns, those of the
-// index ref. The server drops an index with its last column, so a drop of the index
-// after that answers that it does not exist.
-func columnsLeave(diff *difftypes.SchemaDiff, columns []string, ref difftypes.IndexRef, semantics identifier.Semantics) bool {
+// addedForeignKeyUses reports whether a foreign key the plan adds starts with the
+// columns of index. The server builds it on that index rather than a new one, so the
+// index's drop would answer that a foreign key needs it.
+func addedForeignKeyUses(diff *difftypes.SchemaDiff, index catalog.Index, semantics identifier.Semantics) bool {
+	return slices.ContainsFunc(diff.ConstraintsAdded, func(add difftypes.ConstraintAdditionInfo) bool {
+		return strings.EqualFold(add.Type, "FOREIGN KEY") &&
+			semantics.QualifiedTableIdentityKey(add.TableName) == semantics.QualifiedTableIdentityKey(index.QualifiedTableName()) &&
+			startsWith(index, add.Columns)
+	})
+}
+
+// columnsLeave reports whether the plan drops every column of index. The server
+// drops an index with its last column, so a drop of the index after that answers
+// that it does not exist.
+func columnsLeave(diff *difftypes.SchemaDiff, index catalog.Index, semantics identifier.Semantics) bool {
 	for _, table := range diff.TablesModified {
-		if semantics.QualifiedTableIdentityKey(table.TableName) != semantics.QualifiedTableIdentityKey(ref.TableName) {
+		if semantics.QualifiedTableIdentityKey(table.TableName) != semantics.QualifiedTableIdentityKey(index.QualifiedTableName()) {
 			continue
 		}
-		return !slices.ContainsFunc(columns, func(column string) bool {
+		return !slices.ContainsFunc(index.Columns, func(column string) bool {
 			return !slices.ContainsFunc(table.ColumnsRemoved, func(removed schemamodel.Field) bool {
 				return semantics.ColumnIdentityKey(removed.Name) == semantics.ColumnIdentityKey(column)
 			})

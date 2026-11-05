@@ -111,6 +111,27 @@ func TestSchemaApplyRemovedForeignKeyE2E_HappyPath(t *testing.T) {
 	}
 }
 
+// TestSchemaApplyRemovedForeignKeyE2E_AKeptKeyStandsOnTheIndex removes the key an index
+// is named after while another key stands on it. The server names one index for two
+// keys over a column, and would answer that index's drop with Error 1553, so the plan
+// leaves it.
+func TestSchemaApplyRemovedForeignKeyE2E_AKeptKeyStandsOnTheIndex(t *testing.T) {
+	for _, engine := range removedForeignKeyEngines {
+		t.Run(engine.name, func(t *testing.T) {
+			c := qt.New(t)
+			_, target := newMySQLFamilyScratch(c, engine.engine).builtFrom(c, removedForeignKeyParent+
+				"CREATE TABLE child (id bigint PRIMARY KEY, pid bigint, CONSTRAINT a_fk FOREIGN KEY (pid) REFERENCES parent (id), "+
+				"CONSTRAINT b_fk FOREIGN KEY (pid) REFERENCES parent (code));\n")
+
+			run := removedForeignKeyApply(c, target, removedForeignKeyParent+
+				"CREATE TABLE child (id bigint PRIMARY KEY, pid bigint, CONSTRAINT a_fk FOREIGN KEY (pid) REFERENCES parent (id));\n")
+
+			c.Assert(run.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", run.Stdout, run.Stderr))
+			c.Assert(columnKeyString(c, target, removedForeignKeyIndexes), qt.Equals, "b_fk")
+		})
+	}
+}
+
 // TestMigrationsRemovedForeignKeyE2E_TheRollbackRestoresTheKey runs the removal through
 // a migration and back. The key and its index return, and the first declaration reads
 // as synced.
