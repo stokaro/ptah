@@ -1248,11 +1248,20 @@ position, as the shared parser does:
 `read SQL schema file schema.sql: unsupported statement GRANT at position 42 (line 2, column 1)`.
 The JSON documents of `schema plan` and `schema apply` list every diagnostic in
 `schema_diagnostics`, with its code (`syntax`, `unsupported`, `invalid` or
-`incomplete`), severity, path and span. Ptah also refuses a reply the SDK's
-checks refuse, a complete reply with a warning, which it does not report yet,
-and a table that carries facets or owned objects, which a reading cannot place
-yet. A command that selects a provider for the engine fails with
-`provider_missing` before it reads the file when none is installed.
+`incomplete`), severity, path and span.
+
+Ptah also refuses a reply it could use only by dropping part of it:
+
+- a reply the SDK's checks refuse;
+- a complete reply with a warning, which it does not report yet;
+- a table that carries facets or owned objects, which a reading cannot place
+  yet;
+- a view or materialized view that carries settings in its `features`. A
+  view's settings need `schema.common-view-facets`, which Ptah does not
+  negotiate, so a provider reports them as `UNSUPPORTED` and names them.
+
+A command that selects a provider for the engine fails with `provider_missing`
+before it reads the file when none is installed.
 
 The execution adapter does not support managed data or isolated execution of
 untrusted SQL. It does not add

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -59,16 +60,19 @@ func retentionObjectModels() []*protocol.ValueModel {
 //	ALTER TABLE name ADD column type [NOT NULL];
 //	DROP TABLE name;
 //	CREATE RETENTION name SECONDS n;
+//	CREATE VIEW name AS query;
 //
 // A line comment, such as a `ptah:not-described` header, is skipped. Every
 // other statement is refused as UNSUPPORTED and named by its first word. Names
 // compare without regard to ASCII case, as the engine's identifier rules say.
 // Documents run in order, so a later one alters what an earlier one declared.
 //
-// Three table names select a reply shape for the host's tests: `warned` adds
-// a warning to a complete reading, `malformed` leaves its table without the
-// trace the protocol requires, and `stalled` waits for cancellation. This
-// fixture demonstrates the protocol, not an engine's grammar.
+// Three table names and a view name select a reply shape for the host's tests:
+// `warned` adds a warning to a complete reading, `malformed` leaves its table
+// without the trace the protocol requires, `stalled` waits for cancellation,
+// and a view named `tuned` carries a desired facet collection in
+// SQLView.features, which only a host that negotiated schema.common-view-facets
+// receives. This fixture demonstrates the protocol, not an engine's grammar.
 func (*Provider) ReadSQLSchema(ctx context.Context, request *protocol.ReadSQLSchemaRequest) (*protocol.SQLSchema, error) {
 	load := &sqlLoad{}
 	declarations := make([]*protocol.SQLDocumentDeclarations, 0, len(request.GetDocuments()))
@@ -96,6 +100,10 @@ func (*Provider) ReadSQLSchema(ctx context.Context, request *protocol.ReadSQLSch
 		result.NativeObjects = append(result.NativeObjects, entry.object)
 		result.Traces = append(result.Traces, sqlTrace(protocol.SQLObjectTrace_NATIVE_OBJECTS, i, entry.declared))
 	}
+	for i, entry := range load.views {
+		result.Views = append(result.Views, entry.view)
+		result.Traces = append(result.Traces, sqlTrace(protocol.SQLObjectTrace_VIEWS, i, entry.declared))
+	}
 	if load.warned != nil {
 		result.Diagnostics = append(result.Diagnostics, &protocol.SQLDiagnostic{Code: protocol.SQLDiagnostic_INVALID, Severity: protocol.SQLDiagnostic_WARNING,
 			DocumentId: load.warned.document, Span: load.warned.span, Message: "fixture warns about table warned"})
@@ -119,9 +127,15 @@ type sqlRetention struct {
 	declared sqlPlace
 }
 
+type sqlView struct {
+	view     *protocol.SQLView
+	declared sqlPlace
+}
+
 type sqlLoad struct {
 	tables      []*sqlTable
 	retentions  []*sqlRetention
+	views       []*sqlView
 	diagnostics []*protocol.SQLDiagnostic
 	warned      *sqlPlace
 	stalled     bool
@@ -158,11 +172,14 @@ func (l *sqlLoad) run(document *protocol.SQLDocument) *protocol.SQLDocumentDecla
 			continue
 		}
 		place := sqlPlace{document: document.GetId(), span: sqlSpan(text, start, start+len(statement))}
-		l.statement(document, declared, place, strings.FieldsFunc(statement, func(r rune) bool {
-			return r == ' ' || r == '\t' || r == '\r' || r == '\n' || r == '(' || r == ')' || r == ','
-		}))
+		l.statement(document, declared, place, strings.FieldsFunc(statement, sqlSeparator))
 	}
 	return declared
+}
+
+// sqlSeparator reports whether r separates the words of a statement.
+func sqlSeparator(r rune) bool {
+	return r == ' ' || r == '\t' || r == '\r' || r == '\n' || r == '(' || r == ')' || r == ','
 }
 
 // withoutComments blanks every line comment, keeping each byte's offset.
@@ -191,6 +208,8 @@ func (l *sqlLoad) statement(document *protocol.SQLDocument, declared *protocol.S
 		l.alter(document, place, fields[2], fields[4:])
 	case opening == "CREATE RETENTION" && len(words) == 5 && words[3] == "SECONDS":
 		l.retention(document, declared, place, fields[2], fields[4])
+	case opening == "CREATE VIEW" && len(words) > 4 && words[3] == "AS":
+		l.view(document, declared, place, fields[2])
 	default:
 		start := int(place.span.GetStart().GetByteOffset()) // #nosec G115 -- the offset indexes a fixture document
 		l.refuse(document, protocol.SQLDiagnostic_UNSUPPORTED, sqlSpan(document.GetText(), start, start+len(fields[0])), "unsupported statement "+words[0])
@@ -313,6 +332,37 @@ func (l *sqlLoad) retention(document *protocol.SQLDocument, declared *protocol.S
 	l.retentions = append(l.retentions, &sqlRetention{object: &protocol.Envelope{ProviderId: Description().GetProviderId(), Kind: model.GetKind(), SchemaVersion: model.GetSchemaVersion(),
 		Encoding: model.GetEncoding(), DefinitionSha256: model.GetDefinitionSha256(), Owner: retentionOwner(name), Payload: payload}, declared: place})
 	declared.Objects = append(declared.Objects, &protocol.SQLDeclaration{Kind: "retention", Name: name})
+}
+
+// view declares a view whose query is the statement's text after AS. A view
+// named `tuned` carries a desired facet collection in its features.
+func (l *sqlLoad) view(document *protocol.SQLDocument, declared *protocol.SQLDocumentDeclarations, place sqlPlace, name string) {
+	if l.find(name) >= 0 || slices.ContainsFunc(l.views, func(entry *sqlView) bool {
+		return NormalizeCommonIdentifier(entry.view.GetName()) == NormalizeCommonIdentifier(name)
+	}) {
+		l.refuse(document, protocol.SQLDiagnostic_INVALID, place.span, "relation already exists")
+		return
+	}
+	statement := document.GetText()[place.span.GetStart().GetByteOffset():place.span.GetEnd().GetByteOffset()]
+	view := &protocol.SQLView{Name: name, Body: afterWords(statement, 4)}
+	if NormalizeCommonIdentifier(name) == "tuned" {
+		view.Features = &protocol.CapturedFeatures{Facets: &protocol.ComparisonState{Representation: protocol.ValueInput_DESIRED}}
+	}
+	l.views = append(l.views, &sqlView{view: view, declared: place})
+	declared.Objects = append(declared.Objects, &protocol.SQLDeclaration{Kind: "view", Name: name})
+}
+
+// afterWords returns text without its first n words and the space around them.
+func afterWords(text string, n int) string {
+	for range n {
+		text = strings.TrimLeftFunc(text, sqlSeparator)
+		end := strings.IndexFunc(text, sqlSeparator)
+		if end < 0 {
+			return ""
+		}
+		text = text[end:]
+	}
+	return strings.TrimSpace(text)
 }
 
 func retentionOwner(name string) *protocol.Reference {

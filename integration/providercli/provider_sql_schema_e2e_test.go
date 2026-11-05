@@ -16,6 +16,7 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlext"
 	"ptah.run/internal/pathguard"
 	"ptah.run/internal/providercatalog"
@@ -103,7 +104,10 @@ func TestNativeCLIRefusesASQLSchemaTheProviderRefuses(t *testing.T) {
 
 // TestNativeCLIRefusesAReadingItCannotReportWhole refuses a reading the host
 // could only use by dropping part of it: a reply the SDK's validation refuses,
-// and a complete reading with a warning, which the host has no channel for.
+// a complete reading with a warning, which the host has no channel for, and a
+// view with settings, which have no home on a provider's engine. The host does
+// not negotiate schema.common-view-facets, so the SDK refuses that reply in the
+// provider process.
 func TestNativeCLIRefusesAReadingItCannotReportWhole(t *testing.T) {
 	spec := sqlDocumentSpec(qt.New(t))
 	for _, test := range []struct {
@@ -111,6 +115,7 @@ func TestNativeCLIRefusesAReadingItCannotReportWhole(t *testing.T) {
 	}{
 		{"reply without a trace", "CREATE TABLE malformed (id INTEGER NOT NULL);\n", "provider read SQL schema failed"},
 		{"reading with a warning", "CREATE TABLE warned (id INTEGER NOT NULL);\n", "the provider reported a warning, which Ptah does not report for a SQL schema reading yet; the first: fixture warns about table warned at position 0 (line 1, column 1)"},
+		{"view with settings", "CREATE TABLE items (id INTEGER NOT NULL);\nCREATE VIEW tuned AS SELECT id FROM items;\n", "provider read SQL schema failed (Internal)"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -190,6 +195,20 @@ func TestProviderSQLLoadRefusalNamesTheDocument(t *testing.T) {
 	c.Assert(refusal.Diagnostics, qt.HasLen, 1)
 	c.Assert(refusal.Diagnostics[0].Path, qt.Equals, "two.sql")
 	c.Assert(load, qt.DeepEquals, sqlschema.Load{})
+}
+
+// TestProviderReadsASQLViewIntoTheHostModel reads a view the provider declares
+// into the host model, so the refusal of a view with settings in
+// TestNativeCLIRefusesAReadingItCannotReportWhole is a refusal of its settings.
+func TestProviderReadsASQLViewIntoTheHostModel(t *testing.T) {
+	c := qt.New(t)
+	_, runtime := yamlProviderCommand(c, "sql-document")
+	files := []sqlext.SourceFile{{Path: "schema.sql", Text: "CREATE TABLE items (id INTEGER);\nCREATE VIEW visible AS SELECT id FROM items;\n"}}
+
+	load, err := sqlschema.ReadLoad(c.Context(), sqlext.GrammarRequest{Target: "fixture", Files: files}, sqlschema.Options{Owners: runtime.SQL()})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(load.Database.Views, qt.DeepEquals, []schemamodel.View{{Name: "visible", Body: "SELECT id FROM items"}})
 }
 
 // TestMissingProviderRefusesASQLSchemaBeforeReadingIt refuses a SQL desired

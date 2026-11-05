@@ -187,8 +187,22 @@ func addSQLEnum(database *schemamodel.Database, declared *protocol.DeclaredEnum)
 	return nil
 }
 
+// addSQLView places a view or a materialized view. A view's own settings, the
+// desired facets SQLView.features carries, have no home on a provider's engine:
+// the host does not negotiate schema.common-view-facets, and
+// target.declaredCommonObjects refuses the settings of a view that a YAML, HCL
+// or Go source declares. While the feature is not negotiated, the SDK refuses a
+// reply that carries them before it reaches the host; this refusal keeps them
+// from being dropped if the host lists the feature before it places them.
 func addSQLView(database *schemamodel.Database, view *protocol.SQLView) error {
 	name := schemamodel.QualifyTableName(view.GetSchema(), view.GetName())
+	if proto.Size(view.GetFeatures()) != 0 {
+		kind := "view"
+		if view.GetMaterialized() {
+			kind = "materialized view"
+		}
+		return unsupported(fmt.Sprintf("settings of %s %q in a SQL schema reading", kind, name))
+	}
 	if !view.GetMaterialized() {
 		database.Views = append(database.Views, schemamodel.View{Name: name, Body: view.GetBody(), WithCheck: view.GetWithCheck(), Comment: view.GetComment(),
 			Attributes: slices.Clone(view.GetAttributes()), DependsOn: slices.Clone(view.GetDependsOn())})
