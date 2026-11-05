@@ -5,7 +5,10 @@ import (
 	"slices"
 	"strings"
 
+	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/sqlident"
+	"ptah.run/internal/tableref"
 )
 
 // deriveView resolves one view body into edges, or records why it could not.
@@ -15,11 +18,11 @@ import (
 // other shape becomes an [Undecided] naming what stopped it, because a view
 // whose dependencies were not resolved must not be indistinguishable from a
 // view with none.
-func deriveView(name, body string, materialized bool, columns map[string][]string) Result {
+func deriveView(name, body string, materialized bool, columns map[string][]string, reading bodyReading) Result {
 	undecided := func(reason string) Result {
 		return Result{Undecided: []Undecided{{View: name, Reason: reason, Materialized: materialized}}}
 	}
-	tokens := tokenize(body)
+	tokens := tokenize(body, reading)
 	if len(tokens) == 0 {
 		return undecided("the body is empty")
 	}
@@ -27,7 +30,7 @@ func deriveView(name, body string, materialized bool, columns map[string][]strin
 	if err != nil {
 		return undecided(err.Error())
 	}
-	source, err := singleSource(tokens, fromStart)
+	source, err := singleSource(tokens, fromStart, reading)
 	if err != nil {
 		return undecided(err.Error())
 	}
@@ -47,10 +50,35 @@ func deriveView(name, body string, materialized bool, columns map[string][]strin
 	return Result{Edges: edges}
 }
 
+// bodyReading is how one dialect's view bodies are read.
+type bodyReading struct {
+	// options are the lexer's: the scanner of a dialect that has a lexer of
+	// its own, or the shared lexer's lenient rules.
+	options lexer.Options
+	// dialect names the bodies' dialect, whose names sqlident reads.
+	dialect string
+	// paths reports that a FROM source is one identifier holding a table's
+	// path, as sqlident.NamesArePaths answers for the dialect.
+	paths bool
+}
+
+// readingFor is the reading of dialect's view bodies. A dialect with a lexer
+// of its own, such as the scanner a provider registers for its engine, is
+// read by that lexer: on YDB a double-quoted text is a string rather than a
+// name, and a quote inside an @@...@@ string opens no other string. Every
+// other dialect is read by the shared lexer's lenient rules.
+func readingFor(dialect string) bodyReading {
+	reading := bodyReading{dialect: dialect, paths: sqlident.NamesArePaths(dialect)}
+	if options := dialectlexer.Options(dialect); options.Scanner != nil {
+		reading.options = options
+	}
+	return reading
+}
+
 // tokenize drops whitespace and comments, which carry no lineage and would
 // otherwise have to be skipped at every step below.
-func tokenize(body string) []lexer.Token {
-	lex := lexer.NewLexer(body)
+func tokenize(body string, reading bodyReading) []lexer.Token {
+	lex := lexer.NewLexerWithOptions(body, reading.options)
 	var tokens []lexer.Token
 	for {
 		token := lex.NextToken()
@@ -102,7 +130,7 @@ func selectAndFrom(tokens []lexer.Token) (selectStart, fromStart int, err error)
 // at: with more than one source in scope, an unqualified column cannot be
 // attributed to a table, and attributing it to the wrong one is worse than
 // saying so.
-func singleSource(tokens []lexer.Token, fromStart int) (sourceRef, error) {
+func singleSource(tokens []lexer.Token, fromStart int, reading bodyReading) (sourceRef, error) {
 	rest := tokens[fromStart+1:]
 	if len(rest) == 0 {
 		return sourceRef{}, fmt.Errorf("the FROM clause names no source")
@@ -115,6 +143,10 @@ func singleSource(tokens []lexer.Token, fromStart int) (sourceRef, error) {
 		return sourceRef{}, err
 	}
 	source := sourceRef{table: table, alias: table, columnsKey: table}
+	if reading.paths {
+		source = pathSource(rest[0], reading.dialect)
+		consumed = 1
+	}
 	rest = rest[consumed:]
 	if len(rest) > 0 && rest[0].MatchIdentifierValue("as") {
 		rest = rest[1:]
@@ -147,6 +179,19 @@ type sourceRef struct {
 	// columnsKey is the name the table's declared columns are found under,
 	// its bare name: the schema's tables are indexed without their schema.
 	columnsKey string
+}
+
+// pathSource reads a FROM source of a dialect that names a table by one path:
+// one identifier, which a dot never qualifies, since YQL reads `dir`.`t` as a
+// cluster and a table. The table goes by its Ptah name, its directory as the
+// schema, and the path stays the name a column may be qualified with.
+func pathSource(token lexer.Token, dialect string) sourceRef {
+	value, ok := sqlident.ReadName(dialect, token.Value)
+	if !ok {
+		value = unquote(token.Value)
+	}
+	directory, name := sqlident.SplitPath(value)
+	return sourceRef{table: tableref.Canonical(directory, name), alias: value, columnsKey: name}
 }
 
 func isJoinKeyword(token lexer.Token) bool {

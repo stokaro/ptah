@@ -240,7 +240,19 @@ A provider without these features refuses declared rows and seed files: the
 host does not write its own `INSERT` text or `schema_seeds` table for it. An
 engine's `query_dialect` is how the query builder, `core/query`, spells
 statements for it. The host registers it with `query.RegisterDialect` when it
-starts the provider.
+starts the provider, and writes and reads the engine's names with its quoting
+everywhere else. With `paths`, a qualified name is one path, `dir/t`, and Ptah's
+schema is the directory that holds the object.
+
+`sql.scan` lets a provider scan the SQL text of its engine. Ptah reads SQL text
+without parsing it in many places: the lineage of view bodies, the indentation
+of the `sql` template function of `ptah-compat`, placeholder rewriting,
+statement splitting and the scans of migration bodies. The shared rules read
+the SQL standard's strings and quoted names. An engine whose strings or quoted
+names differ, as YQL's `"..."` strings and `@@...@@` strings do, lists the
+feature. While the provider is selected, Ptah asks `ScanSQL` for the tokens of
+each text of the engine it reads, and caches them by text. A scan that fails
+reads the rest of the text as unknown, never by the shared rules.
 
 `lint.migrations` lets a provider own the lint rules of its engine. The provider
 declares the rule catalog in its description, splits migration files with its own

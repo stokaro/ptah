@@ -94,7 +94,11 @@ Every built-in dialect is read by the shared lexer and parser. The seams an
 owner's own lexer, syntax tree or reach scan would enter through
 (`internal/lexerext`, `internal/syntaxext` and `internal/reachext`) serve no
 built-in dialect. An engine whose SQL is not written in the shared grammar,
-such as YDB, is served by its provider, which reads its own SQL.
+such as YDB, is served by its provider, which reads its own SQL documents. A
+provider that lists `sql.scan` also scans the engine's text: the host
+registers its scanner with `lexerext.Provide` while the provider is selected
+(`internal/providerscan`), and every reader of the engine's text through
+`internal/dialectlexer` reads its tokens.
 
 A DO block that declares roles is read by the reader of the procedural
 language the dialect's descriptor names (`Statements.DoBlocks`), which
