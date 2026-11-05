@@ -57,6 +57,16 @@ func TestDeclaredKeyName_HappyPath(t *testing.T) {
 			want:    make([]string, 0),
 		},
 		{
+			name:    "a changed UNIQUE on a table that names its key keeps its own name",
+			held:    "CREATE TABLE parent (id bigint NOT NULL, code bigint, CONSTRAINT parent_u UNIQUE (id));",
+			desired: "CREATE TABLE parent (id bigint NOT NULL, code bigint, CONSTRAINT parent_pk PRIMARY KEY (id), CONSTRAINT parent_u UNIQUE (code));",
+			liveKey: []string{"id"},
+			want: []string{
+				`ALTER TABLE "parent" DROP CONSTRAINT "parent_u"`,
+				`ALTER TABLE "parent" ADD CONSTRAINT "parent_u" UNIQUE ("code")`,
+			},
+		},
+		{
 			name:    "a name of the spelling the server would choose writes none",
 			held:    "CREATE TABLE parent (id bigint NOT NULL);",
 			desired: "CREATE TABLE parent (id bigint NOT NULL, CONSTRAINT parent_pkey PRIMARY KEY (id));",
