@@ -11,6 +11,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
+	"ptah.run/core/platform"
 )
 
 // TestSequenceInSchema_HappyPath reads back what pg_get_serial_sequence
@@ -87,4 +88,33 @@ func TestKeepColumnSequencesOnly_ADescribedSequenceIsAnOrdinaryDefault(t *testin
 
 	c.Assert(tables[0].Columns[0].IsAutoIncrement, qt.IsTrue)
 	c.Assert(tables[0].Columns[1].IsAutoIncrement, qt.IsFalse)
+}
+
+// TestCockroachSequenceDefault_SpellsTheDefaultAsPostgreSQLDoes pins the spelling a
+// declared default compares against, and that nothing else changes.
+func TestCockroachSequenceDefault_SpellsTheDefaultAsPostgreSQLDoes(t *testing.T) {
+	tests := []struct {
+		name, dialect, read, want string
+	}{
+		{name: "the connection's own schema", dialect: platform.CockroachDB, read: "nextval('public.s'::REGCLASS)", want: "nextval('s'::regclass)"},
+		{name: "another schema", dialect: platform.CockroachDB, read: "nextval('other.s'::REGCLASS)", want: "nextval('other.s'::regclass)"},
+		{name: "no schema", dialect: platform.CockroachDB, read: "nextval('s'::REGCLASS)", want: "nextval('s'::regclass)"},
+		{name: "a name that needs quoting", dialect: platform.CockroachDB, read: `nextval('public."S x"'::REGCLASS)`, want: `nextval('public."S x"'::REGCLASS)`},
+		{name: "another default", dialect: platform.CockroachDB, read: "unique_rowid()", want: "unique_rowid()"},
+		{name: "PostgreSQL", dialect: platform.Postgres, read: "nextval('public.s'::regclass)", want: "nextval('public.s'::regclass)"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			reader := &Reader{dialect: test.dialect, schema: "public"}
+			c.Assert(*reader.cockroachSequenceDefault(new(test.read)), qt.Equals, test.want)
+		})
+	}
+}
+
+// TestCockroachSequenceDefault_NoDefault keeps a column with no default without one.
+func TestCockroachSequenceDefault_NoDefault(t *testing.T) {
+	c := qt.New(t)
+	reader := &Reader{dialect: platform.CockroachDB, schema: "public"}
+	c.Assert(reader.cockroachSequenceDefault(nil), qt.IsNil)
 }

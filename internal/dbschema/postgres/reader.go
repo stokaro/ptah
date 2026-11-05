@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -961,6 +962,7 @@ func (r *Reader) readColumnsForSchema(ctx context.Context, schemaName string) (m
 		}
 		col.IdentityGeneration = postgresIdentityGeneration(identityKind)
 		col.FormattedType = cockroachSizedString(r.dialect, col)
+		col.ColumnDefault = r.cockroachSequenceDefault(col.ColumnDefault)
 
 		col.OwnedSequence = sequenceInSchema(ownedSequenceName, schemaName)
 		if col.ColumnDefault != nil {
@@ -976,6 +978,31 @@ func (r *Reader) readColumnsForSchema(ctx context.Context, schemaName string) (m
 		return nil, err
 	}
 	return columnsByTable, nil
+}
+
+// cockroachNextvalDefault is a nextval default as CockroachDB prints it: the
+// sequence qualified, and the cast in upper case. A name that needs quoting is
+// left out, and such a default stays as the server printed it.
+var cockroachNextvalDefault = regexp.MustCompile(`^nextval\('(?:([^'".]+)\.)?([^'".]+)'::REGCLASS\)$`)
+
+// cockroachSequenceDefault spells a CockroachDB nextval default the way
+// PostgreSQL's read does. CockroachDB reads `nextval('s')` back as
+// `nextval('public.s'::REGCLASS)`, measured on v26.3.2, where PostgreSQL leaves
+// out the schema a name reaches by default. Compared as printed, a declared default
+// differs on every run, and the plan sets it again each time.
+func (r *Reader) cockroachSequenceDefault(columnDefault *string) *string {
+	if r.dialect != platform.CockroachDB || columnDefault == nil {
+		return columnDefault
+	}
+	parts := cockroachNextvalDefault.FindStringSubmatch(*columnDefault)
+	if parts == nil {
+		return columnDefault
+	}
+	name := parts[2]
+	if parts[1] != "" && r.referencedSchema(parts[1]) != "" {
+		name = parts[1] + "." + name
+	}
+	return new("nextval('" + name + "'::regclass)")
 }
 
 // sequenceInSchema answers the bare name of the sequence pg_get_serial_sequence
