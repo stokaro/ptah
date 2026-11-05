@@ -1,0 +1,104 @@
+---
+title: Ptah ecosystem
+description: See which public Ptah repositories a workflow needs, how they work together, and how mature each one is.
+type: concept
+audience:
+  - new-user
+  - platform-engineer
+readerQuestion: Which Ptah components do I need, and how do they work together?
+goal: Choose the Ptah components a workflow needs, and find each one's repository, status and compatibility source.
+sourceOfTruth:
+  - docs/site/src/ecosystem.mjs
+  - github:stokaro/ptah-operator
+  - github:stokaro/ptah-console
+  - github:stokaro/ptah-ydb-plugin
+  - github:stokaro/ptah-duckdb-plugin
+  - github:stokaro/ptah-spanner-plugin
+  - github:stokaro/homebrew-ptah
+  - github:stokaro/ptah-action
+  - github:stokaro/ptah.run
+  - github:stokaro/ptah-sandbox
+  - github:stokaro/ptah-atlas-conformance
+  - github:stokaro/ptah-testkit
+  - github:stokaro/ptah-action-e2e
+generated: false
+searchAliases:
+  - Ptah repositories
+  - Ptah components
+  - which Ptah project do I need
+overlaps:
+  - /start/overview/
+  - /operate/kubernetes-operator/
+  - /extend/executable-providers/
+disposition: keep
+---
+
+import EcosystemMap from '../../../components/EcosystemMap.astro';
+import EcosystemText from '../../../components/EcosystemText.astro';
+
+To plan and apply a schema change you need one repository: `ptah`, which holds
+the engine and the CLIs. The other public repositories install it, run it for
+you on Kubernetes, add an engine it does not build in, or check it. Use the map
+to find the ones your work needs, and leave the rest out.
+
+<EcosystemMap />
+
+## Choose a path
+
+Each path below is complete on its own, and the first one needs no other
+component. Start with the first unless your databases are managed from
+Kubernetes.
+
+<EcosystemText view="paths" />
+
+Providers are a separate choice, and they apply on any path. A provider is needed
+only for an engine Ptah does not build in. [Supported databases](../../databases/overview/)
+lists what Ptah builds in, and [executable providers](../../extend/executable-providers/)
+explains how a provider is installed and selected.
+
+## What each repository does
+
+Every public repository is listed here, and each row names what its owner says
+about its maturity. A repository's existence is not a support claim: a scaffold
+can be recognized by Ptah and still do nothing.
+
+<EcosystemText view="repositories" />
+
+The status column uses these labels:
+
+<EcosystemText view="statuses" />
+
+## How the pieces connect
+
+An arrow follows the flow of work, from the component that starts it to the one
+that carries it on. Not every connection is a runtime dependency: installing,
+testing and linking are different relationships, and the table names each one.
+
+<EcosystemText view="relationships" />
+
+## Releases and compatibility
+
+Ptah, the operator, the console and the providers have separate releases, and a
+new version of one does not imply a matching version of another. Each project
+publishes its own compatibility statement, so this page lists no version numbers:
+
+- **Ptah** publishes [its releases](https://github.com/stokaro/ptah/releases), and
+  the [support matrix](../../databases/support-matrix/) lists the database release
+  lines it covers.
+- **The operator** runs a Ptah release image in its Jobs and publishes
+  [which Ptah build each operator release runs](https://operator.ptah.run/support/ptah/).
+- **The console** is built against one operator release and publishes
+  [which console release goes with which operator release](https://github.com/stokaro/ptah-console/blob/master/docs/compatibility.md).
+- **A provider** declares the provider contract it needs, and
+  [executable providers](../../extend/executable-providers/#install-an-official-provider)
+  explains how Ptah picks a release it can run.
+- **Atlas compatibility** is measured in `ptah-atlas-conformance`, and
+  [conformance](../../atlas/conformance/) reports what those runs show.
+
+## Next steps
+
+- To run your first schema change from a terminal, follow
+  [Get a first result](../quick-start/).
+- To check changes on pull requests, read [CI integration](../../testing/ci/).
+- To manage databases from Kubernetes, read
+  [Kubernetes operator](../../operate/kubernetes-operator/).

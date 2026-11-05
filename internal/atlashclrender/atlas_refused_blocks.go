@@ -399,7 +399,7 @@ func (r *renderer) omitRefused(path, block string, dependency func() blockDepend
 		return false
 	}
 	if depends := dependency(); depends.because != "" {
-		r.warn(path, fmt.Sprintf(
+		r.warnAtlasBlock(path, AtlasBlockKept, fmt.Sprintf(
 			"kept in Atlas-compatible schema inspect output because %s:"+
 				" the Atlas community CLI refuses a %s schema file that declares any %s block, so it cannot read"+
 				" this document, but omitting the block would %s",
@@ -407,13 +407,19 @@ func (r *renderer) omitRefused(path, block string, dependency func() blockDepend
 		))
 		return false
 	}
-	r.warn(path, fmt.Sprintf(
+	r.warnAtlasBlock(path, AtlasBlockOmitted, fmt.Sprintf(
 		"omitted from Atlas-compatible schema inspect output: the Atlas community CLI refuses a %s schema file"+
 			" that declares any %s block, and one of them makes the whole document unreadable to it;"+
 			" set %s=1 to keep every block Ptah models",
 		r.dialect, block, KeepAtlasRefusedBlocksEnvVar,
 	))
 	return true
+}
+
+// warnAtlasBlock reports what this rendering did with a block the community
+// CLI refuses.
+func (r *renderer) warnAtlasBlock(path string, fate AtlasBlockFate, message string) {
+	r.diagnostics = append(r.diagnostics, Diagnostic{Severity: SeverityWarning, Path: path, Message: message, AtlasBlock: fate})
 }
 
 // omitsRefusedBlock is the DECISION [renderer.omitRefusedBlock] reports, with

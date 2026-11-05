@@ -224,9 +224,10 @@ func connectSimulationDev(
 	// compared by the server it reaches instead, once connected and before
 	// anything is reset; see [claimSimulationDevServer].
 	//
-	// A YDB dev URL is compared live for the same reason: its dev database is
-	// a dev realm Resolve creates, so the URL that names the target names a
-	// realm beside it, and only the connection can say which.
+	// A dev URL whose provider creates dev realms is compared live for the
+	// same reason: its dev database is a realm Resolve creates, so the URL
+	// that names the target names a realm beside it, and only the connection
+	// can say which.
 	serverDev := isDevServer(devURL)
 	if err := refuseDevURLAliases(ctx, devURL, targetURL, desiredURLs); err != nil {
 		return simulationDev{}, err
@@ -314,7 +315,7 @@ func connectSimulationDev(
 func refuseDevURLAliases(ctx context.Context, devURL, targetURL string, desiredURLs []string) error {
 	// A provider owns the grammar of its addresses, so two of them are
 	// compared by the databases their sessions select, once connected.
-	if _, served := providerurl.Provided(ctx, devURL); served || devdocker.ResolvedPerRun(devURL) {
+	if _, served := providerurl.Provided(ctx, devURL); served || devdocker.ResolvedPerRun(ctx, devURL) {
 		return nil
 	}
 	for _, target := range urlAliasCandidates(devURL, []string{targetURL}) {
@@ -601,9 +602,9 @@ func guardRehearsalBaseline(statements []string, guard *devclean.BaselineGuard, 
 // statementExcerpt is the first line of a statement that is not a comment,
 // cut to a length an error message can carry, so a refusal names what it
 // refused. A `--` line whose first token the dialect's lexer reads as
-// lexer.TokenUnknown, as YQL's lexer reads a `--!` translation setting, is
-// not a comment, and the guard refuses it, so it is the excerpt. A statement
-// holding only comments is excerpted by its first line.
+// lexer.TokenUnknown, a setting the server reads, is not a comment, and the
+// guard refuses it, so it is the excerpt. A statement holding only comments
+// is excerpted by its first line.
 func statementExcerpt(statement, dialect string) string {
 	const limit = 80
 	options := dialectlexer.Options(dialect)

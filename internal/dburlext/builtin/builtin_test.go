@@ -14,12 +14,12 @@ import (
 // The dialects below are the arms of the switches of internal/atlasurl that
 // named engines, written out as they stood when these services replaced them:
 // networkDatabaseIdentity read the PostgreSQL family with pgconn, SQL Server
-// with msdsn, ClickHouse with clickhouse-go and YDB with internal/ydburl;
-// SameDatabaseEndpoint compared SQLite by file; WithDatabaseName refused YDB.
+// with msdsn and ClickHouse with clickhouse-go; SameDatabaseEndpoint compared
+// SQLite by file. No built-in engine renames the database of a URL.
 var (
-	switchEndpoints = []string{"postgres", "cockroachdb", "yugabytedb", "spanner", "sqlserver", "clickhouse", "ydb"}
+	switchEndpoints = []string{"postgres", "cockroachdb", "yugabytedb", "spanner", "sqlserver", "clickhouse"}
 	switchDatabases = []string{"sqlite"}
-	switchRename    = []string{"ydb"}
+	switchRename    []string
 )
 
 func TestLookup_ServesTheArmsOfTheSwitchesItReplaces(t *testing.T) {

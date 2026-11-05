@@ -33,8 +33,8 @@ func TestInferenceStatus_FailurePath_AnotherEngineTarget(t *testing.T) {
 	response, err := session.InferenceStatus(context.Background(), agentapi.InferenceStatusRequest{RunID: "run-1"})
 
 	c.Assert(err, qt.ErrorMatches,
-		`target events: ptah inference works against PostgreSQL with pgvector, against YDB, and against a provider `+
-			`engine with an embedding store, and "mysql://" `+
+		`target events: ptah inference works against PostgreSQL with pgvector and against a provider engine `+
+			`with an embedding store, such as YDB, and "mysql://" `+
 			`names another engine: .* nothing here to run against mysql`)
 	code, coded := agentdiag.CodeOf(err)
 	c.Assert(coded, qt.IsTrue)
@@ -43,20 +43,14 @@ func TestInferenceStatus_FailurePath_AnotherEngineTarget(t *testing.T) {
 	c.Assert(dialed.Load(), qt.Equals, int64(0))
 }
 
-// The controls: a PostgreSQL target and a YDB target on the same listener are
-// both dialed, so the test above measures the refusal and not a listener
-// nothing could reach, and YDB is an engine the tools run against rather than
-// one they refuse.
+// The control: a PostgreSQL target on the same listener is dialed, so the
+// test above measures the refusal and not a listener nothing could reach.
 func TestInferenceStatus_SupportedEngineTargetIsDialed(t *testing.T) {
 	tests := []struct {
 		name   string
 		target func(postgresURL string) string
 	}{
 		{name: "postgresql", target: func(postgresURL string) string { return postgresURL }},
-		{name: "ydb", target: func(postgresURL string) string {
-			listener, _ := url.Parse(postgresURL)
-			return "ydb://" + listener.Host + "/local"
-		}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

@@ -96,48 +96,11 @@ type Timeouts interface {
 	Statements(timeouts migrationfile.Timeouts, scope Scope) (setup, restore []string, err error)
 }
 
-// Unit is one query a migration body runs as.
-type Unit struct {
-	// Text is what is sent to the server.
-	Text string
-	// Source is the body's text the query came from.
-	Source string
-	// Statements are the statements the query holds.
-	Statements []string
-	// Mixed reports that the query runs a schema statement and a statement
-	// that reads or writes a table, which the engine refuses whole.
-	Mixed bool
-}
-
-// Units splits a migration body into the queries an engine runs it as, each
-// on its own, in place of statements. The migrator counts, records and
-// resumes over those queries, runs a schema query outside any transaction,
-// and commits a data query together with the checkpoint that records it. A
-// query carries every definition and setting it needs, and the engine keeps
-// no session state between queries, so a committed one leaves nothing a
-// resumed run has to replay.
-type Units interface {
-	// Split returns the queries of sqlText, or an error for a body the engine
-	// cannot run as queries.
-	Split(sqlText string) ([]Unit, error)
-	// IsData reports whether query reads or writes data rather than schema.
-	IsData(query string) bool
-}
-
 // Checks holds what an engine adds to proving a check assertion read-only.
 type Checks interface {
 	// Validate refuses an assertion whose text the shared rules accept and
 	// the engine cannot run read-only.
 	Validate(assertion string) error
-}
-
-// ReadProver proves, before a check assertion runs, that every object it
-// reads keeps its rows in the database the check is sent to, where the text
-// alone cannot say so.
-type ReadProver interface {
-	// ReadProof returns that proof, reading what it needs over session,
-	// which the caller closes once ReadProof returns.
-	ReadProof(ctx context.Context, session *sql.Conn) (func(ctx context.Context, assertion string) error, error)
 }
 
 // Services is what one engine gives the migrator. A nil service, or a false
@@ -159,18 +122,8 @@ type Services struct {
 	// Timeouts spells a migration's timeouts. Nil means the engine has no
 	// statement for them.
 	Timeouts Timeouts
-	// QueryDeadlines reports that the statement timeout is a deadline the
-	// migrator puts on each query rather than a setting it sends.
-	QueryDeadlines bool
-	// Units splits a body into the queries the engine runs it as. Nil runs a
-	// body statement by statement.
-	Units Units
 	// Checks adds to proving check assertions read-only. Nil adds nothing.
 	Checks Checks
-	// ReadProof proves what a check assertion reads stays in the database.
-	// Nil leaves it to the shared rules, which refuse every construct that
-	// reaches another server by name.
-	ReadProof ReadProver
 	// ReadOnlyChecks reports that the server enforces a read-only session,
 	// so a check runs in one and a statement past the static rules is still
 	// refused by something other than Ptah.

@@ -242,6 +242,8 @@ const (
 	// migration names on purpose: StringField is an exported iota enum, and
 	// inserting into the middle would renumber every constant after it.
 	StringMigrationBaseline
+	// StringMigrationRunner is appended for the same reason.
+	StringMigrationRunner
 	stringFieldCount
 )
 
@@ -272,6 +274,7 @@ const (
 	fieldMigrationMySQLDumpTo      configField = "migration.mysqldump_to"
 	fieldMigrationWebhook          configField = "migration.webhook"
 	fieldMigrationBaseline         configField = "migration.baseline"
+	fieldMigrationRunner           configField = "migration.runner"
 	fieldOnlineDDLTool             configField = "online_ddl.tool"
 	fieldOnlineDDLThresholdRows    configField = "online_ddl.threshold_rows"
 	fieldOnlineDDLArgs             configField = "online_ddl.args"
@@ -377,6 +380,10 @@ var stringFieldDescriptors = [stringFieldCount]stringFieldDescriptor{
 	StringMigrationBaseline: {
 		presence: fieldMigrationBaseline,
 		value:    func(c Config) string { return c.Migration.Baseline },
+	},
+	StringMigrationRunner: {
+		presence: fieldMigrationRunner,
+		value:    func(c Config) string { return c.Migration.Runner },
 	},
 	StringMigrationRevisionsTable: {
 		presence: fieldMigrationRevisionsTable,
@@ -698,6 +705,11 @@ type MigrationConfig struct {
 	// applied before running the pending ones, the config spelling of its
 	// --baseline flag.
 	Baseline string
+	// Runner is the tool the migration directory is written for, which
+	// decides who opens the transaction each file runs in: "ptah", whose
+	// migrator wraps each file, or "golang-migrate", which opens none. Empty
+	// is "ptah".
+	Runner string
 	// Log is the append-only record of migration operations. It is a
 	// tri-state so an explicit false can turn off what is on by default.
 	Log ConfigBool
@@ -1209,6 +1221,13 @@ func mergeMigration(
 		base.Baseline,
 		override.Baseline,
 		fieldMigrationBaseline,
+		overridePresence,
+		resultPresence,
+	)
+	result.Runner = mergeStringValue(
+		base.Runner,
+		override.Runner,
+		fieldMigrationRunner,
 		overridePresence,
 		resultPresence,
 	)

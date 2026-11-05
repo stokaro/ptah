@@ -2,7 +2,7 @@
 
 Status: Proposed
 
-Contract: 25.24
+Contract: 25.21
 
 Deciders: Ptah maintainers
 
@@ -51,12 +51,12 @@ YDB engine.
 
 `models.report-counts` is a two-way feature: the provider and each engine that
 declares reports list it, and the host lists it in its host features. Contract
-25.24 adds one field, one RPC and five messages:
+25.21 adds one field, one RPC and five messages:
 
 ```proto
 message Engine {
   // ...
-  repeated ModelReport reports = 22;
+  repeated ModelReport reports = 23;
 }
 message ModelReport {
   string kind = 1;
@@ -174,11 +174,8 @@ host whose runtime registers them without a service that answers. Rejected.
 
 ## Consequences
 
-- Contract 25.24 adds a field, an RPC, five messages and a two-way feature. It
-  is numbered after contract 25.21, which ADR 0064 proposes, and the two
-  numbers between them, which other open records of
-  [stokaro/ptah#4204](https://github.com/stokaro/ptah/issues/4204) hold. The
-  first of them to merge takes the lowest free number.
+- Contract 25.21 adds a field, an RPC, five messages and a two-way feature. The
+  same minor carries the additions of ADR 0065, ADR 0066 and ADR 0068.
 - The SDK release comes first. The host and the providers adopt it in their
   own changes.
 - Without the feature nothing changes: a provider's kinds stay out of the

@@ -160,6 +160,11 @@ type ApplyPlan struct {
 	annotations  []renderer.Annotation
 	transactions [][]plangraph.Transaction
 	owned        []safety.StatementAssessment
+	// texts is, for each unit, the text its owner writes the operation as,
+	// where the unit is native and the owner has a text form for it, and
+	// "" otherwise. It is a display projection, as a migration file holds the
+	// operation: execution dispatches the captured unit, never this text.
+	texts []string
 }
 
 // ApplyRuntimeOptions configures Atlas schema apply planning and execution.
@@ -493,7 +498,7 @@ func computeApplyPlan(
 	// nothing about it quietly does less than the desired schema asks for. The
 	// wording names neither surface's flags: native `schema apply` and the
 	// compatibility one both come through here.
-	undecidednote.Report(opts.Diagnostics, undecided, "the database", "the desired schema")
+	undecidednote.Report(ctx, opts.Diagnostics, undecided, "the database", "the desired schema")
 	computation.undecided = undecided
 	diff = applyDiffPolicy(diff, opts.Policy)
 	// After the policy, which deletes the table drops a configuration skips:
@@ -531,7 +536,7 @@ func computeApplyPlan(
 		if err != nil {
 			return applyComputation{}, fmt.Errorf("generate schema apply operations: %w", err)
 		}
-		if err := computation.captureRenderedUnits(info, plan); err != nil {
+		if err := computation.captureRenderedUnits(ctx, opts.Runtime, info, plan); err != nil {
 			return applyComputation{}, err
 		}
 	}
@@ -1235,5 +1240,15 @@ func (c applyComputation) executionPlan() ApplyPlan {
 	plan := c.ApplyPlan
 	plan.units, plan.transactions, plan.owned = c.executionUnits(), c.executionTransactions(), c.executionAssessments()
 	plan.annotations = c.executionAnnotations()
+	plan.texts = c.executionTexts()
 	return plan
+}
+
+// executionTexts aligns the native units' texts with executionUnits: the
+// data statements are SQL and have none.
+func (c applyComputation) executionTexts() []string {
+	if len(c.texts) == 0 {
+		return nil
+	}
+	return slices.Insert(slices.Clone(c.texts), c.dataIndex(), make([]string, len(c.dataStatements))...)
 }

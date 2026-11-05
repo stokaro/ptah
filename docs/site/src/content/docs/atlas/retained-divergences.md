@@ -142,7 +142,7 @@ own measurement conditions.
 | [A dev server that is the `--to` side, or beside one database](#a-dev-server-that-is-the---to-side-or-beside-one-database) | refuses both on `migrate diff` before the replay | replays onto a `--to` server that holds no database, and diffs one database against a server |
 | [A SQL file naming a database beside a dev database](#a-sql-file-naming-a-database-beside-a-dev-database) | creates a file naming one database inside the dev database, and refuses one naming two before running it | runs the file as written on the dev connection and creates its tables in the databases it names, the target included |
 | [A dev database beside a whole server](#a-dev-database-beside-a-whole-server) | refuses it on `schema apply` for every desired schema, before the dev database is contacted | plans a document declaring one database, and replays SQL onto the dev database's server before it refuses |
-| [A YDB database URL](#a-ydb-database-url) | serves it on every verb in the default profile, and refuses it in the binary's words under `PTAH_ATLAS_STRICT_COMPAT=1` | has no YDB driver: `sql/sqlclient: unknown driver "ydb"` |
+| [A YDB database URL](#a-ydb-database-url) | serves it through the YDB provider in the default profile, and refuses it in the binary's words under `PTAH_ATLAS_STRICT_COMPAT=1` | has no YDB driver: `sql/sqlclient: unknown driver "ydb"` |
 | [A realm beside one database on a dev server](#a-realm-beside-one-database-on-a-dev-server) | refuses the pair on `schema diff`, with the binary's own `schema apply` sentence for it | plans databases the one-database side never read |
 | [A golang-migrate file that runs its own transaction](#a-golang-migrate-file-that-runs-its-own-transaction) | runs it as golang-migrate does, outside the migrator's transaction, and exits `0` | nests it in a transaction of its own and exits `1` with `pq: unexpected transaction status idle` |
 
@@ -1153,37 +1153,34 @@ exits `1` where the binary exits `0`, never the reverse.
 **Type.** Ptah extension
 
 **Current boundary.** No Atlas edition has a YDB driver. The default profile
-takes a `ydb://` or `ydbs://` URL on every verb, with no `PTAH_*` variable to
-turn it on, and runs the native capability behind each verb. The strict profile
-refuses it in the binary's words, from a flag, `atlas.hcl` or a data source the
-file connects to.
+takes a `ydb://` or `ydbs://` URL on the `schema`, `migrate` and `script` verbs,
+with no `PTAH_*` variable to turn it on, and serves it through the
+[YDB provider](../../extend/providers/ydb/): the installed one, or the one the
+manifest `PTAH_PROVIDER_CONFIG` names. The strict profile refuses it in the
+binary's words, from a flag, `atlas.hcl` or a data source the file connects to.
 
-Measured on 2026-10-04 against local-ydb 26.2.1.14, every exit status read from
-an unpiped invocation. The binary answers `schema inspect`, `schema apply`,
-`schema diff`, `schema clean`, `migrate apply`, `migrate status` and `migrate
-set` on a YDB URL with `sql/sqlclient: unknown driver "ydb". See:
-https://atlasgo.io/url`, naming `"ydbs"` for a `ydbs://` URL:
+The binary answers `schema inspect`, `schema apply`, `schema diff`, `schema
+clean`, `migrate apply`, `migrate status` and `migrate set` on a YDB URL with
+`sql/sqlclient: unknown driver "ydb". See: https://atlasgo.io/url`, naming
+`"ydbs"` for a `ydbs://` URL, and the strict profile answers with the same
+sentence. Measured against local-ydb 26.2.1.14, every exit status read from an
+unpiped invocation:
 
-| URL | Binary | `ptah-compat` | Strict |
-| --- | --- | --- | --- |
-| `--url ydb://...` | exit `1`, unknown driver | exit `0` | exit `1`, the same sentence |
-| `--url ydbs://...` | exit `1`, unknown driver | dials over TLS | exit `1`, the same sentence |
-| `--dev-url ydb://...` | exit `1`, unknown driver | exit `0`, in a dev realm | exit `1`, the same sentence |
-| a `data "sql"` source | exit `1`, unknown driver | exit `0` | exit `1`, unknown driver |
-
-A `ydbs://` URL reaches the server over TLS: on a plaintext port it fails with
-`tls: first record does not look like a TLS handshake`. A data source is refused
-with `data.sql.tenants: opening database: ...` where the binary says `opening
-connection: ...`, a difference in the middle words that every engine shows.
+| URL | Binary | Strict |
+| --- | --- | --- |
+| `--url ydb://...` | exit `1`, unknown driver | exit `1`, the same sentence |
+| `--url ydbs://...` | exit `1`, unknown driver | exit `1`, the same sentence |
+| `--dev-url ydb://...` | exit `1`, unknown driver | exit `1`, the same sentence |
+| a `data "sql"` source | exit `1`, unknown driver | exit `1`, unknown driver |
 
 The never-looser rule is about an invocation the binary refuses because the
 user got something wrong. A YDB URL is a request for an engine the binary lacks,
 and refusing it in the default profile would remove a capability Ptah has.
-`docker://ydb/...` starts a local-ydb container for the run in the default
-profile. The strict profile answers `unsupported docker image "ydb"`, as the
-binary does.
+`docker://ydb/...` asks the YDB provider to start a local-ydb container for the
+run in the default profile. The strict profile answers `unsupported docker image
+"ydb"`, as the binary does.
 
-**Tracking.** [`stokaro/ptah#4015`](https://github.com/stokaro/ptah/issues/4015)
+**Tracking.** [`stokaro/ptah#4204`](https://github.com/stokaro/ptah/issues/4204)
 
 ## A golang-migrate file that runs its own transaction
 

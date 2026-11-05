@@ -95,6 +95,7 @@ const (
 	Provider_SplitMigration_FullMethodName            = "/ptah.provider.experimental.Provider/SplitMigration"
 	Provider_ReverseChanges_FullMethodName            = "/ptah.provider.experimental.Provider/ReverseChanges"
 	Provider_ReportValues_FullMethodName              = "/ptah.provider.experimental.Provider/ReportValues"
+	Provider_ScanSQL_FullMethodName                   = "/ptah.provider.experimental.Provider/ScanSQL"
 )
 
 // ProviderClient is the client API for Provider service.
@@ -194,8 +195,10 @@ type ProviderClient interface {
 	SplitMigration(ctx context.Context, in *SplitMigrationRequest, opts ...grpc.CallOption) (*MigrationSplit, error)
 	// Contract 25.19. Used only when both sides list models.reverse.
 	ReverseChanges(ctx context.Context, in *ReverseChangesRequest, opts ...grpc.CallOption) (*ReversedChanges, error)
-	// Contract 25.24. Used only when both sides list models.report-counts.
+	// Contract 25.21. Used only when both sides list models.report-counts.
 	ReportValues(ctx context.Context, in *ReportValuesRequest, opts ...grpc.CallOption) (*ValueReports, error)
+	// Contract 25.22. A host calls it only for an engine that lists sql.scan.
+	ScanSQL(ctx context.Context, in *ScanSQLRequest, opts ...grpc.CallOption) (*SQLScan, error)
 }
 
 type providerClient struct {
@@ -966,6 +969,16 @@ func (c *providerClient) ReportValues(ctx context.Context, in *ReportValuesReque
 	return out, nil
 }
 
+func (c *providerClient) ScanSQL(ctx context.Context, in *ScanSQLRequest, opts ...grpc.CallOption) (*SQLScan, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SQLScan)
+	err := c.cc.Invoke(ctx, Provider_ScanSQL_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ProviderServer is the server API for Provider service.
 // All implementations must embed UnimplementedProviderServer
 // for forward compatibility.
@@ -1063,8 +1076,10 @@ type ProviderServer interface {
 	SplitMigration(context.Context, *SplitMigrationRequest) (*MigrationSplit, error)
 	// Contract 25.19. Used only when both sides list models.reverse.
 	ReverseChanges(context.Context, *ReverseChangesRequest) (*ReversedChanges, error)
-	// Contract 25.24. Used only when both sides list models.report-counts.
+	// Contract 25.21. Used only when both sides list models.report-counts.
 	ReportValues(context.Context, *ReportValuesRequest) (*ValueReports, error)
+	// Contract 25.22. A host calls it only for an engine that lists sql.scan.
+	ScanSQL(context.Context, *ScanSQLRequest) (*SQLScan, error)
 	mustEmbedUnimplementedProviderServer()
 }
 
@@ -1302,6 +1317,9 @@ func (UnimplementedProviderServer) ReverseChanges(context.Context, *ReverseChang
 }
 func (UnimplementedProviderServer) ReportValues(context.Context, *ReportValuesRequest) (*ValueReports, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReportValues not implemented")
+}
+func (UnimplementedProviderServer) ScanSQL(context.Context, *ScanSQLRequest) (*SQLScan, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ScanSQL not implemented")
 }
 func (UnimplementedProviderServer) mustEmbedUnimplementedProviderServer() {}
 func (UnimplementedProviderServer) testEmbeddedByValue()                  {}
@@ -2692,6 +2710,24 @@ func _Provider_ReportValues_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Provider_ScanSQL_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ScanSQLRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).ScanSQL(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_ScanSQL_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).ScanSQL(ctx, req.(*ScanSQLRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Provider_ServiceDesc is the grpc.ServiceDesc for Provider service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -3002,6 +3038,10 @@ var Provider_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReportValues",
 			Handler:    _Provider_ReportValues_Handler,
+		},
+		{
+			MethodName: "ScanSQL",
+			Handler:    _Provider_ScanSQL_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

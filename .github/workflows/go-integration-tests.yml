@@ -301,72 +301,6 @@ jobs:
         ports:
           - 1521:1521
 
-      # YDB, the newest measured line. local-ydb advertises its node through
-      # discovery under the container's host name, so the container is named
-      # localhost: a client on the runner then reaches the advertised address
-      # through the published port, and the SDK's default balancer works.
-      # The health check is the image's own script, which runs a query, lists
-      # the scheme and creates and drops a table; measured, a container
-      # started this way reports healthy about six seconds after it starts.
-      # 8765 is the monitoring endpoint. YDB_TEST_URL names it in its
-      # monitoring parameter, so every YDB live test reads the cluster's
-      # feature flags there when it connects. local-ydb leaves the
-      # replication API out of the gRPC services it starts, and Ptah's reader
-      # describes an async replication and a transfer through it, so
-      # YDB_GRPC_SERVICES adds it; a cluster whose configuration names no
-      # services starts it with the rest.
-      # EnableResourcePools is off by default on every line. The live tests
-      # enable it through YDB_FEATURE_FLAGS, and the connection reads it
-      # through the monitoring endpoint to turn resource_pools on.
-      ydb:
-        image: ydbplatform/local-ydb:26.2.1.14
-        env:
-          YDB_USE_IN_MEMORY_PDISKS: "true"
-          YDB_FEATURE_FLAGS: enable_resource_pools
-          YDB_GRPC_SERVICES: replication
-        options: >-
-          --hostname localhost
-          --health-cmd "sh /health_check"
-          --health-interval 5s
-          --health-timeout 20s
-          --health-retries 30
-        ports:
-          - 2136:2136
-          - 8765:8765
-
-      # YDB 25.1, the one line with a published support date. The YDB live
-      # tests run against this server and the one above, through
-      # YDB251_TEST_URL. local-ydb advertises GRPC_PORT through discovery, so
-      # the server listens on the port the runner reaches it on rather than
-      # behind a remapped one, which would advertise the other server's port.
-      # MON_PORT moves the monitoring endpoint off the first server's 8765, and
-      # YDB251_TEST_URL names it in its monitoring parameter.
-      # EnableVectorIndex is off by default on 25.1. The flag turns
-      # vector_indexes on, which the connection reads through the monitoring
-      # endpoint, so the vector index tests build their indexes on this line
-      # too. EnableResourcePools is on as above; every other flag that decides
-      # a capability stays at the line's default.
-      #
-      # The tag names a patch: local-ydb's short tags are branch builds, and
-      # `25.1.4` is a build of stable-25-1-4 rather than a release.
-      ydb-25-1:
-        image: ydbplatform/local-ydb:25.1.4.7
-        env:
-          YDB_USE_IN_MEMORY_PDISKS: "true"
-          GRPC_PORT: "2137"
-          MON_PORT: "8766"
-          YDB_FEATURE_FLAGS: enable_vector_index,enable_resource_pools
-          YDB_GRPC_SERVICES: replication
-        options: >-
-          --hostname localhost
-          --health-cmd "sh /health_check"
-          --health-interval 5s
-          --health-timeout 20s
-          --health-retries 30
-        ports:
-          - 2137:2137
-          - 8766:8766
-
       registry:
         image: registry:3
         ports:
@@ -650,8 +584,6 @@ jobs:
           # database.
           MYSQL_DEV_SERVER_URL: "mysql://root:root_password@127.0.0.1:3316/"
           MARIADB_DEV_SERVER_URL: "mariadb://root:root_password@127.0.0.1:3317/"
-          YDB_TEST_URL: "ydb://localhost:2136/local?monitoring=http://localhost:8765"
-          YDB251_TEST_URL: "ydb://localhost:2137/local?monitoring=http://localhost:8766"
           CLICKHOUSE_URL: "clickhouse://ptah_user:ptah_password@localhost:9000/ptah_test"
           PTAH_CLICKHOUSE_REALM_TEST_URL: "clickhouse://ptah_user:ptah_password@localhost:9000/ptah_test"
           PTAH_CLICKHOUSE_LEGACY_REALM_TEST_URL: "clickhouse://ptah_user:ptah_password@localhost:9001/ptah_test"
@@ -752,15 +684,6 @@ jobs:
           # scenario added later joins this list deliberately instead of
           # arriving red.
           ./integration-test --databases=spanner --scenarios=dynamic_circular_dependencies,dynamic_cockroachdb_common_subset,dynamic_yugabytedb_common_subset --report=stdout,txt,json,html --verbose --output=./reports
-
-      - name: Run YDB live smoke tests
-        env:
-          YDB_URL: "ydb://localhost:2136/local"
-        run: |
-          # The scenarios that run are the ones opted in through
-          # YDBCompatible, which a unit test pins; the runner skips every
-          # other one on YDB.
-          ./integration-test --databases=ydb --report=stdout,txt,json,html --verbose --output=./reports
 
       - name: Upload integration test reports
         uses: actions/upload-artifact@v7

@@ -92,6 +92,10 @@ type storedNames struct {
 	defaultSchema  string
 	spaces         map[string]map[string]storedEntry
 	cut            []StoredName
+	// collided records every name a declaration wrote that its namespace
+	// already held under another spelling, for a linter to report; the
+	// reader refuses what it refuses from the error instead.
+	collided []NameCollision
 	// duplicate is the first name the current file declares again without
 	// IF NOT EXISTS, refused once its conversion has run.
 	duplicate error
@@ -268,6 +272,15 @@ func (s *storedNames) claimName(space, owner, kind, written string, rule onExist
 	if !found {
 		names[stored] = storedEntry{kind: kind, written: written, file: s.file}
 		return false, nil
+	}
+	if previous.written != written {
+		s.collided = append(s.collided, NameCollision{
+			Name: StoredName{
+				Kind: kind, Scope: scopeLabel(space, owner), Written: written, Stored: stored,
+				Limit: factsOf(s.sourcePlatform).identifierLimit.Max,
+			},
+			HeldBy: previous.kind, HeldAs: previous.written, Refused: rule == refuseExisting,
+		})
 	}
 	// A name written as the bytes the server keeps is the object stored under
 	// them, whichever of the two spellings comes first; any other second
@@ -467,42 +480,46 @@ func (s *storedNames) storedColumns(columns []string) []string {
 }
 
 // follow records the names one statement declares, drops or renames, and
-// then the names the server derives for what it leaves unnamed.
-func (s *storedNames) follow(statement ast.Node) error {
+// then the names the server derives for what it leaves unnamed. declares
+// reports a statement of a kind that writes names of its own.
+func (s *storedNames) follow(statement ast.Node) (declares bool, err error) {
 	s.derived = nil
-	if err := s.followWritten(statement); err != nil {
-		return err
+	declares, err = s.followWritten(statement)
+	if err != nil {
+		return declares, err
 	}
 	s.claimDerivedNames()
-	return nil
+	return declares, nil
 }
 
-// followWritten records the names one statement writes.
-func (s *storedNames) followWritten(statement ast.Node) error {
+// followWritten records the names one statement writes. declares reports a
+// statement of a kind that writes names of its own: a drop, and an ALTER
+// INDEX that renames nothing, only forget names.
+func (s *storedNames) followWritten(statement ast.Node) (declares bool, err error) {
 	switch node := statement.(type) {
 	case *ast.CreateTableNode:
-		return s.createTable(node)
+		return true, s.createTable(node)
 	case *ast.IndexNode:
-		return s.index(node)
+		return true, s.index(node)
 	case *ast.AlterTableNode:
-		return s.alterTable(node)
+		return true, s.alterTable(node)
 	case *ast.CreateViewNode:
 		_, err := s.declareRelation("view", node.Name, existingRule[node.Replace])
-		return err
+		return true, err
 	case *ast.CreateMaterializedViewNode:
 		rule := existingRule[node.IfNotExists]
-		return s.skipIfExisted(node, rule)(s.declareRelation("materialized view", node.Name, rule))
+		return true, s.skipIfExisted(node, rule)(s.declareRelation("materialized view", node.Name, rule))
 	case *ast.CreateSequenceNode:
 		rule := existingRule[node.IfNotExists]
-		return s.skipIfExisted(node, rule)(s.declareRelation("sequence", schemaQualified(node.Schema, node.Name), rule))
+		return true, s.skipIfExisted(node, rule)(s.declareRelation("sequence", schemaQualified(node.Schema, node.Name), rule))
 	case *ast.CreateFunctionNode:
-		return s.routine(string(ast.RoutineKindFunction), node.Name, node.Parameters, node.Replace)
+		return true, s.routine(string(ast.RoutineKindFunction), node.Name, node.Parameters, node.Replace)
 	case *ast.RoutineNode:
-		return s.routine(strings.ToLower(string(node.Kind)), node.Name, node.Parameters, node.Replace)
+		return true, s.routine(strings.ToLower(string(node.Kind)), node.Name, node.Parameters, node.Replace)
 	case *ast.CreateTriggerNode:
 		table := s.relation(node.Table)
 		_, err := s.declare(triggerSpace, table.tableKey(), "trigger", node.Name, existingRule[node.Replace])
-		return err
+		return true, err
 	case *ast.DropTableNode:
 		for _, name := range append([]string{node.Name}, node.Names...) {
 			if strings.TrimSpace(name) != "" {
@@ -511,10 +528,10 @@ func (s *storedNames) followWritten(statement ast.Node) error {
 		}
 	case *ast.AlterIndexNode:
 		if strings.TrimSpace(node.NewName) == "" {
-			return nil
+			return false, nil
 		}
 		index := s.relation(node.Name)
-		return s.renameName(relationSpace, index.schema, "index", index.written, node.NewName)
+		return true, s.renameName(relationSpace, index.schema, "index", index.written, node.NewName)
 	case *ast.DropIndexNode:
 		s.dropRelation(node.Name)
 	case *ast.DropViewNode:
@@ -524,7 +541,7 @@ func (s *storedNames) followWritten(statement ast.Node) error {
 	case *ast.DropSequenceNode:
 		s.dropRelation(schemaQualified(node.Schema, node.Name))
 	}
-	return nil
+	return false, nil
 }
 
 // schemaQualified is name as a statement writes it, with the schema the node
@@ -1130,7 +1147,7 @@ func (d *Document) followStoredNames(statements *ast.StatementList, dialect stri
 	d.names.file++
 	reported := len(d.names.cut)
 	for _, statement := range statements.Statements {
-		if err := d.names.follow(statement); err != nil {
+		if _, err := d.names.follow(statement); err != nil {
 			return nil, err
 		}
 	}

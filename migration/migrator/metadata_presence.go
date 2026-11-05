@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"ptah.run/core/sqlutil"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/migratorext"
 	"ptah.run/internal/migratorext/builtin"
@@ -122,14 +123,7 @@ func (m *Migrator) migrationsTableUsesLegacyRevisionLayout(ctx context.Context) 
 }
 
 // migrationsTableColumns returns the names of the revision table's columns.
-//
-// On YDB they come from describing the table: YDB has no catalog SQL could
-// read, and `SELECT *` would answer with its columns sorted by name.
 func (m *Migrator) migrationsTableColumns(ctx context.Context) ([]string, error) {
-	if m.usesDescribedMetadata() {
-		columns, _, err := m.describeMetadataTable(ctx, m.migrationsTableName())
-		return columns, err
-	}
 	rows, err := m.conn.QueryContext(
 		ctx,
 		fmt.Sprintf("SELECT * FROM %s WHERE 1 = 0", m.qualifiedMigrationsTable()),
@@ -941,4 +935,24 @@ func configuredOrConnectionSchema(configured, connection string) string {
 		return configured
 	}
 	return connection
+}
+
+// metadataTableExists reports whether the metadata table named table exists,
+// asking the engine's catalog.
+func (m *Migrator) metadataTableExists(ctx context.Context, table string) (bool, error) {
+	query, args, err := migrationTablePresenceQuery(
+		m.connectionDialect(),
+		m.metadataTableSchemaName(),
+		m.connectionSchemaName(),
+		table,
+		m.quoteIdentifier,
+	)
+	if err != nil {
+		return false, err
+	}
+	var count int64
+	if err := m.conn.QueryRowContext(ctx, sqlutil.Rebind(m.connectionDialect(), query), args...).Scan(&count); err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }

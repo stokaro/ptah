@@ -9,7 +9,7 @@ readerQuestion: "Which consistency mode fits my source-write behavior?"
 goal: "Choose a consistency mode for the source-write behavior."
 sourceOfTruth:
   - "internal/cli/inference"
-  - "internal/embedydb"
+  - "github:stokaro/ptah-ydb-plugin"
   - "integration/inference_cli_e2e_test.go"
 generated: false
 overlaps: []

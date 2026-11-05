@@ -22,7 +22,6 @@ import (
 	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/dialect/timescaledb/tsrender"
 	"ptah.run/dialect/timescaledb/tsschema"
-	"ptah.run/dialect/ydb/ydbrender"
 	"ptah.run/engine/builtin/internal/dialects/clickhouse"
 	"ptah.run/feature/oratype"
 	"ptah.run/feature/pgdefaultprivilege"
@@ -32,7 +31,6 @@ import (
 	"ptah.run/feature/pgtype"
 	"ptah.run/feature/synonym"
 	"ptah.run/internal/pgpolicyprovider"
-	"ptah.run/internal/ydbextensions"
 )
 
 // This is built-in composition. Feature-specific shape and support decisions
@@ -40,9 +38,6 @@ import (
 func validateNamedFeatures(dialect string, caps capability.Capabilities, objects schemaext.Objects) error {
 	if objects.IsZero() {
 		return nil
-	}
-	if platform.NormalizeDialect(dialect) == platform.YDB {
-		return ydbextensions.ValidateObjects(dialect, caps, objects)
 	}
 	if platform.IsPostgresFamily(dialect) {
 		return validatePostgresFamilyObjects(dialect, objects)
@@ -238,8 +233,6 @@ func prepareTableFacets(dialect string, facets schemaext.Facets) (schemaext.Face
 	switch platform.NormalizeDialect(dialect) {
 	case platform.ClickHouse:
 		validate = clickhouse.ValidateTableFacets
-	case platform.YDB:
-		validate = ydbrender.ValidateTableFacets
 	case platform.MySQL, platform.MariaDB:
 		validate = mysqlrender.ValidateTableFacets
 	case platform.SQLite:
@@ -268,8 +261,6 @@ func prepareIndexFacets(dialect string, facets schemaext.Facets) (schemaext.Face
 	switch platform.NormalizeDialect(dialect) {
 	case platform.ClickHouse:
 		validate = clickhouse.ValidateIndexFacets
-	case platform.YDB:
-		validate = ydbrender.ValidateIndexFacets
 	case platform.MySQL, platform.MariaDB:
 		validate = mysqlrender.ValidateIndexFacets
 	default:

@@ -1677,19 +1677,6 @@ func (p *Planner) removeEnums(result []ast.Node, diff *difftypes.SchemaDiff) []a
 	return result
 }
 
-// refuseYDBChanges refuses the changes only the YDB planner plans: a table's
-// column families and partitioning settings, and role memberships. A diff
-// reaches this planner with one only when it was built by hand or for YDB, and
-// planning nothing would report the change applied. Feature changes go to
-// their owners through the runtime instead, which refuses a YDB-owned change
-// on this target because no owner plans it here.
-func (p *Planner) refuseYDBChanges(diff *difftypes.SchemaDiff) error {
-	if err := schemaprecondition.RefuseRoleMemberships(p.targetDialect(), diff); err != nil {
-		return err
-	}
-	return nil
-}
-
 // GenerateMigrationAST generates PostgreSQL-specific migration AST statements from schema differences.
 //
 // This method transforms the schema differences captured in the SchemaDiff into executable
@@ -1821,7 +1808,7 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	if err := schemaprecondition.RefuseSerialSequenceChanges(p.targetDialect(), diff); err != nil {
 		return nil, err
 	}
-	if err := p.refuseYDBChanges(diff); err != nil {
+	if err := schemaprecondition.RefuseRoleMemberships(p.targetDialect(), diff); err != nil {
 		return nil, err
 	}
 	var result []ast.Node

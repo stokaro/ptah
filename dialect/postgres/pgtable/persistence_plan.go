@@ -10,7 +10,6 @@ import (
 	"ptah.run/core/featureplan"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/plangraph"
-	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemavalidation"
@@ -111,12 +110,8 @@ func persistenceParent(target string, table featureplan.Table) (string, error) {
 	if !HoldsPersistence(table.Subject) {
 		return "", fmt.Errorf("%w: persistence parent must name a table", schemaext.ErrInvalidValue)
 	}
-	desired, _, err := PersistenceOf(table.Desired.Table.Facets)
-	if err != nil {
+	if _, _, err := PersistenceOf(table.Desired.Table.Facets); err != nil {
 		return "", err
-	}
-	if platform.NormalizeDialect(target) == platform.YDB && desired.Unlogged {
-		return "", fmt.Errorf("%w: UNLOGGED is PostgreSQL's; YDB has no unlogged table", ptaherr.ErrUnsupportedFeature)
 	}
 	if !SupportsPersistence(target) {
 		return "the target has no table persistence setting; CREATE TABLE reports omitted declarations", nil

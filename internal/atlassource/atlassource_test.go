@@ -484,7 +484,7 @@ func TestSetEnsureDevIsolation_RejectsAliasedDatabase(t *testing.T) {
 	set, err := atlassource.ClassifySet("--to", []string{"env://dev"}, env, nil)
 	c.Assert(err, qt.IsNil)
 
-	err = set.EnsureDevIsolation("postgresql://planner@localhost:5432/app?sslmode=require")
+	err = set.EnsureDevIsolation(c.Context(), "postgresql://planner@localhost:5432/app?sslmode=require")
 
 	c.Assert(err, qt.ErrorMatches,
 		`--to database must differ from --dev-url because the dev database is reset during planning`)
@@ -499,7 +499,7 @@ func TestSetEnsureDevIsolation_RejectsPotentialHostAlias(t *testing.T) {
 	)
 	c.Assert(err, qt.IsNil)
 
-	err = set.EnsureDevIsolation("postgres://dev.example/app")
+	err = set.EnsureDevIsolation(c.Context(), "postgres://dev.example/app")
 
 	c.Assert(err, qt.ErrorMatches,
 		`--to database must differ from --dev-url because the dev database is reset during planning`)
@@ -510,7 +510,7 @@ func TestSetEnsureDevIsolation_AllowsIndependentDatabase(t *testing.T) {
 	set, err := atlassource.ClassifySet("--to", []string{"postgres://localhost/desired"}, atlassource.ProjectEnv{}, nil)
 	c.Assert(err, qt.IsNil)
 
-	err = set.EnsureDevIsolation("postgres://localhost/dev")
+	err = set.EnsureDevIsolation(c.Context(), "postgres://localhost/dev")
 
 	c.Assert(err, qt.IsNil)
 }
@@ -537,29 +537,41 @@ func TestSetEnsureDevIsolation_SkipsADockerDevURL(t *testing.T) {
 	set, err := atlassource.ClassifySet("--to", []string{"postgres://localhost/desired"}, atlassource.ProjectEnv{}, nil)
 	c.Assert(err, qt.IsNil)
 
-	c.Assert(set.EnsureDevIsolation("docker://postgres/16/dev"), qt.IsNil)
-	c.Assert(set.EnsureDevIsolation("docker+postgres://_/postgres:17/dev"), qt.IsNil)
+	c.Assert(set.EnsureDevIsolation(c.Context(), "docker://postgres/16/dev"), qt.IsNil)
+	c.Assert(set.EnsureDevIsolation(c.Context(), "docker+postgres://_/postgres:17/dev"), qt.IsNil)
 
 	// The skip is scoped to the scheme, not to "anything unparseable": a dev URL
 	// whose database name cannot be read is still refused, because that is the
 	// fail-closed case the check exists for.
-	c.Assert(set.EnsureDevIsolation("postgres://localhost/desired"), qt.ErrorMatches,
+	c.Assert(set.EnsureDevIsolation(c.Context(), "postgres://localhost/desired"), qt.ErrorMatches,
 		`--to database must differ from --dev-url because the dev database is reset during planning`)
 }
 
-// A YDB dev URL names the database a dev realm is created in, so the URL that
-// names the desired database names a realm beside it; the pair is compared
-// live, through DevProtected. The control is the same desired database beside
-// a PostgreSQL dev URL naming it, which the text still refuses.
-func TestSetEnsureDevIsolation_LeavesAYDBDevURLToTheLiveComparison(t *testing.T) {
-	c := qt.New(t)
-	set, err := atlassource.ClassifySet("--to", []string{"ydb://localhost:2136/local"}, atlassource.ProjectEnv{}, nil)
-	c.Assert(err, qt.IsNil)
-	pgSet, err := atlassource.ClassifySet("--to", []string{"postgres://localhost/app"}, atlassource.ProjectEnv{}, nil)
-	c.Assert(err, qt.IsNil)
+// realmOwner creates dev realms for the URL schemes it names, as the
+// provider of an engine with no SQL that creates a database does.
+type realmOwner struct{ schemes []string }
 
-	c.Assert(set.EnsureDevIsolation("ydb://localhost:2136/local"), qt.IsNil)
-	c.Assert(pgSet.EnsureDevIsolation("postgres://localhost/app"), qt.ErrorMatches,
+func (realmOwner) DevEngines() []string { return nil }
+func (realmOwner) ProvisionDev(context.Context, string) (string, func(), error) {
+	return "", nil, errors.New("the owner provisions no dev database here")
+}
+func (o realmOwner) RealmSchemes() []string { return o.schemes }
+func (realmOwner) EnterRealm(_ context.Context, rawURL string) (string, func(), error) {
+	return rawURL + "?dev_realm=one", func() {}, nil
+}
+
+// A dev URL whose provider creates dev realms names the database a realm is
+// created in, so the URL that names the desired database names a realm beside
+// it; the pair is compared live, through DevProtected. The control is the same
+// pair without the provider, which the text still refuses.
+func TestSetEnsureDevIsolation_LeavesAProviderRealmToTheLiveComparison(t *testing.T) {
+	c := qt.New(t)
+	set, err := atlassource.ClassifySet("--to", []string{"postgres://localhost/app"}, atlassource.ProjectEnv{}, nil)
+	c.Assert(err, qt.IsNil)
+	realms := devdocker.WithExternal(c.Context(), realmOwner{schemes: []string{"postgres"}})
+
+	c.Assert(set.EnsureDevIsolation(realms, "postgres://localhost/app"), qt.IsNil)
+	c.Assert(set.EnsureDevIsolation(c.Context(), "postgres://localhost/app"), qt.ErrorMatches,
 		`--to database must differ from --dev-url because the dev database is reset during planning`)
 }
 
@@ -584,7 +596,7 @@ func TestSetEnsureDevIsolation_LeavesAWholeServerToTheLiveComparison(t *testing.
 			set, err := atlassource.ClassifySet("--to", []string{test.desired}, atlassource.ProjectEnv{}, nil)
 			c.Assert(err, qt.IsNil)
 
-			c.Assert(set.EnsureDevIsolation(test.dev), qt.IsNil)
+			c.Assert(set.EnsureDevIsolation(c.Context(), test.dev), qt.IsNil)
 			c.Assert(set.DevProtected(), qt.HasLen, 1)
 		})
 	}
@@ -597,7 +609,7 @@ func TestSetEnsureDevIsolation_IgnoresLocalFiles(t *testing.T) {
 	set, err := atlassource.ClassifySet("--to", []string{"file://" + path}, atlassource.ProjectEnv{}, nil)
 	c.Assert(err, qt.IsNil)
 
-	err = set.EnsureDevIsolation("sqlite://dev.db")
+	err = set.EnsureDevIsolation(c.Context(), "sqlite://dev.db")
 
 	c.Assert(err, qt.IsNil)
 }

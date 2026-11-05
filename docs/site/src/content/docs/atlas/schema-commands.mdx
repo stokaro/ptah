@@ -554,15 +554,22 @@ schema file that declares any one of them, answering
 the other two. Output a drop-in replacement writes has to be output the tool it
 replaces can read back, and one such block costs the whole document.
 
-Nothing is dropped quietly. Every omitted object is reported on standard error,
-one line each, alongside the other loss diagnostics inspection already writes,
-and the message names the variable that brings it back:
+Nothing is dropped quietly. The omitted blocks are reported on standard error
+when the run ends, beside the details HCL cannot carry, such as the grantor of a
+permission, and the warning names the variable that brings the blocks back.
+Several omitted blocks are one warning with their number, and so are several
+details; `PTAH_LOG_LEVEL=debug` lists each one:
 
 ```console
 $ ptah-compat schema inspect --url "$PG_URL" > schema.hcl
+warning: 3 blocks the Atlas community CLI refuses are omitted from the document; PTAH_ATLAS_INSPECT_ALL_BLOCKS=1 keeps every block Ptah models; PTAH_LOG_LEVEL=debug lists them
+warning: 4 details of the inspected schema cannot be represented in HCL, and the document leaves them out; PTAH_LOG_LEVEL=debug lists them
+```
+
+One omitted block is its own line, as it is in the debug list:
+
+```console
 warning: extensions.pgcrypto: omitted from Atlas-compatible schema inspect output: ... set PTAH_ATLAS_INSPECT_ALL_BLOCKS=1 to keep every block Ptah models
-warning: sequences.order_seq: omitted from ...
-warning: rls_policies.accounts_all: omitted from ...
 ```
 
 The omission is scoped as narrowly as the measurement is. It applies to HCL
@@ -681,8 +688,7 @@ DROP EXTENSION IF EXISTS "pgcrypto";
 because a document that omits no block type describes every one. Native
 `ptah schema inspect` omits none either; its separate generated-code marker is
 unchanged. Both still write what the read itself did not describe, such as a
-role catalog the server refused, a YDB changefeed, a YDB TTL run interval or a
-Spanner change stream: that limit belongs to the description rather than to the
+role catalog the server refused or a Spanner change stream: that limit belongs to the description rather than to the
 rendering, and a document without it would hand the next plan a silence that
 reads as complete. The same directive grammar
 is read out of the leading comments of a `.sql` desired state, spelled
@@ -712,11 +718,10 @@ does not describe extensions:
 
 ```console
 $ ptah-compat schema diff --from file://schema.hcl --to file://desired.hcl --dev-url "$DEV_URL"
-Warning: extension "citext" is declared by --to but no change was planned for
-it: --from does not describe extension objects because a compatibility policy
-left them out of the description, so this comparison cannot tell it apart from
-one that already exists, and the creation Ptah renders for it cannot safely
-converge from an unknown current state.
+warning: PostgreSQL extension citext could not be compared between --from and
+--to: whether the extension is installed was not established: the description
+does not describe extension: a compatibility policy left them out of the
+description
 ```
 
 A statement with no guard — `CREATE SEQUENCE` for a sequence declared without
@@ -725,11 +730,19 @@ migration if the object were already there, so it is not planned. It is named on
 standard error rather than dropped in silence:
 
 ```console
-Warning: sequence "public.order_seq" is declared by --to but no change was
+warning: sequence "public.order_seq" is declared by --to but no change was
 planned for it: --from does not describe sequence objects because a
 compatibility policy left them out of the description, so this comparison cannot
 tell it apart from one that already exists, and the creation Ptah renders for it
-cannot safely converge from an unknown current state.
+cannot safely converge from an unknown current state
+```
+
+Several withheld objects are one warning that still names each, grouped by why
+the comparison could not decide it, and it is written before the command's
+answer rather than when the run ends:
+
+```console
+warning: 2 objects get no planned change because the comparison could not decide them: sequence "public.a_seq", sequence "public.b_seq" (--from does not describe sequence objects because a compatibility policy left them out of the description); PTAH_LOG_LEVEL=debug lists them
 ```
 
 For a sequence, adding `if_not_exists = true` is how you ask for it anyway.
@@ -1349,7 +1362,7 @@ a duration, an empty one included, is refused by the flag parser with Atlas's
 fails the apply before the locked target reinspection; a strict target-policy
 refusal happens before the timeout is consulted. PostgreSQL and YugabyteDB (`pg_advisory_lock`),
 MySQL and MariaDB (`GET_LOCK`), and SQL Server (`sp_getapplock`) use real
-database locks, and YDB takes a semaphore on its coordination node
+database locks, and the YDB provider takes a semaphore on its coordination node
 `ptah_locks`.
 
 Every other dialect has no advisory-lock semantics: the apply proceeds without

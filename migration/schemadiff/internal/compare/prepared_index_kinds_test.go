@@ -8,7 +8,6 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/objectidentity"
-	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacomparison"
@@ -18,6 +17,13 @@ import (
 	"ptah.run/internal/tableidentity"
 	"ptah.run/migration/schemadiff/internal/compare"
 )
+
+// fixtureTarget is a target only a provider serves, whose preparation states
+// index kinds, and renamingCaps its capabilities: it renames an index in
+// place.
+const fixtureTarget = "fixture"
+
+var renamingCaps = capability.Of(map[capability.Capability]bool{capability.IndexRename: true})
 
 // exactKinds compares a declared index's type with the held index's method
 // as strings, as the rules of a target that prepares index kinds do.
@@ -32,7 +38,7 @@ func (exactKinds) RenameCarries(schemaext.Kind) bool { return false }
 // statedKindTables is table t prepared with the kind its preparation states
 // for index name.
 func statedKindTables(name, kind string) map[objectidentity.Key]schemapreparation.Table {
-	subject := tableidentity.Subject("", "t", platform.YDB, identifier.ForDialect(platform.YDB))
+	subject := tableidentity.Subject("", "t", fixtureTarget, identifier.ForDialect(fixtureTarget))
 	return map[objectidentity.Key]schemapreparation.Table{subject.Key(): {Subject: subject, IndexMethods: map[string]string{name: kind}}}
 }
 
@@ -70,8 +76,8 @@ func TestIndexes_PreparedKindsReachTheRules(t *testing.T) {
 			c := qt.New(t)
 			desired, current := kindIndexes("i", row.declared, "i", "async")
 			diff := &difftypes.SchemaDiff{}
-			compare.IndexesWithSemantics(desired, current, diff, platform.YDB, identifier.ForDialect(platform.YDB), nil,
-				capability.YDB262(), schemacomparison.Rules{Indexes: exactKinds{}}, row.prepared)
+			compare.IndexesWithSemantics(desired, current, diff, fixtureTarget, identifier.ForDialect(fixtureTarget), nil,
+				renamingCaps, schemacomparison.Rules{Indexes: exactKinds{}}, row.prepared)
 			c.Assert(diff.IndexesRemoved, qt.DeepEquals, row.replaced)
 			c.Assert(diff.IndexesAdded.Refs(), qt.DeepEquals, row.replaced)
 			c.Assert(addedTypes(diff), qt.DeepEquals, row.types)
@@ -98,9 +104,9 @@ func TestIndexes_PreparedKindsPairARename(t *testing.T) {
 			desired, current := kindIndexes("i", "GLOBAL ASYNC", "old_i", "async")
 			rules := schemacomparison.Rules{Indexes: exactKinds{}}
 			diff := &difftypes.SchemaDiff{}
-			compare.IndexesWithSemantics(desired, current, diff, platform.YDB, identifier.ForDialect(platform.YDB), nil, capability.YDB262(), rules, row.prepared)
+			compare.IndexesWithSemantics(desired, current, diff, fixtureTarget, identifier.ForDialect(fixtureTarget), nil, renamingCaps, rules, row.prepared)
 			c.Assert(diff.IndexesRenamed, qt.DeepEquals, row.renames)
-			c.Assert(compare.IndexRenames(desired, current, platform.YDB, identifier.ForDialect(platform.YDB), nil, capability.YDB262(), rules, row.prepared),
+			c.Assert(compare.IndexRenames(desired, current, fixtureTarget, identifier.ForDialect(fixtureTarget), nil, renamingCaps, rules, row.prepared),
 				qt.DeepEquals, row.renames)
 		})
 	}

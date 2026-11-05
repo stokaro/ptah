@@ -20,7 +20,7 @@ import (
 // because only the owner reads its payload. The metrics live on the engine
 // rather than on the model, so a model's identity is the same whether or not
 // a host negotiates them. The provider and each engine that declares reports
-// list it, and the host lists it in its host features. Contract 25.24.
+// list it, and the host lists it in its host features. Contract 25.21.
 const ReportCountsFeature = "models.report-counts"
 
 // ValueReporter counts captured values offline.

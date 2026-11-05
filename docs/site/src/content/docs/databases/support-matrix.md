@@ -45,8 +45,11 @@ measured.
 | [YugabyteDB](../distributed/) | `yugabytedb` (`yugabyte`, `ysql`) | `yugabytedb://`, `ysql://` | PostgreSQL-compatible path with capability differences. |
 | [ClickHouse](../clickhouse/) | `clickhouse` (`ch`) | `clickhouse://`, `ch://` | Capability-limited support. |
 | [Spanner (PostgreSQL interface)](../distributed/) | `spanner` (`cloudspanner`, `google-spanner`, `google_spanner`) | `spanner://` | Most conservative capability-limited support. |
-| [YDB](../ydb/) | `ydb` (`ydbs`) | `ydb://`, `ydbs://` | Schemas, versioned migrations, lint, data writes and dev databases on row tables. The rest is planned in stokaro/ptah#4015. |
 | [Oracle](../oracle/) | `oracle` | `oracle://` | Renders, plans, and reads a live catalog. |
+
+[YDB](../../extend/providers/ydb/), `ydb://` and `ydbs://`, is served by the official executable
+provider, installed with `ptah providers install ydb`. The provider declares
+its own release lines, so the tables on this page list none.
 
 Accepted URL formats, and the difference between target, dev, shadow, and
 throwaway databases, are on
@@ -104,29 +107,19 @@ the declared set cannot say one thing here and another in a workflow file.
 | `yugabytedb` | 2024.2 | certified | `YugabyteDB24` | yes |
 | `sqlite` | 3 | certified | `SQLite3` | yes |
 | `spanner` | 0 | best-effort | `SpannerPostgres` | yes |
-| `ydb` | 26.2 | certified | `YDB262` | yes |
-| `ydb` | 25.1 | certified | `YDB251` | yes |
 | `mysql` | 26.7 | best-effort | `MySQL84` | no |
 | `clickhouse` | 26.7 | best-effort | `ClickHouse2411` | no |
 | `clickhouse` | 25.8 | best-effort | `ClickHouse2411` | no |
-| `ydb` | 26.1 | best-effort | `YDB261` | no |
-| `ydb` | 25.4 | best-effort | `YDB254` | no |
-| `ydb` | 25.3 | best-effort | `YDB253` | no |
-| `ydb` | 25.2 | best-effort | `YDB252` | no |
 
-Declared release lines: 39. Probed on every pull request: 32.
+Declared release lines: 33. Probed on every pull request: 30.
 
-Support levels across the 39 declared lines: 29 certified, 2 legacy-tested, 8 best-effort.
+Support levels across the 33 declared lines: 27 certified, 2 legacy-tested, 4 best-effort.
 
 Lines that are declared and not probed, and why:
 
 - `mysql` 26.7 — upstream support ended on 2026-10-20 (endoflife.date/mysql).
 - `clickhouse` 26.7 — upstream support ended on 2026-10-24 (endoflife.date/clickhouse).
 - `clickhouse` 25.8 — upstream support ended on 2026-08-29 (endoflife.date/clickhouse).
-- `ydb` 26.1 — YDB publishes no support period for its open-source lines, and the matrix probes the current release and the one line with a published support date.
-- `ydb` 25.4 — YDB publishes no support period for its open-source lines, and the matrix probes the current release and the one line with a published support date.
-- `ydb` 25.3 — YDB publishes no support period for its open-source lines, and the matrix probes the current release and the one line with a published support date.
-- `ydb` 25.2 — YDB publishes no support period for its open-source lines, and the matrix probes the current release and the one line with a published support date.
 
 Lines whose container tag does not name the line, so which patch it resolves to has to be read off the tag:
 

@@ -47,6 +47,30 @@ func TestSchemaInspectSQLUsesSelectedWholeSchemaRenderer(t *testing.T) {
 	c.Assert(schema.Schemas, qt.HasLen, 1)
 }
 
+// A provider's statement ends at its semicolon, where a built-in renderer's
+// ends with a newline. The SQL format writes each statement on lines of its
+// own either way, as `ptah db read` does, rather than running one provider
+// statement into the next and leaving the document without a final newline.
+func TestSchemaInspectSQLWritesEachProviderStatementOnItsOwnLines(t *testing.T) {
+	c := qt.New(t)
+	selected := selectedSchemaRenderer{Runtime: inspectRuntime(c), render: func(context.Context, renderer.SchemaRequest) (renderer.SchemaResult, error) {
+		return renderer.SchemaResult{Complete: true, Statements: []string{
+			"CREATE TABLE `first` (\n    `id` Int64 NOT NULL,\n    PRIMARY KEY (`id`)\n);",
+			"CREATE TABLE `second` (\n    `id` Int64 NOT NULL,\n    PRIMARY KEY (`id`)\n);",
+		}}, nil
+	}}
+	schema := &schemamodel.Database{Tables: []schemamodel.Table{{Name: "first"}, {Name: "second"}}}
+	report, err := atlasreport.NewSchemaInspectReport(t.Context(), schema, &catalog.Database{}, catalog.ServerInfo{Dialect: "ydb"}, nil,
+		atlasreport.SchemaInspectReportOptions{}, selected)
+	c.Assert(err, qt.IsNil)
+
+	sql, err := report.MarshalSQL()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Equals, "CREATE TABLE `first` (\n    `id` Int64 NOT NULL,\n    PRIMARY KEY (`id`)\n);\n"+
+		"CREATE TABLE `second` (\n    `id` Int64 NOT NULL,\n    PRIMARY KEY (`id`)\n);\n")
+}
+
 func TestSchemaInspectSQLDiscardsFailedServiceOutput(t *testing.T) {
 	failure := errors.New("schema renderer failed")
 	for _, test := range []struct {
