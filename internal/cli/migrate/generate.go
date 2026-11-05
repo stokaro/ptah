@@ -719,7 +719,7 @@ func (o *generateOutcome) report(
 	files *generator.MigrationFiles,
 	err error,
 ) error {
-	undecidednote.Report(cmd.ErrOrStderr(), o.undecided, o.current, "the desired schema")
+	undecidednote.Report(cmd.Context(), cmd.ErrOrStderr(), o.undecided, o.current, "the desired schema")
 	if err != nil {
 		return err
 	}

@@ -24,7 +24,7 @@ supported dialect. This page documents Ptah's YAML format only.
 The keys below that declare a YDB object or setting are claimed by the YDB
 provider, stokaro/ptah-ydb-plugin. Ptah reads them only when a command selects
 the provider; see
-[YDB](site/src/content/docs/databases/ydb.md).
+[YDB](site/src/content/docs/extend/providers/ydb.md).
 
 Relative schema-file inputs are confined to the process working directory after
 symbolic-link resolution; pass an absolute pathname for an intentional source
@@ -194,8 +194,8 @@ Each entry under `tables` declares one table.
 | `columns` / `fields` | Ordered column map. Use one or the other; duplicate names across both are rejected. |
 | `indexes` | Ordered table-local index map. |
 | `constraints` | Ordered table-local constraint map. |
-| `column_families` | Ordered map of a YDB table's column families; see [Column families](#column-families). |
-| `changefeeds` | Ordered map of a YDB table's changefeeds; see [Changefeeds](#changefeeds). |
+| `column_families` | Ordered map of a YDB table's column families; see [Column families](https://github.com/stokaro/ptah-ydb-plugin/blob/master/docs/declarations.md#column-families). |
+| `changefeeds` | Ordered map of a YDB table's changefeeds; see [Changefeeds](https://github.com/stokaro/ptah-ydb-plugin/blob/master/docs/declarations.md#changefeeds). |
 | `rls_enabled` | Adds row-level security enablement for this table. |
 | `platform` / `overrides` | Dialect-specific override map, for example `platform.mysql.type`. A row deletion policy sits here too; see [Row Deletion Policies](#row-deletion-policies). |
 | `auto_partitioning_by_size`, `auto_partitioning_partition_size_mb`, `auto_partitioning_by_load`, `auto_partitioning_min_partitions_count`, `auto_partitioning_max_partitions_count`, `read_replicas_settings`, `key_bloom_filter`, `uniform_partitions`, `partition_at_keys` | A YDB row table's partitioning, read replicas, key bloom filter and starting partitions, with the values the `//ptah:schema:table` attributes of the same names take. Every other dialect refuses them. |
@@ -331,50 +331,6 @@ tables:
     columns:
       id: { type: bigint, primary: true }
       created_at: { type: timestamptz }
-```
-
-## Column families
-
-A YDB table's column families sit under `tables.<table>.column_families`, keyed
-by name. The keys are the attributes of `//ptah:schema:columnfamily`, with the
-same values; `fields` is a list of the columns the family holds. Every other
-dialect refuses a table that declares a column family. See
-[column families](https://github.com/stokaro/ptah-ydb-plugin#column-families).
-
-```yaml
-tables:
-  documents:
-    column_families:
-      default:
-        compression: lz4
-      cold:
-        data: hdd
-        compression: lz4
-        fields: [body, attachment]
-```
-
-## Changefeeds
-
-A YDB table's changefeeds sit under `tables.<table>.changefeeds`, keyed by
-name, and each changefeed's consumers under its `consumers` map, keyed by
-name. The keys are the attributes of `//ptah:schema:changefeed` and
-`//ptah:schema:changefeed:consumer`, with the same values; `supported_codecs`
-is a list. Every other dialect refuses a table that declares a changefeed. See
-[changefeeds](https://github.com/stokaro/ptah-ydb-plugin#changefeeds).
-
-```yaml
-tables:
-  orders:
-    changefeeds:
-      updates:
-        mode: NEW_AND_OLD_IMAGES
-        format: JSON
-        retention_period: PT12H
-        consumers:
-          billing:
-            important: true
-          search:
-            supported_codecs: [raw, gzip]
 ```
 
 ## Constraints
@@ -583,19 +539,3 @@ The parser is intentionally strict:
 - A `default_privileges` entry must name its grantor, schema, object type,
   grantee and privileges, and every `grantable` name must be one of the
   privileges it grants.
-
-## YDB Column Storage
-
-A table's `schema` names its database schema or YDB directory. Its
-`column_store` block selects column storage. `hash_columns` names the
-hash key, `partitions` sets its initial shard count, and `ttl` holds an optional
-eviction policy. Each TTL tier declares an `interval` and an absolute
-`external_source` path; omitting the source means deletion and is allowed only
-on the last tier. A deletion-only policy is the table's TTL in its `ydb`
-platform group instead.
-
-Local indexes use `type: bloom_filter`, `bloom_ngram_filter`, or `min_max`.
-Bloom methods accept `false_positive_probability`; the n-gram method also
-accepts `ngram_size` and `case_sensitive`. See the
-[YDB provider's documentation](https://github.com/stokaro/ptah-ydb-plugin#column-tables)
-for limits, cluster flags and examples.

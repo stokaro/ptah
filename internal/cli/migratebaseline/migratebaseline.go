@@ -306,7 +306,7 @@ func verifyBaseline(ctx context.Context, opts baselineVerifyOptions) error {
 	if err != nil {
 		return err
 	}
-	undecidednote.Report(opts.diagnostics, result.Undecided, "the database", "the entities")
+	undecidednote.Report(ctx, opts.diagnostics, result.Undecided, "the database", "the entities")
 	handler.kind = "drift"
 	return handler.handle(entityDriftError(result))
 }

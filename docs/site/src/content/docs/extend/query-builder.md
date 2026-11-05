@@ -98,7 +98,7 @@ provider registers:
   [support matrix](../../databases/support-matrix/) caveat applies — review the
   generated SQL before relying on it.
 
-- **YDB** renders while its [provider](../../databases/ydb/) is selected,
+- **YDB** renders while its [provider](../providers/ydb/) is selected,
   with the spelling the provider declares, which the builder registers for the
   run: `` `id` `` quoting and `LIMIT $pn OFFSET $pn`. YQL has no positional
   parameter, so the builder writes YQL's named parameters, `$p1`, `$p2`, …,
@@ -423,7 +423,7 @@ the statement, which the builder does not know for a table, so use
 On a table with a unique index, name every column. YDB 26.2 fails an `UPSERT`
 that names no column a synchronous index is keyed on with `INTERNAL_ERROR`, and
 the builder cannot see the table's indexes to refuse it; see
-[YDB](../../databases/ydb/#where-the-provider-documents-ydb).
+[YDB](https://github.com/stokaro/ptah-ydb-plugin/blob/master/docs/README.md).
 
 ### INSERT
 

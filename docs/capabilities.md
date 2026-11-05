@@ -513,7 +513,7 @@ raw-SQL view/trigger rendering, `XML` columns, standalone sequences, and
 row-level security in the shape T-SQL has a form for. Drift-safe normalization
 for SQL Server-specific view, trigger, and index metadata is outside it.
 
-YDB has no preset here. The [YDB provider](site/src/content/docs/databases/ydb.md)
+YDB has no preset here. The [YDB provider](site/src/content/docs/extend/providers/ydb.md)
 declares its own release lines and reports each session's capabilities,
 including the keys a cluster's feature flags decide.
 

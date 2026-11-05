@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"slices"
 	"strings"
 	"text/template"
@@ -23,6 +24,7 @@ import (
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/dbmlrender"
 	"ptah.run/internal/facetsplit"
+	"ptah.run/internal/rundiag"
 	"ptah.run/internal/schemaviz"
 )
 
@@ -388,16 +390,43 @@ func (r *SchemaInspectReport) MarshalHCL() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("render HCL schema: %w", err)
 	}
-	if r.diagnostics != nil {
-		for _, diagnostic := range rendered.Diagnostics {
-			fmt.Fprintf(r.diagnostics, "%s: %s: %s\n", diagnostic.Severity, diagnostic.Path, diagnostic.Message)
-		}
+	for _, diagnostic := range rendered.Diagnostics {
+		_ = rundiag.Warn(r.ctx, r.diagnostics, hclCategory(diagnostic), hclRecord(diagnostic))
 	}
 	document := string(rendered.Data)
 	if r.compatibilityHCLFraming {
 		document = frameCompatibilityHCL(document)
 	}
 	return document, nil
+}
+
+// hclCategory is the run category of an HCL rendering diagnostic: a block the
+// Atlas community CLI refuses, omitted or kept, or a detail the document leaves
+// out. Every diagnostic the renderer raises is a warning.
+func hclCategory(diagnostic atlashclrender.Diagnostic) *rundiag.Category {
+	switch diagnostic.AtlasBlock {
+	case atlashclrender.AtlasBlockOmitted:
+		return rundiag.AtlasOmittedBlocks
+	case atlashclrender.AtlasBlockKept:
+		return rundiag.AtlasKeptBlocks
+	default:
+		return rundiag.HCLLosses
+	}
+}
+
+// hclRecord is the run record of an HCL rendering diagnostic. It is keyed by
+// its whole text, so a document rendered twice in one run, or a role whose
+// grants each raise the same diagnostic, counts it once.
+func hclRecord(diagnostic atlashclrender.Diagnostic) rundiag.Record {
+	attrs := []slog.Attr{slog.String("path", diagnostic.Path), slog.String("message", diagnostic.Message)}
+	if diagnostic.AtlasBlock == atlashclrender.AtlasBlockOmitted {
+		attrs = append(attrs, slog.String("variable", atlashclrender.KeepAtlasRefusedBlocksEnvVar))
+	}
+	return rundiag.Record{
+		Key:   diagnostic.Path + "\x00" + diagnostic.Message,
+		Line:  diagnostic.Path + ": " + diagnostic.Message,
+		Attrs: attrs,
+	}
 }
 
 // frameCompatibilityHCL removes only Ptah's generated-code marker and its
