@@ -7,6 +7,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/feature/pgpolicy"
@@ -156,7 +157,7 @@ func earlyGeneratedColumns(diff *difftypes.SchemaDiff) map[string]bool {
 }
 
 // routinesAheadOf works out which removed routines the plan drops ahead of a
-// removed relation or column; see [routinesAhead]. Ptah's own style keeps
+// removed relation or column; see [routinesAhead]. The annotated style keeps
 // every routine in the routine step.
 func (p *Planner) routinesAheadOf(diff *difftypes.SchemaDiff, rebuild viewRebuild, earlyColumns map[string]bool) routinesAhead {
 	ahead := routinesAhead{
@@ -186,12 +187,7 @@ func (p *Planner) routinesAheadOf(diff *difftypes.SchemaDiff, rebuild viewRebuil
 	dropped = append(dropped, namesOf(modifiedViewPaths(diff).dropped)...)
 	for _, routines := range []difftypes.FunctionChanges{diff.FunctionsRemoved, diff.ProceduresRemoved} {
 		for _, routine := range routines {
-			var named []string
-			for _, relation := range dropped {
-				if routineNames(routine, relation, relationSemantics(diff)) && !slices.Contains(named, relation) {
-					named = append(named, relation)
-				}
-			}
+			named := p.relationsHolding(routine, dropped, diff)
 			if len(named) != 1 || !removed[named[0]] || routineInUse(diff, routine, rebuild, earlyColumns) {
 				continue
 			}
@@ -411,6 +407,28 @@ func removedRoutineMatches(diff *difftypes.SchemaDiff, match func(difftypes.Rout
 		}
 	}
 	return false
+}
+
+// relationsHolding returns the relations of dropped routine holds back, each
+// once.
+func (p *Planner) relationsHolding(routine difftypes.RoutineChange, dropped []string, diff *difftypes.SchemaDiff) []string {
+	var named []string
+	for _, relation := range dropped {
+		if (routineNames(routine, relation, relationSemantics(diff)) || p.quotedBodyHolds(routine, relation, diff)) &&
+			!slices.Contains(named, relation) {
+			named = append(named, relation)
+		}
+	}
+	return named
+}
+
+// quotedBodyHolds reports whether the target holds relation back for a routine
+// whose body is a string. CockroachDB records what such a body reads and refuses
+// the drop with SQLSTATE 2BP01, measured on v26.3.2, where PostgreSQL records
+// nothing for it.
+func (p *Planner) quotedBodyHolds(routine difftypes.RoutineChange, relation string, diff *difftypes.SchemaDiff) bool {
+	return p.targetDialect() == platform.CockroachDB &&
+		deporder.ReferencesRelation(routine.Body, relation, relationSemantics(diff))
 }
 
 // sqlStandardBodyReads reports whether routine has a SQL-standard body,

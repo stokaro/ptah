@@ -32,6 +32,7 @@ import (
 	"ptah.run/internal/dbexprprobe"
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/genexprprobe"
+	"ptah.run/internal/planstyle"
 	"ptah.run/internal/providerurl"
 	"ptah.run/internal/schemaload"
 	"ptah.run/internal/schemascope"
@@ -247,6 +248,7 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 		diff, info.Dialect, planext.Options{
 			Capabilities:      info.Capabilities,
 			AllowTableRebuild: rebuild,
+			Statements:        planstyle.Statements,
 		},
 	)
 

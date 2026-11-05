@@ -150,7 +150,7 @@ extension "pgcrypto" {
 		c.Assert(err, qt.IsNil)
 		sql, err := report.MarshalSQL()
 		c.Assert(err, qt.IsNil)
-		c.Assert(sql, qt.Contains, `DROP EXTENSION IF EXISTS "pgcrypto";`)
+		c.Assert(sql, qt.Contains, `DROP EXTENSION "pgcrypto";`)
 	})
 }
 

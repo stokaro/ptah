@@ -169,9 +169,9 @@ func TestGenerateCheckpoint_UpCreatesAndDownDropsInDependencyOrder(t *testing.T)
 	c.Assert(up, qt.Contains, `FOREIGN KEY ("user_id") REFERENCES "users"`)
 
 	// Down drops in reverse dependency order: posts before users.
-	c.Assert(down, qt.Contains, `DROP TABLE IF EXISTS "posts"`)
-	c.Assert(down, qt.Contains, `DROP TABLE IF EXISTS "users"`)
-	c.Assert(strings.Index(down, `DROP TABLE IF EXISTS "posts"`) < strings.Index(down, `DROP TABLE IF EXISTS "users"`), qt.IsTrue)
+	c.Assert(down, qt.Contains, `DROP TABLE "posts"`)
+	c.Assert(down, qt.Contains, `DROP TABLE "users"`)
+	c.Assert(strings.Index(down, `DROP TABLE "posts"`) < strings.Index(down, `DROP TABLE "users"`), qt.IsTrue)
 }
 
 func TestGenerateCheckpoint_DeterministicSchemaContent(t *testing.T) {

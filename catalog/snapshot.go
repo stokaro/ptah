@@ -11,6 +11,7 @@ func (t Table) Clone() Table {
 	for i := range t.Columns {
 		t.Columns[i] = t.Columns[i].Clone()
 	}
+	t.Parents = slices.Clone(t.Parents)
 	return t
 }
 

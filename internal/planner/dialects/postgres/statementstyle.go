@@ -23,7 +23,7 @@ import (
 // knows nothing of styles. A comment that reports what the plan left out or
 // cannot do is an [ast.NewComment] and is written in every style.
 //
-// CASCADE. Ptah's own style drops with CASCADE wherever the target takes it.
+// CASCADE. The annotated style drops with CASCADE wherever the target takes it.
 // The exact style drops with CASCADE only where the plan relies on it: a
 // dependent the plan knows of is still in the database when the drop runs,
 // because the plan drops it later or not at all. Each call site of
@@ -32,7 +32,7 @@ import (
 // CASCADE the server refuses the drop and names it, where CASCADE would remove
 // an object nobody declared.
 //
-// Guards. Ptah's own style writes IF EXISTS on a drop and IF NOT EXISTS on a
+// Guards. The annotated style writes IF EXISTS on a drop and IF NOT EXISTS on a
 // new index. The exact style keeps a guard only where an earlier statement of
 // the same plan may already have removed the object, or created it; see
 // [settleGuards].

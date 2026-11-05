@@ -605,9 +605,9 @@ had left out:
 ```console
 $ ptah-compat schema inspect --url "$PG_URL" > schema.hcl
 $ ptah-compat schema apply --url "$PG_URL" --to file://schema.hcl --dev-url "$DEV_URL" --dry-run
-DROP POLICY IF EXISTS "p" ON "guarded";
-DROP SEQUENCE IF EXISTS "order_seq";
-DROP EXTENSION IF EXISTS "pgcrypto";
+DROP POLICY "p" ON "guarded";
+DROP SEQUENCE "order_seq";
+DROP EXTENSION "pgcrypto";
 ```
 
 The standard-error warnings could not prevent that: `schema apply` is a separate
@@ -679,9 +679,9 @@ wrote yourself has no coverage header and is fully authoritative, so a
 ```console
 $ grep -v 'ptah:not-described' schema.hcl > desired.hcl
 $ ptah-compat schema apply --url "$PG_URL" --to file://desired.hcl --dev-url "$DEV_URL" --dry-run
-DROP POLICY IF EXISTS "p" ON "guarded";
-DROP SEQUENCE IF EXISTS "order_seq";
-DROP EXTENSION IF EXISTS "pgcrypto";
+DROP POLICY "p" ON "guarded";
+DROP SEQUENCE "order_seq";
+DROP EXTENSION "pgcrypto";
 ```
 
 `PTAH_ATLAS_INSPECT_ALL_BLOCKS=1` writes none of the three lines above,
@@ -1440,9 +1440,9 @@ CREATE TABLE t (id serial PRIMARY KEY, a waypoint NOT NULL, b context NOT NULL);
 `waypoint` contains `int` and `context` contains `text`. Compared by spelling,
 a column of either would match a desired `bigint` and `text` respectively and
 no `ALTER COLUMN ... TYPE` would be planned — while the plan still carries the
-`DROP DOMAIN ... CASCADE` that removing the domain requires, so applying it
-would drop the columns and their data instead of converting them
-(stokaro/ptah#1138). The same rule is what `ptah schema compare` reports on the
+`DROP DOMAIN` that removing the domain requires, so applying it would stop at
+the server's refusal instead of converting the columns (stokaro/ptah#1138). The
+same rule is what `ptah schema compare` reports on the
 native surface.
 
 The rule holds in the other direction too. A plain `integer` column against a

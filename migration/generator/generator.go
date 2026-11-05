@@ -260,6 +260,11 @@ type MigrationPlan struct {
 // [MigrationPlan.WriteFilesContext]; when the schemas already match it returns
 // nil files with a nil error rather than publishing anything.
 //
+// Both files are planned in [planext.StatementStyleExact] on the planners that
+// honor it: a file assumes the database it was planned against and stops at
+// the first statement that does not fit another. No option selects another
+// style; [PlanBidirectionalSchemaDiff] takes one from its policy.
+//
 // The context bounds connection, planning, lock acquisition, and publication.
 func GenerateMigration(ctx context.Context, opts GenerateMigrationOptions) (*MigrationFiles, error) {
 	plan, err := PlanMigration(ctx, opts)

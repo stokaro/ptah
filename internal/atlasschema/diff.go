@@ -34,6 +34,7 @@ import (
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/devlock"
 	"ptah.run/internal/pgsystemschema"
+	"ptah.run/internal/planstyle"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/servertarget"
 	"ptah.run/internal/sqlitevirtual"
@@ -488,6 +489,7 @@ func diffResolvedStates(
 				OmitNullBackfill:    opts.OmitNullBackfill,
 				AllowTableRebuild:   opts.Policy.AllowTableRebuild,
 				TableRebuildRequest: opts.Policy.TableRebuildRequest,
+				Statements:          planstyle.Statements,
 			},
 		)
 

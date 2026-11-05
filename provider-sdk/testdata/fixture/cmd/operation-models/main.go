@@ -70,7 +70,7 @@ func main() {
 		d.Features = append(d.Features, provider.SensitiveInputsFeature, provider.HistoryFeature, provider.StatementsFeature)
 		d.Engines[0].Features = append(d.Engines[0].Features, provider.SensitiveInputsFeature, provider.HistoryFeature, provider.StatementsFeature)
 	}
-	modes := []string{"", "native", "native-transactional", "native-unwrapped", "native-cli", "native-text", "owned", "policy", "declarations", "owned-edit", "object-context", "statement-style",
+	modes := []string{"", "native", "native-transactional", "native-unwrapped", "native-cli", "native-cli-unstyled", "native-text", "owned", "policy", "declarations", "owned-edit", "object-context", "statement-style",
 		"owned-comments", "owned-renames"}
 	if !slices.Contains(modes, mode) {
 		panic("unknown fixture render mode")
@@ -82,7 +82,12 @@ func main() {
 		d.Features = append(d.Features, provider.TransactionsFeature)
 		d.Engines[0].Features = append(d.Engines[0].Features, provider.TransactionsFeature)
 	}
-	if mode == "native-cli" || mode == "native-text" || mode == "policy" {
+	// sessionLocks is the modes the native commands drive under the session
+	// lock. native-cli-unstyled is native-cli as a provider built before
+	// planning.statement-style behaves, for the refusal a native command gives
+	// it.
+	sessionLocks := mode == "native-cli" || mode == "native-cli-unstyled" || mode == "native-text" || mode == "policy"
+	if sessionLocks {
 		d.Features = append(d.Features, provider.LocksFeature)
 		d.Engines[0].Features = append(d.Engines[0].Features, provider.LocksFeature)
 	}
@@ -150,8 +155,21 @@ func main() {
 	}
 	if mode == "statement-style" {
 		d.MinContract = provider.Contract()
-		d.Features = append(d.Features, provider.PlanningPolicyFeature, provider.PlanningStatementStyleFeature)
-		d.Engines[0].Features = append(d.Engines[0].Features, provider.PlanningPolicyFeature, provider.PlanningStatementStyleFeature)
+	}
+	// Every Ptah command plans in the exact statement style, so a mode the
+	// commands drive honors it, and FIXTURE_STATEMENT_STYLE lets a test that
+	// reaches the same planning from another mode ask for it. The other modes
+	// reach the planner directly, and native-cli-unstyled is a provider built
+	// before the feature.
+	stylesStatements := mode == "statement-style" || os.Getenv("FIXTURE_STATEMENT_STYLE") == "honored" ||
+		sessionLocks && mode != "native-cli-unstyled"
+	if stylesStatements {
+		added := []string{provider.PlanningStatementStyleFeature}
+		if mode != "policy" {
+			added = append(added, provider.PlanningPolicyFeature)
+		}
+		d.Features = append(d.Features, added...)
+		d.Engines[0].Features = append(d.Engines[0].Features, added...)
 	}
 	definition, err := modeljson.Canonical([]byte(`{
 		"additionalProperties": false,
@@ -194,7 +212,7 @@ func main() {
 			!commented,
 		ownedLifecycle: mode == "owned" || mode == "declarations" || mode == "owned-edit" || commented, ownedEdits: mode == "owned-edit",
 		comments: commented, renames: mode == "owned-renames", reportsRenames: os.Getenv("FIXTURE_INDEX_RENAME") == "always",
-		rebuilds: mode == "policy", statementStyle: mode == "statement-style", transactionalDDL: transactional, refusesDDLTransactions: mode == "native-unwrapped",
+		rebuilds: mode == "policy", statementStyle: stylesStatements, transactionalDDL: transactional, refusesDDLTransactions: mode == "native-unwrapped",
 		operationEnvelope: envelope, inputMode: inputMode}
 	server := runtime.Server{Description: d, Sessions: p, Inspector: p, Renderer: p, Executor: p, SQLAnalyzer: p, ValueNormalizer: p, SourceDecoder: p, ValueConverter: p, FeaturePlanner: p}
 	if inputMode != "" {
@@ -223,7 +241,7 @@ func main() {
 	if p.transactionalDDL {
 		server.Transactions = p
 	}
-	if mode == "native-cli" || mode == "native-text" || mode == "policy" {
+	if sessionLocks {
 		server.Locks = p
 	}
 	if os.Getenv("FIXTURE_DEV_SERVICES") != "" {

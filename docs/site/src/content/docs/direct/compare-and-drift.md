@@ -334,8 +334,8 @@ destructive, so `--check-destructive` fails on it and a drift gate reports it on
 every run.
 
 Declaring the extension is not the way out. Declaring it hands Ptah the object,
-and that includes removing it; dropping one cascades into everything built on
-it, and `CREATE EXTENSION IF NOT EXISTS` has no safe reverse.
+and that includes removing it; the server refuses that while anything uses it,
+and `CREATE EXTENSION IF NOT EXISTS` has no safe reverse.
 
 Name it instead, and the comparison neither creates nor drops it:
 

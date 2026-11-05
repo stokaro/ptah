@@ -14,10 +14,10 @@ import (
 
 // The guard against an index a failed build left unusable is an engine
 // service (see internal/migratorext.IndexGuard): the engine reads what a
-// migration's conditional creates name and what its catalog holds, and words
-// the refusal. This file runs it at the points a revision row could record a
-// migration over such an index: before an up run, when the body completes,
-// before a repair, and before a rollback completes.
+// migration's creates name and what its catalog holds, and words the refusal.
+// This file runs it at the points a revision row could record a migration over
+// such an index: before an up run, when the body completes, before a repair,
+// and before a rollback completes.
 
 type postgresIndexObservation struct {
 	identities []migratorext.IndexState
@@ -131,14 +131,17 @@ func samePostgresIndexIdentity(left, right migratorext.IndexState) bool {
 
 // refuseRepairOverUnsafeIndex refuses to record a migration applied while
 // PostgreSQL cannot prove that every CREATE INDEX ... IF NOT EXISTS left an
-// acceptable index on its intended target table.
+// acceptable index on its intended target table, or reports that a concurrent
+// build without the guard left an unusable one.
 //
 // A concurrent unique index build that fails partway leaves an invalid index
-// behind. Because it occupies the name, re-issuing the generated
-// CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS is skipped with a notice
-// instead of retried, so nothing errors and the revision row would be written
-// as applied over a constraint the database is not enforcing. Refusing leaves
-// the operator with a dirty state they can still see.
+// behind. Because it occupies the name, re-issuing CREATE UNIQUE INDEX
+// CONCURRENTLY IF NOT EXISTS is skipped with a notice instead of retried, so
+// nothing errors and the revision row would be written as applied over a
+// constraint the database is not enforcing. The generated build carries no
+// guard, so running it again stops at the server's error, and `repair --force`
+// is what records it without running it. Refusing leaves the operator with a
+// dirty state they can still see.
 //
 // The probe is PostgreSQL-only by nature -- see
 // [Migrator.postgresIndexStatesCreatedBySQLOn]. This deliberately ignores
@@ -184,7 +187,11 @@ func (m *Migrator) refuseRepairOverUnsafeIndex(ctx context.Context, migration *M
 
 func (m *Migrator) needsPostgresIndexPostcheck(migration *Migration, direction MigrationDirection) bool {
 	guard := m.services().Indexes
-	return guard != nil && len(guard.ConditionalCreates(migrationSQLForDirection(migration, direction))) > 0
+	if guard == nil {
+		return false
+	}
+	sqlText := migrationSQLForDirection(migration, direction)
+	return len(guard.ConditionalCreates(sqlText)) > 0 || len(guard.UnconditionalBuilds(sqlText)) > 0
 }
 
 func (m *Migrator) refuseRollbackCompletionOverUnsafeIndex(ctx context.Context, migration *Migration) error {
@@ -221,10 +228,44 @@ func (m *Migrator) refuseRepairOverUnsafeIndexSQL(
 		return err
 	}
 	unsafe := postgresUnsafeCompletionStates(m.services().Indexes, states)
+	leftBehind, err := m.postgresIndexesLeftByFailedBuildsOn(ctx, conn, sqlText)
+	if err != nil {
+		return err
+	}
+	unsafe = append(unsafe, leftBehind...)
 	if len(unsafe) == 0 {
 		return nil
 	}
 	return m.services().Indexes.RepairError(migration.Version, unsafe, refusal)
+}
+
+// postgresIndexesLeftByFailedBuildsOn returns the unusable indexes that hold a
+// name an unconditional concurrent build of sqlText creates. A name nothing
+// holds is no finding here, unlike for a conditional create: an ordinary create
+// may be renamed or removed by a later statement of the same migration.
+func (m *Migrator) postgresIndexesLeftByFailedBuildsOn(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	sqlText string,
+) ([]migratorext.IndexState, error) {
+	if conn == nil {
+		return nil, nil
+	}
+	guard := builtin.Lookup(conn.Info().Dialect).Indexes
+	if guard == nil {
+		return nil, nil
+	}
+	states, err := m.postgresIndexStatesOn(ctx, conn, guard.UnconditionalBuilds(sqlText))
+	if err != nil {
+		return nil, err
+	}
+	var leftBehind []migratorext.IndexState
+	for _, state := range states {
+		if guard.Unusable(state) {
+			leftBehind = append(leftBehind, state)
+		}
+	}
+	return leftBehind, nil
 }
 
 // refuseUpOverUnsafeIndex refuses to run a migration while PostgreSQL already

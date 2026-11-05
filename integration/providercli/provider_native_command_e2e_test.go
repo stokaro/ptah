@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/stokaro/ptah/provider-sdk/provider"
 
 	"ptah.run/core/renderer"
 	"ptah.run/internal/atlasschema"
@@ -45,6 +46,40 @@ func nativeCommandFixtureFor(c *qt.C, spec providerhost.Spec) providerCLI {
 	return f
 }
 
+// TestProviderNativeCommands_RefuseAProviderThatCannotPlanTheStatementStyle is
+// the cost of one statement style for every Ptah command. A provider that plans
+// and does not list planning.statement-style is refused before anything runs,
+// and the refusal names the provider and the feature. Sending the plan anyway
+// would let the provider write its own guards and CASCADE where the command
+// promises neither.
+func TestProviderNativeCommands_RefuseAProviderThatCannotPlanTheStatementStyle(t *testing.T) {
+	tests := []struct {
+		verb string
+		args func(f providerCLI) []string
+	}{
+		{verb: "apply", args: func(f providerCLI) []string {
+			return []string{"--schema-file", f.schemaPath, "--tx-mode", "none", "--auto-approve"}
+		}},
+		{verb: "plan", args: func(f providerCLI) []string {
+			return []string{"--schema-file", f.schemaPath, "--output", f.planPath}
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.verb, func(t *testing.T) {
+			c := qt.New(t)
+			spec := fixtureReleaseSpec(c, "operation-models", testutils.FixtureRelease{})
+			spec.Environment = []string{"FIXTURE_RENDER_MODE=native-cli-unstyled"}
+			f := newProviderCLI(c, spec)
+			c.Assert(os.WriteFile(f.schemaPath, []byte("tables:\n  items:\n    columns:\n      id: {type: INTEGER, not_null: true}\n"), 0o600), qt.IsNil)
+
+			_, diagnostics, code := f.run(c, c.Context(), test.verb, test.args(f)...)
+
+			c.Assert(code, qt.Equals, 2, qt.Commentf("%s", diagnostics))
+			c.Assert(diagnostics, qt.Contains, "does not list "+provider.PlanningStatementStyleFeature+"; upgrade the provider")
+		})
+	}
+}
+
 func TestProviderNativeSchemaApplyCommand(t *testing.T) {
 	c := qt.New(t)
 	f := nativeCommandFixture(c)
@@ -74,7 +109,7 @@ func TestProviderNativeSchemaApplyRefusesTransactionBeforeWrite(t *testing.T) {
 
 func TestProviderNativePreparedPlanPreservesOperations(t *testing.T) {
 	c := qt.New(t)
-	host, runtime := yamlProviderEnvironment(c, "operation-models", []string{"FIXTURE_RENDER_MODE=native"})
+	host, runtime := yamlProviderEnvironment(c, "operation-models", []string{"FIXTURE_RENDER_MODE=native", "FIXTURE_STATEMENT_STYLE=honored"})
 	conn := observedConnection(c, host, "planned")
 	plan, err := atlasschema.PrepareApply(c.Context(), conn, atlasschema.ApplyRuntimeOptions{Runtime: runtime, Desired: desiredProviderColumn(), TxMode: migrator.MigrationTxModeNone})
 	c.Assert(err, qt.IsNil)
@@ -139,7 +174,7 @@ func TestProviderNativeSchemaApplyRefusesSQLEditing(t *testing.T) {
 
 func TestProviderNativePreparedDryRunDoesNotWrite(t *testing.T) {
 	c := qt.New(t)
-	host, runtime := yamlProviderEnvironment(c, "operation-models", []string{"FIXTURE_RENDER_MODE=native"})
+	host, runtime := yamlProviderEnvironment(c, "operation-models", []string{"FIXTURE_RENDER_MODE=native", "FIXTURE_STATEMENT_STYLE=honored"})
 	conn := observedConnection(c, host, "planned")
 	plan, err := atlasschema.PrepareApply(c.Context(), conn, atlasschema.ApplyRuntimeOptions{Runtime: runtime, Desired: desiredProviderColumn(), TxMode: migrator.MigrationTxModeNone, DryRun: true})
 	c.Assert(err, qt.IsNil)
@@ -152,7 +187,7 @@ func TestProviderNativePreparedDryRunDoesNotWrite(t *testing.T) {
 
 func TestProviderNativePreparedPlanRefusesSQLProjection(t *testing.T) {
 	c := qt.New(t)
-	host, runtime := yamlProviderEnvironment(c, "operation-models", []string{"FIXTURE_RENDER_MODE=native"})
+	host, runtime := yamlProviderEnvironment(c, "operation-models", []string{"FIXTURE_RENDER_MODE=native", "FIXTURE_STATEMENT_STYLE=honored"})
 	conn := observedConnection(c, host, "planned")
 	plan, err := atlasschema.PrepareApply(c.Context(), conn, atlasschema.ApplyRuntimeOptions{Runtime: runtime, Desired: desiredProviderColumn(), TxMode: migrator.MigrationTxModeNone})
 	c.Assert(err, qt.IsNil)
@@ -180,7 +215,7 @@ func TestProviderNativePreparedPlanRefusesARehearsalBeforeConnect_FailurePath(t 
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
-			host, runtime := yamlProviderEnvironment(c, "operation-models", []string{"FIXTURE_RENDER_MODE=native"})
+			host, runtime := yamlProviderEnvironment(c, "operation-models", []string{"FIXTURE_RENDER_MODE=native", "FIXTURE_STATEMENT_STYLE=honored"})
 			conn := observedConnection(c, host, "planned")
 			plan, err := atlasschema.PrepareApply(c.Context(), conn, atlasschema.ApplyRuntimeOptions{Runtime: runtime, Desired: desiredProviderColumn(), TxMode: migrator.MigrationTxModeNone})
 			c.Assert(err, qt.IsNil)

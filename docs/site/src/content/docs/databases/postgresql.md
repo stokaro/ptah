@@ -728,6 +728,13 @@ name and refuses to rebuild a partitioned table without a partition-tree strateg
 An unlogged partitioned table is refused. Complete source coverage distinguishes
 an ordinary table from a partitioned one; unknown coverage establishes neither.
 
+A plan that removes a partitioned table and a partition of it drops the partition
+first, and a table that inherits another before that table. The reader takes
+these relationships from `pg_inherits`. A `DROP TABLE` of a partitioned table also
+removes a partition the run leaves out, because PostgreSQL drops the partitions
+with their parent without `CASCADE`. A table that inherits one the plan removes
+and that the run leaves out stops the drop at the server's error.
+
 ## Function changes
 
 A function the database does not have yet is planned as `CREATE FUNCTION`, and
@@ -960,7 +967,7 @@ declaration. Right after each object it creates again, it writes:
 A comment is part of each `CREATE`, and a routine keeps its language,
 volatility, `SECURITY DEFINER`, `STRICT`, `LEAKPROOF`, `PARALLEL` and `SET`
 settings, because it is created from its declaration. A routine is dropped
-without `CASCADE` in both statement styles.
+without `CASCADE`.
 
 A view the plan changes with `CREATE OR REPLACE VIEW` is not dropped. When its
 definition in the database reads a dropped object and its new one does not, the
@@ -975,11 +982,10 @@ What a rebuild does not keep:
 - the owner. The new object belongs to the role that runs the migration, since
   Ptah does not describe ownership;
 - an object that depends on a dropped one and that the schema does not
-  declare, such as a view in a schema the run leaves out. In Ptah's own
-  statement style the drop carries `CASCADE` and takes it; in the exact style
-  the drop has no `CASCADE`, and the server stops the migration at the drop.
-  The exact style drops a policy of a removed table before a view or column it
-  reads, so the later drop also needs no `CASCADE`;
+  declare, such as a view in a schema the run leaves out. The drop has no
+  `CASCADE`, so the server stops the migration at the drop and names the
+  object, rather than removing it. The plan drops a policy of a removed table
+  before a view or column it reads, so the later drop also needs no `CASCADE`;
 - a materialized view's rows and tablespace. `CREATE MATERIALIZED VIEW` runs
   the query again and puts the view in the default tablespace.
 
@@ -996,10 +1002,12 @@ see each statement as it commits: a rebuilt object is missing between its drop
 and its create, and `REFRESH MATERIALIZED VIEW CONCURRENTLY` fails until the
 unique index is back.
 
-The plan check rates a `DROP VIEW ... CASCADE` and every `DROP MATERIALIZED
-VIEW` destructive although the plan creates the object again, so
-`--check-destructive` refuses the plan; a `CREATE OR REPLACE VIEW` is a
-warning.
+The plan check rates a `DROP VIEW` the plan follows with a `CREATE VIEW` of the
+same view a warning, as it rates a `CREATE OR REPLACE VIEW`: the server stops
+the drop if anything the plan does not rebuild reads the view. It rates a `DROP
+VIEW ... CASCADE`, which the plan writes only where it relies on it, and every
+`DROP MATERIALIZED VIEW` destructive although the plan creates the object again,
+so `--check-destructive` refuses those plans.
 
 ## Materialized view refresh
 
@@ -2177,7 +2185,7 @@ takes TimescaleDB's default, which is 7 days for a `timestamptz` column.
 
 **`create_default_indexes => FALSE` is not a preference.** The call creates an
 index on the dimension unless told not to, and nothing declared it — measured on
-2.29.2, the next comparison planned `DROP INDEX IF EXISTS "readings_time_idx"`,
+2.29.2, the next comparison planned `DROP INDEX "readings_time_idx"`,
 Ptah dropping an index the server had made a moment earlier, on every apply.
 Suppressing it keeps the description the whole truth about which indexes exist;
 declare an index on the dimension if you want one.

@@ -16,8 +16,8 @@ import (
 )
 
 // A failed CREATE UNIQUE INDEX CONCURRENTLY leaves an invalid index occupying
-// the name, so re-issuing the generated IF NOT EXISTS statement is skipped
-// rather than retried and nothing errors. These tests pin what repair does with
+// the name, so re-issuing an IF NOT EXISTS statement is skipped rather than
+// retried and nothing errors. These tests pin what repair does with
 // that residue: it refuses while the index is unusable, and it does not
 // interfere once the index is usable.
 const (
@@ -102,6 +102,48 @@ func TestPostgreSQLRepairRefusesOverInvalidUniqueIndexIntegration(t *testing.T) 
 	status, err = mig.GetMigrationStatus(ctx)
 	c.Assert(err, qt.IsNil)
 	c.Assert(status.DirtyRevision, qt.IsNil)
+	c.Assert(status.AppliedMigrations, qt.DeepEquals, []int64{repairInvalidIndexVersion})
+	c.Assert(repairInvalidIndexDuplicateInsert(ctx, db), qt.IsNotNil)
+}
+
+// TestPostgreSQLRepairRefusesOverAFailedUnguardedBuildIntegration is the build
+// `migrations generate` writes, which carries no IF NOT EXISTS. Running it again
+// stops at the server's error, so the path that could record it over the invalid
+// index is repair, and --force does not buy past that. The name stays taken, so
+// a retry needs the index dropped; a REINDEX makes the record true instead.
+func TestPostgreSQLRepairRefusesOverAFailedUnguardedBuildIntegration(t *testing.T) {
+	dsn := skipIfNoPostgreSQL(t)
+	c := qt.New(t)
+	ctx := t.Context()
+	db := openRepairInvalidIndexDB(c, dsn)
+	seedRepairInvalidIndexTable(c, db, "'shared@example.com'")
+	conn, err := dbschema.ConnectToDatabase(ctx, dsn)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { c.Check(conn.Close(), qt.IsNil) })
+	up := fmt.Sprintf("-- +ptah no_transaction\nCREATE UNIQUE INDEX CONCURRENTLY %q ON %q (%q);",
+		repairInvalidIndexName, repairInvalidIndexTable, "email")
+	down := fmt.Sprintf("-- +ptah no_transaction\nDROP INDEX CONCURRENTLY %q;", repairInvalidIndexName)
+	mig := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(
+		migrator.CreateMigrationFromSQL(repairInvalidIndexVersion, "add unique email", up, down),
+	)).WithMigrationsTable("", repairInvalidIndexTracker)
+
+	c.Assert(mig.MigrateUp(ctx), qt.ErrorMatches, "(?s).*could not create unique index.*")
+	_, err = db.ExecContext(ctx, "DELETE FROM "+repairInvalidIndexTable+" WHERE id > 1")
+	c.Assert(err, qt.IsNil)
+
+	forced := mig.RepairMigration(ctx, migrator.RepairMigrationOptions{Version: repairInvalidIndexVersion, Force: true})
+
+	c.Assert(forced, qt.ErrorMatches, `(?s).*"public"."`+repairInvalidIndexName+`".*indisvalid=false.*REINDEX INDEX CONCURRENTLY.*`)
+	status, err := mig.GetMigrationStatus(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(status.DirtyRevision, qt.IsNotNil)
+	c.Assert(status.AppliedMigrations, qt.HasLen, 0)
+
+	_, err = db.ExecContext(ctx, `REINDEX INDEX CONCURRENTLY "public"."`+repairInvalidIndexName+`"`)
+	c.Assert(err, qt.IsNil)
+	c.Assert(mig.RepairMigration(ctx, migrator.RepairMigrationOptions{Version: repairInvalidIndexVersion, Force: true}), qt.IsNil)
+	status, err = mig.GetMigrationStatus(ctx)
+	c.Assert(err, qt.IsNil)
 	c.Assert(status.AppliedMigrations, qt.DeepEquals, []int64{repairInvalidIndexVersion})
 	c.Assert(repairInvalidIndexDuplicateInsert(ctx, db), qt.IsNotNil)
 }

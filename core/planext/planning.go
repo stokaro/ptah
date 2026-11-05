@@ -38,10 +38,12 @@ const (
 type StatementStyle uint8
 
 const (
-	// StatementStyleAnnotated is the zero value and Ptah's own style. A plan
-	// writes comments that describe its statements, guards a drop with IF
-	// EXISTS and a new index with IF NOT EXISTS, and drops with CASCADE where
-	// the target accepts it.
+	// StatementStyleAnnotated is the zero value. A plan writes comments that
+	// describe its statements, guards a drop with IF EXISTS and a new index
+	// with IF NOT EXISTS, and drops with CASCADE where the target accepts it.
+	// Such a CASCADE also removes a dependent the plan does not name, with its
+	// data. Ptah's commands plan in [StatementStyleExact]; this style is for a
+	// caller of the planning packages that selects it.
 	StatementStyleAnnotated StatementStyle = iota
 	// StatementStyleExact writes a plan that runs only against the database it
 	// was made against. It leaves out the comments that only describe the
@@ -183,9 +185,9 @@ type Options struct {
 	// flag, such as ptah-compat, passes the spelling it reads instead.
 	TableRebuildRequest string
 	// Statements selects the statement style. The zero value is
-	// [StatementStyleAnnotated]. ptah-compat `migrate diff` selects
-	// [StatementStyleExact], which is how the Atlas CLI writes a migration
-	// file.
+	// [StatementStyleAnnotated]. Every Ptah command that plans a change, the
+	// native ones and ptah-compat alike, selects [StatementStyleExact], which
+	// is also how the Atlas CLI writes a migration file.
 	Statements StatementStyle
 }
 
