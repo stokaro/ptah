@@ -47,7 +47,7 @@ measured.
 | [Spanner (PostgreSQL interface)](../distributed/) | `spanner` (`cloudspanner`, `google-spanner`, `google_spanner`) | `spanner://` | Most conservative capability-limited support. |
 | [Oracle](../oracle/) | `oracle` | `oracle://` | Renders, plans, and reads a live catalog. |
 
-[YDB](../ydb/), `ydb://` and `ydbs://`, is served by the official executable
+[YDB](../../extend/providers/ydb/), `ydb://` and `ydbs://`, is served by the official executable
 provider, installed with `ptah providers install ydb`. The provider declares
 its own release lines, so the tables on this page list none.
 

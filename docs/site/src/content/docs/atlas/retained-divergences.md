@@ -1155,7 +1155,7 @@ exits `1` where the binary exits `0`, never the reverse.
 **Current boundary.** No Atlas edition has a YDB driver. The default profile
 takes a `ydb://` or `ydbs://` URL on the `schema`, `migrate` and `script` verbs,
 with no `PTAH_*` variable to turn it on, and serves it through the
-[YDB provider](../../databases/ydb/): the installed one, or the one the
+[YDB provider](../../extend/providers/ydb/): the installed one, or the one the
 manifest `PTAH_PROVIDER_CONFIG` names. The strict profile refuses it in the
 binary's words, from a flag, `atlas.hcl` or a data source the file connects to.
 

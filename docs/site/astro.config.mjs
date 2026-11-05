@@ -66,6 +66,7 @@ const redirectRoutes = {
   '/reference/reusable-components/': '/extend/components/',
   '/reference/query-builder/': '/extend/query-builder/',
   '/start/quick-start-declarative/': '/start/quick-start-direct/',
+  '/databases/ydb/': '/extend/providers/ydb/',
 };
 
 const redirects = Object.fromEntries(
