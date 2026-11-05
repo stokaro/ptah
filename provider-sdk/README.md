@@ -114,6 +114,7 @@ returns to 0.
   [the facets of a SQL schema reading](#facets-of-a-sql-schema-reading),
   [report counts](#report-counts) and
   [index facets on inspected indexes](#index-facets-on-inspected-indexes).
+  Contract 25.22 adds [subtree coverage](#subtree-coverage).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -145,8 +146,9 @@ does not oblige a peer to use it.
   `units.migration-split`, `models.compare-counts`, `schema.index-methods`,
   `sessions.typed-arguments`, `errors.reasons`, `planning.index-renames`,
   `models.reverse`, `schema.unread-tables`, `schema.database-kinds`,
-  `schema.sql-facets`, `models.report-counts` and
-  `schema.observed-index-facets`. The embedding store's calls,
+  `schema.sql-facets`, `models.report-counts`,
+  `schema.observed-index-facets` and `schema.subtree-coverage`. The embedding
+  store's calls,
   `PrepareCommonObjects`, `ReverseChanges` and `ReportValues` are new, and each
   comes with an addition to `Engine`, so a host lists the feature to receive
   any of them. `SplitMigration` is new too,
@@ -983,7 +985,8 @@ to the operation's selected engine. An uninspected or unrepresentable region
 requires a reason and overrides overlapping completeness. Explicit subject
 records take precedence. Duplicate normalized regions, invalid components, and
 namespace-wide absence or defaults are refused. A model can carry at most
-4,096 regions.
+4,096 regions. Under [subtree coverage](#subtree-coverage), a region may also
+cover every schema nested below its schema.
 
 The host requires the exact session database on bindings and coverage regions.
 It retains native coordinates and maps common table and column regions to shared
@@ -2128,6 +2131,39 @@ before preparation, in the provider's words, and its read commands print a
 note naming each unread table and its reason.
 [ADR 0063](../docs/adr/0063-a-read-names-the-tables-it-leaves-out.md)
 records why none of the existing channels of a read carries this.
+
+## Subtree coverage
+
+`schema.subtree-coverage` lets a coverage region cover a schema and every
+schema nested below it: `ModelNamespace.schema_subtree` in a read's coverage
+and `ComparisonNamespace.schema_subtree` in a comparison's. An engine whose
+schemas nest declares the character that separates them in
+`IdentifierRules.schema_separator`, such as `/` for a YDB directory path,
+which is one schema. A subtree region covers a subject whose normalized schema
+is the region's, or begins with the region's followed by the separator; the
+empty root schema covers every schema. `provider.SchemaWithin` is that rule,
+and the host's coverage lookup and a provider's comparison both follow it.
+
+A region names one exact schema without the flag, so an unfiltered read that
+walks every directory can claim only the directories it listed, and a native
+object declared in a directory that does not exist yet has an unknown current
+state. With the feature, the read claims the root subtree complete and sends
+an unknown subtree region for each schema it leaves out; unknown knowledge in a
+matching region still overrides complete knowledge.
+
+The provider and each engine that sends such regions list the feature, and
+the host lists it. An engine that lists it declares a separator, and one that
+declares a separator lists it; a separator is one character that is not a
+letter, a digit or a space. A host that does not list the feature receives
+neither the feature nor the separator. Both transport boundaries refuse a
+subtree region in a read's coverage or a comparison's when the feature was not
+negotiated, or, for a comparison, when its identifier rules carry no
+separator, and a subtree region that names no schema. A filtered read sends
+none: its regions fit inside the namespaces its selectors bind, which each
+name one exact schema. A schema's subtree and the schema alone are different
+regions.
+[ADR 0064](../docs/adr/0064-a-read-covers-a-directory-and-everything-below-it.md)
+records why a region with no schema does not serve.
 
 ## Report counts
 

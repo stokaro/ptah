@@ -93,9 +93,11 @@ read sends no subtree region: its regions must fit inside the namespaces its
 selectors bind, and a binding names one exact schema. Absence and requested
 defaults stay refused for every region, as before.
 
-The SDK exports the match as one function. The host's coverage lookup and a
-provider's comparison both call it, so the two cannot disagree about which
-subjects a region covers.
+The SDK exports the match as one function, `provider.SchemaWithin`, and a
+provider's comparison calls it. The host's coverage lookup lives in a package
+that does not import the SDK, so it states the same rule in its own code, and
+a host test runs both over the same cases, so the two cannot disagree about
+which subjects a region covers unnoticed.
 
 ### What the host does with a subtree region
 
