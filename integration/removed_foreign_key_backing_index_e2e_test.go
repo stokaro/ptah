@@ -67,7 +67,7 @@ func TestSchemaApplyRemovedForeignKeyE2E_HappyPath(t *testing.T) {
 			built: "CREATE TABLE child (id bigint PRIMARY KEY, pid bigint, CONSTRAINT a_fk FOREIGN KEY (pid) REFERENCES parent (id), " +
 				"CONSTRAINT b_fk FOREIGN KEY (pid) REFERENCES parent (code));\n",
 			desired: "CREATE TABLE child (id bigint PRIMARY KEY, pid bigint, CONSTRAINT b_fk FOREIGN KEY (pid) REFERENCES parent (code));\n",
-			want:    "a_fk",
+			want:    "b_fk",
 		},
 		{
 			name:    "a foreign key the plan adds takes the index over",
