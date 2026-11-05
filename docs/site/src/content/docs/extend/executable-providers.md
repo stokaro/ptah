@@ -301,6 +301,13 @@ replays the migrations on that dev database when the engine declares the dev
 database services below, and refuses the dev database at the clean check when
 it declares no `database.dev-cleanup`.
 
+`lint.transaction-owner` tells an engine's rules who opens each file's
+transaction, so a rule can tell a `BEGIN` that would nest inside the migrator's
+transaction from a file's only transaction. `--runner golang-migrate` names a
+tool that opens none, and every other run names a migrator that wraps each file.
+An engine that does not list the feature judges every file as one its migrator
+wraps.
+
 `lint.statement-facts` lets `sql lint` read a provider's SQL. To a host that
 lists the feature, the provider's split says what each statement is, which
 table a statement creates without a primary key, and which capability keys a
