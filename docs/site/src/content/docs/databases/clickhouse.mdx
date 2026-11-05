@@ -153,6 +153,21 @@ objects a DBML source leaves outside its scope. External programs emit
 [SQL, YAML, or HCL](../../schema/orm-and-external/); they use the same syntax
 as the corresponding file format.
 
+## One database per run
+
+A run reads and writes the one database the URL names, or `default` when it names
+none. A document may leave a table unqualified, or name that database. A document
+that declares another database, with `schema "other" {}` or `CREATE DATABASE
+other;`, or puts an object in one, is refused before anything is planned:
+
+```text
+error: the document declares database "other", but the target URL is limited to database "app"; name that database in the URL, or leave the database out of the name
+```
+
+A read cannot find a table in another database, so without the refusal every run
+plans its `CREATE TABLE` again. Ptah creates no ClickHouse database, so a run
+against a database the server does not hold fails on the server instead.
+
 ## Dev-database cleanup
 
 Dev-database replay cleanup requires ClickHouse 24.11 or newer

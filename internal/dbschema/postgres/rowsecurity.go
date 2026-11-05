@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"ptah.run/catalog"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/feature/pgpolicy"
 )
@@ -44,6 +45,16 @@ var compositions = map[bool]pgpolicy.Composition{true: pgpolicy.Permissive, fals
 var policyCommands = map[string]pgpolicy.Command{
 	"*": pgpolicy.CommandAll, "r": pgpolicy.CommandSelect, "a": pgpolicy.CommandInsert,
 	"w": pgpolicy.CommandUpdate, "d": pgpolicy.CommandDelete,
+}
+
+// readRowSecurityWhereItExists reads row security, or clears the switches the
+// table read reported on a server that has none.
+func (r *Reader) readRowSecurityWhereItExists(ctx context.Context, schema *catalog.Database) error {
+	if r.caps.Has(capability.RowLevelSecurity) {
+		return r.readRowSecurity(ctx, schema)
+	}
+	clearRowSecuritySwitches(schema.Tables)
+	return nil
 }
 
 // readRowSecurity reports the read's row-level security to the PostgreSQL

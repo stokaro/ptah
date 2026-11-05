@@ -85,25 +85,29 @@ func TestColumnSpellings_TheServersSpellingSettlesTheColumn(t *testing.T) {
 
 // The server's spelling is compared, not trusted: a spelling that differs from
 // the catalog's is still a difference, and an unresolved one falls back to the
-// comparison's own folding, which cannot settle these.
+// comparison's own folding, which tells two widths apart and cannot settle a default.
 func TestColumnSpellings_ADifferentOrMissingSpellingStillPlans(t *testing.T) {
 	tests := []struct {
 		name       string
+		declared   string
 		spelling   config.ColumnSpelling
 		wantChange string
 	}{
 		{
 			name:       "the type is spelled differently",
+			declared:   "varchar(20)[]",
 			spelling:   config.ColumnSpelling{Type: "character varying(20)[]", Default: "'2020-01-02 00:00:00+00'::timestamp with time zone", Resolved: true},
 			wantChange: "type",
 		},
 		{
 			name:       "the default is spelled differently",
+			declared:   "varchar(10)[]",
 			spelling:   config.ColumnSpelling{Type: "character varying(10)[]", Default: "'2020-01-02 00:00:00+00'::timestamp with time zone", Resolved: true},
 			wantChange: "default_expr",
 		},
 		{
 			name:       "the server refused the column",
+			declared:   "varchar(20)[]",
 			spelling:   config.ColumnSpelling{Type: "character varying(10)[]", Default: "'2020-01-01 00:00:00+00'::timestamp with time zone"},
 			wantChange: "type",
 		},
@@ -111,7 +115,7 @@ func TestColumnSpellings_ADifferentOrMissingSpellingStillPlans(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			desired, current := spelledTable("varchar(10)[]", "'2020-01-01'::timestamp with time zone",
+			desired, current := spelledTable(test.declared, "'2020-01-01'::timestamp with time zone",
 				"character varying(10)[]", "'2020-01-01 00:00:00+00'::timestamp with time zone")
 
 			diff := spellingsDiff(desired, current, map[string]config.ColumnSpelling{spelledColumnKey: test.spelling})

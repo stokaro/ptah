@@ -118,6 +118,34 @@ func typeStep(action plangraph.Action, name string) plangraph.Step[[]ast.Node] {
 		Payload: []ast.Node{ast.NewComment(text)}, Effects: []plangraph.Effect{{Subject: subject, Action: action}}}
 }
 
+// splitReplacement drops zip in the lifecycle span and creates it in the default
+// phase, in that order.
+func splitReplacement() featurehost.Result {
+	result := typeResult(featureplan.PhaseDefault, typeStep(plangraph.Drop, "zip"), typeStep(plangraph.Create, "zip"))
+	result.Phases[result.Contributions[0].Steps[0].ID] = featureplan.PhaseLifecycle
+	return result
+}
+
+// TestGraph_LifecycleDropAheadOfADefaultCreation runs the drop of a replacement in a
+// span ahead of the common statements it stands in the way of, and the creation in
+// the default window after them.
+func TestGraph_LifecycleDropAheadOfADefaultCreation(t *testing.T) {
+	c := qt.New(t)
+	windows := typeWindows()
+	windows.Lifecycle = &featurehost.Span{Start: 1, End: 1}
+	graph := must.Must(featurehost.NewGraph("example.org/host", typeNodes(), nil, windows))
+
+	nodes, err := graph.Schedule(t.Context(), splitReplacement())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(nodes, qt.HasLen, 6)
+	rendered := make([]string, 0, len(nodes))
+	for _, node := range nodes {
+		rendered = append(rendered, node.(*ast.CommentNode).Text)
+	}
+	c.Assert(rendered, qt.DeepEquals, []string{"enums", "drops zip", "tables", "creates zip", "drop tables", "drop enums"})
+}
+
 func TestGraph_TypeWindows_HappyPath(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -165,6 +193,19 @@ func TestGraph_TypeWindows_FailurePath(t *testing.T) {
 		c.Assert(nodes, qt.IsNil)
 	})
 
+	t.Run("a creation in the default phase ahead of a drop in the lifecycle span is refused", func(t *testing.T) {
+		c := qt.New(t)
+		// The span follows the creation window, so the owner's order has a cycle.
+		windows := typeWindows()
+		windows.Lifecycle = &featurehost.Span{Start: 3, End: 3}
+		graph := must.Must(featurehost.NewGraph("example.org/host", typeNodes(), nil, windows))
+
+		nodes, err := graph.Schedule(t.Context(), splitReplacement())
+
+		c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+		c.Assert(nodes, qt.IsNil)
+	})
+
 	t.Run("a rebuild split across the default phase is refused", func(t *testing.T) {
 		c := qt.New(t)
 		graph := must.Must(featurehost.NewGraph("example.org/host", typeNodes(), nil, typeWindows()))
@@ -173,7 +214,7 @@ func TestGraph_TypeWindows_FailurePath(t *testing.T) {
 			typeResult(featureplan.PhaseDefault, typeStep(plangraph.Drop, "zip"), typeStep(plangraph.Create, "zip")))
 
 		c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
-		c.Assert(err, qt.ErrorMatches, `.*creates domain zip, which step .* drops; a replacement is one step, or both halves ask for the dependent, type or lifecycle phase`)
+		c.Assert(err, qt.ErrorMatches, `.*creates domain zip, which step .* drops; a replacement is one step, both halves ask for the dependent, type or lifecycle phase, or the drop asks for the lifecycle phase`)
 		c.Assert(nodes, qt.IsNil)
 	})
 

@@ -454,6 +454,7 @@ func (p *Planner) modifyExistingColumns(
 				continue
 			}
 		}
+		givesUpKey := keyrelease.GivesUpAutoIncrementKey(colDiff)
 		suppressColumnPrimary := false
 		if _, hasPrimaryKeyChange := colDiff.Changes["primary_key"]; hasPrimaryKeyChange && !gainsAutoIncrementKey(colDiff) &&
 			primaryKeyColumnChangeOwnedByTableConstraint(diff, tableDiff.TableName, colDiff.ColumnName, semantics) {
@@ -541,6 +542,9 @@ func (p *Planner) modifyExistingColumns(
 		if p.targetDialect() == platform.SQLServer {
 			result = append(result, sqlServerColumnChange(tableDiff.TableName, modify)...)
 			continue
+		}
+		if givesUpKey {
+			result = append(result, p.keyAwayFromAutoIncrement(tableDiff.TableName, field, diff)...)
 		}
 		result = append(result, &ast.AlterTableNode{Name: tableDiff.TableName, Operations: []ast.AlterOperation{modify}})
 	}
@@ -706,6 +710,24 @@ func primaryKeyColumnChangeOwnedByTableConstraint(
 		}
 	}
 	return false
+}
+
+// keyAwayFromAutoIncrement writes what has to run ahead of the MODIFY COLUMN of a column
+// that gives up AUTO_INCREMENT and the key at once: the column NOT NULL with no
+// AUTO_INCREMENT, then the key's drop; see [keyrelease.PrimaryKeysBehindAutoIncrement].
+func (p *Planner) keyAwayFromAutoIncrement(table string, field schemamodel.Field, diff *difftypes.SchemaDiff) []ast.Node {
+	field.Nullable = false
+	result := []ast.Node{&ast.AlterTableNode{Name: table, Operations: []ast.AlterOperation{
+		&ast.ModifyColumnOperation{Column: modelast.FromField(field, diff.DeclaredUserTypes.Enums, p.targetDialect())},
+	}}}
+	for _, info := range keyrelease.PrimaryKeysBehindAutoIncrement(diff, p.targetDialect()).Constraints {
+		if objectlookup.Same(table, info.TableName, diff.EffectiveIdentifierSemantics(p.targetDialect())) {
+			result = append(result, &ast.AlterTableNode{Name: table, Operations: []ast.AlterOperation{
+				&ast.DropConstraintOperation{ConstraintName: info.Name, PrimaryKey: true},
+			}})
+		}
+	}
+	return result
 }
 
 // gainsAutoIncrementKey reports a column that becomes AUTO_INCREMENT and the key in
@@ -966,6 +988,35 @@ func (p *Planner) planColumnTypeForeignKeyChanges(diff *difftypes.SchemaDiff) co
 		plan.readds = append(plan.readds, p.createForeignKeyAlterStatement(fk.table, fk.name, fk.columns, fk.ref))
 	}
 	return plan
+}
+
+// releaseForeignKeysOverMovedKeys adds to plan the foreign keys the diff removes
+// or changes that reference a table whose primary key the plan moves or removes.
+// They leave ahead of it: MySQL answers `DROP PRIMARY KEY, ADD PRIMARY KEY (code)`
+// with Error 1553 while one of them still stands over the old key. Measured on
+// MySQL 8.4 and 26.10; MariaDB 12.3 takes the move with the foreign key in place,
+// and the order costs it nothing. A foreign key the diff changes comes back with
+// the other additions, after the move.
+func (p *Planner) releaseForeignKeysOverMovedKeys(diff *difftypes.SchemaDiff, plan *columnTypeForeignKeyPlan) {
+	if diff == nil || !p.isMySQLFamily() {
+		return
+	}
+	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
+	losesKey := make(map[string]bool)
+	for _, info := range diff.ConstraintsRemoved {
+		if strings.EqualFold(info.Type, "PRIMARY KEY") {
+			losesKey[semantics.QualifiedTableIdentityKey(info.TableName)] = true
+		}
+	}
+	for _, info := range diff.ForeignKeysRemovedWithTables {
+		if _, done := plan.dropped[info.Identity]; done || !losesKey[semantics.QualifiedTableIdentityKey(info.ForeignTable)] {
+			continue
+		}
+		plan.drops = append(plan.drops, p.dropConstraintNode(difftypes.ConstraintRemovalInfo{
+			Name: info.Name, TableName: info.TableName, Type: "FOREIGN KEY",
+		}))
+		plan.dropped[info.Identity] = struct{}{}
+	}
 }
 
 // collectColumnTypeForeignKeyActions returns, deduped per (table, name) and
@@ -1532,6 +1583,7 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	// tells that machinery — and removeConstraints — to suppress their own now
 	// redundant drop of the same (table, name).
 	fkPlan := p.planColumnTypeForeignKeyChanges(diff)
+	p.releaseForeignKeysOverMovedKeys(diff, &fkPlan)
 	result = append(result, fkPlan.drops...)
 
 	// 4a. Drop a removed key that holds the name a column's own UNIQUE takes,
@@ -1604,6 +1656,7 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	// suppresses any removed-only FK already dropped at step 4, and the keys
 	// DroppedWithColumns finds a key that went with its column at step 4.7.
 	maps.Copy(alreadyDropped, released.ConstraintSet())
+	maps.Copy(alreadyDropped, keyrelease.PrimaryKeysBehindAutoIncrement(diff, p.targetDialect()).ConstraintSet())
 	result = p.removeConstraints(result, diff, alreadyDropped)
 
 	// 6.6. Remove view-like objects before dependent tables. Triggers were
@@ -1870,7 +1923,16 @@ func (p *Planner) addNewConstraints(
 	// would abort the migration.
 	maps.Copy(state.droppedForModify, bracketDropped)
 
-	result = p.addPrimaryKeyConstraintsWithTables(result, diff, diff.TablesAdded.Names(), state)
+	addKeys := func(result []ast.Node) []ast.Node {
+		return p.addPrimaryKeyConstraintsWithTables(result, diff, diff.TablesAdded.Names(), state)
+	}
+	// A foreign key the plan keeps needs a key on its referenced columns at every
+	// moment. MySQL answers `DROP PRIMARY KEY, ADD PRIMARY KEY (code)` with Error
+	// 1553 while the foreign key over the old key has nothing else to use, so a
+	// UNIQUE the plan adds for it goes first. MariaDB takes either order.
+	if !p.isMySQLFamily() {
+		result = addKeys(result)
+	}
 	result = p.addNonForeignKeyConstraintsWithTables(
 		result,
 		diff.ConstraintsAdded,
@@ -1880,6 +1942,9 @@ func (p *Planner) addNewConstraints(
 		diff.IndexRemovalsRebuiltAsUniqueConstraints(),
 		state.semantics,
 	)
+	if p.isMySQLFamily() {
+		result = addKeys(result)
+	}
 	result, err := p.addNamedConstraintsByKind(result, diff, state, nonForeignKeyConstraints)
 	if err != nil {
 		return nil, err

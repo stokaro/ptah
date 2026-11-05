@@ -252,15 +252,15 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	}
 	keepColumnSequencesOnly(schema.Tables, schema.Sequences)
 
-	if r.caps.Has(capability.RowLevelSecurity) {
-		if err := r.readRowSecurity(ctx, schema); err != nil {
-			return nil, err
-		}
-	} else {
-		clearRowSecuritySwitches(schema.Tables)
+	if err := r.readRowSecurityWhereItExists(ctx, schema); err != nil {
+		return nil, err
 	}
 
 	if err := r.readRoleManagedObjects(ctx, schema); err != nil {
+		return nil, err
+	}
+
+	if err := r.leaveOutExtensionOwnedRelations(ctx, schema); err != nil {
 		return nil, err
 	}
 
@@ -3226,7 +3226,6 @@ func (r *Reader) readSequenceGrantsForSchema(ctx context.Context, schemaName str
 		JOIN pg_roles grantor ON grantor.oid = acl.grantor
 		WHERE c.relkind = 'S'
 		AND n.nspname = $1
-		AND COALESCE(grantee.rolname, 'PUBLIC') NOT LIKE 'pg\_%' ESCAPE '\'
 		AND COALESCE(grantee.rolname, 'PUBLIC') != 'postgres'
 		ORDER BY n.nspname, c.relname, COALESCE(grantee.rolname, 'PUBLIC'), acl.privilege_type`
 
@@ -4456,7 +4455,6 @@ func (r *Reader) readRoutineGrantsForSchema(ctx context.Context, schemaName stri
 		-- LEFT JOIN would still yield one with no privilege in it.
 		AND (p.proacl IS NULL OR acl.grantee IS NOT NULL)
 		-- The same roles the table grant read leaves out.
-		AND COALESCE(grantee.rolname, 'PUBLIC') NOT LIKE 'pg\_%' ESCAPE '\'
 		AND COALESCE(grantee.rolname, 'PUBLIC') != 'postgres'
 		AND (acl.grantee IS NULL OR acl.grantee <> p.proowner)
 		UNION ALL
@@ -4548,7 +4546,6 @@ func (r *Reader) readColumnGrantsForSchema(ctx context.Context, schemaName strin
 		LEFT JOIN pg_roles grantor ON grantor.oid = acl.grantor
 		WHERE n.nspname = $1
 		AND ` + columnGrantPredicate + `
-		AND COALESCE(grantee.rolname, 'PUBLIC') NOT LIKE 'pg\_%' ESCAPE '\'
 		AND COALESCE(grantee.rolname, 'PUBLIC') != 'postgres'
 		ORDER BY c.relname, a.attname, 1, 2`
 
@@ -4589,7 +4586,6 @@ func (r *Reader) readTableGrantsForSchema(ctx context.Context, schemaName string
 			COALESCE(grantor, '') AS grantor
 		FROM information_schema.role_table_grants g
 		WHERE table_schema = $1
-		AND grantee NOT LIKE 'pg\_%' ESCAPE '\'
 		AND grantee != 'postgres'
 		-- Only relations on which some privilege has actually been granted.
 		-- information_schema reports an owner's built-in privileges as grants
@@ -4629,7 +4625,6 @@ func (r *Reader) readTableGrantsForSchema(ctx context.Context, schemaName string
 		AND c.relkind IN ('r', 'v', 'f', 'p')
 		AND acl.privilege_type = 'MAINTAIN'
 		AND (pg_has_role(acl.grantor, 'USAGE') OR (acl.grantee <> 0 AND pg_has_role(acl.grantee, 'USAGE')))
-		AND COALESCE(grantee.rolname, 'PUBLIC') NOT LIKE 'pg\_%' ESCAPE '\'
 		AND COALESCE(grantee.rolname, 'PUBLIC') != 'postgres'
 		UNION ALL
 		-- A materialized view's privileges, every one of them:
@@ -4654,7 +4649,6 @@ func (r *Reader) readTableGrantsForSchema(ctx context.Context, schemaName string
 		WHERE n.nspname = $1
 		AND c.relkind = 'm'
 		AND (pg_has_role(acl.grantor, 'USAGE') OR (acl.grantee <> 0 AND pg_has_role(acl.grantee, 'USAGE')))
-		AND COALESCE(grantee.rolname, 'PUBLIC') NOT LIKE 'pg\_%' ESCAPE '\'
 		AND COALESCE(grantee.rolname, 'PUBLIC') != 'postgres'
 		ORDER BY 3, 4, 1, 2`
 
@@ -4692,7 +4686,6 @@ func (r *Reader) readSchemaGrantsForSchema(ctx context.Context, schemaName strin
 		LEFT JOIN pg_roles grantee ON grantee.oid = acl.grantee
 		JOIN pg_roles grantor ON grantor.oid = acl.grantor
 		WHERE n.nspname = $1
-		AND COALESCE(grantee.rolname, 'PUBLIC') NOT LIKE 'pg\_%' ESCAPE '\'
 		AND COALESCE(grantee.rolname, 'PUBLIC') != 'postgres'
 		ORDER BY n.nspname, COALESCE(grantee.rolname, 'PUBLIC'), acl.privilege_type`
 

@@ -73,7 +73,7 @@ func TestSchemaDiffReadsAFromServerBesideAFileE2E(t *testing.T) {
 			c.Assert(forward.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", forward.Stdout, forward.Stderr))
 			c.Assert(forward.Stdout, qt.Contains, "CREATE SCHEMA IF NOT EXISTS `"+added+"`;")
 			c.Assert(forward.Stdout, qt.Contains, "CREATE TABLE `"+added+"`.`w`")
-			c.Assert(forward.Stdout, qt.Contains, "DROP TABLE IF EXISTS `"+gone+"`.`g`;")
+			c.Assert(forward.Stdout, qt.Contains, "DROP TABLE `"+gone+"`.`g`;")
 			c.Assert(forward.Stdout, qt.Contains, "DROP DATABASE `"+gone+"`;")
 			c.Assert(forward.Stdout, qt.Not(qt.Contains), "DROP DATABASE `"+kept+"`")
 			c.Assert(backward.ExitCode, qt.Not(qt.Equals), 0, qt.Commentf("stdout:\n%s", backward.Stdout))

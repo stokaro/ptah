@@ -46,6 +46,27 @@ func Resolve(ctx context.Context, targets ...providerselect.Target) (*engine.Run
 	return builtin.Bundled()
 }
 
+// Serving returns runtime when it serves dialect, or dialect is empty, and
+// otherwise the runtime [Resolve] builds with dialect as a target. A command
+// that learns a dialect from a file it reads after resolving its runtime, as a
+// lint policy names one, uses it: the dialect starts its provider as a
+// --dialect flag naming it would, and the runtime the file is then read with
+// knows it. A dialect nothing serves keeps runtime, so the reader refuses it
+// as it does today.
+func Serving(ctx context.Context, runtime *engine.Runtime, dialect string) (*engine.Runtime, error) {
+	if strings.TrimSpace(dialect) == "" || TargetName(runtime, dialect) != "" {
+		return runtime, nil
+	}
+	served, err := Resolve(ctx, Dialect(dialect))
+	if err != nil {
+		return nil, err
+	}
+	if TargetName(served, dialect) == "" {
+		return runtime, nil
+	}
+	return served, nil
+}
+
 // Selected returns the explicit command selection, and false when none was
 // made and [Resolve] returns the bundled default. A command whose own reading
 // of a dialect is built in asks here, because a selected provider owns its

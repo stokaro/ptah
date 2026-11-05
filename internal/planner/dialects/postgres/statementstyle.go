@@ -67,19 +67,17 @@ func (p *Planner) cascades(relied bool) bool {
 // anyway. This plan removes such an object before the column when it changes
 // or removes it in an earlier step: a policy, a view, a trigger, an index, a
 // foreign key, and a generated column of the same table, which goes before
-// the columns it reads. It removes these only after the column, so a drop
-// relies on CASCADE when the plan holds one:
+// the columns it reads, and a routine that reads the column; see
+// [routinesAhead]. It removes these only after the column, so a drop relies on
+// CASCADE when the plan holds one:
 //
-//   - a routine it removes whose SQL-standard body reads the column and cannot
-//     leave ahead of it;
 //   - a captured object of a table it removes that reads the table, such as a
 //     row-level security policy;
 //   - an owner operation that may drop a standalone object in a later window,
 //     whose object reads the table's columns or cannot say; see
 //     [removedFeatureReadsColumns].
-func columnDropRelies(diff *difftypes.SchemaDiff, tableDiff difftypes.TableDiff, column string, ahead routinesAhead, droppedPolicies map[objectidentity.Key]bool) bool {
-	return removedRoutineReadsColumn(diff, tableDiff.TableName, column, ahead) ||
-		removedTableReadsExcept(diff, tableDiff.TableName, nil, droppedPolicies) ||
+func columnDropRelies(diff *difftypes.SchemaDiff, tableDiff difftypes.TableDiff, droppedPolicies map[objectidentity.Key]bool) bool {
+	return removedTableReadsExcept(diff, tableDiff.TableName, nil, droppedPolicies) ||
 		removedFeatureReadsColumns(diff, tableDiff.TableName)
 }
 
@@ -88,10 +86,9 @@ func columnDropRelies(diff *difftypes.SchemaDiff, tableDiff difftypes.TableDiff,
 //
 // The table's indexes, constraints, triggers and policies go with it, its
 // foreign keys and the ones that point at it are dropped by name first, and
-// the views that read it are removed before it. What the plan removes only
-// after the table is:
+// the views that read it and the routines that depend on it are removed before
+// it; see [routinesAhead]. What the plan removes only after the table is:
 //
-//   - a routine whose parameters, result or SQL-standard body name the table;
 //   - a captured object of a removed table dropped after this one, such as a
 //     policy that reads this table. The tables are ordered so the one holding
 //     the policy goes first, and only a cycle leaves one after;
@@ -99,9 +96,8 @@ func columnDropRelies(diff *difftypes.SchemaDiff, tableDiff difftypes.TableDiff,
 //     table, or one whose object cannot say; see [removedFeatureReads]. A
 //     removed type whose attribute is the table's row type is decided on the
 //     scheduled plan by [Planner.cascadeForLaterTypeDrops].
-func tableDropRelies(diff *difftypes.SchemaDiff, name string, droppedBefore map[string]bool, ahead routinesAhead, droppedPolicies map[objectidentity.Key]bool) bool {
-	return removedRoutineNames(diff, name, ahead) ||
-		removedTableReadsExcept(diff, name, droppedBefore, droppedPolicies) ||
+func tableDropRelies(diff *difftypes.SchemaDiff, name string, droppedBefore map[string]bool, droppedPolicies map[objectidentity.Key]bool) bool {
+	return removedTableReadsExcept(diff, name, droppedBefore, droppedPolicies) ||
 		removedFeatureReads(diff, name)
 }
 

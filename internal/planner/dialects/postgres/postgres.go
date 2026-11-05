@@ -31,6 +31,7 @@ import (
 	"ptah.run/internal/planner/keyrelease"
 	"ptah.run/internal/planner/schemaprecondition"
 	"ptah.run/internal/schemaprep"
+	"ptah.run/internal/sqlident"
 	"ptah.run/internal/tablelookup"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/viewoptions"
@@ -512,28 +513,29 @@ func (p *Planner) addSchemaPreconditions(
 		names = append(names, trigger.TableName)
 	}
 	seen := make(map[string]struct{}, len(names))
-	schemas := make([]string, 0, len(names))
-	for _, name := range names {
-		ref, ok := tableref.Parse(name)
-		if !ok || !ref.Qualified {
-			continue
-		}
-		schema := strings.TrimSpace(ref.Schema)
-		if schema == "" {
-			continue
-		}
+	schemas := make([]string, 0, len(names)+len(diff.SchemasAdded))
+	add := func(schema string) {
 		// A schema the target owns is reached without a precondition. On
 		// PostgreSQL that spares a statement nobody needs; on Spanner it is
 		// what makes the migration run at all, because `public` there is
 		// implicit and CREATE SCHEMA for it is refused by name.
-		if pgsystemschema.IsUncreatableSchema(p.dialect, schema) || schema == connected {
-			continue
+		if schema == "" || pgsystemschema.IsUncreatableSchema(p.dialect, schema) || schema == connected {
+			return
 		}
 		if _, ok := seen[schema]; ok {
-			continue
+			return
 		}
 		seen[schema] = struct{}{}
 		schemas = append(schemas, schema)
+	}
+	for _, name := range names {
+		if ref, ok := tableref.Parse(name); ok && ref.Qualified {
+			add(strings.TrimSpace(ref.Schema))
+		}
+	}
+	// A schema the comparison adds is created whether or not an object names it.
+	for _, schema := range diff.SchemasAdded {
+		add(strings.TrimSpace(schema.Name))
 	}
 	for _, schema := range p.placedSchemas(diff) {
 		if schema == "" || pgsystemschema.IsUncreatableSchema(p.dialect, schema) {
@@ -583,6 +585,23 @@ func connectedSchema(diff *difftypes.SchemaDiff, dialect string) string {
 		return ""
 	}
 	return strings.TrimSpace(diff.EffectiveIdentifierSemantics(dialect).DefaultSchema)
+}
+
+// dropRemovedSchemas ends the plan with a DROP SCHEMA for each schema a rollback
+// removes, after every other statement, the owners' included, because what the
+// plan drops first may be in it. It has no CASCADE in either statement style: the
+// comparison added the schema because the database did not hold it, so whatever
+// it holds by the time this runs was put there by something the plan does not
+// know, and the server refusing the drop is the right answer.
+func (p *Planner) dropRemovedSchemas(nodes []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	guard := " IF EXISTS"
+	if p.exact() {
+		guard = ""
+	}
+	for _, name := range diff.SchemasRemoved {
+		nodes = append(nodes, ast.NewRawSQL("DROP SCHEMA"+guard+" "+sqlident.Quote(platform.Postgres, name)))
+	}
+	return nodes
 }
 
 // placedSchemas are the schemas the plan puts owners' objects into, such as
@@ -1269,8 +1288,8 @@ func (p *Planner) removeTableColumnsFromDiff(result []ast.Node, diff *difftypes.
 		if earlyColumns[tableDiff.TableName+"\x00"+column.Name] {
 			continue
 		}
-		result = p.appendRoutinesAheadColumn(result, diff, tableDiff.TableName, column.Name, ahead)
-		cascade := p.cascades(columnDropRelies(diff, tableDiff, column.Name, ahead, droppedPolicies))
+		result = p.appendRoutineDrops(result, ahead.ofColumn(tableDiff.TableName, column.Name))
+		cascade := p.cascades(columnDropRelies(diff, tableDiff, droppedPolicies))
 		dropOp := &ast.DropColumnOperation{
 			ColumnName: column.Name,
 			Cascade:    cascade,
@@ -1406,12 +1425,13 @@ func (p *Planner) removeTableColumns(result []ast.Node, diff *difftypes.SchemaDi
 	return result
 }
 
-func (p *Planner) removeEarlyGeneratedColumns(result []ast.Node, diff *difftypes.SchemaDiff, earlyColumns map[string]bool) []ast.Node {
+func (p *Planner) removeEarlyGeneratedColumns(result []ast.Node, diff *difftypes.SchemaDiff, earlyColumns map[string]bool, ahead routinesAhead) []ast.Node {
 	for _, table := range diff.TablesModified {
 		for _, column := range table.ColumnsRemoved {
 			if !earlyColumns[table.TableName+"\x00"+column.Name] {
 				continue
 			}
+			result = p.appendRoutineDrops(result, ahead.ofColumn(table.TableName, column.Name))
 			result = append(result, &ast.AlterTableNode{Name: table.TableName, Operations: []ast.AlterOperation{
 				&ast.DropColumnOperation{ColumnName: column.Name},
 			}})
@@ -1590,7 +1610,7 @@ func (p *Planner) removeTables(result []ast.Node, diff *difftypes.SchemaDiff, ah
 	dropped := make(map[string]bool, len(diff.TablesRemoved))
 	for _, group := range p.removedTableGroups(diff, ahead) {
 		for _, tableName := range group {
-			result = p.appendRoutinesAhead(result, diff, tableName, ahead)
+			result = p.appendRoutineDrops(result, ahead.of(tableName))
 		}
 		dropTableNode := ast.NewDropTable(group[0]).SetNames(group).
 			SetIfExists()
@@ -1602,7 +1622,7 @@ func (p *Planner) removeTables(result []ast.Node, diff *difftypes.SchemaDiff, ah
 		}
 		relied := false
 		for _, tableName := range group {
-			relied = relied || tableDropRelies(diff, tableName, dropped, ahead, droppedPolicies)
+			relied = relied || tableDropRelies(diff, tableName, dropped, droppedPolicies)
 		}
 		if p.cascades(relied) {
 			dropTableNode.SetCascade()
@@ -1621,7 +1641,7 @@ func (p *Planner) removeTables(result []ast.Node, diff *difftypes.SchemaDiff, ah
 // dependencies on each other need no CASCADE; one drop at a time, the first
 // would rely on it.
 func (p *Planner) removedTableGroups(diff *difftypes.SchemaDiff, ahead routinesAhead) [][]string {
-	order := removedTableOrder(diff)
+	order := removedTableOrder(diff, ahead)
 	groups := make([][]string, 0, len(order))
 	if !p.exact() {
 		for _, name := range order {
@@ -1664,10 +1684,11 @@ func (p *Planner) removedTableGroups(diff *difftypes.SchemaDiff, ahead routinesA
 // before the tables their foreign keys reference, a partition or an inheriting
 // table before its parent, and a table whose captured object reads another
 // removed table before that table.
-func removedTableOrder(diff *difftypes.SchemaDiff) []string {
+func removedTableOrder(diff *difftypes.SchemaDiff, ahead routinesAhead) []string {
 	names := deporder.TableDropOrderWithDependencies(diff.TablesRemoved.Names(), diff.DeclaredTables, diff.DeclaredTableDependencies)
 	readers := make(map[string][]string)
 	for _, removal := range diff.TablesRemoved {
+		readers[removal.Name] = slices.Clone(ahead.tablesAfter[removal.Name])
 		for _, name := range names {
 			if name != removal.Name && (capturedReads(removal.Current.OwnedObjects, name, relationSemantics(diff)) ||
 				slices.Contains(removal.Current.Table.Parents, name)) {
@@ -1804,6 +1825,7 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	if err != nil {
 		return nil, err
 	}
+	nodes = p.dropRemovedSchemas(nodes, diff)
 	if p.exact() {
 		// Over the scheduled plan, owner operations included, because what a
 		// guard is for depends on every statement before it.
@@ -1813,7 +1835,7 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 }
 
 func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff, windows *featurehost.Windows) ([]ast.Node, error) {
-	if err := schemaprecondition.RefuseServerSchemas(DialectName, diff); err != nil {
+	if err := schemaprecondition.RefuseDatabaseChanges(DialectName, diff); err != nil {
 		return nil, err
 	}
 	// No owner on this family plans a setting attached to a materialized view,
@@ -1944,16 +1966,15 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// refuses ALTER COLUMN TYPE under a view. A materialized view that changes,
 	// and a view the server cannot replace in place, leaves with everything
 	// that depends on it. Step 6.6 puts them back.
-	var earlyColumns map[string]bool
-	if p.exact() {
-		earlyColumns = earlyGeneratedColumns(diff)
-	}
-	ahead := p.routinesAheadOf(diff, rebuild, earlyColumns)
 	result = p.dropRebuiltViewLikes(result, diff, rebuild)
 
 	// 5d. A removed sequence leaves its owner before the column changes that
 	// take its default away; see [Planner.releaseRemovedSequenceOwners].
 	result = p.releaseRemovedSequenceOwners(result, diff)
+
+	// Feature operations that stand in the way of a column change join the plan
+	// here.
+	windows.Lifecycle = &featurehost.Span{Start: len(result), End: len(result)}
 
 	// 6. Add and modify table columns (must be done before creating RLS policies that depend on columns)
 	result = p.addAndModifyTableColumns(result, diff)
@@ -2055,6 +2076,11 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 		return nil, err
 	}
 	droppedPolicies := policiesDroppedBeforeRelations(result[beforeTableFeatures:], diff)
+	earlyColumns := p.columnsLeavingEarly(diff)
+	ahead, err := p.routinesAheadOf(diff, rebuild, earlyColumns, droppedPolicies)
+	if err != nil {
+		return nil, err
+	}
 	// A removed CHECK on a table we keep may call a routine this plan removes.
 	// Release it before moving that routine ahead of a removed relation. The
 	// constraint's body is absent from the diff, so waiting until step 12.5
@@ -2070,7 +2096,7 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// OF a column, and a view reads columns and, through GROUP BY, a primary
 	// key; dropped first, neither leaves a column drop relying on CASCADE.
 	result = p.removeTriggers(result, diff)
-	result = p.removeEarlyGeneratedColumns(result, diff, earlyColumns)
+	result = p.removeEarlyGeneratedColumns(result, diff, earlyColumns, ahead)
 	result = p.removeViewLikes(result, diff, rebuild, ahead, droppedPolicies)
 
 	// 12. Remove table columns (must be done after removing RLS policies that depend on columns)
@@ -2437,10 +2463,15 @@ const (
 )
 
 func (p *Planner) removeFunctions(result []ast.Node, diff *difftypes.SchemaDiff, rebuild viewRebuild, ahead routinesAhead, phase routineRemovalPhase) []ast.Node {
-	for _, group := range p.removedRoutineGroups(diff, rebuild, ahead) {
-		if group.afterTypes != (phase == routinesAfterTypes) {
-			continue
-		}
+	groups := slices.DeleteFunc(slices.Clone(ahead.rest), func(group removedRoutineGroup) bool {
+		return group.afterTypes != (phase == routinesAfterTypes)
+	})
+	return p.appendRoutineDrops(result, groups)
+}
+
+// appendRoutineDrops appends one statement for each group.
+func (p *Planner) appendRoutineDrops(result []ast.Node, groups []removedRoutineGroup) []ast.Node {
+	for _, group := range groups {
 		node := p.dropRoutineNode(group.routines[0], group.kind)
 		for _, other := range group.routines[1:] {
 			node.Others = append(node.Others, ast.DropFunctionTarget{Name: other.Name, Parameters: other.Signature})
@@ -2477,34 +2508,6 @@ func (p *Planner) dropRoutineNode(routine difftypes.RoutineChange, kind string) 
 		node = node.SetParameters(*routine.Signature)
 	}
 	return node
-}
-
-// appendRoutinesAhead appends the drops of the routines the plan drops just
-// ahead of relation; see [routinesAhead].
-func (p *Planner) appendRoutinesAhead(result []ast.Node, diff *difftypes.SchemaDiff, relation string, ahead routinesAhead) []ast.Node {
-	for _, routine := range ahead.of(relation) {
-		kind := schemamodel.FunctionKindFunction
-		if slices.ContainsFunc(diff.ProceduresRemoved, func(candidate difftypes.RoutineChange) bool {
-			return routineKey(candidate) == routineKey(routine)
-		}) {
-			kind = schemamodel.FunctionKindProcedure
-		}
-		result = append(result, p.dropRoutineNode(routine, kind))
-	}
-	return result
-}
-
-func (p *Planner) appendRoutinesAheadColumn(result []ast.Node, diff *difftypes.SchemaDiff, table, column string, ahead routinesAhead) []ast.Node {
-	for _, routine := range ahead.ofColumn(table, column) {
-		kind := schemamodel.FunctionKindFunction
-		if slices.ContainsFunc(diff.ProceduresRemoved, func(candidate difftypes.RoutineChange) bool {
-			return routineKey(candidate) == routineKey(routine)
-		}) {
-			kind = schemamodel.FunctionKindProcedure
-		}
-		result = append(result, p.dropRoutineNode(routine, kind))
-	}
-	return result
 }
 
 // addNewSequences emits CREATE SEQUENCE for newly added sequences. The OWNED BY
@@ -2841,23 +2844,30 @@ func viewReplaceKeepsDependents(viewDiff difftypes.ViewDiff, targetBody string) 
 	}
 }
 
-// removeViewLikes drops the views and materialized views the declaration no
-// longer holds, each after every removed one that reads it, so no drop relies
-// on CASCADE to take another removed object. One the view rebuild dropped
-// already is left out. A drop relies on CASCADE when a removed routine uses
-// the object's row type or a policy of a removed table reads it and still
-// exists; see [removalOutlivesDrop].
-func (p *Planner) removeViewLikes(result []ast.Node, diff *difftypes.SchemaDiff, rebuild viewRebuild, ahead routinesAhead, droppedPolicies map[objectidentity.Key]bool) []ast.Node {
+// removedViewOrder is the views and materialized views the declaration no
+// longer holds, in the order they are dropped: each after every removed one that
+// reads it, or that calls a routine depending on it. One the view rebuild drops
+// is left out.
+func (p *Planner) removedViewOrder(diff *difftypes.SchemaDiff, rebuild viewRebuild, ahead routinesAhead) []deporder.ViewLike {
 	owned := rebuild.owns()
 	removed := make([]deporder.ViewLike, 0, len(diff.ViewsRemoved)+len(diff.MaterializedViewsRemoved))
 	for _, object := range removedViewLikes(diff) {
 		if !owned.has(object) {
+			object.DependsOn = ahead.viewsAfter[object.Name]
 			removed = append(removed, object)
 		}
 	}
-	for _, object := range deporder.ViewLikesForDropIn(removed, p.targetDialect(), diff.EffectiveIdentifierSemantics(p.targetDialect())) {
-		result = p.appendRoutinesAhead(result, diff, object.Name, ahead)
-		result = append(result, p.dropViewLikeNode(object, p.cascades(removalOutlivesDrop(diff, object.Name, ahead, droppedPolicies))))
+	return deporder.ViewLikesForDropIn(removed, p.targetDialect(), diff.EffectiveIdentifierSemantics(p.targetDialect()))
+}
+
+// removeViewLikes drops the views and materialized views of
+// [Planner.removedViewOrder], so no drop relies on CASCADE to take another
+// removed object. A drop relies on CASCADE when a policy of a removed table
+// reads the object and still exists.
+func (p *Planner) removeViewLikes(result []ast.Node, diff *difftypes.SchemaDiff, rebuild viewRebuild, ahead routinesAhead, droppedPolicies map[objectidentity.Key]bool) []ast.Node {
+	for _, object := range p.removedViewOrder(diff, rebuild, ahead) {
+		result = p.appendRoutineDrops(result, ahead.of(object.Name))
+		result = append(result, p.dropViewLikeNode(object, p.cascades(removedTableReadsExcept(diff, object.Name, nil, droppedPolicies))))
 	}
 	return result
 }
@@ -3314,6 +3324,11 @@ func (p *Planner) addPrimaryKeyConstraintsWithTables(
 		}
 		if replaced, found := state.replacedPrimaryKeys[state.semantics.QualifiedTableIdentityKey(add.TableName)]; found {
 			result = p.appendScopedDrop(result, replaced.TableName, replaced.Name, replaced.Identity, state)
+		}
+		// A UNIQUE the key takes its name from is a modification like any other:
+		// the plan's removals leave it to this step.
+		if _, modified := state.removalByTableName[add.Identity]; modified {
+			result = p.emitModifyDrop(result, add, state)
 		}
 		// The payload rides with the key, exactly as it does for a covering
 		// UNIQUE. Without it the re-ADD builds a plain key and the INCLUDE the

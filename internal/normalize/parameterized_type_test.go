@@ -50,7 +50,7 @@ func TestType_ParametersAreNotTypeNames(t *testing.T) {
 		{"a sized varchar keeps folding", "VARCHAR(255)", "varchar"},
 		{"a sized tinyint keeps folding", "TINYINT(1)", "boolean"},
 		{"a sized numeric keeps folding", "NUMERIC(10,2)", "decimal"},
-		{"a sized timestamp keeps folding", "TIMESTAMP(6) WITH TIME ZONE", "timestamp"},
+		{"a sized timestamp keeps folding", "TIMESTAMP(6) WITH TIME ZONE", "timestamptz"},
 	}
 
 	for _, tt := range tests {

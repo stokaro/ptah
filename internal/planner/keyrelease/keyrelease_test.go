@@ -511,3 +511,41 @@ func TestPrimaryKeysUnderColumnChanges_ReleasesNothing(t *testing.T) {
 		})
 	}
 }
+
+// TestPrimaryKeysBehindAutoIncrement_HappyPath pins the removed key of a table whose
+// column gives up AUTO_INCREMENT and the key at once.
+func TestPrimaryKeysBehindAutoIncrement_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	diff := &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{{TableName: "t", ColumnsModified: []difftypes.ColumnDiff{
+			{ColumnName: "x", Changes: map[string]string{"auto_increment": "true -> false", "primary_key": "true -> false"}},
+		}}},
+		ConstraintsRemoved: removed("t", "t_pkey", "PRIMARY KEY"),
+	}
+
+	c.Assert(released(keyrelease.PrimaryKeysBehindAutoIncrement(diff, platform.MySQL)), qt.DeepEquals, []string{"constraint t.t_pkey"})
+}
+
+// TestPrimaryKeysBehindAutoIncrement_FailurePath leaves a key alone where its column
+// keeps either of the two.
+func TestPrimaryKeysBehindAutoIncrement_FailurePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		changes map[string]string
+	}{
+		{name: "the column keeps AUTO_INCREMENT", changes: map[string]string{"primary_key": "true -> false"}},
+		{name: "the column keeps the key", changes: map[string]string{"auto_increment": "true -> false"}},
+		{name: "the column gains both", changes: map[string]string{"auto_increment": "false -> true", "primary_key": "false -> true"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			diff := &difftypes.SchemaDiff{
+				TablesModified:     []difftypes.TableDiff{{TableName: "t", ColumnsModified: []difftypes.ColumnDiff{{ColumnName: "x", Changes: test.changes}}}},
+				ConstraintsRemoved: removed("t", "t_pkey", "PRIMARY KEY"),
+			}
+
+			c.Assert(released(keyrelease.PrimaryKeysBehindAutoIncrement(diff, platform.MySQL)), qt.HasLen, 0)
+		})
+	}
+}

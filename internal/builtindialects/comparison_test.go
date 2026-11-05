@@ -34,6 +34,7 @@ func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 	}
 	want := map[string]descriptor.Comparison{
 		"postgres": {
+			DeclaredSchemas:                true,
 			ForeignKeysOutside:             true,
 			ForeignKeyHoldsItsKey:          true,
 			ColumnPrimaryKeyIsTheTablesKey: true,
@@ -45,6 +46,7 @@ func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 			ProbesSQLStandardBodies:        true,
 		},
 		"cockroachdb": {
+			DeclaredSchemas:         true,
 			ForeignKeysOutside:      true,
 			ExpressionProbes:        "pg-catalog",
 			ProbeViewsInSchema:      true,
@@ -56,12 +58,14 @@ func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 			PrimaryKeyStoresColumns: true,
 		},
 		"yugabytedb": {
+			DeclaredSchemas:    true,
 			ExpressionProbes:   "pg-catalog",
 			RolePasswords:      true,
 			RoutineTypeAliases: "pg-aliases",
 			QualifiedTypeNames: true,
 		},
 		"spanner": {
+			DeclaredSchemas:        true,
 			ForeignKeyBackingIndex: true,
 			RolePasswords:          true,
 			RoutineTypeAliases:     "pg-aliases",

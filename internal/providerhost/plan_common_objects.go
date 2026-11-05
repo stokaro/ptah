@@ -15,7 +15,6 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
-	"ptah.run/core/schemavalidation"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/tableref"
@@ -50,9 +49,6 @@ func (p commonPlanner) planCommonObjects(diff *difftypes.SchemaDiff) (commonObje
 	var plan commonObjectPlan
 	views := viewReplacement{inPlace: p.options.Capabilities.Has(capability.CreateOrReplaceView)}
 	semantics := diff.EffectiveIdentifierSemantics(p.target)
-	if err := refuseGrantsOnRemovedViews(diff, semantics, p.target); err != nil {
-		return commonObjectPlan{}, err
-	}
 	plan.before = droppedRelations(diff, views, semantics).revocations(diff, semantics)
 	for _, membership := range diff.RoleMembershipsRemoved {
 		plan.before = append(plan.before, ast.NewRevokeRoleMembership(membership.Role, membership.Member))
@@ -211,7 +207,7 @@ func (r viewReplacement) regrants(diff *difftypes.SchemaDiff, semantics identifi
 	}
 	var again []difftypes.GrantRef
 	for _, grant := range diff.CurrentGrants {
-		if relationGrant(grant) && recreated[semantics.TableIdentityKey(grant.ObjectName)] && !planned[grantIdentity(grant, semantics)] {
+		if grant.OnRelation() && recreated[semantics.TableIdentityKey(grant.ObjectName)] && !planned[grantIdentity(grant, semantics)] {
 			again = append(again, grant)
 		}
 	}
@@ -248,37 +244,9 @@ func droppedRelations(diff *difftypes.SchemaDiff, views viewReplacement, semanti
 	return dropped
 }
 
-// refuseGrantsOnRemovedViews refuses a grant the comparison adds on a view or
-// a materialized view the plan removes. The drop runs before every GRANT, so
-// the GRANT would name an object that is gone: measured on YDB 26.2.1.14, the
-// DROP VIEW applies and the GRANT then fails with SCHEME_ERROR. A view the
-// plan drops to create again is granted after its creation and is not
-// refused.
-func refuseGrantsOnRemovedViews(diff *difftypes.SchemaDiff, semantics identifier.Semantics, target string) error {
-	removed := make(map[string]string, len(diff.ViewsRemoved)+len(diff.MaterializedViewsRemoved))
-	for _, name := range diff.ViewsRemoved.Names() {
-		removed[semantics.QualifiedTableIdentityKey(name)] = "view"
-	}
-	for _, name := range diff.MaterializedViewsRemoved.Names() {
-		removed[semantics.QualifiedTableIdentityKey(name)] = "materialized view"
-	}
-	for _, grant := range diff.GrantsAdded {
-		kind, dropped := removed[semantics.QualifiedTableIdentityKey(grant.ObjectName)]
-		if !relationGrant(grant) || !dropped {
-			continue
-		}
-		subject := fmt.Sprintf("granting %s on %s %s to %s", grant.Privilege, kind, grant.ObjectName, grant.Role)
-		return schemavalidation.Result{Complete: true, Diagnostics: []schemavalidation.Diagnostic{{
-			Code: schemavalidation.UnsupportedFeature, Kind: "schema", Feature: subject,
-			Message: fmt.Sprintf("%s: the plan drops the %s; declare it, or leave the grant out", subject, kind),
-		}}}.Err(target)
-	}
-	return nil
-}
-
 // holds reports whether grant is an entry on a table or view the plan drops.
 func (d relationDrops) holds(grant difftypes.GrantRef, semantics identifier.Semantics) bool {
-	return relationGrant(grant) && d[semantics.QualifiedTableIdentityKey(grant.ObjectName)]
+	return grant.OnRelation() && d[semantics.QualifiedTableIdentityKey(grant.ObjectName)]
 }
 
 // revocations revokes each entry the comparison removes and each grant
@@ -298,17 +266,11 @@ func (d relationDrops) revocations(diff *difftypes.SchemaDiff, semantics identif
 	return nodes
 }
 
-// relationGrant reports a grant on a table or a view: an engine names a view
-// as either in its access model.
-func relationGrant(grant difftypes.GrantRef) bool {
-	return strings.EqualFold(grant.ObjectType, "TABLE") || strings.EqualFold(grant.ObjectType, "VIEW")
-}
-
 // grantIdentity is what makes two references one permission entry: the
 // role, the privilege, the object and the column it is limited to.
 func grantIdentity(grant difftypes.GrantRef, semantics identifier.Semantics) string {
 	object := grant.ObjectName
-	if relationGrant(grant) {
+	if grant.OnRelation() {
 		object = semantics.TableIdentityKey(object)
 	}
 	return strings.Join([]string{grant.Role, strings.ToLower(grant.Privilege), strings.ToUpper(grant.ObjectType), object, grant.Arguments, grant.Column}, "\x00")

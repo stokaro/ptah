@@ -275,8 +275,9 @@ func (g *Graph) CommonSteps() []featureplan.CommonStep {
 // window otherwise, and is refused by a graph without them; and any other
 // joins the removal window when it drops an object and the creation window
 // otherwise. A step that creates an object another step drops is refused
-// unless both ask for the same dependent, type or lifecycle phase, because the
-// windows would run the creation first. The effects of different
+// unless both ask for the same dependent, type or lifecycle phase, or the drop
+// asks for the lifecycle phase and the creation for the default one, because the
+// windows would otherwise run the creation first. The effects of different
 // contributions are then ordered by [plangraph.LifecycleDependencies], so an
 // owner that creates an object precedes another owner that reads it. The
 // complete graph is validated before any node is returned, so a conflict
@@ -397,7 +398,11 @@ func createdObjects(features Result) map[objectidentity.Key]bool {
 // permits its drop and creation to be ordered together. Default creation and
 // removal windows put the creation first, which would meet the old object.
 // Dependent, type and lifecycle phases each permit an owner to order both
-// halves in one window. The graph still checks their effects and dependencies.
+// halves in one window. A drop in the lifecycle span and a creation in the default
+// window are permitted too, for a host whose span comes first: an owner that has
+// to drop an object before the host's column changes and create it after them
+// orders the two halves, and on a host whose span comes later that order has a
+// cycle. The graph still checks their effects and dependencies.
 func refuseSplitReplacements(features Result) error {
 	type use struct {
 		step  plangraph.StepID
@@ -420,11 +425,12 @@ func refuseSplitReplacements(features Result) error {
 				if !found || effect.Action != plangraph.Create || other.step == step.ID {
 					continue
 				}
-				if phase := features.Phases[step.ID]; phase == other.phase && (phase == featureplan.PhaseDependent || phase == featureplan.PhaseType || phase == featureplan.PhaseLifecycle) {
+				if phase := features.Phases[step.ID]; phase == other.phase && (phase == featureplan.PhaseDependent || phase == featureplan.PhaseType || phase == featureplan.PhaseLifecycle) ||
+					other.phase == featureplan.PhaseLifecycle && phase == featureplan.PhaseDefault {
 					continue
 				}
 				return fmt.Errorf("%w: feature step %s/%s creates %s, which step %s/%s drops; a replacement is one step, "+
-					"or both halves ask for the dependent, type or lifecycle phase",
+					"both halves ask for the dependent, type or lifecycle phase, or the drop asks for the lifecycle phase",
 					ptaherr.ErrInvalidSchemaDiff, step.ID.Owner, step.ID.Name, effect.Subject, other.step.Owner, other.step.Name)
 			}
 		}

@@ -198,6 +198,13 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 	if err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
 	}
+	// A policy may name an engine no flag names. It selects that engine's
+	// provider as --dialect would, so the policy is read with a runtime that
+	// knows its dialect and the run lints with the provider's rules.
+	reportOpts.Runtime, err = engineruntime.Serving(cmd.Context(), runtime, migrationlintreport.PolicyDialect(reportOpts, projectCfg))
+	if err != nil {
+		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
+	}
 	reportOpts.DevServerDisposable = devServerDisposable
 	reportOpts.TransactionOwner = runner.TransactionOwner()
 	// The shared integrity gate. Lint belongs to the class through --dev-url:

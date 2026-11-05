@@ -114,8 +114,8 @@ func TestSchemaApplyFindsAColumnUniqueBesideAnotherUniqueSyncedE2E(t *testing.T)
 // column's UNIQUE and removes another key over the column. Atlas CE v1.3.0
 // plans each drop, measured on the servers above; read as the column's own,
 // the key is never dropped. want is the statement each engine is planned, in
-// the community binary's statement style `migrate diff` writes: PostgreSQL
-// drops a constraint without IF EXISTS.
+// the exact statement style `migrate diff` writes: no engine guards the drop
+// with IF EXISTS.
 var uniqueTheFileRemoves = []struct {
 	name      string
 	migration string
@@ -126,7 +126,7 @@ var uniqueTheFileRemoves = []struct {
 		migration: `CREATE TABLE c (id int PRIMARY KEY, a int UNIQUE);
 ALTER TABLE c ADD CONSTRAINT uq_a UNIQUE (a);`,
 		want: map[string]string{
-			"MySQL": "DROP INDEX `uq_a`", "MariaDB": "DROP INDEX IF EXISTS `uq_a`",
+			"MySQL": "DROP INDEX `uq_a`", "MariaDB": "DROP INDEX `uq_a`",
 			"PostgreSQL": `DROP CONSTRAINT "uq_a"`,
 		},
 	},
@@ -134,7 +134,7 @@ ALTER TABLE c ADD CONSTRAINT uq_a UNIQUE (a);`,
 		name:      "a key led by the column, where the column has no key of its own",
 		migration: `CREATE TABLE c (id int PRIMARY KEY, a int, b int, CONSTRAINT uq_ab UNIQUE (a, b));`,
 		want: map[string]string{
-			"MySQL": "DROP INDEX `uq_ab`", "MariaDB": "DROP INDEX IF EXISTS `uq_ab`",
+			"MySQL": "DROP INDEX `uq_ab`", "MariaDB": "DROP INDEX `uq_ab`",
 			"PostgreSQL": `DROP CONSTRAINT "uq_ab"`,
 		},
 	},
@@ -142,7 +142,7 @@ ALTER TABLE c ADD CONSTRAINT uq_a UNIQUE (a);`,
 		name:      "a key led by the column",
 		migration: `CREATE TABLE c (id int PRIMARY KEY, a int UNIQUE, b int, CONSTRAINT uq_ab UNIQUE (a, b));`,
 		want: map[string]string{
-			"MySQL": "DROP INDEX `uq_ab`", "MariaDB": "DROP INDEX IF EXISTS `uq_ab`",
+			"MySQL": "DROP INDEX `uq_ab`", "MariaDB": "DROP INDEX `uq_ab`",
 			"PostgreSQL": `DROP CONSTRAINT "uq_ab"`,
 		},
 	},

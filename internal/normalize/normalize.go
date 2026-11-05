@@ -16,15 +16,15 @@ import (
 // # Type Normalization Rules
 //
 //   - VARCHAR variations (VARCHAR, VARCHAR2, etc.) → "varchar"
-//   - TEXT variations (TEXT, LONGTEXT, etc.) → "text"
 //   - Integer variations (INT, INTEGER, BIGINT, etc.) → "integer"
 //   - SERIAL types (SERIAL, BIGSERIAL) → "integer" (for comparison purposes)
 //   - Boolean variations (BOOL, BOOLEAN, TINYINT(1)) → "boolean"
-//   - Timestamp variations → "timestamp"
+//   - Timestamp variations → "timestamp", and with a time zone → "timestamptz"
 //   - Decimal variations (DECIMAL, NUMERIC) → "decimal"
 //
-// Every rule reads the type's NAME. A parameter list is not part of the name,
-// so a token inside one names nothing here: VECTOR(512, INT8) is a vector.
+// Every rule reads the type's whole NAME. A parameter list is not part of the name,
+// so a token inside one names nothing here: VECTOR(512, INT8) is a vector. Nor does
+// a word inside a name: INTERVAL is no integer.
 //
 // # Database-Specific Handling
 //
@@ -59,43 +59,16 @@ func Type(typeName string) string {
 	// Convert to lowercase for case-insensitive comparison
 	typeName = strings.ToLower(typeName)
 
-	// Every family arm below recognizes a type by a SUBSTRING of it, and a
-	// parameter list is not part of the name a type is recognized by. So the
-	// arms read the base name, with the arguments held back.
-	//
-	// Without that, a token that names a type somewhere else decided the whole
-	// column's type from inside the parentheses. Oracle writes a vector's
-	// element format there, and measured on Oracle Free 23.26.3.0.0 a declared
-	// VECTOR(512, INT8) normalized to "integer" -- the dimension, the spacing
-	// and the storage form made no difference, and VECTOR(512, FLOAT32) came
-	// through whole, because only the INT8 spelling has a token any arm below
-	// matches. That answer is what every later type question is decided on:
-	// the declaration then equals a plain bigint column, and a column that has
-	// to become a vector reports no change at all.
-	//
-	// The array test keeps reading the whole name. The brackets sit after the
-	// argument list, so the base name cannot see them, and an array is not its
-	// element type.
-	base := baseTypeName(typeName)
+	// An array is not its element type, whatever the element folds to: a column
+	// that goes from `int` to `int[]` is a change. PostgreSQL keeps no dimensions
+	// or bounds in the catalog, so `int[]`, `int[][]`, `int[3]` and `int ARRAY` are
+	// one type there and read back as `integer[]`. The element folds as a column of
+	// that type does, which makes `int4[]` and `integer[]` one name as well.
+	if element, isArray := ArrayElement(typeName); isArray {
+		return Type(element) + "[]"
+	}
 
 	switch {
-	// `character varying` is the SQL-standard spelling of the same type, and
-	// it reaches here from a catalog that reports data_type without a udt_name
-	// to prefer. Measured on Cloud Spanner through PGAdapter 0.55.2: a
-	// varchar(200) column comes back as data_type "character varying" with
-	// udt_name empty, where PostgreSQL answers "varchar" and never needs this
-	// arm. Without it the comparison plans a type change on every run
-	// (stokaro/ptah#1719).
-	//
-	// The array form is excluded from BOTH varchar arms on purpose. An array is
-	// not its element type, so folding `varchar(200)[]` to `varchar` would make
-	// a live scalar `character varying(200)` compare equal to a desired
-	// `varchar(200)[]` -- a column that changed from a scalar to an array,
-	// reported as no change at all.
-	case strings.Contains(base, "character varying") && !isArrayType(typeName):
-		return "varchar"
-	case strings.Contains(base, "varchar") && !isArrayType(typeName):
-		return "varchar"
 	// PostgreSQL's own names for types the renderer writes differently, folded
 	// onto one spelling so a round trip through Ptah's own output converges.
 	//
@@ -135,26 +108,95 @@ func Type(typeName string) string {
 		return "double precision"
 	case isFloatAlias(typeName, "float4"):
 		return "real"
-	case strings.Contains(base, "text"):
-		return "text"
-	case strings.Contains(base, "serial"):
-		// SERIAL types are auto-incrementing integers
-		return "integer"
-	case strings.Contains(base, "tinyint"):
-		// MySQL/MariaDB stores BOOLEAN as TINYINT or TINYINT(1)
-		return "boolean"
-	case strings.Contains(base, "int"):
-		return "integer"
-	case strings.Contains(base, "bool"):
-		return "boolean"
-	case strings.Contains(base, "timestamp"):
-		return "timestamp"
-	case strings.Contains(base, "decimal") || strings.Contains(base, "numeric"):
-		return "decimal"
 	default:
-		// Return as-is for unrecognized types (enums, custom types, etc.)
-		return typeName
+		return typeFamily(typeName)
 	}
+}
+
+// typeFamilies names the family each type name belongs to. A width is asked about
+// separately, by typechange, so `int` and `bigint` are one family here. The width
+// of a string or a decimal is left out the same way.
+//
+// The whole name has to match. Recognizing one by a substring is how `interval`,
+// `point` and `int4range` read as integers and `paint_kind`, an enum, did too, so
+// a column changing to one of them planned nothing. Measured on PostgreSQL 18 and
+// the pinned community binary, which writes the ALTER for each.
+var typeFamilies = map[string]string{
+	"varchar": "varchar", "varchar2": "varchar", "nvarchar": "varchar", "nvarchar2": "varchar",
+	"character varying": "varchar", "char varying": "varchar",
+	"text":   "text",
+	"serial": "integer", "bigserial": "integer", "smallserial": "integer",
+	"serial2": "integer", "serial4": "integer", "serial8": "integer",
+	// MySQL and MariaDB store BOOLEAN as TINYINT.
+	"tinyint": "boolean", "bool": "boolean", "boolean": "boolean",
+	"int": "integer", "integer": "integer", "bigint": "integer", "smallint": "integer", "mediumint": "integer",
+	"int2": "integer", "int4": "integer", "int8": "integer", "int64": "integer",
+	"timestamp": "timestamp", "timestamp without time zone": "timestamp",
+	"timestamp with local time zone": "timestamp",
+	// A timestamp with a zone holds an instant and one without holds a wall clock.
+	// Changing one to the other changes what every stored value means.
+	"timestamptz": "timestamptz", "timestamp with time zone": "timestamptz",
+	"decimal": "decimal", "numeric": "decimal",
+	"interval": "interval",
+}
+
+// typeFamily folds a lowercase type name onto its family, or returns it as it is.
+// An argument list is not part of the name, wherever it sits: Oracle writes
+// `timestamp(6) with time zone`. `unsigned` is part of the type, since it changes
+// what the column holds; `zerofill` implies it.
+func typeFamily(typeName string) string {
+	name, unsigned := nameWithoutArguments(typeName)
+	family, known := typeFamilies[name]
+	switch {
+	case !known:
+		return typeName
+	case unsigned:
+		return family + " unsigned"
+	default:
+		return family
+	}
+}
+
+// nameWithoutArguments is typeName with its argument list and its unsigned and
+// zerofill words taken out, and whether it had either word.
+func nameWithoutArguments(typeName string) (name string, unsigned bool) {
+	trimmed := strings.TrimPrefix(strings.TrimSpace(typeName), "pg_catalog.")
+	if open := strings.Index(trimmed, "("); open >= 0 {
+		if end := strings.LastIndex(trimmed, ")"); end > open {
+			trimmed = trimmed[:open] + " " + trimmed[end+1:]
+		}
+	}
+	words := strings.Fields(trimmed)
+	kept := words[:0]
+	for _, word := range words {
+		if word == "unsigned" || word == "zerofill" {
+			unsigned = true
+			continue
+		}
+		kept = append(kept, word)
+	}
+	return strings.Join(kept, " "), unsigned
+}
+
+// ArrayElement is the element type of an array type name and true, or typeName and
+// false. It reads the spellings PostgreSQL takes: any number of dimensions, with or
+// without a bound, and the SQL standard's ARRAY word.
+func ArrayElement(typeName string) (element string, isArray bool) {
+	element = strings.TrimSpace(typeName)
+	for strings.HasSuffix(element, "]") {
+		open := strings.LastIndex(element, "[")
+		if open < 0 || strings.Trim(element[open+1:len(element)-1], " 0123456789") != "" {
+			break
+		}
+		element, isArray = strings.TrimSpace(element[:open]), true
+	}
+	if at := len(element) - len(" array"); at > 0 && strings.EqualFold(element[at:], " array") {
+		element, isArray = strings.TrimSpace(element[:at]), true
+	}
+	if !isArray {
+		return typeName, false
+	}
+	return element, true
 }
 
 // DefaultValue normalizes default values for cross-database comparison.
@@ -258,7 +300,7 @@ func DefaultValue(defaultValue, typeName string) string {
 
 func normalizeTemporalDefaultExpression(defaultValue, typeName string) string {
 	normalizedType := strings.ToLower(strings.TrimSpace(typeName))
-	if normalizedType != "" && normalizedType != "timestamp" {
+	if normalizedType != "" && normalizedType != "timestamp" && normalizedType != "timestamptz" {
 		return ""
 	}
 	normalizedValue := strings.ToUpper(strings.TrimSpace(defaultValue))
@@ -415,10 +457,6 @@ func skipQuotedSQL(value string, start int, quote byte) (int, bool) {
 	return 0, false
 }
 
-// isArrayType reports whether a normalized type name names an array.
-//
-// The suffix is the whole test because that is how every catalog this compares
-// spells one: `varchar(100)[]`, `int[]`, `text[]`.
 // typeAliases folds a base type name -- the name with any size stripped -- onto
 // the spelling both sides of a comparison will carry.
 //
@@ -445,9 +483,6 @@ var typeAliases = map[string]string{
 
 // isAliasedType reports whether a name is one of the aliased spellings.
 func isAliasedType(typeName string) bool {
-	if isArrayType(typeName) {
-		return false
-	}
 	_, aliased := typeAliases[baseTypeName(typeName)]
 	return aliased
 }
@@ -484,17 +519,10 @@ func splitTypeSize(typeName string) (base, size string) {
 // isFloatAlias reports whether a type name IS one of PostgreSQL's internal
 // float names, with the catalog's optional schema qualification stripped.
 //
-// The whole name has to match, which is what the arms above it do not do. A
-// substring rule would fold `float8range` -- a real PostgreSQL type, and a
-// range is not the number it ranges over -- and `float8[]` with it, making a
-// live scalar compare equal to a desired array. Equality excludes both without
-// a guard for either.
+// The whole name has to match: `float8range` is a real PostgreSQL type, and a range
+// is not the number it ranges over.
 func isFloatAlias(typeName, alias string) bool {
 	return strings.TrimPrefix(strings.TrimSpace(typeName), "pg_catalog.") == alias
-}
-
-func isArrayType(typeName string) bool {
-	return strings.HasSuffix(strings.TrimSpace(typeName), "[]")
 }
 
 // SQLiteAffinity is the type affinity SQLite derives from a declared type,

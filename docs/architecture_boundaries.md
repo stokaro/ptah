@@ -224,9 +224,13 @@ when both sides negotiate `planning.lifecycle`.
 Object effects and explicit dependencies order a native replacement around the
 table it replaces, and order a reader's stop and restart around both operations.
 Rewriting a common step preserves its incoming and outgoing dependencies.
+The PostgreSQL host's span is the point ahead of its column changes, where an
+exclusion constraint leaves, since the server rebuilds it under ALTER COLUMN TYPE.
 The dependent phase retains its insertion point after common creations and
 before removals. The lifecycle span does not override a dependency or permit a
-conflicting replacement. A host without that span refuses the lifecycle phase.
+conflicting replacement, and a replacement may drop in the span and create in the
+default window when the span comes first. A host without that span refuses the
+lifecycle phase.
 
 `internal/embedpg`, `internal/genexprprobe`,
 `migration/generator`, `migration/importer`, `migration/planner`,

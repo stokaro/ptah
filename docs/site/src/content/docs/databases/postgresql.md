@@ -1182,6 +1182,12 @@ items_id_seq TO app`: Ptah reads it back, plans it only when the database lacks
 it, and revokes it from a role the schema manages when the declaration leaves
 it out.
 
+A plan refuses a grant on a table, a view or a materialized view it removes,
+with `--schemas` as without it: declare the object, or leave the grant out.
+`--schemas` compares the grants on every relation in a selected schema, including
+one Ptah does not read, such as a foreign table or the revision table. So a run
+with the flag grants and revokes there as a run without it does.
+
 ### Role passwords
 
 A role's `password` may be a password or a hash PostgreSQL takes as one, such
@@ -1567,6 +1573,10 @@ and a `pg_` name because the prefix is reserved (`role name "pg_monitor" is
 reserved`, SQLSTATE 42939). The prefix is matched literally, so `pgbouncer`,
 `pgadmin` and `pgpool` are ordinary roles and are planned as before.
 
+A grant to a `pg_` role is read and compared like any other, so `GRANT SELECT
+ON t TO pg_monitor` is planned once. A source cannot declare the role, so Ptah
+never revokes a grant it holds.
+
 One thing the refusal costs, so it stays reachable rather than being removed:
 on a cluster bootstrapped under another name, `CREATE ROLE "postgres"` succeeds.
 Measured on PostgreSQL 17.10, a cluster whose superuser is `admin` accepts the
@@ -1895,6 +1905,10 @@ gate. Reconciliation is deliberately conservative:
   duplicate-object error. Ptah reads ownership from `pg_depend`; a similar name
   does not make a user type part of an extension. Extension-owned functions
   follow the same rule.
+- Extension-owned tables, views, materialized views and sequences are omitted
+  too, such as a view of `pg_stat_statements` or PostGIS's `spatial_ref_sys`,
+  along with their indexes, constraints, triggers and policies. The server refuses
+  to drop them while the extension stands. Grants on them are still compared.
 
 ## Unique indexes and access methods
 

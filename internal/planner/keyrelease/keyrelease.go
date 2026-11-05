@@ -166,6 +166,38 @@ func PrimaryKeysUnderColumnChanges(diff *difftypes.SchemaDiff, dialect string) R
 	return released
 }
 
+// PrimaryKeysBehindAutoIncrement answers the removed primary keys of diff whose column
+// gives up AUTO_INCREMENT and the key at once. MySQL and MariaDB refuse to drop a key
+// under a column that still has AUTO_INCREMENT, with Error 1075, and a newer MySQL
+// refuses a nullable column in a key the table holds, with Error 1171. So a planner
+// takes AUTO_INCREMENT off first and drops the key before the column allows NULL.
+func PrimaryKeysBehindAutoIncrement(diff *difftypes.SchemaDiff, dialect string) Releases {
+	if diff == nil {
+		return Releases{}
+	}
+	semantics := diff.EffectiveIdentifierSemantics(dialect)
+	held := make(map[string]bool)
+	for _, table := range diff.TablesModified {
+		if slices.ContainsFunc(table.ColumnsModified, GivesUpAutoIncrementKey) {
+			held[semantics.QualifiedTableIdentityKey(table.TableName)] = true
+		}
+	}
+	var released Releases
+	for _, info := range diff.ConstraintsRemoved {
+		if strings.EqualFold(info.Type, "PRIMARY KEY") && held[semantics.QualifiedTableIdentityKey(info.TableName)] {
+			info.Identity = constraintscope.Identity(semantics, info.TableName, info.Name)
+			released.Constraints = append(released.Constraints, info)
+		}
+	}
+	return released
+}
+
+// GivesUpAutoIncrementKey reports a column that stops being AUTO_INCREMENT and the
+// table's key in one change.
+func GivesUpAutoIncrementKey(column difftypes.ColumnDiff) bool {
+	return column.Changes["auto_increment"] == "true -> false" && column.Changes["primary_key"] == "true -> false"
+}
+
 // columnChangesRequireNoPrimaryKey reports whether table adds a column that declares
 // a primary key, or changes a column of its key to allow NULL.
 func columnChangesRequireNoPrimaryKey(table difftypes.TableDiff) bool {

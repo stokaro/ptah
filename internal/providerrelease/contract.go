@@ -29,10 +29,15 @@ func (c Contract) Requirement() string {
 	return fmt.Sprintf("%s or a later %d.x", c, c.Major)
 }
 
-// HostContract returns the contract version this Ptah speaks. The major version
-// is the Revision of the provider SDK the host is built with. That SDK declares
-// no minor version, so the host speaks minor 0.
-func HostContract() Contract { return Contract{Major: provider.Revision} }
+// HostContract returns the contract version this Ptah speaks: the one the
+// provider SDK the host is built with announces to every provider the host
+// starts (provider.Contract). Installation and selection compare a release's
+// minimum with it, so a release the host can start is never refused for a
+// contract the host speaks.
+func HostContract() Contract {
+	spoken := provider.Contract()
+	return Contract{Major: spoken.GetMajor(), Minor: spoken.GetMinor()}
+}
 
 // Meets reports whether a host that speaks host can start a provider whose
 // minimum contract is minimum: the major versions are equal and the host's

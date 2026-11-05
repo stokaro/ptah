@@ -46,10 +46,9 @@ import (
 // nothing therefore stays the clean no-op it has to be (stokaro/ptah#1996).
 //
 // A schema a document DECLARES and then puts nothing in contributes none
-// either, which is the PostgreSQL behavior this mirrors. Whether an empty
-// declared schema should be created is a question about what a schema
-// declaration means, and it is the same question on both dialects; answering it
-// on one would make them disagree.
+// either. The SQL Server reader reports no schemas, so the comparison cannot say
+// that the database lacks one, and the descriptor's Comparison.DeclaredSchemas
+// stays off for this dialect.
 //
 // The guards go in front of the finished plan, because the schemas an owner's
 // objects are created in are known only once the owners have planned: created

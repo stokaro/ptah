@@ -174,15 +174,20 @@ func TestProviderDropsAMaterializedViewWithItsGrants_HappyPath(t *testing.T) {
 // A grant declared on a view or a materialized view the plan removes would
 // run after the drop and name an object that is gone, so the plan is refused
 // before anything runs: the object stands as it was applied, and a plan of
-// that schema has nothing to change.
+// that schema has nothing to change. A selection of the view's schema changes
+// none of it.
 func TestProviderRefusesAGrantOnARemovedView_FailurePath(t *testing.T) {
 	for _, test := range []struct {
 		name        string
 		environment []string
 		applied     string
 		schema      string
+		scope       []string
 		want        string
 	}{
+		{name: "a view in a selected schema", applied: viewWithAccess("SELECT id FROM items", ""), schema: droppedObjects + readerRecent,
+			scope: []string{"--schemas", "main"},
+			want:  "granting SELECT on view recent to reader: the plan drops the view; declare it, or leave the grant out"},
 		{name: "a view", applied: viewWithAccess("SELECT id FROM items", ""), schema: droppedObjects + readerRecent,
 			want: "granting SELECT on view recent to reader: the plan drops the view; declare it, or leave the grant out"},
 		{name: "a materialized view", environment: materializedViews, applied: totalsWithAccess("SELECT id FROM items", ""), schema: droppedObjects + readerTotals,
@@ -197,7 +202,7 @@ func TestProviderRefusesAGrantOnARemovedView_FailurePath(t *testing.T) {
 			f.success(c, "apply", "--schema-file", f.schemaPath, "--tx-mode", "none", "--auto-approve")
 			c.Assert(os.WriteFile(f.schemaPath, []byte(test.schema), 0o600), qt.IsNil)
 
-			_, refused, code := f.run(c, c.Context(), "apply", "--schema-file", f.schemaPath, "--tx-mode", "none", "--auto-approve")
+			_, refused, code := f.run(c, c.Context(), "apply", append([]string{"--schema-file", f.schemaPath, "--tx-mode", "none", "--auto-approve"}, test.scope...)...)
 
 			c.Assert(code, qt.Not(qt.Equals), 0)
 			c.Assert(refused, qt.Contains, test.want)

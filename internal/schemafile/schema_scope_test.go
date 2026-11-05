@@ -1,6 +1,8 @@
 package schemafile_test
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -262,4 +264,62 @@ func schemaNames(db *schemamodel.Database) []string {
 		names = append(names, schema.Name)
 	}
 	return names
+}
+
+// TestLoadPath_OneSchemaBlockAndAURL_HappyPath pins what loads under a URL limited
+// to one schema when the document declares one schema: the schema the URL names,
+// any schema with no limit, and any database where a URL names a database, since
+// that database's own refusal answers later.
+func TestLoadPath_OneSchemaBlockAndAURL_HappyPath(t *testing.T) {
+	tests := []struct {
+		name, dialect, scope string
+	}{
+		{name: "the schema the URL names", dialect: "postgres", scope: "app"},
+		{name: "no schema named", dialect: "postgres"},
+		{name: "a database the URL names", dialect: "mysql", scope: "other"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			path := filepath.Join(c.TempDir(), "schema.hcl")
+			c.Assert(os.WriteFile(path, []byte("schema \"app\" {\n}\n"), 0o600), qt.IsNil)
+			runtime := builtintest.Runtime()
+
+			got, err := schemafile.LoadPath(c.Context(), path, schemafile.Options{
+				YAML: runtime.YAML(), SQL: runtime.SQL(), HCL: runtime.HCL(),
+				Dialect: test.dialect, SchemaScope: test.scope, SchemaScopeFlag: "--url",
+			})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.IsNotNil)
+		})
+	}
+}
+
+// TestLoadPath_OneSchemaBlockAndAURL_FailurePath pins the refusal, in the community
+// binary's words, where a URL names one schema inside a database and the document
+// declares another. The run cannot reach that schema, and a plan would create it.
+func TestLoadPath_OneSchemaBlockAndAURL_FailurePath(t *testing.T) {
+	tests := []struct {
+		name, dialect string
+	}{
+		{name: "postgresql", dialect: "postgres"},
+		{name: "cockroachdb", dialect: "cockroachdb"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			path := filepath.Join(c.TempDir(), "schema.hcl")
+			c.Assert(os.WriteFile(path, []byte("schema \"app\" {\n}\n"), 0o600), qt.IsNil)
+			runtime := builtintest.Runtime()
+
+			got, err := schemafile.LoadPath(c.Context(), path, schemafile.Options{
+				YAML: runtime.YAML(), SQL: runtime.SQL(), HCL: runtime.HCL(),
+				Dialect: test.dialect, SchemaScope: "public", SchemaScopeFlag: "--url",
+			})
+
+			c.Assert(err, qt.ErrorMatches, `(?s)mismatched HCL and database schemas: "public" <> "app": --url is limited to schema "public", and .*schema\.hcl:1 declares "app"`)
+			c.Assert(got, qt.IsNil)
+		})
+	}
 }

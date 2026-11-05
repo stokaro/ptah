@@ -1,6 +1,7 @@
 // Package main serves the fixture's migration lint under the identity of the
 // official YDB provider: provider github.com/stokaro/ptah-ydb-plugin, engine
-// ydb. That is the shape in which the YDB provider serves YQL migration lint,
+// ydb with the alias ydbs, as the official catalog names it, so it can serve
+// from the user store as an installed release does. That is the shape in which the YDB provider serves YQL migration lint,
 // so a run that names the ydb dialect reaches this process, with the
 // capabilities the host resolved for the server version it names.
 //
@@ -66,7 +67,7 @@ func main() {
 	fixture := backend.Description()
 	description := &protocol.Description{Revision: fixture.Revision, ProviderId: "github.com/stokaro/ptah-ydb-plugin", Version: fixture.Version,
 		SemanticIdentity: fixture.SemanticIdentity + "-ydb-lint",
-		Engines: []*protocol.Engine{{Id: "ydb", DefaultSchema: fixture.Engines[0].DefaultSchema, Features: []string{"tables", "columns", provider.LintFeature},
+		Engines: []*protocol.Engine{{Id: "ydb", Aliases: []string{"ydbs"}, DefaultSchema: fixture.Engines[0].DefaultSchema, Features: []string{"tables", "columns", provider.LintFeature},
 			Identifiers: fixture.Engines[0].Identifiers, LintRules: published}},
 		Features: []string{provider.InspectFeature, provider.RenderFeature, provider.ExecuteFeature, provider.AnalyzeSQLFeature, provider.LintFeature}}
 	owner := &backend.Provider{}

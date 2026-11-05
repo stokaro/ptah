@@ -205,13 +205,13 @@ func integerRank(name string) int {
 	switch name {
 	case "tinyint":
 		return 1
-	case "smallint", "int2":
+	case "smallint", "int2", "smallserial", "serial2":
 		return 2
 	case "mediumint":
 		return 3
-	case "int", "integer", "int4":
+	case "int", "integer", "int4", "serial", "serial4":
 		return 4
-	case "bigint", "int8":
+	case "bigint", "int8", "bigserial", "serial8":
 		return 5
 	default:
 		return 0

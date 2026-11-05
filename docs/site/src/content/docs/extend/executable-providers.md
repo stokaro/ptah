@@ -259,13 +259,20 @@ schema is the directory that holds the object.
 
 `engine.default-capabilities` lets a provider state the capability facts its
 engine is planned with offline: a render, a generation or an export with no
-database, and each release line's for a `--server-version`. A version selects
-the line it equals, or the longest line it starts with followed by a dot, so
-`26.2.1.14` selects `26.2`, and a version that selects no line is refused. Ptah
-has no preset for an engine only a provider serves, so without the facts every
-fact is unknown offline, and a provider that refuses to plan against an
-unknown fact refuses the command. A command that connects plans with the facts
-the session states.
+database, and each release line's for a `--server-version`. Ptah has no preset
+for an engine only a provider serves, so without the facts every fact is
+unknown offline, and a provider that refuses to plan against an unknown fact
+refuses the command. A command that connects plans with the facts the session
+states.
+
+A version selects the line it equals, or the longest line it starts with
+followed by a dot, so `26.2.1.14` selects `26.2`; a build branch such as
+`stable-25-4-1` selects the line of its major and minor. When every line is a
+release, a version that selects none is placed on the lines as a built-in
+dialect's version is placed on its ladder: one newer than every line is planned
+with the newest, one older or between two lines with the line it falls on, and
+a warning says what was planned. A version that is no release, such as `trunk`,
+is refused.
 
 For a provider that states no offline facts, the facts of the first session
 that states any stand in for them for the rest of the command. The conversion
@@ -289,17 +296,29 @@ is not complete is an error, never a clean run. The host keeps output formats,
 severity thresholds, and suppression. It sends the target's capabilities with
 each check: a dev database's session states them, and a `--server-version`, or
 a `server-version` in `.ptah-lint.yaml`, selects a release line the provider
-declares facts for (`engine.default-capabilities`). A version that names no
-declared line is refused, not dropped.
+declares facts for (`engine.default-capabilities`), placed on the lines as
+above. A version that is no release, such as a floating build, is refused, not
+dropped.
 
 A run that names no dialect is split by the host without one. The host answers
 the check for the provider, with no finding of its rules, because the request
 cannot tell the provider that the SQL may be another engine's. The provider
 still annotates that split. A lint run takes an engine the selected provider
-serves as its `--dialect`, and reads it from a dev URL the provider serves. It
+serves as its `--dialect`, and reads it from a dev URL the provider serves.
+A dialect the lint policy names, in `.ptah-lint.yaml` or in the project
+file, selects the engine's provider as `--dialect` would, an installed one
+included, so the policy is read and the run linted with that provider's
+rules; `sql lint` reads the policy in the working directory the same way. It
 replays the migrations on that dev database when the engine declares the dev
 database services below, and refuses the dev database at the clean check when
 it declares no `database.dev-cleanup`.
+
+`lint.transaction-owner` tells an engine's rules who opens each file's
+transaction, so a rule can tell a `BEGIN` that would nest inside the migrator's
+transaction from a file's only transaction. `--runner golang-migrate` names a
+tool that opens none, and every other run names a migrator that wraps each file.
+An engine that does not list the feature judges every file as one its migrator
+wraps.
 
 `lint.statement-facts` lets `sql lint` read a provider's SQL. To a host that
 lists the feature, the provider's split says what each statement is, which
@@ -443,7 +462,10 @@ An engine can declare its release lines in the description. Each line names a
 support level and, for a line that claims testing, the image that runs it. A line
 the provider keeps without running it is best effort and carries the reason. The
 host refuses a description that claims testing nothing runs.
-`ptah providers check` prints the lines a provider declares.
+`ptah providers check` prints the lines a provider declares, and
+`ptah db capabilities` certifies a server against them: the line its version
+names gives the preset its label and the support level, and the line's facts
+are the baseline the server's own answers are compared with.
 
 [Issue #4204](https://github.com/stokaro/ptah/issues/4204)
 owns official provider extraction, installation, and the eventual stable contract.
@@ -482,7 +504,7 @@ releases. A release whose minimum contract this Ptah does not meet is refused,
 and the message names both versions:
 
 ```text
-the ydb provider 0.3.0 needs contract 26.0 or a later 26.x; this Ptah speaks contract 25.0
+the ydb provider 0.3.0 needs contract 26.0 or a later 26.x; this Ptah speaks contract 25.22
 ```
 
 The command takes the archive for the current platform from `ptah-provider.json`.

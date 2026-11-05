@@ -217,6 +217,9 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 
 	// 3. Compare schemas (dialect-aware: MySQL/MariaDB RESTRICT == NO ACTION)
 	info := conn.Info()
+	if err := schemascope.RefuseOutsideTargetDatabase(info, result); err != nil {
+		return err
+	}
 	compareOpts, err := resolveGeneratedExpressions(cmd.Context(), runtime, opts, connectTimeout, info, result)
 	if err != nil {
 		return err

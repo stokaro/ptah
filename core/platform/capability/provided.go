@@ -1,9 +1,11 @@
 package capability
 
 import (
+	"cmp"
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -105,11 +107,24 @@ func RegisterReleaseLines(lines map[string]Capabilities, names ...string) error 
 }
 
 // ReleaseLineResolution is the release line a server version names among the
-// lines an executable provider declared for its engine.
+// lines an executable provider declared for its engine, and the line it is
+// planned with.
 type ReleaseLineResolution struct {
 	// Line is the line the version names, empty when it names none.
 	Line string
-	// Capabilities are the facts of Line.
+	// Planned is the line whose facts the version is planned with: Line, or,
+	// for a version that names no line, the line the declared lines place it
+	// on, as a built-in dialect's version ladder places a version between or
+	// beyond its measured lines. Empty when the version is not a release, or
+	// when the declared lines are not all releases and so form no ladder.
+	Planned string
+	// Saturated reports a version newer than every declared line, planned
+	// with the newest one.
+	Saturated bool
+	// Newest is the newest declared line, empty when the declared lines form
+	// no ladder.
+	Newest string
+	// Capabilities are the facts of Planned.
 	Capabilities Capabilities
 	// Declared are the lines the provider declared, sorted.
 	Declared []string
@@ -119,9 +134,18 @@ type ReleaseLineResolution struct {
 func (r ReleaseLineResolution) Found() bool { return r.Line != "" }
 
 // ProvidedReleaseLine resolves version among the release lines
-// [RegisterReleaseLines] recorded for dialect: the line equal to version, or
-// the longest line version starts with followed by a dot, as 26.2.1.14 names
-// 26.2. registered is false when dialect has no registered lines.
+// [RegisterReleaseLines] recorded for dialect. registered is false when
+// dialect has no registered lines.
+//
+// The version names the line equal to it, or the longest line it starts with
+// followed by a dot, as 26.2.1.14 names 26.2. When every declared line is a
+// release, written <major> or <major>.<minor>, the lines also form a ladder,
+// and a version that is a release names the line of its major and minor and
+// is planned with the line it falls on: the newest line at or below it, the
+// newest line when it is newer than all of them (Saturated), and the oldest
+// when it is older. A version is a release when it opens with a dotted number,
+// "26.3.1.18", or is a build branch, stable-<major>-<minor>[-<patch>], as
+// "stable-25-4-1" names 25.4.
 func ProvidedReleaseLine(dialect, version string) (resolution ReleaseLineResolution, registered bool) {
 	entry, loaded := providedLines.Load(strings.ToLower(strings.TrimSpace(dialect)))
 	if !loaded {
@@ -138,6 +162,133 @@ func ProvidedReleaseLine(dialect, version string) (resolution ReleaseLineResolut
 			resolution.Line = candidate
 		}
 	}
-	resolution.Capabilities = lines[resolution.Line]
+	resolution.Planned = resolution.Line
+	if steps, ok := releaseLadder(resolution.Declared); ok {
+		resolution.Newest = steps[len(steps)-1].line
+		if parsed, ok := parseRelease(version); ok && resolution.Line == "" {
+			resolution.Line, resolution.Planned, resolution.Saturated = steps.place(parsed)
+		}
+	}
+	resolution.Capabilities = lines[resolution.Planned]
 	return resolution, true
+}
+
+// providedResolution answers [ResolveServerVersion] for an engine whose
+// executable provider declared release lines, as a built-in dialect's version
+// ladder answers it. registered is false for an engine with none.
+func providedResolution(dialect, version string) (resolution VersionResolution, registered bool) {
+	line, registered := ProvidedReleaseLine(dialect, version)
+	if !registered {
+		return VersionResolution{}, false
+	}
+	name := strings.ToLower(strings.TrimSpace(dialect))
+	if line.Planned == "" {
+		// Recognized stays false: the defaults are picked without reading
+		// anything out of the string.
+		return VersionResolution{Capabilities: ForDialect(dialect), NewestMeasured: line.Newest, ResolvedDialect: name}, true
+	}
+	return VersionResolution{
+		Capabilities:    line.Capabilities,
+		VersionSpecific: line.Found(),
+		Saturated:       line.Saturated,
+		Recognized:      true,
+		NewestMeasured:  line.Newest,
+		ResolvedDialect: name,
+	}, true
+}
+
+// release is a major and minor release, and the declared line that spells it.
+type release struct {
+	major, minor int
+	line         string
+}
+
+// compare orders two releases by major, then minor.
+func (r release) compare(other release) int {
+	return cmp.Or(cmp.Compare(r.major, other.major), cmp.Compare(r.minor, other.minor))
+}
+
+// ladder is a set of declared lines that are all releases, oldest first.
+type ladder []release
+
+// releaseLadder reads every declared line as a release and orders them, or
+// reports that one is not a release, in which case the lines form no ladder.
+func releaseLadder(declared []string) (ladder, bool) {
+	result := make(ladder, 0, len(declared))
+	for _, line := range declared {
+		major, minor, ok := releaseNumbers(line, ".")
+		if !ok || line != strings.TrimSpace(line) {
+			return nil, false
+		}
+		result = append(result, release{major: major, minor: minor, line: line})
+	}
+	if len(result) == 0 {
+		return nil, false
+	}
+	slices.SortFunc(result, release.compare)
+	return result, true
+}
+
+// place returns the line version names, the line it is planned with, and
+// whether it is newer than every line.
+func (l ladder) place(version release) (named, planned string, saturated bool) {
+	newest := l[len(l)-1]
+	if version.compare(newest) > 0 {
+		return "", newest.line, true
+	}
+	planned = l[0].line
+	for _, step := range l {
+		if step.compare(version) > 0 {
+			break
+		}
+		planned = step.line
+		if step.compare(version) == 0 {
+			named = step.line
+		}
+	}
+	return named, planned, false
+}
+
+// parseRelease reads the major and minor release out of a server version
+// that is a release: one that opens with a dotted number, or a build branch,
+// stable-<major>-<minor>[-<patch>]. A floating build such as "trunk" is
+// neither.
+func parseRelease(version string) (release, bool) {
+	if branch, found := strings.CutPrefix(strings.ToLower(version), "stable-"); found {
+		major, minor, ok := releaseNumbers(branch, "-")
+		return release{major: major, minor: minor}, ok && strings.Count(branch, "-") >= 1
+	}
+	end := 0
+	for end < len(version) && (version[end] >= '0' && version[end] <= '9' || version[end] == '.') {
+		end++
+	}
+	major, minor, ok := releaseNumbers(strings.TrimSuffix(version[:end], "."), ".")
+	return release{major: major, minor: minor}, ok
+}
+
+// releaseNumbers reads the first two numbers of text, separated by separator.
+// A missing minor reads as 0 when text holds only a major; any other part
+// that is not a number refuses the whole text.
+func releaseNumbers(text, separator string) (major, minor int, ok bool) {
+	parts := strings.Split(text, separator)
+	if len(parts) == 0 || parts[0] == "" {
+		return 0, 0, false
+	}
+	numbers := make([]int, 0, 2)
+	for _, part := range parts[:min(len(parts), 2)] {
+		number, err := strconv.Atoi(part)
+		if err != nil || number < 0 || part != strconv.Itoa(number) {
+			return 0, 0, false
+		}
+		numbers = append(numbers, number)
+	}
+	for _, part := range parts[min(len(parts), 2):] {
+		if _, err := strconv.Atoi(part); err != nil {
+			return 0, 0, false
+		}
+	}
+	if len(numbers) == 1 {
+		return numbers[0], 0, true
+	}
+	return numbers[0], numbers[1], true
 }

@@ -241,12 +241,12 @@ var roundTripGaps = []Unreached{
 	{Field: "schemamodel.Constraint.UsingMethod", Dialects: []string{"mysql"}, Directions: nil, Reason: gapComparison},
 	{
 		Field:      "schemamodel.Database.Schemas",
-		Dialects:   []string{"clickhouse", "mariadb", "mysql", "spanner", "sqlserver"},
+		Dialects:   []string{"clickhouse", "mariadb", "mysql", "sqlserver"},
 		Directions: nil,
 		Reason:     gapComparison,
 	},
 	{Field: "schemamodel.EmbeddedField.Overrides", Dialects: []string{"mysql"}, Directions: nil, Reason: gapToCatalog},
-	{Field: "schemamodel.EmbeddedField.Type", Dialects: []string{"cockroachdb", "sqlite"}, Directions: nil, Reason: gapComparison},
+	{Field: "schemamodel.EmbeddedField.Type", Dialects: []string{"sqlite"}, Directions: nil, Reason: gapComparison},
 	{
 		Field:      "schemamodel.Field.AutoInc",
 		Dialects:   []string{"oracle"},
@@ -360,7 +360,7 @@ var roundTripGaps = []Unreached{
 
 	{
 		Field:      "schemamodel.Schema.Name",
-		Dialects:   []string{"clickhouse", "cockroachdb", "mariadb", "mysql", "postgres", "spanner", "sqlserver", "yugabytedb"},
+		Dialects:   []string{"clickhouse", "mariadb", "mysql", "sqlserver"},
 		Directions: nil,
 		Reason:     gapComparison,
 	},

@@ -39,9 +39,10 @@ type UnrecognizedVersionError struct {
 }
 
 // UndeclaredLineError reports a version of an engine an executable provider
-// serves that names none of the release lines the provider declares. It is
-// refused rather than planned with the engine's default for the reason
-// [UnrecognizedVersionError] gives.
+// serves that the release lines the provider declares cannot place: it is no
+// release, such as a floating build, or the lines are not all releases and so
+// form no ladder, and it names none of them. It is refused rather than planned
+// with the engine's default for the reason [UnrecognizedVersionError] gives.
 type UndeclaredLineError struct {
 	// Dialect is the engine the version was resolved against.
 	Dialect string
@@ -123,19 +124,25 @@ type Target struct {
 // names a different server product than the dialect with a
 // *DialectMismatchError.
 //
-// An engine an executable provider serves resolves a version to the release
-// line its provider declares facts for (capability.ProvidedReleaseLine), and
-// a version that names none of its lines is refused with an
+// An engine an executable provider serves resolves a version on the release
+// lines its provider declares facts for (capability.ProvidedReleaseLine), as a
+// built-in dialect resolves one on its ladder: a version newer than every line
+// is planned with the newest and one between or below them with the line it
+// falls on, and the Note says so. A version the lines cannot place, because it
+// is no release or because the lines form no ladder, is refused with an
 // *UndeclaredLineError.
 func Resolve(dialect, version string) (Target, error) {
 	if version == "" {
 		return Target{Capabilities: capability.ForDialect(dialect)}, nil
 	}
 	if line, registered := capability.ProvidedReleaseLine(dialect, version); registered {
-		if !line.Found() {
+		if line.Planned == "" {
 			return Target{}, &UndeclaredLineError{Dialect: dialect, Version: version, Lines: line.Declared}
 		}
-		return Target{Capabilities: line.Capabilities}, nil
+		return Target{
+			Capabilities: line.Capabilities,
+			Note:         VersionNote(dialect, version, capability.ResolveServerVersion(dialect, version)),
+		}, nil
 	}
 	if engine := strings.TrimSpace(dialect); engine != "" && platform.NormalizeDialect(dialect) == "" {
 		// An engine no descriptor describes has no ladder here, and its
