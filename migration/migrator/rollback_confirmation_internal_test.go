@@ -5,7 +5,10 @@ package migrator
 // got tearing the connection down, so a test driving the public API gets
 // sql.ErrTxDone, a connection error or a clean rollback depending on the race.
 // Each is constructed here, and the run that produces them is
-// integration/atlas_migrate_apply_interrupt_unix_e2e_test.go.
+// integration/atlas_migrate_apply_interrupt_unix_e2e_test.go. A commit's own
+// evidence is constructed the same way, so a row can pair it with an uncertain
+// cleanup rollback; integration/providercli/provider_history_e2e_test.go runs a
+// provider that answers a commit with ROLLED_BACK.
 
 import (
 	"context"
@@ -143,3 +146,64 @@ type cancellationRollbackEvidence struct {
 }
 
 func (e cancellationRollbackEvidence) RolledBackByCancellation() bool { return e.confirmed }
+
+// commitRollbackEvidence is the owner's answer to whether the commit rolled
+// the transaction back.
+type commitRollbackEvidence struct {
+	catalog.SchemaTransaction
+	confirmed bool
+}
+
+func (e commitRollbackEvidence) RolledBackAtCommit() bool { return e.confirmed }
+
+func TestMigrationFailureAfterCommit_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	failure := errors.New("provider transaction outcome is ROLLED_BACK")
+
+	err := migrationFailureAfterCommit(7, failure, commitRollbackEvidence{confirmed: true})
+
+	version, confirmed := migrationTransactionRollbackVersion(err)
+	c.Assert(confirmed, qt.IsTrue)
+	c.Assert(version, qt.Equals, int64(7))
+	c.Assert(err, qt.ErrorIs, failure)
+	c.Assert(err.Error(), qt.Equals, failure.Error())
+}
+
+func TestMigrationFailureAfterCommit_FailurePath(t *testing.T) {
+	tests := []struct {
+		name        string
+		failure     error
+		transaction catalog.SchemaTransaction
+	}{
+		{
+			name:        "the owner does not confirm a rollback",
+			failure:     errors.New("provider transaction outcome is ROLLED_BACK"),
+			transaction: commitRollbackEvidence{confirmed: false},
+		},
+		{
+			// A database/sql transaction gives no such evidence: a failed
+			// COMMIT may or may not have ended the transaction.
+			name:    "the transaction carries no evidence",
+			failure: errors.New("pq: could not serialize access"),
+		},
+		{
+			// The cleanup rollback joined to the commit's failure said its
+			// own outcome is unknown, so nothing may be inferred from it.
+			name:        "uncertainty overrides the owner's evidence",
+			failure:     errors.Join(errors.New("provider transaction outcome is ROLLED_BACK"), ptaherr.ErrOutcomeUnknown),
+			transaction: commitRollbackEvidence{confirmed: true},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			err := migrationFailureAfterCommit(7, tt.failure, tt.transaction)
+
+			_, confirmed := migrationTransactionRollbackVersion(err)
+			c.Assert(confirmed, qt.IsFalse)
+			c.Assert(err, qt.Equals, tt.failure)
+		})
+	}
+}

@@ -490,6 +490,19 @@ func TestProviderMigrationUnits(t *testing.T) {
 				c.Assert(tableExists(c, database, "x"), qt.IsFalse)
 			})
 		}
+		t.Run("a file whose commit the engine aborts records a failure that applied nothing", func(t *testing.T) {
+			c := qt.New(t)
+			database := newUnitsDatabase(c)
+			conn := fixture.connect(c, database, "FIXTURE_UNITS_DDL=transactional", "FIXTURE_UNITS_ABORT_COMMITS=9")
+			c.Assert(conn.Writer().ExecuteSQL(c.Context(), `CREATE TABLE "kept" ("id" INTEGER NOT NULL PRIMARY KEY);`), qt.IsNil)
+			m := unitsMigrator(c, conn, data).WithTransactionMode(migrator.MigrationTxModeFile)
+
+			err := m.MigrateUp(c.Context())
+
+			c.Assert(err, qt.ErrorMatches, `failed to commit transaction for migration 1: the engine aborted the transaction for a conflict and applied nothing: .*`)
+			c.Assert(rowCount(c, database, "kept"), qt.Equals, int64(0))
+			c.Assert(revisionsOf(c, m), qt.DeepEquals, []unitsProgress{{Version: 1, State: "failed", Applied: 0, Total: 1}})
+		})
 		t.Run("none runs an OUTSIDE unit on its own", func(t *testing.T) {
 			c := qt.New(t)
 			database := newUnitsDatabase(c)

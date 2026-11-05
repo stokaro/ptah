@@ -732,7 +732,10 @@ it does for a built-in engine with that capability.
 
 `--tx-mode none` permits committed prefixes; a later failure does not undo
 earlier operations. A lost commit reply reports an unknown outcome and is never
-automatically retried. Prepared apply and saved JSON
+automatically retried. A commit the provider answers with `ROLLED_BACK` applied
+nothing: `migrations up` and `migrations down` record the migration as failed
+with no statements applied, and `ptah-compat migrate apply` removes its
+revision, as each does after a refused statement. Prepared apply and saved JSON
 plans preserve owner transaction requirements and refuse a conflicting mode
 before sending any statement. Dev rehearsal checks the same requirements.
 Editing SQL with owner transaction requirements needs a fresh owner assessment;

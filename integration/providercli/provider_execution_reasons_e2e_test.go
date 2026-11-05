@@ -86,8 +86,8 @@ func tableHeld(c *qt.C, f providerCLI, table string) bool {
 // A provider that lists errors.reasons says why a migration's unit applied
 // nothing and why its commit rolled back, and the host prints each reason
 // after the outcome, on standard error and in the run document. The history
-// records the unit's reason with the failed migration. The results' messages
-// stay out of all of them.
+// records each reason with the failed migration. The results' messages stay
+// out of all of them.
 func TestProviderExecutionReasons_HappyPath(t *testing.T) {
 	t.Run("a unit that applied nothing", func(t *testing.T) {
 		c := qt.New(t)
@@ -112,9 +112,10 @@ func TestProviderExecutionReasons_HappyPath(t *testing.T) {
 		want := "provider transaction outcome is ROLLED_BACK: " + refusedCommitReason
 		c.Assert(run.diagnostics, qt.Contains, want)
 		c.Assert(run.message, qt.Contains, want)
-		// The revision keeps the mark it was given before the body ran, so it
-		// records no error of the commit's (G107).
-		c.Assert(run.recorded, qt.Equals, "statement execution outcome is unknown after process interruption")
+		// The commit's ROLLED_BACK confirms that nothing applied, so the
+		// revision records the failure in place of the mark it was given
+		// before the body ran.
+		c.Assert(run.recorded, qt.Contains, want)
 		c.Assert(run.all(), qt.Not(qt.Contains), fixtureCredential)
 		c.Assert(tableHeld(c, f, "uncommitted"), qt.IsFalse)
 	})

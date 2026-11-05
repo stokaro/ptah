@@ -4680,6 +4680,14 @@ establish rollback. The common migrator requires this evidence before treating
 a failed rollback as confirmed through cancellation. Explicit uncertain results
 still prevent that inference.
 
+`catalog.CommitRollback` exposes the same kind of evidence after `Commit` has
+failed: a provider transaction reports true when the provider answered the
+commit with `ROLLED_BACK`. The common migrator then records the migration as a
+rolled-back failure that applied nothing, as it does after a failed statement,
+instead of keeping a revision whose statement outcome is unknown. A
+database/sql transaction does not implement it, and an uncertain cleanup result
+still prevents the inference.
+
 `dbschema.DatabaseConnection.WithSession` pins one physical database session
 for a callback and rebinds the dialect reader, writer, and SQL runner to it.
 Use it when session-local state must remain consistent across cleanup, replay,
