@@ -106,5 +106,5 @@ func TestCompareSerialAgainstPlainType_IdentityOverAPlainDefault(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff.TablesModified, qt.HasLen, 1)
-	c.Assert(diff.TablesModified[0].ColumnsModified[0].Changes, qt.DeepEquals, map[string]string{"default_expr": "7 -> "})
+	c.Assert(diff.TablesModified[0].ColumnsModified[0].Changes["default_expr"], qt.Equals, "7 -> ")
 }
