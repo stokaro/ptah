@@ -212,8 +212,3 @@ type Note struct {
 	c.Assert(droppedExtensions(fromAnnotation), qt.DeepEquals, droppedExtensions(fromHeader))
 	c.Assert(droppedExtensions(fromHeader), qt.HasLen, 0)
 }
-
-// ownerKindSource declines one named object of an owner's coverage kind.
-func ownerKindSource(kind coverage.Kind) string {
-	return "package entities\n\n//ptah:schema:notdescribed kind=\"" + string(kind) + "\" name=\"events\"\ntype _ struct{}\n"
-}

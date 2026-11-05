@@ -9,21 +9,8 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
-	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 )
-
-// serialSchema declares table orders whose BIGSERIAL key starts at 100 and
-// steps by 5.
-func serialSchema() *schemamodel.Database {
-	return &schemamodel.Database{
-		Tables: []schemamodel.Table{{StructName: "Order", Name: "orders"}},
-		Fields: []schemamodel.Field{{
-			StructName: "Order", Name: "id", Type: "BIGSERIAL", Primary: true, AutoInc: true,
-			IdentityGeneration: "BY_DEFAULT", IdentityStart: "100", IdentityIncrement: "5",
-		}},
-	}
-}
 
 // TestRenderSQL_AlterSerialSequence_FailurePath refuses the node on every
 // target without capability.SerialSequenceOptions, before the dialect's

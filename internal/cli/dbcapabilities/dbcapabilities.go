@@ -173,8 +173,7 @@ const connectionRefinementReason = "read from this server when Ptah connected, n
 // path that takes the readings needs a live server.
 func ConnectionReading(dialect string, capabilities capability.Capabilities) serverprofile.Reading {
 	reason := connectionRefinementReason
-	switch platform.NormalizeDialect(dialect) {
-	case platform.Postgres:
+	if platform.NormalizeDialect(dialect) == platform.Postgres {
 		reason = extensionRefinementReason
 	}
 	return serverprofile.Reading{Capabilities: capabilities, Reason: reason}

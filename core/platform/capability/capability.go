@@ -686,7 +686,7 @@ const (
 	// through the table service, and read back from the table's description.
 	// YDB has no COMMENT statement and no comment clause, and an index path
 	// holds no attribute, so a column's and an index's comment is an
-	// attribute of its table under a key that names it (internal/ydbcomment).
+	// attribute of its table under a key that names it.
 	//
 	// Measured on YDB 25.1.4.7 and 26.2.1.14 alike: AlterTable sets and
 	// removes an attribute of a row table, and DescribeTable reports it; a

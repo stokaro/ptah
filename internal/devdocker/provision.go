@@ -16,7 +16,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
 )
 
 // ContainerLabel marks every container this package starts. It exists so an

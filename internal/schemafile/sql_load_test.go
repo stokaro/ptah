@@ -118,9 +118,3 @@ func TestLoadAll_ReadsEveryGrammarSourceInOneCall(t *testing.T) {
 	c.Assert(requestedFiles(requests[0]), qt.DeepEquals, []string{"main.sql: head", "001.sql: tail"})
 	c.Assert(database.Tables, qt.HasLen, 2)
 }
-
-const (
-	yqlUsers    = "CREATE TABLE users (id Int64 NOT NULL, PRIMARY KEY (id));\n"
-	yqlFeed     = "ALTER TABLE users ADD CHANGEFEED updates WITH (mode = 'UPDATES', format = 'JSON');\n"
-	hclUsersYDB = "schema \"main\" {\n}\ntable \"users\" {\n  schema = schema.main\n  column \"id\" {\n    null = false\n    type = Int64\n  }\n  primary_key {\n    columns = [column.id]\n  }\n}\n"
-)

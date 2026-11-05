@@ -13,7 +13,7 @@
   ],
   "generator": "scripts/check-feature-inventory.sh --write",
   "claimed_floor": 79,
-  "claimed": 98,
+  "claimed": 97,
   "rows": [
     {
       "id": "cli-ptah-assist-context",
@@ -1336,120 +1336,6 @@
       "claimed_by": null
     },
     {
-      "id": "gopkg-dialect-ydb-ydbast",
-      "kind": "public-package",
-      "surface": "ptah.run/dialect/ydb/ydbast",
-      "claimed_by": null
-    },
-    {
-      "id": "gopkg-dialect-ydb-ydbcompare",
-      "kind": "public-package",
-      "surface": "ptah.run/dialect/ydb/ydbcompare",
-      "claimed_by": null
-    },
-    {
-      "id": "gopkg-dialect-ydb-ydbconvert",
-      "kind": "public-package",
-      "surface": "ptah.run/dialect/ydb/ydbconvert",
-      "claimed_by": null
-    },
-    {
-      "id": "gopkg-dialect-ydb-ydbcoordination",
-      "kind": "public-package",
-      "surface": "ptah.run/dialect/ydb/ydbcoordination",
-      "claimed_by": null
-    },
-    {
-      "id": "gopkg-dialect-ydb-ydbdiff",
-      "kind": "public-package",
-      "surface": "ptah.run/dialect/ydb/ydbdiff",
-      "claimed_by": null
-    },
-    {
-      "id": "gopkg-dialect-ydb-ydbexternal",
-      "kind": "public-package",
-      "surface": "ptah.run/dialect/ydb/ydbexternal",
-      "claimed_by": null
-    },
-    {
-      "id": "gopkg-dialect-ydb-ydblint",
-      "kind": "public-package",
-      "surface": "ptah.run/dialect/ydb/ydblint",
-      "claimed_by": null
-    },
-    {
-      "id": "gopkg-dialect-ydb-ydbplan",
-      "kind": "public-package",
-      "surface": "ptah.run/dialect/ydb/ydbplan",
-      "claimed_by": null
-    },
-    {
-      "id": "gopkg-dialect-ydb-ydbrender",
-      "kind": "public-package",
-      "surface": "ptah.run/dialect/ydb/ydbrender",
-      "claimed_by": null
-    },
-    {
-      "id": "gopkg-dialect-ydb-ydbreplication",
-      "kind": "public-package",
-      "surface": "ptah.run/dialect/ydb/ydbreplication",
-      "claimed_by": null
-    },
-    {
-      "id": "gopkg-dialect-ydb-ydbreport",
-      "kind": "public-package",
-      "surface": "ptah.run/dialect/ydb/ydbreport",
-      "claimed_by": null
-    },
-    {
-      "id": "gopkg-dialect-ydb-ydbreverse",
-      "kind": "public-package",
-      "surface": "ptah.run/dialect/ydb/ydbreverse",
-      "claimed_by": null
-    },
-    {
-      "id": "gopkg-dialect-ydb-ydbschema",
-      "kind": "public-package",
-      "surface": "ptah.run/dialect/ydb/ydbschema",
-      "claimed_by": null
-    },
-    {
-      "id": "gopkg-dialect-ydb-ydbscheme",
-      "kind": "public-package",
-      "surface": "ptah.run/dialect/ydb/ydbscheme",
-      "claimed_by": null
-    },
-    {
-      "id": "gopkg-dialect-ydb-ydbsecret",
-      "kind": "public-package",
-      "surface": "ptah.run/dialect/ydb/ydbsecret",
-      "claimed_by": null
-    },
-    {
-      "id": "gopkg-dialect-ydb-ydbstreaming",
-      "kind": "public-package",
-      "surface": "ptah.run/dialect/ydb/ydbstreaming",
-      "claimed_by": null
-    },
-    {
-      "id": "gopkg-dialect-ydb-ydbsyntax",
-      "kind": "public-package",
-      "surface": "ptah.run/dialect/ydb/ydbsyntax",
-      "claimed_by": null
-    },
-    {
-      "id": "gopkg-dialect-ydb-ydbtopic",
-      "kind": "public-package",
-      "surface": "ptah.run/dialect/ydb/ydbtopic",
-      "claimed_by": null
-    },
-    {
-      "id": "gopkg-dialect-ydb-ydbworkload",
-      "kind": "public-package",
-      "surface": "ptah.run/dialect/ydb/ydbworkload",
-      "claimed_by": null
-    },
-    {
       "id": "gopkg-docs",
       "kind": "public-package",
       "surface": "ptah.run/docs",
@@ -1826,12 +1712,6 @@
       "kind": "dialect",
       "surface": "sqlserver",
       "claimed_by": "docs/site/src/content/docs/databases/sqlserver.md"
-    },
-    {
-      "id": "dialect-ydb",
-      "kind": "dialect",
-      "surface": "ydb",
-      "claimed_by": "docs/site/src/content/docs/databases/ydb.md"
     },
     {
       "id": "dialect-yugabytedb",

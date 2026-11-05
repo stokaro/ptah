@@ -23,8 +23,7 @@ import (
 // services remain unavailable. The caller owns the context and capability facts.
 func ForTarget(ctx context.Context, runtime featureplan.DeclarationRuntime, target string, caps capability.Capabilities) modelast.Lowering {
 	result := modelast.Lowering{Context: ctx, Runtime: runtime, Capabilities: caps}
-	switch {
-	case platform.IsPostgresFamily(target):
+	if platform.IsPostgresFamily(target) {
 		result.CommonMetadata = postgresMetadata(target)
 		result.ResolvesBodyAtCreate = pgplanner.ResolvesBodyAtCreate
 	}
