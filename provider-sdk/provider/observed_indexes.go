@@ -27,6 +27,8 @@ func validateInspectedIndexes(description *protocol.Description, engine *protoco
 	if negotiated && !slices.Contains(snapshot.GetTargetFeatures(), ObservedColumnsFeature) {
 		return fmt.Errorf("%w: observed indexes require negotiated column observations", ErrProtocol)
 	}
+	facets := negotiated && EngineOffers(description, engine.GetId(), ObservedIndexFacetsFeature) &&
+		slices.Contains(snapshot.GetTargetFeatures(), ObservedIndexFacetsFeature)
 	for _, table := range snapshot.GetTables() {
 		if !negotiated {
 			if len(table.GetIndexes()) != 0 {
@@ -36,6 +38,14 @@ func validateInspectedIndexes(description *protocol.Description, engine *protoco
 		}
 		if err := validateInspectedTableIndexes(table); err != nil {
 			return err
+		}
+		for _, index := range table.GetIndexes() {
+			if len(index.GetFacets()) != 0 && !facets {
+				return fmt.Errorf("%w: observed index facets were not negotiated", ErrProtocol)
+			}
+			if err := validateInspectedIndexFacets(table, index); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

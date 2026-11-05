@@ -2135,6 +2135,11 @@ message ObservedIndex {
   repeated ComparisonIdentity requires = 18;
   bool partition_attached = 19;
   int64 hash_shard_buckets = 20;
+  // The settings of the index the engine reads into its own models, each owned
+  // by the index: kind "index", the table's database and schema, the table as
+  // the only path component, and the index's name. Contract 25.25, negotiated
+  // under schema.observed-index-facets.
+  repeated Envelope facets = 21;
 }
 message ObservedConstraint {
   string name = 1;

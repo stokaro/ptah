@@ -73,7 +73,7 @@ a new record that names it, and its own status line is updated to point there.
 | [0061](0061-a-failed-execution-says-why-in-text-the-provider-wrote.md) | A failed execution says why, in text the provider wrote | Proposed |
 | [0062](0062-a-provider-reverses-the-changes-its-comparison-returned.md) | A provider reverses the changes its comparison returned | Proposed |
 | [0063](0063-a-read-names-the-tables-it-leaves-out.md) | A read names the tables it leaves out | Proposed |
-| [0064](0064-a-read-covers-a-directory-and-everything-below-it.md) | A read covers a directory and everything below it | Proposed |
+| [0068](0068-an-inspected-index-carries-its-own-facets.md) | An inspected index carries its own facets | Proposed |
 
 ## Writing one
 
