@@ -144,6 +144,7 @@ func excludeDatabase(
 	filtered.ObjectOwners = state.filterObjectOwners(filtered.ObjectOwners)
 	filtered.Grants = state.filterGrants(filtered.Grants, excludedObjects(schema.FeatureObjects, filtered.FeatureObjects))
 	state.noteReservedNames(filtered.ReservedNames)
+	state.noteUnreadTables(filtered.UnreadTables)
 	state.noteRolesOutOfScope(filtered.RolesOutOfScope)
 	state.noteUnregisteredVirtualTables(filtered.UnregisteredVirtualTables)
 	return filtered, ExcludeReport{Unmatched: state.unmatchedSelectors()}, nil
@@ -1718,6 +1719,10 @@ func cloneDatabase(schema *catalog.Database) *catalog.Database {
 		// Where the database is does not change with what a filter keeps of
 		// it, and a YDB plan names a Serial column's sequence by that path.
 		DatabasePath: schema.DatabasePath,
+		// A table the read found and left out is still in the database, and a
+		// filter cannot change that: dropping the record would let a declared
+		// table at it plan a CREATE TABLE the database rejects.
+		UnreadTables: slices.Clone(schema.UnreadTables),
 		// The planning context is what a filtered read established outside its
 		// scope, for planning only. A filter narrows the compared description
 		// and leaves the context as it is; without it a provider's plan cannot

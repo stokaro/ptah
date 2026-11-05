@@ -715,6 +715,17 @@ ptah schema inspect --provider-config providers.json \
 A new fixture database reports its `main` schema without tables. An incomplete
 inspection fails; it never represents an empty authoritative database.
 
+A read can find a table it does not describe, such as a YDB replica table no
+replication writes any more. With `schema.unread-tables` the provider names
+each such table in its read, with a one-line reason in its own words. No
+document made from the read names the table, and `schema inspect` and `db read`
+print a note instead: `note: 1 table this read does not describe: dir.rep:
+<reason>`. A plan that declares a table there, or a foreign key that references
+one, is refused before any step with `table dir.rep: <reason>`. A filter, such
+as `--exclude`, keeps the entry, since narrowing a read cannot make the
+database lose a table. Without the feature, the provider leaves the table out
+silently, and a declared table there fails when its creation runs.
+
 ## Plan and apply
 
 Create `schema.yaml` for the fixture's common table grammar. The fixture accepts
