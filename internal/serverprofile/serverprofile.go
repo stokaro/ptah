@@ -24,6 +24,7 @@
 package serverprofile
 
 import (
+	"cmp"
 	"fmt"
 	"slices"
 	"strings"
@@ -121,6 +122,9 @@ type Server struct {
 type Preset struct {
 	// Name is the preset's name in core/platform/capability, empty when the
 	// server fell on no declared release line and no name can be attributed.
+	// For an engine an executable provider serves it is the label of the
+	// release line the provider declares facts for (see
+	// [Profile.WithDeclaredLines]).
 	Name string `json:"name,omitempty"`
 
 	// Dialect is the platform whose ladder produced the set, which is not
@@ -375,6 +379,48 @@ func For(dialect, banner, productVersion string) Profile {
 		Reason: certificationReason(cell),
 	}
 	return profile
+}
+
+// DeclaredLine is a release line the executable provider of an engine
+// declares, with the support level in the vocabulary of the capability matrix.
+type DeclaredLine struct {
+	Line    string
+	Label   string
+	Support capability.SupportLevel
+	Note    string
+}
+
+// WithDeclaredLines returns the profile of a server of an engine an
+// executable provider serves, certified against the release lines the
+// provider declares, as [For] certifies a built-in dialect against the lines
+// this repository declares. The line the server's version names gives the
+// preset its name, the line's label, and the certification its level, label
+// and reason: the line's note, or the level's meaning when it has none. A
+// version that names no declared line, such as one newer than all of them,
+// keeps the best-effort certification For gave it.
+//
+// The line is the one capability.ProvidedReleaseLine resolves, so the profile
+// and the capability facts For read cannot name two different lines. A
+// built-in dialect, and an engine whose provider registered no lines, is
+// returned unchanged.
+func (p Profile) WithDeclaredLines(lines []DeclaredLine) Profile {
+	resolution, registered := capability.ProvidedReleaseLine(p.Dialect, p.Server.Banner)
+	if !registered || !resolution.Found() {
+		return p
+	}
+	for _, line := range lines {
+		if line.Line != resolution.Line {
+			continue
+		}
+		p.Preset.Name = cmp.Or(line.Label, line.Line)
+		reason := line.Note
+		if reason == "" {
+			reason = line.Support.Doc()
+		}
+		p.Certification = Certification{Level: line.Support, Line: line.Line, Label: line.Label, Reason: reason}
+		return p
+	}
+	return p
 }
 
 // unmatched is the certification for a server on no declared release line.

@@ -5354,8 +5354,15 @@ func BannerPlatform(version string) string {
 // on a live connection MariaDB announces itself over the MySQL protocol and
 // CockroachDB over the PostgreSQL one; a string naming only the head of the
 // declared dialect's family keeps the declared ladder; and a string naming no
-// product climbs the declared dialect's ladder.
+// product climbs the declared dialect's ladder. An engine no descriptor
+// describes climbs the release lines its executable provider declared
+// ([ProvidedReleaseLine]) the same way, with the newest of them as
+// NewestMeasured; a string that is no release of it is not Recognized and
+// takes the engine's default facts ([ForDialect]).
 func ResolveServerVersion(dialect, version string) VersionResolution {
+	if resolution, registered := providedResolution(dialect, version); registered {
+		return resolution
+	}
 	return process().ResolveServerVersion(dialect, version)
 }
 

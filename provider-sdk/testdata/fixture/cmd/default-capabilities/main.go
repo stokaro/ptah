@@ -4,7 +4,9 @@
 // that answer for offline planning (contract 25.22,
 // engine.default-capabilities), false by default and on release line 2.1 and
 // true on line 1.4, unless FIXTURE_NO_DEFAULTS is set, which is the control:
-// without the stated facts an offline render is refused.
+// without the stated facts an offline render is refused. A session reports
+// the server version FIXTURE_SERVER_VERSION names, when it names one, so a
+// command that connects can be measured against the declared lines.
 //
 // The engine is fixture-defaults, or the control's fixture-no-defaults: the
 // host keeps one set of offline facts per engine for the life of a process,
@@ -59,6 +61,19 @@ func main() {
 }
 
 type establishedRenderer struct{ *backend.Provider }
+
+// Open opens a session of the fixture backend that reports the server version
+// FIXTURE_SERVER_VERSION names, or the backend's own when it names none.
+func (r *establishedRenderer) Open(ctx context.Context, request *protocol.OpenRequest) (*protocol.Session, error) {
+	session, err := r.Provider.Open(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	if version := os.Getenv("FIXTURE_SERVER_VERSION"); version != "" {
+		session.ServerVersion = version
+	}
+	return session, nil
+}
 
 // Render refuses a request that establishes no answer for transactional_ddl.
 // Otherwise it writes one unit per change that names the change's object and

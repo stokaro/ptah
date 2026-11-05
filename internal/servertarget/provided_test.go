@@ -40,17 +40,46 @@ func TestResolve_AProvidersReleaseLine_HappyPath(t *testing.T) {
 	}
 }
 
-// A version that names no declared line is refused with the lines to choose
-// from, and so is any version of an engine whose provider declares no line:
-// either would otherwise select nothing and be dropped in silence.
+// A release that names no declared line is planned with the line the declared
+// lines place it on, as a built-in dialect's ladder places it, and the note
+// says what was planned instead, in the words a built-in dialect's note uses.
+func TestResolve_AProvidersReleaseLine_HappyPath_PlacesAReleaseOnTheLines(t *testing.T) {
+	c := qt.New(t)
+	c.Assert(capability.RegisterReleaseLines(providedLines, "versioned-engine"), qt.IsNil)
+	for _, test := range []struct {
+		version, note string
+		returning     bool
+	}{
+		{version: "26.3.1.18", returning: true,
+			note: "versioned-engine 26.3.1.18 is newer than the newest measured release line 26.2; capabilities were planned as 26.2"},
+		{version: "25.4.1.15", returning: false,
+			note: "versioned-engine 25.4.1.15 is not a measured release line; capabilities fall back to the preset its ladder assigns (newest measured line: 26.2)"},
+		{version: "24.4.4.12", returning: false,
+			note: "versioned-engine 24.4.4.12 is not a measured release line; capabilities fall back to the preset its ladder assigns (newest measured line: 26.2)"},
+		{version: "stable-25-1-4", returning: false},
+	} {
+		t.Run(test.version, func(t *testing.T) {
+			c := qt.New(t)
+			target, err := servertarget.Resolve("versioned-engine", test.version)
+			c.Assert(err, qt.IsNil)
+			c.Assert(target.Capabilities.Has(capability.ReturningClause), qt.Equals, test.returning)
+			c.Assert(target.Capabilities.Established(capability.TransactionalDDL), qt.IsTrue)
+			c.Assert(target.Note, qt.Equals, test.note)
+		})
+	}
+}
+
+// A version that is no release is refused with the lines to choose from, and
+// so is any version of an engine whose provider declares no line: either
+// would otherwise select nothing and be dropped in silence.
 func TestResolve_AProvidersReleaseLine_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	c.Assert(capability.RegisterReleaseLines(providedLines, "versioned-engine"), qt.IsNil)
 	for _, test := range []struct{ name, dialect, version, want string }{
-		{"an undeclared line", "versioned-engine", "25.4.1.15",
-			`"25.4.1.15" names no release line the versioned-engine provider declares: expected 25.1, 26.2, or a version that starts with one followed by a dot`},
-		{"a spelling the rule does not read", "versioned-engine", "stable-25-1-4",
-			`"stable-25-1-4" names no release line the versioned-engine provider declares: .*`},
+		{"a floating build", "versioned-engine", "trunk",
+			`"trunk" names no release line the versioned-engine provider declares: expected 25.1, 26.2, or a version that starts with one followed by a dot`},
+		{"a branch with no minor", "versioned-engine", "stable-26",
+			`"stable-26" names no release line the versioned-engine provider declares: .*`},
 		{"an engine whose provider declares none", "unversioned-engine", "26.2",
 			`"26.2" names no release line of unversioned-engine: Ptah holds no release-line capabilities for an engine its provider serves, and the provider declares none`},
 	} {

@@ -25,6 +25,8 @@ import (
 	"ptah.run/internal/capabilityprobe"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
+	"ptah.run/internal/providerhost"
+	"ptah.run/internal/providerselect"
 	"ptah.run/internal/serverprofile"
 )
 
@@ -109,6 +111,12 @@ func runCapabilities(cmd *cobra.Command, opts *options) error {
 		info.Version,
 		capabilityprobe.ProductVersion(cmd.Context(), conn, info.Dialect),
 	)
+	// An engine an executable provider serves is certified against the
+	// release lines its provider declares, as a built-in dialect is against
+	// the lines this repository declares.
+	if started := providerselect.StartedFrom(cmd.Context()); started != nil {
+		profile = profile.WithDeclaredLines(declaredLines(started.ReleaseLines()))
+	}
 
 	// A version alone does not decide every key, and this verb exists to say
 	// what THIS server does. Pinning a session is what asks it: the connection
@@ -123,6 +131,16 @@ func runCapabilities(cmd *cobra.Command, opts *options) error {
 	}
 
 	return WriteProfile(cmd.OutOrStdout(), opts.format, profile)
+}
+
+// declaredLines are the release lines a provider declares, as the profile
+// reads them.
+func declaredLines(lines []providerhost.ReleaseLine) []serverprofile.DeclaredLine {
+	declared := make([]serverprofile.DeclaredLine, 0, len(lines))
+	for _, line := range lines {
+		declared = append(declared, serverprofile.DeclaredLine{Line: line.Line, Label: line.Label, Support: line.Support, Note: line.Note})
+	}
+	return declared
 }
 
 // withSessionRefinement asks the server for the capability set its connection
