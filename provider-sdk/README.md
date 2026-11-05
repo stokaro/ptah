@@ -1653,7 +1653,9 @@ states for each table whose group it read.
 A group spells part of a facet. In an HCL reply under the feature, a loss may
 name a value a `TABLE_PLATFORM` part writes, once: the value is written in part,
 and the line says what the document does not hold of it. Every other written
-value takes no loss.
+value takes no loss. Under `source.limits`, an encoding request that knows a
+model less needs a limit only when the model lists the request's format, so a
+read of selected directories writes a platform claim's model without one.
 
 The provider and each engine that declares such a claim list the feature,
 beside `source.hcl`. Without it negotiated, the description the host receives
