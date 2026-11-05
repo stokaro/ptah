@@ -3,6 +3,7 @@ package postgres_test
 import (
 	"cmp"
 	"context"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -1008,7 +1009,9 @@ const (
 // CREATE OR REPLACE VIEW sets the options it states and clears the others, and
 // a view created again starts with none, so each statement that writes a view
 // states the options its declaration holds: the ones the database holds when
-// the declaration states them too, and none of the ones it leaves out.
+// the declaration states them too, and none of the storage parameters or
+// false-held options it leaves out. A security option held on and left out is
+// refused; see [TestViewRebuild_RefusesToLoseViewSecurity_FailurePath].
 func TestViewRebuild_WritesTheDeclaredOptions_HappyPath(t *testing.T) {
 	invoker := map[string][]string{"order_report": {"security_invoker=true", "security_barrier=on"}, "order_totals": {"fillfactor=70"}}
 	tests := []struct {
@@ -1047,13 +1050,37 @@ func TestViewRebuild_WritesTheDeclaredOptions_HappyPath(t *testing.T) {
 			},
 		},
 		{
-			name:     "options the declaration leaves out",
-			live:     rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotals, orderReport}, options: invoker},
+			name: "options the declaration leaves out, each held off or a storage parameter",
+			live: rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotals, orderReport},
+				options: map[string][]string{"order_report": {"security_invoker=off", "security_barrier=0"}, "order_totals": {"fillfactor=70"}}},
 			declared: rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotals, orderReportWide}},
 			want: []string{
 				"CREATE OR REPLACE VIEW \"order_report\" AS\nSELECT total, 1 AS one FROM order_totals",
 				`ALTER MATERIALIZED VIEW "order_totals" RESET (fillfactor)`,
 			},
+		},
+		{
+			name: "a false-held option the declaration leaves out, reset in place",
+			live: rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotals, orderReport},
+				options: map[string][]string{"order_report": {"security_invoker=false"}}},
+			declared: rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotals, orderReport}},
+			want:     []string{`ALTER VIEW "order_report" RESET (security_invoker)`},
+		},
+		{
+			name: "an explicit false, set in place",
+			live: rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotals, orderReport},
+				options: map[string][]string{"order_report": {"security_invoker=true"}}},
+			declared: rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotals, orderReport},
+				options: map[string][]string{"order_report": {"security_invoker=false"}}},
+			want: []string{`ALTER VIEW "order_report" SET (security_invoker=false)`},
+		},
+		{
+			name: "an explicit false on a view replaced in place",
+			live: rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotals, orderReport},
+				options: map[string][]string{"order_report": {"security_invoker=true"}}},
+			declared: rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotals, orderReportWide},
+				options: map[string][]string{"order_report": {"security_invoker=false"}}},
+			want: []string{"CREATE OR REPLACE VIEW \"order_report\" WITH (security_invoker=false) AS\nSELECT total, 1 AS one FROM order_totals"},
 		},
 		{
 			name: "options alone, changed in place",
@@ -1069,12 +1096,12 @@ func TestViewRebuild_WritesTheDeclaredOptions_HappyPath(t *testing.T) {
 			name: "an option change on objects the rebuild creates again",
 			live: rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotals, orderReport}, options: invoker},
 			declared: rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotalsChanged, orderReport},
-				options: map[string][]string{"order_report": {"security_barrier=true"}}},
+				options: map[string][]string{"order_report": {"security_barrier=true", "security_invoker=false"}}},
 			want: []string{
 				`DROP VIEW "order_report"`,
 				`DROP MATERIALIZED VIEW "order_totals"`,
 				createTotalsChanged,
-				"CREATE VIEW \"order_report\" WITH (security_barrier=true) AS\nSELECT total FROM order_totals",
+				"CREATE VIEW \"order_report\" WITH (security_barrier=true, security_invoker=false) AS\nSELECT total FROM order_totals",
 			},
 		},
 	}
@@ -1105,6 +1132,155 @@ func TestViewRebuild_OptionsSpelledAnotherWay_HappyPath(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 0)
+}
+
+// viewSecurityRefusal is the refusal of security_invoker held true on
+// order_report: it names the view and the option, says what the removal does,
+// and gives both remedies.
+const viewSecurityRefusal = `unsupported feature: view order_report holds security_invoker=true and the schema does not state it\. ` +
+	`Without it the view runs with its owner's rights, not the rights of the user who queries it\. ` +
+	`Declare security_invoker=true to keep it, or security_invoker=false to remove it\. ` +
+	`An HCL schema states these options in the view's security block, as invoker and barrier`
+
+// TestViewRebuild_RefusesToLoseViewSecurity_FailurePath pins every path that
+// would take a security option from a view because the declaration leaves it
+// out. Each path has its own statement, and no statement fails on the server:
+// ALTER VIEW ... RESET, a CREATE OR REPLACE VIEW, which clears what it does not
+// state, and a drop and create, for a column the view stops returning and for a
+// rebuild another object's change causes. Both statement styles refuse.
+func TestViewRebuild_RefusesToLoseViewSecurity_FailurePath(t *testing.T) {
+	invoker := map[string][]string{"order_report": {"security_invoker=true"}}
+	tests := []struct {
+		name           string
+		live, declared rebuildState
+		wantErr        string
+	}{
+		{
+			name:     "the option alone, which plans a reset",
+			live:     rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotals, orderReport}, options: invoker},
+			declared: rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotals, orderReport}},
+			wantErr:  viewSecurityRefusal,
+		},
+		{
+			name:     "a changed body, which plans a replacement",
+			live:     rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotals, orderReport}, options: invoker},
+			declared: rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotals, orderReportWide}},
+			wantErr:  viewSecurityRefusal,
+		},
+		{
+			name:     "a body that loses a column, which plans a drop and a create",
+			live:     rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotals, orderReportWide}, options: invoker},
+			declared: rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotals, orderReport}},
+			wantErr:  viewSecurityRefusal,
+		},
+		{
+			name:     "a rebuild the materialized view it reads causes",
+			live:     rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotals, orderReport}, options: invoker},
+			declared: rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotalsChanged, orderReport}},
+			wantErr:  viewSecurityRefusal,
+		},
+		{
+			name: "another spelling of true keeps the spelling the server stores",
+			live: rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotals, orderReport},
+				options: map[string][]string{"order_report": {"security_invoker=on"}}},
+			declared: rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotals, orderReport}},
+			wantErr:  `unsupported feature: view order_report holds security_invoker=on and the schema does not state it\..*`,
+		},
+		{
+			name: "security_barrier says the view loses its barrier",
+			live: rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotals, orderReport},
+				options: map[string][]string{"order_report": {"security_barrier=true"}}},
+			declared: rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotals, orderReport}},
+			wantErr: `unsupported feature: view order_report holds security_barrier=true and the schema does not state it\. ` +
+				`Without it the view loses its barrier, and a function in a query can see rows the view's condition hides\. ` +
+				`Declare security_barrier=true to keep it, or security_barrier=false to remove it\..*`,
+		},
+		{
+			name: "one option kept and one left out names the one left out",
+			live: rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotals, orderReport},
+				options: map[string][]string{"order_report": {"security_invoker=true", "security_barrier=true"}}},
+			declared: rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotals, orderReport},
+				options: map[string][]string{"order_report": {"security_barrier=true"}}},
+			wantErr: viewSecurityRefusal,
+		},
+		{
+			name: "every view and option is named at once, a view's options in name order",
+			live: rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotals, orderReport, bigOrdersPlain},
+				options: map[string][]string{
+					"order_report": {"security_invoker=true", "security_barrier=true"},
+					"big_orders":   {"security_barrier=true"},
+				}},
+			declared: rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotals, orderReport, bigOrdersPlain}},
+			wantErr: `unsupported feature: view big_orders holds security_barrier=true .*; ` +
+				`view order_report holds security_barrier=true .*; ` +
+				`view order_report holds security_invoker=true .*`,
+		},
+	}
+	for _, test := range tests {
+		for _, style := range []planext.StatementStyle{planext.StatementStyleExact, planext.StatementStyleAnnotated} {
+			t.Run(test.name+"/"+string(style), func(t *testing.T) {
+				c := qt.New(t)
+
+				statements, err := planRebuild(c, style, test.live, test.declared)
+
+				c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+				c.Assert(err, qt.ErrorMatches, test.wantErr)
+				c.Assert(statements, qt.IsNil)
+			})
+		}
+	}
+}
+
+// TestViewRebuild_KeepsViewSecurityRefusalToForwardPlans_HappyPath pins the
+// entries the refusal does not read. A rollback restores the state before the
+// forward change, so the option it leaves out is the earlier state: the reset
+// has to plan. An entry with no declaration plans nothing, so it loses nothing,
+// and a materialized view has no security option to lose: a name it holds is
+// a storage parameter to the planner.
+func TestViewRebuild_KeepsViewSecurityRefusalToForwardPlans_HappyPath(t *testing.T) {
+	tests := []struct {
+		name string
+		diff difftypes.SchemaDiff
+		want string
+	}{
+		{
+			name: "a rollback of an added option",
+			diff: difftypes.SchemaDiff{ViewsModified: []difftypes.ViewDiff{{
+				ViewName: "v", Rollback: true, PreviousOptions: []string{"security_invoker=true"},
+				Changes: map[string]string{difftypes.OptionsChange: "security_invoker=true -> (none)"},
+				Desired: schemamodel.View{Name: "v", Body: "SELECT 1"},
+			}}},
+			want: `ALTER VIEW "v" RESET (security_invoker)`,
+		},
+		{
+			name: "an entry with no declaration",
+			diff: difftypes.SchemaDiff{ViewsModified: []difftypes.ViewDiff{{
+				ViewName: "v", PreviousOptions: []string{"security_invoker=true"},
+				Changes: map[string]string{difftypes.OptionsChange: "security_invoker=true -> (none)"},
+			}}},
+			want: "",
+		},
+		{
+			name: "a materialized view's reset",
+			diff: difftypes.SchemaDiff{MaterializedViewsModified: []difftypes.MaterializedViewDiff{{
+				ViewName: "m", PreviousOptions: []string{"security_invoker=true"},
+				Changes: map[string]string{difftypes.OptionsChange: "security_invoker=true -> (none)"},
+				Desired: schemamodel.MaterializedView{Name: "m", Body: "SELECT 1"},
+			}}},
+			want: `ALTER MATERIALIZED VIEW "m" RESET (security_invoker)`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(context.Background(), must.Must(builtin.New()),
+				&test.diff, "postgres", planext.Options{Capabilities: capability.ForDialect("postgres")})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(strings.Join(statements, ";"), qt.Equals, test.want)
+		})
+	}
 }
 
 // TestViewRebuild_FailurePath pins the rebuild the plan refuses rather than

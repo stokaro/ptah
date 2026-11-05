@@ -2112,14 +2112,19 @@ type ViewDiff struct {
 	// the statement rendered for it runs while an operator is undoing a
 	// migration.
 	//
-	// It decides nothing on its own. It settles the cases where a planner cannot
-	// prove whether the engine accepts an in-place replace, and the two
-	// directions want opposite answers there. Going forward, the replace is
-	// worth attempting: it keeps dependent objects and the privileges granted on
-	// the view, and if the engine refuses it the migration stops with nothing
-	// destroyed. A rollback cannot be stopped that way -- it is already running
-	// during the incident -- so it takes the drop-and-recreate that always
-	// applies, and pays for it by rebuilding what CASCADE removes.
+	// It settles the cases where a planner cannot prove whether the engine
+	// accepts an in-place replace, and the two directions want opposite answers
+	// there. Going forward, the replace is worth attempting: it keeps dependent
+	// objects and the privileges granted on the view, and if the engine refuses
+	// it the migration stops with nothing destroyed. A rollback cannot be stopped
+	// that way -- it is already running during the incident -- so it takes the
+	// drop-and-recreate that always applies, and pays for it by rebuilding what
+	// CASCADE removes.
+	//
+	// It also says that an option Desired leaves out is the state the view had
+	// before the forward change, and not an omission. A forward plan refuses to
+	// remove a security option the declaration does not state; a rollback that
+	// removes one restores the earlier state.
 	//
 	// Reverse plan builders set it; a forward comparison leaves it false.
 	Rollback bool `json:"rollback,omitempty"`
@@ -2128,7 +2133,9 @@ type ViewDiff struct {
 	// the database side of a forward comparison, and the options the forward
 	// change leaves in a reversed one. A change whose only entry is
 	// [OptionsChange] is planned in place, and the statement that makes it
-	// resets each option held here that Desired does not state.
+	// resets each option held here that Desired does not state. Where the
+	// option decides what the view's reader can see and the entry is not a
+	// [ViewDiff.Rollback], a planner that reads it refuses instead.
 	//
 	// It stays off the wire, as Desired does.
 	PreviousOptions []string `json:"-"`

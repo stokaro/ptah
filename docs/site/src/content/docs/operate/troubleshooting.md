@@ -267,6 +267,48 @@ weaker one unless that is the intended schema.
 Render the desired schema for the target dialect, then compare it with the live
 database before applying it.
 
+## A plan refuses to remove a view's security option
+
+**Symptom**
+
+`schema apply`, `schema compare` or `migrations generate` stops with exit code 2,
+and `ptah-compat schema apply`, `schema diff` or `migrate diff` with exit code 1,
+naming a view and an option:
+
+```text
+unsupported feature: view my_docs holds security_invoker=true and the schema does not state it.
+```
+
+**Likely cause**
+
+The view holds `security_invoker` or `security_barrier` as true, and the schema
+does not state it. A view altered by hand is the usual case. Removing the option
+fails no statement and widens what the view's readers see, so nothing has changed
+on the server.
+
+**Diagnose**
+
+Read what the view holds:
+
+```sql
+SELECT relname, reloptions FROM pg_class WHERE relname = 'my_docs';
+```
+
+`ptah schema drift` reports the same difference under `views_modified`.
+
+**Resolve**
+
+Keep the option by declaring it: `WITH (security_invoker = true)` in SQL, the
+same `name=value` in `options` in Go annotations and YAML, or `security { invoker
+= true }` in HCL. To remove it, declare it false: `security_invoker = false`.
+Check first what the view's readers would see, because a row-level security
+policy applies to them only while the view keeps `security_invoker`.
+
+**Verify**
+
+Run `ptah schema compare` again. With the option declared it reports no
+difference; with it declared false it shows the `SET` it will run.
+
 ## `atlas.hcl` fails to load
 
 **Symptom**
