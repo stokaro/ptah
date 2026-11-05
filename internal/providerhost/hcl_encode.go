@@ -162,13 +162,18 @@ func (e *hclEncoding) parts(result *protocol.EncodedSource) []*protocol.EncodedF
 		for _, part := range group.GetParts() {
 			fragment := part.GetFragment()
 			encoded := &protocol.EncodedFragment{Fragment: fragment, Placement: part.GetPlacement()}
+			models := fragment.GetHclBlock().GetModels()
+			if fragment.GetIndexKind() != nil {
+				models = fragment.GetIndexKind().GetModels()
+			}
 			for _, value := range e.batch.request.GetValues() {
-				if !slices.Contains(group.GetValueIds(), value.GetValue().GetId()) ||
-					!slices.Contains(fragment.GetHclBlock().GetModels(), value.GetValue().GetValue().GetKind()) ||
+				if !slices.Contains(group.GetValueIds(), value.GetValue().GetId()) || !slices.Contains(models, value.GetValue().GetValue().GetKind()) ||
 					fragment.GetBindingId() != value.GetBindingId() {
 					continue
 				}
-				if fragment.GetSubject() == nil || proto.Equal(fragment.GetSubject(), value.GetValue().GetNormalizedOwner()) {
+				// An index-kind part writes a facet of the table its subject
+				// is an index of.
+				if fragment.GetSubject() == nil || fragment.GetIndexKind() != nil || proto.Equal(fragment.GetSubject(), value.GetValue().GetNormalizedOwner()) {
 					encoded.ValueIds = append(encoded.ValueIds, value.GetValue().GetId())
 				}
 			}
@@ -284,6 +289,9 @@ var hclPlacements = map[protocol.EncodedFragment_Placement]hclext.Placement{
 // attributes of one of the writer's own blocks.
 func (e *hclEncoding) fragment(encoded *protocol.EncodedFragment) error {
 	fragment := encoded.GetFragment()
+	if fragment.GetIndexKind() != nil {
+		return e.index(fragment)
+	}
 	claim := fragment.GetHclBlock()
 	switch claim.GetSite() {
 	case protocol.HCLSourceBlock_TOP_LEVEL, protocol.HCLSourceBlock_IN_TABLE:
@@ -323,6 +331,34 @@ func (e *hclEncoding) fragment(encoded *protocol.EncodedFragment) error {
 		return nil
 	}
 	return fmt.Errorf("%w: the provider wrote HCL at site %s, which the host writes no provider value at", ptaherr.ErrUnsupportedFeature, claim.GetSite())
+}
+
+// index turns an index-kind part into an index the writer writes as an
+// `index` block of the part's table: what the frontend writes from the part's
+// inherited part, and the provider's attributes from its content, each as the
+// kind the engine's claim of the index block reads it as.
+func (e *hclEncoding) index(fragment *protocol.SourceFragment) error {
+	table, found := e.tables[fragment.GetBindingId()]
+	if !found {
+		return fmt.Errorf("%w: the provider wrote index %q of a table the document does not hand it", schemaext.ErrInvalidValue, fragment.GetSubject().GetName())
+	}
+	declaration, err := providersource.ReadIndexDeclaration(fragment)
+	if err != nil {
+		return err
+	}
+	var shapes []*protocol.HCLSourceAttribute
+	for _, block := range e.batch.target.engine.GetHclSource().GetBlocks() {
+		if block.GetSite() == protocol.HCLSourceBlock_INDEX_ATTRIBUTES {
+			shapes = block.GetAttributes()
+		}
+	}
+	attributes, err := hclEncodedAttributes(shapes, fragment.GetValue().GetMapping())
+	if err != nil {
+		return err
+	}
+	e.result.Indexes = append(e.result.Indexes, hclext.EncodedIndex{Table: table, Name: declaration.Name, Type: declaration.Type, Columns: declaration.Columns,
+		Include: declaration.Include, Unique: declaration.Unique, Comment: declaration.Comment, Ops: declaration.Ops, Attributes: attributes})
+	return nil
 }
 
 func cmpErr(err, fallback error) error {

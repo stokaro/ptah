@@ -267,6 +267,9 @@ func render(db *schemamodel.Database, opts Options, defaultSchema string, omitAt
 	if r.slots, err = collectSlots(encoded.Attributes); err != nil {
 		return Result{}, err
 	}
+	if err := r.addOwnerIndexes(encoded.Indexes); err != nil {
+		return Result{}, err
+	}
 	if r.overrides, err = r.joinTableOverrides(); err != nil {
 		return Result{}, err
 	}
@@ -334,6 +337,9 @@ type renderer struct {
 	ownerRequirements map[objectidentity.Key][]objectidentity.ID
 	ownerHeader       []string
 	slots             map[hclext.Slot]ownerSlot
+	// ownerIndexes are what the owners add to the index blocks of the
+	// indexes they write whole; see [renderer.addOwnerIndexes].
+	ownerIndexes map[hclext.Slot]ownerSlot
 	// overrides are the platform overrides of each table its owners write
 	// some of, joined with the table's own.
 	overrides map[hclext.Slot]map[string]map[string]string
@@ -881,7 +887,12 @@ func (r *renderer) renderTable(
 		r.renderConstraint(r.ownerSlot(hclext.Slot{Kind: hclext.SlotKey, Table: owner, Name: constraint.Name}, constraint.Facets), constraint)
 	}
 	for _, index := range indexes {
-		r.renderIndex(r.ownerSlot(hclext.Slot{Kind: hclext.SlotIndex, Table: owner, Name: index.Name}, index.Facets), index)
+		slot := hclext.Slot{Kind: hclext.SlotIndex, Table: owner, Name: index.Name}
+		if written, whole := r.ownerIndexes[slot]; whole {
+			r.renderIndex(written, index)
+			continue
+		}
+		r.renderIndex(r.ownerSlot(slot, index.Facets), index)
 	}
 	r.line("}")
 	r.line("")

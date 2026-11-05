@@ -139,6 +139,11 @@ type EncodeResult struct {
 	// FieldTypes are the Go types the owner gives fields of its target, in
 	// place of the writer's own reading of their types.
 	FieldTypes []FieldType
+	// Indexes are the indexes the owner writes as the frontend's index
+	// directive, for an index type it reads in place of the frontend. At one
+	// table the writer writes them after the table's own indexes, in this
+	// order.
+	Indexes []EncodedIndex
 }
 
 // EncodedLimit is one not-described declaration an owner writes.
@@ -290,7 +295,9 @@ func (s Set) Encodes(kind schemaext.Kind) bool {
 // back does not hand to the extension, and one written twice. An option claim
 // must name an option the extension receives, and each option has one writer.
 // A field type must name a field the request holds and a nonempty Go type;
-// each field has at most one type writer. Every owner is
+// each field has at most one type writer. An index must stand at a table the
+// request holds, once, with a name, a column and a type its owner reads, and
+// with attributes its owner adds to the index directive. Every owner is
 // handed the request's Target. An encoder's own error is returned
 // as it is: it refuses the export, as a value the owner cannot write would
 // otherwise be written wrong.
@@ -333,6 +340,10 @@ func (s Set) Encode(ctx context.Context, schema EncodeRequest) (EncodeResult, er
 		if err := s.checkFieldTypes(index, request, result.FieldTypes, typed); err != nil {
 			return EncodeResult{}, err
 		}
+		if err := s.checkEncodedIndexes(index, request, result.Indexes); err != nil {
+			return EncodeResult{}, err
+		}
+		encoded.Indexes = append(encoded.Indexes, result.Indexes...)
 		encoded.Directives = append(encoded.Directives, result.Directives...)
 		encoded.Attributes = append(encoded.Attributes, result.Attributes...)
 		encoded.Limits = append(encoded.Limits, result.Limits...)

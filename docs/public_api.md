@@ -319,6 +319,16 @@ declares. A `DeclarationError` names the attribute a refusal is about and,
 from `Finish`, the declaration it refuses; the frontend reports the refusal
 there as a `ptaherr.ParseError` that wraps the owner's error.
 
+An owner may read the `ptah:schema:index` declarations of some index types in
+place of the frontend: `Extension.ReadsIndex` reports whether it reads a
+written type, and needs `File`. The frontend then builds no index of the
+declaration and hands it, with every attribute it writes and the index as its
+subject, to the owner's `FileDecoder` through `Reader.DecodeIndex`;
+`Set.IndexOwner` names the owner of a type, and two owners of one type are an
+error. An encoder writes such an index back as an `EncodedIndex` in
+`EncodeResult.Indexes`, which the writer writes as the frontend's index
+directive of the table's struct, after the table's own indexes.
+
 A declaration can describe a column or an index. A `Directive` whose `Describes`
 is `SubjectColumn` is written on a field beside that field's
 `ptah:schema:field` directive, and one that describes `SubjectIndex` beside the
@@ -3296,6 +3306,13 @@ lists the shapes and `Fragment.Entry` reads them, a table's `columns` and
 `Fragment.Name` is the name the entry declares. A top-level index key needs a
 table the document declares.
 
+A document owner may read the index entries of some types in place of the
+frontend: `Extension.ReadsIndex` reports whether it reads a written type, and
+needs `Document`. The frontend builds no index of such an entry and hands it as
+one fragment at the entry's path, with `Fragment.Index` holding what the
+frontend read of it and the values of the owner's keys of index entries.
+`Set.IndexOwner` names the owner of a type.
+
 `EntrySection.Reads` names keys of the entry itself the owner reads with its
 own, such as an index's `type`: a fragment carries the ones the entry writes in
 `Fragment.Inherited`, and each stays the frontend's key. A read that is not a
@@ -3545,6 +3562,16 @@ attribute named by the override's label. The reader claims a table that writes s
 one table under the type and its aliases into one claim, and keeps every other
 `platform` block among the table's overrides. `Claim.Site` names the site of
 the shape that matched.
+
+An owner may read the `index` blocks of some types in place of the reader:
+`Extension.ReadsIndex` reports whether it reads a written type, and needs a
+`Decoder`. The reader builds no index of such a block and claims it with
+`Set.IndexShape`, the owner's `IndexAttributes` shape or one that adds no
+attribute, and an `Index` whose `Owned` holds the columns, covered columns,
+uniqueness and comment it read. The returned facets belong to the table. An
+encoder writes such an index back as an `EncodedIndex` in
+`EncodeResult.Indexes`, which the writer writes among the table's index
+blocks.
 
 `MaterializedViewAttributes` adds
 attributes to a `materialized` block, also with no `Naming`. Its returned facets

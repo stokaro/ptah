@@ -83,7 +83,32 @@ func (ctx *renderContext) encodeOwners(requestContext context.Context) error {
 	for _, fieldType := range encoded.FieldTypes {
 		ctx.fieldTypes[fieldType.Slot] = fieldType
 	}
+	if err := ctx.addOwnerIndexes(encoded.Indexes); err != nil {
+		return err
+	}
 	return ctx.refuseUnclaimedOptions(claimed)
+}
+
+// addOwnerIndexes writes each index an owner writes whole as an index of its
+// table's struct, after the table's own indexes, with the owner's attributes
+// beside the frontend's. A name the table's own indexes take is refused:
+// reading the source back would find one index twice.
+func (ctx *renderContext) addOwnerIndexes(indexes []annotationext.EncodedIndex) error {
+	for _, encoded := range indexes {
+		structName := encoded.Table.Struct
+		if slices.ContainsFunc(ctx.indexesByTable[structName], func(index schemamodel.Index) bool { return index.Name == encoded.Name }) {
+			return fmt.Errorf("%w: an owner wrote index %q of table %q, which the table declares already", schemaext.ErrDuplicate, encoded.Name,
+				encoded.Table.QualifiedName())
+		}
+		ctx.indexesByTable[structName] = append(ctx.indexesByTable[structName], schemamodel.Index{StructName: structName, Name: encoded.Name,
+			Fields: slices.Clone(encoded.Columns), IncludeColumns: slices.Clone(encoded.Include), Unique: encoded.Unique, Type: encoded.Type,
+			Operator: encoded.Ops, Comment: encoded.Comment})
+		place := ownerSlot{slot: annotationext.Slot{Directive: indexDirective, Table: encoded.Table, Name: encoded.Name}, position: annotationext.WithOwnAttributes}
+		for _, attribute := range encoded.Attributes {
+			ctx.ownerAttributes[place] = append(ctx.ownerAttributes[place], attr{name: attribute.Name, value: attribute.Value, set: true})
+		}
+	}
+	return nil
 }
 
 // refuseUnclaimedOptions refuses an index's WITH options no owner writes, such

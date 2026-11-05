@@ -89,6 +89,10 @@ func (h *Host) hclExtensions() []hclext.Extension {
 			}
 		}
 	}
+	// An index block of a type an engine claims is read by the provider whole
+	// (provider.IndexKindsFeature); the SDK keeps the claims only where both
+	// sides listed the feature.
+	extension.ReadsIndex, extension.Kinds = readsIndex(engines), withIndexKindModels(extension.Kinds, engines)
 	return []hclext.Extension{extension}
 }
 
@@ -120,8 +124,15 @@ type hclOwner struct {
 	once     sync.Once
 }
 
-// engineOf is the engine that claims the block a claim matched.
+// engineOf is the engine that claims the block a claim matched: for an index
+// block the frontend claimed whole, the engine that claims its type.
 func (o *hclOwner) engineOf(claim hclext.Claim) (*protocol.Engine, error) {
+	if claim.Index != nil && claim.Index.Owned != nil {
+		if engine := indexKindEngine(o.engines, claim.Index.Type); engine != nil {
+			return engine, nil
+		}
+		return nil, fmt.Errorf("%w: no engine of provider %s reads an index of type %q", ptaherr.ErrUnsupportedFeature, o.host.description.GetProviderId(), claim.Index.Type)
+	}
 	for _, engine := range o.engines {
 		if providersource.HCLBlockClaim(engine, claim) != nil {
 			return engine, nil
@@ -222,11 +233,12 @@ func (o *hclOwner) declaration(engine string, document *protocol.SourceDocument,
 }
 
 // hclFacetOwner refuses a facet whose owner is not what the fragment's site
-// attaches to: the bound table of a block in a table and of table attributes,
-// and the subject of the other sites.
+// attaches to: the bound table of a block in a table, of table attributes and
+// of an index block the provider reads whole, and the subject of the other
+// sites.
 func hclFacetOwner(fragment *protocol.SourceFragment, bound, owner *protocol.Reference) error {
 	want := fragment.GetSubject()
-	if want == nil && bound != nil {
+	if (want == nil || fragment.GetIndexKind() != nil) && bound != nil {
 		want = &protocol.Reference{Kind: "table", Schema: bound.GetSchema(), Name: bound.GetName()}
 	}
 	if want != nil && providersource.SameSubject(owner, want) {

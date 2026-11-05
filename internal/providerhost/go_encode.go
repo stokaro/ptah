@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
+	"ptah.run/internal/providersource"
 )
 
 // goEncoder writes a provider's values as Go annotations through
@@ -160,9 +161,13 @@ var goDirectiveSlots = map[protocol.GoSourceDirective_Scope]string{
 	protocol.GoSourceDirective_INDEX:  "ptah:schema:index",
 }
 
-// fragment turns one fragment into a directive of the provider's own or the
-// attributes of one of the frontend's declarations.
+// fragment turns one fragment into a directive of the provider's own, the
+// attributes of one of the frontend's declarations, or an index directive the
+// provider writes whole.
 func (e *goEncoding) fragment(fragment *protocol.SourceFragment) error {
+	if fragment.GetIndexKind() != nil {
+		return e.index(fragment)
+	}
 	claim := fragment.GetGoDirective()
 	attributes := make([]annotation.EncodedAttribute, 0, len(fragment.GetValue().GetMapping().GetEntries()))
 	for _, entry := range fragment.GetValue().GetMapping().GetEntries() {
@@ -195,6 +200,32 @@ func (e *goEncoding) fragment(fragment *protocol.SourceFragment) error {
 			ptaherr.ErrUnsupportedFeature, claim.GetScope(), claim.GetDirective())
 	}
 	e.result.Directives = append(e.result.Directives, directive)
+	return nil
+}
+
+// index turns an index-kind part into an index the writer writes as the
+// frontend's index directive of the part's table: the frontend's attributes
+// from the part's inherited part, and the provider's own attributes from its
+// content, as text.
+func (e *goEncoding) index(fragment *protocol.SourceFragment) error {
+	table, bound := e.tables[fragment.GetBindingId()]
+	if !bound {
+		return fmt.Errorf("%w: the provider wrote index %q for a table the source does not write", schemaext.ErrInvalidValue, fragment.GetSubject().GetName())
+	}
+	declaration, err := providersource.ReadIndexDeclaration(fragment)
+	if err != nil {
+		return err
+	}
+	encoded := annotation.EncodedIndex{Table: table, Name: declaration.Name, Type: declaration.Type, Columns: declaration.Columns, Include: declaration.Include,
+		Unique: declaration.Unique, Comment: declaration.Comment, Ops: declaration.Ops}
+	for _, entry := range fragment.GetValue().GetMapping().GetEntries() {
+		text, isText := entry.GetValue().GetValue().(*protocol.SourceValue_Text)
+		if !isText {
+			return fmt.Errorf("%w: the provider wrote Go attribute %q of index %q as other than text", schemaext.ErrInvalidValue, entry.GetKey(), declaration.Name)
+		}
+		encoded.Attributes = append(encoded.Attributes, annotation.EncodedAttribute{Name: entry.GetKey(), Value: text.Text})
+	}
+	e.result.Indexes = append(e.result.Indexes, encoded)
 	return nil
 }
 

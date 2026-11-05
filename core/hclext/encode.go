@@ -160,6 +160,33 @@ type EncodeResult struct {
 	// Attributes are what the owner adds to the writer's own blocks, one
 	// entry for each block.
 	Attributes []SlotAttributes
+	// Indexes are the indexes the owner writes as a table's `index` block,
+	// for an index type it reads in place of the frontend (see
+	// [Extension.ReadsIndex]).
+	Indexes []EncodedIndex
+}
+
+// EncodedIndex is an index an owner writes as the `index` block of a table,
+// which the writer writes among the table's own indexes, by name, as it
+// writes an index of the common model, with the owner's attributes where it
+// writes an owner's attributes of an index.
+type EncodedIndex struct {
+	// Table is the table the index is on: one of the request's tables.
+	Table Table
+	// Name is the index's name, unique among the table's indexes.
+	Name string
+	// Type is the index's type, one the owner reads.
+	Type string
+	// Columns are the key columns, in order, and Include the columns the
+	// index covers.
+	Columns, Include []string
+	// Unique marks a unique index.
+	Unique bool
+	// Comment and Ops are the index's comment and operator class, or empty.
+	Comment, Ops string
+	// Attributes are the attributes the owner adds to the block, in order:
+	// those of its [IndexAttributes] shape of the block.
+	Attributes []EncodedAttribute
 }
 
 // Placement is where among the writer's own blocks an encoded block stands.
@@ -355,11 +382,49 @@ func (s Set) Encode(ctx context.Context, document EncodeRequest) (EncodeResult, 
 		if err := claimSlotAttributes(writers, extension, result.Attributes); err != nil {
 			return EncodeResult{}, err
 		}
+		if err := s.checkEncodedIndexes(index, request, result.Indexes); err != nil {
+			return EncodeResult{}, err
+		}
+		encoded.Indexes = append(encoded.Indexes, result.Indexes...)
 		encoded.Blocks = append(encoded.Blocks, result.Blocks...)
 		encoded.Header = append(encoded.Header, result.Header...)
 		encoded.Attributes = append(encoded.Attributes, result.Attributes...)
 	}
 	return encoded, nil
+}
+
+// checkEncodedIndexes refuses an index the extension at index writes at a
+// table the request does not hold, without a name or a column, twice at one
+// table, of a type the extension does not read, or with an attribute its
+// shape of the index block does not name.
+func (s Set) checkEncodedIndexes(index int, request EncodeRequest, indexes []EncodedIndex) error {
+	extension := s.extensions[index]
+	var names []string
+	if routes, ok := s.blocks[blockKey{site: IndexAttributes, block: "index"}]; ok {
+		if shape, owned := routes.shapes[index]; owned {
+			for _, attribute := range shape.Attributes {
+				names = append(names, attribute.Name)
+			}
+		}
+	}
+	written := make(map[[3]string]bool, len(indexes))
+	for _, encoded := range indexes {
+		key := [3]string{encoded.Table.Schema, encoded.Table.Name, encoded.Name}
+		held := slices.ContainsFunc(request.Tables, func(table TableFacets) bool { return table.Table == encoded.Table })
+		if !held || strings.TrimSpace(encoded.Name) == "" || len(encoded.Columns) == 0 || written[key] || extension.ReadsIndex == nil ||
+			!extension.ReadsIndex(encoded.Type) {
+			return fmt.Errorf("%w: HCL encoder of %s wrote index %q of type %q at a table it was not handed, without a column, twice or of a type it does not read",
+				schemaext.ErrInvalidValue, extension.Owner, encoded.Name, encoded.Type)
+		}
+		written[key] = true
+		for i, attribute := range encoded.Attributes {
+			if !slices.Contains(names, attribute.Name) || slices.ContainsFunc(encoded.Attributes[:i], func(other EncodedAttribute) bool { return other.Name == attribute.Name }) {
+				return fmt.Errorf("%w: HCL encoder of %s wrote attribute %q of index %q twice or as one its index shape does not name",
+					schemaext.ErrInvalidValue, extension.Owner, attribute.Name, encoded.Name)
+			}
+		}
+	}
+	return nil
 }
 
 // slotAttribute is one attribute of one of the writer's blocks.

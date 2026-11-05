@@ -64,6 +64,12 @@ type Extension struct {
 	// Coverage is the knowledge a YAML document holds about Kinds. It is
 	// required for local decoders; Document supplies its claim in the result.
 	Coverage func() (schemaext.Coverage, error)
+	// ReadsIndex reports whether the owner reads an index entry of the type
+	// it writes in place of the frontend, such as an index kind the owner
+	// models outside the common index. The frontend builds no index for such
+	// an entry and hands it to Document as one fragment (see
+	// [Fragment.Index]). Nil reads none. It needs Document.
+	ReadsIndex func(indexType string) bool
 }
 
 // Set is the frozen collection of extensions one parse selects. The zero

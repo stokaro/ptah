@@ -227,6 +227,14 @@ type Extension struct {
 	// owner reads where their target scope makes them its own. They need a
 	// decoder as Directives do.
 	TargetScopes []TargetScope
+	// ReadsIndex reports whether the owner reads a ptah:schema:index
+	// declaration of the type it writes in place of the frontend, such as an
+	// index kind the owner models outside the common index. The frontend
+	// builds no index for such a declaration and hands it, with every
+	// attribute it writes, to the owner's [FileDecoder] (see
+	// [Reader.DecodeIndex]). Nil reads none. An extension that sets it needs
+	// File.
+	ReadsIndex func(indexType string) bool
 	// Limits are the kinds of ptah:schema:notdescribed declaration the owner
 	// reads, in lower case, such as "coordination_node". A file's
 	// declarations of them reach Coverage instead of the frontend's own
@@ -334,6 +342,8 @@ func checkExtension(index int, extension Extension) error {
 		return fmt.Errorf("annotation extension of %s declares directives and no decoder", extension.Owner)
 	case extension.Decode != nil && extension.File != nil:
 		return fmt.Errorf("annotation extension of %s declares both a decoder and a file decoder", extension.Owner)
+	case extension.ReadsIndex != nil && extension.File == nil:
+		return fmt.Errorf("annotation extension of %s reads index declarations and has no file decoder", extension.Owner)
 	case (extension.Encoder == nil) != (len(extension.Encodes) == 0):
 		return fmt.Errorf("annotation extension of %s declares an encoder without models to encode, or models without an encoder", extension.Owner)
 	}

@@ -791,6 +791,13 @@ func (p *parser) parseTableBlock(table *schemamodel.Table, fieldsStart, unlabele
 			return err
 		}
 		index.TableName = table.QualifiedName()
+		// An index of a type an owner reads in place of the frontend is the
+		// owner's: no common index is built, and the owner reads the block.
+		if shape, owned, err := p.owners.IndexShape(index.Type); err != nil {
+			return p.blockError(block, "%v", err)
+		} else if owned {
+			return p.claimOwnedIndex(block, index, len(p.db.Tables), shape)
+		}
 		p.db.Indexes = append(p.db.Indexes, index)
 		if err := p.claimOwnerIndex(block, len(p.db.Indexes)-1); err != nil {
 			return err

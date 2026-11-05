@@ -41,10 +41,21 @@ func (h *Host) yamlExtension() []yamlext.Extension {
 			}
 		}
 	}
+	// An index entry of a type an engine claims is read by the provider whole
+	// (provider.IndexKindsFeature); the SDK keeps the claims only where both
+	// sides listed the feature.
+	extension.ReadsIndex = readsIndex(h.description.GetEngines())
+	extension.Kinds = withIndexKindModels(extension.Kinds, h.description.GetEngines())
 	if len(extension.Kinds) == 0 {
 		return nil
 	}
 	return []yamlext.Extension{extension}
+}
+
+// readsYAML reports whether an engine reads a YAML document: it claims a key,
+// or an index type whose entries it reads whole.
+func readsYAML(engine *protocol.Engine) bool {
+	return len(engine.GetYamlSourceKeys()) != 0 || len(engine.GetIndexKinds()) != 0
 }
 
 // yamlEntries is the frontend's entry a key of each entry scope belongs to.
@@ -57,7 +68,7 @@ var yamlEntries = map[protocol.YAMLSourceKey_Scope]string{
 func (h *Host) decodeYAML(ctx context.Context, input yamlext.Document) (yamlext.DocumentResult, error) {
 	var result yamlext.DocumentResult
 	for _, engine := range h.description.GetEngines() {
-		if len(engine.GetYamlSourceKeys()) == 0 {
+		if !readsYAML(engine) {
 			continue
 		}
 		request, err := providersource.YAML(ctx, engine, input)
@@ -161,6 +172,15 @@ func yamlFacetOwner(written yamlFragment, owner *protocol.Reference) error {
 		return unsupported(fmt.Sprintf("a YAML facet owned by %s %q", kind, owner.GetName()))
 	}
 	fragment := written.fragment
+	if fragment.GetIndexKind() != nil {
+		// An index entry the provider reads whole declares facets of the
+		// index's table.
+		if kind != "table" || !providersource.SameSubject(owner, &protocol.Reference{Kind: "table", Schema: written.table.GetSchema(), Name: written.table.GetName()}) {
+			return fmt.Errorf("%w: decoded YAML facet is owned by %s %q, which is not the table %q of the index %q", ptaherr.ErrInvalidAttributeValue,
+				kind, owner.GetName(), written.table.GetName(), fragment.GetSubject().GetName())
+		}
+		return nil
+	}
 	switch fragment.GetYamlKey().GetScope() {
 	case protocol.YAMLSourceKey_DOCUMENT:
 		if kind != "table" {

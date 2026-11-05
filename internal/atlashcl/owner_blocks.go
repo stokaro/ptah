@@ -325,6 +325,49 @@ func (p *parser) claimOwnerIndex(block *hclsyntax.Block, position int) error {
 	return nil
 }
 
+// claimOwnedIndex records an index block whose type its owner reads in place
+// of this package, for the table the walk appends at position: the owner
+// reads what this package read of the block and the attributes of shape, and
+// what it declares belongs to the table. An attribute of the block the claim
+// cannot carry is refused, since the owner would never receive it.
+func (p *parser) claimOwnedIndex(block *hclsyntax.Block, index schemamodel.Index, position int, shape hclext.Shape) error {
+	var uncarried []string
+	for _, written := range []struct {
+		name string
+		set  bool
+	}{
+		{"where", index.Condition != ""}, {"nulls_distinct", index.NullsDistinct != nil}, {"storage_params", len(index.StorageParams) != 0},
+		{"on", len(index.Parts) != 0}, {"platform", len(index.Overrides) != 0},
+	} {
+		if written.set {
+			uncarried = append(uncarried, written.name)
+		}
+	}
+	// An attribute another owner adds to index blocks reaches no owner: the
+	// reader builds no index for that owner to read it from.
+	if other, found := p.owners.Lookup(hclext.IndexAttributes, "index"); found {
+		for _, attribute := range other.Block.Attributes {
+			_, written := block.Body.Attributes[attribute.Name]
+			if written && !slices.ContainsFunc(shape.Block.Attributes, func(own hclext.Attribute) bool { return own.Name == attribute.Name }) {
+				uncarried = append(uncarried, attribute.Name)
+			}
+		}
+	}
+	if len(uncarried) != 0 {
+		return p.blockError(block, "index %q is a %q index, which its owner reads in place of the frontend, and its owner receives no %s of it",
+			index.Name, index.Type, strings.Join(uncarried, ", "))
+	}
+	values, references, err := p.ownerValues(block, shape, index.Name)
+	if err != nil {
+		return err
+	}
+	p.ownerClaims = append(p.ownerClaims, ownerClaim{block: block, index: -1, table: position, references: references,
+		match: hclext.Match{Shape: shape, Claim: hclext.Claim{Block: block.Type, Name: index.Name, Attributes: values, At: blockAt(block), Range: blockRange(block),
+			Index: &hclext.Index{Table: index.TableName, Type: index.Type, Operator: index.Operator, Owned: &hclext.OwnedIndex{Columns: slices.Clone(index.Fields),
+				Include: slices.Clone(index.IncludeColumns), Unique: index.Unique, Comment: index.Comment}}}}})
+	return nil
+}
+
 // ownerValues reads the attributes of shape that block writes, each as its
 // kind and in the order the shape lists them. A [hclext.Ref] attribute is
 // required, and is returned as written for [parser.resolveReference]; name

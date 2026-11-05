@@ -127,6 +127,12 @@ var hostFeatures = []string{
 	// group, and the loss of a value such a group writes in part; see
 	// Host.hclExtensions and hclEncoding.fragment.
 	provider.HCLPlatformFeature,
+	// A provider's claim of the index types it reads in place of the
+	// frontend's common index: the Go, YAML and HCL frontends build no index
+	// for such a declaration and send it whole, and export writes the
+	// provider's index back as the same declaration; see withIndexKinds,
+	// Host.yamlExtension, Host.hclExtensions and the encoders.
+	provider.IndexKindsFeature,
 	// Source groups retain exact value accounting across ordered syntax parts;
 	// claimed headers retain the owner's narrowed source coverage.
 	provider.EncodeGroupsFeature,
