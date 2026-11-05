@@ -202,6 +202,31 @@ message Engine {
   // frontend's common index. Non-empty only when the engine lists
   // source.index-kinds, and sent only to a host that lists it. Contract 25.24.
   repeated SourceIndexKind index_kinds = 25;
+  // The identities the engine's models had before the engine owned them, such
+  // as those of a host's former built-in engine. A document that captured a
+  // claim under one of them, such as the ptah:feature-coverage header of an
+  // HCL export, makes the same claim of the engine's model. Non-empty only
+  // when the engine lists models.predecessors, and sent only to a host that
+  // lists it. Contract 25.25.
+  repeated ModelPredecessor model_predecessors = 26;
+}
+// ModelPredecessor is an identity under which a document captured claims of
+// one of the engine's models: the owner, the kind, the schema version and the
+// definition digest the document names. A host reads such a claim as a claim
+// of the model that kind and representation name. Contract 25.25, under
+// models.predecessors.
+message ModelPredecessor {
+  // A DESIRED or OBSERVED model the engine declares.
+  string kind = 1;
+  ValueInput.Representation representation = 2;
+  // The owner and the kind the captured claim names. They are not the
+  // provider's own identity for a model of that representation.
+  string former_owner = 3;
+  string former_kind = 4;
+  uint32 schema_version = 5;
+  // The lowercase hexadecimal SHA-256 of the former model's canonical
+  // definition, as a captured claim names it after its "sha256:" prefix.
+  string definition_sha256 = 6;
 }
 // SourceIndexKind is an engine's claim on the frontend's index declarations
 // of the types it names: a Go ptah:schema:index directive, a YAML index entry
