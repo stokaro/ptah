@@ -32,7 +32,28 @@ type Atlas struct {
 	Schema string `json:"schema,omitempty"`
 	// HCL states the parts of an Atlas HCL schema that belong to the engine.
 	HCL AtlasHCL `json:"hcl,omitzero"`
+	// ChangeWords is the driver wording the pinned community binary names the
+	// engine's changes in, in a migrate diff file's comments and a plan's
+	// summary. The zero value is the PostgreSQL driver's wording.
+	ChangeWords ChangeWords `json:"change_words,omitempty"`
 }
+
+// ChangeWords names whose words the pinned community binary uses for an
+// engine's changes. Its drivers word one change differently: the MySQL driver
+// writes a schema's sentences in lower case and names a dropped database, and
+// the SQLite driver names each step of a table rebuild and a column's own
+// change. An engine with no driver of its own takes the zero value.
+type ChangeWords int
+
+const (
+	// PostgresDriverChangeWords is the PostgreSQL driver's wording, the zero
+	// value.
+	PostgresDriverChangeWords ChangeWords = iota
+	// MySQLDriverChangeWords is the MySQL driver's wording.
+	MySQLDriverChangeWords
+	// SQLiteDriverChangeWords is the SQLite driver's wording.
+	SQLiteDriverChangeWords
+)
 
 // AtlasHCL states the parts of an Atlas HCL schema that belong to one engine.
 // internal/atlashcl and internal/atlashclrender read it. Every name uses the

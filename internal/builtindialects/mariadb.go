@@ -196,6 +196,7 @@ func mariaDB() descriptor.Dialect {
 		Atlas: descriptor.Atlas{
 			DockerImages:  []string{"maria", "mariadb"},
 			DockerDrivers: []string{"maria", "mariadb"},
+			ChangeWords:   descriptor.MySQLDriverChangeWords,
 			HCL:           mysqlFamilyAtlasHCL(),
 		},
 
