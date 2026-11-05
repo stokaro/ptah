@@ -66,7 +66,7 @@ func (s modelPlanner) planningRequest(request featureplan.Request) (*protocol.Pl
 	if err := onlyFields(request, "Target", "Identifiers", "Capabilities", "Changes", "Tables", "Types", "CommonSteps", "ParentKinds", "DatabasePath", "Policy", "Objects", "ContextKinds"); err != nil {
 		return nil, err
 	}
-	identifiers, err := comparisonIdentifiers(request.Identifiers)
+	identifiers, err := comparisonIdentifiers(request.Identifiers, s.target.schemaSeparator())
 	if err != nil {
 		return nil, err
 	}

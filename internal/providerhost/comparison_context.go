@@ -20,7 +20,7 @@ func (s modelComparer) request(target string, rules identifier.Semantics, capabi
 	if target != s.target.engine.GetId() {
 		return nil, fmt.Errorf("%w: comparison target changed", schemaext.ErrInvalidValue)
 	}
-	identifiers, err := comparisonIdentifiers(rules)
+	identifiers, err := comparisonIdentifiers(rules, s.target.schemaSeparator())
 	if err != nil {
 		return nil, err
 	}
@@ -34,7 +34,11 @@ func (s modelComparer) request(target string, rules identifier.Semantics, capabi
 	return result, nil
 }
 
-func comparisonIdentifiers(rules identifier.Semantics) (*protocol.ComparisonIdentifiers, error) {
+// comparisonIdentifiers spells rules for a request to a provider's engine.
+// The schema separator is the engine's own, as its negotiated description
+// declares it: a caller's semantics may come from an identity that does not
+// carry it, and a subtree region of the request is decided by it.
+func comparisonIdentifiers(rules identifier.Semantics, separator string) (*protocol.ComparisonIdentifiers, error) {
 	comparisons := map[identifier.Comparison]protocol.IdentifierRules_Comparison{identifier.ComparisonExact: protocol.IdentifierRules_EXACT, identifier.ComparisonASCIIInsensitive: protocol.IdentifierRules_ASCII_CASE_INSENSITIVE}
 	namespaces := map[identifier.IndexNamespace]protocol.IdentifierRules_IndexNamespace{identifier.IndexNamespaceTable: protocol.IdentifierRules_TABLE, identifier.IndexNamespaceSchema: protocol.IdentifierRules_SCHEMA}
 	result := &protocol.ComparisonIdentifiers{DefaultSchema: rules.DefaultSchema,
@@ -43,7 +47,7 @@ func comparisonIdentifiers(rules identifier.Semantics) (*protocol.ComparisonIden
 			ColumnNames:     comparisons[rules.ColumnNames],
 			IndexNames:      comparisons[rules.IndexNames],
 			IndexNamespace:  namespaces[rules.IndexNamespace],
-			SchemaSeparator: rules.SchemaSeparator}}
+			SchemaSeparator: separator}}
 	if err := provider.ValidateIdentifierRules(result.Rules); err != nil {
 		return nil, err
 	}

@@ -192,7 +192,7 @@ func (s commonSpeller) LowerDesired(ctx context.Context, request schemapreparati
 	if len(declared.GetViews())+len(declared.GetSequences())+len(declared.GetRoles())+len(declared.GetGrants()) == 0 {
 		return request.Desired, nil
 	}
-	identifiers, err := comparisonIdentifiers(request.Semantics)
+	identifiers, err := comparisonIdentifiers(request.Semantics, s.target.schemaSeparator())
 	if err != nil {
 		return nil, err
 	}

@@ -95,7 +95,7 @@ func (t *target) sqlSchemaRequest(request sqlext.GrammarRequest) (*protocol.Read
 	if err != nil {
 		return nil, err
 	}
-	identifiers, err := comparisonIdentifiers(rules)
+	identifiers, err := comparisonIdentifiers(rules, t.schemaSeparator())
 	if err != nil {
 		return nil, err
 	}

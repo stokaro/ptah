@@ -60,7 +60,7 @@ func (s modelDeclarationPlanner) declarationRequest(request featureplan.Declarat
 	if err := onlyFields(request, "Target", "Identifiers", "Capabilities", "Objects", "Tables", "Types", "CommonSteps"); err != nil {
 		return nil, err
 	}
-	identifiers, err := comparisonIdentifiers(request.Identifiers)
+	identifiers, err := comparisonIdentifiers(request.Identifiers, s.target.schemaSeparator())
 	if err != nil {
 		return nil, err
 	}

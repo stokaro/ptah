@@ -281,7 +281,8 @@ func (s Semantics) IsZero() bool {
 		s.TableNames == "" &&
 		s.ColumnNames == "" &&
 		s.CatalogCollation == "" &&
-		len(s.ResolvedNames) == 0
+		len(s.ResolvedNames) == 0 &&
+		s.SchemaSeparator == ""
 }
 
 // Equal reports whether two semantics values carry the same rules and resolved
@@ -294,7 +295,8 @@ func (s Semantics) Equal(other Semantics) bool {
 		s.IndexNames == other.IndexNames &&
 		s.TableNames == other.TableNames &&
 		s.ColumnNames == other.ColumnNames &&
-		slices.Equal(s.ResolvedNames, other.ResolvedNames)
+		slices.Equal(s.ResolvedNames, other.ResolvedNames) &&
+		s.SchemaSeparator == other.SchemaSeparator
 }
 
 // Normalize returns a deep copy of s when it is complete and internally

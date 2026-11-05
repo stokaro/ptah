@@ -11,6 +11,11 @@ import (
 	"ptah.run/core/schemaext"
 )
 
+// schemaSeparator is the separator of nested schemas the engine declares in
+// its negotiated description, empty where schemas do not nest or the host and
+// the provider did not negotiate schema.subtree-coverage.
+func (t *target) schemaSeparator() string { return t.engine.GetIdentifiers().GetSchemaSeparator() }
+
 func (t *target) comparisonCoverage(representation schemaext.Representation, coverage schemaext.Coverage) (*protocol.ComparisonCoverage, error) {
 	result := &protocol.ComparisonCoverage{}
 	for _, record := range coverage.KindRecords() {
@@ -58,7 +63,7 @@ func (t *target) boundCoverage(representation schemaext.Representation, coverage
 		if contract == nil {
 			return schemaext.Coverage{}, fmt.Errorf("%w: comparison returned an unregistered coverage model", schemaext.ErrIncompatibleCodec)
 		}
-		domain, err := boundKnowledgeDomain(record.GetSources(), t.engine.GetIdentifiers().GetSchemaSeparator())
+		domain, err := boundKnowledgeDomain(record.GetSources(), t.schemaSeparator())
 		if err != nil {
 			return schemaext.Coverage{}, err
 		}
