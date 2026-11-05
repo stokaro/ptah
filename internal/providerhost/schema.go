@@ -9,6 +9,7 @@ import (
 	"github.com/stokaro/ptah/provider-sdk/provider"
 
 	"ptah.run/core/planext"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
@@ -196,6 +197,11 @@ func (t *target) PrepareTables(ctx context.Context, request schemapreparation.Re
 
 // ProjectTableCreations selects owned prediction or the explicit common
 // identity contract. Neither policy falls back to a built-in engine.
+//
+// The common contract answers from the declaration alone, so it refuses facts
+// other than the engine's own, which it could not honor. The engine's own are
+// what the conversion of a source reads from capability.ForDialect once a
+// provider or its first session has stated them, and they change nothing here.
 func (t *target) ProjectTableCreations(ctx context.Context, request schemaprojection.TableCreationRequest) (schemaprojection.TableCreationResult, error) {
 	if slices.Contains(t.engine.GetFeatures(), provider.ProjectTableCreationsFeature) {
 		return t.projectOwnedTableCreations(ctx, request)
@@ -203,7 +209,7 @@ func (t *target) ProjectTableCreations(ctx context.Context, request schemaprojec
 	if err := ctx.Err(); err != nil {
 		return schemaprojection.TableCreationResult{}, err
 	}
-	if request.Target != t.engine.GetId() || request.Capabilities.Len() != 0 {
+	if request.Target != t.engine.GetId() || !request.Capabilities.Equal(capability.ForDialect(t.engine.GetId())) {
 		return schemaprojection.TableCreationResult{}, unsupported("creation target metadata")
 	}
 	result := schemaprojection.TableCreationResult{Complete: true}
