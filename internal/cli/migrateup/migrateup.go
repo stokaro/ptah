@@ -287,35 +287,34 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	dbcli.RegisterRevisionTableFormatFlag(flags, &opts.revisionTableFormat)
 }
 
-func parseMigrationSettings(
-	dirFormatValue,
-	revisionFormatValue,
-	execOrderValue,
-	txModeValue,
-	migrationLockTimeoutValue,
-	connectTimeoutValue string,
-) (parsedMigrationSettings, error) {
-	dirFormat, err := migrationfile.ParseDirFormat(dirFormatValue)
+// parseMigrationSettings reads the settings opts carries, resolved against the
+// project config, into the migrator's types.
+func parseMigrationSettings(opts options) (parsedMigrationSettings, error) {
+	dirFormat, err := migrationfile.ParseDirFormat(opts.dirFormat)
 	if err != nil {
 		return parsedMigrationSettings{}, err
 	}
-	revisionFormat, err := migrateflags.ParseRevisionTableFormat(revisionFormatValue)
+	revisionFormat, err := migrateflags.ParseRevisionTableFormat(opts.revisionTableFormat)
 	if err != nil {
 		return parsedMigrationSettings{}, err
 	}
-	execOrder, err := migrateflags.ParseExecOrder(execOrderValue)
+	execOrder, err := migrateflags.ParseExecOrder(opts.execOrder)
 	if err != nil {
 		return parsedMigrationSettings{}, err
 	}
-	txMode, err := migrateflags.ParseMigrationTxMode(txModeValue)
+	txMode, err := migrateflags.ParseMigrationTxMode(opts.txMode)
 	if err != nil {
 		return parsedMigrationSettings{}, err
 	}
-	migrationLockTimeout, err := migrateflags.ParseMigrationLockTimeout(migrationLockTimeoutValue)
+	migrationLockTimeout, err := migrateflags.ParseMigrationLockTimeout(opts.migrationLockTimeout)
 	if err != nil {
 		return parsedMigrationSettings{}, err
 	}
-	connectTimeout, err := dbcli.ParseConnectTimeout(connectTimeoutValue)
+	connectTimeout, err := dbcli.ParseConnectTimeout(opts.connectTimeout)
+	if err != nil {
+		return parsedMigrationSettings{}, err
+	}
+	runner, err := migrateflags.ParseRunner(opts.runner)
 	if err != nil {
 		return parsedMigrationSettings{}, err
 	}
@@ -326,6 +325,7 @@ func parseMigrationSettings(
 		txMode:               txMode,
 		migrationLockTimeout: migrationLockTimeout,
 		connectTimeout:       connectTimeout,
+		runner:               runner,
 	}, nil
 }
 
@@ -452,17 +452,11 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *runDocument) 
 	}
 	dbURL := resolvedOpts.dbURL
 	migrationsDir := resolvedOpts.migrationsDir
-	dirFormatValue := resolvedOpts.dirFormat
 	atlasEnv := resolvedOpts.atlasEnv
-	execOrderValue := resolvedOpts.execOrder
-	txModeValue := resolvedOpts.txMode
-	migrationLockTimeoutValue := resolvedOpts.migrationLockTimeout
 	lockTimeout := resolvedOpts.lockTimeout
 	statementTimeout := resolvedOpts.statementTimeout
 	migrationsSchema := resolvedOpts.migrationsSchema
 	migrationsTable := resolvedOpts.migrationsTable
-	revisionFormatValue := resolvedOpts.revisionTableFormat
-	connectTimeoutValue := resolvedOpts.connectTimeout
 
 	runtime, err := cliobs.Start(context.Background(), cliobs.Options{
 		Command:     "migrations.up",
@@ -499,18 +493,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *runDocument) 
 		return fmt.Errorf("migrations directory is required")
 	}
 	requestedMigrationsDir := migrationsDir
-	settings, err := parseMigrationSettings(
-		dirFormatValue,
-		revisionFormatValue,
-		execOrderValue,
-		txModeValue,
-		migrationLockTimeoutValue,
-		connectTimeoutValue,
-	)
-	if err != nil {
-		return err
-	}
-	settings.runner, err = migrateflags.ParseRunner(resolvedOpts.runner)
+	settings, err := parseMigrationSettings(resolvedOpts)
 	if err != nil {
 		return err
 	}

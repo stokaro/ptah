@@ -609,6 +609,20 @@ and pipelines share a directory:
   sits below the statement. Refusing the second would exit non-zero where Atlas
   CE exits `0`, so Ptah reports it and applies the directory, as CE does.
 
+- **Runner** (`--runner`, or `migration.runner` in `ptah.yaml`): the tool the
+  directory is written for. `ptah` (default) wraps each file in a transaction
+  of the migrator's, as described above. `golang-migrate` opens none: a
+  PostgreSQL file that opens and closes its own transaction runs those
+  transactions as written, a file of one statement runs without a
+  transaction, and a failed file records the statements its own `COMMIT` made
+  permanent, so a retry with `--allow-dirty` resumes after them. Under the
+  default, PostgreSQL ignores such a file's `BEGIN` with a warning, its
+  `COMMIT` commits the migrator's transaction too, and a failure after it is
+  recorded as nothing applied while the committed work stays. The apply gate
+  and `ptah migrations lint --runner` judge `TX201` by the same runner.
+  [Transactions in a golang-migrate directory](../../atlas/migrate-commands/#transactions-in-a-golang-migrate-directory)
+  describes how such a file runs.
+
 - **Batch limit** (`--limit`): apply only the first N pending migrations —
   useful for staged rollouts and verifying one step at a time. `--allow-dirty`
   is the explicit recovery escape hatch that proceeds past a dirty revision

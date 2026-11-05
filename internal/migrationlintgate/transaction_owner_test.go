@@ -29,7 +29,7 @@ func TestAnalyzeWithPolicy_TransactionOwnerDecidesTX201(t *testing.T) {
 		want  []string
 	}{
 		{name: "a migrator that wraps each file", owner: lintext.TransactionOwnerMigrator, want: []string{"TX201"}},
-		{name: "files that open their own transactions", owner: lintext.TransactionOwnerFile, want: []string{}},
+		{name: "files that open their own transactions", owner: lintext.TransactionOwnerFile, want: make([]string, 0)},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

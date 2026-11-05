@@ -138,3 +138,43 @@ func TestMigrationsUpRunnerDecidesTheGateE2E(t *testing.T) {
 		})
 	}
 }
+
+// `ptah migrations lint --dev-url` replays the directory the way the runner
+// applies it. A file whose COMMIT ends the transaction its first statement
+// runs in, as golang-migrate's single query does, replays under golang-migrate;
+// a migrator that wraps the file refuses the COMMIT, since no transaction of
+// the file's is open to close.
+func TestMigrationsLintRunnerDecidesTheReplayE2E(t *testing.T) {
+	binary := builtPtah(t, qt.New(t))
+	tests := []struct {
+		name     string
+		flags    []string
+		wantCode string
+	}{
+		{name: "the default runner", wantCode: "exit status 2"},
+		{name: "golang-migrate", flags: []string{"--runner", "golang-migrate"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := runnerMigrations(c, map[string]string{
+				"0000000001_commit.up.sql":   "CREATE TABLE base (id int);\nCOMMIT;\nCREATE TABLE after_commit (id int);\n",
+				"0000000001_commit.down.sql": "DROP TABLE after_commit;\nDROP TABLE base;\n",
+			})
+			dev, _ := scratchReplayDatabase(c)
+
+			out, err := runPtahInDir(c.Context(), c.TempDir(), binary,
+				append([]string{"migrations", "lint", "--dir", dir, "--dev-url", dev}, test.flags...)...)
+
+			c.Assert(exitStatus(err), qt.Equals, test.wantCode, qt.Commentf("%s", out))
+		})
+	}
+}
+
+// exitStatus is the process error's text, empty for a run that exited 0.
+func exitStatus(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}

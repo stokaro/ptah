@@ -50,8 +50,8 @@ func TestRunLint_RunnerDecidesTX201(t *testing.T) {
 		want   []string
 	}{
 		{name: "the default runner", want: []string{"TX201"}},
-		{name: "golang-migrate named by the flag", flags: []string{"--runner", "golang-migrate"}, want: []string{}},
-		{name: "golang-migrate named in ptah.yaml", config: "migration:\n  runner: golang-migrate\n", want: []string{}},
+		{name: "golang-migrate named by the flag", flags: []string{"--runner", "golang-migrate"}, want: make([]string, 0)},
+		{name: "golang-migrate named in ptah.yaml", config: "migration:\n  runner: golang-migrate\n", want: make([]string, 0)},
 		{name: "the flag over ptah.yaml", config: "migration:\n  runner: golang-migrate\n", flags: []string{"--runner", "ptah"}, want: []string{"TX201"}},
 	}
 	for _, test := range tests {
