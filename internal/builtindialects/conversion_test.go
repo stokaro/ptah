@@ -49,7 +49,6 @@ func TestDescriptors_ConversionAgreesWithTheRetiredSwitches(t *testing.T) {
 		platform.MySQL:       mysqlFamily,
 		platform.MariaDB:     mysqlFamily,
 		platform.ClickHouse:  {RowPolicyOwned: true},
-		platform.YDB:         {DatabaseRootPaths: true, IndexTypeIsMethod: true},
 		platform.SQLite:      {},
 		platform.SQLServer:   {},
 		platform.Oracle:      {},

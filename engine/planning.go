@@ -178,6 +178,11 @@ func (r *Runtime) planningBatch(owner ownedPlanning, request featureplan.Request
 	batch.Objects = featureplan.ObjectContext{}
 	if len(owner.ContextKinds) > 0 {
 		batch.Objects = r.planningObjectsFor(owner.owner, request.Target, request.Objects)
+		// The planning context reaches only the service that assesses its
+		// kinds. A provider with two assessing services would otherwise hand
+		// each one the other's records, which the SDK refuses as kinds the
+		// service does not assess.
+		batch.Objects.Context = selectObjectState(batch.Objects.Context, owner.ContextKinds)
 	}
 	if len(owner.ParentKinds) > 0 && hasParentActions(request.Tables) {
 		batch.ParentKinds = slices.Clone(owner.ParentKinds)

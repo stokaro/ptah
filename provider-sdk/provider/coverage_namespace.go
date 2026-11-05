@@ -18,12 +18,17 @@ func validateNamespaceKnowledge(representation protocol.ValueInput_Representatio
 	return validateKnowledge(representation, knowledge)
 }
 
-func validateCoverageRegions(representation protocol.ValueInput_Representation, regions []*protocol.ModelNamespaceKnowledge) error {
+// validateCoverageRegions checks a model's regions; subtrees is the error a
+// subtree region meets, nil where subtrees were negotiated.
+func validateCoverageRegions(representation protocol.ValueInput_Representation, regions []*protocol.ModelNamespaceKnowledge, subtrees error) error {
 	if len(regions) > maxCoverageRegions {
 		return fmt.Errorf("%w: too many model namespace regions", ErrProtocol)
 	}
 	for _, region := range regions {
 		if err := validateModelNamespace(region.GetScope()); err != nil {
+			return err
+		}
+		if err := modelSubtreeError(region.GetScope(), subtrees); err != nil {
 			return err
 		}
 		if err := validateNamespaceKnowledge(representation, region.GetKnowledge()); err != nil {
@@ -65,19 +70,32 @@ func validNamespaceComponent(component *protocol.NamespaceComponent, allowEmpty 
 }
 
 // Presence is part of a namespace: an empty qualifier cannot equal a wildcard.
-// Comparison keys omit source spelling but retain each path component boundary.
+// Comparison keys omit source spelling but retain each path component boundary,
+// and a schema's subtree is another region than the schema alone.
 func compareModelNamespaces(a, b *protocol.ModelNamespace) int {
 	for _, compared := range []int{
 		compareNamespaceComponents(a.GetDatabase(), b.GetDatabase()),
 		compareNamespaceComponents(a.GetCatalog(), b.GetCatalog()),
 		compareNamespaceComponents(a.GetSchema(), b.GetSchema()),
 		slices.CompareFunc(a.GetPathPrefix(), b.GetPathPrefix(), compareNamespaceComponents),
+		compareFlags(a.GetSchemaSubtree(), b.GetSchemaSubtree()),
 	} {
 		if compared != 0 {
 			return compared
 		}
 	}
 	return 0
+}
+
+func compareFlags(a, b bool) int {
+	switch {
+	case a == b:
+		return 0
+	case a:
+		return 1
+	default:
+		return -1
+	}
 }
 
 func compareNamespaceComponents(a, b *protocol.NamespaceComponent) int {

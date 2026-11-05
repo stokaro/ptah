@@ -911,6 +911,7 @@ Read the columns as follows.
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--runner` | `string` | `ptah` | `PTAH_RUNNER` | — |
 | `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
 
@@ -1239,6 +1240,7 @@ Read the columns as follows.
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
 | `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
+| `--runner` | `string` | `ptah` | `PTAH_RUNNER` | — |
 | `--skip-checks` | `bool` | `false` | `PTAH_SKIP_CHECKS` | — |
 | `--skip-report` | `bool` | `false` | `PTAH_SKIP_REPORT` | — |
 | `--statement-timeout` | `string` | — | `PTAH_STATEMENT_TIMEOUT` | — |

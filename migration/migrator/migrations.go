@@ -1206,7 +1206,7 @@ func runMigrationFileStatement(
 		}
 	}
 	if !handled {
-		if err := executeBoundedStatement(ctx, conn, event.Statement); err != nil {
+		if err := executeSQLOn(ctx, conn, event.Statement); err != nil {
 			return migrationFileStatementError(markedStatementFailure(ctx, err), event)
 		}
 	}

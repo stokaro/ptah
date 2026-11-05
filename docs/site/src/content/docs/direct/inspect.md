@@ -201,7 +201,7 @@ property of `ptah-compat` alone, never reaches this command, and
 Because this command leaves no block type out, its output claims to describe
 everything the HCL format can express, and its `ptah:not-described` header
 carries only what the read itself did not describe, such as a role catalog the
-server refused or a YDB changefeed, so the plan that follows does not read that
+server refused, so the plan that follows does not read that
 silence as complete. Delete a block from it and the plan that follows removes
 the object, which is what you asked for. The compatibility surface, which does leave blocks
 out, says so in the document; see
@@ -219,15 +219,14 @@ schema does, so silence about one of those in this format still removes it —
 except a hypertable, whose removal TimescaleDB has no statement for and which is
 refused instead. YAML has a key for none of the four.
 
-A table's row deletion policy, a Spanner or YDB TTL, is written as a
+A table's row deletion policy, such as a Spanner one, is written as a
 `platform` block of its engine's properties, which a document read back
-declares; DBML has no spelling for it. A YDB changefeed or column family has no
-HCL or DBML spelling. This command warns about each one it leaves out, and a
-document read back keeps the table's policy, changefeeds and column families.
+declares; DBML has no spelling for it.
 
-A YDB table's partitioning, read replicas and key bloom filter have no HCL or
-DBML spelling. This command warns about each table it leaves them out of, and a
-document read back keeps the table's settings.
+A YDB table's TTL, changefeeds, column families, partitioning, read replicas and
+key bloom filter have no HCL or DBML spelling through the YDB provider, and a
+document read back keeps the table's settings; see
+[YDB](https://github.com/stokaro/ptah-ydb-plugin/blob/master/docs/README.md).
 
 Both commands write a `permission` block by the same three rules: a schema is
 declared whenever anything references one, a grantee is a `role.<name>`

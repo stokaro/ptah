@@ -43,7 +43,6 @@ var oldSwitches = map[string]loweringFacts{
 	platform.ClickHouse: {InlineEnum: descriptor.InlineEnum{Type: descriptor.InlineEnumNumbered}},
 	platform.SQLite: {GeneratedColumnDefault: "VIRTUAL",
 		InlineEnum: descriptor.InlineEnum{Type: "TEXT", Check: descriptor.InlineEnumCheckBare}, ForeignKeysInCreateTable: true},
-	platform.YDB: {QuotingPaths: true},
 }
 
 // TestDescriptors_LoweringFactsAgreeWithTheOldSwitches pins every built-in

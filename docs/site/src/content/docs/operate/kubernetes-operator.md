@@ -1,10 +1,10 @@
 ---
 title: Kubernetes operator
-description: Reconcile a desired schema from an OCI artifact with the Ptah Operator, and know what it does not deploy.
+description: Reconcile a desired schema or run a versioned migration sequence from an OCI artifact with the Ptah Operator, and know what it does not cover.
 type: reference
 audience:
   - "platform-engineer"
-readerQuestion: "How does the Ptah Operator deploy a schema, and what does it not cover?"
+readerQuestion: "How does the Ptah Operator deploy a schema change, and what does it not cover?"
 goal: "Decide whether the operator fits a deployment, and reach its canonical documentation."
 sourceOfTruth:
   - "https://github.com/stokaro/ptah-operator"
@@ -12,6 +12,7 @@ generated: false
 searchAliases:
   - "Kubernetes operator"
   - "PtahSchema"
+  - "PtahMigration"
   - "deploy to Kubernetes"
 overlaps:
   - /operate/oci-registry/
@@ -19,8 +20,8 @@ disposition: keep
 ---
 
 [Ptah Operator](https://github.com/stokaro/ptah-operator) is a Kubernetes
-control plane that converges a database on a desired schema published as an OCI
-artifact. It is a separate project with its own repository, releases, and
+control plane that works from schema changes published as OCI artifacts. It is a
+separate project with its own repository, releases, and
 support matrix; this page exists so the operator is reachable from here and so
 its boundary is stated where a reader decides.
 
@@ -31,29 +32,31 @@ resolves the tag to a digest once, verifies the artifact, observes the
 database, publishes a plan, applies the approved plan, and then observes again
 rather than trusting the apply process's exit.
 
+`PtahMigration` names an artifact holding a versioned migration sequence. The
+controller reads the database's own revision table against the artifact, plans
+the pending sequence, applies it once approved, and reads the history again. It
+is a separate resource with its own API and state machine: one database can have
+both, and the two serialize against each other through the same lock.
+
 Database work runs in short-lived Jobs. The controller itself has no permission
 to read database Secrets, and registry and database credentials are kept apart
 from each other. Destructive plans are disabled by default, and enabling them
 still requires an approval bound to the exact plan bytes.
 
-## What it does not deploy
+## What it does not cover
 
-**A versioned migration directory.** `PtahSchema` reconciles a desired schema.
-The operator's own documentation states that `PtahMigration` is deliberately
-not folded into it: a versioned-migration controller would reuse the OCI
-transport, credential isolation and execution protocol while keeping its own
-API and state machine, and it does not exist yet.
+**Every engine Ptah reaches.** The operator's contract is narrower than the Ptah
+CLI's: it runs on PostgreSQL and MySQL, on the release lines its guide lists in
+[Databases and privileges](https://operator.ptah.run/edge/support/databases/). For
+another engine, deploy with the CLI as [Deliver a schema change](../deliver/)
+describes.
 
-So a team on the versioned workflow deploys with `ptah migrations up` against a
-pinned artifact, as [Deliver a schema change](../deliver/) describes. Running
-the operator does not make that step unnecessary, and there is no resource that
-applies a migration directory today.
+**Cleanup.** Deleting or suspending a resource never runs cleanup SQL.
 
 ## Maturity
 
-The API is `v1alpha1`, and the operator's README calls it an implementation
-preview until its database end-to-end matrix is green and a release is
-published. Databases are PostgreSQL and MySQL.
+The operator publishes signed releases. Its API is `v1alpha1`, which carries no
+compatibility guarantee before v1.
 
 Ptah's version selector on this site does not select an operator version. The
 operator tracks its own releases and publishes its own guide, with a selector
@@ -91,3 +94,5 @@ rather than a screencast of one.
   from a reviewed change to a verified database.
 - [OCI registry artifacts](../oci-registry/) covers publishing the artifact the
   operator consumes.
+- [Ptah ecosystem](../../start/ecosystem/) shows where the operator and its
+  optional console sit among the other repositories.

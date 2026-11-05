@@ -46,18 +46,13 @@ const (
 	// "PostgreSQL 11.2-YB-2024.2.4.0-b0", and a number below the floor is
 	// that version rather than a release.
 	VersionYBRelease VersionScheme = "yb-release"
-	// VersionReleaseBranch reads a dotted release that opens the string,
-	// "26.2.1.14", or a build branch, "stable-25-4-1" for 25.4.1. It reads
-	// nothing out of a string that opens with neither, as a floating build
-	// such as "trunk" does.
-	VersionReleaseBranch VersionScheme = "release-branch"
 )
 
 // VersionSchemes returns every declared version scheme.
 func VersionSchemes() []VersionScheme {
 	return []VersionScheme{
 		VersionDotted, VersionAfterDash, VersionAfterRelease,
-		VersionReplicationPrefix, VersionYBRelease, VersionReleaseBranch,
+		VersionReplicationPrefix, VersionYBRelease,
 	}
 }
 
@@ -422,8 +417,6 @@ func (s VersionScheme) read(version string) (serverVersion, bool) {
 		}
 		v, ok := parseVersion(text)
 		return v, ok && v.major >= firstYBReleaseYear
-	case VersionReleaseBranch:
-		return releaseOrBranch(version)
 	default:
 		return serverVersion{}, false
 	}
@@ -436,32 +429,6 @@ const replicationPrefix = "5.5.5-"
 // firstYBReleaseYear is the first release numbered by year. Every number
 // below it in a banner is the version of the PostgreSQL engine underneath.
 const firstYBReleaseYear = 2024
-
-// releaseOrBranch reads the release out of a string that opens with it,
-// either dotted or as a build branch `stable-<major>-<minor>[-<patch>]`. The
-// dotted parse alone would read the branch "stable-25-4-1" as 25.0.
-func releaseOrBranch(version string) (serverVersion, bool) {
-	trimmed := strings.TrimSpace(version)
-	if rest, ok := strings.CutPrefix(strings.ToLower(trimmed), "stable-"); ok {
-		parts := strings.Split(rest, "-")
-		if len(parts) < 2 || len(parts) > 3 {
-			return serverVersion{}, false
-		}
-		numbers := make([]int, 3)
-		for i, part := range parts {
-			number, err := strconv.Atoi(part)
-			if err != nil || number < 0 {
-				return serverVersion{}, false
-			}
-			numbers[i] = number
-		}
-		return serverVersion{major: numbers[0], minor: numbers[1], patch: numbers[2]}, true
-	}
-	if trimmed == "" || trimmed[0] < '0' || trimmed[0] > '9' {
-		return serverVersion{}, false
-	}
-	return parseVersion(trimmed)
-}
 
 // shippedPresets maps every preset this package ships to its name, which is
 // how a descriptor names it.

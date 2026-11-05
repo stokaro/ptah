@@ -85,6 +85,70 @@ func TestInnerTableSubtractionKeepsADeclaredDotNameLive(t *testing.T) {
 	c.Assert(remaining, qt.Equals, uint64(0))
 }
 
+// TestReadDuringARefreshLeavesItsTemporaryTableOutLive pins that a read taken
+// while a refreshable view refreshes reports only the tables the user declared.
+//
+// A refresh writes into ".tmp.inner_id.<the view's uuid>" and then exchanges it
+// with the view's target, for a view with its own storage and for one with a TO
+// target alike. The table is a MergeTree table that exists only while the
+// refresh runs. Without its name in the subtracted set, a read that meets it
+// reports a table nobody declared, or fails on its empty engine while
+// ClickHouse is still creating it. The views here refresh slowly, so the read runs while
+// both temporary tables exist, and the count taken after the read proves it
+// did. The test runs on both release lines CI starts, because the temporary
+// table is the server's and not Ptah's.
+func TestReadDuringARefreshLeavesItsTemporaryTableOutLive(t *testing.T) {
+	for _, server := range []string{"PTAH_CLICKHOUSE_REALM_TEST_URL", "PTAH_CLICKHOUSE_LEGACY_REALM_TEST_URL"} {
+		t.Run(server, func(t *testing.T) {
+			c := qt.New(t)
+			db, database := openLiveClickHouseRealmDatabase(t, server)
+			target := sqlident.Qualified(platform.ClickHouse, database, "totals")
+			// Twenty one-row blocks at half a second each keep a refresh running
+			// for ten seconds.
+			slowBody := " AS SELECT number AS n FROM numbers(20) WHERE sleepEachRow(0.5) = 0 SETTINGS max_block_size = 1"
+			executeClickHouseViewPlan(t, db, []string{
+				"CREATE TABLE " + target + " (n UInt64) ENGINE = MergeTree ORDER BY n",
+				"CREATE MATERIALIZED VIEW " + sqlident.Qualified(platform.ClickHouse, database, "stored") +
+					" REFRESH EVERY 1 HOUR ENGINE = MergeTree ORDER BY n" + slowBody,
+				"CREATE MATERIALIZED VIEW " + sqlident.Qualified(platform.ClickHouse, database, "routed") +
+					" REFRESH EVERY 1 HOUR TO " + target + slowBody,
+			})
+			waitForRefreshTemporaryTables(c, db, database, 2)
+
+			readback, err := clickhousedb.NewClickHouseReader(db, database).ReadSchemaContext(t.Context())
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(clickHouseTableNames(readback), qt.DeepEquals, []string{"totals"})
+			c.Assert(refreshTemporaryTables(c, db, database), qt.Equals, uint64(2))
+		})
+	}
+}
+
+// refreshTemporaryTables counts the temporary tables refreshes are writing in
+// database.
+func refreshTemporaryTables(c *qt.C, db *sql.DB, database string) uint64 {
+	c.Helper()
+	var count uint64
+	err := db.QueryRowContext(
+		c.Context(),
+		"SELECT count() FROM system.tables WHERE database = ? AND startsWith(name, '.tmp.inner_id.')",
+		database,
+	).Scan(&count)
+	c.Assert(err, qt.IsNil)
+	return count
+}
+
+// waitForRefreshTemporaryTables waits until want refreshes are writing their
+// temporary tables in database, and fails the test after thirty seconds.
+func waitForRefreshTemporaryTables(c *qt.C, db *sql.DB, database string, want uint64) {
+	c.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	for refreshTemporaryTables(c, db, database) != want {
+		c.Assert(time.Now().Before(deadline), qt.IsTrue, qt.Commentf("%d refreshes never ran at once", want))
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
 // TestDropAllTablesRemovesATargetNamedLikeInnerStorageLive pins that the reset
 // does not decide what to destroy by deriving storage names.
 //

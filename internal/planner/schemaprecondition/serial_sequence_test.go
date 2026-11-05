@@ -28,7 +28,7 @@ func TestRefuseSerialSequenceChanges_FailurePath(t *testing.T) {
 		wantErr string
 	}{
 		{name: "a start", diff: sequenceChange("identity_start", "1 -> 100"),
-			wantErr: `.*: the diff changes identity_start of column "id" of table "items" \(1 -> 100\), which only a YDB plan does; the postgres planner plans none`},
+			wantErr: `.*: the diff changes identity_start of column "id" of table "items" \(1 -> 100\), which only an executable provider's plan does; the postgres planner plans none`},
 		{name: "an increment", diff: sequenceChange("identity_increment", "1 -> 5"),
 			wantErr: `.*: the diff changes identity_increment of column "id" of table "items" \(1 -> 5\), .*`},
 	} {

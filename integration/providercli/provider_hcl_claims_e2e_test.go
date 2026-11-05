@@ -5,6 +5,8 @@ package providercli_test
 import (
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -13,8 +15,10 @@ import (
 	"ptah.run/core/goschema"
 	"ptah.run/core/hclext"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/engine"
 	"ptah.run/internal/atlashcl"
+	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/convert/goschematogo"
 	"ptah.run/internal/testutils"
 )
@@ -81,6 +85,29 @@ func TestProviderHCLClaims_HappyPath(t *testing.T) {
 		subjects = append(subjects, string(record.Subject.Kind)+" "+record.Subject.Name.Source+" "+string(record.Knowledge.State))
 	}
 	c.Assert(subjects, qt.ContentEquals, []string{"table records complete", "table events complete", "index by_body complete"})
+}
+
+// TestProviderHCLClaims_WithoutAHeader reads the document of
+// TestProviderHCLClaims_HappyPath without its header. It declares the same
+// values and claims nothing of the provider's model: an HCL document whose
+// header names none of the provider's header kinds describes none of the
+// retentions it leaves out, so a plan of it removes none.
+func TestProviderHCLClaims_WithoutAHeader(t *testing.T) {
+	c := qt.New(t)
+	runtime := hclClaimsProvider(c)
+	source := strings.Replace(hclClaimsDocument, "// ptah:not-described retention \"audits\"\n", "", 1)
+	c.Assert(source, qt.Not(qt.Equals), hclClaimsDocument)
+
+	db, err := atlashcl.ParseWithOptions(c.Context(), []byte(source), "schema.hcl", atlashcl.Options{HCL: runtime.HCL()})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(scopedRetentions(c, runtime, *db), qt.DeepEquals, []string{
+		`table events {"seconds":30}`,
+		`table records {"seconds":5}`,
+		`index by_body {"seconds":9}`,
+	})
+	c.Assert(db.FeatureCoverage.KindRecords(), qt.HasLen, 0)
+	c.Assert(db.FeatureCoverage.SubjectRecords(), qt.HasLen, 0)
 }
 
 // TestProviderHCLClaims_FailurePath refuses an index whose inherited type the
@@ -159,6 +186,73 @@ func TestProviderHCLExport_HappyPath(t *testing.T) {
 	db, err := atlashcl.ParseWithOptions(c.Context(), written, "schema.hcl", atlashcl.Options{HCL: runtime.HCL()})
 	c.Assert(err, qt.IsNil)
 	c.Assert(scopedRetentions(c, runtime, *db), qt.DeepEquals, []string{`table records {"seconds":5}`, `index by_body {"seconds":9}`})
+}
+
+// coverageHeader matches the captured feature coverage header line of an HCL
+// document.
+var coverageHeader = regexp.MustCompile(`(?m)^// (ptah:feature-coverage \{.*\})\n`)
+
+// TestProviderHCLExport_WritesTheClaim writes the Go source of
+// TestProviderHCLExport_HappyPath as HCL. The document states the source's
+// claim of the provider's model as a captured feature coverage header, and
+// writes no ptah:not-described entry; read back, it makes the same claim.
+// Without the header the document claims nothing.
+func TestProviderHCLExport_WritesTheClaim(t *testing.T) {
+	c := qt.New(t)
+	runtime := hclClaimsProvider(c)
+	source, err := goschema.ParseSource(runtime.Annotations(), "records.go", hclExportSource)
+	c.Assert(err, qt.IsNil)
+	c.Assert(source.FeatureCoverage.KindRecords(), qt.HasLen, 1)
+
+	result, err := atlashclrender.Render(&source, atlashclrender.Options{HCL: runtime.HCL(), Target: "fixture"})
+
+	c.Assert(err, qt.IsNil)
+	written := string(result.Data)
+	c.Assert(coverageHeader.FindAllString(written, -1), qt.HasLen, 1, qt.Commentf("%s", written))
+	c.Assert(written, qt.Not(qt.Contains), "ptah:not-described")
+	read, err := atlashcl.ParseWithOptions(c.Context(), result.Data, "schema.hcl", atlashcl.Options{HCL: runtime.HCL()})
+	c.Assert(err, qt.IsNil)
+	c.Assert(read.FeatureCoverage.KindRecords(), qt.DeepEquals, source.FeatureCoverage.KindRecords())
+	c.Assert(read.FeatureCoverage.SubjectRecords(), qt.DeepEquals, source.FeatureCoverage.SubjectRecords())
+	unclaimed, err := atlashcl.ParseWithOptions(c.Context(), []byte(coverageHeader.ReplaceAllString(written, "")), "schema.hcl", atlashcl.Options{HCL: runtime.HCL()})
+	c.Assert(err, qt.IsNil)
+	c.Assert(unclaimed.FeatureCoverage.KindRecords(), qt.HasLen, 0)
+}
+
+// TestProviderHCLExport_SplitKeepsTheClaim cuts the HCL export of
+// TestProviderHCLExport_WritesTheClaim into files: each file carries the
+// document's captured header again, so a file read on its own makes the claim
+// the document made.
+func TestProviderHCLExport_SplitKeepsTheClaim(t *testing.T) {
+	c := qt.New(t)
+	runtime := hclClaimsProvider(c)
+	source, err := goschema.ParseSource(runtime.Annotations(), "records.go", hclExportSource)
+	c.Assert(err, qt.IsNil)
+	result, err := atlashclrender.Render(&source, atlashclrender.Options{HCL: runtime.HCL(), Target: "fixture"})
+	c.Assert(err, qt.IsNil)
+	written := coverageHeader.FindStringSubmatch(string(result.Data))
+	c.Assert(written, qt.HasLen, 2, qt.Commentf("%s", result.Data))
+
+	restated, err := runtime.HCL().SplitRestate(schemaext.CoverageHeaderBodies(string(result.Data)), nil)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(restated, qt.DeepEquals, []string{written[1]})
+}
+
+// TestProviderHCLExport_FailurePath refuses an HCL export whose provider
+// answers with ptah:not-described entries: the host writes the document's
+// account of the provider's models itself, and the document would hold two.
+func TestProviderHCLExport_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	_, runtime := yamlProviderEnvironment(c, "hcl-claims", []string{"FIXTURE_SOURCE_LIMITS=1", "FIXTURE_SOURCE_LIMITS_EXTRA=1"})
+	source, err := goschema.ParseSource(runtime.Annotations(), "records.go", hclExportSource)
+	c.Assert(err, qt.IsNil)
+
+	result, err := atlashclrender.Render(&source, atlashclrender.Options{HCL: runtime.HCL(), Target: "fixture"})
+
+	c.Assert(err, qt.ErrorMatches, `.*provider example\.org/fixture wrote ptah:not-described entries in an HCL document, whose account of the provider's models the host writes as its ptah:feature-coverage header`)
+	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+	c.Assert(result.Data, qt.IsNil)
 }
 
 // TestProviderGoExport_HappyPath writes a provider's values as Go

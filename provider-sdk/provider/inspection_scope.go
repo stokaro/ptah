@@ -11,8 +11,11 @@ import (
 
 // Bindings interpret selectors; coverage records state what was learned within
 // them. Keeping these separate prevents an empty selection from claiming global
-// absence or a partial read from broadening its own request.
-func validateInspectionScope(request *protocol.InspectRequest, snapshot *protocol.Schema) error {
+// absence or a partial read from broadening its own request. The objects of a
+// negotiated database kind belong to the database rather than to a namespace
+// of it, so their subjects and regions, named at the database, stand beside
+// the bound namespaces; see DatabaseKindsFeature.
+func validateInspectionScope(engine *protocol.Engine, request *protocol.InspectRequest, snapshot *protocol.Schema) error {
 	if len(request.GetSchemas()) != len(snapshot.GetScopeBindings()) || len(request.GetSchemas()) > maxCoverageRegions {
 		return fmt.Errorf("%w: inspection selectors lack ordered scope bindings", ErrProtocol)
 	}
@@ -40,6 +43,17 @@ func validateInspectionScope(request *protocol.InspectRequest, snapshot *protoco
 	if len(snapshot.GetDispositions()) != 0 {
 		return fmt.Errorf("%w: filtered dispositions require normalized scope identity", ErrProtocol)
 	}
+	if err := validateScopedIdentities(engine, scopes, snapshot); err != nil {
+		return err
+	}
+	return validateInspectionRegions(engine, snapshot.GetTargetFeatures(), scopes, snapshot.GetCoverage())
+}
+
+// validateScopedIdentities requires every object a filtered snapshot names to
+// lie inside the bound namespaces: its reservations, its tables, the tables it
+// leaves out and its coverage subjects, except a subject of a database kind
+// named at the database.
+func validateScopedIdentities(engine *protocol.Engine, scopes []*protocol.ModelNamespace, snapshot *protocol.Schema) error {
 	for _, reserved := range snapshot.GetReservedObjects() {
 		if !withinInspectionScopes(scopes, reserved.GetNormalizedObject()) {
 			return fmt.Errorf("%w: reserved object is outside the requested scope", ErrProtocol)
@@ -50,20 +64,39 @@ func validateInspectionScope(request *protocol.InspectRequest, snapshot *protoco
 			return fmt.Errorf("%w: inspected table is outside the requested scope", ErrProtocol)
 		}
 	}
+	for _, entry := range snapshot.GetUnreadTables() {
+		if !withinInspectionScopes(scopes, entry.GetTable()) {
+			return fmt.Errorf("%w: unread table is outside the requested scope", ErrProtocol)
+		}
+	}
 	for _, record := range snapshot.GetCoverage().GetSubjects() {
+		if databaseKind(engine, snapshot.GetTargetFeatures(), record.GetKind()) &&
+			databaseReference(record.GetSubject(), record.GetKind()) && databaseReference(record.GetNormalizedSubject(), record.GetKind()) {
+			continue
+		}
 		if !withinInspectionScopes(scopes, record.GetNormalizedSubject()) {
 			return fmt.Errorf("%w: inspected subject is outside the requested scope", ErrProtocol)
 		}
 	}
-	return validateInspectionRegions(scopes, snapshot.GetCoverage())
+	return nil
 }
 
-func validateInspectionRegions(scopes []*protocol.ModelNamespace, coverage *protocol.ModelCoverage) error {
+// validateInspectionRegions refuses a filtered read's claim of global
+// completeness and a region outside the bound namespaces, except the database
+// namespace a database kind's region names.
+func validateInspectionRegions(engine *protocol.Engine, targetFeatures []string, scopes []*protocol.ModelNamespace, coverage *protocol.ModelCoverage) error {
 	for _, record := range coverage.GetKinds() {
 		if record.GetKnowledge().GetState() == protocol.ModelKnowledge_COMPLETE {
 			return fmt.Errorf("%w: filtered inspection cannot claim global completeness", ErrProtocol)
 		}
+		database := databaseKind(engine, targetFeatures, record.GetModel().GetKind())
 		for _, region := range record.GetRegions() {
+			if region.GetScope().GetSchemaSubtree() {
+				return fmt.Errorf("%w: a filtered inspection sends no subtree region", ErrProtocol)
+			}
+			if database && databaseNamespace(region.GetScope()) {
+				continue
+			}
 			if !slices.ContainsFunc(scopes, func(bound *protocol.ModelNamespace) bool { return namespaceContains(bound, region.GetScope()) }) {
 				return fmt.Errorf("%w: inspected region exceeds the requested scope", ErrProtocol)
 			}

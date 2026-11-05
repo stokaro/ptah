@@ -20,7 +20,6 @@ import (
 	"ptah.run/feature/pgextension/extensionrender"
 	"ptah.run/feature/pgpolicy/policyrender"
 	"ptah.run/feature/pgtype/typerender"
-	"ptah.run/internal/ydbextensions"
 )
 
 // The PostgreSQL-family registries are built once. A registry holds nothing a
@@ -93,8 +92,6 @@ type renderOwners struct {
 // MariaDB.
 func ownersFor(dialect string) renderOwners {
 	switch platform.NormalizeDialect(dialect) {
-	case platform.YDB:
-		return renderOwners{extensions: ydbextensions.Registry}
 	case platform.ClickHouse:
 		return renderOwners{extensions: chrender.Registry}
 	case platform.SQLServer:

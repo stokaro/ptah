@@ -458,8 +458,8 @@ func ensureTracker(ctx context.Context, conn *dbschema.DatabaseConnection) error
 // it states its own in its descriptor (descriptor.Seeds.Tracker): ClickHouse
 // needs a table engine and its own type names, SQL Server has no IF NOT EXISTS
 // on CREATE TABLE and no TIMESTAMP that holds a time, Oracle 21 refuses IF NOT
-// EXISTS, Spanner's PostgreSQL interface has neither CHAR nor TIMESTAMP, and
-// YDB declares its key in a clause of its own. The internal/builtindialects
+// EXISTS, and Spanner's PostgreSQL interface has neither CHAR nor TIMESTAMP.
+// The internal/builtindialects
 // file of each engine records the measurement behind its statement.
 //
 // Every name is unqualified, so each guard looks in the schema the CREATE

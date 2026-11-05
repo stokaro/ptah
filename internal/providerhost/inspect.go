@@ -48,6 +48,10 @@ func (r reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, error
 	if err != nil {
 		return nil, err
 	}
+	result.UnreadTables, err = r.unreadTables(snapshot, result.ReservedNames)
+	if err != nil {
+		return nil, err
+	}
 	if err := r.features(ctx, result, request, snapshot, values); err != nil {
 		return nil, err
 	}

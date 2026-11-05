@@ -212,6 +212,14 @@ func main() {
 		configureDeclarations(d)
 		server.Declarations, server.SchemaValidator = p, p
 	}
+	if os.Getenv("FIXTURE_SCHEMA_VALIDATION") != "" {
+		// The provider validates a whole schema, which a rollback plan asks
+		// of its target before it plans the rollback.
+		d.SemanticIdentity += "-schema-validation"
+		d.Features = append(d.Features, provider.ValidateSchemaFeature)
+		d.Engines[0].Features = append(d.Engines[0].Features, provider.ValidateSchemaFeature)
+		server.SchemaValidator = p
+	}
 	if p.transactionalDDL {
 		server.Transactions = p
 	}

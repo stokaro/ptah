@@ -186,7 +186,15 @@ func ValidateEncodedSource(description *protocol.Description, request *protocol.
 			return err
 		}
 	}
-	if err := validateEncodedAccount(request, result); err != nil {
+	values := make(map[string]*protocol.EncodeSourceValue, len(request.GetValues()))
+	for _, value := range request.GetValues() {
+		values[value.GetValue().GetId()] = value
+	}
+	platform := make(map[string]bool)
+	if request.GetFormat() == protocol.SourceDocument_HCL && slices.Contains(engine.GetFeatures(), HCLPlatformFeature) {
+		platform = platformWritten(result, values)
+	}
+	if err := validateEncodedAccount(values, result, platform); err != nil {
 		return err
 	}
 	return validateEncodedExtras(engine, request, result)
@@ -231,13 +239,10 @@ func fragmentModels(fragment *protocol.SourceFragment) []string {
 
 // validateEncodedAccount requires every value to be written once or lost once,
 // a written value to be of a model its fragment's claim names, and an HCL
-// block to say where it stands. A claim names only models whose source
-// formats include its format, so a value of any other model is a loss.
-func validateEncodedAccount(request *protocol.EncodeSourceRequest, result *protocol.EncodedSource) error {
-	values := make(map[string]*protocol.EncodeSourceValue, len(request.GetValues()))
-	for _, value := range request.GetValues() {
-		values[value.GetValue().GetId()] = value
-	}
+// block to say where it stands. A value of a model no claim names is a loss.
+// A value platform holds, one a TABLE_PLATFORM part writes, may also be lost
+// once: a platform group spells part of it.
+func validateEncodedAccount(values map[string]*protocol.EncodeSourceValue, result *protocol.EncodedSource, platform map[string]bool) error {
 	accounted := make(map[string]bool, len(values))
 	for _, encoded := range result.GetFragments() {
 		if len(encoded.GetValueIds()) == 0 {
@@ -262,16 +267,45 @@ func validateEncodedAccount(request *protocol.EncodeSourceRequest, result *proto
 			return err
 		}
 	}
+	lost := make(map[string]bool, len(values))
 	for _, loss := range result.GetLosses() {
-		if values[loss.GetValueId()] == nil || accounted[loss.GetValueId()] || !diagnosticLine(loss.GetMessage()) {
+		id := loss.GetValueId()
+		if values[id] == nil || lost[id] || accounted[id] && !platform[id] || !diagnosticLine(loss.GetMessage()) {
 			return encodeError("a loss names a value of the request once, in one line")
 		}
-		accounted[loss.GetValueId()] = true
+		accounted[id], lost[id] = true, true
 	}
 	if len(accounted) != len(values) {
 		return encodeError("a value is neither written nor lost")
 	}
 	return nil
+}
+
+// platformWritten returns the values a TABLE_PLATFORM part of the reply
+// writes: the values of such a flat fragment, and the values of a group that
+// such a part owns.
+func platformWritten(result *protocol.EncodedSource, values map[string]*protocol.EncodeSourceValue) map[string]bool {
+	written := make(map[string]bool)
+	platform := func(fragment *protocol.SourceFragment) bool {
+		return fragment.GetHclBlock().GetSite() == protocol.HCLSourceBlock_TABLE_PLATFORM
+	}
+	for _, encoded := range result.GetFragments() {
+		if platform(encoded.GetFragment()) {
+			for _, id := range encoded.GetValueIds() {
+				written[id] = true
+			}
+		}
+	}
+	for _, group := range result.GetGroups() {
+		for _, part := range group.GetParts() {
+			for _, id := range group.GetValueIds() {
+				if platform(part.GetFragment()) && values[id] != nil && encodedPartOwns(part.GetFragment(), values[id]) {
+					written[id] = true
+				}
+			}
+		}
+	}
+	return written
 }
 
 // EncodedSourceParts returns the syntax parts of a validated reply in order.

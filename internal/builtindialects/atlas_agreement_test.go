@@ -24,13 +24,12 @@ import (
 var switchDockerImages = map[string]string{
 	"postgres": "postgres", "postgis": "postgres", "pgvector": "postgres",
 	"mysql": "mysql", "maria": "mariadb", "mariadb": "mariadb",
-	"ydb": "ydb",
 }
 
 // switchExtensionImages is dockerExtensionEngines alone, the images strict
-// compatibility refused. The dialect behind them is the one dialect
-// attachYDBJSONLoss of internal/atlasreport warned for.
-var switchExtensionImages = []string{"ydb"}
+// compatibility refused. No built-in dialect states one: an engine only a
+// provider serves is refused in strict mode by its catalog entry.
+var switchExtensionImages []string
 
 // switchDockerDrivers is dockerImageDrivers of internal/atlasurl, whose
 // dialect DialectFromURL read through platform.NormalizeDialect.
@@ -38,7 +37,8 @@ var switchDockerDrivers = []string{"postgres", "mysql", "maria", "mariadb", "cli
 
 // switchUnmeasuredRowCounts is rowCountsUnreported of internal/cli/atlas: the
 // dialects whose driver answers a write with a row count it did not measure.
-var switchUnmeasuredRowCounts = []string{"ydb"}
+// No built-in dialect's driver does.
+var switchUnmeasuredRowCounts []string
 
 // switchDefaultPorts is defaultPorts of internal/atlasurl.
 var switchDefaultPorts = map[string]uint16{

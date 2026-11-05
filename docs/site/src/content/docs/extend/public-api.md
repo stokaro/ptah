@@ -47,7 +47,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `core/platform/descriptor` | What a database engine states about itself, as data, and validated sets of such descriptors. |
 | `core/platform/identifier` | Catalog identifier comparison and namespace semantics. |
 | `core/ptaherr` | Typed public errors and sentinel errors. |
-| `core/query` | Fluent builder for parameterized, dialect-aware SELECT, INSERT, UPDATE, DELETE and YDB UPSERT statements. |
+| `core/query` | Fluent builder for parameterized, dialect-aware SELECT, INSERT, UPDATE, DELETE and, for an engine that spells one, UPSERT statements. |
 | `core/renderer` | Selected AST and whole-schema rendering services, omission records, and local visitor contracts. |
 | `core/schemacapture` | Independent desired and observed table captures for contextual services. |
 | `core/schemacomparison` | Target rules the shared comparison reads columns, index definitions and predicates, foreign key indexes, generated expressions, view queries and omitted routine attributes through. |
@@ -143,25 +143,6 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/timescaledb/tsreverse` | TimescaleDB reversal. |
 | `dialect/timescaledb/tsschema` | TimescaleDB models and codecs. |
 | `dialect/timescaledb/tssource` | TimescaleDB Go annotation directives. |
-| `dialect/ydb/ydbast` | Typed YDB feature operations and their codecs. |
-| `dialect/ydb/ydbcompare` | Coverage-aware comparison of individual YDB feature objects. |
-| `dialect/ydb/ydbconvert` | YDB feature representation conversion. |
-| `dialect/ydb/ydbcoordination` | Coordination-node models and codecs. |
-| `dialect/ydb/ydbdiff` | Directional YDB feature changes. |
-| `dialect/ydb/ydbexternal` | External data source and external table declarations, observations, checks, statements, and codecs. |
-| `dialect/ydb/ydblint` | The YDB owner's migration lint rules and the YQL splitter that reports what each statement does. |
-| `dialect/ydb/ydbrender` | Rendering and validation of YDB feature operations. |
-| `dialect/ydb/ydbreplication` | Async replication and transfer declarations, observations, checks, statements, and codecs. |
-| `dialect/ydb/ydbreport` | Inventory and omission reports for captured YDB feature values. |
-| `dialect/ydb/ydbreverse` | Feature reversal and recovery limits. |
-| `dialect/ydb/ydbplan` | Feature declaration and migration planning. |
-| `dialect/ydb/ydbschema` | YDB feature values and model codecs. |
-| `dialect/ydb/ydbscheme` | Shared physical paths for object dependency planning. |
-| `dialect/ydb/ydbsecret` | Secret declarations, observations, rotation requests, statements, and codecs, without values. |
-| `dialect/ydb/ydbstreaming` | Streaming-query declarations, observations, settings, and codecs. |
-| `dialect/ydb/ydbsyntax` | YQL quoting helpers. |
-| `dialect/ydb/ydbtopic` | Topic and consumer declarations, observations, checks, statements, and codecs. |
-| `dialect/ydb/ydbworkload` | Pool and classifier models and codecs. |
 | `catalog` | Shared database schema types. |
 | `docs` | Ptah's own documentation embedded in the binary as an `embed.FS`. |
 | `feature/oratype` | Oracle domain and object type models, codecs and every stage's service. |
@@ -282,8 +263,7 @@ does not establish source knowledge.
 service. `Runtime.CompareObjects` requires an explicit completion receipt and returns typed changes, effective desired
 objects for captures, and structured diagnostics for undecided state. It
 rejects dropped declarations and duplicate child changes during parent creation
-or removal. Service errors and cancellation return no partial result. The YDB
-service preserves inspected changefeeds omitted by an incomplete desired source.
+or removal. Service errors and cancellation return no partial result.
 
 `Provider.FacetComparisons` registers attached settings and required `OwnerKinds`.
 Each service receives only matching owners, including those without values.
@@ -363,7 +343,7 @@ Scope selections may share a selector type when their naming, relation behavior,
 and fields agree. `selectext.Set.ForType` returns every matching model, ordered
 by kind. Include and exclude selectors apply to each model; the owner still
 clears its own fields.
-Metrics count captured values, including disabled YDB changefeeds and consumers.
+Metrics count captured values, disabled ones included.
 Zero does not establish inspected absence. Statistics and DBML/JSON omission
 reports use these services.
 
@@ -388,16 +368,14 @@ tables the forward plan leaves.
 
 `Target.Lowering` selects `schemapreparation.Lowering`, which rewrites the
 whole desired schema into the shape the target's reader reports it in, before
-comparison. YDB registers one so that a UNIQUE constraint compares as the unique
-index the server holds. A nil service leaves the declaration as written; an
+comparison. The provider host registers one for an engine whose session states
+`unique_constraints` as `false`, so that a UNIQUE constraint compares as the
+unique index the server holds. A nil service leaves the declaration as written; an
 error or a nil result fails the comparison.
 
 `Target.Comparison` holds the `schemacomparison.Rules` the shared comparison
 takes from a target: how a column's type, default and sequence, an index's
-options and a view's query read on it. YDB registers all three, so a declared
-BIGINT compares as the Int64 its catalog reports, a declared BTREE as the
-synchronous global index, and a view's query in the form the server stores
-it. `Routines` names the language a routine that declares none is in and the
+options and a view's query read on it. `Routines` names the language a routine that declares none is in and the
 rights one that states no security mode runs with, so the comparison reads an
 omitted value as the target's: plpgsql and the caller's rights on the
 PostgreSQL family, SQL on MySQL, MariaDB and SQL Server, PL/SQL on Oracle, the
@@ -1045,7 +1023,9 @@ count these changes under `feature_access_widened:<kind>`,
 replayed history against the target, `VerifyRollback` rehearses a rollback plan,
 and `PlanDynamicRollback` derives rollback statements from the schema a version
 defines rather than from a down body. `migration/generator` calls the first of
-these when `ShadowDatabaseURL` is set.
+these when `ShadowDatabaseURL` is set, comparing with `ShadowGenerated` where a
+provider binds declared values to another database context on the shadow than
+on the target.
 
 When candidate or baseline shadow verification fails,
 `generator.PlanMigration`, `generator.GenerateMigration`, and

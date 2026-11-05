@@ -110,8 +110,7 @@ func TestPostgresFamilyRendersDeclaredExtensions(t *testing.T) {
 }
 
 // TestDeclaredExtensionRefusals pins where a declared extension cannot go: an
-// installation schema on a target of the family without one, and YDB, which
-// refuses what the owner skips elsewhere outside the family.
+// installation schema on a target of the family without one.
 func TestDeclaredExtensionRefusals(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -122,8 +121,6 @@ func TestDeclaredExtensionRefusals(t *testing.T) {
 			want: `(?s).*cockroachdb does not support PostgreSQL extension installation schema "ext" for extension "pg_trgm".*`},
 		{name: "a schema on Spanner", target: platform.Spanner,
 			want: `(?s).*spanner does not support PostgreSQL extension installation schema "ext" for extension "pg_trgm".*`},
-		{name: "YDB", target: platform.YDB, want: `PostgreSQL extension pg_trgm cannot be planned on ydb; scope its declaration to the ` +
-			`targets that host it, as dialects="cockroachdb,postgres,spanner,yugabytedb" does in a Go annotation`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -140,7 +137,7 @@ func TestDeclaredExtensionRefusals(t *testing.T) {
 
 // TestDeclaredExtensionRefusalsFailValidation pins that validation refuses
 // what the render refuses: the owner's refusal of an installation schema on a
-// target of the family without one, and YDB's of the extension. The control
+// target of the family without one. The control
 // is PostgreSQL, which installs the extension where it is declared.
 func TestDeclaredExtensionRefusalsFailValidation(t *testing.T) {
 	tests := []struct {
@@ -152,7 +149,6 @@ func TestDeclaredExtensionRefusalsFailValidation(t *testing.T) {
 			want: `(?s).*cockroachdb does not support PostgreSQL extension installation schema "ext" for extension "pg_trgm".*`},
 		{name: "a schema on Spanner", target: platform.Spanner,
 			want: `(?s).*spanner does not support PostgreSQL extension installation schema "ext" for extension "pg_trgm".*`},
-		{name: "YDB", target: platform.YDB, want: `(?s).*PostgreSQL extension pg_trgm cannot be planned on ydb.*`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

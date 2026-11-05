@@ -14,6 +14,7 @@ import (
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/cli/internal/exitcode"
+	"ptah.run/internal/cli/internal/migrateflags"
 	"ptah.run/internal/cli/internal/migrationsource"
 	"ptah.run/internal/cli/internal/serverversion"
 	"ptah.run/internal/devdocker"
@@ -48,6 +49,7 @@ var errLintFindings = errors.New("lint findings exceed the failure threshold")
 func NewLintCommand() *cobra.Command {
 	var dir string
 	var dirFormat string
+	var runner string
 	var dialect string
 	var serverVersion string
 	var format string
@@ -83,6 +85,7 @@ Rules can be disabled per code or family via --disable or .ptah-lint.yaml.`,
 			return runLint(cmd, runOptions{
 				dir:           dir,
 				dirFormat:     dirFormat,
+				runner:        runner,
 				dialect:       dialect,
 				serverVersion: serverVersion,
 				format:        format,
@@ -103,6 +106,7 @@ Rules can be disabled per code or family via --disable or .ptah-lint.yaml.`,
 
 	cmd.Flags().StringVar(&dir, "dir", "./migrations", "Local directory or oci:// reference containing migration files")
 	cmd.Flags().StringVar(&dirFormat, "dir-format", string(migrationfile.DirFormatAuto), "Migration directory format: auto, ptah, or atlas")
+	cmd.Flags().StringVar(&runner, migrateflags.RunnerFlag, string(migrateflags.RunnerPtah), migrateflags.RunnerUsage)
 	cmd.Flags().StringVar(&dialect, "dialect", "", "Target dialect gating dialect-specific rules: "+lintdialect.Expected+" (empty runs every rule)")
 	serverversion.Register(cmd.Flags(), &serverVersion)
 	cmd.Flags().StringVar(&format, "format", formatText, "Output format: text, json, github-actions, sarif, gitlab")
@@ -126,6 +130,7 @@ Rules can be disabled per code or family via --disable or .ptah-lint.yaml.`,
 type runOptions struct {
 	dir           string
 	dirFormat     string
+	runner        string
 	dialect       string
 	serverVersion string
 	format        string
@@ -163,9 +168,27 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 	if err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
 	}
+	// The runtime a provider selection installed, or the bundled one. A
+	// selected provider owns its engine's split, rules and annotations here as
+	// it owns every other service of that engine. It is resolved before the
+	// options are prepared, because preparing them resolves --dialect, and an
+	// engine only a provider serves is a dialect only that runtime knows.
+	runtime, err := engineruntime.Resolve(cmd.Context())
+	if err != nil {
+		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
+	}
+	requested := reportOptions(cmd, opts)
+	requested.Runtime = runtime
+	// The transaction rules judge a file by the tool that applies the
+	// directory, which the directory's layout does not say.
+	runner, err := migrateflags.ParseRunner(dbcli.EffectiveString(
+		cmd, migrateflags.RunnerFlag, opts.runner, projectCfg.StringValue(projectconfig.StringMigrationRunner)))
+	if err != nil {
+		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
+	}
 	reportOpts, provenance, err := prepareReportOptions(
 		cmd,
-		reportOptions(cmd, opts),
+		requested,
 		projectCfg,
 		sourceOptions{
 			attach:    opts.attach,
@@ -176,6 +199,7 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
 	}
 	reportOpts.DevServerDisposable = devServerDisposable
+	reportOpts.TransactionOwner = runner.TransactionOwner()
 	// The shared integrity gate. Lint belongs to the class through --dev-url:
 	// migrationlintreport.Build replays the directory's migrations on that
 	// database to validate execution semantics and read baseline schema state.
@@ -197,14 +221,6 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 	); err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
 	}
-	// The runtime a provider selection installed, or the bundled one. A
-	// selected provider owns its engine's split, rules and annotations here as
-	// it owns every other service of that engine.
-	runtime, err := engineruntime.Resolve(cmd.Context())
-	if err != nil {
-		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
-	}
-	reportOpts.Runtime = runtime
 	report, err := migrationlintreport.Build(cmd.Context(), reportOpts, projectCfg)
 	if err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())

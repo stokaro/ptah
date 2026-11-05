@@ -42,10 +42,10 @@ import (
 	"ptah.run/migration/schemadiff"
 )
 
-const undecidedSequenceDiagnostic = "Warning: sequence \"order_seq\" is declared by --to but no change was planned for it:" +
+const undecidedSequenceDiagnostic = "warning: sequence \"order_seq\" is declared by --to but no change was planned for it:" +
 	" the replayed migration directory records `ptah:not-described sequence`," +
 	" so this comparison cannot tell it apart from one that already exists," +
-	" and the creation Ptah renders for it cannot safely converge from an unknown current state.\n"
+	" and the creation Ptah renders for it cannot safely converge from an unknown current state\n"
 
 // TestCompareReplayedState_CarriesTheDropPolicyIntoTheVirtualTableGuard is
 // `migrate diff`'s half of the plumbing internal/atlasschema and

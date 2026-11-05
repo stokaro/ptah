@@ -38,12 +38,11 @@ func validateDeclaredColumns(dialect string, database *schemamodel.Database) err
 // type has to name an enum type, and rendered as it stands the declaration is
 // the bare type ENUM, which the server refuses. A type created here for the
 // column would be an object no declaration owns, so the column is refused
-// with what to declare instead. YDB refuses an ENUM type of any kind when it
-// maps the column.
+// with what to declare instead.
 func validateUndeclaredEnum(dialect string, database *schemamodel.Database, field schemamodel.Field) error {
 	values, declared := schemaprep.EnumColumnValues(field, database.Enums)
 	target := platform.NormalizeDialect(dialect)
-	if declared || len(values) == 0 || schemaprep.InlineEnumDialect(target) || target == platform.YDB {
+	if declared || len(values) == 0 || schemaprep.InlineEnumDialect(target) {
 		return nil
 	}
 	remedy := "type the column with a type " + target + " has"

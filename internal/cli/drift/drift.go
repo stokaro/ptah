@@ -263,7 +263,7 @@ func runDrift(cmd *cobra.Command, opts runOptions) error {
 		return fail(cmd, opts.format, err)
 	}
 
-	undecidednote.Report(cmd.ErrOrStderr(), result.Undecided, "the database", "the desired schema")
+	undecidednote.Report(cmd.Context(), cmd.ErrOrStderr(), result.Undecided, "the database", "the desired schema")
 	schemascope.WarnUndescribed(cmd.ErrOrStderr(), result.Undescribed)
 	report := assessDrift(result, opts.severity, opts.useExitCode, ignoredTables)
 

@@ -44,8 +44,10 @@ func annotatedSQL(statements []string, annotations []renderer.Annotation) string
 	return out.String()
 }
 
-// WriteUnitReports lists notes and SQL or native summaries in plan order.
-// Native payloads are never exposed as text that could be executed as SQL.
+// WriteUnitReports lists notes and SQL or native summaries in plan order. A
+// native unit is written as its owner's text form where the report carries
+// one, as an SQL unit is, and otherwise by kind, subject and assessment.
+// Native payloads themselves are never exposed.
 func WriteUnitReports(out io.Writer, units []ApplyUnitReport, annotations []renderer.Annotation) {
 	next := 0
 	for i := 0; i <= len(units); i++ {
@@ -65,6 +67,10 @@ func WriteUnitReports(out io.Writer, units []ApplyUnitReport, annotations []rend
 			continue
 		}
 		native := unit.Native
+		if native.Text != "" {
+			fmt.Fprintln(out, native.Text)
+			continue
+		}
 		fmt.Fprintf(out, "Native operation: %s\n  %s: %s (%s)\n", native.Kind, native.Subject, native.Reason, native.Severity)
 		if native.Access != "" {
 			fmt.Fprintf(out, "  Access %s: %s\n", native.Access, native.AccessReason)

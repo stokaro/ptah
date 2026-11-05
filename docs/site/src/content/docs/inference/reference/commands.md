@@ -9,7 +9,7 @@ readerQuestion: "Which inference commands and flags does Ptah expose?"
 goal: "Look up the available inference commands and flags."
 sourceOfTruth:
   - "internal/cli/inference"
-  - "internal/embedydb"
+  - "github:stokaro/ptah-ydb-plugin"
   - "integration/inference_cli_e2e_test.go"
 generated: false
 overlaps: []
@@ -39,13 +39,14 @@ All verbs except `abandon` take `--spec` or `--release`. Most also take
 finds its checkpoint. `abandon` reads the generation identity from the existing
 run, so it needs only the run-state database and run identifier.
 
-`--db-url` names PostgreSQL with pgvector, YDB, or an engine an executable
-provider serves, and its scheme decides which: `postgres://`, or a
-keyword/value DSN with no scheme, for PostgreSQL, `ydb://` or `ydbs://` for YDB,
-and a scheme the selected provider serves for its engine. Each verb runs the
+`--db-url` names PostgreSQL with pgvector or an engine an executable provider
+serves, such as YDB, and its scheme decides which: `postgres://`, or a
+keyword/value DSN with no scheme, for PostgreSQL, and a scheme a provider
+serves, such as `ydb://` or `ydbs://`, for its engine. Each verb runs the
 same lifecycle on every engine; where one differs, its section says so.
 
-Every verb except `probe` takes `--provider-config` and `--provider-engine`,
+A URL of an engine an installed official provider serves selects that provider.
+Every verb except `probe` also takes `--provider-config` and `--provider-engine`,
 which select an executable provider as they do for `ptah schema`; see
 [Test an executable provider](../../../extend/executable-providers/). The
 provider's engine must keep an embedding store.
@@ -71,8 +72,10 @@ can read anything, so that form does reach a registry.
 
 The target objects are the engine's. With `--provider-engine`, or a
 `--provider-config` that names one engine, that engine's provider describes
-them. Without one, the representation names the built-in engine: `vector`,
-`halfvec` and `sparsevec` are pgvector's, and `float` is YDB's.
+them. Without one, the PostgreSQL derivation describes them, and it takes
+pgvector's representations alone: `vector`, `halfvec` and `sparsevec`. Describe
+a YDB generation, whose representation is `float`, with
+`--provider-engine ydb`.
 
 It reports the generation identity, whether that generation can be rebuilt and
 why not, what running it would send out of the database, what the consistency

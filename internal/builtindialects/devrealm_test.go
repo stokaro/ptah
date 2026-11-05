@@ -53,7 +53,6 @@ func TestDescriptors_DevDatabases(t *testing.T) {
 		{dialect: platform.SQLite, want: descriptor.DevRealm{
 			Identity: "file", Query: "SELECT file FROM pragma_database_list WHERE name = 'main'", FileLock: "local",
 		}},
-		{dialect: platform.YDB, want: descriptor.DevRealm{Identity: "writer"}},
 		{dialect: platform.Oracle, want: descriptor.DevRealm{}},
 	}
 	c := qt.New(t)

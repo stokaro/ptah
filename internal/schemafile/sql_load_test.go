@@ -13,9 +13,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlext"
 	"ptah.run/core/yamlext"
-	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine"
-	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemafile"
 )
 
@@ -119,48 +117,4 @@ func TestLoadAll_ReadsEveryGrammarSourceInOneCall(t *testing.T) {
 	c.Assert(requests, qt.HasLen, 1)
 	c.Assert(requestedFiles(requests[0]), qt.DeepEquals, []string{"main.sql: head", "001.sql: tail"})
 	c.Assert(database.Tables, qt.HasLen, 2)
-}
-
-const (
-	yqlUsers    = "CREATE TABLE users (id Int64 NOT NULL, PRIMARY KEY (id));\n"
-	yqlFeed     = "ALTER TABLE users ADD CHANGEFEED updates WITH (mode = 'UPDATES', format = 'JSON');\n"
-	hclUsersYDB = "schema \"main\" {\n}\ntable \"users\" {\n  schema = schema.main\n  column \"id\" {\n    null = false\n    type = Int64\n  }\n  primary_key {\n    columns = [column.id]\n  }\n}\n"
-)
-
-// TestLoadAll_AYQLFileChangesWhatTheLoadDeclares is the control for the
-// refusal below: a YQL file of a source list may change a table another YQL
-// source of the list declares, a file or a directory, before or after it.
-func TestLoadAll_AYQLFileChangesWhatTheLoadDeclares(t *testing.T) {
-	c := qt.New(t)
-	root := c.TempDir()
-	dir := filepath.Join(root, "tables")
-	c.Assert(os.Mkdir(dir, 0o700), qt.IsNil)
-	writeFiles(c, dir, map[string]string{"001.sql": yqlUsers})
-	writeFiles(c, root, map[string]string{"feed.sql": yqlFeed})
-	opts := schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: "ydb"}
-
-	database, err := schemafile.LoadAll(t.Context(), []string{dir, filepath.Join(root, "feed.sql")}, opts)
-
-	c.Assert(err, qt.IsNil)
-	c.Assert(must.Must(ydbschema.DesiredChangefeeds(database.FeatureObjects, "", "users")), qt.HasLen, 1)
-}
-
-// TestLoadAll_AYQLFileCannotChangeWhatAnHCLSourceDeclares refuses a YQL file
-// that changes a table an HCL source of the same list declares. The YDB owner
-// reads the YQL files of a load together and sees none of the HCL source, so
-// the refusal says that a YQL file changes only what the YQL files of its load
-// declare, and names the source it cannot see.
-func TestLoadAll_AYQLFileCannotChangeWhatAnHCLSourceDeclares(t *testing.T) {
-	c := qt.New(t)
-	root := c.TempDir()
-	writeFiles(c, root, map[string]string{"users.hcl": hclUsersYDB, "feed.sql": yqlFeed})
-	opts := schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: "ydb"}
-
-	database, err := schemafile.LoadAll(t.Context(), []string{filepath.Join(root, "users.hcl"), filepath.Join(root, "feed.sql")}, opts)
-
-	c.Assert(err, qt.ErrorMatches, `read SQL schema file .*feed\.sql: the schema model has no place for this statement: `+
-		`ALTER TABLE users ADD CHANGEFEED updates names a table this schema does not declare; `+
-		`a ydb SQL file changes only what the SQL files of the same load declare, not what users\.hcl declares`)
-	c.Assert(err, qt.ErrorIs, sqlext.ErrUndeclared)
-	c.Assert(database, qt.IsNil)
 }

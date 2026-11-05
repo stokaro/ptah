@@ -1,0 +1,180 @@
+//go:build integration
+
+package integration_test
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+
+	qt "github.com/frankban/quicktest"
+
+	"ptah.run/dbschema"
+)
+
+// `ptah migrations up --runner golang-migrate`, or `migration.runner` in
+// ptah.yaml, applies a directory the way golang-migrate does, which opens no
+// transaction around a file. A file with its own BEGIN and COMMIT runs outside
+// any transaction of the migrator's, so when a later statement fails, the
+// revision row records the statements the file's COMMIT made permanent and a
+// retry resumes after them.
+//
+// Under the default runner the migrator wraps the file: PostgreSQL ignores its
+// BEGIN with a warning, its COMMIT commits the migrator's transaction too, and
+// the failure is recorded as nothing applied while the table stays.
+
+// runnerMigrations writes a migration directory whose second version opens
+// and commits a transaction of its own and then fails, and returns it.
+func runnerMigrations(c *qt.C, files map[string]string) string {
+	c.Helper()
+	dir := c.TempDir()
+	for name, sql := range files {
+		c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(sql), 0o600), qt.IsNil) // #nosec G703 -- the path is c.TempDir() plus a constant name
+	}
+	return dir
+}
+
+// ownTransactionFiles is a directory whose second version commits a table in
+// its own transaction before a statement that fails.
+var ownTransactionFiles = map[string]string{
+	"0000000001_init.up.sql":       "CREATE TABLE base (id int);\n",
+	"0000000001_init.down.sql":     "DROP TABLE base;\n",
+	"0000000002_backfill.up.sql":   "BEGIN;\nCREATE TABLE t2 (id int);\nCOMMIT;\nINSERT INTO missing_table VALUES (1);\n",
+	"0000000002_backfill.down.sql": "DROP TABLE t2;\n",
+}
+
+// revisionApplied is how many statements the revision row of version records
+// as applied, and whether the table name exists, read from the database at
+// url.
+func revisionApplied(c *qt.C, url string, version int64, table string) (int, bool) {
+	c.Helper()
+	conn, err := dbschema.ConnectToDatabase(c.Context(), url)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	var applied int
+	c.Assert(conn.QueryRowContext(c.Context(), "SELECT applied FROM schema_migrations WHERE version = $1", version).Scan(&applied), qt.IsNil)
+	var exists bool
+	c.Assert(conn.QueryRowContext(c.Context(), "SELECT to_regclass($1) IS NOT NULL", table).Scan(&exists), qt.IsNil)
+	return applied, exists
+}
+
+// builtPtah builds the native binary once per test and returns its path.
+func builtPtah(t *testing.T, c *qt.C) string {
+	t.Helper()
+	binary := filepath.Join(c.TempDir(), "ptah")
+	buildPtah(c, c.Context(), e2eRepoRoot(t), binary)
+	return binary
+}
+
+func TestMigrationsUpRunnerAppliesTheFileOwnTransactionsE2E(t *testing.T) {
+	binary := builtPtah(t, qt.New(t))
+	tests := []struct {
+		name        string
+		config      string
+		flags       []string
+		wantApplied int
+	}{
+		{name: "the default runner wraps the file", wantApplied: 0},
+		{name: "golang-migrate named by the flag", flags: []string{"--runner", "golang-migrate"}, wantApplied: 3},
+		{name: "golang-migrate named in ptah.yaml", config: "migration:\n  runner: golang-migrate\n", wantApplied: 3},
+		{
+			name: "the flag over ptah.yaml", config: "migration:\n  runner: golang-migrate\n",
+			flags: []string{"--runner", "ptah"}, wantApplied: 0,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := runnerMigrations(c, ownTransactionFiles)
+			workdir := c.TempDir()
+			c.Assert(os.WriteFile(filepath.Join(workdir, "ptah.yaml"), []byte(test.config), 0o600), qt.IsNil) // #nosec G703 -- the path is c.TempDir() plus a constant name
+			target, _ := scratchReplayDatabase(c)
+
+			out, err := runPtahInDir(c.Context(), workdir, binary,
+				append([]string{"migrations", "up", "--migrations-dir", dir, "--db-url", target}, test.flags...)...)
+
+			c.Assert(err, qt.ErrorMatches, "exit status 2", qt.Commentf("%s", out))
+			c.Assert(out, qt.Contains, `relation "missing_table" does not exist`)
+			applied, created := revisionApplied(c, target, 2, "t2")
+			c.Assert(applied, qt.Equals, test.wantApplied)
+			c.Assert(created, qt.IsTrue)
+		})
+	}
+}
+
+// The apply gate judges a file's transaction control by the runner too. With
+// TX201 raised to an error and gated, the default runner refuses a file that
+// opens its own transaction before anything runs, and golang-migrate, which
+// runs that transaction as written, applies it.
+func TestMigrationsUpRunnerDecidesTheGateE2E(t *testing.T) {
+	binary := builtPtah(t, qt.New(t))
+	tests := []struct {
+		name        string
+		flags       []string
+		wantCreated bool
+	}{
+		{name: "the default runner", wantCreated: false},
+		{name: "golang-migrate", flags: []string{"--runner", "golang-migrate"}, wantCreated: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := runnerMigrations(c, map[string]string{
+				"0000000001_own.up.sql":   "BEGIN;\nCREATE TABLE t1 (id int);\nCOMMIT;\n",
+				"0000000001_own.down.sql": "DROP TABLE t1;\n",
+				".ptah-lint.yaml":         "gate:\n  families: [TX]\nrules:\n  TX201:\n    severity: error\n",
+			})
+			target, _ := scratchReplayDatabase(c)
+
+			out, _ := runPtahInDir(c.Context(), c.TempDir(), binary,
+				append([]string{"migrations", "up", "--migrations-dir", dir, "--db-url", target}, test.flags...)...)
+
+			conn, err := dbschema.ConnectToDatabase(c.Context(), target)
+			c.Assert(err, qt.IsNil)
+			defer dbschema.CloseAndWarn(conn)
+			var created bool
+			c.Assert(conn.QueryRowContext(c.Context(), "SELECT to_regclass('t1') IS NOT NULL").Scan(&created), qt.IsNil)
+			c.Assert(created, qt.Equals, test.wantCreated, qt.Commentf("%s", out))
+		})
+	}
+}
+
+// `ptah migrations lint --dev-url` replays the directory the way the runner
+// applies it. A file whose COMMIT ends the transaction its first statement
+// runs in, as golang-migrate's single query does, replays under golang-migrate;
+// a migrator that wraps the file refuses the COMMIT, since no transaction of
+// the file's is open to close.
+func TestMigrationsLintRunnerDecidesTheReplayE2E(t *testing.T) {
+	binary := builtPtah(t, qt.New(t))
+	tests := []struct {
+		name     string
+		flags    []string
+		wantCode string
+	}{
+		{name: "the default runner", wantCode: "exit status 2"},
+		{name: "golang-migrate", flags: []string{"--runner", "golang-migrate"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := runnerMigrations(c, map[string]string{
+				"0000000001_commit.up.sql":   "CREATE TABLE base (id int);\nCOMMIT;\nCREATE TABLE after_commit (id int);\n",
+				"0000000001_commit.down.sql": "DROP TABLE after_commit;\nDROP TABLE base;\n",
+			})
+			dev, _ := scratchReplayDatabase(c)
+
+			out, err := runPtahInDir(c.Context(), c.TempDir(), binary,
+				append([]string{"migrations", "lint", "--dir", dir, "--dev-url", dev}, test.flags...)...)
+
+			c.Assert(exitStatus(err), qt.Equals, test.wantCode, qt.Commentf("%s", out))
+		})
+	}
+}
+
+// exitStatus is the process error's text, empty for a run that exited 0.
+func exitStatus(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}

@@ -13,7 +13,6 @@ import (
 	"ptah.run/internal/devclean/replay"
 	"ptah.run/internal/devclean/sqlitereplay"
 	"ptah.run/internal/devclean/sqlserverreplay"
-	"ptah.run/internal/devclean/ydbreplay"
 )
 
 // All returns the replay guard of every built-in engine that has one. Each
@@ -25,6 +24,5 @@ func All() []replay.Service {
 		sqlitereplay.Services(),
 		sqlserverreplay.Services(),
 		clickhousereplay.Services(),
-		ydbreplay.Services(),
 	)
 }

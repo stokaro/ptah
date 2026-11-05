@@ -141,9 +141,9 @@ Useful controls, all designed for CI:
   `codequality` artifact — [CI](../../testing/ci/) shows both upload steps.
 - `--dialect` gates dialect-specific rules; accepted values are `postgres`,
   `mysql`, `mariadb`, `sqlite`, `sqlserver`, `clickhouse`, `cockroachdb`,
-  `yugabytedb`, `spanner`, and `ydb`, which reads YQL and adds the `YD` rules
-  [YDB](../../databases/ydb/#linting) describes, or an engine the selected
-  provider serves. Aliases resolve to the canonical name —
+  `yugabytedb` and `spanner`, or an engine an executable provider serves, such
+  as `ydb`, whose [provider](../../extend/providers/ydb/) reads YQL and adds its `YD`
+  rules. Aliases resolve to the canonical name —
   see [Dialects and capabilities](../../concepts/dialects-and-capabilities/). `--dev-url` infers the dialect and replays the
   directory on the dev database. Before each analyzed version
   the run reads the schema state that version starts from and hands it to

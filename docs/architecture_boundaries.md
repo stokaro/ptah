@@ -38,7 +38,6 @@ features, database implementations, or external modules.
 | `renderer-consumers-import-builtins` | Selected rendering consumers must not link built-in rendering factories. | 0 |
 | `neutral-packages-link-owners` | Models, contracts, the runtime, orchestration and Go export must not link a concrete dialect, feature or built-in owner. | 0 |
 | `sql-reader-links-owners` | The shared SQL reader must not link a concrete dialect, feature or built-in owner. | 0 |
-| `yql-parser-importers` | Only the in-process YDB reading may import the YQL parser, which moves into the YDB provider. | per package, in the JSON |
 | `shared-packages-name-dialects` | Shared packages must not name a dialect, so that a new engine needs no edit to shared code. | per package, in the JSON |
 
 A count may fall and may never rise. A rule at zero is therefore enforced
@@ -70,16 +69,12 @@ helpers. Its mutation tests compile direct and indirect owner imports, then
 verify that the gate refuses both. The writer must load for the gate to pass;
 renaming or omitting that package cannot silently reduce the measured scope.
 
-The YDB owner's planning and lowering enter through explicit services:
-
-- `migration/planner` links no concrete planner. Each `engine.Target` supplies
-  its planner factory, and `engine.Runtime.MigrationPlanner` resolves that
-  factory from the selected runtime. `engine/builtin.New` supplies the bundled
-  factories, including YDB's. Constructing it cannot change another runtime's
-  selection. `engine/builtin/internal/plannerorder` tests that isolation.
-- `internal/modelast` names a grant's object through `Lowering.GrantPath`.
-  `internal/builtinlowering` sets the hook for YDB, which names a grant on the
-  database, or on an object at its root, by its absolute path.
+Planning enters through an explicit service. `migration/planner` links no
+concrete planner. Each `engine.Target` supplies its planner factory, and
+`engine.Runtime.MigrationPlanner` resolves that factory from the selected
+runtime. `engine/builtin.New` supplies the bundled factories. Constructing it
+cannot change another runtime's selection.
+`engine/builtin/internal/plannerorder` tests that isolation.
 
 The HCL reader under `internal/` takes owner blocks through `hclext.Set` and
 links no owner, and neither does the SQL reader; see
@@ -95,38 +90,22 @@ owner through `core/sqlext` claims, so the reader does not need to link it. A
 finding is one of the two packages and one owner family it links through any
 chain of imports. The count is zero.
 
-YQL is not written in the shared grammar, and the parser refuses a YDB
-document. The seams below carry it, and each is plugin debt under
-[#4204](https://github.com/stokaro/ptah/issues/4204):
-
-- The YDB owner, `internal/ydbsql`, reads YQL with the `Grammar` slot of
-  `core/sqlext`. It parses each document with `internal/yqlparse`, converts the
-  YDB statements into its own models, and hands the rest to
-  `sqlschema.ConvertScript`, which converts tables, columns, indexes and views
-  as for any other dialect. The grammar's answer is data, a
-  `schemamodel.Database` and what each file declares, but the conversion it
-  borrows is in-process: an extracted YDB provider needs a public conversion
-  library or one of its own.
-- A consumer of SQL syntax rather than of the declared schema, such as
-  `atlascompat.ParseSQL` or the structural-change count of migration lint,
-  reaches a YQL syntax tree through `internal/sqlsyntax`, which asks the
-  parser of the lexer the dialect's descriptor names (`internal/syntaxext`).
-  The parser runs in process. Whether a grammar owner also serves syntax trees
-  over the protocol, and in what form, is not decided yet.
-- A reader of SQL text, such as the statement splitter, the reach scan or the
-  dependency order of views, lexes a YDB document with the scanner of the
-  lexer the dialect's descriptor names (`internal/lexerext`), which
-  `internal/dialectlexer` sets in the lexer's options. `internal/lexer` holds
-  no YQL rule. The scanner runs in process and returns a token stream, which
-  is the shape a provider could serve over the protocol.
+Every built-in dialect is read by the shared lexer and parser. The seams an
+owner's own lexer, syntax tree or reach scan would enter through
+(`internal/lexerext`, `internal/syntaxext` and `internal/reachext`) serve no
+built-in dialect. An engine whose SQL is not written in the shared grammar,
+such as YDB, is served by its provider, which reads its own SQL documents. A
+provider that lists `sql.scan` also scans the engine's text: the host
+registers its scanner with `lexerext.Provide` while the provider is selected
+(`internal/providerscan`), and every reader of the engine's text through
+`internal/dialectlexer` reads its tokens.
 
 A DO block that declares roles is read by the reader of the procedural
 language the dialect's descriptor names (`Statements.DoBlocks`), which
 `internal/doblockext/builtin` looks up. PostgreSQL's PL/pgSQL reader is
 `internal/doblockext/postgres`. The SQL reader keeps what every language
 shares: which dialect a block is read as, the roles the file declared before
-it, and how a CREATE ROLE is recorded. The reader runs in process, like the
-YQL parser.
+it, and how a CREATE ROLE is recorded. The reader runs in process.
 
 Routine headers are parsed and converted by `internal/routineext` services, selected by
 the source dialect's `Grammar.Routines.Body`. The PostgreSQL, MySQL, and SQL
@@ -136,11 +115,6 @@ and validates the owner claims after parsing.
 The shared SQL reader normalizes the destination name and adds its refusal
 sentinel to an owner's error. The service boundary is in-process; the public
 provider protocol remains part of #4204.
-
-The tables the shared conversion reads for the YDB owner carry YDB names: one
-path in backticks, where a dot is part of the name. The reader asks
-`internal/sqlident`, the helper that also quotes and qualifies a name, how a
-dialect writes one, so the reader names no dialect for it.
 
 The reader also imports dialect helpers under `internal/`. They are allowed,
 because each interprets an object of the common model that every reader of the
@@ -160,17 +134,6 @@ families. The dialect-name rule reads them as per-engine helpers by their names
 and leaves them out of the shared set; see
 [What the dialect-name rule holds](#what-the-dialect-name-rule-holds). A helper
 that interprets syntax an owner models moves to the owner instead.
-
-### What the YQL parser rule holds
-
-`yql-parser-importers` counts the packages that import `internal/yqlparse`.
-ADR 0027 moves the parser into the YDB provider, which then reads its SQL
-documents whole, and the host keeps no grammar of the engine. Until then
-`internal/ydbsql` and `internal/syntaxext/yql` import it, one finding each. A
-third importer is refused, and the move records zero. Tests are not loaded, so
-a test that parses YQL is not counted. The rule reads at least 500 packages, a
-floor the source states, so a load that matched little of the module cannot
-report no importer and pass.
 
 ### What the dialect-name rule holds
 
@@ -219,7 +182,7 @@ directories that hold a git-tracked Go file. The set leaves out:
 - `core/platform` itself, which declares dialect identity;
 - a package with a path segment that names an engine. The segment begins with a
   spelling `NormalizeDialect` accepts, the name of a `dialect/` owner, or one of
-  the abbreviations `pg`, `ora` and `yql`. That covers the per-engine readers
+  the abbreviations `pg` and `ora`. That covers the per-engine readers
   in `internal/dbschema/<engine>`, the planners in
   `internal/planner/dialects/<engine>`, and helpers such as `internal/pgname`
   and `internal/mysqlname`.
@@ -254,8 +217,7 @@ as feature changes. Registration declares the attached model kinds whose state
 must be assessed during table removal or rebuild. Dispatch does not depend on a
 child delta: empty or unknown namespaces still reach their owner. The runtime
 checks parent receipts and accounts for their contributed steps in the complete
-plan graph. YDB changefeed assessment lives in `dialect/ydb/ydbplan`; the table
-planner supplies captured operands and consumes the selected result.
+plan graph.
 
 The external provider host lets lifecycle operations span its common sequence
 when both sides negotiate `planning.lifecycle`.
@@ -266,7 +228,7 @@ The dependent phase retains its insertion point after common creations and
 before removals. The lifecycle span does not override a dependency or permit a
 conflicting replacement. A host without that span refuses the lifecycle phase.
 
-`internal/embedpg`, `internal/embedydb`, `internal/genexprprobe`,
+`internal/embedpg`, `internal/genexprprobe`,
 `migration/generator`, `migration/importer`, `migration/planner`,
 `migration/safety`, `migration/schemadiff`, and `migration/shadow` receive
 rendering from their caller. Their complete import
@@ -298,14 +260,14 @@ reason.
 
 | Field | Why it is common |
 | --- | --- |
-| `IndexPart.Operator`, `Index.Operator` | The operator class is read by the PostgreSQL family, and YDB checks it against a vector index's distance. |
-| `Index.StorageParams` | PostgreSQL index storage parameters and YDB full-text analyzer options share the one map. |
+| `IndexPart.Operator`, `Index.Operator` | The operator class is read by the PostgreSQL family, and the YDB provider checks it against a vector index's distance. |
+| `Index.StorageParams` | PostgreSQL index storage parameters and the YDB provider's full-text analyzer options share the one map. |
 | `Index.Concurrently` | A plan-time request, not catalog state. `internal/concurrentindex` decides it for the PostgreSQL family, and migration lint, SQL lint and transaction routing read it for every target. |
-| `Index.NullsDistinct`, `Constraint.NullsDistinct` | PostgreSQL states it, and the YDB lowering of a UNIQUE constraint to a global unique index carries it. |
-| `Index.IncludeColumns`, `Constraint.IncludeColumns` | Covering columns on PostgreSQL, YugabyteDB and Spanner indexes and constraints, and the `COVER` list of a YDB index. |
-| `Deferrable`, `Initially` (constraints and foreign-key fields) | PostgreSQL and Oracle render them, and the YDB lowering refuses a constraint that carries either. |
+| `Index.NullsDistinct`, `Constraint.NullsDistinct` | PostgreSQL states it, and `internal/uniquelowering`, which writes a UNIQUE constraint as a global unique index for a provider without UNIQUE constraints, carries it. |
+| `Index.IncludeColumns`, `Constraint.IncludeColumns` | Covering columns on PostgreSQL, YugabyteDB and Spanner indexes and constraints, and the `COVER` list of an index the YDB provider creates. |
+| `Deferrable`, `Initially` (constraints and foreign-key fields) | PostgreSQL and Oracle render them, and `internal/uniquelowering` leaves a constraint that carries either for its provider to refuse. |
 | `Constraint.Match`, `Field.ForeignKeyMatch` | The shared SQL parser reads `MATCH` for the PostgreSQL family, MySQL, MariaDB and SQLite, and refuses the values a server records as `NONE`. |
-| `Constraint.NotValid` | The PostgreSQL family plans and renders it. The YDB lowering and planner read it to refuse it. An export with no way to say it reports it. |
+| `Constraint.NotValid` | The PostgreSQL family plans and renders it. `internal/uniquelowering` reads it to leave the constraint for its provider to refuse. An export with no way to say it reports it. |
 
 A field joins this list only when a second dialect reads it. A field that one
 dialect reads moves to that dialect's owner.
@@ -349,7 +311,6 @@ test and the control that make it evidence.
 | Rendering selection: consumers cannot select built-in factories through their dependency graph | `renderer-consumers-import-builtins` in `scripts/check-architecture-boundaries.sh` | `…-selftest.sh`: an indirect built-in import is refused; a similarly named package is accepted |
 | Owner isolation: neutral packages link no concrete owner | `neutral-packages-link-owners` in `scripts/check-architecture-boundaries.sh` | `…-selftest.sh`: an indirect owner import is refused in two neutral packages with separate import graphs |
 | SQL reader isolation: the shared SQL reader links no owner | `sql-reader-links-owners` in `scripts/check-architecture-boundaries.sh` | `…-selftest.sh`: a direct owner import into the parser and an indirect one into `internal/sqlschema` are refused, a dialect helper import is accepted, and a baseline above the tree is refused |
-| YQL parser importers: no package outside the in-process YDB reading imports the YQL parser | `yql-parser-importers` in `scripts/check-architecture-boundaries.sh` | `…-selftest.sh`: a new importer is refused and the repaired tree is accepted |
 | Dialect names: shared packages name no more dialects than recorded | `shared-packages-name-dialects` in `scripts/check-architecture-boundaries.sh` | `…-selftest.sh`: each counted shape in a shared package is refused; the same name in an owner, a helper or the bundle, and words that are not dialect names, are accepted; a stale package baseline is refused |
 
 ## How target facts are held

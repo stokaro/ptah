@@ -21,6 +21,7 @@ import (
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/internal/sqlscript"
 	"ptah.run/internal/timescale"
+	"ptah.run/internal/unreadtables"
 )
 
 const (
@@ -104,6 +105,10 @@ func readDBCommand(cmd *cobra.Command, opts *options) error {
 	// on the server, and an operator reading the output has no other way to
 	// learn that. See stokaro/ptah#1267.
 	rolescope.ReportUndescribed(stderr, conn.Info().Dialect, schema)
+
+	// A table the read found and left out is in no statement printed below,
+	// so without the note the output reads as a database without it.
+	unreadtables.Report(stderr, schema)
 
 	// A SQLite virtual table whose module this build cannot load leaves that
 	// module's own storage described as ordinary tables, and the statements

@@ -16,8 +16,6 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/clickhouse/chdiff"
 	"ptah.run/dialect/clickhouse/chschema"
-	"ptah.run/dialect/ydb/ydbcoordination"
-	"ptah.run/dialect/ydb/ydbdiff"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/featurejson"
 )
@@ -46,18 +44,18 @@ func refreshChange() schemaext.ChangeRecord {
 	}}
 }
 
-// coordinationChange is a YDB coordination node change, a standalone feature
-// object the diff carries at its own scope.
-func coordinationChange() schemaext.ChangeRecord {
-	return schemaext.ChangeRecord{Subject: ydbcoordination.Ref("", "locks"), Value: &ydbdiff.CoordinationNode{
-		Before: &ydbcoordination.Observed{Spec: ydbcoordination.Spec{ReadConsistencyMode: "relaxed"}},
-		After:  &ydbcoordination.Desired{Spec: ydbcoordination.Spec{ReadConsistencyMode: "strict"}},
-	}}
+// policyChange is a ClickHouse row policy change, a feature object the diff
+// carries at its own scope.
+func policyChange() schemaext.ChangeRecord {
+	return schemaext.ChangeRecord{Subject: chschema.RowPolicyRef("", "orders", "tenant"), Value: chdiff.NewRowPolicy(
+		&chschema.ObservedRowPolicy{Filter: new("tenant = 1"), Composition: chschema.Permissive, Roles: chschema.RoleSelection{All: true}},
+		&chschema.DesiredRowPolicy{Filter: new("tenant = 2"), Roles: chschema.RoleSelection{All: true}},
+	)}
 }
 
 func diffWithChanges() *difftypes.SchemaDiff {
 	return &difftypes.SchemaDiff{
-		FeatureChanges: []schemaext.ChangeRecord{coordinationChange()},
+		FeatureChanges: []schemaext.ChangeRecord{policyChange()},
 		TablesModified: []difftypes.TableDiff{{TableName: "events", FeatureChanges: []schemaext.ChangeRecord{ttlChange()}}},
 		MaterializedViewsModified: []difftypes.MaterializedViewDiff{
 			{ViewName: "hourly", Changes: make(map[string]string), FeatureChanges: []schemaext.ChangeRecord{refreshChange()}},
@@ -100,10 +98,10 @@ func TestMarshal_EncodesOwnerChangesThroughTheirCodecs(t *testing.T) {
 		} `json:"materialized_views_modified"`
 	}
 	c.Assert(json.Unmarshal(data, &raw), qt.IsNil)
-	c.Assert(raw.FeatureChanges[0].Value.Kind, qt.Equals, ydbdiff.CoordinationNodeKind)
-	c.Assert(raw.FeatureChanges[0].Value.Owner, qt.Equals, "ptah.run/ydb")
+	c.Assert(raw.FeatureChanges[0].Value.Kind, qt.Equals, chdiff.RowPolicyKind)
+	c.Assert(raw.FeatureChanges[0].Value.Owner, qt.Equals, "ptah.run/clickhouse")
 	c.Assert(raw.FeatureChanges[0].Value.Version, qt.Equals, uint32(1))
-	c.Assert(raw.FeatureChanges[0].Subject, qt.DeepEquals, coordinationChange().Subject)
+	c.Assert(raw.FeatureChanges[0].Subject, qt.DeepEquals, policyChange().Subject)
 	c.Assert(raw.TablesModified[0].FeatureChanges[0].Value.Kind, qt.Equals, chdiff.TableKind)
 	c.Assert(raw.TablesModified[0].FeatureChanges[0].Value.Representation, qt.Equals, schemaext.Change)
 	c.Assert(raw.MaterializedViewsModified[0].FeatureChanges[0].Value.Kind, qt.Equals, chdiff.RefreshKind)
@@ -173,8 +171,10 @@ func TestMarshal_KeepsFieldOrder(t *testing.T) {
 func TestMarshal_RoundTripsSchemaFeatureData(t *testing.T) {
 	c := qt.New(t)
 	table := must.Must(schemaext.NewFacets(ttlChange().Value.(*chdiff.Table).After))
-	objects := must.Must(schemaext.NewObjects(ydbcoordination.DesiredObject("", "locks", "", ydbcoordination.Spec{ReadConsistencyMode: "strict"})))
-	coverage := must.Must(ydbcoordination.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
+	policy := chschema.RowPolicyRef("", "events", "tenant")
+	objects := must.Must(schemaext.NewObjects(schemaext.Object{Ref: policy,
+		Value: &chschema.DesiredRowPolicy{Filter: new("tenant = 1"), Roles: chschema.RoleSelection{All: true}}}))
+	coverage := must.Must(chschema.RowPolicyCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
 	database := &schemamodel.Database{
 		Tables:          []schemamodel.Table{{Name: "events", Facets: table}},
 		FeatureObjects:  objects,
@@ -191,7 +191,7 @@ func TestMarshal_RoundTripsSchemaFeatureData(t *testing.T) {
 	wantObjects := must.Must(objects.All())
 	c.Assert(readObjects[0].Ref, qt.DeepEquals, wantObjects[0].Ref)
 	c.Assert(readObjects[0].Value.Equal(wantObjects[0].Value), qt.IsTrue)
-	c.Assert(read.FeatureCoverage.Lookup(ydbcoordination.Kind, ydbcoordination.Ref("", "locks")).State, qt.Equals, schemaext.Complete)
+	c.Assert(read.FeatureCoverage.Lookup(chschema.RowPolicyKind, policy).State, qt.Equals, schemaext.Complete)
 }
 
 // An observed catalog uses the observed codecs.
@@ -218,7 +218,7 @@ func TestMarshal_FailurePath(t *testing.T) {
 		value          any
 		want           string
 	}{
-		{"a change kind without a codec", empty, schemaext.Desired, diffWithChanges(), `.*"ptah.run/ydb/coordination-node-change"/change`},
+		{"a change kind without a codec", empty, schemaext.Desired, diffWithChanges(), `.*"ptah.run/clickhouse/row-policy-change"/change`},
 		{"a facet kind without a codec", empty, schemaext.Desired, &schemamodel.Database{Tables: []schemamodel.Table{{Name: "events",
 			Facets: must.Must(schemaext.NewFacets(ttlChange().Value.(*chdiff.Table).After))}}}, `.*"ptah.run/clickhouse/table"/desired`},
 		{"a value in the other representation", codecs(), schemaext.Observed, &schemamodel.Database{Tables: []schemamodel.Table{{Name: "events",
@@ -240,7 +240,7 @@ func TestMarshal_UnknownKindIsTyped(t *testing.T) {
 	_, err := featurejson.Marshal(t.Context(), must.Must(schemaext.NewRegistry()), schemaext.Desired, diffWithChanges())
 	var unknown *schemaext.UnknownCodecError
 	c.Assert(err, qt.ErrorAs, &unknown)
-	c.Assert(unknown.Kind, qt.Equals, ydbdiff.CoordinationNodeKind)
+	c.Assert(unknown.Kind, qt.Equals, chdiff.RowPolicyKind)
 }
 
 func TestUnmarshal_FailurePath(t *testing.T) {

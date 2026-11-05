@@ -378,7 +378,7 @@ package $name
 
 import "ptah.run/core/platform"
 
-var _ = platform.YDB
+var _ = platform.ClickHouse
 GO
   require_acceptance "$dir naming a dialect"
   rm -f "$target"
@@ -418,7 +418,7 @@ cat >"$target" <<'GO'
 package astbuilder
 
 func boundariesSelftestDefect(byDialect map[string]int) int {
-	return byDialect["ydb"]
+	return byDialect["clickhouse"]
 }
 GO
 require_refusal "a shared package looking a dialect name up in a map"
@@ -441,17 +441,6 @@ GO
 require_acceptance "collections, a lookup and a struct field holding no dialect name"
 rm -f "$target"
 
-# A package outside the in-process YDB reading that imports the YQL parser,
-# which moves into the YDB provider.
-target="$tree/internal/schemafile/boundaries_selftest_defect.go"
-cat >"$target" <<'GO'
-package schemafile
-
-import _ "ptah.run/internal/yqlparse"
-GO
-require_refusal "a new importer of the YQL parser"
-rm -f "$target"
-require_acceptance "the repaired tree"
 
 # A fall must be recorded package by package. A baseline that still permits
 # one more reference in a package is refused, and so is debt that moved
