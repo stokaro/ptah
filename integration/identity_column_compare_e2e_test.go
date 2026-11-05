@@ -206,8 +206,8 @@ func TestMigrateDiffIdentityColumnE2E(t *testing.T) {
 		name, strict string
 		wantSetval   bool
 	}{
-		{name: "the default surface", wantSetval: true},
-		{name: "strict mode"},
+		{name: "the default surface", strict: "0", wantSetval: true},
+		{name: "strict mode", strict: "1"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
