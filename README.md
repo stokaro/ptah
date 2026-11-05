@@ -180,6 +180,8 @@ and `ptah db capabilities --db-url <url>` for the concrete target.
 
 - [Choose a workflow](https://docs.ptah.run/edge/start/choose-a-workflow/)
   to compare versioned migrations with direct schema changes.
+- [See the Ptah ecosystem](https://docs.ptah.run/edge/start/ecosystem/)
+  to find which public repositories a workflow needs.
 - [Inspect a live database](https://docs.ptah.run/edge/direct/inspect/)
   or [compare and detect drift](https://docs.ptah.run/edge/direct/compare-and-drift/).
 - [Validate migration integrity](https://docs.ptah.run/edge/versioned/integrity-and-safety/)

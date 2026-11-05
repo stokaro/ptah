@@ -28,14 +28,21 @@ import (
 // stores its rows elsewhere -- and that table then disappears from the table
 // read, from the index read, and from what DropAllTables destroys.
 //
+// An Atomic view also names ".tmp.inner_id.<that uuid>", the table a refresh
+// writes before it exchanges it with the view's target. Measured on 26.9.21.9 and
+// 24.10.4.191, the table exists while a refresh runs. Both servers refuse a
+// refreshable view in an Ordinary database unless it is APPEND, which writes
+// into the target directly, so the Ordinary arm has no such name.
+//
 // The Atomic half of that is pinned live, in
-// TestInnerTableSubtractionKeepsADeclaredDotNameLive. The Ordinary half is not:
-// Ordinary is deprecated and needs allow_deprecated_database_ordinary to create
-// at all, so this text is what holds that arm in place.
+// TestInnerTableSubtractionKeepsADeclaredDotNameLive and
+// TestReadDuringARefreshLeavesItsTemporaryTableOutLive. The Ordinary half is
+// not: Ordinary is deprecated and needs allow_deprecated_database_ordinary to
+// create at all, so this text is what holds that arm in place.
 const innerStorageNameExpression = `if(
 		         uuid = toUUID('00000000-0000-0000-0000-000000000000'),
-		         concat('.inner.', name),
-		         concat('.inner_id.', toString(uuid))
+		         [concat('.inner.', name)],
+		         [concat('.inner_id.', toString(uuid)), concat('.tmp.inner_id.', toString(uuid))]
 		       )`
 
 // clickHouseIndexPresentReaderQuery answers like clickHouseViewReaderQuery but

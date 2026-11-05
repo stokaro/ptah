@@ -14,6 +14,8 @@ const siteRoot = join(scriptDir, '..');
 export const searchCases = [
   ['install Ptah', '/start/install/'],
   ['first migration', '/start/quick-start-migrations/'],
+  ['Ptah ecosystem', '/start/ecosystem/'],
+  ['Ptah repositories', '/start/ecosystem/'],
   ['generate migration', '/versioned/generate/', { before: ['/schema/go-annotations/'] }],
   ['generate migrations from SQL', '/versioned/generate/'],
   ['generate migrations from YAML', '/versioned/generate/'],
