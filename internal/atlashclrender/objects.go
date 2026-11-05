@@ -13,6 +13,7 @@ import (
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/triggerdef"
+	"ptah.run/internal/viewoptions"
 )
 
 func (r *renderer) renderSequences() {
@@ -312,10 +313,62 @@ func (r *renderer) renderViews() {
 		if view.WithCheck {
 			r.rawAttr(1, "check_option", "LOCAL")
 		}
+		r.renderViewSecurity(view)
 		r.stringAttr(1, "comment", view.Comment)
 		r.line("}")
 		r.line("")
 	}
+}
+
+// viewSecurityAttributes maps each PostgreSQL view option the security block
+// carries to its attribute, in the order the block is written.
+var viewSecurityAttributes = []struct{ option, attribute string }{
+	{option: "security_invoker", attribute: "invoker"},
+	{option: "security_barrier", attribute: "barrier"},
+}
+
+// renderViewSecurity writes a view's security_invoker and security_barrier as
+// the security block Atlas documents for a PostgreSQL view, each as the bool
+// the stored value means. An option the block has no attribute for is
+// reported rather than dropped without a word.
+func (r *renderer) renderViewSecurity(view schemamodel.View) {
+	values := make(map[string]string, len(view.Options))
+	for _, option := range view.Options {
+		name, value, _ := strings.Cut(option, "=")
+		values[name] = value
+	}
+	var lines, omitted []string
+	for _, slot := range viewSecurityAttributes {
+		value, declared := values[slot.option]
+		if !declared {
+			continue
+		}
+		delete(values, slot.option)
+		truth, isBool := viewoptions.Bool(value)
+		if !isBool {
+			omitted = append(omitted, slot.option+"="+value)
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("    %s = %t", slot.attribute, truth))
+	}
+	for _, option := range view.Options {
+		name, _, _ := strings.Cut(option, "=")
+		if _, left := values[name]; left {
+			omitted = append(omitted, option)
+		}
+	}
+	if len(omitted) > 0 {
+		r.warn("views."+view.Name, fmt.Sprintf("view option(s) %s have no attribute in HCL schema output and are omitted",
+			strings.Join(omitted, ", ")))
+	}
+	if len(lines) == 0 {
+		return
+	}
+	r.line("  security {")
+	for _, line := range lines {
+		r.line(line)
+	}
+	r.line("  }")
 }
 
 func (r *renderer) renderMaterializedViews() {
@@ -346,6 +399,13 @@ func (r *renderer) renderMaterializedView(view schemamodel.MaterializedView) {
 	r.stringAttr(1, "comment", view.Comment)
 	r.line("}")
 	r.line("")
+	// The block has no attribute for storage parameters. A document read back
+	// states nothing about them, so the comparison keeps the ones the database
+	// holds; see [ptah.run/core/coverage.MaterializedViewOptions].
+	if len(view.Options) > 0 {
+		r.warn("materialized_views."+view.Name, fmt.Sprintf("storage parameter(s) %s have no attribute in HCL schema output "+
+			"and are omitted; a comparison against the document keeps the ones the database holds", strings.Join(view.Options, ", ")))
+	}
 }
 
 func (r *renderer) renderTriggers() {

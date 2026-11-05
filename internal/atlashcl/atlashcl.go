@@ -299,7 +299,7 @@ func (p *parser) readHeader() error {
 	if err != nil {
 		return fmt.Errorf("parse HCL schema %s: %w", p.filename, err)
 	}
-	p.db.NotDescribed = notDescribed
+	p.db.NotDescribed = notDescribed.With(p.storageUndescribed...)
 	p.db.FeatureCoverage, err = documentCoverage(string(p.src), owned, p.db.FeatureObjects, p.ownerMatches, p.owners)
 	return err
 }
@@ -390,6 +390,11 @@ type parser struct {
 	sourceDir      string
 	db             *schemamodel.Database
 	vocabulary     coverage.Vocabulary
+	// storageUndescribed records each materialized view the document
+	// declares, whose storage parameters no attribute of the block can state;
+	// see [coverage.MaterializedViewOptions]. readHeader adds them to what the
+	// header says the document does not describe.
+	storageUndescribed []coverage.Object
 
 	// ctx carries the var. and local. namespaces and the function set every
 	// attribute is evaluated against. It is never nil once Parse has built it.

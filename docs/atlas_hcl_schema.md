@@ -124,7 +124,12 @@ current schema IR:
   described as a `function` when it is a procedure is a different object from
   the one in the database
 - PostgreSQL `view` blocks with `schema`, `as`, `check_option`, `depends_on`,
-  `comment`, and `column` blocks naming the view's output columns. A `column`
+  `comment`, a `security` block, and `column` blocks naming the view's output
+  columns. The `security` block is the spelling Atlas documents for a
+  PostgreSQL view's options: `invoker` and `barrier`, each a bool, at least one
+  of them set, stand for `security_invoker` and `security_barrier`. A view
+  without the block declares no options, so the plan removes one the database
+  holds. A `column`
   block takes a name label and an optional `comment`; a `type` inside one is
   refused, because a view's column types are derived by the server from its body
   and a declaration stating one is a claim Ptah can neither render nor check.
@@ -142,7 +147,10 @@ current schema IR:
   to another dialect is absent from that render by design
 - `materialized` blocks with `schema`, `as`, `depends_on`, `comment`, and the
   same `column` blocks; `depends_on` is the same ordering edge, over the same
-  sort
+  sort. The block has no attribute for PostgreSQL storage parameters such as
+  `fillfactor`, as Atlas's has none, so a document states nothing about them:
+  the comparison keeps the ones the database holds, and a view the plan creates
+  again gets them back. `schema inspect` names the parameters it leaves out
 - PostgreSQL `trigger` blocks with `on`, one of `before`/`after`/`instead_of`,
   `for` or `foreach`, `comment`, and one of `as` or an `execute` block. The two
   differ in ownership: `as` gives the trigger a body, and Ptah generates a

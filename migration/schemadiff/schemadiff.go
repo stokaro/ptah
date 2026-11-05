@@ -120,6 +120,10 @@ func compareReportingUndecidedAdditions(
 	}
 	desired, database = normalizeInlineEnumsForCompare(desired, database, opts)
 	desired = normalizeGeneratedColumnsForCompare(desired, opts)
+	// A materialized view whose storage parameters the source cannot state
+	// takes the ones the database holds, before anything reads the
+	// declaration.
+	desired = compare.HeldMaterializedViewOptions(desired, database, identifierSemantics)
 	// The feature comparison runs before the index comparison, and reads a
 	// renamed index under the name the plan gives it. The renames read the
 	// index kinds the tables' preparation states, as the index comparison does.

@@ -623,6 +623,11 @@ carries the fact itself, in its header:
 A comparator reading that document has three states for an object instead of
 two: present, absent, and **not described**. Only the middle one is a removal.
 
+One limit needs no line. A `materialized` block has no attribute for a
+PostgreSQL materialized view's storage parameters, so the reader records each
+one it reads as `materialized_view_options` with `reason=unsupported`, and the
+comparison keeps the parameters the database holds rather than removing them.
+
 The attributes after the kind say why the document declines that kind and how
 the limit was learned:
 

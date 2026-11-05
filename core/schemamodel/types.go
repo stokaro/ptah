@@ -1019,9 +1019,13 @@ type MaterializedView struct {
 	// CREATE MATERIALIZED VIEW writes as WITH (...) and pg_class.reloptions
 	// holds. As for [View.Options], the list is the whole of what the view
 	// holds, and a change to it alone is made in place rather than by
-	// replacing the view. Only targets with
-	// [ptah.run/core/platform/capability.MaterializedViewOptions] render a
-	// materialized view that carries options.
+	// replacing the view. A description with a
+	// [ptah.run/core/coverage.MaterializedViewOptions] record for the view
+	// states nothing about them instead, and a comparison takes the ones the
+	// database holds: an HCL document records this for every materialized view
+	// it declares, since the block has no attribute for them. Only targets
+	// with [ptah.run/core/platform/capability.MaterializedViewOptions] render
+	// a materialized view that carries options.
 	Options []string `json:",omitempty"`
 
 	// DependsOn names objects this view must be created after, beyond the ones

@@ -121,11 +121,23 @@ const (
 	RoleMembership Kind = "role_membership"
 )
 
+// The common kind a source records for a part of an object its language has
+// no spelling for.
+const (
+	// MaterializedViewOptions is a PostgreSQL materialized view's storage
+	// parameters, such as fillfactor, recorded per view. Atlas's HCL has no
+	// attribute for them, so an HCL document records each materialized view
+	// it declares, and the comparison takes the parameters the database holds
+	// for that view rather than planning their removal or dropping them from
+	// a view it creates again.
+	MaterializedViewOptions Kind = "materialized_view_options"
+)
+
 // kinds is every common [Kind] the serialized directive grammar accepts, in
 // sorted order. An owner's kinds join it through a [Vocabulary].
 var kinds = []Kind{
 	Composite, Domain,
-	Extension, Grant, ObjectOwner, Policy,
+	Extension, Grant, MaterializedViewOptions, ObjectOwner, Policy,
 	Role, RoleMembership, Schema, Sequence,
 	View,
 }

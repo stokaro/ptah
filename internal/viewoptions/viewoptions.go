@@ -209,8 +209,8 @@ func sameValue(a, b string) bool {
 	if leftNumber && rightNumber {
 		return left == right
 	}
-	leftBool, leftIsBool := boolean(a)
-	rightBool, rightIsBool := boolean(b)
+	leftBool, leftIsBool := Bool(a)
+	rightBool, rightIsBool := Bool(b)
 	if leftIsBool && rightIsBool {
 		return leftBool == rightBool
 	}
@@ -232,8 +232,10 @@ var booleans = map[string]bool{
 	"of": false, "off": false, "0": false,
 }
 
-// boolean reads value as [booleans] does, in any case.
-func boolean(value string) (truth, ok bool) {
+// Bool reads value as PostgreSQL reads a boolean option's value: true, yes, on
+// and 1, false, no, off and 0, each unambiguous prefix of the words, in any
+// case. ok is false for any other value.
+func Bool(value string) (truth, ok bool) {
 	truth, ok = booleans[strings.ToLower(strings.TrimSpace(value))]
 	return truth, ok
 }

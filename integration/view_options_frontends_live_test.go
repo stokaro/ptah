@@ -136,3 +136,55 @@ func TestViewOptionsFromEveryFrontendLive(t *testing.T) {
 		})
 	}
 }
+
+// TestViewOptionsFromHCLLive applies an HCL schema to a PostgreSQL database
+// whose view holds security_invoker and whose materialized view holds
+// fillfactor. The view's security block states security_barrier instead, so
+// the plan sets one and resets the other. The materialized view's body
+// changes, which drops it and creates it again, and the HCL block has no
+// attribute for storage parameters, so it is created again with the one the
+// database held. A second comparison finds nothing to do.
+func TestViewOptionsFromHCLLive(t *testing.T) {
+	c := qt.New(t)
+	url, db, _ := viewRebuildTarget(c, optionsSchema(optionsView, "security_invoker = on", "fillfactor = 70"))
+	desired := loadFrontendSchema(c, "schema.hcl", `schema "public" {}
+
+table "orders" {
+  schema = schema.public
+  column "id" {
+    type = integer
+    null = false
+  }
+  column "amount" {
+    type = numeric
+    null = false
+  }
+  primary_key {
+    columns = [column.id]
+  }
+}
+
+view "report" {
+  schema = schema.public
+  as     = "SELECT id, amount FROM orders"
+  security {
+    barrier = true
+  }
+}
+
+materialized "totals" {
+  schema = schema.public
+  as     = "SELECT sum(amount) AS total, count(*) AS n FROM orders"
+}
+`)
+
+	up, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(c.Context(), must.Must(builtin.New()),
+		compareDeclaredLive(c, url, desired), platform.Postgres,
+		planext.Options{Capabilities: capability.ForDialect(platform.Postgres)})
+	c.Assert(err, qt.IsNil)
+	c.Logf("up:\n%s", strings.Join(up, ";\n"))
+	runRebuildStatements(c, db, up)
+
+	c.Assert(heldViewOptions(c, db), qt.DeepEquals, []string{"report security_barrier=true", "totals fillfactor=70"})
+	c.Assert(compareDeclaredLive(c, url, desired).HasChanges(), qt.IsFalse)
+}

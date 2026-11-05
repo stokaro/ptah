@@ -101,6 +101,35 @@ Path confinement is shared by every `--schema-file` source; see
 To replace Go annotations with an HCL source, use the review-aware one-time
 export workflow in [Go annotations](../go-annotations/#move-the-schema-to-hcl).
 
+## Declare view options
+
+A `view` block states PostgreSQL's `security_invoker` and `security_barrier` in
+a `security` block, the spelling the Atlas PostgreSQL reference documents:
+
+```hcl
+view "order_report" {
+  schema = schema.public
+  as     = "SELECT id, amount FROM orders"
+  security {
+    invoker = true
+    barrier = true
+  }
+}
+```
+
+A view without the block declares no options, so the plan removes one the
+database holds.
+
+A `materialized` block has no attribute for storage parameters such as
+`fillfactor`, as Atlas's has none, so an HCL schema cannot set or change them.
+It states nothing about them: the plan keeps the values the database holds, a
+materialized view the plan creates again gets them back, and a new one is
+created without any. To set or change them, declare the view in
+[SQL](../sql/#declare-view-options), [Go annotations](../../reference/go-annotations/#ptahschemamatview)
+or [YAML](../../reference/yaml-schema/#view-options-and-storage-parameters).
+[View options and storage parameters](../../databases/postgresql/#view-options-and-storage-parameters)
+says how they are compared.
+
 ## Declare API export metadata
 
 Ptah HCL extends the Atlas-compatible table and column blocks with contract
