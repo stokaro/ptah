@@ -244,6 +244,13 @@ starts the provider, and writes and reads the engine's names with its quoting
 everywhere else. With `paths`, a qualified name is one path, `dir/t`, and Ptah's
 schema is the directory that holds the object.
 
+`engine.default-capabilities` lets a provider state the capability facts its
+engine is planned with offline: a render, a generation or an export with no
+database. Ptah has no preset for an engine only a provider serves, so without
+them every fact is unknown offline, and a provider that refuses to plan
+against an unknown fact refuses the command. A command that connects plans
+with the facts the session states.
+
 `sql.scan` lets a provider scan the SQL text of its engine. Ptah reads SQL text
 without parsing it in many places: the lineage of view bodies, the indentation
 of the `sql` template function of `ptah-compat`, placeholder rewriting,

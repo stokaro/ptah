@@ -152,6 +152,9 @@ var hostFeatures = []string{
 	// reaches the table's owner as one rename step; see
 	// commonPlanner.indexChanges.
 	provider.IndexRenamesFeature,
+	// An offline command plans an engine with the capabilities its provider
+	// states for it; see registerDefaultCapabilities.
+	provider.DefaultCapabilitiesFeature,
 }
 
 // Start verifies the selected artifact and negotiates experimental services.
@@ -195,6 +198,10 @@ func Start(ctx context.Context, spec Spec) (*Host, error) {
 		return nil, err
 	}
 	if err = registerQueryDialects(host.description.GetEngines()); err != nil {
+		client.Close()
+		return nil, err
+	}
+	if err = registerDefaultCapabilities(host.description.GetEngines()); err != nil {
 		client.Close()
 		return nil, err
 	}

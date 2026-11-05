@@ -5121,10 +5121,15 @@ const timescaleExtension = "timescaledb"
 
 // ForDialect returns the default preset for a dialect name (normalized via
 // platform.NormalizeDialect): the current supported version line of that
-// dialect, as its descriptor names it. Unknown dialects get the zero set, the
-// conservative empty one, and so does a dialect whose descriptor states
-// capability rules [NewResolver] refuses.
+// dialect, as its descriptor names it. An engine no descriptor describes gets
+// the facts its executable provider stated for it ([RegisterDefaults]). Any
+// other unknown dialect gets the zero set, the conservative empty one, and so
+// does a dialect whose descriptor states capability rules [NewResolver]
+// refuses.
 func ForDialect(dialect string) Capabilities {
+	if defaults, registered := providedDefaults(dialect); registered {
+		return defaults
+	}
 	return process().ForDialect(dialect)
 }
 

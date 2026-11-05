@@ -4959,6 +4959,15 @@ written without one resolves in, in search order: on PostgreSQL the session's
 unqualified names takes one to be in any schema. `Equal` and `IsZero` compare
 the path too, and `Clone` copies it.
 
+`core/platform/capability.ForDialect` answers the default preset a dialect's
+descriptor names, which an offline command plans with. An engine no descriptor
+describes has none. When an executable provider states the facts its engine is
+planned with offline (`Engine.default_capabilities`, contract 25.27), the host
+records them with `capability.RegisterDefaults` while the provider is selected,
+and `ForDialect` answers them under the engine's names. A registration lasts
+for the life of the process. A name a descriptor describes, or one already
+registered with other facts, is refused.
+
 `core/platform/descriptor.Dialect` is what an engine states about itself, as
 data only. Beside its names and aliases, protocol family, default schema,
 identifier rules and placeholder style, it carries what shared packages read
