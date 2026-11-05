@@ -55,23 +55,30 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.24. `provider-sdk/v0.20.0` speaks 25.22.
-`provider-sdk/v0.19.0` speaks 25.21.
-`provider-sdk/v0.18.0` speaks 25.19.
-`provider-sdk/v0.17.0` speaks 25.18.
-`provider-sdk/v0.16.0` speaks 25.17.
-`provider-sdk/v0.15.0` speaks 25.16.
-`provider-sdk/v0.14.0` speaks 25.15.
-`provider-sdk/v0.13.0` speaks 25.14.
-`provider-sdk/v0.12.0` speaks 25.12.
-`provider-sdk/v0.11.0` speaks 25.9.
-`provider-sdk/v0.10.0` speaks 25.8.
-`provider-sdk/v0.9.0` speaks 25.7.
-`provider-sdk/v0.8.0` speaks 25.6.
-`provider-sdk/v0.7.0` speaks 25.5.
-`provider-sdk/v0.6.0` speaks 25.4. `provider-sdk/v0.5.0`
-speaks contract 25.3, `provider-sdk/v0.4.0` speaks 25.2, `provider-sdk/v0.3.0`
-speaks 25.1, and `provider-sdk/v0.2.0` speaks 25.0.
+speaks contract 25.25. Each released SDK speaks one contract:
+
+| SDK release | Contract |
+| --- | --- |
+| `provider-sdk/v0.21.0` | 25.24 |
+| `provider-sdk/v0.20.0` | 25.22 |
+| `provider-sdk/v0.19.0` | 25.21 |
+| `provider-sdk/v0.18.0` | 25.19 |
+| `provider-sdk/v0.17.0` | 25.18 |
+| `provider-sdk/v0.16.0` | 25.17 |
+| `provider-sdk/v0.15.0` | 25.16 |
+| `provider-sdk/v0.14.0` | 25.15 |
+| `provider-sdk/v0.13.0` | 25.14 |
+| `provider-sdk/v0.12.0` | 25.12 |
+| `provider-sdk/v0.11.0` | 25.9 |
+| `provider-sdk/v0.10.0` | 25.8 |
+| `provider-sdk/v0.9.0` | 25.7 |
+| `provider-sdk/v0.8.0` | 25.6 |
+| `provider-sdk/v0.7.0` | 25.5 |
+| `provider-sdk/v0.6.0` | 25.4 |
+| `provider-sdk/v0.5.0` | 25.3 |
+| `provider-sdk/v0.4.0` | 25.2 |
+| `provider-sdk/v0.3.0` | 25.1 |
+| `provider-sdk/v0.2.0` | 25.0 |
 
 **What changes which number.** The minor counts compatible additions within a
 major. The major changes only with an incompatible change, and the minor then
@@ -122,6 +129,7 @@ returns to 0.
   [HCL platform groups](#hcl-platform-groups).
   Contract 25.23 adds [the transaction owner of a lint check](#transaction-owner-of-a-lint-check).
   Contract 25.24 adds [index kinds](#index-kinds).
+  Contract 25.25 adds [model predecessors](#model-predecessors).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -155,8 +163,8 @@ does not oblige a peer to use it.
   `models.reverse`, `schema.unread-tables`, `schema.database-kinds`,
   `schema.sql-facets`, `models.report-counts`, `schema.observed-index-facets`,
   `schema.subtree-coverage`, `schema.password-inputs`, `source.hcl-platform`,
-  `engine.default-capabilities`, `lint.transaction-owner` and
-  `source.index-kinds`. The embedding store's calls,
+  `engine.default-capabilities`, `lint.transaction-owner`,
+  `source.index-kinds` and `models.predecessors`. The embedding store's calls,
   `PrepareCommonObjects`, `ReverseChanges` and `ReportValues` are new, and each
   comes with an addition to `Engine`, so a host lists the feature to receive
   any of them. `SplitMigration` is new too, and comes with the abort flags of
@@ -1721,6 +1729,34 @@ loss may name a value an index-kind part writes, once: the parts write part of
 the value. The provider and each engine that claims a type list the feature,
 beside `source.decode`. Without it negotiated, the description the host
 receives holds no claim.
+
+## Model predecessors
+
+[ADR 0075](../docs/adr/0075-a-provider-names-the-identities-its-models-had-before.md)
+decides this declaration. `models.predecessors` adds
+`Engine.model_predecessors`: the identities the engine's models had before
+the engine owned them, such as those of a host's former built-in engine. A
+`ModelPredecessor` names a desired or observed model of the engine by `kind`
+and `representation`, and the former identity a document captured that
+model's claims under: `former_owner`, `former_kind`, `schema_version` and
+`definition_sha256`, the lowercase hexadecimal digest a captured claim names
+after its `sha256:` prefix.
+
+A host reads a claim captured under a predecessor, such as the
+`ptah:feature-coverage` header of an HCL export, as the same claim of the
+engine's model: the kind record takes the model's current identity, and a
+subject record of the former kind takes the model's kind. A document that
+carries a claim under both identities is refused, as a document that repeats a
+claim is. A host writes a claim it restates, as when it cuts a document into
+files, under the model's current identity.
+
+`ValidateDescription` refuses a predecessor on an engine that does not list
+the feature, the feature on an engine with no predecessor or without the
+provider's feature, a predecessor of a model the engine does not declare or of
+an operation or change model, an incomplete former identity, one that is a
+model the provider declares, and a former identity named twice in an engine.
+Without the feature negotiated, the description the host receives holds no
+predecessor.
 
 ## Source encoding
 
