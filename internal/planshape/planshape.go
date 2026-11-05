@@ -389,16 +389,70 @@ func (s postgresCatalog) typeName(column *ast.ColumnNode) string {
 		return quotedTypeName(base) + tail
 	}
 	lower := strings.ToLower(base)
+	lower, tail = zoneIntoName(lower, compactArguments(tail))
+	if strings.HasSuffix(tail, "[]") && !strings.Contains(tail, "time zone") {
+		if words, ok := timeArrayWords[lower]; ok {
+			return words.name + strings.TrimSuffix(tail, "[]") + " " + words.zone + "[]"
+		}
+	}
 	if alias, ok := postgresAliases[lower]; ok {
-		return alias + strings.ReplaceAll(tail, " ", "")
+		return alias + tail
 	}
 	if canonical, ok := pgtypealias.Alias(lower); ok && lower == "bool" {
 		return canonical + tail
 	}
 	if isBuiltinWord(lower) {
-		return lower + strings.ReplaceAll(tail, " ", "")
+		return lower + tail
 	}
 	return strings.TrimSpace(column.Type)
+}
+
+// timeArrayWords spell the element of a temporal array as the catalog prints an array:
+// by the type's full name, where a column of the type alone reads `timestamptz`.
+var timeArrayWords = map[string]struct{ name, zone string }{
+	"timestamp":   {name: "timestamp", zone: "without time zone"},
+	"timestamptz": {name: "timestamp", zone: "with time zone"},
+	"time":        {name: "time", zone: "without time zone"},
+	"timetz":      {name: "time", zone: "with time zone"},
+}
+
+// zoneNames are the names a catalog prints for a temporal column of a type read in full.
+var zoneNames = map[string]string{
+	"timestamp without time zone": "timestamp",
+	"timestamp with time zone":    "timestamptz",
+	"time without time zone":      "time",
+	"time with time zone":         "timetz",
+}
+
+// compactArguments takes the spaces out of the argument list that opens tail, as a
+// catalog prints it, and leaves what follows the list alone.
+func compactArguments(tail string) string {
+	end := strings.IndexByte(tail, ')')
+	if !strings.HasPrefix(tail, "(") || end < 0 {
+		return tail
+	}
+	return strings.ReplaceAll(tail[:end+1], " ", "") + tail[end+1:]
+}
+
+// zoneIntoName reads the time zone words behind a precision into the type's name, as
+// a catalog prints it: `timestamp(3) with time zone` is `timestamptz(3)`.
+func zoneIntoName(spelled, spelledTail string) (name, tail string) {
+	if short, ok := zoneNames[spelled]; ok {
+		return short, spelledTail
+	}
+	end := strings.IndexByte(spelledTail, ')')
+	if end < 0 || (spelled != "timestamp" && spelled != "time") {
+		return spelled, spelledTail
+	}
+	arguments, words := spelledTail[:end+1], strings.ToLower(strings.TrimSpace(spelledTail[end+1:]))
+	switch words {
+	case "without time zone":
+		return spelled, arguments
+	case "with time zone":
+		return spelled + "tz", arguments
+	default:
+		return spelled, spelledTail
+	}
 }
 
 // isBuiltinWord reports a built-in PostgreSQL type the catalog prints in lower

@@ -141,6 +141,7 @@ func cockroachDB() descriptor.Dialect {
 		// f1.public.items;` (stokaro/ptah#4058).
 		Comparison: descriptor.Comparison{
 			DeclaredSchemas:         true,
+			TimePrecision:           descriptor.TimePrecision{Compared: true, Default: 6},
 			ForeignKeysOutside:      true,
 			ExpressionProbes:        "pg-catalog",
 			ProbeViewsInSchema:      true,

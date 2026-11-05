@@ -243,6 +243,12 @@ func sizedType(dbColumn catalog.Column) string {
 		if dbColumn.CharacterMaxLength != nil {
 			return fmt.Sprintf("bit varying(%d)", *dbColumn.CharacterMaxLength)
 		}
+	case "timestamp without time zone", "timestamp with time zone", "time without time zone", "time with time zone", "interval":
+		// Without it a schema read from a catalog builds `timestamp(3)` as `timestamp`,
+		// and every value in the column gains digits the author ruled out.
+		if raw := dbColumn.RawType(); strings.Contains(raw, "(") {
+			return raw
+		}
 	case "numeric", "decimal":
 		if dbColumn.NumericPrecision != nil && dbColumn.NumericScale != nil {
 			return fmt.Sprintf("NUMERIC(%d,%d)", *dbColumn.NumericPrecision, *dbColumn.NumericScale)

@@ -18,6 +18,7 @@ import (
 // pins for every spelling.
 func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 	mysqlFamily := descriptor.Comparison{
+		TimePrecision:                  descriptor.TimePrecision{Compared: true},
 		ColumnPrimaryKeyIsTheTablesKey: true,
 		ForeignKeysOutside:             true,
 		ForeignKeyBackingIndex:         true,
@@ -35,6 +36,7 @@ func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 	want := map[string]descriptor.Comparison{
 		"postgres": {
 			DeclaredSchemas:                true,
+			TimePrecision:                  descriptor.TimePrecision{Compared: true, Default: 6},
 			ForeignKeysOutside:             true,
 			ForeignKeyHoldsItsKey:          true,
 			ColumnPrimaryKeyIsTheTablesKey: true,
@@ -47,6 +49,7 @@ func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 		},
 		"cockroachdb": {
 			DeclaredSchemas:         true,
+			TimePrecision:           descriptor.TimePrecision{Compared: true, Default: 6},
 			ForeignKeysOutside:      true,
 			ExpressionProbes:        "pg-catalog",
 			ProbeViewsInSchema:      true,
@@ -59,6 +62,7 @@ func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 		},
 		"yugabytedb": {
 			DeclaredSchemas:    true,
+			TimePrecision:      descriptor.TimePrecision{Compared: true, Default: 6},
 			ExpressionProbes:   "pg-catalog",
 			RolePasswords:      true,
 			RoutineTypeAliases: "pg-aliases",

@@ -3,8 +3,10 @@ package compare
 import (
 	"fmt"
 	"maps"
+	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"ptah.run/catalog"
@@ -835,14 +837,50 @@ func columnTypeChange(
 	if comparisonOf(dialect).NullableTypes {
 		return clickHouseColumnTypeChange(genCol, dbCol, dbRawType)
 	}
-	genType, dbType := normalizeColumnTypesForDialect(genCol, dbRawType, dialect)
+	precision := comparisonOf(dialect).TimePrecision
+	bareDeclared := genCol
+	bareDeclared.Type = withoutTimePrecision(genCol.Type, precision)
+	genType, dbType := normalizeColumnTypesForDialect(bareDeclared, withoutTimePrecision(dbRawType, precision), dialect)
 	switch {
 	case genType != dbType:
 		return typeChangeText(dbRawType, genCol.Type, dbType, genType, dialect)
+	case timePrecisionOf(dbRawType, precision) != timePrecisionOf(genCol.Type, precision):
+		return fmt.Sprintf("%s -> %s", dbRawType, genCol.Type)
 	case shouldReportSizedTypeChange(arrayElementOf(dbRawType), arrayElementOf(genCol.Type), dialect):
 		return fmt.Sprintf("%s -> %s", dbRawType, genCol.Type)
 	}
 	return ""
+}
+
+// timeTypeRe matches a temporal type with its precision: the name, the precision, and
+// what follows it, such as ` with time zone` or an array marker.
+var timeTypeRe = regexp.MustCompile(`(?i)^\s*(timestamptz|timestamp|timetz|time|interval)\s*\(\s*(\d+)\s*\)(.*)$`)
+
+// withoutTimePrecision is a temporal type with its precision taken out, on an engine
+// whose comparison reads the precision apart; see [timePrecisionOf]. Any other type
+// stands as it is.
+func withoutTimePrecision(typeName string, precision descriptor.TimePrecision) string {
+	match := timeTypeRe.FindStringSubmatch(typeName)
+	if !precision.Compared || match == nil {
+		return typeName
+	}
+	return match[1] + match[3]
+}
+
+// timePrecisionOf is the fractional-seconds precision of a temporal type: the one it
+// declares, or the engine's default. It answers the same for any other type, and for
+// any type on an engine whose comparison does not read a precision, so two of those
+// never differ here.
+func timePrecisionOf(typeName string, precision descriptor.TimePrecision) int {
+	match := timeTypeRe.FindStringSubmatch(typeName)
+	if !precision.Compared || match == nil {
+		return precision.Default
+	}
+	declared, err := strconv.Atoi(match[2])
+	if err != nil {
+		return precision.Default
+	}
+	return declared
 }
 
 // arrayElementOf is the element of an array type, whose width is the array's, and
