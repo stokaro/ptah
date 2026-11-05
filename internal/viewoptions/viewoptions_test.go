@@ -150,6 +150,81 @@ func TestChanges_FailurePath(t *testing.T) {
 	c.Assert(reset, qt.IsNil)
 }
 
+// TestLostSecurity_HappyPath pins which held options a declaration loses by
+// leaving them out. Only a security option held on counts. A value the server
+// could not have read as a boolean counts as on, because the wrong answer here
+// removes a control.
+func TestLostSecurity_HappyPath(t *testing.T) {
+	const invokerEffect = "the view runs with its owner's rights, not the rights of the user who queries it"
+	const barrierEffect = "the view loses its barrier, and a function in a query can see rows the view's condition hides"
+	tests := []struct {
+		name           string
+		held, declared []string
+		want           []viewoptions.SecurityLoss
+	}{
+		{name: "nothing held"},
+		{name: "a security option stated", held: []string{"security_invoker=true"}, declared: []string{"security_invoker=true"}},
+		{name: "a security option stated as false", held: []string{"security_invoker=true"}, declared: []string{"security_invoker=false"}},
+		{name: "a security option stated in another case", held: []string{"security_invoker=on"}, declared: []string{"SECURITY_INVOKER=on"}},
+		{name: "held false", held: []string{"security_invoker=false"}},
+		{name: "held off", held: []string{"security_barrier=off"}},
+		{name: "held 0", held: []string{"security_invoker=0"}},
+		{name: "a storage parameter", held: []string{"fillfactor=70"}},
+		{
+			name: "security_invoker held true",
+			held: []string{"security_invoker=true"},
+			want: []viewoptions.SecurityLoss{{Name: "security_invoker", Held: "true", Effect: invokerEffect}},
+		},
+		{
+			name: "security_barrier held true",
+			held: []string{"security_barrier=true"},
+			want: []viewoptions.SecurityLoss{{Name: "security_barrier", Held: "true", Effect: barrierEffect}},
+		},
+		{
+			name: "the spelling the server stores is kept",
+			held: []string{"security_invoker=ON"},
+			want: []viewoptions.SecurityLoss{{Name: "security_invoker", Held: "ON", Effect: invokerEffect}},
+		},
+		{
+			name: "a value that is not a boolean",
+			held: []string{"security_invoker=maybe"},
+			want: []viewoptions.SecurityLoss{{Name: "security_invoker", Held: "maybe", Effect: invokerEffect}},
+		},
+		{
+			name:     "another option stated does not keep it",
+			held:     []string{"security_invoker=true"},
+			declared: []string{"security_barrier=true"},
+			want:     []viewoptions.SecurityLoss{{Name: "security_invoker", Held: "true", Effect: invokerEffect}},
+		},
+		{
+			name: "sorted by name, whatever the order held",
+			held: []string{"security_invoker=true", "fillfactor=70", "security_barrier=1"},
+			want: []viewoptions.SecurityLoss{
+				{Name: "security_barrier", Held: "1", Effect: barrierEffect},
+				{Name: "security_invoker", Held: "true", Effect: invokerEffect},
+			},
+		},
+		{
+			name: "a held entry the list refuses does not hide the next one",
+			held: []string{"check_option=local", "security_invoker=true"},
+			want: []viewoptions.SecurityLoss{{Name: "security_invoker", Held: "true", Effect: invokerEffect}},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(viewoptions.LostSecurity(test.held, test.declared), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// A declaration Normalize refuses is the comparison's to refuse, before a plan
+// asks.
+func TestLostSecurity_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	c.Assert(viewoptions.LostSecurity([]string{"security_invoker=true"}, []string{"check_option=local"}), qt.IsNil)
+}
+
 func TestDescribe(t *testing.T) {
 	tests := []struct {
 		name    string

@@ -69,13 +69,15 @@ var viewOptionsInPlaceCases = []viewOptionsCase{
 	{
 		name:     "options changed alone",
 		live:     optionsSchema(optionsView, "security_invoker = on", "fillfactor = 70"),
-		declared: optionsSchema(optionsView, "security_barrier = true", "fillfactor = 80, autovacuum_enabled = false"),
-		after:    []string{"report security_barrier=true", "totals fillfactor=80,autovacuum_enabled=false"},
+		declared: optionsSchema(optionsView, "security_barrier = true, security_invoker = false", "fillfactor = 80, autovacuum_enabled = false"),
+		after:    []string{"report security_barrier=true,security_invoker=false", "totals fillfactor=80,autovacuum_enabled=false"},
 	},
 	{
-		// A view declared without options is a view without them.
+		// A storage parameter or a security option held off is removed by leaving
+		// it out. One held on is refused, which view_security_refusal_e2e_test.go
+		// covers.
 		name:     "options the declaration leaves out",
-		live:     optionsSchema(optionsView, "security_invoker = on, security_barrier = 'yes'", "fillfactor = '070'"),
+		live:     optionsSchema(optionsView, "security_invoker = off, security_barrier = 'no'", "fillfactor = '070'"),
 		declared: optionsSchema(optionsView, "", ""),
 		after:    []string{"report ", "totals "},
 	},

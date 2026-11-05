@@ -1082,6 +1082,27 @@ evaluated `atlas.hcl` env.
 All `--to` values must be one source kind, and an unsupported scheme fails
 before the target database is contacted.
 
+### A view security option the document leaves out
+
+`ptah-compat` is stricter than the community binary here, deliberately. Measured
+on the pinned community binary v1.3.0 against PostgreSQL 18, with a view holding
+`security_invoker=true`:
+
+| Document | Community binary | `ptah-compat` |
+| --- | --- | --- |
+| `view` block with `security { invoker = true }` | exit 0, `Schema is synced`, option kept | exit 0, `Schema is synced`, option kept |
+| `view` block without `security` | exit 0, `Schema is synced`, option kept | exit 1, refused, option kept |
+| `view` block with `security { invoker = false }` | exit 0, `Schema is synced`, option kept | exit 0, plans `SET (security_invoker=false)` |
+
+The community binary accepts the block, plans nothing for it and does not write
+one on `schema inspect`, so it manages no view at all. `ptah-compat` manages
+views and reads the block, so a document without it would remove the option and
+widen what the view's readers see. It
+[refuses](../../databases/postgresql/#a-security-option-the-declaration-leaves-out)
+instead, in `schema apply`, `schema diff` and `migrate diff`. Under
+`PTAH_ATLAS_STRICT_COMPAT=1` a database that holds a view is refused before any
+plan: `does not support inspected schema views`.
+
 ### A whole MySQL or MariaDB server
 
 A `--url` that names no MySQL or MariaDB database is the whole server, as on

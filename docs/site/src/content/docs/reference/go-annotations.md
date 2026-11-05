@@ -812,9 +812,10 @@ Declares a database view.
 | `schema` | No | Target schema/namespace. |
 | `with_check` | No | Controls WITH CHECK OPTION where supported. `true`/`false`. |
 
-`options` states every option the view holds, so a view declared without it
-is a view without options, and the plan removes an option the database holds.
-See [View options and storage parameters](../../databases/postgresql/#view-options-and-storage-parameters)
+`options` states every option the view holds. The plan removes a false option
+the database holds and the declaration leaves out, and [refuses to
+remove](../../databases/postgresql/#a-security-option-the-declaration-leaves-out)
+one held on: write `security_invoker=false` for that. See [View options and storage parameters](../../databases/postgresql/#view-options-and-storage-parameters)
 for how they are compared and which engines take them.
 
 ```go

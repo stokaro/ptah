@@ -128,8 +128,9 @@ current schema IR:
   columns. The `security` block is the spelling Atlas documents for a
   PostgreSQL view's options: `invoker` and `barrier`, each a bool, at least one
   of them set, stand for `security_invoker` and `security_barrier`. A view
-  without the block declares no options, so the plan removes one the database
-  holds. A `column`
+  without the block states no options, and the plan refuses to remove a security
+  option the view holds on; `invoker = false` or `barrier = false` removes it. A
+  `column`
   block takes a name label and an optional `comment`; a `type` inside one is
   refused, because a view's column types are derived by the server from its body
   and a declaration stating one is a claim Ptah can neither render nor check.

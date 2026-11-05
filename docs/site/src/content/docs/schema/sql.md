@@ -336,10 +336,13 @@ CREATE MATERIALIZED VIEW order_totals WITH (fillfactor = 70) AS
   SELECT sum(amount) AS total FROM orders;
 ```
 
-A view declared without the list is a view without options, so the plan
-removes an option the database holds and the file leaves out. [View options
-and storage parameters](../../databases/postgresql/#view-options-and-storage-parameters)
-says how they are compared and changed, and which engines take them.
+The plan removes a storage parameter or a false option the database holds and
+the file leaves out, and [refuses to
+remove](../../databases/postgresql/#a-security-option-the-declaration-leaves-out)
+a security option the view holds on: write `security_invoker = false` for that.
+[View options and storage
+parameters](../../databases/postgresql/#view-options-and-storage-parameters) says
+how they are compared and changed, and which engines take them.
 
 ## Comments
 
