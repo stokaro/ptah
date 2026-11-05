@@ -49,7 +49,7 @@ func TwoWayFeatures() []string {
 		DatabaseContextFeature, ValueContextFeature, CommonViewFacetsFeature, ObservedColumnsFeature, ObservedPrimaryKeysFeature, ObservedIndexesFeature, PlanningObjectContextFeature,
 		PlanningContextInventoryFeature, MigrationSplitFeature, ComparisonCountsFeature, IndexMethodsFeature, TypedArgumentsFeature, ErrorReasonsFeature,
 		IndexRenamesFeature, ReverseChangesFeature, UnreadTablesFeature, DatabaseKindsFeature, SQLFacetsFeature, ReportCountsFeature,
-		ObservedIndexFacetsFeature, SchemaSubtreeCoverageFeature, PasswordInputsFeature, HCLPlatformFeature}
+		ObservedIndexFacetsFeature, SchemaSubtreeCoverageFeature, PasswordInputsFeature, HCLPlatformFeature, DefaultCapabilitiesFeature}
 }
 
 // ContractError reports a host and a provider that cannot work together:
@@ -145,8 +145,9 @@ func ValidateHostFeatures(features []string) error {
 // scope selections unless it lists ScopeSelectionsFeature, the reversal
 // services unless it lists ReverseChangesFeature, the database kinds unless
 // it lists DatabaseKindsFeature, the model reports unless it lists
-// ReportCountsFeature, and the schema separator of each engine's identifier
-// rules unless it lists SchemaSubtreeCoverageFeature. A model keeps its
+// ReportCountsFeature, the schema separator of each engine's identifier rules
+// unless it lists SchemaSubtreeCoverageFeature, and the offline capability
+// facts unless it lists DefaultCapabilitiesFeature. A model keeps its
 // source formats without HCLPlatformFeature: a platform claim's models need
 // not list HCL. Without
 // EntryKeysFeature, the YAML claims of a COLUMN or INDEX scope and the
@@ -200,7 +201,8 @@ func NegotiatedDescription(description *protocol.Description, hostFeatures []str
 
 // negotiateLaterAdditions removes the engine fields of contracts 25.19 and
 // later whose features the host does not list: the reversal services, the
-// database kinds, the model reports and the schema separator.
+// database kinds, the model reports, the schema separator and the offline
+// capability facts of the engine and of its release lines.
 func negotiateLaterAdditions(engine *protocol.Engine, hostFeatures []string) {
 	if !slices.Contains(hostFeatures, ReverseChangesFeature) {
 		engine.Reversals = nil
@@ -213,6 +215,12 @@ func negotiateLaterAdditions(engine *protocol.Engine, hostFeatures []string) {
 	}
 	if !slices.Contains(hostFeatures, SchemaSubtreeCoverageFeature) && engine.GetIdentifiers() != nil {
 		engine.Identifiers.SchemaSeparator = ""
+	}
+	if !slices.Contains(hostFeatures, DefaultCapabilitiesFeature) {
+		engine.DefaultCapabilities = nil
+		for _, line := range engine.GetReleaseLines() {
+			line.Capabilities = nil
+		}
 	}
 }
 

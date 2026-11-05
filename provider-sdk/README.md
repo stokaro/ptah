@@ -115,7 +115,8 @@ returns to 0.
   [report counts](#report-counts) and
   [index facets on inspected indexes](#index-facets-on-inspected-indexes).
   Contract 25.22 adds [subtree coverage](#subtree-coverage),
-  [SQL scanning](#sql-scanning), [password inputs](#password-inputs) and
+  [SQL scanning](#sql-scanning), [offline capabilities](#offline-capabilities),
+  [password inputs](#password-inputs) and
   [HCL platform groups](#hcl-platform-groups).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
@@ -2447,3 +2448,26 @@ the end of the text, with an empty token, a token that ends past the text or
 inside a UTF-8 sequence, a token of no known kind, or a value on a token that
 is neither a string nor an identifier. `Server.Validate` refuses the feature
 without `Server.SQLScanner`, and the scanner without the feature.
+
+## Offline capabilities
+
+[ADR 0070](../docs/adr/0070-a-provider-states-the-capabilities-its-engine-is-planned-with-offline.md)
+defines `engine.default-capabilities`. The provider and each engine that
+states its facts list it, and so does the host. It adds a field to an existing
+message, so it is two-way: negotiation removes `Engine.default_capabilities`
+for a host that does not list the feature.
+
+`Engine.default_capabilities` holds the capability facts the host plans the
+engine with when no session states the server's: an offline render, a
+generation without a database, an export. They are the facts of the release
+line a command assumes without a server. `ReleaseLine.capabilities` holds each
+line's, which the host plans with for a `--server-version` that names the
+line: one equal to `line`, or the longest line it starts with followed by a
+dot. A present false is an established answer, and an absent key is unknown,
+as in `Session.capabilities`. A command that connects plans with the session's
+facts.
+
+`ValidateDescription` refuses the fields on an engine that does not list the
+feature, the feature on an engine with no default facts, on one with a
+release line that has none, or without the provider's feature, and a name a
+session could not state.

@@ -1,5 +1,5 @@
 // Package main serves the fixture engine with a SQL scanner of its own
-// (contract 25.26, sql.scan) and a query dialect that names a table by one
+// (contract 25.22, sql.scan) and a query dialect that names a table by one
 // path in backticks. Its text rules are not the shared lexer's: both quote
 // styles delimit strings, @@...@@ is a string in which @@@@ stands for @@,
 // and a backticked identifier holds a path such as `shop/items`. It is
