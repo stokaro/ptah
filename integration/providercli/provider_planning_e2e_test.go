@@ -180,7 +180,9 @@ func TestProviderCommonPlannerDispatchesAndExecutesCompleteGraph(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 2)
 	c.Assert(ast.OwnerTransactions(nodes[1]), qt.DeepEquals, []plangraph.Transaction{plangraph.TransactionForbidden})
-	c.Assert(planner.RequiresNoTransaction("fixture", nodes), qt.IsTrue)
+	// The operation forbids a transaction, which leaves the transactional file
+	// only on an engine that has one: its first session stated the facts.
+	c.Assert(planner.RequiresNoTransaction("fixture", nodes), qt.Equals, capability.ForDialect("fixture").Has(capability.TransactionalDDL))
 	rendered, err := runtime.Render(c.Context(), renderer.Request{Target: "fixture", Capabilities: request.Capabilities, Nodes: nodes})
 	c.Assert(err, qt.IsNil)
 	c.Assert(must.Must(rendered.SQLFragments()), qt.DeepEquals, []string{`CREATE TABLE "common" ("id" INTEGER NOT NULL PRIMARY KEY);`, `CREATE TABLE "planned" ("id" INTEGER NOT NULL PRIMARY KEY);`})
@@ -293,7 +295,9 @@ func TestProviderCommonPlannerRewritesExactColumnOperand(t *testing.T) {
 	c.Assert(nodes, qt.HasLen, 1)
 	c.Assert(ast.OwnerOperations(nodes[0]), qt.HasLen, 1)
 	c.Assert(ast.OwnerTransactions(nodes[0]), qt.DeepEquals, []plangraph.Transaction{plangraph.TransactionForbidden})
-	c.Assert(planner.RequiresNoTransaction("fixture", nodes), qt.IsTrue)
+	// The operation forbids a transaction, which leaves the transactional file
+	// only on an engine that has one: its first session stated the facts.
+	c.Assert(planner.RequiresNoTransaction("fixture", nodes), qt.Equals, capability.ForDialect("fixture").Has(capability.TransactionalDDL))
 	rendered, err := runtime.Render(c.Context(), renderer.Request{Target: "fixture", Capabilities: request.Capabilities, Nodes: nodes})
 	c.Assert(err, qt.IsNil)
 	// The common operand differs from the final declaration. The replacement
