@@ -184,7 +184,7 @@ func validateEngineAdditions(description *protocol.Description, engine *protocol
 	for _, check := range []func(*protocol.Description, *protocol.Engine) error{
 		validateCommonObjectSupport, validateContextFeatures, validateViewFacetFeature, validateObservedColumnsFeature, validateObservedPrimaryKeysFeature, validateObservedIndexesFeature,
 		validateHCLSource, validateEncodeEngine, validateScopeSelections, validateModelDeclarations, validateSourceLimitsEngine, validatePlanningLifecycleEngine,
-		validateMigrationSplitEngine, validateIndexMethodsFeature, validateIndexRenamesFeature, validateModelReversals, validateDatabaseKinds,
+		validateMigrationSplitEngine, validateIndexMethodsFeature, validateIndexRenamesFeature, validateModelReversals, validateDatabaseKinds, validateModelReports,
 	} {
 		if err := check(description, engine); err != nil {
 			return err

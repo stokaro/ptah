@@ -97,6 +97,8 @@ service Provider {
   rpc SplitMigration(SplitMigrationRequest) returns (MigrationSplit);
   // Contract 25.19. Used only when both sides list models.reverse.
   rpc ReverseChanges(ReverseChangesRequest) returns (ReversedChanges);
+  // Contract 25.21. Used only when both sides list models.report-counts.
+  rpc ReportValues(ReportValuesRequest) returns (ValueReports);
 }
 
 message Empty {}
@@ -183,6 +185,10 @@ message Engine {
   // Non-empty exactly when the engine lists schema.database-kinds, and sent
   // only to a host that lists it. Contract 25.21.
   repeated string database_kinds = 22;
+  // The count metrics of the engine's models, one entry per model that
+  // declares any. Non-empty only when the engine lists models.report-counts,
+  // and sent only to a host that lists it. Contract 25.21.
+  repeated ModelReport reports = 23;
 }
 // ScopeSelection is how the --include, --exclude and --schema selectors name
 // the engine's objects of one model kind. The host reads a selector's name
@@ -1141,9 +1147,53 @@ message ValueModel {
   // Full owner definition, canonicalized with modeljson.Canonical. Its exact
   // SHA-256 must match definition_sha256. It is a nonempty JSON object.
   bytes definition_json = 8;
-  // Optional plural label for omission reports. This declares no count metrics.
-  // Only desired and observed models may supply a trimmed, single-line label.
+  // Optional plural label for omission reports. This declares no count
+  // metrics; Engine.reports does. Only desired and observed models may supply
+  // a trimmed, single-line label.
   string display_name = 9;
+}
+// ModelReport declares the count metrics a value of one desired or observed
+// model of the engine contributes to, in the order a report lists them. The
+// model has a display name. Contract 25.21, under models.report-counts.
+message ModelReport {
+  string kind = 1;
+  ValueInput.Representation representation = 2;
+  repeated ModelMetric metrics = 3;
+}
+// ModelMetric is one object-count metric: name is a lowercase ASCII suffix of
+// letters, digits and underscores that starts with a letter, and help is one
+// line. The metrics of one representation give a name one help.
+// Contract 25.21, under models.report-counts.
+message ModelMetric {
+  string name = 1;
+  string help = 2;
+}
+// ReportValuesRequest asks the owner for the counts of captured values of one
+// engine and one representation, each of a model the engine reports. It is
+// offline: it opens no session and reads no database. Contract 25.21, under
+// models.report-counts.
+message ReportValuesRequest {
+  string engine = 1;
+  repeated string target_features = 2;
+  repeated ValueInput values = 3;
+}
+// ValueReports answers every value of the request, in order. Contract 25.21,
+// under models.report-counts.
+message ValueReports {
+  bool complete = 1;
+  repeated ValueReport values = 2;
+}
+// ValueReport counts one value: one count for each metric its model's report
+// declares, in the declared order.
+message ValueReport {
+  string id = 1;
+  repeated MetricCount counts = 2;
+}
+// MetricCount is what one value contributes to one metric. It is at most the
+// largest signed 64-bit integer.
+message MetricCount {
+  string name = 1;
+  uint64 value = 2;
 }
 message ModelKnowledge {
   enum State {

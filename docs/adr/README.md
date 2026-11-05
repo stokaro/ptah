@@ -76,6 +76,7 @@ a new record that names it, and its own status line is updated to point there.
 | [0064](0064-a-read-covers-a-directory-and-everything-below-it.md) | A read covers a directory and everything below it | Proposed |
 | [0065](0065-a-filtered-read-reports-the-objects-of-its-database.md) | A filtered read reports the objects of its database | Proposed |
 | [0066](0066-a-sql-schema-reading-carries-the-facets-of-its-tables.md) | A SQL schema reading carries the facets of its tables | Proposed |
+| [0067](0067-a-provider-counts-what-its-values-hold.md) | A provider counts what its values hold | Proposed |
 
 ## Writing one
 

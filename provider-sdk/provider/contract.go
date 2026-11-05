@@ -48,7 +48,7 @@ func TwoWayFeatures() []string {
 		EncodeGroupsFeature, CommonAccessFeature, SchemaDeclarationsFeature, SourceLimitsFeature, PlanningLifecycleFeature, SensitiveInputsFeature, ColumnsFeature,
 		DatabaseContextFeature, ValueContextFeature, CommonViewFacetsFeature, ObservedColumnsFeature, ObservedPrimaryKeysFeature, ObservedIndexesFeature, PlanningObjectContextFeature,
 		PlanningContextInventoryFeature, MigrationSplitFeature, ComparisonCountsFeature, IndexMethodsFeature, TypedArgumentsFeature, ErrorReasonsFeature,
-		IndexRenamesFeature, ReverseChangesFeature, UnreadTablesFeature, DatabaseKindsFeature, SQLFacetsFeature}
+		IndexRenamesFeature, ReverseChangesFeature, UnreadTablesFeature, DatabaseKindsFeature, SQLFacetsFeature, ReportCountsFeature}
 }
 
 // ContractError reports a host and a provider that cannot work together:
@@ -140,9 +140,10 @@ func ValidateHostFeatures(features []string) error {
 // QueryDialectFeature, the embedding store declarations unless it lists
 // EmbeddingStoreFeature, the common-object declarations unless it lists
 // CommonObjectsFeature, the HCL claims unless it lists HCLSourceFeature, the
-// scope selections unless it lists ScopeSelectionsFeature, and the reversal
-// services unless it lists ReverseChangesFeature, and the database kinds
-// unless it lists DatabaseKindsFeature. Without
+// scope selections unless it lists ScopeSelectionsFeature, the reversal
+// services unless it lists ReverseChangesFeature, the database kinds unless
+// it lists DatabaseKindsFeature, and the model reports unless it lists
+// ReportCountsFeature. Without
 // EntryKeysFeature, the YAML claims of a COLUMN or INDEX scope and the
 // YAML and Go claims that inherit common attributes are removed, since their
 // owner needs what the host would not send, and a model left with no YAML
@@ -188,6 +189,9 @@ func NegotiatedDescription(description *protocol.Description, hostFeatures []str
 		}
 		if !slices.Contains(hostFeatures, DatabaseKindsFeature) {
 			engine.DatabaseKinds = nil
+		}
+		if !slices.Contains(hostFeatures, ReportCountsFeature) {
+			engine.Reports = nil
 		}
 		if len(engine.GetGoHeaderKinds())+len(engine.GetHclSource().GetHeaderKinds()) == 0 {
 			engine.Features = slices.DeleteFunc(engine.Features, func(feature string) bool { return feature == SourceLimitsFeature })
