@@ -68,21 +68,32 @@ func (r *Runtime) registerFacetComparison(owner string, declaration FacetCompari
 // input and reply is checked before changes escape. Missing handlers never
 // turn a concrete value, explicit default, or knowledge limit into a no-op.
 func (r *Runtime) CompareFacets(ctx context.Context, request schemaext.FacetComparisonRequest) (schemaext.FacetComparisonResult, error) {
-	if err := schemaext.RequireRuntime(ctx, r); err != nil {
+	result, counts, err := r.compareFacets(ctx, request)
+	if err != nil {
 		return schemaext.FacetComparisonResult{}, err
+	}
+	result.Counts = counts.result()
+	return result, nil
+}
+
+// compareFacets is [Runtime.CompareFacets] with the counts of its services apart
+// from the result, for a caller that joins them with another comparison's.
+func (r *Runtime) compareFacets(ctx context.Context, request schemaext.FacetComparisonRequest) (schemaext.FacetComparisonResult, objectCounts, error) {
+	if err := schemaext.RequireRuntime(ctx, r); err != nil {
+		return schemaext.FacetComparisonResult{}, objectCounts{}, err
 	}
 	selected, err := r.ResolveTarget(request.Target)
 	if err != nil {
-		return schemaext.FacetComparisonResult{}, err
+		return schemaext.FacetComparisonResult{}, objectCounts{}, err
 	}
 	request.Target = selected.Name()
 	request, err = r.snapshotFacetComparison(ctx, request)
 	if err != nil {
-		return schemaext.FacetComparisonResult{}, err
+		return schemaext.FacetComparisonResult{}, objectCounts{}, err
 	}
 	batches, inactive, err := r.facetComparisonBatches(request)
 	if err != nil {
-		return schemaext.FacetComparisonResult{}, err
+		return schemaext.FacetComparisonResult{}, objectCounts{}, err
 	}
 	result := schemaext.FacetComparisonResult{Complete: true, Desired: selectFacetState(request.Desired, inactive)}
 	var counts objectCounts
@@ -97,37 +108,36 @@ func (r *Runtime) CompareFacets(ctx context.Context, request schemaext.FacetComp
 		batch, retained = selectFacetOwners(batch, r.facetServices[service].OwnerKinds)
 		result.Desired, err = mergeFacetStates(result.Desired, retained)
 		if err != nil {
-			return schemaext.FacetComparisonResult{}, err
+			return schemaext.FacetComparisonResult{}, objectCounts{}, err
 		}
 		sent, err := r.snapshotFacetComparison(ctx, batch)
 		if err != nil {
-			return schemaext.FacetComparisonResult{}, err
+			return schemaext.FacetComparisonResult{}, objectCounts{}, err
 		}
 		reply, err := r.facetServices[service].Service.CompareFacets(ctx, sent)
 		if err != nil {
-			return schemaext.FacetComparisonResult{}, err
+			return schemaext.FacetComparisonResult{}, objectCounts{}, err
 		}
 		reply, err = r.validateFacetReply(ctx, service, batch, reply)
 		if err != nil {
-			return schemaext.FacetComparisonResult{}, err
+			return schemaext.FacetComparisonResult{}, objectCounts{}, err
 		}
 		result.Desired, err = mergeFacetStates(result.Desired, reply.Desired)
 		if err != nil {
-			return schemaext.FacetComparisonResult{}, err
+			return schemaext.FacetComparisonResult{}, objectCounts{}, err
 		}
 		result.Changes = append(result.Changes, reply.Changes...)
 		result.Undecided = append(result.Undecided, reply.Undecided...)
 		counts.add(r.facetServices[service].ChangeKinds, reply.Counts)
 	}
 	if err := ctx.Err(); err != nil {
-		return schemaext.FacetComparisonResult{}, err
+		return schemaext.FacetComparisonResult{}, objectCounts{}, err
 	}
-	result.Counts = counts.result()
 	if err := distinctFacetChanges(result.Changes); err != nil {
-		return schemaext.FacetComparisonResult{}, err
+		return schemaext.FacetComparisonResult{}, objectCounts{}, err
 	}
 	sortFacetReply(&result)
-	return result, nil
+	return result, counts, nil
 }
 
 func (r *Runtime) snapshotFacetComparison(ctx context.Context, request schemaext.FacetComparisonRequest) (schemaext.FacetComparisonRequest, error) {

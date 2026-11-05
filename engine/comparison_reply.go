@@ -102,9 +102,7 @@ type objectCounts struct {
 
 // add takes the counts of a service that owns changes of kinds.
 func (o *objectCounts) add(kinds []schemaext.Kind, counts []schemaext.ObjectCount) {
-	if o.sums == nil {
-		o.sums, o.uncounted = make(map[schemaext.Kind]schemaext.ObjectCount), make(map[schemaext.Kind]bool)
-	}
+	o.prepare()
 	for _, kind := range kinds {
 		index := slices.IndexFunc(counts, func(count schemaext.ObjectCount) bool { return count.Kind == kind })
 		if index < 0 {
@@ -117,6 +115,28 @@ func (o *objectCounts) add(kinds []schemaext.Kind, counts []schemaext.ObjectCoun
 		sum.Added += counts[index].Added
 		sum.Removed += counts[index].Removed
 		o.sums[kind] = sum
+	}
+}
+
+// join takes the counts of the other comparison of one run. A kind an object
+// service and a facet service both own is reported only when both counted it,
+// for the reason [objectCounts] gives.
+func (o *objectCounts) join(other objectCounts) {
+	o.prepare()
+	maps.Copy(o.uncounted, other.uncounted)
+	for kind, count := range other.sums {
+		sum := o.sums[kind]
+		sum.Kind = kind
+		sum.Matched += count.Matched
+		sum.Added += count.Added
+		sum.Removed += count.Removed
+		o.sums[kind] = sum
+	}
+}
+
+func (o *objectCounts) prepare() {
+	if o.sums == nil {
+		o.sums, o.uncounted = make(map[schemaext.Kind]schemaext.ObjectCount), make(map[schemaext.Kind]bool)
 	}
 }
 
@@ -247,25 +267,4 @@ func comparisonParent(parents []schemaext.ParentState, subject objectidentity.ID
 		}
 	}
 	return schemaext.ParentState{}, false
-}
-
-// joinCounts sums the counts of the object and the facet comparisons of one
-// run by change kind, sorted by kind, and returns nil when there is none.
-func joinCounts(lists ...[]schemaext.ObjectCount) []schemaext.ObjectCount {
-	sums := make(map[schemaext.Kind]schemaext.ObjectCount)
-	for _, list := range lists {
-		for _, count := range list {
-			sum := sums[count.Kind]
-			sum.Kind = count.Kind
-			sum.Matched += count.Matched
-			sum.Added += count.Added
-			sum.Removed += count.Removed
-			sums[count.Kind] = sum
-		}
-	}
-	var joined []schemaext.ObjectCount
-	for _, kind := range slices.Sorted(maps.Keys(sums)) {
-		joined = append(joined, sums[kind])
-	}
-	return joined
 }

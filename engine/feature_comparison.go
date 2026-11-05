@@ -44,14 +44,15 @@ func (r *Runtime) CompareFeatures(ctx context.Context, request schemaext.Compari
 	if err != nil {
 		return schemaext.ComparisonResult{}, err
 	}
-	objectResult, err := r.CompareObjects(ctx, objects)
+	objectResult, objectTally, err := r.compareObjects(ctx, objects)
 	if err != nil {
 		return schemaext.ComparisonResult{}, err
 	}
-	facetResult, err := r.CompareFacets(ctx, facets)
+	facetResult, facetTally, err := r.compareFacets(ctx, facets)
 	if err != nil {
 		return schemaext.ComparisonResult{}, err
 	}
+	objectTally.join(facetTally)
 	coverage, err := objectResult.Desired.Coverage.Combine(facetResult.Desired.Coverage)
 	if err != nil {
 		return schemaext.ComparisonResult{}, err
@@ -64,7 +65,7 @@ func (r *Runtime) CompareFeatures(ctx context.Context, request schemaext.Compari
 		Changes: objectResult.Changes, FacetChanges: facetResult.Changes,
 		Undecided: append(slices.Clone(objectResult.Undecided), facetResult.Undecided...),
 		Skipped:   skipped,
-		Counts:    joinCounts(objectResult.Counts, facetResult.Counts),
+		Counts:    objectTally.result(),
 	}
 	if err := ctx.Err(); err != nil {
 		return schemaext.ComparisonResult{}, err
