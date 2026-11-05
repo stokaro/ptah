@@ -455,7 +455,7 @@ func (p *Planner) modifyExistingColumns(
 			}
 		}
 		suppressColumnPrimary := false
-		if _, hasPrimaryKeyChange := colDiff.Changes["primary_key"]; hasPrimaryKeyChange &&
+		if _, hasPrimaryKeyChange := colDiff.Changes["primary_key"]; hasPrimaryKeyChange && !gainsAutoIncrementKey(colDiff) &&
 			primaryKeyColumnChangeOwnedByTableConstraint(diff, tableDiff.TableName, colDiff.ColumnName, semantics) {
 			colDiff.Changes = maps.Clone(colDiff.Changes)
 			delete(colDiff.Changes, "primary_key")
@@ -482,6 +482,10 @@ func (p *Planner) modifyExistingColumns(
 
 		field := colDiff.Desired
 		if suppressColumnPrimary {
+			// The statement that adds the key comes later, and the column's own
+			// PRIMARY KEY no longer makes it NOT NULL here. SQL Server refuses a key
+			// on a nullable column with Msg 8111.
+			field.Nullable = field.Nullable && !field.Primary
 			field.Primary = false
 		}
 		// MODIFY restates the column, and on MySQL and MariaDB a UNIQUE in it
@@ -699,6 +703,33 @@ func primaryKeyColumnChangeOwnedByTableConstraint(
 		if strings.EqualFold(info.Type, "PRIMARY KEY") &&
 			objectlookup.Same(tableName, info.TableName, semantics) {
 			return true
+		}
+	}
+	return false
+}
+
+// gainsAutoIncrementKey reports a column that becomes AUTO_INCREMENT and the key in
+// one change. MySQL and MariaDB refuse an AUTO_INCREMENT column that is no key with
+// Error 1075, so MODIFY COLUMN writes both, and the addition has no statement of its
+// own; see [keyWrittenWithItsColumn].
+func gainsAutoIncrementKey(column difftypes.ColumnDiff) bool {
+	return column.Changes["auto_increment"] == "false -> true" && column.Changes["primary_key"] == "false -> true"
+}
+
+// keyWrittenWithItsColumn reports a key addition the MODIFY COLUMN of its one column
+// has already written; see [gainsAutoIncrementKey].
+func keyWrittenWithItsColumn(diff *difftypes.SchemaDiff, add difftypes.ConstraintAdditionInfo, semantics identifier.Semantics) bool {
+	if len(add.Columns) != 1 {
+		return false
+	}
+	for _, table := range diff.TablesModified {
+		if !objectlookup.Same(table.TableName, add.TableName, semantics) {
+			continue
+		}
+		for _, column := range table.ColumnsModified {
+			if column.ColumnName == add.Columns[0] && gainsAutoIncrementKey(column) {
+				return true
+			}
 		}
 	}
 	return false
@@ -1507,7 +1538,7 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	// before the column changes below add that key. Otherwise the server names
 	// the column's key `x_2`, and the next comparison plans the key again.
 	// Steps 6 and 6.7 skip what this drops.
-	released := keyrelease.Find(diff, p.targetDialect())
+	released := keyrelease.Find(diff, p.targetDialect()).With(keyrelease.PrimaryKeysUnderColumnChanges(diff, p.targetDialect()))
 	result = p.releaseKeyNames(result, diff, released)
 
 	result, columnDrops, err := p.modifyExistingTables(result, diff)
@@ -1549,10 +1580,12 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	// 5.5. Add new constraints (must be done after tables and columns exist).
 	// fkPlan.dropped suppresses the drop half of any FK modification whose
 	// pre-MODIFY drop was already emitted at step 4, and the keys
-	// DroppedWithColumns finds the drop of a key step 4.7 took with its column.
+	// DroppedWithColumns finds the drop of a key step 4.7 took with its column, and
+	// released the drop of a key step 4a took ahead of the column changes.
 	alreadyDropped := make(map[constraintHostKey]struct{}, len(fkPlan.dropped))
 	maps.Copy(alreadyDropped, fkPlan.dropped)
 	maps.Copy(alreadyDropped, keyrelease.DroppedWithColumns(diff, p.targetDialect()))
+	maps.Copy(alreadyDropped, released.ConstraintSet())
 	result, err = p.addNewConstraints(result, diff, alreadyDropped)
 	if err != nil {
 		return nil, err
@@ -1837,7 +1870,7 @@ func (p *Planner) addNewConstraints(
 	// would abort the migration.
 	maps.Copy(state.droppedForModify, bracketDropped)
 
-	result = p.addPrimaryKeyConstraintsWithTables(result, diff.ConstraintsAdded, diff.TablesAdded.Names(), state)
+	result = p.addPrimaryKeyConstraintsWithTables(result, diff, diff.TablesAdded.Names(), state)
 	result = p.addNonForeignKeyConstraintsWithTables(
 		result,
 		diff.ConstraintsAdded,
@@ -1958,7 +1991,7 @@ func newConstraintPlanState(
 
 func (p *Planner) addPrimaryKeyConstraintsWithTables(
 	result []ast.Node,
-	additions difftypes.ConstraintAdditions,
+	diff *difftypes.SchemaDiff,
 	created []string,
 	state constraintPlanState,
 ) []ast.Node {
@@ -1968,12 +2001,14 @@ func (p *Planner) addPrimaryKeyConstraintsWithTables(
 	// introspected DB schema. ConstraintsAdded carries the concrete
 	// table + definition. Names handled here are recorded so the name-only loop
 	// skips them.
-	for _, add := range additions {
+	for _, add := range diff.ConstraintsAdded {
 		if add.Type != "PRIMARY KEY" || add.TableName == "" || len(add.Columns) == 0 {
 			continue
 		}
-		// The CREATE TABLE holds it; see [isPrimaryKeyConstraint].
-		if objectlookup.Contains(created, add.TableName, state.semantics) {
+		// The CREATE TABLE holds it (see [isPrimaryKeyConstraint]), or the column's
+		// MODIFY does.
+		if objectlookup.Contains(created, add.TableName, state.semantics) ||
+			keyWrittenWithItsColumn(diff, add, state.semantics) {
 			state.handled[state.semantics.IndexIdentityKey(add.Name)] = struct{}{}
 			continue
 		}

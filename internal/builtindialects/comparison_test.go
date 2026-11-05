@@ -18,18 +18,19 @@ import (
 // pins for every spelling.
 func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 	mysqlFamily := descriptor.Comparison{
-		ForeignKeysOutside:       true,
-		ForeignKeyBackingIndex:   true,
-		DoubleQuotedStrings:      true,
-		RestrictIsNoAction:       true,
-		PrimaryKeyName:           "PRIMARY",
-		ConstraintComments:       true,
-		RoutineNamesFold:         true,
-		RoutineTypeAliases:       "mysqlroutine",
-		ViewPredicatesAsIntegers: true,
-		AutoIncrementFlag:        true,
-		DefaultGeneratedKind:     "VIRTUAL",
-		ServerDatabases:          true,
+		ColumnPrimaryKeyIsTheTablesKey: true,
+		ForeignKeysOutside:             true,
+		ForeignKeyBackingIndex:         true,
+		DoubleQuotedStrings:            true,
+		RestrictIsNoAction:             true,
+		PrimaryKeyName:                 "PRIMARY",
+		ConstraintComments:             true,
+		RoutineNamesFold:               true,
+		RoutineTypeAliases:             "mysqlroutine",
+		ViewPredicatesAsIntegers:       true,
+		AutoIncrementFlag:              true,
+		DefaultGeneratedKind:           "VIRTUAL",
+		ServerDatabases:                true,
 	}
 	want := map[string]descriptor.Comparison{
 		"postgres": {
@@ -79,11 +80,12 @@ func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 			NoTableComments:      true,
 		},
 		"sqlserver": {
-			UniqueIndexStandsAlone: true,
-			ExpressionProbes:       "sys-catalog",
-			AutoIncrementFlag:      true,
-			DefaultGeneratedKind:   "PERSISTED",
-			RespelledIndexReplaced: true,
+			ColumnPrimaryKeyIsTheTablesKey: true,
+			UniqueIndexStandsAlone:         true,
+			ExpressionProbes:               "sys-catalog",
+			AutoIncrementFlag:              true,
+			DefaultGeneratedKind:           "PERSISTED",
+			RespelledIndexReplaced:         true,
 		},
 		"clickhouse": {NullableTypes: true},
 		"oracle": {
