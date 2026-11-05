@@ -60,7 +60,7 @@ func TestMigrateDiffUsesAtlasProjectDiffSkipDropColumnAndIndex(t *testing.T) {
 	_, stderr, err := atlastest.RunCompatStreams(c, "migrate", "diff", "--env", "local", "next")
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", stderr))
-	c.Assert(newMigration(c, migrations), qt.Equals, "-- Add column \"c\" to table: \"t\"\nALTER TABLE \"t\" ADD COLUMN \"c\" TEXT;\n")
+	c.Assert(newMigration(c, migrations), qt.Equals, "-- Add column \"c\" to table: \"t\"\nALTER TABLE \"t\" ADD COLUMN \"c\" text NULL;\n")
 	c.Assert(stderr, qt.Contains, "SKIP: DROP COLUMN of t.b omitted by diff policy (skip: drop_column)\n"+
 		"SKIP: DROP INDEX of t.t_a omitted by diff policy (skip: drop_index)\n")
 }

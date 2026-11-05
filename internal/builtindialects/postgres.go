@@ -208,6 +208,7 @@ func postgres() descriptor.Dialect {
 		// projects' PostgreSQL images (stokaro/ptah#4066).
 		URLs: descriptor.URLs{DefaultPort: 5432},
 		Atlas: descriptor.Atlas{
+			CatalogForm:   descriptor.PostgresCatalogForm,
 			DockerImages:  []string{"postgres", "postgis", "pgvector"},
 			DockerDrivers: []string{"postgres"},
 			HCL: descriptor.AtlasHCL{

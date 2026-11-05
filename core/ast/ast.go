@@ -75,6 +75,10 @@ type ForeignKeyRef struct {
 	OnDelete string
 	// OnUpdate specifies the action when the referenced row is updated (CASCADE, SET NULL, etc.)
 	OnUpdate string
+	// CatalogOrder writes the reference as a catalog read prints it: a space
+	// between the referenced table and its column list, and ON UPDATE ahead of ON
+	// DELETE. It changes nothing but the text.
+	CatalogOrder bool
 	// Name is the constraint name for the foreign key
 	Name string
 	// Deferrable marks a foreign key whose check may be postponed to the end of

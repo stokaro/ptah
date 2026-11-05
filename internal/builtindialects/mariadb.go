@@ -195,6 +195,7 @@ func mariaDB() descriptor.Dialect {
 		// and its dev database (stokaro/ptah#3756).
 		URLs: descriptor.URLs{DefaultPort: 3306, ComparedAs: "mysql", Grammar: descriptor.URLGrammarGoSQLDriver},
 		Atlas: descriptor.Atlas{
+			CatalogForm:   descriptor.MariaDBCatalogForm,
 			DockerImages:  []string{"maria", "mariadb"},
 			DockerDrivers: []string{"maria", "mariadb"},
 			ChangeWords:   descriptor.MySQLDriverChangeWords,

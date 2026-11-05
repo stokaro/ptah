@@ -1495,6 +1495,9 @@ func (r *Renderer) columnKeyAndNullability(column *ast.ColumnNode) ([]string, er
 					"column, which names no constraint",
 				column.Name, column.NotNullConstraintName)
 		}
+		if column.ExplicitNull {
+			parts = append(parts, "NULL")
+		}
 		return parts, nil
 	}
 	clause, err := r.notNullClause(column)
@@ -1893,7 +1896,11 @@ func (r *Renderer) renderForeignKeyConstraint(constraint *ast.ConstraintNode) (s
 
 	ref := constraint.Reference
 	var result string
-	foreignKey := fmt.Sprintf("FOREIGN KEY (%s) REFERENCES %s(%s)",
+	referenced := "%s(%s)"
+	if ref.CatalogOrder {
+		referenced = "%s (%s)"
+	}
+	foreignKey := fmt.Sprintf("FOREIGN KEY (%s) REFERENCES "+referenced,
 		strings.Join(r.escapeIdentifierList(constraint.Columns), ", "),
 		r.escapeQualifiedIdentifier(ref.Table),
 		strings.Join(r.escapeIdentifierList(ref.ReferencedColumns()), ", "))
@@ -1907,6 +1914,9 @@ func (r *Renderer) renderForeignKeyConstraint(constraint *ast.ConstraintNode) (s
 		result = "  " + foreignKey
 	}
 
+	if ref.CatalogOrder && ref.OnUpdate != "" {
+		result += fmt.Sprintf(" ON UPDATE %s", ref.OnUpdate)
+	}
 	if ref.OnDelete != "" {
 		result += fmt.Sprintf(" ON DELETE %s", ref.OnDelete)
 	}
@@ -1917,7 +1927,7 @@ func (r *Renderer) renderForeignKeyConstraint(constraint *ast.ConstraintNode) (s
 	}
 	result += suffix
 
-	if ref.OnUpdate != "" {
+	if !ref.CatalogOrder && ref.OnUpdate != "" {
 		result += fmt.Sprintf(" ON UPDATE %s", ref.OnUpdate)
 	}
 	deferrable, err := r.deferrableClause(ref, constraint.Name)

@@ -16,6 +16,7 @@ import (
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlutil"
+	"ptah.run/internal/planshape"
 	"ptah.run/internal/txrequire"
 )
 
@@ -159,6 +160,9 @@ func GenerateSchemaDiffASTWithOptions(
 		// comments where it writes them, and one pass over the result leaves
 		// them out whichever planner wrote them.
 		nodes = withoutDescriptiveComments(nodes)
+	}
+	if opts.Shape == planext.StatementShapeCatalog {
+		nodes = planshape.Apply(dialect, nodes)
 	}
 	if err := requireIsolatedOwnerOperations(nodes); err != nil {
 		return nil, wrapPlanError(dialect, err)

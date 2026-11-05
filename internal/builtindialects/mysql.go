@@ -209,6 +209,7 @@ func mysql() descriptor.Dialect {
 		// Atlas HCL reader read.
 		URLs: descriptor.URLs{DefaultPort: 3306, Grammar: descriptor.URLGrammarGoSQLDriver},
 		Atlas: descriptor.Atlas{
+			CatalogForm:   descriptor.MySQLCatalogForm,
 			DockerImages:  []string{"mysql"},
 			DockerDrivers: []string{"mysql"},
 			ChangeWords:   descriptor.MySQLDriverChangeWords,

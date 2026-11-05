@@ -30,6 +30,10 @@ type Atlas struct {
 	// template prints, and of a table a JSON inspection reports. Empty names
 	// none.
 	Schema string `json:"schema,omitempty"`
+	// CatalogForm is the form the pinned community binary's driver writes the
+	// engine's planned statements in. The zero value says it has no driver for
+	// the engine, so a plan keeps the planner's own statements.
+	CatalogForm CatalogForm `json:"catalog_form,omitempty"`
 	// HCL states the parts of an Atlas HCL schema that belong to the engine.
 	HCL AtlasHCL `json:"hcl,omitzero"`
 	// ChangeWords is the driver wording the pinned community binary names the
@@ -53,6 +57,28 @@ const (
 	MySQLDriverChangeWords
 	// SQLiteDriverChangeWords is the SQLite driver's wording.
 	SQLiteDriverChangeWords
+)
+
+// CatalogForm names the driver whose statements a compatibility plan follows
+// for an engine. Each driver writes a schema the way a read of its catalog prints
+// one: its spelling of a type, the keys inside CREATE TABLE, and the action a server
+// reports for a foreign key that declares none.
+type CatalogForm int
+
+const (
+	// NoCatalogForm says the community binary has no driver for the engine, the
+	// zero value.
+	NoCatalogForm CatalogForm = iota
+	// PostgresCatalogForm is the PostgreSQL driver's form.
+	PostgresCatalogForm
+	// MySQLCatalogForm is the MySQL driver's form on a server that reports NO
+	// ACTION for a foreign key that declares no action.
+	MySQLCatalogForm
+	// MariaDBCatalogForm is the MySQL driver's form on a server that reports
+	// RESTRICT for a foreign key that declares no action.
+	MariaDBCatalogForm
+	// SQLiteCatalogForm is the SQLite driver's form.
+	SQLiteCatalogForm
 )
 
 // AtlasHCL states the parts of an Atlas HCL schema that belong to one engine.

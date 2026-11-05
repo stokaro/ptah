@@ -696,6 +696,9 @@ func renderColumn(column *ast.ColumnNode, caps capability.Capabilities) (string,
 	if !column.Nullable {
 		parts = append(parts, "NOT NULL")
 	}
+	if column.Nullable && column.ExplicitNull {
+		parts = append(parts, "NULL")
+	}
 	if column.Primary {
 		parts = append(parts, "PRIMARY KEY")
 	}

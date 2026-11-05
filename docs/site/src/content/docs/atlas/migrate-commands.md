@@ -1481,8 +1481,37 @@ with the first letter in upper case as the community binary writes them on `sche
 diff` and `schema apply`: `-- Create "owners" table`. Native verbs write none. The
 community binary does not have `schema plan`. The files
 still differ from the community binary's in how statements are grouped and
-ordered, in type spelling, and in where the keys of a new table are written;
-[stokaro/ptah#4960](https://github.com/stokaro/ptah/issues/4960) tracks those.
+ordered; [stokaro/ptah#4960](https://github.com/stokaro/ptah/issues/4960) tracks
+those.
+
+On `migrate diff`, `schema diff` and `schema apply`, a plan on PostgreSQL, MySQL,
+MariaDB or SQLite is spelled the way a read of the catalog prints a schema, as the
+community binary writes it. Native verbs keep the planner's statements.
+
+```sql
+-- create "items" table
+CREATE TABLE "items" (
+  "id" bigint NOT NULL,
+  "owner_id" bigint NOT NULL,
+  "note" character varying NULL DEFAULT 'a',
+  PRIMARY KEY ("id"),
+  CONSTRAINT "items_owner_id_fkey" FOREIGN KEY ("owner_id") REFERENCES "owners" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
+  CONSTRAINT "items_note_len" CHECK (length(note) < 100)
+);
+```
+
+A type takes the name the catalog reports, such as `integer` for `int` and
+`character varying` for `varchar`, and a nullable column says `NULL`. The primary
+key, the unique constraints, the foreign keys and the checks of a new table sit
+inside its `CREATE TABLE`, in that order. A foreign key stays in a statement of its
+own when the table it names comes later or the plan changes that table.
+
+Three differences stay, on purpose. An expression keeps the text the author wrote,
+such as `WHERE b > 0`, where the binary writes what the server prints, `WHERE (b >
+0)`. On MySQL and MariaDB the file names no `CHARSET` or `COLLATE` the author did
+not declare, because the binary's are the dev server's defaults: on MariaDB 11.8 it
+writes `COLLATE utf8mb4_uca1400_ai_ci`, which MySQL refuses. On SQLite a `varchar(200)`
+keeps its length, which the binary writes as `varchar`.
 
 A file names no dev database. On MySQL, MariaDB and ClickHouse a read of one
 database records that database on its views, routines and sequences, and the

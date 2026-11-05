@@ -326,6 +326,11 @@ type ColumnNode struct {
 	EnumType bool
 	// Nullable indicates whether the column allows NULL values (default: true)
 	Nullable bool
+	// ExplicitNull writes NULL on a nullable column. The column means the same
+	// without it on every engine this package renders, except that a MySQL
+	// TIMESTAMP column with explicit_defaults_for_timestamp off is NOT NULL unless
+	// it says otherwise.
+	ExplicitNull bool
 	// Primary indicates whether this column is part of the primary key
 	Primary bool
 	// Unique indicates whether this column has a unique constraint

@@ -490,7 +490,7 @@ func TestSchemaApplyUsesAtlasProjectDiffSkipBesideAPlannedChange(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", stderr))
 	c.Assert(stdout, qt.Contains, "-- SKIP: DROP COLUMN of t.b omitted by diff policy (skip: drop_column)\n"+
 		"-- SKIP: DROP INDEX of t.t_a omitted by diff policy (skip: drop_index)\n")
-	c.Assert(stdout, qt.Contains, `ALTER TABLE "t" ADD COLUMN "c" TEXT`)
+	c.Assert(stdout, qt.Contains, `ALTER TABLE "t" ADD COLUMN "c" text NULL`)
 	c.Assert(stdout, qt.Not(qt.Contains), "DROP TABLE")
 	c.Assert(atlastest.SqliteQueryInt(c, dbPath, "SELECT count(*) FROM pragma_table_info('t') WHERE name IN ('b', 'c')"), qt.Equals, 2)
 	c.Assert(atlastest.SqliteIndexCount(c, dbPath, "t_a"), qt.Equals, 1)

@@ -913,6 +913,9 @@ func appendMySQLColumnConstraints(parts []string, column *ast.ColumnNode) []stri
 	if !column.Nullable {
 		parts = append(parts, "NOT NULL")
 	}
+	if column.Nullable && column.ExplicitNull {
+		parts = append(parts, "NULL")
+	}
 	if column.Unique {
 		parts = append(parts, "UNIQUE")
 	}
@@ -1150,7 +1153,11 @@ func (r *Renderer) renderForeignKeyConstraint(constraint *ast.ConstraintNode) (s
 	}
 
 	ref := constraint.Reference
-	result := fmt.Sprintf("  CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s(%s)",
+	referenced := "%s(%s)"
+	if ref.CatalogOrder {
+		referenced = "%s (%s)"
+	}
+	result := fmt.Sprintf("  CONSTRAINT %s FOREIGN KEY (%s) REFERENCES "+referenced,
 		escapeIdentifier(constraint.Name),
 		strings.Join(escapeIdentifierList(constraint.Columns), ", "),
 		escapeQualifiedIdentifier(ref.Table),
@@ -1163,11 +1170,14 @@ func (r *Renderer) renderForeignKeyConstraint(constraint *ast.ConstraintNode) (s
 		result += " MATCH " + ref.Match
 	}
 
+	if ref.CatalogOrder && ref.OnUpdate != "" {
+		result += fmt.Sprintf(" ON UPDATE %s", ref.OnUpdate)
+	}
 	if ref.OnDelete != "" {
 		result += fmt.Sprintf(" ON DELETE %s", ref.OnDelete)
 	}
 
-	if ref.OnUpdate != "" {
+	if !ref.CatalogOrder && ref.OnUpdate != "" {
 		result += fmt.Sprintf(" ON UPDATE %s", ref.OnUpdate)
 	}
 	if ref.Deferrable || ref.Initially != "" {

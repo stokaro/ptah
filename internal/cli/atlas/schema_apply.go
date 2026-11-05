@@ -16,6 +16,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config/projectconfig"
+	"ptah.run/core/planext"
 	"ptah.run/core/plangraph"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
@@ -621,6 +622,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 			return "", err
 		}
 		plan, err := atlasschema.PrepareApply(cmd.Context(), conn, withAtlasSchemaApplyPolicy(atlasschema.ApplyRuntimeOptions{
+			Shape:       planext.StatementShapeCatalog,
 			Runtime:     opts.runtime,
 			DevURL:      opts.devURL,
 			ToURLs:      opts.toURLs,
