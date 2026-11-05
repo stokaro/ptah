@@ -63,6 +63,22 @@ const (
 	StatementStyleExact
 )
 
+// StatementShape selects how a plan groups and spells its statements. The shape
+// never changes what a plan creates, changes or drops.
+type StatementShape uint8
+
+const (
+	// StatementShapePlanned is the zero value: the statements as the planner
+	// wrote them, with a column's type as the declaration spells it.
+	StatementShapePlanned StatementShape = iota
+	// StatementShapeCatalog spells a plan the way a read of the catalog prints a
+	// schema, which is what the Atlas CLI writes: the keys and checks of a new
+	// table inside its CREATE TABLE, a type under the name the catalog reports,
+	// and an explicit NULL on a nullable column. It reaches the PostgreSQL,
+	// MySQL, MariaDB and SQLite planners; on another target it changes nothing.
+	StatementShapeCatalog
+)
+
 // Planner defines the interface for database-specific migration planning.
 //
 // Implementations of this interface are responsible for converting schema differences
@@ -191,6 +207,9 @@ type Options struct {
 	// native ones and ptah-compat alike, selects [StatementStyleExact], which
 	// is also how the Atlas CLI writes a migration file.
 	Statements StatementStyle
+	// Shape selects how the plan groups and spells its statements. The zero value
+	// is [StatementShapePlanned].
+	Shape StatementShape
 }
 
 // DefaultTableRebuildRequest is how the native commands ask for

@@ -27,11 +27,10 @@ type statementStyleStep struct {
 // the pinned community binary v1.3.0 on PostgreSQL 15.19, with owners.name
 // nullable: from PostgreSQL 18 the server names a column's NOT NULL, and the
 // rollback that adds the column back restates that name. The files that binary
-// wrote differ from these only where the issue leaves them out of scope: it
-// groups the changes of one table into one ALTER TABLE, spells varchar
-// `character varying`, writes a new table's keys and checks inside its CREATE
-// TABLE, and orders the statements of a plan its own way. The change comments,
-// the absence of guards and the absence of CASCADE are its.
+// wrote differ from these only where stokaro/ptah#4960 still tracks them: it
+// groups the changes of one table into one ALTER TABLE and orders the statements
+// of a plan its own way. The change comments, the absence of guards and of
+// CASCADE, the type spelling and a new table's keys and checks are its.
 var statementStyleFixture = []statementStyleStep{
 	{
 		name: "v1",
@@ -46,21 +45,21 @@ CREATE INDEX items_owner_idx ON items (owner_id);
 `,
 		up: `-- create "owners" table
 CREATE TABLE "owners" (
-  "id" bigint PRIMARY KEY NOT NULL,
-  "name" varchar
+  "id" bigint NOT NULL,
+  "name" character varying NULL,
+  PRIMARY KEY ("id")
 );
 -- create "items" table
 CREATE TABLE "items" (
-  "id" bigint PRIMARY KEY NOT NULL,
+  "id" bigint NOT NULL,
   "owner_id" bigint NOT NULL,
-  "note" text DEFAULT 'a'
+  "note" text NULL DEFAULT 'a',
+  PRIMARY KEY ("id"),
+  CONSTRAINT "items_owner_id_fkey" FOREIGN KEY ("owner_id") REFERENCES "owners" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
+  CONSTRAINT "items_note_len" CHECK (length(note) < 100)
 );
 -- create index "items_owner_idx" to table: "items"
 CREATE INDEX "items_owner_idx" ON "items" ("owner_id");
--- modify "items" table
-ALTER TABLE "items" ADD CONSTRAINT "items_note_len" CHECK (length(note) < 100);
--- modify "items" table
-ALTER TABLE "items" ADD CONSTRAINT "items_owner_id_fkey" FOREIGN KEY ("owner_id") REFERENCES "owners"("id") ON DELETE CASCADE;
 `,
 		down: `-- reverse: modify "items" table
 ALTER TABLE "items" DROP CONSTRAINT "items_owner_id_fkey";
@@ -86,7 +85,7 @@ CREATE TABLE items (
 CREATE INDEX items_owner_idx ON items (owner_id);
 `,
 		up: `-- modify "owners" table
-ALTER TABLE "owners" ADD COLUMN "email" varchar;
+ALTER TABLE "owners" ADD COLUMN "email" character varying NULL;
 `,
 		down: `-- reverse: modify "owners" table
 ALTER TABLE "owners" DROP COLUMN "email";
@@ -106,18 +105,19 @@ CREATE TABLE tags (id bigint PRIMARY KEY, item_id bigint REFERENCES items (id), 
 `,
 		up: `-- create "tags" table
 CREATE TABLE "tags" (
-  "id" bigint PRIMARY KEY NOT NULL,
-  "item_id" bigint,
-  "label" text NOT NULL
+  "id" bigint NOT NULL,
+  "item_id" bigint NULL,
+  "label" text NOT NULL,
+  PRIMARY KEY ("id")
 );
 -- modify "items" table
-ALTER TABLE "items" ALTER COLUMN "note" TYPE varchar(200);
+ALTER TABLE "items" ALTER COLUMN "note" TYPE character varying(200);
 -- drop index "items_owner_idx" from table: "items"
 DROP INDEX "items_owner_idx";
 -- create index "items_owner_idx" to table: "items"
 CREATE INDEX "items_owner_idx" ON "items" ("owner_id", "id");
 -- modify "tags" table
-ALTER TABLE "tags" ADD CONSTRAINT "tags_item_id_fkey" FOREIGN KEY ("item_id") REFERENCES "items"("id");
+ALTER TABLE "tags" ADD CONSTRAINT "tags_item_id_fkey" FOREIGN KEY ("item_id") REFERENCES "items" ("id") ON UPDATE NO ACTION ON DELETE NO ACTION;
 -- modify "owners" table
 ALTER TABLE "owners" DROP COLUMN "name";
 `,
@@ -126,7 +126,7 @@ ALTER TABLE "tags" DROP CONSTRAINT "tags_item_id_fkey";
 -- reverse: modify "items" table
 ALTER TABLE "items" ALTER COLUMN "note" TYPE text;
 -- reverse: modify "owners" table
-ALTER TABLE "owners" ADD COLUMN "name" character varying;
+ALTER TABLE "owners" ADD COLUMN "name" character varying NULL;
 -- reverse: create index "items_owner_idx" to table: "items"
 DROP INDEX "items_owner_idx";
 -- reverse: drop index "items_owner_idx" from table: "items"
@@ -197,7 +197,7 @@ SELECT id, namespace, feature_key, 'usage_based' AS type FROM charge_usage_based
 		name:   "add_tax_code_external_reference",
 		schema: strings.Replace(chargesTables, "%s", "character varying", 1) + strings.Replace(chargesSearch, ", status_detailed FROM", " FROM", 2),
 		up: `-- modify "tax_codes" table
-ALTER TABLE "tax_codes" ADD COLUMN "external_reference" character varying;
+ALTER TABLE "tax_codes" ADD COLUMN "external_reference" character varying NULL;
 `,
 		down: `-- reverse: modify "tax_codes" table
 ALTER TABLE "tax_codes" DROP COLUMN "external_reference";
@@ -256,7 +256,7 @@ DROP VIEW "charges_search";
 ALTER TABLE "charge_flat_fees" DROP COLUMN "feature_key";
 `,
 		down: `-- reverse: modify "charge_flat_fees" table
-ALTER TABLE "charge_flat_fees" ADD COLUMN "feature_key" VARCHAR(128);
+ALTER TABLE "charge_flat_fees" ADD COLUMN "feature_key" character varying(128) NULL;
 -- reverse: drop "charges_search" view
 CREATE VIEW "charges_search" AS
 ` + chargesSearchHeld,

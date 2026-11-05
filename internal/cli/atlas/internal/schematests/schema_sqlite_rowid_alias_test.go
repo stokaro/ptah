@@ -117,6 +117,6 @@ func TestSchemaDiffSQLiteTextKeyNullabilityStillRebuilds(t *testing.T) {
 		"--from", "file://"+from, "--to", "file://"+to, "--dev-url", atlastest.FreshDevURL(c))
 
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr=%q", stderr))
-	c.Assert(stdout, qt.Contains, `"id" TEXT NOT NULL PRIMARY KEY`)
+	c.Assert(stdout, qt.Contains, `"id" text NOT NULL`)
 	c.Assert(stdout, qt.Contains, "new_widgets")
 }
