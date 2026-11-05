@@ -53,16 +53,18 @@ func checkHCLSource(description *protocol.Description) error {
 // hclExtensions returns the provider's HCL extension, or none when no engine
 // declares HCL claims. Its blocks are the claims of every such engine, each
 // read for every dialect, since a block has one engine. The provider reads the
-// blocks and states the document's knowledge of its models, except where a
-// document carries a captured feature coverage header: that is the exact claim
-// an export wrote, which the host reads with the provider's codecs.
+// blocks. It states the document's knowledge of its models where the document's
+// header names one of its header kinds; a captured feature coverage header is
+// the exact claim an export wrote, which the host reads and writes with the
+// provider's codecs; and a document with neither claims nothing of them (see
+// coverage).
 func (h *Host) hclExtensions() []hclext.Extension {
 	engines := h.hclEngines()
 	if len(engines) == 0 {
 		return nil
 	}
 	owner := &hclOwner{host: h, engines: engines}
-	extension := hclext.Extension{Owner: h.description.GetProviderId(), Decoder: owner, Coverage: owner.coverage, CapturedCoverage: true}
+	extension := hclext.Extension{Owner: h.description.GetProviderId(), Decoder: owner, Coverage: owner.coverage, CapturedCoverage: true, Split: owner}
 	if slices.ContainsFunc(engines, func(engine *protocol.Engine) bool { return h.targets[engine.GetId()].encodes() }) {
 		extension.Encoder = owner
 	}
@@ -106,8 +108,8 @@ func hclBlock(claim *protocol.HCLSourceBlock) hclext.Block {
 type hclOwner struct {
 	host    *Host
 	engines []*protocol.Engine
-	// registry reads a captured feature coverage header with the provider's
-	// desired codecs; it is built on first use.
+	// registry reads and writes a captured feature coverage header with the
+	// provider's desired codecs; it is built on first use.
 	registry func() (schemaext.Registry, error)
 	once     sync.Once
 }
@@ -229,11 +231,22 @@ func hclFacetOwner(fragment *protocol.SourceFragment, bound, owner *protocol.Ref
 }
 
 // coverage is what one document holds of the provider's models: the captured
-// feature coverage header's exact claim where the document carries one, and
-// otherwise the provider's account of the document, its claims and its header
-// limits sent as DecodeSource receives them. A document that carries both a
-// captured header and limits of the provider's kinds is refused: two accounts
-// of one document cannot both govern it.
+// feature coverage header's exact claim where the document carries one, the
+// provider's account of the document for each engine whose HCL header kinds
+// the document's ptah:not-described header names, and nothing of any other
+// engine's models. A document that carries both a captured header and limits
+// of the provider's kinds is refused: two accounts of one document cannot
+// both govern it.
+//
+// A document without such a header entry is an ordinary Atlas file, which
+// names none of the provider's objects it leaves out, so it makes no claim of
+// the engine's models and the provider is not asked: a decoding may claim
+// less than complete only through the document's header limits, so the
+// provider's account of a document without them would be complete for every
+// model, and a plan would drop each object of those models the document does
+// not declare. This is the built-in YDB engine's rule for its coordination
+// nodes. An export keeps its claim through the captured header the encoder
+// writes.
 func (o *hclOwner) coverage(request hclext.CoverageRequest) (schemaext.Coverage, error) {
 	if len(request.Captured) > 0 {
 		return o.capturedCoverage(request)
@@ -250,6 +263,9 @@ func (o *hclOwner) coverage(request hclext.CoverageRequest) (schemaext.Coverage,
 		wire, err := providersource.HCL(ctx, engine, claims, request.Limits)
 		if err != nil {
 			return schemaext.Coverage{}, err
+		}
+		if len(wire.GetDocuments()[0].GetLimits()) == 0 {
+			continue
 		}
 		decoded, err := o.host.client.DecodeSource(ctx, wire)
 		if err != nil {
@@ -273,11 +289,7 @@ func (o *hclOwner) capturedCoverage(request hclext.CoverageRequest) (schemaext.C
 		return schemaext.Coverage{}, fmt.Errorf("%w: a %s header and %s limits of provider %s cannot both govern one HCL document", schemaext.ErrDuplicate,
 			schemaext.CoverageHeaderMarker, coverage.DirectiveMarker, o.host.description.GetProviderId())
 	}
-	o.once.Do(func() {
-		registry, err := o.host.desiredRegistry()
-		o.registry = func() (schemaext.Registry, error) { return registry, err }
-	})
-	registry, err := o.registry()
+	registry, err := o.codecs()
 	if err != nil {
 		return schemaext.Coverage{}, err
 	}
@@ -285,13 +297,61 @@ func (o *hclOwner) capturedCoverage(request hclext.CoverageRequest) (schemaext.C
 	return known, err
 }
 
+// Recognizes reports whether an engine of the provider reads a
+// ptah:not-described entry of kind as a limit on its HCL claim, so that every
+// file a writer cuts a document into carries the entry.
+func (o *hclOwner) Recognizes(kind coverage.Kind) bool {
+	return slices.ContainsFunc(o.engines, func(engine *protocol.Engine) bool {
+		return slices.Contains(engine.GetHclSource().GetHeaderKinds(), string(kind))
+	})
+}
+
+// Restate is the captured feature coverage header line that carries the
+// document's claim of the provider's models into every file a writer cuts the
+// document into, written again with the provider's codecs, and none for a
+// document that captured no claim: a file read on its own keeps the claim the
+// document made, as the built-in YDB engine's splitter keeps its own. A
+// document whose captured header comes with entries the provider reads is
+// refused, as reading it is.
+func (o *hclOwner) Restate(captured []string, limits []coverage.Object) ([]string, error) {
+	if len(captured) == 0 {
+		return nil, nil
+	}
+	known, err := o.capturedCoverage(hclext.CoverageRequest{Captured: captured, Limits: limits})
+	if err != nil {
+		return nil, err
+	}
+	registry, err := o.codecs()
+	if err != nil {
+		return nil, err
+	}
+	line, err := registry.EncodeCoverageHeader(context.Background(), schemaext.Desired, known)
+	if err != nil || line == "" {
+		return nil, err
+	}
+	return []string{line}, nil
+}
+
+// codecs is the registry of the provider's desired codecs, which reads and
+// writes a captured feature coverage header. It is built on first use.
+func (o *hclOwner) codecs() (schemaext.Registry, error) {
+	o.once.Do(func() {
+		registry, err := o.host.desiredRegistry()
+		o.registry = func() (schemaext.Registry, error) { return registry, err }
+	})
+	return o.registry()
+}
+
 // desiredRegistry is a registry of the provider's desired codecs, which reads
-// what a document captured of the provider's models.
+// and writes what a document captured of the provider's models. The codecs
+// decode through the provider's batch decoder, as the runtime registers them
+// (see Provider); a registry refuses a codec that has no decoder.
 func (h *Host) desiredRegistry() (schemaext.Registry, error) {
 	var owned []schemaext.OwnedCodec
+	decoder := &schemaext.BatchDecoder{Decode: h.decodeModels}
 	for _, codec := range h.modelCodecs {
 		if codec.Representation == schemaext.Desired {
-			owned = append(owned, schemaext.OwnedCodec{Owner: h.description.GetProviderId(), Codec: codec})
+			owned = append(owned, schemaext.OwnedCodec{Owner: h.description.GetProviderId(), Codec: codec, BatchDecoder: decoder})
 		}
 	}
 	return schemaext.NewRegistry(owned...)

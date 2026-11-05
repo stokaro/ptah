@@ -3,8 +3,9 @@ package providerhost
 // White-box testing required: the HCL extension is built from a negotiated
 // description in a private method, and only a started provider process reaches
 // it through the public API. The fixture drives one engine through the
-// frontend; the shapes of two engines and the facet ownership refusal are only
-// observable here.
+// frontend; the shapes of two engines, the facet ownership refusal, and that a
+// document without a header entry the engine reads is never sent to the
+// provider are only observable here.
 
 import (
 	"testing"
@@ -67,6 +68,33 @@ func TestHCLExtensions_HappyPath(t *testing.T) {
 
 		c.Assert(host.hclExtensions(), qt.IsNil)
 	})
+}
+
+// TestHCLCoverage_WithoutAHeaderEntry asks the extension for the claim of a
+// document that writes a block of the engine and no header entry the engine
+// reads, either no header at all or an entry of another kind. The document
+// claims nothing, and the provider is not asked: this host holds no provider
+// client, so asking it would fail the test.
+func TestHCLCoverage_WithoutAHeaderEntry(t *testing.T) {
+	claim := hclext.Claim{Block: "fixture", Schema: "app", Name: "n1", At: "schema.hcl:1", Range: hclext.Range{Filename: "schema.hcl",
+		Start: hclext.Position{Byte: 0, Line: 1, Column: 1}, End: hclext.Position{Byte: 20, Line: 1, Column: 21}}}
+	for _, row := range []struct {
+		name   string
+		limits []coverage.Object
+	}{
+		{"no header", nil},
+		{"an entry of a kind the engine does not read", []coverage.Object{{Kind: "other"}}},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+			extension := hclHost("fixture").hclExtensions()[0]
+
+			known, err := extension.Coverage(hclext.CoverageRequest{Claims: []hclext.Claim{claim}, Limits: row.limits})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(known.IsZero(), qt.IsTrue)
+		})
+	}
 }
 
 // TestHCLFacetOwner_FailurePath refuses a facet of something other than what

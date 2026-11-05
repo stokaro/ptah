@@ -1053,10 +1053,16 @@ checks and evaluates each block as it does its own, then sends the provider the
 values, never HCL text, with the index's `type` or `ops` where an index claim
 inherits them. A value belongs to what its block is about: the index, the
 table, the routine or the view. A top-level block's value is a setting of the
-table it names. The provider also states what the document holds of its models,
-from the claims and from the `ptah:not-described` entries of the kinds the
-engine lists in `header_kinds`. A captured `ptah:feature-coverage` header is
-read by Ptah with the provider's model definitions.
+table it names.
+
+For a document whose header holds a `ptah:not-described` entry
+of a kind the engine lists in `header_kinds`, the provider also states what the
+document holds of its models, from the claims and from those entries. A
+document without such an entry is an ordinary Atlas file, which names none of
+the objects it leaves out, so it claims nothing of the provider's models and a
+plan from it drops none of their objects. Ptah reads a captured
+`ptah:feature-coverage` header with the provider's model definitions; the
+provider takes no part in it.
 
 With negotiated
 `source.limits`, claimed headers can narrow the model's or a subject's
@@ -1067,13 +1073,16 @@ its bounds. Without this feature, a header cannot narrow a decode reply's
 coverage, so the provider must refuse a source whose limit it cannot preserve.
 
 `source.encode` lets the provider write its values back when Ptah writes HCL,
-as `ptah schema export --to hcl` does. Ptah sends the values and what the
-document knows of them, and the provider answers with the blocks and
-attributes its claims read, which Ptah writes. A value the provider cannot
-write is reported as a loss where Ptah writes its block. A facet of a column, a
-key, a routine or a materialized view has no place in an encoding request and is
-reported as a loss too. The `ptah:not-described` entries the provider returns
-are written in the document's header.
+as `ptah schema export --to hcl` does. Ptah sends the values, and the provider
+answers with the blocks and attributes its claims read, which Ptah writes. A
+value the provider cannot write is reported as a loss where Ptah writes its
+block. A facet of a column, a key, a routine or a materialized view has no place
+in an encoding request and is reported as a loss too. Ptah writes what the
+document knows of the provider's models itself, as a captured
+`ptah:feature-coverage` header, so the document read back makes the claim the
+export had. It sends the provider no coverage for HCL and refuses a reply that
+carries `ptah:not-described` entries. Splitting the output repeats the header
+in every file.
 
 A schema read through the provider is written as complete for what the read
 listed, such as the directories a `--schemas` read named, as the built-in
@@ -1082,7 +1091,8 @@ selection completely. Where the read knows a model less inside what it listed,
 Ptah sends the namespace regions the provider's `Inspect` reported, with the
 bounds they were read with, and refuses the export, naming the model, when it
 cannot. A table's binding names the database the table's read facets name. The
-provider decides whether the format can keep that knowledge.
+provider decides whether the format can keep that knowledge. An HCL export
+writes it in the header, regions included, without asking the provider.
 
 With negotiated `source.encode-groups`, one model value can require several
 ordered declarations. Each group accounts for its values once; each part must
