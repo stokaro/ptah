@@ -74,6 +74,7 @@ a new record that names it, and its own status line is updated to point there.
 | [0062](0062-a-provider-reverses-the-changes-its-comparison-returned.md) | A provider reverses the changes its comparison returned | Proposed |
 | [0063](0063-a-read-names-the-tables-it-leaves-out.md) | A read names the tables it leaves out | Proposed |
 | [0069](0069-a-provider-scans-the-sql-text-of-its-engine.md) | A provider scans the SQL text of its engine | Proposed |
+| [0070](0070-a-provider-states-the-capabilities-its-engine-is-planned-with-offline.md) | A provider states the capabilities its engine is planned with offline | Proposed |
 
 ## Writing one
 
