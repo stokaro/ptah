@@ -178,7 +178,17 @@ func TestCompareWithDialect_PostgresDomainColumnIdentityReportsAChange(t *testin
 			name:        "a plain array that really changed is reported",
 			column:      catalog.Column{Name: "e", DataType: "ARRAY", UDTName: "_varchar", FormattedType: "character varying(100)[]", IsNullable: "NO"},
 			desiredType: "TEXT[]",
-			wantChange:  "character varying(100)[] -> text",
+			wantChange:  "varchar[] -> text[]",
+		},
+		{
+			// The boundary: with no domain declared anywhere, "waypoint" is an
+			// ordinary type name on both sides and normalization decides. A desired
+			// schema that means the domain has to declare it, which is what every
+			// source Ptah reads does.
+			name:        "an undeclared name is not a domain",
+			column:      catalog.Column{Name: "a", DataType: "integer", UDTName: "int4", IsNullable: "NO"},
+			desiredType: "waypoint",
+			wantChange:  "integer -> waypoint",
 		},
 		{
 			// The other direction of the same rule, and the pinned Atlas
@@ -281,15 +291,6 @@ func TestCompareWithDialect_PostgresDomainColumnIdentityReportsNoChange(t *testi
 			name:        "a plain column is untouched",
 			column:      catalog.Column{Name: "id", DataType: "integer", UDTName: "int4", IsNullable: "NO"},
 			desiredType: "INTEGER",
-		},
-		{
-			// And the boundary: with no domain declared anywhere, "waypoint" is
-			// an ordinary type name on both sides and normalization decides. A
-			// desired schema that means the domain has to declare it, which is
-			// what every source Ptah reads does.
-			name:        "an undeclared name is not a domain",
-			column:      catalog.Column{Name: "a", DataType: "integer", UDTName: "int4", IsNullable: "NO"},
-			desiredType: "waypoint",
 		},
 		{
 			name:           "a domain declared on both sides is not a change",

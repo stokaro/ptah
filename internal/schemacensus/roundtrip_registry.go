@@ -246,7 +246,7 @@ var roundTripGaps = []Unreached{
 		Reason:     gapComparison,
 	},
 	{Field: "schemamodel.EmbeddedField.Overrides", Dialects: []string{"mysql"}, Directions: nil, Reason: gapToCatalog},
-	{Field: "schemamodel.EmbeddedField.Type", Dialects: []string{"cockroachdb", "sqlite"}, Directions: nil, Reason: gapComparison},
+	{Field: "schemamodel.EmbeddedField.Type", Dialects: []string{"sqlite"}, Directions: nil, Reason: gapComparison},
 	{
 		Field:      "schemamodel.Field.AutoInc",
 		Dialects:   []string{"oracle"},
