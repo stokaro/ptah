@@ -1,9 +1,10 @@
 //go:build integration && ignore
 
 // No build compiles this file. It drives the built-in YDB engine, which the
-// host does not carry: stokaro/ptah-ydb-plugin serves YDB. The file is kept as
-// the record of the scenarios its rows in the stokaro/ptah#4204 test ledger do
-// not mark as ported, and it is deleted once the plugin ports them.
+// host does not carry: stokaro/ptah-ydb-plugin serves YDB. The plugin ports
+// every scenario of this file. It stays for buildCompatBinary, runCompat,
+// runCompatWithEnv and writeCompatFile, which ttl_e2e_test.go and
+// vector_indexes_compat_e2e_test.go use, and it is deleted with them.
 
 package ydb_test
 
