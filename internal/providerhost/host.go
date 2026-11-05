@@ -145,6 +145,10 @@ var hostFeatures = []string{
 	// reaches the table's owner as one rename step; see
 	// commonPlanner.indexChanges.
 	provider.IndexRenamesFeature,
+	// A filtered read reports the objects of the kinds an engine names
+	// database kinds, such as resource pools, beside its scope, and the
+	// comparison reads them as it reads an unfiltered read's.
+	provider.DatabaseKindsFeature,
 }
 
 // Start verifies the selected artifact and negotiates experimental services.
