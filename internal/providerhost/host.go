@@ -159,6 +159,10 @@ var hostFeatures = []string{
 	// An offline command plans an engine with the capabilities its provider
 	// states for it; see registerDefaultCapabilities.
 	provider.DefaultCapabilitiesFeature,
+	// A SQL schema reading carries the facets of its tables, columns and
+	// indexes, which the host places where a YAML source places them; see
+	// target.sqlFacets.
+	provider.SQLFacetsFeature,
 	// A provider model's count metrics join the reporting runtime, and the
 	// provider counts the model's values; see modelReporter.
 	provider.ReportCountsFeature,
