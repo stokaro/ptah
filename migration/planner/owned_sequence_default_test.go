@@ -87,7 +87,7 @@ func TestOwnedSequenceDefault_HappyPath(t *testing.T) {
 		},
 		{
 			name: "CockroachDB, the default does not change", dialect: platform.CockroachDB, ownedBy: "owners.code", declared: "nextval('s')",
-			want: []string{},
+			want: make([]string, 0),
 		},
 		{
 			name: "PostgreSQL takes the change as it stands", dialect: platform.Postgres, ownedBy: "owners.code",
