@@ -49,7 +49,7 @@ func TwoWayFeatures() []string {
 		DatabaseContextFeature, ValueContextFeature, CommonViewFacetsFeature, ObservedColumnsFeature, ObservedPrimaryKeysFeature, ObservedIndexesFeature, PlanningObjectContextFeature,
 		PlanningContextInventoryFeature, MigrationSplitFeature, ComparisonCountsFeature, IndexMethodsFeature, TypedArgumentsFeature, ErrorReasonsFeature,
 		IndexRenamesFeature, ReverseChangesFeature, UnreadTablesFeature, DatabaseKindsFeature, SQLFacetsFeature, ReportCountsFeature,
-		ObservedIndexFacetsFeature}
+		ObservedIndexFacetsFeature, PasswordInputsFeature}
 }
 
 // ContractError reports a host and a provider that cannot work together:

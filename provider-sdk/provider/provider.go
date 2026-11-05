@@ -185,14 +185,14 @@ func validateEngineAdditions(description *protocol.Description, engine *protocol
 		validateCommonObjectSupport, validateContextFeatures, validateViewFacetFeature, validateObservedColumnsFeature, validateObservedPrimaryKeysFeature, validateObservedIndexesFeature,
 		validateHCLSource, validateEncodeEngine, validateScopeSelections, validateModelDeclarations, validateSourceLimitsEngine, validatePlanningLifecycleEngine,
 		validateMigrationSplitEngine, validateIndexMethodsFeature, validateIndexRenamesFeature, validateModelReversals, validateDatabaseKinds, validateModelReports,
-		validateObservedIndexFacetsFeature,
+		validateObservedIndexFacetsFeature, validatePasswordInputsEngine,
 	} {
 		if err := check(description, engine); err != nil {
 			return err
 		}
 	}
 	for _, feature := range []string{TextUnitsFeature, PlanningPolicyFeature, PlanningStatementStyleFeature, EntryKeysFeature, StatementsFeature, SensitiveInputsFeature,
-		ComparisonCountsFeature, UnreadTablesFeature} {
+		ComparisonCountsFeature, UnreadTablesFeature, PasswordInputsFeature} {
 		if slices.Contains(engine.GetFeatures(), feature) && !slices.Contains(description.GetFeatures(), feature) {
 			return fmt.Errorf("%w: engine %s requires the provider's", ErrProtocol, feature)
 		}

@@ -88,6 +88,9 @@ func validateRenderOperation(description *protocol.Description, engine *protocol
 		if err := validateViewCreationFacets(description, engine, request.GetTargetFeatures(), viewIdentifiers(engine), operation.CommonObject.GetCreateView()); err != nil {
 			return err
 		}
+		if err := validateRolePassword(description, engine, request.GetTargetFeatures(), operation.CommonObject); err != nil {
+			return err
+		}
 		return validateCommonObjectChange(engine.GetId(), kinds, change.GetObject(), operation.CommonObject)
 	case *protocol.Change_Native:
 		if operation == nil {
