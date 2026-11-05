@@ -795,6 +795,13 @@ func normalizeIdentityGeneration(value string) string {
 
 func addTableIndexes(db *schemamodel.Database, owners yamlext.Set, structName string, indexes orderedMap[indexSpec]) error {
 	for _, index := range indexes {
+		if owned, err := ownedIndex(owners, index.Name, structName, index.Value); err != nil || owned {
+			// An owner reads the entry; see entryCapture.ownedIndex.
+			if err != nil {
+				return err
+			}
+			continue
+		}
 		value, err := buildIndex(owners, index.Name, structName, index.Value)
 		if err != nil {
 			return err
@@ -806,6 +813,13 @@ func addTableIndexes(db *schemamodel.Database, owners yamlext.Set, structName st
 
 func (d document) addIndexes(db *schemamodel.Database, owners yamlext.Set) error {
 	for _, key := range sortedKeys(d.Indexes) {
+		if owned, err := ownedIndex(owners, key, "", d.Indexes[key]); err != nil || owned {
+			// An owner reads the entry; see entryCapture.ownedIndex.
+			if err != nil {
+				return err
+			}
+			continue
+		}
 		index, err := buildIndex(owners, key, "", d.Indexes[key])
 		if err != nil {
 			return err
@@ -813,6 +827,54 @@ func (d document) addIndexes(db *schemamodel.Database, owners yamlext.Set) error
 		db.Indexes = append(db.Indexes, index)
 	}
 	return nil
+}
+
+// ownedIndex reports whether an owner reads the index entry in place of the
+// frontend (see yamlext.Extension.ReadsIndex), and refuses such an entry
+// where the frontend would refuse the index, where it writes a key the owner
+// would never receive, or a key no owner reads. Its owner's keys reach the
+// owner with the entry.
+func ownedIndex(owners yamlext.Set, key, structName string, spec indexSpec) (bool, error) {
+	owner, owned, err := owners.IndexOwner(string(spec.Type))
+	if err != nil {
+		return false, fmt.Errorf("index %q: %w", key, err)
+	}
+	if !owned {
+		return false, nil
+	}
+	if len(cleanStrings(spec.Fields)) == 0 && len(cleanStrings(spec.Columns)) == 0 {
+		return true, fmt.Errorf("index %q requires fields", key)
+	}
+	if structName == "" && string(spec.TableName) == "" {
+		return true, fmt.Errorf("top-level index %q requires table", key)
+	}
+	if len(cleanStrings(spec.Include)) != len(spec.Include) {
+		return true, fmt.Errorf("index %q names an empty include column", key)
+	}
+	var uncarried []string
+	for _, written := range []struct {
+		key string
+		set bool
+	}{{"condition", spec.Condition != ""}, {"where", spec.Where != ""}, {"platform", len(spec.Platform) != 0}} {
+		if written.set {
+			uncarried = append(uncarried, written.key)
+		}
+	}
+	if len(uncarried) != 0 {
+		return true, fmt.Errorf("index %q is a %q index, which %s reads in place of the frontend, and %s receives no %s of it", key, spec.Type, owner, owner,
+			strings.Join(uncarried, ", "))
+	}
+	if _, _, err := ownedKeys(owners, yamlext.EntryIndex, fmt.Sprintf("index %q", key), spec.Owned); err != nil {
+		return true, err
+	}
+	// A key another owner reads in process would never reach that owner:
+	// the frontend builds no index for it to read the key from.
+	for _, written := range sortedKeys(spec.Owned) {
+		if !owners.DocumentKey(yamlext.EntryIndex, written) {
+			return true, fmt.Errorf("index %q is a %q index, which %s reads in place of the frontend, and key %q is another owner's", key, spec.Type, owner, written)
+		}
+	}
+	return true, nil
 }
 
 func buildIndex(owners yamlext.Set, key, structName string, spec indexSpec) (schemamodel.Index, error) {

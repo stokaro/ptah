@@ -162,6 +162,9 @@ func HCL(ctx context.Context, engine *protocol.Engine, claims []hclext.Claim, li
 		}
 		document.ByteLength = max(document.ByteLength, uint64(max(claim.Range.End.Byte, 0)))
 	}
+	if position, err := refuseIndexKindScope(engine, document); err != nil {
+		return nil, fmt.Errorf("HCL block %q at %s: %w", claims[position].Block, claims[position].At, err)
+	}
 	request := sourceRequest(engine, document)
 	if err := provider.ValidateSourceDocuments(engine.GetId(), request.GetDocuments()); err != nil {
 		return nil, err
@@ -190,6 +193,9 @@ func HCLBlockClaim(engine *protocol.Engine, claim hclext.Claim) *protocol.HCLSou
 }
 
 func hclFragment(engine *protocol.Engine, claim hclext.Claim, bind func(schema, name string) string) (*protocol.SourceFragment, error) {
+	if claim.Index != nil && claim.Index.Owned {
+		return hclIndexKindFragment(engine, claim, bind)
+	}
 	shape := HCLBlockClaim(engine, claim)
 	if shape == nil {
 		return nil, fmt.Errorf("engine %q claims no such block", engine.GetId())

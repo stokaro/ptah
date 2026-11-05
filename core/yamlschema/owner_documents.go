@@ -175,7 +175,7 @@ func ownerPlatformGroups(owners yamlext.Set, data []byte) (map[string]map[string
 // document is decoded again as nodes, and only when an owner claims such a
 // key.
 func (d document) ownerEntryFragments(owners yamlext.Set, data []byte, tables yamlext.Tables, capture *ownerCapture) ([]yamlext.Fragment, error) {
-	if len(owners.EntryKeys(yamlext.EntryColumn))+len(owners.EntryKeys(yamlext.EntryIndex)) == 0 {
+	if len(owners.EntryKeys(yamlext.EntryColumn))+len(owners.EntryKeys(yamlext.EntryIndex)) == 0 && !d.ownsIndexes(owners) {
 		return nil, nil
 	}
 	var root yaml.Node
@@ -221,6 +221,12 @@ func (e *entryCapture) tableEntries(index int, key string, spec tableSpec) error
 	}
 	for _, entry := range spec.Indexes {
 		path := []string{yamlext.EntryTable, key, yamlext.EntryIndex, entry.Name}
+		if _, owned, _ := e.owners.IndexOwner(string(entry.Value.Type)); owned {
+			if err := e.ownedIndex(path, index, valueOrDefault(entry.Value.Name, entry.Name), entry.Value); err != nil {
+				return err
+			}
+			continue
+		}
 		if err := e.add(yamlext.EntryIndex, path, index, valueOrDefault(entry.Value.Name, entry.Name), entry.Value.Owned); err != nil {
 			return err
 		}
@@ -228,10 +234,70 @@ func (e *entryCapture) tableEntries(index int, key string, spec tableSpec) error
 	return nil
 }
 
+// ownsIndexes reports whether an owner reads an index entry of the document
+// in place of the frontend.
+func (d document) ownsIndexes(owners yamlext.Set) bool {
+	owned := func(spec indexSpec) bool {
+		_, found, _ := owners.IndexOwner(string(spec.Type))
+		return found
+	}
+	for _, spec := range d.Indexes {
+		if owned(spec) {
+			return true
+		}
+	}
+	for _, table := range d.Tables {
+		for _, entry := range table.Indexes {
+			if owned(entry.Value) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// ownedIndex captures an index entry an owner reads in place of the frontend
+// as one fragment at the entry's path: the entry's mapping, what the frontend
+// read of it, and the values of the owner's keys it writes. ownedIndex has
+// already refused an entry the frontend cannot hand over.
+func (e *entryCapture) ownedIndex(path []string, table int, name string, spec indexSpec) error {
+	node := entryNode(e.root, path...)
+	if node == nil {
+		return fmt.Errorf("parse YAML schema: index %q has no value", path)
+	}
+	fragment, err := e.capture.fragment(slices.Clone(path), table, node)
+	if err != nil {
+		return err
+	}
+	fragment.Name = name
+	index := &yamlext.Index{Type: string(spec.Type), Columns: cleanStrings(spec.Fields), Include: cleanStrings(spec.Include), Unique: spec.Unique,
+		Comment: string(spec.Comment), Ops: string(spec.Operator), Owned: make(map[string]*yamlext.Node)}
+	if len(index.Columns) == 0 {
+		index.Columns = cleanStrings(spec.Columns)
+	}
+	if len(index.Include) == 0 {
+		index.Include = nil
+	}
+	for _, key := range sortedKeys(spec.Owned) {
+		if !e.owners.DocumentKey(yamlext.EntryIndex, key) {
+			continue
+		}
+		captured, err := e.capture.node(mappingValue(node, key))
+		if err != nil {
+			return fmt.Errorf("parse YAML schema: %w", err)
+		}
+		index.Owned[key] = captured
+	}
+	fragment.Index = index
+	e.fragments = append(e.fragments, fragment)
+	return nil
+}
+
 // topLevelIndex captures the owners' keys of a top-level index entry, bound
 // to the table the entry names, which the document has to declare.
 func (e *entryCapture) topLevelIndex(tables yamlext.Tables, key string, spec indexSpec) error {
-	if !slices.ContainsFunc(sortedKeys(spec.Owned), func(owned string) bool { return e.owners.DocumentKey(yamlext.EntryIndex, owned) }) {
+	_, whole, _ := e.owners.IndexOwner(string(spec.Type))
+	if !whole && !slices.ContainsFunc(sortedKeys(spec.Owned), func(owned string) bool { return e.owners.DocumentKey(yamlext.EntryIndex, owned) }) {
 		return nil
 	}
 	table, err := tables.Find("", string(spec.TableName))
@@ -240,6 +306,9 @@ func (e *entryCapture) topLevelIndex(tables yamlext.Tables, key string, spec ind
 	}
 	if table < 0 {
 		return fmt.Errorf("parse YAML schema: index %q names table %q, which the document does not declare; an owner's key of an index needs its table", key, spec.TableName)
+	}
+	if whole {
+		return e.ownedIndex([]string{yamlext.EntryIndex, key}, table, valueOrDefault(spec.Name, key), spec)
 	}
 	return e.add(yamlext.EntryIndex, []string{yamlext.EntryIndex, key}, table, valueOrDefault(spec.Name, key), spec.Owned)
 }

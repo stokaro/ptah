@@ -45,14 +45,15 @@ func goDirectiveClaims(description *protocol.Description) (*goSource, error) {
 // when no engine claims a directive. A provider's models reach the annotation
 // frontend only through the directives it claims.
 func (h *Host) annotationExtensions() []annotation.Extension {
-	if h.goSource == nil || len(h.goSource.claims) == 0 {
+	if h.goSource == nil || len(h.goSource.claims) == 0 && !claimsIndexKinds(h.description.GetEngines()) {
 		return nil
 	}
 	extension := claimedExtension(h.description.GetProviderId(), h.goSource.claims)
+	withIndexKinds(&extension, h.description.GetEngines())
 	extension.Limits = goHeaderKinds(h.description)
 	extension.File = func() annotation.FileDecoder { return &goFileDecoder{host: h} }
 	if slices.ContainsFunc(h.description.GetEngines(), func(engine *protocol.Engine) bool {
-		return h.targets[engine.GetId()].encodes() && len(engine.GetGoSourceDirectives()) > 0
+		return h.targets[engine.GetId()].encodes() && (len(engine.GetGoSourceDirectives()) > 0 || len(engine.GetIndexKinds()) > 0)
 	}) {
 		extension.Encoder, extension.Encodes = goEncoder{host: h}, slices.Clone(extension.Kinds)
 	}
@@ -72,11 +73,12 @@ func PublishedAnnotations(description *protocol.Description) (annotation.Extensi
 	if err != nil {
 		return annotation.Extension{}, false, err
 	}
-	if len(claims) == 0 {
+	if len(claims) == 0 && !claimsIndexKinds(description.GetEngines()) {
 		return annotation.Extension{}, false, nil
 	}
 	providerID := description.GetProviderId()
 	extension := claimedExtension(providerID, claims)
+	withIndexKinds(&extension, description.GetEngines())
 	extension.Limits = goHeaderKinds(description)
 	unread := func() error {
 		return fmt.Errorf("%w: provider %s reads its Go annotations; select it to read this file", ptaherr.ErrUnsupportedFeature, providerID)
@@ -125,6 +127,56 @@ func claimedExtension(providerID string, claims map[string]providersource.GoClai
 	return extension
 }
 
+// claimsIndexKinds reports whether an engine claims an index type it reads in
+// place of the frontend's common index.
+func claimsIndexKinds(engines []*protocol.Engine) bool {
+	return slices.ContainsFunc(engines, func(engine *protocol.Engine) bool { return len(engine.GetIndexKinds()) != 0 })
+}
+
+// withIndexKinds lets the extension read the index declarations of every type
+// an engine claims (provider.IndexKindsFeature), and adds the models their
+// fragments declare to its kinds. The SDK keeps the claims only where both
+// sides listed the feature.
+func withIndexKinds(extension *annotation.Extension, engines []*protocol.Engine) {
+	extension.ReadsIndex = readsIndex(engines)
+	extension.Kinds = withIndexKindModels(extension.Kinds, engines)
+}
+
+// readsIndex reports whether an engine claims an index type, for a frontend
+// that hands the provider the declarations of the types it claims; nil when
+// no engine claims one.
+func readsIndex(engines []*protocol.Engine) func(indexType string) bool {
+	if !claimsIndexKinds(engines) {
+		return nil
+	}
+	return func(indexType string) bool { return indexKindEngine(engines, indexType) != nil }
+}
+
+// withIndexKindModels adds to kinds the models the engines' index-kind claims
+// declare, each once.
+func withIndexKindModels(kinds []schemaext.Kind, engines []*protocol.Engine) []schemaext.Kind {
+	for _, engine := range engines {
+		for _, claim := range engine.GetIndexKinds() {
+			for _, kind := range claim.GetModels() {
+				if !slices.Contains(kinds, schemaext.Kind(kind)) {
+					kinds = append(kinds, schemaext.Kind(kind))
+				}
+			}
+		}
+	}
+	return kinds
+}
+
+// indexKindEngine is the engine that claims the index type written, or nil.
+func indexKindEngine(engines []*protocol.Engine, indexType string) *protocol.Engine {
+	for _, engine := range engines {
+		if provider.IndexKindClaim(engine, indexType) != nil {
+			return engine
+		}
+	}
+	return nil
+}
+
 // goDirective describes a directive of the provider's own. Its scope says where
 // the comment is written and which part of a table the declaration describes:
 // a column directive sits on a field beside the field's directive, and an index
@@ -153,7 +205,7 @@ func (h *Host) goBaseCoverage() (schemaext.Coverage, error) {
 	}
 	var combined schemaext.Coverage
 	for _, engine := range h.description.GetEngines() {
-		if len(engine.GetGoSourceDirectives()) == 0 {
+		if len(engine.GetGoSourceDirectives()) == 0 && len(engine.GetIndexKinds()) == 0 {
 			continue
 		}
 		decoded, err := h.decodeGoSource(engine, nil, nil, nil)
@@ -214,7 +266,7 @@ func (d *goFileDecoder) Finish(tables annotation.Tables) ([]annotation.Contribut
 	var engines []*protocol.Engine
 	byEngine := make(map[string][]annotation.Declaration)
 	for _, declaration := range d.declarations {
-		engine := d.host.goSource.claims[declaration.Directive].Engine
+		engine := d.host.goDeclarationEngine(declaration)
 		if _, seen := byEngine[engine.GetId()]; !seen {
 			engines = append(engines, engine)
 		}
@@ -243,6 +295,18 @@ func (d *goFileDecoder) Finish(tables annotation.Tables) ([]annotation.Contribut
 		}
 	}
 	return contributions, nil
+}
+
+// goDeclarationEngine is the engine that reads a declaration: the one whose
+// index-kind claim names the type of an index directive the provider reads
+// whole, and otherwise the one that claims its directive.
+func (h *Host) goDeclarationEngine(declaration annotation.Declaration) *protocol.Engine {
+	if declaration.Directive == "ptah:schema:index" {
+		if engine := indexKindEngine(h.description.GetEngines(), declaration.Attributes["type"]); engine != nil {
+			return engine
+		}
+	}
+	return h.goSource.claims[declaration.Directive].Engine
 }
 
 // refuseDocument places a refusal of a whole document at the first declaration
@@ -294,6 +358,9 @@ func (h *Host) goContribution(engine string, tables annotation.Tables, declarati
 // [goTableColumn].
 func (h *Host) goFacetSubject(engine string, tables annotation.Tables, declaration annotation.Declaration,
 	decoded decodedSourceValue, owner *protocol.Reference) (table string, subject annotation.Subject, err error) {
+	if providersource.GoIndexKind(h.goDeclarationEngine(declaration), declaration) != nil {
+		return goIndexTable(tables, declaration, owner)
+	}
 	claim := h.goSource.claims[declaration.Directive].Directive
 	scope := claim.GetScope()
 	if scope == protocol.GoSourceDirective_COLUMN || scope == protocol.GoSourceDirective_INDEX {
@@ -318,6 +385,22 @@ func (h *Host) goFacetSubject(engine string, tables annotation.Tables, declarati
 		return "", annotation.Subject{}, err
 	}
 	return tables[index].QualifiedName(), annotation.Subject{}, nil
+}
+
+// goIndexTable places a value decoded from an index declaration the provider
+// reads whole: a facet of the table the index is on, which the provider names
+// by the table's schema and name.
+func goIndexTable(tables annotation.Tables, declaration annotation.Declaration, owner *protocol.Reference) (table string, subject annotation.Subject, err error) {
+	index, err := tables.Owning(declaration.Struct, declaration.Attributes["table"], "the index directive")
+	if err != nil {
+		return "", annotation.Subject{}, err
+	}
+	home := tables[index]
+	if !providersource.SameSubject(owner, &protocol.Reference{Kind: "table", Schema: home.Schema, Name: home.Name}) {
+		return "", annotation.Subject{}, fmt.Errorf("decoded Go facet is owned by %s %q, not the table %q of the index %q", owner.GetKind(), owner.GetName(),
+			home.QualifiedName(), declaration.Subject.Name)
+	}
+	return home.QualifiedName(), annotation.Subject{}, nil
 }
 
 // goTableColumn places a value that a table-scope directive declares for a

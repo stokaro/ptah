@@ -62,6 +62,12 @@ func YAML(ctx context.Context, engine *protocol.Engine, input yamlext.Document) 
 	}
 	walk := yamlWalk{ctx: ctx, source: input.Source, active: make(map[*yamlext.Node]bool)}
 	for i, fragment := range input.Fragments {
+		if fragment.Index != nil {
+			if err := walk.addIndexKindFragment(engine, input, document, i, fragment); err != nil {
+				return nil, err
+			}
+			continue
+		}
 		claim := yamlClaim(engine, fragment)
 		if claim == nil {
 			continue
@@ -86,6 +92,9 @@ func YAML(ctx context.Context, engine *protocol.Engine, input yamlext.Document) 
 			return nil, fmt.Errorf("YAML %s at %v: %w", document.GetFile(), fragment.Path, err)
 		}
 		document.Fragments = append(document.Fragments, captured)
+	}
+	if position, err := refuseIndexKindScope(engine, document); err != nil {
+		return nil, fmt.Errorf("YAML %s at %v: %w", document.GetFile(), document.GetFragments()[position].GetSubject().GetName(), err)
 	}
 	request := sourceRequest(engine, document)
 	if err := ctx.Err(); err != nil {

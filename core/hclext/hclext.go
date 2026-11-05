@@ -384,6 +384,18 @@ type Index struct {
 	Type string
 	// Operator is the operator class the index names, as written.
 	Operator string
+	// Owned reports an index whose type the owner reads in place of the
+	// frontend (see [Extension.ReadsIndex]): the frontend built no index of
+	// the block, and Columns, Include, Unique and Comment carry what it read
+	// of it.
+	Owned bool
+	// Columns are an owned index's key columns, in order, and Include the
+	// columns it covers.
+	Columns, Include []string
+	// Unique marks an owned unique index.
+	Unique bool
+	// Comment is an owned index's comment.
+	Comment string
 }
 
 // Request is every block of one document an owner's shapes matched, in the
@@ -498,6 +510,13 @@ type Extension struct {
 	// without it, a file carries the owner's Header entries as the document
 	// wrote them and nothing else of the owner's.
 	Split HeaderSplitter
+	// ReadsIndex reports whether the owner reads a table's `index` block of
+	// the type it writes in place of the frontend, such as an index kind the
+	// owner models outside the common index. The frontend builds no index for
+	// such a block and claims it for the owner with what it read of the block
+	// (see [Index] and [Set.IndexShape]); the facets the owner returns belong
+	// to the index's table. Nil reads none. It needs a Decoder.
+	ReadsIndex func(indexType string) bool
 }
 
 // HeaderSplitter is an owner's part in cutting one HCL document into several
@@ -599,6 +618,9 @@ func NewSet(extensions ...Extension) (Set, error) {
 		}
 		if extension.Encoder != nil && len(extension.Kinds) == 0 {
 			return Set{}, fmt.Errorf("HCL extension of %s declares an encoder without a model to encode", extension.Owner)
+		}
+		if extension.ReadsIndex != nil && extension.Decoder == nil {
+			return Set{}, fmt.Errorf("HCL extension of %s reads index blocks without a decoder", extension.Owner)
 		}
 		blocks, err := set.claimBlocks(index, extension, grantKinds)
 		if err != nil {
@@ -885,6 +907,35 @@ func (s Set) Lookup(site Site, block string) (Shape, bool) {
 		return Shape{}, false
 	}
 	return Shape{Block: routes.shapes[index], extension: index, dialect: s.dialect}, true
+}
+
+// IndexShape returns the shape the frontend claims a table's `index` block of
+// indexType with, for the owner that reads such a block in place of the
+// frontend (see [Extension.ReadsIndex]): the owner's [IndexAttributes] shape
+// of the block, which names the attributes it adds to it, or one that adds
+// none where the owner has no such shape. It returns false when no owner
+// reads the type, and an error when two owners do.
+func (s Set) IndexShape(indexType string) (Shape, bool, error) {
+	found := -1
+	for index, extension := range s.extensions {
+		if extension.ReadsIndex == nil || !extension.ReadsIndex(indexType) {
+			continue
+		}
+		if found >= 0 {
+			return Shape{}, false, fmt.Errorf("%w: an index of type %q is read by %s and %s", schemaext.ErrDuplicate, indexType,
+				s.extensions[found].Owner, extension.Owner)
+		}
+		found = index
+	}
+	if found < 0 {
+		return Shape{}, false, nil
+	}
+	if routes, ok := s.blocks[blockKey{site: IndexAttributes, block: "index"}]; ok {
+		if index, owned := routes.owner(s.dialect); owned && index == found {
+			return Shape{Block: routes.shapes[index], extension: index, dialect: s.dialect}, true, nil
+		}
+	}
+	return Shape{Block: Block{Site: IndexAttributes, Type: "index"}, extension: found, dialect: s.dialect}, true, nil
 }
 
 // Match is a claim the frontend made for a shape the set returned.

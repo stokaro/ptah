@@ -35,6 +35,7 @@ sourceOfTruth:
   - "integration/providercli/provider_entry_keys_e2e_test.go"
   - "integration/providercli/provider_hcl_claims_e2e_test.go"
   - "integration/providercli/provider_hcl_platform_e2e_test.go"
+  - "integration/providercli/provider_index_kinds_e2e_test.go"
   - "integration/providercli/provider_declarations_e2e_test.go"
 owns:
   - cli-ptah-providers-list
@@ -1181,6 +1182,21 @@ which Ptah reports as a loss at the table.
 The `ptah:feature-coverage` header of an HCL export leaves such a model out.
 The blocks the document writes are its whole account of the model, so a table
 whose block an edit removes keeps its settings too.
+
+`source.index-kinds` lets an engine claim index types it models outside the
+common index, such as YDB's `vector_kmeans_tree`. For a Go `ptah:schema:index`
+directive, a YAML index entry or an HCL `index` block whose `type` is one of
+them, compared in ASCII lower case with single spaces, Ptah builds no index of
+its own. It sends the provider the whole declaration as one fragment, bound to
+the index's table: what Ptah read of it (the type, the columns, the covered
+columns, uniqueness, the comment and the operator class) and the attributes the
+engine claims on the format's index declaration. The values the provider
+decodes are settings of the table.
+
+A declaration of such a type that writes
+something the fragment cannot carry, such as a `where` condition, is refused
+by name. When Ptah writes Go annotations or HCL, the provider writes each such
+index back, and Ptah writes it as the same directive or block.
 
 With negotiated
 `source.limits`, claimed headers can narrow the model's or a subject's

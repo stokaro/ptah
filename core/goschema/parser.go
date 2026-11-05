@@ -360,6 +360,14 @@ func (s *schemaParseState) parseIndexComment(comment *ast.Comment, structName st
 	// and full-text options and the MySQL block-size hint, are read by their
 	// owners into settings and options of the index.
 	ctx := s.annotationContext(comment, "//ptah:schema:index", structName)
+	// An index of a type an owner reads in place of the frontend is the
+	// owner's: no common index is built, and the owner reads the whole
+	// declaration.
+	if _, owned, err := s.annotations.IndexOwner(kv["type"]); err != nil {
+		return ownerAttributeError(ctx, err)
+	} else if owned {
+		return s.declareOwnedIndex(comment, kv, structName, ctx)
+	}
 	facets, err := s.annotations.DecodeAttributes("ptah:schema:index", kv)
 	if err != nil {
 		return ownerAttributeError(ctx, err)
@@ -390,6 +398,29 @@ func (s *schemaParseState) parseIndexComment(comment *ast.Comment, structName st
 		StorageParams:  options,
 	})
 	return nil
+}
+
+// declareOwnedIndex hands an index declaration whose type an owner reads in
+// place of the frontend to that owner, with every attribute it writes and the
+// index as its subject. The facets the owner returns attach to the table once
+// the file is read. The owner names the index by its name, so the
+// declaration needs one.
+func (s *schemaParseState) declareOwnedIndex(comment *ast.Comment, kv map[string]string, structName string, ctx annotationErrorContext) error {
+	if kv["name"] == "" {
+		return &ptaherr.ParseError{File: ctx.file, Line: ctx.line, Directive: "ptah:schema:index", Attribute: "name", Err: ptaherr.ErrInvalidAttributeValue,
+			Message: fmt.Sprintf("//ptah:schema:index at %s of type %q needs a name attribute: its owner reads the index by its name", structName, kv["type"])}
+	}
+	declaration := annotation.Declaration{Directive: "ptah:schema:index", Attributes: kv, Struct: structName, Line: ctx.line, File: ctx.file,
+		Subject: annotation.Subject{Kind: annotation.SubjectIndex, Struct: structName, Name: kv["name"], Table: kv["table"]}}
+	declaration.Start, declaration.End, declaration.FileSize = s.commentSpan(comment)
+	contributions, err := s.owners.DecodeIndex(declaration)
+	if err != nil {
+		return ownerAttributeError(ctx, err)
+	}
+	if len(contributions) == 0 {
+		return nil
+	}
+	return s.contribute(declaration, contributions)
 }
 
 func firstNonEmpty(values ...string) string {

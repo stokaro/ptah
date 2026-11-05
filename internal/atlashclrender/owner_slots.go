@@ -6,6 +6,7 @@ import (
 	"slices"
 	"sort"
 	"strconv"
+	"strings"
 
 	"ptah.run/core/hclext"
 	"ptah.run/core/schemaext"
@@ -211,6 +212,46 @@ func collectSlots(written []hclext.SlotAttributes) (map[hclext.Slot]ownerSlot, e
 		slots[entry.Slot] = slot
 	}
 	return slots, nil
+}
+
+// addOwnerIndexes writes each index an owner writes whole as an index block
+// of its table, among the table's own indexes by name, with the owner's
+// attributes where an index block takes an owner's. A name the table's own
+// indexes take is refused, since reading the document back would find one
+// index twice, and so is an attribute an index block has no place for.
+func (r *renderer) addOwnerIndexes(indexes []hclext.EncodedIndex) error {
+	for _, encoded := range indexes {
+		qualified := ""
+		for _, table := range r.layout.tables {
+			if table.Schema == encoded.Table.Schema && table.Name == encoded.Table.Name {
+				qualified = table.QualifiedName()
+			}
+		}
+		slot := hclext.Slot{Kind: hclext.SlotIndex, Table: encoded.Table, Name: encoded.Name}
+		if qualified == "" || slices.ContainsFunc(r.layout.indexesByTable[qualified], func(index schemamodel.Index) bool { return index.Name == encoded.Name }) {
+			return fmt.Errorf("an HCL encoder wrote %s, which the document writes no table for or writes already", slot)
+		}
+		written := ownerSlot{attributes: make(map[string]hclext.Value, len(encoded.Attributes))}
+		for _, attribute := range encoded.Attributes {
+			if err := placeSlotAttribute(slot, attribute.Name); err != nil {
+				return err
+			}
+			written.attributes[attribute.Name] = attribute.Value
+			written.ordered = append(written.ordered, attribute)
+		}
+		if r.ownerIndexes == nil {
+			r.ownerIndexes = make(map[hclext.Slot]ownerSlot)
+		}
+		if r.layout.indexesByTable == nil {
+			r.layout.indexesByTable = make(map[string][]schemamodel.Index)
+		}
+		r.ownerIndexes[slot] = written
+		r.layout.indexesByTable[qualified] = append(r.layout.indexesByTable[qualified], schemamodel.Index{StructName: encoded.Table.Struct, Name: encoded.Name,
+			TableName: qualified, Fields: slices.Clone(encoded.Columns), IncludeColumns: slices.Clone(encoded.Include), Unique: encoded.Unique,
+			Type: encoded.Type, Operator: encoded.Ops, Comment: encoded.Comment})
+		slices.SortStableFunc(r.layout.indexesByTable[qualified], func(a, b schemamodel.Index) int { return strings.Compare(a.Name, b.Name) })
+	}
+	return nil
 }
 
 // ownerSlot is what the owners add to the block slot names, which holds

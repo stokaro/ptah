@@ -159,6 +159,9 @@ func GoAnnotations(ctx context.Context, engine *protocol.Engine, tables annotati
 		}
 		document.Fragments = append(document.Fragments, fragment)
 	}
+	if position, err := refuseIndexKindScope(engine, document); err != nil {
+		return nil, &annotation.DeclarationError{Declaration: declarations[position], Err: err}
+	}
 	request := sourceRequest(engine, document)
 	if err := provider.ValidateSourceDocuments(engine.GetId(), request.GetDocuments()); err != nil {
 		return nil, err
@@ -167,6 +170,9 @@ func GoAnnotations(ctx context.Context, engine *protocol.Engine, tables annotati
 }
 
 func goFragment(engine *protocol.Engine, tables annotation.Tables, bindings []string, index int, declaration annotation.Declaration) (*protocol.SourceFragment, error) {
+	if kind := GoIndexKind(engine, declaration); kind != nil {
+		return goIndexKindFragment(engine, kind, tables, bindings, index, declaration)
+	}
 	claim := goClaim(engine, declaration.Directive)
 	if claim == nil {
 		return nil, fmt.Errorf("engine %q claims no Go directive %q", engine.GetId(), declaration.Directive)

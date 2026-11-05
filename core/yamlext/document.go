@@ -38,6 +38,57 @@ type Fragment struct {
 	// Inherited holds the keys of the entry itself that the key's owner reads
 	// with it (see [EntrySection.Reads]) and the entry writes, by name.
 	Inherited map[string]*Node
+	// Index is what the frontend read of an index entry whose type the owner
+	// reads in place of the frontend (see [Extension.ReadsIndex]), and nil for
+	// any other fragment. Such a fragment's Path is the entry's own, from the
+	// document root, its Node the entry's mapping and its Name the index's
+	// name.
+	Index *Index
+}
+
+// Index is the frontend's part of an index entry an owner reads in place of
+// the frontend: what the entry writes of the keys the frontend reads itself,
+// and the nodes of the owner's own keys of index entries.
+type Index struct {
+	// Type is the entry's type, as written.
+	Type string
+	// Columns are the key columns, in order, and Include the columns the
+	// index covers.
+	Columns, Include []string
+	// Unique marks a unique index.
+	Unique bool
+	// Comment and Ops are the entry's comment and operator class, or empty.
+	Comment, Ops string
+	// Owned are the values of the keys the entry writes that the owner adds
+	// to index entries (see [EntrySection]), by key.
+	Owned map[string]*Node
+}
+
+// IndexOwner returns the owner that reads an index entry of indexType in place
+// of the frontend (see [Extension.ReadsIndex]), and false when none does and
+// the frontend builds the index itself. Two owners that read one type are an
+// error.
+func (s Set) IndexOwner(indexType string) (string, bool, error) {
+	index, found, err := s.indexOwner(indexType)
+	if err != nil || !found {
+		return "", false, err
+	}
+	return s.extensions[index].Owner, true, nil
+}
+
+func (s Set) indexOwner(indexType string) (int, bool, error) {
+	found := -1
+	for index, extension := range s.extensions {
+		if extension.ReadsIndex == nil || !extension.ReadsIndex(indexType) {
+			continue
+		}
+		if found >= 0 {
+			return -1, false, fmt.Errorf("%w: an index of type %q is read by %s and %s", schemaext.ErrDuplicate, indexType,
+				s.extensions[found].Owner, extension.Owner)
+		}
+		found = index
+	}
+	return found, found >= 0, nil
 }
 
 // Entry returns the frontend's entry the fragment's key belongs to: empty for
@@ -89,6 +140,9 @@ type DocumentResult struct {
 
 func checkDocumentExtension(extension Extension, extensions []Extension) error {
 	if extension.Document == nil {
+		if extension.ReadsIndex != nil {
+			return fmt.Errorf("YAML owner %s reads index entries without a document decoder", extension.Owner)
+		}
 		return nil
 	}
 	if extension.Coverage != nil || extension.Cover != nil || extension.Entries != nil ||
@@ -196,6 +250,9 @@ func (s Set) documentBatches(document Document) (map[int][]Fragment, error) {
 }
 
 func (s Set) fragmentOwner(fragment Fragment, tables Tables) (int, string, error) {
+	if fragment.Index != nil {
+		return s.indexFragmentOwner(fragment, tables)
+	}
 	entry, key, valid := fragment.Entry()
 	bound := fragment.Table >= 0 && fragment.Table < len(tables)
 	switch {
@@ -229,6 +286,33 @@ func (s Set) fragmentOwner(fragment Fragment, tables Tables) (int, string, error
 	return index, key, nil
 }
 
+// indexFragmentOwner is the owner of an index entry the frontend handed whole:
+// the one that reads its type, for an entry of a table's indexes or a
+// top-level one bound to its table, written with its name, and with only the
+// owner's keys of index entries.
+func (s Set) indexFragmentOwner(fragment Fragment, tables Tables) (int, string, error) {
+	path := fragment.Path
+	bound := fragment.Table >= 0 && fragment.Table < len(tables)
+	valid := bound && fragment.Name != "" && fragment.Node != nil &&
+		(len(path) == 2 && path[0] == EntryIndex || len(path) == 4 && path[0] == EntryTable && path[1] == tables[fragment.Table].Key && path[2] == EntryIndex)
+	if !valid {
+		return 0, "", fmt.Errorf("invalid YAML index fragment path or table binding")
+	}
+	index, found, err := s.indexOwner(fragment.Index.Type)
+	if err != nil {
+		return 0, "", err
+	}
+	if !found || s.extensions[index].Document == nil {
+		return 0, "", fmt.Errorf("no document owner reads YAML index %q of type %q", fragment.Path, fragment.Index.Type)
+	}
+	for key := range fragment.Index.Owned {
+		if !s.DocumentKey(EntryIndex, key) || s.entryKeys[EntryIndex][key] != index {
+			return 0, "", fmt.Errorf("YAML index %q carries key %q, which its owner does not add to index entries", fragment.Path, key)
+		}
+	}
+	return index, path[len(path)-1], nil
+}
+
 func checkDocumentCoverage(extension Extension, claim schemaext.Coverage) error {
 	if claim.Representation() != "" && claim.Representation() != schemaext.Desired {
 		return fmt.Errorf("%w: YAML document of %s returned non-desired coverage", schemaext.ErrInvalidValue, extension.Owner)
@@ -253,6 +337,15 @@ func cloneFragments(fragments []Fragment) []Fragment {
 				inherited[name] = cloneNode(node, nodes)
 			}
 			fragment.Inherited = inherited
+		}
+		if fragment.Index != nil {
+			index := *fragment.Index
+			index.Columns, index.Include = slices.Clone(index.Columns), slices.Clone(index.Include)
+			index.Owned = make(map[string]*Node, len(fragment.Index.Owned))
+			for key, node := range fragment.Index.Owned {
+				index.Owned[key] = cloneNode(node, nodes)
+			}
+			fragment.Index = &index
 		}
 		result = append(result, fragment)
 	}
