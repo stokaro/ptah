@@ -236,7 +236,7 @@ func FilterDatabaseWithDefaultSchema(
 		return nil, err
 	}
 	filtered.Grants = keep(db.Grants, func(grant catalog.Grant) bool {
-		return dbGrantAllowed(allowed, keptRelations, grant, defaultSchema)
+		return dbGrantAllowed(allowed, grant, defaultSchema)
 	})
 	filtered.Enums = keepReferencedDatabaseEnums(db.Enums, filtered.Tables)
 
@@ -383,8 +383,12 @@ func grantAllowed(
 	}
 	if grant.OnTable != "" {
 		// OnTable names a view or a materialized view as well as a table; see
-		// [relations].
-		return keptRelations.holds(grant.OnTable)
+		// [relations]. A selected schema also keeps a grant on a relation the
+		// source does not declare there: the plan answers for it as it does on
+		// an unscoped run, and [dbGrantAllowed] keeps its side of the comparison
+		// by the same schema.
+		return keptRelations.holds(grant.OnTable) ||
+			schemaAllowed(allowed, effectiveSchema(schemaFromQualifiedName(grant.OnTable), defaultSchema))
 	}
 	if grant.OnRoutine != "" {
 		// A routine is kept by its schema, and its grants ride it.
@@ -404,7 +408,6 @@ func grantAllowed(
 
 func dbGrantAllowed(
 	allowed map[string]struct{},
-	keptRelations relations,
 	grant catalog.Grant,
 	defaultSchema string,
 ) bool {
@@ -427,8 +430,11 @@ func dbGrantAllowed(
 	if _, object := schemamodel.GrantObjectAttribute(grant.ObjectType); object {
 		return schemaAllowed(allowed, effectiveSchema(grant.Schema, defaultSchema))
 	}
-	return schemaAllowed(allowed, effectiveSchema(grant.Schema, defaultSchema)) &&
-		keptRelations.holds(grant.QualifiedTarget())
+	// A relation is kept by its schema too, whether or not the read reports it.
+	// A read reports a grant on a relation it does not read, such as a foreign
+	// table or the revision table. Left out here, the declared grant stays on the
+	// other side alone and is planned on every run.
+	return schemaAllowed(allowed, effectiveSchema(grant.Schema, defaultSchema))
 }
 
 // relations is the set of relations a selection keeps -- its tables, views

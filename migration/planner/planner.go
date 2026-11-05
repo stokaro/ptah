@@ -91,6 +91,9 @@ func GenerateSchemaDiffAST(ctx context.Context, runtime PlanningRuntime, diff *d
 //     every built-in planner rather than planned as an empty migration
 //   - a dialect no planner is registered for fails with an error satisfying
 //     errors.Is against ptaherr.ErrUnsupportedDialect
+//   - a grant the comparison adds on a table, a view or a materialized view
+//     the plan removes fails with an error satisfying errors.Is against
+//     ptaherr.ErrUnsupportedFeature, whichever comes first in the plan
 //   - a plan in which an owner operation shares a node with other work fails
 //     with an error satisfying errors.Is against [ErrInvalidPlan]: each owner
 //     operation is planned as a node of its own, so its verdict belongs to
@@ -129,6 +132,9 @@ func GenerateSchemaDiffASTWithOptions(
 	}
 	diff, omitted := omitSkippedChanges(diff, opts.SkipChangeKinds, dialect)
 	opts.SkipChangeKinds = nil
+	if err := refuseGrantsOnRemovedRelations(diff, semantics, dialect); err != nil {
+		return nil, wrapPlanError(dialect, err)
+	}
 	planner, err := runtime.MigrationPlanner(dialect, opts)
 	if err != nil {
 		return nil, wrapPlanError(dialect, err)
