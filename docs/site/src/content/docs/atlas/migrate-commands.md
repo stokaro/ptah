@@ -1450,14 +1450,15 @@ Such a `CASCADE` also drops a reader the declaration does not hold, such as a
 view in a schema the run leaves out, and the file applies without an error.
 
 A guard stays where an earlier statement of the same file may already have
-removed the object: a view a `CASCADE` above it may have taken, a constraint
-of a table whose column the file drops before it, an index on a view the file
-drops before it. `CREATE SCHEMA IF NOT EXISTS` stays as well, because the plan
-writes it for every schema an added object names, whether or not that schema
-exists. The exception is the schema the connection resolves unqualified names
-to, usually `public`: it exists, so `public.users` gets no more of a
-precondition than `users` does, and a role that may create tables in it does
-not need `CREATE` on the database.
+removed the object: a view a `CASCADE` above it may have taken, or an index on a
+view the file drops before it. A constraint of a kept table is dropped before the
+columns, so it needs none. `CREATE SCHEMA IF NOT EXISTS` stays for a schema the
+read of the dev database did not find, because a read limited to the connection's
+schema cannot say that one is absent. A schema the read found gets no statement,
+and neither does the schema the connection resolves unqualified names to, usually
+`public`: it exists, so `public.users` gets no more of a precondition than `users`
+does, and a role that may create tables in it does not need `CREATE` on the
+database.
 
 In the exact style, the PostgreSQL type and extension owners omit `IF EXISTS`
 from drops, and type drops omit `CASCADE`. PostgreSQL refuses a domain or
@@ -1467,13 +1468,17 @@ plan is returned, on the native commands too. A drop after another owner
 operation may keep its guard when that operation can remove objects the common
 planner cannot name.
 
-Every planner leaves out its descriptive comments. The MySQL-family, SQLite,
-SQL Server and ClickHouse planners keep their guards. Every other Ptah command
-that plans a change uses the same statement style: `schema apply`, `schema plan`
-and `schema diff` here, and native `ptah migrations generate` and `ptah schema
-apply`. The three `schema` verbs here write the same change comments, with the
-first letter in upper case as the community binary writes them on `schema diff`
-and `schema apply`: `-- Create "owners" table`. Native verbs write none. The
+The MySQL-family, SQLite, SQL Server, Oracle and ClickHouse planners settle their
+guards the same way: `DROP TABLE`, `DROP VIEW` and `DROP INDEX` carry no `IF
+EXISTS` unless an earlier statement of the file may have removed the object, and
+SQLite's `CREATE INDEX` carries no `IF NOT EXISTS`. Those engines have no
+`CASCADE` to settle. Every planner leaves out its descriptive comments.
+
+Every other Ptah command that plans a change uses the same statement style: `schema
+apply`, `schema plan` and `schema diff` here, and native `ptah migrations generate`
+and `ptah schema apply`. The three `schema` verbs here write the same change comments,
+with the first letter in upper case as the community binary writes them on `schema
+diff` and `schema apply`: `-- Create "owners" table`. Native verbs write none. The
 community binary does not have `schema plan`. The files
 still differ from the community binary's in how statements are grouped and
 ordered, in type spelling, and in where the keys of a new table are written;

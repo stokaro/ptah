@@ -65,7 +65,7 @@ type Widget struct {
 	// written with an empty up file passes every assertion about names.
 	c.Assert(readFile(c, pair.UpFile), qt.Contains, `CREATE TABLE "widgets"`)
 	c.Assert(readFile(c, pair.UpFile), qt.Contains, `"name" TEXT NOT NULL`)
-	c.Assert(readFile(c, pair.DownFile), qt.Contains, `DROP TABLE IF EXISTS "widgets"`)
+	c.Assert(readFile(c, pair.DownFile), qt.Contains, `DROP TABLE "widgets"`)
 }
 
 // TestGenerateMigration_AnEmptyNameDefaultsToMigration covers the default the

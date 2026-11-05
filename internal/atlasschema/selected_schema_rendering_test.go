@@ -51,7 +51,7 @@ func TestDiffMaterializationUsesSelectedSchemaRenderer(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	sql, err := report.MarshalSQL()
 	c.Assert(err, qt.IsNil)
-	c.Assert(sql, qt.Contains, `DROP TABLE IF EXISTS "selected"`)
+	c.Assert(sql, qt.Contains, `DROP TABLE "selected"`)
 	c.Assert(calls, qt.Equals, 1)
 }
 

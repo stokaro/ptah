@@ -381,7 +381,7 @@ func TestMigrateDownPlanDryRunChangesNothing(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	// The plan is still shown: a dry run that printed nothing would be
 	// indistinguishable from one that found nothing to do.
-	c.Assert(out, qt.Contains, `DROP TABLE IF EXISTS "orphan"`)
+	c.Assert(out, qt.Contains, `DROP TABLE "orphan"`)
 	c.Assert(tableCensus(c, dbPath), qt.DeepEquals, before)
 }
 

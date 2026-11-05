@@ -348,7 +348,7 @@ func TestCompatMigrateDiff_LiquibaseRollbackIsOneLiquibaseRuns(t *testing.T) {
 			c.Assert(err, qt.IsNil, qt.Commentf("stderr: %s", errOut.String()))
 			contents, err := os.ReadFile(filepath.Join(dir, compatNewestNameMatching(c, atlasDirEntryNames(c, dir), "*_demo.sql")))
 			c.Assert(err, qt.IsNil)
-			c.Assert(string(contents), qt.Contains, "\n--rollback DROP TABLE IF EXISTS \"widgets\";\n")
+			c.Assert(string(contents), qt.Contains, "\n--rollback DROP TABLE \"widgets\";\n")
 			c.Assert(string(contents), qt.Not(qt.Contains), "--rollback:")
 		})
 	}

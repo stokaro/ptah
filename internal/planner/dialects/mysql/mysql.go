@@ -25,6 +25,7 @@ import (
 	"ptah.run/internal/objectlookup"
 	"ptah.run/internal/planner/columnchange"
 	"ptah.run/internal/planner/featurehost"
+	"ptah.run/internal/planner/guards"
 	"ptah.run/internal/planner/keyrelease"
 	"ptah.run/internal/planner/schemaprecondition"
 	"ptah.run/internal/schemaprep"
@@ -1306,11 +1307,9 @@ func (p *Planner) releaseKeyNames(result []ast.Node, diff *difftypes.SchemaDiff,
 
 func (p *Planner) removeTables(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, tableName := range deporder.TableDropOrderWithDependencies(diff.TablesRemoved.Names(), diff.DeclaredTables, diff.DeclaredTableDependencies) {
-		dropTableNode := ast.NewDropTable(tableName).
-			SetIfExists().
-			SetCascade()
+		dropTableNode := ast.NewDropTable(tableName).SetIfExists()
 		if p.describes() {
-			dropTableNode.SetComment("WARNING: This will delete all data!")
+			dropTableNode.SetCascade().SetComment("WARNING: This will delete all data!")
 		}
 
 		result = append(result, dropTableNode)
@@ -1614,7 +1613,18 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	if err != nil {
 		return nil, err
 	}
-	return p.planSchemaPreconditions(result, diff, created), nil
+	result = p.planSchemaPreconditions(result, diff, created)
+	if !p.describes() {
+		guards.Settle(result, guards.Options{HarmlessRaw: harmlessSessionStatement})
+	}
+	return result, nil
+}
+
+// harmlessSessionStatement reports the raw statement a trigger swap writes
+// around the swap, which removes no object.
+func harmlessSessionStatement(raw *ast.RawSQLNode) bool {
+	statement := strings.TrimSpace(raw.SQL)
+	return strings.HasPrefix(statement, "LOCK TABLES") || strings.HasPrefix(statement, "UNLOCK TABLES")
 }
 
 // rejectUniqueIncludeConstraints refuses a covering UNIQUE this plan would have

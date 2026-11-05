@@ -62,6 +62,9 @@ func (p *Planner) planSchemaPreconditions(result []ast.Node, diff *difftypes.Sch
 	schemas := schemasAddedObjectsNeed(diff, created)
 	guarded := make([]ast.Node, 0, len(schemas)+len(result))
 	for _, schema := range schemas {
+		if !p.describes() && slices.Contains(diff.HeldSchemas, schema) {
+			continue
+		}
 		guarded = append(guarded, schemaprecondition.Node(schema, diff.DeclaredSchemas, semantics))
 	}
 	return append(guarded, result...)

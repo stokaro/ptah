@@ -180,6 +180,10 @@ func TablesAndColumnsWithTableContext(
 	// plan's CREATE SCHEMA carries: the plan reaches the schema through an
 	// object's qualifier, which is a name and nothing else.
 	diff.DeclaredSchemas = desired.Schemas
+	// The schemas the read found, so a plan does not create one of them again.
+	for _, schema := range database.Schemas {
+		diff.HeldSchemas = append(diff.HeldSchemas, schema.Name)
+	}
 	// Every declared view and materialized view, for resolving what a DROP
 	// cascades to -- usually a view this diff does not touch.
 	diff.DeclaredViewLikes = difftypes.ViewLikeVocabularyOf(desired)
