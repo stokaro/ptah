@@ -637,6 +637,12 @@ const (
 	HCLSourceBlock_INDEX_ATTRIBUTES             HCLSourceBlock_Site = 4
 	HCLSourceBlock_ROUTINE_ATTRIBUTES           HCLSourceBlock_Site = 5
 	HCLSourceBlock_MATERIALIZED_VIEW_ATTRIBUTES HCLSourceBlock_Site = 6
+	// The `platform` block of a `table` whose label is the claim's type, the
+	// engine's ID. Each `override` label is an attribute name, and the
+	// override's `value` the attribute's STRING value. The models need not
+	// list HCL: a table that writes no such block states nothing about them.
+	// Contract 25.22, under source.hcl-platform.
+	HCLSourceBlock_TABLE_PLATFORM HCLSourceBlock_Site = 7
 )
 
 // Enum value maps for HCLSourceBlock_Site.
@@ -649,6 +655,7 @@ var (
 		4: "INDEX_ATTRIBUTES",
 		5: "ROUTINE_ATTRIBUTES",
 		6: "MATERIALIZED_VIEW_ATTRIBUTES",
+		7: "TABLE_PLATFORM",
 	}
 	HCLSourceBlock_Site_value = map[string]int32{
 		"SITE_UNSPECIFIED":             0,
@@ -658,6 +665,7 @@ var (
 		"INDEX_ATTRIBUTES":             4,
 		"ROUTINE_ATTRIBUTES":           5,
 		"MATERIALIZED_VIEW_ATTRIBUTES": 6,
+		"TABLE_PLATFORM":               7,
 	}
 )
 
@@ -5012,7 +5020,9 @@ func (x *HCLSourceDeclaration) GetHeaderKinds() []string {
 // HCLSourceBlock is one block shape, with the meaning of the host's HCL
 // extension contract. At TOP_LEVEL and IN_TABLE the owner reads a block of its
 // own; at the attribute sites it adds attributes to the frontend's table,
-// index, routine or materialized view block, whose type the claim names.
+// index, routine or materialized view block, whose type the claim names. At
+// TABLE_PLATFORM it reads the overrides of a table's platform block of its
+// engine.
 type HCLSourceBlock struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`
 	Site       HCLSourceBlock_Site    `protobuf:"varint,1,opt,name=site,proto3,enum=ptah.provider.experimental.HCLSourceBlock_Site" json:"site,omitempty"`
@@ -5027,7 +5037,8 @@ type HCLSourceBlock struct {
 	// only.
 	GrantKind string `protobuf:"bytes,7,opt,name=grant_kind,json=grantKind,proto3" json:"grant_kind,omitempty"`
 	Selector  string `protobuf:"bytes,8,opt,name=selector,proto3" json:"selector,omitempty"`
-	// DESIRED models whose source formats include HCL.
+	// DESIRED models whose source formats include HCL. The models of a
+	// TABLE_PLATFORM claim need not include it.
 	Models []string `protobuf:"bytes,9,rep,name=models,proto3" json:"models,omitempty"`
 	// Common attributes of the frontend's block the owner reads too, sent in
 	// SourceFragment.inherited_attributes. Attribute sites only.
@@ -32006,7 +32017,10 @@ func (x *EncodedFragment) GetPlacement() EncodedFragment_Placement {
 }
 
 // EncodeLoss is a value the format cannot say, in one line that names it and
-// never its content.
+// never its content. Under source.hcl-platform, a loss of an HCL reply may
+// also name a value a TABLE_PLATFORM part writes: the value is written in
+// part, and the line says what the document does not hold of it. Contract
+// 25.22.
 type EncodeLoss struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ValueId       string                 `protobuf:"bytes,1,opt,name=value_id,json=valueId,proto3" json:"value_id,omitempty"`
@@ -34063,7 +34077,7 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\x0fROLE_MEMBERSHIP\x10\b\"}\n" +
 	"\x14HCLSourceDeclaration\x12B\n" +
 	"\x06blocks\x18\x01 \x03(\v2*.ptah.provider.experimental.HCLSourceBlockR\x06blocks\x12!\n" +
-	"\fheader_kinds\x18\x02 \x03(\tR\vheaderKinds\"\xfa\x05\n" +
+	"\fheader_kinds\x18\x02 \x03(\tR\vheaderKinds\"\x8e\x06\n" +
 	"\x0eHCLSourceBlock\x12C\n" +
 	"\x04site\x18\x01 \x01(\x0e2/.ptah.provider.experimental.HCLSourceBlock.SiteR\x04site\x12\x12\n" +
 	"\x04type\x18\x02 \x01(\tR\x04type\x12I\n" +
@@ -34078,7 +34092,7 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\bselector\x18\b \x01(\tR\bselector\x12\x16\n" +
 	"\x06models\x18\t \x03(\tR\x06models\x12\x1c\n" +
 	"\tinherited\x18\n" +
-	" \x03(\tR\tinherited\"\x9f\x01\n" +
+	" \x03(\tR\tinherited\"\xb3\x01\n" +
 	"\x04Site\x12\x14\n" +
 	"\x10SITE_UNSPECIFIED\x10\x00\x12\r\n" +
 	"\tTOP_LEVEL\x10\x01\x12\x14\n" +
@@ -34086,7 +34100,8 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\bIN_TABLE\x10\x03\x12\x14\n" +
 	"\x10INDEX_ATTRIBUTES\x10\x04\x12\x16\n" +
 	"\x12ROUTINE_ATTRIBUTES\x10\x05\x12 \n" +
-	"\x1cMATERIALIZED_VIEW_ATTRIBUTES\x10\x06\"t\n" +
+	"\x1cMATERIALIZED_VIEW_ATTRIBUTES\x10\x06\x12\x12\n" +
+	"\x0eTABLE_PLATFORM\x10\a\"t\n" +
 	"\x06Naming\x12\x16\n" +
 	"\x12NAMING_UNSPECIFIED\x10\x00\x12\r\n" +
 	"\tUNLABELED\x10\x01\x12\x13\n" +

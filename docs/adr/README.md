@@ -79,6 +79,7 @@ a new record that names it, and its own status line is updated to point there.
 | [0067](0067-a-provider-counts-what-its-values-hold.md) | A provider counts what its values hold | Proposed |
 | [0068](0068-an-inspected-index-carries-its-own-facets.md) | An inspected index carries its own facets | Proposed |
 | [0071](0071-a-declared-password-travels-as-an-execution-input.md) | A declared password travels as an execution input | Proposed |
+| [0072](0072-a-provider-claims-the-platform-group-of-a-table.md) | A provider claims the platform group of a table | Proposed |
 
 ## Writing one
 

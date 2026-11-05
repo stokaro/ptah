@@ -255,7 +255,9 @@ message HCLSourceDeclaration {
 // HCLSourceBlock is one block shape, with the meaning of the host's HCL
 // extension contract. At TOP_LEVEL and IN_TABLE the owner reads a block of its
 // own; at the attribute sites it adds attributes to the frontend's table,
-// index, routine or materialized view block, whose type the claim names.
+// index, routine or materialized view block, whose type the claim names. At
+// TABLE_PLATFORM it reads the overrides of a table's platform block of its
+// engine.
 message HCLSourceBlock {
   enum Site {
     SITE_UNSPECIFIED = 0;
@@ -265,6 +267,12 @@ message HCLSourceBlock {
     INDEX_ATTRIBUTES = 4;
     ROUTINE_ATTRIBUTES = 5;
     MATERIALIZED_VIEW_ATTRIBUTES = 6;
+    // The `platform` block of a `table` whose label is the claim's type, the
+    // engine's ID. Each `override` label is an attribute name, and the
+    // override's `value` the attribute's STRING value. The models need not
+    // list HCL: a table that writes no such block states nothing about them.
+    // Contract 25.22, under source.hcl-platform.
+    TABLE_PLATFORM = 7;
   }
   // How the labels of a TOP_LEVEL block name the object it declares. Every
   // other site takes none.
@@ -287,7 +295,8 @@ message HCLSourceBlock {
   // only.
   string grant_kind = 7;
   string selector = 8;
-  // DESIRED models whose source formats include HCL.
+  // DESIRED models whose source formats include HCL. The models of a
+  // TABLE_PLATFORM claim need not include it.
   repeated string models = 9;
   // Common attributes of the frontend's block the owner reads too, sent in
   // SourceFragment.inherited_attributes. Attribute sites only.
@@ -3924,7 +3933,10 @@ message EncodedFragment {
   Placement placement = 3;
 }
 // EncodeLoss is a value the format cannot say, in one line that names it and
-// never its content.
+// never its content. Under source.hcl-platform, a loss of an HCL reply may
+// also name a value a TABLE_PLATFORM part writes: the value is written in
+// part, and the line says what the document does not hold of it. Contract
+// 25.22.
 message EncodeLoss {
   string value_id = 1;
   string message = 2;
