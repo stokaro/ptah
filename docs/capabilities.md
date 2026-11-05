@@ -936,6 +936,7 @@ nightly, from the workflow's Run button, or when somebody comments
 | `mariadb` | 11.8 | certified | `MariaDB1011` | version-ladder | `mariadb:11.8` | yes | yes |
 | `mariadb` | 11.4 | certified | `MariaDB1011` | version-ladder | `mariadb:11.4` | yes | yes |
 | `mariadb` | 10.11 | certified | `MariaDB1011` | version-ladder | `mariadb:10.11` | yes | yes |
+| `clickhouse` | 26.10 | certified | `ClickHouse2411` | version-ladder | `clickhouse/clickhouse-server:26.10` | yes | yes |
 | `clickhouse` | 26.9 | certified | `ClickHouse2411` | version-ladder | `clickhouse/clickhouse-server:26.9` | yes | yes |
 | `clickhouse` | 26.8 | certified | `ClickHouse2411` | version-ladder | `clickhouse/clickhouse-server:26.8` | yes | yes |
 | `clickhouse` | 26.3 | certified | `ClickHouse2411` | version-ladder | `clickhouse/clickhouse-server:26.3` | yes | yes |
@@ -952,7 +953,7 @@ nightly, from the workflow's Run button, or when somebody comments
 | `yugabytedb` | 2025.2 | certified | `YugabyteDB25` | measured-release-line | `yugabytedb/yugabyte:2025.2` | yes | yes |
 | `yugabytedb` | 2024.2 | certified | `YugabyteDB24` | version-ladder | `yugabytedb/yugabyte:2024.2` | yes | yes |
 | `sqlite` | 3 | certified | `SQLite3` | version-ladder | none | n/a | yes |
-| `spanner` | 0 | best-effort | `SpannerPostgres` | banner-substring | `gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:v0.56.1` | no | yes |
+| `spanner` | 0 | best-effort | `SpannerPostgres` | banner-substring | `gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:v0.56.2` | no | yes |
 | `mysql` | 26.7 | best-effort | `MySQL84` | version-ladder | `mysql:26.7` | yes | no: upstream support ended on 2026-10-20 (endoflife.date/mysql) |
 | `clickhouse` | 26.7 | best-effort | `ClickHouse2411` | version-ladder | `clickhouse/clickhouse-server:26.7` | yes | no: upstream support ended on 2026-10-24 (endoflife.date/clickhouse) |
 | `clickhouse` | 25.8 | best-effort | `ClickHouse2411` | version-ladder | `clickhouse/clickhouse-server:25.8` | yes | no: upstream support ended on 2026-08-29 (endoflife.date/clickhouse) |
