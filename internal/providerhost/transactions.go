@@ -76,6 +76,9 @@ type transaction struct {
 	commitTried   bool
 	rollbackTried bool
 	result        *protocol.TransactionResult
+	// commitOutcome is the outcome the provider answered a commit with, and
+	// UNKNOWN when no commit was answered.
+	commitOutcome protocol.TransactionResult_Outcome
 	finishErr     error
 }
 
@@ -138,6 +141,16 @@ func (t *transaction) ExecuteUnits(ctx context.Context, units []renderer.Fragmen
 func (t *transaction) Commit() error   { return t.finish(protocol.FinishTransactionRequest_COMMIT) }
 func (t *transaction) Rollback() error { return t.finish(protocol.FinishTransactionRequest_ROLLBACK) }
 
+// RolledBackAtCommit reports that the provider answered the commit with
+// ROLLED_BACK, so nothing the transaction executed took effect. A commit that
+// was refused before it was sent, or whose reply was lost, answers false, and
+// so does a rollback the host asked for.
+func (t *transaction) RolledBackAtCommit() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.commitOutcome == protocol.TransactionResult_ROLLED_BACK
+}
+
 func (t *transaction) finish(action protocol.FinishTransactionRequest_Action) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -172,6 +185,9 @@ func (t *transaction) finish(action protocol.FinishTransactionRequest_Action) er
 	t.result, t.finishErr = t.session.target.host.client.FinishTransaction(ctx, &protocol.FinishTransactionRequest{
 		SessionId: t.session.remote.GetId(), TransactionId: t.id, Action: action,
 	})
+	if action == protocol.FinishTransactionRequest_COMMIT {
+		t.commitOutcome = t.result.GetOutcome()
+	}
 	t.finishErr = nativeOutcomeError(t.finishErr)
 	if t.result.GetAborted() {
 		t.finishErr = abortedError(t.finishErr)

@@ -95,6 +95,8 @@ service Provider {
   rpc CloseStatement(CloseStatementRequest) returns (Empty);
   // Contract 25.12. Used only when both sides list units.migration-split.
   rpc SplitMigration(SplitMigrationRequest) returns (MigrationSplit);
+  // Contract 25.19. Used only when both sides list models.reverse.
+  rpc ReverseChanges(ReverseChangesRequest) returns (ReversedChanges);
 }
 
 message Empty {}
@@ -171,6 +173,10 @@ message Engine {
   repeated ModelDeclarations declarations = 19;
   // Claimed ptah:not-described kinds in Go source, under source.limits.
   repeated string go_header_kinds = 20;
+  // The services that reverse the changes this engine's comparisons return.
+  // Non-empty only when the engine lists models.reverse, and sent only to a
+  // host that lists it. Contract 25.19.
+  repeated ModelReversal reversals = 21;
 }
 // ScopeSelection is how the --include, --exclude and --schema selectors name
 // the engine's objects of one model kind. The host reads a selector's name
@@ -1637,6 +1643,74 @@ message OperationSemantics {
   string reason = 2;
   ChangeSemantics.Access access = 3;
   string access_reason = 4;
+}
+
+// ModelReversal assigns the change kinds whose accepted changes one offline
+// service reverses. A change kind belongs to at most one reversal service.
+// Contract 25.19, under models.reverse.
+message ModelReversal {
+  string id = 1;
+  // CHANGE models of the engine.
+  repeated string change_kinds = 2;
+}
+// ReverseChanges is an offline operation. It has no session handle, reads no
+// database and returns the whole batch or an error. Each change is one a
+// comparison of the engine returned and the host accepted for a plan, in plan
+// order. The reply undoes each one from what the change itself carries: a
+// reverse plan is planned from these changes, never from a second comparison,
+// because the state the forward plan leaves has not been read. Contract
+// 25.19, under models.reverse.
+message ReverseChangesRequest {
+  string engine = 1;
+  string reversal_id = 2;
+  repeated string target_features = 3;
+  ComparisonIdentifiers identifiers = 4;
+  // Missing keys mean unestablished facts; false is an established refusal.
+  map<string, bool> capabilities = 5;
+  // Each subject and change kind appears once.
+  repeated PlanningChange changes = 6;
+}
+message ReversedChanges {
+  bool complete = 1;
+  // One result per change of the request, in the same order. A refusal
+  // exposes no prefix.
+  repeated ReversedChange changes = 2;
+}
+// ReversedChange undoes one forward change.
+message ReversedChange {
+  // The forward change's subject, unchanged.
+  ComparisonIdentity subject = 1;
+  // A CHANGE value of the forward change's kind, whose operands describe the
+  // reverse direction. Absent when the reverse has no statement to run, as
+  // when the forward change replaced a value the server never returns; then
+  // at least one limitation says what the rollback leaves as the forward
+  // change left it.
+  NormalizedValue value = 2;
+  // What the forward change leaves at the subject, as the owner predicts it.
+  // A prediction, never inspection evidence.
+  repeated ForwardState forward_state = 3;
+  // How the reverse restores the prior definition, such as changing settings
+  // in place or recreating the object. One line.
+  string strategy = 4;
+  // What the reverse cannot recover, such as deleted rows or consumed
+  // messages, one line each.
+  repeated string limitations = 5;
+}
+// ForwardState is one complete value the forward change leaves, or the
+// established absence of one. Values it does not name are unchanged.
+message ForwardState {
+  enum Placement {
+    PLACEMENT_UNSPECIFIED = 0;
+    // The subject itself; kind is the subject's kind.
+    OBJECT = 1;
+    // A facet of kind attached to the subject.
+    FACET = 2;
+  }
+  Placement placement = 1;
+  // A model of the engine with an OBSERVED representation.
+  string kind = 2;
+  // An OBSERVED value of kind; absent for the absence of one.
+  NormalizedValue value = 3;
 }
 
 // ModelPlanning assigns change, parent, and operation vocabularies to one

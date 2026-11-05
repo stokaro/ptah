@@ -38,6 +38,23 @@ const (
 		"ALTER TABLE `app/items` RENAME TO `app/__ptah_replaced_items`;\n" +
 		"ALTER TABLE `app/__ptah_rebuild_items` RENAME TO `app/items`;\n" +
 		"DROP TABLE `app/__ptah_replaced_items`;\n"
+
+	// ydbRebuildWithChangefeeds is ydbRebuild of a table that holds a
+	// changefeed and an index with settings, as the built-in YDB planner and
+	// the YDB provider write it: the copy's index settings after its
+	// creation, the changefeed dropped before the old table moves, since YDB
+	// moves no table that carries one, and added with its consumer once the
+	// copy holds the name.
+	ydbRebuildWithChangefeeds = "CREATE TABLE `app/__ptah_rebuild_items` (\n    `id` Int64 NOT NULL,\n    `n` Int64,\n" +
+		"    `label` Utf8,\n    PRIMARY KEY (`id`),\n    INDEX `items_label` GLOBAL SYNC ON (`label`)\n);\n" +
+		"ALTER TABLE `app/__ptah_rebuild_items` ALTER INDEX `items_label` SET (AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 1);\n" +
+		"INSERT INTO `app/__ptah_rebuild_items` (`id`, `n`, `label`) SELECT `id` AS `id`, CAST(`n` AS Int64) AS `n`, `label` AS `label` FROM `app/items`;\n" +
+		"ALTER TABLE `app/items` DROP CHANGEFEED `updates`;\n" +
+		"ALTER TABLE `app/items` RENAME TO `app/__ptah_replaced_items`;\n" +
+		"ALTER TABLE `app/__ptah_rebuild_items` RENAME TO `app/items`;\n" +
+		"ALTER TABLE `app/items` ADD CHANGEFEED `updates` WITH (MODE = 'UPDATES', FORMAT = 'JSON');\n" +
+		"ALTER TOPIC `app/items/updates` ADD CONSUMER `audit` WITH (important = TRUE);\n" +
+		"DROP TABLE `app/__ptah_replaced_items`;\n"
 )
 
 // rebuildCase is a directory whose second version is the statement sequence
@@ -86,6 +103,7 @@ func TestTableRebuild_IsNotADrop(t *testing.T) {
 			baseline: []string{"id", "n", "label"},
 		},
 		{name: "YDB, with the table's history in the directory", dialect: "ydb", first: ydbItems, second: ydbRebuild},
+		{name: "YDB, of a table that holds a changefeed and index settings", dialect: "ydb", first: ydbItems, second: ydbRebuildWithChangefeeds},
 		{
 			name: "YDB, with a table the directory did not create", dialect: "ydb",
 			first: "CREATE TABLE `app/other` (`id` Int64 NOT NULL, PRIMARY KEY (`id`));\n", second: ydbRebuild,
@@ -141,6 +159,14 @@ func TestTableRebuild_ReportsWhatIsNotARebuild(t *testing.T) {
 				first: sqliteItems, second: strings.Replace(sqliteRebuild, "DROP TABLE \"items\";\n",
 					"INSERT INTO items (id, n) VALUES (99, 1);\nDROP TABLE \"items\";\n", 1)},
 			want: []string{"0000000002_change.up.sql:10:BC103", "0000000002_change.up.sql:10:DS101"},
+		},
+		{
+			rebuildCase: rebuildCase{name: "a write to the old table beside the changefeed statements", dialect: "ydb", first: ydbItems,
+				second: strings.Replace(ydbRebuildWithChangefeeds, "ALTER TABLE `app/items` DROP CHANGEFEED `updates`;\n",
+					"ALTER TABLE `app/items` DROP CHANGEFEED `updates`;\nUPSERT INTO `app/items` (`id`) VALUES (99);\n", 1)},
+			want: []string{
+				"0000000002_change.up.sql:12:BC101", "0000000002_change.up.sql:16:BC103", "0000000002_change.up.sql:16:DS101",
+			},
 		},
 		{
 			rebuildCase: rebuildCase{name: "a copy of another table", dialect: "sqlite",

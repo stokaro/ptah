@@ -2,8 +2,10 @@ package goschematodb
 
 import (
 	"context"
+	"slices"
 
 	"ptah.run/catalog"
+	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemaprojection"
@@ -38,4 +40,34 @@ func Columns(ctx context.Context, table schemamodel.Table, fields []schemamodel.
 		return nil, err
 	}
 	return projected.Tables[0].Columns, nil
+}
+
+// PredictedColumns is what the owner of target predicts a read of a table
+// created from declaration reports for its columns, in declaration order, and
+// false where the owner predicts no columns, as a target without an owned
+// column service does. A projection of an existing table's changed columns
+// takes a changed column's observation from it, because only the owner knows
+// what a read reports for a declared type: YDB stores a column declared BIGINT
+// as Int64. It is a prediction from the declaration, never inspection
+// evidence, and it carries no facets. Errors return no columns.
+func PredictedColumns(ctx context.Context, declaration schemacapture.TableDeclaration, target string, runtime Runtime) ([]catalog.Column, bool, error) {
+	if !declaration.HasTable() {
+		return nil, false, nil
+	}
+	source := &schemamodel.Database{
+		Tables: []schemamodel.Table{declaration.Table.Clone()}, Fields: slices.Clone(declaration.Fields), Enums: slices.Clone(declaration.Enums),
+		Constraints: slices.Clone(declaration.Constraints), FeatureObjects: declaration.OwnedObjects, FeatureCoverage: declaration.FeatureCoverage,
+	}
+	_, prepared, err := prepareSourceTables(ctx, source, target, runtime)
+	if err != nil {
+		return nil, false, err
+	}
+	if len(prepared) != 1 || !prepared[0].ColumnsPrepared {
+		return nil, false, nil
+	}
+	columns := make([]catalog.Column, len(prepared[0].Columns))
+	for i, column := range prepared[0].Columns {
+		columns[i] = column.Clone()
+	}
+	return columns, true, nil
 }

@@ -93,6 +93,7 @@ const (
 	Provider_ReadStatementRows_FullMethodName         = "/ptah.provider.experimental.Provider/ReadStatementRows"
 	Provider_CloseStatement_FullMethodName            = "/ptah.provider.experimental.Provider/CloseStatement"
 	Provider_SplitMigration_FullMethodName            = "/ptah.provider.experimental.Provider/SplitMigration"
+	Provider_ReverseChanges_FullMethodName            = "/ptah.provider.experimental.Provider/ReverseChanges"
 )
 
 // ProviderClient is the client API for Provider service.
@@ -190,6 +191,8 @@ type ProviderClient interface {
 	CloseStatement(ctx context.Context, in *CloseStatementRequest, opts ...grpc.CallOption) (*Empty, error)
 	// Contract 25.12. Used only when both sides list units.migration-split.
 	SplitMigration(ctx context.Context, in *SplitMigrationRequest, opts ...grpc.CallOption) (*MigrationSplit, error)
+	// Contract 25.19. Used only when both sides list models.reverse.
+	ReverseChanges(ctx context.Context, in *ReverseChangesRequest, opts ...grpc.CallOption) (*ReversedChanges, error)
 }
 
 type providerClient struct {
@@ -940,6 +943,16 @@ func (c *providerClient) SplitMigration(ctx context.Context, in *SplitMigrationR
 	return out, nil
 }
 
+func (c *providerClient) ReverseChanges(ctx context.Context, in *ReverseChangesRequest, opts ...grpc.CallOption) (*ReversedChanges, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReversedChanges)
+	err := c.cc.Invoke(ctx, Provider_ReverseChanges_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ProviderServer is the server API for Provider service.
 // All implementations must embed UnimplementedProviderServer
 // for forward compatibility.
@@ -1035,6 +1048,8 @@ type ProviderServer interface {
 	CloseStatement(context.Context, *CloseStatementRequest) (*Empty, error)
 	// Contract 25.12. Used only when both sides list units.migration-split.
 	SplitMigration(context.Context, *SplitMigrationRequest) (*MigrationSplit, error)
+	// Contract 25.19. Used only when both sides list models.reverse.
+	ReverseChanges(context.Context, *ReverseChangesRequest) (*ReversedChanges, error)
 	mustEmbedUnimplementedProviderServer()
 }
 
@@ -1266,6 +1281,9 @@ func (UnimplementedProviderServer) CloseStatement(context.Context, *CloseStateme
 }
 func (UnimplementedProviderServer) SplitMigration(context.Context, *SplitMigrationRequest) (*MigrationSplit, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SplitMigration not implemented")
+}
+func (UnimplementedProviderServer) ReverseChanges(context.Context, *ReverseChangesRequest) (*ReversedChanges, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReverseChanges not implemented")
 }
 func (UnimplementedProviderServer) mustEmbedUnimplementedProviderServer() {}
 func (UnimplementedProviderServer) testEmbeddedByValue()                  {}
@@ -2620,6 +2638,24 @@ func _Provider_SplitMigration_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Provider_ReverseChanges_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReverseChangesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).ReverseChanges(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_ReverseChanges_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).ReverseChanges(ctx, req.(*ReverseChangesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Provider_ServiceDesc is the grpc.ServiceDesc for Provider service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -2922,6 +2958,10 @@ var Provider_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SplitMigration",
 			Handler:    _Provider_SplitMigration_Handler,
+		},
+		{
+			MethodName: "ReverseChanges",
+			Handler:    _Provider_ReverseChanges_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

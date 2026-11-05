@@ -146,6 +146,10 @@ type ApplyOptions struct {
 	// ValidateLocalSchemaSource applies a caller-selected policy to each local
 	// desired-schema path before parsing or dev-database work.
 	ValidateLocalSchemaSource func(string) error
+	// withoutData leaves the declared rows out of the plan. A rehearsal plans
+	// the schema again on its dev database, which holds none of the target's
+	// rows, and runs the target plan's data statements instead.
+	withoutData bool
 }
 
 type ApplyPlan struct {
@@ -218,6 +222,14 @@ type ApplyRuntimeOptions struct {
 	// ValidateLocalSchemaSource applies a caller-selected local-source policy;
 	// see [ApplyOptions.ValidateLocalSchemaSource].
 	ValidateLocalSchemaSource func(string) error
+	// DesiredFor loads the sources Desired was loaded from again, bound to the
+	// database databaseURL names. A rehearsal of a plan that holds a native
+	// operation plans the change again on its dev database, because a native
+	// operation is bound to the database it was planned for, and the desired
+	// state it plans from has to be bound to the dev database. Nil plans from
+	// Desired as it is, which binds to the dev database when Desired was loaded
+	// without an address and is refused when it is bound to the target.
+	DesiredFor func(ctx context.Context, databaseURL string) (*schemamodel.Database, error)
 }
 
 // ApplyRuntimePlan is a prepared Atlas schema apply operation for one open
@@ -234,6 +246,9 @@ type ApplyRuntimePlan struct {
 	current *catalog.Database
 	// undecided is what [ApplyRuntimePlan.Undecided] returns.
 	undecided schemadiff.Diagnostics
+	// rehearsal is what a rehearsal of a plan that holds a native operation
+	// plans again on its dev database; see [ApplyRuntimePlan.SimulateOnDev].
+	rehearsal nativeRehearsal
 }
 
 func (p ApplyPlan) HasChanges() bool {
@@ -523,13 +538,27 @@ func computeApplyPlan(
 	// The data stage runs whether or not the schema changed. A release that
 	// only edits a reference row changes no DDL, and a planner that returned
 	// here would report an empty plan for a change its author made.
-	computation.dataStatements, computation.rowSets, err = managedDataStatements(
-		ctx, conn, opts.Runtime, desired, current, opts.ProjectRoot, protectedtable.New(opts.ProtectedTables),
-	)
+	computation.dataStatements, computation.rowSets, err = plannedData(ctx, conn, opts, desired, current)
 	if err != nil {
 		return applyComputation{}, err
 	}
 	return computation, nil
+}
+
+// plannedData is the data stage of a plan: the statements that reconcile the
+// declared rows, and the row sets they read, or none for a plan computed
+// [ApplyOptions.withoutData].
+func plannedData(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	opts ApplyOptions,
+	desired *schemamodel.Database,
+	current *catalog.Database,
+) ([]dataStatement, []PlanRowSet, error) {
+	if opts.withoutData {
+		return nil, nil, nil
+	}
+	return managedDataStatements(ctx, conn, opts.Runtime, desired, current, opts.ProjectRoot, protectedtable.New(opts.ProtectedTables))
 }
 
 // selectApplyStates checks selectors against both sides before planning. One
@@ -935,7 +964,7 @@ func PrepareApply(
 		return ApplyRuntimePlan{}, err
 	}
 
-	computation, err := computeApplyPlan(ctx, conn, ApplyOptions{
+	planning := ApplyOptions{
 		Runtime:                   opts.Runtime,
 		ProjectRoot:               opts.ProjectRoot,
 		ToURLs:                    opts.ToURLs,
@@ -961,7 +990,8 @@ func PrepareApply(
 		RefuseUnmatchedExclude: true,
 		IgnoreUnknownHCLNames:  opts.IgnoreUnknownHCLNames,
 		Vars:                   opts.Vars,
-	})
+	}
+	computation, err := computeApplyPlan(ctx, conn, planning)
 	if err != nil {
 		return ApplyRuntimePlan{}, err
 	}
@@ -976,6 +1006,12 @@ func PrepareApply(
 		txMode:    opts.TxMode,
 		current:   computation.current,
 		undecided: computation.undecided,
+		rehearsal: nativeRehearsal{
+			planning:   planning,
+			desiredFor: opts.DesiredFor,
+			schema:     computation.ApplyPlan,
+			data:       computation.dataStatements,
+		},
 	}, nil
 }
 

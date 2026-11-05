@@ -60,7 +60,8 @@ func reverseObjectContext(ctx context.Context, captured difftypes.FeatureContext
 	if err != nil {
 		return difftypes.FeatureContext{}, err
 	}
-	return difftypes.FeatureContext{DesiredObjects: desired, DesiredCoverage: coverage, CurrentObjects: current.Objects, CurrentCoverage: current.Coverage}, nil
+	return difftypes.FeatureContext{DesiredObjects: desired, DesiredCoverage: coverage, CurrentObjects: current.Objects, CurrentCoverage: current.Coverage,
+		ContextObjects: captured.ContextObjects, ContextCoverage: captured.ContextCoverage}, nil
 }
 
 // A reversal can restore a definition without predicting every observation.

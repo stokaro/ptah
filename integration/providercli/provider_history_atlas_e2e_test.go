@@ -229,3 +229,39 @@ func TestProviderAtlasHistorySetPreservesUncertainCommit(t *testing.T) {
 		})
 	}
 }
+
+// An Atlas-format run that discards a failure its transaction rolled back
+// removes the provider's revision through the history service, as it removes
+// a SQL engine's row: whether the rollback followed a refused statement or
+// the provider answered the commit with ROLLED_BACK, nothing is left recorded.
+func TestProviderAtlasHistoryDiscardsAFailureItsTransactionRolledBack(t *testing.T) {
+	c := qt.New(t)
+	host, _ := yamlProviderCommand(c, "transactions")
+	for _, test := range []struct {
+		name  string
+		fault string
+		body  string
+	}{
+		{"a commit answered with ROLLED_BACK", "rollback-commit", "CREATE TABLE atlas_first (id INTEGER);"},
+		{"a statement after the first fails", "", "CREATE TABLE atlas_first (id INTEGER); CREATE TABLE atlas_first (id INTEGER);"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			_, sql, address := atlasHistoryConnections(c, host)
+			faulty := connectTransactionAddress(c, host, address+"?"+url.Values{"fault": {test.fault}}.Encode())
+			runner := migrator.NewMigrator(faulty, migrator.NewRegisteredMigrationProvider(
+				migrator.CreateMigrationFromSQL(1, "first", test.body, "DROP TABLE atlas_first;"),
+			)).WithMigrationsTable("main", atlasHistoryTable().Name).WithRevisionTableFormat(migrator.RevisionTableFormatAtlas).
+				WithTransactionMode(migrator.MigrationTxModeFile).WithMigrationLog(false).WithoutMigrationLock()
+
+			err := runner.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{DiscardRolledBackFailure: true})
+
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(err.Error(), qt.Not(qt.Contains), "discard rolled-back migration failure")
+			c.Assert(providerTablePresent(c, sql, "atlas_first"), qt.IsFalse)
+			rows, err := atlasHistoryRunner(sql).GetRevisions(c.Context())
+			c.Assert(err, qt.IsNil)
+			c.Assert(rows, qt.HasLen, 0)
+		})
+	}
+}

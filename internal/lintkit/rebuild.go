@@ -26,7 +26,9 @@ import (
 // The shape is matched strictly, as consecutive statements: a write to t
 // between the copy and the drop would be lost, a copy with a WHERE, a join,
 // DISTINCT or anything after its FROM leaves rows behind, and a copy into a
-// table other than the one created just before it is not a rebuild. A column
+// table other than the one created just before it is not a rebuild. The
+// statements a YDB rebuild writes beside its steps are skipped, because each
+// writes no row and moves no table (see [rebuildAside]). A column
 // the copy leaves out is lost too, which the text alone cannot see: where the
 // old table's columns are known a copy that leaves one out is not a rebuild,
 // and DS101 reports the drop.
@@ -72,41 +74,105 @@ type rebuildMatch struct {
 // matchRebuild reports whether the statements from index on are a rebuild,
 // in either order.
 func matchRebuild(statements []lintext.Statement, index int, columns Columns) (rebuildMatch, bool) {
-	if index+3 >= len(statements) {
+	scratch := CreatedTableRef(statements[index].Words)
+	if scratch == "" {
 		return rebuildMatch{}, false
 	}
-	scratch := CreatedTableRef(statements[index].Words)
-	copied, ok := tableCopyOf(&statements[index+1])
-	if scratch == "" || !ok || !sameTableRef(copied.into, scratch) || sameTableRef(copied.from, scratch) {
+	steps := rebuildSteps(statements, index)
+	if len(steps) < 3 {
+		return rebuildMatch{}, false
+	}
+	copied, ok := tableCopyOf(&statements[steps[0]])
+	if !ok || !sameTableRef(copied.into, scratch) || sameTableRef(copied.from, scratch) {
 		return rebuildMatch{}, false
 	}
 	old := copied.from
 	if len(lostColumns(index, old, copied, columns)) > 0 {
 		return rebuildMatch{}, false
 	}
-	// SQLite's order: the old table is dropped, then the copy takes its name.
-	if dropped, ok := singleDroppedTable(&statements[index+2]); ok && sameTableRef(dropped, old) {
-		if from, to, ok := tableRenameOf(&statements[index+3]); ok && sameTableRef(from, scratch) && sameTableRef(to, old) {
-			return rebuildMatch{drop: index + 2, renames: []int{index + 3}}, true
+	if match, ok := sqliteSwap(statements, steps[1:], scratch, old); ok {
+		return match, true
+	}
+	return ydbSwap(statements, steps[1:], scratch, old)
+}
+
+// rebuildSteps are the indexes of the four statements after the one at
+// index, past what a YDB rebuild writes beside its steps, or fewer at the
+// end of the file.
+func rebuildSteps(statements []lintext.Statement, index int) []int {
+	var steps []int
+	for i := index + 1; i < len(statements) && len(steps) < 4; i++ {
+		if !rebuildAside(&statements[i]) {
+			steps = append(steps, i)
 		}
 	}
-	// YDB's order: the old table is moved aside, the copy takes its name, and
-	// the old table is dropped under the name it was moved to.
-	if index+4 >= len(statements) {
+	return steps
+}
+
+// sqliteSwap matches SQLite's order at steps: the old table is dropped, then
+// the copy takes its name.
+func sqliteSwap(statements []lintext.Statement, steps []int, scratch, old string) (rebuildMatch, bool) {
+	dropped, ok := singleDroppedTable(&statements[steps[0]])
+	if !ok || !sameTableRef(dropped, old) {
 		return rebuildMatch{}, false
 	}
-	aside, replaced, ok := tableRenameOf(&statements[index+2])
-	if !ok || !sameTableRef(aside, old) {
-		return rebuildMatch{}, false
-	}
-	from, to, ok := tableRenameOf(&statements[index+3])
+	from, to, ok := tableRenameOf(&statements[steps[1]])
 	if !ok || !sameTableRef(from, scratch) || !sameTableRef(to, old) {
 		return rebuildMatch{}, false
 	}
-	if dropped, ok := singleDroppedTable(&statements[index+4]); !ok || !sameTableRef(dropped, replaced) {
+	return rebuildMatch{drop: steps[0], renames: []int{steps[1]}}, true
+}
+
+// ydbSwap matches YDB's order at steps: the old table is moved aside, the
+// copy takes its name, and the old table is dropped under the name it was
+// moved to.
+func ydbSwap(statements []lintext.Statement, steps []int, scratch, old string) (rebuildMatch, bool) {
+	if len(steps) < 3 {
 		return rebuildMatch{}, false
 	}
-	return rebuildMatch{drop: index + 4, renames: []int{index + 2, index + 3}}, true
+	aside, replaced, ok := tableRenameOf(&statements[steps[0]])
+	if !ok || !sameTableRef(aside, old) {
+		return rebuildMatch{}, false
+	}
+	from, to, ok := tableRenameOf(&statements[steps[1]])
+	if !ok || !sameTableRef(from, scratch) || !sameTableRef(to, old) {
+		return rebuildMatch{}, false
+	}
+	if dropped, ok := singleDroppedTable(&statements[steps[2]]); !ok || !sameTableRef(dropped, replaced) {
+		return rebuildMatch{}, false
+	}
+	return rebuildMatch{drop: steps[2], renames: []int{steps[0], steps[1]}}, true
+}
+
+// rebuildAside reports a statement a YDB rebuild writes beside its steps,
+// each of which writes no row and moves no table: an index setting of the
+// copy, after it is created, a changefeed dropped from the old table before
+// it moves, since YDB moves no table that carries one, a changefeed added to
+// the copy once it holds the name, and a change of a changefeed's topic,
+// which adds its consumers. The built-in YDB planner and the YDB provider
+// write each as a statement of its own.
+func rebuildAside(stmt *lintext.Statement) bool {
+	w := stmt.Words
+	if HasWordPrefix(w, "ALTER", "TOPIC") {
+		return true
+	}
+	if !HasWordPrefix(w, "ALTER", "TABLE") {
+		return false
+	}
+	starts := ClauseStarts(w)
+	if len(starts) == 0 {
+		return false
+	}
+	for _, i := range starts {
+		if i+1 >= len(w) {
+			return false
+		}
+		changefeed := (w[i] == "ADD" || w[i] == "DROP") && w[i+1] == "CHANGEFEED"
+		if !changefeed && (w[i] != "ALTER" || w[i+1] != "INDEX") {
+			return false
+		}
+	}
+	return true
 }
 
 // tableCopy is an INSERT INTO ... SELECT ... FROM that copies every row of one

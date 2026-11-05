@@ -42,13 +42,9 @@ func projectColumns(ctx context.Context, table difftypes.TableDiff, dialect stri
 	if len(converted) != len(fields) {
 		return nil, fmt.Errorf("cannot project incomplete columns of %q", table.TableName)
 	}
-	definitions := make(map[string]catalog.Column, len(fields))
-	for _, column := range converted {
-		key := semantics.ColumnIdentityKey(column.Name)
-		if _, duplicate := definitions[key]; duplicate {
-			return nil, fmt.Errorf("duplicate projected column %q", column.Name)
-		}
-		definitions[key] = column
+	definitions, err := columnDefinitions(ctx, table, converted, dialect, semantics, runtime)
+	if err != nil {
+		return nil, err
 	}
 	for _, removed := range table.ColumnsRemoved {
 		position := columnPosition(columns, removed.Name, semantics)
@@ -76,6 +72,39 @@ func projectColumns(ctx context.Context, table difftypes.TableDiff, dialect stri
 		columns[i].OrdinalPosition = i + 1
 	}
 	return columns, nil
+}
+
+// columnDefinitions keys the converted definitions of the changed columns by
+// column identity. An owner that predicts a read of its columns says what a
+// changed column reads back as, and that prediction replaces the conversion:
+// a conversion of the declaration alone keeps the declared spelling, such as
+// BIGINT where YDB reports Int64, and the reverse plan then compares the
+// prior column with a type no read reports. The conversion's facets stay.
+func columnDefinitions(
+	ctx context.Context, table difftypes.TableDiff, converted []catalog.Column, dialect string, semantics identifier.Semantics, runtime Runtime,
+) (map[string]catalog.Column, error) {
+	predicted, owned, err := goschematodb.PredictedColumns(ctx, table.Desired, dialect, runtime)
+	if err != nil {
+		return nil, err
+	}
+	definitions := make(map[string]catalog.Column, len(converted))
+	for _, column := range converted {
+		key := semantics.ColumnIdentityKey(column.Name)
+		if _, duplicate := definitions[key]; duplicate {
+			return nil, fmt.Errorf("duplicate projected column %q", column.Name)
+		}
+		if owned {
+			at := slices.IndexFunc(predicted, func(read catalog.Column) bool { return semantics.ColumnIdentityKey(read.Name) == key })
+			if at < 0 {
+				return nil, fmt.Errorf("cannot project column %q the owner did not predict", column.Name)
+			}
+			facets := column.Facets
+			column = predicted[at].Clone()
+			column.Facets = facets
+		}
+		definitions[key] = column
+	}
+	return definitions, nil
 }
 
 func columnPosition(columns []catalog.Column, name string, semantics identifier.Semantics) int {

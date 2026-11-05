@@ -83,8 +83,8 @@ type ConstraintNaming string
 
 // ConstraintNamingTableColumnsSuffix names an unnamed constraint
 // `<table>_<columns>_<suffix>`, with `1` and on where a relation or a
-// constraint of the schema holds the name: `_check`, `_key` and `_fkey`.
-// PostgreSQL's naming.
+// constraint of the schema holds the name: `_check`, `_key` and `_fkey`, and
+// `_not_null` on a release that names a NOT NULL. PostgreSQL's naming.
 const ConstraintNamingTableColumnsSuffix ConstraintNaming = "table-columns-suffix"
 
 // ForeignKeyNaming is how a server names a foreign key a schema file leaves

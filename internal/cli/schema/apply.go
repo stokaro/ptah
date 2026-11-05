@@ -86,6 +86,10 @@ type schemaApplyOptions struct {
 	// devServerDisposable is what [devdocker.DisposableServerDeclared]
 	// resolved for this run.
 	devServerDisposable bool
+	// desiredFor loads the desired schema from --root-dir and --schema-file
+	// again, bound to another database; see
+	// [atlasschema.ApplyRuntimeOptions.DesiredFor].
+	desiredFor func(context.Context, string) (*schemamodel.Database, error)
 }
 
 // schemaApplyLockSession runs one apply with the lock held. The callback is
@@ -501,6 +505,13 @@ func applySchema(
 		if err != nil {
 			return "", err
 		}
+		// The sources are bound to the target's address. A rehearsal that
+		// plans again on a dev database loads them bound to its address.
+		opts.desiredFor = func(ctx context.Context, databaseURL string) (*schemamodel.Database, error) {
+			again := loadOptions
+			again.DatabaseURL = databaseURL
+			return schemaload.LoadContext(ctx, again)
+		}
 	}
 
 	// Every authoritative target action runs on one pinned session, under a
@@ -551,6 +562,7 @@ func runSchemaApplyOnLockedSession(
 		DevServerDisposable: opts.devServerDisposable,
 		ToURLs:              opts.toURLs,
 		Desired:             desired,
+		DesiredFor:          opts.desiredFor,
 		Exclude:             opts.exclude,
 		Schemas:             dbcli.ParseSchemas(opts.schemas),
 		Include:             opts.include,

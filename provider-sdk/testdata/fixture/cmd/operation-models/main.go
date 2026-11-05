@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 
 	"example.com/ptah-fixture-provider/backend"
+	"example.com/ptah-fixture-provider/devdb"
 	"example.com/ptah-fixture-provider/statements"
 	"github.com/stokaro/ptah/provider-sdk/modeljson"
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
@@ -106,7 +107,7 @@ func main() {
 		added := []string{provider.CommonObjectsFeature, provider.ObservedColumnsFeature, provider.ObservedIndexesFeature, provider.PlanningLifecycleFeature}
 		d.Features = append(d.Features, added...)
 		d.Engines[0].Features = append(d.Engines[0].Features, added...)
-		d.Engines[0].CommonObjects = &protocol.CommonObjectSupport{Kinds: []protocol.CommonObjectSupport_Kind{protocol.CommonObjectSupport_COMMENT}}
+		d.Engines[0].CommonObjects = &protocol.CommonObjectSupport{Kinds: []protocol.CommonObjectSupport_Kind{protocol.CommonObjectSupport_COMMENT, protocol.CommonObjectSupport_GRANT}}
 	}
 	indexProperty := ""
 	if mode == "owned-renames" {
@@ -216,6 +217,16 @@ func main() {
 	}
 	if mode == "native-cli" || mode == "native-text" || mode == "policy" {
 		server.Locks = p
+	}
+	if os.Getenv("FIXTURE_DEV_SERVICES") != "" {
+		// The provider cleans and guards a dev database, so a rehearsal of a
+		// native plan can claim one, reset it and run the plan there.
+		d.SemanticIdentity += "-dev-services"
+		added := []string{provider.DevCleanupFeature, provider.ReplayGuardFeature}
+		d.Features = append(d.Features, added...)
+		d.Engines[0].Features = append(d.Engines[0].Features, added...)
+		cleaner := devdb.Cleaner{Sessions: p.Provider}
+		server.DevCleaner, server.ReplayGuard = cleaner, cleaner
 	}
 	if err := runtime.Serve(server); err != nil {
 		fmt.Fprintln(os.Stderr, err)

@@ -29,3 +29,10 @@ func foreignKeyNameRulesOf(dialect string) descriptor.ForeignKeyNameRules {
 	described, _ := platform.Lookup(dialect)
 	return described.ForeignKeyNameRules
 }
+
+// constraintNamingOf returns how dialect's server names a constraint a schema
+// leaves unnamed, and the zero value for a dialect the registry does not know.
+func constraintNamingOf(dialect string) descriptor.ConstraintNaming {
+	described, _ := platform.Lookup(dialect)
+	return described.ConstraintNaming
+}

@@ -70,3 +70,26 @@ func TestReverseObjectContextMissingProjectionIsUnknown(t *testing.T) {
 		})
 	}
 }
+
+// The context a filtered read carries is what it established about objects
+// outside its scope, and no change of the plan touches them, so the reverse
+// planner reads it as the forward planner did. Without it, a reverse plan that
+// drops a table created in a new directory is refused by a planner that has to
+// know which streaming queries read the table.
+func TestReverseObjectContextKeepsTheContextInventory(t *testing.T) {
+	c := qt.New(t)
+	runtime := must.Must(builtin.New())
+	outside := ydbtopic.ObservedObject("other", "events", ydbtopic.Spec{MinActivePartitions: 3})
+	inventory := must.Must(ydbtopic.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil))
+	captured := difftypes.FeatureContext{ContextObjects: must.Must(schemaext.NewObjects(outside)), ContextCoverage: inventory}
+
+	result, err := reverseObjectContext(t.Context(), captured, nil, "ydb", runtime)
+
+	c.Assert(err, qt.IsNil)
+	held, found, err := result.ContextObjects.Get(outside.Ref)
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(held.Value, qt.DeepEquals, outside.Value)
+	c.Assert(result.ContextCoverage.Lookup(ydbtopic.Kind, outside.Ref).State, qt.Equals, schemaext.Complete)
+	c.Assert(result.CurrentObjects.Len(), qt.Equals, 0)
+}

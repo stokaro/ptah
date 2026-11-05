@@ -40,7 +40,16 @@ func (m *Migrator) prepareMigrationInputs(ctx context.Context, migrations []*Mig
 	if err := m.askForSplits(ctx, migrations, direction); err != nil {
 		return nil, nil, err
 	}
-	preparer, ok := m.conn.Writer().(dbschema.UnitInputPreparer)
+	return prepareInputs(ctx, m.conn, migrations, direction)
+}
+
+// prepareInputs is the discovery and approval both a migrate run and a replay
+// ([Migration.UpForReplay]) take: each statement of each body in direction,
+// split as conn runs it, is sent to the writer's preparer, and the references
+// it returns are frozen in the returned context. A writer that discovers no
+// inputs returns ctx unchanged.
+func prepareInputs(ctx context.Context, conn *dbschema.DatabaseConnection, migrations []*Migration, direction MigrationDirection) (context.Context, []MigrationInput, error) {
+	preparer, ok := conn.Writer().(dbschema.UnitInputPreparer)
 	if !ok {
 		return ctx, nil, ctx.Err()
 	}
@@ -51,7 +60,7 @@ func (m *Migrator) prepareMigrationInputs(ctx context.Context, migrations []*Mig
 		if direction == MigrationDirectionDown {
 			body = migration.DownSQL
 		}
-		for i, sql := range splitSQLStatementsForConnection(m.conn, body) {
+		for i, sql := range splitSQLStatementsForConnection(conn, body) {
 			sql = strings.TrimSpace(sql)
 			if sql == "" {
 				continue
@@ -82,6 +91,6 @@ func (m *Migrator) prepareMigrationInputs(ctx context.Context, migrations []*Mig
 			inputs = append(inputs, position)
 		}
 	}
-	ctx, err = inputapproval.With(ctx, m.conn.Info().Dialect, prepared)
+	ctx, err = inputapproval.With(ctx, conn.Info().Dialect, prepared)
 	return ctx, inputs, err
 }

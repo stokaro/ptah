@@ -15,7 +15,7 @@ import (
 // counts the compatible additions within the major Revision. A host built
 // with this SDK announces Revision.ContractMinor, and a provider built with it
 // may require at most that minor from its host.
-const ContractMinor uint32 = 18
+const ContractMinor uint32 = 19
 
 // The features below each enable an addition to an existing message. An
 // addition is used only when both sides list its feature: the provider in its
@@ -48,7 +48,7 @@ func TwoWayFeatures() []string {
 		EncodeGroupsFeature, CommonAccessFeature, SchemaDeclarationsFeature, SourceLimitsFeature, PlanningLifecycleFeature, SensitiveInputsFeature, ColumnsFeature,
 		DatabaseContextFeature, ValueContextFeature, CommonViewFacetsFeature, ObservedColumnsFeature, ObservedPrimaryKeysFeature, ObservedIndexesFeature, PlanningObjectContextFeature,
 		PlanningContextInventoryFeature, MigrationSplitFeature, ComparisonCountsFeature, IndexMethodsFeature, TypedArgumentsFeature, ErrorReasonsFeature,
-		IndexRenamesFeature}
+		IndexRenamesFeature, ReverseChangesFeature}
 }
 
 // ContractError reports a host and a provider that cannot work together:
@@ -139,8 +139,9 @@ func ValidateHostFeatures(features []string) error {
 // from each engine's. The query dialects are removed unless the host lists
 // QueryDialectFeature, the embedding store declarations unless it lists
 // EmbeddingStoreFeature, the common-object declarations unless it lists
-// CommonObjectsFeature, the HCL claims unless it lists HCLSourceFeature, and
-// the scope selections unless it lists ScopeSelectionsFeature. Without
+// CommonObjectsFeature, the HCL claims unless it lists HCLSourceFeature, the
+// scope selections unless it lists ScopeSelectionsFeature, and the reversal
+// services unless it lists ReverseChangesFeature. Without
 // EntryKeysFeature, the YAML claims of a COLUMN or INDEX scope and the
 // YAML and Go claims that inherit common attributes are removed, since their
 // owner needs what the host would not send, and a model left with no YAML
@@ -180,6 +181,9 @@ func NegotiatedDescription(description *protocol.Description, hostFeatures []str
 		}
 		if !slices.Contains(hostFeatures, SourceLimitsFeature) {
 			engine.GoHeaderKinds = nil
+		}
+		if !slices.Contains(hostFeatures, ReverseChangesFeature) {
+			engine.Reversals = nil
 		}
 		if len(engine.GetGoHeaderKinds())+len(engine.GetHclSource().GetHeaderKinds()) == 0 {
 			engine.Features = slices.DeleteFunc(engine.Features, func(feature string) bool { return feature == SourceLimitsFeature })
