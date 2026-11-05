@@ -127,7 +127,11 @@ step reads the table and creates or drops one index of it. It carries no
 operand: the provider reads the declared index from the desired table and the
 held one from the current table. A removal comes before the additions, so a
 changed index is dropped before it is created again under the same name.
-Without the feature, index changes are refused.
+Where the engine's identifier rules scope an index name to its table, the
+plan creates its new tables first and then drops and renames the indexes of
+the tables it keeps; where a schema holds index names, the removals come
+first, so a new table may take a dropped index's name. Without the feature,
+index changes are refused.
 
 With `planning.index-renames` as well, a provider renames an index in place.
 When its session reports `index_rename`, the comparison pairs an index the
