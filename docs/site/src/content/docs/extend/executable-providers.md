@@ -1200,6 +1200,9 @@ reply as follows:
 - Tables, namespaces, enums, views, sequences, roles and grants enter the
   common model.
 - The provider's own objects are normalized by the provider.
+- Under `schema.sql-facets`, the facets of a table, a column or an index, such
+  as a YDB table's changefeeds, are normalized by the provider and placed
+  where a YAML source places the same facet.
 - Each file's declarations feed the schema-directory check.
 - The reading's claim is the load's coverage.
 
@@ -1210,8 +1213,8 @@ The JSON documents of `schema plan` and `schema apply` list every diagnostic in
 `schema_diagnostics`, with its code (`syntax`, `unsupported`, `invalid` or
 `incomplete`), severity, path and span. Ptah also refuses a reply the SDK's
 checks refuse, a complete reply with a warning, which it does not report yet,
-and a table that carries facets or owned objects, which a reading cannot place
-yet. A command that selects a provider for the engine fails with
+and a declared table that carries captured comparison features, since a
+reading carries a table's facets in its own collection. A command that selects a provider for the engine fails with
 `provider_missing` before it reads the file when none is installed.
 
 The execution adapter does not support managed data or isolated execution of

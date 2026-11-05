@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -29,12 +30,31 @@ const RetentionHeaderKind = "retention"
 func SQLDocumentDescription() *protocol.Description {
 	description := Description()
 	description.SemanticIdentity += "-sql-document"
-	description.Features = append(description.Features, provider.ReadSQLSchemaFeature)
+	description.Features = append(description.Features, provider.ReadSQLSchemaFeature, provider.SQLFacetsFeature)
 	engine := description.Engines[0]
-	engine.Features = append(engine.Features, provider.ReadSQLSchemaFeature)
+	engine.Features = append(engine.Features, provider.ReadSQLSchemaFeature, provider.SQLFacetsFeature)
 	engine.SqlSchema = &protocol.SQLSchemaDeclaration{Mode: protocol.SQLSchemaDeclaration_DOCUMENT, HeaderKinds: []string{RetentionHeaderKind}}
+	for _, model := range engine.ValueModels {
+		if model.GetKind() == retentionKind && model.GetRepresentation() == protocol.ValueInput_DESIRED {
+			model.SourceFormats = append(model.SourceFormats, protocol.SourceDocument_SQL)
+		}
+	}
 	engine.ValueModels = append(engine.ValueModels, retentionObjectModels()...)
 	return description
+}
+
+// retentionKind is the retention value a table or a column holds as a facet.
+const retentionKind = "example.org/fixture/retention"
+
+// sqlRetentionModel is the desired retention model as the DOCUMENT engine
+// declares it, with SQL among its source formats.
+func sqlRetentionModel() *protocol.ValueModel {
+	for _, model := range SQLDocumentDescription().GetEngines()[0].GetValueModels() {
+		if model.GetKind() == retentionKind && model.GetRepresentation() == protocol.ValueInput_DESIRED {
+			return model
+		}
+	}
+	panic("the fixture declares no desired retention model") // A static description; a missing model is a fixture programming error.
 }
 
 func retentionObjectModels() []*protocol.ValueModel {
@@ -59,8 +79,12 @@ func retentionObjectModels() []*protocol.ValueModel {
 //	ALTER TABLE name ADD column type [NOT NULL];
 //	DROP TABLE name;
 //	CREATE RETENTION name SECONDS n;
+//	ALTER TABLE name SET RETENTION n;
+//	ALTER TABLE name ALTER column SET RETENTION n;
 //
-// A line comment, such as a `ptah:not-described` header, is skipped. Every
+// The two SET RETENTION statements declare a retention facet of the table or
+// of its column, which the reply carries only when the request lists
+// schema.sql-facets; otherwise they are refused as UNSUPPORTED. A line comment, such as a `ptah:not-described` header, is skipped. Every
 // other statement is refused as UNSUPPORTED and named by its first word. Names
 // compare without regard to ASCII case, as the engine's identifier rules say.
 // Documents run in order, so a later one alters what an earlier one declared.
@@ -70,7 +94,7 @@ func retentionObjectModels() []*protocol.ValueModel {
 // trace the protocol requires, and `stalled` waits for cancellation. This
 // fixture demonstrates the protocol, not an engine's grammar.
 func (*Provider) ReadSQLSchema(ctx context.Context, request *protocol.ReadSQLSchemaRequest) (*protocol.SQLSchema, error) {
-	load := &sqlLoad{}
+	load := &sqlLoad{wantsFacets: slices.Contains(request.GetTargetFeatures(), provider.SQLFacetsFeature)}
 	declarations := make([]*protocol.SQLDocumentDeclarations, 0, len(request.GetDocuments()))
 	for _, document := range request.GetDocuments() {
 		if err := ctx.Err(); err != nil {
@@ -95,6 +119,10 @@ func (*Provider) ReadSQLSchema(ctx context.Context, request *protocol.ReadSQLSch
 	for i, entry := range load.retentions {
 		result.NativeObjects = append(result.NativeObjects, entry.object)
 		result.Traces = append(result.Traces, sqlTrace(protocol.SQLObjectTrace_NATIVE_OBJECTS, i, entry.declared))
+	}
+	for i, entry := range load.facets {
+		result.Facets = append(result.Facets, entry.object)
+		result.Traces = append(result.Traces, sqlTrace(protocol.SQLObjectTrace_FACETS, i, entry.declared))
 	}
 	if load.warned != nil {
 		result.Diagnostics = append(result.Diagnostics, &protocol.SQLDiagnostic{Code: protocol.SQLDiagnostic_INVALID, Severity: protocol.SQLDiagnostic_WARNING,
@@ -122,6 +150,8 @@ type sqlRetention struct {
 type sqlLoad struct {
 	tables      []*sqlTable
 	retentions  []*sqlRetention
+	facets      []*sqlRetention
+	wantsFacets bool
 	diagnostics []*protocol.SQLDiagnostic
 	warned      *sqlPlace
 	stalled     bool
@@ -187,14 +217,30 @@ func (l *sqlLoad) statement(document *protocol.SQLDocument, declared *protocol.S
 		l.create(document, declared, place, fields)
 	case opening == "DROP TABLE" && len(words) == 3:
 		l.drop(document, declared, place, fields[2])
-	case opening == "ALTER TABLE" && len(words) >= 6 && words[3] == "ADD":
-		l.alter(document, place, fields[2], fields[4:])
+	case opening == "ALTER TABLE" && l.alterTable(document, place, fields, words):
 	case opening == "CREATE RETENTION" && len(words) == 5 && words[3] == "SECONDS":
 		l.retention(document, declared, place, fields[2], fields[4])
 	default:
 		start := int(place.span.GetStart().GetByteOffset()) // #nosec G115 -- the offset indexes a fixture document
 		l.refuse(document, protocol.SQLDiagnostic_UNSUPPORTED, sqlSpan(document.GetText(), start, start+len(fields[0])), "unsupported statement "+words[0])
 	}
+}
+
+// alterTable reads the ALTER TABLE statements of the dialect and reports
+// whether the statement was one: an added column, and the retention of the
+// table or of one of its columns.
+func (l *sqlLoad) alterTable(document *protocol.SQLDocument, place sqlPlace, fields, words []string) bool {
+	switch {
+	case len(words) >= 6 && words[3] == "ADD":
+		l.alter(document, place, fields[2], fields[4:])
+	case len(words) == 6 && words[3] == "SET" && words[4] == "RETENTION":
+		l.facet(document, place, fields[2], "", fields[5])
+	case len(words) == 8 && words[3] == "ALTER" && words[5] == "SET" && words[6] == "RETENTION":
+		l.facet(document, place, fields[2], fields[4], fields[7])
+	default:
+		return false
+	}
+	return true
 }
 
 func (l *sqlLoad) create(document *protocol.SQLDocument, declared *protocol.SQLDocumentDeclarations, place sqlPlace, fields []string) {
@@ -315,6 +361,39 @@ func (l *sqlLoad) retention(document *protocol.SQLDocument, declared *protocol.S
 	declared.Objects = append(declared.Objects, &protocol.SQLDeclaration{Kind: "retention", Name: name})
 }
 
+// facet declares the retention of a declared table, or of a column of it
+// when column is not empty.
+func (l *sqlLoad) facet(document *protocol.SQLDocument, place sqlPlace, table, column, seconds string) {
+	if !l.wantsFacets {
+		l.refuse(document, protocol.SQLDiagnostic_UNSUPPORTED, place.span, "a retention of a table needs "+provider.SQLFacetsFeature)
+		return
+	}
+	index := l.find(table)
+	if index < 0 {
+		l.refuse(document, protocol.SQLDiagnostic_INVALID, place.span, "unknown table")
+		return
+	}
+	declared := l.tables[index].table
+	owner := &protocol.Reference{Engine: "fixture", Kind: "table", Schema: declared.GetSchema(), Name: declared.GetName()}
+	if column != "" {
+		found := slices.ContainsFunc(declared.GetColumns(), func(held *protocol.DeclaredColumn) bool {
+			return NormalizeCommonIdentifier(held.GetName()) == NormalizeCommonIdentifier(column)
+		})
+		if !found {
+			l.refuse(document, protocol.SQLDiagnostic_INVALID, place.span, "unknown column")
+			return
+		}
+		owner = provider.ColumnReference(owner, column)
+	}
+	if _, err := strconv.ParseUint(seconds, 10, 64); err != nil {
+		l.refuse(document, protocol.SQLDiagnostic_INVALID, place.span, "retention requires a nonnegative number of seconds")
+		return
+	}
+	model := sqlRetentionModel()
+	l.facets = append(l.facets, &sqlRetention{object: &protocol.Envelope{ProviderId: Description().GetProviderId(), Kind: model.GetKind(), SchemaVersion: model.GetSchemaVersion(),
+		Encoding: model.GetEncoding(), DefinitionSha256: model.GetDefinitionSha256(), Owner: owner, Payload: []byte(`{"seconds":` + seconds + `}`)}, declared: place})
+}
+
 func retentionOwner(name string) *protocol.Reference {
 	return &protocol.Reference{Engine: "fixture", Kind: RetentionObjectKind, Name: name}
 }
@@ -325,6 +404,11 @@ func retentionOwner(name string) *protocol.Reference {
 // says nothing about retention claims nothing about it.
 func (l *sqlLoad) coverage(limits []*protocol.SchemaCoverageLimit) *protocol.ModelCoverage {
 	result := &protocol.ModelCoverage{Representation: protocol.ValueInput_DESIRED}
+	if len(l.facets) != 0 {
+		// A load that declares a retention facet claims them all: a table
+		// it declares without one holds none.
+		result.Kinds = append(result.Kinds, &protocol.ModelKindCoverage{Model: sqlRetentionModel(), Knowledge: &protocol.ModelKnowledge{State: protocol.ModelKnowledge_COMPLETE}})
+	}
 	if len(l.retentions) == 0 && len(limits) == 0 {
 		return result
 	}
@@ -338,7 +422,7 @@ func (l *sqlLoad) coverage(limits []*protocol.SchemaCoverageLimit) *protocol.Mod
 		result.Subjects = append(result.Subjects, &protocol.ModelSubjectCoverage{Kind: RetentionObjectKind, Subject: retentionOwner(limit.GetName()),
 			NormalizedSubject: retentionOwner(limit.GetName()), Knowledge: &protocol.ModelKnowledge{State: protocol.ModelKnowledge_UNINSPECTED, Reason: reason}})
 	}
-	result.Kinds = []*protocol.ModelKindCoverage{{Model: proto.CloneOf(retentionObjectModels()[0]), Knowledge: knowledge}}
+	result.Kinds = append(result.Kinds, &protocol.ModelKindCoverage{Model: proto.CloneOf(retentionObjectModels()[0]), Knowledge: knowledge})
 	return result
 }
 

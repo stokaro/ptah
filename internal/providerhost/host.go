@@ -145,6 +145,10 @@ var hostFeatures = []string{
 	// reaches the table's owner as one rename step; see
 	// commonPlanner.indexChanges.
 	provider.IndexRenamesFeature,
+	// A SQL schema reading carries the facets of its tables, columns and
+	// indexes, which the host places where a YAML source places them; see
+	// target.sqlFacets.
+	provider.SQLFacetsFeature,
 }
 
 // Start verifies the selected artifact and negotiates experimental services.

@@ -17,6 +17,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlext"
+	"ptah.run/core/yamlschema"
 	"ptah.run/internal/pathguard"
 	"ptah.run/internal/providercatalog"
 	"ptah.run/internal/providerdiagnostic"
@@ -24,6 +25,10 @@ import (
 	"ptah.run/internal/sqlschema"
 	"ptah.run/internal/testutils"
 )
+
+// retentionFacet is the fixture's retention model, which a table and a
+// column hold as a facet.
+const retentionFacet schemaext.Kind = "example.org/fixture/retention"
 
 // sqlDocumentSpec builds the fixture command whose engine reads its SQL schema
 // documents whole, from the SDK version the host pins.
@@ -171,6 +176,43 @@ func TestProviderReadsASQLLoadIntoTheHostModel(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.IsNil)
 	c.Assert(alone.Tables, qt.HasLen, 1)
+}
+
+// TestProviderReadsTheFacetsOfASQLLoad reads a table's and a column's
+// retention out of a SQL load and places each where a YAML source places it:
+// the table's facet equals the one the same table declares in YAML, both are
+// bound to the engine, and the load claims the retention model.
+func TestProviderReadsTheFacetsOfASQLLoad(t *testing.T) {
+	c := qt.New(t)
+	_, runtime := yamlProviderCommand(c, "sql-document")
+	files := []sqlext.SourceFile{
+		{Path: "one.sql", Text: "CREATE TABLE items (id INTEGER PRIMARY KEY, label TEXT);\nALTER TABLE items SET RETENTION 3600;\n"},
+		{Path: "two.sql", Text: "ALTER TABLE ITEMS ALTER Label SET RETENTION 60;\n"},
+	}
+
+	load, err := sqlschema.ReadLoad(c.Context(), sqlext.GrammarRequest{Target: "fixture", Files: files}, sqlschema.Options{Owners: runtime.SQL()})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(load.Database.Tables, qt.HasLen, 1)
+	table := load.Database.Tables[0].Facets
+	c.Assert(table.Kinds(), qt.DeepEquals, []schemaext.Kind{retentionFacet})
+	c.Assert(table.TargetScope(retentionFacet), qt.DeepEquals, []string{"fixture"})
+	c.Assert(load.Database.Fields, qt.HasLen, 2)
+	c.Assert(load.Database.Fields[0].Facets.Len(), qt.Equals, 0)
+	column := load.Database.Fields[1].Facets
+	c.Assert(column.Kinds(), qt.DeepEquals, []schemaext.Kind{retentionFacet})
+	c.Assert(column.TargetScope(retentionFacet), qt.DeepEquals, []string{"fixture"})
+	c.Assert(column.Equal(table), qt.IsFalse)
+	kinds := make([]schemaext.Kind, 0, len(load.Database.FeatureCoverage.KindRecords()))
+	for _, record := range load.Database.FeatureCoverage.KindRecords() {
+		kinds = append(kinds, record.Model.Kind)
+	}
+	c.Assert(kinds, qt.Contains, retentionFacet)
+
+	declared, err := yamlschema.Parse(c.Context(), runtime.YAML(), []byte("tables:\n  items:\n    columns:\n      id: {type: INTEGER, primary: true}\n"+
+		"      label: {type: TEXT}\n    retention: {seconds: 3600}\n"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(table.Equal(declared.Tables[0].Facets), qt.IsTrue)
 }
 
 // TestProviderSQLLoadRefusalNamesTheDocument refuses a load the provider
