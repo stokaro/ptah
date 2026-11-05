@@ -103,6 +103,9 @@ func (p *owner) planAuthoredParent(request *protocol.PlanFeaturesRequest, table 
 	if desired.GetName() == "captured" && (len(desired.GetIndexes()) != 1 || len(desired.GetTriggers()) != 1 || desired.GetColumns()[0].GetComment() != "retained") {
 		return nil, nil, fmt.Errorf("authored parent lost its complete declaration")
 	}
+	if desired.GetName() == "commented" && (desired.GetComment() != "People who sign in" || desired.GetColumns()[0].GetComment() != "Key") {
+		return nil, nil, fmt.Errorf("authored parent lost its comments")
+	}
 	envelope := proto.CloneOf(p.operationEnvelope)
 	envelope.Owner = &protocol.Reference{Engine: request.Engine, Kind: "table", Schema: desired.Schema, Name: desired.Name}
 	envelope.Payload = []byte(`{"action":"create"}`)

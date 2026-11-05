@@ -35,7 +35,13 @@ type owner struct {
 	// comments carries comments on the common-object wire beside the owned
 	// table lifecycle and reports the indexes a table holds, as the YDB
 	// provider does.
-	comments       bool
+	comments bool
+	// renames claims the host's index rename steps, and its sessions report
+	// index_rename to a host that lists planning.index-renames.
+	renames bool
+	// reportsRenames reports index_rename whatever the host lists, as a
+	// provider that breaks the contract would.
+	reportsRenames bool
 	statementStyle bool
 	// rebuilds plans an added NOT NULL column, which SQLite cannot add in
 	// place, as a rebuild of its table when the host's planning policy asks
@@ -64,7 +70,7 @@ func main() {
 		d.Engines[0].Features = append(d.Engines[0].Features, provider.SensitiveInputsFeature, provider.HistoryFeature, provider.StatementsFeature)
 	}
 	modes := []string{"", "native", "native-transactional", "native-unwrapped", "native-cli", "native-text", "owned", "policy", "declarations", "owned-edit", "object-context", "statement-style",
-		"owned-comments"}
+		"owned-comments", "owned-renames"}
 	if !slices.Contains(modes, mode) {
 		panic("unknown fixture render mode")
 	}
@@ -86,12 +92,13 @@ func main() {
 		d.Features = append(d.Features, provider.TextUnitsFeature)
 		d.Engines[0].Features = append(d.Engines[0].Features, provider.TextUnitsFeature)
 	}
-	if mode == "owned" || mode == "declarations" || mode == "owned-edit" || mode == "owned-comments" {
+	commented := mode == "owned-comments" || mode == "owned-renames"
+	if mode == "owned" || mode == "declarations" || mode == "owned-edit" || commented {
 		// The provider owns the table lifecycle: the host never interprets a
 		// table operation, and the provider claims each column step itself.
 		d.Engines[0].Features = slices.DeleteFunc(d.Engines[0].Features, func(feature string) bool { return feature == provider.CommonTableIdentityFeature })
 	}
-	if mode == "owned-comments" {
+	if commented {
 		// The provider also reports the columns and the indexes its tables
 		// hold and carries comments on the common-object wire, so the host
 		// sends a comment as a step of its own. It creates a table in the
@@ -101,7 +108,17 @@ func main() {
 		d.Engines[0].Features = append(d.Engines[0].Features, added...)
 		d.Engines[0].CommonObjects = &protocol.CommonObjectSupport{Kinds: []protocol.CommonObjectSupport_Kind{protocol.CommonObjectSupport_COMMENT}}
 	}
+	indexProperty := ""
+	if mode == "owned-renames" {
+		// The provider renames an index of a table it owns in place.
+		d.Features = append(d.Features, provider.IndexRenamesFeature)
+		d.Engines[0].Features = append(d.Engines[0].Features, provider.IndexRenamesFeature)
+		indexProperty = `"index": {"type": "string"},`
+	}
 	actions, rebuild := `"create", "rename", "drop", "add-column", "drop-column"`, ""
+	if mode == "owned-renames" {
+		actions += `, "rename-index"`
+	}
 	if mode == "policy" {
 		// The provider honors the planning policy: it replaces the common
 		// step that adds a NOT NULL column with a rebuild of its table when
@@ -138,7 +155,7 @@ func main() {
 	definition, err := modeljson.Canonical([]byte(`{
 		"additionalProperties": false,
 		"properties": {
-			` + rebuild + `
+			` + rebuild + indexProperty + `
 			"action": {"enum": [` + actions + `]},
 			"dropColumn": {"type": "string"},
 			"column": {
@@ -173,9 +190,9 @@ func main() {
 	envelope := &protocol.Envelope{ProviderId: d.GetProviderId(), Kind: operationKind, SchemaVersion: 1, Encoding: "json", DefinitionSha256: hex.EncodeToString(hash[:])}
 	p := &owner{Provider: &backend.Provider{},
 		nativeUnits: mode != "" && mode != "owned" && mode != "policy" && mode != "declarations" && mode != "owned-edit" && mode != "object-context" && mode != "statement-style" &&
-			mode != "owned-comments",
-		ownedLifecycle: mode == "owned" || mode == "declarations" || mode == "owned-edit" || mode == "owned-comments", ownedEdits: mode == "owned-edit",
-		comments: mode == "owned-comments",
+			!commented,
+		ownedLifecycle: mode == "owned" || mode == "declarations" || mode == "owned-edit" || commented, ownedEdits: mode == "owned-edit",
+		comments: commented, renames: mode == "owned-renames", reportsRenames: os.Getenv("FIXTURE_INDEX_RENAME") == "always",
 		rebuilds: mode == "policy", statementStyle: mode == "statement-style", transactionalDDL: transactional, refusesDDLTransactions: mode == "native-unwrapped",
 		operationEnvelope: envelope, inputMode: inputMode}
 	server := runtime.Server{Description: d, Sessions: p, Inspector: p, Renderer: p, Executor: p, SQLAnalyzer: p, ValueNormalizer: p, SourceDecoder: p, ValueConverter: p, FeaturePlanner: p}

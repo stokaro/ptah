@@ -30,12 +30,20 @@ type CommonStep struct {
 	// membership, a grant, a revocation or a comment. Nil otherwise. The node
 	// is read-only; a process adapter maps it to its explicit protocol schema.
 	CommonObject ast.Node
+	// RenamedIndex names the index the step renames in place on Parent: From
+	// as the table holds it and To as the declaration names it. Nil when the
+	// step renames no index. Effects then read Parent, drop the index From
+	// and create the index To.
+	RenamedIndex *ast.RenameIndexOperation
 }
 
 // Clone returns independent metadata and common column operands. Facets retain
 // their immutable value semantics; the runtime validates their local codecs.
 func (s CommonStep) Clone() CommonStep {
 	s.Effects = slices.Clone(s.Effects)
+	if s.RenamedIndex != nil {
+		s.RenamedIndex = new(*s.RenamedIndex)
+	}
 	if s.AddedColumn != nil {
 		s.AddedColumn = new(*s.AddedColumn)
 		if s.AddedColumn.Default != nil {

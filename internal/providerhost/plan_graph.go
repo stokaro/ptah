@@ -92,60 +92,92 @@ func commonPlanningMetadata(request featureplan.Request, nodes []ast.Node, selec
 			metadata[i] = common
 			continue
 		}
-		name, action := "", plangraph.Action("")
-		switch typed := node.(type) {
-		case *ast.CreateTableNode:
-			name, action = typed.Name, plangraph.Create
-		case *pendingTableCreation:
-			name, action = typed.name, plangraph.Create
-		case *ast.DropTableNode:
-			name, action = typed.Name, plangraph.Drop
-		case *pendingTableDrop:
-			name, action = typed.name, plangraph.Drop
-		case *ast.AlterTableNode:
-			name, action = typed.Name, plangraph.Alter
-		case *pendingColumnChange:
-			name, action = typed.table, plangraph.Alter
-		case *pendingIndexChange:
-			name, action = typed.table, plangraph.Alter
-		default:
-			return nil, fmt.Errorf("%w: unsupported common planning node %T", schemaext.ErrInvalidValue, node)
+		name, action, err := commonTableOperation(node)
+		if err != nil {
+			return nil, err
 		}
 		ref, valid := tableref.Parse(name)
 		parent, found := parents[builder.TableParts(ref.Schema, ref.Name).Key()]
 		if !valid || !found {
 			return nil, fmt.Errorf("%w: common operation has no captured parent", schemaext.ErrInvalidValue)
 		}
-		step := featureplan.CommonStep{Parent: parent, Effects: []plangraph.Effect{{Subject: parent, Action: action}}}
-		edit, err := columnChange(node)
+		step, err := commonTableStep(builder, parent, action, node)
 		if err != nil {
 			return nil, err
-		}
-		if edit != nil {
-			// A column step reads its table and creates or drops one column of
-			// it, the footprint a provider that plans columns expects. Altering
-			// the table itself would claim a change this step does not make
-			// and would clash with the provider's own table operations.
-			action = plangraph.Drop
-			if edit.added != nil {
-				step.AddedColumn, action = edit.added, plangraph.Create
-			}
-			subject := planningChild(parent, builder.ColumnParts(parent.Schema.Source, parent.Name.Source, edit.name))
-			step.Effects = []plangraph.Effect{{Subject: parent, Action: plangraph.Read}, {Subject: subject, Action: action}}
-		}
-		if index, isIndex := node.(*pendingIndexChange); isIndex {
-			// An index step has the footprint of a column step: it reads its
-			// table and creates or drops one index of it.
-			action = plangraph.Drop
-			if index.added {
-				action = plangraph.Create
-			}
-			subject := planningChild(parent, builder.IndexParts(parent.Schema.Source, parent.Name.Source, index.index))
-			step.Effects = []plangraph.Effect{{Subject: parent, Action: plangraph.Read}, {Subject: subject, Action: action}}
 		}
 		metadata[i] = step
 	}
 	return metadata, nil
+}
+
+// commonTableOperation names the table a common table operation changes and
+// how it changes it.
+func commonTableOperation(node ast.Node) (string, plangraph.Action, error) {
+	switch typed := node.(type) {
+	case *ast.CreateTableNode:
+		return typed.Name, plangraph.Create, nil
+	case *pendingTableCreation:
+		return typed.name, plangraph.Create, nil
+	case *ast.DropTableNode:
+		return typed.Name, plangraph.Drop, nil
+	case *pendingTableDrop:
+		return typed.name, plangraph.Drop, nil
+	case *ast.AlterTableNode:
+		return typed.Name, plangraph.Alter, nil
+	case *pendingColumnChange:
+		return typed.table, plangraph.Alter, nil
+	case *pendingIndexChange:
+		return typed.table, plangraph.Alter, nil
+	case *pendingIndexRename:
+		return typed.table, plangraph.Alter, nil
+	default:
+		return "", "", fmt.Errorf("%w: unsupported common planning node %T", schemaext.ErrInvalidValue, node)
+	}
+}
+
+// commonTableStep is the step of a common table operation on parent, with the
+// effects and the operand a provider reads it by.
+func commonTableStep(builder objectidentity.Builder, parent objectidentity.ID, action plangraph.Action, node ast.Node) (featureplan.CommonStep, error) {
+	step := featureplan.CommonStep{Parent: parent, Effects: []plangraph.Effect{{Subject: parent, Action: action}}}
+	edit, err := columnChange(node)
+	if err != nil {
+		return featureplan.CommonStep{}, err
+	}
+	index := func(name string) objectidentity.ID {
+		return planningChild(parent, builder.IndexParts(parent.Schema.Source, parent.Name.Source, name))
+	}
+	switch typed := node.(type) {
+	case *pendingIndexChange:
+		// An index step has the footprint of a column step: it reads its
+		// table and creates or drops one index of it.
+		action = plangraph.Drop
+		if typed.added {
+			action = plangraph.Create
+		}
+		step.Effects = []plangraph.Effect{{Subject: parent, Action: plangraph.Read}, {Subject: index(typed.index), Action: action}}
+	case *pendingIndexRename:
+		// A rename reads its table, drops the index under the name the table
+		// holds and creates it under the declared one, the footprint
+		// planning.index-renames gives the step beside its operand.
+		step.Effects = []plangraph.Effect{{Subject: parent, Action: plangraph.Read}, {Subject: index(typed.from), Action: plangraph.Drop},
+			{Subject: index(typed.to), Action: plangraph.Create}}
+		step.RenamedIndex = &ast.RenameIndexOperation{From: typed.from, To: typed.to}
+	default:
+		if edit == nil {
+			break
+		}
+		// A column step reads its table and creates or drops one column of
+		// it, the footprint a provider that plans columns expects. Altering
+		// the table itself would claim a change this step does not make and
+		// would clash with the provider's own table operations.
+		action = plangraph.Drop
+		if edit.added != nil {
+			step.AddedColumn, action = edit.added, plangraph.Create
+		}
+		subject := planningChild(parent, builder.ColumnParts(parent.Schema.Source, parent.Name.Source, edit.name))
+		step.Effects = []plangraph.Effect{{Subject: parent, Action: plangraph.Read}, {Subject: subject, Action: action}}
+	}
+	return step, nil
 }
 
 // columnEdit is the one column a step adds or drops. added is nil for a drop.

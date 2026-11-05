@@ -168,9 +168,9 @@ func (p KeyValueParser) isAutoPromotedBoolean(attr string, skip map[string]bool)
 }
 
 // propertyShortcutDialects names the dialects whose descriptor reads the
-// `engine` and `comment` shortcuts. A schema's every table and field directive
-// asks, so the names are derived once per registry rather than from a copy of
-// every descriptor on each call.
+// `engine` shortcut. A schema's every table and field directive asks, so the
+// names are derived once per registry rather than from a copy of every
+// descriptor on each call.
 var propertyShortcutDialects = descriptortable.NewIndex(func(dialects []descriptor.Dialect) []string {
 	var names []string
 	for _, described := range dialects {
@@ -182,21 +182,21 @@ var propertyShortcutDialects = descriptortable.NewIndex(func(dialects []descript
 })
 
 // ParsePlatformSpecific returns a table or field directive's platform
-// overrides: the `engine` and `comment` shortcuts, for every dialect whose
-// descriptor reads them (descriptor.Conversion.PropertyShortcuts: MySQL and
-// MariaDB), then every `platform.<dialect>.<key>` attribute, which takes
-// precedence.
+// overrides: the `engine` shortcut, for every dialect whose descriptor reads
+// it (descriptor.Conversion.PropertyShortcuts: MySQL and MariaDB), then every
+// `platform.<dialect>.<key>` attribute, which takes precedence.
+//
+// A plain `comment` is the comment of the table or the column on every
+// engine, which the directive's Comment carries, and no property of one. A
+// MySQL-family plan writes that comment where no `platform.mysql.comment`
+// states another, so copying it here would change nothing there, and an
+// engine whose provider receives no platform properties would refuse the
+// copy.
 func ParsePlatformSpecific(kv map[string]string) map[string]map[string]string {
 	out := make(map[string]map[string]string)
-	for _, dialect := range propertyShortcutDialects.Get() {
-		if engine := kv["engine"]; engine != "" {
+	if engine := kv["engine"]; engine != "" {
+		for _, dialect := range propertyShortcutDialects.Get() {
 			out[dialect] = map[string]string{"engine": engine}
-		}
-		if comment := kv["comment"]; comment != "" {
-			if out[dialect] == nil {
-				out[dialect] = make(map[string]string)
-			}
-			out[dialect]["comment"] = comment
 		}
 	}
 

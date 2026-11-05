@@ -10,7 +10,7 @@ import (
 )
 
 func (c *planningCapture) commonStep(source featureplan.CommonStep) (*protocol.CommonPlanningStep, error) {
-	if err := onlyFields(source, "ID", "Parent", "Effects", "Transaction", "Impact", "AddedColumn", "CommonObject"); err != nil {
+	if err := onlyFields(source, "ID", "Parent", "Effects", "Transaction", "Impact", "AddedColumn", "CommonObject", "RenamedIndex"); err != nil {
 		return nil, err
 	}
 	metadata, err := planningMetadata(source)
@@ -30,6 +30,9 @@ func (c *planningCapture) commonStep(source featureplan.CommonStep) (*protocol.C
 		if err != nil {
 			return nil, err
 		}
+	}
+	if source.RenamedIndex != nil {
+		result.RenamedIndex = &protocol.CommonIndexRename{From: source.RenamedIndex.From, To: source.RenamedIndex.To}
 	}
 	return result, nil
 }

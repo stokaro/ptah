@@ -123,10 +123,10 @@ func TestExport_HappyPath_PreservesGoAnnotationSemantics(t *testing.T) {
 	tables := tablesByQualifiedName(after.Tables)
 	c.Assert(tables["app.users"].Checks, qt.DeepEquals, []string{"id > 0"})
 	c.Assert(tables["app.users"].CustomSQL, qt.Equals, "WITHOUT OIDS")
+	c.Assert(tables["app.users"].Comment, qt.Equals, "Users")
 	c.Assert(tables["app.users"].Overrides, qt.DeepEquals, map[string]map[string]string{
 		"mariadb": {
-			"comment": "Users",
-			"engine":  "InnoDB",
+			"engine": "InnoDB",
 		},
 		"mysql": {
 			"comment": "MySQL users",

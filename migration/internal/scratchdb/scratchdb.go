@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/devdocker"
 	"ptah.run/migration/internal/scratchdb/isolators"
 )
 
@@ -91,9 +92,19 @@ func (s *Scratch) Close(ctx context.Context) error {
 // a realm it could not remove is reported in a warning that names the
 // directory.
 //
+// An engine a provider serves gets its realm from the provider, when ctx
+// carries an owner that creates realms for the URL's scheme
+// ([devdocker.RealmOwner]): the connection to such a URL is the provider's,
+// and so is the way to give it a database of its own. That owner is asked
+// before any built-in isolation, as [devdocker.Resolve] asks it.
+//
 // A dialect this cannot isolate returns [ErrNoIsolation], so a caller refuses
-// rather than silently sharing.
+// rather than silently sharing. So does a provider that creates no realm in
+// the database the URL names.
 func Provision(ctx context.Context, baseURL string) (*Scratch, error) {
+	if owner := devdocker.RealmOwner(ctx, baseURL); owner != nil {
+		return provisionRealm(ctx, owner, baseURL)
+	}
 	dialect, err := atlasurl.DialectFromURL(baseURL)
 	if err != nil {
 		return nil, fmt.Errorf("read the dialect of the scratch server URL: %w", err)
@@ -110,6 +121,25 @@ func Provision(ctx context.Context, baseURL string) (*Scratch, error) {
 		return provisionServerDatabase(ctx, baseURL)
 	}
 	return nil, fmt.Errorf("%w: %s", ErrNoIsolation, dialect)
+}
+
+// provisionRealm enters a realm the provider creates in the database baseURL
+// names. A URL that comes back unchanged names a database the provider gives
+// no realm in, and sharing it between cases is what isolation exists to
+// prevent.
+func provisionRealm(ctx context.Context, owner devdocker.ExternalRealms, baseURL string) (*Scratch, error) {
+	realmURL, release, err := owner.EnterRealm(ctx, baseURL)
+	if err != nil {
+		return nil, fmt.Errorf("create a scratch dev realm: %w", err)
+	}
+	if realmURL == baseURL {
+		release()
+		return nil, fmt.Errorf("%w: the provider creates no realm in the database this URL names", ErrNoIsolation)
+	}
+	return &Scratch{url: realmURL, release: func() error {
+		release()
+		return nil
+	}}, nil
 }
 
 // isolation returns the engine's own way to give a case a database, for an
@@ -202,14 +232,16 @@ func scratchName() (string, error) {
 }
 
 // CanIsolate reports whether Provision can give a case its own database on the
-// server baseURL names.
+// server baseURL names, with the realm owners ctx carries.
 //
 // It asks the question without creating anything, so a caller refuses a whole
 // run before provisioning rather than failing partway through it: a suite whose
 // third case cannot be isolated must not first create two databases and apply a
-// schema to each.
-func CanIsolate(baseURL string) error {
-	if baseURL == "" {
+// schema to each. Whether a provider creates a realm in the database a URL
+// names is the provider's answer, which only entering one gives, so Provision
+// refuses a URL it creates none in.
+func CanIsolate(ctx context.Context, baseURL string) error {
+	if baseURL == "" || devdocker.RealmOwner(ctx, baseURL) != nil {
 		return nil
 	}
 	dialect, err := atlasurl.DialectFromURL(baseURL)

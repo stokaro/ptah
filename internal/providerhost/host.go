@@ -141,6 +141,10 @@ var hostFeatures = []string{
 	// for, read with the reason the provider wrote after the code. The SDK
 	// client writes the text; the status message is never shown.
 	provider.ErrorReasonsFeature,
+	// An index the comparison pairs with one declared under another name
+	// reaches the table's owner as one rename step; see
+	// commonPlanner.indexChanges.
+	provider.IndexRenamesFeature,
 }
 
 // Start verifies the selected artifact and negotiates experimental services.
