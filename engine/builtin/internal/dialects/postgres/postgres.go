@@ -980,7 +980,11 @@ func primaryKeyReplacement(node *ast.AlterTableNode) (*ast.DropConstraintOperati
 // renderAlterTable renders PostgreSQL-specific ALTER TABLE statements
 func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 	if drop, add, replaces := primaryKeyReplacement(node); replaces {
-		return r.writeAddConstraintAfter(node.Name, fmt.Sprintf("DROP CONSTRAINT %s, ", r.escapeIdentifier(drop.ConstraintName)), add.Constraint)
+		if err := r.writeAddConstraintAfter(node.Name, fmt.Sprintf("DROP CONSTRAINT %s, ", r.escapeIdentifier(drop.ConstraintName)), add.Constraint); err != nil {
+			return err
+		}
+		r.w.WriteLine("")
+		return nil
 	}
 	return r.renderAlterTableOperations(node)
 }

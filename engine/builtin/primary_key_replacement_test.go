@@ -23,12 +23,12 @@ func TestRenderSQL_AKeyReplacementIsOneStatement(t *testing.T) {
 		{
 			name: "a primary key",
 			add:  ast.NewPrimaryKeyConstraint("code"),
-			want: `ALTER TABLE "t" DROP CONSTRAINT "t_pkey", ADD PRIMARY KEY ("code");` + "\n",
+			want: `ALTER TABLE "t" DROP CONSTRAINT "t_pkey", ADD PRIMARY KEY ("code");` + "\n\n",
 		},
 		{
 			name: "a UNIQUE",
 			add:  ast.NewUniqueConstraint("t_code", "code"),
-			want: `ALTER TABLE "t" DROP CONSTRAINT "t_pkey";` + "\n" + `ALTER TABLE "t" ADD CONSTRAINT "t_code" UNIQUE ("code");` + "\n",
+			want: `ALTER TABLE "t" DROP CONSTRAINT "t_pkey";` + "\n" + `ALTER TABLE "t" ADD CONSTRAINT "t_code" UNIQUE ("code");` + "\n\n",
 		},
 	}
 	for _, test := range tests {
