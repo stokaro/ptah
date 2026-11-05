@@ -21,6 +21,6 @@ func TestAll_ServesEachDialectOnceUnderItsCanonicalName(t *testing.T) {
 	slices.Sort(dialects)
 	c.Assert(dialects, qt.DeepEquals, []string{
 		"clickhouse", "cockroachdb", "mariadb", "mysql", "postgres",
-		"spanner", "sqlite", "sqlserver", "ydb", "yugabytedb",
+		"spanner", "sqlite", "sqlserver", "yugabytedb",
 	})
 }

@@ -60,9 +60,6 @@ func TestRuntimePolicies_ReachEveryTargetTheirCapabilityClaims(t *testing.T) {
 		{dialect: platform.SQLServer, wantLockTimeout: false, wantStatementTimeout: false, wantTxAll: true},
 		{dialect: platform.ClickHouse, wantLockTimeout: false, wantStatementTimeout: false, wantTxAll: false},
 		{dialect: platform.Spanner, wantLockTimeout: false, wantStatementTimeout: false, wantTxAll: false},
-		// YDB carries one timeout and not the other: no statement waits for a
-		// lock there, and the migrator bounds each query with a deadline.
-		{dialect: platform.YDB, wantLockTimeout: false, wantStatementTimeout: true, wantTxAll: false},
 	}
 
 	for _, test := range tests {

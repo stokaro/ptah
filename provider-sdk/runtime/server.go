@@ -83,6 +83,7 @@ type Server struct {
 	ExecutionInputs  provider.ExecutionInputDescriber
 	MigrationSplits  provider.MigrationSplitter
 	ChangeReverser   provider.ChangeReverser
+	ValueReporter    provider.ValueReporter
 	SQLScanner       provider.SQLScanner
 }
 
@@ -133,6 +134,7 @@ func (s Server) Validate() error {
 		{provider.SensitiveInputsFeature, !nilService(s.ExecutionInputs)},
 		{provider.MigrationSplitFeature, !nilService(s.MigrationSplits)},
 		{provider.ReverseChangesFeature, !nilService(s.ChangeReverser)},
+		{provider.ReportCountsFeature, !nilService(s.ValueReporter)},
 		{provider.ScanSQLFeature, !nilService(s.SQLScanner)},
 	} {
 		if slices.Contains(s.Description.GetFeatures(), service.feature) != service.present {

@@ -35,22 +35,6 @@ var catalogRules = []CatalogRule{
 	{ID: RuleStatementsNotAnalyzed, Title: "Statements no rule analyzed", Severity: SeverityInfo},
 }
 
-// yqlCatalogIDs are the identifiers a YDB source can draw, in catalog order.
-// A YDB source is read as YQL rather than by the parser (see lintYQL), so the
-// parse-path and parser-backed identifiers are not among them.
-var yqlCatalogIDs = []string{
-	RuleUnsupportedStatement,
-	RuleTableWithoutPrimaryKey,
-	RuleUnsupportedCapability,
-	RuleStatementsNotAnalyzed,
-}
-
-// YQLCatalogIDs returns the identifiers `ptah sql lint` can report on a YDB
-// source, in the order of [Catalog].
-func YQLCatalogIDs() []string {
-	return slices.Clone(yqlCatalogIDs)
-}
-
 // ownerCatalogIDs are the identifiers a source an owner splits can draw, in
 // catalog order. Such a source is read from the owner's statement facts (see
 // lintOwned), and no statement reaches the parser.

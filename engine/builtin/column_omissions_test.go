@@ -129,7 +129,7 @@ func TestRenderSQL_LeavesBoundMySQLColumnSettingsOutElsewhere(t *testing.T) {
 // bound to no target reaches another target's renderer only to be refused, as
 // a facet no owner of that target registers.
 func TestRenderSQL_RefusesUnboundMySQLColumnSettingsElsewhere(t *testing.T) {
-	for _, dialect := range []string{platform.Postgres, platform.YDB} {
+	for _, dialect := range []string{platform.Postgres, platform.SQLite} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 

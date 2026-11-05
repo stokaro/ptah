@@ -118,19 +118,24 @@ func TestOpen_AnUnrecognizedSchemeStillReachesTheDriver(t *testing.T) {
 	c.Assert(err.Error(), qt.Not(qt.Contains), "ptah inference works against PostgreSQL")
 }
 
-// TestOpen_YDBReachesTheYDBDriver is the YDB row, which reads differently from
-// the rows above: YDB is an engine this namespace runs against, so a YDB URL is
-// not refused, under either scheme. It is handed to the YDB driver, which
-// fails here only because nothing listens on the port.
-func TestOpen_YDBReachesTheYDBDriver(t *testing.T) {
+// The control for the rows above: YDB is an engine this namespace runs
+// against through its provider, so a YDB URL is not refused as another engine,
+// under either scheme. It goes to the YDB provider, and with none installed
+// the run stops naming the provider, rather than handing the URL to the
+// PostgreSQL driver.
+func TestOpen_YDBReachesTheYDBProvider(t *testing.T) {
 	for _, dbURL := range []string{"ydb://127.0.0.1:1/local", "ydbs://127.0.0.1:1/local"} {
 		t.Run(dbURL, func(t *testing.T) {
 			c := qt.New(t)
+			dir := c.TempDir()
+			c.Setenv("HOME", dir)
+			c.Setenv("XDG_CACHE_HOME", dir)
+			c.Setenv("LocalAppData", dir)
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
 			output, err := runInferenceContext(ctx, c, "plan", "--spec", writeSpec(c), "--db-url", dbURL)
 
-			c.Assert(err, qt.ErrorMatches, `connect to ydbs?://127\.0\.0\.1:1/local: .*`)
+			c.Assert(err, qt.ErrorMatches, `(?s).*official Ptah YDB plugin.*github\.com/stokaro/ptah-ydb-plugin.*`)
 			c.Assert(err.Error(), qt.Not(qt.Contains), "ptah inference works against")
 			c.Assert(output, qt.Not(qt.Contains), "invalid keyword/value")
 		})

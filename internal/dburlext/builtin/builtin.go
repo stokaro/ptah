@@ -10,7 +10,6 @@ import (
 	"ptah.run/internal/dburlext/postgres"
 	"ptah.run/internal/dburlext/sqlite"
 	"ptah.run/internal/dburlext/sqlserver"
-	"ptah.run/internal/dburlext/ydb"
 )
 
 // services maps each dialect a built-in service serves to it. It is built
@@ -20,7 +19,6 @@ var services = index(
 	sqlserver.Services(),
 	clickhouse.Services(),
 	sqlite.Services(),
-	ydb.Services(),
 )
 
 func index(all ...dburlext.Services) map[string]dburlext.Services {

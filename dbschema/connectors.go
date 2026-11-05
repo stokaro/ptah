@@ -12,7 +12,6 @@ import (
 	"ptah.run/internal/connector/oracleconnect"
 	"ptah.run/internal/connector/pgconnect"
 	"ptah.run/internal/connector/sqliteconnect"
-	"ptah.run/internal/connector/ydbconnect"
 )
 
 // services is the registry a connection chooses its engine's connector from:
@@ -26,7 +25,6 @@ var services = sync.OnceValue(func() *connector.Registry {
 		sqliteconnect.Registrations(),
 		mssqlconnect.Registrations(),
 		oracleconnect.Registrations(),
-		ydbconnect.Registrations(),
 	)...)
 	if err != nil {
 		// The registrations are compiled into the binary and their own tests

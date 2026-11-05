@@ -125,21 +125,18 @@ for the message and the flag it names.
 | `continuous_aggregate` | TimescaleDB continuous aggregate: `as` for the `SELECT` it materializes, and optionally `materialized_only`, a comment and the `schema` holding it. |
 | `synonym` | SQL Server alias: `target`, plus the `schema` the alias lives in and a comment. |
 | `extended_property` | SQL Server named value: `value`, and the object it is attached to as `schema`, `table` and `column`. |
-| `coordination_node` | Ptah block: a YDB coordination node, with `schema` and the settings of the [`//ptah:schema:coordinationnode`](../go-annotations/#ptahschemacoordinationnode) annotation as strings. |
+| `coordination_node` | A block the [YDB provider](../../databases/ydb/) claims: a YDB coordination node, with `schema` and the settings of the [`//ptah:schema:coordinationnode`](../go-annotations/#ptahschemacoordinationnode) annotation as strings. Ptah reads it only when a command selects the provider. |
 | `data` | Ptah managed-data declaration with a table reference, key columns, and a file path relative to the HCL file. |
 
-For YDB, an `index` block also accepts the
-[index partitioning attributes](../../databases/ydb/#index-partitioning).
-Use quoted `ENABLED` or `DISABLED` for the splitting switches, numbers for
-partition counts and size, and a quoted value such as `ANY_AZ:2` for
-`read_replicas_settings`. These are Ptah extensions; Atlas has no YDB driver.
-An omitted setting leaves the existing index's value unchanged.
+The YDB provider claims the `coordination_node` block and no attribute of a
+`table` or an `index` block, so an HCL document declares no YDB table or index
+setting.
 
 Omitted YDB coordination nodes remain unmanaged unless the document explicitly
 claims a complete namespace. Ptah exports that claim in a versioned
 `// ptah:feature-coverage` header. Keep the header when editing the export;
 incompatible model definitions and duplicate accounts are refused. See
-[coordination nodes](../../databases/ydb/#coordination-nodes) for declaration
+[coordination nodes](https://github.com/stokaro/ptah-ydb-plugin#native-coordination-planning-and-execution) for declaration
 and limit semantics.
 
 The header belongs to HCL sources. Renaming the document to `.sql` does not

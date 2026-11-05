@@ -15,7 +15,7 @@ import (
 // counts the compatible additions within the major Revision. A host built
 // with this SDK announces Revision.ContractMinor, and a provider built with it
 // may require at most that minor from its host.
-const ContractMinor uint32 = 27
+const ContractMinor uint32 = 21
 
 // The features below each enable an addition to an existing message. An
 // addition is used only when both sides list its feature: the provider in its
@@ -48,7 +48,8 @@ func TwoWayFeatures() []string {
 		EncodeGroupsFeature, CommonAccessFeature, SchemaDeclarationsFeature, SourceLimitsFeature, PlanningLifecycleFeature, SensitiveInputsFeature, ColumnsFeature,
 		DatabaseContextFeature, ValueContextFeature, CommonViewFacetsFeature, ObservedColumnsFeature, ObservedPrimaryKeysFeature, ObservedIndexesFeature, PlanningObjectContextFeature,
 		PlanningContextInventoryFeature, MigrationSplitFeature, ComparisonCountsFeature, IndexMethodsFeature, TypedArgumentsFeature, ErrorReasonsFeature,
-		IndexRenamesFeature, ReverseChangesFeature, UnreadTablesFeature, DefaultCapabilitiesFeature}
+		IndexRenamesFeature, ReverseChangesFeature, UnreadTablesFeature, DatabaseKindsFeature, SQLFacetsFeature, ReportCountsFeature,
+		ObservedIndexFacetsFeature, DefaultCapabilitiesFeature}
 }
 
 // ContractError reports a host and a provider that cannot work together:
@@ -141,8 +142,10 @@ func ValidateHostFeatures(features []string) error {
 // EmbeddingStoreFeature, the common-object declarations unless it lists
 // CommonObjectsFeature, the HCL claims unless it lists HCLSourceFeature, the
 // scope selections unless it lists ScopeSelectionsFeature, the reversal
-// services unless it lists ReverseChangesFeature, and the offline capability
-// facts unless it lists DefaultCapabilitiesFeature. Without
+// services unless it lists ReverseChangesFeature, the database kinds unless
+// it lists DatabaseKindsFeature, the model reports unless it lists
+// ReportCountsFeature, and the offline capability facts unless it lists
+// DefaultCapabilitiesFeature. Without
 // EntryKeysFeature, the YAML claims of a COLUMN or INDEX scope and the
 // YAML and Go claims that inherit common attributes are removed, since their
 // owner needs what the host would not send, and a model left with no YAML
@@ -186,12 +189,13 @@ func NegotiatedDescription(description *protocol.Description, hostFeatures []str
 		if !slices.Contains(hostFeatures, ReverseChangesFeature) {
 			engine.Reversals = nil
 		}
-		if !slices.Contains(hostFeatures, DefaultCapabilitiesFeature) {
-			engine.DefaultCapabilities = nil
-			for _, line := range engine.GetReleaseLines() {
-				line.Capabilities = nil
-			}
+		if !slices.Contains(hostFeatures, DatabaseKindsFeature) {
+			engine.DatabaseKinds = nil
 		}
+		if !slices.Contains(hostFeatures, ReportCountsFeature) {
+			engine.Reports = nil
+		}
+		negotiateDefaultCapabilities(engine, hostFeatures)
 		if len(engine.GetGoHeaderKinds())+len(engine.GetHclSource().GetHeaderKinds()) == 0 {
 			engine.Features = slices.DeleteFunc(engine.Features, func(feature string) bool { return feature == SourceLimitsFeature })
 		}

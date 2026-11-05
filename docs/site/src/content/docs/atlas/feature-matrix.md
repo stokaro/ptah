@@ -357,7 +357,7 @@ seven of them as open capabilities regardless.
 | TiDB and LibSQL | ✅ | ✅ | ✅ | TiDB is reached through `mysql://`, which both binaries do and neither exposes as its own driver. `libsql://` and `libsql+ws://` resolve onto the SQLite dialect over the remote transport. |
 | Triggers | ✅ | ❌ | ✅ | Every engine spelling renders the same trigger DDL and four readers read them back. ClickHouse and Spanner have none and name the omission; MySQL statement triggers and SQL Server BEFORE do not exist. |
 | Views and materialized views | ✅ | ❌ | ✅ | Plain views work everywhere. Materialized views render on PostgreSQL, CockroachDB, YugabyteDB and ClickHouse, whose scheduled form carries its REFRESH EVERY\|AFTER clause. |
-| YDB (ydb, ydbs) | 🟡 | ❌ | ❌ | Schema planning, migrations, desired YQL files and inference generations run natively; the schema verbs also run through ptah-compat. The database guide lists object families and line limits. |
+| YDB (ydb, ydbs) | 🟡 | ❌ | ❌ | Served by the official YDB provider: schema planning, migrations, desired YQL files and inference generations; ptah-compat reaches it too. The provider documents object families and line limits. |
 | YugabyteDB (yugabytedb, ysql) | ✅ | ❌ | ✅ | Roles, grants, RLS, sequences, domains, views, matviews, functions, triggers and CREATE INDEX CONCURRENTLY are enabled. Three keys stay off because the server refuses them, not Ptah. |
 
 </div>

@@ -128,7 +128,6 @@ import (
 	"ptah.run/internal/devdocker/dockerengine"
 	"ptah.run/internal/devdocker/mysqldocker"
 	"ptah.run/internal/devdocker/pgdocker"
-	"ptah.run/internal/devdocker/ydbdocker"
 )
 
 // Scheme is the URL scheme this package provisions.
@@ -198,7 +197,6 @@ type engine = dockerengine.Engine
 var engines = indexEngines(slices.Concat(
 	pgdocker.Engines(),
 	mysqldocker.Engines(),
-	ydbdocker.Engines(),
 ))
 
 // indexEngines keys each engine by its name. Two engines of one name are a

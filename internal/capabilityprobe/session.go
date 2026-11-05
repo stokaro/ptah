@@ -4,19 +4,11 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"errors"
 	"fmt"
-	"path"
-	"slices"
 	"strings"
 
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
-	"ptah.run/dialect/ydb/ydbsyntax"
-	"ptah.run/dialect/ydb/ydbworkload"
-	"ptah.run/internal/sqlident"
-	"ptah.run/internal/ydbready"
-	"ptah.run/internal/ydburl"
 )
 
 // Attempt is one statement and the server's answer to it.
@@ -53,27 +45,9 @@ type session struct {
 	conn      *dbschema.DatabaseConnection
 	dialect   string
 	namespace string
-	// database is the absolute path of the YDB database the run works in,
-	// such as /local, and empty on every other dialect: a YDB namespace is a
-	// directory in it, and the catalog reads that locate an object take
-	// absolute paths.
-	database string
-	// prefix is sent ahead of every statement. On YDB it is the pragma that
-	// makes the namespace directory the place an unqualified name means; the
-	// pragma lasts one query, so it has to travel with each. Empty elsewhere,
-	// where the namespace is session state the enter statements set once.
-	prefix string
 	// roles are cluster-scoped objects the probe created; dropping the
-	// namespace does not remove them. On YDB they are groups.
+	// namespace does not remove them.
 	roles []string
-	// users are the YDB users the probe created, which DROP GROUP does not
-	// reach.
-	users []string
-	// resourcePools and resourcePoolClassifiers are the YDB resource pools
-	// and classifiers the probe created. Both belong to the database, so
-	// removing the namespace directory leaves them.
-	resourcePools           []string
-	resourcePoolClassifiers []string
 	// rowPolicies are the same kind of leftover on ClickHouse. Measured on
 	// 26.7.3.19: dropping the database a policy names leaves the policy behind
 	// in system.row_policies, so a run that forgot them would make the next one
@@ -100,25 +74,10 @@ type session struct {
 // capability as absent. So after any failure the session is asked whether it
 // is still alive, and a dead session poisons the run instead of answering it.
 func (s *session) exec(ctx context.Context, statement string) Attempt {
-	return s.execWith(ctx, s.prefix, statement)
-}
-
-// execAtRoot is exec without the session's prefix, for a YDB statement the
-// server would keep the prefix in: a transfer's lambda is compiled under the
-// pragmas CREATE TRANSFER ran under, and measured on 26.2.1.14 one created
-// after `PRAGMA TablePathPrefix` stops at once (`Invalid table name
-// "/local/<ns>/Input": prefix must be "Input"`). Names in statement are
-// relative to the database root.
-func (s *session) execAtRoot(ctx context.Context, statement string) Attempt {
-	return s.execWith(ctx, "", statement)
-}
-
-// execWith runs statement after prefix, as exec describes.
-func (s *session) execWith(ctx context.Context, prefix, statement string) Attempt {
 	if s.broken != nil {
 		return Attempt{Statement: statement, ServerErr: "session already broken: " + s.broken.Error()}
 	}
-	_, err := s.conn.ExecContext(ctx, prefix+statement)
+	_, err := s.conn.ExecContext(ctx, statement)
 	if err == nil {
 		return Attempt{Statement: statement, Accepted: true}
 	}
@@ -138,7 +97,7 @@ func (s *session) query(ctx context.Context, statement string) (int64, Attempt) 
 		return 0, Attempt{Statement: statement, ServerErr: "session already broken: " + s.broken.Error()}
 	}
 	var value int64
-	err := s.conn.QueryRowContext(ctx, s.prefix+statement).Scan(&value)
+	err := s.conn.QueryRowContext(ctx, statement).Scan(&value)
 	if err == nil {
 		return value, Attempt{Statement: statement, Accepted: true}
 	}
@@ -168,9 +127,7 @@ func (s *session) alive(ctx context.Context) error {
 // ORA-00923, FROM keyword not found where expected. That turned every ordinary
 // REFUSED verdict on 21 into a dead session, because the check that asks
 // whether the connection survived was itself refused -- so the run ended at its
-// own nonsense control, before a single capability question. YDB answers
-// `SELECT 1` on every line from 25.1.4.7 to 26.2.1.14, and the check needs no
-// namespace pragma, so it is sent without one.
+// own nonsense control, before a single capability question.
 func livenessSQL(dialect string) string {
 	if platform.NormalizeDialect(dialect) == platform.Oracle {
 		return "SELECT 1 FROM dual"
@@ -218,10 +175,6 @@ func (s *session) tryInTransaction(ctx context.Context, statement string) ([]Att
 // statement block, and the bare word answers `Could not find stored procedure
 // 'BEGIN'` -- a refusal the caller would read as a server that declines
 // transactions. ROLLBACK needs no arm: T-SQL takes it as written.
-//
-// YDB has no arm because no YDB experiment opens a block: YQL has no BEGIN, a
-// transaction is the driver's wrapper around a query, and a schema statement
-// is refused inside one. The YDB plan says which keys that leaves undecided.
 func beginSQL(dialect string) string {
 	if platform.NormalizeDialect(dialect) == platform.SQLServer {
 		return "BEGIN TRANSACTION"
@@ -297,14 +250,6 @@ func namespaceSQL(dialect, namespace string) (enter []string, leave string) {
 				"USE " + namespace,
 			},
 			"USE master; DROP DATABASE " + namespace
-	}
-	if platform.NormalizeDialect(dialect) == platform.YDB {
-		// YDB has no CREATE SCHEMA or CREATE DATABASE. The namespace is a
-		// directory under the database root, which the first CREATE TABLE in
-		// it creates, and every statement is sent after the pragma that names
-		// it (see session.prefix). No SQL removes a directory, so the scheme
-		// service removes it with everything in it; see session.leave.
-		return nil, ""
 	}
 	if platform.NormalizeDialect(dialect) == platform.SQLite {
 		// SQLite has no namespace inside a database to create and enter: there
@@ -391,7 +336,7 @@ func (s *session) confirmNamespace(ctx context.Context) ([]Attempt, error) {
 	var count int64
 	asked := Attempt{Statement: "no namespace to locate the sentinel in", Accepted: true}
 	if namespaceIsolatesTheRun(s.dialect) {
-		count, asked = s.query(ctx, sentinelLocationSQL(s.dialect, s.database, s.namespace))
+		count, asked = s.query(ctx, sentinelLocationSQL(s.dialect, s.namespace))
 		attempts = append(attempts, asked)
 	}
 	dropped := s.exec(ctx, "DROP TABLE "+sentinelTable)
@@ -405,7 +350,7 @@ func (s *session) confirmNamespace(ctx context.Context) ([]Attempt, error) {
 	// The occupancy count is taken on every run rather than only when the
 	// namespace failed, so the decision below is a pure function of two
 	// numbers and can be measured without a server.
-	occupants, counted := s.query(ctx, occupancySQLFor(s.dialect, s.database))
+	occupants, counted := s.query(ctx, occupancySQLFor(s.dialect))
 	attempts = append(attempts, counted)
 	if !counted.Accepted {
 		return attempts, fmt.Errorf(
@@ -416,30 +361,9 @@ func (s *session) confirmNamespace(ctx context.Context) ([]Attempt, error) {
 }
 
 // createSentinel creates the sentinel table, which is the first schema change
-// of the run, and returns every attempt it took.
-//
-// On YDB it waits out the moment a fresh server answers queries and refuses
-// to create a table, through [ydbready.Until]: the connection the matrix waits
-// for is not yet a server that can be measured, and the sentinel is retried
-// while the server says so, a bounded number of times.
+// of the run, and returns the attempt.
 func (s *session) createSentinel(ctx context.Context) []Attempt {
-	var attempts []Attempt
-	try := func(context.Context) error {
-		created := s.exec(ctx, sentinelTableSQL(s.dialect))
-		attempts = append(attempts, created)
-		if created.Accepted {
-			return nil
-		}
-		return errors.New(created.ServerErr)
-	}
-	// The attempts carry every answer, so the error each call returns, which
-	// repeats the last of them, is not kept.
-	if platform.NormalizeDialect(s.dialect) != platform.YDB {
-		_ = try(ctx)
-		return attempts
-	}
-	_ = ydbready.Until(ctx, try)
-	return attempts
+	return []Attempt{s.exec(ctx, sentinelTableSQL(s.dialect))}
 }
 
 // occupancySQL counts the tables on the server that are not the catalog's own.
@@ -470,53 +394,28 @@ const sqliteOccupancySQL = "SELECT COUNT(*) FROM sqlite_master " +
 	"WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
 
 // occupancySQLFor returns the statement that counts what else is on the server.
-// database is the YDB database path and unused elsewhere.
-//
-// YDB has no information_schema. .sys/partition_stats lists a row for every
-// partition of every row table, with its absolute path, and measured on
-// 26.2.1.14 it lists a table the moment the CREATE returns and drops it the
-// moment the DROP does. The dot-directories are the server's own, which is
-// the rule the schema reader applies too.
-func occupancySQLFor(dialect, database string) string {
+func occupancySQLFor(dialect string) string {
 	switch platform.NormalizeDialect(dialect) {
 	case platform.Oracle:
 		return oracleOccupancySQL
 	case platform.SQLite:
 		return sqliteOccupancySQL
-	case platform.YDB:
-		// Concatenated rather than joined: path.Join would clean the dot away
-		// and exclude every table in the database.
-		return fmt.Sprintf("SELECT COUNT(DISTINCT Path) FROM %s WHERE NOT StartsWith(Path, %s)",
-			ydbSystemView(database, "partition_stats"), ydbString(strings.TrimSuffix(database, "/")+"/."))
 	default:
 		return occupancySQL
 	}
 }
 
-// sentinelTableSQL creates the sentinel in the dialect's own spelling. YQL
-// declares a key only in its own clause: `n Int64 PRIMARY KEY` is a parse
-// error on every line.
+// sentinelTableSQL creates the sentinel in the dialect's own spelling.
 func sentinelTableSQL(dialect string) string {
-	if platform.NormalizeDialect(dialect) == platform.YDB {
-		return "CREATE TABLE " + sentinelTable + " (n Int64 NOT NULL, PRIMARY KEY (n))"
-	}
 	return "CREATE TABLE " + sentinelTable + " (n " + sentinelKeyType(dialect) + " PRIMARY KEY)"
 }
 
 // sentinelLocationSQL asks the catalog where the sentinel table landed.
-// database is the YDB database path and unused elsewhere.
 //
 // Oracle's answer comes from ALL_TABLES keyed by OWNER, and both halves are
 // upper-cased because an unquoted identifier is folded there: the namespace is
 // created as `ptah_capprobe_...` and stored as PTAH_CAPPROBE_....
-func sentinelLocationSQL(dialect, database, namespace string) string {
-	if platform.NormalizeDialect(dialect) == platform.YDB {
-		// A YDB table is a path, and the namespace is the directory the
-		// pragma names, so the sentinel landed there when the partition
-		// statistics list it under that directory.
-		return fmt.Sprintf("SELECT COUNT(DISTINCT Path) FROM %s WHERE Path = %s",
-			ydbSystemView(database, "partition_stats"), ydbString(path.Join(database, namespace, sentinelTable)))
-	}
+func sentinelLocationSQL(dialect, namespace string) string {
 	if platform.NormalizeDialect(dialect) == platform.Oracle {
 		return fmt.Sprintf(
 			"SELECT COUNT(*) FROM all_tables WHERE table_name = UPPER('%s') AND owner = UPPER('%s')",
@@ -581,16 +480,8 @@ func newNamespace() (string, error) {
 // PostgreSQL pair below would leave the role behind and report two refusals
 // while doing it.
 func (s *session) dropRole(ctx context.Context, role string) []Attempt {
-	switch platform.NormalizeDialect(s.dialect) {
-	case platform.Oracle:
+	if platform.NormalizeDialect(s.dialect) == platform.Oracle {
 		return []Attempt{s.exec(ctx, "DROP ROLE "+role)}
-	case platform.YDB:
-		// The YDB role is a group, and a group owns nothing a drop would
-		// have to reassign. Its grants on the namespace leave with the
-		// directory; the one on the database does not, and DROP GROUP
-		// leaves it behind (measured on 25.1.4.7 and 26.2.1.14), so it is
-		// revoked first.
-		return []Attempt{s.revokeOnDatabase(ctx, role), s.exec(ctx, "DROP GROUP IF EXISTS "+role)}
 	}
 	return []Attempt{
 		s.exec(ctx, "DROP OWNED BY "+role),
@@ -606,173 +497,21 @@ func (s *session) dropRoles(ctx context.Context) []Attempt {
 	for _, statement := range s.rowPolicies {
 		attempts = append(attempts, s.exec(ctx, statement))
 	}
-	for _, user := range s.users {
-		attempts = append(attempts, s.revokeOnDatabase(ctx, user), s.exec(ctx, "DROP USER IF EXISTS "+user))
-	}
 	for _, role := range s.roles {
 		attempts = append(attempts, s.dropRole(ctx, role)...)
 	}
 	return attempts
 }
 
-// dropResourcePools removes the YDB classifiers the probe created and then
-// its pools, which outlive the namespace directory the way a user does.
-func (s *session) dropResourcePools(ctx context.Context) []Attempt {
-	attempts := make([]Attempt, 0, len(s.resourcePoolClassifiers)+len(s.resourcePools))
-	for _, classifier := range s.resourcePoolClassifiers {
-		attempts = append(attempts, s.exec(ctx, ydbworkload.DropClassifierStatement(classifier)))
-	}
-	for _, pool := range s.resourcePools {
-		attempts = append(attempts, s.exec(ctx, ydbworkload.DropPoolStatement(pool)))
-	}
-	return attempts
-}
-
-// revokeOnDatabase takes every permission principal holds on the YDB database
-// itself. Revoking what a principal does not hold succeeds, so it runs whether
-// or not a grant was made.
-func (s *session) revokeOnDatabase(ctx context.Context, principal string) Attempt {
-	return s.exec(ctx, "REVOKE ALL ON "+sqlident.Quote(platform.YDB, s.database)+" FROM "+principal)
-}
-
-// leave removes the throwaway namespace: the statement namespaceSQL returned,
-// or on YDB the namespace directory with everything in it.
+// leave removes the throwaway namespace: the statement namespaceSQL returned.
 //
 // A dialect whose namespace is the database the probe connected to has nothing
 // to leave, and an empty statement is skipped rather than executed: a refusal
 // the run did not earn would sit in the one place a reader looks to see that
 // the server was left as it was found.
 func (s *session) leave(ctx context.Context, statement string) []Attempt {
-	if platform.NormalizeDialect(s.dialect) == platform.YDB {
-		return []Attempt{s.removeDirectory(ctx)}
-	}
 	if statement == "" {
 		return nil
 	}
 	return []Attempt{s.exec(ctx, statement)}
-}
-
-// leftovers asks the server whether anything the run created outlived the
-// teardown, and returns the reads it made and what each found left. removal
-// is what leave returned.
-//
-// Only YDB is asked. The namespace is checked through the scheme service;
-// partition statistics retain dropped column tables on 25.1.4.7 and cannot
-// establish whether an object still exists. A refused removal or directory
-// listing is a leftover too. Principals and resource pools outlive directories,
-// so their system views are checked separately.
-func (s *session) leftovers(ctx context.Context, removal []Attempt) ([]Attempt, []string) {
-	if platform.NormalizeDialect(s.dialect) != platform.YDB {
-		return nil, nil
-	}
-	var reads []Attempt
-	var remaining []string
-	directory := path.Join(s.database, s.namespace)
-	for _, attempt := range removal {
-		if !attempt.Accepted {
-			remaining = append(remaining, "the directory "+directory+", which the teardown did not remove: "+
-				attempt.ServerErr)
-		}
-	}
-	read, remainingDirectory := s.directoryLeftover(ctx)
-	reads = append(reads, read)
-	remaining = append(remaining, remainingDirectory...)
-	for _, object := range slices.Concat(
-		workloadObjects(s.resourcePools, "resource_pools", "resource pool "),
-		workloadObjects(s.resourcePoolClassifiers, "resource_pool_classifiers", "resource pool classifier "),
-	) {
-		found, read := s.query(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE Name = %s",
-			ydbSystemView(s.database, object.view), ydbString(object.name)))
-		reads = append(reads, read)
-		switch {
-		case !read.Accepted:
-			remaining = append(remaining, object.what+", which the server would not look up")
-		case found > 0:
-			remaining = append(remaining, object.what)
-		}
-	}
-	for _, principal := range slices.Concat(s.roles, s.users) {
-		for _, view := range []struct{ name, what string }{
-			{"auth_groups", "group " + principal},
-			{"auth_users", "user " + principal},
-			{"auth_permissions", "the permissions of " + principal},
-		} {
-			found, read := s.query(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE Sid = %s",
-				ydbSystemView(s.database, view.name), ydbString(principal)))
-			reads = append(reads, read)
-			switch {
-			case !read.Accepted:
-				remaining = append(remaining, view.what+", which the server would not look up")
-			case found > 0:
-				remaining = append(remaining, view.what)
-			}
-		}
-	}
-	return reads, remaining
-}
-
-// workloadObject is a YDB resource pool or classifier the teardown confirms
-// gone, by its name in the system view that lists it.
-type workloadObject struct {
-	name, view, what string
-}
-
-// workloadObjects lists names as objects of one system view.
-func workloadObjects(names []string, view, kind string) []workloadObject {
-	objects := make([]workloadObject, 0, len(names))
-	for _, name := range names {
-		objects = append(objects, workloadObject{name: name, view: view, what: kind + name})
-	}
-	return objects
-}
-
-// directoryDropper is what the YDB teardown needs of the connection's schema
-// writer: no SQL removes a directory, and the writer reaches the scheme
-// service that does.
-type directoryDropper interface {
-	DropDirectory(ctx context.Context, dir string) error
-}
-
-// removeDirectory drops the YDB namespace directory and every object in it.
-// It runs on a broken session too: the scheme service is a channel of its own,
-// and an attempt that fails says so in the cleanup record.
-func (s *session) removeDirectory(ctx context.Context) Attempt {
-	attempt := Attempt{Statement: "remove the directory " + path.Join(s.database, s.namespace) +
-		" and everything in it through the scheme service"}
-	dropper, ok := s.conn.SchemaWriter().(directoryDropper)
-	if !ok {
-		attempt.ServerErr = fmt.Sprintf("the connection's schema writer %T cannot remove a directory", s.conn.SchemaWriter())
-		return attempt
-	}
-	if err := dropper.DropDirectory(ctx, s.namespace); err != nil {
-		attempt.ServerErr = err.Error()
-		return attempt
-	}
-	attempt.Accepted = true
-	return attempt
-}
-
-// enterYDBDirectory points the session at the namespace directory: the
-// database comes from the connection's URL, and every statement from here on
-// is sent after the pragma that names the directory.
-func (s *session) enterYDBDirectory() error {
-	parsed, err := ydburl.Parse(s.conn.Info().URL)
-	if err != nil {
-		return fmt.Errorf("read the YDB database the probe connected to: %w", err)
-	}
-	s.database = parsed.Database
-	s.prefix = "PRAGMA TablePathPrefix(" + ydbString(path.Join(s.database, s.namespace)) + ");\n"
-	return nil
-}
-
-// ydbString is a YQL String literal holding value.
-func ydbString(value string) string {
-	return ydbsyntax.StringLiteral(value)
-}
-
-// ydbSystemView is the quoted absolute path of one of the database's system
-// views. With the namespace pragma in effect a relative `.sys/...` would name
-// a path inside the namespace, so the path is absolute.
-func ydbSystemView(database, view string) string {
-	return sqlident.Quote(platform.YDB, path.Join(database, ".sys", view))
 }

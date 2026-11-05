@@ -12,8 +12,8 @@ import (
 )
 
 // A URL an inference backend reads is left to it: a PostgreSQL scheme, a
-// keyword/value DSN with no scheme, a scheme Ptah does not recognize, and
-// either YDB scheme.
+// keyword/value DSN with no scheme, and a scheme no built-in dialect names,
+// such as either YDB scheme, whose provider an invocation may select.
 func TestRefuseAnotherEngine_HappyPath(t *testing.T) {
 	for _, dbURL := range []string{
 		"postgres://localhost:5432/db",
@@ -39,8 +39,8 @@ func TestRefuseAnotherEngine_FailurePath(t *testing.T) {
 		want  string
 	}{
 		{name: "mysql", dbURL: "mysql://localhost:3306/db",
-			want: `ptah inference works against PostgreSQL with pgvector, against YDB, and against a provider engine ` +
-				`with an embedding store, and "mysql://" names another engine: a generation's run state and its ` +
+			want: `ptah inference works against PostgreSQL with pgvector and against a provider engine with an ` +
+				`embedding store, such as YDB, and "mysql://" names another engine: a generation's run state and its ` +
 				`vectors need one of those, so there is nothing here to run against mysql`},
 		{name: "the PostgreSQL family", dbURL: "crdb://localhost:26257/db",
 			want: `.* "crdb://" names another engine: .* run against cockroachdb`},
@@ -88,8 +88,8 @@ func targetSpec(representation string) embedgen.Spec {
 	}
 }
 
-// Without a database the representation decides the engine, because each
-// names a type only one engine has.
+// Without a provider the PostgreSQL derivation answers for pgvector's
+// representations.
 func TestTargetObjects_HappyPath(t *testing.T) {
 	tests := []struct {
 		representation string
@@ -97,8 +97,6 @@ func TestTargetObjects_HappyPath(t *testing.T) {
 	}{
 		{representation: "vector", wantType: "vector(8)"},
 		{representation: "halfvec", wantType: "halfvec(8)"},
-		{representation: "float", wantType: "String"},
-		{representation: "FLOAT", wantType: "String"},
 	}
 	for _, test := range tests {
 		t.Run(test.representation, func(t *testing.T) {

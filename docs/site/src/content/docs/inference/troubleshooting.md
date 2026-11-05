@@ -9,10 +9,10 @@ readerQuestion: "Which inference migration symptom am I seeing, and how do I rec
 goal: "Identify an inference migration symptom and follow its recovery path."
 sourceOfTruth:
   - "internal/cli/inference"
-  - "internal/embedydb"
+  - "internal/embedrpc"
   - "integration/inference_cli_e2e_test.go"
   - "integration/inference_outbox_prune_e2e_test.go"
-  - "integration/inference_ydb_cli_e2e_test.go"
+  - "github:stokaro/ptah-ydb-plugin"
 generated: false
 searchAliases:
   - "outbox not shrinking"
@@ -23,22 +23,24 @@ disposition: keep
 
 Each entry is a message you might see, what it means, and the fix.
 
-## `ptah inference works against PostgreSQL with pgvector, against YDB, and against a provider engine`
+## `ptah inference works against PostgreSQL with pgvector and against a provider engine`
 
 **Cause.** The `--db-url` names another engine. The run state and the vectors
 live in the database, and the engines with a backend for them are PostgreSQL
-with pgvector, YDB, and an engine whose executable provider keeps an embedding
-store.
+with pgvector and an engine whose executable provider keeps an embedding store,
+such as YDB.
 
-**Fix.** Point it at a PostgreSQL database with pgvector or at a YDB database,
-or select the provider that serves the engine with `--provider-config` or
-`--provider-engine`.
+**Fix.** Point it at a PostgreSQL database with pgvector or at a database of a
+provider engine. A YDB database needs the YDB provider, which
+`ptah providers install ydb` installs; select another provider with
+`--provider-config` or `--provider-engine`.
 
-## `has no triggers, and the outbox consistency mode records each source change`
+## `builds generations in consistency mode immutable, and the specification selects "outbox"`
 
 **Cause.** The specification selects `consistency.mode: outbox` and the
-database is YDB. The outbox captures a change with a row trigger in the
-transaction that makes it, and YDB has no triggers.
+database is YDB, whose provider declares `immutable` alone. The outbox captures
+a change with a row trigger in the transaction that makes it, and YDB has no
+triggers.
 
 **Fix.** Select `mode: immutable` and declare the source `mutable: false`, or
 keep it mutable and stop its writes for the run with `consistency.paused: true`;

@@ -9,7 +9,6 @@ import (
 	"context"
 
 	"ptah.run/migration/internal/scratchdb/sqlitescratch"
-	"ptah.run/migration/internal/scratchdb/ydbscratch"
 )
 
 // Service gives a case of one dialect a database of its own.
@@ -26,6 +25,5 @@ type Service struct {
 func All() []Service {
 	return []Service{
 		{Dialect: sqlitescratch.Dialect, Isolate: sqlitescratch.Isolate},
-		{Dialect: ydbscratch.Dialect, Isolate: ydbscratch.Isolate},
 	}
 }

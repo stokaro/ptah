@@ -9,7 +9,6 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
-	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/builtintest"
@@ -182,29 +181,22 @@ func suppressedBlocks(kinds ...coverage.Kind) coverage.Set {
 
 // TestRenderWritesTheDescriptionsOwnLimits writes the record a description
 // carries of what it did not describe into the header, so the document read
-// back keeps it, beside what the compatibility surface adds. A YDB replica
-// table is consulted in process only, and the runtime's vocabulary knows that
-// no document can name it, so its record stays out of the header: written,
-// the document would not read back.
+// back keeps it, beside what the compatibility surface adds.
 func TestRenderWritesTheDescriptionsOwnLimits(t *testing.T) {
 	c := qt.New(t)
 	db := coverageBareDatabase()
 	db.NotDescribed = coverage.Set{}.With(
-		coverage.Object{Kind: ydbschema.CoverageChangefeed, Name: "app.t", Reason: coverage.Unsupported, Provenance: coverage.Observed},
 		coverage.Object{Kind: coverage.Role, Reason: coverage.NotInspected, Provenance: coverage.Observed},
-		coverage.Object{Kind: ydbschema.CoverageReplicaTable, Name: "replica.accounts", Reason: coverage.Unsupported, Provenance: coverage.Observed},
 	)
 
 	result, err := atlashclrender.RenderInspected(db, "", atlashclrender.Options{HCL: builtintest.Runtime().HCL(),
-		CoverageVocabulary: builtintest.Runtime().CoverageVocabulary(), Dialect: platform.YDB})
+		CoverageVocabulary: builtintest.Runtime().CoverageVocabulary(), Dialect: platform.Postgres})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(coverageHeaderLines(string(result.Data)), qt.DeepEquals, []string{
-		`// ptah:not-described changefeed reason=unsupported provenance=observed "app.t"`,
 		"// ptah:not-described role reason=not-inspected provenance=observed",
 	})
 	c.Assert(result.NotDescribed.Directives(), qt.DeepEquals, []string{
-		`ptah:not-described changefeed reason=unsupported provenance=observed "app.t"`,
 		"ptah:not-described role reason=not-inspected provenance=observed",
 	})
 }
@@ -214,32 +206,17 @@ func TestRenderWritesTheDescriptionsOwnLimits(t *testing.T) {
 // rather than leaving it out of the header: the document read back would
 // describe the database as complete where the read was not, and the next plan
 // would drop what it never saw. The zero vocabulary knows the common kinds
-// alone, so a YDB changefeed is refused, and so is a YDB replica table, which
-// only the runtime's vocabulary knows to leave out.
+// alone, so a kind only an owner names is refused.
 func TestRenderRefusesALimitTheVocabularyCannotName_FailurePath(t *testing.T) {
-	tests := []struct {
-		name    string
-		object  coverage.Object
-		wantErr string
-	}{
-		{name: "a YDB changefeed", object: coverage.Object{Kind: ydbschema.CoverageChangefeed, Name: "app.t", Reason: coverage.Unsupported,
-			Provenance: coverage.Observed},
-			wantErr: `the document records changefeed as not described, which the coverage vocabulary cannot name: unknown coverage kind "changefeed": .*`},
-		{name: "a YDB replica table", object: coverage.Object{Kind: ydbschema.CoverageReplicaTable, Name: "replica.accounts",
-			Reason: coverage.Unsupported, Provenance: coverage.Observed},
-			wantErr: `the document records replica_table as not described, which the coverage vocabulary cannot name: unknown coverage kind "replica_table": .*`},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			db := coverageBareDatabase()
-			db.NotDescribed = coverage.Set{}.With(test.object)
+	c := qt.New(t)
+	db := coverageBareDatabase()
+	db.NotDescribed = coverage.Set{}.With(coverage.Object{Kind: coverage.Kind("changefeed"), Name: "app.t",
+		Reason: coverage.Unsupported, Provenance: coverage.Observed})
 
-			result, err := atlashclrender.RenderInspected(db, "", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.YDB})
+	result, err := atlashclrender.RenderInspected(db, "", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 
-			c.Assert(err, qt.ErrorMatches, test.wantErr)
-			c.Assert(result.Data, qt.IsNil)
-			c.Assert(result.NotDescribed.Directives(), qt.HasLen, 0)
-		})
-	}
+	c.Assert(err, qt.ErrorMatches,
+		`the document records changefeed as not described, which the coverage vocabulary cannot name: unknown coverage kind "changefeed": .*`)
+	c.Assert(result.Data, qt.IsNil)
+	c.Assert(result.NotDescribed.Directives(), qt.HasLen, 0)
 }

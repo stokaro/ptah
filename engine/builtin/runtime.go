@@ -13,7 +13,6 @@ import (
 	"ptah.run/core/renderer"
 	"ptah.run/core/routineext"
 	"ptah.run/core/schemacomparison"
-	"ptah.run/core/schemaext"
 	"ptah.run/core/schemapreparation"
 	"ptah.run/core/schemaprojection"
 	"ptah.run/dialect/mssql/mssqllint"
@@ -23,17 +22,6 @@ import (
 	"ptah.run/dialect/postgres/pglint"
 	"ptah.run/dialect/postgres/pgproject"
 	"ptah.run/dialect/postgres/pgroutine"
-	"ptah.run/dialect/ydb/ydbast"
-	"ptah.run/dialect/ydb/ydbcompare"
-	"ptah.run/dialect/ydb/ydbconvert"
-	"ptah.run/dialect/ydb/ydbcoordination"
-	"ptah.run/dialect/ydb/ydbdiff"
-	"ptah.run/dialect/ydb/ydblint"
-	"ptah.run/dialect/ydb/ydbplan"
-	"ptah.run/dialect/ydb/ydbreport"
-	"ptah.run/dialect/ydb/ydbreverse"
-	"ptah.run/dialect/ydb/ydbschema"
-	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/engine"
 	"ptah.run/internal/builtindialects"
 	"ptah.run/internal/clickhousecomparison"
@@ -47,12 +35,6 @@ import (
 	"ptah.run/internal/postgrescomparison"
 	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/sqlservercomparison"
-	"ptah.run/internal/ydbcomparison"
-	"ptah.run/internal/ydbdata"
-	"ptah.run/internal/ydbextensions"
-	"ptah.run/internal/ydblowering"
-	"ptah.run/internal/ydbsource"
-	"ptah.run/internal/ydbsql"
 	"ptah.run/internal/yugabytecomparison"
 )
 
@@ -87,8 +69,8 @@ func New(additional ...engine.Provider) (*engine.Runtime, error) {
 				Preparation: schemapreparation.Identity{},
 				Creations:   schemaprojection.IdentityCreations{},
 				// Every built-in dialect splits its migrations with the
-				// lint scanner in the dialect's mode; the SQL Server and YDB
-				// owners replace it below.
+				// lint scanner in the dialect's mode; the SQL Server owner
+				// replaces it below.
 				Splitter: lintscan.Splitter{Dialect: name},
 				// A routine body is the engine's own language, so its owner
 				// reads it, and a routine that declares no language is in it.
@@ -102,13 +84,6 @@ func New(additional ...engine.Provider) (*engine.Runtime, error) {
 			provider.Targets[0].Splitter = mssqllint.Splitter{}
 			provider.Targets[0].Lowering = mssqlroutineprep.Service{}
 			registerSQLServerRoutineServices(&provider)
-		}
-		if name == platform.YDB {
-			// YDB answers nothing it cannot hold with a skip comment, since
-			// a comment lets an apply exit 0 without the object; see the
-			// YDB renderer's dispatch table. An object an owner would skip
-			// is refused here as well.
-			provider.Targets[0].RefusesSkips = true
 		}
 		if name == platform.Postgres {
 			provider.Targets[0].Constraints = pgproject.Constraints{}
@@ -142,73 +117,6 @@ func New(additional ...engine.Provider) (*engine.Runtime, error) {
 		}
 		if name == platform.SQLite {
 			registerSQLiteServices(&provider)
-		}
-		if name == platform.YDB {
-			// The YDB owner splits its migrations as YQL and reports the
-			// facts the shared lint rules read, and judges one of them over
-			// the split of a run that names no dialect.
-			provider.Targets[0].Splitter = ydblint.Splitter{}
-			// YDB writes every literal in its column's type, compares rows
-			// typed the same way, and runs a seed file as YQL queries in one
-			// transaction with its record.
-			provider.Targets[0].Data = ydbdata.Services()
-			provider.Targets[0].Annotator = ydblint.Annotator{}
-			provider.Lint = []engine.Lint{{Rules: ydblint.Rules(), Service: ydblint.Service{}}}
-			// A YDB read reports a UNIQUE constraint as an index and a
-			// privilege as a permission name; the comparison lowers the
-			// desired schema to match.
-			provider.Targets[0].Lowering = ydblowering.Service{}
-			// The shared comparison reads a YDB index's kind and settings,
-			// and a view's query, through YDB's own rules.
-			provider.Targets[0].Comparison = ydbcomparison.Rules()
-			provider.Codecs = ydbextensions.Codecs()
-			provider.Conversions = []engine.Conversion{{Target: name, Kinds: []schemaext.Kind{ydbschema.ChangefeedKind}, Service: ydbconvert.Service{}}}
-			provider.Comparisons = []engine.ObjectComparison{{Target: name, Kinds: []schemaext.Kind{ydbschema.ChangefeedKind}, ChangeKinds: []schemaext.Kind{ydbdiff.ChangefeedKind}, Service: ydbcompare.Service{}}}
-			provider.Reversals = []engine.Reversal{{Target: name, Kinds: []schemaext.Kind{ydbdiff.ChangefeedKind}, Service: ydbreverse.Service{}}}
-			provider.Conversions = append(provider.Conversions, engine.Conversion{Target: name, Kinds: []schemaext.Kind{ydbcoordination.Kind}, Service: ydbconvert.CoordinationService{}})
-			provider.Comparisons = append(provider.Comparisons, engine.ObjectComparison{Target: name, Kinds: []schemaext.Kind{ydbcoordination.Kind},
-				ChangeKinds: []schemaext.Kind{ydbdiff.CoordinationNodeKind}, Service: ydbcompare.CoordinationService{}})
-			provider.Reversals = append(provider.Reversals, engine.Reversal{Target: name, Kinds: []schemaext.Kind{ydbdiff.CoordinationNodeKind}, Service: ydbreverse.CoordinationService{}})
-			provider.Planning = []engine.Planning{{
-				Target: name, Kinds: []schemaext.Kind{ydbdiff.ChangefeedKind},
-				ParentKinds:    []schemaext.Kind{ydbschema.ChangefeedKind},
-				OperationKinds: []schemaext.Kind{(&ydbast.AddChangefeed{}).Kind(), (&ydbast.DropChangefeed{}).Kind(), (&ydbast.AlterChangefeedTopic{}).Kind()},
-				Service:        ydbplan.Service{},
-			}}
-			provider.Planning = append(provider.Planning, engine.Planning{Target: name, Kinds: []schemaext.Kind{ydbdiff.CoordinationNodeKind},
-				OperationKinds: []schemaext.Kind{ydbast.CoordinationNodeKind}, Service: ydbplan.CoordinationService{}})
-			provider.Declarations = []engine.DeclarationPlanning{{Target: name, Kinds: []schemaext.Kind{ydbcoordination.Kind},
-				OperationKinds: []schemaext.Kind{ydbast.CoordinationNodeKind}, Service: ydbplan.CoordinationService{}}}
-			provider.Conversions = append(provider.Conversions, engine.Conversion{Target: name, Kinds: []schemaext.Kind{ydbstreaming.Kind}, Service: ydbconvert.StreamingService{}})
-			provider.Comparisons = append(provider.Comparisons, engine.ObjectComparison{Target: name, Kinds: []schemaext.Kind{ydbstreaming.Kind}, ChangeKinds: []schemaext.Kind{ydbdiff.StreamingQueryKind}, Service: ydbcompare.StreamingService{}})
-			provider.Reversals = append(provider.Reversals, engine.Reversal{Target: name, Kinds: []schemaext.Kind{ydbdiff.StreamingQueryKind}, Service: ydbreverse.StreamingService{}})
-			registerWorkloadServices(&provider, name)
-			registerSecretServices(&provider, name)
-			registerTopicServices(&provider, name)
-			registerExternalServices(&provider, name)
-			registerReplicationServices(&provider, name)
-			registerYDBTTLServices(&provider, name)
-			registerYDBColumnFamilyServices(&provider, name)
-			registerYDBTablePartitioningServices(&provider, name)
-			registerYDBColumnStoreServices(&provider, name)
-			registerYDBVectorIndexServices(&provider, name)
-			registerYDBIndexPartitioningServices(&provider, name)
-			provider.Annotations = append(provider.Annotations, ydbsource.Annotations())
-			provider.YAML = append(provider.YAML, ydbsource.YAML())
-			provider.HCL = append(provider.HCL, ydbsource.HCL())
-			provider.Selections = append(provider.Selections, ydbsource.Selections())
-			provider.SQL = append(provider.SQL, ydbsql.SQL())
-			// The YDB state a read records and does not describe: what a
-			// document's header may name, what the owner consults in process
-			// and no document names, and what a format cannot spell.
-			provider.CoverageKinds = append(provider.CoverageKinds, ydbschema.CoverageKinds()...)
-			provider.ProcessCoverageKinds = append(provider.ProcessCoverageKinds, ydbschema.ProcessCoverageKinds()...)
-			provider.CoverageFormatLimits = append(provider.CoverageFormatLimits, ydbschema.CoverageFormatLimits()...)
-			for _, representation := range []schemaext.Representation{schemaext.Desired, schemaext.Observed} {
-				provider.Reporting = append(provider.Reporting, engine.Reporting{Representation: representation, Definitions: ydbreport.Definitions(), Service: ydbreport.Service{}})
-				provider.Reporting = append(provider.Reporting, engine.Reporting{Representation: representation, Definitions: ydbreport.CoordinationDefinitions(), Service: ydbreport.CoordinationService{}})
-				provider.Reporting = append(provider.Reporting, engine.Reporting{Representation: representation, Definitions: ydbreport.StreamingDefinitions(), Service: ydbreport.StreamingService{}})
-			}
 		}
 		providers = append(providers, provider)
 	}

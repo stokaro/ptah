@@ -24,8 +24,7 @@ var purePaths = []struct {
 }
 
 // driverModules are the modules of the connection layer this module requires
-// directly: the database drivers, and for YDB the SDK's credential module and
-// the generated protocol the schema reader decodes. Every one of them belongs to
+// directly: the database drivers. Every one of them belongs to
 // the connection layer under `dbschema`, and none of them has anything to say
 // about rendering. [TestConnectionLayerLinksEveryNamedDriver] holds the list to
 // that claim, so a name that stopped being linked fails rather than guarding
@@ -37,9 +36,6 @@ var driverModules = []string{
 	"github.com/microsoft/go-mssqldb",
 	"github.com/sijms/go-ora/v3",
 	"github.com/tursodatabase/libsql-client-go",
-	"github.com/ydb-platform/ydb-go-genproto",
-	"github.com/ydb-platform/ydb-go-sdk-auth-environ",
-	"github.com/ydb-platform/ydb-go-sdk/v3",
 	"modernc.org/sqlite",
 }
 

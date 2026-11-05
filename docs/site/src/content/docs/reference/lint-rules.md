@@ -116,8 +116,8 @@ because that creates the parent's index without reading a row.
 
 `DS101` recognizes a table rebuild from the text: a new table, a copy of every
 row of the old one into it, and the copy renamed over the old name, as
-`migrations generate` writes one for SQLite and for YDB with
-`--allow-table-rebuild`. On YDB the steps may have the copy's index settings,
+`migrations generate` writes one for SQLite, and for YDB through its provider,
+with `--allow-table-rebuild`. On YDB the steps may have the copy's index settings,
 the old table's changefeeds dropped before it moves and the copy's added after,
 and their consumers between them, none of which writes a row or moves a table.
 The drop that ends it loses no row, so `DS101`,
@@ -419,7 +419,7 @@ A YDB run reads migrations as YQL. The `YD` family above is YDB's own, and every
 
 ## SQL lint rules
 
-7 rules, reported by `ptah sql lint` over standalone SQL files, on every dialect. The compatibility surface has no verb that reaches them. A YDB file is analyzed as YQL independently of the desired-schema parser, and can report `SQL002`, `DDL001`, `CAP001` and `SQL004` only. A file of an executable provider's engine is read from the statement facts of the provider's split and can report `SQL002`, `DDL001`, `CAP001` and `SQL004` only.
+7 rules, reported by `ptah sql lint` over standalone SQL files, on every dialect. The compatibility surface has no verb that reaches them. A file of an executable provider's engine, such as YDB, is read from the statement facts of the provider's split and can report `SQL002`, `DDL001`, `CAP001` and `SQL004` only.
 
 | Rule | Meaning | Surface | Origin |
 | --- | --- | --- | --- |

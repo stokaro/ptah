@@ -12,7 +12,7 @@ import (
 // with when no session states the server's, such as for an offline render,
 // and those of each release line, for a --server-version that names one. The
 // provider and each engine that states them list it, and so does the host.
-// Contract 25.27.
+// Contract 25.22.
 const DefaultCapabilitiesFeature = "engine.default-capabilities"
 
 // validateDefaultCapabilities checks an engine's offline capability facts: an
@@ -48,4 +48,17 @@ func validateDefaultCapabilities(description *protocol.Description, engine *prot
 		}
 	}
 	return nil
+}
+
+// negotiateDefaultCapabilities removes an engine's offline capability facts,
+// and those of each of its release lines, for a host that does not list
+// DefaultCapabilitiesFeature.
+func negotiateDefaultCapabilities(engine *protocol.Engine, hostFeatures []string) {
+	if slices.Contains(hostFeatures, DefaultCapabilitiesFeature) {
+		return
+	}
+	engine.DefaultCapabilities = nil
+	for _, line := range engine.GetReleaseLines() {
+		line.Capabilities = nil
+	}
 }

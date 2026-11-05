@@ -2,7 +2,7 @@
 
 Status: Proposed
 
-Contract: 25.26 (provisional: renumbered if an earlier claim merges first)
+Contract: 25.22
 
 Deciders: Ptah maintainers
 
@@ -55,7 +55,7 @@ a table name nobody declares. The provider has the YQL scanner: the plugin's
 
 ### The provider scans the text
 
-Contract 25.26 adds the RPC `ScanSQL`. The feature `sql.scan` enables it. The
+Contract 25.22 adds the RPC `ScanSQL`. The feature `sql.scan` enables it. The
 provider and each engine that scans list it. A host that does not know the RPC
 never calls it, so the host lists no feature.
 
@@ -170,7 +170,7 @@ this record measures. Rejected.
 
 ## Consequences
 
-- Contract 25.26 adds one RPC, three messages and a one-way feature. A provider
+- Contract 25.22 adds one RPC, three messages and a one-way feature. A provider
   that lists the feature still runs on a host of an earlier minor. That host
   reads its text by the shared rules, as it does today.
 - The SDK release comes first. The host and the providers adopt it in their

@@ -11,11 +11,13 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/query"
+	"ptah.run/internal/sqlident"
 )
 
 // registerQueryDialects registers the query-builder spelling each engine
 // declares, so core/query renders statements for it while the provider is
-// selected. An engine the process registry already describes keeps the
+// selected, and the quoting of that spelling with internal/sqlident, so the
+// host writes and reads the engine's names as the engine does. An engine the process registry already describes keeps the
 // descriptor Ptah ships, which is the one a built-in engine and its provider
 // share. A spelling the builder does not know refuses the provider.
 func registerQueryDialects(engines []*protocol.Engine) error {
@@ -27,8 +29,12 @@ func registerQueryDialects(engines []*protocol.Engine) error {
 		if _, described := platform.Lookup(engine.GetId()); described {
 			continue
 		}
-		if err := query.RegisterDialect(engine.GetId(), querySpelling(declared)); err != nil {
+		spelling := querySpelling(declared)
+		if err := query.RegisterDialect(engine.GetId(), spelling); err != nil {
 			return fmt.Errorf("%w: engine %s declares a query dialect the host cannot register: %w", provider.ErrProtocol, engine.GetId(), err)
+		}
+		if err := sqlident.RegisterQuoting(spelling.Quoting, append([]string{engine.GetId()}, engine.GetAliases()...)...); err != nil {
+			return fmt.Errorf("%w: engine %s declares quoting the host cannot register: %w", provider.ErrProtocol, engine.GetId(), err)
 		}
 	}
 	return nil

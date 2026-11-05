@@ -2,7 +2,7 @@
 
 Status: Proposed
 
-Contract: 25.27 (provisional: renumbered if an earlier claim merges first)
+Contract: 25.22
 
 Deciders: Ptah maintainers
 
@@ -51,7 +51,7 @@ session states them for each server it opens.
 
 ### The engine states its offline capabilities
 
-Contract 25.27 adds one field to `Engine`, one to `ReleaseLine` and the
+Contract 25.22 adds one field to `Engine`, one to `ReleaseLine` and the
 two-way feature `engine.default-capabilities`:
 
 ```proto
@@ -61,7 +61,7 @@ message Engine {
   // states the server's: those of the release line a command assumes without
   // a server. A present false is an established answer; an absent key is
   // unknown. Sent only to a host that lists engine.default-capabilities.
-  map<string, bool> default_capabilities = 22;
+  map<string, bool> default_capabilities = 24;
 }
 message ReleaseLine {
   // ...
@@ -150,8 +150,8 @@ Rejected.
 
 ## Consequences
 
-- Contract 25.27 adds a field and a two-way feature. It is numbered after
-  contract 25.26, which ADR 0069 proposes.
+- Contract 25.22 adds two fields and a two-way feature, beside the RPC that
+  ADR 0069 adds to the same contract.
 - The SDK release comes first. The host and the providers adopt it in their
   own changes.
 - An offline command for an engine whose provider states the facts plans as

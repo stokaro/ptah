@@ -22,12 +22,10 @@ import (
 // transaction and never beside a data statement. Such an engine runs a body as
 // the units it divides it into, and those units are what the migrator counts,
 // records progress over, digests in partial hashes and resumes from, in place
-// of statements. The units come from one of two places: the built-in YDB
-// engine's services (internal/migratorext), found by dialect name for a
-// database/sql connection, or a provider that negotiated units.migration-split
-// (internal/migrationsplit), asked once per body before a run touches
-// anything. A provider's session never takes the built-in services of an
-// engine of the same name.
+// of statements. The units come from a provider that negotiated
+// units.migration-split (internal/migrationsplit), asked once per body before
+// a run touches anything. A database/sql connection runs a body statement by
+// statement.
 //
 // A unit the engine runs only outside a transaction is marked in flight
 // before it runs and checkpointed after, as every statement outside a
@@ -50,11 +48,6 @@ type queryUnit struct {
 	// source is the unit's own statements as written, which partial hashes
 	// digest and a failure records.
 	source string
-	// statements are the unit's own statements, which a built-in split
-	// reads for transaction control. A provider refuses those itself.
-	statements []string
-	// mixed reports a built-in query the engine refuses whole.
-	mixed bool
 	// data reports a unit that changes data only: it commits together with
 	// the checkpoint that records it.
 	data bool
@@ -77,11 +70,9 @@ type bodyGrammar struct {
 	units   queryUnits
 }
 
-// grammarForDialect is the grammar of a database/sql connection to dialect.
+// grammarForDialect is the grammar of a database/sql connection to dialect,
+// which runs a body statement by statement.
 func grammarForDialect(dialect string) bodyGrammar {
-	if units := builtin.Lookup(dialect).Units; units != nil {
-		return bodyGrammar{dialect: dialect, units: builtinUnits{units: units, dialect: dialect}}
-	}
 	return bodyGrammar{dialect: dialect}
 }
 
@@ -126,16 +117,15 @@ func migrationSplitter(conn *dbschema.DatabaseConnection) (migrationsplit.Splitt
 }
 
 // servicesFor returns what conn's engine gives the migrator beyond its
-// descriptor; see internal/migratorext. A provider's session takes no unit
-// split, query deadline, check rule or read proof from a built-in engine of
-// the same name. Those are the built-in engine's own: a provider's split and
+// descriptor; see internal/migratorext. A provider's session takes no check
+// rule from a built-in engine of the same name: a provider's split and
 // verdicts come through its session (see [grammarFor] and
-// [Migrator.checkAssertionRule]), the statement timeout reaches the provider
-// with each unit, and the provider proves what a check reads when it runs it.
+// [Migrator.checkAssertionRule]), and the provider proves what a check reads
+// when it runs it.
 func servicesFor(conn *dbschema.DatabaseConnection) migratorext.Services {
 	services := builtin.Lookup(databaseConnectionDialect(conn))
 	if _, provider := providerSplitter(conn); provider {
-		services.Units, services.QueryDeadlines, services.Checks, services.ReadProof = nil, false, nil, nil
+		services.Checks = nil
 	}
 	return services
 }
@@ -413,13 +403,13 @@ func (m *Migrator) commitDataQuery(
 		}
 		return checkpointRecorded(revision, event.Index), nil
 	}
-	if splitter, splits := migrationSplitter(m.conn); splits {
-		return providerDataQueryCommit(m.conn, splitter, event.Statement, func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
-			return m.checkpointMigrationRevisionOn(ctx, conn, migration, startedAt, event, direction)
-		}, recorded).run(ctx)
+	splitter, splits := migrationSplitter(m.conn)
+	if !splits {
+		return fmt.Errorf("migration %d: unit %d changes data only, and only a provider that splits migration bodies "+
+			"commits such a unit with its checkpoint", migration.Version, event.Index)
 	}
-	return sqlDataQueryCommit(m.conn.BeginTx, event.Statement, func() (string, []any) {
-		return m.checkpointMigrationRevisionStatement(migration, startedAt, event, direction)
+	return providerDataQueryCommit(m.conn, splitter, event.Statement, func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
+		return m.checkpointMigrationRevisionOn(ctx, conn, migration, startedAt, event, direction)
 	}, recorded).run(ctx)
 }
 
