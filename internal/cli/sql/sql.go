@@ -2,6 +2,7 @@
 package sql
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"ptah.run/config/projectconfig"
 	"ptah.run/core/platform"
 	"ptah.run/engine"
 	"ptah.run/engine/builtin"
@@ -21,6 +23,7 @@ import (
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/internal/cli/internal/providercommand"
 	"ptah.run/internal/cli/internal/serverversion"
+	"ptah.run/internal/migrationlintreport"
 	"ptah.run/internal/servertarget"
 	"ptah.run/internal/sqllint"
 	migrationlint "ptah.run/migration/lint"
@@ -170,7 +173,7 @@ func runSQLLint(cmd *cobra.Command, opts sqlLintOptions) error {
 		return writeSQLLintError(cmd.ErrOrStderr(), opts.format, err.Error())
 	}
 
-	severities, err := sqlLintSeverities()
+	severities, err := sqlLintSeverities(cmd.Context())
 	if err != nil {
 		return writeSQLLintError(cmd.ErrOrStderr(), opts.format, err.Error())
 	}
@@ -385,14 +388,22 @@ func sourceNames(sources []sqllint.Source) []string {
 //
 // migration/lint owns the format; sqllint takes a plain map, so the dependency
 // stays here in the command rather than between the two libraries.
-func sqlLintSeverities() (map[string]sqllint.Severity, error) {
+func sqlLintSeverities(ctx context.Context) (map[string]sqllint.Severity, error) {
 	// The policy is validated against the bundled rules, as the migration
 	// linter validates it: a gate family no rule belongs to is refused here too.
+	// A policy naming an engine an executable provider serves is validated
+	// against the runtime that provider joins, as the migration linter reads
+	// it, since only that runtime knows the dialect.
 	runtime, err := builtin.New()
 	if err != nil {
 		return nil, err
 	}
-	cfg, err := migrationlint.LoadConfigFS(runtime, os.DirFS("."), migrationlint.ConfigFileName)
+	policy := os.DirFS(".")
+	runtime, err = engineruntime.Serving(ctx, runtime, migrationlintreport.PolicyDialect(migrationlintreport.Options{FS: policy}, projectconfig.Config{}))
+	if err != nil {
+		return nil, err
+	}
+	cfg, err := migrationlint.LoadConfigFS(runtime, policy, migrationlint.ConfigFileName)
 	if err != nil {
 		return nil, err
 	}
