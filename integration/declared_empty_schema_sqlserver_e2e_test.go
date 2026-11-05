@@ -3,6 +3,7 @@
 package integration_test
 
 import (
+	"context"
 	"database/sql"
 	"testing"
 
@@ -204,6 +205,39 @@ func TestDeclaredEmptySchemaSurvivesAnInspectOnSQLServerE2E(t *testing.T) {
 	}
 }
 
+// TestDeclaredEmptySchemaSurvivesASQLDescriptionOnSQLServerE2E reads a database into
+// SQL and plans from it. A description of that schema writes the guarded creation,
+// which a schema file reads back, so the document is synced. One that does not
+// select it writes no schema at all, not even the connected one, so it is a document
+// a schema file can read whatever the statement looks like.
+func TestDeclaredEmptySchemaSurvivesASQLDescriptionOnSQLServerE2E(t *testing.T) {
+	tests := []struct {
+		name      string
+		selection []string
+		want      string
+	}{
+		{name: "selected", selection: []string{"--schemas", "es_app"}, want: "CREATE SCHEMA [es_app]"},
+		{name: "not selected"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			target, db := declaredSQLServerDatabase(c)
+			declaredSQLServerExec(c, db, "CREATE SCHEMA es_app")
+
+			read := runPtahIn(c, append([]string{"schema", "inspect", "--db-url", target, "--format", "sql"}, test.selection...)...)
+
+			c.Assert(read.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", read.Stderr))
+			c.Assert(read.Stdout, qt.Contains, test.want)
+			c.Assert(read.Stdout, qt.Not(qt.Contains), "CREATE SCHEMA [dbo]")
+			planned := runPtahIn(c, append([]string{"schema", "apply", "--db-url", target, "--dry-run",
+				"--schema-file", writeDeclaredSchemaFile(c, "schema.sql", read.Stdout)}, test.selection...)...)
+			c.Assert(planned.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", planned.Stdout, planned.Stderr))
+			c.Assert(planned.Stdout, qt.Equals, "Schema is synced, no changes to be made.\n")
+		})
+	}
+}
+
 // TestDeclaredEmptySchemaRollsBackOnSQLServerE2E generates the migration that
 // creates a schema. Its down file drops the schema, read back from the catalog.
 func TestDeclaredEmptySchemaRollsBackOnSQLServerE2E(t *testing.T) {
@@ -296,4 +330,29 @@ func TestDeclaredSchemaIsRehearsedOnSQLServerE2E(t *testing.T) {
 			})
 		}
 	}
+}
+
+// TestDeclaredSchemaIsRehearsedOnADottedSQLServerDatabaseE2E rehearses on a dev
+// database whose name holds a dot. The reset asks the server what it may do to the
+// database by name, and an unquoted dotted name is a qualified one, so the server
+// answers that it may do nothing and the reset refuses.
+func TestDeclaredSchemaIsRehearsedOnADottedSQLServerDatabaseE2E(t *testing.T) {
+	c := qt.New(t)
+	target, _ := declaredSQLServerDatabase(c)
+	admin, err := sql.Open("sqlserver", dbtarget.URL(c, dbtarget.SQLServer))
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { c.Assert(admin.Close(), qt.IsNil) })
+	const dotted = "ptah_dotted.dev"
+	declaredSQLServerExec(c, admin, "CREATE DATABASE ["+dotted+"]")
+	c.Cleanup(func() {
+		_, err := admin.ExecContext(context.Background(),
+			"ALTER DATABASE ["+dotted+"] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE ["+dotted+"]")
+		c.Check(err, qt.IsNil)
+	})
+	dev := replaceSQLServerDatabase(c, target, dotted)
+	document := writeDeclaredSchemaFile(c, "schema.hcl", "schema \"dbo\" {\n}\n\nschema \"es_app\" {\n}\n")
+
+	got := runPtahIn(c, "schema", "apply", "--db-url", target, "--schema-file", document, "--dev-url", dev, "--auto-approve")
+
+	c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
 }

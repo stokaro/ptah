@@ -291,6 +291,8 @@ func (p *Parser) parseStatement() (ast.Node, error) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("unsupported SQL statement: %s at position %d", keyword, p.current.Start)
+	case "IF":
+		return p.parseGuardedCreateSchema()
 	case "USE":
 		return nil, p.parseUse()
 	case "ANALYZE", "BEGIN", "CALL", "COMMIT", "DELETE", "INSERT", "MERGE", "PRAGMA", "REINDEX", "ROLLBACK", "SELECT", "SET", "SHOW", "UPDATE", "VACUUM", "WITH":

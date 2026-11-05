@@ -213,7 +213,9 @@ func (r *Reader) recordFunctions(ctx context.Context, schema *catalog.Database) 
 
 // readSchemas reads the schemas of the read's scope that the database holds, each
 // spelled as the catalog spells it. The comparison reads a declared schema missing
-// from them as one the database lacks, so an empty schema has to appear here.
+// from them as one the database lacks, so an empty schema has to appear here. The
+// connected schema does not: the comparison knows it exists, and a description
+// that declared it would open every document with a statement nobody wrote.
 func (r *Reader) readSchemas(ctx context.Context) ([]catalog.Schema, error) {
 	query := `
 		SELECT s.name
@@ -232,7 +234,9 @@ func (r *Reader) readSchemas(ctx context.Context) ([]catalog.Schema, error) {
 		if err := rows.Scan(&schema.Name); err != nil {
 			return nil, err
 		}
-		schemas = append(schemas, schema)
+		if schema.Name != r.schema {
+			schemas = append(schemas, schema)
+		}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
