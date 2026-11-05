@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"slices"
 	"strings"
 
 	"ptah.run/catalog"
@@ -31,6 +32,14 @@ func captureApplyTarget(info catalog.ServerInfo) (ApplyPlan, error) {
 // do not replace the captured connection facts. Callers approve omissions and
 // verify target state before execution.
 func CaptureApplyPlan(info catalog.ServerInfo, rendered planner.RenderedPlan) (ApplyPlan, error) {
+	return captureApplyPlan(info, rendered, renderer.Result{})
+}
+
+// captureApplyPlan is CaptureApplyPlan with text, the plan's nodes rendered in
+// [renderer.FormText], or the zero Result when there is none: a native unit
+// whose node text renders as SQL keeps that SQL for display (see
+// [ApplyPlan.texts]).
+func captureApplyPlan(info catalog.ServerInfo, rendered planner.RenderedPlan, text renderer.Result) (ApplyPlan, error) {
 	if rendered.Request.Target != info.Dialect {
 		return ApplyPlan{}, fmt.Errorf("%w: rendered plan target differs from the connection", renderer.ErrInvalidResult)
 	}
@@ -65,7 +74,11 @@ func CaptureApplyPlan(info catalog.ServerInfo, rendered planner.RenderedPlan) (A
 			continue
 		}
 		plan.units = append(plan.units, unit.Fragment)
+		plan.texts = append(plan.texts, nodeText(unit, text))
 		indexes = append(indexes, unit.Node)
+	}
+	if !slices.ContainsFunc(plan.texts, func(text string) bool { return text != "" }) {
+		plan.texts = nil
 	}
 	positions[len(units)] = len(plan.units)
 	for _, annotation := range annotations {
@@ -128,4 +141,32 @@ func (p ApplyPlan) Execute(ctx context.Context, conn *dbschema.DatabaseConnectio
 		return nil
 	}
 	return applyUnits(ctx, conn, mode, p.units)
+}
+
+// nativeTextForm renders a plan that holds a native operation again in
+// [renderer.FormText], for display, as `schema compare` and a migration file
+// write it. A plan without one, and one whose owner has no text form for some
+// operation (a provider that did not negotiate text units, or an operation it
+// performs only through a native call), gets the zero Result, so its native
+// units are shown by kind and subject.
+func nativeTextForm(ctx context.Context, service renderer.Service, plan planner.RenderedPlan) (renderer.Result, error) {
+	if !slices.ContainsFunc(plan.Result.Fragments, func(fragment renderer.Fragment) bool { return fragment.Native != nil }) {
+		return renderer.Result{}, nil
+	}
+	request := plan.Request
+	request.Form = renderer.FormText
+	text, err := renderer.Render(ctx, service, request)
+	if errors.Is(err, renderer.ErrNativeSQL) {
+		return renderer.Result{}, nil
+	}
+	return text, err
+}
+
+// nodeText is the text of a native unit's node in text, or "" for an SQL unit
+// and for a node text has no SQL for.
+func nodeText(unit planner.PlannedUnit, text renderer.Result) string {
+	if unit.Fragment.Native == nil || unit.Node < 0 || unit.Node >= len(text.Fragments) {
+		return ""
+	}
+	return strings.TrimSpace(text.Fragments[unit.Node].SQL)
 }

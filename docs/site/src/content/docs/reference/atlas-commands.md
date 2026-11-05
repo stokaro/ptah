@@ -1223,8 +1223,10 @@ Native twin: [`ptah schema inspect`](../native-commands/).
 Diffs a live database against the `--to` desired state, prints the planned
 changes, and applies them after interactive confirmation or explicit
 `--auto-approve`. Provider-native operations retain their captured order and
-owner assessments through approval and execution. They are displayed by kind
-and subject; their opaque payloads are not printed. A dry run validates the
+owner assessments through approval and execution. They are displayed as the
+statement the provider writes for them where it writes every operation of the
+plan as text, and otherwise by kind and subject; their opaque payloads are not
+printed. A dry run validates the
 complete batch and writes nothing.
 
 Execution input references are shown before approval and retained with their

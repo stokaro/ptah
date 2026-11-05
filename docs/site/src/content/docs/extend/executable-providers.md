@@ -922,13 +922,18 @@ or [maintaining revision metadata](../../versioned/maintain-history/).
 A provider can return native operations alongside SQL when its declared models
 and planning service support the requested change. `ptah schema apply` keeps
 these operations intact from planning through confirmation and execution.
-The confirmation output shows the operation's kind, subject, and captured
-impact and access assessments. A conflicting transaction requirement refuses
-the whole plan before any operation runs.
+Where the provider lists `render.text-units` and writes every operation of the
+plan as text, the confirmation output shows each operation as that statement,
+the one a migration file holds; the apply still runs the native operation.
+Otherwise it shows the operation's kind, subject, and captured impact and
+access assessments. A conflicting transaction requirement refuses the whole
+plan before any operation runs.
 
 Apply JSON reports use contract version `4` and an ordered `units` list.
 Each entry contains `sql` or a `native` summary. Native summaries omit opaque
-provider payloads and are reports, not execution plans.
+provider payloads and are reports, not execution plans. A summary's `text`
+holds the provider's statement for the operation where the confirmation output
+shows one.
 
 Planner notes stay in the host as ordered annotations. They do not enter the
 provider's rendering or execution batch and do not count as operations.
