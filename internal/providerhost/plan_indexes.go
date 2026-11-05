@@ -36,12 +36,19 @@ func (r observedIndexRules) OptionsEqual(desired schemamodel.Index, current cata
 
 func (observedIndexRules) RenameCarries(schemaext.Kind) bool { return false }
 
+// ownsColumns reports whether the provider owns the lifecycle of its tables,
+// and so the columns it adds and drops: it assesses each altered table whole
+// and leaves no table operation to the host.
+func (p commonPlanner) ownsColumns() bool {
+	return p.assessParents && !p.commonTables
+}
+
 // ownsIndexes reports whether the provider plans the common indexes of the
 // tables it owns. A provider that leaves table operations to the host has no
 // index step on the wire, and one that does not report held indexes gives
 // the comparison no current side, so both keep the index fields refused.
 func (p commonPlanner) ownsIndexes() bool {
-	return p.assessParents && !p.commonTables && p.indexes
+	return p.ownsColumns() && p.indexes
 }
 
 // pendingIndexChange stands in for an index addition or removal on a table

@@ -2531,8 +2531,10 @@ exclusions. Key expressions stay in common index fields and parts.
 The shared comparator consumes prepared column flags
 without reading ClickHouse clauses. Tables sharing a Go struct retain separate
 captures. `SchemaDiff.TablePreparation` stores source and prepared captures;
-filtering, cloning, and reversal preserve independent copies of this provenance.
-It is not reverse intent or evidence that a migration ran. Report JSON omits it;
+filtering and cloning preserve independent copies of this provenance. A reverse
+plan prepares its own copy: a table it leaves alone is the table the forward
+plan leaves, moved to the declaration the database held. The capture is not
+reverse intent or evidence that a migration ran. Report JSON omits it;
 durable plan serialization requires an explicit capture codec.
 
 `core/ast.ExtensionStatement` and `ExtensionAlterOperation` carry typed,
@@ -4942,6 +4944,14 @@ snapshot becomes a publication precondition: `WriteFiles` returns
 `generator.ErrMigrationDirectoryChanged` if the bound output directory no
 longer matches it, so a refreshed integrity file cannot legitimize different
 history.
+
+`GenerateMigrationOptions.ShadowGenerated` is the desired schema shadow
+verification compares with when the shadow database interprets values in
+another database context than the target, such as a dev realm of it: a
+provider binds a declared value to the database it names, and a bound value
+cannot be bound again. Nil compares with `Generated`. `ptah migrations
+generate` loads its sources a second time, bound for the shadow, exactly when
+the provider resolves the two addresses to different contexts.
 
 `migration/safety.RenderJSON` writes a `safety.Report` containing the highest
 risk, destructive verdict, and rendered statement assessments. The native

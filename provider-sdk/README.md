@@ -55,7 +55,8 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.19. `provider-sdk/v0.17.0` speaks 25.18.
+speaks contract 25.20. `provider-sdk/v0.18.0` speaks 25.19.
+`provider-sdk/v0.17.0` speaks 25.18.
 `provider-sdk/v0.16.0` speaks 25.17.
 `provider-sdk/v0.15.0` speaks 25.16.
 `provider-sdk/v0.14.0` speaks 25.15.
@@ -108,6 +109,7 @@ returns to 0.
   Contract 25.17 adds [index renames](#index-renames).
   Contract 25.18 adds [the reasons of execution and transaction results](#error-reasons).
   Contract 25.19 adds [change reversal](#change-reversal).
+  Contract 25.20 adds [unread tables](#unread-tables).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -2029,6 +2031,36 @@ object of another kind than its subject, or named twice.
 [ADR 0062](../docs/adr/0062-a-provider-reverses-the-changes-its-comparison-returned.md)
 records why the owner reverses its changes rather than the host comparing
 again.
+
+## Unread tables
+
+`schema.unread-tables` lets a read name each table it found and does not
+describe, in `Schema.unread_tables`. An entry is the table's reference and a
+`ProviderDiagnostic` that says why the read leaves it out, such as a YDB
+replica table that no replication writes any more. A table named there exists,
+so its absence from `tables` says nothing about it. Which tables a read leaves
+out is the provider's decision.
+
+The reason is one line under the rule of [error reasons](#error-reasons): the
+provider writes it, names the table and why, and quotes no value, address or
+credential. It is required, and the host shows it whether or not the session
+negotiated `errors.reasons`.
+
+The provider and each engine that reports such tables list the feature, and
+the host lists it. Both transport boundaries refuse a snapshot with entries
+when the feature was not negotiated, and an entry that is not a common table
+of the read's engine (kind `table`, no catalog, path or overload), whose reason
+`ValidateDiagnostic` refuses, that names a table twice, that names a table
+`tables` or a table reservation also names, or that lies outside a filtered
+read's scope. A read carries at most 4,096 entries. The host also requires the
+session's database.
+
+The host keeps the entries with the read and writes them into no document. Its
+comparison refuses a declared table, and a foreign key, at an unread table
+before preparation, in the provider's words, and its read commands print a
+note naming each unread table and its reason.
+[ADR 0063](../docs/adr/0063-a-read-names-the-tables-it-leaves-out.md)
+records why none of the existing channels of a read carries this.
 
 ## Comparison counts
 

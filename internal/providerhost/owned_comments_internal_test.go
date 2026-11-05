@@ -35,7 +35,7 @@ func commentPlanner() commonPlanner {
 // lifecycleClaimer claims every table, column and index step the host hands
 // it, as an owner of the table lifecycle does, and leaves the common-object
 // steps, comments included, to the host, ordered after its own steps of the
-// table, as the YDB provider orders them.
+// table that do more than read and drop, as the YDB provider orders them.
 type lifecycleClaimer struct {
 	*engine.Runtime
 	request featureplan.Request
@@ -67,13 +67,31 @@ func (r *lifecycleClaimer) PlanFeatures(_ context.Context, request featureplan.R
 			continue
 		}
 		for n, step := range contribution.Steps {
-			if claimed[n].Parent == common.Parent {
+			if claimed[n].Parent == common.Parent && !removesOnly(claimed[n].Effects) {
 				contribution.Dependencies = append(contribution.Dependencies, plangraph.Dependency{Before: step.ID, After: common.ID})
 			}
 		}
 	}
 	result.Contributions = []plangraph.Contribution[featureplan.Operation]{contribution}
 	return result, nil
+}
+
+// removesOnly reports effects that read and drop, and drop something, as a
+// column's removal reads its table and drops the column. The host places a
+// removal after the comments, so a comment ordered after one would close a
+// cycle.
+func removesOnly(effects []plangraph.Effect) bool {
+	dropped := false
+	for _, effect := range effects {
+		switch effect.Action {
+		case plangraph.Drop:
+			dropped = true
+		case plangraph.Read:
+		default:
+			return false
+		}
+	}
+	return dropped
 }
 
 // commentsOf lists the comment steps of a plan in order, each as the kind of
@@ -186,6 +204,23 @@ func TestOwnedLifecycleAddedColumnCommentIsAStep_HappyPath(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 2)
 	c.Assert(commentsOf(nodes), qt.DeepEquals, []string{"TABLE main.records/note: a note"})
+}
+
+// TestOwnedLifecycleDroppedColumnCommentIsRemoved_HappyPath removes the
+// comment of a column the plan drops from a kept table, which YDB keeps in
+// the table's attributes after the column is gone, with a comment step that
+// comes before the removal. A dropped column without a comment needs none.
+func TestOwnedLifecycleDroppedColumnCommentIsRemoved_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	base, err := engine.New()
+	c.Assert(err, qt.IsNil)
+	runtime := &lifecycleClaimer{Runtime: base}
+	diff := ownedColumnDiff(c, nil, []schemamodel.Field{{Name: "legacy", Type: "TEXT", Nullable: true, Comment: "Going away"}, {Name: "spare", Type: "TEXT", Nullable: true}})
+	nodes, err := commentPlanner().GenerateMigrationAST(c.Context(), runtime, diff)
+	c.Assert(err, qt.IsNil)
+	c.Assert(nodes, qt.HasLen, 3)
+	c.Assert(commentsOf(nodes[:1]), qt.DeepEquals, []string{"TABLE main.records/legacy: "})
+	c.Assert(nodes[1:], qt.All(qt.Satisfies), func(node ast.Node) bool { _, claimed := node.(*ast.ExtensionStatement); return claimed })
 }
 
 // TestOwnedLifecycleWithoutTheCommentWire_HappyPath plans no comment step

@@ -701,7 +701,9 @@ type RoutineRemoval struct {
 // [IndexAdditionsFor] and [ConstraintAdditionsFor].
 type SchemaDiff struct {
 	// TablePreparation retains the source and prepared comparison inputs.
-	// Reversal preserves this provenance without treating it as reverse intent.
+	// It is provenance, not intent: a prepared table is the planning parent of a
+	// change, never a change. The reverse plan of a migration reads its own
+	// copy, prepared from the tables the forward plan leaves.
 	// Report JSON omits these captures; it is not a durable plan codec.
 	TablePreparation *schemapreparation.Capture `json:"-"`
 

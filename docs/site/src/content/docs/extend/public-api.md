@@ -383,7 +383,8 @@ return `ResolvedFacets` records keyed by declared table or index identities.
 Duplicate owners, undeclared kinds, and new target scopes are refused. Source
 facets, bindings, observations, and knowledge stay unchanged. Incomplete replies return
 no diff. `SchemaDiff.TablePreparation` retains independent source and prepared
-captures as comparison provenance, including through reversal.
+captures as comparison provenance. A reverse plan prepares its own copy from the
+tables the forward plan leaves.
 
 `Target.Lowering` selects `schemapreparation.Lowering`, which rewrites the
 whole desired schema into the shape the target's reader reports it in, before
@@ -1044,7 +1045,9 @@ count these changes under `feature_access_widened:<kind>`,
 replayed history against the target, `VerifyRollback` rehearses a rollback plan,
 and `PlanDynamicRollback` derives rollback statements from the schema a version
 defines rather than from a down body. `migration/generator` calls the first of
-these when `ShadowDatabaseURL` is set.
+these when `ShadowDatabaseURL` is set, comparing with `ShadowGenerated` where a
+provider binds declared values to another database context on the shadow than
+on the target.
 
 When candidate or baseline shadow verification fails,
 `generator.PlanMigration`, `generator.GenerateMigration`, and

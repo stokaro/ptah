@@ -138,6 +138,10 @@ func (p *owner) planTableChange(change *protocol.PlanningChange, id string, styl
 
 // commentDependencies orders the host's comment steps of table after the
 // steps the fixture makes on it: a comment is set on an object that exists.
+// A step that only removes is left out, as the YDB provider leaves it out:
+// the host places a removal after the comments, so a comment ordered after
+// one closes a cycle, and no comment the plan sets names what a removal
+// drops.
 func commentDependencies(request *protocol.PlanFeaturesRequest, table *protocol.PlanningTable, steps []*protocol.PlanningStep) []*protocol.PlanningDependency {
 	var result []*protocol.PlanningDependency
 	for _, common := range request.GetCommonSteps() {
@@ -145,8 +149,26 @@ func commentDependencies(request *protocol.PlanFeaturesRequest, table *protocol.
 			continue
 		}
 		for _, step := range steps {
-			result = append(result, &protocol.PlanningDependency{Before: proto.CloneOf(step.GetId()), After: proto.CloneOf(common.GetId())})
+			if !removalOnly(step) {
+				result = append(result, &protocol.PlanningDependency{Before: proto.CloneOf(step.GetId()), After: proto.CloneOf(common.GetId())})
+			}
 		}
 	}
 	return result
+}
+
+// removalOnly reports a step whose effects read and drop, and drop
+// something, as a column's removal reads its table and drops the column.
+func removalOnly(step *protocol.PlanningStep) bool {
+	dropped := false
+	for _, effect := range step.GetMetadata().GetEffects() {
+		switch effect.GetAction() {
+		case protocol.PlanningEffect_DROP:
+			dropped = true
+		case protocol.PlanningEffect_READ:
+		default:
+			return false
+		}
+	}
+	return dropped
 }
