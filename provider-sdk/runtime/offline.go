@@ -5,6 +5,7 @@ import (
 	"time"
 
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	"github.com/stokaro/ptah/provider-sdk/provider"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -28,7 +29,7 @@ func serveOffline[Q proto.Message, R proto.Message](
 	if err := ctx.Err(); err != nil {
 		return zero, status.FromContextError(err).Err()
 	}
-	result, err := invoke(s.owner(ctx), proto.CloneOf(request))
+	result, err := invoke(s.owner(ctx), provider.CloneSharingModels(request))
 	if err != nil {
 		return zero, err
 	}

@@ -82,6 +82,7 @@ func Start(ctx context.Context, options Options) (*Client, error) {
 	defer stopCancel()
 	command := exec.CommandContext(life, options.Executable) // #nosec G204 -- the caller explicitly authorizes an absolute, checksum-pinned executable
 	command.Env = append(slices.Clone(options.Environment), parentEnvironment+"="+strconv.Itoa(os.Getpid()))
+	exchange := &negotiatedTransport{}
 	process := plugin.NewClient(&plugin.ClientConfig{
 		HandshakeConfig: handshake,
 		Plugins:         map[string]plugin.Plugin{transportName: &transport{}},
@@ -89,7 +90,7 @@ func Start(ctx context.Context, options Options) (*Client, error) {
 		SecureConfig: &plugin.SecureConfig{Checksum: checksum, Hash: sha256.New()},
 		AutoMTLS:     true, SkipHostEnv: true, StartTimeout: timeout,
 		Logger: hclog.NewNullLogger(), SyncStdout: io.Discard, SyncStderr: io.Discard,
-		GRPCDialOptions: []grpc.DialOption{grpc.WithDisableRetry(), grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(MaxMessageBytes), grpc.MaxCallSendMsgSize(MaxMessageBytes))},
+		GRPCDialOptions: dialOptions(exchange),
 	})
 	client := &Client{process: process, cancel: cancelLife}
 	connection, err := process.Client()
@@ -124,11 +125,20 @@ func Start(ctx context.Context, options Options) (*Client, error) {
 		return nil, fmt.Errorf("%w: executable provider identity differs from the trusted manifest", provider.ErrProtocol)
 	}
 	client.description = proto.CloneOf(description)
+	exchange.negotiated(client.description)
 	if !stopCancel() || startup.Err() != nil {
 		client.Close()
 		return nil, startupError(startup)
 	}
 	return client, nil
+}
+
+// dialOptions are the options a host dials its provider with: no retries,
+// replies up to LargeMessageBytes, and requests up to MaxMessageBytes until
+// exchange negotiates more.
+func dialOptions(exchange *negotiatedTransport) []grpc.DialOption {
+	return []grpc.DialOption{grpc.WithDisableRetry(), grpc.WithChainUnaryInterceptor(exchange.intercept),
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(LargeMessageBytes), grpc.MaxCallSendMsgSize(MaxMessageBytes))}
 }
 
 // negotiate checks a provider's description against this host: the contract
@@ -222,7 +232,7 @@ func (c *Client) Inspect(ctx context.Context, request *protocol.InspectRequest) 
 
 // Render validates the complete batch and exposes no prefix on failure.
 func (c *Client) Render(ctx context.Context, request *protocol.RenderRequest) (*protocol.RenderResult, error) {
-	return callOffline(ctx, c.description, proto.CloneOf(request), "render", provider.ValidateRenderRequest, provider.ValidateRenderedBatch, c.rpc.Render)
+	return callOffline(ctx, c.description, provider.CloneSharingModels(request), "render", provider.ValidateRenderRequest, provider.ValidateRenderedBatch, c.rpc.Render)
 }
 
 // Execute sends a validated batch once. Any lost or invalid reply is an unknown

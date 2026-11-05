@@ -88,6 +88,7 @@ a new record that names it, and its own status line is updated to point there.
 | [0076](0076-a-provider-says-why-a-read-leaves-roles-out.md) | A provider says why a read leaves roles out | Proposed |
 | [0077](0077-a-provider-says-where-its-go-directives-stand.md) | A provider says where its Go directives stand | Proposed |
 | [0078](0078-a-provider-plans-the-change-of-a-primary-key.md) | A provider plans the change of a primary key | Proposed |
+| [0079](0079-a-described-model-travels-by-reference.md) | A described model travels by reference, and a schema fits one message | Proposed |
 
 ## Writing one
 
