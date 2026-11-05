@@ -36,8 +36,8 @@ type File struct {
 }
 
 // Rule is one rule a bundled owner checks in process. Exactly one of
-// Statement and File is set, and BaselineSubjects is set exactly when the
-// rule's input reads a baseline.
+// Statement, File and Directory is set, and BaselineSubjects is set exactly
+// when the rule's input reads a baseline.
 type Rule struct {
 	// Rule is what the owner publishes.
 	lintext.Rule
@@ -48,6 +48,11 @@ type Rule struct {
 	// File reports the violations of one file. It sees every file and
 	// decides for itself which it judges.
 	File func(file *File) []lintext.Violation
+	// Directory reports the violations of every file of the request at once,
+	// those of files[i] at index i, for a rule whose verdict on a file
+	// depends on the files the directory applies before it. It sees every
+	// file, in request order, and decides for itself which it judges.
+	Directory func(files []File) [][]lintext.Violation
 	// BaselineSubjects names the statements of an up file the rule would
 	// judge further with the schema state the file's version starts from.
 	BaselineSubjects func(file *File) []int
@@ -59,7 +64,7 @@ type Rule struct {
 type Rules []Rule
 
 // Validate reports a rule whose published form does not validate, one that
-// sets neither or both of Statement and File, one whose BaselineSubjects
+// sets other than one of Statement, File and Directory, one whose BaselineSubjects
 // disagrees with its input, and two rules of one code. Each failure wraps
 // lintext.ErrInvalid.
 func (r Rules) Validate() error {
@@ -68,8 +73,8 @@ func (r Rules) Validate() error {
 		if err := rule.Rule.Validate(); err != nil {
 			return err
 		}
-		if (rule.Statement == nil) == (rule.File == nil) {
-			return fmt.Errorf("%w: rule %s must set exactly one of Statement and File", lintext.ErrInvalid, rule.Code)
+		if rule.checkers() != 1 {
+			return fmt.Errorf("%w: rule %s must set exactly one of Statement, File and Directory", lintext.ErrInvalid, rule.Code)
 		}
 		if (rule.BaselineSubjects != nil) != rule.Input.ReadsBaseline() {
 			return fmt.Errorf("%w: rule %s sets BaselineSubjects exactly when its input reads a baseline", lintext.ErrInvalid, rule.Code)
@@ -112,13 +117,10 @@ func (r Rules) CheckMigrations(ctx context.Context, request lintext.CheckRequest
 	if request.Baseline != nil {
 		states = NewStates(*request.Baseline)
 	}
-	result := lintext.CheckResult{Complete: true}
+	files := make([]File, len(request.Files))
 	for index := range request.Files {
-		if err := ctx.Err(); err != nil {
-			return lintext.CheckResult{}, err
-		}
 		requested := &request.Files[index]
-		file := File{
+		files[index] = File{
 			Name:             requested.Name,
 			Version:          requested.Version,
 			IsUp:             requested.Up,
@@ -131,8 +133,25 @@ func (r Rules) CheckMigrations(ctx context.Context, request lintext.CheckRequest
 			TransactionOwner: request.TransactionOwner,
 			Baseline:         states[requested.Version],
 		}
+	}
+	directories := make(map[string][][]lintext.Violation)
+	for _, rule := range enabled {
+		if rule.Directory != nil {
+			directories[rule.Code] = rule.Directory(files)
+		}
+	}
+	result := lintext.CheckResult{Complete: true}
+	for index := range files {
+		if err := ctx.Err(); err != nil {
+			return lintext.CheckResult{}, err
+		}
+		file := files[index]
 		for _, rule := range enabled {
-			result.Findings = append(result.Findings, rule.findings(&file, index)...)
+			if violations, ok := directories[rule.Code]; ok {
+				result.Findings = append(result.Findings, findingsOf(rule.Code, index, violationsAt(violations, index))...)
+			} else {
+				result.Findings = append(result.Findings, rule.findings(&file, index)...)
+			}
 			if rule.BaselineSubjects != nil && file.IsUp && file.Version != 0 {
 				if statements := rule.BaselineSubjects(&file); len(statements) > 0 {
 					result.BaselineSubjects = append(result.BaselineSubjects,
@@ -144,16 +163,43 @@ func (r Rules) CheckMigrations(ctx context.Context, request lintext.CheckRequest
 	return result, ctx.Err()
 }
 
+// checkers counts the functions a rule sets among Statement, File and
+// Directory.
+func (r Rule) checkers() int {
+	count := 0
+	for _, set := range []bool{r.Statement != nil, r.File != nil, r.Directory != nil} {
+		if set {
+			count++
+		}
+	}
+	return count
+}
+
+// violationsAt is the violations a Directory rule reported for the file at
+// index, none where its answer is shorter.
+func violationsAt(violations [][]lintext.Violation, index int) []lintext.Violation {
+	if index < len(violations) {
+		return violations[index]
+	}
+	return nil
+}
+
+// findingsOf is violations of the file at index, as findings of code.
+func findingsOf(code string, index int, violations []lintext.Violation) []lintext.Finding {
+	var findings []lintext.Finding
+	for _, violation := range violations {
+		findings = append(findings, lintext.Finding{Code: code, File: index, Statement: violation.Statement,
+			Message: violation.Message, Subjects: slices.Clone(violation.Subjects)})
+	}
+	return findings
+}
+
 // findings is one rule over one file, the file at index of its request.
 func (r Rule) findings(file *File, index int) []lintext.Finding {
-	var findings []lintext.Finding
 	if r.File != nil {
-		for _, violation := range r.File(file) {
-			findings = append(findings, lintext.Finding{Code: r.Code, File: index, Statement: violation.Statement,
-				Message: violation.Message, Subjects: slices.Clone(violation.Subjects)})
-		}
-		return findings
+		return findingsOf(r.Code, index, r.File(file))
 	}
+	var findings []lintext.Finding
 	if !file.IsUp && (!file.IsDown || !r.AppliesToDown) {
 		return nil
 	}
