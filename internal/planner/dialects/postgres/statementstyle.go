@@ -239,8 +239,14 @@ func (g *guardState) settleDropIndex(n *ast.DropIndexNode) {
 }
 
 func (g *guardState) settleDropFunction(n *ast.DropFunctionNode) {
-	n.IfExists = n.IfExists && (g.mayBeGone("function", n.Name) || g.triggerFunctions[bareName(n.Name)])
-	g.drop("function:"+bareName(n.Name), n.Cascade)
+	relied := false
+	for _, target := range n.Targets() {
+		relied = relied || g.mayBeGone("function", target.Name) || g.triggerFunctions[bareName(target.Name)]
+	}
+	n.IfExists = n.IfExists && relied
+	for _, target := range n.Targets() {
+		g.drop("function:"+bareName(target.Name), n.Cascade)
+	}
 }
 
 func (g *guardState) settleDropSequence(n *ast.DropSequenceNode) {

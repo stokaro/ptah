@@ -54,6 +54,56 @@ func TestStableReverseDependencySort_OrdersDependentsBeforeParents(t *testing.T)
 	c.Assert(ordered, qt.DeepEquals, []string{"tasks", "projects", "memberships", "accounts"})
 }
 
+// TestStableReverseDependencyGroups_HappyPath pins each shape: independent
+// nodes keep caller order, a dependent leaves ahead of what it depends on, and
+// nodes in one cycle share a group listed in caller order.
+func TestStableReverseDependencyGroups_HappyPath(t *testing.T) {
+	tests := []struct {
+		name         string
+		nodes        []string
+		dependencies map[string][]string
+		want         [][]string
+	}{
+		{name: "independent nodes keep caller order", nodes: []string{"b", "a", "c"},
+			want: [][]string{{"b"}, {"a"}, {"c"}}},
+		{name: "a dependent leaves first", nodes: []string{"a", "b"}, dependencies: map[string][]string{"b": {"a"}},
+			want: [][]string{{"b"}, {"a"}}},
+		{name: "a chain", nodes: []string{"a", "m", "z"}, dependencies: map[string][]string{"m": {"a"}, "z": {"m"}},
+			want: [][]string{{"z"}, {"m"}, {"a"}}},
+		{name: "a node depends on itself alone", nodes: []string{"a", "b"}, dependencies: map[string][]string{"a": {"a"}},
+			want: [][]string{{"a"}, {"b"}}},
+		{name: "a cycle", nodes: []string{"a", "b"}, dependencies: map[string][]string{"a": {"b"}, "b": {"a"}},
+			want: [][]string{{"a", "b"}}},
+		{name: "a cycle with a dependent and a dependency", nodes: []string{"base", "x", "y", "top"},
+			dependencies: map[string][]string{"x": {"y", "base"}, "y": {"x"}, "top": {"y"}},
+			want:         [][]string{{"top"}, {"x", "y"}, {"base"}}},
+		{name: "a dependency outside the nodes", nodes: []string{"a"}, dependencies: map[string][]string{"a": {"gone"}},
+			want: [][]string{{"a"}}},
+		{name: "no nodes", want: nil},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(deporder.StableReverseDependencyGroups(test.nodes, test.dependencies), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestStableReverseDependencyGroups_AgreesWithTheSortWithoutACycle holds the two
+// orderings together: without a cycle each group is one node, in the order
+// [deporder.StableReverseDependencySort] gives.
+func TestStableReverseDependencyGroups_AgreesWithTheSortWithoutACycle(t *testing.T) {
+	c := qt.New(t)
+	nodes := []string{"a", "d", "b", "e", "c"}
+	dependencies := map[string][]string{"b": {"a"}, "c": {"b", "d"}, "e": {"d"}}
+	var flat []string
+	for _, group := range deporder.StableReverseDependencyGroups(nodes, dependencies) {
+		c.Assert(group, qt.HasLen, 1)
+		flat = append(flat, group...)
+	}
+	c.Assert(flat, qt.DeepEquals, deporder.StableReverseDependencySort(nodes, dependencies))
+}
+
 func TestTablesForCreate_DerivesForeignKeyDependencies(t *testing.T) {
 	c := qt.New(t)
 	schema := &schemamodel.Database{

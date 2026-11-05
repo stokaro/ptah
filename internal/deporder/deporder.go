@@ -247,6 +247,72 @@ func StableTopologicalSort(nodes []string, dependencies map[string][]string) []s
 	return result
 }
 
+// StableReverseDependencyGroups is [StableReverseDependencySort] for nodes that
+// may depend on each other in a cycle: nodes in one cycle form one group, a
+// group of dependents comes before the groups it depends on, and independent
+// nodes keep caller order. A node with no cycle is a group of its own, and a
+// group lists its members in caller order.
+func StableReverseDependencyGroups(nodes []string, dependencies map[string][]string) [][]string {
+	index := indexNodes(nodes)
+	dependents := make(map[string][]string, len(index))
+	for _, child := range nodes {
+		for _, parent := range dependencies[child] {
+			if parent == child {
+				continue
+			}
+			if _, ok := index[parent]; ok && !slices.Contains(dependents[parent], child) {
+				dependents[parent] = append(dependents[parent], child)
+			}
+		}
+	}
+	for node := range dependents {
+		sortByIndex(dependents[node], index)
+	}
+
+	// Tarjan's algorithm over the dependent edges. It finishes a group after
+	// every group that depends on it, which is the order the groups are wanted.
+	var (
+		groups  [][]string
+		stack   []string
+		counter int
+		visited = make(map[string]int, len(nodes))
+		lowest  = make(map[string]int, len(nodes))
+		onStack = make(map[string]bool, len(nodes))
+		visit   func(string)
+	)
+	visit = func(node string) {
+		counter++
+		visited[node], lowest[node] = counter, counter
+		stack = append(stack, node)
+		onStack[node] = true
+		for _, dependent := range dependents[node] {
+			if visited[dependent] == 0 {
+				visit(dependent)
+				lowest[node] = min(lowest[node], lowest[dependent])
+			} else if onStack[dependent] {
+				lowest[node] = min(lowest[node], visited[dependent])
+			}
+		}
+		if lowest[node] != visited[node] {
+			return
+		}
+		at := slices.Index(stack, node)
+		group := slices.Clone(stack[at:])
+		stack = stack[:at]
+		for _, member := range group {
+			onStack[member] = false
+		}
+		sortByIndex(group, index)
+		groups = append(groups, group)
+	}
+	for _, node := range nodes {
+		if visited[node] == 0 {
+			visit(node)
+		}
+	}
+	return groups
+}
+
 // StableReverseDependencySort returns nodes ordered so dependents come before
 // the objects they depend on, preserving caller order for independent nodes.
 func StableReverseDependencySort(nodes []string, dependencies map[string][]string) []string {

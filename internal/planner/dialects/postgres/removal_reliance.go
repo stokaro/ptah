@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/schemamodel"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/feature/pgtype"
 	"ptah.run/internal/deporder"
@@ -301,7 +302,7 @@ func routineInUse(diff *difftypes.SchemaDiff, routine difftypes.RoutineChange, r
 	for _, routines := range []difftypes.FunctionChanges{diff.FunctionsRemoved, diff.ProceduresRemoved} {
 		for _, other := range routines {
 			if routineKey(other) != routineKey(routine) {
-				bodies = append(bodies, other.Body)
+				bodies = append(bodies, other.Body, other.Parameters)
 			}
 		}
 	}
@@ -311,6 +312,94 @@ func routineInUse(diff *difftypes.SchemaDiff, routine difftypes.RoutineChange, r
 	return slices.ContainsFunc(diff.TablesRemoved, func(removal difftypes.TableRemoval) bool {
 		return capturedReads(removal.Current.OwnedObjects, name, relationSemantics(diff))
 	})
+}
+
+// removedRoutineGroup is one statement of the routine step: the routines it
+// drops, of one kind, and whether the step after the type drops holds them.
+type removedRoutineGroup struct {
+	routines   []difftypes.RoutineChange
+	kind       string
+	afterTypes bool
+}
+
+// removedRoutineGroups is the routines the routine step drops, in the order the
+// server requires: a routine ahead of the functions it calls, so a drop never
+// meets a caller the plan removes later. Functions keep their order among
+// themselves otherwise, ahead of the procedures.
+//
+// A routine a removed domain calls leaves after the types, and so does every
+// function that routine calls. Functions that call each other go in one
+// statement, because PostgreSQL drops the routines one statement names together:
+// CREATE OR REPLACE lets a SQL-standard body call its own caller, and neither
+// drop runs first without CASCADE, which would also take a reader nobody
+// declared. Nothing calls a procedure, so a procedure is never part of a cycle.
+func (p *Planner) removedRoutineGroups(diff *difftypes.SchemaDiff, rebuild viewRebuild, ahead routinesAhead) []removedRoutineGroup {
+	type dropped struct {
+		routine difftypes.RoutineChange
+		kind    string
+	}
+	byKey := make(map[string]dropped)
+	var keys []string
+	var functions []difftypes.RoutineChange
+	for _, routines := range []struct {
+		changes difftypes.FunctionChanges
+		kind    string
+	}{{diff.FunctionsRemoved, schemamodel.FunctionKindFunction}, {diff.ProceduresRemoved, schemamodel.FunctionKindProcedure}} {
+		for _, routine := range routines.changes {
+			if ahead.moves(routine) || rebuild.ownsRoutine(routine.Name) {
+				continue
+			}
+			key := routineKey(routine)
+			byKey[key] = dropped{routine: routine, kind: routines.kind}
+			keys = append(keys, key)
+			if routines.kind == schemamodel.FunctionKindFunction {
+				functions = append(functions, routine)
+			}
+		}
+	}
+	calls := make(map[string][]string, len(keys))
+	for _, key := range keys {
+		for _, function := range functions {
+			if callee := routineKey(function); callee != key && p.routineHolds(byKey[key].routine, function, diff) {
+				calls[key] = append(calls[key], callee)
+			}
+		}
+	}
+	held := make(map[string]bool)
+	var groups []removedRoutineGroup
+	for _, members := range deporder.StableReverseDependencyGroups(keys, calls) {
+		group := removedRoutineGroup{kind: byKey[members[0]].kind}
+		for _, key := range members {
+			group.routines = append(group.routines, byKey[key].routine)
+			group.afterTypes = group.afterTypes || held[key] || removedDomainCallsRoutine(diff, byKey[key].routine)
+		}
+		if group.afterTypes {
+			for _, key := range members {
+				for _, callee := range calls[key] {
+					held[callee] = true
+				}
+			}
+		}
+		groups = append(groups, group)
+	}
+	return groups
+}
+
+// routineHolds reports whether the server refuses to drop callee while caller
+// exists. PostgreSQL records what a parameter default calls and what a
+// SQL-standard body calls, and nothing for a body in quotes. CockroachDB also
+// records what a quoted body calls, measured on v26.3.2. A name that may not be
+// a call only orders two drops or joins them in one statement, either of which
+// the server accepts.
+func (p *Planner) routineHolds(caller, callee difftypes.RoutineChange, diff *difftypes.SchemaDiff) bool {
+	semantics := relationSemantics(diff)
+	if deporder.ReferencesRelation(caller.Parameters, callee.Name, semantics) {
+		return true
+	}
+	if !routinebody.SQLStandard(caller.Language, caller.Body) && p.targetDialect() != platform.CockroachDB {
+		return false
+	}
+	return deporder.ReferencesRelation(caller.Body, callee.Name, semantics)
 }
 
 // removedDomainCallsRoutine reports a removed domain whose CHECK or DEFAULT

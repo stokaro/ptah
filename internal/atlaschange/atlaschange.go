@@ -645,7 +645,11 @@ func describeObject(node ast.Node) (change, bool) {
 	case *ast.CreateFunctionNode:
 		return change{verb: createdVerb[n.Replace], kind: routineKinds[n.IsProcedure()], name: bare(n.Name)}, true
 	case *ast.DropFunctionNode:
-		return change{verb: drop, kind: routineKinds[n.IsProcedure()], name: bare(n.Name)}, true
+		others := make([]string, 0, len(n.Others))
+		for _, other := range n.Others {
+			others = append(others, bare(other.Name))
+		}
+		return change{verb: drop, kind: routineKinds[n.IsProcedure()], name: bare(n.Name), others: others}, true
 	case *ast.CreateSequenceNode:
 		return change{verb: create, kind: "sequence", name: n.Name}, true
 	case *ast.AlterSequenceNode:
