@@ -17,7 +17,6 @@ import (
 	"sync"
 	"time"
 
-	"ptah.run/internal/ydbrealm"
 )
 
 // ContainerLabel marks every container this package starts. It exists so an
@@ -469,14 +468,15 @@ func refuseRemoteRuntime(ctx context.Context, runner Runner, spec Spec) error {
 
 // ResolvedPerRun reports whether [Resolve] may hand back, for rawURL, a database
 // the URL does not name as written: a docker URL, whose server Resolve starts,
-// and a YDB URL, whose dev database is a dev realm Resolve creates. Such a URL
+// and a URL of an engine whose provider in ctx creates dev realms
+// ([RealmOwner]), whose dev database is a realm Resolve creates. Such a URL
 // cannot be compared with another database by its text. The question is
 // asked of the connection Resolve's URL opens instead, as
 // [ptah.run/internal/devlock.EnsureDistinct] asks it, which also refuses a
-// YDB database declared disposable, where Resolve creates no realm, when it is
+// database declared disposable, where Resolve creates no realm, when it is
 // the database it must not be.
-func ResolvedPerRun(rawURL string) bool {
-	return IsURL(rawURL) || ydbrealm.Applies(rawURL)
+func ResolvedPerRun(ctx context.Context, rawURL string) bool {
+	return IsURL(rawURL) || RealmOwner(ctx, rawURL) != nil
 }
 
 // Resolve returns a directly connectable dev database URL for rawURL, together
@@ -490,18 +490,14 @@ func ResolvedPerRun(rawURL string) bool {
 // in the form a consumer connects with, trimmed of surrounding space, and the
 // release ends the record. Without it the release does nothing.
 //
-// A YDB URL is the exception. SQL cannot create a YDB database, so the dev
-// database is a dev realm Resolve creates in the database the URL names, and
-// the URL returned names the realm; the release removes it (see
-// ptah.run/internal/ydbrealm). A YDB server the operator declared disposable
-// is the run's whole, as a `docker://ydb` one is, and gets no realm: its
-// database is the dev database.
-//
 // An executable provider selected in ctx ([WithExternal]) takes the URLs of
 // its engines: a docker URL in either form, `docker://<engine>/...` or
 // `docker+<engine>://...`, is the provider's to provision, and a URL of an
-// engine whose provider creates dev realms ([ExternalRealms]) is entered as a
-// realm the provider creates and removes.
+// engine whose provider creates dev realms ([ExternalRealms]), such as YDB,
+// where SQL cannot create a database, is entered as a realm the provider
+// creates in the database the URL names and removes on release. A server the
+// operator declared disposable is the run's whole and gets no realm: its
+// database is the dev database.
 func Resolve(ctx context.Context, rawURL string, opts Options) (string, func(), error) {
 	if owner, _ := externalFor(ctx, rawURL); owner != nil {
 		return resolveExternal(ctx, owner, rawURL)
@@ -510,9 +506,6 @@ func Resolve(ctx context.Context, rawURL string, opts Options) (string, func(), 
 		if !opts.DeclaredDisposable {
 			if owner := RealmOwner(ctx, rawURL); owner != nil {
 				return enterExternalRealm(ctx, owner, rawURL)
-			}
-			if ydbrealm.Applies(rawURL) {
-				return ydbrealm.Enter(ctx, rawURL)
 			}
 			return rawURL, func() {}, nil
 		}

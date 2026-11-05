@@ -139,9 +139,9 @@ the capability, a renamed index is a drop and a create.
 An engine that reports its indexes and whose session states
 `unique_constraints` as `false` holds a declared UNIQUE constraint, and a
 column's UNIQUE, as a global unique index, as YDB does. The host then reads
-each one as that index before it compares and plans, under the name the
-host's YDB renderer gives it: the constraint's name, or
-`<table>_<columns>_key`. A UNIQUE over the table's key folds into the key. The
+each one as that index before it compares and plans, under the constraint's
+name, or `<table>_<columns>_key` for one that has none, which is the name the
+provider gives the index it creates. A UNIQUE over the table's key folds into the key. The
 provider receives the index in the table it creates or alters, and never the
 constraint. A session that does not state the key leaves a UNIQUE a
 constraint.
@@ -473,9 +473,9 @@ then takes the first candidate that exists. Later candidates are not consulted.
 
 A command asks for an executable provider with `--provider-engine`, when a
 manifest entry claims the engine, or when it names an official engine with no
-built-in implementation, such as DuckDB. An official engine that still has a
-built-in implementation, such as YDB, keeps it when the command does none of
-these, and the presence of an installed provider changes nothing.
+built-in implementation, such as YDB or DuckDB. A built-in engine keeps its
+implementation when the command does none of these, and the presence of an
+installed provider changes nothing.
 
 Rule 2 builds the installation in memory from the catalog and the install
 record: the provider ID and engines come from the catalog, and the expected

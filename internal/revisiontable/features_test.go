@@ -13,7 +13,6 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/clickhouse/chschema"
-	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/migration/schemadiff"
@@ -53,28 +52,4 @@ func TestWithoutRemovesTableFacetCoverageBeforeComparison(t *testing.T) {
 	c.Assert(filtered.FeatureCoverage.Representation(), qt.Equals, schemaext.Observed)
 	c.Assert(source.FeatureCoverage.SubjectRecords(), qt.HasLen, 2)
 	c.Assert(source.Tables, qt.HasLen, 2)
-}
-
-func TestWithoutRemovesOwnedObjectsAndPreservesUnknownKnowledge(t *testing.T) {
-	c := qt.New(t)
-	identities := objectidentity.NewBuilder(identifier.ForDialect("ydb"))
-	kept := identities.TableParts("app", "events")
-	source := &catalog.Database{
-		Tables: []catalog.Table{{Schema: "app", Name: "events"}, {Schema: "app", Name: "CUSTOM_REVS"}},
-		FeatureObjects: must.Must(schemaext.NewObjects(
-			ydbschema.ObservedObject("app", "events", ydbschema.ChangefeedSpec{Name: "updates", Mode: "KEYS_ONLY", Format: "JSON"}),
-			ydbschema.ObservedObject("app", "CUSTOM_REVS", ydbschema.ChangefeedSpec{Name: "updates", Mode: "KEYS_ONLY", Format: "JSON"}),
-		)),
-		FeatureCoverage: must.Must(ydbschema.ChangefeedCoverage(schemaext.Observed, []schemaext.SubjectCoverage{
-			{Kind: ydbschema.ChangefeedKind, Subject: kept, Knowledge: schemaext.Knowledge{State: schemaext.Complete}},
-			{Kind: ydbschema.ChangefeedKind, Subject: ydbschema.ChangefeedRef("app", "events", "limited"), Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "unmodeled option"}},
-			{Kind: ydbschema.ChangefeedKind, Subject: ydbschema.ChangefeedRef("app", "CUSTOM_REVS", "limited"), Knowledge: schemaext.Knowledge{State: schemaext.Uninspected, Reason: "not inspected"}},
-		})),
-	}
-	filtered := revisiontable.Without(source, []string{"custom_revs"})
-	c.Assert(filtered.FeatureObjects.Refs(), qt.DeepEquals, source.FeatureObjects.ForParent(kept).Refs())
-	c.Assert(filtered.FeatureCoverage.SubjectRecords(), qt.DeepEquals, source.FeatureCoverage.ForParent(kept).SubjectRecords())
-	c.Assert(filtered.FeatureCoverage.KindRecords(), qt.DeepEquals, source.FeatureCoverage.KindRecords())
-	c.Assert(source.FeatureObjects.Len(), qt.Equals, 2)
-	c.Assert(source.FeatureCoverage.SubjectRecords(), qt.HasLen, 3)
 }

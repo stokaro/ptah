@@ -244,7 +244,6 @@ func TestReportUndescribedOffersTheOptOutOnlyWhereItWorks(t *testing.T) {
 		{name: "spanner is the same family", dialect: platform.Spanner, wantRemedy: true},
 		{name: "postgresql alias", dialect: "postgresql", wantRemedy: true},
 		{name: "clickhouse consults no such variable", dialect: platform.ClickHouse, wantRemedy: false},
-		{name: "ydb consults no such variable", dialect: platform.YDB, wantRemedy: false},
 		{name: "an unknown dialect promises nothing", dialect: "nonsense", wantRemedy: false},
 	}
 
@@ -354,24 +353,6 @@ func TestReportUndescribedNamesNoCatalogItCouldNotRead(t *testing.T) {
 	c.Assert(out.String(), qt.Equals, "")
 }
 
-// TestReportUndescribedNamesWhyYDBLeavesPrincipalsOut pins the cause a YDB
-// read gives for the principals it leaves out: the cluster made them, they own
-// the database, or the read was of a dev realm, rather than nothing referring
-// to them.
-func TestReportUndescribedNamesWhyYDBLeavesPrincipalsOut(t *testing.T) {
-	c := qt.New(t)
-	var out bytes.Buffer
-
-	rolescope.ReportUndescribed(&out, platform.YDB, &catalog.Database{
-		RolesOutOfScope: []catalog.Role{{Name: "ADMINS", Group: true}, {Name: "USERS", Group: true}},
-	})
-
-	c.Assert(out.String(), qt.Equals, "note: 2 roles Ptah manages on this server are not described, because the"+
-		" cluster made them or they own the database, or the read was of a dev realm, which shares its database's"+
-		" users and groups; comparison still treats them as present, so none of them is planned as a CREATE"+
-		" ROLE.\n")
-}
-
 // TestReportUndescribedNamesTheCauseTheReaderHas pins why the note says roles
 // were left out: the YDB reader leaves out what the cluster made and what owns
 // the database, and every other reader leaves out what nothing refers to.
@@ -388,8 +369,6 @@ func TestReportUndescribedNamesTheCauseTheReaderHas(t *testing.T) {
 		{dialect: platform.Postgres, want: unreferenced},
 		{dialect: platform.ClickHouse, want: unreferenced},
 		{dialect: platform.MySQL, want: unreferenced},
-		{dialect: platform.YDB, want: clusterMade},
-		{dialect: "ydbs", want: clusterMade},
 		{dialect: "nonsense", want: unreferenced},
 	}
 	for _, test := range tests {

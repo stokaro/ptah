@@ -16,7 +16,6 @@ import (
 	"ptah.run/core/lintext"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
-	"ptah.run/dialect/ydb/ydblint"
 )
 
 // lintTarget is an adapter whose host has no client: a call that reaches the
@@ -65,27 +64,6 @@ func TestUntargetedLintRunIsAnsweredWithoutTheProvider_FailurePath(t *testing.T)
 		c.Assert(err, qt.ErrorMatches, `.*lint target changed`)
 		c.Assert(result, qt.DeepEquals, lintext.CheckResult{})
 	})
-}
-
-// TestPublishedRuleCatalogCarriesTheYDBFamily sends the YD family through the
-// wire's rule shape and reads it back as the host publishes a provider's
-// rules. The YDB provider serves the family this way, so a field the wire
-// cannot carry -- a rule input, say -- would change what lint and the rule
-// catalog read once the bundled owner is gone.
-func TestPublishedRuleCatalogCarriesTheYDBFamily(t *testing.T) {
-	c := qt.New(t)
-	severities := map[lintext.Severity]protocol.LintRule_Severity{
-		lintext.Info: protocol.LintRule_INFO, lintext.Warning: protocol.LintRule_WARNING, lintext.Error: protocol.LintRule_ERROR,
-	}
-	bundled := ydblint.Rules()
-	wire := make([]*protocol.LintRule, 0, len(bundled))
-	for _, rule := range bundled {
-		wire = append(wire, &protocol.LintRule{Code: rule.Code, Title: rule.Title, Severity: severities[rule.Severity],
-			AppliesToDown: rule.AppliesToDown, Subsumes: rule.Subsumes})
-	}
-	published := &target{host: &Host{}, engine: &protocol.Engine{Id: "ydb", Features: []string{provider.LintFeature}, LintRules: wire}}
-	c.Assert(len(bundled) > 20, qt.IsTrue, qt.Commentf("the YD family shrank to %d rules", len(bundled)))
-	c.Assert(published.lint().Rules, qt.DeepEquals, bundled)
 }
 
 // An effect crosses the wire and comes back as it was, the statement facts'

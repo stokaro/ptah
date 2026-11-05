@@ -129,16 +129,12 @@ func TestMeasureEmissions_TheGuardsBlindSpotsAreWrittenDown(t *testing.T) {
 		// A rule about objects nobody has created yet. It creates none itself,
 		// so the guard has no name to count.
 		"ALTER DEFAULT PRIVILEGES",
-		// Alterations of an object something else created: a member added
-		// to a YDB group, a sequence, a table.
-		"ALTER GROUP `READERS`",
+		// Alterations of an object something else created: a sequence, a
+		// table.
 		"ALTER SEQUENCE \"PUBLIC\".\"ORDER_SEQ\"",
 		"ALTER TABLE \"T\"",
 		"ALTER TABLE `B`",
 		"ALTER TABLE `T`",
-		// A consumer added to a changefeed's topic, which the ALTER TABLE
-		// that added the changefeed created.
-		"ALTER TOPIC `T/UPDATES`",
 		// Documentation and privileges, which create no object.
 		"COMMENT ON COLUMN",
 		"COMMENT ON CONSTRAINT",
@@ -157,12 +153,8 @@ func TestMeasureEmissions_TheGuardsBlindSpotsAreWrittenDown(t *testing.T) {
 		"COMMENT ON VIEW",
 		// The third tail of a split function body.
 		"END",
-		// The streaming query owns the enclosing block; END creates no object.
-		"END DO",
 		// SQL Server's spelling of a comment.
 		"EXEC SP_ADDEXTENDEDPROPERTY @NAME",
-		// YDB writes a permission by its name, as the server reports it.
-		"GRANT 'YDB.GRANULAR.SELECT_ROW' ON",
 		"GRANT EXECUTE ON",
 		"GRANT SELECT ON",
 		"GRANT UPDATE (\"LABEL\")",
@@ -172,10 +164,6 @@ func TestMeasureEmissions_TheGuardsBlindSpotsAreWrittenDown(t *testing.T) {
 		// TimescaleDB converts a table that CREATE TABLE already made.
 		"SELECT CREATE_HYPERTABLE('\"T\"', BY_RANGE('AT'),",
 		"SELECT CREATE_HYPERTABLE('\"T\"', BY_RANGE('AT',",
-		// A YDB transfer's lambda carries its own semicolons, so the split
-		// leaves the tail of its CREATE TRANSFER behind. The CREATE TRANSFER
-		// that owns it is the first fragment and is classified.
-		"} WITH (CONNECTION_STRING",
 	})
 }
 

@@ -1,8 +1,6 @@
 package atlas_test
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -14,73 +12,6 @@ import (
 // tableRebuildVar is the variable this surface reads where the native commands
 // take --allow-table-rebuild.
 const tableRebuildVar = "PTAH_ALLOW_TABLE_REBUILD"
-
-// writeRebuildDiffFiles writes two SQL documents for one YDB table that differ
-// by a column type, a change YDB makes only by rebuilding the table, and
-// returns them as file:// URLs.
-func writeRebuildDiffFiles(c *qt.C) (from, to string) {
-	c.Helper()
-	dir := c.TempDir()
-	document := func(columnType string) []byte {
-		return []byte("CREATE TABLE rb (id Int64 NOT NULL, v " + columnType + ", PRIMARY KEY (id));")
-	}
-	c.Assert(os.WriteFile(filepath.Join(dir, "from.sql"), document("Int32"), 0o600), qt.IsNil)
-	c.Assert(os.WriteFile(filepath.Join(dir, "to.sql"), document("Int64"), 0o600), qt.IsNil)
-	return "file://" + filepath.ToSlash(filepath.Join(dir, "from.sql")),
-		"file://" + filepath.ToSlash(filepath.Join(dir, "to.sql"))
-}
-
-// rebuildDiffArgs diffs the two documents on YDB. A diff between two files
-// connects to nothing; the dev URL only names the dialect, so one the YDB
-// connector would refuse is never opened.
-func rebuildDiffArgs(c *qt.C) []string {
-	c.Helper()
-	from, to := writeRebuildDiffFiles(c)
-	return []string{"schema", "diff", "--from", from, "--to", to, "--dev-url", ydbConnectorRefusedURL}
-}
-
-// This surface takes no flag the pinned binary lacks, so the refusal of a
-// change only a rebuild can make names the variable, where the native surface
-// names --allow-table-rebuild.
-func TestCompatSchemaDiffNamesTheRebuildVariableOnYDB(t *testing.T) {
-	c := qt.New(t)
-	envbooltest.Unset(tableRebuildVar)(t)
-
-	stdout, stderr, err := runCompatWithPolicy(atlascompatpolicy.Full(), rebuildDiffArgs(c)...)
-
-	c.Assert(err, qt.IsNotNil)
-	c.Assert(stdout, qt.Equals, "")
-	c.Assert(stderr, qt.Equals, "Error: generate schema diff SQL: changing the type of column \"v\" of table \"rb\" "+
-		"(Int32 -> Int64), which requires target capability alter_column_type, unavailable on this ydb target; YDB "+
-		"makes it by rebuilding the table, which Ptah plans when asked with PTAH_ALLOW_TABLE_REBUILD=1\n")
-}
-
-// The variable reaches the plan: set, the same diff plans the rebuild, and a
-// valid false keeps the refusal.
-func TestCompatSchemaDiffPlansARebuildWhenAsked(t *testing.T) {
-	c := qt.New(t)
-	envbooltest.Set(tableRebuildVar, "1")(t)
-
-	stdout, stderr, err := runCompatWithPolicy(atlascompatpolicy.Full(), rebuildDiffArgs(c)...)
-
-	c.Assert(err, qt.IsNil, qt.Commentf("%s", stderr))
-	c.Assert(stdout, qt.Contains, "CREATE TABLE `__ptah_rebuild_rb` (\n")
-	c.Assert(stdout, qt.Contains, "ALTER TABLE `rb` RENAME TO `__ptah_replaced_rb`;\n"+
-		"ALTER TABLE `__ptah_rebuild_rb` RENAME TO `rb`;\n"+
-		"DROP TABLE `__ptah_replaced_rb`;\n")
-}
-
-// The control: false is a value, and it asks for nothing.
-func TestCompatSchemaDiffKeepsTheRefusalWhenTheVariableIsFalse(t *testing.T) {
-	c := qt.New(t)
-	envbooltest.Set(tableRebuildVar, "false")(t)
-
-	stdout, stderr, err := runCompatWithPolicy(atlascompatpolicy.Full(), rebuildDiffArgs(c)...)
-
-	c.Assert(err, qt.IsNotNil)
-	c.Assert(stdout, qt.Equals, "")
-	c.Assert(stderr, qt.Contains, "which Ptah plans when asked with PTAH_ALLOW_TABLE_REBUILD=1\n")
-}
 
 // Each verb that plans resolves the variable before its first early return, so
 // a malformed value fails the run before anything else is looked at: each row

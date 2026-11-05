@@ -39,7 +39,7 @@ func selectReadSource(tokens []lexer.Token) (readSourceRef, bool) {
 	if err != nil {
 		return readSourceRef{}, false
 	}
-	ref, err := singleSource(tokens, fromStart, bodyReading{})
+	ref, err := singleSource(tokens, fromStart)
 	if err != nil {
 		return readSourceRef{}, false
 	}

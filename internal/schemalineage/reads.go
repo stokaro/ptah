@@ -56,7 +56,7 @@ func readingSQL(statements []routineext.Statement) []string {
 
 // statementReads resolves one statement's reads, or none.
 func statementReads(sql, routine, kind string, columns map[string][]string) []RoutineRead {
-	tokens := tokenize(sql, bodyReading{})
+	tokens := tokenize(sql)
 	if len(tokens) == 0 {
 		return nil
 	}

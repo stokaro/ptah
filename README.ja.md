@@ -101,6 +101,15 @@ irm https://ptah.run/install.ps1 | iex
 [インストールガイド](https://docs.ptah.run/edge/start/install/)では、バージョンの固定、
 署名の検証、実行せずにダウンロードする方法、ソースからのビルドを扱っています。
 
+YDB は実行可能プロバイダーが扱い、プロバイダーは別途インストールします:
+
+```bash
+ptah providers install ydb
+```
+
+インストール後は、`ydb://` URL を指定するコマンドがこのプロバイダーを使います。
+[YDB プロバイダーの設定](https://docs.ptah.run/edge/extend/providers/ydb/)を参照してください。
+
 ## SQLite で Ptah を試す
 
 次の目標スキーマを `schema.sql` として保存します。

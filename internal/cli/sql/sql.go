@@ -40,10 +40,9 @@ const (
 // resolves, so `--dialect oracle` is accepted here and exits 0, while nothing
 // in internal/sqllint has been measured to analyze Oracle. Naming Oracle would
 // claim coverage nobody established, and refusing it is a behavior change this
-// help-text change does not get to make. YDB is named: its sources are read as
-// YQL, by the rules internal/sqllint says answer it. An engine of a selected
-// provider is accepted beside them; see providedDialect.
-const sqlLintDialects = "postgres, mysql, mariadb, sqlite, sqlserver, clickhouse, cockroachdb, yugabytedb, spanner, or ydb"
+// help-text change does not get to make. An engine of a selected provider,
+// such as YDB, is accepted beside them; see providedDialect.
+const sqlLintDialects = "postgres, mysql, mariadb, sqlite, sqlserver, clickhouse, cockroachdb, yugabytedb, or spanner"
 
 var errSQLLintFindings = errors.New("sql lint findings found")
 

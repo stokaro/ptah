@@ -106,6 +106,15 @@ Die [Installationsanleitung](https://docs.ptah.run/edge/start/install/)
 erklärt feste Versionsauswahl, Signaturprüfung, Download ohne
 Ausführung und den Build aus dem Quellcode.
 
+YDB wird von einem ausführbaren Provider bedient, der separat installiert wird:
+
+```bash
+ptah providers install ydb
+```
+
+Ein Befehl, der eine `ydb://`-URL nennt, verwendet ihn danach; siehe
+[YDB-Provider konfigurieren](https://docs.ptah.run/edge/extend/providers/ydb/).
+
 ## Ptah mit SQLite ausprobieren
 
 Speichern Sie dieses gewünschte Schema als `schema.sql`:

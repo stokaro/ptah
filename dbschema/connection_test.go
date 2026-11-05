@@ -183,7 +183,7 @@ func TestConnectToDatabase_InvalidURL(t *testing.T) {
 // ports nothing listens on, so a connector that skipped the question would
 // answer with a dial error instead.
 func TestConnect_FailurePath_RefusedByTheContext(t *testing.T) {
-	refuse := refuseDialects("postgres", "ydb")
+	refuse := refuseDialects("postgres", "ydbs")
 	tests := []struct {
 		name    string
 		connect func(context.Context, string) (*dbschema.DatabaseConnection, error)
@@ -191,7 +191,10 @@ func TestConnect_FailurePath_RefusedByTheContext(t *testing.T) {
 	}{
 		{name: "a database", connect: dbschema.ConnectToDatabase, dbURL: "postgres://127.0.0.1:1/app?connect_timeout=1"},
 		{name: "a server", connect: dbschema.ConnectToServer, dbURL: "postgresql://127.0.0.1:1/app?connect_timeout=1"},
-		{name: "a YDB database", connect: dbschema.ConnectToDatabase, dbURL: "ydbs://127.0.0.1:1/local"},
+		// No built-in engine connects to ydbs, so the gate is asked about the
+		// scheme as the URL spells it, before the generic refusal of an
+		// unknown dialect.
+		{name: "a scheme no built-in engine connects to", connect: dbschema.ConnectToDatabase, dbURL: "YDBS://127.0.0.1:1/local"},
 	}
 
 	for _, test := range tests {
@@ -216,41 +219,6 @@ func refuseDialects(dialects ...string) connectgate.Refusal {
 			return errDialectRefused
 		}
 		return nil
-	}
-}
-
-// A YDB URL is opened by the YDB connection, which checks the URL before it
-// dials, so these refusals need no server. internal/dbschema/ydb holds the
-// whole set; these rows pin that both schemes reach it.
-func TestConnectToDatabase_FailurePath_YDBURL(t *testing.T) {
-	tests := []struct {
-		name    string
-		dbURL   string
-		wantErr string
-	}{
-		{
-			name:  "no database",
-			dbURL: "ydb://localhost:2136",
-			wantErr: `failed to open database connection: invalid YDB URL: name the database in the path ` +
-				`\(ydb://host:2136/local\) or in the database parameter`,
-		},
-		{
-			name:  "an unknown parameter over TLS",
-			dbURL: "ydbs://user:secret@localhost:2135/?database=/local&sslmode=require",
-			wantErr: `failed to open database connection: invalid YDB URL: parameter "sslmode" is not one ` +
-				`Ptah reads on a YDB URL; accepted: .*`,
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-
-			conn, err := dbschema.ConnectToDatabase(t.Context(), test.dbURL)
-
-			c.Assert(err, qt.ErrorMatches, test.wantErr)
-			c.Assert(conn, qt.IsNil)
-		})
 	}
 }
 

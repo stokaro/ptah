@@ -146,7 +146,7 @@ ptah schema apply --db-url "sqlite://app.db" --schema-file schema.sql --lock-tim
 Expected output on standard error:
 
 ```text
-error: --lock-timeout requested a schema apply lock, and dialect "sqlite" has none: only postgres, mysql, mariadb, sqlserver, yugabytedb, ydb take a session advisory lock. Remove --lock-timeout to apply without a lock
+error: --lock-timeout requested a schema apply lock, and dialect "sqlite" has none: only postgres, mysql, mariadb, sqlserver, yugabytedb take a session advisory lock. Remove --lock-timeout to apply without a lock
 ```
 
 Nothing is planned and nothing is applied. A URL that names its dialect is
@@ -159,13 +159,11 @@ the flag to apply unlocked, which is what such a target does anyway.
 does lock acquires the lock and waits out the timeout, so the flag means the
 same thing there.
 
-On YDB the lock is a semaphore on the coordination node `ptah_locks`, which the
-first apply that locks creates. A dry run creates nothing: it takes the lock
-when the node exists, and runs unlocked when it does not, since no apply has
-locked that database yet. A coordination session of its own holds the
-semaphore, so the server can take it away while the apply goes on; the apply
-then cancels the statement it is running, starts no other, and fails with the
-loss. [Locking](../../versioned/apply/#locking-and---migration-lock-timeout)
+On YDB the provider takes the lock as a semaphore on the coordination node
+`ptah_locks`, which the first apply that locks creates. A dry run creates no
+lock node. A coordination session of its own holds the semaphore, so the server
+can take it away while the apply goes on; the apply then cancels the statement
+it is running, starts no other, and fails with the loss. [Locking](../../versioned/apply/#locking-and---migration-lock-timeout)
 says when the server takes it.
 
 `ptah-compat schema apply` keeps its lock on a database session of its own on

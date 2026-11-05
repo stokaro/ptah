@@ -87,7 +87,7 @@ func unreadableContents(label string) string {
 
 // classifyRawStatement reads a plain statement's leading word.
 func classifyRawStatement(sql, routine, kind string) (writes []RoutineWrite, unresolved []string) {
-	tokens := tokenize(sql, bodyReading{})
+	tokens := tokenize(sql)
 	if len(tokens) == 0 {
 		return nil, nil
 	}

@@ -13,7 +13,6 @@ import (
 	"ptah.run/internal/migratorext/spanner"
 	"ptah.run/internal/migratorext/sqlite"
 	"ptah.run/internal/migratorext/sqlserver"
-	"ptah.run/internal/migratorext/ydb"
 )
 
 // services maps each dialect a built-in service serves to it. It is built
@@ -28,7 +27,6 @@ var services = index(
 	sqlserver.Services(),
 	spanner.Services(),
 	oracle.Services(),
-	ydb.Services(),
 )
 
 func index(all ...migratorext.Services) map[string]migratorext.Services {

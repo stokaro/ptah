@@ -70,7 +70,7 @@ func TestExclusionRendering_Changes(t *testing.T) {
 }
 
 func TestExclusionRendering_UnsupportedTarget(t *testing.T) {
-	for _, target := range []string{"mysql", "cockroachdb", "yugabytedb", "ydb", "unknown"} {
+	for _, target := range []string{"mysql", "cockroachdb", "yugabytedb", "unknown"} {
 		t.Run(target, func(t *testing.T) {
 			c := qt.New(t)
 			handlers := must.Must(renderer.NewExtensions(pgtablerender.ExclusionHandlers()...))

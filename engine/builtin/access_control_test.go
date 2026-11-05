@@ -15,7 +15,7 @@ import (
 // TestRenderSQL_AccessNodes_FailurePath refuses, on every target without the
 // key, a node built by hand that declares what the key holds: a group, a
 // membership of one role in another, and a grant or revoke on the database or
-// on a scheme object such as a YDB topic.
+// on a scheme object such as a topic.
 // The declaration gate refuses the same in a schema; these never reach one.
 func TestRenderSQL_AccessNodes_FailurePath(t *testing.T) {
 	tests := []struct {
@@ -49,9 +49,9 @@ func TestRenderSQL_AccessNodes_FailurePath(t *testing.T) {
 			node: ast.NewGrantPrivilege("app", "TOPIC", "app.events", []string{"SELECT"}), wantKey: capability.Topics},
 		{name: "a revoke on a coordination node on ClickHouse", dialect: platform.ClickHouse, caps: capability.ClickHouse24(),
 			node: ast.NewRevokePrivilege("app", "coordination node", "app.locks", []string{"SELECT"}), wantKey: capability.CoordinationNodes},
-		{name: "a grant on a secret on YDB 25.1", dialect: platform.YDB, caps: capability.YDB251(),
+		{name: "a grant on a secret on MySQL", dialect: platform.MySQL, caps: capability.MySQL84(),
 			node: ast.NewGrantPrivilege("app", "SECRET", "ext.pw", []string{"SELECT ROW"}), wantKey: capability.Secrets},
-		{name: "a grant on an external data source on YDB with the flag off", dialect: platform.YDB, caps: capability.YDB262(),
+		{name: "a grant on an external data source on SQL Server", dialect: platform.SQLServer, caps: capability.ForDialect(platform.SQLServer),
 			node: ast.NewGrantPrivilege("app", "EXTERNAL DATA SOURCE", "ext.bucket", []string{"SELECT ROW"}), wantKey: capability.ExternalDataSources},
 	}
 

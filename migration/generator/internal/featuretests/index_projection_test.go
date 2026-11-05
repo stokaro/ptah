@@ -8,9 +8,9 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/planext"
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
-	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/migration/diffpolicy"
@@ -18,67 +18,48 @@ import (
 	"ptah.run/migration/schemadiff"
 )
 
+// indexProjectionOptions plans, on PostgreSQL, table items gaining index
+// fresh and losing gone, while its comment changes, so the table is one the
+// plan modifies and the reverse plan captures.
 func indexProjectionOptions(c *qt.C) generator.BidirectionalSchemaPlanOptions {
 	c.Helper()
 	runtime, err := builtin.New()
 	c.Assert(err, qt.IsNil)
-	stream := ydbschema.ChangefeedSpec{Name: "updates", Mode: "UPDATES", Format: "JSON"}
-	before := declaration(c, stream)
-	stream.RetentionPeriod = "PT12H"
-	after := declaration(c, stream)
-	fields := []schemamodel.Field{{StructName: "Item", Name: "label", Type: "string", Nullable: true}, {StructName: "Item", Name: "category", Type: "string", Nullable: true}}
-	before.Fields, after.Fields = append(before.Fields, fields...), append(after.Fields, fields...)
+	table := func(comment string) *schemamodel.Database {
+		return &schemamodel.Database{
+			Tables: []schemamodel.Table{{Name: "items", StructName: "Item", Comment: comment}},
+			Fields: []schemamodel.Field{
+				{Name: "id", StructName: "Item", Type: "BIGINT", Primary: true},
+				{StructName: "Item", Name: "label", Type: "TEXT", Nullable: true},
+				{StructName: "Item", Name: "category", Type: "TEXT", Nullable: true},
+			},
+		}
+	}
+	before, after := table("before"), table("after")
 	before.Indexes = []schemamodel.Index{
 		{Name: "kept", StructName: "Item", Fields: []string{"label"}},
 		{Name: "gone", StructName: "Item", Fields: []string{"category"}, Comment: "removed comment"},
-		{Name: "old_name", StructName: "Item", Fields: []string{"label", "category"}, Comment: "old comment"},
 	}
 	after.Indexes = []schemamodel.Index{
 		{Name: "kept", StructName: "Item", Fields: []string{"label"}},
 		{Name: "fresh", StructName: "Item", Fields: []string{"category", "label"}},
-		{Name: "new_name", StructName: "Item", Fields: []string{"label", "category"}, Comment: "new comment"},
 	}
-	return options(c, runtime, before, after)
-}
-
-func TestGeneratorProjectsAcceptedIndexLifecycleWithFeatureChanges(t *testing.T) {
-	c := qt.New(t)
-	opts := indexProjectionOptions(c)
-	c.Assert(opts.Diff.IndexesAdded.Refs(), qt.DeepEquals, []difftypes.IndexRef{{Name: "fresh", TableName: "items"}})
-	c.Assert(opts.Diff.IndexesRemoved, qt.DeepEquals, []difftypes.IndexRef{{Name: "gone", TableName: "items"}})
-	c.Assert(opts.Diff.IndexesRenamed, qt.DeepEquals, []difftypes.IndexRename{{TableName: "items", From: "old_name", To: "new_name"}})
-	plan, err := generator.PlanBidirectionalSchemaDiff(t.Context(), opts)
-	c.Assert(err, qt.IsNil)
-	indexes := plan.Reverse.Diff.TablesModified[0].Current.Indexes
-	c.Assert(indexes, qt.HasLen, 3)
-	c.Assert(indexes[0].Name, qt.Equals, "kept")
-	c.Assert(indexes[1].Name, qt.Equals, "new_name")
-	c.Assert(indexes[1].Comment, qt.Equals, "new comment")
-	c.Assert(indexes[1].Columns, qt.DeepEquals, []string{"label", "category"})
-	c.Assert(indexes[2].Name, qt.Equals, "fresh")
-	c.Assert(indexes[2].Columns, qt.DeepEquals, []string{"category", "label"})
-	c.Assert(indexes[2].QualifiedTableName(), qt.Equals, "items")
-	c.Assert(opts.Diff.TablesModified[0].Current.Indexes[1].Name, qt.Equals, "gone")
-	c.Assert(opts.Diff.TablesModified[0].Current.Indexes[2].Name, qt.Equals, "old_name")
-	indexes[0].Columns[0], indexes[1].Columns[0], indexes[2].Columns[0] = "mutated", "mutated", "mutated"
-	c.Assert(opts.CurrentSchema.Indexes[0].Columns, qt.DeepEquals, []string{"label"})
-	c.Assert(opts.Diff.TablesModified[0].Current.Indexes[2].Columns, qt.DeepEquals, []string{"label", "category"})
-	c.Assert(opts.Diff.IndexesAdded[0].Index.Fields, qt.DeepEquals, []string{"category", "label"})
+	return options(c, runtime, platform.Postgres, before, after)
 }
 
 func TestGeneratorPreservesSkippedIndexAndItsComment(t *testing.T) {
 	c := qt.New(t)
 	opts := indexProjectionOptions(c)
-	filtered, skipped := diffpolicy.ApplyForDialect(opts.Diff, diffpolicy.NewSkipSet(planext.DropIndex), "ydb")
+	filtered, skipped := diffpolicy.ApplyForDialect(opts.Diff, diffpolicy.NewSkipSet(planext.DropIndex), platform.Postgres)
 	c.Assert(skipped, qt.DeepEquals, []diffpolicy.SkippedChange{{Kind: planext.DropIndex, Object: "items.gone"}})
 	opts.Diff = filtered
 	plan, err := generator.PlanBidirectionalSchemaDiff(t.Context(), opts)
 	c.Assert(err, qt.IsNil)
 	indexes := plan.Reverse.Diff.TablesModified[0].Current.Indexes
-	c.Assert(indexes, qt.HasLen, 4)
+	c.Assert(indexes, qt.HasLen, 3)
 	c.Assert(indexes[1].Name, qt.Equals, "gone")
 	c.Assert(indexes[1].Comment, qt.Equals, "removed comment")
-	c.Assert(indexes[3].Name, qt.Equals, "fresh")
+	c.Assert(indexes[2].Name, qt.Equals, "fresh")
 }
 
 func TestGeneratorProjectsTheAcceptedIndexDefinitionAfterSourceMutation(t *testing.T) {
@@ -88,10 +69,11 @@ func TestGeneratorProjectsTheAcceptedIndexDefinitionAfterSourceMutation(t *testi
 	plan, err := generator.PlanBidirectionalSchemaDiff(t.Context(), opts)
 	c.Assert(err, qt.IsNil)
 	indexes := plan.Reverse.Diff.TablesModified[0].Current.Indexes
-	c.Assert(indexes[2].Columns, qt.DeepEquals, []string{"category", "label"})
-	sql, err := builtin.RenderSQLWithCapabilities("ydb", opts.Capabilities, plan.Forward.Nodes...)
+	c.Assert(indexes[1].Name, qt.Equals, "fresh")
+	c.Assert(indexes[1].Columns, qt.DeepEquals, []string{"category", "label"})
+	sql, err := builtin.RenderSQLWithCapabilities(platform.Postgres, opts.Capabilities, plan.Forward.Nodes...)
 	c.Assert(err, qt.IsNil)
-	c.Assert(sql, qt.Contains, "ON (`category`, `label`)")
+	c.Assert(sql, qt.Contains, `CREATE INDEX IF NOT EXISTS "fresh" ON "items" ("category", "label")`)
 	c.Assert(sql, qt.Not(qt.Contains), "unknown_column")
 }
 

@@ -34,7 +34,7 @@ link here instead of redefining them.
 | YugabyteDB | `yugabytedb://user:pass@localhost:5433/app` |
 | Spanner (PostgreSQL interface) | `spanner://user:pass@localhost:5432/app` |
 | Oracle | `oracle://user:pass@localhost:1521/service` (renders, plans, reads a live catalog, and runs versioned migrations) |
-| YDB | `ydb://localhost:2136/local`, or `ydbs://` over TLS (see [YDB](../../databases/ydb/#connecting)) |
+| YDB, through its provider | `ydb://localhost:2136/local`, or `ydbs://` over TLS (see [YDB](../../databases/ydb/#connecting)) |
 
 Scheme aliases normalize to the canonical dialect (`postgresql://`,
 `sqlite3://`, `mssql://`, `crdb://`, `ysql://`, `ch://`, and more) — the full
@@ -106,7 +106,7 @@ the shadow database again after each run.
 database per case, or the database passed with `--db-url` when tests must
 exercise a real server dialect — see
 [Test migrations and schemas](../../testing/migrations-and-schema/). On YDB the
-cases run in a dev realm in that database.
+provider runs the cases in a dev realm in that database.
 
 ## Consequences
 
@@ -149,10 +149,11 @@ cases run in a dev realm in that database.
   MySQL, MariaDB, and ClickHouse cleanup owns the selected database. SQL
   Server cleanup owns all supported user schemas in the selected database.
   SQLite cleanup owns `main` on one pinned session. YDB has no SQL that
-  creates a database, so a run gets a dev realm instead: a directory under
-  `ptah_dev` in the database its dev, shadow or test URL names, which the run
-  treats as its whole database and removes at the end. A run against the
-  database itself leaves `ptah_dev` out, so the URL may name the target; see
+  creates a database, so its provider gives a run a dev realm instead: a
+  directory under `ptah_dev` in the database its dev, shadow or test URL names,
+  which the run treats as its whole database and the provider removes at the
+  end. A run against the database itself leaves `ptah_dev` out, so the URL may
+  name the target; see
   [YDB](../../databases/ydb/#dev-shadow-and-scratch-databases).
 - **PostgreSQL cleanup gives back the schema it empties.** The schema the dev
   URL selects, `public` when it selects none, comes back after the cleanup
@@ -206,8 +207,9 @@ cases run in a dev realm in that database.
   database. It also rejects statement forms whose nested SQL cannot be
   confined safely during replay.
 - **Replay cleanup is serialized by realm.** PostgreSQL, YugabyteDB, MySQL,
-  MariaDB, and SQL Server use database advisory locks, and YDB a semaphore on
-  the coordination node `ptah_locks`, keyed by the database and the dev realm.
+  MariaDB, and SQL Server use database advisory locks, and the YDB provider a
+  semaphore on the coordination node `ptah_locks`, keyed by the database and
+  the dev realm.
   SQLite, ClickHouse, and
   CockroachDB use an operating-system file lock keyed by the normalized
   database identity. That file lock coordinates only Ptah processes that
@@ -244,7 +246,8 @@ proven to stay inside the disposable realm:
   external dictionary sources, and `FREEZE`/`UNFREEZE`. Tables and standalone
   materialized views must select an explicitly allowlisted engine.
 - SQLite `ATTACH`, `DETACH`, temporary objects, and non-restorable pragmas.
-- YDB writes whose target is an absolute path, climbs out of the dev realm
+- YDB, through its provider's replay guard, writes whose target is an absolute
+  path, climbs out of the dev realm
   with `..`, is named through a `$` expression or names a cluster,
   `PRAGMA TablePathPrefix`, `DEFINE ACTION`, `DO`, `EVALUATE`, users, groups,
   `GRANT`, `REVOKE`, secrets, resource pools, backups, `ALTER DATABASE`,
@@ -333,8 +336,8 @@ reaches past the dev database:
   and `DROP` of a user, role or database, and writes to another database.
 - YDB writes anywhere in the server, `PRAGMA TablePathPrefix`, actions, users,
   groups, permissions, secrets, resource pools, backups and topics, on
-  `docker://ydb/<tag>`. YDB gets no dev realm there: the database is the dev
-  database.
+  `docker://ydb/<tag>`, which the YDB provider starts. YDB gets no dev realm
+  there: the database is the dev database.
 
 So a migration directory that creates its role in a `DO` block or defines a
 function replays on `docker://postgres/18/dev`.
@@ -350,9 +353,9 @@ scheduler runs it during the rest of the command.
 
 A YDB external data source or table, async replication, a transfer and a
 streaming query reach outside the container and stay refused. local-ydb takes
-every connection without a credential, so `docker://ydb` is refused when the
-container runtime is on another machine, where its port would be published on
-every interface of that host.
+every connection without a credential, so the YDB provider refuses
+`docker://ydb` when the container runtime is on another machine, where its port
+would be published on every interface of that host.
 
 A `docker://<engine>` URL whose engine belongs to a selected
 [executable provider](../../extend/executable-providers/) goes to that provider

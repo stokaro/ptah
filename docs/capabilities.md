@@ -513,39 +513,9 @@ raw-SQL view/trigger rendering, `XML` columns, standalone sequences, and
 row-level security in the shape T-SQL has a form for. Drift-safe normalization
 for SQL Server-specific view, trigger, and index metadata is outside it.
 
-The YDB presets were measured by hand on `ydbplatform/local-ydb` 25.1.4.7,
-25.2.1.24, 25.3.1.25, 25.4.1.15, 26.1.1.22 and 26.2.1.14, a statement per query,
-each table read back with `scheme describe`. The capability probe measured each
-line once more and agreed with every preset; it measures 26.2 and 25.1 on every
-run of the tiered workflows. `YDB262()` covers 26.2 and is the base the others
-derive from; each line below it turns off what it was measured without:
-
-| Preset | Lines | Differs from the line above it |
-| --- | --- | --- |
-| `YDB262()` | 26.2 | sets and drops a column default in place |
-| `YDB261()` | 26.1 | no `ALTER COLUMN ... SET DEFAULT` or `DROP DEFAULT` |
-| `YDB254()` | 25.4 | no `ADD COLUMN` with a default (`Adding columns with defaults is disabled`), no changefeed `USER_SIDS` |
-| `YDB253()` | 25.3 | no consumer `availability_period`, no column family `CACHE_MODE` (`EnableTableCacheModes` is off) |
-| `YDB252()` | 25.2 | no literal default on `JsonDocument` or `DyNumber`, no changefeed `SCHEMA_CHANGES` |
-| `YDB251()` | 25.1 | no 64-bit date and time types, `Decimal(22,9)` only, no default on a 16-bit integer, no auto-partitioned changefeed topic |
-
-YDB names no product in `SELECT Version()`, so the dialect comes from the
-`ydb://` URL scheme or `--dialect`, and the ladder reads both version shapes YDB
-reports: the dotted `26.2.1.14` and the branch name `stable-25-4-1`, which
-25.4.1.15 answers with.
-
-A preset describes a server with default feature flags. A `ydb://` URL that
-names the cluster's monitoring endpoint refines the keys the flags decide
-(`unique_index_on_existing_table`, `add_column_with_default`,
-`alter_column_default`, `wide_date_time_types`, `parameterized_decimal`), and
-the capability probe measures its lines with that refinement in place. The
-keys that name an object family YDB has and Ptah does not carry yet -- access
-control -- are false whatever the server can do, and each YDB cell declares
-them understated on purpose. `views` is true on every YDB line and
-`create_or_replace_view` false: YDB has no CREATE OR REPLACE VIEW and no ALTER
-VIEW, so a changed view is dropped and created again. A YDB table's TTL is its
-row deletion policy, so `row_deletion_policy` and
-`row_deletion_policy_epoch_column` are true on every YDB line.
+YDB has no preset here. The [YDB provider](site/src/content/docs/databases/ydb.md)
+declares its own release lines and reports each session's capabilities,
+including the keys a cluster's feature flags decide.
 
 ### Saturation: servers newer than the newest measured line
 
@@ -729,9 +699,7 @@ eleven built-in dialects qualify:
 | `clickhouse` | `system.build_options` `VERSION_FULL` — `ClickHouse 26.7.3.19` |
 | `oracle` | the `v$version` banner — `Oracle AI Database 26ai Free Release 23.26.2.0.0 …` |
 
-`mysql`, `sqlite` and `ydb` are deliberately absent. YDB's `SELECT Version()`
-answers a bare `26.2.1.14` or a build branch such as `stable-25-4-1`, so its
-dialect comes from the `ydb://` URL scheme or `--dialect`. Measured, a live `mysql:9.7`
+`mysql` and `sqlite` are deliberately absent. Measured, a live `mysql:9.7`
 answers `SELECT VERSION()` with `9.7.2`, and `sqlite_version()` answers a bare
 dotted version. Neither server names its own product anywhere a version string
 is read, so `BannerPlatform` correctly returns `""` for both. A token would have

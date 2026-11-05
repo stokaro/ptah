@@ -9,7 +9,6 @@ import (
 	"ptah.run/internal/dblockext/mysql"
 	"ptah.run/internal/dblockext/postgres"
 	"ptah.run/internal/dblockext/sqlserver"
-	"ptah.run/internal/dblockext/ydb"
 )
 
 // services maps each dialect a built-in service serves to it. It is built
@@ -19,7 +18,6 @@ var services = index(
 	mysql.MySQL(),
 	mysql.MariaDB(),
 	sqlserver.Services(),
-	ydb.Services(),
 )
 
 func index(all ...dblockext.Services) map[string]dblockext.Services {

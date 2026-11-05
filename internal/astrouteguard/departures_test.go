@@ -78,19 +78,24 @@ func TestAccount_HappyPath(t *testing.T) {
 	baseline := []astrouteguard.BaselineKind{
 		{Name: "CreateGadgetNode", Marker: astrouteguard.Unmarked},
 		{Name: "CreateTableNode", Marker: astrouteguard.Unmarked},
+		{Name: "DropGizmoNode", Marker: astrouteguard.Unmarked},
 		{Name: "SetWidgetOperation", Marker: astrouteguard.AlterOperationMarker},
 	}
 	departures := []astrouteguard.Departure{
 		{Node: "SetWidgetOperation", Successors: []astrouteguard.ExtensionKind{widget, gadget}},
 		{Node: "CreateGadgetNode", Successors: []astrouteguard.ExtensionKind{gadget}},
+		{Node: "DropGizmoNode", Provider: "example.org/gizmo-provider"},
 	}
 	nodes := []astrouteguard.NodeKind{{Name: "CreateGadgetNode"}, {Name: "CreateTableNode"}, {Name: "ExtensionStatement"}}
 
 	accounting := astrouteguard.Account(baseline, departures, nodes)
 
 	c.Assert(accounting, qt.DeepEquals, astrouteguard.Accounting{
-		Departed: []astrouteguard.Departure{{Node: "SetWidgetOperation", Marker: astrouteguard.AlterOperationMarker,
-			Successors: []astrouteguard.ExtensionKind{widget, gadget}}},
+		Departed: []astrouteguard.Departure{
+			{Node: "DropGizmoNode", Marker: astrouteguard.Unmarked, Provider: "example.org/gizmo-provider"},
+			{Node: "SetWidgetOperation", Marker: astrouteguard.AlterOperationMarker,
+				Successors: []astrouteguard.ExtensionKind{widget, gadget}},
+		},
 		Pending: []astrouteguard.Departure{{Node: "CreateGadgetNode", Marker: astrouteguard.Unmarked,
 			Successors: []astrouteguard.ExtensionKind{gadget}}},
 	})
@@ -157,10 +162,4 @@ func TestAccount_FailurePath(t *testing.T) {
 			c.Assert(accounting.Invalid, qt.DeepEquals, test.wantInvalid)
 		})
 	}
-}
-
-func TestExtensionKind_String(t *testing.T) {
-	c := qt.New(t)
-	kind := astrouteguard.ExtensionKind{Package: "ptah.run/dialect/ydb/ydbast", Name: "AddChangefeed"}
-	c.Assert(kind.String(), qt.Equals, "ptah.run/dialect/ydb/ydbast.AddChangefeed")
 }

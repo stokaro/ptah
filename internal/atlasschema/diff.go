@@ -911,10 +911,10 @@ func prepareDiffSources(ctx context.Context, opts DiffOptions) (preparedDiffSour
 	// create them again. Atlas CE refuses the same argv with `connected
 	// database is not clean`.
 	if resetsDevDatabase(fromSet, toSet, opts.DevURL) {
-		if err := fromSet.EnsureDevIsolation(opts.DevURL); err != nil {
+		if err := fromSet.EnsureDevIsolation(ctx, opts.DevURL); err != nil {
 			return preparedDiffSources{}, err
 		}
-		if err := toSet.EnsureDevIsolation(opts.DevURL); err != nil {
+		if err := toSet.EnsureDevIsolation(ctx, opts.DevURL); err != nil {
 			return preparedDiffSources{}, err
 		}
 	}

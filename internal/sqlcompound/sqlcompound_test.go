@@ -25,7 +25,6 @@ func TestNew_ReadsTheGrammarTheDescriptorNames(t *testing.T) {
 	}{
 		{name: "T-SQL opens a procedure body with AS", dialect: "mssql", words: transactSQL, want: true},
 		{name: "PL/SQL opens a function body with IS", dialect: "oracledb", words: plsql, want: true},
-		{name: "YQL opens an action body", dialect: "ydbs", words: yql, want: true},
 		{name: "AS opens nothing on PostgreSQL", dialect: "postgres", words: transactSQL, want: false},
 		{name: "IS opens nothing on SQL Server", dialect: "sqlserver", words: plsql, want: false},
 		{name: "DEFINE ACTION opens nothing on Oracle", dialect: "oracle", words: yql, want: false},
@@ -65,7 +64,6 @@ func TestState_SymbolReadsLambdaBracesInYQLAlone(t *testing.T) {
 		dialect string
 		want    bool
 	}{
-		{name: "YQL", dialect: "ydb", want: true},
 		{name: "PostgreSQL", dialect: "postgres", want: false},
 	}
 	for _, test := range tests {

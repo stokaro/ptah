@@ -36,9 +36,9 @@ const renderIndent = "  "
 //
 // The statements are read as the dialect they were planned for, because the
 // quoting rules differ by engine and a reading under another engine's rules
-// moves the boundary of a literal. YQL reads `@@...@@` as a string, for
-// example, so a T-SQL body that names two `@@` variables read as YQL would keep
-// the layout between them, and a YQL string read as T-SQL would lose it.
+// moves the boundary of a literal. MySQL reads a backslash in a string as an
+// escape and PostgreSQL does not, for example, so `'a\'` ends the literal on
+// one and not on the other.
 //
 // Every report a command renders names its dialect. An empty or unknown one is
 // read under the dialect-neutral rules [dialectlexer.Options] answers with.

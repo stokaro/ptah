@@ -17,12 +17,12 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/lintext"
-	"ptah.run/dialect/ydb/ydblint"
 	"ptah.run/engine"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/lintcatalog"
 	"ptah.run/internal/providerconfig"
 	"ptah.run/internal/providerhost"
+	"ptah.run/internal/providerpublished"
 	"ptah.run/internal/testutils"
 )
 
@@ -188,10 +188,9 @@ func TestMigrationsLintReportsAProviderThatDoesNotStart(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
 }
 
-// catalogSource lists the bundled owners' rules with the YDB owner's taken
-// out, and the rules a provider published in their place: the source the
-// rule catalog reads once the bundled YDB owner is no longer registered. It
-// lists rules and runs none.
+// catalogSource lists the bundled owners' rules and the rules a provider
+// published beside them: the source the rule catalog reads from a started
+// provider. It lists rules and runs none.
 type catalogSource struct{ bundled, provider lintext.Runtime }
 
 var errCatalogOnly = errors.New("a rule catalog runs no rule")
@@ -205,8 +204,7 @@ func (s catalogSource) LintRules(target string) ([]lintext.Rule, error) {
 	if err != nil {
 		return nil, err
 	}
-	rules := slices.DeleteFunc(bundled, func(rule lintext.Rule) bool { return slices.Equal(rule.Targets, []string{"ydb"}) })
-	rules = append(rules, published...)
+	rules := append(bundled, published...)
 	slices.SortFunc(rules, func(a, b lintext.Rule) int { return strings.Compare(a.Code, b.Code) })
 	return rules, nil
 }
@@ -223,7 +221,8 @@ func (catalogSource) CheckMigrations(context.Context, lintext.CheckRequest) (lin
 	return lintext.CheckResult{}, errCatalogOnly
 }
 
-// publishedYDBFamily is the YD family in the JSON shape the ydb-lint fixture
+// publishedYDBFamily is the YD family the recorded YDB provider publishes
+// (internal/providerpublished), in the JSON shape the ydb-lint fixture
 // publishes from PTAH_FIXTURE_LINT_RULES.
 func publishedYDBFamily(c *qt.C) string {
 	c.Helper()
@@ -235,7 +234,7 @@ func publishedYDBFamily(c *qt.C) string {
 		Subsumes      []string `json:"subsumes"`
 	}
 	var rules []publishedRule
-	for _, rule := range ydblint.Rules() {
+	for _, rule := range recordedYDBRules(c) {
 		rules = append(rules, publishedRule{Code: rule.Code, Title: rule.Title, Severity: string(rule.Severity),
 			AppliesToDown: rule.AppliesToDown, Subsumes: rule.Subsumes})
 	}
@@ -244,12 +243,23 @@ func publishedYDBFamily(c *qt.C) string {
 	return string(data)
 }
 
+// recordedYDBRules is the YD family of the recorded YDB provider, which no
+// bundled owner serves.
+func recordedYDBRules(c *qt.C) []lintext.Rule {
+	c.Helper()
+	bundled, err := builtin.New()
+	c.Assert(err, qt.IsNil)
+	rules, err := providerpublished.LintRules(bundled)
+	c.Assert(err, qt.IsNil)
+	c.Assert(rules, qt.Not(qt.HasLen), 0)
+	return rules
+}
+
 // TestRuleCatalogReadsAProvidersPublishedRules builds the documented rule
 // catalog with the YD family taken from a provider process instead of the
-// bundled owner. The provider publishes the family in its description, the
-// host reads it when the process starts, and the catalog comes out as the one
-// the documentation renders today: what keeps the page whole once the bundled
-// YDB owner is unregistered and the YDB provider serves the family.
+// record. The provider publishes the family in its description, the host
+// reads it when the process starts, and the catalog comes out as the one the
+// documentation renders from the record.
 func TestRuleCatalogReadsAProvidersPublishedRules(t *testing.T) {
 	c := qt.New(t)
 	executable := testutils.BuildFixtureProvider(c, "ydb-lint")
@@ -273,5 +283,5 @@ func TestRuleCatalogReadsAProvidersPublishedRules(t *testing.T) {
 	c.Assert(got, qt.DeepEquals, want)
 	published, err := provider.LintRules("")
 	c.Assert(err, qt.IsNil)
-	c.Assert(published, qt.HasLen, len(ydblint.Rules()))
+	c.Assert(published, qt.HasLen, len(recordedYDBRules(c)))
 }
