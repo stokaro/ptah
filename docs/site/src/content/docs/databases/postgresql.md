@@ -1895,6 +1895,10 @@ gate. Reconciliation is deliberately conservative:
   duplicate-object error. Ptah reads ownership from `pg_depend`; a similar name
   does not make a user type part of an extension. Extension-owned functions
   follow the same rule.
+- Extension-owned tables, views, materialized views and sequences are omitted
+  too, such as a view of `pg_stat_statements` or PostGIS's `spatial_ref_sys`,
+  along with their indexes, constraints, triggers and policies. The server refuses
+  to drop them while the extension stands. Grants on them are still compared.
 
 ## Unique indexes and access methods
 
