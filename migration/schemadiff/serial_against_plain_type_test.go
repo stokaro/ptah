@@ -90,3 +90,21 @@ func TestCompareSerialAgainstPlainType_ADefaultNoSequenceBacks(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff.SequencesRemoved, qt.HasLen, 0)
 }
+
+// TestCompareSerialAgainstPlainType_IdentityOverAPlainDefault declares an identity over
+// a column that holds a default of no sequence. An identity column holds no default, so
+// the live one stays a difference, and the server refuses an identity on a column that
+// keeps one.
+func TestCompareSerialAgainstPlainType_IdentityOverAPlainDefault(t *testing.T) {
+	c := qt.New(t)
+	held := heldSerialColumn("")
+	held.Tables[0].Columns[0].IsAutoIncrement = false
+	held.Tables[0].Columns[0].ColumnDefault = new("7")
+
+	diff, err := schemadiff.CompareWithDialect(c.Context(), plainDeclaration(schemamodel.Field{Type: "bigint", IdentityGeneration: "BY_DEFAULT"}),
+		held, "postgres", builtintest.Runtime())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(diff.TablesModified, qt.HasLen, 1)
+	c.Assert(diff.TablesModified[0].ColumnsModified[0].Changes, qt.DeepEquals, map[string]string{"default_expr": "7 -> "})
+}

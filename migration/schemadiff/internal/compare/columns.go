@@ -623,8 +623,13 @@ func declaredAutoIncrement(field schemamodel.Field, dialect string) (declared, c
 }
 
 // declaresColumnSequence reports whether a declared column is built with a sequence
-// of its own, so that a default drawing from one is what the declaration asks for.
+// of its own that a default draws from, so that such a default is what the declaration
+// asks for. An identity column holds no default: a live one stays a difference, unless
+// the live column draws from a sequence too.
 func declaresColumnSequence(field schemamodel.Field) bool {
+	if strings.TrimSpace(field.IdentityGeneration) != "" {
+		return false
+	}
 	_, creates := columnsequence.Declared("", field)
 	return creates || autoincrement.Declared(field) || strings.Contains(strings.ToUpper(field.Type), "SERIAL")
 }
@@ -680,7 +685,7 @@ func columnDefaultChange(
 	// drift: the declared column has no default, and [ColumnSequencesLeaving] drops
 	// the sequence with it.
 	skipImplicitSequenceDefault := genDefault == "" &&
-		(declaresColumnSequence(genCol) || (dbCol.IsAutoIncrement && dbCol.OwnedSequence == ""))
+		(declaresColumnSequence(genCol) || (dbCol.IsAutoIncrement && (dbCol.OwnedSequence == "" || genCol.IdentityGeneration != "")))
 	// A default the server spells as the catalog reports it is the same
 	// default: '2020-01-01'::timestamp with time zone is stored with its time
 	// and zone filled in.
