@@ -24,6 +24,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/engine"
 	"ptah.run/internal/atlasfilter"
+	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/providerurl"
 	"ptah.run/internal/schemafile"
@@ -67,6 +68,10 @@ type PlanStatement struct {
 	Transactions []plangraph.Transaction `json:"transactions,omitempty"`
 	// SQL is the statement text, empty when the statement is a native operation.
 	SQL string `json:"sql,omitempty"`
+	// Change names the change the statement makes, in the words the Atlas CLI
+	// writes above it. It is a display projection for the Atlas `.plan.hcl` shape:
+	// a plan rebuilt from SQL has none, and the JSON document does not carry it.
+	Change string `json:"-"`
 	// Native is a provider-native operation recorded in place of SQL. Only a
 	// plan bound to a provider holds one; see [PlanNative].
 	Native       *PlanNative      `json:"native,omitempty"`
@@ -352,6 +357,7 @@ func PreparePlanFileReportingUndecided(
 	for i := range statements {
 		statements[i].Transactions = slices.Clone(computation.transactions[i])
 		statements[i].Inputs = slices.Clone(computation.units[i].Inputs)
+		statements[i].Change = computation.changes[i]
 	}
 	// The data statements carry their own severity rather than the analyzer's.
 	// A DELETE of a reference row removes no table and tightens no constraint,
@@ -759,6 +765,16 @@ func (p PlanFile) HasChanges() bool {
 // that honors one looks; see plandirective.go.
 func (p PlanFile) SQL() string {
 	return annotatedSQL(p.StatementSQL(), p.Annotations)
+}
+
+// NamedSQL is [PlanFile.SQL] with the comment that names each statement's change
+// above it, as the Atlas CLI writes a plan.
+func (p PlanFile) NamedSQL() string {
+	named := make([]string, 0, len(p.Statements))
+	for _, statement := range p.Statements {
+		named = append(named, atlasreport.ChangeLine(statement.Change)+statement.SQL)
+	}
+	return annotatedSQL(named, p.Annotations)
 }
 
 // WithDirectiveHeader returns a copy of the plan whose first statement carries

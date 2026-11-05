@@ -231,16 +231,17 @@ func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 	// structured comparison discarded, and that comparison is what says which
 	// tables the diagram marks.
 	report, changes, err := atlasschema.DiffReportingChanges(cmd.Context(), atlasschema.DiffOptions{
-		Runtime:     runtime,
-		FromURLs:    opts.fromURLs,
-		ToURLs:      opts.toURLs,
-		DevURL:      opts.devURL,
-		Exclude:     opts.exclude,
-		Schemas:     opts.schemas,
-		Include:     opts.include,
-		Policy:      policy,
-		ProjectEnv:  projectEnv,
-		Diagnostics: cmd.ErrOrStderr(),
+		Runtime:        runtime,
+		ChangeComments: true,
+		FromURLs:       opts.fromURLs,
+		ToURLs:         opts.toURLs,
+		DevURL:         opts.devURL,
+		Exclude:        opts.exclude,
+		Schemas:        opts.schemas,
+		Include:        opts.include,
+		Policy:         policy,
+		ProjectEnv:     projectEnv,
+		Diagnostics:    cmd.ErrOrStderr(),
 
 		DevServerDisposable:       devServerDisposable,
 		IgnoreUnknownHCLNames:     opts.policy.IgnoreUnknownHCLNames(),

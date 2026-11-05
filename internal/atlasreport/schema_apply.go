@@ -51,6 +51,9 @@ type SchemaApplyOptions struct {
 	DryRun bool
 	// Statements is the ordered plan.
 	Statements []string
+	// Comments names the change of each statement of Statements, at the same
+	// index. Empty names no change.
+	Comments []string
 }
 
 func NewSchemaApply(opts SchemaApplyOptions) SchemaApply {
@@ -58,6 +61,11 @@ func NewSchemaApply(opts SchemaApplyOptions) SchemaApply {
 		Changes: schemaChanges(opts.Statements),
 		pending: opts.DryRun,
 		dialect: opts.Driver,
+	}
+	for i := range report.Changes {
+		if i < len(opts.Comments) {
+			report.Changes[i].Comment = opts.Comments[i]
+		}
 	}
 	// A synced schema carries no environment on the community binary either:
 	// `{{ json . }}` there renders exactly `{"Changes":{}}` when there is

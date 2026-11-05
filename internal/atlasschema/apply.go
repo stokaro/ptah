@@ -22,6 +22,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/engine"
 	"ptah.run/internal/atlasfilter"
+	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/convert/goschematodb"
@@ -167,6 +168,10 @@ type ApplyPlan struct {
 	// "" otherwise. It is a display projection, as a migration file holds the
 	// operation: execution dispatches the captured unit, never this text.
 	texts []string
+	// changes names the change of each unit, in the words the Atlas CLI writes
+	// above a statement, and is empty for a unit nothing names. It is a display
+	// projection like texts, and only the compatibility surface reads it.
+	changes []string
 }
 
 // ApplyRuntimeOptions configures Atlas schema apply planning and execution.
@@ -275,6 +280,29 @@ func (p ApplyPlan) SQL() (string, error) {
 		return "", err
 	}
 	return annotatedSQL(statements, p.annotations), nil
+}
+
+// NamedSQL is [ApplyPlan.SQL] with the comment that names each statement's change
+// above it, as the Atlas CLI writes a plan.
+func (p ApplyPlan) NamedSQL() (string, error) {
+	statements, err := p.Statements()
+	if err != nil {
+		return "", err
+	}
+	named := make([]string, len(statements))
+	for i, statement := range statements {
+		named[i] = statement
+		if i < len(p.changes) {
+			named[i] = atlasreport.ChangeLine(p.changes[i]) + statement
+		}
+	}
+	return annotatedSQL(named, p.annotations), nil
+}
+
+// Comments names the change of each statement of [ApplyPlan.Statements], at the
+// same index. Empty names no change.
+func (p ApplyPlan) Comments() []string {
+	return slices.Clone(p.changes)
 }
 
 // Statements returns an independent SQL projection with execution boundaries.
@@ -1085,6 +1113,16 @@ func (p ApplyRuntimePlan) SQL() (string, error) {
 	return p.plan.SQL()
 }
 
+// NamedSQL is [ApplyPlan.NamedSQL].
+func (p ApplyRuntimePlan) NamedSQL() (string, error) {
+	return p.plan.NamedSQL()
+}
+
+// Comments is [ApplyPlan.Comments].
+func (p ApplyRuntimePlan) Comments() []string {
+	return p.plan.Comments()
+}
+
 func (p ApplyRuntimePlan) Statements() ([]string, error) {
 	return p.plan.Statements()
 }
@@ -1255,7 +1293,17 @@ func (c applyComputation) executionPlan() ApplyPlan {
 	plan.units, plan.transactions, plan.owned = c.executionUnits(), c.executionTransactions(), c.executionAssessments()
 	plan.annotations = c.executionAnnotations()
 	plan.texts = c.executionTexts()
+	plan.changes = c.executionChanges()
 	return plan
+}
+
+// executionChanges aligns the change names with executionUnits: a data statement
+// names no change.
+func (c applyComputation) executionChanges() []string {
+	if len(c.changes) == 0 {
+		return nil
+	}
+	return slices.Insert(slices.Clone(c.changes), c.dataIndex(), make([]string, len(c.dataStatements))...)
 }
 
 // executionTexts aligns the native units' texts with executionUnits: the

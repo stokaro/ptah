@@ -676,13 +676,15 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		formattedPlan := ""
 		if formatOutput {
 			var err error
-			formattedPlan, err = renderAtlasSchemaApplyFormat(opts, conn.Info().Dialect, statements)
+			formattedPlan, err = renderAtlasSchemaApplyFormat(opts, conn.Info().Dialect, statements, plan.Comments())
 			if err != nil {
 				return "", err
 			}
 			fmt.Fprint(cmd.OutOrStdout(), formattedPlan)
 		} else {
-			printAtlasSchemaApplyPlan(cmd.OutOrStdout(), sqlText)
+			if err := printAtlasApplyPreview(cmd.OutOrStdout(), plan, opts, sqlText); err != nil {
+				return "", err
+			}
 		}
 		// The lint verdict covers the statements that would run, edits included,
 		// and lands before the --dry-run exit so a dry run reports the same refusal
@@ -965,7 +967,7 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 		statements := plan.StatementSQL()
 		formattedPlan := ""
 		if opts.formatOutput {
-			formattedPlan, err = renderAtlasSchemaApplyFormat(opts, conn.Info().Dialect, statements)
+			formattedPlan, err = renderAtlasSchemaApplyFormat(opts, conn.Info().Dialect, statements, nil)
 			if err != nil {
 				return "", err
 			}
@@ -1551,7 +1553,7 @@ func writeAtlasSchemaApplyFormat(
 	driver string,
 	statements []string,
 ) error {
-	rendered, err := renderAtlasSchemaApplyFormat(opts, driver, statements)
+	rendered, err := renderAtlasSchemaApplyFormat(opts, driver, statements, nil)
 	if err != nil {
 		return err
 	}
@@ -1559,12 +1561,18 @@ func writeAtlasSchemaApplyFormat(
 	return err
 }
 
-func renderAtlasSchemaApplyFormat(opts atlasSchemaApplyOptions, driver string, statements []string) (string, error) {
+func renderAtlasSchemaApplyFormat(opts atlasSchemaApplyOptions, driver string, statements, comments []string) (string, error) {
+	if opts.edit {
+		// An edit can change the statements, so the comments of the plan no
+		// longer name them.
+		comments = nil
+	}
 	report := atlasreport.NewSchemaApply(atlasreport.SchemaApplyOptions{
 		Driver:     driver,
 		URL:        opts.url,
 		DryRun:     opts.dryRun,
 		Statements: statements,
+		Comments:   comments,
 	})
 	var out bytes.Buffer
 	if err := atlasreport.WriteSchemaApply(&out, opts.format, report); err != nil {
@@ -1686,6 +1694,22 @@ func promptAtlasSchemaApplyConfirmation(prompt io.Writer, input io.Reader) (bool
 	}
 	fmt.Fprintln(prompt)
 	return true, nil
+}
+
+// printAtlasApplyPreview prints the plan as the command shows it: each statement
+// under the comment that names its change. An edit can change the statements, so an
+// edited plan shows what the editor returned.
+func printAtlasApplyPreview(out io.Writer, plan atlasschema.ApplyRuntimePlan, opts atlasSchemaApplyOptions, sqlText string) error {
+	if opts.edit {
+		printAtlasSchemaApplyPlan(out, sqlText)
+		return nil
+	}
+	named, err := plan.NamedSQL()
+	if err != nil {
+		return err
+	}
+	printAtlasSchemaApplyPlan(out, named)
+	return nil
 }
 
 // atlasApplySQL refuses native operations before exposing a SQL editing buffer.

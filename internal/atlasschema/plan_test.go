@@ -248,6 +248,11 @@ func TestPlanFileMarshalReadRoundTrip(t *testing.T) {
 	loaded, err := atlasschema.ReadPlanFile(path)
 
 	c.Assert(err, qt.IsNil)
+	// A statement's change name is a display projection the document does not
+	// carry.
+	for i := range plan.Statements {
+		plan.Statements[i].Change = ""
+	}
 	c.Assert(loaded, qt.DeepEquals, plan)
 }
 

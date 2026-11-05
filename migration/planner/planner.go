@@ -408,6 +408,19 @@ func (p RenderedPlan) Statements() ([]string, error) {
 	return statements, nil
 }
 
+// GenerateSchemaDiffTextPlan is [GenerateSchemaDiffRenderedPlan] rendered in
+// [renderer.FormText], for a caller that reads the planned statements as text and
+// needs to know which node rendered each one. Its Statements are what
+// [GenerateSchemaDiffSQLStatementsWithOptions] returns for the same input.
+func GenerateSchemaDiffTextPlan(
+	ctx context.Context, runtime Runtime,
+	diff *difftypes.SchemaDiff,
+	dialect string,
+	opts planext.Options,
+) (RenderedPlan, error) {
+	return renderedPlan(ctx, runtime, diff, dialect, opts, renderer.FormText)
+}
+
 // GenerateSchemaDiffRenderedPlan plans diff and renders the planned nodes
 // once, keeping the nodes, the request, and the per-node result together. It
 // fails with the errors [GenerateSchemaDiffSQLWithOptions] documents, and

@@ -296,6 +296,16 @@ func statementEnd(dialect string) func(string) string {
 	}
 }
 
+// ChangeLine is the comment line that names a change above its statement, as the
+// `sql` helper writes it: first letter in upper case. It is empty for a change
+// nothing names.
+func ChangeLine(comment string) string {
+	if comment == "" {
+		return ""
+	}
+	return "-- " + capitalized(comment) + "\n"
+}
+
 // asWritten is text as it is.
 func asWritten(text string) string {
 	return text
