@@ -40,6 +40,16 @@ func validateInspectionScope(request *protocol.InspectRequest, snapshot *protoco
 	if len(snapshot.GetDispositions()) != 0 {
 		return fmt.Errorf("%w: filtered dispositions require normalized scope identity", ErrProtocol)
 	}
+	if err := validateScopedIdentities(scopes, snapshot); err != nil {
+		return err
+	}
+	return validateInspectionRegions(scopes, snapshot.GetCoverage())
+}
+
+// validateScopedIdentities requires every object a filtered snapshot names to
+// lie inside the bound namespaces: its reservations, its tables, the tables it
+// leaves out and its coverage subjects.
+func validateScopedIdentities(scopes []*protocol.ModelNamespace, snapshot *protocol.Schema) error {
 	for _, reserved := range snapshot.GetReservedObjects() {
 		if !withinInspectionScopes(scopes, reserved.GetNormalizedObject()) {
 			return fmt.Errorf("%w: reserved object is outside the requested scope", ErrProtocol)
@@ -50,12 +60,17 @@ func validateInspectionScope(request *protocol.InspectRequest, snapshot *protoco
 			return fmt.Errorf("%w: inspected table is outside the requested scope", ErrProtocol)
 		}
 	}
+	for _, entry := range snapshot.GetUnreadTables() {
+		if !withinInspectionScopes(scopes, entry.GetTable()) {
+			return fmt.Errorf("%w: unread table is outside the requested scope", ErrProtocol)
+		}
+	}
 	for _, record := range snapshot.GetCoverage().GetSubjects() {
 		if !withinInspectionScopes(scopes, record.GetNormalizedSubject()) {
 			return fmt.Errorf("%w: inspected subject is outside the requested scope", ErrProtocol)
 		}
 	}
-	return validateInspectionRegions(scopes, snapshot.GetCoverage())
+	return nil
 }
 
 func validateInspectionRegions(scopes []*protocol.ModelNamespace, coverage *protocol.ModelCoverage) error {

@@ -191,7 +191,7 @@ func validateEngineAdditions(description *protocol.Description, engine *protocol
 		}
 	}
 	for _, feature := range []string{TextUnitsFeature, PlanningPolicyFeature, PlanningStatementStyleFeature, EntryKeysFeature, StatementsFeature, SensitiveInputsFeature,
-		ComparisonCountsFeature} {
+		ComparisonCountsFeature, UnreadTablesFeature} {
 		if slices.Contains(engine.GetFeatures(), feature) && !slices.Contains(description.GetFeatures(), feature) {
 			return fmt.Errorf("%w: engine %s requires the provider's", ErrProtocol, feature)
 		}
