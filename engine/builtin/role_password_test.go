@@ -25,6 +25,10 @@ func TestGetOrderedCreateStatementsNamesAPasswordByItsVariable_HappyPath(t *test
 			want: `CREATE ROLE "app_user" WITH LOGIN PASSWORD $PTAH_SECRET_PASSWORD_APP_USER`},
 		{name: "a PostgreSQL role with a SCRAM hash", dialect: "postgres", role: schemamodel.Role{Name: "ops", Password: "SCRAM-SHA-256$4096:SENTINEL"}, // #nosec G101 -- a made-up value, not a credential
 			want: `CREATE ROLE "ops" WITH NOLOGIN PASSWORD $PTAH_SECRET_PASSWORD_OPS`},
+		{name: "a CockroachDB role, which always inherits", dialect: "cockroachdb", role: schemamodel.Role{Name: "app_user", Login: true, Inherit: true, Password: "pw-SENTINEL"},
+			want: `CREATE ROLE "app_user" WITH LOGIN PASSWORD $PTAH_SECRET_PASSWORD_APP_USER`},
+		{name: "a YugabyteDB role", dialect: "yugabytedb", role: schemamodel.Role{Name: "app_user", Login: true, Password: "pw-SENTINEL"},
+			want: `CREATE ROLE "app_user" WITH LOGIN PASSWORD $PTAH_SECRET_PASSWORD_APP_USER`},
 		{name: "a PostgreSQL role whose password names its variable", dialect: "postgres",
 			role: schemamodel.Role{Name: "app", Login: true, Password: "$PTAH_SECRET_APP_PW"}, // #nosec G101 -- a variable name, not a credential
 			want: `CREATE ROLE "app" WITH LOGIN PASSWORD $PTAH_SECRET_APP_PW`},
@@ -58,4 +62,24 @@ func TestValidateSchemaRefusesRolesThatShareAPasswordVariable_FailurePath(t *tes
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 	c.Assert(err, qt.ErrorMatches, `.*roles "App" and "app" read their passwords from one environment variable, PTAH_SECRET_PASSWORD_APP; rename one of them.*`)
 	c.Assert(err, qt.Not(qt.ErrorMatches), `(?s).*SENTINEL.*`)
+}
+
+// The engines whose roles carry no password refuse a declared one before any
+// statement exists, and the refusal names the role and never the password.
+// The refusal is settled inside Ptah before it connects, so no engine-level
+// test is owed.
+func TestGetOrderedCreateStatementsRefusesAPasswordWithoutPrintingIt_FailurePath(t *testing.T) {
+	for _, dialect := range []string{"mysql", "mariadb", "sqlserver", "clickhouse", "oracle"} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			statements, err := builtin.GetOrderedCreateStatements(&schemamodel.Database{Roles: []schemamodel.Role{
+				{Name: "app_user", Login: true, Password: "pw-SENTINEL"}, // #nosec G101 -- a made-up value, not a credential
+			}}, dialect)
+
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(err, qt.Not(qt.ErrorMatches), `(?s).*SENTINEL.*`)
+			c.Assert(statements, qt.IsNil)
+		})
+	}
 }
