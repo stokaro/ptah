@@ -17,6 +17,7 @@ sourceOfTruth:
   - "provider-sdk"
   - "integration/providercli/provider_cli_integration_test.go"
   - "integration/providercli/provider_error_reasons_e2e_test.go"
+  - "integration/providercli/provider_report_counts_e2e_test.go"
   - "integration/providercli/provider_native_verbs_e2e_test.go"
   - "integration/providercli/provider_migrations_e2e_test.go"
   - "integration/providercli/provider_migration_units_e2e_test.go"
@@ -398,6 +399,14 @@ the engine. The work is split this way:
 
 A planning request does not carry the declared and observed objects as
 context.
+
+`models.report-counts` lets an engine name the count metrics each value of one
+of its models contributes to, such as a topic and the number of its consumers.
+`ptah schema stats` then writes one gauge per metric, and the provider counts
+each value, because only the provider reads the value's content. Ptah counts
+the common objects, such as tables and columns, from the read. An engine that
+names no metric adds no gauge, and a metric named like a common one, such as
+`tables`, makes the command fail.
 
 An engine can declare its release lines in the description. Each line names a
 support level and, for a line that claims testing, the image that runs it. A line
