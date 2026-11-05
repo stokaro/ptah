@@ -55,7 +55,7 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.23. `provider-sdk/v0.20.0` speaks 25.22.
+speaks contract 25.24. `provider-sdk/v0.20.0` speaks 25.22.
 `provider-sdk/v0.19.0` speaks 25.21.
 `provider-sdk/v0.18.0` speaks 25.19.
 `provider-sdk/v0.17.0` speaks 25.18.
@@ -121,6 +121,7 @@ returns to 0.
   [password inputs](#password-inputs) and
   [HCL platform groups](#hcl-platform-groups).
   Contract 25.23 adds [the transaction owner of a lint check](#transaction-owner-of-a-lint-check).
+  Contract 25.24 adds [index kinds](#index-kinds).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -154,7 +155,8 @@ does not oblige a peer to use it.
   `models.reverse`, `schema.unread-tables`, `schema.database-kinds`,
   `schema.sql-facets`, `models.report-counts`, `schema.observed-index-facets`,
   `schema.subtree-coverage`, `schema.password-inputs`, `source.hcl-platform`,
-  `engine.default-capabilities` and `lint.transaction-owner`. The embedding store's calls,
+  `engine.default-capabilities`, `lint.transaction-owner` and
+  `source.index-kinds`. The embedding store's calls,
   `PrepareCommonObjects`, `ReverseChanges` and `ReportValues` are new, and each
   comes with an addition to `Engine`, so a host lists the feature to receive
   any of them. `SplitMigration` is new too, and comes with the abort flags of
@@ -1688,6 +1690,37 @@ read of selected directories writes a platform claim's model without one.
 The provider and each engine that declares such a claim list the feature,
 beside `source.hcl`. Without it negotiated, the description the host receives
 holds no `TABLE_PLATFORM` claim and the same models.
+
+## Index kinds
+
+[ADR 0074](../docs/adr/0074-a-provider-claims-the-index-kinds-it-models.md)
+decides this claim. `source.index-kinds` adds `Engine.index_kinds`: the index
+types whose declarations the engine reads in place of the frontend's common
+index. A `SourceIndexKind` lists types in the form
+`provider.NormalizeIndexType` returns, ASCII lower case with single spaces, a
+selector, and the desired models a declaration of one of the types declares,
+each a facet of the index's table. A type is claimed once in an engine, and
+`provider.IndexKindClaim` finds the claim of a written type.
+
+For a Go `ptah:schema:index` directive, a YAML index entry or an HCL `index`
+block of a claimed type, the frontend builds no common index and sends one
+fragment with `SourceFragment.index_kind` and no other claim. It is bound to
+the index's table, and its subject is the index. Its inherited attributes are
+the frontend's part, each present only when the declaration writes it, in this
+order: `type`, `columns` and `include` (sequences of column names), `unique`
+(true), `comment` and `ops`; the constants `provider.IndexKindType` and the
+others name them. Its content is a mapping of the attributes the engine claims
+on the format's index declaration: its INDEX-scope Go claim on
+`ptah:schema:index`, its INDEX-scope YAML keys or its `INDEX_ATTRIBUTES` HCL
+claim. The claim's models must be in the document's scope, and a decoded value
+of the fragment is a facet of the index's table.
+
+An encoded fragment or part may carry the claim too, with the same shape and no
+positions, and the host writes it back as the format's index declaration. A
+loss may name a value an index-kind part writes, once: the parts write part of
+the value. The provider and each engine that claims a type list the feature,
+beside `source.decode`. Without it negotiated, the description the host
+receives holds no claim.
 
 ## Source encoding
 

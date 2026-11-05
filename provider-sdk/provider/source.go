@@ -140,21 +140,26 @@ func (w *sourceWalk) fragment(format protocol.SourceDocument_Format, fragment *p
 }
 
 // valueContentFormat reports whether a fragment of format may carry value
-// content: a YAML or Go fragment, and an HCL attribute claim, which carries the
-// owner's attributes of the frontend's block as a mapping.
+// content: a YAML or Go fragment, and an HCL attribute claim or index-kind
+// claim, which carries the owner's attributes of the frontend's block as a
+// mapping.
 func valueContentFormat(format protocol.SourceDocument_Format, fragment *protocol.SourceFragment) bool {
 	switch format {
 	case protocol.SourceDocument_YAML, protocol.SourceDocument_GO_ANNOTATIONS:
 		return true
 	case protocol.SourceDocument_HCL:
-		return fragment.GetHclBlock() != nil && !hclOwnBlock(fragment.GetHclBlock().GetSite())
+		return fragment.GetIndexKind() != nil || fragment.GetHclBlock() != nil && !hclOwnBlock(fragment.GetHclBlock().GetSite())
 	default:
 		return false
 	}
 }
 
-// foreignGrammarClaim refuses a grammar claim on a source format it does not name.
+// foreignGrammarClaim refuses a grammar claim on a source format it does not
+// name, and an index-kind claim beside another claim.
 func foreignGrammarClaim(format protocol.SourceDocument_Format, fragment *protocol.SourceFragment) error {
+	if fragment.GetIndexKind() != nil && (format == protocol.SourceDocument_SQL || fragment.GetYamlKey() != nil || fragment.GetGoDirective() != nil || fragment.GetHclBlock() != nil) {
+		return sourceError("an index-kind claim in a SQL document or beside another claim")
+	}
 	if format != protocol.SourceDocument_YAML && fragment.GetYamlKey() != nil {
 		return sourceError("YAML grammar claim on another source format")
 	}

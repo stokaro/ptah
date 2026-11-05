@@ -73,6 +73,10 @@ func validateGoSourceFragments(description *protocol.Description, engine string,
 		}
 	}
 	for _, fragment := range document.GetFragments() {
+		if fragment.GetIndexKind() != nil {
+			// See validateIndexKindFragments.
+			continue
+		}
 		claim := fragment.GetGoDirective()
 		if claim == nil && len(claims) == 0 {
 			// An engine that declares no Go syntax keeps accepting captured Go

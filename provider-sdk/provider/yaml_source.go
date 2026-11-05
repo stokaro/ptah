@@ -120,6 +120,10 @@ func validateYAMLSourceFragments(description *protocol.Description, engine strin
 		}
 	}
 	for _, fragment := range document.GetFragments() {
+		if fragment.GetIndexKind() != nil {
+			// See validateIndexKindFragments.
+			continue
+		}
 		claim := fragment.GetYamlKey()
 		if claim == nil || !slices.ContainsFunc(claims, func(declared *protocol.YAMLSourceKey) bool { return proto.Equal(claim, declared) }) || fragment.GetSelector() != claim.GetSelector() {
 			return sourceError("YAML fragment changed its negotiated grammar claim")
