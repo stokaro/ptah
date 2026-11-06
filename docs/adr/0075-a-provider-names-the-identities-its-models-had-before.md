@@ -130,3 +130,15 @@ their exports before upgrading, and an export left unconverted still fails.
   in `core/schemaext` and the provider host.
 - The YDB provider reads exports recorded from the 74de0b65b binary through
   the host on YDB 25.1.4.7 and 26.2.1.14.
+
+## Amendments
+
+- [ADR 0084](0084-a-captured-claim-names-a-providers-model-by-the-identity-the-provider-owns.md)
+  names a provider's model in a captured claim by the identity the provider
+  describes rather than by the host's codec for it, so the current identity
+  a host writes a restated claim under is the provider's.
+- [ADR 0084](0084-a-captured-claim-names-a-providers-model-by-the-identity-the-provider-owns.md)
+  lets a predecessor name an earlier identity of the provider's own model
+  under `models.own-predecessors`. The SDK still refuses a former identity
+  that is another model the provider declares, or the model's current
+  identity.

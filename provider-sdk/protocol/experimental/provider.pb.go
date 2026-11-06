@@ -5057,8 +5057,8 @@ type ModelPredecessor struct {
 	// A DESIRED or OBSERVED model the engine declares.
 	Kind           string                    `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
 	Representation ValueInput_Representation `protobuf:"varint,2,opt,name=representation,proto3,enum=ptah.provider.experimental.ValueInput_Representation" json:"representation,omitempty"`
-	// The owner and the kind the captured claim names. They are not the
-	// provider's own identity for a model of that representation.
+	// The owner and the kind the captured claim names. Under
+	// models.own-predecessors they may be the provider and the model's own kind.
 	FormerOwner   string `protobuf:"bytes,3,opt,name=former_owner,json=formerOwner,proto3" json:"former_owner,omitempty"`
 	FormerKind    string `protobuf:"bytes,4,opt,name=former_kind,json=formerKind,proto3" json:"former_kind,omitempty"`
 	SchemaVersion uint32 `protobuf:"varint,5,opt,name=schema_version,json=schemaVersion,proto3" json:"schema_version,omitempty"`

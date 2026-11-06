@@ -136,8 +136,9 @@ returns to 0.
   [Go placements](#go-placements),
   [primary key changes](#primary-key-changes) and
   [model references and large messages](#model-references-and-large-messages).
-  Contract 25.27 adds [table outlines](#table-outlines) and
-  [shared coverage](#shared-coverage).
+  Contract 25.27 adds [table outlines](#table-outlines),
+  [shared coverage](#shared-coverage) and
+  [own model predecessors](#own-model-predecessors).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -174,8 +175,9 @@ does not oblige a peer to use it.
   `engine.default-capabilities`, `lint.transaction-owner`,
   `source.index-kinds`, `models.predecessors`, `schema.role-scope-reasons`,
   `source.go-placements`, `planning.primary-key-changes`, `models.references`,
-  `transport.large-messages`, `planning.table-outlines` and
-  `transport.shared-coverage`. The embedding store's calls,
+  `transport.large-messages`, `planning.table-outlines`,
+  `transport.shared-coverage` and `models.own-predecessors`. The embedding
+  store's calls,
   `PrepareCommonObjects`, `ReverseChanges` and `ReportValues` are new, and each
   comes with an addition to `Engine`, so a host lists the feature to receive
   any of them. `SplitMigration` is new too, and comes with the abort flags of
@@ -1778,13 +1780,42 @@ carries a claim under both identities is refused, as a document that repeats a
 claim is. A host writes a claim it restates, as when it cuts a document into
 files, under the model's current identity.
 
+A host names a provider's model in a captured claim by the identity the
+provider describes
+([ADR 0084](../docs/adr/0084-a-captured-claim-names-a-providers-model-by-the-identity-the-provider-owns.md)):
+the provider's id as the owner, the model's kind and representation, its
+`schema_version`, and `sha256:` followed by its `definition_sha256`. Neither
+the provider's release nor what a host negotiated with it enters that
+identity, so a later release reads the claim while the model's definition
+stays the same.
+
 `ValidateDescription` refuses a predecessor on an engine that does not list
 the feature, the feature on an engine with no predecessor or without the
 provider's feature, a predecessor of a model the engine does not declare or of
-an operation or change model, an incomplete former identity, one that is a
-model the provider declares, and a former identity named twice in an engine.
-Without the feature negotiated, the description the host receives holds no
-predecessor.
+an operation or change model, an incomplete former identity, one that is
+another model the provider declares or the model's current identity, an
+earlier identity of the model itself without
+[`models.own-predecessors`](#own-model-predecessors), and a former identity
+named twice in an engine. Without the feature negotiated, the description the
+host receives holds no predecessor.
+
+## Own model predecessors
+
+[ADR 0084](../docs/adr/0084-a-captured-claim-names-a-providers-model-by-the-identity-the-provider-owns.md)
+decides this feature. `models.own-predecessors` lets a `ModelPredecessor`
+name an earlier identity of the same model: the provider as `former_owner`,
+the model's own kind as `former_kind`, and a `schema_version` or a
+`definition_sha256` the model does not have now. A provider whose definition
+text changes without changing what a claim of the model means names the
+identity it replaced, so a file exported before the change still reads.
+
+The provider lists the feature, and so does each engine that declares such a
+predecessor, beside `models.predecessors`. `ValidateDescription` refuses the
+engine's feature without the provider's. A host that lists
+`models.predecessors` and not this feature receives the engine's other
+predecessors and none of these, and an engine left with none does not list
+`models.predecessors`, so a host whose SDK refuses such a predecessor never
+receives one.
 
 ## Role scope reasons
 

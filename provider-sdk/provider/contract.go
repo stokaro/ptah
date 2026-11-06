@@ -51,7 +51,7 @@ func TwoWayFeatures() []string {
 		IndexRenamesFeature, ReverseChangesFeature, UnreadTablesFeature, DatabaseKindsFeature, SQLFacetsFeature, ReportCountsFeature,
 		ObservedIndexFacetsFeature, SchemaSubtreeCoverageFeature, PasswordInputsFeature, HCLPlatformFeature, DefaultCapabilitiesFeature, LintTransactionOwnerFeature,
 		IndexKindsFeature, ModelPredecessorsFeature, RoleScopeReasonsFeature, GoPlacementsFeature, PrimaryKeyChangesFeature, ModelReferencesFeature,
-		LargeMessagesFeature, TableOutlinesFeature, SharedCoverageFeature}
+		LargeMessagesFeature, TableOutlinesFeature, SharedCoverageFeature, OwnPredecessorsFeature}
 }
 
 // ContractError reports a host and a provider that cannot work together:
@@ -150,8 +150,9 @@ func ValidateHostFeatures(features []string) error {
 // ReportCountsFeature, the schema separator of each engine's identifier rules
 // unless it lists SchemaSubtreeCoverageFeature, the offline capability facts
 // unless it lists DefaultCapabilitiesFeature, the index-kind claims unless
-// it lists IndexKindsFeature, and the model predecessors unless it lists
-// ModelPredecessorsFeature. A model keeps its
+// it lists IndexKindsFeature, the model predecessors unless it lists
+// ModelPredecessorsFeature, and those that name an earlier identity of their
+// own model unless it lists OwnPredecessorsFeature. A model keeps its
 // source formats without HCLPlatformFeature: a platform claim's models need
 // not list HCL. Without
 // EntryKeysFeature, the YAML claims of a COLUMN or INDEX scope and the
@@ -181,7 +182,7 @@ func NegotiatedDescription(description *protocol.Description, hostFeatures []str
 		negotiatePlanningObjects(engine, hostFeatures)
 		negotiateHCLSource(engine, hostFeatures)
 		negotiateIndexKinds(engine, hostFeatures)
-		negotiateModelPredecessors(engine, hostFeatures)
+		negotiateModelPredecessors(negotiated.GetProviderId(), engine, hostFeatures)
 		if !slices.Contains(hostFeatures, ScopeSelectionsFeature) {
 			engine.ScopeSelections = nil
 		}

@@ -219,8 +219,8 @@ message ModelPredecessor {
   // A DESIRED or OBSERVED model the engine declares.
   string kind = 1;
   ValueInput.Representation representation = 2;
-  // The owner and the kind the captured claim names. They are not the
-  // provider's own identity for a model of that representation.
+  // The owner and the kind the captured claim names. Under
+  // models.own-predecessors they may be the provider and the model's own kind.
   string former_owner = 3;
   string former_kind = 4;
   uint32 schema_version = 5;
