@@ -1,12 +1,12 @@
 -- render: the desired schema
 CREATE TABLE [orders] (
-  [id] BIGINT PRIMARY KEY,
+  [id] BIGINT CONSTRAINT [orders_pkey] PRIMARY KEY,
   [user_id] BIGINT NOT NULL,
   [total] DECIMAL(10,2)
 );
 
 CREATE TABLE [users] (
-  [id] BIGINT PRIMARY KEY,
+  [id] BIGINT CONSTRAINT [users_pkey] PRIMARY KEY,
   [email] NVARCHAR(255) NOT NULL,
   [name] NVARCHAR(100),
   [created_at] DATETIME2
@@ -22,7 +22,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'orders_user_ix' AND objec
 CREATE INDEX [orders_user_ix] ON [orders] ([user_id]);
 -- plan: the current schema to the desired one
 CREATE TABLE [orders] (
-  [id] BIGINT PRIMARY KEY,
+  [id] BIGINT CONSTRAINT [orders_pkey] PRIMARY KEY,
   [user_id] BIGINT NOT NULL,
   [total] DECIMAL(10,2)
 );
@@ -34,7 +34,7 @@ CREATE UNIQUE INDEX [users_email_uq] ON [users] ([email]);
 DROP INDEX IF EXISTS [users_name_ix] ON [users];
 -- render: a covering index
 CREATE TABLE [users] (
-  [id] BIGINT PRIMARY KEY,
+  [id] BIGINT CONSTRAINT [users_pkey] PRIMARY KEY,
   [email] NVARCHAR(255) NOT NULL,
   [name] NVARCHAR(100)
 );

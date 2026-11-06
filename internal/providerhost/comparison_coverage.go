@@ -5,7 +5,6 @@ import (
 	"slices"
 
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"google.golang.org/protobuf/proto"
 
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
@@ -23,7 +22,11 @@ func (t *target) comparisonCoverage(representation schemaext.Representation, cov
 		if contract == nil || contract.engines[t.engine.GetId()] == nil {
 			return nil, fmt.Errorf("%w: comparison coverage model changed", schemaext.ErrIncompatibleCodec)
 		}
-		kind := &protocol.ComparisonKindCoverage{Model: proto.CloneOf(contract.engines[t.engine.GetId()])}
+		// Every kind record of every table names its model by this one
+		// message. A request is never changed once it is built, and the SDK
+		// client copies it with each model once before it sends it, so the
+		// records of 500 tables hold the definitions once, not 500 times.
+		kind := &protocol.ComparisonKindCoverage{Model: contract.engines[t.engine.GetId()]}
 		for _, captured := range record.Knowledge.Sources() {
 			source := &protocol.ComparisonKnowledgeSource{Outside: comparisonKnowledge(captured.Outside)}
 			for _, region := range captured.Regions {

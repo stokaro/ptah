@@ -173,13 +173,23 @@ func (t *target) commonSchema(schema *schemamodel.Database) ([]ast.Node, error) 
 }
 
 // commonObjectCreations creates the common objects beyond tables that schema
-// declares, where a plan from an empty database places them: the roles and
-// the sequences before the tables, which may name them, and the views, the
-// memberships, the grants and the revocations after them. A comment travels
-// with the object it belongs to.
+// declares, in the order a schema render of a built-in engine writes them
+// (modelast.WalkDatabase): the roles, each group's memberships right after
+// them, and the sequences before the tables, which may name them, and the
+// views, the grants and the revocations after them. A membership names only
+// roles, so it needs nothing the tables create; a render that put it after
+// the tables, as a plan from an empty database does, wrote it apart from the
+// roles it joins, where the YDB engine built into Ptah at 74de0b65b wrote
+// `ALTER GROUP ... ADD USER` right after the CREATE USER statements. A
+// comment travels with the object it belongs to.
 func commonObjectCreations(schema *schemamodel.Database) (before, after []ast.Node) {
 	for _, role := range schema.Roles {
 		before = append(before, modelast.FromRole(role))
+	}
+	for _, role := range schema.Roles {
+		for _, membership := range modelast.FromRoleMemberships(role) {
+			before = append(before, membership)
+		}
 	}
 	for _, sequence := range schema.Sequences {
 		before = append(before, modelast.FromSequence(sequence))
@@ -187,11 +197,6 @@ func commonObjectCreations(schema *schemamodel.Database) (before, after []ast.No
 	after = viewReplacement{}.created(&difftypes.SchemaDiff{ViewsAdded: schema.Views})
 	for _, view := range schema.MaterializedViews {
 		after = append(after, modelast.FromMaterializedView(view))
-	}
-	for _, role := range schema.Roles {
-		for _, membership := range modelast.FromRoleMemberships(role) {
-			after = append(after, membership)
-		}
 	}
 	for _, grant := range schema.Grants {
 		after = append(after, modelast.FromGrant(grant))

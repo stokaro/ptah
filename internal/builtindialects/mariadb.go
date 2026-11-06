@@ -137,6 +137,7 @@ func mariaDB() descriptor.Dialect {
 		IndexesBeforeForeignKeys: true,
 		// Comparison: what comparing a declaration with a catalog reads.
 		Comparison: descriptor.Comparison{
+			TimePrecision:                  descriptor.TimePrecision{Compared: true},
 			ColumnPrimaryKeyIsTheTablesKey: true,
 			ForeignKeysOutside:             true,
 			ForeignKeyBackingIndex:         true,

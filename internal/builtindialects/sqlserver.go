@@ -11,9 +11,10 @@ import (
 // carries what a live catalog resolved.
 func sqlServer() descriptor.Dialect {
 	return descriptor.Dialect{
-		Name:          "sqlserver",
-		Aliases:       []string{"mssql", "sql-server", "sql_server", "tsql"},
-		DefaultSchema: "dbo",
+		Name:             "sqlserver",
+		Aliases:          []string{"mssql", "sql-server", "sql_server", "tsql"},
+		DefaultSchema:    "dbo",
+		ConstraintNaming: descriptor.ConstraintNamingServerHash,
 		Identifiers: descriptor.Identifiers{
 			IndexNamespace: "table",
 			IndexNames:     "catalog_unknown",
@@ -131,6 +132,7 @@ END`,
 		// A UNIQUE constraint and a unique index are separate objects, so
 		// neither backs the other.
 		Comparison: descriptor.Comparison{
+			DeclaredSchemas:                true,
 			ColumnPrimaryKeyIsTheTablesKey: true,
 			UniqueIndexStandsAlone:         true,
 			ExpressionProbes:               "sys-catalog",
@@ -184,7 +186,7 @@ END`,
 		// Clean checks: what internal/migrateclean reads. The pinned
 		// community binary does not open a SQL Server URL, so a dev database
 		// is refused in the shape of its other refusals.
-		CleanCheck: descriptor.CleanCheck{Dev: true, Tables: sqlServerCleanTables},
+		CleanCheck: descriptor.CleanCheck{Dev: true, Tables: sqlServerCleanTables, ResetsEverySchema: true},
 		// What a schema qualifier on a planned migration, as `migrate diff
 		// --qualifier` writes one, would need on SQL Server.
 		QualifierRefusal: "SQL Server has schemas and Ptah renders into one (dbo by default), but the qualifier " +

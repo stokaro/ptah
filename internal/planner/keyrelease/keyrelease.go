@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"ptah.run/core/difftypes"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/columnkey"
 	"ptah.run/internal/constraintscope"
@@ -81,6 +82,35 @@ func Find(diff *difftypes.SchemaDiff, dialect string) Releases {
 	}
 }
 
+// NamesRenamedKeysTake answers the removed indexes that hold a name a renamed primary
+// key takes. A key's index and any other index of its schema share one namespace, so
+// the rename answers `relation "x" already exists` while the index is there, and the
+// plan's removals come after it.
+func NamesRenamedKeysTake(diff *difftypes.SchemaDiff, dialect string) Releases {
+	if diff == nil {
+		return Releases{}
+	}
+	semantics := diff.EffectiveIdentifierSemantics(dialect)
+	schemaOf := func(table string) string {
+		if ref, ok := tableref.Parse(table); ok && ref.Schema != "" {
+			return semantics.TableIdentityKey(ref.Schema)
+		}
+		return semantics.TableIdentityKey(semantics.DefaultSchema)
+	}
+	var released Releases
+	for _, add := range diff.ConstraintsAdded {
+		if add.RenamedFrom == "" {
+			continue
+		}
+		for _, ref := range diff.IndexRemovals() {
+			if semantics.IndexIdentityKey(ref.Name) == semantics.IndexIdentityKey(add.Name) && schemaOf(ref.TableName) == schemaOf(add.TableName) {
+				released.Indexes = append(released.Indexes, ref)
+			}
+		}
+	}
+	return released
+}
+
 // UnderAddedForeignKeys answers the removals in diff that a foreign key the plan
 // adds could otherwise bind to, on a server where a foreign key depends on one
 // index and keeps it; see
@@ -131,6 +161,85 @@ func UnderAddedForeignKeys(diff *difftypes.SchemaDiff, dialect string) Releases 
 		_, rebuiltAsConstraint := rebuilt[ref]
 		if referenced[semantics.QualifiedTableIdentityKey(ref.TableName)] && !replacements.Contains(ref) && !rebuiltAsConstraint {
 			released.Indexes = append(released.Indexes, ref)
+		}
+	}
+	return released
+}
+
+// UnderColumnDrops answers the removed UNIQUE and CHECK constraints and the removed
+// indexes of each table that loses a column, which a planner that drops columns ahead of
+// its other removals drops ahead of the column changes. A key or an index over only that
+// column leaves with it, so its own drop then answers `Error 1091: Can't DROP`, and a
+// CHECK over only that column answers `Error 3940: Constraint does not exist`. An index
+// over that column and another one stays, narrowed, which can answer a duplicate key on
+// a UNIQUE. Measured on MySQL 8.4. MariaDB takes the drop under a guard, and the order
+// costs it nothing. The comparison records a removed object by its name alone, so every
+// such object of the table moves.
+//
+// The key [DroppedWithColumns] finds stays out: it leaves with its column, and no
+// statement is written for it. A constraint the plan adds back moves too, since its drop
+// only moves ahead of the column changes, and an index a UNIQUE constraint rebuilds does
+// the same. An index rebuilt under its own name stays out: a foreign key may need it at
+// every moment, so a planner moves its one statement instead.
+func UnderColumnDrops(diff *difftypes.SchemaDiff, dialect string) Releases {
+	if diff == nil {
+		return Releases{}
+	}
+	semantics := diff.EffectiveIdentifierSemantics(dialect)
+	losing := TablesLosingColumns(diff, semantics)
+	if len(losing) == 0 {
+		return Releases{}
+	}
+	var released Releases
+	takenWithColumn := DroppedWithColumns(diff, dialect)
+	for _, info := range diff.ConstraintsRemoved {
+		if !losing[semantics.QualifiedTableIdentityKey(info.TableName)] ||
+			(!strings.EqualFold(info.Type, "UNIQUE") && !strings.EqualFold(info.Type, "CHECK")) {
+			continue
+		}
+		info.Identity = constraintscope.Identity(semantics, info.TableName, info.Name)
+		if _, taken := takenWithColumn[info.Identity]; !taken {
+			released.Constraints = append(released.Constraints, info)
+		}
+	}
+	replacements := indexscope.NewConflictSetWithSemantics(semantics, diff.IndexAdditions())
+	for _, ref := range diff.IndexRemovals() {
+		if losing[semantics.QualifiedTableIdentityKey(ref.TableName)] && !replacements.Contains(ref) {
+			released.Indexes = append(released.Indexes, ref)
+		}
+	}
+	return released
+}
+
+// TablesLosingColumns keys the tables of diff that lose a column.
+func TablesLosingColumns(diff *difftypes.SchemaDiff, semantics identifier.Semantics) map[string]bool {
+	losing := make(map[string]bool)
+	for _, table := range diff.TablesModified {
+		if len(table.ColumnsRemoved) > 0 {
+			losing[semantics.QualifiedTableIdentityKey(table.TableName)] = true
+		}
+	}
+	return losing
+}
+
+// NamesIndexesTake answers the removed UNIQUE constraints of diff under the name of an
+// index the plan adds on their table. A UNIQUE constraint is an index of its name, so
+// `CREATE INDEX u` answers `Error 1061: Duplicate key name 'u'` on MySQL and MariaDB and
+// `relation "u" already exists` on PostgreSQL while the constraint stands, and a planner
+// adds indexes ahead of its constraint removals. A rollback of an index turned into a
+// UNIQUE under one name has this shape.
+func NamesIndexesTake(diff *difftypes.SchemaDiff, dialect string) Releases {
+	if diff == nil || len(diff.IndexesAdded) == 0 {
+		return Releases{}
+	}
+	semantics := diff.EffectiveIdentifierSemantics(dialect)
+	added := indexscope.NewConflictSetWithSemantics(semantics, diff.IndexAdditions())
+	var released Releases
+	for _, info := range diff.ConstraintsRemoved {
+		ref := difftypes.IndexRef{Name: info.Name, TableName: info.TableName}
+		if strings.EqualFold(info.Type, "UNIQUE") && added.Contains(ref) {
+			info.Identity = constraintscope.Identity(semantics, info.TableName, info.Name)
+			released.Constraints = append(released.Constraints, info)
 		}
 	}
 	return released

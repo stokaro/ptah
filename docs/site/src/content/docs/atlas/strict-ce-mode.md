@@ -97,7 +97,9 @@ from that default before `SET NOT NULL`; see
 Atlas CE writes `SET NOT NULL` alone, so under strict mode `migrate diff`,
 `schema apply` and `schema diff` write no fill, and the statement fails on a
 `NULL` row as it does there. A layout that writes a rollback file leaves the
-fill out of both halves.
+fill out of both halves. Strict mode also leaves out the `setval` that moves a new
+identity's sequence past the rows the table holds, so the next insert can collide
+with one, as it does there.
 
 ## Capabilities retained deliberately
 

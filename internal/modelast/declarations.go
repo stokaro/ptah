@@ -197,13 +197,10 @@ func captureCommonSequence(tables schemamodel.Database, target string, lowering 
 // a REVOKE, and the end of the script is after both its object and its
 // grantee.
 func (s commonSequence) withoutDeclaredObjectPermissions(objects []schemaext.Object) commonSequence {
-	declared := make(map[objectidentity.Key]bool, len(objects))
-	for _, object := range objects {
-		declared[object.Ref.Key()] = true
-	}
+	declared := NewDeclaredObjects(objects)
 	kept := commonSequence{typeStart: s.typeStart, typeEnd: s.typeEnd}
 	for i, node := range s.nodes {
-		if !permissionOnDeclaredObject(node, s.metadata[i].Effects, declared) {
+		if !declared.Permits(node, s.metadata[i].Effects) {
 			kept.nodes = append(kept.nodes, node)
 			kept.metadata = append(kept.metadata, s.metadata[i])
 			continue
@@ -219,16 +216,31 @@ func (s commonSequence) withoutDeclaredObjectPermissions(objects []schemaext.Obj
 	return kept
 }
 
-// permissionOnDeclaredObject reports whether node is a GRANT or a REVOKE whose
-// effects read one of the declared objects.
-func permissionOnDeclaredObject(node ast.Node, effects []plangraph.Effect, declared map[objectidentity.Key]bool) bool {
+// DeclaredObjects is the set of the objects owners declare in a schema
+// render, by key. A render writes each GRANT and REVOKE on one of them after
+// every scheduled statement. This walk and a provider's render (providerhost)
+// both ask the set, so the two place those permissions alike.
+type DeclaredObjects map[objectidentity.Key]bool
+
+// NewDeclaredObjects is the set of the keys of objects.
+func NewDeclaredObjects(objects []schemaext.Object) DeclaredObjects {
+	declared := make(DeclaredObjects, len(objects))
+	for _, object := range objects {
+		declared[object.Ref.Key()] = true
+	}
+	return declared
+}
+
+// Permits reports whether node is a GRANT or a REVOKE whose effects read one
+// of the declared objects.
+func (d DeclaredObjects) Permits(node ast.Node, effects []plangraph.Effect) bool {
 	switch node.(type) {
 	case *ast.GrantPrivilegeNode, *ast.RevokePrivilegeNode:
 	default:
 		return false
 	}
 	return slices.ContainsFunc(effects, func(effect plangraph.Effect) bool {
-		return effect.Action == plangraph.Read && declared[effect.Subject.Key()]
+		return effect.Action == plangraph.Read && d[effect.Subject.Key()]
 	})
 }
 

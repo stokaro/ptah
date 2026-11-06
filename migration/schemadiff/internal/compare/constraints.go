@@ -115,8 +115,11 @@ func ConstraintsWithSemantics(
 		}
 	}
 
+	renamed := renamedPrimaryKeys(genConstraints, dbConstraints, dialect, semantics)
+	markRenamedPrimaryKeys(diff.ConstraintsAdded, renamed, dbConstraints, semantics)
+
 	// Find modified constraints (constraints that exist in both but have different definitions)
-	underRemovedKey := foreignKeysOverRemovedKeys(genConstraints, dbConstraints, database, diff, dialect, semantics, opts)
+	underRemovedKey := foreignKeysOverRemovedKeys(genConstraints, constraintsLessRenames(dbConstraints, renamed), database, diff, dialect, semantics, opts)
 	for constraintKey, genConstraint := range genConstraints {
 		if dbConstraint, exists := dbConstraints[constraintKey]; exists {
 			if constraintDefinitionsChanged(genConstraint, dbConstraint, dialect, semantics, opts) || underRemovedKey[constraintKey] {
@@ -200,7 +203,7 @@ func pairedConstraints(
 	//
 	// Every database foreign key stays in the comparison and is paired by
 	// name, whichever form declares its counterpart; see
-	// [isFieldLevelConstraint] for why none is excused by its column.
+	// [fieldLevelConstraints.has] for why none is excused by its column.
 	recordSynthesized(genConstraints, synthesizeFieldLevelForeignKeyConstraints(desired, database, semantics), semantics)
 
 	dbConstraints = collectDatabaseConstraints(
@@ -237,6 +240,7 @@ func collectDatabaseConstraints(
 	declaredIndexes := generatedIndexIdentities(desired, semantics)
 	ownedByColumns := readColumnKeys(desired, database, dialect, semantics).owned
 	dbConstraints := make(map[tableMemberKey]catalog.Constraint, len(database.Constraints))
+	fieldLevel := newFieldLevelConstraints(desired, semantics)
 	for _, constraint := range database.Constraints {
 		key := newCatalogConstraintKey(constraint, semantics)
 		if _, owned := ownedByColumns[key]; owned {
@@ -246,7 +250,7 @@ func collectDatabaseConstraints(
 		// A primary key compared as the table's stays in the comparison though
 		// its first column declares itself primary: a key over more columns than
 		// that one is not the column's.
-		if isFieldLevelConstraint(constraint, desired, semantics) && (!declaredAsConstraint || constraint.Type != "PRIMARY KEY") {
+		if fieldLevel.has(constraint) && (!declaredAsConstraint || constraint.Type != "PRIMARY KEY") {
 			continue
 		}
 		if !declaredAsConstraint &&

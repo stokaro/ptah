@@ -363,14 +363,38 @@ func (o *hclOwner) codecs() (schemaext.Registry, error) {
 // desiredRegistry is a registry of the provider's desired codecs, which reads
 // and writes what a document captured of the provider's models. The codecs
 // decode through the provider's batch decoder, as the runtime registers them
-// (see Provider); a registry refuses a codec that has no decoder.
+// (see Provider); a registry refuses a codec that has no decoder. Each codec
+// carries the earlier identities the engines name for its model
+// (provider.ModelPredecessorsFeature), so a document captured under one, such
+// as an export of a former built-in engine, makes the same claim.
 func (h *Host) desiredRegistry() (schemaext.Registry, error) {
 	var owned []schemaext.OwnedCodec
 	decoder := &schemaext.BatchDecoder{Decode: h.decodeModels}
 	for _, codec := range h.modelCodecs {
 		if codec.Representation == schemaext.Desired {
-			owned = append(owned, schemaext.OwnedCodec{Owner: h.description.GetProviderId(), Codec: codec, BatchDecoder: decoder})
+			owned = append(owned, schemaext.OwnedCodec{Owner: h.description.GetProviderId(), Codec: codec, BatchDecoder: decoder,
+				Predecessors: h.desiredPredecessors(codec.Prototype.Kind())})
 		}
 	}
 	return schemaext.NewRegistry(owned...)
+}
+
+// desiredPredecessors are the earlier identities the provider's engines name
+// for the desired model of kind, each once, in the order the engines name
+// them.
+func (h *Host) desiredPredecessors(kind schemaext.Kind) []schemaext.CodecIdentity {
+	var identities []schemaext.CodecIdentity
+	for _, engine := range h.description.GetEngines() {
+		for _, predecessor := range engine.GetModelPredecessors() {
+			if schemaext.Kind(predecessor.GetKind()) != kind || predecessor.GetRepresentation() != protocol.ValueInput_DESIRED {
+				continue
+			}
+			identity := schemaext.CodecIdentity{Owner: predecessor.GetFormerOwner(), Kind: schemaext.Kind(predecessor.GetFormerKind()),
+				Representation: schemaext.Desired, Version: predecessor.GetSchemaVersion(), Definition: "sha256:" + predecessor.GetDefinitionSha256()}
+			if !slices.Contains(identities, identity) {
+				identities = append(identities, identity)
+			}
+		}
+	}
+	return identities
 }

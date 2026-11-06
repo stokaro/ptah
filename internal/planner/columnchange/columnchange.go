@@ -18,7 +18,7 @@ import (
 )
 
 // Properties names the properties colDiff changes that an ALTER COLUMN clause
-// carries: the type, nullability and the default. Changes no such clause
+// carries: the type, nullability, the default and the identity. Changes no such clause
 // carries, such as a UNIQUE or PRIMARY KEY flag, are not among them.
 //
 // The keys are the comparator's: a default is recorded under "default" or
@@ -28,10 +28,12 @@ func Properties(colDiff difftypes.ColumnDiff) ast.ColumnProperties {
 	_, nullabilityChanged := colDiff.Changes["nullable"]
 	_, literalDefaultChanged := colDiff.Changes["default"]
 	_, expressionDefaultChanged := colDiff.Changes["default_expr"]
+	_, identityChanged := colDiff.Changes["identity"]
 	return ast.ColumnProperties{
 		Type:        typeChanged,
 		Nullability: nullabilityChanged,
 		Default:     literalDefaultChanged || expressionDefaultChanged,
+		Identity:    identityChanged,
 	}
 }
 

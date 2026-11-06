@@ -375,8 +375,8 @@ func requireRealmMetadataVisibility(ctx context.Context, tx *sql.Tx) error {
 		ctx,
 		`SELECT
 			DB_NAME(),
-			HAS_PERMS_BY_NAME(DB_NAME(), N'DATABASE', N'CONTROL'),
-			HAS_PERMS_BY_NAME(DB_NAME(), N'DATABASE', N'VIEW DEFINITION')`,
+			HAS_PERMS_BY_NAME(QUOTENAME(DB_NAME()), N'DATABASE', N'CONTROL'),
+			HAS_PERMS_BY_NAME(QUOTENAME(DB_NAME()), N'DATABASE', N'VIEW DEFINITION')`,
 	).Scan(&databaseName, &hasControl, &hasViewDefinition)
 	if err != nil {
 		return fmt.Errorf("sqlserver: verify database realm metadata visibility: %w", err)

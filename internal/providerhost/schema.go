@@ -68,6 +68,7 @@ func (t *target) registration() engine.Target {
 			return commonPlanner{selections: t.host.selections, options: options, transactions: t.supportsTransactions(), target: t.engine.GetId(),
 				commonTables: t.supportsCommonTables(), commonObjects: len(t.commonKinds()) > 0, comments: t.commonKinds()[protocol.CommonObjectSupport_COMMENT],
 				indexes: t.offers(provider.ObservedIndexesFeature), renames: t.offers(provider.IndexRenamesFeature),
+				observedKeys: t.offers(provider.ObservedPrimaryKeysFeature), keys: t.offers(provider.PrimaryKeyChangesFeature),
 				assessParents: slices.ContainsFunc(t.engine.GetPlanning(), func(assignment *protocol.ModelPlanning) bool { return len(assignment.GetParentKinds()) > 0 })}
 		},
 	}

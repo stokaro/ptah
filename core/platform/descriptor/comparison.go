@@ -32,6 +32,11 @@ type Comparison struct {
 	// exists. A plan that removes the key drops the foreign key first and adds
 	// it back once a key is there to reference.
 	ForeignKeyHoldsItsKey bool `json:"foreign_key_holds_its_key,omitempty"`
+	// ForeignKeyMatchesKeyInAnyOrder reports that a foreign key may reference a
+	// unique key's columns in another order than the key lists them. PostgreSQL and
+	// CockroachDB take REFERENCES parent (a, b) over PRIMARY KEY (b, a), while MySQL
+	// answers with Error 6125 and MariaDB with errno 150.
+	ForeignKeyMatchesKeyInAnyOrder bool `json:"foreign_key_matches_key_in_any_order,omitempty"`
 	// ColumnPrimaryKeyIsTheTablesKey reports that a primary key a column declares
 	// is compared as the table's key where the table holds another key or none:
 	// the planner has a statement for a change of the key, in both directions, and
@@ -71,6 +76,15 @@ type Comparison struct {
 	// RestrictIsNoAction reports that a RESTRICT referential action means
 	// what NO ACTION does, as InnoDB implements both.
 	RestrictIsNoAction bool `json:"restrict_is_no_action,omitempty"`
+	// PrimaryKeyRenames reports that a statement renames a primary key in place,
+	// so a declared name over the columns the key holds is a rename, with no
+	// rebuild of the key and nothing to do for a foreign key over it.
+	PrimaryKeyRenames bool `json:"primary_key_renames,omitempty"`
+
+	// IdentityColumns reports that a read says which identity generation a
+	// column holds, and that ALTER COLUMN adds, changes and drops it, so a
+	// column's identity is compared with its declaration.
+	IdentityColumns bool `json:"identity_columns,omitempty"`
 	// PrimaryKeyName is the name the server gives every primary key, such as
 	// "PRIMARY". Empty means a primary key keeps the name it is declared
 	// with, and one declared with none is named after its table.
@@ -98,6 +112,9 @@ type Comparison struct {
 	// AutoIncrementFlag reports that the catalog reports whether a column
 	// auto-increments, so a declared auto-increment is compared with it.
 	AutoIncrementFlag bool `json:"auto_increment_flag,omitempty"`
+	// TimePrecision says how the engine reads a temporal column's fractional-seconds
+	// precision. The zero value compares none.
+	TimePrecision TimePrecision `json:"time_precision,omitzero"`
 	// PrimaryKeyNullable reports that a primary key column may hold NULL
 	// unless the table's shape says otherwise, so a key does not imply NOT
 	// NULL.
@@ -148,4 +165,15 @@ type Comparison struct {
 	// such as in another case, is dropped and created under the declared
 	// spelling rather than kept.
 	RespelledIndexReplaced bool `json:"respelled_index_replaced,omitempty"`
+}
+
+// TimePrecision states that a comparison reads the precision of a temporal column,
+// and what a column that declares none holds. Two columns differ when their
+// precisions do, so `timestamp(3)` and `timestamp(6)` are a change and, where six is
+// the default, `timestamp` and `timestamp(6)` are not.
+type TimePrecision struct {
+	// Compared reports that the comparison reads the precision.
+	Compared bool `json:"compared,omitempty"`
+	// Default is the precision of a column that declares none.
+	Default int `json:"default,omitempty"`
 }

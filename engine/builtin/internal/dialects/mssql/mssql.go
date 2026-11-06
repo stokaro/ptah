@@ -2,8 +2,11 @@
 package mssql
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strings"
+	"unicode/utf16"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
@@ -115,6 +118,73 @@ func namedColumnCheck(table string, column *ast.ColumnNode) *ast.ColumnNode {
 	return &named
 }
 
+// maxIdentifierLength is the longest name SQL Server takes, in UTF-16 code units: a sysname
+// is an nvarchar(128). Msg 103 answers a longer one.
+const maxIdentifierLength = 128
+
+// primaryKeySuffix ends the name of a primary key nobody named.
+const primaryKeySuffix = "_pkey"
+
+// primaryKeyName is the name a primary key nobody named goes by.
+//
+// SQL Server names an unnamed key itself, `PK__orders__3213E83F2B3A1E5C`, and the hash
+// differs from one database to the next. A later file that drops the key names the one
+// the dev database held, and another database answers `'PK__...' is not a constraint`.
+// Under a name the file chose, it runs on any database the file built.
+//
+// A table's name can leave no room for the suffix. Leaving that key to the server would
+// bring the failure back, so its name is the table's cut short, with a hash of the whole
+// name, which keeps two long names that start alike apart.
+func primaryKeyName(table string) string {
+	leaf := unquoteIdentifier(tableLeafName(table))
+	if identifierLength(leaf)+len(primaryKeySuffix) <= maxIdentifierLength {
+		return leaf + primaryKeySuffix
+	}
+	sum := sha256.Sum256([]byte(leaf))
+	tail := "_" + hex.EncodeToString(sum[:4]) + primaryKeySuffix
+	return cutIdentifier(leaf, maxIdentifierLength-len(tail)) + tail
+}
+
+// identifierLength is a name's length as SQL Server counts it.
+func identifierLength(name string) int {
+	length := 0
+	for _, r := range name {
+		length += max(utf16.RuneLen(r), 1)
+	}
+	return length
+}
+
+// cutIdentifier is the longest start of name that SQL Server counts as limit or fewer.
+func cutIdentifier(name string, limit int) string {
+	length := 0
+	for at, r := range name {
+		length += max(utf16.RuneLen(r), 1)
+		if length > limit {
+			return name[:at]
+		}
+	}
+	return name
+}
+
+// namedKey gives an unnamed primary key its name.
+func namedKey(table string, constraint *ast.ConstraintNode) *ast.ConstraintNode {
+	if constraint == nil || constraint.Name != "" || constraint.Type != ast.PrimaryKeyConstraint {
+		return constraint
+	}
+	named := *constraint
+	named.Name = primaryKeyName(table)
+	return &named
+}
+
+// renderColumnOf writes a column of a table, with the name of the primary key it declares.
+func renderColumnOf(table string, column *ast.ColumnNode) (string, error) {
+	line, err := renderColumn(column)
+	if err != nil || column == nil || !column.Primary {
+		return line, err
+	}
+	return strings.Replace(line, " PRIMARY KEY", " CONSTRAINT "+escapeIdentifier(primaryKeyName(table))+" PRIMARY KEY", 1), nil
+}
+
 // tableLeafName drops the schema qualifier, so a table in a named schema gets
 // the same check name it would get in the default one.
 func tableLeafName(table string) string {
@@ -174,14 +244,14 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 
 	lines := make([]string, 0, len(node.Columns)+len(node.Constraints))
 	for _, column := range node.Columns {
-		line, err := renderColumn(namedColumnCheck(node.Name, column))
+		line, err := renderColumnOf(node.Name, namedColumnCheck(node.Name, column))
 		if err != nil {
 			return fmt.Errorf("render column %s: %w", column.Name, err)
 		}
 		lines = append(lines, line)
 	}
 	for _, constraint := range node.Constraints {
-		line, err := renderConstraint(constraint)
+		line, err := renderConstraint(namedKey(node.Name, constraint))
 		if err != nil {
 			return fmt.Errorf("render constraint: %w", err)
 		}
@@ -219,13 +289,13 @@ func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 	for _, operation := range node.Operations {
 		switch op := operation.(type) {
 		case *ast.AddColumnOperation:
-			line, err := renderColumn(op.Column)
+			line, err := renderColumnOf(node.Name, op.Column)
 			if err != nil {
 				return fmt.Errorf("render added column %s: %w", op.Column.Name, err)
 			}
 			r.w.WriteLinef("ALTER TABLE %s ADD %s;", escapeQualifiedIdentifier(node.Name), strings.TrimSpace(line))
 		case *ast.AddConstraintOperation:
-			line, err := renderConstraint(op.Constraint)
+			line, err := renderConstraint(namedKey(node.Name, op.Constraint))
 			if err != nil {
 				return fmt.Errorf("render added constraint: %w", err)
 			}

@@ -33,7 +33,7 @@ func TestGetOrderedCreateStatements_SerialKey_HappyPath(t *testing.T) {
 		{name: "MySQL SERIAL", dialect: "mysql", field: schemamodel.Field{Name: "id", Type: "SERIAL", Primary: true}, want: "`id` INT PRIMARY KEY AUTO_INCREMENT"},
 		{name: "MariaDB BIGSERIAL", dialect: "mariadb", field: schemamodel.Field{Name: "id", Type: "BIGSERIAL", Primary: true}, want: "`id` BIGINT PRIMARY KEY AUTO_INCREMENT"},
 		{name: "MySQL SMALLSERIAL", dialect: "mysql", field: schemamodel.Field{Name: "id", Type: "SMALLSERIAL", Primary: true}, want: "`id` SMALLINT PRIMARY KEY AUTO_INCREMENT"},
-		{name: "SQL Server SERIAL", dialect: "sqlserver", field: schemamodel.Field{Name: "id", Type: "SERIAL", Primary: true}, want: "[id] INT IDENTITY(1,1) PRIMARY KEY"},
+		{name: "SQL Server SERIAL", dialect: "sqlserver", field: schemamodel.Field{Name: "id", Type: "SERIAL", Primary: true}, want: "[id] INT IDENTITY(1,1) CONSTRAINT [things_pkey] PRIMARY KEY"},
 		{name: "SQL Server SERIAL outside a key", dialect: "sqlserver", field: schemamodel.Field{Name: "id", Type: "SERIAL"}, want: "[id] INT IDENTITY(1,1) NOT NULL"},
 		{
 			name: "MySQL SERIAL with a type of its own", dialect: "mysql",

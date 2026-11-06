@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/difftypes"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/planext"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/modelast"
@@ -36,7 +37,12 @@ type commonPlanner struct {
 	indexes bool
 	// renames plans an index the comparison pairs with one declared under
 	// another name as one step the owner claims, which keeps the index.
-	renames    bool
+	renames bool
+	// observedKeys reads the primary key a provider table holds, in key
+	// order, so the comparison reports a change of it.
+	observedKeys bool
+	// keys hands such a change to the table's owner, which plans it.
+	keys       bool
 	selections *scopeSelections
 }
 
@@ -91,7 +97,8 @@ func (p commonPlanner) GenerateMigrationAST(ctx context.Context, runtime feature
 	// under the same name, and is added once its columns exist. A rename
 	// neither frees nor takes a name another index change uses: the
 	// comparison pairs only names the other side does not hold.
-	nodes := slices.Concat(common.before, indexes.removals, indexes.renames, common.prepared)
+	ahead, behind := indexRemovalPlacement(diff.EffectiveIdentifierSemantics(p.target), slices.Concat(indexes.removals, indexes.renames))
+	nodes := slices.Concat(common.before, ahead, common.prepared)
 	var columnRemovals []ast.Node
 	ordered := diff.TablesAdded.InDependencyOrder()
 	if len(ordered) != len(diff.TablesAdded) {
@@ -104,6 +111,7 @@ func (p commonPlanner) GenerateMigrationAST(ctx context.Context, runtime feature
 		}
 		nodes = append(nodes, created...)
 	}
+	nodes = append(nodes, behind...)
 	for _, table := range diff.TablesModified {
 		additions, removals, err := p.alterations(table)
 		if err != nil {
@@ -133,6 +141,21 @@ func (p commonPlanner) GenerateMigrationAST(ctx context.Context, runtime feature
 	return p.schedule(ctx, runtime, diff, nodes, creationStart, removalStart)
 }
 
+// indexRemovalPlacement places the index removals and renames of a plan ahead
+// of the table creations or behind them, and returns the steps for each
+// place; one of the two is empty. Where an engine scopes an index name to its
+// table, no table the plan creates can hold the name of an index another
+// table drops, so the creations come first, as the YDB engine built into
+// Ptah at 74de0b65b planned them: its plan wrote every CREATE TABLE ahead of
+// the DROP INDEX statements of the tables it kept. Where names share a
+// schema, the index is dropped first, so a new table can take its name.
+func indexRemovalPlacement(semantics identifier.Semantics, steps []ast.Node) (ahead, behind []ast.Node) {
+	if semantics.IndexNamespace == identifier.IndexNamespaceTable {
+		return nil, steps
+	}
+	return steps, nil
+}
+
 // commonObjectSteps plans the common objects beyond tables for a provider
 // that carries them. It first refuses a diff field the planner has no step
 // for; for a provider without the common-object wire that includes every
@@ -160,6 +183,14 @@ func (p commonPlanner) commonObjectSteps(diff *difftypes.SchemaDiff) (commonObje
 			// wire; see indexCommentNodes.
 			fields = append(fields, "IndexCommentsChanged")
 		}
+	}
+	if p.observedKeys {
+		// A changed primary key reaches the table's owner as an alteration
+		// of the table; see keyChanges. Any other constraint stays refused.
+		if err := p.keyChanges(diff); err != nil {
+			return commonObjectPlan{}, err
+		}
+		fields = append(fields, "ConstraintsAdded", "ConstraintsRemoved")
 	}
 	if err := onlyFields(*diff, fields...); err != nil {
 		return commonObjectPlan{}, err

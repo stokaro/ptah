@@ -121,7 +121,7 @@ func TestColumnPrimaryKey_StaysAFlag(t *testing.T) {
 func TestColumnPrimaryKey_AnotherEngineKeepsItsPlan(t *testing.T) {
 	c := qt.New(t)
 
-	got := columnKeyPlan(c, platform.CockroachDB,
+	got := columnKeyPlan(c, platform.YugabyteDB,
 		`CREATE TABLE parent (id bigint NOT NULL, code bigint NOT NULL);`,
 		`CREATE TABLE parent (id bigint NOT NULL, code bigint PRIMARY KEY);`)
 

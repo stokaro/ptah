@@ -124,5 +124,5 @@ func displayAtlasNativeApplyPlan(cmd *cobra.Command, conn *dbschema.DatabaseConn
 
 func printAtlasSchemaApplyUnits(out io.Writer, units []atlasschema.ApplyUnitReport, annotations []renderer.Annotation) {
 	fmt.Fprintln(out, "Planned schema changes:")
-	atlasschema.WriteUnitReports(out, units, annotations)
+	atlasschema.WriteNamedUnitReports(out, units, annotations)
 }

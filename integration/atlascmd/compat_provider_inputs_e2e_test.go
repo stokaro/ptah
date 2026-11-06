@@ -63,6 +63,32 @@ func TestCompatProviderExecutionInputs(t *testing.T) {
 	}
 }
 
+// TestCompatProviderInputStatementsNameTheirChange_HappyPath reads the comment on
+// the verbs that list a statement with an execution input as a unit: it sits
+// under the input and above the statement.
+func TestCompatProviderInputStatementsNameTheirChange_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	f := newCompatProviderFixture(c, compatProviderBinaries{
+		compat:      buildSchemaInspectBinary(c, "ptah-compat", "ptah.run/cmd/ptah-compat"),
+		provider:    testutils.BuildFixtureProvider(c, "operation-models"),
+		environment: []string{"FIXTURE_RENDER_MODE=native-cli", "FIXTURE_INPUT_MODE=stable"},
+	})
+	seedInputFixture(c, f, "")
+	source := filepath.Join(f.dir, "desired.yaml")
+	c.Assert(os.WriteFile(source, []byte("tables:\n  needs_input:\n    columns:\n      id: {type: INTEGER, not_null: true}\n"), 0o600), qt.IsNil)
+	to := "file://" + filepath.ToSlash(source)
+	const want = "Execution input: environment FIXTURE_EXECUTION_INPUT\n-- Create \"needs_input\" table\nCREATE TABLE"
+
+	planned, stderr, code := f.run(f.withManifest(), "schema", "plan", "--from", f.address, "--to", to, "--output", filepath.Join(f.dir, "inputs.plan.json"))
+	c.Assert(code, qt.Equals, 0, qt.Commentf("%s", stderr))
+	previewed, stderr, code := f.run(f.withManifest(), "schema", "apply", "--url", f.address, "--to", to, "--tx-mode", "none", "--dry-run")
+	c.Assert(code, qt.Equals, 0, qt.Commentf("%s", stderr))
+
+	c.Assert(planned, qt.Contains, want)
+	c.Assert(previewed, qt.Contains, want)
+	f.assertStopped(c)
+}
+
 func assertInputFixtureColumn(c *qt.C, f compatProviderFixture, want int) {
 	c.Helper()
 	db, err := sql.Open("sqlite", filepath.Join(f.dir, "database.db"))

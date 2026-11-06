@@ -121,6 +121,8 @@ func cockroachDB() descriptor.Dialect {
 		// materialized view or sequence of its name; the guarded sequence
 		// without a notice. Indexes are not in that namespace; see Identifiers.
 		Statements: descriptor.Statements{ViewsBlockDropTable: true, RelationsShareNames: true},
+		// Measured on v26.3.5: a serial and an identity column read back NOT NULL.
+		Columns: descriptor.Columns{IdentityNotNull: true, SerialNotNull: true},
 
 		// Dev databases. The server takes no advisory lock Ptah can hold, so runs on
 		// one dev database are serialized with a lock file, which only serializes
@@ -140,16 +142,24 @@ func cockroachDB() descriptor.Dialect {
 		// public.items` is stored as `SELECT public.items.id, ... FROM
 		// f1.public.items;` (stokaro/ptah#4058).
 		Comparison: descriptor.Comparison{
-			DeclaredSchemas:         true,
-			ForeignKeysOutside:      true,
-			ExpressionProbes:        "pg-catalog",
-			ProbeViewsInSchema:      true,
-			RewritesRoutineBodies:   true,
-			RolePasswords:           true,
-			RoutineTypeAliases:      "pg-aliases",
-			QualifiedTypeNames:      true,
-			CatalogTypeNames:        true,
-			PrimaryKeyStoresColumns: true,
+			DeclaredSchemas:    true,
+			TimePrecision:      descriptor.TimePrecision{Compared: true, Default: 6},
+			PrimaryKeyRenames:  true,
+			IdentityColumns:    true,
+			ForeignKeysOutside: true,
+			// Measured on v26.3.5.
+			ForeignKeyMatchesKeyInAnyOrder: true,
+			// Without this `code INT8 PRIMARY KEY` on a table that holds another
+			// key plans only the old key's drop, measured on v26.3.5.
+			ColumnPrimaryKeyIsTheTablesKey: true,
+			ExpressionProbes:               "pg-catalog",
+			ProbeViewsInSchema:             true,
+			RewritesRoutineBodies:          true,
+			RolePasswords:                  true,
+			RoutineTypeAliases:             "pg-aliases",
+			QualifiedTypeNames:             true,
+			CatalogTypeNames:               true,
+			PrimaryKeyStoresColumns:        true,
 		},
 
 		// A bare type name PostgreSQL defines is the built-in type here too.

@@ -2,6 +2,8 @@ package compare
 
 import (
 	"fmt"
+	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -11,6 +13,7 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/objectlookup"
 )
 
 // Sequences compares standalone sequence definitions between the target schema
@@ -116,6 +119,132 @@ func sequencesWithSemantics(
 	sort.Slice(diff.SequencesModified, func(i, j int) bool {
 		return diff.SequencesModified[i].SequenceName < diff.SequencesModified[j].SequenceName
 	})
+}
+
+// nextvalDefault is a column default that draws from one sequence, as a catalog
+// prints it.
+var nextvalDefault = regexp.MustCompile(`(?i)^nextval\('([^']+)'(?:::regclass)?\)$`)
+
+// OwnedDefaultSequences marks each column change of diff that moves a default off
+// a sequence its column owns, where the plan keeps that sequence; see
+// [difftypes.ColumnDiff.OwnedDefaultSequence]. It runs after the sequences are
+// compared, since a removed sequence is not kept.
+func OwnedDefaultSequences(database *catalog.Database, diff *difftypes.SchemaDiff, semantics identifier.Semantics) {
+	if database == nil || len(database.Sequences) == 0 {
+		return
+	}
+	for i := range diff.TablesModified {
+		tableDiff := &diff.TablesModified[i]
+		table := objectlookup.Qualified(database.Tables, tableDiff.TableName, semantics)
+		if table == nil {
+			continue
+		}
+		for j := range tableDiff.ColumnsModified {
+			columnDiff := &tableDiff.ColumnsModified[j]
+			columnDiff.OwnedDefaultSequence = ownedDefaultSequence(database, diff, *table, *columnDiff, semantics)
+		}
+	}
+}
+
+// ownedDefaultSequence is the sequence [OwnedDefaultSequences] marks on change, a
+// change of a column of table, or "".
+func ownedDefaultSequence(
+	database *catalog.Database,
+	diff *difftypes.SchemaDiff,
+	table catalog.Table,
+	change difftypes.ColumnDiff,
+	semantics identifier.Semantics,
+) string {
+	_, plain := change.Changes["default"]
+	_, expression := change.Changes["default_expr"]
+	if !plain && !expression {
+		return ""
+	}
+	for _, column := range table.Columns {
+		if column.ColumnDefault == nil || semantics.ColumnIdentityKey(column.Name) != semantics.ColumnIdentityKey(change.ColumnName) {
+			continue
+		}
+		drawn := nextvalDefault.FindStringSubmatch(strings.TrimSpace(*column.ColumnDefault))
+		if drawn == nil {
+			return ""
+		}
+		sequence := objectlookup.Qualified(database.Sequences, drawn[1], semantics)
+		if sequence == nil || !sequenceOwnedBy(*sequence, table, column.Name, semantics) ||
+			objectlookup.Qualified([]schemamodel.Sequence(diff.SequencesRemoved), sequence.QualifiedName(), semantics) != nil {
+			return ""
+		}
+		return sequence.QualifiedName()
+	}
+	return ""
+}
+
+// sequenceOwnedBy reports whether column of table owns sequence. A reader qualifies
+// the owner with its schema only when it differs from the sequence's own.
+func sequenceOwnedBy(sequence catalog.Sequence, table catalog.Table, column string, semantics identifier.Semantics) bool {
+	cut := strings.LastIndex(sequence.OwnedBy, ".")
+	if cut < 0 || semantics.ColumnIdentityKey(sequence.OwnedBy[cut+1:]) != semantics.ColumnIdentityKey(column) {
+		return false
+	}
+	owner := sequence.OwnedBy[:cut]
+	if !strings.Contains(owner, ".") {
+		owner = catalog.QualifyTableName(sequence.Schema, owner)
+	}
+	return semantics.QualifiedTableIdentityKey(owner) == semantics.QualifiedTableIdentityKey(table.QualifiedName())
+}
+
+// ColumnSequencesLeaving settles the sequences a column owns as part of itself, which
+// the reader does not report as sequences of their own. It runs after the sequences are
+// compared.
+//
+// A declaration that names such a sequence does not add it, as CREATE SEQUENCE would
+// answer that the relation exists. A sequence nothing declares joins the removed ones
+// where the comparison takes the column's default away: a serial column the declaration
+// writes as a plain type. With its default gone the reader reports such a sequence as
+// one of its own, so a plan that left it would drop it on the next run.
+func ColumnSequencesLeaving(database *catalog.Database, diff *difftypes.SchemaDiff, semantics identifier.Semantics) {
+	if database == nil {
+		return
+	}
+	declared := func(schema, name string) bool {
+		return slices.ContainsFunc(diff.SequencesAdded, func(sequence schemamodel.Sequence) bool {
+			return semantics.IndexIdentityKey(sequence.Name) == semantics.IndexIdentityKey(name) &&
+				semantics.TableIdentityKey(sequence.Schema) == semantics.TableIdentityKey(schema)
+		})
+	}
+	for _, tableDiff := range diff.TablesModified {
+		table := objectlookup.Qualified(database.Tables, tableDiff.TableName, semantics)
+		if table == nil {
+			continue
+		}
+		for _, columnDiff := range tableDiff.ColumnsModified {
+			for _, column := range table.Columns {
+				if semantics.ColumnIdentityKey(column.Name) == semantics.ColumnIdentityKey(columnDiff.ColumnName) &&
+					column.OwnedSequence != "" && column.IsAutoIncrement && defaultLeaves(columnDiff) && !declared(table.Schema, column.OwnedSequence) {
+					diff.SequencesRemoved = append(diff.SequencesRemoved, schemamodel.Sequence{
+						Name: column.OwnedSequence, Schema: table.Schema, OwnedBy: table.Name + "." + column.Name,
+					})
+				}
+			}
+		}
+	}
+	diff.SequencesAdded = slices.DeleteFunc(diff.SequencesAdded, func(sequence schemamodel.Sequence) bool {
+		return slices.ContainsFunc(database.Tables, func(table catalog.Table) bool {
+			return semantics.TableIdentityKey(table.Schema) == semantics.TableIdentityKey(sequence.Schema) &&
+				slices.ContainsFunc(table.Columns, func(column catalog.Column) bool {
+					return column.OwnedSequence != "" && semantics.IndexIdentityKey(column.OwnedSequence) == semantics.IndexIdentityKey(sequence.Name)
+				})
+		})
+	})
+}
+
+// defaultLeaves reports whether change takes the column's default away.
+func defaultLeaves(change difftypes.ColumnDiff) bool {
+	for _, key := range []string{"default", "default_expr"} {
+		if transition, changed := change.Changes[key]; changed && strings.HasSuffix(transition, " -> ") {
+			return true
+		}
+	}
+	return false
 }
 
 // sequenceChanges records the option-by-option transitions between a declared

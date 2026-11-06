@@ -61,3 +61,33 @@ func TestNativeAccessWindowsRefuseForeignOrMissingFootprints(t *testing.T) {
 		})
 	}
 }
+
+// A native grant waits for the common step ahead of it that keeps its place,
+// so the grants keep their source order where no object's lifecycle moves
+// one. Without that edge the grant on main.other, ready once the role exists,
+// ran ahead of the creation window's markers and of the table grant after
+// them.
+func TestNativeAccessWindowsFollowTheStepAhead_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	selections, err := newScopeSelections(scopeDescription())
+	c.Assert(err, qt.IsNil)
+	request := featureplan.Request{Identifiers: selections.selected["example.org/queue"].rules}
+	nodes := []ast.Node{ast.NewCreateRole("app"), ast.NewGrantPrivilege("app", "TOPIC", "main.jobs", []string{"SELECT"}),
+		ast.NewGrantPrivilege("app", "TABLE", "main.table", []string{"SELECT"}), ast.NewGrantPrivilege("app", "TOPIC", "main.other", []string{"SELECT"})}
+	metadata, err := commonPlanningMetadata(request, nodes, selections)
+	c.Assert(err, qt.IsNil)
+
+	movable, edges, err := nativeAccessWindows(request, nodes, metadata, selections)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(movable, qt.DeepEquals, []int{1, 3})
+	c.Assert(edges, qt.DeepEquals, []featurehost.CommonDependency{{Before: 0, After: 1}, {Before: 0, After: 3}, {Before: 2, After: 3}})
+	graph, err := featurehost.NewGraph("ptah.run/provider-common", nodes, metadata, featurehost.Windows{
+		Creation: 1, Dependent: len(nodes), Removal: len(nodes), Lifecycle: &featurehost.Span{Start: 0, End: len(nodes)},
+		LifecycleCommon: movable, CommonDependencies: edges,
+	})
+	c.Assert(err, qt.IsNil)
+	scheduled, err := graph.Schedule(c.Context(), featurehost.Result{})
+	c.Assert(err, qt.IsNil)
+	c.Assert(scheduled, qt.DeepEquals, nodes)
+}

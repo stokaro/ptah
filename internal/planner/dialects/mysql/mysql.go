@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"maps"
@@ -455,15 +456,9 @@ func (p *Planner) modifyExistingColumns(
 			}
 		}
 		givesUpKey := keyrelease.GivesUpAutoIncrementKey(colDiff)
-		suppressColumnPrimary := false
-		if _, hasPrimaryKeyChange := colDiff.Changes["primary_key"]; hasPrimaryKeyChange && !gainsAutoIncrementKey(colDiff) &&
-			primaryKeyColumnChangeOwnedByTableConstraint(diff, tableDiff.TableName, colDiff.ColumnName, semantics) {
-			colDiff.Changes = maps.Clone(colDiff.Changes)
-			delete(colDiff.Changes, "primary_key")
-			suppressColumnPrimary = true
-			if len(colDiff.Changes) == 0 {
-				continue
-			}
+		colDiff, suppressColumnPrimary, nothingLeft := p.withoutChangesConstraintsMake(diff, tableDiff, colDiff, semantics)
+		if nothingLeft {
+			continue
 		}
 		if err := p.validateColumnModification(tableDiff.TableName, colDiff); err != nil {
 			return result, err
@@ -675,6 +670,64 @@ func (p *Planner) validateColumnModification(tableName string, colDiff difftypes
 			strings.Join(unsupported, ", "),
 		),
 	}
+}
+
+// withoutChangesConstraintsMake leaves out of colDiff what the plan's constraint statements
+// change: a primary key a table-level entry owns, and on SQL Server a uniqueness a UNIQUE
+// over the column owns. suppressPrimary says the first applied, and nothingLeft that
+// the column has no change of its own.
+func (p *Planner) withoutChangesConstraintsMake(
+	diff *difftypes.SchemaDiff,
+	table *difftypes.TableDiff,
+	colDiff difftypes.ColumnDiff,
+	semantics identifier.Semantics,
+) (kept difftypes.ColumnDiff, suppressPrimary, nothingLeft bool) {
+	without := func(change string) {
+		colDiff.Changes = maps.Clone(colDiff.Changes)
+		delete(colDiff.Changes, change)
+		nothingLeft = len(colDiff.Changes) == 0
+	}
+	if _, changes := colDiff.Changes["primary_key"]; changes && !gainsAutoIncrementKey(colDiff) &&
+		primaryKeyColumnChangeOwnedByTableConstraint(diff, table.TableName, colDiff.ColumnName, semantics) {
+		without("primary_key")
+		suppressPrimary = true
+	}
+	if _, changes := colDiff.Changes["unique"]; changes && p.targetDialect() == platform.SQLServer &&
+		uniqueColumnChangeOwnedByConstraint(diff, table, colDiff.ColumnName, semantics) {
+		without("unique")
+	}
+	return colDiff, suppressPrimary, nothingLeft
+}
+
+// uniqueColumnChangeOwnedByConstraint reports whether a column reads as gaining or losing
+// its uniqueness because a UNIQUE over it alone, on the table, is added or dropped. The
+// plan's constraint statements make that change, so there is nothing for the column to do.
+// SQL Server's reader marks the column from the key, whichever way the key was declared.
+func uniqueColumnChangeOwnedByConstraint(
+	diff *difftypes.SchemaDiff,
+	table *difftypes.TableDiff,
+	column string,
+	semantics identifier.Semantics,
+) bool {
+	over := func(columns []string) bool {
+		return len(columns) == 1 && semantics.ColumnIdentityKey(columns[0]) == semantics.ColumnIdentityKey(column)
+	}
+	for _, added := range diff.ConstraintsAdded {
+		if strings.EqualFold(added.Type, "UNIQUE") && objectlookup.Same(table.TableName, added.TableName, semantics) && over(added.Columns) {
+			return true
+		}
+	}
+	for _, removed := range diff.ConstraintsRemoved {
+		if !strings.EqualFold(removed.Type, "UNIQUE") || !objectlookup.Same(table.TableName, removed.TableName, semantics) {
+			continue
+		}
+		for _, held := range table.Current.Constraints {
+			if semantics.IndexIdentityKey(held.Name) == semantics.IndexIdentityKey(removed.Name) && over(held.ColumnNamesOrDefault()) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // primaryKeyColumnChangeOwnedByTableConstraint reports whether a table-level
@@ -997,6 +1050,12 @@ func (p *Planner) planColumnTypeForeignKeyChanges(diff *difftypes.SchemaDiff) co
 // MySQL 8.4 and 26.10; MariaDB 12.3 takes the move with the foreign key in place,
 // and the order costs it nothing. A foreign key the diff changes comes back with
 // the other additions, after the move.
+//
+// The same holds for a table that loses a column, where the foreign key may be on that
+// table or reference it: `DROP COLUMN` answers Error 1829 on MySQL 8.4 and Error 1553 on
+// MariaDB 12.3 while a foreign key references the column, and the keys and indexes
+// [keyrelease.UnderColumnDrops] finds leave ahead of the column changes, where one may
+// still serve the foreign key.
 func (p *Planner) releaseForeignKeysOverMovedKeys(diff *difftypes.SchemaDiff, plan *columnTypeForeignKeyPlan) {
 	if diff == nil || !p.isMySQLFamily() {
 		return
@@ -1008,8 +1067,11 @@ func (p *Planner) releaseForeignKeysOverMovedKeys(diff *difftypes.SchemaDiff, pl
 			losesKey[semantics.QualifiedTableIdentityKey(info.TableName)] = true
 		}
 	}
+	losesColumn := keyrelease.TablesLosingColumns(diff, semantics)
 	for _, info := range diff.ForeignKeysRemovedWithTables {
-		if _, done := plan.dropped[info.Identity]; done || !losesKey[semantics.QualifiedTableIdentityKey(info.ForeignTable)] {
+		foreign := semantics.QualifiedTableIdentityKey(info.ForeignTable)
+		if _, done := plan.dropped[info.Identity]; done ||
+			(!losesKey[foreign] && !losesColumn[foreign] && !losesColumn[semantics.QualifiedTableIdentityKey(info.TableName)]) {
 			continue
 		}
 		plan.drops = append(plan.drops, p.dropConstraintNode(difftypes.ConstraintRemovalInfo{
@@ -1255,13 +1317,14 @@ func foreignKeyRemovalDetailsByHost(
 func (p *Planner) addNewIndexes(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
-) ([]ast.Node, error) {
+	additions difftypes.IndexChanges,
+) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	replacements := indexscope.NewConflictSetWithSemantics(semantics, diff.IndexRemovals())
 	guardedDrops := p.capabilities().Has(capability.DropIndexIfExists)
 	constraintBacked := diff.ConstraintBackedIndexRemovalSet()
 	// The declaration travels WITH the addition (stokaro/ptah#2315).
-	for _, change := range diff.IndexesAdded {
+	for _, change := range additions {
 		ref := difftypes.IndexRef{Name: change.Index.Name, TableName: change.TableName}
 		indexNode := modelast.FromIndex(change.Index)
 		indexNode.Table = ref.TableName
@@ -1295,7 +1358,25 @@ func (p *Planner) addNewIndexes(
 		}
 		result = append(result, indexNode)
 	}
-	return result, nil
+	return result
+}
+
+// splitIndexAdditions answers the index additions a column drop would break, and the
+// others. An addition that rebuilds an index under its own name drops the old one, and
+// that index may have left with a column the plan drops, so the drop answers `Error
+// 1091: Can't DROP`, measured on MySQL 8.4 and MariaDB 12.3. It goes ahead of the column
+// drops: the new index reads only columns the table keeps or has gained by then.
+func (p *Planner) splitIndexAdditions(diff *difftypes.SchemaDiff) (ahead, others difftypes.IndexChanges) {
+	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
+	replacements := indexscope.NewConflictSetWithSemantics(semantics, diff.IndexRemovals())
+	for _, change := range diff.IndexesAdded {
+		if replacements.Contains(difftypes.IndexRef{Name: change.Index.Name, TableName: change.TableName}) {
+			ahead = append(ahead, change)
+		} else {
+			others = append(others, change)
+		}
+	}
+	return ahead, others
 }
 
 // replacesIndexInOneStatement reports whether the addition of ref rebuilds one
@@ -1590,7 +1671,10 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	// before the column changes below add that key. Otherwise the server names
 	// the column's key `x_2`, and the next comparison plans the key again.
 	// Steps 6 and 6.7 skip what this drops.
-	released := keyrelease.Find(diff, p.targetDialect()).With(keyrelease.PrimaryKeysUnderColumnChanges(diff, p.targetDialect()))
+	released := keyrelease.Find(diff, p.targetDialect()).
+		With(keyrelease.PrimaryKeysUnderColumnChanges(diff, p.targetDialect())).
+		With(keyrelease.UnderColumnDrops(diff, p.targetDialect())).
+		With(keyrelease.NamesIndexesTake(diff, p.targetDialect()))
 	result = p.releaseKeyNames(result, diff, released)
 
 	result, columnDrops, err := p.modifyExistingTables(result, diff)
@@ -1620,13 +1704,12 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	// and before any column, view, table or routine it names is removed. Their
 	// owner orders its creations and drops among themselves.
 	windows.Dependent = len(result)
+	rebuiltAhead, otherIndexes := p.splitIndexAdditions(diff)
+	result = p.addNewIndexes(result, diff, rebuiltAhead)
 	result = append(result, columnDrops...)
 
 	// 5. Add new indexes
-	result, err = p.addNewIndexes(result, diff)
-	if err != nil {
-		return nil, err
-	}
+	result = p.addNewIndexes(result, diff, otherIndexes)
 	result = changeIndexVisibility(result, diff)
 
 	// 5.5. Add new constraints (must be done after tables and columns exist).
@@ -1638,7 +1721,7 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	maps.Copy(alreadyDropped, fkPlan.dropped)
 	maps.Copy(alreadyDropped, keyrelease.DroppedWithColumns(diff, p.targetDialect()))
 	maps.Copy(alreadyDropped, released.ConstraintSet())
-	result, err = p.addNewConstraints(result, diff, alreadyDropped)
+	result, err = p.addNewConstraints(result, diff, alreadyDropped, released.IndexSet())
 	if err != nil {
 		return nil, err
 	}
@@ -1700,6 +1783,7 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 		return nil, err
 	}
 	result = p.planSchemaPreconditions(result, diff, created)
+	result = p.dropRemovedSchemas(result, diff)
 	if !p.describes() {
 		guards.Settle(result, guards.Options{HarmlessRaw: harmlessSessionStatement})
 	}
@@ -1912,6 +1996,7 @@ func (p *Planner) addNewConstraints(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
 	bracketDropped map[constraintHostKey]struct{},
+	releasedIndexes map[difftypes.IndexRef]struct{},
 ) ([]ast.Node, error) {
 	state := newConstraintPlanState(diff, diff.EffectiveIdentifierSemantics(p.targetDialect()))
 
@@ -1933,13 +2018,18 @@ func (p *Planner) addNewConstraints(
 	if !p.isMySQLFamily() {
 		result = addKeys(result)
 	}
+	rebuiltIndexes := diff.IndexRemovalsRebuiltAsUniqueConstraints()
+	maps.DeleteFunc(rebuiltIndexes, func(ref difftypes.IndexRef, _ struct{}) bool {
+		_, released := releasedIndexes[ref]
+		return released
+	})
 	result = p.addNonForeignKeyConstraintsWithTables(
 		result,
 		diff.ConstraintsAdded,
 		state.removalByTableName,
 		state.handled,
 		state.droppedForModify,
-		diff.IndexRemovalsRebuiltAsUniqueConstraints(),
+		rebuiltIndexes,
 		state.semantics,
 	)
 	if p.isMySQLFamily() {
@@ -2083,6 +2173,10 @@ func (p *Planner) addPrimaryKeyConstraintsWithTables(
 		// owners keep on the key, which the MySQL family writes in its
 		// definition.
 		primaryKey := ast.NewPrimaryKeyConstraint(add.Columns...)
+		if p.targetDialect() == platform.SQLServer {
+			// SQL Server keeps the name, and a later file and the rollback have to name it.
+			primaryKey.Name = add.Name
+		}
 		primaryKey.Deferrable, primaryKey.Initially = add.Deferrable, add.Initially
 		primaryKey.UsingMethod = add.UsingMethod
 		primaryKey.Facets = add.Facets
@@ -2415,7 +2509,7 @@ func (p *Planner) removeConstraints(
 	}
 
 	dropped := make(map[constraintHostKey]struct{})
-	for _, info := range diff.ConstraintsRemoved {
+	for _, info := range foreignKeysFirst(diff.ConstraintsRemoved) {
 		if info.TableName == "" {
 			// No host recorded: there is no valid table-qualified ALTER TABLE
 			// to emit and no runtime fallback on MySQL. Real comparator output
@@ -2445,6 +2539,27 @@ func (p *Planner) removeConstraints(
 		result = p.appendScopedDrop(result, info, dropped, semantics)
 	}
 	return result
+}
+
+// foreignKeysFirst returns removals with the foreign keys ahead of the others, each
+// group in the order the diff lists it. The server refuses to drop a UNIQUE key a foreign
+// key stands on, with `Error 1553: needed in a foreign key constraint`, and that key may
+// be on the same table or on one the diff lists earlier. Measured on MySQL 8.4 and
+// MariaDB 12.3.
+func foreignKeysFirst(removals difftypes.ConstraintRemovals) difftypes.ConstraintRemovals {
+	ordered := slices.Clone(removals)
+	slices.SortStableFunc(ordered, func(a, b difftypes.ConstraintRemovalInfo) int {
+		return cmp.Compare(foreignKeyRank(a), foreignKeyRank(b))
+	})
+	return ordered
+}
+
+// foreignKeyRank orders a foreign key ahead of any other constraint.
+func foreignKeyRank(info difftypes.ConstraintRemovalInfo) int {
+	if strings.EqualFold(info.Type, "FOREIGN KEY") {
+		return 0
+	}
+	return 1
 }
 
 // dropConstraintNode builds the ALTER TABLE drop statement for a single removed

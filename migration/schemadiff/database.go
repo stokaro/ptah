@@ -995,6 +995,9 @@ func appendGeneratedIdentifierNames(
 	for _, field := range desired.Fields {
 		names = append(names, field.Name)
 	}
+	for _, schema := range desired.Schemas {
+		names = append(names, schema.Name)
+	}
 	for _, table := range desired.Tables {
 		names = append(names, table.Schema, table.Name)
 		for _, field := range generatedschema.FieldsForTable(desired, table) {
@@ -1010,6 +1013,9 @@ func appendGeneratedIdentifierNames(
 			names = append(names, part.Name)
 		}
 	}
+	for _, constraint := range desired.Constraints {
+		names = append(names, constraint.Name)
+	}
 	return names
 }
 
@@ -1019,6 +1025,9 @@ func appendDatabaseIdentifierNames(
 ) []string {
 	if database == nil {
 		return names
+	}
+	for _, schema := range database.Schemas {
+		names = append(names, schema.Name)
 	}
 	for _, table := range database.Tables {
 		names = append(names, table.Schema, table.Name)
@@ -1032,6 +1041,12 @@ func appendDatabaseIdentifierNames(
 		for _, part := range index.Parts {
 			names = append(names, part.Name)
 		}
+	}
+	// A constraint's name compares under the index rule. Left out, it has no answer from
+	// the server, and an unanswered name may collide with any other: adding a constraint
+	// to a table that holds one read as a conflict.
+	for _, constraint := range database.Constraints {
+		names = append(names, constraint.Name)
 	}
 	return names
 }

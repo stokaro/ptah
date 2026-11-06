@@ -113,19 +113,27 @@ func ReportUndescribed(w io.Writer, dialect string, schema *catalog.Database) {
 	if len(schema.RolesOutOfScope) == 0 {
 		return
 	}
+	// A reader that states why it left the roles out knows better than the
+	// dialect's descriptor: a provider's dialect has none, and its own words
+	// are the only cause that is true of its read.
+	cause := schema.RolesOutOfScopeReason
+	if cause == "" {
+		cause = outOfScopeCause(dialect)
+	}
 	fmt.Fprintf(w,
 		"note: %s Ptah manages on this server %s not described, because %s; comparison still treats"+
 			" them as present, so none of them is planned as a CREATE ROLE.%s\n",
 		countedRoles(len(schema.RolesOutOfScope)), pluralIs(len(schema.RolesOutOfScope)),
-		outOfScopeCause(dialect), describeAllRemedy(dialect),
+		cause, describeAllRemedy(dialect),
 	)
 }
 
 // outOfScopeCause says why a reader left roles out of the description, as the
-// dialect's descriptor states it. The YDB reader leaves out the users and
-// groups the cluster made for itself, such as ADMINS and DATA-READERS, the
-// database's owner, and every user and group when it reads a dev realm; the
-// others leave out the roles nothing in the inspected schemas refers to.
+// dialect's descriptor states it, for a read that states no reason of its own.
+// Under RoleScopeUserMade a read leaves out the users and groups the cluster
+// made for itself, such as ADMINS and DATA-READERS, the database's owner, and
+// every user and group of a dev realm; under the other scope it leaves out the
+// roles nothing in the inspected schemas refers to.
 func outOfScopeCause(dialect string) string {
 	described, _ := platform.Lookup(dialect)
 	if described.Roles.OutOfScope == descriptor.RoleScopeUserMade {

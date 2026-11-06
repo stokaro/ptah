@@ -1391,9 +1391,11 @@ that says what a rollback cannot undo.
 A statement an executable provider plans is named from the object the
 provider plans it for and from what the provider says the step does to that
 object. A step that creates the table `orders` writes `create "orders" table`,
-a step that drops it writes `drop "orders" table`, and any other change to it,
-a new column, index or changefeed included, writes `modify "orders" table`.
-Tables, views, materialized views and indexes are named this way. A statement
+a step that drops it writes `drop "orders" table`, and a step that only adds or
+drops one index of it writes `create index "orders_total_ix" to table: "orders"`
+or `drop index "orders_total_ix" from table: "orders"`. Any other change to it,
+a new column or changefeed included, writes `modify "orders" table`. Tables,
+views, materialized views and indexes are named this way. A statement
 for an object of a kind the provider defines itself, a YDB topic for example,
 has no change comment, because the community binary has no words for it.
 
@@ -1435,13 +1437,11 @@ and two removed tables whose policies read each other are dropped in one
 
 A removed domain, composite type or range type that names the row type of a
 removed table, such as `CREATE TYPE wrap AS (r t, n int)`, is dropped before
-the tables. The plan relies on `CASCADE` only where it removes a dependent
-after the drop: a table whose row type a type the plan removes names, when a
-table or a routine the plan drops after the tables still uses the type, so the
-type is dropped after them. Any other removed domain, composite type or range
-type, a removed extension and a removed default privilege hold no drop back. An
-object a feature owner removes and cannot describe holds back every column and
-table drop.
+the tables, and a removed table or routine that uses the type goes before it. Any
+other removed domain, composite type or range type, a removed extension and a
+removed default privilege hold no drop back. The plan relies on `CASCADE` only for
+an object a feature owner removes and cannot describe, which holds back every column
+and table drop.
 
 Such a `CASCADE` also drops a reader the declaration does not hold, such as a
 view in a schema the run leaves out, and the file applies without an error.

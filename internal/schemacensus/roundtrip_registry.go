@@ -241,7 +241,7 @@ var roundTripGaps = []Unreached{
 	{Field: "schemamodel.Constraint.UsingMethod", Dialects: []string{"mysql"}, Directions: nil, Reason: gapComparison},
 	{
 		Field:      "schemamodel.Database.Schemas",
-		Dialects:   []string{"clickhouse", "mariadb", "mysql", "sqlserver"},
+		Dialects:   []string{"clickhouse", "mariadb", "mysql"},
 		Directions: nil,
 		Reason:     gapComparison,
 	},
@@ -270,7 +270,7 @@ var roundTripGaps = []Unreached{
 	{Field: "schemamodel.Field.GeneratedExpression", Dialects: []string{"oracle"}, Directions: nil, Reason: gapComparison},
 	{
 		Field:      "schemamodel.Field.IdentityGeneration",
-		Dialects:   []string{"cockroachdb", "oracle", "postgres", "spanner", "yugabytedb"},
+		Dialects:   []string{"oracle", "spanner", "yugabytedb"},
 		Directions: nil,
 		Reason:     gapComparison,
 	},
@@ -360,7 +360,7 @@ var roundTripGaps = []Unreached{
 
 	{
 		Field:      "schemamodel.Schema.Name",
-		Dialects:   []string{"clickhouse", "mariadb", "mysql", "sqlserver"},
+		Dialects:   []string{"clickhouse", "mariadb", "mysql"},
 		Directions: nil,
 		Reason:     gapComparison,
 	},
@@ -378,9 +378,15 @@ var roundTripGaps = []Unreached{
 	{Field: "schemamodel.Table.PrimaryKeyMethod", Dialects: []string{"mysql"}, Directions: nil, Reason: gapComparison},
 	{
 		Field:      "schemamodel.Table.PrimaryKeyName",
-		Dialects:   []string{"cockroachdb", "oracle", "postgres", "spanner", "sqlserver", "yugabytedb"},
+		Dialects:   []string{"oracle", "spanner", "sqlserver", "yugabytedb"},
 		Directions: nil,
 		Reason:     gapToCatalog,
+	},
+	{
+		Field:      "schemamodel.Table.PrimaryKeyName",
+		Dialects:   []string{"cockroachdb", "postgres"},
+		Directions: []Direction{FromCatalog},
+		Reason:     gapFromCatalog,
 	},
 	{Field: "schemamodel.Table.PrimaryKeyParts", Dialects: []string{"mariadb", "mysql", "sqlserver"}, Directions: nil, Reason: gapToCatalog},
 	{Field: "schemamodel.Trigger.Dialects", Dialects: []string{"clickhouse", "spanner"}, Directions: nil, Reason: gapToCatalog},

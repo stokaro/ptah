@@ -280,9 +280,12 @@ The guarded form is not a style choice. SQL Server has no
 is already an object named 'app' in the database`, and `CREATE SCHEMA` must be
 the first statement of its batch — which is what the `EXEC` is for.
 
-The schemas come from the objects being added, so a migration that adds nothing
-emits no schema statement and a single-schema declaration emits none either. A
-schema a document declares and puts nothing in is not created.
+The schemas come from the objects being added and from the `schema` blocks a
+document declares, so a migration that adds nothing emits no schema statement and
+a single-schema declaration emits none either. A schema a document declares and
+puts nothing in is created too, and a rollback drops it with `DROP SCHEMA`, which
+the server refuses while the schema holds an object. A plan never creates `dbo`,
+and never drops a schema the document does not mention.
 
 **MySQL, MariaDB, ClickHouse and Oracle do not do this**, and that is a
 difference in what a schema IS rather than a gap. A schema there is a database —
@@ -331,6 +334,23 @@ string literals) are not reconstructed, so those predicates compare as changed
 on every run. If a filtered index keeps reporting drift after it was applied,
 read the stored spelling with `ptah db read` and use it in the annotation; the
 rendered SQL always preserves your annotation text verbatim.
+
+## Primary keys nobody named
+
+SQL Server names a primary key with no name itself, as
+`PK__orders__3213E83F2B3A1E5C`, and the hash differs from one database to the next. A
+later file that drops the key could name only the one its dev database held, and any
+other database answers that it is not a constraint. So Ptah writes the name:
+`<table>_pkey`. A name the author wrote stays. Where the table's name leaves no room
+within the server's limit of 128 characters, the name is the table's cut short with a
+hash of the whole name in front of the suffix.
+
+## Unique constraints and checks nobody named
+
+A `UNIQUE` on the table with no name, in a SQL schema file, takes
+`<table>_<columns>_key`, for the same reason as a primary key, and a `CHECK` on the table
+takes `<table>_<column>_check`. Each is numbered past a name the schema holds. A `UNIQUE`
+written on a column keeps the name the server gives it.
 
 ## Column defaults
 

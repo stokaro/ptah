@@ -924,6 +924,7 @@ func (p *Planner) modifyExistingTableColumns(
 					PreviousType:        previousColumnType(colDiff.Changes["type"]),
 					PreviousNullable:    previousColumnNullable(colDiff.Changes["nullable"]),
 					HasPreviousNullable: colDiff.Changes["nullable"] != "",
+					PreviousIdentity:    previousColumnType(colDiff.Changes["identity"]),
 					Changed:             changed,
 					HasChanged:          true,
 				}},
@@ -1326,9 +1327,10 @@ func appendTableComment(result []ast.Node, tableDiff difftypes.TableDiff) []ast.
 // PRIMARY KEY where the plan adds the table's primary key as a constraint. A key
 // declared on the table carries that flag on its column too, and written twice the
 // second answers `multiple primary keys for table "parent" are not allowed`, measured
-// on PostgreSQL 18.6. The rest of the family has not been measured.
+// on PostgreSQL 18.6 and CockroachDB v26.3.5. The rest of the family has not been
+// measured.
 func (p *Planner) columnsLeavingTheirKeyToTheTable(tableDiff difftypes.TableDiff, diff *difftypes.SchemaDiff, semantics identifier.Semantics) difftypes.ColumnChanges {
-	if p.targetDialect() != platform.Postgres {
+	if p.targetDialect() != platform.Postgres && p.targetDialect() != platform.CockroachDB {
 		return tableDiff.ColumnsAdded
 	}
 	table := semantics.QualifiedTableIdentityKey(tableDiff.TableName)
@@ -1550,7 +1552,7 @@ func (p *Planner) dropIndexNode(diff *difftypes.SchemaDiff, ref difftypes.IndexR
 // changes: each one that holds the name a column's own key takes, and what a
 // foreign key or a column change the plan makes cannot run over.
 func (p *Planner) keysDroppedAhead(diff *difftypes.SchemaDiff) keyrelease.Releases {
-	released := keyrelease.Find(diff, p.targetDialect())
+	released := keyrelease.Find(diff, p.targetDialect()).With(keyrelease.NamesIndexesTake(diff, p.targetDialect()))
 	// A foreign key the plan adds would bind to a removed key still there, and
 	// that key's drop would then stop at it.
 	if described, _ := platform.Lookup(p.targetDialect()); described.Comparison.ForeignKeyHoldsItsKey {
@@ -1561,7 +1563,7 @@ func (p *Planner) keysDroppedAhead(diff *difftypes.SchemaDiff) keyrelease.Releas
 	if p.targetDialect() == platform.Postgres {
 		released = released.With(keyrelease.PrimaryKeysUnderColumnChanges(diff, p.targetDialect()))
 	}
-	return released
+	return released.With(keyrelease.NamesRenamedKeysTake(diff, p.targetDialect()))
 }
 
 // releaseKeyNames drops the removed keys released holds, each as its removal
@@ -1607,8 +1609,28 @@ func (p *Planner) constraintBackedIndexDropNode(ref difftypes.IndexRef) ast.Node
 // row-level security policy reads another removed table goes before that
 // table when its policy has not already been dropped; see [tableDropRelies].
 func (p *Planner) removeTables(result []ast.Node, diff *difftypes.SchemaDiff, ahead routinesAhead, droppedPolicies map[objectidentity.Key]bool) []ast.Node {
-	dropped := make(map[string]bool, len(diff.TablesRemoved))
-	for _, group := range p.removedTableGroups(diff, ahead) {
+	_, later := p.removedTablesAroundTypes(diff, ahead)
+	return p.removeTableGroups(result, diff, later, ahead, droppedPolicies)
+}
+
+// removeTablesHoldingTypes drops the removed tables a removed type over another
+// removed table's row is the column type of, and the routines that take such a type.
+// They run ahead of the window the type leaves in; see
+// [Planner.removedTablesAroundTypes].
+func (p *Planner) removeTablesHoldingTypes(result []ast.Node, diff *difftypes.SchemaDiff, ahead routinesAhead, droppedPolicies map[objectidentity.Key]bool) []ast.Node {
+	holding, _ := p.removedTablesAroundTypes(diff, ahead)
+	result = p.removeTableGroups(result, diff, holding, ahead, droppedPolicies)
+	for _, name := range typesOverRemovedRows(diff) {
+		result = p.appendRoutineDrops(result, ahead.of(name))
+	}
+	return result
+}
+
+// removeTableGroups writes one DROP TABLE for each of groups, with the routines
+// that leave just ahead of its tables.
+func (p *Planner) removeTableGroups(result []ast.Node, diff *difftypes.SchemaDiff, groups [][]string, ahead routinesAhead, droppedPolicies map[objectidentity.Key]bool) []ast.Node {
+	dropped := ahead.tablesDropped
+	for _, group := range groups {
 		for _, tableName := range group {
 			result = p.appendRoutineDrops(result, ahead.of(tableName))
 		}
@@ -1971,13 +1993,20 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// 5d. A removed sequence leaves its owner before the column changes that
 	// take its default away; see [Planner.releaseRemovedSequenceOwners].
 	result = p.releaseRemovedSequenceOwners(result, diff)
+	result = p.releaseKeptSequenceOwners(result, diff)
 
 	// Feature operations that stand in the way of a column change join the plan
 	// here.
+	features, err := p.planTableFeatures(ctx, runtime, diff)
+	if err != nil {
+		return nil, err
+	}
+	result = append(result, features.aheadOfColumns...)
 	windows.Lifecycle = &featurehost.Span{Start: len(result), End: len(result)}
 
 	// 6. Add and modify table columns (must be done before creating RLS policies that depend on columns)
 	result = p.addAndModifyTableColumns(result, diff)
+	result = p.restoreKeptSequenceOwners(result, diff)
 
 	// 6.5. Add foreign key constraints for newly added columns (must be done after all columns exist)
 	result = p.addForeignKeyConstraintsForModifiedTables(result, diff)
@@ -2070,12 +2099,8 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// names cannot be dropped while the policy still points at it. A plan that
 	// moved an expression off a column and dropped it once emitted `DROP
 	// COLUMN … CASCADE` first (stokaro/ptah#1027, stokaro/ptah#2236).
-	beforeTableFeatures := len(result)
-	result, err = p.planTableFeatures(ctx, runtime, result, diff)
-	if err != nil {
-		return nil, err
-	}
-	droppedPolicies := policiesDroppedBeforeRelations(result[beforeTableFeatures:], diff)
+	result = append(result, features.afterColumns...)
+	droppedPolicies := policiesDroppedBeforeRelations(slices.Concat(features.aheadOfColumns, features.afterColumns), diff)
 	earlyColumns := p.columnsLeavingEarly(diff)
 	ahead, err := p.routinesAheadOf(diff, rebuild, earlyColumns, droppedPolicies)
 	if err != nil {
@@ -2104,6 +2129,8 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 
 	// 12.5. Remove constraints (must be done before removing tables)
 	result = p.removeConstraints(result, diff, releasedConstraints, constraintsAfterColumns)
+
+	result = p.removeTablesHoldingTypes(result, diff, ahead, droppedPolicies)
 
 	// Feature operations that drop objects join the plan here: after the views
 	// and materialized views that may read them are dropped, and before the
@@ -2619,6 +2646,50 @@ func (p *Planner) releaseRemovedSequenceOwners(result []ast.Node, diff *difftype
 			node.SetSchema(sequence.Schema)
 		}
 		result = append(result, node)
+	}
+	return result
+}
+
+// releaseKeptSequenceOwners is [Planner.releaseRemovedSequenceOwners] for a
+// sequence the plan keeps: CockroachDB answers a change of the default the same
+// way, measured on v26.3.5 for DROP DEFAULT and for SET DEFAULT to another
+// sequence. [Planner.restoreKeptSequenceOwners] gives the sequence its owner back.
+func (p *Planner) releaseKeptSequenceOwners(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	return p.alterKeptSequenceOwners(result, diff, func(difftypes.TableDiff, difftypes.ColumnDiff) string { return "NONE" })
+}
+
+// restoreKeptSequenceOwners gives each sequence
+// [Planner.releaseKeptSequenceOwners] detached its owner back, ahead of the option
+// changes that may move the sequence to another owner.
+func (p *Planner) restoreKeptSequenceOwners(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	return p.alterKeptSequenceOwners(result, diff, func(table difftypes.TableDiff, column difftypes.ColumnDiff) string {
+		return table.TableName + "." + column.ColumnName
+	})
+}
+
+// alterKeptSequenceOwners writes one ALTER SEQUENCE ... OWNED BY for each column
+// change that marks a kept sequence, on CockroachDB; see
+// [difftypes.ColumnDiff.OwnedDefaultSequence].
+func (p *Planner) alterKeptSequenceOwners(
+	result []ast.Node,
+	diff *difftypes.SchemaDiff,
+	owner func(difftypes.TableDiff, difftypes.ColumnDiff) string,
+) []ast.Node {
+	if p.targetDialect() != platform.CockroachDB {
+		return result
+	}
+	for _, table := range diff.TablesModified {
+		for _, column := range table.ColumnsModified {
+			if column.OwnedDefaultSequence == "" {
+				continue
+			}
+			schema, name := splitQualifiedSequenceName(column.OwnedDefaultSequence)
+			node := ast.NewAlterSequence(name).SetOwnedBy(owner(table, column))
+			if schema != "" {
+				node.SetSchema(schema)
+			}
+			result = append(result, node)
+		}
 	}
 	return result
 }
@@ -3322,13 +3393,36 @@ func (p *Planner) addPrimaryKeyConstraintsWithTables(
 		if add.Type != "PRIMARY KEY" || add.TableName == "" || len(add.Columns) == 0 {
 			continue
 		}
-		if replaced, found := state.replacedPrimaryKeys[state.semantics.QualifiedTableIdentityKey(add.TableName)]; found {
-			result = p.appendScopedDrop(result, replaced.TableName, replaced.Name, replaced.Identity, state)
+		var dropsKey []ast.AlterOperation
+		if replaced, found := state.replacedPrimaryKeys[state.semantics.QualifiedTableIdentityKey(add.TableName)]; found && add.RenamedFrom == "" {
+			// CockroachDB refuses a key's drop in a statement of its own, with
+			// `this schema change is disallowed because table "t" is locked` on a
+			// table of the default schema_locked and with `primary key dropped
+			// without subsequent addition` on any other, measured on v26.3.5. It
+			// takes the two together, and that keeps no second index over the old
+			// column, as ALTER PRIMARY KEY does.
+			if p.targetDialect() == platform.CockroachDB {
+				dropsKey = append(dropsKey, &ast.DropConstraintOperation{ConstraintName: replaced.Name})
+				state.droppedForModify[replaced.Identity] = struct{}{}
+			} else {
+				result = p.appendScopedDrop(result, replaced.TableName, replaced.Name, replaced.Identity, state)
+			}
 		}
 		// A UNIQUE the key takes its name from is a modification like any other:
 		// the plan's removals leave it to this step.
 		if _, modified := state.removalByTableName[add.Identity]; modified {
 			result = p.emitModifyDrop(result, add, state)
+		}
+		// The key holds its columns already: the name is all that moves, and a
+		// foreign key over it has nothing to do. The plan's removals leave the old
+		// name to this step.
+		if add.RenamedFrom != "" {
+			result = append(result, &ast.AlterTableNode{
+				Name:       add.TableName,
+				Operations: []ast.AlterOperation{&ast.RenameConstraintOperation{From: add.RenamedFrom, To: add.Name}},
+			})
+			state.handled[add.Name] = struct{}{}
+			continue
 		}
 		// The payload rides with the key, exactly as it does for a covering
 		// UNIQUE. Without it the re-ADD builds a plain key and the INCLUDE the
@@ -3340,7 +3434,7 @@ func (p *Planner) addPrimaryKeyConstraintsWithTables(
 		primaryKey.Deferrable, primaryKey.Initially = add.Deferrable, add.Initially
 		result = append(result, &ast.AlterTableNode{
 			Name:       add.TableName,
-			Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: primaryKey}},
+			Operations: append(dropsKey, &ast.AddConstraintOperation{Constraint: primaryKey}),
 		})
 		state.handled[add.Name] = struct{}{}
 	}

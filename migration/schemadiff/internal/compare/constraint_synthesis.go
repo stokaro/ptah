@@ -202,7 +202,7 @@ func synthesizeTablePrimaryKeyConstraints(
 // check. A column's own primary key is compared as a flag on the column, and
 // the flag cannot defer; against a deferrable live key it is compared as the
 // table's key instead, so the difference is planned (stokaro/ptah#3824).
-// [isFieldLevelConstraint] answers from the same fact on the other side.
+// [fieldLevelConstraints.has] answers from the same fact on the other side.
 func liveKeyDefers(database *catalog.Database, identity tableIdentity, semantics identifier.Semantics) bool {
 	for _, constraint := range database.Constraints {
 		if constraint.Type == "PRIMARY KEY" && constraint.Deferrable &&
@@ -351,6 +351,9 @@ func tablePrimaryKeyConstraintName(
 	dialect string,
 	semantics identifier.Semantics,
 ) string {
+	if declaresKeyName(table, dialect) {
+		return table.PrimaryKeyName
+	}
 	wanted := newQualifiedTableIdentity(table.QualifiedName(), semantics)
 	if name, found := livePrimaryKeyName(dbConstraints, wanted, semantics); found {
 		return name
@@ -363,6 +366,13 @@ func tablePrimaryKeyConstraintName(
 		return table.PrimaryKeyName
 	}
 	return table.Name + "_pkey"
+}
+
+// declaresKeyName reports a primary key name the table declares, on a dialect that
+// compares it with the live key's name. Without it a declared name over the columns
+// the key holds reads as synced, and the two names stay apart for good.
+func declaresKeyName(table schemamodel.Table, dialect string) bool {
+	return table.PrimaryKeyName != "" && comparisonOf(dialect).PrimaryKeyRenames
 }
 
 // addedPrimaryKeyNamed gives a primary key that replaces the live one the name

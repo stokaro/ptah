@@ -139,6 +139,7 @@ func reverseSchemaDiffWithPrior(
 		// collation the pre-change server held, and a changed one is set back.
 		SchemasAdded:    schemaCreationsFromRemovals(diff.SchemasRemoved, prior),
 		SchemasRemoved:  schemaNames(diff.SchemasAdded),
+		HeldSchemas:     schemasHeldAfter(diff),
 		SchemasModified: reverseSchemaChanges(diff.SchemasModified),
 		TablesRemoved:   reverseTableRemovals(diff.TablesAdded),
 		TablesModified:  reverseTableDiffs(diff.TablesModified, prior, semantics),
@@ -301,6 +302,7 @@ func reverseSchemaDiffWithPrior(
 	for _, restored := range constraintRestorations {
 		reversed.ConstraintsAdded = append(reversed.ConstraintsAdded, restored)
 	}
+	renameKeysBack(reversed.ConstraintsAdded, diff.ConstraintsAdded, semantics)
 	// Last of the constraint additions, so these read every key they restore.
 	reversed.ConstraintsRemoved = append(reversed.ConstraintsRemoved,
 		reverseColumnKeyRemovals(diff, reversed.ConstraintsAdded, dialect, semantics)...)
@@ -550,4 +552,17 @@ func reverseIndexComments(changes []difftypes.IndexCommentChange) []difftypes.In
 		})
 	}
 	return reversed
+}
+
+// schemasHeldAfter is the schemas the database holds once diff has run: what the read
+// found, less what the plan drops, and what it creates. A rollback runs on that database,
+// so a schema there needs no creating when the rollback puts a table back in it.
+func schemasHeldAfter(diff *difftypes.SchemaDiff) []string {
+	if len(diff.HeldSchemas) == 0 {
+		return nil
+	}
+	held := slices.DeleteFunc(slices.Clone(diff.HeldSchemas), func(schema string) bool {
+		return slices.Contains(diff.SchemasRemoved, schema)
+	})
+	return append(held, schemaNames(diff.SchemasAdded)...)
 }

@@ -768,6 +768,24 @@ func ProcessEmbeddedFields(embeddedFields []EmbeddedField, originalFields []Fiel
 	return allFields
 }
 
+// StructFields is the part of ProcessEmbeddedFields(embeddedFields,
+// originalFields) that belongs to structName, in the same order: the
+// struct's own fields, then the fields its embedded declarations add that it
+// does not declare itself. It reads only the fields of structName and of the
+// types it embeds, so a caller that wants the fields of each table in turn
+// does not expand every struct's for each of them. Neither input is changed.
+func StructFields(embeddedFields []EmbeddedField, originalFields []Field, structName string) []Field {
+	var fields []Field
+	declared := make(map[fieldKey]struct{})
+	for _, field := range originalFields {
+		if field.StructName == structName && !field.GeneratedFromEmbedded {
+			fields = append(fields, field)
+			declared[fieldKeyFor(field)] = struct{}{}
+		}
+	}
+	return appendFieldsNotDeclared(fields, processEmbeddedFieldsForStruct(embeddedFields, originalFields, structName), declared)
+}
+
 type fieldKey struct {
 	structName string
 	name       string
@@ -892,9 +910,10 @@ func processEmbeddedInlineModeRecursive(
 	activeTypes[embedded.EmbeddedTypeName] = true
 	defer delete(activeTypes, embedded.EmbeddedTypeName)
 
-	// Step 1: Add direct fields from the embedded type
+	// Step 1: Add direct fields from the embedded type, as it declares them:
+	// a field an earlier expansion generated is not one of them.
 	for _, field := range allFields {
-		if field.StructName != embedded.EmbeddedTypeName {
+		if field.StructName != embedded.EmbeddedTypeName || field.GeneratedFromEmbedded {
 			continue
 		}
 		// Clone the field and reassign to target struct

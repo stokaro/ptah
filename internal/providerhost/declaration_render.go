@@ -18,6 +18,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemavalidation"
 	"ptah.run/engine"
+	"ptah.run/internal/modelast"
 	"ptah.run/internal/planner/featurehost"
 	"ptah.run/internal/tableref"
 )
@@ -90,11 +91,12 @@ func (t *target) renderDeclarations(ctx context.Context, request renderer.Schema
 	if err != nil {
 		return renderer.SchemaResult{}, err
 	}
-	plan, nodes := creation.plan, creation.nodes
-	metadata, err := commonPlanningMetadata(plan, nodes, t.host.selections)
+	metadata, err := commonPlanningMetadata(creation.plan, creation.nodes, t.host.selections)
 	if err != nil {
 		return renderer.SchemaResult{}, err
 	}
+	metadata, trailing := creation.takeDeclaredObjectPermissions(metadata, objects)
+	plan, nodes := creation.plan, creation.nodes
 	graph, err := featurehost.NewGraph("ptah.run/provider-declarations", nodes, metadata, featurehost.Windows{
 		Creation: creation.creationStart, Dependent: len(nodes), Removal: len(nodes),
 		Prerequisites: &featurehost.PrerequisiteWindows{Creation: 0, Removal: len(nodes)},
@@ -117,6 +119,7 @@ func (t *target) renderDeclarations(ctx context.Context, request renderer.Schema
 	if err := rejectUnclaimedChanges(ordered); err != nil {
 		return renderer.SchemaResult{}, err
 	}
+	ordered = append(ordered, trailing...)
 	rendered, err := t.Render(ctx, renderer.Request{Target: request.Target, Capabilities: request.Capabilities, Nodes: ordered, Form: renderer.FormText})
 	if err != nil {
 		return renderer.SchemaResult{}, err
@@ -126,6 +129,34 @@ func (t *target) renderDeclarations(ctx context.Context, request renderer.Schema
 		return renderer.SchemaResult{}, err
 	}
 	return renderer.SchemaResult{Complete: true, Statements: statements}, nil
+}
+
+// takeDeclaredObjectPermissions takes out of the common statements that follow
+// the tables each GRANT and REVOKE whose effects read an object a declaration
+// planner creates, one of objects. It returns the metadata of the statements
+// it keeps, and the permissions it took in their order, which the render
+// writes after every scheduled statement, as a built-in engine's schema render
+// does ([modelast.DeclaredObjects]). A declaration planner places its
+// creations among the common steps and may place one after all of them, as
+// YDB's provider places a coordination node. A permission on that object kept
+// among the other grants would come before the object, or would hold the
+// grants after it until the object exists. Nothing depends on a GRANT or a
+// REVOKE, and the end of the script follows both its object and its grantee.
+// A render whose permissions read no declared object keeps every statement in
+// place.
+func (c *authoredCreation) takeDeclaredObjectPermissions(metadata []featureplan.CommonStep, objects []schemaext.Object) ([]featureplan.CommonStep, []ast.Node) {
+	declared := modelast.NewDeclaredObjects(objects)
+	nodes, kept := slices.Clone(c.nodes[:c.creationStart]), slices.Clone(metadata[:c.creationStart])
+	var trailing []ast.Node
+	for i := c.creationStart; i < len(c.nodes); i++ {
+		if declared.Permits(c.nodes[i], metadata[i].Effects) {
+			trailing = append(trailing, c.nodes[i])
+			continue
+		}
+		nodes, kept = append(nodes, c.nodes[i]), append(kept, metadata[i])
+	}
+	c.nodes = nodes
+	return kept, trailing
 }
 
 // authoredCreation keeps complete captured tables, including indexes and
