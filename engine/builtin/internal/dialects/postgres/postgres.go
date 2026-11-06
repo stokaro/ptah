@@ -908,6 +908,12 @@ var notEnforcedClauses = map[bool]string{true: " NOT ENFORCED", false: ""}
 // writeAddConstraint writes one ALTER TABLE ... ADD CONSTRAINT and the comment
 // that belongs to it.
 func (r *Renderer) writeAddConstraint(table string, constraint *ast.ConstraintNode) error {
+	return r.writeAddConstraintAfter(table, "", constraint)
+}
+
+// writeAddConstraintAfter is [Renderer.writeAddConstraint] with the clauses ahead
+// of ADD in the same statement.
+func (r *Renderer) writeAddConstraintAfter(table, ahead string, constraint *ast.ConstraintNode) error {
 	constraintLine, err := r.renderConstraint(constraint)
 	if err != nil {
 		return fmt.Errorf("error rendering add constraint: %w", err)
@@ -918,8 +924,8 @@ func (r *Renderer) writeAddConstraint(table string, constraint *ast.ConstraintNo
 	}
 	// Remove the leading spaces from constraint rendering for ALTER
 	constraintLine = strings.TrimPrefix(constraintLine, "  ")
-	r.w.WriteLinef("ALTER TABLE %s ADD %s%s;",
-		r.escapeQualifiedIdentifier(table), constraintLine, r.notValidClause(constraint))
+	r.w.WriteLinef("ALTER TABLE %s %sADD %s%s;",
+		r.escapeQualifiedIdentifier(table), ahead, constraintLine, r.notValidClause(constraint))
 	// The comment is a separate statement here for the same reason it is after
 	// CREATE TABLE, and it has to be written on BOTH paths. Measured on
 	// PostgreSQL 18: `schema apply` reaches an existing table through ALTER
@@ -958,8 +964,33 @@ func addColumnClause(op *ast.AddColumnOperation) string {
 	return "ADD COLUMN"
 }
 
+// primaryKeyReplacement is the two operations of a node that replaces a primary
+// key in one statement: a constraint's drop and the key's addition. Every other node
+// writes a statement for each operation. CockroachDB takes a key's drop only in the
+// statement that adds the next one.
+func primaryKeyReplacement(node *ast.AlterTableNode) (*ast.DropConstraintOperation, *ast.AddConstraintOperation, bool) {
+	if len(node.Operations) != 2 {
+		return nil, nil, false
+	}
+	drop, drops := node.Operations[0].(*ast.DropConstraintOperation)
+	add, adds := node.Operations[1].(*ast.AddConstraintOperation)
+	return drop, add, drops && adds && add.Constraint != nil && add.Constraint.Type == ast.PrimaryKeyConstraint
+}
+
 // renderAlterTable renders PostgreSQL-specific ALTER TABLE statements
 func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
+	if drop, add, replaces := primaryKeyReplacement(node); replaces {
+		if err := r.writeAddConstraintAfter(node.Name, fmt.Sprintf("DROP CONSTRAINT %s, ", r.escapeIdentifier(drop.ConstraintName)), add.Constraint); err != nil {
+			return err
+		}
+		r.w.WriteLine("")
+		return nil
+	}
+	return r.renderAlterTableOperations(node)
+}
+
+// renderAlterTableOperations writes a statement for each operation of node.
+func (r *Renderer) renderAlterTableOperations(node *ast.AlterTableNode) error {
 	for _, operation := range node.Operations {
 		switch op := operation.(type) {
 		case *ast.AddColumnOperation:
@@ -2072,6 +2103,12 @@ func (r *Renderer) renderPostgreSQLModifyColumn(tableName string, op *ast.Modify
 	if enumDefault {
 		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s DROP DEFAULT;", r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name))
 	}
+	// A column with an identity takes no default, so the identity leaves ahead of
+	// the default that replaces it and arrives after the default it replaces.
+	identityLeaves := changed.Identity && column.IdentityGeneration == ""
+	if identityLeaves {
+		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s DROP IDENTITY;", r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name))
+	}
 	if changed.Type && !r.writeColumnTypeChange(tableName, column) {
 		return
 	}
@@ -2084,6 +2121,43 @@ func (r *Renderer) renderPostgreSQLModifyColumn(tableName string, op *ast.Modify
 	case changed.Default && !enumDefault:
 		r.writeColumnDefaultChange(tableName, column)
 	}
+	if changed.Identity && !identityLeaves {
+		r.writeColumnIdentityChange(tableName, op)
+	}
+}
+
+// writeColumnIdentityChange writes the clause that gives a column its identity. A
+// column that gains one draws from a sequence that starts at the beginning, and the
+// next row would collide with one the table holds, so the statement after it moves
+// the sequence past them. A table with no row at or past the start has nothing to
+// collide with, and an identity that counts down starts below the values it holds.
+func (r *Renderer) writeColumnIdentityChange(tableName string, op *ast.ModifyColumnOperation) {
+	column := op.Column
+	table, name := r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name)
+	if op.PreviousIdentity != "" {
+		generation, err := renderIdentityGeneration(column.IdentityGeneration)
+		if err != nil {
+			r.w.WriteLinef("-- %s: %s", r.dialectUpper, err.Error())
+			return
+		}
+		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s SET GENERATED %s;", table, name, generation)
+		return
+	}
+	identity, err := r.renderIdentity(column)
+	if err != nil {
+		r.w.WriteLinef("-- %s: %s", r.dialectUpper, err.Error())
+		return
+	}
+	r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s ADD %s;", table, name, identity)
+	if op.OmitNullBackfill || strings.HasPrefix(strings.TrimSpace(column.IdentityIncrement), "-") {
+		return
+	}
+	start := strings.TrimSpace(column.IdentityStart)
+	if start == "" {
+		start = "1"
+	}
+	r.w.WriteLinef("SELECT setval(pg_get_serial_sequence(%s, %s), max(%s)) FROM %s HAVING max(%s) >= %s;",
+		r.escapeValue(table), r.escapeValue(column.Name), name, table, name, start)
 }
 
 // writeColumnTypeChange writes the TYPE clause of a column modification, and

@@ -72,6 +72,13 @@ type OwnedCodec struct {
 	// call. It is mutually exclusive with Codec.Decode. Reuse the same pointer
 	// for every registration belonging to one owner; registration snapshots it.
 	BatchDecoder *BatchDecoder
+	// Predecessors are earlier identities of the codec's model, such as the
+	// one a former owner wrote into a captured coverage document. A coverage
+	// document that names one makes its claim of the codec's model (see
+	// [Registry.DecodeCoverage]); nothing is written under one. Each has the
+	// codec's representation, and none is the codec's current identity, the
+	// kind of another registration, or another codec's predecessor.
+	Predecessors []CodecIdentity
 }
 
 // BatchDecoder validates serialized models through their selected owner. It
@@ -106,6 +113,9 @@ type registeredCodec struct {
 type Registry struct {
 	codecs        map[codecKey]registeredCodec
 	batchDecoders map[string]func(context.Context, []Envelope) ([]Payload, error)
+	// predecessors maps each earlier identity a registration names to the
+	// registration whose model it was.
+	predecessors map[CodecIdentity]codecKey
 	// definitions lists the registered keys in Definitions' order, sorted once
 	// when the registry is frozen. The identities, which carry the digests, are
 	// built when a caller asks for them.
@@ -134,6 +144,9 @@ func NewRegistry(owned ...OwnedCodec) (Registry, error) {
 		if declaration.BatchDecoder != nil {
 			result.batchDecoders[declaration.Owner] = declaration.BatchDecoder.Decode
 		}
+	}
+	if err := result.registerPredecessors(owned); err != nil {
+		return Registry{}, err
 	}
 	result.definitions = make([]codecKey, 0, len(result.codecs))
 	for key := range result.codecs {

@@ -291,6 +291,8 @@ func (p *Parser) parseStatement() (ast.Node, error) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("unsupported SQL statement: %s at position %d", keyword, p.current.Start)
+	case "IF":
+		return p.parseGuardedCreateSchema()
 	case "USE":
 		return nil, p.parseUse()
 	case "ANALYZE", "BEGIN", "CALL", "COMMIT", "DELETE", "INSERT", "MERGE", "PRAGMA", "REINDEX", "ROLLBACK", "SELECT", "SET", "SHOW", "UPDATE", "VACUUM", "WITH":
@@ -3137,6 +3139,21 @@ func (p *Parser) handleMultiWordType(typeName string) string {
 	return typeName
 }
 
+// handleTimeZoneBehindPrecision reads the zone qualifier where a precision puts it,
+// behind the parentheses: `timestamp(3) with time zone`, which is how pg_dump writes
+// every such column.
+func (p *Parser) handleTimeZoneBehindPrecision(typeName string) string {
+	base, _, hasPrecision := strings.Cut(typeName, "(")
+	if name := strings.ToUpper(base); !hasPrecision || (name != "TIME" && name != "TIMESTAMP") {
+		return typeName
+	}
+	p.skipWhitespace()
+	if !p.current.MatchIdentifierValue("WITH") && !p.current.MatchIdentifierValue("WITHOUT") {
+		return typeName
+	}
+	return p.appendTimeZoneQualifier(typeName)
+}
+
 // appendTimeZoneQualifier consumes `WITH TIME ZONE` or `WITHOUT TIME ZONE` onto
 // a TIME or TIMESTAMP.
 //
@@ -3230,6 +3247,8 @@ func (p *Parser) parseColumnType() (string, error) {
 
 	// Check for type parameters (e.g., VARCHAR(255), NUMERIC(10,2))
 	typeName = p.collectTypeParameters(typeName)
+
+	typeName = p.handleTimeZoneBehindPrecision(typeName)
 
 	// Check for MySQL/MariaDB type modifiers (UNSIGNED, ZEROFILL, etc.)
 	typeName = p.handleMySQLLikeTypeModifiers(typeName)

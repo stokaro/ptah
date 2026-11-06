@@ -128,6 +128,7 @@ func yugabyteDB() descriptor.Dialect {
 		// Comparison: what comparing a declaration with a catalog reads.
 		Comparison: descriptor.Comparison{
 			DeclaredSchemas:    true,
+			TimePrecision:      descriptor.TimePrecision{Compared: true, Default: 6},
 			ExpressionProbes:   "pg-catalog",
 			RolePasswords:      true,
 			RoutineTypeAliases: "pg-aliases",

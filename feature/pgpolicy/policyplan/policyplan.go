@@ -23,9 +23,12 @@ import (
 // Service plans policy and table-switch changes. Its zero value is ready for
 // concurrent use.
 //
-// Every operation asks for [featureplan.PhaseDependent]: a policy names
-// tables, columns, routines and roles, and nothing common reads it. A policy
-// that changes uses ALTER POLICY when its command and composition stay the
+// An operation asks for [featureplan.PhaseDependent]: a policy names tables,
+// columns, routines and roles, and nothing common reads it. A removed policy
+// names nothing the plan is still to make and stands in the way of a change to
+// a column it reads, which PostgreSQL refuses, so its drop asks for
+// [featureplan.PhaseLifecycle]; see [dropsAheadOfColumnChanges] for the drop that
+// stays. A policy that changes uses ALTER POLICY when its command and composition stay the
 // same and no clause is removed. That step needs no transaction and preserves
 // its comment. Other definition changes drop and create the policy in one
 // step that requires a transaction. A creation or replacement starts without
@@ -55,6 +58,8 @@ type planned struct {
 	table objectidentity.Key
 	main  plangraph.StepID
 	rank  int
+	// removal is whether the change takes the policy away.
+	removal bool
 }
 
 // PlanFeatures returns complete receipts, one per change in input order, and a
@@ -91,6 +96,7 @@ func (Service) PlanFeatures(ctx context.Context, request featureplan.Request) (f
 		all = append(all, step)
 	}
 	contribution.Dependencies = append(contribution.Dependencies, accessOrder(all)...)
+	contribution.Steps = dropsAheadOfColumnChanges(contribution.Steps, all)
 	for index, table := range request.Tables {
 		switch table.Action {
 		case "":
@@ -252,7 +258,7 @@ func planPolicy(roles objectidentity.Builder, name string, subject objectidentit
 		return planned{}, err
 	}
 	table := pgpolicy.Table(subject)
-	result := planned{table: table.Key(), rank: accessRank(change.Access.Access)}
+	result := planned{table: table.Key(), rank: accessRank(change.Access.Access), removal: change.After == nil}
 	result.plan = featureplan.ChangePlan{Subject: subject, Kind: change.Kind(), Strategy: policyStrategy(change)}
 	reads := []plangraph.Effect{{Subject: table, Action: plangraph.Read}}
 	if change.After != nil {
@@ -356,6 +362,30 @@ func planTableState(index int, subject objectidentity.ID, change *pgpolicy.Table
 	}
 	return planned{steps: []plangraph.Step[featureplan.Operation]{step}, table: subject.Key(), main: id, rank: accessRank(change.Access.Access),
 		plan: featureplan.ChangePlan{Subject: subject, Kind: change.Kind(), Strategy: "set the table's row-security switches", Steps: []plangraph.StepID{id}}}, nil
+}
+
+// dropsAheadOfColumnChanges moves the drop of each removed policy to
+// [featureplan.PhaseLifecycle], ahead of the column changes. Without the move the
+// plan stops at `cannot alter type of a column used in a policy definition`.
+//
+// A drop stays in the dependent phase where [accessOrder] puts another step of the
+// table before it: a restrictive policy swapped for another is created first, so
+// the table never admits more than it does at either end, and the replacement may
+// read a column the plan has yet to change.
+func dropsAheadOfColumnChanges(steps []plangraph.Step[featureplan.Operation], all []planned) []plangraph.Step[featureplan.Operation] {
+	for _, drop := range all {
+		if !drop.removal || slices.ContainsFunc(all, func(other planned) bool {
+			return other.table == drop.table && other.rank < drop.rank
+		}) {
+			continue
+		}
+		for i := range steps {
+			if steps[i].ID == drop.main {
+				steps[i].Payload.Phase = featureplan.PhaseLifecycle
+			}
+		}
+	}
+	return steps
 }
 
 // accessRank orders steps from the one that can only narrow access to the one

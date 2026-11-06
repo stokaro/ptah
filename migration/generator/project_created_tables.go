@@ -18,6 +18,8 @@ import (
 // projectCreatedTableRemovals captures the state a reverse DROP would destroy.
 // Only accepted creations and their accepted additions supply this projection.
 // Removals for a table replaced under the same name belong to its former state.
+// The declarations of the created tables are converted together, so a provider
+// is asked twice for all of them rather than twice for each.
 func projectCreatedTableRemovals(ctx context.Context, forward, reverse *difftypes.SchemaDiff, dialect string, caps capability.Capabilities, runtime Runtime) error {
 	semantics := forward.EffectiveIdentifierSemantics(dialect)
 	creations := make(map[string]difftypes.TableCreation, len(forward.TablesAdded))
@@ -28,28 +30,51 @@ func projectCreatedTableRemovals(ctx context.Context, forward, reverse *difftype
 		}
 		creations[key] = creation
 	}
+	var (
+		projected    []int
+		declarations []*schemamodel.Database
+		uncreated    error
+	)
 	for i := range reverse.TablesRemoved {
 		removal := &reverse.TablesRemoved[i]
 		creation, found := creations[semantics.QualifiedTableIdentityKey(removal.Name)]
 		if !found {
-			return fmt.Errorf("cannot project removal of uncreated table %q", removal.Name)
+			// The removals ahead of this one are still projected first, so
+			// their refusals come before this one.
+			uncreated = fmt.Errorf("cannot project removal of uncreated table %q", removal.Name)
+			break
 		}
-		current, err := projectCreatedTableState(ctx, forward, creation, dialect, caps, runtime)
+		if creation.Table.Name == "" {
+			// A name-only intent is not evidence of an empty table. The planner
+			// reports the missing creation operand before it can render a CREATE.
+			removal.Current = schemacapture.TableObservation{}
+			continue
+		}
+		projected = append(projected, i)
+		declarations = append(declarations, createdTableDeclaration(forward, creation, semantics))
+	}
+	if len(declarations) != 0 {
+		converted, err := goschematodb.ToDBSchemas(ctx, declarations, dialect, runtime)
 		if err != nil {
 			return err
 		}
-		removal.Current = current
+		for j, i := range projected {
+			removal := &reverse.TablesRemoved[i]
+			creation := creations[semantics.QualifiedTableIdentityKey(removal.Name)]
+			current, err := projectCreatedTableState(ctx, forward, creation, converted[j], dialect, caps, runtime)
+			if err != nil {
+				return err
+			}
+			removal.Current = current
+		}
 	}
-	return nil
+	return uncreated
 }
 
-func projectCreatedTableState(ctx context.Context, diff *difftypes.SchemaDiff, creation difftypes.TableCreation, dialect string, caps capability.Capabilities, runtime Runtime) (schemacapture.TableObservation, error) {
-	if creation.Table.Name == "" {
-		// A name-only intent is not evidence of an empty table. The planner
-		// reports the missing creation operand before it can render a CREATE.
-		return schemacapture.TableObservation{}, nil
-	}
-	semantics := diff.EffectiveIdentifierSemantics(dialect)
+// createdTableDeclaration is the document that declares one created table:
+// the table with its fields, enums, constraints, owned objects and their
+// coverage, and the indexes and triggers the diff adds to it.
+func createdTableDeclaration(diff *difftypes.SchemaDiff, creation difftypes.TableCreation, semantics identifier.Semantics) *schemamodel.Database {
 	declaration := &schemamodel.Database{
 		Tables: []schemamodel.Table{creation.Table.Clone()}, Fields: slices.Clone(creation.Fields), Enums: slices.Clone(creation.Enums),
 		Constraints: slices.Clone(creation.Constraints), FeatureObjects: creation.OwnedObjects, FeatureCoverage: creation.FeatureCoverage,
@@ -68,10 +93,16 @@ func projectCreatedTableState(ctx context.Context, diff *difftypes.SchemaDiff, c
 			declaration.Triggers = append(declaration.Triggers, trigger)
 		}
 	}
-	converted, err := goschematodb.ToDBSchema(ctx, declaration, dialect, runtime)
-	if err != nil {
-		return schemacapture.TableObservation{}, err
-	}
+	return declaration
+}
+
+// projectCreatedTableState is the state a created table holds once its
+// declaration, converted as the target would read it, takes the constraints
+// the diff adds to it.
+func projectCreatedTableState(
+	ctx context.Context, diff *difftypes.SchemaDiff, creation difftypes.TableCreation, converted *catalog.Database, dialect string, caps capability.Capabilities, runtime Runtime,
+) (schemacapture.TableObservation, error) {
+	semantics := diff.EffectiveIdentifierSemantics(dialect)
 	if len(converted.Tables) != 1 {
 		return schemacapture.TableObservation{}, fmt.Errorf("cannot project incomplete creation of table %q", creation.Name)
 	}

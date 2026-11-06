@@ -240,6 +240,64 @@ func TestProviderHCLExport_SplitKeepsTheClaim(t *testing.T) {
 	c.Assert(restated, qt.DeepEquals, []string{written[1]})
 }
 
+// formerRetentionDocument is document, an HCL export of the hcl-claims
+// fixture, with its captured header written as a former owner of the
+// retention model wrote it: the same claim, under the identity the fixture
+// names as its predecessor with FIXTURE_RETENTION_PREDECESSOR=1.
+func formerRetentionDocument(c *qt.C, document []byte) []byte {
+	c.Helper()
+	header := coverageHeader.FindStringSubmatch(string(document))
+	c.Assert(header, qt.HasLen, 2, qt.Commentf("%s", document))
+	former := strings.ReplaceAll(header[1], `"example.org/fixture/retention"`, `"example.org/builtin/retention"`)
+	former = strings.Replace(former, `"owner":"example.org/fixture"`, `"owner":"example.org/builtin"`, 1)
+	former = regexp.MustCompile(`"definition":"sha256:[0-9a-f]{64}"`).ReplaceAllString(former, `"definition":"sha256:`+strings.Repeat("ab", 32)+`"`)
+	c.Assert(former, qt.Not(qt.Contains), "example.org/fixture")
+	return []byte(strings.Replace(string(document), header[1], former, 1))
+}
+
+// TestProviderHCLRead_AClaimUnderAPredecessor_HappyPath reads the export of
+// TestProviderHCLExport_WritesTheClaim with its header written under the
+// identity a former owner gave the retention model. A provider that names
+// that identity as its model's predecessor reads the same claim the export
+// made, and a file cut from the document carries the claim under the
+// provider's own identity.
+func TestProviderHCLRead_AClaimUnderAPredecessor_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	_, runtime := yamlProviderEnvironment(c, "hcl-claims", []string{"FIXTURE_RETENTION_PREDECESSOR=1"})
+	source, err := goschema.ParseSource(runtime.Annotations(), "records.go", hclExportSource)
+	c.Assert(err, qt.IsNil)
+	result, err := atlashclrender.Render(&source, atlashclrender.Options{HCL: runtime.HCL(), Target: "fixture"})
+	c.Assert(err, qt.IsNil)
+	former := formerRetentionDocument(c, result.Data)
+
+	read, readErr := atlashcl.ParseWithOptions(c.Context(), former, "schema.hcl", atlashcl.Options{HCL: runtime.HCL()})
+	restated, restateErr := runtime.HCL().SplitRestate(schemaext.CoverageHeaderBodies(string(former)), nil)
+
+	c.Assert(readErr, qt.IsNil)
+	c.Assert(read.FeatureCoverage.KindRecords(), qt.DeepEquals, source.FeatureCoverage.KindRecords())
+	c.Assert(read.FeatureCoverage.SubjectRecords(), qt.DeepEquals, source.FeatureCoverage.SubjectRecords())
+	c.Assert(restateErr, qt.IsNil)
+	c.Assert(restated, qt.DeepEquals, []string{coverageHeader.FindStringSubmatch(string(result.Data))[1]})
+}
+
+// TestProviderHCLRead_AClaimUnderAPredecessor_FailurePath reads the same
+// document through a provider that names no predecessor: the header names a
+// model the provider does not own, and the document is refused.
+func TestProviderHCLRead_AClaimUnderAPredecessor_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	runtime := hclClaimsProvider(c)
+	source, err := goschema.ParseSource(runtime.Annotations(), "records.go", hclExportSource)
+	c.Assert(err, qt.IsNil)
+	result, err := atlashclrender.Render(&source, atlashclrender.Options{HCL: runtime.HCL(), Target: "fixture"})
+	c.Assert(err, qt.IsNil)
+
+	read, err := atlashcl.ParseWithOptions(c.Context(), formerRetentionDocument(c, result.Data), "schema.hcl", atlashcl.Options{HCL: runtime.HCL()})
+
+	c.Assert(err, qt.ErrorIs, schemaext.ErrUnknownCodec)
+	c.Assert(err, qt.ErrorMatches, `.*unknown feature codec: "example\.org/builtin/retention"/desired`)
+	c.Assert(read, qt.IsNil)
+}
+
 // TestProviderHCLExport_FailurePath refuses an HCL export whose provider
 // answers with ptah:not-described entries: the host writes the document's
 // account of the provider's models itself, and the document would hold two.

@@ -144,16 +144,21 @@ func postgres() descriptor.Dialect {
 		// Comparison: what comparing a declaration with a catalog reads.
 		Comparison: descriptor.Comparison{
 			DeclaredSchemas:    true,
+			TimePrecision:      descriptor.TimePrecision{Compared: true, Default: 6},
 			ForeignKeysOutside: true,
 			// pg_constraint.conindid names the index, and `DROP CONSTRAINT`
 			// on it answers `cannot drop constraint parent_pkey on table
 			// parent because other objects depend on it`, measured on 18.6.
 			// The rest of the family has not been measured.
-			ForeignKeyHoldsItsKey: true,
+			// Measured on 18.6. The rest of the family has not been measured.
+			ForeignKeyMatchesKeyInAnyOrder: true,
+			ForeignKeyHoldsItsKey:          true,
 			// Without this `code bigint PRIMARY KEY` on a table that holds
 			// another key, or none, plans no key and reads as synced, measured
 			// on 18.6. The rest of the family has not been measured.
 			ColumnPrimaryKeyIsTheTablesKey: true,
+			PrimaryKeyRenames:              true,
+			IdentityColumns:                true,
 			ExpressionProbes:               "pg-catalog",
 			RolePasswords:                  true,
 			DefaultGeneratedKind:           "STORED",

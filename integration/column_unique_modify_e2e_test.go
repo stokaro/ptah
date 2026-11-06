@@ -24,13 +24,16 @@ var columnUniqueModified = []struct {
 	migration string
 	schema    string
 	want      string
-	keys      string
+	// native is what `ptah schema apply` writes, which keeps the planner's spelling.
+	native string
+	keys   string
 }{
 	{
 		name:      "the type of a UNIQUE column changes",
 		migration: `CREATE TABLE c (id int PRIMARY KEY, x int UNIQUE);`,
 		schema:    `CREATE TABLE c (id int PRIMARY KEY, x bigint UNIQUE);`,
-		want:      "MODIFY COLUMN `x` bigint;",
+		want:      "MODIFY COLUMN `x` bigint NULL;",
+		native:    "MODIFY COLUMN `x` bigint;",
 		keys:      "x(x)",
 	},
 	{
@@ -38,13 +41,15 @@ var columnUniqueModified = []struct {
 		migration: `CREATE TABLE c (id int PRIMARY KEY, x int UNIQUE);`,
 		schema:    `CREATE TABLE c (id int PRIMARY KEY, x int NOT NULL UNIQUE);`,
 		want:      "MODIFY COLUMN `x` int NOT NULL;",
+		native:    "MODIFY COLUMN `x` int NOT NULL;",
 		keys:      "x(x)",
 	},
 	{
 		name:      "a UNIQUE column gains a default",
 		migration: `CREATE TABLE c (id int PRIMARY KEY, x int UNIQUE);`,
 		schema:    `CREATE TABLE c (id int PRIMARY KEY, x int DEFAULT 5 UNIQUE);`,
-		want:      "MODIFY COLUMN `x` int DEFAULT 5;",
+		want:      "MODIFY COLUMN `x` int NULL DEFAULT 5;",
+		native:    "MODIFY COLUMN `x` int DEFAULT 5;",
 		keys:      "x(x)",
 	},
 	{
@@ -53,14 +58,16 @@ var columnUniqueModified = []struct {
 ALTER TABLE c ADD COLUMN x int UNIQUE;`,
 		schema: `CREATE TABLE c (id int PRIMARY KEY, y int, KEY x (y));
 ALTER TABLE c ADD COLUMN x bigint UNIQUE;`,
-		want: "MODIFY COLUMN `x` bigint;",
-		keys: "x(y) x_2(x)",
+		want:   "MODIFY COLUMN `x` bigint NULL;",
+		native: "MODIFY COLUMN `x` bigint;",
+		keys:   "x(y) x_2(x)",
 	},
 	{
 		name:      "a column gains its UNIQUE as its type changes",
 		migration: `CREATE TABLE c (id int PRIMARY KEY, x int);`,
 		schema:    `CREATE TABLE c (id int PRIMARY KEY, x bigint UNIQUE);`,
-		want:      "MODIFY COLUMN `x` bigint UNIQUE;",
+		want:      "MODIFY COLUMN `x` bigint NULL UNIQUE;",
+		native:    "MODIFY COLUMN `x` bigint UNIQUE;",
 		keys:      "x(x)",
 	},
 }
@@ -130,7 +137,7 @@ func TestSchemaApplyModifiesAUniqueColumnWithOneKeyE2E(t *testing.T) {
 				applied := runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", schema, "--auto-approve")
 				again := runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", schema, "--dry-run")
 
-				c.Assert(applied, qt.Contains, test.want)
+				c.Assert(applied, qt.Contains, test.native)
 				c.Assert(again, qt.Contains, "Schema is synced")
 				c.Assert(keysOfC(c, target), qt.Equals, test.keys)
 			})

@@ -1437,13 +1437,11 @@ and two removed tables whose policies read each other are dropped in one
 
 A removed domain, composite type or range type that names the row type of a
 removed table, such as `CREATE TYPE wrap AS (r t, n int)`, is dropped before
-the tables. The plan relies on `CASCADE` only where it removes a dependent
-after the drop: a table whose row type a type the plan removes names, when a
-table or a routine the plan drops after the tables still uses the type, so the
-type is dropped after them. Any other removed domain, composite type or range
-type, a removed extension and a removed default privilege hold no drop back. An
-object a feature owner removes and cannot describe holds back every column and
-table drop.
+the tables, and a removed table or routine that uses the type goes before it. Any
+other removed domain, composite type or range type, a removed extension and a
+removed default privilege hold no drop back. The plan relies on `CASCADE` only for
+an object a feature owner removes and cannot describe, which holds back every column
+and table drop.
 
 Such a `CASCADE` also drops a reader the declaration does not hold, such as a
 view in a schema the run leaves out, and the file applies without an error.

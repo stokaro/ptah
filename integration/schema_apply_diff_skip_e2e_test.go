@@ -100,7 +100,7 @@ const sqliteCompatSkippedPlan = "Planned schema changes:\n" +
 	"-- " + skippedColumnB + "\n" +
 	"-- " + skippedIndexTA + "\n" +
 	"-- Add column \"c\" to table: \"t\"\n" +
-	"ALTER TABLE \"t\" ADD COLUMN \"c\" TEXT;\n" +
+	"ALTER TABLE \"t\" ADD COLUMN \"c\" text NULL;\n" +
 	"Auto-approval enabled; applying schema changes.\n" +
 	"Schema apply completed successfully.\n"
 

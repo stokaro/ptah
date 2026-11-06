@@ -32,6 +32,18 @@ type Runtime interface {
 // its source properties under creation rules before projecting that state.
 // This is a prediction from a document, not evidence that a table was inspected.
 func prepareSourceTables(ctx context.Context, source *schemamodel.Database, target string, runtime Runtime) (*schemamodel.Database, []schemaprojection.TableCreation, error) {
+	databases, prepared, err := prepareSourceTableSets(ctx, []*schemamodel.Database{source}, target, runtime)
+	if err != nil {
+		return nil, nil, err
+	}
+	return databases[0], prepared[0], nil
+}
+
+// prepareSourceTableSets prepares each document as [prepareSourceTables]
+// prepares it alone, with one creation projection for the tables of all of
+// them. It returns the prepared documents and the predicted creations of each
+// document's tables, in input order.
+func prepareSourceTableSets(ctx context.Context, sources []*schemamodel.Database, target string, runtime Runtime) ([]*schemamodel.Database, [][]schemaprojection.TableCreation, error) {
 	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
 		return nil, nil, err
 	}
@@ -39,24 +51,28 @@ func prepareSourceTables(ctx context.Context, source *schemamodel.Database, targ
 	if err != nil {
 		return nil, nil, err
 	}
-	scoped, err := schemamodel.ScopeToTarget(source, selected)
-	if err != nil {
-		return nil, nil, err
-	}
-	// Decoding copies tables and indexes. Constraint facet destinations also
-	// need their own slice before computed values are assigned.
-	database, err := schemaproperties.Decode(ctx, scoped, selected.Name(), runtime)
-	if err != nil {
-		return nil, nil, err
-	}
-	database.Constraints = slices.Clone(database.Constraints)
 	semantics := identifier.ForDialect(selected.Name())
 	identities := objectidentity.NewBuilder(semantics)
 	request := schemaprojection.TableCreationRequest{Target: selected.Name(), Identifiers: semantics, Capabilities: capability.ForDialect(selected.Name())}
-	for _, table := range database.Tables {
-		request.Tables = append(request.Tables, schemaprojection.TableCreationInput{
-			Subject: identities.TableParts(table.Schema, table.Name), Declaration: schemacapture.DeclareTable(database, table, semantics),
-		})
+	databases := make([]*schemamodel.Database, len(sources))
+	for i, source := range sources {
+		scoped, err := schemamodel.ScopeToTarget(source, selected)
+		if err != nil {
+			return nil, nil, err
+		}
+		// Decoding copies tables and indexes. Constraint facet destinations also
+		// need their own slice before computed values are assigned.
+		database, err := schemaproperties.Decode(ctx, scoped, selected.Name(), runtime)
+		if err != nil {
+			return nil, nil, err
+		}
+		database.Constraints = slices.Clone(database.Constraints)
+		for _, table := range database.Tables {
+			request.Tables = append(request.Tables, schemaprojection.TableCreationInput{
+				Subject: identities.TableParts(table.Schema, table.Name), Declaration: schemacapture.DeclareTable(database, table, semantics),
+			})
+		}
+		databases[i] = database
 	}
 	result, err := runtime.ProjectTableCreations(ctx, request.Clone())
 	if err != nil {
@@ -66,21 +82,29 @@ func prepareSourceTables(ctx context.Context, source *schemamodel.Database, targ
 	if err != nil {
 		return nil, nil, err
 	}
-	slots, err := creationFacetSlots(database, semantics)
-	if err != nil {
-		return nil, nil, err
-	}
-	if err := applyCreationFacets(slots, projection.Tables, selected.Name()); err != nil {
-		return nil, nil, err
-	}
-	database.FeatureCoverage, err = projectedFacetCoverage(database.FeatureCoverage, slots, runtime.Codecs())
-	if err != nil {
-		return nil, nil, err
+	prepared := make([][]schemaprojection.TableCreation, len(databases))
+	offset := 0
+	for i, database := range databases {
+		end := offset + len(database.Tables)
+		tables := projection.Tables[offset:end:end]
+		offset = end
+		slots, err := creationFacetSlots(database, semantics)
+		if err != nil {
+			return nil, nil, err
+		}
+		if err := applyCreationFacets(slots, tables, selected.Name()); err != nil {
+			return nil, nil, err
+		}
+		database.FeatureCoverage, err = projectedFacetCoverage(database.FeatureCoverage, slots, runtime.Codecs())
+		if err != nil {
+			return nil, nil, err
+		}
+		prepared[i] = tables
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
 	}
-	return database, projection.Tables, nil
+	return databases, prepared, nil
 }
 
 // An unenrolled declaration gains knowledge only for successfully projected

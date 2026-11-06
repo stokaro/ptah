@@ -25,6 +25,10 @@
 //
 // With FIXTURE_REPORT_COUNTS=1 the engine reports the retention models with
 // the count metrics of retentionMetrics and the program counts their values.
+//
+// With FIXTURE_RETENTION_PREDECESSOR=1 the engine names retentionPredecessor
+// as an earlier identity of its desired retention model, so a document a
+// former owner captured the model's claims under reads as the same claim.
 package main
 
 import (
@@ -43,6 +47,12 @@ import (
 )
 
 const retentionKind = "example.org/fixture/retention"
+
+// retentionPredecessor is the identity a former owner named the retention
+// model under: its owner, its kind and its definition digest, schema version 1.
+var retentionPredecessor = &protocol.ModelPredecessor{Kind: retentionKind, Representation: protocol.ValueInput_DESIRED,
+	FormerOwner: "example.org/builtin", FormerKind: "example.org/builtin/retention", SchemaVersion: 1,
+	DefinitionSha256: strings.Repeat("ab", 32)}
 
 func main() {
 	owner := &hclClaims{Provider: &backend.Provider{}}
@@ -83,6 +93,11 @@ func description() *protocol.Description {
 				engine.Reports = append(engine.Reports, &protocol.ModelReport{Kind: retentionKind, Representation: model.GetRepresentation(), Metrics: retentionMetrics()})
 			}
 		}
+	}
+	if os.Getenv("FIXTURE_RETENTION_PREDECESSOR") == "1" {
+		description.Features = append(description.Features, provider.ModelPredecessorsFeature)
+		engine.Features = append(engine.Features, provider.ModelPredecessorsFeature)
+		engine.ModelPredecessors = []*protocol.ModelPredecessor{proto.CloneOf(retentionPredecessor)}
 	}
 	engine.GoSourceDirectives = append(engine.GoSourceDirectives, backend.ScopedGoSourceDirectives()...)
 	seconds := []*protocol.HCLSourceAttribute{{Name: "seconds", Kind: protocol.HCLSourceAttribute_TEXT}}

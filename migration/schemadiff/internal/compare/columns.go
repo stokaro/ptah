@@ -3,8 +3,10 @@ package compare
 import (
 	"fmt"
 	"maps"
+	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"ptah.run/catalog"
@@ -24,6 +26,7 @@ import (
 	"ptah.run/internal/chtype"
 	"ptah.run/internal/cockroachtype"
 	"ptah.run/internal/columnsemantics"
+	"ptah.run/internal/columnsequence"
 	"ptah.run/internal/constraintowner"
 	"ptah.run/internal/exprkey"
 	"ptah.run/internal/normalize"
@@ -539,8 +542,14 @@ func columnsWithDesiredDomains(
 	dbNullable := dbCol.IsNullable == "YES"
 	if genNullable != dbNullable {
 		colDiff.Changes["nullable"] = fmt.Sprintf("%t -> %t", dbNullable, genNullable)
+		// A rule above may hold the column NOT NULL whatever the field says, and the
+		// plan writes the clause from the field.
+		colDiff.Desired.Nullable = genNullable
 	}
 	applyColumnSequence(&colDiff, genCol, dbCol, ctx)
+	if change := identityChange(genCol, dbCol, dialect); change != "" {
+		colDiff.Changes["identity"] = change
+	}
 
 	// Compare primary key
 	genPrimary := genCol.Primary
@@ -619,6 +628,48 @@ func declaredAutoIncrement(field schemamodel.Field, dialect string) (declared, c
 	}
 }
 
+// declaresColumnSequence reports whether a declared column is built with a sequence
+// of its own that a default draws from, so that such a default is what the declaration
+// asks for. An identity column holds no default: a live one stays a difference, unless
+// the live column draws from a sequence too.
+func declaresColumnSequence(field schemamodel.Field) bool {
+	if strings.TrimSpace(field.IdentityGeneration) != "" {
+		return false
+	}
+	_, creates := columnsequence.Declared("", field)
+	return creates || autoincrement.Declared(field) || strings.Contains(strings.ToUpper(field.Type), "SERIAL")
+}
+
+// identityChange returns the change of a column's identity generation, written
+// "<held> -> <declared>" with an empty side for a column that has none, or "" where
+// the two agree or the target does not compare it.
+//
+// A column built from a serial type against an identity column, and the reverse,
+// draws from a sequence on both sides, and that pair is not compared here.
+func identityChange(genCol schemamodel.Field, dbCol catalog.Column, dialect string) string {
+	if !comparisonOf(dialect).IdentityColumns {
+		return ""
+	}
+	declared, held := canonicalIdentity(genCol.IdentityGeneration), canonicalIdentity(dbCol.IdentityGeneration)
+	liveSerial := held == "" && (dbCol.IsAutoIncrement || autoincrement.SerialType(dbCol.RawType()))
+	if declared == "" && declaresSerial(genCol) || declared != "" && liveSerial || declared == held {
+		return ""
+	}
+	return held + " -> " + declared
+}
+
+// canonicalIdentity folds an identity generation to the spelling a read reports.
+func canonicalIdentity(generation string) string {
+	return strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(generation), " ", "_"))
+}
+
+// declaresSerial reports a column built from a serial type, or the auto-increment
+// spelling the PostgreSQL family writes as one.
+func declaresSerial(field schemamodel.Field) bool {
+	_, creates := columnsequence.Declared("", field)
+	return creates || field.AutoInc
+}
+
 // columnDefaultChange compares a column's declared default with the live one
 // and returns the change key and text, or an empty change. A target's column
 // rules, where it registers them, compare the two in place of the shared
@@ -659,16 +710,18 @@ func columnDefaultChange(
 	}
 
 	// Skip the sequence-backed default only when the desired column declares no
-	// default of its own AND the database treats it as an auto-increment/SERIAL
-	// column — the type implies the sequence, so the database's nextval(...)
-	// default is expected and not a difference. When the desired declares an
-	// explicit default (e.g. a column that draws from a standalone sequence via
+	// default of its own and either its declaration implies the sequence, so the
+	// database's nextval(...) default is expected and not a difference, or the
+	// database reports an auto-increment column that owns no sequence, whose default
+	// is the engine's own. When the desired declares an explicit default (e.g. a
+	// column that draws from a standalone sequence via
 	// default_expr="nextval('seq')"), compare it normally; normalize.DefaultValue
-	// reconciles the ::regclass read-back form (issue #675). The genDefault==""
-	// guard alone carries the feature, so a genuine sequence default that the
-	// model does not declare is still reported as drift.
+	// reconciles the ::regclass read-back form (issue #675). A column that owns its
+	// sequence and declares a plain type, `id bigserial` against `id bigint`, is
+	// drift: the declared column has no default, and [ColumnSequencesLeaving] drops
+	// the sequence with it.
 	skipImplicitSequenceDefault := genDefault == "" &&
-		(dbCol.IsAutoIncrement || strings.Contains(strings.ToUpper(genCol.Type), "SERIAL"))
+		(declaresColumnSequence(genCol) || (dbCol.IsAutoIncrement && (dbCol.OwnedSequence == "" || genCol.IdentityGeneration != "")))
 	// A default the server spells as the catalog reports it is the same
 	// default: '2020-01-01'::timestamp with time zone is stored with its time
 	// and zone filled in.
@@ -835,14 +888,50 @@ func columnTypeChange(
 	if comparisonOf(dialect).NullableTypes {
 		return clickHouseColumnTypeChange(genCol, dbCol, dbRawType)
 	}
-	genType, dbType := normalizeColumnTypesForDialect(genCol, dbRawType, dialect)
+	precision := comparisonOf(dialect).TimePrecision
+	bareDeclared := genCol
+	bareDeclared.Type = withoutTimePrecision(genCol.Type, precision)
+	genType, dbType := normalizeColumnTypesForDialect(bareDeclared, withoutTimePrecision(dbRawType, precision), dialect)
 	switch {
 	case genType != dbType:
 		return typeChangeText(dbRawType, genCol.Type, dbType, genType, dialect)
+	case timePrecisionOf(dbRawType, precision) != timePrecisionOf(genCol.Type, precision):
+		return fmt.Sprintf("%s -> %s", dbRawType, genCol.Type)
 	case shouldReportSizedTypeChange(arrayElementOf(dbRawType), arrayElementOf(genCol.Type), dialect):
 		return fmt.Sprintf("%s -> %s", dbRawType, genCol.Type)
 	}
 	return ""
+}
+
+// timeTypeRe matches a temporal type with its precision: the name, the precision, and
+// what follows it, such as ` with time zone` or an array marker.
+var timeTypeRe = regexp.MustCompile(`(?i)^\s*(timestamptz|timestamp|timetz|time|interval)\s*\(\s*(\d+)\s*\)(.*)$`)
+
+// withoutTimePrecision is a temporal type with its precision taken out, on an engine
+// whose comparison reads the precision apart; see [timePrecisionOf]. Any other type
+// stands as it is.
+func withoutTimePrecision(typeName string, precision descriptor.TimePrecision) string {
+	match := timeTypeRe.FindStringSubmatch(typeName)
+	if !precision.Compared || match == nil {
+		return typeName
+	}
+	return match[1] + match[3]
+}
+
+// timePrecisionOf is the fractional-seconds precision of a temporal type: the one it
+// declares, or the engine's default. It answers the same for any other type, and for
+// any type on an engine whose comparison does not read a precision, so two of those
+// never differ here.
+func timePrecisionOf(typeName string, precision descriptor.TimePrecision) int {
+	match := timeTypeRe.FindStringSubmatch(typeName)
+	if !precision.Compared || match == nil {
+		return precision.Default
+	}
+	declared, err := strconv.Atoi(match[2])
+	if err != nil {
+		return precision.Default
+	}
+	return declared
 }
 
 // arrayElementOf is the element of an array type, whose width is the array's, and
@@ -1564,6 +1653,9 @@ func columnNullable(field schemamodel.Field, dialect string, ctx columnContext) 
 		return *receipt.Nullable
 	}
 	if field.Primary && primaryKeyImpliesNotNull(dialect) {
+		return false
+	}
+	if field.IdentityGeneration != "" && columnFactsOf(dialect).IdentityNotNull {
 		return false
 	}
 	// A serial column is NOT NULL on PostgreSQL whatever its definition says,

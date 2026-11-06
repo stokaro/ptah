@@ -36,6 +36,18 @@ func typeReads(diff *difftypes.SchemaDiff, node ast.Node, types featureplan.Type
 	}
 }
 
+// dropsAnObjectWithTypes reports a statement that drops a table or a routine. Ahead of
+// the feature removal window it holds no type back, since every window a removed type
+// can leave in comes after it.
+func dropsAnObjectWithTypes(node ast.Node) bool {
+	switch node.(type) {
+	case *ast.DropTableNode, *ast.DropFunctionNode:
+		return true
+	default:
+		return false
+	}
+}
+
 // removedTableTypes spells the type of each column of the removed tables
 // names, every way the catalog records it: as the server formats it, as the
 // domain it is, and as the type information_schema names, an array's element

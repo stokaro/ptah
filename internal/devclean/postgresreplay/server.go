@@ -36,13 +36,14 @@ import (
 // role in a DO block is ordinary, and on a server the run owns the body can
 // only change what the run owns.
 //
-// A comment on an extension or a schema of the dev database is lifted only in
-// a scope with [replay.Scope.Provisioned]. The cleanup does not restore it, and a
-// server the operator named or declared disposable outlives the run with the
-// extensions and schemas its reset keeps, so a later run on the same dev
-// database would read the comment; a provisioned server is discarded. A
-// comment on a protected namespace such as pg_catalog stays refused, as its
-// mutation is.
+// A comment on an extension or a schema of the dev database is lifted here only
+// in a scope with [replay.Scope.Provisioned]. A server the operator named or
+// declared disposable outlives the run with the extensions and schemas its reset
+// keeps, so a later run on the same dev database would read a comment the reset
+// does not return; a provisioned server is discarded. A reset that returns a
+// schema's comment lifts that comment on any server; see
+// [replay.Scope.SchemaCommentReturned]. A comment on a protected namespace such
+// as pg_catalog stays refused, as its mutation is.
 func postgresServerWideOperation(tokens []lexer.Token, scope replay.Scope) string {
 	if len(tokens) == 0 {
 		return ""

@@ -242,9 +242,12 @@ standalone objects and assigned table children. This path requires
 session and makes no claim about objects that already exist.
 
 The host joins every contribution with its common creation steps before asking
-for SQL text. A missing receipt, an unclaimed table creation, a dependency cycle,
-or a provider refusal returns no SQL prefix. A provider-only operation without
-a text form cannot appear in a rendered schema.
+for SQL text. A grant or a revocation on an object a declaration planner
+creates comes after every other statement, because the planner may create the
+object after the common steps; the other grants keep their place. A missing
+receipt, an unclaimed table creation, a dependency cycle, or a provider refusal
+returns no SQL prefix. A provider-only operation without a text form cannot
+appear in a rendered schema.
 
 Declared rows (`//ptah:schema:data`) and seed files reach a provider through
 four services. The host keeps the row diff, the order across tables, protected
@@ -1114,10 +1117,12 @@ planning still refuses role and grant mutations.
 
 Native grants and revocations follow the declared lifecycle of their target.
 They retain their order relative to principal changes and other access changes
-on the same object. Unrelated table changes do not fix their position: a
-provider can replace an input table, restart its dependent object, and then
-grant access to that object in one plan. The complete graph still refuses
-missing footprints, conflicting dependencies and unordered writes.
+on the same object. Each one still runs after the common statements ahead of
+it, so the grants of a plan keep their order unless a target's lifecycle moves
+one later. The common statements after it do not wait for it: a provider can
+replace an input table, restart its dependent object, and then grant access to
+that object in one plan. The complete graph still refuses missing footprints,
+conflicting dependencies and unordered writes.
 
 ## Resolve failures
 
@@ -1229,6 +1234,15 @@ the objects it leaves out, so it claims nothing of the provider's models and a
 plan from it drops none of their objects. Ptah reads a captured
 `ptah:feature-coverage` header with the provider's model definitions; the
 provider takes no part in it.
+
+`models.predecessors` lets an engine name, in `model_predecessors`, the
+identities its models had before it owned them: an owner, a kind, a schema
+version and a definition digest. Ptah reads a claim a captured header makes
+under one of them as the same claim of the engine's model, so an HCL file
+another owner of the model exported keeps the meaning it was written with. The
+YDB provider names the coordination-node model of the YDB engine built into
+earlier Ptah releases this way. A file Ptah cuts the document into names the
+model's current identity.
 
 `source.hcl-platform` lets an engine claim a table's `platform` block whose
 label is the engine's ID or one of its aliases, such as `platform "ydb"`. Each

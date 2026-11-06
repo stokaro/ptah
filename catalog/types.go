@@ -325,6 +325,33 @@ func (c Column) RawType() string {
 	return withTypeSize(rawType, c)
 }
 
+// defaultCatalogTimePrecision is the fractional-seconds precision of a temporal
+// column that declares none, on the engines whose catalog reports it in a field of
+// its own.
+const defaultCatalogTimePrecision = 6
+
+// withTimePrecision writes the precision a catalog reports for a temporal column
+// into the type's name, behind its first word, so `timestamp without time zone` reads
+// `timestamp(3) without time zone`. A catalog that keeps the precision apart keeps it
+// for every column, so the default is left out: written out, a read of an ordinary
+// column would differ from the document that built it. A nil precision and any other
+// type stand as they are.
+func withTimePrecision(typeName string, precision *int) string {
+	if precision == nil || *precision == defaultCatalogTimePrecision {
+		return typeName
+	}
+	first, rest, _ := strings.Cut(typeName, " ")
+	switch strings.ToLower(first) {
+	case "timestamp", "timestamptz", "time", "timetz", "interval":
+	default:
+		return typeName
+	}
+	if rest != "" {
+		rest = " " + rest
+	}
+	return fmt.Sprintf("%s(%d)%s", first, *precision, rest)
+}
+
 // withTypeSize appends the width or precision the catalog keeps in a field of
 // its own, for the families that have one.
 //
@@ -340,6 +367,8 @@ func withTypeSize(rawType string, column Column) string {
 	// The fold is normalize.Type's, not a second list of spellings: `character
 	// varying` and `varchar` are one type and only that package says so.
 	switch normalize.Type(rawType) {
+	case "timestamp", "timestamptz", "time", "timetz", "interval":
+		return withTimePrecision(rawType, column.DatetimePrecision)
 	case "varchar", "char", "bit", "bit varying":
 		if column.CharacterMaxLength != nil {
 			return fmt.Sprintf("%s(%d)", rawType, *column.CharacterMaxLength)

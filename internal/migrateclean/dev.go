@@ -258,6 +258,13 @@ func RealmScoped(conn *dbschema.DatabaseConnection) bool {
 	return realmScoped(info.Dialect, info.URL, strings.TrimSpace(info.Schema))
 }
 
+// ResetsEverySchema reports whether a reset of conn's dev database empties every
+// user schema, whatever scope the URL left the run at; see
+// [descriptor.CleanCheck.ResetsEverySchema].
+func ResetsEverySchema(conn *dbschema.DatabaseConnection) bool {
+	return conn != nil && described(conn.Info().Dialect).CleanCheck.ResetsEverySchema
+}
+
 // DevRefusal returns the refusal of a dev database with this scope, or nil when
 // the database is clean.
 //
