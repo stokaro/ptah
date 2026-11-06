@@ -36,10 +36,10 @@ func ValidateColumnDefaults(description *protocol.Description, request *protocol
 	return ValidateColumnDefaultsReply(description, request, result)
 }
 
-// ValidateColumnDefaultsReply is [ValidateColumnDefaults] for a request that [ValidateColumnDefaultsRequest] accepted
-// with description and that has not changed since: it checks the reply and not the
-// request again. The SDK's client and server validate each request once
-// and call it for the reply.
+// ValidateColumnDefaultsReply is [ValidateColumnDefaults] for a request that
+// [ValidateColumnDefaultsRequest] accepted with description and that has not
+// changed since: it checks the reply and not the request again. The SDK's
+// client and server validate each request once and call it for the reply.
 func ValidateColumnDefaultsReply(description *protocol.Description, request *protocol.ReadColumnDefaultsRequest, result *protocol.ReadColumnDefaultsResult) error {
 	if !result.GetComplete() || len(result.GetColumns()) != len(request.GetColumns()) {
 		return columnsError("incomplete default readback")

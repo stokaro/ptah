@@ -91,10 +91,10 @@ func ValidatePreparedTables(description *protocol.Description, request *protocol
 	return ValidatePreparedTablesReply(description, request, result)
 }
 
-// ValidatePreparedTablesReply is [ValidatePreparedTables] for a request that [ValidatePreparationRequest] accepted
-// with description and that has not changed since: it checks the reply and not the
-// request again. The SDK's client and server validate each request once
-// and call it for the reply.
+// ValidatePreparedTablesReply is [ValidatePreparedTables] for a request that
+// [ValidatePreparationRequest] accepted with description and that has not
+// changed since: it checks the reply and not the request again. The SDK's
+// client and server validate each request once and call it for the reply.
 func ValidatePreparedTablesReply(description *protocol.Description, request *protocol.PrepareTablesRequest, result *protocol.PreparedTables) error {
 	if result == nil || !result.Complete || len(result.Tables) != len(request.Tables) {
 		return fmt.Errorf("%w: incomplete table preparation", ErrProtocol)

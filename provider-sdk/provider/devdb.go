@@ -130,10 +130,10 @@ func ValidateDevDatabase(description *protocol.Description, request *protocol.Pr
 	return ValidateDevDatabaseReply(description, request, result)
 }
 
-// ValidateDevDatabaseReply is [ValidateDevDatabase] for a request that [ValidateProvisionDevRequest] accepted
-// with description and that has not changed since: it checks the reply and not the
-// request again. The SDK's client and server validate each request once
-// and call it for the reply.
+// ValidateDevDatabaseReply is [ValidateDevDatabase] for a request that
+// [ValidateProvisionDevRequest] accepted with description and that has not
+// changed since: it checks the reply and not the request again. The SDK's
+// client and server validate each request once and call it for the reply.
 func ValidateDevDatabaseReply(description *protocol.Description, request *protocol.ProvisionDevRequest, result *protocol.DevDatabase) error {
 	if result == nil {
 		return fmt.Errorf("%w: dev database reply is missing", ErrProtocol)
@@ -203,10 +203,10 @@ func ValidateReleasedDev(description *protocol.Description, request *protocol.Re
 	return ValidateReleasedDevReply(description, request, result)
 }
 
-// ValidateReleasedDevReply is [ValidateReleasedDev] for a request that [ValidateReleaseDevRequest] accepted
-// with description and that has not changed since: it checks the reply and not the
-// request again. The SDK's client and server validate each request once
-// and call it for the reply.
+// ValidateReleasedDevReply is [ValidateReleasedDev] for a request that
+// [ValidateReleaseDevRequest] accepted with description and that has not
+// changed since: it checks the reply and not the request again. The SDK's
+// client and server validate each request once and call it for the reply.
 func ValidateReleasedDevReply(description *protocol.Description, request *protocol.ReleaseDevRequest, result *protocol.Empty) error {
 	if result == nil {
 		return fmt.Errorf("%w: dev database release reply is missing", ErrProtocol)

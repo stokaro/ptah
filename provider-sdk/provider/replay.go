@@ -74,10 +74,10 @@ func ValidateGuardedReplay(description *protocol.Description, request *protocol.
 	return ValidateGuardedReplayReply(description, request, result)
 }
 
-// ValidateGuardedReplayReply is [ValidateGuardedReplay] for a request that [ValidateGuardReplayRequest] accepted
-// with description and that has not changed since: it checks the reply and not the
-// request again. The SDK's client and server validate each request once
-// and call it for the reply.
+// ValidateGuardedReplayReply is [ValidateGuardedReplay] for a request that
+// [ValidateGuardReplayRequest] accepted with description and that has not
+// changed since: it checks the reply and not the request again. The SDK's
+// client and server validate each request once and call it for the reply.
 func ValidateGuardedReplayReply(description *protocol.Description, request *protocol.GuardReplayRequest, result *protocol.GuardedReplay) error {
 	if result == nil || len(result.GetVerdicts()) != len(request.GetStatements()) {
 		return fmt.Errorf("%w: replay guard does not answer every statement", ErrProtocol)

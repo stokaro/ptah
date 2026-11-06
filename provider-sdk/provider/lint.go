@@ -151,10 +151,10 @@ func ValidateSplitLint(description *protocol.Description, request *protocol.Spli
 	return ValidateSplitLintReply(description, request, result)
 }
 
-// ValidateSplitLintReply is [ValidateSplitLint] for a request that [ValidateSplitLintRequest] accepted
-// with description and that has not changed since: it checks the reply and not the
-// request again. The SDK's client and server validate each request once
-// and call it for the reply.
+// ValidateSplitLintReply is [ValidateSplitLint] for a request that
+// [ValidateSplitLintRequest] accepted with description and that has not
+// changed since: it checks the reply and not the request again. The SDK's
+// client and server validate each request once and call it for the reply.
 func ValidateSplitLintReply(description *protocol.Description, request *protocol.SplitLintRequest, result *protocol.SplitLint) error {
 	if result == nil || len(result.Files) != len(request.Sources) {
 		return fmt.Errorf("%w: lint split does not answer every source", ErrProtocol)
@@ -296,10 +296,10 @@ func ValidateAnnotatedLint(description *protocol.Description, request *protocol.
 	return ValidateAnnotatedLintReply(description, request, result)
 }
 
-// ValidateAnnotatedLintReply is [ValidateAnnotatedLint] for a request that [ValidateAnnotateLintRequest] accepted
-// with description and that has not changed since: it checks the reply and not the
-// request again. The SDK's client and server validate each request once
-// and call it for the reply.
+// ValidateAnnotatedLintReply is [ValidateAnnotatedLint] for a request that
+// [ValidateAnnotateLintRequest] accepted with description and that has not
+// changed since: it checks the reply and not the request again. The SDK's
+// client and server validate each request once and call it for the reply.
 func ValidateAnnotatedLintReply(description *protocol.Description, request *protocol.AnnotateLintRequest, result *protocol.AnnotatedLint) error {
 	if result == nil || len(result.Files) != len(request.Files) {
 		return fmt.Errorf("%w: lint annotation does not answer every file", ErrProtocol)
@@ -364,10 +364,10 @@ func ValidateCheckedLint(description *protocol.Description, request *protocol.Ch
 	return ValidateCheckedLintReply(description, request, result)
 }
 
-// ValidateCheckedLintReply is [ValidateCheckedLint] for a request that [ValidateCheckLintRequest] accepted
-// with description and that has not changed since: it checks the reply and not the
-// request again. The SDK's client and server validate each request once
-// and call it for the reply.
+// ValidateCheckedLintReply is [ValidateCheckedLint] for a request that
+// [ValidateCheckLintRequest] accepted with description and that has not
+// changed since: it checks the reply and not the request again. The SDK's
+// client and server validate each request once and call it for the reply.
 func ValidateCheckedLintReply(description *protocol.Description, request *protocol.CheckLintRequest, result *protocol.CheckedLint) error {
 	if result == nil || !result.Complete {
 		return fmt.Errorf("%w: incomplete lint check", ErrProtocol)

@@ -139,10 +139,10 @@ func ValidateSQLSchema(description *protocol.Description, request *protocol.Read
 	return ValidateSQLSchemaReply(description, request, result)
 }
 
-// ValidateSQLSchemaReply is [ValidateSQLSchema] for a request that [ValidateReadSQLSchemaRequest] accepted
-// with description and that has not changed since: it checks the reply and not the
-// request again. The SDK's client and server validate each request once
-// and call it for the reply.
+// ValidateSQLSchemaReply is [ValidateSQLSchema] for a request that
+// [ValidateReadSQLSchemaRequest] accepted with description and that has not
+// changed since: it checks the reply and not the request again. The SDK's
+// client and server validate each request once and call it for the reply.
 func ValidateSQLSchemaReply(description *protocol.Description, request *protocol.ReadSQLSchemaRequest, result *protocol.SQLSchema) error {
 	if result == nil {
 		return sqlSchemaError("reply is missing")

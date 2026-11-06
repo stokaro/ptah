@@ -94,10 +94,11 @@ func ValidateProjectedCreations(description *protocol.Description, request *prot
 	return ValidateProjectedCreationsReply(description, request, result)
 }
 
-// ValidateProjectedCreationsReply is [ValidateProjectedCreations] for a request that [ValidateCreationRequest] accepted
-// with description and that has not changed since: it checks the reply and not the
-// request again. The SDK's client and server validate each request once
-// and call it for the reply.
+// ValidateProjectedCreationsReply is [ValidateProjectedCreations] for a
+// request that [ValidateCreationRequest] accepted with description and that
+// has not changed since: it checks the reply and not the request again. The
+// SDK's client and server validate each request once and call it for the
+// reply.
 func ValidateProjectedCreationsReply(description *protocol.Description, request *protocol.ProjectTableCreationsRequest, result *protocol.ProjectedTableCreations) error {
 	if result == nil || !result.Complete || len(result.Tables) != len(request.Tables) {
 		return fmt.Errorf("%w: incomplete creation projection", ErrProtocol)

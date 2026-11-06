@@ -153,10 +153,10 @@ func ValidateRenderedBatch(description *protocol.Description, request *protocol.
 	return ValidateRenderedBatchReply(description, request, result)
 }
 
-// ValidateRenderedBatchReply is [ValidateRenderedBatch] for a request that [ValidateRenderRequest] accepted
-// with description and that has not changed since: it checks the reply and not the
-// request again. The SDK's client and server validate each request once
-// and call it for the reply.
+// ValidateRenderedBatchReply is [ValidateRenderedBatch] for a request that
+// [ValidateRenderRequest] accepted with description and that has not changed
+// since: it checks the reply and not the request again. The SDK's client and
+// server validate each request once and call it for the reply.
 func ValidateRenderedBatchReply(description *protocol.Description, request *protocol.RenderRequest, result *protocol.RenderResult) error {
 	if err := validateUnitContexts(description, request.GetEngine(), result.GetUnits()); err != nil {
 		return err

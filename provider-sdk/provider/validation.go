@@ -101,10 +101,10 @@ func ValidateSchemaResult(description *protocol.Description, request *protocol.V
 	return ValidateSchemaResultReply(description, request, result)
 }
 
-// ValidateSchemaResultReply is [ValidateSchemaResult] for a request that [ValidateSchemaRequest] accepted
-// with description and that has not changed since: it checks the reply and not the
-// request again. The SDK's client and server validate each request once
-// and call it for the reply.
+// ValidateSchemaResultReply is [ValidateSchemaResult] for a request that
+// [ValidateSchemaRequest] accepted with description and that has not changed
+// since: it checks the reply and not the request again. The SDK's client and
+// server validate each request once and call it for the reply.
 func ValidateSchemaResultReply(description *protocol.Description, request *protocol.ValidateSchemaRequest, result *protocol.SchemaValidation) error {
 	if result == nil || !result.Complete {
 		return fmt.Errorf("%w: schema validation did not complete", ErrProtocol)

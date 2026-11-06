@@ -151,10 +151,10 @@ func ValidateReversedChanges(description *protocol.Description, request *protoco
 	return ValidateReversedChangesReply(description, request, result)
 }
 
-// ValidateReversedChangesReply is [ValidateReversedChanges] for a request that [ValidateReverseChangesRequest] accepted
-// with description and that has not changed since: it checks the reply and not the
-// request again. The SDK's client and server validate each request once
-// and call it for the reply.
+// ValidateReversedChangesReply is [ValidateReversedChanges] for a request that
+// [ValidateReverseChangesRequest] accepted with description and that has not
+// changed since: it checks the reply and not the request again. The SDK's
+// client and server validate each request once and call it for the reply.
 func ValidateReversedChangesReply(description *protocol.Description, request *protocol.ReverseChangesRequest, result *protocol.ReversedChanges) error {
 	if result == nil || !result.GetComplete() || len(result.GetChanges()) != len(request.GetChanges()) {
 		return reversalError("the reply is incomplete")

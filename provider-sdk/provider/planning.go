@@ -177,10 +177,10 @@ func ValidatePlannedFeatures(description *protocol.Description, request *protoco
 	return ValidatePlannedFeaturesReply(description, request, result)
 }
 
-// ValidatePlannedFeaturesReply is [ValidatePlannedFeatures] for a request that [ValidatePlanningRequest] accepted
-// with description and that has not changed since: it checks the reply and not the
-// request again. The SDK's client and server validate each request once
-// and call it for the reply.
+// ValidatePlannedFeaturesReply is [ValidatePlannedFeatures] for a request that
+// [ValidatePlanningRequest] accepted with description and that has not changed
+// since: it checks the reply and not the request again. The SDK's client and
+// server validate each request once and call it for the reply.
 func ValidatePlannedFeaturesReply(description *protocol.Description, request *protocol.PlanFeaturesRequest, result *protocol.PlannedFeatures) error {
 	if err := requireResolvedContext(result); err != nil {
 		return err
