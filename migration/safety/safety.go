@@ -356,6 +356,7 @@ func assessmentUnits(
 		for _, operation := range alter.Operations {
 			unit := *alter
 			unit.Operations = []ast.AlterOperation{operation}
+			unit.OneStatement = nil
 			units = append(units, &unit)
 		}
 	}

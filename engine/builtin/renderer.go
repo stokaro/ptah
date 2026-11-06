@@ -774,12 +774,23 @@ func prepareAlterTableNode(
 	}
 	cloned := *node
 	cloned.Operations = slices.Clone(node.Operations)
+	preparedOf := make(map[ast.AlterOperation]ast.AlterOperation, len(node.Operations))
 	for i, operation := range cloned.Operations {
 		prepared, err := prepareAlterOperation(dialect, caps, node, operation)
 		if err != nil {
 			return nil, err
 		}
 		cloned.Operations[i] = prepared
+		preparedOf[operation] = prepared
+	}
+	// OneStatement holds the operations of Operations, so it takes what they became. One
+	// that is not there stays as it is, and the writer takes that to mean the two no longer
+	// say the same changes.
+	cloned.OneStatement = slices.Clone(node.OneStatement)
+	for i, operation := range cloned.OneStatement {
+		if prepared, ok := preparedOf[operation]; ok {
+			cloned.OneStatement[i] = prepared
+		}
 	}
 	return &cloned, nil
 }

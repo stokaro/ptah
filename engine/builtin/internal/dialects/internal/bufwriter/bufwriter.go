@@ -5,6 +5,7 @@ package bufwriter
 import (
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 
 	"ptah.run/core/ast"
@@ -53,9 +54,10 @@ func (w *Writer) Output() string {
 // own. prefix is what starts each of them, `ALTER TABLE "t" `. Where node holds one
 // statement's order and all of it fits one ALTER TABLE, it writes that. Otherwise it writes
 // node's operations as they are: the order of one statement may hold only inside one
-// statement, so it never reaches a file as several.
+// statement, so it never reaches a file as several. So do a node whose two lists no longer
+// say the same changes, because something rewrote one of them.
 func (w *Writer) WriteAlterTable(node *ast.AlterTableNode, prefix, dialect string, write func([]ast.AlterOperation) error) error {
-	if len(node.OneStatement) == 0 {
+	if len(node.OneStatement) == 0 || !sameChanges(node) {
 		return write(node.Operations)
 	}
 	start := w.output.Len()
@@ -69,6 +71,29 @@ func (w *Writer) WriteAlterTable(node *ast.AlterTableNode, prefix, dialect strin
 	}
 	w.replaceFrom(start, "")
 	return write(node.Operations)
+}
+
+// sameChanges reports that OneStatement holds the operations of Operations, less a change
+// of a column that a later one of that column replaces.
+func sameChanges(node *ast.AlterTableNode) bool {
+	for _, operation := range node.OneStatement {
+		if !slices.Contains(node.Operations, operation) {
+			return false
+		}
+	}
+	for _, operation := range node.Operations {
+		if slices.Contains(node.OneStatement, operation) {
+			continue
+		}
+		replaced, ok := operation.(*ast.ModifyColumnOperation)
+		if !ok || !slices.ContainsFunc(node.OneStatement, func(kept ast.AlterOperation) bool {
+			modify, ok := kept.(*ast.ModifyColumnOperation)
+			return ok && modify.Column.Name == replaced.Column.Name
+		}) {
+			return false
+		}
+	}
+	return true
 }
 
 // replaceFrom puts text in place of what the writer took in after it held start bytes.
