@@ -125,6 +125,16 @@ type DiffOptions struct {
 	// diff. It receives both sides because whether a diff uses the dev
 	// database at all depends on what they are.
 	CheckDevDatabase func(ctx context.Context, from, to atlassource.Set) error
+
+	// ToReplaysMigrations says the database ToURLs names holds a migration
+	// directory the caller replayed there, as a derived rollback replays one
+	// on its dev database. Its grants are the ones the migrations make, so it
+	// is compared as a --to migration directory is: a grant only the --from
+	// database holds is removed only from a role the replay manages. Read as
+	// a whole answer, every grant of the --from database the replay does not
+	// make reads as a removal, such as the grants a YDB database root gives
+	// its built-in groups, which no dev realm holds.
+	ToReplaysMigrations bool
 }
 
 // DiffReportingChanges computes the Atlas schema diff between two
@@ -422,10 +432,7 @@ func diffResolvedStates(
 	// 8.4.11 and MariaDB 11.8.9, `schema diff` between two servers plans
 	// CREATE DATABASE and DROP DATABASE (stokaro/ptah#3789).
 	compareOpts.ServerSchemas = comparesTwoServers(fromState, toState)
-	// A --to database is a whole answer: a grant it does not hold is one it does
-	// not have. Read as a declaration, a grant to a role --to does not name, or
-	// to PUBLIC, reads as synced in this direction and as a GRANT in the other.
-	compareOpts.DesiredGrantsComplete = toState.Kind == atlassource.KindDatabase
+	compareOpts.DesiredGrantsComplete = desiredGrantsComplete(toState, opts)
 	// Same split as the empty --include selection above: diff previews rather
 	// than executes, so it keeps its exit status and says on stderr that a
 	// selector protected nothing.
@@ -1245,6 +1252,16 @@ func setDiffRoot(ctx context.Context, dialect, devURL string, current *catalog.D
 	}
 	current.DatabasePath = root
 	return nil
+}
+
+// desiredGrantsComplete reports whether the --to side of a diff holds every
+// grant on what it describes. A --to database is a whole answer: a grant it
+// does not hold is one it does not have. Read as a declaration, a grant to a
+// role --to does not name, or to PUBLIC, reads as synced in this direction
+// and as a GRANT in the other. A database the caller filled by replaying a
+// migration directory is not one; see [DiffOptions.ToReplaysMigrations].
+func desiredGrantsComplete(toState atlassource.State, opts DiffOptions) bool {
+	return toState.Kind == atlassource.KindDatabase && !opts.ToReplaysMigrations
 }
 
 // validateResolvedDiffScope applies scope refusals after dev-server projection.
