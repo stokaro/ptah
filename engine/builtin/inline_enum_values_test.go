@@ -63,7 +63,7 @@ func TestGetOrderedCreateStatements_AValuedEnumColumnIsBuiltInline(t *testing.T)
 		},
 		{
 			dialect: platform.SQLServer,
-			want:    "CREATE TABLE [t] (\n  [id] BIGINT PRIMARY KEY,\n  [s] NVARCHAR(255) CONSTRAINT [t_s_check] CHECK ([s] IN ('draft', 'live'))\n);\n",
+			want:    "CREATE TABLE [t] (\n  [id] BIGINT CONSTRAINT [t_pkey] PRIMARY KEY,\n  [s] NVARCHAR(255) CONSTRAINT [t_s_check] CHECK ([s] IN ('draft', 'live'))\n);\n",
 		},
 		{
 			dialect: platform.Oracle,

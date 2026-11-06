@@ -3,6 +3,8 @@
 package integration_test
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -139,9 +141,9 @@ func TestCompatMigrateDiffColumnKeyE2E_AnAutoIncrementColumnBecomesTheKey(t *tes
 }
 
 // TestCompatMigrateDiffColumnKeyE2E_AColumnBecomesTheKeyOnSQLServer holds the file
-// to a key on a column SQL Server would refuse it on while it is nullable. The server
-// names an unnamed key at random, so a later file cannot name the key a dev database
-// held, and this test goes one way.
+// to a key on a column SQL Server would refuse it on while it is nullable. The rollback
+// names the key on a database the dev database is not, so the name has to be the file's
+// and not one the server made up.
 func TestCompatMigrateDiffColumnKeyE2E_AColumnBecomesTheKeyOnSQLServer(t *testing.T) {
 	c := qt.New(t)
 	newTarget := func() string {
@@ -163,4 +165,58 @@ func TestCompatMigrateDiffColumnKeyE2E_AColumnBecomesTheKeyOnSQLServer(t *testin
 	applyEngineFile(c, target, platform.SQLServer, pairs[0].Up)
 	applyEngineFile(c, target, platform.SQLServer, pairs[1].Up)
 	c.Assert(heldColumns(c, target, keyOf), qt.Equals, "id")
+	applyEngineFile(c, target, platform.SQLServer, pairs[1].Down)
+	c.Assert(heldColumns(c, target, keyOf), qt.Equals, "")
+}
+
+// TestCompatMigrateDiffE2E_ALaterFileDropsAKeyOnAnotherDatabase writes a table with a
+// primary key nobody named, then a file that drops the key, against a dev database, and
+// runs both files on another. Left to the server, the key takes a name with a hash that
+// differs between the two, the later file names the dev database's, and the target
+// answers that it is not a constraint. The next plan reads the keys back and finds
+// nothing to do. One row's table leaves no room for a suffix within the server's limit
+// of 128 characters.
+func TestCompatMigrateDiffE2E_ALaterFileDropsAKeyOnAnotherDatabase(t *testing.T) {
+	tests := []struct {
+		name  string
+		table string
+	}{
+		{name: "a short name", table: "t"},
+		{name: "a name with room for the suffix and no more", table: strings.Repeat("t", 123)},
+		{name: "a name with no room for the suffix", table: strings.Repeat("t", 125)},
+		{name: "the longest name", table: strings.Repeat("t", 128)},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			newTarget := func() string {
+				return createdDevDialectDatabase(c, dbtarget.URL(c, dbtarget.SQLServer),
+					"ALTER DATABASE %[1]s SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE %[1]s", replaceSQLServerDatabase)
+			}
+			first := "CREATE TABLE [" + test.table + "] (id int PRIMARY KEY, u int UNIQUE);\n"
+			second := "CREATE TABLE [" + test.table + "] (id int NOT NULL, u int UNIQUE);\n"
+			keys := "SELECT COALESCE(STRING_AGG(CONCAT(kc.type COLLATE DATABASE_DEFAULT, ':', c.name COLLATE DATABASE_DEFAULT), ',') WITHIN GROUP (ORDER BY kc.type, c.name), '') FROM sys.key_constraints kc " +
+				"JOIN sys.index_columns ic ON ic.object_id = kc.parent_object_id AND ic.index_id = kc.unique_index_id " +
+				"JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id " +
+				"WHERE kc.parent_object_id = OBJECT_ID('[" + test.table + "]')"
+			dev := newTarget()
+
+			pairs := readMigrationPairs(c, diffEngineSteps(c, "", dev, []string{first, second}))
+			target := newTarget()
+			schema := filepath.Join(c.TempDir(), "second.sql")
+			c.Assert(os.WriteFile(schema, []byte(second), 0o600), qt.IsNil)
+
+			c.Assert(pairs, qt.HasLen, 2)
+			applyEngineFile(c, target, platform.SQLServer, pairs[0].Up)
+			held := heldColumns(c, target, keys)
+			c.Assert(held, qt.Equals, "PK:id,UQ:u")
+			applyEngineFile(c, target, platform.SQLServer, pairs[1].Up)
+			c.Assert(heldColumns(c, target, keys), qt.Equals, "UQ:u")
+			next, err := runCompatVerb("schema", "diff", "--from", target, "--to", "file://"+filepath.ToSlash(schema), "--dev-url", dev)
+			c.Assert(err, qt.IsNil, qt.Commentf("%s", next))
+			c.Assert(next, qt.Contains, "synced")
+			applyEngineFile(c, target, platform.SQLServer, pairs[1].Down)
+			c.Assert(heldColumns(c, target, keys), qt.Equals, held)
+		})
+	}
 }
