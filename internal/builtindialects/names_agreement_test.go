@@ -29,7 +29,7 @@ import (
 //     an unnamed primary key `<table>_pkey` on the PostgreSQL family.
 //   - the CHECK naming was MySQL's `<table>_chk_<n>` and MariaDB's column
 //     or `CONSTRAINT_<n>`; namesConstraintsLikePostgres was PostgreSQL alone.
-//   - an identity column was NOT NULL on PostgreSQL alone, a column CHECK
+//   - an identity column was NOT NULL on PostgreSQL and CockroachDB, a column CHECK
 //     naming another column was refused on MySQL alone, and MODIFY kept the
 //     rest of the column on SQL Server alone.
 //   - a repeated CREATE ROLE was refused on PostgreSQL, a DO block declaring
@@ -98,6 +98,7 @@ func TestDescriptors_SchemaFileFactsAgreeWithTheSwitchesTheyReplace(t *testing.T
 		},
 		{
 			dialect: platform.CockroachDB,
+			columns: descriptor.Columns{IdentityNotNull: true},
 			names: descriptor.Names{
 				Unquoted: "unicode_case_insensitive", Roles: "unicode_case_insensitive", PublicKeyword: true,
 			},

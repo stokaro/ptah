@@ -93,6 +93,11 @@ type ModifyColumnOperation struct {
 	PreviousDefault string
 	// HasPreviousDefault reports whether PreviousDefault was populated.
 	HasPreviousDefault bool
+	// PreviousIdentity is the identity generation the column holds before the
+	// modification, empty when it has none. The PostgreSQL family reads it where
+	// [ColumnProperties.Identity] is named: a column with one takes SET GENERATED,
+	// and a column without one takes ADD GENERATED.
+	PreviousIdentity string
 	// Changed names the properties the modification changes. It is read only
 	// when HasChanged is set.
 	//
@@ -109,7 +114,9 @@ type ModifyColumnOperation struct {
 	HasChanged bool
 	// OmitNullBackfill asks for SET NOT NULL without filling the column's
 	// NULL rows from its declared default first, so the statement fails on a
-	// NULL row as it does when the column declares no default.
+	// NULL row as it does when the column declares no default. It leaves out the
+	// statement that moves a new identity's sequence past the column's values too:
+	// both write more than the statements the change asked for.
 	//
 	// It is read only by a renderer that fills those rows, which the
 	// PostgreSQL family does; the zero value keeps the fill. ClickHouse does
@@ -127,11 +134,14 @@ type ColumnProperties struct {
 	Nullability bool
 	// Default is set when the column's default is set, replaced or dropped.
 	Default bool
+	// Identity is set when the column gains or loses an identity, or its
+	// generation changes.
+	Identity bool
 }
 
 // Any reports whether at least one property is named.
 func (p ColumnProperties) Any() bool {
-	return p.Type || p.Nullability || p.Default
+	return p.Type || p.Nullability || p.Default || p.Identity
 }
 
 // Accept hands the visitor this operation.

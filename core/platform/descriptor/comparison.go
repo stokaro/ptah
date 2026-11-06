@@ -80,6 +80,11 @@ type Comparison struct {
 	// so a declared name over the columns the key holds is a rename, with no
 	// rebuild of the key and nothing to do for a foreign key over it.
 	PrimaryKeyRenames bool `json:"primary_key_renames,omitempty"`
+
+	// IdentityColumns reports that a read says which identity generation a
+	// column holds, and that ALTER COLUMN adds, changes and drops it, so a
+	// column's identity is compared with its declaration.
+	IdentityColumns bool `json:"identity_columns,omitempty"`
 	// PrimaryKeyName is the name the server gives every primary key, such as
 	// "PRIMARY". Empty means a primary key keeps the name it is declared
 	// with, and one declared with none is named after its table.

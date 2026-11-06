@@ -542,8 +542,14 @@ func columnsWithDesiredDomains(
 	dbNullable := dbCol.IsNullable == "YES"
 	if genNullable != dbNullable {
 		colDiff.Changes["nullable"] = fmt.Sprintf("%t -> %t", dbNullable, genNullable)
+		// A rule above may hold the column NOT NULL whatever the field says, and the
+		// plan writes the clause from the field.
+		colDiff.Desired.Nullable = genNullable
 	}
 	applyColumnSequence(&colDiff, genCol, dbCol, ctx)
+	if change := identityChange(genCol, dbCol, dialect); change != "" {
+		colDiff.Changes["identity"] = change
+	}
 
 	// Compare primary key
 	genPrimary := genCol.Primary
@@ -632,6 +638,36 @@ func declaresColumnSequence(field schemamodel.Field) bool {
 	}
 	_, creates := columnsequence.Declared("", field)
 	return creates || autoincrement.Declared(field) || strings.Contains(strings.ToUpper(field.Type), "SERIAL")
+}
+
+// identityChange returns the change of a column's identity generation, written
+// "<held> -> <declared>" with an empty side for a column that has none, or "" where
+// the two agree or the target does not compare it.
+//
+// A column built from a serial type against an identity column, and the reverse,
+// draws from a sequence on both sides, and that pair is not compared here.
+func identityChange(genCol schemamodel.Field, dbCol catalog.Column, dialect string) string {
+	if !comparisonOf(dialect).IdentityColumns {
+		return ""
+	}
+	declared, held := canonicalIdentity(genCol.IdentityGeneration), canonicalIdentity(dbCol.IdentityGeneration)
+	liveSerial := held == "" && (dbCol.IsAutoIncrement || autoincrement.SerialType(dbCol.RawType()))
+	if declared == "" && declaresSerial(genCol) || declared != "" && liveSerial || declared == held {
+		return ""
+	}
+	return held + " -> " + declared
+}
+
+// canonicalIdentity folds an identity generation to the spelling a read reports.
+func canonicalIdentity(generation string) string {
+	return strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(generation), " ", "_"))
+}
+
+// declaresSerial reports a column built from a serial type, or the auto-increment
+// spelling the PostgreSQL family writes as one.
+func declaresSerial(field schemamodel.Field) bool {
+	_, creates := columnsequence.Declared("", field)
+	return creates || field.AutoInc
 }
 
 // columnDefaultChange compares a column's declared default with the live one
@@ -1617,6 +1653,9 @@ func columnNullable(field schemamodel.Field, dialect string, ctx columnContext) 
 		return *receipt.Nullable
 	}
 	if field.Primary && primaryKeyImpliesNotNull(dialect) {
+		return false
+	}
+	if field.IdentityGeneration != "" && columnFactsOf(dialect).IdentityNotNull {
 		return false
 	}
 	// A serial column is NOT NULL on PostgreSQL whatever its definition says,

@@ -158,6 +158,7 @@ func postgres() descriptor.Dialect {
 			// on 18.6. The rest of the family has not been measured.
 			ColumnPrimaryKeyIsTheTablesKey: true,
 			PrimaryKeyRenames:              true,
+			IdentityColumns:                true,
 			ExpressionProbes:               "pg-catalog",
 			RolePasswords:                  true,
 			DefaultGeneratedKind:           "STORED",
