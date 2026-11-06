@@ -199,6 +199,59 @@ func TestApply_LeavesAConstraintItCannotMove_FailurePath(t *testing.T) {
 			},
 			want: 1,
 		},
+		{
+			name: "a constraint of a table of that name in another schema",
+			nodes: func() []ast.Node {
+				return []ast.Node{
+					ast.NewCreateTable("a.t").AddColumn(key("id")),
+					addConstraint("b.t", checkConstraint("ck", "id > 0")),
+				}
+			},
+			want: 1,
+		},
+		{
+			name: "a constraint of a table whose name differs in case",
+			nodes: func() []ast.Node {
+				return []ast.Node{
+					ast.NewCreateTable("Users").AddColumn(key("id")),
+					addConstraint("users", checkConstraint("ck", "id > 0")),
+				}
+			},
+			want: 1,
+		},
+		{
+			name: "a key into a table of that name in another schema, which the plan changes",
+			nodes: func() []ast.Node {
+				return []ast.Node{
+					ast.NewCreateTable("a.t").AddColumn(key("id")).AddColumn(nullable("p_id", "int")),
+					&ast.AlterTableNode{Name: "b.t", Operations: []ast.AlterOperation{&ast.AddColumnOperation{Column: nullable("n", "int")}}},
+					addConstraint("a.t", foreignKey("a_b", "p_id", "b.t")),
+				}
+			},
+			want: 2,
+		},
+		{
+			name: "a key into a table of that name the plan creates later",
+			nodes: func() []ast.Node {
+				return []ast.Node{
+					ast.NewCreateTable("a.t").AddColumn(key("id")).AddColumn(nullable("p_id", "int")),
+					ast.NewCreateTable("b.t").AddColumn(key("id")),
+					addConstraint("a.t", foreignKey("a_b", "p_id", "b.t")),
+				}
+			},
+			want: 1,
+		},
+		{
+			name: "a key naming a later table without its schema",
+			nodes: func() []ast.Node {
+				return []ast.Node{
+					ast.NewCreateTable("c").AddColumn(key("id")).AddColumn(nullable("p_id", "int")),
+					ast.NewCreateTable("a.p").AddColumn(key("id")),
+					addConstraint("c", foreignKey("c_p", "p_id", "p")),
+				}
+			},
+			want: 1,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -245,6 +298,92 @@ func TestApply_AnIndexFollowsItsTable_HappyPath(t *testing.T) {
 	got := planshape.Apply(platform.Postgres, []ast.Node{first, second, index})
 
 	c.Assert(got, qt.DeepEquals, []ast.Node{first, index, second})
+}
+
+// TestApply_AnIndexStaysBehindItsOwnTable_FailurePath keeps an index of b.t behind
+// the column b.t gains: a new a.t is another table.
+func TestApply_AnIndexStaysBehindItsOwnTable_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	created := ast.NewCreateTable("a.t").AddColumn(key("id"))
+	changed := &ast.AlterTableNode{Name: "b.t", Operations: []ast.AlterOperation{&ast.AddColumnOperation{Column: nullable("n", "int")}}}
+	index := ast.NewIndex("t_n", "b.t", "n")
+
+	got := planshape.Apply(platform.Postgres, []ast.Node{created, changed, index})
+
+	c.Assert(got, qt.DeepEquals, []ast.Node{created, changed, index})
+}
+
+// TestApply_ASameNamedTableKeepsItsConstraint_FailurePath leaves new a.t with what
+// its own statements gave it: a constraint of b.t stops on b.t.
+func TestApply_ASameNamedTableKeepsItsConstraint_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	created := ast.NewCreateTable("a.t").AddColumn(key("id"))
+
+	planshape.Apply(platform.Postgres, []ast.Node{created, addConstraint("b.t", checkConstraint("ck", "id > 0"))})
+
+	c.Assert(created.Constraints, qt.HasLen, 1)
+	c.Assert(created.Constraints[0].Type, qt.Equals, ast.PrimaryKeyConstraint)
+}
+
+// TestApply_ANameWithTheSameLettersKeepsItsConstraint_FailurePath leaves a
+// constraint on its own table where the new table's name reads the same with its
+// quotes taken off.
+func TestApply_ANameWithTheSameLettersKeepsItsConstraint_FailurePath(t *testing.T) {
+	for _, test := range []struct{ name, created, altered string }{
+		{"a dot inside quotes", `"a.b"`, "a.b"},
+		{"a quoted schema", `"a.b"`, `"a"."b"`},
+		{"a doubled quote", `"a""b"`, "ab"},
+		{"a quote a reader kept", `a"b`, "ab"},
+		{"a doubled backquote", "`a``b`", "ab"},
+		{"a backquote a reader kept", "a`b", "ab"},
+		{"a schema of the same letters", `a.b.c`, `"a.b".c`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			created := ast.NewCreateTable(test.created).AddColumn(key("id"))
+
+			planshape.Apply(platform.Postgres, []ast.Node{created, addConstraint(test.altered, checkConstraint("ck", "id > 0"))})
+
+			c.Assert(created.Constraints, qt.HasLen, 1)
+			c.Assert(created.Constraints[0].Type, qt.Equals, ast.PrimaryKeyConstraint)
+		})
+	}
+}
+
+// TestApply_OneNameInTwoSpellingsTakesItsConstraint_HappyPath moves a constraint
+// onto a new table however a statement quotes the table's name.
+func TestApply_OneNameInTwoSpellingsTakesItsConstraint_HappyPath(t *testing.T) {
+	for _, test := range []struct{ name, created, altered string }{
+		{"quotes on every part", "a.b", `"a"."b"`},
+		{"quotes on one part", `a."b"`, `"a".b`},
+		{"a quoted dot", `"a.b"`, `"a.b"`},
+		{"a doubled quote and a kept one", `"a""b"`, `a"b`},
+		{"backquotes", "`a`.`b`", "a.b"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			created := ast.NewCreateTable(test.created).AddColumn(key("id"))
+
+			planshape.Apply(platform.Postgres, []ast.Node{created, addConstraint(test.altered, checkConstraint("ck", "id > 0"))})
+
+			c.Assert(created.Constraints, qt.HasLen, 2)
+			c.Assert(created.Constraints[1].Name, qt.Equals, "ck")
+		})
+	}
+}
+
+// TestApply_AUniqueColumnTakesTheTablesCase_HappyPath writes the name PostgreSQL
+// gives the key, which keeps the case of a quoted table's name.
+func TestApply_AUniqueColumnTakesTheTablesCase_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	column := nullable("code", "int")
+	column.Unique = true
+	table := ast.NewCreateTable("app.Users").AddColumn(column)
+
+	planshape.Apply(platform.Postgres, []ast.Node{table})
+
+	c.Assert(table.Constraints, qt.HasLen, 1)
+	c.Assert(table.Constraints[0].Name, qt.Equals, "Users_code_key")
 }
 
 // TestApply_LeavesAnEngineTheBinaryHasNoDriverFor_FailurePath returns the plan as
@@ -310,11 +449,14 @@ func TestApply_TheColumnsOfAKey_HappyPath(t *testing.T) {
 func TestApply_TheNameOfANotNull_HappyPath(t *testing.T) {
 	tests := []struct {
 		name  string
+		table string
 		named string
 		want  string
 	}{
-		{name: "the server's own name", named: "t_c_not_null", want: ""},
-		{name: "the author's name", named: "c_required", want: "c_required"},
+		{name: "the server's own name", table: "t", named: "t_c_not_null", want: ""},
+		{name: "the server's own name, of a quoted table", table: "Tbl", named: "Tbl_c_not_null", want: ""},
+		{name: "the server's own name, in a schema", table: "app.t", named: "t_c_not_null", want: ""},
+		{name: "the author's name", table: "t", named: "c_required", want: "c_required"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -322,7 +464,7 @@ func TestApply_TheNameOfANotNull_HappyPath(t *testing.T) {
 			column := ast.NewColumn("c", "int")
 			column.NotNullConstraintName = test.named
 
-			planshape.Apply(platform.Postgres, []ast.Node{ast.NewCreateTable("t").AddColumn(column)})
+			planshape.Apply(platform.Postgres, []ast.Node{ast.NewCreateTable(test.table).AddColumn(column)})
 
 			c.Assert(column.NotNullConstraintName, qt.Equals, test.want)
 		})
