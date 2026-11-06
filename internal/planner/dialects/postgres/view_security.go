@@ -7,6 +7,7 @@ import (
 	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
+	"ptah.run/internal/planrefusal"
 	"ptah.run/internal/viewoptions"
 )
 
@@ -44,6 +45,7 @@ func (p *Planner) refuseViewChanges(diff *difftypes.SchemaDiff, rebuild viewRebu
 // remove nothing a reader can see, and plan as declared.
 func refuseLostViewSecurity(diff *difftypes.SchemaDiff) error {
 	var refusals []string
+	var options []planrefusal.ViewOption
 	for _, viewDiff := range diff.ViewsModified {
 		if viewDiff.Rollback || viewDiff.Desired.Name == "" {
 			continue
@@ -53,11 +55,15 @@ func refuseLostViewSecurity(diff *difftypes.SchemaDiff) error {
 				"view %s holds %s=%s and the schema does not state it. Without it %s. "+
 					"Declare %s=true to keep it, or %s=false to remove it",
 				viewDiff.Desired.Name, lost.Name, lost.Held, lost.Effect, lost.Name, lost.Name))
+			options = append(options, planrefusal.ViewOption{View: viewDiff.Desired.Name, Option: lost.Name})
 		}
 	}
 	if len(refusals) == 0 {
 		return nil
 	}
-	return fmt.Errorf("%w: %s. An HCL schema states these options in the view's security block, as invoker and barrier",
-		ptaherr.ErrUnsupportedFeature, strings.Join(refusals, "; "))
+	return &planrefusal.LostViewSecurityError{
+		Options: options,
+		Err: fmt.Errorf("%w: %s. An HCL schema states these options in the view's security block, as invoker and barrier",
+			ptaherr.ErrUnsupportedFeature, strings.Join(refusals, "; ")),
+	}
 }

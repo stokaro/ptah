@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemapreparation"
+	"ptah.run/internal/planrefusal"
 )
 
 // refusePoliciesLostToCascade refuses a plan that drops a view, a materialized
@@ -84,15 +85,15 @@ func (p *Planner) lostReaderRefusal(relation droppedReadable, reader string) err
 	}
 	outcome := p.lossOutcome(relation.kind)
 	if relation.cause == nil {
-		return fmt.Errorf("%w: the plan drops %s %s, which the declaration removes; %s %s it, and %s. "+
+		return &planrefusal.DependentObjectError{Err: fmt.Errorf("%w: the plan drops %s %s, which the declaration removes; %s %s it, and %s. "+
 			"Change %s so it no longer %s %s first",
 			ptaherr.ErrUnsupportedFeature, relation.kind, relation.name, reader, reads, outcome,
-			reader, reads, relation.name)
+			reader, reads, relation.name)}
 	}
-	return fmt.Errorf("%w: the plan drops %s %s and creates it again, for %s; %s %s it, and %s. "+
+	return &planrefusal.DependentObjectError{Err: fmt.Errorf("%w: the plan drops %s %s and creates it again, for %s; %s %s it, and %s. "+
 		"Change %s so it no longer %s %s in one migration, then %s in the next",
 		ptaherr.ErrUnsupportedFeature, relation.kind, relation.name, relation.cause.change, reader, reads, outcome,
-		reader, reads, relation.name, relation.cause.then)
+		reader, reads, relation.name, relation.cause.then)}
 }
 
 // lossOutcome is what the drop of an object of kind does to a captured object

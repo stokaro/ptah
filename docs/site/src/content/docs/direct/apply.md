@@ -574,6 +574,8 @@ file does not record the field, so `apply --plan` does not report it; the
 | `lock-timeout` | `apply` | Another session held the schema apply lock longer than `--lock-timeout` |
 | `transaction-preflight` | `apply` | A statement conflicts with the selected `--tx-mode` |
 | `simulation-failed` | `apply` with `--dev-url` | The plan failed its rehearsal on the dev database and was not sent to the target |
+| `view-security-option` | `plan`, and `apply` without `--plan` | The plan would take `security_invoker` or `security_barrier` from a view whose schema does not state it. `view_options` lists each `view` and `option`, and the [PostgreSQL page](../../databases/postgresql/#a-security-option-the-declaration-leaves-out) gives the remedies |
+| `dependent-object` | `plan`, and `apply` without `--plan` | The plan drops an object something else depends on, and the drop would stop on the dependent or take it with nothing to create it again. The error message names both |
 
 A consumer that does not know a code still knows what `refused` means, and
 reads the error message for the rest.

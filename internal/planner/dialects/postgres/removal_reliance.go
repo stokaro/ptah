@@ -18,6 +18,7 @@ import (
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/feature/pgtype"
 	"ptah.run/internal/deporder"
+	"ptah.run/internal/planrefusal"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/routinebody"
 	"ptah.run/internal/tableref"
@@ -213,10 +214,10 @@ func (p *Planner) routinesAheadOf(diff *difftypes.SchemaDiff, rebuild viewRebuil
 // leave before read.
 func routineWithoutOrder(group removedRoutineGroup, caller, read removalPoint) error {
 	name := group.routines[0].Name
-	return fmt.Errorf("%w: %s calls routine %s, which depends on %s, and the plan has no order that drops them all without CASCADE. "+
+	return &planrefusal.DependentObjectError{Err: fmt.Errorf("%w: %s calls routine %s, which depends on %s, and the plan has no order that drops them all without CASCADE. "+
 		"CASCADE would also take objects the plan does not know of. "+
 		"Change %s so it no longer calls %s in one migration, and remove the rest in the next",
-		ptaherr.ErrUnsupportedFeature, caller, name, read, caller, name)
+		ptaherr.ErrUnsupportedFeature, caller, name, read, caller, name)}
 }
 
 // removalPoint is one object the plan removes that a routine can depend on or

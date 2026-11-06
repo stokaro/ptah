@@ -271,13 +271,17 @@ database before applying it.
 
 **Symptom**
 
-`schema apply`, `schema compare` or `migrations generate` stops with exit code 2,
-and `ptah-compat schema apply`, `schema diff` or `migrate diff` with exit code 1,
-naming a view and an option:
+`schema plan`, `schema apply`, `schema compare` or `migrations generate` stops
+with exit code 2, and `ptah-compat schema apply`, `schema diff` or `migrate diff`
+with exit code 1, naming a view and an option:
 
 ```text
 unsupported feature: view my_docs holds security_invoker=true and the schema does not state it.
 ```
+
+Under `--json`, `schema plan` and `schema apply` report `outcome: refused` with
+the refusal code `view-security-option`, and `view_options` names each view and
+option. See [Refusal codes](../../direct/apply/#refusal-codes).
 
 **Likely cause**
 

@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/core/renderer"
 	"ptah.run/internal/errorkind"
+	"ptah.run/internal/planrefusal"
 	"ptah.run/internal/providerdiagnostic"
 	"ptah.run/internal/txrequire"
 	"ptah.run/migration/schemadiff"
@@ -116,6 +117,14 @@ const (
 	// RefusalSimulationFailed means the plan failed its rehearsal on the
 	// --dev-url database, and the command did not send it to the target.
 	RefusalSimulationFailed RefusalCode = "simulation-failed"
+	// RefusalViewSecurityOption means the plan would take a security option from
+	// a view because the declaration does not state it. State the option to keep
+	// it, or state it as off to remove it.
+	RefusalViewSecurityOption RefusalCode = "view-security-option"
+	// RefusalDependentObject means the plan drops an object something else
+	// depends on, where the drop would stop on the dependent or take it with
+	// nothing to create it again. Change the dependent first.
+	RefusalDependentObject RefusalCode = "dependent-object"
 )
 
 // Refusal is the reason a plan or an apply refused, with the details a caller
@@ -134,6 +143,10 @@ type Refusal struct {
 	// database has now, of the kind Changed names.
 	PlanFingerprint     string `json:"plan_fingerprint,omitempty"`
 	DatabaseFingerprint string `json:"database_fingerprint,omitempty"`
+	// ViewOptions are the security options a view-security-option refusal names,
+	// one entry per view and option, in the order the comparison lists the views
+	// and each view's options in name order.
+	ViewOptions []planrefusal.ViewOption `json:"view_options,omitempty"`
 }
 
 // PlanReport is the machine-readable record of one `schema plan` run.
@@ -370,6 +383,8 @@ func refusalFor(err error) *Refusal {
 	var preflight *TransactionPreflightError
 	var ownerRequirement *txrequire.OwnerRequirementError
 	var simulation *SimulationError
+	var lostViewSecurity *planrefusal.LostViewSecurityError
+	var dependentObject *planrefusal.DependentObjectError
 	switch {
 	case errors.As(err, &stale):
 		changed := "schema"
@@ -390,6 +405,10 @@ func refusalFor(err error) *Refusal {
 		return &Refusal{Code: RefusalTransactionPreflight}
 	case errors.As(err, &simulation):
 		return &Refusal{Code: RefusalSimulationFailed}
+	case errors.As(err, &lostViewSecurity):
+		return &Refusal{Code: RefusalViewSecurityOption, ViewOptions: lostViewSecurity.Options}
+	case errors.As(err, &dependentObject):
+		return &Refusal{Code: RefusalDependentObject}
 	default:
 		return nil
 	}
