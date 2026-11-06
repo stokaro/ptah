@@ -163,6 +163,11 @@ jobs:
           set -euo pipefail
           scripts/check-release-image-mirror-selftest.sh
 
+      # The report runs only on a night something failed, so the rule that keeps
+      # one open issue is driven here with a stub in place of gh.
+      - name: Check the nightly failure report
+        run: scripts/report-nightly-failure-selftest.sh
+
       # A release tag's documentation deployment is created by hand, because
       # the action that would create it cannot be told which build version to
       # use. Which object id the tag deploys under is the rule, and it is

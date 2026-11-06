@@ -85,7 +85,9 @@ go run ./internal/cmd/testcontour \
 ```
 
 A push or a pull request runs this command. The nightly `complete integration
-contour` job in `atlas-reference.yml` adds `--race`.
+contour` job in `atlas-reference.yml` adds `--race`. A failed scheduled run of
+that workflow comments on the open issue titled `Nightly run of "Atlas CE
+reference" failed`, or opens one when none is open.
 
 Do not run selected test names or individual packages as a CI substitute for
 this contour. An integration test is never white-box: integration tests use
