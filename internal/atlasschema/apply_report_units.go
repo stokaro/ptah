@@ -15,6 +15,10 @@ type ApplyUnitReport struct {
 	SQL    string                    `json:"sql,omitempty"`
 	Native *NativeUnitReport         `json:"native,omitempty"`
 	Inputs []renderer.InputReference `json:"inputs,omitempty"`
+	// Change names the change the unit makes, in the words the Atlas CLI writes
+	// above it. It is a display projection for the compatibility surface, which
+	// writes it through [WriteNamedUnitReports]; the JSON evidence does not carry it.
+	Change string `json:"-"`
 }
 
 // NativeUnitReport describes the owner and effects without publishing opaque
@@ -61,6 +65,9 @@ func (p ApplyRuntimePlan) ReportUnits(ctx context.Context, runtime safety.Runtim
 	for i, unit := range units {
 		report[i].SQL = unit.SQL
 		report[i].Inputs = slices.Clone(unit.Inputs)
+		if i < len(p.plan.changes) {
+			report[i].Change = p.plan.changes[i]
+		}
 		if unit.Native != nil {
 			assessment := assessments[i]
 			report[i].Native = &NativeUnitReport{Kind: unit.Native.Kind(), Subject: assessment.Subject, Severity: assessment.Severity, Reason: assessment.Reason, Access: assessment.Access, AccessReason: assessment.AccessReason}

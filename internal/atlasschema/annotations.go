@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"ptah.run/core/renderer"
+	"ptah.run/internal/atlasreport"
 )
 
 // Annotations returns an independent snapshot of non-executable plan notes.
@@ -42,6 +43,25 @@ func annotatedSQL(statements []string, annotations []renderer.Annotation) string
 		}
 	}
 	return out.String()
+}
+
+// WriteNamedUnitReports is [WriteUnitReports] with the comment that names each
+// unit's change above its statement, as the Atlas CLI writes a plan. A native
+// unit without a text form has no statement to head, and its summary already
+// states its kind and subject.
+func WriteNamedUnitReports(out io.Writer, units []ApplyUnitReport, annotations []renderer.Annotation) {
+	named := slices.Clone(units)
+	for i, unit := range named {
+		switch {
+		case unit.Native == nil:
+			named[i].SQL = atlasreport.NameStatement(unit.Change, unit.SQL)
+		case unit.Native.Text != "":
+			native := *unit.Native
+			native.Text = atlasreport.NameStatement(unit.Change, native.Text)
+			named[i].Native = &native
+		}
+	}
+	WriteUnitReports(out, named, annotations)
 }
 
 // WriteUnitReports lists notes and SQL or native summaries in plan order. A
