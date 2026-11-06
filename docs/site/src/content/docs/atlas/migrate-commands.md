@@ -1484,6 +1484,10 @@ and neither does the schema the connection resolves unqualified names to, usuall
 does, and a role that may create tables in it does not need `CREATE` on the
 database.
 
+On the PostgreSQL family this surface also keeps the guard on every drop after an
+enum rebuild, which writes `ALTER TYPE ... RENAME TO`. Native Ptah leaves it out
+there, because the rebuild removes only the type it renamed.
+
 In the exact style, the PostgreSQL type and extension owners omit `IF EXISTS`
 from drops, and type drops omit `CASCADE`. PostgreSQL refuses a domain or
 composite type drop while an undeclared column still uses the type. A provider

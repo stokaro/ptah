@@ -577,6 +577,8 @@ func computeApplyPlan(
 			SkipChangeKinds:     opts.Policy.SkipChangeKinds,
 			Statements:          planstyle.Statements,
 			Shape:               opts.Shape,
+
+			EnumRebuildKeepsGuards: opts.Policy.EnumRebuildKeepsGuards,
 		}
 		plan, err := planner.GenerateSchemaDiffRenderedPlan(
 			ctx, opts.Runtime,

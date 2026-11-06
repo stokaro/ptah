@@ -571,6 +571,8 @@ func diffResolvedStates(
 		SkipChangeKinds:     opts.Policy.SkipChangeKinds,
 		Statements:          planstyle.Statements,
 		Shape:               opts.Shape,
+
+		EnumRebuildKeepsGuards: opts.Policy.EnumRebuildKeepsGuards,
 	})
 	if err != nil {
 		return atlasreport.SchemaDiff{}, nil, err
