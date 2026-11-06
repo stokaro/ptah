@@ -50,8 +50,8 @@ these behaviors:
 - A lock excludes a second session in another process, a lock ID is used once,
   releasing an unused ID fences it, and closing a session releases its locks.
 - A reason never quotes an address, a value, a statement or a credential.
-- Every feature the description lists has a service, and every service has its
-  feature.
+- Every service the description offers has an implementation, and every
+  implementation is offered.
 
 ## Check each service with the SDK's validators
 

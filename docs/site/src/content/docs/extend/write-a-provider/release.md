@@ -47,8 +47,8 @@ operator reaches a release on one of two paths:
   command reads.
 
 A third-party engine name needs no catalog entry and no Ptah release, and a
-manifest is how operators select it. A catalog entry is a change to Ptah
-itself, so a provider that should install by command is proposed in an issue.
+manifest is how operators select it. The catalog lists official providers
+only, and an entry in it is a change to Ptah itself.
 Either way, Ptah checks the digest before every start, and the provider ID, the
 engines, the contract and the required features after it. The
 [operator page](../../executable-providers/#which-provider-serves-an-engine)
