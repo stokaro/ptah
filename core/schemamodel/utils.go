@@ -12,6 +12,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/internal/tableref"
 )
 
@@ -235,6 +236,7 @@ func BuildDependencyGraph(r *Database) {
 	analyzeFieldForeignKeys(r)
 	analyzeEmbeddedFieldRelations(r)
 	analyzeConstraintForeignKeys(r)
+	analyzeFacetParents(r)
 	analyzeDeclaredTableDependencies(r)
 	buildFunctionDependencies(r)
 }
@@ -657,6 +659,105 @@ func analyzeConstraintForeignKeys(r *Database) {
 		// field-level shape is intentionally single-column and lossy.
 		processForeignKeyDependency(r, *table, constraint.ForeignTable, nil)
 	}
+}
+
+// analyzeFacetParents orders a table after the table a facet says it requires.
+// A foreign key's dependency comes from its declaration, and this one from the
+// owner that holds it.
+func analyzeFacetParents(r *Database) {
+	for _, table := range r.Tables {
+		if parent, found := FacetParentTable(r.Tables, table); found && parent != table.QualifiedName() &&
+			!slices.Contains(r.Dependencies[table.QualifiedName()], parent) {
+			r.Dependencies[table.QualifiedName()] = append(r.Dependencies[table.QualifiedName()], parent)
+		}
+	}
+}
+
+// FacetParentTable returns the qualified name, as tables spell it, of the table a
+// facet of table requires, and false when no facet requires one. A document names
+// the default schema or leaves it out as it pleases, on the parent and on the
+// reference alike, so a reference with no exact match pairs with the one table of
+// that name a default-schema spelling can mean. It returns the reference as written
+// when no declared table answers.
+func FacetParentTable(tables []Table, table Table) (string, bool) {
+	schema, name, found := schemaext.ParentTableOf(table.Facets)
+	if !found {
+		return "", false
+	}
+	var unqualified, sameName []Table
+	for _, candidate := range tables {
+		if candidate.Name != name {
+			continue
+		}
+		if candidate.Schema == schema {
+			return candidate.QualifiedName(), true
+		}
+		sameName = append(sameName, candidate)
+		if candidate.Schema == "" {
+			unqualified = append(unqualified, candidate)
+		}
+	}
+	switch {
+	case schema != "" && len(unqualified) == 1:
+		return unqualified[0].QualifiedName(), true
+	case schema == "" && len(sameName) == 1:
+		return sameName[0].QualifiedName(), true
+	default:
+		return QualifyTableName(schema, name), true
+	}
+}
+
+// WithParentColumns returns fields with the columns a table takes from another
+// table, such as a partition from its parent, added under that table's own struct
+// name, so what is declared on it is checked against the columns it will have. A
+// copy holds no foreign key: the parent's is validated once, on the parent.
+func WithParentColumns(tables []Table, fields []Field) []Field {
+	result := slices.Clone(fields)
+	for _, table := range tables {
+		if slices.ContainsFunc(fields, func(field Field) bool { return field.StructName == table.StructName }) {
+			continue
+		}
+		ancestors, _ := FacetAncestors(tables, table)
+		for _, ancestor := range ancestors {
+			for _, field := range fields {
+				if field.StructName == ancestor.StructName {
+					field.StructName = table.StructName
+					field.Foreign, field.ForeignKeyName, field.OnDelete, field.OnUpdate = "", "", "", ""
+					result = append(result, field)
+				}
+			}
+		}
+	}
+	return result
+}
+
+// FacetAncestors returns the declared tables above table in the chain
+// [FacetParentTable] answers, nearest first. complete is false when the chain leaves
+// the declarations: a parent no table declares, or one the chain already holds. A
+// table with no parent has an empty, complete chain.
+func FacetAncestors(tables []Table, table Table) (ancestors []Table, complete bool) {
+	seen := map[string]bool{table.QualifiedName(): true}
+	for {
+		parent, found := FacetParentTable(tables, table)
+		if !found {
+			return ancestors, true
+		}
+		position := slices.IndexFunc(tables, func(candidate Table) bool { return candidate.QualifiedName() == parent })
+		if position < 0 || seen[parent] {
+			return ancestors, false
+		}
+		seen[parent] = true
+		table = tables[position]
+		ancestors = append(ancestors, table)
+	}
+}
+
+// ColumnsComeFromElsewhere reports a table a facet defines whose columns fields do
+// not state, such as a partition of a parent the document leaves to the database. A
+// server resolves them, so nothing declared on the table can be checked here.
+func ColumnsComeFromElsewhere(fields []Field, table Table) bool {
+	_, defined := schemaext.DefiningKind(table.Facets)
+	return defined && !slices.ContainsFunc(fields, func(field Field) bool { return field.StructName == table.StructName })
 }
 
 // findTableByStructName finds a table by its struct name

@@ -268,6 +268,7 @@ func TestStrictCEValidatesDesiredSchemaExtensions(t *testing.T) {
 		{name: "managed data", database: &schemamodel.Database{ManagedData: []schemamodel.ManagedData{{}}}},
 		{name: "API export metadata", database: &schemamodel.Database{Tables: []schemamodel.Table{{Name: "users", APIName: "Account"}}}},
 		{name: "table partitioning", database: &schemamodel.Database{Tables: []schemamodel.Table{{Facets: must.Must(schemaext.NewFacets(&pgtable.DesiredPartition{}))}}}},
+		{name: "table partitioning", database: &schemamodel.Database{Tables: []schemamodel.Table{{Facets: must.Must(schemaext.NewFacets(&pgtable.DesiredPartitionMember{}))}}}},
 		{name: "platform overrides", database: &schemamodel.Database{Fields: []schemamodel.Field{{Overrides: map[string]map[string]string{"mysql": {"type": "bigint"}}}}}},
 		{name: "enum comments", database: &schemamodel.Database{Enums: []schemamodel.Enum{{Name: "mood", Values: []string{"ok"}, Comment: "x"}}}},
 	}

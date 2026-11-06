@@ -2268,7 +2268,11 @@ func (r *Reader) readConstraints(ctx context.Context) ([]catalog.Constraint, err
 		return constraints, nil
 	}
 
-	return r.readBasicConstraints(ctx)
+	constraints, err := r.readBasicConstraints(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return constraints, r.markInheritedConstraints(ctx, constraints)
 }
 
 // readBasicConstraints reads the constraints of every schema the read covers.
@@ -3506,6 +3510,16 @@ func (r *Reader) readTriggersForSchema(ctx context.Context, schemaName string) (
 	if !r.caps.Has(capability.CatalogTriggerDefinitions) {
 		definition = "''"
 	}
+	// A row trigger on a partitioned table has a copy on each partition, which
+	// PostgreSQL creates and drops with the parent's: DROP TRIGGER on one answers
+	// `cannot drop trigger ... because trigger ... requires it`. Read as a trigger
+	// of its own, every copy is a planned removal the server refuses. The column is
+	// read through to_jsonb because the PostgreSQL 11 that YugabyteDB 2024.2 speaks
+	// does not have it, and marks such a copy tgisinternal instead.
+	notCopy := ""
+	if r.readsPartitionCopies() {
+		notCopy = "AND COALESCE(to_jsonb(trg) ->> 'tgparentid', '0') = '0'"
+	}
 	triggersQuery := `
 		SELECT
 			n.nspname AS schema_name,
@@ -3539,6 +3553,7 @@ func (r *Reader) readTriggersForSchema(ctx context.Context, schemaName string) (
 		JOIN pg_proc p ON p.oid = trg.tgfoid
 		WHERE n.nspname = $1
 		AND NOT trg.tgisinternal
+		` + notCopy + `
 		ORDER BY tbl.relname, trg.tgname`
 
 	rows, err := r.db.QueryContext(ctx, triggersQuery, schemaName)

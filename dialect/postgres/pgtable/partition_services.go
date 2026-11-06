@@ -45,23 +45,32 @@ func convertPartition(from schemaext.Representation, value schemaext.Value) (sch
 // surviving table. Missing source knowledge and unresolved expression spelling
 // stay undecided. Foreign targets follow the owner's omission or refusal policy.
 func (PartitionService) CompareFacets(ctx context.Context, request schemaext.FacetComparisonRequest) (schemaext.FacetComparisonResult, error) {
+	return compareTableOwners(ctx, request, PartitionKind, comparePartition)
+}
+
+// compareTableOwners asks compare about each owner of a batch that compares kind
+// alone. A reason it answers leaves that owner undecided, and an error discards the
+// batch.
+func compareTableOwners(ctx context.Context, request schemaext.FacetComparisonRequest, kind schemaext.Kind,
+	compare func(schemaext.FacetComparisonRequest, schemaext.ParentState) (string, error),
+) (schemaext.FacetComparisonResult, error) {
 	if err := persistenceContext(ctx, request.Target); err != nil {
 		return schemaext.FacetComparisonResult{}, err
 	}
-	if !slices.Equal(request.Kinds, []schemaext.Kind{PartitionKind}) {
-		return schemaext.FacetComparisonResult{}, fmt.Errorf("%w: invalid partition comparison kinds", schemaext.ErrInvalidValue)
+	if !slices.Equal(request.Kinds, []schemaext.Kind{kind}) {
+		return schemaext.FacetComparisonResult{}, fmt.Errorf("%w: invalid %s comparison kinds", schemaext.ErrInvalidValue, kind)
 	}
 	result := schemaext.FacetComparisonResult{Complete: true, Desired: request.Desired}
 	for _, owner := range request.Owners {
 		if err := ctx.Err(); err != nil {
 			return schemaext.FacetComparisonResult{}, err
 		}
-		reason, err := comparePartition(request, owner)
+		reason, err := compare(request, owner)
 		if err != nil {
 			return schemaext.FacetComparisonResult{}, err
 		}
 		if reason != "" {
-			result.Undecided = append(result.Undecided, schemaext.UndecidedChange{Kind: PartitionKind, Subject: owner.Subject, Reason: reason})
+			result.Undecided = append(result.Undecided, schemaext.UndecidedChange{Kind: kind, Subject: owner.Subject, Reason: reason})
 		}
 	}
 	return completedPersistence(ctx, result)

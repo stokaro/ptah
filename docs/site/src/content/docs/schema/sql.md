@@ -429,6 +429,22 @@ Both table flags are compared and planned in both directions. See
 `IS NULL` clears it. The declaration must precede the comment, including across
 SQL files. Spanner refuses row-security declarations.
 
+## Declare a partition
+
+On PostgreSQL and YugabyteDB, `CREATE TABLE ... PARTITION OF` declares a partition of
+a table with `PARTITION BY`, whichever order the file writes them in:
+
+```sql
+CREATE TABLE events (id bigint NOT NULL, day date NOT NULL) PARTITION BY RANGE (day);
+CREATE TABLE events_2026 PARTITION OF events FOR VALUES FROM ('2026-01-01') TO ('2027-01-01');
+CREATE TABLE events_rest PARTITION OF events DEFAULT;
+```
+
+The partition takes its columns from its parent, so it declares none. [PostgreSQL
+table partitions](../../databases/postgresql/#table-partitions) has the bound forms,
+how a bound is compared, and the forms that are refused. Every other target refuses
+the statement by name.
+
 ## API export metadata
 
 SQL DDL cannot author Ptah's export-only `api_name`, `openapi_name`,

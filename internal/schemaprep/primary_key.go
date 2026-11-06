@@ -1,6 +1,9 @@
 package schemaprep
 
-import "ptah.run/core/schemamodel"
+import (
+	"ptah.run/core/schemaext"
+	"ptah.run/core/schemamodel"
+)
 
 // NeedsPrimaryKeyConstraint reports whether common key metadata requires a
 // table constraint rather than column flags. Lowering and target preparation
@@ -21,10 +24,7 @@ func NeedsPrimaryKeyConstraint(table schemamodel.Table, fields []schemamodel.Fie
 	if table.PrimaryKeyDeferrable && (len(table.PrimaryKey) > 0 || len(table.PrimaryKeyParts) > 0) {
 		return true
 	}
-	// So is an access method: `PRIMARY KEY USING HASH` has no column spelling.
-	// Nor have a comment and the settings an owner keeps on the key.
-	if (table.PrimaryKeyMethod != "" || table.PrimaryKeyComment != "" || !table.PrimaryKeyFacets.IsZero()) &&
-		(len(table.PrimaryKey) > 0 || len(table.PrimaryKeyParts) > 0) {
+	if keyHasNoColumnSpelling(table) && (len(table.PrimaryKey) > 0 || len(table.PrimaryKeyParts) > 0) {
 		return true
 	}
 	// UNIQUE on the same column is a reason of the same kind. The column
@@ -70,4 +70,13 @@ func primaryKeyPartsHaveAttributes(parts []schemamodel.PrimaryKeyPart) bool {
 		}
 	}
 	return false
+}
+
+// keyHasNoColumnSpelling reports what a column's key flag cannot say: an access
+// method, as in `PRIMARY KEY USING HASH`, a comment, the settings an owner keeps on
+// the key, and a key of a table a facet defines, such as a PostgreSQL partition,
+// which has no column list to write it in.
+func keyHasNoColumnSpelling(table schemamodel.Table) bool {
+	_, defined := schemaext.DefiningKind(table.Facets)
+	return defined || table.PrimaryKeyMethod != "" || table.PrimaryKeyComment != "" || !table.PrimaryKeyFacets.IsZero()
 }

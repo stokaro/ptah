@@ -102,6 +102,7 @@ func corpus() []Fixture {
 		{Name: "constraint-pk-options", Schema: primaryKeyConstraintOptionsFixture()},
 		{Name: "table-pk-parts", Schema: tablePrimaryKeyPartsFixture()},
 		{Name: "table-partition", Schema: tablePartitionFixture()},
+		{Name: "table-partition-member", Schema: tablePartitionMemberFixture()},
 		{Name: "table-mysql", Schema: tableMySQLFixture()},
 		{Name: "table-engine", Schema: tableEngineFixture()},
 		{Name: "table-sqlite", Schema: tableSQLiteFixture()},
@@ -785,6 +786,22 @@ func tablePartitionFixture() schemamodel.Database {
 			{StructName: "T", FieldName: "Tenant", Name: "tenant", Type: "VARCHAR(16)"},
 		},
 	}
+}
+
+// tablePartitionMemberFixture holds a partition that is partitioned itself, since
+// an offline conversion describes partition keys only for tables that hold one.
+func tablePartitionMemberFixture() schemamodel.Database {
+	db := tablePartitionFixture()
+	db.Tables = append(db.Tables, schemamodel.Table{
+		StructName: "A", Name: "a",
+		Facets: must.Must(schemaext.NewFacets(
+			&pgtable.DesiredPartitionMember{PartitionMember: pgtable.PartitionMember{
+				ParentSchema: "app", Parent: "t", Bound: "FOR VALUES FROM ('a') TO ('m')",
+			}},
+			&pgtable.DesiredPartition{Type: "LIST", Parts: []pgtable.PartitionPart{{Name: "tenant"}}},
+		)),
+	})
+	return db
 }
 
 func tableMySQLFixture() schemamodel.Database {

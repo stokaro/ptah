@@ -105,7 +105,7 @@ func CollectWithOptions(
 	if err != nil {
 		return nil, err
 	}
-	problems := collectIndexProblems(scoped, dialect)
+	problems := append(collectIndexProblems(scoped, dialect), collectParentProblems(scoped, dialect)...)
 	target := selected.Name()
 	result, err := schemavalidation.Validate(ctx, service, schemavalidation.Request{
 		Target: target, Schema: scoped, Capabilities: caps,
@@ -136,6 +136,11 @@ func collectIndexProblems(database *schemamodel.Database, dialect string) []Prob
 	for position, index := range database.Indexes {
 		owner := owners[position]
 		columns, known := columnsByTable[owner]
+		if known && columns == nil {
+			// A table whose columns no declaration states, such as a partition of
+			// a parent the document leaves to the database, has no list to check.
+			continue
+		}
 		if !known {
 			if isMaterializedViewOwner(database, owner) {
 				// A materialized view's columns come from its query, which is
@@ -210,9 +215,10 @@ func indexColumnNames(index schemamodel.Index) []string {
 }
 
 // indexableColumns maps each table's qualified name to the columns an index on
-// it may name, embedded fields included.
+// it may name, embedded fields and a parent's columns included. A nil list means
+// the declarations do not state them.
 func indexableColumns(database *schemamodel.Database) map[string][]string {
-	fields := schemamodel.ProcessEmbeddedFields(database.EmbeddedFields, database.Fields)
+	fields := schemamodel.WithParentColumns(database.Tables, schemamodel.ProcessEmbeddedFields(database.EmbeddedFields, database.Fields))
 	byStruct := make(map[string][]string, len(database.Tables))
 	for _, field := range fields {
 		byStruct[field.StructName] = append(byStruct[field.StructName], field.Name)
@@ -220,8 +226,28 @@ func indexableColumns(database *schemamodel.Database) map[string][]string {
 	columns := make(map[string][]string, len(database.Tables))
 	for _, table := range database.Tables {
 		columns[table.QualifiedName()] = byStruct[table.StructName]
+		if !schemamodel.ColumnsComeFromElsewhere(fields, table) && columns[table.QualifiedName()] == nil {
+			columns[table.QualifiedName()] = make([]string, 0)
+		}
 	}
 	return columns
+}
+
+// collectParentProblems reports a table whose declared parent no declaration
+// defines. PostgreSQL answers its CREATE TABLE ... PARTITION OF with `relation does
+// not exist` unless the database already holds the parent, and a schema that leaves
+// the parent out also plans its removal.
+func collectParentProblems(database *schemamodel.Database, dialect string) []Problem {
+	var problems []Problem
+	for _, table := range database.Tables {
+		parent, found := schemamodel.FacetParentTable(database.Tables, table)
+		if !found || slices.ContainsFunc(database.Tables, func(candidate schemamodel.Table) bool { return candidate.QualifiedName() == parent }) {
+			continue
+		}
+		problems = append(problems, Problem{Dialect: dialect, Kind: "table", Object: table.QualifiedName(),
+			Message: fmt.Sprintf("names parent table %q, which no declaration defines", parent)})
+	}
+	return problems
 }
 
 // isMaterializedViewOwner reports whether the resolved owner names a declared

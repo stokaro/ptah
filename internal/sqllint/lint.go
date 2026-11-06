@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/routineext"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlext"
 	"ptah.run/core/sqlutil"
@@ -687,6 +688,11 @@ func (tablePrimaryKeyRule) CheckStatement(ctx Context, stmt ast.Node) []Finding 
 		return nil
 	}
 	if table.SelectBody != "" || createTableHasPrimaryKey(table) {
+		return nil
+	}
+	// A table a facet defines has no key list of its own to read: a partition holds
+	// a copy of each key of its parent, and this statement cannot say what they are.
+	if _, defined := schemaext.DefiningKind(table.Facets); defined {
 		return nil
 	}
 	line, column := ctx.LineColumn(table.Name)

@@ -831,6 +831,74 @@ name and refuses to rebuild a partitioned table without a partition-tree strateg
 An unlogged partitioned table is refused. Complete source coverage distinguishes
 an ordinary table from a partitioned one; unknown coverage establishes neither.
 
+## Table partitions
+
+A SQL schema file declares a partition with `CREATE TABLE ... PARTITION OF`. Every
+bound form reads: `FOR VALUES FROM ... TO`, `FOR VALUES IN`,
+`FOR VALUES WITH (MODULUS ..., REMAINDER ...)` and `DEFAULT`. The partition and its
+parent may be in different schemas and may be quoted. A partition may be partitioned
+itself, with `PARTITION BY` after its bound.
+
+```sql
+CREATE TABLE events (
+  id bigint NOT NULL,
+  happened_at timestamptz NOT NULL,
+  PRIMARY KEY (id, happened_at)
+) PARTITION BY RANGE (happened_at);
+
+CREATE TABLE events_2026 PARTITION OF events
+  FOR VALUES FROM ('2026-01-01') TO ('2027-01-01');
+CREATE TABLE archive.events_rest PARTITION OF events DEFAULT;
+```
+
+A partition's columns are its parent's, so a comparison reads none on the partition.
+A column added to the parent is planned on the parent alone. What the server copies
+onto a partition from its parent is the parent's to change, and no plan names it:
+the copy of a primary key, a unique key, a foreign key, a check, an index and a row
+trigger. An object the partition holds for itself is compared as usual: a table
+comment, an index, a trigger, a grant, row security, and a constraint declared with
+`ALTER TABLE`.
+
+The reader takes a partition's parent from `pg_inherits` and its bound from
+`pg_get_expr`, which prints values in the server's spelling. Connected comparison
+normalizes a declared bound through a temporary copy of the parent in a rolled-back
+transaction, so `'2026-01-01'` on a `timestamptz` key and the catalog's
+`'2026-01-01 00:00:00+00'` compare equal. A bound with no offset means an instant in
+the session's time zone, and a session in another zone reads it as another bound. A
+bound computed by a volatile function, such as `now()`, stores a value that never
+matches its declaration again. Without a connection, a bound spelled differently stays
+undecided.
+
+A partition the document leaves out is a table the plan drops, with its rows. Plans
+mark it destructive and the destructive gates hold it as they hold any `DROP TABLE`.
+A `schema inspect --format sql` writes `CREATE TABLE ... PARTITION OF`, and that
+document rebuilds the tree on an empty database.
+
+Some changes have no plan. Ptah refuses each one by name, and a reviewed manual
+partition cutover makes it: a partition with another bound or another parent, and a
+partition on one side with an ordinary table on the other. A document that keeps a
+partition and leaves out a parent the database holds is refused too, because dropping
+a partitioned table drops its partitions.
+
+Some forms are refused because the declaration has no place for them:
+
+- A column or constraint list, `PARTITION OF events (...)`. Declare a default on the
+  parent, and a constraint with `ALTER TABLE`.
+- `WITH (...)`, `USING` and other clauses after the bound.
+- `ALTER TABLE ... ADD COLUMN` on a partition, which the server refuses too.
+- `COMMENT ON COLUMN` on a partition, whose columns the declaration does not hold. An
+  export leaves such a comment out.
+- `ALTER TABLE ... ATTACH PARTITION`, which `pg_dump` writes.
+
+HCL, DBML, YAML and Go annotations have no spelling for a partition. A source in one
+of them compares the table as it declares it and claims nothing about its parent or
+bound. `schema inspect` and `ptah introspect` describe a partition in such a format as
+an ordinary table with its columns, and report that they left the rest out.
+
+YugabyteDB takes the same statement and reads the same way. On every other target the
+reader refuses `CREATE TABLE ... PARTITION OF` by name, whatever the server would answer:
+MySQL, MariaDB and CockroachDB answer it with a syntax error.
+
 A plan that removes a partitioned table and a partition of it drops the partition
 first, and a table that inherits another before that table. The reader takes
 these relationships from `pg_inherits`. A `DROP TABLE` of a partitioned table also

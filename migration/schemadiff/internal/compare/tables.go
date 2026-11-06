@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -248,20 +249,23 @@ func TablesAndColumnsWithTableContext(
 			// accepts. [ptah.run/internal/sqlitevirtual.ValidateComparison]
 			// refuses the same by name, earlier, at the seams that can return
 			// an error. See stokaro/ptah#1028.
+			var tableDiff difftypes.TableDiff
 			if tableDefinesColumns(genTable.Facets, dbTable.Facets) {
-				continue
+				tableDiff = difftypes.TableDiff{TableName: genTable.QualifiedName(), Desired: schemacapture.DeclareTable(desired, genTable, semantics)}
+			} else {
+				var matchedColumns int
+				tableDiff, matchedColumns = tableColumnsWithSemantics(
+					genTable,
+					dbTable,
+					desired,
+					dialect,
+					semantics,
+					uniqueness,
+					spellings,
+					caps,
+				)
+				diff.Matched.Columns += matchedColumns
 			}
-			tableDiff, matchedColumns := tableColumnsWithSemantics(
-				genTable,
-				dbTable,
-				desired,
-				dialect,
-				semantics,
-				uniqueness,
-				spellings,
-				caps,
-			)
-			diff.Matched.Columns += matchedColumns
 			// A comment is compared here rather than inside
 			// tableColumnsWithSemantics, and reaches TablesModified: it belongs
 			// to the table rather than to any column, and a table whose only

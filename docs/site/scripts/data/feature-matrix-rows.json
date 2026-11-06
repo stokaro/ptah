@@ -1432,6 +1432,15 @@
   },
   {
     "area": "Schema sources",
+    "feature": "PostgreSQL `CREATE TABLE ... PARTITION OF` in a SQL schema",
+    "ptah": "yes",
+    "atlas_oss": "no",
+    "atlas_pro": "unknown",
+    "note": "Read, compared and planned on PostgreSQL and YugabyteDB; other targets refuse it by name. The community binary accepts the file and creates no partition.",
+    "evidence": "Measured 2026-11-06, pinned community binary v1.3.0 against PostgreSQL 18, `schema apply --to file://schema.sql --dev-url`: the parent is created, the partition is not, and the next apply says synced. `migrate diff` writes no statement for it. ptah-compat creates the partition and converges. Strict mode refuses table partitioning for the desired schema. integration/partitionof/partition_of_e2e_test.go, TestPartitionOfThroughTheCompatibilitySurfaceE2E."
+  },
+  {
+    "area": "Schema sources",
     "feature": "HCL table and column child blocks",
     "ptah": "yes",
     "atlas_oss": "partial",

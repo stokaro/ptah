@@ -330,7 +330,7 @@ func preparePostgresTableFacets(dialect string, projected schemaext.Facets) (sch
 	if err := tsrender.ValidateTableFacets(projected); err != nil {
 		return schemaext.Facets{}, err
 	}
-	rest := projected.Without(tsschema.HypertableKind).Without(pgtable.PartitionKind)
+	rest := projected.Without(tsschema.HypertableKind).Without(pgtable.PartitionKind).Without(pgtable.PartitionMemberKind)
 	if platform.NormalizeDialect(dialect) == platform.Postgres {
 		_, remaining, err := pgtablerender.CreateTablePrefix(dialect, capability.Capabilities{}, "", rest)
 		if err != nil {

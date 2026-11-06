@@ -264,3 +264,20 @@ func TestLintSource_CapabilityAwareCreateIndexConcurrently(t *testing.T) {
 	c.Assert(cockroachFindings[0].Rule, qt.Equals, RuleUnsupportedCapability)
 	c.Assert(cockroachFindings[0].Severity, qt.Equals, SeverityError)
 }
+
+// TestLintSource_PartitionHasNoKeyOfItsOwn reads a partition as the table it is: its
+// keys are copies of its parent's, so no statement can say it lacks one. The ordinary
+// table beside it is the control.
+func TestLintSource_PartitionHasNoKeyOfItsOwn(t *testing.T) {
+	c := qt.New(t)
+
+	findings, err := LintSource(t.Context(), Source{Name: "schema.sql", SQL: `
+CREATE TABLE plain (id int);
+CREATE TABLE e1 PARTITION OF events FOR VALUES FROM (1) TO (10);
+`}, Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: platform.Postgres})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(findings, qt.HasLen, 1)
+	c.Assert(findings[0].Rule, qt.Equals, RuleTableWithoutPrimaryKey)
+	c.Assert(findings[0].Message, qt.Equals, `table "plain" has no primary key`)
+}

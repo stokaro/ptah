@@ -4,12 +4,14 @@ package introspect
 import (
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
@@ -117,6 +119,10 @@ func run(cmd *cobra.Command, opts options) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	goSchema, err = withPartitionsAsTables(goSchema, cmd.ErrOrStderr())
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	files, err := goschematogo.Render(cmd.Context(), goSchema, goschematogo.Options{
 		Annotations:     runtime.Annotations(),
 		Runtime:         runtime,
@@ -138,6 +144,31 @@ func run(cmd *cobra.Command, opts options) error {
 	fmt.Fprintf(cmd.OutOrStdout(), "Generated %d Go file(s) in %s\n", len(files), outDir)
 	fmt.Fprintf(cmd.OutOrStdout(), "Imported %d table(s), %d field(s), %d enum(s)\n", len(goSchema.Tables), len(goSchema.Fields), len(goSchema.Enums))
 	return nil
+}
+
+// withPartitionsAsTables models each PostgreSQL partition a read found as the table
+// it is in the catalog, and names each on w. Go annotations have no syntax for a
+// partition. A struct with its columns compares as the table the database holds, and
+// a schema built from the models keeps it; a source that declares the partition is
+// SQL, and ptah db read writes its statement.
+func withPartitionsAsTables(db *schemamodel.Database, w io.Writer) (*schemamodel.Database, error) {
+	result := *db
+	result.Tables = slices.Clone(db.Tables)
+	for i := range result.Tables {
+		table := &result.Tables[i]
+		member, found, err := pgtable.PartitionMemberOf(table.Facets)
+		if err != nil {
+			return nil, fmt.Errorf("table %q: %w", table.QualifiedName(), err)
+		}
+		if !found {
+			continue
+		}
+		table.Facets = table.Facets.Without(pgtable.PartitionMemberKind)
+		fmt.Fprintf(w, "note: %q is a PostgreSQL partition of %q, which Go annotations cannot declare,"+
+			" so the models describe it as an ordinary table; ptah db read writes its CREATE TABLE ... PARTITION OF statement\n",
+			table.QualifiedName(), member.Parent)
+	}
+	return &result, nil
 }
 
 func validateOptions(opts options) error {

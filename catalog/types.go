@@ -824,6 +824,12 @@ type Constraint struct {
 	ForeignColumns []string         `json:"foreign_columns,omitempty"`
 	DeleteRule     *string          `json:"delete_rule"` // CASCADE, RESTRICT, etc.
 	UpdateRule     *string          `json:"update_rule"` // CASCADE, RESTRICT, etc.
+	// Inherited reports that the table holds this constraint from another table:
+	// a partition's copy of its parent's key or foreign key, or a check it
+	// inherits. Only the other table's statements change it, and PostgreSQL answers
+	// `cannot drop inherited constraint` to one on this table. Only readers that
+	// can ask the catalog (pg_constraint) set it.
+	Inherited bool `json:"inherited,omitempty"`
 	// Deferrable reports a foreign key whose check may be postponed to the end
 	// of a transaction, read from pg_constraint.condeferrable.
 	Deferrable bool `json:"deferrable,omitempty"`

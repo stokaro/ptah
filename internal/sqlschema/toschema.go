@@ -28,6 +28,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/routineext"
@@ -1245,6 +1246,28 @@ func describeAlterOperation(op ast.AlterOperation) string {
 	}
 }
 
+// refuseColumnOfDefinedTable refuses a column added to a table a facet defines,
+// which has no column list to hold it: a PostgreSQL partition takes its columns from
+// its parent, and the server answers `cannot add column to a partition`. Read as a
+// field, the column would render nowhere and compare with nothing.
+func refuseColumnOfDefinedTable(database, base *schemamodel.Database, target alterTarget, column string) error {
+	declared := [][]schemamodel.Table{database.Tables}
+	if base != nil {
+		declared = append(declared, base.Tables)
+	}
+	for _, tables := range declared {
+		position := slices.IndexFunc(tables, func(table schemamodel.Table) bool { return table.StructName == target.structName })
+		if position < 0 {
+			continue
+		}
+		if _, defined := schemaext.DefiningKind(tables[position].Facets); defined {
+			return fmt.Errorf("%w: ALTER TABLE %s ADD COLUMN %s adds a column to a table with no column list of its own; "+
+				"a partition takes its columns from its parent", ErrUnmodeledStatement, target.written, column)
+		}
+	}
+	return nil
+}
+
 func applyAlterTableAddColumn(
 	database, base *schemamodel.Database,
 	target alterTarget,
@@ -1260,6 +1283,9 @@ func applyAlterTableAddColumn(
 		return undeclared(fmt.Errorf(
 			"%w: ALTER TABLE %s ADD COLUMN %s names a table this schema does not declare",
 			ErrUnmodeledStatement, tableName, operation.Column.Name))
+	}
+	if err := refuseColumnOfDefinedTable(database, base, target, operation.Column.Name); err != nil {
+		return err
 	}
 	field := fieldFromColumn(operation.Column, structName, sourcePlatform)
 	known := database.Fields

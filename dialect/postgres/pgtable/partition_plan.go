@@ -15,11 +15,19 @@ import (
 // of a partitioned table is refused because it needs a partition-tree strategy.
 // Errors and cancellation discard all parent receipts.
 func (PartitionService) PlanFeatures(ctx context.Context, request featureplan.Request) (featureplan.Result, error) {
+	return planTableParents(ctx, request, PartitionKind, partitionParent)
+}
+
+// planTableParents asks plan for a receipt of each table action in a batch that
+// plans kind alone. An error discards the batch.
+func planTableParents(ctx context.Context, request featureplan.Request, kind schemaext.Kind,
+	plan func(string, featureplan.Table) (string, error),
+) (featureplan.Result, error) {
 	if err := persistenceContext(ctx, request.Target); err != nil {
 		return featureplan.Result{}, err
 	}
-	if len(request.Changes) > 0 || !slices.Equal(request.ParentKinds, []schemaext.Kind{PartitionKind}) {
-		return featureplan.Result{}, fmt.Errorf("%w: partition planning requires only parent actions", schemaext.ErrInvalidValue)
+	if len(request.Changes) > 0 || !slices.Equal(request.ParentKinds, []schemaext.Kind{kind}) {
+		return featureplan.Result{}, fmt.Errorf("%w: %s planning requires only parent actions", schemaext.ErrInvalidValue, kind)
 	}
 	result := featureplan.Result{Complete: true}
 	for _, table := range request.Tables {
@@ -29,11 +37,11 @@ func (PartitionService) PlanFeatures(ctx context.Context, request featureplan.Re
 		if table.Action == "" {
 			continue
 		}
-		strategy, err := partitionParent(request.Target, table)
+		strategy, err := plan(request.Target, table)
 		if err != nil {
 			return featureplan.Result{}, err
 		}
-		result.Parents = append(result.Parents, featureplan.ParentPlan{Subject: table.Subject, Kind: PartitionKind, Action: table.Action, Strategy: strategy})
+		result.Parents = append(result.Parents, featureplan.ParentPlan{Subject: table.Subject, Kind: kind, Action: table.Action, Strategy: strategy})
 	}
 	return completedPersistence(ctx, result)
 }

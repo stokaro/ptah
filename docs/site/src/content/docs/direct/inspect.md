@@ -229,6 +229,11 @@ key bloom filter have no HCL or DBML spelling through the YDB provider, and a
 document read back keeps the table's settings; see
 [YDB](../../extend/providers/ydb/).
 
+A PostgreSQL partition has no HCL or DBML spelling. Those formats describe it as a
+table with its columns and warn, and a document read back compares that table and
+claims nothing about its parent or bound. `--format sql` writes `CREATE TABLE ...
+PARTITION OF`; see [PostgreSQL](../../databases/postgresql/#table-partitions).
+
 Both commands write a `permission` block by the same three rules: a schema is
 declared whenever anything references one, a grantee is a `role.<name>`
 reference only where the document declares that role block, and a target names

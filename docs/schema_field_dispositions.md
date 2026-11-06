@@ -79,13 +79,13 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-479 fields are reachable from the desired schema, and each one carries
+486 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 385 | reaches rendered SQL on at least one target |
-| `comparison` | 33 | read when two schemas are compared, and written into no statement |
+| `ddl` | 389 | reaches rendered SQL on at least one target |
+| `comparison` | 36 | read when two schemas are compared, and written into no statement |
 | `planning` | 6 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
 | `source` | 21 | identifies the source text the declaration was read from |
@@ -182,10 +182,14 @@ migration nobody asked for.
 
 ### Compared fields that do not reach a plan by design
 
-54 exemptions, each with the reason it is right.
+58 exemptions, each with the reason it is right.
 
 | Field | Dialects | Directions | Why |
 | --- | --- | --- | --- |
+| `pgtable.DesiredPartitionMember.PartitionMember` | `postgres`, `yugabytedb` | both | a partition's parent and bound cannot change in place; the owner refuses a change or requests connected normalization |
+| `pgtable.PartitionMember.ParentSchema` | `postgres`, `yugabytedb` | both | a partition's parent and bound cannot change in place; the owner refuses a change or requests connected normalization |
+| `pgtable.PartitionMember.Parent` | `postgres`, `yugabytedb` | both | a partition's parent and bound cannot change in place; the owner refuses a change or requests connected normalization |
+| `pgtable.PartitionMember.Bound` | `postgres`, `yugabytedb` | both | a partition's parent and bound cannot change in place; the owner refuses a change or requests connected normalization |
 | `pgtable.DesiredPartition.Type` | `clickhouse`, `mariadb`, `mysql`, `oracle`, `sqlite`, `sqlserver` | both | the target reports PostgreSQL partition declarations as omitted and does not manage their keys |
 | `pgtable.DesiredPartition.Type` | `postgres`, `yugabytedb` | both | partition keys cannot change in place; the owner refuses a changed key or requests connected normalization |
 | `pgtable.DesiredPartition.Parts` | `clickhouse`, `mariadb`, `mysql`, `oracle`, `sqlite`, `sqlserver` | both | the target reports PostgreSQL partition declarations as omitted and does not manage their keys |
@@ -243,11 +247,14 @@ migration nobody asked for.
 
 ### Compared fields the round trip cannot ask about
 
-23, besides the ones only a recorded loss hides.
+26, besides the ones only a recorded loss hides.
 
 | Field | Why |
 | --- | --- |
 | `pgtable.DesiredPartition.Normalized` | no census fixture declares a server's spelling; a connected comparison attaches one |
+| `pgtable.DesiredPartitionMember.Normalized` | no census fixture declares a server's spelling; a connected comparison attaches one |
+| `pgtable.NormalizedPartitionBound.SourceKey` | no census fixture declares a server's spelling; a connected comparison attaches one |
+| `pgtable.NormalizedPartitionBound.Key` | no census fixture declares a server's spelling; a connected comparison attaches one |
 | `pgtable.DesiredExclusion.Normalized` | no census fixture declares a server's spelling; a connected comparison attaches one |
 | `pgtable.NormalizedExclusion.SourceKey` | no census fixture declares a server's spelling; a connected comparison attaches one |
 | `pgtable.NormalizedExclusion.Elements` | no census fixture declares a server's spelling; a connected comparison attaches one |
@@ -401,6 +408,8 @@ migration nobody asked for.
 | `pgtable.DesiredPartition.Normalized` | `comparison` | the connected server's key for the declaration; source encoders preserve the declared spelling |
 | `pgtable.DesiredPartition.Parts` | `ddl` | — |
 | `pgtable.DesiredPartition.Type` | `ddl` | — |
+| `pgtable.DesiredPartitionMember.Normalized` | `comparison` | the connected server's spelling of the bound; source encoders preserve the declaration |
+| `pgtable.DesiredPartitionMember.PartitionMember` | `ddl` | — |
 | `pgtable.DesiredPersistence.Unlogged` | `ddl` | — |
 | `pgtable.Exclusion.Comment` | `ddl` | — |
 | `pgtable.Exclusion.Deferrable` | `ddl` | — |
@@ -414,6 +423,11 @@ migration nobody asked for.
 | `pgtable.NormalizedExclusion.WhereCondition` | `comparison` | the server's predicate spelling, compared with the catalog and never rendered |
 | `pgtable.NormalizedPartition.Key` | `comparison` | the server's normalized partition key, compared with the catalog and never rendered |
 | `pgtable.NormalizedPartition.SourceKey` | `comparison` | binds the normalized answer to its declaration |
+| `pgtable.NormalizedPartitionBound.Key` | `comparison` | the server's spelling of the bound, compared with the catalog and never rendered |
+| `pgtable.NormalizedPartitionBound.SourceKey` | `comparison` | binds the normalized bound to the declaration |
+| `pgtable.PartitionMember.Bound` | `ddl` | — |
+| `pgtable.PartitionMember.Parent` | `ddl` | — |
+| `pgtable.PartitionMember.ParentSchema` | `ddl` | — |
 | `pgtable.PartitionPart.Collation` | `ddl` | — |
 | `pgtable.PartitionPart.Expr` | `ddl` | — |
 | `pgtable.PartitionPart.Name` | `ddl` | — |

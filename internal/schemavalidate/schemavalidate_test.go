@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/schemavalidate"
 )
@@ -217,4 +218,41 @@ func TestDialects_KeepsATargetTheRuntimeServes(t *testing.T) {
 	got := schemavalidate.Dialects([]string{"fix", "postgres", "fixture"}, servedFixture{})
 
 	c.Assert(got, qt.DeepEquals, []string{"fixture", "postgres"})
+}
+
+func partitionSchema(indexes ...schemamodel.Index) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{
+			{StructName: "Event", Name: "events"},
+			{StructName: "E1", Name: "e1", Facets: must.Must(schemaext.NewFacets(&pgtable.DesiredPartitionMember{PartitionMember: pgtable.PartitionMember{Parent: "events", Bound: "DEFAULT"}}))},
+		},
+		Fields:  []schemamodel.Field{{StructName: "Event", Name: "id", Type: "INTEGER"}},
+		Indexes: indexes,
+	}
+}
+
+// TestCollect_PartitionColumnsAreItsParents checks an index on a partition against
+// the columns the partition will have, which only its parent states.
+func TestCollect_PartitionColumnsAreItsParents(t *testing.T) {
+	c := qt.New(t)
+
+	problems := must.Must(schemavalidate.Collect(c.Context(), must.Must(builtin.New()), partitionSchema(
+		schemamodel.Index{StructName: "E1", Name: "idx_e1", Fields: []string{"id"}},
+		schemamodel.Index{StructName: "E1", Name: "idx_e1_missing", Fields: []string{"nosuchcolumn"}},
+	), "postgres"))
+
+	c.Assert(messages(problems), qt.DeepEquals, []string{`postgres: index "idx_e1_missing": names column "nosuchcolumn", which table "e1" does not declare`})
+}
+
+// TestCollect_PartitionOfAnUndeclaredParentIsAProblem reports a parent nothing
+// defines, and asks nothing of an index on the partition, whose columns nothing
+// states.
+func TestCollect_PartitionOfAnUndeclaredParentIsAProblem(t *testing.T) {
+	c := qt.New(t)
+	schema := partitionSchema(schemamodel.Index{StructName: "E1", Name: "idx_e1", Fields: []string{"anything"}})
+	schema.Tables, schema.Fields = schema.Tables[1:], nil
+
+	problems := must.Must(schemavalidate.Collect(c.Context(), must.Must(builtin.New()), schema, "postgres"))
+
+	c.Assert(messages(problems), qt.DeepEquals, []string{`postgres: table "e1": names parent table "events", which no declaration defines`})
 }

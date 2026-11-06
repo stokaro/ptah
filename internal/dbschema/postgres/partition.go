@@ -17,9 +17,9 @@ import (
 )
 
 // readTableParents records on each inspected table the tables it is a partition
-// of or inherits from, which only pg_inherits holds. A parent outside the read
-// is recorded too: nothing the plan does depends on it, and it says what the
-// catalog says.
+// of or inherits from, which only pg_inherits holds, and on a partition its bound.
+// A parent outside the read is recorded too: nothing the plan does depends on it,
+// and it says what the catalog says.
 func (r *Reader) readTableParents(ctx context.Context, database *catalog.Database) error {
 	if !r.caps.Has(capability.CatalogPartitions) {
 		return nil
@@ -30,7 +30,8 @@ func (r *Reader) readTableParents(ctx context.Context, database *catalog.Databas
 		tables[catalog.QualifyTableName(table.Schema, table.Name)] = table
 	}
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT child_namespace.nspname, child.relname, parent_namespace.nspname, parent.relname
+		SELECT child_namespace.nspname, child.relname, parent_namespace.nspname, parent.relname,
+		       COALESCE(child.relispartition, false), pg_get_expr(child.relpartbound, child.oid)
 		FROM pg_inherits inheritance
 		JOIN pg_class child ON child.oid = inheritance.inhrelid
 		JOIN pg_namespace child_namespace ON child_namespace.oid = child.relnamespace
@@ -44,15 +45,85 @@ func (r *Reader) readTableParents(ctx context.Context, database *catalog.Databas
 	defer rows.Close()
 	for rows.Next() {
 		var childSchema, childName, parentSchema, parentName string
-		if err := rows.Scan(&childSchema, &childName, &parentSchema, &parentName); err != nil {
+		var isPartition bool
+		var bound sql.NullString
+		if err := rows.Scan(&childSchema, &childName, &parentSchema, &parentName, &isPartition, &bound); err != nil {
 			return fmt.Errorf("read table parents: %w", err)
 		}
-		if table, read := tables[catalog.QualifyTableName(r.outputSchema(childSchema), childName)]; read {
-			table.Parents = append(table.Parents, catalog.QualifyTableName(r.outputSchema(parentSchema), parentName))
+		// A catalog row names every schema, and a read of one schema gives its
+		// tables no qualifier, so the row of a table in another schema has to keep
+		// its own: it is not the table of that name this read holds.
+		table, read := tables[catalog.QualifyTableName(r.referencedSchema(childSchema), childName)]
+		if !read {
+			continue
+		}
+		table.Parents = append(table.Parents, catalog.QualifyTableName(r.referencedSchema(parentSchema), parentName))
+		if isPartition && pgtable.SupportsPartition(r.dialect) {
+			member := &pgtable.ObservedPartitionMember{ParentSchema: r.referencedSchema(parentSchema), Parent: parentName, Bound: bound.String}
+			if err := pgtable.ValidateObservedPartitionMember(member); err != nil {
+				return fmt.Errorf("read partition bound of %s: %w", table.QualifiedName(), err)
+			}
+			if table.Facets, err = table.Facets.With(member); err != nil {
+				return fmt.Errorf("read partition bound of %s: %w", table.QualifiedName(), err)
+			}
 		}
 	}
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("read table parents: %w", err)
+	}
+	if !pgtable.SupportsPartition(r.dialect) {
+		return nil
+	}
+	known, err := pgtable.PartitionMemberCoverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil)
+	if err != nil {
+		return err
+	}
+	database.FeatureCoverage, err = database.FeatureCoverage.Combine(known)
+	return err
+}
+
+// readsPartitionCopies reports a server that holds partitions, whose catalog says
+// which objects are copies of a parent's. CockroachDB has pg_inherits and no
+// PARTITION OF, so the question has no answer there to read.
+func (r *Reader) readsPartitionCopies() bool {
+	return r.caps.Has(capability.CatalogPartitions) && pgtable.SupportsPartition(r.dialect)
+}
+
+// markInheritedConstraints marks each constraint of a read table that the table
+// holds from another one: a partition's copy of a primary key, unique key or
+// foreign key (conparentid), and a check it inherits (conislocal). The catalog is
+// the only place that says so, and no statement on the table itself can drop one.
+func (r *Reader) markInheritedConstraints(ctx context.Context, constraints []catalog.Constraint) error {
+	if !r.readsPartitionCopies() || len(constraints) == 0 {
+		return nil
+	}
+	type constraintKey struct{ table, name string }
+	positions := make(map[constraintKey]int, len(constraints))
+	for i, constraint := range constraints {
+		positions[constraintKey{catalog.QualifyTableName(constraint.Schema, constraint.TableName), constraint.Name}] = i
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT n.nspname, c.relname, con.conname
+		FROM pg_constraint con
+		JOIN pg_class c ON c.oid = con.conrelid
+		JOIN pg_namespace n ON n.oid = c.relnamespace
+		WHERE con.conparentid <> 0 OR NOT con.conislocal
+		ORDER BY 1, 2, 3`)
+	if err != nil {
+		return fmt.Errorf("read inherited constraints: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var schemaName, table, name string
+		if err := rows.Scan(&schemaName, &table, &name); err != nil {
+			return fmt.Errorf("read inherited constraints: %w", err)
+		}
+		if position, read := positions[constraintKey{catalog.QualifyTableName(r.referencedSchema(schemaName), table), name}]; read {
+			constraints[position].Inherited = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("read inherited constraints: %w", err)
 	}
 	return nil
 }

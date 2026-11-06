@@ -25,7 +25,7 @@ func declaredRelationColumns(desired *schemamodel.Database) relationColumns {
 		return nil
 	}
 	byStruct := make(map[string][]string, len(desired.Tables))
-	for _, field := range desired.Fields {
+	for _, field := range schemamodel.WithParentColumns(desired.Tables, desired.Fields) {
 		byStruct[field.StructName] = append(byStruct[field.StructName], strings.ToLower(field.Name))
 	}
 	byName := make(map[string][]string, len(desired.Tables))

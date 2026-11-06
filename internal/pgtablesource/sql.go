@@ -13,12 +13,12 @@ import (
 	"ptah.run/internal/lexer"
 )
 
-// SQL reads UNLOGGED prefixes and PARTITION BY keys through table extension
-// sites. Targeted documents describe absence as well as present declarations;
-// an untargeted document adds no target-wide coverage.
+// SQL reads UNLOGGED prefixes, PARTITION BY keys and PARTITION OF declarations
+// through table extension sites. Targeted documents describe absence as well as
+// present declarations; an untargeted document adds no target-wide coverage.
 func SQL() []sqlext.Extension {
 	foreign := slices.DeleteFunc(pgtable.PersistenceTargets(), func(target string) bool { return target == platform.Postgres })
-	return []sqlext.Extension{exclusionSQL(), deleteColumnsSQL(),
+	return []sqlext.Extension{exclusionSQL(), deleteColumnsSQL(), partitionMemberSQLExtension(),
 		{Owner: pgtable.Owner, Targets: []string{platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner},
 			Facets: []schemaext.Kind{pgtable.PartitionKind}, Patterns: []sqlext.Pattern{{Name: "partition", Site: sqlext.TableOption,
 				Words: []string{"PARTITION", "BY"}, Next: []string{"RANGE", "LIST", "HASH"},

@@ -247,6 +247,13 @@ func collectDatabaseConstraints(
 			continue
 		}
 		_, declaredAsConstraint := genConstraints[key]
+		// A partition's copy of its parent's constraint is the parent's to
+		// change: `ALTER TABLE ... DROP CONSTRAINT` answers `cannot drop inherited
+		// constraint`. One the desired state names is still paired, so a source
+		// that spells a partition's constraints as its own plans no addition.
+		if constraint.Inherited && !declaredAsConstraint {
+			continue
+		}
 		// A primary key compared as the table's stays in the comparison though
 		// its first column declares itself primary: a key over more columns than
 		// that one is not the column's.
