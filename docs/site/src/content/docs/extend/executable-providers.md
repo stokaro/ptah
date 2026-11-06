@@ -127,7 +127,11 @@ step reads the table and creates or drops one index of it. It carries no
 operand: the provider reads the declared index from the desired table and the
 held one from the current table. A removal comes before the additions, so a
 changed index is dropped before it is created again under the same name.
-Without the feature, index changes are refused.
+Where the engine's identifier rules scope an index name to its table, the
+plan creates its new tables first and then drops and renames the indexes of
+the tables it keeps; where a schema holds index names, the removals come
+first, so a new table may take a dropped index's name. Without the feature,
+index changes are refused.
 
 With `schema.observed-primary-keys`, a read reports each table's primary key in
 key order, and the host compares it with the declared key, members and order.
@@ -476,8 +480,9 @@ the provider keeps without running it is best effort and carries the reason. The
 host refuses a description that claims testing nothing runs.
 `ptah providers check` prints the lines a provider declares, and
 `ptah db capabilities` certifies a server against them: the line its version
-names gives the preset its label and the support level, and the line's facts
-are the baseline the server's own answers are compared with.
+names gives the preset its name, which is the line's label, and the support
+level, and the line's facts are the baseline the server's own answers are
+compared with. The release line prints as the line alone.
 
 [Issue #4204](https://github.com/stokaro/ptah/issues/4204)
 owns official provider extraction, installation, and the eventual stable contract.

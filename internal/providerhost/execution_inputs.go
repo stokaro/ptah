@@ -29,6 +29,13 @@ func (s *session) PrepareUnitInputs(ctx context.Context, fragments []renderer.Fr
 	if err != nil {
 		return nil, err
 	}
+	none, err := s.target.readNoInputs(ctx, units)
+	if err != nil {
+		return nil, err
+	}
+	if none {
+		return snapshots, ctx.Err()
+	}
 	for i, unit := range units {
 		snapshots[i].Inputs, err = s.target.renderedInputs(ctx, unit)
 		if err != nil {
@@ -47,6 +54,16 @@ func (t *target) executionInputs(ctx context.Context, units []*protocol.Unit) ([
 		return nil, err
 	}
 	return result.GetInputs(), ctx.Err()
+}
+
+// readNoInputs reports whether units, discovered as one batch, read no input.
+// Discovery describes the whole batch (units.sensitive-inputs), so a batch
+// that reads none has no unit that reads one, and the discovery of each unit
+// on its own is not needed: it took a call per unit, about 4,000 calls and 22
+// seconds of an apply that created 500 tables.
+func (t *target) readNoInputs(ctx context.Context, units []*protocol.Unit) (bool, error) {
+	inputs, err := t.executionInputs(ctx, units)
+	return err == nil && len(inputs) == 0, err
 }
 
 func (t *target) renderedInputs(ctx context.Context, unit *protocol.Unit) ([]renderer.InputReference, error) {
@@ -73,15 +90,21 @@ func wireInputs(refs []renderer.InputReference) ([]*protocol.ExecutionInput, err
 }
 
 func (s *session) approvedInputs(ctx context.Context, fragments []renderer.Fragment, units []*protocol.Unit) ([]*protocol.ExecutionInput, error) {
+	none, err := s.target.readNoInputs(ctx, units)
+	if err != nil {
+		return nil, err
+	}
 	byName := make(map[string]*protocol.ExecutionInput)
 	for i, fragment := range fragments {
 		expected, err := wireInputs(fragment.Inputs)
 		if err != nil {
 			return nil, err
 		}
-		actual, err := s.target.executionInputs(ctx, units[i:i+1])
-		if err != nil {
-			return nil, err
+		var actual []*protocol.ExecutionInput
+		if !none {
+			if actual, err = s.target.executionInputs(ctx, units[i:i+1]); err != nil {
+				return nil, err
+			}
 		}
 		if err := provider.CheckExecutionInputs(expected, actual); err != nil {
 			return nil, err

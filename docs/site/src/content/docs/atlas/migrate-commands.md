@@ -1391,9 +1391,11 @@ that says what a rollback cannot undo.
 A statement an executable provider plans is named from the object the
 provider plans it for and from what the provider says the step does to that
 object. A step that creates the table `orders` writes `create "orders" table`,
-a step that drops it writes `drop "orders" table`, and any other change to it,
-a new column, index or changefeed included, writes `modify "orders" table`.
-Tables, views, materialized views and indexes are named this way. A statement
+a step that drops it writes `drop "orders" table`, and a step that only adds or
+drops one index of it writes `create index "orders_total_ix" to table: "orders"`
+or `drop index "orders_total_ix" from table: "orders"`. Any other change to it,
+a new column or changefeed included, writes `modify "orders" table`. Tables,
+views, materialized views and indexes are named this way. A statement
 for an object of a kind the provider defines itself, a YDB topic for example,
 has no change comment, because the community binary has no words for it.
 

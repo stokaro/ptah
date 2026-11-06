@@ -118,7 +118,8 @@ func TestProviderRendersWithAReleaseLinesCapabilities_FailurePath(t *testing.T) 
 
 // `ptah db capabilities` certifies a server of an engine a provider serves
 // against the release lines the provider declares: the line the server's
-// version names gives the preset its label and the support level, and a
+// version names gives the preset its name and the support level, the release
+// line prints as the line alone, as a built-in line's does, and a
 // version newer than every line is planned with the newest and reported as
 // best-effort, as a built-in dialect's server is.
 func TestProviderDatabaseCapabilitiesReportTheDeclaredLine_HappyPath(t *testing.T) {
@@ -131,12 +132,12 @@ func TestProviderDatabaseCapabilitiesReportTheDeclaredLine_HappyPath(t *testing.
 			"Capability preset:  Fixture 2.1 (fixture-defaults)\n",
 			"Preset source:      version-ladder\n",
 			"Support level:      best-effort\n",
-			"Release line:       2.1 (Fixture 2.1)\n",
+			"Release line:       2.1\n",
 			"  transactional_ddl                       unsupported\n",
 		}},
 		{"1.4.2", []string{
 			"Capability preset:  Fixture 1.4 (fixture-defaults)\n",
-			"Release line:       1.4 (Fixture 1.4)\n",
+			"Release line:       1.4\n",
 			"  transactional_ddl                       supported\n",
 		}},
 		{"3.0", []string{
