@@ -224,19 +224,7 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 	// declared is dropped here. It was dropped before this line too; what is
 	// new is that the loss is now reported rather than silent.
 	r.sink.RecordDroppedTableOptions(node.Name, node.Options)
-	if node.Comment != "" {
-		r.w.WriteLinef("-- %s", node.Comment)
-	}
-	// The line above is a SQL comment, which the server does not store, and no
-	// column comment reaches the output at all. Both are declarations the
-	// author wrote and the database will not have.
-	r.sink.RecordLostComment(renderdiag.TableKind, node.Name, node.Comment)
 	for _, column := range node.Columns {
-		r.sink.RecordLostComment(
-			renderdiag.ColumnKind,
-			renderdiag.ColumnName(node.Name, column.Name),
-			column.Comment,
-		)
 		// IDENTITY(start, increment) carries the two values. T-SQL has no
 		// ALWAYS or BY DEFAULT and no raw option list, so those two are lost.
 		r.sink.RecordLostIdentity(renderdiag.ColumnName(node.Name, column.Name), renderdiag.Identity{
@@ -294,6 +282,35 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 	// The author's own raw tail closes the statement (stokaro/ptah#2590).
 	r.writeCustomSQL(node)
 	r.w.WriteLine(";")
+	return r.writeCreatedComments(node)
+}
+
+// writeCreatedComments writes the comments of a table it just created, and of its
+// columns, as extended properties. T-SQL has no comment clause, so a comment left
+// out here arrives only with the next plan, and a description of a database would
+// not carry it at all. A table the statement found keeps the comment it holds,
+// which adding a property would refuse; the comparison plans a change to it.
+func (r *Renderer) writeCreatedComments(node *ast.CreateTableNode) error {
+	object := "OBJECT_ID(" + escapeStringLiteral(node.Name) + ")"
+	write := func(column, comment, minor string) error {
+		if comment == "" {
+			return nil
+		}
+		if node.IfNotExists {
+			r.w.WriteLinef("IF NOT EXISTS (SELECT 1 FROM sys.extended_properties WHERE class = 1 AND major_id = %s "+
+				"AND minor_id = %s AND name = N%s)", object, minor, escapeStringLiteral(commentPropertyName))
+		}
+		return r.writeSetComment(node.Name, &ast.SetCommentOperation{Column: column, Comment: comment})
+	}
+	if err := write("", node.Comment, "0"); err != nil {
+		return err
+	}
+	for _, column := range node.Columns {
+		minor := "COLUMNPROPERTY(" + object + ", " + escapeStringLiteral(column.Name) + ", 'ColumnId')"
+		if err := write(column.Name, column.Comment, minor); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

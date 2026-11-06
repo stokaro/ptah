@@ -84,13 +84,9 @@ func TestGetOrderedCreateStatementsReportingOmissions_NamesEveryCommentATargetDr
 			},
 		},
 		{
-			name:    "sql server stores none of them",
+			name:    "sql server keeps the table and column comments",
 			dialect: platform.SQLServer,
-			want: []string{
-				"column items.code comment",
-				"index idx_items_code comment",
-				"table items comment",
-			},
+			want:    []string{"index idx_items_code comment"},
 		},
 		{
 			name:    "oracle keeps the table and column comments",

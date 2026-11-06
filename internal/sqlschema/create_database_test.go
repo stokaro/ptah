@@ -152,8 +152,19 @@ func TestRead_SchemaCommentCall_FailurePath(t *testing.T) {
 		{name: "another property", sql: sqlServerSchemaCommentCall("other", "x", "SCHEMA", "app") + ";\n", want: "EXEC"},
 		{name: "a property on something else", sql: sqlServerSchemaCommentCall("MS_Description", "x", "USER", "app") + ";\n", want: "EXEC"},
 		{
-			name: "a table's property",
-			sql:  sqlServerSchemaCommentCall("MS_Description", "x", "SCHEMA", "app") + ", @level1type = N'TABLE', @level1name = N't';\n",
+			name: "a property on a view",
+			sql:  sqlServerSchemaCommentCall("MS_Description", "x", "SCHEMA", "app") + ", @level1type = N'VIEW', @level1name = N'v';\n",
+			want: "EXEC",
+		},
+		{
+			name: "another property on a table",
+			sql:  sqlServerSchemaCommentCall("owner", "x", "SCHEMA", "app") + ", @level1type = N'TABLE', @level1name = N't';\n",
+			want: "EXEC",
+		},
+		{
+			name: "a property on a table's constraint",
+			sql: sqlServerSchemaCommentCall("MS_Description", "x", "SCHEMA", "app") +
+				", @level1type = N'TABLE', @level1name = N't', @level2type = N'CONSTRAINT', @level2name = N'c';\n",
 			want: "EXEC",
 		},
 		{
@@ -172,4 +183,71 @@ func TestRead_SchemaCommentCall_FailurePath(t *testing.T) {
 			c.Assert(got.Schemas, qt.HasLen, 0)
 		})
 	}
+}
+
+// TestRead_TableCommentCall_HappyPath reads a table's comment and a column's back
+// from the statements a description writes them in, for a table in the connected
+// schema and for one in another.
+func TestRead_TableCommentCall_HappyPath(t *testing.T) {
+	onTable := func(schema string) string {
+		return sqlServerSchemaCommentCall("MS_Description", "it''s t", "SCHEMA", schema) + ", @level1type = N'TABLE', @level1name = N't';\n"
+	}
+	onColumn := func(schema string) string {
+		return sqlServerSchemaCommentCall("MS_Description", "the id", "SCHEMA", schema) +
+			", @level1type = N'TABLE', @level1name = N't', @level2type = N'COLUMN', @level2name = N'id';\n"
+	}
+	rows := []struct {
+		name, sql string
+	}{
+		{name: "the connected schema", sql: "CREATE TABLE [t] (\n  [id] INT NOT NULL\n);\nGO\n" + onTable("dbo") + "GO\n" + onColumn("dbo") + "GO\n"},
+		{name: "another schema", sql: "CREATE SCHEMA [app];\nGO\nCREATE TABLE [app].[t] (\n  [id] INT NOT NULL\n);\n" + onTable("app") + onColumn("app")},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			database, _, err := sqlschema.Read([]byte(row.sql), platform.SQLServer)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(database.Tables, qt.HasLen, 1)
+			c.Assert(database.Tables[0].Comment, qt.Equals, "it's t")
+			c.Assert(database.Fields, qt.HasLen, 1)
+			c.Assert(database.Fields[0].Comment, qt.Equals, "the id")
+		})
+	}
+}
+
+// TestRead_TableCommentCall_FailurePath refuses a comment on a table the file does
+// not declare, as COMMENT ON does, rather than losing it. A table declared without a
+// schema is in the default one, so a call naming another schema does not find it.
+func TestRead_TableCommentCall_FailurePath(t *testing.T) {
+	rows := []struct {
+		name, schema, table, want string
+	}{
+		{name: "another table", schema: "dbo", table: "other", want: `.*COMMENT ON TABLE .*other.* names an object this schema.*`},
+		{name: "another schema", schema: "app", table: "t", want: `.*COMMENT ON TABLE .*app.* names an object this schema.*`},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+			file := "CREATE TABLE [t] (\n  [id] INT NOT NULL\n);\n" +
+				sqlServerSchemaCommentCall("MS_Description", "x", "SCHEMA", row.schema) + ", @level1type = N'TABLE', @level1name = N'" + row.table + "';\n"
+
+			_, _, err := sqlschema.Read([]byte(file), platform.SQLServer)
+
+			c.Assert(err, qt.ErrorMatches, row.want)
+		})
+	}
+}
+
+// TestRead_CommentQualifiedWithTheDefaultSchema_FailurePath is the control for an
+// engine whose URL selects a schema. There the connection decides where an
+// unqualified table is, so a comment naming public.t does not find a table declared
+// as t.
+func TestRead_CommentQualifiedWithTheDefaultSchema_FailurePath(t *testing.T) {
+	c := qt.New(t)
+
+	_, _, err := sqlschema.Read([]byte("CREATE TABLE t (id int);\nCOMMENT ON TABLE public.t IS 'x';\n"), platform.Postgres)
+
+	c.Assert(err, qt.ErrorMatches, `.*COMMENT ON TABLE public\.t names an object this schema.*`)
 }
