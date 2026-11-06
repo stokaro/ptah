@@ -74,7 +74,8 @@ func TestUniqueNameAnAddedIndexTakes_HappyPath(t *testing.T) {
 }
 
 // TestUniqueNameAnAddedIndexTakes_FailurePath pins the rollbacks that keep their order:
-// the index has another name, or the UNIQUE is on another table.
+// the index has another name, the UNIQUE is on another table, or a CHECK holds the name,
+// which is not an index.
 func TestUniqueNameAnAddedIndexTakes_FailurePath(t *testing.T) {
 	tests := []struct {
 		name, held, desired string
@@ -93,6 +94,12 @@ func TestUniqueNameAnAddedIndexTakes_FailurePath(t *testing.T) {
 			desired: `CREATE TABLE t (id int PRIMARY KEY, a int, CONSTRAINT u UNIQUE (a));
 				CREATE TABLE z (id int PRIMARY KEY, b int);`,
 			want: []string{"CREATE INDEX `u` ON `z` (`b`)", "ALTER TABLE `t` DROP INDEX `u`"},
+		},
+		{
+			name:    "a CHECK of that name",
+			held:    `CREATE TABLE t (id int PRIMARY KEY, a int); CREATE INDEX u ON t (a);`,
+			desired: `CREATE TABLE t (id int PRIMARY KEY, a int, CONSTRAINT u CHECK (a > 0));`,
+			want:    []string{"CREATE INDEX `u` ON `t` (`a`)", "ALTER TABLE `t` DROP CONSTRAINT `u`"},
 		},
 	}
 	for _, test := range tests {

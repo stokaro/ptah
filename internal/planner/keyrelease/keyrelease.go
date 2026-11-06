@@ -198,19 +198,17 @@ func TablesLosingColumns(diff *difftypes.SchemaDiff, semantics identifier.Semant
 // `CREATE INDEX u` answers `Error 1061: Duplicate key name 'u'` on MySQL and MariaDB and
 // `relation "u" already exists` on PostgreSQL while the constraint stands, and a planner
 // adds indexes ahead of its constraint removals. A rollback of an index turned into a
-// UNIQUE under one name has this shape. A removal the index removals list too is rebuilt
-// by the index's own addition and stays out.
+// UNIQUE under one name has this shape.
 func NamesIndexesTake(diff *difftypes.SchemaDiff, dialect string) Releases {
 	if diff == nil || len(diff.IndexesAdded) == 0 {
 		return Releases{}
 	}
 	semantics := diff.EffectiveIdentifierSemantics(dialect)
 	added := indexscope.NewConflictSetWithSemantics(semantics, diff.IndexAdditions())
-	removed := indexscope.NewConflictSetWithSemantics(semantics, diff.IndexRemovals())
 	var released Releases
 	for _, info := range diff.ConstraintsRemoved {
 		ref := difftypes.IndexRef{Name: info.Name, TableName: info.TableName}
-		if strings.EqualFold(info.Type, "UNIQUE") && added.Contains(ref) && !removed.Contains(ref) {
+		if strings.EqualFold(info.Type, "UNIQUE") && added.Contains(ref) {
 			info.Identity = constraintscope.Identity(semantics, info.TableName, info.Name)
 			released.Constraints = append(released.Constraints, info)
 		}
