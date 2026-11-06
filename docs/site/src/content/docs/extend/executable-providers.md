@@ -1240,14 +1240,27 @@ plan from it drops none of their objects. Ptah reads a captured
 `ptah:feature-coverage` header with the provider's model definitions; the
 provider takes no part in it.
 
+A captured header names each of the provider's models by the identity the
+provider describes: the provider's ID as the owner, the model's kind and
+representation, its `schema_version` and its `definition_sha256`. The release
+version and the features Ptah negotiated with the provider do not enter it,
+so an HCL file one release of the provider exported reads with the next while
+the model's definition stays the same. A header that names a definition the
+provider no longer describes is refused, unless the provider names it as a
+predecessor.
+
 `models.predecessors` lets an engine name, in `model_predecessors`, the
 identities its models had before it owned them: an owner, a kind, a schema
 version and a definition digest. Ptah reads a claim a captured header makes
 under one of them as the same claim of the engine's model, so an HCL file
 another owner of the model exported keeps the meaning it was written with. The
 YDB provider names the coordination-node model of the YDB engine built into
-earlier Ptah releases this way. A file Ptah cuts the document into names the
-model's current identity.
+earlier Ptah releases this way. With `models.own-predecessors` a predecessor
+may also name the provider and the model's own kind, with an earlier schema
+version or definition digest: a provider whose definition text changes
+without changing what a claim means names the identity it replaced, and a
+file an earlier release exported keeps reading. A file Ptah cuts the document
+into names the model's current identity.
 
 `source.hcl-platform` lets an engine claim a table's `platform` block whose
 label is the engine's ID or one of its aliases, such as `platform "ydb"`. Each

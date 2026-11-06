@@ -55,7 +55,8 @@ func ValidateRolePasswordComparison(
 		if exists && current.PasswordState != catalog.RolePasswordAbsent &&
 			current.PasswordState != catalog.RolePasswordPresent {
 			return fmt.Errorf(
-				"%w: cannot compare password for role %q: current password state is unknown",
+				"%w: cannot compare password for role %q: current password state is unknown: "+
+					"the read could not establish it, which on PostgreSQL and YugabyteDB takes SELECT on pg_catalog.pg_authid",
 				ptaherr.ErrInvalidSchemaDiff,
 				name,
 			)

@@ -118,10 +118,10 @@ func hclBlock(claim *protocol.HCLSourceBlock) hclext.Block {
 type hclOwner struct {
 	host    *Host
 	engines []*protocol.Engine
-	// registry reads and writes a captured feature coverage header with the
-	// provider's desired codecs; it is built on first use.
-	registry func() (schemaext.Registry, error)
-	once     sync.Once
+	// headers reads and writes a captured feature coverage header of the
+	// provider's desired models; it is built on first use.
+	headers func() (headerCodecs, error)
+	once    sync.Once
 }
 
 // engineOf is the engine that claims the block a claim matched: for an index
@@ -301,18 +301,18 @@ func (o *hclOwner) coverage(request hclext.CoverageRequest) (schemaext.Coverage,
 }
 
 // capturedCoverage reads a captured feature coverage header with the
-// provider's desired codecs. The provider takes no part in it.
+// provider's desired codecs (see headerCodecs). The provider takes no part in
+// it.
 func (o *hclOwner) capturedCoverage(request hclext.CoverageRequest) (schemaext.Coverage, error) {
 	if len(request.Limits) > 0 {
 		return schemaext.Coverage{}, fmt.Errorf("%w: a %s header and %s limits of provider %s cannot both govern one HCL document", schemaext.ErrDuplicate,
 			schemaext.CoverageHeaderMarker, coverage.DirectiveMarker, o.host.description.GetProviderId())
 	}
-	registry, err := o.codecs()
+	headers, err := o.codecs()
 	if err != nil {
 		return schemaext.Coverage{}, err
 	}
-	known, _, err := registry.DecodeCoverageHeaderBodies(context.Background(), schemaext.Desired, request.Captured)
-	return known, err
+	return headers.read(context.Background(), request.Captured)
 }
 
 // Recognizes reports whether an engine of the provider reads a
@@ -339,62 +339,23 @@ func (o *hclOwner) Restate(captured []string, limits []coverage.Object) ([]strin
 	if err != nil {
 		return nil, err
 	}
-	registry, err := o.codecs()
+	headers, err := o.codecs()
 	if err != nil {
 		return nil, err
 	}
-	line, err := registry.EncodeCoverageHeader(context.Background(), schemaext.Desired, known)
+	line, err := headers.line(context.Background(), known)
 	if err != nil || line == "" {
 		return nil, err
 	}
 	return []string{line}, nil
 }
 
-// codecs is the registry of the provider's desired codecs, which reads and
-// writes a captured feature coverage header. It is built on first use.
-func (o *hclOwner) codecs() (schemaext.Registry, error) {
+// codecs are the codecs of the provider's desired models, which read and
+// write a captured feature coverage header. They are built on first use.
+func (o *hclOwner) codecs() (headerCodecs, error) {
 	o.once.Do(func() {
-		registry, err := o.host.desiredRegistry()
-		o.registry = func() (schemaext.Registry, error) { return registry, err }
+		headers, err := o.host.headerCodecs()
+		o.headers = func() (headerCodecs, error) { return headers, err }
 	})
-	return o.registry()
-}
-
-// desiredRegistry is a registry of the provider's desired codecs, which reads
-// and writes what a document captured of the provider's models. The codecs
-// decode through the provider's batch decoder, as the runtime registers them
-// (see Provider); a registry refuses a codec that has no decoder. Each codec
-// carries the earlier identities the engines name for its model
-// (provider.ModelPredecessorsFeature), so a document captured under one, such
-// as an export of a former built-in engine, makes the same claim.
-func (h *Host) desiredRegistry() (schemaext.Registry, error) {
-	var owned []schemaext.OwnedCodec
-	decoder := &schemaext.BatchDecoder{Decode: h.decodeModels}
-	for _, codec := range h.modelCodecs {
-		if codec.Representation == schemaext.Desired {
-			owned = append(owned, schemaext.OwnedCodec{Owner: h.description.GetProviderId(), Codec: codec, BatchDecoder: decoder,
-				Predecessors: h.desiredPredecessors(codec.Prototype.Kind())})
-		}
-	}
-	return schemaext.NewRegistry(owned...)
-}
-
-// desiredPredecessors are the earlier identities the provider's engines name
-// for the desired model of kind, each once, in the order the engines name
-// them.
-func (h *Host) desiredPredecessors(kind schemaext.Kind) []schemaext.CodecIdentity {
-	var identities []schemaext.CodecIdentity
-	for _, engine := range h.description.GetEngines() {
-		for _, predecessor := range engine.GetModelPredecessors() {
-			if schemaext.Kind(predecessor.GetKind()) != kind || predecessor.GetRepresentation() != protocol.ValueInput_DESIRED {
-				continue
-			}
-			identity := schemaext.CodecIdentity{Owner: predecessor.GetFormerOwner(), Kind: schemaext.Kind(predecessor.GetFormerKind()),
-				Representation: schemaext.Desired, Version: predecessor.GetSchemaVersion(), Definition: "sha256:" + predecessor.GetDefinitionSha256()}
-			if !slices.Contains(identities, identity) {
-				identities = append(identities, identity)
-			}
-		}
-	}
-	return identities
+	return o.headers()
 }

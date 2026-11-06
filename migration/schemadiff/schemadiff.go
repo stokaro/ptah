@@ -244,7 +244,10 @@ func compareReportingUndecidedAdditions(
 	// Compare role privilege grants. A grant on an object an owner manages,
 	// such as a YDB topic, rides the object: the source's silence about the
 	// object is silence about its grants.
-	compare.GrantsWithObjects(desired, database, diff, identifierSemantics, compare.OwnedObjects{Names: grantObjectNames(runtime), Desired: authoredFeatures})
+	compare.GrantsWithOptions(desired, database, diff, identifierSemantics, compare.GrantOptions{
+		Objects:         compare.OwnedObjects{Names: grantObjectNames(runtime), Desired: authoredFeatures},
+		DesiredComplete: opts.DesiredGrantsComplete,
+	})
 
 	// Compare common table constraints (CHECK, UNIQUE, PRIMARY KEY, FOREIGN KEY).
 	compare.ConstraintsWithSemantics(desired, database, diff, opts, identifierSemantics)

@@ -135,10 +135,13 @@ setting.
 Omitted YDB coordination nodes remain unmanaged unless the document explicitly
 claims a complete namespace. Ptah exports that claim in a versioned
 `// ptah:feature-coverage` header. Keep the header when editing the export;
-incompatible model definitions and duplicate accounts are refused. A header
-that names an earlier identity of the model, such as one the YDB engine built
-into earlier Ptah releases exported, reads as the same claim when the provider
-names that identity as a predecessor, as the YDB provider does. See
+incompatible model definitions and duplicate accounts are refused. The header
+names the model by the identity the provider describes, so an export of one
+provider release reads with the next while the model's definition is the
+same. A header that names an earlier identity of the model, such as one the
+YDB engine built into earlier Ptah releases exported, reads as the same claim
+when the provider names that identity as a predecessor, as the YDB provider
+does. See
 [coordination nodes](https://github.com/stokaro/ptah-ydb-plugin#native-coordination-planning-and-execution) for declaration
 and limit semantics.
 

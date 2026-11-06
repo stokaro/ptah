@@ -96,3 +96,22 @@ func TestProviderNativePlanFileRefusesBeforeWriting(t *testing.T) {
 		})
 	}
 }
+
+// A plan of native operations prints under the heading a plan of SQL text
+// has, whether schema plan saves it or schema apply previews the saved file.
+// The built-in YDB engine printed that heading above every plan, and a plan
+// through a provider is what it planned as SQL.
+func TestProviderNativePlanFileHeading_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	f := nativeCommandFixture(c)
+
+	savedOut, savedNotes, savedCode := f.run(c, c.Context(), "plan", "--schema-file", f.schemaPath, "--output", f.planPath)
+	previewOut, previewNotes, previewCode := f.run(c, c.Context(), "apply", "--plan", f.planPath, "--tx-mode", "none", "--dry-run")
+
+	c.Assert(savedCode, qt.Equals, 0, qt.Commentf("%s", savedNotes))
+	c.Assert(savedOut+savedNotes, qt.Contains, "Planned schema changes:\nNative operation: "+string(operationModel))
+	c.Assert(savedOut+savedNotes, qt.Not(qt.Contains), "Planned changes:")
+	c.Assert(previewCode, qt.Equals, 0, qt.Commentf("%s", previewNotes))
+	c.Assert(previewOut+previewNotes, qt.Contains, "Planned schema changes:\nNative operation: "+string(operationModel))
+	c.Assert(previewOut+previewNotes, qt.Not(qt.Contains), "Planned changes:")
+}

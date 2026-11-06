@@ -77,7 +77,9 @@ jobs:
     # database setup, race builds, and the following smoke suites. The
     # packages run one at a time, and the contour step alone measured 78 and
     # 112 minutes on two neighboring master commits, so 120 cut passing runs
-    # off. A hung test still fails its package at the contour's --timeout.
+    # off. A hung test still fails its package at the contour's --timeout,
+    # which sits above the root package: it ran past 45 minutes under the race
+    # detector with 26 of its 1195 tests left to start.
     timeout-minutes: 180
     
     services:
@@ -632,7 +634,7 @@ jobs:
           go run ./internal/cmd/testcontour \
             --tags integration \
             --race \
-            --timeout 45m
+            --timeout 75m
 
       - name: Build integration test binary
         run: |

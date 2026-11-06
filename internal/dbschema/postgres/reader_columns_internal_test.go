@@ -138,15 +138,12 @@ func serveColumnQuery(catalog pgColumnCatalog, query string) (dbtest.QueryResult
 }
 
 func queryRestrictsColumnsToBaseTables(query string) bool {
-	body := stripSQLComments(query)
-	if !strings.Contains(body, "information_schema.tables") {
-		return false
-	}
-	if !strings.Contains(body, "tbl.table_type = 'BASE TABLE'") {
-		return false
-	}
-	return true
+	return strings.Contains(stripSQLComments(query), "c.relkind IN ('r', 'p')")
 }
+
+// catalogColumnReadFrom opens the FROM clause of the column read on a target
+// that reads pg_catalog, where the select list ends.
+const catalogColumnReadFrom = "FROM (SELECT"
 
 // queryAsksAboutDomains reports whether the formatted_type projection reads
 // information_schema's domain_name.
@@ -157,7 +154,7 @@ func queryRestrictsColumnsToBaseTables(query string) bool {
 // text passes on a build that no longer reads the column, which is exactly the
 // revert this guard exists to catch.
 func queryAsksAboutDomains(query string) (bool, error) {
-	projection, ok := selectListItem(query, "formatted_type", "FROM information_schema.columns")
+	projection, ok := selectListItem(query, "formatted_type", catalogColumnReadFrom)
 	if !ok {
 		return false, fmt.Errorf("query has no projection aliased formatted_type:\n%s", query)
 	}
@@ -174,7 +171,7 @@ func queryAsksAboutDomains(query string) (bool, error) {
 // type -- nor, for domain_schema, one domain from another of the same name in a
 // different schema.
 func queryReadsCatalogColumn(query, column string) (bool, error) {
-	projection, ok := selectListItem(query, column, "FROM information_schema.columns")
+	projection, ok := selectListItem(query, column, catalogColumnReadFrom)
 	if !ok {
 		return false, fmt.Errorf("query has no projection aliased %s:\n%s", column, query)
 	}

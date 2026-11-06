@@ -25,6 +25,7 @@ import (
 	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgtype"
 	"ptah.run/internal/aclitem"
+	"ptah.run/internal/pgcatalogview"
 	"ptah.run/internal/pgdefaultacl"
 	"ptah.run/internal/pgindexstorage"
 	"ptah.run/internal/pgreservedrole"
@@ -491,7 +492,7 @@ func (r *Reader) readTablesForSchema(ctx context.Context, schemaName string) ([]
 		       ` + r.unloggedExpr() + `,
 		       ` + r.rowTTLOptionsExpr() + `,
 		       ` + r.rowDeletionPolicyExpr() + `
-			FROM information_schema.tables t
+			FROM ` + r.tablesSource() + ` t
 			LEFT JOIN pg_namespace n ON n.nspname = t.table_schema
 			LEFT JOIN pg_class c ON ` + relationByName("c", "n.oid", "t.table_name") + `
 			` + r.rowStatisticsJoin() + `
@@ -666,6 +667,9 @@ func (r *Reader) notNullConstraintNameExpr() string {
 func (r *Reader) ownedSequenceExpr() string {
 	if !r.caps.Has(capability.Sequences) || !r.caps.Has(capability.PostgresCatalogFunctions) {
 		return "'' AS owned_sequence_name"
+	}
+	if r.readsCatalogUnfiltered() {
+		return "COALESCE(" + pgcatalogview.OwnedSequence("cls.oid", "a.attnum") + ", '') AS owned_sequence_name"
 	}
 	return `COALESCE(
 				pg_get_serial_sequence(
@@ -900,10 +904,7 @@ func (r *Reader) readColumnsForSchema(ctx context.Context, schemaName string) (m
 			-- not be told from one naming a same-named type elsewhere
 			-- (stokaro/ptah#3620).
 			COALESCE(col.udt_schema, '') AS udt_schema
-		FROM information_schema.columns col
-		JOIN information_schema.tables tbl ON tbl.table_schema = col.table_schema
-			AND tbl.table_name = col.table_name
-			AND tbl.table_type = 'BASE TABLE'
+		FROM ` + r.columnsSource() + `
 		JOIN pg_namespace n ON n.nspname = col.table_schema
 		JOIN pg_class cls ON ` + relationByName("cls", "n.oid", "col.table_name") + `
 		LEFT JOIN pg_attribute a ON a.attrelid = cls.oid
@@ -2270,7 +2271,7 @@ func (r *Reader) readConstraints(ctx context.Context) ([]catalog.Constraint, err
 	return r.readBasicConstraints(ctx)
 }
 
-// readBasicConstraints reads basic constraint information from information_schema
+// readBasicConstraints reads the constraints of every schema the read covers.
 func (r *Reader) readBasicConstraints(ctx context.Context) ([]catalog.Constraint, error) {
 	var constraints []catalog.Constraint
 	for _, schemaName := range r.schemasToRead() {
@@ -2327,7 +2328,7 @@ func (r *Reader) basicConstraintsQuery() string {
 				` + r.constraintDefinitionExpr() + `,
 				COALESCE(max(obj_description(pc.oid, 'pg_constraint')), ''),
 				` + r.referencedIndexExpr() + `
-		FROM information_schema.table_constraints AS tc
+		FROM ` + r.tableConstraintsSource() + ` AS tc
 		JOIN pg_namespace AS constraint_schema
 			ON constraint_schema.nspname = tc.table_schema
 		JOIN pg_class AS constraint_table
@@ -3375,13 +3376,12 @@ func (r *Reader) readViewsForSchema(ctx context.Context, schemaName string) ([]c
 			n.nspname AS schema_name,
 			c.relname AS view_name,
 			pg_get_viewdef(c.oid, true) AS view_definition,
-			COALESCE(v.check_option, 'NONE') AS check_option,
+			` + r.viewCheckOptionExpr() + ` AS check_option,
 			COALESCE(obj_description(c.oid, 'pg_class'), '') AS comment,
 			COALESCE(array_to_json(c.reloptions)::text, '[]') AS options
 		FROM pg_class c
 		JOIN pg_namespace n ON n.oid = c.relnamespace
-		LEFT JOIN information_schema.views v
-			ON v.table_schema = n.nspname AND v.table_name = c.relname
+		` + r.viewCheckOptionJoin() + `
 		WHERE n.nspname = $1
 		AND c.relkind = 'v'
 		AND c.relname NOT IN (` + revisiontable.NativeSQLNames + `)
@@ -4579,22 +4579,18 @@ func (r *Reader) readTableGrantsForSchema(ctx context.Context, schemaName string
 			table_schema,
 			table_name,
 			is_grantable = 'YES' AS with_option,
-			-- CockroachDB reports every grantor here as NULL (measured on
-			-- 26.3.1 and 26.3.2), and scanning one failed the whole read. An
-			-- empty grantor says the engine did not name one, as the routine
-			-- grant read reports a grantor it cannot resolve.
 			COALESCE(grantor, '') AS grantor
-		FROM information_schema.role_table_grants g
+		FROM (` + pgcatalogview.TableGrants + `) g
 		WHERE table_schema = $1
 		AND grantee != 'postgres'
 		-- Only relations on which some privilege has actually been granted.
-		-- information_schema reports an owner's built-in privileges as grants
-		-- even for a table whose pg_class.relacl is null, meaning nobody has
-		-- ever run GRANT on it. Describing those as GRANT statements describes
-		-- something no one wrote; CREATE TABLE re-establishes them for the new
-		-- owner on replay anyway. It also made the description name a role it
-		-- did not define once role reporting was scoped (stokaro/ptah#1267),
-		-- and the pinned Atlas community binary refuses such a document.
+		-- The source reports an owner's built-in privileges as grants even for
+		-- a table whose pg_class.relacl is null, meaning nobody has ever run
+		-- GRANT on it. Describing those as GRANT statements describes something
+		-- no one wrote; CREATE TABLE re-establishes them for the new owner on
+		-- replay anyway. It also makes the description name a role it does not
+		-- define (stokaro/ptah#1267), and the pinned Atlas community binary
+		-- refuses such a document.
 		AND EXISTS (
 			SELECT 1 FROM pg_namespace n
 			JOIN pg_class c ON ` + relationByName("c", "n.oid", "g.table_name") + `
@@ -4603,12 +4599,11 @@ func (r *Reader) readTableGrantsForSchema(ctx context.Context, schemaName string
 		)
 		UNION ALL
 		-- MAINTAIN, which PostgreSQL 17 added, is left out of
-		-- information_schema.table_privileges: measured on PostgreSQL 18,
-		-- GRANT ALL writes arwdDxtm to relacl and role_table_grants reports
-		-- seven rows. Without this branch a declared MAINTAIN was never seen
-		-- held and was granted again on every run. The rows are read from the
-		-- ACL under the view's own conditions: the relation kinds it covers,
-		-- and a grantor or grantee the reading role is a member of.
+		-- information_schema.table_privileges and of the source above: measured
+		-- on PostgreSQL 18, GRANT ALL writes arwdDxtm to relacl and
+		-- role_table_grants reports seven rows. Without this branch a declared
+		-- MAINTAIN is never seen held and is granted again on every run. The
+		-- rows are read from the ACL for the relation kinds the source covers.
 		SELECT
 			COALESCE(grantee.rolname, 'PUBLIC'),
 			acl.privilege_type,
@@ -4624,16 +4619,11 @@ func (r *Reader) readTableGrantsForSchema(ctx context.Context, schemaName string
 		WHERE n.nspname = $1
 		AND c.relkind IN ('r', 'v', 'f', 'p')
 		AND acl.privilege_type = 'MAINTAIN'
-		AND (pg_has_role(acl.grantor, 'USAGE') OR (acl.grantee <> 0 AND pg_has_role(acl.grantee, 'USAGE')))
 		AND COALESCE(grantee.rolname, 'PUBLIC') != 'postgres'
 		UNION ALL
-		-- A materialized view's privileges, every one of them:
-		-- information_schema.table_privileges leaves the relation kind out.
-		-- Measured on PostgreSQL 18, GRANT SELECT on one writes relacl and
-		-- role_table_grants reports nothing, so a declared grant on it was
-		-- planned again on every run, and a plan that drops the view and
-		-- creates it again could not give back the privileges it held. The
-		-- rows are read under the same conditions as the branch above.
+		-- A materialized view's privileges, every one of them, because the
+		-- relation kinds above are the SQL-standard ones. A plan that drops
+		-- the view and creates it again gives back the privileges read here.
 		SELECT
 			COALESCE(grantee.rolname, 'PUBLIC'),
 			acl.privilege_type,
@@ -4648,7 +4638,6 @@ func (r *Reader) readTableGrantsForSchema(ctx context.Context, schemaName string
 		JOIN pg_roles grantor ON grantor.oid = acl.grantor
 		WHERE n.nspname = $1
 		AND c.relkind = 'm'
-		AND (pg_has_role(acl.grantor, 'USAGE') OR (acl.grantee <> 0 AND pg_has_role(acl.grantee, 'USAGE')))
 		AND COALESCE(grantee.rolname, 'PUBLIC') != 'postgres'
 		ORDER BY 3, 4, 1, 2`
 

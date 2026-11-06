@@ -89,7 +89,7 @@ func TestAtlasCompatInspectRoleReplayE2E(t *testing.T) {
 	// The note is the disclosure half: a role the dev database was not given is
 	// described as the server has it, and an operator is told which.
 	c.Assert(diagnostics, qt.Contains, fmt.Sprintf("%q", roleName))
-	c.Assert(diagnostics, qt.Contains, "already exist on the server hosting the dev database")
+	c.Assert(diagnostics, qt.Contains, "on the server hosting the dev database")
 
 	c.Assert(replayed, qt.Contains, fmt.Sprintf("role %q", roleName))
 	c.Assert(replayed, qt.Contains, "permission {")
@@ -157,7 +157,7 @@ permission {
 	rendered, diagnostics := runRoleAwareCompatInspect(c, "file://"+documentPath, devURL)
 
 	c.Assert(rendered, qt.Contains, fmt.Sprintf("role %q", roleName))
-	c.Assert(diagnostics, qt.Not(qt.Contains), "already exist on the server hosting the dev database")
+	c.Assert(diagnostics, qt.Not(qt.Contains), "on the server hosting the dev database")
 	assertRolePresent(c, ctx, adminDB, roleName)
 }
 

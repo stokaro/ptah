@@ -113,6 +113,27 @@ func GrantsWithObjects(
 	semantics identifier.Semantics,
 	objects OwnedObjects,
 ) {
+	GrantsWithOptions(desired, database, diff, semantics, GrantOptions{Objects: objects})
+}
+
+// GrantOptions are the facts about the two sides a grant comparison reads.
+type GrantOptions struct {
+	// Objects is what the comparison knows of the objects owners manage.
+	Objects OwnedObjects
+	// DesiredComplete says the desired state holds every grant on what it
+	// describes; see [ptah.run/config.CompareOptions.DesiredGrantsComplete].
+	DesiredComplete bool
+}
+
+// GrantsWithOptions is [GrantsWithObjects] told what the two sides are.
+func GrantsWithOptions(
+	desired *schemamodel.Database,
+	database *catalog.Database,
+	diff *difftypes.SchemaDiff,
+	semantics identifier.Semantics,
+	options GrantOptions,
+) {
+	objects := options.Objects
 	sequences := newColumnSequences(desired, database, semantics)
 	generatedGrantMap := make(map[grantIdentity]difftypes.GrantRef)
 	generatedGrantRoles := make(map[string]bool)
@@ -130,6 +151,14 @@ func GrantsWithObjects(
 	managedRoles := make(map[string]bool)
 	for _, role := range desired.Roles {
 		managedRoles[role.Name] = true
+	}
+
+	removable := func(ref difftypes.GrantRef) bool { return managedRoles[ref.Role] }
+	if options.DesiredComplete {
+		owners := objectOwners(database, semantics)
+		removable = func(ref difftypes.GrantRef) bool {
+			return managedRoles[ref.Role] || !heldByDefault(ref, owners, semantics)
+		}
 	}
 
 	cov := removalCoverage(desired, semantics)
@@ -177,7 +206,7 @@ func GrantsWithObjects(
 		// object is, and so is a grant on an owner's object the desired
 		// source does not describe. A revoke the desired state writes out is
 		// still planned.
-		if (managedRoles[ref.Role] && !grant.Implicit && grantRemovalPlanned(cov, grant) && objects.describes(grant)) ||
+		if (removable(ref) && !grant.Implicit && grantRemovalPlanned(cov, grant) && objects.describes(grant)) ||
 			revokedGrants[key] || revokedGrants[key.onWholeObject()] {
 			databaseGrantMapForRemovals[key] = ref
 		}
@@ -197,6 +226,41 @@ func GrantsWithObjects(
 	sortGrantRefs(diff.GrantsRemoved)
 	sortGrantRefs(diff.GrantOptionsAdded)
 	sortGrantRefs(diff.GrantOptionsRevoked)
+}
+
+// heldByDefault reports whether the grant ref is one the other side of a
+// comparison of two server reads holds without any row saying so, so that its
+// absence there is no difference.
+//
+// PostgreSQL stores no ACL until an object's first GRANT or REVOKE, and the first
+// one writes out the defaults. An object's owner then reads as holding its
+// privileges on one side, where a row says so, and as holding nothing on the
+// other, where the read reports no row. PUBLIC's EXECUTE on a routine reads the
+// same way. Revoking either one to match would take away what the other side
+// holds: measured on PostgreSQL 18, a table owner so revoked is refused
+// `permission denied` on its own table. A declared revoke still reaches these
+// grants, and a read of a routine whose PUBLIC EXECUTE was revoked declares one.
+func heldByDefault(ref difftypes.GrantRef, owners map[tableIdentity]string, semantics identifier.Semantics) bool {
+	if ref.Role == "PUBLIC" && grantRoutineKinds[ref.ObjectType] {
+		return true
+	}
+	return owners[newGrantIdentity(ref, semantics).object] == ref.Role
+}
+
+// objectOwners indexes who owns each object of a read by the identity a grant
+// names the object with: [newGrantIdentity] keeps a schema's name in the schema
+// slot.
+func objectOwners(database *catalog.Database, semantics identifier.Semantics) map[tableIdentity]string {
+	builder := objectidentity.NewBuilder(semantics)
+	owners := make(map[tableIdentity]string, len(database.ObjectOwners))
+	for _, owner := range database.ObjectOwners {
+		if owner.Schema == "" {
+			owners[builder.TableParts(owner.Name, "").Key()] = owner.Owner
+			continue
+		}
+		owners[builder.TableParts(owner.Schema, owner.Name).Key()] = owner.Owner
+	}
+	return owners
 }
 
 // planGrantAdditions plans each declared grant the database does not hold,

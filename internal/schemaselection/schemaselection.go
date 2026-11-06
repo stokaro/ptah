@@ -21,6 +21,7 @@ package schemaselection
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"net/url"
 	"slices"
@@ -288,9 +289,26 @@ func (s Selection) Resolve(ctx context.Context, q RowQuerier) (string, error) {
 		return "", fmt.Errorf("failed to resolve PostgreSQL current schema: %w", err)
 	}
 	if !current.Valid || current.String == "" {
-		return "", fmt.Errorf("database URL selects schema %q, which does not exist in this database", s.Raw)
+		return "", s.noUsableSchema()
 	}
 	return current.String, nil
+}
+
+// noUsableSchema refuses a session whose search_path resolved to no schema.
+//
+// PostgreSQL answers NULL for a schema that does not exist and for one the role
+// holds no USAGE on, so the message names both. Read as a missing schema alone,
+// the second case sends the operator looking for a schema that is there.
+// Measured on PostgreSQL 18.6: a role with no USAGE on public, connecting with
+// no search_path at all, gets this answer, and the URL then has no value to
+// quote.
+func (s Selection) noUsableSchema() error {
+	if s.Raw == "" {
+		return errors.New("the search_path of the connecting role resolves to no schema: " +
+			"each schema on it does not exist in this database or holds no USAGE privilege for the role")
+	}
+	return fmt.Errorf("database URL selects schema %q, which does not exist in this database "+
+		"or holds no USAGE privilege for the connecting role", s.Raw)
 }
 
 // ResolveCarried answers the same question for a connection that could not SEND
@@ -336,7 +354,7 @@ func (s Selection) ResolveCarried(ctx context.Context, db TxBeginner) (string, e
 		return "", fmt.Errorf("failed to resolve PostgreSQL current schema: %w", err)
 	}
 	if !current.Valid || current.String == "" {
-		return "", fmt.Errorf("database URL selects schema %q, which does not exist in this database", s.Raw)
+		return "", s.noUsableSchema()
 	}
 	return current.String, nil
 }

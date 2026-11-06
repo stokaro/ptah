@@ -29,7 +29,7 @@ import (
 func tableReadCapture(query *string) func(string, []driver.NamedValue) (dbtest.QueryResult, error) {
 	return func(sql string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
 		switch {
-		case strings.Contains(sql, "FROM information_schema.tables"):
+		case strings.Contains(sql, "AS row_stats_unknown"):
 			*query = sql
 			return dbtest.QueryResult{
 				Columns: []string{
@@ -42,7 +42,7 @@ func tableReadCapture(query *string) func(string, []driver.NamedValue) (dbtest.Q
 					{"public", "cache", "BASE TABLE", "", int64(0), false, false, false, false, true, "[]", ""},
 				},
 			}, nil
-		case strings.Contains(sql, "information_schema.columns"):
+		case strings.Contains(sql, "AS udt_schema"):
 			return dbtest.QueryResult{}, nil
 		case strings.Contains(sql, "SELECT"):
 			return dbtest.QueryResult{Columns: []string{"ok"}, Rows: [][]driver.Value{{true}}}, nil

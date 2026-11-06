@@ -38,6 +38,10 @@ func TestRelationByName_EveryNameLookupLeavesIndexesOut(t *testing.T) {
 		_, err := r.readCockroachRelationGrants(c.Context(), "public")
 		return err
 	})
+	postgresTableRead := issuedQueries(c, platform.Postgres, capability.Postgres18(), func(r *Reader) error {
+		_, err := r.readTablesForSchema(c.Context(), "public")
+		return err
+	})
 	postgresGrantRead := issuedQueries(c, platform.Postgres, capability.Postgres18(), func(r *Reader) error {
 		_, err := r.readTableGrantsForSchema(c.Context(), "public")
 		return err
@@ -73,8 +77,18 @@ func TestRelationByName_EveryNameLookupLeavesIndexesOut(t *testing.T) {
 			want:  "c.relkind NOT IN ('i', 'I')",
 		},
 		{
+			name:  "PostgreSQL tables",
+			query: queryContaining(c, postgresTableRead, "AS row_stats_unknown"),
+			want:  "c.relkind NOT IN ('i', 'I')",
+		},
+		{
+			name:  "PostgreSQL columns",
+			query: queryContaining(c, postgresTableRead, "AS udt_schema"),
+			want:  "cls.relkind NOT IN ('i', 'I')",
+		},
+		{
 			name:  "PostgreSQL table grants",
-			query: queryContaining(c, postgresGrantRead, "FROM information_schema.role_table_grants g"),
+			query: queryContaining(c, postgresGrantRead, "AS with_option"),
 			want:  "c.relkind NOT IN ('i', 'I')",
 		},
 	}
