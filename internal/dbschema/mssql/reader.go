@@ -3,6 +3,7 @@ package mssql
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -137,11 +138,9 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	}
 	schema.Grants = grants
 
-	memberships, err := r.readRoleMemberships(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("sqlserver: read role memberships: %w", err)
+	if err := r.readRoleGraph(ctx, schema); err != nil {
+		return nil, err
 	}
-	schema.RoleMemberships = memberships
 
 	owners, err := r.readObjectOwners(ctx)
 	if err != nil {
@@ -868,6 +867,21 @@ func (r *Reader) readRoles(ctx context.Context) ([]catalog.Role, error) {
 		return nil, err
 	}
 	return roles, nil
+}
+
+// readRoleGraph reads who holds which database role, and which database user
+// this connection runs as.
+func (r *Reader) readRoleGraph(ctx context.Context, schema *catalog.Database) error {
+	memberships, err := r.readRoleMemberships(ctx)
+	if err != nil {
+		return fmt.Errorf("sqlserver: read role memberships: %w", err)
+	}
+	schema.RoleMemberships = memberships
+	// No row leaves the role unknown, and a plan then covers every membership.
+	if err := r.db.QueryRowContext(ctx, `SELECT USER_NAME()`).Scan(&schema.ConnectedRole); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("sqlserver: read the connected role: %w", err)
+	}
+	return nil
 }
 
 // readRoleMemberships reads who holds which database role.

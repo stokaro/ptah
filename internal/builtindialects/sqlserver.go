@@ -116,7 +116,9 @@ END`,
 		},
 
 		// How a schema file's names are read, and how unnamed indexes and CHECKs are named.
-		Names:   descriptor.Names{Lookup: "unicode_case_insensitive"},
+		Names: descriptor.Names{Lookup: "unicode_case_insensitive"},
+		// A read lists every database role, whatever schemas it covers.
+		Roles:   descriptor.Roles{OutOfScope: descriptor.RoleScopeNone},
 		Columns: descriptor.Columns{AlterColumnKeepsRest: true},
 
 		// Dev databases.

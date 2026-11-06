@@ -814,9 +814,10 @@ func TestSchemaPlanEditKeepsTheSourceFingerprint(t *testing.T) {
 	out, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
 		fixture.args("--output", fixture.outputPath, "--edit")...)
 
-	// An edit rewrites the statements, never the fingerprints: `from` still
+	// An edit rewrites the statements and leaves the fingerprints: `from` still
 	// describes the live source database the plan is bound to, so apply-time
-	// staleness detection keeps working on an edited plan.
+	// staleness detection keeps working on an edited plan. The edit that moves
+	// `from` is one naming a role with memberships, which SQLite has none of.
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	plan, err := atlasschema.ReadPlanFile(fixture.outputPath)
 	c.Assert(err, qt.IsNil)

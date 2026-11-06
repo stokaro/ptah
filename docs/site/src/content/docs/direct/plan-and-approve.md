@@ -218,6 +218,28 @@ declaration does not manage does not. The row values themselves are not written
 into the plan file. A plan that declares no rows carries neither field, and the
 Atlas `.plan.hcl` format, which has no place for them, refuses a plan that does.
 
+`from_fingerprint` also covers the role memberships the plan depends on, and no
+others. A membership counts when it connects to one of these roles, directly or
+through a chain of groups:
+
+- a role the read names: a holder or grantor of a privilege, the owner of an
+  object, or the definer of a routine;
+- the role the connection runs as;
+- a role a statement in the plan names, such as the role it grants to or
+  creates. A table with the same name as a role counts too.
+
+The chain is followed in the two directions privileges travel: what such a role
+holds, and who holds it. So a new member of a role the plan grants to makes the
+plan stale, and so does a group joining the groups of the role that runs it. A
+new member of a group the running role merely belongs to does not, because the
+running role holds nothing more.
+
+A credential rotation that creates a user and grants it a group with no tie to
+the plan leaves the plan valid. One that grants a group holding a privilege in
+the read makes every plan reading that privilege stale, on this database, because
+the new user now holds it. On a target that compares memberships, which is YDB,
+the plan covers all of them.
+
 When an embedding application selects an executable provider, the native JSON
 plan also records `provider`: the provider ID, its release version and the
 major version of the provider contract, plus a digest of the server version,
@@ -467,6 +489,16 @@ scopes instead:
 error: pre-planned migration is stale: the plan was computed for every schema of the database, and the target URL reaches schema "public" (plan sha256:c81456cf..., database sha256:dc76f43f...); apply the plan through a URL that reaches every schema of the database, or re-run `schema plan` through this one and review the fresh plan
 ```
 
+A plan covers the memberships of the role that computed it, and the file does not
+record that role. Applied as another role, the plan verifies only when neither
+role holds a membership the rest of the plan does not cover. When the applying
+role has memberships, the refusal says so, because the database may not have
+changed:
+
+```text
+error: pre-planned migration is stale: the target database schema does not match the plan's source fingerprint (plan sha256:b522c397..., database sha256:6b0f19aa...); the database changed since the plan was computed, or the plan was computed as a role other than "migrator" and the fingerprint covers the memberships of the role that runs it, so re-run `schema plan` as "migrator" against the current database and review the fresh plan
+```
+
 ### The key file is missing or unreadable
 
 Key handling belongs to OpenSSH, and its failures reach you unchanged:
@@ -524,6 +556,17 @@ plan, so this control is worth what review of that file is worth.
 - A plan file carries the fingerprint of the database it was computed against.
   Applying it to a database in a different state refuses on that fingerprint,
   whether or not the approval verifies.
+- The fingerprint reads memberships as the server's catalog lists them. On
+  PostgreSQL that leaves out the reserved `pg_` roles and the bootstrap
+  superuser, and the `INHERIT` and `SET` options of a membership, so changing
+  those does not make a plan stale.
+- A role without superuser that creates another role on PostgreSQL 16 or later
+  receives an `ADMIN` membership in it, and on MariaDB any creator holds the role
+  it created. Both count as memberships, so a plan run by the creator is stale
+  after the role appears, and after that role joins a group.
+- On MySQL and MariaDB a read lists every role on the server, and the fingerprint
+  covers that list. `CREATE ROLE` anywhere on the server makes a plan stale, and
+  `CREATE USER` does not.
 
 ## Next steps
 

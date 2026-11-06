@@ -54,6 +54,7 @@ func TestScopeDatabaseKeepsCoverage(t *testing.T) {
 				},
 				NotDescribed:            coverage.Set{}.With(coverage.Refused(coverage.Extension)),
 				DatabasePath:            "/local",
+				ConnectedRole:           "app",
 				PlanningContextObjects:  contextObjects,
 				PlanningContextCoverage: context,
 				// No selection keeps the table, and the filter keeps the record.
@@ -67,6 +68,7 @@ func TestScopeDatabaseKeepsCoverage(t *testing.T) {
 			c.Assert(got.NotDescribed, qt.DeepEquals,
 				coverage.Set{}.With(coverage.Refused(coverage.Extension)))
 			c.Assert(got.DatabasePath, qt.Equals, "/local")
+			c.Assert(got.ConnectedRole, qt.Equals, "app")
 			c.Assert(got.PlanningContextObjects.Equal(contextObjects), qt.IsTrue)
 			c.Assert(got.PlanningContextCoverage.Equal(context), qt.IsTrue)
 			c.Assert(got.UnreadTables, qt.DeepEquals, schema.UnreadTables)

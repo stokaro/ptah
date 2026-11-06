@@ -36,9 +36,11 @@ var scopeAgreement = map[string]scopeAnswers{
 	},
 	"mysql": {
 		selection: descriptor.SchemaSelectionDatabase,
+		roles:     descriptor.RoleScopeNone,
 	},
 	"mariadb": {
 		selection: descriptor.SchemaSelectionDatabase,
+		roles:     descriptor.RoleScopeNone,
 	},
 	"clickhouse": {
 		roles: descriptor.RoleScopeReferenced,
@@ -46,7 +48,9 @@ var scopeAgreement = map[string]scopeAnswers{
 	"sqlite": {
 		selection: descriptor.SchemaSelectionSingle, dialectDefault: "main",
 	},
-	"sqlserver": {},
+	"sqlserver": {
+		roles: descriptor.RoleScopeNone,
+	},
 	"cockroachdb": {
 		selection: descriptor.SchemaSelectionSearchPath, dialectDefault: "public",
 		roles: descriptor.RoleScopeReferenced, widenable: true,

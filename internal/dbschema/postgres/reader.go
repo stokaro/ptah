@@ -4362,7 +4362,10 @@ func (r *Reader) readObjectOwners(ctx context.Context) ([]catalog.ObjectOwner, e
 // which roles reach which privileges through which other roles -- is wrong if
 // the answer stops at the schemas this read happened to name. A membership
 // whose other end is out of the described scope is exactly the edge an analysis
-// needs to see.
+// needs to see. A saved plan's source fingerprint needs the same whole graph,
+// because the chain from a role it depends on can run through roles the read
+// does not describe; [ptah.run/internal/rolegraph.ForPlan] follows that chain and
+// leaves out what it does not reach.
 //
 // Both ends exclude the reserved system roles, through the same
 // [pgreservedrole.ExcludeSQL] the role read uses, so the two lists cannot come to
@@ -5005,6 +5008,11 @@ func (r *Reader) readRoleManagedObjects(ctx context.Context, schema *catalog.Dat
 		return fmt.Errorf("failed to read role memberships: %w", err)
 	}
 	schema.RoleMemberships = memberships
+
+	// No row leaves the role unknown, and a plan then covers every membership.
+	if err := r.db.QueryRowContext(ctx, `SELECT current_user`).Scan(&schema.ConnectedRole); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("failed to read the connected role: %w", err)
+	}
 
 	owners, err := r.readObjectOwners(ctx)
 	if err != nil {

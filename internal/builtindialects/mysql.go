@@ -76,6 +76,8 @@ func mysql() descriptor.Dialect {
 		RevisionTable:   mysqlFamilyRevisionTable(),
 
 		Schemas: descriptor.Schemas{Selection: descriptor.SchemaSelectionDatabase},
+		// mysql.user is server-wide, and a read lists every role in it.
+		Roles: descriptor.Roles{OutOfScope: descriptor.RoleScopeNone},
 		// String literals process C-style backslash escapes by default, so a
 		// backslash in a value is doubled, and a boolean is the TINYINT(1) the
 		// family creates it as. Neither engine's DATETIME literal accepts an

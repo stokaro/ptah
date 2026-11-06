@@ -65,6 +65,18 @@ func TestStalePlanErrorNamesTheScopes(t *testing.T) {
 				"so re-run `schema plan` against the current database and review the fresh plan",
 		},
 		{
+			name: "a connection whose role has memberships the fingerprint can cover",
+			stale: atlasschema.StalePlanError{
+				PlanFingerprint: "sha256:plan", DatabaseFingerprint: "sha256:db",
+				ConnectedRole: "app",
+			},
+			want: "pre-planned migration is stale: the target database schema does not match the plan's source " +
+				"fingerprint (plan sha256:plan, database sha256:db); the database changed since the plan was computed, " +
+				`or the plan was computed as a role other than "app" and the fingerprint covers the memberships of ` +
+				"the role that runs it, so re-run `schema plan` as \"app\" against the current database and review " +
+				"the fresh plan",
+		},
+		{
 			name: "moved rows",
 			stale: atlasschema.StalePlanError{
 				PlanFingerprint: "sha256:plan", DatabaseFingerprint: "sha256:db", Rows: true,
