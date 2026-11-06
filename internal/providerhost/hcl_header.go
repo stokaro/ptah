@@ -50,13 +50,14 @@ func (h *Host) headerCodecs() (headerCodecs, error) {
 			continue
 		}
 		kind := codec.Prototype.Kind()
-		model, err := describedModel(h.models[modelKey{kind: kind, representation: schemaext.Desired}])
+		contract := h.models[modelKey{kind: kind, representation: schemaext.Desired}]
+		model, err := describedModel(contract)
 		if err != nil {
 			return headerCodecs{}, err
 		}
 		described[kind] = model
 		held[kind] = schemaext.CodecIdentity{Owner: h.description.GetProviderId(), Kind: kind, Representation: schemaext.Desired, Version: codec.Version,
-			Definition: h.models[modelKey{kind: kind, representation: schemaext.Desired}].signature}
+			Definition: contract.signature}
 		claimed := codec
 		claimed.Version, claimed.Definition = model.GetSchemaVersion(), model.GetDefinitionJson()
 		owned = append(owned, schemaext.OwnedCodec{Owner: h.description.GetProviderId(), Codec: claimed, BatchDecoder: decoder,
