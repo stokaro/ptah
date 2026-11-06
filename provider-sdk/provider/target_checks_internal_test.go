@@ -178,46 +178,53 @@ func TestCoverageSubjectKeysMatchCompareReferences(t *testing.T) {
 	c.Assert(index.covered(&protocol.Envelope{Kind: "k", Owner: refs[4]}), qt.IsFalse)
 }
 
-// The kinds of the coverages of several tables, checked under one validation,
-// are checked once for each kind message: the coverages a shared list was
-// resolved into hold one message for each kind, so they ask once, and
-// coverages that hold copies ask once for each copy.
-func TestCoverageKindsAreCheckedOncePerKindMessage(t *testing.T) {
-	for _, test := range []struct {
-		name string
-		// shared gives every table the same kind message.
-		shared   bool
-		wantKind int
-	}{
-		{name: "one kind message for every table", shared: true, wantKind: 1},
-		{name: "a copy for each table", shared: false, wantKind: 3},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			description := checkedDescription()
-			request := &protocol.PlanFeaturesRequest{Engine: "fixture", TargetFeatures: []string{"retention"}}
-			checks := new(targetChecks)
-			kind := &protocol.ComparisonKindCoverage{Model: proto.CloneOf(description.Engines[0].ValueModels[0]),
-				Sources: []*protocol.ComparisonKnowledgeSource{{Outside: &protocol.ModelKnowledge{State: protocol.ModelKnowledge_COMPLETE}}}}
+// checkedCoverageKind is a complete coverage kind of the engine's model.
+func checkedCoverageKind(description *protocol.Description) *protocol.ComparisonKindCoverage {
+	return &protocol.ComparisonKindCoverage{Model: proto.CloneOf(description.Engines[0].ValueModels[0]),
+		Sources: []*protocol.ComparisonKnowledgeSource{{Outside: &protocol.ModelKnowledge{State: protocol.ModelKnowledge_COMPLETE}}}}
+}
 
-			for range 3 {
-				held := kind
-				if !test.shared {
-					held = proto.CloneOf(kind)
-				}
-				captured := &protocol.CapturedFeatures{
-					Objects: &protocol.ComparisonState{Representation: protocol.ValueInput_DESIRED, Coverage: &protocol.ComparisonCoverage{}},
-					Facets: &protocol.ComparisonState{Representation: protocol.ValueInput_DESIRED, Coverage: &protocol.ComparisonCoverage{
-						Kinds: []*protocol.ComparisonKindCoverage{held},
-					}},
-				}
-				c.Assert(checkCapturedFeatures(checks, description, request, description.Engines[0], protocol.ValueInput_DESIRED, captured), qt.IsNil)
-			}
-
-			c.Assert(checks.kinds, qt.HasLen, test.wantKind)
-			c.Assert(checks.contexts, qt.HasLen, 1)
-		})
+// checkTablesCovering checks, under one validation, the captured features of
+// one table for each kind message given, each covering its facets by it.
+func checkTablesCovering(c *qt.C, description *protocol.Description, kinds ...*protocol.ComparisonKindCoverage) *targetChecks {
+	c.Helper()
+	request := &protocol.PlanFeaturesRequest{Engine: "fixture", TargetFeatures: []string{"retention"}}
+	checks := new(targetChecks)
+	for _, kind := range kinds {
+		captured := &protocol.CapturedFeatures{
+			Objects: &protocol.ComparisonState{Representation: protocol.ValueInput_DESIRED, Coverage: &protocol.ComparisonCoverage{}},
+			Facets: &protocol.ComparisonState{Representation: protocol.ValueInput_DESIRED, Coverage: &protocol.ComparisonCoverage{
+				Kinds: []*protocol.ComparisonKindCoverage{kind},
+			}},
+		}
+		c.Assert(checkCapturedFeatures(checks, description, request, description.Engines[0], protocol.ValueInput_DESIRED, captured), qt.IsNil)
 	}
+	return checks
+}
+
+// The coverages a shared list was resolved into hold one message for each
+// kind, so the tables of one validation check it once.
+func TestCoverageKindsOfOneMessageAreCheckedOnce(t *testing.T) {
+	c := qt.New(t)
+	description := checkedDescription()
+	kind := checkedCoverageKind(description)
+
+	checks := checkTablesCovering(c, description, kind, kind, kind)
+
+	c.Assert(checks.kinds, qt.HasLen, 1)
+	c.Assert(checks.contexts, qt.HasLen, 1)
+}
+
+// Coverages that hold copies of a kind check each copy once.
+func TestCoverageKindCopiesAreCheckedOnceEach(t *testing.T) {
+	c := qt.New(t)
+	description := checkedDescription()
+	kind := checkedCoverageKind(description)
+
+	checks := checkTablesCovering(c, description, kind, proto.CloneOf(kind), proto.CloneOf(kind))
+
+	c.Assert(checks.kinds, qt.HasLen, 3)
+	c.Assert(checks.contexts, qt.HasLen, 1)
 }
 
 // A kind's answer belongs to the validation that asked: without one, every
