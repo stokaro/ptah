@@ -20,15 +20,16 @@ import (
 
 type executePeer struct {
 	protocol.ProviderClient
-	result *protocol.Execution
-	budget time.Duration
-	calls  int
+	result  *protocol.Execution
+	budget  time.Duration
+	bounded bool
+	calls   int
 }
 
 func (p *executePeer) Execute(ctx context.Context, _ *protocol.ExecuteRequest, _ ...grpc.CallOption) (*protocol.Execution, error) {
 	p.calls++
-	deadline, _ := ctx.Deadline()
-	p.budget = time.Until(deadline)
+	deadline, bounded := ctx.Deadline()
+	p.budget, p.bounded = time.Until(deadline), bounded
 	return p.result, nil
 }
 
@@ -41,19 +42,28 @@ func timedRequest(timeout time.Duration) *protocol.ExecuteRequest {
 }
 
 // A statement timeout widens the transport bound by the timeout of each unit,
-// so the provider's stop arrives as a confirmed outcome; a request without
-// one keeps the ordinary bound.
+// so the provider's stop arrives as a confirmed outcome. A request without
+// one is bounded by the caller's context alone: a batch that creates 500
+// tables ran past a fixed 30-second bound, which ended it as an unknown
+// outcome.
 func TestExecuteBoundCoversTheStatementTimeouts(t *testing.T) {
 	c := qt.New(t)
 	peer := &executePeer{result: &protocol.Execution{Outcome: protocol.Execution_APPLIED, AppliedCount: 2}}
 	client := &Client{description: timeoutDescription(), rpc: peer}
 	_, err := client.Execute(c.Context(), timedRequest(time.Minute))
 	c.Assert(err, qt.IsNil)
+	c.Assert(peer.bounded, qt.IsTrue)
 	c.Assert(peer.budget > CallTimeout+time.Minute, qt.IsTrue)
 	c.Assert(peer.budget <= CallTimeout+2*time.Minute, qt.IsTrue)
-	_, err = client.Execute(c.Context(), timedRequest(0))
+	_, err = client.Execute(context.Background(), timedRequest(0))
 	c.Assert(err, qt.IsNil)
-	c.Assert(peer.budget <= CallTimeout, qt.IsTrue)
+	c.Assert(peer.bounded, qt.IsFalse)
+	caller, cancel := context.WithTimeout(context.Background(), time.Hour)
+	defer cancel()
+	_, err = client.Execute(caller, timedRequest(0))
+	c.Assert(err, qt.IsNil)
+	c.Assert(peer.budget > time.Hour-time.Minute, qt.IsTrue)
+	c.Assert(peer.budget <= time.Hour, qt.IsTrue)
 	c.Assert(executeTimeout(timedRequest(math.MaxInt64)), qt.Equals, time.Duration(math.MaxInt64))
 }
 

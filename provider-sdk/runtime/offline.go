@@ -42,15 +42,19 @@ func serveOffline[Q proto.Message, R proto.Message](
 	return result, nil
 }
 
+// callOffline makes an offline call, which the caller's context alone
+// bounds: what an offline service works on is a schema or a migration, and
+// its work grows with it.
 func callOffline[Q proto.Message, R proto.Message](
 	ctx context.Context, description *protocol.Description, request Q, operation string,
 	validateInput func(*protocol.Description, Q) error, validateOutput func(*protocol.Description, Q, R) error,
 	invoke func(context.Context, Q, ...grpc.CallOption) (R, error),
 ) (R, error) {
-	return callWithin(ctx, CallTimeout, description, request, operation, validateInput, validateOutput, invoke)
+	return callWithin(ctx, 0, description, request, operation, validateInput, validateOutput, invoke)
 }
 
-// callWithin is callOffline with the bound a slow operation needs.
+// callWithin is callOffline with the bound a call needs, when the caller
+// supplied no earlier deadline. A zero timeout sets none.
 func callWithin[Q proto.Message, R proto.Message](
 	ctx context.Context, timeout time.Duration, description *protocol.Description, request Q, operation string,
 	validateInput func(*protocol.Description, Q) error, validateOutput func(*protocol.Description, Q, R) error,
@@ -63,7 +67,7 @@ func callWithin[Q proto.Message, R proto.Message](
 	if err := validateInput(description, request); err != nil {
 		return zero, err
 	}
-	call, cancel := context.WithTimeout(ctx, timeout)
+	call, cancel := withinBound(ctx, timeout)
 	defer cancel()
 	result, err := invoke(call, request)
 	if err != nil {
@@ -76,4 +80,13 @@ func callWithin[Q proto.Message, R proto.Message](
 		return zero, err
 	}
 	return result, nil
+}
+
+// withinBound is ctx with timeout as its deadline when the caller supplied no
+// earlier one, or ctx alone for a zero timeout.
+func withinBound(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	if timeout == 0 {
+		return context.WithCancel(ctx)
+	}
+	return context.WithTimeout(ctx, timeout)
 }

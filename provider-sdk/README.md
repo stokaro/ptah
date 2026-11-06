@@ -529,9 +529,16 @@ Mutual TLS authenticates the local gRPC connection. The bootstrap cookie only
 identifies the expected launch protocol. Messages are limited to 4 MiB in each
 direction, and to 64 MiB between a host and a provider that both list
 `transport.large-messages` ([large messages](#model-references-and-large-messages)).
-Startup defaults to ten seconds; service calls are limited to thirty
-seconds or the caller's earlier deadline. Raw provider logs and RPC error text
-are discarded because they may contain credentials.
+Startup defaults to ten seconds. A call whose work grows with a schema runs
+until the caller's context ends: inspection, every offline service (validation,
+preparation, comparison, planning, rendering, source decoding and encoding),
+SQL analysis, and an execution that sets no statement timeout. The database
+answers a read or a plan of 500 tables in full, and a fixed bound failed it on a
+loaded runner. Every other service call is limited to thirty seconds
+(`runtime.CallTimeout`) or the caller's earlier deadline, and an execution with a
+statement timeout to thirty seconds plus that timeout for each unit. Raw
+provider logs and RPC error text are discarded because they may contain
+credentials.
 
 The context passed to `Start` bounds startup. The returned client owns the process
 until `Close`, which is safe to call repeatedly. Session handles become invalid

@@ -209,13 +209,14 @@ func (c *Client) CloseSession(ctx context.Context, id string) error {
 }
 
 // Inspect returns only a complete, validated snapshot. A transport failure
-// yields an error and no schema, even if the database could be empty.
+// yields an error and no schema, even if the database could be empty. The
+// caller's context alone bounds the read, which grows with the database.
 func (c *Client) Inspect(ctx context.Context, request *protocol.InspectRequest) (*protocol.Schema, error) {
 	request = proto.CloneOf(request)
 	if request.GetSessionId() == "" {
 		return nil, fmt.Errorf("%w: inspection session is missing", provider.ErrProtocol)
 	}
-	call, cancel := context.WithTimeout(ctx, CallTimeout)
+	call, cancel := context.WithCancel(ctx)
 	defer cancel()
 	result, err := c.rpc.Inspect(call, proto.CloneOf(request))
 	if err != nil {
@@ -239,11 +240,13 @@ func (c *Client) Render(ctx context.Context, request *protocol.RenderRequest) (*
 // outcome. A request canceled before dispatch sends nothing. Request IDs do not
 // enable replay, and this method performs no application-level retries.
 //
-// A request with a statement timeout extends the call's bound by that timeout
-// for each unit, so the provider's stop at the timeout reaches the caller as a
-// confirmed outcome rather than a lost reply. A caller's earlier deadline
-// still applies. A stop at the timeout returns an error matching
-// provider.ErrStatementTimeout.
+// A request with a statement timeout is bounded by CallTimeout and that
+// timeout for each unit, so the provider's stop at the timeout reaches the
+// caller as a confirmed outcome rather than a lost reply. A request without
+// one is bounded by the caller's context alone: a batch may create hundreds
+// of tables, and a unit may build an index over a large table. A caller's
+// earlier deadline applies either way. A stop at the timeout returns an
+// error matching provider.ErrStatementTimeout.
 //
 // Under provider.MigrationSplitFeature, a NOT_APPLIED reply in a caller
 // transaction may set transaction_aborted: the engine aborted the
@@ -268,7 +271,7 @@ func (c *Client) Execute(ctx context.Context, request *protocol.ExecuteRequest) 
 	if err := provider.ValidateExecuteRequest(c.description, request); err != nil {
 		return nil, err
 	}
-	call, cancel := context.WithTimeout(ctx, executeTimeout(request))
+	call, cancel := withinBound(ctx, executeTimeout(request))
 	defer cancel()
 	result, err := c.rpc.Execute(call, request)
 	if err != nil {
@@ -286,13 +289,14 @@ func (c *Client) Execute(ctx context.Context, request *protocol.ExecuteRequest) 
 	return result, nil
 }
 
-// executeTimeout is CallTimeout, plus the statement timeout of every unit of a
-// request that sets one, saturating rather than wrapping.
+// executeTimeout is CallTimeout plus the statement timeout of every unit of a
+// request that sets one, saturating rather than wrapping, and zero, no bound,
+// for a request that sets none.
 func executeTimeout(request *protocol.ExecuteRequest) time.Duration {
 	limit := time.Duration(request.GetStatementTimeoutNanoseconds())
 	units := time.Duration(len(request.GetUnits()))
 	if limit <= 0 {
-		return CallTimeout
+		return 0
 	}
 	if limit > (math.MaxInt64-CallTimeout)/units {
 		return math.MaxInt64
@@ -325,8 +329,9 @@ func validateOptions(options Options) ([]byte, error) {
 }
 
 // AnalyzeSQL accepts only complete owner-defined boundaries and safety facts.
+// The caller's context alone bounds the analysis, which grows with the SQL.
 func (c *Client) AnalyzeSQL(ctx context.Context, request *protocol.AnalyzeSQLRequest) (*protocol.SQLAnalysis, error) {
-	call, cancel := context.WithTimeout(ctx, CallTimeout)
+	call, cancel := context.WithCancel(ctx)
 	defer cancel()
 	result, err := c.rpc.AnalyzeSQL(call, request)
 	if err != nil {
