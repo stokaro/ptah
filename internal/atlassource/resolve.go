@@ -225,6 +225,13 @@ type State struct {
 	// otherwise. Like the extensions, it is the dev database's and not the
 	// source's: a comparison leaves it out with [State.WithoutStartingPoint].
 	EnvironmentState *catalog.Database
+	// Address is the connection address of the database the state was read
+	// from, a dev realm's own when it was read in one, and empty for a state
+	// no database read produced. An executable provider binds every value it
+	// reads to that database, so a comparison of two reads moves one side's
+	// values to the other's context by it; see [valuecontext.Move]. It may
+	// hold credentials and is never printed.
+	Address string
 }
 
 // ExtensionNames is the set of extensions the state holds, in the common
@@ -548,6 +555,7 @@ func (s Set) resolveDatabase(ctx context.Context, opts ResolveOptions, finish Ho
 		RealmScoped:         schemaselection.Realm(conn.Info().Dialect, conn.Info().URL, conn.Info().Schema),
 		WholeServer:         conn.Info().WholeServer,
 		IdentifierSemantics: new(conn.Info().IdentifierSemantics.Clone()),
+		Address:             conn.Info().URL,
 	}, conn)
 }
 
@@ -706,6 +714,7 @@ func (s Set) DevState(ctx context.Context, conn *dbschema.DatabaseConnection, op
 		DB:            schema,
 		DefaultSchema: conn.Info().Schema,
 		RealmScoped:   schemaselection.Realm(conn.Info().Dialect, conn.Info().URL, conn.Info().Schema),
+		Address:       conn.Info().URL,
 	}, nil
 }
 

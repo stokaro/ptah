@@ -83,6 +83,25 @@ func TestResolve_DatabaseSourceCarriesTheServersIdentifierRules(t *testing.T) {
 	c.Assert(state.IdentifierSemantics.DefaultSchema, qt.Equals, "main")
 }
 
+// TestResolve_DatabaseSourceCarriesItsAddress holds a database state to the
+// address of the database it was read from. A comparison of two reads moves
+// one side's values to the other's database by it.
+func TestResolve_DatabaseSourceCarriesItsAddress(t *testing.T) {
+	c := qt.New(t)
+	url := seedSQLite(t, "CREATE TABLE live_users (id INTEGER PRIMARY KEY)")
+	conn, err := dbschema.ConnectToDatabase(t.Context(), url)
+	c.Assert(err, qt.IsNil)
+	t.Cleanup(func() { dbschema.CloseAndWarn(conn) })
+
+	state, err := classifySingle(t, "--to", url).Resolve(t.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c),
+		Dialect:     "sqlite",
+		DialectFlag: "--dev-url",
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(state.Address, qt.Equals, conn.Info().URL)
+}
+
 func TestResolve_DatabaseSourceDialectMismatchFailsBeforeConnecting(t *testing.T) {
 	c := qt.New(t)
 	// The URL points at nothing connectable; the scheme-level dialect check
@@ -117,6 +136,7 @@ func TestResolve_MigrationDirReplaysOnDevDatabase(t *testing.T) {
 	c.Assert(state.Schema.Tables, qt.HasLen, 1)
 	c.Assert(state.Schema.Tables[0].Name, qt.Equals, "replayed_users")
 	c.Assert(state.DefaultSchema, qt.Equals, "main")
+	c.Assert(state.Address, qt.Equals, devURL)
 	assertSQLiteDevEmpty(c, devURL)
 }
 
@@ -290,6 +310,7 @@ func TestResolve_LocalFilesMatchLegacyLoader(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(state.Kind, qt.Equals, atlassource.KindLocalFile)
 	c.Assert(state.DB, qt.IsNil)
+	c.Assert(state.Address, qt.Equals, "")
 	c.Assert(state.Schema.Tables, qt.HasLen, 1)
 	c.Assert(state.Schema.Tables[0].Name, qt.Equals, "files_users")
 }

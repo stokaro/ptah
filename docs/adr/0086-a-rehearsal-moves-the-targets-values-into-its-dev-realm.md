@@ -110,3 +110,17 @@ does not. Rejected.
 - Through the YDB provider on 25.1.4.7 and 26.2.1.14, a rehearsal in a dev
   realm applies with `EnableResourcePools` on, and a change to a directory
   that holds a topic and a coordination node applies.
+
+## Amendments
+
+- `schema diff`, native and compatible, compares two reads with the same
+  move. When the `--to` side was read from a database and the `--from` side
+  from another context of its root, a dev realm of it or the database a
+  realm belongs to, the `--to` side's values move to the `--from` side's
+  context before the comparison. A `--from` file created in a dev realm of
+  the `--to` database is read back in that realm, so the same holds for it.
+  When either side was read in a dev realm, both sides leave out the
+  permissions on the database root: the realm's root does not stand in for
+  them, as the baseline leaves them out too.
+  The built-in YDB engine at 74de0b65b planned these diffs; the provider
+  refused them as `conflicting database contexts` without the move.
