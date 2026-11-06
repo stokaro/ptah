@@ -16,6 +16,7 @@ import (
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlutil"
+	"ptah.run/internal/planner/notnullname"
 	"ptah.run/internal/planshape"
 	"ptah.run/internal/txrequire"
 )
@@ -169,6 +170,11 @@ func GenerateSchemaDiffASTWithOptions(
 	}
 	if opts.Shape == planext.StatementShapeCatalog {
 		nodes = planshape.Apply(dialect, nodes, diff)
+	} else {
+		// After the dialect planner, as the passes above: it reads every statement
+		// a planner wrote, in the order they will run. The catalog shape asks for
+		// this itself, once it has merged what it merges.
+		nodes = notnullname.Free(nodes, diff)
 	}
 	if err := requireIsolatedOwnerOperations(nodes); err != nil {
 		return nil, wrapPlanError(dialect, err)

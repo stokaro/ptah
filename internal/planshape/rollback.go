@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/difftypes"
+	"ptah.run/internal/planner/notnullname"
 )
 
 // AlignRollback returns rollback, the statements that undo forward, in the catalog's
@@ -27,6 +28,8 @@ func AlignRollback(dialect string, forward, rollback []ast.Node, diff *difftypes
 	if !ok {
 		return rollback
 	}
+	// The planner freed the names its own order needs, and this order differs.
+	rollback = notnullname.Unfree(rollback, diff)
 	facts := newPlanFacts()
 	facts.readDiff(diff)
 	facts.readApplied(forward)
@@ -36,7 +39,7 @@ func AlignRollback(dialect string, forward, rollback []ast.Node, diff *difftypes
 	index := how.indexForward(forward)
 	how.reorder = index.namesFreedFirst(how)
 	how.places = index.places(how)
-	out := arrange(inlineConstraints(rollback), how)
+	out := notnullname.Free(arrange(inlineConstraints(rollback), how), diff)
 	for _, node := range out {
 		respell(node, spelling)
 	}

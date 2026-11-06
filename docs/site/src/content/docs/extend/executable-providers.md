@@ -1102,6 +1102,14 @@ the `--to` side's values move to the `--from` side's context. When either side
 was read in a dev realm, both sides leave out the permissions on the database
 root, since a realm's root does not stand in for its database's.
 
+`schema diff`, native and compatible, compares two reads the same way. When
+the `--to` side is read from one context of a source database and the `--from`
+side from another, such as a database and a dev realm of it, or a `--from`
+file created in a dev realm of the `--to` database, the `--to` side's values
+move to the `--from` side's context. Both sides then leave out the permissions
+on the database root, since a realm's root does not stand in for its
+database's.
+
 `ptah migrations generate` writes the reverse migration of a provider's change
 from the provider's own reversal of it. A provider that lists `models.reverse`
 undoes each change its comparison returned, predicts what the forward change

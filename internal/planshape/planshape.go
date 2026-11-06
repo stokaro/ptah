@@ -22,6 +22,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/internal/pgtypealias"
+	"ptah.run/internal/planner/notnullname"
 )
 
 // Apply returns nodes in the catalog's shape for dialect. Nodes it does not
@@ -41,7 +42,9 @@ func Apply(dialect string, nodes []ast.Node, diff *difftypes.SchemaDiff) []ast.N
 	how := arrangementFor(form, facts)
 	how.places = how.forwardPlaces(diff)
 	how.absorbs = how.merge && !foreignKeysDeferred(nodes, tablesCreatedBy(nodes))
-	nodes = arrange(inlineConstraints(nodes), how)
+	// Ahead of the respelling, which takes off a name the server gives anyway: the
+	// server gives it only where nothing holds it.
+	nodes = notnullname.Free(arrange(inlineConstraints(nodes), how), diff)
 	for _, node := range nodes {
 		respell(node, spelling)
 	}

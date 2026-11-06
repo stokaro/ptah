@@ -171,10 +171,21 @@ func reverseColumnDiffs(
 			SerialSequence: restoredSerialSequence(columnDiff.Changes["default_expr"]),
 			// The rollback alters the same sequence of the same database,
 			// whose restart is replayed by its ALTER as by the forward one.
-			CurrentSequenceRestart: columnDiff.CurrentSequenceRestart,
+			CurrentSequenceRestart:      columnDiff.CurrentSequenceRestart,
+			NotNullConstraintNameChange: reverseNotNullConstraintName(columnDiff.NotNullConstraintNameChange),
 		}
 	}
 	return reversed
+}
+
+// reverseNotNullConstraintName swaps a NOT NULL constraint's name transition, so a
+// rollback gives the constraint back the name it held. A transition from no name has
+// none to give back, and a target that reported none cannot be asked to hold one.
+func reverseNotNullConstraintName(change *difftypes.NotNullConstraintNameChange) *difftypes.NotNullConstraintNameChange {
+	if change == nil || change.Current == "" {
+		return nil
+	}
+	return &difftypes.NotNullConstraintNameChange{Current: change.Desired, Desired: change.Current}
 }
 
 // restoredSerialSequence names the sequence a rollback builds again for a column the
