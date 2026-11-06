@@ -40,37 +40,47 @@ func RequireFacetPreservation(source, destination []*schemaext.Facets) error {
 func Convert(ctx context.Context, runtime schemaext.ConversionRuntime, target string, from, to schemaext.Representation,
 	objects schemaext.Objects, coverage schemaext.Coverage, destinations []*schemaext.Facets,
 ) (schemaext.Objects, schemaext.Coverage, error) {
-	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
+	converted, err := ConvertParts(ctx, runtime, target, from, to, []Part{{Objects: objects, Coverage: coverage, Destinations: destinations}})
+	if err != nil {
 		return schemaext.Objects{}, schemaext.Coverage{}, err
+	}
+	return converted[0].Objects, converted[0].Coverage, nil
+}
+
+// Part is the share of one schema in a conversion of several: its named
+// objects, its coverage, and the destinations of its facets.
+type Part struct {
+	Objects      schemaext.Objects
+	Coverage     schemaext.Coverage
+	Destinations []*schemaext.Facets
+}
+
+// ConvertParts converts each part as [Convert] converts it alone, and asks the
+// runtime's conversion service once for the values of every part rather than
+// once for each. A conversion converts each value on its own, so the shared
+// call changes no part's result; a schema projected one table at a time sends
+// one call instead of one per table. The result holds one part per input, in
+// order, with the converted objects and coverage; Destinations is nil, since
+// the destinations are assigned in place. Nothing is assigned unless every
+// part succeeds, and an error returns no parts.
+func ConvertParts(ctx context.Context, runtime schemaext.ConversionRuntime, target string, from, to schemaext.Representation, parts []Part) ([]Part, error) {
+	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
+		return nil, err
 	}
 	// Built-in aliases share their target services. Preserve names owned by
 	// external providers instead of reducing them to an empty dialect.
 	if normalized := platform.NormalizeDialect(target); normalized != "" {
 		target = normalized
 	}
-	convertedCoverage, err := runtime.Codecs().ConvertCoverage(ctx, from, to, coverage)
-	if err != nil {
-		return schemaext.Objects{}, schemaext.Coverage{}, err
-	}
-	if objects, err = scopeOffTarget(runtime, target, objects); err != nil {
-		return schemaext.Objects{}, schemaext.Coverage{}, err
-	}
-	inputs, err := objects.All()
-	if err != nil {
-		return schemaext.Objects{}, schemaext.Coverage{}, err
-	}
-	values := make([]schemaext.Value, 0, len(inputs))
-	for _, input := range inputs {
-		values = append(values, input.Value)
-	}
-	lengths := make([]int, len(destinations))
-	for i, destination := range destinations {
-		facets, err := destination.Values()
+	shares := make([]partShare, len(parts))
+	var values []schemaext.Value
+	for i, part := range parts {
+		share, err := sharePart(ctx, runtime, target, from, to, part)
 		if err != nil {
-			return schemaext.Objects{}, schemaext.Coverage{}, err
+			return nil, err
 		}
-		lengths[i] = len(facets)
-		values = append(values, facets...)
+		shares[i] = share
+		values = append(values, share.values...)
 	}
 	// Keep an independent kind ledger: a service may mutate its request slice.
 	kinds := make([]schemaext.Kind, len(values))
@@ -79,38 +89,95 @@ func Convert(ctx context.Context, runtime schemaext.ConversionRuntime, target st
 	}
 	converted, err := runtime.ConvertFeatures(ctx, schemaext.ConversionRequest{Target: target, From: from, To: to, Values: values})
 	if err != nil {
-		return schemaext.Objects{}, schemaext.Coverage{}, err
+		return nil, err
 	}
 	if len(converted) != len(kinds) {
-		return schemaext.Objects{}, schemaext.Coverage{}, fmt.Errorf("%w: conversion changed the value count", schemaext.ErrInvalidValue)
+		return nil, fmt.Errorf("%w: conversion changed the value count", schemaext.ErrInvalidValue)
 	}
 	converted, err = runtime.Codecs().SnapshotValues(ctx, to, converted)
 	if err != nil {
-		return schemaext.Objects{}, schemaext.Coverage{}, err
+		return nil, err
 	}
 	for i, value := range converted {
 		if value.Kind() != kinds[i] {
-			return schemaext.Objects{}, schemaext.Coverage{}, fmt.Errorf("%w: conversion changed an ordered kind", schemaext.ErrInvalidValue)
+			return nil, fmt.Errorf("%w: conversion changed an ordered kind", schemaext.ErrInvalidValue)
 		}
 	}
-	for i := range inputs {
-		inputs[i].Value = converted[i]
-	}
-	convertedObjects, err := schemaext.NewObjects(inputs...)
-	if err != nil {
-		return schemaext.Objects{}, schemaext.Coverage{}, err
-	}
-	groups, err := convertedFacetGroups(destinations, lengths, converted[len(inputs):])
-	if err != nil {
-		return schemaext.Objects{}, schemaext.Coverage{}, err
+	result := make([]Part, len(parts))
+	groups := make([][]schemaext.Facets, len(parts))
+	for i, part := range parts {
+		share := shares[i]
+		result[i], groups[i], err = share.converted(part, converted[:len(share.values)])
+		if err != nil {
+			return nil, err
+		}
+		converted = converted[len(share.values):]
 	}
 	if err := ctx.Err(); err != nil {
-		return schemaext.Objects{}, schemaext.Coverage{}, err
+		return nil, err
 	}
-	for i, group := range groups {
-		*destinations[i] = group
+	for i, part := range parts {
+		for j, group := range groups[i] {
+			*part.Destinations[j] = group
+		}
 	}
-	return convertedObjects, convertedCoverage, nil
+	return result, nil
+}
+
+// partShare is what one part sends to the conversion service: its converted
+// coverage, its objects, and the values of its objects and then of its facet
+// destinations, with the number of facets each destination holds.
+type partShare struct {
+	coverage schemaext.Coverage
+	inputs   []schemaext.Object
+	lengths  []int
+	values   []schemaext.Value
+}
+
+// sharePart reads what part sends to the conversion service.
+func sharePart(ctx context.Context, runtime schemaext.ConversionRuntime, target string, from, to schemaext.Representation, part Part) (partShare, error) {
+	convertedCoverage, err := runtime.Codecs().ConvertCoverage(ctx, from, to, part.Coverage)
+	if err != nil {
+		return partShare{}, err
+	}
+	objects, err := scopeOffTarget(runtime, target, part.Objects)
+	if err != nil {
+		return partShare{}, err
+	}
+	inputs, err := objects.All()
+	if err != nil {
+		return partShare{}, err
+	}
+	share := partShare{coverage: convertedCoverage, inputs: inputs, lengths: make([]int, len(part.Destinations))}
+	for _, input := range inputs {
+		share.values = append(share.values, input.Value)
+	}
+	for j, destination := range part.Destinations {
+		facets, err := destination.Values()
+		if err != nil {
+			return partShare{}, err
+		}
+		share.lengths[j] = len(facets)
+		share.values = append(share.values, facets...)
+	}
+	return share, nil
+}
+
+// converted is the part the converted values of this share make, and the facet
+// groups its destinations take once every part has converted.
+func (s partShare) converted(part Part, values []schemaext.Value) (Part, []schemaext.Facets, error) {
+	for j := range s.inputs {
+		s.inputs[j].Value = values[j]
+	}
+	convertedObjects, err := schemaext.NewObjects(s.inputs...)
+	if err != nil {
+		return Part{}, nil, err
+	}
+	groups, err := convertedFacetGroups(part.Destinations, s.lengths, values[len(s.inputs):])
+	if err != nil {
+		return Part{}, nil, err
+	}
+	return Part{Objects: convertedObjects, Coverage: s.coverage}, groups, nil
 }
 
 // scopeOffTarget leaves out an object the target does not serve, whose owner
