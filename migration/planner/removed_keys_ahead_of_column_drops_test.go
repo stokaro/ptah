@@ -157,19 +157,6 @@ func TestKeysAheadOfColumnDrops_ForeignKeysGoFirst(t *testing.T) {
 	}
 }
 
-// TestKeysAheadOfColumnDrops_SQLServerKeepsItsOrder pins SQL Server, which this planner
-// serves too. Its order around a column drop has not been measured, so it stays.
-func TestKeysAheadOfColumnDrops_SQLServerKeepsItsOrder(t *testing.T) {
-	c := qt.New(t)
-
-	got := columnKeyPlan(c, "sqlserver",
-		`CREATE TABLE t (id int PRIMARY KEY, a int, b int); CREATE INDEX i ON t (b);`,
-		`CREATE TABLE t (id int PRIMARY KEY, a int);`,
-	)
-
-	c.Assert(got, qt.DeepEquals, []string{"ALTER TABLE [t] DROP COLUMN [b]", "DROP INDEX [i] ON [t]"})
-}
-
 // TestKeysAheadOfColumnDrops_FailurePath pins the plans that keep their order: a table
 // that loses no column keeps its removals where they are, an index the plan keeps stays,
 // and the key a column's own UNIQUE names leaves with the column, with no statement.

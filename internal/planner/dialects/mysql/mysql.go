@@ -1315,9 +1315,6 @@ func (p *Planner) addNewIndexes(
 // goes ahead of the column drops: the new index reads only columns the table keeps or
 // has gained by then.
 func (p *Planner) splitIndexAdditions(diff *difftypes.SchemaDiff) (ahead, others difftypes.IndexChanges) {
-	if !p.isMySQLFamily() {
-		return nil, diff.IndexesAdded
-	}
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	losing := keyrelease.TablesLosingColumns(diff, semantics)
 	replacements := indexscope.NewConflictSetWithSemantics(semantics, diff.IndexRemovals())
@@ -1624,10 +1621,9 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	// before the column changes below add that key. Otherwise the server names
 	// the column's key `x_2`, and the next comparison plans the key again.
 	// Steps 6 and 6.7 skip what this drops.
-	released := keyrelease.Find(diff, p.targetDialect()).With(keyrelease.PrimaryKeysUnderColumnChanges(diff, p.targetDialect()))
-	if p.isMySQLFamily() {
-		released = released.With(keyrelease.UnderColumnDrops(diff, p.targetDialect()))
-	}
+	released := keyrelease.Find(diff, p.targetDialect()).
+		With(keyrelease.PrimaryKeysUnderColumnChanges(diff, p.targetDialect())).
+		With(keyrelease.UnderColumnDrops(diff, p.targetDialect()))
 	result = p.releaseKeyNames(result, diff, released)
 
 	result, columnDrops, err := p.modifyExistingTables(result, diff)
