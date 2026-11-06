@@ -103,45 +103,39 @@ var canonicalDefinitions = struct {
 
 const maxCanonicalDefinitions = 4096
 
-// verifiedDefinitions holds the definitions found to be canonical and to
-// match the digest their model claims, by the address and length of their
-// bytes and that digest. A request names the engine whose models it checks,
-// and a validator reaches that engine for every table of a request, so
-// hashing each definition again on every visit made a request of 500 tables
-// spend seconds in SHA-256 alone. A description is validated once per
-// process for each copy of its bytes; a model whose bytes were replaced, or
-// that claims another digest, is checked again. The set holds the bytes it
-// names alive and stops growing at maxCanonicalDefinitions.
+// verifiedDefinitions holds, by the digest a model claims, a copy of the
+// definition found to be canonical and to have that digest. A request names
+// the engine whose models it checks, and a validator reaches that engine for
+// every table of a request, so hashing each definition again on every visit
+// made a request of 500 tables spend seconds in SHA-256 alone. A definition
+// equal to the copy held under its claimed digest is the one checked, whatever
+// bytes hold it: a provider that builds its description for each call, and so
+// new bytes for each model, is checked once per definition, where a set keyed
+// by the address of the bytes filled up and then checked every model again,
+// most of the CPU of a provider's planning of 500 tables. The set stops
+// growing at maxCanonicalDefinitions digests.
 var verifiedDefinitions = struct {
 	sync.RWMutex
-	held map[verifiedDefinition]struct{}
-}{held: make(map[verifiedDefinition]struct{})}
-
-type verifiedDefinition struct {
-	data   *byte
-	length int
-	digest string
-}
+	held map[string][]byte
+}{held: make(map[string][]byte)}
 
 func validateModelDefinition(model *protocol.ValueModel) error {
-	definition := model.GetDefinitionJson()
-	var verified verifiedDefinition
+	definition, digest := model.GetDefinitionJson(), model.GetDefinitionSha256()
 	if len(definition) != 0 {
-		verified = verifiedDefinition{data: &definition[0], length: len(definition), digest: model.GetDefinitionSha256()}
 		verifiedDefinitions.RLock()
-		_, held := verifiedDefinitions.held[verified]
+		held, found := verifiedDefinitions.held[digest]
 		verifiedDefinitions.RUnlock()
-		if held {
+		if found && bytes.Equal(held, definition) {
 			return nil
 		}
 	}
 	if err := checkModelDefinition(model, definition); err != nil {
 		return err
 	}
-	if verified.data != nil {
+	if len(definition) != 0 {
 		verifiedDefinitions.Lock()
-		if len(verifiedDefinitions.held) < maxCanonicalDefinitions {
-			verifiedDefinitions.held[verified] = struct{}{}
+		if _, found := verifiedDefinitions.held[digest]; !found && len(verifiedDefinitions.held) < maxCanonicalDefinitions {
+			verifiedDefinitions.held[digest] = bytes.Clone(definition)
 		}
 		verifiedDefinitions.Unlock()
 	}
