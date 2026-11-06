@@ -62,17 +62,21 @@ func TestTargetChecksAskOncePerQuestion(t *testing.T) {
 }
 
 // The captured features of several tables, checked under one validation, ask
-// for their target once.
+// for their target once and compare the model their coverage names, one
+// message as a request holds it, with the declared one once.
 func TestCapturedFeaturesShareTheAnswersOfTheirValidation(t *testing.T) {
 	c := qt.New(t)
 	description := checkedDescription()
 	request := &protocol.PlanFeaturesRequest{Engine: "fixture", TargetFeatures: []string{"retention"}}
 	checks := new(targetChecks)
+	model := proto.CloneOf(description.Engines[0].ValueModels[0])
 
 	for _, name := range []string{"a", "b", "c"} {
 		captured := &protocol.CapturedFeatures{
 			Objects: &protocol.ComparisonState{Representation: protocol.ValueInput_DESIRED, Coverage: &protocol.ComparisonCoverage{}},
-			Facets: &protocol.ComparisonState{Representation: protocol.ValueInput_DESIRED, Coverage: &protocol.ComparisonCoverage{}, Records: []*protocol.ComparisonRecord{{
+			Facets: &protocol.ComparisonState{Representation: protocol.ValueInput_DESIRED, Coverage: &protocol.ComparisonCoverage{
+				Kinds: []*protocol.ComparisonKindCoverage{{Model: model}},
+			}, Records: []*protocol.ComparisonRecord{{
 				Kind: checkedKind, Subject: &protocol.ComparisonIdentity{Kind: "table", Name: &protocol.ComparisonPart{Source: name, Normalized: name}},
 				Value: checkedValue(description, name),
 			}}},
@@ -81,4 +85,38 @@ func TestCapturedFeaturesShareTheAnswersOfTheirValidation(t *testing.T) {
 	}
 
 	c.Assert(checks.answers, qt.HasLen, 1)
+	c.Assert(checks.same, qt.HasLen, 1)
+}
+
+// A walk for unresolved contexts enters the messages that can hold a
+// normalized value and skips the rest: a value model, which a request's
+// coverage repeats for every table, holds none.
+func TestOnlyHoldersOfNormalizedValuesAreWalked(t *testing.T) {
+	c := qt.New(t)
+	for _, holder := range []proto.Message{&protocol.NormalizedValue{}, &protocol.PlanFeaturesRequest{}, &protocol.ComparisonState{}, &protocol.CapturedFeatures{}} {
+		c.Assert(holdsNormalizedValues(holder.ProtoReflect().Descriptor()), qt.IsTrue, qt.Commentf("%T", holder))
+	}
+	for _, other := range []proto.Message{&protocol.ValueModel{}, &protocol.ComparisonCoverage{}, &protocol.ComparisonIdentity{}, &protocol.Envelope{}} {
+		c.Assert(holdsNormalizedValues(other.ProtoReflect().Descriptor()), qt.IsFalse, qt.Commentf("%T", other))
+	}
+}
+
+// A pair of models compared once is not compared again within a validation,
+// so the answer the validation holds decides; without one, every comparison
+// reads the models.
+func TestCoverageModelsAreComparedOncePerValidation(t *testing.T) {
+	c := qt.New(t)
+	declared := checkedDescription().Engines[0].ValueModels[0]
+	model := proto.CloneOf(declared)
+	checks := new(targetChecks)
+
+	first := checks.sameModel(model, declared)
+	model.CanonicalFormat = "changed after the comparison"
+	again := checks.sameModel(model, declared)
+	var none *targetChecks
+	unheld := none.sameModel(model, declared)
+
+	c.Assert(first, qt.IsTrue)
+	c.Assert(again, qt.IsTrue)
+	c.Assert(unheld, qt.IsFalse)
 }

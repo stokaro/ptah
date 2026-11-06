@@ -165,6 +165,28 @@ func valueTarget(description *protocol.Description, name string, targetFeatures 
 // description changed between two validations is checked again.
 type targetChecks struct {
 	answers []targetAnswer
+	// same holds the pairs of models sameModel compared. The coverage of
+	// every table names the models of its kinds, mostly as one message, and
+	// comparing each definition again for every table was a second of CPU in
+	// a plan of 500 tables.
+	same map[[2]*protocol.ValueModel]bool
+}
+
+// sameModel reports whether model equals declared, comparing each pair once.
+func (c *targetChecks) sameModel(model, declared *protocol.ValueModel) bool {
+	if c == nil {
+		return proto.Equal(model, declared)
+	}
+	pair := [2]*protocol.ValueModel{model, declared}
+	if same, compared := c.same[pair]; compared {
+		return same
+	}
+	if c.same == nil {
+		c.same = make(map[[2]*protocol.ValueModel]bool)
+	}
+	same := proto.Equal(model, declared)
+	c.same[pair] = same
+	return same
 }
 
 // targetAnswer is one answer of [valueTarget] and the question it answered.

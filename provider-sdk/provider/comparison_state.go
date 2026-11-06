@@ -56,7 +56,7 @@ func checkComparisonState(
 	if err := checkComparisonValues(checks, description, request, representation, values); err != nil {
 		return err
 	}
-	return validateComparisonCoverage(description, request, representation, state.GetCoverage())
+	return validateComparisonCoverage(checks, description, request, representation, state.GetCoverage())
 }
 
 func compareComparisonRecords(a, b *protocol.ComparisonRecord) int {

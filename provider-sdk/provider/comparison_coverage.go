@@ -6,12 +6,11 @@ import (
 	"strings"
 
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"google.golang.org/protobuf/proto"
 )
 
 const maxComparisonKnowledgeSources = 256
 
-func validateComparisonCoverage(description *protocol.Description, request *protocol.CompareModelsRequest, representation protocol.ValueInput_Representation, coverage *protocol.ComparisonCoverage) error {
+func validateComparisonCoverage(checks *targetChecks, description *protocol.Description, request *protocol.CompareModelsRequest, representation protocol.ValueInput_Representation, coverage *protocol.ComparisonCoverage) error {
 	if coverage == nil {
 		return fmt.Errorf("%w: comparison coverage must be explicit", ErrProtocol)
 	}
@@ -19,7 +18,7 @@ func validateComparisonCoverage(description *protocol.Description, request *prot
 	for _, record := range coverage.GetKinds() {
 		model := record.GetModel()
 		declared := findValueModel(description, request.GetEngine(), model.GetKind(), representation)
-		if model == nil || declared == nil || !slices.Contains(request.GetKinds(), model.GetKind()) || !proto.Equal(model, declared) || kinds[model.GetKind()] {
+		if model == nil || declared == nil || !slices.Contains(request.GetKinds(), model.GetKind()) || !checks.sameModel(model, declared) || kinds[model.GetKind()] {
 			return fmt.Errorf("%w: unknown, changed, or duplicate comparison coverage model", ErrProtocol)
 		}
 		kinds[model.GetKind()] = true
