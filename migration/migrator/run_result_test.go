@@ -319,3 +319,70 @@ func runSQLiteConnection(c *qt.C, name string) *dbschema.DatabaseConnection {
 	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
 	return conn
 }
+
+// A lost log entry says nothing about the migration. The outcome reads the
+// revision table, so a caller that retried on this document would rerun nothing
+// and bring nothing back.
+func TestNewRunResult_ALostLogEntryKeepsTheOutcome(t *testing.T) {
+	c := qt.New(t)
+	report := &migrator.MigrationLogReport{Written: 2, Lost: []migrator.MigrationLogLoss{{
+		Operation:   "up",
+		Version:     2,
+		VersionKey:  "000002",
+		State:       migrator.MigrationLogStarted,
+		SQLState:    "22001",
+		ErrorNumber: 1406,
+		Message:     "Data too long for column 'actor' at row 1",
+	}}}
+
+	result := migrator.NewRunResult(migrator.RunEvidence{
+		Plan:         &migrator.MigrationPlan{Versions: []int64{1, 2}},
+		After:        &migrator.MigrationStatus{AppliedMigrations: []int64{1, 2}},
+		MigrationLog: report,
+	})
+
+	c.Assert(result.Outcome, qt.Equals, migrator.RunOutcomeApplied)
+	c.Assert(result.Error, qt.IsNil)
+	c.Assert(result.MigrationLog, qt.DeepEquals, report)
+}
+
+// The field names are the contract a caller reads, so they are pinned as text.
+func TestRunResult_NamesTheLostEntriesInTheDocument(t *testing.T) {
+	c := qt.New(t)
+
+	document, err := json.Marshal(migrator.NewRunResult(migrator.RunEvidence{
+		After: &migrator.MigrationStatus{},
+		MigrationLog: &migrator.MigrationLogReport{Written: 1, Lost: []migrator.MigrationLogLoss{{
+			Operation:   "up",
+			Version:     2,
+			VersionKey:  "000002",
+			State:       migrator.MigrationLogApplied,
+			SQLState:    "22001",
+			ErrorNumber: 1406,
+			Message:     "too long",
+		}}},
+	}))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(document), qt.Contains, `"migration_log":{"written":1,"lost":[{"operation":"up","version":2,`+
+		`"version_key":"000002","state":"applied","sqlstate":"22001","error_number":1406,"message":"too long"}]}`)
+}
+
+// Zero entries written is present in the document, which is what separates a run
+// that had nothing to record from a run that keeps no log.
+func TestRunResult_NamesARunWithNothingToRecord(t *testing.T) {
+	c := qt.New(t)
+
+	withLog, err := json.Marshal(migrator.NewRunResult(migrator.RunEvidence{
+		After:        &migrator.MigrationStatus{},
+		MigrationLog: &migrator.MigrationLogReport{},
+	}))
+	c.Assert(err, qt.IsNil)
+	withoutLog, err := json.Marshal(migrator.NewRunResult(migrator.RunEvidence{
+		After: &migrator.MigrationStatus{},
+	}))
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(string(withLog), qt.Contains, `"migration_log":{"written":0}`)
+	c.Assert(string(withoutLog), qt.Not(qt.Contains), "migration_log")
+}

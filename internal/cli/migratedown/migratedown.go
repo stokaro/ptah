@@ -544,6 +544,9 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 
 	preflightHook := downPreflightHook(cmd, opts, runtime, conn, dbURL, resolvedOpts, emit)
 
+	// Last on every path from here, so it follows any line that says success.
+	defer emitLostLogEntries(emit, mig)
+
 	// Run down migrations
 	if err = executeRollback(cmd, buildRollbackExecution(
 		resolvedOpts, opts, mig, preflightHook, conn, rollbackInputs{
@@ -562,6 +565,19 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 		return fmt.Errorf("error getting final migration status: %w", err)
 	}
 
+	emitMigrateDownSummary(emit, opts, targetVersion, migrationsToRollback, finalStatus)
+
+	return nil
+}
+
+// emitMigrateDownSummary says how the rollback ended.
+func emitMigrateDownSummary(
+	emit cliobs.Emitter,
+	opts *options,
+	targetVersion int64,
+	migrationsToRollback []int64,
+	finalStatus *migrator.MigrationStatus,
+) {
 	emit.Println()
 	if opts.dryRun {
 		emit.Println("✅ Dry run completed successfully!")
@@ -569,12 +585,19 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 		if len(migrationsToRollback) > 0 {
 			emit.Printf("Would have rolled back these migrations: %v\n", migrationsToRollback)
 		}
-	} else {
-		emit.Println("✅ Migration rollback completed successfully!")
-		emit.Printf("Database is now at version: %d\n", finalStatus.CurrentVersion)
+		return
 	}
+	emit.Println("✅ Migration rollback completed successfully!")
+	emit.Printf("Database is now at version: %d\n", finalStatus.CurrentVersion)
+}
 
-	return nil
+// emitLostLogEntries tells a person that the migration log did not get
+// everything the rollback tried to write. This command prints no run document,
+// so this and the warnings above it are the whole report.
+func emitLostLogEntries(emit cliobs.Emitter, mig *migrator.Migrator) {
+	if notice := dbcli.LostLogEntriesNotice(mig.MigrationLogReport()); notice != "" {
+		emit.Println(notice)
+	}
 }
 
 // decideConnected refuses, against the server the run reached, the requests

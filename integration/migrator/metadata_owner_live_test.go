@@ -96,6 +96,16 @@ func TestForeignMigrationLogTableDoesNotStopTheMigrationLive(t *testing.T) {
 	applied, err := fixture.migrator.GetAppliedMigrations(t.Context())
 	c.Assert(err, qt.IsNil)
 	c.Assert(applied, qt.DeepEquals, []int64{1})
+
+	// The refusal is warned about once, and every entry it costs is still
+	// reported, each with the reason.
+	report := fixture.migrator.MigrationLogReport()
+	c.Assert(report.Written, qt.Equals, 0)
+	c.Assert(report.Lost, qt.HasLen, 2)
+	c.Assert(report.Lost[0].State, qt.Equals, migrator.MigrationLogStarted)
+	c.Assert(report.Lost[0].Message, qt.Contains, "schema_migrations_log")
+	c.Assert(report.Lost[1].State, qt.Equals, migrator.MigrationLogApplied)
+	c.Assert(report.Lost[1].Message, qt.Contains, "schema_migrations_log")
 }
 
 // foreignMetadataFixture is a scratch database with two login roles: one that
@@ -495,6 +505,11 @@ func TestUnaddressableLogTableNameKeepsTheMigrationLive(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(applied, qt.DeepEquals, []int64{1})
 	c.Assert(fixture.relationExists(c, long+"_log"), qt.IsFalse)
+	report := mig.MigrationLogReport()
+	c.Assert(report.Written, qt.Equals, 0)
+	c.Assert(report.Lost, qt.HasLen, 2)
+	c.Assert(report.Lost[1].State, qt.Equals, migrator.MigrationLogApplied)
+	c.Assert(report.Lost[1].Message, qt.Contains, long)
 }
 
 // A caller that asked for the log is told why, rather than shown the empty

@@ -86,6 +86,13 @@ type RunResult struct {
 	// answered with. It is present only when a statement of a migration was
 	// sent and failed; a run that stopped before any statement ran has none.
 	Failure *RunFailure `json:"failure,omitempty"`
+	// MigrationLog says which of the run's entries reached the migration log and
+	// which did not. It is absent when the run keeps no log: the log is turned
+	// off, the revision format is the Atlas-compatible one, the run is a dry run,
+	// or it failed before the migrator ran, as [RunEvidence.NotStarted] says. A
+	// lost entry does not change Outcome, which reads the revision table and not
+	// the log.
+	MigrationLog *MigrationLogReport `json:"migration_log,omitempty"`
 	// Status is the history after the run, so one document answers both what
 	// was asked and what the database now holds. It is absent when the status
 	// could not be read, which is itself why the outcome is unknown.
@@ -155,6 +162,10 @@ type RunEvidence struct {
 	// failed whether or not a status follows. The zero value claims nothing,
 	// and a failure with no status is then unknown.
 	NotStarted bool
+	// MigrationLog is what the run's writes to the migration log came to, as
+	// [Migrator.MigrationLogReport] returned it. It is nil when the run keeps no
+	// log.
+	MigrationLog *MigrationLogReport
 }
 
 // NewRunResult classifies one run from its own evidence.
@@ -168,6 +179,7 @@ func NewRunResult(evidence RunEvidence) RunResult {
 		ContractVersion: RunContractVersion,
 		Command:         evidence.Command,
 		Direction:       evidence.Direction,
+		MigrationLog:    evidence.MigrationLog,
 		Status:          evidence.After,
 	}
 	if result.Direction == "" {
@@ -286,14 +298,22 @@ func runFailure(err error) *RunFailure {
 		Statement:  statement.StatementIndex,
 		Statements: statement.Total,
 	}
-	if serverErr, ok := errors.AsType[*pgconn.PgError](statement.Err); ok {
-		failure.SQLState = serverErr.Code
+	failure.SQLState, failure.ErrorNumber = serverErrorCodes(statement.Err)
+	return failure
+}
+
+// serverErrorCodes reads the SQLSTATE and the error number a server answered
+// with out of a driver's error. Both are empty when the server gave no answer,
+// and on an engine whose driver error carries neither.
+func serverErrorCodes(err error) (sqlState string, errorNumber int) {
+	if serverErr, ok := errors.AsType[*pgconn.PgError](err); ok {
+		sqlState = serverErr.Code
 	}
-	if serverErr, ok := errors.AsType[*mysqldriver.MySQLError](statement.Err); ok {
-		failure.ErrorNumber = int(serverErr.Number)
+	if serverErr, ok := errors.AsType[*mysqldriver.MySQLError](err); ok {
+		errorNumber = int(serverErr.Number)
 		if serverErr.SQLState != [5]byte{} {
-			failure.SQLState = string(serverErr.SQLState[:])
+			sqlState = string(serverErr.SQLState[:])
 		}
 	}
-	return failure
+	return sqlState, errorNumber
 }
