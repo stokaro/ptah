@@ -63,11 +63,55 @@ func BindSource(ctx context.Context, runtime schemaext.ValueContextRuntime, targ
 	return nil
 }
 
+// Move binds the selected target's desired values in database, bound to the
+// database fromAddress names, to the one toAddress names, and reports whether
+// it moved them. A rehearsal needs it: the target's current schema, read and
+// converted to desired values, is recreated in the dev database, and a value
+// bound to the target is compared and planned nowhere else. It moves nothing,
+// and database is left as it is, when either address resolves to no context,
+// when both resolve to the same one, or when the two read authored references
+// against different roots, where a moved payload could name another object.
+// Failure leaves database unchanged. See [schemaext.ValueContextRequest.From].
+func Move(ctx context.Context, runtime schemaext.ValueContextRuntime, target, fromAddress, toAddress string, database *schemamodel.Database) (bool, error) {
+	if ctx == nil {
+		return false, fmt.Errorf("%w: database binding requires a context", schemaext.ErrInvalidValue)
+	}
+	if database == nil || fromAddress == "" || toAddress == "" || runtime == nil {
+		return false, ctx.Err()
+	}
+	from, err := runtime.ResolveDatabaseContext(ctx, schemaext.DatabaseContextRequest{Target: target, Address: fromAddress})
+	if err != nil {
+		return false, err
+	}
+	to, err := runtime.ResolveDatabaseContext(ctx, schemaext.DatabaseContextRequest{Target: target, Address: toAddress})
+	if err != nil {
+		return false, err
+	}
+	if from.IsZero() || to.IsZero() || from == to || from.SourceDatabase != to.SourceDatabase {
+		return false, nil
+	}
+	objects, err := bind(ctx, runtime, target, schemaext.ValueContextRequest{Context: to, Representation: schemaext.Desired, From: from}, database.FeatureObjects, database.FacetSlots())
+	if err != nil {
+		return false, err
+	}
+	database.FeatureObjects = objects
+	return true, nil
+}
+
 // Bind replaces values only after the complete owner batch succeeds. Values
 // outside the selected target retain their captured state and source bindings.
 func Bind(
 	ctx context.Context, runtime schemaext.ValueContextRuntime, target string, bound schemaext.DatabaseContext,
 	representation schemaext.Representation, objects schemaext.Objects, slots []*schemaext.Facets,
+) (schemaext.Objects, error) {
+	return bind(ctx, runtime, target, schemaext.ValueContextRequest{Context: bound, Representation: representation}, objects, slots)
+}
+
+// bind is [Bind] for a request whose Context, Representation and From are
+// given; the target, the values and their order are bind's own.
+func bind(
+	ctx context.Context, runtime schemaext.ValueContextRuntime, target string, request schemaext.ValueContextRequest,
+	objects schemaext.Objects, slots []*schemaext.Facets,
 ) (schemaext.Objects, error) {
 	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
 		return schemaext.Objects{}, err
@@ -84,7 +128,8 @@ func Bind(
 	for i, value := range capture.values {
 		kinds[i] = value.Kind()
 	}
-	resolved, err := runtime.BindValueContexts(ctx, schemaext.ValueContextRequest{Target: selection.Name(), Context: bound, Representation: representation, Values: capture.values})
+	request.Target, request.Values = selection.Name(), capture.values
+	resolved, err := runtime.BindValueContexts(ctx, request)
 	if err != nil {
 		return schemaext.Objects{}, err
 	}

@@ -1115,6 +1115,12 @@ another context. `engine.SchemaRuntime` includes these services so source loads
 can bind before scope selection and dependency collection. Implementations
 update directly; pre-v1, so compatibility with an incomplete runtime is not owed.
 
+`ValueContextRequest.From` names the context a desired value is bound to when
+the batch moves it to `Context`; an owner that names `From`'s database becomes
+relative, and the payload is kept. The runtime refuses a move of an
+observation, or between two contexts whose `SourceDatabase` differs, before
+dispatch. A rehearsal moves the target's values into its dev realm this way.
+
 `Provider.Conversions` assigns each target and feature kind to one conversion
 service. The provider must own the desired and observed codecs for that kind.
 `Runtime.ConvertFeatures` batches values by registration and preserves their

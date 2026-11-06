@@ -91,7 +91,7 @@ func (p ApplyRuntimePlan) rehearseNativeOnPreparedDev(
 	if err := devclean.Reset(ctx, devConn, baseline); err != nil {
 		return &SimulationError{Stage: "reset", Err: err}
 	}
-	if err := recreateCurrentSchema(ctx, devConn, p.current, baseline, p.runtime); err != nil {
+	if err := recreateCurrentSchema(ctx, devConn, p.current, p.conn.Info().URL, baseline, p.runtime); err != nil {
 		return &SimulationError{Stage: "baseline", Err: err}
 	}
 	plan, err := p.planOnDev(ctx, devConn, baseline, assessments)

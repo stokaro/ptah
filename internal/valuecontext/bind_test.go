@@ -50,7 +50,13 @@ func (b *binder) BindValueContexts(_ context.Context, r schemaext.ValueContextRe
 	return r.Values, nil
 }
 
-func runtime(c *qt.C, b *binder) *engine.Runtime {
+// owner resolves addresses and binds values for the test runtime.
+type owner interface {
+	schemaext.DatabaseContextResolver
+	schemaext.ValueContextService
+}
+
+func runtime(c *qt.C, b owner) *engine.Runtime {
 	c.Helper()
 	var codecs []schemaext.Codec
 	for _, kind := range []schemaext.Kind{objectKind, facetKind} {
@@ -158,4 +164,104 @@ func TestSourceBindingReturnsIndependentFacetCarriers(t *testing.T) {
 			c.Assert(after.(*value).Bound, qt.Equals, "/db")
 		})
 	}
+}
+
+// mover resolves each address to its context in contexts and binds a value by
+// recording the database it is bound to and the one it moved from.
+type mover struct {
+	contexts map[string]schemaext.DatabaseContext
+	fail     bool
+	calls    int
+}
+
+func (m *mover) ResolveDatabaseContext(_ context.Context, r schemaext.DatabaseContextRequest) (schemaext.DatabaseContext, error) {
+	return m.contexts[r.Address], nil
+}
+
+func (m *mover) BindValueContexts(_ context.Context, r schemaext.ValueContextRequest) ([]schemaext.Value, error) {
+	m.calls++
+	for _, input := range r.Values {
+		input.(*value).Bound = r.From.Database + ">" + r.Context.Database
+	}
+	if m.fail {
+		return nil, errors.New("move refused")
+	}
+	return r.Values, nil
+}
+
+func realms() map[string]schemaext.DatabaseContext {
+	return map[string]schemaext.DatabaseContext{
+		"db":    {Database: "/db", SourceDatabase: "/db"},
+		"realm": {Database: "/db/realm", SourceDatabase: "/db"},
+		"other": {Database: "/other", SourceDatabase: "/other"},
+	}
+}
+
+// A move binds the selected target's values, objects and facets alike, from
+// the context the first address names to the one the second names.
+func TestMove_HappyPath(t *testing.T) {
+	t.Parallel()
+	c := qt.New(t)
+	m := &mover{contexts: realms()}
+	database := source(c)
+
+	moved, err := valuecontext.Move(c.Context(), runtime(c, m), "selected", "db", "realm", database)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(moved, qt.IsTrue)
+	objects, err := database.FeatureObjects.All()
+	c.Assert(err, qt.IsNil)
+	c.Assert(objects[0].Value.(*value).Bound, qt.Equals, "/db>/db/realm")
+	c.Assert(objects[1].Value.(*value).Bound, qt.Equals, "")
+	facet, _, err := database.Tables[0].Facets.Get(facetKind)
+	c.Assert(err, qt.IsNil)
+	c.Assert(facet.(*value).Bound, qt.Equals, "/db>/db/realm")
+}
+
+// Nothing moves, and the source is left as it is, where there is nothing to
+// move between: a missing address, one context, or two roots a moved
+// reference would be read against differently.
+func TestMoveLeavesTheSource_HappyPath(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct{ name, from, to string }{
+		{name: "the same context", from: "realm", to: "realm"},
+		{name: "another root", from: "db", to: "other"},
+		{name: "no target address", from: "", to: "realm"},
+		{name: "no dev address", from: "db", to: ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			c := qt.New(t)
+			m := &mover{contexts: realms()}
+			database := source(c)
+
+			moved, err := valuecontext.Move(c.Context(), runtime(c, m), "selected", test.from, test.to, database)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(moved, qt.IsFalse)
+			c.Assert(m.calls, qt.Equals, 0)
+			objects, err := database.FeatureObjects.All()
+			c.Assert(err, qt.IsNil)
+			c.Assert(objects[0].Value.(*value).Bound, qt.Equals, "")
+		})
+	}
+}
+
+// A refused move leaves the objects and the facets as they were.
+func TestMove_FailurePath(t *testing.T) {
+	t.Parallel()
+	c := qt.New(t)
+	m := &mover{contexts: realms(), fail: true}
+	database := source(c)
+
+	moved, err := valuecontext.Move(c.Context(), runtime(c, m), "selected", "db", "realm", database)
+
+	c.Assert(err, qt.ErrorMatches, "move refused")
+	c.Assert(moved, qt.IsFalse)
+	objects, err := database.FeatureObjects.All()
+	c.Assert(err, qt.IsNil)
+	c.Assert(objects[0].Value.(*value).Bound, qt.Equals, "")
+	facet, _, err := database.Tables[0].Facets.Get(facetKind)
+	c.Assert(err, qt.IsNil)
+	c.Assert(facet.(*value).Bound, qt.Equals, "")
 }

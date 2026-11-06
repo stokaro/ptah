@@ -94,6 +94,7 @@ a new record that names it, and its own status line is updated to point there.
 | [0082](0082-a-call-validates-its-request-once-on-each-side.md) | A call validates its request once on each side | Proposed |
 | [0083](0083-a-list-of-coverage-kinds-travels-once-per-message.md) | A list of coverage kinds travels once per message | Proposed |
 | [0084](0084-a-captured-claim-names-a-providers-model-by-the-identity-the-provider-owns.md) | A captured claim names a provider's model by the identity the provider owns | Proposed |
+| [0085](0085-a-rehearsal-moves-the-targets-values-into-its-dev-realm.md) | A rehearsal moves the target's values into its dev realm | Proposed |
 
 ## Writing one
 
