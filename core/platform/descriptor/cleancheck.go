@@ -41,6 +41,12 @@ type CleanCheck struct {
 	// writer's reset would drop alone, as the writer lists it, with no
 	// catalog query. The first object listed refuses the database.
 	ResetListing bool `json:"reset_listing,omitempty"`
+	// ResetsEverySchema reports that a rehearsal's reset empties every user
+	// schema of the dev database, on an engine whose URL selects no schema and
+	// whose check judges them all. A reset of the connected schema alone would
+	// leave what the rehearsal created in another one, and the next claim would
+	// refuse the database over it.
+	ResetsEverySchema bool `json:"resets_every_schema,omitempty"`
 	// StartingPoint reports that a dev database an atlas.hcl docker block
 	// provisioned is not judged: the claim records the state the block
 	// leaves, and every reset returns the database to it.
@@ -62,6 +68,9 @@ func (d Dialect) validateCleanCheck() error {
 	case check.Tables != "" && check.ResetListing:
 		return fmt.Errorf("%w: dialect %q: a clean check that reads the reset listing states no tables query",
 			ErrInvalidDescriptor, d.Name)
+	case check.ResetsEverySchema && selects:
+		return fmt.Errorf("%w: dialect %q: a clean check resets the scope the URL selects by %q, not every schema",
+			ErrInvalidDescriptor, d.Name, d.Schemas.Selection)
 	case check.AdoptionCounts && !check.Adoption:
 		return fmt.Errorf("%w: dialect %q: a counted adoption refusal needs a refused adoption",
 			ErrInvalidDescriptor, d.Name)

@@ -67,8 +67,9 @@ func summary(contributions []plangraph.Contribution[featureplan.Operation]) []st
 // TestPlanPolicies_Steps pins the operation each change becomes: a creation, a
 // drop, a replacement in one step that needs a transaction, a comment set
 // after a creation or a replacement, a comment alone, and a table's switches.
-// Every step asks for the dependent phase, reads its table and the roles its
-// policy names, and writes the switches under their own subject.
+// A drop asks for the lifecycle phase and every other step for the dependent one.
+// Each reads its table and the roles its policy names, and writes the switches
+// under their own subject.
 func TestPlanPolicies_Steps(t *testing.T) {
 	commented := restrictiveDeclared
 	commented.Comment = "tenants"
@@ -89,7 +90,7 @@ func TestPlanPolicies_Steps(t *testing.T) {
 				"policy/000000/comment *pgpolicy.PolicyCommentOperation alter " + policy + ", read " + table + " allowed dependent",
 			}},
 		{name: "a drop", change: policyChange("tenant", &restrictiveObserved, nil, false), strategy: "drop the policy",
-			want: []string{"policy/000000 *pgpolicy.PolicyOperation drop " + policy + ", read " + table + " allowed dependent"}},
+			want: []string{"policy/000000 *pgpolicy.PolicyOperation drop " + policy + ", read " + table + " allowed lifecycle"}},
 		{name: "a replacement", change: policyChange("tenant", &permissiveObserved, &selectOnly, false),
 			strategy: "drop the policy and create it again in one transaction; its command or composition changes, or a clause is removed",
 			want:     []string{"policy/000000 *pgpolicy.PolicyOperation alter " + policy + ", read " + table + ", read role reader required dependent"}},
@@ -174,6 +175,64 @@ func TestPlanPolicies_OrdersATableByAccess(t *testing.T) {
 	c.Assert(slices.ContainsFunc(result.Contributions[0].Dependencies, func(edge plangraph.Dependency) bool {
 		return edge.Before.Name == "table-state/000006" || edge.After.Name == "table-state/000006"
 	}), qt.IsFalse)
+}
+
+// TestPlanPolicies_DropsAheadOfColumnChanges pins which drops ask for the lifecycle
+// phase, the one ahead of the column changes. A drop stays in the dependent phase
+// where the access order puts another step of its table before it.
+func TestPlanPolicies_DropsAheadOfColumnChanges(t *testing.T) {
+	otherTable := policyChange("narrow", nil, &restrictiveDeclared, false)
+	otherTable.Subject = pgpolicy.PolicyRef("app", "invoices", "narrow")
+	tests := []struct {
+		name    string
+		changes []schemaext.ChangeRecord
+		want    map[string]featureplan.Phase
+	}{
+		{
+			name:    "a restrictive drop alone",
+			changes: []schemaext.ChangeRecord{policyChange("old", &restrictiveObserved, nil, false)},
+			want:    map[string]featureplan.Phase{"policy/000000": featureplan.PhaseLifecycle},
+		},
+		{
+			name: "a permissive drop goes ahead of the policy that replaces it",
+			changes: []schemaext.ChangeRecord{
+				policyChange("old", &permissiveObserved, nil, false),
+				policyChange("new", nil, &permissiveDeclared, false),
+			},
+			want: map[string]featureplan.Phase{"policy/000000": featureplan.PhaseLifecycle, "policy/000001": featureplan.PhaseDependent},
+		},
+		{
+			name: "a restrictive drop waits for the policy that replaces it",
+			changes: []schemaext.ChangeRecord{
+				policyChange("old", &restrictiveObserved, nil, false),
+				policyChange("new", nil, &restrictiveDeclared, false),
+			},
+			want: map[string]featureplan.Phase{"policy/000000": featureplan.PhaseDependent, "policy/000001": featureplan.PhaseDependent},
+		},
+		{
+			name: "a narrower step of another table does not hold a drop",
+			changes: []schemaext.ChangeRecord{
+				policyChange("old", &restrictiveObserved, nil, false),
+				otherTable,
+			},
+			want: map[string]featureplan.Phase{"policy/000000": featureplan.PhaseLifecycle, "policy/000001": featureplan.PhaseDependent},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			result, err := newRuntime(c).PlanFeatures(t.Context(), planning(test.changes...))
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(result.Contributions, qt.HasLen, 1)
+			got := make(map[string]featureplan.Phase)
+			for _, step := range result.Contributions[0].Steps {
+				got[step.ID.Name] = step.Payload.Phase
+			}
+			c.Assert(got, qt.DeepEquals, test.want)
+		})
+	}
 }
 
 // TestPlanPolicies_AccountsForATablesOperation pins the receipts for a table

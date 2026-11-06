@@ -46,9 +46,23 @@ import (
 // objects and facets use its batched conversion service; a failed conversion
 // returns no schema.
 func ToDBSchema(ctx context.Context, db *schemamodel.Database, dialect string, runtime Runtime) (*catalog.Database, error) {
-	if db == nil {
-		db = &schemamodel.Database{}
+	converted, err := ToDBSchemas(ctx, []*schemamodel.Database{db}, dialect, runtime)
+	if err != nil {
+		return nil, err
 	}
+	return converted[0], nil
+}
+
+// ToDBSchemas converts each database as [ToDBSchema] converts it alone, and
+// asks the target's creation projection and conversion services once for all
+// of them rather than once for each. Both services predict and convert each
+// table and each value on its own, so sharing the calls changes no database's
+// result; a migration that projects the removal of each table it creates
+// converts one document per table, and through a provider each call is a round
+// trip. The databases must not declare the same table, which a target refuses
+// in one batch. The result holds one database per input, in order; an error
+// returns none.
+func ToDBSchemas(ctx context.Context, dbs []*schemamodel.Database, dialect string, runtime Runtime) ([]*catalog.Database, error) {
 	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
 		return nil, err
 	}
@@ -57,18 +71,53 @@ func ToDBSchema(ctx context.Context, db *schemamodel.Database, dialect string, r
 		return nil, err
 	}
 	dialect = selected.Name()
-	db, prepared, err := prepareSourceTables(ctx, db, dialect, runtime)
+	sources := make([]*schemamodel.Database, len(dbs))
+	for i, db := range dbs {
+		if db == nil {
+			db = &schemamodel.Database{}
+		}
+		sources[i] = db
+	}
+	declared, prepared, err := prepareSourceTableSets(ctx, sources, dialect, runtime)
 	if err != nil {
 		return nil, err
 	}
+	outs := make([]*catalog.Database, len(declared))
+	parts := make([]features.Part, len(declared))
+	for i := range declared {
+		db, out, err := describeDatabase(ctx, declared[i], prepared[i], dialect, runtime)
+		if err != nil {
+			return nil, err
+		}
+		outs[i] = out
+		parts[i] = features.Part{Objects: db.FeatureObjects, Coverage: db.FeatureCoverage, Destinations: out.FacetSlots()}
+	}
+	converted, err := features.ConvertParts(ctx, runtime, dialect, schemaext.Desired, schemaext.Observed, parts)
+	if err != nil {
+		return nil, err
+	}
+	for i, out := range outs {
+		out.FeatureObjects, out.FeatureCoverage = converted[i].Objects, converted[i].Coverage
+		if err := applyCreationObservations(out, prepared[i], identifier.ForDialect(dialect), dialect); err != nil {
+			return nil, err
+		}
+	}
+	return outs, nil
+}
+
+// describeDatabase lowers a database whose tables are prepared and describes
+// it the way the target's reader would, every feature value still in its
+// desired representation. It returns the lowered database, whose feature values
+// the caller converts into the description's facet slots.
+func describeDatabase(ctx context.Context, db *schemamodel.Database, prepared []schemaprojection.TableCreation, dialect string, runtime Runtime) (*schemamodel.Database, *catalog.Database, error) {
 	// A document converted to stand for a database holds what the target's
 	// reader would report, such as the unique index YDB holds for a UNIQUE
 	// constraint. No database is read, so nothing is adopted from one.
-	db, err = runtime.LowerDesired(ctx, schemapreparation.LoweringRequest{
+	db, err := runtime.LowerDesired(ctx, schemapreparation.LoweringRequest{
 		Target: dialect, Desired: db, Capabilities: capability.ForDialect(dialect), Semantics: identifier.ForDialect(dialect),
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	// A target without standalone enums builds an enum column inline, and a
 	// read reports what it built: enum('a','b') on MySQL and MariaDB, a text
@@ -86,7 +135,7 @@ func ToDBSchema(ctx context.Context, db *schemamodel.Database, dialect string, r
 	}
 	readBack, err := runtime.ReadBack(dialect)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	out := &catalog.Database{
@@ -120,17 +169,9 @@ func ToDBSchema(ctx context.Context, db *schemamodel.Database, dialect string, r
 	applyConstraintPrimaryKeys(out)
 	applyPreparedColumnKeys(out, prepared)
 	if err := features.RequireFacetPreservation(db.FacetSlots(), out.FacetSlots()); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	objects, coverage, err := features.Convert(ctx, runtime, dialect, schemaext.Desired, schemaext.Observed, db.FeatureObjects, db.FeatureCoverage, out.FacetSlots())
-	if err != nil {
-		return nil, err
-	}
-	out.FeatureObjects, out.FeatureCoverage = objects, coverage
-	if err := applyCreationObservations(out, prepared, identifier.ForDialect(dialect), dialect); err != nil {
-		return nil, err
-	}
-	return out, nil
+	return db, out, nil
 }
 
 func toDBSchemas(schemas []schemamodel.Schema) []catalog.Schema {

@@ -48,9 +48,10 @@ func newBaselineGuard(guard *ReplayGuard) *BaselineGuard {
 // them on the dev database: a native plan is made again there, and refused if
 // it is not the target's. Written there, they end with the run. A schema the
 // reset keeps goes back to its claimed comment and access list, and any other
-// schema is dropped. A migration replay stays refused, because its statements
-// are not Ptah's own, and so does a dev database whose reset does not return
-// them.
+// schema is dropped. A dev database whose reset does not return them stays
+// refused. A migration replay takes the comment on the same terms, whoever wrote
+// it, and stays refused on the privilege; see
+// [ReplayGuard.WithSchemaCommentReturned].
 func (g *BaselineGuard) WithSchemaStateReturned(returned bool) *BaselineGuard {
 	return &BaselineGuard{replay: g.replay.WithSchemaStateReturned(returned)}
 }

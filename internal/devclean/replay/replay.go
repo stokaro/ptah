@@ -44,6 +44,11 @@ type Scope struct {
 	// own comment and privileges then stay in the dev database and end with the
 	// run.
 	SchemaStateReturned bool
+	// SchemaCommentReturned reports that a migration replay runs the statement
+	// on a dev database whose every reset does the same. A comment on a schema
+	// then ends with the run, whoever wrote it. A privilege on a schema stays
+	// refused in a replay, because it depends on the server's roles.
+	SchemaCommentReturned bool
 }
 
 // Guard refuses a statement whose effects cannot be confined to a scope. It

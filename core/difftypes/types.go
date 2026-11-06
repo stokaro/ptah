@@ -989,11 +989,12 @@ type SchemaDiff struct {
 	// It is read by [ptah.run/internal/planner/schemaprecondition.Node],
 	// which is the one place that turns a needed schema name into a creation.
 	DeclaredSchemas []schemamodel.Schema `json:"-"`
-	// HeldSchemas names the schemas the read of the current database found. A
+	// HeldSchemas names the schemas the database holds when the plan runs: what
+	// the read found and, for a rollback, what the forward plan leaves of it. A
 	// plan in the exact statement style creates no schema named here: an added
 	// object in it needs no precondition, and a creation would read as a new
-	// schema. It is empty for a comparison with no read, such as a rollback, which
-	// says nothing about a schema.
+	// schema. It is empty for a comparison with no read, which says nothing about
+	// a schema.
 	HeldSchemas []string `json:"-"`
 
 	// DeclaredViewLikes is every view and materialized view the declaration
@@ -1841,6 +1842,14 @@ type ColumnDiff struct {
 	// set. A reversal runs against the same database and carries the same
 	// value.
 	CurrentSequenceRestart string `json:"current_sequence_restart,omitempty"`
+
+	// OwnedDefaultSequence names the sequence the column's default draws from
+	// when the default changes, where the column also owns that sequence and the
+	// plan keeps it. It is empty otherwise. CockroachDB answers such a change with
+	// an internal error while the sequence has that owner, so a planner for it
+	// detaches the sequence and attaches it again around the change. A reversal
+	// starts from the other default and carries none.
+	OwnedDefaultSequence string `json:"owned_default_sequence,omitempty"`
 
 	// Desired is the column as the declaration writes it, with embedded fields
 	// already folded in.

@@ -135,7 +135,10 @@ setting.
 Omitted YDB coordination nodes remain unmanaged unless the document explicitly
 claims a complete namespace. Ptah exports that claim in a versioned
 `// ptah:feature-coverage` header. Keep the header when editing the export;
-incompatible model definitions and duplicate accounts are refused. See
+incompatible model definitions and duplicate accounts are refused. A header
+that names an earlier identity of the model, such as one the YDB engine built
+into earlier Ptah releases exported, reads as the same claim when the provider
+names that identity as a predecessor, as the YDB provider does. See
 [coordination nodes](https://github.com/stokaro/ptah-ydb-plugin#native-coordination-planning-and-execution) for declaration
 and limit semantics.
 
@@ -253,7 +256,7 @@ Ptah's generated HCL uses that spelling. CockroachDB likewise refuses its exact
 or `schema "CRDB_INTERNAL" {}` remain user schemas.
 
 A `schema` block with nothing in it declares the schema, so a plan on PostgreSQL,
-CockroachDB, YugabyteDB or Spanner creates it when the database lacks it. A plan
+CockroachDB, YugabyteDB, Spanner or SQL Server creates it when the database lacks it. A plan
 never creates the schema the connection resolved, and never drops a schema the
 document does not mention.
 

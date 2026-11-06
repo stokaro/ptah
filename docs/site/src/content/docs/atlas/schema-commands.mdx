@@ -1105,8 +1105,8 @@ plan: `does not support inspected schema views`.
 
 ### A schema with nothing in it
 
-On PostgreSQL, CockroachDB, YugabyteDB and Spanner, a schema the document declares
-and the database lacks is created, whether or not anything is in it. Measured on
+On PostgreSQL, CockroachDB, YugabyteDB, Spanner and SQL Server, a schema the document
+declares and the database lacks is created, whether or not anything is in it. Measured on
 the pinned community binary v1.3.0 and PostgreSQL 18, with `schema apply`:
 
 | The document and the database | Community binary | `ptah-compat` |

@@ -250,10 +250,12 @@ func TestDeclaredCommonObjects_FailurePath(t *testing.T) {
 	}
 }
 
-// TestCommonSchemaPlacesCommonObjectsAroundTables creates the roles before
-// the tables, sets a table's comments after its creation, and creates the
-// views, in dependency order, the memberships, the grants and the revocations
-// after the tables.
+// TestCommonSchemaPlacesCommonObjectsAroundTables creates the roles and then
+// the memberships before the tables, as a built-in engine's render does, sets
+// a table's comments after its creation, and creates the views, in dependency
+// order, the grants and the revocations after the tables. The YDB engine
+// built into Ptah at 74de0b65b wrote `ALTER GROUP ... ADD USER` right after
+// its CREATE USER statements in the same way.
 func TestCommonSchemaPlacesCommonObjectsAroundTables(t *testing.T) {
 	c := qt.New(t)
 	schema := &schemamodel.Database{
@@ -274,12 +276,12 @@ func TestCommonSchemaPlacesCommonObjectsAroundTables(t *testing.T) {
 	c.Assert(nodes, qt.CmpEquals(), []ast.Node{
 		ast.NewCreateRole("reader").SetInherit(false),
 		ast.NewCreateRole("readers").SetInherit(false).SetGroup(true),
+		ast.NewGrantRoleMembership("readers", "reader"),
 		&ast.CreateTableNode{Name: "items", Columns: []*ast.ColumnNode{{Name: "id", Type: "INTEGER", Primary: true}}},
 		commentStep("items", "", "the items"),
 		commentStep("items", "id", "the key"),
 		ast.NewCreateView("recent").SetBody("SELECT id FROM items"),
 		ast.NewCreateView("summary").SetBody("SELECT * FROM recent"),
-		ast.NewGrantRoleMembership("readers", "reader"),
 		ast.NewGrantPrivilege("reader", "TABLE", "items", []string{"SELECT"}),
 		ast.NewRevokePrivilege("readers", "TABLE", "items", []string{"DELETE"}),
 	})

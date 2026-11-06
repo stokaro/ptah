@@ -95,3 +95,21 @@ func TestCompatProviderTextUnitsInApply_HappyPath(t *testing.T) {
 	c.Assert(out, qt.Not(qt.Contains), "Native operation:")
 	f.assertStopped(c)
 }
+
+// TestCompatProviderUnitsNameTheirChange_HappyPath reads the comment above a
+// provider's statement on both verbs that print it: a reader of schema diff sees
+// the same comment on schema apply.
+func TestCompatProviderUnitsNameTheirChange_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	f, desired := compatOperationsFixture(c, "native-text", `CREATE TABLE "items" ("id" INTEGER NOT NULL PRIMARY KEY, "added" REAL)`)
+	const want = "-- Modify \"items\" table\nALTER TABLE \"items\" ADD COLUMN \"added\" REAL;\n"
+
+	diffed, stderr, code := f.run(f.withManifest(), "schema", "diff", "--from", f.address, "--to", desired)
+	c.Assert(code, qt.Equals, 0, qt.Commentf("%s", stderr))
+	previewed, stderr, code := f.run(f.withManifest(), "schema", "apply", "--url", f.address, "--to", desired, "--tx-mode", "none", "--dry-run")
+	c.Assert(code, qt.Equals, 0, qt.Commentf("%s", stderr))
+
+	c.Assert(diffed, qt.Contains, want)
+	c.Assert(previewed, qt.Contains, want)
+	f.assertStopped(c)
+}

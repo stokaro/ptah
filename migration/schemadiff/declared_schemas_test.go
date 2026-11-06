@@ -112,9 +112,8 @@ func TestCompareDeclaredSchemas_HappyPath(t *testing.T) {
 // TestCompareDeclaredSchemas_ByEngine pins which engines the rule reaches. Where a
 // schema is a namespace, it does. MySQL and MariaDB answer through a whole-server
 // comparison and refuse a document naming another database under a URL naming
-// one. SQL Server's reader reports no schemas yet, so every declared one would
-// read as absent. ClickHouse's planner has no statement for it, and SQLite and
-// Oracle have no schema to create.
+// one. ClickHouse's planner has no statement for it, and SQLite and Oracle have
+// no schema to create.
 func TestCompareDeclaredSchemas_ByEngine(t *testing.T) {
 	app := schemamodel.Schema{Name: "app"}
 	tests := []struct {
@@ -127,7 +126,7 @@ func TestCompareDeclaredSchemas_ByEngine(t *testing.T) {
 		{dialect: platform.Spanner, want: []schemamodel.Schema{app}},
 		{dialect: platform.MySQL},
 		{dialect: platform.MariaDB},
-		{dialect: platform.SQLServer},
+		{dialect: platform.SQLServer, want: []schemamodel.Schema{app}},
 		{dialect: platform.ClickHouse},
 		{dialect: platform.SQLite},
 		{dialect: platform.Oracle},

@@ -127,7 +127,11 @@ step reads the table and creates or drops one index of it. It carries no
 operand: the provider reads the declared index from the desired table and the
 held one from the current table. A removal comes before the additions, so a
 changed index is dropped before it is created again under the same name.
-Without the feature, index changes are refused.
+Where the engine's identifier rules scope an index name to its table, the
+plan creates its new tables first and then drops and renames the indexes of
+the tables it keeps; where a schema holds index names, the removals come
+first, so a new table may take a dropped index's name. Without the feature,
+index changes are refused.
 
 With `planning.index-renames` as well, a provider renames an index in place.
 When its session reports `index_rename`, the comparison pairs an index the
@@ -229,9 +233,12 @@ standalone objects and assigned table children. This path requires
 session and makes no claim about objects that already exist.
 
 The host joins every contribution with its common creation steps before asking
-for SQL text. A missing receipt, an unclaimed table creation, a dependency cycle,
-or a provider refusal returns no SQL prefix. A provider-only operation without
-a text form cannot appear in a rendered schema.
+for SQL text. A grant or a revocation on an object a declaration planner
+creates comes after every other statement, because the planner may create the
+object after the common steps; the other grants keep their place. A missing
+receipt, an unclaimed table creation, a dependency cycle, or a provider refusal
+returns no SQL prefix. A provider-only operation without a text form cannot
+appear in a rendered schema.
 
 Declared rows (`//ptah:schema:data`) and seed files reach a provider through
 four services. The host keeps the row diff, the order across tables, protected
@@ -464,8 +471,9 @@ the provider keeps without running it is best effort and carries the reason. The
 host refuses a description that claims testing nothing runs.
 `ptah providers check` prints the lines a provider declares, and
 `ptah db capabilities` certifies a server against them: the line its version
-names gives the preset its label and the support level, and the line's facts
-are the baseline the server's own answers are compared with.
+names gives the preset its name, which is the line's label, and the support
+level, and the line's facts are the baseline the server's own answers are
+compared with. The release line prints as the line alone.
 
 [Issue #4204](https://github.com/stokaro/ptah/issues/4204)
 owns official provider extraction, installation, and the eventual stable contract.
@@ -1090,10 +1098,12 @@ planning still refuses role and grant mutations.
 
 Native grants and revocations follow the declared lifecycle of their target.
 They retain their order relative to principal changes and other access changes
-on the same object. Unrelated table changes do not fix their position: a
-provider can replace an input table, restart its dependent object, and then
-grant access to that object in one plan. The complete graph still refuses
-missing footprints, conflicting dependencies and unordered writes.
+on the same object. Each one still runs after the common statements ahead of
+it, so the grants of a plan keep their order unless a target's lifecycle moves
+one later. The common statements after it do not wait for it: a provider can
+replace an input table, restart its dependent object, and then grant access to
+that object in one plan. The complete graph still refuses missing footprints,
+conflicting dependencies and unordered writes.
 
 ## Resolve failures
 
@@ -1196,6 +1206,15 @@ the objects it leaves out, so it claims nothing of the provider's models and a
 plan from it drops none of their objects. Ptah reads a captured
 `ptah:feature-coverage` header with the provider's model definitions; the
 provider takes no part in it.
+
+`models.predecessors` lets an engine name, in `model_predecessors`, the
+identities its models had before it owned them: an owner, a kind, a schema
+version and a definition digest. Ptah reads a claim a captured header makes
+under one of them as the same claim of the engine's model, so an HCL file
+another owner of the model exported keeps the meaning it was written with. The
+YDB provider names the coordination-node model of the YDB engine built into
+earlier Ptah releases this way. A file Ptah cuts the document into names the
+model's current identity.
 
 `source.hcl-platform` lets an engine claim a table's `platform` block whose
 label is the engine's ID or one of its aliases, such as `platform "ydb"`. Each

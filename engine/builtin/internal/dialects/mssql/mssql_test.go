@@ -31,7 +31,7 @@ func TestRenderer_CreateTableUsesTSQLIdentityAndBrackets(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Equals, ""+
 		"CREATE TABLE [dbo].[order] (\n"+
-		"  [id] INT IDENTITY(1,1) PRIMARY KEY,\n"+
+		"  [id] INT IDENTITY(1,1) CONSTRAINT [order_pkey] PRIMARY KEY,\n"+
 		"  [status] NVARCHAR(255) NOT NULL DEFAULT 'pending',\n"+
 		"  [user_id] INT NOT NULL,\n"+
 		"  CONSTRAINT [fk_order_user] FOREIGN KEY ([user_id]) REFERENCES [dbo].[user] ([id]) ON DELETE CASCADE,\n"+

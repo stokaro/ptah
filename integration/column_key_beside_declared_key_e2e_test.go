@@ -32,13 +32,16 @@ var columnKeyBesideDeclaredKey = []struct {
 	migration string
 	schema    string
 	want      map[string]string
+	// native is what `ptah schema apply` writes, which keeps the planner's spelling.
+	native map[string]string
 }{
 	{
 		name:      "a named UNIQUE",
 		engines:   mysqlFamilyUniqueEngines,
 		migration: `CREATE TABLE c (id int PRIMARY KEY, a int, CONSTRAINT uq_a UNIQUE (a));`,
 		schema:    `CREATE TABLE c (id int PRIMARY KEY, a int UNIQUE, CONSTRAINT uq_a UNIQUE (a));`,
-		want:      map[string]string{"MySQL": "MODIFY COLUMN `a` int UNIQUE", "MariaDB": "MODIFY COLUMN `a` int UNIQUE"},
+		want:      map[string]string{"MySQL": "MODIFY COLUMN `a` int NULL UNIQUE", "MariaDB": "MODIFY COLUMN `a` int NULL UNIQUE"},
+		native:    map[string]string{"MySQL": "MODIFY COLUMN `a` int UNIQUE", "MariaDB": "MODIFY COLUMN `a` int UNIQUE"},
 	},
 	{
 		name:    "a unique index",
@@ -48,6 +51,10 @@ CREATE UNIQUE INDEX ux ON c (a);`,
 		schema: `CREATE TABLE c (id int PRIMARY KEY, a int UNIQUE);
 CREATE UNIQUE INDEX ux ON c (a);`,
 		want: map[string]string{
+			"MySQL": "MODIFY COLUMN `a` int NULL UNIQUE", "MariaDB": "MODIFY COLUMN `a` int NULL UNIQUE",
+			"PostgreSQL": `ADD CONSTRAINT "c_a_key" UNIQUE ("a")`,
+		},
+		native: map[string]string{
 			"MySQL": "MODIFY COLUMN `a` int UNIQUE", "MariaDB": "MODIFY COLUMN `a` int UNIQUE",
 			"PostgreSQL": `ADD CONSTRAINT "c_a_key" UNIQUE ("a")`,
 		},
@@ -60,6 +67,10 @@ ALTER TABLE c ADD CONSTRAINT uq_a UNIQUE (a);`,
 		schema: `CREATE TABLE c (id int PRIMARY KEY, a int UNIQUE);
 ALTER TABLE c ADD CONSTRAINT uq_a UNIQUE (a);`,
 		want: map[string]string{
+			"MySQL": "MODIFY COLUMN `a` int NULL UNIQUE", "MariaDB": "MODIFY COLUMN `a` int NULL UNIQUE",
+			"PostgreSQL": `ADD CONSTRAINT "c_a_key" UNIQUE ("a")`,
+		},
+		native: map[string]string{
 			"MySQL": "MODIFY COLUMN `a` int UNIQUE", "MariaDB": "MODIFY COLUMN `a` int UNIQUE",
 			"PostgreSQL": `ADD CONSTRAINT "c_a_key" UNIQUE ("a")`,
 		},
@@ -71,7 +82,8 @@ ALTER TABLE c ADD CONSTRAINT uq_a UNIQUE (a);`,
 ALTER TABLE c ADD CONSTRAINT uq_a UNIQUE (a), ADD CONSTRAINT uq_b UNIQUE (b);`,
 		schema: `CREATE TABLE c (id int PRIMARY KEY, a int UNIQUE, b int UNIQUE);
 ALTER TABLE c ADD CONSTRAINT uq_a UNIQUE (a), ADD CONSTRAINT uq_b UNIQUE (b);`,
-		want: map[string]string{"PostgreSQL": `ADD CONSTRAINT "c_b_key" UNIQUE ("b")`},
+		want:   map[string]string{"PostgreSQL": `ADD CONSTRAINT "c_b_key" UNIQUE ("b")`},
+		native: map[string]string{"PostgreSQL": `ADD CONSTRAINT "c_b_key" UNIQUE ("b")`},
 	},
 	{
 		name:      "two columns, each beside a named UNIQUE",
@@ -79,7 +91,8 @@ ALTER TABLE c ADD CONSTRAINT uq_a UNIQUE (a), ADD CONSTRAINT uq_b UNIQUE (b);`,
 		migration: `CREATE TABLE c (id int PRIMARY KEY, a int, b int, CONSTRAINT uq_a UNIQUE (a), CONSTRAINT uq_b UNIQUE (b));`,
 		schema: `CREATE TABLE c (id int PRIMARY KEY, a int UNIQUE, b int UNIQUE,
   CONSTRAINT uq_a UNIQUE (a), CONSTRAINT uq_b UNIQUE (b));`,
-		want: map[string]string{"MySQL": "MODIFY COLUMN `b` int UNIQUE", "MariaDB": "MODIFY COLUMN `b` int UNIQUE"},
+		want:   map[string]string{"MySQL": "MODIFY COLUMN `b` int NULL UNIQUE", "MariaDB": "MODIFY COLUMN `b` int NULL UNIQUE"},
+		native: map[string]string{"MySQL": "MODIFY COLUMN `b` int UNIQUE", "MariaDB": "MODIFY COLUMN `b` int UNIQUE"},
 	},
 }
 
@@ -127,7 +140,7 @@ func TestSchemaApplyAddsAColumnKeyBesideADeclaredKeyE2E(t *testing.T) {
 				applied := runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", schema, "--auto-approve")
 				again := runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", schema, "--dry-run")
 
-				c.Assert(applied, qt.Contains, test.want[engine.name])
+				c.Assert(applied, qt.Contains, test.native[engine.name])
 				c.Assert(again, qt.Contains, "Schema is synced")
 			})
 		}

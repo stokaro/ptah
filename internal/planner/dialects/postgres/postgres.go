@@ -1607,8 +1607,28 @@ func (p *Planner) constraintBackedIndexDropNode(ref difftypes.IndexRef) ast.Node
 // row-level security policy reads another removed table goes before that
 // table when its policy has not already been dropped; see [tableDropRelies].
 func (p *Planner) removeTables(result []ast.Node, diff *difftypes.SchemaDiff, ahead routinesAhead, droppedPolicies map[objectidentity.Key]bool) []ast.Node {
-	dropped := make(map[string]bool, len(diff.TablesRemoved))
-	for _, group := range p.removedTableGroups(diff, ahead) {
+	_, later := p.removedTablesAroundTypes(diff, ahead)
+	return p.removeTableGroups(result, diff, later, ahead, droppedPolicies)
+}
+
+// removeTablesHoldingTypes drops the removed tables a removed type over another
+// removed table's row is the column type of, and the routines that take such a type.
+// They run ahead of the window the type leaves in; see
+// [Planner.removedTablesAroundTypes].
+func (p *Planner) removeTablesHoldingTypes(result []ast.Node, diff *difftypes.SchemaDiff, ahead routinesAhead, droppedPolicies map[objectidentity.Key]bool) []ast.Node {
+	holding, _ := p.removedTablesAroundTypes(diff, ahead)
+	result = p.removeTableGroups(result, diff, holding, ahead, droppedPolicies)
+	for _, name := range typesOverRemovedRows(diff) {
+		result = p.appendRoutineDrops(result, ahead.of(name))
+	}
+	return result
+}
+
+// removeTableGroups writes one DROP TABLE for each of groups, with the routines
+// that leave just ahead of its tables.
+func (p *Planner) removeTableGroups(result []ast.Node, diff *difftypes.SchemaDiff, groups [][]string, ahead routinesAhead, droppedPolicies map[objectidentity.Key]bool) []ast.Node {
+	dropped := ahead.tablesDropped
+	for _, group := range groups {
 		for _, tableName := range group {
 			result = p.appendRoutineDrops(result, ahead.of(tableName))
 		}
@@ -1971,13 +1991,20 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// 5d. A removed sequence leaves its owner before the column changes that
 	// take its default away; see [Planner.releaseRemovedSequenceOwners].
 	result = p.releaseRemovedSequenceOwners(result, diff)
+	result = p.releaseKeptSequenceOwners(result, diff)
 
 	// Feature operations that stand in the way of a column change join the plan
 	// here.
+	features, err := p.planTableFeatures(ctx, runtime, diff)
+	if err != nil {
+		return nil, err
+	}
+	result = append(result, features.aheadOfColumns...)
 	windows.Lifecycle = &featurehost.Span{Start: len(result), End: len(result)}
 
 	// 6. Add and modify table columns (must be done before creating RLS policies that depend on columns)
 	result = p.addAndModifyTableColumns(result, diff)
+	result = p.restoreKeptSequenceOwners(result, diff)
 
 	// 6.5. Add foreign key constraints for newly added columns (must be done after all columns exist)
 	result = p.addForeignKeyConstraintsForModifiedTables(result, diff)
@@ -2070,12 +2097,8 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// names cannot be dropped while the policy still points at it. A plan that
 	// moved an expression off a column and dropped it once emitted `DROP
 	// COLUMN … CASCADE` first (stokaro/ptah#1027, stokaro/ptah#2236).
-	beforeTableFeatures := len(result)
-	result, err = p.planTableFeatures(ctx, runtime, result, diff)
-	if err != nil {
-		return nil, err
-	}
-	droppedPolicies := policiesDroppedBeforeRelations(result[beforeTableFeatures:], diff)
+	result = append(result, features.afterColumns...)
+	droppedPolicies := policiesDroppedBeforeRelations(slices.Concat(features.aheadOfColumns, features.afterColumns), diff)
 	earlyColumns := p.columnsLeavingEarly(diff)
 	ahead, err := p.routinesAheadOf(diff, rebuild, earlyColumns, droppedPolicies)
 	if err != nil {
@@ -2104,6 +2127,8 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 
 	// 12.5. Remove constraints (must be done before removing tables)
 	result = p.removeConstraints(result, diff, releasedConstraints, constraintsAfterColumns)
+
+	result = p.removeTablesHoldingTypes(result, diff, ahead, droppedPolicies)
 
 	// Feature operations that drop objects join the plan here: after the views
 	// and materialized views that may read them are dropped, and before the
@@ -2619,6 +2644,50 @@ func (p *Planner) releaseRemovedSequenceOwners(result []ast.Node, diff *difftype
 			node.SetSchema(sequence.Schema)
 		}
 		result = append(result, node)
+	}
+	return result
+}
+
+// releaseKeptSequenceOwners is [Planner.releaseRemovedSequenceOwners] for a
+// sequence the plan keeps: CockroachDB answers a change of the default the same
+// way, measured on v26.3.5 for DROP DEFAULT and for SET DEFAULT to another
+// sequence. [Planner.restoreKeptSequenceOwners] gives the sequence its owner back.
+func (p *Planner) releaseKeptSequenceOwners(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	return p.alterKeptSequenceOwners(result, diff, func(difftypes.TableDiff, difftypes.ColumnDiff) string { return "NONE" })
+}
+
+// restoreKeptSequenceOwners gives each sequence
+// [Planner.releaseKeptSequenceOwners] detached its owner back, ahead of the option
+// changes that may move the sequence to another owner.
+func (p *Planner) restoreKeptSequenceOwners(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	return p.alterKeptSequenceOwners(result, diff, func(table difftypes.TableDiff, column difftypes.ColumnDiff) string {
+		return table.TableName + "." + column.ColumnName
+	})
+}
+
+// alterKeptSequenceOwners writes one ALTER SEQUENCE ... OWNED BY for each column
+// change that marks a kept sequence, on CockroachDB; see
+// [difftypes.ColumnDiff.OwnedDefaultSequence].
+func (p *Planner) alterKeptSequenceOwners(
+	result []ast.Node,
+	diff *difftypes.SchemaDiff,
+	owner func(difftypes.TableDiff, difftypes.ColumnDiff) string,
+) []ast.Node {
+	if p.targetDialect() != platform.CockroachDB {
+		return result
+	}
+	for _, table := range diff.TablesModified {
+		for _, column := range table.ColumnsModified {
+			if column.OwnedDefaultSequence == "" {
+				continue
+			}
+			schema, name := splitQualifiedSequenceName(column.OwnedDefaultSequence)
+			node := ast.NewAlterSequence(name).SetOwnedBy(owner(table, column))
+			if schema != "" {
+				node.SetSchema(schema)
+			}
+			result = append(result, node)
+		}
 	}
 	return result
 }

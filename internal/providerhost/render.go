@@ -67,14 +67,19 @@ func (t *target) Render(ctx context.Context, request renderer.Request) (renderer
 	if refusal := result.GetRefusal(); refusal != nil {
 		return renderer.Result{}, t.textRefusal(request.Nodes, refusal)
 	}
+	none, err := t.readNoInputs(ctx, result.GetUnits())
+	if err != nil {
+		return renderer.Result{}, err
+	}
 	for i, unit := range result.GetUnits() {
 		fragment, err := t.renderedFragment(changes[i], unit)
 		if err != nil {
 			return renderer.Result{}, err
 		}
-		fragment.Inputs, err = t.renderedInputs(ctx, unit)
-		if err != nil {
-			return renderer.Result{}, err
+		if !none {
+			if fragment.Inputs, err = t.renderedInputs(ctx, unit); err != nil {
+				return renderer.Result{}, err
+			}
 		}
 		fragments[indexes[i]] = fragment
 	}

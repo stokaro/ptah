@@ -269,6 +269,14 @@ tables, including through `pg_temp`. Ptah discards that session after success,
 failure, or cancellation. Explicit `pg_temp_<number>` targets remain protected;
 the replay cannot take ownership of another session's temporary tables.
 
+A PostgreSQL-family `COMMENT ON SCHEMA` is accepted when the dev URL pins no
+schema. The reset that ends the replay returns each schema it keeps to the comment
+it held, and drops the others. A URL pinned to one schema is reset without reading
+that state, so there the comment is refused. A privilege on a schema is refused in
+every replay, because it depends on the server's roles, and so is a comment on a
+protected namespace such as `pg_catalog`. The pinned community binary v1.3.0
+replays all of these, so `ptah-compat` is stricter here, deliberately.
+
 Replay runs each migration the way `migrations up` does, in one transaction
 unless the file opts out with `-- +ptah no_transaction` or
 `-- atlas:txmode none`. Such a setting holds for the rest of its migration and

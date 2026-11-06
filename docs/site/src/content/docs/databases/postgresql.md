@@ -1575,7 +1575,9 @@ reserved`, SQLSTATE 42939). The prefix is matched literally, so `pgbouncer`,
 
 A grant to a `pg_` role is read and compared like any other, so `GRANT SELECT
 ON t TO pg_monitor` is planned once. A source cannot declare the role, so Ptah
-never revokes a grant it holds.
+never revokes a grant it holds. The rights `pg_database_owner` holds on `public`,
+the schema it owns on a stock database, are not read as grants, because no
+statement declared them.
 
 One thing the refusal costs, so it stays reachable rather than being removed:
 on a cluster bootstrapped under another name, `CREATE ROLE "postgres"` succeeds.
@@ -1666,26 +1668,28 @@ the permissive/restrictive composition, or removing either clause, requires
 DROP and CREATE in one transaction.
 
 A migration creates a policy after the views, the role changes and the
-enablement it may name. It drops a policy your schema no longer declares after
-the new policies are created, so renaming a policy never leaves the table with
-neither one, and before the columns, constraints, views, functions and roles
-the migration drops.
+enablement it may name. It drops a policy your schema no longer declares ahead
+of its column changes, because PostgreSQL refuses `ALTER COLUMN ... TYPE` on a
+column a policy names (`cannot alter type of a column used in a policy
+definition`). A restrictive policy replaced by another waits until the new one
+is created, so the table never admits more than it does at either end.
 
-Some changes run before that drop, and PostgreSQL refuses them while a policy
-uses the object they change:
+Some changes run before a drop of that kind, or before a policy that stays or
+changes is touched, and PostgreSQL refuses them while a policy uses the object
+they change:
 
-- `ALTER COLUMN ... TYPE` on a column the policy names (`cannot alter type of
-  a column used in a policy definition`);
+- `ALTER COLUMN ... TYPE` on a column that a policy names, where the policy
+  stays, changes, or is a restrictive policy replaced by another;
 - a function change the server cannot make in place, which is a drop and a
   create (see [Function changes](#function-changes));
 - a domain or composite type that is dropped and created again (`cannot drop
   type ... because other objects depend on it`).
 
-A migration that combines one of them with removing or changing that policy
-stops at that statement. Inside a transaction, nothing the migration holds is
-applied; a migration that runs without one keeps the statements that ran
-before it. Change the policy in one migration and the column, the function or
-the type in the next. Measured on PostgreSQL 17.
+A migration that combines one of them with that policy stops at that statement.
+Inside a transaction, nothing the migration holds is applied; a migration that
+runs without one keeps the statements that ran before it. Change the policy in
+one migration and the column, the function or the type in the next. Measured on
+PostgreSQL 17.
 
 A plan that drops a view or a materialized view a policy reads is refused, and
 so is one that drops a routine a policy calls. The drop would remove the
@@ -1886,9 +1890,9 @@ gate. Reconciliation is deliberately conservative:
   domain over a table's row type, or a type that names such a type. When the
   same plan creates the table, Ptah creates the type after the tables and
   columns. When the same plan drops the table, Ptah drops the type before the
-  tables, so the table's drop does not rely on `CASCADE`. The type stays after
-  the tables when a table or a routine the plan drops after them still uses
-  it. A render and a rollback are planned the same way.
+  tables, and a removed table or routine that uses the type before it, so the
+  table's drop does not rely on `CASCADE`. A render and a rollback are planned the
+  same way.
 - Ptah refuses a plan or a render that no order serves, and names the type,
   the relation and the object that uses the type: a table, a column or a
   routine the plan creates that uses a type over a created table's row type,

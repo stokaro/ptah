@@ -221,7 +221,8 @@ func Claim(ctx context.Context, conn *dbschema.DatabaseConnection) (Baseline, er
 	if err != nil {
 		return Baseline{}, fmt.Errorf("capture dev database baseline: %w", err)
 	}
-	baseline := Baseline{realm: migrateclean.RealmScoped(conn), server: server, roles: roles}
+	realm := migrateclean.RealmScoped(conn) || migrateclean.ResetsEverySchema(conn)
+	baseline := Baseline{realm: realm, server: server, roles: roles}
 	if fromBlock {
 		start, err := recorder.CaptureStartingPoint(ctx)
 		if err != nil {
@@ -326,11 +327,11 @@ func EnsureClean(ctx context.Context, conn *dbschema.DatabaseConnection) error {
 }
 
 // Reset empties a dev database the caller claimed, over the scope the claim
-// judged it clean in: the whole realm when the URL pinned no schema, and the
-// connected schema when it pinned one. A rehearsal resets its dev database
-// this way before and after it runs, so it removes what it created -- a schema
-// or an extension schema included -- and leaves a schema outside the pinned
-// one alone, since the claim did not look there. The baseline's extensions
+// judged it clean in: the whole realm when the URL pinned no schema or the engine
+// judges every schema, and the connected schema when it pinned one. A rehearsal
+// resets its dev database this way before and after it runs, so it removes what
+// it created -- a schema or an extension schema included -- and leaves a schema
+// outside the pinned one alone, since the claim did not look there. The baseline's extensions
 // and default privileges stay in either scope, and on a server the run owns
 // either scope drops the roles the run created; see [Baseline].
 //

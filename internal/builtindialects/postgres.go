@@ -144,6 +144,7 @@ func postgres() descriptor.Dialect {
 		// Comparison: what comparing a declaration with a catalog reads.
 		Comparison: descriptor.Comparison{
 			DeclaredSchemas:    true,
+			TimePrecision:      descriptor.TimePrecision{Compared: true, Default: 6},
 			ForeignKeysOutside: true,
 			// pg_constraint.conindid names the index, and `DROP CONSTRAINT`
 			// on it answers `cannot drop constraint parent_pkey on table

@@ -211,6 +211,7 @@ func compareReportingUndecidedAdditions(
 
 	// Compare PostgreSQL standalone sequences (PostgreSQL-specific feature)
 	compare.SequencesWithSemantics(desired, database, diff, cov, identifierSemantics)
+	compare.OwnedDefaultSequences(database, diff, identifierSemantics)
 
 	// Compare views, materialized views, and triggers
 	compare.ViewsWithSemantics(desired, database, diff, opts.Dialect, identifierSemantics, opts.ViewBodies, rules.Views)
@@ -245,6 +246,7 @@ func compareReportingUndecidedAdditions(
 
 	// Compare common table constraints (CHECK, UNIQUE, PRIMARY KEY, FOREIGN KEY).
 	compare.ConstraintsWithSemantics(desired, database, diff, opts, identifierSemantics)
+	compare.ForeignKeyBackingIndexesLeaving(desired, database, diff, rules.ForeignKeyIndexes, opts.Dialect, identifierSemantics)
 	compare.ConstraintComments(desired, database, diff, opts, caps, identifierSemantics)
 
 	// The declaration of every table those constraints name, for a target that
