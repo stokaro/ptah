@@ -20,6 +20,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/engine"
 	"ptah.run/internal/planstyle"
+	"ptah.run/internal/readscope"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -203,7 +204,7 @@ func applyDesiredSchema(
 	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
 		return false, err
 	}
-	current, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, nil)
+	current, err := dbschema.ReadSchemaWithSchemasContext(readscope.Authored(ctx), conn, nil)
 	if err != nil {
 		return false, fmt.Errorf("inspect test database before applying desired schema: %w", err)
 	}

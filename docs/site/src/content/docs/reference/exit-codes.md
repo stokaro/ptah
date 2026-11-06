@@ -24,7 +24,7 @@ Native Ptah commands use exit codes as a public scripting contract:
 | --- | --- |
 | `0` | Success. The command completed and did not find a configured failing condition. |
 | `1` | Expected negative result. A check found drift, lint findings, integrity drift, pending migrations, or a non-empty diff when that behavior is enabled. |
-| `2` | Command or usage error. Examples: bad flags, unknown commands, invalid input, connection failure, parse failure, unsupported dialect, unwritable output, or an internal panic recovered by the root command. |
+| `2` | Command or usage error. Examples: bad flags, unknown commands, invalid input, connection failure, a database account that cannot see what the command reads, parse failure, unsupported dialect, unwritable output, or an internal panic recovered by the root command. |
 | `128+N` | Interrupted. A signal canceled the command, which exited with the shell convention of 128 plus the signal number: `130` for SIGINT (Ctrl-C), `143` for SIGTERM. |
 | `3+` | Reserved apart from the signal statuses above. Do not rely on these codes until Ptah documents a specific use. |
 

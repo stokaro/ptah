@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/internal/devlock"
+	"ptah.run/internal/readscope"
 	"ptah.run/internal/schemascope"
 	"ptah.run/migration/internal/shadowdb"
 	"ptah.run/migration/migrator"
@@ -448,7 +449,7 @@ func assertSchemaMatches(
 	if err != nil {
 		return newVerificationError("re-introspect", "re_introspect_error", "re-introspect shadow database", err)
 	}
-	dbSchema, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, scope)
+	dbSchema, err := dbschema.ReadSchemaWithSchemasContext(readscope.Authored(ctx), conn, scope)
 	if err != nil {
 		return newVerificationError("re-introspect", "re_introspect_error", "re-introspect shadow database", err)
 	}

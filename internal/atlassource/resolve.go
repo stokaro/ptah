@@ -41,6 +41,7 @@ import (
 	"ptah.run/internal/migrationsnapshot"
 	"ptah.run/internal/ociartifact"
 	"ptah.run/internal/providerurl"
+	"ptah.run/internal/readscope"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/schemaartifact"
 	"ptah.run/internal/schemafile"
@@ -694,7 +695,7 @@ func (s Set) DevState(ctx context.Context, conn *dbschema.DatabaseConnection, op
 	if err != nil {
 		return State{}, fmt.Errorf("read dev database schema: %w", err)
 	}
-	schema, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, names)
+	schema, err := dbschema.ReadSchemaWithSchemasContext(readscope.Authored(ctx), conn, names)
 	if err != nil {
 		return State{}, fmt.Errorf("read dev database schema: %w", err)
 	}

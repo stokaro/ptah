@@ -25,6 +25,7 @@ import (
 	"ptah.run/internal/fileplan"
 	"ptah.run/internal/hashshard"
 	"ptah.run/internal/providerurl"
+	"ptah.run/internal/readscope"
 	"ptah.run/internal/rolescope"
 	"ptah.run/internal/schemascope"
 	"ptah.run/internal/schemaselection"
@@ -132,6 +133,7 @@ func Inspect(ctx context.Context, conn *dbschema.DatabaseConnection, opts Inspec
 		return InspectResult{}, err
 	}
 
+	ctx = readscope.Without(ctx, atlasfilter.KindsLeftOut(opts.Runtime.Selections(), opts.Exclude, opts.Include)...)
 	schema, names, err := readInspectSchemaWithNames(ctx, conn, opts.Schemas)
 	if err != nil {
 		return InspectResult{}, fmt.Errorf("read database schema: %w", err)

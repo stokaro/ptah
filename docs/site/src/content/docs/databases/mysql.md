@@ -563,21 +563,116 @@ out.
 
 `information_schema` lists only what the connecting account holds a privilege on,
 and MySQL and MariaDB have no other catalog an ordinary account can read. A
-comparison reads what is missing as absent, so `schema diff`, `schema compare`,
-`schema drift` and `schema inspect` leave out what the account cannot see, with
-exit 0. Measured on MySQL 8.4 and MariaDB 12.3: an account with `SELECT` on one
-table does not see the others, and an account with `SELECT` on the whole database
-does not see its triggers or routines, and on MariaDB its foreign keys and `CHECK`
-constraints. Either gets `Schemas are synced` for two databases that differ by
-what it cannot see
-([`stokaro/ptah#5497`](https://github.com/stokaro/ptah/issues/5497)).
+comparison reads a missing row as a missing object, so a read that cannot prove it
+saw a kind of object is refused rather than answered. The refusal comes before any
+result, at exit 2, and names what is missing:
 
-Run these commands as an account that holds, on each database they read:
+```text
+the account reader@% cannot see everything in database "app": information_schema lists only what an account holds a privilege on, and a comparison reads a hidden object as absent. The account needs:
+  - triggers: TRIGGER on `app`.*
+  - procedures and functions: SHOW_ROUTINE on *.*
+```
 
-- `SELECT`, `SHOW VIEW` and `TRIGGER` on the database;
-- `SHOW_ROUTINE` globally on MySQL, or `SHOW CREATE ROUTINE` globally on MariaDB.
+Every command that reads a schema gives this answer: `schema diff`, `schema
+compare`, `schema drift`, `schema inspect`, `schema plan`, `schema apply`,
+`migrations generate` and `db read`. A plan needs it as much as a report does: an
+apply that believes an object is absent plans from that belief. `ptah-compat` gives
+the same answer at exit 1, the one failure code its surface has.
 
-An account holding those gets the same report as `root`.
+What each kind of object takes, measured on MySQL 8.4 and 26.10 and on MariaDB
+11.8 and 12.3:
+
+| Objects | MySQL | MariaDB |
+| --- | --- | --- |
+| Tables and views, with their columns and indexes | `SELECT`, `INSERT`, `UPDATE` or `REFERENCES` on the database or globally | The same |
+| Primary keys, unique keys, foreign keys, `CHECK` constraints | Nothing more | A privilege beyond `SELECT` on the table or above it, such as `SHOW VIEW` |
+| View definitions | `SELECT` and `SHOW VIEW` on the view or above it | The same |
+| Triggers | `TRIGGER` on each table or above it | The same |
+| Procedures and functions | `SHOW_ROUTINE` globally, or `SELECT` globally | `SHOW CREATE ROUTINE` on the database or globally, `SELECT` globally, or `SELECT` on `mysql.proc` |
+
+So this account gets the same comparison as `root`, roles and grants aside:
+
+```sql
+-- MySQL
+GRANT SELECT, SHOW VIEW, TRIGGER ON app.* TO reader;
+GRANT SHOW_ROUTINE ON *.* TO reader;
+
+-- MariaDB
+GRANT SELECT, SHOW VIEW, TRIGGER, SHOW CREATE ROUTINE ON app.* TO reader;
+```
+
+`TRIGGER` also lets the account create and drop triggers. Neither engine has a
+privilege that only shows them.
+
+Where a grant applies decides what it proves:
+
+- **A grant on one table says nothing about the others.** The list of tables needs
+  a privilege on the database or a global one, however many tables the account holds
+  a grant on. `TRIGGER` and the MariaDB constraint privilege are read table by table
+  once the list is complete, so a grant on every table counts.
+- **A database-level grant is a pattern, and the most specific one applies.**
+  ``GRANT TRIGGER ON `a%`.*`` beside ``GRANT SELECT ON `app`.*`` leaves the account
+  with `SELECT` on `app` and no `TRIGGER`. An unescaped `_` is a wildcard, so a grant
+  on ``my_app`` ranks below a grant on ``my\_app``.
+- **`partial_revokes` changes both of those on MySQL.** With it on, a name in a grant is
+  literal, so `%` and `_` match only themselves, and `REVOKE TRIGGER ON app.*` takes a
+  global `TRIGGER` away on `app`.
+- **A role counts while it is active**, through `SET DEFAULT ROLE` or
+  `activate_all_roles_on_login`. Connections do not run `SET ROLE`, so a role that is
+  granted and not set holds nothing here.
+- **`ALL PRIVILEGES` on the database** shows everything on MariaDB 11.4 and newer. On
+  MySQL and on MariaDB 10.11 it lists every routine and shows the body only of the
+  account's own, as `EXECUTE`, `ALTER ROUTINE` and `CREATE ROUTINE` on the database do:
+  a routine of another definer is refused by name until the account holds the routine
+  privilege.
+- **A URL that names no database** covers the databases the account can see, and each
+  of them is held to this table. A database the account holds nothing on is outside the
+  comparison, and two servers that differ only by one answer `Schemas are synced`.
+  `SHOW DATABASES` lists every database, so an account that holds it has to see them
+  all or name the ones it reads with `--schemas`.
+
+### A run that does not depend on a kind
+
+A selector that leaves out a whole kind relieves the read of answering for it, so
+the account needs no privilege for it:
+
+| Selector | The account does not need |
+| --- | --- |
+| `--exclude '*[type=trigger]'` | `TRIGGER` |
+| `--exclude '*[type=view]'` | `SHOW VIEW` |
+| `--exclude '*[type=function]'` | The routine privilege |
+| `--exclude '*[type=constraint]'` | The MariaDB constraint privilege |
+| `--exclude '*[type=table]'` | `TRIGGER` and the MariaDB constraint privilege |
+| `--include '*[type=table]'` | `SHOW VIEW` and the routine privilege |
+
+A selector that names objects does not count, because a read that cannot see a
+trigger cannot say what it is called: `--exclude 'audit_*[type=trigger]'` still needs
+`TRIGGER`. Neither does `--exclude '*[type=foreign_key]'`, since the catalog view that
+hides a foreign key from a MariaDB account hides a primary key with it.
+
+`diff.skip` relieves nothing. It leaves destructive changes out of a plan, and the
+comparison still reads the kind to find what to add. `schema compare` and `schema
+drift` take no kind-level selector, so they need every privilege in the table.
+
+`schema apply` refuses a selector that matched nothing, and an account that cannot
+see a trigger matches none with `--exclude '*[type=trigger]'`. Set
+`PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE=1` to run it.
+
+### A dev database
+
+A dev or shadow database holds what the same run created there, and the account that
+created a trigger or a routine is shown it. A read of one needs a privilege that
+lists the columns and nothing else from the table above, on top of what
+[emptying a dev database](#dev-database-cleanup-privileges) takes. A view or routine
+that came back without a body is still refused, because it has another definer.
+
+### Roles and grants
+
+Reading roles and the grants on them needs `SELECT` on the `mysql` database, which
+ordinary schema work does not. An account without it records them as not described
+and is not refused, so a comparison decides nothing about them in either direction:
+two databases that differ only by a grant to a role answer `Schemas are synced` for
+that account. An account that compares grants needs `SELECT` on `mysql.*`.
 
 ## Dev-database cleanup privileges
 

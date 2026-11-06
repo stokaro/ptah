@@ -14,7 +14,9 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/engine"
+	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/readscope"
 	"ptah.run/migration/migrator"
 )
 
@@ -138,7 +140,9 @@ func RehearsePlanStatements(
 		return err
 	}
 
-	current, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, nil)
+	current, err := dbschema.ReadSchemaWithSchemasContext(
+		readscope.Without(ctx, atlasfilter.KindsLeftOut(opts.Runtime.Selections(), opts.Exclude, nil)...), conn, nil,
+	)
 	if err != nil {
 		return fmt.Errorf("read database schema: %w", err)
 	}

@@ -75,11 +75,9 @@ Spanner's `pg_catalog` is an emulation over `information_schema`, without the
 helper functions the statements call.
 
 MySQL and MariaDB have the same exposure and no catalog to move to: an ordinary
-account has only `information_schema`, filtered by its privileges. The fix there
-has to be a refusal that knows which privilege each object kind needs
-([stokaro/ptah#5497](https://github.com/stokaro/ptah/issues/5497)).
-[The MySQL page](../site/src/content/docs/databases/mysql.md) states the account to
-use.
+account has only `information_schema`, filtered by its privileges. There a read
+refuses what the account cannot see:
+[ADR 0087](0087-a-mysql-family-read-refuses-what-the-account-cannot-see.md).
 
 ## A complete desired side
 

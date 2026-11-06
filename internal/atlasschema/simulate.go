@@ -23,6 +23,7 @@ import (
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/providerurl"
+	"ptah.run/internal/readscope"
 	"ptah.run/internal/rolepassword"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/valuecontext"
@@ -560,7 +561,7 @@ func recreateCurrentSchema(
 	if err != nil {
 		return fmt.Errorf("bind the target's current schema to the dev database: %w", err)
 	}
-	devCurrent, err := dbschema.ReadRehearsalSchemaContext(ctx, devConn)
+	devCurrent, err := dbschema.ReadRehearsalSchemaContext(readscope.Authored(ctx), devConn)
 	if err != nil {
 		return fmt.Errorf("read dev database schema: %w", err)
 	}
@@ -690,7 +691,7 @@ func nameColumnSequencesAsTarget(
 	if len(want) == 0 {
 		return nil
 	}
-	dev, err := dbschema.ReadSchemaWithSchemasContext(ctx, devConn, nil)
+	dev, err := dbschema.ReadSchemaWithSchemasContext(readscope.Authored(ctx), devConn, nil)
 	if err != nil {
 		return fmt.Errorf("read dev database sequences: %w", err)
 	}

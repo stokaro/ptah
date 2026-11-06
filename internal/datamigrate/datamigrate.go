@@ -31,6 +31,7 @@ import (
 	"ptah.run/internal/dataorder"
 	"ptah.run/internal/managedrows"
 	"ptah.run/internal/protectedtable"
+	"ptah.run/internal/readscope"
 	"ptah.run/migration/datadiff"
 	"ptah.run/migration/safety"
 )
@@ -399,7 +400,13 @@ func readColumnCatalog(
 		scopes = append(scopes, schemaScope(md.Schema, conn.Info().Schema)...)
 	}
 	slices.Sort(scopes)
-	read, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, slices.Compact(scopes))
+	// The decisions read only the columns of the tables a declaration names, and
+	// a table the account cannot see fails where it is written to, so nothing here
+	// depends on what else the database holds.
+	read, err := dbschema.ReadSchemaWithSchemasContext(
+		readscope.Without(ctx, readscope.Tables, readscope.Views, readscope.Constraints, readscope.Triggers, readscope.Routines),
+		conn, slices.Compact(scopes),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("datamigrate: introspect the columns of the declared tables: %w", err)
 	}

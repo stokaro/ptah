@@ -15,6 +15,7 @@ import (
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/migrateclean"
 	"ptah.run/internal/pgsnapshot"
+	"ptah.run/internal/readscope"
 )
 
 type databaseRealmCleaner interface {
@@ -229,7 +230,7 @@ func Claim(ctx context.Context, conn *dbschema.DatabaseConnection) (Baseline, er
 			return Baseline{}, fmt.Errorf("capture dev database baseline: %w", err)
 		}
 		baseline.startingPoint = start
-		baseline.environment, err = dbschema.ReadSchemaWithSchemasContext(ctx, conn, start.Schemas)
+		baseline.environment, err = dbschema.ReadSchemaWithSchemasContext(readscope.Authored(ctx), conn, start.Schemas)
 		if err != nil {
 			return Baseline{}, fmt.Errorf("capture dev database baseline: %w", err)
 		}

@@ -425,12 +425,12 @@ func TestReadFunctionsCarriesReplacementOwnershipFacts(t *testing.T) {
 	db := functionOwnershipDB(c)
 	reader := NewMySQLReader(db.SQL, "app")
 
-	functions, account, err := reader.readFunctions(t.Context(), "app")
+	read, err := reader.readFunctions(t.Context(), "app")
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(functions, qt.HasLen, 1)
-	c.Assert(functions[0].Definer, qt.Equals, "owner_a@%")
-	c.Assert(account, qt.Equals, "migrator_a@%")
+	c.Assert(read.functions, qt.HasLen, 1)
+	c.Assert(read.functions[0].Definer, qt.Equals, "owner_a@%")
+	c.Assert(read.currentAccount, qt.Equals, "migrator_a@%")
 }
 
 func functionOwnershipDB(c *qt.C) *dbtest.DB {

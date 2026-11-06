@@ -28,6 +28,7 @@ import (
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/cli/atlas"
 	"ptah.run/internal/cli/internal/cmdutil"
+	"ptah.run/internal/readscope"
 	"ptah.run/internal/testutils"
 	"ptah.run/migration/migrationfile"
 )
@@ -293,7 +294,7 @@ func CompatTableNames(c *qt.C, dbPath string) []string {
 	conn, err := dbschema.ConnectToDatabase(c.Context(), "sqlite://"+dbPath)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
-	schema, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, nil)
+	schema, err := dbschema.ReadSchemaWithSchemasContext(readscope.Authored(c.Context()), conn, nil)
 	c.Assert(err, qt.IsNil)
 	names := make([]string, 0, len(schema.Tables))
 	for _, table := range schema.Tables {
