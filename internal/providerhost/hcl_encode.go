@@ -109,12 +109,13 @@ func (o *hclOwner) EncodeHCL(ctx context.Context, request hclext.EncodeRequest) 
 
 // coverageHeader is the captured feature coverage header line that states
 // what the document knows of the provider's models, written with the
-// provider's desired codecs, or none for a document that knows nothing of
-// them. A kind a read knows completely in every region it reports is written
-// as complete, as the encoding request of every other format sends it (see
-// completeRead): the document describes the namespaces the read listed, and a
-// later plan applies it to the selection that plan names. Any other knowledge
-// is written as the document holds it.
+// provider's desired codecs under the identities the provider describes (see
+// headerCodecs), or none for a document that knows nothing of them. A kind a
+// read knows completely in every region it reports is written as complete, as
+// the encoding request of every other format sends it (see completeRead): the
+// document describes the namespaces the read listed, and a later plan applies
+// it to the selection that plan names. Any other knowledge is written as the
+// document holds it.
 //
 // A model HCL states only at a table's platform group is left out, kind-wide
 // and for each subject: the groups the document writes are its whole account
@@ -135,11 +136,11 @@ func (o *hclOwner) coverageHeader(ctx context.Context, batch *encodeBatch, known
 	if err != nil || written.IsZero() {
 		return nil, err
 	}
-	registry, err := o.codecs()
+	headers, err := o.codecs()
 	if err != nil {
 		return nil, err
 	}
-	line, err := registry.EncodeCoverageHeader(ctx, schemaext.Desired, written)
+	line, err := headers.line(ctx, written)
 	if err != nil {
 		return nil, err
 	}
