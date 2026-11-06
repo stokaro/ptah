@@ -27,6 +27,7 @@ import (
 	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/internal/devclean"
 	"ptah.run/internal/devlock"
+	"ptah.run/internal/dispatchwitness"
 	"ptah.run/internal/errorkind"
 	"ptah.run/internal/featureselect"
 	"ptah.run/internal/pgsystemschema"
@@ -1293,7 +1294,12 @@ func executeApplyStatements(ctx context.Context, executor catalog.SchemaExecutor
 		if stmt == "" {
 			continue
 		}
-		if err := executor.ExecuteSQL(ctx, stmt); err != nil {
+		err := checkStatement(ctx, executor, stmt)
+		if err == nil {
+			dispatchwitness.Sending(ctx)
+			err = executor.ExecuteSQL(ctx, stmt)
+		}
+		if err != nil {
 			return &migrator.MigrationExecutionError{
 				Err:            fmt.Errorf("failed to execute SQL statement: %w", err),
 				Statement:      stmt,
@@ -1301,6 +1307,22 @@ func executeApplyStatements(ctx context.Context, executor catalog.SchemaExecutor
 				Total:          len(statements),
 			}
 		}
+	}
+	return nil
+}
+
+// statementChecker is an executor that can refuse a statement without sending
+// it, the way its ExecuteSQL would before anything reached the server.
+type statementChecker interface {
+	CheckStatement(ctx context.Context, statement string) error
+}
+
+// checkStatement asks an executor that can answer whether it would refuse stmt
+// before sending it, so a refusal of the first statement does not read as a run
+// that reached the database.
+func checkStatement(ctx context.Context, executor catalog.SchemaExecutor, stmt string) error {
+	if checked, ok := executor.(statementChecker); ok {
+		return checked.CheckStatement(ctx, stmt)
 	}
 	return nil
 }

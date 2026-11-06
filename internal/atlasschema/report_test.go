@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -35,6 +36,11 @@ type reportErrors struct {
 	preflight   error
 	simulation  error
 	plain       error
+	// transactionUnavailable is the refusal of a mode the target cannot honor.
+	transactionUnavailable error
+	// lostBegin is the connection ending while a transaction began, as the
+	// command wraps it.
+	lostBegin error
 	// unreachable is a target connection the command marked as one, whose
 	// dial failed.
 	unreachable error
@@ -64,7 +70,11 @@ func newReportErrors(c *qt.C) reportErrors {
 		}),
 		preflight:  preflight,
 		simulation: &atlasschema.SimulationError{Stage: "plan", Err: errors.New("no such table: users")},
-		plain:      errors.New("connect to --db-url: connection refused"),
+		transactionUnavailable: &atlasschema.TransactionUnavailableError{
+			Mode: migrator.MigrationTxModeFile, Err: errors.New("the provider offers no transactions"),
+		},
+		lostBegin: fmt.Errorf("apply schema changes: begin schema apply transaction: %w", io.ErrUnexpectedEOF),
+		plain:     errors.New("connect to --db-url: connection refused"),
 		unreachable: fmt.Errorf("connect to --db-url: %w", errorkind.TargetConnection(
 			&net.OpError{Op: "dial", Net: "tcp", Err: errors.New("connection refused")},
 		)),
@@ -260,6 +270,42 @@ func TestNewApplyReport_ClassifiesFromTheEvidence(t *testing.T) {
 				Command:         atlasschema.ApplyReportCommand,
 				Outcome:         atlasschema.ApplyOutcomeFailed,
 				Error:           &errorkind.Report{Kind: errorkind.DatabaseUnreachable, Message: errs.unreachable.Error()},
+			},
+		},
+		{
+			name:     "a transaction mode the target cannot honor",
+			evidence: atlasschema.ApplyEvidence{Units: atlasschema.SQLApplyUnitReports(statements), Err: errs.transactionUnavailable},
+			want: atlasschema.ApplyReport{
+				ContractVersion: atlasschema.ApplyReportContractVersion,
+				Command:         atlasschema.ApplyReportCommand,
+				Outcome:         atlasschema.ApplyOutcomeRefused,
+				Units:           atlasschema.SQLApplyUnitReports(statements),
+				Refusal:         &atlasschema.Refusal{Code: atlasschema.RefusalTransactionUnavailable},
+				Error:           &errorkind.Report{Message: errs.transactionUnavailable.Error()},
+			},
+		},
+		{
+			name:     "a transaction that could not begin",
+			evidence: atlasschema.ApplyEvidence{Units: atlasschema.SQLApplyUnitReports(statements), Err: errs.lostBegin},
+			want: atlasschema.ApplyReport{
+				ContractVersion: atlasschema.ApplyReportContractVersion,
+				Command:         atlasschema.ApplyReportCommand,
+				Outcome:         atlasschema.ApplyOutcomeFailed,
+				Units:           atlasschema.SQLApplyUnitReports(statements),
+				Error:           &errorkind.Report{Message: errs.lostBegin.Error()},
+			},
+		},
+		{
+			name: "a refused transaction after a statement left",
+			evidence: atlasschema.ApplyEvidence{
+				Units: atlasschema.SQLApplyUnitReports(statements), Dispatched: true, Err: errs.transactionUnavailable,
+			},
+			want: atlasschema.ApplyReport{
+				ContractVersion: atlasschema.ApplyReportContractVersion,
+				Command:         atlasschema.ApplyReportCommand,
+				Outcome:         atlasschema.ApplyOutcomeUnknown,
+				Units:           atlasschema.SQLApplyUnitReports(statements),
+				Error:           &errorkind.Report{Message: errs.transactionUnavailable.Error()},
 			},
 		},
 		{

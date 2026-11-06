@@ -30,13 +30,24 @@ func (s *session) BeginTransaction(ctx context.Context) (catalog.SchemaTransacti
 	if s.IsDryRun() {
 		return dryTransaction{session: s}, nil
 	}
-	if !s.target.supportsTransactions() {
-		return nil, unsupported("transactions for the selected engine")
-	}
-	if !s.info.Capabilities.Has(capability.TransactionalDDL) {
-		return nil, unsupported("transactions without established transactional DDL")
+	if err := s.CheckTransaction(); err != nil {
+		return nil, err
 	}
 	return s.beginProviderTransaction(ctx, protocol.TransactionIsolation_DEFAULT)
+}
+
+// CheckTransaction says why BeginTransaction would refuse this session, and
+// asks the provider nothing: what it reads was settled when the session opened.
+// A dry run begins no transaction, so its BeginTransaction refuses nothing, and
+// this answers for the run that follows it.
+func (s *session) CheckTransaction() error {
+	if !s.target.supportsTransactions() {
+		return unsupported("transactions for the selected engine")
+	}
+	if !s.info.Capabilities.Has(capability.TransactionalDDL) {
+		return unsupported("transactions without established transactional DDL")
+	}
+	return nil
 }
 
 // beginProviderTransaction opens the shared remote handle. Callers choose the

@@ -96,6 +96,9 @@ func executeApplyUnits(ctx context.Context, executor catalog.SchemaExecutor, uni
 		return err
 	}
 	if typed, ok := executor.(dbschema.UnitExecutor); ok {
+		// A unit executor tells the witness itself when the batch leaves, because
+		// it can still refuse on the way: an input whose variable is not set, or
+		// a lock lost since the validation above.
 		return typed.ExecuteUnits(ctx, units)
 	}
 	return executeApplyStatements(ctx, executor, statements)

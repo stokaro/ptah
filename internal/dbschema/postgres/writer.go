@@ -215,6 +215,17 @@ func (w *PostgreSQLWriter) ExecuteSQL(ctx context.Context, sqlExpr string, args 
 	return nil
 }
 
+// CheckStatement returns the error ExecuteSQL gives a statement before sending
+// it: a role password whose variable is not set, or a password variable named
+// anywhere else. It sends nothing, and a dry run refuses nothing.
+func (w *PostgreSQLWriter) CheckStatement(ctx context.Context, sqlExpr string) error {
+	if w.dryRun {
+		return nil
+	}
+	_, err := expandPasswords(sqlExpr, rolepassword.Lookup(ctx))
+	return err
+}
+
 // BeginTransaction starts a transaction and returns a transaction-scoped
 // writer. The parent writer keeps no active transaction state.
 func (w *PostgreSQLWriter) BeginTransaction(ctx context.Context) (catalog.SchemaTransaction, error) {
@@ -252,6 +263,16 @@ func (w *postgresTransactionWriter) ExecuteSQL(ctx context.Context, sqlExpr stri
 		return fmt.Errorf("SQL execution failed: %w\nSQL: %s", expanded.redact(err), sqlExpr)
 	}
 	return nil
+}
+
+// CheckStatement is [PostgreSQLWriter.CheckStatement] for a statement of this
+// transaction.
+func (w *postgresTransactionWriter) CheckStatement(ctx context.Context, sqlExpr string) error {
+	if w.dryRun {
+		return nil
+	}
+	_, err := expandPasswords(sqlExpr, rolepassword.Lookup(ctx))
+	return err
 }
 
 // SchemaQueryRunner exposes the live transaction to readers and session-state

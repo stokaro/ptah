@@ -106,6 +106,47 @@ func TestWriterSendsTheDeclaredPassword_FailurePath(t *testing.T) {
 	}
 }
 
+// CheckStatement answers what ExecuteSQL would answer before it sends, and sends
+// nothing. A caller that reports what reached the server relies on both halves.
+func TestWriterChecksAStatementWithoutSendingIt(t *testing.T) {
+	statements := []struct {
+		name      string
+		statement string
+		dryRun    bool
+		wantErr   string
+	}{
+		{name: "no reference", statement: "CREATE TABLE app (id integer);"},
+		{name: "a variable the run declared", statement: "CREATE ROLE app PASSWORD $PTAH_SECRET_PASSWORD_APP;"},
+		{name: "a variable nothing sets, in a dry run", statement: "CREATE ROLE app PASSWORD $PTAH_SECRET_PASSWORD_MISSING;", dryRun: true},
+		{name: "a variable nothing sets", statement: "CREATE ROLE app PASSWORD $PTAH_SECRET_PASSWORD_MISSING;",
+			wantErr: "a role's password comes from environment variable PTAH_SECRET_PASSWORD_MISSING, which is not set"},
+		{name: "a reference outside the password", statement: "SELECT $PTAH_SECRET_PASSWORD_APP;",
+			wantErr: `a password variable is referred to outside the password of CREATE ROLE or ALTER ROLE: \$PTAH_SECRET_PASSWORD_APP at offset 7; .*`},
+	}
+	for _, tc := range statements {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+			runner := &passwordRunner{}
+			writer := passwordWriter(runner)
+			writer.SetDryRun(tc.dryRun)
+			ctx := rolepassword.With(c.Context(), map[string]string{"PTAH_SECRET_PASSWORD_APP": "pw"})
+
+			err := writer.CheckStatement(ctx, tc.statement)
+
+			c.Assert(errorText(err), qt.Matches, tc.wantErr)
+			c.Assert(runner.sent, qt.HasLen, 0)
+		})
+	}
+}
+
+// errorText is err's message, and empty for no error.
+func errorText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
+
 // A refusal the server answers with loses the password, in each form the
 // statement held it in, and still unwraps to the server's error; the SQL the
 // error shows is the statement as written, with the variable.

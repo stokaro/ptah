@@ -53,8 +53,7 @@ func applyNativeSchemaPlan(ctx context.Context, cmd *cobra.Command, opts schemaA
 	if !approved {
 		return atlasschema.ApplyOutcomeCanceled, nil
 	}
-	run.evidence.Dispatched = true
-	if err := plan.Execute(ctx); err != nil {
+	if err := plan.Execute(run.dispatching(ctx)); err != nil {
 		return "", fmt.Errorf("apply schema changes: %w", err)
 	}
 	return atlasschema.ApplyOutcomeApplied, nil
@@ -98,8 +97,7 @@ func runSchemaApplyNativePlanFile(
 		return atlasschema.ApplyOutcomeCanceled, nil
 	}
 	conn.SchemaWriter().SetDryRun(false)
-	run.evidence.Dispatched = true
-	if err := execution.Execute(ctx, conn, txMode); err != nil {
+	if err := execution.Execute(run.dispatching(ctx), conn, txMode); err != nil {
 		return "", fmt.Errorf("apply schema changes: %w", err)
 	}
 	return atlasschema.ApplyOutcomeApplied, nil
