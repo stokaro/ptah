@@ -2,10 +2,10 @@ package atlasschema
 
 import (
 	"net/url"
-	"slices"
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/devclean"
 	"ptah.run/internal/schemafile"
 )
 
@@ -31,21 +31,14 @@ func omitRealmRootGrants(info catalog.ServerInfo, target *schemamodel.Database, 
 	if !namesDevRealm(info) {
 		return
 	}
-	onDatabase := func(grant schemamodel.Grant) bool { return grant.OnDatabase }
+	keptDev, keptTarget := devclean.WithoutDatabaseGrants(dev, target)
 	if target != nil {
-		target.Grants = slices.DeleteFunc(slices.Clone(target.Grants), onDatabase)
-		target.RevokedGrants = slices.DeleteFunc(slices.Clone(target.RevokedGrants), onDatabase)
+		target.Grants, target.RevokedGrants = keptTarget.Grants, keptTarget.RevokedGrants
 	}
 	if dev != nil {
-		dev.Grants = slices.DeleteFunc(slices.Clone(dev.Grants), func(grant catalog.Grant) bool {
-			return grant.ObjectType == databaseGrantObject
-		})
+		dev.Grants = keptDev.Grants
 	}
 }
-
-// databaseGrantObject is the object type a catalog grant on the database
-// itself carries.
-const databaseGrantObject = "DATABASE"
 
 // namesDevRealm reports whether the URL of info names a dev realm under its
 // database root, as the dialect's root reader reads it. A dialect with no

@@ -41,6 +41,7 @@ import (
 	"ptah.run/internal/servertarget"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/internal/undecidednote"
+	"ptah.run/internal/valuecontext"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -262,6 +263,10 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 			if err != nil {
 				return err
 			}
+			fromState, toState, err = moveToFromContext(ctx, opts.Runtime, dialect, fromState, toState)
+			if err != nil {
+				return err
+			}
 			var diffErr error
 			report, changes, diffErr = diffResolvedStates(ctx, conn, fromState, toState, dialect,
 				diffCapabilities(target, opts.ServerVersion, conn, documentCaps), devServerSidesOf(opts.DevURL, fromSet, toSet), opts)
@@ -271,6 +276,59 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 		return atlasreport.SchemaDiff{}, nil, err
 	}
 	return report, changes, nil
+}
+
+// moveToFromContext moves the desired values of a --to side read from a
+// database to the context of the database the --from side was read from: the
+// --from database, or the dev database a --from file or directory was created
+// on. An executable provider binds every value it reads to the database it
+// read (ADR 0046), and refuses a comparison that holds values bound to two
+// databases. The values move as a rehearsal moves the target's (ADR 0086);
+// where [valuecontext.Move] moves nothing, or either side is no read, the
+// states come back as they are. A --to file is bound to the database the diff
+// names already; see [sourceDatabaseURL]. The --to state is the diff's own, so
+// its values are replaced in place.
+//
+// When a side that moved was read in a dev realm, both sides leave out the
+// permissions on the database root, as a rehearsal's baseline does; see
+// [devclean.WithoutDatabaseGrants].
+func moveToFromContext(
+	ctx context.Context, runtime engine.SchemaRuntime, dialect string, fromState, toState atlassource.State,
+) (from, to atlassource.State, err error) {
+	if fromState.Address == "" || toState.Address == "" || toState.Schema == nil {
+		return fromState, toState, nil
+	}
+	moved, err := valuecontext.Move(ctx, runtime, dialect, toState.Address, fromState.Address, toState.Schema)
+	if err != nil {
+		return fromState, toState, fmt.Errorf("bind the --to schema to the --from database: %w", err)
+	}
+	if !moved {
+		return fromState, toState, nil
+	}
+	realm, err := readsADevRealm(ctx, runtime, dialect, fromState.Address, toState.Address)
+	if err != nil {
+		return fromState, toState, err
+	}
+	if realm {
+		fromState.DB, toState.Schema = devclean.WithoutDatabaseGrants(fromState.DB, toState.Schema)
+	}
+	return fromState, toState, nil
+}
+
+// readsADevRealm reports whether any of addresses names a dev realm: a context
+// whose database is not the root its authored references are read against, as
+// [namesDevRealm] reads a connection's.
+func readsADevRealm(ctx context.Context, contexts schemaext.DatabaseContextResolver, dialect string, addresses ...string) (bool, error) {
+	for _, address := range addresses {
+		bound, err := contexts.ResolveDatabaseContext(ctx, schemaext.DatabaseContextRequest{Target: dialect, Address: address})
+		if err != nil {
+			return false, err
+		}
+		if !bound.IsZero() && bound.Database != bound.SourceDatabase {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // diffCapabilities is the capability set a schema diff plans with.

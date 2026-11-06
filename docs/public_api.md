@@ -1119,7 +1119,9 @@ update directly; pre-v1, so compatibility with an incomplete runtime is not owed
 the batch moves it to `Context`; an owner that names `From`'s database becomes
 relative, and the payload is kept. The runtime refuses a move of an
 observation, or between two contexts whose `SourceDatabase` differs, before
-dispatch. A rehearsal moves the target's values into its dev realm this way.
+dispatch. A rehearsal moves the target's values into its dev realm this way,
+and `schema diff` moves the values of a `--to` side read from a database to
+the context of the `--from` side's read.
 
 `Provider.Conversions` assigns each target and feature kind to one conversion
 service. The provider must own the desired and observed codecs for that kind.
