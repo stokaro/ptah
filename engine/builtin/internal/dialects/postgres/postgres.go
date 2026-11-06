@@ -924,8 +924,12 @@ func (r *Renderer) writeAddConstraintAfter(table, ahead string, constraint *ast.
 	}
 	// Remove the leading spaces from constraint rendering for ALTER
 	constraintLine = strings.TrimPrefix(constraintLine, "  ")
-	r.w.WriteLinef("ALTER TABLE %s %sADD %s%s;",
-		r.escapeQualifiedIdentifier(table), ahead, constraintLine, r.notValidClause(constraint))
+	separator := " "
+	if constraint.Reference != nil && constraint.Reference.CatalogOrder {
+		separator = "\n"
+	}
+	r.w.WriteLinef("ALTER TABLE %s %sADD%s%s%s;",
+		r.escapeQualifiedIdentifier(table), ahead, separator, constraintLine, r.notValidClause(constraint))
 	// The comment is a separate statement here for the same reason it is after
 	// CREATE TABLE, and it has to be written on BOTH paths. Measured on
 	// PostgreSQL 18: `schema apply` reaches an existing table through ALTER
@@ -986,12 +990,15 @@ func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 		r.w.WriteLine("")
 		return nil
 	}
-	return r.renderAlterTableOperations(node)
+	prefix := "ALTER TABLE " + r.escapeQualifiedIdentifier(node.Name) + " "
+	return r.w.WriteAlterTable(node, prefix, r.dialect, func(operations []ast.AlterOperation) error {
+		return r.renderAlterTableStatements(node, operations)
+	})
 }
 
-// renderAlterTableOperations writes a statement for each operation of node.
-func (r *Renderer) renderAlterTableOperations(node *ast.AlterTableNode) error {
-	for _, operation := range node.Operations {
+// renderAlterTableStatements writes a statement for each of operations.
+func (r *Renderer) renderAlterTableStatements(node *ast.AlterTableNode, operations []ast.AlterOperation) error {
+	for _, operation := range operations {
 		switch op := operation.(type) {
 		case *ast.AddColumnOperation:
 			if err := r.writeAddColumn(node.Name, op); err != nil {

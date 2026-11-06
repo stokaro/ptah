@@ -107,15 +107,15 @@ row for a migration decision.
 
 ## At a glance
 
-Across the 197 capabilities below:
+Across the 198 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 183 |
+| Ptah supports it fully | 184 |
 | Ptah supports it with a stated limitation | 3 |
 | Ptah does not implement it | 0 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 11 |
-| Ptah and Atlas CE both support it | 64 |
+| Ptah and Atlas CE both support it | 65 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 54 |
 | Ptah has it and neither Atlas edition does | 28 |
 | Atlas CE has it and Ptah does not, or only in part | 0 |
@@ -247,6 +247,7 @@ seven of them as open capabilities regardless.
 | Revision table format and placement | ✅ | ✅ | ✅ | `--revision-format` ptah\|atlas plus `--migrations-table` and `--migrations-schema`. Both binaries place the Atlas layout as Atlas does: `atlas_schema_revisions` on PostgreSQL without `search_path`. |
 | Roll back applied migrations (down) | ✅ | ❌ | ✅ | Ptah validates all down bodies before changing state, dry-run reports separate preflight rejection from attempted rollback, and `--plan`, `--to-tag` and `--skip-checks` are implemented. |
 | Set revision state to a version | ✅ | ✅ | ✅ | Removes revision rows above the target, keeps rows at or below it, and inserts missing rows through it as manually set. |
+| Statement form of a generated migration | ✅ | ✅ | ✅ | On PostgreSQL, MySQL, MariaDB and SQLite a file takes the binary's spelling, grouping and order wherever nothing depends on the order. Other engines keep the planner's form. |
 | Structured JSON log output (`--log-format`) | ✅ | ❌ | ❌ | migrations up, down, and status take `--log-format` text\|json and `--log-level` debug\|info\|warn\|error for machine-readable run logs. |
 | Transaction modes (`--tx-mode` file/all/none) | ✅ | ✅ | ✅ | File/all/none behavior is tested and none-mode partial progress is pinned both ways. `--tx-mode all` decides on transactional DDL and carries neither checks nor timeouts. |
 | Verb `migrate ls` | ✅ | ❌ | ✅ | `ptah migrations ls` lists a migration directory with no database; `ptah-compat migrate ls` is the drop-in spelling (`--dir`, `-s`, `-l`). Beyond the CE pin, so strict compatibility omits it. |

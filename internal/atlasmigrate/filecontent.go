@@ -453,11 +453,9 @@ func withTxModeNoneDirective(content MigrationFileContent) MigrationFileContent 
 // comment: [planner.RenderedPlan.PlannedStatements] joins it to the statement
 // after it, which would put it under that statement's change.
 //
-// [planner.RenderedPlan.PlannedStatements] runs without a dialect here, which
-// leaves the boundaries to the generic splitter. The dialect's own grammar
-// would move a boundary on the engines whose grammar differs, and with it the
-// one-statement files a golang-migrate run writes, which is a decision of its
-// own.
+// The dialect decides the boundaries: only its own grammar knows a backslash escape
+// on MySQL or an escape string on PostgreSQL, and a splitter that does not reads the
+// rest of the statement inside out and cuts a literal holding a semicolon in two.
 func renderMigrationStatements(
 	ctx context.Context,
 	service renderer.Service,
@@ -475,7 +473,7 @@ func renderMigrationStatements(
 	if err != nil {
 		return nil, err
 	}
-	planned, err := planner.RenderedPlan{Request: request, Result: output}.PlannedStatements()
+	planned, err := planner.RenderedPlan{Request: request, Result: output, Dialect: target}.PlannedStatements()
 	if err != nil {
 		return nil, err
 	}

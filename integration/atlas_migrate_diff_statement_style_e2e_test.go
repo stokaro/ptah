@@ -26,11 +26,10 @@ type statementStyleStep struct {
 // statementStyleFixture is the three steps stokaro/ptah#4921 measured against
 // the pinned community binary v1.3.0 on PostgreSQL 15.19, with owners.name
 // nullable: from PostgreSQL 18 the server names a column's NOT NULL, and the
-// rollback that adds the column back restates that name. The files that binary
-// wrote differ from these only where stokaro/ptah#4960 still tracks them: it
-// groups the changes of one table into one ALTER TABLE and orders the statements
-// of a plan its own way. The change comments, the absence of guards and of
-// CASCADE, the type spelling and a new table's keys and checks are its.
+// rollback that adds the column back restates that name. The files are that
+// binary's byte for byte, except where the v3 step changes a column type under a
+// check: the binary drops the check and adds it again as the server prints it, and
+// Ptah keeps it, which costs no scan of the table.
 var statementStyleFixture = []statementStyleStep{
 	{
 		name: "v1",
@@ -61,12 +60,8 @@ CREATE TABLE "items" (
 -- create index "items_owner_idx" to table: "items"
 CREATE INDEX "items_owner_idx" ON "items" ("owner_id");
 `,
-		down: `-- reverse: modify "items" table
-ALTER TABLE "items" DROP CONSTRAINT "items_owner_id_fkey";
--- reverse: create index "items_owner_idx" to table: "items"
+		down: `-- reverse: create index "items_owner_idx" to table: "items"
 DROP INDEX "items_owner_idx";
--- reverse: modify "items" table
-ALTER TABLE "items" DROP CONSTRAINT "items_note_len";
 -- reverse: create "items" table
 DROP TABLE "items";
 -- reverse: create "owners" table
@@ -103,36 +98,33 @@ CREATE TABLE items (
 CREATE INDEX items_owner_idx ON items (owner_id, id);
 CREATE TABLE tags (id bigint PRIMARY KEY, item_id bigint REFERENCES items (id), label text NOT NULL);
 `,
-		up: `-- create "tags" table
+		up: `-- drop index "items_owner_idx" from table: "items"
+DROP INDEX "items_owner_idx";
+-- modify "items" table
+ALTER TABLE "items" ALTER COLUMN "note" TYPE character varying(200);
+-- create index "items_owner_idx" to table: "items"
+CREATE INDEX "items_owner_idx" ON "items" ("owner_id", "id");
+-- modify "owners" table
+ALTER TABLE "owners" DROP COLUMN "name";
+-- create "tags" table
 CREATE TABLE "tags" (
   "id" bigint NOT NULL,
   "item_id" bigint NULL,
   "label" text NOT NULL,
-  PRIMARY KEY ("id")
+  PRIMARY KEY ("id"),
+  CONSTRAINT "tags_item_id_fkey" FOREIGN KEY ("item_id") REFERENCES "items" ("id") ON UPDATE NO ACTION ON DELETE NO ACTION
 );
--- modify "items" table
-ALTER TABLE "items" ALTER COLUMN "note" TYPE character varying(200);
--- drop index "items_owner_idx" from table: "items"
-DROP INDEX "items_owner_idx";
--- create index "items_owner_idx" to table: "items"
-CREATE INDEX "items_owner_idx" ON "items" ("owner_id", "id");
--- modify "tags" table
-ALTER TABLE "tags" ADD CONSTRAINT "tags_item_id_fkey" FOREIGN KEY ("item_id") REFERENCES "items" ("id") ON UPDATE NO ACTION ON DELETE NO ACTION;
--- modify "owners" table
-ALTER TABLE "owners" DROP COLUMN "name";
 `,
-		down: `-- reverse: modify "tags" table
-ALTER TABLE "tags" DROP CONSTRAINT "tags_item_id_fkey";
--- reverse: modify "items" table
-ALTER TABLE "items" ALTER COLUMN "note" TYPE text;
+		down: `-- reverse: create "tags" table
+DROP TABLE "tags";
 -- reverse: modify "owners" table
 ALTER TABLE "owners" ADD COLUMN "name" character varying NULL;
 -- reverse: create index "items_owner_idx" to table: "items"
 DROP INDEX "items_owner_idx";
+-- reverse: modify "items" table
+ALTER TABLE "items" ALTER COLUMN "note" TYPE text;
 -- reverse: drop index "items_owner_idx" from table: "items"
 CREATE INDEX "items_owner_idx" ON "items" ("owner_id");
--- reverse: create "tags" table
-DROP TABLE "tags";
 `,
 	},
 }

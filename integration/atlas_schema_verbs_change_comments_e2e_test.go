@@ -50,6 +50,13 @@ func TestCompatSchemaVerbsChangeCommentsE2E_NameEachStatement(t *testing.T) {
 	dev := pinnedDevURL(c, postgresScratchDevURL(c, "ptah_verbs_dev"), "public")
 	target := pinnedDevURL(c, postgresScratchDevURL(c, "ptah_verbs_target"), "public")
 	want := []string{
+		`Drop index "i" from table: "t"`,
+		`Modify "t" table`,
+		`Create index "i2" to table: "t"`,
+		`Create "u" table`,
+	}
+	// schema plan keeps the planner's statements, since it has no form to match.
+	wantPlanned := []string{
 		`Create "u" table`,
 		`Modify "t" table`,
 		`Create index "i2" to table: "t"`,
@@ -66,7 +73,7 @@ func TestCompatSchemaVerbsChangeCommentsE2E_NameEachStatement(t *testing.T) {
 
 	planned, err := runCompatVerb("schema", "plan", "--from", target, "--to", to, "--dev-url", dev, "--name", "p", "--dry-run")
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", planned))
-	c.Assert(changeLines(planned), qt.DeepEquals, want, qt.Commentf("%s", planned))
+	c.Assert(changeLines(planned), qt.DeepEquals, wantPlanned, qt.Commentf("%s", planned))
 
 	applied, err := runCompatVerb("schema", "apply", "--url", target, "--to", to, "--dev-url", dev, "--auto-approve")
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", applied))

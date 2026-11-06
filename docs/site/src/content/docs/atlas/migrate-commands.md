@@ -1484,10 +1484,7 @@ apply`, `schema plan` and `schema diff` here, and native `ptah migrations genera
 and `ptah schema apply`. The three `schema` verbs here write the same change comments,
 with the first letter in upper case as the community binary writes them on `schema
 diff` and `schema apply`: `-- Create "owners" table`. Native verbs write none. The
-community binary does not have `schema plan`. The files
-still differ from the community binary's in how statements are grouped and
-ordered; [stokaro/ptah#4960](https://github.com/stokaro/ptah/issues/4960) tracks
-those.
+community binary does not have `schema plan`.
 
 On `migrate diff`, `schema diff` and `schema apply`, a plan on PostgreSQL, MySQL,
 MariaDB or SQLite is spelled the way a read of the catalog prints a schema, as the
@@ -1509,14 +1506,69 @@ A type takes the name the catalog reports, such as `integer` for `int` and
 `character varying` for `varchar`, and a nullable column says `NULL`. The primary
 key, the unique constraints, the foreign keys and the checks of a new table sit
 inside its `CREATE TABLE`, in that order. A foreign key stays in a statement of its
-own when the table it names comes later or the plan changes that table.
+own when tables reference each other, or when what it needs comes after the table.
 
-Three differences stay, on purpose. An expression keeps the text the author wrote,
-such as `WHERE b > 0`, where the binary writes what the server prints, `WHERE (b >
-0)`. On MySQL and MariaDB the file names no `CHARSET` or `COLLATE` the author did
-not declare, because the binary's are the dev server's defaults: on MariaDB 11.8 it
-writes `COLLATE utf8mb4_uca1400_ai_ci`, which MySQL refuses. On SQLite a `varchar(200)`
-keeps its length, which the binary writes as `varchar`.
+Where the order cannot change the result, the statements read in the community
+binary's order:
+
+1. The tables the plan changes, by name, a table after the one whose change it needs.
+   Each is its index drops, its `ALTER TABLE` and its new indexes.
+2. The new tables with their indexes. A table comes after the new tables its foreign
+   keys need, and by name among the ones that need the same number.
+3. The foreign keys that wait for a new table.
+4. The tables the plan drops.
+
+On PostgreSQL, MySQL and MariaDB one `ALTER TABLE` holds the changes to a table: a
+dropped primary key, the checks, the columns by position, an added primary key, the
+unique constraints and the foreign keys. That order holds only inside one statement. So
+where a change needs another statement beside it, such as the `UPDATE` that fills a
+column gaining `NOT NULL` or a `COMMENT ON`, each change of that table is a statement of
+its own, in the order the plan gives them. SQLite takes one change in each `ALTER
+TABLE`, so its statements stay apart. A rollback reads as the forward file backwards.
+
+A file that runs comes first. The pass moves a statement or merges one into another
+only where it can show that nothing depends on their order:
+
+- Two statements keep the order the plan gave them when they touch the same column,
+  key, index or name, on one table or across a foreign key. So a foreign key follows
+  the column and the key it references, whatever the tables are called, and on MySQL
+  and MariaDB an index follows the foreign key that stands on it. A rollback keeps its
+  own plan's order on the same terms, but frees a name before it takes it back, since
+  forward ran those two the other way round.
+- The drop of an index comes ahead of a change to its columns. It does not depend on
+  them, and a column that goes first takes the index with it, which leaves the drop
+  nothing to find.
+- A statement whose dependencies the plan does not say, and a statement of another
+  kind, such as a view or a routine, stays where the plan puts it, and the tables are
+  ordered on each side of it. An expression that calls a routine the schema declares
+  counts as one, because the pass does not read the routine's body.
+- Added columns keep the order the plan gives them, since that is the order the table
+  holds them in.
+- Two changes the server refuses in one statement stay in two: on MySQL a foreign key
+  dropped and added under one name, and on MySQL and MariaDB a foreign key of a table
+  to itself and the change it references.
+
+Some differences stay, on purpose:
+
+- The community binary writes a rollback as the forward file backwards in every case.
+  Where a forward file adds a check and the column it reads, PostgreSQL refuses that
+  rollback with `constraint "ck" of relation "t" does not exist`. This binary drops the
+  check first.
+- The community binary drops a column on PostgreSQL without naming the foreign key on
+  it, and its rollback adds the column back without the key. This binary drops the key
+  and puts it back.
+- An expression keeps the text the author wrote, such as `WHERE b > 0`, where the
+  binary writes what the server prints, `WHERE (b > 0)`.
+- On MySQL and MariaDB the file names no `CHARSET` or `COLLATE` the author did not
+  declare, because the binary's are the dev server's defaults: on MariaDB 11.8 it
+  writes `COLLATE utf8mb4_uca1400_ai_ci`, which MySQL refuses.
+- On SQLite a `varchar(200)` keeps its length, which the binary writes as `varchar`,
+  and new tables keep the planner's order, where the binary keeps the order the
+  catalog read lists them in.
+- A check over a column that changes type stays in place, where the binary drops it
+  and adds it again.
+- A comment above an `ALTER TABLE` with `SET NOT NULL` says which rows would stop
+  the statement. The binary writes no comment there.
 
 A file names no dev database. On MySQL, MariaDB and ClickHouse a read of one
 database records that database on its views, routines and sequences, and the

@@ -41,15 +41,12 @@ type nullBackfillDiff struct {
 // golang-migrate layout, whose rollback half sets NOT NULL again.
 var nullBackfillDiffs = []nullBackfillDiff{
 	{
-		name:    "NOT NULL and a default gained together",
-		files:   map[string]string{"20260101000000_init.sql": "CREATE TABLE t3660 (id bigint PRIMARY KEY, c integer);"},
-		schema:  "CREATE TABLE t3660 (id bigint PRIMARY KEY, c integer NOT NULL DEFAULT 9);",
-		written: ".sql",
-		target:  []string{"CREATE TABLE t3660 (id bigint PRIMARY KEY, c integer)", "INSERT INTO t3660 VALUES (1, NULL)"},
-		wantStrict: []string{
-			`ALTER TABLE "t3660" ALTER COLUMN "c" SET NOT NULL`,
-			`ALTER TABLE "t3660" ALTER COLUMN "c" SET DEFAULT 9`,
-		},
+		name:       "NOT NULL and a default gained together",
+		files:      map[string]string{"20260101000000_init.sql": "CREATE TABLE t3660 (id bigint PRIMARY KEY, c integer);"},
+		schema:     "CREATE TABLE t3660 (id bigint PRIMARY KEY, c integer NOT NULL DEFAULT 9);",
+		written:    ".sql",
+		target:     []string{"CREATE TABLE t3660 (id bigint PRIMARY KEY, c integer)", "INSERT INTO t3660 VALUES (1, NULL)"},
+		wantStrict: []string{`ALTER TABLE "t3660" ALTER COLUMN "c" SET NOT NULL, ALTER COLUMN "c" SET DEFAULT 9`},
 	},
 	{
 		name:       "NOT NULL gained under a default the column has",
@@ -142,8 +139,8 @@ func nullBackfillRow(c *qt.C, db *sql.DB) string {
 //	ALTER TABLE "public"."t3660" ALTER COLUMN "c" SET NOT NULL;
 //	ALTER TABLE "public"."t3660" ALTER COLUMN "c" SET NOT NULL;  -- the .down.sql
 //
-// Ptah writes one statement per clause and leaves the schema unqualified; the
-// statements are the same. Run on a table holding a NULL, each file fails with
+// Ptah leaves the schema unqualified; the statements are the same. Run on a table
+// holding a NULL, each file fails with
 // SQLSTATE 23502, as the pinned binary's does, and the row keeps its NULL.
 func TestStrictCompatMigrateDiffWritesNoNullBackfill_FailurePath(t *testing.T) {
 	c := qt.New(t)
@@ -177,7 +174,7 @@ func TestStrictCompatMigrateDiffWritesNoNullBackfill_HappyPath(t *testing.T) {
 
 			c.Assert(statements, qt.Not(qt.HasLen), 0)
 			c.Assert(statements[0], qt.Matches, `UPDATE "t3660" SET "c" = '?9'? WHERE "c" IS NULL`)
-			c.Assert(statements, qt.Contains, `ALTER TABLE "t3660" ALTER COLUMN "c" SET NOT NULL`)
+			c.Assert(strings.Join(statements, "\n"), qt.Contains, `ALTER TABLE "t3660" ALTER COLUMN "c" SET NOT NULL`)
 			c.Assert(runErr, qt.IsNil)
 			c.Assert(row, qt.Equals, "9")
 		})

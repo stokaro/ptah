@@ -77,7 +77,8 @@ type ForeignKeyRef struct {
 	OnUpdate string
 	// CatalogOrder writes the reference as a catalog read prints it: a space
 	// between the referenced table and its column list, and ON UPDATE ahead of ON
-	// DELETE. It changes nothing but the text.
+	// DELETE. On PostgreSQL an ALTER TABLE writes the constraint on a line of its
+	// own. It changes nothing but the text.
 	CatalogOrder bool
 	// Name is the constraint name for the foreign key
 	Name string

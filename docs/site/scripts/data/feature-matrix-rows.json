@@ -874,6 +874,15 @@
   },
   {
     "area": "Versioned migrations — directory",
+    "feature": "Statement form of a generated migration",
+    "ptah": "yes",
+    "atlas_oss": "yes",
+    "atlas_pro": "yes",
+    "note": "On PostgreSQL, MySQL, MariaDB and SQLite a file takes the binary's spelling, grouping and order wherever nothing depends on the order. Other engines keep the planner's form.",
+    "evidence": "Measured against the pinned community binary v1.3.0 on PostgreSQL 18: integration/atlas_migrate_diff_catalog_shape_e2e_test.go compares both files of each step byte for byte (TestCompatMigrateDiffCatalogShapeE2E_MatchesTheBinarysBytes) and applies grouped plans both ways on PostgreSQL, MySQL, MariaDB and SQLite (TestCompatMigrateDiffCatalogShapeE2E_AGroupedPlanRunsBothWays). integration/atlas_migrate_diff_statement_order_e2e_test.go runs the plans whose order a server decides both ways and reads each database back (TestCompatMigrateDiffCatalogShapeE2E_EveryPlanRunsBothWays), and integration/atlas_migrate_diff_statement_rows_e2e_test.go runs plans over rows and backfills and reads the rows back. stokaro/ptah#4960 holds the measured differences left unmatched."
+  },
+  {
+    "area": "Versioned migrations — directory",
     "feature": "Migration import from other tools",
     "ptah": "yes",
     "atlas_oss": "yes",
