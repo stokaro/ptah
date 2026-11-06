@@ -116,14 +116,16 @@ func TestMigrationsForeignKeyMovedE2E_TheRollbackMovesTheKeyBack(t *testing.T) {
 // rebuilds the index with the key gone. Each row holds a row of data through both.
 func TestMigrationsForeignKeyMovedE2E_AKeptKeyStandsOnTheOldIndex(t *testing.T) {
 	const (
-		rows  = "INSERT INTO parent VALUES (1, 1), (2, 2);\nINSERT INTO child (id, pid, qid) VALUES (1, 1, 2);\n"
+		rows  = "INSERT INTO parent VALUES (1, 1), (2, 2);\nINSERT INTO child (id, pid, qid) VALUES (1, 1, 1);\n"
 		old   = "CONSTRAINT c_fk FOREIGN KEY (pid) REFERENCES parent (id)"
 		moved = "CONSTRAINT c_fk FOREIGN KEY (qid) REFERENCES parent (id)"
 		kept  = "CONSTRAINT d_fk FOREIGN KEY (pid) REFERENCES parent (code)"
 		table = "CREATE TABLE child (id bigint PRIMARY KEY, pid bigint, qid bigint, "
 		after = table + moved + ", " + kept + ");\n"
 		ended = "c_fk(qid),d_fk(pid) | c_fk(qid),d_fk(pid)"
-		back  = "c_fk(pid) | c_fk(pid),d_fk(pid)"
+		// keyMovedParent also holds the pair a key over two columns references.
+		keyMovedParent = "CREATE TABLE parent (id bigint PRIMARY KEY, code bigint NOT NULL UNIQUE, UNIQUE KEY pair (id, code));\n"
+		back           = "c_fk(pid) | c_fk(pid),d_fk(pid)"
 	)
 	tests := []struct{ name, built, desired, afterUp, afterDown string }{
 		{
@@ -162,6 +164,13 @@ func TestMigrationsForeignKeyMovedE2E_AKeptKeyStandsOnTheOldIndex(t *testing.T) 
 			afterDown: back,
 		},
 		{
+			name:      "a removed key stands on the index too",
+			built:     table + "KEY c_fk (pid, qid), CONSTRAINT b_fk FOREIGN KEY (pid, qid) REFERENCES parent (id, code), " + old + ", " + kept + ");\n",
+			desired:   after,
+			afterUp:   ended,
+			afterDown: "c_fk(pid,qid) | b_fk(pid),b_fk(qid),c_fk(pid),d_fk(pid)",
+		},
+		{
 			name:      "the kept key has an index that stays, control",
 			built:     table + "KEY z_cover (pid), " + old + ", " + kept + ");\n",
 			desired:   table + "KEY z_cover (pid), " + moved + ", " + kept + ");\n",
@@ -173,11 +182,11 @@ func TestMigrationsForeignKeyMovedE2E_AKeptKeyStandsOnTheOldIndex(t *testing.T) 
 		for _, test := range tests {
 			t.Run(engine.name+" "+test.name, func(t *testing.T) {
 				c := qt.New(t)
-				_, target := newMySQLFamilyScratch(c, engine.engine).builtFrom(c, removedForeignKeyParent+test.built+rows)
+				_, target := newMySQLFamilyScratch(c, engine.engine).builtFrom(c, keyMovedParent+test.built+rows)
 				dir := filepath.Join(c.TempDir(), "migrations")
 				c.Assert(os.MkdirAll(dir, 0o750), qt.IsNil)
 				schema := filepath.Join(c.TempDir(), "schema.sql")
-				c.Assert(os.WriteFile(schema, []byte(removedForeignKeyParent+test.desired), 0o600), qt.IsNil)
+				c.Assert(os.WriteFile(schema, []byte(keyMovedParent+test.desired), 0o600), qt.IsNil)
 
 				generated := runPtahIn(c, "migrations", "generate", "--db-url", target, "--schema-file", schema, "--migrations-dir", dir, "--name", "fk")
 				c.Assert(generated.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", generated.Stdout, generated.Stderr))

@@ -1094,7 +1094,9 @@ func (p *Planner) planColumnTypeForeignKeyChanges(diff *difftypes.SchemaDiff) co
 // A foreign key also leaves ahead of the rebuild of an index under its name, which it
 // stands on until then: `DROP INDEX k, ADD INDEX k (b)` answers Error 1553 while a
 // foreign key over `a` holds k. Measured on MySQL 8.4 and MariaDB 12.3. A rollback of a
-// key moved over another key the plan keeps has this shape.
+// key moved over another key the plan keeps has this shape. So does a foreign key on a
+// table whose kept key takes over at an addition, ahead of the plan's constraint removals:
+// the index it leaves may be the only one that serves the key.
 func (p *Planner) releaseForeignKeysOverMovedKeys(diff *difftypes.SchemaDiff, plan *columnTypeForeignKeyPlan) {
 	if diff == nil || !p.isMySQLFamily() {
 		return
@@ -1108,12 +1110,14 @@ func (p *Planner) releaseForeignKeysOverMovedKeys(diff *difftypes.SchemaDiff, pl
 	}
 	losesColumn := keyrelease.TablesLosingColumns(diff, semantics)
 	rebuilt := indexscope.NewConflictSetWithSemantics(semantics, diff.IndexRemovals())
+	takesOverEarly := tablesTakingOverAtAnAddition(diff, p.targetDialect(), semantics)
 	for _, info := range diff.ForeignKeysRemovedWithTables {
 		foreign := semantics.QualifiedTableIdentityKey(info.ForeignTable)
+		host := semantics.QualifiedTableIdentityKey(info.TableName)
 		ownIndex := difftypes.IndexRef{Name: info.Name, TableName: info.TableName}
 		rebuildsOwnIndex := rebuilt.Contains(ownIndex) && slices.Contains(diff.IndexAdditions(), ownIndex)
 		if _, done := plan.dropped[info.Identity]; done ||
-			(!losesKey[foreign] && !losesColumn[foreign] && !losesColumn[semantics.QualifiedTableIdentityKey(info.TableName)] && !rebuildsOwnIndex) {
+			!(losesKey[foreign] || losesColumn[foreign] || losesColumn[host] || takesOverEarly[host] || rebuildsOwnIndex) {
 			continue
 		}
 		plan.drops = append(plan.drops, p.dropConstraintNode(difftypes.ConstraintRemovalInfo{
@@ -1480,6 +1484,21 @@ func indexTakingOverNode(diff *difftypes.SchemaDiff, change difftypes.IndexChang
 		op.DropsUniqueConstraint = op.DropsUniqueConstraint || ownedByConstraint || uniqueConstraint
 	}
 	return &ast.AlterTableNode{Name: change.TableName, Operations: []ast.AlterOperation{op}}
+}
+
+// tablesTakingOverAtAnAddition keys the tables with an index that takes over from one a
+// foreign key the plan adds takes the name of; see [indexTakingOverNode].
+func tablesTakingOverAtAnAddition(diff *difftypes.SchemaDiff, dialect string, semantics identifier.Semantics) map[string]bool {
+	named := indexesNamedByForeignKeys(diff, dialect)
+	tables := make(map[string]bool)
+	for _, change := range diff.IndexesAdded {
+		for _, ref := range change.Replaces {
+			if _, held := named[ref]; held {
+				tables[semantics.QualifiedTableIdentityKey(change.TableName)] = true
+			}
+		}
+	}
+	return tables
 }
 
 // indexTakingOverFrom answers the addition that takes over from ref, if one does.
