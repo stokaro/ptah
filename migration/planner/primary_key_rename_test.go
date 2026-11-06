@@ -48,6 +48,25 @@ func TestPrimaryKeyRename_HappyPath(t *testing.T) {
 			want:    []string{`DROP INDEX "parent_custom"`, rename},
 		},
 		{
+			name:    "another table's key over the same columns stays",
+			dialect: "postgres",
+			held: `CREATE TABLE parent (id bigint PRIMARY KEY);
+				CREATE TABLE other (id bigint NOT NULL, CONSTRAINT other_pkey PRIMARY KEY (id));`,
+			desired: `CREATE TABLE parent (id bigint NOT NULL, CONSTRAINT parent_custom PRIMARY KEY (id));
+				CREATE TABLE other (id bigint NOT NULL, CONSTRAINT other_pkey PRIMARY KEY (id));`,
+			want: []string{rename},
+		},
+		{
+			name:    "an index of another schema holding the name leaves after the rename",
+			dialect: "postgres",
+			held: `CREATE TABLE parent (id bigint PRIMARY KEY);
+				CREATE TABLE s.other (id bigint NOT NULL, code bigint, CONSTRAINT other_pkey PRIMARY KEY (id));
+				CREATE INDEX parent_custom ON s.other (code);`,
+			desired: `CREATE TABLE parent (id bigint NOT NULL, CONSTRAINT parent_custom PRIMARY KEY (id));
+				CREATE TABLE s.other (id bigint NOT NULL, code bigint, CONSTRAINT other_pkey PRIMARY KEY (id));`,
+			want: []string{rename, `DROP INDEX "s"."parent_custom"`},
+		},
+		{
 			name:    "no name declared keeps the live one",
 			dialect: "postgres",
 			held:    keyedParent,
