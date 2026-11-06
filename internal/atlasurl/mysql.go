@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/url"
 	"strings"
+	"time"
 
 	mysqldriver "github.com/go-sql-driver/mysql"
 
@@ -100,6 +101,25 @@ func ParseMySQLURL(rawURL string) (MySQLURL, error) {
 	}
 	parsed.config = config
 	return parsed, nil
+}
+
+// TextTimeLocation is the zone the text of a time column reads in on a connection
+// opened from rawURL.
+//
+// go-sql-driver hands back a DATETIME or TIMESTAMP value as the server's text
+// unless the URL says parseTime=true, and that text carries no zone. The driver
+// writes a bound time.Time as wall-clock text in the zone of the URL's `loc`
+// parameter, UTC without one, and under parseTime=true it reads the text back in
+// that same zone. Read in any other zone, the text names another moment.
+//
+// Every other URL answers UTC: its driver either hands back a time.Time, or text
+// that was never written through a `loc`.
+func TextTimeLocation(rawURL string) *time.Location {
+	parsed, err := ParseMySQLURL(rawURL)
+	if err != nil {
+		return time.UTC
+	}
+	return parsed.config.Loc
 }
 
 // hasMySQLNetwork reports whether what follows the scheme is go-sql-driver's

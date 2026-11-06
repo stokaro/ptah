@@ -199,8 +199,14 @@ func (m *Migrator) MigrationTags(ctx context.Context) ([]MigrationTag, error) {
 	defer func() { _ = rows.Close() }()
 	var tags []MigrationTag
 	for rows.Next() {
-		var tag MigrationTag
-		if err := rows.Scan(&tag.Tag, &tag.Version, &tag.RecordedAt); err != nil {
+		var (
+			tag        MigrationTag
+			recordedAt any
+		)
+		if err := rows.Scan(&tag.Tag, &tag.Version, &recordedAt); err != nil {
+			return nil, fmt.Errorf("read migration tags: %w", err)
+		}
+		if tag.RecordedAt, err = m.parseStoredTime("recorded_at", recordedAt); err != nil {
 			return nil, fmt.Errorf("read migration tags: %w", err)
 		}
 		tags = append(tags, tag)
