@@ -216,6 +216,14 @@ var hostFeatures = []string{
 	// A comparison counts the objects it compares, and the drift inventory
 	// reports them under their change kinds; see boundCounts.
 	provider.ComparisonCountsFeature,
+	// A described model travels by reference in every message but the
+	// description, so a request's coverage of each table grows by a few
+	// names rather than by every model's definition, and a message may be
+	// 64 MiB rather than 4: a schema of a few thousand tables reaches the
+	// provider in one request. The SDK client sends and resolves the
+	// references, and no adapter here sees one.
+	provider.ModelReferencesFeature,
+	provider.LargeMessagesFeature,
 }
 
 // Start verifies the selected artifact and negotiates experimental services.
