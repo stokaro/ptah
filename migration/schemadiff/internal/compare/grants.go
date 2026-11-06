@@ -64,14 +64,21 @@ type GrantObjects interface {
 }
 
 // OwnedObjects is what a grant comparison knows of the objects owners manage:
-// how a grant names one, and what the desired source says about them. The
-// zero value names none, so every grant is on a common object.
+// how a grant names one, what the desired source says about them, and which
+// ones the owners keep. The zero value names none, so every grant is on a
+// common object.
 type OwnedObjects struct {
 	// Names reads the owner's object a grant names. Nil names none.
 	Names GrantObjects
 	// Desired is the desired source's own account of the owners' objects:
 	// the objects it declares and the knowledge it claims about the rest.
 	Desired schemaext.FeatureState
+	// Effective holds the objects of the desired state the owners made of
+	// the source. An object here that Desired does not declare is one an
+	// owner keeps as the database holds it, such as a YDB resource pool,
+	// which belongs to the whole database and which a source that leaves it
+	// out does not remove. The zero value holds none.
+	Effective schemaext.Objects
 }
 
 // describes reports whether the desired source makes a claim about the
@@ -82,7 +89,9 @@ type OwnedObjects struct {
 // the object absent, or asks for its defaults. A source that does not
 // describe the kind, by a `ptah:not-described` record or by claiming nothing
 // about it, makes no claim about who may use such an object, and the entry
-// stays as the database holds it.
+// stays as the database holds it. Neither does a source that leaves out an
+// object its owner keeps whatever the source claims about the kind: the
+// object stays as the database holds it, and so does the entry on it.
 func (o OwnedObjects) describes(grant catalog.Grant) bool {
 	if o.Names == nil {
 		return true
@@ -93,6 +102,9 @@ func (o OwnedObjects) describes(grant catalog.Grant) bool {
 	}
 	if _, declared, _ := o.Desired.Objects.Get(ref); declared {
 		return true
+	}
+	if _, kept, _ := o.Effective.Get(ref); kept {
+		return false
 	}
 	switch o.Desired.Coverage.Lookup(schemaext.Kind(ref.Kind), ref).State {
 	case schemaext.Uninspected, schemaext.Unrepresentable:
