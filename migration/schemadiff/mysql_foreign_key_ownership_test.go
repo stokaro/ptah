@@ -37,13 +37,18 @@ func liveChildren(indexes ...catalog.Index) *catalog.Database {
 	}
 }
 
-// desiredChildren is the same table declaring only the named indexes.
+// desiredChildren is the same table with its foreign key, declaring only the named
+// indexes.
 func desiredChildren(names ...string) *schemamodel.Database {
 	desired := &schemamodel.Database{
 		Tables: []schemamodel.Table{
 			{StructName: "Children", Name: "children"},
 			{StructName: "Parents", Name: "parents"},
 		},
+		Constraints: []schemamodel.Constraint{{
+			StructName: "Children", Name: "f", Type: "FOREIGN KEY", Table: "children", Columns: []string{"a"},
+			ForeignTable: "parents",
+		}},
 	}
 	for _, name := range names {
 		desired.Indexes = append(desired.Indexes, schemamodel.Index{
