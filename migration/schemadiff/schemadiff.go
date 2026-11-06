@@ -248,6 +248,7 @@ func compareReportingUndecidedAdditions(
 	compare.GrantsWithOptions(desired, database, diff, identifierSemantics, compare.GrantOptions{
 		Objects:         compare.OwnedObjects{Names: grantObjectNames(runtime), Desired: authoredFeatures, Effective: desired.FeatureObjects},
 		DesiredComplete: opts.DesiredGrantsComplete,
+		DesiredRead:     opts.DesiredReadGrants,
 	})
 
 	// Compare common table constraints (CHECK, UNIQUE, PRIMARY KEY, FOREIGN KEY).

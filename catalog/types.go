@@ -1457,13 +1457,17 @@ type Grant struct {
 	// records that the owner revoked its own EXECUTE. The row is reported so a
 	// rollback can distinguish a revoked privilege from an unread ACL. A
 	// description of the database leaves implicit rows out.
+	//
+	// On a relation, a sequence or a schema, an implicit row is a privilege
+	// PostgreSQL gives the object's owner, whether the ACL is NULL or spells it
+	// out; see [Grant.OwnerDefault] and [Grant.OwnerRevoked].
 	Implicit bool `json:"implicit,omitempty"`
 
 	// IsPartialRevoke marks a row that SUBTRACTS from a broader grant rather
-	// than adding one. Only ClickHouse produces it, and only the ClickHouse
-	// reader sets it: `GRANT SELECT ON db.* TO r` followed by
+	// than adding one. On ClickHouse, `GRANT SELECT ON db.* TO r` followed by
 	// `REVOKE SELECT ON db.t FROM r` leaves two rows in system.grants, the
-	// second with is_partial_revoke = 1, and SHOW GRANTS prints both lines.
+	// second with is_partial_revoke = 1, and SHOW GRANTS prints both lines. A
+	// SQL Server DENY reads the same way.
 	//
 	// Ptah does not manage that shape — a grant minus exceptions has no
 	// declaration to compare against — so nothing plans one. The field exists
@@ -1471,7 +1475,9 @@ type Grant struct {
 	// a live validation refuse a managed role whose effective privileges are
 	// quietly narrower than its grant row alone would say.
 	//
-	// omitempty keeps every PostgreSQL serialization byte-identical.
+	// PostgreSQL reports it together with Implicit, for a privilege an object's
+	// owner revoked from itself: what it subtracts from is what ownership gives.
+	// Ptah manages that shape, as a revoke.
 	IsPartialRevoke bool `json:"is_partial_revoke,omitempty"`
 
 	// Column names the column of the table target this privilege is limited
@@ -1479,6 +1485,25 @@ type Grant struct {
 	// whole object. A column privilege and the table privilege of the same
 	// name are two rows.
 	Column string `json:"column,omitempty"`
+}
+
+// OwnerDefault reports whether the row is a privilege the owner of a relation, a
+// sequence or a schema holds by default. No statement wrote it and a new object
+// has it, so a description, a plan that creates the object again and a comparison
+// with a source that says nothing about it all leave it out. A routine's implicit
+// rows are not these: they are PUBLIC's EXECUTE and an observation of the owner.
+func (g Grant) OwnerDefault() bool {
+	return g.Implicit && !g.IsPartialRevoke && !g.onRoutine()
+}
+
+// OwnerRevoked reports whether the row is a privilege the owner of a relation, a
+// sequence or a schema holds by default and revoked from itself.
+func (g Grant) OwnerRevoked() bool {
+	return g.Implicit && g.IsPartialRevoke && !g.onRoutine()
+}
+
+func (g Grant) onRoutine() bool {
+	return strings.EqualFold(g.ObjectType, "FUNCTION") || strings.EqualFold(g.ObjectType, "PROCEDURE")
 }
 
 // QualifiedTarget returns schema.object for table, sequence and routine

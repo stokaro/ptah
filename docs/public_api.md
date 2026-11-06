@@ -15,6 +15,12 @@ this distinction. Membership edges can name principals outside the managed
 role list; `coverage.RoleMembership` and `coverage.ObjectOwner` track these
 observations independently.
 
+A PostgreSQL or YugabyteDB read reports what an object's owner holds by default in
+`catalog.Database.Grants`, one row per privilege with `Grant.Implicit` set, whether
+the object's ACL is NULL or spells it out. `Grant.OwnerDefault` and
+`Grant.OwnerRevoked` name those rows: no statement wrote them, so code that walks the
+grants as what somebody granted leaves them out.
+
 ## Stable Embedder API
 
 These packages are intended for application and tool embedders:

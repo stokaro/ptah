@@ -50,19 +50,11 @@ func TestGrantsWithOptions_ACompleteDesiredStateRemovesWhatItLeavesOut(t *testin
 			grant: catalog.Grant{Role: "reader", Privilege: "EXECUTE", ObjectType: "FUNCTION", ObjectName: "f"},
 			want:  difftypes.GrantRef{Role: "reader", Privilege: "EXECUTE", ObjectType: "FUNCTION", ObjectName: "f"},
 		},
-		{
-			name:  "a role that is not the owner of this object",
-			grant: catalog.Grant{Role: "other_owner", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t"},
-			want:  difftypes.GrantRef{Role: "other_owner", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t"},
-		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			database := &catalog.Database{
-				Grants:       []catalog.Grant{test.grant},
-				ObjectOwners: []catalog.ObjectOwner{{Kind: "table", Schema: "public", Name: "t", Owner: "app_owner"}},
-			}
+			database := &catalog.Database{Grants: []catalog.Grant{test.grant}}
 
 			c.Assert(grantRemovals(database, true), qt.DeepEquals, []difftypes.GrantRef{test.want})
 		})
@@ -70,10 +62,8 @@ func TestGrantsWithOptions_ACompleteDesiredStateRemovesWhatItLeavesOut(t *testin
 }
 
 // TestGrantsWithOptions_ACompleteDesiredStateLeavesWhatItHoldsByDefault is a
-// privilege the other side holds with no row saying so. PostgreSQL stores no ACL
-// until the first GRANT or REVOKE, so one side reports these and the other
-// reports nothing, and revoking them to match takes them from a side that holds
-// them.
+// privilege the other side holds with no grant saying so. Revoking one to match
+// takes it from a side that holds it.
 func TestGrantsWithOptions_ACompleteDesiredStateLeavesWhatItHoldsByDefault(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -81,15 +71,15 @@ func TestGrantsWithOptions_ACompleteDesiredStateLeavesWhatItHoldsByDefault(t *te
 	}{
 		{
 			name:  "the table's owner",
-			grant: catalog.Grant{Role: "app_owner", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t"},
+			grant: catalog.Grant{Role: "app_owner", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t", Implicit: true},
 		},
 		{
 			name:  "the owner of a table in another schema",
-			grant: catalog.Grant{Role: "extra_owner", Privilege: "SELECT", ObjectType: "TABLE", Schema: "extra", ObjectName: "t"},
+			grant: catalog.Grant{Role: "extra_owner", Privilege: "SELECT", ObjectType: "TABLE", Schema: "extra", ObjectName: "t", Implicit: true},
 		},
 		{
 			name:  "the schema's owner",
-			grant: catalog.Grant{Role: "schema_owner", Privilege: "USAGE", ObjectType: "SCHEMA", ObjectName: "app"},
+			grant: catalog.Grant{Role: "schema_owner", Privilege: "USAGE", ObjectType: "SCHEMA", ObjectName: "app", Implicit: true},
 		},
 		{
 			name:  "PUBLIC's EXECUTE on a function",
@@ -103,14 +93,7 @@ func TestGrantsWithOptions_ACompleteDesiredStateLeavesWhatItHoldsByDefault(t *te
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			database := &catalog.Database{
-				Grants: []catalog.Grant{test.grant},
-				ObjectOwners: []catalog.ObjectOwner{
-					{Kind: "table", Schema: "public", Name: "t", Owner: "app_owner"},
-					{Kind: "table", Schema: "extra", Name: "t", Owner: "extra_owner"},
-					{Kind: "schema", Name: "app", Owner: "schema_owner"},
-				},
-			}
+			database := &catalog.Database{Grants: []catalog.Grant{test.grant}}
 
 			c.Assert(grantRemovals(database, true), qt.HasLen, 0)
 		})
@@ -119,7 +102,7 @@ func TestGrantsWithOptions_ACompleteDesiredStateLeavesWhatItHoldsByDefault(t *te
 
 // TestGrantsWithOptions_ACompleteDesiredStateStillRevokesPublicExecute is the
 // read of a routine whose PUBLIC EXECUTE was revoked. The desired state says so
-// in a revoked grant, which reaches the row [heldByDefault] leaves alone.
+// in a revoked grant, which reaches the row [publicExecuteByDefault] leaves alone.
 func TestGrantsWithOptions_ACompleteDesiredStateStillRevokesPublicExecute(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{}

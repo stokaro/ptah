@@ -491,6 +491,7 @@ func diffResolvedStates(
 	// CREATE DATABASE and DROP DATABASE (stokaro/ptah#3789).
 	compareOpts.ServerSchemas = comparesTwoServers(fromState, toState)
 	compareOpts.DesiredGrantsComplete = desiredGrantsComplete(toState, opts)
+	compareOpts.DesiredReadGrants = desiredReadGrants(toState, opts)
 	// Same split as the empty --include selection above: diff previews rather
 	// than executes, so it keeps its exit status and says on stderr that a
 	// selector protected nothing.
@@ -1320,6 +1321,15 @@ func setDiffRoot(ctx context.Context, dialect, devURL string, current *catalog.D
 // migration directory is not one; see [DiffOptions.ToReplaysMigrations].
 func desiredGrantsComplete(toState atlassource.State, opts DiffOptions) bool {
 	return toState.Kind == atlassource.KindDatabase && !opts.ToReplaysMigrations
+}
+
+// desiredReadGrants is the grants of the read behind a desired state that holds
+// every grant on what it describes.
+func desiredReadGrants(toState atlassource.State, opts DiffOptions) []catalog.Grant {
+	if !desiredGrantsComplete(toState, opts) {
+		return nil
+	}
+	return toState.DB.Grants
 }
 
 // validateResolvedDiffScope applies scope refusals after dev-server projection.

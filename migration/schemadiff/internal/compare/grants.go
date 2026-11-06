@@ -135,6 +135,9 @@ type GrantOptions struct {
 	// DesiredComplete says the desired state holds every grant on what it
 	// describes; see [ptah.run/config.CompareOptions.DesiredGrantsComplete].
 	DesiredComplete bool
+	// DesiredRead is the grants of the read the desired state was made from;
+	// see [ptah.run/config.CompareOptions.DesiredReadGrants].
+	DesiredRead []catalog.Grant
 }
 
 // GrantsWithOptions is [GrantsWithObjects] told what the two sides are.
@@ -167,9 +170,8 @@ func GrantsWithOptions(
 
 	removable := func(ref difftypes.GrantRef) bool { return managedRoles[ref.Role] }
 	if options.DesiredComplete {
-		owners := objectOwners(database, semantics)
 		removable = func(ref difftypes.GrantRef) bool {
-			return managedRoles[ref.Role] || !heldByDefault(ref, owners, semantics)
+			return managedRoles[ref.Role] || !publicExecuteByDefault(ref)
 		}
 	}
 
@@ -225,6 +227,7 @@ func GrantsWithOptions(
 	}
 
 	planGrantAdditions(generatedGrantMap, databaseGrantMapForAdditions, managedRoles, diff)
+	diff.GrantsAdded = append(diff.GrantsAdded, ownerPrivilegesToGrantBack(options.DesiredRead, database, sequences, semantics)...)
 	sequences.nameAsDatabase(diff.GrantsAdded, semantics)
 	sequences.nameAsDatabase(diff.GrantOptionsAdded, semantics)
 	for key, ref := range databaseGrantMapForRemovals {
@@ -240,39 +243,50 @@ func GrantsWithOptions(
 	sortGrantRefs(diff.GrantOptionsRevoked)
 }
 
-// heldByDefault reports whether the grant ref is one the other side of a
-// comparison of two server reads holds without any row saying so, so that its
-// absence there is no difference.
+// publicExecuteByDefault reports whether the grant ref is PUBLIC's EXECUTE on a
+// routine, which the other side of a comparison of two server reads may hold
+// without a row saying so, so that its absence there is no difference.
 //
-// PostgreSQL stores no ACL until an object's first GRANT or REVOKE, and the first
-// one writes out the defaults. An object's owner then reads as holding its
-// privileges on one side, where a row says so, and as holding nothing on the
-// other, where the read reports no row. PUBLIC's EXECUTE on a routine reads the
-// same way. Revoking either one to match would take away what the other side
-// holds: measured on PostgreSQL 18, a table owner so revoked is refused
-// `permission denied` on its own table. A declared revoke still reaches these
-// grants, and a read of a routine whose PUBLIC EXECUTE was revoked declares one.
-func heldByDefault(ref difftypes.GrantRef, owners map[tableIdentity]string, semantics identifier.Semantics) bool {
-	if ref.Role == "PUBLIC" && grantRoutineKinds[ref.ObjectType] {
-		return true
-	}
-	return owners[newGrantIdentity(ref, semantics).object] == ref.Role
+// PostgreSQL stores no ACL until a routine's first GRANT or REVOKE, and the first
+// one writes out the defaults: PUBLIC's EXECUTE reads as a plain row on one side
+// and as an implicit one on the other. Revoking it to match would take away what
+// the other side holds. A read of a routine whose PUBLIC EXECUTE was revoked
+// declares the revoke, which still reaches this grant.
+func publicExecuteByDefault(ref difftypes.GrantRef) bool {
+	return ref.Role == "PUBLIC" && grantRoutineKinds[ref.ObjectType]
 }
 
-// objectOwners indexes who owns each object of a read by the identity a grant
-// names the object with: [newGrantIdentity] keeps a schema's name in the schema
-// slot.
-func objectOwners(database *catalog.Database, semantics identifier.Semantics) map[tableIdentity]string {
-	builder := objectidentity.NewBuilder(semantics)
-	owners := make(map[tableIdentity]string, len(database.ObjectOwners))
-	for _, owner := range database.ObjectOwners {
-		if owner.Schema == "" {
-			owners[builder.TableParts(owner.Name, "").Key()] = owner.Owner
+// ownerPrivilegesToGrantBack plans a privilege the database's owner of an object
+// revoked from itself and the same role still holds on the same object on the
+// other side, which desiredRead reports when that side is a server read.
+//
+// The privilege has to be one the other side's owner holds, rather than one it
+// does not revoke. Ptah describes no ownership, so another role owning the object
+// there says nothing about this role, and PostgreSQL 16 has no MAINTAIN for a
+// PostgreSQL 17 owner to get back.
+func ownerPrivilegesToGrantBack(
+	desiredRead []catalog.Grant,
+	database *catalog.Database,
+	sequences columnSequences,
+	semantics identifier.Semantics,
+) []difftypes.GrantRef {
+	held := make(map[grantIdentity]bool, len(desiredRead))
+	for _, grant := range desiredRead {
+		if grant.OwnerDefault() {
+			held[sequences.databaseKey(newGrantIdentity(grantRefFromDatabase(grant), semantics))] = true
+		}
+	}
+	var refs []difftypes.GrantRef
+	for _, grant := range database.Grants {
+		if !grant.OwnerRevoked() {
 			continue
 		}
-		owners[builder.TableParts(owner.Schema, owner.Name).Key()] = owner.Owner
+		ref := grantRefFromDatabase(grant)
+		if held[sequences.databaseKey(newGrantIdentity(ref, semantics))] {
+			refs = append(refs, ref)
+		}
 	}
-	return owners
+	return refs
 }
 
 // planGrantAdditions plans each declared grant the database does not hold,
@@ -508,15 +522,16 @@ func grantRefsFromGenerated(grant schemamodel.Grant) []difftypes.GrantRef {
 }
 
 // CurrentGrants returns every grant the read of the database reported, as the
-// references a plan names a grant with, sorted. A partial revoke is left out:
-// it subtracts a privilege rather than holding one.
+// references a plan names a grant with, sorted. A partial revoke is left out: it
+// subtracts a privilege rather than holding one. So is what an object's owner
+// holds by default, which the object has again when a plan creates it again.
 func CurrentGrants(database *catalog.Database) []difftypes.GrantRef {
 	if database == nil || len(database.Grants) == 0 {
 		return nil
 	}
 	refs := make([]difftypes.GrantRef, 0, len(database.Grants))
 	for _, grant := range database.Grants {
-		if !grant.IsPartialRevoke {
+		if !grant.IsPartialRevoke && !grant.OwnerDefault() {
 			refs = append(refs, grantRefFromDatabase(grant))
 		}
 	}

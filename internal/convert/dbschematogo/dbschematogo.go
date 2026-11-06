@@ -98,7 +98,10 @@ func ConvertDBSchemaToGoSchema(ctx context.Context, dbSchema *catalog.Database, 
 	convertTriggers(database, dbSchema.Triggers)
 	convertRoles(database, dbSchema.Roles, membershipsFor(dbSchema.RoleMemberships, dialect))
 	database.Grants = convertGrants(dbSchema.Grants, replayedColumnSequences(dbSchema.Tables))
-	database.RevokedGrants = revokedPublicExecute(dbSchema.Grants)
+	database.RevokedGrants = append(
+		revokedPublicExecute(dbSchema.Grants),
+		revokedOwnerPrivileges(dbSchema.Grants, replayedColumnSequences(dbSchema.Tables))...,
+	)
 	convertRLSEnabledTables(database, dbSchema.Tables, tableStructNames)
 	// What the read did not look at is part of what the read said. Dropping it
 	// here would turn the reader's silence back into desired absence one
@@ -1071,47 +1074,66 @@ func convertGrants(dbGrants []catalog.Grant, replayed map[string]string) []schem
 	grants := make([]schemamodel.Grant, 0, len(dbGrants))
 	for _, dbGrant := range dbGrants {
 		if dbGrant.IsPartialRevoke || dbGrant.Implicit {
-			// An implicit row is the privilege a routine holds because it
-			// exists, which the routine's own declaration already implies.
+			// An implicit row is what an object holds because it exists, which
+			// the object's own declaration already implies.
 			continue
 		}
-		grant := schemamodel.Grant{
-			Role:       dbGrant.Role,
-			Privileges: []string{dbGrant.Privilege},
-			WithOption: dbGrant.WithOption,
-			GrantedBy:  dbGrant.GrantedBy,
-		}
-		_, objectKind := schemamodel.GrantObjectAttribute(dbGrant.ObjectType)
-		switch {
-		case strings.EqualFold(dbGrant.ObjectType, "DATABASE"):
-			grant.OnDatabase = true
-		case objectKind:
-			grant.OnObject, grant.ObjectKind = dbGrant.QualifiedTarget(), dbGrant.ObjectType
-		case strings.EqualFold(dbGrant.ObjectType, "SCHEMA"):
-			grant.OnSchema = dbGrant.ObjectName
-		case routineGrantObjectTypes[strings.ToUpper(dbGrant.ObjectType)]:
-			grant.OnRoutine = dbGrant.QualifiedTarget()
-			grant.RoutineArguments = dbGrant.Arguments
-			grant.RoutineKind = strings.ToUpper(dbGrant.ObjectType)
-		case strings.EqualFold(dbGrant.ObjectType, "SEQUENCE"):
-			// PostgreSQL accepts GRANT ... ON TABLE for a sequence, so a sequence
-			// described under OnTable still replays. The comparator keys a grant
-			// by its object type, though, and the read reports SEQUENCE, so that
-			// description would never match the row it was made from.
-			grant.OnSequence = dbGrant.QualifiedTarget()
-			if name, ok := replayed[grant.OnSequence]; ok {
-				grant.OnSequence = name
-			}
-		default:
-			grant.OnTable = dbGrant.QualifiedTarget()
-			if dbGrant.Column != "" {
-				grant.Columns = []string{dbGrant.Column}
-			}
-		}
-		grant.Canonicalize()
-		grants = append(grants, grant)
+		grants = append(grants, describedGrant(dbGrant, replayed))
 	}
 	return grants
+}
+
+// describedGrant is the row of a read as a grant of the description.
+func describedGrant(dbGrant catalog.Grant, replayed map[string]string) schemamodel.Grant {
+	grant := schemamodel.Grant{
+		Role:       dbGrant.Role,
+		Privileges: []string{dbGrant.Privilege},
+		WithOption: dbGrant.WithOption,
+		GrantedBy:  dbGrant.GrantedBy,
+	}
+	_, objectKind := schemamodel.GrantObjectAttribute(dbGrant.ObjectType)
+	switch {
+	case strings.EqualFold(dbGrant.ObjectType, "DATABASE"):
+		grant.OnDatabase = true
+	case objectKind:
+		grant.OnObject, grant.ObjectKind = dbGrant.QualifiedTarget(), dbGrant.ObjectType
+	case strings.EqualFold(dbGrant.ObjectType, "SCHEMA"):
+		grant.OnSchema = dbGrant.ObjectName
+	case routineGrantObjectTypes[strings.ToUpper(dbGrant.ObjectType)]:
+		grant.OnRoutine = dbGrant.QualifiedTarget()
+		grant.RoutineArguments = dbGrant.Arguments
+		grant.RoutineKind = strings.ToUpper(dbGrant.ObjectType)
+	case strings.EqualFold(dbGrant.ObjectType, "SEQUENCE"):
+		// PostgreSQL accepts GRANT ... ON TABLE for a sequence, so a sequence
+		// described under OnTable still replays. The comparator keys a grant
+		// by its object type, though, and the read reports SEQUENCE, so that
+		// description would never match the row it was made from.
+		grant.OnSequence = dbGrant.QualifiedTarget()
+		if name, ok := replayed[grant.OnSequence]; ok {
+			grant.OnSequence = name
+		}
+	default:
+		grant.OnTable = dbGrant.QualifiedTarget()
+		if dbGrant.Column != "" {
+			grant.Columns = []string{dbGrant.Column}
+		}
+	}
+	grant.Canonicalize()
+	return grant
+}
+
+// revokedOwnerPrivileges describes the privileges an object's owner revoked from
+// itself, as revoked grants. Without them a description replays the object with
+// its owner holding what the database shows it gave up, and a comparison with a
+// database where the owner holds the privilege has nothing to plan.
+func revokedOwnerPrivileges(dbGrants []catalog.Grant, replayed map[string]string) []schemamodel.Grant {
+	revoked := make([]schemamodel.Grant, 0)
+	for _, dbGrant := range dbGrants {
+		if dbGrant.OwnerRevoked() {
+			revoked = append(revoked, describedGrant(dbGrant, replayed))
+		}
+	}
+	return revoked
 }
 
 // routineGrantObjectTypes are the object types a catalog read reports for a

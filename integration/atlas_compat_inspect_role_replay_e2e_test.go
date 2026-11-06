@@ -28,7 +28,7 @@ import (
 // which is what a dev database normally is and what makes this the hard case.
 // Resetting a database does not clear the server's roles, so the roles the
 // description is right to name -- the grantee of the schema's own GRANT, and
-// the owner that grant's explicit ACL carries -- are all still there when the
+// the owner that wrote it -- are all still there when the
 // document is replayed. `CREATE ROLE` is not idempotent, so before
 // stokaro/ptah#1305's dev-materialization partition this died with
 //

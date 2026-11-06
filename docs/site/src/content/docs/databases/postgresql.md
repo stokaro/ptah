@@ -1194,7 +1194,8 @@ holds, because the replace sets the options it states and clears the others.
 What a rebuild does not keep:
 
 - the owner. The new object belongs to the role that runs the migration, since
-  Ptah does not describe ownership;
+  Ptah does not describe ownership. What the old owner of a view held as its owner
+  is not granted back;
 - an object that depends on a dropped one and that the schema does not
   declare, such as a view in a schema the run leaves out. The drop has no
   `CASCADE`, so the server stops the migration at the drop and names the
@@ -1285,9 +1286,23 @@ a grant only `--from` holds is a difference, whoever holds it. The diff prints i
 prints the `GRANT`. A schema file as `--to` says nothing about a role it does not
 declare, so a grant to such a role stays out of the plan.
 
-The privileges an object's owner holds and `PUBLIC`'s `EXECUTE` on a routine are not
-revoked to match a database that holds them by default, because PostgreSQL stores
-no ACL until an object's first `GRANT` or `REVOKE`.
+`PUBLIC`'s `EXECUTE` on a routine is not revoked to match a database that holds it
+by default, because PostgreSQL stores no ACL until an object's first `GRANT` or
+`REVOKE`.
+
+The same first statement writes out what a table's, a view's, a sequence's or a
+schema's owner holds, so `relacl` being NULL says nothing about the owner. A read
+reports what the owner holds apart from the grants, and a comparison plans nothing
+for it in either direction. A schema file that revokes one of those privileges
+plans the `REVOKE`, and one that grants it asks for what the owner already holds.
+
+An owner that revoked a privilege from itself holds less, and that is a
+difference. Between two databases where the same role owns the object, one
+direction prints the `REVOKE` and the other prints the `GRANT` that gives it back.
+Ptah describes no ownership, so where another role owns the object on the other
+side, nothing is planned for either owner. The privileges of a server's own release
+are the ones compared: PostgreSQL 16 has no `MAINTAIN`, so a difference in it against
+a later release plans nothing.
 
 ### Role passwords
 
@@ -1380,7 +1395,7 @@ versioned migrations before a grant uses them.
 PostgreSQL gives some privileges without a `GRANT`: every role can execute a
 new function through `PUBLIC`, and `ALTER DEFAULT PRIVILEGES` hands a role its
 privileges on each new table. A revoke declaration says such a privilege must
-be absent, whoever holds it:
+be absent, whoever holds it, the object's owner included:
 
 ```sql
 REVOKE ALL ON FUNCTION purge_workspace(uuid) FROM PUBLIC;
@@ -1609,11 +1624,11 @@ not qualify, because Ptah describes no ownership — it writes no `OWNER TO` and
 no `CREATE SCHEMA ... AUTHORIZATION` — so an owner would be created and then
 never referred to.
 
-For the same reason, grant introspection reports privileges somebody granted
-rather than the built-in privileges an owner holds by default. A relation whose
-`pg_class.relacl` is null has had no `GRANT` run against it, and its owner's
-implicit privileges are no longer emitted as `GRANT` statements; replaying
-`CREATE TABLE` gives the new owner exactly those privileges again.
+For the same reason, a description states privileges somebody granted rather than
+the privileges an owner holds by default, whether `pg_class.relacl` is NULL or
+spells them out: replaying `CREATE TABLE` gives the new owner exactly those
+privileges again. A privilege the owner revoked from itself is described as a
+`REVOKE`, and the owner is a role such a description names.
 
 Leaving a role out of a description does not mean Ptah thinks it is missing.
 Which roles a schema uses and which roles Ptah manages on the server are

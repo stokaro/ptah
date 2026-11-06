@@ -256,7 +256,7 @@ func databaseSequenceNameKept(sequences []catalog.Sequence, schema, name string)
 
 func databaseGrantRoleReferenced(grants []catalog.Grant, role string) bool {
 	for _, grant := range grants {
-		if strings.EqualFold(grant.Role, role) {
+		if strings.EqualFold(grant.Role, role) && !grant.OwnerDefault() {
 			return true
 		}
 	}

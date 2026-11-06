@@ -3210,7 +3210,8 @@ func (r *Reader) readSequencesFromPgCatalog(ctx context.Context, schemaName stri
 // items_id_seq`. Without it in this read, a declared grant on such a sequence
 // is never seen held and is planned again on every run, and a missing or an
 // extra one is not seen at all (stokaro/ptah#4037). The grant names the
-// sequence as the catalog does, which is the name a declaration uses too.
+// sequence as the catalog does, which is the name a declaration uses too. The
+// owner's own entry is [Reader.readOwnerPrivilegesForSchema]'s.
 func (r *Reader) readSequenceGrantsForSchema(ctx context.Context, schemaName string) ([]catalog.Grant, error) {
 	const query = `
 		SELECT
@@ -3227,6 +3228,7 @@ func (r *Reader) readSequenceGrantsForSchema(ctx context.Context, schemaName str
 		JOIN pg_roles grantor ON grantor.oid = acl.grantor
 		WHERE c.relkind = 'S'
 		AND n.nspname = $1
+		AND acl.grantee <> c.relowner
 		AND COALESCE(grantee.rolname, 'PUBLIC') != 'postgres'
 		ORDER BY n.nspname, c.relname, COALESCE(grantee.rolname, 'PUBLIC'), acl.privilege_type`
 
@@ -3820,23 +3822,33 @@ func (r *Reader) grantRolesInScopeClauses() []string {
 	}
 	clauses := []string{
 		// Holds a privilege on a relation in scope -- table, view,
-		// materialized view or sequence (pg_class.relacl). An owner appears
-		// here as soon as the relation carries any explicit privilege, which
-		// is also exactly when readTableGrantsForSchema reports the owner's
-		// own grants.
+		// materialized view or sequence (pg_class.relacl). The owner's own
+		// entry is not a reason: a description leaves it out, as the grant
+		// reads do.
 		`SELECT acl.grantee AS roleoid FROM pg_class c
 			JOIN scope s ON s.oid = c.relnamespace
-			CROSS JOIN LATERAL aclexplode(c.relacl) acl`,
+			CROSS JOIN LATERAL aclexplode(c.relacl) acl
+			WHERE acl.grantee <> c.relowner`,
 		// Granted a privilege on a relation in scope (pg_class.relacl).
 		`SELECT acl.grantor FROM pg_class c
 			JOIN scope s ON s.oid = c.relnamespace
-			CROSS JOIN LATERAL aclexplode(c.relacl) acl`,
+			CROSS JOIN LATERAL aclexplode(c.relacl) acl
+			WHERE acl.grantee <> c.relowner`,
+		// Owns a relation in scope and revoked a privilege on it from itself.
+		ownerRevokedPrivilegeRoles(
+			`pg_class c JOIN scope s ON s.oid = c.relnamespace AND c.relkind IN `+ownerPrivilegeRelationKinds,
+			relationDefaultACL("c"), "c.relowner", "c.relacl",
+		),
 		// Holds a privilege on a schema in scope (pg_namespace.nspacl).
 		`SELECT acl.grantee FROM scope s
-			CROSS JOIN LATERAL aclexplode(s.nspacl) acl`,
+			CROSS JOIN LATERAL aclexplode(s.nspacl) acl
+			WHERE acl.grantee <> s.nspowner`,
 		// Granted a privilege on a schema in scope (pg_namespace.nspacl).
 		`SELECT acl.grantor FROM scope s
-			CROSS JOIN LATERAL aclexplode(s.nspacl) acl`,
+			CROSS JOIN LATERAL aclexplode(s.nspacl) acl
+			WHERE acl.grantee <> s.nspowner`,
+		// Owns a schema in scope and revoked a privilege on it from itself.
+		ownerRevokedPrivilegeRoles("scope s", schemaDefaultACL("s"), "s.nspowner", "s.nspacl"),
 		// Holds a privilege on a column of a relation in scope
 		// (pg_attribute.attacl). A column grant leaves pg_class.relacl as it
 		// was, so the relation branches do not see it. The filters are
@@ -3959,8 +3971,9 @@ func (r *Reader) readDefaultPrivilegeGrantees(ctx context.Context, schemas []str
 // database in the same cluster then planned
 // `CREATE ROLE "..." WITH LOGIN SUPERUSER ...` and failed to apply it at
 // SQLSTATE 42710. An owner that a description does refer to still appears,
-// through the privilege clauses: granting anything on a relation makes its
-// ACL explicit, and an explicit ACL always carries the owner's own privileges.
+// through the privilege clauses: as the grantor of a grant it wrote, and as the
+// role of a privilege it revoked from itself. The owner's own entry in an ACL
+// is not a reason, because a description leaves it out.
 //
 // A role that belongs to the inspected schemas is still reported in full, on
 // the native and the compatibility surface alike. What the scoping does cost
@@ -4171,7 +4184,7 @@ func (r *Reader) queryRoles(
 
 	rolesQuery := `
 		WITH scope AS (
-			SELECT n.oid, n.nspacl
+			SELECT n.oid, n.nspacl, n.nspowner
 			FROM pg_namespace n
 			WHERE n.nspname IN (` + strings.Join(placeholders, ", ") + `)
 		),
@@ -4396,6 +4409,12 @@ func (r *Reader) readGrants(ctx context.Context) ([]catalog.Grant, error) {
 		}
 		grants = append(grants, schemaGrants...)
 
+		ownerPrivileges, err := r.readOwnerPrivilegesForSchema(ctx, schemaName)
+		if err != nil {
+			return nil, err
+		}
+		grants = append(grants, ownerPrivileges...)
+
 		if r.caps.Has(capability.Sequences) {
 			sequenceGrants, err := r.readSequenceGrantsForSchema(ctx, schemaName)
 			if err != nil {
@@ -4527,8 +4546,9 @@ const columnGrantPredicate = `c.relkind IN ('r', 'v', 'f', 'p', 'm')
 // it also reports a row per column for a table-level GRANT SELECT, and those
 // rows would read as column grants nobody wrote. attacl holds only what was
 // granted on the column itself; a REVOKE of the table privilege empties it too.
-// The grantees are filtered as readTableGrantsForSchema filters them, and the
-// relation kinds are the ones a column privilege applies to.
+// So an owner's row here is a statement somebody wrote, and it stays, unlike the
+// owner's entry in the table's ACL. The relation kinds are the ones a column
+// privilege applies to.
 func (r *Reader) readColumnGrantsForSchema(ctx context.Context, schemaName string) ([]catalog.Grant, error) {
 	query := `
 		SELECT
@@ -4583,19 +4603,18 @@ func (r *Reader) readTableGrantsForSchema(ctx context.Context, schemaName string
 		FROM (` + pgcatalogview.TableGrants + `) g
 		WHERE table_schema = $1
 		AND grantee != 'postgres'
-		-- Only relations on which some privilege has actually been granted.
-		-- The source reports an owner's built-in privileges as grants even for
-		-- a table whose pg_class.relacl is null, meaning nobody has ever run
-		-- GRANT on it. Describing those as GRANT statements describes something
-		-- no one wrote; CREATE TABLE re-establishes them for the new owner on
-		-- replay anyway. It also makes the description name a role it does not
-		-- define (stokaro/ptah#1267), and the pinned Atlas community binary
-		-- refuses such a document.
+		-- Not the owner's own entry. The source reports it whether or not
+		-- pg_class.relacl is null, and the first GRANT on a relation writes it
+		-- out. Describing it as a GRANT describes something no one wrote, and
+		-- CREATE TABLE establishes it for the new owner on replay anyway. It
+		-- also makes the description name a role it does not define
+		-- (stokaro/ptah#1267), and the pinned Atlas community binary refuses
+		-- such a document. readOwnerPrivilegesForSchema reports it instead.
 		AND EXISTS (
 			SELECT 1 FROM pg_namespace n
 			JOIN pg_class c ON ` + relationByName("c", "n.oid", "g.table_name") + `
 			WHERE n.nspname = g.table_schema
-			AND c.relacl IS NOT NULL
+			AND g.grantee <> pg_get_userbyid(c.relowner)
 		)
 		UNION ALL
 		-- MAINTAIN, which PostgreSQL 17 added, is left out of
@@ -4619,6 +4638,7 @@ func (r *Reader) readTableGrantsForSchema(ctx context.Context, schemaName string
 		WHERE n.nspname = $1
 		AND c.relkind IN ('r', 'v', 'f', 'p')
 		AND acl.privilege_type = 'MAINTAIN'
+		AND acl.grantee <> c.relowner
 		AND COALESCE(grantee.rolname, 'PUBLIC') != 'postgres'
 		UNION ALL
 		-- A materialized view's privileges, every one of them, because the
@@ -4638,6 +4658,7 @@ func (r *Reader) readTableGrantsForSchema(ctx context.Context, schemaName string
 		JOIN pg_roles grantor ON grantor.oid = acl.grantor
 		WHERE n.nspname = $1
 		AND c.relkind = 'm'
+		AND acl.grantee <> c.relowner
 		AND COALESCE(grantee.rolname, 'PUBLIC') != 'postgres'
 		ORDER BY 3, 4, 1, 2`
 
@@ -4676,12 +4697,12 @@ func (r *Reader) readSchemaGrantsForSchema(ctx context.Context, schemaName strin
 		JOIN pg_roles grantor ON grantor.oid = acl.grantor
 		WHERE n.nspname = $1
 		AND COALESCE(grantee.rolname, 'PUBLIC') != 'postgres'
-		-- PostgreSQL creates public owned by pg_database_owner, with that role's
-		-- own rights in nspacl. No statement declared them, so a read that keeps
-		-- them describes a grant on every stock database, and the strict
-		-- compatibility surface refuses every one. Another schema's grant to the
-		-- role is declared, and it stays.
-		AND NOT (grantee.rolname = 'pg_database_owner' AND acl.grantee = n.nspowner)
+		-- Not the owner's own entry. PostgreSQL creates public owned by
+		-- pg_database_owner, with that role's own rights in nspacl, so a read
+		-- that keeps them describes a grant on every stock database, and the
+		-- strict compatibility surface refuses every one. Another schema's
+		-- grant to the role is declared, and it stays.
+		AND acl.grantee <> n.nspowner
 		ORDER BY n.nspname, COALESCE(grantee.rolname, 'PUBLIC'), acl.privilege_type`
 
 	rows, err := r.db.QueryContext(ctx, query, schemaName)

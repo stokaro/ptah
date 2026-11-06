@@ -288,12 +288,11 @@ findings do:
 | `grants` | Privileges, one per role, privilege and object, or column of an object. A declared `ALL` is one, however many privileges the database reports for it. |
 | `schemas` | Databases, on a comparison of a whole MySQL or MariaDB server. |
 
-The database side of `grants` counts every privilege the database holds for a
-role the desired schema declares, and each privilege the desired schema grants
-another role that the database holds. A `REVOKE` the desired schema states for
-an object the plan creates counts on the database side too: the plan revokes
-what PostgreSQL grants the object when it is created, so the `REVOKE` names a
-privilege the database does not hold yet.
+The database side of `grants` counts every privilege granted to a role the desired
+schema declares, and each privilege the desired schema grants another role that the
+database holds. A `REVOKE` the desired schema states for an object the plan creates
+counts on the database side too: the plan revokes what PostgreSQL grants the object
+when it is created, so the `REVOKE` names a privilege the database does not hold yet.
 
 `rls_policies` and `rls_enabled_tables` count the policies and enablements the
 shared comparison pairs. A PostgreSQL report has neither: its feature owner
