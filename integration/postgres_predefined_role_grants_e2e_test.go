@@ -10,6 +10,8 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+
+	"ptah.run/internal/clirun"
 )
 
 // TestSchemaApplyConvergesAGrantToAPredefinedRoleE2E declares a grant to a role
@@ -44,4 +46,52 @@ func TestSchemaApplyConvergesAGrantToAPredefinedRoleE2E(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
 	c.Assert(stdout, qt.Equals, "Schema is synced, no changes to be made.\n")
 	c.Assert(countIn(c, url, heldGrant), qt.Equals, 1)
+}
+
+// TestSchemaInspectLeavesOutTheDatabaseOwnersOwnRightsE2E reads a stock database.
+// PostgreSQL creates public owned by pg_database_owner, with that role's own rights
+// in the schema's ACL, and no statement declared them. A read that keeps them makes
+// the strict compatibility surface refuse every stock database, and writes a grant
+// into every inspected document. The baseline PUBLIC holds stays, as it does for a
+// full round trip.
+func TestSchemaInspectLeavesOutTheDatabaseOwnersOwnRightsE2E(t *testing.T) {
+	c := qt.New(t)
+	target := newEmptyReadScopeDatabase(c, "database_owner")
+
+	got := runPtahIn(c, "schema", "inspect", "--db-url", target)
+
+	c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", got.Stderr))
+	c.Assert(got.Stdout, qt.Not(qt.Contains), "pg_database_owner")
+	c.Assert(got.Stdout, qt.Contains, `to = "PUBLIC"`)
+}
+
+// TestSchemaInspectReadsAGrantAnotherSchemaGivesTheDatabaseOwnerE2E is the control.
+// A schema postgres owns gives the role a privilege, which a statement declared, so
+// the read reports it.
+func TestSchemaInspectReadsAGrantAnotherSchemaGivesTheDatabaseOwnerE2E(t *testing.T) {
+	c := qt.New(t)
+	target := newEmptyReadScopeDatabase(c, "database_owner")
+	execPostgresFamilySQL(c, c.Context(), target, "CREATE SCHEMA app")
+	execPostgresFamilySQL(c, c.Context(), target, "GRANT USAGE ON SCHEMA app TO pg_database_owner")
+
+	got := runPtahIn(c, "schema", "inspect", "--schemas", "app", "--db-url", target)
+
+	c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", got.Stderr))
+	c.Assert(got.Stdout, qt.Contains, `to = "pg_database_owner"`)
+}
+
+// TestStrictCompatTakesAStockDatabaseE2E applies a document that declares what a
+// stock database holds, in strict mode. Refused, no strict run on PostgreSQL gets
+// past reading its target.
+func TestStrictCompatTakesAStockDatabaseE2E(t *testing.T) {
+	c := qt.New(t)
+	target := newEmptyReadScopeDatabase(c, "database_owner")
+	document := filepath.Join(c.TempDir(), "schema.hcl")
+	c.Assert(os.WriteFile(document, []byte("schema \"public\" {\n}\n"), 0o600), qt.IsNil)
+
+	got := clirun.Run(c, clirun.Compat, clirun.Options{Dir: c.TempDir(), Env: append(os.Environ(), "PTAH_ATLAS_STRICT_COMPAT=1")},
+		"schema", "apply", "-u", target, "--to", "file://"+filepath.ToSlash(document), "--dry-run")
+
+	c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+	c.Assert(got.Stdout, qt.Contains, "synced")
 }
