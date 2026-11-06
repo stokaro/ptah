@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/plangraph"
 	"ptah.run/core/schemaext"
+	"ptah.run/internal/atlaschange"
 )
 
 // plannedOperation is an operation a provider planned, as the namer meets it
@@ -203,6 +204,138 @@ func TestRollbackOfAProviderOperation_HappyPath(t *testing.T) {
 
 			c.Assert(ok, qt.IsTrue)
 			c.Assert(got, qt.Equals, test.want)
+		})
+	}
+}
+
+// effect is the effect action has on subject.
+func effect(subject objectidentity.ID, action plangraph.Action) plangraph.Effect {
+	return plangraph.Effect{Subject: subject, Action: action}
+}
+
+// providerRebuild is the plan a provider writes to rebuild table orders with
+// its changefeed and the held settings of its index orders_by_total, step by
+// step as the YDB provider plans it: the new table, its index's settings, the
+// copy, the changefeed's drop, the two moves, the changefeed again and the drop
+// of the old table. The new table is created before an unrelated table, which
+// keeps its name.
+func providerRebuild() []ast.Node {
+	orders := object(objectidentity.KindTable, "orders")
+	scratch := object(objectidentity.KindTable, "__ptah_rebuild_orders")
+	replaced := object(objectidentity.KindTable, "__ptah_replaced_orders")
+	lines := object(objectidentity.KindTable, "lines")
+	slot := func(table objectidentity.ID) objectidentity.ID {
+		table.Kind = "ydb.scheme-path"
+		return table
+	}
+	index := objectidentity.ID{Kind: objectidentity.KindIndex, Schema: part("app"), Parent: part("__ptah_rebuild_orders"), Name: part("orders_by_total")}
+	feed := objectidentity.ID{Kind: "ydb.changefeed", Schema: part("app"), Parent: part("orders"), Name: part("feed")}
+	return []ast.Node{
+		planned(scratch, effect(scratch, plangraph.Create), effect(slot(scratch), plangraph.Create)),
+		planned(lines, effect(lines, plangraph.Create)),
+		planned(scratch, effect(scratch, plangraph.Read), effect(index, plangraph.Alter)),
+		planned(scratch, effect(orders, plangraph.Read), effect(scratch, plangraph.Alter)),
+		planned(orders, effect(orders, plangraph.Read), effect(feed, plangraph.Drop)),
+		planned(orders, effect(orders, plangraph.Alter), effect(replaced, plangraph.Create), effect(slot(replaced), plangraph.Create)),
+		planned(scratch, effect(scratch, plangraph.Drop), effect(slot(scratch), plangraph.Drop), effect(orders, plangraph.Alter)),
+		planned(orders, effect(orders, plangraph.Read), effect(feed, plangraph.Create)),
+		planned(replaced, effect(replaced, plangraph.Drop), effect(slot(replaced), plangraph.Drop)),
+	}
+}
+
+// A table rebuild a provider planned is named as the built-in YDB engine named
+// its own: the new table's creation, each change to the table it replaces, and
+// the old table's drop. The steps that fill the new table and the two moves
+// take no name, so the move of the new table onto the old one's name does not
+// read as a drop of the new table. A rollback that rebuilds a table names the
+// same steps the change each one undoes.
+func TestATableRebuildAProviderPlanned_HappyPath(t *testing.T) {
+	c := qt.New(t)
+
+	forward := atlaschange.Words{}.Forward(providerRebuild())
+	rollback := atlaschange.Words{}.Rollback(nil, providerRebuild())
+
+	c.Assert(forward, qt.DeepEquals, []string{
+		`create "__ptah_rebuild_orders" table`,
+		`create "lines" table`,
+		"",
+		"",
+		`modify "orders" table`,
+		"",
+		"",
+		`modify "orders" table`,
+		`drop "__ptah_replaced_orders" table`,
+	})
+	c.Assert(rollback, qt.DeepEquals, []string{
+		`drop "__ptah_rebuild_orders" table`,
+		`drop "lines" table`,
+		"",
+		"",
+		`modify "orders" table`,
+		"",
+		"",
+		`modify "orders" table`,
+		`create "__ptah_replaced_orders" table`,
+	})
+}
+
+// A step on a new table is part of a rebuild only between the table's creation
+// and its move onto another table's name. Without the move, the copy reads as
+// a change of the table it alters. Without the creation, the table is not one
+// the plan made, and neither is a change after the move. A step that alters
+// two tables, or creates two, is no move.
+func TestATableRebuildAProviderPlanned_FailurePath(t *testing.T) {
+	orders := object(objectidentity.KindTable, "orders")
+	scratch := object(objectidentity.KindTable, "__ptah_rebuild_orders")
+	other := object(objectidentity.KindTable, "other")
+	tests := []struct {
+		name string
+		plan []ast.Node
+		want []string
+	}{
+		{
+			name: "a copy without a move",
+			plan: []ast.Node{
+				planned(scratch, effect(scratch, plangraph.Create)),
+				planned(scratch, effect(orders, plangraph.Read), effect(scratch, plangraph.Alter)),
+			},
+			want: []string{`create "__ptah_rebuild_orders" table`, `modify "__ptah_rebuild_orders" table`},
+		},
+		{
+			name: "a copy into a table no step creates",
+			plan: []ast.Node{
+				planned(scratch, effect(orders, plangraph.Read), effect(scratch, plangraph.Alter)),
+				planned(scratch, effect(scratch, plangraph.Drop), effect(orders, plangraph.Alter)),
+			},
+			want: []string{`modify "__ptah_rebuild_orders" table`, ""},
+		},
+		{
+			name: "a change after the move",
+			plan: []ast.Node{
+				planned(scratch, effect(scratch, plangraph.Create)),
+				planned(scratch, effect(scratch, plangraph.Drop), effect(orders, plangraph.Alter)),
+				planned(scratch, effect(orders, plangraph.Read), effect(scratch, plangraph.Alter)),
+			},
+			want: []string{`create "__ptah_rebuild_orders" table`, "", `modify "__ptah_rebuild_orders" table`},
+		},
+		{
+			name: "a step that alters two tables",
+			plan: []ast.Node{planned(orders, effect(orders, plangraph.Alter), effect(other, plangraph.Alter))},
+			want: []string{`modify "orders" table`},
+		},
+		{
+			name: "a step that creates two tables",
+			plan: []ast.Node{planned(orders, effect(orders, plangraph.Create), effect(other, plangraph.Create))},
+			want: []string{`create "orders" table`},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got := atlaschange.Words{}.Forward(test.plan)
+
+			c.Assert(got, qt.DeepEquals, test.want)
 		})
 	}
 }

@@ -1399,6 +1399,25 @@ views, materialized views and indexes are named this way. A statement
 for an object of a kind the provider defines itself, a YDB topic for example,
 has no change comment, because the community binary has no words for it.
 
+A table rebuild a provider plans names the new table's creation, each change
+to the table it replaces and the old table's drop. The copy of the rows and
+the two renames that swap the tables carry no comment of their own, as the
+built-in YDB engine wrote them:
+
+```sql
+-- Create "__ptah_rebuild_t" table
+CREATE TABLE `app/__ptah_rebuild_t` (...);
+INSERT INTO `app/__ptah_rebuild_t` (`id`, `v`) SELECT ... FROM `app/t`;
+-- Modify "t" table
+ALTER TABLE `app/t` DROP CHANGEFEED `feed`;
+ALTER TABLE `app/t` RENAME TO `app/__ptah_replaced_t`;
+ALTER TABLE `app/__ptah_rebuild_t` RENAME TO `app/t`;
+-- Modify "t" table
+ALTER TABLE `app/t` ADD CHANGEFEED `feed` WITH (MODE = 'UPDATES', FORMAT = 'JSON');
+-- Drop "__ptah_replaced_t" table
+DROP TABLE `app/__ptah_replaced_t`;
+```
+
 On a PostgreSQL-family dev database the statements carry no `IF EXISTS` or
 `IF NOT EXISTS`, and a drop carries `CASCADE` only where the plan relies on it.
 A file run against a database in another state than the one it was planned
