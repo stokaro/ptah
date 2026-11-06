@@ -117,8 +117,9 @@ The host names one model with one message, so the messages identify a list.
   `TestResolveSharedCoverage_HappyPath`,
   `TestResolveSharedCoverage_FailurePath` and
   `TestSharedCoverageWithoutResolution_FailurePath` in
-  `provider-sdk/provider`; `TestCoverageKindsAreCheckedOncePerKindMessage`
-  (white-box) there; `TestSharedCoverage_HappyPath`,
+  `provider-sdk/provider`; `TestCoverageKindsOfOneMessageAreCheckedOnce`
+  and `TestCoverageKindCopiesAreCheckedOnceEach` (white-box) there;
+  `TestSharedCoverage_HappyPath`,
   `TestServerSharedCoverage_FailurePath` and
   `TestClientSharedCoverage_FailurePath` in `provider-sdk/runtime`.
 - The host and the YDB provider list the feature.
