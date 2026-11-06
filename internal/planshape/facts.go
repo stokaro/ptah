@@ -363,30 +363,17 @@ func identifiers(expression string) []string {
 	return append(words, quotedNames(expression)...)
 }
 
-// quotedNames is the names in double quotes or backticks of an expression, each as the
-// server reads it: a doubled quote is one quote of the name. It skips string literals,
-// where those characters name nothing.
+// quotedNames is what stands between each two quotes of an expression, double or backtick,
+// where a doubled quote is one quote of the name. A literal's quote can stand among them, and
+// how a literal ends depends on the engine: `E'it\'s'` and `$$it's$$` on PostgreSQL, `'it\'s'`
+// on MySQL. So it reads no literal and takes every span, which holds the name whichever way
+// the text reads. A span that names nothing only reads a column no table holds.
 func quotedNames(expression string) []string {
 	var names []string
-	for at := 0; at < len(expression); at++ {
-		quote := expression[at]
-		if quote != '\'' && quote != '"' && quote != '`' {
-			continue
-		}
-		var name strings.Builder
-		for at++; at < len(expression); at++ {
-			if expression[at] != quote {
-				name.WriteByte(expression[at])
-				continue
-			}
-			if at+1 == len(expression) || expression[at+1] != quote {
-				break
-			}
-			name.WriteByte(quote)
-			at++
-		}
-		if quote != '\'' {
-			names = append(names, name.String())
+	for _, quote := range []string{`"`, "`"} {
+		spans := strings.Split(strings.ReplaceAll(expression, quote+quote, "\x00"), quote)
+		for _, span := range spans[1:max(len(spans)-1, 1)] {
+			names = append(names, strings.ReplaceAll(span, "\x00", quote))
 		}
 	}
 	return names
