@@ -77,6 +77,10 @@ type ColumnGrammar struct {
 	// `$$x$$` and `E'x'` are the default 'x'. Without it a string default is
 	// kept as written.
 	StoredStringDefaults bool `json:"stored_string_defaults,omitempty"`
+	// StoredStringEscapes reports that the spelling a server stores a string default in
+	// escapes with a backslash rather than doubling a quote: ClickHouse reports `'it''s'`
+	// as `'it\'s'`. It has no effect without StoredStringDefaults.
+	StoredStringEscapes bool `json:"stored_string_escapes,omitempty"`
 	// IdentityProperty reports that IDENTITY, with or without a (seed,
 	// increment) pair, makes the column an identity column, as T-SQL writes
 	// it. A bare IDENTITY is IDENTITY(1, 1). Without it IDENTITY is refused

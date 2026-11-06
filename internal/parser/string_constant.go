@@ -43,6 +43,16 @@ func quotedStringConstant(text string) string {
 	return "'" + strings.ReplaceAll(text, "'", "''") + "'"
 }
 
+// escapedStringConstant writes text as a server that escapes with a backslash stores it:
+// ClickHouse reports `'it”s'` as `'it\'s'`, and a newline as `\n`.
+func escapedStringConstant(text string) string {
+	return "'" + storedStringEscapes.Replace(text) + "'"
+}
+
+var storedStringEscapes = strings.NewReplacer(
+	`\`, `\\`, `'`, `\'`, "\n", `\n`, "\t", `\t`, "\r", `\r`, "\b", `\b`, "\f", `\f`, "\x00", `\0`,
+)
+
 func abbreviatedToken(token string) string {
 	const limit = 40
 	if len(token) <= limit {

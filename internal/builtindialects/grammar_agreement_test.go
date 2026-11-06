@@ -151,7 +151,7 @@ var oldParserSwitches = map[string]descriptor.Grammar{
 		Routines:   descriptor.RoutineGrammar{Body: descriptor.RoutineCompoundStatement, TriggerStatementBody: true},
 	},
 	platform.ClickHouse: {
-		Columns:    descriptor.ColumnGrammar{TypeArgumentsAreTypes: true},
+		Columns:    descriptor.ColumnGrammar{TypeArgumentsAreTypes: true, StoredStringDefaults: true, StoredStringEscapes: true},
 		AlterTable: descriptor.AlterTableGrammar{Modify: descriptor.ModifyOther},
 	},
 	platform.SQLite: {
