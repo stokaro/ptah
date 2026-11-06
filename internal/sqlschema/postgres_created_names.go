@@ -155,6 +155,10 @@ func nameCreatedConstraints(
 	created createdRange,
 	sourcePlatform string,
 ) error {
+	if namesConstraintsForTheServer(sourcePlatform) {
+		nameConstraintsForTheServer(database, base, table, created)
+		return nil
+	}
 	if !namesConstraintsLikePostgres(sourcePlatform) {
 		return nil
 	}
@@ -188,6 +192,30 @@ func nameCreatedConstraints(
 			numberedKeyOnTable(table.StructName, table.QualifiedName(), field.Name, key.name))
 	}
 	return nil
+}
+
+// nameConstraintsForTheServer names the unnamed UNIQUE and CHECK constraints one CREATE
+// TABLE declares on the table, on a server whose own names differ by database. A name the
+// statement writes is taken wherever the statement writes it.
+func nameConstraintsForTheServer(database, base *schemamodel.Database, table schemamodel.Table, created createdRange) {
+	names := statementNames(database, base, table, created)
+	constraints := database.Constraints[created.constraints:]
+	for i := range constraints {
+		names.constraints.Claim(constraints[i].Name)
+		names.relations.Claim(constraints[i].Name)
+	}
+	columns := make([]string, 0, len(database.Fields)-created.fields)
+	for _, field := range database.Fields[created.fields:] {
+		columns = append(columns, field.Name)
+	}
+	for i := range constraints {
+		constraint := &constraints[i]
+		if isCheck(*constraint) && constraint.Name == "" {
+			constraint.Name = claimCheckName(table.Name, constraint.CheckExpression, columns, names.constraints)
+			continue
+		}
+		nameIndexedConstraint(constraint, table.Name, names.constraints, names.relations)
+	}
 }
 
 // numberedKeyOnTable is the UNIQUE on the table that a column's own UNIQUE the

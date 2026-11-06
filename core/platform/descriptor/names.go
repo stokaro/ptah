@@ -87,6 +87,13 @@ type ConstraintNaming string
 // `_not_null` on a release that names a NOT NULL. PostgreSQL's naming.
 const ConstraintNamingTableColumnsSuffix ConstraintNaming = "table-columns-suffix"
 
+// ConstraintNamingServerHash is a server that names an unnamed constraint with a hash
+// that differs from one database to the next, `UQ__t__3BD0198F3A610101`, so no file can
+// name it later and a read cannot tell it from a declared one. A SQL schema file's unnamed
+// UNIQUE on the table takes `<table>_<columns>_key` instead and its unnamed CHECK
+// `<table>_<column>_check`, which the file then writes. SQL Server's naming.
+const ConstraintNamingServerHash ConstraintNaming = "server-hash"
+
 // ForeignKeyNaming is how a server names a foreign key a schema file leaves
 // unnamed, and the index it builds for the key. [ForeignKeyNameRules] states
 // where servers of one naming keep different names.
@@ -221,8 +228,9 @@ func (d Dialect) validateNames() error {
 	if err := d.validateIndexBaseBytes(); err != nil {
 		return err
 	}
-	if naming := d.ConstraintNaming; naming != "" && naming != ConstraintNamingTableColumnsSuffix {
-		return fmt.Errorf("%w: dialect %q: constraint naming %q is not %q", ErrInvalidDescriptor, d.Name, naming, ConstraintNamingTableColumnsSuffix)
+	if naming := d.ConstraintNaming; naming != "" && naming != ConstraintNamingTableColumnsSuffix && naming != ConstraintNamingServerHash {
+		return fmt.Errorf("%w: dialect %q: constraint naming %q is neither %q nor %q",
+			ErrInvalidDescriptor, d.Name, naming, ConstraintNamingTableColumnsSuffix, ConstraintNamingServerHash)
 	}
 	if naming := d.CheckNaming; naming != "" && !slices.Contains(CheckNamings(), naming) {
 		return fmt.Errorf("%w: dialect %q: check naming %q is not one of %q", ErrInvalidDescriptor, d.Name, naming, CheckNamings())

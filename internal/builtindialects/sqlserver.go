@@ -11,9 +11,10 @@ import (
 // carries what a live catalog resolved.
 func sqlServer() descriptor.Dialect {
 	return descriptor.Dialect{
-		Name:          "sqlserver",
-		Aliases:       []string{"mssql", "sql-server", "sql_server", "tsql"},
-		DefaultSchema: "dbo",
+		Name:             "sqlserver",
+		Aliases:          []string{"mssql", "sql-server", "sql_server", "tsql"},
+		DefaultSchema:    "dbo",
+		ConstraintNaming: descriptor.ConstraintNamingServerHash,
 		Identifiers: descriptor.Identifiers{
 			IndexNamespace: "table",
 			IndexNames:     "catalog_unknown",

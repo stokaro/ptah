@@ -1248,7 +1248,11 @@ func reconcileColumnFlags(schema *catalog.Database) {
 		case "PRIMARY KEY":
 			addColumns(primary, key, constraint.ColumnNamesOrDefault())
 		case "UNIQUE":
-			addColumns(unique, key, constraint.ColumnNamesOrDefault())
+			// A key over several columns makes none of them unique on its own. Read as
+			// if it did, every later plan holds a column change nothing declared.
+			if columns := constraint.ColumnNamesOrDefault(); len(columns) == 1 {
+				addColumns(unique, key, columns)
+			}
 		}
 	}
 	for ti := range schema.Tables {

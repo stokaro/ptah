@@ -345,6 +345,13 @@ other database answers that it is not a constraint. So Ptah writes the name:
 within the server's limit of 128 characters, the name is the table's cut short with a
 hash of the whole name in front of the suffix.
 
+## Unique constraints and checks nobody named
+
+A `UNIQUE` on the table with no name, in a SQL schema file, takes
+`<table>_<columns>_key`, for the same reason as a primary key, and a `CHECK` on the table
+takes `<table>_<column>_check`. Each is numbered past a name the schema holds. A `UNIQUE`
+written on a column keeps the name the server gives it.
+
 ## Column defaults
 
 SQL Server keeps a column default as a constraint of its own, so `ALTER

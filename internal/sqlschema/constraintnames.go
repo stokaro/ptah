@@ -56,6 +56,13 @@ func namesConstraintsLikePostgres(sourcePlatform string) bool {
 	return factsOf(sourcePlatform).constraintNaming == descriptor.ConstraintNamingTableColumnsSuffix
 }
 
+// namesConstraintsForTheServer reports whether an unnamed UNIQUE or CHECK on the table
+// takes a name here because the server's own would differ from one database to the next;
+// see [descriptor.ConstraintNamingServerHash].
+func namesConstraintsForTheServer(sourcePlatform string) bool {
+	return factsOf(sourcePlatform).constraintNaming == descriptor.ConstraintNamingServerHash
+}
+
 // numbersForeignKeys reports whether an unnamed foreign key read from a source
 // of this dialect takes the name the server gives it, `<table>_ibfk_<n>`, and
 // the index the server builds for it the name after its first column: the
@@ -297,6 +304,17 @@ func nameAddedConstraint(constraint *schemamodel.Constraint, target alterTarget)
 		if err := nameAddedMySQLFamilyCheck(&constraint.Name, nil, target); err != nil {
 			return err
 		}
+	}
+	if namesConstraintsForTheServer(target.sourcePlatform) {
+		schema, table := splitQualifiedTable(target.qualified)
+		constraints := constraintNamesInSchema(target.databases, schema)
+		if isCheck(*constraint) {
+			_, columns := tableColumns(target.databases, target.structName)
+			constraint.Name = claimCheckName(table, constraint.CheckExpression, columns, constraints)
+			return nil
+		}
+		nameIndexedConstraint(constraint, table, constraints, pgname.RelationNames(target.databases, schema))
+		return nil
 	}
 	if !namesConstraintsLikePostgres(target.sourcePlatform) {
 		return nil
