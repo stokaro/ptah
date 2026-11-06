@@ -120,3 +120,60 @@ func TestCoverageModelsAreComparedOncePerValidation(t *testing.T) {
 	c.Assert(again, qt.IsTrue)
 	c.Assert(unheld, qt.IsFalse)
 }
+
+// The values of one encoding request, checked under one validation, ask for
+// their target once.
+func TestEncodedValuesShareTheAnswersOfTheirValidation(t *testing.T) {
+	c := qt.New(t)
+	description := checkedDescription()
+	request := &protocol.EncodeSourceRequest{Engine: "fixture", TargetFeatures: []string{"retention"}}
+	bindings := make(map[string]*protocol.SourceBinding)
+	checks := new(targetChecks)
+
+	for _, name := range []string{"a", "b", "c"} {
+		value := checkedValue(description, name)
+		bindings[name] = &protocol.SourceBinding{Id: name, Object: proto.CloneOf(value.Value.Owner)}
+		encoded := &protocol.EncodeSourceValue{Value: value, Placement: protocol.SourceModelValue_FACET, BindingId: name}
+		c.Assert(validateEncodeValue(checks, description, request, bindings, encoded), qt.IsNil)
+	}
+
+	c.Assert(checks.answers, qt.HasLen, 1)
+}
+
+// Two coverage subjects have one key exactly when they have one kind and
+// compareReferences finds their subjects equal, whatever separators their
+// fields hold; the index finds the first record of a key.
+func TestCoverageSubjectKeysMatchCompareReferences(t *testing.T) {
+	c := qt.New(t)
+	refs := []*protocol.Reference{
+		{Engine: "e", Kind: "table", Name: "t"},
+		{Engine: "e", Kind: "table", Name: "t", Schema: ""},
+		{Engine: "e", Kind: "table", Name: "1:t"},
+		{Engine: "e", Kind: "table|1:", Name: "t"},
+		{Engine: "e", Kind: "table", Schema: "s", Name: "t"},
+		{Engine: "e", Kind: "table", Schema: "s|1:t", Name: ""},
+		{Engine: "e", Kind: "table", Path: []string{"a", "b"}, Name: "t"},
+		{Engine: "e", Kind: "table", Path: []string{"a|1:b"}, Name: "t"},
+		{Engine: "e", Kind: "table", Path: []string{"a"}, Name: "b", Overload: []string{"t"}},
+		{Engine: "e", Kind: "table", Path: make([]string, 0), Name: "t", Overload: make([]string, 0)},
+		{Engine: "e", Database: "d", Catalog: "c", Kind: "table", Name: "t"},
+		{Engine: "e", Database: "dc", Kind: "table", Name: "t"},
+		{Engine: "e", Catalog: "c|:", Kind: "table", Name: "t"},
+		{Engine: "e", Catalog: "c", Schema: "|:", Kind: "table", Name: "t"},
+	}
+	keys, compared := make([]bool, 0, len(refs)*len(refs)), make([]bool, 0, len(refs)*len(refs))
+	for _, left := range refs {
+		for _, right := range refs {
+			keys = append(keys, subjectKey("k", left) == subjectKey("k", right))
+			compared = append(compared, compareReferences(left, right) == 0)
+		}
+	}
+	c.Assert(keys, qt.DeepEquals, compared)
+	c.Assert(subjectKey("k", refs[0]), qt.Not(qt.Equals), subjectKey("other", refs[0]))
+
+	first := &protocol.ModelSubjectCoverage{Kind: "k", Subject: refs[0], Knowledge: &protocol.ModelKnowledge{State: protocol.ModelKnowledge_COMPLETE}}
+	second := &protocol.ModelSubjectCoverage{Kind: "k", Subject: refs[1], Knowledge: &protocol.ModelKnowledge{State: protocol.ModelKnowledge_UNINSPECTED}}
+	index := indexCoverageSubjects(&protocol.ModelCoverage{Subjects: []*protocol.ModelSubjectCoverage{first, second}})
+	c.Assert(index.covered(&protocol.Envelope{Kind: "k", Owner: refs[1]}), qt.IsTrue)
+	c.Assert(index.covered(&protocol.Envelope{Kind: "k", Owner: refs[4]}), qt.IsFalse)
+}
