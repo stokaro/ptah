@@ -137,6 +137,16 @@
         "github.com/stokaro/ptah/provider-sdk"
       ],
       "enabled": false
+    },
+    {
+      "description": "github.com/spf13/pflag stays below 1.1. Release 1.1.0 writes every boolean flag in help as `--edit[=true|false]` where 1.0 writes `--edit`, and words the refusal of a bad boolean or duration value itself (`must be true or false`, `must be a duration like \"30s\" or \"5m\"`) where 1.0 passes on the strconv and time text the Atlas CLI prints. ptah-compat matches that help and those refusals, so stokaro/ptah#5487 failed six CLI test functions on master. Moving to 1.1 changes the command line surface and needs its own decision.",
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchPackageNames": [
+        "github.com/spf13/pflag"
+      ],
+      "allowedVersions": "<1.1.0"
     }
   ]
 }
