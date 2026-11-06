@@ -53,20 +53,30 @@ var heldTopicGrant = catalog.Grant{Role: "reader", Privilege: "ydb.granular.sele
 var revokedTopicGrant = difftypes.GrantRef{Role: "reader", Privilege: "YDB.GRANULAR.SELECT_ROW", ObjectType: "TOPIC", ObjectName: "app.events"}
 
 // ownedObjectsTest is a desired source's account of the owner's objects: the
-// objects it declares and the knowledge it claims.
+// objects it declares and the knowledge it claims, and the objects of the
+// desired state the owner made of it.
 type ownedObjectsTest struct {
-	name     string
-	declared []schemaext.Object
-	kinds    []schemaext.KindCoverage
-	subjects []schemaext.SubjectCoverage
+	name      string
+	declared  []schemaext.Object
+	kinds     []schemaext.KindCoverage
+	subjects  []schemaext.SubjectCoverage
+	effective []schemaext.Object
 }
 
 func (test ownedObjectsTest) objects() compare.OwnedObjects {
 	return compare.OwnedObjects{Names: topicGrants, Desired: schemaext.FeatureState{
 		Objects:  must.Must(schemaext.NewObjects(test.declared...)),
 		Coverage: must.Must(schemaext.NewCoverage(schemaext.Desired, test.kinds, test.subjects)),
-	}}
+	}, Effective: must.Must(schemaext.NewObjects(test.effective...))}
 }
+
+// completeTopics enrolls topicKind as a source does that describes every
+// topic.
+var completeTopics = []schemaext.KindCoverage{{Model: topicModel, Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Complete})}}
+
+// keptTopic is app.events in the desired state its owner made, as an owner
+// keeps an object a source leaves out.
+var keptTopic = []schemaext.Object{{Ref: eventsTopic, Value: topicValue{}}}
 
 // uninspectedTopics enrolls topicKind with no claim, as a source does whose
 // header says it does not describe topics.
@@ -76,13 +86,17 @@ var uninspectedTopics = []schemaext.KindCoverage{{Model: topicModel,
 // A source that makes no claim about an owner's object leaves the grants on
 // it as the database holds them, though it manages the role that holds one:
 // it does not declare the object and does not describe its kind, by a
-// not-described record or by claiming nothing about it.
+// not-described record or by claiming nothing about it. An object the owner
+// keeps whatever the source claims about its kind keeps its grants too, as
+// the YDB engine built into the host at 74de0b65b kept the grant on a resource
+// pool a source leaves out; without the rule the comparison revokes it.
 func TestGrantsWithObjects_AnUndescribedObjectKeepsItsGrants(t *testing.T) {
 	for _, test := range []ownedObjectsTest{
 		{name: "no claim about the kind"},
 		{name: "the kind not described", kinds: uninspectedTopics},
 		{name: "the object unrepresentable", kinds: uninspectedTopics, subjects: []schemaext.SubjectCoverage{{Kind: topicKind, Subject: eventsTopic,
 			Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "the source cannot spell it"}}}},
+		{name: "the kind described and the object kept", kinds: completeTopics, effective: keptTopic},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -100,12 +114,13 @@ func TestGrantsWithObjects_AnUndescribedObjectKeepsItsGrants(t *testing.T) {
 
 // A source that declares an owner's object, or claims to know its state,
 // manages the grants on it: an entry it leaves out of a managed role is
-// revoked. Where the object is described and not declared, the plan drops it,
-// and its owner accounts for the revoke in the drop.
+// revoked. Where the object is described, not declared and not kept, the plan
+// drops it, and its owner accounts for the revoke in the drop.
 func TestGrantsWithObjects_ADescribedObjectLosesAGrantLeftOut(t *testing.T) {
 	for _, test := range []ownedObjectsTest{
 		{name: "the object declared", declared: []schemaext.Object{{Ref: eventsTopic, Value: topicValue{}}}},
-		{name: "the kind described", kinds: []schemaext.KindCoverage{{Model: topicModel, Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Complete})}}},
+		{name: "the object declared and kept", declared: keptTopic, effective: keptTopic},
+		{name: "the kind described", kinds: completeTopics},
 		{name: "the object asserted absent", kinds: uninspectedTopics, subjects: []schemaext.SubjectCoverage{{Kind: topicKind, Subject: eventsTopic,
 			Knowledge: schemaext.Knowledge{State: schemaext.Absent}}}},
 	} {

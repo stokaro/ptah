@@ -728,8 +728,10 @@ source that neither declares the object nor describes its kind, through a
 `ptah:not-described topic` header or a format that claims nothing about
 topics, says nothing about who may use it, so Ptah plans no removal of the
 grant. A source that describes the kind and leaves the object out drops it,
-and the grant goes with the object. A revoke the source writes out is planned
-either way.
+and the grant goes with the object, unless the provider's comparison keeps the
+object as the database holds it: a YDB resource pool belongs to the whole
+database, and a source that leaves it out keeps both the pool and the grants
+on it. A revoke the source writes out is planned either way.
 
 `migrations checkpoint`, and the rollback `migrations down --shadow-db`
 verifies or plans, replay the directory on a database the provider provisions
