@@ -19,7 +19,7 @@ func validateValueModels(models []*protocol.ValueModel) error {
 		kind           string
 		representation protocol.ValueInput_Representation
 	}
-	seen := make(map[identity]bool)
+	seen := make(map[identity]bool, len(models))
 	for _, model := range models {
 		if model == nil || strings.TrimSpace(model.GetKind()) == "" || model.GetSchemaVersion() == 0 ||
 			strings.TrimSpace(model.GetEncoding()) == "" || strings.TrimSpace(model.GetCanonicalFormat()) == "" {
@@ -36,8 +36,7 @@ func validateValueModels(models []*protocol.ValueModel) error {
 		if err := validateModelSourceFormats(model); err != nil {
 			return err
 		}
-		digest, err := hex.DecodeString(model.GetDefinitionSha256())
-		if err != nil || len(digest) != 32 || model.GetDefinitionSha256() != strings.ToLower(model.GetDefinitionSha256()) {
+		if !lowerHexDigest(model.GetDefinitionSha256()) {
 			return fmt.Errorf("%w: model definition requires a lowercase SHA-256 digest", ErrProtocol)
 		}
 		if err := validateModelDefinition(model); err != nil {
@@ -185,4 +184,20 @@ func validateModelDisplayName(model *protocol.ValueModel) error {
 		return fmt.Errorf("%w: model display name requires a single-line desired or observed label", ErrProtocol)
 	}
 	return nil
+}
+
+// lowerHexDigest reports a SHA-256 digest written as 64 lowercase hexadecimal
+// digits. It allocates nothing: a request's validation checks the models of
+// its engine for each table it carries, and decoding and lowering each digest
+// made that a second of a plan of 500 tables.
+func lowerHexDigest(digest string) bool {
+	if len(digest) != 2*sha256.Size {
+		return false
+	}
+	for i := range len(digest) {
+		if c := digest[i]; (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
 }
