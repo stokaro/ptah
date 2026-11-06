@@ -34,7 +34,7 @@ require (
 	github.com/sijms/go-ora/v3 v3.0.1
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
-	github.com/stokaro/ptah/provider-sdk v0.22.1-0.20261106063002-13d12b1a8fd5
+	github.com/stokaro/ptah/provider-sdk v0.22.1-0.20261106070916-495ad6c19c40
 	github.com/tursodatabase/libsql-client-go v0.0.0-20260528064733-9d5d30a29a60
 	github.com/zclconf/go-cty v1.19.0
 	github.com/zclconf/go-cty-yaml v1.2.0
