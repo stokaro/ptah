@@ -89,6 +89,9 @@ type DiffOptions struct {
 	// IgnoreUnknownHCLNames is the Atlas-compatible surface's unknown-name
 	// policy; see [ptah.run/internal/atlassource.ResolveOptions].
 	IgnoreUnknownHCLNames bool
+	// RefuseUnrequestedSchemas holds an HCL desired state to Schemas; see
+	// [ptah.run/internal/schemafile.Options.RequestedSchemas].
+	RefuseUnrequestedSchemas bool
 	// OmitNullBackfill plans SET NOT NULL without filling the column's NULL
 	// rows from its declared default first; see
 	// [ptah.run/migration/planext.Options]. The caller selects it from its
@@ -190,10 +193,12 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 		DevURL:      opts.DevURL,
 		// A database on either side is compared live with the dev database
 		// before the dev database is reset for the other side.
-		Protected:           append(fromSet.DevProtected(), toSet.DevProtected()...),
-		DevServerDisposable: opts.DevServerDisposable,
-		SchemaScope:         schemaScope,
-		SchemaScopeFlag:     schemaScopeFlag,
+		Protected:                append(fromSet.DevProtected(), toSet.DevProtected()...),
+		DevServerDisposable:      opts.DevServerDisposable,
+		SchemaScope:              schemaScope,
+		SchemaScopeFlag:          schemaScopeFlag,
+		RequestedSchemas:         opts.Schemas,
+		RefuseUnrequestedSchemas: opts.RefuseUnrequestedSchemas,
 		// Both sides introspect exactly the schemas --schema asked for. Without
 		// this the read is scoped to the connection default and the scope
 		// projection below filters a universe that never contained the

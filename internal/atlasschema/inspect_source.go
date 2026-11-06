@@ -80,6 +80,9 @@ type InspectSourceOptions struct {
 	// IgnoreUnknownHCLNames is the Atlas-compatible surface's unknown-name
 	// policy; see [ptah.run/internal/atlassource.ResolveOptions].
 	IgnoreUnknownHCLNames bool
+	// RefuseUnrequestedSchemas holds an HCL desired state to Schemas; see
+	// [ptah.run/internal/schemafile.Options.RequestedSchemas].
+	RefuseUnrequestedSchemas bool
 	// ValidateDesiredSchema applies a caller-selected policy to authored local
 	// schema sources before the dev database is reset. Live database and
 	// migration-directory inspection are descriptions, not authored desired
@@ -365,19 +368,21 @@ func inspectOnDev(
 		// supplies is exit 0 there and was exit 1 here, `missing value for
 		// required variable "tenant"`.
 		desired, err = schemafile.LoadSources(ctx, set.SchemaFileSources(), schemafile.Options{
-			Contexts:              opts.Runtime,
-			YAML:                  opts.Runtime.YAML(),
-			SQL:                   opts.Runtime.SQL(),
-			HCL:                   opts.Runtime.HCL(),
-			CoverageVocabulary:    opts.Runtime.CoverageVocabulary(),
-			Relations:             featureselect.RelationsOf(opts.Runtime),
-			DatabaseURL:           devURL,
-			Dialect:               dialect,
-			IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,
-			ReportIgnored:         opts.Diagnostics,
-			SchemaScope:           schemaScope,
-			SchemaScopeFlag:       schemaScopeFlag,
-			Vars:                  opts.Vars,
+			Contexts:                 opts.Runtime,
+			YAML:                     opts.Runtime.YAML(),
+			SQL:                      opts.Runtime.SQL(),
+			HCL:                      opts.Runtime.HCL(),
+			CoverageVocabulary:       opts.Runtime.CoverageVocabulary(),
+			Relations:                featureselect.RelationsOf(opts.Runtime),
+			DatabaseURL:              devURL,
+			Dialect:                  dialect,
+			IgnoreUnknownHCLNames:    opts.IgnoreUnknownHCLNames,
+			ReportIgnored:            opts.Diagnostics,
+			SchemaScope:              schemaScope,
+			SchemaScopeFlag:          schemaScopeFlag,
+			RequestedSchemas:         opts.Schemas,
+			RefuseUnrequestedSchemas: opts.RefuseUnrequestedSchemas,
+			Vars:                     opts.Vars,
 		})
 		if err != nil {
 			return InspectResult{}, err
@@ -400,6 +405,8 @@ func inspectOnDev(
 			ReportIgnored:             opts.Diagnostics,
 			SchemaScope:               schemaScope,
 			SchemaScopeFlag:           schemaScopeFlag,
+			RequestedSchemas:          opts.Schemas,
+			RefuseUnrequestedSchemas:  opts.RefuseUnrequestedSchemas,
 			Vars:                      opts.Vars,
 		})
 		if err != nil {

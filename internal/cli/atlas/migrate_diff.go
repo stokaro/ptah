@@ -401,6 +401,7 @@ func runAtlasMigrateDiff(
 		Diagnostics:               cmd.ErrOrStderr(),
 		Vars:                      schemaVars,
 		IgnoreUnknownHCLNames:     opts.policy.IgnoreUnknownHCLNames(),
+		RefuseUnrequestedSchemas:  opts.policy.IsStrictCE(),
 		OmitNullBackfill:          !opts.policy.FillsNullRowsWithDefault(),
 		MarkFileModeRefusals:      !opts.policy.IsStrictCE(),
 		ValidateDesiredSchema:     opts.policy.ValidateDesiredSchema,
