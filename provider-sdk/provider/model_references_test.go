@@ -205,3 +205,17 @@ func TestValidatedModelDefinitionIsCheckedAgainWhenReplaced(t *testing.T) {
 
 	c.Assert(provider.ValidateDescription(d, nil), qt.ErrorMatches, `.*model definition digest differs from its content`)
 }
+
+// A model whose definition bytes are changed in place after a description
+// validated is checked again: the set of checked definitions compares what a
+// definition holds, not where it is held.
+func TestValidatedModelDefinitionIsCheckedAgainWhenChangedInPlace(t *testing.T) {
+	c := qt.New(t)
+	d := referenceDescription()
+	c.Assert(provider.ValidateDescription(d, nil), qt.IsNil)
+
+	definition := d.Engines[0].ValueModels[0].DefinitionJson
+	definition[len(definition)-2] ^= 1
+
+	c.Assert(provider.ValidateDescription(d, nil), qt.ErrorMatches, `.*model definition (must be a canonical nonempty JSON object|digest differs from its content)`)
+}
