@@ -21,6 +21,9 @@ import (
 // creation every planner builds. The pinned community binary v1.3.0 writes
 // `CREATE DATABASE` without the guard; the two create the same database.
 func (p *Planner) planServerSchemas(result []ast.Node, diff *difftypes.SchemaDiff) ([]ast.Node, error) {
+	if p.targetDialect() == platform.SQLServer {
+		return result, schemaprecondition.RefuseDatabaseChanges(p.targetDialect(), diff)
+	}
 	if !p.plansServerSchemas() {
 		return result, schemaprecondition.RefuseServerSchemas(p.targetDialect(), diff)
 	}

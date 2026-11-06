@@ -280,9 +280,12 @@ The guarded form is not a style choice. SQL Server has no
 is already an object named 'app' in the database`, and `CREATE SCHEMA` must be
 the first statement of its batch — which is what the `EXEC` is for.
 
-The schemas come from the objects being added, so a migration that adds nothing
-emits no schema statement and a single-schema declaration emits none either. A
-schema a document declares and puts nothing in is not created.
+The schemas come from the objects being added and from the `schema` blocks a
+document declares, so a migration that adds nothing emits no schema statement and
+a single-schema declaration emits none either. A schema a document declares and
+puts nothing in is created too, and a rollback drops it with `DROP SCHEMA`, which
+the server refuses while the schema holds an object. A plan never creates `dbo`,
+and never drops a schema the document does not mention.
 
 **MySQL, MariaDB, ClickHouse and Oracle do not do this**, and that is a
 difference in what a schema IS rather than a gap. A schema there is a database —

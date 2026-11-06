@@ -579,9 +579,9 @@ That is the reason omission cannot mean removal.
 
 ### `//ptah:schema:schema`
 
-Declares a database schema or namespace. On PostgreSQL, CockroachDB, YugabyteDB
-and Spanner, a plan creates it when the database lacks it, whether or not anything
-is in it.
+Declares a database schema or namespace. On PostgreSQL, CockroachDB, YugabyteDB,
+Spanner and SQL Server, a plan creates it when the database lacks it, whether or
+not anything is in it.
 
 | Attribute | Required | Description |
 | --- | --- | --- |

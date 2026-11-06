@@ -88,6 +88,7 @@ func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 			NoTableComments:      true,
 		},
 		"sqlserver": {
+			DeclaredSchemas:                true,
 			ColumnPrimaryKeyIsTheTablesKey: true,
 			UniqueIndexStandsAlone:         true,
 			ExpressionProbes:               "sys-catalog",

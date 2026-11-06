@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/internal/planner/featurehost"
 	"ptah.run/internal/planner/schemaprecondition"
+	"ptah.run/internal/sqlident"
 	"ptah.run/internal/tableref"
 )
 
@@ -45,10 +46,8 @@ import (
 // contributes none and the statement is not emitted at all. An apply that adds
 // nothing therefore stays the clean no-op it has to be (stokaro/ptah#1996).
 //
-// A schema a document DECLARES and then puts nothing in contributes none
-// either. The SQL Server reader reports no schemas, so the comparison cannot say
-// that the database lacks one, and the descriptor's Comparison.DeclaredSchemas
-// stays off for this dialect.
+// A schema a document DECLARES and then puts nothing in is on the diff's
+// SchemasAdded, which the comparison fills from the schemas the reader reports.
 //
 // The guards go in front of the finished plan, because the schemas an owner's
 // objects are created in are known only once the owners have planned: created
@@ -119,8 +118,31 @@ func schemasAddedObjectsNeed(diff *difftypes.SchemaDiff, created []string) []str
 	for _, schema := range created {
 		record(schema)
 	}
+	for _, schema := range diff.SchemasAdded {
+		record(schema.Name)
+	}
 	slices.Sort(schemas)
 	return schemas
+}
+
+// dropRemovedSchemas ends a SQL Server plan with a DROP SCHEMA for each schema a
+// rollback removes, after every other statement, the owners' included, because
+// what the plan drops first may be in it. The server refuses a schema that still
+// holds an object, and the comparison added the schema because the database did
+// not hold it, so whatever it holds by the time this runs was put there by
+// something the plan does not know.
+func (p *Planner) dropRemovedSchemas(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	if p.targetDialect() != platform.SQLServer {
+		return result
+	}
+	guard := ""
+	if p.describes() {
+		guard = " IF EXISTS"
+	}
+	for _, name := range diff.SchemasRemoved {
+		result = append(result, ast.NewRawSQL("DROP SCHEMA"+guard+" "+sqlident.Quote(platform.SQLServer, name)))
+	}
+	return result
 }
 
 // createdOwnedSchemas is the schema of every schema-level object an owner's

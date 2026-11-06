@@ -241,7 +241,7 @@ var roundTripGaps = []Unreached{
 	{Field: "schemamodel.Constraint.UsingMethod", Dialects: []string{"mysql"}, Directions: nil, Reason: gapComparison},
 	{
 		Field:      "schemamodel.Database.Schemas",
-		Dialects:   []string{"clickhouse", "mariadb", "mysql", "sqlserver"},
+		Dialects:   []string{"clickhouse", "mariadb", "mysql"},
 		Directions: nil,
 		Reason:     gapComparison,
 	},
@@ -360,7 +360,7 @@ var roundTripGaps = []Unreached{
 
 	{
 		Field:      "schemamodel.Schema.Name",
-		Dialects:   []string{"clickhouse", "mariadb", "mysql", "sqlserver"},
+		Dialects:   []string{"clickhouse", "mariadb", "mysql"},
 		Directions: nil,
 		Reason:     gapComparison,
 	},

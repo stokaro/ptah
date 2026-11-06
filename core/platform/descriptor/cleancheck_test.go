@@ -15,13 +15,14 @@ func checked() descriptor.Dialect {
 	described.DefaultSchema = "main"
 	described.Schemas = descriptor.Schemas{Selection: descriptor.SchemaSelectionSingle}
 	described.CleanCheck = descriptor.CleanCheck{
-		Adoption:        true,
-		AdoptionCounts:  true,
-		Dev:             true,
-		Tables:          "SELECT name FROM catalog",
-		CatalogOrder:    true,
-		ConnectedSchema: true,
-		StartingPoint:   true,
+		Adoption:          true,
+		AdoptionCounts:    true,
+		Dev:               true,
+		Tables:            "SELECT name FROM catalog",
+		CatalogOrder:      true,
+		ConnectedSchema:   true,
+		ResetsEverySchema: true,
+		StartingPoint:     true,
 	}
 	described.SchemaAttributesQuery = "SELECT charset, collation FROM schemata WHERE name = ?"
 	described.QualifierRefusal = "nobody measured it"
@@ -37,6 +38,7 @@ func TestNewRegistry_CleanCheck_HappyPath(t *testing.T) {
 		{name: "a search-path engine reads its own catalog", described: withCleanCheck(func(d *descriptor.Dialect) {
 			d.Schemas.Selection = descriptor.SchemaSelectionSearchPath
 			d.CleanCheck.Tables = ""
+			d.CleanCheck.ResetsEverySchema = false
 		})},
 		{name: "a reset listing alone", described: withCleanCheck(func(d *descriptor.Dialect) {
 			d.CleanCheck = descriptor.CleanCheck{Dev: true, ResetListing: true}
@@ -76,6 +78,15 @@ func TestNewRegistry_CleanCheck_FailurePath(t *testing.T) {
 			name:    "a tables query beside the reset listing",
 			edit:    withCleanCheck(func(d *descriptor.Dialect) { d.CleanCheck.ResetListing = true }),
 			wantErr: `invalid dialect descriptor: dialect "alpha": a clean check that reads the reset listing states no tables query`,
+		},
+		{
+			name: "every schema reset where the URL selects a schema",
+			edit: withCleanCheck(func(d *descriptor.Dialect) {
+				d.CleanCheck.Tables = ""
+				d.CleanCheck.ResetsEverySchema = true
+				d.Schemas.Selection = descriptor.SchemaSelectionSearchPath
+			}),
+			wantErr: `invalid dialect descriptor: dialect "alpha": a clean check resets the scope the URL selects by "search-path", not every schema`,
 		},
 		{
 			name:    "a counted adoption refusal with no refused adoption",

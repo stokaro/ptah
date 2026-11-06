@@ -17,11 +17,10 @@ const (
 		"\n\t\t\tWHERE type = 'table'" +
 		"\n\t\t\t  AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\'" +
 		"\n\t\t\tORDER BY rowid"
-	// sqlServerCleanTables reads sys.tables. A replay empties every user
-	// schema of a SQL Server dev database, so the probe reads them all and
-	// returns the first table in byte order. A rehearsal empties only the
-	// connected schema and is refused over a table elsewhere too, since one
-	// claim serves both. is_ms_shipped leaves the server's own out.
+	// sqlServerCleanTables reads sys.tables. A replay and a rehearsal each empty
+	// every user schema of a SQL Server dev database, so the probe reads them
+	// all and returns the first table in byte order. is_ms_shipped leaves the
+	// server's own out.
 	sqlServerCleanTables = "\n\t\t\tSELECT TOP 1 s.name, t.name" +
 		"\n\t\t\tFROM sys.tables t" +
 		"\n\t\t\tJOIN sys.schemas s ON s.schema_id = t.schema_id" +
