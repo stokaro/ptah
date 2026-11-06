@@ -87,3 +87,18 @@ func TestForeignKeyMoved_ACheckLeavesTheIndexToTheRemovals(t *testing.T) {
 		"DROP INDEX `qid_rule` ON `child`",
 	})
 }
+
+// TestForeignKeyMoved_SQLServerBuildsNoIndex pins a foreign key moved under its own name
+// on SQL Server, which builds a key no index: nothing takes the old index's name, so the
+// index leaves with the removals.
+func TestForeignKeyMoved_SQLServerBuildsNoIndex(t *testing.T) {
+	c := qt.New(t)
+
+	got := plannedOverHeld(c, "sqlserver", declaredMovedForeignKey("child_fk"), heldMovedForeignKey())
+
+	c.Assert(got, qt.DeepEquals, []string{
+		"ALTER TABLE [child] DROP CONSTRAINT [child_fk]",
+		"ALTER TABLE [child] ADD CONSTRAINT [child_fk] FOREIGN KEY ([qid]) REFERENCES [parent] ([id])",
+		"DROP INDEX [child_fk] ON [child]",
+	})
+}
