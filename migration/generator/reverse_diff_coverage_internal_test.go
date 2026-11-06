@@ -15,6 +15,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/difftypes"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -179,10 +180,13 @@ func assertReverseCoverageField(
 		return
 	}
 	if field.Name == "HeldSchemas" {
-		// A rollback is planned with no read of its own, so it says nothing
-		// about which schemas the database holds when it runs. Carrying the
-		// forward value would take a CREATE SCHEMA a rollback that puts a table
-		// back needs.
+		// A rollback is planned with no read of its own, so what it holds comes
+		// from the forward value less what the forward plan drops and with what it
+		// creates, and a plan that runs on a held schema writes the same either
+		// way on most fixtures.
+		//
+		// TestReverseSchemaDiff_ARollbackHoldsWhatTheForwardPlanLeaves is what
+		// holds that, since this gate structurally cannot.
 		return
 	}
 	if field.Name == "DeclaredSchemas" {
@@ -1190,4 +1194,28 @@ func TestReverseSchemaDiff_ARolledBackRebuildPutsBackThePriorDependents(t *testi
 	c.Assert(indexes, qt.Not(qt.Contains), "rev_dep_host/rev_dep_desired_idx")
 	c.Assert(triggers, qt.Contains, "rev_dep_prior_trg")
 	c.Assert(triggers, qt.Not(qt.Contains), "rev_dep_desired_trg")
+}
+
+// TestReverseSchemaDiff_ARollbackHoldsWhatTheForwardPlanLeaves is the schemas a rollback
+// runs on: what the read found, less what the forward plan drops, and what it creates.
+func TestReverseSchemaDiff_ARollbackHoldsWhatTheForwardPlanLeaves(t *testing.T) {
+	tests := []struct {
+		name    string
+		forward *difftypes.SchemaDiff
+		want    []string
+	}{
+		{name: "no read says nothing", forward: &difftypes.SchemaDiff{SchemasAdded: []schemamodel.Schema{{Name: "fresh"}}}},
+		{name: "a schema the plan leaves", forward: &difftypes.SchemaDiff{HeldSchemas: []string{"kept"}}, want: []string{"kept"}},
+		{name: "a schema the plan drops", forward: &difftypes.SchemaDiff{HeldSchemas: []string{"kept", "gone"}, SchemasRemoved: []string{"gone"}}, want: []string{"kept"}},
+		{name: "a schema the plan creates", forward: &difftypes.SchemaDiff{HeldSchemas: []string{"kept"}, SchemasAdded: []schemamodel.Schema{{Name: "fresh"}}}, want: []string{"kept", "fresh"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got := reverseSchemaDiffWithPrior(test.forward, &schemamodel.Database{}, &catalog.Database{}, &schemamodel.Database{}, "postgres", capability.Capabilities{})
+
+			c.Assert(got.HeldSchemas, qt.DeepEquals, test.want)
+		})
+	}
 }
