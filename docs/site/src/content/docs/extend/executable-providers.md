@@ -1095,10 +1095,12 @@ planning still refuses role and grant mutations.
 
 Native grants and revocations follow the declared lifecycle of their target.
 They retain their order relative to principal changes and other access changes
-on the same object. Unrelated table changes do not fix their position: a
-provider can replace an input table, restart its dependent object, and then
-grant access to that object in one plan. The complete graph still refuses
-missing footprints, conflicting dependencies and unordered writes.
+on the same object. Each one still runs after the common statements ahead of
+it, so the grants of a plan keep their order unless a target's lifecycle moves
+one later. The common statements after it do not wait for it: a provider can
+replace an input table, restart its dependent object, and then grant access to
+that object in one plan. The complete graph still refuses missing footprints,
+conflicting dependencies and unordered writes.
 
 ## Resolve failures
 
