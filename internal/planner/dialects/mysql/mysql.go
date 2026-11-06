@@ -1117,7 +1117,7 @@ func (p *Planner) releaseForeignKeysOverMovedKeys(diff *difftypes.SchemaDiff, pl
 		ownIndex := difftypes.IndexRef{Name: info.Name, TableName: info.TableName}
 		rebuildsOwnIndex := rebuilt.Contains(ownIndex) && slices.Contains(diff.IndexAdditions(), ownIndex)
 		if _, done := plan.dropped[info.Identity]; done ||
-			!(losesKey[foreign] || losesColumn[foreign] || losesColumn[host] || takesOverEarly[host] || rebuildsOwnIndex) {
+			(!losesKey[foreign] && !losesColumn[foreign] && !losesColumn[host] && !takesOverEarly[host] && !rebuildsOwnIndex) {
 			continue
 		}
 		plan.drops = append(plan.drops, p.dropConstraintNode(difftypes.ConstraintRemovalInfo{
