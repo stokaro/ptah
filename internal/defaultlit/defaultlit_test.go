@@ -124,3 +124,38 @@ func TestTyped(t *testing.T) {
 		})
 	}
 }
+
+// TestRenderEscaped is a default on an engine that reads a backslash inside a literal as an
+// escape. A literal holding one passes through, and a bare value is quoted once.
+func TestRenderEscaped(t *testing.T) {
+	quote := func(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
+	tests := []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{name: "an escaped quote", value: `'it\'s;x'`, want: `'it\'s;x'`},
+		{name: "a doubled quote", value: `'it''s'`, want: `'it''s'`},
+		{name: "an escaped backslash ahead of the end", value: `'a\\'`, want: `'a\\'`},
+		{name: "a plain literal", value: `'x'`, want: `'x'`},
+		{name: "a bare value", value: `active`, want: `'active'`},
+		{name: "a bare value with a quote", value: `it's`, want: `'it''s'`},
+		{name: "a literal an escape leaves open", value: `'a\'`, want: `'''a\'''`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(defaultlit.RenderEscaped(test.value, quote), qt.Equals, test.want)
+		})
+	}
+}
+
+// TestRender_ABackslashEscapesNothing is the same text where a backslash is an ordinary
+// character: `'it\'s'` closes at the quote behind the backslash, so it is no one literal.
+func TestRender_ABackslashEscapesNothing(t *testing.T) {
+	c := qt.New(t)
+	quote := func(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
+
+	c.Assert(defaultlit.Render(`'it\'s'`, quote), qt.Equals, `'''it\''s'''`)
+}

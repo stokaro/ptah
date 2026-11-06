@@ -123,7 +123,7 @@ func Value(col *ast.ColumnNode) (keyword, expression string) {
 	case col.Default != nil && col.Default.Expression != "":
 		return "DEFAULT", col.Default.Expression
 	case col.Default != nil && col.Default.HasLiteral():
-		return "DEFAULT", defaultlit.Render(col.Default.Value, StringLiteral)
+		return "DEFAULT", defaultlit.RenderEscaped(col.Default.Value, StringLiteral)
 	}
 	return "", ""
 }
@@ -176,7 +176,7 @@ func Definition(name, typ, keyword, expression, comment string) string {
 }
 
 // StringLiteral quotes s as a ClickHouse string literal, doubling every single
-// quote it holds.
+// quote it holds. A backslash doubles too, since ClickHouse reads one as an escape.
 func StringLiteral(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+	return "'" + strings.ReplaceAll(strings.ReplaceAll(s, `\`, `\\`), "'", "''") + "'"
 }

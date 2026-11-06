@@ -29,12 +29,29 @@ import "strings"
 // carries a cast, `'{}'::jsonb`, which does not end in a quote, and a bare
 // value that merely happens to start with one.
 func IsSQLLiteral(s string) bool {
+	return isLiteral(s, 0)
+}
+
+// IsEscapedSQLLiteral is [IsSQLLiteral] for an engine that reads a backslash inside a string
+// literal as an escape, such as ClickHouse: there `'it\'s'` is one literal, where a reader
+// that does not know the escape ends it at the quote behind the backslash.
+func IsEscapedSQLLiteral(s string) bool {
+	return isLiteral(s, '\\')
+}
+
+// isLiteral walks a literal. escape is the byte that escapes the one behind it, or zero for
+// an engine with none.
+func isLiteral(s string, escape byte) bool {
 	if len(s) < 2 || s[0] != '\'' {
 		return false
 	}
 
 	i := 1
 	for i < len(s) {
+		if escape != 0 && s[i] == escape {
+			i += 2
+			continue
+		}
 		if s[i] != '\'' {
 			i++
 			continue
@@ -67,6 +84,16 @@ func IsSQLLiteral(s string) bool {
 func Render(value string, quote func(string) string) string {
 	trimmed := strings.TrimSpace(value)
 	if IsSQLLiteral(trimmed) {
+		return trimmed
+	}
+	return quote(value)
+}
+
+// RenderEscaped is [Render] for an engine that reads a backslash inside a string literal as an
+// escape; see [IsEscapedSQLLiteral].
+func RenderEscaped(value string, quote func(string) string) string {
+	trimmed := strings.TrimSpace(value)
+	if IsEscapedSQLLiteral(trimmed) {
 		return trimmed
 	}
 	return quote(value)
