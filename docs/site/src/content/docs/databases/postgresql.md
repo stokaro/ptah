@@ -701,8 +701,10 @@ A column's identity is compared with its declaration, on PostgreSQL and
 CockroachDB. A column that loses one takes `DROP IDENTITY`, and a change of
 generation takes `SET GENERATED`. A column that gains one takes `ADD GENERATED`,
 then a `setval` that moves the sequence past the highest value the table holds,
-so the next insert does not collide with a row. A `SERIAL` column against an
-identity column compares as equal in both directions: each draws from a sequence.
+so the next insert does not collide with a row. A `SERIAL` column and an identity
+generated `BY DEFAULT` compare equal: each draws from a sequence and takes a value
+an insert names. An identity generated `ALWAYS` refuses that value, so against a
+`SERIAL` column the plan replaces one with the other, in both directions.
 
 ## Unlogged tables
 

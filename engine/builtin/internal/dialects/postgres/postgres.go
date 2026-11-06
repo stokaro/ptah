@@ -2128,11 +2128,14 @@ func (r *Renderer) renderPostgreSQLModifyColumn(tableName string, op *ast.Modify
 	case changed.Default && !enumDefault:
 		r.writeColumnDefaultChange(tableName, column)
 	}
-	if changed.Identity && !identityLeaves {
-		r.writeColumnIdentityChange(tableName, op)
-	}
 	if op.SeedsSequence != "" && !op.OmitNullBackfill {
 		r.writeSequenceSeed(tableName, column.Name, op.SeedsSequence)
+	}
+	if op.DropsSequence != "" {
+		r.w.WriteLinef("DROP SEQUENCE %s;", r.escapeQualifiedIdentifier(op.DropsSequence))
+	}
+	if changed.Identity && !identityLeaves {
+		r.writeColumnIdentityChange(tableName, op)
 	}
 }
 
