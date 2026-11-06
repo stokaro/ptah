@@ -352,6 +352,18 @@ func TestApply_KeepsThePlannersOrderOverWhatTwoStepsShare_HappyPath(t *testing.T
 			want:  []string{"t: drop my col, drop constraint ck"},
 		},
 		{
+			name: "a column going with a check whose escape string holds an apostrophe ahead of its name", dialect: platform.Postgres,
+			nodes: []ast.Node{alter("t", dropColumn("my col"), dropConstraint("ck"))},
+			diff:  changes(changedTable("t", []catalog.Constraint{{TableName: "t", Name: "ck", Type: "CHECK", CheckClause: new(`E'it\'s' <> "my col"`)}})),
+			want:  []string{"t: drop my col, drop constraint ck"},
+		},
+		{
+			name: "a column going with a check whose dollar quote holds an apostrophe ahead of its name", dialect: platform.Postgres,
+			nodes: []ast.Node{alter("t", dropColumn("my col"), dropConstraint("ck"))},
+			diff:  changes(changedTable("t", []catalog.Constraint{{TableName: "t", Name: "ck", Type: "CHECK", CheckClause: new(`$$it's$$ <> "my col"`)}})),
+			want:  []string{"t: drop my col, drop constraint ck"},
+		},
+		{
 			name: "a column going with a check over its name, which holds an apostrophe", dialect: platform.Postgres,
 			nodes: []ast.Node{alter("t", dropColumn("it's"), dropConstraint("ck"))},
 			diff:  changes(changedTable("t", []catalog.Constraint{{TableName: "t", Name: "ck", Type: "CHECK", CheckClause: new(`"it's" > 0`)}})),
