@@ -16,6 +16,7 @@ import (
 	"ptah.run/core/schemavalidation"
 	"ptah.run/internal/concurrentindex"
 	"ptah.run/internal/convert/dbschematogo"
+	"ptah.run/internal/planshape"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/migration/internal/identifiervalidation"
@@ -300,7 +301,6 @@ func planBidirectionalSchemaDiffWithRefs(
 		AllowTableRebuild:       opts.Policy.AllowTableRebuild,
 		TableRebuildRequest:     opts.Policy.TableRebuildRequest,
 		Statements:              opts.Policy.Statements,
-		Shape:                   opts.Policy.Shape,
 	}
 	// The rollback's target is the schema the database currently holds, and it
 	// is validated here because this is where that schema exists. The forward
@@ -318,6 +318,11 @@ func planBidirectionalSchemaDiffWithRefs(
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error planning reverse migration: %w", err)
+	}
+	if opts.Policy.Shape == planext.StatementShapeCatalog {
+		// Here rather than in the planner, because what makes a rollback's statements free
+		// to move is what the forward plan wrote.
+		reverseNodes = planshape.AlignRollback(dialect, forwardNodes, reverseNodes, reverseDiff)
 	}
 	reverseNodes = append(recoveryNotes(opts.Runtime, recovery, opts.Policy.Statements), reverseNodes...)
 

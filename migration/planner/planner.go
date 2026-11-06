@@ -168,7 +168,7 @@ func GenerateSchemaDiffASTWithOptions(
 		nodes = withoutDescriptiveComments(nodes)
 	}
 	if opts.Shape == planext.StatementShapeCatalog {
-		nodes = planshape.Apply(dialect, nodes)
+		nodes = planshape.Apply(dialect, nodes, diff)
 	}
 	if err := requireIsolatedOwnerOperations(nodes); err != nil {
 		return nil, wrapPlanError(dialect, err)

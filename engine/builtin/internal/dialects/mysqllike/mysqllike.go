@@ -1228,11 +1228,14 @@ func (r *Renderer) visitAlterTableWithEnums(node *ast.AlterTableNode, enums map[
 	if handled, err := r.writePrimaryKeyReplacement(node); handled {
 		return err
 	}
-	return r.writeAlterTableOperations(node, enums)
+	prefix := "ALTER TABLE " + escapeQualifiedIdentifier(node.Name) + " "
+	return r.w.WriteAlterTable(node, prefix, r.dialect, func(operations []ast.AlterOperation) error {
+		return r.writeAlterTableOperations(node, operations, enums)
+	})
 }
 
-func (r *Renderer) writeAlterTableOperations(node *ast.AlterTableNode, enums map[string][]string) error {
-	for _, operation := range node.Operations {
+func (r *Renderer) writeAlterTableOperations(node *ast.AlterTableNode, operations []ast.AlterOperation, enums map[string][]string) error {
+	for _, operation := range operations {
 		switch op := operation.(type) {
 		case *ast.ExtensionAlterOperation:
 			if err := r.renderOwnedExtension(node, ast.AlterExtension, op.Payload); err != nil {

@@ -26,8 +26,16 @@ type Node interface {
 type AlterTableNode struct {
 	// Name is the name of the table to alter
 	Name string
-	// Operations contains the list of operations to perform on the table
+	// Operations contains the list of operations to perform on the table, in an
+	// order that runs when each is a statement of its own.
 	Operations []AlterOperation
+	// OneStatement, when set, is what one ALTER TABLE writes for Operations: the
+	// same changes in the order that statement lists them, less a change a later
+	// one replaces. A server reads a statement as a whole, so this order may hold
+	// only inside one statement. A renderer writes it where all of it fits one ALTER
+	// TABLE, separated by commas, and writes Operations instead where one of its
+	// changes needs another statement beside it, such as a backfill or a comment.
+	OneStatement []AlterOperation
 	// Algorithm is the MySQL-family `ALGORITHM=` value the statement asks the
 	// server for -- INSTANT, INPLACE or COPY -- and is empty when the
 	// statement asks for nothing.

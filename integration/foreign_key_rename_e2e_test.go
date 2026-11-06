@@ -3,6 +3,7 @@
 package integration_test
 
 import (
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -139,7 +140,8 @@ func TestMigrateDiffReplacesAForeignKeyTheSchemaNamesOtherwiseE2E(t *testing.T) 
 			c.Assert(err, qt.IsNil, qt.Commentf("%s", again))
 
 			c.Assert(plan, qt.Contains, `DROP CONSTRAINT "`+test.dropped+`"`)
-			c.Assert(plan, qt.Contains, test.wantAdd)
+			// The community binary breaks the line ahead of a foreign key in ALTER TABLE.
+			c.Assert(strings.ReplaceAll(plan, "ADD\nCONSTRAINT", "ADD CONSTRAINT"), qt.Contains, test.wantAdd)
 			c.Assert(readForeignKeys(c, target), qt.Equals, test.want)
 			c.Assert(again, qt.Contains, "The migration directory is synced with the desired state")
 		})

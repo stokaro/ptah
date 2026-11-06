@@ -1,12 +1,15 @@
 // Package planshape rewrites a planned migration into the statement shape the
 // Atlas CLI writes, for [ptah.run/core/planext.StatementShapeCatalog]: the keys
 // and checks of a new table inside its CREATE TABLE, a type spelled the way the
-// catalog reports it, and an explicit NULL on a nullable column.
+// catalog reports it, an explicit NULL on a nullable column, and the statements in
+// the order and the grouping the binary writes.
 //
 // It reads and rewrites the planner's nodes, so what a plan changes stays the
-// planner's decision: the rewrite only moves a constraint into the CREATE TABLE
-// that precedes it and respells a column. It covers the engines the community
-// binary has a driver for, and leaves any other plan as it is.
+// planner's decision. A file that runs comes ahead of a file that reads like the
+// binary's: the rewrite moves or merges a statement only where it can show that
+// nothing depends on the order, and otherwise leaves the planner's order standing.
+// It covers the engines the community binary has a driver for, and leaves any other
+// plan as it is.
 package planshape
 
 import (
@@ -15,6 +18,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/internal/pgtypealias"
@@ -22,29 +26,47 @@ import (
 
 // Apply returns nodes in the catalog's shape for dialect. Nodes it does not
 // rewrite are returned as they are.
-func Apply(dialect string, nodes []ast.Node) []ast.Node {
-	target, ok := platform.Lookup(dialect)
+//
+// A rollback goes through [AlignRollback] instead: what a rollback's diff says about
+// the database it runs on is projected from the forward diff, and only the forward
+// plan's statements say all of it.
+func Apply(dialect string, nodes []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	form, spelling, ok := catalogRules(dialect)
 	if !ok {
 		return nodes
 	}
-	var spelling columnSpelling
-	switch target.Atlas.CatalogForm {
-	case descriptor.PostgresCatalogForm:
-		spelling = postgresSpelling
-	case descriptor.MySQLCatalogForm:
-		spelling = mysqlSpelling{foreignKeyAction: "NO ACTION"}
-	case descriptor.MariaDBCatalogForm:
-		spelling = mysqlSpelling{foreignKeyAction: "RESTRICT"}
-	case descriptor.SQLiteCatalogForm:
-		spelling = sqliteSpelling
-	default:
-		return nodes
-	}
-	nodes = inlineConstraints(nodes)
+	facts := newPlanFacts()
+	facts.readDiff(diff)
+	facts.readPlan(nodes)
+	how := arrangementFor(form, facts)
+	how.places = how.forwardPlaces(diff)
+	how.absorbs = how.merge && !foreignKeysDeferred(nodes, tablesCreatedBy(nodes))
+	nodes = arrange(inlineConstraints(nodes), how)
 	for _, node := range nodes {
 		respell(node, spelling)
 	}
 	return nodes
+}
+
+// catalogRules is the form an engine's catalog prints and how it spells a column. It
+// answers false for an engine the community binary has no driver for.
+func catalogRules(dialect string) (descriptor.CatalogForm, columnSpelling, bool) {
+	target, ok := platform.Lookup(dialect)
+	if !ok {
+		return descriptor.NoCatalogForm, nil, false
+	}
+	switch target.Atlas.CatalogForm {
+	case descriptor.PostgresCatalogForm:
+		return target.Atlas.CatalogForm, postgresSpelling, true
+	case descriptor.MySQLCatalogForm:
+		return target.Atlas.CatalogForm, mysqlSpelling{foreignKeyAction: "NO ACTION"}, true
+	case descriptor.MariaDBCatalogForm:
+		return target.Atlas.CatalogForm, mysqlSpelling{foreignKeyAction: "RESTRICT"}, true
+	case descriptor.SQLiteCatalogForm:
+		return target.Atlas.CatalogForm, sqliteSpelling, true
+	default:
+		return descriptor.NoCatalogForm, nil, false
+	}
 }
 
 // columnSpelling is what an engine's catalog says about a column.
@@ -66,12 +88,7 @@ type columnSpelling interface {
 // A statement between the table and its constraint that the constraint may need,
 // such as a routine a check calls, keeps the constraint where the planner put it.
 func inlineConstraints(nodes []ast.Node) []ast.Node {
-	created := make(map[string]int, len(nodes))
-	for i, node := range nodes {
-		if table, ok := node.(*ast.CreateTableNode); ok {
-			created[tableKey(table.Name)] = i
-		}
-	}
+	created := tablesCreatedBy(nodes)
 	if len(created) == 0 {
 		return nodes
 	}
@@ -115,6 +132,17 @@ func inlineConstraints(nodes []ast.Node) []ast.Node {
 		out = append(out, node)
 	}
 	return out
+}
+
+// tablesCreatedBy is the position in nodes of each table they create.
+func tablesCreatedBy(nodes []ast.Node) map[string]int {
+	created := make(map[string]int, len(nodes))
+	for i, node := range nodes {
+		if table, ok := node.(*ast.CreateTableNode); ok {
+			created[tableKey(table.Name)] = i
+		}
+	}
+	return created
 }
 
 // insertIndex places index after table and the indexes already behind it.
