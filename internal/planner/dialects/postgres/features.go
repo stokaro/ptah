@@ -40,12 +40,12 @@ const commonOwner = "ptah.run/postgres"
 // type rebuilds the plan makes run before it: PostgreSQL refuses ALTER COLUMN
 // TYPE on a column a policy uses, and a refused routine replacement or a
 // rebuilt domain or composite type drops an object a policy still uses, so a
-// plan that combines one of them with removing the policy fails at that
-// statement.
+// plan that combines one of them with a policy that stays or changes fails at
+// that statement.
 //
 // The lifecycle span is the point just ahead of the column changes, for an object
 // that stands in the way of one of them and that nothing else needs, such as an
-// exclusion constraint a changed column type cannot serve.
+// exclusion constraint a changed column type cannot serve, or a removed policy.
 //
 // The prerequisite creation window is after the schema preconditions and the
 // extensions the plan installs, before every other creation, and the
@@ -149,11 +149,12 @@ func hasFeatureChanges(target string, diff *difftypes.SchemaDiff) bool {
 // is the position itself; an owner that asks to rewrite a common step is
 // refused rather than scheduled as if it had not asked. An operation of the
 // dependent phase takes the same position, which is after every creation and
-// change it may name and before every drop.
-func (p *Planner) planTableFeatures(ctx context.Context, runtime featureplan.Runtime, result []ast.Node, diff *difftypes.SchemaDiff) ([]ast.Node, error) {
+// change it may name and before every drop. One of the lifecycle phase stands in
+// the way of a column change, so [tableFeatures] keeps it apart to go ahead of them.
+func (p *Planner) planTableFeatures(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff) (tableFeatures, error) {
 	statements, err := p.featureStatementStyle()
 	if err != nil {
-		return nil, err
+		return tableFeatures{}, err
 	}
 	target := p.targetDialect()
 	request := featureplan.Request{
@@ -181,7 +182,7 @@ func (p *Planner) planTableFeatures(ctx context.Context, runtime featureplan.Run
 		table := featureplan.Table{Subject: builder.Table(removal.Name), Action: featureplan.DropTable, Current: removal.Current}
 		kinds, err := table.CapturedKinds()
 		if err != nil {
-			return nil, err
+			return tableFeatures{}, err
 		}
 		if len(kinds) == 0 {
 			continue
@@ -190,23 +191,34 @@ func (p *Planner) planTableFeatures(ctx context.Context, runtime featureplan.Run
 		names[table.Subject.Key()] = removal.Name
 	}
 	if len(request.Tables) == 0 {
-		return result, nil
+		return tableFeatures{}, nil
 	}
-	features, err := featurehost.Plan(ctx, runtime, request, names, featureplan.PhaseDependent)
+	features, err := featurehost.Plan(ctx, runtime, request, names, featureplan.PhaseDependent, featureplan.PhaseLifecycle)
 	if err != nil {
-		return nil, err
+		return tableFeatures{}, err
 	}
 	if len(features.Rewrites) != 0 {
-		return nil, fmt.Errorf("%w: %s planning has no common steps for a feature to rewrite", schemaext.ErrInvalidValue, target)
+		return tableFeatures{}, fmt.Errorf("%w: %s planning has no common steps for a feature to rewrite", schemaext.ErrInvalidValue, target)
 	}
 	plan, err := plangraph.Schedule(ctx, features.Contributions...)
 	if err != nil {
-		return nil, err
+		return tableFeatures{}, err
 	}
+	var planned tableFeatures
 	for _, step := range plan.Steps {
-		result = append(result, step.Payload...)
+		if features.Phases[step.ID] == featureplan.PhaseLifecycle {
+			planned.aheadOfColumns = append(planned.aheadOfColumns, step.Payload...)
+			continue
+		}
+		planned.afterColumns = append(planned.afterColumns, step.Payload...)
 	}
-	return result, nil
+	return planned, nil
+}
+
+// tableFeatures is what [Planner.planTableFeatures] plans, by where the plan takes it.
+type tableFeatures struct {
+	aheadOfColumns []ast.Node
+	afterColumns   []ast.Node
 }
 
 func (p *Planner) featureStatementStyle() (featureplan.StatementStyle, error) {
