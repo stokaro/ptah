@@ -144,6 +144,12 @@ func PlanDynamicRollback(ctx context.Context, opts DynamicRollbackOptions) (stat
 		// materialize either one.
 		Exclude:        migrationMetadataExclusions(opts.RevisionsTable),
 		ConnectTimeout: opts.ConnectTimeout,
+		// The dev database holds what the directory makes at TargetVersion,
+		// not the target's environment: a grant the target holds and the
+		// replay does not make is left alone unless the replay manages its
+		// role. Without this the rollback revokes every such grant, a YDB
+		// database root's grants to its built-in groups among them.
+		ToReplaysMigrations: true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("dynamic rollback planning failed: compare the schemas: %w", err)
