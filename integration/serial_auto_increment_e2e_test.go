@@ -51,7 +51,7 @@ func TestSerialAutoIncrementE2E_HappyPath(t *testing.T) {
 	}{
 		{engine: "mysql", wantPlan: "  `id` INT PRIMARY KEY AUTO_INCREMENT,\n"},
 		{engine: "mariadb", wantPlan: "  `id` INT PRIMARY KEY AUTO_INCREMENT,\n"},
-		{engine: "sqlserver", wantPlan: "  [id] INT IDENTITY(1,1) PRIMARY KEY,\n"},
+		{engine: "sqlserver", wantPlan: "  [id] INT IDENTITY(1,1) CONSTRAINT [things_pkey] PRIMARY KEY,\n"},
 	}
 	for _, test := range tests {
 		t.Run(test.engine, func(t *testing.T) {

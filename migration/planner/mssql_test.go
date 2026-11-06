@@ -64,7 +64,7 @@ func TestGenerateSchemaDiffSQL_SQLServerCreatesTSQL(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "CREATE TABLE [dbo].[users] (")
-	c.Assert(sql, qt.Contains, "[id] INT IDENTITY(1,1) PRIMARY KEY")
+	c.Assert(sql, qt.Contains, "[id] INT IDENTITY(1,1) CONSTRAINT [users_pkey] PRIMARY KEY")
 	c.Assert(sql, qt.Contains, "[email] NVARCHAR(320) NOT NULL")
 	// The check carries the name the comparison looks for. Left unnamed, SQL
 	// Server assigns its own -- CK__users__status__<hash>, is_system_named = 1

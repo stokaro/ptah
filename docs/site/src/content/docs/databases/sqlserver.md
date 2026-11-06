@@ -332,6 +332,16 @@ on every run. If a filtered index keeps reporting drift after it was applied,
 read the stored spelling with `ptah db read` and use it in the annotation; the
 rendered SQL always preserves your annotation text verbatim.
 
+## Primary keys nobody named
+
+SQL Server names a primary key with no name itself, as
+`PK__orders__3213E83F2B3A1E5C`, and the hash differs from one database to the next. A
+later file that drops the key could name only the one its dev database held, and any
+other database answers that it is not a constraint. So Ptah writes the name:
+`<table>_pkey`. A name the author wrote stays. Where the table's name leaves no room
+within the server's limit of 128 characters, the name is the table's cut short with a
+hash of the whole name in front of the suffix.
+
 ## Column defaults
 
 SQL Server keeps a column default as a constraint of its own, so `ALTER
