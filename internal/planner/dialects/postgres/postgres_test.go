@@ -666,7 +666,7 @@ func TestPlanner_ForeignKeyDependencyOrdering_SQLOutput(t *testing.T) {
 	var addConstraintLines []int
 
 	for i, line := range lines {
-		if strings.Contains(line, "ADD COLUMN") {
+		if strings.HasPrefix(line, "ALTER TABLE") && strings.Contains(line, "ADD COLUMN") {
 			addColumnLines = append(addColumnLines, i)
 		}
 		if strings.Contains(line, "ADD CONSTRAINT") {

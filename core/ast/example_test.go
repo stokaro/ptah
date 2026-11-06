@@ -80,6 +80,7 @@ func ExampleAlterTableNode() {
 	}
 
 	// Output:
+	// -- POSTGRES: ADD COLUMN "nickname" fails if "users" holds any row; the column is NOT NULL and declares no default to fill it with.
 	// ALTER TABLE "users" ADD COLUMN "nickname" VARCHAR(64) NOT NULL;
 	// ALTER TABLE "users" DROP COLUMN "legacy_flags";
 	// ALTER TABLE "users" ADD CONSTRAINT "uk_users_nickname" UNIQUE ("nickname");

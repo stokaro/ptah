@@ -74,7 +74,8 @@ func TestRenderer_AddNotNullColumnOnSpanner(t *testing.T) {
 
 // TestRenderer_AddNotNullColumnOnPostgres is the control: PostgreSQL adds a
 // NOT NULL column without a default in one statement, which succeeds on an
-// empty table, so the column stays as declared.
+// empty table, so the column stays as declared, with a comment for a table that
+// holds rows.
 func TestRenderer_AddNotNullColumnOnPostgres(t *testing.T) {
 	c := qt.New(t)
 	r := postgres.NewWithCapabilities(capability.Postgres17(), platform.Postgres)
@@ -84,5 +85,6 @@ func TestRenderer_AddNotNullColumnOnPostgres(t *testing.T) {
 	}})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(got, qt.Equals, "ALTER TABLE \"t\" ADD COLUMN \"c\" TEXT NOT NULL;\n\n")
+	c.Assert(got, qt.Equals, "-- POSTGRES: ADD COLUMN \"c\" fails if \"t\" holds any row; the column is NOT NULL and declares no default to fill it with.\n"+
+		"ALTER TABLE \"t\" ADD COLUMN \"c\" TEXT NOT NULL;\n\n")
 }

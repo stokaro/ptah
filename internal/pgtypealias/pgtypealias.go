@@ -61,3 +61,31 @@ func Alias(name string) (string, bool) {
 	canonical, ok := aliases[strings.ToLower(name)]
 	return canonical, ok
 }
+
+// builtinTypeNames are PostgreSQL's own type names as a comparison spells a
+// column's type, with no length, precision or array suffix.
+var builtinTypeNames = map[string]bool{
+	"smallint": true, "int2": true, "integer": true, "int": true, "int4": true, "bigint": true, "int8": true,
+	"smallserial": true, "serial2": true, "serial": true, "serial4": true, "bigserial": true, "serial8": true,
+	"decimal": true, "numeric": true, "real": true, "float4": true, "double precision": true, "float8": true, "float": true,
+	"money": true, "text": true, "varchar": true, "character varying": true, "char": true, "character": true,
+	"bpchar": true, "name": true, "bytea": true, "boolean": true, "bool": true, "date": true, "time": true,
+	"timetz": true, "time without time zone": true, "time with time zone": true, "timestamp": true,
+	"timestamptz": true, "timestamp without time zone": true, "timestamp with time zone": true,
+	"interval": true, "uuid": true, "json": true, "jsonb": true, "xml": true, "inet": true, "cidr": true,
+	"macaddr": true, "macaddr8": true, "bit": true, "varbit": true, "bit varying": true, "tsvector": true,
+	"tsquery": true, "point": true, "line": true, "lseg": true, "box": true, "path": true, "polygon": true,
+	"circle": true, "oid": true, "regclass": true,
+}
+
+// Builtin reports whether spelling names one of PostgreSQL's own types, or an
+// array of one. Any other name is a type somebody created, such as a domain.
+func Builtin(spelling string) bool {
+	name := strings.ToLower(strings.TrimSpace(spelling))
+	name = strings.TrimSpace(strings.TrimSuffix(name, "[]"))
+	if open := strings.IndexByte(name, '('); open >= 0 {
+		name = strings.TrimSpace(name[:open])
+	}
+	name = strings.TrimPrefix(name, "pg_catalog.")
+	return builtinTypeNames[name]
+}

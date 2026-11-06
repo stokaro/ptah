@@ -2232,7 +2232,48 @@ table "users" {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Equals, "1|--|-- Modify \"users\" table\nALTER TABLE \"users\" ADD COLUMN \"email\" character varying(255) NOT NULL;\n")
+	c.Assert(out.String(), qt.Equals, "1|--|-- POSTGRES: ADD COLUMN \"email\" fails if \"users\" holds any row; the column is NOT NULL and declares no default to fill it with.\n"+
+		"-- Modify \"users\" table\nALTER TABLE \"users\" ADD COLUMN \"email\" character varying(255) NOT NULL;\n")
+}
+
+// Strict mode writes the statement the community binary writes and the comment that
+// says what stops it, as it does for SET NOT NULL. The comment is no statement, so it
+// changes nothing the server runs.
+func TestCompatCommand_StrictSchemaDiffKeepsTheAddColumnComment(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_ATLAS_STRICT_COMPAT", "1")
+	dir := t.TempDir()
+	from := filepath.Join(dir, "from.hcl")
+	to := filepath.Join(dir, "to.hcl")
+	c.Assert(os.WriteFile(from, []byte(`
+table "users" {
+  column "id" {
+    type = int
+  }
+}
+`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(to, []byte(`
+table "users" {
+  column "id" {
+    type = int
+  }
+  column "email" {
+    type = varchar(255)
+  }
+}
+`), 0o600), qt.IsNil)
+
+	cmd := NewCompatCommand("atlas")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"schema", "diff", "--from", "file://" + from, "--to", "file://" + to, "--dev-url", "postgres://localhost/dev"})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))
+	c.Assert(out.String(), qt.Equals, "-- POSTGRES: ADD COLUMN \"email\" fails if \"users\" holds any row; the column is NOT NULL and declares no default to fill it with.\n"+
+		"-- Modify \"users\" table\nALTER TABLE \"users\" ADD COLUMN \"email\" character varying(255) NOT NULL;\n")
 }
 
 func TestCompatCommand_SchemaDiffFormatsSyncedCustomTemplate(t *testing.T) {

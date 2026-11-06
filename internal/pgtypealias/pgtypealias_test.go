@@ -52,3 +52,27 @@ func TestAlias(t *testing.T) {
 		})
 	}
 }
+
+func TestBuiltin(t *testing.T) {
+	tests := []struct {
+		name     string
+		spelling string
+		want     bool
+	}{
+		{name: "a plain type", spelling: "text", want: true},
+		{name: "upper case with parameters", spelling: " VARCHAR ( 20 ) ", want: true},
+		{name: "two words", spelling: "timestamp with time zone", want: true},
+		{name: "an array", spelling: "int[]", want: true},
+		{name: "qualified with its own schema", spelling: "pg_catalog.int4", want: true},
+		{name: "a domain or an enum", spelling: "email", want: false},
+		{name: "a qualified user type", spelling: "app.email", want: false},
+		{name: "an extension type", spelling: "vector(3)", want: false},
+		{name: "nothing", spelling: "", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(pgtypealias.Builtin(test.spelling), qt.Equals, test.want)
+		})
+	}
+}
