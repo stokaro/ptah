@@ -378,9 +378,15 @@ var roundTripGaps = []Unreached{
 	{Field: "schemamodel.Table.PrimaryKeyMethod", Dialects: []string{"mysql"}, Directions: nil, Reason: gapComparison},
 	{
 		Field:      "schemamodel.Table.PrimaryKeyName",
-		Dialects:   []string{"cockroachdb", "oracle", "postgres", "spanner", "sqlserver", "yugabytedb"},
+		Dialects:   []string{"oracle", "spanner", "sqlserver", "yugabytedb"},
 		Directions: nil,
 		Reason:     gapToCatalog,
+	},
+	{
+		Field:      "schemamodel.Table.PrimaryKeyName",
+		Dialects:   []string{"cockroachdb", "postgres"},
+		Directions: []Direction{FromCatalog},
+		Reason:     gapFromCatalog,
 	},
 	{Field: "schemamodel.Table.PrimaryKeyParts", Dialects: []string{"mariadb", "mysql", "sqlserver"}, Directions: nil, Reason: gapToCatalog},
 	{Field: "schemamodel.Trigger.Dialects", Dialects: []string{"clickhouse", "spanner"}, Directions: nil, Reason: gapToCatalog},

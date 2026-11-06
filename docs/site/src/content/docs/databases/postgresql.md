@@ -460,6 +460,11 @@ when one of them needs it gone: a column of the key that stops being `NOT NULL`,
 which PostgreSQL refuses with `column "id" is in a primary key`, or a new column
 that declares `PRIMARY KEY`. Otherwise the key is replaced after them.
 
+A declared primary key name over the columns the live key holds is a rename, on
+PostgreSQL and CockroachDB: the plan writes `RENAME CONSTRAINT`, so the key's index
+is not rebuilt and a foreign key over it stays. A key that declares no name keeps
+the name it holds.
+
 A column-level `UNIQUE` is compared by the name PostgreSQL gives it,
 `<table>_<column>_key`, numbered `1` and on where another relation or
 constraint of the schema already holds that name. When the database holds the

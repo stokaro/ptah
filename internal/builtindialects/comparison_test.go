@@ -41,6 +41,7 @@ func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 			ForeignKeyMatchesKeyInAnyOrder: true,
 			ForeignKeyHoldsItsKey:          true,
 			ColumnPrimaryKeyIsTheTablesKey: true,
+			PrimaryKeyRenames:              true,
 			ExpressionProbes:               "pg-catalog",
 			RolePasswords:                  true,
 			RoutineTypeAliases:             "pg-aliases",
@@ -51,6 +52,7 @@ func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 		"cockroachdb": {
 			DeclaredSchemas:                true,
 			TimePrecision:                  descriptor.TimePrecision{Compared: true, Default: 6},
+			PrimaryKeyRenames:              true,
 			ForeignKeysOutside:             true,
 			ForeignKeyMatchesKeyInAnyOrder: true,
 			ColumnPrimaryKeyIsTheTablesKey: true,

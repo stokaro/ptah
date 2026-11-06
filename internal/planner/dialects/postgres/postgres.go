@@ -1562,7 +1562,7 @@ func (p *Planner) keysDroppedAhead(diff *difftypes.SchemaDiff) keyrelease.Releas
 	if p.targetDialect() == platform.Postgres {
 		released = released.With(keyrelease.PrimaryKeysUnderColumnChanges(diff, p.targetDialect()))
 	}
-	return released
+	return released.With(keyrelease.NamesRenamedKeysTake(diff, p.targetDialect()))
 }
 
 // releaseKeyNames drops the removed keys released holds, each as its removal
@@ -3393,7 +3393,7 @@ func (p *Planner) addPrimaryKeyConstraintsWithTables(
 			continue
 		}
 		var dropsKey []ast.AlterOperation
-		if replaced, found := state.replacedPrimaryKeys[state.semantics.QualifiedTableIdentityKey(add.TableName)]; found {
+		if replaced, found := state.replacedPrimaryKeys[state.semantics.QualifiedTableIdentityKey(add.TableName)]; found && add.RenamedFrom == "" {
 			// CockroachDB refuses a key's drop in a statement of its own, with
 			// `this schema change is disallowed because table "t" is locked` on a
 			// table of the default schema_locked and with `primary key dropped
@@ -3411,6 +3411,17 @@ func (p *Planner) addPrimaryKeyConstraintsWithTables(
 		// the plan's removals leave it to this step.
 		if _, modified := state.removalByTableName[add.Identity]; modified {
 			result = p.emitModifyDrop(result, add, state)
+		}
+		// The key holds its columns already: the name is all that moves, and a
+		// foreign key over it has nothing to do. The plan's removals leave the old
+		// name to this step.
+		if add.RenamedFrom != "" {
+			result = append(result, &ast.AlterTableNode{
+				Name:       add.TableName,
+				Operations: []ast.AlterOperation{&ast.RenameConstraintOperation{From: add.RenamedFrom, To: add.Name}},
+			})
+			state.handled[add.Name] = struct{}{}
+			continue
 		}
 		// The payload rides with the key, exactly as it does for a covering
 		// UNIQUE. Without it the re-ADD builds a plain key and the INCLUDE the

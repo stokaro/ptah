@@ -50,11 +50,11 @@ func TestDeclaredKeyName_HappyPath(t *testing.T) {
 			},
 		},
 		{
-			name:    "a key over the same columns is not renamed",
+			name:    "a key over the same columns takes the name in place",
 			held:    "CREATE TABLE parent (id bigint NOT NULL);",
 			desired: "CREATE TABLE parent (id bigint NOT NULL, CONSTRAINT parent_pk PRIMARY KEY (id));",
 			liveKey: []string{"id"},
-			want:    make([]string, 0),
+			want:    []string{`ALTER TABLE "parent" RENAME CONSTRAINT "parent_pkey" TO "parent_pk"`},
 		},
 		{
 			name:    "a changed UNIQUE on a table that names its key keeps its own name",
@@ -62,6 +62,7 @@ func TestDeclaredKeyName_HappyPath(t *testing.T) {
 			desired: "CREATE TABLE parent (id bigint NOT NULL, code bigint, CONSTRAINT parent_pk PRIMARY KEY (id), CONSTRAINT parent_u UNIQUE (code));",
 			liveKey: []string{"id"},
 			want: []string{
+				`ALTER TABLE "parent" RENAME CONSTRAINT "parent_pkey" TO "parent_pk"`,
 				`ALTER TABLE "parent" DROP CONSTRAINT "parent_u"`,
 				`ALTER TABLE "parent" ADD CONSTRAINT "parent_u" UNIQUE ("code")`,
 			},

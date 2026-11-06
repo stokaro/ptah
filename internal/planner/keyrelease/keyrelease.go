@@ -82,6 +82,35 @@ func Find(diff *difftypes.SchemaDiff, dialect string) Releases {
 	}
 }
 
+// NamesRenamedKeysTake answers the removed indexes that hold a name a renamed primary
+// key takes. A key's index and any other index of its schema share one namespace, so
+// the rename answers `relation "x" already exists` while the index is there, and the
+// plan's removals come after it.
+func NamesRenamedKeysTake(diff *difftypes.SchemaDiff, dialect string) Releases {
+	if diff == nil {
+		return Releases{}
+	}
+	semantics := diff.EffectiveIdentifierSemantics(dialect)
+	schemaOf := func(table string) string {
+		if ref, ok := tableref.Parse(table); ok && ref.Schema != "" {
+			return semantics.TableIdentityKey(ref.Schema)
+		}
+		return semantics.TableIdentityKey(semantics.DefaultSchema)
+	}
+	var released Releases
+	for _, add := range diff.ConstraintsAdded {
+		if add.RenamedFrom == "" {
+			continue
+		}
+		for _, ref := range diff.IndexRemovals() {
+			if semantics.IndexIdentityKey(ref.Name) == semantics.IndexIdentityKey(add.Name) && schemaOf(ref.TableName) == schemaOf(add.TableName) {
+				released.Indexes = append(released.Indexes, ref)
+			}
+		}
+	}
+	return released
+}
+
 // UnderAddedForeignKeys answers the removals in diff that a foreign key the plan
 // adds could otherwise bind to, on a server where a foreign key depends on one
 // index and keeps it; see

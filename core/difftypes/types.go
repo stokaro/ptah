@@ -632,6 +632,11 @@ type ConstraintAdditionInfo struct {
 	// UsingMethod is the index access method of a PRIMARY KEY.
 	UsingMethod string `json:"using_method,omitempty"`
 
+	// RenamedFrom names the live primary key this addition is, under another
+	// name: same columns and same definition. The removal of that key stays in
+	// the diff beside the addition, and a planner writes the two as a rename.
+	RenamedFrom string `json:"renamed_from,omitempty"`
+
 	// ForeignTable / ForeignColumn / ForeignColumns describe the FK target
 	// (FOREIGN KEY only). ForeignColumn is kept for compatibility with older
 	// single-column callers; ForeignColumns carries the full referenced column

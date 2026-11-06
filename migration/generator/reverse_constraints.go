@@ -635,3 +635,19 @@ func reverseConstraintComments(changes []difftypes.ConstraintCommentChange) []di
 	}
 	return reversed
 }
+
+// renameKeysBack marks each restored primary key that the up migration renamed: the
+// rollback renames it back, and a rebuild would stop at a foreign key over it.
+func renameKeysBack(restored, forward difftypes.ConstraintAdditions, semantics identifier.Semantics) {
+	for _, add := range forward {
+		if add.RenamedFrom == "" {
+			continue
+		}
+		table := semantics.QualifiedTableIdentityKey(add.TableName)
+		for i := range restored {
+			if restored[i].Name == add.RenamedFrom && semantics.QualifiedTableIdentityKey(restored[i].TableName) == table {
+				restored[i].RenamedFrom = add.Name
+			}
+		}
+	}
+}
