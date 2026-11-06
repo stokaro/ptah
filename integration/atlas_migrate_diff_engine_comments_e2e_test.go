@@ -175,7 +175,7 @@ var engineCommentsCases = []engineCommentsCase{
 			{
 				schema:      "CREATE TABLE owners (id bigint PRIMARY KEY);\nCREATE TABLE fresh (id bigint PRIMARY KEY);\n",
 				wantUp:      []string{`create "fresh" table`, `drop "gone" table`},
-				wantDown:    []string{`reverse: Drop schema named "dbo"`, `reverse: drop "gone" table`, `reverse: create "fresh" table`},
+				wantDown:    []string{`reverse: drop "gone" table`, `reverse: create "fresh" table`},
 				wantColumns: "fresh,owners",
 			},
 		},

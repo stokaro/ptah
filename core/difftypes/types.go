@@ -989,11 +989,12 @@ type SchemaDiff struct {
 	// It is read by [ptah.run/internal/planner/schemaprecondition.Node],
 	// which is the one place that turns a needed schema name into a creation.
 	DeclaredSchemas []schemamodel.Schema `json:"-"`
-	// HeldSchemas names the schemas the read of the current database found. A
+	// HeldSchemas names the schemas the database holds when the plan runs: what
+	// the read found and, for a rollback, what the forward plan leaves of it. A
 	// plan in the exact statement style creates no schema named here: an added
 	// object in it needs no precondition, and a creation would read as a new
-	// schema. It is empty for a comparison with no read, such as a rollback, which
-	// says nothing about a schema.
+	// schema. It is empty for a comparison with no read, which says nothing about
+	// a schema.
 	HeldSchemas []string `json:"-"`
 
 	// DeclaredViewLikes is every view and materialized view the declaration

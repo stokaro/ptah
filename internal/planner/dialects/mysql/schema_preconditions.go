@@ -60,8 +60,14 @@ func (p *Planner) planSchemaPreconditions(result []ast.Node, diff *difftypes.Sch
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	schemas := schemasAddedObjectsNeed(diff, created)
 	guarded := make([]ast.Node, 0, len(schemas)+len(result))
+	// The server creates the default schema with every database and refuses to drop
+	// it. A rollback that puts a table back names it, and so needs no creation of it.
+	var defaultSchema string
+	if described, ok := platform.Lookup(p.targetDialect()); ok {
+		defaultSchema = described.DefaultSchema
+	}
 	for _, schema := range schemas {
-		if !p.describes() && slices.Contains(diff.HeldSchemas, schema) {
+		if schema == defaultSchema || (!p.describes() && slices.Contains(diff.HeldSchemas, schema)) {
 			continue
 		}
 		guarded = append(guarded, schemaprecondition.Node(schema, diff.DeclaredSchemas, semantics))
