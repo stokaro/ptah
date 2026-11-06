@@ -1272,6 +1272,11 @@ other, `all` and an empty value included, is refused with Atlas's
 before the plan is shown and approved, and the edited SQL is what gets
 applied.
 
+On an executable provider that cannot open a transaction, `--tx-mode=file` is
+refused before the plan is rehearsed or approved, and under `--dry-run` as well,
+with a message that names `--tx-mode=none`. The pinned community binary has no
+such provider, so nothing here differs from it.
+
 For Atlas script compatibility, `schema apply` also accepts the hidden
 `--file/-f` alias for local HCL or SQL paths and maps it to the same
 local desired-schema loading path as `--to`. `--file` and `--to` are mutually

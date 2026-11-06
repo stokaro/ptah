@@ -879,7 +879,9 @@ A dry run takes no lock.
 
 A provider can support `--tx-mode file` and `--tx-mode all` by advertising
 transaction sessions for the selected engine and establishing transactional DDL
-on the opened session. Otherwise these modes are refused before execution.
+on the opened session. Otherwise these modes are refused before rehearsal,
+approval or execution, with the refusal code `transaction-unavailable` under
+`--json`.
 
 A provider whose session establishes `ddl_inside_transaction` as false states
 that its server refuses a schema statement inside an explicit transaction. The
@@ -1233,6 +1235,13 @@ A provider crash, lost response, or cancellation after dispatch can report
 `"outcome": "unknown"`. Inspect the actual database before planning again. Ptah
 does not automatically retry execution, and terminating a provider does not prove
 rollback. A stale plan refuses application after the target changes.
+
+Dispatch is the `Execute` request that carries the first unit. A failure before
+it reports `"outcome": "failed"`, because no unit has left the host: a transaction
+the provider refuses to begin or dies beginning, an input variable that is not
+set, a lock lost before the request. A reply of `NOT_STARTED` comes after it and
+stays `unknown`, because the units left the host and the provider's answer is the
+only evidence they did not run.
 
 YAML loading accepts document and table keys explicitly declared by the selected
 provider. It preserves exact numbers and source locations and requires complete

@@ -137,6 +137,9 @@ func (p ApplyPlan) Preflight(ctx context.Context, conn *dbschema.DatabaseConnect
 	if err := checkOwnerTransactions(p.transactions, mode, conn); err != nil {
 		return err
 	}
+	if err := checkTransactionAvailable(mode, conn); err != nil {
+		return err
+	}
 	units, statements, err := cloneApplyUnits(p.units)
 	if err != nil {
 		return err

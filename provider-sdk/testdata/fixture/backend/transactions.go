@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"os"
 
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"github.com/stokaro/ptah/provider-sdk/provider"
@@ -59,6 +60,9 @@ func (p *Provider) BeginTransaction(ctx context.Context, request *protocol.Begin
 	if err != nil {
 		return nil, err
 	}
+	if s.fault == "crash-begin" {
+		os.Exit(23) //revive:disable-line:deep-exit this fixture tests a provider crash while a transaction begins
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := ctx.Err(); err != nil {
@@ -69,6 +73,9 @@ func (p *Provider) BeginTransaction(ctx context.Context, request *protocol.Begin
 	}
 	if err := s.guardLocks(ctx); err != nil {
 		return nil, err
+	}
+	if s.fault == "refuse-begin" {
+		return nil, fmt.Errorf("fixture refused to begin a transaction")
 	}
 	if s.transactions == nil {
 		s.transactions = make(map[string]*transaction)

@@ -114,6 +114,10 @@ const (
 	// RefusalTransactionPreflight means a statement conflicts with the
 	// requested transaction mode.
 	RefusalTransactionPreflight RefusalCode = "transaction-preflight"
+	// RefusalTransactionUnavailable means the requested transaction mode needs
+	// a transaction the target cannot open. --tx-mode none runs the plan
+	// without one.
+	RefusalTransactionUnavailable RefusalCode = "transaction-unavailable"
 	// RefusalSimulationFailed means the plan failed its rehearsal on the
 	// --dev-url database, and the command did not send it to the target.
 	RefusalSimulationFailed RefusalCode = "simulation-failed"
@@ -311,9 +315,11 @@ type ApplyEvidence struct {
 	// Undecided are the declared objects the comparison withheld, from
 	// [ApplyRuntimePlan.Undecided].
 	Undecided schemadiff.Diagnostics
-	// Dispatched reports that the statements were handed to the database. It
-	// is set before execution starts, so a run that died inside it still
-	// reports it.
+	// Dispatched reports that a statement left for the database. It is set as
+	// the first one leaves, so a run that died sending it still reports it, and
+	// it stays set, so a failure later in the run does not read as nothing having
+	// reached the database. Reading the plan again, checking it, and beginning a
+	// transaction send no statement and do not set it.
 	Dispatched bool
 	// Completed is how a run that returned without an error ended: applied,
 	// no-changes, dry-run or canceled. It is not read when Err is set.
@@ -329,6 +335,11 @@ type ApplyEvidence struct {
 // A lock session lost on release is the case in point. Its error arrives after
 // every statement succeeded, and the command reports a failure rather than let
 // a lost session read as success.
+//
+// An error before dispatch is refused or failed, and that includes a transaction
+// that could not begin, however it failed. A connection lost during BEGIN leaves
+// a session whose state nobody knows, but no statement of the plan was in it:
+// the request that begins a transaction carries none.
 func NewApplyReport(evidence ApplyEvidence) ApplyReport {
 	report := ApplyReport{
 		ContractVersion: ApplyReportContractVersion,
@@ -381,6 +392,7 @@ func refusalFor(err error) *Refusal {
 	var stale *StalePlanError
 	var fenced *ProtectedTableError
 	var preflight *TransactionPreflightError
+	var unavailable *TransactionUnavailableError
 	var ownerRequirement *txrequire.OwnerRequirementError
 	var simulation *SimulationError
 	var lostViewSecurity *planrefusal.LostViewSecurityError
@@ -403,6 +415,8 @@ func refusalFor(err error) *Refusal {
 		return &Refusal{Code: RefusalLockTimeout}
 	case errors.As(err, &preflight), errors.As(err, &ownerRequirement):
 		return &Refusal{Code: RefusalTransactionPreflight}
+	case errors.As(err, &unavailable):
+		return &Refusal{Code: RefusalTransactionUnavailable}
 	case errors.As(err, &simulation):
 		return &Refusal{Code: RefusalSimulationFailed}
 	case errors.As(err, &lostViewSecurity):

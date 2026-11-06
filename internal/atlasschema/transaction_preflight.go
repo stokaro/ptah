@@ -7,6 +7,8 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/renderer"
 	"ptah.run/core/sqlutil"
+	"ptah.run/dbschema"
+	"ptah.run/internal/sqliterebuild"
 	"ptah.run/internal/txrequire"
 	"ptah.run/migration/migrator"
 )
@@ -80,6 +82,57 @@ func (e *TransactionPreflightError) Error() string {
 		"the planned changes cannot run inside a transaction: statement %d of %d: %s; "+
 			"rerun with --tx-mode none, which commits each statement as it runs\nSQL: %s",
 		e.Finding.Statement.Index+1, e.Total, e.Finding.Message, e.Finding.Statement.SQL)
+}
+
+// TransactionUnavailableError is the refusal of a transaction mode the target
+// cannot honor. Nothing about the statements is at fault: an executable provider
+// that does not offer sessions.transactions refuses every plan in the file and
+// all modes, and --tx-mode none runs the same plan.
+type TransactionUnavailableError struct {
+	// Mode is the transaction mode the run resolved, from --tx-mode or from a
+	// directive the plan carries.
+	Mode migrator.MigrationTxMode
+	// Err is the target's reason.
+	Err error
+}
+
+func (e *TransactionUnavailableError) Error() string {
+	return fmt.Sprintf(
+		"transaction mode %q needs a transaction this target cannot open: %v; "+
+			"rerun with --tx-mode none, which commits each statement as it runs",
+		e.Mode, e.Err)
+}
+
+// Unwrap returns the target's reason.
+func (e *TransactionUnavailableError) Unwrap() error { return e.Err }
+
+// transactionChecker is a schema writer that can say why it would refuse
+// [catalog.SchemaWriter.BeginTransaction] without opening anything.
+type transactionChecker interface {
+	CheckTransaction() error
+}
+
+// checkTransactionAvailable refuses a mode that opens a transaction on a target
+// that says it cannot. The answer comes before the plan is rehearsed, confirmed
+// or sent, so a refused run prompts nobody, and it does not depend on what the
+// target would do with the first statement.
+//
+// A target whose schema statements run unwrapped opens no transaction in any
+// mode, so it has nothing to refuse. A writer that cannot answer ahead of time
+// is asked by the attempt itself; a refusal there reaches the caller as the
+// failure to begin.
+func checkTransactionAvailable(mode migrator.MigrationTxMode, conn *dbschema.DatabaseConnection) error {
+	if (mode != migrator.MigrationTxModeFile && mode != migrator.MigrationTxModeAll) || conn == nil || !sqliterebuild.OpensTransaction(conn) {
+		return nil
+	}
+	checked, ok := conn.SchemaWriter().(transactionChecker)
+	if !ok {
+		return nil
+	}
+	if err := checked.CheckTransaction(); err != nil {
+		return &TransactionUnavailableError{Mode: mode, Err: err}
+	}
+	return nil
 }
 
 // preflightUnitTransaction retains unit indexes while judging only SQL text.

@@ -28,6 +28,7 @@ import (
 	"ptah.run/internal/cli/internal/secretrotation"
 	"ptah.run/internal/cli/internal/tablerebuild"
 	"ptah.run/internal/devdocker"
+	"ptah.run/internal/dispatchwitness"
 	"ptah.run/internal/errorkind"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/schemaload"
@@ -324,6 +325,13 @@ func runSchemaApplyWithLockSession(
 type applyRun struct {
 	human    io.Writer
 	evidence atlasschema.ApplyEvidence
+}
+
+// dispatching returns the context the plan executes under, which records in the
+// evidence when the first statement leaves for the database. A rehearsal on the
+// dev database runs under another context, so its statements do not count.
+func (r *applyRun) dispatching(ctx context.Context) context.Context {
+	return dispatchwitness.With(ctx, func() { r.evidence.Dispatched = true })
 }
 
 // refuseEditWithJSON refuses --edit under --json. The document is for a
@@ -638,8 +646,7 @@ func runSchemaApplyOnLockedSession(
 		return atlasschema.ApplyOutcomeCanceled, nil
 	}
 
-	run.evidence.Dispatched = true
-	if err := plan.ExecuteSQL(ctx, sqlText); err != nil {
+	if err := plan.ExecuteSQL(run.dispatching(ctx), sqlText); err != nil {
 		return "", fmt.Errorf("apply schema changes: %w", err)
 	}
 	return atlasschema.ApplyOutcomeApplied, nil
@@ -781,8 +788,7 @@ func runSchemaApplyPlanFileOnLockedSession(
 	}
 
 	conn.SchemaWriter().SetDryRun(false)
-	run.evidence.Dispatched = true
-	if err := plan.Execute(ctx, conn, txMode); err != nil {
+	if err := plan.Execute(run.dispatching(ctx), conn, txMode); err != nil {
 		return "", fmt.Errorf("apply schema changes: %w", err)
 	}
 	return atlasschema.ApplyOutcomeApplied, nil

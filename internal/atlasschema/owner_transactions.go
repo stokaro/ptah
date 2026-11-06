@@ -65,7 +65,10 @@ func (p ApplyRuntimePlan) PreflightExecution(sqlText string) error {
 	if sqlText != original && p.HasInputReferences() {
 		return fmt.Errorf("%w: edited SQL with approved execution inputs needs a new provider plan", ptaherr.ErrUnsupportedFeature)
 	}
-	return checkOwnerTransactions(p.plan.transactions, p.txMode, p.conn)
+	if err := checkOwnerTransactions(p.plan.transactions, p.txMode, p.conn); err != nil {
+		return err
+	}
+	return checkTransactionAvailable(p.txMode, p.conn)
 }
 
 // ExecuteSQL executes the prepared SQL or an edit that PreflightExecution can
@@ -94,13 +97,17 @@ func (p ApplyRuntimePlan) ExecuteSQL(ctx context.Context, sqlText string) error 
 }
 
 // PreflightTransaction checks the owner requirements retained by a saved plan
-// against the transaction mode opens on conn. It does not replace target
-// fingerprint verification or SQL-based preflight.
+// against the transaction mode opens on conn, and that conn can open that
+// transaction. It does not replace target fingerprint verification or SQL-based
+// preflight.
 func (p PlanFile) PreflightTransaction(mode migrator.MigrationTxMode, conn *dbschema.DatabaseConnection) error {
 	if err := renderer.ValidateAnnotations(p.Annotations, len(p.Statements)); err != nil {
 		return err
 	}
-	return checkOwnerTransactions(p.OwnerTransactions(), mode, conn)
+	if err := checkOwnerTransactions(p.OwnerTransactions(), mode, conn); err != nil {
+		return err
+	}
+	return checkTransactionAvailable(mode, conn)
 }
 
 // OwnerTransactions returns independent requirements in StatementSQL order.

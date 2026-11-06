@@ -14,6 +14,7 @@ import (
 
 	"ptah.run/core/renderer"
 	"ptah.run/dbschema"
+	"ptah.run/internal/dispatchwitness"
 	"ptah.run/internal/statementtimeout"
 )
 
@@ -119,6 +120,9 @@ func (s *session) dispatchUnits(ctx context.Context, transactionID string, prepa
 	if timeout, bounded := statementtimeout.From(ctx); bounded {
 		request.StatementTimeoutNanoseconds = timeout.Nanoseconds()
 	}
+	// Every refusal above leaves the units in this process. From here they may
+	// reach the provider, and a lost reply says nothing about what it did.
+	dispatchwitness.Sending(ctx)
 	result, err := s.target.host.client.Execute(ctx, request)
 	if err == nil {
 		return nil
