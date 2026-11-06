@@ -156,10 +156,17 @@ func reverseColumnDiffs(
 			}
 		}
 
+		desired := priorColumn(prior, tableName, columnDiff.ColumnName, semantics)
+		// A serial column's prior field writes no default, since its type implies
+		// one. The forward plan took that default away, and only the change says
+		// what it was.
+		if restored, found := strings.CutSuffix(columnDiff.Changes["default_expr"], " -> "); found && desired.Default == "" && desired.DefaultExpr == "" {
+			desired.DefaultExpr = restored
+		}
 		reversed[i] = difftypes.ColumnDiff{
 			ColumnName: columnDiff.ColumnName,
 			Changes:    reversedChanges,
-			Desired:    priorColumn(prior, tableName, columnDiff.ColumnName, semantics),
+			Desired:    desired,
 			// The rollback alters the same sequence of the same database,
 			// whose restart is replayed by its ALTER as by the forward one.
 			CurrentSequenceRestart: columnDiff.CurrentSequenceRestart,

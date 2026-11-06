@@ -1840,8 +1840,9 @@ earlier file created.
 PostgreSQL creates an implicit sequence for every `SERIAL` column and identity
 column; you do not declare those, and Ptah's introspection deliberately
 excludes them, so a plain `SERIAL` column never produces a spurious diff. A
-grant on one is still read and compared; see [Roles and
-grants](#roles-and-grants). A
+column the database holds as `SERIAL` and the declaration writes as a plain type
+is a difference: the plan drops its default and its sequence. A grant on one is
+still read and compared; see [Roles and grants](#roles-and-grants). A
 *standalone* sequence — declared with `//ptah:schema:sequence`, typically
 to share one number generator across tables — is a first-class object with the
 full lifecycle.

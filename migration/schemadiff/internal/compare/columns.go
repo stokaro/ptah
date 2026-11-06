@@ -26,6 +26,7 @@ import (
 	"ptah.run/internal/chtype"
 	"ptah.run/internal/cockroachtype"
 	"ptah.run/internal/columnsemantics"
+	"ptah.run/internal/columnsequence"
 	"ptah.run/internal/constraintowner"
 	"ptah.run/internal/exprkey"
 	"ptah.run/internal/normalize"
@@ -621,6 +622,18 @@ func declaredAutoIncrement(field schemamodel.Field, dialect string) (declared, c
 	}
 }
 
+// declaresColumnSequence reports whether a declared column is built with a sequence
+// of its own that a default draws from, so that such a default is what the declaration
+// asks for. An identity column holds no default: a live one stays a difference, unless
+// the live column draws from a sequence too.
+func declaresColumnSequence(field schemamodel.Field) bool {
+	if strings.TrimSpace(field.IdentityGeneration) != "" {
+		return false
+	}
+	_, creates := columnsequence.Declared("", field)
+	return creates || autoincrement.Declared(field) || strings.Contains(strings.ToUpper(field.Type), "SERIAL")
+}
+
 // columnDefaultChange compares a column's declared default with the live one
 // and returns the change key and text, or an empty change. A target's column
 // rules, where it registers them, compare the two in place of the shared
@@ -661,16 +674,18 @@ func columnDefaultChange(
 	}
 
 	// Skip the sequence-backed default only when the desired column declares no
-	// default of its own AND the database treats it as an auto-increment/SERIAL
-	// column — the type implies the sequence, so the database's nextval(...)
-	// default is expected and not a difference. When the desired declares an
-	// explicit default (e.g. a column that draws from a standalone sequence via
+	// default of its own and either its declaration implies the sequence, so the
+	// database's nextval(...) default is expected and not a difference, or the
+	// database reports an auto-increment column that owns no sequence, whose default
+	// is the engine's own. When the desired declares an explicit default (e.g. a
+	// column that draws from a standalone sequence via
 	// default_expr="nextval('seq')"), compare it normally; normalize.DefaultValue
-	// reconciles the ::regclass read-back form (issue #675). The genDefault==""
-	// guard alone carries the feature, so a genuine sequence default that the
-	// model does not declare is still reported as drift.
+	// reconciles the ::regclass read-back form (issue #675). A column that owns its
+	// sequence and declares a plain type, `id bigserial` against `id bigint`, is
+	// drift: the declared column has no default, and [ColumnSequencesLeaving] drops
+	// the sequence with it.
 	skipImplicitSequenceDefault := genDefault == "" &&
-		(dbCol.IsAutoIncrement || strings.Contains(strings.ToUpper(genCol.Type), "SERIAL"))
+		(declaresColumnSequence(genCol) || (dbCol.IsAutoIncrement && (dbCol.OwnedSequence == "" || genCol.IdentityGeneration != "")))
 	// A default the server spells as the catalog reports it is the same
 	// default: '2020-01-01'::timestamp with time zone is stored with its time
 	// and zone filled in.
