@@ -301,6 +301,10 @@ SQL:
   its new index, so a plan drops the key, then the old index, then adds the key.
   With the old index in place `ADD CONSTRAINT` answers `ERROR 1061: Duplicate key
   name`. The same order serves a new key named after an index that leaves.
+  Where a key the plan keeps stands on that index, the statement that gives the
+  kept key an index of its own takes the old one out at that point, and a rollback
+  drops the moved key first, then rebuilds the index under its name in one
+  statement.
 - MariaDB 12.1 and later name an unnamed key `<n>` rather than
   `<table>_ibfk_<n>`, and the name belongs to the table rather than to the
   database. A schema file does not say which line it is for, so Ptah reads the
