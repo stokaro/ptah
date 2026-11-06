@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"github.com/stokaro/ptah/provider-sdk/provider"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -66,11 +67,36 @@ func TestShareCoverage_HappyPath(t *testing.T) {
 		c := qt.New(t)
 		_, request, _ := twoTablePlanning()
 		for _, coverage := range facetCoverages(request)[2:] {
-			coverage.Kinds = []*protocol.ComparisonKindCoverage{proto.CloneOf(coverage.Kinds[0])}
+			kind := coverage.Kinds[0]
+			coverage.Kinds = []*protocol.ComparisonKindCoverage{{Model: kind.Model, Sources: []*protocol.ComparisonKnowledgeSource{proto.CloneOf(kind.Sources[0])}}}
 			coverage.Kinds[0].Sources[0].Outside.Reason = "another read"
 		}
 
 		c.Assert(provider.ShareCoverage(request), qt.Equals, proto.Message(request))
+	})
+	t.Run("kinds that differ in a field this SDK does not know travel whole", func(t *testing.T) {
+		c := qt.New(t)
+		_, request, _ := twoTablePlanning()
+		for _, coverage := range facetCoverages(request)[2:] {
+			kind := coverage.Kinds[0]
+			coverage.Kinds = []*protocol.ComparisonKindCoverage{{Model: kind.Model, Sources: kind.Sources}}
+			coverage.Kinds[0].ProtoReflect().SetUnknown(protowire.AppendVarint(protowire.AppendTag(nil, 99, protowire.VarintType), 1))
+		}
+
+		c.Assert(provider.ShareCoverage(request), qt.Equals, proto.Message(request))
+	})
+	t.Run("kinds of one model message with equal content are one list", func(t *testing.T) {
+		c := qt.New(t)
+		_, request, _ := twoTablePlanning()
+		for _, coverage := range facetCoverages(request)[2:] {
+			kind := coverage.Kinds[0]
+			coverage.Kinds = []*protocol.ComparisonKindCoverage{{Model: kind.Model, Sources: []*protocol.ComparisonKnowledgeSource{proto.CloneOf(kind.Sources[0])}}}
+		}
+
+		sent := facetCoverages(provider.ShareCoverage(request).(*protocol.PlanFeaturesRequest))
+
+		c.Assert(sent[2].GetKindsOf(), qt.Equals, sent[0].GetKindsKey())
+		c.Assert(sent[2].GetKinds(), qt.HasLen, 0)
 	})
 	t.Run("a coverage without kinds travels as it is", func(t *testing.T) {
 		c := qt.New(t)

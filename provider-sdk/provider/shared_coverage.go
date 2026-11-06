@@ -107,19 +107,22 @@ type coverageSharing struct {
 }
 
 // listIdentity is the identity of a list of kinds: the identity of each kind
-// in order. A kind is identified by the value model message it names and by
-// its sources, so two kinds of one model with equal sources are one kind.
+// in order. A kind is identified by the value model message it names, and by
+// the rest of its content: its sources and any field this SDK does not know.
+// Two kinds of one model message with equal content are one kind.
 func (s *coverageSharing) listIdentity(kinds []*protocol.ComparisonKindCoverage) string {
 	var identity strings.Builder
 	for _, kind := range kinds {
 		known, seen := s.kinds[kind]
 		if !seen {
-			sources, err := proto.MarshalOptions{Deterministic: true}.Marshal(&protocol.ComparisonKindCoverage{Sources: kind.GetSources()})
+			rest := &protocol.ComparisonKindCoverage{Sources: kind.GetSources()}
+			rest.ProtoReflect().SetUnknown(kind.ProtoReflect().GetUnknown())
+			content, err := proto.MarshalOptions{Deterministic: true}.Marshal(rest)
 			if err != nil {
 				// A kind that does not marshal is kept apart from every other.
-				sources = []byte(fmt.Sprintf("%p", kind))
+				content = fmt.Appendf(nil, "%p", kind)
 			}
-			known = fmt.Sprintf("%p:%s", kind.GetModel(), sources)
+			known = fmt.Sprintf("%p:%s", kind.GetModel(), content)
 			s.kinds[kind] = known
 		}
 		identity.WriteString(strconv.Itoa(len(known)))

@@ -115,7 +115,9 @@ for a service that reads none.
 ## Consequences
 
 - The services of a migration that assess named objects receive outlines:
-  four of the six planning calls of a migration of 500 new YDB tables. The
+  four of the six planning calls of a migration of 500 new YDB tables, each
+  of about 115 KB where it was 2.3 MB, most of it the common steps every
+  service receives, and each of 30 to 100 ms where it was 300 to 500. The
   owner of the tables still receives them whole.
 - An outlined service cannot read a table's columns, indexes or features. A
   service that needs them reads whole tables, and a provider that starts

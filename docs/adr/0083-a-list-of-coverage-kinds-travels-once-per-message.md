@@ -101,9 +101,11 @@ The host names one model with one message, so the messages identify a list.
 
 ## Consequences
 
-- A request of 500 tables carries each list of kinds once: a planning request
-  of 500 new tables shrinks from about 2.3 MB to about 0.15 MB, and the
-  preparation of a synced plan from 11.3 MB to about 2.9 MB.
+- A request of 500 tables carries each list of kinds once. Measured on the
+  same setup with this feature, ADR 0081 and the host and provider that list
+  both: the creation projection of 500 new tables is 130,038 bytes
+  (2,262,848 before), the planning request of the row tables' owner 140,682
+  (2,273,991), and the preparation of a synced plan 2,905,040 (11,299,082).
 - A service reads coverages that share kind messages. A change a service
   makes to one kind of one table's coverage is a change to every coverage
   that held the list, as a change to a model already was.
