@@ -206,6 +206,17 @@ func clonedCollectionRows() []clonedCollectionRow {
 					Reason:   "orphan_replica is a replica table"})
 			},
 		},
+		{
+			// Not filtered either: the report says the database holds the
+			// object, and no selection changes that. It is still ASKED, for the
+			// reason UnreadTables is.
+			field: "UnmodeledObjects", present: "nightly_cleanup", absent: "nosuch_event",
+			seed: func(s *catalog.Database) {
+				s.UnmodeledObjects = append(s.UnmodeledObjects,
+					catalog.UnmodeledObject{Kind: "event", Reason: "the account cannot list them"},
+					catalog.UnmodeledObject{Kind: "event", Name: "nightly_cleanup", Reason: "nothing compares it"})
+			},
+		},
 	}
 }
 

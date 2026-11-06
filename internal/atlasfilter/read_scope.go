@@ -24,6 +24,7 @@ var (
 		{selectorType: "function", kinds: []readscope.Kind{readscope.Routines}},
 		{selectorType: "trigger", kinds: []readscope.Kind{readscope.Triggers}, child: true},
 		{selectorType: "constraint", kinds: []readscope.Kind{readscope.Constraints}, child: true},
+		{selectorType: "event", kinds: []readscope.Kind{readscope.Events}},
 	}
 )
 

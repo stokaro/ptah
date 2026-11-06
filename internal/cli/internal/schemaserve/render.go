@@ -5,8 +5,10 @@ import (
 	"strings"
 	"time"
 
+	"ptah.run/catalog"
 	"ptah.run/internal/schemadoc"
 	"ptah.run/internal/undecidednote"
+	"ptah.run/internal/unmodelednote"
 	"ptah.run/migration/safety"
 	"ptah.run/migration/schemadiff"
 )
@@ -101,12 +103,17 @@ func writeStatus(out *strings.Builder, current observation) {
 	writeStat(out, countOf(current.Findings, safety.Safe), "safe", "safe")
 	out.WriteString(`</div>`)
 
-	if len(current.Findings) == 0 {
-		out.WriteString(`<div class="card"><div class="empty">The database matches the declared schema.</div></div>`)
-	} else {
+	switch {
+	case len(current.Findings) > 0:
 		writeFindings(out, current.Findings)
+	case len(current.NotCompared) > 0:
+		fmt.Fprintf(out, `<div class="card"><div class="empty">No difference found, but %s.</div></div>`,
+			escape(unmodelednote.Summary(current.NotCompared)))
+	default:
+		out.WriteString(`<div class="card"><div class="empty">The database matches the declared schema.</div></div>`)
 	}
 	writeUndecided(out, current.Undecided)
+	writeNotCompared(out, current.NotCompared)
 	writeStamp(out, current, "compared")
 }
 
@@ -124,6 +131,23 @@ func writeUndecided(out *strings.Builder, undecided schemadiff.Diagnostics) {
 		fmt.Fprintf(out, `<td>%s</td>`, escape(object.Kind))
 		fmt.Fprintf(out, `<td class="name">%s</td>`, escape(object.Name))
 		fmt.Fprintf(out, `<td>%s</td>`, escape(object.Reason))
+		out.WriteString(`</tr>`)
+	}
+	out.WriteString(`</tbody></table></div></div>`)
+}
+
+// writeNotCompared lists the objects the database holds of a kind nothing
+// compares, each with why.
+func writeNotCompared(out *strings.Builder, objects []catalog.UnmodeledObject) {
+	if len(objects) == 0 {
+		return
+	}
+	out.WriteString(`<div class="card"><div class="card-head"><h3>Not compared</h3></div>`)
+	out.WriteString(`<div class="scroller"><table><thead><tr><th>Object</th><th>Why</th></tr></thead><tbody>`)
+	for _, entry := range unmodelednote.Entries(objects) {
+		out.WriteString(`<tr>`)
+		fmt.Fprintf(out, `<td class="name">%s</td>`, escape(entry.Subject))
+		fmt.Fprintf(out, `<td>%s</td>`, escape(entry.Reason))
 		out.WriteString(`</tr>`)
 	}
 	out.WriteString(`</tbody></table></div></div>`)

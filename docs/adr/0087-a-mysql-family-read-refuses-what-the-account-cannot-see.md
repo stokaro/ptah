@@ -64,6 +64,10 @@ comparison still reads the kind to find what to add.
 
 These blind spots stay, written down rather than refused:
 
+- Ptah does not model an event, so no comparison reads one, and a read without `EVENT`
+  has nothing to refuse over. It records that it could not list them, and a report
+  says so. `internal/dbschema/mysql/events.go` holds the rule, and the page on
+  [MySQL and MariaDB](../site/src/content/docs/databases/mysql.md#events) the table.
 - A URL that names no database covers the databases the account can see, as the plan
   and apply pages state, and each of them is held to this rule. A database the account
   holds nothing on is outside the comparison. Refusing there would refuse every

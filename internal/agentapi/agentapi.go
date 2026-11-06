@@ -587,7 +587,7 @@ func readDatabase(
 	// The response lists tables and views by name, so it answers for those and
 	// not for what it does not report.
 	live, err := dbschema.ReadSchemaWithSchemasContext(
-		readscope.Without(ctx, readscope.Views, readscope.Constraints, readscope.Triggers, readscope.Routines),
+		readscope.Without(ctx, readscope.Views, readscope.Constraints, readscope.Triggers, readscope.Routines, readscope.Events),
 		conn, req.Schemas,
 	)
 	if err != nil {

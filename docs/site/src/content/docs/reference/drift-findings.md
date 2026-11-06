@@ -26,6 +26,10 @@ schema does not declare, and `<kind>_modified` the objects both hold that
 differ. Every difference the comparison reports is counted under a category, so
 a report whose `drift` is true has at least one finding.
 
+An object of a kind Ptah does not model, such as a MySQL event, is not a difference
+and has no category. The report names it under `not_compared`; see
+[Events](../../databases/mysql/#events).
+
 The categories are not disjoint: a change that has a category of its own, such
 as a removal that takes a UNIQUE constraint's enforcement with it, is counted
 under its kind as well. `migration/safety/categories_doc_test.go` fails when the

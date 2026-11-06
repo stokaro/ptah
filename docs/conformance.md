@@ -341,6 +341,15 @@ matched rather than refused, because there Atlas CE is right: it executes the
 file's bytes verbatim, drops nothing, and records the revision honestly. See
 [`stokaro/ptah#981`](https://github.com/stokaro/ptah/issues/981).
 
+### An event neither binary compares
+
+Measured against the pinned Atlas CE v1.3.0 binary on MySQL 8.4 and MariaDB 12.3,
+`schema diff` between two databases that differ by one event answers `Schemas are
+synced` at exit 0, and Ptah gives the same output and exit code. Ptah adds a warning
+on standard error naming the event, on `schema diff`, `schema inspect` and `schema
+apply`, where CE says nothing. An account without `EVENT` gets the warning as well
+and no refusal, since no answer here depends on it.
+
 ### An account that cannot see what a read covers
 
 `information_schema` lists only what an account holds a privilege on, and a

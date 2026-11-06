@@ -145,6 +145,7 @@ func excludeDatabase(
 	filtered.Grants = state.filterGrants(filtered.Grants, excludedObjects(schema.FeatureObjects, filtered.FeatureObjects))
 	state.noteReservedNames(filtered.ReservedNames)
 	state.noteUnreadTables(filtered.UnreadTables)
+	state.noteUnmodeledObjects(filtered.UnmodeledObjects)
 	state.noteRolesOutOfScope(filtered.RolesOutOfScope)
 	state.noteUnregisteredVirtualTables(filtered.UnregisteredVirtualTables)
 	return filtered, ExcludeReport{Unmatched: state.unmatchedSelectors()}, nil
@@ -1727,6 +1728,9 @@ func cloneDatabase(schema *catalog.Database) *catalog.Database {
 		// filter cannot change that: dropping the record would let a declared
 		// table at it plan a CREATE TABLE the database rejects.
 		UnreadTables: slices.Clone(schema.UnreadTables),
+		// An event is still in the database whatever a filter keeps, and the
+		// report names it because nothing compares it.
+		UnmodeledObjects: slices.Clone(schema.UnmodeledObjects),
 		// The planning context is what a filtered read established outside its
 		// scope, for planning only. A filter narrows the compared description
 		// and leaves the context as it is; without it a provider's plan cannot

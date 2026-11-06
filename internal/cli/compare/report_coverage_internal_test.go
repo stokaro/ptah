@@ -89,7 +89,7 @@ func TestWriteComparisonReportsEveryDiffCategory(t *testing.T) {
 			stdout := &bytes.Buffer{}
 			stderr := &bytes.Buffer{}
 
-			writeComparison(c.Context(), stdout, stderr, diff, schemadiff.Diagnostics{}, "", "postgres")
+			writeComparison(c.Context(), stdout, stderr, diff, schemadiff.Diagnostics{}, nil, "", "postgres")
 
 			c.Assert(stdout.String(), qt.Contains, diffCategoryJSONName(field)+" (1):")
 			c.Assert(stdout.String(), qt.Contains, "Reconciling SQL: none.")
@@ -150,7 +150,7 @@ func TestWriteComparisonReportsNoDifferences(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	writeComparison(c.Context(), stdout, stderr, &difftypes.SchemaDiff{}, schemadiff.Diagnostics{}, "", "postgres")
+	writeComparison(c.Context(), stdout, stderr, &difftypes.SchemaDiff{}, schemadiff.Diagnostics{}, nil, "", "postgres")
 
 	c.Assert(stdout.String(), qt.Equals, "No schema differences detected.\n")
 	c.Assert(stderr.String(), qt.Equals, "")
@@ -168,7 +168,7 @@ func TestWriteComparisonPrintsCategoriesAndSQL(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	writeComparison(c.Context(), stdout, stderr, diff, schemadiff.Diagnostics{}, "ALTER TABLE \"other\".\"secured\" ENABLE ROW LEVEL SECURITY;\n", "postgres")
+	writeComparison(c.Context(), stdout, stderr, diff, schemadiff.Diagnostics{}, nil, "ALTER TABLE \"other\".\"secured\" ENABLE ROW LEVEL SECURITY;\n", "postgres")
 
 	c.Assert(stdout.String(), qt.Equals, `Differences detected (2 categories):
   rls_enabled_tables_added (1): other.secured
@@ -193,7 +193,7 @@ func TestWriteComparison_WritesAColumnsValuesUnderItsTable(t *testing.T) {
 		}},
 	}
 
-	writeComparison(c.Context(), &stdout, &stderr, diff, schemadiff.Diagnostics{}, "ALTER TABLE \"t\" ALTER COLUMN \"k\" TYPE int4;\n", "postgres")
+	writeComparison(c.Context(), &stdout, &stderr, diff, schemadiff.Diagnostics{}, nil, "ALTER TABLE \"t\" ALTER COLUMN \"k\" TYPE int4;\n", "postgres")
 
 	c.Assert(stdout.String(), qt.Equals, `Differences detected (2 categories):
   tables_added (1): fresh
@@ -274,7 +274,7 @@ func TestWriteComparisonWritesASkippedObjectBesideNoDifferences(t *testing.T) {
 		Subject: objectidentity.ID{Kind: "example.org/extension", Name: objectidentity.Part{Source: "pg_trgm", Normalized: "pg_trgm"}},
 		Label:   "PostgreSQL extension", Target: "mysql"}}}
 
-	writeComparison(c.Context(), stdout, stderr, diff, schemadiff.Diagnostics{}, "", "mysql")
+	writeComparison(c.Context(), stdout, stderr, diff, schemadiff.Diagnostics{}, nil, "", "mysql")
 
 	c.Assert(stdout.String(), qt.Equals, "No schema differences detected.\n")
 	c.Assert(stderr.String(), qt.Equals, "MYSQL: PostgreSQL extension pg_trgm is not supported by this target; skipped.\n")

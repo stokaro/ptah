@@ -42,6 +42,7 @@ import (
 	"ptah.run/internal/servertarget"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/internal/undecidednote"
+	"ptah.run/internal/unmodelednote"
 	"ptah.run/internal/valuecontext"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -545,6 +546,10 @@ func diffResolvedStates(
 		return atlasreport.SchemaDiff{}, nil, undecided.Err()
 	}
 	undecidednote.Report(ctx, opts.Diagnostics, undecided, "--from", "--to")
+	// Neither side's objects of a kind Ptah does not model reach the comparison,
+	// so a report that the two match says nothing about them.
+	unmodelednote.Report(ctx, opts.Diagnostics, "--from", fromState.DB)
+	unmodelednote.Report(ctx, opts.Diagnostics, "--to", toState.DB)
 	// Apply the planned-change half of target validation to offline comparisons
 	// as well. A table both sides name and describe
 	// differently is rebuilt by the SQLite planner, which destroys a module's

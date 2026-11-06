@@ -101,6 +101,19 @@ var (
 		},
 	}
 
+	// UnmodeledObjects is an object of a kind the server has and Ptah does not
+	// model, which no comparison reads, or the whole kind where a read could not
+	// list it. Its records carry the object as the "object" attribute and why
+	// nothing compares it as the "cause" attribute. Like [UndecidedObjects], the
+	// summary names every object, since each is one the run's answer does not
+	// cover.
+	UnmodeledObjects = &Category{
+		Name: "unmodeled-object",
+		Summary: func(records []Record) string {
+			return fmt.Sprintf("%d objects were left out: %s", len(records), objectsByCause(records))
+		},
+	}
+
 	// UndecidedObjects is an object a comparison could not decide, so it plans
 	// no change for it: a declared object of a kind the current side does not
 	// describe, or a provider's object it could not compare. Its records carry

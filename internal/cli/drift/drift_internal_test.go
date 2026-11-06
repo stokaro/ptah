@@ -13,6 +13,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/google/go-cmp/cmp/cmpopts"
 
+	"ptah.run/catalog"
 	"ptah.run/core/coverage"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/schemaext"
@@ -208,6 +209,155 @@ func TestWriteJSONReportCarriesTheUndecidedObjects(t *testing.T) {
       }
     ]
   },`)
+}
+
+// resultHolding is a comparison that found nothing, over a read that holds
+// objects of a kind nothing compares.
+func resultHolding(objects ...catalog.UnmodeledObject) *schemaops.CompareResult {
+	return &schemaops.CompareResult{Diff: &difftypes.SchemaDiff{}, Database: &catalog.Database{UnmodeledObjects: objects}}
+}
+
+var (
+	unmodeledEvent = catalog.UnmodeledObject{Kind: "event", Name: "e_tick", Reason: "nothing compares it"}
+	unlistedEvents = catalog.UnmodeledObject{Kind: "event", Reason: "the account cannot list them"}
+)
+
+// TestAssessDriftLeavesTheAnswerAloneOverAnObjectItDidNotCompare holds the exit
+// code in place: an object of a kind no schema source can declare is not a
+// difference, and a check that failed on one would have no remedy short of
+// dropping it. The report names it, and that is all it does.
+func TestAssessDriftLeavesTheAnswerAloneOverAnObjectItDidNotCompare(t *testing.T) {
+	tests := []struct {
+		name     string
+		object   catalog.UnmodeledObject
+		severity string
+	}{
+		{name: "an event the read found", object: unmodeledEvent, severity: severityAll},
+		{name: "an event the read found, at the destructive threshold", object: unmodeledEvent, severity: severityDestructive},
+		{name: "events the account cannot list", object: unlistedEvents, severity: severityAll},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			report := assessDrift(resultHolding(test.object), test.severity, true, nil)
+
+			c.Assert(report.Drift, qt.IsFalse)
+			c.Assert(report.Failed, qt.IsFalse)
+			c.Assert(report.Findings, qt.HasLen, 0)
+			c.Assert(report.HighestSeverity, qt.Equals, safety.Safe)
+			c.Assert(report.NotCompared, qt.DeepEquals, []catalog.UnmodeledObject{test.object})
+		})
+	}
+}
+
+// TestWriteReportNamesWhatItDidNotCompare is each format of each report that has
+// something to say, and the control that has nothing.
+func TestWriteReportNamesWhatItDidNotCompare(t *testing.T) {
+	const database = "Failure threshold: all. Failing: false.\n"
+	tests := []struct {
+		name   string
+		format string
+		result *schemaops.CompareResult
+		want   string
+	}{
+		{
+			name:   "text, an event the read found",
+			format: formatText,
+			result: resultHolding(unmodeledEvent),
+			want: "No schema drift found, but 1 event was not compared.\n" + database +
+				"\nNot compared:\n- event \"e_tick\": nothing compares it\n",
+		},
+		{
+			name:   "text, events the account cannot list",
+			format: formatText,
+			result: resultHolding(unlistedEvents),
+			want: "No schema drift found, but events were not compared.\n" + database +
+				"\nNot compared:\n- events: the account cannot list them\n",
+		},
+		{
+			name:   "text, a read that found none",
+			format: formatText,
+			result: resultHolding(),
+			want:   "No schema drift detected.\n",
+		},
+		{
+			name:   "workflow annotations, an event the read found",
+			format: formatGitHubActions,
+			result: resultHolding(unmodeledEvent),
+			want: "::warning title=Ptah schema drift::No schema drift found, but 1 event was not compared;" +
+				" highest severity: safe; failure threshold: all\n" +
+				"::warning title=Ptah object not compared::event \"e_tick\": nothing compares it\n",
+		},
+		{
+			name:   "workflow annotations, a read that found none",
+			format: formatGitHubActions,
+			result: resultHolding(),
+			want:   "::notice title=Ptah drift check::No schema drift detected\n",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			var buf bytes.Buffer
+
+			err := writeReport(t.Context(), &buf, test.format, assessDrift(test.result, severityAll, true, nil), schemaext.Registry{})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(buf.String(), qt.Equals, test.want)
+		})
+	}
+}
+
+// TestWriteJSONReportNamesWhatItDidNotCompare is the document: a named entry, with
+// no kind of its own among the findings, and absent where there is nothing to
+// name.
+func TestWriteJSONReportNamesWhatItDidNotCompare(t *testing.T) {
+	c := qt.New(t)
+	var buf bytes.Buffer
+
+	err := writeReport(t.Context(), &buf, formatJSON, assessDrift(resultHolding(unmodeledEvent), severityAll, true, nil), schemaext.Registry{})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(buf.String(), qt.Contains, `"drift": false,
+  "failed": false,`)
+	c.Assert(buf.String(), qt.Contains, `"not_compared": [
+    {
+      "kind": "event",
+      "name": "e_tick",
+      "reason": "nothing compares it"
+    }
+  ],`)
+
+	buf.Reset()
+	err = writeReport(t.Context(), &buf, formatJSON, assessDrift(resultHolding(), severityAll, true, nil), schemaext.Registry{})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(buf.String(), qt.Not(qt.Contains), "not_compared")
+}
+
+// TestWriteTextReportNamesWhatItDidNotCompareBesideADifference is a report with
+// both answers, neither of which hides the other.
+func TestWriteTextReportNamesWhatItDidNotCompareBesideADifference(t *testing.T) {
+	c := qt.New(t)
+	result := resultHolding(unmodeledEvent)
+	result.Diff = &difftypes.SchemaDiff{TablesRemoved: difftypes.TableRemovals{{Name: "orphan"}}}
+	var buf bytes.Buffer
+
+	err := writeReport(t.Context(), &buf, formatText, assessDrift(result, severityAll, true, nil), schemaext.Registry{})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(buf.String(), qt.Equals, `Schema drift detected (highest severity: destructive).
+Failure threshold: all. Failing: true.
+
+Not compared:
+- event "e_tick": nothing compares it
+
+Findings:
+- tables_removed: 1 (destructive)
+`)
 }
 
 // undecidedRoles is what the comparison withholds for declared roles a read

@@ -180,6 +180,17 @@ type Database struct {
 	// make the database lose a table.
 	UnreadTables []UnreadTable `json:"-"`
 
+	// UnmodeledObjects lists the objects this read found of a kind Ptah does not
+	// model, and the kinds it could not list, for a report to name. Nothing
+	// compares them, so a difference never comes from one and no plan touches
+	// one.
+	//
+	// It is a fact about the read, not part of the description, so it is never
+	// serialized: no document can declare such an object, and a document that
+	// recorded one would limit nothing. A filter keeps the list, since narrowing
+	// the description cannot make the database lose the object.
+	UnmodeledObjects []UnmodeledObject `json:"-"`
+
 	// DatabasePath is the absolute path of the database this read describes,
 	// such as /local, on a target whose statements name some objects by an
 	// absolute path rather than relative to the connection: YDB, whose ALTER

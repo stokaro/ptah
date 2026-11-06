@@ -78,9 +78,18 @@ func TestKindsLeftOut(t *testing.T) {
 			want:    []readscope.Kind{readscope.Views},
 		},
 		{
+			name:    "every event",
+			exclude: []string{"*[type=event]"},
+			want:    []readscope.Kind{readscope.Events},
+		},
+		{
+			name:    "a named event names no kind",
+			exclude: []string{"nightly[type=event]"},
+		},
+		{
 			name:    "everything",
 			exclude: []string{"*"},
-			want:    []readscope.Kind{readscope.Tables, readscope.Constraints, readscope.Triggers, readscope.Views, readscope.Routines, readscope.Triggers, readscope.Constraints},
+			want:    []readscope.Kind{readscope.Tables, readscope.Constraints, readscope.Triggers, readscope.Views, readscope.Routines, readscope.Triggers, readscope.Constraints, readscope.Events},
 		},
 		{
 			name:    "a named trigger names no kind",
@@ -111,19 +120,19 @@ func TestKindsLeftOut(t *testing.T) {
 			exclude: []string{"*[type=nosuchtype]"},
 		},
 		{
-			name:    "including only tables leaves views and routines out",
+			name:    "including only tables leaves views, routines and events out",
 			include: []string{"*[type=table]"},
-			want:    []readscope.Kind{readscope.Views, readscope.Routines},
+			want:    []readscope.Kind{readscope.Views, readscope.Routines, readscope.Events},
 		},
 		{
-			name:    "including one named table leaves views and routines out",
+			name:    "including one named table leaves views, routines and events out",
 			include: []string{"orders[type=table]"},
-			want:    []readscope.Kind{readscope.Views, readscope.Routines},
+			want:    []readscope.Kind{readscope.Views, readscope.Routines, readscope.Events},
 		},
 		{
-			name:    "including only views leaves tables and routines out",
+			name:    "including only views leaves tables, routines and events out",
 			include: []string{"*[type=view]"},
-			want:    []readscope.Kind{readscope.Tables, readscope.Constraints, readscope.Triggers, readscope.Routines},
+			want:    []readscope.Kind{readscope.Tables, readscope.Constraints, readscope.Triggers, readscope.Routines, readscope.Events},
 		},
 		{
 			name:    "an include with no type can name any kind",
@@ -137,7 +146,7 @@ func TestKindsLeftOut(t *testing.T) {
 			name:    "both flags add up",
 			exclude: []string{"*[type=trigger]"},
 			include: []string{"*[type=table]"},
-			want:    []readscope.Kind{readscope.Triggers, readscope.Views, readscope.Routines},
+			want:    []readscope.Kind{readscope.Triggers, readscope.Views, readscope.Routines, readscope.Events},
 		},
 	}
 
