@@ -51,7 +51,7 @@ func validateIndexRename(description *protocol.Description, request *protocol.Pl
 	if !comparisonReason(from) || !comparisonReason(to) || from == to {
 		return indexRenameError("the step names two different indexes")
 	}
-	if err := validateRenamedParent(request, step.GetParent(), from, to); err != nil {
+	if err := validateRenamedParent(description, request, step.GetParent(), from, to); err != nil {
 		return err
 	}
 	effects := step.GetMetadata().GetEffects()
@@ -64,13 +64,19 @@ func validateIndexRename(description *protocol.Description, request *protocol.Pl
 }
 
 // validateRenamedParent refuses a rename whose parent the request does not
-// alter, or which does not hold the index as from and declare it as to.
-func validateRenamedParent(request *protocol.PlanFeaturesRequest, parent *protocol.ComparisonIdentity, from, to string) error {
+// alter, or which does not hold the index as from and declare it as to. The
+// outline of a table holds no index, so for a service that reads outlines
+// only the parent is checked; the service that owns the table receives it
+// whole, with the same step.
+func validateRenamedParent(description *protocol.Description, request *protocol.PlanFeaturesRequest, parent *protocol.ComparisonIdentity, from, to string) error {
 	at := slices.IndexFunc(request.GetTables(), func(table *protocol.PlanningTable) bool {
 		return CompareIdentities(table.GetSubject(), parent) == 0
 	})
 	if at < 0 || request.GetTables()[at].GetAction() != protocol.PlanningTable_ALTER {
 		return indexRenameError("the parent is not a table the request alters")
+	}
+	if outlinedPlanning(description, request) {
+		return nil
 	}
 	table := request.GetTables()[at]
 	declared := slices.ContainsFunc(table.GetDesired().GetIndexes(), func(index *protocol.DeclaredIndex) bool { return index.GetName() == to })

@@ -67,6 +67,14 @@ func ValidateMigrationSplit(description *protocol.Description, request *protocol
 	if err := ValidateSplitMigrationRequest(description, request); err != nil {
 		return err
 	}
+	return ValidateMigrationSplitReply(description, request, result)
+}
+
+// ValidateMigrationSplitReply is [ValidateMigrationSplit] for a request that [ValidateSplitMigrationRequest] accepted
+// with description and that has not changed since: it checks the reply and not the
+// request again. The SDK's client and server validate each request once
+// and call it for the reply.
+func ValidateMigrationSplitReply(description *protocol.Description, request *protocol.SplitMigrationRequest, result *protocol.MigrationSplit) error {
 	if result == nil {
 		return migrationSplitError("the reply is missing")
 	}

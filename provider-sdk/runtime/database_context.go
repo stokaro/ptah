@@ -14,14 +14,14 @@ import (
 // explicit address without opening a session. Errors exclude provider text.
 func (c *Client) ResolveDatabaseContext(ctx context.Context, request *protocol.DatabaseContextRequest) (*protocol.DatabaseContext, error) {
 	return callOffline(ctx, c.description, proto.CloneOf(request), "resolve database context", provider.ValidateDatabaseContextRequest,
-		provider.ValidateResolvedDatabaseContext, c.rpc.ResolveDatabaseContext)
+		provider.ValidateResolvedDatabaseContextReply, c.rpc.ResolveDatabaseContext)
 }
 
 func (s *serverAdapter) ResolveDatabaseContext(ctx context.Context, request *protocol.DatabaseContextRequest) (*protocol.DatabaseContext, error) {
 	if nilService(s.server.DatabaseContexts) {
 		return nil, status.Error(codes.Unimplemented, "database context resolution is unavailable")
 	}
-	return serveOffline(ctx, s, request, provider.ValidateDatabaseContextRequest, provider.ValidateResolvedDatabaseContext,
+	return serveOffline(ctx, s, request, provider.ValidateDatabaseContextRequest, provider.ValidateResolvedDatabaseContextReply,
 		s.server.DatabaseContexts.ResolveDatabaseContext)
 }
 

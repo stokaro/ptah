@@ -26,10 +26,14 @@ type ValueNormalizer interface {
 // ValidateValueInputs checks transport ownership before dispatch. It does not
 // interpret payloads; the selected owner must validate their complete meaning.
 func ValidateValueInputs(description *protocol.Description, request *protocol.NormalizeValuesRequest) error {
+	return validateValueInputs(nil, description, request)
+}
+
+func validateValueInputs(checks *targetChecks, description *protocol.Description, request *protocol.NormalizeValuesRequest) error {
 	if request == nil || description == nil || !slices.Contains(description.GetFeatures(), NormalizeValuesFeature) {
 		return fmt.Errorf("%w: value normalization is unavailable", ErrProtocol)
 	}
-	_, features, err := valueTarget(description, request.GetEngine(), request.GetTargetFeatures())
+	_, features, err := checks.valueTarget(description, request.GetEngine(), request.GetTargetFeatures())
 	if err != nil {
 		return err
 	}
@@ -92,7 +96,11 @@ func validValueReference(ref *protocol.Reference, engine string) bool {
 // compares only envelope metadata; raw payload bytes never establish equality.
 // The owner remains responsible for normalization and canonical semantics.
 func ValidateNormalizedValues(description *protocol.Description, request *protocol.NormalizeValuesRequest, result *protocol.NormalizedValues) error {
-	if err := ValidateValueInputs(description, request); err != nil {
+	return validateNormalizedValues(nil, description, request, result)
+}
+
+func validateNormalizedValues(checks *targetChecks, description *protocol.Description, request *protocol.NormalizeValuesRequest, result *protocol.NormalizedValues) error {
+	if err := validateValueInputs(checks, description, request); err != nil {
 		return err
 	}
 	if result == nil || !result.GetComplete() || len(request.GetValues()) != len(result.GetValues()) {
@@ -146,6 +154,133 @@ func valueTarget(description *protocol.Description, name string, targetFeatures 
 		features[feature] = true
 	}
 	return engine, features, nil
+}
+
+// targetChecks holds the answers [valueTarget] gave within one validation of
+// one request. A request names one engine and one set of target features for
+// every table it carries, and asking again for each of them checked every
+// value model of the engine once per table: most of the validation of a plan
+// of 500 tables. A nil *targetChecks asks [valueTarget] every time. A
+// validator makes one for the request it checks and drops it on return, so a
+// description changed between two validations is checked again.
+type targetChecks struct {
+	answers []targetAnswer
+	// same holds the pairs of models sameModel compared. The coverage of
+	// every table names the models of its kinds, mostly as one message, and
+	// comparing each definition again for every table was a second of CPU in
+	// a plan of 500 tables.
+	same map[[2]*protocol.ValueModel]bool
+	// contexts holds the comparison context each representation of a
+	// request's captured tables is checked in, and kinds the answer each kind
+	// of a coverage had in its context. Under SharedCoverageFeature the
+	// coverages of every table hold the same kind messages, so each is checked
+	// once per validation rather than once per table.
+	contexts map[capturedContextKey]*protocol.CompareModelsRequest
+	kinds    map[coverageKindKey]error
+}
+
+// capturedContextKey names the context of one representation of one
+// planning request's captured tables.
+type capturedContextKey struct {
+	request        *protocol.PlanFeaturesRequest
+	representation protocol.ValueInput_Representation
+}
+
+// coverageKindKey names one kind message checked in one context.
+type coverageKindKey struct {
+	kind           *protocol.ComparisonKindCoverage
+	representation protocol.ValueInput_Representation
+	context        *protocol.CompareModelsRequest
+}
+
+// capturedContext returns the context the captured tables of request are
+// checked in for representation: the request's value context with the kinds
+// the engine declares for the representation. A nil *targetChecks builds it
+// every time; otherwise each request and representation has one.
+func (c *targetChecks) capturedContext(request *protocol.PlanFeaturesRequest, engine *protocol.Engine, representation protocol.ValueInput_Representation) *protocol.CompareModelsRequest {
+	key := capturedContextKey{request: request, representation: representation}
+	if c != nil {
+		if built, found := c.contexts[key]; found {
+			return built
+		}
+	}
+	compared := planningValueContext(request)
+	for _, model := range engine.GetValueModels() {
+		if model.GetRepresentation() == representation {
+			compared.Kinds = append(compared.Kinds, model.GetKind())
+		}
+	}
+	if c != nil {
+		if c.contexts == nil {
+			c.contexts = make(map[capturedContextKey]*protocol.CompareModelsRequest)
+		}
+		c.contexts[key] = compared
+	}
+	return compared
+}
+
+// coverageKind answers as validateCoverageKind does, once per kind message
+// and context.
+func (c *targetChecks) coverageKind(description *protocol.Description, request *protocol.CompareModelsRequest, representation protocol.ValueInput_Representation,
+	record *protocol.ComparisonKindCoverage,
+) error {
+	if c == nil {
+		return validateCoverageKind(c, description, request, representation, record)
+	}
+	key := coverageKindKey{kind: record, representation: representation, context: request}
+	if err, answered := c.kinds[key]; answered {
+		return err
+	}
+	err := validateCoverageKind(c, description, request, representation, record)
+	if c.kinds == nil {
+		c.kinds = make(map[coverageKindKey]error)
+	}
+	c.kinds[key] = err
+	return err
+}
+
+// sameModel reports whether model equals declared, comparing each pair once.
+func (c *targetChecks) sameModel(model, declared *protocol.ValueModel) bool {
+	if c == nil {
+		return proto.Equal(model, declared)
+	}
+	pair := [2]*protocol.ValueModel{model, declared}
+	if same, compared := c.same[pair]; compared {
+		return same
+	}
+	if c.same == nil {
+		c.same = make(map[[2]*protocol.ValueModel]bool)
+	}
+	same := proto.Equal(model, declared)
+	c.same[pair] = same
+	return same
+}
+
+// targetAnswer is one answer of [valueTarget] and the question it answered.
+type targetAnswer struct {
+	description *protocol.Description
+	name        string
+	asked       []string
+	engine      *protocol.Engine
+	features    map[string]bool
+	err         error
+}
+
+// valueTarget answers as [valueTarget] does, once per question.
+func (c *targetChecks) valueTarget(description *protocol.Description, name string, targetFeatures []string) (*protocol.Engine, map[string]bool, error) {
+	if c == nil {
+		return valueTarget(description, name, targetFeatures)
+	}
+	for _, answer := range c.answers {
+		if answer.description == description && answer.name == name && slices.Equal(answer.asked, targetFeatures) {
+			return answer.engine, answer.features, answer.err
+		}
+	}
+	engine, features, err := valueTarget(description, name, targetFeatures)
+	c.answers = append(c.answers, targetAnswer{
+		description: description, name: name, asked: slices.Clone(targetFeatures), engine: engine, features: features, err: err,
+	})
+	return engine, features, err
 }
 
 func validateNormalizedMetadata(input *protocol.ValueInput, output *protocol.NormalizedValue) error {

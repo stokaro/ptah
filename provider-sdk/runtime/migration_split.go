@@ -14,12 +14,12 @@ import (
 // reply and cancellation expose no unit.
 func (c *Client) SplitMigration(ctx context.Context, request *protocol.SplitMigrationRequest) (*protocol.MigrationSplit, error) {
 	return callOffline(ctx, c.description, proto.CloneOf(request), "split migration",
-		provider.ValidateSplitMigrationRequest, provider.ValidateMigrationSplit, c.rpc.SplitMigration)
+		provider.ValidateSplitMigrationRequest, provider.ValidateMigrationSplitReply, c.rpc.SplitMigration)
 }
 
 func (s *serverAdapter) SplitMigration(ctx context.Context, request *protocol.SplitMigrationRequest) (*protocol.MigrationSplit, error) {
 	if nilService(s.server.MigrationSplits) {
 		return nil, unavailable("migration splitting")
 	}
-	return serveOffline(ctx, s, request, provider.ValidateSplitMigrationRequest, provider.ValidateMigrationSplit, s.server.MigrationSplits.SplitMigration)
+	return serveOffline(ctx, s, request, provider.ValidateSplitMigrationRequest, provider.ValidateMigrationSplitReply, s.server.MigrationSplits.SplitMigration)
 }

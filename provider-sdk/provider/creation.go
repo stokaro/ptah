@@ -91,10 +91,22 @@ func ValidateProjectedCreations(description *protocol.Description, request *prot
 	if err := ValidateCreationRequest(description, request); err != nil {
 		return err
 	}
+	return ValidateProjectedCreationsReply(description, request, result)
+}
+
+// ValidateProjectedCreationsReply is [ValidateProjectedCreations] for a request that [ValidateCreationRequest] accepted
+// with description and that has not changed since: it checks the reply and not the
+// request again. The SDK's client and server validate each request once
+// and call it for the reply.
+func ValidateProjectedCreationsReply(description *protocol.Description, request *protocol.ProjectTableCreationsRequest, result *protocol.ProjectedTableCreations) error {
 	if result == nil || !result.Complete || len(result.Tables) != len(request.Tables) {
 		return fmt.Errorf("%w: incomplete creation projection", ErrProtocol)
 	}
-	engine, _, _ := valueTarget(description, request.GetEngine(), request.GetTargetFeatures())
+	engine, _, target := valueTarget(description, request.GetEngine(), request.GetTargetFeatures())
+	// The facets of every table are checked in one context of each
+	// representation, built once: built for each table, it held every table
+	// of the request, so a reply of 500 tables built 500 lists of 500.
+	records := creationRecordChecks{checks: new(targetChecks), contexts: make(map[protocol.ValueInput_Representation]*protocol.CompareModelsRequest)}
 	for i, output := range result.Tables {
 		input := request.Tables[i]
 		if !proto.Equal(input.Subject, output.GetSubject()) {
@@ -106,10 +118,13 @@ func ValidateProjectedCreations(description *protocol.Description, request *prot
 		if err := validateColumnKeys(input.Declaration, output); err != nil {
 			return err
 		}
-		if err := validateCreationRecords(description, request, input, protocol.ValueInput_DESIRED, output.DesiredFacets); err != nil {
+		if target != nil {
+			return target
+		}
+		if err := records.validate(description, request, engine, input, protocol.ValueInput_DESIRED, output.DesiredFacets); err != nil {
 			return err
 		}
-		if err := validateCreationRecords(description, request, input, protocol.ValueInput_OBSERVED, output.ObservedFacets); err != nil {
+		if err := records.validate(description, request, engine, input, protocol.ValueInput_OBSERVED, output.ObservedFacets); err != nil {
 			return err
 		}
 	}

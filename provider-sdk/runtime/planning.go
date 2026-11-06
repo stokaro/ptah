@@ -12,12 +12,12 @@ import (
 // PlanFeatures validates one complete contextual planning exchange. Errors and
 // cancellation discard the entire result, including diagnostics and receipts.
 func (c *Client) PlanFeatures(ctx context.Context, request *protocol.PlanFeaturesRequest) (*protocol.PlannedFeatures, error) {
-	return callOffline(ctx, c.description, provider.CloneSharingModels(request), "plan features", provider.ValidatePlanningRequest, provider.ValidatePlannedFeatures, c.rpc.PlanFeatures)
+	return callOffline(ctx, c.description, provider.CloneSharingModels(request), "plan features", provider.ValidatePlanningRequest, provider.ValidatePlannedFeaturesReply, c.rpc.PlanFeatures)
 }
 
 func (s *serverAdapter) PlanFeatures(ctx context.Context, request *protocol.PlanFeaturesRequest) (*protocol.PlannedFeatures, error) {
 	if nilService(s.server.FeaturePlanner) {
 		return nil, status.Error(codes.Unimplemented, "feature planning is unavailable")
 	}
-	return serveOffline(ctx, s, request, provider.ValidatePlanningRequest, provider.ValidatePlannedFeatures, s.server.FeaturePlanner.PlanFeatures)
+	return serveOffline(ctx, s, request, provider.ValidatePlanningRequest, provider.ValidatePlannedFeaturesReply, s.server.FeaturePlanner.PlanFeatures)
 }

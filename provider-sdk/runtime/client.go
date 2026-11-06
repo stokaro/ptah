@@ -233,7 +233,7 @@ func (c *Client) Inspect(ctx context.Context, request *protocol.InspectRequest) 
 
 // Render validates the complete batch and exposes no prefix on failure.
 func (c *Client) Render(ctx context.Context, request *protocol.RenderRequest) (*protocol.RenderResult, error) {
-	return callOffline(ctx, c.description, provider.CloneSharingModels(request), "render", provider.ValidateRenderRequest, provider.ValidateRenderedBatch, c.rpc.Render)
+	return callOffline(ctx, c.description, provider.CloneSharingModels(request), "render", provider.ValidateRenderRequest, provider.ValidateRenderedBatchReply, c.rpc.Render)
 }
 
 // Execute sends a validated batch once. Any lost or invalid reply is an unknown

@@ -51,6 +51,14 @@ func ValidateConvertedValues(description *protocol.Description, request *protoco
 	if err := ValidateConversionRequest(description, request); err != nil {
 		return err
 	}
+	return ValidateConvertedValuesReply(description, request, result)
+}
+
+// ValidateConvertedValuesReply is [ValidateConvertedValues] for a request that [ValidateConversionRequest] accepted
+// with description and that has not changed since: it checks the reply and not the
+// request again. The SDK's client and server validate each request once
+// and call it for the reply.
+func ValidateConvertedValuesReply(description *protocol.Description, request *protocol.ConvertValuesRequest, result *protocol.NormalizedValues) error {
 	if result == nil || !result.GetComplete() || len(request.GetValues()) != len(result.GetValues()) {
 		return fmt.Errorf("%w: incomplete value conversion", ErrProtocol)
 	}

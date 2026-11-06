@@ -10,11 +10,11 @@ import (
 var (
 	statementRows = sessionCall[*protocol.ReadStatementRowsRequest, *protocol.StatementRows]{
 		feature: provider.StatementsFeature, operation: "read statement rows", timeout: CallTimeout,
-		validateInput: provider.ValidateReadStatementRowsRequest, validateOutput: provider.ValidateStatementRows,
+		validateInput: provider.ValidateReadStatementRowsRequest, validateOutput: provider.ValidateStatementRowsReply,
 	}
 	statementClose = sessionCall[*protocol.CloseStatementRequest, *protocol.Empty]{
 		feature: provider.StatementsFeature, operation: "close statement", timeout: CallTimeout,
-		validateInput: provider.ValidateCloseStatementRequest, validateOutput: provider.ValidateClosedStatement,
+		validateInput: provider.ValidateCloseStatementRequest, validateOutput: provider.ValidateClosedStatementReply,
 	}
 )
 
@@ -31,7 +31,7 @@ func statementRun(description *protocol.Description, request *protocol.RunStatem
 			}
 			return provider.ValidateTypedArguments(description, request)
 		},
-		validateOutput: provider.ValidateStatementResult,
+		validateOutput: provider.ValidateStatementResultReply,
 	}
 	if request.GetAccess() != protocol.RunStatementRequest_READ_ONLY {
 		call.uncertain = unknownStatement

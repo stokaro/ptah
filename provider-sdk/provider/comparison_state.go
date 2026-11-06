@@ -9,6 +9,15 @@ import (
 )
 
 func validateComparisonState(description *protocol.Description, request *protocol.CompareModelsRequest, service *protocol.ModelComparison, representation protocol.ValueInput_Representation, state *protocol.ComparisonState) error {
+	return checkComparisonState(nil, description, request, service, representation, state)
+}
+
+// checkComparisonState is [validateComparisonState] with the answers of a
+// validation that checks more than one state of the same request.
+func checkComparisonState(
+	checks *targetChecks, description *protocol.Description, request *protocol.CompareModelsRequest, service *protocol.ModelComparison,
+	representation protocol.ValueInput_Representation, state *protocol.ComparisonState,
+) error {
 	if state == nil || state.GetRepresentation() != representation {
 		return fmt.Errorf("%w: comparison state has the wrong representation", ErrProtocol)
 	}
@@ -44,10 +53,10 @@ func validateComparisonState(description *protocol.Description, request *protoco
 			return fmt.Errorf("%w: duplicate comparison record", ErrProtocol)
 		}
 	}
-	if err := validateComparisonValues(description, request, representation, values); err != nil {
+	if err := checkComparisonValues(checks, description, request, representation, values); err != nil {
 		return err
 	}
-	return validateComparisonCoverage(description, request, representation, state.GetCoverage())
+	return validateComparisonCoverage(checks, description, request, representation, state.GetCoverage())
 }
 
 func compareComparisonRecords(a, b *protocol.ComparisonRecord) int {
@@ -58,11 +67,15 @@ func compareComparisonRecords(a, b *protocol.ComparisonRecord) int {
 }
 
 func validateComparisonValues(description *protocol.Description, request *protocol.CompareModelsRequest, representation protocol.ValueInput_Representation, values []*protocol.NormalizedValue) error {
+	return checkComparisonValues(nil, description, request, representation, values)
+}
+
+func checkComparisonValues(checks *targetChecks, description *protocol.Description, request *protocol.CompareModelsRequest, representation protocol.ValueInput_Representation, values []*protocol.NormalizedValue) error {
 	inputs := &protocol.NormalizeValuesRequest{Engine: request.GetEngine(), TargetFeatures: request.GetTargetFeatures()}
 	for _, value := range values {
 		inputs.Values = append(inputs.Values, &protocol.ValueInput{Id: value.GetId(), Representation: representation, Value: value.GetValue()})
 	}
-	return ValidateNormalizedValues(description, inputs, &protocol.NormalizedValues{Complete: true, Values: values})
+	return validateNormalizedValues(checks, description, inputs, &protocol.NormalizedValues{Complete: true, Values: values})
 }
 
 func validateComparedChanges(description *protocol.Description, request *protocol.CompareModelsRequest, service *protocol.ModelComparison, changes []*protocol.ComparedChange) error {

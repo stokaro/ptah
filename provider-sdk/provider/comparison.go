@@ -69,6 +69,17 @@ func ValidateComparedModels(description *protocol.Description, request *protocol
 	if err := ValidateComparisonRequest(description, request); err != nil {
 		return err
 	}
+	return ValidateComparedModelsReply(description, request, result)
+}
+
+// ValidateComparedModelsReply is [ValidateComparedModels] for a request that [ValidateComparisonRequest] accepted
+// with description and that has not changed since: it checks the reply and not the
+// request again. The SDK's client and server validate each request once
+// and call it for the reply.
+func ValidateComparedModelsReply(description *protocol.Description, request *protocol.CompareModelsRequest, result *protocol.ComparedModels) error {
+	if err := requireResolvedContext(result); err != nil {
+		return err
+	}
 	if result == nil || !result.GetComplete() {
 		return fmt.Errorf("%w: incomplete model comparison", ErrProtocol)
 	}

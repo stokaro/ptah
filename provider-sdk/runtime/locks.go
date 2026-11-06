@@ -74,7 +74,7 @@ func (c *Client) lockCall(ctx context.Context, request *protocol.LockRequest, op
 		return nil, errors.Join(&provider.LockError{}, remoteError(call, c.description, "lock operation", err))
 	}
 	result = negotiatedReceipt(c.description, result)
-	if err := provider.ValidateLockResult(operation, request, result); err != nil {
+	if err := provider.ValidateLockResultReply(operation, request, result); err != nil {
 		return nil, errors.Join(err, &provider.LockError{})
 	}
 	result = proto.CloneOf(result)
@@ -118,7 +118,7 @@ func (s *serverAdapter) lockCall(ctx context.Context, request *protocol.LockRequ
 	}
 	if err == nil {
 		result = negotiatedReceipt(s.negotiated(), result)
-		if failure := provider.ValidateLockResult(operation, request, result); failure != nil {
+		if failure := provider.ValidateLockResultReply(operation, request, result); failure != nil {
 			err = status.Error(codes.Internal, "provider returned an invalid lock receipt")
 		}
 	}

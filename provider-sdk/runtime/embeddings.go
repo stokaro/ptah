@@ -50,39 +50,39 @@ func unknownEmbeddingWrite() error {
 
 var (
 	embeddingPrepareStore = embeddingWrite("prepare embedding store", EmbeddingStorageTimeout,
-		provider.ValidatePrepareEmbeddingStoreRequest, provider.ValidatePreparedEmbeddingStore)
+		provider.ValidatePrepareEmbeddingStoreRequest, provider.ValidatePreparedEmbeddingStoreReply)
 	embeddingReadState = embeddingCall("read embedding state", CallTimeout,
-		provider.ValidateReadEmbeddingStateRequest, provider.ValidateEmbeddingState)
+		provider.ValidateReadEmbeddingStateRequest, provider.ValidateEmbeddingStateReply)
 	embeddingMutateState = embeddingWrite("mutate embedding state", EmbeddingWriteTimeout,
-		provider.ValidateMutateEmbeddingStateRequest, provider.ValidateMutatedEmbeddingState)
+		provider.ValidateMutateEmbeddingStateRequest, provider.ValidateMutatedEmbeddingStateReply)
 	embeddingAppendEvent = embeddingWrite("append embedding event", CallTimeout,
-		provider.ValidateAppendEmbeddingEventRequest, provider.ValidateAppendedEmbeddingEvent)
+		provider.ValidateAppendEmbeddingEventRequest, provider.ValidateAppendedEmbeddingEventReply)
 	embeddingReadEvents = embeddingCall("read embedding events", CallTimeout,
-		provider.ValidateReadEmbeddingEventsRequest, provider.ValidateEmbeddingEventPage)
+		provider.ValidateReadEmbeddingEventsRequest, provider.ValidateEmbeddingEventPageReply)
 	embeddingResolveRelations = embeddingCall("resolve embedding relations", CallTimeout,
-		provider.ValidateResolveEmbeddingRelationsRequest, provider.ValidateEmbeddingRelations)
+		provider.ValidateResolveEmbeddingRelationsRequest, provider.ValidateEmbeddingRelationsReply)
 	embeddingMeasure = embeddingCall("measure embedding", EmbeddingStorageTimeout,
-		provider.ValidateMeasureEmbeddingRequest, provider.ValidateEmbeddingMeasurement)
+		provider.ValidateMeasureEmbeddingRequest, provider.ValidateEmbeddingMeasurementReply)
 	embeddingPrepareTarget = embeddingWrite("prepare embedding target", EmbeddingStorageTimeout,
-		provider.ValidatePrepareEmbeddingTargetRequest, provider.ValidatePreparedEmbeddingTarget)
+		provider.ValidatePrepareEmbeddingTargetRequest, provider.ValidatePreparedEmbeddingTargetReply)
 	embeddingBuildIndex = embeddingWrite("build embedding index", EmbeddingIndexTimeout,
-		provider.ValidateBuildEmbeddingIndexRequest, provider.ValidateBuiltEmbeddingIndex)
+		provider.ValidateBuildEmbeddingIndexRequest, provider.ValidateBuiltEmbeddingIndexReply)
 	embeddingReadStructure = embeddingCall("read embedding structure", EmbeddingStorageTimeout,
-		provider.ValidateReadEmbeddingStructureRequest, provider.ValidateEmbeddingStructure)
+		provider.ValidateReadEmbeddingStructureRequest, provider.ValidateEmbeddingStructureReply)
 	embeddingDropGeneration = embeddingWrite("drop embedding generation", EmbeddingStorageTimeout,
-		provider.ValidateDropEmbeddingGenerationRequest, provider.ValidateDroppedEmbeddingGeneration)
+		provider.ValidateDropEmbeddingGenerationRequest, provider.ValidateDroppedEmbeddingGenerationReply)
 	embeddingScanSource = embeddingCall("scan embedding source", EmbeddingStorageTimeout,
-		provider.ValidateScanEmbeddingSourceRequest, provider.ValidateEmbeddingSourcePage)
+		provider.ValidateScanEmbeddingSourceRequest, provider.ValidateEmbeddingSourcePageReply)
 	embeddingReadSourceRows = embeddingCall("read embedding source rows", EmbeddingStorageTimeout,
-		provider.ValidateReadEmbeddingSourceRowsRequest, provider.ValidateEmbeddingSourceRows)
+		provider.ValidateReadEmbeddingSourceRowsRequest, provider.ValidateEmbeddingSourceRowsReply)
 	embeddingReadBatchState = embeddingCall("read embedding batch state", CallTimeout,
 		provider.ValidateReadEmbeddingBatchStateRequest, provider.ValidateEmbeddingBatchState)
 	embeddingCommitBatch = embeddingWrite("commit embedding batch", EmbeddingWriteTimeout,
-		provider.ValidateCommitEmbeddingBatchRequest, provider.ValidateCommittedEmbeddingBatch)
+		provider.ValidateCommitEmbeddingBatchRequest, provider.ValidateCommittedEmbeddingBatchReply)
 	embeddingReadVerification = embeddingCall("read embedding verification", EmbeddingStorageTimeout,
-		provider.ValidateReadEmbeddingVerificationRequest, provider.ValidateEmbeddingVerificationPage)
+		provider.ValidateReadEmbeddingVerificationRequest, provider.ValidateEmbeddingVerificationPageReply)
 	embeddingSearch = embeddingCall("search embeddings", EmbeddingStorageTimeout,
-		provider.ValidateSearchEmbeddingsRequest, provider.ValidateEmbeddingSearchResult)
+		provider.ValidateSearchEmbeddingsRequest, provider.ValidateEmbeddingSearchResultReply)
 )
 
 // writeResult returns a validated write result with the error that a
@@ -132,7 +132,7 @@ func (c *Client) ReadEmbeddingEvents(ctx context.Context, request *protocol.Read
 // cancellation expose nothing.
 func (c *Client) DescribeEmbeddingTarget(ctx context.Context, request *protocol.DescribeEmbeddingTargetRequest) (*protocol.EmbeddingTargetObjects, error) {
 	return callWithin(ctx, CallTimeout, c.description, proto.CloneOf(request), "describe embedding target",
-		provider.ValidateDescribeEmbeddingTargetRequest, provider.ValidateEmbeddingTargetObjects, c.rpc.DescribeEmbeddingTarget)
+		provider.ValidateDescribeEmbeddingTargetRequest, provider.ValidateEmbeddingTargetObjectsReply, c.rpc.DescribeEmbeddingTarget)
 }
 
 // ResolveEmbeddingRelations answers the relation each spelling names on the
@@ -260,7 +260,7 @@ func (s *serverAdapter) DescribeEmbeddingTarget(ctx context.Context, request *pr
 	if err != nil {
 		return nil, err
 	}
-	return serveOffline(ctx, s, request, provider.ValidateDescribeEmbeddingTargetRequest, provider.ValidateEmbeddingTargetObjects, owner.DescribeEmbeddingTarget)
+	return serveOffline(ctx, s, request, provider.ValidateDescribeEmbeddingTargetRequest, provider.ValidateEmbeddingTargetObjectsReply, owner.DescribeEmbeddingTarget)
 }
 
 func (s *serverAdapter) ResolveEmbeddingRelations(ctx context.Context, request *protocol.ResolveEmbeddingRelationsRequest) (*protocol.EmbeddingRelations, error) {

@@ -62,6 +62,14 @@ func ValidateEmbeddingSourcePage(request *protocol.ScanEmbeddingSourceRequest, r
 	if err := ValidateScanEmbeddingSourceRequest(request); err != nil {
 		return err
 	}
+	return ValidateEmbeddingSourcePageReply(request, result)
+}
+
+// ValidateEmbeddingSourcePageReply is [ValidateEmbeddingSourcePage] for a request that [ValidateScanEmbeddingSourceRequest] accepted
+// and that has not changed since: it checks the reply and not the
+// request again. The SDK's client and server validate each request once
+// and call it for the reply.
+func ValidateEmbeddingSourcePageReply(request *protocol.ScanEmbeddingSourceRequest, result *protocol.EmbeddingSourcePage) error {
 	if len(result.GetRows()) > int(request.GetMaxRows()) {
 		return fmt.Errorf("%w: a source page holds more rows than its bound", ErrProtocol)
 	}
@@ -108,6 +116,14 @@ func ValidateEmbeddingSourceRows(request *protocol.ReadEmbeddingSourceRowsReques
 	if err := ValidateReadEmbeddingSourceRowsRequest(request); err != nil {
 		return err
 	}
+	return ValidateEmbeddingSourceRowsReply(request, result)
+}
+
+// ValidateEmbeddingSourceRowsReply is [ValidateEmbeddingSourceRows] for a request that [ValidateReadEmbeddingSourceRowsRequest] accepted
+// and that has not changed since: it checks the reply and not the
+// request again. The SDK's client and server validate each request once
+// and call it for the reply.
+func ValidateEmbeddingSourceRowsReply(request *protocol.ReadEmbeddingSourceRowsRequest, result *protocol.EmbeddingSourceRows) error {
 	if result == nil {
 		return fmt.Errorf("%w: reread source rows are missing", ErrProtocol)
 	}
@@ -293,6 +309,14 @@ func ValidateCommittedEmbeddingBatch(request *protocol.CommitEmbeddingBatchReque
 	if err := ValidateCommitEmbeddingBatchRequest(request); err != nil {
 		return err
 	}
+	return ValidateCommittedEmbeddingBatchReply(request, result)
+}
+
+// ValidateCommittedEmbeddingBatchReply is [ValidateCommittedEmbeddingBatch] for a request that [ValidateCommitEmbeddingBatchRequest] accepted
+// and that has not changed since: it checks the reply and not the
+// request again. The SDK's client and server validate each request once
+// and call it for the reply.
+func ValidateCommittedEmbeddingBatchReply(request *protocol.CommitEmbeddingBatchRequest, result *protocol.EmbeddingWriteResult) error {
 	if err := validateEmbeddingWriteResult(request.GetRequestId(), writeShape{compares: true, payload: payloadRecords}, result); err != nil {
 		return err
 	}
@@ -358,6 +382,14 @@ func ValidateEmbeddingVerificationPage(request *protocol.ReadEmbeddingVerificati
 	if err := ValidateReadEmbeddingVerificationRequest(request); err != nil {
 		return err
 	}
+	return ValidateEmbeddingVerificationPageReply(request, result)
+}
+
+// ValidateEmbeddingVerificationPageReply is [ValidateEmbeddingVerificationPage] for a request that [ValidateReadEmbeddingVerificationRequest] accepted
+// and that has not changed since: it checks the reply and not the
+// request again. The SDK's client and server validate each request once
+// and call it for the reply.
+func ValidateEmbeddingVerificationPageReply(request *protocol.ReadEmbeddingVerificationRequest, result *protocol.EmbeddingVerificationPage) error {
 	if len(result.GetRows()) > int(request.GetMaxRows()) {
 		return fmt.Errorf("%w: a verification page holds more rows than its bound", ErrProtocol)
 	}
@@ -418,6 +450,14 @@ func ValidateEmbeddingSearchResult(request *protocol.SearchEmbeddingsRequest, re
 	if err := ValidateSearchEmbeddingsRequest(request); err != nil {
 		return err
 	}
+	return ValidateEmbeddingSearchResultReply(request, result)
+}
+
+// ValidateEmbeddingSearchResultReply is [ValidateEmbeddingSearchResult] for a request that [ValidateSearchEmbeddingsRequest] accepted
+// and that has not changed since: it checks the reply and not the
+// request again. The SDK's client and server validate each request once
+// and call it for the reply.
+func ValidateEmbeddingSearchResultReply(request *protocol.SearchEmbeddingsRequest, result *protocol.EmbeddingSearchResult) error {
 	switch result.GetOutcome() {
 	case protocol.EmbeddingSearchResult_COMPLETED:
 		if result.GetMessage() != "" || result.GetIndexUsed() && request.GetSpec().GetTarget().GetIndexMethod() == "" {

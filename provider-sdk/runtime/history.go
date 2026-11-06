@@ -73,7 +73,7 @@ func (c *Client) ReadHistory(ctx context.Context, request *protocol.ReadHistoryR
 	if err != nil {
 		return nil, remoteError(call, c.description, "read history", err)
 	}
-	if err := provider.ValidateHistorySnapshot(request, result); err != nil {
+	if err := provider.ValidateHistorySnapshotReply(request, result); err != nil {
 		return nil, err
 	}
 	return proto.CloneOf(result), nil
@@ -94,7 +94,7 @@ func (s *serverAdapter) ReadHistory(ctx context.Context, request *protocol.ReadH
 	if err != nil {
 		return nil, err
 	}
-	if err := provider.ValidateHistorySnapshot(request, result); err != nil {
+	if err := provider.ValidateHistorySnapshotReply(request, result); err != nil {
 		return nil, status.Error(codes.Internal, "provider returned an invalid history snapshot")
 	}
 	return proto.CloneOf(result), nil

@@ -73,6 +73,7 @@ func ValidateEncodeSourceRequest(description *protocol.Description, request *pro
 		bindings[binding.GetId()] = binding
 	}
 	ids := make(map[string]bool)
+	checks := new(targetChecks)
 	for _, value := range request.GetValues() {
 		// The envelope check below refuses an empty ID.
 		id := value.GetValue().GetId()
@@ -80,7 +81,7 @@ func ValidateEncodeSourceRequest(description *protocol.Description, request *pro
 			return encodeError("a value needs a unique ID")
 		}
 		ids[id] = true
-		if err := validateEncodeValue(description, request, bindings, value); err != nil {
+		if err := validateEncodeValue(checks, description, request, bindings, value); err != nil {
 			return err
 		}
 	}
@@ -95,12 +96,14 @@ func ValidateEncodeSourceRequest(description *protocol.Description, request *pro
 	return validateEncodeColumns(request, bindings)
 }
 
-func validateEncodeValue(description *protocol.Description, request *protocol.EncodeSourceRequest, bindings map[string]*protocol.SourceBinding, value *protocol.EncodeSourceValue) error {
+func validateEncodeValue(
+	checks *targetChecks, description *protocol.Description, request *protocol.EncodeSourceRequest, bindings map[string]*protocol.SourceBinding, value *protocol.EncodeSourceValue,
+) error {
 	normalized := value.GetValue()
 	envelope := normalized.GetValue()
 	normalization := &protocol.NormalizeValuesRequest{Engine: request.GetEngine(), TargetFeatures: request.GetTargetFeatures(),
 		Values: []*protocol.ValueInput{{Id: normalized.GetId(), Representation: protocol.ValueInput_DESIRED, Value: envelope}}}
-	if err := ValidateNormalizedValues(description, normalization, &protocol.NormalizedValues{Complete: true, Values: []*protocol.NormalizedValue{normalized}}); err != nil {
+	if err := validateNormalizedValues(checks, description, normalization, &protocol.NormalizedValues{Complete: true, Values: []*protocol.NormalizedValue{normalized}}); err != nil {
 		return err
 	}
 	owner := envelope.GetOwner()
@@ -153,6 +156,14 @@ func ValidateEncodedSource(description *protocol.Description, request *protocol.
 	if err := ValidateEncodeSourceRequest(description, request); err != nil {
 		return err
 	}
+	return ValidateEncodedSourceReply(description, request, result)
+}
+
+// ValidateEncodedSourceReply is [ValidateEncodedSource] for a request that [ValidateEncodeSourceRequest] accepted
+// with description and that has not changed since: it checks the reply and not the
+// request again. The SDK's client and server validate each request once
+// and call it for the reply.
+func ValidateEncodedSourceReply(description *protocol.Description, request *protocol.EncodeSourceRequest, result *protocol.EncodedSource) error {
 	if !result.GetComplete() {
 		return encodeError("incomplete encoding")
 	}

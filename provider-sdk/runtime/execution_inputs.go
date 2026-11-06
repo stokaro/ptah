@@ -14,14 +14,14 @@ import (
 // DescribeExecutionInputs discovers references before plan approval. It never
 // resolves input values; invalid or canceled discovery exposes no prefix.
 func (c *Client) DescribeExecutionInputs(ctx context.Context, request *protocol.DescribeExecutionInputsRequest) (*protocol.ExecutionInputs, error) {
-	return callOffline(ctx, c.description, proto.CloneOf(request), "describe execution inputs", provider.ValidateExecutionInputsRequest, provider.ValidateExecutionInputs, c.rpc.DescribeExecutionInputs)
+	return callOffline(ctx, c.description, proto.CloneOf(request), "describe execution inputs", provider.ValidateExecutionInputsRequest, provider.ValidateExecutionInputsReply, c.rpc.DescribeExecutionInputs)
 }
 
 func (s *serverAdapter) DescribeExecutionInputs(ctx context.Context, request *protocol.DescribeExecutionInputsRequest) (*protocol.ExecutionInputs, error) {
 	if nilService(s.server.ExecutionInputs) {
 		return nil, unavailable("execution input discovery")
 	}
-	return serveOffline(ctx, s, request, provider.ValidateExecutionInputsRequest, provider.ValidateExecutionInputs, s.server.ExecutionInputs.DescribeExecutionInputs)
+	return serveOffline(ctx, s, request, provider.ValidateExecutionInputsRequest, provider.ValidateExecutionInputsReply, s.server.ExecutionInputs.DescribeExecutionInputs)
 }
 
 func (s *serverAdapter) checkExecutionInputs(ctx context.Context, request *protocol.ExecuteRequest) error {
