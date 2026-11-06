@@ -1399,6 +1399,12 @@ func (p *Planner) splitIndexAdditions(diff *difftypes.SchemaDiff) (ahead, others
 // dropped, for the removal step to leave out.
 func indexesTakingOver(result []ast.Node, diff *difftypes.SchemaDiff) ([]ast.Node, map[difftypes.IndexRef]struct{}) {
 	constraintBacked := diff.ConstraintBackedIndexRemovalSet()
+	uniques := make(map[difftypes.IndexRef]struct{})
+	for _, info := range diff.ConstraintsRemoved {
+		if strings.EqualFold(info.Type, "UNIQUE") {
+			uniques[difftypes.IndexRef{Name: info.Name, TableName: info.TableName}] = struct{}{}
+		}
+	}
 	dropped := make(map[difftypes.IndexRef]struct{})
 	for _, change := range diff.IndexesAdded {
 		if len(change.Replaces) == 0 {
@@ -1411,7 +1417,8 @@ func indexesTakingOver(result []ast.Node, diff *difftypes.SchemaDiff) ([]ast.Nod
 		for _, ref := range change.Replaces {
 			op.Drops = append(op.Drops, ref.Name)
 			_, ownedByConstraint := constraintBacked[ref]
-			op.DropsUniqueConstraint = op.DropsUniqueConstraint || ownedByConstraint
+			_, uniqueConstraint := uniques[ref]
+			op.DropsUniqueConstraint = op.DropsUniqueConstraint || ownedByConstraint || uniqueConstraint
 			dropped[ref] = struct{}{}
 		}
 		result = append(result, &ast.AlterTableNode{Name: change.TableName, Operations: []ast.AlterOperation{op}})
@@ -1763,6 +1770,7 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	alreadyDropped := make(map[constraintHostKey]struct{}, len(fkPlan.dropped))
 	maps.Copy(alreadyDropped, fkPlan.dropped)
 	maps.Copy(alreadyDropped, keyrelease.DroppedWithColumns(diff, p.targetDialect()))
+	maps.Copy(alreadyDropped, keyrelease.UniquesTakenOver(diff, p.targetDialect()))
 	maps.Copy(alreadyDropped, released.ConstraintSet())
 	result, err = p.addNewConstraints(result, diff, alreadyDropped, released.IndexSet())
 	if err != nil {

@@ -87,8 +87,12 @@ func ForeignKeyIndexesStaying(database *catalog.Database, diff *difftypes.Schema
 		return
 	}
 	removedConstraints := make(map[difftypes.ConstraintIdentity]bool, len(diff.ConstraintsRemoved))
+	removedUniques := make(map[difftypes.ConstraintIdentity]bool)
 	for _, info := range diff.ConstraintsRemoved {
 		removedConstraints[info.Identity] = true
+		if strings.EqualFold(info.Type, "UNIQUE") {
+			removedUniques[info.Identity] = true
+		}
 	}
 	removedIndexes := make(map[difftypes.IndexRef]difftypes.IndexRef, len(diff.IndexesRemoved))
 	for _, ref := range diff.IndexesRemoved {
@@ -122,8 +126,10 @@ func ForeignKeyIndexesStaying(database *catalog.Database, diff *difftypes.Schema
 			Index:     schemamodel.Index{Name: name, Fields: slices.Clone(key.ColumnNamesOrDefault())},
 		}
 		for _, index := range under {
-			identity := indexscope.IdentityKeyWithSemantics(semantics, difftypes.IndexRef{Name: index.Name, TableName: index.QualifiedTableName()})
-			if ref, removed := removedIndexes[identity]; removed {
+			ref := difftypes.IndexRef{Name: index.Name, TableName: index.QualifiedTableName()}
+			if removed, listed := removedIndexes[indexscope.IdentityKeyWithSemantics(semantics, ref)]; listed {
+				change.Replaces = append(change.Replaces, removed)
+			} else if removedUniques[constraintIdentity(ref.TableName, ref.Name, semantics)] {
 				change.Replaces = append(change.Replaces, ref)
 			}
 		}

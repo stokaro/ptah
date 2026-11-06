@@ -58,6 +58,31 @@ func TestSchemaApplyKeptForeignKeyIndexE2E_HappyPath(t *testing.T) {
 			want:    "a_fk(pid) | a_fk",
 		},
 		{
+			name:    "an index of the author's own name, on a table that loses a column",
+			built:   "CREATE TABLE child (id bigint PRIMARY KEY, pid bigint, qid bigint, KEY cover (pid), CONSTRAINT a_fk FOREIGN KEY (pid) REFERENCES parent (id));\n",
+			desired: "CREATE TABLE child (id bigint PRIMARY KEY, pid bigint, CONSTRAINT a_fk FOREIGN KEY (pid) REFERENCES parent (id));\n",
+			want:    "a_fk(pid) | a_fk",
+		},
+		{
+			name:    "a wider index over the column that leaves",
+			built:   "CREATE TABLE child (id bigint PRIMARY KEY, pid bigint, qid bigint, KEY w (pid, qid), CONSTRAINT a_fk FOREIGN KEY (pid) REFERENCES parent (id));\n",
+			desired: "CREATE TABLE child (id bigint PRIMARY KEY, pid bigint, CONSTRAINT a_fk FOREIGN KEY (pid) REFERENCES parent (id));\n",
+			want:    "a_fk(pid) | a_fk",
+		},
+		{
+			name:    "a unique index, on a table that loses a column",
+			built:   "CREATE TABLE child (id bigint PRIMARY KEY, pid bigint, qid bigint, UNIQUE KEY u (pid), CONSTRAINT a_fk FOREIGN KEY (pid) REFERENCES parent (id));\n",
+			desired: "CREATE TABLE child (id bigint PRIMARY KEY, pid bigint, CONSTRAINT a_fk FOREIGN KEY (pid) REFERENCES parent (id));\n",
+			want:    "a_fk(pid) | a_fk",
+		},
+		{
+			name: "the removed key shared its index with the kept key, on a table that loses a column",
+			built: "CREATE TABLE child (id bigint PRIMARY KEY, pid bigint, qid bigint, CONSTRAINT a_fk FOREIGN KEY (pid) REFERENCES parent (id), " +
+				"CONSTRAINT b_fk FOREIGN KEY (pid) REFERENCES parent (code));\n",
+			desired: "CREATE TABLE child (id bigint PRIMARY KEY, pid bigint, CONSTRAINT a_fk FOREIGN KEY (pid) REFERENCES parent (id));\n",
+			want:    "a_fk(pid) | a_fk",
+		},
+		{
 			name:    "a wider index of the author's own name",
 			built:   "CREATE TABLE child (id bigint PRIMARY KEY, pid bigint, qid bigint, KEY w (pid, qid), CONSTRAINT a_fk FOREIGN KEY (pid) REFERENCES parent (id));\n",
 			desired: keeps,
