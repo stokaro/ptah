@@ -229,9 +229,9 @@ type DiffResult struct {
 }
 
 // devSchemaReader reads the replayed dev database at an ALREADY RESOLVED read
-// scope. The names come from [schemascope.ReadNames] at the call site, not from
-// here, so this verb reads the same schemas `schema diff`, `schema inspect` and
-// `schema apply` read (stokaro/ptah#1276).
+// scope. The names come from [schemascope.ComparisonReadNames] at the call site, not
+// from here, so this verb reads the same schemas `schema diff` and `schema apply` read
+// (stokaro/ptah#1276).
 type devSchemaReader func(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
@@ -781,7 +781,7 @@ func compareReplayedState(
 		selectext.Runtime
 	},
 ) (*catalog.Database, *difftypes.SchemaDiff, error) {
-	readNames, err := schemascope.ReadNames(ctx, replayConn.Info(), schemas, replayConn)
+	readNames, err := schemascope.ComparisonReadNames(ctx, replayConn.Info(), schemas, replayConn, desired)
 	if err != nil {
 		return nil, nil, fmt.Errorf("read dev database schema: %w", err)
 	}
