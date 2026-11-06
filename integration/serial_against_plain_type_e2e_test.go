@@ -117,3 +117,25 @@ func serialPlainSchemaFile(c *qt.C, desired string) string {
 	c.Assert(os.WriteFile(schema, []byte(desired), 0o600), qt.IsNil)
 	return schema
 }
+
+// TestMigrationsSerialAgainstPlainTypeE2E_TheRollbackMovesTheSequencePastTheRows rolls back
+// the removal of a serial column's sequence on a table that holds rows. The sequence the
+// rollback builds starts at the beginning, so without the same `setval` the forward plan
+// writes for a new serial column the next insert collides with a row.
+func TestMigrationsSerialAgainstPlainTypeE2E_TheRollbackMovesTheSequencePastTheRows(t *testing.T) {
+	c := qt.New(t)
+	target := databaseBuiltFrom(c, "CREATE TABLE parent (id bigserial PRIMARY KEY, code int);\nINSERT INTO parent (code) VALUES (1), (2), (3);\n")
+	dir := filepath.Join(c.TempDir(), "migrations")
+	c.Assert(os.MkdirAll(dir, 0o750), qt.IsNil)
+	schema := filepath.Join(c.TempDir(), "schema.sql")
+	c.Assert(os.WriteFile(schema, []byte("CREATE TABLE parent (id bigint PRIMARY KEY, code int);\n"), 0o600), qt.IsNil)
+	generated := runPtahIn(c, "migrations", "generate", "--db-url", target, "--schema-file", schema, "--schemas", "public", "--migrations-dir", dir, "--name", "serial")
+	c.Assert(generated.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", generated.Stdout, generated.Stderr))
+	up := runPtahIn(c, "migrations", "up", "--db-url", target, "--migrations-dir", dir, "--allow-destructive")
+	c.Assert(up.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", up.Stdout, up.Stderr))
+
+	down := runPtahIn(c, "migrations", "down", "--db-url", target, "--migrations-dir", dir, "--target", "0", "--confirm")
+
+	c.Assert(down.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", down.Stdout, down.Stderr))
+	c.Assert(readInt(c, target, "INSERT INTO parent (code) VALUES (4) RETURNING id"), qt.Equals, 4)
+}

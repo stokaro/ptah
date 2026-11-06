@@ -4,6 +4,7 @@ package generator
 // prior shape from the schema the diff was built against.
 
 import (
+	"regexp"
 	"slices"
 	"strings"
 
@@ -164,9 +165,10 @@ func reverseColumnDiffs(
 			desired.DefaultExpr = restored
 		}
 		reversed[i] = difftypes.ColumnDiff{
-			ColumnName: columnDiff.ColumnName,
-			Changes:    reversedChanges,
-			Desired:    desired,
+			ColumnName:     columnDiff.ColumnName,
+			Changes:        reversedChanges,
+			Desired:        desired,
+			SerialSequence: restoredSerialSequence(columnDiff.Changes["default_expr"]),
 			// The rollback alters the same sequence of the same database,
 			// whose restart is replayed by its ALTER as by the forward one.
 			CurrentSequenceRestart: columnDiff.CurrentSequenceRestart,
@@ -174,6 +176,21 @@ func reverseColumnDiffs(
 	}
 	return reversed
 }
+
+// restoredSerialSequence names the sequence a rollback builds again for a column the
+// forward plan took a serial default from, or "" for any other change. The new sequence
+// starts at the beginning while the table holds rows, so the planner moves it past them.
+func restoredSerialSequence(change string) string {
+	matched := restoredSequencePattern.FindStringSubmatch(change)
+	if matched == nil {
+		return ""
+	}
+	return matched[1]
+}
+
+// restoredSequencePattern reads the bare sequence name out of the default a forward
+// change took away.
+var restoredSequencePattern = regexp.MustCompile(`^nextval\('(?:"?[^".']+"?\.)?"?([^".']+)"?'(?:::regclass)?\) -> $`)
 
 // priorTable is the table of the pre-change database a forward diff entry
 // names, or nil when that database holds no single table under the name.
