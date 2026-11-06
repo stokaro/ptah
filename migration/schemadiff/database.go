@@ -1013,6 +1013,9 @@ func appendGeneratedIdentifierNames(
 			names = append(names, part.Name)
 		}
 	}
+	for _, constraint := range desired.Constraints {
+		names = append(names, constraint.Name)
+	}
 	return names
 }
 
@@ -1038,6 +1041,12 @@ func appendDatabaseIdentifierNames(
 		for _, part := range index.Parts {
 			names = append(names, part.Name)
 		}
+	}
+	// A constraint's name compares under the index rule. Left out, it has no answer from
+	// the server, and an unanswered name may collide with any other: adding a constraint
+	// to a table that holds one read as a conflict.
+	for _, constraint := range database.Constraints {
+		names = append(names, constraint.Name)
 	}
 	return names
 }
