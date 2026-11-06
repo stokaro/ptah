@@ -396,6 +396,13 @@ the `ALTER COLUMN`. It does this for a longer length of the same type too,
 which the server would accept with the default in place. A nullability change
 leaves the default where it is.
 
+A temporal column's precision is compared. `datetime2`, `datetimeoffset` and `time`
+hold seven fractional-second digits where a column declares none, so `datetime2` and
+`datetime2(7)` are one type and `datetime2(3)` is another. A plan that lowers a
+precision, or moves a column to `datetime`, `smalldatetime` or `date`, is rated
+destructive, since the server rounds the digits away without a word. See
+[how a column change is rated](../../direct/plan-and-approve/#how-a-column-change-is-rated).
+
 ## Routines
 
 A function or a procedure is written `CREATE OR ALTER`. Its header's `WITH`

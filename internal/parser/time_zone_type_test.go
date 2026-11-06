@@ -188,3 +188,34 @@ func TestParseColumnType_ATruncatedQualifierDoesNotEatTheNextColumn(t *testing.T
 		})
 	}
 }
+
+// TestParseColumnType_AnIntervalKeepsItsFields reads what pg_dump writes for an interval
+// column that keeps some of its fields. The fields are the type: refused at parse, a
+// dump of such a column could not be read back.
+func TestParseColumnType_AnIntervalKeepsItsFields(t *testing.T) {
+	tests := []struct {
+		name string
+		sql  string
+		want string
+	}{
+		{name: "alone", sql: `CREATE TABLE z (id BIGINT, a interval);`, want: "interval"},
+		{name: "a precision", sql: `CREATE TABLE z (id BIGINT, a interval(3));`, want: "interval(3)"},
+		{name: "one field", sql: `CREATE TABLE z (id BIGINT, a interval year);`, want: "interval year"},
+		{name: "year to month", sql: `CREATE TABLE z (id BIGINT, a interval year to month);`, want: "interval year to month"},
+		{name: "hour to minute", sql: `CREATE TABLE z (id BIGINT, a INTERVAL HOUR TO MINUTE);`, want: "INTERVAL HOUR TO MINUTE"},
+		{name: "day to second", sql: `CREATE TABLE z (id BIGINT, a interval day to second);`, want: "interval day to second"},
+		{name: "a precision behind the fields", sql: `CREATE TABLE z (id BIGINT, a interval day to second(3));`, want: "interval day to second(3)"},
+		{name: "a precision behind one field", sql: `CREATE TABLE z (id BIGINT, a interval second(3));`, want: "interval second(3)"},
+		{name: "Oracle's leading digits", sql: `CREATE TABLE z (id BIGINT, a INTERVAL DAY(2) TO SECOND(6));`, want: "INTERVAL DAY(2) TO SECOND(6)"},
+		{name: "Oracle's year", sql: `CREATE TABLE z (id BIGINT, a INTERVAL YEAR(4) TO MONTH);`, want: "INTERVAL YEAR(4) TO MONTH"},
+		{name: "a constraint behind the fields", sql: `CREATE TABLE z (id BIGINT, a interval year to month NOT NULL);`, want: "interval year to month"},
+		{name: "a constraint with none", sql: `CREATE TABLE z (id BIGINT, a interval NOT NULL);`, want: "interval"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(columnTypeOf(c, test.sql), qt.Equals, test.want)
+		})
+	}
+}

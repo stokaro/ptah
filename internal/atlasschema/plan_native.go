@@ -87,10 +87,10 @@ func classifyPlanUnits(
 	runtime PlanRuntime,
 	units []renderer.Fragment,
 	dialect string,
-	owned []safety.StatementAssessment,
+	owned, columns []safety.StatementAssessment,
 ) (statements []PlanStatement, destructive bool, err error) {
 	var sqlText []string
-	var sqlOwned []safety.StatementAssessment
+	var sqlOwned, sqlColumns []safety.StatementAssessment
 	var natives []renderer.Fragment
 	var nativeOwned []safety.StatementAssessment
 	var payloads []schemaext.Payload
@@ -102,13 +102,18 @@ func classifyPlanUnits(
 		if unit.Native == nil {
 			sqlText = append(sqlText, unit.SQL)
 			sqlOwned = append(sqlOwned, verdict)
+			var column safety.StatementAssessment
+			if i < len(columns) {
+				column = columns[i]
+			}
+			sqlColumns = append(sqlColumns, column)
 			continue
 		}
 		natives = append(natives, unit)
 		nativeOwned = append(nativeOwned, verdict)
 		payloads = append(payloads, unit.Native)
 	}
-	sqlStatements, _, err := classifyPlanStatements(ctx, runtime, sqlText, dialect, sqlOwned)
+	sqlStatements, _, err := classifyPlanStatements(ctx, runtime, sqlText, dialect, sqlOwned, sqlColumns)
 	if err != nil {
 		return nil, false, err
 	}

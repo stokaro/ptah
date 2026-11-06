@@ -259,7 +259,7 @@ func TestAssessRenderedSplitsPostgresModifyColumnStatements(t *testing.T) {
 	}
 	c.Assert(byStatement["type"], qt.Equals, safety.Destructive)
 	c.Assert(byStatement["drop_not_null"], qt.Equals, safety.Destructive)
-	c.Assert(byStatement["drop_default"], qt.Equals, safety.Safe)
+	c.Assert(byStatement["drop_default"], qt.Equals, safety.Warning)
 }
 
 func TestIsTypeNarrowing(t *testing.T) {

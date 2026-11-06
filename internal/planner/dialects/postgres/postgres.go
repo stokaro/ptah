@@ -939,6 +939,7 @@ func (p *Planner) modifyExistingTableColumns(
 				Operations: []ast.AlterOperation{&ast.ModifyColumnOperation{
 					Column:              columnNode,
 					PreviousType:        previousColumnType(colDiff.Changes["type"]),
+					TypeNarrows:         colDiff.TypeNarrows,
 					PreviousNullable:    previousColumnNullable(colDiff.Changes["nullable"]),
 					HasPreviousNullable: colDiff.Changes["nullable"] != "",
 					PreviousIdentity:    previousColumnType(colDiff.Changes["identity"]),

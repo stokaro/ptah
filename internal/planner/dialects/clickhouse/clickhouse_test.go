@@ -893,3 +893,60 @@ func withDeclaredTables(diff *difftypes.SchemaDiff, desired *schemamodel.Databas
 	completed.DeclaredTables = desired.Tables
 	return &completed
 }
+
+// TestGenerateMigrationAST_CarriesTheComparisonsAnswerOnANarrowing passes on what the
+// comparison established about a type change, which migration/safety reads because a
+// transition alone cannot always say.
+func TestGenerateMigrationAST_CarriesTheComparisonsAnswerOnANarrowing(t *testing.T) {
+	tests := []struct {
+		name    string
+		narrows bool
+	}{
+		{name: "narrows", narrows: true},
+		{name: "does not narrow", narrows: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			column := schemamodel.Field{StructName: "Existing", Name: "c", Type: "DateTime", Nullable: true}
+			captured := capturedColumnFixture(schemamodel.Table{Name: "existing", StructName: "Existing"})
+			diff := &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
+				TableName: "existing", Desired: captured.Desired, Current: captured.Current,
+				ColumnsModified: []difftypes.ColumnDiff{{
+					ColumnName:  "c",
+					TypeNarrows: test.narrows,
+					Desired:     column,
+					Changes:     map[string]string{"type": "DateTime64(3) -> DateTime"},
+				}},
+			}}}
+			gen := &schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "Existing", Name: "existing"}},
+				Fields: []schemamodel.Field{column},
+			}
+
+			nodes, err := clickhouse.New().GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()),
+				withDeclaredTables(diff, gen),
+			)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(modifyColumnOf(nodes).TypeNarrows, qt.Equals, test.narrows)
+		})
+	}
+}
+
+// modifyColumnOf is the one column modification among nodes.
+func modifyColumnOf(nodes []ast.Node) *ast.ModifyColumnOperation {
+	for _, node := range nodes {
+		alter, isAlter := node.(*ast.AlterTableNode)
+		if !isAlter {
+			continue
+		}
+		for _, operation := range alter.Operations {
+			if modify, isModify := operation.(*ast.ModifyColumnOperation); isModify {
+				return modify
+			}
+		}
+	}
+	return &ast.ModifyColumnOperation{}
+}

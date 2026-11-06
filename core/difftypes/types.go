@@ -1824,6 +1824,11 @@ type ColumnDiff struct {
 	// Format: "change_type" -> "old_value -> new_value"
 	Changes map[string]string `json:"changes"`
 
+	// TypeNarrows reports that a value the column holds may not fit its new type, as
+	// the engine reads the two: a bare `timestamp` holds six fractional-second digits
+	// on PostgreSQL and none on MySQL, so the transition alone cannot say.
+	TypeNarrows bool `json:"type_narrows,omitempty"`
+
 	// CommentChange carries the column's comment transition, and is nil when
 	// the comment is unchanged.
 	//

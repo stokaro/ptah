@@ -272,6 +272,45 @@ digest covers the bytes of the file `--output` writes, and the document carries
 the plan's content rather than those bytes, so the file is what gets approved
 and applied.
 
+### How a column change is rated
+
+A column change is rated by what the comparison knows about the column, because
+its SQL cannot say. `ALTER COLUMN c TYPE timestamp(0)` reads the same over a
+`timestamp(6)` as over a `date`, and MySQL's `MODIFY COLUMN c bigint` reads the
+same whether it gives up a `NOT NULL`, a default or nothing.
+
+| Rating | Change | What happens to a row or a writer |
+| --- | --- | --- |
+| destructive | The new type cannot hold every value of the old one: a shorter string, a smaller integer or decimal, a lower temporal precision or range, or fewer interval fields | The reason reads `column type narrows from X to Y`. `timestamp(6)` under `timestamp(0)` loses `.123456`, and a `timestamp` under `date` loses its time of day |
+| destructive | `DROP NOT NULL`, also where a restated column gives it up | A writer can store `NULL` |
+| destructive | `DROP IDENTITY` | The server drops the sequence with it, as `DROP SEQUENCE` does, and an insert that leaves the column out fails |
+| warning | `DROP DEFAULT`, also where a restated column gives it up | No row changes. An insert that leaves the column out fails on `NOT NULL` or writes `NULL` |
+| warning | `SET GENERATED`, and `ADD GENERATED ALWAYS` | No row changes. `ALWAYS` refuses an insert that names the column, and `BY DEFAULT` accepts one whose value can collide with a later one |
+| safe | A wider type, or a higher precision | Every value survives. `ptah migrations plan` reports it as a warning, because the column's type still changes. One type in two spellings plans nothing, so nothing is rated |
+
+A temporal type that declares no precision holds what its engine says, so
+`timestamp(3)` under `timestamp` loses digits on MySQL and gains them on
+PostgreSQL:
+
+| Engine | Types | Digits when none are declared |
+| --- | --- | --- |
+| PostgreSQL, CockroachDB, YugabyteDB | `timestamp`, `timestamptz`, `time`, `timetz`, `interval` | 6 |
+| MySQL, MariaDB | `timestamp`, `datetime`, `time` | 0 |
+| SQL Server | `datetime2`, `datetimeoffset`, `time` | 7 |
+| ClickHouse | `DateTime` holds none, and a bare `DateTime64` is `DateTime64(3)` | 0 or 3 |
+
+Oracle, Spanner and SQLite compare no temporal precision, so a change of one
+alone plans nothing there. Oracle refuses to lower one on a column that holds a
+row (`ORA-30082`), Spanner has one timestamp type, and SQLite stores the
+declaration without reading it. A change of type on these engines is rated as
+above. Oracle's `TIMESTAMP(0)` under `DATE` keeps every second and is rated
+destructive all the same, since the rating reads the two as a time of day going
+away.
+
+`ptah schema apply` prints the planned SQL and no rating, so read the plan to see
+one. Plan with `ptah schema plan`, review the file, and run it with `ptah schema
+apply --plan`.
+
 ## List the approvers
 
 Verification reads an OpenSSH `allowed_signers` file, one line per approver.

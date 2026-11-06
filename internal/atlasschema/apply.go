@@ -168,6 +168,11 @@ type ApplyPlan struct {
 	annotations  []renderer.Annotation
 	transactions [][]plangraph.Transaction
 	owned        []safety.StatementAssessment
+	// columns holds, position for position with the planned statements, what a column
+	// modification establishes that a statement's words cannot say; see
+	// [safety.ColumnVerdicts]. It stays apart from owned because a plan marks a
+	// statement an owner judged, and an edit to such a plan fails closed.
+	columns []safety.StatementAssessment
 	// texts is, for each unit, the text its owner writes the operation as,
 	// where the unit is native and the owner has a text form for it, and
 	// "" otherwise. It is a display projection, as a migration file holds the

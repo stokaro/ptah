@@ -101,6 +101,14 @@ func captureApplyPlan(info catalog.ServerInfo, rendered planner.RenderedPlan, te
 	if err != nil {
 		return ApplyPlan{}, err
 	}
+	statements := make([]string, len(plan.units))
+	for i, unit := range plan.units {
+		statements[i] = unit.SQL
+	}
+	plan.columns, err = safety.ColumnVerdicts(rendered.Request.Nodes, indexes, statements)
+	if err != nil {
+		return ApplyPlan{}, err
+	}
 	return plan, nil
 }
 

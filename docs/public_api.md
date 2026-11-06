@@ -2714,7 +2714,19 @@ outside the nodes is refused with `renderer.ErrInvalidResult`. `Fold` attaches
 a verdict to the same statement classified from its text: the severity only
 rises and the strongest access assessment is kept.
 
-A saved schema plan uses `OwnerVerdicts` and `Fold`. The JSON plan marks each
+`safety.ColumnVerdicts` takes the planned nodes, that provenance and the statements,
+and returns, position for position, what a column modification establishes that a
+statement's words cannot say, or a zero assessment: a verdict the node reports as
+`Destructive`, or a dropped default. `ALTER COLUMN c TYPE timestamp(0)` reads the same
+whatever type it replaces. A node that renders several statements gives its verdict
+only to one that changes the type or restates the column. `core/difftypes.ColumnDiff`
+and `core/ast.ModifyColumnOperation` carry `TypeNarrows`, the comparison's answer on
+the target engine, since a temporal type that declares no precision holds what the
+engine says. `safety.IsTypeNarrowing` has no engine, and answers false for a transition
+that declares a precision on one side only.
+
+A saved schema plan uses `OwnerVerdicts`, `ColumnVerdicts` and `Fold`, and the column
+verdict marks no statement `owned`. The JSON plan marks each
 statement an owner operation rendered with `owned` and records `access`,
 `access_reason`, and the owner's higher verdict. Reading a plan refuses an
 unrecognized access value, an access value without its reason, a reason

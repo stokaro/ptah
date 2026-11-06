@@ -94,3 +94,70 @@ func OwnerVerdicts(nodes []ast.Node, statementNodes []int) ([]StatementAssessmen
 	}
 	return verdicts, nil
 }
+
+// ColumnVerdicts returns, for each statement of a plan, what a column modification
+// establishes that the statement's words cannot say, and a zero assessment for any
+// other statement.
+//
+// A statement's words do not name the type it replaces, so ALTER COLUMN ... TYPE
+// timestamp(0) reads the same over a timestamp(6) as over a date. They do not say what
+// a restated column gives up either: MySQL's MODIFY COLUMN c bigint reads the same
+// whether c was NOT NULL, or held a default, or neither. The node knows. An assessment
+// of planned statements by their text folds these in with [Fold] and loses nothing
+// [AssessRenderedWithCapabilities] reports as destructive.
+//
+// A verdict is a column modification the classifier rates Destructive, or a dropped
+// default. A warning that only says a column changes stays out, since a statement reports
+// that by being there, and so does every other operation an ALTER TABLE holds.
+// A node that renders several statements gives its verdict only to one that changes the
+// column's type or restates its definition, as [AssessRenderedWithCapabilities] does. A
+// node holding an owner operation is left to [OwnerVerdicts].
+//
+// nodes are the planned nodes; statementNodes holds, position for position with
+// statements, the index of the node that rendered each one, or -1 for a statement no
+// node rendered. Provenance outside nodes, or lists of different lengths, are refused
+// with [renderer.ErrInvalidResult].
+func ColumnVerdicts(nodes []ast.Node, statementNodes []int, statements []string) ([]StatementAssessment, error) {
+	if len(statementNodes) != len(statements) {
+		return nil, fmt.Errorf("%w: %d statements have provenance for %d", renderer.ErrInvalidResult, len(statements), len(statementNodes))
+	}
+	rendered := make(map[int]int, len(nodes))
+	for _, index := range statementNodes {
+		if index < -1 || index >= len(nodes) {
+			return nil, fmt.Errorf("%w: statement provenance %d is outside the %d planned nodes", renderer.ErrInvalidResult, index, len(nodes))
+		}
+		rendered[index]++
+	}
+	verdicts := make([]StatementAssessment, len(statements))
+	for i, index := range statementNodes {
+		if index == -1 {
+			continue
+		}
+		verdict, established := columnVerdict(nodes[index])
+		if established && (rendered[index] == 1 || isTypeChangeSQL(statements[i])) {
+			verdicts[i] = verdict
+		}
+	}
+	return verdicts, nil
+}
+
+// columnVerdict is what [ColumnVerdicts] takes from one node: the strongest of what its
+// column modifications establish.
+func columnVerdict(node ast.Node) (StatementAssessment, bool) {
+	alter, altersTable := node.(*ast.AlterTableNode)
+	if !altersTable || alter == nil || ast.PlacementOf(node) != ast.NoExtension {
+		return StatementAssessment{}, false
+	}
+	var verdict StatementAssessment
+	for _, operation := range alter.Operations {
+		modify, modifies := operation.(*ast.ModifyColumnOperation)
+		if !modifies {
+			continue
+		}
+		severity, reason := classifyModifyColumn(modify)
+		if severity == Destructive || reason == dropDefaultReason {
+			raiseAssessment(&verdict, StatementAssessment{Severity: severity, Reason: reason})
+		}
+	}
+	return verdict, verdict.Severity != ""
+}
