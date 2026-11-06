@@ -50,12 +50,20 @@ type DatabaseContextResolver interface {
 // ValueContextRequest binds a complete ordered batch to an established receipt.
 // Binding preserves representation, payload ownership, and authored identity.
 // It may complete dependency facts, but it never changes the target context of
-// an already bound value. Services must not retain or mutate request values.
+// an already bound value unless From names it. Services must not retain or
+// mutate request values.
 type ValueContextRequest struct {
 	Target         string
 	Context        DatabaseContext
 	Representation Representation
 	Values         []Value
+	// From is the context a desired value is bound to when the batch moves it
+	// to Context; the zero value moves nothing. A moved value keeps its
+	// payload, and an owner that names From's database names its object
+	// relative to the database it moves to. From and Context must name the
+	// same SourceDatabase, so every authored reference keeps its meaning. A
+	// value bound to any context other than From or Context is refused.
+	From DatabaseContext
 }
 
 // ValueContextService binds model interpretation before dependency consumers

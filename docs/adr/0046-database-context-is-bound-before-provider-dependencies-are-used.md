@@ -195,3 +195,10 @@ runtime, fixture and documentation gates. Pin that published SDK in the host
 and fixture module, then implement the generic binding stage and provider
 adapters. Qualify the combined source, scope, comparison and saved-plan paths
 against live targets. A plugin release is a separate action.
+
+## Amendments
+
+- [ADR 0086](0086-a-rehearsal-moves-the-targets-values-into-its-dev-realm.md)
+  lets a binding move a desired value between two contexts that share a
+  `source_database`, which a rehearsal needs to recreate the target's read in
+  its dev realm. A value bound to any other context still refuses.

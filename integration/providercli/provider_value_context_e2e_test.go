@@ -14,8 +14,10 @@ import (
 
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/schemaload"
+	"ptah.run/internal/valuecontext"
 )
 
 func TestProviderSourceBindingSurvivesCaptureAndRefusesAnotherTarget(t *testing.T) {
@@ -114,4 +116,111 @@ func TestProviderSourceBindingSurvivesCaptureAndRefusesAnotherTarget(t *testing.
 	c.Assert(captured.Subject.Name, qt.Equals, "cleanup")
 	_, err = os.Stat(path)
 	c.Assert(os.IsNotExist(err), qt.IsTrue)
+}
+
+// valueContextFixture is the value-context fixture's runtime and a schema
+// whose table carries a retention facet.
+type valueContextFixture struct {
+	runtime   *engine.Runtime
+	dir, yaml string
+}
+
+func newValueContextFixture(c *qt.C) valueContextFixture {
+	c.Helper()
+	_, runtime := yamlProviderCommand(c, "value-context")
+	dir := c.TempDir()
+	yaml := filepath.Join(dir, "schema.yaml")
+	c.Assert(os.WriteFile(yaml, []byte("tables:\n  records:\n    columns:\n      id: {type: INTEGER}\n    retention: {seconds: 60}\n"), 0o600), qt.IsNil)
+	return valueContextFixture{runtime: runtime, dir: dir, yaml: yaml}
+}
+
+// address names the fixture database name, whose authored references are
+// read against root.
+func (f valueContextFixture) address(name, root string) string {
+	path := filepath.Join(f.dir, name)
+	return (&url.URL{Scheme: "fixture", Path: "/" + strings.TrimPrefix(filepath.ToSlash(path), "/"), RawQuery: url.Values{"source": {root}}.Encode()}).String()
+}
+
+// load is the schema bound to address.
+func (f valueContextFixture) load(c *qt.C, address string) *schemamodel.Database {
+	c.Helper()
+	database, err := schemafile.LoadPath(c.Context(), f.yaml, schemafile.Options{Contexts: f.runtime, DatabaseURL: address, Dialect: "fixture-context",
+		YAML: f.runtime.YAML(), SQL: f.runtime.SQL(), HCL: f.runtime.HCL(), CoverageVocabulary: f.runtime.CoverageVocabulary()})
+	c.Assert(err, qt.IsNil)
+	return database
+}
+
+// boundFacet is the context the schema's retention facet is bound to, and the
+// database of the dependency the provider computed under it.
+func (f valueContextFixture) boundFacet(c *qt.C, database *schemamodel.Database) (schemaext.DatabaseContext, string) {
+	c.Helper()
+	encoded, err := f.runtime.Codecs().EncodeFacets(c.Context(), schemaext.Desired, database.Tables[0].Facets)
+	c.Assert(err, qt.IsNil)
+	var captured struct {
+		Context schemaext.DatabaseContext `json:"context"`
+	}
+	c.Assert(json.Unmarshal(encoded[0].Value.Payload, &captured), qt.IsNil)
+	values, err := database.Tables[0].Facets.Values()
+	c.Assert(err, qt.IsNil)
+	dependencies, err := values[0].(schemaext.Requirer).Requires()
+	c.Assert(err, qt.IsNil)
+	c.Assert(dependencies, qt.HasLen, 1)
+	return captured.Context, dependencies[0].Database.Source
+}
+
+// A value bound to one database moves to another database read against the
+// same root, the way a rehearsal moves the target's schema into its dev
+// realm: the provider binds it again, and the dependency it computes names
+// the database the value moved to.
+func TestProviderMovesValuesToAnotherContextOfTheirRoot_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	f := newValueContextFixture(c)
+	target, realm := f.address("target.db", "/authored"), f.address("realm.db", "/authored")
+	database := f.load(c, target)
+	bound, err := f.runtime.ResolveDatabaseContext(c.Context(), schemaext.DatabaseContextRequest{Target: "fixture-context", Address: realm})
+	c.Assert(err, qt.IsNil)
+
+	moved, err := valuecontext.Move(c.Context(), f.runtime, "fixture-context", target, realm, database)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(moved, qt.IsTrue)
+	context, dependency := f.boundFacet(c, database)
+	c.Assert(context, qt.Equals, bound)
+	c.Assert(dependency, qt.Equals, bound.Database)
+}
+
+// A move between databases whose authored references are read against
+// different roots, and a move of a value bound to neither context, are
+// refused, and the value keeps the binding it had.
+func TestProviderMovesValuesToAnotherContextOfTheirRoot_FailurePath(t *testing.T) {
+	for _, test := range []struct {
+		name, from, to string
+	}{
+		{name: "another root", from: "target.db", to: "other.db"},
+		{name: "a value bound to neither", from: "realm.db", to: "elsewhere.db"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			f := newValueContextFixture(c)
+			target := f.address("target.db", "/authored")
+			database := f.load(c, target)
+			before, _ := f.boundFacet(c, database)
+			roots := map[string]string{"target.db": "/authored", "realm.db": "/authored", "elsewhere.db": "/authored", "other.db": "/other"}
+			resolve := func(name string) schemaext.DatabaseContext {
+				bound, err := f.runtime.ResolveDatabaseContext(c.Context(), schemaext.DatabaseContextRequest{Target: "fixture-context", Address: f.address(name, roots[name])})
+				c.Assert(err, qt.IsNil)
+				return bound
+			}
+			values, err := database.Tables[0].Facets.Values()
+			c.Assert(err, qt.IsNil)
+
+			result, err := f.runtime.BindValueContexts(c.Context(), schemaext.ValueContextRequest{Target: "fixture", Context: resolve(test.to), From: resolve(test.from),
+				Representation: schemaext.Desired, Values: values})
+
+			c.Assert(err, qt.ErrorIs, schemaext.ErrIncompatibleCodec)
+			c.Assert(result, qt.IsNil)
+			after, _ := f.boundFacet(c, database)
+			c.Assert(after, qt.Equals, before)
+		})
+	}
 }

@@ -25,6 +25,7 @@ import (
 	"ptah.run/internal/providerurl"
 	"ptah.run/internal/rolepassword"
 	"ptah.run/internal/sqlident"
+	"ptah.run/internal/valuecontext"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -465,7 +466,7 @@ func rehearseStatementsOnDev(
 	// WithUntrustedSQLSession is what makes an unrestricted rehearsal
 	// impossible to write; the lint above is only a lint.
 	return devConn.WithUntrustedSQLSession(ctx, func(session *dbschema.DatabaseConnection) error {
-		return rehearseOnPreparedDev(ctx, session, baseline, current, txMode, statements, runtime)
+		return rehearseOnPreparedDev(ctx, session, baseline, current, targetConn.Info().URL, txMode, statements, runtime)
 	})
 }
 
@@ -485,6 +486,7 @@ func rehearseOnPreparedDev(
 	devConn *dbschema.DatabaseConnection,
 	baseline devclean.Baseline,
 	current *catalog.Database,
+	targetURL string,
 	txMode migrator.MigrationTxMode,
 	statements []string,
 	runtime engine.SchemaRuntime,
@@ -493,7 +495,7 @@ func rehearseOnPreparedDev(
 	if err := devclean.Reset(ctx, devConn, baseline); err != nil {
 		return &SimulationError{Stage: "reset", Err: err}
 	}
-	if err := recreateCurrentSchema(ctx, devConn, current, baseline, runtime); err != nil {
+	if err := recreateCurrentSchema(ctx, devConn, current, targetURL, baseline, runtime); err != nil {
 		return &SimulationError{Stage: "baseline", Err: err}
 	}
 	if err := applyStatements(ctx, devConn, txMode, statements); err != nil {
@@ -529,10 +531,19 @@ func checkSimulationSchemaScope(devInfo, targetInfo catalog.ServerInfo) error {
 // point. The reset left them in place, and the comparison below does not plan
 // to drop the ones the target lacks: they are the dev database's environment,
 // not a difference from the target. See [devclean.Baseline].
+//
+// targetURL names the database current was read from. An executable provider
+// binds each value it reads to that database, and a dev realm of it binds
+// values to the realm, so the target's values are moved to the realm before
+// the comparison (see [valuecontext.Move]); without the move the provider
+// refuses a comparison that holds values bound to two databases. What the
+// realm does not read is left out of what it recreates (see
+// [devclean.WithoutUnreadObjects]).
 func recreateCurrentSchema(
 	ctx context.Context,
 	devConn *dbschema.DatabaseConnection,
 	current *catalog.Database,
+	targetURL string,
 	baseline devclean.Baseline,
 	runtime engine.SchemaRuntime,
 ) error {
@@ -544,9 +555,16 @@ func recreateCurrentSchema(
 		return err
 	}
 	normalizeBaselineSerialColumns(target, devConn.Info().Dialect)
+	moved, err := valuecontext.Move(ctx, runtime, devConn.Info().Dialect, targetURL, devConn.Info().URL, target)
+	if err != nil {
+		return fmt.Errorf("bind the target's current schema to the dev database: %w", err)
+	}
 	devCurrent, err := dbschema.ReadRehearsalSchemaContext(ctx, devConn)
 	if err != nil {
 		return fmt.Errorf("read dev database schema: %w", err)
+	}
+	if moved {
+		target = devclean.WithoutUnreadObjects(target, devCurrent)
 	}
 	devCurrent = baseline.WithoutEnvironment(devCurrent, devclean.ReadExtensions(current))
 	devCurrent, err = baseline.WithoutStartingPoint(ctx, devCurrent, current, defaultSchemaOf(devConn.Info()), runtime.Selections())

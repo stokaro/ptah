@@ -85,11 +85,16 @@ func (r *Runtime) ResolveDatabaseContext(ctx context.Context, request schemaext.
 // BindValueContexts snapshots all inputs before dispatch and restores their
 // order after owner batches complete. Models without a binding service retain
 // their snapshots. Cancellation or any malformed result discards the batch.
+// A request with From set moves desired values only, and only between two
+// contexts of one SourceDatabase; any other move is refused before dispatch.
 func (r *Runtime) BindValueContexts(ctx context.Context, request schemaext.ValueContextRequest) ([]schemaext.Value, error) {
 	if err := schemaext.RequireRuntime(ctx, r); err != nil {
 		return nil, err
 	}
 	if err := request.Context.Validate(); err != nil {
+		return nil, err
+	}
+	if err := validateMove(request); err != nil {
 		return nil, err
 	}
 	selected, found := r.lookup(request.Target)
@@ -113,7 +118,8 @@ func (r *Runtime) BindValueContexts(ctx context.Context, request schemaext.Value
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		batch := schemaext.ValueContextRequest{Target: selected.name, Context: request.Context, Representation: request.Representation, Values: make([]schemaext.Value, len(indexes))}
+		batch := schemaext.ValueContextRequest{Target: selected.name, Context: request.Context, Representation: request.Representation,
+			Values: make([]schemaext.Value, len(indexes)), From: request.From}
 		kinds := make([]schemaext.Kind, len(indexes))
 		for i, index := range indexes {
 			batch.Values[i], kinds[i] = values[index], values[index].Kind()
@@ -140,4 +146,24 @@ func (r *Runtime) BindValueContexts(ctx context.Context, request schemaext.Value
 		return nil, err
 	}
 	return values, nil
+}
+
+// validateMove refuses a move [schemaext.ValueContextRequest.From] cannot
+// make. Only a desired value is moved: an observation describes the database
+// it was read from. The two contexts must read authored references against
+// one root, since a moved payload is not rewritten.
+func validateMove(request schemaext.ValueContextRequest) error {
+	if request.From.IsZero() {
+		return nil
+	}
+	if err := request.From.Validate(); err != nil {
+		return err
+	}
+	if request.Representation != schemaext.Desired {
+		return fmt.Errorf("%w: only a desired value moves to another database context", schemaext.ErrInvalidValue)
+	}
+	if request.From.SourceDatabase != request.Context.SourceDatabase {
+		return fmt.Errorf("%w: a value moves only between database contexts that read authored references against one root", schemaext.ErrIncompatibleCodec)
+	}
+	return nil
 }

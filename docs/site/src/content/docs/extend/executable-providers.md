@@ -1085,6 +1085,11 @@ desired schema again for the dev database, and runs that plan through the
 provider, as the apply runs the target's. A plan whose operations are not the
 target's, one by one, refuses the apply: the rehearsal would pass on changes
 the apply does not make. `ptah-compat schema apply` rehearses the same way.
+A provider binds every value it reads to the target, so when the dev database
+is a realm of the target's database, one whose context names the same source
+database, the target's values move to the realm before it is compared. What
+the realm reads nothing of is left out of what it recreates: a YDB dev realm
+reads none of its database's resource pools, which are the target's own.
 
 `ptah migrations generate` writes the reverse migration of a provider's change
 from the provider's own reversal of it. A provider that lists `models.reverse`
