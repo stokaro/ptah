@@ -79,7 +79,7 @@ func testDynamicSQLServerIdentitySchemaBracketReservedWords(
 		sqlText := strings.Join(rendered.Statements, "\n")
 		for _, expected := range []string{
 			"CREATE TABLE [ptah_mssql_acceptance].[order]",
-			"[id] INT IDENTITY(1,1) PRIMARY KEY",
+			"[id] INT IDENTITY(1,1) CONSTRAINT [order_pkey] PRIMARY KEY",
 			"[select] NVARCHAR(100) NOT NULL",
 			"[from] INT NOT NULL",
 			"CREATE INDEX [idx_order_select] ON [ptah_mssql_acceptance].[order] ([select]);",
