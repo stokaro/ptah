@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"maps"
@@ -2416,7 +2417,7 @@ func (p *Planner) removeConstraints(
 	}
 
 	dropped := make(map[constraintHostKey]struct{})
-	for _, info := range diff.ConstraintsRemoved {
+	for _, info := range foreignKeysFirst(diff.ConstraintsRemoved) {
 		if info.TableName == "" {
 			// No host recorded: there is no valid table-qualified ALTER TABLE
 			// to emit and no runtime fallback on MySQL. Real comparator output
@@ -2446,6 +2447,27 @@ func (p *Planner) removeConstraints(
 		result = p.appendScopedDrop(result, info, dropped, semantics)
 	}
 	return result
+}
+
+// foreignKeysFirst returns removals with the foreign keys ahead of the others, each
+// group in the order the diff lists it. The server refuses to drop a UNIQUE key a foreign
+// key stands on, with `Error 1553: needed in a foreign key constraint`, and that key may
+// be on the same table or on one the diff lists earlier. Measured on MySQL 8.4 and
+// MariaDB 12.3.
+func foreignKeysFirst(removals difftypes.ConstraintRemovals) difftypes.ConstraintRemovals {
+	ordered := slices.Clone(removals)
+	slices.SortStableFunc(ordered, func(a, b difftypes.ConstraintRemovalInfo) int {
+		return cmp.Compare(foreignKeyRank(a), foreignKeyRank(b))
+	})
+	return ordered
+}
+
+// foreignKeyRank orders a foreign key ahead of any other constraint.
+func foreignKeyRank(info difftypes.ConstraintRemovalInfo) int {
+	if strings.EqualFold(info.Type, "FOREIGN KEY") {
+		return 0
+	}
+	return 1
 }
 
 // dropConstraintNode builds the ALTER TABLE drop statement for a single removed
