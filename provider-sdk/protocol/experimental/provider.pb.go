@@ -75,6 +75,58 @@ func (TransactionIsolation) EnumDescriptor() ([]byte, []int) {
 	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{0}
 }
 
+// PlanningTables is what a planning request carries of each table.
+// Contract 25.27, under planning.table-outlines.
+type PlanningTables int32
+
+const (
+	// Each table with its declared and observed state, as captured.
+	PlanningTables_PLANNING_TABLES_CAPTURED PlanningTables = 0
+	// Each table with its subject and action, and each state the plan holds by
+	// its name alone: no columns, keys, indexes or captured features. A
+	// service with parent kinds plans those features and is never outlined.
+	PlanningTables_PLANNING_TABLES_OUTLINED PlanningTables = 1
+)
+
+// Enum value maps for PlanningTables.
+var (
+	PlanningTables_name = map[int32]string{
+		0: "PLANNING_TABLES_CAPTURED",
+		1: "PLANNING_TABLES_OUTLINED",
+	}
+	PlanningTables_value = map[string]int32{
+		"PLANNING_TABLES_CAPTURED": 0,
+		"PLANNING_TABLES_OUTLINED": 1,
+	}
+)
+
+func (x PlanningTables) Enum() *PlanningTables {
+	p := new(PlanningTables)
+	*p = x
+	return p
+}
+
+func (x PlanningTables) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (PlanningTables) Descriptor() protoreflect.EnumDescriptor {
+	return file_protocol_experimental_provider_proto_enumTypes[1].Descriptor()
+}
+
+func (PlanningTables) Type() protoreflect.EnumType {
+	return &file_protocol_experimental_provider_proto_enumTypes[1]
+}
+
+func (x PlanningTables) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use PlanningTables.Descriptor instead.
+func (PlanningTables) EnumDescriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{1}
+}
+
 type PlanningStatementStyle int32
 
 const (
@@ -105,11 +157,11 @@ func (x PlanningStatementStyle) String() string {
 }
 
 func (PlanningStatementStyle) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[1].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[2].Descriptor()
 }
 
 func (PlanningStatementStyle) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[1]
+	return &file_protocol_experimental_provider_proto_enumTypes[2]
 }
 
 func (x PlanningStatementStyle) Number() protoreflect.EnumNumber {
@@ -118,7 +170,7 @@ func (x PlanningStatementStyle) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use PlanningStatementStyle.Descriptor instead.
 func (PlanningStatementStyle) EnumDescriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{1}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{2}
 }
 
 type LintFact int32
@@ -188,11 +240,11 @@ func (x LintFact) String() string {
 }
 
 func (LintFact) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[2].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[3].Descriptor()
 }
 
 func (LintFact) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[2]
+	return &file_protocol_experimental_provider_proto_enumTypes[3]
 }
 
 func (x LintFact) Number() protoreflect.EnumNumber {
@@ -201,7 +253,7 @@ func (x LintFact) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use LintFact.Descriptor instead.
 func (LintFact) EnumDescriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{2}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{3}
 }
 
 // LintStatementClass is what a statement does to the schema, so a host rule
@@ -248,11 +300,11 @@ func (x LintStatementClass) String() string {
 }
 
 func (LintStatementClass) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[3].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[4].Descriptor()
 }
 
 func (LintStatementClass) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[3]
+	return &file_protocol_experimental_provider_proto_enumTypes[4]
 }
 
 func (x LintStatementClass) Number() protoreflect.EnumNumber {
@@ -261,7 +313,7 @@ func (x LintStatementClass) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use LintStatementClass.Descriptor instead.
 func (LintStatementClass) EnumDescriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{3}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{4}
 }
 
 type LintImpact int32
@@ -297,11 +349,11 @@ func (x LintImpact) String() string {
 }
 
 func (LintImpact) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[4].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[5].Descriptor()
 }
 
 func (LintImpact) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[4]
+	return &file_protocol_experimental_provider_proto_enumTypes[5]
 }
 
 func (x LintImpact) Number() protoreflect.EnumNumber {
@@ -310,7 +362,7 @@ func (x LintImpact) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use LintImpact.Descriptor instead.
 func (LintImpact) EnumDescriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{4}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{5}
 }
 
 // LintTransactionOwner is who opens the transaction a migration file runs in.
@@ -353,11 +405,11 @@ func (x LintTransactionOwner) String() string {
 }
 
 func (LintTransactionOwner) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[5].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[6].Descriptor()
 }
 
 func (LintTransactionOwner) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[5]
+	return &file_protocol_experimental_provider_proto_enumTypes[6]
 }
 
 func (x LintTransactionOwner) Number() protoreflect.EnumNumber {
@@ -366,7 +418,7 @@ func (x LintTransactionOwner) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use LintTransactionOwner.Descriptor instead.
 func (LintTransactionOwner) EnumDescriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{5}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{6}
 }
 
 // DataKind names the case of DataValue the values of a column take.
@@ -433,11 +485,11 @@ func (x DataKind) String() string {
 }
 
 func (DataKind) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[6].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[7].Descriptor()
 }
 
 func (DataKind) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[6]
+	return &file_protocol_experimental_provider_proto_enumTypes[7]
 }
 
 func (x DataKind) Number() protoreflect.EnumNumber {
@@ -446,7 +498,7 @@ func (x DataKind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use DataKind.Descriptor instead.
 func (DataKind) EnumDescriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{6}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{7}
 }
 
 // EmbeddingWriteKind is what a target write did to a row.
@@ -486,11 +538,11 @@ func (x EmbeddingWriteKind) String() string {
 }
 
 func (EmbeddingWriteKind) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[7].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[8].Descriptor()
 }
 
 func (EmbeddingWriteKind) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[7]
+	return &file_protocol_experimental_provider_proto_enumTypes[8]
 }
 
 func (x EmbeddingWriteKind) Number() protoreflect.EnumNumber {
@@ -499,7 +551,7 @@ func (x EmbeddingWriteKind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use EmbeddingWriteKind.Descriptor instead.
 func (EmbeddingWriteKind) EnumDescriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{7}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{8}
 }
 
 type ColumnAspect int32
@@ -541,11 +593,11 @@ func (x ColumnAspect) String() string {
 }
 
 func (ColumnAspect) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[8].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[9].Descriptor()
 }
 
 func (ColumnAspect) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[8]
+	return &file_protocol_experimental_provider_proto_enumTypes[9]
 }
 
 func (x ColumnAspect) Number() protoreflect.EnumNumber {
@@ -554,7 +606,7 @@ func (x ColumnAspect) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ColumnAspect.Descriptor instead.
 func (ColumnAspect) EnumDescriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{8}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{9}
 }
 
 type ScopeSelection_Naming int32
@@ -599,11 +651,11 @@ func (x ScopeSelection_Naming) String() string {
 }
 
 func (ScopeSelection_Naming) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[9].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[10].Descriptor()
 }
 
 func (ScopeSelection_Naming) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[9]
+	return &file_protocol_experimental_provider_proto_enumTypes[10]
 }
 
 func (x ScopeSelection_Naming) Number() protoreflect.EnumNumber {
@@ -667,11 +719,11 @@ func (x CommonObjectSupport_Kind) String() string {
 }
 
 func (CommonObjectSupport_Kind) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[10].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[11].Descriptor()
 }
 
 func (CommonObjectSupport_Kind) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[10]
+	return &file_protocol_experimental_provider_proto_enumTypes[11]
 }
 
 func (x CommonObjectSupport_Kind) Number() protoreflect.EnumNumber {
@@ -736,11 +788,11 @@ func (x HCLSourceBlock_Site) String() string {
 }
 
 func (HCLSourceBlock_Site) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[11].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[12].Descriptor()
 }
 
 func (HCLSourceBlock_Site) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[11]
+	return &file_protocol_experimental_provider_proto_enumTypes[12]
 }
 
 func (x HCLSourceBlock_Site) Number() protoreflect.EnumNumber {
@@ -793,11 +845,11 @@ func (x HCLSourceBlock_Naming) String() string {
 }
 
 func (HCLSourceBlock_Naming) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[12].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[13].Descriptor()
 }
 
 func (HCLSourceBlock_Naming) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[12]
+	return &file_protocol_experimental_provider_proto_enumTypes[13]
 }
 
 func (x HCLSourceBlock_Naming) Number() protoreflect.EnumNumber {
@@ -860,11 +912,11 @@ func (x HCLSourceAttribute_Kind) String() string {
 }
 
 func (HCLSourceAttribute_Kind) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[13].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[14].Descriptor()
 }
 
 func (HCLSourceAttribute_Kind) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[13]
+	return &file_protocol_experimental_provider_proto_enumTypes[14]
 }
 
 func (x HCLSourceAttribute_Kind) Number() protoreflect.EnumNumber {
@@ -909,11 +961,11 @@ func (x SQLSchemaDeclaration_Mode) String() string {
 }
 
 func (SQLSchemaDeclaration_Mode) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[14].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[15].Descriptor()
 }
 
 func (SQLSchemaDeclaration_Mode) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[14]
+	return &file_protocol_experimental_provider_proto_enumTypes[15]
 }
 
 func (x SQLSchemaDeclaration_Mode) Number() protoreflect.EnumNumber {
@@ -964,11 +1016,11 @@ func (x ReleaseLine_Support) String() string {
 }
 
 func (ReleaseLine_Support) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[15].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[16].Descriptor()
 }
 
 func (ReleaseLine_Support) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[15]
+	return &file_protocol_experimental_provider_proto_enumTypes[16]
 }
 
 func (x ReleaseLine_Support) Number() protoreflect.EnumNumber {
@@ -1022,11 +1074,11 @@ func (x YAMLSourceKey_Scope) String() string {
 }
 
 func (YAMLSourceKey_Scope) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[16].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[17].Descriptor()
 }
 
 func (YAMLSourceKey_Scope) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[16]
+	return &file_protocol_experimental_provider_proto_enumTypes[17]
 }
 
 func (x YAMLSourceKey_Scope) Number() protoreflect.EnumNumber {
@@ -1077,11 +1129,11 @@ func (x GoSourceDirective_Scope) String() string {
 }
 
 func (GoSourceDirective_Scope) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[17].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[18].Descriptor()
 }
 
 func (GoSourceDirective_Scope) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[17]
+	return &file_protocol_experimental_provider_proto_enumTypes[18]
 }
 
 func (x GoSourceDirective_Scope) Number() protoreflect.EnumNumber {
@@ -1126,11 +1178,11 @@ func (x IdentifierRules_Comparison) String() string {
 }
 
 func (IdentifierRules_Comparison) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[18].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[19].Descriptor()
 }
 
 func (IdentifierRules_Comparison) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[18]
+	return &file_protocol_experimental_provider_proto_enumTypes[19]
 }
 
 func (x IdentifierRules_Comparison) Number() protoreflect.EnumNumber {
@@ -1175,11 +1227,11 @@ func (x IdentifierRules_IndexNamespace) String() string {
 }
 
 func (IdentifierRules_IndexNamespace) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[19].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[20].Descriptor()
 }
 
 func (IdentifierRules_IndexNamespace) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[19]
+	return &file_protocol_experimental_provider_proto_enumTypes[20]
 }
 
 func (x IdentifierRules_IndexNamespace) Number() protoreflect.EnumNumber {
@@ -1224,11 +1276,11 @@ func (x ObservedRole_Password) String() string {
 }
 
 func (ObservedRole_Password) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[20].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[21].Descriptor()
 }
 
 func (ObservedRole_Password) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[20]
+	return &file_protocol_experimental_provider_proto_enumTypes[21]
 }
 
 func (x ObservedRole_Password) Number() protoreflect.EnumNumber {
@@ -1279,11 +1331,11 @@ func (x Disposition_State) String() string {
 }
 
 func (Disposition_State) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[21].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[22].Descriptor()
 }
 
 func (Disposition_State) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[21]
+	return &file_protocol_experimental_provider_proto_enumTypes[22]
 }
 
 func (x Disposition_State) Number() protoreflect.EnumNumber {
@@ -1328,11 +1380,11 @@ func (x NativeOperation_Role) String() string {
 }
 
 func (NativeOperation_Role) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[22].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[23].Descriptor()
 }
 
 func (NativeOperation_Role) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[22]
+	return &file_protocol_experimental_provider_proto_enumTypes[23]
 }
 
 func (x NativeOperation_Role) Number() protoreflect.EnumNumber {
@@ -1377,11 +1429,11 @@ func (x RenderRequest_Form) String() string {
 }
 
 func (RenderRequest_Form) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[23].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[24].Descriptor()
 }
 
 func (RenderRequest_Form) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[23]
+	return &file_protocol_experimental_provider_proto_enumTypes[24]
 }
 
 func (x RenderRequest_Form) Number() protoreflect.EnumNumber {
@@ -1423,11 +1475,11 @@ func (x ExecutionInput_Source) String() string {
 }
 
 func (ExecutionInput_Source) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[24].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[25].Descriptor()
 }
 
 func (ExecutionInput_Source) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[24]
+	return &file_protocol_experimental_provider_proto_enumTypes[25]
 }
 
 func (x ExecutionInput_Source) Number() protoreflect.EnumNumber {
@@ -1472,11 +1524,11 @@ func (x FinishTransactionRequest_Action) String() string {
 }
 
 func (FinishTransactionRequest_Action) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[25].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[26].Descriptor()
 }
 
 func (FinishTransactionRequest_Action) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[25]
+	return &file_protocol_experimental_provider_proto_enumTypes[26]
 }
 
 func (x FinishTransactionRequest_Action) Number() protoreflect.EnumNumber {
@@ -1526,11 +1578,11 @@ func (x TransactionResult_Outcome) String() string {
 }
 
 func (TransactionResult_Outcome) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[26].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[27].Descriptor()
 }
 
 func (TransactionResult_Outcome) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[26]
+	return &file_protocol_experimental_provider_proto_enumTypes[27]
 }
 
 func (x TransactionResult_Outcome) Number() protoreflect.EnumNumber {
@@ -1587,11 +1639,11 @@ func (x Execution_Outcome) String() string {
 }
 
 func (Execution_Outcome) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[27].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[28].Descriptor()
 }
 
 func (Execution_Outcome) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[27]
+	return &file_protocol_experimental_provider_proto_enumTypes[28]
 }
 
 func (x Execution_Outcome) Number() protoreflect.EnumNumber {
@@ -1644,11 +1696,11 @@ func (x SQLStatement_Safety) String() string {
 }
 
 func (SQLStatement_Safety) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[28].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[29].Descriptor()
 }
 
 func (SQLStatement_Safety) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[28]
+	return &file_protocol_experimental_provider_proto_enumTypes[29]
 }
 
 func (x SQLStatement_Safety) Number() protoreflect.EnumNumber {
@@ -1699,11 +1751,11 @@ func (x ValueInput_Representation) String() string {
 }
 
 func (ValueInput_Representation) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[29].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[30].Descriptor()
 }
 
 func (ValueInput_Representation) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[29]
+	return &file_protocol_experimental_provider_proto_enumTypes[30]
 }
 
 func (x ValueInput_Representation) Number() protoreflect.EnumNumber {
@@ -1754,11 +1806,11 @@ func (x SourceDocument_Format) String() string {
 }
 
 func (SourceDocument_Format) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[30].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[31].Descriptor()
 }
 
 func (SourceDocument_Format) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[30]
+	return &file_protocol_experimental_provider_proto_enumTypes[31]
 }
 
 func (x SourceDocument_Format) Number() protoreflect.EnumNumber {
@@ -1803,11 +1855,11 @@ func (x SourceTrace_Root) String() string {
 }
 
 func (SourceTrace_Root) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[31].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[32].Descriptor()
 }
 
 func (SourceTrace_Root) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[31]
+	return &file_protocol_experimental_provider_proto_enumTypes[32]
 }
 
 func (x SourceTrace_Root) Number() protoreflect.EnumNumber {
@@ -1861,11 +1913,11 @@ func (x ModelKnowledge_State) String() string {
 }
 
 func (ModelKnowledge_State) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[32].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[33].Descriptor()
 }
 
 func (ModelKnowledge_State) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[32]
+	return &file_protocol_experimental_provider_proto_enumTypes[33]
 }
 
 func (x ModelKnowledge_State) Number() protoreflect.EnumNumber {
@@ -1910,11 +1962,11 @@ func (x SourceModelValue_Placement) String() string {
 }
 
 func (SourceModelValue_Placement) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[33].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[34].Descriptor()
 }
 
 func (SourceModelValue_Placement) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[33]
+	return &file_protocol_experimental_provider_proto_enumTypes[34]
 }
 
 func (x SourceModelValue_Placement) Number() protoreflect.EnumNumber {
@@ -1981,11 +2033,11 @@ func (x SQLObjectTrace_Collection) String() string {
 }
 
 func (SQLObjectTrace_Collection) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[34].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[35].Descriptor()
 }
 
 func (SQLObjectTrace_Collection) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[34]
+	return &file_protocol_experimental_provider_proto_enumTypes[35]
 }
 
 func (x SQLObjectTrace_Collection) Number() protoreflect.EnumNumber {
@@ -2036,11 +2088,11 @@ func (x SQLDiagnostic_Code) String() string {
 }
 
 func (SQLDiagnostic_Code) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[35].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[36].Descriptor()
 }
 
 func (SQLDiagnostic_Code) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[35]
+	return &file_protocol_experimental_provider_proto_enumTypes[36]
 }
 
 func (x SQLDiagnostic_Code) Number() protoreflect.EnumNumber {
@@ -2085,11 +2137,11 @@ func (x SQLDiagnostic_Severity) String() string {
 }
 
 func (SQLDiagnostic_Severity) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[36].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[37].Descriptor()
 }
 
 func (SQLDiagnostic_Severity) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[36]
+	return &file_protocol_experimental_provider_proto_enumTypes[37]
 }
 
 func (x SQLDiagnostic_Severity) Number() protoreflect.EnumNumber {
@@ -2134,11 +2186,11 @@ func (x ModelComparison_Placement) String() string {
 }
 
 func (ModelComparison_Placement) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[37].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[38].Descriptor()
 }
 
 func (ModelComparison_Placement) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[37]
+	return &file_protocol_experimental_provider_proto_enumTypes[38]
 }
 
 func (x ModelComparison_Placement) Number() protoreflect.EnumNumber {
@@ -2189,11 +2241,11 @@ func (x ChangeSemantics_Impact) String() string {
 }
 
 func (ChangeSemantics_Impact) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[38].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[39].Descriptor()
 }
 
 func (ChangeSemantics_Impact) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[38]
+	return &file_protocol_experimental_provider_proto_enumTypes[39]
 }
 
 func (x ChangeSemantics_Impact) Number() protoreflect.EnumNumber {
@@ -2244,11 +2296,11 @@ func (x ChangeSemantics_Access) String() string {
 }
 
 func (ChangeSemantics_Access) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[39].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[40].Descriptor()
 }
 
 func (ChangeSemantics_Access) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[39]
+	return &file_protocol_experimental_provider_proto_enumTypes[40]
 }
 
 func (x ChangeSemantics_Access) Number() protoreflect.EnumNumber {
@@ -2295,11 +2347,11 @@ func (x ForwardState_Placement) String() string {
 }
 
 func (ForwardState_Placement) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[40].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[41].Descriptor()
 }
 
 func (ForwardState_Placement) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[40]
+	return &file_protocol_experimental_provider_proto_enumTypes[41]
 }
 
 func (x ForwardState_Placement) Number() protoreflect.EnumNumber {
@@ -2350,11 +2402,11 @@ func (x PlanningEffect_Action) String() string {
 }
 
 func (PlanningEffect_Action) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[41].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[42].Descriptor()
 }
 
 func (PlanningEffect_Action) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[41]
+	return &file_protocol_experimental_provider_proto_enumTypes[42]
 }
 
 func (x PlanningEffect_Action) Number() protoreflect.EnumNumber {
@@ -2402,11 +2454,11 @@ func (x PlanningMetadata_Transaction) String() string {
 }
 
 func (PlanningMetadata_Transaction) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[42].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[43].Descriptor()
 }
 
 func (PlanningMetadata_Transaction) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[42]
+	return &file_protocol_experimental_provider_proto_enumTypes[43]
 }
 
 func (x PlanningMetadata_Transaction) Number() protoreflect.EnumNumber {
@@ -2448,11 +2500,11 @@ func (x PlanningMetadata_Placement) String() string {
 }
 
 func (PlanningMetadata_Placement) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[43].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[44].Descriptor()
 }
 
 func (PlanningMetadata_Placement) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[43]
+	return &file_protocol_experimental_provider_proto_enumTypes[44]
 }
 
 func (x PlanningMetadata_Placement) Number() protoreflect.EnumNumber {
@@ -2505,11 +2557,11 @@ func (x PlanningOperation_Phase) String() string {
 }
 
 func (PlanningOperation_Phase) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[44].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[45].Descriptor()
 }
 
 func (PlanningOperation_Phase) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[44]
+	return &file_protocol_experimental_provider_proto_enumTypes[45]
 }
 
 func (x PlanningOperation_Phase) Number() protoreflect.EnumNumber {
@@ -2557,11 +2609,11 @@ func (x PlanningDiagnostic_Code) String() string {
 }
 
 func (PlanningDiagnostic_Code) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[45].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[46].Descriptor()
 }
 
 func (PlanningDiagnostic_Code) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[45]
+	return &file_protocol_experimental_provider_proto_enumTypes[46]
 }
 
 func (x PlanningDiagnostic_Code) Number() protoreflect.EnumNumber {
@@ -2612,11 +2664,11 @@ func (x PlanningTable_Action) String() string {
 }
 
 func (PlanningTable_Action) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[46].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[47].Descriptor()
 }
 
 func (PlanningTable_Action) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[46]
+	return &file_protocol_experimental_provider_proto_enumTypes[47]
 }
 
 func (x PlanningTable_Action) Number() protoreflect.EnumNumber {
@@ -2661,11 +2713,11 @@ func (x HistoryScope_Format) String() string {
 }
 
 func (HistoryScope_Format) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[47].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[48].Descriptor()
 }
 
 func (HistoryScope_Format) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[47]
+	return &file_protocol_experimental_provider_proto_enumTypes[48]
 }
 
 func (x HistoryScope_Format) Number() protoreflect.EnumNumber {
@@ -2713,11 +2765,11 @@ func (x HistoryRevision_State) String() string {
 }
 
 func (HistoryRevision_State) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[48].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[49].Descriptor()
 }
 
 func (HistoryRevision_State) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[48]
+	return &file_protocol_experimental_provider_proto_enumTypes[49]
 }
 
 func (x HistoryRevision_State) Number() protoreflect.EnumNumber {
@@ -2762,11 +2814,11 @@ func (x HistoryRevision_Direction) String() string {
 }
 
 func (HistoryRevision_Direction) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[49].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[50].Descriptor()
 }
 
 func (HistoryRevision_Direction) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[49]
+	return &file_protocol_experimental_provider_proto_enumTypes[50]
 }
 
 func (x HistoryRevision_Direction) Number() protoreflect.EnumNumber {
@@ -2814,11 +2866,11 @@ func (x HistoryResult_Outcome) String() string {
 }
 
 func (HistoryResult_Outcome) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[50].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[51].Descriptor()
 }
 
 func (HistoryResult_Outcome) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[50]
+	return &file_protocol_experimental_provider_proto_enumTypes[51]
 }
 
 func (x HistoryResult_Outcome) Number() protoreflect.EnumNumber {
@@ -2872,11 +2924,11 @@ func (x LockResult_Outcome) String() string {
 }
 
 func (LockResult_Outcome) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[51].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[52].Descriptor()
 }
 
 func (LockResult_Outcome) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[51]
+	return &file_protocol_experimental_provider_proto_enumTypes[52]
 }
 
 func (x LockResult_Outcome) Number() protoreflect.EnumNumber {
@@ -2921,11 +2973,11 @@ func (x MetadataScope_Kind) String() string {
 }
 
 func (MetadataScope_Kind) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[52].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[53].Descriptor()
 }
 
 func (MetadataScope_Kind) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[52]
+	return &file_protocol_experimental_provider_proto_enumTypes[53]
 }
 
 func (x MetadataScope_Kind) Number() protoreflect.EnumNumber {
@@ -2970,11 +3022,11 @@ func (x MetadataResult_Outcome) String() string {
 }
 
 func (MetadataResult_Outcome) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[53].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[54].Descriptor()
 }
 
 func (MetadataResult_Outcome) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[53]
+	return &file_protocol_experimental_provider_proto_enumTypes[54]
 }
 
 func (x MetadataResult_Outcome) Number() protoreflect.EnumNumber {
@@ -3025,11 +3077,11 @@ func (x ReservedObject_Purpose) String() string {
 }
 
 func (ReservedObject_Purpose) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[54].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[55].Descriptor()
 }
 
 func (ReservedObject_Purpose) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[54]
+	return &file_protocol_experimental_provider_proto_enumTypes[55]
 }
 
 func (x ReservedObject_Purpose) Number() protoreflect.EnumNumber {
@@ -3077,11 +3129,11 @@ func (x SchemaDiagnostic_Code) String() string {
 }
 
 func (SchemaDiagnostic_Code) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[55].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[56].Descriptor()
 }
 
 func (SchemaDiagnostic_Code) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[55]
+	return &file_protocol_experimental_provider_proto_enumTypes[56]
 }
 
 func (x SchemaDiagnostic_Code) Number() protoreflect.EnumNumber {
@@ -3129,11 +3181,11 @@ func (x LintRule_Severity) String() string {
 }
 
 func (LintRule_Severity) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[56].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[57].Descriptor()
 }
 
 func (LintRule_Severity) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[56]
+	return &file_protocol_experimental_provider_proto_enumTypes[57]
 }
 
 func (x LintRule_Severity) Number() protoreflect.EnumNumber {
@@ -3178,11 +3230,11 @@ func (x LintSubject_Kind) String() string {
 }
 
 func (LintSubject_Kind) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[57].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[58].Descriptor()
 }
 
 func (LintSubject_Kind) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[57]
+	return &file_protocol_experimental_provider_proto_enumTypes[58]
 }
 
 func (x LintSubject_Kind) Number() protoreflect.EnumNumber {
@@ -3230,11 +3282,11 @@ func (x DevDatabaseRefusal_Kind) String() string {
 }
 
 func (DevDatabaseRefusal_Kind) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[58].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[59].Descriptor()
 }
 
 func (DevDatabaseRefusal_Kind) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[58]
+	return &file_protocol_experimental_provider_proto_enumTypes[59]
 }
 
 func (x DevDatabaseRefusal_Kind) Number() protoreflect.EnumNumber {
@@ -3279,11 +3331,11 @@ func (x DevCleanup_Outcome) String() string {
 }
 
 func (DevCleanup_Outcome) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[59].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[60].Descriptor()
 }
 
 func (DevCleanup_Outcome) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[59]
+	return &file_protocol_experimental_provider_proto_enumTypes[60]
 }
 
 func (x DevCleanup_Outcome) Number() protoreflect.EnumNumber {
@@ -3334,11 +3386,11 @@ func (x RowWrite_Mode) String() string {
 }
 
 func (RowWrite_Mode) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[60].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[61].Descriptor()
 }
 
 func (RowWrite_Mode) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[60]
+	return &file_protocol_experimental_provider_proto_enumTypes[61]
 }
 
 func (x RowWrite_Mode) Number() protoreflect.EnumNumber {
@@ -3388,11 +3440,11 @@ func (x RenderRefusal_Reason) String() string {
 }
 
 func (RenderRefusal_Reason) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[61].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[62].Descriptor()
 }
 
 func (RenderRefusal_Reason) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[61]
+	return &file_protocol_experimental_provider_proto_enumTypes[62]
 }
 
 func (x RenderRefusal_Reason) Number() protoreflect.EnumNumber {
@@ -3443,11 +3495,11 @@ func (x SeedResult_Outcome) String() string {
 }
 
 func (SeedResult_Outcome) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[62].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[63].Descriptor()
 }
 
 func (SeedResult_Outcome) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[62]
+	return &file_protocol_experimental_provider_proto_enumTypes[63]
 }
 
 func (x SeedResult_Outcome) Number() protoreflect.EnumNumber {
@@ -3492,11 +3544,11 @@ func (x EmbeddingTarget_Layout) String() string {
 }
 
 func (EmbeddingTarget_Layout) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[63].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[64].Descriptor()
 }
 
 func (EmbeddingTarget_Layout) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[63]
+	return &file_protocol_experimental_provider_proto_enumTypes[64]
 }
 
 func (x EmbeddingTarget_Layout) Number() protoreflect.EnumNumber {
@@ -3544,11 +3596,11 @@ func (x EmbeddingTarget_Metric) String() string {
 }
 
 func (EmbeddingTarget_Metric) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[64].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[65].Descriptor()
 }
 
 func (EmbeddingTarget_Metric) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[64]
+	return &file_protocol_experimental_provider_proto_enumTypes[65]
 }
 
 func (x EmbeddingTarget_Metric) Number() protoreflect.EnumNumber {
@@ -3604,11 +3656,11 @@ func (x EmbeddingRefusal_Reason) String() string {
 }
 
 func (EmbeddingRefusal_Reason) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[65].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[66].Descriptor()
 }
 
 func (EmbeddingRefusal_Reason) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[65]
+	return &file_protocol_experimental_provider_proto_enumTypes[66]
 }
 
 func (x EmbeddingRefusal_Reason) Number() protoreflect.EnumNumber {
@@ -3659,11 +3711,11 @@ func (x EmbeddingWriteResult_Outcome) String() string {
 }
 
 func (EmbeddingWriteResult_Outcome) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[66].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[67].Descriptor()
 }
 
 func (EmbeddingWriteResult_Outcome) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[66]
+	return &file_protocol_experimental_provider_proto_enumTypes[67]
 }
 
 func (x EmbeddingWriteResult_Outcome) Number() protoreflect.EnumNumber {
@@ -3714,11 +3766,11 @@ func (x EmbeddingWriteResult_IndexOutcome) String() string {
 }
 
 func (EmbeddingWriteResult_IndexOutcome) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[67].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[68].Descriptor()
 }
 
 func (EmbeddingWriteResult_IndexOutcome) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[67]
+	return &file_protocol_experimental_provider_proto_enumTypes[68]
 }
 
 func (x EmbeddingWriteResult_IndexOutcome) Number() protoreflect.EnumNumber {
@@ -3763,11 +3815,11 @@ func (x PrepareEmbeddingTargetRequest_Mode) String() string {
 }
 
 func (PrepareEmbeddingTargetRequest_Mode) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[68].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[69].Descriptor()
 }
 
 func (PrepareEmbeddingTargetRequest_Mode) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[68]
+	return &file_protocol_experimental_provider_proto_enumTypes[69]
 }
 
 func (x PrepareEmbeddingTargetRequest_Mode) Number() protoreflect.EnumNumber {
@@ -3815,11 +3867,11 @@ func (x DropEmbeddingGenerationRequest_Storage) String() string {
 }
 
 func (DropEmbeddingGenerationRequest_Storage) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[69].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[70].Descriptor()
 }
 
 func (DropEmbeddingGenerationRequest_Storage) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[69]
+	return &file_protocol_experimental_provider_proto_enumTypes[70]
 }
 
 func (x DropEmbeddingGenerationRequest_Storage) Number() protoreflect.EnumNumber {
@@ -3864,11 +3916,11 @@ func (x EmbeddingSearchResult_Outcome) String() string {
 }
 
 func (EmbeddingSearchResult_Outcome) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[70].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[71].Descriptor()
 }
 
 func (EmbeddingSearchResult_Outcome) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[70]
+	return &file_protocol_experimental_provider_proto_enumTypes[71]
 }
 
 func (x EmbeddingSearchResult_Outcome) Number() protoreflect.EnumNumber {
@@ -3939,11 +3991,11 @@ func (x EncodedFragment_Placement) String() string {
 }
 
 func (EncodedFragment_Placement) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[71].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[72].Descriptor()
 }
 
 func (EncodedFragment_Placement) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[71]
+	return &file_protocol_experimental_provider_proto_enumTypes[72]
 }
 
 func (x EncodedFragment_Placement) Number() protoreflect.EnumNumber {
@@ -3992,11 +4044,11 @@ func (x RunStatementRequest_Access) String() string {
 }
 
 func (RunStatementRequest_Access) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[72].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[73].Descriptor()
 }
 
 func (RunStatementRequest_Access) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[72]
+	return &file_protocol_experimental_provider_proto_enumTypes[73]
 }
 
 func (x RunStatementRequest_Access) Number() protoreflect.EnumNumber {
@@ -4094,11 +4146,11 @@ func (x ArgumentType_Scalar) String() string {
 }
 
 func (ArgumentType_Scalar) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[73].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[74].Descriptor()
 }
 
 func (ArgumentType_Scalar) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[73]
+	return &file_protocol_experimental_provider_proto_enumTypes[74]
 }
 
 func (x ArgumentType_Scalar) Number() protoreflect.EnumNumber {
@@ -4155,11 +4207,11 @@ func (x StatementResult_Outcome) String() string {
 }
 
 func (StatementResult_Outcome) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[74].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[75].Descriptor()
 }
 
 func (StatementResult_Outcome) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[74]
+	return &file_protocol_experimental_provider_proto_enumTypes[75]
 }
 
 func (x StatementResult_Outcome) Number() protoreflect.EnumNumber {
@@ -4208,11 +4260,11 @@ func (x MigrationUnit_Placement) String() string {
 }
 
 func (MigrationUnit_Placement) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[75].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[76].Descriptor()
 }
 
 func (MigrationUnit_Placement) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[75]
+	return &file_protocol_experimental_provider_proto_enumTypes[76]
 }
 
 func (x MigrationUnit_Placement) Number() protoreflect.EnumNumber {
@@ -4257,11 +4309,11 @@ func (x ColumnDifference_Relation) String() string {
 }
 
 func (ColumnDifference_Relation) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[76].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[77].Descriptor()
 }
 
 func (ColumnDifference_Relation) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[76]
+	return &file_protocol_experimental_provider_proto_enumTypes[77]
 }
 
 func (x ColumnDifference_Relation) Number() protoreflect.EnumNumber {
@@ -4306,11 +4358,11 @@ func (x ColumnSequenceDifference_Attribute) String() string {
 }
 
 func (ColumnSequenceDifference_Attribute) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[77].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[78].Descriptor()
 }
 
 func (ColumnSequenceDifference_Attribute) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[77]
+	return &file_protocol_experimental_provider_proto_enumTypes[78]
 }
 
 func (x ColumnSequenceDifference_Attribute) Number() protoreflect.EnumNumber {
@@ -4358,11 +4410,11 @@ func (x ColumnDefaultReceipt_Kind) String() string {
 }
 
 func (ColumnDefaultReceipt_Kind) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[78].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[79].Descriptor()
 }
 
 func (ColumnDefaultReceipt_Kind) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[78]
+	return &file_protocol_experimental_provider_proto_enumTypes[79]
 }
 
 func (x ColumnDefaultReceipt_Kind) Number() protoreflect.EnumNumber {
@@ -4428,11 +4480,11 @@ func (x SQLToken_Kind) String() string {
 }
 
 func (SQLToken_Kind) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[79].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[80].Descriptor()
 }
 
 func (SQLToken_Kind) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[79]
+	return &file_protocol_experimental_provider_proto_enumTypes[80]
 }
 
 func (x SQLToken_Kind) Number() protoreflect.EnumNumber {
@@ -14797,9 +14849,17 @@ func (x *ComparisonSubjectCoverage) GetTargets() []string {
 }
 
 type ComparisonCoverage struct {
-	state         protoimpl.MessageState       `protogen:"open.v1"`
-	Kinds         []*ComparisonKindCoverage    `protobuf:"bytes,1,rep,name=kinds,proto3" json:"kinds,omitempty"`
-	Subjects      []*ComparisonSubjectCoverage `protobuf:"bytes,2,rep,name=subjects,proto3" json:"subjects,omitempty"`
+	state    protoimpl.MessageState       `protogen:"open.v1"`
+	Kinds    []*ComparisonKindCoverage    `protobuf:"bytes,1,rep,name=kinds,proto3" json:"kinds,omitempty"`
+	Subjects []*ComparisonSubjectCoverage `protobuf:"bytes,2,rep,name=subjects,proto3" json:"subjects,omitempty"`
+	// Contract 25.27, under transport.shared-coverage: a message carries one
+	// list of kinds once, however many of its coverages repeat it. A nonzero
+	// kinds_key names this coverage's kinds for the other coverages of the
+	// same message; kinds_of names the coverage whose kinds this one has, and
+	// is set instead of kinds. The SDK's client and server set and resolve
+	// both, so no service sees either.
+	KindsKey      uint32 `protobuf:"varint,3,opt,name=kinds_key,json=kindsKey,proto3" json:"kinds_key,omitempty"`
+	KindsOf       uint32 `protobuf:"varint,4,opt,name=kinds_of,json=kindsOf,proto3" json:"kinds_of,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -14846,6 +14906,20 @@ func (x *ComparisonCoverage) GetSubjects() []*ComparisonSubjectCoverage {
 		return x.Subjects
 	}
 	return nil
+}
+
+func (x *ComparisonCoverage) GetKindsKey() uint32 {
+	if x != nil {
+		return x.KindsKey
+	}
+	return 0
+}
+
+func (x *ComparisonCoverage) GetKindsOf() uint32 {
+	if x != nil {
+		return x.KindsOf
+	}
+	return 0
 }
 
 // A missing value is a deliberately excluded facet, with a nonempty target
@@ -16439,7 +16513,13 @@ type ModelPlanning struct {
 	ParentKinds    []string               `protobuf:"bytes,3,rep,name=parent_kinds,json=parentKinds,proto3" json:"parent_kinds,omitempty"`
 	OperationKinds []string               `protobuf:"bytes,4,rep,name=operation_kinds,json=operationKinds,proto3" json:"operation_kinds,omitempty"`
 	// Contract 25.7, under planning.object-context. Assessed without a change.
-	ContextKinds  []string `protobuf:"bytes,5,rep,name=context_kinds,json=contextKinds,proto3" json:"context_kinds,omitempty"`
+	ContextKinds []string `protobuf:"bytes,5,rep,name=context_kinds,json=contextKinds,proto3" json:"context_kinds,omitempty"`
+	// How much of each table a request carries for this service. A service
+	// that plans no table-attached model reads a table's subject, its action
+	// and which of its states the plan holds, and the host leaves the rest
+	// out. Contract 25.27, under planning.table-outlines; a host that does not
+	// list it sends every table whole.
+	Tables        PlanningTables `protobuf:"varint,6,opt,name=tables,proto3,enum=ptah.provider.experimental.PlanningTables" json:"tables,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -16507,6 +16587,13 @@ func (x *ModelPlanning) GetContextKinds() []string {
 		return x.ContextKinds
 	}
 	return nil
+}
+
+func (x *ModelPlanning) GetTables() PlanningTables {
+	if x != nil {
+		return x.Tables
+	}
+	return PlanningTables_PLANNING_TABLES_CAPTURED
 }
 
 type ModelDeclarations struct {
@@ -35637,10 +35724,12 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12H\n" +
 	"\asubject\x18\x02 \x01(\v2..ptah.provider.experimental.ComparisonIdentityR\asubject\x12H\n" +
 	"\tknowledge\x18\x03 \x01(\v2*.ptah.provider.experimental.ModelKnowledgeR\tknowledge\x12\x18\n" +
-	"\atargets\x18\x04 \x03(\tR\atargets\"\xb1\x01\n" +
+	"\atargets\x18\x04 \x03(\tR\atargets\"\xe9\x01\n" +
 	"\x12ComparisonCoverage\x12H\n" +
 	"\x05kinds\x18\x01 \x03(\v22.ptah.provider.experimental.ComparisonKindCoverageR\x05kinds\x12Q\n" +
-	"\bsubjects\x18\x02 \x03(\v25.ptah.provider.experimental.ComparisonSubjectCoverageR\bsubjects\"\xcd\x01\n" +
+	"\bsubjects\x18\x02 \x03(\v25.ptah.provider.experimental.ComparisonSubjectCoverageR\bsubjects\x12\x1b\n" +
+	"\tkinds_key\x18\x03 \x01(\rR\bkindsKey\x12\x19\n" +
+	"\bkinds_of\x18\x04 \x01(\rR\akindsOf\"\xcd\x01\n" +
 	"\x10ComparisonRecord\x12H\n" +
 	"\asubject\x18\x01 \x01(\v2..ptah.provider.experimental.ComparisonIdentityR\asubject\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x18\n" +
@@ -35785,13 +35874,14 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\x15PLACEMENT_UNSPECIFIED\x10\x00\x12\n" +
 	"\n" +
 	"\x06OBJECT\x10\x01\x12\t\n" +
-	"\x05FACET\x10\x02\"\xb3\x01\n" +
+	"\x05FACET\x10\x02\"\xf7\x01\n" +
 	"\rModelPlanning\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fchange_kinds\x18\x02 \x03(\tR\vchangeKinds\x12!\n" +
 	"\fparent_kinds\x18\x03 \x03(\tR\vparentKinds\x12'\n" +
 	"\x0foperation_kinds\x18\x04 \x03(\tR\x0eoperationKinds\x12#\n" +
-	"\rcontext_kinds\x18\x05 \x03(\tR\fcontextKinds\"b\n" +
+	"\rcontext_kinds\x18\x05 \x03(\tR\fcontextKinds\x12B\n" +
+	"\x06tables\x18\x06 \x01(\x0e2*.ptah.provider.experimental.PlanningTablesR\x06tables\"b\n" +
 	"\x11ModelDeclarations\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05kinds\x18\x02 \x03(\tR\x05kinds\x12'\n" +
@@ -37693,7 +37783,10 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\x14TransactionIsolation\x12%\n" +
 	"!TRANSACTION_ISOLATION_UNSPECIFIED\x10\x00\x12\v\n" +
 	"\aDEFAULT\x10\x01\x12\x10\n" +
-	"\fSERIALIZABLE\x10\x02*d\n" +
+	"\fSERIALIZABLE\x10\x02*L\n" +
+	"\x0ePlanningTables\x12\x1c\n" +
+	"\x18PLANNING_TABLES_CAPTURED\x10\x00\x12\x1c\n" +
+	"\x18PLANNING_TABLES_OUTLINED\x10\x01*d\n" +
 	"\x16PlanningStatementStyle\x12&\n" +
 	"\"PLANNING_STATEMENT_STYLE_ANNOTATED\x10\x00\x12\"\n" +
 	"\x1ePLANNING_STATEMENT_STYLE_EXACT\x10\x01*\x99\x02\n" +
@@ -37840,1365 +37933,1367 @@ func file_protocol_experimental_provider_proto_rawDescGZIP() []byte {
 	return file_protocol_experimental_provider_proto_rawDescData
 }
 
-var file_protocol_experimental_provider_proto_enumTypes = make([]protoimpl.EnumInfo, 80)
+var file_protocol_experimental_provider_proto_enumTypes = make([]protoimpl.EnumInfo, 81)
 var file_protocol_experimental_provider_proto_msgTypes = make([]protoimpl.MessageInfo, 404)
 var file_protocol_experimental_provider_proto_goTypes = []any{
 	(TransactionIsolation)(0),                   // 0: ptah.provider.experimental.TransactionIsolation
-	(PlanningStatementStyle)(0),                 // 1: ptah.provider.experimental.PlanningStatementStyle
-	(LintFact)(0),                               // 2: ptah.provider.experimental.LintFact
-	(LintStatementClass)(0),                     // 3: ptah.provider.experimental.LintStatementClass
-	(LintImpact)(0),                             // 4: ptah.provider.experimental.LintImpact
-	(LintTransactionOwner)(0),                   // 5: ptah.provider.experimental.LintTransactionOwner
-	(DataKind)(0),                               // 6: ptah.provider.experimental.DataKind
-	(EmbeddingWriteKind)(0),                     // 7: ptah.provider.experimental.EmbeddingWriteKind
-	(ColumnAspect)(0),                           // 8: ptah.provider.experimental.ColumnAspect
-	(ScopeSelection_Naming)(0),                  // 9: ptah.provider.experimental.ScopeSelection.Naming
-	(CommonObjectSupport_Kind)(0),               // 10: ptah.provider.experimental.CommonObjectSupport.Kind
-	(HCLSourceBlock_Site)(0),                    // 11: ptah.provider.experimental.HCLSourceBlock.Site
-	(HCLSourceBlock_Naming)(0),                  // 12: ptah.provider.experimental.HCLSourceBlock.Naming
-	(HCLSourceAttribute_Kind)(0),                // 13: ptah.provider.experimental.HCLSourceAttribute.Kind
-	(SQLSchemaDeclaration_Mode)(0),              // 14: ptah.provider.experimental.SQLSchemaDeclaration.Mode
-	(ReleaseLine_Support)(0),                    // 15: ptah.provider.experimental.ReleaseLine.Support
-	(YAMLSourceKey_Scope)(0),                    // 16: ptah.provider.experimental.YAMLSourceKey.Scope
-	(GoSourceDirective_Scope)(0),                // 17: ptah.provider.experimental.GoSourceDirective.Scope
-	(IdentifierRules_Comparison)(0),             // 18: ptah.provider.experimental.IdentifierRules.Comparison
-	(IdentifierRules_IndexNamespace)(0),         // 19: ptah.provider.experimental.IdentifierRules.IndexNamespace
-	(ObservedRole_Password)(0),                  // 20: ptah.provider.experimental.ObservedRole.Password
-	(Disposition_State)(0),                      // 21: ptah.provider.experimental.Disposition.State
-	(NativeOperation_Role)(0),                   // 22: ptah.provider.experimental.NativeOperation.Role
-	(RenderRequest_Form)(0),                     // 23: ptah.provider.experimental.RenderRequest.Form
-	(ExecutionInput_Source)(0),                  // 24: ptah.provider.experimental.ExecutionInput.Source
-	(FinishTransactionRequest_Action)(0),        // 25: ptah.provider.experimental.FinishTransactionRequest.Action
-	(TransactionResult_Outcome)(0),              // 26: ptah.provider.experimental.TransactionResult.Outcome
-	(Execution_Outcome)(0),                      // 27: ptah.provider.experimental.Execution.Outcome
-	(SQLStatement_Safety)(0),                    // 28: ptah.provider.experimental.SQLStatement.Safety
-	(ValueInput_Representation)(0),              // 29: ptah.provider.experimental.ValueInput.Representation
-	(SourceDocument_Format)(0),                  // 30: ptah.provider.experimental.SourceDocument.Format
-	(SourceTrace_Root)(0),                       // 31: ptah.provider.experimental.SourceTrace.Root
-	(ModelKnowledge_State)(0),                   // 32: ptah.provider.experimental.ModelKnowledge.State
-	(SourceModelValue_Placement)(0),             // 33: ptah.provider.experimental.SourceModelValue.Placement
-	(SQLObjectTrace_Collection)(0),              // 34: ptah.provider.experimental.SQLObjectTrace.Collection
-	(SQLDiagnostic_Code)(0),                     // 35: ptah.provider.experimental.SQLDiagnostic.Code
-	(SQLDiagnostic_Severity)(0),                 // 36: ptah.provider.experimental.SQLDiagnostic.Severity
-	(ModelComparison_Placement)(0),              // 37: ptah.provider.experimental.ModelComparison.Placement
-	(ChangeSemantics_Impact)(0),                 // 38: ptah.provider.experimental.ChangeSemantics.Impact
-	(ChangeSemantics_Access)(0),                 // 39: ptah.provider.experimental.ChangeSemantics.Access
-	(ForwardState_Placement)(0),                 // 40: ptah.provider.experimental.ForwardState.Placement
-	(PlanningEffect_Action)(0),                  // 41: ptah.provider.experimental.PlanningEffect.Action
-	(PlanningMetadata_Transaction)(0),           // 42: ptah.provider.experimental.PlanningMetadata.Transaction
-	(PlanningMetadata_Placement)(0),             // 43: ptah.provider.experimental.PlanningMetadata.Placement
-	(PlanningOperation_Phase)(0),                // 44: ptah.provider.experimental.PlanningOperation.Phase
-	(PlanningDiagnostic_Code)(0),                // 45: ptah.provider.experimental.PlanningDiagnostic.Code
-	(PlanningTable_Action)(0),                   // 46: ptah.provider.experimental.PlanningTable.Action
-	(HistoryScope_Format)(0),                    // 47: ptah.provider.experimental.HistoryScope.Format
-	(HistoryRevision_State)(0),                  // 48: ptah.provider.experimental.HistoryRevision.State
-	(HistoryRevision_Direction)(0),              // 49: ptah.provider.experimental.HistoryRevision.Direction
-	(HistoryResult_Outcome)(0),                  // 50: ptah.provider.experimental.HistoryResult.Outcome
-	(LockResult_Outcome)(0),                     // 51: ptah.provider.experimental.LockResult.Outcome
-	(MetadataScope_Kind)(0),                     // 52: ptah.provider.experimental.MetadataScope.Kind
-	(MetadataResult_Outcome)(0),                 // 53: ptah.provider.experimental.MetadataResult.Outcome
-	(ReservedObject_Purpose)(0),                 // 54: ptah.provider.experimental.ReservedObject.Purpose
-	(SchemaDiagnostic_Code)(0),                  // 55: ptah.provider.experimental.SchemaDiagnostic.Code
-	(LintRule_Severity)(0),                      // 56: ptah.provider.experimental.LintRule.Severity
-	(LintSubject_Kind)(0),                       // 57: ptah.provider.experimental.LintSubject.Kind
-	(DevDatabaseRefusal_Kind)(0),                // 58: ptah.provider.experimental.DevDatabaseRefusal.Kind
-	(DevCleanup_Outcome)(0),                     // 59: ptah.provider.experimental.DevCleanup.Outcome
-	(RowWrite_Mode)(0),                          // 60: ptah.provider.experimental.RowWrite.Mode
-	(RenderRefusal_Reason)(0),                   // 61: ptah.provider.experimental.RenderRefusal.Reason
-	(SeedResult_Outcome)(0),                     // 62: ptah.provider.experimental.SeedResult.Outcome
-	(EmbeddingTarget_Layout)(0),                 // 63: ptah.provider.experimental.EmbeddingTarget.Layout
-	(EmbeddingTarget_Metric)(0),                 // 64: ptah.provider.experimental.EmbeddingTarget.Metric
-	(EmbeddingRefusal_Reason)(0),                // 65: ptah.provider.experimental.EmbeddingRefusal.Reason
-	(EmbeddingWriteResult_Outcome)(0),           // 66: ptah.provider.experimental.EmbeddingWriteResult.Outcome
-	(EmbeddingWriteResult_IndexOutcome)(0),      // 67: ptah.provider.experimental.EmbeddingWriteResult.IndexOutcome
-	(PrepareEmbeddingTargetRequest_Mode)(0),     // 68: ptah.provider.experimental.PrepareEmbeddingTargetRequest.Mode
-	(DropEmbeddingGenerationRequest_Storage)(0), // 69: ptah.provider.experimental.DropEmbeddingGenerationRequest.Storage
-	(EmbeddingSearchResult_Outcome)(0),          // 70: ptah.provider.experimental.EmbeddingSearchResult.Outcome
-	(EncodedFragment_Placement)(0),              // 71: ptah.provider.experimental.EncodedFragment.Placement
-	(RunStatementRequest_Access)(0),             // 72: ptah.provider.experimental.RunStatementRequest.Access
-	(ArgumentType_Scalar)(0),                    // 73: ptah.provider.experimental.ArgumentType.Scalar
-	(StatementResult_Outcome)(0),                // 74: ptah.provider.experimental.StatementResult.Outcome
-	(MigrationUnit_Placement)(0),                // 75: ptah.provider.experimental.MigrationUnit.Placement
-	(ColumnDifference_Relation)(0),              // 76: ptah.provider.experimental.ColumnDifference.Relation
-	(ColumnSequenceDifference_Attribute)(0),     // 77: ptah.provider.experimental.ColumnSequenceDifference.Attribute
-	(ColumnDefaultReceipt_Kind)(0),              // 78: ptah.provider.experimental.ColumnDefaultReceipt.Kind
-	(SQLToken_Kind)(0),                          // 79: ptah.provider.experimental.SQLToken.Kind
-	(*Empty)(nil),                               // 80: ptah.provider.experimental.Empty
-	(*ContractVersion)(nil),                     // 81: ptah.provider.experimental.ContractVersion
-	(*DescribeRequest)(nil),                     // 82: ptah.provider.experimental.DescribeRequest
-	(*Description)(nil),                         // 83: ptah.provider.experimental.Description
-	(*Engine)(nil),                              // 84: ptah.provider.experimental.Engine
-	(*ModelPredecessor)(nil),                    // 85: ptah.provider.experimental.ModelPredecessor
-	(*SourceIndexKind)(nil),                     // 86: ptah.provider.experimental.SourceIndexKind
-	(*ScopeSelection)(nil),                      // 87: ptah.provider.experimental.ScopeSelection
-	(*CommonObjectSupport)(nil),                 // 88: ptah.provider.experimental.CommonObjectSupport
-	(*HCLSourceDeclaration)(nil),                // 89: ptah.provider.experimental.HCLSourceDeclaration
-	(*HCLSourceBlock)(nil),                      // 90: ptah.provider.experimental.HCLSourceBlock
-	(*HCLSourceAttribute)(nil),                  // 91: ptah.provider.experimental.HCLSourceAttribute
-	(*HCLSourceChild)(nil),                      // 92: ptah.provider.experimental.HCLSourceChild
-	(*QueryDialect)(nil),                        // 93: ptah.provider.experimental.QueryDialect
-	(*QueryQuoting)(nil),                        // 94: ptah.provider.experimental.QueryQuoting
-	(*QuerySpelling)(nil),                       // 95: ptah.provider.experimental.QuerySpelling
-	(*SQLSchemaDeclaration)(nil),                // 96: ptah.provider.experimental.SQLSchemaDeclaration
-	(*ReleaseLine)(nil),                         // 97: ptah.provider.experimental.ReleaseLine
-	(*YAMLSourceKey)(nil),                       // 98: ptah.provider.experimental.YAMLSourceKey
-	(*GoSourceDirective)(nil),                   // 99: ptah.provider.experimental.GoSourceDirective
-	(*IdentifierRules)(nil),                     // 100: ptah.provider.experimental.IdentifierRules
-	(*Reference)(nil),                           // 101: ptah.provider.experimental.Reference
-	(*Envelope)(nil),                            // 102: ptah.provider.experimental.Envelope
-	(*DatabaseContext)(nil),                     // 103: ptah.provider.experimental.DatabaseContext
-	(*DatabaseContextRequest)(nil),              // 104: ptah.provider.experimental.DatabaseContextRequest
-	(*OpenRequest)(nil),                         // 105: ptah.provider.experimental.OpenRequest
-	(*Session)(nil),                             // 106: ptah.provider.experimental.Session
-	(*CloseRequest)(nil),                        // 107: ptah.provider.experimental.CloseRequest
-	(*InspectRequest)(nil),                      // 108: ptah.provider.experimental.InspectRequest
-	(*Schema)(nil),                              // 109: ptah.provider.experimental.Schema
-	(*UnreadTable)(nil),                         // 110: ptah.provider.experimental.UnreadTable
-	(*PlanningContextInventory)(nil),            // 111: ptah.provider.experimental.PlanningContextInventory
-	(*ObservedCommonObjects)(nil),               // 112: ptah.provider.experimental.ObservedCommonObjects
-	(*ObjectOwner)(nil),                         // 113: ptah.provider.experimental.ObjectOwner
-	(*CommonObjectCoverage)(nil),                // 114: ptah.provider.experimental.CommonObjectCoverage
-	(*ObservedView)(nil),                        // 115: ptah.provider.experimental.ObservedView
-	(*ObservedSequence)(nil),                    // 116: ptah.provider.experimental.ObservedSequence
-	(*ObservedRole)(nil),                        // 117: ptah.provider.experimental.ObservedRole
-	(*ObservedGrant)(nil),                       // 118: ptah.provider.experimental.ObservedGrant
-	(*ObjectComment)(nil),                       // 119: ptah.provider.experimental.ObjectComment
-	(*Table)(nil),                               // 120: ptah.provider.experimental.Table
-	(*Column)(nil),                              // 121: ptah.provider.experimental.Column
-	(*Disposition)(nil),                         // 122: ptah.provider.experimental.Disposition
-	(*Change)(nil),                              // 123: ptah.provider.experimental.Change
-	(*CommonObjectChange)(nil),                  // 124: ptah.provider.experimental.CommonObjectChange
-	(*ViewCreation)(nil),                        // 125: ptah.provider.experimental.ViewCreation
-	(*SequenceAlteration)(nil),                  // 126: ptah.provider.experimental.SequenceAlteration
-	(*RoleCreation)(nil),                        // 127: ptah.provider.experimental.RoleCreation
-	(*RoleAlteration)(nil),                      // 128: ptah.provider.experimental.RoleAlteration
-	(*RoleMembership)(nil),                      // 129: ptah.provider.experimental.RoleMembership
-	(*NativeOperation)(nil),                     // 130: ptah.provider.experimental.NativeOperation
-	(*RenderRequest)(nil),                       // 131: ptah.provider.experimental.RenderRequest
-	(*Unit)(nil),                                // 132: ptah.provider.experimental.Unit
-	(*RenderResult)(nil),                        // 133: ptah.provider.experimental.RenderResult
-	(*ExecuteRequest)(nil),                      // 134: ptah.provider.experimental.ExecuteRequest
-	(*ExecutionInput)(nil),                      // 135: ptah.provider.experimental.ExecutionInput
-	(*ExecutionInputBinding)(nil),               // 136: ptah.provider.experimental.ExecutionInputBinding
-	(*DescribeExecutionInputsRequest)(nil),      // 137: ptah.provider.experimental.DescribeExecutionInputsRequest
-	(*ExecutionInputs)(nil),                     // 138: ptah.provider.experimental.ExecutionInputs
-	(*BeginTransactionRequest)(nil),             // 139: ptah.provider.experimental.BeginTransactionRequest
-	(*Transaction)(nil),                         // 140: ptah.provider.experimental.Transaction
-	(*FinishTransactionRequest)(nil),            // 141: ptah.provider.experimental.FinishTransactionRequest
-	(*TransactionResult)(nil),                   // 142: ptah.provider.experimental.TransactionResult
-	(*Execution)(nil),                           // 143: ptah.provider.experimental.Execution
-	(*AnalyzeSQLRequest)(nil),                   // 144: ptah.provider.experimental.AnalyzeSQLRequest
-	(*SQLAnalysis)(nil),                         // 145: ptah.provider.experimental.SQLAnalysis
-	(*SQLFile)(nil),                             // 146: ptah.provider.experimental.SQLFile
-	(*SQLStatement)(nil),                        // 147: ptah.provider.experimental.SQLStatement
-	(*NormalizeValuesRequest)(nil),              // 148: ptah.provider.experimental.NormalizeValuesRequest
-	(*ValueInput)(nil),                          // 149: ptah.provider.experimental.ValueInput
-	(*NormalizedValues)(nil),                    // 150: ptah.provider.experimental.NormalizedValues
-	(*NormalizedValue)(nil),                     // 151: ptah.provider.experimental.NormalizedValue
-	(*SourcePosition)(nil),                      // 152: ptah.provider.experimental.SourcePosition
-	(*SourceSpan)(nil),                          // 153: ptah.provider.experimental.SourceSpan
-	(*SourceValue)(nil),                         // 154: ptah.provider.experimental.SourceValue
-	(*SourceSequence)(nil),                      // 155: ptah.provider.experimental.SourceSequence
-	(*SourceMapping)(nil),                       // 156: ptah.provider.experimental.SourceMapping
-	(*SourceEntry)(nil),                         // 157: ptah.provider.experimental.SourceEntry
-	(*SourceBlock)(nil),                         // 158: ptah.provider.experimental.SourceBlock
-	(*SourceLabel)(nil),                         // 159: ptah.provider.experimental.SourceLabel
-	(*SourceBinding)(nil),                       // 160: ptah.provider.experimental.SourceBinding
-	(*SourceFragment)(nil),                      // 161: ptah.provider.experimental.SourceFragment
-	(*SourceDocument)(nil),                      // 162: ptah.provider.experimental.SourceDocument
-	(*SourcePathStep)(nil),                      // 163: ptah.provider.experimental.SourcePathStep
-	(*SourceTrace)(nil),                         // 164: ptah.provider.experimental.SourceTrace
-	(*ValueModel)(nil),                          // 165: ptah.provider.experimental.ValueModel
-	(*ModelReport)(nil),                         // 166: ptah.provider.experimental.ModelReport
-	(*ModelMetric)(nil),                         // 167: ptah.provider.experimental.ModelMetric
-	(*ReportValuesRequest)(nil),                 // 168: ptah.provider.experimental.ReportValuesRequest
-	(*ValueReports)(nil),                        // 169: ptah.provider.experimental.ValueReports
-	(*ValueReport)(nil),                         // 170: ptah.provider.experimental.ValueReport
-	(*MetricCount)(nil),                         // 171: ptah.provider.experimental.MetricCount
-	(*ModelKnowledge)(nil),                      // 172: ptah.provider.experimental.ModelKnowledge
-	(*NamespaceComponent)(nil),                  // 173: ptah.provider.experimental.NamespaceComponent
-	(*ModelNamespace)(nil),                      // 174: ptah.provider.experimental.ModelNamespace
-	(*ModelNamespaceKnowledge)(nil),             // 175: ptah.provider.experimental.ModelNamespaceKnowledge
-	(*ModelKindCoverage)(nil),                   // 176: ptah.provider.experimental.ModelKindCoverage
-	(*ModelSubjectCoverage)(nil),                // 177: ptah.provider.experimental.ModelSubjectCoverage
-	(*ModelCoverage)(nil),                       // 178: ptah.provider.experimental.ModelCoverage
-	(*DecodeSourceRequest)(nil),                 // 179: ptah.provider.experimental.DecodeSourceRequest
-	(*DecodedSource)(nil),                       // 180: ptah.provider.experimental.DecodedSource
-	(*DecodedSourceDocument)(nil),               // 181: ptah.provider.experimental.DecodedSourceDocument
-	(*DecodedSourceFragment)(nil),               // 182: ptah.provider.experimental.DecodedSourceFragment
-	(*SourceModelValue)(nil),                    // 183: ptah.provider.experimental.SourceModelValue
-	(*ReadSQLSchemaRequest)(nil),                // 184: ptah.provider.experimental.ReadSQLSchemaRequest
-	(*SQLDocument)(nil),                         // 185: ptah.provider.experimental.SQLDocument
-	(*SQLSchema)(nil),                           // 186: ptah.provider.experimental.SQLSchema
-	(*SQLView)(nil),                             // 187: ptah.provider.experimental.SQLView
-	(*SQLSequence)(nil),                         // 188: ptah.provider.experimental.SQLSequence
-	(*SQLRole)(nil),                             // 189: ptah.provider.experimental.SQLRole
-	(*SQLGrant)(nil),                            // 190: ptah.provider.experimental.SQLGrant
-	(*DeclaredCommonObjects)(nil),               // 191: ptah.provider.experimental.DeclaredCommonObjects
-	(*PrepareCommonObjectsRequest)(nil),         // 192: ptah.provider.experimental.PrepareCommonObjectsRequest
-	(*PreparedCommonObjects)(nil),               // 193: ptah.provider.experimental.PreparedCommonObjects
-	(*SQLObjectTrace)(nil),                      // 194: ptah.provider.experimental.SQLObjectTrace
-	(*SQLDocumentDeclarations)(nil),             // 195: ptah.provider.experimental.SQLDocumentDeclarations
-	(*SQLDeclaration)(nil),                      // 196: ptah.provider.experimental.SQLDeclaration
-	(*SQLTableStatement)(nil),                   // 197: ptah.provider.experimental.SQLTableStatement
-	(*SQLDiagnostic)(nil),                       // 198: ptah.provider.experimental.SQLDiagnostic
-	(*ConvertValuesRequest)(nil),                // 199: ptah.provider.experimental.ConvertValuesRequest
-	(*InspectionScopeBinding)(nil),              // 200: ptah.provider.experimental.InspectionScopeBinding
-	(*ModelComparison)(nil),                     // 201: ptah.provider.experimental.ModelComparison
-	(*ComparisonPart)(nil),                      // 202: ptah.provider.experimental.ComparisonPart
-	(*ComparisonIdentity)(nil),                  // 203: ptah.provider.experimental.ComparisonIdentity
-	(*ComparisonNamespace)(nil),                 // 204: ptah.provider.experimental.ComparisonNamespace
-	(*ComparisonRegion)(nil),                    // 205: ptah.provider.experimental.ComparisonRegion
-	(*ComparisonKnowledgeSource)(nil),           // 206: ptah.provider.experimental.ComparisonKnowledgeSource
-	(*ComparisonKindCoverage)(nil),              // 207: ptah.provider.experimental.ComparisonKindCoverage
-	(*ComparisonSubjectCoverage)(nil),           // 208: ptah.provider.experimental.ComparisonSubjectCoverage
-	(*ComparisonCoverage)(nil),                  // 209: ptah.provider.experimental.ComparisonCoverage
-	(*ComparisonRecord)(nil),                    // 210: ptah.provider.experimental.ComparisonRecord
-	(*ComparisonState)(nil),                     // 211: ptah.provider.experimental.ComparisonState
-	(*ComparisonParent)(nil),                    // 212: ptah.provider.experimental.ComparisonParent
-	(*RequestedChange)(nil),                     // 213: ptah.provider.experimental.RequestedChange
-	(*ComparisonExclusion)(nil),                 // 214: ptah.provider.experimental.ComparisonExclusion
-	(*ComparisonColumn)(nil),                    // 215: ptah.provider.experimental.ComparisonColumn
-	(*ComparisonConstraint)(nil),                // 216: ptah.provider.experimental.ComparisonConstraint
-	(*ResolvedIdentifier)(nil),                  // 217: ptah.provider.experimental.ResolvedIdentifier
-	(*ComparisonIdentifiers)(nil),               // 218: ptah.provider.experimental.ComparisonIdentifiers
-	(*CompareModelsRequest)(nil),                // 219: ptah.provider.experimental.CompareModelsRequest
-	(*ChangeSemantics)(nil),                     // 220: ptah.provider.experimental.ChangeSemantics
-	(*ComparedChange)(nil),                      // 221: ptah.provider.experimental.ComparedChange
-	(*ComparisonUndecided)(nil),                 // 222: ptah.provider.experimental.ComparisonUndecided
-	(*ComparedModels)(nil),                      // 223: ptah.provider.experimental.ComparedModels
-	(*ResolvedRequest)(nil),                     // 224: ptah.provider.experimental.ResolvedRequest
-	(*ComparisonCount)(nil),                     // 225: ptah.provider.experimental.ComparisonCount
-	(*OperationSemantics)(nil),                  // 226: ptah.provider.experimental.OperationSemantics
-	(*ModelReversal)(nil),                       // 227: ptah.provider.experimental.ModelReversal
-	(*ReverseChangesRequest)(nil),               // 228: ptah.provider.experimental.ReverseChangesRequest
-	(*ReversedChanges)(nil),                     // 229: ptah.provider.experimental.ReversedChanges
-	(*ReversedChange)(nil),                      // 230: ptah.provider.experimental.ReversedChange
-	(*ForwardState)(nil),                        // 231: ptah.provider.experimental.ForwardState
-	(*ModelPlanning)(nil),                       // 232: ptah.provider.experimental.ModelPlanning
-	(*ModelDeclarations)(nil),                   // 233: ptah.provider.experimental.ModelDeclarations
-	(*PlanDeclarationsRequest)(nil),             // 234: ptah.provider.experimental.PlanDeclarationsRequest
-	(*PlannedDeclarations)(nil),                 // 235: ptah.provider.experimental.PlannedDeclarations
-	(*DeclarationReceipt)(nil),                  // 236: ptah.provider.experimental.DeclarationReceipt
-	(*DeclarationDiagnostic)(nil),               // 237: ptah.provider.experimental.DeclarationDiagnostic
-	(*StepIdentity)(nil),                        // 238: ptah.provider.experimental.StepIdentity
-	(*PlanningEffect)(nil),                      // 239: ptah.provider.experimental.PlanningEffect
-	(*PlanningMetadata)(nil),                    // 240: ptah.provider.experimental.PlanningMetadata
-	(*PlanningDependency)(nil),                  // 241: ptah.provider.experimental.PlanningDependency
-	(*CommonPlanningStep)(nil),                  // 242: ptah.provider.experimental.CommonPlanningStep
-	(*CommonIndexRename)(nil),                   // 243: ptah.provider.experimental.CommonIndexRename
-	(*PlanningOperation)(nil),                   // 244: ptah.provider.experimental.PlanningOperation
-	(*PlanningStep)(nil),                        // 245: ptah.provider.experimental.PlanningStep
-	(*PlanningContribution)(nil),                // 246: ptah.provider.experimental.PlanningContribution
-	(*PlanningRewrite)(nil),                     // 247: ptah.provider.experimental.PlanningRewrite
-	(*PlanningChange)(nil),                      // 248: ptah.provider.experimental.PlanningChange
-	(*PlanningReceipt)(nil),                     // 249: ptah.provider.experimental.PlanningReceipt
-	(*PlanningParentReceipt)(nil),               // 250: ptah.provider.experimental.PlanningParentReceipt
-	(*PlanningDiagnostic)(nil),                  // 251: ptah.provider.experimental.PlanningDiagnostic
-	(*PlanningType)(nil),                        // 252: ptah.provider.experimental.PlanningType
-	(*PlanningTable)(nil),                       // 253: ptah.provider.experimental.PlanningTable
-	(*PlanFeaturesRequest)(nil),                 // 254: ptah.provider.experimental.PlanFeaturesRequest
-	(*PlanningPolicy)(nil),                      // 255: ptah.provider.experimental.PlanningPolicy
-	(*PlannedFeatures)(nil),                     // 256: ptah.provider.experimental.PlannedFeatures
-	(*CapturedFeatures)(nil),                    // 257: ptah.provider.experimental.CapturedFeatures
-	(*DeclaredTable)(nil),                       // 258: ptah.provider.experimental.DeclaredTable
-	(*DeclaredKeyPart)(nil),                     // 259: ptah.provider.experimental.DeclaredKeyPart
-	(*DeclaredColumn)(nil),                      // 260: ptah.provider.experimental.DeclaredColumn
-	(*DeclaredEnum)(nil),                        // 261: ptah.provider.experimental.DeclaredEnum
-	(*CapturedIndexPart)(nil),                   // 262: ptah.provider.experimental.CapturedIndexPart
-	(*DeclaredIndex)(nil),                       // 263: ptah.provider.experimental.DeclaredIndex
-	(*DeclaredConstraint)(nil),                  // 264: ptah.provider.experimental.DeclaredConstraint
-	(*CapturedTrigger)(nil),                     // 265: ptah.provider.experimental.CapturedTrigger
-	(*ObservedTable)(nil),                       // 266: ptah.provider.experimental.ObservedTable
-	(*ObservedColumn)(nil),                      // 267: ptah.provider.experimental.ObservedColumn
-	(*ObservedIndex)(nil),                       // 268: ptah.provider.experimental.ObservedIndex
-	(*ObservedConstraint)(nil),                  // 269: ptah.provider.experimental.ObservedConstraint
-	(*PlanningColumn)(nil),                      // 270: ptah.provider.experimental.PlanningColumn
-	(*PlanningDefault)(nil),                     // 271: ptah.provider.experimental.PlanningDefault
-	(*PlanningForeignKey)(nil),                  // 272: ptah.provider.experimental.PlanningForeignKey
-	(*CapturedFacet)(nil),                       // 273: ptah.provider.experimental.CapturedFacet
-	(*HistoryScope)(nil),                        // 274: ptah.provider.experimental.HistoryScope
-	(*HistoryRevision)(nil),                     // 275: ptah.provider.experimental.HistoryRevision
-	(*ReadHistoryRequest)(nil),                  // 276: ptah.provider.experimental.ReadHistoryRequest
-	(*HistorySnapshot)(nil),                     // 277: ptah.provider.experimental.HistorySnapshot
-	(*PrepareHistoryRequest)(nil),               // 278: ptah.provider.experimental.PrepareHistoryRequest
-	(*MutateHistoryRequest)(nil),                // 279: ptah.provider.experimental.MutateHistoryRequest
-	(*HistoryResult)(nil),                       // 280: ptah.provider.experimental.HistoryResult
-	(*LockScope)(nil),                           // 281: ptah.provider.experimental.LockScope
-	(*LockRequest)(nil),                         // 282: ptah.provider.experimental.LockRequest
-	(*LockResult)(nil),                          // 283: ptah.provider.experimental.LockResult
-	(*ProviderDiagnostic)(nil),                  // 284: ptah.provider.experimental.ProviderDiagnostic
-	(*MetadataScope)(nil),                       // 285: ptah.provider.experimental.MetadataScope
-	(*MigrationLogRecord)(nil),                  // 286: ptah.provider.experimental.MigrationLogRecord
-	(*MigrationTagRecord)(nil),                  // 287: ptah.provider.experimental.MigrationTagRecord
-	(*PrepareMetadataRequest)(nil),              // 288: ptah.provider.experimental.PrepareMetadataRequest
-	(*MutateMetadataRequest)(nil),               // 289: ptah.provider.experimental.MutateMetadataRequest
-	(*MetadataResult)(nil),                      // 290: ptah.provider.experimental.MetadataResult
-	(*LookupMetadataTagRequest)(nil),            // 291: ptah.provider.experimental.LookupMetadataTagRequest
-	(*MetadataTagResult)(nil),                   // 292: ptah.provider.experimental.MetadataTagResult
-	(*MetadataReadRequest)(nil),                 // 293: ptah.provider.experimental.MetadataReadRequest
-	(*MetadataReadResult)(nil),                  // 294: ptah.provider.experimental.MetadataReadResult
-	(*ReadMetadataPageRequest)(nil),             // 295: ptah.provider.experimental.ReadMetadataPageRequest
-	(*MetadataPage)(nil),                        // 296: ptah.provider.experimental.MetadataPage
-	(*ReservedObject)(nil),                      // 297: ptah.provider.experimental.ReservedObject
-	(*PrepareTablesRequest)(nil),                // 298: ptah.provider.experimental.PrepareTablesRequest
-	(*TablePreparationInput)(nil),               // 299: ptah.provider.experimental.TablePreparationInput
-	(*PreparedTable)(nil),                       // 300: ptah.provider.experimental.PreparedTable
-	(*PreparedIndex)(nil),                       // 301: ptah.provider.experimental.PreparedIndex
-	(*PreparedTables)(nil),                      // 302: ptah.provider.experimental.PreparedTables
-	(*ProjectTableCreationsRequest)(nil),        // 303: ptah.provider.experimental.ProjectTableCreationsRequest
-	(*TableCreationInput)(nil),                  // 304: ptah.provider.experimental.TableCreationInput
-	(*ProjectedTableCreation)(nil),              // 305: ptah.provider.experimental.ProjectedTableCreation
-	(*ProjectedTableCreations)(nil),             // 306: ptah.provider.experimental.ProjectedTableCreations
-	(*ValidateSchemaRequest)(nil),               // 307: ptah.provider.experimental.ValidateSchemaRequest
-	(*ValidationTable)(nil),                     // 308: ptah.provider.experimental.ValidationTable
-	(*DeclaredNamespace)(nil),                   // 309: ptah.provider.experimental.DeclaredNamespace
-	(*SchemaValidation)(nil),                    // 310: ptah.provider.experimental.SchemaValidation
-	(*SchemaDiagnostic)(nil),                    // 311: ptah.provider.experimental.SchemaDiagnostic
-	(*SchemaCoverageLimit)(nil),                 // 312: ptah.provider.experimental.SchemaCoverageLimit
-	(*SchemaDependencies)(nil),                  // 313: ptah.provider.experimental.SchemaDependencies
-	(*LintRule)(nil),                            // 314: ptah.provider.experimental.LintRule
-	(*LintSource)(nil),                          // 315: ptah.provider.experimental.LintSource
-	(*LintEffect)(nil),                          // 316: ptah.provider.experimental.LintEffect
-	(*LintStatement)(nil),                       // 317: ptah.provider.experimental.LintStatement
-	(*LintFile)(nil),                            // 318: ptah.provider.experimental.LintFile
-	(*SplitLintRequest)(nil),                    // 319: ptah.provider.experimental.SplitLintRequest
-	(*SplitLint)(nil),                           // 320: ptah.provider.experimental.SplitLint
-	(*AnnotateLintRequest)(nil),                 // 321: ptah.provider.experimental.AnnotateLintRequest
-	(*LintAnnotation)(nil),                      // 322: ptah.provider.experimental.LintAnnotation
-	(*LintAnnotations)(nil),                     // 323: ptah.provider.experimental.LintAnnotations
-	(*AnnotatedLint)(nil),                       // 324: ptah.provider.experimental.AnnotatedLint
-	(*CheckLintRequest)(nil),                    // 325: ptah.provider.experimental.CheckLintRequest
-	(*LintSubject)(nil),                         // 326: ptah.provider.experimental.LintSubject
-	(*LintFinding)(nil),                         // 327: ptah.provider.experimental.LintFinding
-	(*CheckedLint)(nil),                         // 328: ptah.provider.experimental.CheckedLint
-	(*ProvisionDevRequest)(nil),                 // 329: ptah.provider.experimental.ProvisionDevRequest
-	(*DevDatabaseRefusal)(nil),                  // 330: ptah.provider.experimental.DevDatabaseRefusal
-	(*DevDatabase)(nil),                         // 331: ptah.provider.experimental.DevDatabase
-	(*ReleaseDevRequest)(nil),                   // 332: ptah.provider.experimental.ReleaseDevRequest
-	(*ListDevObjectsRequest)(nil),               // 333: ptah.provider.experimental.ListDevObjectsRequest
-	(*DevObject)(nil),                           // 334: ptah.provider.experimental.DevObject
-	(*DevObjects)(nil),                          // 335: ptah.provider.experimental.DevObjects
-	(*CleanDevRequest)(nil),                     // 336: ptah.provider.experimental.CleanDevRequest
-	(*DevCleanup)(nil),                          // 337: ptah.provider.experimental.DevCleanup
-	(*ReplayScope)(nil),                         // 338: ptah.provider.experimental.ReplayScope
-	(*GuardReplayRequest)(nil),                  // 339: ptah.provider.experimental.GuardReplayRequest
-	(*ReplayVerdict)(nil),                       // 340: ptah.provider.experimental.ReplayVerdict
-	(*GuardedReplay)(nil),                       // 341: ptah.provider.experimental.GuardedReplay
-	(*DataValue)(nil),                           // 342: ptah.provider.experimental.DataValue
-	(*DecimalValue)(nil),                        // 343: ptah.provider.experimental.DecimalValue
-	(*TimestampValue)(nil),                      // 344: ptah.provider.experimental.TimestampValue
-	(*IntervalValue)(nil),                       // 345: ptah.provider.experimental.IntervalValue
-	(*NativeValue)(nil),                         // 346: ptah.provider.experimental.NativeValue
-	(*Row)(nil),                                 // 347: ptah.provider.experimental.Row
-	(*DataColumn)(nil),                          // 348: ptah.provider.experimental.DataColumn
-	(*RowColumn)(nil),                           // 349: ptah.provider.experimental.RowColumn
-	(*LiveTable)(nil),                           // 350: ptah.provider.experimental.LiveTable
-	(*TypeRowsRequest)(nil),                     // 351: ptah.provider.experimental.TypeRowsRequest
-	(*TypedRows)(nil),                           // 352: ptah.provider.experimental.TypedRows
-	(*ReadRowsRequest)(nil),                     // 353: ptah.provider.experimental.ReadRowsRequest
-	(*RowPage)(nil),                             // 354: ptah.provider.experimental.RowPage
-	(*RenderRowWritesRequest)(nil),              // 355: ptah.provider.experimental.RenderRowWritesRequest
-	(*RowWrite)(nil),                            // 356: ptah.provider.experimental.RowWrite
-	(*RenderRefusal)(nil),                       // 357: ptah.provider.experimental.RenderRefusal
-	(*ListSeedTablesRequest)(nil),               // 358: ptah.provider.experimental.ListSeedTablesRequest
-	(*SeedTables)(nil),                          // 359: ptah.provider.experimental.SeedTables
-	(*Seed)(nil),                                // 360: ptah.provider.experimental.Seed
-	(*ApplySeedRequest)(nil),                    // 361: ptah.provider.experimental.ApplySeedRequest
-	(*RecordSeedRequest)(nil),                   // 362: ptah.provider.experimental.RecordSeedRequest
-	(*SeedResult)(nil),                          // 363: ptah.provider.experimental.SeedResult
-	(*ReadSeedLedgerRequest)(nil),               // 364: ptah.provider.experimental.ReadSeedLedgerRequest
-	(*SeedLedger)(nil),                          // 365: ptah.provider.experimental.SeedLedger
-	(*SeedLedgerEntry)(nil),                     // 366: ptah.provider.experimental.SeedLedgerEntry
-	(*EmbeddingEngine)(nil),                     // 367: ptah.provider.experimental.EmbeddingEngine
-	(*EmbeddingKey)(nil),                        // 368: ptah.provider.experimental.EmbeddingKey
-	(*EmbeddingSource)(nil),                     // 369: ptah.provider.experimental.EmbeddingSource
-	(*EmbeddingTarget)(nil),                     // 370: ptah.provider.experimental.EmbeddingTarget
-	(*EmbeddingNames)(nil),                      // 371: ptah.provider.experimental.EmbeddingNames
-	(*EmbeddingSpec)(nil),                       // 372: ptah.provider.experimental.EmbeddingSpec
-	(*EmbeddingLocation)(nil),                   // 373: ptah.provider.experimental.EmbeddingLocation
-	(*EmbeddingRefusal)(nil),                    // 374: ptah.provider.experimental.EmbeddingRefusal
-	(*EmbeddingWriteResult)(nil),                // 375: ptah.provider.experimental.EmbeddingWriteResult
-	(*EmbeddingGeneration)(nil),                 // 376: ptah.provider.experimental.EmbeddingGeneration
-	(*EmbeddingProgress)(nil),                   // 377: ptah.provider.experimental.EmbeddingProgress
-	(*EmbeddingRun)(nil),                        // 378: ptah.provider.experimental.EmbeddingRun
-	(*EmbeddingRecords)(nil),                    // 379: ptah.provider.experimental.EmbeddingRecords
-	(*EmbeddingPointerKey)(nil),                 // 380: ptah.provider.experimental.EmbeddingPointerKey
-	(*EmbeddingPointer)(nil),                    // 381: ptah.provider.experimental.EmbeddingPointer
-	(*EmbeddingEventCounts)(nil),                // 382: ptah.provider.experimental.EmbeddingEventCounts
-	(*EmbeddingEvent)(nil),                      // 383: ptah.provider.experimental.EmbeddingEvent
-	(*EmbeddingStateScope)(nil),                 // 384: ptah.provider.experimental.EmbeddingStateScope
-	(*PrepareEmbeddingStoreRequest)(nil),        // 385: ptah.provider.experimental.PrepareEmbeddingStoreRequest
-	(*ReadEmbeddingStateRequest)(nil),           // 386: ptah.provider.experimental.ReadEmbeddingStateRequest
-	(*EmbeddingState)(nil),                      // 387: ptah.provider.experimental.EmbeddingState
-	(*MutateEmbeddingStateRequest)(nil),         // 388: ptah.provider.experimental.MutateEmbeddingStateRequest
-	(*AppendEmbeddingEventRequest)(nil),         // 389: ptah.provider.experimental.AppendEmbeddingEventRequest
-	(*ReadEmbeddingEventsRequest)(nil),          // 390: ptah.provider.experimental.ReadEmbeddingEventsRequest
-	(*EmbeddingEventPage)(nil),                  // 391: ptah.provider.experimental.EmbeddingEventPage
-	(*DescribeEmbeddingTargetRequest)(nil),      // 392: ptah.provider.experimental.DescribeEmbeddingTargetRequest
-	(*EmbeddingTargetObjects)(nil),              // 393: ptah.provider.experimental.EmbeddingTargetObjects
-	(*ResolveEmbeddingRelationsRequest)(nil),    // 394: ptah.provider.experimental.ResolveEmbeddingRelationsRequest
-	(*EmbeddingRelations)(nil),                  // 395: ptah.provider.experimental.EmbeddingRelations
-	(*MeasureEmbeddingRequest)(nil),             // 396: ptah.provider.experimental.MeasureEmbeddingRequest
-	(*EmbeddingMeasurement)(nil),                // 397: ptah.provider.experimental.EmbeddingMeasurement
-	(*PrepareEmbeddingTargetRequest)(nil),       // 398: ptah.provider.experimental.PrepareEmbeddingTargetRequest
-	(*BuildEmbeddingIndexRequest)(nil),          // 399: ptah.provider.experimental.BuildEmbeddingIndexRequest
-	(*ReadEmbeddingStructureRequest)(nil),       // 400: ptah.provider.experimental.ReadEmbeddingStructureRequest
-	(*EmbeddingStructure)(nil),                  // 401: ptah.provider.experimental.EmbeddingStructure
-	(*DropEmbeddingGenerationRequest)(nil),      // 402: ptah.provider.experimental.DropEmbeddingGenerationRequest
-	(*EmbeddingSourceRow)(nil),                  // 403: ptah.provider.experimental.EmbeddingSourceRow
-	(*ScanEmbeddingSourceRequest)(nil),          // 404: ptah.provider.experimental.ScanEmbeddingSourceRequest
-	(*EmbeddingSourcePage)(nil),                 // 405: ptah.provider.experimental.EmbeddingSourcePage
-	(*ReadEmbeddingSourceRowsRequest)(nil),      // 406: ptah.provider.experimental.ReadEmbeddingSourceRowsRequest
-	(*EmbeddingSourceRows)(nil),                 // 407: ptah.provider.experimental.EmbeddingSourceRows
-	(*EmbeddingHeldTarget)(nil),                 // 408: ptah.provider.experimental.EmbeddingHeldTarget
-	(*ReadEmbeddingBatchStateRequest)(nil),      // 409: ptah.provider.experimental.ReadEmbeddingBatchStateRequest
-	(*EmbeddingBatchState)(nil),                 // 410: ptah.provider.experimental.EmbeddingBatchState
-	(*EmbeddingTargetWrite)(nil),                // 411: ptah.provider.experimental.EmbeddingTargetWrite
-	(*CommitEmbeddingBatchRequest)(nil),         // 412: ptah.provider.experimental.CommitEmbeddingBatchRequest
-	(*EmbeddingStoredRow)(nil),                  // 413: ptah.provider.experimental.EmbeddingStoredRow
-	(*EmbeddingVerificationSource)(nil),         // 414: ptah.provider.experimental.EmbeddingVerificationSource
-	(*EmbeddingVerificationRow)(nil),            // 415: ptah.provider.experimental.EmbeddingVerificationRow
-	(*ReadEmbeddingVerificationRequest)(nil),    // 416: ptah.provider.experimental.ReadEmbeddingVerificationRequest
-	(*EmbeddingVerificationPage)(nil),           // 417: ptah.provider.experimental.EmbeddingVerificationPage
-	(*SearchEmbeddingsRequest)(nil),             // 418: ptah.provider.experimental.SearchEmbeddingsRequest
-	(*EmbeddingSearchResult)(nil),               // 419: ptah.provider.experimental.EmbeddingSearchResult
-	(*EncodeSourceRequest)(nil),                 // 420: ptah.provider.experimental.EncodeSourceRequest
-	(*EncodeSourceValue)(nil),                   // 421: ptah.provider.experimental.EncodeSourceValue
-	(*EncodeSourceColumn)(nil),                  // 422: ptah.provider.experimental.EncodeSourceColumn
-	(*EncodedSource)(nil),                       // 423: ptah.provider.experimental.EncodedSource
-	(*EncodedSourceGroup)(nil),                  // 424: ptah.provider.experimental.EncodedSourceGroup
-	(*EncodedSourcePart)(nil),                   // 425: ptah.provider.experimental.EncodedSourcePart
-	(*EncodedFragment)(nil),                     // 426: ptah.provider.experimental.EncodedFragment
-	(*EncodeLoss)(nil),                          // 427: ptah.provider.experimental.EncodeLoss
-	(*EncodedFieldType)(nil),                    // 428: ptah.provider.experimental.EncodedFieldType
-	(*RunStatementRequest)(nil),                 // 429: ptah.provider.experimental.RunStatementRequest
-	(*StatementArgument)(nil),                   // 430: ptah.provider.experimental.StatementArgument
-	(*ArgumentType)(nil),                        // 431: ptah.provider.experimental.ArgumentType
-	(*StatementResult)(nil),                     // 432: ptah.provider.experimental.StatementResult
-	(*ReadStatementRowsRequest)(nil),            // 433: ptah.provider.experimental.ReadStatementRowsRequest
-	(*StatementRows)(nil),                       // 434: ptah.provider.experimental.StatementRows
-	(*CloseStatementRequest)(nil),               // 435: ptah.provider.experimental.CloseStatementRequest
-	(*SplitMigrationRequest)(nil),               // 436: ptah.provider.experimental.SplitMigrationRequest
-	(*MigrationSplit)(nil),                      // 437: ptah.provider.experimental.MigrationSplit
-	(*MigrationUnit)(nil),                       // 438: ptah.provider.experimental.MigrationUnit
-	(*SplitRefusal)(nil),                        // 439: ptah.provider.experimental.SplitRefusal
-	(*AssertionVerdict)(nil),                    // 440: ptah.provider.experimental.AssertionVerdict
-	(*CompareColumnsRequest)(nil),               // 441: ptah.provider.experimental.CompareColumnsRequest
-	(*ColumnComparisonTable)(nil),               // 442: ptah.provider.experimental.ColumnComparisonTable
-	(*ColumnComparisonPair)(nil),                // 443: ptah.provider.experimental.ColumnComparisonPair
-	(*ComparedColumns)(nil),                     // 444: ptah.provider.experimental.ComparedColumns
-	(*ComparedColumnTable)(nil),                 // 445: ptah.provider.experimental.ComparedColumnTable
-	(*ComparedColumn)(nil),                      // 446: ptah.provider.experimental.ComparedColumn
-	(*ColumnAspectReceipt)(nil),                 // 447: ptah.provider.experimental.ColumnAspectReceipt
-	(*ColumnDifference)(nil),                    // 448: ptah.provider.experimental.ColumnDifference
-	(*ColumnNullability)(nil),                   // 449: ptah.provider.experimental.ColumnNullability
-	(*ColumnSequenceDifferences)(nil),           // 450: ptah.provider.experimental.ColumnSequenceDifferences
-	(*ColumnSequenceDifference)(nil),            // 451: ptah.provider.experimental.ColumnSequenceDifference
-	(*ReadColumnDefaultsRequest)(nil),           // 452: ptah.provider.experimental.ReadColumnDefaultsRequest
-	(*ObservedColumnDefaultInput)(nil),          // 453: ptah.provider.experimental.ObservedColumnDefaultInput
-	(*ReadColumnDefaultsResult)(nil),            // 454: ptah.provider.experimental.ReadColumnDefaultsResult
-	(*ColumnDefaultReceipt)(nil),                // 455: ptah.provider.experimental.ColumnDefaultReceipt
-	(*ScanSQLRequest)(nil),                      // 456: ptah.provider.experimental.ScanSQLRequest
-	(*SQLScan)(nil),                             // 457: ptah.provider.experimental.SQLScan
-	(*SQLToken)(nil),                            // 458: ptah.provider.experimental.SQLToken
-	nil,                                         // 459: ptah.provider.experimental.Engine.DefaultCapabilitiesEntry
-	nil,                                         // 460: ptah.provider.experimental.QueryDialect.DefaultCapabilitiesEntry
-	nil,                                         // 461: ptah.provider.experimental.ReleaseLine.CapabilitiesEntry
-	nil,                                         // 462: ptah.provider.experimental.Session.CapabilitiesEntry
-	nil,                                         // 463: ptah.provider.experimental.RenderRequest.CapabilitiesEntry
-	nil,                                         // 464: ptah.provider.experimental.PrepareCommonObjectsRequest.CapabilitiesEntry
-	nil,                                         // 465: ptah.provider.experimental.CompareModelsRequest.CapabilitiesEntry
-	nil,                                         // 466: ptah.provider.experimental.ReverseChangesRequest.CapabilitiesEntry
-	nil,                                         // 467: ptah.provider.experimental.PlanDeclarationsRequest.CapabilitiesEntry
-	nil,                                         // 468: ptah.provider.experimental.PlanFeaturesRequest.CapabilitiesEntry
-	nil,                                         // 469: ptah.provider.experimental.DeclaredIndex.StorageParametersEntry
-	nil,                                         // 470: ptah.provider.experimental.ObservedIndex.StorageParametersEntry
-	nil,                                         // 471: ptah.provider.experimental.PrepareTablesRequest.CapabilitiesEntry
-	nil,                                         // 472: ptah.provider.experimental.ProjectTableCreationsRequest.CapabilitiesEntry
-	nil,                                         // 473: ptah.provider.experimental.ValidateSchemaRequest.CapabilitiesEntry
-	nil,                                         // 474: ptah.provider.experimental.ValidateSchemaRequest.DependenciesEntry
-	nil,                                         // 475: ptah.provider.experimental.CheckLintRequest.CapabilitiesEntry
-	nil,                                         // 476: ptah.provider.experimental.TypeRowsRequest.CapabilitiesEntry
-	nil,                                         // 477: ptah.provider.experimental.RenderRowWritesRequest.CapabilitiesEntry
-	nil,                                         // 478: ptah.provider.experimental.RowWrite.ColumnTypesEntry
-	nil,                                         // 479: ptah.provider.experimental.EmbeddingTarget.IndexOptionsEntry
-	(*EmbeddingStateScope_AllRecords)(nil),      // 480: ptah.provider.experimental.EmbeddingStateScope.AllRecords
-	nil,                                         // 481: ptah.provider.experimental.EmbeddingMeasurement.CapabilitiesEntry
-	nil,                                         // 482: ptah.provider.experimental.CompareColumnsRequest.CapabilitiesEntry
-	nil,                                         // 483: ptah.provider.experimental.ReadColumnDefaultsRequest.CapabilitiesEntry
+	(PlanningTables)(0),                         // 1: ptah.provider.experimental.PlanningTables
+	(PlanningStatementStyle)(0),                 // 2: ptah.provider.experimental.PlanningStatementStyle
+	(LintFact)(0),                               // 3: ptah.provider.experimental.LintFact
+	(LintStatementClass)(0),                     // 4: ptah.provider.experimental.LintStatementClass
+	(LintImpact)(0),                             // 5: ptah.provider.experimental.LintImpact
+	(LintTransactionOwner)(0),                   // 6: ptah.provider.experimental.LintTransactionOwner
+	(DataKind)(0),                               // 7: ptah.provider.experimental.DataKind
+	(EmbeddingWriteKind)(0),                     // 8: ptah.provider.experimental.EmbeddingWriteKind
+	(ColumnAspect)(0),                           // 9: ptah.provider.experimental.ColumnAspect
+	(ScopeSelection_Naming)(0),                  // 10: ptah.provider.experimental.ScopeSelection.Naming
+	(CommonObjectSupport_Kind)(0),               // 11: ptah.provider.experimental.CommonObjectSupport.Kind
+	(HCLSourceBlock_Site)(0),                    // 12: ptah.provider.experimental.HCLSourceBlock.Site
+	(HCLSourceBlock_Naming)(0),                  // 13: ptah.provider.experimental.HCLSourceBlock.Naming
+	(HCLSourceAttribute_Kind)(0),                // 14: ptah.provider.experimental.HCLSourceAttribute.Kind
+	(SQLSchemaDeclaration_Mode)(0),              // 15: ptah.provider.experimental.SQLSchemaDeclaration.Mode
+	(ReleaseLine_Support)(0),                    // 16: ptah.provider.experimental.ReleaseLine.Support
+	(YAMLSourceKey_Scope)(0),                    // 17: ptah.provider.experimental.YAMLSourceKey.Scope
+	(GoSourceDirective_Scope)(0),                // 18: ptah.provider.experimental.GoSourceDirective.Scope
+	(IdentifierRules_Comparison)(0),             // 19: ptah.provider.experimental.IdentifierRules.Comparison
+	(IdentifierRules_IndexNamespace)(0),         // 20: ptah.provider.experimental.IdentifierRules.IndexNamespace
+	(ObservedRole_Password)(0),                  // 21: ptah.provider.experimental.ObservedRole.Password
+	(Disposition_State)(0),                      // 22: ptah.provider.experimental.Disposition.State
+	(NativeOperation_Role)(0),                   // 23: ptah.provider.experimental.NativeOperation.Role
+	(RenderRequest_Form)(0),                     // 24: ptah.provider.experimental.RenderRequest.Form
+	(ExecutionInput_Source)(0),                  // 25: ptah.provider.experimental.ExecutionInput.Source
+	(FinishTransactionRequest_Action)(0),        // 26: ptah.provider.experimental.FinishTransactionRequest.Action
+	(TransactionResult_Outcome)(0),              // 27: ptah.provider.experimental.TransactionResult.Outcome
+	(Execution_Outcome)(0),                      // 28: ptah.provider.experimental.Execution.Outcome
+	(SQLStatement_Safety)(0),                    // 29: ptah.provider.experimental.SQLStatement.Safety
+	(ValueInput_Representation)(0),              // 30: ptah.provider.experimental.ValueInput.Representation
+	(SourceDocument_Format)(0),                  // 31: ptah.provider.experimental.SourceDocument.Format
+	(SourceTrace_Root)(0),                       // 32: ptah.provider.experimental.SourceTrace.Root
+	(ModelKnowledge_State)(0),                   // 33: ptah.provider.experimental.ModelKnowledge.State
+	(SourceModelValue_Placement)(0),             // 34: ptah.provider.experimental.SourceModelValue.Placement
+	(SQLObjectTrace_Collection)(0),              // 35: ptah.provider.experimental.SQLObjectTrace.Collection
+	(SQLDiagnostic_Code)(0),                     // 36: ptah.provider.experimental.SQLDiagnostic.Code
+	(SQLDiagnostic_Severity)(0),                 // 37: ptah.provider.experimental.SQLDiagnostic.Severity
+	(ModelComparison_Placement)(0),              // 38: ptah.provider.experimental.ModelComparison.Placement
+	(ChangeSemantics_Impact)(0),                 // 39: ptah.provider.experimental.ChangeSemantics.Impact
+	(ChangeSemantics_Access)(0),                 // 40: ptah.provider.experimental.ChangeSemantics.Access
+	(ForwardState_Placement)(0),                 // 41: ptah.provider.experimental.ForwardState.Placement
+	(PlanningEffect_Action)(0),                  // 42: ptah.provider.experimental.PlanningEffect.Action
+	(PlanningMetadata_Transaction)(0),           // 43: ptah.provider.experimental.PlanningMetadata.Transaction
+	(PlanningMetadata_Placement)(0),             // 44: ptah.provider.experimental.PlanningMetadata.Placement
+	(PlanningOperation_Phase)(0),                // 45: ptah.provider.experimental.PlanningOperation.Phase
+	(PlanningDiagnostic_Code)(0),                // 46: ptah.provider.experimental.PlanningDiagnostic.Code
+	(PlanningTable_Action)(0),                   // 47: ptah.provider.experimental.PlanningTable.Action
+	(HistoryScope_Format)(0),                    // 48: ptah.provider.experimental.HistoryScope.Format
+	(HistoryRevision_State)(0),                  // 49: ptah.provider.experimental.HistoryRevision.State
+	(HistoryRevision_Direction)(0),              // 50: ptah.provider.experimental.HistoryRevision.Direction
+	(HistoryResult_Outcome)(0),                  // 51: ptah.provider.experimental.HistoryResult.Outcome
+	(LockResult_Outcome)(0),                     // 52: ptah.provider.experimental.LockResult.Outcome
+	(MetadataScope_Kind)(0),                     // 53: ptah.provider.experimental.MetadataScope.Kind
+	(MetadataResult_Outcome)(0),                 // 54: ptah.provider.experimental.MetadataResult.Outcome
+	(ReservedObject_Purpose)(0),                 // 55: ptah.provider.experimental.ReservedObject.Purpose
+	(SchemaDiagnostic_Code)(0),                  // 56: ptah.provider.experimental.SchemaDiagnostic.Code
+	(LintRule_Severity)(0),                      // 57: ptah.provider.experimental.LintRule.Severity
+	(LintSubject_Kind)(0),                       // 58: ptah.provider.experimental.LintSubject.Kind
+	(DevDatabaseRefusal_Kind)(0),                // 59: ptah.provider.experimental.DevDatabaseRefusal.Kind
+	(DevCleanup_Outcome)(0),                     // 60: ptah.provider.experimental.DevCleanup.Outcome
+	(RowWrite_Mode)(0),                          // 61: ptah.provider.experimental.RowWrite.Mode
+	(RenderRefusal_Reason)(0),                   // 62: ptah.provider.experimental.RenderRefusal.Reason
+	(SeedResult_Outcome)(0),                     // 63: ptah.provider.experimental.SeedResult.Outcome
+	(EmbeddingTarget_Layout)(0),                 // 64: ptah.provider.experimental.EmbeddingTarget.Layout
+	(EmbeddingTarget_Metric)(0),                 // 65: ptah.provider.experimental.EmbeddingTarget.Metric
+	(EmbeddingRefusal_Reason)(0),                // 66: ptah.provider.experimental.EmbeddingRefusal.Reason
+	(EmbeddingWriteResult_Outcome)(0),           // 67: ptah.provider.experimental.EmbeddingWriteResult.Outcome
+	(EmbeddingWriteResult_IndexOutcome)(0),      // 68: ptah.provider.experimental.EmbeddingWriteResult.IndexOutcome
+	(PrepareEmbeddingTargetRequest_Mode)(0),     // 69: ptah.provider.experimental.PrepareEmbeddingTargetRequest.Mode
+	(DropEmbeddingGenerationRequest_Storage)(0), // 70: ptah.provider.experimental.DropEmbeddingGenerationRequest.Storage
+	(EmbeddingSearchResult_Outcome)(0),          // 71: ptah.provider.experimental.EmbeddingSearchResult.Outcome
+	(EncodedFragment_Placement)(0),              // 72: ptah.provider.experimental.EncodedFragment.Placement
+	(RunStatementRequest_Access)(0),             // 73: ptah.provider.experimental.RunStatementRequest.Access
+	(ArgumentType_Scalar)(0),                    // 74: ptah.provider.experimental.ArgumentType.Scalar
+	(StatementResult_Outcome)(0),                // 75: ptah.provider.experimental.StatementResult.Outcome
+	(MigrationUnit_Placement)(0),                // 76: ptah.provider.experimental.MigrationUnit.Placement
+	(ColumnDifference_Relation)(0),              // 77: ptah.provider.experimental.ColumnDifference.Relation
+	(ColumnSequenceDifference_Attribute)(0),     // 78: ptah.provider.experimental.ColumnSequenceDifference.Attribute
+	(ColumnDefaultReceipt_Kind)(0),              // 79: ptah.provider.experimental.ColumnDefaultReceipt.Kind
+	(SQLToken_Kind)(0),                          // 80: ptah.provider.experimental.SQLToken.Kind
+	(*Empty)(nil),                               // 81: ptah.provider.experimental.Empty
+	(*ContractVersion)(nil),                     // 82: ptah.provider.experimental.ContractVersion
+	(*DescribeRequest)(nil),                     // 83: ptah.provider.experimental.DescribeRequest
+	(*Description)(nil),                         // 84: ptah.provider.experimental.Description
+	(*Engine)(nil),                              // 85: ptah.provider.experimental.Engine
+	(*ModelPredecessor)(nil),                    // 86: ptah.provider.experimental.ModelPredecessor
+	(*SourceIndexKind)(nil),                     // 87: ptah.provider.experimental.SourceIndexKind
+	(*ScopeSelection)(nil),                      // 88: ptah.provider.experimental.ScopeSelection
+	(*CommonObjectSupport)(nil),                 // 89: ptah.provider.experimental.CommonObjectSupport
+	(*HCLSourceDeclaration)(nil),                // 90: ptah.provider.experimental.HCLSourceDeclaration
+	(*HCLSourceBlock)(nil),                      // 91: ptah.provider.experimental.HCLSourceBlock
+	(*HCLSourceAttribute)(nil),                  // 92: ptah.provider.experimental.HCLSourceAttribute
+	(*HCLSourceChild)(nil),                      // 93: ptah.provider.experimental.HCLSourceChild
+	(*QueryDialect)(nil),                        // 94: ptah.provider.experimental.QueryDialect
+	(*QueryQuoting)(nil),                        // 95: ptah.provider.experimental.QueryQuoting
+	(*QuerySpelling)(nil),                       // 96: ptah.provider.experimental.QuerySpelling
+	(*SQLSchemaDeclaration)(nil),                // 97: ptah.provider.experimental.SQLSchemaDeclaration
+	(*ReleaseLine)(nil),                         // 98: ptah.provider.experimental.ReleaseLine
+	(*YAMLSourceKey)(nil),                       // 99: ptah.provider.experimental.YAMLSourceKey
+	(*GoSourceDirective)(nil),                   // 100: ptah.provider.experimental.GoSourceDirective
+	(*IdentifierRules)(nil),                     // 101: ptah.provider.experimental.IdentifierRules
+	(*Reference)(nil),                           // 102: ptah.provider.experimental.Reference
+	(*Envelope)(nil),                            // 103: ptah.provider.experimental.Envelope
+	(*DatabaseContext)(nil),                     // 104: ptah.provider.experimental.DatabaseContext
+	(*DatabaseContextRequest)(nil),              // 105: ptah.provider.experimental.DatabaseContextRequest
+	(*OpenRequest)(nil),                         // 106: ptah.provider.experimental.OpenRequest
+	(*Session)(nil),                             // 107: ptah.provider.experimental.Session
+	(*CloseRequest)(nil),                        // 108: ptah.provider.experimental.CloseRequest
+	(*InspectRequest)(nil),                      // 109: ptah.provider.experimental.InspectRequest
+	(*Schema)(nil),                              // 110: ptah.provider.experimental.Schema
+	(*UnreadTable)(nil),                         // 111: ptah.provider.experimental.UnreadTable
+	(*PlanningContextInventory)(nil),            // 112: ptah.provider.experimental.PlanningContextInventory
+	(*ObservedCommonObjects)(nil),               // 113: ptah.provider.experimental.ObservedCommonObjects
+	(*ObjectOwner)(nil),                         // 114: ptah.provider.experimental.ObjectOwner
+	(*CommonObjectCoverage)(nil),                // 115: ptah.provider.experimental.CommonObjectCoverage
+	(*ObservedView)(nil),                        // 116: ptah.provider.experimental.ObservedView
+	(*ObservedSequence)(nil),                    // 117: ptah.provider.experimental.ObservedSequence
+	(*ObservedRole)(nil),                        // 118: ptah.provider.experimental.ObservedRole
+	(*ObservedGrant)(nil),                       // 119: ptah.provider.experimental.ObservedGrant
+	(*ObjectComment)(nil),                       // 120: ptah.provider.experimental.ObjectComment
+	(*Table)(nil),                               // 121: ptah.provider.experimental.Table
+	(*Column)(nil),                              // 122: ptah.provider.experimental.Column
+	(*Disposition)(nil),                         // 123: ptah.provider.experimental.Disposition
+	(*Change)(nil),                              // 124: ptah.provider.experimental.Change
+	(*CommonObjectChange)(nil),                  // 125: ptah.provider.experimental.CommonObjectChange
+	(*ViewCreation)(nil),                        // 126: ptah.provider.experimental.ViewCreation
+	(*SequenceAlteration)(nil),                  // 127: ptah.provider.experimental.SequenceAlteration
+	(*RoleCreation)(nil),                        // 128: ptah.provider.experimental.RoleCreation
+	(*RoleAlteration)(nil),                      // 129: ptah.provider.experimental.RoleAlteration
+	(*RoleMembership)(nil),                      // 130: ptah.provider.experimental.RoleMembership
+	(*NativeOperation)(nil),                     // 131: ptah.provider.experimental.NativeOperation
+	(*RenderRequest)(nil),                       // 132: ptah.provider.experimental.RenderRequest
+	(*Unit)(nil),                                // 133: ptah.provider.experimental.Unit
+	(*RenderResult)(nil),                        // 134: ptah.provider.experimental.RenderResult
+	(*ExecuteRequest)(nil),                      // 135: ptah.provider.experimental.ExecuteRequest
+	(*ExecutionInput)(nil),                      // 136: ptah.provider.experimental.ExecutionInput
+	(*ExecutionInputBinding)(nil),               // 137: ptah.provider.experimental.ExecutionInputBinding
+	(*DescribeExecutionInputsRequest)(nil),      // 138: ptah.provider.experimental.DescribeExecutionInputsRequest
+	(*ExecutionInputs)(nil),                     // 139: ptah.provider.experimental.ExecutionInputs
+	(*BeginTransactionRequest)(nil),             // 140: ptah.provider.experimental.BeginTransactionRequest
+	(*Transaction)(nil),                         // 141: ptah.provider.experimental.Transaction
+	(*FinishTransactionRequest)(nil),            // 142: ptah.provider.experimental.FinishTransactionRequest
+	(*TransactionResult)(nil),                   // 143: ptah.provider.experimental.TransactionResult
+	(*Execution)(nil),                           // 144: ptah.provider.experimental.Execution
+	(*AnalyzeSQLRequest)(nil),                   // 145: ptah.provider.experimental.AnalyzeSQLRequest
+	(*SQLAnalysis)(nil),                         // 146: ptah.provider.experimental.SQLAnalysis
+	(*SQLFile)(nil),                             // 147: ptah.provider.experimental.SQLFile
+	(*SQLStatement)(nil),                        // 148: ptah.provider.experimental.SQLStatement
+	(*NormalizeValuesRequest)(nil),              // 149: ptah.provider.experimental.NormalizeValuesRequest
+	(*ValueInput)(nil),                          // 150: ptah.provider.experimental.ValueInput
+	(*NormalizedValues)(nil),                    // 151: ptah.provider.experimental.NormalizedValues
+	(*NormalizedValue)(nil),                     // 152: ptah.provider.experimental.NormalizedValue
+	(*SourcePosition)(nil),                      // 153: ptah.provider.experimental.SourcePosition
+	(*SourceSpan)(nil),                          // 154: ptah.provider.experimental.SourceSpan
+	(*SourceValue)(nil),                         // 155: ptah.provider.experimental.SourceValue
+	(*SourceSequence)(nil),                      // 156: ptah.provider.experimental.SourceSequence
+	(*SourceMapping)(nil),                       // 157: ptah.provider.experimental.SourceMapping
+	(*SourceEntry)(nil),                         // 158: ptah.provider.experimental.SourceEntry
+	(*SourceBlock)(nil),                         // 159: ptah.provider.experimental.SourceBlock
+	(*SourceLabel)(nil),                         // 160: ptah.provider.experimental.SourceLabel
+	(*SourceBinding)(nil),                       // 161: ptah.provider.experimental.SourceBinding
+	(*SourceFragment)(nil),                      // 162: ptah.provider.experimental.SourceFragment
+	(*SourceDocument)(nil),                      // 163: ptah.provider.experimental.SourceDocument
+	(*SourcePathStep)(nil),                      // 164: ptah.provider.experimental.SourcePathStep
+	(*SourceTrace)(nil),                         // 165: ptah.provider.experimental.SourceTrace
+	(*ValueModel)(nil),                          // 166: ptah.provider.experimental.ValueModel
+	(*ModelReport)(nil),                         // 167: ptah.provider.experimental.ModelReport
+	(*ModelMetric)(nil),                         // 168: ptah.provider.experimental.ModelMetric
+	(*ReportValuesRequest)(nil),                 // 169: ptah.provider.experimental.ReportValuesRequest
+	(*ValueReports)(nil),                        // 170: ptah.provider.experimental.ValueReports
+	(*ValueReport)(nil),                         // 171: ptah.provider.experimental.ValueReport
+	(*MetricCount)(nil),                         // 172: ptah.provider.experimental.MetricCount
+	(*ModelKnowledge)(nil),                      // 173: ptah.provider.experimental.ModelKnowledge
+	(*NamespaceComponent)(nil),                  // 174: ptah.provider.experimental.NamespaceComponent
+	(*ModelNamespace)(nil),                      // 175: ptah.provider.experimental.ModelNamespace
+	(*ModelNamespaceKnowledge)(nil),             // 176: ptah.provider.experimental.ModelNamespaceKnowledge
+	(*ModelKindCoverage)(nil),                   // 177: ptah.provider.experimental.ModelKindCoverage
+	(*ModelSubjectCoverage)(nil),                // 178: ptah.provider.experimental.ModelSubjectCoverage
+	(*ModelCoverage)(nil),                       // 179: ptah.provider.experimental.ModelCoverage
+	(*DecodeSourceRequest)(nil),                 // 180: ptah.provider.experimental.DecodeSourceRequest
+	(*DecodedSource)(nil),                       // 181: ptah.provider.experimental.DecodedSource
+	(*DecodedSourceDocument)(nil),               // 182: ptah.provider.experimental.DecodedSourceDocument
+	(*DecodedSourceFragment)(nil),               // 183: ptah.provider.experimental.DecodedSourceFragment
+	(*SourceModelValue)(nil),                    // 184: ptah.provider.experimental.SourceModelValue
+	(*ReadSQLSchemaRequest)(nil),                // 185: ptah.provider.experimental.ReadSQLSchemaRequest
+	(*SQLDocument)(nil),                         // 186: ptah.provider.experimental.SQLDocument
+	(*SQLSchema)(nil),                           // 187: ptah.provider.experimental.SQLSchema
+	(*SQLView)(nil),                             // 188: ptah.provider.experimental.SQLView
+	(*SQLSequence)(nil),                         // 189: ptah.provider.experimental.SQLSequence
+	(*SQLRole)(nil),                             // 190: ptah.provider.experimental.SQLRole
+	(*SQLGrant)(nil),                            // 191: ptah.provider.experimental.SQLGrant
+	(*DeclaredCommonObjects)(nil),               // 192: ptah.provider.experimental.DeclaredCommonObjects
+	(*PrepareCommonObjectsRequest)(nil),         // 193: ptah.provider.experimental.PrepareCommonObjectsRequest
+	(*PreparedCommonObjects)(nil),               // 194: ptah.provider.experimental.PreparedCommonObjects
+	(*SQLObjectTrace)(nil),                      // 195: ptah.provider.experimental.SQLObjectTrace
+	(*SQLDocumentDeclarations)(nil),             // 196: ptah.provider.experimental.SQLDocumentDeclarations
+	(*SQLDeclaration)(nil),                      // 197: ptah.provider.experimental.SQLDeclaration
+	(*SQLTableStatement)(nil),                   // 198: ptah.provider.experimental.SQLTableStatement
+	(*SQLDiagnostic)(nil),                       // 199: ptah.provider.experimental.SQLDiagnostic
+	(*ConvertValuesRequest)(nil),                // 200: ptah.provider.experimental.ConvertValuesRequest
+	(*InspectionScopeBinding)(nil),              // 201: ptah.provider.experimental.InspectionScopeBinding
+	(*ModelComparison)(nil),                     // 202: ptah.provider.experimental.ModelComparison
+	(*ComparisonPart)(nil),                      // 203: ptah.provider.experimental.ComparisonPart
+	(*ComparisonIdentity)(nil),                  // 204: ptah.provider.experimental.ComparisonIdentity
+	(*ComparisonNamespace)(nil),                 // 205: ptah.provider.experimental.ComparisonNamespace
+	(*ComparisonRegion)(nil),                    // 206: ptah.provider.experimental.ComparisonRegion
+	(*ComparisonKnowledgeSource)(nil),           // 207: ptah.provider.experimental.ComparisonKnowledgeSource
+	(*ComparisonKindCoverage)(nil),              // 208: ptah.provider.experimental.ComparisonKindCoverage
+	(*ComparisonSubjectCoverage)(nil),           // 209: ptah.provider.experimental.ComparisonSubjectCoverage
+	(*ComparisonCoverage)(nil),                  // 210: ptah.provider.experimental.ComparisonCoverage
+	(*ComparisonRecord)(nil),                    // 211: ptah.provider.experimental.ComparisonRecord
+	(*ComparisonState)(nil),                     // 212: ptah.provider.experimental.ComparisonState
+	(*ComparisonParent)(nil),                    // 213: ptah.provider.experimental.ComparisonParent
+	(*RequestedChange)(nil),                     // 214: ptah.provider.experimental.RequestedChange
+	(*ComparisonExclusion)(nil),                 // 215: ptah.provider.experimental.ComparisonExclusion
+	(*ComparisonColumn)(nil),                    // 216: ptah.provider.experimental.ComparisonColumn
+	(*ComparisonConstraint)(nil),                // 217: ptah.provider.experimental.ComparisonConstraint
+	(*ResolvedIdentifier)(nil),                  // 218: ptah.provider.experimental.ResolvedIdentifier
+	(*ComparisonIdentifiers)(nil),               // 219: ptah.provider.experimental.ComparisonIdentifiers
+	(*CompareModelsRequest)(nil),                // 220: ptah.provider.experimental.CompareModelsRequest
+	(*ChangeSemantics)(nil),                     // 221: ptah.provider.experimental.ChangeSemantics
+	(*ComparedChange)(nil),                      // 222: ptah.provider.experimental.ComparedChange
+	(*ComparisonUndecided)(nil),                 // 223: ptah.provider.experimental.ComparisonUndecided
+	(*ComparedModels)(nil),                      // 224: ptah.provider.experimental.ComparedModels
+	(*ResolvedRequest)(nil),                     // 225: ptah.provider.experimental.ResolvedRequest
+	(*ComparisonCount)(nil),                     // 226: ptah.provider.experimental.ComparisonCount
+	(*OperationSemantics)(nil),                  // 227: ptah.provider.experimental.OperationSemantics
+	(*ModelReversal)(nil),                       // 228: ptah.provider.experimental.ModelReversal
+	(*ReverseChangesRequest)(nil),               // 229: ptah.provider.experimental.ReverseChangesRequest
+	(*ReversedChanges)(nil),                     // 230: ptah.provider.experimental.ReversedChanges
+	(*ReversedChange)(nil),                      // 231: ptah.provider.experimental.ReversedChange
+	(*ForwardState)(nil),                        // 232: ptah.provider.experimental.ForwardState
+	(*ModelPlanning)(nil),                       // 233: ptah.provider.experimental.ModelPlanning
+	(*ModelDeclarations)(nil),                   // 234: ptah.provider.experimental.ModelDeclarations
+	(*PlanDeclarationsRequest)(nil),             // 235: ptah.provider.experimental.PlanDeclarationsRequest
+	(*PlannedDeclarations)(nil),                 // 236: ptah.provider.experimental.PlannedDeclarations
+	(*DeclarationReceipt)(nil),                  // 237: ptah.provider.experimental.DeclarationReceipt
+	(*DeclarationDiagnostic)(nil),               // 238: ptah.provider.experimental.DeclarationDiagnostic
+	(*StepIdentity)(nil),                        // 239: ptah.provider.experimental.StepIdentity
+	(*PlanningEffect)(nil),                      // 240: ptah.provider.experimental.PlanningEffect
+	(*PlanningMetadata)(nil),                    // 241: ptah.provider.experimental.PlanningMetadata
+	(*PlanningDependency)(nil),                  // 242: ptah.provider.experimental.PlanningDependency
+	(*CommonPlanningStep)(nil),                  // 243: ptah.provider.experimental.CommonPlanningStep
+	(*CommonIndexRename)(nil),                   // 244: ptah.provider.experimental.CommonIndexRename
+	(*PlanningOperation)(nil),                   // 245: ptah.provider.experimental.PlanningOperation
+	(*PlanningStep)(nil),                        // 246: ptah.provider.experimental.PlanningStep
+	(*PlanningContribution)(nil),                // 247: ptah.provider.experimental.PlanningContribution
+	(*PlanningRewrite)(nil),                     // 248: ptah.provider.experimental.PlanningRewrite
+	(*PlanningChange)(nil),                      // 249: ptah.provider.experimental.PlanningChange
+	(*PlanningReceipt)(nil),                     // 250: ptah.provider.experimental.PlanningReceipt
+	(*PlanningParentReceipt)(nil),               // 251: ptah.provider.experimental.PlanningParentReceipt
+	(*PlanningDiagnostic)(nil),                  // 252: ptah.provider.experimental.PlanningDiagnostic
+	(*PlanningType)(nil),                        // 253: ptah.provider.experimental.PlanningType
+	(*PlanningTable)(nil),                       // 254: ptah.provider.experimental.PlanningTable
+	(*PlanFeaturesRequest)(nil),                 // 255: ptah.provider.experimental.PlanFeaturesRequest
+	(*PlanningPolicy)(nil),                      // 256: ptah.provider.experimental.PlanningPolicy
+	(*PlannedFeatures)(nil),                     // 257: ptah.provider.experimental.PlannedFeatures
+	(*CapturedFeatures)(nil),                    // 258: ptah.provider.experimental.CapturedFeatures
+	(*DeclaredTable)(nil),                       // 259: ptah.provider.experimental.DeclaredTable
+	(*DeclaredKeyPart)(nil),                     // 260: ptah.provider.experimental.DeclaredKeyPart
+	(*DeclaredColumn)(nil),                      // 261: ptah.provider.experimental.DeclaredColumn
+	(*DeclaredEnum)(nil),                        // 262: ptah.provider.experimental.DeclaredEnum
+	(*CapturedIndexPart)(nil),                   // 263: ptah.provider.experimental.CapturedIndexPart
+	(*DeclaredIndex)(nil),                       // 264: ptah.provider.experimental.DeclaredIndex
+	(*DeclaredConstraint)(nil),                  // 265: ptah.provider.experimental.DeclaredConstraint
+	(*CapturedTrigger)(nil),                     // 266: ptah.provider.experimental.CapturedTrigger
+	(*ObservedTable)(nil),                       // 267: ptah.provider.experimental.ObservedTable
+	(*ObservedColumn)(nil),                      // 268: ptah.provider.experimental.ObservedColumn
+	(*ObservedIndex)(nil),                       // 269: ptah.provider.experimental.ObservedIndex
+	(*ObservedConstraint)(nil),                  // 270: ptah.provider.experimental.ObservedConstraint
+	(*PlanningColumn)(nil),                      // 271: ptah.provider.experimental.PlanningColumn
+	(*PlanningDefault)(nil),                     // 272: ptah.provider.experimental.PlanningDefault
+	(*PlanningForeignKey)(nil),                  // 273: ptah.provider.experimental.PlanningForeignKey
+	(*CapturedFacet)(nil),                       // 274: ptah.provider.experimental.CapturedFacet
+	(*HistoryScope)(nil),                        // 275: ptah.provider.experimental.HistoryScope
+	(*HistoryRevision)(nil),                     // 276: ptah.provider.experimental.HistoryRevision
+	(*ReadHistoryRequest)(nil),                  // 277: ptah.provider.experimental.ReadHistoryRequest
+	(*HistorySnapshot)(nil),                     // 278: ptah.provider.experimental.HistorySnapshot
+	(*PrepareHistoryRequest)(nil),               // 279: ptah.provider.experimental.PrepareHistoryRequest
+	(*MutateHistoryRequest)(nil),                // 280: ptah.provider.experimental.MutateHistoryRequest
+	(*HistoryResult)(nil),                       // 281: ptah.provider.experimental.HistoryResult
+	(*LockScope)(nil),                           // 282: ptah.provider.experimental.LockScope
+	(*LockRequest)(nil),                         // 283: ptah.provider.experimental.LockRequest
+	(*LockResult)(nil),                          // 284: ptah.provider.experimental.LockResult
+	(*ProviderDiagnostic)(nil),                  // 285: ptah.provider.experimental.ProviderDiagnostic
+	(*MetadataScope)(nil),                       // 286: ptah.provider.experimental.MetadataScope
+	(*MigrationLogRecord)(nil),                  // 287: ptah.provider.experimental.MigrationLogRecord
+	(*MigrationTagRecord)(nil),                  // 288: ptah.provider.experimental.MigrationTagRecord
+	(*PrepareMetadataRequest)(nil),              // 289: ptah.provider.experimental.PrepareMetadataRequest
+	(*MutateMetadataRequest)(nil),               // 290: ptah.provider.experimental.MutateMetadataRequest
+	(*MetadataResult)(nil),                      // 291: ptah.provider.experimental.MetadataResult
+	(*LookupMetadataTagRequest)(nil),            // 292: ptah.provider.experimental.LookupMetadataTagRequest
+	(*MetadataTagResult)(nil),                   // 293: ptah.provider.experimental.MetadataTagResult
+	(*MetadataReadRequest)(nil),                 // 294: ptah.provider.experimental.MetadataReadRequest
+	(*MetadataReadResult)(nil),                  // 295: ptah.provider.experimental.MetadataReadResult
+	(*ReadMetadataPageRequest)(nil),             // 296: ptah.provider.experimental.ReadMetadataPageRequest
+	(*MetadataPage)(nil),                        // 297: ptah.provider.experimental.MetadataPage
+	(*ReservedObject)(nil),                      // 298: ptah.provider.experimental.ReservedObject
+	(*PrepareTablesRequest)(nil),                // 299: ptah.provider.experimental.PrepareTablesRequest
+	(*TablePreparationInput)(nil),               // 300: ptah.provider.experimental.TablePreparationInput
+	(*PreparedTable)(nil),                       // 301: ptah.provider.experimental.PreparedTable
+	(*PreparedIndex)(nil),                       // 302: ptah.provider.experimental.PreparedIndex
+	(*PreparedTables)(nil),                      // 303: ptah.provider.experimental.PreparedTables
+	(*ProjectTableCreationsRequest)(nil),        // 304: ptah.provider.experimental.ProjectTableCreationsRequest
+	(*TableCreationInput)(nil),                  // 305: ptah.provider.experimental.TableCreationInput
+	(*ProjectedTableCreation)(nil),              // 306: ptah.provider.experimental.ProjectedTableCreation
+	(*ProjectedTableCreations)(nil),             // 307: ptah.provider.experimental.ProjectedTableCreations
+	(*ValidateSchemaRequest)(nil),               // 308: ptah.provider.experimental.ValidateSchemaRequest
+	(*ValidationTable)(nil),                     // 309: ptah.provider.experimental.ValidationTable
+	(*DeclaredNamespace)(nil),                   // 310: ptah.provider.experimental.DeclaredNamespace
+	(*SchemaValidation)(nil),                    // 311: ptah.provider.experimental.SchemaValidation
+	(*SchemaDiagnostic)(nil),                    // 312: ptah.provider.experimental.SchemaDiagnostic
+	(*SchemaCoverageLimit)(nil),                 // 313: ptah.provider.experimental.SchemaCoverageLimit
+	(*SchemaDependencies)(nil),                  // 314: ptah.provider.experimental.SchemaDependencies
+	(*LintRule)(nil),                            // 315: ptah.provider.experimental.LintRule
+	(*LintSource)(nil),                          // 316: ptah.provider.experimental.LintSource
+	(*LintEffect)(nil),                          // 317: ptah.provider.experimental.LintEffect
+	(*LintStatement)(nil),                       // 318: ptah.provider.experimental.LintStatement
+	(*LintFile)(nil),                            // 319: ptah.provider.experimental.LintFile
+	(*SplitLintRequest)(nil),                    // 320: ptah.provider.experimental.SplitLintRequest
+	(*SplitLint)(nil),                           // 321: ptah.provider.experimental.SplitLint
+	(*AnnotateLintRequest)(nil),                 // 322: ptah.provider.experimental.AnnotateLintRequest
+	(*LintAnnotation)(nil),                      // 323: ptah.provider.experimental.LintAnnotation
+	(*LintAnnotations)(nil),                     // 324: ptah.provider.experimental.LintAnnotations
+	(*AnnotatedLint)(nil),                       // 325: ptah.provider.experimental.AnnotatedLint
+	(*CheckLintRequest)(nil),                    // 326: ptah.provider.experimental.CheckLintRequest
+	(*LintSubject)(nil),                         // 327: ptah.provider.experimental.LintSubject
+	(*LintFinding)(nil),                         // 328: ptah.provider.experimental.LintFinding
+	(*CheckedLint)(nil),                         // 329: ptah.provider.experimental.CheckedLint
+	(*ProvisionDevRequest)(nil),                 // 330: ptah.provider.experimental.ProvisionDevRequest
+	(*DevDatabaseRefusal)(nil),                  // 331: ptah.provider.experimental.DevDatabaseRefusal
+	(*DevDatabase)(nil),                         // 332: ptah.provider.experimental.DevDatabase
+	(*ReleaseDevRequest)(nil),                   // 333: ptah.provider.experimental.ReleaseDevRequest
+	(*ListDevObjectsRequest)(nil),               // 334: ptah.provider.experimental.ListDevObjectsRequest
+	(*DevObject)(nil),                           // 335: ptah.provider.experimental.DevObject
+	(*DevObjects)(nil),                          // 336: ptah.provider.experimental.DevObjects
+	(*CleanDevRequest)(nil),                     // 337: ptah.provider.experimental.CleanDevRequest
+	(*DevCleanup)(nil),                          // 338: ptah.provider.experimental.DevCleanup
+	(*ReplayScope)(nil),                         // 339: ptah.provider.experimental.ReplayScope
+	(*GuardReplayRequest)(nil),                  // 340: ptah.provider.experimental.GuardReplayRequest
+	(*ReplayVerdict)(nil),                       // 341: ptah.provider.experimental.ReplayVerdict
+	(*GuardedReplay)(nil),                       // 342: ptah.provider.experimental.GuardedReplay
+	(*DataValue)(nil),                           // 343: ptah.provider.experimental.DataValue
+	(*DecimalValue)(nil),                        // 344: ptah.provider.experimental.DecimalValue
+	(*TimestampValue)(nil),                      // 345: ptah.provider.experimental.TimestampValue
+	(*IntervalValue)(nil),                       // 346: ptah.provider.experimental.IntervalValue
+	(*NativeValue)(nil),                         // 347: ptah.provider.experimental.NativeValue
+	(*Row)(nil),                                 // 348: ptah.provider.experimental.Row
+	(*DataColumn)(nil),                          // 349: ptah.provider.experimental.DataColumn
+	(*RowColumn)(nil),                           // 350: ptah.provider.experimental.RowColumn
+	(*LiveTable)(nil),                           // 351: ptah.provider.experimental.LiveTable
+	(*TypeRowsRequest)(nil),                     // 352: ptah.provider.experimental.TypeRowsRequest
+	(*TypedRows)(nil),                           // 353: ptah.provider.experimental.TypedRows
+	(*ReadRowsRequest)(nil),                     // 354: ptah.provider.experimental.ReadRowsRequest
+	(*RowPage)(nil),                             // 355: ptah.provider.experimental.RowPage
+	(*RenderRowWritesRequest)(nil),              // 356: ptah.provider.experimental.RenderRowWritesRequest
+	(*RowWrite)(nil),                            // 357: ptah.provider.experimental.RowWrite
+	(*RenderRefusal)(nil),                       // 358: ptah.provider.experimental.RenderRefusal
+	(*ListSeedTablesRequest)(nil),               // 359: ptah.provider.experimental.ListSeedTablesRequest
+	(*SeedTables)(nil),                          // 360: ptah.provider.experimental.SeedTables
+	(*Seed)(nil),                                // 361: ptah.provider.experimental.Seed
+	(*ApplySeedRequest)(nil),                    // 362: ptah.provider.experimental.ApplySeedRequest
+	(*RecordSeedRequest)(nil),                   // 363: ptah.provider.experimental.RecordSeedRequest
+	(*SeedResult)(nil),                          // 364: ptah.provider.experimental.SeedResult
+	(*ReadSeedLedgerRequest)(nil),               // 365: ptah.provider.experimental.ReadSeedLedgerRequest
+	(*SeedLedger)(nil),                          // 366: ptah.provider.experimental.SeedLedger
+	(*SeedLedgerEntry)(nil),                     // 367: ptah.provider.experimental.SeedLedgerEntry
+	(*EmbeddingEngine)(nil),                     // 368: ptah.provider.experimental.EmbeddingEngine
+	(*EmbeddingKey)(nil),                        // 369: ptah.provider.experimental.EmbeddingKey
+	(*EmbeddingSource)(nil),                     // 370: ptah.provider.experimental.EmbeddingSource
+	(*EmbeddingTarget)(nil),                     // 371: ptah.provider.experimental.EmbeddingTarget
+	(*EmbeddingNames)(nil),                      // 372: ptah.provider.experimental.EmbeddingNames
+	(*EmbeddingSpec)(nil),                       // 373: ptah.provider.experimental.EmbeddingSpec
+	(*EmbeddingLocation)(nil),                   // 374: ptah.provider.experimental.EmbeddingLocation
+	(*EmbeddingRefusal)(nil),                    // 375: ptah.provider.experimental.EmbeddingRefusal
+	(*EmbeddingWriteResult)(nil),                // 376: ptah.provider.experimental.EmbeddingWriteResult
+	(*EmbeddingGeneration)(nil),                 // 377: ptah.provider.experimental.EmbeddingGeneration
+	(*EmbeddingProgress)(nil),                   // 378: ptah.provider.experimental.EmbeddingProgress
+	(*EmbeddingRun)(nil),                        // 379: ptah.provider.experimental.EmbeddingRun
+	(*EmbeddingRecords)(nil),                    // 380: ptah.provider.experimental.EmbeddingRecords
+	(*EmbeddingPointerKey)(nil),                 // 381: ptah.provider.experimental.EmbeddingPointerKey
+	(*EmbeddingPointer)(nil),                    // 382: ptah.provider.experimental.EmbeddingPointer
+	(*EmbeddingEventCounts)(nil),                // 383: ptah.provider.experimental.EmbeddingEventCounts
+	(*EmbeddingEvent)(nil),                      // 384: ptah.provider.experimental.EmbeddingEvent
+	(*EmbeddingStateScope)(nil),                 // 385: ptah.provider.experimental.EmbeddingStateScope
+	(*PrepareEmbeddingStoreRequest)(nil),        // 386: ptah.provider.experimental.PrepareEmbeddingStoreRequest
+	(*ReadEmbeddingStateRequest)(nil),           // 387: ptah.provider.experimental.ReadEmbeddingStateRequest
+	(*EmbeddingState)(nil),                      // 388: ptah.provider.experimental.EmbeddingState
+	(*MutateEmbeddingStateRequest)(nil),         // 389: ptah.provider.experimental.MutateEmbeddingStateRequest
+	(*AppendEmbeddingEventRequest)(nil),         // 390: ptah.provider.experimental.AppendEmbeddingEventRequest
+	(*ReadEmbeddingEventsRequest)(nil),          // 391: ptah.provider.experimental.ReadEmbeddingEventsRequest
+	(*EmbeddingEventPage)(nil),                  // 392: ptah.provider.experimental.EmbeddingEventPage
+	(*DescribeEmbeddingTargetRequest)(nil),      // 393: ptah.provider.experimental.DescribeEmbeddingTargetRequest
+	(*EmbeddingTargetObjects)(nil),              // 394: ptah.provider.experimental.EmbeddingTargetObjects
+	(*ResolveEmbeddingRelationsRequest)(nil),    // 395: ptah.provider.experimental.ResolveEmbeddingRelationsRequest
+	(*EmbeddingRelations)(nil),                  // 396: ptah.provider.experimental.EmbeddingRelations
+	(*MeasureEmbeddingRequest)(nil),             // 397: ptah.provider.experimental.MeasureEmbeddingRequest
+	(*EmbeddingMeasurement)(nil),                // 398: ptah.provider.experimental.EmbeddingMeasurement
+	(*PrepareEmbeddingTargetRequest)(nil),       // 399: ptah.provider.experimental.PrepareEmbeddingTargetRequest
+	(*BuildEmbeddingIndexRequest)(nil),          // 400: ptah.provider.experimental.BuildEmbeddingIndexRequest
+	(*ReadEmbeddingStructureRequest)(nil),       // 401: ptah.provider.experimental.ReadEmbeddingStructureRequest
+	(*EmbeddingStructure)(nil),                  // 402: ptah.provider.experimental.EmbeddingStructure
+	(*DropEmbeddingGenerationRequest)(nil),      // 403: ptah.provider.experimental.DropEmbeddingGenerationRequest
+	(*EmbeddingSourceRow)(nil),                  // 404: ptah.provider.experimental.EmbeddingSourceRow
+	(*ScanEmbeddingSourceRequest)(nil),          // 405: ptah.provider.experimental.ScanEmbeddingSourceRequest
+	(*EmbeddingSourcePage)(nil),                 // 406: ptah.provider.experimental.EmbeddingSourcePage
+	(*ReadEmbeddingSourceRowsRequest)(nil),      // 407: ptah.provider.experimental.ReadEmbeddingSourceRowsRequest
+	(*EmbeddingSourceRows)(nil),                 // 408: ptah.provider.experimental.EmbeddingSourceRows
+	(*EmbeddingHeldTarget)(nil),                 // 409: ptah.provider.experimental.EmbeddingHeldTarget
+	(*ReadEmbeddingBatchStateRequest)(nil),      // 410: ptah.provider.experimental.ReadEmbeddingBatchStateRequest
+	(*EmbeddingBatchState)(nil),                 // 411: ptah.provider.experimental.EmbeddingBatchState
+	(*EmbeddingTargetWrite)(nil),                // 412: ptah.provider.experimental.EmbeddingTargetWrite
+	(*CommitEmbeddingBatchRequest)(nil),         // 413: ptah.provider.experimental.CommitEmbeddingBatchRequest
+	(*EmbeddingStoredRow)(nil),                  // 414: ptah.provider.experimental.EmbeddingStoredRow
+	(*EmbeddingVerificationSource)(nil),         // 415: ptah.provider.experimental.EmbeddingVerificationSource
+	(*EmbeddingVerificationRow)(nil),            // 416: ptah.provider.experimental.EmbeddingVerificationRow
+	(*ReadEmbeddingVerificationRequest)(nil),    // 417: ptah.provider.experimental.ReadEmbeddingVerificationRequest
+	(*EmbeddingVerificationPage)(nil),           // 418: ptah.provider.experimental.EmbeddingVerificationPage
+	(*SearchEmbeddingsRequest)(nil),             // 419: ptah.provider.experimental.SearchEmbeddingsRequest
+	(*EmbeddingSearchResult)(nil),               // 420: ptah.provider.experimental.EmbeddingSearchResult
+	(*EncodeSourceRequest)(nil),                 // 421: ptah.provider.experimental.EncodeSourceRequest
+	(*EncodeSourceValue)(nil),                   // 422: ptah.provider.experimental.EncodeSourceValue
+	(*EncodeSourceColumn)(nil),                  // 423: ptah.provider.experimental.EncodeSourceColumn
+	(*EncodedSource)(nil),                       // 424: ptah.provider.experimental.EncodedSource
+	(*EncodedSourceGroup)(nil),                  // 425: ptah.provider.experimental.EncodedSourceGroup
+	(*EncodedSourcePart)(nil),                   // 426: ptah.provider.experimental.EncodedSourcePart
+	(*EncodedFragment)(nil),                     // 427: ptah.provider.experimental.EncodedFragment
+	(*EncodeLoss)(nil),                          // 428: ptah.provider.experimental.EncodeLoss
+	(*EncodedFieldType)(nil),                    // 429: ptah.provider.experimental.EncodedFieldType
+	(*RunStatementRequest)(nil),                 // 430: ptah.provider.experimental.RunStatementRequest
+	(*StatementArgument)(nil),                   // 431: ptah.provider.experimental.StatementArgument
+	(*ArgumentType)(nil),                        // 432: ptah.provider.experimental.ArgumentType
+	(*StatementResult)(nil),                     // 433: ptah.provider.experimental.StatementResult
+	(*ReadStatementRowsRequest)(nil),            // 434: ptah.provider.experimental.ReadStatementRowsRequest
+	(*StatementRows)(nil),                       // 435: ptah.provider.experimental.StatementRows
+	(*CloseStatementRequest)(nil),               // 436: ptah.provider.experimental.CloseStatementRequest
+	(*SplitMigrationRequest)(nil),               // 437: ptah.provider.experimental.SplitMigrationRequest
+	(*MigrationSplit)(nil),                      // 438: ptah.provider.experimental.MigrationSplit
+	(*MigrationUnit)(nil),                       // 439: ptah.provider.experimental.MigrationUnit
+	(*SplitRefusal)(nil),                        // 440: ptah.provider.experimental.SplitRefusal
+	(*AssertionVerdict)(nil),                    // 441: ptah.provider.experimental.AssertionVerdict
+	(*CompareColumnsRequest)(nil),               // 442: ptah.provider.experimental.CompareColumnsRequest
+	(*ColumnComparisonTable)(nil),               // 443: ptah.provider.experimental.ColumnComparisonTable
+	(*ColumnComparisonPair)(nil),                // 444: ptah.provider.experimental.ColumnComparisonPair
+	(*ComparedColumns)(nil),                     // 445: ptah.provider.experimental.ComparedColumns
+	(*ComparedColumnTable)(nil),                 // 446: ptah.provider.experimental.ComparedColumnTable
+	(*ComparedColumn)(nil),                      // 447: ptah.provider.experimental.ComparedColumn
+	(*ColumnAspectReceipt)(nil),                 // 448: ptah.provider.experimental.ColumnAspectReceipt
+	(*ColumnDifference)(nil),                    // 449: ptah.provider.experimental.ColumnDifference
+	(*ColumnNullability)(nil),                   // 450: ptah.provider.experimental.ColumnNullability
+	(*ColumnSequenceDifferences)(nil),           // 451: ptah.provider.experimental.ColumnSequenceDifferences
+	(*ColumnSequenceDifference)(nil),            // 452: ptah.provider.experimental.ColumnSequenceDifference
+	(*ReadColumnDefaultsRequest)(nil),           // 453: ptah.provider.experimental.ReadColumnDefaultsRequest
+	(*ObservedColumnDefaultInput)(nil),          // 454: ptah.provider.experimental.ObservedColumnDefaultInput
+	(*ReadColumnDefaultsResult)(nil),            // 455: ptah.provider.experimental.ReadColumnDefaultsResult
+	(*ColumnDefaultReceipt)(nil),                // 456: ptah.provider.experimental.ColumnDefaultReceipt
+	(*ScanSQLRequest)(nil),                      // 457: ptah.provider.experimental.ScanSQLRequest
+	(*SQLScan)(nil),                             // 458: ptah.provider.experimental.SQLScan
+	(*SQLToken)(nil),                            // 459: ptah.provider.experimental.SQLToken
+	nil,                                         // 460: ptah.provider.experimental.Engine.DefaultCapabilitiesEntry
+	nil,                                         // 461: ptah.provider.experimental.QueryDialect.DefaultCapabilitiesEntry
+	nil,                                         // 462: ptah.provider.experimental.ReleaseLine.CapabilitiesEntry
+	nil,                                         // 463: ptah.provider.experimental.Session.CapabilitiesEntry
+	nil,                                         // 464: ptah.provider.experimental.RenderRequest.CapabilitiesEntry
+	nil,                                         // 465: ptah.provider.experimental.PrepareCommonObjectsRequest.CapabilitiesEntry
+	nil,                                         // 466: ptah.provider.experimental.CompareModelsRequest.CapabilitiesEntry
+	nil,                                         // 467: ptah.provider.experimental.ReverseChangesRequest.CapabilitiesEntry
+	nil,                                         // 468: ptah.provider.experimental.PlanDeclarationsRequest.CapabilitiesEntry
+	nil,                                         // 469: ptah.provider.experimental.PlanFeaturesRequest.CapabilitiesEntry
+	nil,                                         // 470: ptah.provider.experimental.DeclaredIndex.StorageParametersEntry
+	nil,                                         // 471: ptah.provider.experimental.ObservedIndex.StorageParametersEntry
+	nil,                                         // 472: ptah.provider.experimental.PrepareTablesRequest.CapabilitiesEntry
+	nil,                                         // 473: ptah.provider.experimental.ProjectTableCreationsRequest.CapabilitiesEntry
+	nil,                                         // 474: ptah.provider.experimental.ValidateSchemaRequest.CapabilitiesEntry
+	nil,                                         // 475: ptah.provider.experimental.ValidateSchemaRequest.DependenciesEntry
+	nil,                                         // 476: ptah.provider.experimental.CheckLintRequest.CapabilitiesEntry
+	nil,                                         // 477: ptah.provider.experimental.TypeRowsRequest.CapabilitiesEntry
+	nil,                                         // 478: ptah.provider.experimental.RenderRowWritesRequest.CapabilitiesEntry
+	nil,                                         // 479: ptah.provider.experimental.RowWrite.ColumnTypesEntry
+	nil,                                         // 480: ptah.provider.experimental.EmbeddingTarget.IndexOptionsEntry
+	(*EmbeddingStateScope_AllRecords)(nil),      // 481: ptah.provider.experimental.EmbeddingStateScope.AllRecords
+	nil,                                         // 482: ptah.provider.experimental.EmbeddingMeasurement.CapabilitiesEntry
+	nil,                                         // 483: ptah.provider.experimental.CompareColumnsRequest.CapabilitiesEntry
+	nil,                                         // 484: ptah.provider.experimental.ReadColumnDefaultsRequest.CapabilitiesEntry
 }
 var file_protocol_experimental_provider_proto_depIdxs = []int32{
-	81,  // 0: ptah.provider.experimental.DescribeRequest.host_contract:type_name -> ptah.provider.experimental.ContractVersion
-	84,  // 1: ptah.provider.experimental.Description.engines:type_name -> ptah.provider.experimental.Engine
-	81,  // 2: ptah.provider.experimental.Description.min_contract:type_name -> ptah.provider.experimental.ContractVersion
-	100, // 3: ptah.provider.experimental.Engine.identifiers:type_name -> ptah.provider.experimental.IdentifierRules
-	165, // 4: ptah.provider.experimental.Engine.value_models:type_name -> ptah.provider.experimental.ValueModel
-	98,  // 5: ptah.provider.experimental.Engine.yaml_source_keys:type_name -> ptah.provider.experimental.YAMLSourceKey
-	201, // 6: ptah.provider.experimental.Engine.comparisons:type_name -> ptah.provider.experimental.ModelComparison
-	232, // 7: ptah.provider.experimental.Engine.planning:type_name -> ptah.provider.experimental.ModelPlanning
-	314, // 8: ptah.provider.experimental.Engine.lint_rules:type_name -> ptah.provider.experimental.LintRule
-	97,  // 9: ptah.provider.experimental.Engine.release_lines:type_name -> ptah.provider.experimental.ReleaseLine
-	99,  // 10: ptah.provider.experimental.Engine.go_source_directives:type_name -> ptah.provider.experimental.GoSourceDirective
-	96,  // 11: ptah.provider.experimental.Engine.sql_schema:type_name -> ptah.provider.experimental.SQLSchemaDeclaration
-	93,  // 12: ptah.provider.experimental.Engine.query_dialect:type_name -> ptah.provider.experimental.QueryDialect
-	367, // 13: ptah.provider.experimental.Engine.embeddings:type_name -> ptah.provider.experimental.EmbeddingEngine
-	88,  // 14: ptah.provider.experimental.Engine.common_objects:type_name -> ptah.provider.experimental.CommonObjectSupport
-	89,  // 15: ptah.provider.experimental.Engine.hcl_source:type_name -> ptah.provider.experimental.HCLSourceDeclaration
-	87,  // 16: ptah.provider.experimental.Engine.scope_selections:type_name -> ptah.provider.experimental.ScopeSelection
-	233, // 17: ptah.provider.experimental.Engine.declarations:type_name -> ptah.provider.experimental.ModelDeclarations
-	227, // 18: ptah.provider.experimental.Engine.reversals:type_name -> ptah.provider.experimental.ModelReversal
-	166, // 19: ptah.provider.experimental.Engine.reports:type_name -> ptah.provider.experimental.ModelReport
-	459, // 20: ptah.provider.experimental.Engine.default_capabilities:type_name -> ptah.provider.experimental.Engine.DefaultCapabilitiesEntry
-	86,  // 21: ptah.provider.experimental.Engine.index_kinds:type_name -> ptah.provider.experimental.SourceIndexKind
-	85,  // 22: ptah.provider.experimental.Engine.model_predecessors:type_name -> ptah.provider.experimental.ModelPredecessor
-	29,  // 23: ptah.provider.experimental.ModelPredecessor.representation:type_name -> ptah.provider.experimental.ValueInput.Representation
-	9,   // 24: ptah.provider.experimental.ScopeSelection.naming:type_name -> ptah.provider.experimental.ScopeSelection.Naming
-	10,  // 25: ptah.provider.experimental.CommonObjectSupport.kinds:type_name -> ptah.provider.experimental.CommonObjectSupport.Kind
-	90,  // 26: ptah.provider.experimental.HCLSourceDeclaration.blocks:type_name -> ptah.provider.experimental.HCLSourceBlock
-	11,  // 27: ptah.provider.experimental.HCLSourceBlock.site:type_name -> ptah.provider.experimental.HCLSourceBlock.Site
-	12,  // 28: ptah.provider.experimental.HCLSourceBlock.naming:type_name -> ptah.provider.experimental.HCLSourceBlock.Naming
-	91,  // 29: ptah.provider.experimental.HCLSourceBlock.attributes:type_name -> ptah.provider.experimental.HCLSourceAttribute
-	92,  // 30: ptah.provider.experimental.HCLSourceBlock.children:type_name -> ptah.provider.experimental.HCLSourceChild
-	13,  // 31: ptah.provider.experimental.HCLSourceAttribute.kind:type_name -> ptah.provider.experimental.HCLSourceAttribute.Kind
-	91,  // 32: ptah.provider.experimental.HCLSourceChild.attributes:type_name -> ptah.provider.experimental.HCLSourceAttribute
-	94,  // 33: ptah.provider.experimental.QueryDialect.quoting:type_name -> ptah.provider.experimental.QueryQuoting
-	95,  // 34: ptah.provider.experimental.QueryDialect.query:type_name -> ptah.provider.experimental.QuerySpelling
-	460, // 35: ptah.provider.experimental.QueryDialect.default_capabilities:type_name -> ptah.provider.experimental.QueryDialect.DefaultCapabilitiesEntry
-	14,  // 36: ptah.provider.experimental.SQLSchemaDeclaration.mode:type_name -> ptah.provider.experimental.SQLSchemaDeclaration.Mode
-	15,  // 37: ptah.provider.experimental.ReleaseLine.support:type_name -> ptah.provider.experimental.ReleaseLine.Support
-	461, // 38: ptah.provider.experimental.ReleaseLine.capabilities:type_name -> ptah.provider.experimental.ReleaseLine.CapabilitiesEntry
-	16,  // 39: ptah.provider.experimental.YAMLSourceKey.scope:type_name -> ptah.provider.experimental.YAMLSourceKey.Scope
-	17,  // 40: ptah.provider.experimental.GoSourceDirective.scope:type_name -> ptah.provider.experimental.GoSourceDirective.Scope
-	18,  // 41: ptah.provider.experimental.IdentifierRules.table_names:type_name -> ptah.provider.experimental.IdentifierRules.Comparison
-	18,  // 42: ptah.provider.experimental.IdentifierRules.column_names:type_name -> ptah.provider.experimental.IdentifierRules.Comparison
-	18,  // 43: ptah.provider.experimental.IdentifierRules.index_names:type_name -> ptah.provider.experimental.IdentifierRules.Comparison
-	19,  // 44: ptah.provider.experimental.IdentifierRules.index_namespace:type_name -> ptah.provider.experimental.IdentifierRules.IndexNamespace
-	101, // 45: ptah.provider.experimental.Envelope.owner:type_name -> ptah.provider.experimental.Reference
-	103, // 46: ptah.provider.experimental.Envelope.context:type_name -> ptah.provider.experimental.DatabaseContext
-	100, // 47: ptah.provider.experimental.Session.identifiers:type_name -> ptah.provider.experimental.IdentifierRules
-	462, // 48: ptah.provider.experimental.Session.capabilities:type_name -> ptah.provider.experimental.Session.CapabilitiesEntry
-	103, // 49: ptah.provider.experimental.Session.context:type_name -> ptah.provider.experimental.DatabaseContext
-	120, // 50: ptah.provider.experimental.Schema.tables:type_name -> ptah.provider.experimental.Table
-	102, // 51: ptah.provider.experimental.Schema.native_objects:type_name -> ptah.provider.experimental.Envelope
-	122, // 52: ptah.provider.experimental.Schema.dispositions:type_name -> ptah.provider.experimental.Disposition
-	178, // 53: ptah.provider.experimental.Schema.coverage:type_name -> ptah.provider.experimental.ModelCoverage
-	200, // 54: ptah.provider.experimental.Schema.scope_bindings:type_name -> ptah.provider.experimental.InspectionScopeBinding
-	297, // 55: ptah.provider.experimental.Schema.reserved_objects:type_name -> ptah.provider.experimental.ReservedObject
-	112, // 56: ptah.provider.experimental.Schema.common_objects:type_name -> ptah.provider.experimental.ObservedCommonObjects
-	111, // 57: ptah.provider.experimental.Schema.planning_context:type_name -> ptah.provider.experimental.PlanningContextInventory
-	110, // 58: ptah.provider.experimental.Schema.unread_tables:type_name -> ptah.provider.experimental.UnreadTable
-	101, // 59: ptah.provider.experimental.UnreadTable.table:type_name -> ptah.provider.experimental.Reference
-	284, // 60: ptah.provider.experimental.UnreadTable.diagnostic:type_name -> ptah.provider.experimental.ProviderDiagnostic
-	102, // 61: ptah.provider.experimental.PlanningContextInventory.objects:type_name -> ptah.provider.experimental.Envelope
-	178, // 62: ptah.provider.experimental.PlanningContextInventory.coverage:type_name -> ptah.provider.experimental.ModelCoverage
-	115, // 63: ptah.provider.experimental.ObservedCommonObjects.views:type_name -> ptah.provider.experimental.ObservedView
-	116, // 64: ptah.provider.experimental.ObservedCommonObjects.sequences:type_name -> ptah.provider.experimental.ObservedSequence
-	117, // 65: ptah.provider.experimental.ObservedCommonObjects.roles:type_name -> ptah.provider.experimental.ObservedRole
-	118, // 66: ptah.provider.experimental.ObservedCommonObjects.grants:type_name -> ptah.provider.experimental.ObservedGrant
-	119, // 67: ptah.provider.experimental.ObservedCommonObjects.comments:type_name -> ptah.provider.experimental.ObjectComment
-	114, // 68: ptah.provider.experimental.ObservedCommonObjects.coverage:type_name -> ptah.provider.experimental.CommonObjectCoverage
-	113, // 69: ptah.provider.experimental.ObservedCommonObjects.object_owners:type_name -> ptah.provider.experimental.ObjectOwner
-	129, // 70: ptah.provider.experimental.ObservedCommonObjects.memberships:type_name -> ptah.provider.experimental.RoleMembership
-	101, // 71: ptah.provider.experimental.ObjectOwner.object:type_name -> ptah.provider.experimental.Reference
-	10,  // 72: ptah.provider.experimental.CommonObjectCoverage.kind:type_name -> ptah.provider.experimental.CommonObjectSupport.Kind
-	172, // 73: ptah.provider.experimental.CommonObjectCoverage.knowledge:type_name -> ptah.provider.experimental.ModelKnowledge
-	101, // 74: ptah.provider.experimental.ObservedView.identity:type_name -> ptah.provider.experimental.Reference
-	102, // 75: ptah.provider.experimental.ObservedView.facets:type_name -> ptah.provider.experimental.Envelope
-	101, // 76: ptah.provider.experimental.ObservedSequence.identity:type_name -> ptah.provider.experimental.Reference
-	101, // 77: ptah.provider.experimental.ObservedSequence.owned_by:type_name -> ptah.provider.experimental.Reference
-	20,  // 78: ptah.provider.experimental.ObservedRole.password:type_name -> ptah.provider.experimental.ObservedRole.Password
-	101, // 79: ptah.provider.experimental.ObservedGrant.target:type_name -> ptah.provider.experimental.Reference
-	101, // 80: ptah.provider.experimental.ObjectComment.object:type_name -> ptah.provider.experimental.Reference
-	101, // 81: ptah.provider.experimental.Table.identity:type_name -> ptah.provider.experimental.Reference
-	121, // 82: ptah.provider.experimental.Table.columns:type_name -> ptah.provider.experimental.Column
-	102, // 83: ptah.provider.experimental.Table.facets:type_name -> ptah.provider.experimental.Envelope
-	101, // 84: ptah.provider.experimental.Table.normalized_identity:type_name -> ptah.provider.experimental.Reference
-	269, // 85: ptah.provider.experimental.Table.primary_key:type_name -> ptah.provider.experimental.ObservedConstraint
-	268, // 86: ptah.provider.experimental.Table.indexes:type_name -> ptah.provider.experimental.ObservedIndex
-	102, // 87: ptah.provider.experimental.Column.facets:type_name -> ptah.provider.experimental.Envelope
-	267, // 88: ptah.provider.experimental.Column.observed:type_name -> ptah.provider.experimental.ObservedColumn
-	101, // 89: ptah.provider.experimental.Disposition.object:type_name -> ptah.provider.experimental.Reference
-	21,  // 90: ptah.provider.experimental.Disposition.state:type_name -> ptah.provider.experimental.Disposition.State
-	101, // 91: ptah.provider.experimental.Change.object:type_name -> ptah.provider.experimental.Reference
-	120, // 92: ptah.provider.experimental.Change.create_table:type_name -> ptah.provider.experimental.Table
-	80,  // 93: ptah.provider.experimental.Change.drop_table:type_name -> ptah.provider.experimental.Empty
-	121, // 94: ptah.provider.experimental.Change.add_column:type_name -> ptah.provider.experimental.Column
-	130, // 95: ptah.provider.experimental.Change.native:type_name -> ptah.provider.experimental.NativeOperation
-	124, // 96: ptah.provider.experimental.Change.common_object:type_name -> ptah.provider.experimental.CommonObjectChange
-	125, // 97: ptah.provider.experimental.CommonObjectChange.create_view:type_name -> ptah.provider.experimental.ViewCreation
-	101, // 98: ptah.provider.experimental.CommonObjectChange.drop_view:type_name -> ptah.provider.experimental.Reference
-	188, // 99: ptah.provider.experimental.CommonObjectChange.create_sequence:type_name -> ptah.provider.experimental.SQLSequence
-	126, // 100: ptah.provider.experimental.CommonObjectChange.alter_sequence:type_name -> ptah.provider.experimental.SequenceAlteration
-	101, // 101: ptah.provider.experimental.CommonObjectChange.drop_sequence:type_name -> ptah.provider.experimental.Reference
-	127, // 102: ptah.provider.experimental.CommonObjectChange.create_role:type_name -> ptah.provider.experimental.RoleCreation
-	128, // 103: ptah.provider.experimental.CommonObjectChange.alter_role:type_name -> ptah.provider.experimental.RoleAlteration
-	101, // 104: ptah.provider.experimental.CommonObjectChange.drop_role:type_name -> ptah.provider.experimental.Reference
-	190, // 105: ptah.provider.experimental.CommonObjectChange.grant:type_name -> ptah.provider.experimental.SQLGrant
-	190, // 106: ptah.provider.experimental.CommonObjectChange.revoke:type_name -> ptah.provider.experimental.SQLGrant
-	129, // 107: ptah.provider.experimental.CommonObjectChange.add_member:type_name -> ptah.provider.experimental.RoleMembership
-	129, // 108: ptah.provider.experimental.CommonObjectChange.remove_member:type_name -> ptah.provider.experimental.RoleMembership
-	119, // 109: ptah.provider.experimental.CommonObjectChange.set_comment:type_name -> ptah.provider.experimental.ObjectComment
-	187, // 110: ptah.provider.experimental.ViewCreation.view:type_name -> ptah.provider.experimental.SQLView
-	115, // 111: ptah.provider.experimental.ViewCreation.current:type_name -> ptah.provider.experimental.ObservedView
-	101, // 112: ptah.provider.experimental.SequenceAlteration.sequence:type_name -> ptah.provider.experimental.Reference
-	188, // 113: ptah.provider.experimental.SequenceAlteration.desired:type_name -> ptah.provider.experimental.SQLSequence
-	189, // 114: ptah.provider.experimental.RoleCreation.role:type_name -> ptah.provider.experimental.SQLRole
-	135, // 115: ptah.provider.experimental.RoleCreation.password_input:type_name -> ptah.provider.experimental.ExecutionInput
-	189, // 116: ptah.provider.experimental.RoleAlteration.desired:type_name -> ptah.provider.experimental.SQLRole
-	135, // 117: ptah.provider.experimental.RoleAlteration.password_input:type_name -> ptah.provider.experimental.ExecutionInput
-	151, // 118: ptah.provider.experimental.NativeOperation.value:type_name -> ptah.provider.experimental.NormalizedValue
-	22,  // 119: ptah.provider.experimental.NativeOperation.role:type_name -> ptah.provider.experimental.NativeOperation.Role
-	101, // 120: ptah.provider.experimental.NativeOperation.parent:type_name -> ptah.provider.experimental.Reference
-	123, // 121: ptah.provider.experimental.RenderRequest.changes:type_name -> ptah.provider.experimental.Change
-	463, // 122: ptah.provider.experimental.RenderRequest.capabilities:type_name -> ptah.provider.experimental.RenderRequest.CapabilitiesEntry
-	23,  // 123: ptah.provider.experimental.RenderRequest.form:type_name -> ptah.provider.experimental.RenderRequest.Form
-	102, // 124: ptah.provider.experimental.Unit.native:type_name -> ptah.provider.experimental.Envelope
-	132, // 125: ptah.provider.experimental.RenderResult.units:type_name -> ptah.provider.experimental.Unit
-	357, // 126: ptah.provider.experimental.RenderResult.refusal:type_name -> ptah.provider.experimental.RenderRefusal
-	132, // 127: ptah.provider.experimental.ExecuteRequest.units:type_name -> ptah.provider.experimental.Unit
-	135, // 128: ptah.provider.experimental.ExecuteRequest.expected_inputs:type_name -> ptah.provider.experimental.ExecutionInput
-	136, // 129: ptah.provider.experimental.ExecuteRequest.input_bindings:type_name -> ptah.provider.experimental.ExecutionInputBinding
-	24,  // 130: ptah.provider.experimental.ExecutionInput.source:type_name -> ptah.provider.experimental.ExecutionInput.Source
-	135, // 131: ptah.provider.experimental.ExecutionInputBinding.input:type_name -> ptah.provider.experimental.ExecutionInput
-	132, // 132: ptah.provider.experimental.DescribeExecutionInputsRequest.units:type_name -> ptah.provider.experimental.Unit
-	135, // 133: ptah.provider.experimental.ExecutionInputs.inputs:type_name -> ptah.provider.experimental.ExecutionInput
+	82,  // 0: ptah.provider.experimental.DescribeRequest.host_contract:type_name -> ptah.provider.experimental.ContractVersion
+	85,  // 1: ptah.provider.experimental.Description.engines:type_name -> ptah.provider.experimental.Engine
+	82,  // 2: ptah.provider.experimental.Description.min_contract:type_name -> ptah.provider.experimental.ContractVersion
+	101, // 3: ptah.provider.experimental.Engine.identifiers:type_name -> ptah.provider.experimental.IdentifierRules
+	166, // 4: ptah.provider.experimental.Engine.value_models:type_name -> ptah.provider.experimental.ValueModel
+	99,  // 5: ptah.provider.experimental.Engine.yaml_source_keys:type_name -> ptah.provider.experimental.YAMLSourceKey
+	202, // 6: ptah.provider.experimental.Engine.comparisons:type_name -> ptah.provider.experimental.ModelComparison
+	233, // 7: ptah.provider.experimental.Engine.planning:type_name -> ptah.provider.experimental.ModelPlanning
+	315, // 8: ptah.provider.experimental.Engine.lint_rules:type_name -> ptah.provider.experimental.LintRule
+	98,  // 9: ptah.provider.experimental.Engine.release_lines:type_name -> ptah.provider.experimental.ReleaseLine
+	100, // 10: ptah.provider.experimental.Engine.go_source_directives:type_name -> ptah.provider.experimental.GoSourceDirective
+	97,  // 11: ptah.provider.experimental.Engine.sql_schema:type_name -> ptah.provider.experimental.SQLSchemaDeclaration
+	94,  // 12: ptah.provider.experimental.Engine.query_dialect:type_name -> ptah.provider.experimental.QueryDialect
+	368, // 13: ptah.provider.experimental.Engine.embeddings:type_name -> ptah.provider.experimental.EmbeddingEngine
+	89,  // 14: ptah.provider.experimental.Engine.common_objects:type_name -> ptah.provider.experimental.CommonObjectSupport
+	90,  // 15: ptah.provider.experimental.Engine.hcl_source:type_name -> ptah.provider.experimental.HCLSourceDeclaration
+	88,  // 16: ptah.provider.experimental.Engine.scope_selections:type_name -> ptah.provider.experimental.ScopeSelection
+	234, // 17: ptah.provider.experimental.Engine.declarations:type_name -> ptah.provider.experimental.ModelDeclarations
+	228, // 18: ptah.provider.experimental.Engine.reversals:type_name -> ptah.provider.experimental.ModelReversal
+	167, // 19: ptah.provider.experimental.Engine.reports:type_name -> ptah.provider.experimental.ModelReport
+	460, // 20: ptah.provider.experimental.Engine.default_capabilities:type_name -> ptah.provider.experimental.Engine.DefaultCapabilitiesEntry
+	87,  // 21: ptah.provider.experimental.Engine.index_kinds:type_name -> ptah.provider.experimental.SourceIndexKind
+	86,  // 22: ptah.provider.experimental.Engine.model_predecessors:type_name -> ptah.provider.experimental.ModelPredecessor
+	30,  // 23: ptah.provider.experimental.ModelPredecessor.representation:type_name -> ptah.provider.experimental.ValueInput.Representation
+	10,  // 24: ptah.provider.experimental.ScopeSelection.naming:type_name -> ptah.provider.experimental.ScopeSelection.Naming
+	11,  // 25: ptah.provider.experimental.CommonObjectSupport.kinds:type_name -> ptah.provider.experimental.CommonObjectSupport.Kind
+	91,  // 26: ptah.provider.experimental.HCLSourceDeclaration.blocks:type_name -> ptah.provider.experimental.HCLSourceBlock
+	12,  // 27: ptah.provider.experimental.HCLSourceBlock.site:type_name -> ptah.provider.experimental.HCLSourceBlock.Site
+	13,  // 28: ptah.provider.experimental.HCLSourceBlock.naming:type_name -> ptah.provider.experimental.HCLSourceBlock.Naming
+	92,  // 29: ptah.provider.experimental.HCLSourceBlock.attributes:type_name -> ptah.provider.experimental.HCLSourceAttribute
+	93,  // 30: ptah.provider.experimental.HCLSourceBlock.children:type_name -> ptah.provider.experimental.HCLSourceChild
+	14,  // 31: ptah.provider.experimental.HCLSourceAttribute.kind:type_name -> ptah.provider.experimental.HCLSourceAttribute.Kind
+	92,  // 32: ptah.provider.experimental.HCLSourceChild.attributes:type_name -> ptah.provider.experimental.HCLSourceAttribute
+	95,  // 33: ptah.provider.experimental.QueryDialect.quoting:type_name -> ptah.provider.experimental.QueryQuoting
+	96,  // 34: ptah.provider.experimental.QueryDialect.query:type_name -> ptah.provider.experimental.QuerySpelling
+	461, // 35: ptah.provider.experimental.QueryDialect.default_capabilities:type_name -> ptah.provider.experimental.QueryDialect.DefaultCapabilitiesEntry
+	15,  // 36: ptah.provider.experimental.SQLSchemaDeclaration.mode:type_name -> ptah.provider.experimental.SQLSchemaDeclaration.Mode
+	16,  // 37: ptah.provider.experimental.ReleaseLine.support:type_name -> ptah.provider.experimental.ReleaseLine.Support
+	462, // 38: ptah.provider.experimental.ReleaseLine.capabilities:type_name -> ptah.provider.experimental.ReleaseLine.CapabilitiesEntry
+	17,  // 39: ptah.provider.experimental.YAMLSourceKey.scope:type_name -> ptah.provider.experimental.YAMLSourceKey.Scope
+	18,  // 40: ptah.provider.experimental.GoSourceDirective.scope:type_name -> ptah.provider.experimental.GoSourceDirective.Scope
+	19,  // 41: ptah.provider.experimental.IdentifierRules.table_names:type_name -> ptah.provider.experimental.IdentifierRules.Comparison
+	19,  // 42: ptah.provider.experimental.IdentifierRules.column_names:type_name -> ptah.provider.experimental.IdentifierRules.Comparison
+	19,  // 43: ptah.provider.experimental.IdentifierRules.index_names:type_name -> ptah.provider.experimental.IdentifierRules.Comparison
+	20,  // 44: ptah.provider.experimental.IdentifierRules.index_namespace:type_name -> ptah.provider.experimental.IdentifierRules.IndexNamespace
+	102, // 45: ptah.provider.experimental.Envelope.owner:type_name -> ptah.provider.experimental.Reference
+	104, // 46: ptah.provider.experimental.Envelope.context:type_name -> ptah.provider.experimental.DatabaseContext
+	101, // 47: ptah.provider.experimental.Session.identifiers:type_name -> ptah.provider.experimental.IdentifierRules
+	463, // 48: ptah.provider.experimental.Session.capabilities:type_name -> ptah.provider.experimental.Session.CapabilitiesEntry
+	104, // 49: ptah.provider.experimental.Session.context:type_name -> ptah.provider.experimental.DatabaseContext
+	121, // 50: ptah.provider.experimental.Schema.tables:type_name -> ptah.provider.experimental.Table
+	103, // 51: ptah.provider.experimental.Schema.native_objects:type_name -> ptah.provider.experimental.Envelope
+	123, // 52: ptah.provider.experimental.Schema.dispositions:type_name -> ptah.provider.experimental.Disposition
+	179, // 53: ptah.provider.experimental.Schema.coverage:type_name -> ptah.provider.experimental.ModelCoverage
+	201, // 54: ptah.provider.experimental.Schema.scope_bindings:type_name -> ptah.provider.experimental.InspectionScopeBinding
+	298, // 55: ptah.provider.experimental.Schema.reserved_objects:type_name -> ptah.provider.experimental.ReservedObject
+	113, // 56: ptah.provider.experimental.Schema.common_objects:type_name -> ptah.provider.experimental.ObservedCommonObjects
+	112, // 57: ptah.provider.experimental.Schema.planning_context:type_name -> ptah.provider.experimental.PlanningContextInventory
+	111, // 58: ptah.provider.experimental.Schema.unread_tables:type_name -> ptah.provider.experimental.UnreadTable
+	102, // 59: ptah.provider.experimental.UnreadTable.table:type_name -> ptah.provider.experimental.Reference
+	285, // 60: ptah.provider.experimental.UnreadTable.diagnostic:type_name -> ptah.provider.experimental.ProviderDiagnostic
+	103, // 61: ptah.provider.experimental.PlanningContextInventory.objects:type_name -> ptah.provider.experimental.Envelope
+	179, // 62: ptah.provider.experimental.PlanningContextInventory.coverage:type_name -> ptah.provider.experimental.ModelCoverage
+	116, // 63: ptah.provider.experimental.ObservedCommonObjects.views:type_name -> ptah.provider.experimental.ObservedView
+	117, // 64: ptah.provider.experimental.ObservedCommonObjects.sequences:type_name -> ptah.provider.experimental.ObservedSequence
+	118, // 65: ptah.provider.experimental.ObservedCommonObjects.roles:type_name -> ptah.provider.experimental.ObservedRole
+	119, // 66: ptah.provider.experimental.ObservedCommonObjects.grants:type_name -> ptah.provider.experimental.ObservedGrant
+	120, // 67: ptah.provider.experimental.ObservedCommonObjects.comments:type_name -> ptah.provider.experimental.ObjectComment
+	115, // 68: ptah.provider.experimental.ObservedCommonObjects.coverage:type_name -> ptah.provider.experimental.CommonObjectCoverage
+	114, // 69: ptah.provider.experimental.ObservedCommonObjects.object_owners:type_name -> ptah.provider.experimental.ObjectOwner
+	130, // 70: ptah.provider.experimental.ObservedCommonObjects.memberships:type_name -> ptah.provider.experimental.RoleMembership
+	102, // 71: ptah.provider.experimental.ObjectOwner.object:type_name -> ptah.provider.experimental.Reference
+	11,  // 72: ptah.provider.experimental.CommonObjectCoverage.kind:type_name -> ptah.provider.experimental.CommonObjectSupport.Kind
+	173, // 73: ptah.provider.experimental.CommonObjectCoverage.knowledge:type_name -> ptah.provider.experimental.ModelKnowledge
+	102, // 74: ptah.provider.experimental.ObservedView.identity:type_name -> ptah.provider.experimental.Reference
+	103, // 75: ptah.provider.experimental.ObservedView.facets:type_name -> ptah.provider.experimental.Envelope
+	102, // 76: ptah.provider.experimental.ObservedSequence.identity:type_name -> ptah.provider.experimental.Reference
+	102, // 77: ptah.provider.experimental.ObservedSequence.owned_by:type_name -> ptah.provider.experimental.Reference
+	21,  // 78: ptah.provider.experimental.ObservedRole.password:type_name -> ptah.provider.experimental.ObservedRole.Password
+	102, // 79: ptah.provider.experimental.ObservedGrant.target:type_name -> ptah.provider.experimental.Reference
+	102, // 80: ptah.provider.experimental.ObjectComment.object:type_name -> ptah.provider.experimental.Reference
+	102, // 81: ptah.provider.experimental.Table.identity:type_name -> ptah.provider.experimental.Reference
+	122, // 82: ptah.provider.experimental.Table.columns:type_name -> ptah.provider.experimental.Column
+	103, // 83: ptah.provider.experimental.Table.facets:type_name -> ptah.provider.experimental.Envelope
+	102, // 84: ptah.provider.experimental.Table.normalized_identity:type_name -> ptah.provider.experimental.Reference
+	270, // 85: ptah.provider.experimental.Table.primary_key:type_name -> ptah.provider.experimental.ObservedConstraint
+	269, // 86: ptah.provider.experimental.Table.indexes:type_name -> ptah.provider.experimental.ObservedIndex
+	103, // 87: ptah.provider.experimental.Column.facets:type_name -> ptah.provider.experimental.Envelope
+	268, // 88: ptah.provider.experimental.Column.observed:type_name -> ptah.provider.experimental.ObservedColumn
+	102, // 89: ptah.provider.experimental.Disposition.object:type_name -> ptah.provider.experimental.Reference
+	22,  // 90: ptah.provider.experimental.Disposition.state:type_name -> ptah.provider.experimental.Disposition.State
+	102, // 91: ptah.provider.experimental.Change.object:type_name -> ptah.provider.experimental.Reference
+	121, // 92: ptah.provider.experimental.Change.create_table:type_name -> ptah.provider.experimental.Table
+	81,  // 93: ptah.provider.experimental.Change.drop_table:type_name -> ptah.provider.experimental.Empty
+	122, // 94: ptah.provider.experimental.Change.add_column:type_name -> ptah.provider.experimental.Column
+	131, // 95: ptah.provider.experimental.Change.native:type_name -> ptah.provider.experimental.NativeOperation
+	125, // 96: ptah.provider.experimental.Change.common_object:type_name -> ptah.provider.experimental.CommonObjectChange
+	126, // 97: ptah.provider.experimental.CommonObjectChange.create_view:type_name -> ptah.provider.experimental.ViewCreation
+	102, // 98: ptah.provider.experimental.CommonObjectChange.drop_view:type_name -> ptah.provider.experimental.Reference
+	189, // 99: ptah.provider.experimental.CommonObjectChange.create_sequence:type_name -> ptah.provider.experimental.SQLSequence
+	127, // 100: ptah.provider.experimental.CommonObjectChange.alter_sequence:type_name -> ptah.provider.experimental.SequenceAlteration
+	102, // 101: ptah.provider.experimental.CommonObjectChange.drop_sequence:type_name -> ptah.provider.experimental.Reference
+	128, // 102: ptah.provider.experimental.CommonObjectChange.create_role:type_name -> ptah.provider.experimental.RoleCreation
+	129, // 103: ptah.provider.experimental.CommonObjectChange.alter_role:type_name -> ptah.provider.experimental.RoleAlteration
+	102, // 104: ptah.provider.experimental.CommonObjectChange.drop_role:type_name -> ptah.provider.experimental.Reference
+	191, // 105: ptah.provider.experimental.CommonObjectChange.grant:type_name -> ptah.provider.experimental.SQLGrant
+	191, // 106: ptah.provider.experimental.CommonObjectChange.revoke:type_name -> ptah.provider.experimental.SQLGrant
+	130, // 107: ptah.provider.experimental.CommonObjectChange.add_member:type_name -> ptah.provider.experimental.RoleMembership
+	130, // 108: ptah.provider.experimental.CommonObjectChange.remove_member:type_name -> ptah.provider.experimental.RoleMembership
+	120, // 109: ptah.provider.experimental.CommonObjectChange.set_comment:type_name -> ptah.provider.experimental.ObjectComment
+	188, // 110: ptah.provider.experimental.ViewCreation.view:type_name -> ptah.provider.experimental.SQLView
+	116, // 111: ptah.provider.experimental.ViewCreation.current:type_name -> ptah.provider.experimental.ObservedView
+	102, // 112: ptah.provider.experimental.SequenceAlteration.sequence:type_name -> ptah.provider.experimental.Reference
+	189, // 113: ptah.provider.experimental.SequenceAlteration.desired:type_name -> ptah.provider.experimental.SQLSequence
+	190, // 114: ptah.provider.experimental.RoleCreation.role:type_name -> ptah.provider.experimental.SQLRole
+	136, // 115: ptah.provider.experimental.RoleCreation.password_input:type_name -> ptah.provider.experimental.ExecutionInput
+	190, // 116: ptah.provider.experimental.RoleAlteration.desired:type_name -> ptah.provider.experimental.SQLRole
+	136, // 117: ptah.provider.experimental.RoleAlteration.password_input:type_name -> ptah.provider.experimental.ExecutionInput
+	152, // 118: ptah.provider.experimental.NativeOperation.value:type_name -> ptah.provider.experimental.NormalizedValue
+	23,  // 119: ptah.provider.experimental.NativeOperation.role:type_name -> ptah.provider.experimental.NativeOperation.Role
+	102, // 120: ptah.provider.experimental.NativeOperation.parent:type_name -> ptah.provider.experimental.Reference
+	124, // 121: ptah.provider.experimental.RenderRequest.changes:type_name -> ptah.provider.experimental.Change
+	464, // 122: ptah.provider.experimental.RenderRequest.capabilities:type_name -> ptah.provider.experimental.RenderRequest.CapabilitiesEntry
+	24,  // 123: ptah.provider.experimental.RenderRequest.form:type_name -> ptah.provider.experimental.RenderRequest.Form
+	103, // 124: ptah.provider.experimental.Unit.native:type_name -> ptah.provider.experimental.Envelope
+	133, // 125: ptah.provider.experimental.RenderResult.units:type_name -> ptah.provider.experimental.Unit
+	358, // 126: ptah.provider.experimental.RenderResult.refusal:type_name -> ptah.provider.experimental.RenderRefusal
+	133, // 127: ptah.provider.experimental.ExecuteRequest.units:type_name -> ptah.provider.experimental.Unit
+	136, // 128: ptah.provider.experimental.ExecuteRequest.expected_inputs:type_name -> ptah.provider.experimental.ExecutionInput
+	137, // 129: ptah.provider.experimental.ExecuteRequest.input_bindings:type_name -> ptah.provider.experimental.ExecutionInputBinding
+	25,  // 130: ptah.provider.experimental.ExecutionInput.source:type_name -> ptah.provider.experimental.ExecutionInput.Source
+	136, // 131: ptah.provider.experimental.ExecutionInputBinding.input:type_name -> ptah.provider.experimental.ExecutionInput
+	133, // 132: ptah.provider.experimental.DescribeExecutionInputsRequest.units:type_name -> ptah.provider.experimental.Unit
+	136, // 133: ptah.provider.experimental.ExecutionInputs.inputs:type_name -> ptah.provider.experimental.ExecutionInput
 	0,   // 134: ptah.provider.experimental.BeginTransactionRequest.isolation:type_name -> ptah.provider.experimental.TransactionIsolation
 	0,   // 135: ptah.provider.experimental.Transaction.isolation:type_name -> ptah.provider.experimental.TransactionIsolation
-	25,  // 136: ptah.provider.experimental.FinishTransactionRequest.action:type_name -> ptah.provider.experimental.FinishTransactionRequest.Action
-	26,  // 137: ptah.provider.experimental.TransactionResult.outcome:type_name -> ptah.provider.experimental.TransactionResult.Outcome
-	284, // 138: ptah.provider.experimental.TransactionResult.diagnostic:type_name -> ptah.provider.experimental.ProviderDiagnostic
-	27,  // 139: ptah.provider.experimental.Execution.outcome:type_name -> ptah.provider.experimental.Execution.Outcome
-	284, // 140: ptah.provider.experimental.Execution.diagnostic:type_name -> ptah.provider.experimental.ProviderDiagnostic
-	146, // 141: ptah.provider.experimental.SQLAnalysis.files:type_name -> ptah.provider.experimental.SQLFile
-	147, // 142: ptah.provider.experimental.SQLFile.statements:type_name -> ptah.provider.experimental.SQLStatement
-	28,  // 143: ptah.provider.experimental.SQLStatement.safety:type_name -> ptah.provider.experimental.SQLStatement.Safety
-	149, // 144: ptah.provider.experimental.NormalizeValuesRequest.values:type_name -> ptah.provider.experimental.ValueInput
-	29,  // 145: ptah.provider.experimental.ValueInput.representation:type_name -> ptah.provider.experimental.ValueInput.Representation
-	102, // 146: ptah.provider.experimental.ValueInput.value:type_name -> ptah.provider.experimental.Envelope
-	151, // 147: ptah.provider.experimental.NormalizedValues.values:type_name -> ptah.provider.experimental.NormalizedValue
-	102, // 148: ptah.provider.experimental.NormalizedValue.value:type_name -> ptah.provider.experimental.Envelope
-	101, // 149: ptah.provider.experimental.NormalizedValue.normalized_owner:type_name -> ptah.provider.experimental.Reference
-	203, // 150: ptah.provider.experimental.NormalizedValue.required_objects:type_name -> ptah.provider.experimental.ComparisonIdentity
-	220, // 151: ptah.provider.experimental.NormalizedValue.change_semantics:type_name -> ptah.provider.experimental.ChangeSemantics
-	226, // 152: ptah.provider.experimental.NormalizedValue.operation_semantics:type_name -> ptah.provider.experimental.OperationSemantics
-	152, // 153: ptah.provider.experimental.SourceSpan.start:type_name -> ptah.provider.experimental.SourcePosition
-	152, // 154: ptah.provider.experimental.SourceSpan.end:type_name -> ptah.provider.experimental.SourcePosition
-	153, // 155: ptah.provider.experimental.SourceValue.span:type_name -> ptah.provider.experimental.SourceSpan
-	80,  // 156: ptah.provider.experimental.SourceValue.null:type_name -> ptah.provider.experimental.Empty
-	101, // 157: ptah.provider.experimental.SourceValue.reference:type_name -> ptah.provider.experimental.Reference
-	155, // 158: ptah.provider.experimental.SourceValue.sequence:type_name -> ptah.provider.experimental.SourceSequence
-	156, // 159: ptah.provider.experimental.SourceValue.mapping:type_name -> ptah.provider.experimental.SourceMapping
-	154, // 160: ptah.provider.experimental.SourceSequence.values:type_name -> ptah.provider.experimental.SourceValue
-	157, // 161: ptah.provider.experimental.SourceMapping.entries:type_name -> ptah.provider.experimental.SourceEntry
-	153, // 162: ptah.provider.experimental.SourceEntry.key_span:type_name -> ptah.provider.experimental.SourceSpan
-	154, // 163: ptah.provider.experimental.SourceEntry.value:type_name -> ptah.provider.experimental.SourceValue
-	159, // 164: ptah.provider.experimental.SourceBlock.labels:type_name -> ptah.provider.experimental.SourceLabel
-	156, // 165: ptah.provider.experimental.SourceBlock.attributes:type_name -> ptah.provider.experimental.SourceMapping
-	158, // 166: ptah.provider.experimental.SourceBlock.children:type_name -> ptah.provider.experimental.SourceBlock
-	153, // 167: ptah.provider.experimental.SourceBlock.span:type_name -> ptah.provider.experimental.SourceSpan
-	153, // 168: ptah.provider.experimental.SourceLabel.span:type_name -> ptah.provider.experimental.SourceSpan
-	101, // 169: ptah.provider.experimental.SourceBinding.object:type_name -> ptah.provider.experimental.Reference
-	98,  // 170: ptah.provider.experimental.SourceFragment.yaml_key:type_name -> ptah.provider.experimental.YAMLSourceKey
-	99,  // 171: ptah.provider.experimental.SourceFragment.go_directive:type_name -> ptah.provider.experimental.GoSourceDirective
-	90,  // 172: ptah.provider.experimental.SourceFragment.hcl_block:type_name -> ptah.provider.experimental.HCLSourceBlock
-	86,  // 173: ptah.provider.experimental.SourceFragment.index_kind:type_name -> ptah.provider.experimental.SourceIndexKind
-	101, // 174: ptah.provider.experimental.SourceFragment.subject:type_name -> ptah.provider.experimental.Reference
-	156, // 175: ptah.provider.experimental.SourceFragment.inherited_attributes:type_name -> ptah.provider.experimental.SourceMapping
-	153, // 176: ptah.provider.experimental.SourceFragment.span:type_name -> ptah.provider.experimental.SourceSpan
-	154, // 177: ptah.provider.experimental.SourceFragment.value:type_name -> ptah.provider.experimental.SourceValue
-	158, // 178: ptah.provider.experimental.SourceFragment.block:type_name -> ptah.provider.experimental.SourceBlock
-	30,  // 179: ptah.provider.experimental.SourceDocument.format:type_name -> ptah.provider.experimental.SourceDocument.Format
-	160, // 180: ptah.provider.experimental.SourceDocument.bindings:type_name -> ptah.provider.experimental.SourceBinding
-	161, // 181: ptah.provider.experimental.SourceDocument.fragments:type_name -> ptah.provider.experimental.SourceFragment
-	165, // 182: ptah.provider.experimental.SourceDocument.models:type_name -> ptah.provider.experimental.ValueModel
-	312, // 183: ptah.provider.experimental.SourceDocument.limits:type_name -> ptah.provider.experimental.SchemaCoverageLimit
-	163, // 184: ptah.provider.experimental.SourceTrace.path:type_name -> ptah.provider.experimental.SourcePathStep
-	31,  // 185: ptah.provider.experimental.SourceTrace.root:type_name -> ptah.provider.experimental.SourceTrace.Root
-	153, // 186: ptah.provider.experimental.SourceTrace.span:type_name -> ptah.provider.experimental.SourceSpan
-	29,  // 187: ptah.provider.experimental.ValueModel.representation:type_name -> ptah.provider.experimental.ValueInput.Representation
-	30,  // 188: ptah.provider.experimental.ValueModel.source_formats:type_name -> ptah.provider.experimental.SourceDocument.Format
-	29,  // 189: ptah.provider.experimental.ModelReport.representation:type_name -> ptah.provider.experimental.ValueInput.Representation
-	167, // 190: ptah.provider.experimental.ModelReport.metrics:type_name -> ptah.provider.experimental.ModelMetric
-	149, // 191: ptah.provider.experimental.ReportValuesRequest.values:type_name -> ptah.provider.experimental.ValueInput
-	170, // 192: ptah.provider.experimental.ValueReports.values:type_name -> ptah.provider.experimental.ValueReport
-	171, // 193: ptah.provider.experimental.ValueReport.counts:type_name -> ptah.provider.experimental.MetricCount
-	32,  // 194: ptah.provider.experimental.ModelKnowledge.state:type_name -> ptah.provider.experimental.ModelKnowledge.State
-	173, // 195: ptah.provider.experimental.ModelNamespace.database:type_name -> ptah.provider.experimental.NamespaceComponent
-	173, // 196: ptah.provider.experimental.ModelNamespace.catalog:type_name -> ptah.provider.experimental.NamespaceComponent
-	173, // 197: ptah.provider.experimental.ModelNamespace.schema:type_name -> ptah.provider.experimental.NamespaceComponent
-	173, // 198: ptah.provider.experimental.ModelNamespace.path_prefix:type_name -> ptah.provider.experimental.NamespaceComponent
-	174, // 199: ptah.provider.experimental.ModelNamespaceKnowledge.scope:type_name -> ptah.provider.experimental.ModelNamespace
-	172, // 200: ptah.provider.experimental.ModelNamespaceKnowledge.knowledge:type_name -> ptah.provider.experimental.ModelKnowledge
-	165, // 201: ptah.provider.experimental.ModelKindCoverage.model:type_name -> ptah.provider.experimental.ValueModel
-	172, // 202: ptah.provider.experimental.ModelKindCoverage.knowledge:type_name -> ptah.provider.experimental.ModelKnowledge
-	175, // 203: ptah.provider.experimental.ModelKindCoverage.regions:type_name -> ptah.provider.experimental.ModelNamespaceKnowledge
-	101, // 204: ptah.provider.experimental.ModelSubjectCoverage.subject:type_name -> ptah.provider.experimental.Reference
-	101, // 205: ptah.provider.experimental.ModelSubjectCoverage.normalized_subject:type_name -> ptah.provider.experimental.Reference
-	172, // 206: ptah.provider.experimental.ModelSubjectCoverage.knowledge:type_name -> ptah.provider.experimental.ModelKnowledge
-	29,  // 207: ptah.provider.experimental.ModelCoverage.representation:type_name -> ptah.provider.experimental.ValueInput.Representation
-	176, // 208: ptah.provider.experimental.ModelCoverage.kinds:type_name -> ptah.provider.experimental.ModelKindCoverage
-	177, // 209: ptah.provider.experimental.ModelCoverage.subjects:type_name -> ptah.provider.experimental.ModelSubjectCoverage
-	162, // 210: ptah.provider.experimental.DecodeSourceRequest.documents:type_name -> ptah.provider.experimental.SourceDocument
-	181, // 211: ptah.provider.experimental.DecodedSource.documents:type_name -> ptah.provider.experimental.DecodedSourceDocument
-	178, // 212: ptah.provider.experimental.DecodedSourceDocument.coverage:type_name -> ptah.provider.experimental.ModelCoverage
-	182, // 213: ptah.provider.experimental.DecodedSourceDocument.fragments:type_name -> ptah.provider.experimental.DecodedSourceFragment
-	183, // 214: ptah.provider.experimental.DecodedSourceFragment.values:type_name -> ptah.provider.experimental.SourceModelValue
-	33,  // 215: ptah.provider.experimental.SourceModelValue.placement:type_name -> ptah.provider.experimental.SourceModelValue.Placement
-	151, // 216: ptah.provider.experimental.SourceModelValue.value:type_name -> ptah.provider.experimental.NormalizedValue
-	164, // 217: ptah.provider.experimental.SourceModelValue.source:type_name -> ptah.provider.experimental.SourceTrace
-	218, // 218: ptah.provider.experimental.ReadSQLSchemaRequest.identifiers:type_name -> ptah.provider.experimental.ComparisonIdentifiers
-	185, // 219: ptah.provider.experimental.ReadSQLSchemaRequest.documents:type_name -> ptah.provider.experimental.SQLDocument
-	312, // 220: ptah.provider.experimental.ReadSQLSchemaRequest.limits:type_name -> ptah.provider.experimental.SchemaCoverageLimit
-	258, // 221: ptah.provider.experimental.SQLSchema.tables:type_name -> ptah.provider.experimental.DeclaredTable
-	102, // 222: ptah.provider.experimental.SQLSchema.native_objects:type_name -> ptah.provider.experimental.Envelope
-	195, // 223: ptah.provider.experimental.SQLSchema.declarations:type_name -> ptah.provider.experimental.SQLDocumentDeclarations
-	178, // 224: ptah.provider.experimental.SQLSchema.coverage:type_name -> ptah.provider.experimental.ModelCoverage
-	198, // 225: ptah.provider.experimental.SQLSchema.diagnostics:type_name -> ptah.provider.experimental.SQLDiagnostic
-	309, // 226: ptah.provider.experimental.SQLSchema.namespaces:type_name -> ptah.provider.experimental.DeclaredNamespace
-	261, // 227: ptah.provider.experimental.SQLSchema.enums:type_name -> ptah.provider.experimental.DeclaredEnum
-	187, // 228: ptah.provider.experimental.SQLSchema.views:type_name -> ptah.provider.experimental.SQLView
-	188, // 229: ptah.provider.experimental.SQLSchema.sequences:type_name -> ptah.provider.experimental.SQLSequence
-	189, // 230: ptah.provider.experimental.SQLSchema.roles:type_name -> ptah.provider.experimental.SQLRole
-	190, // 231: ptah.provider.experimental.SQLSchema.grants:type_name -> ptah.provider.experimental.SQLGrant
-	194, // 232: ptah.provider.experimental.SQLSchema.traces:type_name -> ptah.provider.experimental.SQLObjectTrace
-	102, // 233: ptah.provider.experimental.SQLSchema.facets:type_name -> ptah.provider.experimental.Envelope
-	257, // 234: ptah.provider.experimental.SQLView.features:type_name -> ptah.provider.experimental.CapturedFeatures
-	101, // 235: ptah.provider.experimental.SQLGrant.target:type_name -> ptah.provider.experimental.Reference
-	187, // 236: ptah.provider.experimental.DeclaredCommonObjects.views:type_name -> ptah.provider.experimental.SQLView
-	188, // 237: ptah.provider.experimental.DeclaredCommonObjects.sequences:type_name -> ptah.provider.experimental.SQLSequence
-	189, // 238: ptah.provider.experimental.DeclaredCommonObjects.roles:type_name -> ptah.provider.experimental.SQLRole
-	190, // 239: ptah.provider.experimental.DeclaredCommonObjects.grants:type_name -> ptah.provider.experimental.SQLGrant
-	218, // 240: ptah.provider.experimental.PrepareCommonObjectsRequest.identifiers:type_name -> ptah.provider.experimental.ComparisonIdentifiers
-	464, // 241: ptah.provider.experimental.PrepareCommonObjectsRequest.capabilities:type_name -> ptah.provider.experimental.PrepareCommonObjectsRequest.CapabilitiesEntry
-	191, // 242: ptah.provider.experimental.PrepareCommonObjectsRequest.declared:type_name -> ptah.provider.experimental.DeclaredCommonObjects
-	191, // 243: ptah.provider.experimental.PreparedCommonObjects.prepared:type_name -> ptah.provider.experimental.DeclaredCommonObjects
-	34,  // 244: ptah.provider.experimental.SQLObjectTrace.collection:type_name -> ptah.provider.experimental.SQLObjectTrace.Collection
-	164, // 245: ptah.provider.experimental.SQLObjectTrace.source:type_name -> ptah.provider.experimental.SourceTrace
-	196, // 246: ptah.provider.experimental.SQLDocumentDeclarations.objects:type_name -> ptah.provider.experimental.SQLDeclaration
-	196, // 247: ptah.provider.experimental.SQLDocumentDeclarations.guards:type_name -> ptah.provider.experimental.SQLDeclaration
-	197, // 248: ptah.provider.experimental.SQLDocumentDeclarations.tables:type_name -> ptah.provider.experimental.SQLTableStatement
-	35,  // 249: ptah.provider.experimental.SQLDiagnostic.code:type_name -> ptah.provider.experimental.SQLDiagnostic.Code
-	36,  // 250: ptah.provider.experimental.SQLDiagnostic.severity:type_name -> ptah.provider.experimental.SQLDiagnostic.Severity
-	153, // 251: ptah.provider.experimental.SQLDiagnostic.span:type_name -> ptah.provider.experimental.SourceSpan
-	29,  // 252: ptah.provider.experimental.ConvertValuesRequest.from:type_name -> ptah.provider.experimental.ValueInput.Representation
-	29,  // 253: ptah.provider.experimental.ConvertValuesRequest.to:type_name -> ptah.provider.experimental.ValueInput.Representation
-	151, // 254: ptah.provider.experimental.ConvertValuesRequest.values:type_name -> ptah.provider.experimental.NormalizedValue
-	174, // 255: ptah.provider.experimental.InspectionScopeBinding.namespaces:type_name -> ptah.provider.experimental.ModelNamespace
-	37,  // 256: ptah.provider.experimental.ModelComparison.placement:type_name -> ptah.provider.experimental.ModelComparison.Placement
-	202, // 257: ptah.provider.experimental.ComparisonIdentity.database:type_name -> ptah.provider.experimental.ComparisonPart
-	202, // 258: ptah.provider.experimental.ComparisonIdentity.catalog:type_name -> ptah.provider.experimental.ComparisonPart
-	202, // 259: ptah.provider.experimental.ComparisonIdentity.schema:type_name -> ptah.provider.experimental.ComparisonPart
-	202, // 260: ptah.provider.experimental.ComparisonIdentity.path:type_name -> ptah.provider.experimental.ComparisonPart
-	202, // 261: ptah.provider.experimental.ComparisonIdentity.parent:type_name -> ptah.provider.experimental.ComparisonPart
-	202, // 262: ptah.provider.experimental.ComparisonIdentity.name:type_name -> ptah.provider.experimental.ComparisonPart
-	202, // 263: ptah.provider.experimental.ComparisonIdentity.signature:type_name -> ptah.provider.experimental.ComparisonPart
-	202, // 264: ptah.provider.experimental.ComparisonNamespace.database:type_name -> ptah.provider.experimental.ComparisonPart
-	202, // 265: ptah.provider.experimental.ComparisonNamespace.catalog:type_name -> ptah.provider.experimental.ComparisonPart
-	202, // 266: ptah.provider.experimental.ComparisonNamespace.schema:type_name -> ptah.provider.experimental.ComparisonPart
-	202, // 267: ptah.provider.experimental.ComparisonNamespace.parent:type_name -> ptah.provider.experimental.ComparisonPart
-	202, // 268: ptah.provider.experimental.ComparisonNamespace.path_prefix:type_name -> ptah.provider.experimental.ComparisonPart
-	204, // 269: ptah.provider.experimental.ComparisonRegion.scope:type_name -> ptah.provider.experimental.ComparisonNamespace
-	172, // 270: ptah.provider.experimental.ComparisonRegion.knowledge:type_name -> ptah.provider.experimental.ModelKnowledge
-	172, // 271: ptah.provider.experimental.ComparisonKnowledgeSource.outside:type_name -> ptah.provider.experimental.ModelKnowledge
-	205, // 272: ptah.provider.experimental.ComparisonKnowledgeSource.regions:type_name -> ptah.provider.experimental.ComparisonRegion
-	165, // 273: ptah.provider.experimental.ComparisonKindCoverage.model:type_name -> ptah.provider.experimental.ValueModel
-	206, // 274: ptah.provider.experimental.ComparisonKindCoverage.sources:type_name -> ptah.provider.experimental.ComparisonKnowledgeSource
-	203, // 275: ptah.provider.experimental.ComparisonSubjectCoverage.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	172, // 276: ptah.provider.experimental.ComparisonSubjectCoverage.knowledge:type_name -> ptah.provider.experimental.ModelKnowledge
-	207, // 277: ptah.provider.experimental.ComparisonCoverage.kinds:type_name -> ptah.provider.experimental.ComparisonKindCoverage
-	208, // 278: ptah.provider.experimental.ComparisonCoverage.subjects:type_name -> ptah.provider.experimental.ComparisonSubjectCoverage
-	203, // 279: ptah.provider.experimental.ComparisonRecord.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	151, // 280: ptah.provider.experimental.ComparisonRecord.value:type_name -> ptah.provider.experimental.NormalizedValue
-	29,  // 281: ptah.provider.experimental.ComparisonState.representation:type_name -> ptah.provider.experimental.ValueInput.Representation
-	210, // 282: ptah.provider.experimental.ComparisonState.records:type_name -> ptah.provider.experimental.ComparisonRecord
-	209, // 283: ptah.provider.experimental.ComparisonState.coverage:type_name -> ptah.provider.experimental.ComparisonCoverage
-	203, // 284: ptah.provider.experimental.ComparisonParent.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	203, // 285: ptah.provider.experimental.RequestedChange.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	203, // 286: ptah.provider.experimental.ComparisonColumn.table:type_name -> ptah.provider.experimental.ComparisonIdentity
-	203, // 287: ptah.provider.experimental.ComparisonConstraint.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	100, // 288: ptah.provider.experimental.ComparisonIdentifiers.rules:type_name -> ptah.provider.experimental.IdentifierRules
-	217, // 289: ptah.provider.experimental.ComparisonIdentifiers.resolved_names:type_name -> ptah.provider.experimental.ResolvedIdentifier
-	218, // 290: ptah.provider.experimental.CompareModelsRequest.identifiers:type_name -> ptah.provider.experimental.ComparisonIdentifiers
-	465, // 291: ptah.provider.experimental.CompareModelsRequest.capabilities:type_name -> ptah.provider.experimental.CompareModelsRequest.CapabilitiesEntry
-	211, // 292: ptah.provider.experimental.CompareModelsRequest.desired:type_name -> ptah.provider.experimental.ComparisonState
-	211, // 293: ptah.provider.experimental.CompareModelsRequest.current:type_name -> ptah.provider.experimental.ComparisonState
-	212, // 294: ptah.provider.experimental.CompareModelsRequest.parents:type_name -> ptah.provider.experimental.ComparisonParent
-	213, // 295: ptah.provider.experimental.CompareModelsRequest.requests:type_name -> ptah.provider.experimental.RequestedChange
-	203, // 296: ptah.provider.experimental.CompareModelsRequest.declared_relations:type_name -> ptah.provider.experimental.ComparisonIdentity
-	203, // 297: ptah.provider.experimental.CompareModelsRequest.declared_roles:type_name -> ptah.provider.experimental.ComparisonIdentity
-	214, // 298: ptah.provider.experimental.CompareModelsRequest.exclusions:type_name -> ptah.provider.experimental.ComparisonExclusion
-	215, // 299: ptah.provider.experimental.CompareModelsRequest.declared_columns:type_name -> ptah.provider.experimental.ComparisonColumn
-	203, // 300: ptah.provider.experimental.CompareModelsRequest.required:type_name -> ptah.provider.experimental.ComparisonIdentity
-	216, // 301: ptah.provider.experimental.CompareModelsRequest.desired_constraints:type_name -> ptah.provider.experimental.ComparisonConstraint
-	216, // 302: ptah.provider.experimental.CompareModelsRequest.current_constraints:type_name -> ptah.provider.experimental.ComparisonConstraint
-	38,  // 303: ptah.provider.experimental.ChangeSemantics.impact:type_name -> ptah.provider.experimental.ChangeSemantics.Impact
-	39,  // 304: ptah.provider.experimental.ChangeSemantics.access:type_name -> ptah.provider.experimental.ChangeSemantics.Access
-	203, // 305: ptah.provider.experimental.ComparedChange.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	151, // 306: ptah.provider.experimental.ComparedChange.value:type_name -> ptah.provider.experimental.NormalizedValue
-	203, // 307: ptah.provider.experimental.ComparisonUndecided.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	211, // 308: ptah.provider.experimental.ComparedModels.desired:type_name -> ptah.provider.experimental.ComparisonState
-	221, // 309: ptah.provider.experimental.ComparedModels.changes:type_name -> ptah.provider.experimental.ComparedChange
-	222, // 310: ptah.provider.experimental.ComparedModels.undecided:type_name -> ptah.provider.experimental.ComparisonUndecided
-	224, // 311: ptah.provider.experimental.ComparedModels.resolved_requests:type_name -> ptah.provider.experimental.ResolvedRequest
-	225, // 312: ptah.provider.experimental.ComparedModels.counts:type_name -> ptah.provider.experimental.ComparisonCount
-	203, // 313: ptah.provider.experimental.ResolvedRequest.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	38,  // 314: ptah.provider.experimental.OperationSemantics.impact:type_name -> ptah.provider.experimental.ChangeSemantics.Impact
-	39,  // 315: ptah.provider.experimental.OperationSemantics.access:type_name -> ptah.provider.experimental.ChangeSemantics.Access
-	218, // 316: ptah.provider.experimental.ReverseChangesRequest.identifiers:type_name -> ptah.provider.experimental.ComparisonIdentifiers
-	466, // 317: ptah.provider.experimental.ReverseChangesRequest.capabilities:type_name -> ptah.provider.experimental.ReverseChangesRequest.CapabilitiesEntry
-	248, // 318: ptah.provider.experimental.ReverseChangesRequest.changes:type_name -> ptah.provider.experimental.PlanningChange
-	230, // 319: ptah.provider.experimental.ReversedChanges.changes:type_name -> ptah.provider.experimental.ReversedChange
-	203, // 320: ptah.provider.experimental.ReversedChange.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	151, // 321: ptah.provider.experimental.ReversedChange.value:type_name -> ptah.provider.experimental.NormalizedValue
-	231, // 322: ptah.provider.experimental.ReversedChange.forward_state:type_name -> ptah.provider.experimental.ForwardState
-	40,  // 323: ptah.provider.experimental.ForwardState.placement:type_name -> ptah.provider.experimental.ForwardState.Placement
-	151, // 324: ptah.provider.experimental.ForwardState.value:type_name -> ptah.provider.experimental.NormalizedValue
-	218, // 325: ptah.provider.experimental.PlanDeclarationsRequest.identifiers:type_name -> ptah.provider.experimental.ComparisonIdentifiers
-	467, // 326: ptah.provider.experimental.PlanDeclarationsRequest.capabilities:type_name -> ptah.provider.experimental.PlanDeclarationsRequest.CapabilitiesEntry
-	210, // 327: ptah.provider.experimental.PlanDeclarationsRequest.objects:type_name -> ptah.provider.experimental.ComparisonRecord
-	308, // 328: ptah.provider.experimental.PlanDeclarationsRequest.tables:type_name -> ptah.provider.experimental.ValidationTable
-	252, // 329: ptah.provider.experimental.PlanDeclarationsRequest.types:type_name -> ptah.provider.experimental.PlanningType
-	242, // 330: ptah.provider.experimental.PlanDeclarationsRequest.common_steps:type_name -> ptah.provider.experimental.CommonPlanningStep
-	246, // 331: ptah.provider.experimental.PlannedDeclarations.contributions:type_name -> ptah.provider.experimental.PlanningContribution
-	236, // 332: ptah.provider.experimental.PlannedDeclarations.declarations:type_name -> ptah.provider.experimental.DeclarationReceipt
-	237, // 333: ptah.provider.experimental.PlannedDeclarations.diagnostics:type_name -> ptah.provider.experimental.DeclarationDiagnostic
-	203, // 334: ptah.provider.experimental.DeclarationReceipt.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	238, // 335: ptah.provider.experimental.DeclarationReceipt.steps:type_name -> ptah.provider.experimental.StepIdentity
-	311, // 336: ptah.provider.experimental.DeclarationDiagnostic.problem:type_name -> ptah.provider.experimental.SchemaDiagnostic
-	203, // 337: ptah.provider.experimental.PlanningEffect.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	41,  // 338: ptah.provider.experimental.PlanningEffect.action:type_name -> ptah.provider.experimental.PlanningEffect.Action
-	239, // 339: ptah.provider.experimental.PlanningMetadata.effects:type_name -> ptah.provider.experimental.PlanningEffect
-	42,  // 340: ptah.provider.experimental.PlanningMetadata.transaction:type_name -> ptah.provider.experimental.PlanningMetadata.Transaction
-	38,  // 341: ptah.provider.experimental.PlanningMetadata.impact:type_name -> ptah.provider.experimental.ChangeSemantics.Impact
-	43,  // 342: ptah.provider.experimental.PlanningMetadata.placement:type_name -> ptah.provider.experimental.PlanningMetadata.Placement
-	238, // 343: ptah.provider.experimental.PlanningDependency.before:type_name -> ptah.provider.experimental.StepIdentity
-	238, // 344: ptah.provider.experimental.PlanningDependency.after:type_name -> ptah.provider.experimental.StepIdentity
-	238, // 345: ptah.provider.experimental.CommonPlanningStep.id:type_name -> ptah.provider.experimental.StepIdentity
-	240, // 346: ptah.provider.experimental.CommonPlanningStep.metadata:type_name -> ptah.provider.experimental.PlanningMetadata
-	270, // 347: ptah.provider.experimental.CommonPlanningStep.added_column:type_name -> ptah.provider.experimental.PlanningColumn
-	203, // 348: ptah.provider.experimental.CommonPlanningStep.parent:type_name -> ptah.provider.experimental.ComparisonIdentity
-	124, // 349: ptah.provider.experimental.CommonPlanningStep.common_object:type_name -> ptah.provider.experimental.CommonObjectChange
-	243, // 350: ptah.provider.experimental.CommonPlanningStep.renamed_index:type_name -> ptah.provider.experimental.CommonIndexRename
-	22,  // 351: ptah.provider.experimental.PlanningOperation.role:type_name -> ptah.provider.experimental.NativeOperation.Role
-	203, // 352: ptah.provider.experimental.PlanningOperation.parent:type_name -> ptah.provider.experimental.ComparisonIdentity
-	151, // 353: ptah.provider.experimental.PlanningOperation.value:type_name -> ptah.provider.experimental.NormalizedValue
-	44,  // 354: ptah.provider.experimental.PlanningOperation.phase:type_name -> ptah.provider.experimental.PlanningOperation.Phase
-	238, // 355: ptah.provider.experimental.PlanningStep.id:type_name -> ptah.provider.experimental.StepIdentity
-	240, // 356: ptah.provider.experimental.PlanningStep.metadata:type_name -> ptah.provider.experimental.PlanningMetadata
-	244, // 357: ptah.provider.experimental.PlanningStep.operation:type_name -> ptah.provider.experimental.PlanningOperation
-	245, // 358: ptah.provider.experimental.PlanningContribution.steps:type_name -> ptah.provider.experimental.PlanningStep
-	241, // 359: ptah.provider.experimental.PlanningContribution.dependencies:type_name -> ptah.provider.experimental.PlanningDependency
-	238, // 360: ptah.provider.experimental.PlanningRewrite.sources:type_name -> ptah.provider.experimental.StepIdentity
-	238, // 361: ptah.provider.experimental.PlanningRewrite.replacement:type_name -> ptah.provider.experimental.StepIdentity
-	203, // 362: ptah.provider.experimental.PlanningChange.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	151, // 363: ptah.provider.experimental.PlanningChange.value:type_name -> ptah.provider.experimental.NormalizedValue
-	203, // 364: ptah.provider.experimental.PlanningReceipt.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	238, // 365: ptah.provider.experimental.PlanningReceipt.steps:type_name -> ptah.provider.experimental.StepIdentity
-	249, // 366: ptah.provider.experimental.PlanningParentReceipt.receipt:type_name -> ptah.provider.experimental.PlanningReceipt
-	46,  // 367: ptah.provider.experimental.PlanningParentReceipt.action:type_name -> ptah.provider.experimental.PlanningTable.Action
-	45,  // 368: ptah.provider.experimental.PlanningDiagnostic.code:type_name -> ptah.provider.experimental.PlanningDiagnostic.Code
-	203, // 369: ptah.provider.experimental.PlanningType.identity:type_name -> ptah.provider.experimental.ComparisonIdentity
-	203, // 370: ptah.provider.experimental.PlanningTable.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	46,  // 371: ptah.provider.experimental.PlanningTable.action:type_name -> ptah.provider.experimental.PlanningTable.Action
-	258, // 372: ptah.provider.experimental.PlanningTable.desired:type_name -> ptah.provider.experimental.DeclaredTable
-	266, // 373: ptah.provider.experimental.PlanningTable.current:type_name -> ptah.provider.experimental.ObservedTable
-	218, // 374: ptah.provider.experimental.PlanFeaturesRequest.identifiers:type_name -> ptah.provider.experimental.ComparisonIdentifiers
-	468, // 375: ptah.provider.experimental.PlanFeaturesRequest.capabilities:type_name -> ptah.provider.experimental.PlanFeaturesRequest.CapabilitiesEntry
-	248, // 376: ptah.provider.experimental.PlanFeaturesRequest.changes:type_name -> ptah.provider.experimental.PlanningChange
-	253, // 377: ptah.provider.experimental.PlanFeaturesRequest.tables:type_name -> ptah.provider.experimental.PlanningTable
-	252, // 378: ptah.provider.experimental.PlanFeaturesRequest.desired_types:type_name -> ptah.provider.experimental.PlanningType
-	252, // 379: ptah.provider.experimental.PlanFeaturesRequest.current_types:type_name -> ptah.provider.experimental.PlanningType
-	242, // 380: ptah.provider.experimental.PlanFeaturesRequest.common_steps:type_name -> ptah.provider.experimental.CommonPlanningStep
-	191, // 381: ptah.provider.experimental.PlanFeaturesRequest.desired_common:type_name -> ptah.provider.experimental.DeclaredCommonObjects
-	112, // 382: ptah.provider.experimental.PlanFeaturesRequest.current_common:type_name -> ptah.provider.experimental.ObservedCommonObjects
-	255, // 383: ptah.provider.experimental.PlanFeaturesRequest.policy:type_name -> ptah.provider.experimental.PlanningPolicy
-	211, // 384: ptah.provider.experimental.PlanFeaturesRequest.desired_objects:type_name -> ptah.provider.experimental.ComparisonState
-	211, // 385: ptah.provider.experimental.PlanFeaturesRequest.current_objects:type_name -> ptah.provider.experimental.ComparisonState
-	203, // 386: ptah.provider.experimental.PlanFeaturesRequest.changed_subjects:type_name -> ptah.provider.experimental.ComparisonIdentity
-	211, // 387: ptah.provider.experimental.PlanFeaturesRequest.context_inventory:type_name -> ptah.provider.experimental.ComparisonState
-	203, // 388: ptah.provider.experimental.PlanningPolicy.concurrent_index_build_subjects:type_name -> ptah.provider.experimental.ComparisonIdentity
-	203, // 389: ptah.provider.experimental.PlanningPolicy.concurrent_index_drop_subjects:type_name -> ptah.provider.experimental.ComparisonIdentity
-	1,   // 390: ptah.provider.experimental.PlanningPolicy.statement_style:type_name -> ptah.provider.experimental.PlanningStatementStyle
-	246, // 391: ptah.provider.experimental.PlannedFeatures.contributions:type_name -> ptah.provider.experimental.PlanningContribution
-	249, // 392: ptah.provider.experimental.PlannedFeatures.changes:type_name -> ptah.provider.experimental.PlanningReceipt
-	250, // 393: ptah.provider.experimental.PlannedFeatures.parents:type_name -> ptah.provider.experimental.PlanningParentReceipt
-	247, // 394: ptah.provider.experimental.PlannedFeatures.rewrites:type_name -> ptah.provider.experimental.PlanningRewrite
-	251, // 395: ptah.provider.experimental.PlannedFeatures.diagnostics:type_name -> ptah.provider.experimental.PlanningDiagnostic
-	249, // 396: ptah.provider.experimental.PlannedFeatures.objects:type_name -> ptah.provider.experimental.PlanningReceipt
-	211, // 397: ptah.provider.experimental.CapturedFeatures.objects:type_name -> ptah.provider.experimental.ComparisonState
-	211, // 398: ptah.provider.experimental.CapturedFeatures.facets:type_name -> ptah.provider.experimental.ComparisonState
-	259, // 399: ptah.provider.experimental.DeclaredTable.primary_key_parts:type_name -> ptah.provider.experimental.DeclaredKeyPart
-	260, // 400: ptah.provider.experimental.DeclaredTable.columns:type_name -> ptah.provider.experimental.DeclaredColumn
-	261, // 401: ptah.provider.experimental.DeclaredTable.enums:type_name -> ptah.provider.experimental.DeclaredEnum
-	264, // 402: ptah.provider.experimental.DeclaredTable.constraints:type_name -> ptah.provider.experimental.DeclaredConstraint
-	263, // 403: ptah.provider.experimental.DeclaredTable.indexes:type_name -> ptah.provider.experimental.DeclaredIndex
-	265, // 404: ptah.provider.experimental.DeclaredTable.triggers:type_name -> ptah.provider.experimental.CapturedTrigger
-	257, // 405: ptah.provider.experimental.DeclaredTable.features:type_name -> ptah.provider.experimental.CapturedFeatures
-	262, // 406: ptah.provider.experimental.DeclaredIndex.parts:type_name -> ptah.provider.experimental.CapturedIndexPart
-	469, // 407: ptah.provider.experimental.DeclaredIndex.storage_parameters:type_name -> ptah.provider.experimental.DeclaredIndex.StorageParametersEntry
-	203, // 408: ptah.provider.experimental.DeclaredIndex.requires:type_name -> ptah.provider.experimental.ComparisonIdentity
-	203, // 409: ptah.provider.experimental.DeclaredConstraint.requires:type_name -> ptah.provider.experimental.ComparisonIdentity
-	267, // 410: ptah.provider.experimental.ObservedTable.columns:type_name -> ptah.provider.experimental.ObservedColumn
-	268, // 411: ptah.provider.experimental.ObservedTable.indexes:type_name -> ptah.provider.experimental.ObservedIndex
-	269, // 412: ptah.provider.experimental.ObservedTable.constraints:type_name -> ptah.provider.experimental.ObservedConstraint
-	265, // 413: ptah.provider.experimental.ObservedTable.triggers:type_name -> ptah.provider.experimental.CapturedTrigger
-	257, // 414: ptah.provider.experimental.ObservedTable.features:type_name -> ptah.provider.experimental.CapturedFeatures
-	203, // 415: ptah.provider.experimental.ObservedIndex.managed_by:type_name -> ptah.provider.experimental.ComparisonIdentity
-	262, // 416: ptah.provider.experimental.ObservedIndex.parts:type_name -> ptah.provider.experimental.CapturedIndexPart
-	470, // 417: ptah.provider.experimental.ObservedIndex.storage_parameters:type_name -> ptah.provider.experimental.ObservedIndex.StorageParametersEntry
-	203, // 418: ptah.provider.experimental.ObservedIndex.requires:type_name -> ptah.provider.experimental.ComparisonIdentity
-	102, // 419: ptah.provider.experimental.ObservedIndex.facets:type_name -> ptah.provider.experimental.Envelope
-	203, // 420: ptah.provider.experimental.ObservedConstraint.requires:type_name -> ptah.provider.experimental.ComparisonIdentity
-	271, // 421: ptah.provider.experimental.PlanningColumn.default:type_name -> ptah.provider.experimental.PlanningDefault
-	272, // 422: ptah.provider.experimental.PlanningColumn.foreign_key:type_name -> ptah.provider.experimental.PlanningForeignKey
-	273, // 423: ptah.provider.experimental.PlanningColumn.facets:type_name -> ptah.provider.experimental.CapturedFacet
-	273, // 424: ptah.provider.experimental.PlanningForeignKey.facets:type_name -> ptah.provider.experimental.CapturedFacet
-	151, // 425: ptah.provider.experimental.CapturedFacet.value:type_name -> ptah.provider.experimental.NormalizedValue
-	47,  // 426: ptah.provider.experimental.HistoryScope.format:type_name -> ptah.provider.experimental.HistoryScope.Format
-	48,  // 427: ptah.provider.experimental.HistoryRevision.state:type_name -> ptah.provider.experimental.HistoryRevision.State
-	49,  // 428: ptah.provider.experimental.HistoryRevision.direction:type_name -> ptah.provider.experimental.HistoryRevision.Direction
-	274, // 429: ptah.provider.experimental.ReadHistoryRequest.scope:type_name -> ptah.provider.experimental.HistoryScope
-	274, // 430: ptah.provider.experimental.HistorySnapshot.scope:type_name -> ptah.provider.experimental.HistoryScope
-	275, // 431: ptah.provider.experimental.HistorySnapshot.revisions:type_name -> ptah.provider.experimental.HistoryRevision
-	274, // 432: ptah.provider.experimental.PrepareHistoryRequest.scope:type_name -> ptah.provider.experimental.HistoryScope
-	274, // 433: ptah.provider.experimental.MutateHistoryRequest.scope:type_name -> ptah.provider.experimental.HistoryScope
-	275, // 434: ptah.provider.experimental.MutateHistoryRequest.expected:type_name -> ptah.provider.experimental.HistoryRevision
-	275, // 435: ptah.provider.experimental.MutateHistoryRequest.replacement:type_name -> ptah.provider.experimental.HistoryRevision
-	274, // 436: ptah.provider.experimental.HistoryResult.scope:type_name -> ptah.provider.experimental.HistoryScope
-	50,  // 437: ptah.provider.experimental.HistoryResult.outcome:type_name -> ptah.provider.experimental.HistoryResult.Outcome
-	281, // 438: ptah.provider.experimental.LockRequest.scope:type_name -> ptah.provider.experimental.LockScope
-	281, // 439: ptah.provider.experimental.LockResult.scope:type_name -> ptah.provider.experimental.LockScope
-	51,  // 440: ptah.provider.experimental.LockResult.outcome:type_name -> ptah.provider.experimental.LockResult.Outcome
-	284, // 441: ptah.provider.experimental.LockResult.diagnostic:type_name -> ptah.provider.experimental.ProviderDiagnostic
-	52,  // 442: ptah.provider.experimental.MetadataScope.kind:type_name -> ptah.provider.experimental.MetadataScope.Kind
-	285, // 443: ptah.provider.experimental.PrepareMetadataRequest.scope:type_name -> ptah.provider.experimental.MetadataScope
-	285, // 444: ptah.provider.experimental.MutateMetadataRequest.scope:type_name -> ptah.provider.experimental.MetadataScope
-	286, // 445: ptah.provider.experimental.MutateMetadataRequest.append_log:type_name -> ptah.provider.experimental.MigrationLogRecord
-	287, // 446: ptah.provider.experimental.MutateMetadataRequest.put_tag:type_name -> ptah.provider.experimental.MigrationTagRecord
-	285, // 447: ptah.provider.experimental.MetadataResult.scope:type_name -> ptah.provider.experimental.MetadataScope
-	53,  // 448: ptah.provider.experimental.MetadataResult.outcome:type_name -> ptah.provider.experimental.MetadataResult.Outcome
-	285, // 449: ptah.provider.experimental.LookupMetadataTagRequest.scope:type_name -> ptah.provider.experimental.MetadataScope
-	285, // 450: ptah.provider.experimental.MetadataTagResult.scope:type_name -> ptah.provider.experimental.MetadataScope
-	287, // 451: ptah.provider.experimental.MetadataTagResult.record:type_name -> ptah.provider.experimental.MigrationTagRecord
-	285, // 452: ptah.provider.experimental.MetadataReadRequest.scope:type_name -> ptah.provider.experimental.MetadataScope
-	285, // 453: ptah.provider.experimental.MetadataReadResult.scope:type_name -> ptah.provider.experimental.MetadataScope
-	293, // 454: ptah.provider.experimental.ReadMetadataPageRequest.reader:type_name -> ptah.provider.experimental.MetadataReadRequest
-	294, // 455: ptah.provider.experimental.MetadataPage.reader:type_name -> ptah.provider.experimental.MetadataReadResult
-	286, // 456: ptah.provider.experimental.MetadataPage.logs:type_name -> ptah.provider.experimental.MigrationLogRecord
-	287, // 457: ptah.provider.experimental.MetadataPage.tags:type_name -> ptah.provider.experimental.MigrationTagRecord
-	101, // 458: ptah.provider.experimental.ReservedObject.object:type_name -> ptah.provider.experimental.Reference
-	101, // 459: ptah.provider.experimental.ReservedObject.normalized_object:type_name -> ptah.provider.experimental.Reference
-	54,  // 460: ptah.provider.experimental.ReservedObject.purpose:type_name -> ptah.provider.experimental.ReservedObject.Purpose
-	218, // 461: ptah.provider.experimental.PrepareTablesRequest.identifiers:type_name -> ptah.provider.experimental.ComparisonIdentifiers
-	471, // 462: ptah.provider.experimental.PrepareTablesRequest.capabilities:type_name -> ptah.provider.experimental.PrepareTablesRequest.CapabilitiesEntry
-	299, // 463: ptah.provider.experimental.PrepareTablesRequest.tables:type_name -> ptah.provider.experimental.TablePreparationInput
-	203, // 464: ptah.provider.experimental.TablePreparationInput.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	258, // 465: ptah.provider.experimental.TablePreparationInput.desired:type_name -> ptah.provider.experimental.DeclaredTable
-	266, // 466: ptah.provider.experimental.TablePreparationInput.current:type_name -> ptah.provider.experimental.ObservedTable
-	172, // 467: ptah.provider.experimental.TablePreparationInput.current_knowledge:type_name -> ptah.provider.experimental.ModelKnowledge
-	203, // 468: ptah.provider.experimental.PreparedTable.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	210, // 469: ptah.provider.experimental.PreparedTable.resolved_facets:type_name -> ptah.provider.experimental.ComparisonRecord
-	301, // 470: ptah.provider.experimental.PreparedTable.indexes:type_name -> ptah.provider.experimental.PreparedIndex
-	300, // 471: ptah.provider.experimental.PreparedTables.tables:type_name -> ptah.provider.experimental.PreparedTable
-	218, // 472: ptah.provider.experimental.ProjectTableCreationsRequest.identifiers:type_name -> ptah.provider.experimental.ComparisonIdentifiers
-	472, // 473: ptah.provider.experimental.ProjectTableCreationsRequest.capabilities:type_name -> ptah.provider.experimental.ProjectTableCreationsRequest.CapabilitiesEntry
-	304, // 474: ptah.provider.experimental.ProjectTableCreationsRequest.tables:type_name -> ptah.provider.experimental.TableCreationInput
-	203, // 475: ptah.provider.experimental.TableCreationInput.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	258, // 476: ptah.provider.experimental.TableCreationInput.declaration:type_name -> ptah.provider.experimental.DeclaredTable
-	203, // 477: ptah.provider.experimental.TableCreationInput.facet_owners:type_name -> ptah.provider.experimental.ComparisonIdentity
-	203, // 478: ptah.provider.experimental.ProjectedTableCreation.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	210, // 479: ptah.provider.experimental.ProjectedTableCreation.desired_facets:type_name -> ptah.provider.experimental.ComparisonRecord
-	210, // 480: ptah.provider.experimental.ProjectedTableCreation.observed_facets:type_name -> ptah.provider.experimental.ComparisonRecord
-	267, // 481: ptah.provider.experimental.ProjectedTableCreation.columns:type_name -> ptah.provider.experimental.ObservedColumn
-	305, // 482: ptah.provider.experimental.ProjectedTableCreations.tables:type_name -> ptah.provider.experimental.ProjectedTableCreation
-	218, // 483: ptah.provider.experimental.ValidateSchemaRequest.identifiers:type_name -> ptah.provider.experimental.ComparisonIdentifiers
-	473, // 484: ptah.provider.experimental.ValidateSchemaRequest.capabilities:type_name -> ptah.provider.experimental.ValidateSchemaRequest.CapabilitiesEntry
-	308, // 485: ptah.provider.experimental.ValidateSchemaRequest.tables:type_name -> ptah.provider.experimental.ValidationTable
-	309, // 486: ptah.provider.experimental.ValidateSchemaRequest.namespaces:type_name -> ptah.provider.experimental.DeclaredNamespace
-	261, // 487: ptah.provider.experimental.ValidateSchemaRequest.enums:type_name -> ptah.provider.experimental.DeclaredEnum
-	257, // 488: ptah.provider.experimental.ValidateSchemaRequest.features:type_name -> ptah.provider.experimental.CapturedFeatures
-	312, // 489: ptah.provider.experimental.ValidateSchemaRequest.not_described:type_name -> ptah.provider.experimental.SchemaCoverageLimit
-	474, // 490: ptah.provider.experimental.ValidateSchemaRequest.dependencies:type_name -> ptah.provider.experimental.ValidateSchemaRequest.DependenciesEntry
-	191, // 491: ptah.provider.experimental.ValidateSchemaRequest.common_objects:type_name -> ptah.provider.experimental.DeclaredCommonObjects
-	203, // 492: ptah.provider.experimental.ValidationTable.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	258, // 493: ptah.provider.experimental.ValidationTable.declaration:type_name -> ptah.provider.experimental.DeclaredTable
-	203, // 494: ptah.provider.experimental.DeclaredNamespace.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	311, // 495: ptah.provider.experimental.SchemaValidation.diagnostics:type_name -> ptah.provider.experimental.SchemaDiagnostic
-	55,  // 496: ptah.provider.experimental.SchemaDiagnostic.code:type_name -> ptah.provider.experimental.SchemaDiagnostic.Code
-	56,  // 497: ptah.provider.experimental.LintRule.severity:type_name -> ptah.provider.experimental.LintRule.Severity
-	2,   // 498: ptah.provider.experimental.LintEffect.fact:type_name -> ptah.provider.experimental.LintFact
-	4,   // 499: ptah.provider.experimental.LintEffect.impact:type_name -> ptah.provider.experimental.LintImpact
-	3,   // 500: ptah.provider.experimental.LintEffect.statement_class:type_name -> ptah.provider.experimental.LintStatementClass
-	316, // 501: ptah.provider.experimental.LintStatement.effects:type_name -> ptah.provider.experimental.LintEffect
-	317, // 502: ptah.provider.experimental.LintFile.statements:type_name -> ptah.provider.experimental.LintStatement
-	315, // 503: ptah.provider.experimental.SplitLintRequest.sources:type_name -> ptah.provider.experimental.LintSource
-	318, // 504: ptah.provider.experimental.SplitLint.files:type_name -> ptah.provider.experimental.LintFile
-	2,   // 505: ptah.provider.experimental.SplitLint.judged:type_name -> ptah.provider.experimental.LintFact
-	2,   // 506: ptah.provider.experimental.AnnotateLintRequest.facts:type_name -> ptah.provider.experimental.LintFact
-	315, // 507: ptah.provider.experimental.AnnotateLintRequest.sources:type_name -> ptah.provider.experimental.LintSource
-	318, // 508: ptah.provider.experimental.AnnotateLintRequest.files:type_name -> ptah.provider.experimental.LintFile
-	316, // 509: ptah.provider.experimental.LintAnnotation.effects:type_name -> ptah.provider.experimental.LintEffect
-	322, // 510: ptah.provider.experimental.LintAnnotations.statements:type_name -> ptah.provider.experimental.LintAnnotation
-	323, // 511: ptah.provider.experimental.AnnotatedLint.files:type_name -> ptah.provider.experimental.LintAnnotations
-	475, // 512: ptah.provider.experimental.CheckLintRequest.capabilities:type_name -> ptah.provider.experimental.CheckLintRequest.CapabilitiesEntry
-	318, // 513: ptah.provider.experimental.CheckLintRequest.files:type_name -> ptah.provider.experimental.LintFile
-	5,   // 514: ptah.provider.experimental.CheckLintRequest.transaction_owner:type_name -> ptah.provider.experimental.LintTransactionOwner
-	57,  // 515: ptah.provider.experimental.LintSubject.kind:type_name -> ptah.provider.experimental.LintSubject.Kind
-	326, // 516: ptah.provider.experimental.LintFinding.subjects:type_name -> ptah.provider.experimental.LintSubject
-	327, // 517: ptah.provider.experimental.CheckedLint.findings:type_name -> ptah.provider.experimental.LintFinding
-	58,  // 518: ptah.provider.experimental.DevDatabaseRefusal.kind:type_name -> ptah.provider.experimental.DevDatabaseRefusal.Kind
-	330, // 519: ptah.provider.experimental.DevDatabase.refusal:type_name -> ptah.provider.experimental.DevDatabaseRefusal
-	101, // 520: ptah.provider.experimental.DevObject.object:type_name -> ptah.provider.experimental.Reference
-	334, // 521: ptah.provider.experimental.DevObjects.objects:type_name -> ptah.provider.experimental.DevObject
-	59,  // 522: ptah.provider.experimental.DevCleanup.outcome:type_name -> ptah.provider.experimental.DevCleanup.Outcome
-	334, // 523: ptah.provider.experimental.DevCleanup.blocking:type_name -> ptah.provider.experimental.DevObject
-	338, // 524: ptah.provider.experimental.GuardReplayRequest.scope:type_name -> ptah.provider.experimental.ReplayScope
-	340, // 525: ptah.provider.experimental.GuardedReplay.verdicts:type_name -> ptah.provider.experimental.ReplayVerdict
-	80,  // 526: ptah.provider.experimental.DataValue.null:type_name -> ptah.provider.experimental.Empty
-	343, // 527: ptah.provider.experimental.DataValue.decimal_value:type_name -> ptah.provider.experimental.DecimalValue
-	344, // 528: ptah.provider.experimental.DataValue.timestamp_value:type_name -> ptah.provider.experimental.TimestampValue
-	345, // 529: ptah.provider.experimental.DataValue.interval_value:type_name -> ptah.provider.experimental.IntervalValue
-	346, // 530: ptah.provider.experimental.DataValue.native_value:type_name -> ptah.provider.experimental.NativeValue
-	342, // 531: ptah.provider.experimental.Row.values:type_name -> ptah.provider.experimental.DataValue
-	6,   // 532: ptah.provider.experimental.DataColumn.kind:type_name -> ptah.provider.experimental.DataKind
-	121, // 533: ptah.provider.experimental.LiveTable.columns:type_name -> ptah.provider.experimental.Column
-	476, // 534: ptah.provider.experimental.TypeRowsRequest.capabilities:type_name -> ptah.provider.experimental.TypeRowsRequest.CapabilitiesEntry
-	101, // 535: ptah.provider.experimental.TypeRowsRequest.table:type_name -> ptah.provider.experimental.Reference
-	350, // 536: ptah.provider.experimental.TypeRowsRequest.live_table:type_name -> ptah.provider.experimental.LiveTable
-	349, // 537: ptah.provider.experimental.TypeRowsRequest.columns:type_name -> ptah.provider.experimental.RowColumn
-	347, // 538: ptah.provider.experimental.TypeRowsRequest.declared:type_name -> ptah.provider.experimental.Row
-	347, // 539: ptah.provider.experimental.TypeRowsRequest.live:type_name -> ptah.provider.experimental.Row
-	348, // 540: ptah.provider.experimental.TypedRows.columns:type_name -> ptah.provider.experimental.DataColumn
-	347, // 541: ptah.provider.experimental.TypedRows.declared:type_name -> ptah.provider.experimental.Row
-	347, // 542: ptah.provider.experimental.TypedRows.live:type_name -> ptah.provider.experimental.Row
-	101, // 543: ptah.provider.experimental.ReadRowsRequest.table:type_name -> ptah.provider.experimental.Reference
-	101, // 544: ptah.provider.experimental.RowPage.table:type_name -> ptah.provider.experimental.Reference
-	348, // 545: ptah.provider.experimental.RowPage.columns:type_name -> ptah.provider.experimental.DataColumn
-	347, // 546: ptah.provider.experimental.RowPage.rows:type_name -> ptah.provider.experimental.Row
-	477, // 547: ptah.provider.experimental.RenderRowWritesRequest.capabilities:type_name -> ptah.provider.experimental.RenderRowWritesRequest.CapabilitiesEntry
-	356, // 548: ptah.provider.experimental.RenderRowWritesRequest.writes:type_name -> ptah.provider.experimental.RowWrite
-	23,  // 549: ptah.provider.experimental.RenderRowWritesRequest.form:type_name -> ptah.provider.experimental.RenderRequest.Form
-	60,  // 550: ptah.provider.experimental.RowWrite.mode:type_name -> ptah.provider.experimental.RowWrite.Mode
-	101, // 551: ptah.provider.experimental.RowWrite.table:type_name -> ptah.provider.experimental.Reference
-	342, // 552: ptah.provider.experimental.RowWrite.values:type_name -> ptah.provider.experimental.DataValue
-	478, // 553: ptah.provider.experimental.RowWrite.column_types:type_name -> ptah.provider.experimental.RowWrite.ColumnTypesEntry
-	61,  // 554: ptah.provider.experimental.RenderRefusal.reason:type_name -> ptah.provider.experimental.RenderRefusal.Reason
-	101, // 555: ptah.provider.experimental.SeedTables.tables:type_name -> ptah.provider.experimental.Reference
-	360, // 556: ptah.provider.experimental.ApplySeedRequest.seed:type_name -> ptah.provider.experimental.Seed
-	360, // 557: ptah.provider.experimental.RecordSeedRequest.seed:type_name -> ptah.provider.experimental.Seed
-	62,  // 558: ptah.provider.experimental.SeedResult.outcome:type_name -> ptah.provider.experimental.SeedResult.Outcome
-	152, // 559: ptah.provider.experimental.SeedResult.position:type_name -> ptah.provider.experimental.SourcePosition
-	366, // 560: ptah.provider.experimental.SeedLedger.entries:type_name -> ptah.provider.experimental.SeedLedgerEntry
-	101, // 561: ptah.provider.experimental.EmbeddingSource.table:type_name -> ptah.provider.experimental.Reference
-	101, // 562: ptah.provider.experimental.EmbeddingTarget.table:type_name -> ptah.provider.experimental.Reference
-	63,  // 563: ptah.provider.experimental.EmbeddingTarget.layout:type_name -> ptah.provider.experimental.EmbeddingTarget.Layout
-	64,  // 564: ptah.provider.experimental.EmbeddingTarget.metric:type_name -> ptah.provider.experimental.EmbeddingTarget.Metric
-	479, // 565: ptah.provider.experimental.EmbeddingTarget.index_options:type_name -> ptah.provider.experimental.EmbeddingTarget.IndexOptionsEntry
-	369, // 566: ptah.provider.experimental.EmbeddingSpec.source:type_name -> ptah.provider.experimental.EmbeddingSource
-	370, // 567: ptah.provider.experimental.EmbeddingSpec.target:type_name -> ptah.provider.experimental.EmbeddingTarget
-	371, // 568: ptah.provider.experimental.EmbeddingSpec.names:type_name -> ptah.provider.experimental.EmbeddingNames
-	101, // 569: ptah.provider.experimental.EmbeddingLocation.table:type_name -> ptah.provider.experimental.Reference
-	371, // 570: ptah.provider.experimental.EmbeddingLocation.names:type_name -> ptah.provider.experimental.EmbeddingNames
-	65,  // 571: ptah.provider.experimental.EmbeddingRefusal.reason:type_name -> ptah.provider.experimental.EmbeddingRefusal.Reason
-	66,  // 572: ptah.provider.experimental.EmbeddingWriteResult.outcome:type_name -> ptah.provider.experimental.EmbeddingWriteResult.Outcome
-	374, // 573: ptah.provider.experimental.EmbeddingWriteResult.refusal:type_name -> ptah.provider.experimental.EmbeddingRefusal
-	379, // 574: ptah.provider.experimental.EmbeddingWriteResult.written:type_name -> ptah.provider.experimental.EmbeddingRecords
-	67,  // 575: ptah.provider.experimental.EmbeddingWriteResult.index_outcome:type_name -> ptah.provider.experimental.EmbeddingWriteResult.IndexOutcome
-	344, // 576: ptah.provider.experimental.EmbeddingGeneration.created_at:type_name -> ptah.provider.experimental.TimestampValue
-	344, // 577: ptah.provider.experimental.EmbeddingGeneration.retired_at:type_name -> ptah.provider.experimental.TimestampValue
-	344, // 578: ptah.provider.experimental.EmbeddingGeneration.verified_at:type_name -> ptah.provider.experimental.TimestampValue
-	344, // 579: ptah.provider.experimental.EmbeddingGeneration.maintained_until:type_name -> ptah.provider.experimental.TimestampValue
-	344, // 580: ptah.provider.experimental.EmbeddingRun.lease_expires:type_name -> ptah.provider.experimental.TimestampValue
-	377, // 581: ptah.provider.experimental.EmbeddingRun.progress:type_name -> ptah.provider.experimental.EmbeddingProgress
-	344, // 582: ptah.provider.experimental.EmbeddingRun.created_at:type_name -> ptah.provider.experimental.TimestampValue
-	344, // 583: ptah.provider.experimental.EmbeddingRun.updated_at:type_name -> ptah.provider.experimental.TimestampValue
-	376, // 584: ptah.provider.experimental.EmbeddingRecords.generations:type_name -> ptah.provider.experimental.EmbeddingGeneration
-	378, // 585: ptah.provider.experimental.EmbeddingRecords.runs:type_name -> ptah.provider.experimental.EmbeddingRun
-	381, // 586: ptah.provider.experimental.EmbeddingRecords.pointers:type_name -> ptah.provider.experimental.EmbeddingPointer
-	344, // 587: ptah.provider.experimental.EmbeddingPointer.cut_over_at:type_name -> ptah.provider.experimental.TimestampValue
-	344, // 588: ptah.provider.experimental.EmbeddingEvent.at:type_name -> ptah.provider.experimental.TimestampValue
-	382, // 589: ptah.provider.experimental.EmbeddingEvent.counts:type_name -> ptah.provider.experimental.EmbeddingEventCounts
-	480, // 590: ptah.provider.experimental.EmbeddingStateScope.everything:type_name -> ptah.provider.experimental.EmbeddingStateScope.AllRecords
-	380, // 591: ptah.provider.experimental.EmbeddingStateScope.pointer:type_name -> ptah.provider.experimental.EmbeddingPointerKey
-	384, // 592: ptah.provider.experimental.ReadEmbeddingStateRequest.scope:type_name -> ptah.provider.experimental.EmbeddingStateScope
-	384, // 593: ptah.provider.experimental.EmbeddingState.scope:type_name -> ptah.provider.experimental.EmbeddingStateScope
-	379, // 594: ptah.provider.experimental.EmbeddingState.records:type_name -> ptah.provider.experimental.EmbeddingRecords
-	384, // 595: ptah.provider.experimental.MutateEmbeddingStateRequest.scope:type_name -> ptah.provider.experimental.EmbeddingStateScope
-	379, // 596: ptah.provider.experimental.MutateEmbeddingStateRequest.records:type_name -> ptah.provider.experimental.EmbeddingRecords
-	383, // 597: ptah.provider.experimental.AppendEmbeddingEventRequest.event:type_name -> ptah.provider.experimental.EmbeddingEvent
-	383, // 598: ptah.provider.experimental.EmbeddingEventPage.events:type_name -> ptah.provider.experimental.EmbeddingEvent
-	372, // 599: ptah.provider.experimental.DescribeEmbeddingTargetRequest.spec:type_name -> ptah.provider.experimental.EmbeddingSpec
-	374, // 600: ptah.provider.experimental.EmbeddingTargetObjects.refusal:type_name -> ptah.provider.experimental.EmbeddingRefusal
-	101, // 601: ptah.provider.experimental.ResolveEmbeddingRelationsRequest.relations:type_name -> ptah.provider.experimental.Reference
-	101, // 602: ptah.provider.experimental.EmbeddingRelations.relations:type_name -> ptah.provider.experimental.Reference
-	372, // 603: ptah.provider.experimental.MeasureEmbeddingRequest.spec:type_name -> ptah.provider.experimental.EmbeddingSpec
-	481, // 604: ptah.provider.experimental.EmbeddingMeasurement.capabilities:type_name -> ptah.provider.experimental.EmbeddingMeasurement.CapabilitiesEntry
-	372, // 605: ptah.provider.experimental.PrepareEmbeddingTargetRequest.spec:type_name -> ptah.provider.experimental.EmbeddingSpec
-	68,  // 606: ptah.provider.experimental.PrepareEmbeddingTargetRequest.mode:type_name -> ptah.provider.experimental.PrepareEmbeddingTargetRequest.Mode
-	372, // 607: ptah.provider.experimental.BuildEmbeddingIndexRequest.spec:type_name -> ptah.provider.experimental.EmbeddingSpec
-	373, // 608: ptah.provider.experimental.ReadEmbeddingStructureRequest.location:type_name -> ptah.provider.experimental.EmbeddingLocation
-	373, // 609: ptah.provider.experimental.DropEmbeddingGenerationRequest.location:type_name -> ptah.provider.experimental.EmbeddingLocation
-	69,  // 610: ptah.provider.experimental.DropEmbeddingGenerationRequest.storage:type_name -> ptah.provider.experimental.DropEmbeddingGenerationRequest.Storage
-	368, // 611: ptah.provider.experimental.EmbeddingSourceRow.key:type_name -> ptah.provider.experimental.EmbeddingKey
-	342, // 612: ptah.provider.experimental.EmbeddingSourceRow.fields:type_name -> ptah.provider.experimental.DataValue
-	369, // 613: ptah.provider.experimental.ScanEmbeddingSourceRequest.source:type_name -> ptah.provider.experimental.EmbeddingSource
-	368, // 614: ptah.provider.experimental.ScanEmbeddingSourceRequest.after:type_name -> ptah.provider.experimental.EmbeddingKey
-	403, // 615: ptah.provider.experimental.EmbeddingSourcePage.rows:type_name -> ptah.provider.experimental.EmbeddingSourceRow
-	368, // 616: ptah.provider.experimental.EmbeddingSourcePage.cursor:type_name -> ptah.provider.experimental.EmbeddingKey
-	369, // 617: ptah.provider.experimental.ReadEmbeddingSourceRowsRequest.source:type_name -> ptah.provider.experimental.EmbeddingSource
-	368, // 618: ptah.provider.experimental.ReadEmbeddingSourceRowsRequest.keys:type_name -> ptah.provider.experimental.EmbeddingKey
-	403, // 619: ptah.provider.experimental.EmbeddingSourceRows.rows:type_name -> ptah.provider.experimental.EmbeddingSourceRow
-	368, // 620: ptah.provider.experimental.EmbeddingHeldTarget.key:type_name -> ptah.provider.experimental.EmbeddingKey
-	7,   // 621: ptah.provider.experimental.EmbeddingHeldTarget.kind:type_name -> ptah.provider.experimental.EmbeddingWriteKind
-	372, // 622: ptah.provider.experimental.ReadEmbeddingBatchStateRequest.spec:type_name -> ptah.provider.experimental.EmbeddingSpec
-	368, // 623: ptah.provider.experimental.ReadEmbeddingBatchStateRequest.keys:type_name -> ptah.provider.experimental.EmbeddingKey
-	378, // 624: ptah.provider.experimental.EmbeddingBatchState.run:type_name -> ptah.provider.experimental.EmbeddingRun
-	408, // 625: ptah.provider.experimental.EmbeddingBatchState.held:type_name -> ptah.provider.experimental.EmbeddingHeldTarget
-	368, // 626: ptah.provider.experimental.EmbeddingTargetWrite.key:type_name -> ptah.provider.experimental.EmbeddingKey
-	7,   // 627: ptah.provider.experimental.EmbeddingTargetWrite.kind:type_name -> ptah.provider.experimental.EmbeddingWriteKind
-	372, // 628: ptah.provider.experimental.CommitEmbeddingBatchRequest.spec:type_name -> ptah.provider.experimental.EmbeddingSpec
-	368, // 629: ptah.provider.experimental.CommitEmbeddingBatchRequest.keys:type_name -> ptah.provider.experimental.EmbeddingKey
-	378, // 630: ptah.provider.experimental.CommitEmbeddingBatchRequest.run:type_name -> ptah.provider.experimental.EmbeddingRun
-	411, // 631: ptah.provider.experimental.CommitEmbeddingBatchRequest.writes:type_name -> ptah.provider.experimental.EmbeddingTargetWrite
-	7,   // 632: ptah.provider.experimental.EmbeddingStoredRow.kind:type_name -> ptah.provider.experimental.EmbeddingWriteKind
-	342, // 633: ptah.provider.experimental.EmbeddingVerificationSource.fields:type_name -> ptah.provider.experimental.DataValue
-	368, // 634: ptah.provider.experimental.EmbeddingVerificationRow.key:type_name -> ptah.provider.experimental.EmbeddingKey
-	414, // 635: ptah.provider.experimental.EmbeddingVerificationRow.source:type_name -> ptah.provider.experimental.EmbeddingVerificationSource
-	413, // 636: ptah.provider.experimental.EmbeddingVerificationRow.stored:type_name -> ptah.provider.experimental.EmbeddingStoredRow
-	372, // 637: ptah.provider.experimental.ReadEmbeddingVerificationRequest.spec:type_name -> ptah.provider.experimental.EmbeddingSpec
-	415, // 638: ptah.provider.experimental.EmbeddingVerificationPage.rows:type_name -> ptah.provider.experimental.EmbeddingVerificationRow
-	372, // 639: ptah.provider.experimental.SearchEmbeddingsRequest.spec:type_name -> ptah.provider.experimental.EmbeddingSpec
-	70,  // 640: ptah.provider.experimental.EmbeddingSearchResult.outcome:type_name -> ptah.provider.experimental.EmbeddingSearchResult.Outcome
-	368, // 641: ptah.provider.experimental.EmbeddingSearchResult.indexed:type_name -> ptah.provider.experimental.EmbeddingKey
-	368, // 642: ptah.provider.experimental.EmbeddingSearchResult.exact:type_name -> ptah.provider.experimental.EmbeddingKey
-	30,  // 643: ptah.provider.experimental.EncodeSourceRequest.format:type_name -> ptah.provider.experimental.SourceDocument.Format
-	160, // 644: ptah.provider.experimental.EncodeSourceRequest.bindings:type_name -> ptah.provider.experimental.SourceBinding
-	421, // 645: ptah.provider.experimental.EncodeSourceRequest.values:type_name -> ptah.provider.experimental.EncodeSourceValue
-	178, // 646: ptah.provider.experimental.EncodeSourceRequest.coverage:type_name -> ptah.provider.experimental.ModelCoverage
-	422, // 647: ptah.provider.experimental.EncodeSourceRequest.columns:type_name -> ptah.provider.experimental.EncodeSourceColumn
-	33,  // 648: ptah.provider.experimental.EncodeSourceValue.placement:type_name -> ptah.provider.experimental.SourceModelValue.Placement
-	151, // 649: ptah.provider.experimental.EncodeSourceValue.value:type_name -> ptah.provider.experimental.NormalizedValue
-	426, // 650: ptah.provider.experimental.EncodedSource.fragments:type_name -> ptah.provider.experimental.EncodedFragment
-	427, // 651: ptah.provider.experimental.EncodedSource.losses:type_name -> ptah.provider.experimental.EncodeLoss
-	312, // 652: ptah.provider.experimental.EncodedSource.limits:type_name -> ptah.provider.experimental.SchemaCoverageLimit
-	428, // 653: ptah.provider.experimental.EncodedSource.field_types:type_name -> ptah.provider.experimental.EncodedFieldType
-	424, // 654: ptah.provider.experimental.EncodedSource.groups:type_name -> ptah.provider.experimental.EncodedSourceGroup
-	425, // 655: ptah.provider.experimental.EncodedSourceGroup.parts:type_name -> ptah.provider.experimental.EncodedSourcePart
-	161, // 656: ptah.provider.experimental.EncodedSourcePart.fragment:type_name -> ptah.provider.experimental.SourceFragment
-	71,  // 657: ptah.provider.experimental.EncodedSourcePart.placement:type_name -> ptah.provider.experimental.EncodedFragment.Placement
-	161, // 658: ptah.provider.experimental.EncodedFragment.fragment:type_name -> ptah.provider.experimental.SourceFragment
-	71,  // 659: ptah.provider.experimental.EncodedFragment.placement:type_name -> ptah.provider.experimental.EncodedFragment.Placement
-	342, // 660: ptah.provider.experimental.RunStatementRequest.arguments:type_name -> ptah.provider.experimental.DataValue
-	72,  // 661: ptah.provider.experimental.RunStatementRequest.access:type_name -> ptah.provider.experimental.RunStatementRequest.Access
-	430, // 662: ptah.provider.experimental.RunStatementRequest.typed_arguments:type_name -> ptah.provider.experimental.StatementArgument
-	431, // 663: ptah.provider.experimental.StatementArgument.type:type_name -> ptah.provider.experimental.ArgumentType
-	342, // 664: ptah.provider.experimental.StatementArgument.value:type_name -> ptah.provider.experimental.DataValue
-	342, // 665: ptah.provider.experimental.StatementArgument.elements:type_name -> ptah.provider.experimental.DataValue
-	73,  // 666: ptah.provider.experimental.ArgumentType.scalar:type_name -> ptah.provider.experimental.ArgumentType.Scalar
-	74,  // 667: ptah.provider.experimental.StatementResult.outcome:type_name -> ptah.provider.experimental.StatementResult.Outcome
-	348, // 668: ptah.provider.experimental.StatementResult.columns:type_name -> ptah.provider.experimental.DataColumn
-	347, // 669: ptah.provider.experimental.StatementResult.rows:type_name -> ptah.provider.experimental.Row
-	347, // 670: ptah.provider.experimental.StatementRows.rows:type_name -> ptah.provider.experimental.Row
-	438, // 671: ptah.provider.experimental.MigrationSplit.units:type_name -> ptah.provider.experimental.MigrationUnit
-	439, // 672: ptah.provider.experimental.MigrationSplit.refusal:type_name -> ptah.provider.experimental.SplitRefusal
-	440, // 673: ptah.provider.experimental.MigrationSplit.assertions:type_name -> ptah.provider.experimental.AssertionVerdict
-	75,  // 674: ptah.provider.experimental.MigrationUnit.placement:type_name -> ptah.provider.experimental.MigrationUnit.Placement
-	218, // 675: ptah.provider.experimental.CompareColumnsRequest.identifiers:type_name -> ptah.provider.experimental.ComparisonIdentifiers
-	482, // 676: ptah.provider.experimental.CompareColumnsRequest.capabilities:type_name -> ptah.provider.experimental.CompareColumnsRequest.CapabilitiesEntry
-	442, // 677: ptah.provider.experimental.CompareColumnsRequest.tables:type_name -> ptah.provider.experimental.ColumnComparisonTable
-	203, // 678: ptah.provider.experimental.ColumnComparisonTable.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	258, // 679: ptah.provider.experimental.ColumnComparisonTable.desired:type_name -> ptah.provider.experimental.DeclaredTable
-	266, // 680: ptah.provider.experimental.ColumnComparisonTable.current:type_name -> ptah.provider.experimental.ObservedTable
-	443, // 681: ptah.provider.experimental.ColumnComparisonTable.pairs:type_name -> ptah.provider.experimental.ColumnComparisonPair
-	203, // 682: ptah.provider.experimental.ColumnComparisonTable.current_subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	203, // 683: ptah.provider.experimental.ColumnComparisonPair.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	8,   // 684: ptah.provider.experimental.ColumnComparisonPair.aspects:type_name -> ptah.provider.experimental.ColumnAspect
-	203, // 685: ptah.provider.experimental.ColumnComparisonPair.current_subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	445, // 686: ptah.provider.experimental.ComparedColumns.tables:type_name -> ptah.provider.experimental.ComparedColumnTable
-	203, // 687: ptah.provider.experimental.ComparedColumnTable.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	446, // 688: ptah.provider.experimental.ComparedColumnTable.columns:type_name -> ptah.provider.experimental.ComparedColumn
-	203, // 689: ptah.provider.experimental.ComparedColumnTable.current_subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	203, // 690: ptah.provider.experimental.ComparedColumn.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	447, // 691: ptah.provider.experimental.ComparedColumn.aspects:type_name -> ptah.provider.experimental.ColumnAspectReceipt
-	203, // 692: ptah.provider.experimental.ComparedColumn.current_subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	8,   // 693: ptah.provider.experimental.ColumnAspectReceipt.aspect:type_name -> ptah.provider.experimental.ColumnAspect
-	448, // 694: ptah.provider.experimental.ColumnAspectReceipt.difference:type_name -> ptah.provider.experimental.ColumnDifference
-	449, // 695: ptah.provider.experimental.ColumnAspectReceipt.nullability:type_name -> ptah.provider.experimental.ColumnNullability
-	450, // 696: ptah.provider.experimental.ColumnAspectReceipt.sequence:type_name -> ptah.provider.experimental.ColumnSequenceDifferences
-	76,  // 697: ptah.provider.experimental.ColumnDifference.relation:type_name -> ptah.provider.experimental.ColumnDifference.Relation
-	451, // 698: ptah.provider.experimental.ColumnSequenceDifferences.changes:type_name -> ptah.provider.experimental.ColumnSequenceDifference
-	77,  // 699: ptah.provider.experimental.ColumnSequenceDifference.attribute:type_name -> ptah.provider.experimental.ColumnSequenceDifference.Attribute
-	218, // 700: ptah.provider.experimental.ReadColumnDefaultsRequest.identifiers:type_name -> ptah.provider.experimental.ComparisonIdentifiers
-	483, // 701: ptah.provider.experimental.ReadColumnDefaultsRequest.capabilities:type_name -> ptah.provider.experimental.ReadColumnDefaultsRequest.CapabilitiesEntry
-	453, // 702: ptah.provider.experimental.ReadColumnDefaultsRequest.columns:type_name -> ptah.provider.experimental.ObservedColumnDefaultInput
-	203, // 703: ptah.provider.experimental.ObservedColumnDefaultInput.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	267, // 704: ptah.provider.experimental.ObservedColumnDefaultInput.column:type_name -> ptah.provider.experimental.ObservedColumn
-	455, // 705: ptah.provider.experimental.ReadColumnDefaultsResult.columns:type_name -> ptah.provider.experimental.ColumnDefaultReceipt
-	203, // 706: ptah.provider.experimental.ColumnDefaultReceipt.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	78,  // 707: ptah.provider.experimental.ColumnDefaultReceipt.kind:type_name -> ptah.provider.experimental.ColumnDefaultReceipt.Kind
-	458, // 708: ptah.provider.experimental.SQLScan.tokens:type_name -> ptah.provider.experimental.SQLToken
-	79,  // 709: ptah.provider.experimental.SQLToken.kind:type_name -> ptah.provider.experimental.SQLToken.Kind
-	313, // 710: ptah.provider.experimental.ValidateSchemaRequest.DependenciesEntry.value:type_name -> ptah.provider.experimental.SchemaDependencies
-	82,  // 711: ptah.provider.experimental.Provider.Describe:input_type -> ptah.provider.experimental.DescribeRequest
-	105, // 712: ptah.provider.experimental.Provider.Open:input_type -> ptah.provider.experimental.OpenRequest
-	104, // 713: ptah.provider.experimental.Provider.ResolveDatabaseContext:input_type -> ptah.provider.experimental.DatabaseContextRequest
-	107, // 714: ptah.provider.experimental.Provider.Close:input_type -> ptah.provider.experimental.CloseRequest
-	108, // 715: ptah.provider.experimental.Provider.Inspect:input_type -> ptah.provider.experimental.InspectRequest
-	131, // 716: ptah.provider.experimental.Provider.Render:input_type -> ptah.provider.experimental.RenderRequest
-	144, // 717: ptah.provider.experimental.Provider.AnalyzeSQL:input_type -> ptah.provider.experimental.AnalyzeSQLRequest
-	179, // 718: ptah.provider.experimental.Provider.DecodeSource:input_type -> ptah.provider.experimental.DecodeSourceRequest
-	184, // 719: ptah.provider.experimental.Provider.ReadSQLSchema:input_type -> ptah.provider.experimental.ReadSQLSchemaRequest
-	148, // 720: ptah.provider.experimental.Provider.NormalizeValues:input_type -> ptah.provider.experimental.NormalizeValuesRequest
-	199, // 721: ptah.provider.experimental.Provider.ConvertValues:input_type -> ptah.provider.experimental.ConvertValuesRequest
-	219, // 722: ptah.provider.experimental.Provider.CompareModels:input_type -> ptah.provider.experimental.CompareModelsRequest
-	254, // 723: ptah.provider.experimental.Provider.PlanFeatures:input_type -> ptah.provider.experimental.PlanFeaturesRequest
-	234, // 724: ptah.provider.experimental.Provider.PlanDeclarations:input_type -> ptah.provider.experimental.PlanDeclarationsRequest
-	441, // 725: ptah.provider.experimental.Provider.CompareColumns:input_type -> ptah.provider.experimental.CompareColumnsRequest
-	452, // 726: ptah.provider.experimental.Provider.ReadColumnDefaults:input_type -> ptah.provider.experimental.ReadColumnDefaultsRequest
-	137, // 727: ptah.provider.experimental.Provider.DescribeExecutionInputs:input_type -> ptah.provider.experimental.DescribeExecutionInputsRequest
-	298, // 728: ptah.provider.experimental.Provider.PrepareTables:input_type -> ptah.provider.experimental.PrepareTablesRequest
-	303, // 729: ptah.provider.experimental.Provider.ProjectTableCreations:input_type -> ptah.provider.experimental.ProjectTableCreationsRequest
-	307, // 730: ptah.provider.experimental.Provider.ValidateSchema:input_type -> ptah.provider.experimental.ValidateSchemaRequest
-	319, // 731: ptah.provider.experimental.Provider.SplitLintStatements:input_type -> ptah.provider.experimental.SplitLintRequest
-	321, // 732: ptah.provider.experimental.Provider.AnnotateLintStatements:input_type -> ptah.provider.experimental.AnnotateLintRequest
-	325, // 733: ptah.provider.experimental.Provider.CheckLintMigrations:input_type -> ptah.provider.experimental.CheckLintRequest
-	329, // 734: ptah.provider.experimental.Provider.ProvisionDevDatabase:input_type -> ptah.provider.experimental.ProvisionDevRequest
-	332, // 735: ptah.provider.experimental.Provider.ReleaseDevDatabase:input_type -> ptah.provider.experimental.ReleaseDevRequest
-	333, // 736: ptah.provider.experimental.Provider.ListDevObjects:input_type -> ptah.provider.experimental.ListDevObjectsRequest
-	336, // 737: ptah.provider.experimental.Provider.CleanDevDatabase:input_type -> ptah.provider.experimental.CleanDevRequest
-	339, // 738: ptah.provider.experimental.Provider.GuardReplay:input_type -> ptah.provider.experimental.GuardReplayRequest
-	351, // 739: ptah.provider.experimental.Provider.TypeRows:input_type -> ptah.provider.experimental.TypeRowsRequest
-	353, // 740: ptah.provider.experimental.Provider.ReadRows:input_type -> ptah.provider.experimental.ReadRowsRequest
-	355, // 741: ptah.provider.experimental.Provider.RenderRowWrites:input_type -> ptah.provider.experimental.RenderRowWritesRequest
-	358, // 742: ptah.provider.experimental.Provider.ListSeedTables:input_type -> ptah.provider.experimental.ListSeedTablesRequest
-	361, // 743: ptah.provider.experimental.Provider.ApplySeed:input_type -> ptah.provider.experimental.ApplySeedRequest
-	362, // 744: ptah.provider.experimental.Provider.RecordSeed:input_type -> ptah.provider.experimental.RecordSeedRequest
-	364, // 745: ptah.provider.experimental.Provider.ReadSeedLedger:input_type -> ptah.provider.experimental.ReadSeedLedgerRequest
-	134, // 746: ptah.provider.experimental.Provider.Execute:input_type -> ptah.provider.experimental.ExecuteRequest
-	139, // 747: ptah.provider.experimental.Provider.BeginTransaction:input_type -> ptah.provider.experimental.BeginTransactionRequest
-	141, // 748: ptah.provider.experimental.Provider.FinishTransaction:input_type -> ptah.provider.experimental.FinishTransactionRequest
-	276, // 749: ptah.provider.experimental.Provider.ReadHistory:input_type -> ptah.provider.experimental.ReadHistoryRequest
-	278, // 750: ptah.provider.experimental.Provider.PrepareHistory:input_type -> ptah.provider.experimental.PrepareHistoryRequest
-	279, // 751: ptah.provider.experimental.Provider.MutateHistory:input_type -> ptah.provider.experimental.MutateHistoryRequest
-	288, // 752: ptah.provider.experimental.Provider.PrepareMetadata:input_type -> ptah.provider.experimental.PrepareMetadataRequest
-	289, // 753: ptah.provider.experimental.Provider.MutateMetadata:input_type -> ptah.provider.experimental.MutateMetadataRequest
-	291, // 754: ptah.provider.experimental.Provider.LookupMetadataTag:input_type -> ptah.provider.experimental.LookupMetadataTagRequest
-	293, // 755: ptah.provider.experimental.Provider.OpenMetadataRead:input_type -> ptah.provider.experimental.MetadataReadRequest
-	295, // 756: ptah.provider.experimental.Provider.ReadMetadataPage:input_type -> ptah.provider.experimental.ReadMetadataPageRequest
-	293, // 757: ptah.provider.experimental.Provider.CloseMetadataRead:input_type -> ptah.provider.experimental.MetadataReadRequest
-	282, // 758: ptah.provider.experimental.Provider.TryLock:input_type -> ptah.provider.experimental.LockRequest
-	282, // 759: ptah.provider.experimental.Provider.CheckLock:input_type -> ptah.provider.experimental.LockRequest
-	282, // 760: ptah.provider.experimental.Provider.ReleaseLock:input_type -> ptah.provider.experimental.LockRequest
-	385, // 761: ptah.provider.experimental.Provider.PrepareEmbeddingStore:input_type -> ptah.provider.experimental.PrepareEmbeddingStoreRequest
-	386, // 762: ptah.provider.experimental.Provider.ReadEmbeddingState:input_type -> ptah.provider.experimental.ReadEmbeddingStateRequest
-	388, // 763: ptah.provider.experimental.Provider.MutateEmbeddingState:input_type -> ptah.provider.experimental.MutateEmbeddingStateRequest
-	389, // 764: ptah.provider.experimental.Provider.AppendEmbeddingEvent:input_type -> ptah.provider.experimental.AppendEmbeddingEventRequest
-	390, // 765: ptah.provider.experimental.Provider.ReadEmbeddingEvents:input_type -> ptah.provider.experimental.ReadEmbeddingEventsRequest
-	392, // 766: ptah.provider.experimental.Provider.DescribeEmbeddingTarget:input_type -> ptah.provider.experimental.DescribeEmbeddingTargetRequest
-	394, // 767: ptah.provider.experimental.Provider.ResolveEmbeddingRelations:input_type -> ptah.provider.experimental.ResolveEmbeddingRelationsRequest
-	396, // 768: ptah.provider.experimental.Provider.MeasureEmbedding:input_type -> ptah.provider.experimental.MeasureEmbeddingRequest
-	398, // 769: ptah.provider.experimental.Provider.PrepareEmbeddingTarget:input_type -> ptah.provider.experimental.PrepareEmbeddingTargetRequest
-	399, // 770: ptah.provider.experimental.Provider.BuildEmbeddingIndex:input_type -> ptah.provider.experimental.BuildEmbeddingIndexRequest
-	400, // 771: ptah.provider.experimental.Provider.ReadEmbeddingStructure:input_type -> ptah.provider.experimental.ReadEmbeddingStructureRequest
-	402, // 772: ptah.provider.experimental.Provider.DropEmbeddingGeneration:input_type -> ptah.provider.experimental.DropEmbeddingGenerationRequest
-	404, // 773: ptah.provider.experimental.Provider.ScanEmbeddingSource:input_type -> ptah.provider.experimental.ScanEmbeddingSourceRequest
-	406, // 774: ptah.provider.experimental.Provider.ReadEmbeddingSourceRows:input_type -> ptah.provider.experimental.ReadEmbeddingSourceRowsRequest
-	409, // 775: ptah.provider.experimental.Provider.ReadEmbeddingBatchState:input_type -> ptah.provider.experimental.ReadEmbeddingBatchStateRequest
-	412, // 776: ptah.provider.experimental.Provider.CommitEmbeddingBatch:input_type -> ptah.provider.experimental.CommitEmbeddingBatchRequest
-	416, // 777: ptah.provider.experimental.Provider.ReadEmbeddingVerification:input_type -> ptah.provider.experimental.ReadEmbeddingVerificationRequest
-	418, // 778: ptah.provider.experimental.Provider.SearchEmbeddings:input_type -> ptah.provider.experimental.SearchEmbeddingsRequest
-	192, // 779: ptah.provider.experimental.Provider.PrepareCommonObjects:input_type -> ptah.provider.experimental.PrepareCommonObjectsRequest
-	420, // 780: ptah.provider.experimental.Provider.EncodeSource:input_type -> ptah.provider.experimental.EncodeSourceRequest
-	429, // 781: ptah.provider.experimental.Provider.RunStatement:input_type -> ptah.provider.experimental.RunStatementRequest
-	433, // 782: ptah.provider.experimental.Provider.ReadStatementRows:input_type -> ptah.provider.experimental.ReadStatementRowsRequest
-	435, // 783: ptah.provider.experimental.Provider.CloseStatement:input_type -> ptah.provider.experimental.CloseStatementRequest
-	436, // 784: ptah.provider.experimental.Provider.SplitMigration:input_type -> ptah.provider.experimental.SplitMigrationRequest
-	228, // 785: ptah.provider.experimental.Provider.ReverseChanges:input_type -> ptah.provider.experimental.ReverseChangesRequest
-	168, // 786: ptah.provider.experimental.Provider.ReportValues:input_type -> ptah.provider.experimental.ReportValuesRequest
-	456, // 787: ptah.provider.experimental.Provider.ScanSQL:input_type -> ptah.provider.experimental.ScanSQLRequest
-	83,  // 788: ptah.provider.experimental.Provider.Describe:output_type -> ptah.provider.experimental.Description
-	106, // 789: ptah.provider.experimental.Provider.Open:output_type -> ptah.provider.experimental.Session
-	103, // 790: ptah.provider.experimental.Provider.ResolveDatabaseContext:output_type -> ptah.provider.experimental.DatabaseContext
-	80,  // 791: ptah.provider.experimental.Provider.Close:output_type -> ptah.provider.experimental.Empty
-	109, // 792: ptah.provider.experimental.Provider.Inspect:output_type -> ptah.provider.experimental.Schema
-	133, // 793: ptah.provider.experimental.Provider.Render:output_type -> ptah.provider.experimental.RenderResult
-	145, // 794: ptah.provider.experimental.Provider.AnalyzeSQL:output_type -> ptah.provider.experimental.SQLAnalysis
-	180, // 795: ptah.provider.experimental.Provider.DecodeSource:output_type -> ptah.provider.experimental.DecodedSource
-	186, // 796: ptah.provider.experimental.Provider.ReadSQLSchema:output_type -> ptah.provider.experimental.SQLSchema
-	150, // 797: ptah.provider.experimental.Provider.NormalizeValues:output_type -> ptah.provider.experimental.NormalizedValues
-	150, // 798: ptah.provider.experimental.Provider.ConvertValues:output_type -> ptah.provider.experimental.NormalizedValues
-	223, // 799: ptah.provider.experimental.Provider.CompareModels:output_type -> ptah.provider.experimental.ComparedModels
-	256, // 800: ptah.provider.experimental.Provider.PlanFeatures:output_type -> ptah.provider.experimental.PlannedFeatures
-	235, // 801: ptah.provider.experimental.Provider.PlanDeclarations:output_type -> ptah.provider.experimental.PlannedDeclarations
-	444, // 802: ptah.provider.experimental.Provider.CompareColumns:output_type -> ptah.provider.experimental.ComparedColumns
-	454, // 803: ptah.provider.experimental.Provider.ReadColumnDefaults:output_type -> ptah.provider.experimental.ReadColumnDefaultsResult
-	138, // 804: ptah.provider.experimental.Provider.DescribeExecutionInputs:output_type -> ptah.provider.experimental.ExecutionInputs
-	302, // 805: ptah.provider.experimental.Provider.PrepareTables:output_type -> ptah.provider.experimental.PreparedTables
-	306, // 806: ptah.provider.experimental.Provider.ProjectTableCreations:output_type -> ptah.provider.experimental.ProjectedTableCreations
-	310, // 807: ptah.provider.experimental.Provider.ValidateSchema:output_type -> ptah.provider.experimental.SchemaValidation
-	320, // 808: ptah.provider.experimental.Provider.SplitLintStatements:output_type -> ptah.provider.experimental.SplitLint
-	324, // 809: ptah.provider.experimental.Provider.AnnotateLintStatements:output_type -> ptah.provider.experimental.AnnotatedLint
-	328, // 810: ptah.provider.experimental.Provider.CheckLintMigrations:output_type -> ptah.provider.experimental.CheckedLint
-	331, // 811: ptah.provider.experimental.Provider.ProvisionDevDatabase:output_type -> ptah.provider.experimental.DevDatabase
-	80,  // 812: ptah.provider.experimental.Provider.ReleaseDevDatabase:output_type -> ptah.provider.experimental.Empty
-	335, // 813: ptah.provider.experimental.Provider.ListDevObjects:output_type -> ptah.provider.experimental.DevObjects
-	337, // 814: ptah.provider.experimental.Provider.CleanDevDatabase:output_type -> ptah.provider.experimental.DevCleanup
-	341, // 815: ptah.provider.experimental.Provider.GuardReplay:output_type -> ptah.provider.experimental.GuardedReplay
-	352, // 816: ptah.provider.experimental.Provider.TypeRows:output_type -> ptah.provider.experimental.TypedRows
-	354, // 817: ptah.provider.experimental.Provider.ReadRows:output_type -> ptah.provider.experimental.RowPage
-	133, // 818: ptah.provider.experimental.Provider.RenderRowWrites:output_type -> ptah.provider.experimental.RenderResult
-	359, // 819: ptah.provider.experimental.Provider.ListSeedTables:output_type -> ptah.provider.experimental.SeedTables
-	363, // 820: ptah.provider.experimental.Provider.ApplySeed:output_type -> ptah.provider.experimental.SeedResult
-	363, // 821: ptah.provider.experimental.Provider.RecordSeed:output_type -> ptah.provider.experimental.SeedResult
-	365, // 822: ptah.provider.experimental.Provider.ReadSeedLedger:output_type -> ptah.provider.experimental.SeedLedger
-	143, // 823: ptah.provider.experimental.Provider.Execute:output_type -> ptah.provider.experimental.Execution
-	140, // 824: ptah.provider.experimental.Provider.BeginTransaction:output_type -> ptah.provider.experimental.Transaction
-	142, // 825: ptah.provider.experimental.Provider.FinishTransaction:output_type -> ptah.provider.experimental.TransactionResult
-	277, // 826: ptah.provider.experimental.Provider.ReadHistory:output_type -> ptah.provider.experimental.HistorySnapshot
-	280, // 827: ptah.provider.experimental.Provider.PrepareHistory:output_type -> ptah.provider.experimental.HistoryResult
-	280, // 828: ptah.provider.experimental.Provider.MutateHistory:output_type -> ptah.provider.experimental.HistoryResult
-	290, // 829: ptah.provider.experimental.Provider.PrepareMetadata:output_type -> ptah.provider.experimental.MetadataResult
-	290, // 830: ptah.provider.experimental.Provider.MutateMetadata:output_type -> ptah.provider.experimental.MetadataResult
-	292, // 831: ptah.provider.experimental.Provider.LookupMetadataTag:output_type -> ptah.provider.experimental.MetadataTagResult
-	294, // 832: ptah.provider.experimental.Provider.OpenMetadataRead:output_type -> ptah.provider.experimental.MetadataReadResult
-	296, // 833: ptah.provider.experimental.Provider.ReadMetadataPage:output_type -> ptah.provider.experimental.MetadataPage
-	294, // 834: ptah.provider.experimental.Provider.CloseMetadataRead:output_type -> ptah.provider.experimental.MetadataReadResult
-	283, // 835: ptah.provider.experimental.Provider.TryLock:output_type -> ptah.provider.experimental.LockResult
-	283, // 836: ptah.provider.experimental.Provider.CheckLock:output_type -> ptah.provider.experimental.LockResult
-	283, // 837: ptah.provider.experimental.Provider.ReleaseLock:output_type -> ptah.provider.experimental.LockResult
-	375, // 838: ptah.provider.experimental.Provider.PrepareEmbeddingStore:output_type -> ptah.provider.experimental.EmbeddingWriteResult
-	387, // 839: ptah.provider.experimental.Provider.ReadEmbeddingState:output_type -> ptah.provider.experimental.EmbeddingState
-	375, // 840: ptah.provider.experimental.Provider.MutateEmbeddingState:output_type -> ptah.provider.experimental.EmbeddingWriteResult
-	375, // 841: ptah.provider.experimental.Provider.AppendEmbeddingEvent:output_type -> ptah.provider.experimental.EmbeddingWriteResult
-	391, // 842: ptah.provider.experimental.Provider.ReadEmbeddingEvents:output_type -> ptah.provider.experimental.EmbeddingEventPage
-	393, // 843: ptah.provider.experimental.Provider.DescribeEmbeddingTarget:output_type -> ptah.provider.experimental.EmbeddingTargetObjects
-	395, // 844: ptah.provider.experimental.Provider.ResolveEmbeddingRelations:output_type -> ptah.provider.experimental.EmbeddingRelations
-	397, // 845: ptah.provider.experimental.Provider.MeasureEmbedding:output_type -> ptah.provider.experimental.EmbeddingMeasurement
-	375, // 846: ptah.provider.experimental.Provider.PrepareEmbeddingTarget:output_type -> ptah.provider.experimental.EmbeddingWriteResult
-	375, // 847: ptah.provider.experimental.Provider.BuildEmbeddingIndex:output_type -> ptah.provider.experimental.EmbeddingWriteResult
-	401, // 848: ptah.provider.experimental.Provider.ReadEmbeddingStructure:output_type -> ptah.provider.experimental.EmbeddingStructure
-	375, // 849: ptah.provider.experimental.Provider.DropEmbeddingGeneration:output_type -> ptah.provider.experimental.EmbeddingWriteResult
-	405, // 850: ptah.provider.experimental.Provider.ScanEmbeddingSource:output_type -> ptah.provider.experimental.EmbeddingSourcePage
-	407, // 851: ptah.provider.experimental.Provider.ReadEmbeddingSourceRows:output_type -> ptah.provider.experimental.EmbeddingSourceRows
-	410, // 852: ptah.provider.experimental.Provider.ReadEmbeddingBatchState:output_type -> ptah.provider.experimental.EmbeddingBatchState
-	375, // 853: ptah.provider.experimental.Provider.CommitEmbeddingBatch:output_type -> ptah.provider.experimental.EmbeddingWriteResult
-	417, // 854: ptah.provider.experimental.Provider.ReadEmbeddingVerification:output_type -> ptah.provider.experimental.EmbeddingVerificationPage
-	419, // 855: ptah.provider.experimental.Provider.SearchEmbeddings:output_type -> ptah.provider.experimental.EmbeddingSearchResult
-	193, // 856: ptah.provider.experimental.Provider.PrepareCommonObjects:output_type -> ptah.provider.experimental.PreparedCommonObjects
-	423, // 857: ptah.provider.experimental.Provider.EncodeSource:output_type -> ptah.provider.experimental.EncodedSource
-	432, // 858: ptah.provider.experimental.Provider.RunStatement:output_type -> ptah.provider.experimental.StatementResult
-	434, // 859: ptah.provider.experimental.Provider.ReadStatementRows:output_type -> ptah.provider.experimental.StatementRows
-	80,  // 860: ptah.provider.experimental.Provider.CloseStatement:output_type -> ptah.provider.experimental.Empty
-	437, // 861: ptah.provider.experimental.Provider.SplitMigration:output_type -> ptah.provider.experimental.MigrationSplit
-	229, // 862: ptah.provider.experimental.Provider.ReverseChanges:output_type -> ptah.provider.experimental.ReversedChanges
-	169, // 863: ptah.provider.experimental.Provider.ReportValues:output_type -> ptah.provider.experimental.ValueReports
-	457, // 864: ptah.provider.experimental.Provider.ScanSQL:output_type -> ptah.provider.experimental.SQLScan
-	788, // [788:865] is the sub-list for method output_type
-	711, // [711:788] is the sub-list for method input_type
-	711, // [711:711] is the sub-list for extension type_name
-	711, // [711:711] is the sub-list for extension extendee
-	0,   // [0:711] is the sub-list for field type_name
+	26,  // 136: ptah.provider.experimental.FinishTransactionRequest.action:type_name -> ptah.provider.experimental.FinishTransactionRequest.Action
+	27,  // 137: ptah.provider.experimental.TransactionResult.outcome:type_name -> ptah.provider.experimental.TransactionResult.Outcome
+	285, // 138: ptah.provider.experimental.TransactionResult.diagnostic:type_name -> ptah.provider.experimental.ProviderDiagnostic
+	28,  // 139: ptah.provider.experimental.Execution.outcome:type_name -> ptah.provider.experimental.Execution.Outcome
+	285, // 140: ptah.provider.experimental.Execution.diagnostic:type_name -> ptah.provider.experimental.ProviderDiagnostic
+	147, // 141: ptah.provider.experimental.SQLAnalysis.files:type_name -> ptah.provider.experimental.SQLFile
+	148, // 142: ptah.provider.experimental.SQLFile.statements:type_name -> ptah.provider.experimental.SQLStatement
+	29,  // 143: ptah.provider.experimental.SQLStatement.safety:type_name -> ptah.provider.experimental.SQLStatement.Safety
+	150, // 144: ptah.provider.experimental.NormalizeValuesRequest.values:type_name -> ptah.provider.experimental.ValueInput
+	30,  // 145: ptah.provider.experimental.ValueInput.representation:type_name -> ptah.provider.experimental.ValueInput.Representation
+	103, // 146: ptah.provider.experimental.ValueInput.value:type_name -> ptah.provider.experimental.Envelope
+	152, // 147: ptah.provider.experimental.NormalizedValues.values:type_name -> ptah.provider.experimental.NormalizedValue
+	103, // 148: ptah.provider.experimental.NormalizedValue.value:type_name -> ptah.provider.experimental.Envelope
+	102, // 149: ptah.provider.experimental.NormalizedValue.normalized_owner:type_name -> ptah.provider.experimental.Reference
+	204, // 150: ptah.provider.experimental.NormalizedValue.required_objects:type_name -> ptah.provider.experimental.ComparisonIdentity
+	221, // 151: ptah.provider.experimental.NormalizedValue.change_semantics:type_name -> ptah.provider.experimental.ChangeSemantics
+	227, // 152: ptah.provider.experimental.NormalizedValue.operation_semantics:type_name -> ptah.provider.experimental.OperationSemantics
+	153, // 153: ptah.provider.experimental.SourceSpan.start:type_name -> ptah.provider.experimental.SourcePosition
+	153, // 154: ptah.provider.experimental.SourceSpan.end:type_name -> ptah.provider.experimental.SourcePosition
+	154, // 155: ptah.provider.experimental.SourceValue.span:type_name -> ptah.provider.experimental.SourceSpan
+	81,  // 156: ptah.provider.experimental.SourceValue.null:type_name -> ptah.provider.experimental.Empty
+	102, // 157: ptah.provider.experimental.SourceValue.reference:type_name -> ptah.provider.experimental.Reference
+	156, // 158: ptah.provider.experimental.SourceValue.sequence:type_name -> ptah.provider.experimental.SourceSequence
+	157, // 159: ptah.provider.experimental.SourceValue.mapping:type_name -> ptah.provider.experimental.SourceMapping
+	155, // 160: ptah.provider.experimental.SourceSequence.values:type_name -> ptah.provider.experimental.SourceValue
+	158, // 161: ptah.provider.experimental.SourceMapping.entries:type_name -> ptah.provider.experimental.SourceEntry
+	154, // 162: ptah.provider.experimental.SourceEntry.key_span:type_name -> ptah.provider.experimental.SourceSpan
+	155, // 163: ptah.provider.experimental.SourceEntry.value:type_name -> ptah.provider.experimental.SourceValue
+	160, // 164: ptah.provider.experimental.SourceBlock.labels:type_name -> ptah.provider.experimental.SourceLabel
+	157, // 165: ptah.provider.experimental.SourceBlock.attributes:type_name -> ptah.provider.experimental.SourceMapping
+	159, // 166: ptah.provider.experimental.SourceBlock.children:type_name -> ptah.provider.experimental.SourceBlock
+	154, // 167: ptah.provider.experimental.SourceBlock.span:type_name -> ptah.provider.experimental.SourceSpan
+	154, // 168: ptah.provider.experimental.SourceLabel.span:type_name -> ptah.provider.experimental.SourceSpan
+	102, // 169: ptah.provider.experimental.SourceBinding.object:type_name -> ptah.provider.experimental.Reference
+	99,  // 170: ptah.provider.experimental.SourceFragment.yaml_key:type_name -> ptah.provider.experimental.YAMLSourceKey
+	100, // 171: ptah.provider.experimental.SourceFragment.go_directive:type_name -> ptah.provider.experimental.GoSourceDirective
+	91,  // 172: ptah.provider.experimental.SourceFragment.hcl_block:type_name -> ptah.provider.experimental.HCLSourceBlock
+	87,  // 173: ptah.provider.experimental.SourceFragment.index_kind:type_name -> ptah.provider.experimental.SourceIndexKind
+	102, // 174: ptah.provider.experimental.SourceFragment.subject:type_name -> ptah.provider.experimental.Reference
+	157, // 175: ptah.provider.experimental.SourceFragment.inherited_attributes:type_name -> ptah.provider.experimental.SourceMapping
+	154, // 176: ptah.provider.experimental.SourceFragment.span:type_name -> ptah.provider.experimental.SourceSpan
+	155, // 177: ptah.provider.experimental.SourceFragment.value:type_name -> ptah.provider.experimental.SourceValue
+	159, // 178: ptah.provider.experimental.SourceFragment.block:type_name -> ptah.provider.experimental.SourceBlock
+	31,  // 179: ptah.provider.experimental.SourceDocument.format:type_name -> ptah.provider.experimental.SourceDocument.Format
+	161, // 180: ptah.provider.experimental.SourceDocument.bindings:type_name -> ptah.provider.experimental.SourceBinding
+	162, // 181: ptah.provider.experimental.SourceDocument.fragments:type_name -> ptah.provider.experimental.SourceFragment
+	166, // 182: ptah.provider.experimental.SourceDocument.models:type_name -> ptah.provider.experimental.ValueModel
+	313, // 183: ptah.provider.experimental.SourceDocument.limits:type_name -> ptah.provider.experimental.SchemaCoverageLimit
+	164, // 184: ptah.provider.experimental.SourceTrace.path:type_name -> ptah.provider.experimental.SourcePathStep
+	32,  // 185: ptah.provider.experimental.SourceTrace.root:type_name -> ptah.provider.experimental.SourceTrace.Root
+	154, // 186: ptah.provider.experimental.SourceTrace.span:type_name -> ptah.provider.experimental.SourceSpan
+	30,  // 187: ptah.provider.experimental.ValueModel.representation:type_name -> ptah.provider.experimental.ValueInput.Representation
+	31,  // 188: ptah.provider.experimental.ValueModel.source_formats:type_name -> ptah.provider.experimental.SourceDocument.Format
+	30,  // 189: ptah.provider.experimental.ModelReport.representation:type_name -> ptah.provider.experimental.ValueInput.Representation
+	168, // 190: ptah.provider.experimental.ModelReport.metrics:type_name -> ptah.provider.experimental.ModelMetric
+	150, // 191: ptah.provider.experimental.ReportValuesRequest.values:type_name -> ptah.provider.experimental.ValueInput
+	171, // 192: ptah.provider.experimental.ValueReports.values:type_name -> ptah.provider.experimental.ValueReport
+	172, // 193: ptah.provider.experimental.ValueReport.counts:type_name -> ptah.provider.experimental.MetricCount
+	33,  // 194: ptah.provider.experimental.ModelKnowledge.state:type_name -> ptah.provider.experimental.ModelKnowledge.State
+	174, // 195: ptah.provider.experimental.ModelNamespace.database:type_name -> ptah.provider.experimental.NamespaceComponent
+	174, // 196: ptah.provider.experimental.ModelNamespace.catalog:type_name -> ptah.provider.experimental.NamespaceComponent
+	174, // 197: ptah.provider.experimental.ModelNamespace.schema:type_name -> ptah.provider.experimental.NamespaceComponent
+	174, // 198: ptah.provider.experimental.ModelNamespace.path_prefix:type_name -> ptah.provider.experimental.NamespaceComponent
+	175, // 199: ptah.provider.experimental.ModelNamespaceKnowledge.scope:type_name -> ptah.provider.experimental.ModelNamespace
+	173, // 200: ptah.provider.experimental.ModelNamespaceKnowledge.knowledge:type_name -> ptah.provider.experimental.ModelKnowledge
+	166, // 201: ptah.provider.experimental.ModelKindCoverage.model:type_name -> ptah.provider.experimental.ValueModel
+	173, // 202: ptah.provider.experimental.ModelKindCoverage.knowledge:type_name -> ptah.provider.experimental.ModelKnowledge
+	176, // 203: ptah.provider.experimental.ModelKindCoverage.regions:type_name -> ptah.provider.experimental.ModelNamespaceKnowledge
+	102, // 204: ptah.provider.experimental.ModelSubjectCoverage.subject:type_name -> ptah.provider.experimental.Reference
+	102, // 205: ptah.provider.experimental.ModelSubjectCoverage.normalized_subject:type_name -> ptah.provider.experimental.Reference
+	173, // 206: ptah.provider.experimental.ModelSubjectCoverage.knowledge:type_name -> ptah.provider.experimental.ModelKnowledge
+	30,  // 207: ptah.provider.experimental.ModelCoverage.representation:type_name -> ptah.provider.experimental.ValueInput.Representation
+	177, // 208: ptah.provider.experimental.ModelCoverage.kinds:type_name -> ptah.provider.experimental.ModelKindCoverage
+	178, // 209: ptah.provider.experimental.ModelCoverage.subjects:type_name -> ptah.provider.experimental.ModelSubjectCoverage
+	163, // 210: ptah.provider.experimental.DecodeSourceRequest.documents:type_name -> ptah.provider.experimental.SourceDocument
+	182, // 211: ptah.provider.experimental.DecodedSource.documents:type_name -> ptah.provider.experimental.DecodedSourceDocument
+	179, // 212: ptah.provider.experimental.DecodedSourceDocument.coverage:type_name -> ptah.provider.experimental.ModelCoverage
+	183, // 213: ptah.provider.experimental.DecodedSourceDocument.fragments:type_name -> ptah.provider.experimental.DecodedSourceFragment
+	184, // 214: ptah.provider.experimental.DecodedSourceFragment.values:type_name -> ptah.provider.experimental.SourceModelValue
+	34,  // 215: ptah.provider.experimental.SourceModelValue.placement:type_name -> ptah.provider.experimental.SourceModelValue.Placement
+	152, // 216: ptah.provider.experimental.SourceModelValue.value:type_name -> ptah.provider.experimental.NormalizedValue
+	165, // 217: ptah.provider.experimental.SourceModelValue.source:type_name -> ptah.provider.experimental.SourceTrace
+	219, // 218: ptah.provider.experimental.ReadSQLSchemaRequest.identifiers:type_name -> ptah.provider.experimental.ComparisonIdentifiers
+	186, // 219: ptah.provider.experimental.ReadSQLSchemaRequest.documents:type_name -> ptah.provider.experimental.SQLDocument
+	313, // 220: ptah.provider.experimental.ReadSQLSchemaRequest.limits:type_name -> ptah.provider.experimental.SchemaCoverageLimit
+	259, // 221: ptah.provider.experimental.SQLSchema.tables:type_name -> ptah.provider.experimental.DeclaredTable
+	103, // 222: ptah.provider.experimental.SQLSchema.native_objects:type_name -> ptah.provider.experimental.Envelope
+	196, // 223: ptah.provider.experimental.SQLSchema.declarations:type_name -> ptah.provider.experimental.SQLDocumentDeclarations
+	179, // 224: ptah.provider.experimental.SQLSchema.coverage:type_name -> ptah.provider.experimental.ModelCoverage
+	199, // 225: ptah.provider.experimental.SQLSchema.diagnostics:type_name -> ptah.provider.experimental.SQLDiagnostic
+	310, // 226: ptah.provider.experimental.SQLSchema.namespaces:type_name -> ptah.provider.experimental.DeclaredNamespace
+	262, // 227: ptah.provider.experimental.SQLSchema.enums:type_name -> ptah.provider.experimental.DeclaredEnum
+	188, // 228: ptah.provider.experimental.SQLSchema.views:type_name -> ptah.provider.experimental.SQLView
+	189, // 229: ptah.provider.experimental.SQLSchema.sequences:type_name -> ptah.provider.experimental.SQLSequence
+	190, // 230: ptah.provider.experimental.SQLSchema.roles:type_name -> ptah.provider.experimental.SQLRole
+	191, // 231: ptah.provider.experimental.SQLSchema.grants:type_name -> ptah.provider.experimental.SQLGrant
+	195, // 232: ptah.provider.experimental.SQLSchema.traces:type_name -> ptah.provider.experimental.SQLObjectTrace
+	103, // 233: ptah.provider.experimental.SQLSchema.facets:type_name -> ptah.provider.experimental.Envelope
+	258, // 234: ptah.provider.experimental.SQLView.features:type_name -> ptah.provider.experimental.CapturedFeatures
+	102, // 235: ptah.provider.experimental.SQLGrant.target:type_name -> ptah.provider.experimental.Reference
+	188, // 236: ptah.provider.experimental.DeclaredCommonObjects.views:type_name -> ptah.provider.experimental.SQLView
+	189, // 237: ptah.provider.experimental.DeclaredCommonObjects.sequences:type_name -> ptah.provider.experimental.SQLSequence
+	190, // 238: ptah.provider.experimental.DeclaredCommonObjects.roles:type_name -> ptah.provider.experimental.SQLRole
+	191, // 239: ptah.provider.experimental.DeclaredCommonObjects.grants:type_name -> ptah.provider.experimental.SQLGrant
+	219, // 240: ptah.provider.experimental.PrepareCommonObjectsRequest.identifiers:type_name -> ptah.provider.experimental.ComparisonIdentifiers
+	465, // 241: ptah.provider.experimental.PrepareCommonObjectsRequest.capabilities:type_name -> ptah.provider.experimental.PrepareCommonObjectsRequest.CapabilitiesEntry
+	192, // 242: ptah.provider.experimental.PrepareCommonObjectsRequest.declared:type_name -> ptah.provider.experimental.DeclaredCommonObjects
+	192, // 243: ptah.provider.experimental.PreparedCommonObjects.prepared:type_name -> ptah.provider.experimental.DeclaredCommonObjects
+	35,  // 244: ptah.provider.experimental.SQLObjectTrace.collection:type_name -> ptah.provider.experimental.SQLObjectTrace.Collection
+	165, // 245: ptah.provider.experimental.SQLObjectTrace.source:type_name -> ptah.provider.experimental.SourceTrace
+	197, // 246: ptah.provider.experimental.SQLDocumentDeclarations.objects:type_name -> ptah.provider.experimental.SQLDeclaration
+	197, // 247: ptah.provider.experimental.SQLDocumentDeclarations.guards:type_name -> ptah.provider.experimental.SQLDeclaration
+	198, // 248: ptah.provider.experimental.SQLDocumentDeclarations.tables:type_name -> ptah.provider.experimental.SQLTableStatement
+	36,  // 249: ptah.provider.experimental.SQLDiagnostic.code:type_name -> ptah.provider.experimental.SQLDiagnostic.Code
+	37,  // 250: ptah.provider.experimental.SQLDiagnostic.severity:type_name -> ptah.provider.experimental.SQLDiagnostic.Severity
+	154, // 251: ptah.provider.experimental.SQLDiagnostic.span:type_name -> ptah.provider.experimental.SourceSpan
+	30,  // 252: ptah.provider.experimental.ConvertValuesRequest.from:type_name -> ptah.provider.experimental.ValueInput.Representation
+	30,  // 253: ptah.provider.experimental.ConvertValuesRequest.to:type_name -> ptah.provider.experimental.ValueInput.Representation
+	152, // 254: ptah.provider.experimental.ConvertValuesRequest.values:type_name -> ptah.provider.experimental.NormalizedValue
+	175, // 255: ptah.provider.experimental.InspectionScopeBinding.namespaces:type_name -> ptah.provider.experimental.ModelNamespace
+	38,  // 256: ptah.provider.experimental.ModelComparison.placement:type_name -> ptah.provider.experimental.ModelComparison.Placement
+	203, // 257: ptah.provider.experimental.ComparisonIdentity.database:type_name -> ptah.provider.experimental.ComparisonPart
+	203, // 258: ptah.provider.experimental.ComparisonIdentity.catalog:type_name -> ptah.provider.experimental.ComparisonPart
+	203, // 259: ptah.provider.experimental.ComparisonIdentity.schema:type_name -> ptah.provider.experimental.ComparisonPart
+	203, // 260: ptah.provider.experimental.ComparisonIdentity.path:type_name -> ptah.provider.experimental.ComparisonPart
+	203, // 261: ptah.provider.experimental.ComparisonIdentity.parent:type_name -> ptah.provider.experimental.ComparisonPart
+	203, // 262: ptah.provider.experimental.ComparisonIdentity.name:type_name -> ptah.provider.experimental.ComparisonPart
+	203, // 263: ptah.provider.experimental.ComparisonIdentity.signature:type_name -> ptah.provider.experimental.ComparisonPart
+	203, // 264: ptah.provider.experimental.ComparisonNamespace.database:type_name -> ptah.provider.experimental.ComparisonPart
+	203, // 265: ptah.provider.experimental.ComparisonNamespace.catalog:type_name -> ptah.provider.experimental.ComparisonPart
+	203, // 266: ptah.provider.experimental.ComparisonNamespace.schema:type_name -> ptah.provider.experimental.ComparisonPart
+	203, // 267: ptah.provider.experimental.ComparisonNamespace.parent:type_name -> ptah.provider.experimental.ComparisonPart
+	203, // 268: ptah.provider.experimental.ComparisonNamespace.path_prefix:type_name -> ptah.provider.experimental.ComparisonPart
+	205, // 269: ptah.provider.experimental.ComparisonRegion.scope:type_name -> ptah.provider.experimental.ComparisonNamespace
+	173, // 270: ptah.provider.experimental.ComparisonRegion.knowledge:type_name -> ptah.provider.experimental.ModelKnowledge
+	173, // 271: ptah.provider.experimental.ComparisonKnowledgeSource.outside:type_name -> ptah.provider.experimental.ModelKnowledge
+	206, // 272: ptah.provider.experimental.ComparisonKnowledgeSource.regions:type_name -> ptah.provider.experimental.ComparisonRegion
+	166, // 273: ptah.provider.experimental.ComparisonKindCoverage.model:type_name -> ptah.provider.experimental.ValueModel
+	207, // 274: ptah.provider.experimental.ComparisonKindCoverage.sources:type_name -> ptah.provider.experimental.ComparisonKnowledgeSource
+	204, // 275: ptah.provider.experimental.ComparisonSubjectCoverage.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	173, // 276: ptah.provider.experimental.ComparisonSubjectCoverage.knowledge:type_name -> ptah.provider.experimental.ModelKnowledge
+	208, // 277: ptah.provider.experimental.ComparisonCoverage.kinds:type_name -> ptah.provider.experimental.ComparisonKindCoverage
+	209, // 278: ptah.provider.experimental.ComparisonCoverage.subjects:type_name -> ptah.provider.experimental.ComparisonSubjectCoverage
+	204, // 279: ptah.provider.experimental.ComparisonRecord.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	152, // 280: ptah.provider.experimental.ComparisonRecord.value:type_name -> ptah.provider.experimental.NormalizedValue
+	30,  // 281: ptah.provider.experimental.ComparisonState.representation:type_name -> ptah.provider.experimental.ValueInput.Representation
+	211, // 282: ptah.provider.experimental.ComparisonState.records:type_name -> ptah.provider.experimental.ComparisonRecord
+	210, // 283: ptah.provider.experimental.ComparisonState.coverage:type_name -> ptah.provider.experimental.ComparisonCoverage
+	204, // 284: ptah.provider.experimental.ComparisonParent.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	204, // 285: ptah.provider.experimental.RequestedChange.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	204, // 286: ptah.provider.experimental.ComparisonColumn.table:type_name -> ptah.provider.experimental.ComparisonIdentity
+	204, // 287: ptah.provider.experimental.ComparisonConstraint.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	101, // 288: ptah.provider.experimental.ComparisonIdentifiers.rules:type_name -> ptah.provider.experimental.IdentifierRules
+	218, // 289: ptah.provider.experimental.ComparisonIdentifiers.resolved_names:type_name -> ptah.provider.experimental.ResolvedIdentifier
+	219, // 290: ptah.provider.experimental.CompareModelsRequest.identifiers:type_name -> ptah.provider.experimental.ComparisonIdentifiers
+	466, // 291: ptah.provider.experimental.CompareModelsRequest.capabilities:type_name -> ptah.provider.experimental.CompareModelsRequest.CapabilitiesEntry
+	212, // 292: ptah.provider.experimental.CompareModelsRequest.desired:type_name -> ptah.provider.experimental.ComparisonState
+	212, // 293: ptah.provider.experimental.CompareModelsRequest.current:type_name -> ptah.provider.experimental.ComparisonState
+	213, // 294: ptah.provider.experimental.CompareModelsRequest.parents:type_name -> ptah.provider.experimental.ComparisonParent
+	214, // 295: ptah.provider.experimental.CompareModelsRequest.requests:type_name -> ptah.provider.experimental.RequestedChange
+	204, // 296: ptah.provider.experimental.CompareModelsRequest.declared_relations:type_name -> ptah.provider.experimental.ComparisonIdentity
+	204, // 297: ptah.provider.experimental.CompareModelsRequest.declared_roles:type_name -> ptah.provider.experimental.ComparisonIdentity
+	215, // 298: ptah.provider.experimental.CompareModelsRequest.exclusions:type_name -> ptah.provider.experimental.ComparisonExclusion
+	216, // 299: ptah.provider.experimental.CompareModelsRequest.declared_columns:type_name -> ptah.provider.experimental.ComparisonColumn
+	204, // 300: ptah.provider.experimental.CompareModelsRequest.required:type_name -> ptah.provider.experimental.ComparisonIdentity
+	217, // 301: ptah.provider.experimental.CompareModelsRequest.desired_constraints:type_name -> ptah.provider.experimental.ComparisonConstraint
+	217, // 302: ptah.provider.experimental.CompareModelsRequest.current_constraints:type_name -> ptah.provider.experimental.ComparisonConstraint
+	39,  // 303: ptah.provider.experimental.ChangeSemantics.impact:type_name -> ptah.provider.experimental.ChangeSemantics.Impact
+	40,  // 304: ptah.provider.experimental.ChangeSemantics.access:type_name -> ptah.provider.experimental.ChangeSemantics.Access
+	204, // 305: ptah.provider.experimental.ComparedChange.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	152, // 306: ptah.provider.experimental.ComparedChange.value:type_name -> ptah.provider.experimental.NormalizedValue
+	204, // 307: ptah.provider.experimental.ComparisonUndecided.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	212, // 308: ptah.provider.experimental.ComparedModels.desired:type_name -> ptah.provider.experimental.ComparisonState
+	222, // 309: ptah.provider.experimental.ComparedModels.changes:type_name -> ptah.provider.experimental.ComparedChange
+	223, // 310: ptah.provider.experimental.ComparedModels.undecided:type_name -> ptah.provider.experimental.ComparisonUndecided
+	225, // 311: ptah.provider.experimental.ComparedModels.resolved_requests:type_name -> ptah.provider.experimental.ResolvedRequest
+	226, // 312: ptah.provider.experimental.ComparedModels.counts:type_name -> ptah.provider.experimental.ComparisonCount
+	204, // 313: ptah.provider.experimental.ResolvedRequest.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	39,  // 314: ptah.provider.experimental.OperationSemantics.impact:type_name -> ptah.provider.experimental.ChangeSemantics.Impact
+	40,  // 315: ptah.provider.experimental.OperationSemantics.access:type_name -> ptah.provider.experimental.ChangeSemantics.Access
+	219, // 316: ptah.provider.experimental.ReverseChangesRequest.identifiers:type_name -> ptah.provider.experimental.ComparisonIdentifiers
+	467, // 317: ptah.provider.experimental.ReverseChangesRequest.capabilities:type_name -> ptah.provider.experimental.ReverseChangesRequest.CapabilitiesEntry
+	249, // 318: ptah.provider.experimental.ReverseChangesRequest.changes:type_name -> ptah.provider.experimental.PlanningChange
+	231, // 319: ptah.provider.experimental.ReversedChanges.changes:type_name -> ptah.provider.experimental.ReversedChange
+	204, // 320: ptah.provider.experimental.ReversedChange.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	152, // 321: ptah.provider.experimental.ReversedChange.value:type_name -> ptah.provider.experimental.NormalizedValue
+	232, // 322: ptah.provider.experimental.ReversedChange.forward_state:type_name -> ptah.provider.experimental.ForwardState
+	41,  // 323: ptah.provider.experimental.ForwardState.placement:type_name -> ptah.provider.experimental.ForwardState.Placement
+	152, // 324: ptah.provider.experimental.ForwardState.value:type_name -> ptah.provider.experimental.NormalizedValue
+	1,   // 325: ptah.provider.experimental.ModelPlanning.tables:type_name -> ptah.provider.experimental.PlanningTables
+	219, // 326: ptah.provider.experimental.PlanDeclarationsRequest.identifiers:type_name -> ptah.provider.experimental.ComparisonIdentifiers
+	468, // 327: ptah.provider.experimental.PlanDeclarationsRequest.capabilities:type_name -> ptah.provider.experimental.PlanDeclarationsRequest.CapabilitiesEntry
+	211, // 328: ptah.provider.experimental.PlanDeclarationsRequest.objects:type_name -> ptah.provider.experimental.ComparisonRecord
+	309, // 329: ptah.provider.experimental.PlanDeclarationsRequest.tables:type_name -> ptah.provider.experimental.ValidationTable
+	253, // 330: ptah.provider.experimental.PlanDeclarationsRequest.types:type_name -> ptah.provider.experimental.PlanningType
+	243, // 331: ptah.provider.experimental.PlanDeclarationsRequest.common_steps:type_name -> ptah.provider.experimental.CommonPlanningStep
+	247, // 332: ptah.provider.experimental.PlannedDeclarations.contributions:type_name -> ptah.provider.experimental.PlanningContribution
+	237, // 333: ptah.provider.experimental.PlannedDeclarations.declarations:type_name -> ptah.provider.experimental.DeclarationReceipt
+	238, // 334: ptah.provider.experimental.PlannedDeclarations.diagnostics:type_name -> ptah.provider.experimental.DeclarationDiagnostic
+	204, // 335: ptah.provider.experimental.DeclarationReceipt.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	239, // 336: ptah.provider.experimental.DeclarationReceipt.steps:type_name -> ptah.provider.experimental.StepIdentity
+	312, // 337: ptah.provider.experimental.DeclarationDiagnostic.problem:type_name -> ptah.provider.experimental.SchemaDiagnostic
+	204, // 338: ptah.provider.experimental.PlanningEffect.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	42,  // 339: ptah.provider.experimental.PlanningEffect.action:type_name -> ptah.provider.experimental.PlanningEffect.Action
+	240, // 340: ptah.provider.experimental.PlanningMetadata.effects:type_name -> ptah.provider.experimental.PlanningEffect
+	43,  // 341: ptah.provider.experimental.PlanningMetadata.transaction:type_name -> ptah.provider.experimental.PlanningMetadata.Transaction
+	39,  // 342: ptah.provider.experimental.PlanningMetadata.impact:type_name -> ptah.provider.experimental.ChangeSemantics.Impact
+	44,  // 343: ptah.provider.experimental.PlanningMetadata.placement:type_name -> ptah.provider.experimental.PlanningMetadata.Placement
+	239, // 344: ptah.provider.experimental.PlanningDependency.before:type_name -> ptah.provider.experimental.StepIdentity
+	239, // 345: ptah.provider.experimental.PlanningDependency.after:type_name -> ptah.provider.experimental.StepIdentity
+	239, // 346: ptah.provider.experimental.CommonPlanningStep.id:type_name -> ptah.provider.experimental.StepIdentity
+	241, // 347: ptah.provider.experimental.CommonPlanningStep.metadata:type_name -> ptah.provider.experimental.PlanningMetadata
+	271, // 348: ptah.provider.experimental.CommonPlanningStep.added_column:type_name -> ptah.provider.experimental.PlanningColumn
+	204, // 349: ptah.provider.experimental.CommonPlanningStep.parent:type_name -> ptah.provider.experimental.ComparisonIdentity
+	125, // 350: ptah.provider.experimental.CommonPlanningStep.common_object:type_name -> ptah.provider.experimental.CommonObjectChange
+	244, // 351: ptah.provider.experimental.CommonPlanningStep.renamed_index:type_name -> ptah.provider.experimental.CommonIndexRename
+	23,  // 352: ptah.provider.experimental.PlanningOperation.role:type_name -> ptah.provider.experimental.NativeOperation.Role
+	204, // 353: ptah.provider.experimental.PlanningOperation.parent:type_name -> ptah.provider.experimental.ComparisonIdentity
+	152, // 354: ptah.provider.experimental.PlanningOperation.value:type_name -> ptah.provider.experimental.NormalizedValue
+	45,  // 355: ptah.provider.experimental.PlanningOperation.phase:type_name -> ptah.provider.experimental.PlanningOperation.Phase
+	239, // 356: ptah.provider.experimental.PlanningStep.id:type_name -> ptah.provider.experimental.StepIdentity
+	241, // 357: ptah.provider.experimental.PlanningStep.metadata:type_name -> ptah.provider.experimental.PlanningMetadata
+	245, // 358: ptah.provider.experimental.PlanningStep.operation:type_name -> ptah.provider.experimental.PlanningOperation
+	246, // 359: ptah.provider.experimental.PlanningContribution.steps:type_name -> ptah.provider.experimental.PlanningStep
+	242, // 360: ptah.provider.experimental.PlanningContribution.dependencies:type_name -> ptah.provider.experimental.PlanningDependency
+	239, // 361: ptah.provider.experimental.PlanningRewrite.sources:type_name -> ptah.provider.experimental.StepIdentity
+	239, // 362: ptah.provider.experimental.PlanningRewrite.replacement:type_name -> ptah.provider.experimental.StepIdentity
+	204, // 363: ptah.provider.experimental.PlanningChange.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	152, // 364: ptah.provider.experimental.PlanningChange.value:type_name -> ptah.provider.experimental.NormalizedValue
+	204, // 365: ptah.provider.experimental.PlanningReceipt.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	239, // 366: ptah.provider.experimental.PlanningReceipt.steps:type_name -> ptah.provider.experimental.StepIdentity
+	250, // 367: ptah.provider.experimental.PlanningParentReceipt.receipt:type_name -> ptah.provider.experimental.PlanningReceipt
+	47,  // 368: ptah.provider.experimental.PlanningParentReceipt.action:type_name -> ptah.provider.experimental.PlanningTable.Action
+	46,  // 369: ptah.provider.experimental.PlanningDiagnostic.code:type_name -> ptah.provider.experimental.PlanningDiagnostic.Code
+	204, // 370: ptah.provider.experimental.PlanningType.identity:type_name -> ptah.provider.experimental.ComparisonIdentity
+	204, // 371: ptah.provider.experimental.PlanningTable.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	47,  // 372: ptah.provider.experimental.PlanningTable.action:type_name -> ptah.provider.experimental.PlanningTable.Action
+	259, // 373: ptah.provider.experimental.PlanningTable.desired:type_name -> ptah.provider.experimental.DeclaredTable
+	267, // 374: ptah.provider.experimental.PlanningTable.current:type_name -> ptah.provider.experimental.ObservedTable
+	219, // 375: ptah.provider.experimental.PlanFeaturesRequest.identifiers:type_name -> ptah.provider.experimental.ComparisonIdentifiers
+	469, // 376: ptah.provider.experimental.PlanFeaturesRequest.capabilities:type_name -> ptah.provider.experimental.PlanFeaturesRequest.CapabilitiesEntry
+	249, // 377: ptah.provider.experimental.PlanFeaturesRequest.changes:type_name -> ptah.provider.experimental.PlanningChange
+	254, // 378: ptah.provider.experimental.PlanFeaturesRequest.tables:type_name -> ptah.provider.experimental.PlanningTable
+	253, // 379: ptah.provider.experimental.PlanFeaturesRequest.desired_types:type_name -> ptah.provider.experimental.PlanningType
+	253, // 380: ptah.provider.experimental.PlanFeaturesRequest.current_types:type_name -> ptah.provider.experimental.PlanningType
+	243, // 381: ptah.provider.experimental.PlanFeaturesRequest.common_steps:type_name -> ptah.provider.experimental.CommonPlanningStep
+	192, // 382: ptah.provider.experimental.PlanFeaturesRequest.desired_common:type_name -> ptah.provider.experimental.DeclaredCommonObjects
+	113, // 383: ptah.provider.experimental.PlanFeaturesRequest.current_common:type_name -> ptah.provider.experimental.ObservedCommonObjects
+	256, // 384: ptah.provider.experimental.PlanFeaturesRequest.policy:type_name -> ptah.provider.experimental.PlanningPolicy
+	212, // 385: ptah.provider.experimental.PlanFeaturesRequest.desired_objects:type_name -> ptah.provider.experimental.ComparisonState
+	212, // 386: ptah.provider.experimental.PlanFeaturesRequest.current_objects:type_name -> ptah.provider.experimental.ComparisonState
+	204, // 387: ptah.provider.experimental.PlanFeaturesRequest.changed_subjects:type_name -> ptah.provider.experimental.ComparisonIdentity
+	212, // 388: ptah.provider.experimental.PlanFeaturesRequest.context_inventory:type_name -> ptah.provider.experimental.ComparisonState
+	204, // 389: ptah.provider.experimental.PlanningPolicy.concurrent_index_build_subjects:type_name -> ptah.provider.experimental.ComparisonIdentity
+	204, // 390: ptah.provider.experimental.PlanningPolicy.concurrent_index_drop_subjects:type_name -> ptah.provider.experimental.ComparisonIdentity
+	2,   // 391: ptah.provider.experimental.PlanningPolicy.statement_style:type_name -> ptah.provider.experimental.PlanningStatementStyle
+	247, // 392: ptah.provider.experimental.PlannedFeatures.contributions:type_name -> ptah.provider.experimental.PlanningContribution
+	250, // 393: ptah.provider.experimental.PlannedFeatures.changes:type_name -> ptah.provider.experimental.PlanningReceipt
+	251, // 394: ptah.provider.experimental.PlannedFeatures.parents:type_name -> ptah.provider.experimental.PlanningParentReceipt
+	248, // 395: ptah.provider.experimental.PlannedFeatures.rewrites:type_name -> ptah.provider.experimental.PlanningRewrite
+	252, // 396: ptah.provider.experimental.PlannedFeatures.diagnostics:type_name -> ptah.provider.experimental.PlanningDiagnostic
+	250, // 397: ptah.provider.experimental.PlannedFeatures.objects:type_name -> ptah.provider.experimental.PlanningReceipt
+	212, // 398: ptah.provider.experimental.CapturedFeatures.objects:type_name -> ptah.provider.experimental.ComparisonState
+	212, // 399: ptah.provider.experimental.CapturedFeatures.facets:type_name -> ptah.provider.experimental.ComparisonState
+	260, // 400: ptah.provider.experimental.DeclaredTable.primary_key_parts:type_name -> ptah.provider.experimental.DeclaredKeyPart
+	261, // 401: ptah.provider.experimental.DeclaredTable.columns:type_name -> ptah.provider.experimental.DeclaredColumn
+	262, // 402: ptah.provider.experimental.DeclaredTable.enums:type_name -> ptah.provider.experimental.DeclaredEnum
+	265, // 403: ptah.provider.experimental.DeclaredTable.constraints:type_name -> ptah.provider.experimental.DeclaredConstraint
+	264, // 404: ptah.provider.experimental.DeclaredTable.indexes:type_name -> ptah.provider.experimental.DeclaredIndex
+	266, // 405: ptah.provider.experimental.DeclaredTable.triggers:type_name -> ptah.provider.experimental.CapturedTrigger
+	258, // 406: ptah.provider.experimental.DeclaredTable.features:type_name -> ptah.provider.experimental.CapturedFeatures
+	263, // 407: ptah.provider.experimental.DeclaredIndex.parts:type_name -> ptah.provider.experimental.CapturedIndexPart
+	470, // 408: ptah.provider.experimental.DeclaredIndex.storage_parameters:type_name -> ptah.provider.experimental.DeclaredIndex.StorageParametersEntry
+	204, // 409: ptah.provider.experimental.DeclaredIndex.requires:type_name -> ptah.provider.experimental.ComparisonIdentity
+	204, // 410: ptah.provider.experimental.DeclaredConstraint.requires:type_name -> ptah.provider.experimental.ComparisonIdentity
+	268, // 411: ptah.provider.experimental.ObservedTable.columns:type_name -> ptah.provider.experimental.ObservedColumn
+	269, // 412: ptah.provider.experimental.ObservedTable.indexes:type_name -> ptah.provider.experimental.ObservedIndex
+	270, // 413: ptah.provider.experimental.ObservedTable.constraints:type_name -> ptah.provider.experimental.ObservedConstraint
+	266, // 414: ptah.provider.experimental.ObservedTable.triggers:type_name -> ptah.provider.experimental.CapturedTrigger
+	258, // 415: ptah.provider.experimental.ObservedTable.features:type_name -> ptah.provider.experimental.CapturedFeatures
+	204, // 416: ptah.provider.experimental.ObservedIndex.managed_by:type_name -> ptah.provider.experimental.ComparisonIdentity
+	263, // 417: ptah.provider.experimental.ObservedIndex.parts:type_name -> ptah.provider.experimental.CapturedIndexPart
+	471, // 418: ptah.provider.experimental.ObservedIndex.storage_parameters:type_name -> ptah.provider.experimental.ObservedIndex.StorageParametersEntry
+	204, // 419: ptah.provider.experimental.ObservedIndex.requires:type_name -> ptah.provider.experimental.ComparisonIdentity
+	103, // 420: ptah.provider.experimental.ObservedIndex.facets:type_name -> ptah.provider.experimental.Envelope
+	204, // 421: ptah.provider.experimental.ObservedConstraint.requires:type_name -> ptah.provider.experimental.ComparisonIdentity
+	272, // 422: ptah.provider.experimental.PlanningColumn.default:type_name -> ptah.provider.experimental.PlanningDefault
+	273, // 423: ptah.provider.experimental.PlanningColumn.foreign_key:type_name -> ptah.provider.experimental.PlanningForeignKey
+	274, // 424: ptah.provider.experimental.PlanningColumn.facets:type_name -> ptah.provider.experimental.CapturedFacet
+	274, // 425: ptah.provider.experimental.PlanningForeignKey.facets:type_name -> ptah.provider.experimental.CapturedFacet
+	152, // 426: ptah.provider.experimental.CapturedFacet.value:type_name -> ptah.provider.experimental.NormalizedValue
+	48,  // 427: ptah.provider.experimental.HistoryScope.format:type_name -> ptah.provider.experimental.HistoryScope.Format
+	49,  // 428: ptah.provider.experimental.HistoryRevision.state:type_name -> ptah.provider.experimental.HistoryRevision.State
+	50,  // 429: ptah.provider.experimental.HistoryRevision.direction:type_name -> ptah.provider.experimental.HistoryRevision.Direction
+	275, // 430: ptah.provider.experimental.ReadHistoryRequest.scope:type_name -> ptah.provider.experimental.HistoryScope
+	275, // 431: ptah.provider.experimental.HistorySnapshot.scope:type_name -> ptah.provider.experimental.HistoryScope
+	276, // 432: ptah.provider.experimental.HistorySnapshot.revisions:type_name -> ptah.provider.experimental.HistoryRevision
+	275, // 433: ptah.provider.experimental.PrepareHistoryRequest.scope:type_name -> ptah.provider.experimental.HistoryScope
+	275, // 434: ptah.provider.experimental.MutateHistoryRequest.scope:type_name -> ptah.provider.experimental.HistoryScope
+	276, // 435: ptah.provider.experimental.MutateHistoryRequest.expected:type_name -> ptah.provider.experimental.HistoryRevision
+	276, // 436: ptah.provider.experimental.MutateHistoryRequest.replacement:type_name -> ptah.provider.experimental.HistoryRevision
+	275, // 437: ptah.provider.experimental.HistoryResult.scope:type_name -> ptah.provider.experimental.HistoryScope
+	51,  // 438: ptah.provider.experimental.HistoryResult.outcome:type_name -> ptah.provider.experimental.HistoryResult.Outcome
+	282, // 439: ptah.provider.experimental.LockRequest.scope:type_name -> ptah.provider.experimental.LockScope
+	282, // 440: ptah.provider.experimental.LockResult.scope:type_name -> ptah.provider.experimental.LockScope
+	52,  // 441: ptah.provider.experimental.LockResult.outcome:type_name -> ptah.provider.experimental.LockResult.Outcome
+	285, // 442: ptah.provider.experimental.LockResult.diagnostic:type_name -> ptah.provider.experimental.ProviderDiagnostic
+	53,  // 443: ptah.provider.experimental.MetadataScope.kind:type_name -> ptah.provider.experimental.MetadataScope.Kind
+	286, // 444: ptah.provider.experimental.PrepareMetadataRequest.scope:type_name -> ptah.provider.experimental.MetadataScope
+	286, // 445: ptah.provider.experimental.MutateMetadataRequest.scope:type_name -> ptah.provider.experimental.MetadataScope
+	287, // 446: ptah.provider.experimental.MutateMetadataRequest.append_log:type_name -> ptah.provider.experimental.MigrationLogRecord
+	288, // 447: ptah.provider.experimental.MutateMetadataRequest.put_tag:type_name -> ptah.provider.experimental.MigrationTagRecord
+	286, // 448: ptah.provider.experimental.MetadataResult.scope:type_name -> ptah.provider.experimental.MetadataScope
+	54,  // 449: ptah.provider.experimental.MetadataResult.outcome:type_name -> ptah.provider.experimental.MetadataResult.Outcome
+	286, // 450: ptah.provider.experimental.LookupMetadataTagRequest.scope:type_name -> ptah.provider.experimental.MetadataScope
+	286, // 451: ptah.provider.experimental.MetadataTagResult.scope:type_name -> ptah.provider.experimental.MetadataScope
+	288, // 452: ptah.provider.experimental.MetadataTagResult.record:type_name -> ptah.provider.experimental.MigrationTagRecord
+	286, // 453: ptah.provider.experimental.MetadataReadRequest.scope:type_name -> ptah.provider.experimental.MetadataScope
+	286, // 454: ptah.provider.experimental.MetadataReadResult.scope:type_name -> ptah.provider.experimental.MetadataScope
+	294, // 455: ptah.provider.experimental.ReadMetadataPageRequest.reader:type_name -> ptah.provider.experimental.MetadataReadRequest
+	295, // 456: ptah.provider.experimental.MetadataPage.reader:type_name -> ptah.provider.experimental.MetadataReadResult
+	287, // 457: ptah.provider.experimental.MetadataPage.logs:type_name -> ptah.provider.experimental.MigrationLogRecord
+	288, // 458: ptah.provider.experimental.MetadataPage.tags:type_name -> ptah.provider.experimental.MigrationTagRecord
+	102, // 459: ptah.provider.experimental.ReservedObject.object:type_name -> ptah.provider.experimental.Reference
+	102, // 460: ptah.provider.experimental.ReservedObject.normalized_object:type_name -> ptah.provider.experimental.Reference
+	55,  // 461: ptah.provider.experimental.ReservedObject.purpose:type_name -> ptah.provider.experimental.ReservedObject.Purpose
+	219, // 462: ptah.provider.experimental.PrepareTablesRequest.identifiers:type_name -> ptah.provider.experimental.ComparisonIdentifiers
+	472, // 463: ptah.provider.experimental.PrepareTablesRequest.capabilities:type_name -> ptah.provider.experimental.PrepareTablesRequest.CapabilitiesEntry
+	300, // 464: ptah.provider.experimental.PrepareTablesRequest.tables:type_name -> ptah.provider.experimental.TablePreparationInput
+	204, // 465: ptah.provider.experimental.TablePreparationInput.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	259, // 466: ptah.provider.experimental.TablePreparationInput.desired:type_name -> ptah.provider.experimental.DeclaredTable
+	267, // 467: ptah.provider.experimental.TablePreparationInput.current:type_name -> ptah.provider.experimental.ObservedTable
+	173, // 468: ptah.provider.experimental.TablePreparationInput.current_knowledge:type_name -> ptah.provider.experimental.ModelKnowledge
+	204, // 469: ptah.provider.experimental.PreparedTable.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	211, // 470: ptah.provider.experimental.PreparedTable.resolved_facets:type_name -> ptah.provider.experimental.ComparisonRecord
+	302, // 471: ptah.provider.experimental.PreparedTable.indexes:type_name -> ptah.provider.experimental.PreparedIndex
+	301, // 472: ptah.provider.experimental.PreparedTables.tables:type_name -> ptah.provider.experimental.PreparedTable
+	219, // 473: ptah.provider.experimental.ProjectTableCreationsRequest.identifiers:type_name -> ptah.provider.experimental.ComparisonIdentifiers
+	473, // 474: ptah.provider.experimental.ProjectTableCreationsRequest.capabilities:type_name -> ptah.provider.experimental.ProjectTableCreationsRequest.CapabilitiesEntry
+	305, // 475: ptah.provider.experimental.ProjectTableCreationsRequest.tables:type_name -> ptah.provider.experimental.TableCreationInput
+	204, // 476: ptah.provider.experimental.TableCreationInput.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	259, // 477: ptah.provider.experimental.TableCreationInput.declaration:type_name -> ptah.provider.experimental.DeclaredTable
+	204, // 478: ptah.provider.experimental.TableCreationInput.facet_owners:type_name -> ptah.provider.experimental.ComparisonIdentity
+	204, // 479: ptah.provider.experimental.ProjectedTableCreation.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	211, // 480: ptah.provider.experimental.ProjectedTableCreation.desired_facets:type_name -> ptah.provider.experimental.ComparisonRecord
+	211, // 481: ptah.provider.experimental.ProjectedTableCreation.observed_facets:type_name -> ptah.provider.experimental.ComparisonRecord
+	268, // 482: ptah.provider.experimental.ProjectedTableCreation.columns:type_name -> ptah.provider.experimental.ObservedColumn
+	306, // 483: ptah.provider.experimental.ProjectedTableCreations.tables:type_name -> ptah.provider.experimental.ProjectedTableCreation
+	219, // 484: ptah.provider.experimental.ValidateSchemaRequest.identifiers:type_name -> ptah.provider.experimental.ComparisonIdentifiers
+	474, // 485: ptah.provider.experimental.ValidateSchemaRequest.capabilities:type_name -> ptah.provider.experimental.ValidateSchemaRequest.CapabilitiesEntry
+	309, // 486: ptah.provider.experimental.ValidateSchemaRequest.tables:type_name -> ptah.provider.experimental.ValidationTable
+	310, // 487: ptah.provider.experimental.ValidateSchemaRequest.namespaces:type_name -> ptah.provider.experimental.DeclaredNamespace
+	262, // 488: ptah.provider.experimental.ValidateSchemaRequest.enums:type_name -> ptah.provider.experimental.DeclaredEnum
+	258, // 489: ptah.provider.experimental.ValidateSchemaRequest.features:type_name -> ptah.provider.experimental.CapturedFeatures
+	313, // 490: ptah.provider.experimental.ValidateSchemaRequest.not_described:type_name -> ptah.provider.experimental.SchemaCoverageLimit
+	475, // 491: ptah.provider.experimental.ValidateSchemaRequest.dependencies:type_name -> ptah.provider.experimental.ValidateSchemaRequest.DependenciesEntry
+	192, // 492: ptah.provider.experimental.ValidateSchemaRequest.common_objects:type_name -> ptah.provider.experimental.DeclaredCommonObjects
+	204, // 493: ptah.provider.experimental.ValidationTable.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	259, // 494: ptah.provider.experimental.ValidationTable.declaration:type_name -> ptah.provider.experimental.DeclaredTable
+	204, // 495: ptah.provider.experimental.DeclaredNamespace.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	312, // 496: ptah.provider.experimental.SchemaValidation.diagnostics:type_name -> ptah.provider.experimental.SchemaDiagnostic
+	56,  // 497: ptah.provider.experimental.SchemaDiagnostic.code:type_name -> ptah.provider.experimental.SchemaDiagnostic.Code
+	57,  // 498: ptah.provider.experimental.LintRule.severity:type_name -> ptah.provider.experimental.LintRule.Severity
+	3,   // 499: ptah.provider.experimental.LintEffect.fact:type_name -> ptah.provider.experimental.LintFact
+	5,   // 500: ptah.provider.experimental.LintEffect.impact:type_name -> ptah.provider.experimental.LintImpact
+	4,   // 501: ptah.provider.experimental.LintEffect.statement_class:type_name -> ptah.provider.experimental.LintStatementClass
+	317, // 502: ptah.provider.experimental.LintStatement.effects:type_name -> ptah.provider.experimental.LintEffect
+	318, // 503: ptah.provider.experimental.LintFile.statements:type_name -> ptah.provider.experimental.LintStatement
+	316, // 504: ptah.provider.experimental.SplitLintRequest.sources:type_name -> ptah.provider.experimental.LintSource
+	319, // 505: ptah.provider.experimental.SplitLint.files:type_name -> ptah.provider.experimental.LintFile
+	3,   // 506: ptah.provider.experimental.SplitLint.judged:type_name -> ptah.provider.experimental.LintFact
+	3,   // 507: ptah.provider.experimental.AnnotateLintRequest.facts:type_name -> ptah.provider.experimental.LintFact
+	316, // 508: ptah.provider.experimental.AnnotateLintRequest.sources:type_name -> ptah.provider.experimental.LintSource
+	319, // 509: ptah.provider.experimental.AnnotateLintRequest.files:type_name -> ptah.provider.experimental.LintFile
+	317, // 510: ptah.provider.experimental.LintAnnotation.effects:type_name -> ptah.provider.experimental.LintEffect
+	323, // 511: ptah.provider.experimental.LintAnnotations.statements:type_name -> ptah.provider.experimental.LintAnnotation
+	324, // 512: ptah.provider.experimental.AnnotatedLint.files:type_name -> ptah.provider.experimental.LintAnnotations
+	476, // 513: ptah.provider.experimental.CheckLintRequest.capabilities:type_name -> ptah.provider.experimental.CheckLintRequest.CapabilitiesEntry
+	319, // 514: ptah.provider.experimental.CheckLintRequest.files:type_name -> ptah.provider.experimental.LintFile
+	6,   // 515: ptah.provider.experimental.CheckLintRequest.transaction_owner:type_name -> ptah.provider.experimental.LintTransactionOwner
+	58,  // 516: ptah.provider.experimental.LintSubject.kind:type_name -> ptah.provider.experimental.LintSubject.Kind
+	327, // 517: ptah.provider.experimental.LintFinding.subjects:type_name -> ptah.provider.experimental.LintSubject
+	328, // 518: ptah.provider.experimental.CheckedLint.findings:type_name -> ptah.provider.experimental.LintFinding
+	59,  // 519: ptah.provider.experimental.DevDatabaseRefusal.kind:type_name -> ptah.provider.experimental.DevDatabaseRefusal.Kind
+	331, // 520: ptah.provider.experimental.DevDatabase.refusal:type_name -> ptah.provider.experimental.DevDatabaseRefusal
+	102, // 521: ptah.provider.experimental.DevObject.object:type_name -> ptah.provider.experimental.Reference
+	335, // 522: ptah.provider.experimental.DevObjects.objects:type_name -> ptah.provider.experimental.DevObject
+	60,  // 523: ptah.provider.experimental.DevCleanup.outcome:type_name -> ptah.provider.experimental.DevCleanup.Outcome
+	335, // 524: ptah.provider.experimental.DevCleanup.blocking:type_name -> ptah.provider.experimental.DevObject
+	339, // 525: ptah.provider.experimental.GuardReplayRequest.scope:type_name -> ptah.provider.experimental.ReplayScope
+	341, // 526: ptah.provider.experimental.GuardedReplay.verdicts:type_name -> ptah.provider.experimental.ReplayVerdict
+	81,  // 527: ptah.provider.experimental.DataValue.null:type_name -> ptah.provider.experimental.Empty
+	344, // 528: ptah.provider.experimental.DataValue.decimal_value:type_name -> ptah.provider.experimental.DecimalValue
+	345, // 529: ptah.provider.experimental.DataValue.timestamp_value:type_name -> ptah.provider.experimental.TimestampValue
+	346, // 530: ptah.provider.experimental.DataValue.interval_value:type_name -> ptah.provider.experimental.IntervalValue
+	347, // 531: ptah.provider.experimental.DataValue.native_value:type_name -> ptah.provider.experimental.NativeValue
+	343, // 532: ptah.provider.experimental.Row.values:type_name -> ptah.provider.experimental.DataValue
+	7,   // 533: ptah.provider.experimental.DataColumn.kind:type_name -> ptah.provider.experimental.DataKind
+	122, // 534: ptah.provider.experimental.LiveTable.columns:type_name -> ptah.provider.experimental.Column
+	477, // 535: ptah.provider.experimental.TypeRowsRequest.capabilities:type_name -> ptah.provider.experimental.TypeRowsRequest.CapabilitiesEntry
+	102, // 536: ptah.provider.experimental.TypeRowsRequest.table:type_name -> ptah.provider.experimental.Reference
+	351, // 537: ptah.provider.experimental.TypeRowsRequest.live_table:type_name -> ptah.provider.experimental.LiveTable
+	350, // 538: ptah.provider.experimental.TypeRowsRequest.columns:type_name -> ptah.provider.experimental.RowColumn
+	348, // 539: ptah.provider.experimental.TypeRowsRequest.declared:type_name -> ptah.provider.experimental.Row
+	348, // 540: ptah.provider.experimental.TypeRowsRequest.live:type_name -> ptah.provider.experimental.Row
+	349, // 541: ptah.provider.experimental.TypedRows.columns:type_name -> ptah.provider.experimental.DataColumn
+	348, // 542: ptah.provider.experimental.TypedRows.declared:type_name -> ptah.provider.experimental.Row
+	348, // 543: ptah.provider.experimental.TypedRows.live:type_name -> ptah.provider.experimental.Row
+	102, // 544: ptah.provider.experimental.ReadRowsRequest.table:type_name -> ptah.provider.experimental.Reference
+	102, // 545: ptah.provider.experimental.RowPage.table:type_name -> ptah.provider.experimental.Reference
+	349, // 546: ptah.provider.experimental.RowPage.columns:type_name -> ptah.provider.experimental.DataColumn
+	348, // 547: ptah.provider.experimental.RowPage.rows:type_name -> ptah.provider.experimental.Row
+	478, // 548: ptah.provider.experimental.RenderRowWritesRequest.capabilities:type_name -> ptah.provider.experimental.RenderRowWritesRequest.CapabilitiesEntry
+	357, // 549: ptah.provider.experimental.RenderRowWritesRequest.writes:type_name -> ptah.provider.experimental.RowWrite
+	24,  // 550: ptah.provider.experimental.RenderRowWritesRequest.form:type_name -> ptah.provider.experimental.RenderRequest.Form
+	61,  // 551: ptah.provider.experimental.RowWrite.mode:type_name -> ptah.provider.experimental.RowWrite.Mode
+	102, // 552: ptah.provider.experimental.RowWrite.table:type_name -> ptah.provider.experimental.Reference
+	343, // 553: ptah.provider.experimental.RowWrite.values:type_name -> ptah.provider.experimental.DataValue
+	479, // 554: ptah.provider.experimental.RowWrite.column_types:type_name -> ptah.provider.experimental.RowWrite.ColumnTypesEntry
+	62,  // 555: ptah.provider.experimental.RenderRefusal.reason:type_name -> ptah.provider.experimental.RenderRefusal.Reason
+	102, // 556: ptah.provider.experimental.SeedTables.tables:type_name -> ptah.provider.experimental.Reference
+	361, // 557: ptah.provider.experimental.ApplySeedRequest.seed:type_name -> ptah.provider.experimental.Seed
+	361, // 558: ptah.provider.experimental.RecordSeedRequest.seed:type_name -> ptah.provider.experimental.Seed
+	63,  // 559: ptah.provider.experimental.SeedResult.outcome:type_name -> ptah.provider.experimental.SeedResult.Outcome
+	153, // 560: ptah.provider.experimental.SeedResult.position:type_name -> ptah.provider.experimental.SourcePosition
+	367, // 561: ptah.provider.experimental.SeedLedger.entries:type_name -> ptah.provider.experimental.SeedLedgerEntry
+	102, // 562: ptah.provider.experimental.EmbeddingSource.table:type_name -> ptah.provider.experimental.Reference
+	102, // 563: ptah.provider.experimental.EmbeddingTarget.table:type_name -> ptah.provider.experimental.Reference
+	64,  // 564: ptah.provider.experimental.EmbeddingTarget.layout:type_name -> ptah.provider.experimental.EmbeddingTarget.Layout
+	65,  // 565: ptah.provider.experimental.EmbeddingTarget.metric:type_name -> ptah.provider.experimental.EmbeddingTarget.Metric
+	480, // 566: ptah.provider.experimental.EmbeddingTarget.index_options:type_name -> ptah.provider.experimental.EmbeddingTarget.IndexOptionsEntry
+	370, // 567: ptah.provider.experimental.EmbeddingSpec.source:type_name -> ptah.provider.experimental.EmbeddingSource
+	371, // 568: ptah.provider.experimental.EmbeddingSpec.target:type_name -> ptah.provider.experimental.EmbeddingTarget
+	372, // 569: ptah.provider.experimental.EmbeddingSpec.names:type_name -> ptah.provider.experimental.EmbeddingNames
+	102, // 570: ptah.provider.experimental.EmbeddingLocation.table:type_name -> ptah.provider.experimental.Reference
+	372, // 571: ptah.provider.experimental.EmbeddingLocation.names:type_name -> ptah.provider.experimental.EmbeddingNames
+	66,  // 572: ptah.provider.experimental.EmbeddingRefusal.reason:type_name -> ptah.provider.experimental.EmbeddingRefusal.Reason
+	67,  // 573: ptah.provider.experimental.EmbeddingWriteResult.outcome:type_name -> ptah.provider.experimental.EmbeddingWriteResult.Outcome
+	375, // 574: ptah.provider.experimental.EmbeddingWriteResult.refusal:type_name -> ptah.provider.experimental.EmbeddingRefusal
+	380, // 575: ptah.provider.experimental.EmbeddingWriteResult.written:type_name -> ptah.provider.experimental.EmbeddingRecords
+	68,  // 576: ptah.provider.experimental.EmbeddingWriteResult.index_outcome:type_name -> ptah.provider.experimental.EmbeddingWriteResult.IndexOutcome
+	345, // 577: ptah.provider.experimental.EmbeddingGeneration.created_at:type_name -> ptah.provider.experimental.TimestampValue
+	345, // 578: ptah.provider.experimental.EmbeddingGeneration.retired_at:type_name -> ptah.provider.experimental.TimestampValue
+	345, // 579: ptah.provider.experimental.EmbeddingGeneration.verified_at:type_name -> ptah.provider.experimental.TimestampValue
+	345, // 580: ptah.provider.experimental.EmbeddingGeneration.maintained_until:type_name -> ptah.provider.experimental.TimestampValue
+	345, // 581: ptah.provider.experimental.EmbeddingRun.lease_expires:type_name -> ptah.provider.experimental.TimestampValue
+	378, // 582: ptah.provider.experimental.EmbeddingRun.progress:type_name -> ptah.provider.experimental.EmbeddingProgress
+	345, // 583: ptah.provider.experimental.EmbeddingRun.created_at:type_name -> ptah.provider.experimental.TimestampValue
+	345, // 584: ptah.provider.experimental.EmbeddingRun.updated_at:type_name -> ptah.provider.experimental.TimestampValue
+	377, // 585: ptah.provider.experimental.EmbeddingRecords.generations:type_name -> ptah.provider.experimental.EmbeddingGeneration
+	379, // 586: ptah.provider.experimental.EmbeddingRecords.runs:type_name -> ptah.provider.experimental.EmbeddingRun
+	382, // 587: ptah.provider.experimental.EmbeddingRecords.pointers:type_name -> ptah.provider.experimental.EmbeddingPointer
+	345, // 588: ptah.provider.experimental.EmbeddingPointer.cut_over_at:type_name -> ptah.provider.experimental.TimestampValue
+	345, // 589: ptah.provider.experimental.EmbeddingEvent.at:type_name -> ptah.provider.experimental.TimestampValue
+	383, // 590: ptah.provider.experimental.EmbeddingEvent.counts:type_name -> ptah.provider.experimental.EmbeddingEventCounts
+	481, // 591: ptah.provider.experimental.EmbeddingStateScope.everything:type_name -> ptah.provider.experimental.EmbeddingStateScope.AllRecords
+	381, // 592: ptah.provider.experimental.EmbeddingStateScope.pointer:type_name -> ptah.provider.experimental.EmbeddingPointerKey
+	385, // 593: ptah.provider.experimental.ReadEmbeddingStateRequest.scope:type_name -> ptah.provider.experimental.EmbeddingStateScope
+	385, // 594: ptah.provider.experimental.EmbeddingState.scope:type_name -> ptah.provider.experimental.EmbeddingStateScope
+	380, // 595: ptah.provider.experimental.EmbeddingState.records:type_name -> ptah.provider.experimental.EmbeddingRecords
+	385, // 596: ptah.provider.experimental.MutateEmbeddingStateRequest.scope:type_name -> ptah.provider.experimental.EmbeddingStateScope
+	380, // 597: ptah.provider.experimental.MutateEmbeddingStateRequest.records:type_name -> ptah.provider.experimental.EmbeddingRecords
+	384, // 598: ptah.provider.experimental.AppendEmbeddingEventRequest.event:type_name -> ptah.provider.experimental.EmbeddingEvent
+	384, // 599: ptah.provider.experimental.EmbeddingEventPage.events:type_name -> ptah.provider.experimental.EmbeddingEvent
+	373, // 600: ptah.provider.experimental.DescribeEmbeddingTargetRequest.spec:type_name -> ptah.provider.experimental.EmbeddingSpec
+	375, // 601: ptah.provider.experimental.EmbeddingTargetObjects.refusal:type_name -> ptah.provider.experimental.EmbeddingRefusal
+	102, // 602: ptah.provider.experimental.ResolveEmbeddingRelationsRequest.relations:type_name -> ptah.provider.experimental.Reference
+	102, // 603: ptah.provider.experimental.EmbeddingRelations.relations:type_name -> ptah.provider.experimental.Reference
+	373, // 604: ptah.provider.experimental.MeasureEmbeddingRequest.spec:type_name -> ptah.provider.experimental.EmbeddingSpec
+	482, // 605: ptah.provider.experimental.EmbeddingMeasurement.capabilities:type_name -> ptah.provider.experimental.EmbeddingMeasurement.CapabilitiesEntry
+	373, // 606: ptah.provider.experimental.PrepareEmbeddingTargetRequest.spec:type_name -> ptah.provider.experimental.EmbeddingSpec
+	69,  // 607: ptah.provider.experimental.PrepareEmbeddingTargetRequest.mode:type_name -> ptah.provider.experimental.PrepareEmbeddingTargetRequest.Mode
+	373, // 608: ptah.provider.experimental.BuildEmbeddingIndexRequest.spec:type_name -> ptah.provider.experimental.EmbeddingSpec
+	374, // 609: ptah.provider.experimental.ReadEmbeddingStructureRequest.location:type_name -> ptah.provider.experimental.EmbeddingLocation
+	374, // 610: ptah.provider.experimental.DropEmbeddingGenerationRequest.location:type_name -> ptah.provider.experimental.EmbeddingLocation
+	70,  // 611: ptah.provider.experimental.DropEmbeddingGenerationRequest.storage:type_name -> ptah.provider.experimental.DropEmbeddingGenerationRequest.Storage
+	369, // 612: ptah.provider.experimental.EmbeddingSourceRow.key:type_name -> ptah.provider.experimental.EmbeddingKey
+	343, // 613: ptah.provider.experimental.EmbeddingSourceRow.fields:type_name -> ptah.provider.experimental.DataValue
+	370, // 614: ptah.provider.experimental.ScanEmbeddingSourceRequest.source:type_name -> ptah.provider.experimental.EmbeddingSource
+	369, // 615: ptah.provider.experimental.ScanEmbeddingSourceRequest.after:type_name -> ptah.provider.experimental.EmbeddingKey
+	404, // 616: ptah.provider.experimental.EmbeddingSourcePage.rows:type_name -> ptah.provider.experimental.EmbeddingSourceRow
+	369, // 617: ptah.provider.experimental.EmbeddingSourcePage.cursor:type_name -> ptah.provider.experimental.EmbeddingKey
+	370, // 618: ptah.provider.experimental.ReadEmbeddingSourceRowsRequest.source:type_name -> ptah.provider.experimental.EmbeddingSource
+	369, // 619: ptah.provider.experimental.ReadEmbeddingSourceRowsRequest.keys:type_name -> ptah.provider.experimental.EmbeddingKey
+	404, // 620: ptah.provider.experimental.EmbeddingSourceRows.rows:type_name -> ptah.provider.experimental.EmbeddingSourceRow
+	369, // 621: ptah.provider.experimental.EmbeddingHeldTarget.key:type_name -> ptah.provider.experimental.EmbeddingKey
+	8,   // 622: ptah.provider.experimental.EmbeddingHeldTarget.kind:type_name -> ptah.provider.experimental.EmbeddingWriteKind
+	373, // 623: ptah.provider.experimental.ReadEmbeddingBatchStateRequest.spec:type_name -> ptah.provider.experimental.EmbeddingSpec
+	369, // 624: ptah.provider.experimental.ReadEmbeddingBatchStateRequest.keys:type_name -> ptah.provider.experimental.EmbeddingKey
+	379, // 625: ptah.provider.experimental.EmbeddingBatchState.run:type_name -> ptah.provider.experimental.EmbeddingRun
+	409, // 626: ptah.provider.experimental.EmbeddingBatchState.held:type_name -> ptah.provider.experimental.EmbeddingHeldTarget
+	369, // 627: ptah.provider.experimental.EmbeddingTargetWrite.key:type_name -> ptah.provider.experimental.EmbeddingKey
+	8,   // 628: ptah.provider.experimental.EmbeddingTargetWrite.kind:type_name -> ptah.provider.experimental.EmbeddingWriteKind
+	373, // 629: ptah.provider.experimental.CommitEmbeddingBatchRequest.spec:type_name -> ptah.provider.experimental.EmbeddingSpec
+	369, // 630: ptah.provider.experimental.CommitEmbeddingBatchRequest.keys:type_name -> ptah.provider.experimental.EmbeddingKey
+	379, // 631: ptah.provider.experimental.CommitEmbeddingBatchRequest.run:type_name -> ptah.provider.experimental.EmbeddingRun
+	412, // 632: ptah.provider.experimental.CommitEmbeddingBatchRequest.writes:type_name -> ptah.provider.experimental.EmbeddingTargetWrite
+	8,   // 633: ptah.provider.experimental.EmbeddingStoredRow.kind:type_name -> ptah.provider.experimental.EmbeddingWriteKind
+	343, // 634: ptah.provider.experimental.EmbeddingVerificationSource.fields:type_name -> ptah.provider.experimental.DataValue
+	369, // 635: ptah.provider.experimental.EmbeddingVerificationRow.key:type_name -> ptah.provider.experimental.EmbeddingKey
+	415, // 636: ptah.provider.experimental.EmbeddingVerificationRow.source:type_name -> ptah.provider.experimental.EmbeddingVerificationSource
+	414, // 637: ptah.provider.experimental.EmbeddingVerificationRow.stored:type_name -> ptah.provider.experimental.EmbeddingStoredRow
+	373, // 638: ptah.provider.experimental.ReadEmbeddingVerificationRequest.spec:type_name -> ptah.provider.experimental.EmbeddingSpec
+	416, // 639: ptah.provider.experimental.EmbeddingVerificationPage.rows:type_name -> ptah.provider.experimental.EmbeddingVerificationRow
+	373, // 640: ptah.provider.experimental.SearchEmbeddingsRequest.spec:type_name -> ptah.provider.experimental.EmbeddingSpec
+	71,  // 641: ptah.provider.experimental.EmbeddingSearchResult.outcome:type_name -> ptah.provider.experimental.EmbeddingSearchResult.Outcome
+	369, // 642: ptah.provider.experimental.EmbeddingSearchResult.indexed:type_name -> ptah.provider.experimental.EmbeddingKey
+	369, // 643: ptah.provider.experimental.EmbeddingSearchResult.exact:type_name -> ptah.provider.experimental.EmbeddingKey
+	31,  // 644: ptah.provider.experimental.EncodeSourceRequest.format:type_name -> ptah.provider.experimental.SourceDocument.Format
+	161, // 645: ptah.provider.experimental.EncodeSourceRequest.bindings:type_name -> ptah.provider.experimental.SourceBinding
+	422, // 646: ptah.provider.experimental.EncodeSourceRequest.values:type_name -> ptah.provider.experimental.EncodeSourceValue
+	179, // 647: ptah.provider.experimental.EncodeSourceRequest.coverage:type_name -> ptah.provider.experimental.ModelCoverage
+	423, // 648: ptah.provider.experimental.EncodeSourceRequest.columns:type_name -> ptah.provider.experimental.EncodeSourceColumn
+	34,  // 649: ptah.provider.experimental.EncodeSourceValue.placement:type_name -> ptah.provider.experimental.SourceModelValue.Placement
+	152, // 650: ptah.provider.experimental.EncodeSourceValue.value:type_name -> ptah.provider.experimental.NormalizedValue
+	427, // 651: ptah.provider.experimental.EncodedSource.fragments:type_name -> ptah.provider.experimental.EncodedFragment
+	428, // 652: ptah.provider.experimental.EncodedSource.losses:type_name -> ptah.provider.experimental.EncodeLoss
+	313, // 653: ptah.provider.experimental.EncodedSource.limits:type_name -> ptah.provider.experimental.SchemaCoverageLimit
+	429, // 654: ptah.provider.experimental.EncodedSource.field_types:type_name -> ptah.provider.experimental.EncodedFieldType
+	425, // 655: ptah.provider.experimental.EncodedSource.groups:type_name -> ptah.provider.experimental.EncodedSourceGroup
+	426, // 656: ptah.provider.experimental.EncodedSourceGroup.parts:type_name -> ptah.provider.experimental.EncodedSourcePart
+	162, // 657: ptah.provider.experimental.EncodedSourcePart.fragment:type_name -> ptah.provider.experimental.SourceFragment
+	72,  // 658: ptah.provider.experimental.EncodedSourcePart.placement:type_name -> ptah.provider.experimental.EncodedFragment.Placement
+	162, // 659: ptah.provider.experimental.EncodedFragment.fragment:type_name -> ptah.provider.experimental.SourceFragment
+	72,  // 660: ptah.provider.experimental.EncodedFragment.placement:type_name -> ptah.provider.experimental.EncodedFragment.Placement
+	343, // 661: ptah.provider.experimental.RunStatementRequest.arguments:type_name -> ptah.provider.experimental.DataValue
+	73,  // 662: ptah.provider.experimental.RunStatementRequest.access:type_name -> ptah.provider.experimental.RunStatementRequest.Access
+	431, // 663: ptah.provider.experimental.RunStatementRequest.typed_arguments:type_name -> ptah.provider.experimental.StatementArgument
+	432, // 664: ptah.provider.experimental.StatementArgument.type:type_name -> ptah.provider.experimental.ArgumentType
+	343, // 665: ptah.provider.experimental.StatementArgument.value:type_name -> ptah.provider.experimental.DataValue
+	343, // 666: ptah.provider.experimental.StatementArgument.elements:type_name -> ptah.provider.experimental.DataValue
+	74,  // 667: ptah.provider.experimental.ArgumentType.scalar:type_name -> ptah.provider.experimental.ArgumentType.Scalar
+	75,  // 668: ptah.provider.experimental.StatementResult.outcome:type_name -> ptah.provider.experimental.StatementResult.Outcome
+	349, // 669: ptah.provider.experimental.StatementResult.columns:type_name -> ptah.provider.experimental.DataColumn
+	348, // 670: ptah.provider.experimental.StatementResult.rows:type_name -> ptah.provider.experimental.Row
+	348, // 671: ptah.provider.experimental.StatementRows.rows:type_name -> ptah.provider.experimental.Row
+	439, // 672: ptah.provider.experimental.MigrationSplit.units:type_name -> ptah.provider.experimental.MigrationUnit
+	440, // 673: ptah.provider.experimental.MigrationSplit.refusal:type_name -> ptah.provider.experimental.SplitRefusal
+	441, // 674: ptah.provider.experimental.MigrationSplit.assertions:type_name -> ptah.provider.experimental.AssertionVerdict
+	76,  // 675: ptah.provider.experimental.MigrationUnit.placement:type_name -> ptah.provider.experimental.MigrationUnit.Placement
+	219, // 676: ptah.provider.experimental.CompareColumnsRequest.identifiers:type_name -> ptah.provider.experimental.ComparisonIdentifiers
+	483, // 677: ptah.provider.experimental.CompareColumnsRequest.capabilities:type_name -> ptah.provider.experimental.CompareColumnsRequest.CapabilitiesEntry
+	443, // 678: ptah.provider.experimental.CompareColumnsRequest.tables:type_name -> ptah.provider.experimental.ColumnComparisonTable
+	204, // 679: ptah.provider.experimental.ColumnComparisonTable.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	259, // 680: ptah.provider.experimental.ColumnComparisonTable.desired:type_name -> ptah.provider.experimental.DeclaredTable
+	267, // 681: ptah.provider.experimental.ColumnComparisonTable.current:type_name -> ptah.provider.experimental.ObservedTable
+	444, // 682: ptah.provider.experimental.ColumnComparisonTable.pairs:type_name -> ptah.provider.experimental.ColumnComparisonPair
+	204, // 683: ptah.provider.experimental.ColumnComparisonTable.current_subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	204, // 684: ptah.provider.experimental.ColumnComparisonPair.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	9,   // 685: ptah.provider.experimental.ColumnComparisonPair.aspects:type_name -> ptah.provider.experimental.ColumnAspect
+	204, // 686: ptah.provider.experimental.ColumnComparisonPair.current_subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	446, // 687: ptah.provider.experimental.ComparedColumns.tables:type_name -> ptah.provider.experimental.ComparedColumnTable
+	204, // 688: ptah.provider.experimental.ComparedColumnTable.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	447, // 689: ptah.provider.experimental.ComparedColumnTable.columns:type_name -> ptah.provider.experimental.ComparedColumn
+	204, // 690: ptah.provider.experimental.ComparedColumnTable.current_subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	204, // 691: ptah.provider.experimental.ComparedColumn.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	448, // 692: ptah.provider.experimental.ComparedColumn.aspects:type_name -> ptah.provider.experimental.ColumnAspectReceipt
+	204, // 693: ptah.provider.experimental.ComparedColumn.current_subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	9,   // 694: ptah.provider.experimental.ColumnAspectReceipt.aspect:type_name -> ptah.provider.experimental.ColumnAspect
+	449, // 695: ptah.provider.experimental.ColumnAspectReceipt.difference:type_name -> ptah.provider.experimental.ColumnDifference
+	450, // 696: ptah.provider.experimental.ColumnAspectReceipt.nullability:type_name -> ptah.provider.experimental.ColumnNullability
+	451, // 697: ptah.provider.experimental.ColumnAspectReceipt.sequence:type_name -> ptah.provider.experimental.ColumnSequenceDifferences
+	77,  // 698: ptah.provider.experimental.ColumnDifference.relation:type_name -> ptah.provider.experimental.ColumnDifference.Relation
+	452, // 699: ptah.provider.experimental.ColumnSequenceDifferences.changes:type_name -> ptah.provider.experimental.ColumnSequenceDifference
+	78,  // 700: ptah.provider.experimental.ColumnSequenceDifference.attribute:type_name -> ptah.provider.experimental.ColumnSequenceDifference.Attribute
+	219, // 701: ptah.provider.experimental.ReadColumnDefaultsRequest.identifiers:type_name -> ptah.provider.experimental.ComparisonIdentifiers
+	484, // 702: ptah.provider.experimental.ReadColumnDefaultsRequest.capabilities:type_name -> ptah.provider.experimental.ReadColumnDefaultsRequest.CapabilitiesEntry
+	454, // 703: ptah.provider.experimental.ReadColumnDefaultsRequest.columns:type_name -> ptah.provider.experimental.ObservedColumnDefaultInput
+	204, // 704: ptah.provider.experimental.ObservedColumnDefaultInput.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	268, // 705: ptah.provider.experimental.ObservedColumnDefaultInput.column:type_name -> ptah.provider.experimental.ObservedColumn
+	456, // 706: ptah.provider.experimental.ReadColumnDefaultsResult.columns:type_name -> ptah.provider.experimental.ColumnDefaultReceipt
+	204, // 707: ptah.provider.experimental.ColumnDefaultReceipt.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	79,  // 708: ptah.provider.experimental.ColumnDefaultReceipt.kind:type_name -> ptah.provider.experimental.ColumnDefaultReceipt.Kind
+	459, // 709: ptah.provider.experimental.SQLScan.tokens:type_name -> ptah.provider.experimental.SQLToken
+	80,  // 710: ptah.provider.experimental.SQLToken.kind:type_name -> ptah.provider.experimental.SQLToken.Kind
+	314, // 711: ptah.provider.experimental.ValidateSchemaRequest.DependenciesEntry.value:type_name -> ptah.provider.experimental.SchemaDependencies
+	83,  // 712: ptah.provider.experimental.Provider.Describe:input_type -> ptah.provider.experimental.DescribeRequest
+	106, // 713: ptah.provider.experimental.Provider.Open:input_type -> ptah.provider.experimental.OpenRequest
+	105, // 714: ptah.provider.experimental.Provider.ResolveDatabaseContext:input_type -> ptah.provider.experimental.DatabaseContextRequest
+	108, // 715: ptah.provider.experimental.Provider.Close:input_type -> ptah.provider.experimental.CloseRequest
+	109, // 716: ptah.provider.experimental.Provider.Inspect:input_type -> ptah.provider.experimental.InspectRequest
+	132, // 717: ptah.provider.experimental.Provider.Render:input_type -> ptah.provider.experimental.RenderRequest
+	145, // 718: ptah.provider.experimental.Provider.AnalyzeSQL:input_type -> ptah.provider.experimental.AnalyzeSQLRequest
+	180, // 719: ptah.provider.experimental.Provider.DecodeSource:input_type -> ptah.provider.experimental.DecodeSourceRequest
+	185, // 720: ptah.provider.experimental.Provider.ReadSQLSchema:input_type -> ptah.provider.experimental.ReadSQLSchemaRequest
+	149, // 721: ptah.provider.experimental.Provider.NormalizeValues:input_type -> ptah.provider.experimental.NormalizeValuesRequest
+	200, // 722: ptah.provider.experimental.Provider.ConvertValues:input_type -> ptah.provider.experimental.ConvertValuesRequest
+	220, // 723: ptah.provider.experimental.Provider.CompareModels:input_type -> ptah.provider.experimental.CompareModelsRequest
+	255, // 724: ptah.provider.experimental.Provider.PlanFeatures:input_type -> ptah.provider.experimental.PlanFeaturesRequest
+	235, // 725: ptah.provider.experimental.Provider.PlanDeclarations:input_type -> ptah.provider.experimental.PlanDeclarationsRequest
+	442, // 726: ptah.provider.experimental.Provider.CompareColumns:input_type -> ptah.provider.experimental.CompareColumnsRequest
+	453, // 727: ptah.provider.experimental.Provider.ReadColumnDefaults:input_type -> ptah.provider.experimental.ReadColumnDefaultsRequest
+	138, // 728: ptah.provider.experimental.Provider.DescribeExecutionInputs:input_type -> ptah.provider.experimental.DescribeExecutionInputsRequest
+	299, // 729: ptah.provider.experimental.Provider.PrepareTables:input_type -> ptah.provider.experimental.PrepareTablesRequest
+	304, // 730: ptah.provider.experimental.Provider.ProjectTableCreations:input_type -> ptah.provider.experimental.ProjectTableCreationsRequest
+	308, // 731: ptah.provider.experimental.Provider.ValidateSchema:input_type -> ptah.provider.experimental.ValidateSchemaRequest
+	320, // 732: ptah.provider.experimental.Provider.SplitLintStatements:input_type -> ptah.provider.experimental.SplitLintRequest
+	322, // 733: ptah.provider.experimental.Provider.AnnotateLintStatements:input_type -> ptah.provider.experimental.AnnotateLintRequest
+	326, // 734: ptah.provider.experimental.Provider.CheckLintMigrations:input_type -> ptah.provider.experimental.CheckLintRequest
+	330, // 735: ptah.provider.experimental.Provider.ProvisionDevDatabase:input_type -> ptah.provider.experimental.ProvisionDevRequest
+	333, // 736: ptah.provider.experimental.Provider.ReleaseDevDatabase:input_type -> ptah.provider.experimental.ReleaseDevRequest
+	334, // 737: ptah.provider.experimental.Provider.ListDevObjects:input_type -> ptah.provider.experimental.ListDevObjectsRequest
+	337, // 738: ptah.provider.experimental.Provider.CleanDevDatabase:input_type -> ptah.provider.experimental.CleanDevRequest
+	340, // 739: ptah.provider.experimental.Provider.GuardReplay:input_type -> ptah.provider.experimental.GuardReplayRequest
+	352, // 740: ptah.provider.experimental.Provider.TypeRows:input_type -> ptah.provider.experimental.TypeRowsRequest
+	354, // 741: ptah.provider.experimental.Provider.ReadRows:input_type -> ptah.provider.experimental.ReadRowsRequest
+	356, // 742: ptah.provider.experimental.Provider.RenderRowWrites:input_type -> ptah.provider.experimental.RenderRowWritesRequest
+	359, // 743: ptah.provider.experimental.Provider.ListSeedTables:input_type -> ptah.provider.experimental.ListSeedTablesRequest
+	362, // 744: ptah.provider.experimental.Provider.ApplySeed:input_type -> ptah.provider.experimental.ApplySeedRequest
+	363, // 745: ptah.provider.experimental.Provider.RecordSeed:input_type -> ptah.provider.experimental.RecordSeedRequest
+	365, // 746: ptah.provider.experimental.Provider.ReadSeedLedger:input_type -> ptah.provider.experimental.ReadSeedLedgerRequest
+	135, // 747: ptah.provider.experimental.Provider.Execute:input_type -> ptah.provider.experimental.ExecuteRequest
+	140, // 748: ptah.provider.experimental.Provider.BeginTransaction:input_type -> ptah.provider.experimental.BeginTransactionRequest
+	142, // 749: ptah.provider.experimental.Provider.FinishTransaction:input_type -> ptah.provider.experimental.FinishTransactionRequest
+	277, // 750: ptah.provider.experimental.Provider.ReadHistory:input_type -> ptah.provider.experimental.ReadHistoryRequest
+	279, // 751: ptah.provider.experimental.Provider.PrepareHistory:input_type -> ptah.provider.experimental.PrepareHistoryRequest
+	280, // 752: ptah.provider.experimental.Provider.MutateHistory:input_type -> ptah.provider.experimental.MutateHistoryRequest
+	289, // 753: ptah.provider.experimental.Provider.PrepareMetadata:input_type -> ptah.provider.experimental.PrepareMetadataRequest
+	290, // 754: ptah.provider.experimental.Provider.MutateMetadata:input_type -> ptah.provider.experimental.MutateMetadataRequest
+	292, // 755: ptah.provider.experimental.Provider.LookupMetadataTag:input_type -> ptah.provider.experimental.LookupMetadataTagRequest
+	294, // 756: ptah.provider.experimental.Provider.OpenMetadataRead:input_type -> ptah.provider.experimental.MetadataReadRequest
+	296, // 757: ptah.provider.experimental.Provider.ReadMetadataPage:input_type -> ptah.provider.experimental.ReadMetadataPageRequest
+	294, // 758: ptah.provider.experimental.Provider.CloseMetadataRead:input_type -> ptah.provider.experimental.MetadataReadRequest
+	283, // 759: ptah.provider.experimental.Provider.TryLock:input_type -> ptah.provider.experimental.LockRequest
+	283, // 760: ptah.provider.experimental.Provider.CheckLock:input_type -> ptah.provider.experimental.LockRequest
+	283, // 761: ptah.provider.experimental.Provider.ReleaseLock:input_type -> ptah.provider.experimental.LockRequest
+	386, // 762: ptah.provider.experimental.Provider.PrepareEmbeddingStore:input_type -> ptah.provider.experimental.PrepareEmbeddingStoreRequest
+	387, // 763: ptah.provider.experimental.Provider.ReadEmbeddingState:input_type -> ptah.provider.experimental.ReadEmbeddingStateRequest
+	389, // 764: ptah.provider.experimental.Provider.MutateEmbeddingState:input_type -> ptah.provider.experimental.MutateEmbeddingStateRequest
+	390, // 765: ptah.provider.experimental.Provider.AppendEmbeddingEvent:input_type -> ptah.provider.experimental.AppendEmbeddingEventRequest
+	391, // 766: ptah.provider.experimental.Provider.ReadEmbeddingEvents:input_type -> ptah.provider.experimental.ReadEmbeddingEventsRequest
+	393, // 767: ptah.provider.experimental.Provider.DescribeEmbeddingTarget:input_type -> ptah.provider.experimental.DescribeEmbeddingTargetRequest
+	395, // 768: ptah.provider.experimental.Provider.ResolveEmbeddingRelations:input_type -> ptah.provider.experimental.ResolveEmbeddingRelationsRequest
+	397, // 769: ptah.provider.experimental.Provider.MeasureEmbedding:input_type -> ptah.provider.experimental.MeasureEmbeddingRequest
+	399, // 770: ptah.provider.experimental.Provider.PrepareEmbeddingTarget:input_type -> ptah.provider.experimental.PrepareEmbeddingTargetRequest
+	400, // 771: ptah.provider.experimental.Provider.BuildEmbeddingIndex:input_type -> ptah.provider.experimental.BuildEmbeddingIndexRequest
+	401, // 772: ptah.provider.experimental.Provider.ReadEmbeddingStructure:input_type -> ptah.provider.experimental.ReadEmbeddingStructureRequest
+	403, // 773: ptah.provider.experimental.Provider.DropEmbeddingGeneration:input_type -> ptah.provider.experimental.DropEmbeddingGenerationRequest
+	405, // 774: ptah.provider.experimental.Provider.ScanEmbeddingSource:input_type -> ptah.provider.experimental.ScanEmbeddingSourceRequest
+	407, // 775: ptah.provider.experimental.Provider.ReadEmbeddingSourceRows:input_type -> ptah.provider.experimental.ReadEmbeddingSourceRowsRequest
+	410, // 776: ptah.provider.experimental.Provider.ReadEmbeddingBatchState:input_type -> ptah.provider.experimental.ReadEmbeddingBatchStateRequest
+	413, // 777: ptah.provider.experimental.Provider.CommitEmbeddingBatch:input_type -> ptah.provider.experimental.CommitEmbeddingBatchRequest
+	417, // 778: ptah.provider.experimental.Provider.ReadEmbeddingVerification:input_type -> ptah.provider.experimental.ReadEmbeddingVerificationRequest
+	419, // 779: ptah.provider.experimental.Provider.SearchEmbeddings:input_type -> ptah.provider.experimental.SearchEmbeddingsRequest
+	193, // 780: ptah.provider.experimental.Provider.PrepareCommonObjects:input_type -> ptah.provider.experimental.PrepareCommonObjectsRequest
+	421, // 781: ptah.provider.experimental.Provider.EncodeSource:input_type -> ptah.provider.experimental.EncodeSourceRequest
+	430, // 782: ptah.provider.experimental.Provider.RunStatement:input_type -> ptah.provider.experimental.RunStatementRequest
+	434, // 783: ptah.provider.experimental.Provider.ReadStatementRows:input_type -> ptah.provider.experimental.ReadStatementRowsRequest
+	436, // 784: ptah.provider.experimental.Provider.CloseStatement:input_type -> ptah.provider.experimental.CloseStatementRequest
+	437, // 785: ptah.provider.experimental.Provider.SplitMigration:input_type -> ptah.provider.experimental.SplitMigrationRequest
+	229, // 786: ptah.provider.experimental.Provider.ReverseChanges:input_type -> ptah.provider.experimental.ReverseChangesRequest
+	169, // 787: ptah.provider.experimental.Provider.ReportValues:input_type -> ptah.provider.experimental.ReportValuesRequest
+	457, // 788: ptah.provider.experimental.Provider.ScanSQL:input_type -> ptah.provider.experimental.ScanSQLRequest
+	84,  // 789: ptah.provider.experimental.Provider.Describe:output_type -> ptah.provider.experimental.Description
+	107, // 790: ptah.provider.experimental.Provider.Open:output_type -> ptah.provider.experimental.Session
+	104, // 791: ptah.provider.experimental.Provider.ResolveDatabaseContext:output_type -> ptah.provider.experimental.DatabaseContext
+	81,  // 792: ptah.provider.experimental.Provider.Close:output_type -> ptah.provider.experimental.Empty
+	110, // 793: ptah.provider.experimental.Provider.Inspect:output_type -> ptah.provider.experimental.Schema
+	134, // 794: ptah.provider.experimental.Provider.Render:output_type -> ptah.provider.experimental.RenderResult
+	146, // 795: ptah.provider.experimental.Provider.AnalyzeSQL:output_type -> ptah.provider.experimental.SQLAnalysis
+	181, // 796: ptah.provider.experimental.Provider.DecodeSource:output_type -> ptah.provider.experimental.DecodedSource
+	187, // 797: ptah.provider.experimental.Provider.ReadSQLSchema:output_type -> ptah.provider.experimental.SQLSchema
+	151, // 798: ptah.provider.experimental.Provider.NormalizeValues:output_type -> ptah.provider.experimental.NormalizedValues
+	151, // 799: ptah.provider.experimental.Provider.ConvertValues:output_type -> ptah.provider.experimental.NormalizedValues
+	224, // 800: ptah.provider.experimental.Provider.CompareModels:output_type -> ptah.provider.experimental.ComparedModels
+	257, // 801: ptah.provider.experimental.Provider.PlanFeatures:output_type -> ptah.provider.experimental.PlannedFeatures
+	236, // 802: ptah.provider.experimental.Provider.PlanDeclarations:output_type -> ptah.provider.experimental.PlannedDeclarations
+	445, // 803: ptah.provider.experimental.Provider.CompareColumns:output_type -> ptah.provider.experimental.ComparedColumns
+	455, // 804: ptah.provider.experimental.Provider.ReadColumnDefaults:output_type -> ptah.provider.experimental.ReadColumnDefaultsResult
+	139, // 805: ptah.provider.experimental.Provider.DescribeExecutionInputs:output_type -> ptah.provider.experimental.ExecutionInputs
+	303, // 806: ptah.provider.experimental.Provider.PrepareTables:output_type -> ptah.provider.experimental.PreparedTables
+	307, // 807: ptah.provider.experimental.Provider.ProjectTableCreations:output_type -> ptah.provider.experimental.ProjectedTableCreations
+	311, // 808: ptah.provider.experimental.Provider.ValidateSchema:output_type -> ptah.provider.experimental.SchemaValidation
+	321, // 809: ptah.provider.experimental.Provider.SplitLintStatements:output_type -> ptah.provider.experimental.SplitLint
+	325, // 810: ptah.provider.experimental.Provider.AnnotateLintStatements:output_type -> ptah.provider.experimental.AnnotatedLint
+	329, // 811: ptah.provider.experimental.Provider.CheckLintMigrations:output_type -> ptah.provider.experimental.CheckedLint
+	332, // 812: ptah.provider.experimental.Provider.ProvisionDevDatabase:output_type -> ptah.provider.experimental.DevDatabase
+	81,  // 813: ptah.provider.experimental.Provider.ReleaseDevDatabase:output_type -> ptah.provider.experimental.Empty
+	336, // 814: ptah.provider.experimental.Provider.ListDevObjects:output_type -> ptah.provider.experimental.DevObjects
+	338, // 815: ptah.provider.experimental.Provider.CleanDevDatabase:output_type -> ptah.provider.experimental.DevCleanup
+	342, // 816: ptah.provider.experimental.Provider.GuardReplay:output_type -> ptah.provider.experimental.GuardedReplay
+	353, // 817: ptah.provider.experimental.Provider.TypeRows:output_type -> ptah.provider.experimental.TypedRows
+	355, // 818: ptah.provider.experimental.Provider.ReadRows:output_type -> ptah.provider.experimental.RowPage
+	134, // 819: ptah.provider.experimental.Provider.RenderRowWrites:output_type -> ptah.provider.experimental.RenderResult
+	360, // 820: ptah.provider.experimental.Provider.ListSeedTables:output_type -> ptah.provider.experimental.SeedTables
+	364, // 821: ptah.provider.experimental.Provider.ApplySeed:output_type -> ptah.provider.experimental.SeedResult
+	364, // 822: ptah.provider.experimental.Provider.RecordSeed:output_type -> ptah.provider.experimental.SeedResult
+	366, // 823: ptah.provider.experimental.Provider.ReadSeedLedger:output_type -> ptah.provider.experimental.SeedLedger
+	144, // 824: ptah.provider.experimental.Provider.Execute:output_type -> ptah.provider.experimental.Execution
+	141, // 825: ptah.provider.experimental.Provider.BeginTransaction:output_type -> ptah.provider.experimental.Transaction
+	143, // 826: ptah.provider.experimental.Provider.FinishTransaction:output_type -> ptah.provider.experimental.TransactionResult
+	278, // 827: ptah.provider.experimental.Provider.ReadHistory:output_type -> ptah.provider.experimental.HistorySnapshot
+	281, // 828: ptah.provider.experimental.Provider.PrepareHistory:output_type -> ptah.provider.experimental.HistoryResult
+	281, // 829: ptah.provider.experimental.Provider.MutateHistory:output_type -> ptah.provider.experimental.HistoryResult
+	291, // 830: ptah.provider.experimental.Provider.PrepareMetadata:output_type -> ptah.provider.experimental.MetadataResult
+	291, // 831: ptah.provider.experimental.Provider.MutateMetadata:output_type -> ptah.provider.experimental.MetadataResult
+	293, // 832: ptah.provider.experimental.Provider.LookupMetadataTag:output_type -> ptah.provider.experimental.MetadataTagResult
+	295, // 833: ptah.provider.experimental.Provider.OpenMetadataRead:output_type -> ptah.provider.experimental.MetadataReadResult
+	297, // 834: ptah.provider.experimental.Provider.ReadMetadataPage:output_type -> ptah.provider.experimental.MetadataPage
+	295, // 835: ptah.provider.experimental.Provider.CloseMetadataRead:output_type -> ptah.provider.experimental.MetadataReadResult
+	284, // 836: ptah.provider.experimental.Provider.TryLock:output_type -> ptah.provider.experimental.LockResult
+	284, // 837: ptah.provider.experimental.Provider.CheckLock:output_type -> ptah.provider.experimental.LockResult
+	284, // 838: ptah.provider.experimental.Provider.ReleaseLock:output_type -> ptah.provider.experimental.LockResult
+	376, // 839: ptah.provider.experimental.Provider.PrepareEmbeddingStore:output_type -> ptah.provider.experimental.EmbeddingWriteResult
+	388, // 840: ptah.provider.experimental.Provider.ReadEmbeddingState:output_type -> ptah.provider.experimental.EmbeddingState
+	376, // 841: ptah.provider.experimental.Provider.MutateEmbeddingState:output_type -> ptah.provider.experimental.EmbeddingWriteResult
+	376, // 842: ptah.provider.experimental.Provider.AppendEmbeddingEvent:output_type -> ptah.provider.experimental.EmbeddingWriteResult
+	392, // 843: ptah.provider.experimental.Provider.ReadEmbeddingEvents:output_type -> ptah.provider.experimental.EmbeddingEventPage
+	394, // 844: ptah.provider.experimental.Provider.DescribeEmbeddingTarget:output_type -> ptah.provider.experimental.EmbeddingTargetObjects
+	396, // 845: ptah.provider.experimental.Provider.ResolveEmbeddingRelations:output_type -> ptah.provider.experimental.EmbeddingRelations
+	398, // 846: ptah.provider.experimental.Provider.MeasureEmbedding:output_type -> ptah.provider.experimental.EmbeddingMeasurement
+	376, // 847: ptah.provider.experimental.Provider.PrepareEmbeddingTarget:output_type -> ptah.provider.experimental.EmbeddingWriteResult
+	376, // 848: ptah.provider.experimental.Provider.BuildEmbeddingIndex:output_type -> ptah.provider.experimental.EmbeddingWriteResult
+	402, // 849: ptah.provider.experimental.Provider.ReadEmbeddingStructure:output_type -> ptah.provider.experimental.EmbeddingStructure
+	376, // 850: ptah.provider.experimental.Provider.DropEmbeddingGeneration:output_type -> ptah.provider.experimental.EmbeddingWriteResult
+	406, // 851: ptah.provider.experimental.Provider.ScanEmbeddingSource:output_type -> ptah.provider.experimental.EmbeddingSourcePage
+	408, // 852: ptah.provider.experimental.Provider.ReadEmbeddingSourceRows:output_type -> ptah.provider.experimental.EmbeddingSourceRows
+	411, // 853: ptah.provider.experimental.Provider.ReadEmbeddingBatchState:output_type -> ptah.provider.experimental.EmbeddingBatchState
+	376, // 854: ptah.provider.experimental.Provider.CommitEmbeddingBatch:output_type -> ptah.provider.experimental.EmbeddingWriteResult
+	418, // 855: ptah.provider.experimental.Provider.ReadEmbeddingVerification:output_type -> ptah.provider.experimental.EmbeddingVerificationPage
+	420, // 856: ptah.provider.experimental.Provider.SearchEmbeddings:output_type -> ptah.provider.experimental.EmbeddingSearchResult
+	194, // 857: ptah.provider.experimental.Provider.PrepareCommonObjects:output_type -> ptah.provider.experimental.PreparedCommonObjects
+	424, // 858: ptah.provider.experimental.Provider.EncodeSource:output_type -> ptah.provider.experimental.EncodedSource
+	433, // 859: ptah.provider.experimental.Provider.RunStatement:output_type -> ptah.provider.experimental.StatementResult
+	435, // 860: ptah.provider.experimental.Provider.ReadStatementRows:output_type -> ptah.provider.experimental.StatementRows
+	81,  // 861: ptah.provider.experimental.Provider.CloseStatement:output_type -> ptah.provider.experimental.Empty
+	438, // 862: ptah.provider.experimental.Provider.SplitMigration:output_type -> ptah.provider.experimental.MigrationSplit
+	230, // 863: ptah.provider.experimental.Provider.ReverseChanges:output_type -> ptah.provider.experimental.ReversedChanges
+	170, // 864: ptah.provider.experimental.Provider.ReportValues:output_type -> ptah.provider.experimental.ValueReports
+	458, // 865: ptah.provider.experimental.Provider.ScanSQL:output_type -> ptah.provider.experimental.SQLScan
+	789, // [789:866] is the sub-list for method output_type
+	712, // [712:789] is the sub-list for method input_type
+	712, // [712:712] is the sub-list for extension type_name
+	712, // [712:712] is the sub-list for extension extendee
+	0,   // [0:712] is the sub-list for field type_name
 }
 
 func init() { file_protocol_experimental_provider_proto_init() }
@@ -39311,7 +39406,7 @@ func file_protocol_experimental_provider_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_protocol_experimental_provider_proto_rawDesc), len(file_protocol_experimental_provider_proto_rawDesc)),
-			NumEnums:      80,
+			NumEnums:      81,
 			NumMessages:   404,
 			NumExtensions: 0,
 			NumServices:   1,

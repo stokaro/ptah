@@ -61,6 +61,14 @@ func ValidateExecutionInputs(description *protocol.Description, request *protoco
 	if err := ValidateExecutionInputsRequest(description, request); err != nil {
 		return err
 	}
+	return ValidateExecutionInputsReply(description, request, result)
+}
+
+// ValidateExecutionInputsReply is [ValidateExecutionInputs] for a request that [ValidateExecutionInputsRequest] accepted
+// with description and that has not changed since: it checks the reply and not the
+// request again. The SDK's client and server validate each request once
+// and call it for the reply.
+func ValidateExecutionInputsReply(description *protocol.Description, request *protocol.DescribeExecutionInputsRequest, result *protocol.ExecutionInputs) error {
 	if !result.GetComplete() {
 		return executionInputError("incomplete discovery")
 	}

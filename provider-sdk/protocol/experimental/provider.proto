@@ -1676,6 +1676,14 @@ message ComparisonSubjectCoverage {
 message ComparisonCoverage {
   repeated ComparisonKindCoverage kinds = 1;
   repeated ComparisonSubjectCoverage subjects = 2;
+  // Contract 25.27, under transport.shared-coverage: a message carries one
+  // list of kinds once, however many of its coverages repeat it. A nonzero
+  // kinds_key names this coverage's kinds for the other coverages of the
+  // same message; kinds_of names the coverage whose kinds this one has, and
+  // is set instead of kinds. The SDK's client and server set and resolve
+  // both, so no service sees either.
+  uint32 kinds_key = 3;
+  uint32 kinds_of = 4;
 }
 // A missing value is a deliberately excluded facet, with a nonempty target
 // binding. It is not an absent object or a request to restore defaults.
@@ -1907,6 +1915,22 @@ message ModelPlanning {
   repeated string operation_kinds = 4;
   // Contract 25.7, under planning.object-context. Assessed without a change.
   repeated string context_kinds = 5;
+  // How much of each table a request carries for this service. A service
+  // that plans no table-attached model reads a table's subject, its action
+  // and which of its states the plan holds, and the host leaves the rest
+  // out. Contract 25.27, under planning.table-outlines; a host that does not
+  // list it sends every table whole.
+  PlanningTables tables = 6;
+}
+// PlanningTables is what a planning request carries of each table.
+// Contract 25.27, under planning.table-outlines.
+enum PlanningTables {
+  // Each table with its declared and observed state, as captured.
+  PLANNING_TABLES_CAPTURED = 0;
+  // Each table with its subject and action, and each state the plan holds by
+  // its name alone: no columns, keys, indexes or captured features. A
+  // service with parent kinds plans those features and is never outlined.
+  PLANNING_TABLES_OUTLINED = 1;
 }
 message ModelDeclarations {
   string id = 1;

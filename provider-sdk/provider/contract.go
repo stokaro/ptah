@@ -15,7 +15,7 @@ import (
 // counts the compatible additions within the major Revision. A host built
 // with this SDK announces Revision.ContractMinor, and a provider built with it
 // may require at most that minor from its host.
-const ContractMinor uint32 = 26
+const ContractMinor uint32 = 27
 
 // The features below each enable an addition to an existing message. An
 // addition is used only when both sides list its feature: the provider in its
@@ -51,7 +51,7 @@ func TwoWayFeatures() []string {
 		IndexRenamesFeature, ReverseChangesFeature, UnreadTablesFeature, DatabaseKindsFeature, SQLFacetsFeature, ReportCountsFeature,
 		ObservedIndexFacetsFeature, SchemaSubtreeCoverageFeature, PasswordInputsFeature, HCLPlatformFeature, DefaultCapabilitiesFeature, LintTransactionOwnerFeature,
 		IndexKindsFeature, ModelPredecessorsFeature, RoleScopeReasonsFeature, GoPlacementsFeature, PrimaryKeyChangesFeature, ModelReferencesFeature,
-		LargeMessagesFeature}
+		LargeMessagesFeature, TableOutlinesFeature, SharedCoverageFeature}
 }
 
 // ContractError reports a host and a provider that cannot work together:
@@ -207,9 +207,11 @@ func NegotiatedDescription(description *protocol.Description, hostFeatures []str
 
 // negotiateLaterAdditions removes the engine fields of contracts 25.19 and
 // later whose features the host does not list: the reversal services, the
-// database kinds, the model reports, the schema separator and the offline
-// capability facts of the engine and of its release lines.
+// database kinds, the model reports, the schema separator, the offline
+// capability facts of the engine and of its release lines, and the table
+// outlines of its planning services.
 func negotiateLaterAdditions(engine *protocol.Engine, hostFeatures []string) {
+	negotiateTableOutlines(engine, hostFeatures)
 	if !slices.Contains(hostFeatures, ReverseChangesFeature) {
 		engine.Reversals = nil
 	}

@@ -90,6 +90,9 @@ a new record that names it, and its own status line is updated to point there.
 | [0078](0078-a-provider-plans-the-change-of-a-primary-key.md) | A provider plans the change of a primary key | Proposed |
 | [0079](0079-a-described-model-travels-by-reference.md) | A described model travels by reference, and a schema fits one message | Proposed |
 | [0080](0080-a-call-that-grows-with-a-schema-is-bounded-by-its-caller.md) | A call that grows with a schema is bounded by its caller | Proposed |
+| [0081](0081-a-planning-service-reads-the-outlines-of-its-tables.md) | A planning service reads the outlines of its tables | Proposed |
+| [0082](0082-a-call-validates-its-request-once-on-each-side.md) | A call validates its request once on each side | Proposed |
+| [0083](0083-a-list-of-coverage-kinds-travels-once-per-message.md) | A list of coverage kinds travels once per message | Proposed |
 
 ## Writing one
 

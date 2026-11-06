@@ -16,19 +16,19 @@ const SeedTimeout = 10 * time.Minute
 var (
 	seedTables = sessionCall[*protocol.ListSeedTablesRequest, *protocol.SeedTables]{
 		feature: provider.SeedsFeature, operation: "list seed tables", timeout: CallTimeout,
-		validateInput: provider.ValidateListSeedTablesRequest, validateOutput: provider.ValidateSeedTables,
+		validateInput: provider.ValidateListSeedTablesRequest, validateOutput: provider.ValidateSeedTablesReply,
 	}
 	seedApply = sessionCall[*protocol.ApplySeedRequest, *protocol.SeedResult]{
 		feature: provider.SeedsFeature, operation: "apply seed", timeout: SeedTimeout,
-		validateInput: provider.ValidateApplySeedRequest, validateOutput: provider.ValidateAppliedSeed, uncertain: unknownSeed,
+		validateInput: provider.ValidateApplySeedRequest, validateOutput: provider.ValidateAppliedSeedReply, uncertain: unknownSeed,
 	}
 	seedRecord = sessionCall[*protocol.RecordSeedRequest, *protocol.SeedResult]{
 		feature: provider.SeedsFeature, operation: "record seed", timeout: CallTimeout,
-		validateInput: provider.ValidateRecordSeedRequest, validateOutput: provider.ValidateRecordedSeed, uncertain: unknownSeed,
+		validateInput: provider.ValidateRecordSeedRequest, validateOutput: provider.ValidateRecordedSeedReply, uncertain: unknownSeed,
 	}
 	seedLedger = sessionCall[*protocol.ReadSeedLedgerRequest, *protocol.SeedLedger]{
 		feature: provider.SeedsFeature, operation: "read seed ledger", timeout: CallTimeout,
-		validateInput: provider.ValidateReadSeedLedgerRequest, validateOutput: provider.ValidateSeedLedger,
+		validateInput: provider.ValidateReadSeedLedgerRequest, validateOutput: provider.ValidateSeedLedgerReply,
 	}
 )
 

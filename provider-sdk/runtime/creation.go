@@ -12,12 +12,12 @@ import (
 // ProjectTableCreations predicts effects for a complete captured batch offline.
 // Invalid replies and cancellation expose no prefix or inspection evidence.
 func (c *Client) ProjectTableCreations(ctx context.Context, request *protocol.ProjectTableCreationsRequest) (*protocol.ProjectedTableCreations, error) {
-	return callOffline(ctx, c.description, provider.CloneSharingModels(request), "project table creations", provider.ValidateCreationRequest, provider.ValidateProjectedCreations, c.rpc.ProjectTableCreations)
+	return callOffline(ctx, c.description, provider.CloneSharingModels(request), "project table creations", provider.ValidateCreationRequest, provider.ValidateProjectedCreationsReply, c.rpc.ProjectTableCreations)
 }
 
 func (s *serverAdapter) ProjectTableCreations(ctx context.Context, request *protocol.ProjectTableCreationsRequest) (*protocol.ProjectedTableCreations, error) {
 	if s.server.TableCreations == nil {
 		return nil, status.Error(codes.Unimplemented, "project table creations is unavailable")
 	}
-	return serveOffline(ctx, s, request, provider.ValidateCreationRequest, provider.ValidateProjectedCreations, s.server.TableCreations.ProjectTableCreations)
+	return serveOffline(ctx, s, request, provider.ValidateCreationRequest, provider.ValidateProjectedCreationsReply, s.server.TableCreations.ProjectTableCreations)
 }

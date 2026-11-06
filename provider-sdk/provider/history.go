@@ -124,6 +124,14 @@ func ValidateHistorySnapshot(request *protocol.ReadHistoryRequest, result *proto
 	if err := ValidateReadHistoryRequest(request); err != nil {
 		return err
 	}
+	return ValidateHistorySnapshotReply(request, result)
+}
+
+// ValidateHistorySnapshotReply is [ValidateHistorySnapshot] for a request that [ValidateReadHistoryRequest] accepted
+// and that has not changed since: it checks the reply and not the
+// request again. The SDK's client and server validate each request once
+// and call it for the reply.
+func ValidateHistorySnapshotReply(request *protocol.ReadHistoryRequest, result *protocol.HistorySnapshot) error {
 	if result == nil || !proto.Equal(result.GetScope(), request.GetScope()) {
 		return fmt.Errorf("%w: history snapshot changed its scope", ErrProtocol)
 	}

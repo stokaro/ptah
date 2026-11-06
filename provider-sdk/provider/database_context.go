@@ -64,6 +64,14 @@ func ValidateResolvedDatabaseContext(description *protocol.Description, request 
 	if err := ValidateDatabaseContextRequest(description, request); err != nil {
 		return err
 	}
+	return ValidateResolvedDatabaseContextReply(description, request, result)
+}
+
+// ValidateResolvedDatabaseContextReply is [ValidateResolvedDatabaseContext] for a request that [ValidateDatabaseContextRequest] accepted
+// with description and that has not changed since: it checks the reply and not the
+// request again. The SDK's client and server validate each request once
+// and call it for the reply.
+func ValidateResolvedDatabaseContextReply(description *protocol.Description, request *protocol.DatabaseContextRequest, result *protocol.DatabaseContext) error {
 	return ValidateDatabaseContext(result)
 }
 

@@ -41,7 +41,7 @@ func (c *Client) BeginTransaction(ctx context.Context, request *protocol.BeginTr
 	if err != nil {
 		err = remoteError(call, c.description, "begin transaction", err)
 	} else {
-		err = provider.ValidateTransaction(request, result)
+		err = provider.ValidateTransactionReply(request, result)
 	}
 	if err != nil {
 		_, cleanupErr := c.FinishTransaction(context.WithoutCancel(ctx), &protocol.FinishTransactionRequest{
@@ -111,7 +111,7 @@ func (s *serverAdapter) BeginTransaction(ctx context.Context, request *protocol.
 	if err != nil {
 		return nil, err
 	}
-	if err := provider.ValidateTransaction(request, result); err != nil {
+	if err := provider.ValidateTransactionReply(request, result); err != nil {
 		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), CallTimeout)
 		defer cancel()
 		_, _ = s.server.Transactions.FinishTransaction(cleanup, &protocol.FinishTransactionRequest{

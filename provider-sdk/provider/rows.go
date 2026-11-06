@@ -336,6 +336,14 @@ func ValidateTypedRows(description *protocol.Description, request *protocol.Type
 	if err := ValidateTypeRowsRequest(description, request); err != nil {
 		return err
 	}
+	return ValidateTypedRowsReply(description, request, result)
+}
+
+// ValidateTypedRowsReply is [ValidateTypedRows] for a request that [ValidateTypeRowsRequest] accepted
+// with description and that has not changed since: it checks the reply and not the
+// request again. The SDK's client and server validate each request once
+// and call it for the reply.
+func ValidateTypedRowsReply(description *protocol.Description, request *protocol.TypeRowsRequest, result *protocol.TypedRows) error {
 	if result == nil {
 		return fmt.Errorf("%w: typed rows are missing", ErrProtocol)
 	}
@@ -401,6 +409,14 @@ func ValidateRowPage(request *protocol.ReadRowsRequest, result *protocol.RowPage
 	if err := ValidateReadRowsRequest(request); err != nil {
 		return err
 	}
+	return ValidateRowPageReply(request, result)
+}
+
+// ValidateRowPageReply is [ValidateRowPage] for a request that [ValidateReadRowsRequest] accepted
+// and that has not changed since: it checks the reply and not the
+// request again. The SDK's client and server validate each request once
+// and call it for the reply.
+func ValidateRowPageReply(request *protocol.ReadRowsRequest, result *protocol.RowPage) error {
 	if result == nil || !proto.Equal(result.GetTable(), request.GetTable()) {
 		return fmt.Errorf("%w: row page answers another table", ErrProtocol)
 	}
@@ -510,6 +526,14 @@ func ValidateRenderedRowWrites(description *protocol.Description, request *proto
 	if err := ValidateRenderRowWritesRequest(description, request); err != nil {
 		return err
 	}
+	return ValidateRenderedRowWritesReply(description, request, result)
+}
+
+// ValidateRenderedRowWritesReply is [ValidateRenderedRowWrites] for a request that [ValidateRenderRowWritesRequest] accepted
+// with description and that has not changed since: it checks the reply and not the
+// request again. The SDK's client and server validate each request once
+// and call it for the reply.
+func ValidateRenderedRowWritesReply(description *protocol.Description, request *protocol.RenderRowWritesRequest, result *protocol.RenderResult) error {
 	if result == nil {
 		return fmt.Errorf("%w: row write reply is missing", ErrProtocol)
 	}

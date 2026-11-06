@@ -11,6 +11,14 @@ func ValidateComparedColumns(description *protocol.Description, request *protoco
 	if err := ValidateColumnsRequest(description, request); err != nil {
 		return err
 	}
+	return ValidateComparedColumnsReply(description, request, result)
+}
+
+// ValidateComparedColumnsReply is [ValidateComparedColumns] for a request that [ValidateColumnsRequest] accepted
+// with description and that has not changed since: it checks the reply and not the
+// request again. The SDK's client and server validate each request once
+// and call it for the reply.
+func ValidateComparedColumnsReply(description *protocol.Description, request *protocol.CompareColumnsRequest, result *protocol.ComparedColumns) error {
 	if !result.GetComplete() || len(result.GetTables()) != len(request.GetTables()) {
 		return columnsError("incomplete comparison")
 	}

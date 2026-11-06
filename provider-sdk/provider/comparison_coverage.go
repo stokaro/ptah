@@ -14,17 +14,18 @@ func validateComparisonCoverage(checks *targetChecks, description *protocol.Desc
 	if coverage == nil {
 		return fmt.Errorf("%w: comparison coverage must be explicit", ErrProtocol)
 	}
+	if err := validateUnsharedCoverage(coverage); err != nil {
+		return err
+	}
 	kinds := make(map[string]bool)
 	for _, record := range coverage.GetKinds() {
-		model := record.GetModel()
-		declared := findValueModel(description, request.GetEngine(), model.GetKind(), representation)
-		if model == nil || declared == nil || !slices.Contains(request.GetKinds(), model.GetKind()) || !checks.sameModel(model, declared) || kinds[model.GetKind()] {
+		if kinds[record.GetModel().GetKind()] {
 			return fmt.Errorf("%w: unknown, changed, or duplicate comparison coverage model", ErrProtocol)
 		}
-		kinds[model.GetKind()] = true
-		if err := validateComparisonKnowledge(representation, record.GetSources(), comparisonSubtreeRefusal(description, request)); err != nil {
+		if err := checks.coverageKind(description, request, representation, record); err != nil {
 			return err
 		}
+		kinds[record.GetModel().GetKind()] = true
 	}
 	for _, record := range coverage.GetSubjects() {
 		if !kinds[record.GetKind()] {
@@ -48,6 +49,20 @@ func validateComparisonCoverage(checks *targetChecks, description *protocol.Desc
 		}
 	}
 	return nil
+}
+
+// validateCoverageKind checks one kind of a coverage: a model the engine
+// declares for the representation, unchanged, among the request's kinds, with
+// valid knowledge.
+func validateCoverageKind(checks *targetChecks, description *protocol.Description, request *protocol.CompareModelsRequest, representation protocol.ValueInput_Representation,
+	record *protocol.ComparisonKindCoverage,
+) error {
+	model := record.GetModel()
+	declared := findValueModel(description, request.GetEngine(), model.GetKind(), representation)
+	if model == nil || declared == nil || !slices.Contains(request.GetKinds(), model.GetKind()) || !checks.sameModel(model, declared) {
+		return fmt.Errorf("%w: unknown, changed, or duplicate comparison coverage model", ErrProtocol)
+	}
+	return validateComparisonKnowledge(representation, record.GetSources(), comparisonSubtreeRefusal(description, request))
 }
 
 func compareComparisonCoverageSubjects(a, b *protocol.ComparisonSubjectCoverage) int {

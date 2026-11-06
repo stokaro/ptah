@@ -14,12 +14,12 @@ import (
 // expose no result.
 func (c *Client) ReverseChanges(ctx context.Context, request *protocol.ReverseChangesRequest) (*protocol.ReversedChanges, error) {
 	return callOffline(ctx, c.description, proto.CloneOf(request), "reverse changes",
-		provider.ValidateReverseChangesRequest, provider.ValidateReversedChanges, c.rpc.ReverseChanges)
+		provider.ValidateReverseChangesRequest, provider.ValidateReversedChangesReply, c.rpc.ReverseChanges)
 }
 
 func (s *serverAdapter) ReverseChanges(ctx context.Context, request *protocol.ReverseChangesRequest) (*protocol.ReversedChanges, error) {
 	if nilService(s.server.ChangeReverser) {
 		return nil, unavailable("change reversal")
 	}
-	return serveOffline(ctx, s, request, provider.ValidateReverseChangesRequest, provider.ValidateReversedChanges, s.server.ChangeReverser.ReverseChanges)
+	return serveOffline(ctx, s, request, provider.ValidateReverseChangesRequest, provider.ValidateReversedChangesReply, s.server.ChangeReverser.ReverseChanges)
 }

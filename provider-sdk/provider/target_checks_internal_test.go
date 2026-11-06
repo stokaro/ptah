@@ -177,3 +177,87 @@ func TestCoverageSubjectKeysMatchCompareReferences(t *testing.T) {
 	c.Assert(index.covered(&protocol.Envelope{Kind: "k", Owner: refs[1]}), qt.IsTrue)
 	c.Assert(index.covered(&protocol.Envelope{Kind: "k", Owner: refs[4]}), qt.IsFalse)
 }
+
+// The kinds of the coverages of several tables, checked under one validation,
+// are checked once for each kind message: the coverages a shared list was
+// resolved into hold one message for each kind, so they ask once, and
+// coverages that hold copies ask once for each copy.
+func TestCoverageKindsAreCheckedOncePerKindMessage(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		// shared gives every table the same kind message.
+		shared   bool
+		wantKind int
+	}{
+		{name: "one kind message for every table", shared: true, wantKind: 1},
+		{name: "a copy for each table", shared: false, wantKind: 3},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			description := checkedDescription()
+			request := &protocol.PlanFeaturesRequest{Engine: "fixture", TargetFeatures: []string{"retention"}}
+			checks := new(targetChecks)
+			kind := &protocol.ComparisonKindCoverage{Model: proto.CloneOf(description.Engines[0].ValueModels[0]),
+				Sources: []*protocol.ComparisonKnowledgeSource{{Outside: &protocol.ModelKnowledge{State: protocol.ModelKnowledge_COMPLETE}}}}
+
+			for range 3 {
+				held := kind
+				if !test.shared {
+					held = proto.CloneOf(kind)
+				}
+				captured := &protocol.CapturedFeatures{
+					Objects: &protocol.ComparisonState{Representation: protocol.ValueInput_DESIRED, Coverage: &protocol.ComparisonCoverage{}},
+					Facets: &protocol.ComparisonState{Representation: protocol.ValueInput_DESIRED, Coverage: &protocol.ComparisonCoverage{
+						Kinds: []*protocol.ComparisonKindCoverage{held},
+					}},
+				}
+				c.Assert(checkCapturedFeatures(checks, description, request, description.Engines[0], protocol.ValueInput_DESIRED, captured), qt.IsNil)
+			}
+
+			c.Assert(checks.kinds, qt.HasLen, test.wantKind)
+			c.Assert(checks.contexts, qt.HasLen, 1)
+		})
+	}
+}
+
+// A kind's answer belongs to the validation that asked: without one, every
+// check reads the kind again, and a kind changed after it was checked is
+// refused.
+func TestCoverageKindAnswersBelongToTheirValidation(t *testing.T) {
+	c := qt.New(t)
+	description := checkedDescription()
+	context := &protocol.CompareModelsRequest{Engine: "fixture", Kinds: []string{checkedKind}}
+	kind := &protocol.ComparisonKindCoverage{Model: proto.CloneOf(description.Engines[0].ValueModels[0]),
+		Sources: []*protocol.ComparisonKnowledgeSource{{Outside: &protocol.ModelKnowledge{State: protocol.ModelKnowledge_COMPLETE}}}}
+	checks := new(targetChecks)
+
+	first := checks.coverageKind(description, context, protocol.ValueInput_DESIRED, kind)
+	kind.Model.CanonicalFormat = "changed after the check"
+	again := checks.coverageKind(description, context, protocol.ValueInput_DESIRED, kind)
+	var none *targetChecks
+	unheld := none.coverageKind(description, context, protocol.ValueInput_DESIRED, kind)
+
+	c.Assert(first, qt.IsNil)
+	c.Assert(again, qt.IsNil)
+	c.Assert(unheld, qt.ErrorIs, ErrProtocol)
+}
+
+// The facets of the tables of one creation reply are checked in one context
+// of each representation, built once, and under the answers of one
+// validation: a context built for each table held every table of the
+// request.
+func TestCreationRecordsShareTheirContexts(t *testing.T) {
+	c := qt.New(t)
+	description := checkedDescription()
+	request := &protocol.ProjectTableCreationsRequest{Engine: "fixture", TargetFeatures: []string{"retention"}}
+	records := creationRecordChecks{checks: new(targetChecks), contexts: make(map[protocol.ValueInput_Representation]*protocol.CompareModelsRequest)}
+
+	for _, name := range []string{"a", "b", "c"} {
+		input := &protocol.TableCreationInput{Subject: &protocol.ComparisonIdentity{Kind: "table", Name: &protocol.ComparisonPart{Source: name, Normalized: name}}}
+		c.Assert(records.validate(description, request, description.Engines[0], input, protocol.ValueInput_DESIRED, nil), qt.IsNil)
+	}
+
+	c.Assert(records.contexts, qt.HasLen, 1)
+	c.Assert(records.contexts[protocol.ValueInput_DESIRED].GetKinds(), qt.DeepEquals, []string{checkedKind})
+	c.Assert(records.checks.answers, qt.HasLen, 1)
+}
