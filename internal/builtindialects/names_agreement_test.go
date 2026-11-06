@@ -91,9 +91,10 @@ func TestDescriptors_SchemaFileFactsAgreeWithTheSwitchesTheyReplace(t *testing.T
 			},
 		},
 		{
-			dialect: platform.SQLServer,
-			names:   descriptor.Names{Lookup: "unicode_case_insensitive"},
-			columns: descriptor.Columns{AlterColumnKeepsRest: true},
+			dialect:          platform.SQLServer,
+			constraintNaming: descriptor.ConstraintNamingServerHash,
+			names:            descriptor.Names{Lookup: "unicode_case_insensitive"},
+			columns:          descriptor.Columns{AlterColumnKeepsRest: true},
 		},
 		{
 			dialect: platform.CockroachDB,

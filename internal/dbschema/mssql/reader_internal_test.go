@@ -76,3 +76,24 @@ func TestReconcileColumnFlags_PreservesStructuralTableIdentity(t *testing.T) {
 	c.Assert(schema.Tables[1].Columns[0].IsPrimaryKey, qt.IsFalse)
 	c.Assert(schema.Tables[1].Columns[0].IsUnique, qt.IsTrue)
 }
+
+// TestReconcileColumnFlags_AKeyOverSeveralColumns reads a UNIQUE over two columns as
+// making neither unique on its own, and one over a column alone as making that column
+// unique. Read otherwise, a plan beside the key holds a column change nothing declared.
+func TestReconcileColumnFlags_AKeyOverSeveralColumns(t *testing.T) {
+	c := qt.New(t)
+	schema := &catalog.Database{
+		Tables: []catalog.Table{{Name: "t", Schema: "dbo", Columns: []catalog.Column{{Name: "v"}, {Name: "w"}, {Name: "x"}}}},
+		Constraints: []catalog.Constraint{
+			{Name: "pair", TableName: "t", Schema: "dbo", Type: "UNIQUE", ColumnNames: []string{"v", "w"}},
+			{Name: "lone", TableName: "t", Schema: "dbo", Type: "UNIQUE", ColumnNames: []string{"x"}},
+		},
+	}
+
+	reconcileColumnFlags(schema)
+
+	columns := schema.Tables[0].Columns
+	c.Assert(columns[0].IsUnique, qt.IsFalse)
+	c.Assert(columns[1].IsUnique, qt.IsFalse)
+	c.Assert(columns[2].IsUnique, qt.IsTrue)
+}
