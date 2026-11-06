@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"ptah.run/internal/cli/internal/cmdflags"
 )
 
 const atlasPreserveHelpAnnotation = "ptah.atlas.preserve-help"
@@ -78,10 +80,10 @@ func renderAtlasHelp(cmd *cobra.Command) error {
 		}
 	}
 	if cmd.HasAvailableLocalFlags() {
-		fmt.Fprintf(out, "\n\nFlags:\n%s", trimAtlasHelp(cmd.LocalFlags().FlagUsages()))
+		fmt.Fprintf(out, "\n\nFlags:\n%s", trimAtlasHelp(cmdflags.FlagUsages(cmd.LocalFlags())))
 	}
 	if cmd.HasAvailableInheritedFlags() {
-		fmt.Fprintf(out, "\n\nGlobal Flags:\n%s", trimAtlasHelp(cmd.InheritedFlags().FlagUsages()))
+		fmt.Fprintf(out, "\n\nGlobal Flags:\n%s", trimAtlasHelp(cmdflags.FlagUsages(cmd.InheritedFlags())))
 	}
 	if cmd.HasHelpSubCommands() {
 		fmt.Fprint(out, "\n\nAdditional help topics:")
