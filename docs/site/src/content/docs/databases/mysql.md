@@ -287,6 +287,12 @@ SQL:
   name. An index the author declared never gives way. So a file that drops a
   key, or adds a `UNIQUE` over a key's column, compares equal to the database
   it built.
+- A plan that removes the last index a foreign key it keeps can stand on, whoever
+  built it, gives the key an index of its own in the statement that drops the
+  old one: `ALTER TABLE t DROP INDEX cover, ADD INDEX k (a)`. `DROP INDEX` alone
+  answers `ERROR 1553`, and an index added first can make the server drop one it
+  built by itself, so that a later `DROP INDEX` answers `ERROR 1091`. The new
+  index takes the name the server gives the index it builds for that key.
 - A foreign key that moves to another column under its name takes that name for
   its new index, so a plan drops the key, then the old index, then adds the key.
   With the old index in place `ADD CONSTRAINT` answers `ERROR 1061: Duplicate key

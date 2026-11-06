@@ -530,8 +530,12 @@ func (op *AlterIndexVisibilityOperation) alterOperation() {}
 // while it takes the pair. The MySQL-family renderers write it; the other
 // renderers refuse it.
 type ReplaceIndexOperation struct {
-	// Index is the index as it is added. Its name is the one dropped.
+	// Index is the index as it is added. Its name is the one dropped, unless
+	// Drops names the ones to drop.
 	Index *IndexNode
+	// Drops names the indexes the statement drops, where they are not the one
+	// it adds.
+	Drops []string
 	// DropsUniqueConstraint reports that the index dropped is the one a
 	// UNIQUE constraint enforces, as [DropIndexNode.EnforcesUniqueConstraint]
 	// does: a safety check reads it to see a rebuild that loses uniqueness.

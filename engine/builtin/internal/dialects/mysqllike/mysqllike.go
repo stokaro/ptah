@@ -1336,8 +1336,16 @@ func (r *Renderer) writeIndexAlteration(node *ast.AlterTableNode, operation ast.
 		if err != nil {
 			return err
 		}
-		r.writeAlterStatementf(node, "ALTER TABLE %s DROP INDEX %s, ADD %s",
-			table, escapeIdentifier(op.Index.Name), strings.Join(definition, " "))
+		drops := op.Drops
+		if len(drops) == 0 {
+			drops = []string{op.Index.Name}
+		}
+		clauses := make([]string, 0, len(drops)+1)
+		for _, drop := range drops {
+			clauses = append(clauses, "DROP INDEX "+escapeIdentifier(drop))
+		}
+		r.writeAlterStatementf(node, "ALTER TABLE %s %s, ADD %s",
+			table, strings.Join(clauses, ", "), strings.Join(definition, " "))
 	default:
 		return fmt.Errorf("%w: %s: this renderer has no ALTER TABLE spelling for %T", ptaherr.ErrUnsupportedFeature, r.dialect, operation)
 	}
