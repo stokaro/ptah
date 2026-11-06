@@ -74,6 +74,9 @@ type renderOwners struct {
 	tablePrefix func(target string, caps capability.Capabilities, table string, facets schemaext.Facets) (string, schemaext.Facets, error)
 	// extensions builds the owners' handler registry; nil means none.
 	extensions func() (renderer.Extensions, error)
+	// tableDefinition renders the clause a facet writes in place of a column
+	// list; nil means none.
+	tableDefinition func(target string, caps capability.Capabilities, table string, facets schemaext.Facets) (string, error)
 	// tableStorage renders the clause owned facets add to a CREATE TABLE;
 	// nil means none.
 	tableStorage func(target string, caps capability.Capabilities, table string, facets schemaext.Facets) (string, error)
@@ -106,9 +109,10 @@ func ownersFor(dialect string) renderOwners {
 			lowerTableFacets: lowerPostgresFamilyFacets}
 	case platform.Postgres:
 		return renderOwners{extensions: postgresRegistry, tableConstraints: pgtablerender.SourceExclusions, tableObjects: pgtablerender.CreateTableExclusionStatements, tableStorage: pgtablerender.CreateTablePartition,
-			tablePrefix: pgtablerender.CreateTablePrefix, lowerTableFacets: lowerPostgresFamilyFacets}
+			tableDefinition: pgtablerender.CreateTablePartitionOf, tablePrefix: pgtablerender.CreateTablePrefix, lowerTableFacets: lowerPostgresFamilyFacets}
 	case platform.YugabyteDB:
-		return renderOwners{extensions: postgresFamilyRegistry, tableStorage: pgtablerender.CreateTablePartition, lowerTableFacets: lowerPostgresFamilyFacets}
+		return renderOwners{extensions: postgresFamilyRegistry, tableStorage: pgtablerender.CreateTablePartition, tableDefinition: pgtablerender.CreateTablePartitionOf,
+			lowerTableFacets: lowerPostgresFamilyFacets}
 	case platform.MySQL, platform.MariaDB:
 		return renderOwners{extensions: mysqlrender.Registry}
 	default:
@@ -135,7 +139,7 @@ func postgresOwners(dialect string) (postgres.Owners, error) {
 	owners := ownersFor(dialect)
 	return postgres.Owners{
 		Extensions: registry, TableObjects: owners.tableObjects,
-		TableConstraints: owners.tableConstraints, TableStorage: owners.tableStorage,
+		TableConstraints: owners.tableConstraints, TableStorage: owners.tableStorage, TableDefinition: owners.tableDefinition,
 		ForeignKeyDelete: pgtablerender.DeleteColumnsSuffix,
 		TablePrefix:      owners.tablePrefix, LowerTableFacets: owners.lowerTableFacets,
 	}, nil

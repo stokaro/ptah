@@ -2000,6 +2000,9 @@ func (p *Parser) parseCreateTableHeader() (*ast.CreateTableNode, error) {
 
 func (p *Parser) parseCreateTableBeforeColumnList(table *ast.CreateTableNode) (bool, error) {
 	p.skipWhitespace()
+	if p.atPartitionOf() {
+		return true, p.parsePartitionOf(table)
+	}
 	if p.current.MatchIdentifierValue("AS") || p.current.MatchIdentifierValue("SELECT") {
 		if err := p.parseCreateTableSelectBody(table); err != nil {
 			return false, err
@@ -2020,6 +2023,29 @@ func (p *Parser) parseCreateTableBeforeColumnList(table *ast.CreateTableNode) (b
 	}
 
 	return false, nil
+}
+
+// atPartitionOf reports whether a table's name is followed by PARTITION OF, which
+// takes the place of its column list.
+func (p *Parser) atPartitionOf() bool {
+	words := p.upcomingWords(2)
+	return len(words) == 2 && strings.EqualFold(words[0], "PARTITION") && strings.EqualFold(words[1], "OF")
+}
+
+// parsePartitionOf hands PARTITION OF to the owner that reads it, and reads what
+// follows the owner's span as any table's suffix. The grammar shared by every
+// target has no such form, so a target without that owner refuses it by name
+// rather than as a missing column list.
+func (p *Parser) parsePartitionOf(table *ast.CreateTableNode) error {
+	position := p.current.Start
+	if !p.claimOwnerTableOption(table) {
+		on := "without a target"
+		if p.dialect != "" {
+			on = "on " + p.dialect
+		}
+		return fmt.Errorf("CREATE TABLE %s PARTITION OF at position %d declares a PostgreSQL partition, which Ptah does not read %s", table.Name, position, on)
+	}
+	return p.parseCreateTableSuffix(table)
 }
 
 func (p *Parser) parseCreateTableElements(table *ast.CreateTableNode) error {

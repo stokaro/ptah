@@ -46,6 +46,7 @@ func ConvertDBSchemaToGoSchema(ctx context.Context, dbSchema *catalog.Database, 
 	if dbSchema == nil {
 		dbSchema = &catalog.Database{}
 	}
+	dbSchema = withoutPartitionCopies(dbSchema)
 	rules, err := targetRules(dialect, runtime)
 	if err != nil {
 		return nil, err
@@ -705,6 +706,7 @@ func primaryKeyColumnSets(primaryKeysByTable map[string]tablePrimaryKey) map[str
 // table, which the column flag has no slot for either.
 func primaryKeysByTable(dbSchema *catalog.Database, dialect string) map[string]tablePrimaryKey {
 	result := make(map[string]tablePrimaryKey)
+	partitions := partitionTables(dbSchema)
 	for _, constraint := range dbSchema.Constraints {
 		if !strings.EqualFold(constraint.Type, "PRIMARY KEY") {
 			continue
@@ -718,7 +720,7 @@ func primaryKeysByTable(dbSchema *catalog.Database, dialect string) map[string]t
 		if described, _ := platform.Lookup(dialect); described.Conversion.ConstraintComments {
 			comment = constraint.Comment
 		}
-		if len(columns) == 1 && len(constraint.IncludeColumns) == 0 && !constraint.Deferrable && method == "" && comment == "" && constraint.Facets.IsZero() {
+		if len(columns) == 1 && !partitions[constraint.QualifiedTableName()] && len(constraint.IncludeColumns) == 0 && !constraint.Deferrable && method == "" && comment == "" && constraint.Facets.IsZero() {
 			continue
 		}
 		result[constraint.QualifiedTableName()] = tablePrimaryKey{
@@ -845,12 +847,17 @@ func convertConstraints(
 	indexDescribed, besideColumn map[tableMemberKey]struct{},
 ) []schemamodel.Constraint {
 	constraints := make([]schemamodel.Constraint, 0, len(dbSchema.Constraints))
+	partitions := partitionTables(dbSchema)
 	for _, dbConstraint := range dbSchema.Constraints {
 		key := tableMemberKey{table: dbConstraint.QualifiedTableName(), member: dbConstraint.Name}
 		if _, ok := indexDescribed[key]; ok {
 			continue
 		}
 		if _, beside := besideColumn[key]; !beside && carriedByItsColumn(dbConstraint) {
+			continue
+		}
+		// A partition's declaration has no column to carry a key.
+		if !partitions[dbConstraint.QualifiedTableName()] && uniqueCarriedByItsColumn(dbConstraint) {
 			continue
 		}
 		constraint, ok := convertConstraint(dbConstraint, tableStructNames)
@@ -870,6 +877,27 @@ func carriedByItsColumn(dbConstraint catalog.Constraint) bool {
 		!dbConstraint.NotValid && dbConstraint.Facets.IsZero()
 }
 
+// uniqueCarriedByItsColumn reports a UNIQUE the column's `unique = true` carries.
+//
+// A single-column UNIQUE is normally carried by the column's own `unique = true`,
+// which is the compact spelling and the one a person writing a schema uses. That
+// spelling has no room for a NAME, so a constraint somebody named was described
+// without it and came back under the server's generated one --
+// `customers_email_key` where the author had written `customers_email_uq`. A
+// constraint name is an interface: it appears in every violation error the
+// application sees (stokaro/ptah#2102).
+//
+// NULLS NOT DISTINCT is the exception: the column's `unique = true` has no room for
+// it either, so such a key stays a constraint. Measured on PostgreSQL 18.6, `a int
+// UNIQUE NULLS NOT DISTINCT` builds `<table>_a_key`, and described as the column's
+// flag it compares equal to a plain UNIQUE (stokaro/ptah#3821). A deferrable key is
+// the other exception, for the same reason (stokaro/ptah#3824).
+func uniqueCarriedByItsColumn(dbConstraint catalog.Constraint) bool {
+	columns := dbConstraint.ColumnNamesOrDefault()
+	return strings.EqualFold(dbConstraint.Type, "UNIQUE") && len(columns) <= 1 && generatedUniqueConstraintName(dbConstraint, columns) &&
+		!nullsNotDistinct(dbConstraint) && !dbConstraint.Deferrable && dbConstraint.Facets.IsZero()
+}
+
 func convertConstraint(dbConstraint catalog.Constraint, tableStructNames map[string]string) (schemamodel.Constraint, bool) {
 	constraintType := strings.ToUpper(dbConstraint.Type)
 	columns := dbConstraint.ColumnNamesOrDefault()
@@ -880,26 +908,6 @@ func convertConstraint(dbConstraint catalog.Constraint, tableStructNames map[str
 		// A key over one column reaches here only when its column carries
 		// another; see convertConstraints.
 	case "UNIQUE":
-		// A single-column UNIQUE is normally carried by the column's own
-		// `unique = true`, which is the compact spelling and the one a person
-		// writing a schema uses. That spelling has no room for a NAME, so a
-		// constraint somebody named was described without it and came back
-		// under the server's generated one -- `customers_email_key` where the
-		// author had written `customers_email_uq`. A constraint name is an
-		// interface: it appears in every violation error the application sees
-		// (stokaro/ptah#2102).
-		//
-		// NULLS NOT DISTINCT is the exception: the column's `unique = true`
-		// has no room for it either, so such a key stays a constraint.
-		// Measured on PostgreSQL 18.6, `a int UNIQUE NULLS NOT DISTINCT`
-		// builds `<table>_a_key`, and described as the column's flag it
-		// compares equal to a plain UNIQUE (stokaro/ptah#3821). A deferrable
-		// key is the other exception, for the same reason
-		// (stokaro/ptah#3824).
-		if len(columns) <= 1 && generatedUniqueConstraintName(dbConstraint, columns) &&
-			!nullsNotDistinct(dbConstraint) && !dbConstraint.Deferrable && dbConstraint.Facets.IsZero() {
-			return schemamodel.Constraint{}, false
-		}
 	case "CHECK":
 		if dbConstraint.CheckClause == nil || strings.TrimSpace(*dbConstraint.CheckClause) == "" {
 			return schemamodel.Constraint{}, false
@@ -1311,6 +1319,37 @@ func generateFieldName(columnName string) string {
 // nullsNotDistinct reports whether a UNIQUE treats NULLs as equal.
 func nullsNotDistinct(constraint catalog.Constraint) bool {
 	return constraint.NullsDistinct != nil && !*constraint.NullsDistinct
+}
+
+// partitionTables names the tables a facet says take their columns from a parent.
+func partitionTables(database *catalog.Database) map[string]bool {
+	partitions := make(map[string]bool)
+	for _, table := range database.Tables {
+		if _, _, found := schemaext.ParentTableOf(table.Facets); found {
+			partitions[table.QualifiedName()] = true
+		}
+	}
+	return partitions
+}
+
+// withoutPartitionCopies leaves out what a partition holds from its parent: the
+// copy of a key, a foreign key or a check, and the copy of an index. The server
+// makes them when the partition is created or the parent changes, so a description
+// that declares them replays `constraint ... already exists`. What a partition
+// declares for itself stays. The input is not changed.
+func withoutPartitionCopies(database *catalog.Database) *catalog.Database {
+	partitions := partitionTables(database)
+	if len(partitions) == 0 {
+		return database
+	}
+	filtered := *database
+	filtered.Constraints = slices.DeleteFunc(slices.Clone(database.Constraints), func(constraint catalog.Constraint) bool {
+		return constraint.Inherited && partitions[constraint.QualifiedTableName()]
+	})
+	filtered.Indexes = slices.DeleteFunc(slices.Clone(database.Indexes), func(index catalog.Index) bool {
+		return index.PartitionAttached && partitions[index.QualifiedTableName()]
+	})
+	return &filtered
 }
 
 // tableStorageOverrides preserves compression needed to replay MySQL index hints.

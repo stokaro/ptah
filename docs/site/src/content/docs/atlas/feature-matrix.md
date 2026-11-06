@@ -107,11 +107,11 @@ row for a migration decision.
 
 ## At a glance
 
-Across the 198 capabilities below:
+Across the 199 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 184 |
+| Ptah supports it fully | 185 |
 | Ptah supports it with a stated limitation | 3 |
 | Ptah does not implement it | 0 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 11 |
@@ -119,7 +119,7 @@ Across the 198 capabilities below:
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 54 |
 | Ptah has it and neither Atlas edition does | 28 |
 | Atlas CE has it and Ptah does not, or only in part | 0 |
-| An Atlas column is ❔ — not established by this page's evidence | 4 |
+| An Atlas column is ❔ — not established by this page's evidence | 5 |
 
 Every 🟡 and every ❌ in the Ptah column names its specific limitation and the
 issue that owns it, reproduced against a binary built from this repository;
@@ -162,6 +162,7 @@ seven of them as open capabilities regardless.
 | Live database as desired state | ✅ | ✅ | ✅ | One connectable DB URL can be the desired side of compat schema apply/diff and migrate diff; `ptah db read` introspects natively. |
 | Live database to Go annotation source | ✅ | ❌ | ❌ | `ptah introspect` writes annotated Go models from a live DB; repo docs record Go annotations as a first-party Ptah workflow. |
 | Migration directory as a source | ✅ | ✅ | ✅ | Atlas-format directory with `atlas.sum`, replayed on a required `--dev-url`. Works on `ptah schema inspect` and compat apply/diff/migrate diff. |
+| PostgreSQL `CREATE TABLE ... PARTITION OF` in a SQL schema | ✅ | ❌ | ❔ | Read, compared and planned on PostgreSQL and YugabyteDB; other targets refuse it by name. The community binary accepts the file and creates no partition. |
 | Ptah-only HCL schema extensions | ✅ | ➖ | ➖ | platform/override per dialect, including ClickHouse index settings, EXCLUDE constraint block, column enum, table checks/custom, index ops, seed data block. |
 | SQL DDL schema files | ✅ | ✅ | ✅ | Native `--schema-file` and compat `--to`/`--from` accept DDL. COMMENT ON is modeled or refused. Supported PostgreSQL role-bootstrap DO blocks contribute roles; other procedural effects are refused. |
 | YAML schema files | ✅ | ❌ | ❌ | Strict parser; unknown keys fail. Repo docs list Atlas OSS data sources as SQL, HCL, external schema, and remote/template dirs. |

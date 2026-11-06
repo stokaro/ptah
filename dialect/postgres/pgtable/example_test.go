@@ -34,3 +34,20 @@ func ExampleWithPersistence() {
 	// ptah.run/postgres/table-persistence
 	// true
 }
+
+// ExampleParsePartitionBound reads a bound as a document writes it and as the catalog
+// prints it. The two keys differ, because only a connected server can say that
+// `'2026-01-01'` on a timestamptz key is the value it prints back.
+func ExampleParsePartitionBound() {
+	declared, err := pgtable.ParsePartitionBound("FOR VALUES  FROM ('2026-01-01') TO ('2027-01-01')")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	printed := "FOR VALUES FROM ('2026-01-01 00:00:00+00') TO ('2027-01-01 00:00:00+00')"
+	fmt.Println(declared)
+	fmt.Println(pgtable.PartitionBoundKey(declared) == pgtable.PartitionBoundKey(printed))
+	// Output:
+	// FOR VALUES FROM ('2026-01-01') TO ('2027-01-01')
+	// false
+}

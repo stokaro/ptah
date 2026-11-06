@@ -629,6 +629,16 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 	}
 	local := *node
 	local.Facets = facets
+	// A clause that takes the place of the column list leaves the columns nothing
+	// to say: a declaration read from a database still holds the ones the catalog
+	// listed, and they belong to what defines the table.
+	definition, err := r.renderOwnedTableDefinition(&local)
+	if err != nil {
+		return err
+	}
+	if definition != "" {
+		local.Columns, local.Elements = nil, nil
+	}
 	node = &local
 	// This target writes the identity clauses, UNIQUE, and -- where the server
 	// persists one -- the name on a NOT NULL, refusing the name rather than
@@ -680,16 +690,20 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 	}
 	r.writeTableOptionsSkipped(node.Name, node.Options)
 
-	r.w.WriteLinef("CREATE%s TABLE%s %s (", prefix, guard, r.escapeQualifiedIdentifier(node.Name))
-	for i, line := range lines {
-		if i == len(lines)-1 {
-			r.w.WriteLine(line) // Last line without comma
-		} else {
-			r.w.WriteLinef("%s,", line)
+	if definition != "" {
+		r.w.Writef("CREATE%s TABLE%s %s%s", prefix, guard, r.escapeQualifiedIdentifier(node.Name), definition)
+	} else {
+		r.w.WriteLinef("CREATE%s TABLE%s %s (", prefix, guard, r.escapeQualifiedIdentifier(node.Name))
+		for i, line := range lines {
+			if i == len(lines)-1 {
+				r.w.WriteLine(line) // Last line without comma
+			} else {
+				r.w.WriteLinef("%s,", line)
+			}
 		}
-	}
 
-	r.w.Write(")")
+		r.w.Write(")")
+	}
 
 	// An owned table clause takes this position: CockroachDB row-level TTL as
 	// a WITH clause of storage parameters, or the Spanner row deletion policy
@@ -715,6 +729,13 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 
 	r.w.WriteLine(";")
 	r.w.WriteLine("")
+	// With no column list to hold them, a partition's own check or key is a statement
+	// of its own, as a document declares one.
+	if definition != "" {
+		for _, line := range lines {
+			r.w.WriteLinef("ALTER TABLE %s ADD %s;", r.escapeQualifiedIdentifier(node.Name), strings.TrimSpace(line))
+		}
+	}
 	r.renderTableComments(node)
 	for _, statement := range append(owned, sourceComments...) {
 		r.w.WriteLine(statement)

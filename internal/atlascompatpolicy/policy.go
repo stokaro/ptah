@@ -763,7 +763,8 @@ func strictCEUnsupportedCleanupSnapshotObjects(database *schemamodel.Database) [
 
 func hasTablePartitioning(database *schemamodel.Database) bool {
 	return slices.ContainsFunc(database.Tables, func(table schemamodel.Table) bool {
-		return slices.Contains(table.Facets.DeclaredKinds(), pgtable.PartitionKind)
+		kinds := table.Facets.DeclaredKinds()
+		return slices.Contains(kinds, pgtable.PartitionKind) || slices.Contains(kinds, pgtable.PartitionMemberKind)
 	})
 }
 

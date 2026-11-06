@@ -16,12 +16,36 @@ import "ptah.run/core/objectidentity"
 // tables: a source with no syntax for the kind has not asked for the table to
 // go, and dropping it destroys what it holds.
 //
-// The answer belongs to the value, so it holds in both representations. A
+// An owner answers for each representation. Both of a SQLite virtual table's do.
+// Only a PostgreSQL partition's declaration does: the catalog lists a partition's
+// columns as any table's, and dropping one is an ordinary, visible table drop. A
 // table carries at most one value that defines it; an owner refuses a second.
 type TableDefinition interface {
 	Value
 	// DefinesTable reports whether the value defines what its table is.
 	DefinesTable() bool
+}
+
+// TableParent is implemented by a table facet value whose table cannot exist
+// before another table, such as a PostgreSQL partition before its partitioned
+// parent. A host creates the parent first.
+type TableParent interface {
+	Value
+	// ParentTable names the other table, its schema empty where the source
+	// leaves the name unqualified.
+	ParentTable() (schema, name string)
+}
+
+// ParentTableOf names the table a value in facets requires, and reports false
+// when no value does. Values are asked in kind order and the first one answers.
+func ParentTableOf(facets Facets) (schema, name string, found bool) {
+	for _, kind := range facets.Kinds() {
+		if parent, ok := facets.values[kind].(TableParent); ok {
+			schema, name = parent.ParentTable()
+			return schema, name, true
+		}
+	}
+	return "", "", false
 }
 
 // DefiningKind returns the kind of the value in facets that defines what their

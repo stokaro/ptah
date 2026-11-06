@@ -14,7 +14,7 @@ import (
 )
 
 func postgresTableProvider() engine.Provider {
-	provider := engine.Provider{ID: pgtable.Owner, Codecs: pgtable.PartitionCodecs(),
+	provider := engine.Provider{ID: pgtable.Owner, Codecs: append(pgtable.PartitionCodecs(), pgtable.PartitionMemberCodecs()...),
 		Annotations: []annotation.Extension{pgtablesource.Annotations(), pgtablesource.ExclusionAnnotations(), pgtablesource.DeleteColumnsAnnotations()},
 		HCL:         []hclext.Extension{pgtablesource.HCL(), pgtablesource.ExclusionHCL(), pgtablesource.DeleteColumnsHCL()},
 		YAML:        []yamlext.Extension{pgtablesource.YAML(), pgtablesource.ExclusionYAML(), pgtablesource.DeleteColumnsYAML()},
@@ -29,6 +29,13 @@ func postgresTableProvider() engine.Provider {
 	for _, target := range []string{platform.Postgres, platform.YugabyteDB} {
 		provider.FacetNormalizations = append(provider.FacetNormalizations, engine.FacetNormalization{Target: target,
 			Kinds: []schemaext.Kind{pgtable.PartitionKind}, OwnerKinds: []objectidentity.Kind{objectidentity.KindTable}, Service: pgtableprobe.Service{}})
+		registerPartitionMembers(&provider, target)
+	}
+	for _, representation := range []schemaext.Representation{schemaext.Desired, schemaext.Observed} {
+		provider.Reporting = append(provider.Reporting,
+			engine.Reporting{Representation: representation, Definitions: pgtable.PartitionReports(), Service: pgtable.PartitionService{}},
+			engine.Reporting{Representation: representation, Definitions: pgtable.PartitionMemberReports(), Service: pgtable.PartitionMemberService{}},
+		)
 	}
 	provider.Properties = append(provider.Properties, engine.PropertySource{Target: platform.YugabyteDB,
 		Format: schemaext.TablePlatformProperties, Definitions: []schemaext.PropertyDefinition{{Kind: pgtable.PartitionKind, Keys: []string{"partition_by"}}}, Service: pgtablesource.Service{}})
@@ -57,6 +64,20 @@ func postgresTableProvider() engine.Provider {
 	registerExclusions(&provider)
 	registerDeleteColumns(&provider)
 	return provider
+}
+
+// registerPartitionMembers serves a partition's parent and bound on a target that
+// has the statement. Every other target refuses a declared partition before a
+// comparison or a plan can read one, so no service answers there.
+func registerPartitionMembers(provider *engine.Provider, target string) {
+	kinds := []schemaext.Kind{pgtable.PartitionMemberKind}
+	service := pgtable.PartitionMemberService{}
+	provider.Planning = append(provider.Planning, engine.Planning{Target: target, ParentKinds: kinds, Service: service})
+	provider.Conversions = append(provider.Conversions, engine.Conversion{Target: target, Kinds: kinds, Service: service})
+	provider.FacetComparisons = append(provider.FacetComparisons, engine.FacetComparison{Target: target,
+		OwnerKinds: []objectidentity.Kind{objectidentity.KindTable}, Kinds: kinds, Service: service})
+	provider.FacetNormalizations = append(provider.FacetNormalizations, engine.FacetNormalization{Target: target,
+		Kinds: kinds, OwnerKinds: []objectidentity.Kind{objectidentity.KindTable}, Service: pgtableprobe.PartitionMemberService{}})
 }
 
 func registerExclusions(provider *engine.Provider) {

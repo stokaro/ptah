@@ -39,6 +39,11 @@ type Owners struct {
 	// INTERVAL ...`, or the empty string for none. Nil means no owner renders
 	// one.
 	TableStorage func(target string, caps capability.Capabilities, table string, facets schemaext.Facets) (string, error)
+	// TableDefinition returns the clause that takes the place of a CREATE
+	// TABLE's column list where a facet defines the table, with its leading
+	// space, or the empty string for an ordinary table. Nil means no owner
+	// renders one.
+	TableDefinition func(target string, caps capability.Capabilities, table string, facets schemaext.Facets) (string, error)
 	// LowerTableFacets takes the table settings a CREATE TABLE cannot carry
 	// and returns the owned statements that follow it, with the facets it left
 	// for the statement itself. Nil leaves every facet on the statement.
@@ -168,6 +173,15 @@ func (r *Renderer) renderOwnedTableStorage(node *ast.CreateTableNode, facets sch
 			Message: fmt.Sprintf("%s: table %q declares feature facet %q, which this target does not render", r.dialect, node.Name, kinds[0])}
 	}
 	return "", nil
+}
+
+// renderOwnedTableDefinition returns the clause that replaces a table's column
+// list, and the empty string for an ordinary table.
+func (r *Renderer) renderOwnedTableDefinition(node *ast.CreateTableNode) (string, error) {
+	if r.owners.TableDefinition == nil {
+		return "", nil
+	}
+	return r.owners.TableDefinition(r.dialect, r.capabilities(), node.Name, node.Facets)
 }
 
 // tablePrefix obtains modifiers without changing the caller's AST node.

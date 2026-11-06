@@ -2931,7 +2931,7 @@ func validateSchemaForeignKeys(
 		database:      database,
 		dialect:       dialect,
 		caps:          caps,
-		fields:        schemamodel.ProcessEmbeddedFields(database.EmbeddedFields, database.Fields),
+		fields:        schemamodel.WithParentColumns(database.Tables, schemamodel.ProcessEmbeddedFields(database.EmbeddedFields, database.Fields)),
 		explicitNames: make(map[string]map[string]struct{}),
 	}
 	fieldBindings, err := validation.fieldKeys()
@@ -3177,6 +3177,9 @@ func validateSchemaForeignKeyColumns(
 ) error {
 	if err := validateForeignKeyColumnLists(localColumns, referencedColumns); err != nil {
 		return invalidSchemaForeignKeyError(dialect, err.Error())
+	}
+	if schemamodel.ColumnsComeFromElsewhere(fields, owner) || schemamodel.ColumnsComeFromElsewhere(fields, target) {
+		return nil
 	}
 	if missing := firstMissingTableColumn(fields, owner, localColumns); missing != "" {
 		return invalidSchemaForeignKeyError(
@@ -3653,9 +3656,16 @@ func validateReferencedKeyPolicy(
 ) error {
 	switch {
 	case caps.Has(capability.ForeignKeysRequireUniqueReference):
-		if !tableHasUniqueKey(database, dialect, target, columns) {
-			return uniqueReferenceError(dialect, target, columns)
+		// A partition holds a copy of each key of its parent, so a key declared
+		// there serves a reference to the partition. Above a parent no table
+		// declares, only the server can say.
+		ancestors, complete := schemamodel.FacetAncestors(database.Tables, target)
+		if !complete || tableHasUniqueKey(database, dialect, target, columns) || slices.ContainsFunc(ancestors, func(ancestor schemamodel.Table) bool {
+			return tableHasUniqueKey(database, dialect, ancestor, columns)
+		}) {
+			return nil
 		}
+		return uniqueReferenceError(dialect, target, columns)
 	case caps.Has(capability.ForeignKeysRequireIndexedReference):
 		if !tableHasIndexedKey(database, target, columns) {
 			return indexedReferenceError(dialect, target, columns)

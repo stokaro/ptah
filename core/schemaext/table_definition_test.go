@@ -83,3 +83,41 @@ func TestPlansDefinedTableRemoval(t *testing.T) {
 		})
 	}
 }
+
+const parentKind schemaext.Kind = "example.org/parent"
+
+// parentWidget is a table facet value that requires another table.
+type parentWidget struct{ schema, name string }
+
+func (*parentWidget) Kind() schemaext.Kind                 { return parentKind }
+func (v *parentWidget) Clone() schemaext.Value             { return &parentWidget{schema: v.schema, name: v.name} }
+func (v *parentWidget) ParentTable() (schema, name string) { return v.schema, v.name }
+func (v *parentWidget) Equal(other schemaext.Value) bool {
+	w, ok := other.(*parentWidget)
+	return ok && *v == *w
+}
+
+// TestParentTableOf names the table a value requires, and nothing for a value
+// without the contract or for no value.
+func TestParentTableOf(t *testing.T) {
+	tests := []struct {
+		name                 string
+		facets               schemaext.Facets
+		wantSchema, wantName string
+		wantFound            bool
+	}{
+		{name: "a value that requires a table", facets: must.Must(schemaext.NewFacets(&parentWidget{schema: "app", name: "events"}, &widget{ID: widgetKind})),
+			wantSchema: "app", wantName: "events", wantFound: true},
+		{name: "a value without the contract", facets: must.Must(schemaext.NewFacets(&widget{ID: widgetKind}))},
+		{name: "no value"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			schema, name, found := schemaext.ParentTableOf(test.facets)
+			c.Assert(schema, qt.Equals, test.wantSchema)
+			c.Assert(name, qt.Equals, test.wantName)
+			c.Assert(found, qt.Equals, test.wantFound)
+		})
+	}
+}

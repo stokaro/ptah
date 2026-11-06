@@ -64,6 +64,9 @@ func CreateTablePrefix(target string, _ capability.Capabilities, _ string, facet
 // renders. PostgreSQL retains the facet. Other targets omit it; YDB refuses a
 // true declaration. An explicit false is a default, not a lost setting.
 func PrepareTableFacets(target string, facets schemaext.Facets) (schemaext.Facets, error) {
+	if err := preparePartitionMember(target, facets); err != nil {
+		return schemaext.Facets{}, err
+	}
 	var err error
 	facets, err = preparePartitionFacets(target, facets)
 	if err != nil {

@@ -459,6 +459,12 @@ func GeneratedTableDependencies(schema *schemamodel.Database) map[string][]strin
 		addGeneratedTableDependency(dependencies, schema.Tables, *table, constraint.ForeignTable)
 	}
 
+	for _, table := range schema.Tables {
+		if parent, found := schemamodel.FacetParentTable(schema.Tables, table); found {
+			addGeneratedTableDependency(dependencies, schema.Tables, table, parent)
+		}
+	}
+
 	return dependencies
 }
 

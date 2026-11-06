@@ -613,6 +613,20 @@ spelling leaves the comparison undecided. `dialect/postgres/pgtableprobe.Service
 normalizes a declaration in a rolled-back transaction through `ProbeSession`.
 It attaches a source-bound `NormalizedPartition` without changing the declaration.
 The common table and AST models carry the feature through facets.
+
+`pgtable.DesiredPartitionMember` and `ObservedPartitionMember` carry a partition's
+parent and bound, which `ParsePartitionBound` reads and `PartitionBoundKey` compares.
+The declaration implements `schemaext.TableDefinition`, because a declared partition
+has no column list, and both implement `schemaext.TableParent`, which orders a
+partition after its parent. The observation does not define its table, so a source
+with no syntax for a partition still plans the removal of one it leaves out.
+
+`PartitionMemberService` converts and compares them and refuses a change of parent or
+bound by name. `pgtableprobe.PartitionMemberService` normalizes a held partition's
+bound in a rolled-back transaction, and `pgtablerender.CreateTablePartitionOf` renders
+the clause that takes the place of a column list. `catalog.Constraint.Inherited` marks
+a partition's copy of its parent's constraint, which no statement on the partition can
+change.
 `hclext.EncodedBlock.References` carries the SQL names a table child uses, so
 HCL export retains extensions required by key expressions and modifiers.
 
