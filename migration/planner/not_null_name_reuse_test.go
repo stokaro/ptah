@@ -46,13 +46,15 @@ func TestGenerateSchemaDiffAST_ANotNullNameStillHeld_HappyPath(t *testing.T) {
 			name:  "as planned",
 			shape: planext.StatementShapePlanned,
 			want: `ALTER TABLE "t" RENAME CONSTRAINT "t_full_name_not_null" TO "t_full_name_not_null__ptah_old";` + "\n\n" +
+				`-- POSTGRES: ADD COLUMN "display_name" fails if "t" holds any row; the column is NOT NULL and declares no default to fill it with.` + "\n" +
 				`ALTER TABLE "t" ADD COLUMN "display_name" text CONSTRAINT "t_full_name_not_null" NOT NULL;` + "\n\n" +
 				`ALTER TABLE "t" DROP COLUMN "full_name";` + "\n\n",
 		},
 		{
 			name:  "in the catalog's shape",
 			shape: planext.StatementShapeCatalog,
-			want:  `ALTER TABLE "t" DROP COLUMN "full_name", ADD COLUMN "display_name" text CONSTRAINT "t_full_name_not_null" NOT NULL;` + "\n\n",
+			want: `-- POSTGRES: ADD COLUMN "display_name" fails if "t" holds any row; the column is NOT NULL and declares no default to fill it with.` + "\n" +
+				`ALTER TABLE "t" DROP COLUMN "full_name", ADD COLUMN "display_name" text CONSTRAINT "t_full_name_not_null" NOT NULL;` + "\n\n",
 		},
 	}
 	for _, test := range tests {

@@ -21,6 +21,7 @@ import (
 	"ptah.run/engine/builtin/internal/dialects/internal/viewrefusal"
 	"ptah.run/internal/defaultlit"
 	"ptah.run/internal/notnullfill"
+	"ptah.run/internal/pgtypealias"
 	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/rlspolicy"
 	"ptah.run/internal/rolepassword"
@@ -1685,6 +1686,10 @@ func (r *Renderer) writeAddColumn(table string, op *ast.AddColumnOperation) erro
 	}
 	// Remove the leading spaces from column rendering for ALTER
 	line = strings.TrimPrefix(line, "  ")
+	if addFailsOnARow(column) {
+		r.w.WriteLinef("-- %s: ADD COLUMN %s fails if %s holds any row; the column is NOT NULL and declares no default to fill it with.",
+			r.dialectUpper, commentFragment(r.escapeIdentifier(column.Name)), commentFragment(r.escapeQualifiedIdentifier(table)))
+	}
 	r.w.WriteLinef("ALTER TABLE %s %s %s;", r.escapeQualifiedIdentifier(table), addColumnClause(op), line)
 	if check != nil {
 		clause := fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s CHECK (%s)",
@@ -1698,6 +1703,28 @@ func (r *Renderer) writeAddColumn(table string, op *ast.AddColumnOperation) erro
 		r.writeColumnNullabilityChange(table, notNull)
 	}
 	return nil
+}
+
+// addFailsOnARow reports whether adding column stops on a table that holds a row:
+// it is NOT NULL, and nothing gives an existing row a value. The statement is valid
+// on an empty table, so the plan says so in a comment beside it and writes it as it
+// is, as it does for SET NOT NULL.
+//
+// Measured on PostgreSQL 17.11 and 18.6 and CockroachDB 26.1.8 over a table with one
+// row, a declared default, an identity and a generated column fill it, and on
+// PostgreSQL a serial too. A primary key column is NOT NULL whatever its flag says.
+//
+// A type somebody created stays silent. A domain may declare a default of its own,
+// which fills the row (measured on PostgreSQL 18.6), and the renderer cannot read
+// it. An enum cannot declare one.
+func addFailsOnARow(column *ast.ColumnNode) bool {
+	if column == nil || (column.Nullable && !column.Primary) {
+		return false
+	}
+	if notnullfill.DeclaresDefault(column) || column.GeneratedExpression != "" || generatesItsOwnValues(column) {
+		return false
+	}
+	return column.EnumType || pgtypealias.Builtin(column.Type)
 }
 
 // spannerDeferredNotNull is the SET NOT NULL a Spanner ADD COLUMN leaves for
@@ -2289,7 +2316,7 @@ func (r *Renderer) updateNullValuesBeforeNotNull(tableName string, op *ast.Modif
 			reason = "this plan does not fill it with the column's default"
 		}
 		r.w.WriteLinef("-- %s: SET NOT NULL fails if any row of %s holds NULL in %s; %s.",
-			r.dialectUpper, r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name), reason)
+			r.dialectUpper, commentFragment(r.escapeQualifiedIdentifier(tableName)), commentFragment(r.escapeIdentifier(column.Name)), reason)
 		return
 	}
 	value := r.nullBackfillValue(column)

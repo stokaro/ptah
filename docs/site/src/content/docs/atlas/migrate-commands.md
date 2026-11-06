@@ -1586,8 +1586,9 @@ Some differences stay, on purpose:
   catalog read lists them in.
 - A check over a column that changes type stays in place, where the binary drops it
   and adds it again.
-- A comment above an `ALTER TABLE` with `SET NOT NULL` says which rows would stop
-  the statement. The binary writes no comment there.
+- A comment above an `ALTER TABLE` with `SET NOT NULL`, or with an `ADD COLUMN` for
+  a `NOT NULL` column with no default, says which rows would stop the statement. The
+  binary writes no comment there. Strict mode writes it too.
 
 A file names no dev database. On MySQL, MariaDB and ClickHouse a read of one
 database records that database on its views, routines and sequences, and the

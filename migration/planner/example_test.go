@@ -100,6 +100,7 @@ func ExampleGenerateSchemaDiffSQLStatements() {
 	// Output:
 	// -- statement 1 --
 	// -- Add/modify columns for table: users
+	// -- POSTGRES: ADD COLUMN "email" fails if "users" holds any row; the column is NOT NULL and declares no default to fill it with.
 	// ALTER TABLE "users" ADD COLUMN "email" VARCHAR(255) NOT NULL
 	// -- statement 2 --
 	// CREATE UNIQUE INDEX IF NOT EXISTS "idx_users_email" ON "users" ("email")

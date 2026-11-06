@@ -45,7 +45,7 @@ func TestPrimaryKeyBeforeColumns_LeavesFirst(t *testing.T) {
 			desired: `CREATE TABLE parent (id bigint NOT NULL, code bigint PRIMARY KEY);`,
 			want: []string{
 				`ALTER TABLE "parent" DROP CONSTRAINT "parent_pkey"`,
-				`ALTER TABLE "parent" ADD COLUMN "code" bigint PRIMARY KEY NOT NULL`,
+				addCodeComment("POSTGRES") + `ALTER TABLE "parent" ADD COLUMN "code" bigint PRIMARY KEY NOT NULL`,
 			},
 		},
 		{
@@ -54,7 +54,7 @@ func TestPrimaryKeyBeforeColumns_LeavesFirst(t *testing.T) {
 			desired: `CREATE TABLE parent (id bigint NOT NULL, code bigint NOT NULL, CONSTRAINT parent_pkey PRIMARY KEY (code));`,
 			want: []string{
 				`ALTER TABLE "parent" DROP CONSTRAINT "parent_pkey"`,
-				`ALTER TABLE "parent" ADD COLUMN "code" bigint NOT NULL`,
+				addCodeComment("POSTGRES") + `ALTER TABLE "parent" ADD COLUMN "code" bigint NOT NULL`,
 				`ALTER TABLE "parent" ADD PRIMARY KEY ("code")`,
 			},
 		},

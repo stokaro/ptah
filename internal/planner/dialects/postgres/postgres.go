@@ -26,6 +26,7 @@ import (
 	"ptah.run/internal/objectlookup"
 	"ptah.run/internal/pgname"
 	"ptah.run/internal/pgsystemschema"
+	"ptah.run/internal/pgtypealias"
 	"ptah.run/internal/planner/columnchange"
 	"ptah.run/internal/planner/featurehost"
 	"ptah.run/internal/planner/keyrelease"
@@ -1017,7 +1018,7 @@ func serialSequencePath(table, sequence string) string {
 // is restated alike, whether the schema still declares it or removes it here.
 func restatesDefault(colDiff difftypes.ColumnDiff) bool {
 	previous := previousColumnType(colDiff.Changes["type"])
-	if previous == "" || builtinColumnType(previous) {
+	if previous == "" || pgtypealias.Builtin(previous) {
 		return false
 	}
 	return colDiff.Desired.DefaultSet || colDiff.Desired.Default != "" || colDiff.Desired.DefaultExpr != ""
@@ -1059,34 +1060,6 @@ func domainBase(name string, defined []schemaext.DefinedType) (string, bool) {
 		return bareName(strings.TrimSuffix(strings.TrimSpace(definition.References[0]), "[]")), true
 	}
 	return "", false
-}
-
-// builtinTypeNames are PostgreSQL's own type names as a comparison spells a
-// column's type, with no length, precision or array suffix.
-var builtinTypeNames = map[string]bool{
-	"smallint": true, "int2": true, "integer": true, "int": true, "int4": true, "bigint": true, "int8": true,
-	"smallserial": true, "serial2": true, "serial": true, "serial4": true, "bigserial": true, "serial8": true,
-	"decimal": true, "numeric": true, "real": true, "float4": true, "double precision": true, "float8": true, "float": true,
-	"money": true, "text": true, "varchar": true, "character varying": true, "char": true, "character": true,
-	"bpchar": true, "name": true, "bytea": true, "boolean": true, "bool": true, "date": true, "time": true,
-	"timetz": true, "time without time zone": true, "time with time zone": true, "timestamp": true,
-	"timestamptz": true, "timestamp without time zone": true, "timestamp with time zone": true,
-	"interval": true, "uuid": true, "json": true, "jsonb": true, "xml": true, "inet": true, "cidr": true,
-	"macaddr": true, "macaddr8": true, "bit": true, "varbit": true, "bit varying": true, "tsvector": true,
-	"tsquery": true, "point": true, "line": true, "lseg": true, "box": true, "path": true, "polygon": true,
-	"circle": true, "oid": true, "regclass": true,
-}
-
-// builtinColumnType reports whether spelled names one of PostgreSQL's own
-// types, or an array of one.
-func builtinColumnType(spelled string) bool {
-	name := strings.ToLower(strings.TrimSpace(spelled))
-	name = strings.TrimSpace(strings.TrimSuffix(name, "[]"))
-	if open := strings.IndexByte(name, '('); open >= 0 {
-		name = strings.TrimSpace(name[:open])
-	}
-	name = strings.TrimPrefix(name, "pg_catalog.")
-	return builtinTypeNames[name]
 }
 
 // addedColumnUnique is the ADD CONSTRAINT for a column that gains a

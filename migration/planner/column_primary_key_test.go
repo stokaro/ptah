@@ -105,7 +105,7 @@ func TestColumnPrimaryKey_StaysAFlag(t *testing.T) {
 			name:    "a column the plan adds",
 			held:    `CREATE TABLE parent (id bigint NOT NULL);`,
 			desired: `CREATE TABLE parent (id bigint NOT NULL, code bigint PRIMARY KEY);`,
-			want:    []string{`ALTER TABLE "parent" ADD COLUMN "code" bigint PRIMARY KEY NOT NULL`},
+			want:    []string{addCodeComment("POSTGRES") + `ALTER TABLE "parent" ADD COLUMN "code" bigint PRIMARY KEY NOT NULL`},
 		},
 	}
 	for _, test := range tests {
@@ -126,4 +126,10 @@ func TestColumnPrimaryKey_AnotherEngineKeepsItsPlan(t *testing.T) {
 		`CREATE TABLE parent (id bigint NOT NULL, code bigint PRIMARY KEY);`)
 
 	c.Assert(got, qt.Not(qt.Contains), `ALTER TABLE "parent" ADD PRIMARY KEY ("code")`)
+}
+
+// addCodeComment is the comment above the statement that adds parent.code, on the
+// engine the label names.
+func addCodeComment(label string) string {
+	return "-- " + label + `: ADD COLUMN "code" fails if "parent" holds any row; the column is NOT NULL and declares no default to fill it with.` + "\n"
 }

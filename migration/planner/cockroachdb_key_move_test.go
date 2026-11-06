@@ -33,7 +33,7 @@ func TestCockroachDBKeyMove_HappyPath(t *testing.T) {
 		{
 			name: "a column the plan adds takes its key from the table", held: "CREATE TABLE parent (id bigint PRIMARY KEY);",
 			desired: "CREATE TABLE parent (id bigint NOT NULL, code bigint NOT NULL, PRIMARY KEY (code));",
-			want:    []string{`ALTER TABLE "parent" ADD COLUMN "code" bigint NOT NULL`, move},
+			want:    []string{addCodeComment("COCKROACHDB") + `ALTER TABLE "parent" ADD COLUMN "code" bigint NOT NULL`, move},
 		},
 	}
 	for _, test := range tests {

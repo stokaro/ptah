@@ -951,6 +951,9 @@ func TestApply_AColumnChangedTwice_HappyPath(t *testing.T) {
 	}
 }
 
+// addCComment is what a plan says above the statement that adds column c to t.
+const addCComment = `-- POSTGRES: ADD COLUMN "c" fails if "t" holds any row; the column is NOT NULL and declares no default to fill it with.` + "\n"
+
 // heldNotNullName is a diff that adds column c under the name a removed column holds,
 // and the two statements as the planner writes them.
 func heldNotNullName(table, name string) (diff *difftypes.SchemaDiff, add, drop *ast.AlterTableNode) {
@@ -984,14 +987,14 @@ func TestAlignRollback_ANotNullNameStillHeld_HappyPath(t *testing.T) {
 		{
 			name:   "merged with the drop",
 			column: "x",
-			want:   `ALTER TABLE "t" DROP COLUMN "old", ADD COLUMN "c" text CONSTRAINT "x" NOT NULL;` + "\n\n",
+			want:   addCComment + `ALTER TABLE "t" DROP COLUMN "old", ADD COLUMN "c" text CONSTRAINT "x" NOT NULL;` + "\n\n",
 		},
 		{
 			name:    "kept apart from the drop",
 			between: []ast.Node{ast.NewRawSQL("SELECT 1;")},
 			column:  "x",
 			want: `ALTER TABLE "t" RENAME CONSTRAINT "x" TO "x__ptah_old";` + "\n\n" +
-				`ALTER TABLE "t" ADD COLUMN "c" text CONSTRAINT "x" NOT NULL;` + "\n\n" +
+				addCComment + `ALTER TABLE "t" ADD COLUMN "c" text CONSTRAINT "x" NOT NULL;` + "\n\n" +
 				"SELECT 1;\n" +
 				`ALTER TABLE "t" DROP COLUMN "old";` + "\n\n",
 		},
@@ -1000,7 +1003,7 @@ func TestAlignRollback_ANotNullNameStillHeld_HappyPath(t *testing.T) {
 			between: []ast.Node{ast.NewRawSQL("SELECT 1;")},
 			column:  "t_c_not_null",
 			want: `ALTER TABLE "t" RENAME CONSTRAINT "t_c_not_null" TO "t_c_not_null__ptah_old";` + "\n\n" +
-				`ALTER TABLE "t" ADD COLUMN "c" text NOT NULL;` + "\n\n" +
+				addCComment + `ALTER TABLE "t" ADD COLUMN "c" text NOT NULL;` + "\n\n" +
 				"SELECT 1;\n" +
 				`ALTER TABLE "t" DROP COLUMN "old";` + "\n\n",
 		},
@@ -1030,13 +1033,13 @@ func TestApply_ANotNullNameStillHeld_HappyPath(t *testing.T) {
 	}{
 		{
 			name: "merged with the drop",
-			want: `ALTER TABLE "t" DROP COLUMN "old", ADD COLUMN "c" text CONSTRAINT "x" NOT NULL;` + "\n\n",
+			want: addCComment + `ALTER TABLE "t" DROP COLUMN "old", ADD COLUMN "c" text CONSTRAINT "x" NOT NULL;` + "\n\n",
 		},
 		{
 			name:    "kept apart from the drop",
 			between: []ast.Node{ast.NewRawSQL("SELECT 1;")},
 			want: `ALTER TABLE "t" RENAME CONSTRAINT "x" TO "x__ptah_old";` + "\n\n" +
-				`ALTER TABLE "t" ADD COLUMN "c" text CONSTRAINT "x" NOT NULL;` + "\n\n" +
+				addCComment + `ALTER TABLE "t" ADD COLUMN "c" text CONSTRAINT "x" NOT NULL;` + "\n\n" +
 				"SELECT 1;\n" +
 				`ALTER TABLE "t" DROP COLUMN "old";` + "\n\n",
 		},
