@@ -1673,7 +1673,8 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	// Steps 6 and 6.7 skip what this drops.
 	released := keyrelease.Find(diff, p.targetDialect()).
 		With(keyrelease.PrimaryKeysUnderColumnChanges(diff, p.targetDialect())).
-		With(keyrelease.UnderColumnDrops(diff, p.targetDialect()))
+		With(keyrelease.UnderColumnDrops(diff, p.targetDialect())).
+		With(keyrelease.NamesIndexesTake(diff, p.targetDialect()))
 	result = p.releaseKeyNames(result, diff, released)
 
 	result, columnDrops, err := p.modifyExistingTables(result, diff)
