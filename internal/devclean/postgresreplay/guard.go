@@ -36,8 +36,7 @@ func validatePostgresReplayStatement(dialect string, tokens []lexer.Token, scope
 	if first == "IMPORT" && replay.ContainsTokenSequence(tokens, "FOREIGN", "SCHEMA") {
 		return replay.Refuse(dialect, "IMPORT FOREIGN SCHEMA")
 	}
-	if operation := postgresGlobalDCLOrMetadata(tokens); operation != "" &&
-		(!scope.SchemaStateReturned || !postgresSchemaStateStatement(tokens)) {
+	if operation := postgresGlobalDCLOrMetadata(tokens); operation != "" && !postgresSchemaStateReturned(tokens, scope) {
 		return replay.Refuse(dialect, operation)
 	}
 	if operation := postgresRoleOrAuthorizationChange(tokens); operation != "" {
@@ -574,6 +573,17 @@ func postgresGlobalPrivilegeOperation(tokens []lexer.Token) string {
 		return first + " server privilege"
 	}
 	return ""
+}
+
+// postgresSchemaStateReturned reports a statement whose effect the scope's reset
+// undoes: a schema's comment and its privileges in a plan rehearsal, and its
+// comment alone in a migration replay.
+func postgresSchemaStateReturned(tokens []lexer.Token, scope replay.Scope) bool {
+	if !postgresSchemaStateStatement(tokens) {
+		return false
+	}
+	return scope.SchemaStateReturned ||
+		(scope.SchemaCommentReturned && replay.NormalizedIdentifier(tokens[0]) == "COMMENT")
 }
 
 // postgresSchemaStateStatement reports a comment on a schema, or a privilege

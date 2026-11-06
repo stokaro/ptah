@@ -27,6 +27,9 @@ type ReplayGuard struct {
 	// baseline words a refusal as the rehearsal baseline's; see
 	// [BaselineGuard].
 	baseline bool
+	// schemaCommentReturned answers [replay.Scope.SchemaCommentReturned] when a
+	// statement is validated; see [ReplayGuard.WithSchemaCommentReturned].
+	schemaCommentReturned func() bool
 	// schemaStateReturned is [replay.Scope.SchemaStateReturned]; see
 	// [ReplayGuard.WithSchemaStateReturned].
 	schemaStateReturned bool
@@ -253,6 +256,23 @@ func (g *ReplayGuard) WithSchemaStateReturned(returned bool) *ReplayGuard {
 	return &guard
 }
 
+// WithSchemaCommentReturned returns a copy of the guard for a migration replay on
+// a dev database whose every reset may return the schemas it keeps to what the
+// claim recorded. A replay builds its guard before it claims the database, so
+// returned is asked when a statement is validated, and answers
+// [Baseline.ReturnsSchemaState] for the claim.
+//
+// The copy accepts a comment on a schema where returned answers true: the reset
+// gives the comment back, so the effect is confined whoever wrote the statement.
+// The pinned community binary v1.3.0 replays the same files, measured on
+// PostgreSQL 18. A privilege on a schema stays refused, because it depends on the
+// server's roles, and so does a comment on a protected namespace.
+func (g *ReplayGuard) WithSchemaCommentReturned(returned func() bool) *ReplayGuard {
+	guard := *g
+	guard.schemaCommentReturned = returned
+	return &guard
+}
+
 // withRemedy ends err, the refusal of stmt, with the guard's remedy when the
 // server realm would have accepted stmt, and with
 // [devdocker.ProvisionedServerRemedy] when only a provisioned server would.
@@ -281,6 +301,7 @@ func (g *ReplayGuard) validate(stmt string, realm ReplayRealm) error {
 	scope := realm.scope(g.info.Schema)
 	scope.Session = g.session
 	scope.SchemaStateReturned = g.schemaStateReturned
+	scope.SchemaCommentReturned = g.schemaCommentReturned != nil && g.schemaCommentReturned()
 	return g.guard.Validate(stmt, scope)
 }
 

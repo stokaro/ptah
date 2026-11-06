@@ -298,11 +298,13 @@ func replayOnLockedConnection(
 		return fmt.Errorf("replay migrations: nil database connection")
 	}
 	return conn.WithSession(ctx, func(replayConn *dbschema.DatabaseConnection) (resultErr error) {
+		var claim replayClaim
 		// A history written for a runner that sends each file as it is carries
 		// files that open and close their own transaction. Replay runs those
 		// outside a transaction of its own and rolls a failed one back on this
 		// pinned session, which it then cleans.
-		guard := devclean.NewDevReplayGuardFor(replayConn).WithSessionScope().WithOwnTransactions()
+		guard := devclean.NewDevReplayGuardFor(replayConn).WithSessionScope().WithOwnTransactions().
+			WithSchemaCommentReturned(claim.returnsSchemaState)
 		if hooks.ownTransactions {
 			guard = guard.WithUnwrappedTransactions()
 		}
@@ -333,8 +335,21 @@ func replayOnLockedConnection(
 			replayConn,
 			provider.Migrations(),
 			hooks,
+			&claim,
 		)
 	})
+}
+
+// replayClaim holds what a replay claimed the dev database with. The replay builds
+// its guard before it claims the database and validates a statement after, so the
+// guard asks here when it validates. Asked before the claim, it answers no.
+type replayClaim struct {
+	baseline devclean.Baseline
+}
+
+// returnsSchemaState is [devclean.Baseline.ReturnsSchemaState] for the claim.
+func (c *replayClaim) returnsSchemaState() bool {
+	return c.baseline.ReturnsSchemaState()
 }
 
 func replayMigrations(
@@ -342,6 +357,7 @@ func replayMigrations(
 	conn *dbschema.DatabaseConnection,
 	migrations []*migrator.Migration,
 	hooks replayHooks,
+	claim *replayClaim,
 ) (resultErr error) {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -350,6 +366,7 @@ func replayMigrations(
 	if err != nil {
 		return err
 	}
+	claim.baseline = baseline
 	replaySucceeded := false
 	defer func() {
 		if !devlock.MayClean(ctx) {
