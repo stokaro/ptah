@@ -3441,6 +3441,33 @@ func (p *Planner) addPrimaryKeyConstraintsWithTables(
 	return result
 }
 
+// rowIDColumn is the hidden column CockroachDB keys a table declared without a primary
+// key on.
+const rowIDColumn = "rowid"
+
+// keyLeavingForRowID removes a primary key on CockroachDB, where every table holds one.
+// A table declared without one takes a hidden rowid column as its key, and the server
+// refuses a key's drop with `primary key dropped without subsequent addition`, or with
+// `this schema change is disallowed because table "t" is locked` on a table of the
+// default schema_locked. These statements build the column and the key a table declared
+// without one holds, measured on v26.3.5, and the comparison reads neither.
+func keyLeavingForRowID(info difftypes.ConstraintRemovalInfo) []ast.Node {
+	table := info.TableName
+	if ref, ok := tableref.Parse(info.TableName); ok {
+		table = ref.Name
+	}
+	key := ast.NewPrimaryKeyConstraint(rowIDColumn)
+	key.Name = pgname.Object(table, "", "pkey")
+	return []ast.Node{
+		ast.NewRawSQL(fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s INT8 NOT VISIBLE NOT NULL DEFAULT unique_rowid();`,
+			quotePostgresIdentifierPath(info.TableName), quotePostgresIdentifier(rowIDColumn))),
+		&ast.AlterTableNode{Name: info.TableName, Operations: []ast.AlterOperation{
+			&ast.DropConstraintOperation{ConstraintName: info.Name},
+			&ast.AddConstraintOperation{Constraint: key},
+		}},
+	}
+}
+
 // writtenPrimaryKeyName is the name an added primary key is written with: the
 // name it asks for, or none where that is the name PostgreSQL gives an unnamed
 // key. Without the name, a declared key is built as `<table>_pkey`, and the
@@ -3676,6 +3703,10 @@ func (p *Planner) removeConstraints(
 		}
 		if skipConstraintRemoval(info, state.semantics, replacedKeys, droppedTables,
 			modifySet, released, addedBareNamesHosted, addedHostCounts) {
+			continue
+		}
+		if p.targetDialect() == platform.CockroachDB && strings.EqualFold(info.Type, "PRIMARY KEY") && !tableRemoved {
+			result = append(result, keyLeavingForRowID(info)...)
 			continue
 		}
 		result = p.appendScopedDrop(result, info.TableName, info.Name, info.Identity, state)
