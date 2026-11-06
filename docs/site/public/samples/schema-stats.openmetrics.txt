@@ -109,6 +109,12 @@ ptah_schema_postgres_exclusion_constraints{dialect="sqlite"} 0
 # HELP ptah_schema_postgres_foreign_key_delete_column_lists Foreign keys with captured ON DELETE column selections.
 # TYPE ptah_schema_postgres_foreign_key_delete_column_lists gauge
 ptah_schema_postgres_foreign_key_delete_column_lists{dialect="sqlite"} 0
+# HELP ptah_schema_postgres_partitioned_tables Tables with a captured PostgreSQL partition key.
+# TYPE ptah_schema_postgres_partitioned_tables gauge
+ptah_schema_postgres_partitioned_tables{dialect="sqlite"} 0
+# HELP ptah_schema_postgres_table_partitions Tables captured as a PostgreSQL partition of another table.
+# TYPE ptah_schema_postgres_table_partitions gauge
+ptah_schema_postgres_table_partitions{dialect="sqlite"} 0
 # HELP ptah_schema_postgres_unlogged_tables Tables with captured PostgreSQL UNLOGGED persistence.
 # TYPE ptah_schema_postgres_unlogged_tables gauge
 ptah_schema_postgres_unlogged_tables{dialect="sqlite"} 0
