@@ -28,6 +28,19 @@ type PolicyChange struct {
 	After       *DesiredPolicy         `json:"after"`
 	CommentOnly bool                   `json:"comment_only"`
 	Access      schemaext.AccessEffect `json:"access"`
+	// Rebuild drops the policy ahead of the plan's column changes and creates After
+	// behind them, because PostgreSQL refuses to change the type of a column a
+	// policy names. Both operands may be the same policy.
+	Rebuild bool `json:"rebuild,omitempty"`
+}
+
+// AroundColumnChanges implements [schemaext.ColumnTypeRebuild].
+func (v *PolicyChange) AroundColumnChanges() schemaext.ChangeValue {
+	rebuilt := v.Copy()
+	if rebuilt != nil {
+		rebuilt.Rebuild = true
+	}
+	return rebuilt
 }
 
 // Kind returns the stable change identity.
@@ -47,7 +60,7 @@ func (v *PolicyChange) Copy() *PolicyChange {
 	if v == nil {
 		return nil
 	}
-	return &PolicyChange{Before: v.Before.Copy(), After: v.After.Copy(), CommentOnly: v.CommentOnly, Access: v.Access}
+	return &PolicyChange{Before: v.Before.Copy(), After: v.After.Copy(), CommentOnly: v.CommentOnly, Access: v.Access, Rebuild: v.Rebuild}
 }
 
 // RemovesState reports a drop: a change without a declaration removes the

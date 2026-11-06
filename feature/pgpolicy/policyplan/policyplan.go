@@ -60,6 +60,9 @@ type planned struct {
 	rank  int
 	// removal is whether the change takes the policy away.
 	removal bool
+	// rebuild is whether the change goes around the plan's column changes. The
+	// server's refusal decides its order, so the access order leaves it out.
+	rebuild bool
 }
 
 // PlanFeatures returns complete receipts, one per change in input order, and a
@@ -257,6 +260,11 @@ func planPolicy(roles objectidentity.Builder, name string, subject objectidentit
 	if err := pgpolicy.ValidatePolicyRef(subject); err != nil {
 		return planned{}, err
 	}
+	// A rollback of a removed policy creates it, with nothing to drop ahead of the
+	// column changes: its own step in the dependent phase already follows them.
+	if change.Rebuild && change.Before != nil {
+		return planRebuild(roles, name, subject, change)
+	}
 	table := pgpolicy.Table(subject)
 	result := planned{table: table.Key(), rank: accessRank(change.Access.Access), removal: change.After == nil}
 	result.plan = featureplan.ChangePlan{Subject: subject, Kind: change.Kind(), Strategy: policyStrategy(change)}
@@ -300,6 +308,35 @@ func planPolicy(roles objectidentity.Builder, name string, subject objectidentit
 	for _, step := range result.steps {
 		result.plan.Steps = append(result.plan.Steps, step.ID)
 	}
+	return result, nil
+}
+
+// planRebuild drops the policy in the lifecycle phase, ahead of the column changes, and
+// creates its declaration in the dependent phase, with the other policies. A policy
+// that leaves has nothing to create. The two steps need no transaction of their own, as
+// a view rebuilt under a column change needs none: in a plan that runs without one, the
+// table is without the policy between them. So the steps leave the access order.
+func planRebuild(roles objectidentity.Builder, name string, subject objectidentity.ID, change *pgpolicy.PolicyChange) (planned, error) {
+	dropped := &pgpolicy.PolicyChange{Before: change.Before, Access: pgpolicy.PolicyAccess(change.Before, nil, pgpolicy.ExpressionsSame)}
+	result, err := planPolicy(roles, name+"/drop", subject, dropped, featureplan.PhaseLifecycle)
+	if err != nil {
+		return planned{}, err
+	}
+	result.rebuild, result.removal = true, false
+	result.plan.Kind = change.Kind()
+	if change.After == nil {
+		result.plan.Strategy = "drop the policy ahead of the column change it stands in the way of"
+		return result, nil
+	}
+	created := &pgpolicy.PolicyChange{After: change.After, Access: pgpolicy.PolicyAccess(nil, change.After, pgpolicy.ExpressionsSame)}
+	creation, err := planPolicy(roles, name, subject, created, featureplan.PhaseDependent)
+	if err != nil {
+		return planned{}, err
+	}
+	result.edges = append(append(result.edges, creation.edges...), plangraph.Dependency{Before: result.main, After: creation.steps[0].ID})
+	result.steps = append(result.steps, creation.steps...)
+	result.plan.Steps = append(result.plan.Steps, creation.plan.Steps...)
+	result.plan.Strategy = "drop the policy ahead of the column change it stands in the way of, and create it again after"
 	return result, nil
 }
 
@@ -375,7 +412,7 @@ func planTableState(index int, subject objectidentity.ID, change *pgpolicy.Table
 func dropsAheadOfColumnChanges(steps []plangraph.Step[featureplan.Operation], all []planned) []plangraph.Step[featureplan.Operation] {
 	for _, drop := range all {
 		if !drop.removal || slices.ContainsFunc(all, func(other planned) bool {
-			return other.table == drop.table && other.rank < drop.rank
+			return other.table == drop.table && other.rank < drop.rank && !other.rebuild
 		}) {
 			continue
 		}
@@ -408,7 +445,7 @@ func accessOrder(all []planned) []plangraph.Dependency {
 	var edges []plangraph.Dependency
 	for _, before := range all {
 		for _, after := range all {
-			if before.table == after.table && before.rank < after.rank {
+			if before.table == after.table && before.rank < after.rank && !before.rebuild && !after.rebuild {
 				edges = append(edges, plangraph.Dependency{Before: before.main, After: after.main})
 			}
 		}
