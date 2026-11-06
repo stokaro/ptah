@@ -19,6 +19,37 @@ type planningCapture struct {
 	identifiers identifier.Semantics
 }
 
+// planningTable is table as a planning service reads it: whole, or as its
+// outline when the service reads outlines. Under
+// provider.TableOutlinesFeature a service that plans no table-attached model
+// reads only which tables the plan keeps, creates, changes and drops, so the
+// host captures nothing more of them for it: a migration of 500 new YDB
+// tables sent the whole capture of every table to each service that assesses
+// named objects, in both directions.
+func (c *planningCapture) planningTable(table featureplan.Table, outlined bool) (*protocol.PlanningTable, error) {
+	if !outlined {
+		return c.table(table)
+	}
+	return tableOutline(table)
+}
+
+// tableOutline is the outline of table: its subject, its action and the name
+// of each state it has.
+func tableOutline(table featureplan.Table) (*protocol.PlanningTable, error) {
+	action, err := planningParentAction(table.Action)
+	if err != nil {
+		return nil, err
+	}
+	result := &protocol.PlanningTable{Subject: comparisonIdentity(table.Subject), Action: action}
+	if table.Desired.HasTable() {
+		result.Desired = &protocol.DeclaredTable{Name: table.Desired.Table.Name}
+	}
+	if table.Current.HasTable() {
+		result.Current = &protocol.ObservedTable{Name: table.Current.Table.Name}
+	}
+	return result, nil
+}
+
 func (c *planningCapture) table(table featureplan.Table) (*protocol.PlanningTable, error) {
 	if err := onlyFields(table, "Subject", "Action", "Desired", "Current"); err != nil {
 		return nil, err

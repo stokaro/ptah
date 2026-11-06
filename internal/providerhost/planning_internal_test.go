@@ -600,3 +600,39 @@ func TestCommonPlannerKeepsDependentPhaseBetweenCommonChanges(t *testing.T) {
 		})
 	}
 }
+
+// A service that reads outlines receives each table by its subject, its
+// action and the names of its states, and a service that reads whole tables
+// receives each one as captured.
+func TestPlanningRequestOutlinesTheTablesOfAnOutlinedService(t *testing.T) {
+	c := qt.New(t)
+	service, _ := planningFixture(c)
+	parent := planningParent()
+	request := featureplan.Request{
+		Target:      "fixture",
+		Identifiers: identifier.Semantics{TableNames: identifier.ComparisonExact, ColumnNames: identifier.ComparisonExact, IndexNames: identifier.ComparisonExact, IndexNamespace: identifier.IndexNamespaceTable},
+		Tables: []featureplan.Table{{
+			Subject: parent,
+			Action:  featureplan.AlterTable,
+			Desired: schemacapture.TableDeclaration{
+				Table:  schemamodel.Table{Name: "Records", Schema: "Main", PrimaryKey: []string{"id"}},
+				Fields: []schemamodel.Field{{Name: "id", Type: "text"}},
+			},
+			Current: schemacapture.TableObservation{
+				Table: catalog.Table{Name: "Records", Schema: "Main", Columns: []catalog.Column{{Name: "id", DataType: "text"}}},
+			},
+		}},
+	}
+
+	whole, err := service.planningRequest(request)
+	c.Assert(err, qt.IsNil)
+	service.declaration = &protocol.ModelPlanning{Id: "plan", Tables: protocol.PlanningTables_PLANNING_TABLES_OUTLINED}
+	outlined, err := service.planningRequest(request)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(whole.Tables[0].Desired.Columns, qt.HasLen, 1)
+	c.Assert(proto.Equal(outlined.Tables[0], provider.TableOutline(whole.Tables[0])), qt.IsTrue)
+	c.Assert(outlined.Tables[0].Desired.GetName(), qt.Equals, "Records")
+	c.Assert(outlined.Tables[0].Current.GetName(), qt.Equals, "Records")
+	c.Assert(outlined.Tables[0].Action, qt.Equals, protocol.PlanningTable_ALTER)
+}

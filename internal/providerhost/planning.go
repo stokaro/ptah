@@ -116,8 +116,9 @@ func (s modelPlanner) planningRequest(request featureplan.Request) (*protocol.Pl
 		}
 		remote.Changes = append(remote.Changes, &protocol.PlanningChange{Subject: comparisonIdentity(change.Subject), Value: value})
 	}
+	outlined := s.declaration.GetTables() == protocol.PlanningTables_PLANNING_TABLES_OUTLINED
 	for _, table := range request.Tables {
-		captured, err := capture.table(table)
+		captured, err := capture.planningTable(table, outlined)
 		if err != nil {
 			return nil, err
 		}
