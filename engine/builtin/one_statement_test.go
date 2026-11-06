@@ -1,6 +1,7 @@
 package builtin_test
 
 import (
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -45,10 +46,11 @@ func TestRenderSQL_OneStatement_HappyPath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
+			column, check := addedColumn(), checkOverIt()
 			node := &ast.AlterTableNode{
 				Name:         "t",
-				Operations:   []ast.AlterOperation{addedColumn(), checkOverIt()},
-				OneStatement: []ast.AlterOperation{checkOverIt(), addedColumn()},
+				Operations:   []ast.AlterOperation{column, check},
+				OneStatement: []ast.AlterOperation{check, column},
 			}
 
 			c.Assert(must.Must(builtin.RenderSQL(test.dialect, ast.NewDropTable("old"), node)), qt.Equals, test.want)
@@ -79,13 +81,106 @@ func TestRenderSQL_OneStatement_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
+			column, check := addedColumn(), checkOverIt()
 			node := &ast.AlterTableNode{
 				Name:         "t",
-				Operations:   []ast.AlterOperation{addedColumn(), test.split, checkOverIt()},
-				OneStatement: []ast.AlterOperation{checkOverIt(), test.split, addedColumn()},
+				Operations:   []ast.AlterOperation{column, test.split, check},
+				OneStatement: []ast.AlterOperation{check, test.split, column},
 			}
 
 			c.Assert(must.Must(builtin.RenderSQL(platform.Postgres, ast.NewDropTable("old"), node)), qt.Equals, test.want)
 		})
 	}
+}
+
+// foreignKeyWithActions is a key with actions as a schema file spells them.
+func foreignKeyWithActions(onUpdate, onDelete string) *ast.ConstraintNode {
+	return ast.NewForeignKeyConstraint("c_p", []string{"p_id"}, &ast.ForeignKeyRef{Table: "p", Column: "id", OnUpdate: onUpdate, OnDelete: onDelete})
+}
+
+// TestRenderSQL_OneStatementIsPreparedLikeOperations spells a foreign key's actions the way
+// each server takes them in both forms of a node: alone, where it fits one statement, and with
+// a statement beside it, where it does not.
+func TestRenderSQL_OneStatementIsPreparedLikeOperations(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		split   []ast.AlterOperation
+		want    string
+	}{
+		{
+			name: "one statement on PostgreSQL", dialect: platform.Postgres,
+			want: "ON DELETE SET NULL ON UPDATE NO ACTION",
+		},
+		{
+			name: "one statement on MySQL", dialect: platform.MySQL,
+			want: "ON DELETE SET NULL ON UPDATE NO ACTION",
+		},
+		{
+			name: "one statement on MariaDB", dialect: platform.MariaDB,
+			want: "ON DELETE SET NULL ON UPDATE NO ACTION",
+		},
+		{
+			name: "beside a backfill on PostgreSQL", dialect: platform.Postgres, split: []ast.AlterOperation{backfilled()},
+			want: "ON DELETE SET NULL ON UPDATE NO ACTION",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			key := &ast.AddConstraintOperation{Constraint: foreignKeyWithActions("NO_ACTION", "SET_NULL")}
+			operations := append(slices.Clone(test.split), key)
+			node := &ast.AlterTableNode{Name: "c", Operations: operations, OneStatement: slices.Clone(operations)}
+
+			got := must.Must(builtin.RenderSQL(test.dialect, node))
+
+			c.Assert(got, qt.Contains, test.want)
+			c.Assert(got, qt.Not(qt.Contains), "NO_ACTION")
+		})
+	}
+}
+
+// TestRenderSQL_OneStatementANodeOutOfStep_FailurePath is a node whose two lists no longer say
+// the same changes, as a pass that rewrites only one leaves it. The renderer writes Operations,
+// which is an order that runs, and nothing of the stale list.
+func TestRenderSQL_OneStatementANodeOutOfStep_FailurePath(t *testing.T) {
+	column, check := addedColumn(), checkOverIt()
+	tests := []struct {
+		name       string
+		operations []ast.AlterOperation
+		statement  []ast.AlterOperation
+		want       string
+	}{
+		{
+			name:       "a change only the statement holds",
+			operations: []ast.AlterOperation{column},
+			statement:  []ast.AlterOperation{check, column},
+			want:       "ALTER TABLE \"t\" ADD COLUMN \"x\" INTEGER;\n\n",
+		},
+		{
+			name:       "a change only the operations hold",
+			operations: []ast.AlterOperation{column, check},
+			statement:  []ast.AlterOperation{column},
+			want:       "ALTER TABLE \"t\" ADD COLUMN \"x\" INTEGER;\nALTER TABLE \"t\" ADD CONSTRAINT \"ck\" CHECK (x > 0);\n\n",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			node := &ast.AlterTableNode{Name: "t", Operations: test.operations, OneStatement: test.statement}
+
+			c.Assert(must.Must(builtin.RenderSQL(platform.Postgres, node)), qt.Equals, test.want)
+		})
+	}
+}
+
+// TestRenderSQL_OneStatementLeavesOutAChangeALaterOneReplaces is a column changed twice. One
+// statement names it once, and the first change is not missing from it.
+func TestRenderSQL_OneStatementLeavesOutAChangeALaterOneReplaces(t *testing.T) {
+	c := qt.New(t)
+	first := &ast.ModifyColumnOperation{Column: ast.NewColumn("x", "INT")}
+	last := &ast.ModifyColumnOperation{Column: ast.NewColumn("x", "BIGINT")}
+	node := &ast.AlterTableNode{Name: "t", Operations: []ast.AlterOperation{first, last}, OneStatement: []ast.AlterOperation{last}}
+
+	c.Assert(must.Must(builtin.RenderSQL(platform.MySQL, node)), qt.Equals, "ALTER TABLE `t` MODIFY COLUMN `x` BIGINT;\n\n")
 }

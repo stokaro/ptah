@@ -35,6 +35,9 @@ type AlterTableNode struct {
 	// only inside one statement. A renderer writes it where all of it fits one ALTER
 	// TABLE, separated by commas, and writes Operations instead where one of its
 	// changes needs another statement beside it, such as a backfill or a comment.
+	// It holds the same operation values as Operations: a pass that rewrites an
+	// operation in place reaches both, and a pass that replaces one in Operations has
+	// to replace it here, or the renderer writes Operations.
 	OneStatement []AlterOperation
 	// Algorithm is the MySQL-family `ALGORITHM=` value the statement asks the
 	// server for -- INSTANT, INPLACE or COPY -- and is empty when the
