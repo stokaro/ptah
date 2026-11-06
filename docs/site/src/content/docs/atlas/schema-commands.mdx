@@ -1662,9 +1662,10 @@ own base64 hashes (those have no local recipe — in either direction). Without
 `--save`/`--output`/`--dry-run`, the plan document prints to stdout, and
 `--auto-approve` is accepted for CLI compatibility.
 
-Ptah fingerprints include named feature objects, attached settings, and the
-source's coverage claims. Each feature is bound to its codec owner, version,
-and model definition. Missing codecs refuse fingerprinting. Plans generated
+Ptah fingerprints include named feature objects, attached settings, the source's
+coverage claims, and the role memberships the plan depends on, which
+[Plan and approve](../../direct/plan-and-approve/) lists. Each feature is bound
+to its codec owner, version, and model definition. Missing codecs refuse fingerprinting. Plans generated
 with a different fingerprint format must be regenerated and reviewed before
 applying them.
 

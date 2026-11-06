@@ -94,7 +94,8 @@ type Database struct {
 	// RoleMemberships are the role-in-role edges the server reports: who
 	// inherits whose privileges. An endpoint may be outside the managed roles.
 	// Analysis reads these edges independently of role definitions. Engines
-	// with declared memberships also compare them when coverage permits it.
+	// with declared memberships also compare them when coverage permits it. A
+	// saved plan's source fingerprint covers the part its plan depends on.
 	RoleMemberships []RoleMembership `json:"role_memberships,omitempty"`
 
 	// RolesOutOfScope lists roles that exist on the server but that this
@@ -205,6 +206,18 @@ type Database struct {
 	// serialized: the same database read by another account describes the
 	// same schema.
 	CurrentAccount string `json:"-"`
+
+	// ConnectedRole is the role the reading connection ran as, spelled the way
+	// [RoleMembership] spells a role, which on the MySQL family leaves out the
+	// host that [Database.CurrentAccount] carries. A plan applied through the
+	// same connection holds what this role holds, so the memberships it
+	// reaches are part of what a saved plan's source fingerprint covers.
+	//
+	// Empty from a reader that reads no memberships or does not record it, and
+	// from a description that did not come from a live read. Like
+	// CurrentAccount, it is never serialized: the same database read by another
+	// role describes the same schema.
+	ConnectedRole string `json:"-"`
 }
 
 // VirtualTable identifies one SQLite virtual table and the module that owns

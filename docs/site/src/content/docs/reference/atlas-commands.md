@@ -1459,8 +1459,12 @@ representation were verified against Atlas's own reference; their values still
 differ because Ptah fingerprints its independent
 representation.
 
-Editing changes the statements, never the fingerprints. `from` still describes
-the live source database, so apply-time staleness detection keeps working. `to`
+Editing changes the statements and leaves `to` as it was. `from` still describes
+the live source database, so apply-time staleness detection keeps working. The
+role memberships it covers include those of the roles the statements name, so
+after an edit `schema plan` reads the database again and records the `from` the
+edited statements call for. A database that moved while the editor was open
+keeps the planned value, which apply refuses. `to`
 still describes the schema the plan was computed against, which edited SQL may
 no longer reach: `schema apply` replays an Atlas-format plan on a dev database
 and requires it to converge on `--to` before touching the target, but a native

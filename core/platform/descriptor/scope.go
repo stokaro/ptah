@@ -76,11 +76,15 @@ const (
 	// itself and the database's owner, and every user and group when the read
 	// is of a dev realm, which shares its database's users and groups.
 	RoleScopeUserMade RoleScope = "user-made"
+	// RoleScopeNone leaves out no role: a read lists every role the target
+	// holds, whatever schemas it covers, so being listed says nothing about
+	// being used.
+	RoleScopeNone RoleScope = "none"
 )
 
 // RoleScopes returns every declared role scope.
 func RoleScopes() []RoleScope {
-	return []RoleScope{RoleScopeReferenced, RoleScopeUserMade}
+	return []RoleScope{RoleScopeReferenced, RoleScopeUserMade, RoleScopeNone}
 }
 
 // validateScope checks the fields declared in this file.

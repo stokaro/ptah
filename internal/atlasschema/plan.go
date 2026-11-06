@@ -27,6 +27,7 @@ import (
 	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/providerurl"
+	"ptah.run/internal/rolegraph"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/schemafingerprint"
 	"ptah.run/internal/schemascope"
@@ -216,6 +217,11 @@ type StalePlanError struct {
 	// no scope.
 	PlanScope     string
 	DatabaseScope string
+	// ConnectedRole is the role this connection runs as, set when that role
+	// has a membership the fingerprint can cover. The memberships it covers
+	// include those of the role that computed the plan, so a plan applied as
+	// another role can differ here with nothing in the database changed.
+	ConnectedRole string
 }
 
 func (e *StalePlanError) Error() string {
@@ -232,6 +238,14 @@ func (e *StalePlanError) Error() string {
 				"against (plan %s, database %s); a row changed since the plan was computed, so re-run `schema plan` "+
 				"against the current database and review the fresh plan",
 			e.PlanFingerprint, e.DatabaseFingerprint)
+	}
+	if e.ConnectedRole != "" {
+		return fmt.Sprintf(
+			"pre-planned migration is stale: the target database schema does not match the plan's source fingerprint "+
+				"(plan %s, database %s); the database changed since the plan was computed, or the plan was computed "+
+				"as a role other than %[3]q and the fingerprint covers the memberships of the role that runs it, so "+
+				"re-run `schema plan` as %[3]q against the current database and review the fresh plan",
+			e.PlanFingerprint, e.DatabaseFingerprint, e.ConnectedRole)
 	}
 	return fmt.Sprintf(
 		"pre-planned migration is stale: the target database schema does not match the plan's source fingerprint "+
@@ -333,10 +347,6 @@ func PreparePlanFileReportingUndecided(
 	if err != nil {
 		return PlanFile{}, schemadiff.Diagnostics{}, err
 	}
-	fromFingerprint, err := SchemaFingerprint(ctx, from, opts.Runtime)
-	if err != nil {
-		return PlanFile{}, schemadiff.Diagnostics{}, fmt.Errorf("fingerprint current schema: %w", err)
-	}
 	toFingerprint, err := schemafingerprint.Desired(ctx, opts.Runtime, computation.desired)
 	if err != nil {
 		return PlanFile{}, schemadiff.Diagnostics{}, fmt.Errorf("fingerprint desired schema: %w", err)
@@ -344,10 +354,6 @@ func PreparePlanFileReportingUndecided(
 	rowsFingerprint, err := managedRowsFingerprint(ctx, conn, computation.rowSets)
 	if err != nil {
 		return PlanFile{}, schemadiff.Diagnostics{}, err
-	}
-	name := strings.TrimSpace(opts.Name)
-	if name == "" {
-		name = defaultPlanName(fromFingerprint, toFingerprint, rowsFingerprint)
 	}
 
 	statements, destructive, err := classifyComputedUnits(ctx, opts.Runtime, computation, conn.Info().Dialect)
@@ -374,6 +380,15 @@ func PreparePlanFileReportingUndecided(
 	// A saved plan is applied as these statements, so the rows sit where an
 	// apply puts them: inside a SQLite rebuild's foreign-key bracket.
 	statements = slices.Insert(statements, computation.dataIndex(), data...)
+
+	fromFingerprint, err := planSourceFingerprint(ctx, from, conn.Info(), statements, opts.Runtime)
+	if err != nil {
+		return PlanFile{}, schemadiff.Diagnostics{}, fmt.Errorf("fingerprint current schema: %w", err)
+	}
+	name := strings.TrimSpace(opts.Name)
+	if name == "" {
+		name = defaultPlanName(fromFingerprint, toFingerprint, rowsFingerprint)
+	}
 
 	return PlanFile{
 		Provider:         binding,
@@ -636,7 +651,9 @@ func splitPlanStatements(sqlText, dialect string) []string {
 // without changing anything yields the same plan document as no edit at all.
 //
 // The fingerprints are deliberately NOT recomputed. `from` is the fingerprint
-// of the live source database, which an edit cannot change. `to` is the
+// of the live source database, which an edit cannot change, apart from which
+// roles' memberships it covers: that needs a read of the database, and
+// [RescopeEditedPlan] is the step a caller holding a connection takes. `to` is the
 // fingerprint of the desired schema the plan was computed against, and edited
 // SQL may no longer reach it — that claim is verified where it can be, at
 // apply time: an Atlas-format plan is replayed on a dev database and required
@@ -690,6 +707,36 @@ func (p PlanFile) WithStatementsFromSQL(ctx context.Context, runtime safety.Runt
 	}
 	p.Statements, p.Destructive = statements, destructive
 	return p, nil
+}
+
+// RescopeEditedPlan gives an edited plan the source fingerprint its statements
+// call for. A plan's fingerprint covers the memberships of the roles its
+// statements name, so an edit that adds or removes such a name changes which
+// memberships apply reads, and the fingerprint the planner recorded would then
+// refuse a database nothing has changed in.
+//
+// planned is the plan before the edit and edited the plan after it. The
+// fingerprint moves only when a fresh read still matches planned: a database
+// that moved while the editor was open keeps the recorded fingerprint, and apply
+// refuses the plan as it would have. Nothing else about edited changes, and an
+// edit that names no new role leaves the fingerprint as it was.
+func RescopeEditedPlan(ctx context.Context, conn *dbschema.DatabaseConnection, planned, edited PlanFile, runtime PlanTargetRuntime) (PlanFile, error) {
+	current, err := planTargetState(ctx, conn, recordedReadScope(planned), planned.Exclude, runtime)
+	if err != nil {
+		return PlanFile{}, err
+	}
+	before, err := planSourceFingerprint(ctx, current, conn.Info(), planned.Statements, runtime)
+	if err != nil {
+		return PlanFile{}, fmt.Errorf("fingerprint current schema: %w", err)
+	}
+	if before != planned.FromFingerprint {
+		return edited, nil
+	}
+	edited.FromFingerprint, err = planSourceFingerprint(ctx, current, conn.Info(), edited.Statements, runtime)
+	if err != nil {
+		return PlanFile{}, fmt.Errorf("fingerprint current schema: %w", err)
+	}
+	return edited, nil
 }
 
 // sameStatementSequence reports whether edited holds the recorded statements
@@ -885,8 +932,9 @@ func decodePlanJSON(contents []byte, path string) (PlanFile, error) {
 
 // VerifyPlanTarget checks that the connected database is the state the plan
 // was computed against: the dialects must be compatible and the current
-// schema, filtered with the plan's recorded exclude patterns, must match the
-// plan's source fingerprint. The schema is read at the plan's
+// schema, filtered with the plan's recorded exclude patterns and with its role
+// memberships narrowed as [rolegraph.ForPlan] says, must match the plan's source
+// fingerprint. The schema is read at the plan's
 // [PlanFile.Schemas] when it records a selection, and otherwise at the
 // connection URL's scope together with the plan's [PlanFile.SchemasBeyondURL].
 // A fingerprint mismatch returns *StalePlanError.
@@ -911,7 +959,7 @@ func VerifyPlanTarget(ctx context.Context, conn *dbschema.DatabaseConnection, pl
 	if err != nil {
 		return err
 	}
-	fingerprint, err := SchemaFingerprint(ctx, current, runtime)
+	fingerprint, err := planSourceFingerprint(ctx, current, conn.Info(), plan.Statements, runtime)
 	if err != nil {
 		return fmt.Errorf("fingerprint current schema: %w", err)
 	}
@@ -919,6 +967,9 @@ func VerifyPlanTarget(ctx context.Context, conn *dbschema.DatabaseConnection, pl
 		stale := &StalePlanError{
 			PlanFingerprint:     plan.FromFingerprint,
 			DatabaseFingerprint: fingerprint,
+		}
+		if len(rolegraph.Related(current.RoleMemberships, []string{current.ConnectedRole})) > 0 {
+			stale.ConnectedRole = current.ConnectedRole
 		}
 		if plan.Scope != nil {
 			dialect := conn.Info().Dialect
@@ -948,6 +999,31 @@ func VerifyPlanTarget(ctx context.Context, conn *dbschema.DatabaseConnection, pl
 // the fingerprint instead of omitting feature data.
 func SchemaFingerprint(ctx context.Context, schema *catalog.Database, runtime schemaext.ModelRuntime) (string, error) {
 	return schemafingerprint.Observed(ctx, runtime, schema)
+}
+
+// planSourceFingerprint is the fingerprint a saved plan records and
+// [VerifyPlanTarget] recomputes: current as a whole, with its role memberships
+// narrowed to the ones this plan depends on; see [rolegraph.ForPlan].
+//
+// The statements are an input because a plan can name a role nothing in the
+// database refers to yet. Both halves read them from the plan itself, which is
+// what lets a `.plan.hcl` document, which has no field to record the roles in,
+// recompute the same answer. The bodies have their comments stripped, because
+// the `.plan.hcl` writer adds one above each statement and the words in it name
+// nothing.
+func planSourceFingerprint(ctx context.Context,
+	current *catalog.Database,
+	info catalog.ServerInfo,
+	statements []PlanStatement,
+	runtime schemaext.ModelRuntime,
+) (string, error) {
+	bodies := make([]string, 0, len(statements))
+	for _, statement := range statements {
+		bodies = append(bodies, sqlutil.StripCommentsForDialect(statement.SQL, info.Dialect))
+	}
+	scoped := *current
+	scoped.RoleMemberships = rolegraph.ForPlan(current, bodies, described(info.Dialect).Roles.OutOfScope, info.Capabilities)
+	return SchemaFingerprint(ctx, &scoped, runtime)
 }
 
 // defaultPlanName derives a plan's name from what it was computed between. The

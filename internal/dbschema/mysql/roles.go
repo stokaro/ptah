@@ -2,6 +2,7 @@ package mysql
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -255,6 +256,22 @@ func (r *Reader) readRolesInto(ctx context.Context, schema *catalog.Database, da
 		return nil
 	}
 	schema.RoleMemberships = memberships
+	return r.readConnectedRole(ctx, schema)
+}
+
+// readConnectedRole records the role this connection runs as. CURRENT_USER()
+// answers `user@host`, and a membership names the user alone; a user name can
+// hold an `@`, and a host cannot.
+func (r *Reader) readConnectedRole(ctx context.Context, schema *catalog.Database) error {
+	var account string
+	// No row leaves the role unknown, and a plan then covers every membership.
+	if err := r.db.QueryRowContext(ctx, `SELECT CURRENT_USER()`).Scan(&account); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("failed to read the connected account: %w", err)
+	}
+	schema.ConnectedRole = account
+	if at := strings.LastIndexByte(account, '@'); at >= 0 {
+		schema.ConnectedRole = account[:at]
+	}
 	return nil
 }
 

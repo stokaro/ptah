@@ -257,7 +257,7 @@ func runAtlasSchemaPlan(cmd *cobra.Command, opts atlasSchemaPlanOptions) error {
 	// over a format or naming problem that was decidable beforehand loses it
 	// for nothing: the editor's buffer is a temporary file this command
 	// deletes. Nothing below depends on the statement text — the name template
-	// reads only fingerprints, which an edit cannot change.
+	// reads only the fingerprints as they were planned.
 	outputPath := strings.TrimSpace(opts.output)
 	outputMode := atlasSchemaPlanOutputModeFor(outputPath)
 	format := atlasSchemaPlanFormat(outputPath)
@@ -278,9 +278,21 @@ func runAtlasSchemaPlan(cmd *cobra.Command, opts atlasSchemaPlanOptions) error {
 		plan.Name = atlasschema.TimestampPlanName(time.Now())
 	}
 	if opts.edit {
+		planned := plan
 		plan, err = editAtlasSchemaPlan(cmd.Context(), runtime, plan)
 		if err != nil {
 			return cmdutil.Fail(cmd, err)
+		}
+		// The edit is operator work, and this read matters only to an edit that
+		// adds or removes the name of a role, so a read that fails after a long
+		// edit costs a warning rather than the edit.
+		rescoped, err := atlasschema.RescopeEditedPlan(cmd.Context(), conn, planned, plan, runtime)
+		if err != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(),
+				"warning: the database could not be read again after the edit: %v; "+
+					"apply refuses the plan as stale if the edit added or removed the name of a role with memberships\n", err)
+		} else {
+			plan = rescoped
 		}
 	}
 	document, err := atlasschema.MarshalPlanFileAs(plan, format)
@@ -345,7 +357,8 @@ func writeAtlasSchemaPlanFormat(cmd *cobra.Command, format string, plan atlassch
 // returns the plan rebuilt from the edited text. Severity and the destructive
 // marker are re-derived so the saved plan describes the SQL it actually
 // carries; the fingerprints are not, for the reasons documented on
-// [atlasschema.PlanFile.WithStatementsFromSQL].
+// [atlasschema.PlanFile.WithStatementsFromSQL], and [atlasschema.RescopeEditedPlan]
+// is the one step after this that may move the source fingerprint.
 //
 // An edit that leaves no executable statement is refused rather than saved:
 // an empty plan file would apply cleanly and change nothing, which reads as
