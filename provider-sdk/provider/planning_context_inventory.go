@@ -75,13 +75,14 @@ func validateInspectedPlanningContext(description *protocol.Description, engine 
 	for _, binding := range snapshot.GetScopeBindings() {
 		scopes = append(scopes, binding.GetNamespaces()...)
 	}
+	subjects := indexCoverageSubjects(coverage)
 	for _, value := range inventory.GetObjects() {
 		switch {
 		case value == nil || value.GetOwner().GetKind() != value.GetKind() || !slices.Contains(kinds, value.GetKind()):
 			return contextInventoryError("an object must be of a context kind, named by its kind")
 		case withinInspectionScopes(scopes, value.GetOwner()):
 			return contextInventoryError("an object inside the requested scope belongs to the snapshot's native objects")
-		case !inspectionSubjectCovered(coverage, value):
+		case !subjects.covered(value):
 			return contextInventoryError("an object lacks complete subject coverage")
 		}
 	}
