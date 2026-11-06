@@ -226,7 +226,87 @@ func comparisonChanges(result schemaext.ComparisonResult) []schemaext.ChangeReco
 	return changes
 }
 
+// withColumnDependentsRebuilt returns changes with each captured object that stands in
+// the way of a column type change the comparison found planned around that change: a
+// change the object already has is marked, and an object the declaration keeps gets one.
+// PostgreSQL refuses `ALTER COLUMN ... TYPE` on a column a row-security policy names, so
+// without it such a plan stops at that statement. An object on another table counts where
+// it reads the table of the column.
+func withColumnDependentsRebuilt(changes []schemaext.ChangeRecord, diff *difftypes.SchemaDiff, semantics identifier.Semantics) ([]schemaext.ChangeRecord, error) {
+	retyped := retypedColumns(diff)
+	if len(retyped) == 0 || diff.TablePreparation == nil {
+		return changes, nil
+	}
+	positions := make(map[objectidentity.Key]int, len(changes))
+	for i, change := range changes {
+		positions[change.Subject.Key()] = i
+	}
+	for _, table := range diff.TablePreparation.Source {
+		objects, err := table.Current.OwnedObjects.All()
+		if err != nil {
+			return nil, err
+		}
+		for _, object := range objects {
+			dependent, ok := object.Value.(schemaext.ColumnTypeDependent)
+			if !ok || !standsInTheWay(dependent, table.Current.Table.QualifiedName(), retyped, semantics) {
+				continue
+			}
+			if position, found := positions[object.Ref.Key()]; found {
+				if value, rebuilds := changes[position].Value.(schemaext.ColumnTypeRebuild); rebuilds {
+					changes[position].Value = value.AroundColumnChanges()
+				}
+				continue
+			}
+			declared, found, err := table.Desired.OwnedObjects.Get(object.Ref)
+			if err != nil {
+				return nil, err
+			}
+			if !found {
+				continue
+			}
+			rebuild, err := dependent.RebuildChange(declared.Value)
+			if err != nil {
+				return nil, err
+			}
+			changes = append(changes, schemaext.ChangeRecord{Subject: object.Ref, Value: rebuild})
+		}
+	}
+	return changes, nil
+}
+
+// retypedColumns names, by the table the diff names, the columns whose type it changes.
+func retypedColumns(diff *difftypes.SchemaDiff) map[string][]string {
+	retyped := make(map[string][]string)
+	for _, table := range diff.TablesModified {
+		for _, column := range table.ColumnsModified {
+			if _, changed := column.Changes["type"]; changed {
+				retyped[table.TableName] = append(retyped[table.TableName], column.ColumnName)
+			}
+		}
+	}
+	return retyped
+}
+
+// standsInTheWay reports whether dependent, an object of the table own, names a column
+// of retyped on its own table or on a table it reads.
+func standsInTheWay(dependent schemaext.ColumnTypeDependent, own string, retyped map[string][]string, semantics identifier.Semantics) bool {
+	for table, columns := range retyped {
+		sameTable := semantics.QualifiedTableIdentityKey(table) == semantics.QualifiedTableIdentityKey(own)
+		if !sameTable && !schemaext.ReadsRelationIn(dependent, table, semantics) {
+			continue
+		}
+		if slices.ContainsFunc(columns, dependent.NamesColumn) {
+			return true
+		}
+	}
+	return false
+}
+
 func attachFeatureChanges(diff *difftypes.SchemaDiff, desired *schemamodel.Database, current *catalog.Database, changes []schemaext.ChangeRecord, target string, semantics identifier.Semantics) error {
+	changes, err := withColumnDependentsRebuilt(changes, diff, semantics)
+	if err != nil {
+		return err
+	}
 	positions := make(map[objectidentity.Key]int, len(diff.TablesModified))
 	for i, table := range diff.TablesModified {
 		if table.Desired.HasTable() {

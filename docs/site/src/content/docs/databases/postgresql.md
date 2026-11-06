@@ -1684,14 +1684,23 @@ enablement it may name. It drops a policy your schema no longer declares ahead
 of its column changes, because PostgreSQL refuses `ALTER COLUMN ... TYPE` on a
 column a policy names (`cannot alter type of a column used in a policy
 definition`). A restrictive policy replaced by another waits until the new one
-is created, so the table never admits more than it does at either end.
+is created, so the table never admits more than it does at either end, unless it
+names a column the plan retypes.
 
-Some changes run before a drop of that kind, or before a policy that stays or
-changes is touched, and PostgreSQL refuses them while a policy uses the object
-they change:
+A policy that names a column the plan retypes is rebuilt around that change,
+whether your schema keeps it, changes it or removes it, and whether it sits on that
+table or on a table that reads it: the plan drops it ahead of the column step and
+creates it from your schema after, with its comment. The test reads the names in its
+expressions. An expression that reads the column through the whole row of the table
+names no column, so the server's refusal stands there. The `DROP` and the `CREATE`
+run inside the migration. In a migration that runs without a transaction, other
+sessions see each statement as it commits, as they do for a rebuilt view: between
+the two the table has no such policy, so a permissive policy admits fewer rows than
+either end, and a restrictive one admits more.
 
-- `ALTER COLUMN ... TYPE` on a column that a policy names, where the policy
-  stays, changes, or is a restrictive policy replaced by another;
+Two other changes run before a policy is touched, and PostgreSQL refuses them while
+a policy uses the object they change:
+
 - a function change the server cannot make in place, which is a drop and a
   create (see [Function changes](#function-changes));
 - a domain or composite type that is dropped and created again (`cannot drop
@@ -1700,8 +1709,8 @@ they change:
 A migration that combines one of them with that policy stops at that statement.
 Inside a transaction, nothing the migration holds is applied; a migration that
 runs without one keeps the statements that ran before it. Change the policy in
-one migration and the column, the function or the type in the next. Measured on
-PostgreSQL 17.
+one migration and the function or the type in the next. Measured on PostgreSQL
+17.
 
 A plan that drops a view or a materialized view a policy reads is refused, and
 so is one that drops a routine a policy calls. The drop would remove the

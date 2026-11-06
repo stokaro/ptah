@@ -1519,7 +1519,12 @@ see, on `schema apply` and `schema diff` alike:
   are schema namespaces and unqualified objects belong to the connection's
   default schema (`public`). On MySQL and MariaDB a schema is a database, and
   because a Ptah connection is bound to one database, only the connected
-  database's name selects anything. SQLite has the single schema `main`.
+  database's name selects anything. SQLite has the single schema `main`. An HCL
+  document may declare a schema the names leave out, and the run narrows the
+  document to the selection. Under `PTAH_ATLAS_STRICT_COMPAT=1` the document is
+  refused instead, as the pinned community binary v1.3.0 refuses it: `schema
+  "app" from paths ["schema.hcl"] is not requested (all schemas in HCL must be
+  requested)`.
 - `--include` picks top-level resources inside that universe with Atlas-style
   glob selectors, optionally constrained with `[type=...]`. Selectable types:
   `table`, `view`, `materialized_view`, `function`, `enum`, `extension`,

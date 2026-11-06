@@ -398,8 +398,8 @@ func createdObjects(features Result) map[objectidentity.Key]bool {
 // permits its drop and creation to be ordered together. Default creation and
 // removal windows put the creation first, which would meet the old object.
 // Dependent, type and lifecycle phases each permit an owner to order both
-// halves in one window. A drop in the lifecycle span and a creation in the default
-// window are permitted too, for a host whose span comes first: an owner that has
+// halves in one window. A drop in the lifecycle span and a creation in the default or
+// the dependent window are permitted too, for a host whose span comes first: an owner that has
 // to drop an object before the host's column changes and create it after them
 // orders the two halves, and on a host whose span comes later that order has a
 // cycle. The graph still checks their effects and dependencies.
@@ -426,7 +426,7 @@ func refuseSplitReplacements(features Result) error {
 					continue
 				}
 				if phase := features.Phases[step.ID]; phase == other.phase && (phase == featureplan.PhaseDependent || phase == featureplan.PhaseType || phase == featureplan.PhaseLifecycle) ||
-					other.phase == featureplan.PhaseLifecycle && phase == featureplan.PhaseDefault {
+					other.phase == featureplan.PhaseLifecycle && (phase == featureplan.PhaseDefault || phase == featureplan.PhaseDependent) {
 					continue
 				}
 				return fmt.Errorf("%w: feature step %s/%s creates %s, which step %s/%s drops; a replacement is one step, "+

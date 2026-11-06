@@ -411,6 +411,7 @@ func withAtlasSchemaApplyPolicy(
 	policy atlascompatpolicy.Policy,
 ) atlasschema.ApplyRuntimeOptions {
 	runtime.IgnoreUnknownHCLNames = policy.IgnoreUnknownHCLNames()
+	runtime.RefuseUnrequestedSchemas = policy.IsStrictCE()
 	runtime.OmitNullBackfill = !policy.FillsNullRowsWithDefault()
 	runtime.ValidateDesiredSchema = policy.ValidateDesiredSchema
 	runtime.ValidateCurrentSchema = policy.ValidateInspectedSchema

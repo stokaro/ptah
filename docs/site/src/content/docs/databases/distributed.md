@@ -275,6 +275,13 @@ back asked for a column the engine owns. Both are now excluded from a
 CockroachDB read. PostgreSQL and YugabyteDB have no such notion and their reads
 are unchanged.
 
+**A declared primary key that leaves becomes the hidden `rowid`.** Every
+CockroachDB table holds a primary key, and the server refuses a key's drop with
+no key added in the same statement. So a plan adds the hidden column, then drops
+the key and adds one over that column in one statement, which leaves the table
+as one declared without a key. A table that holds a column named `rowid` stops
+at the first statement, before anything changes.
+
 ### On other engines
 
 The `platform.cockroachdb` properties apply to CockroachDB only, as every

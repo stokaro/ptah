@@ -207,6 +207,32 @@ func (v *ObservedPolicy) ReadsRelationIn(relation string, semantics identifier.S
 	return false
 }
 
+// NamesColumn reports whether either expression names column, or selects every
+// column with a `*`. It implements [schemaext.ColumnTypeDependent]. PostgreSQL records
+// a dependency from a policy to each column its expressions read, and refuses to
+// change the type of one. A nil policy names nothing.
+func (v *ObservedPolicy) NamesColumn(column string) bool {
+	if v == nil {
+		return false
+	}
+	for _, clause := range []*string{v.Using, v.WithCheck} {
+		if clause != nil && (strings.Contains(*clause, "*") || deporder.ReferencesIdentifier(*clause, column)) {
+			return true
+		}
+	}
+	return false
+}
+
+// RebuildChange implements [schemaext.ColumnTypeDependent]: desired is the policy the
+// declaration holds under this name, which may read as this one does.
+func (v *ObservedPolicy) RebuildChange(desired schemaext.Value) (schemaext.ChangeValue, error) {
+	after, ok := desired.(*DesiredPolicy)
+	if !ok || after == nil {
+		return nil, fmt.Errorf("%w: a policy is rebuilt from a declared policy, got %T", schemaext.ErrInvalidValue, desired)
+	}
+	return &PolicyChange{Before: v, After: after, Rebuild: true, Access: PolicyAccess(v, after, ExpressionsSame)}, nil
+}
+
 // Equal compares observations field by field, the role list as a set.
 func (v *ObservedPolicy) Equal(other schemaext.Value) bool {
 	right, ok := other.(*ObservedPolicy)

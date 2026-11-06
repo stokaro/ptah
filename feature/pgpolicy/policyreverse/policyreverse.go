@@ -79,7 +79,7 @@ func reversePolicy(record schemaext.ChangeRecord, change *pgpolicy.PolicyChange)
 	if err := pgpolicy.ValidatePolicyRef(record.Subject); err != nil {
 		return schemaext.Reversal{}, err
 	}
-	reversed := &pgpolicy.PolicyChange{CommentOnly: change.CommentOnly}
+	reversed := &pgpolicy.PolicyChange{CommentOnly: change.CommentOnly, Rebuild: change.Rebuild}
 	projection := schemaext.ProjectedValue{Placement: schemaext.ObjectPlacement, Kind: pgpolicy.PolicyKind}
 	if change.After != nil {
 		after, err := change.After.Observed()

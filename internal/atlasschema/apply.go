@@ -112,6 +112,9 @@ type ApplyOptions struct {
 	// IgnoreUnknownHCLNames is the Atlas-compatible surface's unknown-name
 	// policy; see [ptah.run/internal/atlassource.ResolveOptions].
 	IgnoreUnknownHCLNames bool
+	// RefuseUnrequestedSchemas holds an HCL desired state to Schemas; see
+	// [ptah.run/internal/schemafile.Options.RequestedSchemas].
+	RefuseUnrequestedSchemas bool
 	// OmitNullBackfill plans SET NOT NULL without filling the column's NULL
 	// rows from its declared default first; see
 	// [ptah.run/migration/planext.Options]. The caller selects it from its
@@ -220,6 +223,8 @@ type ApplyRuntimeOptions struct {
 	// IgnoreUnknownHCLNames is the Atlas-compatible surface's unknown-name
 	// policy; see [ApplyOptions.IgnoreUnknownHCLNames].
 	IgnoreUnknownHCLNames bool
+	// RefuseUnrequestedSchemas is [ApplyOptions.RefuseUnrequestedSchemas].
+	RefuseUnrequestedSchemas bool
 	// OmitNullBackfill is [ApplyOptions.OmitNullBackfill].
 	OmitNullBackfill bool
 	// ValidateDesiredSchema applies a caller-selected desired-schema policy;
@@ -809,19 +814,21 @@ func loadDesiredApplySchema(
 	schemaScope, schemaScopeFlag := schemafile.ScopeFromURLs(opts.DevURL, conn.Info().URL, "url")
 	if opts.LocalFilesOnly {
 		desired, err := schemafile.LoadSources(ctx, localApplySources(opts), schemafile.Options{
-			Contexts:              opts.Runtime,
-			YAML:                  opts.Runtime.YAML(),
-			SQL:                   opts.Runtime.SQL(),
-			HCL:                   opts.Runtime.HCL(),
-			CoverageVocabulary:    opts.Runtime.CoverageVocabulary(),
-			Relations:             featureselect.RelationsOf(opts.Runtime),
-			DatabaseURL:           conn.Info().URL,
-			Dialect:               conn.Info().Dialect,
-			IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,
-			ReportIgnored:         opts.Diagnostics,
-			SchemaScope:           schemaScope,
-			SchemaScopeFlag:       schemaScopeFlag,
-			Vars:                  opts.Vars,
+			Contexts:                 opts.Runtime,
+			YAML:                     opts.Runtime.YAML(),
+			SQL:                      opts.Runtime.SQL(),
+			HCL:                      opts.Runtime.HCL(),
+			CoverageVocabulary:       opts.Runtime.CoverageVocabulary(),
+			Relations:                featureselect.RelationsOf(opts.Runtime),
+			DatabaseURL:              conn.Info().URL,
+			Dialect:                  conn.Info().Dialect,
+			IgnoreUnknownHCLNames:    opts.IgnoreUnknownHCLNames,
+			ReportIgnored:            opts.Diagnostics,
+			SchemaScope:              schemaScope,
+			SchemaScopeFlag:          schemaScopeFlag,
+			RequestedSchemas:         opts.Schemas,
+			RefuseUnrequestedSchemas: opts.RefuseUnrequestedSchemas,
+			Vars:                     opts.Vars,
 		})
 		if err != nil {
 			return nil, err
@@ -864,6 +871,8 @@ func loadDesiredApplySchema(
 		DevServerDisposable:       opts.DevServerDisposable,
 		SchemaScope:               schemaScope,
 		SchemaScopeFlag:           schemaScopeFlag,
+		RequestedSchemas:          opts.Schemas,
+		RefuseUnrequestedSchemas:  opts.RefuseUnrequestedSchemas,
 		IgnoreUnknownHCLNames:     opts.IgnoreUnknownHCLNames,
 		ReportIgnored:             opts.Diagnostics,
 		Vars:                      opts.Vars,
@@ -1035,11 +1044,12 @@ func PrepareApply(
 		ValidateLocalSchemaSource: opts.ValidateLocalSchemaSource,
 		OmitNullBackfill:          opts.OmitNullBackfill,
 
-		Diagnostics:            opts.Diagnostics,
-		WarnUndescribedSchemas: opts.WarnUndescribedSchemas,
-		RefuseUnmatchedExclude: true,
-		IgnoreUnknownHCLNames:  opts.IgnoreUnknownHCLNames,
-		Vars:                   opts.Vars,
+		Diagnostics:              opts.Diagnostics,
+		WarnUndescribedSchemas:   opts.WarnUndescribedSchemas,
+		RefuseUnmatchedExclude:   true,
+		IgnoreUnknownHCLNames:    opts.IgnoreUnknownHCLNames,
+		RefuseUnrequestedSchemas: opts.RefuseUnrequestedSchemas,
+		Vars:                     opts.Vars,
 	}
 	computation, err := computeApplyPlan(ctx, conn, planning)
 	if err != nil {

@@ -123,6 +123,10 @@ type ResolveOptions struct {
 	// layer that knows which flags it has.
 	SchemaScope     string
 	SchemaScopeFlag string
+	// RequestedSchemas and RefuseUnrequestedSchemas hold an HCL desired state to a
+	// selection; see [ptah.run/internal/schemafile.Options.RequestedSchemas].
+	RequestedSchemas         []string
+	RefuseUnrequestedSchemas bool
 	// ConnectTimeout bounds opening a database-backed source and reading its
 	// initial connection metadata. A zero value leaves the caller's context
 	// deadline unchanged.
@@ -382,20 +386,22 @@ func (s Set) resolve(ctx context.Context, opts ResolveOptions, finish HoldFunc) 
 	switch s.Kind {
 	case KindLocalFile:
 		schema, err := schemafile.LoadSources(ctx, s.SchemaFileSources(), schemafile.Options{
-			Contexts:              opts.Runtime,
-			DatabaseURL:           opts.DatabaseURL,
-			Dialect:               opts.Dialect,
-			YAML:                  opts.Runtime.YAML(),
-			SQL:                   opts.Runtime.SQL(),
-			HCL:                   opts.Runtime.HCL(),
-			CoverageVocabulary:    opts.Runtime.CoverageVocabulary(),
-			Relations:             featureselect.RelationsOf(opts.Runtime),
-			IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,
-			Notices:               opts.ReportIgnored,
-			ReportIgnored:         opts.ReportIgnored,
-			SchemaScope:           opts.SchemaScope,
-			SchemaScopeFlag:       opts.SchemaScopeFlag,
-			Vars:                  opts.Vars,
+			Contexts:                 opts.Runtime,
+			DatabaseURL:              opts.DatabaseURL,
+			Dialect:                  opts.Dialect,
+			YAML:                     opts.Runtime.YAML(),
+			SQL:                      opts.Runtime.SQL(),
+			HCL:                      opts.Runtime.HCL(),
+			CoverageVocabulary:       opts.Runtime.CoverageVocabulary(),
+			Relations:                featureselect.RelationsOf(opts.Runtime),
+			IgnoreUnknownHCLNames:    opts.IgnoreUnknownHCLNames,
+			Notices:                  opts.ReportIgnored,
+			ReportIgnored:            opts.ReportIgnored,
+			SchemaScope:              opts.SchemaScope,
+			SchemaScopeFlag:          opts.SchemaScopeFlag,
+			RequestedSchemas:         opts.RequestedSchemas,
+			RefuseUnrequestedSchemas: opts.RefuseUnrequestedSchemas,
+			Vars:                     opts.Vars,
 		})
 		if err != nil {
 			return err
