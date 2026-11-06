@@ -2,6 +2,11 @@ name: Integration Tests
 
 on:
   workflow_call:
+    inputs:
+      race:
+        description: Run the tagged contour and the suite runner under the race detector.
+        type: boolean
+        default: false
   push:
     branches:
       - master
@@ -73,13 +78,16 @@ jobs:
     if: github.event_name != 'pull_request' || needs.scope.outputs.code == 'true'
     runs-on: ubuntu-latest
     # The whole contour runs in one job, because testcontour fails on a skip
-    # and no package selector may narrow it. The total budget also covers
-    # database setup, race builds, and the following smoke suites. The
-    # packages run one at a time, and the contour step alone measured 78 and
-    # 112 minutes on two neighboring master commits, so 120 cut passing runs
-    # off. A hung test still fails its package at the contour's --timeout,
-    # which sits above the root package: it ran past 45 minutes under the race
-    # detector with 26 of its 1195 tests left to start.
+    # and no package selector may narrow it. A push or a pull request runs it
+    # without the race detector. The nightly `complete integration contour` in
+    # atlas-reference.yml asks for the detector, and the limits here are sized
+    # for that slower run. The total budget also covers database setup, race
+    # builds, and the following smoke suites. The packages run one at a time,
+    # and the contour step alone measured 78 and 112 minutes on two neighboring
+    # master commits, so 120 cut passing runs off. A hung test still fails its
+    # package at the contour's --timeout, which sits above the root package: it
+    # ran past 45 minutes under the race detector with 26 of its 1195 tests left
+    # to start.
     timeout-minutes: 180
     
     services:
@@ -638,12 +646,12 @@ jobs:
           command -v dot
           go run ./internal/cmd/testcontour \
             --tags integration \
-            --race \
+            --race=${{ inputs.race == true }} \
             --timeout 75m
 
       - name: Build integration test binary
         run: |
-          go build -race -o ./integration-test ./cmd/integration-test
+          go build -race=${{ inputs.race == true }} -o ./integration-test ./cmd/integration-test
 
       - name: Test integration binary help
         run: |

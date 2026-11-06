@@ -235,6 +235,10 @@ jobs:
       contents: read
       pull-requests: read
     uses: ./.github/workflows/go-integration-tests.yml
+    # The one run of the whole contour under the race detector. A push or a pull
+    # request leaves the detector out to keep the contour short.
+    with:
+      race: true
 
   atlas-reference-gate:
     name: Atlas reference gate

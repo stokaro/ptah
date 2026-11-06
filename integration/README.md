@@ -81,9 +81,11 @@ step, install Graphviz, and then run the single recursive contour:
 ```bash
 go run ./internal/cmd/testcontour \
   --tags integration \
-  --race \
-  --timeout 45m
+  --timeout 75m
 ```
+
+A push or a pull request runs this command. The nightly `complete integration
+contour` job in `atlas-reference.yml` adds `--race`.
 
 Do not run selected test names or individual packages as a CI substitute for
 this contour. An integration test is never white-box: integration tests use
