@@ -76,6 +76,10 @@ type Comparison struct {
 	// RestrictIsNoAction reports that a RESTRICT referential action means
 	// what NO ACTION does, as InnoDB implements both.
 	RestrictIsNoAction bool `json:"restrict_is_no_action,omitempty"`
+	// PrimaryKeyRenames reports that a statement renames a primary key in place,
+	// so a declared name over the columns the key holds is a rename, with no
+	// rebuild of the key and nothing to do for a foreign key over it.
+	PrimaryKeyRenames bool `json:"primary_key_renames,omitempty"`
 	// PrimaryKeyName is the name the server gives every primary key, such as
 	// "PRIMARY". Empty means a primary key keeps the name it is declared
 	// with, and one declared with none is named after its table.

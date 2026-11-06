@@ -115,8 +115,11 @@ func ConstraintsWithSemantics(
 		}
 	}
 
+	renamed := renamedPrimaryKeys(genConstraints, dbConstraints, dialect, semantics)
+	markRenamedPrimaryKeys(diff.ConstraintsAdded, renamed, dbConstraints, semantics)
+
 	// Find modified constraints (constraints that exist in both but have different definitions)
-	underRemovedKey := foreignKeysOverRemovedKeys(genConstraints, dbConstraints, database, diff, dialect, semantics, opts)
+	underRemovedKey := foreignKeysOverRemovedKeys(genConstraints, constraintsLessRenames(dbConstraints, renamed), database, diff, dialect, semantics, opts)
 	for constraintKey, genConstraint := range genConstraints {
 		if dbConstraint, exists := dbConstraints[constraintKey]; exists {
 			if constraintDefinitionsChanged(genConstraint, dbConstraint, dialect, semantics, opts) || underRemovedKey[constraintKey] {

@@ -142,6 +142,7 @@ func cockroachDB() descriptor.Dialect {
 		Comparison: descriptor.Comparison{
 			DeclaredSchemas:    true,
 			TimePrecision:      descriptor.TimePrecision{Compared: true, Default: 6},
+			PrimaryKeyRenames:  true,
 			ForeignKeysOutside: true,
 			// Measured on v26.3.5.
 			ForeignKeyMatchesKeyInAnyOrder: true,

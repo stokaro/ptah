@@ -705,6 +705,9 @@ func toDBFieldConstraints(table schemamodel.Table, field schemamodel.Field, chec
 }
 
 func tablePrimaryKeyName(table schemamodel.Table) string {
+	if table.PrimaryKeyName != "" {
+		return table.PrimaryKeyName
+	}
 	if table.Name == "" {
 		return "primary"
 	}

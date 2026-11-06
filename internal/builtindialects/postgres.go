@@ -157,6 +157,7 @@ func postgres() descriptor.Dialect {
 			// another key, or none, plans no key and reads as synced, measured
 			// on 18.6. The rest of the family has not been measured.
 			ColumnPrimaryKeyIsTheTablesKey: true,
+			PrimaryKeyRenames:              true,
 			ExpressionProbes:               "pg-catalog",
 			RolePasswords:                  true,
 			DefaultGeneratedKind:           "STORED",
