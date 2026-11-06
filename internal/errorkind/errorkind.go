@@ -1,5 +1,6 @@
 // Package errorkind names why a command could not open its connection to the
-// target database, from a closed vocabulary a program can branch on.
+// target database, or could not see what it reads there, from a closed
+// vocabulary a program can branch on.
 //
 // The machine-readable documents `schema drift`, `schema plan`, `schema
 // apply`, `migrations status` and `migrations up` print carry an error object
@@ -10,19 +11,21 @@
 //
 // # What is classified
 //
-// Only a failure to open the target connection. A command marks that one
-// failure with [TargetConnection] where it connects, and [Classify] answers
-// nothing for an error without the mark. The mark is what keeps the answer
-// honest: a registry, a Git remote, a webhook and a dev database all dial
-// too, and a refused dial to any of them is not the target being unreachable.
-// A failure the command did not mark has no kind, which is a missing answer
-// rather than a wrong one.
+// A failure to open the target connection, and a [ReadRefusal] from reading the
+// target. A command marks the first with [TargetConnection] where it connects
+// and the second with [TargetRead] where it reads, and [Classify] answers nothing
+// for an error without the mark. The mark is what keeps the answer honest: a
+// registry, a Git remote, a webhook and a dev database all dial too, and a
+// refused dial to any of them is not the target being unreachable. A dev database
+// is read too, and an account that cannot see what is in it says nothing about
+// the target. A failure the command did not mark has no kind, which is a missing
+// answer rather than a wrong one.
 //
 // The kind is read from typed errors and never from message text: the driver's
 // error type and code for an answer from the server, the crypto/tls and
-// crypto/x509 error types for a handshake, and the net package's error types
-// for a server that never answered. An error that carries none of them has no
-// kind.
+// crypto/x509 error types for a handshake, the net package's error types for a
+// server that never answered, and [ReadRefusal] for a read. An error that carries
+// none of them has no kind.
 package errorkind
 
 import (
@@ -60,7 +63,8 @@ const (
 	// connection names does not exist.
 	DatabaseNotFound Kind = "database_not_found"
 	// PermissionDenied means the server accepted the credentials and refused
-	// the role access to the database it names.
+	// the role access to the database it names, or the role holds no privilege
+	// that shows what the command reads there.
 	PermissionDenied Kind = "permission_denied"
 	// TLSFailed means the TLS handshake failed: the server's certificate did
 	// not verify, the server does not offer TLS the connection requires, or
@@ -81,6 +85,9 @@ type Report struct {
 	// Message is the error written for a person. It can quote what the
 	// database said, so a caller that must not publish that reads Kind.
 	Message string `json:"message"`
+	// MissingPrivileges is what the role lacks, present when the failure is a
+	// [ReadRefusal] from reading the target.
+	MissingPrivileges []MissingPrivilege `json:"missing_privileges,omitempty"`
 }
 
 // NewReport describes err, and returns nil for a nil err.
@@ -88,7 +95,11 @@ func NewReport(err error) *Report {
 	if err == nil {
 		return nil
 	}
-	return &Report{Kind: Classify(err), Message: err.Error()}
+	report := &Report{Kind: Classify(err), Message: err.Error()}
+	if refusal, ok := targetReadRefusal(err); ok {
+		report.MissingPrivileges = refusal.Missing
+	}
+	return report
 }
 
 // Failure is the document a command prints when it fails and its own document
@@ -127,15 +138,82 @@ func (e *targetConnectionError) Error() string { return e.err.Error() }
 
 func (e *targetConnectionError) Unwrap() error { return e.err }
 
+// ReadRefusal is a schema read that refused because the connecting account holds
+// no privilege that shows what the run depends on. A reader raises it for any
+// database it reads, and only a command knows which one is its target, so it
+// counts for [Classify] under the mark of [TargetRead].
+type ReadRefusal struct {
+	// Missing is what the account lacks, in the order the message lists it.
+	Missing []MissingPrivilege
+	// Err is the refusal as the command reports it.
+	Err error
+}
+
+// Error returns the message of the wrapped refusal.
+func (e *ReadRefusal) Error() string { return e.Err.Error() }
+
+// Unwrap returns the wrapped refusal.
+func (e *ReadRefusal) Unwrap() error { return e.Err }
+
+// MissingPrivilege is one kind of object an account cannot see in a database, and
+// what it needs to see it.
+type MissingPrivilege struct {
+	// Database is the database the read could not see all of.
+	Database string `json:"database"`
+	// Objects is what the account cannot see: tables, which is also the list of
+	// views, or views, constraints, triggers or routines.
+	Objects string `json:"objects"`
+	// Names are the objects the read listed and could not read, and absent when
+	// the account cannot list that kind at all.
+	Names []string `json:"names,omitempty"`
+	// Privilege is what the account needs, spelled as the message spells it.
+	Privilege string `json:"privilege"`
+}
+
+// TargetRead marks err as a failure to read the command's target database. The
+// mark changes neither the message nor what errors.Is and errors.As find, and
+// [Classify] gives a kind only to a [ReadRefusal] under it, so a connection lost
+// in the middle of a read still has none. It returns nil for a nil err.
+func TargetRead(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &targetReadError{err: err}
+}
+
+// targetReadError is the mark [TargetRead] puts on an error.
+type targetReadError struct {
+	err error
+}
+
+func (e *targetReadError) Error() string { return e.err.Error() }
+
+func (e *targetReadError) Unwrap() error { return e.err }
+
+// targetReadRefusal returns the [ReadRefusal] under a [TargetRead] mark in err.
+func targetReadRefusal(err error) (*ReadRefusal, bool) {
+	target, ok := errors.AsType[*targetReadError](err)
+	if !ok {
+		return nil, false
+	}
+	return errors.AsType[*ReadRefusal](target.err)
+}
+
 // Classify returns the kind of err, and the empty Kind when it has none.
 //
-// Only the part of err under a [TargetConnection] mark is read. Within it an
-// answer from the server decides first, because a server that answered was
+// A [ReadRefusal] under a [TargetRead] mark is permission denied: the account
+// connected and cannot see what the command reads.
+//
+// Otherwise only the part of err under a [TargetConnection] mark is read. Within
+// it an answer from the server decides first, because a server that answered was
 // reached: a code outside the vocabulary leaves the failure with no kind
 // rather than letting a network error elsewhere in the chain speak for it.
 // Then a handshake failure, then a server that never answered. A cancellation
 // has no kind, since the command was stopped rather than refused.
 func Classify(err error) Kind {
+	if _, refused := targetReadRefusal(err); refused {
+		return PermissionDenied
+	}
 	target, ok := errors.AsType[*targetConnectionError](err)
 	if !ok {
 		return ""

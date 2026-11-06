@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/dbreset"
+	"ptah.run/internal/errorkind"
 	"ptah.run/internal/mysqlgrants"
 	"ptah.run/internal/readscope"
 )
@@ -94,8 +95,12 @@ func (r *Reader) readGrantOptions(ctx context.Context) (mysqlgrants.Options, err
 	return options, rows.Err()
 }
 
-// missingPrivilege is one line of a refusal.
+// missingPrivilege is one line of a refusal: what the account cannot see, in the
+// words of the message and as the kind and the names a report carries, and the
+// privilege it needs.
 type missingPrivilege struct {
+	kind      readscope.Kind
+	names     []string
 	objects   string
 	privilege string
 }
@@ -126,14 +131,21 @@ func (r *Reader) refuseUnseenObjects(
 			"a privilege on, and a comparison reads a hidden object as absent. The account needs:",
 		a.name, database,
 	)
+	report := make([]errorkind.MissingPrivilege, 0, len(missing))
 	for _, line := range missing {
 		privilege := line.privilege
 		if privilege == "" {
 			privilege = routinePrivilege
 		}
 		fmt.Fprintf(&message, "\n  - %s: %s", line.objects, privilege)
+		report = append(report, errorkind.MissingPrivilege{
+			Database:  database,
+			Objects:   string(line.kind),
+			Names:     line.names,
+			Privilege: privilege,
+		})
 	}
-	return errors.New(message.String())
+	return &errorkind.ReadRefusal{Missing: report, Err: errors.New(message.String())}
 }
 
 // missingPrivileges is what the account lacks to see what the run depends on in
@@ -152,44 +164,53 @@ func (a sessionAccount) missingPrivileges(
 
 	var missing []missingPrivilege
 	if !listed && needsListing(ctx) {
-		missing = append(missing, missingPrivilege{"tables and views", "SELECT on " + wholeDatabase})
+		missing = append(missing, missingPrivilege{
+			kind: readscope.Tables, objects: "tables and views", privilege: "SELECT on " + wholeDatabase,
+		})
 	}
 	if readscope.Needs(ctx, readscope.Views) {
 		emptyViews := viewsWithoutDefinition(schema.Views)
 		switch {
 		case len(emptyViews) > 0:
 			missing = append(missing, missingPrivilege{
-				"the definitions of views " + strings.Join(emptyViews, ", "),
-				"SELECT and SHOW VIEW on " + wholeDatabase,
+				kind:      readscope.Views,
+				names:     emptyViews,
+				objects:   "the definitions of views " + strings.Join(emptyViews, ", "),
+				privilege: "SELECT and SHOW VIEW on " + wholeDatabase,
 			})
 		case !authored && !listed && !onDatabase.Holds("SHOW VIEW"):
 			missing = append(missing, missingPrivilege{
-				"the definitions of views",
-				"SELECT and SHOW VIEW on " + wholeDatabase,
+				kind:      readscope.Views,
+				objects:   "the definitions of views",
+				privilege: "SELECT and SHOW VIEW on " + wholeDatabase,
 			})
 		}
 	}
 	if a.mariaDB && !authored && readscope.Needs(ctx, readscope.Constraints) &&
 		!a.holdsOnEveryTable(database, schema.Tables, mariaDBConstraintPrivileges) {
 		missing = append(missing, missingPrivilege{
-			"primary keys, unique keys, foreign keys and CHECK constraints",
-			"a privilege beyond SELECT, such as SHOW VIEW, on " + wholeDatabase,
+			kind:      readscope.Constraints,
+			objects:   "primary keys, unique keys, foreign keys and CHECK constraints",
+			privilege: "a privilege beyond SELECT, such as SHOW VIEW, on " + wholeDatabase,
 		})
 	}
 	if readscope.Needs(ctx, readscope.Triggers) &&
 		(slices.ContainsFunc(schema.Triggers, triggerHasNoBody) ||
 			(!authored && !a.holdsOnEveryTable(database, schema.Tables, []string{"TRIGGER"}))) {
-		missing = append(missing, missingPrivilege{"triggers", "TRIGGER on " + wholeDatabase})
+		missing = append(missing, missingPrivilege{
+			kind: readscope.Triggers, objects: "triggers", privilege: "TRIGGER on " + wholeDatabase,
+		})
 	}
 	if readscope.Needs(ctx, readscope.Routines) {
 		switch {
 		case len(hiddenRoutines) > 0:
 			missing = append(missing, missingPrivilege{
-				"the bodies of routines " + strings.Join(hiddenRoutines, ", ") + ", unless the account is their definer",
-				"",
+				kind:    readscope.Routines,
+				names:   hiddenRoutines,
+				objects: "the bodies of routines " + strings.Join(hiddenRoutines, ", ") + ", unless the account is their definer",
 			})
 		case !authored && !a.holdsRoutineListing(database):
-			missing = append(missing, missingPrivilege{"procedures and functions", ""})
+			missing = append(missing, missingPrivilege{kind: readscope.Routines, objects: "procedures and functions"})
 		}
 	}
 	return missing

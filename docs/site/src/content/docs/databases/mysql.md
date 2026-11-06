@@ -579,6 +579,12 @@ compare`, `schema drift`, `schema inspect`, `schema plan`, `schema apply`,
 apply that believes an object is absent plans from that belief. `ptah-compat` gives
 the same answer at exit 1, the one failure code its surface has.
 
+The documents of `schema plan`, `schema apply` and `schema drift` report a refused
+read of the target with the kind `permission_denied` and a `missing_privileges`
+list, so a caller need not read the sentence.
+[Why a command failed](../../reference/exit-codes/#why-a-command-failed) gives the
+fields.
+
 What each kind of object takes, measured on MySQL 8.4 and 26.10 and on MariaDB
 11.8 and 12.3:
 

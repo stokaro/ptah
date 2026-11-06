@@ -453,7 +453,7 @@ apply`, so a consumer can refuse a document it did not ask for.
 A run that fails carries `error`, an object with two fields. `message` is the
 sentence printed on standard error. It can quote the database, so a consumer
 that must not publish what the database said reads `kind` instead. `kind` says
-why the target database could not be opened, from a closed list:
+why the target database could not be opened or read, from a closed list:
 `database_unreachable`, `authentication_failed`, `database_not_found`,
 `permission_denied` or `tls_failed`. It is absent for every other failure.
 [Why a command failed](../../reference/exit-codes/#why-a-command-failed)
@@ -484,7 +484,7 @@ Against a database whose password the URL gets wrong, the plan reports:
 | `undecided` | The declared objects the comparison could not check; see [Undecided objects](#undecided-objects) |
 | `command` | `schema plan` |
 | `refusal` | Why planning refused; see below |
-| `error` | The failure, for `refused` and `failed`: `message`, printed on standard error, and `kind` when the target database could not be opened |
+| `error` | The failure, for `refused` and `failed`: `message`, printed on standard error, and `kind` when the target database could not be opened or the account cannot see what the command reads there |
 | `schema_diagnostics` | Every diagnostic a provider reported when it refused the SQL schema documents it read: `code`, `severity`, `path`, `start` and `end` (byte `offset`, `line`, `column`) and `message` |
 
 `plan` also appears with `no-changes` when it contains notes. A saved or
@@ -520,7 +520,7 @@ format.
 | `undecided` | The declared objects the comparison could not check; see [Undecided objects](#undecided-objects). Absent with `--plan` |
 | `command` | `schema apply` |
 | `refusal` | Why the apply refused; see below |
-| `error` | The failure, for `refused`, `failed` and `unknown`: `message`, printed on standard error, and `kind` when the target database could not be opened |
+| `error` | The failure, for `refused`, `failed` and `unknown`: `message`, printed on standard error, and `kind` when the target database could not be opened or the account cannot see what the command reads there |
 | `schema_diagnostics` | As in the plan document |
 
 | Outcome | Meaning |

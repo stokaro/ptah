@@ -53,8 +53,9 @@ Atlas-compatible surfaces use `1` for both classes to match Atlas CE.
 ## Why a command failed
 
 Exit code `2` does not say why a command failed. When the reason is that the
-target database could not be opened, the machine-readable document of these
-commands says it:
+target database could not be opened, or that the connecting account cannot see
+what the command reads there, the machine-readable document of these commands
+says it:
 
 - `ptah schema drift --format json`
 - `ptah schema plan --json`
@@ -70,7 +71,7 @@ command prints on standard error, and a `kind` from this list:
 | `database_unreachable` | The server never answered: the host name did not resolve, the address refused or could not route the connection, or the connection timed out before the server completed it. | The host and port in the URL, name resolution, network policy, and whether the server is running. |
 | `authentication_failed` | The server did not accept the credentials: a wrong password, an unknown or locked role, an expired password, or no host rule that admits the connection. | The user name and password in the URL, and the server's host rules, such as `pg_hba.conf`. |
 | `database_not_found` | The server answered that the database the URL names does not exist. | The database name in the URL. |
-| `permission_denied` | The server accepted the credentials and refused the role access to the database. | The role's privileges: `CONNECT` on the database on PostgreSQL, a grant on the database on MySQL. |
+| `permission_denied` | The server accepted the credentials and refused the role access to the database, or the role holds no privilege that shows what the command reads there. | The role's privileges: `CONNECT` on the database on PostgreSQL, a grant on the database on MySQL, and what `missing_privileges` lists. |
 | `tls_failed` | The TLS handshake failed: the certificate did not verify, the server offers no TLS the URL requires, or the server requires TLS the URL did not use. | The URL's TLS parameters, such as `sslmode`, `sslrootcert` or `tls`, and the server's certificate. |
 
 `kind` is absent for every other failure, including a failure to reach
@@ -81,6 +82,21 @@ PostgreSQL driver reports a server that refuses the TLS a URL requires that way.
 MySQL answers an account that holds no privilege on a database name with access
 denied whether or not the database exists, so that account sees
 `permission_denied` rather than `database_not_found`.
+
+A MySQL or MariaDB read of the target refuses when the account cannot see what
+the command depends on. `schema drift`, `schema plan` and `schema apply` report
+that as `permission_denied`, and `error` adds `missing_privileges`, with one
+entry for each kind of object:
+
+- `database` is the database the read could not see all of.
+- `objects` is `tables`, which is also the list of views, or `views`,
+  `constraints`, `triggers` or `routines`.
+- `names` are the objects the read listed and could not read. It is absent when
+  the account cannot list that kind at all.
+- `privilege` is what the account needs, spelled as `message` spells it.
+
+The same refusal from a database that is not the target, such as the one `--to`
+names, has no kind and no `missing_privileges`.
 
 The list may grow. A reader treats a kind it does not know as no kind. The exit
 code is `2` for every kind. Each command's document is described with the command:
