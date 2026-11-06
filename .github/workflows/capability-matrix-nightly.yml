@@ -113,11 +113,7 @@ jobs:
           set +e
           set -uo pipefail
           mkdir -p results
-          "${RUNNER_TEMP}/capmatrix" probe \
-            --cell "${CELL_ID}" \
-            --tier 3 \
-            --wait 6m \
-            --result "results/${CELL_ID}.json" >"results/${CELL_ID}-probe.log" 2>&1
+          scripts/capmatrix-probe-cell.sh 3 6m "results/${CELL_ID}-probe.log"
           cat "results/${CELL_ID}-probe.log"
 
       # The runner's own URL and its --databases name come from the same

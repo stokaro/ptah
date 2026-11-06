@@ -168,6 +168,12 @@ jobs:
       - name: Check the nightly failure report
         run: scripts/report-nightly-failure-selftest.sh
 
+      # The restart runs only when a matrix server died, which no pull request
+      # shows, so its rule is driven here with stubs in place of docker and the
+      # driver.
+      - name: Check the capability probe's restart rule
+        run: scripts/capmatrix-probe-cell-selftest.sh
+
       # A release tag's documentation deployment is created by hand, because
       # the action that would create it cannot be told which build version to
       # use. Which object id the tag deploys under is the rule, and it is

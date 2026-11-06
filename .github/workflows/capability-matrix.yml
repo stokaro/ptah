@@ -467,11 +467,7 @@ jobs:
           set +e
           set -uo pipefail
           mkdir -p results
-          "${RUNNER_TEMP}/capmatrix" probe \
-            --cell "${CELL_ID}" \
-            --tier 2 \
-            --wait 4m \
-            --result "results/${CELL_ID}.json" >"results/${CELL_ID}.log" 2>&1
+          scripts/capmatrix-probe-cell.sh 2 4m "results/${CELL_ID}.log"
           code=$?
           cat "results/${CELL_ID}.log"
           echo "code=${code}" >>"${GITHUB_OUTPUT}"
