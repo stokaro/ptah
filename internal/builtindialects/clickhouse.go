@@ -166,7 +166,7 @@ func clickHouse() descriptor.Dialect {
 		// ClickHouse's MODIFY COLUMN is not measured, so it is not read as
 		// MySQL's.
 		Grammar: descriptor.Grammar{
-			Columns:    descriptor.ColumnGrammar{TypeArgumentsAreTypes: true},
+			Columns:    descriptor.ColumnGrammar{TypeArgumentsAreTypes: true, StoredStringDefaults: true, StoredStringEscapes: true},
 			AlterTable: descriptor.AlterTableGrammar{Modify: descriptor.ModifyOther},
 		},
 

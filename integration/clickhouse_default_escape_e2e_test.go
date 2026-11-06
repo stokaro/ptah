@@ -37,6 +37,18 @@ func TestCompatMigrateDiffE2E_AClickHouseDefaultHoldingAnEscapedQuote(t *testing
 			want:  "it's;x|y;z",
 		},
 		{
+			name:  "a doubled quote, which the server reports with a backslash",
+			to:    "CREATE TABLE t (id UInt64, v String DEFAULT 'it''s', w String DEFAULT 'y;z') ENGINE = MergeTree ORDER BY id;\n",
+			table: "t",
+			want:  "it's|y;z",
+		},
+		{
+			name:  "a line break and a tab",
+			to:    "CREATE TABLE t (id UInt64, v String DEFAULT 'a\\nb', w String DEFAULT 'c\\td') ENGINE = MergeTree ORDER BY id;\n",
+			table: "t",
+			want:  "a\nb|c\td",
+		},
+		{
 			name:  "an escaped backslash",
 			to:    "CREATE TABLE t (id UInt64, v String DEFAULT 'a\\\\b', w String DEFAULT 'y;z') ENGINE = MergeTree ORDER BY id;\n",
 			table: "t",

@@ -3347,6 +3347,9 @@ func (p *Parser) handleStringLiteral() (*ast.DefaultValue, error) {
 			return nil, err
 		}
 		value = quotedStringConstant(text)
+		if p.target.grammar.Columns.StoredStringEscapes {
+			value = escapedStringConstant(text)
+		}
 	} else {
 		p.advance()
 	}
