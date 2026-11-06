@@ -7,6 +7,9 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"ptah.run/internal/devdocker"
+	"ptah.run/internal/envbool/envbooltest"
 )
 
 // catalogRowCases are plans that run over rows, read back after each direction. A statement
@@ -201,6 +204,9 @@ func catalogRowCasesOf(engine string) []int {
 // cannot be one statement, so what is free inside one statement stops being free here. The
 // next plan has to find nothing left to do in either direction.
 func TestCompatMigrateDiffCatalogShapeE2E_EveryPlanKeepsItsRows(t *testing.T) {
+	// One row replays a routine, whose effects a dev database cannot hold. The contour's servers
+	// are service containers the job throws away, which is what this declaration says.
+	envbooltest.Set(devdocker.DisposableServerEnvVar, "1")(qt.New(t))
 	for _, engine := range catalogOrderEngines {
 		for _, at := range catalogRowCasesOf(engine.name) {
 			test := catalogRowCases[at]
