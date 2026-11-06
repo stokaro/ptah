@@ -43,11 +43,14 @@ func TestExcludeDatabase_KeepsWhichRolesTheServerHas(t *testing.T) {
 	// See stokaro/ptah#1267.
 	schema := filterFixtureSchema()
 	schema.RolesOutOfScope = []catalog.Role{{Name: "other_tenants_role"}}
+	schema.RolesOutOfScopeReason = "another tenant owns them"
 
 	got, err := atlasfilter.ExcludeDatabase(ownerSelections(), schema, []string{"auth.audit_log"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(roleNames(got.RolesOutOfScope), qt.DeepEquals, []string{"other_tenants_role"})
+	// The reason is the reader's, and the note that counts the roles prints it.
+	c.Assert(got.RolesOutOfScopeReason, qt.Equals, "another tenant owns them")
 }
 
 func TestExcludeDatabase_TypeSelectorRemovesOnlyIndexes(t *testing.T) {

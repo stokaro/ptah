@@ -14,9 +14,12 @@ import (
 // starts from: the declaration it moves to and the table it found. The
 // reverse plan starts from what the forward plan leaves and moves to what it
 // found, so each prepared table takes the prior declaration of the table and
-// the table the forward plan found with its index changes projected onto it.
-// Without it, an owner asked to drop an index the forward plan added finds
-// the table without the index and refuses the drop.
+// the table the forward plan found with its index and constraint changes
+// projected onto it. Without the indexes, an owner asked to drop an index the
+// forward plan added finds the table without the index and refuses the drop;
+// without the constraints, an owner whose forward plan changed the table's
+// primary key finds the key it is asked to restore already held and plans no
+// rollback.
 //
 // A table the reverse plan alters is planned from its own projected capture,
 // which the reverse table diff carries, and a table it creates or drops from
@@ -49,8 +52,12 @@ func reverseTablePreparation(ctx context.Context, forward, reverse *difftypes.Sc
 		if err != nil {
 			return err
 		}
+		constraints, err := projectConstraints(forward, table.Current, semantics)
+		if err != nil {
+			return err
+		}
 		current := table.Current.Clone()
-		current.Indexes = indexes
+		current.Indexes, current.Constraints = indexes, constraints
 		reverse.TablePreparation.Prepared[i].Current = current
 		reverse.TablePreparation.Prepared[i].Desired = priorTableDeclaration(prior, name, semantics)
 	}

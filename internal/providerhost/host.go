@@ -80,6 +80,12 @@ var hostFeatures = []string{
 	// The query builder renders an engine from the spelling its provider
 	// declares; see registerQueryDialects.
 	provider.QueryDialectFeature,
+	// The note that counts the roles a read leaves out names the reason the
+	// provider gives; see rolescope.ReportUndescribed.
+	provider.RoleScopeReasonsFeature,
+	// A provider's Go directive of the document stands in the group its
+	// encoded part names; see goEncoding.fragment.
+	provider.GoPlacementsFeature,
 	// `ptah inference` keeps a generation's run state and vectors in a
 	// provider's embedding store; see EmbeddingSession.
 	provider.EmbeddingStoreFeature,
@@ -151,6 +157,12 @@ var hostFeatures = []string{
 	// hands their changes to the table's owner; see reader.ReadSchemaContext
 	// and commonPlanner.indexChanges.
 	provider.ObservedIndexesFeature,
+	// Inspection reports a provider table's primary key in key order, which
+	// the catalog keeps as the table's PRIMARY KEY constraint, and the
+	// planner hands a change of it to the table's owner as an alteration of
+	// the table; see reader.tables and commonPlanner.keyChanges.
+	provider.ObservedPrimaryKeysFeature,
+	provider.PrimaryKeyChangesFeature,
 	// Table preparation states the kind of each declared index, and the
 	// index rules compare it with the held index's method; see
 	// observedIndexRules.
@@ -204,6 +216,14 @@ var hostFeatures = []string{
 	// A comparison counts the objects it compares, and the drift inventory
 	// reports them under their change kinds; see boundCounts.
 	provider.ComparisonCountsFeature,
+	// A described model travels by reference in every message but the
+	// description, so a request's coverage of each table grows by a few
+	// names rather than by every model's definition, and a message may be
+	// 64 MiB rather than 4: a schema of a few thousand tables reaches the
+	// provider in one request. The SDK client sends and resolves the
+	// references, and no adapter here sees one.
+	provider.ModelReferencesFeature,
+	provider.LargeMessagesFeature,
 }
 
 // Start verifies the selected artifact and negotiates experimental services.

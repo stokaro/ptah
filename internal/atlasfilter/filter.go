@@ -1699,7 +1699,8 @@ func cloneDatabase(schema *catalog.Database) *catalog.Database {
 		// the description a filter narrows. Dropping it here would tell the
 		// comparator that every cluster role outside the description is
 		// absent. See stokaro/ptah#1267.
-		RolesOutOfScope: slices.Clone(schema.RolesOutOfScope),
+		RolesOutOfScope:       slices.Clone(schema.RolesOutOfScope),
+		RolesOutOfScopeReason: schema.RolesOutOfScopeReason,
 		// Filtering narrows what a description contains; it does not widen what
 		// the description claimed to cover. This is a field-by-field
 		// constructor, which is exactly the shape that drops a new field in

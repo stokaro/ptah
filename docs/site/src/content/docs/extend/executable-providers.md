@@ -133,6 +133,15 @@ the tables it keeps; where a schema holds index names, the removals come
 first, so a new table may take a dropped index's name. Without the feature,
 index changes are refused.
 
+With `schema.observed-primary-keys`, a read reports each table's primary key in
+key order, and the host compares it with the declared key, members and order.
+A provider that owns its tables and lists `planning.primary-key-changes`
+receives a key change as an altered table: the desired table carries the
+declared key and the current table the held one as its `PRIMARY KEY`
+constraint, and no common step stands for the change. The provider plans it,
+for example as a rebuild, or refuses it in its own words. Without the feature
+the host refuses a key change before it plans, naming the table.
+
 With `planning.index-renames` as well, a provider renames an index in place.
 When its session reports `index_rename`, the comparison pairs an index the
 table holds with one the declaration states under another name and with one
@@ -430,7 +439,10 @@ the engine. The work is split this way:
   read the kind, and Ptah then plans no removal of it. A role the server holds
   outside the read's scope, such as a database's user in a YDB dev realm, is
   named without its attributes: Ptah plans no creation of it and no change to
-  its attributes.
+  its attributes. Ptah counts such roles in a note on the diagnostics stream.
+  With `schema.role-scope-reasons` the read says why it left them out, and the
+  note gives that reason; without it the note says that nothing in the
+  inspected schemas refers to them.
 - Before a comparison, the provider spells the declared objects as its engine
   reports them, such as a view's query as the engine stores it.
 - Ptah compares and orders the changes, and keeps each object as declared in
@@ -1126,6 +1138,13 @@ provider execution: NOT_APPLIED (0 units confirmed applied): <reason>
 provider transaction outcome is ROLLED_BACK: <reason>
 ```
 
+A request or a reply larger than one message holds fails with
+`ResourceExhausted`. A message holds 4 MiB, or 64 MiB with a provider that lists
+`transport.large-messages`. With `models.references` the host and the provider
+send a model the provider describes by its reference rather than its whole
+definition, which a request otherwise repeats for every table; a schema of a
+few thousand tables then fits one message.
+
 Ptah never prints the rest of a provider's error, or the message of an
 execution or transaction result: a driver's error can quote a connection
 address, a credential or a statement with its values, so only text the
@@ -1293,6 +1312,11 @@ annotations. Ptah preserves their reason and provenance, checks the closed
 evidence vocabulary, and sends each header to its owner when reading the
 source back. Unclaimed limits and limits returned without negotiation refuse
 the export.
+
+A directive of the provider's own among the standalone objects stands after
+the views. With `source.go-placements`, its part may name another group of the
+writer's: after the schemas, after the views, or after the default privileges.
+Ptah keeps the order of the provider's parts within a group.
 
 A native Go object reads back in the engine that owns its directive. An export
 preserves that scope implicitly and refuses another target scope. An unscoped

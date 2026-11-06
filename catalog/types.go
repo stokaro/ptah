@@ -122,6 +122,13 @@ type Database struct {
 	// rendered. Only Roles reaches output.
 	RolesOutOfScope []Role `json:"-"`
 
+	// RolesOutOfScopeReason is why the reader left RolesOutOfScope out of the
+	// description, in that reader's words: a clause that completes
+	// "because", which names no role. It is empty where the reader states no
+	// reason, and the note that counts the roles then words the cause from
+	// the dialect. Like RolesOutOfScope it is never serialized.
+	RolesOutOfScopeReason string `json:"-"`
+
 	// NotDescribed records what this read did not look at, so a comparator can
 	// tell an object the database does not have from one the reader was never
 	// asked about. The zero value claims the read covered everything; see
