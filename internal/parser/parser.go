@@ -294,7 +294,7 @@ func (p *Parser) parseStatement() (ast.Node, error) {
 	case "IF":
 		return p.parseGuardedCreateSchema()
 	case "EXEC":
-		return p.parseSchemaCommentCall()
+		return p.parseCommentCall()
 	case "USE":
 		return nil, p.parseUse()
 	case "ANALYZE", "BEGIN", "CALL", "COMMIT", "DELETE", "INSERT", "MERGE", "PRAGMA", "REINDEX", "ROLLBACK", "SELECT", "SET", "SHOW", "UPDATE", "VACUUM", "WITH":

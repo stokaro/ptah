@@ -301,6 +301,10 @@ leaves the comment as the server holds it. A rehearsal's reset takes the comment
 back, on `dbo` as well, so a dev database's own comment on `dbo` does not survive
 one.
 
+A table's `comment` and a column's take the same shape, written right after
+`CREATE TABLE`. `ptah db read` writes them that way as well, and a schema file
+reads them back, so a description keeps them.
+
 **MySQL, MariaDB, ClickHouse and Oracle do not do this**, and that is a
 difference in what a schema IS rather than a gap. A schema there is a database —
 or, on Oracle, a user — so creating one is `CREATE DATABASE` or `CREATE USER`,
