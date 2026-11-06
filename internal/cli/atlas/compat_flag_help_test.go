@@ -80,3 +80,38 @@ func TestCompatStrictProfileRefusesFlagValuesAsAtlasCE(t *testing.T) {
 		})
 	}
 }
+
+// TestCompatForwardedVerbsRefuseFlagValuesInTheStandardLibrarysWords covers a
+// verb that hands its arguments to a native command a factory builds for the
+// call. That command belongs to neither assembled tree, so it is the install in
+// cmdadapter, not the one at the root, that gives its flags this wording.
+func TestCompatForwardedVerbsRefuseFlagValuesInTheStandardLibrarysWords(t *testing.T) {
+	tests := []struct {
+		name       string
+		args       []string
+		wantStderr string
+	}{
+		{
+			name:       "migrate checkpoint",
+			args:       []string{"migrate", "checkpoint", "--edit=maybe"},
+			wantStderr: "Error: invalid argument \"maybe\" for \"--edit\" flag: strconv.ParseBool: parsing \"maybe\": invalid syntax\n",
+		},
+		{
+			name:       "migrate down",
+			args:       []string{"migrate", "down", "--dry-run=maybe"},
+			wantStderr: "Error: invalid argument \"maybe\" for \"--dry-run\" flag: strconv.ParseBool: parsing \"maybe\": invalid syntax\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			stdout, stderr, err := atlastest.RunCompat(tt.args...)
+
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(stdout, qt.Equals, "")
+			c.Assert(stderr, qt.Equals, tt.wantStderr)
+		})
+	}
+}
