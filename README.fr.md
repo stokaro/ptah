@@ -39,6 +39,7 @@
   &nbsp;&nbsp;
   <a href="https://docs.ptah.run/edge/databases/distributed/" title="Spanner"><img src="docs/assets/engines/spanner.svg" alt="Spanner" height="32" width="32"></a>
   &nbsp;&nbsp;
+  <a href="https://docs.ptah.run/edge/extend/providers/ydb/" title="YDB, through the official provider"><img src="docs/assets/engines/ydb.svg" alt="YDB" height="32" width="32"></a>
 </p>
 
 Ptah gère les modifications des schémas de bases de données et de l’état
@@ -106,14 +107,24 @@ Le [guide d’installation](https://docs.ptah.run/edge/start/install/)
 couvre le choix d’une version précise, la vérification des
 signatures, le téléchargement sans exécution et la compilation des sources.
 
-YDB est servi par un fournisseur exécutable, qui s’installe séparément :
+## YDB
+
+YDB est pris en charge par le fournisseur officiel
+[stokaro/ptah-ydb-plugin](https://github.com/stokaro/ptah-ydb-plugin). Il
+s’installe séparément, avec une commande de Ptah ; le binaire `ptah`, les
+archives et les images de conteneur ne contiennent aucun code YDB :
 
 ```bash
 ptah providers install ydb
 ```
 
-Une commande qui nomme une URL `ydb://` l’utilise ensuite ; voir
-[Configurer le fournisseur YDB](https://docs.ptah.run/edge/extend/providers/ydb/).
+Ensuite, une commande qui nomme une URL `ydb://` ou `ydbs://`, ou le dialecte
+`ydb`, utilise le fournisseur sans option ni manifeste. Le fournisseur
+planifie, applique et lit les tables, les objets natifs et les vues YDB,
+exécute les migrations versionnées, analyse le YQL et écrit des données, sur
+YDB 25.1 et 26.2.
+[Configurer le fournisseur YDB](https://docs.ptah.run/edge/extend/providers/ydb/)
+décrit la sélection par manifeste, la vérification et les codes de refus.
 
 ## Essayer Ptah avec SQLite
 

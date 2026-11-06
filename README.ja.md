@@ -39,6 +39,7 @@
   &nbsp;&nbsp;
   <a href="https://docs.ptah.run/edge/databases/distributed/" title="Spanner"><img src="docs/assets/engines/spanner.svg" alt="Spanner" height="32" width="32"></a>
   &nbsp;&nbsp;
+  <a href="https://docs.ptah.run/edge/extend/providers/ydb/" title="YDB, through the official provider"><img src="docs/assets/engines/ydb.svg" alt="YDB" height="32" width="32"></a>
 </p>
 
 Ptah はスキーマと永続的な推論状態の両方について、データベースの変更を管理します。
@@ -100,13 +101,22 @@ irm https://ptah.run/install.ps1 | iex
 [インストールガイド](https://docs.ptah.run/edge/start/install/)では、バージョンの固定、
 署名の検証、実行せずにダウンロードする方法、ソースからのビルドを扱っています。
 
-YDB は実行可能プロバイダーが扱い、プロバイダーは別途インストールします:
+## YDB
+
+YDB は公式プロバイダー
+[stokaro/ptah-ydb-plugin](https://github.com/stokaro/ptah-ydb-plugin) でサポートしています。
+プロバイダーは Ptah のコマンドで別途インストールします。`ptah` バイナリ、アーカイブ、
+コンテナーイメージには YDB のコードは含まれません:
 
 ```bash
 ptah providers install ydb
 ```
 
-インストール後は、`ydb://` URL を指定するコマンドがこのプロバイダーを使います。
+インストール後は、`ydb://` または `ydbs://` の URL、あるいは `ydb` 方言を指定するコマンドが、
+フラグやマニフェストなしでこのプロバイダーを使います。プロバイダーは YDB 25.1 と 26.2 で、
+テーブル、ネイティブオブジェクト、ビューの計画・適用・読み取り、バージョン管理された
+マイグレーションの実行、YQL の lint、データの書き込みを行います。マニフェストによる選択、
+検証、拒否コードについては
 [YDB プロバイダーの設定](https://docs.ptah.run/edge/extend/providers/ydb/)を参照してください。
 
 ## SQLite で Ptah を試す
