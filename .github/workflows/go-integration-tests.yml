@@ -89,11 +89,16 @@ jobs:
           POSTGRES_DB: ptah_test
           POSTGRES_USER: ptah_user
           POSTGRES_PASSWORD: ptah_password
+        # The data directory sits in memory, as on the MySQL family's servers:
+        # the job throws this server away, so an fsync protects nothing and
+        # every DDL statement would wait on one. The size leaves room for
+        # max_wal_size, 1 GB by default, on top of the test databases.
         options: >-
           --health-cmd "pg_isready -h 127.0.0.1 -p 5432 -U ptah_user -d ptah_test"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+          --tmpfs /var/lib/postgresql:rw,noexec,nosuid,size=4096m
         ports:
           - 5432:5432
 
