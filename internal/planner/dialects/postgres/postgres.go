@@ -1971,6 +1971,7 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// 5d. A removed sequence leaves its owner before the column changes that
 	// take its default away; see [Planner.releaseRemovedSequenceOwners].
 	result = p.releaseRemovedSequenceOwners(result, diff)
+	result = p.releaseKeptSequenceOwners(result, diff)
 
 	// Feature operations that stand in the way of a column change join the plan
 	// here.
@@ -1978,6 +1979,7 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 
 	// 6. Add and modify table columns (must be done before creating RLS policies that depend on columns)
 	result = p.addAndModifyTableColumns(result, diff)
+	result = p.restoreKeptSequenceOwners(result, diff)
 
 	// 6.5. Add foreign key constraints for newly added columns (must be done after all columns exist)
 	result = p.addForeignKeyConstraintsForModifiedTables(result, diff)
@@ -2619,6 +2621,50 @@ func (p *Planner) releaseRemovedSequenceOwners(result []ast.Node, diff *difftype
 			node.SetSchema(sequence.Schema)
 		}
 		result = append(result, node)
+	}
+	return result
+}
+
+// releaseKeptSequenceOwners is [Planner.releaseRemovedSequenceOwners] for a
+// sequence the plan keeps: CockroachDB answers a change of the default the same
+// way, measured on v26.3.5 for DROP DEFAULT and for SET DEFAULT to another
+// sequence. [Planner.restoreKeptSequenceOwners] gives the sequence its owner back.
+func (p *Planner) releaseKeptSequenceOwners(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	return p.alterKeptSequenceOwners(result, diff, func(difftypes.TableDiff, difftypes.ColumnDiff) string { return "NONE" })
+}
+
+// restoreKeptSequenceOwners gives each sequence
+// [Planner.releaseKeptSequenceOwners] detached its owner back, ahead of the option
+// changes that may move the sequence to another owner.
+func (p *Planner) restoreKeptSequenceOwners(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	return p.alterKeptSequenceOwners(result, diff, func(table difftypes.TableDiff, column difftypes.ColumnDiff) string {
+		return table.TableName + "." + column.ColumnName
+	})
+}
+
+// alterKeptSequenceOwners writes one ALTER SEQUENCE ... OWNED BY for each column
+// change that marks a kept sequence, on CockroachDB; see
+// [difftypes.ColumnDiff.OwnedDefaultSequence].
+func (p *Planner) alterKeptSequenceOwners(
+	result []ast.Node,
+	diff *difftypes.SchemaDiff,
+	owner func(difftypes.TableDiff, difftypes.ColumnDiff) string,
+) []ast.Node {
+	if p.targetDialect() != platform.CockroachDB {
+		return result
+	}
+	for _, table := range diff.TablesModified {
+		for _, column := range table.ColumnsModified {
+			if column.OwnedDefaultSequence == "" {
+				continue
+			}
+			schema, name := splitQualifiedSequenceName(column.OwnedDefaultSequence)
+			node := ast.NewAlterSequence(name).SetOwnedBy(owner(table, column))
+			if schema != "" {
+				node.SetSchema(schema)
+			}
+			result = append(result, node)
+		}
 	}
 	return result
 }

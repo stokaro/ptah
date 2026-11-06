@@ -1842,6 +1842,14 @@ type ColumnDiff struct {
 	// value.
 	CurrentSequenceRestart string `json:"current_sequence_restart,omitempty"`
 
+	// OwnedDefaultSequence names the sequence the column's default draws from
+	// when the default changes, where the column also owns that sequence and the
+	// plan keeps it. It is empty otherwise. CockroachDB answers such a change with
+	// an internal error while the sequence has that owner, so a planner for it
+	// detaches the sequence and attaches it again around the change. A reversal
+	// starts from the other default and carries none.
+	OwnedDefaultSequence string `json:"owned_default_sequence,omitempty"`
+
 	// Desired is the column as the declaration writes it, with embedded fields
 	// already folded in.
 	//
