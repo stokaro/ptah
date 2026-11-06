@@ -1037,6 +1037,13 @@ Otherwise it shows the operation's kind, subject, and captured impact and
 access assessments. A conflicting transaction requirement refuses the whole
 plan before any operation runs.
 
+Ptah sends every planning service it calls each table of the plan with its
+captured state. A service that plans no table's settings can set `tables` to
+`PLANNING_TABLES_OUTLINED` under `planning.table-outlines`, and then receives
+each table by its subject, its action and the names of its declared and held
+states, which is what such a service reads to learn which tables the plan
+keeps, creates, changes and drops.
+
 Apply JSON reports use contract version `4` and an ordered `units` list.
 Each entry contains `sql` or a `native` summary. Native summaries omit opaque
 provider payloads and are reports, not execution plans. A summary's `text`
@@ -1143,7 +1150,9 @@ A request or a reply larger than one message holds fails with
 `transport.large-messages`. With `models.references` the host and the provider
 send a model the provider describes by its reference rather than its whole
 definition, which a request otherwise repeats for every table; a schema of a
-few thousand tables then fits one message.
+few thousand tables then fits one message. With `transport.shared-coverage`
+the list of coverage kinds that every table of a request repeats travels once
+per message.
 
 Ptah never prints the rest of a provider's error, or the message of an
 execution or transaction result: a driver's error can quote a connection

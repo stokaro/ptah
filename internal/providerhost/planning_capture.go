@@ -19,6 +19,24 @@ type planningCapture struct {
 	identifiers identifier.Semantics
 }
 
+// tableOutline is the outline of table a planning service that reads
+// outlines receives: its subject, its action and the name of each state it
+// has.
+func tableOutline(table featureplan.Table) (*protocol.PlanningTable, error) {
+	action, err := planningParentAction(table.Action)
+	if err != nil {
+		return nil, err
+	}
+	result := &protocol.PlanningTable{Subject: comparisonIdentity(table.Subject), Action: action}
+	if table.Desired.HasTable() {
+		result.Desired = &protocol.DeclaredTable{Name: table.Desired.Table.Name}
+	}
+	if table.Current.HasTable() {
+		result.Current = &protocol.ObservedTable{Name: table.Current.Table.Name}
+	}
+	return result, nil
+}
+
 func (c *planningCapture) table(table featureplan.Table) (*protocol.PlanningTable, error) {
 	if err := onlyFields(table, "Subject", "Action", "Desired", "Current"); err != nil {
 		return nil, err

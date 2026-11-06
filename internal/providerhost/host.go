@@ -224,6 +224,14 @@ var hostFeatures = []string{
 	// references, and no adapter here sees one.
 	provider.ModelReferencesFeature,
 	provider.LargeMessagesFeature,
+	// A planning service that plans no table-attached model receives each
+	// table by its subject, its action and the names of its states, not its
+	// whole capture; see tableOutline.
+	provider.TableOutlinesFeature,
+	// A list of coverage kinds that every table of a request repeats travels
+	// once per message. The SDK client shares and resolves the lists, and no
+	// adapter here sees a shared one.
+	provider.SharedCoverageFeature,
 }
 
 // Start verifies the selected artifact and negotiates experimental services.
