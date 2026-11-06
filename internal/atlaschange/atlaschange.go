@@ -36,7 +36,9 @@
 // of it is that index's change, `create index "orders_by_total" to table:
 // "orders"`, as the built-in YDB engine named its `ALTER TABLE ... ADD INDEX`.
 // An operation on an object of a kind of the provider's own, or one that
-// carries no effects, is not named.
+// carries no effects, is not named. Neither is a step of a table rebuild a
+// provider planned that only fills the new table or moves a table to another
+// name; the rebuild's other steps keep their words (see rebuildMoves).
 package atlaschange
 
 import (
@@ -93,10 +95,14 @@ func For(dialect string) Words {
 // operation that reports no object it changes.
 func (w Words) Forward(plan []ast.Node) []string {
 	steps := w.rebuildSteps(plan)
+	moves := rebuildMoves(plan)
 	names := make([]string, len(plan))
 	for i, node := range plan {
 		if step, ok := steps[i]; ok {
 			names[i] = step
+			continue
+		}
+		if moves[i] {
 			continue
 		}
 		if c, ok := w.describe(node); ok {
@@ -158,15 +164,137 @@ func (w Words) Rollback(forward, plan []ast.Node) []string {
 		return c.inverse().String()
 	}
 	steps := w.rebuildSteps(plan)
+	moves := rebuildMoves(plan)
 	names := make([]string, len(plan))
 	for i, node := range plan {
 		if step, ok := steps[i]; ok {
 			names[i] = step
 			continue
 		}
+		if moves[i] {
+			continue
+		}
 		names[i] = undone(node)
 	}
 	return names
+}
+
+// rebuildMoves finds the steps of the table rebuilds a provider planned that
+// take no name of their own, by their index in plan. A provider rebuilds a
+// table as the built-in YDB engine did: it creates a new table, fills it from
+// the old one, moves the old table to a spare name, moves the new table onto
+// the old one's name, and drops the old table. A move alters one table and
+// creates or drops a second one. The steps between the creation of a new
+// table and its move that only read or alter it or its indexes, or read the
+// table it replaces, fill it.
+//
+// The built-in YDB engine named the creation, any change to the replaced
+// table and the drop, and none of these steps: its rebuild wrote them as raw
+// statements. A name from a move's subject would also misstate it, since the
+// move of the new table drops that table's name and keeps the table, which
+// would read `drop "__ptah_rebuild_t" table`.
+func rebuildMoves(plan []ast.Node) map[int]bool {
+	moves := make(map[int]bool)
+	for i, node := range plan {
+		effects, ok := nativeEffects(node)
+		if !ok {
+			continue
+		}
+		moved, onto, ok := tableMove(effects)
+		if !ok {
+			continue
+		}
+		moves[i] = true
+		if moved.drop {
+			for _, j := range fillers(plan[:i], moved.table, onto) {
+				moves[j] = true
+			}
+		}
+	}
+	return moves
+}
+
+// fillers returns the positions of the steps of plan that fill table, the new
+// table of a rebuild that the last step of plan moves onto replaced: those
+// after the step that creates table. It returns none when no step creates it.
+func fillers(plan []ast.Node, table, replaced objectidentity.ID) []int {
+	var found []int
+	for j, node := range slices.Backward(plan) {
+		effects, ok := nativeEffects(node)
+		if !ok {
+			continue
+		}
+		if slices.ContainsFunc(effects, func(effect plangraph.Effect) bool {
+			return effect.Subject.Key() == table.Key() && effect.Action == plangraph.Create
+		}) {
+			return found
+		}
+		if fills(effects, table, replaced) {
+			found = append(found, j)
+		}
+	}
+	return nil
+}
+
+// movedTable is a table a move creates or drops.
+type movedTable struct {
+	table objectidentity.ID
+	drop  bool
+}
+
+// tableMove reports whether effects are those of a move: the step alters one
+// table and creates or drops one other table, and changes no third one. It
+// returns the table the step creates or drops, and the one it alters.
+func tableMove(effects []plangraph.Effect) (movedTable, objectidentity.ID, bool) {
+	var moved []movedTable
+	var altered []objectidentity.ID
+	for _, effect := range effects {
+		if effect.Subject.Kind != objectidentity.KindTable {
+			continue
+		}
+		switch effect.Action {
+		case plangraph.Create, plangraph.Drop:
+			moved = append(moved, movedTable{table: effect.Subject, drop: effect.Action == plangraph.Drop})
+		case plangraph.Alter:
+			altered = append(altered, effect.Subject)
+		}
+	}
+	if len(moved) != 1 || len(altered) != 1 || moved[0].table.Key() == altered[0].Key() {
+		return movedTable{}, objectidentity.ID{}, false
+	}
+	return moved[0], altered[0], true
+}
+
+// fills reports whether effects only read or alter table or its indexes, or
+// read replaced: those of a step that fills the new table of a rebuild before
+// it moves onto replaced.
+func fills(effects []plangraph.Effect, table, replaced objectidentity.ID) bool {
+	for _, effect := range effects {
+		switch {
+		case effect.Action != plangraph.Read && effect.Action != plangraph.Alter:
+			return false
+		case effect.Subject.Key() == table.Key():
+		case effect.Subject.Kind == objectidentity.KindIndex && indexOf(effect.Subject, table):
+		case effect.Action == plangraph.Read && effect.Subject.Key() == replaced.Key():
+		default:
+			return false
+		}
+	}
+	return len(effects) > 0
+}
+
+// nativeEffects returns the effects of the plan step of an operation a
+// provider planned, and false for any other node.
+func nativeEffects(node ast.Node) ([]plangraph.Effect, bool) {
+	statement, ok := node.(*ast.ExtensionStatement)
+	if !ok {
+		return nil, false
+	}
+	operation, ok := statement.Payload.(nativeOperation)
+	if !ok {
+		return nil, false
+	}
+	return operation.Effects(), true
 }
 
 // rebuildSteps names the statements of the table rebuilds a SQLite plan makes,
