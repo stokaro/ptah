@@ -61,3 +61,29 @@ func TestForeignKeyMoved_FailurePath(t *testing.T) {
 		"DROP INDEX `child_fk` ON `child`",
 	})
 }
+
+// TestForeignKeyMoved_ACheckLeavesTheIndexToTheRemovals pins an index under the name of
+// a CHECK constraint the plan adds: the server builds no index for it, so the index
+// leaves with the removals, and it does leave.
+func TestForeignKeyMoved_ACheckLeavesTheIndexToTheRemovals(t *testing.T) {
+	c := qt.New(t)
+	held := heldMovedForeignKey()
+	held.Indexes = append(held.Indexes, catalog.Index{Name: "qid_rule", TableName: "child", Columns: []string{"qid"}})
+	declared := declaredWithoutForeignKey(func(declared *schemamodel.Database) {
+		declared.Fields = append(declared.Fields, schemamodel.Field{StructName: "Child", Name: "qid", Type: "bigint", Nullable: true})
+		declared.Constraints = append(declared.Constraints,
+			schemamodel.Constraint{
+				StructName: "Child", Name: "child_fk", Type: "FOREIGN KEY", Table: "child", Columns: []string{"pid"},
+				ForeignTable: "parent", ForeignColumn: "id",
+			},
+			schemamodel.Constraint{StructName: "Child", Name: "qid_rule", Type: "CHECK", Table: "child", CheckExpression: "qid > 0"},
+		)
+	})
+
+	got := plannedOverHeld(c, "mysql", declared, held)
+
+	c.Assert(got, qt.DeepEquals, []string{
+		"ALTER TABLE `child` ADD CONSTRAINT `qid_rule` CHECK (qid > 0)",
+		"DROP INDEX `qid_rule` ON `child`",
+	})
+}
