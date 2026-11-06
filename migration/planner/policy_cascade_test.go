@@ -18,6 +18,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/feature/pgpolicy"
+	"ptah.run/internal/planrefusal"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -170,6 +171,7 @@ func TestGenerateSchemaDiffSQL_RefusesARetypeThatDropsAPolicy_FailurePath(t *tes
 			statements, err := planPolicyCascadeInStyle(c, desired, current, test.style)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorAs, new(*planrefusal.DependentObjectError))
 			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(lostPolicy(test.style,
 				"the type change of tenants.id", "change the type of tenants.id")))
 			c.Assert(statements, qt.IsNil)
@@ -189,6 +191,7 @@ func TestGenerateSchemaDiffSQL_RefusesAMaterializedViewChangeThatDropsAPolicy_Fa
 			statements, err := planPolicyCascadeInStyle(c, desired, current, test.style)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorAs, new(*planrefusal.DependentObjectError))
 			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(lostPolicy(test.style,
 				"the change to materialized view tenant_flags", "change materialized view tenant_flags")))
 			c.Assert(statements, qt.IsNil)
@@ -221,6 +224,7 @@ func TestGenerateSchemaDiffSQL_RefusesARemovedViewAPolicyReads_FailurePath(t *te
 			statements, err := planPolicyCascadeInStyle(c, desired, current, test.style)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorAs, new(*planrefusal.DependentObjectError))
 			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta("unsupported feature: the plan drops view active_tenants, which the declaration "+
 				"removes; ptah.run/pgpolicy/policy public.orders.tenant_visible reads it, and "+test.outcome+
 				". Change ptah.run/pgpolicy/policy public.orders.tenant_visible so it no longer reads active_tenants first"))

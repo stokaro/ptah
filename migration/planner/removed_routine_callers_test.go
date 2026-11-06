@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/feature/pgtype"
+	"ptah.run/internal/planrefusal"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -351,6 +352,7 @@ func TestRemovedRoutineCallers_FailurePath(t *testing.T) {
 			c := qt.New(t)
 			err := removedRoutineRefusal(c, styleHeldWith(test.change), styleDeclared())
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorAs, new(*planrefusal.DependentObjectError))
 			c.Assert(err, qt.ErrorMatches, `(?s)unsupported feature: `+test.want+`, and the plan has no order .*`)
 		})
 	}

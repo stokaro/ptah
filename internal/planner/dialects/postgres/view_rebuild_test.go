@@ -3,6 +3,7 @@ package postgres_test
 import (
 	"cmp"
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -17,6 +18,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/planrefusal"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -1224,11 +1226,36 @@ func TestViewRebuild_RefusesToLoseViewSecurity_FailurePath(t *testing.T) {
 				statements, err := planRebuild(c, style, test.live, test.declared)
 
 				c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+				c.Assert(err, qt.ErrorAs, new(*planrefusal.LostViewSecurityError))
 				c.Assert(err, qt.ErrorMatches, test.wantErr)
 				c.Assert(statements, qt.IsNil)
 			})
 		}
 	}
+}
+
+// TestViewRebuild_RefusalNamesEachOptionItWouldLose_FailurePath pins what a
+// report reads off the refusal in place of its message: each view and option, in
+// the order the sentence names them, whichever way the database spells the value.
+func TestViewRebuild_RefusalNamesEachOptionItWouldLose_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	live := rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotals, orderReport, bigOrdersPlain},
+		options: map[string][]string{
+			"order_report": {"security_invoker=on", "security_barrier=true"},
+			"big_orders":   {"security_barrier=true"},
+		}}
+	declared := rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotals, orderReport, bigOrdersPlain}}
+
+	statements, err := planRebuild(c, planext.StatementStyleExact, live, declared)
+
+	refused, isRefusal := errors.AsType[*planrefusal.LostViewSecurityError](err)
+	c.Assert(isRefusal, qt.IsTrue, qt.Commentf("%v", err))
+	c.Assert(refused.Options, qt.DeepEquals, []planrefusal.ViewOption{
+		{View: "big_orders", Option: "security_barrier"},
+		{View: "order_report", Option: "security_barrier"},
+		{View: "order_report", Option: "security_invoker"},
+	})
+	c.Assert(statements, qt.IsNil)
 }
 
 // TestViewRebuild_KeepsViewSecurityRefusalToForwardPlans_HappyPath pins the

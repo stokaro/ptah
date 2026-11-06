@@ -1212,12 +1212,16 @@ sees. A storage parameter plans as declared.
 
 The refusal covers each statement that would lose the option: `ALTER VIEW ...
 RESET`, a `CREATE OR REPLACE VIEW` for a changed body, which clears what it does
-not state, and a drop and create. It is the same on `schema apply`, `schema
-compare` and `migrations generate`, and on `ptah-compat schema apply`, `schema
-diff` and `migrate diff`. `schema drift` plans nothing, so it reports the
-difference under `views_modified` and does not refuse. A rollback migration is
-not refused either: a down file that removes an option its up file added
-restores the earlier state.
+not state, and a drop and create. It is the same on `schema plan`, `schema
+apply`, `schema compare` and `migrations generate`, and on `ptah-compat schema
+apply`, `schema diff` and `migrate diff`. `schema drift` plans nothing, so it
+reports the difference under `views_modified` and does not refuse. A rollback
+migration is not refused either: a down file that removes an option its up file
+added restores the earlier state.
+
+Under `--json`, `schema plan` and `schema apply` report the refusal as
+`outcome: refused` with the code `view-security-option` and a `view_options`
+list. See [Refusal codes](../../direct/apply/#refusal-codes).
 
 PostgreSQL 18, CockroachDB v26.3 and YugabyteDB 2026.1 give the same answer for
 a reader the row-level security policy limits to one row of two: one row through
