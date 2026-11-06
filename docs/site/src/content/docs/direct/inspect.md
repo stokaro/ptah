@@ -87,10 +87,11 @@ Equivalently, a read describes a role exactly when some other statement in the
 same output names it, so the output never refers to a role it does not create.
 Ownership alone is not a reason: Ptah writes no `OWNER TO` and no
 `CREATE SCHEMA ... AUTHORIZATION`, so an owner would be a role the output
-creates and never mentions again. For the same reason a read no longer reports
-the built-in privileges an owner holds on a relation nobody has granted
-anything on -- no `GRANT` produced them, and `CREATE TABLE` re-establishes them
-for the new owner when the output is replayed.
+creates and never mentions again. For the same reason the output leaves out the
+privileges an owner holds by default, on a relation whose ACL spells them out as
+on one whose ACL is NULL: no `GRANT` produced them, and `CREATE TABLE`
+re-establishes them for the new owner when the output is replayed. A privilege
+the owner revoked from itself is stated as a `REVOKE`, and that names the owner.
 
 A read that leaves roles out says so on standard error, and the fuller read is
 still available on this same command:

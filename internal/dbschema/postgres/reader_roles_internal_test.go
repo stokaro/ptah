@@ -210,11 +210,12 @@ const (
 	complementMembership = "NOT EXISTS (SELECT 1 FROM used u WHERE u.roleoid = r.oid)"
 )
 
-// Ownership columns. These name reasons the query must NOT act on, so they
-// exist to be asserted absent. See TestReadRolesDoesNotTreatOwnershipAsUse.
+// Ownership as a reason: a branch selecting the owner of whatever is in scope.
+// These name reasons the query must NOT act on, so they exist to be asserted
+// absent. See TestReadRolesDoesNotTreatOwnershipAsUse.
 const (
-	readsSchemaOwner   = "s.nspowner"
-	readsRelationOwner = "c.relowner"
+	readsSchemaOwner   = "SELECT s.nspowner"
+	readsRelationOwner = "SELECT c.relowner"
 	readsTypeOwner     = "t.typowner"
 	readsRoutineOwner  = "p.proowner"
 )
@@ -1155,10 +1156,11 @@ func TestReadRolesDoesNotTreatOwnershipAsUse(t *testing.T) {
 	// INHERIT REPLICATION` and failed to apply it at SQLSTATE 42710.
 	//
 	// An owner a description does refer to is still described, through the
-	// privilege clauses: granting anything on a relation makes its ACL
-	// explicit, and an explicit ACL always carries the owner's own privileges.
-	// That case is TestReadRolesReportsOneRolePerReason's relation-privilege
-	// row, not this one.
+	// privilege clauses: as the grantor of a grant it wrote, and as the role of
+	// a privilege it revoked from itself. Those cases are
+	// TestReadRolesReportsOneRolePerReason's rows, not this one, and which entry
+	// of an ACL counts is decided by the server:
+	// integration/schema_diff_owner_default_acl_e2e_test.go measures it.
 	tests := []struct {
 		name  string
 		owner clusterRole

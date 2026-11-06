@@ -90,10 +90,22 @@ database read as `--to` is not such a file. It holds every grant on what it
 describes, so a grant only `--from` holds is a difference, whoever holds it.
 
 `config.CompareOptions.DesiredGrantsComplete` carries that fact, and `schema diff`
-sets it for a `--to` database. Two rows stay out, because the other side holds them
-by default and reads as holding nothing: an object owner's privileges, and PUBLIC's
-`EXECUTE` on a routine. Revoking either to match takes away what the other side
-holds.
+sets it for a `--to` database. PUBLIC's `EXECUTE` on a routine stays out, because
+the other side holds it by default and reads as holding nothing. Revoking it to
+match takes away what the other side holds.
+
+An object owner's privileges have the same two forms, and a read reports neither
+as grants. PostgreSQL writes the owner's entry out with an object's first `GRANT`
+or `REVOKE`, so a read that takes the entry for grants tells a NULL ACL from a
+written one. A role the other side names then loses every privilege, and the owner
+is refused on its own table
+([stokaro/ptah#5508](https://github.com/stokaro/ptah/issues/5508)).
+
+Each read asks `acldefault` what the object type gives its owner on that server and
+reports what the owner holds, or revoked from itself, as an implicit row. A declared
+grant pairs with a held privilege and a declared revoke reaches it, and nothing else
+plans a statement for it. `config.CompareOptions.DesiredReadGrants` lets the
+comparison give back a privilege only this side's owner revoked.
 
 ## Consequences
 

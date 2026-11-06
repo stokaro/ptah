@@ -27,8 +27,8 @@ func roleNames(roles []schemamodel.Role) []string {
 // the output was inspected from.
 //
 // The first row is the reviewer's shape on PR #1305 -- a schema with one GRANT,
-// whose description therefore names the grantee and the owner the explicit ACL
-// carries. Both exist on the server, and re-creating either fails at SQLSTATE
+// whose description therefore names the grantee and the owner that wrote the
+// grant. Both exist on the server, and re-creating either fails at SQLSTATE
 // 42710 with the dev database freshly reset, because resetting a database does
 // not clear a server's roles.
 //

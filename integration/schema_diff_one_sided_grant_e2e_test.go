@@ -17,9 +17,8 @@ import (
 // TestSchemaDiffReportsAGrantOnlyOneSideHoldsE2E compares two databases that differ
 // by one grant, in both directions. Both are read in full, so the grant is a
 // difference whoever holds it, and the two directions have to agree that one
-// exists. Each object carries a grant both sides hold, which writes its ACL on both
-// sides and keeps the owner's own privileges equal; a table whose ACL was never
-// written reads differently from one whose ACL was.
+// exists. Each object carries a grant both sides hold, so the extra grant is what
+// sets the two apart and not the first grant on the object.
 //
 // The role of the first row is named by nothing on the --to side, and PUBLIC is a
 // role no side can name. A comparison that reads --to as a declaration plans no
@@ -130,11 +129,10 @@ func TestSchemaDiffToAFileLeavesARoleItDoesNotNameE2E(t *testing.T) {
 }
 
 // TestSchemaDiffLeavesWhatTheOtherSideHoldsByDefaultE2E is a privilege a database
-// holds with no row saying so. PostgreSQL stores no ACL until an object's first
-// GRANT or REVOKE, and that first statement writes the defaults out, so one side
-// reads as holding them and the other as holding nothing. Revoking them to match
-// would take them from a side that holds them: the only difference in each row is
-// the grant to the grantee.
+// holds with no grant saying so. PostgreSQL stores no ACL until an object's first
+// GRANT or REVOKE, and that first statement writes the defaults out. Revoking them to
+// match would take them from a side that holds them: the only difference in each row
+// is the grant to the grantee.
 func TestSchemaDiffLeavesWhatTheOtherSideHoldsByDefaultE2E(t *testing.T) {
 	t.Run("PUBLIC's EXECUTE on a routine", func(t *testing.T) {
 		c := qt.New(t)

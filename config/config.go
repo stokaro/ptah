@@ -8,6 +8,7 @@ package config
 import (
 	"slices"
 
+	"ptah.run/catalog"
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
@@ -87,10 +88,18 @@ type CompareOptions struct {
 	// about a role it does not manage, and without this field a grant to such a
 	// role, or to PUBLIC, stays as the database holds it.
 	//
-	// Two grants are still left alone, because each is what the other side
-	// holds by default and a read reports it in a different form: a privilege
-	// the object's owner holds, and PUBLIC's EXECUTE on a routine.
+	// PUBLIC's EXECUTE on a routine is still left alone, because the other side
+	// holds it by default and a read reports it in a different form. So is what
+	// an object's owner holds by default, which a read reports apart from the
+	// grants.
 	DesiredGrantsComplete bool
+
+	// DesiredReadGrants are the grants of the read the desired state was made
+	// from, nil for a declaration. A desired state keeps a privilege an object's
+	// owner revoked from itself as a revoke, and says nothing about what the
+	// owner holds. The comparison reads that here, to plan the GRANT that gives
+	// the database's owner back what the same owner holds on the other side.
+	DesiredReadGrants []catalog.Grant
 
 	// SkipColumnDrops reports that the caller removes every column drop from
 	// the diff before it is planned: `diff.skip: [drop_column]` in ptah.yaml.

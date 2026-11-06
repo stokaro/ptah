@@ -467,6 +467,10 @@ ALTER TABLE ptah_ref_untouched_137 OWNER TO ptah_ref_owner_137;`)
 func rolesNamedByDescription(schema *catalog.Database) []string {
 	var named []string
 	for _, grant := range schema.Grants {
+		if grant.OwnerDefault() {
+			// What an owner holds by default, which a description leaves out.
+			continue
+		}
 		named = append(named, grant.Role)
 		if grant.GrantedBy != "" {
 			named = append(named, grant.GrantedBy)
