@@ -240,6 +240,34 @@ jobs:
     with:
       race: true
 
+  report-nightly-failure:
+    name: Report a failed nightly run
+    # A canceled run is someone's decision and reports nothing. A job that ran
+    # out of time also reads as cancelled, and without canceling the run.
+    if: >-
+      ${{ !cancelled() && github.event_name == 'schedule' &&
+      (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
+    needs: [scope, differential-and-corpus, reference-from-source, complete-integration]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    # Two late runs listing at once would each find no issue and open one.
+    concurrency:
+      group: report-nightly-failure
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+      - name: Comment on the open issue, or open one
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          COMMIT: ${{ github.sha }}
+          NEEDS: ${{ toJSON(needs) }}
+        run: scripts/report-nightly-failure.sh
+
   atlas-reference-gate:
     name: Atlas reference gate
     if: ${{ !cancelled() && github.event_name == 'pull_request' }}
