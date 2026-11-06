@@ -189,14 +189,34 @@ func TestProviderMovesValuesToAnotherContextOfTheirRoot_HappyPath(t *testing.T) 
 	c.Assert(dependency, qt.Equals, bound.Database)
 }
 
-// A move between databases whose authored references are read against
-// different roots, and a move of a value bound to neither context, are
-// refused, and the value keeps the binding it had.
+// A value bound to one database moves to a database whose authored
+// references are read against another root, the way a rehearsal moves the
+// target's schema into a dev database of another name: the provider binds it
+// again under the new root, and the dependency it computes names the database
+// the value moved to.
+func TestProviderMovesValuesToAnotherRoot_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	f := newValueContextFixture(c)
+	target, other := f.address("target.db", "/authored"), f.address("other.db", "/other")
+	database := f.load(c, target)
+	bound, err := f.runtime.ResolveDatabaseContext(c.Context(), schemaext.DatabaseContextRequest{Target: "fixture-context", Address: other})
+	c.Assert(err, qt.IsNil)
+
+	moved, err := valuecontext.Move(c.Context(), f.runtime, "fixture-context", target, other, database)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(moved, qt.IsTrue)
+	context, dependency := f.boundFacet(c, database)
+	c.Assert(context, qt.Equals, bound)
+	c.Assert(dependency, qt.Equals, bound.Database)
+}
+
+// A move of a value bound to neither context is refused, and the value keeps
+// the binding it had.
 func TestProviderMovesValuesToAnotherContextOfTheirRoot_FailurePath(t *testing.T) {
 	for _, test := range []struct {
 		name, from, to string
 	}{
-		{name: "another root", from: "target.db", to: "other.db"},
 		{name: "a value bound to neither", from: "realm.db", to: "elsewhere.db"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -205,7 +225,7 @@ func TestProviderMovesValuesToAnotherContextOfTheirRoot_FailurePath(t *testing.T
 			target := f.address("target.db", "/authored")
 			database := f.load(c, target)
 			before, _ := f.boundFacet(c, database)
-			roots := map[string]string{"target.db": "/authored", "realm.db": "/authored", "elsewhere.db": "/authored", "other.db": "/other"}
+			roots := map[string]string{"target.db": "/authored", "realm.db": "/authored", "elsewhere.db": "/authored"}
 			resolve := func(name string) schemaext.DatabaseContext {
 				bound, err := f.runtime.ResolveDatabaseContext(c.Context(), schemaext.DatabaseContextRequest{Target: "fixture-context", Address: f.address(name, roots[name])})
 				c.Assert(err, qt.IsNil)

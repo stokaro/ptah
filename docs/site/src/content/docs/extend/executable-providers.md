@@ -1087,19 +1087,20 @@ desired schema again for the dev database, and runs that plan through the
 provider, as the apply runs the target's. A plan whose operations are not the
 target's, one by one, refuses the apply: the rehearsal would pass on changes
 the apply does not make. `ptah-compat schema apply` rehearses the same way.
-A provider binds every value it reads to the target, so when the dev database
-is a realm of the target's database, one whose context names the same source
-database, the target's values move to the realm before it is compared. What
-the realm reads nothing of is left out of what it recreates: a YDB dev realm
-reads none of its database's resource pools, which are the target's own.
+
+A provider binds every value it reads to the target, so the target's values
+move to the dev database's context before it is compared, a realm of the
+target's database or of a database of another name alike. A moved value's
+relative references name the objects at the same place in the dev database.
+What the realm reads nothing of is left out of what it recreates: a YDB dev
+realm reads none of its database's resource pools, which are the target's own.
 
 `schema diff`, native and compatible, compares two reads the same way. When
-the `--to` side is read from one context of a source database and the `--from`
-side from another, such as a database and a dev realm of it, or a `--from`
-file created in a dev realm of the `--to` database, the `--to` side's values
-move to the `--from` side's context. Both sides then leave out the permissions
-on the database root, since a realm's root does not stand in for its
-database's.
+the two sides are read from two contexts, such as a database and a dev realm
+of it, or a `--from` file created in a dev realm of the `--dev-url` database,
+the `--to` side's values move to the `--from` side's context. When either side
+was read in a dev realm, both sides leave out the permissions on the database
+root, since a realm's root does not stand in for its database's.
 
 `ptah migrations generate` writes the reverse migration of a provider's change
 from the provider's own reversal of it. A provider that lists `models.reverse`
