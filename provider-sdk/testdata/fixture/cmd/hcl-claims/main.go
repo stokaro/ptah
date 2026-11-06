@@ -29,6 +29,8 @@
 // With FIXTURE_RETENTION_PREDECESSOR=1 the engine names retentionPredecessor
 // as an earlier identity of its desired retention model, so a document a
 // former owner captured the model's claims under reads as the same claim.
+// With FIXTURE_RETENTION_OWN_PREDECESSOR=1 it names ownRetentionPredecessor,
+// an earlier definition of the same model, under models.own-predecessors.
 package main
 
 import (
@@ -53,6 +55,15 @@ const retentionKind = "example.org/fixture/retention"
 var retentionPredecessor = &protocol.ModelPredecessor{Kind: retentionKind, Representation: protocol.ValueInput_DESIRED,
 	FormerOwner: "example.org/builtin", FormerKind: "example.org/builtin/retention", SchemaVersion: 1,
 	DefinitionSha256: strings.Repeat("ab", 32)}
+
+// ownRetentionPredecessor is an earlier identity of the retention model of
+// the provider owner: the same owner and kind, schema version 1 and another
+// definition digest, as a file exported before a definition text changed
+// names the model.
+func ownRetentionPredecessor(owner string) *protocol.ModelPredecessor {
+	return &protocol.ModelPredecessor{Kind: retentionKind, Representation: protocol.ValueInput_DESIRED, FormerOwner: owner, FormerKind: retentionKind,
+		SchemaVersion: 1, DefinitionSha256: strings.Repeat("cd", 32)}
+}
 
 func main() {
 	owner := &hclClaims{Provider: &backend.Provider{}}
@@ -95,9 +106,16 @@ func description() *protocol.Description {
 		}
 	}
 	if os.Getenv("FIXTURE_RETENTION_PREDECESSOR") == "1" {
+		engine.ModelPredecessors = append(engine.ModelPredecessors, proto.CloneOf(retentionPredecessor))
+	}
+	if os.Getenv("FIXTURE_RETENTION_OWN_PREDECESSOR") == "1" {
+		description.Features = append(description.Features, provider.OwnPredecessorsFeature)
+		engine.Features = append(engine.Features, provider.OwnPredecessorsFeature)
+		engine.ModelPredecessors = append(engine.ModelPredecessors, ownRetentionPredecessor(description.GetProviderId()))
+	}
+	if len(engine.ModelPredecessors) != 0 {
 		description.Features = append(description.Features, provider.ModelPredecessorsFeature)
 		engine.Features = append(engine.Features, provider.ModelPredecessorsFeature)
-		engine.ModelPredecessors = []*protocol.ModelPredecessor{proto.CloneOf(retentionPredecessor)}
 	}
 	engine.GoSourceDirectives = append(engine.GoSourceDirectives, backend.ScopedGoSourceDirectives()...)
 	seconds := []*protocol.HCLSourceAttribute{{Name: "seconds", Kind: protocol.HCLSourceAttribute_TEXT}}
