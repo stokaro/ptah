@@ -95,7 +95,18 @@ func (r *Reader) readPartitions(ctx context.Context, database *catalog.Database)
 
 func (r *Reader) readPartition(ctx context.Context, table catalog.Table) (*pgtable.ObservedPartition, error) {
 	name := sqlident.Qualified(platform.Postgres, table.Schema, table.Name)
-	rows, err := r.db.QueryContext(ctx, "SELECT pg_get_partkeydef($1::regclass)", name)
+	// By the table's oid rather than a name cast to regclass: PostgreSQL resolves
+	// a name only in a schema the role holds USAGE on, and the read lists tables
+	// in every schema.
+	schemaName := table.Schema
+	if schemaName == "" {
+		schemaName = r.schema
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT pg_get_partkeydef(c.oid)
+		FROM pg_class c
+		JOIN pg_namespace n ON n.oid = c.relnamespace
+		WHERE n.nspname = $1 AND c.relname = $2 AND c.relkind = 'p'`, schemaName, table.Name)
 	if err != nil {
 		return nil, fmt.Errorf("read partition key of %s: %w", name, err)
 	}

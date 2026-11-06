@@ -55,6 +55,19 @@ func withBanner(cmd *cobra.Command, release string) {
 	})
 }
 
+// withStdlibHelpValues gives the flags of the command whose help is printed
+// the wording [cmdflags.InstallStdlibValues] gives the rest of the tree. cobra
+// adds --help and --version to that command just before printing, after
+// NewRootCommand's pass over the tree, and the help template renders the flags
+// with pflag's own renderer.
+func withStdlibHelpValues(cmd *cobra.Command) {
+	help := cmd.HelpFunc()
+	cmd.SetHelpFunc(func(target *cobra.Command, args []string) {
+		cmdflags.InstallStdlibFlagValues(target.Flags())
+		help(target, args)
+	})
+}
+
 // helpDrawsBanner reports whether a help call is the root's own.
 //
 // It is separate from the terminal question so that each half can be measured.
@@ -109,6 +122,8 @@ func NewRootCommand() *cobra.Command {
 	providercommand.Install(cmd)
 	installProgramPolicy(cmd)
 	cmdflags.InstallEnvBinding(envPrefix, cmd)
+	cmdflags.InstallStdlibValues(cmd)
+	withStdlibHelpValues(cmd)
 
 	return cmd
 }

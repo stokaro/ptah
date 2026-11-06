@@ -341,7 +341,7 @@ func TestReadTablesForSchema_CarriesRowTTLThroughTheRead(t *testing.T) {
 func ttlTableServer(reloptions string) func(string, []driver.NamedValue) (dbtest.QueryResult, error) {
 	return func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
 		switch {
-		case strings.Contains(query, "FROM information_schema.tables"):
+		case strings.Contains(query, "AS row_stats_unknown"):
 			return dbtest.QueryResult{
 				Columns: []string{
 					"table_schema", "table_name", "table_type", "table_comment",
@@ -354,8 +354,7 @@ func ttlTableServer(reloptions string) func(string, []driver.NamedValue) (dbtest
 					{"public", "sessions", "BASE TABLE", "", int64(0), false, false, false, false, false, reloptions, ""},
 				},
 			}, nil
-		case strings.Contains(query, "FROM information_schema.columns"),
-			strings.Contains(query, "information_schema.columns"):
+		case strings.Contains(query, "AS udt_schema"):
 			return dbtest.QueryResult{}, nil
 		case strings.Contains(query, "SELECT"):
 			return dbtest.QueryResult{Columns: []string{"ok"}, Rows: [][]driver.Value{{true}}}, nil

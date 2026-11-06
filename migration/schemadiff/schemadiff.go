@@ -245,8 +245,10 @@ func compareReportingUndecidedAdditions(
 	// such as a YDB topic, rides the object: the source's silence about the
 	// object is silence about its grants, and so is its silence about an
 	// object the owner keeps.
-	compare.GrantsWithObjects(desired, database, diff, identifierSemantics, compare.OwnedObjects{Names: grantObjectNames(runtime), Desired: authoredFeatures,
-		Effective: desired.FeatureObjects})
+	compare.GrantsWithOptions(desired, database, diff, identifierSemantics, compare.GrantOptions{
+		Objects:         compare.OwnedObjects{Names: grantObjectNames(runtime), Desired: authoredFeatures, Effective: desired.FeatureObjects},
+		DesiredComplete: opts.DesiredGrantsComplete,
+	})
 
 	// Compare common table constraints (CHECK, UNIQUE, PRIMARY KEY, FOREIGN KEY).
 	compare.ConstraintsWithSemantics(desired, database, diff, opts, identifierSemantics)

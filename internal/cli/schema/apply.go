@@ -873,8 +873,14 @@ func printNothingPlanned(out io.Writer, undecided schemadiff.Diagnostics) {
 	fmt.Fprintln(out, "Schema is synced, no changes to be made.")
 }
 
+// plannedSchemaChanges heads every plan schema apply and schema plan print,
+// an SQL plan and a plan through a provider alike. Only a provider's plan
+// holds native operations or approved inputs, and it is what a built-in
+// engine plans as SQL, so the operator reads one heading either way.
+const plannedSchemaChanges = "Planned schema changes:"
+
 func printSchemaApplyPlan(out io.Writer, sqlText string) {
-	fmt.Fprintln(out, "Planned schema changes:")
+	fmt.Fprintln(out, plannedSchemaChanges)
 	fmt.Fprintln(out, strings.TrimSpace(sqlText))
 }
 

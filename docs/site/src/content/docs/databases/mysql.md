@@ -559,6 +559,26 @@ The parser applies when the index is created. A read does not report it, so a
 plan never changes it on an index that exists, and another target leaves it
 out.
 
+## What the connecting account needs
+
+`information_schema` lists only what the connecting account holds a privilege on,
+and MySQL and MariaDB have no other catalog an ordinary account can read. A
+comparison reads what is missing as absent, so `schema diff`, `schema compare`,
+`schema drift` and `schema inspect` leave out what the account cannot see, with
+exit 0. Measured on MySQL 8.4 and MariaDB 12.3: an account with `SELECT` on one
+table does not see the others, and an account with `SELECT` on the whole database
+does not see its triggers or routines, and on MariaDB its foreign keys and `CHECK`
+constraints. Either gets `Schemas are synced` for two databases that differ by
+what it cannot see
+([`stokaro/ptah#5497`](https://github.com/stokaro/ptah/issues/5497)).
+
+Run these commands as an account that holds, on each database they read:
+
+- `SELECT`, `SHOW VIEW` and `TRIGGER` on the database;
+- `SHOW_ROUTINE` globally on MySQL, or `SHOW CREATE ROUTINE` globally on MariaDB.
+
+An account holding those gets the same report as `root`.
+
 ## Dev-database cleanup privileges
 
 Database-realm cleanup requires global `SELECT`, `DROP`, `ALTER`,

@@ -74,6 +74,38 @@ Ptah keeps the declared column types because PostgreSQL can compare these
 values without widening the columns. This rule does not permit arbitrary
 type pairs; PostgreSQL must have a suitable equality operator for the key.
 
+### What the connecting role needs
+
+A read takes its tables, columns, constraints, views and grants from
+`pg_catalog`, which lists every object to every role. `schema diff`, `schema
+compare`, `schema drift`, `schema inspect` and every other command that reads a
+schema give the same answer for a role with no table privileges as for the
+object's owner, so a comparison can run as a role that cannot read a single row.
+`information_schema` is not read here: it answers only for what the role holds a
+privilege on, and `pg_read_all_data` shows no constraint or grant through it.
+[MySQL and MariaDB](../mysql/#what-the-connecting-account-needs) have no such
+catalog, so there the account matters.
+
+The role needs `CONNECT` on the database and `USAGE` on a schema on its
+`search_path`. Ptah needs that schema to place the objects a name without a
+schema refers to, and PostgreSQL resolves a schema the role has no `USAGE` on to
+nothing. Such a connection is refused at exit 2, and the message names the
+privilege:
+
+```text
+database URL selects schema "app", which does not exist in this database or holds no USAGE privilege for the connecting role
+```
+
+`USAGE` on the other schemas is not needed. A schema the role cannot use is read
+like any other. A `search_path` that lists one is the exception for spelling:
+PostgreSQL leaves it out of the role's search path, so a view body names its tables
+with the schema, and the first schema the role can use becomes the default.
+
+One fact needs more. A role's password is in `pg_catalog.pg_authid`, which only a
+superuser can read by default. A comparison that has to decide whether to set a
+declared password is refused at exit 2 for any other role; see
+[Role passwords](#role-passwords).
+
 ## Version-dependent behavior
 
 PostgreSQL release lines differ in grammar that reaches generated SQL:
@@ -1202,6 +1234,18 @@ with `--schemas` as without it: declare the object, or leave the grant out.
 one Ptah does not read, such as a foreign table or the revision table. So a run
 with the flag grants and revokes there as a run without it does.
 
+### Grants between two databases
+
+`schema diff` with a database as `--to` reads every grant that database holds, so
+a grant only `--from` holds is a difference, whoever holds it. The diff prints its
+`REVOKE`, for a role `--to` does not name and for `PUBLIC`, and the other direction
+prints the `GRANT`. A schema file as `--to` says nothing about a role it does not
+declare, so a grant to such a role stays out of the plan.
+
+The privileges an object's owner holds and `PUBLIC`'s `EXECUTE` on a routine are not
+revoked to match a database that holds them by default, because PostgreSQL stores
+no ACL until an object's first `GRANT` or `REVOKE`.
+
 ### Role passwords
 
 A role's `password` may be a password or a hash PostgreSQL takes as one, such
@@ -1237,6 +1281,15 @@ value. The statements name it, and every run reads it from the environment,
 so the schema holds no password at all. A SQL schema read from a migration
 file Ptah generated keeps the reference it holds. The same rules hold on
 [YDB](../../extend/providers/ydb/), where a user's password is named the same way.
+
+Whether a role has a password is in `pg_catalog.pg_authid`. A comparison that
+declares a password for a role that exists needs `SELECT` on it, which a superuser
+holds. For any other connecting role the comparison cannot tell a missing password
+from a set one, so it is refused at exit 2 rather than planning nothing:
+
+```text
+cannot compare password for role "app": current password state is unknown: the read could not establish it, which on PostgreSQL and YugabyteDB takes SELECT on pg_catalog.pg_authid
+```
 
 A plan that removes a table revokes the privileges of the roles the schema
 manages and leaves the others to `DROP TABLE`. The rollback of that plan
@@ -2195,7 +2248,7 @@ URL:
 | `app` | `app` |
 | `app,public` | `app` |
 | `nosuch,public` | `public` |
-| `nosuch` | refused: `database URL selects schema "nosuch", which does not exist in this database` |
+| `nosuch` | refused: `database URL selects schema "nosuch", which does not exist in this database or holds no USAGE privilege for the connecting role` |
 
 The refusal is carried too. A URL naming a schema the database does not have is
 rejected rather than folded back to `public`, because a caller who named a

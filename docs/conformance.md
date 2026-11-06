@@ -892,7 +892,7 @@ a `ptah-compat exits 0 where Atlas CE exits 1` cell:
 
 | `schema inspect -u file://schema.sql --dev-url …` | Atlas CE v1.3.0 | Ptah |
 | --- | --- | --- |
-| `docker://postgres/16/dev?search_path=app` | 1, `schema "app" was not found` | 1, `database URL selects schema "app", which does not exist in this database` |
+| `docker://postgres/16/dev?search_path=app` | 1, `schema "app" was not found` | 1, `database URL selects schema "app", which does not exist in this database or holds no USAGE privilege for the connecting role` |
 | `docker://postgres/16/dev?search_path=public` | 0 | 0, byte-identical to the same run with no parameters |
 
 The engine's own parameters are defaults, not overrides: `sslmode=disable` is
@@ -1076,7 +1076,7 @@ that runs as `image_admin`, as the Supabase image does with `supabase_admin`.
 | `docker+postgres://_/library/postgres:17/dev` | 0 | 0 |
 | `docker+postgres://_/local/dev` | 0 | 0 |
 | `DOCKER+POSTGRES://_/postgres:17/dev` | 0 | 0 |
-| `docker+postgres://_/postgres:17/dev?search_path=nosuch` | 1, `schema "nosuch" was not found` | 1, `database URL selects schema "nosuch", which does not exist in this database` |
+| `docker+postgres://_/postgres:17/dev?search_path=nosuch` | 1, `schema "nosuch" was not found` | 1, `database URL selects schema "nosuch", which does not exist in this database or holds no USAGE privilege for the connecting role` |
 | `docker+postgres://_/` | 1, `invalid configuration` and a dump of its configuration | 1, `docker+postgres --dev-url names no image` |
 | `docker+postgres://postgres:17/dev` | 1, `Unable to find image 'postgres:17/dev:latest'` | 1, the same `docker run` refusal |
 | `docker+sqlite://_/postgres:17/dev` | 1, `sql/sqlclient: unknown driver "docker+sqlite"` | 1, byte-identical |

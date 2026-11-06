@@ -144,9 +144,11 @@ var hostFeatures = []string{
 	provider.IndexKindsFeature,
 	// A claim a document captured under an identity a provider's model had
 	// before, such as an HCL export's header written by a former built-in
-	// engine, is read as the same claim of the provider's model; see
-	// Host.desiredRegistry.
+	// engine, or by a release of the provider before a definition text
+	// changed, is read as the same claim of the provider's model; see
+	// Host.headerCodecs.
 	provider.ModelPredecessorsFeature,
+	provider.OwnPredecessorsFeature,
 	// Source groups retain exact value accounting across ordered syntax parts;
 	// claimed headers retain the owner's narrowed source coverage.
 	provider.EncodeGroupsFeature,

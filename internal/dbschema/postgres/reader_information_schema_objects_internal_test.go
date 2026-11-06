@@ -226,13 +226,9 @@ func TestConstraintAndViewReadsPickTheCatalogTheServerHas(t *testing.T) {
 			_, _ = reader.readAllViews(t.Context())
 
 			asked := strings.Join(queries, "\n")
-			// The PostgreSQL path reads information_schema.table_constraints
-			// too -- its "basic" half is standard-catalog and only its anchor
-			// is pg_constraint -- so the discriminator is the join only the
-			// standard read makes.
+			// The discriminator is the join only the standard read makes.
 			c.Assert(strings.Contains(asked, "information_schema.check_constraints"), qt.Equals, tt.standard)
-			// Same for views: both paths name information_schema.views, and only
-			// the standard read asks it for check_option in one projection.
+			// For views it is the projection only the standard read asks for.
 			c.Assert(strings.Contains(asked, "table_name, view_definition, check_option"), qt.Equals, tt.standard)
 			c.Assert(strings.Contains(asked, "pg_constraint"), qt.Equals, !tt.standard)
 		})

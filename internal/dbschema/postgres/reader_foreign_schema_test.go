@@ -40,7 +40,7 @@ func foreignSchemaCatalog() dbtest.QueryHandler {
 		},
 		{Columns: []string{"a", "b", "c", "d", "e", "f", "g", "h"}},
 	}
-	markers := []string{"SELECT EXISTS", "has_table_privilege", "information_schema.table_constraints AS tc"}
+	markers := []string{"SELECT EXISTS", "has_table_privilege", "tc.constraint_name"}
 	return func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
 		asked := slices.IndexFunc(markers, func(marker string) bool { return strings.Contains(query, marker) })
 		return answers[(asked+len(answers))%len(answers)], nil
