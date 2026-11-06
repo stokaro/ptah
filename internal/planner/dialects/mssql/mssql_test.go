@@ -139,3 +139,20 @@ func TestAUniqueOverAnotherColumnLeavesTheChange_FailurePath(t *testing.T) {
 		})
 	}
 }
+
+// TestAddingAPrimaryKeyKeepsItsName is a key the diff names. SQL Server keeps the name,
+// and a later file and the rollback have to write it.
+func TestAddingAPrimaryKeyKeepsItsName(t *testing.T) {
+	c := qt.New(t)
+	engine := must.Must(builtin.New())
+	diff := &difftypes.SchemaDiff{ConstraintsAdded: difftypes.ConstraintAdditions{{
+		Name: "t_pk", TableName: "t", Type: "PRIMARY KEY", Columns: []string{"id", "k"},
+	}}}
+
+	nodes, err := mssql.New().GenerateMigrationAST(context.Background(), engine, diff)
+
+	c.Assert(err, qt.IsNil)
+	sql, err := builtin.RenderSQL("sqlserver", nodes...)
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, "ALTER TABLE [t] ADD CONSTRAINT [t_pk] PRIMARY KEY ([id], [k]);")
+}

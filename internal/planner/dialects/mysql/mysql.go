@@ -2172,6 +2172,10 @@ func (p *Planner) addPrimaryKeyConstraintsWithTables(
 		// owners keep on the key, which the MySQL family writes in its
 		// definition.
 		primaryKey := ast.NewPrimaryKeyConstraint(add.Columns...)
+		if p.targetDialect() == platform.SQLServer {
+			// SQL Server keeps the name, and a later file and the rollback have to name it.
+			primaryKey.Name = add.Name
+		}
 		primaryKey.Deferrable, primaryKey.Initially = add.Deferrable, add.Initially
 		primaryKey.UsingMethod = add.UsingMethod
 		primaryKey.Facets = add.Facets
