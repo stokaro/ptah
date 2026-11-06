@@ -533,11 +533,12 @@ func checkSimulationSchemaScope(devInfo, targetInfo catalog.ServerInfo) error {
 // not a difference from the target. See [devclean.Baseline].
 //
 // targetURL names the database current was read from. An executable provider
-// binds each value it reads to that database, and a dev realm of it binds
-// values to the realm, so the target's values are moved to the realm before
-// the comparison (see [valuecontext.Move]); without the move the provider
-// refuses a comparison that holds values bound to two databases. What the
-// realm does not read is left out of what it recreates (see
+// binds each value it reads to that database, and a dev realm binds values to
+// the realm, whether it is a realm of the target's database or of a database
+// of another name, so the target's values are moved to the realm before the
+// comparison (see [valuecontext.Move]); without the move the provider refuses
+// a comparison that holds values bound to two databases. What the realm does
+// not read is left out of what it recreates (see
 // [devclean.WithoutUnreadObjects]).
 func recreateCurrentSchema(
 	ctx context.Context,

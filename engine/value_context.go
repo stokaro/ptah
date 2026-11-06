@@ -85,8 +85,8 @@ func (r *Runtime) ResolveDatabaseContext(ctx context.Context, request schemaext.
 // BindValueContexts snapshots all inputs before dispatch and restores their
 // order after owner batches complete. Models without a binding service retain
 // their snapshots. Cancellation or any malformed result discards the batch.
-// A request with From set moves desired values only, and only between two
-// contexts of one SourceDatabase; any other move is refused before dispatch.
+// A request with From set moves desired values only; a move of any other
+// representation is refused before dispatch.
 func (r *Runtime) BindValueContexts(ctx context.Context, request schemaext.ValueContextRequest) ([]schemaext.Value, error) {
 	if err := schemaext.RequireRuntime(ctx, r); err != nil {
 		return nil, err
@@ -150,8 +150,8 @@ func (r *Runtime) BindValueContexts(ctx context.Context, request schemaext.Value
 
 // validateMove refuses a move [schemaext.ValueContextRequest.From] cannot
 // make. Only a desired value is moved: an observation describes the database
-// it was read from. The two contexts must read authored references against
-// one root, since a moved payload is not rewritten.
+// it was read from. The two contexts may read authored references against
+// different roots; the owner reads each moved value again under the new one.
 func validateMove(request schemaext.ValueContextRequest) error {
 	if request.From.IsZero() {
 		return nil
@@ -161,9 +161,6 @@ func validateMove(request schemaext.ValueContextRequest) error {
 	}
 	if request.Representation != schemaext.Desired {
 		return fmt.Errorf("%w: only a desired value moves to another database context", schemaext.ErrInvalidValue)
-	}
-	if request.From.SourceDatabase != request.Context.SourceDatabase {
-		return fmt.Errorf("%w: a value moves only between database contexts that read authored references against one root", schemaext.ErrIncompatibleCodec)
 	}
 	return nil
 }

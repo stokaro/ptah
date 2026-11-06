@@ -198,34 +198,41 @@ func realms() map[string]schemaext.DatabaseContext {
 }
 
 // A move binds the selected target's values, objects and facets alike, from
-// the context the first address names to the one the second names.
+// the context the first address names to the one the second names: a realm
+// of the same database, or a database of another root.
 func TestMove_HappyPath(t *testing.T) {
 	t.Parallel()
-	c := qt.New(t)
-	m := &mover{contexts: realms()}
-	database := source(c)
+	for _, test := range []struct{ name, to, want string }{
+		{name: "a realm of the database", to: "realm", want: "/db>/db/realm"},
+		{name: "another root", to: "other", want: "/db>/other"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			c := qt.New(t)
+			m := &mover{contexts: realms()}
+			database := source(c)
 
-	moved, err := valuecontext.Move(c.Context(), runtime(c, m), "selected", "db", "realm", database)
+			moved, err := valuecontext.Move(c.Context(), runtime(c, m), "selected", "db", test.to, database)
 
-	c.Assert(err, qt.IsNil)
-	c.Assert(moved, qt.IsTrue)
-	objects, err := database.FeatureObjects.All()
-	c.Assert(err, qt.IsNil)
-	c.Assert(objects[0].Value.(*value).Bound, qt.Equals, "/db>/db/realm")
-	c.Assert(objects[1].Value.(*value).Bound, qt.Equals, "")
-	facet, _, err := database.Tables[0].Facets.Get(facetKind)
-	c.Assert(err, qt.IsNil)
-	c.Assert(facet.(*value).Bound, qt.Equals, "/db>/db/realm")
+			c.Assert(err, qt.IsNil)
+			c.Assert(moved, qt.IsTrue)
+			objects, err := database.FeatureObjects.All()
+			c.Assert(err, qt.IsNil)
+			c.Assert(objects[0].Value.(*value).Bound, qt.Equals, test.want)
+			c.Assert(objects[1].Value.(*value).Bound, qt.Equals, "")
+			facet, _, err := database.Tables[0].Facets.Get(facetKind)
+			c.Assert(err, qt.IsNil)
+			c.Assert(facet.(*value).Bound, qt.Equals, test.want)
+		})
+	}
 }
 
 // Nothing moves, and the source is left as it is, where there is nothing to
-// move between: a missing address, one context, or two roots a moved
-// reference would be read against differently.
+// move between: a missing address or one context.
 func TestMoveLeavesTheSource_HappyPath(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct{ name, from, to string }{
 		{name: "the same context", from: "realm", to: "realm"},
-		{name: "another root", from: "db", to: "other"},
 		{name: "no target address", from: "", to: "realm"},
 		{name: "no dev address", from: "db", to: ""},
 	} {

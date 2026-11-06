@@ -67,10 +67,9 @@ func BindSource(ctx context.Context, runtime schemaext.ValueContextRuntime, targ
 // database fromAddress names, to the one toAddress names, and reports whether
 // it moved them. A rehearsal needs it: the target's current schema, read and
 // converted to desired values, is recreated in the dev database, and a value
-// bound to the target is compared and planned nowhere else. It moves nothing,
-// and database is left as it is, when either address resolves to no context,
-// when both resolve to the same one, or when the two read authored references
-// against different roots, where a moved payload could name another object.
+// bound to the target is compared and planned nowhere else, a dev database of
+// another name included. It moves nothing, and database is left as it is,
+// when either address resolves to no context or both resolve to the same one.
 // Failure leaves database unchanged. See [schemaext.ValueContextRequest.From].
 func Move(ctx context.Context, runtime schemaext.ValueContextRuntime, target, fromAddress, toAddress string, database *schemamodel.Database) (bool, error) {
 	if ctx == nil {
@@ -87,7 +86,7 @@ func Move(ctx context.Context, runtime schemaext.ValueContextRuntime, target, fr
 	if err != nil {
 		return false, err
 	}
-	if from.IsZero() || to.IsZero() || from == to || from.SourceDatabase != to.SourceDatabase {
+	if from.IsZero() || to.IsZero() || from == to {
 		return false, nil
 	}
 	objects, err := bind(ctx, runtime, target, schemaext.ValueContextRequest{Context: to, Representation: schemaext.Desired, From: from}, database.FeatureObjects, database.FacetSlots())

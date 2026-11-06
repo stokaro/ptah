@@ -60,9 +60,13 @@ type ValueContextRequest struct {
 	// From is the context a desired value is bound to when the batch moves it
 	// to Context; the zero value moves nothing. A moved value keeps its
 	// payload, and an owner that names From's database names its object
-	// relative to the database it moves to. From and Context must name the
-	// same SourceDatabase, so every authored reference keeps its meaning. A
-	// value bound to any context other than From or Context is refused.
+	// relative to the database it moves to. The selected target binds the
+	// value again under Context, so its references are read against
+	// Context's SourceDatabase: between two contexts of one SourceDatabase
+	// every reference keeps its meaning, and between two roots a relative
+	// reference names the object at the same place in the new one, while an
+	// absolute reference is read as the target reads one there. A value
+	// bound to any context other than From or Context is refused.
 	From DatabaseContext
 }
 

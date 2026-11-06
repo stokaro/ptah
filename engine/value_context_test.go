@@ -156,32 +156,43 @@ func TestValueContextBindingRegistrationIsExclusive(t *testing.T) {
 }
 
 // A move reaches the owner's service with the context the values leave, and
-// the runtime returns what the service bound.
+// the runtime returns what the service bound, within one root and between
+// two: the owner reads each moved value again under the new root.
 func TestValueContextMove_HappyPath(t *testing.T) {
 	t.Parallel()
-	c := qt.New(t)
-	var held schemaext.ValueContextRequest
-	service := valueContextFunc(func(_ context.Context, request schemaext.ValueContextRequest) ([]schemaext.Value, error) {
-		held = request
-		return request.Values, nil
-	})
-	runtime := mustRuntime(c, contextProvider(service))
-	from := schemaext.DatabaseContext{Database: "/db", SourceDatabase: "/db"}
-	to := schemaext.DatabaseContext{Database: "/db/realm", SourceDatabase: "/db"}
+	for _, test := range []struct {
+		name string
+		to   schemaext.DatabaseContext
+	}{
+		{name: "a realm of the database", to: schemaext.DatabaseContext{Database: "/db/realm", SourceDatabase: "/db"}},
+		{name: "another root", to: schemaext.DatabaseContext{Database: "/other/realm", SourceDatabase: "/other"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			c := qt.New(t)
+			var held schemaext.ValueContextRequest
+			service := valueContextFunc(func(_ context.Context, request schemaext.ValueContextRequest) ([]schemaext.Value, error) {
+				held = request
+				return request.Values, nil
+			})
+			runtime := mustRuntime(c, contextProvider(service))
+			from := schemaext.DatabaseContext{Database: "/db", SourceDatabase: "/db"}
 
-	result, err := runtime.BindValueContexts(c.Context(), schemaext.ValueContextRequest{Target: "custom", Context: to, From: from, Representation: schemaext.Desired,
-		Values: []schemaext.Value{&conversionValue{ID: conversionFirst, Number: 7}}})
+			result, err := runtime.BindValueContexts(c.Context(), schemaext.ValueContextRequest{Target: "custom", Context: test.to, From: from, Representation: schemaext.Desired,
+				Values: []schemaext.Value{&conversionValue{ID: conversionFirst, Number: 7}}})
 
-	c.Assert(err, qt.IsNil)
-	c.Assert(held.From, qt.Equals, from)
-	c.Assert(held.Context, qt.Equals, to)
-	c.Assert(result, qt.HasLen, 1)
-	c.Assert(result[0].(*conversionValue).Number, qt.Equals, 7)
+			c.Assert(err, qt.IsNil)
+			c.Assert(held.From, qt.Equals, from)
+			c.Assert(held.Context, qt.Equals, test.to)
+			c.Assert(result, qt.HasLen, 1)
+			c.Assert(result[0].(*conversionValue).Number, qt.Equals, 7)
+		})
+	}
 }
 
 // A move the runtime cannot make is refused before any service runs: an
-// observation describes the database it was read from, and a move between
-// two roots would reinterpret every authored reference it carries.
+// observation describes the database it was read from, and an incomplete
+// context names no database to leave.
 func TestValueContextMove_FailurePath(t *testing.T) {
 	t.Parallel()
 	to := schemaext.DatabaseContext{Database: "/db/realm", SourceDatabase: "/db"}
@@ -192,7 +203,6 @@ func TestValueContextMove_FailurePath(t *testing.T) {
 		want           error
 	}{
 		{name: "an observation", from: schemaext.DatabaseContext{Database: "/db", SourceDatabase: "/db"}, representation: schemaext.Observed, want: schemaext.ErrInvalidValue},
-		{name: "another root", from: schemaext.DatabaseContext{Database: "/other", SourceDatabase: "/other"}, representation: schemaext.Desired, want: schemaext.ErrIncompatibleCodec},
 		{name: "an incomplete context", from: schemaext.DatabaseContext{Database: "/db"}, representation: schemaext.Desired, want: schemaext.ErrInvalidValue},
 	} {
 		t.Run(test.name, func(t *testing.T) {

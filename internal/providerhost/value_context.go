@@ -133,9 +133,8 @@ func boundInput(captured *resolvedModel, bound, from *protocol.DatabaseContext) 
 // moves out of from: when captured is from, an owner that names from's
 // database names its object relative to the database instead, as a session
 // reads an object of its own database. Any other owner is kept, and so is
-// every owner of a value that does not move. A move keeps the SourceDatabase,
-// so the relative name means the same object in the database the value moves
-// to.
+// every owner of a value that does not move. The relative name means the
+// object at the same place in the database the value moves to.
 func movedOwner(owner *protocol.Reference, from, captured *protocol.DatabaseContext) *protocol.Reference {
 	if owner == nil || from == nil || !proto.Equal(captured, from) || owner.GetDatabase() != from.GetDatabase() {
 		return owner

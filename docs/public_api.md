@@ -1117,8 +1117,9 @@ update directly; pre-v1, so compatibility with an incomplete runtime is not owed
 
 `ValueContextRequest.From` names the context a desired value is bound to when
 the batch moves it to `Context`; an owner that names `From`'s database becomes
-relative, and the payload is kept. The runtime refuses a move of an
-observation, or between two contexts whose `SourceDatabase` differs, before
+relative, and the payload is kept. The target binds a moved value again under
+`Context`, so its references are read against `Context`'s `SourceDatabase`,
+which may be another root. The runtime refuses a move of an observation before
 dispatch. A rehearsal moves the target's values into its dev realm this way,
 and `schema diff` moves the values of a `--to` side read from a database to
 the context of the `--from` side's read.

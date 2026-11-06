@@ -124,3 +124,22 @@ does not. Rejected.
   them, as the baseline leaves them out too.
   The built-in YDB engine at 74de0b65b planned these diffs; the provider
   refused them as `conflicting database contexts` without the move.
+- A move may cross roots: `From` and `Context` may name different
+  `source_database` values. A rehearsal whose dev URL names a database of
+  another name moves the target's values into a realm of that database, and
+  a diff of a file created there moves the `--to` database's values to it.
+  The built-in YDB engine at 74de0b65b rehearsed and diffed both, on 25.1.4.7
+  and 26.2.1.14; the provider refused them as `conflicting database
+  contexts`, because the values stayed bound to the target. The provider
+  binds each moved value again under the new root. Its owner and its
+  relative references name the objects at the same place in the new
+  database, which is what recreating the target there means. An absolute
+  reference is read against the new root, and the YDB provider refuses one
+  outside it. One that falls inside it, when the dev database's root holds
+  the target's, would name an object of the realm. The YDB values that carry
+  such a path are external data sources and tables, replications, transfers
+  and streaming queries, and the provider's realm guard refuses their
+  statements in a dev realm, so no rehearsal or materialization runs them.
+  A provider whose moved values could name a wrong object without a
+  statement the guard refuses needs the root a value leaves; the request
+  does not carry it yet.
