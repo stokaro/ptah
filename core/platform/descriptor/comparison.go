@@ -98,6 +98,9 @@ type Comparison struct {
 	// AutoIncrementFlag reports that the catalog reports whether a column
 	// auto-increments, so a declared auto-increment is compared with it.
 	AutoIncrementFlag bool `json:"auto_increment_flag,omitempty"`
+	// TimePrecision says how the engine reads a temporal column's fractional-seconds
+	// precision. The zero value compares none.
+	TimePrecision TimePrecision `json:"time_precision,omitzero"`
 	// PrimaryKeyNullable reports that a primary key column may hold NULL
 	// unless the table's shape says otherwise, so a key does not imply NOT
 	// NULL.
@@ -148,4 +151,15 @@ type Comparison struct {
 	// such as in another case, is dropped and created under the declared
 	// spelling rather than kept.
 	RespelledIndexReplaced bool `json:"respelled_index_replaced,omitempty"`
+}
+
+// TimePrecision states that a comparison reads the precision of a temporal column,
+// and what a column that declares none holds. Two columns differ when their
+// precisions do, so `timestamp(3)` and `timestamp(6)` are a change and, where six is
+// the default, `timestamp` and `timestamp(6)` are not.
+type TimePrecision struct {
+	// Compared reports that the comparison reads the precision.
+	Compared bool `json:"compared,omitempty"`
+	// Default is the precision of a column that declares none.
+	Default int `json:"default,omitempty"`
 }

@@ -51,6 +51,21 @@ func TestParseColumnType_ATimeZoneQualifierGoesOnTheEnd(t *testing.T) {
 			want: "timestamp without time zone",
 		},
 		{
+			name: "a precision ahead of the zone, as pg_dump writes it",
+			sql:  `CREATE TABLE z (id BIGINT, a timestamp(3) with time zone);`,
+			want: "timestamp(3) with time zone",
+		},
+		{
+			name: "a time's precision ahead of no zone",
+			sql:  `CREATE TABLE z (id BIGINT, a time(3) without time zone);`,
+			want: "time(3) without time zone",
+		},
+		{
+			name: "a precision with no zone",
+			sql:  `CREATE TABLE z (id BIGINT, a timestamp(3));`,
+			want: "timestamp(3)",
+		},
+		{
 			name: "time with time zone",
 			sql:  `CREATE TABLE z (id BIGINT, a time with time zone);`,
 			want: "time with time zone",
