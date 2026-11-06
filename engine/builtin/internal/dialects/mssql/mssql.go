@@ -75,16 +75,40 @@ func (r *Renderer) renderCreateSchema(node *ast.CreateSchemaNode) error {
 	// a declared one reaches the output nowhere here.
 	r.sink.RecordLostProperty(renderdiag.SchemaKind, node.Name, renderdiag.CharsetProperty, node.Charset)
 	r.sink.RecordLostProperty(renderdiag.SchemaKind, node.Name, renderdiag.CollateProperty, node.Collate)
-	if node.Comment != "" {
-		r.w.WriteLinef("-- %s", node.Comment)
-	}
-	if node.IfNotExists {
-		r.w.WriteLinef("IF SCHEMA_ID(%s) IS NULL", escapeStringLiteral(node.Name))
-		r.w.WriteLinef("    EXEC(%s);", escapeStringLiteral("CREATE SCHEMA "+escapeQualifiedIdentifier(node.Name)))
+	// Every SQL Server database holds dbo, and a description opens with it, so it
+	// takes a statement only to carry a comment.
+	if node.Name == defaultSchema && node.Comment == "" {
 		return nil
 	}
-	r.w.WriteLinef("CREATE SCHEMA %s;", escapeQualifiedIdentifier(node.Name))
+	if !node.IfNotExists {
+		r.w.WriteLinef("CREATE SCHEMA %s;", escapeQualifiedIdentifier(node.Name))
+		if node.Comment != "" {
+			r.w.WriteLinef("EXEC sp_addextendedproperty %s;", schemaCommentArguments(node.Name, node.Comment))
+		}
+		return nil
+	}
+	r.w.WriteLinef("IF SCHEMA_ID(%s) IS NULL", escapeStringLiteral(node.Name))
+	r.w.WriteLinef("    EXEC(%s);", escapeStringLiteral("CREATE SCHEMA "+escapeQualifiedIdentifier(node.Name)))
+	if node.Comment != "" {
+		// A schema this statement finds keeps its comment, which adding a
+		// property would refuse; the comparison plans a change to it.
+		r.w.WriteLinef("IF NOT EXISTS (SELECT 1 FROM sys.extended_properties WHERE class = 3 AND major_id = SCHEMA_ID(%s) "+
+			"AND minor_id = 0 AND name = N%s)", escapeStringLiteral(node.Name), escapeStringLiteral(commentPropertyName))
+		r.w.WriteLinef("    EXEC sp_addextendedproperty %s;", schemaCommentArguments(node.Name, node.Comment))
+	}
 	return nil
+}
+
+// schemaCommentArguments addresses the comment of a schema, as a list of string
+// literals: @level0name is a sysname, so bracket quoting would address a schema
+// literally called `[app]`. A drop passes no comment.
+func schemaCommentArguments(schema, comment string) string {
+	arguments := []string{"@name = N" + escapeStringLiteral(commentPropertyName)}
+	if comment != "" {
+		arguments = append(arguments, "@value = N"+escapeStringLiteral(comment))
+	}
+	arguments = append(arguments, "@level0type = N'SCHEMA'", "@level0name = N"+escapeStringLiteral(schema))
+	return strings.Join(arguments, ", ")
 }
 
 func (r *Renderer) renderCreateDatabase(node *ast.CreateDatabaseNode) error {
@@ -1636,10 +1660,23 @@ func partOperatorClasses(node *ast.IndexNode) []string {
 	return classes
 }
 
-// renderObjectComment names a comment statement this dialect has no spelling
-// of. COMMENT ON is the PostgreSQL family's, and only its planner emits the
-// node, so a caller that builds one for this target is told what was left out.
+// renderObjectComment sets a schema's comment, as one of the three stored
+// procedures [Renderer.writeSetComment] chooses among. It names any other comment
+// statement this dialect has no spelling of: COMMENT ON is the PostgreSQL family's,
+// and only its planner emits those, so a caller that builds one for this target is
+// told what was left out.
 func (r *Renderer) renderObjectComment(node *ast.ObjectCommentNode) error {
-	r.notSupported("COMMENT ON "+string(node.Object), node.Name)
+	if node.Object != ast.CommentedSchema {
+		r.notSupported("COMMENT ON "+string(node.Object), node.Name)
+		return nil
+	}
+	procedure := "sp_addextendedproperty"
+	switch {
+	case node.Comment == "":
+		procedure = "sp_dropextendedproperty"
+	case node.HasCurrent:
+		procedure = "sp_updateextendedproperty"
+	}
+	r.w.WriteLinef("EXEC %s %s;", procedure, schemaCommentArguments(node.Name, node.Comment))
 	return nil
 }

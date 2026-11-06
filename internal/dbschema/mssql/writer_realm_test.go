@@ -13,6 +13,12 @@ import (
 	"ptah.run/internal/dbschema/mssql"
 )
 
+// dropKeptSchemaComment is what a cleanup runs last: the schema it keeps gives up
+// its comment, as every other schema does by being dropped.
+const dropKeptSchemaComment = "IF EXISTS (SELECT 1 FROM sys.extended_properties WHERE class = 3 AND major_id = SCHEMA_ID('dbo') " +
+	"AND minor_id = 0 AND name = N'MS_Description') EXEC sp_dropextendedproperty @name = N'MS_Description', " +
+	"@level0type = N'SCHEMA', @level0name = N'dbo'"
+
 func TestWriterDropDatabaseRealm_CleansCrossSchemaGraph(t *testing.T) {
 	c := qt.New(t)
 	sqlMock := newWriterSQLMock(t,
@@ -104,6 +110,7 @@ func TestWriterDropDatabaseRealm_CleansCrossSchemaGraph(t *testing.T) {
 			execExpectation("DROP SCHEMA IF EXISTS [m_util]", nil),
 			execExpectation("DROP SCHEMA IF EXISTS [types]", nil),
 			execExpectation("DROP SCHEMA IF EXISTS [z_data]", nil),
+			execExpectation(dropKeptSchemaComment, nil),
 		},
 	)
 	db := dbtest.OpenWithExec(t, sqlMock.query, sqlMock.exec)
@@ -266,7 +273,7 @@ func TestWriterDropDatabaseRealm_RejectsResidualObjectAndRollsBack(t *testing.T)
 				[]driver.Value{"object", "rogue]", "queue]", "SERVICE_QUEUE"},
 			),
 		},
-		nil,
+		[]writerExecExpectation{execExpectation(dropKeptSchemaComment, nil)},
 	)
 	db := dbtest.OpenWithExec(t, sqlMock.query, sqlMock.exec)
 	writer := mssql.NewSQLServerWriter(db.SQL, "dbo")
@@ -419,6 +426,7 @@ func TestWriterDropDatabaseRealm_DisablesTemporalTableBeforeDroppingHistory(t *t
 			),
 			execExpectation("DROP TABLE IF EXISTS [app].[z_current]", nil),
 			execExpectation("DROP TABLE IF EXISTS [audit].[a_history]", nil),
+			execExpectation(dropKeptSchemaComment, nil),
 		},
 	)
 	db := dbtest.OpenWithExec(t, sqlMock.query, sqlMock.exec)
@@ -793,7 +801,7 @@ func TestWriterDropDatabaseRealm_RejectsLateDatabaseArtifactAndRollsBack(t *test
 				[]driver.Value{"database-scoped credential", "", "late]credential", "DATABASE_SCOPED_CREDENTIAL"},
 			),
 		),
-		nil,
+		[]writerExecExpectation{execExpectation(dropKeptSchemaComment, nil)},
 	)
 	db := dbtest.OpenWithExec(t, sqlMock.query, sqlMock.exec)
 	writer := mssql.NewSQLServerWriter(db.SQL, "dbo")
@@ -806,7 +814,7 @@ func TestWriterDropDatabaseRealm_RejectsLateDatabaseArtifactAndRollsBack(t *test
 		`sqlserver: refusing to commit database realm cleanup: residual database-scoped credential `+
 			`\[late\]\]credential\] \(DATABASE_SCOPED_CREDENTIAL\)`,
 	)
-	c.Assert(db.ExecCount(), qt.Equals, 0)
+	c.Assert(db.ExecCount(), qt.Equals, 1)
 	c.Assert(db.CommitCount(), qt.Equals, 0)
 	c.Assert(db.RollbackCount(), qt.Equals, 1)
 }
@@ -827,7 +835,7 @@ func TestWriterDropDatabaseRealm_IsIdempotentWhenRealmIsEmpty(t *testing.T) {
 				[]string{"category", "schema", "name", "detail"},
 			),
 		),
-		nil,
+		[]writerExecExpectation{execExpectation(dropKeptSchemaComment, nil)},
 	)
 	db := dbtest.OpenWithExec(t, sqlMock.query, sqlMock.exec)
 	writer := mssql.NewSQLServerWriter(db.SQL, "dbo")
@@ -835,7 +843,7 @@ func TestWriterDropDatabaseRealm_IsIdempotentWhenRealmIsEmpty(t *testing.T) {
 	err := writer.DropDatabaseRealm(t.Context())
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.ExecCount(), qt.Equals, 0)
+	c.Assert(db.ExecCount(), qt.Equals, 1)
 	c.Assert(db.CommitCount(), qt.Equals, 1)
 	c.Assert(db.RollbackCount(), qt.Equals, 0)
 }

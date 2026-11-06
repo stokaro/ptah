@@ -287,6 +287,20 @@ puts nothing in is created too, and a rollback drops it with `DROP SCHEMA`, whic
 the server refuses while the schema holds an object. A plan never creates `dbo`,
 and never drops a schema the document does not mention.
 
+A schema's `comment` is its `MS_Description` extended property, because T-SQL has
+no `COMMENT ON`:
+
+```sql
+EXEC sp_addextendedproperty @name = N'MS_Description', @value = N'application',
+  @level0type = N'SCHEMA', @level0name = N'app';
+```
+
+A plan writes it with the schema, sets it on a schema the database holds, and
+replaces a different one. A declaration that names a schema and states no comment
+leaves the comment as the server holds it. A rehearsal's reset takes the comment
+back, on `dbo` as well, so a dev database's own comment on `dbo` does not survive
+one.
+
 **MySQL, MariaDB, ClickHouse and Oracle do not do this**, and that is a
 difference in what a schema IS rather than a gap. A schema there is a database —
 or, on Oracle, a user — so creating one is `CREATE DATABASE` or `CREATE USER`,

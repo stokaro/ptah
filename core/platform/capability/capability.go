@@ -581,7 +581,8 @@ const (
 	SequenceStartCounterOnly Capability = "sequence_start_counter_only"
 
 	// SchemaComments marks a target that stores a comment against a SCHEMA,
-	// through `COMMENT ON SCHEMA`.
+	// through `COMMENT ON SCHEMA`, or on SQL Server through an MS_Description
+	// extended property.
 	//
 	// Separate from a table's or a column's comment because the statements are
 	// separate and one target takes some and not the others: measured on the
@@ -2066,7 +2067,7 @@ var registry = map[Capability]spec{
 		requires: []Capability{Sequences},
 	},
 	SchemaComments: {
-		doc: "COMMENT ON SCHEMA, which stores a comment against a schema rather than a table or column",
+		doc: "a comment stored against a schema rather than a table or column: COMMENT ON SCHEMA, or on SQL Server an extended property",
 	},
 	ViewComments: {
 		doc:      "COMMENT ON VIEW, stored where Ptah's reader reads it back: obj_description, or a YDB view's attribute",
@@ -4080,8 +4081,9 @@ func buildSQLServer2022() Capabilities {
 		// (stokaro/ptah#1626).
 		Sequences:                true,
 		SequenceStartCounterOnly: false,
-		// SQL Server carries this as an extended property, not COMMENT ON.
-		SchemaComments:               false,
+		// SQL Server carries this as an extended property, not COMMENT ON. Ptah
+		// writes the property and reads it back.
+		SchemaComments:               true,
 		ViewComments:                 false,
 		SequenceComments:             false,
 		TypeComments:                 false,

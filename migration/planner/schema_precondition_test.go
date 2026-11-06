@@ -103,10 +103,11 @@ func TestGenerateSchemaDiffSQLStatements_ACreatedSchemaCarriesItsComment(t *test
 			want:    `COMMENT ON SCHEMA "extra" IS 'the extra schema'`,
 		},
 		{
-			name:    "sqlserver writes the comment line",
+			name:    "sqlserver writes an extended property",
 			dialect: "sqlserver",
 			home:    "dbo",
-			want:    "-- the extra schema",
+			want: "EXEC sp_addextendedproperty @name = N'MS_Description', @value = N'the extra schema', " +
+				"@level0type = N'SCHEMA', @level0name = N'extra'",
 		},
 	}
 

@@ -131,6 +131,23 @@ func schemasAddedObjectsNeed(diff *difftypes.SchemaDiff, created []string) []str
 	return schemas
 }
 
+// changeSchemaComments sets the comment of each schema both sides hold whose
+// comment the comparison found changed, on SQL Server, the one dialect of this
+// planner that stores one. A schema the plan creates takes its comment from the
+// creation.
+func (p *Planner) changeSchemaComments(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	if p.targetDialect() != platform.SQLServer {
+		return result
+	}
+	for _, change := range diff.ObjectCommentsChanged {
+		if change.Kind == difftypes.CommentedSchema {
+			result = append(result, ast.NewObjectComment(ast.CommentedSchema, change.Name, change.Desired).
+				SetHasCurrent(change.Current != ""))
+		}
+	}
+	return result
+}
+
 // dropRemovedSchemas ends a SQL Server plan with a DROP SCHEMA for each schema a
 // rollback removes, after every other statement, the owners' included, because
 // what the plan drops first may be in it. The server refuses a schema that still

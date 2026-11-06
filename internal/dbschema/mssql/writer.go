@@ -82,6 +82,7 @@ type realmCleanupPlan struct {
 	types        []realmType
 	xmlSchemas   []realmXMLSchema
 	schemas      []string
+	keptSchema   string
 }
 
 type transactionWriter struct {
@@ -441,6 +442,7 @@ func buildRealmCleanupPlan(
 		types:        userTypes,
 		xmlSchemas:   xmlSchemas,
 		schemas:      schemas,
+		keptSchema:   preservedSchema,
 	}, nil
 }
 
@@ -483,6 +485,21 @@ func executeRealmCleanupPlan(ctx context.Context, tx *sql.Tx, plan realmCleanupP
 		if _, err := tx.ExecContext(ctx, "DROP SCHEMA IF EXISTS "+quoted); err != nil {
 			return fmt.Errorf("sqlserver: drop schema %s: %w", quoted, err)
 		}
+	}
+	return dropKeptSchemaComment(ctx, tx, plan.keptSchema)
+}
+
+// dropKeptSchemaComment takes away the comment of the schema a cleanup keeps. Every
+// other schema's comment goes with the schema. A rehearsal's comment on this one
+// would otherwise still be there for the next run.
+func dropKeptSchemaComment(ctx context.Context, tx *sql.Tx, keptSchema string) error {
+	schema := sqlident.StringLiteral(keptSchema)
+	// #nosec G202 -- the schema name is emitted only through SQL string-literal quoting.
+	statement := "IF EXISTS (SELECT 1 FROM sys.extended_properties WHERE class = 3 AND major_id = SCHEMA_ID(" + schema +
+		") AND minor_id = 0 AND name = N'MS_Description') EXEC sp_dropextendedproperty @name = N'MS_Description', " +
+		"@level0type = N'SCHEMA', @level0name = N" + schema
+	if _, err := tx.ExecContext(ctx, statement); err != nil {
+		return fmt.Errorf("sqlserver: drop the comment of schema %s: %w", quoteIdent(keptSchema), err)
 	}
 	return nil
 }
@@ -1346,6 +1363,7 @@ const unsupportedRealmArtifactQuery = `
 			   OR (
 				   p.class = 3
 				   AND p.major_id IN (SCHEMA_ID(N'dbo'), SCHEMA_ID(@p1))
+				   AND p.name <> N'MS_Description'
 			   )
 		) AS artifact
 		ORDER BY artifact.category, artifact.object_name

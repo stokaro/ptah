@@ -20,7 +20,7 @@ func validateSQLServerReplayStatement(tokens []lexer.Token) error {
 
 	first := replay.NormalizedIdentifier(tokens[0])
 	if first == "EXEC" || first == "EXECUTE" {
-		return replay.Refuse(platform.SQLServer, "EXEC/EXECUTE sublanguage")
+		return validateSQLServerExecute(tokens)
 	}
 	if operation := sqlServerExternalOrServerOperation(tokens); operation != "" {
 		return replay.Refuse(platform.SQLServer, operation)
@@ -140,6 +140,49 @@ func sqlServerTriggerStatement(tokens []lexer.Token) bool {
 	first := replay.NormalizedIdentifier(tokens[0])
 	return (first == "ENABLE" || first == "DISABLE") &&
 		sqlServerKeywordSequenceAt(tokens, 1, "TRIGGER")
+}
+
+// validateSQLServerExecute refuses an EXEC, which can run anything, unless it is a
+// call the cleanup takes back.
+func validateSQLServerExecute(tokens []lexer.Token) error {
+	if sqlServerConfinedExtendedProperty(tokens) {
+		return nil
+	}
+	return replay.Refuse(platform.SQLServer, "EXEC/EXECUTE sublanguage")
+}
+
+// sqlServerConfinedExtendedProperty reports a call that sets, changes or drops an
+// extended property the realm cleanup takes back: one on an object inside a schema,
+// which goes with the object, or a schema's MS_Description, which goes with the
+// schema, or with the cleanup where the schema is the one it keeps. A property on
+// the database, or another property on a schema, outlives the cleanup.
+func sqlServerConfinedExtendedProperty(tokens []lexer.Token) bool {
+	index := 1
+	dot := replay.TokenAt(tokens, index+1)
+	if replay.NormalizedIdentifier(replay.TokenAt(tokens, index)) == "SYS" && dot.MatchOperatorValue(".") {
+		index += 2
+	}
+	switch replay.NormalizedIdentifier(replay.TokenAt(tokens, index)) {
+	case "SP_ADDEXTENDEDPROPERTY", "SP_UPDATEEXTENDEDPROPERTY", "SP_DROPEXTENDEDPROPERTY":
+	default:
+		return false
+	}
+	arguments := make(map[string]string, 8)
+	for index++; index < len(tokens); index++ {
+		if !tokens[index].MatchOperatorValue("@") {
+			continue
+		}
+		name := replay.NormalizedIdentifier(replay.TokenAt(tokens, index+1))
+		value := replay.TokenAt(tokens, index+3)
+		if value.MatchIdentifierValue("N") {
+			value = replay.TokenAt(tokens, index+4)
+		}
+		arguments[name] = replay.NormalizedIdentifier(value)
+	}
+	if arguments["LEVEL0TYPE"] != "SCHEMA" {
+		return false
+	}
+	return arguments["LEVEL1TYPE"] != "" || arguments["NAME"] == "MS_DESCRIPTION"
 }
 
 func sqlServerExecutableTokens(tokens []lexer.Token) []lexer.Token {

@@ -187,10 +187,11 @@ func sqlServerPlan() plan {
 			"CREATE SEQUENCE sso_ok",
 			"CREATE SEQUENCE sso_no INCREMENT BY 2",
 		),
-		acceptanceNote(capability.SchemaComments, nil,
-			"COMMENT ON SCHEMA dbo IS 'probe'",
-			"T-SQL has no COMMENT ON statement at all; SQL Server carries the same idea as an extended "+
-				"property written through sp_addextendedproperty, which this key does not name",
+		// T-SQL has no COMMENT ON statement; SQL Server carries the same idea as
+		// an extended property, which the reader reads back.
+		acceptance(capability.SchemaComments, nil,
+			"EXEC sp_addextendedproperty @name = N'MS_Description', @value = N'probe', "+
+				"@level0type = N'SCHEMA', @level0name = N'dbo'",
 		),
 		acceptance(capability.XMLType, nil,
 			"CREATE TABLE xmlt (c XML)",

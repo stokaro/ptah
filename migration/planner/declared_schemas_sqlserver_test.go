@@ -51,6 +51,42 @@ func TestSQLServerPlansADeclaredSchema(t *testing.T) {
 			want:  "",
 		},
 		{
+			name:  "a comment with a creation, which holds if the schema is found",
+			style: planext.StatementStyleExact,
+			diff: difftypes.SchemaDiff{
+				SchemasAdded:    []schemamodel.Schema{{Name: "app", Comment: "it's"}},
+				DeclaredSchemas: []schemamodel.Schema{{Name: "app", Comment: "it's"}},
+			},
+			want: "IF SCHEMA_ID('app') IS NULL\n    EXEC('CREATE SCHEMA [app]'); " +
+				"IF NOT EXISTS (SELECT 1 FROM sys.extended_properties WHERE class = 3 AND major_id = SCHEMA_ID('app') " +
+				"AND minor_id = 0 AND name = N'MS_Description')\n" +
+				"    EXEC sp_addextendedproperty @name = N'MS_Description', @value = N'it''s', @level0type = N'SCHEMA', @level0name = N'app'",
+		},
+		{
+			name:  "a comment on a schema that holds none",
+			style: planext.StatementStyleExact,
+			diff: difftypes.SchemaDiff{ObjectCommentsChanged: []difftypes.ObjectCommentChange{
+				{Kind: difftypes.CommentedSchema, Name: "app", Desired: "new"},
+			}},
+			want: "EXEC sp_addextendedproperty @name = N'MS_Description', @value = N'new', @level0type = N'SCHEMA', @level0name = N'app'",
+		},
+		{
+			name:  "a comment on a schema that holds another",
+			style: planext.StatementStyleExact,
+			diff: difftypes.SchemaDiff{ObjectCommentsChanged: []difftypes.ObjectCommentChange{
+				{Kind: difftypes.CommentedSchema, Name: "app", Current: "old", Desired: "new"},
+			}},
+			want: "EXEC sp_updateextendedproperty @name = N'MS_Description', @value = N'new', @level0type = N'SCHEMA', @level0name = N'app'",
+		},
+		{
+			name:  "a comment removed, which a rollback plans",
+			style: planext.StatementStyleExact,
+			diff: difftypes.SchemaDiff{ObjectCommentsChanged: []difftypes.ObjectCommentChange{
+				{Kind: difftypes.CommentedSchema, Name: "app", Current: "old"},
+			}},
+			want: "EXEC sp_dropextendedproperty @name = N'MS_Description', @level0type = N'SCHEMA', @level0name = N'app'",
+		},
+		{
 			name:  "a schema alone, dropped, with a guard in the annotated style",
 			style: planext.StatementStyleAnnotated,
 			diff:  difftypes.SchemaDiff{SchemasRemoved: []string{"app"}},

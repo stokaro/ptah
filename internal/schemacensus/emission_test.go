@@ -159,6 +159,8 @@ func TestMeasureEmissions_TheGuardsBlindSpotsAreWrittenDown(t *testing.T) {
 		"GRANT SELECT ON",
 		"GRANT UPDATE (\"LABEL\")",
 		"GRANT USAGE ON",
+		// SQL Server's spelling of a comment on a schema it may find holding one.
+		"IF NOT EXISTS",
 		// A privilege taken away, which creates no object either.
 		"REVOKE INSERT ON",
 		// TimescaleDB converts a table that CREATE TABLE already made.
