@@ -244,8 +244,8 @@ func TestPlanBidirectionalSchemaDiff_MySQLCompositeAddedColumnBackingCleanupOrde
 	c.Assert(dropForeignKey >= 0, qt.IsTrue)
 	c.Assert(dropColumn >= 0, qt.IsTrue)
 	c.Assert(dropIndex >= 0, qt.IsTrue)
-	c.Assert(dropForeignKey < dropColumn, qt.IsTrue)
-	c.Assert(dropColumn < dropIndex, qt.IsTrue)
+	c.Assert(dropForeignKey < dropIndex, qt.IsTrue)
+	c.Assert(dropIndex < dropColumn, qt.IsTrue)
 }
 
 func TestPlanBidirectionalSchemaDiff_MySQLReferencedAddedColumnDropsForeignKeyFirst(t *testing.T) {

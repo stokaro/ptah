@@ -1050,6 +1050,12 @@ func (p *Planner) planColumnTypeForeignKeyChanges(diff *difftypes.SchemaDiff) co
 // MySQL 8.4 and 26.10; MariaDB 12.3 takes the move with the foreign key in place,
 // and the order costs it nothing. A foreign key the diff changes comes back with
 // the other additions, after the move.
+//
+// The same holds for a table that loses a column, where the foreign key may be on that
+// table or reference it: `DROP COLUMN` answers Error 1829 on MySQL 8.4 and Error 1553 on
+// MariaDB 12.3 while a foreign key references the column, and the keys and indexes
+// [keyrelease.UnderColumnDrops] finds leave ahead of the column changes, where one may
+// still serve the foreign key.
 func (p *Planner) releaseForeignKeysOverMovedKeys(diff *difftypes.SchemaDiff, plan *columnTypeForeignKeyPlan) {
 	if diff == nil || !p.isMySQLFamily() {
 		return
@@ -1061,8 +1067,11 @@ func (p *Planner) releaseForeignKeysOverMovedKeys(diff *difftypes.SchemaDiff, pl
 			losesKey[semantics.QualifiedTableIdentityKey(info.TableName)] = true
 		}
 	}
+	losesColumn := keyrelease.TablesLosingColumns(diff, semantics)
 	for _, info := range diff.ForeignKeysRemovedWithTables {
-		if _, done := plan.dropped[info.Identity]; done || !losesKey[semantics.QualifiedTableIdentityKey(info.ForeignTable)] {
+		foreign := semantics.QualifiedTableIdentityKey(info.ForeignTable)
+		if _, done := plan.dropped[info.Identity]; done ||
+			(!losesKey[foreign] && !losesColumn[foreign] && !losesColumn[semantics.QualifiedTableIdentityKey(info.TableName)]) {
 			continue
 		}
 		plan.drops = append(plan.drops, p.dropConstraintNode(difftypes.ConstraintRemovalInfo{
@@ -1308,13 +1317,14 @@ func foreignKeyRemovalDetailsByHost(
 func (p *Planner) addNewIndexes(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
-) ([]ast.Node, error) {
+	additions difftypes.IndexChanges,
+) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	replacements := indexscope.NewConflictSetWithSemantics(semantics, diff.IndexRemovals())
 	guardedDrops := p.capabilities().Has(capability.DropIndexIfExists)
 	constraintBacked := diff.ConstraintBackedIndexRemovalSet()
 	// The declaration travels WITH the addition (stokaro/ptah#2315).
-	for _, change := range diff.IndexesAdded {
+	for _, change := range additions {
 		ref := difftypes.IndexRef{Name: change.Index.Name, TableName: change.TableName}
 		indexNode := modelast.FromIndex(change.Index)
 		indexNode.Table = ref.TableName
@@ -1348,7 +1358,25 @@ func (p *Planner) addNewIndexes(
 		}
 		result = append(result, indexNode)
 	}
-	return result, nil
+	return result
+}
+
+// splitIndexAdditions answers the index additions a column drop would break, and the
+// others. An addition that rebuilds an index under its own name drops the old one, and
+// that index may have left with a column the plan drops, so the drop answers `Error
+// 1091: Can't DROP`, measured on MySQL 8.4 and MariaDB 12.3. It goes ahead of the column
+// drops: the new index reads only columns the table keeps or has gained by then.
+func (p *Planner) splitIndexAdditions(diff *difftypes.SchemaDiff) (ahead, others difftypes.IndexChanges) {
+	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
+	replacements := indexscope.NewConflictSetWithSemantics(semantics, diff.IndexRemovals())
+	for _, change := range diff.IndexesAdded {
+		if replacements.Contains(difftypes.IndexRef{Name: change.Index.Name, TableName: change.TableName}) {
+			ahead = append(ahead, change)
+		} else {
+			others = append(others, change)
+		}
+	}
+	return ahead, others
 }
 
 // replacesIndexInOneStatement reports whether the addition of ref rebuilds one
@@ -1643,7 +1671,9 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	// before the column changes below add that key. Otherwise the server names
 	// the column's key `x_2`, and the next comparison plans the key again.
 	// Steps 6 and 6.7 skip what this drops.
-	released := keyrelease.Find(diff, p.targetDialect()).With(keyrelease.PrimaryKeysUnderColumnChanges(diff, p.targetDialect()))
+	released := keyrelease.Find(diff, p.targetDialect()).
+		With(keyrelease.PrimaryKeysUnderColumnChanges(diff, p.targetDialect())).
+		With(keyrelease.UnderColumnDrops(diff, p.targetDialect()))
 	result = p.releaseKeyNames(result, diff, released)
 
 	result, columnDrops, err := p.modifyExistingTables(result, diff)
@@ -1673,13 +1703,12 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	// and before any column, view, table or routine it names is removed. Their
 	// owner orders its creations and drops among themselves.
 	windows.Dependent = len(result)
+	rebuiltAhead, otherIndexes := p.splitIndexAdditions(diff)
+	result = p.addNewIndexes(result, diff, rebuiltAhead)
 	result = append(result, columnDrops...)
 
 	// 5. Add new indexes
-	result, err = p.addNewIndexes(result, diff)
-	if err != nil {
-		return nil, err
-	}
+	result = p.addNewIndexes(result, diff, otherIndexes)
 	result = changeIndexVisibility(result, diff)
 
 	// 5.5. Add new constraints (must be done after tables and columns exist).
@@ -1691,7 +1720,7 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	maps.Copy(alreadyDropped, fkPlan.dropped)
 	maps.Copy(alreadyDropped, keyrelease.DroppedWithColumns(diff, p.targetDialect()))
 	maps.Copy(alreadyDropped, released.ConstraintSet())
-	result, err = p.addNewConstraints(result, diff, alreadyDropped)
+	result, err = p.addNewConstraints(result, diff, alreadyDropped, released.IndexSet())
 	if err != nil {
 		return nil, err
 	}
@@ -1966,6 +1995,7 @@ func (p *Planner) addNewConstraints(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
 	bracketDropped map[constraintHostKey]struct{},
+	releasedIndexes map[difftypes.IndexRef]struct{},
 ) ([]ast.Node, error) {
 	state := newConstraintPlanState(diff, diff.EffectiveIdentifierSemantics(p.targetDialect()))
 
@@ -1987,13 +2017,18 @@ func (p *Planner) addNewConstraints(
 	if !p.isMySQLFamily() {
 		result = addKeys(result)
 	}
+	rebuiltIndexes := diff.IndexRemovalsRebuiltAsUniqueConstraints()
+	maps.DeleteFunc(rebuiltIndexes, func(ref difftypes.IndexRef, _ struct{}) bool {
+		_, released := releasedIndexes[ref]
+		return released
+	})
 	result = p.addNonForeignKeyConstraintsWithTables(
 		result,
 		diff.ConstraintsAdded,
 		state.removalByTableName,
 		state.handled,
 		state.droppedForModify,
-		diff.IndexRemovalsRebuiltAsUniqueConstraints(),
+		rebuiltIndexes,
 		state.semantics,
 	)
 	if p.isMySQLFamily() {
