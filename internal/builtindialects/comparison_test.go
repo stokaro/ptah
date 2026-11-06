@@ -53,6 +53,7 @@ func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 			TimePrecision:                  descriptor.TimePrecision{Compared: true, Default: 6},
 			ForeignKeysOutside:             true,
 			ForeignKeyMatchesKeyInAnyOrder: true,
+			ColumnPrimaryKeyIsTheTablesKey: true,
 			ExpressionProbes:               "pg-catalog",
 			ProbeViewsInSchema:             true,
 			RewritesRoutineBodies:          true,

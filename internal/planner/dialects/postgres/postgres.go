@@ -1326,9 +1326,10 @@ func appendTableComment(result []ast.Node, tableDiff difftypes.TableDiff) []ast.
 // PRIMARY KEY where the plan adds the table's primary key as a constraint. A key
 // declared on the table carries that flag on its column too, and written twice the
 // second answers `multiple primary keys for table "parent" are not allowed`, measured
-// on PostgreSQL 18.6. The rest of the family has not been measured.
+// on PostgreSQL 18.6 and CockroachDB v26.3.5. The rest of the family has not been
+// measured.
 func (p *Planner) columnsLeavingTheirKeyToTheTable(tableDiff difftypes.TableDiff, diff *difftypes.SchemaDiff, semantics identifier.Semantics) difftypes.ColumnChanges {
-	if p.targetDialect() != platform.Postgres {
+	if p.targetDialect() != platform.Postgres && p.targetDialect() != platform.CockroachDB {
 		return tableDiff.ColumnsAdded
 	}
 	table := semantics.QualifiedTableIdentityKey(tableDiff.TableName)
@@ -3391,8 +3392,20 @@ func (p *Planner) addPrimaryKeyConstraintsWithTables(
 		if add.Type != "PRIMARY KEY" || add.TableName == "" || len(add.Columns) == 0 {
 			continue
 		}
+		var dropsKey []ast.AlterOperation
 		if replaced, found := state.replacedPrimaryKeys[state.semantics.QualifiedTableIdentityKey(add.TableName)]; found {
-			result = p.appendScopedDrop(result, replaced.TableName, replaced.Name, replaced.Identity, state)
+			// CockroachDB refuses a key's drop in a statement of its own, with
+			// `this schema change is disallowed because table "t" is locked` on a
+			// table of the default schema_locked and with `primary key dropped
+			// without subsequent addition` on any other, measured on v26.3.5. It
+			// takes the two together, and that keeps no second index over the old
+			// column, as ALTER PRIMARY KEY does.
+			if p.targetDialect() == platform.CockroachDB {
+				dropsKey = append(dropsKey, &ast.DropConstraintOperation{ConstraintName: replaced.Name})
+				state.droppedForModify[replaced.Identity] = struct{}{}
+			} else {
+				result = p.appendScopedDrop(result, replaced.TableName, replaced.Name, replaced.Identity, state)
+			}
 		}
 		// A UNIQUE the key takes its name from is a modification like any other:
 		// the plan's removals leave it to this step.
@@ -3409,7 +3422,7 @@ func (p *Planner) addPrimaryKeyConstraintsWithTables(
 		primaryKey.Deferrable, primaryKey.Initially = add.Deferrable, add.Initially
 		result = append(result, &ast.AlterTableNode{
 			Name:       add.TableName,
-			Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: primaryKey}},
+			Operations: append(dropsKey, &ast.AddConstraintOperation{Constraint: primaryKey}),
 		})
 		state.handled[add.Name] = struct{}{}
 	}
