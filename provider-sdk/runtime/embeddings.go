@@ -131,7 +131,7 @@ func (c *Client) ReadEmbeddingEvents(ctx context.Context, request *protocol.Read
 // specification, and what a generation needs on it. An invalid reply and
 // cancellation expose nothing.
 func (c *Client) DescribeEmbeddingTarget(ctx context.Context, request *protocol.DescribeEmbeddingTargetRequest) (*protocol.EmbeddingTargetObjects, error) {
-	return callOffline(ctx, c.description, proto.CloneOf(request), "describe embedding target",
+	return callWithin(ctx, CallTimeout, c.description, proto.CloneOf(request), "describe embedding target",
 		provider.ValidateDescribeEmbeddingTargetRequest, provider.ValidateEmbeddingTargetObjects, c.rpc.DescribeEmbeddingTarget)
 }
 
