@@ -134,6 +134,17 @@ func TestKeysAheadOfColumnDrops_ForeignKeysGoFirst(t *testing.T) {
 				"ALTER TABLE `t` DROP COLUMN `b`",
 			},
 		},
+		{
+			name: "on another table, over a UNIQUE of a column the table keeps",
+			held: `CREATE TABLE t (id int PRIMARY KEY, code int, b int, CONSTRAINT u UNIQUE (code));
+				CREATE TABLE z (id int PRIMARY KEY, tc int, CONSTRAINT z_fk FOREIGN KEY (tc) REFERENCES t (code));`,
+			desired: `CREATE TABLE t (id int PRIMARY KEY, code int); CREATE TABLE z (id int PRIMARY KEY, tc int);`,
+			want: []string{
+				"ALTER TABLE `z` DROP FOREIGN KEY `z_fk`",
+				"ALTER TABLE `t` DROP INDEX `u`",
+				"ALTER TABLE `t` DROP COLUMN `b`",
+			},
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -144,6 +155,19 @@ func TestKeysAheadOfColumnDrops_ForeignKeysGoFirst(t *testing.T) {
 			c.Assert(got, qt.DeepEquals, test.want)
 		})
 	}
+}
+
+// TestKeysAheadOfColumnDrops_SQLServerKeepsItsOrder pins SQL Server, which this planner
+// serves too. Its order around a column drop has not been measured, so it stays.
+func TestKeysAheadOfColumnDrops_SQLServerKeepsItsOrder(t *testing.T) {
+	c := qt.New(t)
+
+	got := columnKeyPlan(c, "sqlserver",
+		`CREATE TABLE t (id int PRIMARY KEY, a int, b int); CREATE INDEX i ON t (b);`,
+		`CREATE TABLE t (id int PRIMARY KEY, a int);`,
+	)
+
+	c.Assert(got, qt.DeepEquals, []string{"ALTER TABLE [t] DROP COLUMN [b]", "DROP INDEX [i] ON [t]"})
 }
 
 // TestKeysAheadOfColumnDrops_FailurePath pins the plans that keep their order: a table
