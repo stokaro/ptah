@@ -97,10 +97,10 @@ func ValidateDecodedSource(description *protocol.Description, request *protocol.
 	return ValidateDecodedSourceReply(description, request, result)
 }
 
-// ValidateDecodedSourceReply is [ValidateDecodedSource] for a request that [ValidateSourceRequest] accepted
-// with description and that has not changed since: it checks the reply and not the
-// request again. The SDK's client and server validate each request once
-// and call it for the reply.
+// ValidateDecodedSourceReply is [ValidateDecodedSource] for a request that
+// [ValidateSourceRequest] accepted with description and that has not changed
+// since: it checks the reply and not the request again. The SDK's client and
+// server validate each request once and call it for the reply.
 func ValidateDecodedSourceReply(description *protocol.Description, request *protocol.DecodeSourceRequest, result *protocol.DecodedSource) error {
 	if result == nil || !result.GetComplete() || len(result.GetDocuments()) != len(request.GetDocuments()) {
 		return sourceError("incomplete decoded batch")

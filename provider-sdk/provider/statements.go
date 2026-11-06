@@ -112,10 +112,10 @@ func ValidateStatementResult(request *protocol.RunStatementRequest, result *prot
 	return ValidateStatementResultReply(request, result)
 }
 
-// ValidateStatementResultReply is [ValidateStatementResult] for a request that [ValidateRunStatementRequest] accepted
-// and that has not changed since: it checks the reply and not the
-// request again. The SDK's client and server validate each request once
-// and call it for the reply.
+// ValidateStatementResultReply is [ValidateStatementResult] for a request that
+// [ValidateRunStatementRequest] accepted and that has not changed since: it
+// checks the reply and not the request again. The SDK's client and server
+// validate each request once and call it for the reply.
 func ValidateStatementResultReply(request *protocol.RunStatementRequest, result *protocol.StatementResult) error {
 	// The request ID is never empty, so a missing reply answers another one.
 	if result.GetRequestId() != request.GetRequestId() {
@@ -212,10 +212,10 @@ func ValidateStatementRows(request *protocol.ReadStatementRowsRequest, result *p
 	return ValidateStatementRowsReply(request, result)
 }
 
-// ValidateStatementRowsReply is [ValidateStatementRows] for a request that [ValidateReadStatementRowsRequest] accepted
-// and that has not changed since: it checks the reply and not the
-// request again. The SDK's client and server validate each request once
-// and call it for the reply.
+// ValidateStatementRowsReply is [ValidateStatementRows] for a request that
+// [ValidateReadStatementRowsRequest] accepted and that has not changed since:
+// it checks the reply and not the request again. The SDK's client and server
+// validate each request once and call it for the reply.
 func ValidateStatementRowsReply(request *protocol.ReadStatementRowsRequest, result *protocol.StatementRows) error {
 	if result == nil {
 		return statementError("a statement page is missing")
@@ -243,10 +243,10 @@ func ValidateClosedStatement(request *protocol.CloseStatementRequest, result *pr
 	return ValidateClosedStatementReply(request, result)
 }
 
-// ValidateClosedStatementReply is [ValidateClosedStatement] for a request that [ValidateCloseStatementRequest] accepted
-// and that has not changed since: it checks the reply and not the
-// request again. The SDK's client and server validate each request once
-// and call it for the reply.
+// ValidateClosedStatementReply is [ValidateClosedStatement] for a request that
+// [ValidateCloseStatementRequest] accepted and that has not changed since: it
+// checks the reply and not the request again. The SDK's client and server
+// validate each request once and call it for the reply.
 func ValidateClosedStatementReply(request *protocol.CloseStatementRequest, result *protocol.Empty) error {
 	if result == nil {
 		return statementError("a release reply is missing")

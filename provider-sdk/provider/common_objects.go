@@ -462,10 +462,11 @@ func ValidatePreparedCommonObjects(description *protocol.Description, request *p
 	return ValidatePreparedCommonObjectsReply(description, request, result)
 }
 
-// ValidatePreparedCommonObjectsReply is [ValidatePreparedCommonObjects] for a request that [ValidatePrepareCommonObjectsRequest] accepted
-// with description and that has not changed since: it checks the reply and not the
-// request again. The SDK's client and server validate each request once
-// and call it for the reply.
+// ValidatePreparedCommonObjectsReply is [ValidatePreparedCommonObjects] for a
+// request that [ValidatePrepareCommonObjectsRequest] accepted with description
+// and that has not changed since: it checks the reply and not the request
+// again. The SDK's client and server validate each request once and call it
+// for the reply.
 func ValidatePreparedCommonObjectsReply(description *protocol.Description, request *protocol.PrepareCommonObjectsRequest, result *protocol.PreparedCommonObjects) error {
 	if !result.GetComplete() {
 		return commonObjectError("incomplete preparation")

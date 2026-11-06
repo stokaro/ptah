@@ -203,10 +203,10 @@ func ValidateValueReports(description *protocol.Description, request *protocol.R
 	return ValidateValueReportsReply(description, request, reply)
 }
 
-// ValidateValueReportsReply is [ValidateValueReports] for a request that [ValidateReportValuesRequest] accepted
-// with description and that has not changed since: it checks the reply and not the
-// request again. The SDK's client and server validate each request once
-// and call it for the reply.
+// ValidateValueReportsReply is [ValidateValueReports] for a request that
+// [ValidateReportValuesRequest] accepted with description and that has not
+// changed since: it checks the reply and not the request again. The SDK's
+// client and server validate each request once and call it for the reply.
 func ValidateValueReportsReply(description *protocol.Description, request *protocol.ReportValuesRequest, reply *protocol.ValueReports) error {
 	engine, _, err := valueTarget(description, request.GetEngine(), request.GetTargetFeatures())
 	if err != nil {

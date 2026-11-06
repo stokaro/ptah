@@ -143,10 +143,11 @@ func ValidateEmbeddingTargetObjects(description *protocol.Description, request *
 	return ValidateEmbeddingTargetObjectsReply(description, request, result)
 }
 
-// ValidateEmbeddingTargetObjectsReply is [ValidateEmbeddingTargetObjects] for a request that [ValidateDescribeEmbeddingTargetRequest] accepted
-// with description and that has not changed since: it checks the reply and not the
-// request again. The SDK's client and server validate each request once
-// and call it for the reply.
+// ValidateEmbeddingTargetObjectsReply is [ValidateEmbeddingTargetObjects] for
+// a request that [ValidateDescribeEmbeddingTargetRequest] accepted with
+// description and that has not changed since: it checks the reply and not the
+// request again. The SDK's client and server validate each request once and
+// call it for the reply.
 func ValidateEmbeddingTargetObjectsReply(description *protocol.Description, request *protocol.DescribeEmbeddingTargetRequest, result *protocol.EmbeddingTargetObjects) error {
 	if result.GetRefusal() != nil {
 		return validateRefusedTargetObjects(result)
@@ -209,10 +210,11 @@ func ValidateEmbeddingRelations(request *protocol.ResolveEmbeddingRelationsReque
 	return ValidateEmbeddingRelationsReply(request, result)
 }
 
-// ValidateEmbeddingRelationsReply is [ValidateEmbeddingRelations] for a request that [ValidateResolveEmbeddingRelationsRequest] accepted
-// and that has not changed since: it checks the reply and not the
-// request again. The SDK's client and server validate each request once
-// and call it for the reply.
+// ValidateEmbeddingRelationsReply is [ValidateEmbeddingRelations] for a
+// request that [ValidateResolveEmbeddingRelationsRequest] accepted and that
+// has not changed since: it checks the reply and not the request again. The
+// SDK's client and server validate each request once and call it for the
+// reply.
 func ValidateEmbeddingRelationsReply(request *protocol.ResolveEmbeddingRelationsRequest, result *protocol.EmbeddingRelations) error {
 	if len(result.GetRelations()) != len(request.GetRelations()) {
 		return fmt.Errorf("%w: resolved relations do not answer the request", ErrProtocol)
@@ -244,10 +246,10 @@ func ValidateEmbeddingMeasurement(request *protocol.MeasureEmbeddingRequest, res
 	return ValidateEmbeddingMeasurementReply(request, result)
 }
 
-// ValidateEmbeddingMeasurementReply is [ValidateEmbeddingMeasurement] for a request that [ValidateMeasureEmbeddingRequest] accepted
-// and that has not changed since: it checks the reply and not the
-// request again. The SDK's client and server validate each request once
-// and call it for the reply.
+// ValidateEmbeddingMeasurementReply is [ValidateEmbeddingMeasurement] for a
+// request that [ValidateMeasureEmbeddingRequest] accepted and that has not
+// changed since: it checks the reply and not the request again. The SDK's
+// client and server validate each request once and call it for the reply.
 func ValidateEmbeddingMeasurementReply(request *protocol.MeasureEmbeddingRequest, result *protocol.EmbeddingMeasurement) error {
 	if result == nil {
 		return fmt.Errorf("%w: embedding measurement is missing", ErrProtocol)
@@ -295,10 +297,11 @@ func ValidatePreparedEmbeddingTarget(request *protocol.PrepareEmbeddingTargetReq
 	return ValidatePreparedEmbeddingTargetReply(request, result)
 }
 
-// ValidatePreparedEmbeddingTargetReply is [ValidatePreparedEmbeddingTarget] for a request that [ValidatePrepareEmbeddingTargetRequest] accepted
-// and that has not changed since: it checks the reply and not the
-// request again. The SDK's client and server validate each request once
-// and call it for the reply.
+// ValidatePreparedEmbeddingTargetReply is [ValidatePreparedEmbeddingTarget]
+// for a request that [ValidatePrepareEmbeddingTargetRequest] accepted and that
+// has not changed since: it checks the reply and not the request again. The
+// SDK's client and server validate each request once and call it for the
+// reply.
 func ValidatePreparedEmbeddingTargetReply(request *protocol.PrepareEmbeddingTargetRequest, result *protocol.EmbeddingWriteResult) error {
 	return validateEmbeddingWriteResult(request.GetRequestId(), writeShape{}, result)
 }
@@ -323,10 +326,10 @@ func ValidateBuiltEmbeddingIndex(request *protocol.BuildEmbeddingIndexRequest, r
 	return ValidateBuiltEmbeddingIndexReply(request, result)
 }
 
-// ValidateBuiltEmbeddingIndexReply is [ValidateBuiltEmbeddingIndex] for a request that [ValidateBuildEmbeddingIndexRequest] accepted
-// and that has not changed since: it checks the reply and not the
-// request again. The SDK's client and server validate each request once
-// and call it for the reply.
+// ValidateBuiltEmbeddingIndexReply is [ValidateBuiltEmbeddingIndex] for a
+// request that [ValidateBuildEmbeddingIndexRequest] accepted and that has not
+// changed since: it checks the reply and not the request again. The SDK's
+// client and server validate each request once and call it for the reply.
 func ValidateBuiltEmbeddingIndexReply(request *protocol.BuildEmbeddingIndexRequest, result *protocol.EmbeddingWriteResult) error {
 	if err := validateEmbeddingWriteResult(request.GetRequestId(), writeShape{payload: payloadIndex}, result); err != nil {
 		return err
@@ -363,10 +366,10 @@ func ValidateEmbeddingStructure(request *protocol.ReadEmbeddingStructureRequest,
 	return ValidateEmbeddingStructureReply(request, result)
 }
 
-// ValidateEmbeddingStructureReply is [ValidateEmbeddingStructure] for a request that [ValidateReadEmbeddingStructureRequest] accepted
-// and that has not changed since: it checks the reply and not the
-// request again. The SDK's client and server validate each request once
-// and call it for the reply.
+// ValidateEmbeddingStructureReply is [ValidateEmbeddingStructure] for a
+// request that [ValidateReadEmbeddingStructureRequest] accepted and that has
+// not changed since: it checks the reply and not the request again. The SDK's
+// client and server validate each request once and call it for the reply.
 func ValidateEmbeddingStructureReply(request *protocol.ReadEmbeddingStructureRequest, result *protocol.EmbeddingStructure) error {
 	if result == nil {
 		return fmt.Errorf("%w: embedding structure is missing", ErrProtocol)
@@ -420,10 +423,11 @@ func ValidateDroppedEmbeddingGeneration(request *protocol.DropEmbeddingGeneratio
 	return ValidateDroppedEmbeddingGenerationReply(request, result)
 }
 
-// ValidateDroppedEmbeddingGenerationReply is [ValidateDroppedEmbeddingGeneration] for a request that [ValidateDropEmbeddingGenerationRequest] accepted
-// and that has not changed since: it checks the reply and not the
-// request again. The SDK's client and server validate each request once
-// and call it for the reply.
+// ValidateDroppedEmbeddingGenerationReply is
+// [ValidateDroppedEmbeddingGeneration] for a request that
+// [ValidateDropEmbeddingGenerationRequest] accepted and that has not changed
+// since: it checks the reply and not the request again. The SDK's client and
+// server validate each request once and call it for the reply.
 func ValidateDroppedEmbeddingGenerationReply(request *protocol.DropEmbeddingGenerationRequest, result *protocol.EmbeddingWriteResult) error {
 	return validateEmbeddingWriteResult(request.GetRequestId(), writeShape{}, result)
 }

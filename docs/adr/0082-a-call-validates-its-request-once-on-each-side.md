@@ -24,13 +24,16 @@ The reply validators check the request again before they check the reply.
 the reply validators the runtime calls do the same. A planning request was
 therefore validated twice on each side, four times per call, and a request of
 500 tables carries the captured state of every table, so each validation
-walks, compares and checks all of it. Measured with CPU profiles of a
+walks, compares and checks all of it.
+
+Measured with CPU profiles of a
 `migrations generate` of 500 new YDB tables (host #5464 and #5471, SDK
-#5472, provider stokaro/ptah-ydb-plugin#291 and #293, YDB 25.1.4.7): the
-provider's second validation of the planning requests alone, inside
-`ValidatePlannedFeatures`, took a third of the time its first did, and the
-creation projection, the preparation and the schema validation repeated
-theirs the same way on both sides.
+#5472, provider stokaro/ptah-ydb-plugin#291 and #293, YDB 25.1.4.7), the
+host and the provider spent 0.77 s of CPU validating the six planning
+requests, 0.42 s of it inside the reply validators; the creation
+projection, the preparation and the schema validation repeated theirs the
+same way. The YDB provider's own service methods check each request and
+reply once more, and repeated the request the same way.
 
 The second check finds nothing the first did not. On the client the request
 is the client's own copy, which nothing changes while the call runs; on the

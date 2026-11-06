@@ -71,10 +71,10 @@ func ValidateDevObjects(request *protocol.ListDevObjectsRequest, result *protoco
 	return ValidateDevObjectsReply(request, result)
 }
 
-// ValidateDevObjectsReply is [ValidateDevObjects] for a request that [ValidateListDevObjectsRequest] accepted
-// and that has not changed since: it checks the reply and not the
-// request again. The SDK's client and server validate each request once
-// and call it for the reply.
+// ValidateDevObjectsReply is [ValidateDevObjects] for a request that
+// [ValidateListDevObjectsRequest] accepted and that has not changed since: it
+// checks the reply and not the request again. The SDK's client and server
+// validate each request once and call it for the reply.
 func ValidateDevObjectsReply(request *protocol.ListDevObjectsRequest, result *protocol.DevObjects) error {
 	if result == nil || !result.GetComplete() {
 		return fmt.Errorf("%w: dev object list is incomplete", ErrIncomplete)
@@ -118,10 +118,10 @@ func ValidateDevCleanup(request *protocol.CleanDevRequest, result *protocol.DevC
 	return ValidateDevCleanupReply(request, result)
 }
 
-// ValidateDevCleanupReply is [ValidateDevCleanup] for a request that [ValidateCleanDevRequest] accepted
-// and that has not changed since: it checks the reply and not the
-// request again. The SDK's client and server validate each request once
-// and call it for the reply.
+// ValidateDevCleanupReply is [ValidateDevCleanup] for a request that
+// [ValidateCleanDevRequest] accepted and that has not changed since: it checks
+// the reply and not the request again. The SDK's client and server validate
+// each request once and call it for the reply.
 func ValidateDevCleanupReply(request *protocol.CleanDevRequest, result *protocol.DevCleanup) error {
 	if result == nil || result.GetRequestId() != request.GetRequestId() {
 		return fmt.Errorf("%w: dev cleanup result changed its request binding", ErrProtocol)
