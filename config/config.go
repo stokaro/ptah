@@ -81,6 +81,17 @@ type CompareOptions struct {
 	// no database.
 	ServerSchemas bool
 
+	// DesiredGrantsComplete says the desired state was read from a server, so
+	// it holds every grant on what it describes. A grant only the database
+	// holds is then a removal, whoever holds it. A declaration says nothing
+	// about a role it does not manage, and without this field a grant to such a
+	// role, or to PUBLIC, stays as the database holds it.
+	//
+	// Two grants are still left alone, because each is what the other side
+	// holds by default and a read reports it in a different form: a privilege
+	// the object's owner holds, and PUBLIC's EXECUTE on a routine.
+	DesiredGrantsComplete bool
+
 	// SkipColumnDrops reports that the caller removes every column drop from
 	// the diff before it is planned: `diff.skip: [drop_column]` in ptah.yaml.
 	//
