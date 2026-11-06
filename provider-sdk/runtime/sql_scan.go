@@ -13,12 +13,12 @@ import (
 // copied before dispatch; an invalid reply and cancellation expose no token.
 func (c *Client) ScanSQL(ctx context.Context, request *protocol.ScanSQLRequest) (*protocol.SQLScan, error) {
 	return callOffline(ctx, c.description, proto.CloneOf(request), "scan SQL",
-		provider.ValidateScanSQLRequest, provider.ValidateSQLScan, c.rpc.ScanSQL)
+		provider.ValidateScanSQLRequest, provider.ValidateSQLScanReply, c.rpc.ScanSQL)
 }
 
 func (s *serverAdapter) ScanSQL(ctx context.Context, request *protocol.ScanSQLRequest) (*protocol.SQLScan, error) {
 	if nilService(s.server.SQLScanner) {
 		return nil, unavailable("SQL scanning")
 	}
-	return serveOffline(ctx, s, request, provider.ValidateScanSQLRequest, provider.ValidateSQLScan, s.server.SQLScanner.ScanSQL)
+	return serveOffline(ctx, s, request, provider.ValidateScanSQLRequest, provider.ValidateSQLScanReply, s.server.SQLScanner.ScanSQL)
 }

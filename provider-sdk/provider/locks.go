@@ -85,6 +85,14 @@ func ValidateLockResult(operation LockOperation, request *protocol.LockRequest, 
 	if err := ValidateLockRequest(request); err != nil {
 		return err
 	}
+	return ValidateLockResultReply(operation, request, result)
+}
+
+// ValidateLockResultReply is [ValidateLockResult] for a request that
+// [ValidateLockRequest] accepted and that has not changed since: it checks the
+// reply and not the request again. The SDK's client and server validate each
+// request once and call it for the reply.
+func ValidateLockResultReply(operation LockOperation, request *protocol.LockRequest, result *protocol.LockResult) error {
 	if operation != LockTry && operation != LockCheck && operation != LockRelease {
 		return fmt.Errorf("%w: unknown lock operation", ErrProtocol)
 	}

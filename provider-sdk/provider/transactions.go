@@ -60,6 +60,14 @@ func ValidateTransaction(request *protocol.BeginTransactionRequest, result *prot
 	if err := ValidateBeginTransactionRequest(request); err != nil {
 		return err
 	}
+	return ValidateTransactionReply(request, result)
+}
+
+// ValidateTransactionReply is [ValidateTransaction] for a request that
+// [ValidateBeginTransactionRequest] accepted and that has not changed since:
+// it checks the reply and not the request again. The SDK's client and server
+// validate each request once and call it for the reply.
+func ValidateTransactionReply(request *protocol.BeginTransactionRequest, result *protocol.Transaction) error {
 	if result == nil || result.GetId() != request.GetTransactionId() || result.GetSessionId() != request.GetSessionId() {
 		return fmt.Errorf("%w: transaction reply changed the requested handle or session", ErrProtocol)
 	}

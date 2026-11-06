@@ -88,6 +88,14 @@ func ValidatePreparedTables(description *protocol.Description, request *protocol
 	if err := ValidatePreparationRequest(description, request); err != nil {
 		return err
 	}
+	return ValidatePreparedTablesReply(description, request, result)
+}
+
+// ValidatePreparedTablesReply is [ValidatePreparedTables] for a request that
+// [ValidatePreparationRequest] accepted with description and that has not
+// changed since: it checks the reply and not the request again. The SDK's
+// client and server validate each request once and call it for the reply.
+func ValidatePreparedTablesReply(description *protocol.Description, request *protocol.PrepareTablesRequest, result *protocol.PreparedTables) error {
 	if result == nil || !result.Complete || len(result.Tables) != len(request.Tables) {
 		return fmt.Errorf("%w: incomplete table preparation", ErrProtocol)
 	}
@@ -95,6 +103,15 @@ func ValidatePreparedTables(description *protocol.Description, request *protocol
 	if err != nil {
 		return err
 	}
+	// The resolved facets of every table are checked in one context, built
+	// once: built for each table, it held every table of the request.
+	values := &protocol.CompareModelsRequest{Engine: request.GetEngine(), TargetFeatures: request.GetTargetFeatures(), Identifiers: request.GetIdentifiers()}
+	for _, model := range engine.ValueModels {
+		if model.Representation == protocol.ValueInput_DESIRED {
+			values.Kinds = append(values.Kinds, model.Kind)
+		}
+	}
+	checks := new(targetChecks)
 	for i, output := range result.Tables {
 		input := request.Tables[i]
 		if !proto.Equal(input.Subject, output.GetSubject()) {
@@ -103,7 +120,7 @@ func ValidatePreparedTables(description *protocol.Description, request *protocol
 		if err := validateColumnKeys(input.Desired, output); err != nil {
 			return err
 		}
-		if err := validateResolvedFacets(description, request, input, output.ResolvedFacets); err != nil {
+		if err := validateResolvedFacets(checks, description, values, input, output.ResolvedFacets); err != nil {
 			return err
 		}
 		if err := validatePreparedIndexes(description, engine, request, input, output); err != nil {
@@ -134,18 +151,12 @@ func validateColumnKeys(input *protocol.DeclaredTable, result columnKeyResult) e
 	return nil
 }
 
-func validateResolvedFacets(description *protocol.Description, request *protocol.PrepareTablesRequest, input *protocol.TablePreparationInput, records []*protocol.ComparisonRecord) error {
-	engine, _, err := valueTarget(description, request.Engine, request.TargetFeatures)
-	if err != nil {
-		return err
-	}
-	values := planningValueContext(preparationContext(request))
+// validateResolvedFacets checks the facets a preparation resolved for input
+// in values, the desired context of the request's engine.
+func validateResolvedFacets(checks *targetChecks, description *protocol.Description, values *protocol.CompareModelsRequest, input *protocol.TablePreparationInput,
+	records []*protocol.ComparisonRecord,
+) error {
 	service := &protocol.ModelComparison{Placement: protocol.ModelComparison_FACETS, OwnerKinds: tableFacetOwnerKinds}
-	for _, model := range engine.ValueModels {
-		if model.Representation == protocol.ValueInput_DESIRED {
-			values.Kinds = append(values.Kinds, model.Kind)
-		}
-	}
 	for _, record := range records {
 		if record.GetValue() == nil || len(record.GetTargets()) != 0 {
 			return fmt.Errorf("%w: resolved facets require values without target overrides", ErrProtocol)
@@ -162,5 +173,5 @@ func validateResolvedFacets(description *protocol.Description, request *protocol
 		}
 	}
 	state := &protocol.ComparisonState{Representation: protocol.ValueInput_DESIRED, Coverage: &protocol.ComparisonCoverage{}, Records: records}
-	return validateComparisonState(description, values, service, protocol.ValueInput_DESIRED, state)
+	return checkComparisonState(checks, description, values, service, protocol.ValueInput_DESIRED, state)
 }

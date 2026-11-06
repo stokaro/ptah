@@ -55,6 +55,14 @@ func ValidateSeedTables(request *protocol.ListSeedTablesRequest, result *protoco
 	if err := ValidateListSeedTablesRequest(request); err != nil {
 		return err
 	}
+	return ValidateSeedTablesReply(request, result)
+}
+
+// ValidateSeedTablesReply is [ValidateSeedTables] for a request that
+// [ValidateListSeedTablesRequest] accepted and that has not changed since: it
+// checks the reply and not the request again. The SDK's client and server
+// validate each request once and call it for the reply.
+func ValidateSeedTablesReply(request *protocol.ListSeedTablesRequest, result *protocol.SeedTables) error {
 	if result == nil {
 		return fmt.Errorf("%w: seed table list is missing", ErrProtocol)
 	}
@@ -153,6 +161,14 @@ func ValidateAppliedSeed(request *protocol.ApplySeedRequest, result *protocol.Se
 	if err := ValidateApplySeedRequest(request); err != nil {
 		return err
 	}
+	return ValidateAppliedSeedReply(request, result)
+}
+
+// ValidateAppliedSeedReply is [ValidateAppliedSeed] for a request that
+// [ValidateApplySeedRequest] accepted and that has not changed since: it
+// checks the reply and not the request again. The SDK's client and server
+// validate each request once and call it for the reply.
+func ValidateAppliedSeedReply(request *protocol.ApplySeedRequest, result *protocol.SeedResult) error {
 	return validateSeedResult(request.GetRequestId(), request.GetSeed(), result)
 }
 
@@ -162,6 +178,14 @@ func ValidateRecordedSeed(request *protocol.RecordSeedRequest, result *protocol.
 	if err := ValidateRecordSeedRequest(request); err != nil {
 		return err
 	}
+	return ValidateRecordedSeedReply(request, result)
+}
+
+// ValidateRecordedSeedReply is [ValidateRecordedSeed] for a request that
+// [ValidateRecordSeedRequest] accepted and that has not changed since: it
+// checks the reply and not the request again. The SDK's client and server
+// validate each request once and call it for the reply.
+func ValidateRecordedSeedReply(request *protocol.RecordSeedRequest, result *protocol.SeedResult) error {
 	if err := validateSeedResult(request.GetRequestId(), request.GetSeed(), result); err != nil {
 		return err
 	}
@@ -216,6 +240,14 @@ func ValidateSeedLedger(request *protocol.ReadSeedLedgerRequest, result *protoco
 	if err := ValidateReadSeedLedgerRequest(request); err != nil {
 		return err
 	}
+	return ValidateSeedLedgerReply(request, result)
+}
+
+// ValidateSeedLedgerReply is [ValidateSeedLedger] for a request that
+// [ValidateReadSeedLedgerRequest] accepted and that has not changed since: it
+// checks the reply and not the request again. The SDK's client and server
+// validate each request once and call it for the reply.
+func ValidateSeedLedgerReply(request *protocol.ReadSeedLedgerRequest, result *protocol.SeedLedger) error {
 	if result == nil || !result.GetComplete() || len(result.GetEntries()) > int(request.GetMaxEntries()) {
 		return fmt.Errorf("%w: seed ledger is incomplete", ErrIncomplete)
 	}

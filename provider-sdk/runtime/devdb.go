@@ -14,12 +14,12 @@ import (
 // and cancellation expose no lease. A reply that is not a lease is a typed
 // refusal in the result, not an error.
 func (c *Client) ProvisionDevDatabase(ctx context.Context, request *protocol.ProvisionDevRequest) (*protocol.DevDatabase, error) {
-	return callWithin(ctx, ProvisionTimeout, c.description, proto.CloneOf(request), "provision dev database", provider.ValidateProvisionDevRequest, provider.ValidateDevDatabase, c.rpc.ProvisionDevDatabase)
+	return callWithin(ctx, ProvisionTimeout, c.description, proto.CloneOf(request), "provision dev database", provider.ValidateProvisionDevRequest, provider.ValidateDevDatabaseReply, c.rpc.ProvisionDevDatabase)
 }
 
 // ReleaseDevDatabase removes what a lease names.
 func (c *Client) ReleaseDevDatabase(ctx context.Context, request *protocol.ReleaseDevRequest) (*protocol.Empty, error) {
-	return callWithin(ctx, ProvisionTimeout, c.description, proto.CloneOf(request), "release dev database", provider.ValidateReleaseDevRequest, provider.ValidateReleasedDev, c.rpc.ReleaseDevDatabase)
+	return callWithin(ctx, ProvisionTimeout, c.description, proto.CloneOf(request), "release dev database", provider.ValidateReleaseDevRequest, provider.ValidateReleasedDevReply, c.rpc.ReleaseDevDatabase)
 }
 
 func (s *serverAdapter) ProvisionDevDatabase(ctx context.Context, request *protocol.ProvisionDevRequest) (*protocol.DevDatabase, error) {
@@ -27,7 +27,7 @@ func (s *serverAdapter) ProvisionDevDatabase(ctx context.Context, request *proto
 		return nil, status.Error(codes.Unimplemented, "dev database provisioning is unavailable")
 	}
 	var created *protocol.DevDatabase
-	result, err := serveOffline(ctx, s, request, provider.ValidateProvisionDevRequest, provider.ValidateDevDatabase,
+	result, err := serveOffline(ctx, s, request, provider.ValidateProvisionDevRequest, provider.ValidateDevDatabaseReply,
 		func(ctx context.Context, request *protocol.ProvisionDevRequest) (*protocol.DevDatabase, error) {
 			reply, err := s.server.DevProvisioner.ProvisionDevDatabase(s.owner(ctx), request)
 			created = reply
@@ -47,5 +47,5 @@ func (s *serverAdapter) ReleaseDevDatabase(ctx context.Context, request *protoco
 	if s.server.DevProvisioner == nil {
 		return nil, status.Error(codes.Unimplemented, "dev database provisioning is unavailable")
 	}
-	return serveOffline(ctx, s, request, provider.ValidateReleaseDevRequest, provider.ValidateReleasedDev, s.server.DevProvisioner.ReleaseDevDatabase)
+	return serveOffline(ctx, s, request, provider.ValidateReleaseDevRequest, provider.ValidateReleasedDevReply, s.server.DevProvisioner.ReleaseDevDatabase)
 }

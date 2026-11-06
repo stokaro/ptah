@@ -170,6 +170,73 @@ type targetChecks struct {
 	// comparing each definition again for every table was a second of CPU in
 	// a plan of 500 tables.
 	same map[[2]*protocol.ValueModel]bool
+	// contexts holds the comparison context each representation of a
+	// request's captured tables is checked in, and kinds the answer each kind
+	// of a coverage had in its context. Under SharedCoverageFeature the
+	// coverages of every table hold the same kind messages, so each is checked
+	// once per validation rather than once per table.
+	contexts map[capturedContextKey]*protocol.CompareModelsRequest
+	kinds    map[coverageKindKey]error
+}
+
+// capturedContextKey names the context of one representation of one
+// planning request's captured tables.
+type capturedContextKey struct {
+	request        *protocol.PlanFeaturesRequest
+	representation protocol.ValueInput_Representation
+}
+
+// coverageKindKey names one kind message checked in one context.
+type coverageKindKey struct {
+	kind           *protocol.ComparisonKindCoverage
+	representation protocol.ValueInput_Representation
+	context        *protocol.CompareModelsRequest
+}
+
+// capturedContext returns the context the captured tables of request are
+// checked in for representation: the request's value context with the kinds
+// the engine declares for the representation. A nil *targetChecks builds it
+// every time; otherwise each request and representation has one.
+func (c *targetChecks) capturedContext(request *protocol.PlanFeaturesRequest, engine *protocol.Engine, representation protocol.ValueInput_Representation) *protocol.CompareModelsRequest {
+	key := capturedContextKey{request: request, representation: representation}
+	if c != nil {
+		if built, found := c.contexts[key]; found {
+			return built
+		}
+	}
+	compared := planningValueContext(request)
+	for _, model := range engine.GetValueModels() {
+		if model.GetRepresentation() == representation {
+			compared.Kinds = append(compared.Kinds, model.GetKind())
+		}
+	}
+	if c != nil {
+		if c.contexts == nil {
+			c.contexts = make(map[capturedContextKey]*protocol.CompareModelsRequest)
+		}
+		c.contexts[key] = compared
+	}
+	return compared
+}
+
+// coverageKind answers as validateCoverageKind does, once per kind message
+// and context.
+func (c *targetChecks) coverageKind(description *protocol.Description, request *protocol.CompareModelsRequest, representation protocol.ValueInput_Representation,
+	record *protocol.ComparisonKindCoverage,
+) error {
+	if c == nil {
+		return validateCoverageKind(c, description, request, representation, record)
+	}
+	key := coverageKindKey{kind: record, representation: representation, context: request}
+	if err, answered := c.kinds[key]; answered {
+		return err
+	}
+	err := validateCoverageKind(c, description, request, representation, record)
+	if c.kinds == nil {
+		c.kinds = make(map[coverageKindKey]error)
+	}
+	c.kinds[key] = err
+	return err
 }
 
 // sameModel reports whether model equals declared, comparing each pair once.

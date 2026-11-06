@@ -11,11 +11,11 @@ import (
 var (
 	devObjects = sessionCall[*protocol.ListDevObjectsRequest, *protocol.DevObjects]{
 		feature: provider.DevCleanupFeature, operation: "list dev objects", timeout: CallTimeout,
-		validateInput: provider.ValidateListDevObjectsRequest, validateOutput: provider.ValidateDevObjects,
+		validateInput: provider.ValidateListDevObjectsRequest, validateOutput: provider.ValidateDevObjectsReply,
 	}
 	devClean = sessionCall[*protocol.CleanDevRequest, *protocol.DevCleanup]{
 		feature: provider.DevCleanupFeature, operation: "clean dev database", timeout: ProvisionTimeout,
-		validateInput: provider.ValidateCleanDevRequest, validateOutput: provider.ValidateDevCleanup, uncertain: unknownCleanup,
+		validateInput: provider.ValidateCleanDevRequest, validateOutput: provider.ValidateDevCleanupReply, uncertain: unknownCleanup,
 	}
 )
 

@@ -59,6 +59,14 @@ func ValidateSQLScan(description *protocol.Description, request *protocol.ScanSQ
 	if err := ValidateScanSQLRequest(description, request); err != nil {
 		return err
 	}
+	return ValidateSQLScanReply(description, request, result)
+}
+
+// ValidateSQLScanReply is [ValidateSQLScan] for a request that
+// [ValidateScanSQLRequest] accepted with description and that has not changed
+// since: it checks the reply and not the request again. The SDK's client and
+// server validate each request once and call it for the reply.
+func ValidateSQLScanReply(description *protocol.Description, request *protocol.ScanSQLRequest, result *protocol.SQLScan) error {
 	if result == nil {
 		return sqlScanError("the reply is missing")
 	}

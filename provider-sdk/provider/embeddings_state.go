@@ -210,6 +210,14 @@ func ValidateEmbeddingState(request *protocol.ReadEmbeddingStateRequest, result 
 	if err := ValidateReadEmbeddingStateRequest(request); err != nil {
 		return err
 	}
+	return ValidateEmbeddingStateReply(request, result)
+}
+
+// ValidateEmbeddingStateReply is [ValidateEmbeddingState] for a request that
+// [ValidateReadEmbeddingStateRequest] accepted and that has not changed since:
+// it checks the reply and not the request again. The SDK's client and server
+// validate each request once and call it for the reply.
+func ValidateEmbeddingStateReply(request *protocol.ReadEmbeddingStateRequest, result *protocol.EmbeddingState) error {
 	if !proto.Equal(result.GetScope(), request.GetScope()) {
 		return fmt.Errorf("%w: embedding state answers another scope", ErrProtocol)
 	}
@@ -283,6 +291,14 @@ func ValidateMutatedEmbeddingState(request *protocol.MutateEmbeddingStateRequest
 	if err := ValidateMutateEmbeddingStateRequest(request); err != nil {
 		return err
 	}
+	return ValidateMutatedEmbeddingStateReply(request, result)
+}
+
+// ValidateMutatedEmbeddingStateReply is [ValidateMutatedEmbeddingState] for a
+// request that [ValidateMutateEmbeddingStateRequest] accepted and that has not
+// changed since: it checks the reply and not the request again. The SDK's
+// client and server validate each request once and call it for the reply.
+func ValidateMutatedEmbeddingStateReply(request *protocol.MutateEmbeddingStateRequest, result *protocol.EmbeddingWriteResult) error {
 	if err := validateEmbeddingWriteResult(request.GetRequestId(), writeShape{compares: true, payload: payloadRecords}, result); err != nil {
 		return err
 	}
@@ -301,6 +317,14 @@ func ValidatePreparedEmbeddingStore(request *protocol.PrepareEmbeddingStoreReque
 	if err := ValidatePrepareEmbeddingStoreRequest(request); err != nil {
 		return err
 	}
+	return ValidatePreparedEmbeddingStoreReply(request, result)
+}
+
+// ValidatePreparedEmbeddingStoreReply is [ValidatePreparedEmbeddingStore] for
+// a request that [ValidatePrepareEmbeddingStoreRequest] accepted and that has
+// not changed since: it checks the reply and not the request again. The SDK's
+// client and server validate each request once and call it for the reply.
+func ValidatePreparedEmbeddingStoreReply(request *protocol.PrepareEmbeddingStoreRequest, result *protocol.EmbeddingWriteResult) error {
 	return validateEmbeddingWriteResult(request.GetRequestId(), writeShape{}, result)
 }
 
@@ -347,6 +371,14 @@ func ValidateAppendedEmbeddingEvent(request *protocol.AppendEmbeddingEventReques
 	if err := ValidateAppendEmbeddingEventRequest(request); err != nil {
 		return err
 	}
+	return ValidateAppendedEmbeddingEventReply(request, result)
+}
+
+// ValidateAppendedEmbeddingEventReply is [ValidateAppendedEmbeddingEvent] for
+// a request that [ValidateAppendEmbeddingEventRequest] accepted and that has
+// not changed since: it checks the reply and not the request again. The SDK's
+// client and server validate each request once and call it for the reply.
+func ValidateAppendedEmbeddingEventReply(request *protocol.AppendEmbeddingEventRequest, result *protocol.EmbeddingWriteResult) error {
 	if err := validateEmbeddingWriteResult(request.GetRequestId(), writeShape{payload: payloadSequence}, result); err != nil {
 		return err
 	}
@@ -378,6 +410,14 @@ func ValidateEmbeddingEventPage(request *protocol.ReadEmbeddingEventsRequest, re
 	if err := ValidateReadEmbeddingEventsRequest(request); err != nil {
 		return err
 	}
+	return ValidateEmbeddingEventPageReply(request, result)
+}
+
+// ValidateEmbeddingEventPageReply is [ValidateEmbeddingEventPage] for a
+// request that [ValidateReadEmbeddingEventsRequest] accepted and that has not
+// changed since: it checks the reply and not the request again. The SDK's
+// client and server validate each request once and call it for the reply.
+func ValidateEmbeddingEventPageReply(request *protocol.ReadEmbeddingEventsRequest, result *protocol.EmbeddingEventPage) error {
 	if result.GetRunId() != request.GetRunId() {
 		return fmt.Errorf("%w: an event page answers another run", ErrProtocol)
 	}

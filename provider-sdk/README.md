@@ -55,10 +55,11 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.26. Each released SDK speaks one contract:
+speaks contract 25.27. Each released SDK speaks one contract:
 
 | SDK release | Contract |
 | --- | --- |
+| `provider-sdk/v0.23.0` | 25.26 |
 | `provider-sdk/v0.22.0` | 25.25 |
 | `provider-sdk/v0.21.0` | 25.24 |
 | `provider-sdk/v0.20.0` | 25.22 |
@@ -135,6 +136,8 @@ returns to 0.
   [Go placements](#go-placements),
   [primary key changes](#primary-key-changes) and
   [model references and large messages](#model-references-and-large-messages).
+  Contract 25.27 adds [table outlines](#table-outlines) and
+  [shared coverage](#shared-coverage).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -170,8 +173,9 @@ does not oblige a peer to use it.
   `schema.subtree-coverage`, `schema.password-inputs`, `source.hcl-platform`,
   `engine.default-capabilities`, `lint.transaction-owner`,
   `source.index-kinds`, `models.predecessors`, `schema.role-scope-reasons`,
-  `source.go-placements`, `planning.primary-key-changes`, `models.references`
-  and `transport.large-messages`. The embedding store's calls,
+  `source.go-placements`, `planning.primary-key-changes`, `models.references`,
+  `transport.large-messages`, `planning.table-outlines` and
+  `transport.shared-coverage`. The embedding store's calls,
   `PrepareCommonObjects`, `ReverseChanges` and `ReportValues` are new, and each
   comes with an addition to `Engine`, so a host lists the feature to receive
   any of them. `SplitMigration` is new too, and comes with the abort flags of
@@ -1851,6 +1855,72 @@ steps, for a peer that does not use the SDK's runtime.
 `provider.CloneSharingModels` copies a message so that each model message it
 holds is copied once: the SDK copies a request with it before it sends the
 request and before it hands the request to a service.
+
+## Table outlines
+
+[ADR 0081](../docs/adr/0081-a-planning-service-reads-the-outlines-of-its-tables.md)
+decides this feature. `planning.table-outlines` lets a planning service read
+the outline of each table a request carries rather than its whole capture.
+The provider and the engine list it, and the host lists it in its host
+features.
+
+`ModelPlanning.tables` is `PLANNING_TABLES_CAPTURED`, the default, or
+`PLANNING_TABLES_OUTLINED`. An outlined service receives each table by its
+`subject`, its `action`, and each state the plan holds by its name alone:
+`provider.TableOutline` builds it. A service with parent kinds plans the
+features an outline leaves out and reads whole tables. A host that does not
+list the feature sends whole tables, and the negotiated description shows
+every service as reading them, so a service that reads outlines reads the same
+subjects, actions and states from either.
+
+`ValidateDescription` refuses an outlined service without the engine's
+feature, the engine's feature without the provider's, an outlined service with
+parent kinds, and an unknown value. `ValidatePlanningRequest` refuses, for an
+outlined service, a table that carries more than its outline, and, for a
+service that reads whole tables, an outline. An index rename's parent is
+checked for its old and new index only where the service reads the whole
+table.
+
+## Shared coverage
+
+[ADR 0083](../docs/adr/0083-a-list-of-coverage-kinds-travels-once-per-message.md)
+decides this feature. `transport.shared-coverage` is a feature of the
+provider alone, which the provider lists in `Description.features` and the
+host in its host features.
+
+Each state of each table names a coverage of every model of its
+representation, the same list of kinds for every table of a read or a
+declaration. Where both sides list the feature, the SDK sends each list that
+more than one coverage of a message carries once: the first coverage keeps
+its kinds under a nonzero `kinds_key`, and each later one carries `kinds_of`
+instead of them. A list is one list when its kinds name the same model
+messages with equal sources. The receiving SDK gives each coverage its kinds
+back before a service or a validator reads the message, as the same kind
+messages, and clears both fields, so neither a host adapter nor a provider
+service sees them. A change a service makes to one kind of a shared list is a
+change to every coverage that holds it. A validation checks each kind message
+once.
+
+A server answers a key it cannot resolve with `InvalidArgument`; a client
+reports such a reply as malformed. Without the feature nothing is resolved,
+and validation refuses a coverage that carries either field.
+`provider.ShareCoverage` and `provider.ResolveSharedCoverage` are the two
+steps, for a peer that does not use the SDK's runtime; the SDK shares a
+message's lists before it sends its models by reference, and resolves the
+references of a message before its lists.
+
+## Reply validation
+
+[ADR 0082](../docs/adr/0082-a-call-validates-its-request-once-on-each-side.md)
+decides this change, which negotiates nothing. A reply validator such as
+`provider.ValidatePlannedFeatures` checks the request with its request
+validator, here `provider.ValidatePlanningRequest`, and then the reply. Each
+such validator has a reply-only form, `provider.ValidatePlannedFeaturesReply`
+for this one, which checks the reply against a request the request validator
+accepted with the same description and that has not changed since. The SDK's
+client and server validate each request once and call the reply-only form,
+so each side validates a request once per call. A caller that cannot vouch
+for the request calls the full validator.
 
 ## Source encoding
 

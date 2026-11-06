@@ -8,18 +8,28 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func validateCreationRecords(description *protocol.Description, request *protocol.ProjectTableCreationsRequest, input *protocol.TableCreationInput,
-	representation protocol.ValueInput_Representation, records []*protocol.ComparisonRecord,
+// creationRecordChecks checks the facets of the tables of one creation
+// projection: checks holds the answers of the reply's validation, and
+// contexts the comparison context of each representation.
+type creationRecordChecks struct {
+	checks   *targetChecks
+	contexts map[protocol.ValueInput_Representation]*protocol.CompareModelsRequest
+}
+
+// validate checks the facets of one table of the reply for representation,
+// in the context engine gives that representation.
+func (c creationRecordChecks) validate(description *protocol.Description, request *protocol.ProjectTableCreationsRequest, engine *protocol.Engine,
+	input *protocol.TableCreationInput, representation protocol.ValueInput_Representation, records []*protocol.ComparisonRecord,
 ) error {
-	engine, _, err := valueTarget(description, request.Engine, request.TargetFeatures)
-	if err != nil {
-		return err
-	}
-	values := planningValueContext(creationContext(request))
-	for _, model := range engine.ValueModels {
-		if model.Representation == representation {
-			values.Kinds = append(values.Kinds, model.Kind)
+	values, built := c.contexts[representation]
+	if !built {
+		values = &protocol.CompareModelsRequest{Engine: request.GetEngine(), TargetFeatures: request.GetTargetFeatures(), Identifiers: request.GetIdentifiers()}
+		for _, model := range engine.ValueModels {
+			if model.Representation == representation {
+				values.Kinds = append(values.Kinds, model.Kind)
+			}
 		}
+		c.contexts[representation] = values
 	}
 	for _, record := range records {
 		if record.GetValue() == nil || len(record.GetTargets()) != 0 || !hasCreationOwner(input, record.GetSubject()) {
@@ -35,7 +45,7 @@ func validateCreationRecords(description *protocol.Description, request *protoco
 	}
 	state := &protocol.ComparisonState{Representation: representation, Coverage: &protocol.ComparisonCoverage{}, Records: records}
 	service := &protocol.ModelComparison{Placement: protocol.ModelComparison_FACETS, OwnerKinds: tableFacetOwnerKinds}
-	return validateComparisonState(description, values, service, representation, state)
+	return checkComparisonState(c.checks, description, values, service, representation, state)
 }
 
 func retainCreationFacetIdentity(input *protocol.TableCreationInput, record *protocol.ComparisonRecord) error {

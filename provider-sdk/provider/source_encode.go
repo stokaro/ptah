@@ -156,6 +156,14 @@ func ValidateEncodedSource(description *protocol.Description, request *protocol.
 	if err := ValidateEncodeSourceRequest(description, request); err != nil {
 		return err
 	}
+	return ValidateEncodedSourceReply(description, request, result)
+}
+
+// ValidateEncodedSourceReply is [ValidateEncodedSource] for a request that
+// [ValidateEncodeSourceRequest] accepted with description and that has not
+// changed since: it checks the reply and not the request again. The SDK's
+// client and server validate each request once and call it for the reply.
+func ValidateEncodedSourceReply(description *protocol.Description, request *protocol.EncodeSourceRequest, result *protocol.EncodedSource) error {
 	if !result.GetComplete() {
 		return encodeError("incomplete encoding")
 	}

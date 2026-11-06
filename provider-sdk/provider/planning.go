@@ -60,7 +60,7 @@ func ValidatePlanningRequest(description *protocol.Description, request *protoco
 	if err := validatePlanningChanges(description, request, service); err != nil {
 		return err
 	}
-	if err := validatePlanningTables(description, request, engine); err != nil {
+	if err := validateServiceTables(description, request, engine, service); err != nil {
 		return err
 	}
 	if err := validatePlanningObjects(description, engine, service, request); err != nil {
@@ -116,6 +116,15 @@ func validatePlanningCommonObjects(description *protocol.Description, engine *pr
 	return nil
 }
 
+// validateServiceTables checks the tables of request as the service reads
+// them: whole, or as outlines under TableOutlinesFeature.
+func validateServiceTables(description *protocol.Description, request *protocol.PlanFeaturesRequest, engine *protocol.Engine, service *protocol.ModelPlanning) error {
+	if service.GetTables() == protocol.PlanningTables_PLANNING_TABLES_OUTLINED {
+		return validateOutlinedTables(request)
+	}
+	return validatePlanningTables(description, request, engine)
+}
+
 func hasPlanningActions(request *protocol.PlanFeaturesRequest) bool {
 	for _, table := range request.GetTables() {
 		if table.GetAction() != protocol.PlanningTable_CONTEXT {
@@ -163,6 +172,17 @@ func ValidatePlannedFeatures(description *protocol.Description, request *protoco
 		return err
 	}
 	if err := ValidatePlanningRequest(description, request); err != nil {
+		return err
+	}
+	return ValidatePlannedFeaturesReply(description, request, result)
+}
+
+// ValidatePlannedFeaturesReply is [ValidatePlannedFeatures] for a request that
+// [ValidatePlanningRequest] accepted with description and that has not changed
+// since: it checks the reply and not the request again. The SDK's client and
+// server validate each request once and call it for the reply.
+func ValidatePlannedFeaturesReply(description *protocol.Description, request *protocol.PlanFeaturesRequest, result *protocol.PlannedFeatures) error {
+	if err := requireResolvedContext(result); err != nil {
 		return err
 	}
 	if result == nil || !result.GetComplete() {

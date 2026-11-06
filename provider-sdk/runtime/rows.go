@@ -11,20 +11,20 @@ import (
 // TypeRows types the declared and live rows of one table offline. An invalid
 // reply and cancellation expose no rows.
 func (c *Client) TypeRows(ctx context.Context, request *protocol.TypeRowsRequest) (*protocol.TypedRows, error) {
-	return callOffline(ctx, c.description, proto.CloneOf(request), "type rows", provider.ValidateTypeRowsRequest, provider.ValidateTypedRows, c.rpc.TypeRows)
+	return callOffline(ctx, c.description, proto.CloneOf(request), "type rows", provider.ValidateTypeRowsRequest, provider.ValidateTypedRowsReply, c.rpc.TypeRows)
 }
 
 // RenderRowWrites renders typed row writes offline. A complete reply has one
 // unit per write in input order; a refusal names a write and carries no unit.
 // An invalid reply exposes neither.
 func (c *Client) RenderRowWrites(ctx context.Context, request *protocol.RenderRowWritesRequest) (*protocol.RenderResult, error) {
-	return callOffline(ctx, c.description, proto.CloneOf(request), "render row writes", provider.ValidateRenderRowWritesRequest, provider.ValidateRenderedRowWrites, c.rpc.RenderRowWrites)
+	return callOffline(ctx, c.description, proto.CloneOf(request), "render row writes", provider.ValidateRenderRowWritesRequest, provider.ValidateRenderedRowWritesReply, c.rpc.RenderRowWrites)
 }
 
 func rowRead(request *protocol.ReadRowsRequest) sessionCall[*protocol.ReadRowsRequest, *protocol.RowPage] {
 	return sessionCall[*protocol.ReadRowsRequest, *protocol.RowPage]{
 		feature: provider.ReadRowsFeature, operation: "read rows", timeout: CallTimeout, transaction: request.GetTransactionId(),
-		validateInput: provider.ValidateReadRowsRequest, validateOutput: provider.ValidateRowPage,
+		validateInput: provider.ValidateReadRowsRequest, validateOutput: provider.ValidateRowPageReply,
 	}
 }
 
@@ -39,14 +39,14 @@ func (s *serverAdapter) TypeRows(ctx context.Context, request *protocol.TypeRows
 	if nilService(s.server.RowTyper) {
 		return nil, unavailable("row typing")
 	}
-	return serveOffline(ctx, s, request, provider.ValidateTypeRowsRequest, provider.ValidateTypedRows, s.server.RowTyper.TypeRows)
+	return serveOffline(ctx, s, request, provider.ValidateTypeRowsRequest, provider.ValidateTypedRowsReply, s.server.RowTyper.TypeRows)
 }
 
 func (s *serverAdapter) RenderRowWrites(ctx context.Context, request *protocol.RenderRowWritesRequest) (*protocol.RenderResult, error) {
 	if nilService(s.server.RowWriter) {
 		return nil, unavailable("row write rendering")
 	}
-	return serveOffline(ctx, s, request, provider.ValidateRenderRowWritesRequest, provider.ValidateRenderedRowWrites, s.server.RowWriter.RenderRowWrites)
+	return serveOffline(ctx, s, request, provider.ValidateRenderRowWritesRequest, provider.ValidateRenderedRowWritesReply, s.server.RowWriter.RenderRowWrites)
 }
 
 func (s *serverAdapter) ReadRows(ctx context.Context, request *protocol.ReadRowsRequest) (*protocol.RowPage, error) {

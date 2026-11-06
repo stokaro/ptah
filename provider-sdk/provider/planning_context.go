@@ -156,12 +156,7 @@ func checkCapturedFeatures(
 	if captured == nil {
 		return fmt.Errorf("%w: missing captured feature knowledge", ErrProtocol)
 	}
-	context := planningValueContext(request)
-	for _, model := range engine.GetValueModels() {
-		if model.GetRepresentation() == representation {
-			context.Kinds = append(context.Kinds, model.GetKind())
-		}
-	}
+	context := checks.capturedContext(request, engine, representation)
 	for _, entry := range []struct {
 		state     *protocol.ComparisonState
 		placement protocol.ModelComparison_Placement

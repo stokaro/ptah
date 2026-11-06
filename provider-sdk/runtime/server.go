@@ -365,7 +365,7 @@ func (s *serverAdapter) Render(ctx context.Context, request *protocol.RenderRequ
 	if s.server.Renderer == nil {
 		return nil, status.Error(codes.Unimplemented, "rendering is unavailable")
 	}
-	return serveOffline(ctx, s, request, provider.ValidateRenderRequest, provider.ValidateRenderedBatch, s.server.Renderer.Render)
+	return serveOffline(ctx, s, request, provider.ValidateRenderRequest, provider.ValidateRenderedBatchReply, s.server.Renderer.Render)
 }
 
 func (s *serverAdapter) Execute(ctx context.Context, request *protocol.ExecuteRequest) (*protocol.Execution, error) {
