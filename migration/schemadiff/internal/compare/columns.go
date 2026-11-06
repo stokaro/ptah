@@ -720,7 +720,7 @@ func liveSerial(dbCol catalog.Column, dialect string) bool {
 	if canonicalIdentity(dbCol.IdentityGeneration) != "" {
 		return false
 	}
-	if dbCol.IsAutoIncrement || autoincrement.SerialType(dbCol.RawType()) {
+	if dbCol.IsAutoIncrement || dbCol.OwnedSequence != "" || autoincrement.SerialType(dbCol.RawType()) {
 		return true
 	}
 	serialDefault := comparisonOf(dialect).SerialDefault
