@@ -1,7 +1,15 @@
 #!/usr/bin/env node
 // Holds every top-level examples directory to one reader contract and keeps the
 // examples index derived from those READMEs.
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+//
+// It also holds a page that quotes an example to the example's files. A README
+// names such a page with a `<!-- ptah:quoted-by <path> -->` line, the path
+// relative to the repository root. On that page, every fenced block whose meta
+// carries `title="<file>"` must be a run of whole lines of that file of the
+// example, and every `go` block must carry such a title. A tutorial whose code
+// drifted from the example it teaches then fails here, in the change that
+// moved one without the other.
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -71,6 +79,69 @@ export function analyze(root) {
   return { examples, problems };
 }
 
+const quotedByMarker = /<!--\s*ptah:quoted-by\s+(\S+)\s*-->/g;
+
+// fencedBlocks returns each fenced block of a Markdown source with its
+// language, its meta string and its body, without the fence lines.
+export function fencedBlocks(source) {
+  const blocks = [];
+  const lines = source.replace(/\r\n/g, '\n').split('\n');
+  for (let index = 0; index < lines.length; index += 1) {
+    const opening = lines[index].match(/^(\s*)(`{3,}|~{3,})([^`\s]*)\s*(.*)$/);
+    if (!opening) continue;
+    const [, indent, fence, language, meta] = opening;
+    const body = [];
+    let end = index + 1;
+    for (; end < lines.length; end += 1) {
+      if (lines[end].trim() === fence) break;
+      body.push(indent && lines[end].startsWith(indent) ? lines[end].slice(indent.length) : lines[end]);
+    }
+    blocks.push({ language, meta, body: body.join('\n'), line: index + 1 });
+    index = end;
+  }
+  return blocks;
+}
+
+// quotedExcerptProblems reads every README under examplesRoot for quoted-by
+// markers and checks each named page, resolved against repositoryRoot.
+export function quotedExcerptProblems(examplesRoot, repositoryRoot) {
+  const problems = [];
+  let pages = 0;
+  for (const name of directories(examplesRoot)) {
+    const readmePath = join(examplesRoot, name, 'README.md');
+    if (!existsSync(readmePath)) continue;
+    for (const [, pagePath] of readFileSync(readmePath, 'utf8').matchAll(quotedByMarker)) {
+      pages += 1;
+      const absolutePage = join(repositoryRoot, pagePath);
+      if (!existsSync(absolutePage)) {
+        problems.push(`${name}: README.md names ${pagePath}, which does not exist`);
+        continue;
+      }
+      let checked = 0;
+      for (const block of fencedBlocks(readFileSync(absolutePage, 'utf8'))) {
+        const title = block.meta.match(/(?:^|\s)title="([^"]+)"/)?.[1];
+        if (!title) {
+          if (block.language === 'go') problems.push(`${pagePath}:${block.line}: a go block names no example file in title="..."`);
+          continue;
+        }
+        const file = join(examplesRoot, name, title);
+        if (!existsSync(file)) {
+          problems.push(`${pagePath}:${block.line}: title="${title}" names no file of examples/${name}`);
+          continue;
+        }
+        checked += 1;
+        const text = readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
+        // Framed by newlines, so a block matches whole lines only.
+        if (!`\n${text}${text.endsWith('\n') ? '' : '\n'}`.includes(`\n${block.body}\n`)) {
+          problems.push(`${pagePath}:${block.line}: the block titled ${title} is not a run of whole lines of examples/${name}/${title}`);
+        }
+      }
+      if (checked === 0) problems.push(`${pagePath}: quotes no file of examples/${name}`);
+    }
+  }
+  return { pages, problems };
+}
+
 export function renderIndex(examples) {
   const rows = examples.map(({ name, purpose, title }) => `| [${title}](${name}/) | ${purpose} |`);
   return `# Ptah examples
@@ -106,7 +177,35 @@ function selftest() {
       process.exitCode = 1;
       return;
     }
-    console.log('check-examples.mjs --selftest: OK (missing contract sections rejected and index rendered)');
+
+    // A quoting page: one faithful excerpt, one that drifted, one go block
+    // without a title, and one title that names no file.
+    const repository = join(root, 'repository');
+    mkdirSync(join(repository, 'examples', 'quoted'), { recursive: true });
+    writeFileSync(join(repository, 'examples', 'quoted', 'README.md'), '<!-- ptah:quoted-by page.md -->\n');
+    writeFileSync(join(repository, 'examples', 'quoted', 'main.go'), 'package main\n\nfunc main() {\n\tprintln("one")\n}\n');
+    const page = [
+      '```go title="main.go"', 'func main() {', '\tprintln("one")', '}', '```',
+      '```go title="main.go"', 'func main() {', '\tprintln("two")', '}', '```',
+      '```go', 'package main', '```',
+      '```text title="missing.go"', 'x', '```',
+    ].join('\n');
+    writeFileSync(join(repository, 'page.md'), page);
+    const quoted = quotedExcerptProblems(join(repository, 'examples'), repository);
+    const expected = ['page.md:6: the block titled main.go', 'page.md:11: a go block names no example file', 'page.md:14: title="missing.go" names no file'];
+    if (quoted.pages !== 1 || quoted.problems.length !== expected.length || !expected.every((text, index) => quoted.problems[index].startsWith(text))) {
+      console.error(`check-examples.mjs --selftest: FAILED (quoted excerpts: ${JSON.stringify(quoted.problems)})`);
+      process.exitCode = 1;
+      return;
+    }
+    writeFileSync(join(repository, 'page.md'), 'No code here.\n');
+    const empty = quotedExcerptProblems(join(repository, 'examples'), repository);
+    if (empty.problems.length !== 1 || !empty.problems[0].includes('quotes no file')) {
+      console.error('check-examples.mjs --selftest: FAILED (a quoting page with no excerpt was accepted)');
+      process.exitCode = 1;
+      return;
+    }
+    console.log('check-examples.mjs --selftest: OK (missing contract sections rejected, index rendered, quoted excerpts held to their files)');
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -121,9 +220,11 @@ function main() {
   const root = join(repositoryRoot, 'examples');
   const indexPath = join(root, 'README.md');
   const result = analyze(root);
-  if (result.problems.length > 0) {
+  const quoted = quotedExcerptProblems(root, repositoryRoot);
+  const problems = [...result.problems, ...quoted.problems];
+  if (problems.length > 0) {
     console.error('check-examples.mjs: FAILED');
-    for (const problem of result.problems) console.error(`- ${problem}`);
+    for (const problem of problems) console.error(`- ${problem}`);
     process.exitCode = 1;
     return;
   }
@@ -142,7 +243,7 @@ function main() {
     process.exitCode = 1;
     return;
   }
-  console.log(`check-examples.mjs: OK (${result.examples.length} example contracts and generated index)`);
+  console.log(`check-examples.mjs: OK (${result.examples.length} example contracts, generated index, ${quoted.pages} quoting page${quoted.pages === 1 ? '' : 's'})`);
 }
 
 main();

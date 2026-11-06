@@ -4,6 +4,11 @@ This module is for developers implementing Ptah subprocess providers. It defines
 explicit protocol messages, service interfaces, and authenticated local transport.
 Its Go module path is `github.com/stokaro/ptah/provider-sdk`.
 
+This README is the specification. To build a first provider, follow
+[Write a provider](https://docs.ptah.run/edge/extend/write-a-provider/tutorial/),
+which builds the module in [`examples/minimal-provider`](../examples/minimal-provider)
+and covers testing and releasing a provider.
+
 The contract is experimental. It has a major and a minor version: a host and a
 provider of different majors are refused before a session opens, and so is a
 host older than the minimum a provider declares. Within a major, additions are
@@ -59,6 +64,7 @@ speaks contract 25.27. Each released SDK speaks one contract:
 
 | SDK release | Contract |
 | --- | --- |
+| `provider-sdk/v0.24.0` | 25.27 |
 | `provider-sdk/v0.23.0` | 25.26 |
 | `provider-sdk/v0.22.0` | 25.25 |
 | `provider-sdk/v0.21.0` | 25.24 |

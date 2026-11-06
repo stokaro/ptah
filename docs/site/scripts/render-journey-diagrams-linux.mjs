@@ -18,7 +18,7 @@ const image = `mcr.microsoft.com/playwright:v${version}-noble`;
 const container = `ptah-journey-diagrams-${process.pid}-${Date.now()}`;
 const work = mkdtempSync(join(tmpdir(), 'ptah-journey-diagrams-'));
 const archive = join(work, 'sources.tar.gz');
-const names = ['product-journeys', 'inference-generation-lifecycle'];
+const names = ['product-journeys', 'inference-generation-lifecycle', 'provider-lifecycle'];
 let imageExisted = false;
 let containerCreated = false;
 try {

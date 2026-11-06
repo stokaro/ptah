@@ -509,7 +509,8 @@ versions are equal and Ptah's minor version is at least the release's. What a
 provider can do beyond its minimum is agreed at startup, feature by feature. A
 Ptah release does not change the contract version by itself, so a provider
 release keeps working across Ptah releases that speak a contract it accepts.
-Provider authors find the rules in the
+Provider authors start with [Write a provider](../write-a-provider/tutorial/),
+and find the rules in the
 [provider SDK README (latest development source)](https://github.com/stokaro/ptah/blob/master/provider-sdk/README.md).
 
 Without `--version`, the command lists the releases of the provider's GitHub
@@ -869,6 +870,12 @@ ptah schema apply --provider-config providers.json \
   --db-url "$DATABASE_URL" --plan change.plan.json \
   --tx-mode none --auto-approve
 ```
+
+`schema apply` takes the provider's session lock before it reads the target
+and holds it until the run ends, so the engine and the provider must list
+`sessions.locks`. Without it the apply fails before it reads anything, with
+`acquire schema apply lock: unsupported feature: the experimental provider contract does not support session locks for the selected engine`.
+A dry run takes no lock.
 
 A provider can support `--tx-mode file` and `--tx-mode all` by advertising
 transaction sessions for the selected engine and establishing transactional DDL

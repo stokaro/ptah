@@ -60,10 +60,64 @@ grep -qF 'SQLAlchemy==2.0.50' examples/orm-loaders/sqlalchemy/requirements.txt
 	env GOCACHE="$example_gocache" GOWORK=off go test -mod=readonly ./...
 )
 
+# The minimal provider example. The commands are the README's own: the first
+# bash block of its Run, Verify and Cleanup sections runs, in that order and in
+# one shell as a reader runs them, in a copy of the example with this tree's
+# ptah first on PATH, and each result the README promises is required. The
+# tutorial page quotes the example's files, and
+# docs/site/scripts/check-examples.mjs holds those excerpts to them.
+provider_work="$work_dir/minimal-provider"
+mkdir -p "$provider_work/bin" "$provider_work/example"
+run_go build -o "$provider_work/bin/ptah" ./cmd/ptah
+(cd examples/minimal-provider && git ls-files -z --cached --others --exclude-standard -- . | tar --null -T - -cf -) |
+	tar -xf - -C "$provider_work/example"
+: >"$provider_work/readme.sh"
+for section in Run Verify Cleanup; do
+	awk -v section="## $section" '
+		/^## / { inside = ($0 == section) }
+		inside && /^```bash$/ { capture = 1; next }
+		capture && /^```$/ { exit }
+		capture { print }
+	' examples/minimal-provider/README.md >"$provider_work/$section.sh"
+	if [ ! -s "$provider_work/$section.sh" ]; then
+		echo "check-examples: examples/minimal-provider/README.md has no bash block under $section" >&2
+		exit 1
+	fi
+	cat "$provider_work/$section.sh" >>"$provider_work/readme.sh"
+	echo "echo '--- end of $section'" >>"$provider_work/readme.sh"
+done
+(
+	cd "$provider_work/example"
+	env PATH="$provider_work/bin:$PATH" GOCACHE="$example_gocache" GOWORK=off bash -eu "$provider_work/readme.sh"
+) >"$provider_work/readme.txt" 2>&1 || {
+	echo 'check-examples: the README blocks of examples/minimal-provider failed:' >&2
+	cat "$provider_work/readme.txt" >&2
+	exit 1
+}
+for expected in \
+	'example.com/ptah-tutorial-provider 0.0.0-dev: compatible' \
+	'CREATE TABLE "notes" ("id" INTEGER NOT NULL PRIMARY KEY, "body" TEXT);' \
+	'Schema apply completed successfully.' \
+	'--- end of Run' \
+	'"outcome": "no-changes"' \
+	'--- end of Cleanup'; do
+	grep -qF -- "$expected" "$provider_work/readme.txt" || {
+		echo "check-examples: the README blocks of examples/minimal-provider did not print $expected" >&2
+		cat "$provider_work/readme.txt" >&2
+		exit 1
+	}
+done
+for leftover in ptah-tutorial-provider providers.json change.plan.json app.db; do
+	if [ -e "$provider_work/example/$leftover" ]; then
+		echo "check-examples: the Cleanup block of examples/minimal-provider/README.md left $leftover" >&2
+		exit 1
+	fi
+done
+
 # The Kubernetes manifests need a cluster, so what is checked here is that every
 # `ptah` argv in them names a verb this build registers and flags that verb
 # accepts. That is the drift that actually happens: a flag renamed in the code
 # and an example still naming the old spelling.
 run_go test ./internal/cli/inference -run TestKubernetesExample -count=1
 
-echo 'check-examples: OK (4 executed examples, viz artifacts, Kubernetes manifests, and 2 provider fixtures)'
+echo 'check-examples: OK (5 executed examples, viz artifacts, Kubernetes manifests, and 2 provider fixtures)'

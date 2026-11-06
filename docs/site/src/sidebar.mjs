@@ -279,6 +279,17 @@ export const sidebar = [
       ] },
       ...providerSidebarGroups(),
       {
+        label: 'Write a provider',
+        items: [
+          { slug: 'extend/write-a-provider/tutorial' },
+          { slug: 'extend/write-a-provider/architecture' },
+          { slug: 'extend/write-a-provider/models-and-planning' },
+          { slug: 'extend/write-a-provider/testing' },
+          { slug: 'extend/write-a-provider/release' },
+          { slug: 'extend/write-a-provider/sdk-reference' },
+        ],
+      },
+      {
         label: 'Go integration',
         items: [
           { slug: 'extend/public-api' },

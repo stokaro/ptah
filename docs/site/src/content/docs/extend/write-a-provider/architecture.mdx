@@ -1,0 +1,277 @@
+---
+title: How a provider works
+description: The process boundary, the contract and its features, sessions, execution outcomes, locks and the reasons a provider gives, as a provider author meets them.
+type: concept
+audience:
+  - "go-developer"
+  - "integration-developer"
+readerQuestion: "What does Ptah expect of a provider process, and what does the provider own?"
+goal: "Understand the provider lifecycle, contract negotiation, and the execution, lock and diagnostic rules a provider implements."
+sourceOfTruth:
+  - "provider-sdk/README.md"
+  - "provider-sdk/runtime"
+  - "provider-sdk/provider"
+  - "internal/providerhost"
+  - "internal/providerselect"
+generated: false
+searchAliases:
+  - "provider contract"
+  - "provider negotiation"
+  - "provider features"
+overlaps:
+  - /extend/executable-providers/
+disposition: keep
+---
+
+import ProductPreview from '../../../../components/ProductPreview.astro';
+import lifecycleLight from '../../../../assets/provider-lifecycle-light.svg';
+import lifecycleDark from '../../../../assets/provider-lifecycle-dark.svg';
+import lifecycleSource from '../../../../../diagrams/provider-lifecycle.mmd?url&no-inline';
+
+A provider owns what Ptah cannot know about an engine: how to connect, how to
+read its catalog, how to spell a change, how to run it, and how to keep a
+second writer out. Ptah owns what is the same for every engine: schema
+sources, comparison policy, the order of a plan, saved plans, migration
+history rules, and everything a command prints. The two run as separate
+processes and meet over a versioned gRPC contract. The
+[provider SDK README (latest development source)](https://github.com/stokaro/ptah/blob/master/provider-sdk/README.md)
+states the contract field by field; this page gives the model that the
+README's sections fit into.
+
+## The process boundary
+
+Ptah starts a provider as a subprocess of the command that needs it. Before
+every start, it checks the SHA-256 digest of the executable against the
+manifest entry or the install record, and after the start it compares the
+provider ID the process reports with the expected one.
+
+- **Trust.** A digest detects changed bytes; it does not prove who built them.
+  The process runs with the operator's operating-system permissions and is not
+  a sandbox.
+- **Environment.** The process receives no environment from the command that
+  starts it. It sees the bootstrap variables and the `NAME=value` entries the
+  manifest lists, and nothing else, so a provider never reads `HOME` or a
+  credential from its environment by accident.
+- **Credentials.** A database address, with any credential in it, reaches the
+  provider in an `Open` request, never on a command line.
+- **Transport.** The SDK runs gRPC over a local listener with mutual TLS,
+  bootstrapped through go-plugin. Standard output belongs to the bootstrap and
+  the transport, and Ptah discards what the provider writes to standard output
+  and standard error, because it can hold a credential.
+- **Message size.** One message is at most 4 MiB in each direction, or 64 MiB
+  when both sides list `transport.large-messages`.
+- **Time.** Startup has ten seconds. A call whose work grows with the schema,
+  such as inspection, comparison, planning, rendering or an execution without
+  a statement timeout, runs until the caller's context ends. Every other call
+  has 30 seconds (`runtime.CallTimeout`), and provisioning a dev database has
+  ten minutes (`runtime.ProvisionTimeout`).
+- **Lifetime.** The provider starts at the first connection, dev database or
+  plan that needs it and ends with the command. It also watches its parent and
+  exits when the parent dies. Session handles do not survive the process.
+
+A provider written in another language implements the go-plugin control
+services and Ptah's `Provider` gRPC service; the README's
+[bootstrap specification (latest development source)](https://github.com/stokaro/ptah/blob/master/provider-sdk/README.md#bootstrap-specification)
+lists the handshake. A Go provider calls `runtime.Serve` and gets all of it.
+
+## From start to the first call
+
+A command that selects a provider goes through the same steps each time:
+
+<ProductPreview
+  id="provider-lifecycle"
+  label="Sequence diagram"
+  themeWithSite
+  src={lifecycleLight}
+  darkSrc={lifecycleDark}
+  alt="The Ptah command selects a provider, verifies the executable's digest and starts the provider process. It sends Describe and checks the provider ID, the engines and the contract in the reply. It sends Open with the engine and the address, and the provider connects to the database with the engine's driver. Ptah calls Inspect, Render, Execute and the locks, the provider reads and changes the database, and Ptah receives replies the SDK has validated. Ptah then closes the sessions and ends the process."
+  caption="Ptah verifies and starts the provider, negotiates, and calls it over one authenticated local connection."
+  notice="The provider runs with the operator's permissions. A digest proves that the bytes did not change, not who built them."
+  fullSizeHref={lifecycleLight.src}
+  downloadHref={lifecycleLight.src}
+  sourceHref={lifecycleSource}
+/>
+
+1. **Selection.** A manifest entry or an installation from
+   `ptah providers install` names the executable. See
+   [Which provider serves an engine](../../executable-providers/#which-provider-serves-an-engine).
+2. **Start.** Ptah verifies the digest, starts the process and completes the
+   authenticated handshake.
+3. **Describe.** Ptah sends its contract version, the features it acts on, and
+   the features it requires: `schema.inspect`, `schema.render`, `units.execute`
+   and `sql.analyze`. The provider answers with its description, narrowed to
+   what the host can use.
+4. **Checks.** Ptah compares the provider ID, the engines and their aliases
+   with the manifest, refuses an engine name that the catalog gives to another
+   provider, and registers what the description declares: models, source
+   syntax, query dialect, offline capabilities and scope selections.
+5. **Sessions.** Each connection is an `Open` with an engine and an address,
+   and ends with `Close`. Offline services, such as rendering and comparison,
+   need no session.
+6. **End.** When the command returns, fails or is interrupted, Ptah closes the
+   sessions and ends the process.
+
+## Contract versions and features
+
+The contract has a major and a minor version. `provider.Revision` is the
+major, and a host and a provider of different majors never talk.
+`provider.ContractMinor` is the minor that the SDK speaks. Each minor adds
+vocabulary that an older peer can ignore: a call, a field, an enum value or a
+feature.
+
+A provider sets `Description.min_contract` only when it cannot work at all with
+an older host. Left unset, it means the first minor of the major, and the
+provider works with every host of that major. A release publishes the same
+minimum in `ptah-provider.json`, so a host can choose a release it can run
+before it downloads one. See [Package and release a provider](../release/).
+
+Features decide what a given host and provider use. Feature names travel in
+three places:
+
+- `Description.features` lists the services and behaviors of the provider.
+  Each service in `runtime.Server` has a feature, and `runtime.Serve` refuses
+  a service without its feature and a feature without its service.
+- `Engine.features` lists what one engine offers, such as
+  `schema.common-table-identity.v1` or `sessions.locks`. Many services are
+  listed on both.
+- `DescribeRequest.host_features` lists what the host acts on.
+
+A **two-way feature** changes a message that already exists, for example by
+adding a reply field. It is used only when the provider and the host both list
+it, and `provider.TwoWayFeatures()` returns every such feature. A service reads
+what the host listed with `provider.HostFeatures(ctx)`. The SDK server removes
+from a reply what the host did not negotiate, or refuses the reply, so a
+provider built from a newer SDK keeps working with an older host. A
+**provider feature** that adds a new call needs no host listing: the host calls
+it only when the provider offers it.
+
+The README keeps the table of SDK releases and the contract each one speaks,
+and names what each minor added; see
+[Contract versions (latest development source)](https://github.com/stokaro/ptah/blob/master/provider-sdk/README.md#contract-versions).
+
+## Sessions and capabilities
+
+An `Open` reply is a session: an ID, the engine, the database it selected, the
+default schema, the server version, the effective identifier rules, the
+session's features and its capabilities. Calls on different sessions may
+arrive at the same time, so a provider keeps sessions apart and serializes
+what one session must not do twice at once.
+
+A capability is a named fact about the server, such as
+`ddl_inside_transaction`. Presence matters: an explicit `false` is an
+established answer, and an absent key is unknown. Ptah plans with the facts a
+session states. An offline command, which opens no session, plans with the
+facts the engine states under `engine.default-capabilities`.
+
+Identifier rules say how names compare: exactly, or with ASCII letters folded.
+An engine declares them in its description, and a session reports the
+effective ones. Ptah refuses a missing or unknown rule and never borrows the
+rules of a built-in dialect.
+
+## Execution and uncertainty
+
+`Execute` receives units, each SQL text or a native operation that the
+provider's own planner produced, and returns an outcome with the number of
+consecutive units confirmed applied:
+
+| Outcome | What it confirms |
+| --- | --- |
+| `APPLIED` | Every unit applied. |
+| `NOT_STARTED`, `NOT_APPLIED` | No unit applied. |
+| `PARTIAL` | A proper prefix applied, and `applied_count` says how long it is. |
+| `UNKNOWN` | Nobody knows the final effect. A confirmed prefix may still be reported. |
+
+A provider never runs a request again because it carries an ID, and the SDK
+never retries one. A lost reply, a crash or a cancellation after the request
+left is an unknown outcome, and Ptah reads the database before it decides
+anything. Ending the process does not prove that a transaction rolled back.
+
+Transactions are a separate service, `sessions.transactions`. Listing it does
+not establish transactional DDL: the opened session states that as a
+capability. Without the service, `--tx-mode file` and `--tx-mode all` are
+refused before anything runs, unless the session states
+`ddl_inside_transaction` as `false`, which runs the default mode without a
+transaction. A transaction outlives the call that began it, so its lifetime
+must not follow that call's context.
+
+Versioned migrations add three services. `sessions.history` stores revision
+records, `sessions.migration-metadata` stores the migration log and tags, and
+`sessions.locks` provides the migration lock. The provider owns storage and
+atomic writes; Ptah owns ordering, checksums, recovery and repair decisions.
+The README sections
+[Session transactions (latest development source)](https://github.com/stokaro/ptah/blob/master/provider-sdk/README.md#session-transactions)
+and
+[Revision storage (latest development source)](https://github.com/stokaro/ptah/blob/master/provider-sdk/README.md#revision-storage)
+give the rules.
+
+## Locks and receipts
+
+`ptah schema apply` and the migration commands take a lock before they read
+the target. The provider owns how the engine keeps a second session out; Ptah
+owns how long to wait and whether to run.
+
+- `TryLock` makes one attempt and never waits. It answers `ACQUIRED`, `BUSY`
+  for a confirmed refusal, or `LOST`.
+- A lock ID is used once. A second request with the same ID gets the first
+  answer, and a `BUSY` answer lets Ptah try again with a new ID.
+- `CheckLock` proves ownership now, including the freshness of any lease. An
+  earlier `ACQUIRED` receipt proves nothing about a later statement.
+- `ReleaseLock` of an ID that never took the lock fences it, so a late
+  `TryLock` acquires nothing. Closing a session releases its locks.
+- Before execution, history writes and commits, the provider checks every lock
+  that guards the session. A lost lock fences the session for good; release,
+  rollback and close stay available.
+
+Every receipt echoes the scope and the request ID of its request, and the
+validators refuse one that changes either. Lock, history and transaction
+results follow this rule, so a reply always says exactly which request it
+answers.
+
+## Reasons a provider gives
+
+A failed call reaches Ptah as its gRPC code. Ptah never shows the status
+message, because it is whatever error text the provider passed on, and a
+driver's error can quote an address, a credential or a statement with its
+values. Under `errors.reasons`, the provider adds a reason that Ptah prints
+after the code:
+
+```text
+provider render failed (InvalidArgument): the tutorial engine stores the column types INTEGER, TEXT, REAL and BLOB only
+```
+
+A reason is the provider's promise about the text:
+
+- The provider writes it. It is never the text of an error the provider
+  received.
+- It names what failed and why. It never quotes statement text, a value, an
+  address or a credential.
+- It is one line of at most 512 bytes of valid UTF-8, with no control
+  character and no white space around it. `provider.ValidateDiagnostic`
+  checks the shape; nothing can check the content.
+
+`runtime.ErrorWithReason(code, reason)` builds a failed call. The same rules
+apply to the `diagnostic` of a lock receipt, an execution result and a
+transaction result that did not succeed. The SDK server removes every reason
+the host did not negotiate and replaces a malformed one with
+`the provider's reason is malformed and not shown`. A cancellation and a
+deadline stay the context's errors.
+
+Some replies carry text of their own, each with its own shape: the reason a
+read leaves a table out, the reason it leaves roles out, a positioned SQL
+schema diagnostic, an encoding loss and a cleanup refusal. Each follows the
+same content rule. The README sections
+[Unread tables (latest development source)](https://github.com/stokaro/ptah/blob/master/provider-sdk/README.md#unread-tables)
+and
+[Role scope reasons (latest development source)](https://github.com/stokaro/ptah/blob/master/provider-sdk/README.md#role-scope-reasons)
+give their limits.
+
+## Where this appears
+
+- [Build a minimal provider](../tutorial/) implements the required services,
+  locks and reasons.
+- [Engines, models and planning](../models-and-planning/) covers what the
+  provider declares about an engine and how planning work is divided.
+- [Test a provider](../testing/) proves each rule above with the SDK's
+  validators.
+- [Test an executable provider](../../executable-providers/) is the operator's
+  side: selection, manifests and installation.

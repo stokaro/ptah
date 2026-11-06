@@ -1,0 +1,7 @@
+# What the Run section of README.md writes.
+/ptah-tutorial-provider
+/ptah-tutorial-provider.exe
+/providers.json
+/app.db
+/app.db.lock-*
+/change.plan.json

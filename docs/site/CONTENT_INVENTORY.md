@@ -202,6 +202,7 @@ tutorials have separate acceptance checks for commands and stable results.
 | Check database and version support | `Databases > Overview`; choose lookup, policy, evidence, or live measurement | `databases/overview` → `databases/support-matrix` → `databases/support-policy` or `databases/support-evidence` → engine page or `ptah db capabilities` | Complete: generated lookup, testing promise, measurement evidence, and target capability report are distinct. |
 | Migrate from Atlas | `Atlas compatibility > Overview`; decide default compatibility, strict CE, or native adoption | `atlas/overview` → `atlas/adoption`, `atlas/strict-ce-mode`, command, or evidence page | Complete: the landing routes the three surfaces without carrying command reference or strict-policy internals. |
 | Embed Ptah as Go packages | `Extend and integrate > Overview`; choose the Go API path | `extend/overview` → `extend/public-api` → `extend/components` → `extend/query-builder` | Discoverable without entering CLI reference. |
+| Write a provider for a new engine | `Extend and integrate > Write a provider`; decide whether the engine fits the common table model or needs models of its own | `extend/write-a-provider/tutorial` → `extend/write-a-provider/architecture` → `extend/write-a-provider/models-and-planning` → `extend/write-a-provider/testing` → `extend/write-a-provider/release`, with `extend/write-a-provider/sdk-reference` for lookup | Complete: the tutorial's Go blocks are excerpts of `examples/minimal-provider`, `check-examples.mjs` holds them to its files, and `scripts/check-examples.sh` runs the example README's commands against this tree's `ptah`. |
 | Connect an AI client through MCP | `Extend and integrate > Overview`; choose the AI client path | `extend/overview` → `operate/ai-agents` → `operate/ai-agent-connect` → permissions, patch workflow, or tool reference | Complete: setup, authority, changes, diagnostics, and exhaustive tool lookup are separate reader tasks. |
 | Arrive from a copied error | Search | subsystem troubleshooting page → canonical task page | Complete: general, inference, and AI-agent symptom indexes route to focused fixes; canonical checksum, recovery, and exit-code results are top-three gated. |
 | Add or move a documentation page | `AGENTS.md` and the documentation-maintenance skill | style guide → page metadata → sidebar → redirect ledger → editorial check | Governed by build checks, stale waiver detection, and the current contributor instructions. |
@@ -231,3 +232,14 @@ their own. The host page for the engine, `extend/providers/<engine>`, stays
 here: it covers installing and selecting the provider, the host's refusals, and
 a table that sends the reader to the provider's pages. A host page that needs a
 provider detail links the imported route; it does not repeat the detail.
+
+## Provider developer guide
+
+The provider SDK README is the specification of the provider contract. The
+`extend/write-a-provider/` pages teach and route: they link a README section
+for each rule rather than restating it, so a contract change edits one file.
+The reference page links the README at the SDK release the minimal provider
+example requires, and a `go.mod` excerpt on the page fails `check-examples.mjs`
+when the example moves to another release. Decision records are named by
+number and not linked, because site pages do not link repository documents;
+each README section links its record.

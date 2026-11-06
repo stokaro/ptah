@@ -1,0 +1,19 @@
+sequenceDiagram
+  accTitle: Provider process lifecycle
+  accDescr: A Ptah command selects a provider from a manifest entry or an install record, checks the SHA-256 digest of the executable, and starts it as a subprocess that receives only the environment the manifest lists. Over an authenticated local gRPC connection, Ptah sends Describe with its contract version and features and checks the provider ID, the engines and the contract in the reply. Ptah then opens a session for each database, with the address in the Open request, and calls the provider's services. Only the provider talks to the database, through the engine's own driver. When the command ends, Ptah closes the sessions and ends the process.
+  participant P as Ptah command
+  participant V as Provider process
+  participant D as Database
+  Note over P: Select a manifest entry or an install record
+  Note over P: Verify the SHA-256 digest of the executable
+  P->>V: Start, with the listed environment only
+  P->>V: Describe: contract version, host features
+  V-->>P: Description: provider ID, engines, features
+  Note over P: Check the provider ID, engines and contract
+  P->>V: Open: engine and address
+  V->>D: Connect with the engine's driver
+  V-->>P: Session
+  P->>V: Inspect, Render, Execute, locks
+  V->>D: Read and change the database
+  V-->>P: Replies the SDK has validated
+  P->>V: Close the sessions, end the process
