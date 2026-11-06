@@ -14,6 +14,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"ptah.run/catalog"
 	"ptah.run/config/projectconfig"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/schemaext"
@@ -28,6 +29,7 @@ import (
 	"ptah.run/internal/featurejson"
 	"ptah.run/internal/schemascope"
 	"ptah.run/internal/undecidednote"
+	"ptah.run/internal/unmodelednote"
 	"ptah.run/migration/safety"
 	"ptah.run/migration/schemadiff"
 )
@@ -163,6 +165,13 @@ type driftReport struct {
 	// false when they are all there is, because no difference was found, and
 	// Failed says whether the check passed.
 	Undecided schemadiff.Diagnostics `json:"undecided,omitzero"`
+	// NotCompared names the objects the database holds of a kind Ptah does not
+	// model, such as a MySQL event, and the kinds the read could not list. No
+	// schema source can declare one and no comparison reads one, so they are not
+	// findings: Drift and Failed say nothing about them, and the exit code does
+	// not move. It is here because a false Drift would otherwise read as a
+	// comparison that covered them. It is absent when the read found none.
+	NotCompared []catalog.UnmodeledObject `json:"not_compared,omitempty"`
 	// ManagedData names the declared reference tables whose live rows differ,
 	// in counts. It is absent when every declared row is in place, so the
 	// section appears only where there is something to act on, and it carries
@@ -325,6 +334,7 @@ func assessDrift(
 		Findings:         findings,
 		Inventory:        safety.Inventory(result.Diff),
 		Undecided:        result.Undecided,
+		NotCompared:      result.NotCompared(),
 		ManagedData:      driftedManagedData(result.DataDrift),
 		Diff:             result.Diff,
 	}
@@ -468,7 +478,7 @@ func writeTextReport(w io.Writer, report driftReport) error {
 	if _, err := fmt.Fprintln(w, textHeadline(report)); err != nil {
 		return err
 	}
-	if !report.Drift && report.Undecided.Empty() {
+	if !report.Drift && report.Undecided.Empty() && len(report.NotCompared) == 0 {
 		return nil
 	}
 	if _, err := fmt.Fprintf(w, "Failure threshold: %s. Failing: %t.\n", report.FailureThreshold, report.Failed); err != nil {
@@ -490,6 +500,9 @@ func writeTextReport(w io.Writer, report driftReport) error {
 	if err := writeUndecidedSection(w, report.Undecided); err != nil {
 		return err
 	}
+	if err := writeNotComparedSection(w, report.NotCompared); err != nil {
+		return err
+	}
 	if len(report.Findings) == 0 {
 		return nil
 	}
@@ -506,9 +519,11 @@ func writeTextReport(w io.Writer, report driftReport) error {
 }
 
 // textHeadline is the first line of the text report. A run that found no
-// difference and withheld nothing is the only one that says no drift was
-// detected: with an undecided object the read did not look at something the
-// desired schema declares, and "no drift" would claim a check that did not run.
+// difference, withheld nothing and read every kind the database holds is the
+// only one that says no drift was detected: with an undecided object the read did
+// not look at something the desired schema declares, and with an object of a kind
+// nothing compares the check did not cover what the database holds. Either way
+// "no drift" would claim a check that did not run.
 func textHeadline(report driftReport) string {
 	switch {
 	case report.Drift:
@@ -516,6 +531,8 @@ func textHeadline(report driftReport) string {
 	case !report.Undecided.Empty():
 		return fmt.Sprintf("No schema drift found, but %s (highest severity: %s).",
 			undecidednote.Summary(report.Undecided), report.HighestSeverity)
+	case len(report.NotCompared) > 0:
+		return fmt.Sprintf("No schema drift found, but %s.", unmodelednote.Summary(report.NotCompared))
 	default:
 		return "No schema drift detected."
 	}
@@ -532,6 +549,23 @@ func writeUndecidedSection(w io.Writer, undecided schemadiff.Diagnostics) error 
 	}
 	for _, object := range undecidednote.Entries(undecided, "the database") {
 		if _, err := fmt.Fprintf(w, "- %s %q\n", object.Kind, object.Name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// writeNotComparedSection prints one line per object the comparison left out and
+// why. Nothing compares one, so a reader has no other way to learn it is there.
+func writeNotComparedSection(w io.Writer, objects []catalog.UnmodeledObject) error {
+	if len(objects) == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprintln(w, "\nNot compared:"); err != nil {
+		return err
+	}
+	for _, entry := range unmodelednote.Entries(objects) {
+		if _, err := fmt.Fprintf(w, "- %s: %s\n", entry.Subject, entry.Reason); err != nil {
 			return err
 		}
 	}
@@ -574,7 +608,7 @@ func writeGitHubActionsReport(w io.Writer, report driftReport) error {
 		_, err := fmt.Fprintf(w, "::error title=Ptah drift check failed::%s\n", escapeWorkflowCommand(report.Error))
 		return err
 	}
-	if !report.Drift && report.Undecided.Empty() {
+	if !report.Drift && report.Undecided.Empty() && len(report.NotCompared) == 0 {
 		_, err := fmt.Fprintln(w, "::notice title=Ptah drift check::No schema drift detected")
 		return err
 	}
@@ -606,6 +640,12 @@ func writeGitHubActionsReport(w io.Writer, report driftReport) error {
 			return err
 		}
 	}
+	for _, entry := range unmodelednote.Entries(report.NotCompared) {
+		message := fmt.Sprintf("%s: %s", entry.Subject, entry.Reason)
+		if _, err := fmt.Fprintf(w, "::%s title=Ptah object not compared::%s\n", level, escapeWorkflowCommand(message)); err != nil {
+			return err
+		}
+	}
 	for _, finding := range report.Findings {
 		message := fmt.Sprintf("%s: %d (%s)", finding.Category, finding.Count, finding.Severity)
 		if _, err := fmt.Fprintf(w, "::%s title=Ptah drift finding::%s\n", level, escapeWorkflowCommand(message)); err != nil {
@@ -620,6 +660,9 @@ func writeGitHubActionsReport(w io.Writer, report driftReport) error {
 func annotationHeadline(report driftReport) string {
 	if report.Drift {
 		return "Schema drift detected"
+	}
+	if report.Undecided.Empty() {
+		return "No schema drift found, but " + unmodelednote.Summary(report.NotCompared)
 	}
 	return "No schema drift found, but " + undecidednote.Summary(report.Undecided)
 }

@@ -26,7 +26,7 @@ func TestWriteComparisonReportsUndecidedWithoutDifferences(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 
-	writeComparison(c.Context(), stdout, stderr, &difftypes.SchemaDiff{}, schemadiff.Diagnostics{Common: []coverage.Object{undecidedRole("reporter")}}, "", "mysql")
+	writeComparison(c.Context(), stdout, stderr, &difftypes.SchemaDiff{}, schemadiff.Diagnostics{Common: []coverage.Object{undecidedRole("reporter")}}, nil, "", "mysql")
 
 	c.Assert(stdout.String(), qt.Equals, `No differences planned, but 1 declared object could not be decided:
   role "reporter"
@@ -49,7 +49,7 @@ func TestWriteComparisonReportsUndecidedBesideDifferences(t *testing.T) {
 	stderr := &bytes.Buffer{}
 
 	writeComparison(c.Context(), stdout, stderr, diff,
-		schemadiff.Diagnostics{Common: []coverage.Object{undecidedRole("reporter"), undecidedRole("auditor")}},
+		schemadiff.Diagnostics{Common: []coverage.Object{undecidedRole("reporter"), undecidedRole("auditor")}}, nil,
 		"CREATE TABLE users (id INT);\n", "mysql")
 
 	c.Assert(stdout.String(), qt.Equals, `Differences detected (1 category):

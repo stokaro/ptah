@@ -404,7 +404,7 @@ func readColumnCatalog(
 	// a table the account cannot see fails where it is written to, so nothing here
 	// depends on what else the database holds.
 	read, err := dbschema.ReadSchemaWithSchemasContext(
-		readscope.Without(ctx, readscope.Tables, readscope.Views, readscope.Constraints, readscope.Triggers, readscope.Routines),
+		readscope.Without(ctx, readscope.Tables, readscope.Views, readscope.Constraints, readscope.Triggers, readscope.Routines, readscope.Events),
 		conn, slices.Compact(scopes),
 	)
 	if err != nil {

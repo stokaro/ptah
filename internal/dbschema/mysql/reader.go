@@ -167,6 +167,7 @@ func (r *Reader) readServer(ctx context.Context, account sessionAccount) (*catal
 		server.Functions = append(server.Functions, part.Functions...)
 		server.CurrentAccount = cmp.Or(server.CurrentAccount, part.CurrentAccount)
 		server.Sequences = append(server.Sequences, part.Sequences...)
+		server.UnmodeledObjects = append(server.UnmodeledObjects, part.UnmodeledObjects...)
 		names = append(names, database.Name)
 	}
 	if r.caps.Has(capability.RoleManagement) {
@@ -245,6 +246,9 @@ func inDatabase(part *catalog.Database, database string) {
 	}
 	for i := range part.Sequences {
 		part.Sequences[i].Schema = cmp.Or(part.Sequences[i].Schema, database)
+	}
+	for i := range part.UnmodeledObjects {
+		part.UnmodeledObjects[i].Schema = cmp.Or(part.UnmodeledObjects[i].Schema, database)
 	}
 }
 
@@ -356,6 +360,11 @@ func (r *Reader) readDatabase(
 	schema.Sequences = sequences
 
 	if err := r.refuseUnseenObjects(ctx, account, dbName, schema, routines.hidden); err != nil {
+		return nil, err
+	}
+
+	schema.UnmodeledObjects, err = r.readEvents(ctx, account, dbName)
+	if err != nil {
 		return nil, err
 	}
 

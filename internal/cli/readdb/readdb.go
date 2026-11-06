@@ -21,6 +21,7 @@ import (
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/internal/sqlscript"
 	"ptah.run/internal/timescale"
+	"ptah.run/internal/unmodelednote"
 	"ptah.run/internal/unreadtables"
 )
 
@@ -109,6 +110,10 @@ func readDBCommand(cmd *cobra.Command, opts *options) error {
 	// A table the read found and left out is in no statement printed below,
 	// so without the note the output reads as a database without it.
 	unreadtables.Report(stderr, schema)
+
+	// An object of a kind Ptah does not model is in no statement printed below
+	// either.
+	unmodelednote.Report(cmd.Context(), stderr, "the database", schema)
 
 	// A SQLite virtual table whose module this build cannot load leaves that
 	// module's own storage described as ordinary tables, and the statements

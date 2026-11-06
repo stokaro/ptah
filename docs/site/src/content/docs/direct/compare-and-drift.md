@@ -147,8 +147,8 @@ severity-classified findings. With the extra model column still in place:
 ptah schema drift --schema-file schema.sql --db-url "sqlite://app.db"
 ```
 
-The command exits `1` because drift was found, which is the check working
-rather than a fault in it. Expected output on standard output:
+The command exits `1` because drift was found. Expected output on standard
+output:
 
 ```text
 Schema drift detected (highest severity: warning).
@@ -158,10 +158,10 @@ Findings:
 - columns_added: 1 (warning)
 ```
 
-The command exits `1` because drift was found. Findings describe what applying
-the desired schema would change on the database: `columns_added` means the
-desired schema has a column the database lacks, and `columns_removed` is
-classified destructive because applying would drop data.
+Findings describe what applying the desired schema would change on the
+database: `columns_added` means the desired schema has a column the database
+lacks, and `columns_removed` is classified destructive because applying would
+drop data.
 
 `--severity destructive` lowers the threshold to data-risking drift only. The
 same findings print, and the check passes:
@@ -205,6 +205,9 @@ the object under `Undecided`, and counts the objects as one `undecided` finding
 at `warning` severity. The default threshold fails on it, and
 `--severity destructive` counts only established destructive changes. A missing
 observation does not establish that a withheld operation is safe.
+
+A MySQL or MariaDB event is named under `not_compared` and is not a finding; see
+[Events](../../databases/mysql/#events).
 
 The JSON report carries common-object limits in `undecided.common` and feature limits in
 `undecided.features`, with `drift` false and `failed` set by the threshold.

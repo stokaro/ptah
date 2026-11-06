@@ -60,6 +60,7 @@ func TestScopeDatabaseKeepsCoverage(t *testing.T) {
 				// No selection keeps the table, and the filter keeps the record.
 				UnreadTables: []catalog.UnreadTable{{Identity: objectidentity.NewBuilder(identifier.ForDialect("postgres")).TablePartsVerbatim("public", "rep"),
 					Reason: "rep is a replica table"}},
+				UnmodeledObjects: []catalog.UnmodeledObject{{Kind: "event", Name: "e_a", Reason: "nothing compares it"}},
 			}
 
 			got, err := atlasfilter.ScopeDatabase(schema, test.scope)
@@ -72,6 +73,7 @@ func TestScopeDatabaseKeepsCoverage(t *testing.T) {
 			c.Assert(got.PlanningContextObjects.Equal(contextObjects), qt.IsTrue)
 			c.Assert(got.PlanningContextCoverage.Equal(context), qt.IsTrue)
 			c.Assert(got.UnreadTables, qt.DeepEquals, schema.UnreadTables)
+			c.Assert(got.UnmodeledObjects, qt.DeepEquals, schema.UnmodeledObjects)
 		})
 	}
 }

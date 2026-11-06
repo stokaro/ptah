@@ -34,6 +34,10 @@ const (
 	Triggers Kind = "triggers"
 	// Routines is stored functions and procedures.
 	Routines Kind = "routines"
+	// Events is MySQL-family events. Nothing compares one, so a read that cannot
+	// list them says so rather than refuses, and a run that left them out has
+	// nothing to say about them.
+	Events Kind = "events"
 )
 
 type contextKey struct{}

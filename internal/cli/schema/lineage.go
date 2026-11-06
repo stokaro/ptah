@@ -206,7 +206,7 @@ func runSchemaLineageLive(cmd *cobra.Command, opts schemaLineageOptions) error {
 	// The analysis follows columns through views and routine bodies, so it does
 	// not answer for triggers or constraints.
 	live, err := dbschema.ReadSchemaWithSchemasContext(
-		readscope.Without(cmd.Context(), readscope.Triggers, readscope.Constraints), conn, dbcli.ParseSchemas(opts.schemas),
+		readscope.Without(cmd.Context(), readscope.Triggers, readscope.Constraints, readscope.Events), conn, dbcli.ParseSchemas(opts.schemas),
 	)
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("read database schema: %w", err))

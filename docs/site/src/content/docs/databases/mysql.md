@@ -595,6 +595,7 @@ What each kind of object takes, measured on MySQL 8.4 and 26.10 and on MariaDB
 | View definitions | `SELECT` and `SHOW VIEW` on the view or above it | The same |
 | Triggers | `TRIGGER` on each table or above it | The same |
 | Procedures and functions | `SHOW_ROUTINE` globally, or `SELECT` globally | `SHOW CREATE ROUTINE` on the database or globally, `SELECT` globally, or `SELECT` on `mysql.proc` |
+| Events, which no comparison reads | `EVENT` on the database or globally, for a report to [name them](#events) | The same |
 
 So this account gets the same comparison as `root`, roles and grants aside:
 
@@ -679,6 +680,59 @@ ordinary schema work does not. An account without it records them as not describ
 and is not refused, so a comparison decides nothing about them in either direction:
 two databases that differ only by a grant to a role answer `Schemas are synced` for
 that account. An account that compares grants needs `SELECT` on `mysql.*`.
+
+### Events
+
+A read reports an event rather than refuses over one, because Ptah does not model
+it. No schema source can declare an event: a SQL file that says `CREATE EVENT` fails
+with `unsupported CREATE target: EVENT`, and a dev database replay refuses it, since
+what an event does on its schedule cannot be confined to that database. So no
+comparison reads events and no plan creates, changes or drops one. `schema apply`
+leaves them where they are.
+
+An event made by hand is therefore not a difference, and a report that found nothing
+else says so rather than claiming the database matches. `drift`, `failed`, the
+findings and the exit code stay what they would be without it:
+
+```text
+No schema drift found, but 1 event was not compared.
+Failure threshold: all. Failing: false.
+Database: mysql://root:***@db/app
+
+Not compared:
+- event "nightly_cleanup": Ptah does not model events, so nothing compares or plans this one
+```
+
+The JSON report carries the same objects under `not_compared`, each with a `kind`, a
+`name` and a `reason`, and the `schema` it is in when the URL names no database.
+`github-actions` annotates each one as a warning. `schema compare` opens with
+`No schema differences detected, but 1 event was not compared:` over the same list,
+and `schema serve` lists them under `Not compared`. `schema diff`, `schema inspect`,
+`db read`, `schema apply`, `schema plan` and `migrations plan` keep their output as it
+is and name them in a warning on standard error. `migrations generate` writes files
+for what differs and does not name them.
+
+What a report says depends on what the read can list:
+
+| Read | `schema drift` |
+| --- | --- |
+| The account holds `EVENT` and the database has none | `No schema drift detected.` |
+| The account holds `EVENT` and the database has some | Names each one under `Not compared` |
+| The account holds no `EVENT` on the database | An entry with no `name`, whose `reason` asks for the privilege |
+| The server refuses the catalog | An entry with no `name`, whose `reason` gives the server's answer |
+
+`information_schema.EVENTS` lists a database's events only to an account holding
+`EVENT` on it, at the database level, on a pattern or globally. Measured on MySQL
+8.4 and 26.10 and on MariaDB 11.8 and 12.3, every other privilege answers no rows
+and no error, including `SELECT` on `mysql.*`, so an empty answer alone says nothing.
+Nothing the comparison does depends on the answer, so that account is not refused.
+MariaDB with `--event-scheduler=DISABLED` refuses the query for every account with
+error 1577, and MySQL answers it.
+
+To have a report name the events, add `GRANT EVENT ON app.* TO reader`. `EVENT` also
+lets the account create and drop events, and neither engine has a privilege that
+only shows them. A run that does not depend on them can say so with
+`--exclude '*[type=event]'`, as for any other kind.
 
 ## Dev-database cleanup privileges
 

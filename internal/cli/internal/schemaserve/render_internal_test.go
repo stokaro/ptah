@@ -11,6 +11,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/catalog"
 	"ptah.run/core/coverage"
 	"ptah.run/core/difftypes"
 	"ptah.run/internal/cli/internal/schemaops"
@@ -38,6 +39,23 @@ func TestRender_NamesWhatTheComparisonCouldNotCheck(t *testing.T) {
 		` the catalog that would have listed them</td>`)
 }
 
+// TestRender_NamesWhatTheComparisonDidNotCover keeps the page from saying the
+// database matches over an object nothing compares, which is not a finding.
+func TestRender_NamesWhatTheComparisonDidNotCover(t *testing.T) {
+	c := qt.New(t)
+	result := &schemaops.CompareResult{Diff: &difftypes.SchemaDiff{}, Database: &catalog.Database{
+		UnmodeledObjects: []catalog.UnmodeledObject{{Kind: "event", Name: "e_tick", Reason: "nothing compares it"}},
+	}}
+	s := &server{opts: Options{DatabaseURL: "mysql://app@db/app", Now: time.Now}}
+
+	page := s.render(observationOf(result, time.Unix(0, 0)))
+
+	c.Assert(page, qt.Not(qt.Contains), "The database matches the declared schema.")
+	c.Assert(page, qt.Contains, "No difference found, but 1 event was not compared.")
+	c.Assert(page, qt.Contains, `<h3>Not compared</h3>`)
+	c.Assert(page, qt.Contains, `<td class="name">event &#34;e_tick&#34;</td><td>nothing compares it</td>`)
+}
+
 // TestRender_SaysTheDatabaseMatchesWhenNothingWasWithheld is the control.
 func TestRender_SaysTheDatabaseMatchesWhenNothingWasWithheld(t *testing.T) {
 	c := qt.New(t)
@@ -47,4 +65,5 @@ func TestRender_SaysTheDatabaseMatchesWhenNothingWasWithheld(t *testing.T) {
 
 	c.Assert(page, qt.Contains, "The database matches the declared schema.")
 	c.Assert(page, qt.Not(qt.Contains), "<h3>Undecided</h3>")
+	c.Assert(page, qt.Not(qt.Contains), "<h3>Not compared</h3>")
 }

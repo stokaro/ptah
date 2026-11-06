@@ -27,6 +27,7 @@ import (
 	"sync"
 	"time"
 
+	"ptah.run/catalog"
 	"ptah.run/core/schemaext"
 	"ptah.run/internal/cli/internal/schemaops"
 	"ptah.run/internal/ociartifact"
@@ -79,8 +80,12 @@ type observation struct {
 	// read did not describe their kind. They are counted in Findings too, so a
 	// page that could not look never says the database matches.
 	Undecided schemadiff.Diagnostics
-	Err       error
-	Schema    *schemaSnapshot
+	// NotCompared are the objects the database holds of a kind nothing compares.
+	// They are not findings, so a page with no finding says what it did not
+	// cover rather than that the database matches.
+	NotCompared []catalog.UnmodeledObject
+	Err         error
+	Schema      *schemaSnapshot
 }
 
 // schemaSnapshot is the declared schema as the page renders it, resolved with
@@ -195,10 +200,11 @@ func (s *server) observe(ctx context.Context) observation {
 func observationOf(result *schemaops.CompareResult, at time.Time) observation {
 	findings := append(safety.ClassifySchemaDiff(result.Diff), undecidednote.Findings(result.Undecided)...)
 	return observation{
-		At:        at,
-		Findings:  findings,
-		Highest:   safety.Highest(findings),
-		Undecided: result.Undecided,
+		At:          at,
+		Findings:    findings,
+		Highest:     safety.Highest(findings),
+		Undecided:   result.Undecided,
+		NotCompared: result.NotCompared(),
 	}
 }
 

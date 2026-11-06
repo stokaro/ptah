@@ -38,6 +38,7 @@ import (
 	"ptah.run/internal/schemascope"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/internal/undecidednote"
+	"ptah.run/internal/unmodelednote"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
@@ -258,7 +259,7 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return fmt.Errorf("error generating schema diff SQL: %w", err)
 	}
-	writeComparison(cmd.Context(), out, cmd.ErrOrStderr(), diff, undecided, output, info.Dialect)
+	writeComparison(cmd.Context(), out, cmd.ErrOrStderr(), diff, undecided, dbSchema.UnmodeledObjects, output, info.Dialect)
 
 	if opts.exitOnDiff {
 		return nonEmptyDiffExitCode(diff, undecided)
@@ -282,30 +283,51 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 // No statement is planned for one, so a report of the differences alone says
 // "No schema differences detected." about a database the comparison could not
 // check (stokaro/ptah#3834).
+//
+// What the database holds of a kind nothing compares is named on standard output
+// too, for the same reason: no difference can come from one, so a report of the
+// differences alone says the same sentence about an object nothing looked at.
 func writeComparison(
 	ctx context.Context,
 	out, errOut io.Writer,
 	diff *difftypes.SchemaDiff,
 	undecided schemadiff.Diagnostics,
+	unmodeled []catalog.UnmodeledObject,
 	sql, dialect string,
 ) {
 	undecidednote.Report(ctx, errOut, undecided, "the database", "the desired schema")
 	reportSkipped(errOut, diff)
 	categories := diffreport.Categories(diff)
-	if len(categories) == 0 && !undecided.Empty() {
+	switch {
+	case len(categories) == 0 && !undecided.Empty():
 		fmt.Fprintf(out, "No differences planned, but %s:\n", undecidednote.Summary(undecided))
 		writeUndecided(out, undecided)
+	case len(categories) == 0 && len(unmodeled) > 0:
+		fmt.Fprintf(out, "No schema differences detected, but %s:\n", unmodelednote.Summary(unmodeled))
+		writeUnmodeled(out, unmodeled)
 		return
-	}
-	if len(categories) == 0 {
+	case len(categories) == 0:
 		fmt.Fprintln(out, "No schema differences detected.")
 		return
+	default:
+		writeDifferences(out, errOut, categories, sql, dialect)
+		if !undecided.Empty() {
+			fmt.Fprintln(out)
+			fmt.Fprintf(out, "Undecided (%d):\n", undecided.Count())
+			writeUndecided(out, undecided)
+		}
 	}
-	writeDifferences(out, errOut, categories, sql, dialect)
-	if !undecided.Empty() {
+	if len(unmodeled) > 0 {
 		fmt.Fprintln(out)
-		fmt.Fprintf(out, "Undecided (%d):\n", undecided.Count())
-		writeUndecided(out, undecided)
+		fmt.Fprintf(out, "Not compared (%d):\n", len(unmodeled))
+		writeUnmodeled(out, unmodeled)
+	}
+}
+
+// writeUnmodeled names each object the comparison left out and says why.
+func writeUnmodeled(out io.Writer, unmodeled []catalog.UnmodeledObject) {
+	for _, entry := range unmodelednote.Entries(unmodeled) {
+		fmt.Fprintf(out, "  %s: %s\n", entry.Subject, entry.Reason)
 	}
 }
 

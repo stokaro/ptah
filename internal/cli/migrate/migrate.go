@@ -30,6 +30,7 @@ import (
 	"ptah.run/internal/schemascope"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/internal/undecidednote"
+	"ptah.run/internal/unmodelednote"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/safety"
 	"ptah.run/migration/schemadiff"
@@ -250,6 +251,7 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 		return fmt.Errorf("error comparing schemas: %w", err)
 	}
 	undecidednote.Report(cmd.Context(), cmd.ErrOrStderr(), undecided, "the database", "the desired schema")
+	unmodelednote.Report(cmd.Context(), cmd.ErrOrStderr(), "the database", dbSchema)
 	undescribed, err := schemascope.UndescribedRemovals(info, requested, result, diff)
 	if err != nil {
 		return fmt.Errorf("error comparing schemas: %w", err)

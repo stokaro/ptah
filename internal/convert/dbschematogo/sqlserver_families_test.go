@@ -116,4 +116,5 @@ var unconvertedFamilies = map[string]string{
 	"RolesOutOfScope":           "a report about what the read did not cover, not an object",
 	"UnregisteredVirtualTables": "a report about SQLite virtual tables no module registered",
 	"UnreadTables":              "tables the read found and does not describe, which no declaration names",
+	"UnmodeledObjects":          "objects of a kind Ptah does not model, which no declaration can name",
 }

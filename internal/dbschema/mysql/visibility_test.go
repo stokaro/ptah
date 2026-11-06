@@ -27,10 +27,19 @@ type visibleCatalog struct {
 	views     [][]driver.Value
 	triggers  [][]driver.Value
 	routines  [][]driver.Value
+	// events are the event names the account may see, by database.
+	events map[string][]string
 }
 
-func (v visibleCatalog) answer(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
+func (v visibleCatalog) answer(query string, args []driver.NamedValue) (dbtest.QueryResult, error) {
 	switch {
+	case strings.Contains(query, "FROM information_schema.EVENTS"):
+		database, _ := args[0].Value.(string)
+		rows := make([][]driver.Value, 0, len(v.events[database]))
+		for _, name := range v.events[database] {
+			rows = append(rows, []driver.Value{name})
+		}
+		return dbtest.QueryResult{Columns: []string{"EVENT_NAME"}, Rows: rows}, nil
 	case strings.Contains(query, "SELECT DATABASE()"):
 		return dbtest.QueryResult{Columns: []string{"DATABASE()"}, Rows: [][]driver.Value{{v.selected}}}, nil
 	case strings.Contains(query, "FROM information_schema.SCHEMATA"):

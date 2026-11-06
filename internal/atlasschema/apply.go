@@ -43,6 +43,7 @@ import (
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/internal/sqlscript"
 	"ptah.run/internal/undecidednote"
+	"ptah.run/internal/unmodelednote"
 	"ptah.run/internal/valuecontext"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/planner"
@@ -547,6 +548,9 @@ func computeApplyPlan(
 	// wording names neither surface's flags: native `schema apply` and the
 	// compatibility one both come through here.
 	undecidednote.Report(ctx, opts.Diagnostics, undecided, "the database", "the desired schema")
+	// The plan leaves an object of a kind Ptah does not model where it is, so an
+	// empty plan says nothing about it.
+	unmodelednote.Report(ctx, opts.Diagnostics, "the database", current)
 	computation.undecided = undecided
 	diff, omitted := ApplyDiffPolicy(compared, opts.Policy, info.Dialect)
 	// After the policy, which deletes the table drops a configuration skips:

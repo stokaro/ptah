@@ -109,6 +109,16 @@ type CompareResult struct {
 	DataDrift *datamigrate.Summary
 }
 
+// NotCompared returns what the read recorded of a kind the comparison does not
+// read: the objects a report of no differences says nothing about. A result with
+// no read has none.
+func (r *CompareResult) NotCompared() []catalog.UnmodeledObject {
+	if r.Database == nil {
+		return nil
+	}
+	return r.Database.UnmodeledObjects
+}
+
 // Native URL names come from the frozen connection selection. The connector
 // still checks that selection before opening any target.
 func comparisonDialect(ctx context.Context, address string) (string, error) {

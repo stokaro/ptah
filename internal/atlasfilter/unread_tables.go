@@ -10,3 +10,11 @@ func (s *exclusionState) noteUnreadTables(tables []catalog.UnreadTable) {
 		s.matches("table", s.nameCandidates(table.Identity.Schema.Authored(), table.Identity.Name.Source)...)
 	}
 }
+
+// An object of a kind Ptah does not model is outside the description for the same
+// reason, so a selector that names one is not reported as matching nothing.
+func (s *exclusionState) noteUnmodeledObjects(objects []catalog.UnmodeledObject) {
+	for _, object := range objects {
+		s.matches(object.Kind, s.nameCandidates(object.Schema, object.Name)...)
+	}
+}
