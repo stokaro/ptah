@@ -968,7 +968,7 @@ func TestAlignRollback_PlacesAStepByWhatItUndoes_HappyPath(t *testing.T) {
 		},
 		{
 			name:     "a primary key whose name says nothing of the other columns a table held one over",
-			forward:  []ast.Node{alter("t", addKey(primaryKey("pk_new", "k")))},
+			forward:  []ast.Node{alter("t", modifyColumn("id", "bigint")), alter("t", addKey(primaryKey("pk_new", "k")))},
 			rollback: []ast.Node{alter("t", modifyColumn("id", "int")), alter("t", dropConstraint("pk_new"))},
 			diff:     changes(changedTable("t", []catalog.Constraint{observedKey("t", "pk_old", "PRIMARY KEY", "id")})),
 			want:     []string{"t: modify id, drop constraint pk_new"},
