@@ -154,6 +154,10 @@ SQL:
   (`ERROR 1068`). A new table holds its `PRIMARY KEY` constraint inside its
   `CREATE TABLE`, because both engines refuse an `AUTO_INCREMENT` column that
   no key of the same statement covers (`ERROR 1075`).
+- A plain `KEY` that is the only key of an `AUTO_INCREMENT` column shares a
+  statement with the column for the same reason. A new table holds it inside its
+  `CREATE TABLE`. A column that comes or starts counting adds it in the same
+  `ALTER TABLE`, and one that goes or stops counting drops it there.
 - `KEY_BLOCK_SIZE [=] n` on a secondary, unique or primary index is retained
   by MariaDB. MySQL retains it only on a table with `ROW_FORMAT=COMPRESSED`.
   Ptah reads the hint from `SHOW CREATE TABLE` and compares it where the

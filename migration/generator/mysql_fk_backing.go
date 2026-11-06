@@ -104,6 +104,9 @@ func (s *mysqlForeignKeyIndexSimulation) createTable(node *ast.CreateTableNode) 
 	for _, column := range node.Columns {
 		s.addColumnKeys(node.Name, column)
 	}
+	for _, index := range node.Indexes {
+		s.addIndex(mysqlIndexCandidateFromNode(index))
+	}
 	for _, constraint := range node.Constraints {
 		if constraint != nil && constraint.Type != ast.ForeignKeyConstraint {
 			if err := s.addConstraint(node.Name, constraint); err != nil {
@@ -258,6 +261,8 @@ func (s *mysqlForeignKeyIndexSimulation) applyAlterTable(node *ast.AlterTableNod
 			if err := s.replaceIndex(table, typed.Index); err != nil {
 				return err
 			}
+		case *ast.AddIndexOperation:
+			s.addIndex(mysqlIndexCandidateFromNode(typed.Index))
 		}
 	}
 	return nil
