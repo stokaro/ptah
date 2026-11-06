@@ -99,10 +99,10 @@
   "dependencies": {
     "@astrojs/starlight": "0.42.10",
     "@astrojs/starlight-tailwind": "5.0.0",
-    "@tailwindcss/vite": "4.3.4",
+    "@tailwindcss/vite": "4.3.5",
     "astro": "7.4.7",
     "sharp": "^0.35.0",
-    "tailwindcss": "4.3.4"
+    "tailwindcss": "4.3.5"
   },
   "devDependencies": {
     "@astrojs/markdown-satteri": "0.4.7",
