@@ -19,7 +19,7 @@ func validateValueModels(models []*protocol.ValueModel) error {
 		kind           string
 		representation protocol.ValueInput_Representation
 	}
-	seen := make(map[identity]bool)
+	seen := make(map[identity]bool, len(models))
 	for _, model := range models {
 		if model == nil || strings.TrimSpace(model.GetKind()) == "" || model.GetSchemaVersion() == 0 ||
 			strings.TrimSpace(model.GetEncoding()) == "" || strings.TrimSpace(model.GetCanonicalFormat()) == "" {
@@ -36,8 +36,7 @@ func validateValueModels(models []*protocol.ValueModel) error {
 		if err := validateModelSourceFormats(model); err != nil {
 			return err
 		}
-		digest, err := hex.DecodeString(model.GetDefinitionSha256())
-		if err != nil || len(digest) != 32 || model.GetDefinitionSha256() != strings.ToLower(model.GetDefinitionSha256()) {
+		if !lowerHexDigest(model.GetDefinitionSha256()) {
 			return fmt.Errorf("%w: model definition requires a lowercase SHA-256 digest", ErrProtocol)
 		}
 		if err := validateModelDefinition(model); err != nil {
@@ -104,8 +103,48 @@ var canonicalDefinitions = struct {
 
 const maxCanonicalDefinitions = 4096
 
+// verifiedDefinitions holds, by the digest a model claims, a copy of the
+// definition found to be canonical and to have that digest. A request names
+// the engine whose models it checks, and a validator reaches that engine for
+// every table of a request, so hashing each definition again on every visit
+// made a request of 500 tables spend seconds in SHA-256 alone. A definition
+// equal to the copy held under its claimed digest is the one checked, whatever
+// bytes hold it: a provider that builds its description for each call, and so
+// new bytes for each model, is checked once per definition, where a set keyed
+// by the address of the bytes filled up and then checked every model again,
+// most of the CPU of a provider's planning of 500 tables. The set stops
+// growing at maxCanonicalDefinitions digests.
+var verifiedDefinitions = struct {
+	sync.RWMutex
+	held map[string][]byte
+}{held: make(map[string][]byte)}
+
 func validateModelDefinition(model *protocol.ValueModel) error {
-	definition := model.GetDefinitionJson()
+	definition, digest := model.GetDefinitionJson(), model.GetDefinitionSha256()
+	if len(definition) != 0 {
+		verifiedDefinitions.RLock()
+		held, found := verifiedDefinitions.held[digest]
+		verifiedDefinitions.RUnlock()
+		if found && bytes.Equal(held, definition) {
+			return nil
+		}
+	}
+	if err := checkModelDefinition(model, definition); err != nil {
+		return err
+	}
+	if len(definition) != 0 {
+		verifiedDefinitions.Lock()
+		if _, found := verifiedDefinitions.held[digest]; !found && len(verifiedDefinitions.held) < maxCanonicalDefinitions {
+			verifiedDefinitions.held[digest] = bytes.Clone(definition)
+		}
+		verifiedDefinitions.Unlock()
+	}
+	return nil
+}
+
+// checkModelDefinition checks that definition is a canonical nonempty JSON
+// object whose digest is the one model claims.
+func checkModelDefinition(model *protocol.ValueModel, definition []byte) error {
 	digest := sha256.Sum256(definition)
 	canonicalDefinitions.RLock()
 	_, known := canonicalDefinitions.digests[digest]
@@ -139,4 +178,20 @@ func validateModelDisplayName(model *protocol.ValueModel) error {
 		return fmt.Errorf("%w: model display name requires a single-line desired or observed label", ErrProtocol)
 	}
 	return nil
+}
+
+// lowerHexDigest reports a SHA-256 digest written as 64 lowercase hexadecimal
+// digits. It allocates nothing: a request's validation checks the models of
+// its engine for each table it carries, and decoding and lowering each digest
+// made that a second of a plan of 500 tables.
+func lowerHexDigest(digest string) bool {
+	if len(digest) != 2*sha256.Size {
+		return false
+	}
+	for i := range len(digest) {
+		if c := digest[i]; (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
 }

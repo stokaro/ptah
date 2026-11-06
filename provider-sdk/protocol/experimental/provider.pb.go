@@ -3880,7 +3880,11 @@ func (EmbeddingSearchResult_Outcome) EnumDescriptor() ([]byte, []int) {
 	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{339, 0}
 }
 
-// Where an HCL TOP_LEVEL or IN_TABLE block stands among the writer's own.
+// Where an HCL TOP_LEVEL or IN_TABLE block stands among the writer's own,
+// or where a Go DOCUMENT directive stands among the writer's own directives
+// in the comment of the struct that holds a schema's standalone objects.
+// A Go DOCUMENT directive that names no placement stands after the views.
+// The GO_ values are contract 25.26, under source.go-placements.
 type EncodedFragment_Placement int32
 
 const (
@@ -3890,6 +3894,12 @@ const (
 	EncodedFragment_AFTER_TABLES          EncodedFragment_Placement = 3
 	EncodedFragment_AFTER_TRIGGERS        EncodedFragment_Placement = 4
 	EncodedFragment_WITHIN_TABLE          EncodedFragment_Placement = 5
+	// After the schemas, before the types and sequences.
+	EncodedFragment_GO_AFTER_SCHEMAS EncodedFragment_Placement = 6
+	// After the views and materialized views, before the roles.
+	EncodedFragment_GO_AFTER_VIEWS EncodedFragment_Placement = 7
+	// After the default privileges, the last of the writer's own.
+	EncodedFragment_GO_AFTER_PRIVILEGES EncodedFragment_Placement = 8
 )
 
 // Enum value maps for EncodedFragment_Placement.
@@ -3901,6 +3911,9 @@ var (
 		3: "AFTER_TABLES",
 		4: "AFTER_TRIGGERS",
 		5: "WITHIN_TABLE",
+		6: "GO_AFTER_SCHEMAS",
+		7: "GO_AFTER_VIEWS",
+		8: "GO_AFTER_PRIVILEGES",
 	}
 	EncodedFragment_Placement_value = map[string]int32{
 		"PLACEMENT_UNSPECIFIED": 0,
@@ -3909,6 +3922,9 @@ var (
 		"AFTER_TABLES":          3,
 		"AFTER_TRIGGERS":        4,
 		"WITHIN_TABLE":          5,
+		"GO_AFTER_SCHEMAS":      6,
+		"GO_AFTER_VIEWS":        7,
+		"GO_AFTER_PRIVILEGES":   8,
 	}
 )
 
@@ -7148,9 +7164,14 @@ type ObservedCommonObjects struct {
 	ObjectOwners []*ObjectOwner `protobuf:"bytes,8,rep,name=object_owners,json=objectOwners,proto3" json:"object_owners,omitempty"`
 	// Independent of the roles this read describes. When ROLE_MEMBERSHIP is
 	// declared, ObservedRole.member_of is empty and these are the only edges.
-	Memberships   []*RoleMembership `protobuf:"bytes,9,rep,name=memberships,proto3" json:"memberships,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Memberships []*RoleMembership `protobuf:"bytes,9,rep,name=memberships,proto3" json:"memberships,omitempty"`
+	// Why this read leaves roles_out_of_scope out of the description, as a
+	// clause that completes "because": one trimmed line that names no role and
+	// ends without a period. Empty when roles_out_of_scope is. Contract 25.26,
+	// under schema.role-scope-reasons.
+	RolesOutOfScopeReason string `protobuf:"bytes,10,opt,name=roles_out_of_scope_reason,json=rolesOutOfScopeReason,proto3" json:"roles_out_of_scope_reason,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *ObservedCommonObjects) Reset() {
@@ -7244,6 +7265,13 @@ func (x *ObservedCommonObjects) GetMemberships() []*RoleMembership {
 		return x.Memberships
 	}
 	return nil
+}
+
+func (x *ObservedCommonObjects) GetRolesOutOfScopeReason() string {
+	if x != nil {
+		return x.RolesOutOfScopeReason
+	}
+	return ""
 }
 
 type ObjectOwner struct {
@@ -34871,7 +34899,7 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"diagnostic\"\xa1\x01\n" +
 	"\x18PlanningContextInventory\x12>\n" +
 	"\aobjects\x18\x01 \x03(\v2$.ptah.provider.experimental.EnvelopeR\aobjects\x12E\n" +
-	"\bcoverage\x18\x02 \x01(\v2).ptah.provider.experimental.ModelCoverageR\bcoverage\"\x84\x05\n" +
+	"\bcoverage\x18\x02 \x01(\v2).ptah.provider.experimental.ModelCoverageR\bcoverage\"\xbe\x05\n" +
 	"\x15ObservedCommonObjects\x12>\n" +
 	"\x05views\x18\x01 \x03(\v2(.ptah.provider.experimental.ObservedViewR\x05views\x12J\n" +
 	"\tsequences\x18\x02 \x03(\v2,.ptah.provider.experimental.ObservedSequenceR\tsequences\x12>\n" +
@@ -34881,7 +34909,9 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\bcoverage\x18\x06 \x03(\v20.ptah.provider.experimental.CommonObjectCoverageR\bcoverage\x12+\n" +
 	"\x12roles_out_of_scope\x18\a \x03(\tR\x0frolesOutOfScope\x12L\n" +
 	"\robject_owners\x18\b \x03(\v2'.ptah.provider.experimental.ObjectOwnerR\fobjectOwners\x12L\n" +
-	"\vmemberships\x18\t \x03(\v2*.ptah.provider.experimental.RoleMembershipR\vmemberships\"\xa3\x01\n" +
+	"\vmemberships\x18\t \x03(\v2*.ptah.provider.experimental.RoleMembershipR\vmemberships\x128\n" +
+	"\x19roles_out_of_scope_reason\x18\n" +
+	" \x01(\tR\x15rolesOutOfScopeReason\"\xa3\x01\n" +
 	"\vObjectOwner\x12=\n" +
 	"\x06object\x18\x01 \x01(\v2%.ptah.provider.experimental.ReferenceR\x06object\x12\x14\n" +
 	"\x05owner\x18\x02 \x01(\tR\x05owner\x12+\n" +
@@ -37415,11 +37445,11 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\x05parts\x18\x02 \x03(\v2-.ptah.provider.experimental.EncodedSourcePartR\x05parts\"\xb0\x01\n" +
 	"\x11EncodedSourcePart\x12F\n" +
 	"\bfragment\x18\x01 \x01(\v2*.ptah.provider.experimental.SourceFragmentR\bfragment\x12S\n" +
-	"\tplacement\x18\x02 \x01(\x0e25.ptah.provider.experimental.EncodedFragment.PlacementR\tplacement\"\xce\x02\n" +
+	"\tplacement\x18\x02 \x01(\x0e25.ptah.provider.experimental.EncodedFragment.PlacementR\tplacement\"\x91\x03\n" +
 	"\x0fEncodedFragment\x12F\n" +
 	"\bfragment\x18\x01 \x01(\v2*.ptah.provider.experimental.SourceFragmentR\bfragment\x12\x1b\n" +
 	"\tvalue_ids\x18\x02 \x03(\tR\bvalueIds\x12S\n" +
-	"\tplacement\x18\x03 \x01(\x0e25.ptah.provider.experimental.EncodedFragment.PlacementR\tplacement\"\x80\x01\n" +
+	"\tplacement\x18\x03 \x01(\x0e25.ptah.provider.experimental.EncodedFragment.PlacementR\tplacement\"\xc3\x01\n" +
 	"\tPlacement\x12\x19\n" +
 	"\x15PLACEMENT_UNSPECIFIED\x10\x00\x12\x10\n" +
 	"\fBEFORE_TYPES\x10\x01\x12\x0e\n" +
@@ -37427,7 +37457,10 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"USER_TYPES\x10\x02\x12\x10\n" +
 	"\fAFTER_TABLES\x10\x03\x12\x12\n" +
 	"\x0eAFTER_TRIGGERS\x10\x04\x12\x10\n" +
-	"\fWITHIN_TABLE\x10\x05\"A\n" +
+	"\fWITHIN_TABLE\x10\x05\x12\x14\n" +
+	"\x10GO_AFTER_SCHEMAS\x10\x06\x12\x12\n" +
+	"\x0eGO_AFTER_VIEWS\x10\a\x12\x17\n" +
+	"\x13GO_AFTER_PRIVILEGES\x10\b\"A\n" +
 	"\n" +
 	"EncodeLoss\x12\x19\n" +
 	"\bvalue_id\x18\x01 \x01(\tR\avalueId\x12\x18\n" +

@@ -73,6 +73,7 @@ func ValidateEncodeSourceRequest(description *protocol.Description, request *pro
 		bindings[binding.GetId()] = binding
 	}
 	ids := make(map[string]bool)
+	checks := new(targetChecks)
 	for _, value := range request.GetValues() {
 		// The envelope check below refuses an empty ID.
 		id := value.GetValue().GetId()
@@ -80,7 +81,7 @@ func ValidateEncodeSourceRequest(description *protocol.Description, request *pro
 			return encodeError("a value needs a unique ID")
 		}
 		ids[id] = true
-		if err := validateEncodeValue(description, request, bindings, value); err != nil {
+		if err := validateEncodeValue(checks, description, request, bindings, value); err != nil {
 			return err
 		}
 	}
@@ -95,12 +96,14 @@ func ValidateEncodeSourceRequest(description *protocol.Description, request *pro
 	return validateEncodeColumns(request, bindings)
 }
 
-func validateEncodeValue(description *protocol.Description, request *protocol.EncodeSourceRequest, bindings map[string]*protocol.SourceBinding, value *protocol.EncodeSourceValue) error {
+func validateEncodeValue(
+	checks *targetChecks, description *protocol.Description, request *protocol.EncodeSourceRequest, bindings map[string]*protocol.SourceBinding, value *protocol.EncodeSourceValue,
+) error {
 	normalized := value.GetValue()
 	envelope := normalized.GetValue()
 	normalization := &protocol.NormalizeValuesRequest{Engine: request.GetEngine(), TargetFeatures: request.GetTargetFeatures(),
 		Values: []*protocol.ValueInput{{Id: normalized.GetId(), Representation: protocol.ValueInput_DESIRED, Value: envelope}}}
-	if err := ValidateNormalizedValues(description, normalization, &protocol.NormalizedValues{Complete: true, Values: []*protocol.NormalizedValue{normalized}}); err != nil {
+	if err := validateNormalizedValues(checks, description, normalization, &protocol.NormalizedValues{Complete: true, Values: []*protocol.NormalizedValue{normalized}}); err != nil {
 		return err
 	}
 	owner := envelope.GetOwner()
@@ -406,6 +409,13 @@ func validateEncodedPlacement(encoded *protocol.EncodedFragment) error {
 	if _, known := protocol.EncodedFragment_Placement_name[int32(placement)]; !known {
 		return encodeError("unknown placement")
 	}
+	if goPlacement(placement) {
+		// See validateGoPlacements for the negotiation.
+		if encoded.GetFragment().GetGoDirective().GetScope() != protocol.GoSourceDirective_DOCUMENT {
+			return encodeError("a Go placement belongs to a Go directive of the document")
+		}
+		return nil
+	}
 	if (block != nil && hclOwnBlock(block.GetSite())) != (placement != protocol.EncodedFragment_PLACEMENT_UNSPECIFIED) {
 		return encodeError("an HCL block of the owner's says where it stands, and no other fragment does")
 	}
@@ -415,6 +425,9 @@ func validateEncodedPlacement(encoded *protocol.EncodedFragment) error {
 // validateEncodedExtras checks the header limits and the Go field types.
 func validateEncodedExtras(engine *protocol.Engine, request *protocol.EncodeSourceRequest, result *protocol.EncodedSource) error {
 	if err := validateEncodedLimits(engine, request, result); err != nil {
+		return err
+	}
+	if err := validateGoPlacements(engine, result); err != nil {
 		return err
 	}
 	for _, limit := range result.GetLimits() {

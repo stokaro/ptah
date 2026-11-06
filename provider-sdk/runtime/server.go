@@ -24,9 +24,23 @@ import (
 )
 
 const (
-	// MaxMessageBytes bounds each request and response in both directions.
+	// MaxMessageBytes bounds each request and response in both directions
+	// between a host and a provider that do not both list
+	// provider.LargeMessagesFeature.
 	MaxMessageBytes = 4 << 20
-	// CallTimeout bounds calls whose caller supplied no earlier deadline.
+	// LargeMessageBytes bounds each request and response in both directions
+	// between a host and a provider that both list
+	// provider.LargeMessagesFeature. The server receives and sends up to it
+	// with every host; a host that does not list the feature sends no more
+	// than MaxMessageBytes and receives no more either.
+	LargeMessageBytes = 64 << 20
+	// CallTimeout bounds a call whose work does not grow with a schema, when
+	// its caller supplied no earlier deadline: opening and closing a session,
+	// a lock, a transaction, a history or a seed call, a statement. A call
+	// that reads, sends or plans a schema runs until its caller's context
+	// ends (see [Client.Inspect], [Client.Execute] and the offline services):
+	// its work grows with the database, and a fixed bound failed a read or a
+	// plan of a large one that the database answers in full.
 	CallTimeout = 30 * time.Second
 	// ProvisionTimeout bounds a dev database call that has no earlier deadline:
 	// starting a container may pull an image, and a cleanup drops every object
@@ -172,11 +186,13 @@ func Serve(server Server) error {
 }
 
 // grpcServer returns the factory go-plugin builds the provider's gRPC server
-// with: messages bounded in both directions, and the reasons check on every
-// call's error, so no service can send a reason the host did not negotiate.
+// with: messages bounded in both directions by LargeMessageBytes, model
+// references resolved and
+// sent where the host negotiated them, and the reasons check on every call's
+// error, so no service can send a reason the host did not negotiate.
 func grpcServer(adapter *serverAdapter) func([]grpc.ServerOption) *grpc.Server {
 	return func(options []grpc.ServerOption) *grpc.Server {
-		options = append(options, grpc.MaxRecvMsgSize(MaxMessageBytes), grpc.MaxSendMsgSize(MaxMessageBytes), grpc.ChainUnaryInterceptor(adapter.reasons))
+		options = append(options, grpc.MaxRecvMsgSize(LargeMessageBytes), grpc.MaxSendMsgSize(LargeMessageBytes), grpc.ChainUnaryInterceptor(adapter.references, adapter.reasons))
 		return grpc.NewServer(options...)
 	}
 }

@@ -640,6 +640,11 @@ message ObservedCommonObjects {
   // Independent of the roles this read describes. When ROLE_MEMBERSHIP is
   // declared, ObservedRole.member_of is empty and these are the only edges.
   repeated RoleMembership memberships = 9;
+  // Why this read leaves roles_out_of_scope out of the description, as a
+  // clause that completes "because": one trimmed line that names no role and
+  // ends without a period. Empty when roles_out_of_scope is. Contract 25.26,
+  // under schema.role-scope-reasons.
+  string roles_out_of_scope_reason = 10;
 }
 message ObjectOwner {
   Reference object = 1;
@@ -4013,7 +4018,11 @@ message EncodedFragment {
   SourceFragment fragment = 1;
   // The IDs of the input values the fragment writes.
   repeated string value_ids = 2;
-  // Where an HCL TOP_LEVEL or IN_TABLE block stands among the writer's own.
+  // Where an HCL TOP_LEVEL or IN_TABLE block stands among the writer's own,
+  // or where a Go DOCUMENT directive stands among the writer's own directives
+  // in the comment of the struct that holds a schema's standalone objects.
+  // A Go DOCUMENT directive that names no placement stands after the views.
+  // The GO_ values are contract 25.26, under source.go-placements.
   enum Placement {
     PLACEMENT_UNSPECIFIED = 0;
     BEFORE_TYPES = 1;
@@ -4021,6 +4030,12 @@ message EncodedFragment {
     AFTER_TABLES = 3;
     AFTER_TRIGGERS = 4;
     WITHIN_TABLE = 5;
+    // After the schemas, before the types and sequences.
+    GO_AFTER_SCHEMAS = 6;
+    // After the views and materialized views, before the roles.
+    GO_AFTER_VIEWS = 7;
+    // After the default privileges, the last of the writer's own.
+    GO_AFTER_PRIVILEGES = 8;
   }
   Placement placement = 3;
 }

@@ -82,6 +82,7 @@ func Start(ctx context.Context, options Options) (*Client, error) {
 	defer stopCancel()
 	command := exec.CommandContext(life, options.Executable) // #nosec G204 -- the caller explicitly authorizes an absolute, checksum-pinned executable
 	command.Env = append(slices.Clone(options.Environment), parentEnvironment+"="+strconv.Itoa(os.Getpid()))
+	exchange := &negotiatedTransport{}
 	process := plugin.NewClient(&plugin.ClientConfig{
 		HandshakeConfig: handshake,
 		Plugins:         map[string]plugin.Plugin{transportName: &transport{}},
@@ -89,7 +90,7 @@ func Start(ctx context.Context, options Options) (*Client, error) {
 		SecureConfig: &plugin.SecureConfig{Checksum: checksum, Hash: sha256.New()},
 		AutoMTLS:     true, SkipHostEnv: true, StartTimeout: timeout,
 		Logger: hclog.NewNullLogger(), SyncStdout: io.Discard, SyncStderr: io.Discard,
-		GRPCDialOptions: []grpc.DialOption{grpc.WithDisableRetry(), grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(MaxMessageBytes), grpc.MaxCallSendMsgSize(MaxMessageBytes))},
+		GRPCDialOptions: dialOptions(exchange),
 	})
 	client := &Client{process: process, cancel: cancelLife}
 	connection, err := process.Client()
@@ -124,11 +125,20 @@ func Start(ctx context.Context, options Options) (*Client, error) {
 		return nil, fmt.Errorf("%w: executable provider identity differs from the trusted manifest", provider.ErrProtocol)
 	}
 	client.description = proto.CloneOf(description)
+	exchange.negotiated(client.description)
 	if !stopCancel() || startup.Err() != nil {
 		client.Close()
 		return nil, startupError(startup)
 	}
 	return client, nil
+}
+
+// dialOptions are the options a host dials its provider with: no retries,
+// replies up to LargeMessageBytes, and requests up to MaxMessageBytes until
+// exchange negotiates more.
+func dialOptions(exchange *negotiatedTransport) []grpc.DialOption {
+	return []grpc.DialOption{grpc.WithDisableRetry(), grpc.WithChainUnaryInterceptor(exchange.intercept),
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(LargeMessageBytes), grpc.MaxCallSendMsgSize(MaxMessageBytes))}
 }
 
 // negotiate checks a provider's description against this host: the contract
@@ -199,13 +209,14 @@ func (c *Client) CloseSession(ctx context.Context, id string) error {
 }
 
 // Inspect returns only a complete, validated snapshot. A transport failure
-// yields an error and no schema, even if the database could be empty.
+// yields an error and no schema, even if the database could be empty. The
+// caller's context alone bounds the read, which grows with the database.
 func (c *Client) Inspect(ctx context.Context, request *protocol.InspectRequest) (*protocol.Schema, error) {
 	request = proto.CloneOf(request)
 	if request.GetSessionId() == "" {
 		return nil, fmt.Errorf("%w: inspection session is missing", provider.ErrProtocol)
 	}
-	call, cancel := context.WithTimeout(ctx, CallTimeout)
+	call, cancel := context.WithCancel(ctx)
 	defer cancel()
 	result, err := c.rpc.Inspect(call, proto.CloneOf(request))
 	if err != nil {
@@ -222,18 +233,20 @@ func (c *Client) Inspect(ctx context.Context, request *protocol.InspectRequest) 
 
 // Render validates the complete batch and exposes no prefix on failure.
 func (c *Client) Render(ctx context.Context, request *protocol.RenderRequest) (*protocol.RenderResult, error) {
-	return callOffline(ctx, c.description, proto.CloneOf(request), "render", provider.ValidateRenderRequest, provider.ValidateRenderedBatch, c.rpc.Render)
+	return callOffline(ctx, c.description, provider.CloneSharingModels(request), "render", provider.ValidateRenderRequest, provider.ValidateRenderedBatch, c.rpc.Render)
 }
 
 // Execute sends a validated batch once. Any lost or invalid reply is an unknown
 // outcome. A request canceled before dispatch sends nothing. Request IDs do not
 // enable replay, and this method performs no application-level retries.
 //
-// A request with a statement timeout extends the call's bound by that timeout
-// for each unit, so the provider's stop at the timeout reaches the caller as a
-// confirmed outcome rather than a lost reply. A caller's earlier deadline
-// still applies. A stop at the timeout returns an error matching
-// provider.ErrStatementTimeout.
+// A request with a statement timeout is bounded by CallTimeout and that
+// timeout for each unit, so the provider's stop at the timeout reaches the
+// caller as a confirmed outcome rather than a lost reply. A request without
+// one is bounded by the caller's context alone: a batch may create hundreds
+// of tables, and a unit may build an index over a large table. A caller's
+// earlier deadline applies either way. A stop at the timeout returns an
+// error matching provider.ErrStatementTimeout.
 //
 // Under provider.MigrationSplitFeature, a NOT_APPLIED reply in a caller
 // transaction may set transaction_aborted: the engine aborted the
@@ -258,7 +271,7 @@ func (c *Client) Execute(ctx context.Context, request *protocol.ExecuteRequest) 
 	if err := provider.ValidateExecuteRequest(c.description, request); err != nil {
 		return nil, err
 	}
-	call, cancel := context.WithTimeout(ctx, executeTimeout(request))
+	call, cancel := withinBound(ctx, executeTimeout(request))
 	defer cancel()
 	result, err := c.rpc.Execute(call, request)
 	if err != nil {
@@ -276,13 +289,14 @@ func (c *Client) Execute(ctx context.Context, request *protocol.ExecuteRequest) 
 	return result, nil
 }
 
-// executeTimeout is CallTimeout, plus the statement timeout of every unit of a
-// request that sets one, saturating rather than wrapping.
+// executeTimeout is CallTimeout plus the statement timeout of every unit of a
+// request that sets one, saturating rather than wrapping, and zero, no bound,
+// for a request that sets none.
 func executeTimeout(request *protocol.ExecuteRequest) time.Duration {
 	limit := time.Duration(request.GetStatementTimeoutNanoseconds())
 	units := time.Duration(len(request.GetUnits()))
 	if limit <= 0 {
-		return CallTimeout
+		return 0
 	}
 	if limit > (math.MaxInt64-CallTimeout)/units {
 		return math.MaxInt64
@@ -315,8 +329,9 @@ func validateOptions(options Options) ([]byte, error) {
 }
 
 // AnalyzeSQL accepts only complete owner-defined boundaries and safety facts.
+// The caller's context alone bounds the analysis, which grows with the SQL.
 func (c *Client) AnalyzeSQL(ctx context.Context, request *protocol.AnalyzeSQLRequest) (*protocol.SQLAnalysis, error) {
-	call, cancel := context.WithTimeout(ctx, CallTimeout)
+	call, cancel := context.WithCancel(ctx)
 	defer cancel()
 	result, err := c.rpc.AnalyzeSQL(call, request)
 	if err != nil {

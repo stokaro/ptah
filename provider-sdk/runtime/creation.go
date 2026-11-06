@@ -7,13 +7,12 @@ import (
 	"github.com/stokaro/ptah/provider-sdk/provider"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 )
 
 // ProjectTableCreations predicts effects for a complete captured batch offline.
 // Invalid replies and cancellation expose no prefix or inspection evidence.
 func (c *Client) ProjectTableCreations(ctx context.Context, request *protocol.ProjectTableCreationsRequest) (*protocol.ProjectedTableCreations, error) {
-	return callOffline(ctx, c.description, proto.CloneOf(request), "project table creations", provider.ValidateCreationRequest, provider.ValidateProjectedCreations, c.rpc.ProjectTableCreations)
+	return callOffline(ctx, c.description, provider.CloneSharingModels(request), "project table creations", provider.ValidateCreationRequest, provider.ValidateProjectedCreations, c.rpc.ProjectTableCreations)
 }
 
 func (s *serverAdapter) ProjectTableCreations(ctx context.Context, request *protocol.ProjectTableCreationsRequest) (*protocol.ProjectedTableCreations, error) {

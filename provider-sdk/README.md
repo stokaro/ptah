@@ -55,10 +55,11 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.25. Each released SDK speaks one contract:
+speaks contract 25.26. Each released SDK speaks one contract:
 
 | SDK release | Contract |
 | --- | --- |
+| `provider-sdk/v0.22.0` | 25.25 |
 | `provider-sdk/v0.21.0` | 25.24 |
 | `provider-sdk/v0.20.0` | 25.22 |
 | `provider-sdk/v0.19.0` | 25.21 |
@@ -130,6 +131,10 @@ returns to 0.
   Contract 25.23 adds [the transaction owner of a lint check](#transaction-owner-of-a-lint-check).
   Contract 25.24 adds [index kinds](#index-kinds).
   Contract 25.25 adds [model predecessors](#model-predecessors).
+  Contract 25.26 adds [role scope reasons](#role-scope-reasons),
+  [Go placements](#go-placements),
+  [primary key changes](#primary-key-changes) and
+  [model references and large messages](#model-references-and-large-messages).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -164,7 +169,9 @@ does not oblige a peer to use it.
   `schema.sql-facets`, `models.report-counts`, `schema.observed-index-facets`,
   `schema.subtree-coverage`, `schema.password-inputs`, `source.hcl-platform`,
   `engine.default-capabilities`, `lint.transaction-owner`,
-  `source.index-kinds` and `models.predecessors`. The embedding store's calls,
+  `source.index-kinds`, `models.predecessors`, `schema.role-scope-reasons`,
+  `source.go-placements`, `planning.primary-key-changes`, `models.references`
+  and `transport.large-messages`. The embedding store's calls,
   `PrepareCommonObjects`, `ReverseChanges` and `ReportValues` are new, and each
   comes with an addition to `Engine`, so a host lists the feature to receive
   any of them. `SplitMigration` is new too, and comes with the abort flags of
@@ -520,9 +527,26 @@ they are not a security sandbox.
 
 Mutual TLS authenticates the local gRPC connection. The bootstrap cookie only
 identifies the expected launch protocol. Messages are limited to 4 MiB in each
-direction. Startup defaults to ten seconds; service calls are limited to thirty
-seconds or the caller's earlier deadline. Raw provider logs and RPC error text
-are discarded because they may contain credentials.
+direction, and to 64 MiB between a host and a provider that both list
+`transport.large-messages` ([large messages](#model-references-and-large-messages)).
+Raw provider logs and RPC error text are discarded because they may contain
+credentials.
+
+Startup defaults to ten seconds. A call whose work grows with a schema runs
+until the caller's context ends
+([ADR 0080](../docs/adr/0080-a-call-that-grows-with-a-schema-is-bounded-by-its-caller.md)):
+
+- inspection;
+- every offline service: validation, preparation, comparison, planning,
+  rendering, source decoding and encoding;
+- SQL analysis;
+- an execution that sets no statement timeout.
+
+The database answers a read or a plan of 500 tables in full, and a fixed bound
+failed it on a loaded runner. Every other service call is limited to thirty
+seconds (`runtime.CallTimeout`) or the caller's earlier deadline, and an
+execution with a statement timeout to thirty seconds plus that timeout for each
+unit.
 
 The context passed to `Start` bounds startup. The returned client owns the process
 until `Close`, which is safe to call repeatedly. Session handles become invalid
@@ -1758,6 +1782,76 @@ model the provider declares, and a former identity named twice in an engine.
 Without the feature negotiated, the description the host receives holds no
 predecessor.
 
+## Role scope reasons
+
+[ADR 0076](../docs/adr/0076-a-provider-says-why-a-read-leaves-roles-out.md)
+decides this field. `schema.role-scope-reasons` adds
+`ObservedCommonObjects.roles_out_of_scope_reason`: the owner's own words for
+why a read leaves the roles in `roles_out_of_scope` out of the description.
+A host prints them in the note that counts those roles, after "because", so
+the reason is a clause: one trimmed line of at most 300 bytes that does not
+end with a period. The note never names a role, and neither does the reason.
+
+A read sets the reason only with a role out of scope. The provider lists the
+feature, and so does each engine that carries the `ROLE` common kind. A host
+that does not list the feature, or that does not list `schema.common-objects`,
+receives an engine without it, and a read that gives such a host a reason is
+refused. Without a reason, the host words the note from what it knows of the
+dialect.
+
+## Go placements
+
+[ADR 0077](../docs/adr/0077-a-provider-says-where-its-go-directives-stand.md)
+decides these values. `source.go-placements` adds `GO_AFTER_SCHEMAS`,
+`GO_AFTER_VIEWS` and `GO_AFTER_PRIVILEGES` to `EncodedFragment.Placement`. An
+encoded Go `DOCUMENT` directive may say where it stands among the Go writer's
+own directives in the comment of the struct that holds a schema's standalone
+objects: after the schemas, after the views, or after the default privileges,
+the last of the writer's own. A directive that says nothing stands after the
+views, as it does without the feature. Within one placement the writer keeps
+the order of the provider's parts.
+
+A Go placement belongs to a Go `DOCUMENT` directive only, and an HCL value to an
+HCL block of the owner's only. The provider lists the feature, and so does each
+engine that places its directives, beside `source.encode`. A reply that places
+a directive for a host that did not list the feature is refused.
+
+## Model references and large messages
+
+[ADR 0079](../docs/adr/0079-a-described-model-travels-by-reference.md) decides
+these two transport features. Each is a feature of the provider alone, which
+the provider lists in `Description.features` and the host in its host
+features.
+
+`models.references` sends a described model by reference. A coverage record
+names the model it covers with a `ValueModel`, and the host captures a
+coverage for each state of each table, so a request repeated every model's
+definition once per table. Where both sides list the feature, the SDK replaces
+each `ValueModel` outside `Describe` that equals a model of the negotiated
+description with `provider.ModelReference`: the `kind`, `representation`,
+`schema_version` and `definition_sha256` alone. A model the description does
+not declare, or declares differently in two engines, travels whole.
+
+The receiving SDK replaces each reference with the described model before a
+service or a validator reads the message, so neither a host adapter nor a
+provider service sees one. A server answers a reference it cannot resolve
+with `InvalidArgument`; a client reports such a reply as malformed. Without
+the feature a reference is not resolved, and validation refuses it as a model
+the description does not declare.
+
+`transport.large-messages` raises the bound on one message from 4 MiB
+(`runtime.MaxMessageBytes`) to 64 MiB (`runtime.LargeMessageBytes`). The SDK
+server receives and sends up to 64 MiB with any host. The SDK client sends
+more than 4 MiB only where both sides list the feature, so a provider of an
+earlier contract meets the refusal it meets without the feature. A host keeps
+an embedding batch within 4 MiB whatever it negotiated.
+
+`provider.ReferenceModels` and `provider.ResolveModelReferences` are the two
+steps, for a peer that does not use the SDK's runtime.
+`provider.CloneSharingModels` copies a message so that each model message it
+holds is copied once: the SDK copies a request with it before it sends the
+request and before it hands the request to a service.
+
 ## Source encoding
 
 [ADR 0037](../docs/adr/0037-a-provider-encodes-the-source-it-decodes.md)
@@ -2129,6 +2223,27 @@ its members or inventing a name. The common source declaration owns the
 writable key; native observations can retain independent evidence.
 [ADR 0051](../docs/adr/0051-inspected-primary-keys-retain-their-common-order.md)
 defines the ownership and export controls.
+
+## Primary key changes
+
+[ADR 0078](../docs/adr/0078-a-provider-plans-the-change-of-a-primary-key.md)
+decides this feature. `planning.primary-key-changes` states that an engine
+plans the change of the primary key of a table whose lifecycle it owns. The
+provider and the engine list it. The engine needs
+`schema.observed-primary-keys` and a planning service with parent kinds, and
+it does not list `schema.common-table-identity.v1`, under which the host plans
+a table's operations itself. `ValidateDescription` refuses any other
+declaration.
+
+With the feature negotiated, a host that finds a declared key different from
+the key a read reports, in its members or in their order, hands the change to
+the engine as an `ALTER` of the table in `PlanFeatures`. The table's
+`desired` declaration carries the declared key in `primary_key`, its
+`current` observation carries the held key as a `PRIMARY KEY` entry of
+`constraints` with its columns in key order, and no common step stands for
+the change. The engine plans it, for example as a table rebuild, or refuses
+the request in its own words. A host that has not negotiated the feature
+refuses a plan with such a change before it plans, naming the table.
 
 ## Common index observations
 

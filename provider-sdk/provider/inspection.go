@@ -62,8 +62,9 @@ func InspectionValues(description *protocol.Description, request *protocol.Inspe
 		return nil, err
 	}
 	result := &protocol.NormalizeValuesRequest{Engine: snapshot.GetEngine(), TargetFeatures: slices.Clone(snapshot.GetTargetFeatures())}
+	subjects := indexCoverageSubjects(coverage)
 	for i, value := range values {
-		if !inspectionSubjectCovered(coverage, value) {
+		if !subjects.covered(value) {
 			return nil, fmt.Errorf("%w: inspected value lacks complete subject coverage", ErrProtocol)
 		}
 		result.Values = append(result.Values, &protocol.ValueInput{Id: strconv.Itoa(i), Representation: protocol.ValueInput_OBSERVED, Value: proto.CloneOf(value)})
@@ -166,13 +167,50 @@ func ColumnReference(table *protocol.Reference, name string) *protocol.Reference
 	return result
 }
 
-func inspectionSubjectCovered(coverage *protocol.ModelCoverage, value *protocol.Envelope) bool {
+// coverageSubjects finds the subject record of a coverage that a scan of its
+// subjects in order finds first for a kind and a subject, by a key that holds
+// every field compareReferences compares. A snapshot covers each of its
+// values by a record, and scanning every record for every value grew with the
+// square of the tables.
+type coverageSubjects map[string]*protocol.ModelSubjectCoverage
+
+func indexCoverageSubjects(coverage *protocol.ModelCoverage) coverageSubjects {
+	index := make(coverageSubjects, len(coverage.GetSubjects()))
 	for _, record := range coverage.GetSubjects() {
-		if record.GetKind() == value.GetKind() && compareReferences(record.GetSubject(), value.GetOwner()) == 0 {
-			return record.GetKnowledge().GetState() == protocol.ModelKnowledge_COMPLETE
+		key := subjectKey(record.GetKind(), record.GetSubject())
+		if _, seen := index[key]; !seen {
+			index[key] = record
 		}
 	}
-	return false
+	return index
+}
+
+// covered reports whether the first record for value's kind and owner holds
+// complete knowledge.
+func (s coverageSubjects) covered(value *protocol.Envelope) bool {
+	record, found := s[subjectKey(value.GetKind(), value.GetOwner())]
+	return found && record.GetKnowledge().GetState() == protocol.ModelKnowledge_COMPLETE
+}
+
+// subjectKey writes kind and every field of ref compareReferences compares,
+// each with its length, so two keys are equal exactly when the kinds are and
+// compareReferences answers 0.
+func subjectKey(kind string, ref *protocol.Reference) string {
+	var key strings.Builder
+	write := func(parts ...string) {
+		key.WriteString(strconv.Itoa(len(parts)))
+		for _, part := range parts {
+			key.WriteByte('|')
+			key.WriteString(strconv.Itoa(len(part)))
+			key.WriteByte(':')
+			key.WriteString(part)
+		}
+	}
+	write(kind, ref.GetEngine(), ref.GetDatabase(), ref.GetCatalog(), ref.GetSchema())
+	write(ref.GetPath()...)
+	write(ref.GetKind(), ref.GetName())
+	write(ref.GetOverload()...)
+	return key.String()
 }
 
 // ValidateNormalizedInspection checks the owner's complete normalization reply
@@ -186,15 +224,10 @@ func ValidateNormalizedInspection(description *protocol.Description, request *pr
 	if err := ValidateNormalizedValues(description, batch, normalized); err != nil {
 		return err
 	}
+	subjects := indexCoverageSubjects(snapshot.GetCoverage())
 	for _, value := range normalized.GetValues() {
-		matched := false
-		for _, record := range snapshot.GetCoverage().GetSubjects() {
-			if record.GetKind() == value.GetValue().GetKind() && compareReferences(record.GetSubject(), value.GetValue().GetOwner()) == 0 {
-				matched = compareReferences(record.GetNormalizedSubject(), value.GetNormalizedOwner()) == 0
-				break
-			}
-		}
-		if !matched {
+		record, found := subjects[subjectKey(value.GetValue().GetKind(), value.GetValue().GetOwner())]
+		if !found || compareReferences(record.GetNormalizedSubject(), value.GetNormalizedOwner()) != 0 {
 			return fmt.Errorf("%w: normalized inspection subject differs from coverage", ErrProtocol)
 		}
 	}
