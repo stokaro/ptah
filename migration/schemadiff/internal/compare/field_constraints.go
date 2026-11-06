@@ -31,7 +31,44 @@ func buildTablePrimaryKeyColumnSets(
 	return result
 }
 
-// isFieldLevelConstraint determines if a database constraint represents a field-level constraint
+// fieldLevelConstraints decides which database constraints the desired
+// fields already state; see [fieldLevelConstraints.has]. A comparison builds
+// it once: built for each database constraint, its lookups made a read of 500
+// tables spend seconds on them, the work growing with the tables, the
+// constraints and the fields together.
+type fieldLevelConstraints struct {
+	desired   *schemamodel.Database
+	semantics identifier.Semantics
+	// fields maps table.column to the field that declares it.
+	fields map[tableMemberKey]schemamodel.Field
+	// primaryKeys maps a table to the columns of its table-level primary key
+	// (Table.PrimaryKey), which are synthesized as a table-level PRIMARY KEY
+	// constraint.
+	primaryKeys map[tableIdentity]map[string]struct{}
+}
+
+// newFieldLevelConstraints indexes the fields of desired by the table each
+// belongs to: the first table of the field's struct, or the struct's own name
+// where no table has it.
+func newFieldLevelConstraints(desired *schemamodel.Database, semantics identifier.Semantics) fieldLevelConstraints {
+	tables := make(map[string]string, len(desired.Tables))
+	for _, table := range desired.Tables {
+		if _, seen := tables[table.StructName]; !seen {
+			tables[table.StructName] = table.QualifiedName()
+		}
+	}
+	fields := make(map[tableMemberKey]schemamodel.Field, len(desired.Fields))
+	for _, field := range desired.Fields {
+		tableName := field.StructName
+		if qualified, found := tables[field.StructName]; found {
+			tableName = qualified
+		}
+		fields[newTableMemberKey(tableName, field.Name, semantics)] = field
+	}
+	return fieldLevelConstraints{desired: desired, semantics: semantics, fields: fields, primaryKeys: buildTablePrimaryKeyColumnSets(desired, semantics)}
+}
+
+// has determines if a database constraint represents a field-level constraint
 // that is already represented in the field definitions (NOT NULL, PRIMARY KEY).
 // A column's UNIQUE is decided with every other key of its table in view; see
 // [readColumnKeys].
@@ -47,29 +84,8 @@ func buildTablePrimaryKeyColumnSets(
 // name, or a composite key led by the column, is kept beside the one the plan
 // adds, and the table ends with two foreign keys where the declaration has one
 // (stokaro/ptah#3718).
-func isFieldLevelConstraint(
-	dbConstraint catalog.Constraint,
-	desired *schemamodel.Database,
-	semantics identifier.Semantics,
-) bool {
-	// Create a map of table.column -> field for quick lookup
-	fieldMap := make(map[tableMemberKey]schemamodel.Field)
-	// tablePKColumns maps a qualified table name to the set of columns in its
-	// table-level primary key (Table.PrimaryKey), which are synthesized as a
-	// table-level PRIMARY KEY constraint.
-	tablePKColumns := buildTablePrimaryKeyColumnSets(desired, semantics)
-	for _, field := range desired.Fields {
-		// Get table name for this field
-		tableName := field.StructName // default to struct name
-		for _, table := range desired.Tables {
-			if table.StructName == field.StructName {
-				tableName = table.QualifiedName()
-				break
-			}
-		}
-		key := newTableMemberKey(tableName, field.Name, semantics)
-		fieldMap[key] = field
-	}
+func (f fieldLevelConstraints) has(dbConstraint catalog.Constraint) bool {
+	desired, semantics, fieldMap, tablePKColumns := f.desired, f.semantics, f.fields, f.primaryKeys
 
 	// Check if this constraint corresponds to a field-level constraint
 	switch dbConstraint.Type {
