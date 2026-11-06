@@ -50,18 +50,39 @@ func TestSchemaApplyReferencedKeyOrderE2E_PostgreSQL(t *testing.T) {
 	}
 }
 
-// TestSchemaApplyReferencedKeyOrderE2E_CockroachDB takes the same order on creation.
+// TestSchemaApplyReferencedKeyOrderE2E_CockroachDB takes the same order on creation, and
+// when the plan moves the key under the foreign key. The move stands in one statement,
+// the server keeps the foreign key through it, and the rows stay.
 func TestSchemaApplyReferencedKeyOrderE2E_CockroachDB(t *testing.T) {
-	c := qt.New(t)
-	target, _ := cockroachVisibilityDatabase(c, c.Context(), "CREATE TABLE keep (id INT8 PRIMARY KEY);\n")
-	desired := referencedKeyReversed + referencedKeyChild
+	const foreignKeys = "SELECT count(*) FROM pg_constraint WHERE conrelid = 'public.child'::regclass AND contype = 'f'"
+	tests := []struct {
+		name, built string
+		wantRows    int
+	}{
+		{name: "the plan creates the tables", built: "CREATE TABLE keep (id INT8 PRIMARY KEY);\n"},
+		{
+			name: "the plan moves the key under the foreign key",
+			built: "CREATE TABLE parent (a INT8 NOT NULL, b INT8 NOT NULL, PRIMARY KEY (a, b));\n" + referencedKeyChild +
+				"INSERT INTO parent VALUES (1, 2);\nINSERT INTO child VALUES (1, 1, 2);\n",
+			wantRows: 1,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			target, _ := cockroachVisibilityDatabase(c, c.Context(), test.built)
+			desired := referencedKeyReversed + referencedKeyChild
 
-	run := keyedApply(c, target, desired)
+			run := keyedApply(c, target, desired)
 
-	c.Assert(run.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", run.Stdout, run.Stderr))
-	c.Assert(columnKeyString(c, target, referencedKeyRead), qt.Equals, "PRIMARY KEY (b ASC, a ASC)")
-	again := keyedApply(c, target, desired)
-	c.Assert(again.Stdout, qt.Contains, "Schema is synced")
+			c.Assert(run.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", run.Stdout, run.Stderr))
+			c.Assert(columnKeyString(c, target, referencedKeyRead), qt.Equals, "PRIMARY KEY (b ASC, a ASC)")
+			c.Assert(readInt(c, target, foreignKeys), qt.Equals, 1)
+			c.Assert(readInt(c, target, "SELECT count(*) FROM child"), qt.Equals, test.wantRows)
+			again := keyedApply(c, target, desired)
+			c.Assert(again.Stdout, qt.Contains, "Schema is synced")
+		})
+	}
 }
 
 // TestSchemaApplyReferencedKeyOrderE2E_FailurePath is the control: MySQL answers this
