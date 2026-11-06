@@ -1550,7 +1550,7 @@ func (p *Planner) dropIndexNode(diff *difftypes.SchemaDiff, ref difftypes.IndexR
 // changes: each one that holds the name a column's own key takes, and what a
 // foreign key or a column change the plan makes cannot run over.
 func (p *Planner) keysDroppedAhead(diff *difftypes.SchemaDiff) keyrelease.Releases {
-	released := keyrelease.Find(diff, p.targetDialect())
+	released := keyrelease.Find(diff, p.targetDialect()).With(keyrelease.NamesIndexesTake(diff, p.targetDialect()))
 	// A foreign key the plan adds would bind to a removed key still there, and
 	// that key's drop would then stop at it.
 	if described, _ := platform.Lookup(p.targetDialect()); described.Comparison.ForeignKeyHoldsItsKey {
