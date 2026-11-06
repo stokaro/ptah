@@ -67,7 +67,7 @@ func TestReferenceModels_HappyPath(t *testing.T) {
 			c.Assert(proto.Equal(model, reference), qt.IsTrue)
 		}
 		c.Assert(proto.Equal(request, before), qt.IsTrue)
-		c.Assert(len(reference.GetDefinitionJson()), qt.Equals, 0)
+		c.Assert(reference.GetDefinitionJson(), qt.HasLen, 0)
 	})
 	t.Run("a model the description does not declare travels whole", func(t *testing.T) {
 		c := qt.New(t)
@@ -113,9 +113,9 @@ func TestResolveModelReferences_HappyPath(t *testing.T) {
 	models := coveredModels(received)
 	// Every reference to the model resolves to one copy made for this
 	// message; the description keeps its own.
-	c.Assert(models[0] == models[2], qt.IsTrue)
-	c.Assert(models[0] == declared, qt.IsFalse)
-	c.Assert(models[1] == models[3], qt.IsFalse)
+	c.Assert(models[0], qt.Equals, models[2])
+	c.Assert(models[0], qt.Not(qt.Equals), declared)
+	c.Assert(models[1], qt.Not(qt.Equals), models[3])
 }
 
 func TestResolveModelReferences_FailurePath(t *testing.T) {
@@ -184,10 +184,10 @@ func TestCloneSharingModels_HappyPath(t *testing.T) {
 	models, original := coveredModels(copied), coveredModels(request)
 	// The copy shares a model where the request shared it, and shares
 	// nothing with the request.
-	c.Assert(models[0] == models[2], qt.IsTrue)
-	c.Assert(models[1] == models[3], qt.IsTrue)
-	c.Assert(models[0] == models[1], qt.IsFalse)
-	c.Assert(models[0] == original[0], qt.IsFalse)
+	c.Assert(models[0], qt.Equals, models[2])
+	c.Assert(models[1], qt.Equals, models[3])
+	c.Assert(models[0], qt.Not(qt.Equals), models[1])
+	c.Assert(models[0], qt.Not(qt.Equals), original[0])
 	models[0].DisplayName = "changed"
 	c.Assert(declared.GetDisplayName(), qt.Equals, "")
 	c.Assert(models[2].GetDisplayName(), qt.Equals, "changed")
