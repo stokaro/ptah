@@ -93,12 +93,11 @@ func DeclareTable(desired *schemamodel.Database, table schemamodel.Table, semant
 	declaration.FeatureCoverage = desired.FeatureCoverage.ForParent(parent)
 	qualified := table.QualifiedName()
 
-	all := schemamodel.ProcessEmbeddedFields(desired.EmbeddedFields, desired.Fields)
-	owned := make([]schemamodel.Field, 0, len(all))
-	for _, field := range all {
-		if field.StructName == table.StructName {
-			owned = append(owned, field.Clone())
-		}
+	// Expanding every struct's embedded fields for each table made declaring
+	// the tables of a schema grow with the tables times the fields.
+	owned := schemamodel.StructFields(desired.EmbeddedFields, desired.Fields, table.StructName)
+	for i := range owned {
+		owned[i] = owned[i].Clone()
 	}
 	declaration.Fields = nilWhenEmpty(owned)
 	declaration.Enums = EnumsFor(owned, desired.Enums)
