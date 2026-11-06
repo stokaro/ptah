@@ -37,6 +37,6 @@ func TestModelDefinitionIsCheckedOncePerDigest(t *testing.T) {
 
 	verifiedDefinitions.RLock()
 	defer verifiedDefinitions.RUnlock()
-	c.Assert(len(verifiedDefinitions.held), qt.Equals, before)
+	c.Assert(verifiedDefinitions.held, qt.HasLen, before)
 	c.Assert(bytes.Equal(verifiedDefinitions.held[model.DefinitionSha256], model.DefinitionJson), qt.IsTrue)
 }
