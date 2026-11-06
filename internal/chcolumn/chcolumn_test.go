@@ -70,6 +70,8 @@ func TestValue(t *testing.T) {
 	}{
 		{name: "none", column: ast.ColumnNode{Name: "n"}},
 		{name: "literal", column: ast.ColumnNode{Name: "s", Default: &ast.DefaultValue{Value: "it's", ValueSet: true}}, keyword: "DEFAULT", expression: "'it''s'"},
+		{name: "a written literal holding an escaped quote", column: ast.ColumnNode{Name: "s", Default: &ast.DefaultValue{Value: `'it\'s;x'`, ValueSet: true}}, keyword: "DEFAULT", expression: `'it\'s;x'`},
+		{name: "a bare value holding a backslash", column: ast.ColumnNode{Name: "s", Default: &ast.DefaultValue{Value: `a\b`, ValueSet: true}}, keyword: "DEFAULT", expression: `'a\\b'`},
 		{name: "expression", column: ast.ColumnNode{Name: "t", Default: &ast.DefaultValue{Expression: "now()"}}, keyword: "DEFAULT", expression: "now()"},
 		{name: "stored", column: ast.ColumnNode{Name: "c", GeneratedExpression: "a + 1", GeneratedKind: "STORED"}, keyword: "MATERIALIZED", expression: "a + 1"},
 		{name: "virtual", column: ast.ColumnNode{Name: "c", GeneratedExpression: "a + 1", GeneratedKind: "virtual"}, keyword: "ALIAS", expression: "a + 1"},
