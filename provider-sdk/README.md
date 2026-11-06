@@ -530,7 +530,8 @@ identifies the expected launch protocol. Messages are limited to 4 MiB in each
 direction, and to 64 MiB between a host and a provider that both list
 `transport.large-messages` ([large messages](#model-references-and-large-messages)).
 Startup defaults to ten seconds. A call whose work grows with a schema runs
-until the caller's context ends: inspection, every offline service (validation,
+until the caller's context ends
+([ADR 0080](../docs/adr/0080-a-call-that-grows-with-a-schema-is-bounded-by-its-caller.md)): inspection, every offline service (validation,
 preparation, comparison, planning, rendering, source decoding and encoding),
 SQL analysis, and an execution that sets no statement timeout. The database
 answers a read or a plan of 500 tables in full, and a fixed bound failed it on a
