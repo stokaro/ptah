@@ -68,6 +68,9 @@ type BidirectionalPlanPolicy struct {
 	// Shape selects the statement shape of both directions. See
 	// [planext.Options.Shape].
 	Shape planext.StatementShape
+	// EnumRebuildKeepsGuards selects the guards of both directions after an enum
+	// rebuild. See [planext.Options.EnumRebuildKeepsGuards].
+	EnumRebuildKeepsGuards bool
 }
 
 // SchemaDirectionPlan is one half of a bidirectional schema migration plan.
@@ -237,6 +240,7 @@ func planBidirectionalSchemaDiffWithRefs(
 		TableRebuildRequest:     opts.Policy.TableRebuildRequest,
 		Statements:              opts.Policy.Statements,
 		Shape:                   opts.Policy.Shape,
+		EnumRebuildKeepsGuards:  opts.Policy.EnumRebuildKeepsGuards,
 	}
 	forwardNodes, err := planner.GenerateSchemaDiffASTWithOptions(
 		ctx, opts.Runtime,
@@ -301,6 +305,7 @@ func planBidirectionalSchemaDiffWithRefs(
 		AllowTableRebuild:       opts.Policy.AllowTableRebuild,
 		TableRebuildRequest:     opts.Policy.TableRebuildRequest,
 		Statements:              opts.Policy.Statements,
+		EnumRebuildKeepsGuards:  opts.Policy.EnumRebuildKeepsGuards,
 	}
 	// The rollback's target is the schema the database currently holds, and it
 	// is validated here because this is where that schema exists. The forward

@@ -43,6 +43,9 @@ type DynamicRollbackOptions struct {
 	// RevisionsTable names the revision table this run was configured with, so
 	// a non-default one is excluded from the comparison alongside the defaults.
 	RevisionsTable string
+	// EnumRebuildKeepsGuards selects the guards of the plan after an enum
+	// rebuild. See [ptah.run/core/planext.Options.EnumRebuildKeepsGuards].
+	EnumRebuildKeepsGuards bool
 }
 
 // PlanDynamicRollback computes the statements that take the live database back
@@ -150,6 +153,7 @@ func PlanDynamicRollback(ctx context.Context, opts DynamicRollbackOptions) (stat
 		// role. Without this the rollback revokes every such grant, a YDB
 		// database root's grants to its built-in groups among them.
 		ToReplaysMigrations: true,
+		Policy:              atlasschema.DiffPolicy{EnumRebuildKeepsGuards: opts.EnumRebuildKeepsGuards},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("dynamic rollback planning failed: compare the schemas: %w", err)

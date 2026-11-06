@@ -211,7 +211,7 @@ func runAtlasMigrateDiff(
 			return cmdutil.Fail(cmd, err)
 		}
 	}
-	policy = withAtlasTableRebuild(policy, rebuild)
+	policy = withAtlasPlanPolicy(policy, rebuild)
 	// Captured after the atlas.hcl merge, because an env supplying `dev` counts
 	// as having given the flag: the pinned binary runs such an invocation rather
 	// than refusing it.
@@ -521,6 +521,8 @@ func planCompatBidirectionalSchemaDiff(
 			TableRebuildRequest: input.TableRebuildRequest,
 			Statements:          input.Statements,
 			Shape:               input.Shape,
+
+			EnumRebuildKeepsGuards: input.EnumRebuildKeepsGuards,
 		},
 	})
 	if err != nil {

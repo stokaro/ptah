@@ -210,6 +210,12 @@ type Options struct {
 	// Shape selects how the plan groups and spells its statements. The zero value
 	// is [StatementShapePlanned].
 	Shape StatementShape
+	// EnumRebuildKeepsGuards keeps IF EXISTS on every drop an exact plan of the
+	// PostgreSQL family writes after it rebuilds an enum. The rebuild removes no
+	// object a later drop names, so such a guard protects nothing, and the native
+	// commands leave this off. ptah-compat sets it, which keeps the statements it
+	// writes as they are. Other targets do not read it.
+	EnumRebuildKeepsGuards bool
 }
 
 // DefaultTableRebuildRequest is how the native commands ask for

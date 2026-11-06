@@ -30,12 +30,15 @@ func atlasTableRebuildRequested() (bool, error) {
 	return atlasTableRebuild.Resolve()
 }
 
-// withAtlasTableRebuild returns policy with this surface's rebuild request in
-// it: whether the operator asked, and the words a refusal uses to say how to
-// ask. The words are set whether or not the operator asked, because the
-// refusal is what an operator who did not ask reads.
-func withAtlasTableRebuild(policy atlasschema.DiffPolicy, requested bool) atlasschema.DiffPolicy {
+// withAtlasPlanPolicy returns policy with what this surface decides about a plan
+// in it. A rebuild request says whether the operator asked, and the words a
+// refusal uses to say how to ask. The words are set whether or not the operator
+// asked, because the refusal is what an operator who did not ask reads. Every plan
+// here keeps its guards after an enum rebuild; see
+// [atlasschema.DiffPolicy.EnumRebuildKeepsGuards].
+func withAtlasPlanPolicy(policy atlasschema.DiffPolicy, requested bool) atlasschema.DiffPolicy {
 	policy.AllowTableRebuild = requested
 	policy.TableRebuildRequest = atlasTableRebuildRequest
+	policy.EnumRebuildKeepsGuards = true
 	return policy
 }

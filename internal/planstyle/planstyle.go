@@ -20,7 +20,9 @@ import "ptah.run/core/planext"
 // error, where CASCADE would remove it and its data in silence. A guard such
 // as IF EXISTS appears only where an earlier statement of the same plan may
 // already have removed the object: `schema apply` plans against the database
-// it has just read, so any other guard protects nothing there. A migration
+// it has just read, so any other guard protects nothing there, and ptah-compat
+// alone keeps one behind an enum rebuild; see
+// [planext.Options.EnumRebuildKeepsGuards]. A migration
 // file run against a database in another state than the one it was planned
 // against stops at the first statement that does not fit, and on PostgreSQL,
 // where a file runs in one transaction unless it opts out, nothing of it stays

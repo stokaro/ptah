@@ -37,7 +37,7 @@ import (
 // Guards. The annotated style writes IF EXISTS on a drop and IF NOT EXISTS on a
 // new index. The exact style keeps a guard only where an earlier statement of
 // the same plan may already have removed the object, or created it; see
-// [settleGuards].
+// [Planner.settleGuards].
 
 // exact reports whether the plan is spelled in [planext.StatementStyleExact].
 func (p *Planner) exact() bool {
@@ -108,9 +108,32 @@ func isGenerated(column schemamodel.Field) bool {
 // settleGuards removes from an exact plan every IF EXISTS and IF NOT EXISTS no
 // earlier statement of the plan makes necessary; see [guards.Settle]. An owner's
 // drop of a policy or an exclusion constraint removes nothing a later drop names,
-// so a drop after it needs no guard for its sake.
-func settleGuards(nodes []ast.Node) {
-	guards.Settle(nodes, guards.Options{HarmlessOwner: isolatedOwnerDrop})
+// so a drop after it needs no guard for its sake. An enum rebuild is the same; see
+// [Planner.enumRebuildStatements].
+func (p *Planner) settleGuards(nodes []ast.Node, diff *difftypes.SchemaDiff) {
+	opts := guards.Options{HarmlessOwner: isolatedOwnerDrop}
+	if !p.enumRebuildKeepsGuards {
+		rebuilds := p.enumRebuildStatements(diff)
+		opts.HarmlessRaw = func(raw *ast.RawSQLNode) bool { return rebuilds[raw.SQL] }
+	}
+	guards.Settle(nodes, opts)
+}
+
+// enumRebuildStatements holds the raw statement of each enum diff rebuilds. A
+// rebuild renames the enum, creates it again, moves its columns to the new type
+// and drops the old type without CASCADE, and the old type is the only object it
+// removes: ALTER COLUMN TYPE rebuilds an index on the column and stops at a view
+// that reads it. A statement counts only when its whole text is one of these, so
+// every other raw statement of the plan may still remove what a later drop names.
+func (p *Planner) enumRebuildStatements(diff *difftypes.SchemaDiff) map[string]bool {
+	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
+	statements := make(map[string]bool, len(diff.EnumsModified))
+	for _, enumDiff := range diff.EnumsModified {
+		if declared, rebuilt := enumRebuild(diff.DeclaredUserTypes, enumDiff, semantics); rebuilt {
+			statements[postgresEnumValueRemovalSQL(enumDiff.EnumName, declared.Values, enumDiff.Usages)] = true
+		}
+	}
+	return statements
 }
 
 // isolatedOwnerDrop is an owner statement whose only effect on object existence

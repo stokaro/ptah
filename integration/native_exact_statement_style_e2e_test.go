@@ -220,54 +220,60 @@ func TestMigrationsGenerateExactDropsE2E_AFileStopsOnAPartlyAppliedDatabase(t *t
 	), qt.Equals, 0)
 }
 
+// filesMatching is the content of the files under dir that pattern matches.
+func filesMatching(c *qt.C, dir, pattern string) string {
+	c.Helper()
+	matches, err := filepath.Glob(filepath.Join(dir, pattern))
+	c.Assert(err, qt.IsNil)
+	var written strings.Builder
+	for _, match := range matches {
+		content, err := os.ReadFile(match) // #nosec G304 -- a path under the test's own temporary directory
+		c.Assert(err, qt.IsNil)
+		written.Write(content)
+	}
+	return written.String()
+}
+
 // plannedFiles is the content of what a verb that reports its plan in a file
 // wrote under dir: a saved plan, and a migration pair.
 func plannedFiles(c *qt.C, dir string) string {
 	c.Helper()
-	var written strings.Builder
-	for _, pattern := range []string{"*.json", "migrations/*.sql"} {
-		matches, err := filepath.Glob(filepath.Join(dir, pattern))
-		c.Assert(err, qt.IsNil)
-		for _, match := range matches {
-			content, err := os.ReadFile(match) // #nosec G304 -- a path under the test's own temporary directory
-			c.Assert(err, qt.IsNil)
-			written.Write(content)
-		}
-	}
-	return written.String()
+	return filesMatching(c, dir, "*.json") + filesMatching(c, dir, "migrations/*.sql")
+}
+
+// nativePlanningVerbs are the native verbs that show or write a plan, each asking
+// through its own planning call.
+var nativePlanningVerbs = []struct {
+	name string
+	args func(target, schema string) []string
+}{
+	{name: "schema apply --dry-run", args: func(target, schema string) []string {
+		return []string{"schema", "apply", "--db-url", target, "--schema-file", schema, "--schemas", "public", "--dry-run"}
+	}},
+	{name: "schema plan", args: func(target, schema string) []string {
+		return []string{"schema", "plan", "--db-url", target, "--schema-file", schema, "--schemas", "public", "--output", "plan.json"}
+	}},
+	{name: "schema diff", args: func(target, schema string) []string {
+		return []string{"schema", "diff", "--from", target, "--to", schema, "--schemas", "public"}
+	}},
+	{name: "schema compare", args: func(target, schema string) []string {
+		return []string{"schema", "compare", "--db-url", target, "--schema-file", schema, "--schemas", "public"}
+	}},
+	{name: "migrations plan", args: func(target, schema string) []string {
+		return []string{"migrations", "plan", "--db-url", target, "--schema-file", schema, "--schemas", "public"}
+	}},
+	{name: "migrations generate", args: func(target, schema string) []string {
+		return []string{"migrations", "generate", "--db-url", target, "--schema-file", schema, "--schemas", "public",
+			"--migrations-dir", "migrations", "--name", "exact"}
+	}},
 }
 
 // TestNativePlanningVerbsE2E_WriteTheExactStatementStyle holds every native
 // verb that shows or writes a plan to the style `schema apply` runs, on
 // PostgreSQL, so a preview never shows a statement the run does not send. Each
-// verb asks through its own planning call, and each row reddens when that call
-// is planned in the annotated style.
+// row reddens when that verb's planning call is planned in the annotated style.
 func TestNativePlanningVerbsE2E_WriteTheExactStatementStyle(t *testing.T) {
-	tests := []struct {
-		name string
-		args func(target, schema string) []string
-	}{
-		{name: "schema apply --dry-run", args: func(target, schema string) []string {
-			return []string{"schema", "apply", "--db-url", target, "--schema-file", schema, "--schemas", "public", "--dry-run"}
-		}},
-		{name: "schema plan", args: func(target, schema string) []string {
-			return []string{"schema", "plan", "--db-url", target, "--schema-file", schema, "--schemas", "public", "--output", "plan.json"}
-		}},
-		{name: "schema diff", args: func(target, schema string) []string {
-			return []string{"schema", "diff", "--from", target, "--to", schema, "--schemas", "public"}
-		}},
-		{name: "schema compare", args: func(target, schema string) []string {
-			return []string{"schema", "compare", "--db-url", target, "--schema-file", schema, "--schemas", "public"}
-		}},
-		{name: "migrations plan", args: func(target, schema string) []string {
-			return []string{"migrations", "plan", "--db-url", target, "--schema-file", schema, "--schemas", "public"}
-		}},
-		{name: "migrations generate", args: func(target, schema string) []string {
-			return []string{"migrations", "generate", "--db-url", target, "--schema-file", schema, "--schemas", "public",
-				"--migrations-dir", "migrations", "--name", "exact"}
-		}},
-	}
-	for _, test := range tests {
+	for _, test := range nativePlanningVerbs {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			target := databaseBuiltFrom(c, exactDropColumn.built+"CREATE TABLE gone (id bigint PRIMARY KEY);\n")
@@ -285,6 +291,139 @@ func TestNativePlanningVerbsE2E_WriteTheExactStatementStyle(t *testing.T) {
 			c.Assert(planned, qt.Not(qt.Contains), "IF EXISTS")
 		})
 	}
+}
+
+// The enum e loses the value y, which PostgreSQL can only do by rebuilding the type,
+// and an index, a check constraint and a view leave in the same plan. The row of t
+// shows the rebuild keeps the data.
+const (
+	enumRebuildBuilt = "CREATE TYPE e AS ENUM ('x', 'y');\n" +
+		"CREATE TABLE t (id int PRIMARY KEY, a int, s e, CONSTRAINT t_a_check CHECK (a > 0));\n" +
+		"CREATE INDEX i ON t (a);\n" +
+		"CREATE VIEW v AS SELECT id, a FROM t;\n" +
+		"INSERT INTO t VALUES (1, 2, 'x');\n"
+	enumRebuildDesired = "CREATE TYPE e AS ENUM ('x');\n" +
+		"CREATE TABLE t (id int PRIMARY KEY, a int, s e);\n"
+)
+
+// TestNativePlanningVerbsE2E_AnEnumRebuildLeavesTheOtherDropsWithoutAGuard holds
+// every verb to the drops the same plan gets without the rebuild. The rebuild is
+// one raw statement ahead of them, and it removes only the type it renamed.
+func TestNativePlanningVerbsE2E_AnEnumRebuildLeavesTheOtherDropsWithoutAGuard(t *testing.T) {
+	for _, test := range nativePlanningVerbs {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			target := databaseBuiltFrom(c, enumRebuildBuilt)
+			schema := filepath.Join(c.TempDir(), "schema.sql")
+			c.Assert(os.WriteFile(schema, []byte(enumRebuildDesired), 0o600), qt.IsNil)
+			dir := c.TempDir()
+
+			run := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: dir}, test.args(target, schema)...)
+
+			c.Assert(run.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", run.Stdout, run.Stderr))
+			planned := run.Stdout + plannedFiles(c, dir)
+			c.Assert(planned, qt.Contains, `ALTER TYPE "e" RENAME TO "e__ptah_old";`)
+			c.Assert(planned, qt.Contains, `DROP VIEW "v";`)
+			c.Assert(planned, qt.Contains, `DROP INDEX "i";`)
+			c.Assert(planned, qt.Contains, `ALTER TABLE "t" DROP CONSTRAINT "t_a_check";`)
+			c.Assert(planned, qt.Not(qt.Contains), "IF EXISTS")
+		})
+	}
+}
+
+// TestSchemaApplyExactDropsE2E_AnEnumRebuildRunsWithTheOtherDrops runs that plan on
+// the server, and a second plan finding nothing proves it converged. Nothing ahead
+// of a drop took its object, or the drop without a guard would stop the plan.
+func TestSchemaApplyExactDropsE2E_AnEnumRebuildRunsWithTheOtherDrops(t *testing.T) {
+	c := qt.New(t)
+
+	target, run := runExactApply(c, enumRebuildBuilt, enumRebuildDesired)
+
+	c.Assert(run.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", run.Stdout, run.Stderr))
+	for query, want := range map[string]int{
+		"SELECT count(*) FROM pg_enum WHERE enumlabel = 'y'":             0,
+		"SELECT count(*) FROM pg_type WHERE typname = 'e__ptah_old'":     0,
+		"SELECT count(*) FROM pg_class WHERE relname IN ('i', 'v')":      0,
+		"SELECT count(*) FROM pg_constraint WHERE conname = 't_a_check'": 0,
+		"SELECT count(*) FROM t WHERE id = 1 AND s = 'x'":                1,
+	} {
+		c.Assert(readInt(c, target, query), qt.Equals, want, qt.Commentf("%s", query))
+	}
+	schema := filepath.Join(c.TempDir(), "schema.sql")
+	c.Assert(os.WriteFile(schema, []byte(enumRebuildDesired), 0o600), qt.IsNil)
+	again := runPtahIn(c, "schema", "diff", "--from", target, "--to", schema, "--schemas", "public")
+	c.Assert(again.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", again.Stdout, again.Stderr))
+	c.Assert(again.Stdout, qt.Not(qt.Contains), "ALTER")
+	c.Assert(again.Stdout, qt.Not(qt.Contains), "DROP")
+}
+
+// TestMigrationsGenerateExactDropsE2E_AFileWithAnEnumRebuildStopsOnAPartlyAppliedDatabase
+// is what a guard behind a rebuild would hide. The index is gone by the time the
+// file runs. `migrations up` stops at its drop, and the file's one transaction takes
+// the rebuild back, so the enum keeps the value. With IF EXISTS on that drop the file
+// does nothing there and records itself applied over a database it was not planned
+// against.
+func TestMigrationsGenerateExactDropsE2E_AFileWithAnEnumRebuildStopsOnAPartlyAppliedDatabase(t *testing.T) {
+	c := qt.New(t)
+	target := databaseBuiltFrom(c, enumRebuildBuilt)
+	dir := exactGeneratedFile(c, target, enumRebuildDesired)
+	conn, err := dbschema.ConnectToDatabase(c.Context(), target)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	_, err = conn.ExecContext(c.Context(), "DROP INDEX i")
+	c.Assert(err, qt.IsNil)
+
+	up := runPtahIn(c, "migrations", "up", "--db-url", target, "--migrations-dir", dir, "--allow-destructive")
+
+	c.Assert(up.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", up.Stdout, up.Stderr))
+	c.Assert(up.Stderr, qt.Contains, `index "i" does not exist`)
+	c.Assert(readInt(c, target, "SELECT count(*) FROM pg_enum WHERE enumlabel = 'y'"), qt.Equals, 1)
+	c.Assert(readInt(c, target, "SELECT count(*) FROM pg_type WHERE typname = 'e__ptah_old'"), qt.Equals, 0)
+}
+
+// enumValueAddedBuilt and enumValueAddedDesired add the value y and the index i, so
+// a rollback planned as one change rebuilds the enum and then drops the index.
+const (
+	enumValueAddedBuilt   = "CREATE TYPE e AS ENUM ('x');\nCREATE TABLE t (id int PRIMARY KEY, a int, s e);\n"
+	enumValueAddedDesired = "CREATE TYPE e AS ENUM ('x', 'y');\nCREATE TABLE t (id int PRIMARY KEY, a int, s e);\nCREATE INDEX i ON t (a);\n"
+)
+
+// derivedRollbackDir is a hashed migration directory whose second file adds the
+// value y and the index i, applied to a scratch database. A rollback to its first
+// file derived from the schema difference rebuilds the enum and then drops the index.
+// It returns the directory, the database and a dev database.
+func derivedRollbackDir(c *qt.C) (dir, target, dev string) {
+	c.Helper()
+	dir = c.TempDir()
+	for name, body := range map[string]string{
+		"20200101000000_init.sql": enumValueAddedBuilt,
+		"20200102000000_add.sql":  "ALTER TYPE e ADD VALUE 'y';\nCREATE INDEX i ON t (a);\n",
+	} {
+		c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600), qt.IsNil)
+	}
+	out, err := runCompatVerb("migrate", "hash", "--dir", "file://"+filepath.ToSlash(dir))
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	target, _ = scratchReplayDatabase(c)
+	dev, _ = scratchReplayDatabase(c)
+	out, err = runCompatVerb("migrate", "apply", "--url", target, "--dir", "file://"+filepath.ToSlash(dir))
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	return dir, target, dev
+}
+
+// TestMigrationsDownE2E_ADerivedRollbackThatRebuildsAnEnumLeavesItsDropWithoutAGuard
+// plans in the style a generated rollback carries, through the comparison a derived
+// rollback runs instead.
+func TestMigrationsDownE2E_ADerivedRollbackThatRebuildsAnEnumLeavesItsDropWithoutAGuard(t *testing.T) {
+	c := qt.New(t)
+	dir, target, dev := derivedRollbackDir(c)
+
+	run := runPtahIn(c, "migrations", "down", "--db-url", target, "--migrations-dir", dir, "--dir-format", "atlas",
+		"--revision-format", "atlas", "--shadow-db", dev, "--target", "20200101000000", "--plan", "--dry-run", "--confirm")
+
+	c.Assert(run.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", run.Stdout, run.Stderr))
+	c.Assert(run.Stdout, qt.Contains, `ALTER TYPE "e" RENAME TO "e__ptah_old"`)
+	c.Assert(run.Stdout, qt.Contains, `DROP INDEX "i"`)
+	c.Assert(run.Stdout, qt.Not(qt.Contains), "IF EXISTS")
 }
 
 // TestSchemaApplyExactDropsE2E_ARoutineLeavesAheadOfTheCockroachDBTableItsBodyReads
