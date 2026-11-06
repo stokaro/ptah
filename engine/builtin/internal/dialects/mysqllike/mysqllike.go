@@ -429,6 +429,11 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 		}
 	}
 
+	lines, err = r.appendIndexLines(lines, node.Indexes)
+	if err != nil {
+		return err
+	}
+
 	// Join all lines
 	for i, line := range lines {
 		if i == len(lines)-1 {
@@ -1234,6 +1239,18 @@ func (r *Renderer) visitAlterTableWithEnums(node *ast.AlterTableNode, enums map[
 	})
 }
 
+// appendIndexLines writes the indexes a table declares in its column list.
+func (r *Renderer) appendIndexLines(lines []string, indexes []*ast.IndexNode) ([]string, error) {
+	for _, index := range indexes {
+		definition, err := r.indexDefinition(index, "")
+		if err != nil {
+			return nil, fmt.Errorf("error rendering index %s: %w", index.Name, err)
+		}
+		lines = append(lines, "  "+strings.Join(definition, " "))
+	}
+	return lines, nil
+}
+
 func (r *Renderer) writeAlterTableOperations(node *ast.AlterTableNode, operations []ast.AlterOperation, enums map[string][]string) error {
 	for _, operation := range operations {
 		switch op := operation.(type) {
@@ -1300,7 +1317,7 @@ func (r *Renderer) writeAlterTableOperations(node *ast.AlterTableNode, operation
 			// migration apply time rather than at SQL generation time.
 			r.writeAlterStatementf(node, "ALTER TABLE %s RENAME COLUMN %s TO %s",
 				escapeQualifiedIdentifier(node.Name), escapeIdentifier(op.OldName), escapeIdentifier(op.NewName))
-		case *ast.RenameIndexOperation, *ast.AlterIndexVisibilityOperation, *ast.ReplaceIndexOperation:
+		case *ast.RenameIndexOperation, *ast.AlterIndexVisibilityOperation, *ast.ReplaceIndexOperation, *ast.AddIndexOperation:
 			if err := r.writeIndexAlteration(node, op); err != nil {
 				return err
 			}
@@ -1349,6 +1366,16 @@ func (r *Renderer) writeIndexAlteration(node *ast.AlterTableNode, operation ast.
 		}
 		r.writeAlterStatementf(node, "ALTER TABLE %s %s, ADD %s",
 			table, strings.Join(clauses, ", "), strings.Join(definition, " "))
+	case *ast.AddIndexOperation:
+		if op.Index == nil {
+			return fmt.Errorf("add-index operation on table %s carries no index", node.Name)
+		}
+		r.recordLostIndexProperties(op.Index)
+		definition, err := r.indexDefinition(op.Index, "")
+		if err != nil {
+			return err
+		}
+		r.writeAlterStatementf(node, "ALTER TABLE %s ADD %s", table, strings.Join(definition, " "))
 	default:
 		return fmt.Errorf("%w: %s: this renderer has no ALTER TABLE spelling for %T", ptaherr.ErrUnsupportedFeature, r.dialect, operation)
 	}

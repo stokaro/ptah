@@ -184,3 +184,36 @@ func TestRenderSQL_OneStatementLeavesOutAChangeALaterOneReplaces(t *testing.T) {
 
 	c.Assert(must.Must(builtin.RenderSQL(platform.MySQL, node)), qt.Equals, "ALTER TABLE `t` MODIFY COLUMN `x` BIGINT;\n\n")
 }
+
+// TestRenderSQL_AKeyInsideItsTable writes a plain index in the column list of a table on MySQL
+// and MariaDB, which is the only way to declare one over an AUTO_INCREMENT column.
+func TestRenderSQL_AKeyInsideItsTable(t *testing.T) {
+	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+			table := ast.NewCreateTable("t").AddColumn(ast.NewColumn("id", "INT").SetNotNull().SetAutoIncrement())
+			table.Indexes = []*ast.IndexNode{ast.NewIndex("t_id", "t", "id")}
+
+			got := must.Must(builtin.RenderSQL(dialect, table))
+
+			c.Assert(got, qt.Contains, "  `id` INT NOT NULL AUTO_INCREMENT,\n  INDEX `t_id` (`id`)\n)")
+		})
+	}
+}
+
+// TestRenderSQL_AKeyAddedInOneStatementWithItsColumn writes an added plain index as a clause of
+// the statement that adds its AUTO_INCREMENT column.
+func TestRenderSQL_AKeyAddedInOneStatementWithItsColumn(t *testing.T) {
+	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+			column := &ast.AddColumnOperation{Column: ast.NewColumn("id", "INT").SetNotNull().SetAutoIncrement()}
+			key := &ast.AddIndexOperation{Index: ast.NewIndex("t_id", "t", "id")}
+			operations := []ast.AlterOperation{column, key}
+			node := &ast.AlterTableNode{Name: "t", Operations: operations, OneStatement: operations}
+
+			c.Assert(must.Must(builtin.RenderSQL(dialect, node)), qt.Equals,
+				"ALTER TABLE `t` ADD COLUMN `id` INT NOT NULL AUTO_INCREMENT, ADD INDEX `t_id` (`id`);\n\n")
+		})
+	}
+}

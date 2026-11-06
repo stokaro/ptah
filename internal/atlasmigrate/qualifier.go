@@ -191,6 +191,11 @@ func (s *qualifyState) rewriteCreateTable(node *ast.CreateTableNode) error {
 			return err
 		}
 	}
+	for _, index := range node.Indexes {
+		if err := s.rewriteStringName(&index.Table); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -215,6 +220,8 @@ func (s *qualifyState) rewriteAlterOperation(tableName string, operation ast.Alt
 		return s.rewriteColumn(tableName, op.Column)
 	case *ast.AddConstraintOperation:
 		return s.rewriteConstraint(op.Constraint)
+	case *ast.AddIndexOperation:
+		return s.rewriteStringName(&op.Index.Table)
 	case *ast.DropColumnOperation, *ast.DropConstraintOperation,
 		*ast.RenameColumnOperation, *ast.AlterGeneratedColumnExpressionOperation:
 		return nil // column- and constraint-name only; no table references

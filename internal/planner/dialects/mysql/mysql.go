@@ -206,6 +206,7 @@ func (p *Planner) addNewTables(result []ast.Node, diff *difftypes.SchemaDiff) []
 	// ordering rules read the same three plus the document's dependency map,
 	// which travels too (stokaro/ptah#2315).
 	creations := diff.TablesAdded.Qualified(diff.DeclaredUserTypes, p.targetDialect()).InDependencyOrder()
+	autoIncrement := p.autoIncrementKeysOf(diff)
 	for _, creation := range creations {
 		astNode := modelast.FromTableWithConstraints(creation.Table, creation.Fields, creation.Enums, p.targetDialect(), creation.Constraints)
 		for _, column := range astNode.Columns {
@@ -214,6 +215,7 @@ func (p *Planner) addNewTables(result []ast.Node, diff *difftypes.SchemaDiff) []
 		if key := slices.IndexFunc(creation.Constraints, isPrimaryKeyConstraint); key >= 0 {
 			astNode.AddConstraint(modelast.FromConstraint(creation.Constraints[key]))
 		}
+		astNode.Indexes = append(astNode.Indexes, autoIncrement.insideNewTable(creation)...)
 		result = append(result, astNode)
 	}
 
@@ -379,6 +381,7 @@ func (p *Planner) addNewTableColumns(
 	declared []schemamodel.Table,
 	vocabulary difftypes.UserTypeVocabulary,
 	semantics identifier.Semantics,
+	keys autoIncrementKeys,
 ) []ast.Node {
 	// The TABLE still has to be declared. The column travels with the change,
 	// so a field lookup here cannot fail -- but the guard is load-bearing on
@@ -388,6 +391,10 @@ func (p *Planner) addNewTableColumns(
 	if findGeneratedTable(declared, tableDiff.TableName, semantics) == nil {
 		return result
 	}
+	// A key over several columns the plan adds reads them all, so the statement holding it
+	// holds them too.
+	together := keys.gainsAKey(tableDiff)
+	var joined []ast.AlterOperation
 
 	// The column itself is not looked up. Finding it by the table's Go STRUCT
 	// name and a scan of every field in the schema is the route
@@ -423,6 +430,11 @@ func (p *Planner) addNewTableColumns(
 				}
 			}
 
+			if together {
+				joined = append(joined, operations...)
+				continue
+			}
+
 			// Generate ALTER TABLE statement with all operations
 			alterNode := &ast.AlterTableNode{
 				Name:       tableDiff.TableName,
@@ -430,6 +442,14 @@ func (p *Planner) addNewTableColumns(
 			}
 			result = append(result, alterNode)
 		}
+	}
+	if together {
+		for _, column := range tableDiff.ColumnsAdded {
+			if key, ok := keys.gainedBy(tableDiff.TableName, column.Name); ok {
+				joined = append(joined, key)
+			}
+		}
+		result = append(result, oneStatement(tableDiff.TableName, joined...))
 	}
 	return result
 }
@@ -541,6 +561,15 @@ func (p *Planner) modifyExistingColumns(
 		}
 		if givesUpKey {
 			result = append(result, p.keyAwayFromAutoIncrement(tableDiff.TableName, field, diff)...)
+		}
+		keys := p.autoIncrementKeysOf(diff)
+		if key, ok := keys.gainedBy(tableDiff.TableName, colDiff.ColumnName); ok {
+			result = append(result, oneStatement(tableDiff.TableName, modify, key))
+			continue
+		}
+		if drops := keys.droppedWith(tableDiff.TableName, colDiff.ColumnName); len(drops) > 0 {
+			result = append(result, oneStatement(tableDiff.TableName, append(drops, modify)...))
+			continue
 		}
 		result = append(result, &ast.AlterTableNode{Name: tableDiff.TableName, Operations: []ast.AlterOperation{modify}})
 	}
@@ -811,7 +840,7 @@ func keyWrittenWithItsColumn(diff *difftypes.SchemaDiff, add difftypes.Constrain
 	return false
 }
 
-func (p *Planner) removeColumns(result []ast.Node, tableDiff *difftypes.TableDiff) ([]ast.Node, error) {
+func (p *Planner) removeColumns(result []ast.Node, tableDiff *difftypes.TableDiff, keys autoIncrementKeys) ([]ast.Node, error) {
 	if p.targetDialect() == platform.SQLServer && len(tableDiff.ColumnsRemoved) > 0 {
 		return result, &ptaherr.CapabilityError{
 			Dialect: p.targetDialect(),
@@ -828,6 +857,9 @@ func (p *Planner) removeColumns(result []ast.Node, tableDiff *difftypes.TableDif
 		alterNode := &ast.AlterTableNode{
 			Name:       tableDiff.TableName,
 			Operations: []ast.AlterOperation{&ast.DropColumnOperation{ColumnName: column.Name}},
+		}
+		if drops := keys.droppedWith(tableDiff.TableName, column.Name); len(drops) > 0 {
+			alterNode = oneStatement(tableDiff.TableName, append(drops, alterNode.Operations...)...)
 		}
 		result = append(result, alterNode)
 		astCommentNode := ast.NewDescriptiveComment(fmt.Sprintf("WARNING: Dropping column %s.%s - This will delete data!", tableDiff.TableName, column.Name))
@@ -901,6 +933,7 @@ func appendTableComment(result []ast.Node, tableDiff difftypes.TableDiff) []ast.
 // result.
 func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.SchemaDiff) (_, columnDrops []ast.Node, _ error) {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
+	keys := p.autoIncrementKeysOf(diff)
 	for _, tableDiff := range diff.TablesModified {
 		header := ast.NewDescriptiveComment(fmt.Sprintf("Modify table: %s", tableDiff.TableName))
 
@@ -912,7 +945,7 @@ func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.Schema
 		inPlace := appendTableComment(nil, tableDiff)
 
 		// Add new columns
-		inPlace = p.addNewTableColumns(inPlace, &tableDiff, diff.DeclaredTables, diff.DeclaredUserTypes, semantics)
+		inPlace = p.addNewTableColumns(inPlace, &tableDiff, diff.DeclaredTables, diff.DeclaredUserTypes, semantics, keys)
 
 		// Modify existing columns
 		inPlace, err := p.modifyExistingColumns(inPlace, diff, &tableDiff, semantics)
@@ -921,7 +954,7 @@ func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.Schema
 		}
 
 		// Remove columns (dangerous!)
-		drops, err := p.removeColumns(nil, &tableDiff)
+		drops, err := p.removeColumns(nil, &tableDiff, keys)
 		if err != nil {
 			return result, nil, err
 		}
@@ -1328,9 +1361,13 @@ func (p *Planner) addNewIndexes(
 	guardedDrops := p.capabilities().Has(capability.DropIndexIfExists)
 	constraintBacked := diff.ConstraintBackedIndexRemovalSet()
 	namedByForeignKeys := indexesNamedByForeignKeys(diff, p.targetDialect())
+	autoIncrement := p.autoIncrementKeysOf(diff)
 	// The declaration travels WITH the addition (stokaro/ptah#2315).
 	for _, change := range additions {
 		ref := difftypes.IndexRef{Name: change.Index.Name, TableName: change.TableName}
+		if autoIncrement.writes(ref) {
+			continue
+		}
 		// A rollback restores the index the key it adds back builds for itself. Written
 		// here the index comes ahead of the key's drop, which the index still serves.
 		if _, named := namedByForeignKeys[ref]; named && foreignKeyBuildsIndex(diff, change) {
@@ -1468,8 +1505,12 @@ func (p *Planner) removeIndexes(
 	rebuiltAsConstraint := diff.IndexRemovalsRebuiltAsUniqueConstraints()
 	namedByForeignKeys := indexesNamedByForeignKeys(diff, p.targetDialect())
 	result, takenOver := indexesTakingOver(result, diff)
+	autoIncrement := p.autoIncrementKeysOf(diff)
 	for _, ref := range diff.IndexRemovals() {
-		if _, written := takenOver[ref]; written || replacements.Contains(ref) {
+		if _, written := takenOver[ref]; written || replacements.Contains(ref) || autoIncrement.writes(ref) {
+			continue
+		}
+		if p.isMySQLFamily() && p.tableGoes(diff, ref.TableName) {
 			continue
 		}
 		// A removal a UNIQUE constraint addition rebuilds was already emitted
@@ -1486,6 +1527,16 @@ func (p *Planner) removeIndexes(
 		result = append(result, p.dropIndexNode(diff, ref))
 	}
 	return result
+}
+
+// tableGoes reports a table this plan drops, which takes its indexes with it. A rollback of
+// a new table lists them too. Dropping one first gains nothing, and MySQL and MariaDB answer
+// 1075 where it is the key of an AUTO_INCREMENT column.
+func (p *Planner) tableGoes(diff *difftypes.SchemaDiff, table string) bool {
+	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
+	return slices.ContainsFunc(diff.TablesRemoved, func(removal difftypes.TableRemoval) bool {
+		return objectlookup.Same(removal.Name, table, semantics)
+	})
 }
 
 // dropIndexNode is the DROP INDEX for the removed index ref.
@@ -1725,6 +1776,8 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 		With(keyrelease.PrimaryKeysUnderColumnChanges(diff, p.targetDialect())).
 		With(keyrelease.UnderColumnDrops(diff, p.targetDialect())).
 		With(keyrelease.NamesIndexesTake(diff, p.targetDialect()))
+	autoIncrement := p.autoIncrementKeysOf(diff)
+	released.Indexes = slices.DeleteFunc(released.Indexes, autoIncrement.writes)
 	result = p.releaseKeyNames(result, diff, released)
 
 	result, columnDrops, err := p.modifyExistingTables(result, diff)
