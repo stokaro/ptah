@@ -455,15 +455,9 @@ func (p *Planner) modifyExistingColumns(
 			}
 		}
 		givesUpKey := keyrelease.GivesUpAutoIncrementKey(colDiff)
-		suppressColumnPrimary := false
-		if _, hasPrimaryKeyChange := colDiff.Changes["primary_key"]; hasPrimaryKeyChange && !gainsAutoIncrementKey(colDiff) &&
-			primaryKeyColumnChangeOwnedByTableConstraint(diff, tableDiff.TableName, colDiff.ColumnName, semantics) {
-			colDiff.Changes = maps.Clone(colDiff.Changes)
-			delete(colDiff.Changes, "primary_key")
-			suppressColumnPrimary = true
-			if len(colDiff.Changes) == 0 {
-				continue
-			}
+		colDiff, suppressColumnPrimary, nothingLeft := p.withoutChangesConstraintsMake(diff, tableDiff, colDiff, semantics)
+		if nothingLeft {
+			continue
 		}
 		if err := p.validateColumnModification(tableDiff.TableName, colDiff); err != nil {
 			return result, err
@@ -675,6 +669,64 @@ func (p *Planner) validateColumnModification(tableName string, colDiff difftypes
 			strings.Join(unsupported, ", "),
 		),
 	}
+}
+
+// withoutChangesConstraintsMake leaves out of colDiff what the plan's constraint statements
+// change: a primary key a table-level entry owns, and on SQL Server a uniqueness a UNIQUE
+// over the column owns. suppressPrimary says the first applied, and nothingLeft that
+// the column has no change of its own.
+func (p *Planner) withoutChangesConstraintsMake(
+	diff *difftypes.SchemaDiff,
+	table *difftypes.TableDiff,
+	colDiff difftypes.ColumnDiff,
+	semantics identifier.Semantics,
+) (kept difftypes.ColumnDiff, suppressPrimary, nothingLeft bool) {
+	without := func(change string) {
+		colDiff.Changes = maps.Clone(colDiff.Changes)
+		delete(colDiff.Changes, change)
+		nothingLeft = len(colDiff.Changes) == 0
+	}
+	if _, changes := colDiff.Changes["primary_key"]; changes && !gainsAutoIncrementKey(colDiff) &&
+		primaryKeyColumnChangeOwnedByTableConstraint(diff, table.TableName, colDiff.ColumnName, semantics) {
+		without("primary_key")
+		suppressPrimary = true
+	}
+	if _, changes := colDiff.Changes["unique"]; changes && p.targetDialect() == platform.SQLServer &&
+		uniqueColumnChangeOwnedByConstraint(diff, table, colDiff.ColumnName, semantics) {
+		without("unique")
+	}
+	return colDiff, suppressPrimary, nothingLeft
+}
+
+// uniqueColumnChangeOwnedByConstraint reports whether a column reads as gaining or losing
+// its uniqueness because a UNIQUE over it alone, on the table, is added or dropped. The
+// plan's constraint statements make that change, so there is nothing for the column to do.
+// SQL Server's reader marks the column from the key, whichever way the key was declared.
+func uniqueColumnChangeOwnedByConstraint(
+	diff *difftypes.SchemaDiff,
+	table *difftypes.TableDiff,
+	column string,
+	semantics identifier.Semantics,
+) bool {
+	over := func(columns []string) bool {
+		return len(columns) == 1 && semantics.ColumnIdentityKey(columns[0]) == semantics.ColumnIdentityKey(column)
+	}
+	for _, added := range diff.ConstraintsAdded {
+		if strings.EqualFold(added.Type, "UNIQUE") && objectlookup.Same(table.TableName, added.TableName, semantics) && over(added.Columns) {
+			return true
+		}
+	}
+	for _, removed := range diff.ConstraintsRemoved {
+		if !strings.EqualFold(removed.Type, "UNIQUE") || !objectlookup.Same(table.TableName, removed.TableName, semantics) {
+			continue
+		}
+		for _, held := range table.Current.Constraints {
+			if semantics.IndexIdentityKey(held.Name) == semantics.IndexIdentityKey(removed.Name) && over(held.ColumnNamesOrDefault()) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // primaryKeyColumnChangeOwnedByTableConstraint reports whether a table-level
