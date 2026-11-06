@@ -10,6 +10,8 @@
 package pgname
 
 import (
+	"fmt"
+	"hash/crc32"
 	"slices"
 	"strconv"
 	"strings"
@@ -96,6 +98,23 @@ func Constraint(table string, columns []string, label string, taken func(string)
 		}
 		numbered = label + strconv.Itoa(pass)
 	}
+}
+
+// Interim answers the name a plan gives a constraint for as long as another
+// constraint of its table needs the name it holds: `<name>__ptah_old`, fitted
+// into 63 bytes. Written longer, the server cuts the name back to the one it
+// holds and answers that the name exists.
+//
+// A name with no room for the label loses its end to the cut and takes a checksum
+// of the whole name in its place, so two long names that differ only there keep
+// two interim names.
+func Interim(name string) string {
+	const label = "__ptah_old"
+	if len(name)+len(label) <= maxIdentifierBytes {
+		return name + label
+	}
+	checksum := fmt.Sprintf("_%08x", crc32.ChecksumIEEE([]byte(name)))
+	return clip(name, maxIdentifierBytes-len(checksum)-len(label)) + checksum + label
 }
 
 // Unique answers the name PostgreSQL gives an unnamed UNIQUE constraint on

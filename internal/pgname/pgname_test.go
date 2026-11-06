@@ -2,6 +2,7 @@ package pgname_test
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -135,6 +136,36 @@ func TestConstraint(t *testing.T) {
 			})
 
 			c.Assert(got, qt.Equals, test.want)
+		})
+	}
+}
+
+// An interim name carries the label, stays inside the 63 bytes the server keeps,
+// and differs from the name it stands for, because a name the server cuts back to
+// the one it holds answers that the name exists. Measured on PostgreSQL 18.6 with
+// a 63-byte name and the label written whole.
+func TestInterim(t *testing.T) {
+	sharedStart := strings.Repeat("a", 60)
+	tests := []struct {
+		name string
+		from string
+		want string
+	}{
+		{name: "a short name", from: "t_c_not_null", want: "t_c_not_null__ptah_old"},
+		{name: "the longest name the label fits", from: strings.Repeat("a", 53), want: strings.Repeat("a", 53) + "__ptah_old"},
+		{name: "a name the label does not fit", from: strings.Repeat("a", 54), want: strings.Repeat("a", 44) + "_dac56129__ptah_old"},
+		{name: "the longest name", from: sharedStart + "bcd", want: strings.Repeat("a", 44) + "_283eed8a__ptah_old"},
+		{name: "a long name that differs only at its end", from: sharedStart + "bce", want: strings.Repeat("a", 44) + "_5f39dd1c__ptah_old"},
+		{name: "a cut falls inside a character", from: strings.Repeat("a", 43) + strings.Repeat("ß", 10), want: strings.Repeat("a", 43) + "_b77f5607__ptah_old"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got := pgname.Interim(test.from)
+
+			c.Assert(got, qt.Equals, test.want)
+			c.Assert(len(got) <= 63, qt.IsTrue)
 		})
 	}
 }

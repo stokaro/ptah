@@ -706,6 +706,32 @@ reports it back. PostgreSQL, CockroachDB and YugabyteDB do. The Spanner
 PostgreSQL interface refuses the statement, so there the render names the
 comment it left out.
 
+## A NOT NULL name another column holds
+
+PostgreSQL 18 keeps a `NOT NULL` as a named constraint, and `RENAME COLUMN` leaves
+the name as it was. So `display_name` can hold `t_full_name_not_null` in one
+database while `full_name` holds it in another, and no two constraints of a table
+can share a name.
+
+The plan keeps its order, with the removal last, because a view or a policy may
+read the old column until an earlier statement moves it to the new one. It moves
+the name instead, and the interim name leaves with the old column:
+
+```sql
+ALTER TABLE "t" RENAME CONSTRAINT "t_full_name_not_null" TO "t_full_name_not_null__ptah_old";
+ALTER TABLE "t" ADD COLUMN "display_name" text CONSTRAINT "t_full_name_not_null" NOT NULL;
+ALTER TABLE "t" DROP COLUMN "full_name";
+```
+
+A column whose `NOT NULL` the plan renames holds its name in the same way until
+that rename runs, and it goes through the interim name too when another statement
+takes the name first.
+
+`ptah-compat` writes one `ALTER TABLE` for the drop and the addition where nothing
+depends on their order. PostgreSQL runs the drops of a statement first, so that
+statement needs no rename. PostgreSQL 17 and earlier keep no such name, so a plan
+between two of them has nothing to move.
+
 ## Making a column NOT NULL
 
 A plan that makes an existing column `NOT NULL` writes

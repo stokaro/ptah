@@ -1,6 +1,7 @@
 package planshape_test
 
 import (
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -10,7 +11,9 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemacapture"
+	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planshape"
 )
@@ -944,6 +947,108 @@ func TestApply_AColumnChangedTwice_HappyPath(t *testing.T) {
 			operations := got[0].(*ast.AlterTableNode).OneStatement
 			c.Assert(operations, qt.HasLen, test.want)
 			c.Assert(operations[len(operations)-1].(*ast.ModifyColumnOperation).Column.Type, qt.Equals, "bigint")
+		})
+	}
+}
+
+// heldNotNullName is a diff that adds column c under the name a removed column holds,
+// and the two statements as the planner writes them.
+func heldNotNullName(table, name string) (diff *difftypes.SchemaDiff, add, drop *ast.AlterTableNode) {
+	column := ast.NewColumn("c", "text").SetNotNull()
+	column.NotNullConstraintName = name
+	diff = &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
+		TableName:      table,
+		ColumnsAdded:   []schemamodel.Field{{Name: "c", Type: "text", NotNullConstraintName: name}},
+		ColumnsRemoved: []schemamodel.Field{{Name: "old", Type: "text", NotNullConstraintName: name}},
+	}}}
+	return diff, alter(table, &ast.AddColumnOperation{Column: column}), alter(table, dropColumn("old"))
+}
+
+// freesHeldName is the rename the planner writes ahead of the statement that takes name.
+func freesHeldName(table, name string) *ast.AlterTableNode {
+	return alter(table, &ast.RenameConstraintOperation{From: name, To: name + "__ptah_old"})
+}
+
+// A rollback's planner freed a name for its own order, one statement per change. Merged
+// with the drop of the column holding it, the addition needs no such thing: PostgreSQL
+// runs the drops of a statement first. A statement of another kind between them keeps
+// them apart, and there the rename stays. It also stays behind the name the server gives
+// anyway, which the statement leaves out: the server gives that name only once it is free.
+func TestAlignRollback_ANotNullNameStillHeld_HappyPath(t *testing.T) {
+	tests := []struct {
+		name    string
+		between []ast.Node
+		column  string
+		want    string
+	}{
+		{
+			name:   "merged with the drop",
+			column: "x",
+			want:   `ALTER TABLE "t" DROP COLUMN "old", ADD COLUMN "c" text CONSTRAINT "x" NOT NULL;` + "\n\n",
+		},
+		{
+			name:    "kept apart from the drop",
+			between: []ast.Node{ast.NewRawSQL("SELECT 1;")},
+			column:  "x",
+			want: `ALTER TABLE "t" RENAME CONSTRAINT "x" TO "x__ptah_old";` + "\n\n" +
+				`ALTER TABLE "t" ADD COLUMN "c" text CONSTRAINT "x" NOT NULL;` + "\n\n" +
+				"SELECT 1;\n" +
+				`ALTER TABLE "t" DROP COLUMN "old";` + "\n\n",
+		},
+		{
+			name:    "kept apart from the drop, under the name the server gives",
+			between: []ast.Node{ast.NewRawSQL("SELECT 1;")},
+			column:  "t_c_not_null",
+			want: `ALTER TABLE "t" RENAME CONSTRAINT "t_c_not_null" TO "t_c_not_null__ptah_old";` + "\n\n" +
+				`ALTER TABLE "t" ADD COLUMN "c" text NOT NULL;` + "\n\n" +
+				"SELECT 1;\n" +
+				`ALTER TABLE "t" DROP COLUMN "old";` + "\n\n",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			diff, add, drop := heldNotNullName("t", test.column)
+			planned := slices.Concat([]ast.Node{freesHeldName("t", test.column), add}, test.between, []ast.Node{drop})
+
+			forward := []ast.Node{alter("t", dropColumn("c"), addColumn("old"))}
+
+			got := planshape.AlignRollback(platform.Postgres, forward, planned, diff)
+
+			c.Assert(must.Must(builtin.RenderSQLWithCapabilities(platform.Postgres, capability.Postgres18(), got...)), qt.Equals, test.want)
+		})
+	}
+}
+
+// The forward plan reads the same: the merged statement needs no rename, and where a
+// statement of another kind keeps the two apart the rename goes ahead of the addition.
+func TestApply_ANotNullNameStillHeld_HappyPath(t *testing.T) {
+	tests := []struct {
+		name    string
+		between []ast.Node
+		want    string
+	}{
+		{
+			name: "merged with the drop",
+			want: `ALTER TABLE "t" DROP COLUMN "old", ADD COLUMN "c" text CONSTRAINT "x" NOT NULL;` + "\n\n",
+		},
+		{
+			name:    "kept apart from the drop",
+			between: []ast.Node{ast.NewRawSQL("SELECT 1;")},
+			want: `ALTER TABLE "t" RENAME CONSTRAINT "x" TO "x__ptah_old";` + "\n\n" +
+				`ALTER TABLE "t" ADD COLUMN "c" text CONSTRAINT "x" NOT NULL;` + "\n\n" +
+				"SELECT 1;\n" +
+				`ALTER TABLE "t" DROP COLUMN "old";` + "\n\n",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			diff, add, drop := heldNotNullName("t", "x")
+
+			got := planshape.Apply(platform.Postgres, slices.Concat([]ast.Node{add}, test.between, []ast.Node{drop}), diff)
+
+			c.Assert(must.Must(builtin.RenderSQLWithCapabilities(platform.Postgres, capability.Postgres18(), got...)), qt.Equals, test.want)
 		})
 	}
 }
