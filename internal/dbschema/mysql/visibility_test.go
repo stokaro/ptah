@@ -13,6 +13,7 @@ import (
 
 	"ptah.run/internal/dbschema/dbtest"
 	"ptah.run/internal/dbschema/mysql"
+	"ptah.run/internal/errorkind"
 	"ptah.run/internal/readscope"
 )
 
@@ -240,6 +241,65 @@ func TestReader_RefusesWhatTheAccountCannotSee_FailurePath(t *testing.T) {
 			got, err := mysql.NewMySQLReader(db.SQL, "").ReadSchemaContext(t.Context())
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(got, qt.IsNil)
+		})
+	}
+}
+
+// TestReader_ReportsWhatTheAccountLacks_FailurePath holds the fields a report
+// carries to the lines of the message. A row whose name stays hidden lists the kind
+// alone, and an object the read listed without its body is named.
+func TestReader_ReportsWhatTheAccountLacks_FailurePath(t *testing.T) {
+	missing := func(objects, privilege string, names ...string) errorkind.MissingPrivilege {
+		return errorkind.MissingPrivilege{Database: "fx", Objects: objects, Names: names, Privilege: privilege}
+	}
+	tests := []struct {
+		name    string
+		version string
+		grants  []string
+		catalog visibleCatalog
+		want    []errorkind.MissingPrivilege
+	}{
+		{
+			name:    "MySQL, SELECT on one table",
+			version: dbtest.MySQLVersion,
+			grants:  []string{"GRANT USAGE ON *.* TO `app`@`%`", "GRANT SELECT ON `fx`.`child` TO `app`@`%`"},
+			catalog: visibleCatalog{selected: "fx", tables: []string{"child"}},
+			want: []errorkind.MissingPrivilege{
+				missing("tables", "SELECT on `fx`.*"),
+				missing("views", "SELECT and SHOW VIEW on `fx`.*"),
+				missing("triggers", "TRIGGER on `fx`.*"),
+				missing("routines", "SHOW_ROUTINE on *.*"),
+			},
+		},
+		{
+			name:    "MariaDB, SELECT on the database, a view and a routine listed with nothing in them",
+			version: dbtest.MariaDBVersion,
+			grants:  []string{"GRANT USAGE ON *.* TO `app`@`%`", "GRANT SELECT ON `fx`.* TO `app`@`%`"},
+			catalog: visibleCatalog{
+				selected: "fx",
+				tables:   []string{"child", "parent"},
+				views:    [][]driver.Value{{"v_child", "", "NONE"}},
+				routines: [][]driver.Value{procedureRow("p_noop", nil)},
+			},
+			want: []errorkind.MissingPrivilege{
+				missing("views", "SELECT and SHOW VIEW on `fx`.*", "v_child"),
+				missing("constraints", "a privilege beyond SELECT, such as SHOW VIEW, on `fx`.*"),
+				missing("triggers", "TRIGGER on `fx`.*"),
+				missing("routines", "SHOW CREATE ROUTINE on `fx`.*", "p_noop"),
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			db := dbtest.Open(t, dbtest.MySQLSession(test.version, test.grants, test.catalog.answer))
+
+			got, err := mysql.NewMySQLReader(db.SQL, "").ReadSchemaContext(t.Context())
+
+			refusal, isRefusal := errors.AsType[*errorkind.ReadRefusal](err)
+			c.Assert(isRefusal, qt.IsTrue, qt.Commentf("%v", err))
+			c.Assert(refusal.Missing, qt.DeepEquals, test.want)
 			c.Assert(got, qt.IsNil)
 		})
 	}

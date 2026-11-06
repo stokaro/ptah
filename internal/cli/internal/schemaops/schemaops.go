@@ -181,7 +181,7 @@ func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
 	}
 	dbSchema, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, schemas)
 	if err != nil {
-		return nil, fmt.Errorf("error reading database schema: %w", err)
+		return nil, fmt.Errorf("error reading database schema: %w", errorkind.TargetRead(err))
 	}
 
 	if len(opts.IgnoredTables) > 0 {

@@ -26,6 +26,7 @@ import (
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/errorkind"
 	"ptah.run/internal/providerurl"
 	"ptah.run/internal/readscope"
 	"ptah.run/internal/rolegraph"
@@ -521,7 +522,7 @@ func planTargetState(ctx context.Context,
 	}
 	current, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, names)
 	if err != nil {
-		return nil, fmt.Errorf("read database schema: %w", err)
+		return nil, fmt.Errorf("read database schema: %w", errorkind.TargetRead(err))
 	}
 	current, err = excludeCurrentWithBindings(ctx, current, exclude, conn.Info(), runtime)
 	if err != nil {

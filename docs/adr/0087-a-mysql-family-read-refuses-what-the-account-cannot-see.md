@@ -30,7 +30,9 @@ prove it saw a kind of object. The message names the privilege, and the command 
 reads gets it and `ptah-compat` gets it at exit 1. `internal/mysqlgrants` reads the
 lines, including the rules that make a grant apply: a database-level row is a
 pattern, the most specific matching row is the one used, and a role counts while it
-is active.
+is active. A command marks the read of its target, so a machine-readable document
+reports that refusal with the error kind `permission_denied` and the privileges as
+fields, and the same refusal from a dev database or a `--to` source has no kind.
 
 What can be read off the rows is read off the rows. A view listed with an empty
 definition, a trigger with no body and a routine with a NULL body say that the

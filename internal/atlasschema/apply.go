@@ -27,6 +27,7 @@ import (
 	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/internal/devclean"
 	"ptah.run/internal/devlock"
+	"ptah.run/internal/errorkind"
 	"ptah.run/internal/featureselect"
 	"ptah.run/internal/pgsystemschema"
 	"ptah.run/internal/planstyle"
@@ -793,7 +794,7 @@ func applyCurrentState(
 	}
 	current, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, readScope)
 	if err != nil {
-		return applyRead{}, fmt.Errorf("read database schema: %w", err)
+		return applyRead{}, fmt.Errorf("read database schema: %w", errorkind.TargetRead(err))
 	}
 	return applyRead{
 		current:          current,
