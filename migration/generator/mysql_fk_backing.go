@@ -258,7 +258,7 @@ func (s *mysqlForeignKeyIndexSimulation) applyAlterTable(node *ast.AlterTableNod
 				return err
 			}
 		case *ast.ReplaceIndexOperation:
-			if err := s.replaceIndex(table, typed.Index); err != nil {
+			if err := s.replaceIndex(table, typed); err != nil {
 				return err
 			}
 		case *ast.AddIndexOperation:
@@ -270,8 +270,10 @@ func (s *mysqlForeignKeyIndexSimulation) applyAlterTable(node *ast.AlterTableNod
 
 // replaceIndex applies `DROP INDEX k, ADD INDEX k (...)`, one statement: the
 // server checks the foreign keys against the table the statement leaves, so
-// the dropped index needs no cover while the added one takes its place.
-func (s *mysqlForeignKeyIndexSimulation) replaceIndex(table string, index *ast.IndexNode) error {
+// the dropped index needs no cover while the added one takes its place. The
+// statement may drop indexes under other names too, and those leave with it.
+func (s *mysqlForeignKeyIndexSimulation) replaceIndex(table string, op *ast.ReplaceIndexOperation) error {
+	index := op.Index
 	if index == nil {
 		return nil
 	}
@@ -279,7 +281,9 @@ func (s *mysqlForeignKeyIndexSimulation) replaceIndex(table string, index *ast.I
 	added.Table = table
 	ref := difftypes.IndexRef{Name: added.Name, TableName: table}
 	s.indexes = slices.DeleteFunc(s.indexes, func(candidate mysqlIndexCandidate) bool {
-		return s.sameIndexIdentity(candidate.ref, ref)
+		return s.sameIndexIdentity(candidate.ref, ref) || slices.ContainsFunc(op.Drops, func(name string) bool {
+			return s.sameIndexIdentity(candidate.ref, difftypes.IndexRef{Name: name, TableName: table})
+		})
 	})
 	s.addIndex(mysqlIndexCandidateFromNode(&added))
 	return s.validateForeignKeyCoverage()

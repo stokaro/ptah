@@ -290,6 +290,10 @@ func (how arrangement) operationAccess(table string, operation ast.AlterOperatio
 		for _, column := range indexFactOf(op.Index).columns {
 			use.write(keyedResource(table, column))
 		}
+		// The statement frees these names too, which a foreign key may take next.
+		for _, name := range op.Drops {
+			use.write(nameResource(name))
+		}
 		return use, true
 	default:
 		return access{}, false

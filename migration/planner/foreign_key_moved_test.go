@@ -102,3 +102,54 @@ func TestForeignKeyMoved_SQLServerBuildsNoIndex(t *testing.T) {
 		"DROP INDEX [child_fk] ON [child]",
 	})
 }
+
+// TestForeignKeyMoved_AKeptKeyStandsOnTheOldIndex pins the order for a key moved under its
+// name over another key the plan keeps. The old index cannot leave alone, and it holds the
+// name the moved key's new index takes, so the statement that gives the kept key an index
+// of its own comes ahead of the addition.
+func TestForeignKeyMoved_AKeptKeyStandsOnTheOldIndex(t *testing.T) {
+	c := qt.New(t)
+	held := heldMovedForeignKey()
+	held.Constraints = append(held.Constraints, catalog.Constraint{
+		Name: "d_fk", TableName: "child", Type: "FOREIGN KEY", ColumnName: "pid", ColumnNames: []string{"pid"},
+		ForeignTable: new("parent"), ForeignColumn: new("code"),
+	})
+	held.Tables[0].Columns = append(held.Tables[0].Columns, catalog.Column{Name: "code", DataType: "bigint", ColumnType: "bigint", IsNullable: "NO"})
+	declared := declaredMovedForeignKey("child_fk")
+	declared.Fields = append(declared.Fields, schemamodel.Field{StructName: "Parent", Name: "code", Type: "bigint"})
+	declared.Constraints = append(declared.Constraints, schemamodel.Constraint{
+		StructName: "Child", Name: "d_fk", Type: "FOREIGN KEY", Table: "child", Columns: []string{"pid"},
+		ForeignTable: "parent", ForeignColumn: "code",
+	})
+
+	got := plannedOverHeld(c, "mysql", declared, held)
+
+	c.Assert(got, qt.DeepEquals, []string{
+		"ALTER TABLE `child` DROP FOREIGN KEY `child_fk`",
+		"ALTER TABLE `child` DROP INDEX `child_fk`, ADD INDEX `d_fk` (`pid`)",
+		"ALTER TABLE `child` ADD CONSTRAINT `child_fk` FOREIGN KEY (`qid`) REFERENCES `parent`(`id`)",
+	})
+}
+
+// TestForeignKeyMoved_TheRollbackRebuildsTheIndexWithTheKeyGone pins the rollback of a key
+// moved over a key the plan keeps. The index under the key's name comes back in one
+// statement, and the key stands on that name until then, so it goes first.
+func TestForeignKeyMoved_TheRollbackRebuildsTheIndexWithTheKeyGone(t *testing.T) {
+	c := qt.New(t)
+	const parent = `CREATE TABLE parent (id bigint PRIMARY KEY, code bigint NOT NULL, CONSTRAINT parent_code UNIQUE (code));`
+
+	got := rollbackOfPlan(c, "mysql",
+		parent+`CREATE TABLE child (id bigint PRIMARY KEY, pid bigint, qid bigint,
+			CONSTRAINT d_fk FOREIGN KEY (pid) REFERENCES parent (code), CONSTRAINT c_fk FOREIGN KEY (pid) REFERENCES parent (id));
+			CREATE INDEX c_fk ON child (pid);`,
+		parent+`CREATE TABLE child (id bigint PRIMARY KEY, pid bigint, qid bigint,
+			CONSTRAINT d_fk FOREIGN KEY (pid) REFERENCES parent (code), CONSTRAINT c_fk FOREIGN KEY (qid) REFERENCES parent (id));`,
+	)
+
+	c.Assert(got, qt.DeepEquals, []string{
+		"ALTER TABLE `child` DROP FOREIGN KEY `c_fk`",
+		"ALTER TABLE `child` DROP INDEX `c_fk`, ADD INDEX `c_fk` (`pid`)",
+		"ALTER TABLE `child` ADD CONSTRAINT `c_fk` FOREIGN KEY (`pid`) REFERENCES `parent`(`id`)",
+		"DROP INDEX `d_fk` ON `child`",
+	})
+}
