@@ -36,7 +36,7 @@ func applyNativeSchemaPlan(ctx context.Context, cmd *cobra.Command, opts schemaA
 		return "", err
 	}
 	run.evidence.Units = units
-	fmt.Fprintln(run.human, "Planned changes:")
+	fmt.Fprintln(run.human, plannedSchemaChanges)
 	printApplyUnits(run.human, units, plan.Annotations())
 	if opts.dryRun {
 		return atlasschema.ApplyOutcomeDryRun, nil

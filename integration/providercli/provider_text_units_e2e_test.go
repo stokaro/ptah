@@ -139,7 +139,8 @@ func (f providerCLI) applyPreview(c *qt.C, extra ...string) (preview string, cod
 // TestProviderSchemaApplyShowsTheTextForm_HappyPath previews a plan whose new
 // column a provider performs as a native operation and writes as text: the
 // preview shows the provider's statement, as a migration file holds it and as
-// a built-in engine's plan is shown, rather than the operation's kind.
+// a built-in engine's plan is shown, under a built-in engine's heading, rather
+// than the operation's kind.
 func TestProviderSchemaApplyShowsTheTextForm_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	f := textUnitsFixture(c, "native-text", addedColumnSchema)
@@ -147,14 +148,15 @@ func TestProviderSchemaApplyShowsTheTextForm_HappyPath(t *testing.T) {
 	preview, code := f.applyPreview(c)
 
 	c.Assert(code, qt.Equals, 0, qt.Commentf("%s", preview))
-	c.Assert(preview, qt.Contains, "Planned changes:\n"+`ALTER TABLE "items" ADD COLUMN "added" REAL;`+"\n")
+	c.Assert(preview, qt.Contains, "Planned schema changes:\n"+`ALTER TABLE "items" ADD COLUMN "added" REAL;`+"\n")
 	c.Assert(preview, qt.Not(qt.Contains), "Native operation:")
 }
 
 // TestProviderSchemaApplyShowsTheTextForm_FailurePath previews plans that have
 // no text form: a provider that renders no text units, and a change a provider
 // that renders them performs only natively. The preview shows each native
-// operation by kind, subject and assessment, as before.
+// operation by kind, subject and assessment, under the heading an SQL plan
+// has.
 func TestProviderSchemaApplyShowsTheTextForm_FailurePath(t *testing.T) {
 	rebuild := "tables:\n  items:\n    columns:\n      id: {type: INTEGER, primary: true, not_null: true}\n      flag: {type: INTEGER, not_null: true}\n"
 	tests := []struct {
@@ -172,6 +174,7 @@ func TestProviderSchemaApplyShowsTheTextForm_FailurePath(t *testing.T) {
 			preview, code := f.applyPreview(c, test.extra...)
 
 			c.Assert(code, qt.Equals, 0, qt.Commentf("%s", preview))
+			c.Assert(preview, qt.Contains, "Planned schema changes:\n")
 			c.Assert(preview, qt.Contains, "Native operation: example.org/fixture/table-operation\n")
 		})
 	}
