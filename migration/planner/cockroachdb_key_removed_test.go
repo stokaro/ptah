@@ -83,3 +83,17 @@ func TestCockroachDBKeyRemoved_FailurePath(t *testing.T) {
 		})
 	}
 }
+
+// TestCockroachDBKeyRemoved_AnotherConstraintDropsAlone pins a removed constraint that is
+// not the table's key: the table keeps its key, so no hidden column comes with the drop.
+func TestCockroachDBKeyRemoved_AnotherConstraintDropsAlone(t *testing.T) {
+	c := qt.New(t)
+
+	got := columnKeyPlan(c, "cockroachdb",
+		`CREATE TABLE parent (id bigint PRIMARY KEY, code bigint, CONSTRAINT code_rule CHECK (code > 0));`,
+		`CREATE TABLE parent (id bigint PRIMARY KEY, code bigint);`,
+		"id",
+	)
+
+	c.Assert(got, qt.DeepEquals, []string{`ALTER TABLE "parent" DROP CONSTRAINT "code_rule"`})
+}
