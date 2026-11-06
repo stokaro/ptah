@@ -197,6 +197,9 @@ func newForwardCommandWithArgsMapper(
 			defer restoreCommandContexts(target, targetContexts)
 			resetCommandFlags(target)
 			installForwardedTargetEnv(target)
+			// A factory need not return a command from either assembled tree, so the
+			// target gets the surface's value wording here rather than by inheritance.
+			cmdflags.InstallStdlibValues(target)
 			defer resetCommandFlags(target)
 			parent := target.Parent()
 			if parent != nil {
@@ -338,12 +341,12 @@ func adapterUsageFunc(adapterPath string, target *cobra.Command) func(*cobra.Com
 		if cmd.HasAvailableLocalFlags() {
 			cmd.Println()
 			cmd.Println("Flags:")
-			cmd.Print(cmd.LocalFlags().FlagUsages())
+			cmd.Print(cmdflags.FlagUsages(cmd.LocalFlags()))
 		}
 		if cmd.HasAvailableInheritedFlags() {
 			cmd.Println()
 			cmd.Println("Global Flags:")
-			cmd.Print(cmd.InheritedFlags().FlagUsages())
+			cmd.Print(cmdflags.FlagUsages(cmd.InheritedFlags()))
 		}
 		return nil
 	}

@@ -19,7 +19,9 @@ const atlasLockTimeoutDefault = 10 * time.Second
 // binary does: a duration flag that defaults to [atlasLockTimeoutDefault].
 //
 // A duration flag is what gives a bad value the pinned binary's answer, in its
-// place. Measured on 2026-09-26 on PostgreSQL 18 (stokaro/ptah#3689), the value
+// place, once [cmdflags.InstallStdlibValues] has given it the standard
+// library's parse error; pflag's own duration value answers `must be a
+// duration like "30s" or "5m"`. Measured on 2026-09-26 on PostgreSQL 18 (stokaro/ptah#3689), the value
 // is refused by the flag parser, before the verb runs and before a missing
 // --url is named: `invalid argument "bogus" for "--lock-timeout" flag: time:
 // invalid duration "bogus"`, and the same for an empty value and for a number

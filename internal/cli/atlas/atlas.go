@@ -186,6 +186,9 @@ existing Ptah equivalent forward to that native command.`, policy)
 	installAtlasProviderSession(cmd, policy)
 	// Last, so its pre-run wraps every other one and runs first.
 	installAtlasStrictConnectGate(cmd, policy)
+	// On both profiles, and after every flag above exists: a bad value and a
+	// boolean help line are measured against the pinned binary either way.
+	cmdflags.InstallStdlibValues(cmd)
 	return cmd
 }
 
