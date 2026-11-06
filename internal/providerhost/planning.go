@@ -116,9 +116,17 @@ func (s modelPlanner) planningRequest(request featureplan.Request) (*protocol.Pl
 		}
 		remote.Changes = append(remote.Changes, &protocol.PlanningChange{Subject: comparisonIdentity(change.Subject), Value: value})
 	}
-	outlined := s.declaration.GetTables() == protocol.PlanningTables_PLANNING_TABLES_OUTLINED
+	// Under provider.TableOutlinesFeature a service that plans no
+	// table-attached model reads only which tables the plan keeps, creates,
+	// changes and drops, so the host captures nothing more of them for it: a
+	// migration of 500 new YDB tables sent the whole capture of every table
+	// to each service that assesses named objects, in both directions.
+	captureTable := capture.table
+	if s.declaration.GetTables() == protocol.PlanningTables_PLANNING_TABLES_OUTLINED {
+		captureTable = tableOutline
+	}
 	for _, table := range request.Tables {
-		captured, err := capture.planningTable(table, outlined)
+		captured, err := captureTable(table)
 		if err != nil {
 			return nil, err
 		}
