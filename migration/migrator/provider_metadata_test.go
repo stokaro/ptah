@@ -59,10 +59,14 @@ type metadataLog struct {
 	prepares, appends int
 	records           []dbschema.MigrationLogRecord
 	appendErr         error
+	prepareErr        error
 	reader            *metadataReader[dbschema.MigrationLogRecord]
 }
 
 func (l *metadataLog) Prepare(context.Context, dbschema.MigrationMetadataTable) error {
+	if l.prepareErr != nil {
+		return l.prepareErr
+	}
 	l.prepared = true
 	l.prepares++
 	return nil
@@ -231,6 +235,28 @@ func TestProviderMetadataLogFailureDoesNotReplayMigration(t *testing.T) {
 	c.Assert(owner.log.appends, qt.Equals, 2)
 	c.Assert(owner.history, qt.HasLen, 1)
 	c.Assert(owner.history[0].State, qt.Equals, "applied")
+	report := runner.MigrationLogReport()
+	c.Assert(report.Written, qt.Equals, 0)
+	c.Assert(report.Lost, qt.HasLen, 2)
+	c.Assert(report.Lost[0].State, qt.Equals, migrator.MigrationLogStarted)
+	c.Assert(report.Lost[0].Message, qt.Equals, ptaherr.ErrOutcomeUnknown.Error())
+	c.Assert(report.Lost[1].State, qt.Equals, migrator.MigrationLogApplied)
+}
+
+// A store that cannot prepare its table loses every entry, and the report says
+// so against each of them rather than once for the run.
+func TestProviderMetadataLogPrepareFailureIsReportedPerEntry(t *testing.T) {
+	c := qt.New(t)
+	owner := &metadataSession{log: metadataLog{prepareErr: ptaherr.ErrOutcomeUnknown}}
+	_, runner := metadataMigrator(c, owner)
+	c.Assert(runner.MigrateUp(c.Context()), qt.IsNil)
+	c.Assert(owner.statements, qt.Equals, 1)
+	c.Assert(owner.log.appends, qt.Equals, 0)
+	report := runner.MigrationLogReport()
+	c.Assert(report.Written, qt.Equals, 0)
+	c.Assert(report.Lost, qt.HasLen, 2)
+	c.Assert(report.Lost[1].State, qt.Equals, migrator.MigrationLogApplied)
+	c.Assert(report.Lost[1].Message, qt.Equals, ptaherr.ErrOutcomeUnknown.Error())
 }
 
 func TestProviderMetadataTagsPreserveZeroAndAtomicDelete(t *testing.T) {

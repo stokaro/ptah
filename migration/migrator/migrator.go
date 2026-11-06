@@ -271,6 +271,9 @@ type Migrator struct {
 	// the refusal is reported once rather than on every entry the run would
 	// have written.
 	migrationLogRefused *atomic.Bool
+	// migrationLogTally gathers which entries reached the log and which did not.
+	// See [Migrator.MigrationLogReport].
+	migrationLogTally *migrationLogTally
 	// actor is the name the log records for this run, and actorSource says
 	// what that name is worth. See [ActorSource].
 	actor                    string
@@ -320,6 +323,7 @@ func NewMigrator(conn *dbschema.DatabaseConnection, provider MigrationProvider) 
 		migrationLogSeq:     new(atomic.Int64),
 		migrationLogReady:   new(atomic.Bool),
 		migrationLogRefused: new(atomic.Bool),
+		migrationLogTally:   new(migrationLogTally),
 		actor:               actorName,
 		actorSource:         actorSource,
 	}

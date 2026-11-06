@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"ptah.run/core/sqlutil"
@@ -120,6 +122,115 @@ func (a MigrationLogAttempt) Undetermined() bool {
 	return a.Outcome.State == ""
 }
 
+// MigrationLogReport says what a migrator's attempts to write the log came to.
+//
+// The log is written beside the work, and a write that fails does not stop the
+// migration. So the migrator that tried is the only witness to a lost entry:
+// the table cannot say what it was never given, and a rerun finds nothing left
+// to do and writes nothing. A table with no rows reads the same whether the run
+// had nothing to record or lost everything it tried to record, and this report
+// is what tells the two apart.
+//
+// It counts what the database accepted, which is not always what it stored. A
+// MySQL or MariaDB session whose sql_mode is not strict shortens a value too long
+// for its column, or replaces a character its charset cannot hold, and answers
+// success, so such an entry counts as written.
+type MigrationLogReport struct {
+	// Written counts the entries the database accepted. Zero with nothing in
+	// Lost is a run that had nothing to record.
+	Written int `json:"written"`
+	// Lost names the entries the database did not accept, in the order they were
+	// tried. Each attempt writes two entries, so one migration can appear twice.
+	Lost []MigrationLogLoss `json:"lost,omitempty"`
+}
+
+// MigrationLogLoss is one entry the log should hold and does not.
+//
+// It says nothing about the migration: a migration whose entries are lost ran
+// as far as the revision table says it ran.
+type MigrationLogLoss struct {
+	// Operation is the verb the entry belongs to: `up` or `down`.
+	Operation string `json:"operation"`
+	// Version is the version of the migration the entry is about.
+	Version int64 `json:"version"`
+	// VersionKey is that migration's exact revision identity, spelled as
+	// [RunResult.PlannedKeys] spells it. It is always present, because an empty
+	// string is itself an identity a Flyway repeatable migration records.
+	VersionKey string `json:"version_key"`
+	// State is the outcome the entry would have recorded. It is empty, with
+	// Version zero, when a rollback could not name the migrations it undoes, so
+	// this one loss stands for all of their entries.
+	State MigrationLogState `json:"state,omitempty"`
+	// SQLState is the SQLSTATE the server answered with, read from a
+	// PostgreSQL-protocol or MySQL-protocol driver error. It is empty when the
+	// server gave no answer, and on other engines.
+	SQLState string `json:"sqlstate,omitempty"`
+	// ErrorNumber is the server's error number on the MySQL protocol, such as
+	// 1406 for a value too long for its column. It is zero on other engines.
+	ErrorNumber int `json:"error_number,omitempty"`
+	// Message is the failure written for a person. It can quote what the
+	// database said, including part of the value it refused. A caller that must
+	// not publish data reads the fields above instead.
+	Message string `json:"message"`
+}
+
+// migrationLogTally gathers what a migrator's writes came to.
+//
+// It is a pointer on the Migrator for the reason the sequence counter is one:
+// every With* builder copies the Migrator by value, and the migrator a caller
+// holds is not the one a run session derives from it.
+type migrationLogTally struct {
+	mu     sync.Mutex
+	report MigrationLogReport
+}
+
+func (t *migrationLogTally) wrote() {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.report.Written++
+}
+
+func (t *migrationLogTally) lost(loss MigrationLogLoss) {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.report.Lost = append(t.report.Lost, loss)
+}
+
+func (t *migrationLogTally) snapshot() MigrationLogReport {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return MigrationLogReport{Written: t.report.Written, Lost: slices.Clone(t.report.Lost)}
+}
+
+// MigrationLogReport returns what this migrator's writes to the log have come
+// to so far, across every run it and the migrators derived from it have made.
+//
+// It returns nil when this migrator keeps no log to write to: the log is turned
+// off, the revision format is the Atlas-compatible one, or the connection is in
+// dry-run mode. A non-nil report with nothing lost means the database accepted
+// every entry the runs tried to write.
+func (m *Migrator) MigrationLogReport() *MigrationLogReport {
+	if m.migrationLogTally == nil || m.conn == nil || !m.migrationLogWritable() || m.conn.Writer().IsDryRun() {
+		return nil
+	}
+	report := m.migrationLogTally.snapshot()
+	return &report
+}
+
+// reportLostLogEntry records one entry the log did not get. The caller says
+// which entry, and cause says why.
+func (m *Migrator) reportLostLogEntry(loss MigrationLogLoss, cause error) {
+	loss.Message = cause.Error()
+	loss.SQLState, loss.ErrorNumber = serverErrorCodes(cause)
+	m.migrationLogTally.lost(loss)
+}
+
 // migrationLogWritable reports whether this migrator keeps the log.
 //
 // Two conditions, in one predicate because the DDL, the writer and the reader
@@ -227,10 +338,14 @@ func (m *Migrator) createMigrationLogTableSQL() string {
 // back must still leave the record that it was attempted, and a record that
 // vanished with the transaction would describe only the runs that succeeded.
 //
-// A write that fails is reported to the run's logger and does not fail the
-// migration. The log exists to explain what happened afterwards; refusing to
-// apply a migration because its note could not be written would make an
-// investigation aid into an outage.
+// A write that fails does not fail the migration. The log exists to explain
+// what happened afterwards; refusing to apply a migration because its note could
+// not be written would make an investigation aid into an outage. The failure goes
+// to the run's logger for a person and to [Migrator.MigrationLogReport] for a
+// caller that reads no log stream, and every value goes to the database as the
+// caller gave it. Shortening an actor or replacing a character the column cannot
+// hold would write a record that names somebody else, so such an entry is lost
+// and says why rather than kept and wrong.
 func (m *Migrator) logMigrationEvent(
 	ctx context.Context,
 	operation string,
@@ -252,11 +367,18 @@ func (m *Migrator) logMigrationEvent(
 		defer cancel()
 		ctx = durable
 	}
+	lost := MigrationLogLoss{
+		Operation:  operation,
+		Version:    migration.Version,
+		VersionKey: migration.RevisionVersion(),
+		State:      state,
+	}
 	if err := m.ensureMigrationLogTable(ctx); err != nil {
 		if !errors.Is(err, errMigrationLogAlreadyRefused) {
 			m.logger.Warn("Could not create the migration log table",
 				"version", migration.Version, "error", err)
 		}
+		m.reportLostLogEntry(lost, err)
 		return
 	}
 	entry := MigrationLogEntry{
@@ -276,7 +398,10 @@ func (m *Migrator) logMigrationEvent(
 	if err := m.writeMigrationLogEntry(ctx, entry); err != nil {
 		m.logger.Warn("Could not append to the migration log",
 			"version", migration.Version, "operation", operation, "state", string(state), "error", err)
+		m.reportLostLogEntry(lost, err)
+		return
 	}
+	m.migrationLogTally.wrote()
 }
 
 // migrationLogTableExists reports whether the log table is there.
@@ -292,6 +417,12 @@ func (m *Migrator) migrationLogTableExists(ctx context.Context) (bool, error) {
 	return exists, nil
 }
 
+// errMigrationLogAlreadyRefused marks a refusal the run's logger has already
+// been told about. The caller warns on every other error and skips this one, so
+// the warning is not repeated. The refusal itself stays in the chain, because
+// the entry is still lost and [Migrator.MigrationLogReport] says why.
+var errMigrationLogAlreadyRefused = errors.New("migration log table already refused")
+
 // ensureMigrationLogTable creates the log table if it is not there yet.
 //
 // The creation lives here rather than in Initialize, and the difference is who
@@ -300,11 +431,6 @@ func (m *Migrator) migrationLogTableExists(ctx context.Context) (bool, error) {
 // by any command run with an account that may read and not create -- turning a
 // question into a write, and a read-only credential into a failure. Only a run
 // that has something to record needs the table.
-// errMigrationLogAlreadyRefused is the silent form of a refusal already
-// reported. The caller warns on every other error and skips this one, so the
-// entry is still not written and the message is not repeated.
-var errMigrationLogAlreadyRefused = errors.New("migration log table already refused")
-
 func (m *Migrator) ensureMigrationLogTable(ctx context.Context) error {
 	if m.migrationLogReady == nil || m.migrationLogReady.Load() {
 		return nil
@@ -324,10 +450,7 @@ func (m *Migrator) ensureMigrationLogTable(ctx context.Context) error {
 	// A name the target would truncate closes the log for this run rather than
 	// stopping the migration. See [Migrator.refuseUnaddressableLogTable].
 	if err := m.refuseUnaddressableLogTable(); err != nil {
-		if m.migrationLogRefused != nil && m.migrationLogRefused.Swap(true) {
-			return errMigrationLogAlreadyRefused
-		}
-		return err
+		return m.latchLogTableRefusal(err)
 	}
 	// The same refusal the revision table gets, and for the same reason: this
 	// table is written on every attempt, so adopting one somebody else created
@@ -343,10 +466,7 @@ func (m *Migrator) ensureMigrationLogTable(ctx context.Context) error {
 		// Latched so the refusal is reported once rather than per entry: it
 		// names one table and one remedy, and repeating it per attempt buries
 		// the rest of the run.
-		if m.migrationLogRefused != nil && m.migrationLogRefused.Swap(true) {
-			return errMigrationLogAlreadyRefused
-		}
-		return err
+		return m.latchLogTableRefusal(err)
 	}
 	if _, err := m.conn.ExecContext(ctx, m.createMigrationLogTableSQL()); err != nil {
 		return fmt.Errorf("create the migration log table: %w", err)
@@ -356,13 +476,19 @@ func (m *Migrator) ensureMigrationLogTable(ctx context.Context) error {
 	// role that can create objects in the metadata schema can place its table
 	// between them for IF NOT EXISTS to adopt.
 	if err := m.refuseForeignMetadataTable(ctx, m.migrationsTableName()+migrationLogTableSuffix); err != nil {
-		if m.migrationLogRefused != nil && m.migrationLogRefused.Swap(true) {
-			return errMigrationLogAlreadyRefused
-		}
-		return err
+		return m.latchLogTableRefusal(err)
 	}
 	m.migrationLogReady.Store(true)
 	return nil
+}
+
+// latchLogTableRefusal returns a refusal of the log table, marked as reported
+// from the second time on.
+func (m *Migrator) latchLogTableRefusal(err error) error {
+	if m.migrationLogRefused != nil && m.migrationLogRefused.Swap(true) {
+		return fmt.Errorf("%w: %w", errMigrationLogAlreadyRefused, err)
+	}
+	return err
 }
 
 func (m *Migrator) writeMigrationLogEntry(ctx context.Context, entry MigrationLogEntry) error {
@@ -590,7 +716,8 @@ func scanMigrationLogEntry(rows *sql.Rows) (MigrationLogEntry, error) {
 //
 // Logging never fails the rollback. A migrator that keeps no log, a dry run,
 // and a boundary this migrator cannot resolve each return a function that
-// records nothing.
+// records nothing. The last of these loses the rollback's entries, so
+// [Migrator.MigrationLogReport] says so.
 func (m *Migrator) LogDerivedRollback(ctx context.Context, targetVersion int64) func(error) {
 	noop := func(error) {}
 	if !m.migrationLogWritable() || m.conn.Writer().IsDryRun() {
@@ -600,6 +727,7 @@ func (m *Migrator) LogDerivedRollback(ctx context.Context, targetVersion int64) 
 	if err != nil {
 		m.logger.Warn("Could not read the applied migrations for the log",
 			"targetVersion", targetVersion, "error", err)
+		m.reportLostLogEntry(MigrationLogLoss{Operation: "down"}, err)
 		return noop
 	}
 	rollingBack, err := migrationsToRollback(
@@ -607,6 +735,7 @@ func (m *Migrator) LogDerivedRollback(ctx context.Context, targetVersion int64) 
 	if err != nil {
 		m.logger.Warn("Could not name the migrations a derived rollback undoes",
 			"targetVersion", targetVersion, "error", err)
+		m.reportLostLogEntry(MigrationLogLoss{Operation: "down"}, err)
 		return noop
 	}
 	for _, migration := range rollingBack {

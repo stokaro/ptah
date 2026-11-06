@@ -465,6 +465,7 @@ parses one stream and reads the other.
     "statements": 3,
     "sqlstate": "42P01"
   },
+  "migration_log": { "written": 4 },
   "status": { "…": "the history after the run" }
 }
 ```
@@ -513,6 +514,42 @@ run that stopped before any statement ran has none: a lock timeout, a checksum
 mismatch, or a statement refused before execution because it cannot run inside
 a transaction. `sqlstate` is absent when the server gave no answer, such as after
 a lost connection or a canceled statement.
+
+`migration_log` says what the run's writes to the
+[migration log](../migration-log/) came to. A failed write does not stop the
+migration, so it changes neither `outcome` nor the exit status, and the table
+cannot say what it was never given. This document is the only record that an
+entry was lost, and a rerun cannot bring it back.
+
+| `migration_log` | Meaning |
+| --- | --- |
+| absent | The run keeps no log: `migration.log` is `false`, the revision format is the Atlas-compatible one, the run is a dry run, or it failed before the migrator ran, such as one that could not open the target |
+| `{ "written": 0 }` | The run had nothing to record |
+| `{ "written": 4 }` | The server accepted all four entries the run tried to write |
+| `{ "written": 2, "lost": [ … ] }` | The server accepted two entries, and `lost` names the rest |
+
+Each attempt tries to write two entries, one when it starts and one when it ends,
+so a migration can appear in `lost` twice:
+
+```json
+{
+  "operation": "up",
+  "version": 1785255999,
+  "version_key": "1785255999",
+  "state": "started",
+  "sqlstate": "22001",
+  "error_number": 1406,
+  "message": "SQL execution failed: Error 1406 (22001): Data too long for column 'actor' at row 1 ..."
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `operation` | The verb the entry belongs to, `up` or `down` |
+| `version`, `version_key` | The migration the entry is about, spelled as `planned` and `planned_keys` spell it |
+| `state` | The outcome the entry would have recorded |
+| `sqlstate`, `error_number` | The server's answer, as in `failure`. Absent when the server gave none, and on other engines |
+| `message` | The failure written for a person. It can quote what the database said, including part of the value it refused, so a caller that must not publish data reads the other fields |
 
 ## Execution controls
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing/fstest"
@@ -201,6 +202,41 @@ func ExampleMigrator_GetMigrationStatus() {
 	// pending: [2]
 	// total migrations: 2
 	// has pending changes: true
+}
+
+// ExampleMigrator_MigrationLogReport reads what a run's writes to the migration
+// log came to. A write the server refuses does not fail the run, so the report is
+// the only place a caller learns that an entry is missing. Here a trigger refuses
+// the second migration's rows, and the first migration is the one that plants it.
+func ExampleMigrator_MigrationLogReport() {
+	ctx := context.Background()
+	conn, cleanup := exampleSQLiteConnection()
+	defer cleanup()
+
+	m := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(
+		migrator.CreateMigrationFromSQL(1, "refuse_second_file", `CREATE TRIGGER refuse BEFORE INSERT ON schema_migrations_log
+WHEN NEW.version = 2
+BEGIN
+  SELECT RAISE(ABORT, 'refused');
+END;
+`, "DROP TRIGGER refuse;"),
+		migrator.CreateMigrationFromSQL(2, "create_users", "CREATE TABLE users (id INTEGER PRIMARY KEY);", "DROP TABLE users;"),
+	)).WithLogger(slog.New(slog.DiscardHandler))
+	if err := m.MigrateUp(ctx); err != nil {
+		fmt.Println("migrate up:", err)
+		return
+	}
+
+	report := m.MigrationLogReport()
+	fmt.Println("written:", report.Written)
+	for _, lost := range report.Lost {
+		fmt.Println("lost:", lost.Operation, lost.Version, lost.State)
+	}
+
+	// Output:
+	// written: 2
+	// lost: up 2 started
+	// lost: up 2 applied
 }
 
 // ExampleWithStatementObserver installs the auditing hook for tools that need

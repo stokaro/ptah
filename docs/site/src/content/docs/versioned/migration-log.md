@@ -73,6 +73,45 @@ it:
 Storing an unverified name and an observed one the same way is how a log
 becomes evidence for something it cannot support.
 
+## When an entry cannot be written
+
+A write to the log can fail: the server refuses the value, the account may not
+create the table, or the connection is gone. The migration goes on, because
+stopping a migration over its note would turn an investigation aid into an
+outage. Nothing in the table can record that it was not written to, so the run
+reports it:
+
+- `ptah migrations up --json` names each lost entry under `migration_log` in
+  [the run document](../apply/#the-evidence-a-run-leaves), against the migration
+  it belongs to. A table with no rows then has two different readings, and the
+  document says which one applies.
+- Without `--json`, `ptah migrations up` and `ptah migrations down` close with a
+  notice that names the migrations, after the line that says the run succeeded.
+- `ptah migrations down` prints no document, so that notice and the warnings on
+  the log stream are its whole report.
+- A program using the library asks `Migrator.MigrationLogReport`.
+
+The exit status does not change. A lost entry says nothing about the migration:
+the revision table says what is applied, and a run that exits `0` applied what it
+selected. A nonzero status would send a caller to retry, the retry would find
+nothing left to do, and the entry would stay lost. A caller that treats a lost
+record as a problem reads `migration_log.lost`.
+
+An entry is sent as the run holds it. Ptah does not shorten an actor to fit the
+256 characters of its column, or replace a character the database's charset cannot
+hold, because a record that names somebody else is worse than no record. The
+server refuses such an entry, and it is lost and reported like any other. The
+measured answers are `22001` on PostgreSQL for a name that is too long, `1406` on
+MySQL and MariaDB, `3988` on MySQL and `1366` on MariaDB for a character the
+charset cannot hold.
+
+A MySQL or MariaDB session whose `sql_mode` is not strict is the exception, and
+Ptah cannot see it. The server stores the name shortened to 256 characters or with
+`?` in place of the character, and answers success, so the entry counts as written
+and the record is wrong. Measured with `sql_mode=''` on MySQL 8.4 for a long name
+and on MariaDB 12.3 for a character the charset cannot hold. Keep the mode strict,
+which is the default on both, on a database whose log you rely on.
+
 ## What this is not
 
 **It is not an audit trail.** The table lives in the database it describes and

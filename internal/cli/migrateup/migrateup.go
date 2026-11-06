@@ -581,6 +581,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *runDocument) 
 	if err != nil {
 		return err
 	}
+	document.migrator = mig
 
 	status, err := readStatusWithoutInitializing(cmd.Context(), conn, mig)
 	if err != nil {
@@ -665,6 +666,9 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *runDocument) 
 		preflightHook,
 	)
 
+	// Last on every path from here, so it follows any line that says success.
+	defer emitLostLogEntries(emit, opts, mig)
+
 	// Run migrations
 	startedAt := time.Now()
 	outcome := applyPendingMigrations(cmd, conn, mig, opts, toVersion, preflightHook, expected, document)
@@ -697,6 +701,14 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *runDocument) 
 		emitMigrateUpDeferredChecks(emit, checksDeferred)
 	}
 	return nil
+}
+
+// emitLostLogEntries tells a person that the migration log did not get
+// everything the run tried to write. Under --json the document says it.
+func emitLostLogEntries(emit cliobs.Emitter, opts *options, mig *migrator.Migrator) {
+	if notice := dbcli.LostLogEntriesNotice(mig.MigrationLogReport()); notice != "" && !opts.jsonOutput {
+		emit.Println(notice)
+	}
 }
 
 // decideConnected refuses, against the server the run reached, the requests
@@ -940,6 +952,10 @@ type runDocument struct {
 	enabled bool
 	out     io.Writer
 	written bool
+	// migrator is the run's migrator once one exists. It is the only witness to
+	// a log entry the table did not get, so every document that follows it asks
+	// it, whichever path the run took to get there.
+	migrator *migrator.Migrator
 }
 
 // write writes the run's evidence as its document, and does nothing without
@@ -950,6 +966,9 @@ func (d *runDocument) write(evidence migrator.RunEvidence) error {
 	}
 	d.written = true
 	evidence.Command = Command
+	if d.migrator != nil && !evidence.NotStarted {
+		evidence.MigrationLog = d.migrator.MigrationLogReport()
+	}
 	return emitRunResult(d.out, evidence)
 }
 
