@@ -233,9 +233,12 @@ standalone objects and assigned table children. This path requires
 session and makes no claim about objects that already exist.
 
 The host joins every contribution with its common creation steps before asking
-for SQL text. A missing receipt, an unclaimed table creation, a dependency cycle,
-or a provider refusal returns no SQL prefix. A provider-only operation without
-a text form cannot appear in a rendered schema.
+for SQL text. A grant or a revocation on an object a declaration planner
+creates comes after every other statement, because the planner may create the
+object after the common steps; the other grants keep their place. A missing
+receipt, an unclaimed table creation, a dependency cycle, or a provider refusal
+returns no SQL prefix. A provider-only operation without a text form cannot
+appear in a rendered schema.
 
 Declared rows (`//ptah:schema:data`) and seed files reach a provider through
 four services. The host keeps the row diff, the order across tables, protected
