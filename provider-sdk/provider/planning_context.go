@@ -87,6 +87,7 @@ func validatePlanningMetadata(metadata *protocol.PlanningMetadata) error {
 }
 
 func validatePlanningTables(description *protocol.Description, request *protocol.PlanFeaturesRequest, engine *protocol.Engine) error {
+	checks := new(targetChecks)
 	identities := make([]*protocol.ComparisonIdentity, 0, len(request.GetTables()))
 	for _, table := range request.GetTables() {
 		identities = append(identities, table.GetSubject())
@@ -104,7 +105,7 @@ func validatePlanningTables(description *protocol.Description, request *protocol
 			if err := validateDeclaredTable(desired); err != nil {
 				return err
 			}
-			if err := validateCapturedFeatures(description, request, engine, protocol.ValueInput_DESIRED, desired.GetFeatures()); err != nil {
+			if err := checkCapturedFeatures(checks, description, request, engine, protocol.ValueInput_DESIRED, desired.GetFeatures()); err != nil {
 				return err
 			}
 		}
@@ -115,7 +116,7 @@ func validatePlanningTables(description *protocol.Description, request *protocol
 			if err := validateObservedTable(current); err != nil {
 				return err
 			}
-			if err := validateCapturedFeatures(description, request, engine, protocol.ValueInput_OBSERVED, current.GetFeatures()); err != nil {
+			if err := checkCapturedFeatures(checks, description, request, engine, protocol.ValueInput_OBSERVED, current.GetFeatures()); err != nil {
 				return err
 			}
 		}
@@ -143,6 +144,15 @@ func validatePlanningLifecycle(table *protocol.PlanningTable) error {
 }
 
 func validateCapturedFeatures(description *protocol.Description, request *protocol.PlanFeaturesRequest, engine *protocol.Engine, representation protocol.ValueInput_Representation, captured *protocol.CapturedFeatures) error {
+	return checkCapturedFeatures(nil, description, request, engine, representation, captured)
+}
+
+// checkCapturedFeatures is [validateCapturedFeatures] with the answers of a
+// validation that checks the captured features of more than one table.
+func checkCapturedFeatures(
+	checks *targetChecks, description *protocol.Description, request *protocol.PlanFeaturesRequest, engine *protocol.Engine,
+	representation protocol.ValueInput_Representation, captured *protocol.CapturedFeatures,
+) error {
 	if captured == nil {
 		return fmt.Errorf("%w: missing captured feature knowledge", ErrProtocol)
 	}
@@ -162,7 +172,7 @@ func validateCapturedFeatures(description *protocol.Description, request *protoc
 		}
 		slices.Sort(service.OwnerKinds)
 		service.OwnerKinds = slices.Compact(service.OwnerKinds)
-		if err := validateComparisonState(description, context, service, representation, entry.state); err != nil {
+		if err := checkComparisonState(checks, description, context, service, representation, entry.state); err != nil {
 			return err
 		}
 	}

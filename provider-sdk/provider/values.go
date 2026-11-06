@@ -26,10 +26,14 @@ type ValueNormalizer interface {
 // ValidateValueInputs checks transport ownership before dispatch. It does not
 // interpret payloads; the selected owner must validate their complete meaning.
 func ValidateValueInputs(description *protocol.Description, request *protocol.NormalizeValuesRequest) error {
+	return validateValueInputs(nil, description, request)
+}
+
+func validateValueInputs(checks *targetChecks, description *protocol.Description, request *protocol.NormalizeValuesRequest) error {
 	if request == nil || description == nil || !slices.Contains(description.GetFeatures(), NormalizeValuesFeature) {
 		return fmt.Errorf("%w: value normalization is unavailable", ErrProtocol)
 	}
-	_, features, err := valueTarget(description, request.GetEngine(), request.GetTargetFeatures())
+	_, features, err := checks.valueTarget(description, request.GetEngine(), request.GetTargetFeatures())
 	if err != nil {
 		return err
 	}
@@ -92,7 +96,11 @@ func validValueReference(ref *protocol.Reference, engine string) bool {
 // compares only envelope metadata; raw payload bytes never establish equality.
 // The owner remains responsible for normalization and canonical semantics.
 func ValidateNormalizedValues(description *protocol.Description, request *protocol.NormalizeValuesRequest, result *protocol.NormalizedValues) error {
-	if err := ValidateValueInputs(description, request); err != nil {
+	return validateNormalizedValues(nil, description, request, result)
+}
+
+func validateNormalizedValues(checks *targetChecks, description *protocol.Description, request *protocol.NormalizeValuesRequest, result *protocol.NormalizedValues) error {
+	if err := validateValueInputs(checks, description, request); err != nil {
 		return err
 	}
 	if result == nil || !result.GetComplete() || len(request.GetValues()) != len(result.GetValues()) {
@@ -146,6 +154,44 @@ func valueTarget(description *protocol.Description, name string, targetFeatures 
 		features[feature] = true
 	}
 	return engine, features, nil
+}
+
+// targetChecks holds the answers [valueTarget] gave within one validation of
+// one request. A request names one engine and one set of target features for
+// every table it carries, and asking again for each of them checked every
+// value model of the engine once per table: most of the validation of a plan
+// of 500 tables. A nil *targetChecks asks [valueTarget] every time. A
+// validator makes one for the request it checks and drops it on return, so a
+// description changed between two validations is checked again.
+type targetChecks struct {
+	answers []targetAnswer
+}
+
+// targetAnswer is one answer of [valueTarget] and the question it answered.
+type targetAnswer struct {
+	description *protocol.Description
+	name        string
+	asked       []string
+	engine      *protocol.Engine
+	features    map[string]bool
+	err         error
+}
+
+// valueTarget answers as [valueTarget] does, once per question.
+func (c *targetChecks) valueTarget(description *protocol.Description, name string, targetFeatures []string) (*protocol.Engine, map[string]bool, error) {
+	if c == nil {
+		return valueTarget(description, name, targetFeatures)
+	}
+	for _, answer := range c.answers {
+		if answer.description == description && answer.name == name && slices.Equal(answer.asked, targetFeatures) {
+			return answer.engine, answer.features, answer.err
+		}
+	}
+	engine, features, err := valueTarget(description, name, targetFeatures)
+	c.answers = append(c.answers, targetAnswer{
+		description: description, name: name, asked: slices.Clone(targetFeatures), engine: engine, features: features, err: err,
+	})
+	return engine, features, err
 }
 
 func validateNormalizedMetadata(input *protocol.ValueInput, output *protocol.NormalizedValue) error {
