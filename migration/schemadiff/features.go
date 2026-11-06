@@ -303,6 +303,10 @@ func standsInTheWay(dependent schemaext.ColumnTypeDependent, own string, retyped
 }
 
 func attachFeatureChanges(diff *difftypes.SchemaDiff, desired *schemamodel.Database, current *catalog.Database, changes []schemaext.ChangeRecord, target string, semantics identifier.Semantics) error {
+	changes, err := withColumnDependentsRebuilt(changes, diff, semantics)
+	if err != nil {
+		return err
+	}
 	positions := make(map[objectidentity.Key]int, len(diff.TablesModified))
 	for i, table := range diff.TablesModified {
 		if table.Desired.HasTable() {
