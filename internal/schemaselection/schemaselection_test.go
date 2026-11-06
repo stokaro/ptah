@@ -194,13 +194,19 @@ func TestResolveAsksTheServer(t *testing.T) {
 			name:    "a search_path that resolves to nothing is refused, naming the URL's value",
 			rawURL:  "postgres://localhost/dev?search_path=nosuchschema",
 			current: nil,
-			wantErr: `database URL selects schema "nosuchschema", which does not exist in this database`,
+			wantErr: `database URL selects schema "nosuchschema", which does not exist in this database or holds no USAGE privilege for the connecting role`,
+		},
+		{
+			name:    "a URL that names no schema is refused without quoting one",
+			rawURL:  "postgres://localhost/dev",
+			current: nil,
+			wantErr: `the search_path of the connecting role resolves to no schema: each schema on it does not exist in this database or holds no USAGE privilege for the role`,
 		},
 		{
 			name:    "an empty answer is refused the same way",
 			rawURL:  "postgres://localhost/dev?search_path=nosuchschema",
 			current: "",
-			wantErr: `database URL selects schema "nosuchschema", which does not exist in this database`,
+			wantErr: `database URL selects schema "nosuchschema", which does not exist in this database or holds no USAGE privilege for the connecting role`,
 		},
 	}
 

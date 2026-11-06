@@ -24,7 +24,7 @@ func commentedConstraintCatalog(comment string) dbtest.QueryHandler {
 			return dbtest.QueryResult{Columns: []string{"exists"}, Rows: [][]driver.Value{{true}}}, nil
 		case strings.Contains(query, "has_table_privilege"):
 			return dbtest.QueryResult{Columns: []string{"has_table_privilege"}, Rows: [][]driver.Value{{false}}}, nil
-		case strings.Contains(query, "information_schema.table_constraints AS tc"):
+		case strings.Contains(query, "tc.constraint_name"):
 			return dbtest.QueryResult{
 				Columns: []string{
 					"table_schema", "table_name", "constraint_name", "constraint_type", "columns",
