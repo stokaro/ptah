@@ -1868,6 +1868,12 @@ still read and compared; see [Roles and grants](#roles-and-grants). A
 to share one number generator across tables — is a first-class object with the
 full lifecycle.
 
+A plain column the declaration writes as `SERIAL` is a difference too. The column
+takes a sequence, the default and the owner, then a `setval` that moves the
+sequence past the highest value the table holds, so the next insert does not
+collide with a row. On CockroachDB, where a `SERIAL` column draws from
+`unique_rowid()`, it takes that default.
+
 Ordering matters twice: a sequence consumed by a column default is created
 before the table that uses it, while an `owned_by="table.column"` association
 requires the table to exist, so Ptah emits it as a separate

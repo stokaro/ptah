@@ -12,6 +12,7 @@
 package cockroachtype
 
 import (
+	"slices"
 	"strings"
 
 	"ptah.run/internal/normalize"
@@ -27,11 +28,19 @@ import (
 // as `int4` or `bigint`, is returned as written, and so is every other type. An
 // array takes the width of its element.
 //
+// A column declared with a serial type is built as INT8 whatever its width, measured
+// on v26.3.5: `smallserial` answers `upgrading the column to INT8` and reads back as
+// INT8, as do `serial`, `serial2` and `serial4`.
+//
 // defaultIntSize is the session's setting in bytes, and 0 where nothing read
 // it; 0 is taken as CockroachDB's own default.
 func Resolve(declared string, defaultIntSize int) string {
 	element, isArray := normalize.ArrayElement(declared)
-	if name := strings.ToLower(strings.TrimSpace(element)); name != "int" && name != "integer" {
+	name := strings.ToLower(strings.TrimSpace(element))
+	if slices.Contains([]string{"smallserial", "serial", "bigserial", "serial2", "serial4", "serial8"}, name) {
+		return "int8"
+	}
+	if name != "int" && name != "integer" {
 		return declared
 	}
 	width := "int8"

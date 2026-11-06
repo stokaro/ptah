@@ -252,7 +252,8 @@ func toDBColumns(table schemamodel.Table, fields []schemamodel.Field, dialect st
 	out := make([]catalog.Column, 0, len(fields))
 	for i, field := range fields {
 		if sqlitekey.KeyColumnIsNotNull(dialect, table, keyColumns, field) ||
-			described.Columns.IdentityNotNull && field.IdentityGeneration != "" {
+			described.Columns.IdentityNotNull && field.IdentityGeneration != "" ||
+			described.Columns.SerialNotNull && autoincrement.SerialType(field.Type) {
 			field.Nullable = false
 		}
 		column := toDBColumn(field, i+1)

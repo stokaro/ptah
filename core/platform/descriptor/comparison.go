@@ -85,6 +85,14 @@ type Comparison struct {
 	// column holds, and that ALTER COLUMN adds, changes and drops it, so a
 	// column's identity is compared with its declaration.
 	IdentityColumns bool `json:"identity_columns,omitempty"`
+
+	// SerialOwnsSequence reports that a column of a serial type draws from a
+	// sequence it owns, so a plan makes a plain column serial with a sequence of
+	// its own, a default and an owner.
+	SerialOwnsSequence bool `json:"serial_owns_sequence,omitempty"`
+	// SerialDefault is the default a column of a serial type holds where it
+	// owns no sequence, so a plan makes a plain column serial with that default.
+	SerialDefault string `json:"serial_default,omitempty"`
 	// PrimaryKeyName is the name the server gives every primary key, such as
 	// "PRIMARY". Empty means a primary key keeps the name it is declared
 	// with, and one declared with none is named after its table.

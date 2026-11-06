@@ -146,6 +146,7 @@ func cockroachDB() descriptor.Dialect {
 			TimePrecision:      descriptor.TimePrecision{Compared: true, Default: 6},
 			PrimaryKeyRenames:  true,
 			IdentityColumns:    true,
+			SerialDefault:      "unique_rowid()",
 			ForeignKeysOutside: true,
 			// Measured on v26.3.5.
 			ForeignKeyMatchesKeyInAnyOrder: true,
