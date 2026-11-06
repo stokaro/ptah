@@ -997,6 +997,12 @@ func (p *Planner) planColumnTypeForeignKeyChanges(diff *difftypes.SchemaDiff) co
 // MySQL 8.4 and 26.10; MariaDB 12.3 takes the move with the foreign key in place,
 // and the order costs it nothing. A foreign key the diff changes comes back with
 // the other additions, after the move.
+//
+// The same holds for a table that loses a column, where the foreign key may be on that
+// table or reference it: `DROP COLUMN` answers Error 1829 on MySQL 8.4 and Error 1553 on
+// MariaDB 12.3 while a foreign key references the column, and the keys and indexes
+// [keyrelease.UnderColumnDrops] finds leave ahead of the column changes, where one may
+// still serve the foreign key.
 func (p *Planner) releaseForeignKeysOverMovedKeys(diff *difftypes.SchemaDiff, plan *columnTypeForeignKeyPlan) {
 	if diff == nil || !p.isMySQLFamily() {
 		return
@@ -1008,8 +1014,16 @@ func (p *Planner) releaseForeignKeysOverMovedKeys(diff *difftypes.SchemaDiff, pl
 			losesKey[semantics.QualifiedTableIdentityKey(info.TableName)] = true
 		}
 	}
+	losesColumn := make(map[string]bool)
+	for _, table := range diff.TablesModified {
+		if len(table.ColumnsRemoved) > 0 {
+			losesColumn[semantics.QualifiedTableIdentityKey(table.TableName)] = true
+		}
+	}
 	for _, info := range diff.ForeignKeysRemovedWithTables {
-		if _, done := plan.dropped[info.Identity]; done || !losesKey[semantics.QualifiedTableIdentityKey(info.ForeignTable)] {
+		foreign := semantics.QualifiedTableIdentityKey(info.ForeignTable)
+		if _, done := plan.dropped[info.Identity]; done ||
+			(!losesKey[foreign] && !losesColumn[foreign] && !losesColumn[semantics.QualifiedTableIdentityKey(info.TableName)]) {
 			continue
 		}
 		plan.drops = append(plan.drops, p.dropConstraintNode(difftypes.ConstraintRemovalInfo{
@@ -1591,6 +1605,9 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	// the column's key `x_2`, and the next comparison plans the key again.
 	// Steps 6 and 6.7 skip what this drops.
 	released := keyrelease.Find(diff, p.targetDialect()).With(keyrelease.PrimaryKeysUnderColumnChanges(diff, p.targetDialect()))
+	if p.isMySQLFamily() {
+		released = released.With(keyrelease.UnderColumnDrops(diff, p.targetDialect()))
+	}
 	result = p.releaseKeyNames(result, diff, released)
 
 	result, columnDrops, err := p.modifyExistingTables(result, diff)
