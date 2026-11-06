@@ -58,9 +58,45 @@ func TestMigrationsKeysAheadOfColumnDropsE2E(t *testing.T) {
 			afterDown: "a,b,id | t.u",
 		},
 		{
+			name:      "forward, an index over the column rebuilt over another",
+			built:     "CREATE TABLE t (id int PRIMARY KEY, a int, b int, KEY i (b));\n",
+			desired:   "CREATE TABLE t (id int PRIMARY KEY, a int, KEY i (a));\n",
+			afterUp:   "a,id | t.i",
+			afterDown: "a,b,id | t.i",
+		},
+		{
+			name:      "forward, a UNIQUE over the column rebuilt over another",
+			built:     "CREATE TABLE t (id int PRIMARY KEY, a int, b int, CONSTRAINT u UNIQUE (b));\n",
+			desired:   "CREATE TABLE t (id int PRIMARY KEY, a int, CONSTRAINT u UNIQUE (a));\n",
+			afterUp:   "a,id | t.u",
+			afterDown: "a,b,id | t.u",
+		},
+		{
+			name:      "forward, a CHECK over the column rebuilt over another",
+			built:     "CREATE TABLE t (id int PRIMARY KEY, a int, b int, CONSTRAINT k CHECK (b > 0));\n",
+			desired:   "CREATE TABLE t (id int PRIMARY KEY, a int, CONSTRAINT k CHECK (a > 0));\n",
+			afterUp:   "a,id | t.k",
+			afterDown: "a,b,id | t.k",
+		},
+		{
+			name:      "forward, a CHECK over the column and another",
+			built:     "CREATE TABLE t (id int PRIMARY KEY, a int, b int, CONSTRAINT k CHECK (a > b));\n",
+			desired:   "CREATE TABLE t (id int PRIMARY KEY, a int);\n",
+			afterUp:   "a,id | ",
+			afterDown: "a,b,id | t.k",
+		},
+		{
 			name:  "rollback, an index and a foreign key over a new column",
 			built: "CREATE TABLE p (id int PRIMARY KEY);\nCREATE TABLE t (id int PRIMARY KEY);\n",
 			desired: "CREATE TABLE p (id int PRIMARY KEY);\n" +
+				"CREATE TABLE t (id int PRIMARY KEY, p_id int, KEY t_p_idx (p_id), CONSTRAINT t_p_fk FOREIGN KEY (p_id) REFERENCES p (id));\n",
+			afterUp:   "id,p_id | t.t_p_fk,t.t_p_idx",
+			afterDown: "id | ",
+		},
+		{
+			name:  "rollback, an index and a foreign key over a new column, with another table changed",
+			built: "CREATE TABLE p (id int PRIMARY KEY);\nCREATE TABLE t (id int PRIMARY KEY);\n",
+			desired: "CREATE TABLE p (id int PRIMARY KEY, x int);\n" +
 				"CREATE TABLE t (id int PRIMARY KEY, p_id int, KEY t_p_idx (p_id), CONSTRAINT t_p_fk FOREIGN KEY (p_id) REFERENCES p (id));\n",
 			afterUp:   "id,p_id | t.t_p_fk,t.t_p_idx",
 			afterDown: "id | ",

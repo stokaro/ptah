@@ -48,6 +48,61 @@ func TestKeysAheadOfColumnDrops_HappyPath(t *testing.T) {
 	}
 }
 
+// TestKeysAheadOfColumnDrops_Rebuilds pins what a table that loses a column rebuilds under
+// one name. The old object may have left with the column, so its drop goes first, and an
+// index rebuilt under its own name keeps its one statement, which a foreign key may need.
+func TestKeysAheadOfColumnDrops_Rebuilds(t *testing.T) {
+	const dropColumn = "ALTER TABLE `t` DROP COLUMN `b`"
+	tests := []struct {
+		name, held, desired string
+		want                []string
+	}{
+		{
+			name:    "an index rebuilt over another column",
+			held:    `CREATE TABLE t (id int PRIMARY KEY, a int, b int); CREATE INDEX i ON t (b);`,
+			desired: `CREATE TABLE t (id int PRIMARY KEY, a int); CREATE INDEX i ON t (a);`,
+			want:    []string{"ALTER TABLE `t` DROP INDEX `i`, ADD INDEX `i` (`a`)", dropColumn},
+		},
+		{
+			name:    "a UNIQUE rebuilt over another column",
+			held:    `CREATE TABLE t (id int PRIMARY KEY, a int, b int, CONSTRAINT u UNIQUE (b));`,
+			desired: `CREATE TABLE t (id int PRIMARY KEY, a int, CONSTRAINT u UNIQUE (a));`,
+			want:    []string{"ALTER TABLE `t` DROP INDEX `u`", dropColumn, "ALTER TABLE `t` ADD CONSTRAINT `u` UNIQUE (`a`)"},
+		},
+		{
+			name:    "a CHECK rebuilt over another column",
+			held:    `CREATE TABLE t (id int PRIMARY KEY, a int, b int, CONSTRAINT k CHECK (b > 0));`,
+			desired: `CREATE TABLE t (id int PRIMARY KEY, a int, CONSTRAINT k CHECK (a > 0));`,
+			want:    []string{"ALTER TABLE `t` DROP CONSTRAINT `k`", dropColumn, "ALTER TABLE `t` ADD CONSTRAINT `k` CHECK (a > 0)"},
+		},
+		{
+			name:    "an index a UNIQUE takes the name of",
+			held:    `CREATE TABLE t (id int PRIMARY KEY, a int, b int); CREATE INDEX u ON t (b);`,
+			desired: `CREATE TABLE t (id int PRIMARY KEY, a int, CONSTRAINT u UNIQUE (a));`,
+			want:    []string{"DROP INDEX `u` ON `t`", dropColumn, "ALTER TABLE `t` ADD CONSTRAINT `u` UNIQUE (`a`)"},
+		},
+		{
+			name:    "a new index beside them stays after the column",
+			held:    `CREATE TABLE t (id int PRIMARY KEY, a int, b int); CREATE INDEX i ON t (b);`,
+			desired: `CREATE TABLE t (id int PRIMARY KEY, a int); CREATE INDEX i ON t (a); CREATE INDEX n ON t (a, id);`,
+			want: []string{
+				"ALTER TABLE `t` DROP INDEX `i`, ADD INDEX `i` (`a`)",
+				dropColumn,
+				"CREATE INDEX `n` ON `t` (`a`, `id`)",
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got := columnKeyPlan(c, "mysql", test.held, test.desired)
+
+			c.Assert(got, qt.DeepEquals, test.want)
+		})
+	}
+}
+
 // TestKeysAheadOfColumnDrops_ForeignKeysGoFirst pins a foreign key that may stand on what
 // leaves: on the table that loses the column, or referencing it. It goes first, and a
 // changed one comes back after the column changes.
@@ -110,6 +165,12 @@ func TestKeysAheadOfColumnDrops_FailurePath(t *testing.T) {
 			held:    `CREATE TABLE t (id int PRIMARY KEY, a int, b int); CREATE INDEX i ON t (a);`,
 			desired: `CREATE TABLE t (id int PRIMARY KEY, a int); CREATE INDEX i ON t (a);`,
 			want:    []string{"ALTER TABLE `t` DROP COLUMN `b`"},
+		},
+		{
+			name:    "an index rebuilt on a table that loses no column",
+			held:    `CREATE TABLE t (id int PRIMARY KEY, a int, b int, c int); CREATE INDEX i ON t (b);`,
+			desired: `CREATE TABLE t (id int PRIMARY KEY, a int, b int, c int, d int); CREATE INDEX i ON t (a);`,
+			want:    []string{"ALTER TABLE `t` ADD COLUMN `d` int", "ALTER TABLE `t` DROP INDEX `i`, ADD INDEX `i` (`a`)"},
 		},
 		{
 			name:    "a column's own UNIQUE",

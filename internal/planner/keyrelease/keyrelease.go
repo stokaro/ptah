@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"ptah.run/core/difftypes"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/columnkey"
 	"ptah.run/internal/constraintscope"
@@ -148,18 +149,15 @@ func UnderAddedForeignKeys(diff *difftypes.SchemaDiff, dialect string) Releases 
 //
 // The key [DroppedWithColumns] finds stays out: it leaves with its column, and no
 // statement is written for it. A constraint the plan adds back moves too, since its drop
-// only moves ahead of the column changes.
+// only moves ahead of the column changes, and an index a UNIQUE constraint rebuilds does
+// the same. An index rebuilt under its own name stays out: a foreign key may need it at
+// every moment, so a planner moves its one statement instead.
 func UnderColumnDrops(diff *difftypes.SchemaDiff, dialect string) Releases {
 	if diff == nil {
 		return Releases{}
 	}
 	semantics := diff.EffectiveIdentifierSemantics(dialect)
-	losing := make(map[string]bool)
-	for _, table := range diff.TablesModified {
-		if len(table.ColumnsRemoved) > 0 {
-			losing[semantics.QualifiedTableIdentityKey(table.TableName)] = true
-		}
-	}
+	losing := TablesLosingColumns(diff, semantics)
 	if len(losing) == 0 {
 		return Releases{}
 	}
@@ -176,14 +174,23 @@ func UnderColumnDrops(diff *difftypes.SchemaDiff, dialect string) Releases {
 		}
 	}
 	replacements := indexscope.NewConflictSetWithSemantics(semantics, diff.IndexAdditions())
-	rebuilt := diff.IndexRemovalsRebuiltAsUniqueConstraints()
 	for _, ref := range diff.IndexRemovals() {
-		_, rebuiltAsConstraint := rebuilt[ref]
-		if losing[semantics.QualifiedTableIdentityKey(ref.TableName)] && !replacements.Contains(ref) && !rebuiltAsConstraint {
+		if losing[semantics.QualifiedTableIdentityKey(ref.TableName)] && !replacements.Contains(ref) {
 			released.Indexes = append(released.Indexes, ref)
 		}
 	}
 	return released
+}
+
+// TablesLosingColumns keys the tables of diff that lose a column.
+func TablesLosingColumns(diff *difftypes.SchemaDiff, semantics identifier.Semantics) map[string]bool {
+	losing := make(map[string]bool)
+	for _, table := range diff.TablesModified {
+		if len(table.ColumnsRemoved) > 0 {
+			losing[semantics.QualifiedTableIdentityKey(table.TableName)] = true
+		}
+	}
+	return losing
 }
 
 // PrimaryKeysUnderColumnChanges answers the removed primary keys of diff that a
