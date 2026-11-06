@@ -49,7 +49,7 @@ func rlsStrengthFakeServer(
 					{"docs", "q", "r", `["App", "reader"]`, nil, nil, "reads", true},
 				},
 			}, nil
-		case strings.Contains(query, "FROM information_schema.tables"):
+		case strings.Contains(query, "AS row_stats_unknown"):
 			*tablesQuery = query
 			return dbtest.QueryResult{
 				Columns: []string{
@@ -61,7 +61,7 @@ func rlsStrengthFakeServer(
 					{"public", "docs", "BASE TABLE", "", int64(0), false, false, true, forced, false, "[]", ""},
 				},
 			}, nil
-		case strings.Contains(query, "FROM information_schema.columns"):
+		case strings.Contains(query, "AS udt_schema"):
 			return dbtest.QueryResult{
 				Columns: []string{
 					"table_name", "column_name", "data_type", "udt_name", "udt_schema",

@@ -580,8 +580,10 @@ sources merge into one composite desired schema. See
 These commands read the schemas `ptah schema apply` reads: the ones `--schemas`
 or `schemas` in `ptah.yaml` name, or else what the URL covers plus every schema
 the desired schema names. A PostgreSQL URL covers its pinned `search_path`, or
-every schema when it pins none, and then the tables of a schema the desired
+every schema when it pins none, and the tables of a schema the desired
 schema does not describe are reported as removals, as apply would drop them.
+
+See [what the role needs](../../databases/postgresql/#what-the-connecting-role-needs).
 
 ## Diff two arbitrary schema states
 

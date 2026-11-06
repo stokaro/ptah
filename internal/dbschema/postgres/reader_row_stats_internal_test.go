@@ -36,9 +36,9 @@ func rowStatsFakeServer(
 				Columns: []string{"exists"},
 				Rows:    [][]driver.Value{{hasRelationSize}},
 			}, nil
-		case strings.Contains(query, "FROM information_schema.columns"):
+		case strings.Contains(query, "AS udt_schema"):
 			return dbtest.QueryResult{Columns: []string{"table_name"}}, nil
-		case strings.Contains(query, "FROM information_schema.tables"):
+		case strings.Contains(query, "AS row_stats_unknown"):
 			*tablesQuery = query
 			return dbtest.QueryResult{
 				Columns: []string{

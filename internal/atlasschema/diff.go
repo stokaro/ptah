@@ -422,6 +422,10 @@ func diffResolvedStates(
 	// 8.4.11 and MariaDB 11.8.9, `schema diff` between two servers plans
 	// CREATE DATABASE and DROP DATABASE (stokaro/ptah#3789).
 	compareOpts.ServerSchemas = comparesTwoServers(fromState, toState)
+	// A --to database is a whole answer: a grant it does not hold is one it does
+	// not have. Read as a declaration, a grant to a role --to does not name, or
+	// to PUBLIC, reads as synced in this direction and as a GRANT in the other.
+	compareOpts.DesiredGrantsComplete = toState.Kind == atlassource.KindDatabase
 	// Same split as the empty --include selection above: diff previews rather
 	// than executes, so it keeps its exit status and says on stderr that a
 	// selector protected nothing.

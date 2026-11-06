@@ -66,7 +66,7 @@ func servePostgres11(query string, _ []driver.NamedValue) (dbtest.QueryResult, e
 // generated_kind as long as generated_expression still names the column, and a
 // mutant that blanks the kind everywhere then passes -- measured, it did.
 func projectionReadsAttgenerated(query, alias string) bool {
-	projection, ok := selectListItem(query, alias, "FROM information_schema.columns")
+	projection, ok := selectListItem(query, alias, catalogColumnReadFrom)
 	if !ok {
 		return false
 	}
