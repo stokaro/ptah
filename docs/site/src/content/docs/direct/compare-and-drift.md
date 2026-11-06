@@ -582,7 +582,8 @@ the desired schema names. A PostgreSQL URL covers its pinned `search_path`, or
 every schema when it pins none, and the tables of a schema the desired
 schema does not describe are reported as removals, as apply would drop them.
 
-See [what the role needs](../../databases/postgresql/#what-the-connecting-role-needs).
+Privileges: [PostgreSQL](../../databases/postgresql/#what-the-connecting-role-needs),
+[MySQL and MariaDB](../../databases/mysql/#what-the-connecting-account-needs).
 
 ## Diff two arbitrary schema states
 

@@ -119,10 +119,14 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	if err := r.db.QueryRowContext(ctx, "SELECT DATABASE()").Scan(&selected); err != nil {
 		return nil, fmt.Errorf("failed to get database name: %w", err)
 	}
-	if !selected.Valid {
-		return r.readServer(ctx)
+	account, err := r.readSessionAccount(ctx)
+	if err != nil {
+		return nil, err
 	}
-	schema, err := r.readDatabase(ctx, selected.String, referencedOutside(selected.String))
+	if !selected.Valid {
+		return r.readServer(ctx, account)
+	}
+	schema, err := r.readDatabase(ctx, account, selected.String, referencedOutside(selected.String))
 	if err != nil {
 		return nil, err
 	}
@@ -141,7 +145,7 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 
 // readServer describes the databases a whole-server read covers, each under
 // its own name, and the server's roles once.
-func (r *Reader) readServer(ctx context.Context) (*catalog.Database, error) {
+func (r *Reader) readServer(ctx context.Context, account sessionAccount) (*catalog.Database, error) {
 	databases, err := r.serverDatabases(ctx)
 	if err != nil {
 		return nil, err
@@ -149,7 +153,7 @@ func (r *Reader) readServer(ctx context.Context) (*catalog.Database, error) {
 	server := &catalog.Database{Schemas: databases}
 	names := make([]string, 0, len(databases))
 	for _, database := range databases {
-		part, err := r.readDatabase(ctx, database.Name, referencedDatabase)
+		part, err := r.readDatabase(ctx, account, database.Name, referencedDatabase)
 		if err != nil {
 			return nil, fmt.Errorf("database %s: %w", database.Name, err)
 		}
@@ -272,9 +276,23 @@ func referencedOutside(database string) foreignSchemaRule {
 }
 
 // readDatabase describes one database, dbName, recording referenced schemas
-// by foreignSchema.
-func (r *Reader) readDatabase(ctx context.Context, dbName string, foreignSchema foreignSchemaRule) (*catalog.Database, error) {
+// by foreignSchema, and refuses a description the account could not see all of.
+func (r *Reader) readDatabase(
+	ctx context.Context,
+	account sessionAccount,
+	dbName string,
+	foreignSchema foreignSchemaRule,
+) (*catalog.Database, error) {
 	schema := &catalog.Database{}
+
+	// Before the first catalog query: an account that holds a grant on one table
+	// is refused some of what follows outright, with an answer that names no
+	// privilege.
+	if !account.listsEveryTable(dbName) && needsListing(ctx) {
+		if err := r.refuseUnseenObjects(ctx, account, dbName, schema, nil); err != nil {
+			return nil, err
+		}
+	}
 
 	// Read tables
 	tables, err := r.readTables(ctx, dbName)
@@ -320,12 +338,12 @@ func (r *Reader) readDatabase(ctx context.Context, dbName string, foreignSchema 
 	}
 	schema.Triggers = triggers
 
-	functions, account, err := r.readFunctions(ctx, dbName)
+	routines, err := r.readFunctions(ctx, dbName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read functions: %w", err)
 	}
-	schema.Functions = functions
-	schema.CurrentAccount = account
+	schema.Functions = routines.functions
+	schema.CurrentAccount = routines.currentAccount
 
 	// Read only where the preset claims the object. MySQL answers a sequence
 	// question with a syntax error rather than an empty result, so asking
@@ -336,6 +354,10 @@ func (r *Reader) readDatabase(ctx context.Context, dbName string, foreignSchema 
 		return nil, err
 	}
 	schema.Sequences = sequences
+
+	if err := r.refuseUnseenObjects(ctx, account, dbName, schema, routines.hidden); err != nil {
+		return nil, err
+	}
 
 	// Reconcile per-column flags after all catalog metadata is loaded.
 	// information_schema.KEY_COLUMN_USAGE carries primary-key membership, and
@@ -760,6 +782,17 @@ func (r *Reader) readViews(ctx context.Context, dbName string) ([]catalog.View, 
 	return views, nil
 }
 
+// routineRead is what [Reader.readFunctions] finds.
+type routineRead struct {
+	functions []catalog.Function
+	// currentAccount is the account the connection runs as, CURRENT_USER(), which
+	// the same query reports beside each routine's DEFINER. It is empty when the
+	// database holds no routine.
+	currentAccount string
+	// hidden names the routines listed with no body.
+	hidden []string
+}
+
 // readFunctions reads stored functions back from the live catalog.
 //
 // The parameter list is rebuilt from information_schema.PARAMETERS rather than
@@ -779,16 +812,20 @@ func (r *Reader) readViews(ctx context.Context, dbName string) ([]catalog.View, 
 // same destructive drop and create on every apply, forever. Measured on MySQL
 // 26.7.0 and MariaDB 12.3.2, the diff was still there after a second apply.
 //
-// A body the connected account may not see is refused rather than reported as
-// empty; see [errFunctionBodyHidden].
-//
-// It also returns the account the connection runs as, CURRENT_USER(), which
-// the same query reports beside each routine's DEFINER, and which is empty
-// when the database holds no routine.
-func (r *Reader) readFunctions(ctx context.Context, dbName string) ([]catalog.Function, string, error) {
+// information_schema.ROUTINES reports ROUTINE_DEFINITION as NULL, rather than
+// omitting the row, when the account may see that a routine exists but lacks the
+// privilege to inspect another definer's body. Measured on MySQL 26.7.0 and
+// MariaDB 12.3.2 with an account holding only SELECT and EXECUTE on the database,
+// every function it could name came back with a NULL body. Coalescing that to the
+// empty string turns "I am not allowed to know" into "the author wrote nothing":
+// [compare.FunctionDefinitions] then reports body drift against every desired
+// function, and the planner answers it with the destructive DROP-then-CREATE
+// pair. So the names come back too, and [Reader.refuseUnseenObjects] refuses the
+// read unless the run leaves routines out.
+func (r *Reader) readFunctions(ctx context.Context, dbName string) (routineRead, error) {
 	parameters, err := r.readRoutineParameters(ctx, dbName)
 	if err != nil {
-		return nil, "", err
+		return routineRead{}, err
 	}
 
 	query := `
@@ -813,12 +850,11 @@ func (r *Reader) readFunctions(ctx context.Context, dbName string) ([]catalog.Fu
 
 	rows, err := r.db.QueryContext(ctx, query, dbName)
 	if err != nil {
-		return nil, "", err
+		return routineRead{}, err
 	}
 	defer rows.Close()
 
-	var functions []catalog.Function
-	var account string
+	var read routineRead
 	for rows.Next() {
 		var (
 			fn              catalog.Function
@@ -830,12 +866,12 @@ func (r *Reader) readFunctions(ctx context.Context, dbName string) ([]catalog.Fu
 		)
 		if err := rows.Scan(
 			&fn.Name, &returns, &isDeterministic, &sqlDataAccess,
-			&fn.Security, &fn.Definer, &account, &body, &fn.Comment, &routineType,
+			&fn.Security, &fn.Definer, &read.currentAccount, &body, &fn.Comment, &routineType,
 		); err != nil {
-			return nil, "", err
+			return routineRead{}, err
 		}
 		if !body.Valid {
-			return nil, "", hiddenRoutineBodyError(dbName, fn.Name)
+			read.hidden = append(read.hidden, fn.Name)
 		}
 		// DTD_IDENTIFIER is NULL for a procedure and carries the type for a
 		// function, which is the catalog saying the same thing the grammar
@@ -847,41 +883,9 @@ func (r *Reader) readFunctions(ctx context.Context, dbName string) ([]catalog.Fu
 		fn.Returns = mysqlroutine.NormalizeType(returns.String)
 		fn.Parameters = parameters[routineParameterKey(routineType, fn.Name)]
 		fn.Volatility = mysqlroutine.VolatilityFromCatalog(isDeterministic, sqlDataAccess)
-		functions = append(functions, fn)
+		read.functions = append(read.functions, fn)
 	}
-	return functions, account, rows.Err()
-}
-
-// hiddenRoutineBodyError refuses a read whose function bodies the connected
-// account may not see.
-//
-// information_schema.ROUTINES reports ROUTINE_DEFINITION as NULL, rather than
-// omitting the row, when the account may see that a routine exists but lacks
-// the privilege to inspect another definer's body. Measured on MySQL 26.7.0 and
-// MariaDB 12.3.2 with an account holding only SELECT and EXECUTE on the
-// database, every function it could name came back with a NULL body.
-//
-// Coalescing that to the empty string turned "I am not allowed to know" into
-// "the author wrote nothing". [compare.FunctionDefinitions] then reported body
-// drift against every desired function, and the planner answered it with the
-// destructive DROP-then-CREATE pair -- so an account that may alter routines
-// but not read them would replace a function that already matched, using a body
-// it had never been able to compare against. The failure is silent and it
-// destroys someone else's work, which is why this refuses the read instead of
-// returning a value it knows is wrong.
-//
-// The trade is deliberate and it is a narrowing: an error naming the routine
-// and the privilege, in place of a fabricated body. Reporting a schema this
-// account cannot actually read is not a capability.
-func hiddenRoutineBodyError(dbName, routine string) error {
-	return fmt.Errorf(
-		"cannot read the body of function %s.%s: information_schema reports its "+
-			"ROUTINE_DEFINITION as NULL, which means this account may see the routine "+
-			"but not inspect another definer's body. Comparing against it would report "+
-			"drift that is not there and plan a replacement of a function this account "+
-			"cannot read. Grant SHOW_ROUTINE (or connect as the routine's definer), or "+
-			"exclude the schema from this operation",
-		dbName, routine)
+	return read, rows.Err()
 }
 
 // readRoutineParameters returns the rendered argument list of every FUNCTION in
@@ -985,17 +989,19 @@ func (r *Reader) readTriggers(ctx context.Context, dbName string) ([]catalog.Tri
 	var triggers []catalog.Trigger
 	for rows.Next() {
 		var trigger catalog.Trigger
+		var body sql.NullString
 		err := rows.Scan(
 			&trigger.Name,
 			&trigger.Table,
 			&trigger.Timing,
 			&trigger.Event,
 			&trigger.ForEach,
-			&trigger.Body,
+			&body,
 		)
 		if err != nil {
 			return nil, err
 		}
+		trigger.Body = body.String
 		triggers = append(triggers, trigger)
 	}
 	if err := rows.Err(); err != nil {

@@ -92,7 +92,7 @@ func newRestrictedMySQLTarget(c *qt.C) restrictedMySQL {
 	createMySQLUser(c, ctx, server.admin, account, password)
 	c.Cleanup(func() { dropMySQLUser(c, context.Background(), server.admin, account) })
 	_, err = server.admin.ExecContext(ctx, fmt.Sprintf(
-		"GRANT SELECT, CREATE, DROP, ALTER, INSERT, UPDATE, DELETE ON `%s`.* TO '%s'@'%%'", database, account))
+		"GRANT SELECT, CREATE, DROP, ALTER, INSERT, UPDATE, DELETE, SHOW VIEW, TRIGGER, EXECUTE ON `%s`.* TO '%s'@'%%'", database, account))
 	c.Assert(err, qt.IsNil)
 
 	workDir := c.TempDir()

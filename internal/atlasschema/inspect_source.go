@@ -24,6 +24,7 @@ import (
 	"ptah.run/internal/devlock"
 	"ptah.run/internal/featureselect"
 	"ptah.run/internal/migrationreplay"
+	"ptah.run/internal/readscope"
 	"ptah.run/internal/rolescope"
 	"ptah.run/internal/schemafile"
 	"ptah.run/migration/migrationfile"
@@ -260,6 +261,7 @@ func InspectSource(ctx context.Context, opts InspectSourceOptions) (InspectResul
 	if err := ValidateInspectOptions(opts); err != nil {
 		return InspectResult{}, err
 	}
+	ctx = readscope.Without(ctx, atlasfilter.KindsLeftOut(opts.Runtime.Selections(), opts.Exclude, opts.Include)...)
 	set, err := atlassource.ClassifySet(opts.sourceFlag(), opts.URLs, opts.ProjectEnv, dbschema.NativeSources(ctx))
 	if err != nil {
 		return InspectResult{}, err
@@ -679,7 +681,7 @@ func devMaterializableSchema(ctx context.Context,
 	if desired == nil || len(desired.Roles) == 0 {
 		return desired, nil
 	}
-	devSchema, err := dbschema.ReadSchemaWithSchemasContext(ctx, devConn, nil)
+	devSchema, err := dbschema.ReadSchemaWithSchemasContext(readscope.Authored(ctx), devConn, nil)
 	if err != nil {
 		return nil, fmt.Errorf("read dev database roles: %w", err)
 	}
@@ -710,7 +712,7 @@ func readValidatedInspectDevSchema(
 	devConn *dbschema.DatabaseConnection,
 	opts inspectDevReadOptions,
 ) (*catalog.Database, InspectOptions, error) {
-	schema, names, err := readInspectSchemaWithNames(ctx, devConn, opts.inspect.Schemas)
+	schema, names, err := readInspectSchemaWithNames(readscope.Authored(ctx), devConn, opts.inspect.Schemas)
 	if err != nil {
 		return nil, InspectOptions{}, fmt.Errorf("read dev database schema: %w", err)
 	}

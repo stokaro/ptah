@@ -114,7 +114,7 @@ func TestReader_ReadsAWholeServer_HappyPath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db := dbtest.Open(t, serverCatalog(test.selected))
+			db := dbtest.Open(t, dbtest.MySQLSession(dbtest.MySQLVersion, dbtest.MySQLAllGrants, serverCatalog(test.selected)))
 			reader := mysql.NewMySQLReader(db.SQL, "")
 			reader.SetSchemas(test.databases)
 
@@ -132,11 +132,11 @@ func TestReader_ReadsAWholeServer_HappyPath(t *testing.T) {
 func TestReader_ReadsAWholeServer_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	answer := serverCatalog(nil)
-	db := dbtest.Open(t, func(query string, args []driver.NamedValue) (dbtest.QueryResult, error) {
+	db := dbtest.Open(t, dbtest.MySQLSession(dbtest.MySQLVersion, dbtest.MySQLAllGrants, func(query string, args []driver.NamedValue) (dbtest.QueryResult, error) {
 		refused := map[bool]error{true: errors.New("SELECT command denied"), false: nil}[strings.Contains(query, "SCHEMATA")]
 		result, _ := answer(query, args)
 		return result, refused
-	})
+	}))
 
 	got, err := mysql.NewMySQLReader(db.SQL, "").ReadSchemaContext(t.Context())
 

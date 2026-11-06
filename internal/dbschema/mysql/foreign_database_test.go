@@ -84,7 +84,7 @@ func TestReader_KeepsTheDatabaseOfAReferencedTable_HappyPath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db := dbtest.Open(t, foreignKeyCatalog(test.selected))
+			db := dbtest.Open(t, dbtest.MySQLSession(dbtest.MySQLVersion, dbtest.MySQLAllGrants, foreignKeyCatalog(test.selected)))
 			reader := mysql.NewMySQLReader(db.SQL, "")
 			reader.SetSchemas(test.databases)
 

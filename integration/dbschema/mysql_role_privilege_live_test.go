@@ -51,8 +51,8 @@ func TestMySQLLiveRoleReadDegradesWithoutPrivilege(t *testing.T) {
 		_, _ = admin.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS `%s`", tableName))
 	}()
 
-	// An account with exactly the privileges ordinary schema work needs, and
-	// none of the ones a role read needs.
+	// An account that can see everything in its schema, and holds none of the
+	// privileges a role read needs.
 	_, err = admin.ExecContext(ctx, fmt.Sprintf(
 		"CREATE USER '%s'@'%%' IDENTIFIED BY '%s'", account, password))
 	c.Assert(err, qt.IsNil)
@@ -60,7 +60,7 @@ func TestMySQLLiveRoleReadDegradesWithoutPrivilege(t *testing.T) {
 		_, _ = admin.ExecContext(ctx, fmt.Sprintf("DROP USER IF EXISTS '%s'@'%%'", account))
 	}()
 	_, err = admin.ExecContext(ctx, fmt.Sprintf(
-		"GRANT SELECT, CREATE, DROP, ALTER, INSERT, UPDATE, DELETE ON %s.* TO '%s'@'%%'",
+		"GRANT SELECT, CREATE, DROP, ALTER, INSERT, UPDATE, DELETE, SHOW VIEW, TRIGGER, EXECUTE ON %s.* TO '%s'@'%%'",
 		databaseNameOf(c, dbURL), account))
 	c.Assert(err, qt.IsNil)
 
@@ -104,7 +104,7 @@ func TestMySQLLiveSchemaSecurity_FailurePath_RefusesUnreadRoles(t *testing.T) {
 	defer func() {
 		_, _ = admin.ExecContext(ctx, fmt.Sprintf("DROP USER IF EXISTS '%s'@'%%'", account))
 	}()
-	_, err = admin.ExecContext(ctx, fmt.Sprintf("GRANT SELECT ON %s.* TO '%s'@'%%'", databaseNameOf(c, dbURL), account))
+	_, err = admin.ExecContext(ctx, fmt.Sprintf("GRANT SELECT, SHOW VIEW, TRIGGER, EXECUTE ON %s.* TO '%s'@'%%'", databaseNameOf(c, dbURL), account))
 	c.Assert(err, qt.IsNil)
 
 	stdout, err := runSchemaSecurity(c, replaceCredentials(dbURL, account, password))

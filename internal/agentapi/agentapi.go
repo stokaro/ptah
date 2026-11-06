@@ -40,6 +40,7 @@ import (
 	"ptah.run/internal/agentdiag"
 	"ptah.run/internal/agenttarget"
 	"ptah.run/internal/docsembed"
+	"ptah.run/internal/readscope"
 	"ptah.run/internal/schemalineage"
 	"ptah.run/internal/schemaload"
 	"ptah.run/internal/schemavalidate"
@@ -583,7 +584,12 @@ func readDatabase(
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, req.Schemas)
+	// The response lists tables and views by name, so it answers for those and
+	// not for what it does not report.
+	live, err := dbschema.ReadSchemaWithSchemasContext(
+		readscope.Without(ctx, readscope.Views, readscope.Constraints, readscope.Triggers, readscope.Routines),
+		conn, req.Schemas,
+	)
 	if err != nil {
 		return nil, agentdiag.Errorf(agentdiag.CodeDatabaseReadFailed, "read schema: %w", err)
 	}

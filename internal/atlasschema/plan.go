@@ -27,6 +27,7 @@ import (
 	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/providerurl"
+	"ptah.run/internal/readscope"
 	"ptah.run/internal/rolegraph"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/schemafingerprint"
@@ -509,6 +510,7 @@ func planTargetState(ctx context.Context,
 	exclude []string,
 	runtime selectext.Runtime,
 ) (*catalog.Database, error) {
+	ctx = readscope.Without(ctx, atlasfilter.KindsLeftOut(runtime.Selections(), exclude, nil)...)
 	names := schemascope.Union(scope.schemas, nil)
 	if len(names) == 0 {
 		urlScope, err := schemascope.ReadNames(ctx, conn.Info(), nil, conn)

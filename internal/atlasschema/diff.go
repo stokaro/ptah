@@ -37,6 +37,7 @@ import (
 	"ptah.run/internal/devlock"
 	"ptah.run/internal/pgsystemschema"
 	"ptah.run/internal/planstyle"
+	"ptah.run/internal/readscope"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/servertarget"
 	"ptah.run/internal/sqlitevirtual"
@@ -154,6 +155,7 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 	if err := schemaext.RequireRuntime(ctx, opts.Runtime); err != nil {
 		return atlasreport.SchemaDiff{}, nil, err
 	}
+	ctx = readscope.Without(ctx, atlasfilter.KindsLeftOut(opts.Runtime.Selections(), opts.Exclude, opts.Include)...)
 	prepared, err := prepareDiffSources(ctx, opts)
 	if err != nil {
 		return atlasreport.SchemaDiff{}, nil, err

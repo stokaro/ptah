@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/internal/readscope"
 	"ptah.run/migration/datadiff"
 )
 
@@ -130,7 +131,7 @@ func bootstrapColumnTypes(
 	if found && !described.ManagedData.TypedRows || !found && typer == nil {
 		return nil, rows, nil
 	}
-	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{tableSchema})
+	live, err := dbschema.ReadSchemaWithSchemasContext(readscope.Authored(ctx), conn, []string{tableSchema})
 	if err != nil {
 		return nil, nil, fmt.Errorf("read the column types: %w", err)
 	}

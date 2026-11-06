@@ -37,6 +37,7 @@ import (
 	"ptah.run/internal/envbool"
 	"ptah.run/internal/featureselect"
 	"ptah.run/internal/pathguard"
+	"ptah.run/internal/readscope"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/sqlitevirtual"
 	migrationlint "ptah.run/migration/lint"
@@ -1450,7 +1451,7 @@ func checkAtlasApplyTarget(
 	}
 	if opts.policy.IsStrictCE() {
 		if err := atlasschema.PreflightApplyTarget(
-			cmd.Context(),
+			readscope.Without(cmd.Context(), atlasfilter.KindsLeftOut(opts.runtime.Selections(), opts.exclude, nil)...),
 			conn,
 			opts.schemas,
 			opts.policy.ValidateInspectedSchema,

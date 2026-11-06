@@ -341,6 +341,29 @@ matched rather than refused, because there Atlas CE is right: it executes the
 file's bytes verbatim, drops nothing, and records the revision honestly. See
 [`stokaro/ptah#981`](https://github.com/stokaro/ptah/issues/981).
 
+### An account that cannot see what a read covers
+
+`information_schema` lists only what an account holds a privilege on, and a
+comparison reads a missing row as a missing object. Measured against the pinned
+Atlas CE v1.3.0 binary on MySQL 8.4 and MariaDB 12.3, with `only_here` a table on
+the `--from` side alone, and `t_trg` a trigger there:
+
+| `schema diff` between two databases | Atlas CE v1.3.0 | Ptah |
+| --- | --- | --- |
+| As `root`, `only_here` | 0, `DROP TABLE` | 0, `DROP TABLE` |
+| `SELECT` on `shared` alone, `only_here` | 0, `Schemas are synced` | 1, names `SELECT` on the database |
+| `SELECT` on the database, `t_trg` | 0, `Schemas are synced` | 1, names `TRIGGER` and the routine privilege |
+| As `root`, `t_trg` | 0, `Schemas are synced`: CE does not read triggers | 0, `DROP TRIGGER` |
+
+The first refusal is the defect: the same comparison answers differently by who
+asks, and the answer people act on is the false one. The second follows from what
+Ptah reads and CE does not, and `--exclude '*[type=trigger]'` is the way out for a
+run that does not depend on them.
+
+`PTAH_ATLAS_STRICT_COMPAT=1` keeps the refusal. Strict mode refuses a trigger it
+finds, and an account that cannot see triggers cannot show there is none. See
+[What the connecting account needs](site/src/content/docs/databases/mysql.md#what-the-connecting-account-needs).
+
 ### The refusal for an `--exclude` pattern too deep for its scope
 
 Same refusal, different words. An exclude pattern is counted against the scope

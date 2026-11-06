@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dbschema"
 	"ptah.run/internal/convert/dbschematogo"
+	"ptah.run/internal/readscope"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/migration/internal/shadowdb"
 	"ptah.run/migration/migrator"
@@ -150,7 +151,7 @@ func VerifyBaseline(ctx context.Context, opts BaselineVerifyOptions) (resultErr 
 		return baselineErrorWithDisplayMessage("drop-metadata", "drop_metadata_error", err.Error(), err)
 	}
 
-	shadowSchema, err := dbschema.ReadSchemaWithSchemasContext(ctx, shadowConn, opts.Schemas)
+	shadowSchema, err := dbschema.ReadSchemaWithSchemasContext(readscope.Authored(ctx), shadowConn, opts.Schemas)
 	if err != nil {
 		return baselineError("re-introspect", "re_introspect_error", "read shadow schema", err)
 	}

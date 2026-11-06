@@ -32,6 +32,7 @@ import (
 	"ptah.run/internal/planstyle"
 	"ptah.run/internal/protectedtable"
 	"ptah.run/internal/providerurl"
+	"ptah.run/internal/readscope"
 	"ptah.run/internal/rolepassword"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/schemascope"
@@ -473,6 +474,7 @@ func computeApplyPlan(
 	if err := validateApplyPlanningInputs(conn, opts); err != nil {
 		return applyComputation{}, err
 	}
+	ctx = readscope.Without(ctx, atlasfilter.KindsLeftOut(opts.Runtime.Selections(), opts.Exclude, opts.Include)...)
 	allowUnmatched, err := resolveApplyAllowUnmatched(opts)
 	if err != nil {
 		return applyComputation{}, err

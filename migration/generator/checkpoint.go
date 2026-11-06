@@ -18,6 +18,7 @@ import (
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/planstyle"
+	"ptah.run/internal/readscope"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/migration/internal/shadowdb"
 	"ptah.run/migration/migrationfile"
@@ -465,7 +466,7 @@ func generateCheckpointFromConn(ctx context.Context, shadowConn *dbschema.Databa
 		return "", "", fmt.Errorf("checkpoint generation failed: %w", err)
 	}
 
-	shadowSchema, err := dbschema.ReadSchemaWithSchemasContext(ctx, shadowConn, opts.Schemas)
+	shadowSchema, err := dbschema.ReadSchemaWithSchemasContext(readscope.Authored(ctx), shadowConn, opts.Schemas)
 	if err != nil {
 		return "", "", fmt.Errorf("checkpoint generation failed: read shadow schema: %w", err)
 	}

@@ -336,7 +336,9 @@ Rich, interactive report with:
 - Required cleanup permissions: global SELECT, DROP, ALTER, ALTER ROUTINE,
   EVENT, LOCK TABLES, PROCESS, and TRIGGER. MySQL 8.0.20 and newer also
   requires SHOW_ROUTINE. Use these credentials only for a disposable dev
-  database. Restricted credentials remain suitable for non-cleanup tests.
+  database. Restricted credentials remain suitable for non-cleanup tests, as long
+  as they hold what a schema read needs: `SELECT`, `SHOW VIEW` and `TRIGGER` on the
+  database, and `EXECUTE` or the routine privilege.
 - Authentication: default MySQL authentication (`caching_sha2_password` on current MySQL images)
 
 ### MariaDB

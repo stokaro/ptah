@@ -38,6 +38,7 @@ import (
 	"ptah.run/internal/migrationsnapshot"
 	"ptah.run/internal/pathguard"
 	"ptah.run/internal/planstyle"
+	"ptah.run/internal/readscope"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/schemascope"
 	"ptah.run/internal/schemaselection"
@@ -298,6 +299,7 @@ func generateDiff(
 	opts = prepared.opts
 	schemas := prepared.schemas
 	format := prepared.format
+	ctx = readscope.Without(ctx, atlasfilter.KindsLeftOut(opts.Runtime.Selections(), opts.Exclude, nil)...)
 
 	if err := ensureMigrationDirParent(opts.Root, opts.Dir); err != nil {
 		return DiffResult{}, err
@@ -871,7 +873,7 @@ func readReplayedSchema(ctx context.Context,
 	readNames []string,
 	_ string,
 ) (*catalog.Database, error) {
-	current, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, readNames)
+	current, err := dbschema.ReadSchemaWithSchemasContext(readscope.Authored(ctx), conn, readNames)
 	if err != nil {
 		return nil, fmt.Errorf("read dev database schema: %w", err)
 	}

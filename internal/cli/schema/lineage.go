@@ -14,6 +14,7 @@ import (
 	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/cli/internal/serverversion"
 	"ptah.run/internal/convert/dbschematogo"
+	"ptah.run/internal/readscope"
 	"ptah.run/internal/schemalineage"
 	"ptah.run/internal/schemaload"
 )
@@ -202,8 +203,10 @@ func runSchemaLineageLive(cmd *cobra.Command, opts schemaLineageOptions) error {
 	}
 	defer dbschema.CloseAndWarn(conn)
 
+	// The analysis follows columns through views and routine bodies, so it does
+	// not answer for triggers or constraints.
 	live, err := dbschema.ReadSchemaWithSchemasContext(
-		cmd.Context(), conn, dbcli.ParseSchemas(opts.schemas),
+		readscope.Without(cmd.Context(), readscope.Triggers, readscope.Constraints), conn, dbcli.ParseSchemas(opts.schemas),
 	)
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("read database schema: %w", err))
