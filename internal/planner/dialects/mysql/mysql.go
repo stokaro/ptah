@@ -1308,19 +1308,16 @@ func (p *Planner) addNewIndexes(
 	return result
 }
 
-// splitIndexAdditions answers the index additions a table's column drop would break,
-// and the others. An addition that rebuilds an index under its own name drops the old
-// one, and on a table that loses a column that index may have left with the column, so
-// the drop answers `Error 1091: Can't DROP`, measured on MySQL 8.4 and MariaDB 12.3. It
-// goes ahead of the column drops: the new index reads only columns the table keeps or
-// has gained by then.
+// splitIndexAdditions answers the index additions a column drop would break, and the
+// others. An addition that rebuilds an index under its own name drops the old one, and
+// that index may have left with a column the plan drops, so the drop answers `Error
+// 1091: Can't DROP`, measured on MySQL 8.4 and MariaDB 12.3. It goes ahead of the column
+// drops: the new index reads only columns the table keeps or has gained by then.
 func (p *Planner) splitIndexAdditions(diff *difftypes.SchemaDiff) (ahead, others difftypes.IndexChanges) {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
-	losing := keyrelease.TablesLosingColumns(diff, semantics)
 	replacements := indexscope.NewConflictSetWithSemantics(semantics, diff.IndexRemovals())
 	for _, change := range diff.IndexesAdded {
-		ref := difftypes.IndexRef{Name: change.Index.Name, TableName: change.TableName}
-		if losing[semantics.QualifiedTableIdentityKey(change.TableName)] && replacements.Contains(ref) {
+		if replacements.Contains(difftypes.IndexRef{Name: change.Index.Name, TableName: change.TableName}) {
 			ahead = append(ahead, change)
 		} else {
 			others = append(others, change)
