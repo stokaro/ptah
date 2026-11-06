@@ -202,7 +202,7 @@ func synthesizeTablePrimaryKeyConstraints(
 // check. A column's own primary key is compared as a flag on the column, and
 // the flag cannot defer; against a deferrable live key it is compared as the
 // table's key instead, so the difference is planned (stokaro/ptah#3824).
-// [isFieldLevelConstraint] answers from the same fact on the other side.
+// [fieldLevelConstraints.has] answers from the same fact on the other side.
 func liveKeyDefers(database *catalog.Database, identity tableIdentity, semantics identifier.Semantics) bool {
 	for _, constraint := range database.Constraints {
 		if constraint.Type == "PRIMARY KEY" && constraint.Deferrable &&
