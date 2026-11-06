@@ -15,7 +15,7 @@ const font = readFileSync(join(siteRoot, 'src/fonts/instrument-sans-var-latin.wo
 const fontCSS = `@font-face{font-family:PtahDiagram;src:url(data:font/woff2;base64,${font}) format('woff2');font-weight:100 900;}`;
 const browser = await chromium.launch();
 try {
-  for (const name of ['product-journeys', 'inference-generation-lifecycle']) {
+  for (const name of ['product-journeys', 'inference-generation-lifecycle', 'provider-lifecycle']) {
     const source = readFileSync(join(siteRoot, 'diagrams', `${name}.mmd`), 'utf8');
     for (const theme of ['light', 'dark']) {
       const page = await browser.newPage();
@@ -35,6 +35,7 @@ try {
           deterministicIds: true,
           deterministicIDSeed: name,
           flowchart: { htmlLabels: false, curve: 'linear', nodeSpacing: 32, rankSpacing: 42, padding: 16, wrappingWidth: 280, useMaxWidth: false },
+          sequence: { useMaxWidth: false },
           themeCSS: `
             .node.active rect { fill: ${dark ? '#14382b' : '#dcfce7'}; stroke: ${dark ? '#4ade80' : '#15803d'}; }
             .node.candidate rect { fill: ${dark ? '#3d2e16' : '#fef3c7'}; stroke: ${dark ? '#fbbf24' : '#b45309'}; }
@@ -50,6 +51,10 @@ try {
             clusterBorder: dark ? '#64748b' : '#cbd5e1',
             titleColor: dark ? '#f1f5f9' : '#0f172a',
             edgeLabelBackground: dark ? '#111827' : '#f8fafc',
+            // A sequence diagram's notes, which the flowcharts do not use.
+            noteBkgColor: dark ? '#3d2e16' : '#fef3c7',
+            noteBorderColor: dark ? '#fbbf24' : '#b45309',
+            noteTextColor: dark ? '#f1f5f9' : '#0f172a',
             fontSize: '18px',
           },
         });

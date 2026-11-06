@@ -87,6 +87,40 @@
       "versionedDownload": true
     },
     {
+      "id": "provider-lifecycle",
+      "path": "docs/site/src/assets/provider-lifecycle-light.svg",
+      "type": "semantic-diagram",
+      "editableSource": "docs/site/diagrams/provider-lifecycle.mmd",
+      "fixture": null,
+      "generator": "docs/site/scripts/generate-journey-diagrams.mjs",
+      "pages": [
+        "/extend/write-a-provider/architecture/"
+      ],
+      "titleRequired": true,
+      "descriptionRequired": true,
+      "sizeLimitBytes": 128000,
+      "themeBehavior": "site-light",
+      "fullSizeArtifact": "docs/site/src/assets/provider-lifecycle-light.svg",
+      "versionedDownload": true
+    },
+    {
+      "id": "provider-lifecycle-dark",
+      "path": "docs/site/src/assets/provider-lifecycle-dark.svg",
+      "type": "semantic-diagram",
+      "editableSource": "docs/site/diagrams/provider-lifecycle.mmd",
+      "fixture": null,
+      "generator": "docs/site/scripts/generate-journey-diagrams.mjs",
+      "pages": [
+        "/extend/write-a-provider/architecture/"
+      ],
+      "titleRequired": true,
+      "descriptionRequired": true,
+      "sizeLimitBytes": 128000,
+      "themeBehavior": "site-dark",
+      "fullSizeArtifact": "docs/site/src/assets/provider-lifecycle-dark.svg",
+      "versionedDownload": true
+    },
+    {
       "id": "schema-viz-relationships-light",
       "path": "docs/site/src/assets/schema-viz-relationships-light.svg",
       "type": "generated-product-output",
@@ -573,6 +607,10 @@
     {
       "route": "/inference/quick-start/",
       "name": "inference-quick-start"
+    },
+    {
+      "route": "/extend/write-a-provider/architecture/",
+      "name": "provider-architecture"
     },
     {
       "route": "/databases/support-matrix/",

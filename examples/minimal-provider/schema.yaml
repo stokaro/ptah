@@ -1,0 +1,9 @@
+tables:
+  notes:
+    columns:
+      id:
+        type: INTEGER
+        primary: true
+        not_null: true
+      body:
+        type: TEXT
