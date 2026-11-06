@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	qt "github.com/frankban/quicktest"
 )
@@ -219,10 +220,11 @@ func TestSchemaApplyForeignKeyMovedE2E_AKeptKeyStandsOnTheOldIndex(t *testing.T)
 	}
 }
 
-// TestCompatSchemaApplyForeignKeyMovedE2E_AKeptKeyStandsOnTheOldIndex runs the plan through
-// the compatibility surface, whose statements come in the community binary's order. The
-// statement that frees the name has to stay ahead of the foreign key that takes it.
-func TestCompatSchemaApplyForeignKeyMovedE2E_AKeptKeyStandsOnTheOldIndex(t *testing.T) {
+// TestCompatMigrateDiffForeignKeyMovedE2E_AKeptKeyStandsOnTheOldIndex writes the plan and its
+// rollback through the compatibility surface, whose statements come in the community
+// binary's order, and runs the files on the server. The statement that frees the name has
+// to stay ahead of the foreign key that takes it.
+func TestCompatMigrateDiffForeignKeyMovedE2E_AKeptKeyStandsOnTheOldIndex(t *testing.T) {
 	const desired = removedForeignKeyParent + "CREATE TABLE child (id bigint PRIMARY KEY, pid bigint, qid bigint, " +
 		"CONSTRAINT c_fk FOREIGN KEY (qid) REFERENCES parent (id), CONSTRAINT d_fk FOREIGN KEY (pid) REFERENCES parent (code));\n"
 	const built = removedForeignKeyParent + "CREATE TABLE child (id bigint PRIMARY KEY, pid bigint, qid bigint, KEY c_fk (pid), " +
@@ -231,15 +233,38 @@ func TestCompatSchemaApplyForeignKeyMovedE2E_AKeptKeyStandsOnTheOldIndex(t *test
 		t.Run(engine.name, func(t *testing.T) {
 			c := qt.New(t)
 			scratch := newMySQLFamilyScratch(c, engine.engine)
-			_, target := scratch.builtFrom(c, built)
 			_, dev := scratch.database(c, "fk_dev")
-			schema := filepath.Join(c.TempDir(), "schema.sql")
-			c.Assert(os.WriteFile(schema, []byte(desired), 0o600), qt.IsNil)
+			root := c.TempDir()
+			dir := filepath.Join(root, "migrations")
+			c.Assert(os.MkdirAll(dir, 0o750), qt.IsNil)
+			diff := func(name, schema string) []byte {
+				c.Helper()
+				file := filepath.Join(root, name+".sql")
+				c.Assert(os.WriteFile(file, []byte(schema), 0o600), qt.IsNil)
+				stdout, stderr, err := runCompat(c.Context(), "migrate", "diff", name, "--dir", "file://"+filepath.ToSlash(dir)+"?format=golang-migrate",
+					"--to", "file://"+filepath.ToSlash(file), "--dev-url", dev)
+				c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+				ups, err := filepath.Glob(filepath.Join(dir, "*_"+name+".up.sql"))
+				c.Assert(err, qt.IsNil)
+				c.Assert(ups, qt.HasLen, 1)
+				up, err := os.ReadFile(ups[0])
+				c.Assert(err, qt.IsNil)
+				return up
+			}
+			first := diff("first", built)
+			time.Sleep(time.Second) // the version is a timestamp in seconds
+			second := diff("second", desired)
+			downs, err := filepath.Glob(filepath.Join(dir, "*_second.down.sql"))
+			c.Assert(err, qt.IsNil)
+			c.Assert(downs, qt.HasLen, 1)
+			down, err := os.ReadFile(downs[0])
+			c.Assert(err, qt.IsNil)
 
-			stdout, stderr, err := runCompat(c.Context(), "schema", "apply", "--url", target, "--to", "file://"+filepath.ToSlash(schema), "--dev-url", dev, "--auto-approve")
+			_, applied := scratch.builtFrom(c, string(first)+string(second))
+			_, rolledBack := scratch.builtFrom(c, string(first)+string(second)+string(down))
 
-			c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
-			c.Assert(columnKeyString(c, target, foreignKeyMovedRead), qt.Equals, "c_fk(qid),d_fk(pid) | c_fk(qid),d_fk(pid)")
+			c.Assert(columnKeyString(c, applied, foreignKeyMovedRead), qt.Equals, "c_fk(qid),d_fk(pid) | c_fk(qid),d_fk(pid)")
+			c.Assert(columnKeyString(c, rolledBack, foreignKeyMovedRead), qt.Equals, "c_fk(pid) | d_fk(pid)")
 		})
 	}
 }
