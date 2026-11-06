@@ -342,6 +342,6 @@ func printPlan(out io.Writer, plan atlasschema.PlanFile) {
 		printSchemaApplyPlan(out, plan.SQL())
 		return
 	}
-	fmt.Fprintln(out, "Planned changes:")
+	fmt.Fprintln(out, plannedSchemaChanges)
 	printApplyUnits(out, plan.UnitReports(), plan.Annotations)
 }
