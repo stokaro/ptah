@@ -13,10 +13,11 @@ import (
 )
 
 // sameNamedTables are plans that create one table and change another with the
-// same name in another schema or in another case. The compatibility surface moves
-// a constraint the plan adds to a new table into its CREATE TABLE. held and absent
-// count the constraint on the table that owns it and on the new table, read from
-// the catalog after the apply.
+// same name in another schema or in another case, or with a name that reads the
+// same with its quotes taken off. The compatibility surface moves a constraint the
+// plan adds to a new table into its CREATE TABLE. held and absent count the
+// constraint on the table that owns it and on the new table, read from the catalog
+// after the apply.
 var sameNamedTables = []struct {
 	name    string
 	engines []uniqueEngine
@@ -59,6 +60,40 @@ CREATE TABLE users (id int PRIMARY KEY, code int, CONSTRAINT users_code_key UNIQ
 			AND BINARY TABLE_NAME = 'users' AND CONSTRAINT_NAME = 'users_code_chk'`,
 		absent: `SELECT count(*) FROM information_schema.TABLE_CONSTRAINTS WHERE TABLE_SCHEMA = DATABASE()
 			AND BINARY TABLE_NAME = 'Users' AND CONSTRAINT_NAME = 'users_code_chk'`,
+	},
+	{
+		name:    "a name holding a dot",
+		engines: []uniqueEngine{postgresUniqueEngine},
+		current: `CREATE SCHEMA a;
+CREATE TABLE a.b (id int PRIMARY KEY, code int);`,
+		schema: `CREATE SCHEMA a;
+CREATE TABLE "a.b" (id int PRIMARY KEY, code int);
+CREATE TABLE a.b (id int PRIMARY KEY, code int, CONSTRAINT b_code_key UNIQUE (code));`,
+		want:   `ALTER TABLE "a"."b" ADD CONSTRAINT "b_code_key" UNIQUE ("code");`,
+		held:   `SELECT count(*) FROM pg_constraint WHERE conrelid = 'a.b'::regclass AND conname = 'b_code_key'`,
+		absent: `SELECT count(*) FROM pg_constraint WHERE conrelid = '"a.b"'::regclass AND conname = 'b_code_key'`,
+	},
+	{
+		name:    "a name holding a quote",
+		engines: []uniqueEngine{postgresUniqueEngine},
+		current: `CREATE TABLE ab (id int PRIMARY KEY, code int);`,
+		schema: `CREATE TABLE "a""b" (id int PRIMARY KEY, code int);
+CREATE TABLE ab (id int PRIMARY KEY, code int, CONSTRAINT ab_code_key UNIQUE (code));`,
+		want:   `ALTER TABLE "ab" ADD CONSTRAINT "ab_code_key" UNIQUE ("code");`,
+		held:   `SELECT count(*) FROM pg_constraint WHERE conrelid = 'ab'::regclass AND conname = 'ab_code_key'`,
+		absent: `SELECT count(*) FROM pg_constraint WHERE conrelid = '"a""b"'::regclass AND conname = 'ab_code_key'`,
+	},
+	{
+		name:    "a name holding a quote",
+		engines: mysqlFamilyUniqueEngines,
+		current: "CREATE TABLE ab (id int PRIMARY KEY, code int);",
+		schema: "CREATE TABLE `a``b` (id int PRIMARY KEY, code int);\n" +
+			"CREATE TABLE ab (id int PRIMARY KEY, code int, CONSTRAINT ab_code_chk CHECK (code > 0));",
+		want: "ALTER TABLE `ab` ADD CONSTRAINT `ab_code_chk` CHECK (code > 0);",
+		held: `SELECT count(*) FROM information_schema.TABLE_CONSTRAINTS WHERE TABLE_SCHEMA = DATABASE()
+			AND BINARY TABLE_NAME = 'ab' AND CONSTRAINT_NAME = 'ab_code_chk'`,
+		absent: "SELECT count(*) FROM information_schema.TABLE_CONSTRAINTS WHERE TABLE_SCHEMA = DATABASE()" +
+			" AND BINARY TABLE_NAME = 'a`b' AND CONSTRAINT_NAME = 'ab_code_chk'",
 	},
 }
 

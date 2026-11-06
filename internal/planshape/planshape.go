@@ -152,7 +152,7 @@ func createdAt(created map[string]int, reference string) (int, bool) {
 	}
 	at, found := 0, false
 	for table, position := range created {
-		if bare(table) == bare(reference) && (!found || position > at) {
+		if strings.ToLower(table[strings.LastIndexByte(table, 0)+1:]) == bare(reference) && (!found || position > at) {
 			at, found = position, true
 		}
 	}
@@ -484,21 +484,48 @@ func (sqliteCatalog) typeName(column *ast.ColumnNode) string {
 	return strings.ToLower(strings.TrimSpace(column.Type))
 }
 
-// tableKey is a table as the plan's statements name it: its schema and its name in
-// their case, without quotes. A statement moves onto a table only under this key,
-// because a.t and b.t, or "Users" and users, are two tables.
+// tableKey is a table as the plan's statements name it: each part of its name in
+// its case, without quotes. A statement moves onto a table only under this key,
+// because a.t and b.t, "Users" and users, "a.b" and a.b, or "a""b" and ab are two
+// tables. The parts stay apart under a byte no name part can hold.
 func tableKey(name string) string {
-	return strings.NewReplacer("`", "", `"`, "").Replace(strings.TrimSpace(name))
+	return strings.Join(nameParts(name), "\x00")
+}
+
+// nameParts splits a name at the dots outside its quotes and takes the quotes off
+// each part. A quote opens only at the start of a part, so a name a reader has
+// already unquoted keeps the quote it holds, and a doubled quote inside quotes is
+// one quote of the name.
+func nameParts(name string) []string {
+	var parts []string
+	var part strings.Builder
+	var quote byte
+	name = strings.TrimSpace(name)
+	for i := 0; i < len(name); i++ {
+		char := name[i]
+		switch {
+		case quote != 0 && char == quote && i+1 < len(name) && name[i+1] == quote:
+			part.WriteByte(char)
+			i++
+		case quote != 0 && char == quote:
+			quote = 0
+		case quote == 0 && part.Len() == 0 && (char == '"' || char == '`'):
+			quote = char
+		case quote == 0 && char == '.':
+			parts = append(parts, part.String())
+			part.Reset()
+		default:
+			part.WriteByte(char)
+		}
+	}
+	return append(parts, part.String())
 }
 
 // unqualified is a table's name without its schema or its quotes, in its case, as
 // the server starts a name it gives the table's constraints.
 func unqualified(name string) string {
-	name = tableKey(name)
-	if at := strings.LastIndex(name, "."); at >= 0 {
-		name = name[at+1:]
-	}
-	return name
+	parts := nameParts(name)
+	return parts[len(parts)-1]
 }
 
 // bare is a name that may be the table: without schema, quotes or case. Two tables

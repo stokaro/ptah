@@ -314,6 +314,53 @@ func TestApply_ASameNamedTableKeepsItsConstraint_FailurePath(t *testing.T) {
 	c.Assert(created.Constraints[0].Type, qt.Equals, ast.PrimaryKeyConstraint)
 }
 
+// TestApply_ANameWithTheSameLettersKeepsItsConstraint_FailurePath leaves a
+// constraint on its own table where the new table's name reads the same with its
+// quotes taken off.
+func TestApply_ANameWithTheSameLettersKeepsItsConstraint_FailurePath(t *testing.T) {
+	for _, test := range []struct{ name, created, altered string }{
+		{"a dot inside quotes", `"a.b"`, "a.b"},
+		{"a quoted schema", `"a.b"`, `"a"."b"`},
+		{"a doubled quote", `"a""b"`, "ab"},
+		{"a quote a reader kept", `a"b`, "ab"},
+		{"a doubled backquote", "`a``b`", "ab"},
+		{"a backquote a reader kept", "a`b", "ab"},
+		{"a schema of the same letters", `a.b.c`, `"a.b".c`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			created := ast.NewCreateTable(test.created).AddColumn(key("id"))
+
+			planshape.Apply(platform.Postgres, []ast.Node{created, addConstraint(test.altered, checkConstraint("ck", "id > 0"))})
+
+			c.Assert(created.Constraints, qt.HasLen, 1)
+			c.Assert(created.Constraints[0].Type, qt.Equals, ast.PrimaryKeyConstraint)
+		})
+	}
+}
+
+// TestApply_OneNameInTwoSpellingsTakesItsConstraint_HappyPath moves a constraint
+// onto a new table however a statement quotes the table's name.
+func TestApply_OneNameInTwoSpellingsTakesItsConstraint_HappyPath(t *testing.T) {
+	for _, test := range []struct{ name, created, altered string }{
+		{"quotes on every part", "a.b", `"a"."b"`},
+		{"quotes on one part", `a."b"`, `"a".b`},
+		{"a quoted dot", `"a.b"`, `"a.b"`},
+		{"a doubled quote and a kept one", `"a""b"`, `a"b`},
+		{"backquotes", "`a`.`b`", "a.b"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			created := ast.NewCreateTable(test.created).AddColumn(key("id"))
+
+			planshape.Apply(platform.Postgres, []ast.Node{created, addConstraint(test.altered, checkConstraint("ck", "id > 0"))})
+
+			c.Assert(created.Constraints, qt.HasLen, 2)
+			c.Assert(created.Constraints[1].Name, qt.Equals, "ck")
+		})
+	}
+}
+
 // TestApply_AUniqueColumnTakesTheTablesCase_HappyPath writes the name PostgreSQL
 // gives the key, which keeps the case of a quoted table's name.
 func TestApply_AUniqueColumnTakesTheTablesCase_HappyPath(t *testing.T) {
