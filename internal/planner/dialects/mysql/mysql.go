@@ -2032,11 +2032,13 @@ func (p *Planner) addNewConstraints(
 	if !p.isMySQLFamily() {
 		result = addKeys(result)
 	}
+	released := func(ref difftypes.IndexRef, _ struct{}) bool {
+		_, dropped := releasedIndexes[ref]
+		return dropped
+	}
 	rebuiltIndexes := diff.IndexRemovalsRebuiltAsUniqueConstraints()
-	maps.DeleteFunc(rebuiltIndexes, func(ref difftypes.IndexRef, _ struct{}) bool {
-		_, released := releasedIndexes[ref]
-		return released
-	})
+	maps.DeleteFunc(rebuiltIndexes, released)
+	maps.DeleteFunc(state.indexesNamedByForeignKeys, released)
 	result = p.addNonForeignKeyConstraintsWithTables(
 		result,
 		diff.ConstraintsAdded,

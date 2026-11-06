@@ -38,6 +38,12 @@ func TestSchemaApplyForeignKeyMovedE2E_HappyPath(t *testing.T) {
 			want:    "c_fk(qid) | c_fk(qid)",
 		},
 		{
+			name:    "another column of the table leaves as well",
+			built:   "CREATE TABLE child (id bigint PRIMARY KEY, pid bigint, qid bigint, other bigint, CONSTRAINT c_fk FOREIGN KEY (pid) REFERENCES parent (id));\n",
+			desired: "CREATE TABLE child (id bigint PRIMARY KEY, pid bigint, qid bigint, CONSTRAINT c_fk FOREIGN KEY (qid) REFERENCES parent (id));\n",
+			want:    "c_fk(qid) | c_fk(qid)",
+		},
+		{
 			name:    "a new key takes the name of an index that leaves",
 			built:   "CREATE TABLE child (id bigint PRIMARY KEY, pid bigint, qid bigint, KEY c_fk (pid));\n",
 			desired: "CREATE TABLE child (id bigint PRIMARY KEY, pid bigint, qid bigint, CONSTRAINT c_fk FOREIGN KEY (qid) REFERENCES parent (id));\n",
