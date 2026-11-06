@@ -420,7 +420,7 @@ func classifyComputedUnits(
 	dialect string,
 ) ([]PlanStatement, bool, error) {
 	if slices.ContainsFunc(computation.units, func(unit renderer.Fragment) bool { return unit.Native != nil }) {
-		statements, destructive, err := classifyPlanUnits(ctx, runtime, computation.units, dialect, computation.owned)
+		statements, destructive, err := classifyPlanUnits(ctx, runtime, computation.units, dialect, computation.owned, computation.columns)
 		if err != nil {
 			return nil, false, fmt.Errorf("assess plan safety: %w", err)
 		}
@@ -430,7 +430,7 @@ func classifyComputedUnits(
 	if err != nil {
 		return nil, false, err
 	}
-	statements, destructive, err := classifyPlanStatements(ctx, runtime, sqlStatements, dialect, computation.owned)
+	statements, destructive, err := classifyPlanStatements(ctx, runtime, sqlStatements, dialect, computation.owned, computation.columns)
 	if err != nil {
 		return nil, false, fmt.Errorf("assess plan safety: %w", err)
 	}
@@ -559,12 +559,17 @@ func excludeCurrentWithBindings(ctx context.Context, current *catalog.Database, 
 // CREATE POLICY reads as additive whether it widens or narrows access. A
 // statement with an owner verdict takes its access assessment and, when
 // higher, its severity.
+//
+// columns holds the same way what a column modification established (see
+// [safety.ColumnVerdicts]), and raises a statement without marking it owned: ALTER
+// COLUMN ... TYPE timestamp(0) reads as safe whatever type it replaces. A plan read back
+// from SQL has neither.
 func classifyPlanStatements(
 	ctx context.Context,
 	runtime safety.Runtime,
 	raw []string,
 	dialect string,
-	owned []safety.StatementAssessment,
+	owned, columns []safety.StatementAssessment,
 ) (statements []PlanStatement, destructive bool, err error) {
 	// Statements can carry comments and MySQL-family executable comments.
 	// Classify the SQL the plan's dialect may execute, including guarded
@@ -583,6 +588,9 @@ func classifyPlanStatements(
 		ownerVerdict := i < len(owned) && owned[i].Severity != ""
 		if ownerVerdict {
 			safety.Fold(&assessment, owned[i])
+		}
+		if i < len(columns) {
+			safety.Fold(&assessment, columns[i])
 		}
 		destructive = destructive || assessment.Severity == safety.Destructive
 		statements = append(statements, PlanStatement{
@@ -673,7 +681,7 @@ func (p PlanFile) WithStatementsFromSQL(ctx context.Context, runtime safety.Runt
 	// Keeping positional notes too would duplicate them or attach them to
 	// a different statement after the edit.
 	p.Annotations = nil
-	statements, destructive, err := classifyPlanStatements(ctx, runtime, splitPlanStatements(sqlText, p.Dialect), p.Dialect, nil)
+	statements, destructive, err := classifyPlanStatements(ctx, runtime, splitPlanStatements(sqlText, p.Dialect), p.Dialect, nil, nil)
 	if err != nil {
 		return PlanFile{}, err
 	}

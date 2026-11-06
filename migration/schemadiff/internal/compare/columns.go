@@ -532,6 +532,7 @@ func columnsWithDesiredDomains(
 		applyColumnDifference(colDiff.Changes, "type", receipt.Difference)
 	} else if change := columnTypeChange(declared, dbCol, dbRawType, dialect, desiredDomains, ctx.rules); change != "" && !sameType {
 		colDiff.Changes["type"] = change
+		colDiff.TypeNarrows = typeChangeNarrows(change, dbRawType, declared.Type, dialect)
 	}
 
 	// Compare nullable. On the engines that enforce it, a primary key column is
@@ -975,9 +976,29 @@ func columnTypeChange(
 	return ""
 }
 
+// typeChangeNarrows reports whether a value the column holds may not fit its declared
+// type, as this engine reads the two. The raw spellings are asked rather than change,
+// which may hold a normalized spelling with the precision gone. ClickHouse's change is
+// the exception, since it holds the canonical types and the raw ones may not be.
+func typeChangeNarrows(change, dbRawType, declaredType, dialect string) bool {
+	comparison := comparisonOf(dialect)
+	bareDigits := comparison.TimePrecision.Default
+	if comparison.NullableTypes {
+		before, after, _ := strings.Cut(change, " -> ")
+		return typechange.IsNarrowingOn(before, after, bareDigits)
+	}
+	if comparison.MapsDeclaredTypes {
+		declaredType = oracletype.Map(declaredType)
+	}
+	return typechange.IsNarrowingOn(dbRawType, declaredType, bareDigits)
+}
+
 // timeTypeRe matches a temporal type with its precision: the name, the precision, and
-// what follows it, such as ` with time zone` or an array marker.
-var timeTypeRe = regexp.MustCompile(`(?i)^\s*(timestamptz|timestamp|timetz|time|interval)\s*\(\s*(\d+)\s*\)(.*)$`)
+// what follows it, such as ` with time zone` or an array marker. MySQL's datetime and SQL
+// Server's datetime2 and datetimeoffset are here for the reason timestamp is: `datetime`
+// and `datetime(0)` are one type on MySQL, and `datetime2` and `datetime2(7)` one on SQL
+// Server, and only a precision read apart from the name says so.
+var timeTypeRe = regexp.MustCompile(`(?i)^\s*(timestamptz|timestamp|timetz|time|interval(?:\s+[a-z]+(?:\s+to\s+[a-z]+)?)?|datetime2|datetimeoffset|datetime)\s*\(\s*(\d+)\s*\)(.*)$`)
 
 // withoutTimePrecision is a temporal type with its precision taken out, on an engine
 // whose comparison reads the precision apart; see [timePrecisionOf]. Any other type
@@ -1097,10 +1118,10 @@ func foldDomainPart(value string) string {
 // without the catalog columns and because the failure it guards is destructive
 // while its cost is not: reading a spelling as an identity can only ever REPORT
 // a change that normalization would have folded away, never hide one. The one
-// shape it must not claim is an array, whose spelling is a type rather than an
-// identifier -- and format_type spells every array with a trailing "[]",
-// including an array of a domain, while a column whose declared type IS a
-// domain is spelled with the domain's own name.
+// shapes it must not claim are an array and an interval that keeps some of its fields,
+// whose spellings are types rather than identifiers -- and format_type spells every array
+// with a trailing "[]", including an array of a domain, while a column whose declared
+// type IS a domain is spelled with the domain's own name.
 func dbColumnDomainIdentity(dbCol catalog.Column) (domainIdentity, bool) {
 	qualifier, spelled := domainColumnSpelling(dbCol)
 	if name := foldDomainPart(dbCol.DomainName); name != "" {
@@ -1118,10 +1139,11 @@ func dbColumnDomainIdentity(dbCol catalog.Column) (domainIdentity, bool) {
 
 // domainColumnSpelling splits the server's own spelling of a domain column's
 // declared type, and returns an empty name for every column that has none --
-// including an array, whose spelling is a type.
+// including an array, whose spelling is a type, and an interval that keeps some of its
+// fields, which the catalog spells no other way.
 func domainColumnSpelling(dbCol catalog.Column) (schema, name string) {
 	formatted := strings.TrimSpace(dbCol.FormattedType)
-	if formatted == "" || strings.HasSuffix(formatted, "[]") {
+	if formatted == "" || strings.HasSuffix(formatted, "[]") || typechange.IsTemporal(formatted) {
 		return "", ""
 	}
 	return splitQualifiedTypeName(formatted)
@@ -1483,6 +1505,13 @@ func renderedSQLiteType(genCol schemamodel.Field) string {
 // schema would carry, so both are reported. The SQLite guard suppresses these
 // for SQLite's type affinity, where such distinctions do not exist.
 func shouldReportSizedTypeChange(dbType, genType, dialect string) bool {
+	// A temporal type's precision is not a width. An engine that compares it declares
+	// so ([descriptor.TimePrecision]) and has compared it by now, and an engine that
+	// does not leaves it alone: Oracle refuses to lower one on a column holding a row
+	// (ORA-30082), and SQLite stores the declaration without reading it.
+	if typechange.IsTemporal(dbType) && typechange.IsTemporal(genType) {
+		return false
+	}
 	if comparisonOf(dialect).TypeAffinity &&
 		normalize.Type(dbType) == normalize.Type(normalize.SQLiteColumnType(genType)) {
 		return false

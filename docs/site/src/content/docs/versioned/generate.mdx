@@ -422,6 +422,11 @@ Safety classification:
   5  warning      *ast.RawSQLNode          rename can break deployed readers and writers
 ```
 
+A change that narrows a column is classified the same way, because a value that
+does not fit is gone: a shorter string, a smaller integer, or a temporal type with
+a lower precision. [How a column change is rated](../../direct/plan-and-approve/#how-a-column-change-is-rated)
+lists the rest.
+
 With `--check-destructive` set, `plan` and `generate` refuse to proceed and
 exit `2`:
 

@@ -805,6 +805,13 @@ func (r *Reader) constraintDefinitionExpr() string {
 // sized built-ins are not USER-DEFINED at all, so the sized-type branches and
 // the SERIAL detection downstream stay where #1138 left them.
 //
+// An interval that keeps some of its fields is read the same way, because they have no
+// other home here: information_schema's data_type says `interval` for `interval year to
+// month`. atttypmod holds a mask of the fields above its low 16 bits, all 15 set for a
+// column that keeps every field, which leaves `interval(3)` to datetime_precision. Without
+// this a column holding those fields reads as holding all of them, a declaration of those
+// fields plans a change on every run, and one of plain `interval` over them plans none.
+//
 // The expression it replaces reads format_type inside a CASE that only an array
 // or a domain column takes. That is not enough on a currentCatalog without the
 // function: the name is resolved before any row is, so a branch no row would
@@ -814,8 +821,19 @@ func (r *Reader) formattedTypeExpr() string {
 	if !r.caps.Has(capability.PostgresCatalogFunctions) {
 		return "'' AS formatted_type"
 	}
+	if r.dialect == platform.CockroachDB {
+		// format_type answers `interval` for `interval year to month` here, and the
+		// catalog's own column keeps the fields. Measured on v26.3.5.
+		return `CASE WHEN data_type = 'interval' AND col.crdb_sql_type LIKE 'INTERVAL %' THEN col.crdb_sql_type
+				WHEN data_type = 'ARRAY' OR col.domain_name IS NOT NULL
+				OR (data_type = 'USER-DEFINED' AND a.atttypmod <> -1)
+				THEN format_type(a.atttypid, a.atttypmod)
+				ELSE ''
+			END AS formatted_type`
+	}
 	return `CASE WHEN data_type = 'ARRAY' OR col.domain_name IS NOT NULL
 				OR (data_type = 'USER-DEFINED' AND a.atttypmod <> -1)
+				OR (data_type = 'interval' AND a.atttypmod <> -1 AND (a.atttypmod >> 16) & 32767 <> 32767)
 				THEN format_type(a.atttypid, a.atttypmod)
 				ELSE ''
 			END AS formatted_type`

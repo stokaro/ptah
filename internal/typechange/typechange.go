@@ -12,9 +12,18 @@ var typeArgRe = regexp.MustCompile(`^([a-zA-Z0-9_ ]+)\(([^)]*)\)$`)
 
 // IsNarrowing reports whether changing from oldType to newType can lose data
 // by reducing the representable range or length.
+//
+// A temporal type counts when its precision, its range or the fields it keeps go down.
+// A precision that only one side declares means what the engine says it means, so
+// without an engine that transition is not answered here; see [IsNarrowingOn].
 func IsNarrowing(oldType, newType string) bool {
 	if oldInt, newInt, ok := fixedWidthIntegers(oldType, newType); ok {
 		return fixedWidthNarrows(oldInt, newInt)
+	}
+	if old, ok := parseTemporal(oldType); ok {
+		if updated, ok := parseTemporal(newType); ok {
+			return temporalNarrows(old, updated, bareDigits{})
+		}
 	}
 	oldSpec := parseSpec(oldType)
 	newSpec := parseSpec(newType)
@@ -22,7 +31,9 @@ func IsNarrowing(oldType, newType string) bool {
 		return false
 	}
 	if isTextType(oldSpec.name) && isSizedString(newSpec.name) {
-		return true
+		// A bare VARCHAR has no limit, so a text value keeps every character there.
+		newLen, bounded := stringLength(newSpec)
+		return !bounded || newLen != unboundedStringLength
 	}
 	if oldSpec.kind == "string" && newSpec.kind == "string" {
 		oldLen, oldOK := stringLength(oldSpec)
@@ -54,6 +65,11 @@ func IsNarrowing(oldType, newType string) bool {
 func IsWidening(oldType, newType string) bool {
 	if oldInt, newInt, ok := fixedWidthIntegers(oldType, newType); ok {
 		return oldInt != newInt && !fixedWidthNarrows(oldInt, newInt)
+	}
+	if old, ok := parseTemporal(oldType); ok {
+		if updated, ok := parseTemporal(newType); ok {
+			return temporalWidens(old, updated)
+		}
 	}
 	oldSpec := parseSpec(oldType)
 	newSpec := parseSpec(newType)

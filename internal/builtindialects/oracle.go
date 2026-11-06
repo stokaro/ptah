@@ -131,6 +131,7 @@ END;`,
 		// Oracle stores a generated column's expression in a form of its own
 		// (stokaro/ptah#1915).
 		Comparison: descriptor.Comparison{
+			TimePrecision:                descriptor.TimePrecision{Default: 6},
 			RewritesGeneratedExpressions: true,
 			RoutineNamesFold:             true,
 			ArgumentModeAfterName:        true,

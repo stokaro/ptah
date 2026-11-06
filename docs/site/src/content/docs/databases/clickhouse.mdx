@@ -486,9 +486,11 @@ second-precision one, while the portable `INT8` is `Int64`.
 A narrowing is planned as well. Measured on 24.10 and 26.9, the server accepts
 `MODIFY COLUMN d Int32` over an `Int64` column and stores a value that does not
 fit wrapped: `30000000000` becomes `-64771072`. A decimal narrowing whose values
-do not fit fails the conversion and leaves the column unreadable. The plan's
-safety report marks an integer narrowing between ClickHouse type names, and a
-decimal narrowing, as destructive; check the values before applying either.
+do not fit fails the conversion and leaves the column unreadable. A lower temporal
+type is accepted too: `DateTime64(6)` under `DateTime64(3)` loses three digits, and
+`DateTime` under `Date` loses the time of day. The plan's safety report marks an
+integer narrowing between ClickHouse type names, a decimal narrowing and a temporal
+narrowing as destructive; check the values before applying any of them.
 
 A type that already admits NULL, such as `LowCardinality(Nullable(String))`, is
 not wrapped in a second `Nullable`, which ClickHouse refuses. A `Nullable` inside

@@ -97,6 +97,7 @@ func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 			NoTableComments:      true,
 		},
 		"sqlserver": {
+			TimePrecision:                  descriptor.TimePrecision{Compared: true, Default: 7},
 			DeclaredSchemas:                true,
 			ColumnPrimaryKeyIsTheTablesKey: true,
 			UniqueIndexStandsAlone:         true,
@@ -107,6 +108,7 @@ func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 		},
 		"clickhouse": {NullableTypes: true},
 		"oracle": {
+			TimePrecision:                descriptor.TimePrecision{Default: 6},
 			RewritesGeneratedExpressions: true,
 			RoutineNamesFold:             true,
 			ArgumentModeAfterName:        true,

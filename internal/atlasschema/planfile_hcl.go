@@ -328,7 +328,7 @@ func MarshalPlanFileAs(plan PlanFile, format PlanFormat) ([]byte, error) {
 // correctness-sensitive callers must reclassify the SQL after resolving the
 // target dialect.
 func planStatementsFromSQL(ctx context.Context, runtime safety.Runtime, raw []string) ([]PlanStatement, error) {
-	statements, _, err := classifyPlanStatements(ctx, runtime, raw, "", nil)
+	statements, _, err := classifyPlanStatements(ctx, runtime, raw, "", nil, nil)
 	return statements, err
 }
 

@@ -41,10 +41,10 @@ func TestAssessSQL_DropWithoutColumnDropsTheColumn(t *testing.T) {
 	}
 }
 
-// A DROP that names another kind of object keeps the verdict its words had
-// before: a constraint's drop removes a data protection, and an index's or a
-// key's drop inside ALTER TABLE, and an ALTER COLUMN that drops a property,
-// are left as they were, which is safe by their words. A DROP inside a string or a comment is no DROP at all, and a name
+// A DROP that names another kind of object is judged as that object: a constraint's
+// drop removes a data protection, a default's or an identity's changes what an insert
+// that leaves the column out does, and an index's or a key's drop inside ALTER TABLE is
+// safe by its words. A DROP inside a string or a comment is no DROP at all, and a name
 // that only Unicode case mapping turns into a keyword is still a name.
 func TestAssessSQL_DropOfAnotherObjectIsNoColumnDrop(t *testing.T) {
 	tests := []struct {
@@ -62,10 +62,10 @@ func TestAssessSQL_DropOfAnotherObjectIsNoColumnDrop(t *testing.T) {
 		{target: platform.MySQL, statement: "ALTER TABLE users DROP PRIMARY KEY", severity: safety.Safe, reason: safeReason},
 		{target: platform.MySQL, statement: "ALTER TABLE users DROP FOREIGN KEY fk_team", severity: safety.Safe, reason: safeReason},
 		{target: platform.MySQL, statement: "ALTER TABLE users DROP PARTITION p0", severity: safety.Safe, reason: safeReason},
-		{target: platform.MySQL, statement: "ALTER TABLE users ALTER COLUMN age DROP DEFAULT", severity: safety.Safe, reason: safeReason},
+		{target: platform.MySQL, statement: "ALTER TABLE users ALTER COLUMN age DROP DEFAULT", severity: safety.Warning, reason: dropDefaultReason},
 		{target: platform.Postgres, statement: "ALTER TABLE users ALTER COLUMN age DROP EXPRESSION", severity: safety.Safe, reason: safeReason},
 		{target: platform.Spanner, statement: `ALTER TABLE "sessions" DROP TTL`, severity: safety.Safe, reason: safeReason},
-		{target: platform.Postgres, statement: "ALTER TABLE users ALTER COLUMN id DROP IDENTITY IF EXISTS", severity: safety.Safe, reason: safeReason},
+		{target: platform.Postgres, statement: "ALTER TABLE users ALTER COLUMN id DROP IDENTITY IF EXISTS", severity: safety.Destructive, reason: dropIdentityReason},
 		{target: platform.Postgres, statement: "ALTER TABLE users ADD CONSTRAINT c CHECK (note <> 'a drop b c')", severity: safety.Safe,
 			reason: safeReason},
 		{target: platform.Postgres, statement: "ALTER TABLE users -- drop legacy\n  ADD COLUMN fresh int", severity: safety.Safe, reason: safeReason},

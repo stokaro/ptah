@@ -134,6 +134,7 @@ END`,
 		// A UNIQUE constraint and a unique index are separate objects, so
 		// neither backs the other.
 		Comparison: descriptor.Comparison{
+			TimePrecision:                  descriptor.TimePrecision{Compared: true, Default: 7},
 			DeclaredSchemas:                true,
 			ColumnPrimaryKeyIsTheTablesKey: true,
 			UniqueIndexStandsAlone:         true,

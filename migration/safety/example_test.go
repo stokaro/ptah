@@ -108,7 +108,7 @@ func ExampleAssessRendered() {
 	// 1 destructive DROP TABLE removes the table and all rows
 	// 2 destructive column type narrows from varchar(255) to varchar(100)
 	// 3 destructive DROP NOT NULL removes an existing data protection
-	// 4 safe        does not remove data or tighten constraints
+	// 4 warning     DROP DEFAULT can break writers that leave the column out
 }
 
 // ExampleRenderText writes the compact text table an operator reads in a

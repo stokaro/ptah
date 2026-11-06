@@ -781,6 +781,17 @@ generated `BY DEFAULT` compare equal: each draws from a sequence and takes a val
 an insert names. An identity generated `ALWAYS` refuses that value, so against a
 `SERIAL` column the plan replaces one with the other, in both directions.
 
+A plan rates these by what an insert does next, and no row is lost by any of them.
+`DROP IDENTITY` is destructive, because the server drops the sequence with it, as
+`DROP SEQUENCE` is. That holds where the plan replaces the identity with a `SERIAL`
+column as well, since the statement reads the same. `DROP DEFAULT`, `SET GENERATED` and
+`ADD GENERATED ALWAYS` are warnings. See
+[how a column change is rated](../../direct/plan-and-approve/#how-a-column-change-is-rated).
+
+An `interval` column is read with the fields it keeps. `interval year to month` clears
+days and time of day from every value, so declaring it over an `interval` column is
+rated as a narrowing, and a schema file may spell it as `pg_dump` does.
+
 ## Unlogged tables
 
 A table declared `unlogged = true` renders `CREATE UNLOGGED TABLE`. Its writes

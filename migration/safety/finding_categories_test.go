@@ -67,6 +67,12 @@ func classifierRows() []*difftypes.SchemaDiff {
 		{TablesModified: []difftypes.TableDiff{{ColumnsModified: []difftypes.ColumnDiff{
 			{Changes: map[string]string{"type": "vector(3) -> vector(4)"}},
 		}}}},
+		{TablesModified: []difftypes.TableDiff{{ColumnsModified: []difftypes.ColumnDiff{
+			{TypeNarrows: true, Changes: map[string]string{"type": "timestamp(6) -> timestamp"}},
+		}}}},
+		{TablesModified: []difftypes.TableDiff{{ColumnsModified: []difftypes.ColumnDiff{
+			{Changes: map[string]string{"identity": "always -> "}},
+		}}}},
 		{MaterializedViewsModified: []difftypes.MaterializedViewDiff{{ViewName: "daily", FeatureChanges: []schemaext.ChangeRecord{
 			ownerChange(&classifiedChange{effect: schemaext.Effect{Impact: schemaext.Behavioral, Reason: "rows are kept"}}),
 		}}}},

@@ -755,6 +755,14 @@ trigger, and is destructive.
   routine call such as `other.f()`, a sequence such as `NEXTVAL(other.s)` and
   a three-part path such as `other.t.v`.
 
+## A column's fractional seconds
+
+`timestamp`, `datetime` and `time` hold no fractional-second digits where a column
+declares none, on both servers. So `datetime` and `datetime(0)` are one type and plan
+nothing, and `datetime(6)` declared `datetime` plans a `MODIFY COLUMN` that rounds the
+digits away. The plan rates that destructive. See
+[how a column change is rated](../../direct/plan-and-approve/#how-a-column-change-is-rated).
+
 ## Making a column NOT NULL
 
 A plan that makes an existing column `NOT NULL` writes `MODIFY COLUMN` with

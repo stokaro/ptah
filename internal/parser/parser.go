@@ -3162,9 +3162,40 @@ func (p *Parser) handleMultiWordType(typeName string) string {
 			break
 		}
 		typeName = p.appendTimeZoneQualifier(typeName)
+	case "INTERVAL":
+		typeName = p.appendIntervalFields(typeName)
 	}
 
 	return typeName
+}
+
+// intervalFields are the words an interval type names its fields with.
+var intervalFields = map[string]bool{"YEAR": true, "MONTH": true, "DAY": true, "HOUR": true, "MINUTE": true, "SECOND": true}
+
+// appendIntervalFields consumes the fields behind INTERVAL: `interval year to month`,
+// `interval day to second(3)`, which is how pg_dump writes a column that keeps them, and
+// Oracle's `INTERVAL DAY(2) TO SECOND(6)`. The fields are part of the type: a column of
+// `interval year to month` clears days and time of day from every value written to it.
+func (p *Parser) appendIntervalFields(typeName string) string {
+	if !intervalFields[strings.ToUpper(p.current.Value)] {
+		return typeName
+	}
+	typeName += " " + p.current.Value
+	p.advance()
+	typeName = p.collectTypeParameters(typeName)
+	p.skipWhitespace()
+	if !p.current.MatchIdentifierValue("TO") {
+		return typeName
+	}
+	typeName += " " + p.current.Value
+	p.advance()
+	p.skipWhitespace()
+	if !intervalFields[strings.ToUpper(p.current.Value)] {
+		return typeName
+	}
+	typeName += " " + p.current.Value
+	p.advance()
+	return p.collectTypeParameters(typeName)
 }
 
 // handleTimeZoneBehindPrecision reads the zone qualifier where a precision puts it,

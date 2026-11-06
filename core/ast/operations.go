@@ -72,6 +72,11 @@ type ModifyColumnOperation struct {
 	// modification. Renderers ignore this metadata; safety analysis uses it to
 	// distinguish narrowing changes from other column modifications.
 	PreviousType string
+	// TypeNarrows reports that a value the column holds may not fit the new type, as
+	// the comparison read the two on the target engine. Renderers ignore it. Safety
+	// analysis reads it because a transition alone cannot say: `timestamp(3)` to
+	// `timestamp` loses digits on MySQL and gains them on PostgreSQL.
+	TypeNarrows bool
 	// PreviousNullable is the best-known existing database nullability before
 	// the modification. Safety analysis uses it to distinguish DROP NOT NULL
 	// from SET NOT NULL. Most renderers ignore it. Oracle's MODIFY repeats a

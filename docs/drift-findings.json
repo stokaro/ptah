@@ -2,6 +2,22 @@
   "comment": "Every finding category `ptah schema drift` can report, with the severities a finding of it can carry and whether it is written alone (bare) or followed by a colon and a feature owner's change kind (qualified). Generated from internal/cli/drift.FindingCategories by `scripts/check-docsync.sh --write`; do not edit.",
   "categories": [
     {
+      "category": "column_identities_removed",
+      "severities": [
+        "destructive"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "column_types_narrowed",
+      "severities": [
+        "destructive"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
       "category": "columns_added",
       "severities": [
         "warning"

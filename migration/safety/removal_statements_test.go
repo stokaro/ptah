@@ -391,6 +391,7 @@ var unplannedRemovals = map[string]string{
 	"rls_enabled_tables_removed": "row-level security is planned by its feature owner on every engine that has it",
 	"rls_force_removed":          "row-level security is planned by its feature owner on every engine that has it",
 	"unique_protections_removed": "a qualifier of indexes_removed, which a row above plans",
+	"column_identities_removed":  "a qualifier of columns_modified, which TestPlanCheck_RatesARemovedIdentityAsTheDriftReportDoes plans",
 	"table_constraints_removed":  "a table's own constraint lists, which only a diff assembled by hand fills",
 }
 
@@ -414,6 +415,22 @@ func TestPlanCheck_RatesEachRemovalAsTheDriftReportDoes(t *testing.T) {
 			c.Assert(safety.HighestAssessment(assessments), qt.Equals, findings[0].Severity)
 		})
 	}
+}
+
+// TestPlanCheck_RatesARemovedIdentityAsTheDriftReportDoes is the same agreement for a
+// column that loses its identity, which the report counts under columns_modified as
+// well, so it has no place among the rows of one finding.
+func TestPlanCheck_RatesARemovedIdentityAsTheDriftReportDoes(t *testing.T) {
+	c := qt.New(t)
+	row := changeRow{dialect: "postgres", current: withIdentityOnID}
+
+	findings, assessments := planChange(c, must.Must(builtin.New()), row)
+
+	c.Assert(findings, qt.DeepEquals, []safety.Finding{
+		{Category: "column_identities_removed", Count: 1, Severity: safety.Destructive},
+		{Category: "columns_modified", Count: 1, Severity: safety.Warning},
+	})
+	c.Assert(safety.HighestAssessment(assessments), qt.Equals, safety.Destructive)
 }
 
 // TestPlanCheck_RatesEachReplacementAsTheDriftReportDoes is the same agreement
@@ -517,6 +534,9 @@ func removalBase() *schemamodel.Database {
 		},
 	}
 }
+
+// withIdentityOnID gives the table's key column, which removalBase lists first, an identity.
+func withIdentityOnID(d *schemamodel.Database) { d.Fields[0].IdentityGeneration = "ALWAYS" }
 
 func withView(d *schemamodel.Database) { withViewBody("SELECT email FROM users")(d) }
 

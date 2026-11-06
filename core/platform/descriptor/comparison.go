@@ -182,6 +182,8 @@ type Comparison struct {
 type TimePrecision struct {
 	// Compared reports that the comparison reads the precision.
 	Compared bool `json:"compared,omitempty"`
-	// Default is the precision of a column that declares none.
+	// Default is the precision of a column that declares none. It answers whether a
+	// change the comparison reports for another reason narrows the column, so an
+	// engine that does not compare a precision can still state one.
 	Default int `json:"default,omitempty"`
 }

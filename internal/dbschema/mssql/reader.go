@@ -1161,8 +1161,28 @@ func sqlServerColumnType(typeName string, maxLength, precision, scale int) strin
 		return fmt.Sprintf("%s(%d)", upper, length)
 	case supportsPrecision(typeName):
 		return fmt.Sprintf("%s(%d,%d)", upper, precision, scale)
+	case keepsFractionalSeconds(typeName) && scale != defaultFractionalSeconds:
+		return fmt.Sprintf("%s(%d)", upper, scale)
 	default:
 		return upper
+	}
+}
+
+// defaultFractionalSeconds is what a datetime2, a datetimeoffset or a time holds when
+// it declares no precision. The read leaves it out, so an ordinary column reads as the
+// document that built it did.
+const defaultFractionalSeconds = 7
+
+// keepsFractionalSeconds reports a type whose precision a column declares, which the
+// catalog keeps as its scale. Without it a datetime2(3) column reads as datetime2: a
+// declaration of datetime2(3) over it plans a change on every run, and one of datetime2
+// plans none.
+func keepsFractionalSeconds(typeName string) bool {
+	switch strings.ToLower(typeName) {
+	case "datetime2", "datetimeoffset", "time":
+		return true
+	default:
+		return false
 	}
 }
 

@@ -104,6 +104,9 @@ func TestIsNarrowing(t *testing.T) {
 		{"varchar length down", "varchar(255)", "varchar(100)", true},
 		{"varchar length up is not narrowing", "varchar(100)", "varchar(255)", false},
 		{"text to sized string", "text", "varchar(255)", true},
+		// PostgreSQL's bare varchar has no limit, so a text value keeps every character.
+		{"text to unbounded varchar", "text", "varchar", false},
+		{"text to bare char", "text", "char", true},
 		{"integer aliases are not narrowing", "int4", "integer", false},
 
 		// Scaleless decimal — dropping fractional scale loses data (ptah#693); this
