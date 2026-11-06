@@ -1888,9 +1888,9 @@ gate. Reconciliation is deliberately conservative:
   domain over a table's row type, or a type that names such a type. When the
   same plan creates the table, Ptah creates the type after the tables and
   columns. When the same plan drops the table, Ptah drops the type before the
-  tables, so the table's drop does not rely on `CASCADE`. The type stays after
-  the tables when a table or a routine the plan drops after them still uses
-  it. A render and a rollback are planned the same way.
+  tables, and a removed table or routine that uses the type before it, so the
+  table's drop does not rely on `CASCADE`. A render and a rollback are planned the
+  same way.
 - Ptah refuses a plan or a render that no order serves, and names the type,
   the relation and the object that uses the type: a table, a column or a
   routine the plan creates that uses a type over a created table's row type,
