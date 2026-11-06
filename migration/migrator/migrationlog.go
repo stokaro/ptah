@@ -102,12 +102,13 @@ type MigrationLogEntry struct {
 }
 
 // MigrationLogAttempt is one attempt, read back as the pair of entries that
-// describe it.
+// describe it. At least one of the two is present.
 type MigrationLogAttempt struct {
-	// Start is the entry written before the body ran.
+	// Start is the entry written before the body ran, and is the zero value
+	// when the log lost it. See [MigrationLogAttempt.StartLost].
 	Start MigrationLogEntry
 	// Outcome is the entry written after it, and is the zero value when the
-	// attempt has none.
+	// attempt has none. See [MigrationLogAttempt.Undetermined].
 	Outcome MigrationLogEntry
 }
 
@@ -120,6 +121,16 @@ type MigrationLogAttempt struct {
 // claim is available.
 func (a MigrationLogAttempt) Undetermined() bool {
 	return a.Outcome.State == ""
+}
+
+// StartLost reports whether the attempt has an outcome and no start.
+//
+// A write to the log that fails does not stop the migration, so a start the
+// database refused leaves exactly this. The outcome names the same run,
+// operation, version, actor and checksum, and what is gone is when the attempt
+// began. [Migrator.MigrationLogReport] tells the run that lost it.
+func (a MigrationLogAttempt) StartLost() bool {
+	return a.Start.State == ""
 }
 
 // MigrationLogReport says what a migrator's attempts to write the log came to.
@@ -566,8 +577,9 @@ func resolveActor(provided string) (string, ActorSource) {
 //
 // The entries of one attempt are paired here rather than by the caller: a
 // start with no outcome is the shape that says a run stopped mid-flight, and
-// pairing is what makes it visible. limit bounds the attempts returned; zero
-// returns every one.
+// pairing is what makes it visible. An outcome with no start is returned too,
+// as [MigrationLogAttempt.StartLost] describes. limit bounds the attempts
+// returned; zero returns every one.
 func (m *Migrator) MigrationLog(ctx context.Context, limit int) ([]MigrationLogAttempt, error) {
 	if err := m.refuseUnloggedRead(); err != nil {
 		return nil, err
@@ -632,7 +644,7 @@ FROM %s ORDER BY logged_at DESC, run_id DESC, seq DESC`, m.migrationLogTable())
 	defer func() { _ = rows.Close() }()
 	var entries []MigrationLogEntry
 	for rows.Next() {
-		entry, scanErr := scanMigrationLogEntry(rows)
+		entry, scanErr := m.scanMigrationLogEntry(rows)
 		if scanErr != nil {
 			return nil, scanErr
 		}
@@ -644,23 +656,36 @@ FROM %s ORDER BY logged_at DESC, run_id DESC, seq DESC`, m.migrationLogTable())
 	return entries, nil
 }
 
-// pairMigrationLogEntries joins each start with the outcome that followed it.
+// pairMigrationLogEntries joins each start with the outcome that followed it,
+// and returns the attempts newest first.
 //
-// The entries arrive newest first, so an outcome is seen before the start it
-// belongs to. Correlating by run, operation and version is enough: one run
-// applies a version once, and a second attempt at the same version is a second
-// run with its own identifier.
+// The entries arrive newest first, and the walk takes them oldest first, the
+// order they were written in, so a start is open by the time its outcome comes.
+// Correlating by run, operation and version is enough: one run applies a version
+// once, and a second attempt at the same version is a second run with its own
+// identifier.
+//
+// An outcome that finds no open start is an attempt of its own. The log's writes
+// fail one at a time and none of them stops the migration, so a start can be lost
+// while its outcome is kept, and that outcome is the only record the attempt has.
 func pairMigrationLogEntries(entries []MigrationLogEntry) []MigrationLogAttempt {
-	outcomes := make(map[string]MigrationLogEntry, len(entries))
 	attempts := make([]MigrationLogAttempt, 0, len(entries))
-	for _, entry := range entries {
+	open := make(map[string]int, len(entries))
+	for _, entry := range slices.Backward(entries) {
 		key := migrationLogAttemptKey(entry)
-		if entry.State != MigrationLogStarted {
-			outcomes[key] = entry
-			continue
+		index, started := open[key]
+		switch {
+		case entry.State == MigrationLogStarted:
+			open[key] = len(attempts)
+			attempts = append(attempts, MigrationLogAttempt{Start: entry})
+		case started:
+			attempts[index].Outcome = entry
+			delete(open, key)
+		default:
+			attempts = append(attempts, MigrationLogAttempt{Outcome: entry})
 		}
-		attempts = append(attempts, MigrationLogAttempt{Start: entry, Outcome: outcomes[key]})
 	}
+	slices.Reverse(attempts)
 	return attempts
 }
 
@@ -674,21 +699,27 @@ func migrationLogAttemptKey(entry MigrationLogEntry) string {
 // Oracle stores an empty string as NULL, so a column Ptah wrote empty comes
 // back NULL there and non-NULL everywhere else. Reading through a nullable
 // type on every engine is what keeps one written value one read value.
-func scanMigrationLogEntry(rows *sql.Rows) (MigrationLogEntry, error) {
+func (m *Migrator) scanMigrationLogEntry(rows *sql.Rows) (MigrationLogEntry, error) {
 	var (
 		entry       MigrationLogEntry
 		state       string
 		actorSource string
 		actor       sql.NullString
 		checksum    sql.NullString
+		loggedAt    any
 		failure     sql.NullString
 	)
 	if err := rows.Scan(
 		&entry.RunID, &entry.Seq, &entry.Operation, &entry.Version, &state,
-		&actor, &actorSource, &checksum, &entry.At, &failure,
+		&actor, &actorSource, &checksum, &loggedAt, &failure,
 	); err != nil {
 		return MigrationLogEntry{}, fmt.Errorf("read a migration log row: %w", err)
 	}
+	at, err := m.parseStoredTime("logged_at", loggedAt)
+	if err != nil {
+		return MigrationLogEntry{}, fmt.Errorf("read a migration log row: %w", err)
+	}
+	entry.At = at
 	entry.State = MigrationLogState(state)
 	entry.ActorSource = ActorSource(actorSource)
 	entry.Actor = actor.String

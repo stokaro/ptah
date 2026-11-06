@@ -41,6 +41,12 @@ reader pairs them, so an attempt that never gained an outcome is reported as
 container stopped says nothing about whether its work landed, and inferring
 success from a missing failure would be a claim nobody can support.
 
+A write to the log can fail on its own, so an attempt can keep its outcome and
+lose its start. The reader keeps that attempt, because the outcome is the only
+record it has. The `STARTED` column prints `-`, and `--json` sets `start_lost` and
+leaves out `started_at`. The other fields come from the outcome, which names the
+same run, version, actor and checksum.
+
 The entries are written on the pool connection rather than inside the
 migration's transaction, which is the point: a migration that failed and rolled
 back still leaves the record that it was attempted. A log written inside the
@@ -48,6 +54,13 @@ transaction would describe only the runs that succeeded.
 
 `--json` prints the same attempts with the start and finish timestamps, the run
 identifier, the checksum of the migration that ran, and the error.
+
+A MySQL or MariaDB URL does not need `parseTime=true`. Without it the driver hands
+back a time as the server's text, which carries no zone, and Ptah reads that text
+the way the driver does with the parameter: in the zone the URL's `loc` parameter
+names, or UTC without one. `ptah migrations log`, `ptah migrations status` and
+`ptah migrations tag` print the same values with or without the parameter. Measured
+on MySQL 8.4 and 26.10 and on MariaDB 10.11 and 12.3.
 
 Under `tx-mode all` the whole batch is one transaction, so every migration in it
 gets an entry opened before the transaction starts and they all settle with the

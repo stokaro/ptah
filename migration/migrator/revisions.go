@@ -1320,7 +1320,7 @@ func (m *Migrator) scanRevisionRow(row rowScanner) (MigrationRevision, error) {
 	if err := validateNativeRevisionState(revision, storedState, "read revision metadata"); err != nil {
 		return MigrationRevision{}, err
 	}
-	parsedAppliedAt, err := parseRevisionAppliedAt(appliedAt)
+	parsedAppliedAt, err := m.parseStoredTime("applied_at", appliedAt)
 	if err != nil {
 		return MigrationRevision{}, err
 	}
@@ -1365,7 +1365,7 @@ func (m *Migrator) scanAtlasRevisionRow(row rowScanner) (MigrationRevision, erro
 	if err := validateRevisionProgress(revision, "read revision metadata"); err != nil {
 		return MigrationRevision{}, err
 	}
-	parsedExecutedAt, err := parseRevisionAppliedAt(executedAt)
+	parsedExecutedAt, err := m.parseStoredTime("executed_at", executedAt)
 	if err != nil {
 		return MigrationRevision{}, err
 	}
@@ -1449,39 +1449,6 @@ func atlasRevisionState(revision MigrationRevision) string {
 		return migrationStatePending
 	}
 	return migrationStateApplied
-}
-
-func parseRevisionAppliedAt(value any) (time.Time, error) {
-	switch v := value.(type) {
-	case time.Time:
-		return v, nil
-	case []byte:
-		return parseRevisionAppliedAtString(string(v))
-	case string:
-		return parseRevisionAppliedAtString(v)
-	case nil:
-		return time.Time{}, nil
-	default:
-		return time.Time{}, fmt.Errorf("unsupported applied_at value %T", value)
-	}
-}
-
-func parseRevisionAppliedAtString(value string) (time.Time, error) {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return time.Time{}, nil
-	}
-	for _, layout := range []string{
-		"2006-01-02 15:04:05.999999",
-		"2006-01-02 15:04:05",
-		time.RFC3339Nano,
-	} {
-		parsed, err := time.Parse(layout, value)
-		if err == nil {
-			return parsed, nil
-		}
-	}
-	return time.Time{}, fmt.Errorf("failed to parse applied_at %q", value)
 }
 
 func (m *Migrator) failIfDirty(ctx context.Context) error {

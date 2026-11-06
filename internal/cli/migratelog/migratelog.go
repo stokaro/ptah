@@ -56,7 +56,8 @@ func NewMigrateLogCommand() *cobra.Command {
 Each line is one attempt: when it started, which migration it was about, which
 direction it ran, how it ended, and who the run said it was. An attempt whose
 process stopped mid-flight has no outcome and is reported as undetermined,
-because a run that was killed says nothing about whether its work landed.
+because a run that was killed says nothing about whether its work landed. An
+attempt whose start the log could not write shows its outcome and no start time.
 
 This reads a log, not an audit trail. The table lives in the database it
 describes and is writable by the account that runs migrations: whoever can
@@ -157,13 +158,14 @@ func runMigrateLog(cmd *cobra.Command, opts options) error {
 // because a consumer wants the attempt: when it started, how it ended, and
 // whether anybody knows.
 type logRecord struct {
-	StartedAt    time.Time  `json:"started_at"`
+	StartedAt    *time.Time `json:"started_at,omitempty"`
 	FinishedAt   *time.Time `json:"finished_at,omitempty"`
 	RunID        string     `json:"run_id"`
 	Operation    string     `json:"operation"`
 	Version      int64      `json:"version"`
 	Outcome      string     `json:"outcome"`
 	Undetermined bool       `json:"undetermined"`
+	StartLost    bool       `json:"start_lost"`
 	Actor        string     `json:"actor,omitempty"`
 	ActorSource  string     `json:"actor_source"`
 	Checksum     string     `json:"checksum,omitempty"`
@@ -181,17 +183,22 @@ func writeJSON(out io.Writer, attempts []migrator.MigrationLogAttempt) error {
 }
 
 func newLogRecord(attempt migrator.MigrationLogAttempt) logRecord {
+	entry := describingEntry(attempt)
 	record := logRecord{
-		StartedAt:    attempt.Start.At,
-		RunID:        attempt.Start.RunID,
-		Operation:    attempt.Start.Operation,
-		Version:      attempt.Start.Version,
+		RunID:        entry.RunID,
+		Operation:    entry.Operation,
+		Version:      entry.Version,
 		Outcome:      string(attempt.Outcome.State),
 		Undetermined: attempt.Undetermined(),
-		Actor:        attempt.Start.Actor,
-		ActorSource:  string(attempt.Start.ActorSource),
-		Checksum:     attempt.Start.Checksum,
+		StartLost:    attempt.StartLost(),
+		Actor:        entry.Actor,
+		ActorSource:  string(entry.ActorSource),
+		Checksum:     entry.Checksum,
 		Error:        attempt.Outcome.Error,
+	}
+	if !attempt.StartLost() {
+		started := attempt.Start.At
+		record.StartedAt = &started
 	}
 	if !attempt.Undetermined() {
 		finished := attempt.Outcome.At
@@ -208,16 +215,36 @@ func writeTable(out io.Writer, attempts []migrator.MigrationLogAttempt) error {
 	writer := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(writer, "STARTED\tVERSION\tOPERATION\tOUTCOME\tACTOR\tSOURCE")
 	for _, attempt := range attempts {
+		entry := describingEntry(attempt)
 		fmt.Fprintf(writer, "%s\t%d\t%s\t%s\t%s\t%s\n",
-			attempt.Start.At.UTC().Format(time.RFC3339),
-			attempt.Start.Version,
-			attempt.Start.Operation,
+			startedLabel(attempt),
+			entry.Version,
+			entry.Operation,
 			outcomeLabel(attempt),
-			actorLabel(attempt.Start.Actor),
-			attempt.Start.ActorSource,
+			actorLabel(entry.Actor),
+			entry.ActorSource,
 		)
 	}
 	return writer.Flush()
+}
+
+// describingEntry is the entry that says which migration an attempt was about:
+// the start, or the outcome when the log lost the start. Both carry the same
+// run, operation, version, actor and checksum.
+func describingEntry(attempt migrator.MigrationLogAttempt) migrator.MigrationLogEntry {
+	if attempt.StartLost() {
+		return attempt.Outcome
+	}
+	return attempt.Start
+}
+
+// startedLabel is when the attempt began, or a dash when the log lost the entry
+// that recorded it. The zero time would read as an attempt from the year 1.
+func startedLabel(attempt migrator.MigrationLogAttempt) string {
+	if attempt.StartLost() {
+		return "-"
+	}
+	return attempt.Start.At.UTC().Format(time.RFC3339)
 }
 
 // outcomeLabel names what happened, including the case where nobody knows.
