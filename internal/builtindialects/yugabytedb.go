@@ -182,6 +182,7 @@ func yugabyteDB() descriptor.Dialect {
 				Match:    descriptor.Match{Clause: true},
 			},
 			Statements: descriptor.StatementGrammar{Extensions: true, UserTypes: true, GrantTargetLists: true},
+			Forms:      yugabyteStatementForms(),
 			Routines: descriptor.RoutineGrammar{
 				Body:                   descriptor.RoutineQuotedBody,
 				TriggerConditions:      true,

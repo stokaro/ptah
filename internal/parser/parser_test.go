@@ -2486,7 +2486,7 @@ func TestParser_ParseRejectsUnknownStatement(t *testing.T) {
 // TestParser_AVersionGuardedStatementIsSteppedOverNotRefused pins the decision
 // naming a dialect forced.
 //
-// With no dialect, `/*!50001 LOCK TABLES ... */` is an ordinary comment and the
+// With no dialect, `/*!50001 FLUSH TABLES ... */` is an ordinary comment and the
 // document reads. Naming one turns the span into a single token, and the
 // question becomes what to do with it. Refusing its contents was measured and
 // rejected: mariadb-dump opens every file with
@@ -2502,7 +2502,7 @@ func TestParser_AVersionGuardedStatementIsSteppedOverNotRefused(t *testing.T) {
 		c := qt.New(t)
 
 		statements, err := parser.NewParser(
-			"CREATE TABLE t (id BIGINT PRIMARY KEY);\n/*!50001 LOCK TABLES `t` WRITE */;",
+			"CREATE TABLE t (id BIGINT PRIMARY KEY);\n/*!50001 FLUSH TABLES `t` */;",
 			parser.WithDialect(platform.MySQL)).Parse()
 
 		c.Assert(err, qt.IsNil)
@@ -2513,11 +2513,11 @@ func TestParser_AVersionGuardedStatementIsSteppedOverNotRefused(t *testing.T) {
 		c := qt.New(t)
 
 		_, err := parser.NewParser(
-			"CREATE TABLE t (id BIGINT PRIMARY KEY);\nLOCK TABLES `t` WRITE;",
+			"CREATE TABLE t (id BIGINT PRIMARY KEY);\nFLUSH TABLES `t`;",
 			parser.WithDialect(platform.MySQL)).Parse()
 
 		c.Assert(err, qt.IsNotNil)
-		c.Assert(err.Error(), qt.Equals, "line 2, column 1: unsupported SQL statement: LOCK")
+		c.Assert(err.Error(), qt.Equals, "line 2, column 1: unsupported SQL statement: FLUSH")
 	})
 }
 
@@ -2786,8 +2786,8 @@ func TestParser_ParseDropTable(t *testing.T) {
 func TestParser_ParseDropTableRejectsUnsupportedTargets(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := parser.NewParser("DROP VIEW users;").Parse()
-	c.Assert(err, qt.ErrorMatches, "line 1, column 6: unsupported DROP target: VIEW")
+	_, err := parser.NewParser("DROP AGGREGATE users;").Parse()
+	c.Assert(err, qt.ErrorMatches, "line 1, column 6: unsupported DROP target: AGGREGATE")
 }
 
 func TestParser_ParseCreateIndex(t *testing.T) {

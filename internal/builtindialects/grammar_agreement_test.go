@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"ptah.run/core/platform"
@@ -69,6 +70,13 @@ import (
 //
 // YDB's documents never reach the shared grammar, which refuses the YQL
 // lexer before any of the switches is asked, so it states no grammar.
+// noOldSwitch leaves out the fields no switch answered: the parser refused those
+// statements on every engine.
+var noOldSwitch = cmp.Options{
+	cmpopts.IgnoreFields(descriptor.Grammar{}, "Forms"),
+	cmpopts.IgnoreFields(descriptor.IndexGrammar{}, "Storing", "Nonclustered"),
+}
+
 var oldParserSwitches = map[string]descriptor.Grammar{
 	platform.Postgres: {
 		Columns: descriptor.ColumnGrammar{CurrentTimeKeywords: true, StoredStringDefaults: true},
@@ -228,7 +236,7 @@ func TestDescriptors_GrammarAgreesWithTheParserSwitches(t *testing.T) {
 			c.Assert(found, qt.IsTrue)
 			want, pinned := oldParserSwitches[got.Name]
 			c.Assert(pinned, qt.IsTrue)
-			c.Assert(got.Grammar, qt.CmpEquals(cmpopts.EquateEmpty()), want)
+			c.Assert(got.Grammar, qt.CmpEquals(cmpopts.EquateEmpty(), noOldSwitch), want)
 		})
 	}
 }

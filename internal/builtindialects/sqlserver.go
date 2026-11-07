@@ -179,8 +179,9 @@ END`,
 		Grammar: descriptor.Grammar{
 			Columns:    descriptor.ColumnGrammar{IdentityProperty: true},
 			Keys:       descriptor.KeyGrammar{IndexKeywords: []string{"KEY", "INDEX"}},
-			Indexes:    descriptor.IndexGrammar{DropNamesTable: true},
+			Indexes:    descriptor.IndexGrammar{DropNamesTable: true, Nonclustered: true},
 			AlterTable: descriptor.AlterTableGrammar{AlterColumnDefinition: true},
+			Forms:      sqlServerStatementForms(),
 			Routines: descriptor.RoutineGrammar{
 				Body:    descriptor.RoutineTransactSQL,
 				Trigger: descriptor.TriggerTransactSQL,

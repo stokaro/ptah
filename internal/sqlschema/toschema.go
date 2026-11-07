@@ -726,8 +726,7 @@ func appendFamilyStatement(
 
 // changeDeclared applies a statement that changes or removes an object an
 // earlier statement declared, rather than declaring one: ALTER TABLE, ALTER
-// INDEX, COMMENT ON, DROP TABLE and DROP INDEX. handled is false for any other
-// statement.
+// INDEX, COMMENT ON and DROP. handled is false for any other statement.
 func changeDeclared(
 	ctx context.Context, database *schemamodel.Database, document *Document, stmt ast.Node, sourcePlatform string,
 ) (handled bool, err error) {
@@ -742,9 +741,31 @@ func changeDeclared(
 		return true, applyDropTable(ctx, database, document.base, document, node, sourcePlatform)
 	case *ast.DropIndexNode:
 		return true, applyDropIndex(database, document.base, document, node, sourcePlatform)
+	case *ast.DropViewNode:
+		return true, applyDropView(ctx, database, document, node, sourcePlatform)
+	case *ast.DropMaterializedViewNode:
+		return true, applyDropMaterializedView(ctx, database, document, node, sourcePlatform)
+	case *ast.DropTriggerNode:
+		return true, refuseDrop("TRIGGER", node.Name)
+	case *ast.DropFunctionNode:
+		return true, refuseDrop(strings.ToUpper(node.Kind), node.Name)
+	case *ast.DropSequenceNode:
+		return true, refuseDrop("SEQUENCE", node.Name)
+	case *ast.DropTypeNode:
+		return true, refuseDrop("TYPE", node.Name)
 	default:
 		return false, nil
 	}
+}
+
+// refuseDrop refuses a DROP this package does not apply to the schema it reads. The
+// statement is valid SQL and the object may be in the document, so stepping over it
+// would keep an object the script removes.
+func refuseDrop(kind, name string) error {
+	return fmt.Errorf(
+		"%w: DROP %s %s: a schema read applies DROP TABLE, DROP INDEX, DROP VIEW and DROP MATERIALIZED VIEW; "+
+			"leave the object and its drop out of the file",
+		ErrUnmodeledStatement, kind, name)
 }
 
 // ErrUnmodeledStatement is the class of every statement this package parsed and

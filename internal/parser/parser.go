@@ -97,6 +97,9 @@ type Parser struct {
 	// because the column parser is shared by all three statements.
 	modifyColumn bool
 
+	// midStatement reports that the statement before the cursor ended with no
+	// semicolon, so the word at the cursor is not known to open a statement.
+	midStatement bool
 	// usedDatabase is the database the last MySQL-family USE selected; see
 	// parseUse.
 	usedDatabase string
@@ -240,6 +243,7 @@ func (p *Parser) parseStatements() (*ast.StatementList, error) {
 
 		// Skip empty statements (just semicolons)
 		if p.current.Type == lexer.TokenSemicolon {
+			p.midStatement = false
 			p.advance()
 			continue
 		}
@@ -256,6 +260,10 @@ func (p *Parser) parseStatements() (*ast.StatementList, error) {
 		} else if stmt != nil {
 			statements.Statements = append(statements.Statements, stmt)
 		}
+
+		// A word after a statement with no semicolon in between is not known to
+		// open anything: it may be a clause this parser's reading stopped short of.
+		p.midStatement = p.current.Type != lexer.TokenSemicolon && p.previous.Type != lexer.TokenSemicolon
 
 		// Consume optional semicolon
 		if p.current.Type == lexer.TokenSemicolon {
@@ -297,19 +305,32 @@ func (p *Parser) parseStatement() (ast.Node, error) {
 			p.skipGoBatchSeparator()
 			return nil, nil
 		}
-		return nil, ptaherr.At(p.current.Start, fmt.Errorf("unsupported SQL statement: %s", keyword))
+		return nil, p.refuseHead(p.current.Start, "", keyword, "unsupported SQL statement: %s")
 	case "IF":
 		return p.parseGuardedCreateSchema()
 	case "EXEC":
 		return p.parseCommentCall()
 	case "USE":
 		return nil, p.parseUse()
-	case "ANALYZE", "BEGIN", "CALL", "COMMIT", "DELETE", "INSERT", "MERGE", "PRAGMA", "REINDEX", "ROLLBACK", "SELECT", "SET", "SHOW", "UPDATE", "VACUUM", "WITH":
+	}
+	return p.parseOtherStatement(keyword)
+}
+
+// parseOtherStatement reads what the document's dialect states about a statement
+// the shared grammar has no reading of: an operation read to its end, a statement
+// stepped over, or a rename. Anything else is refused.
+func (p *Parser) parseOtherStatement(keyword string) (ast.Node, error) {
+	if terms, ok := p.operationForm(keyword); ok {
+		return nil, p.parseOperation(keyword, terms)
+	}
+	if SkipsUnread(keyword, p.dialect) {
 		p.skipSchemaNeutralStatement()
 		return nil, nil
-	default:
-		return nil, ptaherr.At(p.current.Start, fmt.Errorf("unsupported SQL statement: %s", keyword))
 	}
+	if keyword == "RENAME" && (!p.target.known || p.target.grammar.Forms.RenameTable) {
+		return p.parseRenameTable()
+	}
+	return nil, p.refuseHead(p.current.Start, "", keyword, "unsupported SQL statement: %s")
 }
 
 func (p *Parser) parseDoStatement() (ast.Node, error) {
@@ -417,6 +438,12 @@ func (p *Parser) parseCreateModifier(target string, statementStart int) (ast.Nod
 		return p.parseCreateTemporary(target, statementStart)
 	case "UNIQUE":
 		return p.parseCreateUniqueIndexStatement()
+	case "NONCLUSTERED":
+		if p.target.known && !p.target.grammar.Indexes.Nonclustered {
+			return nil, ptaherr.At(p.current.Start, fmt.Errorf("unsupported CREATE target: %s", target))
+		}
+		p.skipNonclustered()
+		return p.parseCreateIndex()
 	default:
 		return p.parseCreateSchemaObject(target)
 	}
@@ -427,10 +454,23 @@ func (p *Parser) parseCreateModifier(target string, statementStart int) (ast.Nod
 func (p *Parser) parseCreateUniqueIndexStatement() (ast.Node, error) {
 	p.advance()
 	p.skipWhitespace()
+	p.skipNonclustered()
+	if word := strings.ToUpper(p.current.Value); p.current.Type == lexer.TokenIdentifier && word != "INDEX" {
+		return nil, p.refuseHead(p.current.Start, "CREATE UNIQUE", word, "unsupported CREATE UNIQUE target: %s")
+	}
 	if err := p.expect(lexer.TokenIdentifier, "INDEX"); err != nil {
 		return nil, err
 	}
 	return p.parseCreateUniqueIndex()
+}
+
+// skipNonclustered steps over T-SQL's word for the kind of index a plain CREATE INDEX
+// makes, so the index it stands before is read as that index.
+func (p *Parser) skipNonclustered() {
+	if p.current.MatchIdentifierValue("NONCLUSTERED") && (!p.target.known || p.target.grammar.Indexes.Nonclustered) {
+		p.advance()
+		p.skipWhitespace()
+	}
 }
 
 // createTargetList names the CREATE targets the grammar recognizes.
@@ -448,7 +488,7 @@ func (p *Parser) parseCreateSchemaObject(target string) (ast.Node, error) {
 	case "MATERIALIZED":
 		return p.parseCreateMaterializedView()
 	default:
-		return nil, ptaherr.At(p.current.Start, fmt.Errorf("unsupported CREATE target: %s", target))
+		return nil, p.refuseHead(p.current.Start, "CREATE", target, "unsupported CREATE target: %s")
 	}
 }
 
@@ -5247,7 +5287,7 @@ func (p *Parser) parseAlterStatement() (ast.Node, error) {
 		}
 		return nil, ptaherr.At(p.current.Start, fmt.Errorf("unsupported ALTER target: %s", target))
 	default:
-		return nil, ptaherr.At(p.current.Start, fmt.Errorf("unsupported ALTER target: %s", target))
+		return nil, p.refuseHead(p.current.Start, "ALTER", target, "unsupported ALTER target: %s")
 	}
 }
 
@@ -5323,7 +5363,7 @@ func (p *Parser) parseDropStatement() (ast.Node, error) {
 	case "INDEX":
 		return p.parseDropIndex()
 	default:
-		return nil, ptaherr.At(p.current.Start, fmt.Errorf("unsupported DROP target: %s", target))
+		return p.parseDropObject(target)
 	}
 }
 
@@ -5363,6 +5403,10 @@ func (p *Parser) parseDropTable() (*ast.DropTableNode, error) {
 	}
 	if p.current.MatchIdentifierValue("RESTRICT") {
 		p.advance()
+		return dropTable, nil
+	}
+	if form, reads := p.dropForm(descriptor.DropKindTable); reads {
+		p.parseDropSync(form)
 	}
 	return dropTable, nil
 }
@@ -6505,7 +6549,8 @@ func (p *Parser) parseCreateIndexCondition() (string, error) {
 }
 
 func (p *Parser) parseCreateIndexIncludeColumns() ([]string, error) {
-	if !p.current.MatchIdentifierValue("INCLUDE") {
+	storing := p.current.MatchIdentifierValue("STORING") && (!p.target.known || p.target.grammar.Indexes.Storing)
+	if !storing && !p.current.MatchIdentifierValue("INCLUDE") {
 		return nil, nil
 	}
 	p.advance()

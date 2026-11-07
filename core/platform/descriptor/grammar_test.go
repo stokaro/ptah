@@ -54,6 +54,8 @@ func TestNewRegistry_Grammar_HappyPath(t *testing.T) {
 			TrailingVisibility: true,
 			Alter:              descriptor.AlterIndexVisibility,
 			DropNamesTable:     true,
+			Storing:            true,
+			Nonclustered:       true,
 		},
 		AlterTable: descriptor.AlterTableGrammar{
 			AddIndex:              true,
@@ -69,6 +71,12 @@ func TestNewRegistry_Grammar_HappyPath(t *testing.T) {
 			UserTypes:          true,
 			GrantTargetLists:   true,
 			RoleIfNotExists:    true,
+		},
+		Forms: descriptor.StatementForms{
+			Drops:            []descriptor.Drop{{Kind: descriptor.DropKindView, IfExists: true, List: true, Behavior: true, Sync: true}},
+			Operations:       []string{"TRUNCATE [TABLE] <names>"},
+			UnreadStatements: []string{"REPLACE"},
+			RenameTable:      true,
 		},
 		Routines: descriptor.RoutineGrammar{
 			Body:                   descriptor.RoutineQuotedBody,
@@ -120,6 +128,28 @@ func TestNewRegistry_Grammar_FailurePath(t *testing.T) {
 		dialect descriptor.Dialect
 		wantErr string
 	}{
+		{
+			name:    "a DROP kind no parser reads",
+			dialect: with(func(g *descriptor.Grammar) { g.Forms.Drops = []descriptor.Drop{{Kind: "WIDGET"}} }),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: DROP kind "WIDGET" is not one of .*`,
+		},
+		{
+			name: "a DROP kind stated twice",
+			dialect: with(func(g *descriptor.Grammar) {
+				g.Forms.Drops = []descriptor.Drop{{Kind: descriptor.DropKindView}, {Kind: descriptor.DropKindView}}
+			}),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: DROP kind "VIEW" is written twice`,
+		},
+		{
+			name:    "a statement form a parser could not read",
+			dialect: with(func(g *descriptor.Grammar) { g.Forms.Operations = []string{"LOCK {A B|A C}"} }),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: statement form "LOCK \{A B\|A C\}": two alternatives open with A`,
+		},
+		{
+			name:    "two forms of one statement",
+			dialect: with(func(g *descriptor.Grammar) { g.Forms.Operations = []string{"LOCK <name>", "LOCK TABLE <name>"} }),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: two statement forms open with LOCK`,
+		},
 		{
 			name:    "an undeclared column constraint kind",
 			dialect: with(func(g *descriptor.Grammar) { g.Columns.Constraint.Define = "UNIQUE" }),

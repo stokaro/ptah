@@ -285,6 +285,10 @@ func nodeScopeReference(node ast.Node, object string) string {
 		if table := strings.TrimSpace(n.Table); table != "" {
 			return table
 		}
+	case *ast.DropTriggerNode:
+		if table := strings.TrimSpace(n.Table); table != "" {
+			return table
+		}
 	}
 	return object
 }

@@ -23,7 +23,7 @@ const (
 	// garbage is no SQL at all, and the parser refuses it.
 	garbage = "CREATE TABLE b BOGUS;\n"
 	// validUnmodeled is SQL SQLite runs, and the parser refuses its last statement.
-	validUnmodeled = "CREATE TABLE ok (id INT PRIMARY KEY);\nCREATE VIEW v AS SELECT id FROM ok;\nDROP VIEW v;\n"
+	validUnmodeled = "CREATE TABLE ok (id INT PRIMARY KEY);\nCREATE VIEW v AS SELECT id FROM ok;\nEXPLAIN SELECT id FROM v;\n"
 	// parsed is a statement the parser reads.
 	parsed = "CREATE TABLE ok (id INT PRIMARY KEY);\n"
 )
@@ -60,7 +60,7 @@ func TestNativeLint_WithNoDevDatabase(t *testing.T) {
 		},
 		{
 			name: "SQL the parser does not model", up: validUnmodeled, down: "SELECT 1;\n",
-			wantLine: "d/1_x.up.sql:3 [info] AC102: the SQL parser could not read this statement (unsupported DROP target: VIEW)",
+			wantLine: "d/1_x.up.sql:3 [info] AC102: the SQL parser could not read this statement (unsupported SQL statement: EXPLAIN)",
 		},
 		{
 			name: "a down file", up: parsed, down: "DROP TABEL ok;\n",
@@ -256,5 +256,5 @@ func TestSQLLint_RefusesAStatementItCouldNotRead(t *testing.T) {
 	run := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: project}, "sql", "lint", "--dialect", "sqlite", "d/1_x.up.sql")
 
 	c.Assert(run.ExitCode, qt.Equals, 1, qt.Commentf("stdout: %s\nstderr: %s", run.Stdout, run.Stderr))
-	c.Assert(run.Stdout, qt.Contains, "error SQL002: unsupported table option: BOGUS")
+	c.Assert(run.Stdout, qt.Contains, "error SQL002: the SQL parser does not read this statement, which a server may still accept: unsupported table option: BOGUS")
 }
