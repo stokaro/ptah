@@ -14,7 +14,7 @@ Package `pgsyntax` reads PostgreSQL-family text:
 - `Value` reads what a string constant or quoted identifier stands for: its escapes, the segments that continue a string on later lines, and the `UESCAPE` clause of a Unicode escape string. It reports no value where the server refuses the constant.
 - `QuoteIdentifier` and `QuoteString` write a name and a value so that a server reads them back exactly.
 
-`Options{}` is PostgreSQL's default, with `standard_conforming_strings` on. `Options{BackslashEscapes: true}` reads a backslash in an ordinary string as an escape, as a server with that setting off does.
+`Options{}` is PostgreSQL's default, with `standard_conforming_strings` on. `Options{BackslashEscapes: true}` reads a backslash in an ordinary string as an escape, as a server with that setting off does. `Options{PlainContinuations: true}` reads a segment that continues an escape string as an ordinary string, as DuckDB does.
 
 ```go
 statements, err := pgsyntax.Statements(body, pgsyntax.Options{})

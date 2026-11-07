@@ -74,6 +74,11 @@ type Options struct {
 	// start of an escape, as a server with standard_conforming_strings off
 	// does. An E'...' string reads escapes either way.
 	BackslashEscapes bool
+	// PlainContinuations reads a segment that continues an escape string as
+	// an ordinary string, so a backslash before its closing quote does not
+	// escape the quote, as DuckDB 2.0 does. PostgreSQL reads the segment with
+	// the escapes of the string it continues.
+	PlainContinuations bool
 }
 
 // SyntaxError is text the rules cannot read, such as a string that never
@@ -265,7 +270,7 @@ func (s *scanner) quotedText(c byte) (Kind, bool, error) {
 	switch {
 	case c == '\'':
 		escapes := s.options.BackslashEscapes
-		if s.continues() {
+		if !s.options.PlainContinuations && s.continues() {
 			escapes = s.segment.escapes
 		}
 		return String, true, s.segmented(escapes)

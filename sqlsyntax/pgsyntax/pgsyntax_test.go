@@ -95,6 +95,21 @@ func TestScan_BackslashEscapes(t *testing.T) {
 	c.Assert(shape(text, tokens), qt.DeepEquals, []string{`String 'it\'s'`, "Word x"})
 }
 
+// DuckDB 2.0 reads a segment that continues an escape string as an ordinary
+// string: E'a', then 'b\' on the next line, is one constant and a semicolon
+// after it ends the statement. Measured with duckdb-go v2.20000.0, where
+// running both statements of the text left the value ab\ and the second
+// table. PostgreSQL reads the segment with escapes and refuses the text.
+func TestScan_PlainContinuations(t *testing.T) {
+	c := qt.New(t)
+	text := "E'a'\n'b\\'; x"
+
+	tokens, err := pgsyntax.Scan(text, pgsyntax.Options{PlainContinuations: true})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(shape(text, tokens), qt.DeepEquals, []string{"String E'a'", `String 'b\'`, "Punctuation ;", "Word x"})
+}
+
 // A construct that does not close is refused at the byte where it opens.
 func TestScan_FailurePath(t *testing.T) {
 	for _, test := range []struct {
@@ -104,6 +119,7 @@ func TestScan_FailurePath(t *testing.T) {
 	}{
 		{name: "a string", text: "a 'b", offset: 2, reason: "a string does not close"},
 		{name: "an escaped quote leaves a string open", text: `E'a\'`, offset: 1, reason: "a string does not close"},
+		{name: "a segment that continues an escape string reads its escapes", text: "E'a'\n'b\\'; x", offset: 5, reason: "a string does not close"},
 		{name: "a quoted identifier", text: `"a`, offset: 0, reason: "a quoted identifier does not close"},
 		{name: "a dollar-quoted string", text: "x $f$ a $g$", offset: 2, reason: "a dollar-quoted string $f$ does not close"},
 		{name: "a nested block comment", text: "/* a /* b */", offset: 0, reason: "a block comment does not close"},
