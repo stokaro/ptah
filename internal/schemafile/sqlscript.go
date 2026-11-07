@@ -22,6 +22,24 @@ func readsAsLoad(opts Options) bool {
 	return sqlschema.ReadsAsLoad(opts.Dialect, opts.SQL)
 }
 
+// IsSQLSource reports whether path is a SQL file or a SQL schema directory.
+// It uses the same directory classification as LoadSources, so callers that
+// group SQL documents do not have to guess from a directory's name.
+func IsSQLSource(path string) (bool, error) {
+	resolved, isDir, err := statSchemaPath(path)
+	if err != nil {
+		return false, err
+	}
+	if !isDir {
+		return strings.EqualFold(filepath.Ext(resolved), dirSQLExtension), nil
+	}
+	_, format, err := schemaDirFiles(resolved)
+	if err != nil {
+		return false, err
+	}
+	return format == schemaDirFormatSQL, nil
+}
+
 // sqlScript is the SQL documents of one load, in the order the load runs them,
 // for a dialect whose documents an owner's grammar reads.
 type sqlScript struct {

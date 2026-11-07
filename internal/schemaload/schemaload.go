@@ -267,13 +267,11 @@ func (o Options) loadCompositeContext(
 			sources = append(sources, goDB)
 		}
 	}
-	for _, schemaFile := range schemaFiles {
-		fileDB, err := o.loadSchemaFile(ctx, schemaFile)
-		if err != nil {
-			return nil, err
-		}
-		sources = append(sources, fileDB)
+	files, err := o.loadSchemaFiles(ctx, schemaFiles)
+	if err != nil {
+		return nil, err
 	}
+	sources = append(sources, files...)
 	for _, command := range commands {
 		commandDB, err := o.loadCommand(ctx, command)
 		if err != nil {
@@ -287,6 +285,71 @@ func (o Options) loadCompositeContext(
 		return nil, fmt.Errorf("error merging composite schema: %w", err)
 	}
 	return result, nil
+}
+
+// loadSchemaFiles sends all SQL documents of an owner-read dialect through
+// one load, including files named beside other formats. Other formats keep
+// their own source identity and materialized row attachments.
+func (o Options) loadSchemaFiles(ctx context.Context, paths []string) ([]*schemamodel.Database, error) {
+	group := sqlschema.ReadsAsLoad(o.Dialect, o.sql()) && !slices.ContainsFunc(paths, func(path string) bool {
+		return strings.HasPrefix(path, ociartifact.Scheme)
+	})
+	if !group {
+		var sources []*schemamodel.Database
+		for _, path := range paths {
+			db, err := o.loadSchemaFile(ctx, path)
+			if err != nil {
+				return nil, err
+			}
+			sources = append(sources, db)
+		}
+		return sources, nil
+	}
+
+	var sources []*schemamodel.Database
+	var sqlSources []schemafile.Source
+	var otherNames []string
+	sqlAt := -1
+	for _, path := range paths {
+		if err := rejectEnvReference(path, o.EnvSelectorFlag); err != nil {
+			return nil, err
+		}
+		isSQL, err := schemafile.IsSQLSource(path)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing schema file: %w", err)
+		}
+		if !isSQL {
+			db, err := o.loadSchemaFile(ctx, path)
+			if err != nil {
+				return nil, err
+			}
+			sources = append(sources, db)
+			otherNames = append(otherNames, filepath.Base(path))
+			continue
+		}
+		if sqlAt < 0 {
+			sqlAt = len(sources)
+			sources = append(sources, nil)
+		}
+		absPath, err := filepath.Abs(path)
+		if err != nil {
+			return nil, fmt.Errorf("error resolving schema file: %w", err)
+		}
+		o.logf("Reading schema file: %s", absPath)
+		sqlSources = append(sqlSources, schemafile.Source{URL: path})
+	}
+	if sqlAt >= 0 {
+		db, err := schemafile.LoadSources(ctx, sqlSources, o.schemaFileOptions())
+		if errors.Is(err, sqlext.ErrUndeclared) && len(otherNames) > 0 {
+			err = fmt.Errorf("%w; a %s SQL file changes only what the SQL files of the same load declare, not what %s declares",
+				err, o.Dialect, strings.Join(otherNames, ", "))
+		}
+		if err != nil {
+			return nil, fmt.Errorf("error parsing schema file: %w", err)
+		}
+		sources[sqlAt] = db
+	}
+	return sources, nil
 }
 
 // ResolveBeforeConnect resolves a desired source that needs no database, so a
@@ -553,7 +616,18 @@ func (o Options) loadSchemaFile(ctx context.Context, schemaFile string) (*schema
 	// destination through that identical guard. absPath is a display and
 	// extension-check convenience above; it must not become the value the guard
 	// judges.
-	result, err := schemafile.LoadPath(ctx, schemaFile, schemafile.Options{
+	result, err := schemafile.LoadPath(ctx, schemaFile, o.schemaFileOptions())
+	if err != nil {
+		return nil, fmt.Errorf("error parsing schema file: %w", err)
+	}
+	if err := attachMaterializedRows(result, absPath); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (o Options) schemaFileOptions() schemafile.Options {
+	return schemafile.Options{
 		Contexts:           o.Owners,
 		DatabaseURL:        o.DatabaseURL,
 		Dialect:            o.Dialect,
@@ -568,14 +642,7 @@ func (o Options) loadSchemaFile(ctx context.Context, schemaFile string) (*schema
 		// HCL tolerance is off here, so an unknown HCL name is refused and
 		// this carries what a DBML document declares and the model drops.
 		ReportIgnored: o.notices(),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("error parsing schema file: %w", err)
 	}
-	if err := attachMaterializedRows(result, absPath); err != nil {
-		return nil, err
-	}
-	return result, nil
 }
 
 // attachMaterializedRows reads the declared rows of a materialized artifact.
