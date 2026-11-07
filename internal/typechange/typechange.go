@@ -31,29 +31,27 @@ func narrows(oldType, newType string, engine *Engine) bool {
 			return temporalNarrows(old, updated, engine)
 		}
 	}
-	oldSpec, newSpec, ok := parseElementSpecs(oldType, newType)
+	pair, ok := elementSpecs(oldType, newType)
 	if !ok {
 		return false
 	}
-	if isTextType(oldSpec.name) && isSizedString(newSpec.name) {
-		// A bare VARCHAR has no limit, so a text value keeps every character there.
-		newLen, bounded := stringLength(newSpec, engine)
-		return !bounded || newLen != unboundedStringLength
+	switch {
+	case pair.old.kind == "string" && pair.updated.kind == "string":
+		return stringNarrows(pair.old, pair.updated, engine)
+	case pair.old.kind == "binary" && pair.updated.kind == "binary":
+		oldLen, oldOK := binaryLength(pair.old, pair.updated, engine)
+		newLen, newOK := binaryLength(pair.updated, pair.old, engine)
+		return oldOK && newOK && newLen < oldLen
+	case isBitType(pair.old.name) && isBitType(pair.updated.name):
+		oldLen, oldOK := bitLength(pair.old, engine)
+		newLen, newOK := bitLength(pair.updated, engine)
+		return oldOK && newOK && newLen < oldLen
 	}
-	if oldSpec.kind == "string" && newSpec.kind == "string" {
-		oldLen, oldOK := stringLength(oldSpec, engine)
-		newLen, newOK := stringLength(newSpec, engine)
-		if oldOK && newOK {
-			return newLen < oldLen
-		}
+	if oldMembers, isEnum := membersOf(pair.oldRaw); isEnum {
+		newMembers, newIsEnum := membersOf(pair.newRaw)
+		return newIsEnum && membersNarrow(oldMembers, newMembers)
 	}
-	if oldSpec.kind == "integer" && newSpec.kind == "integer" {
-		return integerRank(newSpec.name) < integerRank(oldSpec.name)
-	}
-	if oldSpec.kind == "decimal" && newSpec.kind == "decimal" {
-		return decimalNarrows(oldSpec, newSpec, engine)
-	}
-	return false
+	return familiesNarrow(pair, engine)
 }
 
 // IsWidening reports whether changing from oldType to newType keeps the same
@@ -80,42 +78,72 @@ func widens(oldType, newType string, engine *Engine) bool {
 			return temporalWidens(old, updated, engine)
 		}
 	}
-	oldSpec, newSpec, ok := parseElementSpecs(oldType, newType)
+	pair, ok := elementSpecs(oldType, newType)
 	if !ok {
 		return false
 	}
-	if oldSpec.kind == "string" && newSpec.kind == "string" {
-		oldLen, oldOK := stringLength(oldSpec, engine)
-		newLen, newOK := stringLength(newSpec, engine)
-		if oldOK && newOK {
-			return newLen > oldLen
-		}
+	if pair.old.kind == "string" && pair.updated.kind == "string" {
+		return stringNarrows(pair.updated, pair.old, engine)
 	}
-	if oldSpec.kind == "integer" && newSpec.kind == "integer" {
-		return integerRank(newSpec.name) > integerRank(oldSpec.name)
+	if pair.old.kind == "integer" && pair.updated.kind == "integer" {
+		return integerRank(pair.updated.name) > integerRank(pair.old.name)
 	}
-	if oldSpec.kind == "decimal" && newSpec.kind == "decimal" {
-		return decimalWidens(oldSpec, newSpec, engine)
+	if pair.old.kind == "decimal" && pair.updated.kind == "decimal" {
+		return decimalWidens(pair.old, pair.updated, engine)
 	}
 	return false
 }
 
-// parseElementSpecs reads two types to compare, or their elements if both are arrays. An
-// array against its element, and two bare spellings of one name, have no answer.
-func parseElementSpecs(oldType, newType string) (oldSpec, newSpec spec, ok bool) {
-	oldElement, oldArray := normalize.ArrayElement(normalizeName(oldType))
-	newElement, newArray := normalize.ArrayElement(normalizeName(newType))
+// elementPair is two types to compare, read and as they are spelled, since the case of a
+// fixed-width integer's name is what tells it from PostgreSQL's.
+type elementPair struct {
+	oldRaw, newRaw string
+	old, updated   spec
+}
+
+// elementSpecs reads two types to compare, or their elements if both are arrays, with what
+// ClickHouse wraps a type in taken off. An array against its element, and two bare spellings
+// of one name, have no answer.
+func elementSpecs(oldType, newType string) (elementPair, bool) {
+	oldRaw, oldArray := unwrappedType(oldType)
+	newRaw, newArray := unwrappedType(newType)
 	if oldArray != newArray {
-		return spec{}, spec{}, false
+		return elementPair{}, false
 	}
-	oldSpec, newSpec = parseSpec(oldElement), parseSpec(newElement)
+	pair := elementPair{oldRaw: oldRaw, newRaw: newRaw, old: parseSpec(oldRaw), updated: parseSpec(newRaw)}
 	switch {
-	case oldSpec.name == "" || newSpec.name == "":
-		return spec{}, spec{}, false
-	case oldSpec.name == newSpec.name && oldSpec.bare() && newSpec.bare():
-		return spec{}, spec{}, false
+	case pair.old.name == "" || pair.updated.name == "":
+		return elementPair{}, false
+	case pair.old.name == pair.updated.name && pair.old.bare() && pair.updated.bare() &&
+		isUnsigned(oldRaw) == isUnsigned(newRaw) && !hasMembers(oldRaw):
+		return elementPair{}, false
 	}
-	return oldSpec, newSpec, true
+	return pair, true
+}
+
+// unwrappedType takes ClickHouse's Nullable, LowCardinality and Array off a type, and the
+// array spellings the other engines use. None of them changes the values one element
+// holds. It reports whether the type is an array.
+func unwrappedType(raw string) (string, bool) {
+	inner := strings.TrimSpace(raw)
+	array := false
+	for {
+		switch {
+		case hasWrapper(inner, "nullable("):
+			inner = strings.TrimSpace(inner[len("nullable(") : len(inner)-1])
+		case hasWrapper(inner, "lowcardinality("):
+			inner = strings.TrimSpace(inner[len("lowcardinality(") : len(inner)-1])
+		case hasWrapper(inner, "array("):
+			inner, array = strings.TrimSpace(inner[len("array("):len(inner)-1]), true
+		default:
+			element, isArray := normalize.ArrayElement(inner)
+			return element, array || isArray
+		}
+	}
+}
+
+func hasWrapper(raw, prefix string) bool {
+	return len(raw) > len(prefix) && strings.EqualFold(raw[:len(prefix)], prefix) && strings.HasSuffix(raw, ")")
 }
 
 // VectorDimensionChange reports a pgvector column whose declared dimension
@@ -206,8 +234,12 @@ func parseSpec(raw string) spec {
 		parsed.kind = "string"
 	case integerRank(name) > 0:
 		parsed.kind = "integer"
-	case name == "numeric" || name == "decimal" || name == "number":
+	case name == "numeric" || name == "decimal" || name == "number" || name == "money" || name == "smallmoney":
 		parsed.kind = "decimal"
+	case namedDecimalDigits[name] > 0:
+		parsed.kind = "decimal"
+	case isBinaryType(name):
+		parsed.kind = "binary"
 	}
 	return parsed
 }
@@ -247,10 +279,12 @@ func normalizeName(raw string) string {
 	clean = strings.ReplaceAll(clean, "character varying", "varchar")
 	clean = strings.ReplaceAll(clean, "double precision", "double")
 	clean = strings.ReplaceAll(clean, "unsigned", "")
+	clean = strings.ReplaceAll(clean, "zerofill", "")
 	return strings.Join(strings.Fields(clean), " ")
 }
 
-// isSizedString reports whether a type carries a declared character width.
+// isSizedString reports whether a type carries a declared character width. CockroachDB's
+// STRING and ClickHouse's String have no limit until a width says otherwise.
 //
 // SQL Server's nvarchar is here for the reason the Oracle spellings are: the
 // comparison strips a width before it compares two spellings, so a width change
@@ -265,14 +299,15 @@ func normalizeName(raw string) string {
 // reported (stokaro/ptah#1875).
 func isSizedString(name string) bool {
 	return name == "varchar" || name == "char" || name == "character" || name == "bpchar" ||
-		name == "varchar2" || name == "nvarchar2" || name == "nchar" || name == "nvarchar"
+		name == "varchar2" || name == "nvarchar2" || name == "nchar" || name == "nvarchar" ||
+		name == "string" || name == "fixedstring"
 }
 
 // isTextType reports whether a type is an unsized character type. CLOB and
 // NCLOB are Oracle's, and they are what a declared TEXT becomes there.
 func isTextType(name string) bool {
 	return name == "text" || name == "tinytext" || name == "mediumtext" || name == "longtext" ||
-		name == "clob" || name == "nclob"
+		name == "clob" || name == "nclob" || name == "ntext"
 }
 
 func integerRank(name string) int {
@@ -308,25 +343,24 @@ type fixedWidthInteger struct {
 	bits     int
 }
 
-// fixedWidthIntegers parses both types as fixed-width integers, looking inside
-// ClickHouse's Nullable(...), which changes what a column admits and not the
-// values its type holds.
+// fixedWidthIntegers parses both types as fixed-width integers, looking inside what
+// ClickHouse wraps a type in, which changes what a column admits and not the values its
+// type holds.
 func fixedWidthIntegers(oldType, newType string) (oldInt, newInt fixedWidthInteger, ok bool) {
-	parse := func(raw string) (fixedWidthInteger, bool) {
-		raw = strings.TrimSpace(raw)
-		if inner, found := strings.CutPrefix(raw, "Nullable("); found {
-			raw = strings.TrimSpace(strings.TrimSuffix(inner, ")"))
-		}
-		match := fixedWidthIntegerRe.FindStringSubmatch(raw)
-		if match == nil {
-			return fixedWidthInteger{}, false
-		}
-		bits, _ := strconv.Atoi(match[2])
-		return fixedWidthInteger{unsigned: match[1] == "U", bits: bits}, true
+	oldRaw, oldArray := unwrappedType(oldType)
+	newRaw, newArray := unwrappedType(newType)
+	oldInt, oldOK := parseFixedWidthInteger(oldRaw)
+	newInt, newOK := parseFixedWidthInteger(newRaw)
+	return oldInt, newInt, oldOK && newOK && oldArray == newArray
+}
+
+func parseFixedWidthInteger(raw string) (fixedWidthInteger, bool) {
+	match := fixedWidthIntegerRe.FindStringSubmatch(strings.TrimSpace(raw))
+	if match == nil {
+		return fixedWidthInteger{}, false
 	}
-	oldInt, oldOK := parse(oldType)
-	newInt, newOK := parse(newType)
-	return oldInt, newInt, oldOK && newOK
+	bits, _ := strconv.Atoi(match[2])
+	return fixedWidthInteger{unsigned: match[1] == "U", bits: bits}, true
 }
 
 // fixedWidthNarrows reports whether some value of oldInt is not a value of
@@ -343,10 +377,8 @@ func fixedWidthNarrows(oldInt, newInt fixedWidthInteger) bool {
 	}
 }
 
-func decimalNarrows(oldSpec, newSpec spec, engine *Engine) bool {
-	oldSize, oldOK := decimalSizeOf(oldSpec, engine)
-	newSize, newOK := decimalSizeOf(newSpec, engine)
-	if !oldOK || !newOK || newSize.unlimited {
+func decimalSizeNarrows(oldSize, newSize decimalSize) bool {
+	if newSize.unlimited {
 		return false
 	}
 	if oldSize.unlimited {
@@ -371,6 +403,9 @@ func decimalWidens(oldSpec, newSpec spec, engine *Engine) bool {
 	return newSize.precision > oldSize.precision || newSize.scale > oldSize.scale || newIntegerDigits > oldIntegerDigits
 }
 
+// namedDecimalDigits is the digits ClickHouse's Decimal32(S) and its siblings name.
+var namedDecimalDigits = map[string]int{"decimal32": 9, "decimal64": 18, "decimal128": 38, "decimal256": 76}
+
 // decimalSize is what a decimal type holds.
 type decimalSize struct {
 	precision, scale int
@@ -382,6 +417,15 @@ type decimalSize struct {
 // removal is still a comparable change. A bare NUMERIC holds what the engine says, and ok
 // is false where no engine says.
 func decimalSizeOf(s spec, engine *Engine) (size decimalSize, ok bool) {
+	if digits, named := namedDecimalDigits[s.name]; named {
+		return decimalSize{precision: digits, scale: s.arg}, true
+	}
+	switch s.name {
+	case "money":
+		return decimalSize{precision: 19, scale: 4}, true
+	case "smallmoney":
+		return decimalSize{precision: 10, scale: 4}, true
+	}
 	switch len(s.args) {
 	case 0:
 		if engine == nil || !engine.Bare.Stated {
@@ -412,7 +456,7 @@ func stringLength(s spec, engine *Engine) (length int, ok bool) {
 		return unboundedStringLength, true
 	case s.arg > 0:
 		return s.arg, true
-	case s.name == "bpchar":
+	case s.name == "bpchar" || s.name == "string":
 		return unboundedStringLength, true
 	case engine != nil && engine.Bare.Stated:
 		switch s.name {

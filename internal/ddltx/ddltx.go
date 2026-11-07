@@ -41,6 +41,9 @@ const (
 	// transaction. The migration body and the success revision are written
 	// inside one transaction, so they commit together or roll back together,
 	// and a failed revision-completion write leaves no trace of the body.
+	// CockroachDB and YugabyteDB take this path and keep schema statements
+	// through a rollback at their defaults; their migrator services read what
+	// stays (see migratorext.RollbackSurvivors).
 	Transactional Class = "transactional"
 
 	// ImplicitCommit marks targets whose server commits the open transaction

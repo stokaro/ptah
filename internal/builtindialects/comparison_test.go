@@ -19,7 +19,7 @@ import (
 func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 	mysqlFamily := descriptor.Comparison{
 		TimePrecision:                  descriptor.TimePrecision{Compared: true},
-		BareTypes:                      descriptor.BareTypes{Stated: true, DecimalPrecision: 10, FloatBits: 24, RealBits: 53},
+		BareTypes:                      descriptor.BareTypes{Stated: true, DecimalPrecision: 10, FloatBits: 24, RealBits: 53, LobTiers: true},
 		ColumnPrimaryKeyIsTheTablesKey: true,
 		ForeignKeysOutside:             true,
 		ForeignKeyBackingIndex:         true,

@@ -813,6 +813,11 @@ transaction commits itself first, so the rollback has nothing left to undo. A
 connected CockroachDB server on an older line reaches the capability through the
 version ladder and is accepted.
 
+YugabyteDB takes `--tx-mode all`, and with `yb_ddl_transaction_block_enabled` off
+the rollback still leaves every schema statement of every migration in the run.
+One revision row cannot count those, so a failed run that left any of them
+reports `unknown`.
+
 Timeouts themselves are not tied to that capability. Each has a capability of
 its own, `migration_lock_timeout` and `migration_statement_timeout`, and a
 target can carry one and not the other. Where a target lacks one,
@@ -978,11 +983,29 @@ skips is only ever the prefix that really survived:
 - Under `none`, every statement commits on its own. The revision row is
   checkpointed after each one, so `applied` and the cumulative digests name
   exactly the statements that ran, and the retry continues at the next one.
-- Under `file` or `all` on PostgreSQL, CockroachDB, YugabyteDB, SQLite and
-  SQL Server, DDL is transactional and the failure rolls the whole body back.
-  Nothing is recorded as committed, and the retry runs the body from its first
-  statement. An Atlas-format row written for such a failure is removed rather
-  than left claiming progress that no longer exists.
+- Under `file` or `all` on PostgreSQL, SQLite and SQL Server, DDL is
+  transactional and the failure rolls the whole body back. Nothing is recorded
+  as committed, and the retry runs the body from its first statement. An
+  Atlas-format row written for such a failure is removed rather than left
+  claiming progress that no longer exists.
+- Under `file` on CockroachDB from v25, `autocommit_before_ddl` is on by
+  default. A schema statement commits the transaction around it before it runs,
+  and the statements after it commit one by one. The server reports that the
+  session left its transaction, and Ptah reads that report: `applied` counts
+  every statement that ran before the failure. A body that reached no schema
+  statement still rolls back and records zero.
+- Under `file` on YugabyteDB, `yb_ddl_transaction_block_enabled` is off by
+  default. A schema statement commits on its own and the transaction around it
+  stays open, so the rollback undoes the data and leaves the schema statements.
+  `applied` counts the leading statements that stayed, and a retry runs the data
+  after them again. Data ahead of a schema statement is the exception: no count
+  describes a statement that stayed behind one the rollback undid, so the row
+  says so and the outcome is `unknown`. The same goes for a statement Ptah
+  cannot read, such as a `DO` block or a `CALL`. With the setting on, the
+  rollback takes the whole body.
+
+  [What a failed migration leaves](../../databases/distributed/#what-a-failed-migration-leaves)
+  shows each shape on each engine.
 - Under `file` on Oracle, Ptah opens no transaction around the body. Oracle
   commits before every schema statement, so each statement commits as it runs,
   as under `none`, and `applied` counts the statements that ran before the one

@@ -60,3 +60,16 @@ func PreviousDefault(colDiff difftypes.ColumnDiff) (string, bool) {
 	}
 	return "", changed
 }
+
+// PreviousType is the type the column holds, as the comparison read it, or what the
+// `type` entry says in a diff assembled by hand.
+func PreviousType(diff difftypes.ColumnDiff) string {
+	if diff.PreviousType != "" {
+		return diff.PreviousType
+	}
+	before, _, found := strings.Cut(diff.Changes["type"], " -> ")
+	if !found {
+		return ""
+	}
+	return strings.TrimSpace(before)
+}

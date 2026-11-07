@@ -543,7 +543,7 @@ func (p *Planner) modifyExistingColumns(
 		previousDefault, defaultChanged := columnchange.PreviousDefault(colDiff)
 		modify := &ast.ModifyColumnOperation{
 			Column:              columnNode,
-			PreviousType:        previousColumnType(colDiff.Changes["type"]),
+			PreviousType:        columnchange.PreviousType(colDiff),
 			TypeNarrows:         colDiff.TypeNarrows,
 			PreviousNullable:    previousColumnNullable(colDiff.Changes["nullable"]),
 			HasPreviousNullable: colDiff.Changes["nullable"] != "",
@@ -2820,14 +2820,6 @@ func (p *Planner) dropConstraintNode(info difftypes.ConstraintRemovalInfo) ast.N
 		Name:       info.TableName,
 		Operations: []ast.AlterOperation{op},
 	}
-}
-
-func previousColumnType(change string) string {
-	before, _, ok := strings.Cut(change, " -> ")
-	if !ok {
-		return ""
-	}
-	return strings.TrimSpace(before)
 }
 
 func previousColumnNullable(change string) bool {

@@ -2572,6 +2572,17 @@ func (m *Migrator) applyUpMigrationsInSingleTransaction(ctx context.Context, mig
 	if len(migrations) == 0 {
 		return nil, nil
 	}
+	// What a rollback leaves can depend on what the server says of the session,
+	// and only a pinned session can be asked.
+	if m.services().RollbackSurvivors != nil && m.runSession == nil && !m.conn.Writer().IsDryRun() {
+		var checksDeferred []int64
+		err := m.withRunSession(ctx, func(run *Migrator) error {
+			var err error
+			checksDeferred, err = run.applyUpMigrationsInSingleTransaction(ctx, migrations)
+			return err
+		})
+		return checksDeferred, err
+	}
 	if err := m.validateUpTransactionMode(ctx, migrations); err != nil {
 		return nil, err
 	}
@@ -2610,21 +2621,26 @@ func (m *Migrator) applyUpMigrationsInSingleTransaction(ctx context.Context, mig
 	started := slices.Clone(migrations)
 	m.logBatchStart(ctx, started)
 
-	tx, err := sqliterebuild.BeginTransactionForAnySQL(ctx, m.conn, upSQLTexts(migrations))
+	body := m.bodyConnection()
+	tx, err := sqliterebuild.BeginTransactionForAnySQL(ctx, body, upSQLTexts(migrations))
 	if err != nil {
 		failure := fmt.Errorf("failed to begin tx-mode all transaction: %w", err)
 		m.logBatchOutcome(ctx, started, MigrationLogFailed, failure)
 		return nil, failure
 	}
-	txConn := m.conn.WithExecutor(tx)
+	txConn := body.WithExecutor(tx)
 	startedAt := make(map[string]time.Time, len(migrations))
-	for _, migration := range migrations {
+	for index, migration := range migrations {
 		key := migration.RevisionVersion()
 		startedAt[key] = time.Now()
 		plan := plans[key]
 		migrationCtx := withMigrationResume(ctx, plan.resumeFrom)
 		if err := m.applyUpMigrationInExistingTransaction(migrationCtx, txConn, migration, startedAt[key]); err != nil {
+			evidence := m.batchRollbackEvidence(migrationCtx, body, migrations[:index], plans, migration, err, bodyStopped)
 			err = migrationFailureAfterRollback(migration.Version, err, tx.Rollback(), tx)
+			if m.batchLeftStatements(ctx, evidence) {
+				err = &rollbackLeftUnknownFailure{err: err}
+			}
 			recorded := m.recordRolledBackBatchFailure(ctx, migration, startedAt[key], err, plan)
 			m.logBatchOutcome(ctx, started, MigrationLogFailed, recorded)
 			return nil, recorded
@@ -2638,8 +2654,18 @@ func (m *Migrator) applyUpMigrationsInSingleTransaction(ctx context.Context, mig
 		}
 	}
 	last := migrations[len(migrations)-1]
+	lastKey := last.RevisionVersion()
+	// Read ahead of the commit, for the reason the per-file transaction reads it
+	// there. A failed commit that left statements in place needs the row the
+	// other failed commit does not: the history says nothing of them otherwise.
+	lastCtx := withMigrationResume(ctx, plans[lastKey].resumeFrom)
+	evidence := m.batchRollbackEvidence(lastCtx, body, migrations[:len(migrations)-1], plans, last, nil, bodyFinished)
 	if err := m.commitMigrationTransaction(tx, last.UpSQL); err != nil {
-		failure := newFailedMigrationError(last, fmt.Errorf("failed to commit tx-mode all transaction: %w", err))
+		commitFailure := fmt.Errorf("failed to commit tx-mode all transaction: %w", err)
+		failure := error(newFailedMigrationError(last, commitFailure))
+		if m.batchLeftStatements(ctx, evidence) {
+			failure = m.recordRolledBackBatchFailure(ctx, last, startedAt[lastKey], &rollbackLeftUnknownFailure{err: commitFailure}, plans[lastKey])
+		}
 		m.logBatchOutcome(ctx, started, MigrationLogFailed, failure)
 		return nil, failure
 	}
@@ -3404,6 +3430,13 @@ func (m *Migrator) rollbackMigrationTransactional(
 				return scoped.rollbackMigrationTransactionalOnSession(ctx, migration, startedAt, deleteSQL)
 			},
 		)
+	}
+	// What a rollback leaves can depend on what the server says of the body's
+	// session, and only a pinned session can be asked.
+	if m.services().RollbackSurvivors != nil && !m.conn.Writer().IsDryRun() {
+		return m.withBodySession(ctx, func(session *dbschema.DatabaseConnection) error {
+			return m.inRunSession(session).rollbackMigrationTransactionalOnSession(ctx, migration, startedAt, deleteSQL)
+		})
 	}
 	return m.rollbackMigrationTransactionalOnSession(ctx, migration, startedAt, deleteSQL)
 }

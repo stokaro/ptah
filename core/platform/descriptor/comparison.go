@@ -218,4 +218,7 @@ type BareTypes struct {
 	// IntervalLeading is the digits of an interval's leading field where it declares
 	// none, on an engine whose catalog reports them.
 	IntervalLeading int `json:"interval_leading,omitempty"`
+	// LobTiers reports that TEXT and BLOB are one of four sizes, as MySQL's are, rather
+	// than holding a value of any length.
+	LobTiers bool `json:"lob_tiers,omitempty"`
 }

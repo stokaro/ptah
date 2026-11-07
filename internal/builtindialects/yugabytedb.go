@@ -62,7 +62,9 @@ func yugabyteDB() descriptor.Dialect {
 		// Migrations: what the migrator reads.
 		// The PostgreSQL driver and the transactional migrator path PostgreSQL
 		// takes, so this is the contract that code implements; no live
-		// revision-completion test drives it yet.
+		// revision-completion test drives it yet. A schema statement commits on
+		// its own unless yb_ddl_transaction_block_enabled is on, and
+		// internal/migratorext/postgres reads what a rollback leaves.
 		DDLTransactions: "transactional",
 		RevisionTable:   postgresFamilyRevisionTable(),
 

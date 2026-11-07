@@ -794,6 +794,11 @@ is a change rated safe. `char` and `char(1)` are one type, `double precision` an
 `float` are one type, and `real` and `float(24)` are one type, while a bare `bpchar` has
 no limit.
 
+A float or a number under a type with a lower capacity is a narrowing, and most of them
+lose a value without a word. `double precision` declared `real` reads `1.23456789012` back
+as `1.2345679`, `numeric(10,2)` declared `integer` rounds `1.50` to `2`, and `bigint` declared
+`double precision` reads `9007199254740993` back as `9.007199254740992e+15`.
+
 An `interval` column is read with the fields it keeps. `interval year to month` clears
 days and time of day from every value, so declaring it over an `interval` column is
 rated as a narrowing, and a schema file may spell it as `pg_dump` does.

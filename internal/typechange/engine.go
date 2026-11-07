@@ -69,10 +69,13 @@ func (e Engine) resolvedElement(s spec) (string, bool) {
 	case isSizedString(s.name):
 		length, ok := stringLength(s, &e)
 		return fmt.Sprintf("%s(%d)", stringFamily(s.name), length), ok
-	case s.name == "binary" || s.name == "bit" || s.name == "varbinary":
+	case s.kind == "binary" || isBitType(s.name):
 		return e.resolvedBytes(s)
 	case s.name == "year":
 		return "year", true
+	case isTextType(s.name):
+		tier, ok := lobTier(s, spec{}, &e)
+		return fmt.Sprintf("text(%d)", tier), ok
 	}
 	if bits, ok := e.floatBits(s); ok {
 		return fmt.Sprintf("float(%d)", bits), true
@@ -81,19 +84,23 @@ func (e Engine) resolvedElement(s spec) (string, bool) {
 }
 
 // resolvedBytes reads the binary and bit types, whose length holds what a string's does.
+// Every tiered name is a blob, where a length keeps the name it was declared with.
 func (e Engine) resolvedBytes(s spec) (string, bool) {
-	switch {
-	case s.unlimited:
-		return s.name + "(max)", true
-	case s.arg > 0:
-		return fmt.Sprintf("%s(%d)", s.name, s.arg), true
-	case s.name != "varbinary":
-		return s.name + "(1)", true
-	case e.Bare.VariableLength > 0:
-		return fmt.Sprintf("%s(%d)", s.name, e.Bare.VariableLength), true
-	default:
-		return "", false
+	var length int
+	var ok bool
+	family := s.name
+	if isBitType(s.name) {
+		length, ok = bitLength(s, &e)
+		if family == "bit varying" {
+			family = "varbit"
+		}
+	} else {
+		length, ok = binaryLength(s, spec{}, &e)
+		if _, tiered := lobTier(s, spec{}, &e); tiered {
+			family = "blob"
+		}
 	}
+	return fmt.Sprintf("%s(%d)", family, length), ok
 }
 
 // stringFamily folds the names of one string type. PostgreSQL's catalog calls `char(1)`
@@ -132,14 +139,16 @@ func (e Engine) resolvedInterval(clean string) (string, bool) {
 func (e Engine) floatBits(s spec) (int, bool) {
 	const singleBits, doubleBits = 24, 53
 	switch s.name {
-	case "float4":
+	case "float4", "float32", "binary_float":
 		return singleBits, true
-	case "float8", "double":
+	case "float8", "float64", "binary_double", "double":
 		return doubleBits, len(s.args) == 0
 	case "real":
 		return e.Bare.RealBits, e.Bare.RealBits > 0
 	case "float":
 		switch {
+		case !e.Bare.Stated:
+			return 0, false
 		case len(s.args) == 0:
 			return e.Bare.FloatBits, e.Bare.FloatBits > 0
 		case len(s.args) > 1:

@@ -209,7 +209,10 @@ hint reads the recorded failure to tell it apart. Whether that statement
 committed was never recorded, and the statements after it did not run, so no
 verb finishes the migration on its own: a rerun can repeat what committed,
 which is why `ptah migrations up --allow-dirty` and
-`ptah migrations repair --resume-from` both refuse the row.
+`ptah migrations repair --resume-from` both refuse the row. A rollback on
+YugabyteDB that kept a schema statement and undid the data ahead of it reads the
+same way, because no count describes what stayed; see
+[What a failed migration leaves](../../databases/distributed/#what-a-failed-migration-leaves).
 
 Inspect the database, apply what is missing yourself, then
 `ptah migrations repair --version <version>` records the result. A rollback

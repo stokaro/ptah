@@ -938,7 +938,7 @@ func (p *Planner) modifyExistingTableColumns(
 				Name: tableDiff.TableName,
 				Operations: []ast.AlterOperation{&ast.ModifyColumnOperation{
 					Column:              columnNode,
-					PreviousType:        previousColumnType(colDiff.Changes["type"]),
+					PreviousType:        columnchange.PreviousType(colDiff),
 					TypeNarrows:         colDiff.TypeNarrows,
 					PreviousNullable:    previousColumnNullable(colDiff.Changes["nullable"]),
 					HasPreviousNullable: colDiff.Changes["nullable"] != "",

@@ -533,6 +533,7 @@ func columnsWithDesiredDomains(
 	} else if change := columnTypeChange(declared, dbCol, dbRawType, dialect, desiredDomains, ctx.rules); change != "" && !sameType {
 		colDiff.Changes["type"] = change
 		colDiff.TypeNarrows = typeChangeNarrows(change, dbRawType, declared.Type, dialect)
+		colDiff.PreviousType = strings.TrimSpace(dbRawType)
 	}
 
 	// Compare nullable. On the engines that enforce it, a primary key column is
@@ -1523,8 +1524,7 @@ func shouldReportSizedTypeChange(dbType, genType, dialect string) bool {
 	if typechange.IsTemporal(dbType) && typechange.IsTemporal(genType) {
 		return false
 	}
-	if comparisonOf(dialect).TypeAffinity &&
-		normalize.Type(dbType) == normalize.Type(normalize.SQLiteColumnType(genType)) {
+	if comparisonOf(dialect).TypeAffinity {
 		return false
 	}
 	engine := typeEngineOf(dialect)

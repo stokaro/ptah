@@ -117,3 +117,19 @@ func (dc *DatabaseConnection) pinnedSessionOutsideTransaction(ctx context.Contex
 	}
 	return dc.engine().OutsideTransaction(ctx, dc.session)
 }
+
+// SessionOutsideTransaction reports whether the server says the session this
+// connection is pinned to holds no transaction. pinned is false on a connection
+// that is pinned to no session, and outside means nothing then.
+//
+// An answer of outside after a statement sent inside a transaction means the
+// server ended that transaction. CockroachDB does so before a schema statement
+// unless autocommit_before_ddl is off. Asking sends nothing on a PostgreSQL-wire
+// session, so a failed statement cannot disturb the answer. Any driver or engine
+// that cannot answer says it is not outside.
+func (dc *DatabaseConnection) SessionOutsideTransaction(ctx context.Context) (outside, pinned bool) {
+	if dc == nil || dc.session == nil {
+		return false, false
+	}
+	return dc.engine().OutsideTransaction(ctx, dc.session), true
+}
