@@ -254,3 +254,37 @@ func TestProviderIndexNullsOrder_FailurePath(t *testing.T) {
 	c.Assert(diagnostics, qt.Contains, `SQLite keeps no NULLS order in an index key, so the fixture cannot build index items_by_score with NULLS LAST`)
 	c.Assert(f.storedTable(c, "items_by_score"), qt.Equals, heldScoreIndex[1])
 }
+
+// `migrations generate` of two tables, one referencing the other through a
+// table constraint, writes their creation to the up file and their removal to
+// the down file. The down file's plan drops the tables the up file creates,
+// starting from each table as the host projects it from its declaration and
+// the foreign key the up file adds, in the form a provider read reports.
+// Without that projection the command has no capture of the referencing
+// table and refuses to plan the down file.
+func TestProviderForeignKeyMigration_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	f := constraintsFixture(c, "text")
+	f.declare(c, declaredPosts(plainOwner)+"constraints:\n  posts_owner_fk:\n    table: posts\n    type: FOREIGN KEY\n    columns: [owner_id]\n"+
+		"    foreign_table: owners\n    foreign_column: id\n    on_delete: CASCADE\n")
+
+	_, diagnostics, code, dir := f.generateMigration(c)
+
+	c.Assert(code, qt.Equals, 0, qt.Commentf("%s", diagnostics))
+	c.Assert(upMigration(c, dir), qt.Contains,
+		`CREATE TABLE "posts" ("id" INTEGER NOT NULL PRIMARY KEY, "owner_id" INTEGER NOT NULL, CONSTRAINT "posts_owner_fk" FOREIGN KEY ("owner_id") REFERENCES "owners" ("id") ON DELETE CASCADE);`)
+	down := downMigration(c, dir)
+	c.Assert(down, qt.Contains, `DROP TABLE "posts";`)
+	c.Assert(down, qt.Contains, `DROP TABLE "owners";`)
+}
+
+// downMigration returns the text of the one down migration in dir.
+func downMigration(c *qt.C, dir string) string {
+	c.Helper()
+	files, err := filepath.Glob(filepath.Join(dir, "*.down.sql"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(files, qt.HasLen, 1)
+	data, err := os.ReadFile(files[0])
+	c.Assert(err, qt.IsNil)
+	return string(data)
+}

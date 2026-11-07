@@ -11,9 +11,10 @@ import (
 )
 
 // PlanFeatures plans the tables the plan keeps and changes: each is rebuilt
-// with its declared foreign keys and CHECKs. It refuses every other change,
-// among them an index whose key states a NULLS order SQLite cannot build, in
-// a diagnostic.
+// with its declared foreign keys and CHECKs. In the text mode it also creates
+// and drops tables, in place of the host's steps. It refuses every other
+// change, among them an index whose key states a NULLS order SQLite cannot
+// build, in a diagnostic.
 func (o *owner) PlanFeatures(ctx context.Context, request *protocol.PlanFeaturesRequest) (*protocol.PlannedFeatures, error) {
 	result := &protocol.PlannedFeatures{Complete: true}
 	contribution := &protocol.PlanningContribution{Owner: o.description.GetProviderId()}
@@ -24,12 +25,13 @@ func (o *owner) PlanFeatures(ctx context.Context, request *protocol.PlanFeatures
 		if table.GetAction() == protocol.PlanningTable_CONTEXT {
 			continue
 		}
-		steps, refusal := o.planTable(request, table)
+		steps, rewrites, refusal := o.planLifecycle(request, table)
 		if refusal != "" {
 			return &protocol.PlannedFeatures{Complete: true, Diagnostics: []*protocol.PlanningDiagnostic{{
 				Code: protocol.PlanningDiagnostic_UNSUPPORTED_FEATURE, Kind: "table", Message: refusal}}}, nil
 		}
 		contribution.Steps = append(contribution.Steps, steps...)
+		result.Rewrites = append(result.Rewrites, rewrites...)
 		var ids []*protocol.StepIdentity
 		for _, step := range steps {
 			ids = append(ids, proto.CloneOf(step.GetId()))
@@ -43,6 +45,48 @@ func (o *owner) PlanFeatures(ctx context.Context, request *protocol.PlanFeatures
 		result.Contributions = append(result.Contributions, contribution)
 	}
 	return result, nil
+}
+
+// planLifecycle plans one table: in the text mode a created table is one
+// CREATE TABLE with its declared constraints and a dropped one a DROP TABLE,
+// each in place of the host's step, and an altered table is rebuilt.
+func (o *owner) planLifecycle(request *protocol.PlanFeaturesRequest, table *protocol.PlanningTable) ([]*protocol.PlanningStep, []*protocol.PlanningRewrite, string) {
+	if !o.text || table.GetAction() == protocol.PlanningTable_ALTER {
+		steps, refusal := o.planTable(request, table)
+		return steps, nil, refusal
+	}
+	var statement, name string
+	switch table.GetAction() {
+	case protocol.PlanningTable_CREATE:
+		declared := table.GetDesired()
+		wanted, err := declaredConstraints(declared)
+		if err != nil {
+			return nil, nil, err.Error()
+		}
+		name = declared.GetName()
+		statement = createStatement(quote(name), declared, wanted)
+	case protocol.PlanningTable_DROP:
+		name = table.GetCurrent().GetName()
+		statement = "DROP TABLE " + quote(name) + ";"
+	default:
+		return nil, nil, "the constraints fixture creates, drops and rebuilds tables only"
+	}
+	common := slices.IndexFunc(request.GetCommonSteps(), func(step *protocol.CommonPlanningStep) bool { return proto.Equal(step.GetParent(), table.GetSubject()) })
+	if common < 0 {
+		return nil, nil, fmt.Sprintf("the host planned no step for table %s", name)
+	}
+	id := &protocol.StepIdentity{Owner: o.description.GetProviderId(), Name: "lifecycle/" + name}
+	value, err := o.statements(request.GetEngine(), id.GetName(), name, []string{statement})
+	if err != nil {
+		return nil, nil, err.Error()
+	}
+	// The step stands for the host's, so it carries that step's effects.
+	metadata := proto.CloneOf(request.GetCommonSteps()[common].GetMetadata())
+	metadata.Transaction = protocol.PlanningMetadata_FORBIDDEN
+	metadata.Impact, metadata.Reason = value.GetOperationSemantics().GetImpact(), value.GetOperationSemantics().GetReason()
+	step := &protocol.PlanningStep{Id: id, Metadata: metadata, Operation: &protocol.PlanningOperation{Value: value, Role: protocol.NativeOperation_STATEMENT}}
+	rewrite := &protocol.PlanningRewrite{Sources: []*protocol.StepIdentity{proto.CloneOf(request.GetCommonSteps()[common].GetId())}, Replacement: proto.CloneOf(id)}
+	return []*protocol.PlanningStep{step}, []*protocol.PlanningRewrite{rewrite}, ""
 }
 
 // planTable plans one altered table, or says why it cannot.
@@ -70,7 +114,7 @@ func (o *owner) planTable(request *protocol.PlanFeaturesRequest, table *protocol
 	if err != nil {
 		return nil, err.Error()
 	}
-	value, err := o.statements(request.GetEngine(), declared.GetName(), rebuildStatements(declared, held, wanted))
+	value, err := o.statements(request.GetEngine(), "rebuild/"+declared.GetName(), declared.GetName(), rebuildStatements(declared, held, wanted))
 	if err != nil {
 		return nil, err.Error()
 	}
@@ -145,12 +189,10 @@ func declaredConstraints(declared *protocol.DeclaredTable) ([]constraint, error)
 	return result, nil
 }
 
-// rebuildStatements write the declared table under a scratch name with the
-// declared constraints, copy the rows of the columns both hold, drop the held
-// table, give the new one its name and build the held indexes again.
-func rebuildStatements(declared *protocol.DeclaredTable, held *protocol.ObservedTable, wanted []constraint) []string {
-	name, scratch := declared.GetName(), declared.GetName()+"__rebuild"
-	var elements, copied []string
+// createStatement writes CREATE TABLE of the declared table's columns and
+// the constraints wanted under the quoted name.
+func createStatement(name string, declared *protocol.DeclaredTable, wanted []constraint) string {
+	var elements []string
 	for _, column := range declared.GetColumns() {
 		primary := column.GetPrimary() || slices.Contains(declared.GetPrimaryKey(), column.GetName())
 		element := quote(column.GetName()) + " " + strings.ToUpper(column.GetType())
@@ -161,14 +203,25 @@ func rebuildStatements(declared *protocol.DeclaredTable, held *protocol.Observed
 			element += " PRIMARY KEY"
 		}
 		elements = append(elements, element)
-		if slices.ContainsFunc(held.GetColumns(), func(observed *protocol.ObservedColumn) bool { return observed.GetName() == column.GetName() }) {
-			copied = append(copied, quote(column.GetName()))
-		}
 	}
 	for _, value := range wanted {
 		elements = append(elements, value.text())
 	}
-	statements := []string{fmt.Sprintf("CREATE TABLE %s (%s);", quote(scratch), strings.Join(elements, ", "))}
+	return fmt.Sprintf("CREATE TABLE %s (%s);", name, strings.Join(elements, ", "))
+}
+
+// rebuildStatements write the declared table under a scratch name with the
+// declared constraints, copy the rows of the columns both hold, drop the held
+// table, give the new one its name and build the held indexes again.
+func rebuildStatements(declared *protocol.DeclaredTable, held *protocol.ObservedTable, wanted []constraint) []string {
+	name, scratch := declared.GetName(), declared.GetName()+"__rebuild"
+	var copied []string
+	for _, column := range declared.GetColumns() {
+		if slices.ContainsFunc(held.GetColumns(), func(observed *protocol.ObservedColumn) bool { return observed.GetName() == column.GetName() }) {
+			copied = append(copied, quote(column.GetName()))
+		}
+	}
+	statements := []string{createStatement(quote(scratch), declared, wanted)}
 	if len(copied) != 0 {
 		list := strings.Join(copied, ", ")
 		statements = append(statements, fmt.Sprintf("INSERT INTO %s (%s) SELECT %s FROM %s;", quote(scratch), list, list, quote(name)))

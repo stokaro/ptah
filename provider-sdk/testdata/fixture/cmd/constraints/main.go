@@ -30,14 +30,18 @@ const retentionKind = "example.org/fixture/retention"
 
 // engineFeatures are the features of 25.28 and the ones they need. The mode
 // FIXTURE_CONSTRAINT_MODE=unplanned leaves out the constraint changes, so a
-// host refuses a change of a constraint the read reports.
+// host refuses a change of a constraint the read reports, and the mode text
+// adds text units, so a migration file holds the statements of a rebuild.
 func engineFeatures(mode string) []string {
 	features := []string{provider.ObservedColumnsFeature, provider.ObservedConstraintsFeature, provider.ConstraintChangesFeature,
 		provider.CheckEquivalenceFeature, provider.ObservedIndexesFeature, provider.IndexNullsOrderFeature, provider.PrepareTablesFeature,
 		provider.ProjectTableCreationsFeature, provider.ValidateSchemaFeature, provider.PlanningPolicyFeature, provider.PlanningStatementStyleFeature,
 		provider.LocksFeature}
-	if mode == "unplanned" {
+	switch mode {
+	case "unplanned":
 		features = slices.DeleteFunc(features, func(feature string) bool { return feature == provider.ConstraintChangesFeature })
+	case "text":
+		features = append(features, provider.TextUnitsFeature)
 	}
 	return features
 }
@@ -50,7 +54,7 @@ func main() {
 		}
 	}
 	mode := os.Getenv("FIXTURE_CONSTRAINT_MODE")
-	if mode != "" && mode != "unplanned" {
+	if mode != "" && mode != "unplanned" && mode != "text" {
 		fmt.Fprintln(os.Stderr, "unknown fixture constraint mode")
 		os.Exit(1)
 	}
@@ -77,7 +81,7 @@ func main() {
 	engine.ValueModels = append(engine.ValueModels, &protocol.ValueModel{Kind: statementsKind, Representation: protocol.ValueInput_OPERATION,
 		SchemaVersion: 1, Encoding: "json", DefinitionJson: definition, DefinitionSha256: hex.EncodeToString(digest[:]), CanonicalFormat: "constraint-statements-v1"})
 	engine.Planning = []*protocol.ModelPlanning{{Id: "tables", ParentKinds: []string{retentionKind}, OperationKinds: []string{statementsKind}}}
-	owner := &owner{Provider: &backend.Provider{}, description: description,
+	owner := &owner{Provider: &backend.Provider{}, description: description, text: mode == "text",
 		operation: &protocol.Envelope{ProviderId: description.GetProviderId(), Kind: statementsKind, SchemaVersion: 1, Encoding: "json", DefinitionSha256: hex.EncodeToString(digest[:])}}
 	err = runtime.Serve(runtime.Server{Description: description, Sessions: owner, Inspector: owner, Renderer: owner, Executor: owner, SQLAnalyzer: owner,
 		ValueNormalizer: owner, SourceDecoder: owner, ValueConverter: owner, FeaturePlanner: owner, TablePreparer: owner, TableCreations: owner, SchemaValidator: owner,
@@ -96,4 +100,7 @@ type owner struct {
 	// operation is the envelope of a statements operation, without its owner
 	// and payload.
 	operation *protocol.Envelope
+	// text renders a statements operation as text where the host asks for
+	// it, and reads the statements of a rebuild back.
+	text bool
 }
