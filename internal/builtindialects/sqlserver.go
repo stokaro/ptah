@@ -119,8 +119,10 @@ END`,
 		// How a schema file's names are read, and how unnamed indexes and CHECKs are named.
 		Names: descriptor.Names{Lookup: "unicode_case_insensitive"},
 		// A read lists every database role, whatever schemas it covers.
-		Roles:   descriptor.Roles{OutOfScope: descriptor.RoleScopeNone},
-		Columns: descriptor.Columns{AlterColumnKeepsRest: true},
+		Roles: descriptor.Roles{OutOfScope: descriptor.RoleScopeNone},
+		// A serial type is written with IDENTITY, and the server refuses a nullable identity
+		// (Msg 8147).
+		Columns: descriptor.Columns{AlterColumnKeepsRest: true, SerialNotNull: true},
 
 		// Dev databases.
 		DevRealm: descriptor.DevRealm{
@@ -138,6 +140,7 @@ END`,
 			TimePrecision:                  descriptor.TimePrecision{Compared: true, Default: 7},
 			BareTypes:                      descriptor.BareTypes{Stated: true, DecimalPrecision: 18, VariableLength: 1, FloatBits: 53, RealBits: 24},
 			DeclaredSchemas:                true,
+			MapsPortableTypes:              true,
 			ColumnPrimaryKeyIsTheTablesKey: true,
 			UniqueIndexStandsAlone:         true,
 			ExpressionProbes:               "sys-catalog",

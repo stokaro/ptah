@@ -145,6 +145,12 @@ type Comparison struct {
 	// names to types of the engine's own, as internal/oracletype does, so a
 	// declaration is compared in the renderer's spelling.
 	MapsDeclaredTypes bool `json:"maps_declared_types,omitempty"`
+	// MapsPortableTypes reports that the renderer writes a portable type name as a type
+	// of the engine's own, as internal/sqlservertype does, and writes a type named for
+	// the engine as it stands. A declaration is compared in the renderer's spelling, and
+	// a portable name that also names one of the engine's own types matches that type
+	// too, since the server builds it from the same word.
+	MapsPortableTypes bool `json:"maps_portable_types,omitempty"`
 	// CatalogTypeNames reports that the catalog names the string and byte
 	// types STRING and BYTES, as internal/cockroachtype spells them, and an
 	// unsized INT resolves to the width the session's default_int_size gives.

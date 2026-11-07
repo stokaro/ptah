@@ -416,6 +416,15 @@ Lower capacities are rated destructive on the same terms: `varbinary(max)` decla
 `float` declared `real`, where the server keeps seven digits of `1.23456789012` without a
 word.
 
+A column declared with a portable name is compared with the type that name writes.
+`timestamp` is `datetime2`, `timestamptz` is `datetimeoffset`, `boolean` is `bit`, `text`
+and `citext` are `nvarchar(max)`, `bytea` and `blob` are `varbinary(max)`, `char` is
+`nchar`, and `varchar` is `nvarchar`, so each plans nothing against that type. A word the
+server also takes as a type of its own matches the column it builds from that word too:
+`text` over `text`, `char(5)` over `char(5)`, and `varchar(50)` over `varchar(50)`. Any
+other column plans a change: `varchar(max)` declared `text`, `tinyint` declared `boolean`,
+and `datetime2(3)` declared `timestamp`, which writes `datetime2`.
+
 `ptah migrations lint` reports `ALTER COLUMN c datetime2(0) NULL` as `DS103`, with or
 without brackets around the names, since SQL Server names the new type with no word
 before it. That clause has to name a type to change a nullability too, so under
