@@ -286,6 +286,7 @@ func Build(ctx context.Context, opts Options, projectCfg projectconfig.Config) (
 		Target:        declared.resolved,
 		Disabled:      disabled,
 		PathPrefix:    filepath.ToSlash(opts.Dir),
+		Unparsed:      unparsedScope(opts),
 		// Scoped on the Atlas-compatible surface ONLY, where the pinned
 		// community binary is the contract and it reviews just what the dev URL
 		// covers.
@@ -340,6 +341,19 @@ func Build(ctx context.Context, opts Options, projectCfg projectconfig.Config) (
 		return report, err
 	}
 	return report, nil
+}
+
+// unparsedScope says which statements of this run no server reads.
+//
+// A dev database replays the up files, and a statement the server refuses ends the
+// run, so the parser's opinion of one it accepted adds nothing. It never runs a down
+// file. The compatibility report leaves down files out, so with a dev database that
+// surface shows none of this, which is the pinned community binary's answer too.
+func unparsedScope(opts Options) lint.UnparsedScope {
+	if opts.DevURL == "" {
+		return lint.UnparsedAll
+	}
+	return lint.UnparsedDown
 }
 
 type preparedSourceOptions struct {

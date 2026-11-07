@@ -26,9 +26,8 @@ Prerequisites: a migration directory (see
 reviewed is a separate question, answered by
 [Integrity and safety](../integrity-and-safety/).
 
-`ptah migrations lint` analyzes migration files for patterns that are legal
-SQL but dangerous in production — dropped tables and columns, lock-heavy
-DDL, and dialect-specific hazards:
+`ptah migrations lint` reports dropped tables and columns, lock-heavy DDL, and
+dialect-specific hazards:
 
 ```bash
 ptah migrations lint --dir ./migrations --dialect sqlite
@@ -42,7 +41,10 @@ migrations/0000000003_drop_users.up.sql:1 [error] DS101: DROP TABLE permanently 
 1 finding(s).
 ```
 
-A clean run prints `No lint findings.` and exits `0`.
+A clean run prints `No lint findings.` and exits `0`. A statement the SQL parser
+could not read is not clean:
+[`AC102`](../../reference/lint-rules/#a-statement-the-parser-could-not-read) reports it and
+keeps the exit code.
 
 [Lint rules](../../reference/lint-rules/) lists every rule identifier with its
 meaning, dialects, surface, and origin.
@@ -126,7 +128,7 @@ transaction restriction whichever direction asked for it:
   refuses that second shape before its first statement runs, using the same
   classification, so lint and apply cannot disagree about one file.
 
-Useful controls, all designed for CI:
+Useful controls:
 
 - `--latest N` lints only the newest N migration revision keys — the changeset
   of a pull request rather than all of history. Atlas-format repeatables keep

@@ -108,12 +108,12 @@ func extractSchemaChanges(file *File, dialect string, scope schemaScope) ([]Sche
 // left alone -- silence there is absence of evidence, and it must not be able to
 // drop a finding.
 func statementSchemaChanges(file *File, stmt Statement, dialect string, scope schemaScope) ([]SchemaChange, bool) {
-	list, err := sqlsyntax.Parse(stmt.SQL, dialect, parser.WithSQL(file.owners))
+	list, err := parseStatement(file, stmt.SQL, dialect)
 	if err != nil || list == nil {
 		// A statement Ptah's parser cannot model contributes no structural
-		// change here. The dev-database replay independently validates that the
-		// statement executes, so nothing is silently accepted; it is only
-		// excluded from the semantic change count.
+		// change here. A dev-database replay runs it, and a run with no replay
+		// reports it under AC102, so it is only excluded from the semantic
+		// change count.
 		return nil, false
 	}
 	var changes []SchemaChange
@@ -124,6 +124,13 @@ func statementSchemaChanges(file *File, stmt Statement, dialect string, scope sc
 		scopedOut = scopedOut || out
 	}
 	return changes, scopedOut && len(changes) == 0
+}
+
+// parseStatement reads one statement in the grammar of the run's dialect. It is
+// the one parse of a statement this package makes, so the schema change count and
+// the report of a statement nothing read answer alike about the same text.
+func parseStatement(file *File, sql, dialect string) (*ast.StatementList, error) {
+	return sqlsyntax.Parse(sql, dialect, parser.WithSQL(file.owners))
 }
 
 // nodeSchemaChanges returns a node's changes and reports whether the scope

@@ -211,6 +211,7 @@ func dataSafetyRules() []Rule {
 		enumValueRemovedRule(),
 		databaseObjectDroppedRule(),
 		routineBodyNotAnalyzedRule(),
+		statementNotParsedRule(),
 		immutableRoutineReadsTheClockRule(),
 		tableTruncatedRule(),
 		rlsDisabledRule(),
@@ -904,6 +905,25 @@ func routineBodyNotAnalyzedRule() Rule {
 			}
 			return true, "this migration defines a " + kind +
 				"; its body is not analyzed, so a clean result here says nothing about what the body does"
+		},
+		AppliesToDown: true,
+	}
+}
+
+// statementNotParsedRule keeps a run from reading clean over text nothing read.
+// The rules still scan the statement's tokens, so a DROP in it is reported, but
+// nothing says it is SQL at all until a server runs it.
+func statementNotParsedRule() Rule {
+	return Rule{
+		Code:     "AC102",
+		Title:    "statement not parsed",
+		Severity: SeverityInfo,
+		CheckStatement: func(stmt *Statement) (bool, string) {
+			if stmt.unparsed == "" {
+				return false, ""
+			}
+			return true, "the SQL parser could not read this statement (" + stmt.unparsed +
+				") and no server ran it, so a clean result here says nothing about it"
 		},
 		AppliesToDown: true,
 	}

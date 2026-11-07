@@ -202,8 +202,8 @@ community CLI has no YDB driver and plans no rebuild.
 By default, `ptah-compat migrate lint` requires `--dev-url`, because the community CLI marks
 it required and exits 1 without it. Ptah's analyzers read the migration files
 and need no database, so set it to `1` and the run proceeds with no dev database
-and reports what the static analysis finds. Native `ptah migrations lint` needs
-no opt-in.
+and reports what the static analysis finds, including under `AC102` each statement
+the SQL parser could not read. Native `ptah migrations lint` needs no opt-in.
 
 ## `PTAH_ATLAS_DIFF_WITHOUT_DEV_URL`
 

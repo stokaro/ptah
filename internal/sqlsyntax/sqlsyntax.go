@@ -14,9 +14,28 @@ package sqlsyntax
 import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/internal/parser"
 	"ptah.run/internal/syntaxext/builtin"
 )
+
+// Reads reports whether [Parse] holds a grammar for dialect, so that its refusal
+// says something about the text. A run with no dialect reads the shared grammar.
+// An engine Ptah has no descriptor for is unknown to it, and [Parse] hands that to
+// the shared grammar too, which refuses what the engine accepts.
+func Reads(dialect string) bool {
+	if dialect == "" {
+		return true
+	}
+	described, known := platform.Lookup(dialect)
+	return known && ReadsDescribed(described)
+}
+
+// ReadsDescribed is [Reads] for a descriptor. A dialect whose descriptor names a
+// lexer no built-in service serves is read by its engine's provider.
+func ReadsDescribed(described descriptor.Dialect) bool {
+	return described.Lexical.Lexer == "" || builtin.Lookup(described.Lexical.Lexer).Parser != nil
+}
 
 // Parse returns the statements text parses to in the grammar of dialect. A
 // document of a dialect whose descriptor names a lexer with a parser of its
