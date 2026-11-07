@@ -45,6 +45,9 @@ func clickHouse() descriptor.Dialect {
 		// How a connection reaches the server.
 		Driver: "clickhouse",
 
+		// clickhouse-go reads a proxy and its credentials from this parameter.
+		URLValuedParameters: []string{"http_proxy"},
+
 		// A read reaches the database the URL names, and no URL names more.
 		Schemas: descriptor.Schemas{ConnectedDatabaseOnly: true},
 

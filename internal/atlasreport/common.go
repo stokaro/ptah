@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/dburldisplay"
 )
 
 type atlasEnv struct {
@@ -28,7 +29,7 @@ func (u atlasTemplateURL) IsZero() bool {
 }
 
 func atlasRedactedURL(raw string) atlasTemplateURL {
-	parsed, err := atlasurl.Parse(raw)
+	parsed, err := atlasurl.Parse(dburldisplay.Format(raw))
 	if err != nil {
 		return atlasTemplateURL{}
 	}
@@ -42,7 +43,7 @@ func atlasRedactedURL(raw string) atlasTemplateURL {
 	}
 	query := parsed.Query()
 	for key := range query {
-		if isAtlasSensitiveQueryKey(key) {
+		if dburldisplay.IsSecretParameter(key) {
 			query.Set(key, "xxxxx")
 		}
 	}
@@ -55,21 +56,6 @@ func atlasRedactedURL(raw string) atlasTemplateURL {
 		result.Schema = fact.schema
 	}
 	return result
-}
-
-func isAtlasSensitiveQueryKey(key string) bool {
-	normalized := strings.ToLower(key)
-	compact := strings.NewReplacer("_", "", "-", "", ".", "").Replace(normalized)
-	switch compact {
-	case "password", "passwd", "pass", "pwd", "token", "secret", "accesstoken", "authtoken", "apikey", "clientsecret":
-		return true
-	default:
-		return strings.Contains(compact, "password") ||
-			strings.Contains(compact, "passwd") ||
-			strings.Contains(compact, "token") ||
-			strings.Contains(compact, "secret") ||
-			strings.Contains(compact, "apikey")
-	}
 }
 
 func atlasMigrationFileDescription(fileName string) string {

@@ -42,11 +42,11 @@ type Backend struct {
 func Open(ctx context.Context, dbURL string) (*Backend, error) {
 	db, err := sql.Open("pgx", dbURL)
 	if err != nil {
-		return nil, fmt.Errorf("open %s: %w", dburldisplay.Format(dbURL), err)
+		return nil, fmt.Errorf("open %s: %w", dburldisplay.Format(dbURL), dburldisplay.RedactError(dbURL, err))
 	}
 	if err := db.PingContext(ctx); err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("connect to %s: %w", dburldisplay.Format(dbURL), err)
+		return nil, fmt.Errorf("connect to %s: %w", dburldisplay.Format(dbURL), dburldisplay.RedactError(dbURL, err))
 	}
 	return NewBackend(db), nil
 }

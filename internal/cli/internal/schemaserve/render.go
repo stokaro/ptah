@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"ptah.run/catalog"
+	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/schemadoc"
 	"ptah.run/internal/undecidednote"
 	"ptah.run/internal/unmodelednote"
@@ -203,12 +204,13 @@ func severityClass(severity safety.Severity) string {
 // reach it. A dashboard that printed a password would put it in every
 // screenshot of itself.
 func shortURL(dbURL string) string {
-	scheme, rest, found := strings.Cut(dbURL, "://")
+	display := dburldisplay.Format(dbURL)
+	scheme, rest, found := strings.Cut(display, "://")
 	if !found {
-		return dbURL
+		return display
 	}
 	if _, host, hasCredentials := strings.Cut(rest, "@"); hasCredentials {
 		return scheme + "://" + host
 	}
-	return dbURL
+	return display
 }

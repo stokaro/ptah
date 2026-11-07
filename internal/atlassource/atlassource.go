@@ -46,6 +46,7 @@ import (
 	"ptah.run/internal/atlasprojectpath"
 	"ptah.run/internal/atlasregistry"
 	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/descriptortable"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/devlock"
@@ -399,18 +400,18 @@ func ClassifySet(flag string, rawURLs []string, env ProjectEnv, databaseTargets 
 	for _, rawURL := range rawURLs {
 		source, err := Classify(rawURL, databaseTargets)
 		if err != nil {
-			return Set{}, fmt.Errorf("%s %q: %w", flag, rawURL, err)
+			return Set{}, fmt.Errorf("%s %q: %w", flag, dburldisplay.Format(rawURL), err)
 		}
 		if source.Kind != KindEnv {
 			set.Sources = append(set.Sources, withProjectVarScope(source, env, flag))
 			continue
 		}
 		if len(rawURLs) > 1 {
-			return Set{}, fmt.Errorf("%s %q: an env:// desired-state reference must be the only %s value", flag, rawURL, flag)
+			return Set{}, fmt.Errorf("%s %q: an env:// desired-state reference must be the only %s value", flag, dburldisplay.Format(rawURL), flag)
 		}
 		expanded, err := expandEnv(source, env, databaseTargets)
 		if err != nil {
-			return Set{}, fmt.Errorf("%s %q: %w", flag, rawURL, err)
+			return Set{}, fmt.Errorf("%s %q: %w", flag, dburldisplay.Format(rawURL), err)
 		}
 		set.Sources = append(set.Sources, expanded...)
 	}

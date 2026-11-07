@@ -43,7 +43,8 @@ var scopeAgreement = map[string]scopeAnswers{
 		roles:     descriptor.RoleScopeNone,
 	},
 	"clickhouse": {
-		roles: descriptor.RoleScopeReferenced,
+		roles:     descriptor.RoleScopeReferenced,
+		urlValued: []string{"http_proxy"},
 	},
 	"sqlite": {
 		selection: descriptor.SchemaSelectionSingle, dialectDefault: "main",

@@ -20,6 +20,7 @@ import (
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
+	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/envbool"
 	"ptah.run/internal/schemafile"
@@ -421,7 +422,7 @@ func (r atlasDiffDevURLRule) ensure(set atlassource.Set) error {
 func ensureLocalSchemaURLs(flag string, urls []string) error {
 	for _, rawURL := range urls {
 		if _, err := schemafile.LocalFilePath(rawURL); err != nil {
-			return fmt.Errorf("%s %q: %w", flag, rawURL, err)
+			return fmt.Errorf("%s %q: %w", flag, dburldisplay.Format(rawURL), err)
 		}
 	}
 	return nil

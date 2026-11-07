@@ -320,6 +320,27 @@ func TestRunMigrationTest_ApplySchemaRequiresRootDir(t *testing.T) {
 	c.Assert(report, qt.IsNil)
 }
 
+// A value handed over as the root directory may be a database URL, so a refusal to
+// read it quotes it as the display shows it.
+func TestRunMigrationTest_ApplySchemaRefusalRepeatsNoPassword(t *testing.T) {
+	c := qt.New(t)
+	cases := []dbtest.Case{{
+		Name:  "an address where a directory goes",
+		Steps: []dbtest.Step{{Name: "apply desired schema", ApplySchema: true}},
+	}}
+
+	// #nosec G101 -- fixture URL with a made-up password, not a credential
+	report, err := dbtest.RunMigrationTest(t.Context(), dbtest.Options{
+		Runtime: selectedRuntime(c),
+		Cases:   cases,
+		RootDir: "postgres://app:Pa55wordX9@db.internal/shop",
+	})
+
+	c.Assert(err, qt.ErrorMatches, `(?s)parse desired schema from postgres://app:\*\*\*@db\.internal/shop: .*`)
+	c.Assert(err, qt.Not(qt.ErrorMatches), `(?s).*Pa55wordX9.*`)
+	c.Assert(report, qt.IsNil)
+}
+
 func TestRunMigrationTest_EphemeralCasesAreIsolated(t *testing.T) {
 	c := qt.New(t)
 	cases := []dbtest.Case{

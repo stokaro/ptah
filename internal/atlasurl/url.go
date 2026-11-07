@@ -22,6 +22,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/descriptor"
+	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/dburlext"
 	"ptah.run/internal/dburlext/builtin"
 	"ptah.run/internal/descriptortable"
@@ -152,7 +153,8 @@ func SQLiteURLFromPath(path string) string {
 	return "sqlite:file:" + escaped
 }
 
-// Parse parses a database URL, accepting the one shape net/url refuses.
+// Parse parses a database URL, accepting the one shape net/url refuses. Its error
+// repeats nothing of the password (see [dburldisplay.ParseURL]).
 //
 // A Windows absolute path is not an authority: sqlite://C:\dir\app.db makes
 // net/url read the drive letter's colon as a port separator and refuse the
@@ -163,7 +165,7 @@ func SQLiteURLFromPath(path string) string {
 // endpoints, while dbschema drops it because it reads the database name from
 // the path. Only the Windows rule is one rule.
 func Parse(rawURL string) (*url.URL, error) {
-	parsed, err := url.Parse(rawURL)
+	parsed, err := dburldisplay.ParseURL(rawURL)
 	if err == nil {
 		return parsed, nil
 	}
@@ -184,36 +186,16 @@ func Parse(rawURL string) (*url.URL, error) {
 		// the drive letter's colon as one -- handing it to an operator whose
 		// address has no port at all is the misleading diagnostic this whole
 		// path exists to remove.
+		//
+		// The reason is not net/url's either, which quotes the escape it
+		// refused: that may be in a value that is a secret.
 		if _, queryErr := url.ParseQuery(query); queryErr != nil {
-			return nil, fmt.Errorf("parse the query of %s: %w", rawURL, queryErr)
+			return nil, fmt.Errorf("parse the query of %s: it holds a %% that starts no escape, or a character a query cannot hold",
+				dburldisplay.Format(rawURL))
 		}
 		return &url.URL{Scheme: scheme, Opaque: path, RawQuery: query}, nil
 	}
 	return nil, err
-}
-
-// CutMySQLScheme reports whether rawURL begins with a scheme that selects the
-// MySQL driver, and returns what follows that scheme's "://".
-//
-// Which schemes those are is the descriptors' answer: every spelling of a
-// dialect whose URLs take go-sql-driver's forms (descriptor.URLs.Grammar),
-// MySQL's and MariaDB's, in any letter case, since net/url lowercases a scheme
-// too. The scheme is read as text because net/url refuses
-// the go-sql-driver form a MySQL-family URL may carry,
-// user:pass@tcp(host:port)/db, so a caller that rewrites, redacts or splits
-// that form has to recognize the scheme before it can parse anything.
-//
-// It is one predicate because the dialect check and each of those callers must
-// recognize the same set. With a list of `mysql://` and `mariadb://` at each
-// caller instead, `maria://user:pass@tcp(host)/db` reaches the MySQL driver
-// while the display prints its password and the online-DDL parser reads
-// `maria` as the user name (stokaro/ptah#3744).
-//
-// A prefix that is not a URL scheme, such as one with leading space, is not
-// recognized: net/url refuses it as well.
-func CutMySQLScheme(rawURL string) (rest string, ok bool) {
-	_, rest, ok = cutMySQLScheme(rawURL)
-	return rest, ok
 }
 
 // isURLScheme reports whether s is spelled as RFC 3986 section 3.1 and net/url
@@ -287,7 +269,7 @@ func DialectFromURL(rawURL string) (string, error) {
 	// Trimmed, the value would be refused as an image, a sentence about a
 	// container that value cannot start.
 	if IsDockerScheme(parsed.Scheme) {
-		if _, err := url.Parse(asWritten); err != nil {
+		if _, err := dburldisplay.ParseURL(asWritten); err != nil {
 			return "", fmt.Errorf("parse --dev-url: %w", err)
 		}
 	}
@@ -314,7 +296,7 @@ func DialectFromURL(rawURL string) (string, error) {
 	if dialect := platform.NormalizeDialect(parsed.Scheme); dialect != "" {
 		return dialect, nil
 	}
-	return "", fmt.Errorf("unsupported --dev-url dialect %q", rawURL)
+	return "", fmt.Errorf("unsupported --dev-url dialect %q", dburldisplay.Format(rawURL))
 }
 
 // ValidateDialectMatch verifies that rawURL can name a server of the dialect

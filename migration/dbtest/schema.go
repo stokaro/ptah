@@ -19,6 +19,7 @@ import (
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
 	"ptah.run/engine"
+	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/planstyle"
 	"ptah.run/internal/readscope"
 	"ptah.run/migration/planner"
@@ -119,7 +120,7 @@ func RunSchemaTest(ctx context.Context, opts SchemaOptions) (*Report, error) {
 	if schema == nil && strings.TrimSpace(opts.RootDir) != "" {
 		parsed, err := goschema.ParseDir(opts.Runtime.Annotations(), opts.RootDir)
 		if err != nil {
-			return nil, fmt.Errorf("parse desired schema from %s: %w", opts.RootDir, err)
+			return nil, fmt.Errorf("parse desired schema from %s: %w", dburldisplay.Format(opts.RootDir), err)
 		}
 		schema = parsed
 	}
@@ -171,7 +172,7 @@ func desiredSchemaForMigrationCases(annotations annotation.Set, rootDir string, 
 	}
 	schema, err := goschema.ParseDir(annotations, rootDir)
 	if err != nil {
-		return nil, fmt.Errorf("parse desired schema from %s: %w", rootDir, err)
+		return nil, fmt.Errorf("parse desired schema from %s: %w", dburldisplay.Format(rootDir), err)
 	}
 	if err := validateTestSchema(schema); err != nil {
 		return nil, err

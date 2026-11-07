@@ -917,9 +917,12 @@ func LocalFilePath(rawURL string) (string, error) {
 	if base == "" {
 		return "", fmt.Errorf("schema file URL is required")
 	}
+	// net/url's reason quotes the escape it refused, and what was handed to this
+	// function may be a database URL with a password holding it, so neither
+	// refusal below passes the reason on.
 	if rawQuery != "" {
 		if _, err := url.ParseQuery(rawQuery); err != nil {
-			return "", fmt.Errorf("parse schema file URL query: %w", err)
+			return "", errors.New("parse schema file URL query: it holds a % that starts no escape, or a character a query cannot hold")
 		}
 		return "", fmt.Errorf("schema file URL query parameters are not supported yet")
 	}
@@ -933,7 +936,7 @@ func LocalFilePath(rawURL string) (string, error) {
 	}
 	path, err := url.PathUnescape(path)
 	if err != nil {
-		return "", fmt.Errorf("decode schema file URL path: %w", err)
+		return "", errors.New("decode schema file URL path: it holds a % that starts no escape")
 	}
 	return filepath.Clean(path), nil
 }

@@ -26,6 +26,10 @@ func TestDefaultName(t *testing.T) {
 		{name: "socket URL naming no database", url: "maria+unix://app@/run/mysqld/mysqld.sock", want: "database"},
 		{name: "PostgreSQL URL naming no database", url: "postgres://app@db.internal", want: "database"},
 		{name: "a URL that cannot be read", url: "postgres://app@db.internal:notaport/shop", want: "database"},
+		// net/url reads host app, port 12345 and a path that is the rest of the
+		// password, and the name is read from what the display shows instead.
+		{name: "a / in a password", url: "postgres://app:12345/Xk9Lm@db.internal/shop", want: "shop"},
+		{name: "a / in a MySQL password", url: "mysql://app:12345/Xk9Lm@db.internal/shop", want: "shop"},
 	}
 
 	for _, test := range tests {
@@ -50,6 +54,18 @@ func TestTargetDisplay_WithholdsTheCredential(t *testing.T) {
 			name: "PostgreSQL",
 			url:  "postgres://app:secret@db.internal/shop?sslmode=disable",
 			want: "postgres://app@db.internal/shop",
+		},
+		{
+			// net/url reads host app, port 12345 and a path that is the rest of
+			// the password.
+			name: "a / in a password",
+			url:  "postgres://app:12345/Xk9Lm@db.internal/shop",
+			want: "postgres://app@db.internal/shop",
+		},
+		{
+			name: "a / in a MySQL password",
+			url:  "mysql://app:12345/Xk9Lm@db.internal:3307/shop",
+			want: "mysql://app@db.internal:3307/shop",
 		},
 		// #nosec G101 -- fixture URL with a made-up password, not a credential
 		{

@@ -55,6 +55,43 @@ env "local" {
 	c.Assert(stdout, qt.Contains, "public, app")
 }
 
+// The report says which database a project names and keeps its credentials out,
+// in text and in JSON, whatever form the address is written in.
+func TestProjectInspect_RepeatsNoPassword(t *testing.T) {
+	tests := []struct {
+		name    string
+		address string
+		want    string
+	}{
+		// #nosec G101 -- fixture URL with a made-up password, not a credential
+		{name: "a URL", address: "postgres://app:Xk9Lm@db.internal/shop", want: "postgres://app:***@db.internal/shop"},
+		{name: "a DSN", address: "mysql://app:Xk9Lm/q@tcp(db.internal:3306)/shop", want: "mysql://app:***@tcp(db.internal:3306)/shop"},
+		{name: "a DSN with no scheme", address: "app:Xk9Lm@tcp(db.internal:3306)/shop", want: "app:***@tcp(db.internal:3306)/shop"},
+		{name: "a secret parameter", address: "postgres://db.internal/shop?sslpassword=Xk9Lm", want: "postgres://db.internal/shop?sslpassword=redacted"},
+	}
+
+	for _, test := range tests {
+		for _, format := range []string{"text", "json"} {
+			t.Run(test.name+"/"+format, func(t *testing.T) {
+				c := qt.New(t)
+				path := projectFile(c, `
+env "local" {
+  url = "`+test.address+`"
+  dev = "`+test.address+`"
+  src = ["`+test.address+`"]
+}
+`)
+
+				stdout, _, err := runInspect(c, "inspect", "--atlas-config", path, "--env", "local", "--format", format)
+
+				c.Assert(err, qt.IsNil)
+				c.Assert(stdout, qt.Not(qt.Contains), "Xk9Lm")
+				c.Assert(stdout, qt.Contains, test.want)
+			})
+		}
+	}
+}
+
 // A setting the file does not carry is named as absent rather than omitted.
 //
 // A list of only what happens to be present answers "what did I write". The

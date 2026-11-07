@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/url"
 	"strings"
+
+	"ptah.run/internal/dburldisplay"
 )
 
 // redactCredentials removes passwords from any connection URL inside a tool
@@ -76,17 +78,30 @@ func redactValue(value any) (any, bool) {
 }
 
 // redactURL drops the password from one URL, and leaves anything else alone.
+//
+// What counts as a URL here is wider than what net/url reads with a user: it
+// refuses a go-sql-driver DSN and a password with a reserved character in it, and
+// reads some of those as a host and a path with no user at all. So the password
+// is found by the display, and the result is read from what the display shows.
+// Text with a space that does not parse as carrying credentials is prose, and so
+// is an email address or a file name with no "://".
 func redactURL(candidate string) string {
 	if !strings.Contains(candidate, "@") {
 		return candidate
 	}
 	parsed, err := url.Parse(candidate)
-	if err != nil || parsed.Scheme == "" || parsed.User == nil {
+	hasCredentials := err == nil && parsed.Scheme != "" && parsed.User != nil
+	if !hasCredentials && (strings.ContainsAny(candidate, " \t\r\n") || err == nil && !strings.Contains(candidate, "://")) {
 		return candidate
 	}
-	if _, hasPassword := parsed.User.Password(); !hasPassword {
+	if len(dburldisplay.Secrets(candidate)) == 0 {
 		return candidate
 	}
-	parsed.User = url.User(parsed.User.Username())
-	return parsed.String()
+	display := dburldisplay.Format(candidate)
+	shown, err := url.Parse(display)
+	if err != nil || shown.Scheme == "" || shown.Opaque != "" || shown.User == nil {
+		return display
+	}
+	shown.User = url.User(shown.User.Username())
+	return shown.String()
 }

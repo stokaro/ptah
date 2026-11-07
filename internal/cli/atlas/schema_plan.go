@@ -17,6 +17,7 @@ import (
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
+	"ptah.run/internal/dburldisplay"
 	"ptah.run/migration/safety"
 )
 
@@ -517,7 +518,7 @@ func ensureAtlasPlanDatabaseURL(ctx context.Context, verb, raw string) error {
 	source, err := atlassource.Classify(trimmed, dbschema.NativeSources(ctx))
 	if err != nil || source.Kind != atlassource.KindDatabase {
 		return fmt.Errorf("%s requires --from to be the target database URL the plan will be applied to "+
-			"(got %q); local desired-state schema files belong in --to", verb, raw)
+			"(got %q); local desired-state schema files belong in --to", verb, dburldisplay.Format(raw))
 	}
 	return nil
 }

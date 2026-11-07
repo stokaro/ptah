@@ -177,6 +177,70 @@ func TestConnectToDatabase_InvalidURL(t *testing.T) {
 	}
 }
 
+// A URL the connection cannot read is refused before anything is dialed, and
+// the refusal says what is wrong and repeats nothing of the password: net/url's
+// own error quotes the whole URL, and for a password holding a "#" its reason
+// quotes the start of the password as a port. These URLs name ports nothing
+// listens on.
+func TestConnectToDatabase_FailurePath_AnUnreadableURLKeepsItsPassword(t *testing.T) {
+	tests := []struct {
+		name    string
+		dbURL   string
+		wantErr string
+	}{
+		{
+			name:    "a driver DSN with no scheme and a user net/url refuses as a scheme",
+			dbURL:   "my_app:Pa55wordX9@tcp(127.0.0.1:1)/shop",
+			wantErr: `invalid database URL: parse "my_app:\*\*\*@tcp\(127\.0\.0\.1:1\)/shop": first path segment in URL cannot contain colon`,
+		},
+		{
+			// net/url reads the user as the scheme, and the user is not a
+			// secret.
+			name:    "a driver DSN with no scheme",
+			dbURL:   "app:Pa55wordX9@tcp(127.0.0.1:1)/shop",
+			wantErr: `unsupported database dialect: app`,
+		},
+		{
+			name:    "a PostgreSQL password with a # in it",
+			dbURL:   "postgres://app:Pa5#5wordX9@127.0.0.1:1/shop",
+			wantErr: `invalid database URL: parse "postgres://app:\*\*\*@127\.0\.0\.1:1/shop": the user name or password cannot be read as written; .*`,
+		},
+		{
+			name:    "a MySQL password with a # in it",
+			dbURL:   "mysql://app:Pa5#5wordX9@127.0.0.1:1/shop",
+			wantErr: `invalid database URL: invalid mysql URL: the user name or password cannot be read as written; .*`,
+		},
+		{
+			name:    "a YDB password with a # in it",
+			dbURL:   "ydb://app:Pa5#5wordX9@127.0.0.1:1/local",
+			wantErr: `invalid database URL: parse "ydb://app:\*\*\*@127\.0\.0\.1:1/local": the user name or password cannot be read as written; .*`,
+		},
+		{
+			// net/url reads host app, port 12345 and a database that is the
+			// rest of the password, which pgx names when it cannot connect.
+			name:    "a part of a password read as a database",
+			dbURL:   "postgres://app:12345/5wordX9@127.0.0.1:1/shop?connect_timeout=1&host=127.0.0.1&port=1",
+			wantErr: `(?s)failed to ping database: .*database=\*\*\*@127\.0\.0\.1:1/shop.*`,
+		},
+		{
+			// pgx quotes this value when it cannot open the file it names.
+			name:    "a secret parameter a driver repeats",
+			dbURL:   "postgres://127.0.0.1:1/shop?sslkey=Pa5/5wordX9&sslcert=/nonexistent",
+			wantErr: `(?s)failed to ping database: .*unable to read sslkey.*`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn, err := dbschema.ConnectToDatabase(c.Context(), test.dbURL)
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(err, qt.Not(qt.ErrorMatches), `(?s).*(Pa5|wordX9).*`)
+			c.Assert(conn, qt.IsNil)
+		})
+	}
+}
+
 // TestPostgreSQLConnection tests PostgreSQL connection (will fail if no server running)
 // A refusal the caller's context carries is asked about every connection
 // before anything is dialed, whichever connector opens it: these URLs name
