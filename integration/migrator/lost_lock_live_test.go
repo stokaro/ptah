@@ -106,6 +106,11 @@ func TestMigrator_StopsWhenItsLockSessionEnds(t *testing.T) {
 				test.name+` was lost while it was held.*`)
 			c.Assert(time.Since(started) < 15*time.Second, qt.IsTrue, qt.Commentf("the run went on for %s", time.Since(started)))
 			c.Assert(scalarInt(c, witness, test.exists, after), qt.Equals, int64(0))
+			// The statement in flight is where the run stopped, and the record
+			// says so. The loss canceled it, so the server gave no answer.
+			c.Assert(migrator.NewRunResult(migrator.RunEvidence{Err: runErr}).Failure, qt.DeepEquals, &migrator.RunFailure{
+				Version: 1, VersionKey: "1", Statement: 1, Statements: 2,
+			}, qt.Commentf("error: %v", runErr))
 		})
 	}
 }

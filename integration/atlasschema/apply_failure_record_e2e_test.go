@@ -21,6 +21,7 @@ import (
 	"ptah.run/internal/clirun"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/errorkind"
+	"ptah.run/internal/rolepassword"
 )
 
 // These tests hold what a caller of `ptah schema apply --json` learns when a
@@ -477,6 +478,29 @@ func TestSchemaApplyFailureRecordOfACommitE2E(t *testing.T) {
 			c.Assert(rows, qt.Equals, 0)
 		})
 	}
+}
+
+// TestSchemaApplyFailureRecordOfAStatementNeverSentE2E stops a run at a statement
+// the writer refuses to send, after an earlier one went out. The run reached the
+// database, and the record names where it stopped, with no code because no server
+// answered.
+func TestSchemaApplyFailureRecordOfAStatementNeverSentE2E(t *testing.T) {
+	c := qt.New(t)
+	f := newFailureTarget(c, dbtarget.PostgreSQL)
+	first, role := f.table("first_unit"), f.table("role")
+	plan := f.savedPlan(c, "CREATE TABLE "+f.table("planned")+" (id INT PRIMARY KEY)",
+		"CREATE TABLE "+first+" (id INT PRIMARY KEY)",
+		`CREATE ROLE "`+role+`" WITH LOGIN PASSWORD `+rolepassword.Reference(role))
+	c.Cleanup(func() {
+		_, _ = f.conn.ExecContext(context.Background(), `DROP ROLE IF EXISTS "`+role+`"`)
+	})
+
+	result, document := f.apply(c, "--plan", plan, "--tx-mode", "none")
+
+	c.Assert(result.ExitCode, qt.Equals, 2, qt.Commentf("%s", result.Stderr))
+	c.Assert(document.Outcome, qt.Equals, atlasschema.ApplyOutcomeUnknown)
+	c.Assert(compactRecord(c, document.Failure), qt.Equals, `{"statement":2,"statements":2}`)
+	c.Assert(f.tableExists(c, first), qt.IsTrue)
 }
 
 // TestSchemaApplyNoFailureRecordBeforeDispatchE2E stops a run on a real server
