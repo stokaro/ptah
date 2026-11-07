@@ -56,6 +56,36 @@ func TestParseReference_FailurePath(t *testing.T) {
 	}
 }
 
+func TestParseReference_RefusalKeepsTheCredentialOut(t *testing.T) {
+	tests := []struct {
+		name, raw, shows string
+	}{
+		{name: "a password in an https URL", raw: "git+https://deploy:s3cret@git.example.com/app.git", // #nosec G101 -- this row's value is what the test looks for
+			shows: "git+https://git.example.com/app.git"},
+		{name: "a token as the https user", raw: "git+https://s3cret@git.example.com/app.git", // #nosec G101 -- this row's value is what the test looks for
+			shows: "git+https://git.example.com/app.git"},
+		{name: "a password in an ssh URL", raw: "git+ssh://git:s3cret@git.example.com/app.git", // #nosec G101 -- this row's value is what the test looks for
+			shows: "git+ssh://git@git.example.com/app.git"},
+		{name: "another scheme", raw: "git+http://deploy:s3cret@git.example.com/app.git", // #nosec G101 -- this row's value is what the test looks for
+			shows: "git+http://git.example.com/app.git"},
+		{name: "no repository", raw: "git+https://deploy:s3cret@git.example.com/", // #nosec G101 -- this row's value is what the test looks for
+			shows: "git+https://git.example.com/"},
+		{name: "a query", raw: "git+ssh://git:s3cret@git.example.com/app.git?ref=main", // #nosec G101 -- this row's value is what the test looks for
+			shows: "git+ssh://git@git.example.com/app.git?ref=main"},
+		{name: "a URL net/url refuses", raw: "git+https://deploy:s3cr#et@git.example.com/app.git", // #nosec G101 -- this row's value is what the test looks for
+			shows: "git+https://deploy:***@git.example.com/app.git"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			_, err := gitsource.ParseReference(test.raw)
+			c.Assert(err, qt.ErrorIs, gitsource.ErrReference)
+			c.Assert(err.Error(), qt.Contains, test.shows)
+			c.Assert(err.Error(), qt.Not(qt.Contains), "s3cr")
+		})
+	}
+}
+
 func TestIsReference_FailurePath(t *testing.T) {
 	for _, raw := range []string{"oci://registry.example.com/schema:1", "https://git.example.com/app.git", "git@git.example.com:app.git"} {
 		t.Run(raw, func(t *testing.T) {
