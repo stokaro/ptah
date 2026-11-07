@@ -74,6 +74,12 @@ func (r *Runtime) validateReportDefinition(owner string, representation schemaex
 		metrics[metric.Name] = metric
 		seen[metric.Name] = true
 	}
+	if definition.OmissionLabel != "" && !reportText(definition.OmissionLabel) {
+		return fmt.Errorf("%w: invalid omission label for %q", ErrInvalidRegistration, definition.Kind)
+	}
+	if definition.OmissionCountMetric != "" && !seen[definition.OmissionCountMetric] {
+		return fmt.Errorf("%w: undeclared omission count metric for %q", ErrInvalidRegistration, definition.Kind)
+	}
 	return nil
 }
 
