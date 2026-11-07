@@ -2139,6 +2139,28 @@ unit. `Render` sets a refusal only in the `TEXT` form.
 each engine whose changes it can write as text. Without it the host sends the
 `ANY` form, which is the behavior of earlier minors.
 
+### Render omissions
+
+[ADR 0110](../docs/adr/0110-a-render-reports-what-it-leaves-out.md) decides
+this feature. A complete `Render` reply may carry `RenderResult.omissions`:
+each declared property or object its units go on without, such as a length
+the engine's string type does not keep or the start of an identity the engine
+cannot set. An omission names why with a lower-case token (`unsupported`), the
+owning object's kind and name, the lost property (empty when the whole object
+was lost), the declared value where repeating it helps, and a remedy where one
+exists on the engine. The host reports them as it reports a built-in engine's:
+in the result of a schema render and of a node render, where a caller that
+must not lose anything refuses the rendering.
+
+`render.omissions` is a two-way feature. The provider lists it, and so does
+each engine whose render reports omissions; the provider must offer `Render`.
+The reply validator refuses omissions the engine or the request's target does
+not negotiate, omissions in an incomplete reply or beside a refusal, an
+omission without a reason token, a kind or a name, a field that is not one
+line of text, and one omission reported twice. `RenderRowWrites` reports none.
+A host that does not list the feature receives no omissions, as a host of
+contract 25.32 receives none.
+
 ## Planning policy
 
 [ADR 0035](../docs/adr/0035-the-operators-planning-policy-reaches-the-provider.md)

@@ -161,6 +161,9 @@ func ValidateRenderedBatchReply(description *protocol.Description, request *prot
 	if err := validateUnitContexts(description, request.GetEngine(), result.GetUnits()); err != nil {
 		return err
 	}
+	if err := validateRenderOmissions(description, request, result); err != nil {
+		return err
+	}
 	return ValidateRender(request, result)
 }
 

@@ -191,6 +191,7 @@ func validateEngineAdditions(description *protocol.Description, engine *protocol
 		validateIndexNullsOrderFeature, validateCommonNamespacesFeature, validateSQLTableClauses, validateReservedSeedsFeature, validateIndexPredicatesFeature,
 		validateLinkedReleaseLines, validateEnumColumns, validateObservedUniqueConstraintsFeature, validateColumnCollationsFeature,
 		validateViewCheckOptionsFeature, validateDeclaredRelationsFeature, validateTableOwnershipFeature, validateDeclaredObjectsFeature,
+		validateRenderOmissionsFeature,
 	} {
 		if err := check(description, engine); err != nil {
 			return err
