@@ -418,6 +418,33 @@ func TableDropOrderWithDependencies(
 	return result
 }
 
+// TableDropOrderWithObservedDependencies is [TableDropOrderWithDependencies]
+// with the foreign keys a database holds between the tables a plan drops.
+// observed maps a name of tableNames to the names of tableNames it references.
+// A forward plan drops tables its declaration no longer names, so only the
+// database can say which of them references another; both sets of edges
+// order one sort, so neither undoes the other. A table that references
+// itself, and a cycle the edges cannot order, keep the order they arrived in.
+func TableDropOrderWithObservedDependencies(
+	tableNames []string,
+	tables []schemamodel.Table,
+	dependencies, observed map[string][]string,
+) []string {
+	merged := make(map[string][]string, len(dependencies)+len(observed))
+	for key, parents := range dependencies {
+		merged[key] = slices.Clone(parents)
+	}
+	for name, referenced := range observed {
+		key := resolveTableKey(tables, name)
+		for _, parent := range referenced {
+			if parentKey := resolveTableKey(tables, parent); !slices.Contains(merged[key], parentKey) {
+				merged[key] = append(merged[key], parentKey)
+			}
+		}
+	}
+	return TableDropOrderWithDependencies(tableNames, tables, merged)
+}
+
 // GeneratedTableDependencies returns table dependency edges derived from
 // finalized metadata plus inline field and table-level FK definitions.
 func GeneratedTableDependencies(schema *schemamodel.Database) map[string][]string {
