@@ -96,6 +96,11 @@ var hostFeatures = []string{
 	provider.PlanningStatementStyleFeature,
 	// Lifecycle operations may surround common changes; see commonPlanner.schedule.
 	provider.PlanningLifecycleFeature,
+	// A planning service that owns the tables of its engine without a table
+	// setting receives every table the plan creates, alters, rebuilds or
+	// drops and answers a receipt of kind "table" for each; see
+	// target.registerPlanning and target.assessesParents.
+	provider.TableOwnershipFeature,
 	provider.PlanningObjectContextFeature,
 	// A filtered read carries the provider's planning context outside its
 	// scope, which the planner receives as context and nothing compares; see

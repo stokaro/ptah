@@ -92,7 +92,7 @@ func validatePlanningDiagnostics(request featureplan.Request, diagnostics []feat
 		if diagnostic.Change != nil && kind != request.Changes[*diagnostic.Change].Value.Kind() {
 			return featureplan.Result{}, fmt.Errorf("%w: planning diagnostic changed its input kind", schemaext.ErrInvalidValue)
 		}
-		if diagnostic.Parent != nil && !slices.Contains(request.ParentKinds, kind) {
+		if diagnostic.Parent != nil && !slices.Contains(parentReceiptKinds(request), kind) {
 			return featureplan.Result{}, fmt.Errorf("%w: planning diagnostic names an unassigned parent kind", schemaext.ErrInvalidValue)
 		}
 		if diagnostic.ContextObject != nil && (!slices.Contains(request.ContextKinds, kind) || kind != schemaext.Kind(request.Objects.AllSubjects()[*diagnostic.ContextObject].Kind)) {

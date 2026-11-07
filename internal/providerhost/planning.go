@@ -27,6 +27,7 @@ func (t *target) registerPlanning(result *engine.Provider) {
 			ParentKinds:    boundKinds(declaration.GetParentKinds()),
 			ContextKinds:   boundKinds(declaration.GetContextKinds()),
 			OperationKinds: boundKinds(declaration.GetOperationKinds()),
+			OwnsTables:     declaration.GetOwnsTables(),
 			Service:        modelPlanner{target: t, declaration: declaration},
 		})
 	}
@@ -59,11 +60,25 @@ func (s modelPlanner) PlanFeatures(ctx context.Context, request featureplan.Requ
 	return result, nil
 }
 
-func (s modelPlanner) planningRequest(request featureplan.Request) (*protocol.PlanFeaturesRequest, error) {
+// validatePlanningInput refuses a request for another target, one that
+// carries a field the wire cannot, and one that tells a service it owns
+// tables when its declaration does not: the SDK reads table ownership from
+// the declaration, so the wire carries no flag.
+func (s modelPlanner) validatePlanningInput(request featureplan.Request) error {
 	if request.Target != s.target.engine.GetId() {
-		return nil, fmt.Errorf("%w: planning target changed", schemaext.ErrInvalidValue)
+		return fmt.Errorf("%w: planning target changed", schemaext.ErrInvalidValue)
 	}
-	if err := onlyFields(request, "Target", "Identifiers", "Capabilities", "Changes", "Tables", "Types", "CommonSteps", "ParentKinds", "DatabasePath", "Policy", "Objects", "ContextKinds"); err != nil {
+	if err := onlyFields(request, "Target", "Identifiers", "Capabilities", "Changes", "Tables", "Types", "CommonSteps", "ParentKinds", "OwnsTables", "DatabasePath", "Policy", "Objects", "ContextKinds"); err != nil {
+		return err
+	}
+	if request.OwnsTables && !s.declaration.GetOwnsTables() {
+		return fmt.Errorf("%w: planning service %s does not own tables", schemaext.ErrInvalidValue, s.declaration.GetId())
+	}
+	return nil
+}
+
+func (s modelPlanner) planningRequest(request featureplan.Request) (*protocol.PlanFeaturesRequest, error) {
+	if err := s.validatePlanningInput(request); err != nil {
 		return nil, err
 	}
 	identifiers, err := comparisonIdentifiers(request.Identifiers, s.target.schemaSeparator())
