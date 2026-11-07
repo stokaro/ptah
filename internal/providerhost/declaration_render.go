@@ -16,6 +16,7 @@ import (
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/schemapreparation"
 	"ptah.run/core/schemavalidation"
 	"ptah.run/engine"
 	"ptah.run/internal/modelast"
@@ -69,6 +70,15 @@ func (t *target) renderDeclarations(ctx context.Context, request renderer.Schema
 	if err != nil {
 		return renderer.SchemaResult{}, err
 	}
+	// Render the same desired shape that comparison reads. In particular, a
+	// UNIQUE constraint on an engine without constraints becomes the index that
+	// holds it, including the index's comment.
+	lowered, err := runtime.LowerDesired(ctx, schemapreparation.LoweringRequest{Target: request.Target,
+		Desired: request.Schema, Capabilities: request.Capabilities, Semantics: request.Identifiers})
+	if err != nil {
+		return renderer.SchemaResult{}, err
+	}
+	request.Schema = lowered
 	child := func(ref objectidentity.ID) bool {
 		return !ref.Parent.Empty() && runtime.DeclaresKind(request.Target, schemaext.Kind(ref.Kind))
 	}
@@ -219,12 +229,12 @@ func (t *target) authoredCreationContext(request renderer.SchemaRequest) (author
 // creation. A provider-owned table remains a placeholder until parent planning
 // replaces it using the complete declaration in the same request.
 func (t *target) authoredTableNodes(declaration schemacapture.TableDeclaration) ([]ast.Node, error) {
-	if !t.supportsCommonTables() {
-		return []ast.Node{&pendingTableCreation{name: tableref.CanonicalExact(declaration.Table.Schema, declaration.Table.Name)}}, nil
-	}
 	var comments []ast.Node
 	if t.commonKinds()[protocol.CommonObjectSupport_COMMENT] {
 		declaration, comments = creationComments(declaration)
+	}
+	if !t.supportsCommonTables() {
+		return append([]ast.Node{&pendingTableCreation{name: tableref.CanonicalExact(declaration.Table.Schema, declaration.Table.Name)}}, comments...), nil
 	}
 	node, err := commonTable(declaration)
 	if err != nil {

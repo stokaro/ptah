@@ -13,6 +13,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	"github.com/stokaro/ptah/provider-sdk/provider"
 	"google.golang.org/protobuf/testing/protocmp"
 
 	"ptah.run/catalog"
@@ -152,6 +153,27 @@ func TestOwnedLifecycleCreationCommentsAreSteps_HappyPath(t *testing.T) {
 		changed = append(changed, string(subject.Kind)+" "+subject.Namespace.Values()[0].Source+" "+subject.Name.Source)
 	}
 	c.Assert(changed, qt.DeepEquals, []string{"comment table users", "comment column id", "comment index users_by_label"})
+}
+
+// An authored schema has no comparison diff. Its table placeholder must
+// still carry the comments after creation, including an index comment that
+// the provider holds separately from the index definition.
+func TestAuthoredTableCreationKeepsCommentSteps_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	target := &target{host: &Host{description: &protocol.Description{Features: []string{provider.CommonObjectsFeature}}},
+		engine: &protocol.Engine{Features: []string{provider.CommonObjectsFeature},
+			CommonObjects: &protocol.CommonObjectSupport{Kinds: []protocol.CommonObjectSupport_Kind{protocol.CommonObjectSupport_COMMENT}}}}
+	declaration := schemacapture.TableDeclaration{Table: schemamodel.Table{Name: "users", Schema: "main", Comment: "People"},
+		Fields:  []schemamodel.Field{{Name: "id", Type: "INTEGER", Comment: "Key"}},
+		Indexes: []schemamodel.Index{{Name: "by_id", Comment: "Lookup"}}}
+	nodes, err := target.authoredTableNodes(declaration)
+	c.Assert(err, qt.IsNil)
+	c.Assert(nodes, qt.HasLen, 4)
+	c.Assert(nodes[0], qt.Satisfies, func(node ast.Node) bool { _, pending := node.(*pendingTableCreation); return pending })
+	c.Assert(commentsOf(nodes), qt.DeepEquals, []string{
+		"TABLE main.users/: People", "TABLE main.users/id: Key", "INDEX main.users/by_id: Lookup"})
+	c.Assert(declaration.Table.Comment, qt.Equals, "People")
+	c.Assert(declaration.Indexes[0].Comment, qt.Equals, "Lookup")
 }
 
 // TestOwnedLifecycleIndexCommentChanges_HappyPath plans each index comment the

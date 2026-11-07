@@ -88,9 +88,10 @@ func TestProviderOwningTablesRendersAnAuthoredSchema(t *testing.T) {
 	_, runtime := yamlProviderEnvironment(c, "operation-models", []string{"FIXTURE_RENDER_MODE=owned-comments", "FIXTURE_SCHEMA_VALIDATION=1"})
 	request := renderer.SchemaRequest{Target: "fixture", Capabilities: unwrappedOperationTarget(), Identifiers: identifier.Semantics{DefaultSchema: "main",
 		TableNames: identifier.ComparisonExact, ColumnNames: identifier.ComparisonExact, IndexNames: identifier.ComparisonExact, IndexNamespace: identifier.IndexNamespaceTable},
-		Schema: &schemamodel.Database{Tables: []schemamodel.Table{{Name: "users", Schema: "main", StructName: "Users"}},
-			Fields: []schemamodel.Field{{StructName: "Users", Name: "id", Type: "INTEGER", Primary: true}}}}
+		Schema: &schemamodel.Database{Tables: []schemamodel.Table{{Name: "users", Schema: "main", StructName: "Users", Comment: "People"}},
+			Fields: []schemamodel.Field{{StructName: "Users", Name: "id", Type: "INTEGER", Primary: true, Comment: "Key"}}}}
 	rendered, err := runtime.RenderSchema(c.Context(), request)
 	c.Assert(err, qt.IsNil)
-	c.Assert(rendered.Statements, qt.DeepEquals, []string{`CREATE TABLE "users" ("id" INTEGER NOT NULL PRIMARY KEY);`})
+	c.Assert(rendered.Statements, qt.DeepEquals, []string{`CREATE TABLE "users" ("id" INTEGER NOT NULL PRIMARY KEY);`,
+		`COMMENT ON TABLE "users" IS 'People';`, `COMMENT ON COLUMN "users"."id" IS 'Key';`})
 }
