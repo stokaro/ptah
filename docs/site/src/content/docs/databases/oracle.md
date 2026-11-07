@@ -63,7 +63,10 @@ and a column built as `INTEGER` hold no fraction, `FLOAT` is `FLOAT(126)`, `CHAR
 is `INTERVAL DAY(2) TO SECOND(6)` and `INTERVAL YEAR TO MONTH` is `INTERVAL YEAR(2) TO
 MONTH`. A lower size on a column with a row is refused by the server with `ORA-30082`
 for a date or an interval and `ORA-01440` for a number, so the plan rated destructive
-stops there and every value stays. See
+stops there and every value stays. A change of type needs an empty column too
+(`ORA-01439`), so `BINARY_DOUBLE` declared `BINARY_FLOAT` is rated destructive, and it
+stops the same way with a row in place. `BLOB` declared `RAW(50)` answers `ORA-22859`. `RAW`
+is compared by its bytes, and a lower length runs if the row fits. See
 [how a column change is rated](../../direct/plan-and-approve/#how-a-column-change-is-rated).
 
 ## What the 23 and 21 lines do differently

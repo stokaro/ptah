@@ -832,6 +832,16 @@ rated destructive. `char`, `binary` and `bit` are the same types with a length o
 `float(p)` is `float` up to a `p` of 24 and `double` above it, and `real` is `double`
 unless `REAL_AS_FLOAT` is set.
 
+`text` and `blob` hold 65535 bytes, the `tiny` types 255, the `medium` types 16 MB and the
+`long` types 4 GB, so `longtext` declared `text` is rated destructive, and in strict mode
+the server refuses a value that does not fit. `text(n)` and `blob(n)` read as the type the
+server builds for them, so `blob(100)` and `tinyblob` are one type, and `text(60)` and
+`tinytext` are one type. `text(n)` and a `varchar(n)` under a text type are read at four
+bytes a character, which is utf8mb4. `double` declared `float` reads
+`1.23456789012` back as `1.23457`, without a word, and is rated destructive. So are a lost
+sign (`int` declared `int unsigned`), half a range lost (`int unsigned` declared `int`),
+and a member an `enum` or a `set` stops naming.
+
 ## Making a column NOT NULL
 
 A plan that makes an existing column `NOT NULL` writes `MODIFY COLUMN` with

@@ -230,7 +230,7 @@ func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.Schema
 				Name: td.TableName,
 				Operations: []ast.AlterOperation{&ast.ModifyColumnOperation{
 					Column:              col,
-					PreviousType:        previousColumnType(colDiff.Changes["type"]),
+					PreviousType:        columnchange.PreviousType(colDiff),
 					TypeNarrows:         colDiff.TypeNarrows,
 					PreviousNullable:    previousColumnNullable(colDiff.Changes["nullable"]),
 					HasPreviousNullable: colDiff.Changes["nullable"] != "",
@@ -351,14 +351,6 @@ func (p *Planner) removeTables(result []ast.Node, diff *difftypes.SchemaDiff) []
 		result = append(result, drop)
 	}
 	return result
-}
-
-func previousColumnType(change string) string {
-	before, _, ok := strings.Cut(change, " -> ")
-	if !ok {
-		return ""
-	}
-	return strings.TrimSpace(before)
 }
 
 func previousColumnNullable(change string) bool {

@@ -1829,6 +1829,12 @@ type ColumnDiff struct {
 	// on PostgreSQL and none on MySQL, so the transition alone cannot say.
 	TypeNarrows bool `json:"type_narrows,omitempty"`
 
+	// PreviousType is the type the column holds, as the catalog spells it. The `type`
+	// entry of Changes may hold a folded spelling with the size gone, which is no input
+	// to a rule about sizes: `varchar -> char(10)` reads as a narrowing whatever the
+	// varchar held.
+	PreviousType string `json:"previous_type,omitempty"`
+
 	// CommentChange carries the column's comment transition, and is nil when
 	// the comment is unchanged.
 	//

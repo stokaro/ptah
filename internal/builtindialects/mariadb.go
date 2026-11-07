@@ -140,7 +140,7 @@ func mariaDB() descriptor.Dialect {
 		// Comparison: what comparing a declaration with a catalog reads.
 		Comparison: descriptor.Comparison{
 			TimePrecision:                  descriptor.TimePrecision{Compared: true},
-			BareTypes:                      descriptor.BareTypes{Stated: true, DecimalPrecision: 10, FloatBits: 24, RealBits: 53},
+			BareTypes:                      descriptor.BareTypes{Stated: true, DecimalPrecision: 10, FloatBits: 24, RealBits: 53, LobTiers: true},
 			ColumnPrimaryKeyIsTheTablesKey: true,
 			ForeignKeysOutside:             true,
 			ForeignKeyBackingIndex:         true,

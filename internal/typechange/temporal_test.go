@@ -113,8 +113,10 @@ func TestIsNarrowing_Temporal(t *testing.T) {
 		{"Oracle timestamp down", "TIMESTAMP(6) WITH TIME ZONE", "TIMESTAMP(0) WITH TIME ZONE", true},
 		{"Oracle local timestamp down", "TIMESTAMP(6) WITH LOCAL TIME ZONE", "TIMESTAMP(0) WITH LOCAL TIME ZONE", true},
 
+		// A column of text may hold what no timestamp can stand for.
+		{"a varchar to a timestamp", "varchar(6)", "timestamp", true},
+
 		// Types that only sound temporal.
-		{"a varchar is not a timestamp", "varchar(6)", "timestamp", false},
 		{"timestamp to text", "timestamp", "text", false},
 		{"an enum named after one", "timestamp_kind", "timestamp", false},
 	}

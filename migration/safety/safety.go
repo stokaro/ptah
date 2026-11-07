@@ -1188,6 +1188,9 @@ func narrowedTypes(columns []difftypes.ColumnDiff) int {
 	narrowed := 0
 	for _, column := range columns {
 		before, after, ok := strings.Cut(column.Changes["type"], " -> ")
+		if column.PreviousType != "" {
+			before = column.PreviousType
+		}
 		if column.TypeNarrows || (ok && IsTypeNarrowing(before, after)) {
 			narrowed++
 		}

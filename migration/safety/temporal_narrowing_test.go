@@ -345,6 +345,11 @@ func TestClassifySchemaDiff_CountsWhatThePlanRatesDestructive(t *testing.T) {
 			},
 		},
 		{
+			name:   "the entry's folded spelling is not what the column holds",
+			column: difftypes.ColumnDiff{PreviousType: "varchar(5)", Changes: map[string]string{"type": "varchar -> char(10)"}},
+			want:   []safety.Finding{{Category: modified, Count: 1, Severity: safety.Warning}},
+		},
+		{
 			name:   "a widening",
 			column: difftypes.ColumnDiff{Changes: map[string]string{"type": "timestamp(0) -> timestamp(6)"}},
 			want:   []safety.Finding{{Category: modified, Count: 1, Severity: safety.Warning}},

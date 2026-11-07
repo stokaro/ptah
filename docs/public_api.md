@@ -2720,11 +2720,15 @@ and returns, position for position, what a column modification establishes that 
 statement's words cannot say, or a zero assessment: a verdict the node reports as
 `Destructive`, or a dropped default. `ALTER COLUMN c TYPE timestamp(0)` reads the same
 whatever type it replaces. A node that renders several statements gives its verdict
-only to one that changes the type or restates the column. `core/difftypes.ColumnDiff`
-and `core/ast.ModifyColumnOperation` carry `TypeNarrows`, the comparison's answer on
-the target engine, since a type that declares no size or precision holds what the
-engine says. `safety.IsTypeNarrowing` has no engine, and answers false for a transition
-that declares a size or a precision on one side only.
+only to one that changes the type or restates the column.
+
+`core/difftypes.ColumnDiff` and `core/ast.ModifyColumnOperation` carry `TypeNarrows`, the
+comparison's answer on the target engine, since a type that declares no size or precision
+holds what the engine says. `ColumnDiff.PreviousType` is the type the column holds as the catalog spells
+it, since the `type` entry of `Changes` may hold a folded name with the size gone.
+`safety.IsTypeNarrowing` has no engine, and answers false for a transition that declares a
+size or a precision on one side only, or that names `real` or `float`, each of which is
+four bytes on one engine and eight on another.
 
 A saved schema plan uses `OwnerVerdicts`, `ColumnVerdicts` and `Fold`, and the column
 verdict marks no statement `owned`. The JSON plan marks each
