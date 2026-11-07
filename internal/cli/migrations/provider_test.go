@@ -36,7 +36,7 @@ func TestProviderSelectionBelongsToNativeMigrations(t *testing.T) {
 }
 
 func TestProviderSetupFailurePreservesMigrationJSON(t *testing.T) {
-	for _, verb := range []string{"up", "status", "log"} {
+	for _, verb := range []string{"up", "down", "status", "log"} {
 		t.Run(verb, func(t *testing.T) {
 			c := qt.New(t)
 			command := migrations.NewMigrationsCommand()
@@ -55,7 +55,7 @@ func TestProviderSetupFailurePreservesMigrationJSON(t *testing.T) {
 
 func TestProviderMigrationSetupReportsOfficialInstallation(t *testing.T) {
 	for _, entry := range providercatalog.Entries() {
-		for _, verb := range []string{"up", "status", "log"} {
+		for _, verb := range []string{"up", "down", "status", "log"} {
 			t.Run(entry.EngineID+"/"+verb, func(t *testing.T) {
 				c := qt.New(t)
 				command := migrations.NewMigrationsCommand()
@@ -78,7 +78,7 @@ func TestProviderMigrationSetupReportsOfficialInstallation(t *testing.T) {
 
 // TestProviderSetupFailureIsTheVerbsFailureDocument holds a setup failure to
 // the failure document of the verb it stopped: a run that never started for
-// up, and the status contract's failure document for status. Neither names a
+// up and down, and the status contract's failure document for status. Neither names a
 // kind, because no target connection was opened.
 func TestProviderSetupFailureIsTheVerbsFailureDocument(t *testing.T) {
 	c := qt.New(t)
@@ -102,6 +102,16 @@ func TestProviderSetupFailureIsTheVerbsFailureDocument(t *testing.T) {
 	c.Assert(up.Outcome, qt.Equals, migrator.RunOutcomeFailed)
 	c.Assert(up.Error, qt.IsNotNil)
 	c.Assert(up.Error.Kind, qt.Equals, "")
+
+	var down struct {
+		migrator.RunResult
+		ProviderDiagnostic *providerdiagnostic.Diagnostic `json:"provider_diagnostic"`
+	}
+	c.Assert(json.Unmarshal([]byte(run("down")), &down), qt.IsNil)
+	c.Assert(down.Command, qt.Equals, "migrations down")
+	c.Assert(down.Direction, qt.Equals, migrator.MigrationDirectionDown)
+	c.Assert(down.Outcome, qt.Equals, migrator.RunOutcomeFailed)
+	c.Assert(down.Error, qt.IsNotNil)
 
 	var status struct {
 		errorkind.Failure
