@@ -304,7 +304,8 @@ SQL:
   Where a key the plan keeps stands on that index, the statement that gives the
   kept key an index of its own takes the old one out at that point, and a rollback
   drops the moved key first, then rebuilds the index under its name in one
-  statement.
+  statement. Where that statement takes out several indexes, each under the name
+  of a key the plan moves or adds, it goes once, at the first of those keys.
 - MariaDB 12.1 and later name an unnamed key `<n>` rather than
   `<table>_ibfk_<n>`, and the name belongs to the table rather than to the
   database. A schema file does not say which line it is for, so Ptah reads the

@@ -153,3 +153,100 @@ func TestForeignKeyMoved_TheRollbackRebuildsTheIndexWithTheKeyGone(t *testing.T)
 		"DROP INDEX `d_fk` ON `child`",
 	})
 }
+
+// heldKeptKeyOnTwoIndexes is a read of child, whose foreign key k_fk stands on the indexes
+// x_fk and y_fk over pid, with the keys given beside it.
+func heldKeptKeyOnTwoIndexes(keys ...catalog.Constraint) *catalog.Database {
+	held := heldMovedForeignKey()
+	held.Tables[0].Columns = append(held.Tables[0].Columns,
+		catalog.Column{Name: "code", DataType: "bigint", ColumnType: "bigint", IsNullable: "NO"},
+		catalog.Column{Name: "alt", DataType: "bigint", ColumnType: "bigint", IsNullable: "NO"},
+	)
+	held.Tables[1].Columns = append(held.Tables[1].Columns, catalog.Column{Name: "rid", DataType: "bigint", ColumnType: "bigint", IsNullable: "YES"})
+	held.Indexes = []catalog.Index{
+		{Name: "x_fk", TableName: "child", Columns: []string{"pid"}},
+		{Name: "y_fk", TableName: "child", Columns: []string{"pid"}},
+	}
+	held.Constraints = append([]catalog.Constraint{{
+		Name: "k_fk", TableName: "child", Type: "FOREIGN KEY", ColumnName: "pid", ColumnNames: []string{"pid"},
+		ForeignTable: new("parent"), ForeignColumn: new("alt"),
+	}}, keys...)
+	return held
+}
+
+// declaredKeptKeyBesideTwoKeys declares k_fk over pid, x_fk over qid and y_fk over rid.
+func declaredKeptKeyBesideTwoKeys() *schemamodel.Database {
+	return declaredWithoutForeignKey(func(declared *schemamodel.Database) {
+		declared.Fields = append(declared.Fields,
+			schemamodel.Field{StructName: "Parent", Name: "code", Type: "bigint"},
+			schemamodel.Field{StructName: "Parent", Name: "alt", Type: "bigint"},
+			schemamodel.Field{StructName: "Child", Name: "qid", Type: "bigint", Nullable: true},
+			schemamodel.Field{StructName: "Child", Name: "rid", Type: "bigint", Nullable: true},
+		)
+		declared.Constraints = append(declared.Constraints,
+			schemamodel.Constraint{
+				StructName: "Child", Name: "k_fk", Type: "FOREIGN KEY", Table: "child", Columns: []string{"pid"},
+				ForeignTable: "parent", ForeignColumn: "alt",
+			},
+			schemamodel.Constraint{
+				StructName: "Child", Name: "x_fk", Type: "FOREIGN KEY", Table: "child", Columns: []string{"qid"},
+				ForeignTable: "parent", ForeignColumn: "id",
+			},
+			schemamodel.Constraint{
+				StructName: "Child", Name: "y_fk", Type: "FOREIGN KEY", Table: "child", Columns: []string{"rid"},
+				ForeignTable: "parent", ForeignColumn: "code",
+			},
+		)
+	})
+}
+
+// TestForeignKeyMoved_TwoKeysTakeTheNamesOfTheIndexesAKeptKeyStandsOn pins one statement
+// for a kept key whose indexes all leave, each under the name of a foreign key the plan
+// moves or adds. The statement drops both indexes, and the plan wrote it at each key's
+// addition, so the second answered `Error 1091: Can't DROP` with the first key in place.
+func TestForeignKeyMoved_TwoKeysTakeTheNamesOfTheIndexesAKeptKeyStandsOn(t *testing.T) {
+	const (
+		takeover = "ALTER TABLE `child` DROP INDEX `x_fk`, DROP INDEX `y_fk`, ADD INDEX `k_fk` (`pid`)"
+		addX     = "ALTER TABLE `child` ADD CONSTRAINT `x_fk` FOREIGN KEY (`qid`) REFERENCES `parent`(`id`)"
+		addY     = "ALTER TABLE `child` ADD CONSTRAINT `y_fk` FOREIGN KEY (`rid`) REFERENCES `parent`(`code`)"
+	)
+	tests := []struct {
+		name string
+		keys []catalog.Constraint
+		want []string
+	}{
+		{
+			name: "two keys move under their names",
+			keys: []catalog.Constraint{
+				{
+					Name: "x_fk", TableName: "child", Type: "FOREIGN KEY", ColumnName: "pid", ColumnNames: []string{"pid"},
+					ForeignTable: new("parent"), ForeignColumn: new("id"),
+				},
+				{
+					Name: "y_fk", TableName: "child", Type: "FOREIGN KEY", ColumnName: "pid", ColumnNames: []string{"pid"},
+					ForeignTable: new("parent"), ForeignColumn: new("code"),
+				},
+			},
+			want: []string{
+				"ALTER TABLE `child` DROP FOREIGN KEY `x_fk`",
+				"ALTER TABLE `child` DROP FOREIGN KEY `y_fk`",
+				takeover, addX, addY,
+			},
+		},
+		{
+			name: "two new keys take the names",
+			want: []string{takeover, addX, addY},
+		},
+	}
+	for _, dialect := range []string{"mysql", "mariadb"} {
+		for _, test := range tests {
+			t.Run(dialect+" "+test.name, func(t *testing.T) {
+				c := qt.New(t)
+
+				got := plannedOverHeld(c, dialect, declaredKeptKeyBesideTwoKeys(), heldKeptKeyOnTwoIndexes(test.keys...))
+
+				c.Assert(got, qt.DeepEquals, test.want)
+			})
+		}
+	}
+}
