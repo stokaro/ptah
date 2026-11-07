@@ -13,6 +13,16 @@ var providerContractRoots = []string{
 	"core/schemaext", "core/schemamodel", "core/schemaprojection", "core/schemavalidation", "core/yamlext", "engine",
 }
 
+// neutralModules are the modules of this repository released apart from Ptah
+// for providers to depend on, which a provider contract may link: a provider
+// that imports the contract may depend on them as it depends on provider-sdk.
+// Each holds no implementation and depends on nothing outside the standard
+// library.
+var neutralModules = []string{
+	// The lexical syntax of SQL families (stokaro/ptah#5586).
+	"github.com/stokaro/ptah/sqlsyntax",
+}
+
 func providerContractImports(pkg *packages.Package) []finding {
 	self := relative(pkg.PkgPath)
 	if !slices.Contains(providerContractRoots, self) {
@@ -23,7 +33,8 @@ func providerContractImports(pkg *packages.Package) []finding {
 		implementation := local == "dbschema" || anyUnder(
 			"engine/builtin", "dialect/", "feature/", "internal/dbschema/", "internal/planner/", "migration/",
 		)(local)
-		external := dependency.Module != nil && dependency.Module.Path != modulePath
+		external := dependency.Module != nil && dependency.Module.Path != modulePath &&
+			!slices.Contains(neutralModules, dependency.Module.Path)
 		return implementation || external
 	})
 }

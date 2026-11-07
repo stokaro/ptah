@@ -537,6 +537,9 @@ func ValidateRenderedRowWritesReply(description *protocol.Description, request *
 	if result == nil {
 		return fmt.Errorf("%w: row write reply is missing", ErrProtocol)
 	}
+	if len(result.GetOmissions()) != 0 {
+		return fmt.Errorf("%w: a row write render reports no omissions; only Render does", ErrProtocol)
+	}
 	if refusal := result.GetRefusal(); refusal != nil {
 		if result.GetComplete() || len(result.GetUnits()) != 0 {
 			return fmt.Errorf("%w: a refused row write batch exposes units", ErrProtocol)

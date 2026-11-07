@@ -92,7 +92,9 @@
 //
 //   - Line comments: -- This is a comment
 //   - Block comments: /* This is a block comment */
-//   - Nested block comments are not supported (SQL standard)
+//   - Nested block comments, where [Options.NestedBlockComments] asks for
+//     them, as the PostgreSQL family reads them; otherwise a comment ends at
+//     the first */ (SQL standard)
 //
 // # Performance Characteristics
 //

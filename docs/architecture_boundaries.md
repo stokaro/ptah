@@ -34,7 +34,7 @@ features, database implementations, or external modules.
 | `pipeline-builds-source-description` | A planner or comparator must not construct a source schema description. | 0 |
 | `pipeline-imports-execution` | Planning must not import versioned execution. | 0 |
 | `renderer-imports-comparator` | A renderer must not import a comparator. | 0 |
-| `provider-contracts-import-implementation` | Public provider contracts must not link concrete implementations. | 0 |
+| `provider-contracts-import-implementation` | Public provider contracts must not link concrete implementations or a module outside Ptah, apart from the repository's neutral modules released for providers, such as `sqlsyntax`. | 0 |
 | `renderer-consumers-import-builtins` | Selected rendering consumers must not link built-in rendering factories. | 0 |
 | `neutral-packages-link-owners` | Models, contracts, the runtime, orchestration and Go export must not link a concrete dialect, feature or built-in owner. | 0 |
 | `sql-reader-links-owners` | The shared SQL reader must not link a concrete dialect, feature or built-in owner. | 0 |

@@ -4,6 +4,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/stokaro/ptah/sqlsyntax/pgsyntax"
 )
 
 // TokenType represents the type of SQL token
@@ -134,6 +136,11 @@ type Options struct {
 	// local and global temporary-table identifiers. Hash comments remain enabled
 	// by default for MySQL-compatible and dialect-neutral input.
 	DisableHashComments bool
+
+	// NestedBlockComments reads a block comment that holds block comments,
+	// each closed by its own */, as one comment, as the PostgreSQL family
+	// does. Unset, a comment ends at the first */.
+	NestedBlockComments bool
 
 	// Scanner is a lexer of an engine's own. When it is set, it reads the
 	// text in place of every rule the fields above select, which it does not
@@ -655,9 +662,26 @@ func isHashOperatorContinuation(ch rune) bool {
 	}
 }
 
-// scanBlockComment scans a block comment (/* comment */)
+// scanBlockComment scans a block comment (/* comment */). Where
+// NestedBlockComments asks for it, a comment holds comments, each closed by its
+// own */, read by the PostgreSQL family's rules in pgsyntax.
 func (l *Lexer) scanBlockComment() Token {
+	if l.opts.NestedBlockComments {
+		return l.scanNestedBlockComment()
+	}
 	return l.scanBlockToken(TokenComment)
+}
+
+// scanNestedBlockComment reads a comment that may hold comments. One that does
+// not close runs to the end of the text, as an unnested one does.
+func (l *Lexer) scanNestedBlockComment() Token {
+	token, err := pgsyntax.Next(l.input[l.start:], pgsyntax.Options{})
+	if err != nil || token.Kind != pgsyntax.BlockComment {
+		l.pos = len(l.input)
+		return l.emit(TokenComment)
+	}
+	l.pos = l.start + token.End
+	return l.emit(TokenComment)
 }
 
 func (l *Lexer) scanBlockToken(tokenType TokenType) Token {

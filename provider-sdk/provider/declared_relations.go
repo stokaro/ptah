@@ -13,10 +13,12 @@ import (
 // "materialized view"). A comparison of models that reference a relation,
 // such as a transfer into a table, then knows whether the relation is
 // declared. A host that does not list the feature sends the declared views
-// and materialized views alone, as a host of contract 25.31 does. A relation
-// of the provider's own models is not listed: the comparison's state carries
-// it. It is a two-way feature: the provider lists it, and so does each engine
-// whose comparisons read it. Contract 25.32.
+// and materialized views alone, as a host of contract 25.31 does. An object
+// of the provider's own models, such as a topic, is not a relation and is
+// never listed: the comparison's state carries the objects of its own models,
+// and DeclaredObjectsFeature the declared objects of a model another
+// comparison owns. It is a two-way feature: the provider lists it, and so
+// does each engine whose comparisons read it. Contract 25.32.
 const DeclaredRelationsFeature = "models.declared-relations"
 
 // Kinds of a declared relation, as a ComparisonIdentity names them.

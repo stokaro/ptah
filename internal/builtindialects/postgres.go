@@ -208,7 +208,8 @@ func postgres() descriptor.Dialect {
 		// Lexing and reach: what internal/dialectlexer and internal/sqlreach
 		// read. PostgreSQL's scanner reads E'...', continued strings and
 		// U&'...' strings.
-		Lexical: descriptor.Lexical{EscapeStrings: true, ContinuedStrings: true, UnicodeStrings: true},
+		// 18.6 reads a block comment that holds another as one comment.
+		Lexical: descriptor.Lexical{EscapeStrings: true, ContinuedStrings: true, UnicodeStrings: true, NestedComments: true},
 		Reach:   postgresReach(),
 
 		// Database URLs and the Atlas contract: what internal/atlasurl and the

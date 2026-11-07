@@ -33,11 +33,13 @@ import (
 // TestViewLikesForCreateForDialect_MySQLFamilyStringsAndComments in
 // internal/deporder is the effect. SQLite states bracketed names, which no
 // switch gave it, so a name such as [a;b] is one token wherever SQLite text
-// is lexed.
+// is lexed. The PostgreSQL family states nested block comments, which no
+// switch read and which PostgreSQL 18.6, CockroachDB v26.3.5 and YugabyteDB
+// 2026.1.2 read as one comment.
 func TestDescriptors_LexicalFactsAgreeWithTheSwitchesTheyReplace(t *testing.T) {
-	postgresFamily := descriptor.Lexical{EscapeStrings: true}
+	postgresFamily := descriptor.Lexical{EscapeStrings: true, NestedComments: true}
 	want := map[string]descriptor.Lexical{
-		platform.Postgres:    {EscapeStrings: true, ContinuedStrings: true, UnicodeStrings: true},
+		platform.Postgres:    {EscapeStrings: true, ContinuedStrings: true, UnicodeStrings: true, NestedComments: true},
 		platform.CockroachDB: postgresFamily,
 		platform.YugabyteDB:  postgresFamily,
 		platform.MySQL: {

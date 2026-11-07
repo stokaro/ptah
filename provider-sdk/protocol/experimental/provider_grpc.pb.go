@@ -97,6 +97,7 @@ const (
 	Provider_ReportValues_FullMethodName              = "/ptah.provider.experimental.Provider/ReportValues"
 	Provider_ScanSQL_FullMethodName                   = "/ptah.provider.experimental.Provider/ScanSQL"
 	Provider_CompareChecks_FullMethodName             = "/ptah.provider.experimental.Provider/CompareChecks"
+	Provider_CompareViewQueries_FullMethodName        = "/ptah.provider.experimental.Provider/CompareViewQueries"
 )
 
 // ProviderClient is the client API for Provider service.
@@ -203,6 +204,9 @@ type ProviderClient interface {
 	// Contract 25.28. A host calls it only for an engine that lists
 	// schema.check-equivalence.
 	CompareChecks(ctx context.Context, in *CompareChecksRequest, opts ...grpc.CallOption) (*ComparedChecks, error)
+	// Contract 25.33. A host calls it only for an engine that lists
+	// schema.view-query-equivalence.
+	CompareViewQueries(ctx context.Context, in *CompareViewQueriesRequest, opts ...grpc.CallOption) (*ComparedViewQueries, error)
 }
 
 type providerClient struct {
@@ -993,6 +997,16 @@ func (c *providerClient) CompareChecks(ctx context.Context, in *CompareChecksReq
 	return out, nil
 }
 
+func (c *providerClient) CompareViewQueries(ctx context.Context, in *CompareViewQueriesRequest, opts ...grpc.CallOption) (*ComparedViewQueries, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ComparedViewQueries)
+	err := c.cc.Invoke(ctx, Provider_CompareViewQueries_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ProviderServer is the server API for Provider service.
 // All implementations must embed UnimplementedProviderServer
 // for forward compatibility.
@@ -1097,6 +1111,9 @@ type ProviderServer interface {
 	// Contract 25.28. A host calls it only for an engine that lists
 	// schema.check-equivalence.
 	CompareChecks(context.Context, *CompareChecksRequest) (*ComparedChecks, error)
+	// Contract 25.33. A host calls it only for an engine that lists
+	// schema.view-query-equivalence.
+	CompareViewQueries(context.Context, *CompareViewQueriesRequest) (*ComparedViewQueries, error)
 	mustEmbedUnimplementedProviderServer()
 }
 
@@ -1340,6 +1357,9 @@ func (UnimplementedProviderServer) ScanSQL(context.Context, *ScanSQLRequest) (*S
 }
 func (UnimplementedProviderServer) CompareChecks(context.Context, *CompareChecksRequest) (*ComparedChecks, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CompareChecks not implemented")
+}
+func (UnimplementedProviderServer) CompareViewQueries(context.Context, *CompareViewQueriesRequest) (*ComparedViewQueries, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CompareViewQueries not implemented")
 }
 func (UnimplementedProviderServer) mustEmbedUnimplementedProviderServer() {}
 func (UnimplementedProviderServer) testEmbeddedByValue()                  {}
@@ -2766,6 +2786,24 @@ func _Provider_CompareChecks_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Provider_CompareViewQueries_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CompareViewQueriesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).CompareViewQueries(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_CompareViewQueries_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).CompareViewQueries(ctx, req.(*CompareViewQueriesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Provider_ServiceDesc is the grpc.ServiceDesc for Provider service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -3084,6 +3122,10 @@ var Provider_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CompareChecks",
 			Handler:    _Provider_CompareChecks_Handler,
+		},
+		{
+			MethodName: "CompareViewQueries",
+			Handler:    _Provider_CompareViewQueries_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

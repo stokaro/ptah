@@ -55,6 +55,7 @@ func FromDescriptor(described descriptor.Dialect) lexer.Options {
 		ExecutableComments:             executableComments(lexical.ExecutableComments),
 		BracketIdentifiers:             lexical.BracketIdentifiers,
 		DisableHashComments:            lexical.HashNames,
+		NestedBlockComments:            lexical.NestedComments,
 	}
 }
 

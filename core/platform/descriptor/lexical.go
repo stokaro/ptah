@@ -64,6 +64,10 @@ type Lexical struct {
 	// HashNames reports that a name may begin with #, as the temporary tables
 	// #t and ##t of SQL Server do, so # opens no comment.
 	HashNames bool `json:"hash_names,omitempty"`
+	// NestedComments reports that a block comment may hold block comments,
+	// each closed by its own */, as on PostgreSQL. Without it a comment ends
+	// at the first */, which is the SQL standard.
+	NestedComments bool `json:"nested_comments,omitempty"`
 	// AlternativeQuoting reports that q'...' and nq'...' are string literals
 	// that choose their own closing delimiter, as Oracle's are. The shared
 	// lexer does not read them, so a scan that has to agree with the server
