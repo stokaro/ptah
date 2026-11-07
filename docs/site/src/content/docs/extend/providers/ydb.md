@@ -72,7 +72,18 @@ Set `provider_id` to `github.com/stokaro/ptah-ydb-plugin` and declare the canoni
 
 ## Verify the installation
 
-Given the reviewed manifest at `providers.json`, run:
+Check the copy that `ptah providers install ydb` stored. It needs no manifest:
+
+```console
+ptah providers check --provider-engine ydb --json
+```
+
+It checks the executable against the SHA-256 in the install record, starts
+it, and reports `"status": "compatible"`. With nothing installed it reports
+`provider_missing`.
+
+To check a manifest entry instead, given the reviewed manifest at
+`providers.json`, run:
 
 ```console
 ptah providers check --provider-config providers.json \

@@ -81,6 +81,14 @@ func TestReportCounts_HappyPath(t *testing.T) {
 		report(d, observed, &protocol.ModelMetric{Name: "retained_tables", Help: "Tables a read found with a retention"})
 		c.Assert(provider.ValidateDescription(d, nil), qt.IsNil)
 	})
+	t.Run("a report chooses an omission count and label", func(t *testing.T) {
+		c := qt.New(t)
+		d := reportDescription()
+		d.Engines[0].Reports[0].OmissionLabel = "retentions"
+		d.Engines[0].Reports[0].OmissionCountMetric = "retained_tables"
+		c.Assert(provider.ValidateDescription(d, nil), qt.IsNil)
+		c.Assert(provider.ValidateValueReports(d, reportRequest(), valueReports(2, 30)), qt.IsNil)
+	})
 	t.Run("a host that does not list the feature", func(t *testing.T) {
 		c := qt.New(t)
 		negotiated := provider.NegotiatedDescription(reportDescription(), nil)
@@ -142,6 +150,15 @@ func TestReportCountsDescription_FailurePath(t *testing.T) {
 		}, `.*report counts: a metric name is invalid or repeated`},
 		{"an empty help", func(d *protocol.Description) { metrics(d)[0].Help = "" },
 			`.*report counts: a metric's help is not one line`},
+		{"an omission label of two lines", func(d *protocol.Description) {
+			d.Engines[0].Reports[0].OmissionLabel = "retained\ntables"
+		}, `.*report counts: an omission label is not one line`},
+		{"an omission label with surrounding space", func(d *protocol.Description) {
+			d.Engines[0].Reports[0].OmissionLabel = " retentions"
+		}, `.*report counts: an omission label is not one line`},
+		{"an undeclared omission count metric", func(d *protocol.Description) {
+			d.Engines[0].Reports[0].OmissionCountMetric = "missing_tables"
+		}, `.*report counts: an omission count metric is not declared`},
 		{"a help of two lines", func(d *protocol.Description) {
 			metrics(d)[0].Help = "Tables\nwith a retention"
 		},
@@ -165,6 +182,18 @@ func TestReportCountsDescription_FailurePath(t *testing.T) {
 			other.Reports[0].Metrics = other.Reports[0].Metrics[:1]
 			d.Engines = append(d.Engines, other)
 		}, `.*report counts: engines that share a model report other metrics for it`},
+		{"engines that share a model choose different omission counts", func(d *protocol.Description) {
+			other := proto.CloneOf(d.Engines[0])
+			other.Id = "fixture2"
+			other.Reports[0].OmissionCountMetric = "retained_tables"
+			d.Engines = append(d.Engines, other)
+		}, `.*report counts: engines that share a model report other omission metadata for it`},
+		{"engines that share a model choose different omission labels", func(d *protocol.Description) {
+			other := proto.CloneOf(d.Engines[0])
+			other.Id = "fixture2"
+			other.Reports[0].OmissionLabel = "retentions"
+			d.Engines = append(d.Engines, other)
+		}, `.*report counts: engines that share a model report other omission metadata for it`},
 		{"engines that share a model and one reports it", func(d *protocol.Description) {
 			other := proto.CloneOf(d.Engines[0])
 			other.Id = "fixture2"

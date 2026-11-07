@@ -20,11 +20,15 @@ type MetricDefinition struct {
 
 // ReportDefinition names a feature for omission reports and declares its count
 // metrics. Metadata is frozen during registration, not supplied by a service
-// reply. DisplayName is plural, for example "changefeeds".
+// reply. DisplayName is plural, for example "changefeeds". OmissionLabel
+// overrides it in export diagnostics, and OmissionCountMetric selects a
+// declared metric to count omitted objects instead of counting one per value.
 type ReportDefinition struct {
-	Kind        Kind
-	DisplayName string
-	Metrics     []MetricDefinition
+	Kind                Kind
+	DisplayName         string
+	Metrics             []MetricDefinition
+	OmissionLabel       string
+	OmissionCountMetric string
 }
 
 // MetricCount is one declared metric's contribution from a captured value.

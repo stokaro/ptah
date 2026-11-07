@@ -45,8 +45,12 @@ func TestReporting_BatchesAndSnapshotsValuesAndMetadata(t *testing.T) {
 		return reply, nil
 	})
 	provider := reportingProvider(service)
+	provider.Reporting[0].Definitions[0].OmissionLabel = "second items"
+	provider.Reporting[0].Definitions[0].OmissionCountMetric = "second_count"
 	runtime := mustRuntime(c, provider)
 	provider.Reporting[0].Definitions[0].DisplayName = "mutated"
+	provider.Reporting[0].Definitions[0].OmissionLabel = "mutated"
+	provider.Reporting[0].Definitions[0].OmissionCountMetric = "mutated"
 	provider.Reporting[0].Definitions[0].Metrics[0].Name = "mutated"
 	provider.Reporting[0].Service = nil
 	values := []schemaext.Value{&conversionValue{ID: conversionSecond, Number: 3}, &conversionValue{ID: conversionFirst, Number: 7}, &conversionValue{ID: conversionSecond, Number: 5}}
@@ -57,6 +61,8 @@ func TestReporting_BatchesAndSnapshotsValuesAndMetadata(t *testing.T) {
 	c.Assert(received.Values, qt.HasLen, 3)
 	c.Assert(report.Definitions[0].Kind, qt.Equals, conversionFirst)
 	c.Assert(report.Definitions[1].DisplayName, qt.Equals, "second objects")
+	c.Assert(report.Definitions[1].OmissionLabel, qt.Equals, "second items")
+	c.Assert(report.Definitions[1].OmissionCountMetric, qt.Equals, "second_count")
 	c.Assert(report.Definitions[1].Metrics[0].Name, qt.Equals, "second_count")
 	c.Assert(report.Values, qt.DeepEquals, []schemaext.ValueReport{
 		{Kind: conversionSecond, Counts: []schemaext.MetricCount{{Name: "second_count", Value: 3}}},
@@ -90,6 +96,8 @@ func TestReporting_RegistrationRefusesConflictsAndInvalidMetadata(t *testing.T) 
 		{name: "empty label", change: func(p *engine.Provider) { p.Reporting[0].Definitions[0].DisplayName = "" }},
 		{name: "label control character", change: func(p *engine.Provider) { p.Reporting[0].Definitions[0].DisplayName = "first\nobjects" }},
 		{name: "unicode line separator", change: func(p *engine.Provider) { p.Reporting[0].Definitions[0].DisplayName = "first\u2028objects" }},
+		{name: "invalid omission label", change: func(p *engine.Provider) { p.Reporting[0].Definitions[0].OmissionLabel = "bad\nlabel" }},
+		{name: "undeclared omission count", change: func(p *engine.Provider) { p.Reporting[0].Definitions[0].OmissionCountMetric = "missing_count" }},
 		{name: "invalid metric name", change: func(p *engine.Provider) { p.Reporting[0].Definitions[0].Metrics[0].Name = "bad-name" }},
 		{name: "help control character", change: func(p *engine.Provider) { p.Reporting[0].Definitions[0].Metrics[0].Help = "bad\nhelp" }},
 		{name: "duplicate kind", change: func(p *engine.Provider) {
