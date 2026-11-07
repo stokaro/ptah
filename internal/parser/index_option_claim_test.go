@@ -45,9 +45,10 @@ func TestParse_AnIndexOptionClaimCarriesItsKey(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(claims, qt.DeepEquals, []sqlext.Claim{
-		{Pattern: "tag", Site: sqlext.IndexOption, Subject: "k", Text: "TAGGED x", Definition: 3, Offset: 41},
-		{Pattern: "tag", Site: sqlext.IndexOption, Subject: "ft", Text: "TAGGED y ", Definition: 4, IndexType: "FULLTEXT", Offset: 80},
-		{Pattern: "tag", Site: sqlext.IndexOption, Subject: "c", Text: "TAGGED z", Definition: 5, Offset: 118},
+		{Pattern: "tag", Site: sqlext.IndexOption, Subject: "k", Text: "TAGGED x", Definition: 3, Offset: 41, Written: sqlext.Position{Offset: 41, Line: 1, Column: 42}},
+		{Pattern: "tag", Site: sqlext.IndexOption, Subject: "ft", Text: "TAGGED y ", Definition: 4, IndexType: "FULLTEXT", Offset: 80,
+			Written: sqlext.Position{Offset: 80, Line: 1, Column: 81}},
+		{Pattern: "tag", Site: sqlext.IndexOption, Subject: "c", Text: "TAGGED z", Definition: 5, Offset: 118, Written: sqlext.Position{Offset: 118, Line: 1, Column: 119}},
 	})
 }
 

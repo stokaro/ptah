@@ -180,6 +180,10 @@ var hostFeatures = []string{
 	// storage, which every comparison leaves out, so a plan never drops it;
 	// see reader.reservedNames.
 	provider.ReservedSeedsFeature,
+	// A clause of CREATE TABLE an engine that reads the shared SQL grammar
+	// claims reaches the provider whole, and the facets it decodes are the
+	// table's; see Host.tableClauseExtension.
+	provider.SQLTableClausesFeature,
 	// Table preparation states the kind of each declared index, and the
 	// index rules compare it with the held index's method; see
 	// observedIndexRules.

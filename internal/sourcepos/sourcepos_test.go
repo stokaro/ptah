@@ -131,3 +131,35 @@ func TestShift_AChainStatingNoOffset(t *testing.T) {
 	c.Assert(sourcepos.Shift(cause, 10), qt.Equals, cause)
 	c.Assert(sourcepos.Shift(nil, 10), qt.IsNil)
 }
+
+func TestLinesLocateBytes(t *testing.T) {
+	tests := []struct {
+		name       string
+		text       string
+		offset     int
+		wantLine   int
+		wantColumn int
+	}{
+		{name: "an empty document", text: "", offset: 0, wantLine: 1, wantColumn: 1},
+		{name: "on the first line", text: "ab", offset: 1, wantLine: 1, wantColumn: 2},
+		{name: "after LF", text: "ab\ncd", offset: 4, wantLine: 2, wantColumn: 2},
+		{name: "after CRLF, which is one line ending", text: "ab\r\ncd", offset: 5, wantLine: 2, wantColumn: 2},
+		{name: "after a lone CR", text: "ab\rcd", offset: 4, wantLine: 2, wantColumn: 2},
+		{name: "on the LF of a CRLF, still the line it ends", text: "ab\r\ncd", offset: 3, wantLine: 1, wantColumn: 4},
+		{name: "a two-byte character is two columns", text: "заказ x", offset: 11, wantLine: 1, wantColumn: 12},
+		{name: "a four-byte character is four columns", text: "😀 x", offset: 5, wantLine: 1, wantColumn: 6},
+		{name: "the end, after a final line ending", text: "ab\n", offset: 3, wantLine: 2, wantColumn: 1},
+		{name: "past the end is the end", text: "ab\ncd", offset: 99, wantLine: 2, wantColumn: 3},
+		{name: "before the start is the start", text: "ab", offset: -1, wantLine: 1, wantColumn: 1},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			line, column := sourcepos.NewLines(test.text).LocateBytes(test.offset)
+
+			c.Assert(line, qt.Equals, test.wantLine)
+			c.Assert(column, qt.Equals, test.wantColumn)
+		})
+	}
+}
