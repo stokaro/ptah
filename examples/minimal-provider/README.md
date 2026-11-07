@@ -68,7 +68,9 @@ ptah schema plan --provider-config providers.json \
 ```
 
 The report says `"outcome": "no-changes"`. Run the module's own tests, which
-drive the services directly and through a provider process:
+drive the services directly and through a provider process, and run the SDK's
+conformance suite: offline against the server in process, and in full against
+the executable and a database file:
 
 ```bash
 GOWORK=off go test -race ./...

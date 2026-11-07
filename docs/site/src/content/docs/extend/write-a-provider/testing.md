@@ -282,9 +282,45 @@ negotiation and every service the description offers, without a database.
 
 From a test, `conformance.Run` reports each check as a subtest, and
 `conformance.Check` returns the report. The target is your executable,
-started as Ptah starts it, or your `runtime.Server` in the test process.
-Outside Go, or in a pipeline, the command runs the suite against an
-executable and prints the report as JSON:
+started as Ptah starts it, or your `runtime.Server` in the test process. The
+example runs both: the offline part in process with its unit tests, and the
+whole suite against its executable and a database file:
+
+```go title="integration/conformance_e2e_test.go"
+// The SDK's conformance suite checks the executable as Ptah starts it: the
+// handshake, the description and its negotiation, every service, the
+// offline calls below, and on a database file sessions, reads, locks, a
+// change applied and reverted, and a statement the database refuses.
+func TestConformance(t *testing.T) {
+	c := qt.New(t)
+	executable, digest := build(c)
+	_, location := address(c)
+	conformance.Run(t, conformance.Config{
+		Target:            conformance.Executable(executable, digest),
+		ProviderID:        backend.ProviderID,
+		RequiredFeatures:  hostRequires,
+		CredentialAddress: "tutorial://user:" + conformance.Canary + "@localhost/app.db",
+		Calls: []conformance.Call{
+			{Name: "render-create", Request: &protocol.RenderRequest{Engine: backend.Engine, Changes: []*protocol.Change{createNotes("create")}}},
+			{Name: "render-unsupported-type", Request: &protocol.RenderRequest{Engine: backend.Engine, Changes: []*protocol.Change{unsupportedColumn}}, Refused: true},
+			{Name: "analyze", Request: &protocol.AnalyzeSQLRequest{Engine: backend.Engine, Sources: []string{`CREATE TABLE "notes" ("id" INTEGER NOT NULL PRIMARY KEY);`}}},
+		},
+		Live: &conformance.Live{
+			Address: location,
+			Changes: []conformance.Change{{
+				Name:   "notes",
+				Apply:  conformance.Step{Render: &protocol.RenderRequest{Changes: []*protocol.Change{createNotes("create")}}},
+				Revert: conformance.Step{Render: &protocol.RenderRequest{Changes: []*protocol.Change{dropNotes("drop")}}},
+			}},
+			Refused: []*protocol.Unit{{ChangeId: "missing", Body: &protocol.Unit_Sql{Sql: `DROP TABLE "missing";`}}},
+		},
+	})
+}
+```
+
+A check that does not apply, such as transactions for a provider that offers
+none, is logged rather than skipped. Outside Go, or in a pipeline, the
+command runs the suite against an executable and prints the report as JSON:
 
 ```bash
 go run github.com/stokaro/ptah/provider-sdk/cmd/ptah-provider-conformance \
