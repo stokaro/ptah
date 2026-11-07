@@ -16,6 +16,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"ptah.run/internal/clirun"
+	"ptah.run/internal/providercatalog"
 )
 
 // refused is the address nothing listens on. A run against it reaches every
@@ -73,6 +74,11 @@ var addressForms = []addressForm{
 	{name: "ODBC string", address: "odbc:server=127.0.0.1;port=1;uid=app;pwd={" + password + "};database=shop"},
 }
 
+// mcpArgs start `ptah mcp` on the address where ADDRESS stands, with database
+// inspection allowed so a tool call connects.
+var mcpArgs = []string{"mcp", "--workspace", ".", "--dialect", "postgres", "--schema-dir", "models", "--migrations-dir", "native",
+	"--allow-database-inspect", "allow", "--database-url", "ADDRESS"}
+
 // verbs are the commands that name an address, each in the output it can report
 // an error in. ADDRESS stands where the address under test goes.
 var verbs = []struct {
@@ -100,7 +106,7 @@ var verbs = []struct {
 	{name: "schema test, source", target: clirun.Ptah, args: []string{"schema", "test", "--source-db-url", "ADDRESS", "--dir", "tests"}},
 	{name: "seed", target: clirun.Ptah, args: []string{"seed", "--db-url", "ADDRESS", "--env", "dev", "--seeds-dir", "seeds"}},
 	{name: "inference status", target: clirun.Ptah, args: []string{"inference", "status", "--db-url", "ADDRESS", "--release", "r1", "--run-id", "r1"}},
-	{name: "mcp, until its input ends", target: clirun.Ptah, args: []string{"mcp", "--workspace", ".", "--dialect", "postgres", "--schema-dir", "models", "--migrations-dir", "native", "--allow-database-inspect", "allow", "--database-url", "ADDRESS"}},
+	{name: "mcp, until its input ends", target: clirun.Ptah, args: mcpArgs},
 	{name: "compat migrate apply", target: clirun.Compat, args: []string{"migrate", "apply", "--url", "ADDRESS", "--dir", "file://migrations"}},
 	{name: "compat migrate status", target: clirun.Compat, args: []string{"migrate", "status", "--url", "ADDRESS", "--dir", "file://migrations", "--format", "{{ json . }}"}},
 	{name: "compat migrate diff", target: clirun.Compat, args: []string{"migrate", "diff", "x", "--to", "file://schema.sql", "--dev-url", "ADDRESS", "--dir", "file://migrations"}},
@@ -305,13 +311,72 @@ func TestProjectInspectPrintsNoPasswordE2E(t *testing.T) {
 	}
 }
 
+// providerOnlyEngine is the official engine whose URL scheme the address
+// carries when no built-in engine of this binary serves it, so only the
+// engine's provider can. The two MCP tests below split the address forms by it:
+// `ptah mcp` starts for an engine it serves by itself and refuses one only a
+// provider serves, so an engine that moves to its provider moves from one test
+// to the other with no edit here.
+func providerOnlyEngine(address string) (providercatalog.Entry, bool) {
+	scheme, _, isURL := strings.Cut(address, "://")
+	entry, providerOnly := providercatalog.ProviderOnly(scheme)
+	return entry, isURL && providerOnly
+}
+
 // formsTheServerStartsWith are the address forms of an engine this binary serves
-// by itself: for one only a provider serves, `ptah mcp` refuses to start, which
-// the verb table above measures.
+// by itself.
 func formsTheServerStartsWith() []addressForm {
 	return slices.DeleteFunc(slices.Clone(addressForms), func(form addressForm) bool {
-		return strings.HasPrefix(form.address, "ydb://") || strings.HasPrefix(form.address, "spanner://")
+		_, providerOnly := providerOnlyEngine(form.address)
+		return providerOnly
 	})
+}
+
+// formsOnlyAProviderServes are the address forms of an engine only its provider
+// serves.
+func formsOnlyAProviderServes() []addressForm {
+	return slices.DeleteFunc(slices.Clone(addressForms), func(form addressForm) bool {
+		_, providerOnly := providerOnlyEngine(form.address)
+		return !providerOnly
+	})
+}
+
+// noProviderInstalled is the environment with the user store in an empty
+// directory, so no provider a developer installed serves the run, and with no
+// PTAH_* variable configuring the command beside its flags. A later entry wins
+// over the inherited one of the same name.
+func noProviderInstalled(c *qt.C) []string {
+	c.Helper()
+	home := c.TempDir()
+	return append(slices.DeleteFunc(os.Environ(), func(entry string) bool { return strings.HasPrefix(entry, "PTAH_") }),
+		"HOME="+home, "XDG_CACHE_HOME="+home, "LocalAppData="+home)
+}
+
+// With no provider installed, `ptah mcp` refuses an address of an engine only a
+// provider serves before it opens the transport: it exits 2, writes nothing a
+// client would read, and names the command that installs the provider, without
+// any part of the password. The verb table holds the same run to the absence of
+// the password alone, which a refusal that said nothing would also pass.
+func TestMCPRefusesAnEngineWithNoProviderE2E(t *testing.T) {
+	c := qt.New(t)
+	forms := formsOnlyAProviderServes()
+	c.Assert(forms, qt.Not(qt.HasLen), 0)
+	for _, form := range forms {
+		t.Run(form.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := newWorkspace(c)
+			engine, _ := providerOnlyEngine(form.address)
+
+			got := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: dir, Env: noProviderInstalled(c), Timeout: 30 * time.Second},
+				withAddress(mcpArgs, form.address)...)
+
+			c.Assert(got.ExitCode, qt.Equals, 2, qt.Commentf("%s", got.Stderr))
+			c.Assert(got.Stdout, qt.Equals, "")
+			c.Assert(got.Stderr, qt.Contains, "Run `ptah providers install "+engine.EngineID+"`")
+			assertNoPassword(c, got.Stderr)
+			assertNoPasswordInFiles(c, dir)
+		})
+	}
 }
 
 // ptah mcp hands what a database refused to a model, which is the one reader that
@@ -323,9 +388,7 @@ func TestMCPPrintsNoPasswordE2E(t *testing.T) {
 			c := qt.New(t)
 			dir := newWorkspace(c)
 			// #nosec G204 -- the test runs the ptah binary clirun built from this checkout
-			cmd := exec.Command(binary,
-				"mcp", "--workspace", ".", "--dialect", "postgres", "--schema-dir", "models", "--migrations-dir", "native",
-				"--allow-database-inspect", "allow", "--database-url", form.address)
+			cmd := exec.Command(binary, withAddress(mcpArgs, form.address)...)
 			cmd.Dir = dir
 			// An exported PTAH_* variable would configure the server beside the flags.
 			cmd.Env = slices.DeleteFunc(os.Environ(), func(entry string) bool { return strings.HasPrefix(entry, "PTAH_") })
