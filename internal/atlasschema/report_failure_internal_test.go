@@ -9,9 +9,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/jackc/pgx/v5/pgconn"
-
 	qt "github.com/frankban/quicktest"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // A commit the server gave no answer to has no code, and the rollback tried after it

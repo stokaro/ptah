@@ -7,11 +7,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	qt "github.com/frankban/quicktest"
 	mysqldriver "github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5/pgconn"
 	mssql "github.com/microsoft/go-mssqldb"
-
-	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/renderer"

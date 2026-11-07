@@ -163,6 +163,11 @@ func TestProviderSchemaApply_ReportsWhereTheRunStopped(t *testing.T) {
 			wantOutcome: atlasschema.ApplyOutcomeFailed, wantError: "begin schema apply transaction: ",
 		},
 		{
+			name: "the lock is lost as the first unit leaves", spec: withLocks, fault: "lose-lock-before-write", args: savedArgs, mode: []string{"--tx-mode", "none"},
+			wantOutcome: atlasschema.ApplyOutcomeUnknown, wantError: "was lost while it was held",
+			wantFailure: &atlasschema.ApplyFailure{Statement: 1, Statements: 2},
+		},
+		{
 			name: "the lock is lost after every statement", spec: withLocks, fault: "lose-lock-on-check", args: savedArgs,
 			wantOutcome: atlasschema.ApplyOutcomeUnknown, wantError: "was lost while it was held", wantTables: []string{"items", "second"},
 		},

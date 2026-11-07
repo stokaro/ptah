@@ -6,11 +6,10 @@ import (
 	"testing"
 
 	clickhousedriver "github.com/ClickHouse/clickhouse-go/v2"
+	qt "github.com/frankban/quicktest"
 	mysqldriver "github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5/pgconn"
 	mssql "github.com/microsoft/go-mssqldb"
-
-	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/servercode"
 )

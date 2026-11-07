@@ -199,7 +199,7 @@ func (f *failureTarget) savedPlan(c *qt.C, desired string, statements ...string)
 	}
 	edited, err := atlasschema.MarshalPlanFile(plan)
 	c.Assert(err, qt.IsNil)
-	c.Assert(os.WriteFile(path, edited, 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(path, edited, 0o600), qt.IsNil) // #nosec G703 -- the path is under the test's own temporary directory.
 	return path
 }
 
@@ -480,9 +480,9 @@ func TestSchemaApplyFailureRecordOfACommitE2E(t *testing.T) {
 }
 
 // TestSchemaApplyNoFailureRecordBeforeDispatchE2E stops a run on a real server
-// before its first statement leaves. A preflight names a statement too, and a
-// stale plan refuses it. Neither reached the target, so neither is a failure the
-// database answered.
+// before its first statement leaves. A preflight and a rehearsal both name a
+// statement, and a server answers the rehearsal's, on the dev database. Nothing
+// reached the target, so none of them is a failure the target answered.
 func TestSchemaApplyNoFailureRecordBeforeDispatchE2E(t *testing.T) {
 	c := qt.New(t)
 	f := newFailureTarget(c, dbtarget.PostgreSQL)
@@ -499,6 +499,22 @@ func TestSchemaApplyNoFailureRecordBeforeDispatchE2E(t *testing.T) {
 		c.Assert(document.Outcome, qt.Equals, atlasschema.ApplyOutcomeRefused)
 		c.Assert(document.Refusal.Code, qt.Equals, atlasschema.RefusalTransactionPreflight)
 		c.Assert(compactRecord(c, document.Failure), qt.Equals, "")
+	})
+	t.Run("a rehearsal the dev database refused", func(t *testing.T) {
+		c := qt.New(t)
+		dev := newFailureTarget(c, dbtarget.PostgreSQL)
+		declared, notes := f.table("declared"), f.table("notes")
+		root := c.TempDir()
+		c.Assert(os.WriteFile(filepath.Join(root, "entities.go"), fmt.Appendf(nil, declaredRowsEntities, declared, declared, notes), 0o600), qt.IsNil)
+		c.Assert(os.WriteFile(filepath.Join(root, "rows.yaml"), fmt.Appendf(nil, "- id: 1\n  email: %[1]q\n- id: 2\n  email: %[1]q\n", failureRowValue), 0o600), qt.IsNil)
+
+		_, document := f.apply(c, "--root-dir", root, "--dev-url", dev.url)
+
+		c.Assert(document.Outcome, qt.Equals, atlasschema.ApplyOutcomeRefused)
+		c.Assert(document.Refusal.Code, qt.Equals, atlasschema.RefusalSimulationFailed)
+		c.Assert(document.Error.Message, qt.Contains, failureRowValue)
+		c.Assert(compactRecord(c, document.Failure), qt.Equals, "")
+		c.Assert(f.tableExists(c, notes), qt.IsFalse)
 	})
 	t.Run("a plan of a target that moved", func(t *testing.T) {
 		c := qt.New(t)

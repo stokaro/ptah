@@ -11,9 +11,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/jackc/pgx/v5/pgconn"
-
 	qt "github.com/frankban/quicktest"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // A run that cannot put a session's timeouts back after a statement failed reports
