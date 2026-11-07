@@ -195,6 +195,7 @@ func generateCommand(cmd *cobra.Command, opts *options) error {
 		if err != nil {
 			return fmt.Errorf("error rendering %s schema: %w", d, err)
 		}
+		reportRenderOmissions(stderr, selected.Name(), schemaSQL.Omissions)
 
 		if len(dialects) > 1 {
 			fmt.Fprintf(&rendered, "-- %s schema\n\n", d)
@@ -254,6 +255,36 @@ func reportDialectScopeOmissions(stderr io.Writer, db *schemamodel.Database, tar
 			target.Name(), kind, name, strings.Join(omitted.Dialects, ", "))
 	}
 	return nil
+}
+
+// reportRenderOmissions names, on stderr, every declaration the render of
+// this target went on without: a property the target keeps only in part, such
+// as the length of a VARCHAR(255) on an engine whose string type has none, or
+// an object the target has no statement for.
+//
+// The statements on stdout carry no trace of such a loss, except the comment a
+// PostgreSQL-family target writes beside a statement, and a target served by a
+// provider writes no comment at all. The note goes where the note for a scoped
+// object goes, for the reason that one does: stdout is DDL somebody pipes into
+// a database. Each note names the owning object, then the lost property and
+// its declared value where there is one, as `schema validate --no-skipped`
+// names them, then the omission's reason token and the remedy where the
+// target has one.
+func reportRenderOmissions(stderr io.Writer, target string, omissions []renderer.Omission) {
+	for _, omission := range omissions {
+		subject := omission.Kind + " " + omission.Name
+		if omission.Property != "" {
+			subject += ": " + omission.Property
+		}
+		if omission.Detail != "" {
+			subject += "=" + omission.Detail
+		}
+		line := fmt.Sprintf("note: %s: %s was skipped (%s)", target, subject, omission.Reason)
+		if omission.Remedy != "" {
+			line += "; " + omission.Remedy
+		}
+		fmt.Fprintln(stderr, line)
+	}
 }
 
 // labeler returns the label an owner states for its model.

@@ -3,6 +3,7 @@
 package providercli_test
 
 import (
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -12,6 +13,7 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/testutils"
 )
 
 // omittedLength is the omission the render-omissions fixture reports for a
@@ -67,4 +69,51 @@ func TestProviderRenderReportsWhatItLeavesOut(t *testing.T) {
 			c.Assert(rendered.Omissions, qt.DeepEquals, test.want)
 		})
 	}
+}
+
+// TestProviderRenderCommandNamesWhatItLeavesOut runs `ptah schema render`
+// against a provider engine whose string type has no length. The statement on
+// stdout writes the column as TEXT, and stderr names the length the render
+// left out, as it names what a built-in engine's render leaves out. A provider
+// that predates render.omissions renders the same statement, and the command
+// has nothing to name.
+func TestProviderRenderCommandNamesWhatItLeavesOut(t *testing.T) {
+	tests := []struct {
+		name        string
+		environment []string
+		want        []string
+	}{
+		{name: "a provider that reports omissions",
+			want: []string{"note: fixture: column accounts.email: type modifier=VARCHAR(255): length 255 was skipped (unsupported)"}},
+		{name: "a provider that predates the feature", environment: []string{"FIXTURE_RENDER_OMISSIONS=off"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			spec := fixtureReleaseSpec(c, "render-omissions", testutils.FixtureRelease{})
+			spec.Environment = append(spec.Environment, test.environment...)
+			f := newProviderCLI(c, spec)
+			f.declare(c, "tables:\n  accounts:\n    columns:\n      id: {type: INTEGER, primary: true, not_null: true}\n"+
+				"      email: {type: VARCHAR(255)}\n")
+
+			out, diagnostics, code := executeProviderCLI(c.Context(), []string{"schema", "render", "--provider-config", f.manifestPath,
+				"--dialect", "fixture", "--schema-file", f.schemaPath})
+
+			c.Assert(code, qt.Equals, 0, qt.Commentf("%s", diagnostics))
+			c.Assert(out, qt.Contains, `CREATE TABLE "accounts" ("id" INTEGER NOT NULL PRIMARY KEY, "email" TEXT);`)
+			c.Assert(renderNotes(diagnostics), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// renderNotes are the lines of a command's stderr that report a declaration
+// the render went on without.
+func renderNotes(stderr string) []string {
+	var notes []string
+	for line := range strings.SplitSeq(stderr, "\n") {
+		if strings.HasPrefix(line, "note: ") {
+			notes = append(notes, line)
+		}
+	}
+	return notes
 }

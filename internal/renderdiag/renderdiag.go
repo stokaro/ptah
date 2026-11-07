@@ -9,9 +9,10 @@
 // word, and both spellings exit 0 (stokaro/ptah#2976).
 //
 // A record here is what makes that answer readable by a program. It is not a
-// finding and it is not published: `ptah schema validate --no-skipped` maps a
-// record into the problem model that verb already reports, so this package adds
-// a vocabulary rather than a fifth analysis result shape.
+// finding: `ptah schema validate --no-skipped` maps a record into the problem
+// model that verb already reports, and `ptah schema render` names each one in
+// a note on stderr, so this package adds a vocabulary rather than a fifth
+// analysis result shape.
 //
 // A comment answered with a `-- text` line is recorded too. The server stores
 // none of it, so the render looks like it kept the text while the database has
