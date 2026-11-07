@@ -22,6 +22,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/matviewrefresh"
+	"ptah.run/internal/routinesetting"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/triggerdef"
 	"ptah.run/internal/viewcolumns"
@@ -114,12 +115,17 @@ func (p *parser) parseRoutine(block *hclsyntax.Block, blockType, kind string) er
 }
 
 // routineSettings reads a routine's `set` into the `name=value` spelling the
-// model holds, which is the one pg_proc.proconfig reports.
+// model holds, the value written in SQL.
 //
-// The attribute was accepted and never read, so a routine pinning its
-// search_path rendered without the SET clause and resolved unqualified names
-// through whatever the caller had set. On a SECURITY DEFINER routine that is
-// the whole hazard the clause exists to close, and the document reported exit 0
+// A document writes each value as the server keeps it in pg_proc.proconfig,
+// `work_mem = "8MB"` and `search_path = "\"$user\", public"`, which is the
+// spelling schema inspect writes. [routinesetting.ParseCatalog] quotes it as
+// pg_get_functiondef does: written back as it stands, `SET work_mem = 8MB` is
+// refused with "trailing junk after numeric literal".
+//
+// Without this reader a routine pinning its search_path renders without the SET
+// clause and resolves unqualified names through whatever the caller set. On a
+// SECURITY DEFINER routine that is the whole hazard the clause exists to close
 // (stokaro/ptah#3121).
 //
 // The order is sorted so one declaration renders one way. A map has none of its
@@ -145,7 +151,11 @@ func (p *parser) routineSettings(block *hclsyntax.Block, blockType string) ([]st
 		if err != nil {
 			return nil, p.blockError(block, "%s set %q is not a value SET takes", blockType, name)
 		}
-		settings = append(settings, name+"="+converted.AsString())
+		setting, err := routinesetting.ParseCatalog(name + "=" + converted.AsString())
+		if err != nil {
+			return nil, p.blockError(block, "%s set %q: %w", blockType, name, err)
+		}
+		settings = append(settings, setting)
 	}
 	return settings, nil
 }
