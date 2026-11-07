@@ -149,7 +149,7 @@ func (t *target) commonSchema(schema *schemamodel.Database) ([]ast.Node, error) 
 	if len(ordered) != len(creations) {
 		return nil, fmt.Errorf("provider schema contains duplicate tables")
 	}
-	before, after := commonObjectCreations(schema)
+	before, after := commonObjectCreations(schema, t.engine.GetId())
 	nodes := make([]ast.Node, 0, len(namespaces)+len(before)+len(ordered)+len(after))
 	nodes = append(append(nodes, namespaces...), before...)
 	for _, creation := range ordered {
@@ -177,7 +177,7 @@ func (t *target) commonSchema(schema *schemamodel.Database) ([]ast.Node, error) 
 // roles it joins, where the YDB engine built into Ptah at 74de0b65b wrote
 // `ALTER GROUP ... ADD USER` right after the CREATE USER statements. A
 // comment travels with the object it belongs to.
-func commonObjectCreations(schema *schemamodel.Database) (before, after []ast.Node) {
+func commonObjectCreations(schema *schemamodel.Database, dialect string) (before, after []ast.Node) {
 	for _, role := range schema.Roles {
 		before = append(before, modelast.FromRole(role))
 	}
@@ -189,7 +189,7 @@ func commonObjectCreations(schema *schemamodel.Database) (before, after []ast.No
 	for _, sequence := range schema.Sequences {
 		before = append(before, modelast.FromSequence(sequence))
 	}
-	after = viewReplacement{}.created(&difftypes.SchemaDiff{ViewsAdded: schema.Views})
+	after = viewReplacement{dialect: dialect}.created(&difftypes.SchemaDiff{ViewsAdded: schema.Views})
 	for _, view := range schema.MaterializedViews {
 		after = append(after, modelast.FromMaterializedView(view))
 	}

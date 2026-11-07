@@ -47,7 +47,7 @@ type commonObjectPlan struct {
 // cannot say.
 func (p commonPlanner) planCommonObjects(diff *difftypes.SchemaDiff) (commonObjectPlan, error) {
 	var plan commonObjectPlan
-	views := viewReplacement{inPlace: p.options.Capabilities.Has(capability.CreateOrReplaceView)}
+	views := viewReplacement{inPlace: p.options.Capabilities.Has(capability.CreateOrReplaceView), dialect: p.target}
 	semantics := diff.EffectiveIdentifierSemantics(p.target)
 	plan.before = droppedRelations(diff, views, semantics).revocations(diff, semantics)
 	for _, membership := range diff.RoleMembershipsRemoved {
@@ -128,6 +128,7 @@ func bindGrantDatabasePath(nodes []ast.Node, database string) {
 // dropping the view and creating it again.
 type viewReplacement struct {
 	inPlace bool
+	dialect string
 }
 
 // dropped drops each view the plan removes, dependents first. On a target
@@ -143,7 +144,7 @@ func (r viewReplacement) dropped(diff *difftypes.SchemaDiff) []ast.Node {
 			objects = append(objects, deporder.ViewLike{Name: change.ViewName, Body: change.PreviousBody})
 		}
 	}
-	ordered := deporder.ViewLikesForCreate(objects)
+	ordered := deporder.ViewLikesForCreateIn(objects, r.dialect, diff.EffectiveIdentifierSemantics(r.dialect))
 	slices.Reverse(ordered)
 	nodes := make([]ast.Node, 0, len(ordered))
 	for _, object := range ordered {
@@ -174,7 +175,7 @@ func (r viewReplacement) created(diff *difftypes.SchemaDiff) []ast.Node {
 		add(change.Desired.Name, node, change.Desired.DependsOn)
 	}
 	nodes := make([]ast.Node, 0, len(objects))
-	for _, object := range deporder.ViewLikesForCreate(objects) {
+	for _, object := range deporder.ViewLikesForCreateIn(objects, r.dialect, diff.EffectiveIdentifierSemantics(r.dialect)) {
 		nodes = append(nodes, views[object.Name])
 	}
 	return nodes

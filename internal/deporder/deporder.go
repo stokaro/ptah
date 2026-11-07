@@ -1148,13 +1148,14 @@ func spanIsCode(code []bool, start, end int) bool {
 // of the MySQL family and ClickHouse's # and //, and the backslash escapes of
 // its strings and of its quoted names. MySQL's catalog writes a view's
 // strings that way, as 'it\'s'. A target whose descriptor names a lexer of
-// its own is read by that lexer instead; see [lexerMasks].
+// its own, or whose provider supplies one, is read by that lexer instead;
+// see [lexerMasks].
 func sqlMasksForDialect(body, dialect string) sqlMasks {
 	described, _ := platform.Lookup(dialect)
 	lexical := described.Lexical
 	brackets := described.Quoting.Style == descriptor.QuoteBracket
-	if lexical.Lexer != "" {
-		masks := lexerMasks(body, dialectlexer.FromDescriptor(described))
+	if options := dialectlexer.Options(dialect); options.Scanner != nil {
+		masks := lexerMasks(body, options)
 		masks.bracketNames = brackets
 		return masks
 	}
