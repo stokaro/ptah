@@ -87,7 +87,18 @@ Set `provider_id` to `github.com/stokaro/ptah-spanner-plugin` and declare the ca
 
 ## Verify the installation
 
-Given the reviewed manifest at `providers.json`, run:
+Check the copy that `ptah providers install spanner` stored. It needs no manifest:
+
+```console
+ptah providers check --provider-engine spanner --json
+```
+
+It checks the executable against the SHA-256 in the install record, starts
+it, and reports `"status": "compatible"`. With nothing installed it reports
+`provider_missing`.
+
+To check a manifest entry instead, given the reviewed manifest at
+`providers.json`, run:
 
 ```console
 ptah providers check --provider-config providers.json \

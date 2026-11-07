@@ -152,6 +152,10 @@ func TestMissingOfficialProviderDiagnosticsAcrossNativeCommands(t *testing.T) {
 	}
 }
 
+// TestProviderSetupLinksMatchPublishedDocumentation follows each catalog
+// entry's setup link to the page the site publishes, and requires the page to
+// name the provider and to carry the install and the check of the installed
+// copy that TestProvidersInstallFromAMirror drives.
 func TestProviderSetupLinksMatchPublishedDocumentation(t *testing.T) {
 	c := qt.New(t)
 	site := filepath.Join("..", "..", "docs", "site")
@@ -172,5 +176,7 @@ func TestProviderSetupLinksMatchPublishedDocumentation(t *testing.T) {
 		content, err := os.ReadFile(page)
 		c.Assert(err, qt.IsNil)
 		c.Assert(string(content), qt.Contains, entry.ProviderID)
+		c.Assert(string(content), qt.Contains, "`ptah providers install "+entry.EngineID+"`")
+		c.Assert(string(content), qt.Contains, "```console\nptah providers check --provider-engine "+entry.EngineID+" --json\n```")
 	}
 }
