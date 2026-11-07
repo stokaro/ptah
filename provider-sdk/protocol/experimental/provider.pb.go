@@ -13980,8 +13980,9 @@ func (x *SQLSequence) GetComment() string {
 	return ""
 }
 
-// SQLRole carries no password: a secret in a schema file is not a declared
-// value the host compares.
+// SQLRole is a role a schema declares. It carries a password only in a
+// ReadSQLSchema reply under source.sql-role-passwords; a role a host sends
+// carries none.
 type SQLRole struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	Name        string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
@@ -13995,8 +13996,9 @@ type SQLRole struct {
 	// A principal of its own kind that never logs in and has members.
 	Group    bool     `protobuf:"varint,9,opt,name=group,proto3" json:"group,omitempty"`
 	MemberOf []string `protobuf:"bytes,10,rep,name=member_of,json=memberOf,proto3" json:"member_of,omitempty"`
-	// The declaration gives the role a password. The password never travels in
-	// a declaration. Contract 25.3, under schema.common-objects.
+	// The declaration gives the role a password. The password itself travels
+	// only in password, in a ReadSQLSchema reply under
+	// source.sql-role-passwords. Contract 25.3, under schema.common-objects.
 	PasswordDeclared bool `protobuf:"varint,11,opt,name=password_declared,json=passwordDeclared,proto3" json:"password_declared,omitempty"`
 	// The password a SQL schema document gives the role, as written: a literal,
 	// or a reference to an execution input. Set only in a ReadSQLSchema reply,

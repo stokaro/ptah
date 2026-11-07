@@ -189,6 +189,12 @@ func validateDeclaredRole(kinds commonKinds, role *protocol.SQLRole) error {
 	if strings.TrimSpace(role.GetName()) == "" {
 		return commonObjectError("a role needs a name")
 	}
+	// A password reaches a host only in a SQL reading (SQLRolePasswordsFeature);
+	// a role a host sends carries none, and a role change carries its password
+	// in RoleCreation or RoleAlteration.
+	if role.GetPassword() != "" {
+		return commonObjectError("role " + role.GetName() + " carries a password, which travels only in a SQL reading")
+	}
 	if err := validateMemberships(role.GetName(), role.GetMemberOf()); err != nil {
 		return err
 	}

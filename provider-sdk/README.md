@@ -1117,6 +1117,33 @@ prefix, and cancellation. The fixture's `sql-document` command declares the
 and the header kind `retention`. The process tests in `integration` read through
 it, and so does the host's adapter, which maps a reading into its common model.
 
+### SQL role passwords
+
+[ADR 0112](../docs/adr/0112-a-sql-reading-returns-the-password-a-document-gives-a-role.md)
+decides this feature. `source.sql-role-passwords` adds `SQLRole.password` to a
+`ReadSQLSchema` reply: the password a SQL schema document gives a role, as the
+document writes it, a literal or a reference to an execution input such as
+`$PTAH_SECRET_APP_PASSWORD`. The host holds it as it holds a password a Go,
+YAML or HCL source declares: a plan binds it at execution, under
+[password inputs](#password-inputs) where the engine takes them, and no
+output prints it. The provider and each engine whose reading returns
+passwords list this two-way feature, beside `schema.read-sql` and the
+common-object wire with roles.
+
+Under the feature a role carries a password exactly when it declares one
+(`password_declared`). Without it a reading says only that a role declares a
+password, as contract 25.32 does. The password travels in that reply and
+nowhere else: a role a host sends, in declared common objects, a preparation
+or a role change, carries none, and a role change carries its password in
+`RoleCreation` or `RoleAlteration`.
+
+The SDK refuses the engine's feature without the provider's, without SQL
+reading or without roles on the common-object wire; a reply's password for a
+target that does not list the feature, a password without `password_declared`
+or `password_declared` without a password under it, and a password that holds
+a control character or is not UTF-8; and a password in any role a host sends
+or a preparation returns. Its messages name the role and never the password.
+
 ## Contextual model comparison
 
 The optional `models.compare` service uses a `ModelComparer`. Each engine names
