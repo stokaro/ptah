@@ -21,6 +21,11 @@ type Rules struct {
 	Columns Columns
 	// ColumnService owns contextful column batches. It cannot coexist with Columns.
 	ColumnService ColumnService
+	// ColumnCollations reports that ColumnService answers [ColumnCollation]
+	// for every column pair, apart from the type, so a comparison asks it and
+	// records a changed collation as a change of its own. False asks no
+	// collation, and a service that compares one compares it inside the type.
+	ColumnCollations bool
 	// Checks decides whether a declared CHECK and the held one are one
 	// constraint.
 	Checks Checks

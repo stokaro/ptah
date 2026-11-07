@@ -185,6 +185,10 @@ var hostFeatures = []string{
 	// builds, a type that lists the values or a column under a CHECK, or is
 	// refused by table and column; see target.enumColumns.
 	provider.EnumColumnsFeature,
+	// A column comparison answers the collation apart from the type, and
+	// the comparison records a changed collation as a change of its own;
+	// see columnAspects and Rules.ColumnCollations.
+	provider.ColumnCollationsFeature,
 	// A read reports the ledger the engine's seed service keeps as reserved
 	// storage, which every comparison leaves out, so a plan never drops it;
 	// see reader.reservedNames.

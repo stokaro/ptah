@@ -26,11 +26,14 @@ type ColumnFacts struct {
 	Defaults map[columnsemantics.Column]*schemacomparison.ColumnDefaultReceipt
 }
 
-// ResolveColumnFacts invokes the exclusive owner after parent preparation and
-// before common comparison. Unknown or incomplete facts return no partial map.
+// ResolveColumnFacts invokes the exclusive owner, rules.ColumnService, after
+// parent preparation and before common comparison, and asks it the collation
+// of each pair when rules.ColumnCollations is set. Unknown or incomplete facts
+// return no partial map.
 func ResolveColumnFacts(ctx context.Context, desired *schemamodel.Database, current *catalog.Database, target string, semantics identifier.Semantics,
-	caps capability.Capabilities, prepared map[objectidentity.Key]schemapreparation.Table, service schemacomparison.ColumnService,
+	caps capability.Capabilities, prepared map[objectidentity.Key]schemapreparation.Table, rules schemacomparison.Rules,
 ) (ColumnFacts, error) {
+	service := rules.ColumnService
 	if service == nil {
 		return ColumnFacts{}, nil
 	}
@@ -41,7 +44,7 @@ func ResolveColumnFacts(ctx context.Context, desired *schemamodel.Database, curr
 	if err != nil {
 		return ColumnFacts{}, err
 	}
-	request := columnServiceRequest(desired, current, target, semantics, caps, prepared)
+	request := columnServiceRequest(desired, current, target, semantics, caps, prepared, collationAspects(rules))
 	result, err := service.CompareColumns(ctx, request.Clone())
 	if err != nil {
 		return ColumnFacts{}, err
@@ -69,8 +72,17 @@ func ResolveColumnFacts(ctx context.Context, desired *schemamodel.Database, curr
 	return facts, nil
 }
 
+// collationAspects are the aspects a request asks of each pair beyond the
+// shared ones: the collation where the owner answers it.
+func collationAspects(rules schemacomparison.Rules) []schemacomparison.ColumnAspect {
+	if rules.ColumnCollations {
+		return []schemacomparison.ColumnAspect{schemacomparison.ColumnCollation}
+	}
+	return nil
+}
+
 func columnServiceRequest(desired *schemamodel.Database, current *catalog.Database, target string, semantics identifier.Semantics,
-	caps capability.Capabilities, prepared map[objectidentity.Key]schemapreparation.Table,
+	caps capability.Capabilities, prepared map[objectidentity.Key]schemapreparation.Table, extra []schemacomparison.ColumnAspect,
 ) schemacomparison.ColumnsRequest {
 	request := schemacomparison.ColumnsRequest{Target: target, Identifiers: semantics, Capabilities: caps}
 	builder := objectidentity.NewBuilder(semantics)
@@ -109,6 +121,7 @@ func columnServiceRequest(desired *schemamodel.Database, current *catalog.Databa
 			if caps.Has(capability.SerialSequenceOptions) {
 				pair.Aspects = append(pair.Aspects, schemacomparison.ColumnSequence)
 			}
+			pair.Aspects = append(pair.Aspects, extra...)
 			capture.Pairs = append(capture.Pairs, pair)
 		}
 		request.Tables = append(request.Tables, capture)

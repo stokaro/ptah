@@ -83,6 +83,13 @@ for file-to-file comparison. Missing facts refuse the operation; they do not
 select a built-in parser or a live spelling probe. Domain identities and
 generated expressions remain separately owned.
 
+With `schema.column-collations` as well, the host also asks each pair's
+collation, and the provider answers it apart from the type: a column whose
+collation alone changes has a collation change, which a plan and a diff name as
+such, and no type change. Without the feature the host asks no collation, and a
+provider that compares one compares it inside the type, so the change reads as
+a type change.
+
 Providers can negotiate `schema.observed-columns` to return complete common
 column facts during inspection. The host preserves type metadata, default
 presence, generated expressions, identity and sequence settings, comments, and

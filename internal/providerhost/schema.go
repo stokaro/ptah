@@ -94,6 +94,9 @@ func (t *target) registration() engine.Target {
 	}
 	if slices.Contains(t.engine.GetFeatures(), provider.ColumnsFeature) {
 		result.Comparison.ColumnService = columnService{target: t}
+		// The engine answers the collation apart from the type; see
+		// columnAspects.
+		result.Comparison.ColumnCollations = t.offers(provider.ColumnCollationsFeature)
 	}
 	if t.offers(provider.CheckEquivalenceFeature) {
 		result.Comparison.Checks = checkService{target: t}
