@@ -375,6 +375,60 @@ func (r Releases) With(other Releases) Releases {
 	return merged
 }
 
+// TakenBy answers the removals of r on table that hold the name the own UNIQUE of
+// column takes on dialect, the name [Find] reads. A planner that writes them in the
+// statement giving column that UNIQUE frees the name and takes it at once, which
+// leaves a foreign key standing on one of them an index at every moment.
+func (r Releases) TakenBy(diff *difftypes.SchemaDiff, dialect string, table difftypes.TableDiff, column string) Releases {
+	if diff == nil || !columnkey.Named(dialect) {
+		return Releases{}
+	}
+	semantics := diff.EffectiveIdentifierSemantics(dialect)
+	name := ownKeyName(dialect, table, column)
+	on := func(other string) bool {
+		return semantics.QualifiedTableIdentityKey(other) == semantics.QualifiedTableIdentityKey(table.TableName)
+	}
+	var taken Releases
+	for _, info := range r.Constraints {
+		if on(info.TableName) && columnkey.Same(dialect, name, info.Name) {
+			taken.Constraints = append(taken.Constraints, info)
+		}
+	}
+	for _, ref := range r.Indexes {
+		if on(ref.TableName) && columnkey.Same(dialect, name, ref.Name) {
+			taken.Indexes = append(taken.Indexes, ref)
+		}
+	}
+	return taken
+}
+
+// Without is r less the removals other holds, in r's order.
+func (r Releases) Without(other Releases) Releases {
+	constraints, indexes := other.ConstraintSet(), other.IndexSet()
+	var kept Releases
+	for _, info := range r.Constraints {
+		if _, held := constraints[info.Identity]; !held {
+			kept.Constraints = append(kept.Constraints, info)
+		}
+	}
+	for _, ref := range r.Indexes {
+		if _, held := indexes[ref]; !held {
+			kept.Indexes = append(kept.Indexes, ref)
+		}
+	}
+	return kept
+}
+
+// ownKeyName is the name the own UNIQUE of column on table takes on dialect: the one
+// the comparison derived, or the first the server tries where the diff carries none.
+func ownKeyName(dialect string, table difftypes.TableDiff, column string) string {
+	if name := table.ColumnKeyNames[column]; name != "" {
+		return name
+	}
+	name, _ := columnkey.Name(dialect, bareTableName(table.TableName), column, nil)
+	return name
+}
+
 // keyNames answers whether a name on a table is one a column of that table
 // gains its own UNIQUE under, and nil where no column gains one.
 func keyNames(diff *difftypes.SchemaDiff, dialect string) func(table, name string) bool {
@@ -383,11 +437,7 @@ func keyNames(diff *difftypes.SchemaDiff, dialect string) func(table, name strin
 	for _, table := range diff.TablesModified {
 		key := semantics.QualifiedTableIdentityKey(table.TableName)
 		for _, column := range gainingColumns(table) {
-			name := table.ColumnKeyNames[column]
-			if name == "" {
-				name, _ = columnkey.Name(dialect, bareTableName(table.TableName), column, nil)
-			}
-			names[key] = append(names[key], name)
+			names[key] = append(names[key], ownKeyName(dialect, table, column))
 		}
 	}
 	if len(names) == 0 {
