@@ -3376,7 +3376,12 @@ such as a table's changefeeds, through the same strict decode callback a
 a SQL document carries. An `Extension` names its owner and targets and
 registers each piece of syntax as a `Pattern`: a `Site` where it stands, the
 words it opens with, the words that may or may not follow them, the words that
-end it, and whether a document that names no target consults it too.
+end it, and whether a document that names no target consults it too. An
+`Extension` may also state `Statements`, the `StatementFacts` of its targets'
+servers that the reader follows for a target no dialect descriptor describes,
+such as whether `DROP VIEW IF EXISTS` of a table's name is skipped; one owner
+states them for a target, `Set.Statements` answers them, and the zero value is
+the answer that accepts nothing a server could refuse.
 Matching is data, so the reader finds every span with its own lexer. It hands
 an owner's `Parser` every span of one document in one call and applies the
 `Value` it returns for each: an index or named child objects a table element

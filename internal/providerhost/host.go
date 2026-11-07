@@ -255,6 +255,11 @@ var hostFeatures = []string{
 	// claims reaches the provider whole, and the facets it decodes are the
 	// table's; see Host.tableClauseExtension.
 	provider.SQLTableClausesFeature,
+	// An engine that reads the shared SQL grammar states how its server
+	// treats a statement servers treat differently, such as DROP VIEW IF
+	// EXISTS of a table's name, and the SQL reader follows it; see
+	// statementFacts.
+	provider.SQLStatementFactsFeature,
 	// A release line of an engine linked into its provider names the version
 	// it links as its evidence, which `ptah providers check` reports; see
 	// Host.ReleaseLines.

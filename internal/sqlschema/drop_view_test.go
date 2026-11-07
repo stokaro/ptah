@@ -357,3 +357,55 @@ func TestNameFollower_ADropForgetsTheName(t *testing.T) {
 	c.Assert(follower.Follow(parseOne(c, "DROP VIEW v;", "postgres")).Declares, qt.IsFalse)
 	c.Assert(follower.Follow(parseOne(c, "CREATE TABLE v (id int);", "postgres")).Collisions, qt.HasLen, 0)
 }
+
+// statementOwners is a set whose one owner states the statement facts given
+// for the target given.
+func statementOwners(c *qt.C, target string, facts sqlext.StatementFacts) sqlext.Set {
+	c.Helper()
+	set, err := sqlext.NewSet(sqlext.Extension{Owner: "example.org/fixture", Targets: []string{target}, Statements: facts})
+	c.Assert(err, qt.IsNil)
+	return set
+}
+
+// An engine a provider serves has no descriptor, so its provider states what
+// its server does with DROP VIEW IF EXISTS of a table's name. Where it states
+// that the server does nothing, the read leaves the table and every view as
+// they are, as the Spanner emulator does.
+func TestReadWith_DropViewIfExists_FollowsTheOwnersFacts_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	owners := statementOwners(c, providerEngine, sqlext.StatementFacts{DropViewIfExistsSkipsOtherKinds: true})
+
+	database, _, err := sqlschema.ReadWith(c.Context(), []byte(viewFixture+"DROP VIEW IF EXISTS t;"), providerEngine, nil, sqlschema.Options{Owners: owners})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(database.Tables, qt.HasLen, 1)
+	c.Assert(database.Tables[0].Name, qt.Equals, "t")
+	c.Assert(viewNamesOf(database), qt.DeepEquals, []string{"v", "w"})
+}
+
+// The read refuses DROP VIEW IF EXISTS of a table's name where no owner of
+// the document's engine states that its server skips it, the statement has
+// no IF EXISTS, or a descriptor describes the dialect and says its server
+// refuses it.
+func TestReadWith_DropViewIfExists_FollowsTheOwnersFacts_FailurePath(t *testing.T) {
+	skips := sqlext.StatementFacts{DropViewIfExistsSkipsOtherKinds: true}
+	for _, test := range []struct {
+		name, dialect, owner, drop string
+		facts                      sqlext.StatementFacts
+	}{
+		{"an owner that states nothing", providerEngine, providerEngine, "DROP VIEW IF EXISTS t;", sqlext.StatementFacts{}},
+		{"an owner of another engine", providerEngine, "other", "DROP VIEW IF EXISTS t;", skips},
+		{"no IF EXISTS", providerEngine, providerEngine, "DROP VIEW t;", skips},
+		{"a dialect a descriptor describes", "postgres", "postgres", "DROP VIEW IF EXISTS t;", skips},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			owners := statementOwners(c, test.owner, test.facts)
+
+			database, _, err := sqlschema.ReadWith(c.Context(), []byte(viewFixture+test.drop), test.dialect, nil, sqlschema.Options{Owners: owners})
+
+			c.Assert(err, qt.ErrorMatches, `line 4, column 1: DROP VIEW t: the schema declares t as another kind of object`)
+			c.Assert(database.Tables, qt.HasLen, 0)
+		})
+	}
+}

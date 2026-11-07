@@ -42,6 +42,10 @@ type Document struct {
 	// read are attached to, and is nil when its read has no runtime; see
 	// [Options.Relations].
 	relations featureselect.RelationRuntime
+	// statements is what the owner of the file's dialect states about its
+	// server's statements, for a dialect no descriptor describes; see
+	// [sqlext.Extension.Statements].
+	statements sqlext.StatementFacts
 	// names follows the names the files declared so far in each namespace of a
 	// server that cuts long names, so a later file's name cut to an earlier
 	// one's is found; nil until a file of such a dialect is read.

@@ -391,6 +391,24 @@ type Extension struct {
 	// document's header whose kind is one of Header, and the objects the
 	// document declares. It is optional; without it the owner claims nothing.
 	Coverage func(request CoverageRequest) (schemaext.Coverage, error)
+	// Statements is what the owner states about how the server of Targets
+	// treats a statement a document of the shared grammar writes, which the
+	// reader follows for a target no dialect descriptor describes, such as
+	// an engine a provider serves. The zero value states nothing, and the
+	// reader then takes the answers that accept nothing a server could
+	// refuse. A target's facts come from one owner; see [Set.Statements].
+	Statements StatementFacts
+}
+
+// StatementFacts are an owner's answers to questions about the statements of a
+// schema document that servers answer differently. Each answer's zero value
+// is the one that accepts nothing a server could refuse.
+type StatementFacts struct {
+	// DropViewIfExistsSkipsOtherKinds reports that DROP VIEW IF EXISTS does
+	// nothing when another kind of object, such as a table, holds the name.
+	// False means the server refuses that statement, as it refuses one
+	// without IF EXISTS, and the reader refuses it too.
+	DropViewIfExistsSkipsOtherKinds bool
 }
 
 // CoverageRequest is the document's input to an owner's coverage claim.

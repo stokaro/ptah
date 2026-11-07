@@ -66,7 +66,7 @@ func applyViewDrop(ctx context.Context, database *schemamodel.Database, document
 	switch {
 	case target:
 		name = declared.names[index]
-	case !drop.skipsHolder(sourcePlatform) && holdsRelation(databases, name, sourcePlatform):
+	case !drop.skipsHolder(document, sourcePlatform) && holdsRelation(databases, name, sourcePlatform):
 		return fmt.Errorf("%s %s: the schema declares %s as another kind of object", drop.statement, drop.written, drop.written)
 	case drop.ifExists:
 		return nil
@@ -100,9 +100,17 @@ func (d viewDrop) reaches(declared declaredViewNames, index int, sourcePlatform 
 }
 
 // skipsHolder reports that the server skips this statement when it says IF EXISTS and
-// another kind of object holds the name.
-func (d viewDrop) skipsHolder(sourcePlatform string) bool {
-	return d.ifExists && factsOf(sourcePlatform).statements.DropViewIfExistsSkipsOtherKinds
+// another kind of object holds the name. A descriptor states it for its dialect; for a
+// dialect no descriptor describes, an engine a provider serves, the owner of the
+// document's dialect states it, and a dialect nobody states it for is refused.
+func (d viewDrop) skipsHolder(document *Document, sourcePlatform string) bool {
+	if !d.ifExists {
+		return false
+	}
+	if facts := factsOf(sourcePlatform); facts.name != "" {
+		return facts.statements.DropViewIfExistsSkipsOtherKinds
+	}
+	return document.statements.DropViewIfExistsSkipsOtherKinds
 }
 
 // hasDropForm reports whether the grammar of a dialect states DROP of kind.

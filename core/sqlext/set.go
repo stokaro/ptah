@@ -29,8 +29,9 @@ func None() Set {
 // owner or a target, an object or facet kind that is not valid, patterns at a
 // site that takes facets without facet kinds, a pattern without a name, a
 // known site or opening words, patterns without a parser,
-// two patterns of one extension under one name, and two patterns that one
-// document could consult at one site and that can match the same syntax.
+// two patterns of one extension under one name, two patterns that one
+// document could consult at one site and that can match the same syntax, and
+// two owners that state statement facts for one target.
 func NewSet(extensions ...Extension) (Set, error) {
 	set := Set{selected: true}
 	for _, extension := range extensions {
@@ -54,7 +55,45 @@ func NewSet(extensions ...Extension) (Set, error) {
 	if err := set.refuseSecondGrammar(); err != nil {
 		return Set{}, err
 	}
+	if err := set.refuseSecondStatementFacts(); err != nil {
+		return Set{}, err
+	}
 	return set, nil
+}
+
+// refuseSecondStatementFacts refuses two owners that state statement facts for
+// one target: an answer one of them leaves false could not be told from one it
+// does not state.
+func (s Set) refuseSecondStatementFacts() error {
+	owners := make(map[string]string)
+	for _, extension := range s.extensions {
+		if extension.Statements == (StatementFacts{}) {
+			continue
+		}
+		for _, target := range extension.Targets {
+			if owner, found := owners[target]; found {
+				return fmt.Errorf("%w: SQL statement facts of target %q are stated by %s and %s",
+					schemaext.ErrDuplicate, target, owner, extension.Owner)
+			}
+			owners[target] = extension.Owner
+		}
+	}
+	return nil
+}
+
+// Statements returns the statement facts the owner of target states, and the
+// zero facts for a target no owner states facts for or for a document that
+// names no target.
+func (s Set) Statements(target string) StatementFacts {
+	if target == "" {
+		return StatementFacts{}
+	}
+	for _, extension := range s.extensions {
+		if extension.Statements != (StatementFacts{}) && slices.Contains(extension.Targets, target) {
+			return extension.Statements
+		}
+	}
+	return StatementFacts{}
 }
 
 // refuseSecondGrammar refuses two grammars for one target, and owner patterns
