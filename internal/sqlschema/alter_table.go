@@ -12,6 +12,7 @@ import (
 	"ptah.run/internal/columnkey"
 	"ptah.run/internal/mysqlcheck"
 	"ptah.run/internal/mysqlname"
+	"ptah.run/internal/pgname"
 )
 
 // alterTarget is the table an ALTER TABLE names, found in this file or in an
@@ -218,7 +219,7 @@ func applyAlterColumn(target alterTarget, operation *ast.AlterColumnOperation) e
 	case ast.AlterColumnDropDefault:
 		field.Default, field.DefaultSet, field.DefaultExpr = "", false, ""
 	case ast.AlterColumnSetNotNull:
-		field.Nullable = false
+		return applySetNotNull(target, field, operation)
 	case ast.AlterColumnDropNotNull:
 		// PostgreSQL 18.6: `column "id" is in a primary key`.
 		if target.isPrimaryKeyColumn(field) {
@@ -233,6 +234,35 @@ func applyAlterColumn(target alterTarget, operation *ast.AlterColumnOperation) e
 		return fmt.Errorf("%w: ALTER TABLE %s ALTER COLUMN %s %s",
 			ErrUnmodeledStatement, target.written, operation.ColumnName, operation.Action)
 	}
+	return nil
+}
+
+// applySetNotNull makes a column NOT NULL, under the name the statement states.
+//
+// Measured on PostgreSQL 18.6 for `ADD CONSTRAINT name NOT NULL column`: a column NOT
+// NULL under another name answers `cannot create not-null constraint`, the name it
+// holds changes nothing, and a name another constraint of the table holds answers
+// `already exists`.
+func applySetNotNull(target alterTarget, field *schemamodel.Field, operation *ast.AlterColumnOperation) error {
+	if operation.NotNullConstraintName == "" {
+		field.Nullable = false
+		return nil
+	}
+	name := normalizeSQLIdentifier(target.sourcePlatform, operation.NotNullConstraintName)
+	held := field.NotNullConstraintName
+	if held == "" {
+		held = pgname.NotNull(target.table.Name, field.Name)
+	}
+	switch {
+	case (!field.Nullable || target.isPrimaryKeyColumn(field)) && name != held:
+		return fmt.Errorf("ALTER TABLE %s ADD CONSTRAINT %s NOT NULL %s: the column is NOT NULL under another name",
+			target.written, operation.NotNullConstraintName, operation.ColumnName)
+	case field.Nullable && target.holdsConstraint(name):
+		return fmt.Errorf("ALTER TABLE %s ADD CONSTRAINT %s NOT NULL %s: another constraint of the table holds the name",
+			target.written, operation.NotNullConstraintName, operation.ColumnName)
+	}
+	field.Nullable = false
+	field.NotNullConstraintName = name
 	return nil
 }
 

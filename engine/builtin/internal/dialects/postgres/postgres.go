@@ -1121,6 +1121,11 @@ func (r *Renderer) writeColumnOperation(tableName string, operation ast.AlterOpe
 		}
 		r.w.WriteLinef("%s;", dropSQL)
 	case *ast.AlterColumnOperation:
+		if op.NotNullConstraintName != "" {
+			r.w.WriteLinef("ALTER TABLE %s ADD CONSTRAINT %s NOT NULL %s;", table,
+				r.escapeIdentifier(op.NotNullConstraintName), r.escapeIdentifier(op.ColumnName))
+			return
+		}
 		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s %s;", table, r.escapeIdentifier(op.ColumnName), r.alterColumnAction(op))
 	}
 }
@@ -2323,6 +2328,11 @@ func (r *Renderer) writeColumnNullabilityChange(tableName string, op *ast.Modify
 		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s DROP NOT NULL;", r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name))
 	} else {
 		r.updateNullValuesBeforeNotNull(tableName, op)
+		if op.NotNullConstraintName != "" {
+			r.w.WriteLinef("ALTER TABLE %s ADD CONSTRAINT %s NOT NULL %s;", r.escapeQualifiedIdentifier(tableName),
+				r.escapeIdentifier(op.NotNullConstraintName), r.escapeIdentifier(column.Name))
+			return
+		}
 		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s SET NOT NULL;", r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name))
 	}
 }
@@ -2365,8 +2375,12 @@ func (r *Renderer) updateNullValuesBeforeNotNull(tableName string, op *ast.Modif
 		if notnullfill.DeclaresDefault(column) {
 			reason = "this plan does not fill it with the column's default"
 		}
-		r.w.WriteLinef("-- %s: SET NOT NULL fails if any row of %s holds NULL in %s; %s.",
-			r.dialectUpper, commentFragment(r.escapeQualifiedIdentifier(tableName)), commentFragment(r.escapeIdentifier(column.Name)), reason)
+		statement := "SET NOT NULL"
+		if op.NotNullConstraintName != "" {
+			statement = "ADD CONSTRAINT " + commentFragment(r.escapeIdentifier(op.NotNullConstraintName)) + " NOT NULL"
+		}
+		r.w.WriteLinef("-- %s: %s fails if any row of %s holds NULL in %s; %s.",
+			r.dialectUpper, statement, commentFragment(r.escapeQualifiedIdentifier(tableName)), commentFragment(r.escapeIdentifier(column.Name)), reason)
 		return
 	}
 	value := r.nullBackfillValue(column)

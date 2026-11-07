@@ -37,10 +37,19 @@ func notNullModification(column *ast.ColumnNode, omit bool) *ast.ModifyColumnOpe
 	}
 }
 
+// namedNotNullModification makes a column NOT NULL under the name nn.
+func namedNotNullModification(column *ast.ColumnNode) *ast.ModifyColumnOperation {
+	operation := notNullModification(column, false)
+	operation.NotNullConstraintName = "nn"
+	return operation
+}
+
 const (
-	fillReason       = "UPDATE rewrites the column's NULL rows with its declared default before SET NOT NULL"
-	afterFillReason  = "SET NOT NULL follows the UPDATE that fills the column's NULL rows"
-	setNotNullReason = "SET NOT NULL can fail when existing rows contain NULL"
+	fillReason           = "UPDATE rewrites the column's NULL rows with its declared default before SET NOT NULL"
+	afterFillReason      = "SET NOT NULL follows the UPDATE that fills the column's NULL rows"
+	setNotNullReason     = "SET NOT NULL can fail when existing rows contain NULL"
+	afterNamedFillReason = "ADD CONSTRAINT ... NOT NULL follows the UPDATE that fills the column's NULL rows"
+	namedNotNullReason   = "ADD CONSTRAINT ... NOT NULL can fail when existing rows contain NULL"
 	// modifyNotNullReason is what a MySQL-family MODIFY ... NOT NULL is
 	// reported with (stokaro/ptah#3669).
 	modifyNotNullReason = "MODIFY or CHANGE ... NOT NULL fails when a row holds NULL; " +
@@ -84,6 +93,24 @@ func TestAssessRendered_NullFillPair(t *testing.T) {
 				Reason:   setNotNullReason,
 				Statement: "-- POSTGRES: SET NOT NULL fails if any row of \"flags\" holds NULL in \"c\"; this plan does not fill it with the column's default.\n" +
 					`ALTER TABLE "flags" ALTER COLUMN "c" SET NOT NULL`,
+			}},
+		},
+		{
+			name:       "a name on the constraint, with a declared default that fills the NULL rows",
+			operations: []ast.AlterOperation{namedNotNullModification(ast.NewColumn("c", "INTEGER").SetNotNull().SetDefault("9"))},
+			want: []judged{
+				{Severity: safety.Warning, Reason: fillReason, Statement: fillStatement("c")},
+				{Severity: safety.Safe, Reason: afterNamedFillReason, Statement: `ALTER TABLE "flags" ADD CONSTRAINT "nn" NOT NULL "c"`},
+			},
+		},
+		{
+			name:       "a name on the constraint, with nothing to fill from",
+			operations: []ast.AlterOperation{namedNotNullModification(ast.NewColumn("c", "INTEGER").SetNotNull())},
+			want: []judged{{
+				Severity: safety.Warning,
+				Reason:   namedNotNullReason,
+				Statement: "-- POSTGRES: ADD CONSTRAINT \"nn\" NOT NULL fails if any row of \"flags\" holds NULL in \"c\"; the column declares no default to fill it with.\n" +
+					`ALTER TABLE "flags" ADD CONSTRAINT "nn" NOT NULL "c"`,
 			}},
 		},
 		{
@@ -157,6 +184,35 @@ func TestAssessRendered_NullFillPairIsPostgreSQLOnly(t *testing.T) {
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(judgedOf(assessments), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestAssessSQL_AddNotNull reads the two spellings of SET NOT NULL that PostgreSQL 18
+// adds as SET NOT NULL is read: each fails on a NULL row, measured on 18.6. The controls
+// are a CHECK that reads IS NOT NULL, and a column added with NOT NULL, which a rule of
+// its own judges.
+func TestAssessSQL_AddNotNull(t *testing.T) {
+	tests := []struct {
+		name string
+		sql  string
+		want safety.Severity
+	}{
+		{name: "a named constraint", sql: `ALTER TABLE t ADD CONSTRAINT "nn" NOT NULL "a";`, want: safety.Warning},
+		{name: "an unnamed constraint", sql: `ALTER TABLE t ADD NOT NULL a;`, want: safety.Warning},
+		{name: "beside another clause", sql: `ALTER TABLE t ADD COLUMN b int, ADD CONSTRAINT nn NOT NULL a;`, want: safety.Warning},
+		{name: "a CHECK that reads IS NOT NULL", sql: `ALTER TABLE t ADD CONSTRAINT ck CHECK (a IS NOT NULL);`, want: safety.Safe},
+		{name: "a nullable column named like the clause", sql: `ALTER TABLE t ADD COLUMN "NOT" int;`, want: safety.Safe},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			assessments, err := safety.AssessSQL(c.Context(), must.Must(builtin.New()), platform.Postgres, []string{test.sql})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(assessments, qt.HasLen, 1)
+			c.Assert(assessments[0].Severity, qt.Equals, test.want)
 		})
 	}
 }

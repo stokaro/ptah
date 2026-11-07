@@ -23,6 +23,11 @@ func drop(column string) *ast.AlterTableNode {
 	return alterT(&ast.DropColumnOperation{ColumnName: column})
 }
 
+// setNotNull is one statement on t that makes a column NOT NULL under the name.
+func setNotNull(column, name string) *ast.AlterTableNode {
+	return alterT(&ast.ModifyColumnOperation{Column: ast.NewColumn(column, "text").SetNotNull(), NotNullConstraintName: name})
+}
+
 // rename is one RENAME CONSTRAINT statement on t.
 func rename(from, to string) *ast.AlterTableNode {
 	return alterT(&ast.RenameConstraintOperation{From: from, To: to})
@@ -69,6 +74,8 @@ func statements(nodes []ast.Node) []string {
 				line += " drop " + op.ColumnName
 			case *ast.RenameConstraintOperation:
 				line += " rename " + op.From + " to " + op.To
+			case *ast.ModifyColumnOperation:
+				line += " set " + op.Column.Name + " as " + op.NotNullConstraintName
 			}
 		}
 		lines = append(lines, line)
@@ -96,6 +103,18 @@ func TestFree_HappyPath(t *testing.T) {
 			table: removed(holding("full_name", "n")),
 			nodes: []ast.Node{add("display_name", "n"), ast.NewComment("kept"), drop("full_name")},
 			want:  []string{"t: rename n to n__ptah_old", "t: add display_name as n", "other", "t: drop full_name"},
+		},
+		{
+			name:  "a column made NOT NULL takes the name of a column the plan removes later",
+			table: removed(holding("b", "n")),
+			nodes: []ast.Node{setNotNull("a", "n"), drop("b")},
+			want:  []string{"t: rename n to n__ptah_old", "t: set a as n", "t: drop b"},
+		},
+		{
+			name:  "a column made NOT NULL takes the name a renamed constraint holds until later",
+			table: renaming(difftypes.TableDiff{TableName: "t"}, "n", "m"),
+			nodes: []ast.Node{setNotNull("a", "n"), rename("n", "m")},
+			want:  []string{"t: rename n to n__ptah_old", "t: set a as n", "t: rename n__ptah_old to m"},
 		},
 		{
 			name:  "a renamed constraint takes the name of a column the plan removes later",
@@ -163,6 +182,18 @@ func TestFree_LeavesAPlanThatRuns_HappyPath(t *testing.T) {
 			table: removed(holding("full_name", "n")),
 			nodes: []ast.Node{alterT(drop("full_name").Operations[0], add("display_name", "n").Operations[0])},
 			want:  []string{"t: drop full_name add display_name as n"},
+		},
+		{
+			name:  "one statement drops the holder and then makes a column NOT NULL under its name",
+			table: removed(holding("b", "n")),
+			nodes: []ast.Node{alterT(drop("b").Operations[0], setNotNull("a", "n").Operations[0])},
+			want:  []string{"t: drop b set a as n"},
+		},
+		{
+			name:  "a column made NOT NULL leaves its name to the server",
+			table: removed(holding("b", "n")),
+			nodes: []ast.Node{setNotNull("a", ""), drop("b")},
+			want:  []string{"t: set a as ", "t: drop b"},
 		},
 		{
 			name:  "the holder's rename runs first",

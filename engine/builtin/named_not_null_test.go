@@ -1,6 +1,7 @@
 package builtin_test
 
 import (
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -204,6 +205,97 @@ func TestNamedNotNull_ATargetThatRecordsNothingRefusesEveryOtherName(t *testing.
 
 			c.Assert(renderErr, qt.ErrorMatches, ".*"+test.want+".*")
 			c.Assert(sql, qt.Equals, "")
+		})
+	}
+}
+
+// TestNamedNotNull_AModificationStatesItsName writes the constraint under the name the
+// operation carries, where SET NOT NULL would leave it to the server, and fills a NULL
+// row from the column's default ahead of it. A name on the column is not a request: a
+// read of PostgreSQL 18 puts one on every NOT NULL.
+func TestNamedNotNull_AModificationStatesItsName(t *testing.T) {
+	declaredDefault := ast.NewColumn("a", "TEXT").SetNotNull().SetDefault("x")
+	tests := []struct {
+		name string
+		op   *ast.ModifyColumnOperation
+		want string
+	}{
+		{
+			name: "a name",
+			op:   &ast.ModifyColumnOperation{Column: ast.NewColumn("a", "TEXT").SetNotNull(), NotNullConstraintName: "nn"},
+			want: `-- POSTGRES: ADD CONSTRAINT "nn" NOT NULL fails if any row of "widget" holds NULL in "a"; the column declares no default to fill it with.
+ALTER TABLE "widget" ADD CONSTRAINT "nn" NOT NULL "a";`,
+		},
+		{
+			name: "a name beside a declared default",
+			op:   &ast.ModifyColumnOperation{Column: declaredDefault, NotNullConstraintName: "nn"},
+			want: `UPDATE "widget" SET "a" = 'x' WHERE "a" IS NULL;
+ALTER TABLE "widget" ADD CONSTRAINT "nn" NOT NULL "a";`,
+		},
+		{
+			name: "a name a plan does not fill for",
+			op:   &ast.ModifyColumnOperation{Column: declaredDefault, NotNullConstraintName: "nn", OmitNullBackfill: true},
+			want: `-- POSTGRES: ADD CONSTRAINT "nn" NOT NULL fails if any row of "widget" holds NULL in "a"; this plan does not fill it with the column's default.
+ALTER TABLE "widget" ADD CONSTRAINT "nn" NOT NULL "a";`,
+		},
+		{
+			name: "no name, with one on the column",
+			op:   &ast.ModifyColumnOperation{Column: ast.NewColumn("a", "TEXT").SetNotNull().SetNotNullConstraintName("widget_a_not_null")},
+			want: `-- POSTGRES: SET NOT NULL fails if any row of "widget" holds NULL in "a"; the column declares no default to fill it with.
+ALTER TABLE "widget" ALTER COLUMN "a" SET NOT NULL;`,
+		},
+		{
+			name: "a column made nullable",
+			op:   &ast.ModifyColumnOperation{Column: ast.NewColumn("a", "TEXT"), NotNullConstraintName: "nn"},
+			want: `ALTER TABLE "widget" ALTER COLUMN "a" DROP NOT NULL;`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			r, err := builtin.NewRendererWithCapabilities("postgres", postgresCaps(true))
+			c.Assert(err, qt.IsNil)
+			test.op.HasChanged = true
+			test.op.Changed = ast.ColumnProperties{Nullability: true}
+
+			sql, renderErr := r.Render(&ast.AlterTableNode{Name: "widget", Operations: []ast.AlterOperation{test.op}})
+
+			c.Assert(renderErr, qt.IsNil)
+			c.Assert(strings.TrimSpace(sql), qt.Equals, test.want)
+		})
+	}
+}
+
+// TestNamedNotNull_AParsedClauseRendersAsItIsWritten renders what the parser reads of
+// `ADD CONSTRAINT name NOT NULL column`, which keeps the name, beside the action without
+// one.
+func TestNamedNotNull_AParsedClauseRendersAsItIsWritten(t *testing.T) {
+	tests := []struct {
+		name string
+		op   *ast.AlterColumnOperation
+		want string
+	}{
+		{
+			name: "a name",
+			op:   &ast.AlterColumnOperation{ColumnName: "a", Action: ast.AlterColumnSetNotNull, NotNullConstraintName: "nn"},
+			want: `ALTER TABLE "widget" ADD CONSTRAINT "nn" NOT NULL "a";`,
+		},
+		{
+			name: "no name",
+			op:   &ast.AlterColumnOperation{ColumnName: "a", Action: ast.AlterColumnSetNotNull},
+			want: `ALTER TABLE "widget" ALTER COLUMN "a" SET NOT NULL;`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			r, err := builtin.NewRendererWithCapabilities("postgres", postgresCaps(true))
+			c.Assert(err, qt.IsNil)
+
+			sql, renderErr := r.Render(&ast.AlterTableNode{Name: "widget", Operations: []ast.AlterOperation{test.op}})
+
+			c.Assert(renderErr, qt.IsNil)
+			c.Assert(strings.TrimSpace(sql), qt.Equals, test.want)
 		})
 	}
 }

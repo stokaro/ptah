@@ -86,7 +86,7 @@ var oldParserSwitches = map[string]descriptor.Grammar{
 			Match:       descriptor.Match{Clause: true},
 		},
 		Indexes:    descriptor.IndexGrammar{Alter: descriptor.AlterIndexRename},
-		AlterTable: descriptor.AlterTableGrammar{KeyUsingIndex: true},
+		AlterTable: descriptor.AlterTableGrammar{KeyUsingIndex: true, AddNotNull: true},
 		Statements: descriptor.StatementGrammar{Extensions: true, UserTypes: true, GrantTargetLists: true},
 		Routines: descriptor.RoutineGrammar{
 			Body: descriptor.RoutineQuotedBody, TriggerConditions: true, DefaultDoBlockLanguage: "plpgsql",

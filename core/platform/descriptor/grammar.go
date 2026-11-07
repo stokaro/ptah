@@ -287,6 +287,10 @@ type AlterTableGrammar struct {
 	// USING INDEX index makes an existing unique index the key, its columns
 	// the index's, as PostgreSQL writes it. Without it the clause is refused.
 	KeyUsingIndex bool `json:"key_using_index,omitempty"`
+	// AddNotNull reports that ADD [CONSTRAINT name] NOT NULL column makes a column
+	// NOT NULL, under that name, as PostgreSQL 18 writes it. Without it the clause
+	// is refused.
+	AddNotNull bool `json:"add_not_null,omitempty"`
 }
 
 const (

@@ -770,6 +770,20 @@ runs, and fails it with SQLSTATE 23502 if a row holds `NULL`.
   lists it as a warning. Update those rows in a migration of their own first,
   or declare a default.
 
+A declared name that is not the one the server would give takes the same steps and
+a different statement, because `SET NOT NULL` leaves the name to the server:
+
+```sql
+ALTER TABLE "t" ADD CONSTRAINT "nn" NOT NULL "a";
+```
+
+It fails on a `NULL` row as `SET NOT NULL` does, with the same SQLSTATE, and the
+safety report and lint rule `PG303` read it the same way. PostgreSQL 18 added the
+statement, and a target that keeps no name writes `SET NOT NULL` with a `WARNING`
+comment. A rename after `SET NOT NULL` would have to guess the name the server picked:
+it picks `t_a_not_null1` where another constraint holds `t_a_not_null`, and the
+rename would then move that other constraint's name.
+
 A plan that adds a `NOT NULL` column with no default writes the statement as it
 is, because it is valid on an empty table. On a table that holds a row it fails
 with SQLSTATE 23502, so a comment says so, on every verb that writes a plan and
