@@ -22,13 +22,15 @@ import (
 //
 // SQLite differs from the switch, deliberately: its descriptor states
 // bracketed names, which the switch did not give it, and which SQLite 3.51
-// reads (see internal/builtindialects/sqlite.go).
+// reads (see internal/builtindialects/sqlite.go). So does the PostgreSQL
+// family, whose descriptors state nested block comments, which no switch read
+// and which PostgreSQL 18.6, CockroachDB v26.3.5 and YugabyteDB 2026.1.2 read.
 var switchAnswers = map[string]lexer.Options{
 	platform.Postgres: {
-		StandardStrings: true, PostgreSQLEscapeStrings: true, PostgreSQLStringConstants: true,
+		StandardStrings: true, PostgreSQLEscapeStrings: true, PostgreSQLStringConstants: true, NestedBlockComments: true,
 	},
-	platform.CockroachDB: {StandardStrings: true, PostgreSQLEscapeStrings: true},
-	platform.YugabyteDB:  {StandardStrings: true, PostgreSQLEscapeStrings: true},
+	platform.CockroachDB: {StandardStrings: true, PostgreSQLEscapeStrings: true, NestedBlockComments: true},
+	platform.YugabyteDB:  {StandardStrings: true, PostgreSQLEscapeStrings: true, NestedBlockComments: true},
 	platform.MySQL: {
 		StandardStrings: true, BackslashEscapes: true,
 		RequireWhitespaceAfterDashDash: true, ExecutableComments: lexer.ExecutableCommentsMySQL,

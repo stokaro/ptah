@@ -194,7 +194,8 @@ func cockroachDB() descriptor.Dialect {
 		// read. CockroachDB 26.3, measured, refuses a -- comment between
 		// continued strings and has no U&'...' strings, so it keeps only the
 		// E'...' prefix.
-		Lexical: descriptor.Lexical{EscapeStrings: true},
+		// v26.3.5 reads a block comment that holds another as one comment.
+		Lexical: descriptor.Lexical{EscapeStrings: true, NestedComments: true},
 		Reach:   postgresReach(),
 
 		// Database URLs: what internal/atlasurl reads.

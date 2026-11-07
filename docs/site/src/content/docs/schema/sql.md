@@ -529,6 +529,11 @@ or `yugabytedb`, a comment, default or label written as a continued string or a
 `U&'...'` string is refused: CockroachDB applies a different continuation rule
 and has no `U&'...'` strings, and YugabyteDB has not been measured.
 
+On PostgreSQL, CockroachDB and YugabyteDB a block comment may hold another, as
+`/* a /* b */ c */`, and reads as one comment to its own `*/`, as the server
+reads it. The same holds for a migration body, which `migrations up` splits into
+statements by these rules. Every other dialect ends a comment at the first `*/`.
+
 **A version-guarded span is stepped over, except among a key's options, where
 it is read as options.** `mysqldump` writes ``KEY `k` (`a`) /*!80000 INVISIBLE
 */`` and ``FULLTEXT KEY `ft` (`bio`) /*!50100 WITH PARSER `ngram` */``, and
