@@ -620,10 +620,9 @@ ptah schema pull \
 ```
 
 The output file must not already exist. A second pull to the same path refuses
-with `error: schema artifact output already exists: <path>` and exits `2`, so a
-pull never overwrites a working copy. A reference the registry does not hold
-refuses with `error: pull ...: fetch OCI manifest: ...: not found` and exits `2`
-as well.
+with `error: schema artifact output already exists: <path>`. A reference the
+registry does not hold refuses with
+`error: pull ...: fetch OCI manifest: ...: not found`.
 
 An artifact that declares reference rows is written as two files: the canonical
 HCL at `--out`, and `managed-data.json` beside it. Both paths are printed. The
@@ -634,6 +633,20 @@ consumer has. Keep the pair together: `--schema-file` reads the rows from it,
 whether you name the HCL or the directory holding it. Neither file is written
 when the other cannot be, because a canonical HCL beside a missing row layer
 reads exactly like an artifact that declares no rows.
+
+### Pull without reading the schema
+
+`--skip-parse` is for a step that holds registry credentials and must not report
+what an artifact says. A schema from a newer Ptah then fails in the next command
+that reads the file.
+
+It skips the HCL parse and the check of the row layer against the `data` blocks.
+Every other check still runs, so the pull still refuses a layer media type this
+build does not know.
+
+`--out` has to end in `.hcl`. `managed-data.json` is always written beside it,
+as an empty layer for an artifact with no rows, so the next command refuses a
+published `data` block rather than opening the file it names.
 
 ### Exit codes
 

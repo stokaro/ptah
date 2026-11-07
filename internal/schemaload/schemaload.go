@@ -590,6 +590,11 @@ func (o Options) loadSchemaFile(ctx context.Context, schemaFile string) (*schema
 // and none are loaded, and a layer that does not agree with the declaration is
 // refused rather than skipped: a reader that ignores a row set it cannot
 // account for is the failure this exists to prevent.
+//
+// A layer's absence means a working copy, whose `data` blocks name files the
+// planners read. So `ptah schema pull --skip-parse`, which cannot see those
+// blocks, writes an empty layer for an artifact that carries no rows, and the
+// agreement below refuses a published block instead of following it.
 func attachMaterializedRows(db *schemamodel.Database, schemaPath string) error {
 	if db == nil || len(db.ManagedData) == 0 {
 		return nil

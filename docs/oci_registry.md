@@ -816,6 +816,24 @@ beside it, which is where the rows are. Both paths are printed, and
 `--schema-file` reads the pair whether it is given the HCL or the directory
 holding it.
 
+`--skip-parse` leaves out the HCL syntax check and the comparison of the row layer
+with the `data` blocks, for a step that holds registry credentials and must not
+report what an artifact says. The artifact type, format annotation, layer media
+types, sizes, digests and file names are still checked, so a layer media type
+this build does not know is still refused by the pull. Standard output adds a
+line saying the schema was not parsed, `--json` adds `"unparsed": true`, and a
+Git reference refuses the flag, because a Git pull parses nothing.
+
+`--out` has to end in `.hcl`, because the extension selects the parser that reads
+the file next. `managed-data.json` is always written beside it, holding
+`{"sets":[]}` when the artifact carries no rows, and a directory that already
+holds one refuses the pull. That file keeps a published `data` block from opening
+a file on the consumer's machine: without it, the reader takes the schema for a
+working copy and follows the block's `file`. With it, the next command refuses
+what a default pull refuses by reading the content, in the same words. The one
+exception is a row layer beside a schema with no `data` block, which no
+declaration asks for and the reader ignores.
+
 Use the OCI schema directly for live comparison or drift detection through the
 repeatable `--schema-file` input:
 

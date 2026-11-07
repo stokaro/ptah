@@ -82,7 +82,7 @@ func TestProviderInspectionCapturesObjectsAndFacets(t *testing.T) {
 		Payload  []byte
 	}
 	c.Assert(json.Unmarshal(facets[0].Value.Payload, &wire), qt.IsNil)
-	c.Assert(wire.Features, qt.DeepEquals, []string{"tables"})
+	c.Assert(wire.Features, qt.DeepEquals, []string{"schema.common-table-identity.v1"})
 	c.Assert(string(wire.Payload), qt.Equals, `{"seconds":9007199254740993}`)
 	c.Assert(connection.Close(), qt.IsNil)
 	host.Close()

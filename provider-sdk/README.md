@@ -625,61 +625,119 @@ modes, and unknown index namespaces are refused. The experimental contract
 supports exact and ASCII-insensitive comparison; it makes no claim about other
 collation semantics. Hosts must not infer these rules from a built-in target.
 
-The experimental application adapter requires `schema.common-table-identity.v1`
-for common table rendering, identity preparation, identity CREATE projection, and common SQL planning. This promises
-common table and column comparison semantics without implicit schema objects,
-undeclared facets, additional creation
-defaults, or type coercions. A provider must refuse declarations outside that
-contract. A missing feature does not select a built-in implementation. Providers
-without this feature can start, inspect, analyze SQL, and run reviewed SQL
-migrations through their declared session, history, lock, and metadata services.
-Provider-owned planning operations retain their separately negotiated contracts.
-
-Engines can instead advertise `schema.prepare-tables` and implement `TablePreparer`
-for offline preparation. The host sends complete declared and observed tables,
-explicit existence knowledge, identifier rules, capabilities, and selected
-features. Results may resolve declared table, index, primary-key, or constraint
-facets and column key membership. They cannot add kinds, change owners or target
-bindings, restore excluded properties, or alter captured observations. The host
-retains authored values separately. Complete batch receipts and cancellation
-checks prevent partial preparation.
-
-An engine cannot advertise both preparation policies. Owned preparation does not
-select identity CREATE projection or common SQL planning.
-
-`schema.project-table-creations` selects `TableCreationProjector` for offline
-CREATE prediction. Each input carries a complete declared table and the host's
-explicit inventory of eligible facet owners, including empty table, primary-key,
-index, and named-constraint slots. The reply supplies computed desired facets,
-optional observed overrides, and authoritative column key membership. Computed
-kinds may be new; owners and bindings cannot change, and exclusions cannot be
-restored. Observed overrides require a declared conversion for the same kind.
-Complete batches, immutable captures, and cancellation checks apply at both
-process boundaries. Predictions do not establish execution or inspection.
-
-The host obtains eligible owners from the same inventory used by core acceptance.
-Native CREATE planning gives the owner a captured declaration and an explicit
-graph step to replace. The common scheduler transfers dependencies to the accepted
-replacement and refuses any unclaimed CREATE. Preparation and prediction do not
-grant common SQL rendering, validation, or native ALTER and DROP planning.
-
 The application runtime requires namespaced provider IDs and model kinds, such
 as `github.com/stokaro/ptah-ydb-plugin` and
 `github.com/stokaro/ptah-ydb-plugin/column-properties`. Official manifests use
 the provider ID from the catalog; repository shorthand is not an alias.
-
-`AnalyzeSQL` accounts for every source byte with a statement span or whitespace.
-It preserves source tokens, canonical tokens, and line numbers. A provider refuses
-comments or syntax it cannot represent. `COMMON_DDL` permits the host's common DDL
-assessment; it does not mean safe. Native behavioral and destructive effects carry
-explicit reasons. `UNKNOWN` remains destructive for approval policy. Unknown
-numeric dispositions, incomplete batches, gaps, and overlapping spans are errors.
 
 A failed process launch or transport bootstrap wraps `runtime.ErrStartup`.
 A rejected contract version, service contract, or provider identity wraps
 `provider.ErrProtocol`; a contract version a host cannot work with is a
 `*provider.ContractError`. Cancellation and deadline errors preserve their context
 sentinels. A caller can distinguish these failures from a missing installation.
+
+## Table policies
+
+These features decide who interprets an engine's tables. `ValidateDescription`
+refuses an engine that lists `schema.common-table-identity.v1` beside
+`schema.prepare-tables`, `schema.project-table-creations` or `schema.validate`.
+A missing feature does not select a built-in implementation: the host refuses
+the operation.
+
+### Common table identity
+
+The host requires `schema.common-table-identity.v1` for common table rendering,
+identity preparation, identity `CREATE` projection and common SQL planning. The
+feature promises common table and column comparison semantics: no implicit
+schema objects, no undeclared facets, no additional creation defaults and no
+type coercions.
+
+The promise is the provider's to keep, so a provider refuses a declaration
+outside that contract. The host's common path refuses what it cannot carry: a
+field beyond the table's name, schema, primary key and dependencies and each
+column's name, type, nullability and key membership, and a composite primary
+key.
+
+Without the feature, a provider can start, inspect, analyze SQL and run reviewed
+SQL migrations through its declared session, history, lock and metadata services
+(`TestProviderMigrationsWithoutCommonTables`). `ptah schema plan` refuses it
+(`TestProviderWithoutCommonTablesNegotiatesAndRefusesSchemaPlan`), unless the
+engine owns the table lifecycle through the services below and a planning
+service with parent kinds. Provider-owned planning operations keep their
+separately negotiated contracts.
+
+### Table preparation
+
+`schema.prepare-tables` selects `TablePreparer` for offline preparation. The
+provider and the engine list the feature, and the provider also lists
+`values.normalize`.
+
+The host sends complete declared and observed tables, explicit existence
+knowledge, identifier rules, capabilities and selected features. A reply may
+resolve declared table, index, primary-key and constraint facets and column key
+membership. Under `schema.index-methods` it also states declared index kinds;
+see [Prepared index kinds](#prepared-index-kinds). A reply cannot add kinds,
+change owners or target bindings, restore excluded properties or alter captured
+observations. The host keeps the authored values separately.
+
+`ValidatePreparedTables` refuses an incomplete, reordered or unbound reply, and
+a failed batch exposes no prefix (`TestPreparationRefusesForgedResults`). Owned
+preparation does not select identity `CREATE` projection or common SQL planning.
+
+### Table creation projection
+
+`schema.project-table-creations` selects `TableCreationProjector` for offline
+`CREATE` prediction. The provider and the engine list the feature, and the
+provider also lists `values.normalize`.
+
+Each input carries a complete declared table and the host's explicit inventory
+of eligible facet owners, including empty table, primary-key, index and
+named-constraint slots. The host takes that inventory from the one its own
+acceptance of a prediction reads. The reply supplies computed desired facets,
+optional observed overrides and authoritative column key membership.
+
+Computed kinds may be new. Owners and bindings cannot change, and exclusions
+cannot be restored (`TestCreationPredictionRefusesForgedEffects`). An observed
+override requires a declared conversion for the same kind
+(`TestCreationObservationsRequireTargetConversion`). Complete batches, immutable
+captures and cancellation checks apply at both process boundaries. A prediction
+establishes neither execution nor inspection.
+
+Native `CREATE` planning gives the owner a captured declaration and an explicit
+graph step to replace. The common scheduler moves dependencies to the accepted
+replacement and refuses any unclaimed `CREATE`. Preparation and prediction do
+not grant common SQL rendering, validation, or native `ALTER` and `DROP`
+planning.
+
+## SQL analysis
+
+`AnalyzeSQL` is the `SQLAnalyzer` service under `sql.analyze`, which the host
+requires of every provider it starts. The reply states the owner's statement
+boundaries and tokens and a safety disposition for each statement. Unsupported
+syntax refuses the whole batch.
+
+The host reads the analysis through the engine's statement splitter, which
+migration lint and the safety assessment of a plan call. An engine that lists
+[`lint.migrations`](#migration-lint) is split by `SplitLintStatements` instead,
+and the host does not send it `AnalyzeSQL`.
+
+`ValidateSQLAnalysis` holds a reply to these rules at both process boundaries
+(`TestSQLAnalysisRequiresCompleteLosslessFraming`). It checks framing. Only the
+provider can establish that its tokens match what its database reads.
+
+- `complete` is set, and each source has one file, in request order.
+- Every source byte lies in a statement span or is whitespace. Spans are in
+  order, do not overlap and are not blank. A comment outside every span is a
+  gap, so a provider refuses comments or syntax it cannot represent.
+- `line` is the 1-based line of the span's start.
+- `words` is not empty, `source_words` has the same length, and `canonical` is
+  not blank.
+- `safety` names a disposition. `COMMON_DDL` carries no `reason`, and every other
+  disposition carries one.
+
+`COMMON_DDL` permits the host's common DDL assessment. It does not mean safe.
+Native behavioral and destructive effects carry explicit reasons. `UNKNOWN`
+counts as destructive for approval policy.
 
 ## Owner-defined value normalization
 
@@ -1392,6 +1450,111 @@ the engine and the host both list `database.dev-realms`.
 
 A scratch database for a test case is another realm: the host provisions one per
 case. The protocol therefore has no separate scratch-database operation.
+
+## Migration lint
+
+`lint.migrations` lets an engine's owner publish lint rules, split migration
+files with its own lexing and report findings for its rules. The provider and
+the engine list the feature, and `runtime.Server.Linter` implements
+`provider.Linter`. Every call is offline: no message names a session.
+
+An engine that does not list the feature publishes no rule, and the host splits
+its SQL with [`AnalyzeSQL`](#sql-analysis).
+
+### The rule catalog
+
+`Engine.lint_rules` declares the rules as data, so the host lists them without
+calling the service (`TestRuleCatalogReadsAProvidersPublishedRules`). An engine
+that lists the feature declares at least one rule.
+
+| Field | What it holds |
+| --- | --- |
+| `code` | The identifier a finding carries: an uppercase ASCII letter, then uppercase ASCII letters and digits. |
+| `title` | The rule's short name in reports. It is not blank. |
+| `severity` | The default severity: `INFO`, `WARNING` or `ERROR`. |
+| `applies_to_down` | Whether the rule also judges the rollback half of a migration. The request holds down files either way, and the host does not filter findings by this field, so the owner applies it. |
+| `subsumes` | The rules whose finding on the same statement this rule's finding replaces. |
+
+`ValidateDescription` refuses a rule that breaks these shapes, a rule that
+subsumes itself and a code declared twice in the description
+(`TestLintDescriptionDeclaresRules_FailurePath`). The host holds every
+provider's rules beside its own. It refuses to register a code another provider
+publishes. A lint run refuses a code one of the host's rules uses and a
+`subsumes` entry that names no rule.
+
+### How a run enables rules
+
+The host decides which rules a run checks, and `CheckLintRequest.codes` lists
+them. It leaves out a rule that `--disable` or `disabled-rules` in
+`.ptah-lint.yaml` turns off, and a rule whose code starts with `ON` unless the
+run is under `online: require`. A run that enables no rule of the engine, or
+selects no file, does not call the service.
+
+`ValidateCheckLintRequest` refuses a repeated code and a code the engine does
+not declare. The owner judges the enabled codes and no others.
+
+The request holds every file of the run, in the order the migrator applies them,
+with the statements of the run's split. That includes a file whose path the
+policy excludes and a file that suppresses a rule, because the host applies what
+depends on one file to the answer.
+
+`server_version` and `capabilities` are the target the host resolved. A dev
+database's session states them, or a server version selects a
+[release line](#release-lines). A run that names neither sends no capability. The
+owner judges with what it receives
+(`TestProviderLintReceivesTheTargetTheHostResolved`). `compatibility` is empty for
+Ptah's own surface and `atlas` for the Atlas-compatible one.
+
+A run that names no dialect does not reach `CheckLintMigrations`. The host split
+those files without a dialect, and that split need not be the owner's, so the
+host answers for the owner: a complete result and no finding
+(`TestProviderLintOfARunThatNamesNoTarget`). It calls `AnnotateLintStatements`
+instead (`TestMigrationsLintThroughAProviderWithoutADialect`).
+
+### What a complete result is
+
+Each call returns a complete batch or an error. An invalid reply, an error and a
+canceled call expose no part of a result at either process boundary
+(`TestProviderLintDiscardsCancellation`). The host never reads silence as a clean
+run.
+
+- A `SplitLintStatements` reply has one file per source, in request order. Each
+  statement's `sql` equals the source bytes from `start` to `end`. Statements are
+  in order and do not overlap, and `line` counts from 1. Each effect names a fact
+  that `judged` lists, and `judged` lists `LINT_FACT_REBUILD_DROP` and
+  `LINT_FACT_REBUILD_RENAME` together or neither. A statement carries at most one
+  `LINT_FACT_SAFETY_EFFECT`, with an impact and a reason, and only that fact
+  carries them (`TestLintSplit_FailurePath`).
+- An `AnnotateLintStatements` reply has one annotation per statement of `files`,
+  which the host split without a dialect. Each effect names a fact the request
+  asks about. `declined` marks a statement the owner's lexing would split
+  differently. It carries no effect, and the host reports it as unjudged rather
+  than as a statement without the fact (`TestLintAnnotation_FailurePath`).
+- A `CheckLintMigrations` reply sets `complete`, which says the owner judged every
+  enabled rule over every file. A reply that does not set it is refused, and one
+  that sets it with no finding is a clean answer. A finding names an enabled
+  code, a file of the request, a statement of that file or `-1` for the whole
+  file, and a message. A whole-file finding names no subject, and a subject is a
+  named `TABLE` or `COLUMN` (`TestLintCheck_FailurePath`).
+
+### What the host keeps
+
+The host keeps the policy over findings: output formats, severity thresholds and
+overrides, suppression directives, excluded paths, subsumption, version selection
+and the filter to the schemas a run reviews. A `LintFinding` carries no severity,
+title or line. The host reads the first two from the catalog and the line from
+the statement the finding names.
+
+The host also runs its own rules over the owner's split
+(`TestMigrationsLintOfTheNamedDialectReportsTheProvidersFindings`). They read
+`words`, `canonical` and `effects`. A suppression directive above a statement
+reaches the host through that statement's `comments`. No validator requires
+`words`, `canonical` or `comments`. A split that leaves them empty gives the
+host's rules no tokens to match and hides a directive from the host.
+
+[Statement facts for SQL lint](#statement-facts-for-sql-lint) and
+[Transaction owner of a lint check](#transaction-owner-of-a-lint-check) specify
+the features negotiated beside this one.
 
 ## Statement facts for SQL lint
 
@@ -2885,6 +3048,75 @@ inside a UTF-8 sequence, a token of no known kind, or a value on a token that
 is neither a string nor an identifier. `Server.Validate` refuses the feature
 without `Server.SQLScanner`, and the scanner without the feature.
 
+## Release lines
+
+`Engine.release_lines` names the server release lines a provider knows for an
+engine and says how much testing stands behind each one. An engine may declare
+none.
+
+| Field | What it holds |
+| --- | --- |
+| `line` | The name a server version selects, such as `26.2`. It holds no whitespace, and an engine declares it once. |
+| `label` | The preset name `ptah db capabilities` prints. Without a label it prints `line`. |
+| `support` | The support level, from the table below. |
+| `image` | The image that runs the line. The host reports it and never starts it. |
+| `unprobed` | Why the provider keeps the line without running it. |
+| `note` | The reason `ptah db capabilities` prints with the level. Without a note it prints the level's general meaning. For `CERTIFIED` that sentence names Ptah's own CI, so give a certified line a note. |
+| `capabilities` | The line's capability facts; see [Offline capabilities](#offline-capabilities). |
+
+| Level | What it claims | `image` | `unprobed` |
+| --- | --- | --- | --- |
+| `CERTIFIED` | Something runs against the line. | Required | Refused |
+| `LEGACY_TESTED` | Something runs against a line past its upstream end of life. | Required | Refused |
+| `BEST_EFFORT` | The provider keeps the line and runs nothing against it. | Only with `unprobed` | Optional |
+| `KNOWN_INCOMPATIBLE` | The line has a concrete technical incompatibility, which `note` can state. | Refused | Refused |
+
+`ValidateDescription` enforces the last two columns. It also refuses a line with
+no level, a malformed or repeated `line`, a blank `unprobed` and text that is not
+valid UTF-8 (`TestReleaseLines_FailurePath`). `Server.Validate`, the provider's
+`Describe` and `runtime.Start` all run it, so the host refuses such a description
+with `provider.ErrProtocol` before a session opens.
+
+The check reads the declaration. It confirms that a line claiming testing names
+an image, and it cannot see whether anything runs that image. `release_lines`
+reaches every host: only `capabilities` is negotiated.
+
+A level describes testing and not the server. No command reads it to decide
+whether to proceed, on `KNOWN_INCOMPATIBLE` as on the others. To refuse a server
+it cannot serve, a provider fails `Open`.
+
+The host reads the lines in these commands:
+
+- `ptah providers check --json` prints every line under `release_lines`, without
+  its `capabilities` (`TestProviderCheckListsReleaseLines`).
+- `ptah db capabilities` certifies a server against the line its version names:
+  `label` names the preset, and `support` and `note` give the certification
+  (`TestProviderDatabaseCapabilitiesReportTheDeclaredLine_HappyPath`). A version
+  that names no line stays best effort.
+- A `--server-version` selects the line's facts for an offline command, and so
+  does a `server-version` in `.ptah-lint.yaml` for a lint run.
+
+The last two need `engine.default-capabilities` on the engine, because the host
+registers a line with its facts, and only for an engine no built-in dialect
+describes. On an engine without the feature, `ptah db capabilities` matches no
+line and a `--server-version` is refused
+(`TestMigrationsLintThroughAProviderOfTheNamedDialect_FailurePath`).
+
+A server version selects the line it equals, or the longest line it starts with
+followed by a dot, so `26.2.1.14` selects `26.2`. When every line of an engine is
+a dotted number, such as `26` or `26.2`, the lines also form a ladder, and the
+host reads a version by its major and minor. A version is a release when it opens
+with a dotted number or is a build branch, `stable-<major>-<minor>[-<patch>]`, so
+`stable-25-4-1` selects `25.4`.
+
+A release that selects no line is planned with a line of the ladder, and the
+command warns: the newest when it is newer than every line, the oldest when it is
+older, and otherwise the line below it
+(`TestProviderRendersWithAReleaseLinesCapabilities_HappyPath_PlacesAReleaseOnTheLines`).
+A version the lines cannot place is refused, such as `trunk`, or any version that
+selects no line when the lines form no ladder
+(`TestResolve_AProvidersReleaseLine_FailurePath`).
+
 ## Offline capabilities
 
 [ADR 0070](../docs/adr/0070-a-provider-states-the-capabilities-its-engine-is-planned-with-offline.md)
@@ -2901,7 +3133,8 @@ line's, which the host plans with for a `--server-version` that names the
 line: one equal to `line`, or the longest line it starts with followed by a
 dot. A present false is an established answer, and an absent key is unknown,
 as in `Session.capabilities`. A command that connects plans with the session's
-facts.
+facts. [Release lines](#release-lines) says how a version selects a line and what
+else the host reads from one.
 
 `ValidateDescription` refuses the fields on an engine that does not list the
 feature, the feature on an engine with no default facts, on one with a

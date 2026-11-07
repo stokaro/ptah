@@ -262,10 +262,7 @@ func Pull(ctx context.Context, client *ociartifact.Client, reference string, voc
 	if client == nil {
 		return Artifact{}, fmt.Errorf("OCI client is required")
 	}
-	pulled, err := client.Pull(ctx, reference, ociartifact.PullOptions{
-		ExpectedArtifactTypes:   []string{ociartifact.SchemaArtifactType},
-		AcceptedLayerMediaTypes: acceptedLayerMediaTypes,
-	})
+	pulled, err := client.Pull(ctx, reference, pullOptions())
 	if err != nil {
 		return Artifact{}, err
 	}
@@ -275,10 +272,7 @@ func Pull(ctx context.Context, client *ociartifact.Client, reference string, voc
 // PullFrom retrieves and validates a canonical schema from target, reading its
 // header with vocabulary and its blocks with hcl as [Pull] does.
 func PullFrom(ctx context.Context, target oras.ReadOnlyTarget, selector string, vocabulary coverage.Vocabulary, hcl hclext.Set) (Artifact, error) {
-	pulled, err := ociartifact.PullFrom(ctx, target, selector, ociartifact.PullOptions{
-		ExpectedArtifactTypes:   []string{ociartifact.SchemaArtifactType},
-		AcceptedLayerMediaTypes: acceptedLayerMediaTypes,
-	})
+	pulled, err := ociartifact.PullFrom(ctx, target, selector, pullOptions())
 	if err != nil {
 		return Artifact{}, err
 	}
@@ -289,17 +283,9 @@ func PullFrom(ctx context.Context, target oras.ReadOnlyTarget, selector string, 
 // paths it created, the canonical HCL first. The schema is read with
 // vocabulary and hcl as [Pull] does.
 func PullToFile(ctx context.Context, reference, output string, plainHTTP bool, vocabulary coverage.Vocabulary, hcl hclext.Set) (Artifact, []string, error) {
-	if strings.TrimSpace(output) == "" {
-		return Artifact{}, nil, fmt.Errorf("schema artifact output file is required")
-	}
-	resolved, err := pathguard.ResolveCLIPath(output)
+	resolved, err := absentOutput(output)
 	if err != nil {
-		return Artifact{}, nil, fmt.Errorf("resolve schema artifact output: %w", err)
-	}
-	if _, err := os.Lstat(resolved); err == nil {
-		return Artifact{}, nil, fmt.Errorf("schema artifact output already exists: %s", resolved)
-	} else if !os.IsNotExist(err) {
-		return Artifact{}, nil, fmt.Errorf("stat schema artifact output: %w", err)
+		return Artifact{}, nil, err
 	}
 	client, err := ociartifact.NewClient(ociartifact.ClientOptions{PlainHTTP: plainHTTP})
 	if err != nil {
@@ -339,7 +325,13 @@ func Materialize(artifact Artifact, output string) ([]string, error) {
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, fmt.Errorf("read managed data layer: %w", err)
 	}
-	if err := writeExclusive(output, contents); err != nil {
+	return writeSchemaFiles(output, contents, managed)
+}
+
+// writeSchemaFiles writes the schema at output and, when managed is not nil,
+// the row layer beside it. Neither file survives a failure to write the other.
+func writeSchemaFiles(output string, schema, managed []byte) ([]string, error) {
+	if err := writeExclusive(output, schema); err != nil {
 		return nil, err
 	}
 	if managed == nil {
@@ -351,6 +343,35 @@ func Materialize(artifact Artifact, output string) ([]string, error) {
 		return nil, err
 	}
 	return []string{output, rows}, nil
+}
+
+// pullOptions is what a schema pull admits from a registry, whether or not it
+// goes on to read the schema: one artifact type and the layers this package
+// writes.
+func pullOptions() ociartifact.PullOptions {
+	return ociartifact.PullOptions{
+		ExpectedArtifactTypes:   []string{ociartifact.SchemaArtifactType},
+		AcceptedLayerMediaTypes: acceptedLayerMediaTypes,
+	}
+}
+
+// absentOutput resolves output and refuses a path that exists, before any
+// network access: an output that cannot be written is not worth a registry
+// round trip.
+func absentOutput(output string) (string, error) {
+	if strings.TrimSpace(output) == "" {
+		return "", fmt.Errorf("schema artifact output file is required")
+	}
+	resolved, err := pathguard.ResolveCLIPath(output)
+	if err != nil {
+		return "", fmt.Errorf("resolve schema artifact output: %w", err)
+	}
+	if _, err := os.Lstat(resolved); err == nil {
+		return "", fmt.Errorf("schema artifact output already exists: %s", resolved)
+	} else if !os.IsNotExist(err) {
+		return "", fmt.Errorf("stat schema artifact output: %w", err)
+	}
+	return resolved, nil
 }
 
 func prepare(ctx context.Context,
@@ -386,20 +407,27 @@ func prepare(ctx context.Context,
 	}, nil
 }
 
-func validatePulled(ctx context.Context, pulled ociartifact.Artifact, vocabulary coverage.Vocabulary, hcl hclext.Set) (Artifact, error) {
+// checkLayout answers whether a pulled artifact is laid out as a schema artifact,
+// reading no layer's content: the format the manifest declares, and exactly the
+// file names this package writes. It reports which of the optional layers are
+// present.
+//
+// It is the part of validating a pull that does not depend on which Ptah wrote
+// the schema, so an unparsed pull runs it too. Every name it admits is a constant
+// of this package, which is what keeps a write under one of them inside the
+// directory the caller chose.
+func checkLayout(pulled ociartifact.Artifact) (managedData, checks bool, err error) {
 	if pulled.Annotations[annotationFormat] != canonicalFormat {
-		return Artifact{}, fmt.Errorf("unsupported schema artifact format %q", pulled.Annotations[annotationFormat])
+		return false, false, fmt.Errorf("unsupported schema artifact format %q", pulled.Annotations[annotationFormat])
 	}
 	entries, err := fs.ReadDir(pulled.FileSystem, ".")
 	if err != nil {
-		return Artifact{}, fmt.Errorf("read schema artifact: %w", err)
+		return false, false, fmt.Errorf("read schema artifact: %w", err)
 	}
-	managedDataPresent := false
-	checksPresent := false
 	schemaPresent := false
 	for _, entry := range entries {
 		if entry.IsDir() {
-			return Artifact{}, fmt.Errorf(
+			return false, false, fmt.Errorf(
 				"schema artifact must contain only %s, %s and %s",
 				FileName, ManagedDataFileName, ChecksFileName,
 			)
@@ -408,15 +436,23 @@ func validatePulled(ctx context.Context, pulled ociartifact.Artifact, vocabulary
 		case FileName:
 			schemaPresent = true
 		case ManagedDataFileName:
-			managedDataPresent = true
+			managedData = true
 		case ChecksFileName:
-			checksPresent = true
+			checks = true
 		default:
-			return Artifact{}, fmt.Errorf("schema artifact carries unexpected file %s", entry.Name())
+			return false, false, fmt.Errorf("schema artifact carries unexpected file %s", entry.Name())
 		}
 	}
 	if !schemaPresent {
-		return Artifact{}, fmt.Errorf("schema artifact must contain %s", FileName)
+		return false, false, fmt.Errorf("schema artifact must contain %s", FileName)
+	}
+	return managedData, checks, nil
+}
+
+func validatePulled(ctx context.Context, pulled ociartifact.Artifact, vocabulary coverage.Vocabulary, hcl hclext.Set) (Artifact, error) {
+	managedDataPresent, checksPresent, err := checkLayout(pulled)
+	if err != nil {
+		return Artifact{}, err
 	}
 	data, err := fs.ReadFile(pulled.FileSystem, FileName)
 	if err != nil {
