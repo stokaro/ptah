@@ -112,6 +112,7 @@ a new record that names it, and its own status line is updated to point there.
 | [0100](0100-a-read-reports-the-unique-constraints-an-engine-keeps-apart-from-its-indexes.md) | A read reports the UNIQUE constraints an engine keeps apart from its indexes | Proposed |
 | [0101](0101-the-sdk-servers-refusal-of-a-request-is-not-the-providers.md) | The SDK server's refusal of a request is not the provider's | Proposed |
 | [0102](0102-the-provider-contract-freezes-with-ptah-1-0-and-keeps-major-25.md) | The provider contract freezes with Ptah 1.0 and keeps major 25 | Accepted |
+| [0107](0107-the-lock-check-of-an-engine-one-process-holds-contends-from-that-process.md) | The lock check of an engine one process holds contends from that process | Proposed |
 
 ## Writing one
 

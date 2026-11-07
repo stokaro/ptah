@@ -844,6 +844,15 @@ takes one lock from two sessions in two processes, begins and finishes
 transactions, applies and reverts the author's changes, runs units the
 database refuses, opens the credential address, and sends session-bound reads.
 
+An engine that one process holds at a time, such as one linked into its
+provider, keeps a second process out of the database, so a session of a
+second process cannot ask for the lock. `Live.InProcessLocks` takes the lock
+from two sessions of one process instead, and still requires the second to
+find it busy. On an executable or a wire target, where each connection is a
+process, the check then requires a second process to fail to open the
+database while the first holds a session of it
+([ADR 0107](../docs/adr/0107-the-lock-check-of-an-engine-one-process-holds-contends-from-that-process.md)).
+
 Across the run, a refusal or a result carries a reason only when both sides
 list `errors.reasons`, and then one reason of the valid shape; no reason,
 execution or transaction message or session field quotes the live address, a
@@ -871,8 +880,8 @@ go run github.com/stokaro/ptah/provider-sdk/cmd/ptah-provider-conformance \
 
 `-fixtures` names a JSON file with `calls` (a `name`, a protocol `method`, its
 `request` in the Protobuf JSON mapping and `refused`), `models`, and `live`
-with `schemas`, `lock_name`, `changes` (each `apply` and `revert` a `render`
-request or a list of `units`) and `refused` units.
+with `schemas`, `lock_name`, `in_process_locks`, `changes` (each `apply` and
+`revert` a `render` request or a list of `units`) and `refused` units.
 `PTAH_CONFORMANCE_ADDRESS` names the live database and
 `PTAH_CONFORMANCE_CREDENTIAL_ADDRESS` the credential address; neither is a
 flag, so a credential never appears in a process list. `models` as the first

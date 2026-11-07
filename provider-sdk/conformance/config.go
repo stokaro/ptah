@@ -76,6 +76,18 @@ type Live struct {
 	// LockName is the name the lock checks take. Empty means
 	// "ptah-conformance".
 	LockName string
+	// InProcessLocks makes the lock check contend for the lock from a
+	// second session of the provider process that holds it, instead of a
+	// session of a second process. It is for an engine whose database one
+	// process holds at a time, such as an engine linked into the provider:
+	// the engine keeps other processes out of the database, and the lock
+	// service keeps out the other sessions of the process that holds it. The
+	// check still requires the second session to find the held lock busy.
+	// Where each connection of the suite is a process of its own, as with an
+	// executable or a wire target, it also requires a second process to fail
+	// to open the database while the first session holds it, so the mode
+	// does not pass a provider whose lock another process could contend for.
+	InProcessLocks bool
 	// Changes are applied and reverted, one at a time.
 	Changes []Change
 	// Refused are units the database refuses, such as a statement naming a
