@@ -255,6 +255,11 @@ func (p *Parser) parseStatements() (*ast.StatementList, error) {
 			continue
 		}
 
+		if p.atDumpRestriction() {
+			p.skipLine()
+			continue
+		}
+
 		start := p.current.Start
 		stmt, err := p.parseStatement()
 		if err != nil {
@@ -701,6 +706,45 @@ func replacingRoutine(node ast.Node, err error) (ast.Node, error) {
 		routine.Replace = true
 	}
 	return node, nil
+}
+
+// readIndexOnly reads PostgreSQL's ONLY after CREATE INDEX ... ON, which creates
+// a partitioned table's index without the copies its partitions would get;
+// pg_dump attaches each copy after it. A table named only is read as the table.
+func (p *Parser) readIndexOnly() bool {
+	if !p.current.MatchIdentifierValue("ONLY") {
+		return false
+	}
+	if next := p.peekSignificantToken(); next.Type != lexer.TokenIdentifier || next.MatchIdentifierValue("USING") {
+		return false
+	}
+	p.advance()
+	p.skipWhitespace()
+	return true
+}
+
+// atDumpRestriction reports a `\restrict key` or `\unrestrict key` line at the
+// start of a statement. pg_dump writes the pair around a plain dump from its
+// August 2025 minor releases on, 17.6 and 18 among them: they are psql
+// meta-commands, which no server receives, and they declare nothing. Any other
+// meta-command reaches the statement grammar and is refused.
+func (p *Parser) atDumpRestriction() bool {
+	if p.midStatement || !p.current.MatchOperatorValue(`\`) {
+		return false
+	}
+	scan := *p.lexer
+	word := scan.NextToken()
+	return word.Type == lexer.TokenIdentifier && (word.Value == "restrict" || word.Value == "unrestrict")
+}
+
+// skipLine moves past the rest of the current line.
+func (p *Parser) skipLine() {
+	for !p.isAtEnd() {
+		p.advance()
+		if p.current.Type == lexer.TokenWhitespace && strings.ContainsAny(p.current.Value, "\r\n") {
+			return
+		}
+	}
 }
 
 // advance moves to the next token.
@@ -6591,6 +6635,8 @@ func (p *Parser) parseCreateIndexAfterKeyword(indexType string) (*ast.IndexNode,
 
 	p.skipWhitespace()
 
+	only := p.readIndexOnly()
+
 	// Get table name
 	tableName, err := p.parseTableName("table name")
 	if err != nil {
@@ -6655,6 +6701,7 @@ func (p *Parser) parseCreateIndexAfterKeyword(indexType string) (*ast.IndexNode,
 	index.Condition = condition
 	index.Concurrently = concurrently
 	index.IfNotExists = ifNotExists
+	index.Only = only
 	index.Comment = p.keyOptions.comment
 	index.Invisible = p.keyOptions.invisible
 	p.keyOptions.hold(&index.Facets, "index "+index.Name)

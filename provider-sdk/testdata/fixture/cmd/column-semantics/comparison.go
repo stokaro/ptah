@@ -25,6 +25,9 @@ func (*columns) CompareColumns(ctx context.Context, request *protocol.CompareCol
 				return nil, fmt.Errorf("incomplete parent capture")
 			}
 			column := &protocol.ComparedColumn{Subject: proto.CloneOf(pair.Subject), CurrentSubject: proto.CloneOf(pair.CurrentSubject)}
+			// A host that asks the collation gets it apart from the type;
+			// one that does not gets it inside the type.
+			collated := !slices.Contains(pair.Aspects, protocol.ColumnAspect_COLUMN_COLLATION)
 			for _, aspect := range pair.Aspects {
 				receipt := &protocol.ColumnAspectReceipt{Aspect: aspect}
 				switch aspect {
@@ -33,7 +36,13 @@ func (*columns) CompareColumns(ctx context.Context, request *protocol.CompareCol
 					if held == "" {
 						held = current.DataType
 					}
-					receipt.Receipt = &protocol.ColumnAspectReceipt_Difference{Difference: difference(canonicalType(held), canonicalType(desired.Type))}
+					heldType, declaredType := canonicalType(held), canonicalType(desired.Type)
+					if collated {
+						heldType, declaredType = withCollation(heldType, current.Collation), withCollation(declaredType, desired.Collation)
+					}
+					receipt.Receipt = &protocol.ColumnAspectReceipt_Difference{Difference: difference(heldType, declaredType)}
+				case protocol.ColumnAspect_COLUMN_COLLATION:
+					receipt.Receipt = &protocol.ColumnAspectReceipt_Difference{Difference: difference(current.Collation, desired.Collation)}
 				case protocol.ColumnAspect_COLUMN_DEFAULT:
 					held := current.GetDefaultExpression()
 					if value, ok := typedLiteral(held); ok {
@@ -74,6 +83,15 @@ func difference(current, desired string) *protocol.ColumnDifference {
 		relation = protocol.ColumnDifference_CHANGED
 	}
 	return &protocol.ColumnDifference{Relation: relation, Current: current, Desired: desired}
+}
+
+// withCollation writes a column type with its collation, as an engine that
+// compares collation inside the type spells it.
+func withCollation(columnType, collation string) string {
+	if collation == "" {
+		return columnType
+	}
+	return columnType + " COLLATE " + collation
 }
 
 func typedLiteral(value string) (string, bool) {

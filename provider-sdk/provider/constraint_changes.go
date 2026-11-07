@@ -19,16 +19,17 @@ import (
 // its own words, and the host adds no step of its own for it. Without it the
 // host refuses such a change by name rather than plan the table as if its
 // constraints matched. The provider and the engine list it; the engine needs
-// ObservedConstraintsFeature and a planning service with parent kinds, and
-// does not list CommonTableIdentityFeature, under which the host plans the
-// table's operations itself. Contract 25.28.
+// ObservedConstraintsFeature and a planning service that owns its tables,
+// with a parent kind or under TableOwnershipFeature, and does not list
+// CommonTableIdentityFeature, under which the host plans the table's
+// operations itself. Contract 25.28.
 const ConstraintChangesFeature = "planning.constraint-changes"
 
 func validateConstraintChangesFeature(description *protocol.Description, engine *protocol.Engine) error {
 	if !slices.Contains(engine.GetFeatures(), ConstraintChangesFeature) {
 		return nil
 	}
-	owns := slices.ContainsFunc(engine.GetPlanning(), func(assignment *protocol.ModelPlanning) bool { return len(assignment.GetParentKinds()) > 0 })
+	owns := slices.ContainsFunc(engine.GetPlanning(), ownsTableLifecycles)
 	if !slices.Contains(description.GetFeatures(), ConstraintChangesFeature) || !EngineOffers(description, engine.GetId(), ObservedConstraintsFeature) ||
 		!owns || slices.Contains(engine.GetFeatures(), CommonTableIdentityFeature) {
 		return fmt.Errorf("%w: constraint changes: the engine requires the provider's feature, observed constraints "+

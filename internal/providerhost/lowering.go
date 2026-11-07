@@ -23,8 +23,10 @@ import (
 // absence of an answer is not an engine without UNIQUE constraints.
 type uniqueIndexLowering struct{}
 
-// providerLowering is a provider engine's lowering before comparison: its
-// enum columns in the form the engine states (see target.enumColumns), then,
+// providerLowering is a provider engine's lowering before comparison: on an
+// engine that does not carry namespaces, the refusal of a declared schema
+// nothing would hand to the provider (see target.refuseUncarriedSchemas); its
+// enum columns in the form the engine states (see target.enumColumns); then,
 // for an engine that reports its indexes, its UNIQUE constraints as the
 // unique indexes of uniqueIndexLowering.
 type providerLowering struct {
@@ -35,6 +37,9 @@ type providerLowering struct {
 
 func (l providerLowering) LowerDesired(ctx context.Context, request schemapreparation.LoweringRequest) (*schemamodel.Database, error) {
 	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := l.target.refuseUncarriedSchemas(request.Desired, request.Current, request.Semantics); err != nil {
 		return nil, err
 	}
 	desired, err := l.target.enumColumns(request.Desired)

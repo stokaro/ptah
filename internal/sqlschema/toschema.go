@@ -668,7 +668,11 @@ func appendStatement(
 	case *ast.CreateTableNode:
 		return appendGuardedCreateTable(database, document, node, sourcePlatform)
 	case *ast.IndexNode:
-		database.Indexes = append(database.Indexes, ToIndex(node, sourcePlatform))
+		index := ToIndex(node, sourcePlatform)
+		database.Indexes = append(database.Indexes, index)
+		if node.Only {
+			document.noteOnlyIndex(index, node, declaringDatabases(database, document.base))
+		}
 	case *ast.CreateTypeNode:
 		appendCreateType(database, node, sourcePlatform)
 	case *ast.CreateFunctionNode:

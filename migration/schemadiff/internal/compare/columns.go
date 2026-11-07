@@ -526,6 +526,12 @@ func columnsWithDesiredDomains(
 	sameType := spelled && strings.EqualFold(spelling.Type, strings.TrimSpace(dbRawType))
 	declared := genCol
 	declared.Type = resolvedDeclaredType(genCol.Type, dialect, ctx.defaultIntSize)
+	// An owner that answers the collation leaves it out of the type, so a
+	// changed collation is a change of its own and never reads as a type
+	// change.
+	if receipt, owned := ctx.receipts[schemacomparison.ColumnCollation]; owned {
+		applyColumnDifference(colDiff.Changes, "collation", receipt.Difference)
+	}
 	if receipt, owned := ctx.receipts[schemacomparison.ColumnType]; owned {
 		applyColumnDifference(colDiff.Changes, "type", receipt.Difference)
 	} else if change := columnTypeChange(declared, dbCol, dbRawType, dialect, desiredDomains, ctx.rules); change != "" && !sameType {

@@ -26,7 +26,7 @@ import (
 // statement SQLite keeps, the spelling the fixture builds an index with.
 func (o *owner) Inspect(ctx context.Context, request *protocol.InspectRequest) (*protocol.Schema, error) {
 	for _, schema := range request.GetSchemas() {
-		if schema != "main" {
+		if schema != "main" && !o.otherSchemas {
 			return nil, fmt.Errorf("fixture supports only the main schema")
 		}
 	}
@@ -47,8 +47,12 @@ func (o *owner) Inspect(ctx context.Context, request *protocol.InspectRequest) (
 			result.Tables = append(result.Tables, table)
 		}
 		for _, selector := range request.GetSchemas() {
+			bound := &protocol.NamespaceComponent{}
+			if selector != "main" {
+				bound = &protocol.NamespaceComponent{Source: selector, Normalized: selector}
+			}
 			result.ScopeBindings = append(result.ScopeBindings, &protocol.InspectionScopeBinding{Selector: selector, Namespaces: []*protocol.ModelNamespace{{
-				Database: &protocol.NamespaceComponent{Source: access.Path, Normalized: access.Path}, Catalog: &protocol.NamespaceComponent{}, Schema: &protocol.NamespaceComponent{},
+				Database: &protocol.NamespaceComponent{Source: access.Path, Normalized: access.Path}, Catalog: &protocol.NamespaceComponent{}, Schema: bound,
 			}}})
 		}
 		return nil

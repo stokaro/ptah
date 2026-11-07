@@ -245,6 +245,9 @@ func convertStatements(
 	if err != nil {
 		return schemamodel.Database{}, err
 	}
+	if err := document.settleAttachedPartitions(&database); err != nil {
+		return schemamodel.Database{}, err
+	}
 	if err := document.applyOwnedComments(ctx, &database, dialect, owners); err != nil {
 		return schemamodel.Database{}, err
 	}

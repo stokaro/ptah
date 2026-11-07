@@ -94,6 +94,9 @@ func (t *target) registration() engine.Target {
 	}
 	if slices.Contains(t.engine.GetFeatures(), provider.ColumnsFeature) {
 		result.Comparison.ColumnService = columnService{target: t}
+		// The engine answers the collation apart from the type; see
+		// columnAspects.
+		result.Comparison.ColumnCollations = t.offers(provider.ColumnCollationsFeature)
 	}
 	if t.offers(provider.CheckEquivalenceFeature) {
 		result.Comparison.Checks = checkService{target: t}
@@ -106,9 +109,7 @@ func (t *target) registration() engine.Target {
 		result.Comparison.Indexes = observedIndexRules{methods: t.offers(provider.IndexMethodsFeature), facets: t.offers(provider.ObservedIndexFacetsFeature),
 			nulls: t.offers(provider.IndexNullsOrderFeature)}
 	}
-	if t.offers(provider.ObservedIndexesFeature) || t.offers(provider.EnumColumnsFeature) {
-		result.Lowering = providerLowering{target: t, uniqueIndexes: t.offers(provider.ObservedIndexesFeature)}
-	}
+	result.Lowering = providerLowering{target: t, uniqueIndexes: t.offers(provider.ObservedIndexesFeature)}
 	if t.offers(provider.IndexMethodsFeature) {
 		result.ReadBack = indexKindReadBack{}
 	}
@@ -133,9 +134,12 @@ func (t *target) commonDeclaration(declaration schemacapture.TableDeclaration) s
 }
 
 // assessesParents reports an engine with a planning service that owns table
-// settings, which the host hands every table it creates, changes or drops.
+// settings or, under provider.TableOwnershipFeature, the tables themselves,
+// which the host hands every table it creates, changes or drops.
 func (t *target) assessesParents() bool {
-	return slices.ContainsFunc(t.engine.GetPlanning(), func(assignment *protocol.ModelPlanning) bool { return len(assignment.GetParentKinds()) > 0 })
+	return slices.ContainsFunc(t.engine.GetPlanning(), func(assignment *protocol.ModelPlanning) bool {
+		return len(assignment.GetParentKinds()) > 0 || assignment.GetOwnsTables()
+	})
 }
 
 // rendersAuthoredSchemas reports an engine whose whole schema renders through

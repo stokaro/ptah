@@ -83,6 +83,13 @@ for file-to-file comparison. Missing facts refuse the operation; they do not
 select a built-in parser or a live spelling probe. Domain identities and
 generated expressions remain separately owned.
 
+With `schema.column-collations` as well, the host also asks each pair's
+collation, and the provider answers it apart from the type: a column whose
+collation alone changes has a collation change, which a plan and a diff name as
+such, and no type change. Without the feature the host asks no collation, and a
+provider that compares one compares it inside the type, so the change reads as
+a type change.
+
 Providers can negotiate `schema.observed-columns` to return complete common
 column facts during inspection. The host preserves type metadata, default
 presence, generated expressions, identity and sequence settings, comments, and
@@ -127,6 +134,14 @@ a predicate the server rewrote converges, and a changed predicate drops the
 index and builds it again. The plan creates the index with the predicate the
 source wrote. Without the feature the host compares predicates by its rules for
 CHECK expressions.
+
+A provider owns the table lifecycle through a planning service that has a
+parent kind, a model of a table setting, or, under `planning.table-ownership`,
+one that sets `owns_tables` and needs no such model. Ptah hands that service
+every table the plan creates, alters, rebuilds or drops. A service that owns
+tables answers one parent receipt of kind `table` for each, after the receipts
+of its parent kinds, and refuses a table with a parent diagnostic of that kind.
+An engine has at most one such service.
 
 A provider that owns the table lifecycle without
 `schema.common-table-identity.v1` also receives altered tables. The planning
@@ -505,6 +520,15 @@ a batch that captures no value. A provider without the feature has no entry for
 its kinds, and the report never counts them as zero. `provider-sdk/README.md`
 says what each count means.
 
+`models.declared-relations` tells a provider's object comparison every relation
+the desired schema declares: each table, view and materialized view, with its
+kind. A comparison of models that reference a table, such as a transfer into
+one, can then tell a declared table from an undeclared one, and one whose
+objects share a name space with the tables can refuse a collision. Ptah sends
+the tables only in a request whose `target_features` list the feature; a
+provider without the feature receives the declared views and materialized views
+alone.
+
 `planning.policy` hands the provider's planner the operator's planning policy:
 whether to rebuild a table, with the words a refusal names to say how to ask
 (`--allow-table-rebuild`, or `PTAH_ALLOW_TABLE_REBUILD=1` on `ptah-compat`),
@@ -552,6 +576,13 @@ the engine. The work is split this way:
   by rendering it, so the provider refuses there an object it cannot hold, and
   the error names the render.
 
+With `schema.view-check-options`, a declared view states the level of its
+check option. Ptah's view model holds no level, so a view with a check option
+reaches the provider as `CASCADED`, which is what `WITH CHECK OPTION` means
+without a level. A view a provider reads from SQL with `WITH LOCAL CHECK
+OPTION` is refused by name rather than kept as the stricter `CASCADED` check.
+Without the feature a `LOCAL` view is refused before it is sent.
+
 A planning request does not carry the declared and observed objects as
 context.
 
@@ -564,8 +595,17 @@ tables, views and sequences in it, and so is the schema of a table the plan
 creates in a schema nobody declared. A schema the declaration no longer names
 stays; a down file removes the schema its up file created, after everything
 in it, without `CASCADE`. A rehearsal on a dev database removes the schemas it
-created when it cleans up. Without the feature, a declared schema other than
-the engine's default is refused, since nothing could create it.
+created when it cleans up.
+
+Without the feature, nothing creates a declared schema. A schema that holds a
+table, view, sequence or provider object reaches the provider as the schema of
+that object, which is how a YDB directory comes to exist. A declared schema
+other than the engine's default and the session's, in which neither the
+declaration nor the read has an object, reaches the provider through nothing,
+so a comparison refuses it by name rather than report the database synced. A
+render from nothing, and the validation of an engine without `schema.validate`,
+which renders the declaration, refuse every declared schema other than the
+engine's default.
 
 `models.report-counts` lets an engine name the count metrics each value of one
 of its models contributes to, such as a topic and the number of its consumers.

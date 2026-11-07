@@ -238,6 +238,14 @@ func main() {
 		d.Engines[0].Features = append(d.Engines[0].Features, provider.ValidateSchemaFeature)
 		server.SchemaValidator = p
 	}
+	if os.Getenv("FIXTURE_TABLE_PROJECTIONS") != "" {
+		// The provider predicts the tables a plan creates, which a rollback
+		// plan asks of each table whose columns it changes.
+		d.SemanticIdentity += "-table-projections"
+		d.Features = append(d.Features, provider.ProjectTableCreationsFeature)
+		d.Engines[0].Features = append(d.Engines[0].Features, provider.ProjectTableCreationsFeature)
+		server.TableCreations = p
+	}
 	if p.transactionalDDL {
 		server.Transactions = p
 	}

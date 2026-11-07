@@ -2269,7 +2269,10 @@ Each pair names the delegated type, default, nullability, and sequence aspects.
 unchanged. Explicit nullability overrides descriptor inference while authored
 fields remain intact. Domain identities and generated expressions retain their
 separate owners; sequence start and increment are delegated only when the target
-supports them. Sequence restart remains an operation operand.
+supports them. Sequence restart remains an operation operand. With
+`Rules.ColumnCollations` set, each pair also names the `ColumnCollation`
+aspect, and the owner answers the collation apart from the type, so a changed
+collation is a change of its own.
 
 `ColumnDefaultsRequest` includes every observed column, including columns needed
 for rollback after removal. `AcceptColumnDefaults` distinguishes absent defaults,

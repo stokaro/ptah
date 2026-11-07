@@ -9,9 +9,10 @@ import (
 	"ptah.run/internal/parser"
 )
 
-// PostgreSQL renames an index with ALTER INDEX, which names the index alone:
-// bare, schema-qualified, or quoted. Each form is read into the node that
-// carries it, the spelling kept for the reader to fold.
+// PostgreSQL and YugabyteDB rename an index with ALTER INDEX, which names the
+// index alone: bare, schema-qualified, or quoted, and attach a partition's copy
+// of an index with it. Each form is read into the node that carries it, the
+// spelling kept for the reader to fold.
 func TestParse_AlterIndex_HappyPath(t *testing.T) {
 	rows := []struct {
 		name string
@@ -33,21 +34,28 @@ func TestParse_AlterIndex_HappyPath(t *testing.T) {
 			sql:  `ALTER INDEX "App"."Ix" RENAME TO "Other";`,
 			want: ast.AlterIndexNode{Name: `"App"."Ix"`, NewName: `"Other"`},
 		},
+		{
+			name: "a partition's copy attached",
+			sql:  `ALTER INDEX public.events_note ATTACH PARTITION public."Events 2026_note_idx";`,
+			want: ast.AlterIndexNode{Name: "public.events_note", AttachPartition: `public."Events 2026_note_idx"`},
+		},
 	}
 	for _, row := range rows {
-		t.Run(row.name, func(t *testing.T) {
-			c := qt.New(t)
+		for _, dialect := range []string{"postgres", "yugabytedb"} {
+			t.Run(dialect+"/"+row.name, func(t *testing.T) {
+				c := qt.New(t)
 
-			statements, err := parser.NewParser(row.sql, parser.WithDialect("postgres")).Parse()
+				statements, err := parser.NewParser(row.sql, parser.WithDialect(dialect)).Parse()
 
-			c.Assert(err, qt.IsNil)
-			c.Assert(statements.Statements, qt.DeepEquals, []ast.Node{&row.want})
-		})
+				c.Assert(err, qt.IsNil)
+				c.Assert(statements.Statements, qt.DeepEquals, []ast.Node{&row.want})
+			})
+		}
 	}
 }
 
-// An ALTER INDEX action other than RENAME TO changes nothing a schema file
-// holds, so it is refused by name, and so is a qualified new name, which
+// An ALTER INDEX action other than RENAME TO and ATTACH PARTITION changes
+// nothing a schema file holds, so it is refused by name, and so is a qualified new name, which
 // PostgreSQL's grammar does not take. On another engine the statement stays
 // unsupported: MySQL has no ALTER INDEX, and the engines that do are not
 // measured.
@@ -61,12 +69,17 @@ func TestParse_AlterIndex_FailurePath(t *testing.T) {
 		{
 			name: "SET TABLESPACE", dialect: "postgres",
 			sql:     "ALTER INDEX ix SET TABLESPACE pg_default;",
-			wantErr: `line \d+, column \d+: ALTER INDEX ix SET: only RENAME TO is read; an index's other settings are not part of a schema file`,
+			wantErr: `line \d+, column \d+: ALTER INDEX ix SET: only RENAME TO and ATTACH PARTITION are read; an index's other settings are not part of a schema file`,
 		},
 		{
-			name: "ATTACH PARTITION", dialect: "postgres",
-			sql:     "ALTER INDEX ix ATTACH PARTITION ix_2026;",
-			wantErr: `line \d+, column \d+: ALTER INDEX ix ATTACH: only RENAME TO is read; .*`,
+			name: "ATTACH without PARTITION", dialect: "postgres",
+			sql:     "ALTER INDEX ix ATTACH ix_2026;",
+			wantErr: `line \d+, column \d+: expected PARTITION after ALTER INDEX ix ATTACH: .*`,
+		},
+		{
+			name: "IF EXISTS before ATTACH PARTITION", dialect: "postgres",
+			sql:     "ALTER INDEX IF EXISTS ix ATTACH PARTITION ix_2026;",
+			wantErr: `line \d+, column \d+: ALTER INDEX IF EXISTS ix ATTACH PARTITION: PostgreSQL takes no IF EXISTS here`,
 		},
 		{
 			name: "RENAME without TO", dialect: "postgres",

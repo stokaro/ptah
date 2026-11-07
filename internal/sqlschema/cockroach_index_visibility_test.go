@@ -120,6 +120,6 @@ func TestRead_PostgreSQLIndexVisibility_FailurePath(t *testing.T) {
 	database, _, err := sqlschema.Read(
 		[]byte(cockroachVisibilityTable+"CREATE INDEX k ON t (a); ALTER INDEX k NOT VISIBLE;"), "postgres")
 
-	c.Assert(err, qt.ErrorMatches, `.*ALTER INDEX k NOT: only RENAME TO is read; .*`)
+	c.Assert(err, qt.ErrorMatches, `.*ALTER INDEX k NOT: only RENAME TO and ATTACH PARTITION are read; .*`)
 	c.Assert(database.Indexes, qt.HasLen, 0)
 }

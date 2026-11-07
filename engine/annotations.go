@@ -217,15 +217,18 @@ func (r *Runtime) readsObjects(owner string, extension sqlext.Extension, target 
 
 // readsFacets reports whether owner may read syntax on target, a target
 // another provider registers, that only sets facets of the owner's: every
-// pattern stands at a site whose value carries facets alone, and every facet
-// kind the extension declares is the owner's and compared on target. The MySQL
-// owner reads a MariaDB column's character set and ON UPDATE clause so.
+// pattern stands at a site whose value carries facets alone, or is a statement
+// of an extension that declares no object kind, whose value can then set a
+// table's facets and declare nothing; and every facet kind the extension
+// declares is the owner's and compared on target. The MySQL owner reads a
+// MariaDB column's character set and ON UPDATE clause so, and the PostgreSQL
+// table owner reads `ALTER TABLE ... ATTACH PARTITION`.
 func (r *Runtime) readsFacets(owner string, extension sqlext.Extension, target string) bool {
 	if len(extension.Patterns) == 0 || len(extension.Facets) == 0 {
 		return false
 	}
 	for _, pattern := range extension.Patterns {
-		if !sqlext.FacetSite(pattern.Site) {
+		if !sqlext.FacetSite(pattern.Site) && (pattern.Site != sqlext.Statement || len(extension.Kinds) > 0) {
 			return false
 		}
 	}

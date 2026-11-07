@@ -171,7 +171,9 @@ provider takes part on one or more of these paths:
   `schema.prepare-tables`, and usually `schema.project-table-creations`,
   `schema.columns` and the observed column, index and primary-key features.
   One lifecycle service of the engine then owns creating, altering and dropping
-  a table. An engine cannot take both table paths.
+  a table. The service says so with `owns_tables` under
+  `planning.table-ownership`, or by planning a table setting model as its
+  parent kind. An engine cannot take both table paths.
 - **Provider models.** `models.compare` returns changes, and `models.plan`
   turns them into operations with dependencies on common steps. Ptah validates
   each contribution and schedules the whole graph; the provider never orders a

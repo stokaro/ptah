@@ -157,7 +157,63 @@ func TestProviderNamespacesWithoutTheFeature_FailurePath(t *testing.T) {
 	_, diagnostics, code := f.run(c, c.Context(), "plan", "--schema-file", f.schemaPath, "--output", f.planPath, "--json")
 
 	c.Assert(code, qt.Equals, 2)
-	c.Assert(diagnostics, qt.Contains, "does not support schema creation")
+	c.Assert(diagnostics, qt.Contains, uncarriedAppSchema)
 	c.Assert(tables(c, f.databasePath), qt.HasLen, 0)
 	c.Assert(heldSchemas(c, f.databasePath), qt.HasLen, 0)
+}
+
+// uncarriedAppSchema is the host's refusal of schema app on the fixture
+// engine when its provider does not carry namespaces.
+const uncarriedAppSchema = `does not support schema "app" on the fixture engine, whose provider does not carry namespaces (schema.common-namespaces)`
+
+// emptySchemaDocuments declare schema app, which holds nothing, beside table
+// p, in each source format that declares a schema; the YAML format declares
+// none. argument is what the flag names, relative to the directory the
+// document is written to.
+var emptySchemaDocuments = []struct {
+	name, file, flag, argument, text string
+}{
+	{name: "SQL", file: "schema.sql", flag: "--schema-file", argument: "schema.sql",
+		text: "CREATE SCHEMA app;\nCREATE TABLE p (id INTEGER NOT NULL PRIMARY KEY);\n"},
+	{name: "HCL", file: "schema.hcl", flag: "--schema-file", argument: "schema.hcl",
+		text: "schema \"main\" {\n}\n\nschema \"app\" {\n}\n\ntable \"p\" {\n  schema = schema.main\n  column \"id\" {\n    type = INTEGER\n  }\n}\n"},
+	{name: "Go", file: "p.go", flag: "--root-dir", argument: ".",
+		text: "package p\n\n//ptah:schema:schema name=\"app\"\ntype _ struct{}\n\n//ptah:schema:table name=\"p\"\ntype P struct {\n" +
+			"\t//ptah:schema:field name=\"id\" type=\"INTEGER\" not_null=\"true\" primary=\"true\"\n\tID int\n}\n"},
+}
+
+// An engine that does not carry namespaces has no step that creates a declared
+// schema, and where no object of the declaration or of the read is in it,
+// nothing hands it to the provider. The host refuses the declaration by the
+// schema's name and the feature the engine lacks, and writes nothing. The
+// constraints fixture validates each declaration itself, as a provider of
+// contract 25.28 with schema.validate did, and reads schema app as one holding
+// nothing; without the refusal the plan reported the database synced.
+func TestProviderDeclaredSchemaWithoutNamespaces_FailurePath(t *testing.T) {
+	for _, document := range emptySchemaDocuments {
+		t.Run(document.name, func(t *testing.T) {
+			c := qt.New(t)
+			f := constraintsFixture(c, "schemas", `CREATE TABLE "p" ("id" INTEGER NOT NULL PRIMARY KEY)`)
+			dir := c.TempDir()
+			c.Assert(os.WriteFile(filepath.Join(dir, document.file), []byte(document.text), 0o600), qt.IsNil)
+
+			out, diagnostics, code := f.run(c, c.Context(), "plan", document.flag, filepath.Join(dir, document.argument), "--output", f.planPath, "--json")
+
+			c.Assert(code, qt.Equals, 2)
+			c.Assert(out, qt.Contains, `"outcome": "failed"`)
+			c.Assert(diagnostics, qt.Contains, uncarriedAppSchema)
+			c.Assert(tables(c, f.databasePath), qt.DeepEquals, []string{"p"})
+		})
+	}
+}
+
+// The engine's default schema exists, so a declaration of it is kept on an
+// engine that does not carry namespaces, and the plan finds nothing to do.
+func TestProviderDeclaredSchemaWithoutNamespaces_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	f := constraintsFixture(c, "schemas", `CREATE TABLE "p" ("id" INTEGER NOT NULL PRIMARY KEY)`)
+	f.schemaPath = filepath.Join(filepath.Dir(f.schemaPath), "schema.sql")
+	f.declare(c, "CREATE SCHEMA IF NOT EXISTS main;\nCREATE TABLE p (id INTEGER NOT NULL PRIMARY KEY);\n")
+
+	c.Assert(f.plan(c), qt.Contains, `"outcome": "no-changes"`)
 }

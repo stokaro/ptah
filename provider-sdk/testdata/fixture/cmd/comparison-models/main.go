@@ -48,10 +48,13 @@ func comparisonDescription() *protocol.Description {
 	description := backend.Description()
 	description.SemanticIdentity += "-contextual-comparison"
 	// The planning policy lets the host send a rotation as the operator
-	// wrote it; the objects comparison reads the object's name from it.
-	description.Features = append(description.Features, provider.CompareModelsFeature, provider.PlanningPolicyFeature)
+	// wrote it; the objects comparison reads the object's name from it. The
+	// declared relations tell it which tables the desired schema declares, so
+	// it refuses a retention object that takes one's name, with a reason.
+	description.Features = append(description.Features, provider.CompareModelsFeature, provider.PlanningPolicyFeature, provider.DeclaredRelationsFeature,
+		provider.ErrorReasonsFeature)
 	engine := description.Engines[0]
-	engine.Features = append(engine.Features, provider.PlanningPolicyFeature)
+	engine.Features = append(engine.Features, provider.PlanningPolicyFeature, provider.DeclaredRelationsFeature)
 	for _, model := range engine.GetValueModels() {
 		native := proto.CloneOf(model)
 		native.Kind, native.SourceFormats = nativeKind, nil
