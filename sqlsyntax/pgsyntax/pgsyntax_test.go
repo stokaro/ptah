@@ -162,3 +162,36 @@ func TestQuote_ReadsBack(t *testing.T) {
 		}
 	}
 }
+
+// Next reads one construct and stops there, whatever follows it, so a comment is
+// read to its own end although the text after it never closes a string.
+func TestNext_HappyPath(t *testing.T) {
+	for _, test := range []struct {
+		name, text string
+		want       pgsyntax.Token
+	}{
+		{name: "a nested comment before an unclosed string", text: "/* a /* b */ */ 'open", want: pgsyntax.Token{Kind: pgsyntax.BlockComment, End: 15}},
+		{name: "a dollar quote", text: "$x$;$x$ rest", want: pgsyntax.Token{Kind: pgsyntax.DollarString, End: 7}},
+		{name: "a word", text: "abc def", want: pgsyntax.Token{Kind: pgsyntax.Word, End: 3}},
+		{name: "no text", text: "", want: pgsyntax.Token{}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			token, err := pgsyntax.Next(test.text, pgsyntax.Options{})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(token, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// A first construct that does not close is refused.
+func TestNext_FailurePath(t *testing.T) {
+	c := qt.New(t)
+
+	token, err := pgsyntax.Next("/* a /* b */ c", pgsyntax.Options{})
+
+	c.Assert(err, qt.DeepEquals, error(&pgsyntax.SyntaxError{Offset: 0, Reason: "a block comment does not close"}))
+	c.Assert(token, qt.Equals, pgsyntax.Token{})
+}
