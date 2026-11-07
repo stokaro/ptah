@@ -206,7 +206,7 @@ func (t *target) authoredCreationContext(request renderer.SchemaRequest) (author
 	if len(ordered) != len(creations) {
 		return authoredCreation{}, fmt.Errorf("provider schema has invalid table dependencies")
 	}
-	before, after := commonObjectCreations(source)
+	before, after := commonObjectCreations(source, t.engine.GetId())
 	bindGrantDatabasePath(before, request.DatabasePath)
 	bindGrantDatabasePath(after, request.DatabasePath)
 	nodes := slices.Concat(namespaces, before)
