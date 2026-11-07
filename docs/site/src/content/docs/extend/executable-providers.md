@@ -135,6 +135,14 @@ index and builds it again. The plan creates the index with the predicate the
 source wrote. Without the feature the host compares predicates by its rules for
 CHECK expressions.
 
+A provider owns the table lifecycle through a planning service that has a
+parent kind, a model of a table setting, or, under `planning.table-ownership`,
+one that sets `owns_tables` and needs no such model. Ptah hands that service
+every table the plan creates, alters, rebuilds or drops. A service that owns
+tables answers one parent receipt of kind `table` for each, after the receipts
+of its parent kinds, and refuses a table with a parent diagnostic of that kind.
+An engine has at most one such service.
+
 A provider that owns the table lifecycle without
 `schema.common-table-identity.v1` also receives altered tables. The planning
 request carries the captured desired and current state of each altered table,
