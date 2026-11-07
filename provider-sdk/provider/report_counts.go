@@ -23,6 +23,15 @@ import (
 // list it, and the host lists it in its host features. Contract 25.21.
 const ReportCountsFeature = "models.report-counts"
 
+// OmissionCountsFeature enables ModelReport.omission_label and
+// ModelReport.omission_count_metric: how an export names and counts the
+// objects a value of the model holds when the export leaves the value out.
+// The provider and each engine whose reports set either field list it beside
+// ReportCountsFeature, and the host lists it when its exports read them. A
+// host that does not list it receives reports without the two fields and
+// counts one omitted object per value. Contract 25.36.
+const OmissionCountsFeature = "models.omission-counts"
+
 // ValueReporter counts captured values offline.
 type ValueReporter interface {
 	// ReportValues returns one report per value of the request, in order and
@@ -108,6 +117,19 @@ func validateModelReports(description *protocol.Description, engine *protocol.En
 	return nil
 }
 
+// validateOmissionCounts holds an engine that lists OmissionCountsFeature to
+// ReportCountsFeature beside it and to the provider's listing of the feature:
+// the omission fields live on its reports.
+func validateOmissionCounts(description *protocol.Description, engine *protocol.Engine) error {
+	if !slices.Contains(engine.GetFeatures(), OmissionCountsFeature) {
+		return nil
+	}
+	if !slices.Contains(engine.GetFeatures(), ReportCountsFeature) || !slices.Contains(description.GetFeatures(), OmissionCountsFeature) {
+		return reportCountsError("an engine that lists " + OmissionCountsFeature + " lists " + ReportCountsFeature + ", and so does the provider")
+	}
+	return nil
+}
+
 func validateModelReport(description *protocol.Description, engine *protocol.Engine, report *protocol.ModelReport) error {
 	if report.GetRepresentation() != protocol.ValueInput_DESIRED && report.GetRepresentation() != protocol.ValueInput_OBSERVED {
 		return reportCountsError("only a desired or observed model is reported")
@@ -131,6 +153,10 @@ func validateModelReport(description *protocol.Description, engine *protocol.Eng
 		if !metricHelp(metric.GetHelp()) {
 			return reportCountsError("a metric's help is not one line")
 		}
+	}
+	if (report.GetOmissionLabel() != "" || report.GetOmissionCountMetric() != "") &&
+		(!slices.Contains(engine.GetFeatures(), OmissionCountsFeature) || !slices.Contains(description.GetFeatures(), OmissionCountsFeature)) {
+		return reportCountsError("an omission label or count metric needs " + OmissionCountsFeature)
 	}
 	if label := report.GetOmissionLabel(); label != "" && !metricHelp(label) {
 		return reportCountsError("an omission label is not one line")

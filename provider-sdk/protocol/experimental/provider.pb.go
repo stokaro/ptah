@@ -12512,10 +12512,11 @@ type ModelReport struct {
 	Representation ValueInput_Representation `protobuf:"varint,2,opt,name=representation,proto3,enum=ptah.provider.experimental.ValueInput_Representation" json:"representation,omitempty"`
 	Metrics        []*ModelMetric            `protobuf:"bytes,3,rep,name=metrics,proto3" json:"metrics,omitempty"`
 	// Optional label for export omission diagnostics. Empty uses the model's
-	// display_name. Contract 25.35, under models.report-counts.
+	// display_name. Contract 25.36, under models.omission-counts.
 	OmissionLabel string `protobuf:"bytes,4,opt,name=omission_label,json=omissionLabel,proto3" json:"omission_label,omitempty"`
 	// Optional name of a declared metric whose per-value count gives the
-	// number of omitted objects. Empty counts one per value. Contract 25.35.
+	// number of omitted objects. Empty counts one per value. Contract 25.36,
+	// under models.omission-counts.
 	OmissionCountMetric string `protobuf:"bytes,5,opt,name=omission_count_metric,json=omissionCountMetric,proto3" json:"omission_count_metric,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
@@ -15089,7 +15090,7 @@ type ModelComparison struct {
 	// sends every desired facet value of these kinds in
 	// CompareModelsRequest.declared_facets. A transfer that reads a table's
 	// changefeed, a facet of the table, then knows whether the declaration
-	// declares the changefeed. Contract 25.36, under models.declared-facets.
+	// declares the changefeed. Contract 25.37, under models.declared-facets.
 	DeclaredFacetKinds []string `protobuf:"bytes,8,rep,name=declared_facet_kinds,json=declaredFacetKinds,proto3" json:"declared_facet_kinds,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
@@ -16351,7 +16352,7 @@ type CompareModelsRequest struct {
 	// Every desired facet whose kind the comparison names in
 	// ModelComparison.declared_facet_kinds, each with its owner, its kind and
 	// its value, once and in kind and owner order. A facet the declaration
-	// excludes on purpose has no value and is not listed. Contract 25.36,
+	// excludes on purpose has no value and is not listed. Contract 25.37,
 	// under models.declared-facets.
 	DeclaredFacets []*ComparisonRecord `protobuf:"bytes,20,rep,name=declared_facets,json=declaredFacets,proto3" json:"declared_facets,omitempty"`
 	unknownFields  protoimpl.UnknownFields
@@ -36008,7 +36009,7 @@ type CompareViewQueriesRequest struct {
 	// The columns of every table the declaration declares, each named by its
 	// table's identity, in the order the declaration lists them: what a `*` of
 	// a declared query stands for, and which relation each column a server
-	// qualifies belongs to. Contract 25.36, under schema.view-query-context.
+	// qualifies belongs to. Contract 25.37, under schema.view-query-context.
 	DeclaredColumns []*ComparisonColumn `protobuf:"bytes,6,rep,name=declared_columns,json=declaredColumns,proto3" json:"declared_columns,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
@@ -36207,7 +36208,7 @@ type ComparedViewQuery struct {
 	// The owner cannot decide this pair from the request, and the host compares
 	// the two queries by its own reading of their texts, as it does for an
 	// engine that does not compare view queries. equivalent is false. Contract
-	// 25.36, under schema.view-query-context.
+	// 25.37, under schema.view-query-context.
 	Undecided     bool `protobuf:"varint,3,opt,name=undecided,proto3" json:"undecided,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

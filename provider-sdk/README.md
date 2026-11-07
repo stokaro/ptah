@@ -68,10 +68,12 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.36. Each released SDK speaks one contract:
+speaks contract 25.37. Each released SDK speaks one contract:
 
 | SDK release | Contract |
 | --- | --- |
+| `provider-sdk/v0.33.0` | 25.35 |
+| `provider-sdk/v0.32.0` | 25.34 |
 | `provider-sdk/v0.31.0` | 25.33 |
 | `provider-sdk/v0.30.0` | 25.32 |
 | `provider-sdk/v0.29.0` | 25.31 |
@@ -181,7 +183,7 @@ returns to 0.
   [render omissions](#render-omissions), [table grants](#table-grants),
   [SQL role passwords](#sql-role-passwords) and
   [SQL statement facts](#sql-statement-facts).
-  Contract 25.36 adds [view query context](#view-query-context) and
+  Contract 25.37 adds [view query context](#view-query-context) and
   [declared facets](#declared-facets).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
@@ -230,9 +232,9 @@ does not oblige a peer to use it.
   `models.declared-relations`, `planning.table-ownership`,
   `models.declared-objects`, `render.omissions`, `planning.table-grants`,
   `source.sql-role-passwords`, `source.sql-statement-facts`, `query.lexical`,
-  `engine.connection-capability-source`, `schema.view-query-context` and
-  `models.declared-facets`. The embedding
-  store's calls,
+  `engine.connection-capability-source`, `models.omission-counts`,
+  `schema.view-query-context` and `models.declared-facets`. The
+  embedding store's calls,
   `PrepareCommonObjects`, `ReverseChanges` and `ReportValues` are new, and each
   comes with an addition to `Engine`, so a host lists the feature to receive
   any of them. `SplitMigration` is new too, and comes with the abort flags of
@@ -3510,12 +3512,16 @@ refuse. The reports sit on the engine rather than on the model, so a model's
 copy in coverage or a request is the same whether or not the host counts.
 
 For export omission diagnostics, a report may give an `omission_label` and
-`omission_count_metric`. The label defaults to the model's `display_name`;
-the count defaults to one per value. When set, the count metric must be one
-of the report's declared metrics, and its value gives the number of omitted
-objects represented by each captured value. This lets a single value holding
-multiple objects report their actual number without interpreting its payload
-in the host. Both fields were added in contract 25.35.
+`omission_count_metric` (contract 25.36, `models.omission-counts`). The label
+defaults to the model's `display_name`; the count defaults to one per value.
+When set, the count metric must be one of the report's declared metrics, and
+its value gives the number of omitted objects represented by each captured
+value. This lets a single value holding multiple objects report their actual
+number without interpreting its payload in the host. The provider and each
+engine whose reports set either field list `models.omission-counts` beside
+`models.report-counts`, and so does a host whose exports read them. A host that
+does not list it receives the reports without the two fields and counts one
+omitted object per value.
 
 `ReportValues` is offline: no session, no database. The host sends the values
 of one engine and one representation, each of a reported model, and the

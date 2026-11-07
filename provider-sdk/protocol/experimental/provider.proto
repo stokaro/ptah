@@ -1460,10 +1460,11 @@ message ModelReport {
   ValueInput.Representation representation = 2;
   repeated ModelMetric metrics = 3;
   // Optional label for export omission diagnostics. Empty uses the model's
-  // display_name. Contract 25.35, under models.report-counts.
+  // display_name. Contract 25.36, under models.omission-counts.
   string omission_label = 4;
   // Optional name of a declared metric whose per-value count gives the
-  // number of omitted objects. Empty counts one per value. Contract 25.35.
+  // number of omitted objects. Empty counts one per value. Contract 25.36,
+  // under models.omission-counts.
   string omission_count_metric = 5;
 }
 // ModelMetric is one object-count metric: name is a lowercase ASCII suffix of
@@ -1852,7 +1853,7 @@ message ModelComparison {
   // sends every desired facet value of these kinds in
   // CompareModelsRequest.declared_facets. A transfer that reads a table's
   // changefeed, a facet of the table, then knows whether the declaration
-  // declares the changefeed. Contract 25.36, under models.declared-facets.
+  // declares the changefeed. Contract 25.37, under models.declared-facets.
   repeated string declared_facet_kinds = 8;
 }
 
@@ -2013,7 +2014,7 @@ message CompareModelsRequest {
   // Every desired facet whose kind the comparison names in
   // ModelComparison.declared_facet_kinds, each with its owner, its kind and
   // its value, once and in kind and owner order. A facet the declaration
-  // excludes on purpose has no value and is not listed. Contract 25.36,
+  // excludes on purpose has no value and is not listed. Contract 25.37,
   // under models.declared-facets.
   repeated ComparisonRecord declared_facets = 20;
 }
@@ -4794,7 +4795,7 @@ message CompareViewQueriesRequest {
   // The columns of every table the declaration declares, each named by its
   // table's identity, in the order the declaration lists them: what a `*` of
   // a declared query stands for, and which relation each column a server
-  // qualifies belongs to. Contract 25.36, under schema.view-query-context.
+  // qualifies belongs to. Contract 25.37, under schema.view-query-context.
   repeated ComparisonColumn declared_columns = 6;
 }
 // ViewQueryPair pairs a declared view's query with the view the database holds
@@ -4821,6 +4822,6 @@ message ComparedViewQuery {
   // The owner cannot decide this pair from the request, and the host compares
   // the two queries by its own reading of their texts, as it does for an
   // engine that does not compare view queries. equivalent is false. Contract
-  // 25.36, under schema.view-query-context.
+  // 25.37, under schema.view-query-context.
   bool undecided = 3;
 }

@@ -2,7 +2,7 @@
 
 Status: Proposed
 
-Contract: 25.36
+Contract: 25.37
 
 Deciders: Ptah maintainers
 

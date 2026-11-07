@@ -16,7 +16,7 @@ import (
 // knows whether the changefeed is declared. A host that does not list the
 // feature sees no declared facet kinds and sends no declared facet. A two-way
 // feature: the provider lists it, and so does each engine with a comparison
-// that names such kinds. Contract 25.36.
+// that names such kinds. Contract 25.37.
 const DeclaredFacetsFeature = "models.declared-facets"
 
 // validateDeclaredFacetsFeature refuses an engine that lists the feature

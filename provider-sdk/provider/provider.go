@@ -192,8 +192,8 @@ func validateEngineAdditions(description *protocol.Description, engine *protocol
 		validateLinkedReleaseLines, validateEnumColumns, validateObservedUniqueConstraintsFeature, validateColumnCollationsFeature,
 		validateViewCheckOptionsFeature, validateDeclaredRelationsFeature, validateTableOwnershipFeature, validateDeclaredObjectsFeature,
 		validateRenderOmissionsFeature, validateViewQueryEquivalenceEngine, validateTableGrantsFeature, validateSQLRolePasswordsFeature,
-		validateSQLStatementFactsFeature, validateQueryLexical, validateConnectionCapabilitySource, validateViewQueryContextEngine,
-		validateDeclaredFacetsFeature,
+		validateSQLStatementFactsFeature, validateQueryLexical, validateConnectionCapabilitySource, validateOmissionCounts,
+		validateViewQueryContextEngine, validateDeclaredFacetsFeature,
 	} {
 		if err := check(description, engine); err != nil {
 			return err

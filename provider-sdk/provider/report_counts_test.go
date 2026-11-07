@@ -2,6 +2,7 @@ package provider_test
 
 import (
 	"math"
+	"slices"
 	"strings"
 	"testing"
 
@@ -23,6 +24,17 @@ func reportDescription() *protocol.Description {
 	engine.Reports = []*protocol.ModelReport{{Kind: model.Kind, Representation: model.Representation, Metrics: []*protocol.ModelMetric{
 		{Name: "retained_tables", Help: "Tables with a retention"}, {Name: "retention_days", Help: "Days of retention across tables"},
 	}}}
+	return d
+}
+
+// omissionCounts lists models.omission-counts on the provider and on each of
+// its engines, which a report needs before it may set an omission label or
+// count metric.
+func omissionCounts(d *protocol.Description) *protocol.Description {
+	d.Features = append(d.Features, provider.OmissionCountsFeature)
+	for _, engine := range d.Engines {
+		engine.Features = append(engine.Features, provider.OmissionCountsFeature)
+	}
 	return d
 }
 
@@ -83,7 +95,7 @@ func TestReportCounts_HappyPath(t *testing.T) {
 	})
 	t.Run("a report chooses an omission count and label", func(t *testing.T) {
 		c := qt.New(t)
-		d := reportDescription()
+		d := omissionCounts(reportDescription())
 		d.Engines[0].Reports[0].OmissionLabel = "retentions"
 		d.Engines[0].Reports[0].OmissionCountMetric = "retained_tables"
 		c.Assert(provider.ValidateDescription(d, nil), qt.IsNil)
@@ -99,6 +111,24 @@ func TestReportCounts_HappyPath(t *testing.T) {
 		c.Assert(provider.ValidateDescription(negotiated, nil), qt.IsNil)
 		listed := provider.NegotiatedDescription(reportDescription(), []string{provider.ReportCountsFeature})
 		c.Assert(listed.Engines[0].Reports, qt.HasLen, 1)
+	})
+	t.Run("a host that counts reports and does not read omission counts", func(t *testing.T) {
+		c := qt.New(t)
+		d := omissionCounts(reportDescription())
+		d.Engines[0].Reports[0].OmissionLabel = "retentions"
+		d.Engines[0].Reports[0].OmissionCountMetric = "retained_tables"
+
+		counted := provider.NegotiatedDescription(d, []string{provider.ReportCountsFeature})
+		both := provider.NegotiatedDescription(d, []string{provider.ReportCountsFeature, provider.OmissionCountsFeature})
+
+		c.Assert(counted.Engines[0].Features, qt.Not(qt.Contains), provider.OmissionCountsFeature)
+		c.Assert(counted.Engines[0].Reports[0].OmissionLabel, qt.Equals, "")
+		c.Assert(counted.Engines[0].Reports[0].OmissionCountMetric, qt.Equals, "")
+		c.Assert(counted.Engines[0].Reports[0].Metrics, qt.HasLen, 2)
+		c.Assert(provider.ValidateDescription(counted, nil), qt.IsNil)
+		c.Assert(both.Engines[0].Reports[0].OmissionLabel, qt.Equals, "retentions")
+		c.Assert(both.Engines[0].Reports[0].OmissionCountMetric, qt.Equals, "retained_tables")
+		c.Assert(d.Engines[0].Reports[0].OmissionLabel, qt.Equals, "retentions", qt.Commentf("negotiation must not change the description"))
 	})
 }
 
@@ -151,14 +181,30 @@ func TestReportCountsDescription_FailurePath(t *testing.T) {
 		{"an empty help", func(d *protocol.Description) { metrics(d)[0].Help = "" },
 			`.*report counts: a metric's help is not one line`},
 		{"an omission label of two lines", func(d *protocol.Description) {
-			d.Engines[0].Reports[0].OmissionLabel = "retained\ntables"
+			omissionCounts(d).Engines[0].Reports[0].OmissionLabel = "retained\ntables"
 		}, `.*report counts: an omission label is not one line`},
 		{"an omission label with surrounding space", func(d *protocol.Description) {
-			d.Engines[0].Reports[0].OmissionLabel = " retentions"
+			omissionCounts(d).Engines[0].Reports[0].OmissionLabel = " retentions"
 		}, `.*report counts: an omission label is not one line`},
 		{"an undeclared omission count metric", func(d *protocol.Description) {
-			d.Engines[0].Reports[0].OmissionCountMetric = "missing_tables"
+			omissionCounts(d).Engines[0].Reports[0].OmissionCountMetric = "missing_tables"
 		}, `.*report counts: an omission count metric is not declared`},
+		{"an omission label the engine does not list the feature for", func(d *protocol.Description) {
+			d.Features = append(d.Features, provider.OmissionCountsFeature)
+			d.Engines[0].Reports[0].OmissionLabel = "retentions"
+		}, `.*report counts: an omission label or count metric needs models\.omission-counts`},
+		{"an omission count metric the provider does not list the feature for", func(d *protocol.Description) {
+			d.Engines[0].Features = append(d.Engines[0].Features, provider.OmissionCountsFeature)
+			d.Engines[0].Reports[0].OmissionCountMetric = "retained_tables"
+		}, `.*report counts: an omission label or count metric needs models\.omission-counts`},
+		{"an engine that lists omission counts the provider does not list", func(d *protocol.Description) {
+			d.Engines[0].Features = append(d.Engines[0].Features, provider.OmissionCountsFeature)
+		}, `.*report counts: an engine that lists models\.omission-counts lists models\.report-counts, and so does the provider`},
+		{"omission counts without report counts", func(d *protocol.Description) {
+			omissionCounts(d)
+			d.Engines[0].Features = slices.DeleteFunc(d.Engines[0].Features, func(feature string) bool { return feature == provider.ReportCountsFeature })
+			d.Engines[0].Reports = nil
+		}, `.*report counts: an engine that lists models\.omission-counts lists models\.report-counts, and so does the provider`},
 		{"a help of two lines", func(d *protocol.Description) {
 			metrics(d)[0].Help = "Tables\nwith a retention"
 		},
@@ -186,13 +232,17 @@ func TestReportCountsDescription_FailurePath(t *testing.T) {
 			other := proto.CloneOf(d.Engines[0])
 			other.Id = "fixture2"
 			other.Reports[0].OmissionCountMetric = "retained_tables"
+			omissionCounts(d)
 			d.Engines = append(d.Engines, other)
+			other.Features = append(other.Features, provider.OmissionCountsFeature)
 		}, `.*report counts: engines that share a model report other omission metadata for it`},
 		{"engines that share a model choose different omission labels", func(d *protocol.Description) {
 			other := proto.CloneOf(d.Engines[0])
 			other.Id = "fixture2"
 			other.Reports[0].OmissionLabel = "retentions"
+			omissionCounts(d)
 			d.Engines = append(d.Engines, other)
+			other.Features = append(other.Features, provider.OmissionCountsFeature)
 		}, `.*report counts: engines that share a model report other omission metadata for it`},
 		{"engines that share a model and one reports it", func(d *protocol.Description) {
 			other := proto.CloneOf(d.Engines[0])

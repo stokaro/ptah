@@ -14,7 +14,7 @@ import (
 // host sends the columns of every declared table, and an owner that still
 // cannot decide a pair leaves it to the host's reading of the texts. A
 // two-way feature: the host lists it, and so do the provider and each engine
-// that compares view queries under it. Contract 25.36.
+// that compares view queries under it. Contract 25.37.
 const ViewQueryContextFeature = "schema.view-query-context"
 
 // validateViewQueryContextEngine refuses an engine that lists
