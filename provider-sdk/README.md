@@ -679,7 +679,7 @@ sentinels. A caller can distinguish these failures from a missing installation.
 
 ## Conformance suite
 
-[ADR 0088](../docs/adr/0088-a-provider-is-checked-by-a-suite-that-acts-as-a-strict-host.md)
+[ADR 0092](../docs/adr/0092-a-provider-is-checked-by-a-suite-that-acts-as-a-strict-host.md)
 decides this suite. Package `conformance` checks a provider against what a host
 relies on. It acts as a strict host on the raw wire: it sends `Describe` itself,
 calls each RPC with the generated client, runs the validator the SDK's client
