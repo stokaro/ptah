@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemapreparation"
 	"ptah.run/core/schemaprojection"
 	"ptah.run/engine"
 	"ptah.run/internal/convert/goschematodb"
@@ -26,7 +27,8 @@ func (f creationFunc) ProjectTableCreations(ctx context.Context, request schemap
 }
 
 func creationProvider(service schemaprojection.TableCreationService) engine.Provider {
-	return engine.Provider{ID: "example.org/creation", Targets: []engine.Target{{Name: "custom", Aliases: []string{"alternate"}, Creations: service}},
+	return engine.Provider{ID: "example.org/creation", Targets: []engine.Target{{Name: "custom", Aliases: []string{"alternate"}, Creations: service,
+		Preparation: schemapreparation.Identity{}}},
 		Codecs: []schemaext.Codec{conversionCodec(conversionFirst, schemaext.Desired)},
 	}
 }

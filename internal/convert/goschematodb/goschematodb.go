@@ -44,7 +44,10 @@ import (
 // document does not revoke it from, because a database built from the document
 // would hold it. The target must be registered in runtime. Named feature
 // objects and facets use its batched conversion service; a failed conversion
-// returns no schema.
+// returns no schema. An index takes the kind, the NULLS orders and the
+// predicate the target's table preparation states for it, the spelling the
+// comparison reads a declared index in, so a document compared with itself
+// plans nothing; a target with indexed tables needs a preparation service.
 func ToDBSchema(ctx context.Context, db *schemamodel.Database, dialect string, runtime Runtime) (*catalog.Database, error) {
 	converted, err := ToDBSchemas(ctx, []*schemamodel.Database{db}, dialect, runtime)
 	if err != nil {
@@ -54,10 +57,10 @@ func ToDBSchema(ctx context.Context, db *schemamodel.Database, dialect string, r
 }
 
 // ToDBSchemas converts each database as [ToDBSchema] converts it alone, and
-// asks the target's creation projection and conversion services once for all
-// of them rather than once for each. Both services predict and convert each
-// table and each value on its own, so sharing the calls changes no database's
-// result; a migration that projects the removal of each table it creates
+// asks the target's creation projection, table preparation and conversion
+// services once for all of them rather than once for each. Each service
+// predicts, prepares and converts each table and each value on its own, so
+// sharing the calls changes no database's result; a migration that projects the removal of each table it creates
 // converts one document per table, and through a provider each call is a round
 // trip. The databases must not declare the same table, which a target refuses
 // in one batch. The result holds one database per input, in order; an error
@@ -83,14 +86,18 @@ func ToDBSchemas(ctx context.Context, dbs []*schemamodel.Database, dialect strin
 		return nil, err
 	}
 	outs := make([]*catalog.Database, len(declared))
+	lowered := make([]*schemamodel.Database, len(declared))
 	parts := make([]features.Part, len(declared))
 	for i := range declared {
 		db, out, err := describeDatabase(ctx, declared[i], prepared[i], dialect, runtime)
 		if err != nil {
 			return nil, err
 		}
-		outs[i] = out
+		outs[i], lowered[i] = out, db
 		parts[i] = features.Part{Objects: db.FeatureObjects, Coverage: db.FeatureCoverage, Destinations: out.FacetSlots()}
+	}
+	if err := applyPreparedIndexes(ctx, outs, lowered, dialect, runtime); err != nil {
+		return nil, err
 	}
 	converted, err := features.ConvertParts(ctx, runtime, dialect, schemaext.Desired, schemaext.Observed, parts)
 	if err != nil {

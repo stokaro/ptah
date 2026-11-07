@@ -26,6 +26,7 @@ type Runtime interface {
 	schemaprojection.ReadBackRuntime
 	schemaproperties.Runtime
 	schemapreparation.Lowering
+	schemapreparation.Service
 }
 
 // A current-side document describes the table its CREATE would produce. Resolve

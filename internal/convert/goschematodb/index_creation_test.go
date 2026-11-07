@@ -23,7 +23,7 @@ import (
 
 func indexCreationRuntime() *engine.Runtime {
 	return must.Must(engine.New(engine.Provider{
-		ID: "example.org/clickhouse", Targets: []engine.Target{{Name: "clickhouse", Creations: chprepare.Service{}}},
+		ID: "example.org/clickhouse", Targets: []engine.Target{{Name: "clickhouse", Preparation: chprepare.Service{}, Creations: chprepare.Service{}}},
 		Codecs:      append(chschema.Codecs(), chschema.IndexCodecs()...),
 		Conversions: []engine.Conversion{{Target: "clickhouse", Kinds: []schemaext.Kind{chschema.TableKind, chschema.IndexKind}, Service: chconvert.Service{}}},
 		Properties:  []engine.PropertySource{{Target: "clickhouse", Format: schemaext.IndexPlatformProperties, Definitions: chsource.IndexDefinitions(), Service: chsource.IndexService{}}},

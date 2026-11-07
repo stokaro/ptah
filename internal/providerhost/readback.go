@@ -12,7 +12,8 @@ import (
 // stand in for the current side, as a Go source does, compares with the read
 // rather than as an index of no method. Without it an asynchronous YDB index
 // read as "async" compares with a declaration of none, and every plan drops
-// and creates it again.
+// and creates it again. Where table preparation states a declared index's
+// kind, the conversion describes the index with that kind instead.
 //
 // A column reads back with its declared type, and a unique index is described
 // as a unique index only by what the comparison reads of it.
