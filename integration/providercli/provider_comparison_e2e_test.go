@@ -221,3 +221,57 @@ func TestProviderResolvesAWrittenRequest_FailurePath(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `.*no owner on "fixture" reads the "rotate" request "kep"`)
 	c.Assert(result, qt.DeepEquals, schemaext.ObjectComparisonResult{})
 }
+
+// declaredTable is the identity of a declared table, as the host names it
+// among the declared relations.
+func declaredTable(name string) objectidentity.ID {
+	return objectidentity.NewBuilder(comparisonRules()).TableParts("main", name)
+}
+
+// relationsRequest is writtenRotationRequest with its values captured under a
+// target profile that lists models.declared-relations, as the host captures
+// them for an engine that negotiated it, and the declared tables given.
+func relationsRequest(c *qt.C, runtime *engine.Runtime, tables ...string) schemaext.ObjectComparisonRequest {
+	c.Helper()
+	request := writtenRotationRequest(c, runtime)
+	subject := objectidentity.ID{Kind: objectidentity.Kind(comparisonNative), Name: objectidentity.Part{Source: "keep", Normalized: "keep"}}
+	profile := []string{"models.declared-relations"}
+	desired, err := schemaext.NewObjects(schemaext.Object{Ref: subject, Value: profiledModel(c, runtime, profile, schemaext.Desired, comparisonNative, subject, `{"seconds":60}`)})
+	c.Assert(err, qt.IsNil)
+	current, err := schemaext.NewObjects(schemaext.Object{Ref: subject, Value: profiledModel(c, runtime, profile, schemaext.Observed, comparisonNative, subject, `{"seconds":60}`)})
+	c.Assert(err, qt.IsNil)
+	request.Desired.Objects, request.Current.Objects = desired, current
+	for _, table := range tables {
+		request.DeclaredRelations = append(request.DeclaredRelations, declaredTable(table))
+	}
+	return request
+}
+
+// TestProviderReadsTheDeclaredTables_FailurePath sends the tables the desired
+// schema declares to a provider that negotiated models.declared-relations. The
+// fixture keeps its retention objects in the namespace of the tables, so it
+// refuses one that takes a declared table's name, and says why.
+func TestProviderReadsTheDeclaredTables_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	_, runtime := yamlProviderCommand(c, "comparison-models")
+	request := relationsRequest(c, runtime, "keep")
+
+	result, err := runtime.CompareObjects(c.Context(), request)
+
+	c.Assert(err, qt.ErrorMatches, `.*Retention object keep takes the name of declared table keep`)
+	c.Assert(result, qt.DeepEquals, schemaext.ObjectComparisonResult{})
+}
+
+// TestProviderReadsTheDeclaredTables_HappyPath is the control: a declared
+// table of another name leaves the retention object compared as before.
+func TestProviderReadsTheDeclaredTables_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	_, runtime := yamlProviderCommand(c, "comparison-models")
+	request := relationsRequest(c, runtime, "orders")
+
+	result, err := runtime.CompareObjects(c.Context(), request)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Complete, qt.IsTrue)
+	c.Assert(result.Changes, qt.HasLen, 0)
+}

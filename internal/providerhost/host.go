@@ -126,6 +126,11 @@ var hostFeatures = []string{
 	provider.PlanningStatementStyleFeature,
 	// Lifecycle operations may surround common changes; see commonPlanner.schedule.
 	provider.PlanningLifecycleFeature,
+	// A planning service that owns the tables of its engine without a table
+	// setting receives every table the plan creates, alters, rebuilds or
+	// drops and answers a receipt of kind "table" for each; see
+	// target.registerPlanning and target.assessesParents.
+	provider.TableOwnershipFeature,
 	provider.PlanningObjectContextFeature,
 	// A filtered read carries the provider's planning context outside its
 	// scope, which the planner receives as context and nothing compares; see
@@ -215,6 +220,21 @@ var hostFeatures = []string{
 	// builds, a type that lists the values or a column under a CHECK, or is
 	// refused by table and column; see target.enumColumns.
 	provider.EnumColumnsFeature,
+	// An engine's object comparisons receive every table the desired schema
+	// declares beside its views and materialized views, so an owner whose
+	// objects reference a table can tell a declared one; see
+	// modelComparer.declaredRelations.
+	provider.DeclaredRelationsFeature,
+	// A column comparison answers the collation apart from the type, and
+	// the comparison records a changed collation as a change of its own;
+	// see columnAspects and Rules.ColumnCollations.
+	provider.ColumnCollationsFeature,
+	// A declared view states the level of its check option: CASCADED for a
+	// view the host model gives one, since that model has no LOCAL, and a
+	// LOCAL view a SQL reading reports is refused by name; see
+	// target.declaredCheckOption, target.createdCheckOption and
+	// readCheckOption.
+	provider.ViewCheckOptionsFeature,
 	// A read reports the ledger the engine's seed service keeps as reserved
 	// storage, which every comparison leaves out, so a plan never drops it;
 	// see reader.reservedNames.

@@ -27,7 +27,7 @@ func (s modelComparer) CompareObjects(ctx context.Context, request schemaext.Obj
 		return schemaext.ObjectComparisonResult{}, err
 	}
 	remote.Parents = comparisonParents(request.Parents)
-	remote.DeclaredRelations, remote.DeclaredRoles, remote.Required = comparisonIdentities(request.DeclaredRelations), comparisonIdentities(request.DeclaredRoles), comparisonIdentities(request.Required)
+	remote.DeclaredRelations, remote.DeclaredRoles, remote.Required = s.declaredRelations(remote.GetTargetFeatures(), request.DeclaredRelations), comparisonIdentities(request.DeclaredRoles), comparisonIdentities(request.Required)
 	remote.DatabasePath = request.DatabasePath
 	sent := s.writtenRequests(request.Requests)
 	for _, index := range sent {
@@ -65,6 +65,19 @@ func (s modelComparer) CompareObjects(ctx context.Context, request schemaext.Obj
 	}
 	return schemaext.ObjectComparisonResult{Complete: true, Desired: desired, Changes: changes, Undecided: boundUndecided(result.GetUndecided()), Resolved: resolved,
 		Counts: boundCounts(result.GetCounts())}, nil
+}
+
+// declaredRelations returns the declared relations a provider receives: every
+// one when the provider and the engine negotiated
+// provider.DeclaredRelationsFeature and the request's target features, which
+// the captured values set, list it too; the views and materialized views
+// alone otherwise, which is what the list holds for such a request. The SDK
+// refuses a table the request's target does not list.
+func (s modelComparer) declaredRelations(targetFeatures []string, relations []objectidentity.ID) []*protocol.ComparisonIdentity {
+	if !s.target.negotiated(provider.DeclaredRelationsFeature) || !slices.Contains(targetFeatures, provider.DeclaredRelationsFeature) {
+		relations = slices.DeleteFunc(slices.Clone(relations), func(relation objectidentity.ID) bool { return relation.Kind == objectidentity.KindTable })
+	}
+	return comparisonIdentities(relations)
 }
 
 // boundCounts converts the counts a provider's comparison stated. The SDK
