@@ -310,10 +310,13 @@ func (p *Parser) readOwnerClaims(ctx context.Context) error {
 		return nil
 	}
 	matches := make([]sqlext.Match, 0, len(p.ownerClaims))
+	lines := sourcepos.NewLines(p.source)
 	for _, claim := range p.ownerClaims {
-		matches = append(matches, claim.match)
+		match := claim.match
+		match.Claim.Written = p.written(lines, match.Claim.Offset)
+		matches = append(matches, match)
 	}
-	values, err := p.owners.Parse(ctx, p.dialect, matches, sqlext.Document{Declared: p.declared, DroppedTables: p.droppedTables})
+	values, err := p.owners.Parse(ctx, p.dialect, matches, sqlext.Document{Declared: p.declared, DroppedTables: p.droppedTables, Length: len(p.source)})
 	if err != nil {
 		return err
 	}
@@ -323,6 +326,15 @@ func (p *Parser) readOwnerClaims(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// written is where offset, an offset in the text the parser reads, stands in
+// the document as its author wrote it, whose lines are lines; see
+// [sqlext.Claim.Written].
+func (p *Parser) written(lines sourcepos.Lines, offset int) sqlext.Position {
+	origin := p.origins.Of(offset)
+	line, column := lines.LocateBytes(origin)
+	return sqlext.Position{Offset: origin, Line: line, Column: column}
 }
 
 // claimOwnerTableElement claims an owner's element of a CREATE TABLE column

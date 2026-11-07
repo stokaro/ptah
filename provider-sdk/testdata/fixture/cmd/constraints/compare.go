@@ -64,11 +64,14 @@ func (o *owner) CompareChecks(ctx context.Context, request *protocol.CompareChec
 }
 
 // PrepareTables states the key membership of each declared table and, where
-// the host negotiated it, the NULLS order of each key part of each declared
-// index: SQLite sorts NULLs first in an ascending key and last in a
-// descending one, so a part that states that order, or none, states it empty.
+// the host negotiated them, the NULLS order of each key part of each declared
+// index and its predicate. SQLite sorts NULLs first in an ascending key and
+// last in a descending one, so a part that states that order, or none, states
+// it empty. A predicate is stated in the spelling the fixture builds an index
+// with and reads it back in (predicateSpelling).
 func (o *owner) PrepareTables(ctx context.Context, request *protocol.PrepareTablesRequest) (*protocol.PreparedTables, error) {
 	nulls := slices.Contains(request.GetTargetFeatures(), provider.IndexNullsOrderFeature)
+	predicates := slices.Contains(request.GetTargetFeatures(), provider.IndexPredicatesFeature)
 	result := &protocol.PreparedTables{Complete: true}
 	for _, input := range request.GetTables() {
 		if err := ctx.Err(); err != nil {
@@ -82,12 +85,17 @@ func (o *owner) PrepareTables(ctx context.Context, request *protocol.PrepareTabl
 			}
 		}
 		for _, index := range declared.GetIndexes() {
-			if !nulls {
+			if !nulls && !predicates {
 				break
 			}
 			prepared := &protocol.PreparedIndex{Name: index.GetName()}
 			for _, part := range keyParts(index) {
-				prepared.Nulls = append(prepared.Nulls, nullsOrder(part))
+				if nulls {
+					prepared.Nulls = append(prepared.Nulls, nullsOrder(part))
+				}
+			}
+			if predicates && strings.TrimSpace(index.GetCondition()) != "" {
+				prepared.Condition = predicateSpelling(index.GetCondition())
 			}
 			output.Indexes = append(output.Indexes, prepared)
 		}

@@ -52,7 +52,7 @@ func normalizeStatements(input *protocol.ValueInput) (*protocol.NormalizedValue,
 	value.Payload = canonical
 	return &protocol.NormalizedValue{Id: input.GetId(), Value: value, NormalizedOwner: proto.CloneOf(owner), CanonicalFormat: "constraint-statements-v1",
 		CanonicalProjection: bytes.Clone(canonical), OperationSemantics: &protocol.OperationSemantics{Impact: protocol.ChangeSemantics_BEHAVIORAL,
-			Reason: "Rebuild table " + owner.GetName(), Access: protocol.ChangeSemantics_UNCHANGED, AccessReason: "A rebuild changes no grants"}}, nil
+			Reason: "Change table " + owner.GetName(), Access: protocol.ChangeSemantics_UNCHANGED, AccessReason: "The statements change no grants"}}, nil
 }
 
 // NormalizeValues normalizes statements operations and leaves every other

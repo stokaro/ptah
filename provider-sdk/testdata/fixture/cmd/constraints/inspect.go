@@ -17,7 +17,8 @@ import (
 // (<expression>)` and `CONSTRAINT "<name>" FOREIGN KEY ("<column>") REFERENCES
 // "<table>" ("<column>") [ON DELETE <rule>]`, which SQLite keeps as written.
 // SQLite keeps no NULLS order in an index key, so every key part is in the
-// default order.
+// default order. A partial index's predicate is the text after WHERE in the
+// statement SQLite keeps, the spelling the fixture builds an index with.
 func (o *owner) Inspect(ctx context.Context, request *protocol.InspectRequest) (*protocol.Schema, error) {
 	for _, schema := range request.GetSchemas() {
 		if schema != "main" {
@@ -127,7 +128,8 @@ func inspectIndexes(ctx context.Context, db backend.Querier, table string) ([]*p
 	}
 	result := make([]*protocol.ObservedIndex, 0, len(indexes))
 	for _, index := range indexes {
-		observed := &protocol.ObservedIndex{Name: index.name, TableName: table, Unique: strings.HasPrefix(index.sql, "CREATE UNIQUE INDEX")}
+		observed := &protocol.ObservedIndex{Name: index.name, TableName: table, Unique: strings.HasPrefix(index.sql, "CREATE UNIQUE INDEX"),
+			Condition: indexPredicate(index.sql)}
 		rows, err := db.QueryContext(ctx, "SELECT name, \"desc\" FROM pragma_index_xinfo(?) WHERE key = 1 ORDER BY seqno", index.name)
 		if err != nil {
 			return nil, err

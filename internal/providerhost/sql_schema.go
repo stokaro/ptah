@@ -21,12 +21,16 @@ import (
 // SQL schema documents whole (the DOCUMENT mode). Ptah does not lex or parse
 // such a document: the extension's grammar sends the text to the provider and
 // maps its reading back. An engine without the declaration is read with the
-// shared grammar and contributes nothing here.
+// shared grammar, and contributes the clauses of CREATE TABLE it claims; see
+// Host.tableClauseExtension.
 func (h *Host) sqlExtensions() []sqlext.Extension {
 	var result []sqlext.Extension
 	for _, engine := range h.description.GetEngines() {
 		declaration := engine.GetSqlSchema()
 		if declaration.GetMode() != protocol.SQLSchemaDeclaration_DOCUMENT {
+			if extension, claims := h.tableClauseExtension(engine); claims {
+				result = append(result, extension)
+			}
 			continue
 		}
 		extension := sqlext.Extension{Owner: h.description.GetProviderId(), Targets: []string{engine.GetId()}, Grammar: sqlGrammar{target: h.targets[engine.GetId()]}}

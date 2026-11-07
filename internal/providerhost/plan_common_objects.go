@@ -586,7 +586,7 @@ func commonObjectMetadata(builder objectidentity.Builder, parents map[objectiden
 		}
 		return step, true, nil
 	}
-	for _, family := range []func(objectidentity.Builder, ast.Node) (objectidentity.ID, plangraph.Action, bool){relationEffect, principalEffect, accessEffect} {
+	for _, family := range []func(objectidentity.Builder, ast.Node) (objectidentity.ID, plangraph.Action, bool){relationEffect, principalEffect, accessEffect, namespaceEffect} {
 		subject, action, matched := family(builder, node)
 		if !matched {
 			continue

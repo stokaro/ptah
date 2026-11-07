@@ -22,17 +22,28 @@ var commonCoverageKinds = map[protocol.CommonObjectSupport_Kind]coverage.Kind{
 	protocol.CommonObjectSupport_GRANT:           coverage.Grant,
 	protocol.CommonObjectSupport_OBJECT_OWNER:    coverage.ObjectOwner,
 	protocol.CommonObjectSupport_ROLE_MEMBERSHIP: coverage.RoleMembership,
+	// A read that leaves the namespaces uninspected says nothing of the
+	// schemas the declaration names, so the comparison withholds them; see
+	// compare.DeclaredNamespaces.
+	protocol.CommonObjectSupport_SCHEMA: coverage.Schema,
 }
 
 // commonObjects places what a read reports of the common objects beyond
-// tables into result: views, sequences, roles and their memberships, grants,
-// and the comments of the objects the read reports. The SDK has checked the
-// reply against the kinds the engine declares; a comment on an object the read
-// does not hold, and an uninspected kind no coverage record can express, are
-// refused here.
+// tables into result: namespaces, views, sequences, roles and their
+// memberships, grants, and the comments of the objects the read reports. The
+// SDK has checked the reply against the kinds the engine declares; a comment
+// on an object the read does not hold, a namespace of another database, and
+// an uninspected kind no coverage record can express, are refused here.
 func (r reader) commonObjects(result *catalog.Database, observed *protocol.ObservedCommonObjects) error {
 	if err := recordCommonCoverage(result, observed); err != nil {
 		return err
+	}
+	for _, namespace := range observed.GetNamespaces() {
+		identity := namespace.GetIdentity()
+		if identity.GetDatabase() != "" && (r.session == nil || identity.GetDatabase() != r.session.remote.GetDatabase()) {
+			return unsupported(fmt.Sprintf("namespace %q of another database than the session's", identity.GetName()))
+		}
+		result.Schemas = append(result.Schemas, catalog.Schema{Name: identity.GetName()})
 	}
 	for _, view := range observed.GetViews() {
 		identity := view.GetIdentity()
@@ -211,6 +222,10 @@ var commentTargets = map[string]func(*catalog.Database, *protocol.Reference) *st
 	},
 	"role":  roleCommentTarget,
 	"group": roleCommentTarget,
+	"schema": func(result *catalog.Database, object *protocol.Reference) *string {
+		return field(result.Schemas, func(schema catalog.Schema) bool { return schema.Name == object.GetName() },
+			func(schema *catalog.Schema) *string { return &schema.Comment })
+	},
 }
 
 func roleCommentTarget(result *catalog.Database, object *protocol.Reference) *string {

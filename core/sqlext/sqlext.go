@@ -168,6 +168,21 @@ type Claim struct {
 	// about the span states its place with [ptah.run/core/ptaherr.At], from this
 	// offset, and the reader of the document reports the line and column.
 	Offset int
+	// Written is where the span starts in the document as its author wrote
+	// it. It differs from Offset where the frontend rewrote the document
+	// before reading it, as it rewrites a client delimiter directive. An
+	// owner that records where a span stands, rather than refusing it, reads
+	// it here.
+	Written Position
+}
+
+// Position is a place in a document as its author wrote it: the byte offset,
+// and the line and the column, each counted from 1, the column in bytes from
+// the start of its line. A line ends at LF, at CRLF or at a lone CR.
+type Position struct {
+	Offset int
+	Line   int
+	Column int
 }
 
 // ReferenceContext describes a shared referential action. Event is DELETE or
@@ -299,6 +314,9 @@ type Document struct {
 	// DroppedTables are common DROP TABLE boundaries in source order. A
 	// statement naming several tables contributes one entry per table.
 	DroppedTables []DroppedTable
+	// Length is the length in bytes of the document as its author wrote it,
+	// which bounds every [Claim.Written] position.
+	Length int
 }
 
 // Request is every claim of one document an extension's patterns matched.
@@ -317,6 +335,9 @@ type Request struct {
 	// order. An owner can end a table's pending declarations at its removal
 	// without parsing the shared DROP TABLE grammar itself.
 	DroppedTables []DroppedTable
+	// Length is the length in bytes of the document as its author wrote it;
+	// see [Document.Length].
+	Length int
 }
 
 // Result is an owner's reading of a [Request].

@@ -377,3 +377,23 @@ func TestSet_Parse_ReferenceContextIsIsolated(t *testing.T) {
 	c.Assert(reference, qt.DeepEquals, want)
 	c.Assert(requests[0].Claims[1].Reference, qt.DeepEquals, want)
 }
+
+// TestSet_Parse_CarriesWhereTheDocumentIsWritten hands each owner the
+// document's length and every claim's written position as the frontend
+// gave them.
+func TestSet_Parse_CarriesWhereTheDocumentIsWritten(t *testing.T) {
+	c := qt.New(t)
+	var requests []sqlext.Request
+	set := must.Must(sqlext.NewSet(extension("example.org/a", "x", echoParser{requests: &requests},
+		sqlext.Pattern{Name: "a", Site: sqlext.TableElement, Words: []string{"A"}})))
+	written := sqlext.Position{Offset: 30, Line: 2, Column: 7}
+	match := sqlext.Match{Candidate: set.Candidates("x", sqlext.TableElement)[0], Claim: sqlext.Claim{Pattern: "a", Text: "A 1", Offset: 12, Written: written}}
+
+	_, err := set.Parse(t.Context(), "x", []sqlext.Match{match}, sqlext.Document{Length: 64})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(requests, qt.HasLen, 1)
+	c.Assert(requests[0].Length, qt.Equals, 64)
+	c.Assert(requests[0].Claims[0].Written, qt.Equals, written)
+	c.Assert(requests[0].Claims[0].Offset, qt.Equals, 12)
+}

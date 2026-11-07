@@ -159,7 +159,7 @@ func compareReportingUndecidedAdditions(
 	if opts.ServerSchemas && comparesServerDatabases(opts.Dialect) {
 		compare.ServerSchemas(diff, desired, database.Schemas, identifierSemantics)
 	}
-	addDeclaredSchemas(diff, desired, database, cov, opts.Dialect, identifierSemantics)
+	addDeclaredSchemas(diff, desired, database, cov, opts.Dialect, identifierSemantics, rules)
 
 	columnFacts, err := compare.ResolveColumnFacts(ctx, desired, database, opts.Dialect, identifierSemantics, caps, prepared.bySubject, rules.ColumnService)
 	if err != nil {
@@ -521,7 +521,9 @@ func comparesServerDatabases(dialect string) bool {
 }
 
 // addDeclaredSchemas runs [compare.DeclaredSchemas] on a dialect that plans a
-// schema the desired state declares and the read does not hold.
+// schema the desired state declares and the read does not hold, and
+// [compare.DeclaredNamespaces] on a target whose rules say its reads list
+// their schemas ([schemacomparison.Rules.Namespaces]).
 func addDeclaredSchemas(
 	diff *difftypes.SchemaDiff,
 	desired *schemamodel.Database,
@@ -529,9 +531,14 @@ func addDeclaredSchemas(
 	cov compare.Coverage,
 	dialect string,
 	semantics identifier.Semantics,
+	rules schemacomparison.Rules,
 ) {
 	if described, _ := platform.Lookup(dialect); described.Comparison.DeclaredSchemas {
 		compare.DeclaredSchemas(diff, desired, database.Schemas, cov, semantics)
+		return
+	}
+	if rules.Namespaces {
+		compare.DeclaredNamespaces(diff, desired, database.Schemas, cov, semantics)
 	}
 }
 
