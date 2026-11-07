@@ -126,13 +126,13 @@ func TestRead_AlterConstraint_FailurePath(t *testing.T) {
 			name:    "no clause the reader models",
 			dialect: "postgres",
 			sql:     "CREATE TABLE c (a int);\nALTER TABLE c ALTER CONSTRAINT c_a;",
-			wantErr: `(?s).*ALTER CONSTRAINT at position \d+: only \[NOT\] DEFERRABLE and INITIALLY DEFERRED \| IMMEDIATE are supported.*`,
+			wantErr: `(?s).*ALTER CONSTRAINT: only \[NOT\] DEFERRABLE and INITIALLY DEFERRED \| IMMEDIATE are supported.*`,
 		},
 		{
 			name:    "MySQL has no deferral",
 			dialect: "mysql",
 			sql:     "CREATE TABLE c (a int);\nALTER TABLE c ALTER CONSTRAINT c_a DEFERRABLE;",
-			wantErr: `(?s).*deferral clause at position \d+.*`,
+			wantErr: `(?s).*deferral clause.*`,
 		},
 	}
 	for _, test := range tests {

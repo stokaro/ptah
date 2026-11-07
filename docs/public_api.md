@@ -5290,6 +5290,13 @@ outcome is uncertain support `errors.Is(err, ptaherr.ErrOutcomeUnknown)`.
 Inspect durable state before choosing recovery; this error never permits replay,
 and its absence does not prove that an operation was never executed.
 
+A refusal of a SQL document that states where it stopped supports the same
+`errors.As(err, *ptaherr.ParseError)`, and `Line`, `Column` and `Offset` give the
+place. Lines and columns count from 1, columns count characters with a tab as
+one, and `Offset` is the byte offset in the text as written. An owner's SQL
+parser states that place with `ptaherr.At` and `sqlext.Claim.Offset`, and writes
+no position in its sentence.
+
 ### `ptah.run/docs`
 
 This package holds Ptah's own documentation as an `embed.FS` and nothing else.

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlext"
 	"ptah.run/dialect/postgres/pgtable"
@@ -115,7 +116,7 @@ func (partitionMemberSQL) ParseSQL(ctx context.Context, request sqlext.Request) 
 		}
 		value, err := ParsePartitionMemberSQL(claim.Text)
 		if err != nil {
-			return sqlext.Result{}, fmt.Errorf("table %s at position %d: %w", claim.Subject, claim.Offset, err)
+			return sqlext.Result{}, ptaherr.At(claim.Offset, fmt.Errorf("table %s: %w", claim.Subject, err))
 		}
 		facets, err := schemaext.NewFacets(value)
 		if err != nil {

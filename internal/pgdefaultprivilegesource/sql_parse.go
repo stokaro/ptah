@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"ptah.run/core/ptaherr"
 	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/internal/lexer"
 )
@@ -53,7 +54,7 @@ func (t *privilegeTokens) parse() (*pgdefaultprivilege.Operation, error) {
 		return nil, err
 	}
 	if err := operation.Validate(); err != nil {
-		return nil, fmt.Errorf("ALTER DEFAULT PRIVILEGES at position %d: %w", t.offset, err)
+		return nil, ptaherr.At(t.offset, fmt.Errorf("ALTER DEFAULT PRIVILEGES: %w", err))
 	}
 	return operation, nil
 }
@@ -65,7 +66,7 @@ func (t *privilegeTokens) scope() (pgdefaultprivilege.Identity, error) {
 	}
 	t.pos++
 	if !t.keyword("ROLE") && !t.keyword("USER") {
-		return identity, fmt.Errorf("expected ROLE or USER after FOR in ALTER DEFAULT PRIVILEGES at position %d", t.offset+t.current().Start)
+		return identity, ptaherr.At(t.offset+t.current().Start, fmt.Errorf("expected ROLE or USER after FOR in ALTER DEFAULT PRIVILEGES"))
 	}
 	t.pos++
 	grantor, err := t.roleName("grantor role")
@@ -97,7 +98,7 @@ func (t *privilegeTokens) action(operation *pgdefaultprivilege.Operation) error 
 			operation.Action = pgdefaultprivilege.RevokeGrantOptions
 		}
 	default:
-		return fmt.Errorf("expected GRANT or REVOKE in ALTER DEFAULT PRIVILEGES at position %d", t.offset+t.current().Start)
+		return ptaherr.At(t.offset+t.current().Start, fmt.Errorf("expected GRANT or REVOKE in ALTER DEFAULT PRIVILEGES"))
 	}
 	return nil
 }
@@ -107,7 +108,7 @@ func (t *privilegeTokens) privileges() ([]string, error) {
 	for {
 		token := t.current()
 		if token.Type != lexer.TokenIdentifier || t.keyword("ON") {
-			return nil, fmt.Errorf("expected default privilege name at position %d", t.offset+token.Start)
+			return nil, ptaherr.At(t.offset+token.Start, fmt.Errorf("expected default privilege name"))
 		}
 		t.pos++
 		name := strings.ToUpper(token.Value)
@@ -125,7 +126,7 @@ func (t *privilegeTokens) privileges() ([]string, error) {
 func (t *privilegeTokens) objectType() (string, error) {
 	token := t.current()
 	if token.Type != lexer.TokenIdentifier {
-		return "", fmt.Errorf("expected default privilege object type at position %d", t.offset+token.Start)
+		return "", ptaherr.At(t.offset+token.Start, fmt.Errorf("expected default privilege object type"))
 	}
 	t.pos++
 	name := strings.ToUpper(token.Value)

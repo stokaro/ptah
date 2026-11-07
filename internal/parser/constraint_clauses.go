@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlext"
 	"ptah.run/internal/lexer"
@@ -25,8 +26,8 @@ type enforcement struct {
 // ENFORCED` reads back ENFORCED `YES`.
 func (e *enforcement) record(target targetGrammar, notEnforced bool, start int) error {
 	if e.written && target.takesOneEnforcement() {
-		return fmt.Errorf("NOT ENFORCED or ENFORCED at position %d: a constraint takes one of them, and "+
-			"PostgreSQL 18.6 answers `multiple ENFORCED/NOT ENFORCED clauses not allowed`", start)
+		return ptaherr.At(start, fmt.Errorf("NOT ENFORCED or ENFORCED: a constraint takes one of them, and "+
+			"PostgreSQL 18.6 answers `multiple ENFORCED/NOT ENFORCED clauses not allowed`"))
 	}
 	e.written = true
 	e.notEnforced = notEnforced
@@ -121,12 +122,12 @@ func (p *Parser) refuseEnforcement(kind, clause string, start int) error {
 	case p.target.takesEnforced(kind):
 		return nil
 	case kind == primaryKeyElement || kind == uniqueElement:
-		return fmt.Errorf("%s at position %d: %s constraints cannot be marked %s", clause, start, kind, clause)
+		return ptaherr.At(start, fmt.Errorf("%s: %s constraints cannot be marked %s", clause, kind, clause))
 	case kind == indexElement:
-		return fmt.Errorf("%s at position %d: an index takes no %s clause", clause, start, clause)
+		return ptaherr.At(start, fmt.Errorf("%s: an index takes no %s clause", clause, clause))
 	default:
-		return fmt.Errorf("%s at position %d: the %s dialect takes no %s clause after a %s",
-			clause, start, dialectName(p.dialect), clause, kind)
+		return ptaherr.At(start, fmt.Errorf("%s: the %s dialect takes no %s clause after a %s",
+			clause, dialectName(p.dialect), clause, kind))
 	}
 }
 
@@ -137,11 +138,11 @@ func (p *Parser) refuseEnforcement(kind, clause string, start int) error {
 func (p *Parser) readNotValid(kind string, start int) error {
 	switch {
 	case kind == primaryKeyElement || kind == uniqueElement:
-		return fmt.Errorf("NOT VALID at position %d: %s constraints cannot be marked NOT VALID", start, kind)
+		return ptaherr.At(start, fmt.Errorf("NOT VALID: %s constraints cannot be marked NOT VALID", kind))
 	case kind != checkElement && kind != foreignKeyElement:
-		return fmt.Errorf("NOT VALID at position %d: an index takes no NOT VALID clause", start)
+		return ptaherr.At(start, fmt.Errorf("NOT VALID: an index takes no NOT VALID clause"))
 	case !p.target.takesNotValid():
-		return fmt.Errorf("NOT VALID at position %d: the %s dialect takes no NOT VALID clause", start, dialectName(p.dialect))
+		return ptaherr.At(start, fmt.Errorf("NOT VALID: the %s dialect takes no NOT VALID clause", dialectName(p.dialect)))
 	default:
 		p.addedNotValid = p.addingConstraint
 		return nil
@@ -199,11 +200,11 @@ func (p *Parser) parseColumnAttribute(kind string, enforced *enforcement) error 
 	start := p.current.Start
 	switch {
 	case p.current.MatchIdentifierValue("NOT") && p.nextIsWord("VALID"):
-		return fmt.Errorf("NOT VALID at position %d: it follows a table constraint, not a column", start)
+		return ptaherr.At(start, fmt.Errorf("NOT VALID: it follows a table constraint, not a column"))
 	case kind != checkElement && kind != foreignKeyElement:
-		return fmt.Errorf(
-			"misplaced ENFORCED clause at position %d: it has to follow the column's CHECK or REFERENCES", start,
-		)
+		return ptaherr.At(start, fmt.Errorf(
+			"misplaced ENFORCED clause: it has to follow the column's CHECK or REFERENCES",
+		))
 	}
 	return p.readConstraintAttributes(kind, enforced)
 }
@@ -252,7 +253,7 @@ func (p *Parser) readMatchType() (string, error) {
 	}
 	start := p.current.Start
 	if !p.target.takesMatch() {
-		return "", fmt.Errorf("MATCH at position %d: the %s dialect takes no MATCH clause", start, dialectName(p.dialect))
+		return "", ptaherr.At(start, fmt.Errorf("MATCH: the %s dialect takes no MATCH clause", dialectName(p.dialect)))
 	}
 	p.advance()
 	p.skipWhitespace()
@@ -268,7 +269,7 @@ func (p *Parser) readMatchType() (string, error) {
 		p.advance()
 		return matchType, nil
 	default:
-		return "", fmt.Errorf("expected SIMPLE, FULL or PARTIAL after MATCH at position %d", p.current.Start)
+		return "", ptaherr.At(p.current.Start, fmt.Errorf("expected SIMPLE, FULL or PARTIAL after MATCH"))
 	}
 }
 
@@ -281,10 +282,10 @@ func (p *Parser) refuseMatchType(matchType string, start int) error {
 	case !p.target.known:
 		return nil
 	case match.Refusal != "":
-		return fmt.Errorf("MATCH %s at position %d: %s", matchType, start, match.Refusal)
+		return ptaherr.At(start, fmt.Errorf("MATCH %s: %s", matchType, match.Refusal))
 	case matchType == "PARTIAL" && !match.Partial:
-		return fmt.Errorf("MATCH PARTIAL at position %d: the %s dialect's server does not implement it, and "+
-			"PostgreSQL 18.6 answers `MATCH PARTIAL not yet implemented`", start, dialectName(p.dialect))
+		return ptaherr.At(start, fmt.Errorf("MATCH PARTIAL: the %s dialect's server does not implement it, and "+
+			"PostgreSQL 18.6 answers `MATCH PARTIAL not yet implemented`", dialectName(p.dialect)))
 	default:
 		return nil
 	}
@@ -356,8 +357,8 @@ func (p *Parser) keyOptionReader() (func(kind, prefix string, start int) error, 
 		// Measured on MySQL 8.4 and MariaDB 11.8, an engine attribute is
 		// stored with the index, and the model has no field for it.
 		return func(_, _ string, start int) error {
-			return fmt.Errorf("%s at position %d: an engine attribute of an index is not modeled; declare the key without it",
-				keyword, start)
+			return ptaherr.At(start, fmt.Errorf("%s: an engine attribute of an index is not modeled; declare the key without it",
+				keyword))
 		}, true
 	default:
 		return nil, false
@@ -391,8 +392,8 @@ func (p *Parser) readGuardedKeyOptions(kind, name, prefix string) error {
 	if p.opensNextOption(sqlext.IndexOption) {
 		err = p.readKeyOptions(kind, name, prefix)
 		if err == nil && !p.isAtEnd() {
-			err = fmt.Errorf("%s at position %d: a version guard among a key's options holds only key options",
-				p.current.Value, p.current.Start)
+			err = ptaherr.At(p.current.Start, fmt.Errorf("%s: a version guard among a key's options holds only key options",
+				p.current.Value))
 		}
 	}
 	p.lexer, p.current, p.previous = outer, current, previous
@@ -498,13 +499,13 @@ func (p *Parser) readKeyVisibility(kind, keyword string, start int) error {
 	visibility := p.target.grammar.Keys.Visibility
 	switch {
 	case slices.Contains(visibility.Refused, clause):
-		return fmt.Errorf("%s at position %d: %s", clause, start, visibility.Refusal)
+		return ptaherr.At(start, fmt.Errorf("%s: %s", clause, visibility.Refusal))
 	case clause == "INVISIBLE" && kind == primaryKeyElement:
-		return fmt.Errorf("INVISIBLE at position %d: MySQL 8.4.11 answers ERROR 3522, "+
-			"a primary key index cannot be invisible", start)
+		return ptaherr.At(start, fmt.Errorf("INVISIBLE: MySQL 8.4.11 answers ERROR 3522, "+
+			"a primary key index cannot be invisible"))
 	case clause == "IGNORED" && kind == primaryKeyElement:
-		return fmt.Errorf("IGNORED at position %d: MariaDB 11.8.9 answers ERROR 4174, "+
-			"a primary key cannot be marked as IGNORE", start)
+		return ptaherr.At(start, fmt.Errorf("IGNORED: MariaDB 11.8.9 answers ERROR 4174, "+
+			"a primary key cannot be marked as IGNORE"))
 	}
 	p.advance()
 	if clause == "NOT IGNORED" {
@@ -524,7 +525,7 @@ func (p *Parser) readsKeyOptions() bool {
 // readKeyMethod reads `USING BTREE | HASH` after a key's parts.
 func (p *Parser) readKeyMethod(kind, prefix string, start int) error {
 	if prefix != "" {
-		return fmt.Errorf("USING at position %d: a %s index takes no access method", start, prefix)
+		return ptaherr.At(start, fmt.Errorf("USING: a %s index takes no access method", prefix))
 	}
 	method := p.readIndexAccessMethod()
 	if kind != primaryKeyElement {

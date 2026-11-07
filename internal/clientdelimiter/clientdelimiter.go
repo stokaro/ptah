@@ -1,10 +1,14 @@
-// Package clientdelimiter recognizes a client delimiter directive: the MySQL
-// client's `DELIMITER $$` line and Atlas's `-- atlas:delimiter $$` comment.
+// Package clientdelimiter recognizes a client delimiter directive, the MySQL
+// client's `DELIMITER $$` line and Atlas's `-- atlas:delimiter $$` comment, and
+// rewrites the script around one into ordinary semicolon-terminated SQL.
 //
 // core/sqlutil honors a directive when it splits a script. The recognizer is a
 // package of its own so that a splitter for a language with no client
 // delimiter refuses the same set of lines: a second copy of the rules would
 // refuse a line the splitter does not honor, or let through a line it does.
+// The rewrite is here beside it because the SQL parser reads the rewritten text
+// and reports refusals against the written one, so it needs the mapping between
+// the two, which the exported core/sqlutil function does not return.
 package clientdelimiter
 
 import "strings"

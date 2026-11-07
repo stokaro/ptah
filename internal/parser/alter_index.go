@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/ptaherr"
 	"ptah.run/internal/lexer"
 )
 
@@ -40,9 +41,9 @@ func (p *Parser) parseAlterIndex() (*ast.AlterIndexNode, error) {
 	p.skipWhitespace()
 
 	if !p.current.MatchIdentifierValue("RENAME") {
-		return nil, fmt.Errorf(
-			"ALTER INDEX %s %s at position %d: only RENAME TO is read; an index's other settings are not part of a schema file",
-			name, p.current.Value, p.current.Start)
+		return nil, ptaherr.At(p.current.Start, fmt.Errorf(
+			"ALTER INDEX %s %s: only RENAME TO is read; an index's other settings are not part of a schema file",
+			name, p.current.Value))
 	}
 	p.advance()
 	p.skipWhitespace()
@@ -55,9 +56,9 @@ func (p *Parser) parseAlterIndex() (*ast.AlterIndexNode, error) {
 		return nil, fmt.Errorf("expected the new name after ALTER INDEX %s RENAME TO: %w", name, err)
 	}
 	if p.current.MatchOperatorValue(".") {
-		return nil, fmt.Errorf(
-			"ALTER INDEX %s RENAME TO %s. at position %d: the new name is bare, because the index stays in its schema",
-			name, newName, p.current.Start)
+		return nil, ptaherr.At(p.current.Start, fmt.Errorf(
+			"ALTER INDEX %s RENAME TO %s.: the new name is bare, because the index stays in its schema",
+			name, newName))
 	}
 	node.NewName = newName
 	return node, nil

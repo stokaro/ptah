@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/ptaherr"
 	"ptah.run/internal/mysqlcheck"
 )
 
@@ -33,7 +34,7 @@ func refuseMySQLColumnCheckReferences(table *ast.CreateTableNode, checks []colum
 	}
 	for _, check := range checks {
 		if other, found := mysqlcheck.OtherColumn(check.column, check.expression, columns); found {
-			return fmt.Errorf("column CHECK at position %d: %w", check.position, mysqlcheck.Refusal(check.column, other))
+			return ptaherr.At(check.position, fmt.Errorf("column CHECK: %w", mysqlcheck.Refusal(check.column, other)))
 		}
 	}
 	return nil

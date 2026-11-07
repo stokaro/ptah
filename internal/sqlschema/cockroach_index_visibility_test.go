@@ -81,22 +81,22 @@ func TestRead_CockroachDBIndexVisibility_FailurePath(t *testing.T) {
 		{
 			name:    "the clause before WHERE, a syntax error on v26.3.2",
 			sql:     "CREATE INDEX k ON t (a) NOT VISIBLE WHERE a > 0;",
-			wantErr: `unsupported SQL statement: WHERE at position \d+`,
+			wantErr: `line \d+, column \d+: unsupported SQL statement: WHERE`,
 		},
 		{
 			name:    "a partially visible index",
 			sql:     "CREATE INDEX k ON t (a) VISIBILITY 0.5;",
-			wantErr: `VISIBILITY 0\.5 at position \d+: a partially visible index is not modeled; write VISIBLE or NOT VISIBLE`,
+			wantErr: `line \d+, column \d+: VISIBILITY 0\.5: a partially visible index is not modeled; write VISIBLE or NOT VISIBLE`,
 		},
 		{
 			name:    "a partially visible index after a condition",
 			sql:     "CREATE INDEX k ON t (a) WHERE a > 0 VISIBILITY 0.25;",
-			wantErr: `VISIBILITY 0\.25 at position \d+: a partially visible index is not modeled; .*`,
+			wantErr: `line \d+, column \d+: VISIBILITY 0\.25: a partially visible index is not modeled; .*`,
 		},
 		{
 			name:    "an index named without its table",
 			sql:     "CREATE INDEX k ON t (a); ALTER INDEX k NOT VISIBLE;",
-			wantErr: `ALTER INDEX k at position \d+: name the index through its table, as table@index`,
+			wantErr: `line \d+, column \d+: ALTER INDEX k: name the index through its table, as table@index`,
 		},
 	}
 	for _, test := range tests {
@@ -120,6 +120,6 @@ func TestRead_PostgreSQLIndexVisibility_FailurePath(t *testing.T) {
 	database, _, err := sqlschema.Read(
 		[]byte(cockroachVisibilityTable+"CREATE INDEX k ON t (a); ALTER INDEX k NOT VISIBLE;"), "postgres")
 
-	c.Assert(err, qt.ErrorMatches, `.*ALTER INDEX k NOT at position \d+: only RENAME TO is read; .*`)
+	c.Assert(err, qt.ErrorMatches, `.*ALTER INDEX k NOT: only RENAME TO is read; .*`)
 	c.Assert(database.Indexes, qt.HasLen, 0)
 }

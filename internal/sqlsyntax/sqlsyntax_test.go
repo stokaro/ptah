@@ -24,7 +24,7 @@ func TestParse_HappyPath(t *testing.T) {
 // TestParse_FailurePath refuses a document the shared grammar refuses.
 func TestParse_FailurePath(t *testing.T) {
 	for _, test := range []struct{ name, text, dialect, wantErr string }{
-		{name: "shared grammar", text: "CREATE TABLE (;", dialect: "postgres", wantErr: `expected table name: .*`},
+		{name: "shared grammar", text: "CREATE TABLE (;", dialect: "postgres", wantErr: `line 1, column 14: expected table name: .*`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)

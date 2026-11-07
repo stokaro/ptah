@@ -73,7 +73,7 @@ func TestReadWith_WithoutTheTableOwnerRefusesItsSyntax(t *testing.T) {
 	database, statements, err := sqlschema.ReadWith(t.Context(), []byte("CREATE SHELF TABLE b;"), "shelves", nil,
 		sqlschema.Options{Owners: sqlext.None()})
 
-	c.Assert(err, qt.ErrorMatches, `unsupported CREATE target: SHELF at position 7`)
+	c.Assert(err, qt.ErrorMatches, `line 1, column 8: unsupported CREATE target: SHELF`)
 	c.Assert(database.Tables, qt.HasLen, 0)
 	c.Assert(statements, qt.IsNil)
 }
@@ -154,7 +154,7 @@ func TestReadWith_WithoutTheOptionOwnerRefusesItsSyntax(t *testing.T) {
 	database, statements, err := sqlschema.ReadWith(t.Context(), []byte("CREATE TABLE a (id INTEGER) LABELED 'archive';"), "shelves", nil,
 		sqlschema.Options{Owners: sqlext.None()})
 
-	c.Assert(err, qt.ErrorMatches, `unsupported table option: LABELED at position 28`)
+	c.Assert(err, qt.ErrorMatches, `line 1, column 29: unsupported table option: LABELED`)
 	c.Assert(database.Tables, qt.HasLen, 0)
 	c.Assert(statements, qt.IsNil)
 }

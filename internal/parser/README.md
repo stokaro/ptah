@@ -340,14 +340,21 @@ The parser follows a recursive descent parsing approach:
 
 The parser provides detailed error messages including:
 - Expected vs actual token types
-- Position information in the input
+- The line and column in the input, read through `sourcepos.Locate`
 - Context about what was being parsed
 
 ```go
 parser := parser.NewParser("CREATE TABLE (id INTEGER);")
 _, err := parser.Parse()
-// Error: "expected table name: expected identifier, got Operator at position 13"
+// Error: "line 1, column 14: expected table name: expected identifier, got Operator"
 ```
+
+A refusal states where it stopped with `ptaherr.At`, as a byte offset into the
+text the parser holds, and writes no position in its sentence. `ParseContext` is
+the one place that turns the offset into a line and column, against the text
+given to `NewParser`, and returns a `*ptaherr.ParseError` holding all three. A
+piece of a document read again by itself counts from the piece's start, so its
+reader moves the offset with `sourcepos.Shift` before the refusal leaves.
 
 ## Testing
 

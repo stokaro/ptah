@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/ptaherr"
 	"ptah.run/internal/lexer"
 )
 
@@ -97,8 +98,8 @@ func visibilityShare(value string, start int) (bool, error) {
 	case err == nil && share == 1:
 		return false, nil
 	}
-	return false, fmt.Errorf("VISIBILITY %s at position %d: a partially visible index is not modeled; "+
-		"write VISIBLE or NOT VISIBLE", value, start)
+	return false, ptaherr.At(start, fmt.Errorf("VISIBILITY %s: a partially visible index is not modeled; "+
+		"write VISIBLE or NOT VISIBLE", value))
 }
 
 // splitCockroachConditionVisibility separates a visibility clause from the end
@@ -178,12 +179,12 @@ func (p *Parser) parseCockroachAlterIndex() (ast.Node, error) {
 	start := p.current.Start
 	table, err := p.parseQualifiedIdentifier("table name")
 	if err != nil {
-		return nil, fmt.Errorf("ALTER INDEX at position %d: %w", start, err)
+		return nil, ptaherr.At(start, fmt.Errorf("ALTER INDEX: %w", err))
 	}
 	p.skipWhitespace()
 	if !p.current.MatchOperatorValue("@") {
-		return nil, fmt.Errorf("ALTER INDEX %s at position %d: name the index through its table, as table@index",
-			table, start)
+		return nil, ptaherr.At(start, fmt.Errorf("ALTER INDEX %s: name the index through its table, as table@index",
+			table))
 	}
 	p.advance()
 	index, err := p.expectIdentifier()
@@ -196,10 +197,10 @@ func (p *Parser) parseCockroachAlterIndex() (ast.Node, error) {
 		return nil, err
 	}
 	if !read {
-		return nil, fmt.Errorf(
-			"ALTER INDEX %s@%s %s at position %d: only VISIBLE and NOT VISIBLE are read; "+
+		return nil, ptaherr.At(p.current.Start, fmt.Errorf(
+			"ALTER INDEX %s@%s %s: only VISIBLE and NOT VISIBLE are read; "+
 				"an index's other settings are not part of a schema file",
-			table, index, p.current.Value, p.current.Start)
+			table, index, p.current.Value))
 	}
 	return &ast.AlterTableNode{
 		Name: table,

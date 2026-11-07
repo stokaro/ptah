@@ -80,7 +80,7 @@ type AddressType struct{}
 	var parseErr *ptaherr.ParseError
 	c.Assert(err, qt.ErrorAs, &parseErr)
 	c.Assert(parseErr.Directive, qt.Equals, "ptah:schema:composite")
-	c.Assert(err, qt.ErrorMatches, `expected ":" at position 6 on //ptah:schema:composite at AddressType`)
+	c.Assert(err, qt.ErrorMatches, `expected ":" on //ptah:schema:composite at AddressType`)
 }
 
 func TestParseRangeAnnotation(t *testing.T) {

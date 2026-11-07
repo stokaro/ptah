@@ -6,6 +6,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/sqlext"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
@@ -62,7 +63,7 @@ func (t *policyTokens) operator(word string) bool {
 func (t *policyTokens) words(words ...string) error {
 	for _, word := range words {
 		if !t.keyword(word) {
-			return fmt.Errorf("expected %s at position %d", word, t.offset+t.current().Start)
+			return ptaherr.At(t.offset+t.current().Start, fmt.Errorf("expected %s", word))
 		}
 		t.pos++
 	}
@@ -71,7 +72,7 @@ func (t *policyTokens) words(words ...string) error {
 
 func (t *policyTokens) end() error {
 	if t.current().Type != lexer.TokenEOF {
-		return fmt.Errorf("unexpected %s at position %d", t.current().Value, t.offset+t.current().Start)
+		return ptaherr.At(t.offset+t.current().Start, fmt.Errorf("unexpected %s", t.current().Value))
 	}
 	return nil
 }
@@ -91,12 +92,12 @@ func (t *policyTokens) name(label string) (string, error) {
 		}
 	case token.Type == lexer.TokenString && strings.HasPrefix(token.Value, `"`):
 		if len(token.Value) < 2 || !strings.HasSuffix(token.Value, `"`) || strings.Contains(strings.ReplaceAll(token.Value[1:len(token.Value)-1], `""`, ""), `"`) {
-			return "", fmt.Errorf("expected a closed quoted %s at position %d", label, t.offset+token.Start)
+			return "", ptaherr.At(t.offset+token.Start, fmt.Errorf("expected a closed quoted %s", label))
 		}
 		t.pos++
 		return strings.ReplaceAll(token.Value[1:len(token.Value)-1], `""`, `"`), nil
 	default:
-		return "", fmt.Errorf("expected %s at position %d", label, t.offset+token.Start)
+		return "", ptaherr.At(t.offset+token.Start, fmt.Errorf("expected %s", label))
 	}
 }
 
@@ -124,7 +125,7 @@ func (t *policyTokens) table() (policyTable, error) {
 
 func (t *policyTokens) expression(label string) (string, error) {
 	if !t.operator("(") {
-		return "", fmt.Errorf("expected '(' after %s at position %d", label, t.offset+t.current().Start)
+		return "", ptaherr.At(t.offset+t.current().Start, fmt.Errorf("expected '(' after %s", label))
 	}
 	start := t.current().End
 	t.pos++
@@ -152,11 +153,11 @@ func (t *policyTokens) commentText() (string, error) {
 	}
 	token := t.current()
 	if token.Type != lexer.TokenString || strings.HasPrefix(token.Value, `"`) {
-		return "", fmt.Errorf("expected a string constant or NULL after IS at position %d", t.offset+token.Start)
+		return "", ptaherr.At(t.offset+token.Start, fmt.Errorf("expected a string constant or NULL after IS"))
 	}
 	value, ok := lexer.StringValue(token.Value, t.options)
 	if !ok {
-		return "", fmt.Errorf("invalid policy comment string at position %d", t.offset+token.Start)
+		return "", ptaherr.At(t.offset+token.Start, fmt.Errorf("invalid policy comment string"))
 	}
 	t.pos++
 	return value, t.end()

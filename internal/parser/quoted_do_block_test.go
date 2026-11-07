@@ -44,7 +44,7 @@ func TestParse_AnUnterminatedDoBlockIsRefused(t *testing.T) {
 
 	_, err := parser.NewParser(`DO 'BEGIN PERFORM 1; END`, parser.WithDialect("postgres")).Parse()
 
-	c.Assert(err, qt.ErrorMatches, `unterminated DO statement at position \d+`)
+	c.Assert(err, qt.ErrorMatches, `line \d+, column \d+: unterminated DO statement`)
 }
 
 // Without a dialect the lexer is the permissive one, which takes a backslash

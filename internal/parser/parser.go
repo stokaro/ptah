@@ -18,14 +18,15 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlext"
-	"ptah.run/core/sqlutil"
 	"ptah.run/internal/chtype"
+	"ptah.run/internal/clientdelimiter"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/nullsdistinct"
 	routinebuiltin "ptah.run/internal/routineext/builtin"
 	"ptah.run/internal/routineext/compound"
+	"ptah.run/internal/sourcepos"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/viewcolumns"
 )
@@ -67,10 +68,14 @@ type Parser struct {
 	columnChecks []columnCheck
 	lexer        *lexer.Lexer
 	input        string
-	current      lexer.Token
-	previous     lexer.Token
-	startTime    time.Time
-	timeout      time.Duration
+	// source is the text as written, and origins maps an offset in input back
+	// to it, since input has its client delimiter directives rewritten.
+	source    string
+	origins   clientdelimiter.Origins
+	current   lexer.Token
+	previous  lexer.Token
+	startTime time.Time
+	timeout   time.Duration
 
 	dialect      string
 	capabilities capability.Capabilities
@@ -138,9 +143,11 @@ type Parser struct {
 //
 //	parser := NewParser("CREATE TABLE users (id INTEGER PRIMARY KEY);")
 func NewParser(input string, opts ...Option) *Parser {
-	normalized := sqlutil.NormalizeClientDelimiters(input)
+	normalized, origins := clientdelimiter.Normalize(input)
 	p := &Parser{
 		input:     normalized,
+		source:    input,
+		origins:   origins,
 		startTime: time.Now(),
 		timeout:   30 * time.Second, // 30 second timeout to prevent infinite loops
 	}
@@ -262,7 +269,7 @@ func (p *Parser) parseStatements() (*ast.StatementList, error) {
 // parseStatement parses a single SQL statement based on the current token.
 func (p *Parser) parseStatement() (ast.Node, error) {
 	if p.current.Type != lexer.TokenIdentifier {
-		return nil, fmt.Errorf("expected SQL keyword, got %s at position %d", p.current.Type, p.current.Start)
+		return nil, ptaherr.At(p.current.Start, fmt.Errorf("expected SQL keyword, got %s", p.current.Type))
 	}
 
 	if statement, claimed := p.claimOwnerStatement(); claimed {
@@ -290,7 +297,7 @@ func (p *Parser) parseStatement() (ast.Node, error) {
 			p.skipGoBatchSeparator()
 			return nil, nil
 		}
-		return nil, fmt.Errorf("unsupported SQL statement: %s at position %d", keyword, p.current.Start)
+		return nil, ptaherr.At(p.current.Start, fmt.Errorf("unsupported SQL statement: %s", keyword))
 	case "IF":
 		return p.parseGuardedCreateSchema()
 	case "EXEC":
@@ -301,7 +308,7 @@ func (p *Parser) parseStatement() (ast.Node, error) {
 		p.skipSchemaNeutralStatement()
 		return nil, nil
 	default:
-		return nil, fmt.Errorf("unsupported SQL statement: %s at position %d", keyword, p.current.Start)
+		return nil, ptaherr.At(p.current.Start, fmt.Errorf("unsupported SQL statement: %s", keyword))
 	}
 }
 
@@ -338,7 +345,7 @@ func (p *Parser) collectRawStatement(statementStart int, label string) (string, 
 		}
 		p.advance()
 	}
-	return "", fmt.Errorf("unterminated %s at position %d", label, p.current.Start)
+	return "", ptaherr.At(p.current.Start, fmt.Errorf("unterminated %s", label))
 }
 
 // parseCreateStatement parses CREATE statements (TABLE, INDEX, TYPE).
@@ -355,8 +362,8 @@ func (p *Parser) parseCreateStatement() (ast.Node, error) {
 	}
 
 	if p.current.Type != lexer.TokenIdentifier {
-		return nil, fmt.Errorf("expected CREATE target (%s), got %s at position %d",
-			createTargetList, p.current.Type, p.current.Start)
+		return nil, ptaherr.At(p.current.Start, fmt.Errorf("expected CREATE target (%s), got %s",
+			createTargetList, p.current.Type))
 	}
 
 	target := strings.ToUpper(p.current.Value)
@@ -441,7 +448,7 @@ func (p *Parser) parseCreateSchemaObject(target string) (ast.Node, error) {
 	case "MATERIALIZED":
 		return p.parseCreateMaterializedView()
 	default:
-		return nil, fmt.Errorf("unsupported CREATE target: %s at position %d", target, p.current.Start)
+		return nil, ptaherr.At(p.current.Start, fmt.Errorf("unsupported CREATE target: %s", target))
 	}
 }
 
@@ -469,7 +476,7 @@ func (p *Parser) parseCreateDefinerRoutineBestEffort(statementStart int) (ast.No
 		}
 		p.advance()
 	}
-	return nil, fmt.Errorf("unsupported CREATE DEFINER target at position %d", p.current.Start)
+	return nil, ptaherr.At(p.current.Start, fmt.Errorf("unsupported CREATE DEFINER target"))
 }
 
 func (p *Parser) parseCreateTemporary(target string, statementStart int) (ast.Node, error) {
@@ -480,7 +487,7 @@ func (p *Parser) parseCreateTemporary(target string, statementStart int) (ast.No
 	if p.current.MatchIdentifierValue("TRIGGER") && !p.readsTransactSQLTriggers() {
 		return p.parseCreateTrigger(statementStart)
 	}
-	return nil, fmt.Errorf("unsupported CREATE %s target: %s at position %d", target, p.current.Value, p.current.Start)
+	return nil, ptaherr.At(p.current.Start, fmt.Errorf("unsupported CREATE %s target: %s", target, p.current.Value))
 }
 
 func (p *Parser) parseCreateSchema() (*ast.CreateSchemaNode, error) {
@@ -575,11 +582,11 @@ func (p *Parser) parseCreateOrReplaceStatement(statementStart int) (ast.Node, er
 	case "REPLACE", "ALTER":
 		p.advance()
 	default:
-		return nil, fmt.Errorf("expected REPLACE or ALTER after CREATE OR, got %s at position %d", p.current.Value, p.current.Start)
+		return nil, ptaherr.At(p.current.Start, fmt.Errorf("expected REPLACE or ALTER after CREATE OR, got %s", p.current.Value))
 	}
 	p.skipWhitespace()
 	if orMode == "ALTER" && !p.routineServices().ReplacesWithAlter {
-		return nil, fmt.Errorf("unsupported CREATE OR ALTER outside SQL Server dialect at position %d", p.current.Start)
+		return nil, ptaherr.At(p.current.Start, fmt.Errorf("unsupported CREATE OR ALTER outside SQL Server dialect"))
 	}
 	if orMode == "ALTER" {
 		switch {
@@ -592,7 +599,7 @@ func (p *Parser) parseCreateOrReplaceStatement(statementStart int) (ast.Node, er
 		case p.current.MatchIdentifierValue("TRIGGER") && p.readsTransactSQLTriggers():
 			return replacingTrigger(p.parseCreateTrigger(statementStart))
 		default:
-			return nil, fmt.Errorf("unsupported CREATE OR ALTER target: %s at position %d", p.current.Value, p.current.Start)
+			return nil, ptaherr.At(p.current.Start, fmt.Errorf("unsupported CREATE OR ALTER target: %s", p.current.Value))
 		}
 	}
 	if p.current.MatchIdentifierValue("VIEW") {
@@ -612,7 +619,7 @@ func (p *Parser) parseCreateOrReplaceStatement(statementStart int) (ast.Node, er
 	if p.current.MatchIdentifierValue("TRIGGER") && !p.readsTransactSQLTriggers() {
 		return replacingTrigger(p.parseCreateTrigger(statementStart))
 	}
-	return nil, fmt.Errorf("unsupported CREATE OR REPLACE target: %s at position %d", p.current.Value, p.current.Start)
+	return nil, ptaherr.At(p.current.Start, fmt.Errorf("unsupported CREATE OR REPLACE target: %s", p.current.Value))
 }
 
 // replacingTrigger keeps OR REPLACE, or SQL Server's OR ALTER, on a trigger
@@ -661,7 +668,7 @@ func (p *Parser) isAtEnd() bool {
 // checkTimeout checks if parsing has exceeded the timeout limit.
 func (p *Parser) checkTimeout() error {
 	if time.Since(p.startTime) > p.timeout {
-		return fmt.Errorf("parsing timeout exceeded (%v) - possible infinite loop at position %d", p.timeout, p.current.Start)
+		return ptaherr.At(p.current.Start, fmt.Errorf("parsing timeout exceeded (%v) - possible infinite loop", p.timeout))
 	}
 	return nil
 }
@@ -670,10 +677,10 @@ func (p *Parser) checkTimeout() error {
 func (p *Parser) expect(tokenType lexer.TokenType, value string) error {
 	p.skipWhitespace()
 	if p.current.Type != tokenType {
-		return fmt.Errorf("expected %s, got %s at position %d", tokenType, p.current.Type, p.current.Start)
+		return ptaherr.At(p.current.Start, fmt.Errorf("expected %s, got %s", tokenType, p.current.Type))
 	}
 	if value != "" && !strings.EqualFold(p.current.Value, value) {
-		return fmt.Errorf("expected '%s', got '%s' at position %d", value, p.current.Value, p.current.Start)
+		return ptaherr.At(p.current.Start, fmt.Errorf("expected '%s', got '%s'", value, p.current.Value))
 	}
 	p.advance()
 	return nil
@@ -685,7 +692,7 @@ func (p *Parser) expectIdentifier() (string, error) {
 		return p.expectBracketedIdentifier()
 	}
 	if p.current.Type != lexer.TokenIdentifier && !isDoubleQuotedIdentifierToken(p.current) {
-		return "", fmt.Errorf("expected identifier, got %s at position %d", p.current.Type, p.current.Start)
+		return "", ptaherr.At(p.current.Start, fmt.Errorf("expected identifier, got %s", p.current.Type))
 	}
 	value := p.current.Value
 	p.advance()
@@ -699,7 +706,7 @@ func (p *Parser) expectBracketedIdentifier() (string, error) {
 	p.advance()
 	for {
 		if p.current.Type == lexer.TokenEOF {
-			return "", fmt.Errorf("unterminated bracketed identifier at position %d", start)
+			return "", ptaherr.At(start, fmt.Errorf("unterminated bracketed identifier"))
 		}
 		value.WriteString(p.current.Value)
 		if !p.current.MatchOperatorValue("]") {
@@ -965,7 +972,7 @@ func (p *Parser) collectParenthesizedBody(label string) (string, error) {
 		p.advance()
 	}
 
-	return "", fmt.Errorf("unterminated %s at position %d", label, p.current.Start)
+	return "", ptaherr.At(p.current.Start, fmt.Errorf("unterminated %s", label))
 }
 
 func (p *Parser) parseFunctionClauses(function *ast.CreateFunctionNode) (bool, error) {
@@ -979,7 +986,7 @@ func (p *Parser) parseFunctionClauses(function *ast.CreateFunctionNode) (bool, e
 			return false, nil
 		}
 		if p.current.Type != lexer.TokenIdentifier {
-			return false, fmt.Errorf("unsupported CREATE FUNCTION syntax: expected function clause, got %s at position %d", p.current.Type, p.current.Start)
+			return false, ptaherr.At(p.current.Start, fmt.Errorf("unsupported CREATE FUNCTION syntax: expected function clause, got %s", p.current.Type))
 		}
 
 		raw, err := p.parseFunctionClause(function)
@@ -1036,7 +1043,7 @@ func (p *Parser) parseFunctionClause(function *ast.CreateFunctionNode) (bool, er
 		if p.skipMySQLFunctionAttribute(keyword) {
 			return false, nil
 		}
-		return false, fmt.Errorf("unsupported CREATE FUNCTION clause: %s at position %d", p.current.Value, p.current.Start)
+		return false, ptaherr.At(p.current.Start, fmt.Errorf("unsupported CREATE FUNCTION clause: %s", p.current.Value))
 	}
 }
 
@@ -1140,7 +1147,7 @@ func (p *Parser) parseFunctionNotClause() error {
 	switch {
 	case p.current.MatchIdentifierValue("DETERMINISTIC"):
 	default:
-		return fmt.Errorf("unsupported CREATE FUNCTION clause: NOT %s at position %d", p.current.Value, start)
+		return ptaherr.At(start, fmt.Errorf("unsupported CREATE FUNCTION clause: NOT %s", p.current.Value))
 	}
 	p.advance()
 	return nil
@@ -1164,14 +1171,14 @@ func (p *Parser) parseFunctionBody(function *ast.CreateFunctionNode) error {
 	p.skipWhitespace()
 
 	if p.current.Type != lexer.TokenString {
-		return fmt.Errorf("unsupported CREATE FUNCTION body: expected string literal after AS, got %s at position %d", p.current.Type, p.current.Start)
+		return ptaherr.At(p.current.Start, fmt.Errorf("unsupported CREATE FUNCTION body: expected string literal after AS, got %s", p.current.Type))
 	}
 
 	body := p.current.Value
 	text, ok := lexer.StringValue(body, p.stringLiteralOptions())
 	if !ok {
-		return fmt.Errorf("unsupported CREATE FUNCTION body: %s is not a complete string literal at position %d",
-			abbreviatedToken(body), p.current.Start)
+		return ptaherr.At(p.current.Start, fmt.Errorf("unsupported CREATE FUNCTION body: %s is not a complete string literal",
+			abbreviatedToken(body)))
 	}
 	function.SetBody(text)
 	if delimiter := p.routineServices().Delimiter; delimiter != nil {
@@ -1267,7 +1274,7 @@ func (p *Parser) collectFunctionBeginBody() (string, bool, error) {
 		p.advance()
 	}
 
-	return "", false, fmt.Errorf("unterminated SQL function body at position %d", p.current.Start)
+	return "", false, ptaherr.At(p.current.Start, fmt.Errorf("unterminated SQL function body"))
 }
 
 func (p *Parser) trackCurrentRoutineCompoundKeyword(blockDepth, caseDepth *int, pendingEndTrailer *bool) {
@@ -1361,8 +1368,8 @@ func (p *Parser) parseFunctionSetting(function *ast.CreateFunctionNode) error {
 	case p.current.Type == lexer.TokenIdentifier && strings.EqualFold(p.current.Value, "TO"):
 		p.advance()
 	default:
-		return fmt.Errorf("expected =, TO or FROM CURRENT in the %s routine setting at position %d",
-			name, p.current.Start)
+		return ptaherr.At(p.current.Start, fmt.Errorf("expected =, TO or FROM CURRENT in the %s routine setting",
+			name))
 	}
 	p.skipWhitespace()
 
@@ -1490,7 +1497,7 @@ func (p *Parser) parseTriggerExecuteClause(trigger *ast.CreateTriggerNode, state
 	p.advance()
 	p.skipWhitespace()
 	if !p.current.MatchIdentifierValue("FUNCTION") && !p.current.MatchIdentifierValue("PROCEDURE") {
-		return nil, fmt.Errorf("expected FUNCTION or PROCEDURE after EXECUTE at position %d", p.current.Start)
+		return nil, ptaherr.At(p.current.Start, fmt.Errorf("expected FUNCTION or PROCEDURE after EXECUTE"))
 	}
 	p.advance()
 	p.skipWhitespace()
@@ -1501,7 +1508,7 @@ func (p *Parser) parseTriggerExecuteClause(trigger *ast.CreateTriggerNode, state
 	}
 	p.skipWhitespace()
 	if !p.current.MatchOperatorValue("(") {
-		return nil, fmt.Errorf("expected '(' after trigger function name at position %d", p.current.Start)
+		return nil, ptaherr.At(p.current.Start, fmt.Errorf("expected '(' after trigger function name"))
 	}
 	p.advance()
 	p.skipWhitespace()
@@ -1546,7 +1553,7 @@ func (p *Parser) parseTriggerTiming() (string, error) {
 		}
 		return "INSTEAD OF", nil
 	default:
-		return "", fmt.Errorf("expected trigger timing, got %s at position %d", p.current.Type, p.current.Start)
+		return "", ptaherr.At(p.current.Start, fmt.Errorf("expected trigger timing, got %s", p.current.Type))
 	}
 }
 
@@ -1582,7 +1589,7 @@ func (p *Parser) parseTriggerEvent() (string, error) {
 	case p.current.MatchIdentifierValue("UPDATE"):
 		return p.parseUpdateTriggerEvent()
 	default:
-		return "", fmt.Errorf("expected trigger event, got %s at position %d", p.current.Type, p.current.Start)
+		return "", ptaherr.At(p.current.Start, fmt.Errorf("expected trigger event, got %s", p.current.Type))
 	}
 }
 
@@ -1647,13 +1654,13 @@ func (p *Parser) parseOptionalTriggerReferencing() (oldTable, newTable string, e
 			target = &oldTable
 		}
 		if *target != "" {
-			return "", "", fmt.Errorf("REFERENCING names the %s transition table twice at position %d", which, p.current.Start)
+			return "", "", ptaherr.At(p.current.Start, fmt.Errorf("REFERENCING names the %s transition table twice", which))
 		}
 		*target = name
 		p.skipWhitespace()
 	}
 	if oldTable == "" && newTable == "" {
-		return "", "", fmt.Errorf("expected OLD TABLE or NEW TABLE after REFERENCING at position %d", p.current.Start)
+		return "", "", ptaherr.At(p.current.Start, fmt.Errorf("expected OLD TABLE or NEW TABLE after REFERENCING"))
 	}
 	return oldTable, newTable, nil
 }
@@ -1712,7 +1719,7 @@ func (p *Parser) collectTriggerBody() (string, error) {
 	if !p.current.MatchIdentifierValue("BEGIN") && (p.dialect == "" || p.target.grammar.Routines.TriggerStatementBody) {
 		body := p.collectStatementBody()
 		if body == "" {
-			return "", fmt.Errorf("expected trigger body at position %d", p.current.Start)
+			return "", ptaherr.At(p.current.Start, fmt.Errorf("expected trigger body"))
 		}
 		return body, nil
 	}
@@ -1758,9 +1765,9 @@ func (p *Parser) collectTriggerBody() (string, error) {
 	}
 
 	if !seenBegin {
-		return "", fmt.Errorf("expected trigger body BEGIN at position %d", p.current.Start)
+		return "", ptaherr.At(p.current.Start, fmt.Errorf("expected trigger body BEGIN"))
 	}
-	return "", fmt.Errorf("unterminated trigger body at position %d", p.current.Start)
+	return "", ptaherr.At(p.current.Start, fmt.Errorf("unterminated trigger body"))
 }
 
 func (p *Parser) parseCreateViewNode() (*ast.CreateViewNode, error) {
@@ -1790,7 +1797,7 @@ func (p *Parser) parseCreateViewNode() (*ast.CreateViewNode, error) {
 
 	body := p.collectStatementBody()
 	if strings.TrimSpace(body) == "" {
-		return nil, fmt.Errorf("expected view body after AS at position %d", p.current.Start)
+		return nil, ptaherr.At(p.current.Start, fmt.Errorf("expected view body after AS"))
 	}
 
 	// A catalog keeps `CREATE VIEW v (a, b) AS SELECT x, y` as `SELECT x AS a,
@@ -1842,7 +1849,7 @@ func (p *Parser) parseRelationOptions(label string) ([]string, error) {
 			p.skipWhitespace()
 			return options, nil
 		default:
-			return nil, fmt.Errorf("expected ',' or ')' in the %s options at position %d", label, p.current.Start)
+			return nil, ptaherr.At(p.current.Start, fmt.Errorf("expected ',' or ')' in the %s options", label))
 		}
 	}
 }
@@ -1856,7 +1863,7 @@ func (p *Parser) parseRelationOption(label string) (string, error) {
 		name = strings.ReplaceAll(name[1:len(name)-1], `""`, `"`)
 	}
 	if name == "" {
-		return "", fmt.Errorf("expected an option name in the %s options at position %d", label, p.current.Start)
+		return "", ptaherr.At(p.current.Start, fmt.Errorf("expected an option name in the %s options", label))
 	}
 	p.skipWhitespace()
 	if !p.current.MatchOperatorValue("=") {
@@ -1866,7 +1873,7 @@ func (p *Parser) parseRelationOption(label string) (string, error) {
 	p.skipWhitespace()
 	value := p.collectRelationOptionPart(endsRelationOption)
 	if value == "" {
-		return "", fmt.Errorf("expected a value after %s= in the %s options at position %d", name, label, p.current.Start)
+		return "", ptaherr.At(p.current.Start, fmt.Errorf("expected a value after %s= in the %s options", name, label))
 	}
 	return name + "=" + value, nil
 }
@@ -1927,7 +1934,7 @@ func (p *Parser) parseViewColumnAliases() ([]string, error) {
 			p.skipWhitespace()
 			return names, nil
 		}
-		return nil, fmt.Errorf("expected ',' or ')' in view column list at position %d", p.current.Start)
+		return nil, ptaherr.At(p.current.Start, fmt.Errorf("expected ',' or ')' in view column list"))
 	}
 }
 
@@ -2043,7 +2050,7 @@ func (p *Parser) parsePartitionOf(table *ast.CreateTableNode) error {
 		if p.dialect != "" {
 			on = "on " + p.dialect
 		}
-		return fmt.Errorf("CREATE TABLE %s PARTITION OF at position %d declares a PostgreSQL partition, which Ptah does not read %s", table.Name, position, on)
+		return ptaherr.At(position, fmt.Errorf("CREATE TABLE %s PARTITION OF declares a PostgreSQL partition, which Ptah does not read %s", table.Name, on))
 	}
 	return p.parseCreateTableSuffix(table)
 }
@@ -2086,10 +2093,10 @@ func (p *Parser) parseCreateTableElements(table *ast.CreateTableNode) error {
 		// element with it turns `UNIQUE (a) DEFERRABLE` into a column named
 		// deferrable with no type and drops the clause (stokaro/ptah#3818).
 		if p.current.Type == lexer.TokenIdentifier {
-			return fmt.Errorf("unexpected %s after a table element at position %d: expected ',' or ')'",
-				p.current.Value, p.current.Start)
+			return ptaherr.At(p.current.Start, fmt.Errorf("unexpected %s after a table element: expected ',' or ')'",
+				p.current.Value))
 		}
-		return fmt.Errorf("expected ',' or ')' after table element at position %d", p.current.Start)
+		return ptaherr.At(p.current.Start, fmt.Errorf("expected ',' or ')' after table element"))
 	}
 
 	// Once, after the whole body. Not for correctness -- a per-element call
@@ -2150,7 +2157,7 @@ func (p *Parser) parseCreateTableSuffix(table *ast.CreateTableNode) error {
 // owners claim their table syntax before this generic option path runs.
 func (p *Parser) parseTablePartitionExpression(table *ast.CreateTableNode) error {
 	if _, taken := table.Options["PARTITION_BY"]; taken {
-		return fmt.Errorf("duplicate PARTITION BY clause at position %d", p.current.Start)
+		return ptaherr.At(p.current.Start, fmt.Errorf("duplicate PARTITION BY clause"))
 	}
 	if err := p.expect(lexer.TokenIdentifier, "PARTITION"); err != nil {
 		return err
@@ -2170,7 +2177,7 @@ func (p *Parser) parseCreateTableSelectBody(table *ast.CreateTableNode) error {
 		p.skipWhitespace()
 	}
 	if !p.current.MatchIdentifierValue("SELECT") {
-		return fmt.Errorf("expected SELECT in CREATE TABLE SELECT body, got %s at position %d", p.current.Type, p.current.Start)
+		return ptaherr.At(p.current.Start, fmt.Errorf("expected SELECT in CREATE TABLE SELECT body, got %s", p.current.Type))
 	}
 	table.SetSelectBody(p.collectStatementBody())
 	return nil
@@ -2247,7 +2254,7 @@ func (p *Parser) handleNull(column *ast.ColumnNode) error {
 // identityNullError refuses NULL on a column with an IDENTITY property, which
 // is NOT NULL whatever the definition says.
 func identityNullError(position int) error {
-	return fmt.Errorf("an IDENTITY column is NOT NULL, and SQL Server 2025 answers Msg 8147 to NULL on one, at position %d", position)
+	return ptaherr.At(position, fmt.Errorf("an IDENTITY column is NOT NULL, and SQL Server 2025 answers Msg 8147 to NULL on one"))
 }
 
 func (p *Parser) handlePrimaryKey(column *ast.ColumnNode) error {
@@ -2285,7 +2292,7 @@ func (p *Parser) handleAutoIncrement(column *ast.ColumnNode) {
 // column attribute the parser does not read.
 func (p *Parser) handleIdentityProperty(column *ast.ColumnNode) error {
 	if p.target.known && !p.target.grammar.Columns.IdentityProperty {
-		return fmt.Errorf("unsupported column attribute: IDENTITY at position %d", p.current.Start)
+		return ptaherr.At(p.current.Start, fmt.Errorf("unsupported column attribute: IDENTITY"))
 	}
 	if p.nullColumn == column {
 		return identityNullError(p.current.Start)
@@ -2330,7 +2337,7 @@ func (p *Parser) identityPropertyValue(name string) (string, error) {
 	}
 	value := p.current.Value
 	if p.current.Type != lexer.TokenIdentifier || value == "" || strings.Trim(value, "0123456789") != "" {
-		return "", fmt.Errorf("expected the IDENTITY %s as an integer: got %q at position %d", name, value, p.current.Start)
+		return "", ptaherr.At(p.current.Start, fmt.Errorf("expected the IDENTITY %s as an integer: got %q", name, value))
 	}
 	p.advance()
 	return sign + value, nil
@@ -2386,13 +2393,13 @@ func (p *Parser) handleColumnCheck(table *ast.CreateTableNode, column *ast.Colum
 		return nil
 	}
 	if refusal := p.target.grammar.Columns.SecondCheckRefusal; refusal != "" {
-		return fmt.Errorf("column %s carries a second CHECK at position %d: %s", column.Name, position, refusal)
+		return ptaherr.At(position, fmt.Errorf("column %s carries a second CHECK: %s", column.Name, refusal))
 	}
 	if table == nil {
-		return fmt.Errorf(
-			"column %s carries a second CHECK at position %d: a column added or modified by ALTER TABLE "+
+		return ptaherr.At(position, fmt.Errorf(
+			"column %s carries a second CHECK: a column added or modified by ALTER TABLE "+
 				"keeps one CHECK; add the next with ALTER TABLE ... ADD CHECK",
-			column.Name, position)
+			column.Name))
 	}
 	table.AddConstraint(&ast.ConstraintNode{Type: ast.CheckConstraint, Name: name, Expression: checkExpr})
 	return nil
@@ -2442,12 +2449,12 @@ func (p *Parser) refuseColumnReferences() error {
 	if refusal == "" {
 		return nil
 	}
-	return &ptaherr.CapabilityError{
+	return ptaherr.At(p.current.Start, &ptaherr.CapabilityError{
 		Dialect: p.dialect,
 		Feature: "column-level REFERENCES without a server version",
 		Err:     ptaherr.ErrUnsupportedFeature,
-		Message: fmt.Sprintf("a column-level REFERENCES clause at position %d: %s", p.current.Start, refusal),
-	}
+		Message: "a column-level REFERENCES clause: " + refusal,
+	})
 }
 
 // refuseModifyReferences refuses a REFERENCES clause in the column definition
@@ -2467,11 +2474,10 @@ func (p *Parser) refuseModifyReferences() error {
 	if !p.target.grammar.Columns.ModifyRefusesReferences || !p.modifyColumn {
 		return nil
 	}
-	return fmt.Errorf(
-		"REFERENCES at position %d in ALTER TABLE ... MODIFY: %s takes no REFERENCES clause in a "+
+	return ptaherr.At(p.current.Start, fmt.Errorf(
+		"REFERENCES in ALTER TABLE ... MODIFY: %s takes no REFERENCES clause in a "+
 			"MODIFY column definition, and answers ERROR 1064 (42000) to one; add the key with "+
-			"ALTER TABLE ... ADD FOREIGN KEY",
-		p.current.Start, p.dialect)
+			"ALTER TABLE ... ADD FOREIGN KEY", p.dialect))
 }
 
 func (p *Parser) handleReferences(column *ast.ColumnNode) error {
@@ -2546,7 +2552,7 @@ func (p *Parser) handleGenerated(column *ast.ColumnNode) error {
 	case "ALWAYS":
 		p.advance()
 	default:
-		return fmt.Errorf("expected ALWAYS or BY after GENERATED: got %q at position %d", p.current.Value, p.current.Start)
+		return ptaherr.At(p.current.Start, fmt.Errorf("expected ALWAYS or BY after GENERATED: got %q", p.current.Value))
 	}
 
 	p.skipWhitespace()
@@ -2684,7 +2690,7 @@ func (p *Parser) handleCollate(column *ast.ColumnNode) error {
 		collation = p.current.Value
 		p.advance()
 	default:
-		return fmt.Errorf("expected collation name: got %s at position %d", p.current.Type, p.current.Start)
+		return ptaherr.At(p.current.Start, fmt.Errorf("expected collation name: got %s", p.current.Type))
 	}
 
 	column.Collate = collation
@@ -2768,7 +2774,7 @@ func (p *Parser) parseColumnConstraintsAndAttributes(table *ast.CreateTableNode,
 func (p *Parser) parseColumnConstraintOrAttribute(table *ast.CreateTableNode, column *ast.ColumnNode, keyword string) error {
 	read, known := columnClauseReader(keyword)
 	if !known {
-		return fmt.Errorf("unsupported column attribute: %s at position %d", keyword, p.current.Start)
+		return ptaherr.At(p.current.Start, fmt.Errorf("unsupported column attribute: %s", keyword))
 	}
 	return read(p, table, column)
 }
@@ -2950,13 +2956,13 @@ func (p *Parser) handleColumnConstraint(table *ast.CreateTableNode, column *ast.
 		// syntax and records nothing. Accepting a name no reader can return
 		// would make every later comparison report a difference no apply can
 		// settle.
-		return fmt.Errorf(
-			"named column constraint %q at position %d: Ptah has nowhere to keep a "+
+		return ptaherr.At(p.current.Start, fmt.Errorf(
+			"named column constraint %q: Ptah has nowhere to keep a "+
 				"name on %s, and does not read one back from a database, so write the "+
 				"constraint without a name; a name is kept on NOT NULL, CHECK, "+
 				"REFERENCES, UNIQUE and PRIMARY KEY",
-			name, p.current.Start, p.refusedColumnConstraintKeyword(),
-		)
+			name, p.refusedColumnConstraintKeyword(),
+		))
 	}
 }
 
@@ -3009,10 +3015,10 @@ func (p *Parser) namedSingleColumnConstraint(
 	kind ast.ConstraintType,
 ) error {
 	if table == nil {
-		return fmt.Errorf(
-			"named column constraint %q at position %d: a %s constraint is read at table "+
+		return ptaherr.At(p.current.Start, fmt.Errorf(
+			"named column constraint %q: a %s constraint is read at table "+
 				"level, and this column has no table to attach it to",
-			name, p.current.Start, kind)
+			name, kind))
 	}
 	p.advance()
 	constraint := &ast.ConstraintNode{
@@ -3289,7 +3295,7 @@ func (p *Parser) handlePostgresArrayNotation(typeName string) string {
 // parseColumnType parses a column data type (e.g., INTEGER, VARCHAR(255), DECIMAL(10,2), DOUBLE PRECISION).
 func (p *Parser) parseColumnType() (string, error) {
 	if p.current.Type != lexer.TokenIdentifier && !isDoubleQuotedIdentifierToken(p.current) {
-		return "", fmt.Errorf("expected column type, got %s at position %d", p.current.Type, p.current.Start)
+		return "", ptaherr.At(p.current.Start, fmt.Errorf("expected column type, got %s", p.current.Type))
 	}
 
 	// A type may be schema-qualified and quoted, `app.mood` or
@@ -3361,7 +3367,7 @@ func (p *Parser) parsePostgresCasts() (string, error) {
 		start := p.current.Start
 		p.advance()
 		if !p.current.MatchOperatorValue(":") {
-			return "", fmt.Errorf("expected '::' for a type cast at position %d", start)
+			return "", ptaherr.At(start, fmt.Errorf("expected '::' for a type cast"))
 		}
 		p.advance()
 		typeName, err := p.parseCastType()
@@ -3435,7 +3441,7 @@ func (p *Parser) parseArrayLiteral(value string) (*string, error) {
 	// Collect array elements
 	for {
 		if p.current.Type == lexer.TokenEOF {
-			return result, fmt.Errorf("unexpected end of input while parsing array at position %d", p.current.Start)
+			return result, ptaherr.At(p.current.Start, fmt.Errorf("unexpected end of input while parsing array"))
 		}
 		if p.current.MatchOperatorValue("]") {
 			arrayLiteral += "]"
@@ -3443,7 +3449,7 @@ func (p *Parser) parseArrayLiteral(value string) (*string, error) {
 			break
 		}
 		if p.current.MatchOperatorValue("[") {
-			return result, fmt.Errorf("nested arrays are not supported at position %d", p.current.Start)
+			return result, ptaherr.At(p.current.Start, fmt.Errorf("nested arrays are not supported"))
 		}
 
 		arrayLiteral += p.current.Value
@@ -3457,7 +3463,7 @@ func (p *Parser) parseArrayLiteral(value string) (*string, error) {
 	}
 	p.advance()
 	if !p.current.MatchOperatorValue(":") {
-		return result, fmt.Errorf("expected '::' for type cast, got %s at position %d", p.current.Type, p.current.Start)
+		return result, ptaherr.At(p.current.Start, fmt.Errorf("expected '::' for type cast, got %s", p.current.Type))
 	}
 	p.advance()
 	// Get the cast type
@@ -3474,7 +3480,7 @@ func (p *Parser) parseArrayLiteral(value string) (*string, error) {
 	arrayLiteral += "["
 	p.advance()
 	if !p.current.MatchOperatorValue("]") {
-		return result, fmt.Errorf("expected ']' for array cast, got %s at position %d", p.current.Type, p.current.Start)
+		return result, ptaherr.At(p.current.Start, fmt.Errorf("expected ']' for array cast, got %s", p.current.Type))
 	}
 	arrayLiteral += "]"
 	p.advance()
@@ -3545,7 +3551,7 @@ func (p *Parser) handleFunctionCallOrKeyword() (*ast.DefaultValue, error) {
 			return nil, err
 		}
 		if pArrayLiteral == nil {
-			return nil, fmt.Errorf("expected '[' after ARRAY at position %d", p.current.Start)
+			return nil, ptaherr.At(p.current.Start, fmt.Errorf("expected '[' after ARRAY"))
 		}
 
 		return &ast.DefaultValue{Expression: *pArrayLiteral}, nil
@@ -3569,7 +3575,7 @@ func (p *Parser) parseDefaultFunctionCall(start int) (*ast.DefaultValue, error) 
 	for {
 		switch {
 		case p.isAtEnd():
-			return nil, fmt.Errorf("unterminated argument list in default at position %d", open)
+			return nil, ptaherr.At(open, fmt.Errorf("unterminated argument list in default"))
 		case p.current.MatchOperatorValue("("):
 			depth++
 		case p.current.MatchOperatorValue(")"):
@@ -3607,7 +3613,7 @@ func (p *Parser) handleNumber() (*ast.DefaultValue, error) {
 		return &ast.DefaultValue{Value: value, ValueSet: true}, nil
 	}
 
-	return nil, fmt.Errorf("unexpected token for default value: %s at position %d", p.current.Value, p.current.Start)
+	return nil, ptaherr.At(p.current.Start, fmt.Errorf("unexpected token for default value: %s", p.current.Value))
 }
 
 // parseDefaultValue parses a default value (literal or function call).
@@ -3627,7 +3633,7 @@ func (p *Parser) parseDefaultValue() (*ast.DefaultValue, error) {
 		// Could be a number (positive or negative) or just a number
 		value, err = p.handleNumber()
 	default:
-		return nil, fmt.Errorf("expected default value, got %s at position %d", p.current.Type, p.current.Start)
+		return nil, ptaherr.At(p.current.Start, fmt.Errorf("expected default value, got %s", p.current.Type))
 	}
 	if err != nil {
 		return nil, err
@@ -4010,11 +4016,10 @@ func (p *Parser) readForeignKeyIndexName() error {
 	}
 	name := p.current.Value
 	if !p.target.grammar.Keys.ForeignKeyIndexName {
-		return fmt.Errorf(
-			"an index name after FOREIGN KEY at position %d is the MySQL family's alone; "+
+		return ptaherr.At(p.current.Start, fmt.Errorf(
+			"an index name after FOREIGN KEY is the MySQL family's alone; "+
 				"%s has no such syntax, so write the key as FOREIGN KEY (columns) and "+
-				"declare the index %q separately",
-			p.current.Start, describeFunctionalKeyDialect(p.dialect), name)
+				"declare the index %q separately", describeFunctionalKeyDialect(p.dialect), name))
 	}
 	p.foreignKeyIndexName = name
 	p.advance()
@@ -4231,7 +4236,7 @@ func (p *Parser) parseTableColumnList(constraint *ast.ConstraintNode) error {
 			break
 		}
 
-		return fmt.Errorf("expected ',' or ')' in column list at position %d", p.current.Start)
+		return ptaherr.At(p.current.Start, fmt.Errorf("expected ',' or ')' in column list"))
 	}
 
 	if err := p.expect(lexer.TokenOperator, ")"); err != nil {
@@ -4270,7 +4275,7 @@ func (p *Parser) handleTableConstraintInclude(constraint *ast.ConstraintNode) er
 		if p.current.MatchOperatorValue(")") {
 			break
 		}
-		return fmt.Errorf("expected ',' or ')' in table constraint INCLUDE list at position %d", p.current.Start)
+		return ptaherr.At(p.current.Start, fmt.Errorf("expected ',' or ')' in table constraint INCLUDE list"))
 	}
 	return p.expect(lexer.TokenOperator, ")")
 }
@@ -4296,8 +4301,8 @@ func (p *Parser) parseConstraintColumn() (ast.ConstraintColumn, error) {
 	}
 
 	if isBareNumberToken(p.current) {
-		return ast.ConstraintColumn{}, fmt.Errorf(
-			"%w, and %q at position %d is a number", errConstraintColumnNotAName, p.current.Value, p.current.Start)
+		return ast.ConstraintColumn{}, ptaherr.At(p.current.Start, fmt.Errorf(
+			"%w, and %q is a number", errConstraintColumnNotAName, p.current.Value))
 	}
 	columnName, err := p.expectIdentifier()
 	if err != nil {
@@ -4359,8 +4364,8 @@ func (p *Parser) readTableElementKind(constraint *ast.ConstraintNode) (bool, str
 		p.handleTableConstraintIndex(constraint)
 		return true, "", nil
 	default:
-		return false, "", fmt.Errorf(
-			"unsupported constraint type: %s at position %d", constraintType, p.current.Start)
+		return false, "", ptaherr.At(p.current.Start, fmt.Errorf(
+			"unsupported constraint type: %s", constraintType))
 	}
 }
 
@@ -4474,17 +4479,16 @@ func describeConstraintKind(kind ast.ConstraintType) string {
 // one engine.
 func (p *Parser) parseFunctionalKeyPart() (ast.ConstraintColumn, error) {
 	if !p.target.grammar.Keys.FunctionalParts {
-		return ast.ConstraintColumn{}, fmt.Errorf(
-			"a functional key part at position %d is MySQL's alone; %s has no such syntax",
-			p.current.Start, describeFunctionalKeyDialect(p.dialect))
+		return ast.ConstraintColumn{}, ptaherr.At(p.current.Start, fmt.Errorf(
+			"a functional key part is MySQL's alone; %s has no such syntax", describeFunctionalKeyDialect(p.dialect)))
 	}
 	expression, err := p.collectParenthesizedBody("functional key part")
 	if err != nil {
 		return ast.ConstraintColumn{}, err
 	}
 	if expression == "" {
-		return ast.ConstraintColumn{}, fmt.Errorf(
-			"a functional key part at position %d declares no expression", p.current.Start)
+		return ast.ConstraintColumn{}, ptaherr.At(p.current.Start, fmt.Errorf(
+			"a functional key part declares no expression"))
 	}
 	column := ast.ConstraintColumn{Expr: expression}
 
@@ -4613,7 +4617,7 @@ func (p *Parser) parseTableConstraint() (*ast.ConstraintNode, *ast.IndexNode, er
 
 	// Parse constraint type
 	if p.current.Type != lexer.TokenIdentifier {
-		return nil, nil, fmt.Errorf("expected constraint type, got %s at position %d", p.current.Type, p.current.Start)
+		return nil, nil, ptaherr.At(p.current.Start, fmt.Errorf("expected constraint type, got %s", p.current.Type))
 	}
 
 	p.keyOptions = keyOptions{}
@@ -4732,14 +4736,14 @@ func (p *Parser) parseKeyUsingIndex(constraint *ast.ConstraintNode) (*ast.Constr
 	kind := tableElementKind(constraint)
 	start := p.current.Start
 	if !p.addingConstraint {
-		return nil, nil, fmt.Errorf(
-			"%s USING INDEX at position %d: an existing index becomes a key only in ALTER TABLE ... ADD, "+
-				"and PostgreSQL 18.6 answers `cannot use an existing index in CREATE TABLE`", kind, start)
+		return nil, nil, ptaherr.At(start, fmt.Errorf(
+			"%s USING INDEX: an existing index becomes a key only in ALTER TABLE ... ADD, "+
+				"and PostgreSQL 18.6 answers `cannot use an existing index in CREATE TABLE`", kind))
 	}
 	if p.target.known && !p.target.grammar.AlterTable.KeyUsingIndex {
-		return nil, nil, fmt.Errorf(
-			"%s USING INDEX at position %d: a key made of an existing index is PostgreSQL's clause, "+
-				"which the %s dialect does not take; list the key's columns", kind, start, p.dialect)
+		return nil, nil, ptaherr.At(start, fmt.Errorf(
+			"%s USING INDEX: a key made of an existing index is PostgreSQL's clause, "+
+				"which the %s dialect does not take; list the key's columns", kind, p.dialect))
 	}
 	p.advance()
 	p.skipWhitespace()
@@ -4751,9 +4755,9 @@ func (p *Parser) parseKeyUsingIndex(constraint *ast.ConstraintNode) (*ast.Constr
 	}
 	p.skipWhitespace()
 	if p.current.MatchOperatorValue(".") {
-		return nil, nil, fmt.Errorf(
-			"%s USING INDEX at position %d: the index is named without its schema, since it is in the table's, "+
-				"and PostgreSQL 18.6 answers a qualified name with a syntax error", kind, p.current.Start)
+		return nil, nil, ptaherr.At(p.current.Start, fmt.Errorf(
+			"%s USING INDEX: the index is named without its schema, since it is in the table's, "+
+				"and PostgreSQL 18.6 answers a qualified name with a syntax error", kind))
 	}
 	constraint.UsingIndex = name
 	if err := p.readConstraintTail(constraint, kind); err != nil {
@@ -4851,7 +4855,7 @@ func (p *Parser) handleTableAutoIncrement(table *ast.CreateTableNode) error {
 		value = p.current.Value
 		p.advance()
 	default:
-		return fmt.Errorf("expected auto increment value: got %s at position %d", p.current.Type, p.current.Start)
+		return ptaherr.At(p.current.Start, fmt.Errorf("expected auto increment value: got %s", p.current.Type))
 	}
 
 	table.SetOption("AUTO_INCREMENT", value)
@@ -4866,7 +4870,7 @@ func (p *Parser) handleTableDefault(table *ast.CreateTableNode) error {
 
 	if !p.current.MatchIdentifierValue("CHARSET") {
 		// Unknown DEFAULT option, stop parsing
-		return fmt.Errorf("unsupported DEFAULT option: %s at position %d", p.current.Value, p.current.Start)
+		return ptaherr.At(p.current.Start, fmt.Errorf("unsupported DEFAULT option: %s", p.current.Value))
 	}
 
 	p.advance()
@@ -4967,7 +4971,7 @@ func (p *Parser) parseTableOptions(table *ast.CreateTableNode) error {
 			var handled bool
 			if handled, err = p.handleWordTableOption(table, option); !handled {
 				// Unknown option, stop parsing
-				err = fmt.Errorf("unsupported table option: %s at position %d", option, p.current.Start)
+				err = ptaherr.At(p.current.Start, fmt.Errorf("unsupported table option: %s", option))
 			}
 		}
 
@@ -5075,7 +5079,7 @@ func (p *Parser) handleClickHouseRawClause(table *ast.CreateTableNode, option st
 func (p *Parser) captureTableClause(table *ast.CreateTableNode, option string) error {
 	value, start := p.captureExpression(p.endsTableClause)
 	if value == "" {
-		return fmt.Errorf("expected an expression after %s at position %d", clickHouseTableClauses[option], start)
+		return ptaherr.At(start, fmt.Errorf("expected an expression after %s", clickHouseTableClauses[option]))
 	}
 	table.SetOption(option, value)
 	return nil
@@ -5157,7 +5161,7 @@ func (p *Parser) parsePostgreSQLWithClause(table *ast.CreateTableNode) error {
 
 		// Get option name
 		if p.current.Type != lexer.TokenIdentifier {
-			return fmt.Errorf("expected option name in WITH clause, got %s at position %d", p.current.Type, p.current.Start)
+			return ptaherr.At(p.current.Start, fmt.Errorf("expected option name in WITH clause, got %s", p.current.Type))
 		}
 		optionName := p.current.Value
 		p.advance()
@@ -5201,7 +5205,7 @@ func (p *Parser) parsePostgreSQLWithClause(table *ast.CreateTableNode) error {
 			break
 		}
 
-		return fmt.Errorf("expected ',' or ')' in WITH clause at position %d", p.current.Start)
+		return ptaherr.At(p.current.Start, fmt.Errorf("expected ',' or ')' in WITH clause"))
 	}
 
 	// Consume closing parenthesis
@@ -5227,7 +5231,7 @@ func (p *Parser) parseAlterStatement() (ast.Node, error) {
 	p.skipWhitespace()
 
 	if p.current.Type != lexer.TokenIdentifier {
-		return nil, fmt.Errorf("expected ALTER target, got %s at position %d", p.current.Type, p.current.Start)
+		return nil, ptaherr.At(p.current.Start, fmt.Errorf("expected ALTER target, got %s", p.current.Type))
 	}
 
 	target := strings.ToUpper(p.current.Value)
@@ -5241,9 +5245,9 @@ func (p *Parser) parseAlterStatement() (ast.Node, error) {
 		case descriptor.AlterIndexVisibility:
 			return p.parseCockroachAlterIndex()
 		}
-		return nil, fmt.Errorf("unsupported ALTER target: %s at position %d", target, p.current.Start)
+		return nil, ptaherr.At(p.current.Start, fmt.Errorf("unsupported ALTER target: %s", target))
 	default:
-		return nil, fmt.Errorf("unsupported ALTER target: %s at position %d", target, p.current.Start)
+		return nil, ptaherr.At(p.current.Start, fmt.Errorf("unsupported ALTER target: %s", target))
 	}
 }
 
@@ -5309,7 +5313,7 @@ func (p *Parser) parseDropStatement() (ast.Node, error) {
 	p.skipWhitespace()
 
 	if p.current.Type != lexer.TokenIdentifier {
-		return nil, fmt.Errorf("expected DROP target, got %s at position %d", p.current.Type, p.current.Start)
+		return nil, ptaherr.At(p.current.Start, fmt.Errorf("expected DROP target, got %s", p.current.Type))
 	}
 
 	target := strings.ToUpper(p.current.Value)
@@ -5319,7 +5323,7 @@ func (p *Parser) parseDropStatement() (ast.Node, error) {
 	case "INDEX":
 		return p.parseDropIndex()
 	default:
-		return nil, fmt.Errorf("unsupported DROP target: %s at position %d", target, p.current.Start)
+		return nil, ptaherr.At(p.current.Start, fmt.Errorf("unsupported DROP target: %s", target))
 	}
 }
 
@@ -5445,7 +5449,7 @@ func (p *Parser) parseDropIndex() (*ast.DropIndexNode, error) {
 
 	p.skipWhitespace()
 	if p.current.MatchOperatorValue(",") {
-		return nil, fmt.Errorf("unsupported DROP INDEX with multiple index names at position %d", p.current.Start)
+		return nil, ptaherr.At(p.current.Start, fmt.Errorf("unsupported DROP INDEX with multiple index names"))
 	}
 
 	dropIndex := ast.NewDropIndex(name)
@@ -5544,7 +5548,7 @@ func (p *Parser) parseAlterOperation(table string) ([]ast.AlterOperation, error)
 	}
 
 	if p.current.Type != lexer.TokenIdentifier {
-		return nil, fmt.Errorf("expected ALTER operation, got %s at position %d", p.current.Type, p.current.Start)
+		return nil, ptaherr.At(p.current.Start, fmt.Errorf("expected ALTER operation, got %s", p.current.Type))
 	}
 
 	operation := strings.ToUpper(p.current.Value)
@@ -5568,7 +5572,7 @@ func (p *Parser) parseAlterOperation(table string) ([]ast.AlterOperation, error)
 	case "VALIDATE":
 		return oneOperation(p.parseValidateConstraintOperation())
 	default:
-		return nil, fmt.Errorf("unsupported ALTER operation: %s at position %d", operation, p.current.Start)
+		return nil, ptaherr.At(p.current.Start, fmt.Errorf("unsupported ALTER operation: %s", operation))
 	}
 }
 
@@ -5594,7 +5598,7 @@ func (p *Parser) parseAlterConstraintOperation() (ast.AlterOperation, error) {
 		return nil, err
 	}
 	if !clauses.written {
-		return nil, fmt.Errorf("ALTER CONSTRAINT at position %d: only [NOT] DEFERRABLE and INITIALLY DEFERRED | IMMEDIATE are supported", start)
+		return nil, ptaherr.At(start, fmt.Errorf("ALTER CONSTRAINT: only [NOT] DEFERRABLE and INITIALLY DEFERRED | IMMEDIATE are supported"))
 	}
 	operation := &ast.AlterConstraintOperation{ConstraintName: name, Initially: clauses.timingWritten}
 	switch {
@@ -5619,8 +5623,7 @@ func (p *Parser) parseValidateConstraintOperation() (ast.AlterOperation, error) 
 		return nil, fmt.Errorf("expected CONSTRAINT after VALIDATE: %w", err)
 	}
 	if !p.target.takesNotValid() {
-		return nil, fmt.Errorf("VALIDATE CONSTRAINT at position %d: the %s dialect takes no VALIDATE CONSTRAINT",
-			start, dialectName(p.dialect))
+		return nil, ptaherr.At(start, fmt.Errorf("VALIDATE CONSTRAINT: the %s dialect takes no VALIDATE CONSTRAINT", dialectName(p.dialect)))
 	}
 	p.skipWhitespace()
 	name, err := p.expectIdentifier()
@@ -5877,10 +5880,10 @@ func (p *Parser) describeIndexKeywordElement(keyword string, start int, err erro
 	if !errors.Is(err, errConstraintColumnListMissing) && !errors.Is(err, errConstraintColumnNotAName) {
 		return err
 	}
-	return fmt.Errorf(
-		"a table element opening with %s at position %d declares a table-level index on %s "+
+	return ptaherr.At(start, fmt.Errorf(
+		"a table element opening with %s declares a table-level index on %s "+
 			"rather than a column named after the word: %w",
-		keyword, start, describeFunctionalKeyDialect(p.dialect), err)
+		keyword, describeFunctionalKeyDialect(p.dialect), err))
 }
 
 // tableBodyReadsKeywordAsIndex reports whether a table element beginning with
@@ -6081,10 +6084,10 @@ func (p *Parser) parseDropNamedConstraint(operation *ast.DropConstraintOperation
 		return nil, err
 	}
 	if cascade {
-		return nil, fmt.Errorf(
-			"DROP CONSTRAINT %s CASCADE at position %d: CASCADE also drops the objects that depend on "+
+		return nil, ptaherr.At(p.previous.Start, fmt.Errorf(
+			"DROP CONSTRAINT %s CASCADE: CASCADE also drops the objects that depend on "+
 				"the constraint, which a schema file does not list; drop them by name",
-			name, p.previous.Start)
+			name))
 	}
 	return operation, nil
 }
@@ -6157,15 +6160,13 @@ func (p *Parser) refuseModify() error {
 	case p.dialect == "" || modify == descriptor.ModifyDefinition:
 		return nil
 	case modify == descriptor.ModifyOther:
-		return fmt.Errorf(
-			"MODIFY at position %d in ALTER TABLE: %s's MODIFY is not MySQL's, which replaces the column's "+
-				"definition and is the one Ptah reads; state the column as it should be in CREATE TABLE",
-			p.current.Start, p.dialect)
+		return ptaherr.At(p.current.Start, fmt.Errorf(
+			"MODIFY in ALTER TABLE: %s's MODIFY is not MySQL's, which replaces the column's "+
+				"definition and is the one Ptah reads; state the column as it should be in CREATE TABLE", p.dialect))
 	default:
-		return fmt.Errorf(
-			"MODIFY at position %d in ALTER TABLE: %s has no MODIFY clause; change the column with "+
-				"ALTER COLUMN, or state it as it should be in CREATE TABLE",
-			p.current.Start, p.dialect)
+		return ptaherr.At(p.current.Start, fmt.Errorf(
+			"MODIFY in ALTER TABLE: %s has no MODIFY clause; change the column with "+
+				"ALTER COLUMN, or state it as it should be in CREATE TABLE", p.dialect))
 	}
 }
 
@@ -6193,8 +6194,8 @@ func (p *Parser) parseAlterIndexVisibility() (ast.AlterOperation, error) {
 	start := p.current.Start
 	keyword := strings.ToUpper(p.current.Value)
 	if p.current.Type != lexer.TokenIdentifier || !p.atVisibilityWord(keyword) {
-		return nil, fmt.Errorf("expected VISIBLE, INVISIBLE, IGNORED or NOT IGNORED after ALTER INDEX %s at position %d",
-			name, start)
+		return nil, ptaherr.At(start, fmt.Errorf("expected VISIBLE, INVISIBLE, IGNORED or NOT IGNORED after ALTER INDEX %s",
+			name))
 	}
 	p.keyOptions = keyOptions{}
 	if err := p.readKeyVisibility(indexElement, keyword, start); err != nil {
@@ -6210,7 +6211,7 @@ func (p *Parser) parseAlterColumnOperation() (ast.AlterOperation, error) {
 		p.advance()
 		p.skipWhitespace()
 	} else if p.target.grammar.AlterTable.AlterColumnDefinition {
-		return nil, fmt.Errorf("expected COLUMN after ALTER at position %d", p.current.Start)
+		return nil, ptaherr.At(p.current.Start, fmt.Errorf("expected COLUMN after ALTER"))
 	}
 	columnName, err := p.expectIdentifier()
 	if err != nil {
@@ -6233,8 +6234,8 @@ func (p *Parser) parseAlterColumnOperation() (ast.AlterOperation, error) {
 		}
 		return &ast.ModifyColumnOperation{Column: column}, nil
 	default:
-		return nil, fmt.Errorf(
-			"expected an ALTER COLUMN %s action (SET, DROP or TYPE) at position %d", columnName, p.current.Start)
+		return nil, ptaherr.At(p.current.Start, fmt.Errorf(
+			"expected an ALTER COLUMN %s action (SET, DROP or TYPE)", columnName))
 	}
 }
 
@@ -6296,10 +6297,10 @@ func (p *Parser) parseAlterColumnAction(columnName string) (ast.AlterOperation, 
 	if p.current.Type == lexer.TokenIdentifier {
 		action += " " + strings.ToUpper(p.current.Value)
 	}
-	return nil, fmt.Errorf(
-		"unsupported ALTER COLUMN %s %s at position %d: a schema file may set a column's default, "+
+	return nil, ptaherr.At(start, fmt.Errorf(
+		"unsupported ALTER COLUMN %s %s: a schema file may set a column's default, "+
 			"NOT NULL or type this way; declare anything else on the column itself",
-		columnName, action, start)
+		columnName, action))
 }
 
 // parseAlterColumnType reads the type of ALTER COLUMN ... [SET DATA] TYPE and
@@ -6313,9 +6314,9 @@ func (p *Parser) parseAlterColumnType(columnName string) (ast.AlterOperation, er
 	operation := &ast.AlterColumnOperation{ColumnName: columnName, Action: ast.AlterColumnSetType, Type: columnType}
 	p.skipWhitespace()
 	if p.current.MatchIdentifierValue("COLLATE") {
-		return nil, fmt.Errorf(
-			"unsupported COLLATE in ALTER COLUMN %s TYPE at position %d: declare the collation on the column itself",
-			columnName, p.current.Start)
+		return nil, ptaherr.At(p.current.Start, fmt.Errorf(
+			"unsupported COLLATE in ALTER COLUMN %s TYPE: declare the collation on the column itself",
+			columnName))
 	}
 	if !p.current.MatchIdentifierValue("USING") {
 		return operation, nil
@@ -6340,7 +6341,7 @@ func (p *Parser) parseAlterColumnType(columnName string) (ast.AlterOperation, er
 	}
 	operation.Using = strings.TrimSpace(p.input[start:end])
 	if operation.Using == "" {
-		return nil, fmt.Errorf("expected an expression after USING at position %d", start)
+		return nil, ptaherr.At(start, fmt.Errorf("expected an expression after USING"))
 	}
 	return operation, nil
 }
@@ -6529,7 +6530,7 @@ func (p *Parser) parseCreateIndexIncludeColumns() ([]string, error) {
 		if p.current.MatchOperatorValue(")") {
 			break
 		}
-		return nil, fmt.Errorf("expected ',' or ')' in index INCLUDE list at position %d", p.current.Start)
+		return nil, ptaherr.At(p.current.Start, fmt.Errorf("expected ',' or ')' in index INCLUDE list"))
 	}
 	return columns, p.expect(lexer.TokenOperator, ")")
 }
@@ -6596,7 +6597,7 @@ func (p *Parser) parseCreateIndexStorageParams() (map[string]string, error) {
 		if p.current.MatchOperatorValue(")") {
 			break
 		}
-		return nil, fmt.Errorf("expected ',' or ')' in index WITH parameter list at position %d", p.current.Start)
+		return nil, ptaherr.At(p.current.Start, fmt.Errorf("expected ',' or ')' in index WITH parameter list"))
 	}
 	if err := p.expect(lexer.TokenOperator, ")"); err != nil {
 		return nil, err
@@ -6606,7 +6607,7 @@ func (p *Parser) parseCreateIndexStorageParams() (map[string]string, error) {
 
 func (p *Parser) parseCreateIndexStorageParamValue() (string, error) {
 	if p.current.Type == lexer.TokenEOF || p.current.MatchOperatorValue(",") || p.current.MatchOperatorValue(")") {
-		return "", fmt.Errorf("expected index storage parameter value at position %d", p.current.Start)
+		return "", ptaherr.At(p.current.Start, fmt.Errorf("expected index storage parameter value"))
 	}
 	value := p.current.Value
 	p.advance()
@@ -6645,7 +6646,7 @@ columnList:
 				if parenDepth == 0 {
 					columnText := strings.TrimSpace(column.String())
 					if columnText == "" {
-						return nil, fmt.Errorf("expected column or expression before ',' in index column list at position %d", p.current.Start)
+						return nil, ptaherr.At(p.current.Start, fmt.Errorf("expected column or expression before ',' in index column list"))
 					}
 					columns = append(columns, columnText)
 					column.Reset()
@@ -6667,7 +6668,7 @@ columnList:
 
 	columns = append(columns, strings.TrimSpace(column.String()))
 	if slices.Contains(columns, "") {
-		return nil, fmt.Errorf("expected column or expression in index column list at position %d", p.current.Start)
+		return nil, ptaherr.At(p.current.Start, fmt.Errorf("expected column or expression in index column list"))
 	}
 
 	if err := p.expect(lexer.TokenOperator, ")"); err != nil {
@@ -6734,7 +6735,7 @@ func (p *Parser) parseCreateType() (ast.Node, error) {
 	if p.current.MatchOperatorValue("(") {
 		return nil, p.refuseUserType("CREATE TYPE", typeName, "composite types")
 	}
-	return nil, fmt.Errorf("expected ENUM or '(' after AS at position %d", p.current.Start)
+	return nil, ptaherr.At(p.current.Start, fmt.Errorf("expected ENUM or '(' after AS"))
 }
 
 // parseEnumTypeBody parses the `(value, ...)` body of CREATE TYPE ... AS ENUM.
@@ -6768,7 +6769,7 @@ func (p *Parser) parseEnumTypeBody(typeName string) (*ast.EnumNode, error) {
 			break
 		}
 
-		return nil, fmt.Errorf("expected ',' or ')' in enum values at position %d", p.current.Start)
+		return nil, ptaherr.At(p.current.Start, fmt.Errorf("expected ',' or ')' in enum values"))
 	}
 
 	if err := p.expect(lexer.TokenOperator, ")"); err != nil {
@@ -6839,7 +6840,7 @@ func (p *Parser) parseCommentStatement() (ast.Node, error) {
 	depth := 0
 	for {
 		if p.isAtEnd() || p.current.MatchOperatorValue(";") {
-			return nil, fmt.Errorf("expected IS and the comment text after the object at position %d", start)
+			return nil, ptaherr.At(start, fmt.Errorf("expected IS and the comment text after the object"))
 		}
 		switch {
 		case p.current.MatchOperatorValue("("):
@@ -6854,14 +6855,16 @@ func (p *Parser) parseCommentStatement() (ast.Node, error) {
 			p.skipWhitespace()
 			if p.current.MatchIdentifierValue("NULL") {
 				p.advance()
-				return constraintCommentNode(strings.TrimSpace(p.input[start:isAt]), "", "NULL")
+				node, err := constraintCommentNode(strings.TrimSpace(p.input[start:isAt]), "", "NULL")
+				return node, sourcepos.Shift(err, start)
 			}
 			text, err := p.stringConstant("the comment text")
 			if err != nil {
 				return nil, err
 			}
 			target := strings.TrimSpace(p.input[start:isAt])
-			return constraintCommentNode(target, text, quotedStringConstant(text))
+			node, err := constraintCommentNode(target, text, quotedStringConstant(text))
+			return node, sourcepos.Shift(err, start)
 		}
 		p.advance()
 	}

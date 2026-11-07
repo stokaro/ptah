@@ -78,7 +78,7 @@ func TestParserGrantTargetListDialectsFailurePath(t *testing.T) {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 			statements, err := parser.NewParser("GRANT SELECT ON a, b TO r;", parser.WithDialect(dialect)).Parse()
-			c.Assert(err, qt.ErrorMatches, "GRANT target lists are not supported for .* at position [0-9]+")
+			c.Assert(err, qt.ErrorMatches, "line [0-9]+, column [0-9]+: GRANT target lists are not supported for .*")
 			c.Assert(statements, qt.IsNil)
 		})
 	}

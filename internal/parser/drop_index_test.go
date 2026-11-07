@@ -286,37 +286,37 @@ func TestParser_ParseDropIndexRefusesShapesItCannotRecord(t *testing.T) {
 		{
 			name: "several index names",
 			sql:  "DROP INDEX a, b;",
-			want: "unsupported DROP INDEX with multiple index names at position 12",
+			want: "line 1, column 13: unsupported DROP INDEX with multiple index names",
 		},
 		{
 			name: "several index names after IF EXISTS",
 			sql:  "DROP INDEX IF EXISTS a, b;",
-			want: "unsupported DROP INDEX with multiple index names at position 22",
+			want: "line 1, column 23: unsupported DROP INDEX with multiple index names",
 		},
 		{
 			name: "no index name",
 			sql:  "DROP INDEX;",
-			want: "expected index name: expected identifier, got Semicolon at position 10",
+			want: "line 1, column 11: expected index name: expected identifier, got Semicolon",
 		},
 		{
 			name: "ON without a table",
 			sql:  "DROP INDEX idx ON;",
-			want: "expected table name: expected identifier, got Semicolon at position 17",
+			want: "line 1, column 18: expected table name: expected identifier, got Semicolon",
 		},
 		{
 			name: "@ without an index name",
 			sql:  "DROP INDEX t@;",
-			want: "expected index name after '@': expected identifier, got Semicolon at position 13",
+			want: "line 1, column 14: expected index name after '@': expected identifier, got Semicolon",
 		},
 		{
 			name: "IF without EXISTS",
 			sql:  "DROP INDEX IF idx;",
-			want: "expected EXISTS after DROP INDEX IF: expected 'EXISTS', got 'idx' at position 14",
+			want: "line 1, column 15: expected EXISTS after DROP INDEX IF: expected 'EXISTS', got 'idx'",
 		},
 		{
 			name: "a DROP target that is still unmodeled",
 			sql:  "DROP VIEW users;",
-			want: "unsupported DROP target: VIEW at position 5",
+			want: "line 1, column 6: unsupported DROP target: VIEW",
 		},
 	}
 

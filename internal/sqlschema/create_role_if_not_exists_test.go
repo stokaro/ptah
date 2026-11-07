@@ -40,5 +40,5 @@ func TestRead_CreateRoleIfNotExists_FailurePath(t *testing.T) {
 
 	_, _, err := sqlschema.Read([]byte(`CREATE ROLE IF NOT EXISTS probe_role;`), "postgres")
 
-	c.Assert(err, qt.ErrorMatches, `(?s).*CREATE ROLE IF NOT EXISTS at position \d+: postgres takes no IF NOT EXISTS on CREATE ROLE.*`)
+	c.Assert(err, qt.ErrorMatches, `(?s).*CREATE ROLE IF NOT EXISTS: postgres takes no IF NOT EXISTS on CREATE ROLE.*`)
 }

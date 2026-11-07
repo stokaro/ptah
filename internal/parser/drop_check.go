@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/ptaherr"
 )
 
 // refuseDropCheck refuses ALTER TABLE ... DROP CHECK, written at position, on a
@@ -25,8 +26,7 @@ func (p *Parser) refuseDropCheck(position int) error {
 	if !p.target.grammar.AlterTable.ChecksCapabilities || p.targetHas(capability.DropCheckClause) {
 		return nil
 	}
-	return fmt.Errorf(
-		"DROP CHECK at position %d in ALTER TABLE: %s has no DROP CHECK, and answers ERROR 1064 (42000) "+
-			"to one; drop the check with DROP CONSTRAINT",
-		position, p.dialect)
+	return ptaherr.At(position, fmt.Errorf(
+		"DROP CHECK in ALTER TABLE: %s has no DROP CHECK, and answers ERROR 1064 (42000) "+
+			"to one; drop the check with DROP CONSTRAINT", p.dialect))
 }

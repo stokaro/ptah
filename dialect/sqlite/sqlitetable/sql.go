@@ -181,10 +181,10 @@ func (t *virtualTokens) expect(word string) error {
 	t.skipSpace()
 	current := t.current()
 	if current.Type != lexer.TokenIdentifier {
-		return fmt.Errorf("expected %s, got %s at position %d", lexer.TokenIdentifier, current.Type, t.position(current))
+		return ptaherr.At(t.position(current), fmt.Errorf("expected %s, got %s", lexer.TokenIdentifier, current.Type))
 	}
 	if !strings.EqualFold(current.Value, word) {
-		return fmt.Errorf("expected '%s', got '%s' at position %d", word, current.Value, t.position(current))
+		return ptaherr.At(t.position(current), fmt.Errorf("expected '%s', got '%s'", word, current.Value))
 	}
 	t.advance()
 	return nil
@@ -222,7 +222,7 @@ func (t *virtualTokens) declaration() (*sqlext.TableDeclaration, error) {
 	}
 	t.skipSpace()
 	if rest := t.current(); rest.Type != lexer.TokenEOF {
-		return nil, fmt.Errorf("unexpected %q after the virtual table declaration at position %d", rest.Value, t.position(rest))
+		return nil, ptaherr.At(t.position(rest), fmt.Errorf("unexpected %q after the virtual table declaration", rest.Value))
 	}
 	facets, err := schemaext.Facets{}.With(&DesiredVirtual{Virtual: Virtual{Module: module, Arguments: arguments}})
 	if err != nil {
@@ -277,13 +277,13 @@ func (t *virtualTokens) qualifiedIdentifier(label string) (string, error) {
 func (t *virtualTokens) identifier() (string, error) {
 	current := t.current()
 	if unterminatedBracket(current) {
-		return "", fmt.Errorf("unterminated bracketed identifier at position %d", t.position(current))
+		return "", ptaherr.At(t.position(current), fmt.Errorf("unterminated bracketed identifier"))
 	}
 	if current.MatchOperatorValue("[") {
 		return t.bracketed()
 	}
 	if current.Type != lexer.TokenIdentifier && (current.Type != lexer.TokenString || !strings.HasPrefix(current.Value, `"`)) {
-		return "", fmt.Errorf("expected identifier, got %s at position %d", current.Type, t.position(current))
+		return "", ptaherr.At(t.position(current), fmt.Errorf("expected identifier, got %s", current.Type))
 	}
 	t.advance()
 	return current.Value, nil
@@ -298,7 +298,7 @@ func (t *virtualTokens) bracketed() (string, error) {
 	for {
 		current := t.current()
 		if current.Type == lexer.TokenEOF {
-			return "", fmt.Errorf("unterminated bracketed identifier at position %d", start)
+			return "", ptaherr.At(start, fmt.Errorf("unterminated bracketed identifier"))
 		}
 		value.WriteString(current.Value)
 		t.advance()
@@ -337,5 +337,5 @@ func (t *virtualTokens) arguments() (string, error) {
 			}
 		}
 	}
-	return "", fmt.Errorf("unterminated virtual table arguments at position %d", t.offset+open.End)
+	return "", ptaherr.At(t.offset+open.End, fmt.Errorf("unterminated virtual table arguments"))
 }

@@ -83,7 +83,7 @@ func (s *sqlScript) read(ctx context.Context, opts Options) (*schemamodel.Databa
 		sqlext.GrammarRequest{Target: opts.Dialect, Files: s.files, DatabasePath: root},
 		sqlschema.Options{Owners: opts.SQL, Vocabulary: opts.CoverageVocabulary, Relations: opts.Relations})
 	if refused, ok := errors.AsType[*sqlext.FileError](err); ok {
-		return nil, fmt.Errorf("read SQL schema file %s: %w", refused.Path, refused.Err)
+		return nil, sqlFileRefusal(refused.Path, refused.Err)
 	}
 	if err != nil {
 		return nil, err

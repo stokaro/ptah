@@ -594,7 +594,7 @@ func TestEnginesWithoutThePartitionStatementRefuseItE2E(t *testing.T) {
 			out, err := ptah("schema", "compare", "--schema-file", writeSchema(c, statement+";\n"), "--db-url", dbtarget.URL(c, test.engine))
 
 			c.Assert(err, qt.IsNotNil, qt.Commentf("%s", out))
-			c.Assert(err.Error(), qt.Contains, "CREATE TABLE ptah_partitionof_child PARTITION OF at position")
+			c.Assert(err.Error(), qt.Contains, "CREATE TABLE ptah_partitionof_child PARTITION OF declares")
 			c.Assert(err.Error(), qt.Contains, test.want)
 		})
 	}

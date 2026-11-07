@@ -184,7 +184,7 @@ func TestReadWith_WithoutTheStatementOwnerRefusesItsSyntax(t *testing.T) {
 	database, _, err := sqlschema.ReadWith(t.Context(), []byte("CREATE WIDGET w;"), "custom", nil,
 		sqlschema.Options{Owners: sqlext.None()})
 
-	c.Assert(err, qt.ErrorMatches, `unsupported CREATE target: WIDGET at position 7`)
+	c.Assert(err, qt.ErrorMatches, `line 1, column 8: unsupported CREATE target: WIDGET`)
 	c.Assert(database.FeatureObjects.Len(), qt.Equals, 0)
 }
 

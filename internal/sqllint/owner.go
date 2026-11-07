@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/core/lintext"
 	"ptah.run/core/platform/capability"
+	"ptah.run/internal/sourcepos"
 )
 
 // lintOwned lints a source the owner of its dialect splits and judges, which
@@ -64,7 +65,7 @@ type ownedReading struct {
 
 func (r *ownedReading) read(statement lintext.Statement) {
 	kind := statementKind(statement)
-	line, column := lineColumn(r.source.SQL, statement.Start)
+	line, column := sourcepos.Locate(r.source.SQL, statement.Start)
 	if kind.Class == lintext.ClassOther {
 		r.findings = append(r.findings, Finding{Rule: RuleUnsupportedStatement, Title: "Unsupported SQL statement", Severity: SeverityError,
 			File: r.source.Name, Line: line, Column: column, Dialect: r.opts.Dialect,

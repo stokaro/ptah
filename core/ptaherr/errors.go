@@ -20,6 +20,7 @@ package ptaherr
 
 import (
 	"errors"
+	"fmt"
 
 	"ptah.run/core/ast"
 )
@@ -85,14 +86,27 @@ var (
 //
 // A directive written at a scope it does not take wraps
 // [ErrMisplacedDirective].
+//
+// A refusal of a SQL document is a ParseError too, with Line, Column and Offset
+// set. File is set where the reader knows the document's file, and errors.Is
+// reaches the refusal's own cause through Err, such as
+// [ErrUnsupportedFeature].
 type ParseError struct {
 	// File names the source file being parsed. For in-memory parsing it is
 	// the name the caller supplied for diagnostics.
 	File string
-	// Line is the 1-based line of the annotation comment at fault, and zero
-	// when the failure is not tied to a single line. Check it before
-	// reporting a position.
+	// Line is the 1-based line at fault, and zero when the failure is not
+	// tied to a single line. Check it before reporting a position.
 	Line int
+	// Column is the 1-based column in Line, and zero when only the line is
+	// known. It counts characters, as an editor's cursor does: a multi-byte
+	// character is one column and a tab is one column. A byte that is not
+	// valid UTF-8 is one column.
+	Column int
+	// Offset is the byte offset of the position from the start of the
+	// document, from 0. It is meaningful where Column is set, and on an error
+	// [At] returned, which no reader has given a line yet.
+	Offset int
 	// Directive names the //ptah: directive at fault without its leading
 	// slashes, such as "ptah:schema:field". Empty when the failure is not
 	// about one directive.
@@ -108,11 +122,25 @@ type ParseError struct {
 
 // Error returns Message when set and Err's text otherwise. An error carrying
 // neither still formats as a non-empty description of its kind, and a nil
-// receiver formats rather than panicking.
+// receiver formats rather than panicking. An error with Column set opens with
+// its position: file:line:column where File names the document, and
+// "line L, column C" where nothing does.
 func (e *ParseError) Error() string {
 	if e == nil {
 		return "<nil>"
 	}
+	text := e.reason()
+	switch {
+	case e.Column == 0:
+		return text
+	case e.File != "":
+		return fmt.Sprintf("%s:%d:%d: %s", e.File, e.Line, e.Column, text)
+	default:
+		return fmt.Sprintf("line %d, column %d: %s", e.Line, e.Column, text)
+	}
+}
+
+func (e *ParseError) reason() string {
 	if e.Message != "" {
 		return e.Message
 	}
@@ -129,6 +157,19 @@ func (e *ParseError) Unwrap() error {
 		return nil
 	}
 	return e.Err
+}
+
+// At returns err as a refusal at a byte offset of the SQL document being read,
+// counted from 0: a [ParseError] with Offset set and no line yet, whose text is
+// err's. The reader of the document gives it its line and column, so a parser
+// states where it stopped in the one unit it holds and writes no position in
+// its sentence. An owner's parser passes [ptah.run/core/sqlext.Claim].Offset
+// plus the offset in the claim's text. A nil err returns nil.
+func At(offset int, err error) error {
+	if err == nil {
+		return nil
+	}
+	return &ParseError{Offset: offset, Err: err}
 }
 
 // PlanError reports a migration planning failure. The migration/planner

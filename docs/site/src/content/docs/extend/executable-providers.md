@@ -1501,7 +1501,10 @@ reply as follows:
 
 Ptah refuses a reply that is not complete. It prints the first error with its
 position, as the shared parser does:
-`read SQL schema file schema.sql: unsupported statement GRANT at position 42 (line 2, column 1)`.
+`read SQL schema file schema.sql:2:1: unsupported statement GRANT`. It works out
+that line and column from the diagnostic's byte offset and the document, so the
+column counts characters as it does for the shared parser, where the wire's
+column counts bytes.
 The JSON documents of `schema plan` and `schema apply` list every diagnostic in
 `schema_diagnostics`, with its code (`syntax`, `unsupported`, `invalid` or
 `incomplete`), severity, path and span.

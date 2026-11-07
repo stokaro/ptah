@@ -7,9 +7,11 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlext"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/sourcepos"
 )
 
 // WithSQL selects the owners whose syntax the parse reads beside the shared
@@ -583,7 +585,20 @@ func (p *Parser) placeOwnerTables(statements *ast.StatementList) {
 
 // ParseContext is [Parser.Parse] with the context the owners' parsers run
 // under.
+//
+// A refusal that states where it stopped comes back as a
+// [ptaherr.ParseError] holding the line, the column and the byte offset in the
+// text given to [NewParser].
 func (p *Parser) ParseContext(ctx context.Context) (*ast.StatementList, error) {
+	statements, err := p.parseDocument(ctx)
+	if err != nil {
+		return nil, sourcepos.Resolve(err, p.source, p.origins.Of)
+	}
+	return statements, nil
+}
+
+// parseDocument reads the statements and what the owners make of their syntax.
+func (p *Parser) parseDocument(ctx context.Context) (*ast.StatementList, error) {
 	statements, err := p.parseStatements()
 	if err != nil {
 		return nil, err
@@ -620,7 +635,8 @@ func (p *Parser) placeDeclinedStatements(statements *ast.StatementList) error {
 		read, err := NewParser(claim.Text, WithDialect(p.dialect), WithCapabilities(p.capabilities), WithTimeout(p.timeout),
 			WithSQL(sqlext.None())).parseStatements()
 		if err != nil {
-			return fmt.Errorf("statement at position %d: %w", claim.offset, err)
+			// The statement read by itself counts from its own start.
+			return ptaherr.At(claim.offset, sourcepos.Shift(err, claim.offset))
 		}
 		placed = append(placed, read.Statements...)
 	}
@@ -648,7 +664,7 @@ func (p *Parser) parseOwnedTablePrefix() (*ast.CreateTableNode, bool, error) {
 		return nil, false, nil
 	}
 	if !p.current.MatchIdentifierValue("TABLE") {
-		return nil, true, fmt.Errorf("expected TABLE after a table prefix, found %s at position %d", p.current.Value, p.current.Start)
+		return nil, true, ptaherr.At(p.current.Start, fmt.Errorf("expected TABLE after a table prefix, found %s", p.current.Value))
 	}
 	var err error
 	table, err = p.parseCreateTable()

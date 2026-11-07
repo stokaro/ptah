@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlext"
 	"ptah.run/feature/oratype"
@@ -116,7 +117,7 @@ func (t *tokens) position() int { return t.offset + t.current().Start }
 func (t *tokens) words(words ...string) error {
 	for _, word := range words {
 		if !t.keyword(word) {
-			return fmt.Errorf("expected %s at position %d", word, t.position())
+			return ptaherr.At(t.position(), fmt.Errorf("expected %s", word))
 		}
 		t.pos++
 	}
@@ -125,7 +126,7 @@ func (t *tokens) words(words ...string) error {
 
 func (t *tokens) punctuation(text string) error {
 	if !t.operator(text) {
-		return fmt.Errorf("expected %q at position %d", text, t.position())
+		return ptaherr.At(t.position(), fmt.Errorf("expected %q", text))
 	}
 	t.pos++
 	return nil
@@ -141,12 +142,12 @@ func (t *tokens) name(label string) (string, error) {
 		return token.Value, nil
 	case token.Type == lexer.TokenString && strings.HasPrefix(token.Value, `"`):
 		if len(token.Value) < 2 || !strings.HasSuffix(token.Value, `"`) {
-			return "", fmt.Errorf("expected a closed quoted %s at position %d", label, t.offset+token.Start)
+			return "", ptaherr.At(t.offset+token.Start, fmt.Errorf("expected a closed quoted %s", label))
 		}
 		t.pos++
 		return strings.ReplaceAll(token.Value[1:len(token.Value)-1], `""`, `"`), nil
 	default:
-		return "", fmt.Errorf("expected %s at position %d", label, t.offset+token.Start)
+		return "", ptaherr.At(t.offset+token.Start, fmt.Errorf("expected %s", label))
 	}
 }
 
@@ -186,13 +187,13 @@ func (t *tokens) span(label string, stop func() bool) (string, error) {
 			cases--
 		}
 		if depth < 0 {
-			return "", fmt.Errorf("unexpected %s in %s at position %d", t.current().Value, label, t.position())
+			return "", ptaherr.At(t.position(), fmt.Errorf("unexpected %s in %s", t.current().Value, label))
 		}
 		end = t.current().End
 		t.pos++
 	}
 	if depth != 0 || cases != 0 || end == start {
-		return "", fmt.Errorf("expected a complete %s at position %d", label, t.offset+start)
+		return "", ptaherr.At(t.offset+start, fmt.Errorf("expected a complete %s", label))
 	}
 	return strings.TrimSpace(t.text[start:end]), nil
 }
@@ -285,7 +286,7 @@ func (t *tokens) domainClause(value *oratype.DesiredDomain) error {
 		value.Check = check
 		return t.punctuation(")")
 	default:
-		return fmt.Errorf("unsupported domain clause %q at position %d", t.current().Value, t.position())
+		return ptaherr.At(t.position(), fmt.Errorf("unsupported domain clause %q", t.current().Value))
 	}
 }
 
@@ -350,7 +351,7 @@ func (t *tokens) createObjectType() (sqlext.Value, error) {
 		return sqlext.Value{}, err
 	}
 	if t.current().Type != lexer.TokenEOF {
-		return sqlext.Value{}, fmt.Errorf("unexpected %s at position %d", t.current().Value, t.position())
+		return sqlext.Value{}, ptaherr.At(t.position(), fmt.Errorf("unexpected %s", t.current().Value))
 	}
 	object, err := oratype.DesiredObject(ref, value)
 	if err != nil {

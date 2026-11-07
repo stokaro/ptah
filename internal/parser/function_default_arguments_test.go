@@ -49,12 +49,12 @@ func TestParse_FunctionDefaultArguments_FailurePath(t *testing.T) {
 		{
 			name:    "an argument list that never closes",
 			sql:     "CREATE TABLE t (id int PRIMARY KEY, a int DEFAULT nextval('s'",
-			wantErr: `expected default value: unterminated argument list in default at position \d+`,
+			wantErr: `line \d+, column \d+: expected default value: unterminated argument list in default`,
 		},
 		{
 			name:    "a qualified name that ends at the dot",
 			sql:     "CREATE TABLE t (id int PRIMARY KEY, a int DEFAULT pg_catalog.());",
-			wantErr: `expected default value: expected function name after '\.' in default: .*`,
+			wantErr: `line \d+, column \d+: expected default value: expected function name after '\.' in default: .*`,
 		},
 	}
 	for _, row := range rows {

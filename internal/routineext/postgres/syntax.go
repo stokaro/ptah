@@ -6,8 +6,10 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/ptaherr"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/routineext"
+	"ptah.run/internal/sourcepos"
 )
 
 // ReadDo reads a DO statement's body and its language: the
@@ -132,12 +134,12 @@ func parsePostgresRoutineClauses(tokens []lexer.Token, keyword string) (security
 			// The SQL standard's spelling of SECURITY, read as the CREATE
 			// FUNCTION path reads it.
 			if next := nextPostgresRoutineToken(tokens, i+1); next == -1 || !tokens[next].MatchIdentifierValue("SECURITY") {
-				return "", nil, fmt.Errorf("expected SECURITY after EXTERNAL at position %d", tokens[i].Start)
+				return "", nil, ptaherr.At(tokens[i].Start, fmt.Errorf("expected SECURITY after EXTERNAL"))
 			}
 		case tokens[i].MatchIdentifierValue("SECURITY"):
 			modeIdx := nextPostgresRoutineToken(tokens, i+1)
 			if modeIdx == -1 || tokens[modeIdx].Type != lexer.TokenIdentifier {
-				return "", nil, fmt.Errorf("expected a security mode after SECURITY at position %d", tokens[i].Start)
+				return "", nil, ptaherr.At(tokens[i].Start, fmt.Errorf("expected a security mode after SECURITY"))
 			}
 			security, i = strings.ToUpper(tokens[modeIdx].Value), modeIdx
 		case tokens[i].MatchIdentifierValue("SET"):
@@ -178,7 +180,7 @@ func postgresRoutineParametersEnd(tokens []lexer.Token, keyword string) int {
 func postgresRoutineSetting(tokens []lexer.Token, setIdx int) (setting string, lastIdx int, err error) {
 	nameIdx := nextPostgresRoutineToken(tokens, setIdx+1)
 	if nameIdx == -1 || tokens[nameIdx].Type != lexer.TokenIdentifier {
-		return "", -1, fmt.Errorf("expected a routine setting name at position %d", tokens[setIdx].Start)
+		return "", -1, ptaherr.At(tokens[setIdx].Start, fmt.Errorf("expected a routine setting name"))
 	}
 	name := tokens[nameIdx].Value
 	opIdx := nextPostgresRoutineToken(tokens, nameIdx+1)
@@ -350,7 +352,13 @@ func (syntax) Create(p routineext.Cursor, target string, start int) (ast.Node, e
 		if err != nil {
 			return nil, err
 		}
-		return parsePostgresRoutineSQL(sql, p.Dialect(), p.FamilyOptions(), ast.RoutineKindProcedure)
+		routine, err := parsePostgresRoutineSQL(sql, p.Dialect(), p.FamilyOptions(), ast.RoutineKindProcedure)
+		if err != nil {
+			// The statement is read again from its own text, so its offsets
+			// count from its start.
+			return nil, sourcepos.Shift(err, start)
+		}
+		return routine, nil
 	}
 	if target == "PROC" {
 		return p.Fallback(target, start)
@@ -389,7 +397,7 @@ func collectPostgresRoutineStatement(p routineext.Cursor, statementStart int) (s
 	}
 
 	if blockDepth > 0 {
-		return "", fmt.Errorf("unterminated CREATE PROCEDURE body at position %d", p.Current().Start)
+		return "", ptaherr.At(p.Current().Start, fmt.Errorf("unterminated CREATE PROCEDURE body"))
 	}
 	return p.Fragment(statementStart, p.Previous().End), nil
 }

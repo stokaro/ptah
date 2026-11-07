@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
-	"strconv"
 	"strings"
 
 	"ptah.run/core/ast"
@@ -22,6 +21,7 @@ import (
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/parser"
 	"ptah.run/internal/servertarget"
+	"ptah.run/internal/sourcepos"
 	"ptah.run/migration/risk"
 )
 
@@ -374,7 +374,7 @@ func splitSourceStatements(source Source, dialect string) []sourceStatement {
 }
 
 func unsupportedStatementFinding(source Source, statement sourceStatement, opts Options, keyword string, keywordOffset int) Finding {
-	line, column := lineColumn(source.SQL, statement.offset+keywordOffset)
+	line, column := sourcepos.Locate(source.SQL, statement.offset+keywordOffset)
 	return Finding{
 		Rule:      RuleUnsupportedStatement,
 		Title:     "Unsupported SQL statement",
@@ -629,8 +629,16 @@ func isSupportedTopLevelKeyword(keyword string) bool {
 	}
 }
 
+// parseErrorFinding reports a statement the parser refused. The parser read the
+// statement alone, so the offset it states counts from the statement's start, and
+// the line and column it names would count from there too. The finding names the
+// file's, and its message is the reason without them.
 func parseErrorFinding(source Source, statement sourceStatement, opts Options, err error) Finding {
-	line, column := lineColumn(source.SQL, statement.offset+parseErrorPosition(err))
+	offset, message := statement.offset, err.Error()
+	if at, ok := errors.AsType[*ptaherr.ParseError](err); ok {
+		offset, message = offset+at.Offset, at.Err.Error()
+	}
+	line, column := sourcepos.Locate(source.SQL, offset)
 	return Finding{
 		Rule:      parseErrorRule(err),
 		Title:     parseErrorTitle(err),
@@ -639,7 +647,7 @@ func parseErrorFinding(source Source, statement sourceStatement, opts Options, e
 		Line:      line,
 		Column:    column,
 		Dialect:   opts.Dialect,
-		Message:   err.Error(),
+		Message:   message,
 		Rationale: "The SQL parser could not build an AST, so no rule can safely treat this statement as clean.",
 	}
 }
@@ -656,24 +664,6 @@ func parseErrorTitle(err error) string {
 		return "Unsupported SQL statement"
 	}
 	return "SQL parse error"
-}
-
-func parseErrorPosition(err error) int {
-	message := err.Error()
-	idx := strings.LastIndex(message, "position ")
-	if idx == -1 {
-		return 0
-	}
-	start := idx + len("position ")
-	end := start
-	for end < len(message) && message[end] >= '0' && message[end] <= '9' {
-		end++
-	}
-	pos, convErr := strconv.Atoi(message[start:end])
-	if convErr != nil {
-		return 0
-	}
-	return pos
 }
 
 type tablePrimaryKeyRule struct{}
@@ -934,7 +924,7 @@ func (c Context) unsupportedModeledSQLFinding(label string, offset int) Finding 
 	if offset < 0 {
 		offset = 0
 	}
-	line, column := lineColumn(c.Source.SQL, c.statement.offset+offset)
+	line, column := sourcepos.Locate(c.Source.SQL, c.statement.offset+offset)
 	return Finding{
 		Rule:      RuleUnsupportedStatement,
 		Title:     "Unsupported SQL statement",
@@ -985,25 +975,5 @@ func (c Context) LineColumn(needle string) (line, column int) {
 	if idx := strings.Index(c.statement.sql, needle); idx >= 0 {
 		pos += idx
 	}
-	return lineColumn(c.Source.SQL, pos)
-}
-
-func lineColumn(input string, pos int) (line, column int) {
-	if pos < 0 {
-		pos = 0
-	}
-	line = 1
-	column = 1
-	for i, r := range input {
-		if i >= pos {
-			break
-		}
-		if r == '\n' {
-			line++
-			column = 1
-			continue
-		}
-		column++
-	}
-	return line, column
+	return sourcepos.Locate(c.Source.SQL, pos)
 }

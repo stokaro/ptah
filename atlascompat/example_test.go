@@ -2,12 +2,14 @@ package atlascompat_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing/fstest"
 
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/atlascompat"
+	"ptah.run/core/ptaherr"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/migrationfile"
 )
@@ -126,6 +128,30 @@ CREATE INDEX idx_users_email ON users (email);
 	// Output:
 	// *ast.CreateTableNode
 	// *ast.IndexNode
+}
+
+// ExampleParseSQL_refusalPosition reads where a parse stopped from the refusal
+// itself, rather than out of its text. The line and column count from 1 in what
+// an author sees, one column to a character of the Cyrillic name, and Offset
+// keeps the byte offset for a caller that slices the text.
+func ExampleParseSQL_refusalPosition() {
+	const text = "-- Каталог\nCREATE TABLE заказы id INTEGER;\n"
+
+	_, err := atlascompat.ParseSQL(text, atlascompat.ParseSQLOptions{Dialect: "postgres"})
+
+	at, ok := errors.AsType[*ptaherr.ParseError](err)
+	if !ok {
+		fmt.Println("no position:", err)
+		return
+	}
+	fmt.Println(err)
+	fmt.Printf("line %d, column %d, byte %d\n", at.Line, at.Column, at.Offset)
+	fmt.Println(text[at.Offset : at.Offset+2])
+
+	// Output:
+	// line 2, column 21: unsupported table option: ID
+	// line 2, column 21, byte 44
+	// id
 }
 
 // ExampleComputeSum hashes a migration directory into an integrity file and

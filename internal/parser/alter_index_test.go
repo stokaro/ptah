@@ -61,47 +61,47 @@ func TestParse_AlterIndex_FailurePath(t *testing.T) {
 		{
 			name: "SET TABLESPACE", dialect: "postgres",
 			sql:     "ALTER INDEX ix SET TABLESPACE pg_default;",
-			wantErr: `ALTER INDEX ix SET at position \d+: only RENAME TO is read; an index's other settings are not part of a schema file`,
+			wantErr: `line \d+, column \d+: ALTER INDEX ix SET: only RENAME TO is read; an index's other settings are not part of a schema file`,
 		},
 		{
 			name: "ATTACH PARTITION", dialect: "postgres",
 			sql:     "ALTER INDEX ix ATTACH PARTITION ix_2026;",
-			wantErr: `ALTER INDEX ix ATTACH at position \d+: only RENAME TO is read; .*`,
+			wantErr: `line \d+, column \d+: ALTER INDEX ix ATTACH: only RENAME TO is read; .*`,
 		},
 		{
 			name: "RENAME without TO", dialect: "postgres",
 			sql:     "ALTER INDEX ix RENAME other;",
-			wantErr: `expected TO after ALTER INDEX ix RENAME: .*`,
+			wantErr: `line \d+, column \d+: expected TO after ALTER INDEX ix RENAME: .*`,
 		},
 		{
 			name: "a qualified new name", dialect: "postgres",
 			sql:     "ALTER INDEX ix RENAME TO app.other;",
-			wantErr: `ALTER INDEX ix RENAME TO app\. at position \d+: the new name is bare, because the index stays in its schema`,
+			wantErr: `line \d+, column \d+: ALTER INDEX ix RENAME TO app\.: the new name is bare, because the index stays in its schema`,
 		},
 		{
 			name: "IF without EXISTS", dialect: "postgres",
 			sql:     "ALTER INDEX IF ix RENAME TO other;",
-			wantErr: `expected EXISTS after ALTER INDEX IF: .*`,
+			wantErr: `line \d+, column \d+: expected EXISTS after ALTER INDEX IF: .*`,
 		},
 		{
 			name: "MySQL", dialect: "mysql",
 			sql:     "ALTER INDEX ix RENAME TO other;",
-			wantErr: `unsupported ALTER target: INDEX at position \d+`,
+			wantErr: `line \d+, column \d+: unsupported ALTER target: INDEX`,
 		},
 		{
 			name: "CockroachDB, an index named without its table", dialect: "cockroachdb",
 			sql:     "ALTER INDEX ix RENAME TO other;",
-			wantErr: `ALTER INDEX ix at position \d+: name the index through its table, as table@index`,
+			wantErr: `line \d+, column \d+: ALTER INDEX ix: name the index through its table, as table@index`,
 		},
 		{
 			name: "CockroachDB, a rename", dialect: "cockroachdb",
 			sql:     "ALTER INDEX c@ix RENAME TO other;",
-			wantErr: `ALTER INDEX c@ix RENAME at position \d+: only VISIBLE and NOT VISIBLE are read; .*`,
+			wantErr: `line \d+, column \d+: ALTER INDEX c@ix RENAME: only VISIBLE and NOT VISIBLE are read; .*`,
 		},
 		{
 			name: "no dialect", dialect: "",
 			sql:     "ALTER INDEX ix RENAME TO other;",
-			wantErr: `unsupported ALTER target: INDEX at position \d+`,
+			wantErr: `line \d+, column \d+: unsupported ALTER target: INDEX`,
 		},
 	}
 	for _, row := range rows {

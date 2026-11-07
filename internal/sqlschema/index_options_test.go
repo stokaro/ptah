@@ -122,13 +122,13 @@ func TestRead_IndexOptions_FailurePath(t *testing.T) {
 			name:    "a word that is not a visibility",
 			dialect: "mysql",
 			sql:     "CREATE TABLE c (id int PRIMARY KEY, a int, KEY k_a (a));\nALTER TABLE c ALTER INDEX k_a HIDDEN;",
-			wantErr: `(?s).*expected VISIBLE, INVISIBLE, IGNORED or NOT IGNORED after ALTER INDEX k_a at position \d+.*`,
+			wantErr: `(?s).*expected VISIBLE, INVISIBLE, IGNORED or NOT IGNORED after ALTER INDEX k_a.*`,
 		},
 		{
 			name:    "MariaDB's word on MySQL",
 			dialect: "mysql",
 			sql:     "CREATE TABLE c (id int PRIMARY KEY, a int, KEY k_a (a));\nALTER TABLE c ALTER INDEX k_a IGNORED;",
-			wantErr: `(?s).*IGNORED at position \d+: it is MariaDB's clause, and MySQL 8.4 answers ERROR 1064.*`,
+			wantErr: `(?s).*IGNORED: it is MariaDB's clause, and MySQL 8.4 answers ERROR 1064.*`,
 		},
 	}
 	for _, test := range tests {

@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/parser"
+	"ptah.run/internal/sourcepos"
 )
 
 const (
@@ -39,7 +40,7 @@ func (indexColumnRule) CheckStatement(ctx Context, stmt ast.Node) []Finding {
 	if len(unknown) == 0 {
 		return nil
 	}
-	line, column := lineColumn(ctx.Source.SQL, ctx.statement.offset)
+	line, column := sourcepos.Locate(ctx.Source.SQL, ctx.statement.offset)
 	return []Finding{{
 		Rule:     RuleIndexNamesUnknownColumn,
 		Title:    "index names a column the schema does not declare",

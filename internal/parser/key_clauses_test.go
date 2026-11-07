@@ -102,27 +102,27 @@ func TestParse_KeyIndexClause_FailurePath(t *testing.T) {
 		{
 			name:    "a table UNIQUE in a tablespace",
 			sql:     "CREATE TABLE c (a int, CONSTRAINT u2 UNIQUE (a) USING INDEX TABLESPACE pg_default);",
-			wantErr: `UNIQUE USING INDEX TABLESPACE at position 48: the tablespace of the index behind a key is not read; .*`,
+			wantErr: `line 1, column 49: UNIQUE USING INDEX TABLESPACE: the tablespace of the index behind a key is not read; .*`,
 		},
 		{
 			name:    "a table PRIMARY KEY in a tablespace",
 			sql:     "CREATE TABLE c (a int, PRIMARY KEY (a) USING INDEX TABLESPACE pg_default);",
-			wantErr: `PRIMARY KEY USING INDEX TABLESPACE at position 39: .*`,
+			wantErr: `line 1, column 40: PRIMARY KEY USING INDEX TABLESPACE: .*`,
 		},
 		{
 			name:    "a column UNIQUE in a tablespace",
 			sql:     "CREATE TABLE c (a int UNIQUE USING INDEX TABLESPACE pg_default);",
-			wantErr: `UNIQUE USING INDEX TABLESPACE at position 29: .*`,
+			wantErr: `line 1, column 30: UNIQUE USING INDEX TABLESPACE: .*`,
 		},
 		{
 			name:    "storage parameters after a UNIQUE",
 			sql:     "CREATE TABLE c (a int, UNIQUE (a) WITH (fillfactor = 70));",
-			wantErr: `UNIQUE WITH \(\.\.\.\) at position 34: storage parameters of the index behind a key are not read; .*`,
+			wantErr: `line 1, column 35: UNIQUE WITH \(\.\.\.\): storage parameters of the index behind a key are not read; .*`,
 		},
 		{
 			name:    "storage parameters after INCLUDE",
 			sql:     "CREATE TABLE c (a int, b int, UNIQUE (a) INCLUDE (b) WITH (fillfactor = 70));",
-			wantErr: `UNIQUE WITH \(\.\.\.\) at position 53: .*`,
+			wantErr: `line 1, column 54: UNIQUE WITH \(\.\.\.\): .*`,
 		},
 		{
 			name:    "storage parameters after an EXCLUDE",
@@ -132,12 +132,12 @@ func TestParse_KeyIndexClause_FailurePath(t *testing.T) {
 		{
 			name:    "storage parameters after a column PRIMARY KEY",
 			sql:     "CREATE TABLE c (a int PRIMARY KEY WITH (fillfactor = 70));",
-			wantErr: `PRIMARY KEY WITH \(\.\.\.\) at position 34: .*`,
+			wantErr: `line 1, column 35: PRIMARY KEY WITH \(\.\.\.\): .*`,
 		},
 		{
 			name:    "a NULLS clause on a column ALTER TABLE adds",
 			sql:     "CREATE TABLE c (a int);\nALTER TABLE c ADD COLUMN b int UNIQUE NULLS NOT DISTINCT;",
-			wantErr: `UNIQUE NULLS at position 55: a column's UNIQUE with a NULLS clause is read as the table's UNIQUE .*`,
+			wantErr: `line 2, column 32: UNIQUE NULLS: a column's UNIQUE with a NULLS clause is read as the table's UNIQUE .*`,
 		},
 	}
 	for _, test := range tests {

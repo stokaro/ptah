@@ -689,6 +689,23 @@ CREATE TABLE "pets" (
   is refused loudly rather than turned into an incomplete diff. For example,
   adding a `NOT NULL` column to an existing table exits with
   `sqlite: adding column email to table users requires a table rebuild plan`.
+- A refusal names the file, line and column where the reader stopped, in the
+  form an editor and a terminal open:
+
+  ```text
+  read SQL schema file schema.sql:7:12: expected '(' after table name: expected Operator, got Identifier
+  ```
+
+  Lines count from 1 and end at LF, CRLF or a lone CR. Columns count from 1 in
+  characters, so a multi-byte character is one column and a tab is one column,
+  which is what `ptah sql lint` reports for the same file. A refusal at the end
+  of the file names the place after its last character, which is column 1 of
+  the next line when the file ends with a line ending. Both numbers belong to
+  the file as written, with its comments, multi-line strings and `DELIMITER`
+  lines counted, and a schema directory or an import names the file that holds
+  the statement. Text read from a command rather than a file has no file to name,
+  and reads `line 7, column 12: ...`. The examples below leave out the leading
+  `read SQL schema file`.
 - Unsupported DDL constructs fail with a parse error naming the statement.
   Treat the error as a compatibility gap and check the conformance reports.
 - A table element ends at a comma or at the closing parenthesis. A clause
@@ -700,7 +717,7 @@ CREATE TABLE "pets" (
   ```
 
   ```text
-  unexpected NO after a table element at position 41: expected ',' or ')'
+  schema.sql:1:42: unexpected NO after a table element: expected ',' or ')'
   ```
 - A constraint name on `DEFAULT` is refused. Ptah keeps a name on `NOT NULL`,
   `CHECK`, `REFERENCES`, `UNIQUE` and `PRIMARY KEY` where the dialect's grammar
@@ -713,8 +730,8 @@ CREATE TABLE "pets" (
   ```
 
   ```text
-  named column constraint "c_x" at position 41: Ptah has nowhere to keep a name
-  on DEFAULT, and does not read one back from a database, so write the
+  schema.sql:1:42: named column constraint "c_x": Ptah has nowhere to keep a
+  name on DEFAULT, and does not read one back from a database, so write the
   constraint without a name; a name is kept on NOT NULL, CHECK, REFERENCES,
   UNIQUE and PRIMARY KEY
   ```
@@ -734,7 +751,7 @@ CREATE TABLE "pets" (
   ```
 
   ```text
-  an index name after FOREIGN KEY at position 39 is the MySQL family's alone;
+  schema.sql:1:40: an index name after FOREIGN KEY is the MySQL family's alone;
   postgres has no such syntax, so write the key as FOREIGN KEY (columns) and
   declare the index "zidx" separately
   ```
@@ -752,7 +769,7 @@ CREATE TABLE "pets" (
   ```
 
   ```text
-  CONSTRAINT at position 27 is followed by FOREIGN, not by a name: postgres
+  schema.sql:1:28: CONSTRAINT is followed by FOREIGN, not by a name: postgres
   requires a name after CONSTRAINT, and only MySQL and MariaDB accept the
   keyword without one; name the constraint, or drop the CONSTRAINT keyword
   ```
@@ -775,7 +792,7 @@ CREATE TABLE "pets" (
   ```
 
   ```text
-  CONSTRAINT uq at position 22 is followed by UNIQUE: on a column, mysql
+  schema.sql:1:23: CONSTRAINT uq is followed by UNIQUE: on a column, mysql
   accepts CONSTRAINT with a name only before CHECK, and answers ERROR 1064
   (42000) to this; drop CONSTRAINT uq
   ```
@@ -796,7 +813,7 @@ CREATE TABLE "pets" (
   ```
 
   ```text
-  a column-level REFERENCES clause at position 26: MySQL 8.4 builds nothing from
+  schema.sql:1:27: a column-level REFERENCES clause: MySQL 8.4 builds nothing from
   the clause, while MySQL 9.7 and 26.7 build a foreign key and its index, and
   the SQL file is read without the server version, so Ptah refuses the clause
   rather than guess which schema it declares; write a table-level FOREIGN KEY
@@ -819,7 +836,7 @@ CREATE TABLE "pets" (
   ```
 
   ```text
-  REFERENCES at position 27 in ALTER TABLE ... MODIFY: mariadb takes no
+  schema.sql:1:28: REFERENCES in ALTER TABLE ... MODIFY: mariadb takes no
   REFERENCES clause in a MODIFY column definition, and answers ERROR 1064
   (42000) to one; add the key with ALTER TABLE ... ADD FOREIGN KEY
   ```

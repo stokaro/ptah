@@ -33,6 +33,27 @@ func Example() {
 	// dialect: dbase
 }
 
+// ExampleAt is how an owner's SQL parser states where it stopped: in the one unit
+// it holds, the byte offset in the document, with no position in its sentence. The
+// error has no line yet. The reader of the document gives it one, and the refusal
+// then opens with its line and column, as the ParseSQL example in atlascompat shows.
+func ExampleAt() {
+	err := ptaherr.At(42, errors.New("expected a name"))
+
+	parseErr, ok := errors.AsType[*ptaherr.ParseError](err)
+	if !ok {
+		return
+	}
+	fmt.Println(err)
+	fmt.Println("offset:", parseErr.Offset)
+	fmt.Println("line:", parseErr.Line)
+
+	// Output:
+	// expected a name
+	// offset: 42
+	// line: 0
+}
+
 // ExampleParseError feeds the annotation parser source carrying an attribute
 // no directive declares, then reads the refusal both ways: errors.AsType
 // reaches the location fields that say where and what, and errors.Is through

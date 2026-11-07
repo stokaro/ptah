@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/coverage"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlext"
 	"ptah.run/feature/pgtype"
@@ -100,6 +101,7 @@ func (t *rangeTokens) create() (sqlext.Value, error) {
 	}
 	attributes := make(map[string]string)
 	for {
+		start := t.offset + t.current().Start
 		name, err := t.name("range option")
 		if err != nil {
 			return sqlext.Value{}, err
@@ -108,7 +110,7 @@ func (t *rangeTokens) create() (sqlext.Value, error) {
 		switch name {
 		case "subtype", pgtype.RangeSubtypeOpClass, pgtype.RangeCollation, pgtype.RangeCanonical, pgtype.RangeSubtypeDiff:
 		default:
-			return sqlext.Value{}, fmt.Errorf("unsupported range option %q at position %d", name, t.offset+t.current().Start)
+			return sqlext.Value{}, ptaherr.At(start, fmt.Errorf("unsupported range option %q", name))
 		}
 		if _, duplicate := attributes[name]; duplicate {
 			return sqlext.Value{}, fmt.Errorf("range option %q is declared more than once", name)

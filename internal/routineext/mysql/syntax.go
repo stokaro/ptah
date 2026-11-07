@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/ptaherr"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/routineext"
@@ -70,7 +71,7 @@ func (p mysqlRoutineParser) parse() (*ast.RoutineNode, error) {
 
 	bodyIdx := p.findRoutineBodyStart(afterParamsIdx)
 	if bodyIdx == -1 {
-		return nil, fmt.Errorf("unsupported MySQL routine body at position %d", p.tokens[afterParamsIdx].Start)
+		return nil, ptaherr.At(p.tokens[afterParamsIdx].Start, fmt.Errorf("unsupported MySQL routine body"))
 	}
 
 	if routine.Kind == ast.RoutineKindFunction {
@@ -234,12 +235,12 @@ func (p mysqlRoutineParser) collectRoutineComment(startIdx, bodyIdx int) (string
 		}
 		valueIdx := p.nextSignificant(i + 1)
 		if valueIdx == -1 {
-			return "", fmt.Errorf("expected a string after COMMENT at position %d", p.tokens[i].Start)
+			return "", ptaherr.At(p.tokens[i].Start, fmt.Errorf("expected a string after COMMENT"))
 		}
 		text, ok := lexer.StringValue(p.tokens[valueIdx].Value, dialectlexer.Options(p.dialect))
 		if !ok {
-			return "", fmt.Errorf("%s is not a string constant the server reads, for a routine comment at position %d",
-				abbreviatedToken(p.tokens[valueIdx].Value), p.tokens[valueIdx].Start)
+			return "", ptaherr.At(p.tokens[valueIdx].Start, fmt.Errorf("%s is not a string constant the server reads, for a routine comment",
+				abbreviatedToken(p.tokens[valueIdx].Value)))
 		}
 		comment = text
 		i = valueIdx
@@ -320,7 +321,7 @@ func (p mysqlRoutineParser) parseRoutineBody(bodyIdx int) (ast.RoutineBody, erro
 		bodySQL := strings.TrimSpace(p.rawFragment(p.tokens[bodyIdx].Start, p.statementEndFrom(bodyIdx)))
 		return ast.RoutineBody{SQL: bodySQL}, nil
 	default:
-		return ast.RoutineBody{}, fmt.Errorf("unsupported MySQL routine body at position %d", p.tokens[bodyIdx].Start)
+		return ast.RoutineBody{}, ptaherr.At(p.tokens[bodyIdx].Start, fmt.Errorf("unsupported MySQL routine body"))
 	}
 }
 
@@ -358,7 +359,7 @@ func (p mysqlRoutineParser) collectCompoundBodySQL(beginIdx int) (string, error)
 		}
 	}
 
-	return "", fmt.Errorf("unterminated MySQL routine body at position %d", p.tokens[beginIdx].Start)
+	return "", ptaherr.At(p.tokens[beginIdx].Start, fmt.Errorf("unterminated MySQL routine body"))
 }
 
 func (p mysqlRoutineParser) compoundBodyEnd(endIdx int, bodyLabel string) int {
@@ -524,7 +525,7 @@ func Collect(p routineext.Cursor, statementStart int) (string, error) {
 	}
 
 	if blockDepth > 0 {
-		return "", fmt.Errorf("unterminated CREATE routine body at position %d", p.Current().Start)
+		return "", ptaherr.At(p.Current().Start, fmt.Errorf("unterminated CREATE routine body"))
 	}
 	return p.Fragment(statementStart, p.Previous().End), nil
 }
@@ -567,12 +568,12 @@ func (syntax) Definer(p routineext.Cursor, statementStart int) (ast.Node, error)
 		case p.Current().MatchIdentifierValue("PROCEDURE"):
 			return parseRoutine(p, statementStart, ast.RoutineKindProcedure)
 		case p.Current().Type == lexer.TokenSemicolon:
-			return nil, fmt.Errorf("unsupported CREATE DEFINER target at position %d", p.Current().Start)
+			return nil, ptaherr.At(p.Current().Start, fmt.Errorf("unsupported CREATE DEFINER target"))
 		default:
 			p.Advance()
 		}
 	}
-	return nil, fmt.Errorf("unsupported CREATE DEFINER target at position %d", p.Current().Start)
+	return nil, ptaherr.At(p.Current().Start, fmt.Errorf("unsupported CREATE DEFINER target"))
 }
 
 type syntax struct{}

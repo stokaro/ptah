@@ -6,6 +6,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/sqlext"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
@@ -56,7 +57,7 @@ func (t *privilegeTokens) comma() bool {
 func (t *privilegeTokens) words(words ...string) error {
 	for _, word := range words {
 		if !t.keyword(word) {
-			return fmt.Errorf("expected %s in ALTER DEFAULT PRIVILEGES at position %d", word, t.offset+t.current().Start)
+			return ptaherr.At(t.offset+t.current().Start, fmt.Errorf("expected %s in ALTER DEFAULT PRIVILEGES", word))
 		}
 		t.pos++
 	}
@@ -78,12 +79,12 @@ func (t *privilegeTokens) name(label string) (string, error) {
 		}
 	case token.Type == lexer.TokenString && strings.HasPrefix(token.Value, `"`):
 		if len(token.Value) < 2 || !strings.HasSuffix(token.Value, `"`) || strings.Contains(strings.ReplaceAll(token.Value[1:len(token.Value)-1], `""`, ""), `"`) {
-			return "", fmt.Errorf("expected a closed quoted %s at position %d", label, t.offset+token.Start)
+			return "", ptaherr.At(t.offset+token.Start, fmt.Errorf("expected a closed quoted %s", label))
 		}
 		t.pos++
 		return strings.ReplaceAll(token.Value[1:len(token.Value)-1], `""`, `"`), nil
 	default:
-		return "", fmt.Errorf("expected %s in ALTER DEFAULT PRIVILEGES at position %d", label, t.offset+token.Start)
+		return "", ptaherr.At(t.offset+token.Start, fmt.Errorf("expected %s in ALTER DEFAULT PRIVILEGES", label))
 	}
 }
 
@@ -93,14 +94,14 @@ func (t *privilegeTokens) singleName(label string) (string, error) {
 		return "", err
 	}
 	if t.comma() {
-		return "", fmt.Errorf("ALTER DEFAULT PRIVILEGES names one %s here, not a list, at position %d", label, t.offset+t.current().Start)
+		return "", ptaherr.At(t.offset+t.current().Start, fmt.Errorf("ALTER DEFAULT PRIVILEGES names one %s here, not a list", label))
 	}
 	return name, nil
 }
 
 func (t *privilegeTokens) endOfStatement() error {
 	if t.current().Type != lexer.TokenEOF {
-		return fmt.Errorf("unsupported ALTER DEFAULT PRIVILEGES clause %q at position %d", t.current().Value, t.offset+t.current().Start)
+		return ptaherr.At(t.offset+t.current().Start, fmt.Errorf("unsupported ALTER DEFAULT PRIVILEGES clause %q", t.current().Value))
 	}
 	return nil
 }

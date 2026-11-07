@@ -36,12 +36,12 @@ func TestRead_ModifyColumn_FailurePath(t *testing.T) {
 		dialect string
 		wantErr string
 	}{
-		{dialect: "postgres", wantErr: `(?s).*MODIFY at position \d+ in ALTER TABLE: postgres has no MODIFY clause.*`},
-		{dialect: "cockroachdb", wantErr: `(?s).*MODIFY at position \d+ in ALTER TABLE: cockroachdb has no MODIFY clause.*`},
-		{dialect: "sqlite", wantErr: `(?s).*MODIFY at position \d+ in ALTER TABLE: sqlite has no MODIFY clause.*`},
-		{dialect: "sqlserver", wantErr: `(?s).*MODIFY at position \d+ in ALTER TABLE: sqlserver has no MODIFY clause.*`},
-		{dialect: "oracle", wantErr: `(?s).*MODIFY at position \d+ in ALTER TABLE: oracle's MODIFY is not MySQL's.*`},
-		{dialect: "clickhouse", wantErr: `(?s).*MODIFY at position \d+ in ALTER TABLE: clickhouse's MODIFY is not MySQL's.*`},
+		{dialect: "postgres", wantErr: `(?s).*MODIFY in ALTER TABLE: postgres has no MODIFY clause.*`},
+		{dialect: "cockroachdb", wantErr: `(?s).*MODIFY in ALTER TABLE: cockroachdb has no MODIFY clause.*`},
+		{dialect: "sqlite", wantErr: `(?s).*MODIFY in ALTER TABLE: sqlite has no MODIFY clause.*`},
+		{dialect: "sqlserver", wantErr: `(?s).*MODIFY in ALTER TABLE: sqlserver has no MODIFY clause.*`},
+		{dialect: "oracle", wantErr: `(?s).*MODIFY in ALTER TABLE: oracle's MODIFY is not MySQL's.*`},
+		{dialect: "clickhouse", wantErr: `(?s).*MODIFY in ALTER TABLE: clickhouse's MODIFY is not MySQL's.*`},
 	}
 	for _, test := range tests {
 		t.Run(test.dialect, func(t *testing.T) {

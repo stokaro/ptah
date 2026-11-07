@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"ptah.run/core/ast"
+	"ptah.run/internal/sourcepos"
 	"ptah.run/internal/sqlschema"
 )
 
@@ -129,5 +130,5 @@ func namePosition(source Source, statement sourceStatement, opts Options, writte
 	if !found {
 		_, offset = firstKeyword(statement.sql)
 	}
-	return lineColumn(source.SQL, statement.offset+offset)
+	return sourcepos.Locate(source.SQL, statement.offset+offset)
 }

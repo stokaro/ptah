@@ -1,6 +1,7 @@
 package ptaherr_test
 
 import (
+	"errors"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -30,6 +31,67 @@ func TestParseError(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnknownAttribute)
 	c.Assert(err.Error(), qt.Equals, `unknown annotation attribute "bogus" on //ptah:schema:field at models.go:12`)
 	c.Assert(err.Unwrap(), qt.Equals, ptaherr.ErrUnknownAttribute)
+}
+
+// A position opens the text once a reader has given the error a column: the
+// file form where a file is named, the spelled-out form where none is. An error
+// that knows a line and no column is written as it always was, since its message
+// states its own place.
+func TestParseError_Position(t *testing.T) {
+	tests := []struct {
+		name string
+		err  *ptaherr.ParseError
+		want string
+	}{
+		{
+			name: "a file, a line and a column",
+			err:  &ptaherr.ParseError{File: "schema.sql", Line: 7, Column: 12, Err: errors.New("expected a name")},
+			want: "schema.sql:7:12: expected a name",
+		},
+		{
+			name: "a line and a column",
+			err:  &ptaherr.ParseError{Line: 7, Column: 12, Err: errors.New("expected a name")},
+			want: "line 7, column 12: expected a name",
+		},
+		{
+			name: "a message in place of the cause",
+			err:  &ptaherr.ParseError{Line: 7, Column: 12, Message: "stated", Err: errors.New("cause")},
+			want: "line 7, column 12: stated",
+		},
+		{
+			name: "a file and a line, with no column",
+			err:  &ptaherr.ParseError{File: "models.go", Line: 7, Err: errors.New("expected a name")},
+			want: "expected a name",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(test.err.Error(), qt.Equals, test.want)
+		})
+	}
+}
+
+// At states an offset and nothing else: the text is the cause's until a reader
+// gives it a line and column, and the cause stays reachable.
+func TestAt(t *testing.T) {
+	c := qt.New(t)
+
+	err := ptaherr.At(180, ptaherr.ErrUnsupportedFeature)
+
+	c.Assert(err, qt.ErrorMatches, ptaherr.ErrUnsupportedFeature.Error())
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	at, ok := errors.AsType[*ptaherr.ParseError](err)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(at.Offset, qt.Equals, 180)
+	c.Assert(at.Line, qt.Equals, 0)
+}
+
+func TestAt_NilIsNil(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(ptaherr.At(180, nil), qt.IsNil)
 }
 
 func TestParseErrorFallbackMessages(t *testing.T) {

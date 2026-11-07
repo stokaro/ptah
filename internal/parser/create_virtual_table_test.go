@@ -142,7 +142,7 @@ func TestParseCreateVirtualTable_IsTheSQLiteOwners(t *testing.T) {
 
 			statements, err := parser.NewParser("CREATE VIRTUAL TABLE docs USING fts5(a);", test.options...).Parse()
 
-			c.Assert(err, qt.ErrorMatches, `unsupported CREATE target: VIRTUAL at position 7`)
+			c.Assert(err, qt.ErrorMatches, `line 1, column 8: unsupported CREATE target: VIRTUAL`)
 			c.Assert(statements, qt.IsNil)
 		})
 	}
@@ -155,5 +155,5 @@ func TestParseCreateVirtualTable_RefusesAnUnfinishedStatement(t *testing.T) {
 
 	_, err := parser.NewParser(`CREATE VIRTUAL TABLE docs USING fts5(title, body`, parser.WithDialect(platform.SQLite), parser.WithSQL(sqliteOwners())).Parse()
 
-	c.Assert(err, qt.ErrorMatches, `unterminated virtual table arguments at position 37`)
+	c.Assert(err, qt.ErrorMatches, `line 1, column 38: unterminated virtual table arguments`)
 }

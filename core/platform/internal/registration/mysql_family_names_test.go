@@ -56,7 +56,7 @@ func TestRegister_NamesTheForeignKeysOfAnEngineNobodyShipsByItsRules(t *testing.
 	cut := "CREATE TABLE x (id int PRIMARY KEY, " + longColumn + " int, KEY (" + longColumn + "), KEY (" + longColumn + "));"
 	c := qt.New(t)
 	database, _, err := sqlschema.Read([]byte(clause), "numberdb")
-	c.Assert(err, qt.ErrorMatches, `.*an index name after FOREIGN KEY at position \d+ is the MySQL family's alone; .*`)
+	c.Assert(err, qt.ErrorMatches, `.*an index name after FOREIGN KEY is the MySQL family's alone; .*`)
 	c.Assert(database, qt.DeepEquals, schemamodel.Database{})
 	database, _, err = sqlschema.Read([]byte(createLimit), "numberdb")
 	c.Assert(err, qt.IsNil)

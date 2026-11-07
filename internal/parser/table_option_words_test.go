@@ -56,11 +56,11 @@ func TestParser_TableOptionWords_FailurePath(t *testing.T) {
 		wantErr string
 	}{
 		{name: "another word after WITHOUT", sql: "CREATE TABLE t (id int) WITHOUT OIDS;",
-			wantErr: `expected ROWID after WITHOUT: expected 'ROWID', got 'OIDS' at position 32`},
+			wantErr: `line 1, column 33: expected ROWID after WITHOUT: expected 'ROWID', got 'OIDS'`},
 		{name: "nothing after WITHOUT", sql: "CREATE TABLE t (id int) WITHOUT;",
-			wantErr: `expected ROWID after WITHOUT: expected Identifier, got Semicolon at position 31`},
+			wantErr: `line 1, column 32: expected ROWID after WITHOUT: expected Identifier, got Semicolon`},
 		{name: "a longer word", sql: "CREATE TABLE t (id int) STRICTLY;",
-			wantErr: `unsupported table option: STRICTLY at position 24`},
+			wantErr: `line 1, column 25: unsupported table option: STRICTLY`},
 	}
 	for _, dialect := range wordOptionDialects {
 		for _, test := range tests {

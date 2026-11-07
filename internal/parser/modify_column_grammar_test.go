@@ -31,7 +31,7 @@ func TestParseModifyColumn_MySQLFamilyFailurePath(t *testing.T) {
 			name:    "a reference on MariaDB",
 			dialect: platform.MariaDB,
 			sql:     "ALTER TABLE c MODIFY a INT REFERENCES p(id);",
-			wantErr: "REFERENCES at position 96 in ALTER TABLE ... MODIFY: mariadb takes no REFERENCES " +
+			wantErr: "line 3, column 28: REFERENCES in ALTER TABLE ... MODIFY: mariadb takes no REFERENCES " +
 				"clause in a MODIFY column definition, and answers ERROR 1064 (42000) to one; add the key " +
 				"with ALTER TABLE ... ADD FOREIGN KEY",
 		},
@@ -39,7 +39,7 @@ func TestParseModifyColumn_MySQLFamilyFailurePath(t *testing.T) {
 			name:    "a reference after MODIFY COLUMN on MariaDB",
 			dialect: platform.MariaDB,
 			sql:     "ALTER TABLE c MODIFY COLUMN a INT REFERENCES p(id);",
-			wantErr: "REFERENCES at position 103 in ALTER TABLE ... MODIFY: mariadb takes no REFERENCES " +
+			wantErr: "line 3, column 35: REFERENCES in ALTER TABLE ... MODIFY: mariadb takes no REFERENCES " +
 				"clause in a MODIFY column definition, and answers ERROR 1064 (42000) to one; add the key " +
 				"with ALTER TABLE ... ADD FOREIGN KEY",
 		},
@@ -47,7 +47,7 @@ func TestParseModifyColumn_MySQLFamilyFailurePath(t *testing.T) {
 			name:    "a lower-case reference on MariaDB",
 			dialect: platform.MariaDB,
 			sql:     "alter table c modify a int references p(id);",
-			wantErr: "REFERENCES at position 96 in ALTER TABLE ... MODIFY: mariadb takes no REFERENCES " +
+			wantErr: "line 3, column 28: REFERENCES in ALTER TABLE ... MODIFY: mariadb takes no REFERENCES " +
 				"clause in a MODIFY column definition, and answers ERROR 1064 (42000) to one; add the key " +
 				"with ALTER TABLE ... ADD FOREIGN KEY",
 		},
@@ -55,14 +55,14 @@ func TestParseModifyColumn_MySQLFamilyFailurePath(t *testing.T) {
 			name:    "a named reference on MariaDB",
 			dialect: platform.MariaDB,
 			sql:     "ALTER TABLE c MODIFY a INT CONSTRAINT fk REFERENCES p(id);",
-			wantErr: "CONSTRAINT fk at position 96 is followed by REFERENCES: in a MODIFY column definition, " +
+			wantErr: "line 3, column 28: CONSTRAINT fk is followed by REFERENCES: in a MODIFY column definition, " +
 				"mariadb accepts no CONSTRAINT, and answers ERROR 1064 (42000) to this; drop CONSTRAINT fk",
 		},
 		{
 			name:    "a reference after CONSTRAINT without a name on MariaDB",
 			dialect: platform.MariaDB,
 			sql:     "ALTER TABLE c MODIFY a INT CONSTRAINT REFERENCES p(id);",
-			wantErr: "CONSTRAINT at position 96 is followed by REFERENCES, not by a name: in a MODIFY column " +
+			wantErr: "line 3, column 28: CONSTRAINT is followed by REFERENCES, not by a name: in a MODIFY column " +
 				"definition, mariadb accepts no CONSTRAINT, and answers ERROR 1064 (42000) to this; drop the " +
 				"CONSTRAINT keyword",
 		},
@@ -70,14 +70,14 @@ func TestParseModifyColumn_MySQLFamilyFailurePath(t *testing.T) {
 			name:    "a named check on MariaDB",
 			dialect: platform.MariaDB,
 			sql:     "ALTER TABLE c MODIFY a INT CONSTRAINT ck CHECK (a > 0);",
-			wantErr: "CONSTRAINT ck at position 96 is followed by CHECK: in a MODIFY column definition, " +
+			wantErr: "line 3, column 28: CONSTRAINT ck is followed by CHECK: in a MODIFY column definition, " +
 				"mariadb accepts no CONSTRAINT, and answers ERROR 1064 (42000) to this; drop CONSTRAINT ck",
 		},
 		{
 			name:    "a check after CONSTRAINT without a name on MariaDB",
 			dialect: platform.MariaDB,
 			sql:     "ALTER TABLE c MODIFY a INT CONSTRAINT CHECK (a > 0);",
-			wantErr: "CONSTRAINT at position 96 is followed by CHECK, not by a name: in a MODIFY column " +
+			wantErr: "line 3, column 28: CONSTRAINT is followed by CHECK, not by a name: in a MODIFY column " +
 				"definition, mariadb accepts no CONSTRAINT, and answers ERROR 1064 (42000) to this; drop the " +
 				"CONSTRAINT keyword",
 		},
@@ -85,7 +85,7 @@ func TestParseModifyColumn_MySQLFamilyFailurePath(t *testing.T) {
 			name:    "a reference on MySQL",
 			dialect: platform.MySQL,
 			sql:     "ALTER TABLE c MODIFY a INT REFERENCES p(id);",
-			wantErr: "REFERENCES at position 96 in ALTER TABLE ... MODIFY: mysql takes no REFERENCES " +
+			wantErr: "line 3, column 28: REFERENCES in ALTER TABLE ... MODIFY: mysql takes no REFERENCES " +
 				"clause in a MODIFY column definition, and answers ERROR 1064 (42000) to one; add the key " +
 				"with ALTER TABLE ... ADD FOREIGN KEY",
 		},
@@ -93,7 +93,7 @@ func TestParseModifyColumn_MySQLFamilyFailurePath(t *testing.T) {
 			name:    "a named reference on MySQL",
 			dialect: platform.MySQL,
 			sql:     "ALTER TABLE c MODIFY a INT CONSTRAINT fk REFERENCES p(id);",
-			wantErr: "CONSTRAINT fk at position 96 is followed by REFERENCES: in a MODIFY column definition, " +
+			wantErr: "line 3, column 28: CONSTRAINT fk is followed by REFERENCES: in a MODIFY column definition, " +
 				"mysql accepts CONSTRAINT with a name only before CHECK, and answers ERROR 1064 (42000) to " +
 				"this; drop CONSTRAINT fk",
 		},

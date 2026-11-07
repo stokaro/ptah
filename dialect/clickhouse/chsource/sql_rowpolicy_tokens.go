@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/sqlext"
 	"ptah.run/internal/lexer"
 )
@@ -35,7 +36,7 @@ func (t *rowPolicyTokens) words(words ...string) error {
 }
 
 func (t *rowPolicyTokens) fail(reason string) error {
-	return fmt.Errorf("ClickHouse ROW POLICY: %s at position %d (got %q)", reason, t.position(t.current()), t.current().Value)
+	return ptaherr.At(t.position(t.current()), fmt.Errorf("ClickHouse ROW POLICY: %s (got %q)", reason, t.current().Value))
 }
 
 func (t *rowPolicyTokens) name() (string, error) {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/ptaherr"
 )
 
 // An existence guard inside ALTER TABLE.
@@ -49,10 +50,10 @@ func (p *Parser) refuseAlterGuard(guard, clause string, key capability.Capabilit
 	if !p.target.grammar.AlterTable.ChecksCapabilities || p.takesAlterGuard(key) {
 		return nil
 	}
-	return fmt.Errorf(
-		"%s at position %d in ALTER TABLE ... %s: %s takes no %s on %s, and answers ERROR 1064 (42000) "+
+	return ptaherr.At(position, fmt.Errorf(
+		"%s in ALTER TABLE ... %s: %s takes no %s on %s, and answers ERROR 1064 (42000) "+
 			"to one; write the clause without it",
-		guard, position, clause, p.dialect, guard, clause)
+		guard, clause, p.dialect, guard, clause))
 }
 
 // takesAlterGuard answers whether this parser's target takes the existence

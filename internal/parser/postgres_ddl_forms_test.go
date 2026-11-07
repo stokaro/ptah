@@ -71,8 +71,8 @@ func TestParse_CastInADefaultIsReadWhole_FailurePath(t *testing.T) {
 		column  string
 		wantErr string
 	}{
-		{name: "no type after ::", column: "n text DEFAULT 'x'::", wantErr: `expected default value: expected type after '::': .*`},
-		{name: "a single colon", column: "n text DEFAULT 'x':text", wantErr: `expected default value: expected '::' for a type cast at position \d+`},
+		{name: "no type after ::", column: "n text DEFAULT 'x'::", wantErr: `line \d+, column \d+: expected default value: expected type after '::': .*`},
+		{name: "a single colon", column: "n text DEFAULT 'x':text", wantErr: `line \d+, column \d+: expected default value: expected '::' for a type cast`},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
@@ -128,7 +128,7 @@ func TestParse_AddColumnIfNotExists_FailurePath(t *testing.T) {
 		"ALTER TABLE users ADD COLUMN IF EXISTS note text;", parser.WithDialect("postgres"), parser.WithSQL(builtintest.Runtime().SQL()),
 	).Parse()
 
-	c.Assert(err, qt.ErrorMatches, `expected NOT after IF: .*`)
+	c.Assert(err, qt.ErrorMatches, `line \d+, column \d+: expected NOT after IF: .*`)
 	c.Assert(statements, qt.IsNil)
 }
 
@@ -231,7 +231,7 @@ func TestParse_RoutineNullInputAndParallelClauses_FailurePath(t *testing.T) {
 		{
 			name:    "an unknown PARALLEL level",
 			sql:     "CREATE FUNCTION f(a int) RETURNS int LANGUAGE sql PARALLEL MAYBE AS $$ SELECT a $$;",
-			wantErr: `.*function f at position \d+: invalid function property PARALLEL MAYBE`,
+			wantErr: `.*function f: invalid function property PARALLEL MAYBE`,
 		},
 		{
 			name:    "CALLED without ON NULL INPUT",
@@ -246,13 +246,13 @@ func TestParse_RoutineNullInputAndParallelClauses_FailurePath(t *testing.T) {
 		{
 			name:    "a NOT clause Ptah does not know",
 			sql:     "CREATE FUNCTION f(a int) RETURNS int LANGUAGE sql NOT STRICT AS $$ SELECT a $$;",
-			wantErr: `unsupported CREATE FUNCTION clause: NOT STRICT at position \d+`,
+			wantErr: `line \d+, column \d+: unsupported CREATE FUNCTION clause: NOT STRICT`,
 		},
 		{
 			// COST ended nothing before, and read as part of the return type.
 			name:    "a clause Ptah does not model, after the type",
 			sql:     "CREATE FUNCTION f(a int) RETURNS int COST 100 LANGUAGE sql AS $$ SELECT a $$;",
-			wantErr: `unsupported CREATE FUNCTION clause: COST at position \d+`,
+			wantErr: `line \d+, column \d+: unsupported CREATE FUNCTION clause: COST`,
 		},
 	}
 	for _, row := range rows {
