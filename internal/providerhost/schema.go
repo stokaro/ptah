@@ -69,6 +69,7 @@ func (t *target) registration() engine.Target {
 				commonTables: t.supportsCommonTables(), commonObjects: len(t.commonKinds()) > 0, comments: t.commonKinds()[protocol.CommonObjectSupport_COMMENT],
 				indexes: t.offers(provider.ObservedIndexesFeature), renames: t.offers(provider.IndexRenamesFeature),
 				observedKeys: t.offers(provider.ObservedPrimaryKeysFeature), keys: t.offers(provider.PrimaryKeyChangesFeature),
+				observedConstraints: t.offers(provider.ObservedConstraintsFeature), constraints: t.offers(provider.ConstraintChangesFeature),
 				assessParents: slices.ContainsFunc(t.engine.GetPlanning(), func(assignment *protocol.ModelPlanning) bool { return len(assignment.GetParentKinds()) > 0 })}
 		},
 	}
@@ -94,8 +95,12 @@ func (t *target) registration() engine.Target {
 	if slices.Contains(t.engine.GetFeatures(), provider.ColumnsFeature) {
 		result.Comparison.ColumnService = columnService{target: t}
 	}
+	if t.offers(provider.CheckEquivalenceFeature) {
+		result.Comparison.Checks = checkService{target: t}
+	}
 	if t.offers(provider.ObservedIndexesFeature) {
-		result.Comparison.Indexes = observedIndexRules{methods: t.offers(provider.IndexMethodsFeature), facets: t.offers(provider.ObservedIndexFacetsFeature)}
+		result.Comparison.Indexes = observedIndexRules{methods: t.offers(provider.IndexMethodsFeature), facets: t.offers(provider.ObservedIndexFacetsFeature),
+			nulls: t.offers(provider.IndexNullsOrderFeature)}
 		result.Lowering = uniqueIndexLowering{}
 	}
 	if t.offers(provider.IndexMethodsFeature) {

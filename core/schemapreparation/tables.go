@@ -51,6 +51,18 @@ type Table struct {
 	// ([schemacomparison.Indexes.OptionsEqual]); the source declaration in
 	// Desired keeps the type it was written with.
 	IndexMethods map[string]string
+	// IndexNulls holds the NULLS order the target gives each key part of each
+	// declared index, keyed by the index's declared name: one entry for each
+	// of the index's parts, or for each of its fields when it lists no parts,
+	// in key order. An entry is [schemamodel.NullsOrderFirst] or
+	// [schemamodel.NullsOrderLast] where the order differs from the target's
+	// default for the part's direction, and empty where it is the default, the
+	// form the target's reader reports a held index's parts in. It is
+	// output-only, and a target that states no order leaves it nil. The index
+	// comparison hands the target's index rules a declared index with these
+	// orders in its parts ([schemacomparison.Indexes.OptionsEqual]); the
+	// source declaration in Desired keeps the orders it was written with.
+	IndexNulls map[string][]string
 }
 
 // Clone returns independent common state and immutable feature snapshots.
@@ -59,6 +71,13 @@ func (t Table) Clone() Table {
 	t.Current = t.Current.Clone()
 	t.ResolvedFacets = slices.Clone(t.ResolvedFacets)
 	t.IndexMethods = maps.Clone(t.IndexMethods)
+	if t.IndexNulls != nil {
+		nulls := make(map[string][]string, len(t.IndexNulls))
+		for name, orders := range t.IndexNulls {
+			nulls[name] = slices.Clone(orders)
+		}
+		t.IndexNulls = nulls
+	}
 	return t
 }
 
@@ -83,7 +102,8 @@ func (r Request) Clone() Request {
 // may resolve desired Fields.Primary and set ColumnPrimaryKeysPrepared. All
 // other captured state, including observations and coverage, stays unchanged.
 // ResolvedFacets may carry resolved values for existing declared facet kinds,
-// and IndexMethods the kinds of declared indexes.
+// IndexMethods the kinds of declared indexes, and IndexNulls the NULLS orders
+// of their key parts.
 // Complete is required even for an empty batch. Errors discard the whole result.
 type Result struct {
 	Complete bool
@@ -178,6 +198,9 @@ func samePreparedTable(before, after Table, semantics identifier.Semantics) erro
 	if err := acceptIndexMethods(before, after.IndexMethods); err != nil {
 		return err
 	}
+	if err := acceptIndexNulls(before, after.IndexNulls); err != nil {
+		return err
+	}
 	before, after = before.Clone(), after.Clone()
 	if !retainEqualFeatures(&before, &after) {
 		return fmt.Errorf("%w: preparation changed captured features", ErrInvalid)
@@ -195,6 +218,35 @@ func samePreparedTable(before, after Table, semantics identifier.Semantics) erro
 	}
 	if !reflect.DeepEqual(before.Desired, unchanged) {
 		return fmt.Errorf("%w: preparation changed state outside column key membership", ErrInvalid)
+	}
+	return nil
+}
+
+// acceptIndexNulls refuses NULLS orders for an index the table does not
+// declare, orders that do not number the index's key parts, an order other
+// than FIRST, LAST or empty, and an input that already states orders.
+func acceptIndexNulls(source Table, nulls map[string][]string) error {
+	if len(source.IndexNulls) != 0 {
+		return fmt.Errorf("%w: preparation input already states index NULLS orders", ErrInvalid)
+	}
+	for name, orders := range nulls {
+		position := slices.IndexFunc(source.Desired.Indexes, func(index schemamodel.Index) bool { return index.Name == name })
+		if position < 0 {
+			return fmt.Errorf("%w: preparation states the NULLS orders of index %q, which the table does not declare", ErrInvalid, name)
+		}
+		index := source.Desired.Indexes[position]
+		parts := len(index.Parts)
+		if parts == 0 {
+			parts = len(index.Fields)
+		}
+		if len(orders) != parts {
+			return fmt.Errorf("%w: preparation states %d NULLS orders for the %d key parts of index %q", ErrInvalid, len(orders), parts, name)
+		}
+		for _, order := range orders {
+			if order != "" && order != schemamodel.NullsOrderFirst && order != schemamodel.NullsOrderLast {
+				return fmt.Errorf("%w: preparation states NULLS order %q for index %q", ErrInvalid, order, name)
+			}
+		}
 	}
 	return nil
 }

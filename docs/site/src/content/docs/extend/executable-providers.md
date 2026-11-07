@@ -109,6 +109,14 @@ alone drops the index and builds it again. The plan keeps the type the source
 wrote. Without the feature, the host compares no kind, and a change of kind
 alone plans nothing.
 
+The NULLS order of an index key is the engine's too: a key that states none
+takes the engine's default for its direction. With `schema.index-nulls-order`
+beside the same two features, inspection states the order of every held key
+part and table preparation the order of every declared one, each `FIRST` or
+`LAST` where it differs from the default and empty where it is the default.
+The host compares the two exactly, and a change of a key's order alone drops
+the index and builds it again. Without the feature the host compares no order.
+
 A provider that owns the table lifecycle without
 `schema.common-table-identity.v1` also receives altered tables. The planning
 request carries the captured desired and current state of each altered table,
@@ -141,6 +149,25 @@ declared key and the current table the held one as its `PRIMARY KEY`
 constraint, and no common step stands for the change. The provider plans it,
 for example as a rebuild, or refuses it in its own words. Without the feature
 the host refuses a key change before it plans, naming the table.
+
+With `schema.observed-constraints`, a read reports the foreign keys and CHECKs
+each table holds, and the host keeps them as the table's constraints: an
+export writes them, and the comparison compares them with the declared ones.
+A foreign key's rules travel in the `information_schema` spelling, so the host
+compares them as it does for every engine. A provider that owns its tables and
+lists `planning.constraint-changes` receives a change of one on a table the
+plan keeps as an altered table: the desired table carries the declared
+constraints and the current table the held ones, and no common step stands for
+the change. A constraint of a created table travels in its declaration, and
+one of a removed table leaves with it. Without the feature the host refuses a
+change of a kept table's constraint before it plans, naming the constraint and
+the table.
+
+A server often keeps a CHECK in a form of its own, with literals cast or a
+list rewritten. With `schema.check-equivalence`, the host asks the provider
+whether each declared CHECK and the CHECK the table holds under the same name
+are one constraint, and keeps the held one or replaces it as the provider
+answers. Without the feature the host compares the two texts by its own rules.
 
 With `planning.index-renames` as well, a provider renames an index in place.
 When its session reports `index_rename`, the comparison pairs an index the

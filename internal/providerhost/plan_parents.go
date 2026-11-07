@@ -77,20 +77,34 @@ func (p *planningParents) alterForIndexes(builder objectidentity.Builder, diff *
 	return p.alter(builder, tables, "an index change")
 }
 
-// alterForKeys gives the owner of a table whose primary key changes, and
-// whose table the plan otherwise leaves alone, an alter action on it. The
-// owner compares the declared key with the one the table holds, as it does
-// for any table it alters. A key of a table the plan neither creates,
-// prepares nor removes is refused.
-func (p *planningParents) alterForKeys(builder objectidentity.Builder, diff *difftypes.SchemaDiff) error {
-	var tables []string
+// alterForConstraints gives the owner of a table whose constraints change,
+// and whose table the plan otherwise leaves alone, an alter action on it, for
+// each constraint whose kind the owner plans. The owner compares the declared
+// constraints with the ones the table holds, as it does for any table it
+// alters. A constraint of a table the plan neither creates, prepares nor
+// removes is refused.
+func (p *planningParents) alterForConstraints(builder objectidentity.Builder, diff *difftypes.SchemaDiff, owned func(kind string) bool) error {
+	alter := func(name, table, kind string) error {
+		if !owned(kind) {
+			return nil
+		}
+		change := fmt.Sprintf("a change of constraint %s", name)
+		if primaryKeyType(kind) {
+			change = "a primary key change"
+		}
+		return p.alter(builder, []string{table}, change)
+	}
 	for _, added := range diff.ConstraintsAdded {
-		tables = append(tables, added.TableName)
+		if err := alter(added.Name, added.TableName, added.Type); err != nil {
+			return err
+		}
 	}
 	for _, removed := range diff.ConstraintsRemoved {
-		tables = append(tables, removed.TableName)
+		if err := alter(removed.Name, removed.TableName, removed.Type); err != nil {
+			return err
+		}
 	}
-	return p.alter(builder, tables, "a primary key change")
+	return nil
 }
 
 // alter gives each of the tables an alter action, unless the plan already
