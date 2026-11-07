@@ -101,12 +101,11 @@ var (
 		},
 	}
 
-	// UnmodeledObjects is an object of a kind the server has and Ptah does not
-	// model, which no comparison reads, or the whole kind where a read could not
-	// list it. Its records carry the object as the "object" attribute and why
-	// nothing compares it as the "cause" attribute. Like [UndecidedObjects], the
-	// summary names every object, since each is one the run's answer does not
-	// cover.
+	// UnmodeledObjects is an object a read saw of a kind the server has and Ptah
+	// does not model, which no comparison reads. Its records carry the object as
+	// the "object" attribute and why nothing compares it as the "cause" attribute.
+	// Like [UndecidedObjects], the summary names every object, since each is one
+	// the run's answer does not cover.
 	UnmodeledObjects = &Category{
 		Name: "unmodeled-object",
 		Summary: func(records []Record) string {

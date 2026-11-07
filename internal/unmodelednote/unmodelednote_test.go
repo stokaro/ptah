@@ -88,12 +88,50 @@ func TestReport_WithoutARun(t *testing.T) {
 	var out bytes.Buffer
 
 	unmodelednote.Report(c.Context(), &out, "--from", &catalog.Database{
-		UnmodeledObjects: append(named("e_a"), wholeKind),
+		UnmodeledObjects: named("e_a", "e_b"),
 	})
 
 	c.Assert(out.String(), qt.Equals, `warning: event "e_a" in --from is left out: nothing compares it
-warning: events in --from are left out: the account cannot list them
+warning: event "e_b" in --from is left out: nothing compares it
 `)
+}
+
+// TestReport_NamesOnlyWhatTheReadSaw covers a read that could not list a kind. A
+// surface reporting through Report claims nothing about the kind, so the record
+// raises nothing, and it does not hide an object the same read saw: a read of a
+// whole server can list one database and not another.
+func TestReport_NamesOnlyWhatTheReadSaw(t *testing.T) {
+	inAnotherDatabase := catalog.UnmodeledObject{Kind: "event", Schema: "r2", Reason: "the account cannot list them"}
+	tests := []struct {
+		name    string
+		objects []catalog.UnmodeledObject
+		want    string
+	}{
+		{
+			name:    "a kind the read could not list",
+			objects: []catalog.UnmodeledObject{wholeKind},
+		},
+		{
+			name:    "a kind one database of a server read could not list",
+			objects: []catalog.UnmodeledObject{inAnotherDatabase},
+		},
+		{
+			name:    "an object beside a kind the read could not list",
+			objects: append(named("e_a"), inAnotherDatabase),
+			want:    "warning: event \"e_a\" in the database is left out: nothing compares it\n",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			var out bytes.Buffer
+
+			unmodelednote.Report(c.Context(), &out, "the database", &catalog.Database{UnmodeledObjects: test.objects})
+
+			c.Assert(out.String(), qt.Equals, test.want)
+		})
+	}
 }
 
 // TestReport_WithinARun counts several objects as one warning naming each, and

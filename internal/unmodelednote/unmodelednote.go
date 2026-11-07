@@ -8,6 +8,12 @@
 // place for the objects, such as `schema drift`, prints [Entries] there and says
 // [Summary]; one whose output has no place for them says [Report] on its
 // diagnostics stream.
+//
+// The two differ on a kind the read could not list. A report that claims to have
+// compared has to say what it could not look at. A surface that makes no such
+// claim has nothing to correct, and an account without the privilege to list a
+// kind would hear the same warning on every run of it, so [Report] names only what
+// the read saw.
 package unmodelednote
 
 import (
@@ -89,8 +95,9 @@ func subject(object catalog.UnmodeledObject) string {
 	}
 }
 
-// Report raises each object schema records as [rundiag.UnmodeledObjects] for the
-// run ctx carries, on a surface whose output has no place for them. description
+// Report raises each object schema names as [rundiag.UnmodeledObjects] for the run
+// ctx carries, on a surface whose output has no place for them. A record with no
+// name, which says the read could not list a kind, raises nothing. description
 // names the database in prose: "the database", or "--from" on a command with two
 // sides. A nil diagnostics stream or a nil schema drops the report.
 func Report(ctx context.Context, diagnostics io.Writer, description string, schema *catalog.Database) {
@@ -98,12 +105,11 @@ func Report(ctx context.Context, diagnostics io.Writer, description string, sche
 		return
 	}
 	for _, object := range schema.UnmodeledObjects {
-		named := subject(object) + " in " + description
-		verb := "is"
 		if object.Name == "" {
-			verb = "are"
+			continue
 		}
-		line := fmt.Sprintf("%s %s left out: %s", named, verb, object.Reason)
+		named := subject(object) + " in " + description
+		line := fmt.Sprintf("%s is left out: %s", named, object.Reason)
 		_ = rundiag.Warn(ctx, diagnostics, rundiag.UnmodeledObjects, rundiag.Record{
 			Key: line, Line: line, Attrs: []slog.Attr{slog.String("object", named), slog.String("cause", object.Reason)},
 		})
