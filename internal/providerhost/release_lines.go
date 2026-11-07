@@ -15,6 +15,10 @@ type ReleaseLine struct {
 	Image    string                  `json:"image,omitempty"`
 	Unprobed string                  `json:"unprobed,omitempty"`
 	Note     string                  `json:"note,omitempty"`
+	// Linked is the version of the engine's library the provider executable
+	// links, which a line of an engine that runs in the provider's process
+	// names as its evidence in place of an image.
+	Linked string `json:"linked,omitempty"`
 }
 
 // ReleaseLines returns the lines the provider declares for one engine, in the
@@ -27,7 +31,7 @@ func (h *Host) ReleaseLines(engine string) []ReleaseLine {
 		lines := make([]ReleaseLine, 0, len(declared.GetReleaseLines()))
 		for _, line := range declared.GetReleaseLines() {
 			lines = append(lines, ReleaseLine{Line: line.GetLine(), Label: line.GetLabel(), Support: supportLevel(line.GetSupport()),
-				Image: line.GetImage(), Unprobed: line.GetUnprobed(), Note: line.GetNote()})
+				Image: line.GetImage(), Unprobed: line.GetUnprobed(), Note: line.GetNote(), Linked: line.GetLinked()})
 		}
 		return lines
 	}

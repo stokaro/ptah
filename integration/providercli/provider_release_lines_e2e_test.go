@@ -34,3 +34,22 @@ func TestProviderCheckListsReleaseLines(t *testing.T) {
 	c.Assert(report.ReleaseLines, qt.HasLen, 2)
 	c.Assert(report.ReleaseLines[1].Unprobed, qt.Equals, "the vendor ended support")
 }
+
+// An engine linked into its provider certifies its line by the version it
+// links, and the check reports the version as the line's evidence.
+func TestProviderCheckListsALinkedReleaseLine(t *testing.T) {
+	c := qt.New(t)
+	spec := migrationProviderCommandSpec(c, "devdb")
+	spec.Environment = append(spec.Environment, "FIXTURE_LINKED_LINE=true")
+	f := newProviderCLI(c, spec)
+	out, stderr, code := executeProviderCLI(c.Context(), []string{"providers", "check", "--provider-config", f.manifestPath, "--provider-engine", "fixture", "--json"})
+	c.Assert(code, qt.Equals, 0, qt.Commentf("%s", stderr))
+	var report struct {
+		ReleaseLines []providerhost.ReleaseLine `json:"release_lines"`
+	}
+	c.Assert(json.Unmarshal([]byte(out), &report), qt.IsNil)
+	c.Assert(report.ReleaseLines, qt.DeepEquals, []providerhost.ReleaseLine{
+		{Line: "3.0", Support: capability.Certified, Linked: "3.0.1", Note: "The fixture's tests run the SQLite it links"},
+		{Line: "2.0", Support: capability.BestEffort, Unprobed: "the fixture links 3.0"},
+	})
+}
