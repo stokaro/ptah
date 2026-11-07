@@ -30,9 +30,6 @@ func plannerFactory(dialect descriptor.Dialect) (planext.Factory, bool) {
 			if opts.ConcurrentIndexDrops {
 				plan = plan.WithConcurrentIndexDrops()
 			}
-			if opts.EnumRebuildKeepsGuards {
-				plan = plan.WithEnumRebuildKeepingGuards()
-			}
 			return plan
 		}, true
 	case dialect.Family == platform.MySQL:

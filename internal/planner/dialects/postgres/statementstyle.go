@@ -111,12 +111,11 @@ func isGenerated(column schemamodel.Field) bool {
 // so a drop after it needs no guard for its sake. An enum rebuild is the same; see
 // [Planner.enumRebuildStatements].
 func (p *Planner) settleGuards(nodes []ast.Node, diff *difftypes.SchemaDiff) {
-	opts := guards.Options{HarmlessOwner: isolatedOwnerDrop}
-	if !p.enumRebuildKeepsGuards {
-		rebuilds := p.enumRebuildStatements(diff)
-		opts.HarmlessRaw = func(raw *ast.RawSQLNode) bool { return rebuilds[raw.SQL] }
-	}
-	guards.Settle(nodes, opts)
+	rebuilds := p.enumRebuildStatements(diff)
+	guards.Settle(nodes, guards.Options{
+		HarmlessOwner: isolatedOwnerDrop,
+		HarmlessRaw:   func(raw *ast.RawSQLNode) bool { return rebuilds[raw.SQL] },
+	})
 }
 
 // enumRebuildStatements holds the raw statement of each enum diff rebuilds. A

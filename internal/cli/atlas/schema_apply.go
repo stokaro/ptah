@@ -489,7 +489,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		}
 		opts.lintPolicy = projectCfg.Lint
 	}
-	policy = withAtlasPlanPolicy(policy, rebuild)
+	policy = withAtlasTableRebuild(policy, rebuild)
 	opts.formatOutput = formatOutput
 	// The toggle belongs to every SQLite apply invocation. Resolve it as soon
 	// as the effective target URL is known, before classifying or executing a

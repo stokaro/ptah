@@ -119,9 +119,6 @@ type Planner struct {
 	// value is the annotated style; see statementstyle.go for what the exact
 	// style leaves out and why.
 	statements planext.StatementStyle
-	// enumRebuildKeepsGuards treats an enum rebuild like any other raw statement
-	// when an exact plan settles its guards; see [Planner.settleGuards].
-	enumRebuildKeepsGuards bool
 }
 
 // New returns a planner configured with the current PostgreSQL line preset
@@ -234,15 +231,6 @@ func (p *Planner) WithConcurrentIndexDropRefs(indexRefs ...difftypes.IndexRef) *
 func (p *Planner) WithStatementStyle(style planext.StatementStyle) *Planner {
 	cp := *p
 	cp.statements = style
-	return &cp
-}
-
-// WithEnumRebuildKeepingGuards returns a copy of the planner that keeps IF EXISTS
-// on the drops an exact plan writes after it rebuilds an enum; see
-// [planext.Options.EnumRebuildKeepsGuards]. The receiver is not modified.
-func (p *Planner) WithEnumRebuildKeepingGuards() *Planner {
-	cp := *p
-	cp.enumRebuildKeepsGuards = true
 	return &cp
 }
 

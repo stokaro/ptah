@@ -45,13 +45,6 @@ func withEnumRebuild(change styleChange) styleChange {
 	return change
 }
 
-// keepingGuardsAfterEnumRebuild asks for the guards ptah-compat writes after an
-// enum rebuild.
-func keepingGuardsAfterEnumRebuild(change styleChange) styleChange {
-	change.opts.EnumRebuildKeepsGuards = true
-	return change
-}
-
 // removedViewUnderRemovedView removes owner_ids and owner_list, which reads
 // it. The reader's name sorts after the view it reads.
 func removedViewUnderRemovedView() styleChange {
@@ -78,9 +71,8 @@ func drops(plan []string) []string {
 // pins each reason the exact style keeps IF EXISTS on a drop: an earlier
 // statement of the plan may have removed the object already. A dropped table
 // takes the sequence its column owns, and a view a column type change rebuilds
-// takes its triggers. On the surface that asks for it, a drop after an enum
-// rebuild keeps its guard too. Removed views are dropped readers first, so neither
-// drop needs a guard or CASCADE.
+// takes its triggers. Removed views are dropped readers first, so neither drop
+// needs a guard or CASCADE.
 func TestGenerateSchemaDiffSQLStatementsWithOptions_ExactStyleKeepsGuards_HappyPath(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -95,10 +87,6 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_ExactStyleKeepsGuards_HappyP
 			`DROP VIEW "item_sku_count"`,
 			`DROP VIEW "item_skus"`,
 			`DROP TRIGGER IF EXISTS "item_skus_insert" ON "public"."item_skus"`,
-		}},
-		{name: "a table dropped after an enum rebuild that keeps guards", change: keepingGuardsAfterEnumRebuild(withEnumRebuild(droppedTable())), want: []string{
-			`DROP TYPE "status__ptah_old"`,
-			`DROP TABLE IF EXISTS "public"."archive"`,
 		}},
 		{name: "a view a removed view reads", change: removedViewUnderRemovedView(), want: []string{
 			`DROP VIEW "public"."owner_list"`,

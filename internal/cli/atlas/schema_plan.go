@@ -185,7 +185,7 @@ func runAtlasSchemaPlan(cmd *cobra.Command, opts atlasSchemaPlanOptions) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	policy = withAtlasPlanPolicy(policy, rebuild)
+	policy = withAtlasTableRebuild(policy, rebuild)
 	opts.atlasSchemaPlanTransitionFlags = transition
 	if err := validateAtlasSchemaPlanOptions(cmd, opts); err != nil {
 		return cmdutil.Fail(cmd, err)

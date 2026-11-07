@@ -172,7 +172,7 @@ func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 			return cmdutil.Fail(cmd, err)
 		}
 	}
-	policy = withAtlasPlanPolicy(policy, rebuild)
+	policy = withAtlasTableRebuild(policy, rebuild)
 	// An exporter is a named format, so selecting one is choosing the template
 	// this run renders through (stokaro/ptah#1620).
 	exported, exportSelected, err := resolveAtlasExporter(cmd, atlasExportProject{config: projectCfg, loaded: loaded})
