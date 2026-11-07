@@ -508,8 +508,8 @@ func (p commonPlanner) indexCommentNodes(diff *difftypes.SchemaDiff) ([]ast.Node
 
 // creationComments takes the comments off a table declaration, since the
 // common table message has no place for one, and returns the steps that set
-// them once the table exists: the table's, then each column's in order. The
-// caller's fields are not changed.
+// them once the table exists: the table's, then each column's and index's in
+// order. The caller's fields are not changed.
 func creationComments(declaration schemacapture.TableDeclaration) (schemacapture.TableDeclaration, []ast.Node) {
 	name := tableref.CanonicalExact(declaration.Table.Schema, declaration.Table.Name)
 	var steps []ast.Node
@@ -522,6 +522,13 @@ func creationComments(declaration schemacapture.TableDeclaration) (schemacapture
 		if field := &declaration.Fields[i]; field.Comment != "" {
 			steps = append(steps, commentStep(name, field.Name, field.Comment))
 			field.Comment = ""
+		}
+	}
+	declaration.Indexes = slices.Clone(declaration.Indexes)
+	for i := range declaration.Indexes {
+		if index := &declaration.Indexes[i]; index.Comment != "" {
+			steps = append(steps, ast.NewObjectComment(ast.CommentedIndex, index.Name, index.Comment).SetTable(name))
+			index.Comment = ""
 		}
 	}
 	return declaration, steps
