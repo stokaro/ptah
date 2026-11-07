@@ -62,6 +62,13 @@ func negotiateTableOwnership(engine *protocol.Engine, hostFeatures []string) {
 	}
 }
 
+// ownsTableLifecycles reports a planning service the host hands every table
+// it creates, alters, rebuilds or drops: one with a parent kind, or one that
+// owns the engine's tables.
+func ownsTableLifecycles(service *protocol.ModelPlanning) bool {
+	return len(service.GetParentKinds()) > 0 || service.GetOwnsTables()
+}
+
 // parentReceiptKinds returns the kinds of the parent receipts a service
 // answers for each table with an action: its parent kinds, and the table
 // receipt after them when it owns tables.
