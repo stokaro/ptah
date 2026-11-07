@@ -505,6 +505,15 @@ a batch that captures no value. A provider without the feature has no entry for
 its kinds, and the report never counts them as zero. `provider-sdk/README.md`
 says what each count means.
 
+`models.declared-relations` tells a provider's object comparison every relation
+the desired schema declares: each table, view and materialized view, with its
+kind. A comparison of models that reference a table, such as a transfer into
+one, can then tell a declared table from an undeclared one, and one whose
+objects share a name space with the tables can refuse a collision. Ptah sends
+the tables only in a request whose `target_features` list the feature; a
+provider without the feature receives the declared views and materialized views
+alone.
+
 `planning.policy` hands the provider's planner the operator's planning policy:
 whether to rebuild a table, with the words a refusal names to say how to ask
 (`--allow-table-rebuild`, or `PTAH_ALLOW_TABLE_REBUILD=1` on `ptah-compat`),

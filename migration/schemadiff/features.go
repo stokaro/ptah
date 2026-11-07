@@ -98,7 +98,7 @@ func compareFeatures(ctx context.Context, desired *schemamodel.Database, current
 		return schemaext.ComparisonResult{}, err
 	}
 	result, err := runtime.CompareFeatures(ctx, schemaext.ComparisonRequest{Target: target, Identifiers: semantics, Capabilities: caps,
-		Desired: declared, Current: observed, Owners: parents, Requests: requests, DeclaredRelations: declaredRelations(desired, semantics),
+		Desired: declared, Current: observed, Owners: parents, Requests: requests, DeclaredRelations: declaredRelations(desired, target, semantics),
 		DatabasePath: current.DatabasePath, DesiredLimits: desired.NotDescribed, CurrentLimits: current.NotDescribed,
 		Exclusions: opts.Exclusions(), DeclaredColumns: declaredColumns(desired, semantics),
 		DeclaredRoles:      declaredRoles(desired, semantics),
@@ -145,11 +145,18 @@ func declaredRoles(desired *schemamodel.Database, semantics identifier.Semantics
 	return roles
 }
 
-// declaredRelations names the views and materialized views the desired
-// schema declares, for owners whose objects share their namespace.
-func declaredRelations(desired *schemamodel.Database, semantics identifier.Semantics) []objectidentity.ID {
+// declaredRelations names the tables, views and materialized views the
+// desired schema declares, each identity's kind saying which, for owners
+// whose objects share their namespace or reference a relation. A table has
+// the identity its comparison parent has.
+func declaredRelations(desired *schemamodel.Database, target string, semantics identifier.Semantics) []objectidentity.ID {
 	builder := objectidentity.NewBuilder(semantics)
-	relations := make([]objectidentity.ID, 0, len(desired.Views)+len(desired.MaterializedViews))
+	relations := make([]objectidentity.ID, 0, len(desired.Tables)+len(desired.Views)+len(desired.MaterializedViews))
+	for _, table := range desired.Tables {
+		if ref := tableidentity.Subject(table.Schema, table.Name, target, semantics); ref.Name.Source != "" && ref.Name.Normalized != "" {
+			relations = append(relations, ref)
+		}
+	}
 	relation := func(kind objectidentity.Kind, name string) {
 		ref := builder.Table(name)
 		if ref.Name.Source == "" || ref.Name.Normalized == "" {

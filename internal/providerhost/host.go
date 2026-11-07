@@ -185,6 +185,11 @@ var hostFeatures = []string{
 	// builds, a type that lists the values or a column under a CHECK, or is
 	// refused by table and column; see target.enumColumns.
 	provider.EnumColumnsFeature,
+	// An engine's object comparisons receive every table the desired schema
+	// declares beside its views and materialized views, so an owner whose
+	// objects reference a table can tell a declared one; see
+	// modelComparer.declaredRelations.
+	provider.DeclaredRelationsFeature,
 	// A read reports the ledger the engine's seed service keeps as reserved
 	// storage, which every comparison leaves out, so a plan never drops it;
 	// see reader.reservedNames.
