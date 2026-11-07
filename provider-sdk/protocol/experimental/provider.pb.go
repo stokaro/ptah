@@ -16137,9 +16137,11 @@ type CompareModelsRequest struct {
 	// The relations the desired schema declares, each identity's kind naming
 	// what it is: "view" or "materialized view" without
 	// models.declared-relations, and under it every declared "table", "view"
-	// and "materialized view". A relation of the provider's own models, such
-	// as a topic, is not listed here: the comparison's state carries it.
-	// Contract 25.32 gives the list its meaning under that feature.
+	// and "materialized view". An object of the provider's own models, such as
+	// a topic, is not a relation and is never listed here: the comparison's
+	// state carries the objects of its own models, and declared_objects those
+	// of a model another comparison owns. Contract 25.32 gives the list its
+	// meaning under that feature.
 	DeclaredRelations  []*ComparisonIdentity   `protobuf:"bytes,11,rep,name=declared_relations,json=declaredRelations,proto3" json:"declared_relations,omitempty"`
 	DeclaredRoles      []*ComparisonIdentity   `protobuf:"bytes,12,rep,name=declared_roles,json=declaredRoles,proto3" json:"declared_roles,omitempty"`
 	DatabasePath       string                  `protobuf:"bytes,13,opt,name=database_path,json=databasePath,proto3" json:"database_path,omitempty"`

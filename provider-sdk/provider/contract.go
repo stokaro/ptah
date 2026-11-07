@@ -156,8 +156,9 @@ func ValidateHostFeatures(features []string) error {
 // it lists IndexKindsFeature, the model predecessors unless it lists
 // ModelPredecessorsFeature, those that name an earlier identity of their
 // own model unless it lists OwnPredecessorsFeature, the enum columns
-// unless it lists EnumColumnsFeature, and the table ownership of its planning
-// services unless it lists TableOwnershipFeature. A model keeps its
+// unless it lists EnumColumnsFeature, the table ownership of its planning
+// services unless it lists TableOwnershipFeature, and the declared kinds of
+// its comparisons unless it lists DeclaredObjectsFeature. A model keeps its
 // source formats without HCLPlatformFeature: a platform claim's models need
 // not list HCL. Without
 // EntryKeysFeature, the YAML claims of a COLUMN or INDEX scope and the
@@ -217,11 +218,13 @@ func NegotiatedDescription(description *protocol.Description, hostFeatures []str
 // database kinds, the model reports, the schema separator, the offline
 // capability facts of the engine and of its release lines, the table
 // outlines of its planning services, the table clauses of its SQL grammar,
-// the linked engines of its release lines, its enum columns and the table
-// ownership of its planning services.
+// the linked engines of its release lines, its enum columns, the table
+// ownership of its planning services and the declared kinds of its
+// comparisons.
 func negotiateLaterAdditions(engine *protocol.Engine, hostFeatures []string) {
 	negotiateTableOutlines(engine, hostFeatures)
 	negotiateTableOwnership(engine, hostFeatures)
+	negotiateDeclaredObjects(engine, hostFeatures)
 	negotiateSQLTableClauses(engine, hostFeatures)
 	negotiateLinkedReleaseLines(engine, hostFeatures)
 	negotiateEnumColumns(engine, hostFeatures)

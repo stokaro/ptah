@@ -1139,11 +1139,33 @@ materialized views alone (kinds `view` and `materialized view`). Under the
 feature it holds every declared table, view and materialized view (kinds
 `table`, `view` and `materialized view`), so a comparison of models that
 reference a relation, such as a transfer into a table, knows whether the
-relation is declared. A relation of the provider's own models, such as a
-topic, is not listed: the comparison's state carries it. The provider and
-each engine whose comparisons read the list declare this two-way feature, and
-the engine needs a model comparison. `ValidateComparisonRequest` refuses a
-table without the feature and any other kind.
+relation is declared. An object of the provider's own models, such as a
+topic, is not a relation and is never listed: the comparison's state carries
+the objects of its own models, and [declared objects](#declared-objects)
+those of a model another comparison owns. The provider and each engine whose
+comparisons read the list declare this two-way feature, and the engine needs
+a model comparison. `ValidateComparisonRequest` refuses a table without the
+feature and any other kind.
+
+### Declared objects
+
+[ADR 0109](../docs/adr/0109-a-comparison-knows-the-declared-objects-of-another-comparisons-models.md)
+decides this feature. A comparison receives the records of its own models
+only, so a comparison of transfers does not see the topics another
+comparison of the engine owns. Under `models.declared-objects` a comparison
+names those object models in `ModelComparison.declared_kinds`, and
+`CompareModelsRequest.declared_objects` carries the identity of every desired
+object of those kinds, each once, the kind of each naming its model: the
+objects of the desired state the comparison request is built from, after the
+run's scope, so a topic a scope leaves out is not declared. The provider and
+each engine with such a comparison declare this two-way feature. A host that
+does not list it sees no declared kinds and sends no declared object.
+`ValidateDescription` refuses declared kinds on an engine without the
+feature, on a facet comparison, a kind named twice, the comparison's own
+kind and a kind no object comparison of the engine owns.
+`ValidateComparisonRequest` refuses declared objects the engine or the
+request's target did not negotiate, an identity named twice and one of a kind
+the comparison does not name.
 
 Bound identity components retain source and normalized spelling, quoting, and
 connection defaults. Parent, namespace path, and signature remain separate.

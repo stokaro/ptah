@@ -78,3 +78,12 @@ no provider model carries it.
   `TestDeclaredRelationsNegotiation_FailurePath` in `provider-sdk/provider`.
 - The conformance suite's narrowed host profiles include the feature for every
   provider that offers it.
+
+## Amendments
+
+- [ADR 0109](0109-a-comparison-knows-the-declared-objects-of-another-comparisons-models.md)
+  corrects the sentence "the comparison's state carries it" in the Decision:
+  a comparison's state carries only the models that comparison owns, so a
+  topic another comparison owns reaches it through
+  `CompareModelsRequest.declared_objects` under `models.declared-objects`. A
+  provider's own model is still never a declared relation.
