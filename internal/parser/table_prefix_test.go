@@ -101,7 +101,8 @@ func TestParse_TablePrefixStopsAtAnotherOwner(t *testing.T) {
 	parsed, err := parser.NewParser("CREATE TAGGED first MARKED second TABLE t (id int);", parser.WithDialect("postgres"), parser.WithSQL(owners)).Parse()
 	c.Assert(err, qt.IsNil)
 	c.Assert(requests[0].Claims[0].Text, qt.Equals, "TAGGED first")
-	c.Assert(claims, qt.DeepEquals, []sqlext.Claim{{Pattern: "marked", Site: sqlext.TablePrefix, Subject: "t", Text: "MARKED second ", Offset: 20}})
+	c.Assert(claims, qt.DeepEquals, []sqlext.Claim{{Pattern: "marked", Site: sqlext.TablePrefix, Subject: "t", Text: "MARKED second ", Offset: 20,
+		Written: sqlext.Position{Offset: 20, Line: 1, Column: 21}}})
 	setting, _, err := parsed.Statements[0].(*ast.CreateTableNode).Facets.Get(prefixKind)
 	c.Assert(err, qt.IsNil)
 	c.Assert(setting, qt.DeepEquals, &prefixSetting{Text: "TAGGED first"})

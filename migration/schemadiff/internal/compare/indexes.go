@@ -118,6 +118,12 @@ type generatedIndexEntry struct {
 	// nulls are the NULLS orders the target's table preparation stated for
 	// the index's key parts, one per part, nil where it stated none.
 	nulls []string
+	// condition is the predicate the target's table preparation stated for
+	// the index, in the spelling the target's reader reports a held predicate
+	// in, where conditionStated reports that it stated one; see
+	// [indexReplacementRequired].
+	condition       string
+	conditionStated bool
 }
 
 // compared is the declared index as the target's index rules compare it:
@@ -241,11 +247,14 @@ func collectGeneratedIndexes(
 }
 
 // withPreparedKinds gives each declared index the kind its table's
-// preparation stated for it ([schemapreparation.Table.IndexMethods]), and the
-// NULLS orders of its key parts ([schemapreparation.Table.IndexNulls]), where
-// it stated them. A target spells the kind as its reader reports a held index's
-// method, so its rules compare the two spellings rather than the type the
-// source wrote; see [generatedIndexEntry.compared].
+// preparation stated for it ([schemapreparation.Table.IndexMethods]), the
+// NULLS orders of its key parts ([schemapreparation.Table.IndexNulls]) and its
+// predicate ([schemapreparation.Table.IndexConditions]), where it stated them.
+// A target spells the kind as its reader reports a held index's method, so its
+// rules compare the two spellings rather than the type the source wrote; see
+// [generatedIndexEntry.compared]. It spells the predicate as its reader
+// reports a held one, so the two are compared exactly; see
+// [indexReplacementRequired].
 func withPreparedKinds(
 	entries map[difftypes.IndexRef]generatedIndexEntry,
 	desired *schemamodel.Database,
@@ -256,6 +265,7 @@ func withPreparedKinds(
 	// An index's owner resolves to its table's qualified name.
 	kinds := make(map[string]map[string]string)
 	nulls := make(map[string]map[string][]string)
+	conditions := make(map[string]map[string]string)
 	for _, table := range desired.Tables {
 		preparedTable := prepared[tableMapIdentity(table.Schema, table.Name, dialect, semantics)]
 		if methods := preparedTable.IndexMethods; len(methods) != 0 {
@@ -264,6 +274,9 @@ func withPreparedKinds(
 		if orders := preparedTable.IndexNulls; len(orders) != 0 {
 			nulls[table.QualifiedName()] = orders
 		}
+		if predicates := preparedTable.IndexConditions; len(predicates) != 0 {
+			conditions[table.QualifiedName()] = predicates
+		}
 	}
 	for identity, entry := range entries {
 		if kind, stated := kinds[entry.ref.TableName][entry.index.Name]; stated {
@@ -271,6 +284,9 @@ func withPreparedKinds(
 		}
 		if orders, stated := nulls[entry.ref.TableName][entry.index.Name]; stated && len(orders) == len(effectiveGeneratedIndexParts(entry.index)) {
 			entry.nulls = orders
+		}
+		if condition, stated := conditions[entry.ref.TableName][entry.index.Name]; stated {
+			entry.condition, entry.conditionStated = condition, true
 		}
 		entries[identity] = entry
 	}
@@ -858,7 +874,22 @@ func indexReplacementRequired(
 	if comparisonOf(dialect).RespelledIndexReplaced && desired.ref.Name != database.ref.Name {
 		return true
 	}
-	return indexDefinitionsChanged(desired.compared(), database.index, dialect, semantics, resolved, rules)
+	compared := desired.compared()
+	// A target that states a declared predicate as its reader reports a held
+	// one leaves nothing for the shared comparison to fold: the two spellings
+	// agree, or the predicate changed. The stated one also stands for the
+	// declaration in the shared comparison that follows, so it finds equal
+	// predicates equal.
+	if desired.conditionStated {
+		if desired.condition != strings.TrimSpace(database.index.Condition) {
+			return true
+		}
+		compared.Condition = desired.condition
+		if resolved.Resolved {
+			resolved.Predicate = desired.condition
+		}
+	}
+	return indexDefinitionsChanged(compared, database.index, dialect, semantics, resolved, rules)
 }
 
 func indexDefinitionsChanged(

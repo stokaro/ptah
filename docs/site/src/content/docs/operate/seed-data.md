@@ -113,6 +113,12 @@ environment and the table is absent, and leaves an existing table in place. It
 holds the same columns on every engine: `seed_path`, `env`, `checksum` and
 `applied_at`.
 
+The table is Ptah's own bookkeeping, as `schema_migrations` is: a schema read
+leaves it out, so `schema apply` and `migrations generate` never plan its
+removal, and a declaration does not manage a table of that name. A provider
+that keeps a ledger of its own reports it as reserved storage under
+`schema.reserved-seeds`, with the same effect.
+
 SQL Server, Oracle, Spanner and YDB do not take the statement the other engines
 get, so each has its own:
 

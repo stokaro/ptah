@@ -33,7 +33,7 @@ func (t *target) commonObjectChange(node ast.Node) (*protocol.Change, bool, erro
 // nil for a node that changes no common object beyond tables.
 func (t *target) commonOperation(node ast.Node) (*protocol.CommonObjectChange, *protocol.Reference, error) {
 	for _, family := range []func(ast.Node) (*protocol.CommonObjectChange, *protocol.Reference, error){
-		t.relationOperation, t.principalOperation, t.accessOperation,
+		t.relationOperation, t.principalOperation, t.accessOperation, t.namespaceOperation,
 	} {
 		if operation, object, err := family(node); operation != nil || err != nil {
 			return operation, object, err

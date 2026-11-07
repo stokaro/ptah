@@ -1,9 +1,10 @@
 // Package main serves the fixture engine as a provider that owns its tables
 // and reports, compares and plans their foreign keys, CHECKs and index NULLS
-// orders (contract 25.28). It reads the constraints back from the SQLite
-// tables it writes, in the table text it writes itself, and changes a
-// constraint by rebuilding its table, since SQLite adds no constraint to a
-// table in place. It establishes no support for an official engine.
+// orders (contract 25.28) and the predicates of their partial indexes
+// (contract 25.29). It reads the constraints back from the SQLite tables it
+// writes, in the table text it writes itself, and changes a constraint or an
+// index by rebuilding its table, since SQLite adds no constraint to a table in
+// place. It establishes no support for an official engine.
 package main
 
 import (
@@ -28,18 +29,22 @@ const statementsKind = "example.org/fixture/constraint-statements"
 // assesses as the parent of the tables it owns.
 const retentionKind = "example.org/fixture/retention"
 
-// engineFeatures are the features of 25.28 and the ones they need. The mode
-// FIXTURE_CONSTRAINT_MODE=unplanned leaves out the constraint changes, so a
-// host refuses a change of a constraint the read reports, and the mode text
-// adds text units, so a migration file holds the statements of a rebuild.
+// engineFeatures are the features of 25.28 and 25.29 the fixture serves and
+// the ones they need. The mode FIXTURE_CONSTRAINT_MODE=unplanned leaves out
+// the constraint changes, so a host refuses a change of a constraint the read
+// reports, unpredicated leaves out the index predicates, so a host compares
+// them by its own rules, and the mode text adds text units, so a migration
+// file holds the statements of a rebuild.
 func engineFeatures(mode string) []string {
 	features := []string{provider.ObservedColumnsFeature, provider.ObservedConstraintsFeature, provider.ConstraintChangesFeature,
-		provider.CheckEquivalenceFeature, provider.ObservedIndexesFeature, provider.IndexNullsOrderFeature, provider.PrepareTablesFeature,
-		provider.ProjectTableCreationsFeature, provider.ValidateSchemaFeature, provider.PlanningPolicyFeature, provider.PlanningStatementStyleFeature,
-		provider.LocksFeature}
+		provider.CheckEquivalenceFeature, provider.ObservedIndexesFeature, provider.IndexNullsOrderFeature, provider.IndexPredicatesFeature,
+		provider.PrepareTablesFeature, provider.ProjectTableCreationsFeature, provider.ValidateSchemaFeature, provider.PlanningPolicyFeature,
+		provider.PlanningStatementStyleFeature, provider.PlanningLifecycleFeature, provider.LocksFeature}
 	switch mode {
 	case "unplanned":
 		features = slices.DeleteFunc(features, func(feature string) bool { return feature == provider.ConstraintChangesFeature })
+	case "unpredicated":
+		features = slices.DeleteFunc(features, func(feature string) bool { return feature == provider.IndexPredicatesFeature })
 	case "text":
 		features = append(features, provider.TextUnitsFeature)
 	}
@@ -54,7 +59,7 @@ func main() {
 		}
 	}
 	mode := os.Getenv("FIXTURE_CONSTRAINT_MODE")
-	if mode != "" && mode != "unplanned" && mode != "text" {
+	if mode != "" && mode != "unplanned" && mode != "unpredicated" && mode != "text" {
 		fmt.Fprintln(os.Stderr, "unknown fixture constraint mode")
 		os.Exit(1)
 	}

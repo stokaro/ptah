@@ -10,6 +10,7 @@ package sourcepos
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -39,6 +40,37 @@ func Locate(text string, offset int) (line, column int) {
 		lineStart = i + 1
 	}
 	return line, utf8.RuneCountInString(text[lineStart:offset]) + 1
+}
+
+// Lines indexes where each line of a text starts, so the places of many
+// offsets are found without reading the text again for each. A line ends at
+// LF, at CRLF or at a lone CR, as [Locate] counts them.
+type Lines struct {
+	length int
+	starts []int
+}
+
+// NewLines indexes the lines of text.
+func NewLines(text string) Lines {
+	lines := Lines{length: len(text), starts: []int{0}}
+	for i := range len(text) {
+		if ch := text[i]; ch == '\n' || ch == '\r' && !strings.HasPrefix(text[i+1:], "\n") {
+			lines.starts = append(lines.starts, i+1)
+		}
+	}
+	return lines
+}
+
+// LocateBytes returns the 1-based line of offset, counted as [Locate] counts
+// lines, and its 1-based column counted in bytes from the start of that line.
+// A provider's source position takes this form: its column and its byte
+// offset agree on every line, which a column counted in characters does not
+// where a multi-byte character comes before it. An offset before the text is
+// its start, and one past it is its end.
+func (l Lines) LocateBytes(offset int) (line, column int) {
+	offset = max(0, min(offset, l.length))
+	line, _ = slices.BinarySearch(l.starts, offset+1)
+	return line, offset - l.starts[line-1] + 1
 }
 
 // Shift moves the offsets err's chain states by base, and returns err. A parser

@@ -119,6 +119,11 @@ var hostFeatures = []string{
 	// target.commonObjectChange.
 	provider.CommonObjectsFeature,
 	provider.CommonAccessFeature,
+	// A provider's read lists the namespaces of its scope, which the catalog
+	// keeps as its schemas, and a plan creates a declared schema the read
+	// does not hold, and the schema of a created object, through the
+	// provider; see reader.commonObjects and commonPlanner.namespaceSteps.
+	provider.CommonNamespacesFeature,
 	// A declared role password reaches a provider as an execution input it
 	// renders a reference to, and its value only as an execution binding; see
 	// target.passwordInput and session.bindExecutionInputs.
@@ -171,6 +176,14 @@ var hostFeatures = []string{
 	// table; see reader.constraints and commonPlanner.constraintChanges.
 	provider.ObservedConstraintsFeature,
 	provider.ConstraintChangesFeature,
+	// A read reports the ledger the engine's seed service keeps as reserved
+	// storage, which every comparison leaves out, so a plan never drops it;
+	// see reader.reservedNames.
+	provider.ReservedSeedsFeature,
+	// A clause of CREATE TABLE an engine that reads the shared SQL grammar
+	// claims reaches the provider whole, and the facets it decodes are the
+	// table's; see Host.tableClauseExtension.
+	provider.SQLTableClausesFeature,
 	// Table preparation states the kind of each declared index, and the
 	// index rules compare it with the held index's method; see
 	// observedIndexRules.
@@ -179,6 +192,11 @@ var hostFeatures = []string{
 	// and table preparation states it for every key part of a declared one,
 	// which the index rules compare exactly; see observedIndexRules.
 	provider.IndexNullsOrderFeature,
+	// Table preparation states the predicate of each declared partial index
+	// as the engine holds it, and inspection states a held one in the same
+	// spelling, which the index comparison compares exactly; see
+	// preparedIndexConditions.
+	provider.IndexPredicatesFeature,
 	provider.DatabaseContextFeature,
 	provider.ValueContextFeature,
 	// A command's scope names a provider's objects by the selector types its

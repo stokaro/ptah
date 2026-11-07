@@ -733,6 +733,24 @@ depends on their order. PostgreSQL runs the drops of a statement first, so that
 statement needs no rename. PostgreSQL 17 and earlier keep no such name, so a plan
 between two of them has nothing to move.
 
+## A NOT NULL name on PostgreSQL 17
+
+PostgreSQL 17 accepts `CONSTRAINT c NOT NULL` and stores no name, and a read of
+PostgreSQL 18 names every `NOT NULL`. So `schema diff --from <17> --to <18>` sees
+a name on every column, most of which nobody wrote.
+
+- **The name the server gives.** `<table>_<column>_not_null`, cut to 63 bytes as
+  the server cuts it, asks for nothing. The plan writes `NOT NULL`, and the next
+  plan reads synced.
+- **Any other name on a column the plan adds or creates** is refused, because the
+  target would lose it. A name the server numbered, such as `t_c_not_null1`, is
+  refused too: the catalog does not say who wrote a name, so it reads as written.
+- **Any other name on a column that exists.** The plan writes a `WARNING` comment
+  in place of a statement, and the next plan writes it again.
+
+From PostgreSQL 18 toward PostgreSQL 17 the desired side names nothing. An added
+column takes the name the server gives it, and a name the left side holds stays.
+
 ## Making a column NOT NULL
 
 A plan that makes an existing column `NOT NULL` writes

@@ -74,6 +74,27 @@ func TestColumnKey(t *testing.T) {
 // an inline REFERENCES. The label `fkey` leaves an odd number of bytes for
 // the two names, so they cannot come out the same length, and the second is
 // the one that gives up the last byte.
+// The rows are the names PostgreSQL 18.6 gave an unnamed NOT NULL.
+func TestNotNull(t *testing.T) {
+	tests := []struct {
+		name, table, column, want string
+	}{
+		{name: "short names", table: "t", column: "c", want: "t_c_not_null"},
+		{
+			name:   "a long column is cut",
+			table:  "t",
+			column: "a_column_name_that_is_much_longer_than_fifty_four_bytes_x",
+			want:   "t_a_column_name_that_is_much_longer_than_fifty_four_by_not_null",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(pgname.NotNull(test.table, test.column), qt.Equals, test.want)
+		})
+	}
+}
+
 func TestObject(t *testing.T) {
 	tests := []struct {
 		name  string

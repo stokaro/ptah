@@ -2753,6 +2753,16 @@ in neither list. The SDK checks each constraint:
   no foreign key attribute;
 - neither carries index attributes.
 
+A host relies on these rules beyond the read. A rollback plan starts from the
+tables the forward plan leaves, and the host predicts them without a read: a
+foreign key the forward plan adds or replaces changes the table's constraints
+and nothing else, in the spelling above, with an absent rule as `NO ACTION`
+and an absent referenced schema as the default schema. A provider that lists
+the feature keeps that true: it reports each foreign key with its referenced
+schema and rules stated, and keeps the index the engine builds for one out of
+the table's indexes. A primary key, a UNIQUE constraint and a constraint that
+carries facets are not predicted, so a down file that needs one is refused.
+
 ## Constraint changes
 
 [ADR 0089](../docs/adr/0089-a-provider-plans-the-constraint-changes-of-a-table-it-owns.md)
