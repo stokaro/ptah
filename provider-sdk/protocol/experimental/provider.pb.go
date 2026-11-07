@@ -12512,10 +12512,11 @@ type ModelReport struct {
 	Representation ValueInput_Representation `protobuf:"varint,2,opt,name=representation,proto3,enum=ptah.provider.experimental.ValueInput_Representation" json:"representation,omitempty"`
 	Metrics        []*ModelMetric            `protobuf:"bytes,3,rep,name=metrics,proto3" json:"metrics,omitempty"`
 	// Optional label for export omission diagnostics. Empty uses the model's
-	// display_name. Contract 25.35, under models.report-counts.
+	// display_name. Contract 25.36, under models.omission-counts.
 	OmissionLabel string `protobuf:"bytes,4,opt,name=omission_label,json=omissionLabel,proto3" json:"omission_label,omitempty"`
 	// Optional name of a declared metric whose per-value count gives the
-	// number of omitted objects. Empty counts one per value. Contract 25.35.
+	// number of omitted objects. Empty counts one per value. Contract 25.36,
+	// under models.omission-counts.
 	OmissionCountMetric string `protobuf:"bytes,5,opt,name=omission_count_metric,json=omissionCountMetric,proto3" json:"omission_count_metric,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
