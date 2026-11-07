@@ -36,7 +36,7 @@ require (
 	github.com/spf13/pflag v1.1.0
 	github.com/stokaro/ptah/provider-sdk v0.25.0
 	github.com/tursodatabase/libsql-client-go v0.0.0-20260528064733-9d5d30a29a60
-	github.com/zclconf/go-cty v1.19.0
+	github.com/zclconf/go-cty v1.20.0
 	github.com/zclconf/go-cty-yaml v1.2.0
 	go.opentelemetry.io/otel v1.47.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.47.0
