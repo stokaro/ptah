@@ -160,6 +160,8 @@ func (h *holders) freedFor(alter *ast.AlterTableNode) []string {
 			if op.Column != nil {
 				take(op.Column.NotNullConstraintName)
 			}
+		case *ast.ModifyColumnOperation:
+			take(op.NotNullConstraintName)
 		case *ast.RenameConstraintOperation:
 			take(op.To)
 			delete(h.held, op.From)

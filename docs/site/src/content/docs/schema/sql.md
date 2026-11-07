@@ -306,6 +306,9 @@ These operations are read:
 
 - `ADD COLUMN`, `ADD PRIMARY KEY` and `ADD CONSTRAINT` (`UNIQUE`, `CHECK`,
   `FOREIGN KEY`);
+- on PostgreSQL, `ADD [CONSTRAINT name] NOT NULL column`, which does what `SET
+  NOT NULL` does and keeps the name. `NOT VALID` and `NO INHERIT` after the column
+  are refused, because the model has no field for them;
 - `ALTER [COLUMN] ... SET DEFAULT`, `DROP DEFAULT`, `SET NOT NULL`,
   `DROP NOT NULL` and `[SET DATA] TYPE`, with an optional `USING`;
 - `DROP [COLUMN] [IF EXISTS]` and `RENAME [COLUMN] ... TO`;

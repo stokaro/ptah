@@ -61,6 +61,10 @@ type Parser struct {
 	// addedNotValid is set when the constraint ALTER TABLE ... ADD reads ends
 	// in `NOT VALID`, and the ADD operation carries it onto the constraint.
 	addedNotValid bool
+	// addedNotNull is what ALTER TABLE ... ADD read for a NOT NULL, which is an
+	// action on a column rather than a table element; see
+	// [Parser.readAddedNotNull].
+	addedNotNull *ast.AlterColumnOperation
 	// columnChecks are the CHECKs the table body being read wrote on its
 	// columns, the ones read at table level included. MySQL's rule for them
 	// needs every column of the table, so they are checked once the body is
@@ -4655,6 +4659,15 @@ func (p *Parser) parseTableConstraint() (*ast.ConstraintNode, *ast.IndexNode, er
 		return nil, nil, err
 	}
 
+	if p.addingConstraint && p.current.MatchIdentifierValue("NOT") && p.takesAddNotNull() {
+		return nil, nil, p.readAddedNotNull(constraint.Name)
+	}
+	return p.parseConstraintAfterName(constraint)
+}
+
+// parseConstraintAfterName parses a table element from the word after its optional
+// CONSTRAINT name.
+func (p *Parser) parseConstraintAfterName(constraint *ast.ConstraintNode) (*ast.ConstraintNode, *ast.IndexNode, error) {
 	// Parse constraint type
 	if p.current.Type != lexer.TokenIdentifier {
 		return nil, nil, ptaherr.At(p.current.Start, fmt.Errorf("expected constraint type, got %s", p.current.Type))
@@ -5803,6 +5816,11 @@ func (p *Parser) parseAddOperation() ([]ast.AlterOperation, error) {
 		if err != nil {
 			return nil, err
 		}
+		if p.addedNotNull != nil {
+			operation := p.addedNotNull
+			p.addedNotNull = nil
+			return []ast.AlterOperation{operation}, nil
+		}
 		if constraint != nil {
 			constraint.NotValid = p.addedNotValid
 		}
@@ -5864,6 +5882,8 @@ func (p *Parser) isAlterAddConstraintStart() bool {
 	switch strings.ToUpper(p.current.Value) {
 	case "CONSTRAINT", "PRIMARY", "UNIQUE", "FOREIGN", "CHECK", "EXCLUDE":
 		return true
+	case "NOT":
+		return p.takesAddNotNull()
 	case "KEY", "SPATIAL", "FULLTEXT":
 		// MySQL and MariaDB add a secondary index this way, and both accept
 		// every one of these spellings -- measured on 8.4 and 11.8. Left out of
@@ -5878,6 +5898,31 @@ func (p *Parser) isAlterAddConstraintStart() bool {
 	default:
 		return false
 	}
+}
+
+// takesAddNotNull reports whether the dialect reads ADD [CONSTRAINT name] NOT NULL
+// column. A document read with no dialect takes what any of them does.
+func (p *Parser) takesAddNotNull() bool {
+	return !p.target.known || p.target.grammar.AlterTable.AddNotNull
+}
+
+// readAddedNotNull reads the rest of ADD [CONSTRAINT name] NOT NULL column, from
+// NOT, into [Parser.addedNotNull]. The clause does what SET NOT NULL does and states
+// the name. NOT VALID and NO INHERIT, which PostgreSQL 18 takes after the column,
+// describe a NOT NULL the model has no field for, and the statement stops on them.
+func (p *Parser) readAddedNotNull(name string) error {
+	if err := p.expectWords("NOT", "NULL"); err != nil {
+		return err
+	}
+	p.skipWhitespace()
+	column, err := p.expectIdentifier()
+	if err != nil {
+		return fmt.Errorf("expected column name after NOT NULL: %w", err)
+	}
+	p.addedNotNull = &ast.AlterColumnOperation{
+		ColumnName: column, Action: ast.AlterColumnSetNotNull, NotNullConstraintName: name,
+	}
+	return nil
 }
 
 // errConstraintColumnListMissing marks the one failure that means a table

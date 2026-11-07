@@ -986,6 +986,12 @@ func (s *storedNames) alterOperation(table *relation, operation ast.AlterOperati
 		return err
 	case *ast.AddConstraintOperation:
 		return s.constraint(*table, op.Constraint)
+	case *ast.AlterColumnOperation:
+		if op.NotNullConstraintName != "" {
+			_, err := s.declareOwned(constraintSpace, owner, "not-null constraint", op.NotNullConstraintName, skipExisting,
+				ownership{table: owner, columns: []string{s.storedColumn(op.ColumnName)}})
+			return err
+		}
 	case *ast.AddIndexOperation:
 		if op.Index != nil && strings.TrimSpace(op.Index.Name) != "" {
 			_, err := s.declareOwned(relationSpace, table.schema, "index", op.Index.Name, existingRule[op.Index.IfNotExists], ownership{table: table.tableKey()})

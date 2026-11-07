@@ -404,6 +404,9 @@ func judgeNullFillPair(assessment *StatementAssessment, statement, target string
 	case hasWordSequence(words, "SET", "NOT", "NULL"):
 		assessment.Severity = Safe
 		assessment.Reason = "SET NOT NULL follows the UPDATE that fills the column's NULL rows"
+	case addsNotNullConstraint(words):
+		assessment.Severity = Safe
+		assessment.Reason = "ADD CONSTRAINT ... NOT NULL follows the UPDATE that fills the column's NULL rows"
 	}
 }
 
@@ -989,6 +992,9 @@ func assessRawSQL(sql string, assessment StatementAssessment, keepsNullability b
 	case hasWordSequence(words, "SET", "NOT", "NULL"):
 		assessment.Severity = Warning
 		assessment.Reason = "SET NOT NULL can fail when existing rows contain NULL"
+	case addsNotNullConstraint(words):
+		assessment.Severity = Warning
+		assessment.Reason = "ADD CONSTRAINT ... NOT NULL can fail when existing rows contain NULL"
 	case !keepsNullability && restatesNotNull(sql):
 		assessment.Severity = Warning
 		assessment.Reason, _ = restatedNotNullReason(sql)
@@ -1260,6 +1266,21 @@ func rawWords(sql string) []string {
 	replacer := strings.NewReplacer("(", " ", ")", " ", ",", " ", ";", " ", "\n", " ", "\t", " ")
 	clean := replacer.Replace(strings.ToUpper(sql))
 	return strings.Fields(clean)
+}
+
+// addsNotNullConstraint reports whether words hold the spelling of SET NOT NULL that
+// names the constraint, `ADD CONSTRAINT name NOT NULL column`, or its unnamed
+// form. It fails on a NULL row as SET NOT NULL does, measured on PostgreSQL 18.6.
+func addsNotNullConstraint(words []string) bool {
+	for i := range words {
+		if hasWordPrefix(words[i:], "ADD", "NOT", "NULL") {
+			return true
+		}
+		if hasWordPrefix(words[i:], "ADD", "CONSTRAINT") && i+3 < len(words) && hasWordPrefix(words[i+3:], "NOT", "NULL") {
+			return true
+		}
+	}
+	return false
 }
 
 func hasWordPrefix(words []string, prefix ...string) bool {

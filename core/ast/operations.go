@@ -136,6 +136,17 @@ type ModifyColumnOperation struct {
 	// not read it: its MODIFY COLUMN states the column's default, and there is
 	// no separate fill statement to leave out.
 	OmitNullBackfill bool
+	// NotNullConstraintName is the name of the NOT NULL this modification adds,
+	// where the plan asks for one, and is empty for the name the server gives it.
+	//
+	// The PostgreSQL family writes `ADD CONSTRAINT name NOT NULL column` for it in
+	// place of SET NOT NULL. A rename after SET NOT NULL would have to guess what
+	// the server picked, which is `<table>_<column>_not_null1` when another
+	// constraint holds the plain name, and a wrong guess renames that constraint.
+	// The statement is PostgreSQL 18's, and callers gate the name on
+	// [capability.NamedNotNullConstraints] as they gate
+	// [RenameConstraintOperation]. Every other renderer ignores it.
+	NotNullConstraintName string
 }
 
 // ColumnProperties names the properties of a column that a
@@ -201,6 +212,11 @@ type AlterColumnOperation struct {
 	ColumnName string
 	// Action is the property the operation changes.
 	Action AlterColumnAction
+	// NotNullConstraintName is the name [AlterColumnSetNotNull] gives the
+	// constraint, where the statement states one: `ADD CONSTRAINT name NOT NULL
+	// column`, which the PostgreSQL family writes back. It is empty otherwise, and
+	// every other renderer ignores it.
+	NotNullConstraintName string
 	// Default is the new default for [AlterColumnSetDefault], nil otherwise.
 	Default *DefaultValue
 	// Type is the new type for [AlterColumnSetType], empty otherwise.
