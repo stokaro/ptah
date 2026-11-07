@@ -155,6 +155,9 @@ const (
 	// replay supplies, on YDB a replay in a dev realm. A run without a dev
 	// database names the rule as unmet rather than reporting less in silence.
 	YDBNeedsDevDatabase YDBVerdict = "needs a dev database"
+	// YDBProviderReads marks a rule about something the provider does on YDB
+	// rather than the host, so the rule does not run there.
+	YDBProviderReads YDBVerdict = "read by the provider"
 )
 
 // ruleMeta is everything about a rule that no registry can carry.
@@ -316,6 +319,11 @@ var migrationRuleMeta = map[string]ruleMeta{
 		Summary: "the migration defines a routine whose body is not analyzed, so a clean result says nothing about what the body does",
 		YDB:     YDBNoSuchStatement,
 		YDBNote: "YQL stores no routine",
+	},
+	"AC102": {
+		Summary: "the SQL parser could not read a statement and no server ran it, so a clean result says nothing about it",
+		YDB:     YDBProviderReads,
+		YDBNote: "the rule is about Ptah's SQL parser, and YQL is read by its provider",
 	},
 	"ON101": {
 		Summary: "the statement is outside the set measured to take no lock conflicting with reads and writes on PostgreSQL",
@@ -1092,7 +1100,7 @@ func ydbVerdictProblems(entry Entry) []string {
 }
 
 // ydbVerdicts are the verdicts a rule may carry.
-var ydbVerdicts = []YDBVerdict{YDBApplies, YDBNoSuchStatement, YDBReplaced, YDBNeedsDevDatabase}
+var ydbVerdicts = []YDBVerdict{YDBApplies, YDBNoSuchStatement, YDBReplaced, YDBNeedsDevDatabase, YDBProviderReads}
 
 // atlasReferenceProblems compares the Atlas check catalog against the reviewed
 // snapshot, code for code.

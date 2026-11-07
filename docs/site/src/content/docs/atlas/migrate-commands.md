@@ -1826,8 +1826,8 @@ Two environment variables relax these requirements. They relax **different**
 ones, and neither implies the other:
 
 - `PTAH_ATLAS_LINT_WITHOUT_DEV_URL=1` drops the dev-database requirement.
-  Ptah's analyzers reach a verdict from the migration files alone; the run still
-  needs a scope.
+  Ptah's analyzers reach a verdict from the migration files alone, and `AC102`
+  names each statement the SQL parser could not read; the run still needs a scope.
 - `PTAH_ATLAS_LINT_ALL_VERSIONS=1` drops the scope requirement and lints the
   whole directory. The run still needs a dev database unless the variable above
   is also set.
