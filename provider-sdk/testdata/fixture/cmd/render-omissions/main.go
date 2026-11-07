@@ -1,7 +1,7 @@
 // Package main runs a fixture provider whose engine has no string type with a
 // length: its render writes a VARCHAR(n) column as TEXT and, under
-// render.omissions, reports the length it left out, as Ptah's built-in YDB
-// engine reported the length a Utf8 column does not keep.
+// render.omissions, reports the length it left out, as a YDB render reports
+// the length a Utf8 column does not keep.
 //
 // FIXTURE_RENDER_OMISSIONS=off stands for a provider that predates the
 // feature: it lists none, and its render drops the length without a word.

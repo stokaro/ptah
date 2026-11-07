@@ -149,8 +149,8 @@ func ydbSwap(statements []lintext.Statement, steps []int, scratch, old string) (
 // copy, after it is created, a changefeed dropped from the old table before
 // it moves, since YDB moves no table that carries one, a changefeed added to
 // the copy once it holds the name, and a change of a changefeed's topic,
-// which adds its consumers. The built-in YDB planner and the YDB provider
-// write each as a statement of its own.
+// which adds its consumers. The YDB provider writes each as a statement of
+// its own.
 func rebuildAside(stmt *lintext.Statement) bool {
 	w := stmt.Words
 	if HasWordPrefix(w, "ALTER", "TOPIC") {

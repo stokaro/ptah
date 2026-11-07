@@ -19,9 +19,8 @@ import (
 // names, and changes nothing else: an unread table is not one the plan
 // drops or alters.
 //
-// The refusal is the error the built-in YDB engine gives for its replica
-// tables: a capability error for the target, which reads as the table and the
-// reason alone.
+// The refusal is a capability error for the target, which reads as the table
+// and the reason alone.
 func refuseUnreadTables(desired *schemamodel.Database, current *catalog.Database, target string, semantics identifier.Semantics) error {
 	if len(current.UnreadTables) == 0 {
 		return nil
