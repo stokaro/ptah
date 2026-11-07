@@ -10,7 +10,7 @@ import (
 func TestValidateEnvironment_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
-	err := bootstrap.ValidateEnvironment([]string{"PTAH_FIXTURE_LOG=/tmp/log", "HOME=/home/user", "EMPTY="})
+	err := bootstrap.ValidateEnvironment([]string{"PTAH_FIXTURE_LOG=provider.log", "LANG=C", "EMPTY="})
 
 	c.Assert(err, qt.IsNil)
 }
