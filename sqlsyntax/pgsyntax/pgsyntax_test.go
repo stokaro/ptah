@@ -48,6 +48,13 @@ func TestScan_HappyPath(t *testing.T) {
 			"Punctuation ]", "Punctuation ,", "Word b", "Punctuation )", "Punctuation ;"}},
 		{name: "a lone dollar sign", text: "a $ b", want: []string{"Word a", "Operator $", "Word b"}},
 		{name: "a name in another script", text: "заказ.id", want: []string{"Word заказ", "Punctuation .", "Word id"}},
+		{name: "a segment that continues an escape string reads its escapes", text: "E'a' -- c\n'b\\'c' x",
+			want: []string{"String E'a'", "LineComment -- c", `String 'b\'c'`, "Word x"}},
+		{name: "a block comment ends the constant", text: "E'a' /* c */\n'b\\' x",
+			want: []string{"String E'a'", "BlockComment /* c */", `String 'b\'`, "Word x"}},
+		{name: "a segment on the same line continues nothing", text: "E'a' 'b\\' x",
+			want: []string{"String E'a'", `String 'b\'`, "Word x"}},
+		{name: "a vertical tab is white space", text: "1\v+1", want: []string{"Number 1", "Operator +", "Number 1"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)

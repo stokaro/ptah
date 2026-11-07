@@ -8,9 +8,10 @@ It knows no engine's catalog, types or DDL. Reading, rendering and planning stay
 
 Package `pgsyntax` reads PostgreSQL-family text:
 
-- `Scan` splits text into tokens: white space, line and nested block comments, words, quoted identifiers (`"..."`, `U&"..."`), strings (`'...'`, `E'...'`, `U&'...'`, `B'...'`, `X'...'`), dollar-quoted strings, numbers, positional parameters, operators and punctuation. Every byte belongs to one token.
+- `Scan` splits text into tokens: white space, line and nested block comments, words, quoted identifiers (`"..."`, `U&"..."`), strings (`'...'`, `E'...'`, `U&'...'`, `N'...'`, `B'...'`, `X'...'`), dollar-quoted strings, numbers, positional parameters, operators and punctuation. Every byte belongs to one token.
 - `Next` reads the first token of a text, for a reader that keeps its own scanner and reads one construct by these rules.
 - `Statements` splits text at semicolons outside strings, identifiers, dollar quotes and comments.
+- `Value` reads what a string constant or quoted identifier stands for: its escapes, the segments that continue a string on later lines, and the `UESCAPE` clause of a Unicode escape string. It reports no value where the server refuses the constant.
 - `QuoteIdentifier` and `QuoteString` write a name and a value so that a server reads them back exactly.
 
 `Options{}` is PostgreSQL's default, with `standard_conforming_strings` on. `Options{BackslashEscapes: true}` reads a backslash in an ordinary string as an escape, as a server with that setting off does.
