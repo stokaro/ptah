@@ -22,6 +22,7 @@ var notChanges = map[string]string{
 	"TablePreparation":             "the comparison's own inputs, which a reversal keeps for provenance",
 	"SkippedFeatures":              "objects the target does not serve, which a report names beside its result",
 	"IdentifierSemantics":          "the identifier rules the comparison ran under",
+	"UnmanagedOwnerPrivileges":     "owner privileges the desired state does not manage, a diagnostic a report names beside its result",
 	"RLSPolicyIdentityConflicts":   "two declared policies with one identity, a defect in the declaration a planner refuses",
 	"DeclaredTables":               "a planner input off the wire: every table the declaration holds",
 	"HeldSchemas":                  "a planner input off the wire: the schemas the read of the current database found",

@@ -255,3 +255,144 @@ func TestCurrentGrants_LeavesOutWhatANewObjectHolds(t *testing.T) {
 		{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t"},
 	})
 }
+
+// ownerLostInsert is the owner's INSERT, revoked from itself.
+var ownerLostInsert = catalog.Grant{Role: "owner", Privilege: "INSERT", ObjectType: "TABLE", ObjectName: "t", Implicit: true, IsPartialRevoke: true}
+
+// declaresTable is a declaration of table t that manages the owner role and
+// names none of its privileges.
+func declaresTable() *schemamodel.Database {
+	return &schemamodel.Database{Roles: []schemamodel.Role{{Name: "owner"}}, Tables: []schemamodel.Table{{Name: "t"}}}
+}
+
+// compareDeclaredTable compares desired with a database that holds table t and
+// the grants held, against a declaration.
+func compareDeclaredTable(desired *schemamodel.Database, held []catalog.Grant) *difftypes.SchemaDiff {
+	database := &catalog.Database{Tables: []catalog.Table{{Name: "t"}}, Views: []catalog.View{{Name: "v"}},
+		Sequences: []catalog.Sequence{{Name: "s"}}, Grants: held}
+	diff := &difftypes.SchemaDiff{}
+	compare.GrantsWithOptions(desired, database, diff, identifier.ForDialect("postgres"), compare.GrantOptions{})
+	return diff
+}
+
+// TestGrantsWithOptions_AnUnmanagedOwnerPrivilegeIsReportedNotPlanned is an owner
+// that revoked privileges from itself on a declared object, which the declaration
+// does not name. Ptah plans no GRANT for a privilege the declaration does not
+// manage, and reports what the owner lacks instead (stokaro/ptah#5765). Whether
+// the declaration manages the owner role does not matter: a role is not its
+// privileges.
+func TestGrantsWithOptions_AnUnmanagedOwnerPrivilegeIsReportedNotPlanned(t *testing.T) {
+	sequenceLost := catalog.Grant{Role: "owner", Privilege: "USAGE", ObjectType: "SEQUENCE", ObjectName: "s", Implicit: true, IsPartialRevoke: true}
+	viewLost := catalog.Grant{Role: "owner", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "v", Implicit: true, IsPartialRevoke: true}
+	tests := []struct {
+		name    string
+		desired *schemamodel.Database
+		held    []catalog.Grant
+		want    []difftypes.OwnerPrivilegeDeviation
+	}{
+		{
+			name:    "two privileges of a declared table",
+			desired: declaresTable(),
+			held:    []catalog.Grant{ownerLost, ownerLostInsert, ownerUpdate},
+			want:    []difftypes.OwnerPrivilegeDeviation{{ObjectType: "TABLE", Object: "t", Owner: "owner", Missing: []string{"INSERT", "SELECT"}}},
+		},
+		{
+			name:    "a table whose owner role the declaration does not manage",
+			desired: &schemamodel.Database{Tables: []schemamodel.Table{{Name: "t"}}},
+			held:    []catalog.Grant{ownerLost},
+			want:    []difftypes.OwnerPrivilegeDeviation{{ObjectType: "TABLE", Object: "t", Owner: "owner", Missing: []string{"SELECT"}}},
+		},
+		{
+			name:    "a declared view",
+			desired: &schemamodel.Database{Views: []schemamodel.View{{Name: "v"}}},
+			held:    []catalog.Grant{viewLost},
+			want:    []difftypes.OwnerPrivilegeDeviation{{ObjectType: "TABLE", Object: "v", Owner: "owner", Missing: []string{"SELECT"}}},
+		},
+		{
+			name:    "a declared sequence",
+			desired: &schemamodel.Database{Sequences: []schemamodel.Sequence{{Name: "s"}}},
+			held:    []catalog.Grant{sequenceLost},
+			want:    []difftypes.OwnerPrivilegeDeviation{{ObjectType: "SEQUENCE", Object: "s", Owner: "owner", Missing: []string{"USAGE"}}},
+		},
+		{
+			name:    "an owner that holds every privilege",
+			desired: declaresTable(),
+			held:    []catalog.Grant{ownerSelect, ownerUpdate},
+			want:    make([]difftypes.OwnerPrivilegeDeviation, 0),
+		},
+		{
+			name:    "an object the declaration does not declare",
+			desired: &schemamodel.Database{Tables: []schemamodel.Table{{Name: "other"}}},
+			held:    []catalog.Grant{ownerLost},
+			want:    make([]difftypes.OwnerPrivilegeDeviation, 0),
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			diff := compareDeclaredTable(test.desired, test.held)
+
+			c.Assert(diff.UnmanagedOwnerPrivileges, qt.DeepEquals, test.want)
+			c.Assert(diff.GrantsAdded, qt.HasLen, 0)
+			c.Assert(diff.GrantsRemoved, qt.HasLen, 0)
+			c.Assert(diff.HasChanges(), qt.IsFalse)
+		})
+	}
+}
+
+// TestGrantsWithOptions_AManagedOwnerPrivilegeIsPlannedNotReported is a privilege
+// of the owner the declaration names. A declared grant is restored, a declared
+// ALL restores every privilege it covers, and a declared revoke is respected;
+// none of them is an unmanaged deviation.
+func TestGrantsWithOptions_AManagedOwnerPrivilegeIsPlannedNotReported(t *testing.T) {
+	tests := []struct {
+		name  string
+		grant []schemamodel.Grant
+		undo  []schemamodel.Grant
+		want  []difftypes.GrantRef
+	}{
+		{
+			name:  "a declared grant",
+			grant: []schemamodel.Grant{{Role: "owner", Privileges: []string{"SELECT"}, OnTable: "t"}},
+			want:  []difftypes.GrantRef{{Role: "owner", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t"}},
+		},
+		{
+			name:  "a declared ALL",
+			grant: []schemamodel.Grant{{Role: "owner", Privileges: []string{"ALL"}, OnTable: "t"}},
+			want:  []difftypes.GrantRef{{Role: "owner", Privilege: "ALL", ObjectType: "TABLE", ObjectName: "t"}},
+		},
+		{
+			name: "a declared revoke",
+			undo: []schemamodel.Grant{{Role: "owner", Privileges: []string{"SELECT"}, OnTable: "t"}},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			desired := declaresTable()
+			desired.Grants, desired.RevokedGrants = test.grant, test.undo
+
+			diff := compareDeclaredTable(desired, []catalog.Grant{ownerLost})
+
+			c.Assert(diff.GrantsAdded, qt.DeepEquals, test.want)
+			c.Assert(diff.UnmanagedOwnerPrivileges, qt.HasLen, 0)
+		})
+	}
+}
+
+// TestGrantsWithOptions_AServerReadReportsNoUnmanagedOwnerPrivilege is a desired
+// state read from a server, which states what its owner holds: the comparison of
+// two reads grants a revoked privilege back where the same owner holds it, and
+// reports nothing as unmanaged.
+func TestGrantsWithOptions_AServerReadReportsNoUnmanagedOwnerPrivilege(t *testing.T) {
+	c := qt.New(t)
+	database := &catalog.Database{Tables: []catalog.Table{{Name: "t"}}, Grants: []catalog.Grant{ownerLost}}
+	diff := &difftypes.SchemaDiff{}
+
+	compare.GrantsWithOptions(declaresTable(), database, diff, identifier.ForDialect("postgres"),
+		compare.GrantOptions{DesiredComplete: true, DesiredRead: []catalog.Grant{ownerSelect}})
+
+	c.Assert(diff.UnmanagedOwnerPrivileges, qt.HasLen, 0)
+	c.Assert(diff.GrantsAdded, qt.DeepEquals, []difftypes.GrantRef{{Role: "owner", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t"}})
+}

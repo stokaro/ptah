@@ -485,4 +485,5 @@ func reportSkipped(errOut io.Writer, diff *difftypes.SchemaDiff) {
 	for _, object := range diff.SkippedFeatures {
 		fmt.Fprintln(errOut, strings.ToUpper(object.Target)+": "+object.Note())
 	}
+	atlasschema.ReportUnmanagedOwnerPrivileges(errOut, diff.UnmanagedOwnerPrivileges)
 }

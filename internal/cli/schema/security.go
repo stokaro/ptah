@@ -176,6 +176,7 @@ func runSchemaSecurity(cmd *cobra.Command, opts schemaSecurityOptions) error {
 			// report themselves skipped (stokaro/ptah#1950).
 			RoleMemberships: roleMemberships(live),
 			ObjectOwners:    objectOwners(live),
+			OwnerRevokes:    ownerRevokes(live),
 			RoleObjectUsage: usage,
 			DatabasePath:    live.DatabasePath,
 		},
@@ -233,6 +234,20 @@ func roleMemberships(live *catalog.Database) []schemasecurity.RoleMembership {
 // objectOwners carries who owns what into the analysis, with the owner's login
 // flag as the catalog reported it. An unknown flag stays unknown: OWN01 names
 // that owner as not checked, and the rest of the report still runs.
+// ownerRevokes reads the privileges each object's owner revoked from itself out
+// of the grants the read reports, which OWN02 checks.
+func ownerRevokes(live *catalog.Database) []schemasecurity.OwnerRevoke {
+	revokes := make([]schemasecurity.OwnerRevoke, 0)
+	for _, grant := range live.Grants {
+		if !grant.OwnerRevoked() {
+			continue
+		}
+		revokes = append(revokes, schemasecurity.OwnerRevoke{Kind: strings.ToLower(grant.ObjectType), Name: grant.QualifiedTarget(),
+			Owner: grant.Role, Privilege: grant.Privilege})
+	}
+	return revokes
+}
+
 func objectOwners(live *catalog.Database) []schemasecurity.ObjectOwner {
 	owners := make([]schemasecurity.ObjectOwner, 0, len(live.ObjectOwners))
 	for _, owner := range live.ObjectOwners {
