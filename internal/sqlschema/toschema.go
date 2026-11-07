@@ -633,7 +633,7 @@ func toDatabase(
 			continue
 		}
 		if err := appendStatement(ctx, &database, document, stmt, sourcePlatform); err != nil {
-			return schemamodel.Database{}, err
+			return schemamodel.Database{}, document.atStatement(stmt, err)
 		}
 	}
 	// A PostgreSQL trigger renders as a function plus a trigger; recombine the

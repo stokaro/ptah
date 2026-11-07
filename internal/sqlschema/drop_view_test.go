@@ -179,26 +179,26 @@ func TestRead_DropView_FailurePath(t *testing.T) {
 		sql     string
 		wantErr string
 	}{
-		{name: "a view nothing declares", dialect: "postgres", sql: viewFixture + "DROP VIEW nope;", wantErr: `DROP VIEW nope names a view this schema does not declare`},
-		{name: "a view nothing declares, SQLite", dialect: "sqlite", sql: "DROP VIEW nope;", wantErr: `DROP VIEW nope names a view this schema does not declare`},
-		{name: "a materialized view nothing declares", dialect: "postgres", sql: "DROP MATERIALIZED VIEW nope;", wantErr: `DROP MATERIALIZED VIEW nope names a view this schema does not declare`},
-		{name: "CASCADE", dialect: "postgres", sql: viewFixture + "DROP VIEW v CASCADE;", wantErr: `DROP VIEW v CASCADE also drops the objects.*`},
-		{name: "a table, PostgreSQL", dialect: "postgres", sql: viewFixture + "DROP VIEW t;", wantErr: `DROP VIEW t: the schema declares t as another kind of object`},
-		{name: "a table under IF EXISTS, PostgreSQL", dialect: "postgres", sql: viewFixture + "DROP VIEW IF EXISTS t;", wantErr: `DROP VIEW t: the schema declares t as another kind of object`},
-		{name: "a table under IF EXISTS, SQLite", dialect: "sqlite", sql: viewFixture + "DROP VIEW IF EXISTS t;", wantErr: `DROP VIEW t: the schema declares t as another kind of object`},
-		{name: "a table under IF EXISTS, SQL Server", dialect: "sqlserver", sql: viewFixture + "DROP VIEW IF EXISTS t;", wantErr: `DROP VIEW t: the schema declares t as another kind of object`},
-		{name: "a table with no IF EXISTS, MySQL", dialect: "mysql", sql: viewFixture + "DROP VIEW t;", wantErr: `DROP VIEW t: the schema declares t as another kind of object`},
-		{name: "a materialized view by DROP VIEW", dialect: "postgres", sql: matViewFixture + "DROP VIEW m;", wantErr: `DROP VIEW m: the schema declares m as another kind of object`},
-		{name: "a view by DROP MATERIALIZED VIEW", dialect: "postgres", sql: viewFixture + "DROP MATERIALIZED VIEW v;", wantErr: `DROP MATERIALIZED VIEW v: the schema declares v as another kind of object`},
+		{name: "a view nothing declares", dialect: "postgres", sql: viewFixture + "DROP VIEW nope;", wantErr: `line 4, column 1: DROP VIEW nope names a view this schema does not declare`},
+		{name: "a view nothing declares, SQLite", dialect: "sqlite", sql: "DROP VIEW nope;", wantErr: `line 1, column 1: DROP VIEW nope names a view this schema does not declare`},
+		{name: "a materialized view nothing declares", dialect: "postgres", sql: "DROP MATERIALIZED VIEW nope;", wantErr: `line 1, column 1: DROP MATERIALIZED VIEW nope names a view this schema does not declare`},
+		{name: "CASCADE", dialect: "postgres", sql: viewFixture + "DROP VIEW v CASCADE;", wantErr: `line 4, column 1: DROP VIEW v CASCADE also drops the objects.*`},
+		{name: "a table, PostgreSQL", dialect: "postgres", sql: viewFixture + "DROP VIEW t;", wantErr: `line 4, column 1: DROP VIEW t: the schema declares t as another kind of object`},
+		{name: "a table under IF EXISTS, PostgreSQL", dialect: "postgres", sql: viewFixture + "DROP VIEW IF EXISTS t;", wantErr: `line 4, column 1: DROP VIEW t: the schema declares t as another kind of object`},
+		{name: "a table under IF EXISTS, SQLite", dialect: "sqlite", sql: viewFixture + "DROP VIEW IF EXISTS t;", wantErr: `line 4, column 1: DROP VIEW t: the schema declares t as another kind of object`},
+		{name: "a table under IF EXISTS, SQL Server", dialect: "sqlserver", sql: viewFixture + "DROP VIEW IF EXISTS t;", wantErr: `line 4, column 1: DROP VIEW t: the schema declares t as another kind of object`},
+		{name: "a table with no IF EXISTS, MySQL", dialect: "mysql", sql: viewFixture + "DROP VIEW t;", wantErr: `line 4, column 1: DROP VIEW t: the schema declares t as another kind of object`},
+		{name: "a materialized view by DROP VIEW", dialect: "postgres", sql: matViewFixture + "DROP VIEW m;", wantErr: `line 4, column 1: DROP VIEW m: the schema declares m as another kind of object`},
+		{name: "a view by DROP MATERIALIZED VIEW", dialect: "postgres", sql: viewFixture + "DROP MATERIALIZED VIEW v;", wantErr: `line 4, column 1: DROP MATERIALIZED VIEW v: the schema declares v as another kind of object`},
 		{
 			name: "a view another view reads, PostgreSQL", dialect: "postgres",
 			sql:     viewFixture + "CREATE VIEW x AS SELECT id FROM v;\nDROP VIEW v;",
-			wantErr: `DROP VIEW v: view x still reads the view`,
+			wantErr: `line 5, column 1: DROP VIEW v: view x still reads the view`,
 		},
 		{
 			name: "a view a materialized view reads, CockroachDB", dialect: "cockroachdb",
 			sql:     viewFixture + "CREATE MATERIALIZED VIEW x AS SELECT id FROM v;\nDROP VIEW v;",
-			wantErr: `DROP VIEW v: materialized view x still reads the view`,
+			wantErr: `line 5, column 1: DROP VIEW v: materialized view x still reads the view`,
 		},
 	}
 	for _, test := range tests {

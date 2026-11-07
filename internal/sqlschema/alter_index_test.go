@@ -172,101 +172,101 @@ func TestRead_AlterIndex_FailurePath(t *testing.T) {
 		{
 			name:    "an index nothing declares",
 			sql:     "CREATE TABLE c (id int PRIMARY KEY, b int);\nALTER INDEX nope RENAME TO other;",
-			wantErr: `ALTER INDEX nope names an index this schema does not declare`,
+			wantErr: `line 2, column 1: ALTER INDEX nope names an index this schema does not declare`,
 		},
 		{
 			name: "an index of another schema, named bare",
 			sql: "CREATE SCHEMA app;\nCREATE TABLE app.c (id int PRIMARY KEY, b int);\nCREATE INDEX ix ON app.c (b);\n" +
 				"ALTER INDEX ix RENAME TO other;",
-			wantErr: `ALTER INDEX ix names an index this schema does not declare`,
+			wantErr: `line 4, column 1: ALTER INDEX ix names an index this schema does not declare`,
 		},
 		{
 			name:    "onto a table",
 			sql:     "CREATE TABLE c (id int PRIMARY KEY, b int);\nCREATE INDEX ix ON c (b);\nALTER INDEX ix RENAME TO c;",
-			wantErr: `ALTER INDEX ix RENAME TO c: the schema already holds a relation named c`,
+			wantErr: `line 3, column 1: ALTER INDEX ix RENAME TO c: the schema already holds a relation named c`,
 		},
 		{
 			name:    "onto its own name",
 			sql:     "CREATE TABLE c (id int PRIMARY KEY, b int);\nCREATE INDEX ix ON c (b);\nALTER INDEX ix RENAME TO ix;",
-			wantErr: `ALTER INDEX ix RENAME TO ix: the schema already holds a relation named ix`,
+			wantErr: `line 3, column 1: ALTER INDEX ix RENAME TO ix: the schema already holds a relation named ix`,
 		},
 		{
 			name: "onto another index",
 			sql: "CREATE TABLE c (id int PRIMARY KEY, b int, d int);\nCREATE INDEX ix ON c (b);\nCREATE INDEX iy ON c (d);\n" +
 				"ALTER INDEX ix RENAME TO iy;",
-			wantErr: `ALTER INDEX ix RENAME TO iy: the schema already holds a relation named iy`,
+			wantErr: `line 4, column 1: ALTER INDEX ix RENAME TO iy: the schema already holds a relation named iy`,
 		},
 		{
 			name:    "onto a column's own UNIQUE",
 			sql:     "CREATE TABLE c (id int PRIMARY KEY, b int UNIQUE, d int);\nCREATE INDEX ix ON c (d);\nALTER INDEX ix RENAME TO c_b_key;",
-			wantErr: `ALTER INDEX ix RENAME TO c_b_key: the schema already holds a relation named c_b_key`,
+			wantErr: `line 3, column 1: ALTER INDEX ix RENAME TO c_b_key: the schema already holds a relation named c_b_key`,
 		},
 		{
 			name: "onto the own UNIQUE of a column of another table",
 			sql: "CREATE TABLE c (id int PRIMARY KEY, b int);\nCREATE TABLE e (id int PRIMARY KEY, y int UNIQUE);\n" +
 				"CREATE INDEX ix ON c (b);\nALTER INDEX ix RENAME TO e_y_key;",
-			wantErr: `ALTER INDEX ix RENAME TO e_y_key: the schema already holds a relation named e_y_key`,
+			wantErr: `line 4, column 1: ALTER INDEX ix RENAME TO e_y_key: the schema already holds a relation named e_y_key`,
 		},
 		{
 			name:    "onto the primary key",
 			sql:     "CREATE TABLE c (id int PRIMARY KEY, b int);\nCREATE INDEX ix ON c (b);\nALTER INDEX ix RENAME TO c_pkey;",
-			wantErr: `ALTER INDEX ix RENAME TO c_pkey: the schema already holds a relation named c_pkey`,
+			wantErr: `line 3, column 1: ALTER INDEX ix RENAME TO c_pkey: the schema already holds a relation named c_pkey`,
 		},
 		{
 			name:    "onto the sequence of a serial column",
 			sql:     "CREATE TABLE c (id serial PRIMARY KEY, b int);\nCREATE INDEX ix ON c (b);\nALTER INDEX ix RENAME TO c_id_seq;",
-			wantErr: `ALTER INDEX ix RENAME TO c_id_seq: the schema already holds a relation named c_id_seq`,
+			wantErr: `line 3, column 1: ALTER INDEX ix RENAME TO c_id_seq: the schema already holds a relation named c_id_seq`,
 		},
 		{
 			name: "onto the sequence of an identity column",
 			sql: "CREATE TABLE c (id int PRIMARY KEY, b int, d int GENERATED ALWAYS AS IDENTITY);\nCREATE INDEX ix ON c (b);\n" +
 				"ALTER INDEX ix RENAME TO c_d_seq;",
-			wantErr: `ALTER INDEX ix RENAME TO c_d_seq: the schema already holds a relation named c_d_seq`,
+			wantErr: `line 3, column 1: ALTER INDEX ix RENAME TO c_d_seq: the schema already holds a relation named c_d_seq`,
 		},
 		{
 			name: "onto a sequence",
 			sql: "CREATE SEQUENCE s;\nCREATE TABLE c (id int PRIMARY KEY, b int);\nCREATE INDEX ix ON c (b);\n" +
 				"ALTER INDEX ix RENAME TO s;",
-			wantErr: `ALTER INDEX ix RENAME TO s: the schema already holds a relation named s`,
+			wantErr: `line 4, column 1: ALTER INDEX ix RENAME TO s: the schema already holds a relation named s`,
 		},
 		{
 			name: "onto a view",
 			sql: "CREATE TABLE c (id int PRIMARY KEY, b int);\nCREATE VIEW v AS SELECT id FROM c;\nCREATE INDEX ix ON c (b);\n" +
 				"ALTER INDEX ix RENAME TO v;",
-			wantErr: `ALTER INDEX ix RENAME TO v: the schema already holds a relation named v`,
+			wantErr: `line 4, column 1: ALTER INDEX ix RENAME TO v: the schema already holds a relation named v`,
 		},
 		{
 			name: "onto a composite type",
 			sql: "CREATE TYPE pair AS (a int, b int);\nCREATE TABLE c (id int PRIMARY KEY, b int);\nCREATE INDEX ix ON c (b);\n" +
 				"ALTER INDEX ix RENAME TO pair;",
-			wantErr: `ALTER INDEX ix RENAME TO pair: the schema already holds a relation named pair`,
+			wantErr: `line 4, column 1: ALTER INDEX ix RENAME TO pair: the schema already holds a relation named pair`,
 		},
 		{
 			name: "onto a table declared as public's",
 			sql: "CREATE TABLE public.t (id int PRIMARY KEY);\nCREATE TABLE c (id int PRIMARY KEY, b int);\nCREATE INDEX ix ON c (b);\n" +
 				"ALTER INDEX ix RENAME TO t;",
-			wantErr: `ALTER INDEX ix RENAME TO t: the schema already holds a relation named t`,
+			wantErr: `line 4, column 1: ALTER INDEX ix RENAME TO t: the schema already holds a relation named t`,
 		},
 		{
 			name:    "a key onto a CHECK of its table",
 			sql:     "CREATE TABLE c (id int PRIMARY KEY, b int CONSTRAINT ck CHECK (b > 0) UNIQUE);\nALTER INDEX c_b_key RENAME TO ck;",
-			wantErr: `ALTER INDEX c_b_key RENAME TO ck: table c already holds a constraint named ck`,
+			wantErr: `line 2, column 1: ALTER INDEX c_b_key RENAME TO ck: table c already holds a constraint named ck`,
 		},
 		{
 			name:    "a key onto a NOT NULL of its table",
 			sql:     "CREATE TABLE c (id int PRIMARY KEY, b int UNIQUE, d int CONSTRAINT nn NOT NULL);\nALTER INDEX c_b_key RENAME TO nn;",
-			wantErr: `ALTER INDEX c_b_key RENAME TO nn: table c already holds a constraint named nn`,
+			wantErr: `line 2, column 1: ALTER INDEX c_b_key RENAME TO nn: table c already holds a constraint named nn`,
 		},
 		{
 			name:    "the primary key onto a foreign key of its table",
 			sql:     "CREATE TABLE c (id int PRIMARY KEY, b int, p_id int REFERENCES c (id));\nALTER INDEX c_pkey RENAME TO c_p_id_fkey;",
-			wantErr: `ALTER INDEX c_pkey RENAME TO c_p_id_fkey: table c already holds a constraint named c_p_id_fkey`,
+			wantErr: `line 2, column 1: ALTER INDEX c_pkey RENAME TO c_p_id_fkey: table c already holds a constraint named c_p_id_fkey`,
 		},
 		{
 			name: "a named UNIQUE onto a CHECK the table declares",
 			sql: "CREATE TABLE c (id int PRIMARY KEY, b int, CONSTRAINT uq UNIQUE (b), CONSTRAINT ck2 CHECK (b > 0));\n" +
 				"ALTER INDEX uq RENAME TO ck2;",
-			wantErr: `ALTER INDEX uq RENAME TO ck2: table c already holds a constraint named ck2`,
+			wantErr: `line 2, column 1: ALTER INDEX uq RENAME TO ck2: table c already holds a constraint named ck2`,
 		},
 	}
 	for _, test := range tests {

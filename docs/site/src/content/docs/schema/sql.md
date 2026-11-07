@@ -740,8 +740,10 @@ CREATE TABLE "pets" (
   the file as written, with its comments, multi-line strings and `DELIMITER`
   lines counted, and a schema directory or an import names the file that holds
   the statement. Text read from a command rather than a file has no file to name,
-  and reads `line 7, column 12: ...`. The examples below leave out the leading
-  `read SQL schema file`.
+  and reads `line 7, column 12: ...`. A refusal of what a statement declares,
+  such as an `ALTER TABLE ... ADD COLUMN` for a column the table already has,
+  comes after the statement was read, and names where that statement begins.
+  The examples below leave out the leading `read SQL schema file`.
 - Unsupported DDL constructs fail with a parse error naming the statement.
   Treat the error as a compatibility gap and check the conformance reports.
 - A table element ends at a comma or at the closing parenthesis. A clause

@@ -100,7 +100,7 @@ func TestRead_AChangeToAnExtension_FailurePath(t *testing.T) {
 				sqlschema.Options{Owners: builtintest.Runtime().SQL()})
 
 			c.Assert(err, qt.ErrorIs, sqlschema.ErrUnmodeledStatement)
-			c.Assert(err, qt.ErrorMatches, `the schema model has no place for this statement: `+regexp.QuoteMeta(test.want))
+			c.Assert(err, qt.ErrorMatches, `line 2, column 1: the schema model has no place for this statement: `+regexp.QuoteMeta(test.want))
 			c.Assert(db.FeatureObjects.Len(), qt.Equals, 0)
 			c.Assert(statements, qt.IsNil)
 		})

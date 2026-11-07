@@ -25,19 +25,19 @@ func TestRoleBootstrap_RefusalText(t *testing.T) {
 			name:    "a dialect whose grammar has DO blocks and whose descriptor names no language",
 			sql:     `DO $$ BEGIN CREATE ROLE reader; END $$;`,
 			dialect: "cockroachdb",
-			wantErr: `the schema model has no place for this statement: procedural role declarations require a dialect that reads DO blocks: postgres`,
+			wantErr: `line 1, column 1: the schema model has no place for this statement: procedural role declarations require a dialect that reads DO blocks: postgres`,
 		},
 		{
 			name:    "another language",
 			sql:     `DO $$ BEGIN NULL; END $$ LANGUAGE sql;`,
 			dialect: "postgres",
-			wantErr: `the schema model has no place for this statement: desired-state DO blocks require the supported PL/pgSQL role-bootstrap form`,
+			wantErr: `line 1, column 1: the schema model has no place for this statement: desired-state DO blocks require the supported PL/pgSQL role-bootstrap form`,
 		},
 		{
 			name:    "a refusal of the language's reader",
 			sql:     `DO $$ BEGIN PERFORM 1; END $$;`,
 			dialect: "postgres",
-			wantErr: `the schema model has no place for this statement: desired-state DO block at body byte 7: ` +
+			wantErr: `line 1, column 1: the schema model has no place for this statement: desired-state DO block at body byte 7: ` +
 				`only CREATE ROLE, NULL, BEGIN, and supported IF conditions are allowed; ` +
 				`use supported role-bootstrap declarations or an explicit migration`,
 		},

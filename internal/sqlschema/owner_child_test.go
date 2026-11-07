@@ -230,9 +230,9 @@ func TestReadWith_TableFacets_FailurePath(t *testing.T) {
 		wantErr string
 	}{
 		{name: "an undeclared table", source: "STAMP TABLE orders 'kept';\n", wantIs: sqlext.ErrUndeclared,
-			wantErr: `STAMP TABLE orders 'kept': table "orders" is not declared in this schema`},
+			wantErr: `line 1, column 1: STAMP TABLE orders 'kept': table "orders" is not declared in this schema`},
 		{name: "a facet the table holds", source: "CREATE TABLE orders (id int);\nSTAMP TABLE orders 'a';\nSTAMP TABLE orders 'b';\n",
-			wantIs: schemaext.ErrDuplicate, wantErr: `STAMP TABLE orders 'b': .*`},
+			wantIs: schemaext.ErrDuplicate, wantErr: `line 3, column 1: STAMP TABLE orders 'b': .*`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

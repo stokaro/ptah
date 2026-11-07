@@ -43,6 +43,9 @@ type Parser struct {
 	// index rather than anything a renderer writes. See
 	// [Parser.ForeignKeyIndex].
 	foreignKeyIndexes map[*ast.IndexNode]bool
+	// statementStarts is where the statement each top-level node came from
+	// begins in the text; see [Parser.StatementStart].
+	statementStarts map[ast.Node]int
 	// foreignKeyIndexName is the optional identifier the MySQL family allows
 	// between FOREIGN KEY and the column list. It lives on the parser because
 	// the keyword handler reads it, and the node it belongs to is not built
@@ -259,11 +262,13 @@ func (p *Parser) parseStatements() (*ast.StatementList, error) {
 		}
 
 		p.recordTableDrops(stmt, start)
+		read := len(statements.Statements)
 		if list, ok := stmt.(*ast.StatementList); ok {
 			statements.Statements = append(statements.Statements, list.Statements...)
 		} else if stmt != nil {
 			statements.Statements = append(statements.Statements, stmt)
 		}
+		p.recordStatementStarts(statements.Statements[read:], start)
 
 		// A word after a statement with no semicolon in between is not known to
 		// open anything: it may be a clause this parser's reading stopped short of.
@@ -4188,6 +4193,34 @@ func (p *Parser) foreignKeyBackingIndex(constraint *ast.ConstraintNode) *ast.Ind
 // difference, since an index written out is declared, so no AST node carries
 // it; the reader of this parse's declarations asks here.
 func (p *Parser) ForeignKeyIndex(index *ast.IndexNode) bool { return p.foreignKeyIndexes[index] }
+
+func (p *Parser) recordStatementStarts(nodes []ast.Node, start int) {
+	if p.statementStarts == nil {
+		p.statementStarts = make(map[ast.Node]int)
+	}
+	for _, node := range nodes {
+		p.statementStarts[node] = start
+	}
+}
+
+// StatementStart returns the byte offset, in the text given to [NewParser],
+// where the statement that produced node begins, for a node this parse
+// returned at the top level. A node another parse produced, such as a
+// statement an owner declined and the shared grammar read by itself, has none.
+//
+// A refusal raised after the parse, about what a statement declares, has no
+// position of its own; this is the one it can name.
+func (p *Parser) StatementStart(node ast.Node) (int, bool) {
+	start, found := p.statementStarts[node]
+	return start, found
+}
+
+// Locate gives err, which carries a byte offset in the text given to
+// [NewParser], the line and column of that offset, as [Parser.ParseContext]
+// does for a refusal of its own.
+func (p *Parser) Locate(err error) error {
+	return sourcepos.Resolve(err, p.source, p.origins.Of)
+}
 
 func (p *Parser) handleTableConstraintCheck(constraint *ast.ConstraintNode) {
 	p.advance()

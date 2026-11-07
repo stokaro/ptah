@@ -94,12 +94,12 @@ func TestRead_AlterTableAddColumnReachesTheTable_FailurePath(t *testing.T) {
 		{
 			name:    "a column the table already declares, unguarded",
 			sql:     "CREATE TABLE users (id uuid PRIMARY KEY, note text);\nALTER TABLE users ADD COLUMN note text;",
-			wantErr: `ALTER TABLE users ADD COLUMN note names a column the table already declares`,
+			wantErr: `line 2, column 1: ALTER TABLE users ADD COLUMN note names a column the table already declares`,
 		},
 		{
 			name:    "a table the document does not declare",
 			sql:     "ALTER TABLE ghosts ADD COLUMN note text;",
-			wantErr: `the schema model has no place for this statement: ALTER TABLE ghosts ADD COLUMN note names a table this schema does not declare`,
+			wantErr: `line 1, column 1: the schema model has no place for this statement: ALTER TABLE ghosts ADD COLUMN note names a table this schema does not declare`,
 		},
 	}
 	for _, test := range tests {
@@ -140,7 +140,7 @@ func TestReadOnto_AddsAColumnToAnEarlierTable_FailurePath(t *testing.T) {
 
 	database, _, err := sqlschema.ReadOnto([]byte("ALTER TABLE users ADD COLUMN note text;"), "postgres", sqlschema.NewDocument(&earlier))
 
-	c.Assert(err, qt.ErrorMatches, `ALTER TABLE users ADD COLUMN note names a column the table already declares`)
+	c.Assert(err, qt.ErrorMatches, `line 1, column 1: ALTER TABLE users ADD COLUMN note names a column the table already declares`)
 	c.Assert(database.Fields, qt.HasLen, 0)
 }
 

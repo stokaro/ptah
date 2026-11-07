@@ -207,61 +207,61 @@ func TestRead_ColumnKeyByName_FailurePath(t *testing.T) {
 			// ERROR 1091: Can't DROP 'b_2'.
 			name: "MySQL, a name the column's key does not have", dialect: "mysql",
 			sql:     "CREATE TABLE c (id int PRIMARY KEY, b int UNIQUE);\nALTER TABLE c DROP INDEX b_2;",
-			wantErr: `ALTER TABLE c DROP CONSTRAINT b_2 names a constraint this schema does not declare by that name`,
+			wantErr: `line 2, column 1: ALTER TABLE c DROP CONSTRAINT b_2 names a constraint this schema does not declare by that name`,
 		},
 		{
 			// constraint "c_b_key1" of relation "c" does not exist.
 			name: "PostgreSQL, a name the column's key does not have", dialect: "postgres",
 			sql:     "CREATE TABLE c (id int PRIMARY KEY, b int UNIQUE);\nALTER TABLE c DROP CONSTRAINT c_b_key1;",
-			wantErr: `ALTER TABLE c DROP CONSTRAINT c_b_key1 names a constraint this schema does not declare by that name`,
+			wantErr: `line 2, column 1: ALTER TABLE c DROP CONSTRAINT c_b_key1 names a constraint this schema does not declare by that name`,
 		},
 		{
 			// ERROR 1091: Can't DROP 'b'.
 			name: "MySQL DROP FOREIGN KEY under the key's name", dialect: "mysql",
 			sql:     "CREATE TABLE c (id int PRIMARY KEY, b int UNIQUE);\nALTER TABLE c DROP FOREIGN KEY b;",
-			wantErr: `ALTER TABLE c DROP CONSTRAINT b names a constraint this schema does not declare by that name`,
+			wantErr: `line 2, column 1: ALTER TABLE c DROP CONSTRAINT b names a constraint this schema does not declare by that name`,
 		},
 		{
 			// ERROR 3821: Check constraint 'b' is not found in the table.
 			name: "MySQL DROP CHECK under the key's name", dialect: "mysql",
 			sql:     "CREATE TABLE c (id int PRIMARY KEY, b int UNIQUE);\nALTER TABLE c DROP CHECK b;",
-			wantErr: `ALTER TABLE c DROP CONSTRAINT b names a constraint this schema does not declare by that name`,
+			wantErr: `line 2, column 1: ALTER TABLE c DROP CONSTRAINT b names a constraint this schema does not declare by that name`,
 		},
 		{
 			// ERROR 1061: Duplicate key name 'a'.
 			name: "MySQL, renamed onto another column's key", dialect: "mysql",
 			sql:     "CREATE TABLE c (id int PRIMARY KEY, a int UNIQUE, b int UNIQUE);\nALTER TABLE c RENAME INDEX b TO a;",
-			wantErr: `ALTER TABLE c RENAME INDEX b TO a: the table already holds a key named a`,
+			wantErr: `line 2, column 1: ALTER TABLE c RENAME INDEX b TO a: the table already holds a key named a`,
 		},
 		{
 			// ERROR 1061: Duplicate key name 'k'.
 			name: "MySQL, renamed onto an index", dialect: "mysql",
 			sql:     "CREATE TABLE c (id int PRIMARY KEY, b int UNIQUE, y int, KEY k (y));\nALTER TABLE c RENAME INDEX b TO k;",
-			wantErr: `ALTER TABLE c RENAME INDEX b TO k: the table already holds a key named k`,
+			wantErr: `line 2, column 1: ALTER TABLE c RENAME INDEX b TO k: the table already holds a key named k`,
 		},
 		{
 			// ERROR 1176: Key 'nope' doesn't exist in table 'c'.
 			name: "MySQL, a name no index has", dialect: "mysql",
 			sql:     "CREATE TABLE c (id int PRIMARY KEY, y int);\nALTER TABLE c RENAME INDEX nope TO k2;",
-			wantErr: `ALTER TABLE c RENAME INDEX nope names an index this schema does not declare by that name`,
+			wantErr: `line 2, column 1: ALTER TABLE c RENAME INDEX nope names an index this schema does not declare by that name`,
 		},
 		{
 			// relation "c_a_key" already exists.
 			name: "PostgreSQL, renamed onto another column's key", dialect: "postgres",
 			sql:     "CREATE TABLE c (id int PRIMARY KEY, a int UNIQUE, b int UNIQUE);\nALTER TABLE c RENAME CONSTRAINT c_b_key TO c_a_key;",
-			wantErr: `ALTER TABLE c RENAME CONSTRAINT c_b_key TO c_a_key: the table already holds a key named c_a_key`,
+			wantErr: `line 2, column 1: ALTER TABLE c RENAME CONSTRAINT c_b_key TO c_a_key: the table already holds a key named c_a_key`,
 		},
 		{
 			// relation "other" already exists.
 			name: "PostgreSQL, renamed onto a relation", dialect: "postgres",
 			sql:     "CREATE TABLE c (id int PRIMARY KEY, b int UNIQUE);\nCREATE TABLE other (id int);\nALTER TABLE c RENAME CONSTRAINT c_b_key TO other;",
-			wantErr: `ALTER TABLE c RENAME CONSTRAINT c_b_key TO other: the table already holds a key named other`,
+			wantErr: `line 3, column 1: ALTER TABLE c RENAME CONSTRAINT c_b_key TO other: the table already holds a key named other`,
 		},
 		{
 			// constraint "ck" for relation "c" already exists.
 			name: "PostgreSQL, renamed onto a CHECK", dialect: "postgres",
 			sql:     "CREATE TABLE c (id int PRIMARY KEY, b int UNIQUE, CONSTRAINT ck CHECK (b > 0));\nALTER TABLE c RENAME CONSTRAINT c_b_key TO ck;",
-			wantErr: `ALTER TABLE c RENAME CONSTRAINT c_b_key TO ck: the table already holds a key named ck`,
+			wantErr: `line 2, column 1: ALTER TABLE c RENAME CONSTRAINT c_b_key TO ck: the table already holds a key named ck`,
 		},
 	}
 	for _, test := range tests {

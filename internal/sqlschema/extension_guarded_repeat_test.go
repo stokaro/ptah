@@ -93,7 +93,7 @@ func TestRead_AnUnguardedRepeatOfAnExtension_FailurePath(t *testing.T) {
 	database, err := readExtensionDocument(c, "CREATE SCHEMA ext;\nCREATE EXTENSION IF NOT EXISTS pgcrypto;\nCREATE EXTENSION pgcrypto SCHEMA ext;", nil)
 
 	c.Assert(err, qt.ErrorIs, schemaext.ErrDuplicate)
-	c.Assert(err, qt.ErrorMatches, `duplicate feature identity: conflicting definitions of .*pgcrypto`)
+	c.Assert(err, qt.ErrorMatches, `line 3, column 1: duplicate feature identity: conflicting definitions of .*pgcrypto`)
 	c.Assert(database.FeatureObjects.Len(), qt.Equals, 0)
 }
 

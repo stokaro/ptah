@@ -218,85 +218,85 @@ func TestRead_AlterTable_FailurePath(t *testing.T) {
 		{
 			name:    "a table no file declares",
 			sql:     "ALTER TABLE ghost ADD CONSTRAINT g_uq UNIQUE (a);",
-			wantErr: `the schema model has no place for this statement: ALTER TABLE ghost ADD CONSTRAINT names a table this schema does not declare`,
+			wantErr: `line 3, column 1: the schema model has no place for this statement: ALTER TABLE ghost ADD CONSTRAINT names a table this schema does not declare`,
 		},
 		{
 			name:    "a column the table does not declare",
 			sql:     "ALTER TABLE t ALTER COLUMN zz SET NOT NULL;",
-			wantErr: `ALTER TABLE t ALTER COLUMN zz names a column the table does not declare`,
+			wantErr: `line 3, column 1: ALTER TABLE t ALTER COLUMN zz names a column the table does not declare`,
 		},
 		{
 			// PostgreSQL 18.6: column "id" is in a primary key.
 			name:    "DROP NOT NULL of a primary key column",
 			sql:     "ALTER TABLE p ALTER COLUMN id DROP NOT NULL;",
-			wantErr: `ALTER TABLE p ALTER COLUMN id DROP NOT NULL: the column is in the primary key`,
+			wantErr: `line 3, column 1: ALTER TABLE p ALTER COLUMN id DROP NOT NULL: the column is in the primary key`,
 		},
 		{
 			name:    "a second primary key",
 			sql:     "ALTER TABLE p ADD PRIMARY KEY (id);",
-			wantErr: `ALTER TABLE p ADD PRIMARY KEY: the table already declares a primary key`,
+			wantErr: `line 3, column 1: ALTER TABLE p ADD PRIMARY KEY: the table already declares a primary key`,
 		},
 		{
 			name:    "DROP COLUMN of an absent column",
 			sql:     "ALTER TABLE t DROP COLUMN zz;",
-			wantErr: `ALTER TABLE t DROP COLUMN zz names a column the table does not declare`,
+			wantErr: `line 3, column 1: ALTER TABLE t DROP COLUMN zz names a column the table does not declare`,
 		},
 		{
 			name:    "DROP COLUMN CASCADE",
 			sql:     "ALTER TABLE t DROP COLUMN b CASCADE;",
-			wantErr: `ALTER TABLE t DROP COLUMN b CASCADE also drops the objects that depend on the column, which a schema file does not list; drop them by name`,
+			wantErr: `line 3, column 1: ALTER TABLE t DROP COLUMN b CASCADE also drops the objects that depend on the column, which a schema file does not list; drop them by name`,
 		},
 		{
 			name:    "DROP COLUMN of a primary key column",
 			sql:     "ALTER TABLE p DROP COLUMN id;",
-			wantErr: `ALTER TABLE p DROP COLUMN id: the column is in the primary key`,
+			wantErr: `line 3, column 1: ALTER TABLE p DROP COLUMN id: the column is in the primary key`,
 		},
 		{
 			name:    "DROP COLUMN a constraint names",
 			sql:     "ALTER TABLE t ADD CONSTRAINT t_ck CHECK (a > 0);\nALTER TABLE t DROP COLUMN a;",
-			wantErr: `ALTER TABLE t DROP COLUMN a: check constraint t_ck still refers to the column`,
+			wantErr: `line 4, column 1: ALTER TABLE t DROP COLUMN a: check constraint t_ck still refers to the column`,
 		},
 		{
 			name:    "DROP COLUMN an index names",
 			sql:     "CREATE INDEX t_b_idx ON t (lower(b));\nALTER TABLE t DROP COLUMN b;",
-			wantErr: `ALTER TABLE t DROP COLUMN b: index t_b_idx still refers to the column`,
+			wantErr: `line 4, column 1: ALTER TABLE t DROP COLUMN b: index t_b_idx still refers to the column`,
 		},
 		{
 			name:    "DROP COLUMN another table's foreign key references",
 			sql:     "CREATE TABLE r (id int PRIMARY KEY, t_a int REFERENCES t (a));\nALTER TABLE t DROP COLUMN a;",
-			wantErr: `ALTER TABLE t DROP COLUMN a: the foreign key on column t_a still refers to the column`,
+			wantErr: `line 4, column 1: ALTER TABLE t DROP COLUMN a: the foreign key on column t_a still refers to the column`,
 		},
 		{
 			name:    "DROP COLUMN a generated column reads",
 			sql:     "CREATE TABLE g (id int PRIMARY KEY, a int, twice int GENERATED ALWAYS AS (a * 2) STORED);\nALTER TABLE g DROP COLUMN a;",
-			wantErr: `ALTER TABLE g DROP COLUMN a: column twice still refers to the column`,
+			wantErr: `line 4, column 1: ALTER TABLE g DROP COLUMN a: column twice still refers to the column`,
 		},
 		{
 			name:    "RENAME COLUMN a constraint names",
 			sql:     "ALTER TABLE t ADD CONSTRAINT t_uq UNIQUE (b);\nALTER TABLE t RENAME COLUMN b TO note;",
-			wantErr: `ALTER TABLE t RENAME COLUMN b: unique constraint t_uq names the column, and a schema file keeps its text; declare the column under its new name`,
+			wantErr: `line 4, column 1: ALTER TABLE t RENAME COLUMN b: unique constraint t_uq names the column, and a schema file keeps its text; declare the column under its new name`,
 		},
 		{
 			name:    "RENAME COLUMN onto a declared name",
 			sql:     "ALTER TABLE t RENAME COLUMN a TO b;",
-			wantErr: `ALTER TABLE t RENAME COLUMN a TO b: the table already declares b`,
+			wantErr: `line 3, column 1: ALTER TABLE t RENAME COLUMN a TO b: the table already declares b`,
 		},
 		{
 			name:    "RENAME TO",
 			sql:     "ALTER TABLE t RENAME TO t2;",
-			wantErr: `the schema model has no place for this statement: ALTER TABLE t RENAME TO t2: every other declaration names the table by its old name; declare the table under its new name`,
+			wantErr: `line 3, column 1: the schema model has no place for this statement: ALTER TABLE t RENAME TO t2: every other declaration names the table by its old name; declare the table under its new name`,
 		},
 		{
 			// The name a server generates for an unnamed constraint is not in
 			// the model.
 			name:    "DROP CONSTRAINT of a name nothing carries",
 			sql:     "ALTER TABLE t DROP CONSTRAINT t_a_check;",
-			wantErr: `ALTER TABLE t DROP CONSTRAINT t_a_check names a constraint this schema does not declare by that name`,
+			wantErr: `line 3, column 1: ALTER TABLE t DROP CONSTRAINT t_a_check names a constraint this schema does not declare by that name`,
 		},
 		{
 			name:    "RENAME CONSTRAINT of a name nothing carries",
 			sql:     "ALTER TABLE t RENAME CONSTRAINT x TO y;",
-			wantErr: `ALTER TABLE t RENAME CONSTRAINT x names a constraint this schema does not declare by that name`,
+			wantErr: `line 3, column 1: ALTER TABLE t RENAME CONSTRAINT x names a constraint this schema does not declare by that name`,
 		},
 	}
 	for _, test := range tests {
