@@ -1401,8 +1401,7 @@ has no change comment, because the community binary has no words for it.
 
 A table rebuild a provider plans names the new table's creation, each change
 to the table it replaces and the old table's drop. The copy of the rows and
-the two renames that swap the tables carry no comment of their own, as the
-built-in YDB engine wrote them:
+the two renames that swap the tables carry no comment of their own:
 
 ```sql
 -- Create "__ptah_rebuild_t" table
