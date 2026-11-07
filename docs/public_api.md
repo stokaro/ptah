@@ -472,6 +472,7 @@ indexes by. A bare table reference reaches a table in a schema only when the
 child names no struct or that table's struct, so same-named tables in two
 schemas keep their own children.
 `difftypes.TableObservationFor` assembles comparison-time observations.
+
 An observation also holds the grants the read found on the table itself, one
 row for each column of a column privilege, and `GrantsDescribed`, which is
 false when the read did not describe grants: an empty list then says nothing
@@ -2487,10 +2488,11 @@ semantics. A `dbschema.DatabaseConnection` implements it, and the comparison
 does not link the schema readers through it. A nil `Connection` is refused.
 
 `schemaext.ComparisonRequest.DeclaredRelations` and
-`schemaext.ObjectComparisonRequest.DeclaredRelations` name the views and
-materialized views the desired schema declares, for an owner whose objects
-hold their names as relations; tables are in `Parents`. The runtime refuses an
-entry that is not a named view or materialized view with
+`schemaext.ObjectComparisonRequest.DeclaredRelations` name the tables, views and
+materialized views the desired schema declares, each identity's kind saying
+which, for an owner whose objects hold their names as relations or reference
+one. A table has the identity its parent has. The runtime refuses an entry that
+is not a named table, view or materialized view with
 `schemaext.ErrInvalidValue`, sends the owner a copy in identity order, and
 leaves the caller's slice unchanged. A nil list declares none.
 
@@ -2506,7 +2508,7 @@ state they may remove from this captured batch without reading the server.
 of the models an owner reads beside its own, the kinds its
 `engine.ObjectComparison.DeclaredKinds` lists, such as the topics another owner
 compares for an owner of transfers that read them. The runtime fills it for
-each owner from the request's whole desired state, in identity order and each
+each owner from the request's whole desired schema, in identity order and each
 once, and replaces what a caller set; an owner that lists no declared kind
 receives none. Registration refuses a declared kind the owner does not register
 a desired model for, one named twice and one of the owner's own kinds with
@@ -3376,12 +3378,14 @@ such as a table's changefeeds, through the same strict decode callback a
 a SQL document carries. An `Extension` names its owner and targets and
 registers each piece of syntax as a `Pattern`: a `Site` where it stands, the
 words it opens with, the words that may or may not follow them, the words that
-end it, and whether a document that names no target consults it too. An
-`Extension` may also state `Statements`, the `StatementFacts` of its targets'
-servers that the reader follows for a target no dialect descriptor describes,
-such as whether `DROP VIEW IF EXISTS` of a table's name is skipped; one owner
-states them for a target, `Set.Statements` answers them, and the zero value is
-the answer that accepts nothing a server could refuse.
+end it, and whether a document that names no target consults it too.
+
+An `Extension` may also state `Statements`, the `StatementFacts` of its
+targets' servers that the reader follows for a target no dialect descriptor
+describes, such as whether `DROP VIEW IF EXISTS` of a table's name is skipped.
+One owner states them for a target, `Set.Statements` answers them, and the zero
+value is the answer that accepts nothing a server could refuse.
+
 Matching is data, so the reader finds every span with its own lexer. It hands
 an owner's `Parser` every span of one document in one call and applies the
 `Value` it returns for each: an index or named child objects a table element

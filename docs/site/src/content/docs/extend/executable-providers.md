@@ -1676,15 +1676,18 @@ each claimed clause, bound to its table, to `DecodeSource`, and places the
 facets it returns on the table. A document of the engine states each claimed
 facet for every table it declares, so removing the clause removes the facet. A
 clause the provider refuses stops the load with its position. ClickHouse keeps
-reading `TTL` as its own table option. With `source.sql-statement-facts` the
-engine also states how its server treats a statement servers disagree on, and
+reading `TTL` as its own table option.
+
+With `source.sql-statement-facts` a `FRAGMENTS` engine also states how its
+server treats a statement servers disagree on, and
 Ptah reads the engine's documents the way its server runs them:
 `drop_view_if_exists_skips_other_kinds` says that `DROP VIEW IF EXISTS t` does
 nothing when `t` is a table, as the Spanner emulator does, so the table stays.
 An engine that states nothing, or a host that does not list the feature, keeps
 the refusal `the schema declares t as another kind of object`, which is what
-DuckDB answers. An engine whose grammar the shared one cannot read, such as
-YQL, declares the `DOCUMENT` mode and the feature `schema.read-sql`, and Ptah
+DuckDB answers.
+
+An engine whose grammar the shared one cannot read, such as YQL, declares the `DOCUMENT` mode and the feature `schema.read-sql`, and Ptah
 does not parse the text.
 
 Ptah reads the files of a load, a schema file with its imports or a schema
