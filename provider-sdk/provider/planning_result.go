@@ -80,7 +80,7 @@ func validatePlanningOperation(request *protocol.PlanFeaturesRequest, service *p
 	return nil
 }
 
-func validatePlanningReceipts(request *protocol.PlanFeaturesRequest, result *protocol.PlannedFeatures, steps map[planningStepKey]bool) error {
+func validatePlanningReceipts(request *protocol.PlanFeaturesRequest, service *protocol.ModelPlanning, result *protocol.PlannedFeatures, steps map[planningStepKey]bool) error {
 	if len(result.GetChanges()) != len(request.GetChanges()) {
 		return fmt.Errorf("%w: missing planning change receipts", ErrProtocol)
 	}
@@ -90,11 +90,12 @@ func validatePlanningReceipts(request *protocol.PlanFeaturesRequest, result *pro
 		}
 	}
 	index := 0
+	kinds := parentReceiptKinds(request, service)
 	for _, table := range request.GetTables() {
 		if table.GetAction() == protocol.PlanningTable_CONTEXT {
 			continue
 		}
-		for _, kind := range request.GetParentKinds() {
+		for _, kind := range kinds {
 			if index >= len(result.GetParents()) {
 				return fmt.Errorf("%w: missing planning parent receipt", ErrProtocol)
 			}

@@ -23,7 +23,13 @@ func validateViewFacetFeature(description *protocol.Description, engine *protoco
 	return nil
 }
 
+// validateDeclaredViewFacets checks what each declared view carries beyond
+// its definition: its check option level and its facets. Every SQLView a
+// request or a reply carries passes here.
 func validateDeclaredViewFacets(description *protocol.Description, engine *protocol.Engine, features []string, identifiers *protocol.ComparisonIdentifiers, views []*protocol.SQLView) error {
+	if err := validateViewCheckOptions(description, engine, features, views); err != nil {
+		return err
+	}
 	for _, view := range views {
 		captured := view.GetFeatures()
 		if captured == nil {

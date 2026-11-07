@@ -1565,6 +1565,8 @@ message SQLView {
   // The SELECT text that defines the view.
   string body = 3;
   bool materialized = 4;
+  // The view has a check option. Under schema.view-check-options it is true
+  // exactly when check_option is CASCADED or LOCAL.
   bool with_check = 5;
   string comment = 6;
   repeated string attributes = 7;
@@ -1572,6 +1574,18 @@ message SQLView {
   // Desired facets and their knowledge, bound to this exact common view.
   // The objects collection is empty. Contract 25.7, schema.common-view-facets.
   CapturedFeatures features = 9;
+  // The level of the check option. LOCAL checks a row written through the
+  // view against the view's own condition; CASCADED checks it against the
+  // conditions of the views it reads as well, and is what WITH CHECK OPTION
+  // means when it names no level. Contract 25.32, under
+  // schema.view-check-options; without the feature it is CHECK_OPTION_NONE
+  // and with_check alone says whether the view has a check option.
+  enum CheckOption {
+    CHECK_OPTION_NONE = 0;
+    CASCADED = 1;
+    LOCAL = 2;
+  }
+  CheckOption check_option = 10;
 }
 message SQLSequence {
   string schema = 1;
@@ -1866,6 +1880,12 @@ message CompareModelsRequest {
   ComparisonState current = 8;
   repeated ComparisonParent parents = 9;
   repeated RequestedChange requests = 10;
+  // The relations the desired schema declares, each identity's kind naming
+  // what it is: "view" or "materialized view" without
+  // models.declared-relations, and under it every declared "table", "view"
+  // and "materialized view". A relation of the provider's own models, such
+  // as a topic, is not listed here: the comparison's state carries it.
+  // Contract 25.32 gives the list its meaning under that feature.
   repeated ComparisonIdentity declared_relations = 11;
   repeated ComparisonIdentity declared_roles = 12;
   string database_path = 13;
@@ -2038,6 +2058,13 @@ message ModelPlanning {
   // out. Contract 25.27, under planning.table-outlines; a host that does not
   // list it sends every table whole.
   PlanningTables tables = 6;
+  // The service owns the lifecycle of every table of its engine, as a
+  // service with a parent kind does, without a table setting model: the host
+  // hands it every table it creates, alters, rebuilds or drops, and the
+  // service answers one parent receipt of kind "table" for each, after the
+  // receipts of its parent kinds. At most one service of an engine sets it.
+  // Contract 25.32, under planning.table-ownership.
+  bool owns_tables = 7;
 }
 // PlanningTables is what a planning request carries of each table.
 // Contract 25.27, under planning.table-outlines.
@@ -4448,6 +4475,11 @@ enum ColumnAspect {
   COLUMN_DEFAULT = 2;
   COLUMN_NULLABILITY = 3;
   COLUMN_SEQUENCE = 4;
+  // The column's collation, answered with a ColumnDifference whose spellings
+  // are the collations, empty for the engine's default. Under it the
+  // COLUMN_TYPE answer leaves collation out. Contract 25.32, under
+  // schema.column-collations.
+  COLUMN_COLLATION = 5;
 }
 message ColumnComparisonPair {
   ComparisonIdentity subject = 1;

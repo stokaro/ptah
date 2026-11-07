@@ -60,6 +60,8 @@ func validateColumnReceipt(receipt *protocol.ColumnAspectReceipt) error {
 		if receipt.GetNullability() == nil || receipt.GetNullability().Nullable == nil {
 			return columnsError("a nullability receipt requires an explicit boolean")
 		}
+	case protocol.ColumnAspect_COLUMN_COLLATION:
+		return validateCollationReceipt(receipt.GetDifference())
 	case protocol.ColumnAspect_COLUMN_SEQUENCE:
 		if receipt.GetSequence() == nil {
 			return columnsError("a sequence receipt is required even for no changes")

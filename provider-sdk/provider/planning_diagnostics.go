@@ -7,7 +7,7 @@ import (
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 )
 
-func validatePlanningDiagnostics(request *protocol.PlanFeaturesRequest, result *protocol.PlannedFeatures) error {
+func validatePlanningDiagnostics(request *protocol.PlanFeaturesRequest, service *protocol.ModelPlanning, result *protocol.PlannedFeatures) error {
 	if len(result.GetContributions())+len(result.GetChanges())+len(result.GetParents())+len(result.GetRewrites())+len(result.GetObjects()) != 0 {
 		return fmt.Errorf("%w: refused planning batch contains successful output", ErrProtocol)
 	}
@@ -32,7 +32,7 @@ func validatePlanningDiagnostics(request *protocol.PlanFeaturesRequest, result *
 			if index == nil || uint64(index.Parent) >= uint64(len(request.GetTables())) || request.GetTables()[index.Parent].GetAction() == protocol.PlanningTable_CONTEXT {
 				return fmt.Errorf("%w: planning diagnostic parent has no action", ErrProtocol)
 			}
-			if !slices.Contains(request.GetParentKinds(), diagnostic.GetKind()) {
+			if !slices.Contains(parentReceiptKinds(request, service), diagnostic.GetKind()) {
 				return fmt.Errorf("%w: planning diagnostic parent kind is unassigned", ErrProtocol)
 			}
 		case *protocol.PlanningDiagnostic_ContextObject:

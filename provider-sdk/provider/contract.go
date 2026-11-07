@@ -15,7 +15,7 @@ import (
 // counts the compatible additions within the major Revision. A host built
 // with this SDK announces Revision.ContractMinor, and a provider built with it
 // may require at most that minor from its host.
-const ContractMinor uint32 = 31
+const ContractMinor uint32 = 32
 
 // The features below each enable an addition to an existing message. An
 // addition is used only when both sides list its feature: the provider in its
@@ -53,7 +53,8 @@ func TwoWayFeatures() []string {
 		IndexKindsFeature, ModelPredecessorsFeature, RoleScopeReasonsFeature, GoPlacementsFeature, PrimaryKeyChangesFeature, ModelReferencesFeature,
 		LargeMessagesFeature, TableOutlinesFeature, SharedCoverageFeature, OwnPredecessorsFeature, ObservedConstraintsFeature, ConstraintChangesFeature,
 		IndexNullsOrderFeature, CommonNamespacesFeature, SQLTableClausesFeature, ReservedSeedsFeature, IndexPredicatesFeature, LinkedReleaseLinesFeature,
-		EnumColumnsFeature, ObservedUniqueConstraintsFeature}
+		EnumColumnsFeature, ObservedUniqueConstraintsFeature, ColumnCollationsFeature, ViewCheckOptionsFeature, DeclaredRelationsFeature,
+		TableOwnershipFeature}
 }
 
 // ContractError reports a host and a provider that cannot work together:
@@ -154,8 +155,9 @@ func ValidateHostFeatures(features []string) error {
 // unless it lists DefaultCapabilitiesFeature, the index-kind claims unless
 // it lists IndexKindsFeature, the model predecessors unless it lists
 // ModelPredecessorsFeature, those that name an earlier identity of their
-// own model unless it lists OwnPredecessorsFeature, and the enum columns
-// unless it lists EnumColumnsFeature. A model keeps its
+// own model unless it lists OwnPredecessorsFeature, the enum columns
+// unless it lists EnumColumnsFeature, and the table ownership of its planning
+// services unless it lists TableOwnershipFeature. A model keeps its
 // source formats without HCLPlatformFeature: a platform claim's models need
 // not list HCL. Without
 // EntryKeysFeature, the YAML claims of a COLUMN or INDEX scope and the
@@ -215,9 +217,11 @@ func NegotiatedDescription(description *protocol.Description, hostFeatures []str
 // database kinds, the model reports, the schema separator, the offline
 // capability facts of the engine and of its release lines, the table
 // outlines of its planning services, the table clauses of its SQL grammar,
-// the linked engines of its release lines and its enum columns.
+// the linked engines of its release lines, its enum columns and the table
+// ownership of its planning services.
 func negotiateLaterAdditions(engine *protocol.Engine, hostFeatures []string) {
 	negotiateTableOutlines(engine, hostFeatures)
+	negotiateTableOwnership(engine, hostFeatures)
 	negotiateSQLTableClauses(engine, hostFeatures)
 	negotiateLinkedReleaseLines(engine, hostFeatures)
 	negotiateEnumColumns(engine, hostFeatures)

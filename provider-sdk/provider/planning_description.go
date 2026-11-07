@@ -13,7 +13,8 @@ func validateModelPlanning(description *protocol.Description, engine *protocol.E
 	}
 	services, changes, parents := make(map[string]bool), make(map[string]bool), make(map[string]bool)
 	for _, service := range engine.GetPlanning() {
-		if !validName(service.GetId()) || services[service.GetId()] || len(service.GetChangeKinds())+len(service.GetParentKinds())+len(service.GetContextKinds()) == 0 {
+		if !validName(service.GetId()) || services[service.GetId()] ||
+			(len(service.GetChangeKinds())+len(service.GetParentKinds())+len(service.GetContextKinds()) == 0 && !service.GetOwnsTables()) {
 			return fmt.Errorf("%w: missing or duplicate planning service", ErrProtocol)
 		}
 		services[service.GetId()] = true
