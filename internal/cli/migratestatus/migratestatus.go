@@ -569,6 +569,9 @@ func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *db
 // past the end either way. Both are read before the direction split rather than
 // inside each side of it.
 func dirtyRevisionRecoveryHint(revision *migrator.MigrationRevision, dialect string) string {
+	if revision.RollbackLeftUnknown() {
+		return rollbackLeftUnknownHint(revision)
+	}
 	if revision.StatementOutcomeUnknown() {
 		return unknownStatementOutcomeHint(revision)
 	}
@@ -661,6 +664,28 @@ func uncheckpointedHint(revision *migrator.MigrationRevision, dialect string) st
 // its own: the operator reconciles the database and then records the result.
 // Which record that is depends on the direction, because a repair that signs a
 // migration off is the wrong answer for a rollback that was reverting it.
+// rollbackLeftUnknownHint is the hint for a row whose transaction rolled back and
+// left statements in place that no count describes: a schema statement stayed and
+// a statement ahead of it did not.
+func rollbackLeftUnknownHint(revision *migrator.MigrationRevision) string {
+	if revision.Direction == migrator.MigrationDirectionDown {
+		return fmt.Sprintf(
+			"The rollback stopped, and the rollback of its transaction left some statements in place and "+
+				"undid others. Inspect the database, then run 'ptah migrations repair --version %d --force' to "+
+				"record the migration applied if you restored what the rollback reverted, or 'ptah migrations set "+
+				"--version <previous>' (version 0 where this is the oldest migration in the directory) if you "+
+				"finished the rollback by hand.",
+			revision.Version,
+		)
+	}
+	return fmt.Sprintf(
+		"The migration stopped, and the rollback of its transaction left some statements in place and undid "+
+			"others. Inspect the database and apply what is missing, then run 'ptah migrations repair --version %d' "+
+			"to record the migration applied -- rerunning it could repeat a statement that stayed.",
+		revision.Version,
+	)
+}
+
 func unknownStatementOutcomeHint(revision *migrator.MigrationRevision) string {
 	if revision.Direction == migrator.MigrationDirectionDown {
 		return fmt.Sprintf(

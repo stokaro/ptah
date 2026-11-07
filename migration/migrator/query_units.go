@@ -126,6 +126,7 @@ func servicesFor(conn *dbschema.DatabaseConnection) migratorext.Services {
 	services := builtin.Lookup(databaseConnectionDialect(conn))
 	if _, provider := providerSplitter(conn); provider {
 		services.Checks = nil
+		services.RollbackSurvivors = nil
 	}
 	return services
 }

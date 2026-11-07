@@ -103,6 +103,36 @@ type Checks interface {
 	Validate(assertion string) error
 }
 
+// RollbackEvidence is what the migrator saw of a migration body whose
+// transaction ended in a rollback. The session half is read before the rollback
+// is sent, which ends the transaction whatever had happened to it.
+type RollbackEvidence struct {
+	// Ran are the statements of the body that ran and that the server answered
+	// for, in order. A statement the server refused is not among them, and a
+	// statement an earlier attempt committed is not either.
+	Ran []string
+	// Unanswered are the statements that may have run with no answer reaching
+	// the migrator: the one in flight when the connection broke or the context
+	// ended, or every statement of the body when the failure names none.
+	Unanswered []string
+	// SessionKnown reports that the body ran on a pinned session the driver can
+	// be asked about.
+	SessionKnown bool
+	// OutsideTransaction reports that the server said the session held no
+	// transaction, and means nothing unless SessionKnown is true.
+	OutsideTransaction bool
+}
+
+// RollbackSurvivors reads what stays of a migration body after its transaction
+// rolled back, on an engine where a schema statement does not wait for the end
+// of the transaction around it.
+type RollbackSurvivors interface {
+	// Kept returns how many leading statements of evidence.Ran stay in place,
+	// with every later one undone. known is false when what stayed is not a
+	// leading run of statements, or cannot be told.
+	Kept(ctx context.Context, q Queryer, evidence RollbackEvidence) (kept int, known bool)
+}
+
 // Services is what one engine gives the migrator. A nil service, or a false
 // flag, takes the generic behavior the field names.
 type Services struct {
@@ -162,6 +192,9 @@ type Services struct {
 	// an account holding the TRIGGER privilege, so a run that must prove a
 	// table has no hidden writer proves the privilege first.
 	TriggerGrant bool
+	// RollbackSurvivors reads what stays of a body after its transaction rolled
+	// back. Nil means the rollback takes the whole body.
+	RollbackSurvivors RollbackSurvivors
 }
 
 // ContainsIdentifierSequence reports whether source holds the identifiers of

@@ -91,9 +91,10 @@ Spanner refuses a schema statement inside an explicit transaction, so the
 migrator applies a migration body unwrapped and every statement commits as it
 runs. A body that fails partway keeps the statements that already ran, and the
 revision row records that prefix for the retry to resume from; `--tx-mode all`
-is refused. CockroachDB and YugabyteDB take the transactional path, where a
-failed body leaves nothing behind. See
-[Apply migrations](../../versioned/apply/) for what each target records.
+is refused. CockroachDB and YugabyteDB open a transaction around a body, and a
+schema statement does not wait for it to end. See
+[What a failed migration leaves](#what-a-failed-migration-leaves) for those two,
+and [Apply migrations](../../versioned/apply/) for what each target records.
 
 Spanner also has one drop mode, and it refuses `CASCADE` on `DROP TABLE`,
 `DROP VIEW` and `ALTER TABLE ... DROP COLUMN`. A plan for Spanner writes those
@@ -136,6 +137,44 @@ foreign-data objects a dev database held when the command started, and reject
 one the run created before dev-database cleanup. PostgreSQL additionally
 removes database large objects inside the cleanup transaction; YugabyteDB does
 not support that catalog write path.
+
+## What a failed migration leaves
+
+CockroachDB and YugabyteDB open the transaction PostgreSQL does around a migration
+file, and a `ROLLBACK` there does not take the schema statements back. They differ
+in what happens to the rest:
+
+- CockroachDB 25 and later, with `autocommit_before_ddl` on, its default: a schema
+  statement commits the transaction first and the session then has none. Data
+  ahead of it and data after it both stay.
+- YugabyteDB, with `yb_ddl_transaction_block_enabled` off, its default: a schema
+  statement commits on its own and the transaction stays open. Data ahead of it and
+  data after it both roll back.
+
+`CREATE`, `ALTER`, `DROP`, `TRUNCATE`, `COMMENT` and `GRANT` all behave this way,
+measured on CockroachDB v26.3.5 and YugabyteDB 2025.2.5 and 2026.1.2.
+`migrations up --json` reports what stays. Each cell is the outcome, the
+statements the row records as applied, and what the database holds afterward:
+
+| Body | PostgreSQL | CockroachDB | YugabyteDB | MySQL, MariaDB |
+| --- | --- | --- | --- | --- |
+| `CREATE TABLE`, then a failure | `failed`, 0 of 2, no table | `partial`, 1 of 2, the table | `partial`, 1 of 2, the table | `partial`, 1 of 2, the table |
+| `CREATE TABLE`, `INSERT` into it, then a failure | `failed`, 0 of 3, no table | `partial`, 2 of 3, the table and its row | `partial`, 1 of 3, the table and no row | `partial`, 2 of 3, the table and its row |
+| `INSERT`, `CREATE TABLE`, then a failure | `failed`, 0 of 3, nothing | `partial`, 2 of 3, the row and the table | `unknown`, 0 of 3, the table and no row | `partial`, 2 of 3, the row and the table |
+| `INSERT`, then a `CREATE TABLE` the server refuses | `failed`, 0 of 2, no row | `partial`, 1 of 2, the row | `failed`, 0 of 2, no row | `unknown`, 1 of 2, the row |
+| `INSERT`, then a failure | `failed`, 0 of 2, no row | `failed`, 0 of 2, no row | `failed`, 0 of 2, no row | `failed`, 0 of 2, no row |
+
+A `partial` row is resumed with `ptah migrations up --allow-dirty`, which skips the
+statements the row counts. An `unknown` row has no statement to resume from. Inspect
+the database and finish the migration by hand, then record it with
+`ptah migrations repair --version <version>`.
+
+A server can turn this off. CockroachDB 24.3 keeps `autocommit_before_ddl` off, and
+a YugabyteDB server started with `ysql_yb_ddl_transaction_block_enabled` rolls schema
+statements back. Ptah reads the answer from the server in both cases, so a failure
+there reports `failed`, 0 of 2, with no table. `schema apply` reports `unknown` for a
+plan that stopped after it was sent, on every engine, because it keeps no count: see
+[The apply document](../../direct/apply/#the-apply-document).
 
 ## Scoped schema clean
 

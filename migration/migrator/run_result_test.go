@@ -92,6 +92,42 @@ func TestNewRunResult_ClassifiesFromTheEvidence(t *testing.T) {
 			outcome: migrator.RunOutcomePartial,
 		},
 		{
+			name: "a statement was interrupted before anything was recorded",
+			evidence: migrator.RunEvidence{
+				Direction: migrator.MigrationDirectionUp,
+				Plan:      &migrator.MigrationPlan{Versions: []int64{1}},
+				After: &migrator.MigrationStatus{
+					DirtyRevision: &migrator.MigrationRevision{Version: 1, Applied: 0, Total: 3, Error: "statement execution outcome is unknown after process interruption"},
+				},
+				Err: runErr,
+			},
+			outcome: migrator.RunOutcomeUnknown,
+		},
+		{
+			name: "a statement was interrupted after a recorded prefix",
+			evidence: migrator.RunEvidence{
+				Direction: migrator.MigrationDirectionUp,
+				Plan:      &migrator.MigrationPlan{Versions: []int64{1}},
+				After: &migrator.MigrationStatus{
+					DirtyRevision: &migrator.MigrationRevision{Version: 1, Applied: 1, Total: 3, Error: "statement execution outcome is unknown after process interruption"},
+				},
+				Err: runErr,
+			},
+			outcome: migrator.RunOutcomeUnknown,
+		},
+		{
+			name: "a rollback left statements in place that no count describes",
+			evidence: migrator.RunEvidence{
+				Direction: migrator.MigrationDirectionUp,
+				Plan:      &migrator.MigrationPlan{Versions: []int64{1}},
+				After: &migrator.MigrationStatus{
+					DirtyRevision: &migrator.MigrationRevision{Version: 1, Applied: 0, Total: 3, Error: "the rollback of the migration's transaction left some statements in place and undid others"},
+				},
+				Err: runErr,
+			},
+			outcome: migrator.RunOutcomeUnknown,
+		},
+		{
 			name: "dirty row that counts nothing at all",
 			evidence: migrator.RunEvidence{
 				Direction: migrator.MigrationDirectionUp,
