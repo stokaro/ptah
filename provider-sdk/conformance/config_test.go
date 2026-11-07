@@ -3,6 +3,8 @@ package conformance_test
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -66,16 +68,18 @@ func TestCheck_ConfigFailurePath(t *testing.T) {
 }
 
 // A provider that does not start fails the first check, and no other check
-// runs.
+// runs. The executable path is absolute on every platform, so that each row
+// reaches the check it names; nothing is started.
 func TestCheck_NotStarted(t *testing.T) {
+	absolute := filepath.Join(os.TempDir(), "ptah-conformance-provider")
 	for _, test := range []struct {
 		name   string
 		target conformance.Target
 		want   string
 	}{
 		{name: "a relative executable", target: conformance.Executable("bin/provider", strings.Repeat("0", 64)), want: "the executable's path is not absolute"},
-		{name: "a checksum of another length", target: conformance.Executable("/bin/provider", "00"), want: "the executable's checksum is not a SHA-256 digest"},
-		{name: "a reserved environment entry", target: conformance.Executable("/bin/provider", strings.Repeat("0", 64), "PLUGIN_X=1"), want: "invalid or reserved provider environment entry"},
+		{name: "a checksum of another length", target: conformance.Executable(absolute, "00"), want: "the executable's checksum is not a SHA-256 digest"},
+		{name: "a reserved environment entry", target: conformance.Executable(absolute, strings.Repeat("0", 64), "PLUGIN_X=1"), want: "invalid or reserved provider environment entry"},
 		{name: "a false advertisement", target: conformance.InProcess(runtime.Server{Description: memoryDescription(), Sessions: newMemoryProvider(memoryDefects{})}),
 			want: "invalid provider protocol exchange: schema.inspect advertisement differs from implementation"},
 	} {
