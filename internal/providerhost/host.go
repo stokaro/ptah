@@ -176,6 +176,10 @@ var hostFeatures = []string{
 	// table; see reader.constraints and commonPlanner.constraintChanges.
 	provider.ObservedConstraintsFeature,
 	provider.ConstraintChangesFeature,
+	// A read reports the ledger the engine's seed service keeps as reserved
+	// storage, which every comparison leaves out, so a plan never drops it;
+	// see reader.reservedNames.
+	provider.ReservedSeedsFeature,
 	// Table preparation states the kind of each declared index, and the
 	// index rules compare it with the held index's method; see
 	// observedIndexRules.

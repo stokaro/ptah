@@ -40,11 +40,14 @@ import (
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
 	"ptah.run/internal/protectedtable"
+	"ptah.run/internal/revisiontable"
 )
 
 const (
-	allEnv      = "all"
-	trackerName = "schema_seeds"
+	allEnv = "all"
+	// trackerName is the ledger every reader leaves out, so a plan never
+	// drops it; see revisiontable.Seeds.
+	trackerName = revisiontable.Seeds
 )
 
 var seedFilenameRE = regexp.MustCompile(`^([0-9]+)_(.+)\.([A-Za-z0-9_-]+)\.sql$`)

@@ -1,6 +1,7 @@
 // Package main serves the fixture with transactions, session locks, the row
 // services, the seed service and the query-builder spelling of contract 25.1,
-// and, in the native-text row-write mode, the text units of contract 25.3.
+// in the native-text row-write mode the text units of contract 25.3, and with
+// FIXTURE_RESERVED_SEEDS=true the reserved seed ledger of contract 25.29.
 package main
 
 import (
@@ -25,6 +26,13 @@ func main() {
 	writes := os.Getenv("FIXTURE_ROW_WRITES")
 	owner := &data.Provider{NativeWrites: writes == "native" || writes == "native-text"}
 	description := data.Description()
+	// FIXTURE_RESERVED_SEEDS=true reports the seed ledger as reserved storage,
+	// which the engine and the provider declare.
+	if os.Getenv("FIXTURE_RESERVED_SEEDS") == "true" {
+		owner.ReservedSeeds = true
+		description.Features = append(description.Features, provider.ReservedSeedsFeature)
+		description.Engines[0].Features = append(description.Engines[0].Features, provider.ReservedSeedsFeature)
+	}
 	if writes == "native-text" {
 		description.Features = append(description.Features, provider.TextUnitsFeature)
 		description.Engines[0].Features = append(description.Engines[0].Features, provider.TextUnitsFeature)

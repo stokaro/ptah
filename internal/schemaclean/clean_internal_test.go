@@ -312,7 +312,7 @@ func TestRevisionTableProbeBindsNamesInTheDialectsPlaceholderSyntax(t *testing.T
 			dialect:      "sqlserver",
 			schema:       "",
 			wantScopeArg: "dbo",
-			wantTokens:   []string{"@p1", "@p2", "@p3", "@p4", "@p5"},
+			wantTokens:   []string{"@p1", "@p2", "@p3", "@p4", "@p5", "@p6"},
 			wantCatalog:  "sys.tables",
 		},
 	}
@@ -325,7 +325,7 @@ func TestRevisionTableProbeBindsNamesInTheDialectsPlaceholderSyntax(t *testing.T
 			c.Assert(args, qt.HasLen, len(names)+1)
 			c.Assert(args[0], qt.Equals, test.wantScopeArg)
 			c.Assert(args[1:], qt.DeepEquals,
-				[]any{revisiontable.Atlas, revisiontable.Ptah, revisiontable.PtahLog, revisiontable.Tags})
+				[]any{revisiontable.Atlas, revisiontable.Ptah, revisiontable.PtahLog, revisiontable.Tags, revisiontable.Seeds})
 			c.Assert(query, qt.Contains, test.wantCatalog)
 			for _, token := range test.wantTokens {
 				c.Assert(query, qt.Contains, token)

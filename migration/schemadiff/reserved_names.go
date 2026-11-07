@@ -64,7 +64,7 @@ func reservedNamesIndex(current *catalog.Database, target string, semantics iden
 			return nil, fmt.Errorf("%w: invalid provider storage reservation", ptaherr.ErrInvalidSchemaDiff)
 		}
 		switch record.Purpose {
-		case "history", "lock", "log", "tag":
+		case "history", "lock", "log", "tag", "seeds":
 		default:
 			return nil, fmt.Errorf("%w: unknown provider storage purpose", ptaherr.ErrInvalidSchemaDiff)
 		}
