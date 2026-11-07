@@ -18,8 +18,9 @@ type statementsOperation struct {
 	Statements []string `json:"statements"`
 }
 
-// statements is the normalized operation that runs statements on table.
-func (o *owner) statements(engine, table string, statements []string) (*protocol.NormalizedValue, error) {
+// statements is the normalized operation that runs statements on table, the
+// value of the step named id.
+func (o *owner) statements(engine, table, id string, statements []string) (*protocol.NormalizedValue, error) {
 	payload, err := json.Marshal(statementsOperation{Statements: statements})
 	if err != nil {
 		return nil, err
@@ -27,7 +28,7 @@ func (o *owner) statements(engine, table string, statements []string) (*protocol
 	envelope := proto.CloneOf(o.operation)
 	envelope.Payload = payload
 	envelope.Owner = &protocol.Reference{Engine: engine, Kind: "table", Name: table}
-	return normalizeStatements(&protocol.ValueInput{Id: "rebuild/" + table, Representation: protocol.ValueInput_OPERATION, Value: envelope})
+	return normalizeStatements(&protocol.ValueInput{Id: id, Representation: protocol.ValueInput_OPERATION, Value: envelope})
 }
 
 // normalizeStatements checks a statements operation of a table and writes its
@@ -51,7 +52,7 @@ func normalizeStatements(input *protocol.ValueInput) (*protocol.NormalizedValue,
 	value.Payload = canonical
 	return &protocol.NormalizedValue{Id: input.GetId(), Value: value, NormalizedOwner: proto.CloneOf(owner), CanonicalFormat: "constraint-statements-v1",
 		CanonicalProjection: bytes.Clone(canonical), OperationSemantics: &protocol.OperationSemantics{Impact: protocol.ChangeSemantics_BEHAVIORAL,
-			Reason: "Rebuild table " + owner.GetName(), Access: protocol.ChangeSemantics_UNCHANGED, AccessReason: "A rebuild changes no grants"}}, nil
+			Reason: "Change table " + owner.GetName(), Access: protocol.ChangeSemantics_UNCHANGED, AccessReason: "The statements change no grants"}}, nil
 }
 
 // NormalizeValues normalizes statements operations and leaves every other

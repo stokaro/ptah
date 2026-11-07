@@ -11,6 +11,7 @@ import (
 	"maps"
 	"reflect"
 	"slices"
+	"strings"
 
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
@@ -63,6 +64,16 @@ type Table struct {
 	// orders in its parts ([schemacomparison.Indexes.OptionsEqual]); the
 	// source declaration in Desired keeps the orders it was written with.
 	IndexNulls map[string][]string
+	// IndexConditions holds the predicate of each declared index as the
+	// target holds it, keyed by the index's declared name, in the spelling the
+	// target's reader reports [ptah.run/catalog.Index.Condition] in, without
+	// the WHERE keyword. An entry is empty exactly when the index declares no
+	// predicate, and has no surrounding white space. It is output-only, and a
+	// target that states no predicate leaves it nil. The index comparison
+	// compares a stated predicate exactly with the held one, in place of the
+	// shared comparison of predicates; the source declaration in Desired keeps
+	// the predicate it was written with.
+	IndexConditions map[string]string
 }
 
 // Clone returns independent common state and immutable feature snapshots.
@@ -71,6 +82,7 @@ func (t Table) Clone() Table {
 	t.Current = t.Current.Clone()
 	t.ResolvedFacets = slices.Clone(t.ResolvedFacets)
 	t.IndexMethods = maps.Clone(t.IndexMethods)
+	t.IndexConditions = maps.Clone(t.IndexConditions)
 	if t.IndexNulls != nil {
 		nulls := make(map[string][]string, len(t.IndexNulls))
 		for name, orders := range t.IndexNulls {
@@ -102,8 +114,8 @@ func (r Request) Clone() Request {
 // may resolve desired Fields.Primary and set ColumnPrimaryKeysPrepared. All
 // other captured state, including observations and coverage, stays unchanged.
 // ResolvedFacets may carry resolved values for existing declared facet kinds,
-// IndexMethods the kinds of declared indexes, and IndexNulls the NULLS orders
-// of their key parts.
+// IndexMethods the kinds of declared indexes, IndexNulls the NULLS orders of
+// their key parts, and IndexConditions their predicates.
 // Complete is required even for an empty batch. Errors discard the whole result.
 type Result struct {
 	Complete bool
@@ -201,6 +213,9 @@ func samePreparedTable(before, after Table, semantics identifier.Semantics) erro
 	if err := acceptIndexNulls(before, after.IndexNulls); err != nil {
 		return err
 	}
+	if err := acceptIndexConditions(before, after.IndexConditions); err != nil {
+		return err
+	}
 	before, after = before.Clone(), after.Clone()
 	if !retainEqualFeatures(&before, &after) {
 		return fmt.Errorf("%w: preparation changed captured features", ErrInvalid)
@@ -246,6 +261,29 @@ func acceptIndexNulls(source Table, nulls map[string][]string) error {
 			if order != "" && order != schemamodel.NullsOrderFirst && order != schemamodel.NullsOrderLast {
 				return fmt.Errorf("%w: preparation states NULLS order %q for index %q", ErrInvalid, order, name)
 			}
+		}
+	}
+	return nil
+}
+
+// acceptIndexConditions refuses a predicate for an index the table does not
+// declare, a predicate stated for an index that declares none or none for one
+// that declares one, a predicate with surrounding white space, and an input
+// that already states predicates.
+func acceptIndexConditions(source Table, conditions map[string]string) error {
+	if len(source.IndexConditions) != 0 {
+		return fmt.Errorf("%w: preparation input already states index predicates", ErrInvalid)
+	}
+	for name, condition := range conditions {
+		position := slices.IndexFunc(source.Desired.Indexes, func(index schemamodel.Index) bool { return index.Name == name })
+		if position < 0 {
+			return fmt.Errorf("%w: preparation states the predicate of index %q, which the table does not declare", ErrInvalid, name)
+		}
+		if (strings.TrimSpace(source.Desired.Indexes[position].Condition) == "") != (condition == "") {
+			return fmt.Errorf("%w: preparation states a predicate for index %q exactly when the index declares one", ErrInvalid, name)
+		}
+		if strings.TrimSpace(condition) != condition {
+			return fmt.Errorf("%w: preparation states the predicate of index %q with surrounding white space", ErrInvalid, name)
 		}
 	}
 	return nil

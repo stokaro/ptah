@@ -11,9 +11,10 @@ import (
 )
 
 // PlanFeatures plans the tables the plan keeps and changes: each is rebuilt
-// with its declared foreign keys and CHECKs. It refuses every other change,
-// among them an index whose key states a NULLS order SQLite cannot build, in
-// a diagnostic.
+// with its declared foreign keys and CHECKs, or has the indexes the host adds
+// and drops built and dropped in place of the host's steps. It refuses every
+// other change, among them an index whose key states a NULLS order SQLite
+// cannot build, in a diagnostic.
 func (o *owner) PlanFeatures(ctx context.Context, request *protocol.PlanFeaturesRequest) (*protocol.PlannedFeatures, error) {
 	result := &protocol.PlannedFeatures{Complete: true}
 	contribution := &protocol.PlanningContribution{Owner: o.description.GetProviderId()}
@@ -24,12 +25,13 @@ func (o *owner) PlanFeatures(ctx context.Context, request *protocol.PlanFeatures
 		if table.GetAction() == protocol.PlanningTable_CONTEXT {
 			continue
 		}
-		steps, refusal := o.planTable(request, table)
+		steps, rewrites, refusal := o.planTable(request, table)
 		if refusal != "" {
 			return &protocol.PlannedFeatures{Complete: true, Diagnostics: []*protocol.PlanningDiagnostic{{
 				Code: protocol.PlanningDiagnostic_UNSUPPORTED_FEATURE, Kind: "table", Message: refusal}}}, nil
 		}
 		contribution.Steps = append(contribution.Steps, steps...)
+		result.Rewrites = append(result.Rewrites, rewrites...)
 		var ids []*protocol.StepIdentity
 		for _, step := range steps {
 			ids = append(ids, proto.CloneOf(step.GetId()))
@@ -46,39 +48,147 @@ func (o *owner) PlanFeatures(ctx context.Context, request *protocol.PlanFeatures
 }
 
 // planTable plans one altered table, or says why it cannot.
-func (o *owner) planTable(request *protocol.PlanFeaturesRequest, table *protocol.PlanningTable) ([]*protocol.PlanningStep, string) {
+func (o *owner) planTable(request *protocol.PlanFeaturesRequest, table *protocol.PlanningTable) ([]*protocol.PlanningStep, []*protocol.PlanningRewrite, string) {
 	declared, held := table.GetDesired(), table.GetCurrent()
 	if table.GetAction() != protocol.PlanningTable_ALTER || declared == nil || held == nil {
-		return nil, "the constraints fixture plans only the tables a plan keeps"
+		return nil, nil, "the constraints fixture plans only the tables a plan keeps"
 	}
 	for _, index := range declared.GetIndexes() {
 		for _, part := range keyParts(index) {
 			if nullsOrder(part) != "" {
-				return nil, fmt.Sprintf("SQLite keeps no NULLS order in an index key, so the fixture cannot build index %s with NULLS %s", index.GetName(), nullsOrder(part))
+				return nil, nil, fmt.Sprintf("SQLite keeps no NULLS order in an index key, so the fixture cannot build index %s with NULLS %s", index.GetName(), nullsOrder(part))
 			}
 		}
 	}
-	for _, common := range request.GetCommonSteps() {
-		if proto.Equal(common.GetParent(), table.GetSubject()) {
-			return nil, fmt.Sprintf("the constraints fixture plans no change of table %s but its constraints", declared.GetName())
-		}
-	}
-	// The host hands the fixture a table it keeps only for a change of its
-	// constraints, which the host compared, so the fixture rebuilds it
-	// without comparing them again: a plan shows what the host handed.
+	// The host hands the fixture a table it keeps for a change of its
+	// constraints or of its indexes, which the host compared, so the fixture
+	// plans it without comparing them again: a plan shows what the host
+	// handed.
 	wanted, err := declaredConstraints(declared)
 	if err != nil {
-		return nil, err.Error()
+		return nil, nil, err.Error()
 	}
-	value, err := o.statements(request.GetEngine(), declared.GetName(), rebuildStatements(declared, held, wanted))
+	var common []*protocol.CommonPlanningStep
+	for _, step := range request.GetCommonSteps() {
+		if !proto.Equal(step.GetParent(), table.GetSubject()) {
+			continue
+		}
+		if indexName(step) == "" {
+			return nil, nil, fmt.Sprintf("the constraints fixture plans no change of table %s but its constraints and indexes", declared.GetName())
+		}
+		common = append(common, step)
+	}
+	if len(common) != 0 {
+		if !sameConstraints(wanted, held) {
+			return nil, nil, fmt.Sprintf("the constraints fixture plans the indexes or the constraints of table %s in one plan, not both", declared.GetName())
+		}
+		return o.planIndexes(request.GetEngine(), declared, common)
+	}
+	value, err := o.statements(request.GetEngine(), declared.GetName(), "rebuild/"+declared.GetName(), rebuildStatements(declared, held, wanted))
 	if err != nil {
-		return nil, err.Error()
+		return nil, nil, err.Error()
 	}
 	step := &protocol.PlanningStep{Id: &protocol.StepIdentity{Owner: o.description.GetProviderId(), Name: "rebuild/" + declared.GetName()},
 		Metadata: &protocol.PlanningMetadata{Transaction: protocol.PlanningMetadata_FORBIDDEN, Impact: value.GetOperationSemantics().GetImpact(),
 			Reason: value.GetOperationSemantics().GetReason(), Effects: []*protocol.PlanningEffect{{Subject: proto.CloneOf(table.GetSubject()), Action: protocol.PlanningEffect_ALTER}}},
 		Operation: &protocol.PlanningOperation{Value: value, Role: protocol.NativeOperation_STATEMENT}}
-	return []*protocol.PlanningStep{step}, ""
+	return []*protocol.PlanningStep{step}, nil, ""
+}
+
+// planIndexes plans one statement for each host step that adds or drops an
+// index of declared, with the step's footprint, in place of the step: a DROP
+// INDEX for a removal, and a CREATE INDEX of the declared index for an
+// addition, a partial one with its predicate in the fixture's spelling. Each
+// takes the lifecycle phase, which lets the host order the drop and the
+// creation of a replaced index together.
+func (o *owner) planIndexes(engine string, declared *protocol.DeclaredTable, common []*protocol.CommonPlanningStep) ([]*protocol.PlanningStep, []*protocol.PlanningRewrite, string) {
+	var steps []*protocol.PlanningStep
+	var rewrites []*protocol.PlanningRewrite
+	for _, source := range common {
+		name := indexName(source)
+		statement := "DROP INDEX " + quote(name) + ";"
+		id := "index/" + declared.GetName() + "/drop/" + name
+		if indexCreated(source) {
+			position := slices.IndexFunc(declared.GetIndexes(), func(index *protocol.DeclaredIndex) bool { return index.GetName() == name })
+			if position < 0 {
+				return nil, nil, fmt.Sprintf("the host adds index %s, which table %s does not declare", name, declared.GetName())
+			}
+			statement, id = createIndex(declared.GetName(), declared.GetIndexes()[position]), "index/"+declared.GetName()+"/create/"+name
+		}
+		value, err := o.statements(engine, declared.GetName(), id, []string{statement})
+		if err != nil {
+			return nil, nil, err.Error()
+		}
+		var effects []*protocol.PlanningEffect
+		for _, effect := range source.GetMetadata().GetEffects() {
+			effects = append(effects, proto.CloneOf(effect))
+		}
+		step := &protocol.PlanningStep{Id: &protocol.StepIdentity{Owner: o.description.GetProviderId(), Name: id},
+			Metadata: &protocol.PlanningMetadata{Transaction: protocol.PlanningMetadata_FORBIDDEN, Impact: value.GetOperationSemantics().GetImpact(),
+				Reason: value.GetOperationSemantics().GetReason(), Effects: effects},
+			Operation: &protocol.PlanningOperation{Value: value, Role: protocol.NativeOperation_STATEMENT, Phase: protocol.PlanningOperation_LIFECYCLE}}
+		steps = append(steps, step)
+		rewrites = append(rewrites, &protocol.PlanningRewrite{Sources: []*protocol.StepIdentity{proto.CloneOf(source.GetId())}, Replacement: proto.CloneOf(step.GetId())})
+	}
+	return steps, rewrites, ""
+}
+
+// indexName is the index a host step adds or drops, or empty for a step that
+// changes no index: one with an operand of its own, or with no index among
+// its effects.
+func indexName(common *protocol.CommonPlanningStep) string {
+	if common.GetAddedColumn() != nil || common.GetRenamedIndex() != nil || common.GetCommonObject() != nil {
+		return ""
+	}
+	for _, effect := range common.GetMetadata().GetEffects() {
+		if effect.GetSubject().GetKind() == "index" {
+			return effect.GetSubject().GetName().GetSource()
+		}
+	}
+	return ""
+}
+
+// indexCreated reports whether a host index step adds its index.
+func indexCreated(common *protocol.CommonPlanningStep) bool {
+	return slices.ContainsFunc(common.GetMetadata().GetEffects(), func(effect *protocol.PlanningEffect) bool {
+		return effect.GetSubject().GetKind() == "index" && effect.GetAction() == protocol.PlanningEffect_CREATE
+	})
+}
+
+// createIndex is the statement that builds a declared index of table.
+func createIndex(table string, index *protocol.DeclaredIndex) string {
+	var keys []string
+	for _, part := range keyParts(index) {
+		key := quote(part.GetColumn())
+		if part.GetDescending() {
+			key += " DESC"
+		}
+		keys = append(keys, key)
+	}
+	unique := ""
+	if index.GetUnique() {
+		unique = "UNIQUE "
+	}
+	predicate := ""
+	if strings.TrimSpace(index.GetCondition()) != "" {
+		predicate = " WHERE " + predicateSpelling(index.GetCondition())
+	}
+	return fmt.Sprintf("CREATE %sINDEX %s ON %s (%s)%s;", unique, quote(index.GetName()), quote(table), strings.Join(keys, ", "), predicate)
+}
+
+// sameConstraints reports whether a table holds the constraints wanted
+// declares, by name, and each CHECK by the fixture's reading of its text.
+func sameConstraints(wanted []constraint, held *protocol.ObservedTable) bool {
+	if len(wanted) != len(held.GetConstraints()) {
+		return false
+	}
+	for _, value := range wanted {
+		position := slices.IndexFunc(held.GetConstraints(), func(observed *protocol.ObservedConstraint) bool { return observed.GetName() == value.name })
+		if position < 0 || value.check != "" && checkText(value.check) != checkText(held.GetConstraints()[position].GetCheckClause()) {
+			return false
+		}
+	}
+	return true
 }
 
 // constraint is a foreign key or CHECK as the fixture writes it.

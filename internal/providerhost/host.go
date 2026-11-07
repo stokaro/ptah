@@ -192,6 +192,11 @@ var hostFeatures = []string{
 	// and table preparation states it for every key part of a declared one,
 	// which the index rules compare exactly; see observedIndexRules.
 	provider.IndexNullsOrderFeature,
+	// Table preparation states the predicate of each declared partial index
+	// as the engine holds it, and inspection states a held one in the same
+	// spelling, which the index comparison compares exactly; see
+	// preparedIndexConditions.
+	provider.IndexPredicatesFeature,
 	provider.DatabaseContextFeature,
 	provider.ValueContextFeature,
 	// A command's scope names a provider's objects by the selector types its

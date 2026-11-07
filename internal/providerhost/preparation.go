@@ -64,6 +64,9 @@ func (t *target) prepareOwnedTables(ctx context.Context, request schemapreparati
 		if t.offers(provider.IndexNullsOrderFeature) {
 			table.IndexNulls = preparedIndexNulls(output.GetIndexes())
 		}
+		if t.offers(provider.IndexPredicatesFeature) {
+			table.IndexConditions = preparedIndexConditions(output.GetIndexes())
+		}
 	}
 	if err := ctx.Err(); err != nil {
 		return schemapreparation.Result{}, err
@@ -108,6 +111,22 @@ func preparedIndexNulls(indexes []*protocol.PreparedIndex) map[string][]string {
 	result := make(map[string][]string, len(indexes))
 	for _, index := range indexes {
 		result[index.GetName()] = slices.Clone(index.GetNulls())
+	}
+	return result
+}
+
+// preparedIndexConditions keys the predicate of each index a provider
+// prepared by the declared index's name, an empty one for an index that
+// declares none. The SDK client has checked that a negotiated reply states
+// one for each declared index, empty exactly when the declaration states
+// none, so a table without indexes keeps none.
+func preparedIndexConditions(indexes []*protocol.PreparedIndex) map[string]string {
+	if len(indexes) == 0 {
+		return nil
+	}
+	result := make(map[string]string, len(indexes))
+	for _, index := range indexes {
+		result[index.GetName()] = index.GetCondition()
 	}
 	return result
 }
