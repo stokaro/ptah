@@ -23,6 +23,14 @@ import (
 // the plan back.
 func rollbackOfPlan(c *qt.C, dialect, held, desired string) []string {
 	c.Helper()
+	_, down := bothWaysOfPlan(c, dialect, held, desired)
+	return down
+}
+
+// bothWaysOfPlan plans held to desired on dialect and answers the statements of the plan
+// and those that roll it back.
+func bothWaysOfPlan(c *qt.C, dialect, held, desired string) (up, down []string) {
+	c.Helper()
 	runtime := builtintest.Runtime()
 	read := func(sql string) schemamodel.Database {
 		schema, _, err := sqlschema.ReadWith(c.Context(), []byte(sql), platform.Postgres, nil, sqlschema.Options{Owners: runtime.SQL()})
@@ -40,10 +48,12 @@ func rollbackOfPlan(c *qt.C, dialect, held, desired string) []string {
 		Policy: generator.BidirectionalPlanPolicy{Create: generator.ConcurrentIndexDisabled, Drop: generator.ConcurrentIndexDisabled},
 	})
 	c.Assert(err, qt.IsNil)
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(c.Context(), must.Must(builtin.New()), plan.Reverse.Diff, dialect,
-		planext.Options{Capabilities: capability.ForDialect(dialect), Statements: planext.StatementStyleExact})
+	options := planext.Options{Capabilities: capability.ForDialect(dialect), Statements: planext.StatementStyleExact}
+	up, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(c.Context(), must.Must(builtin.New()), plan.Forward.Diff, dialect, options)
 	c.Assert(err, qt.IsNil)
-	return statements
+	down, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(c.Context(), must.Must(builtin.New()), plan.Reverse.Diff, dialect, options)
+	c.Assert(err, qt.IsNil)
+	return up, down
 }
 
 // TestUniqueNameAnAddedIndexTakes_HappyPath pins the rollback of an index turned into a

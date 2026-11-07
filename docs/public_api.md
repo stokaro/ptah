@@ -4755,6 +4755,15 @@ change, carried by its table's `TableDiff.FeatureChanges`. Every built-in
 planner refuses a diff that carries one with `ptaherr.ErrUnsupportedFeature`,
 so a diff built by hand cannot reach a planner that would plan nothing for it.
 
+On MySQL and MariaDB the server drops the index it built for a foreign key once
+an addition begins with the key's columns. Each such addition names that index:
+`IndexChange.Replaces` for an index, `ConstraintAdditionInfo.Replaces` for a
+`UNIQUE` or `PRIMARY KEY`, and `ColumnDiff.Replaces` for the own `UNIQUE` a
+column gains. The index is also in `IndexesRemoved`, and a planner drops it in
+the first statement it writes for one of those additions.
+`SchemaDiff.IndexesTakenOver` keys what all additions take over. The fields
+stay out of the JSON shape.
+
 A PostgreSQL extension's installation, removal, version update, move and
 comment are the extension owner's changes in `SchemaDiff.FeatureChanges`
 (`pgextension.Change`); the diff has no list of its own for them.

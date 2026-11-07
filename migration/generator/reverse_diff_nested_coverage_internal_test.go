@@ -41,6 +41,11 @@ var nestedCoverageExempt = map[string]string{
 	// has to happen in one statement. TestMigrationsKeptForeignKeyIndexE2E
 	// reads the rollback back on the server.
 	"IndexChange.Replaces": "a rollback adds the removed index ahead of this removal, so no statement has to carry both",
+	// The same holds for a UNIQUE or PRIMARY KEY addition, whose removal the down
+	// direction writes after it adds the removed index back.
+	// TestForeignKeyIndexOrderE2E_AKeyThePlanAddsTakesOverABuiltIndex reads that
+	// rollback back.
+	"ConstraintAdditionInfo.Replaces": "a rollback adds the removed index ahead of this removal, so no statement has to carry both",
 }
 
 // TestReverseSchemaDiff_NamesEveryFieldOfEveryDiffElement is the half of the

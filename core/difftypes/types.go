@@ -637,6 +637,12 @@ type ConstraintAdditionInfo struct {
 	// the diff beside the addition, and a planner writes the two as a rename.
 	RenamedFrom string `json:"renamed_from,omitempty"`
 
+	// Replaces names the indexes this UNIQUE or PRIMARY KEY addition takes over
+	// from on its table, as [IndexChange.Replaces] does for an index: a key is an
+	// index on a server that fills this, and the server drops an index it built for
+	// a foreign key once the key is in. It rides off the wire, like the index's.
+	Replaces []IndexRef `json:"-"`
+
 	// ForeignTable / ForeignColumn / ForeignColumns describe the FK target
 	// (FOREIGN KEY only). ForeignColumn is kept for compatibility with older
 	// single-column callers; ForeignColumns carries the full referenced column
@@ -1573,6 +1579,32 @@ func (d *SchemaDiff) IndexRemovalsRebuiltAsUniqueConstraints() map[IndexRef]stru
 	return set
 }
 
+// IndexesTakenOver keys everything an addition of d takes over from, as the
+// additions name it: what [IndexChange.Replaces], [ConstraintAdditionInfo.Replaces]
+// and [ColumnDiff.Replaces] hold. A planner writes each removal in the statement of
+// one of those additions, so the step that writes the other removals leaves these
+// out. It is empty, never nil, where nothing is taken over.
+func (d *SchemaDiff) IndexesTakenOver() map[IndexRef]struct{} {
+	taken := make(map[IndexRef]struct{})
+	add := func(refs []IndexRef) {
+		for _, ref := range refs {
+			taken[ref] = struct{}{}
+		}
+	}
+	for _, change := range d.IndexesAdded {
+		add(change.Replaces)
+	}
+	for _, info := range d.ConstraintsAdded {
+		add(info.Replaces)
+	}
+	for _, table := range d.TablesModified {
+		for _, column := range table.ColumnsModified {
+			add(column.Replaces)
+		}
+	}
+	return taken
+}
+
 func sortedIndexRefs(refs []IndexRef) []IndexRef {
 	if len(refs) == 0 {
 		return nil
@@ -1890,6 +1922,13 @@ type ColumnDiff struct {
 	// It rides off the wire. `columns_modified` is a display shape and stays
 	// one; this is the operand behind it.
 	Desired schemamodel.Field `json:"-"`
+
+	// Replaces names the indexes the own UNIQUE this change gives the column takes
+	// over from on its table, as [IndexChange.Replaces] does for an index: the key is
+	// an index on a server that fills this, and the server drops an index it built
+	// for a foreign key over the column once the key is in. It is nil for a change
+	// that gives the column no key. It rides off the wire, like Desired.
+	Replaces []IndexRef `json:"-"`
 }
 
 // NotNullConstraintNameChange is one column's NOT NULL constraint name
@@ -2958,10 +2997,16 @@ type IndexChange struct {
 	// Replaces names what this addition takes over from on its table: indexes
 	// [SchemaDiff.IndexesRemoved] lists, and UNIQUE constraints
 	// [SchemaDiff.ConstraintsRemoved] lists, each of which is an index of its name on
-	// a server that fills this. A planner writes the removals and the addition as one
-	// statement: the server may drop an index it built for a foreign key by itself
-	// once the addition covers the key, and it refuses the removal ahead of the
-	// addition.
+	// a server that fills this. The server may drop an index it built for a foreign
+	// key by itself once the addition covers the key, and it refuses the removal
+	// ahead of the addition, so a planner writes each removal in the statement of an
+	// addition that takes over from it.
+	//
+	// Every addition the server would drop such an index for names it: an index, a
+	// UNIQUE or PRIMARY KEY ([ConstraintAdditionInfo.Replaces]), the own UNIQUE a
+	// column gains ([ColumnDiff.Replaces]). The first of their statements a plan
+	// writes drops it, and the later ones leave it out, as the index is gone by
+	// then. [SchemaDiff.IndexesTakenOver] keys what all of them take over.
 	Replaces []IndexRef
 }
 
