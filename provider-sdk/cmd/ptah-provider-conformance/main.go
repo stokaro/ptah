@@ -176,7 +176,7 @@ func configure(o options, getenv func(string) string) (conformance.Config, error
 	if address := getenv(addressVariable); address != "" {
 		config.Live = &conformance.Live{Address: address}
 		if loaded != nil {
-			config.Live.Schemas, config.Live.LockName = loaded.schemas, loaded.lockName
+			config.Live.Schemas, config.Live.LockName, config.Live.InProcessLocks = loaded.schemas, loaded.lockName, loaded.inProcessLocks
 			config.Live.Changes, config.Live.Refused = loaded.changes, loaded.refused
 		}
 	}

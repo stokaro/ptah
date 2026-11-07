@@ -5,7 +5,6 @@ package migrateup
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -30,6 +29,7 @@ import (
 	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/cli/internal/migrateflags"
 	"ptah.run/internal/cli/internal/migratelock"
+	"ptah.run/internal/cli/internal/migraterun"
 	"ptah.run/internal/cli/internal/migratetimeout"
 	"ptah.run/internal/cli/internal/migrationsource"
 	"ptah.run/internal/dburldisplay"
@@ -181,9 +181,9 @@ explicitly opts out with -- +ptah no_transaction. Use --tx-mode=all to wrap the
 whole pending up batch in one transaction on supported dialects, or
 --tx-mode=none to run without migration transaction wrapping.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			document := &runDocument{enabled: opts.jsonOutput, out: cmd.OutOrStdout()}
+			document := &migraterun.Document{Enabled: opts.jsonOutput, Out: cmd.OutOrStdout(), Command: Command, Direction: migrator.MigrationDirectionUp}
 			if err := migrateUpCommand(cmd, &opts, document); err != nil {
-				return document.failBeforeRun(err, opts.dryRun)
+				return document.FailBeforeRun(err, opts.dryRun)
 			}
 			// The work is finite and it is done, so an interrupt arriving
 			// between here and the process exit stopped nothing. See
@@ -419,7 +419,7 @@ func commandLogWriter(cmd *cobra.Command, logFormat string) io.Writer {
 	return cmd.ErrOrStderr()
 }
 
-func migrateUpCommand(cmd *cobra.Command, opts *options, document *runDocument) error {
+func migrateUpCommand(cmd *cobra.Command, opts *options, document *migraterun.Document) error {
 	// --limit and --to-version select different prefixes of the pending list and
 	// neither outranks the other, so the pair is refused here rather than deep
 	// in the migrator, whose own refusal names an operand ("amount") that no
@@ -581,7 +581,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *runDocument) 
 	if err != nil {
 		return err
 	}
-	document.migrator = mig
+	document.Migrator = mig
 
 	status, err := readStatusWithoutInitializing(cmd.Context(), conn, mig)
 	if err != nil {
@@ -632,7 +632,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *runDocument) 
 			migrator.ObservationAttribute{Key: "migration.pending_count", Value: 0},
 		)
 		emit.Println("✅ Database is already up to date!")
-		return document.write(migrator.RunEvidence{Direction: migrator.MigrationDirectionUp, After: status, DryRun: opts.dryRun})
+		return document.Write(migrator.RunEvidence{After: status, DryRun: opts.dryRun})
 	}
 
 	if settings.execOrder == migrator.ExecOrderLinear && len(status.OutOfOrderMigrations) > 0 {
@@ -651,7 +651,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *runDocument) 
 		PostgresDumpDir:    resolvedOpts.pgDumpTo,
 		MySQLDumpDir:       resolvedOpts.mySQLDumpTo,
 		WebhookURL:         resolvedOpts.webhook,
-	}, emit, cliobs.NewOutputWriter(cmd.OutOrStdout(), runtime, "pre-flight output"))
+	}, emit, preflightOutput(cmd, opts, runtime))
 	if !opts.allowDestructive {
 		preflightHook = dbcli.CombineMigrationHooks(
 			lockedDestructiveLintHook(lintRuntime, migrationsFS, lintPolicy, lintPathPrefix),
@@ -888,7 +888,7 @@ func applyPendingMigrations(
 	toVersion int64,
 	preflightHook migrator.PreMigrationHook,
 	expected *expectedSequence,
-	document *runDocument,
+	document *migraterun.Document,
 ) migrateUpOutcome {
 	outcome := migrateUpOutcome{}
 	// The selected plan is captured rather than derived from the pending list
@@ -930,12 +930,11 @@ func applyPendingMigrations(
 		status = nil
 	}
 	outcome.status = status
-	if err := document.write(migrator.RunEvidence{
-		Direction: migrator.MigrationDirectionUp,
-		Plan:      outcome.plan,
-		After:     status,
-		Err:       outcome.runErr,
-		DryRun:    opts.dryRun,
+	if err := document.Write(migrator.RunEvidence{
+		Plan:   outcome.plan,
+		After:  status,
+		Err:    outcome.runErr,
+		DryRun: opts.dryRun,
 	}); err != nil && outcome.runErr == nil {
 		outcome.runErr = err
 	}
@@ -945,52 +944,11 @@ func applyPendingMigrations(
 // Command is the command a run document names.
 const Command = "migrations up"
 
-// runDocument is the one document a --json run prints on standard output. It
-// is written at most once, so a failure that follows the run's document adds
-// no second one.
-type runDocument struct {
-	enabled bool
-	out     io.Writer
-	written bool
-	// migrator is the run's migrator once one exists. It is the only witness to
-	// a log entry the table did not get, so every document that follows it asks
-	// it, whichever path the run took to get there.
-	migrator *migrator.Migrator
-}
-
-// write writes the run's evidence as its document, and does nothing without
-// --json or once a document was written.
-func (d *runDocument) write(evidence migrator.RunEvidence) error {
-	if !d.enabled || d.written {
-		return nil
-	}
-	d.written = true
-	evidence.Command = Command
-	if d.migrator != nil && !evidence.NotStarted {
-		evidence.MigrationLog = d.migrator.MigrationLogReport()
-	}
-	return emitRunResult(d.out, evidence)
-}
-
-// failBeforeRun writes the document for a run that failed with err before it
-// wrote one, and returns err.
-//
-// Every failure that reaches here without a document stopped before the
-// migrator selected anything: the run's own document is written as soon as the
-// migrator returns, and nothing before it changes the database. So the run
-// sent no migration statement, and the document says failed, with nothing
-// planned and no status.
-func (d *runDocument) failBeforeRun(err error, dryRun bool) error {
-	writeErr := d.write(migrator.RunEvidence{
-		Direction:  migrator.MigrationDirectionUp,
-		Err:        err,
-		DryRun:     dryRun,
-		NotStarted: true,
-	})
-	if writeErr != nil {
-		return errors.Join(err, writeErr)
-	}
-	return err
+// preflightOutput is where a pre-flight hook's output goes. It is written for
+// a person, so under --json it joins the rest of that output on standard
+// error, out of the document.
+func preflightOutput(cmd *cobra.Command, opts *options, runtime *cliobs.Runtime) io.Writer {
+	return cliobs.NewOutputWriter(humanOutput(cmd, opts), runtime, "pre-flight output")
 }
 
 // humanOutput selects where this command's human-facing output goes.
@@ -999,19 +957,6 @@ func humanOutput(cmd *cobra.Command, opts *options) io.Writer {
 		return cmd.ErrOrStderr()
 	}
 	return cmd.OutOrStdout()
-}
-
-// emitRunResult writes the run's evidence as one JSON document.
-//
-// It goes to standard output on both the successful and the failing path,
-// because the caller that most needs the evidence is the one whose run stopped.
-func emitRunResult(w io.Writer, evidence migrator.RunEvidence) error {
-	encoder := json.NewEncoder(w)
-	encoder.SetIndent("", "  ")
-	if err := encoder.Encode(migrator.NewRunResult(evidence)); err != nil {
-		return fmt.Errorf("error writing migration run result: %w", err)
-	}
-	return nil
 }
 
 // upMigratorOptions is what the run has resolved by the time it can build a

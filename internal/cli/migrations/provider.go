@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/providercommand"
+	"ptah.run/internal/cli/migratedown"
 	"ptah.run/internal/cli/migratestatus"
 	"ptah.run/internal/cli/migrateup"
 	"ptah.run/internal/errorkind"
@@ -38,6 +39,19 @@ func reportProviderFailure(cmd *cobra.Command, err error) error {
 			}{migrator.NewRunResult(migrator.RunEvidence{
 				Command:    migrateup.Command,
 				Direction:  migrator.MigrationDirectionUp,
+				Err:        err,
+				DryRun:     dryRun,
+				NotStarted: true,
+			}), diagnostic}
+		case "down":
+			// Provider setup precedes the run, so nothing was selected or sent.
+			dryRun, _ := cmd.Flags().GetBool("dry-run")
+			report = struct {
+				migrator.RunResult
+				ProviderDiagnostic *providerdiagnostic.Diagnostic `json:"provider_diagnostic,omitempty"`
+			}{migrator.NewRunResult(migrator.RunEvidence{
+				Command:    migratedown.Command,
+				Direction:  migrator.MigrationDirectionDown,
 				Err:        err,
 				DryRun:     dryRun,
 				NotStarted: true,

@@ -116,6 +116,7 @@ a new record that names it, and its own status line is updated to point there.
 | [0104](0104-a-declared-view-states-the-level-of-its-check-option.md) | A declared view states the level of its check option | Proposed |
 | [0105](0105-a-comparison-knows-every-relation-the-desired-schema-declares.md) | A comparison knows every relation the desired schema declares | Proposed |
 | [0106](0106-a-planning-service-owns-tables-without-a-table-setting.md) | A planning service owns tables without a table setting | Proposed |
+| [0107](0107-the-lock-check-of-an-engine-one-process-holds-contends-from-that-process.md) | The lock check of an engine one process holds contends from that process | Proposed |
 
 ## Writing one
 

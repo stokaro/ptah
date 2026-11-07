@@ -70,7 +70,9 @@ func Checks() []CheckInfo {
 		{ID: checkSessions, Summary: "Two sessions have distinct handles, and closing one leaves the other usable.", Live: true},
 		{ID: checkRestart, Summary: "A session handle of a process that exited is refused by a new process.", Live: true},
 		{ID: checkInspect, Summary: "Reading the database returns a snapshot the SDK's validator accepts under every host profile, the same snapshot each time.", Live: true},
-		{ID: checkLocks, Summary: "A lock excludes a session of another process, a lock ID is used once, releasing an unused ID fences it, and closing a session releases its locks.", Live: true},
+		{ID: checkLocks, Live: true,
+			Summary: "A lock excludes a session of another process (under Live.InProcessLocks, another session of its own process, and no other process opens the database), " +
+				"a lock ID is used once, releasing an unused ID fences it, and closing a session releases its locks."},
 		{ID: checkTransactions, Summary: "A transaction begins with the isolation it asked for, a finish repeats its stored result, and rolling back an unused ID fences it.", Live: true},
 		{ID: checkOpenCredential, Summary: "Opening the credential address returns nothing that quotes the canary.", Live: true},
 		{ID: checkChanges, Summary: "A change applies with every unit confirmed, reverts, and the database then reads as it did before.", Live: true},

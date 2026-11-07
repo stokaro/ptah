@@ -38,8 +38,8 @@ func seedForLostRollback(c *qt.C, up string) (dir, dbPath string) {
 	return dir, dbPath
 }
 
-// This command prints no run document, so the notice is what a caller gets. The
-// rollback ran and the exit stays clean: the loss is about the record of it.
+// Without --json the notice is what a caller gets. The rollback ran and the
+// exit stays clean: the loss is about the record of it.
 func TestMigrateDownTellsAPersonWhatTheLogLost(t *testing.T) {
 	c := qt.New(t)
 	dir, dbPath := seedForLostRollback(c, refuseDownLogRows)

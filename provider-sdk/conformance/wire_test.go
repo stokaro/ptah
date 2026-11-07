@@ -42,6 +42,11 @@ type wireProvider struct {
 	protocol.UnimplementedProviderServer
 	inner   protocol.ProviderClient
 	defects wireDefects
+	// exclusive, when set, keeps the databases a session of this connection
+	// opened from every other connection, which is process, as an engine
+	// linked into its provider keeps other processes out.
+	exclusive *exclusiveDatabases
+	process   int
 
 	mu sync.Mutex
 	// hostFeatures are what the host listed in the last Describe of this
@@ -58,6 +63,78 @@ func wireTarget(c *qt.C, memory *memoryProvider, defects wireDefects) func() pro
 		c.Assert(err, qt.IsNil)
 		c.Cleanup(stop)
 		return &wireProvider{inner: client, defects: defects}
+	}
+}
+
+// exclusiveDatabases is what an engine linked into its provider keeps: one
+// process holds a database from the Open of its first session to the Close
+// of its last, and the other processes cannot open it meanwhile. Each
+// connection of a wire target is a process.
+type exclusiveDatabases struct {
+	mu        sync.Mutex
+	processes int
+	holders   map[string]int
+	sessions  map[string]string
+	open      map[string]int
+}
+
+func newExclusiveDatabases() *exclusiveDatabases {
+	return &exclusiveDatabases{holders: make(map[string]int), sessions: make(map[string]string), open: make(map[string]int)}
+}
+
+// process returns the number of a new process.
+func (e *exclusiveDatabases) process() int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.processes++
+	return e.processes
+}
+
+// enter opens a session of address for process with open, unless another
+// process holds the database.
+func (e *exclusiveDatabases) enter(process int, address string, open func() (*protocol.Session, error)) (*protocol.Session, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if holder, held := e.holders[address]; held && holder != process {
+		return nil, status.Error(codes.FailedPrecondition, "another process holds the database")
+	}
+	session, err := open()
+	if err != nil {
+		return nil, err
+	}
+	e.holders[address] = process
+	e.sessions[session.GetId()] = address
+	e.open[address]++
+	return session, nil
+}
+
+// leave releases a closed session, and the database with its process's last
+// session.
+func (e *exclusiveDatabases) leave(id string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	address, found := e.sessions[id]
+	if !found {
+		return
+	}
+	delete(e.sessions, id)
+	if e.open[address]--; e.open[address] == 0 {
+		delete(e.open, address)
+		delete(e.holders, address)
+	}
+}
+
+// exclusiveWireTarget is the memory provider behind a wire provider whose
+// engine one process holds at a time, as an engine linked into its provider
+// is: each connection is a process, and a database one process has a session
+// of refuses every other.
+func exclusiveWireTarget(c *qt.C, memory *memoryProvider) func() protocol.ProviderServer {
+	exclusive := newExclusiveDatabases()
+	return func() protocol.ProviderServer {
+		client, stop, err := runtime.ServeInMemory(memory.server())
+		c.Assert(err, qt.IsNil)
+		c.Cleanup(stop)
+		return &wireProvider{inner: client, exclusive: exclusive, process: exclusive.process()}
 	}
 }
 
@@ -100,12 +177,18 @@ func (w *wireProvider) Describe(ctx context.Context, request *protocol.DescribeR
 }
 
 func (w *wireProvider) Open(ctx context.Context, request *protocol.OpenRequest) (*protocol.Session, error) {
+	if w.exclusive != nil {
+		return w.exclusive.enter(w.process, request.GetAddress(), func() (*protocol.Session, error) { return w.inner.Open(ctx, request) })
+	}
 	reply, err := w.inner.Open(ctx, request)
 	return reply, w.refusal(err)
 }
 
 func (w *wireProvider) Close(ctx context.Context, request *protocol.CloseRequest) (*protocol.Empty, error) {
 	reply, err := w.inner.Close(ctx, request)
+	if w.exclusive != nil && err == nil {
+		w.exclusive.leave(request.GetSessionId())
+	}
 	return reply, w.refusal(err)
 }
 
