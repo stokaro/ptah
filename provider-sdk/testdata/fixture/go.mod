@@ -4,7 +4,7 @@ go 1.26.5
 
 require (
 	github.com/frankban/quicktest v1.14.6
-	github.com/stokaro/ptah/provider-sdk v0.29.1-0.20261107121331-60a58223bd0c
+	github.com/stokaro/ptah/provider-sdk v0.29.1-0.20261107123817-fe84f67e9300
 	google.golang.org/grpc v1.86.0-dev
 	google.golang.org/protobuf v1.36.12
 	modernc.org/sqlite v1.62.0
