@@ -507,6 +507,35 @@ func TestPartitionMoveRefusalsE2E(t *testing.T) {
 	}
 }
 
+// TestPartitionMoveRatingE2E holds a move that takes a partition's rows out of its
+// parent at the destructive gate, and lets a bound change under the same parent,
+// which keeps every row in the parent, through it.
+func TestPartitionMoveRatingE2E(t *testing.T) {
+	const parent = "CREATE TABLE events (id bigint NOT NULL, day date NOT NULL) PARTITION BY RANGE (day);\n"
+	const partition = "CREATE TABLE e1 PARTITION OF events FOR VALUES FROM ('2026-01-01') TO ('2027-01-01');\n"
+	t.Run("a partition declared as a table", func(t *testing.T) {
+		c := qt.New(t)
+		dev := newScratch(c, dbtarget.PostgreSQL)
+		dev.apply(c, parent+partition)
+
+		out, err := ptah("migrations", "generate", "--schema-file", writeSchema(c, parent+"CREATE TABLE e1 (id bigint NOT NULL, day date NOT NULL);\n"),
+			"--db-url", dev.url, "--migrations-dir", c.TempDir(), "--name", "move", "--check-destructive")
+
+		c.Assert(err, qt.ErrorMatches, "destructive migration statements require AllowDestructive", qt.Commentf("%s", out))
+	})
+	t.Run("a bound change under the same parent", func(t *testing.T) {
+		c := qt.New(t)
+		dev := newScratch(c, dbtarget.PostgreSQL)
+		dev.apply(c, parent+partition)
+
+		out, err := ptah("migrations", "generate", "--schema-file",
+			writeSchema(c, parent+"CREATE TABLE e1 PARTITION OF events FOR VALUES FROM ('2026-01-01') TO ('2028-01-01');\n"),
+			"--db-url", dev.url, "--migrations-dir", c.TempDir(), "--name", "widen", "--check-destructive")
+
+		c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	})
+}
+
 // TestPartitionMoveMigrationsE2E generates a migration that moves a partition to
 // another bound, applies it, and rolls it back to the bound the partition held.
 func TestPartitionMoveMigrationsE2E(t *testing.T) {

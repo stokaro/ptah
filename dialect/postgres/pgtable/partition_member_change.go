@@ -28,10 +28,39 @@ type PartitionMemberChange struct {
 // Kind returns the owned change identity.
 func (*PartitionMemberChange) Kind() schemaext.Kind { return PartitionMemberChangeKind }
 
-// Effect describes what the move costs a running workload.
-func (*PartitionMemberChange) Effect() schemaext.Effect {
+// Effect describes what the move costs a running workload. A move that takes
+// the table out of the parent it holds, to no parent or another one, is
+// destructive: the partition's rows stay in the table and leave what that
+// parent returns. A bound change under the same parent keeps every row in the
+// parent and only locks it.
+func (c *PartitionMemberChange) Effect() schemaext.Effect {
+	if c.LeavesParent() {
+		return schemaext.Effect{Impact: schemaext.Destructive,
+			Reason: "DETACH PARTITION takes the partition's rows out of what " + partitionParentName(PartitionMember(*c.Before)) + " returns; they stay in the table"}
+	}
 	return schemaext.Effect{Impact: schemaext.Behavioral,
 		Reason: "DETACH and ATTACH PARTITION lock the parent table, ATTACH reads every row of the partition, and of a default partition, to check the bound"}
+}
+
+// LeavesParent reports whether the move takes the table out of the parent it
+// holds: the declaration makes it an ordinary table or a partition of another
+// table. Parents are compared by name, and a schema one side leaves out matches
+// any schema the other names, as an unqualified parent is the default schema's.
+func (c *PartitionMemberChange) LeavesParent() bool {
+	if c == nil || c.Before == nil {
+		return false
+	}
+	if c.After == nil || c.After.Parent != c.Before.Parent {
+		return true
+	}
+	return c.After.ParentSchema != "" && c.Before.ParentSchema != "" && c.After.ParentSchema != c.Before.ParentSchema
+}
+
+func partitionParentName(member PartitionMember) string {
+	if member.ParentSchema == "" {
+		return member.Parent
+	}
+	return member.ParentSchema + "." + member.Parent
 }
 
 // CloneChange returns independent operands. A nil receiver remains typed nil.
@@ -167,8 +196,15 @@ func cloneMovePartition(op *MovePartition) *MovePartition {
 	return &MovePartition{Change: *op.Change.Copy(), Step: op.Step}
 }
 
-// Effect is the change's effect.
-func (op *MovePartition) Effect() schemaext.Effect { return op.Change.Effect() }
+// Effect is the change's effect for the detachment, which is what takes rows
+// out of a parent, and a warning for the attachment, which only locks the
+// parent and checks the rows against the bound.
+func (op *MovePartition) Effect() schemaext.Effect {
+	if op.Step == PartitionDetach {
+		return op.Change.Effect()
+	}
+	return (&PartitionMemberChange{After: op.Change.After}).Effect()
+}
 
 // ValidateMovePartition refuses a nil operation, an invalid change, an unknown
 // step, and a step whose operand the change does not carry.

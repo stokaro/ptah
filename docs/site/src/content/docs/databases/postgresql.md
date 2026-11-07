@@ -963,11 +963,16 @@ transaction, and Ptah does not write it. Every detachment of a plan runs before 
 attachment, so two partitions can trade bounds. A detachment runs before the table's
 other changes, which a partition refuses, and an attachment runs after them.
 
-A plan rates each statement as a warning. Both lock the parent table. `ATTACH`
-reads every row of the partition to check it against the bound, and reads a
-default partition too when the parent has one. A row outside the declared bound
-makes the server refuse the attachment, and the transaction rolls the move back. A
-rollback moves the table back to the parent and bound it held.
+A plan rates a statement by what a reader of the parent sees. A `DETACH` that takes
+the table out of its parent, to no parent or to another one, is destructive: the
+partition's rows stay in the table and leave what that parent returns, so the
+destructive gates hold it. Every other statement of a move is a warning, a bound
+change under the same parent included, because its `ATTACH` returns the rows in the
+same transaction. Both statements lock the parent table. `ATTACH` reads every row
+of the partition to check it against the bound, and reads a default partition too
+when the parent has one. A row outside the declared bound makes the server refuse
+the attachment, and the transaction rolls the move back. A rollback moves the table
+back to the parent and bound it held.
 
 A document that keeps a partition and leaves out a parent the database holds is
 refused, because dropping a partitioned table drops its partitions.
