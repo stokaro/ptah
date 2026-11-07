@@ -18,7 +18,8 @@ type Kind int
 
 // The kinds of token. Every byte of the text belongs to exactly one token.
 const (
-	// Whitespace is a run of spaces, tabs, line endings and form feeds.
+	// Whitespace is a run of spaces, tabs, line endings, form feeds and
+	// vertical tabs.
 	Whitespace Kind = iota + 1
 	// LineComment is `--` to the end of its line, the line ending excluded.
 	LineComment
@@ -28,9 +29,10 @@ const (
 	Word
 	// QuotedIdentifier is `"..."` or `U&"..."`.
 	QuotedIdentifier
-	// String is `'...'`, `E'...'`, `U&'...'`, `B'...'` or `X'...'`. A string
-	// continued on the next line is two tokens, as the server reads two
-	// constants it then joins.
+	// String is `'...'`, `E'...'`, `U&'...'`, `N'...'`, `B'...'` or `X'...'`.
+	// A segment that continues a string on a later line is a String of its
+	// own, read with the escapes of the string it continues; [Value] reads
+	// the constant they make together.
 	String
 	// DollarString is `$tag$...$tag$`, with an empty tag or a name.
 	DollarString
@@ -104,7 +106,8 @@ func Scan(text string, options Options) ([]Token, error) {
 // Next reads the first token of text: a reader that keeps its own scanner, such
 // as Ptah's lexer, reads one construct by these rules and goes on with its own.
 // Text that holds no token returns a zero Token, and a construct that does not
-// close returns a [*SyntaxError].
+// close returns a [*SyntaxError]. Next sees no text before its own, so a string
+// segment is read by options alone, even where it continues an escape string.
 func Next(text string, options Options) (Token, error) {
 	if text == "" {
 		return Token{}, nil
@@ -184,6 +187,14 @@ type scanner struct {
 	text    string
 	options Options
 	pos     int
+	// segment is the end of the last string segment read and whether its
+	// backslashes start escapes. A segment that continues it is read the same
+	// way, as the server goes on reading one constant.
+	segment struct {
+		end     int
+		escapes bool
+		read    bool
+	}
 }
 
 func (s *scanner) peek(offset int) byte {
@@ -253,23 +264,61 @@ func (s *scanner) comment(c byte) (Kind, bool, error) {
 func (s *scanner) quotedText(c byte) (Kind, bool, error) {
 	switch {
 	case c == '\'':
-		return String, true, s.quoted('\'', s.options.BackslashEscapes)
+		escapes := s.options.BackslashEscapes
+		if s.continues() {
+			escapes = s.segment.escapes
+		}
+		return String, true, s.segmented(escapes)
 	case c == '"':
 		return QuotedIdentifier, true, s.quoted('"', false)
 	case (c == 'E' || c == 'e') && s.peek(1) == '\'':
 		s.pos++
-		return String, true, s.quoted('\'', true)
+		return String, true, s.segmented(true)
 	case strings.IndexByte("BbXxNn", c) >= 0 && s.peek(1) == '\'':
 		s.pos++
-		return String, true, s.quoted('\'', s.options.BackslashEscapes)
+		return String, true, s.segmented(s.options.BackslashEscapes)
 	case (c == 'U' || c == 'u') && s.peek(1) == '&' && s.peek(2) == '"':
 		s.pos += 2
 		return QuotedIdentifier, true, s.quoted('"', false)
 	case (c == 'U' || c == 'u') && s.peek(1) == '&' && s.peek(2) == '\'':
 		s.pos += 2
-		return String, true, s.quoted('\'', false)
+		return String, true, s.segmented(false)
 	}
 	return 0, false, nil
+}
+
+// segmented reads a string segment from its opening quote and records where
+// it ends, so a segment that continues it is read with the same escapes.
+func (s *scanner) segmented(escapes bool) error {
+	if err := s.quoted('\'', escapes); err != nil {
+		return err
+	}
+	s.segment.end, s.segment.escapes, s.segment.read = s.pos, escapes, true
+	return nil
+}
+
+// continues reports whether the quote at pos continues the last string
+// segment: only white space and -- comments stand between them, and the white
+// space holds a line ending.
+func (s *scanner) continues() bool {
+	if !s.segment.read {
+		return false
+	}
+	newline := false
+	for i := s.segment.end; i < s.pos; {
+		switch c := s.text[i]; {
+		case c == '-' && i+1 < s.pos && s.text[i+1] == '-':
+			for i < s.pos && s.text[i] != '\n' && s.text[i] != '\r' {
+				i++
+			}
+		case isSpace(c):
+			newline = newline || c == '\n' || c == '\r'
+			i++
+		default:
+			return false
+		}
+	}
+	return newline
 }
 
 // blockComment reads a comment that may hold nested comments.
@@ -410,7 +459,9 @@ func (s *scanner) operator() {
 	}
 }
 
-func isSpace(c byte) bool { return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' }
+func isSpace(c byte) bool {
+	return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v'
+}
 
 func isDigit(c byte) bool { return c >= '0' && c <= '9' }
 
