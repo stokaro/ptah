@@ -31,6 +31,11 @@ its contract-25.0 programs (`provider`, `lint` and `contract-host`) against
 contract minors meet. Those programs and the `backend` package use nothing a
 later minor added.
 
+The conformance tests across releases install the suite's command from
+`provider-sdk/v0.26.0`, the oldest release that ships it, and run it against
+the fixture provider built with the in-tree SDK. The in-tree suite checks the
+fixture provider built against that release in turn.
+
 SDK-only proof programs under `integration/testdata` build in
 an isolated temporary module using the same workspace. They can exercise an
 unreleased contract without changing the independent fixture's published pin.
