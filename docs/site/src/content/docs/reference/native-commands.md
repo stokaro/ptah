@@ -182,7 +182,7 @@ flags that select within it, `ptah <command> --help` is authoritative and
 
 | Verb | Reads | Writes |
 | --- | --- | --- |
-| `ptah schema render` | Go annotations, YAML, HCL, SQL, or an external command | SQL on stdout; progress and dependency diagnostics on stderr |
+| `ptah schema render` | Go annotations, YAML, HCL, SQL, or an external command | SQL on stdout; progress and dependency diagnostics on stderr, and a `note:` line for each declaration the target left out |
 | `ptah schema inspect` | a live database, a local schema file, an `oci://` schema artifact, or an Atlas-format migration directory | HCL, SQL, or JSON; `--out-dir` and `--split` write files instead of stdout |
 | `ptah schema diff` | two schema states, each a file, a database URL, or a migration directory | migration SQL or JSON |
 | `ptah schema export` | any desired-schema source | HCL, an OpenAPI 3.0 component schema, a GraphQL SDL, a Protobuf Edition 2023 definition, or reference documentation as Markdown or a self-contained HTML page |
