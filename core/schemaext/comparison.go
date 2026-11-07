@@ -49,6 +49,15 @@ type ParentState struct {
 // desired schema declares. Required is what the desired values of every owner
 // need, ordered by identity and each named once; see [Requirer]. An owner does
 // not plan the removal of an object Required names.
+//
+// DeclaredObjects names the desired objects of the models a service reads
+// beside its own, the kinds its declaration lists as declared kinds, such as
+// the topics another service owns for a service that compares transfers that
+// read them. Each is named once, in identity order, its kind naming its model.
+// The runtime fills it for each service from the request's whole desired
+// state, before it selects the service's own kinds, so it holds what that
+// state holds after the run's scope; a value a caller sets is replaced. A
+// service that lists no declared kind receives none.
 type ObjectComparisonRequest struct {
 	Target            string
 	Identifiers       identifier.Semantics
@@ -69,6 +78,7 @@ type ObjectComparisonRequest struct {
 	Exclusions      []Exclusion
 	DeclaredColumns []DeclaredColumn
 	Required        []objectidentity.ID
+	DeclaredObjects []objectidentity.ID
 }
 
 // Exclusion is one subject the run's configuration leaves out of a

@@ -225,6 +225,11 @@ var hostFeatures = []string{
 	// objects reference a table can tell a declared one; see
 	// modelComparer.declaredRelations.
 	provider.DeclaredRelationsFeature,
+	// A comparison that names the models of another comparison it reads, such
+	// as the topics a transfer reads, receives the identity of every declared
+	// object of those models; see engine.ObjectComparison.DeclaredKinds and
+	// modelComparer.declaredObjects.
+	provider.DeclaredObjectsFeature,
 	// A column comparison answers the collation apart from the type, and
 	// the comparison records a changed collation as a change of its own;
 	// see columnAspects and Rules.ColumnCollations.

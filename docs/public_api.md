@@ -2494,6 +2494,16 @@ manages none. The runtime validates unqualified role identities, orders them,
 and gives each service an independent copy. Owners can decide which existing
 state they may remove from this captured batch without reading the server.
 
+`schemaext.ObjectComparisonRequest.DeclaredObjects` names the desired objects
+of the models an owner reads beside its own, the kinds its
+`engine.ObjectComparison.DeclaredKinds` lists, such as the topics another owner
+compares for an owner of transfers that read them. The runtime fills it for
+each owner from the request's whole desired state, in identity order and each
+once, and replaces what a caller set; an owner that lists no declared kind
+receives none. Registration refuses a declared kind the owner does not register
+a desired model for, one named twice and one of the owner's own kinds with
+`engine.ErrInvalidRegistration`.
+
 `schemaext.ComparisonRequest.Exclusions` and `DeclaredColumns`, and the same
 fields of `schemaext.ObjectComparisonRequest`, give an owner the run's context.
 An `Exclusion` is a subject the configuration leaves out, by a kind of the

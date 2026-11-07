@@ -534,6 +534,16 @@ the tables only in a request whose `target_features` list the feature; a
 provider without the feature receives the declared views and materialized views
 alone.
 
+`models.declared-objects` tells a provider's object comparison which objects of
+another comparison's models the desired schema declares. A comparison receives
+the objects of its own models only, so one that compares transfers does not see
+the topics another comparison of the engine owns. A comparison that names those
+models among its declared kinds receives the identity of each declared object of
+them, so it can refuse a transfer of a topic the schema does not declare. The
+list holds what the desired schema holds after the run's scope: a topic that
+`--include` or `--schemas` leaves out is not declared. Ptah sends the list only
+in a request whose `target_features` list the feature.
+
 `planning.policy` hands the provider's planner the operator's planning policy:
 whether to rebuild a table, with the words a refusal names to say how to ask
 (`--allow-table-rebuild`, or `PTAH_ALLOW_TABLE_REBUILD=1` on `ptah-compat`),

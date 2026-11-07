@@ -26,7 +26,7 @@ func (p *comparer) NormalizeValues(ctx context.Context, request *protocol.Normal
 			continue
 		}
 		captured := proto.CloneOf(input)
-		if captured.GetValue().GetKind() == nativeKind {
+		if captured.GetValue().GetKind() == nativeKind || captured.GetValue().GetKind() == anchorKind {
 			captured.Value.Kind = facetKind
 		}
 		values, err := p.Provider.NormalizeValues(ctx, &protocol.NormalizeValuesRequest{Engine: request.GetEngine(), TargetFeatures: request.GetTargetFeatures(), Values: []*protocol.ValueInput{captured}})
