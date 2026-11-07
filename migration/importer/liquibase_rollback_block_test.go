@@ -60,12 +60,12 @@ func TestLiquibaseRollbackBlock_HappyPath(t *testing.T) {
 		{
 			name:    "a rollback that is not required",
 			content: "--liquibase formatted sql\n--changeset s:1\nCREATE TABLE t (id int);\n--rollback not required\n",
-			want:    []importer.SourceMigration{{Version: 1, Name: "s_1", Path: "changelog.sql", Changeset: "s:1", UpSQL: "CREATE TABLE t (id int);"}},
+			want:    []importer.SourceMigration{{Version: 1, Name: "s_1", Path: "changelog.sql", Changeset: "s:1", UpSQL: "CREATE TABLE t (id int);", EmptyRollback: true}},
 		},
 		{
 			name:    "an empty rollback",
 			content: "--liquibase formatted sql\n--changeset s:1\nCREATE TABLE t (id int);\n--rollback empty\n",
-			want:    []importer.SourceMigration{{Version: 1, Name: "s_1", Path: "changelog.sql", Changeset: "s:1", UpSQL: "CREATE TABLE t (id int);"}},
+			want:    []importer.SourceMigration{{Version: 1, Name: "s_1", Path: "changelog.sql", Changeset: "s:1", UpSQL: "CREATE TABLE t (id int);", EmptyRollback: true}},
 		},
 		{
 			// Liquibase 5.0.4 read `--rollback;` as a comment in the SQL, and

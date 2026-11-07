@@ -421,9 +421,9 @@ rebuilding through the matching history. The supported rollback boundary is in
 
 ### The import produced down files. Are all my migrations reversible now? {#import-down-files}
 
-No. Where the source tool carried no rollback SQL, import can leave a placeholder
-file. Review those versions and prepare a real recovery path before you rely on
-`down`.
+No. Where the source tool carried no rollback SQL, import leaves a placeholder
+file, and `ptah migrations down` refuses it until you write the rollback or
+[state that it has none](../versioned/rollback/#a-down-file-with-no-statements).
 
 - [Import from another tool](../versioned/import/)
 

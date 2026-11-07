@@ -395,7 +395,10 @@ func liquibaseConvertChangeset(
 	return SourceMigration{
 		Name: name, UpSQL: upSQL, DownSQL: downSQL,
 		UpNoTransaction: noTransaction, DownNoTransaction: noTransaction,
-		Path: converter.file, Changeset: changeset.author + ":" + changeset.id,
+		// An empty <rollback/> says undoing the changeset takes nothing. A derived
+		// rollback that came out empty says only that none could be derived.
+		EmptyRollback: changeset.rollbackDeclared && downSQL == "",
+		Path:          converter.file, Changeset: changeset.author + ":" + changeset.id,
 	}, nil
 }
 

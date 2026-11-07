@@ -1,6 +1,7 @@
 package migrator
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -417,6 +418,47 @@ type sqlMigrationFile struct {
 	// checkFiles are the raw Atlas txtar checks.sql and checks/*.sql sections.
 	// They remain unsplit until execution, when the target dialect is known.
 	checkFiles []migrationfile.AtlasTxtarCheckFile
+}
+
+// EmptyRollbackError reports a migration whose down file holds no statements and
+// does not say so on purpose. Rolling it back would run nothing and move the
+// version anyway, so the objects the up file made stay, and the next apply of
+// that up file fails on them. The rollback is refused before anything changes.
+type EmptyRollbackError struct {
+	// Version is the migration's version.
+	Version int64
+	// Description is the migration's description.
+	Description string
+	// Path names the down file. It is empty for a migration built in code with
+	// [CreateMigrationFromSQL] that has no description.
+	Path string
+}
+
+func (e *EmptyRollbackError) Error() string {
+	return fmt.Sprintf(
+		"migration %d has a down file with no statements (%s), so a rollback would change nothing and still move the version; "+
+			"write the rollback, or state that it has none with `-- +ptah %s` at the top of the down file",
+		e.Version, cmp.Or(e.Path, e.Description), migrationfile.DirectiveEmptyRollback,
+	)
+}
+
+// EmptyRollbackConflictError reports a down file that states it has no rollback
+// and holds statements. Either half of that could be the mistake, so the rollback
+// runs neither.
+type EmptyRollbackConflictError struct {
+	// Version is the migration's version.
+	Version int64
+	// Path names the down file.
+	Path string
+	// Statements counts the statements the down file holds.
+	Statements int
+}
+
+func (e *EmptyRollbackConflictError) Error() string {
+	return fmt.Sprintf(
+		"migration %d: %s states `-- +ptah %s` and holds %d statement(s); remove the directive or the statements",
+		e.Version, e.Path, migrationfile.DirectiveEmptyRollback, e.Statements,
+	)
 }
 
 type atlasSQLMigrationFile struct {

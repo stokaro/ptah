@@ -41,6 +41,11 @@ type SourceMigration struct {
 	Repeatable        bool
 	UpNoTransaction   bool
 	DownNoTransaction bool
+	// EmptyRollback reports that the source states the migration has no rollback,
+	// as Liquibase's `--rollback empty` does, where an empty DownSQL alone only
+	// says none was written. [Emit] carries the statement into the down file, so
+	// rolling back through the migration runs nothing rather than being refused.
+	EmptyRollback bool
 	// Path is the slash-separated path, relative to the source root, of the
 	// Liquibase changelog the migration was read from, and Changeset is the
 	// changeset's author:id, as [SkippedChangeset] names one. Each migration

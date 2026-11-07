@@ -187,8 +187,8 @@ type MisplacedDirective struct {
 // whose value cannot be read.
 //
 // Only keys some parser consumes are checked. A `key=value` pair nobody reads
-// has no grammar to be wrong against, and a bare token that is not
-// no_transaction is not a directive at all -- treating `-- +ptah TODO revisit`
+// has no grammar to be wrong against, and a bare token that is neither
+// no_transaction nor empty_rollback is not a directive at all -- treating `-- +ptah TODO revisit`
 // as a malformed directive would refuse ordinary comments this tree has always
 // accepted below a statement.
 //
@@ -196,6 +196,9 @@ type MisplacedDirective struct {
 // them are called, so a change to either reaches this check.
 func validateRecognizedDirectives(directives map[string]string) error {
 	if _, err := parseNoTransactionDirective(directives); err != nil {
+		return err
+	}
+	if _, err := parseBoolDirective(directives, DirectiveEmptyRollback); err != nil {
 		return err
 	}
 	for _, key := range []string{"lock_timeout", "lock-timeout", "statement_timeout", "statement-timeout"} {

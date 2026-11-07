@@ -16,8 +16,15 @@ import (
 const maxPtahVersion int64 = 9999999999
 
 // emptyDownSQL is written for the down file of a source migration that has no
-// rollback, so every imported migration is a complete Ptah up/down pair.
+// rollback, so every imported migration is a complete Ptah up/down pair. Rolling
+// back through it is refused until someone writes the rollback or states that it
+// has none: the source did not say which, and the import cannot decide for it.
 const emptyDownSQL = "-- No rollback was provided by the source migration.\n"
+
+// statedEmptyDownSQL is the down file of a source migration that states it has no
+// rollback.
+const statedEmptyDownSQL = "-- +ptah " + migrationfile.DirectiveEmptyRollback + "\n" +
+	"-- The source migration states that it has no rollback.\n"
 
 // fallbackMigrationName is used when a source name sanitizes to empty (Ptah
 // rejects an empty description).
@@ -50,6 +57,19 @@ type EmitResult struct {
 type plannedFile struct {
 	name    string
 	content []byte
+}
+
+// downFileSQL is what a migration's down file holds: its rollback, the statement
+// that it has none, or the placeholder for a source that said neither.
+func downFileSQL(migration SourceMigration) string {
+	switch {
+	case migration.DownSQL != "":
+		return migration.DownSQL
+	case migration.EmptyRollback:
+		return statedEmptyDownSQL
+	default:
+		return emptyDownSQL
+	}
 }
 
 // Emit writes each migration as a Ptah NNNNNNNNNN_description.up.sql / .down.sql
@@ -118,10 +138,7 @@ func Emit(outDir string, migrations []SourceMigration, declined []DeclinedFile, 
 				return nil, fmt.Errorf("cannot import migration %q as Ptah file %q: %w", migration.Name, name, err)
 			}
 		}
-		downSQL := migration.DownSQL
-		if downSQL == "" {
-			downSQL = emptyDownSQL
-		}
+		downSQL := downFileSQL(migration)
 		upSQL := migration.UpSQL
 		if migration.UpNoTransaction {
 			upSQL = addImportedNoTransactionDirective(upSQL)

@@ -347,7 +347,10 @@ out of the import and named on standard error. In formatted SQL, the lines an
 
 In formatted SQL, a `/* liquibase rollback` block becomes the down file the way
 a `--rollback` line does, and `--rollback empty` or `--rollback not required`
-becomes a down file that runs nothing. Liquibase joins the lines of a block with
+becomes a down file that runs nothing and says so. A changeset with no rollback at
+all gets a placeholder, and [a rollback through it is
+refused](../../versioned/rollback/#a-down-file-with-no-statements), as Liquibase
+refuses it. Liquibase joins the lines of a block with
 nothing between them, so `DELETE FROM t` and `WHERE id = 1;` on two lines run as
 `DELETE FROM tWHERE id = 1;`. A rollback that Liquibase would run as different
 SQL from what is written is refused by name; rewrite it as `--rollback` lines,

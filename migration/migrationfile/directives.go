@@ -14,9 +14,9 @@ import (
 // SQL. Every annotated line in the file's directive HEADER -- the run of blank
 // lines and line comments before the first executable SQL statement --
 // contributes to one merged map (later lines win on duplicate keys). Bare
-// no_transaction is a boolean shorthand for no_transaction=true; other tokens
-// without an equals sign and malformed lines are ignored so directives never
-// make a migration file unreadable.
+// no_transaction and empty_rollback are boolean shorthands for =true; other
+// tokens without an equals sign and malformed lines are ignored so directives
+// never make a migration file unreadable.
 //
 // A directive written BELOW the statements it claims to govern is not honored,
 // because it does not govern them: it is read after the fact by a file the
@@ -68,7 +68,7 @@ func parseDirectives(bodies iter.Seq[string]) map[string]string {
 			switch {
 			case found && key != "":
 				directives[key] = value
-			case token == DirectiveNoTransaction:
+			case token == DirectiveNoTransaction, token == DirectiveEmptyRollback:
 				directives[token] = "true"
 			}
 		}
@@ -82,16 +82,35 @@ func parseDirectives(bodies iter.Seq[string]) map[string]string {
 // statements in the same migration.
 const DirectiveNoTransaction = "no_transaction"
 
+// DirectiveEmptyRollback states that a down file holds no statements on purpose,
+// the way Liquibase's `--rollback empty` does. Without it a rollback refuses the
+// file: running nothing and moving the version back leaves the objects the up
+// file made, and the next apply of the same up file fails on them. With it the
+// rollback runs nothing and moves the version back, and the author answers for
+// the up file being safe to run again. It says nothing about an up file.
+const DirectiveEmptyRollback = "empty_rollback"
+
+// DeclaresEmptyRollback reports whether down, the SQL of a down file, carries
+// [DirectiveEmptyRollback] in its directive header, read with the target
+// dialect's comment and string rules. A value that is not a boolean is an error.
+func DeclaresEmptyRollback(down, dialect string) (bool, error) {
+	return parseBoolDirective(ParseDirectivesForDialect(down, dialect), DirectiveEmptyRollback)
+}
+
 func parseNoTransactionDirective(directives map[string]string) (bool, error) {
-	value, ok := directives[DirectiveNoTransaction]
+	return parseBoolDirective(directives, DirectiveNoTransaction)
+}
+
+func parseBoolDirective(directives map[string]string, key string) (bool, error) {
+	value, ok := directives[key]
 	if !ok {
 		return false, nil
 	}
-	noTransaction, err := strconv.ParseBool(value)
+	parsed, err := strconv.ParseBool(value)
 	if err != nil {
-		return false, fmt.Errorf("invalid +ptah %s value %q: expected true or false", DirectiveNoTransaction, value)
+		return false, fmt.Errorf("invalid +ptah %s value %q: expected true or false", key, value)
 	}
-	return noTransaction, nil
+	return parsed, nil
 }
 
 // checkDirective is the +ptah directive keyword that introduces an ordered

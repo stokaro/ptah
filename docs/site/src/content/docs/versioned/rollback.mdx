@@ -210,8 +210,9 @@ Database is now at version: 1785255953
 ```
 
 Before rollback starts, Ptah verifies that every selected migration has a down
-body. A missing down body aborts before Ptah changes either the schema or the
-revision table.
+body that says what it does. A missing down body, or a down file with no
+statements that does not [state it has none](#a-down-file-with-no-statements),
+aborts before Ptah changes either the schema or the revision table.
 
 Dry run follows the same dirty-state, checksum, checkpoint, and down-body
 validation path as execution. It reports no migration as reverted when a
@@ -281,8 +282,39 @@ Two consequences:
   the down half is what this page executes.
 - **Imported history may carry placeholder downs.** When a source tool had no
   rollback for a migration, [Import from another tool](../import/) writes a
-  placeholder down file. Rolling back through such a version executes a no-op
-  comment, not a real reversal — review imported downs before relying on them.
+  placeholder down file, and a rollback through it is refused until someone
+  decides what it should do.
+
+### A down file with no statements
+
+A rollback runs nothing for a file holding only comments, so the objects the up
+file made stay. Moving the version back anyway would make the next apply run that
+up file again, and it would fail on those objects. So the rollback is refused, on
+exit `2`, before any file of the plan runs, in a dry run and on `--shadow-db` too:
+
+```text illustration
+error: error running down migrations: migration 4 has a down file with no statements (0000000004_team_4.down.sql), so a rollback would change nothing and still move the version; write the rollback, or state that it has none with `-- +ptah empty_rollback` at the top of the down file
+```
+
+There are two ways out. Each edits a file, so run `ptah migrations hash` afterwards.
+
+- **Write the rollback.** This is the answer when the up file changed the schema.
+- **State that it has none,** when undoing the migration takes nothing:
+
+  ```sql illustration
+  -- +ptah empty_rollback
+  ```
+
+  The rollback then runs nothing and moves the version back, and the next apply
+  runs the up file again. So the up file has to be safe to run twice, as
+  `CREATE INDEX IF NOT EXISTS` is. This is what Liquibase's `--rollback empty` says,
+  and importing a changeset that says it writes this line for you. A down file that
+  holds the line and statements is refused too, because each contradicts the other.
+
+The refusal is about the file. `--plan` derives a rollback from the dev database
+instead of running the down files, so it does not read this one. A migration
+registered with a Go function decides for itself, and a generated migration whose
+reverse has nothing to undo carries the directive.
 
 A [checkpoint](../checkpoints/) adds one more boundary: history squashed
 below a checkpoint no longer has individually applied migrations to reverse,
