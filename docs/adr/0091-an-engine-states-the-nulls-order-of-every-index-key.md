@@ -34,20 +34,24 @@ index keeps the old order.
 
 ## Decision
 
-### Both sides state the order
+### Both sides state the order in one form
 
 The two-way feature `schema.index-nulls-order` has an engine state the NULLS
-order of every key part on both sides. A read states it on each part of each
-held index, in `CapturedIndexPart.nulls`, and lists every key part in
-`parts`. Table preparation states it for each key part of each declared
-index, in the new field `PreparedIndex.nulls`, filling a part that states no
-order with the engine's default for its direction. Both spell it `FIRST` or
-`LAST`, so the host compares the two exactly. The provider and the engine list
-it, and the host lists it in its host features. The engine needs
-`schema.observed-indexes` and `schema.prepare-tables`.
+order of every key part on both sides, in one form: `FIRST` or `LAST` where
+the order differs from the engine's default for the part's direction, and
+empty where it is the default. A read states it on each part of each held
+index, in `CapturedIndexPart.nulls`; a key a read names in `columns` with no
+parts is in the default order. Table preparation states it for each key part
+of each declared index, in the new field `PreparedIndex.nulls`, whether the
+declaration spells the default or leaves it out. The host compares the two
+exactly. The provider and the engine list the feature, and the host lists it
+in its host features. The engine needs `schema.observed-indexes` and
+`schema.prepare-tables`.
 
-The prepared orders serve the comparison alone: the declaration keeps the
-order its source wrote.
+The form is the one a host's catalog keeps for a key part, where an empty
+order is the default, so an export writes an order only where the engine
+does not apply it anyway. The prepared orders serve the comparison alone: the
+declaration keeps the order its source wrote.
 
 ### Preparation states each declared index once
 
@@ -60,10 +64,10 @@ index methods an entry's `method` stays empty.
 `ValidateDescription` refuses the engine's feature without the provider's,
 without observed indexes or without table preparation. Preparation validation
 refuses NULLS orders without negotiation and, with it, an index whose orders
-do not number its key parts, a spelling other than `FIRST` or `LAST`, and a
-method without index methods. Inspection validation refuses, under the
-feature, a held index that lists no part and a part without `FIRST` or
-`LAST`. A read without the feature is checked as before it.
+do not number its key parts, a spelling other than `FIRST`, `LAST` or empty,
+and a method without index methods. Inspection validation refuses, under the
+feature, a part spelled otherwise. A read without the feature is checked as
+before it.
 
 ## Alternatives considered
 
@@ -78,6 +82,12 @@ holds a rule in the host that the engine owns, and it says nothing of an
 engine whose default depends on more than the direction. The preparation
 already states the declared index's kind the same way.
 
+**State the order of every part as FIRST or LAST.** Both sides would then
+carry an order on every part, and the host would still compare them exactly.
+A read reaches the catalog and every export from it, so each ascending key of
+a Spanner table would be written back as `NULLS LAST`, which no declaration
+wrote and the built-in engine's export never printed.
+
 **Let the owner of the table compare the whole index.** The host could hand
 every index of an owned table to its owner. The comparison of uniqueness, keys
 and covered columns is common and already works; only the order needs the
@@ -87,8 +97,9 @@ engine's knowledge.
 
 - A key's NULLS order is compared on the provider path as the built-in engine
   compares it, and a change plans a drop and a create of the index.
-- A provider that lists the feature states an order for every key part it
-  reads and every one it prepares, the default included.
+- A provider that lists the feature resolves the default for every key part
+  it reads and every one it prepares, and a wrong default plans a rebuild of
+  the index or hides a change.
 
 ## Acceptance evidence
 

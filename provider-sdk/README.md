@@ -2671,15 +2671,20 @@ records why the provider spells the declared kind.
 
 [ADR 0091](../docs/adr/0091-an-engine-states-the-nulls-order-of-every-index-key.md)
 decides this feature. `schema.index-nulls-order` has an engine state the
-NULLS order of every key part of an index on both sides, so the host
-compares them exactly. A read states it on each part of each index a table
-holds, in `CapturedIndexPart.nulls`, and lists every key part of such an
-index in `parts`. Table preparation states it for each key part of each
-declared index, in `PreparedIndex.nulls`: one entry for each
-`DeclaredIndex.parts` entry, or for each `DeclaredIndex.fields` entry of an
-index with no parts, in key order. A part that states no order takes the
-engine's default for its direction, which only the engine knows. Both sides
-spell it `FIRST` or `LAST`.
+NULLS order of every key part of an index on both sides, in one form: `FIRST`
+or `LAST` where the order differs from the engine's default for the part's
+direction, and empty where it is the default. Only the engine knows its
+default, so a host that receives both sides in this form compares them
+exactly.
+
+- A read states the order on each part of each index a table holds, in
+  `CapturedIndexPart.nulls`. A key named in `columns` with no parts is in the
+  default order.
+- Table preparation states it for each key part of each declared index, in
+  `PreparedIndex.nulls`: one entry for each `DeclaredIndex.parts` entry, or for
+  each `DeclaredIndex.fields` entry of an index with no parts, in key order. A
+  declaration that spells the default and one that leaves it out both state
+  it empty.
 
 The provider and the engine both declare this two-way feature, which requires
 `schema.observed-indexes` and `schema.prepare-tables` on the engine. A
@@ -2687,10 +2692,10 @@ prepared table then states one `PreparedIndex` for each declared index, in
 the declared order, as under [prepared index kinds](#prepared-index-kinds);
 without `schema.index-methods` its `method` stays empty. Both transport
 boundaries refuse NULLS orders without negotiation and, with it, a prepared
-index whose orders do not match its key parts in number, a read that leaves a
-held index's parts out, and a spelling other than `FIRST` or `LAST`. A read
-without the feature is checked as before it. The prepared orders serve the
-comparison alone: the declaration keeps the order it was written with.
+index whose orders do not match its key parts in number, and a spelling other
+than `FIRST`, `LAST` or empty. A read without the feature is checked as before
+it. The prepared orders serve the comparison alone: the declaration keeps the
+order it was written with.
 
 ## Index renames
 

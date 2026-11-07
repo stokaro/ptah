@@ -23091,11 +23091,14 @@ type PreparedIndex struct {
 	// any other when the provider reports a held index of that kind with no
 	// method. Empty without schema.index-methods.
 	Method string `protobuf:"bytes,2,opt,name=method,proto3" json:"method,omitempty"`
-	// The NULLS order the engine gives each key part of the declaration,
-	// FIRST or LAST, in key order: one for each DeclaredIndex.parts entry, or
-	// for each DeclaredIndex.fields entry of an index with no parts. A part
-	// that states no order takes the engine's default for its direction.
-	// Contract 25.28, negotiated under schema.index-nulls-order.
+	// The NULLS order the engine gives each key part of the declaration, in
+	// key order: one for each DeclaredIndex.parts entry, or for each
+	// DeclaredIndex.fields entry of an index with no parts. It is FIRST or
+	// LAST where the order differs from the engine's default for the part's
+	// direction, and empty where it is the default, whether the declaration
+	// spells the default or leaves it out. A read under the same feature
+	// states CapturedIndexPart.nulls of a held index the same way. Contract
+	// 25.28, negotiated under schema.index-nulls-order.
 	Nulls         []string `protobuf:"bytes,3,rep,name=nulls,proto3" json:"nulls,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

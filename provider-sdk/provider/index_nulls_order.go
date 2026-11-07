@@ -8,18 +8,23 @@ import (
 )
 
 // IndexNullsOrderFeature has an engine state the NULLS order of every key
-// part of an index on both sides. A read states it on each part of each held
-// index, in CapturedIndexPart.nulls, and table preparation states it for each
-// key part of each declared index, in PreparedIndex.nulls, filling a part
-// that states none with the engine's default for its direction. Both spell it
-// FIRST or LAST, so a host compares the two sides exactly, and a declaration
-// that changes only a key's NULLS order is a change. It is a two-way feature
-// that requires ObservedIndexesFeature and PrepareTablesFeature: the provider
-// lists it, and so does each engine that states the order. Contract 25.28.
+// part of an index on both sides, in one form: FIRST or LAST where the order
+// differs from the engine's default for the part's direction, and empty where
+// it is the default. A read states it on each part of each held index, in
+// CapturedIndexPart.nulls, and table preparation states it for each key part
+// of each declared index, in PreparedIndex.nulls, whether the declaration
+// spells the default or leaves it out. Only the engine knows its default, so
+// a host that receives both compares them exactly, and a declaration that
+// changes only a key's NULLS order is a change. The form is the one a host's
+// catalog keeps, so an export writes an order only where it is not the
+// default. It is a two-way feature that requires ObservedIndexesFeature and
+// PrepareTablesFeature: the provider lists it, and so does each engine that
+// states the order. Contract 25.28.
 const IndexNullsOrderFeature = "schema.index-nulls-order"
 
-// nullsOrders are the spellings of a key part's NULLS order.
-var nullsOrders = []string{"FIRST", "LAST"}
+// nullsOrders are the spellings of a key part's NULLS order: the default, or
+// the order that differs from it.
+var nullsOrders = []string{"", "FIRST", "LAST"}
 
 func validateIndexNullsOrderFeature(description *protocol.Description, engine *protocol.Engine) error {
 	if !slices.Contains(engine.GetFeatures(), IndexNullsOrderFeature) {
@@ -33,21 +38,18 @@ func validateIndexNullsOrderFeature(description *protocol.Description, engine *p
 }
 
 // validateInspectedIndexNulls checks that a read under a negotiated NULLS
-// order states it on every key part of every index. A held index then lists
-// each key part in parts, so no part is left to the reader's default. A read
-// without the feature is checked as before it.
+// order spells it FIRST, LAST or empty for the default on every key part. A
+// read without the feature is checked as before it.
 func validateInspectedIndexNulls(description *protocol.Description, engine *protocol.Engine, snapshot *protocol.Schema) error {
 	if !EngineOffers(description, engine.GetId(), IndexNullsOrderFeature) || !slices.Contains(snapshot.GetTargetFeatures(), IndexNullsOrderFeature) {
 		return nil
 	}
 	for _, table := range snapshot.GetTables() {
 		for _, index := range table.GetIndexes() {
-			if len(index.GetParts()) == 0 {
-				return fmt.Errorf("%w: observed index %q states no key part to give a NULLS order", ErrProtocol, index.GetName())
-			}
 			for _, part := range index.GetParts() {
 				if !slices.Contains(nullsOrders, part.GetNulls()) {
-					return fmt.Errorf("%w: observed index %q has a key part with NULLS order %q; it is FIRST or LAST", ErrProtocol, index.GetName(), part.GetNulls())
+					return fmt.Errorf("%w: observed index %q has a key part with NULLS order %q; it is FIRST, LAST or empty for the default", ErrProtocol,
+						index.GetName(), part.GetNulls())
 				}
 			}
 		}
@@ -65,8 +67,8 @@ func declaredKeyParts(index *protocol.DeclaredIndex) int {
 }
 
 // validatePreparedIndexNulls checks the NULLS orders one prepared index
-// states under a negotiated feature: one of FIRST or LAST for each key part of
-// its declaration.
+// states under a negotiated feature: FIRST, LAST or empty for the default, for
+// each key part of its declaration.
 func validatePreparedIndexNulls(declared *protocol.DeclaredIndex, prepared *protocol.PreparedIndex) error {
 	if len(prepared.GetNulls()) != declaredKeyParts(declared) {
 		return fmt.Errorf("%w: table preparation states %d NULLS orders for the %d key parts of index %q", ErrProtocol,
@@ -74,7 +76,7 @@ func validatePreparedIndexNulls(declared *protocol.DeclaredIndex, prepared *prot
 	}
 	for _, order := range prepared.GetNulls() {
 		if !slices.Contains(nullsOrders, order) {
-			return fmt.Errorf("%w: table preparation states NULLS order %q for index %q; it is FIRST or LAST", ErrProtocol, order, declared.GetName())
+			return fmt.Errorf("%w: table preparation states NULLS order %q for index %q; it is FIRST, LAST or empty for the default", ErrProtocol, order, declared.GetName())
 		}
 	}
 	return nil

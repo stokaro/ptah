@@ -12,20 +12,22 @@ import (
 
 // nullsOrderPreparation is a preparation negotiated with index methods and the
 // NULLS order, whose table declares an index of two parts and one of one
-// field, and a reply that states the order of each key part.
+// field, and a reply that states the order of each key part: FIRST where it is
+// not the engine's default, empty where it is.
 func nullsOrderPreparation() (*protocol.Description, *protocol.PrepareTablesRequest, *protocol.PreparedTables) {
 	d, request, result := indexMethodsExchange()
 	d.Features = append(d.Features, provider.IndexNullsOrderFeature)
 	d.Engines[0].Features = append(d.Engines[0].Features, provider.IndexNullsOrderFeature)
 	request.TargetFeatures = append(request.TargetFeatures, provider.IndexNullsOrderFeature)
 	request.Tables[0].Desired.Indexes[0].Parts = []*protocol.CapturedIndexPart{{Column: "id", Descending: true}, {Column: "id", Nulls: "FIRST"}}
-	result.Tables[0].Indexes[0].Nulls = []string{"FIRST", "FIRST"}
-	result.Tables[0].Indexes[1].Nulls = []string{"LAST"}
+	result.Tables[0].Indexes[0].Nulls = []string{"", "FIRST"}
+	result.Tables[0].Indexes[1].Nulls = []string{""}
 	return d, request, result
 }
 
-// nullsOrderInspection is a read negotiated with the NULLS order of an index
-// whose every key part states it.
+// nullsOrderInspection is a read negotiated with the NULLS order of two
+// indexes, one keyed by a part in the default order and one by a descending
+// part that sorts NULLs first.
 func nullsOrderInspection() (*protocol.Description, *protocol.InspectRequest, *protocol.Schema) {
 	d, request, snapshot := indexInspection()
 	features := []string{provider.PrepareTablesFeature, provider.NormalizeValuesFeature, provider.IndexNullsOrderFeature}
@@ -36,10 +38,8 @@ func nullsOrderInspection() (*protocol.Description, *protocol.InspectRequest, *p
 	}
 	d.Engines[0].Features = append(d.Engines[0].Features, provider.PrepareTablesFeature, provider.IndexNullsOrderFeature)
 	snapshot.TargetFeatures = append(snapshot.TargetFeatures, provider.IndexNullsOrderFeature)
-	for _, index := range snapshot.Tables[0].Indexes {
-		index.Parts = []*protocol.CapturedIndexPart{{Column: "label", Nulls: "LAST"}}
-	}
-	snapshot.Tables[0].Indexes[1].Parts[0].Descending, snapshot.Tables[0].Indexes[1].Parts[0].Nulls = true, "FIRST"
+	snapshot.Tables[0].Indexes[0].Parts = []*protocol.CapturedIndexPart{{Column: "label"}}
+	snapshot.Tables[0].Indexes[1].Parts = []*protocol.CapturedIndexPart{{Column: "label", Descending: true, Nulls: "FIRST"}}
 	return d, request, snapshot
 }
 
@@ -55,7 +55,7 @@ func TestIndexNullsOrder_HappyPath(t *testing.T) {
 		decoded := &protocol.PreparedTables{}
 		c.Assert(proto.Unmarshal(data, decoded), qt.IsNil)
 		c.Assert(provider.ValidatePreparedTables(d, request, decoded), qt.IsNil)
-		c.Assert(decoded.Tables[0].Indexes[0].GetNulls(), qt.DeepEquals, []string{"FIRST", "FIRST"})
+		c.Assert(decoded.Tables[0].Indexes[0].GetNulls(), qt.DeepEquals, []string{"", "FIRST"})
 	})
 	t.Run("without index methods an entry states the order and no kind", func(t *testing.T) {
 		c := qt.New(t)
@@ -67,21 +67,27 @@ func TestIndexNullsOrder_HappyPath(t *testing.T) {
 		c.Assert(provider.ValidateDescription(d, nil), qt.IsNil)
 		c.Assert(provider.ValidatePreparedTables(d, request, result), qt.IsNil)
 	})
-	t.Run("a negotiated read states the order of every key part", func(t *testing.T) {
+	t.Run("a negotiated read states the order of a part where it is not the default", func(t *testing.T) {
 		c := qt.New(t)
 		d, request, snapshot := nullsOrderInspection()
 		c.Assert(provider.ValidateDescription(d, nil), qt.IsNil)
 		_, err := provider.InspectionValues(d, request, snapshot)
 		c.Assert(err, qt.IsNil)
 	})
-	// A read without the feature keeps what contract 25.27 accepts: a part
-	// whose order is the default may leave it out.
+	t.Run("a negotiated read may name its keys without parts, each in the default order", func(t *testing.T) {
+		c := qt.New(t)
+		d, request, snapshot := nullsOrderInspection()
+		snapshot.Tables[0].Indexes[0].Parts = nil
+		_, err := provider.InspectionValues(d, request, snapshot)
+		c.Assert(err, qt.IsNil)
+	})
+	// A read without the feature keeps what contract 25.27 accepts, whatever
+	// a part's order says.
 	t.Run("a read without the feature is checked as before", func(t *testing.T) {
 		c := qt.New(t)
 		d, request, snapshot := nullsOrderInspection()
 		snapshot.TargetFeatures = withoutFeature(snapshot.TargetFeatures, provider.IndexNullsOrderFeature)
-		snapshot.Tables[0].Indexes[0].Parts[0].Nulls = ""
-		snapshot.Tables[0].Indexes[1].Parts = nil
+		snapshot.Tables[0].Indexes[1].Parts[0].Nulls = "NULLS FIRST"
 		_, err := provider.InspectionValues(d, request, snapshot)
 		c.Assert(err, qt.IsNil)
 	})
@@ -96,8 +102,8 @@ func TestIndexNullsOrder_HappyPath(t *testing.T) {
 	})
 }
 
-// A negotiated preparation states FIRST or LAST for each key part of each
-// declared index, and one without the feature states none.
+// A negotiated preparation states FIRST, LAST or empty for each key part of
+// each declared index, and one without the feature states none.
 func TestPreparedIndexNullsOrder_FailurePath(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
@@ -114,11 +120,11 @@ func TestPreparedIndexNullsOrder_FailurePath(t *testing.T) {
 		{"no order for an index of fields", `.*states 0 NULLS orders for the 1 key parts of index "by_id"`, func(_ *protocol.PrepareTablesRequest, p *protocol.PreparedTable) {
 			p.Indexes[1].Nulls = nil
 		}},
-		{"another spelling", `.*states NULLS order "first" for index "by_id"; it is FIRST or LAST`, func(_ *protocol.PrepareTablesRequest, p *protocol.PreparedTable) {
+		{"another spelling", `.*states NULLS order "first" for index "by_id"; it is FIRST, LAST or empty for the default`, func(_ *protocol.PrepareTablesRequest, p *protocol.PreparedTable) {
 			p.Indexes[1].Nulls = []string{"first"}
 		}},
-		{"the default left empty", `.*states NULLS order "" for index "by_id"; it is FIRST or LAST`, func(_ *protocol.PrepareTablesRequest, p *protocol.PreparedTable) {
-			p.Indexes[1].Nulls = []string{""}
+		{"the keyword spelled out", `.*states NULLS order "NULLS LAST" for index "by_label"; it is FIRST, LAST or empty for the default`, func(_ *protocol.PrepareTablesRequest, p *protocol.PreparedTable) {
+			p.Indexes[0].Nulls[0] = "NULLS LAST"
 		}},
 		{"orders the host did not ask for", `.*prepared index NULLS orders need schema\.index-nulls-order`, func(r *protocol.PrepareTablesRequest, _ *protocol.PreparedTable) {
 			r.TargetFeatures = withoutFeature(r.TargetFeatures, provider.IndexNullsOrderFeature)
@@ -147,8 +153,8 @@ func TestPreparedIndexMethodWithoutTheFeature_FailurePath(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `.*prepared index "by_label" states a method, which needs schema\.index-methods`)
 }
 
-// A negotiated read states FIRST or LAST on every key part of every index it
-// reports.
+// A negotiated read spells each key part's order FIRST, LAST or empty for the
+// default.
 func TestInspectedIndexNullsOrder_FailurePath(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
@@ -156,13 +162,10 @@ func TestInspectedIndexNullsOrder_FailurePath(t *testing.T) {
 		want   string
 		mutate func(*protocol.Schema)
 	}{
-		{"an index without parts", `.*observed index "items_label" states no key part to give a NULLS order`, func(s *protocol.Schema) {
-			s.Tables[0].Indexes[0].Parts = nil
+		{"lower case", `.*observed index "items_label" has a key part with NULLS order "last"; it is FIRST, LAST or empty for the default`, func(s *protocol.Schema) {
+			s.Tables[0].Indexes[0].Parts[0].Nulls = "last"
 		}},
-		{"a part that leaves the default out", `.*observed index "items_label" has a key part with NULLS order ""; it is FIRST or LAST`, func(s *protocol.Schema) {
-			s.Tables[0].Indexes[0].Parts[0].Nulls = ""
-		}},
-		{"another spelling", `.*observed index "items_label_unique" has a key part with NULLS order "NULLS FIRST"; it is FIRST or LAST`, func(s *protocol.Schema) {
+		{"the keyword spelled out", `.*observed index "items_label_unique" has a key part with NULLS order "NULLS FIRST"; it is FIRST, LAST or empty for the default`, func(s *protocol.Schema) {
 			s.Tables[0].Indexes[1].Parts[0].Nulls = "NULLS FIRST"
 		}},
 	} {
