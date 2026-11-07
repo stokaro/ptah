@@ -200,6 +200,22 @@ func extensionSupportScope(
 	return scope, false
 }
 
+// requirementScope turns a positive comparison scope into its second-pass
+// projection when either side kept an object for a requirement alone, such as
+// the resource pool a kept classifier routes to. Both sides are projected
+// again with what the desired side kept that way (see
+// [atlasfilter.DesiredRequirements]): kept on one side only, a pool the
+// database holds next to a declared classifier is planned as a creation the
+// server refuses, and a pool a classifier routed to before the plan moves it
+// is planned as a removal no selector asked for.
+func requirementScope(scope atlasfilter.Scope, desired, current atlasfilter.SelectionReport) (atlasfilter.Scope, bool) {
+	if scope.Requirements.Decided() || len(desired.Required) == 0 && len(current.Required) == 0 {
+		return scope, false
+	}
+	scope.Requirements = atlasfilter.DesiredRequirements(desired)
+	return scope, true
+}
+
 // emptySelection reports whether err is the empty-include-selection signal.
 func emptySelection(err error) bool {
 	var empty *atlasfilter.EmptySelectionError

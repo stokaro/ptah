@@ -19,6 +19,7 @@ import (
 	"ptah.run/core/selectext"
 	"ptah.run/engine"
 	"ptah.run/internal/atlasfilter"
+	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/providerhost"
 	"ptah.run/internal/testutils"
 )
@@ -149,6 +150,49 @@ func TestProviderScopeSelectionsTakeGrantsWithTheirObject(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(grantTargets(kept.Grants), qt.DeepEquals, []string{"MAIN.Mail"})
 	c.Assert(selected(kept.FeatureObjects), qt.DeepEquals, []string{"queue main.mail"})
+}
+
+// A comparison selecting a declared queue keeps the pool the queue requires on
+// both sides, through the requirements the provider lists for the queue, so
+// the pool the database holds is not planned as a creation. A pool only a held
+// queue requires is on neither side.
+func TestProviderScopeSelectionsKeepARequiredPoolOnBothSides(t *testing.T) {
+	c := qt.New(t)
+	host, runtime := yamlProviderCommand(c, "scope-selections")
+	connection := observedConnection(c, host, "items")
+	current, err := connection.Reader().ReadSchema()
+	c.Assert(err, qt.IsNil)
+	queue := objectidentity.ID{Kind: objectidentity.Kind(selectedQueue), Schema: objectidentity.Part{Source: "main", Normalized: "main"},
+		Name: objectidentity.Part{Source: "etl-slow", Normalized: "etl-slow"}}
+	pool := objectidentity.ID{Kind: objectidentity.Kind(selectedPool), Name: objectidentity.Part{Source: "slow", Normalized: "slow"}}
+	declared, err := schemaext.NewObjects(
+		schemaext.Object{Ref: queue, Value: comparisonModel(c, runtime, schemaext.Desired, selectedQueue, queue, `{"seconds":60}`)},
+		schemaext.Object{Ref: pool, Value: comparisonModel(c, runtime, schemaext.Desired, selectedPool, pool, `{"seconds":60}`)})
+	c.Assert(err, qt.IsNil)
+
+	tests := []struct {
+		name        string
+		include     string
+		wantCurrent []string
+		wantDesired []string
+	}{
+		{name: "a declared queue beside its held pool", include: "main.etl-slow[type=queue]",
+			wantCurrent: []string{"pool slow"}, wantDesired: []string{"pool slow", "queue main.etl-slow"}},
+		{name: "a held queue the declaration leaves out", include: "main.jobs-fast[type=queue]",
+			wantCurrent: []string{"queue main.jobs-fast"}, wantDesired: make([]string, 0)},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			selection := atlasschema.LiveSelection{Include: []string{test.include}}
+
+			gotCurrent, gotDesired, err := selection.Apply(c.Context(), runtime, connection.Info(), current, &schemamodel.Database{FeatureObjects: declared})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(selected(gotCurrent.FeatureObjects), qt.DeepEquals, test.wantCurrent)
+			c.Assert(selected(gotDesired.FeatureObjects), qt.DeepEquals, test.wantDesired)
+		})
+	}
 }
 
 // An object of a selected kind whose identity its naming cannot read refuses

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/selectext"
 	"ptah.run/internal/featureselect"
@@ -53,6 +54,17 @@ type Scope struct {
 	// value is refused with [selectext.ErrUnselected], and [selectext.None]
 	// names the common objects alone.
 	Selections selectext.Set
+	// Requirements are the objects a comparison keeps on both of its sides
+	// because a kept object of its desired side requires them, though no
+	// selector names them: the resource pool a kept classifier routes to.
+	// The zero value leaves them to each projection, which keeps what its own
+	// kept objects require, where it holds it. That is the answer for one
+	// state and the wrong one for a comparison: a pool the desired side keeps
+	// for its classifier and the current side holds, beside no classifier,
+	// would be kept on the desired side alone and planned as a creation of a
+	// pool the database holds. A comparison projects both sides again with
+	// [DesiredRequirements] of its desired side's report.
+	Requirements Requirements
 	// ExtensionSupport keeps every database-wide extension during a
 	// comparison-side reprojection. Comparison callers set it only after either
 	// side reports a matching non-extension resource, so an extension-only
@@ -432,6 +444,38 @@ func ScopeGeneratedReport(db *schemamodel.Database, scope Scope) (*schemamodel.D
 // from extensions that ride as support for a selected non-extension resource.
 type SelectionReport struct {
 	NonExtensionMatched bool
+	// Required lists the objects the projection kept only because a kept
+	// object requires them, each held by the projected state, in the order
+	// the state lists them. A comparison reads its desired side's list with
+	// [DesiredRequirements].
+	Required []objectidentity.ID
+}
+
+// Requirements are the objects a comparison's scope keeps because a kept
+// object requires them, decided once for both sides (see
+// [Scope.Requirements]). The zero value decides nothing.
+type Requirements struct {
+	decided bool
+	keys    map[objectidentity.Key]bool
+}
+
+// DesiredRequirements are the requirements of a comparison whose desired side
+// reported report: the objects that side kept for a requirement. Each side
+// projected with them keeps those objects where it holds them. A requirement
+// of an object the current side alone keeps keeps nothing, so a classifier
+// the plan drops or moves does not bring its old pool into the plan.
+func DesiredRequirements(report SelectionReport) Requirements {
+	keys := make(map[objectidentity.Key]bool, len(report.Required))
+	for _, ref := range report.Required {
+		keys[ref.Key()] = true
+	}
+	return Requirements{decided: true, keys: keys}
+}
+
+// Decided reports whether the requirements were decided for a comparison,
+// rather than left to each projection.
+func (r Requirements) Decided() bool {
+	return r.decided
 }
 
 // ScopeReports groups the exclusion and positive-selection observations from
@@ -498,6 +542,7 @@ func scopeReport[T any](
 		Exclude: report,
 		Selection: SelectionReport{
 			NonExtensionMatched: selection.nonExtensionMatched,
+			Required:            selection.required,
 		},
 	}, selection.emptySelectionError(scope)
 }
@@ -543,6 +588,10 @@ type scopeSelection struct {
 	matched             bool
 	nonExtensionMatched bool
 	bindings            featureselect.Bindings
+	// requirements are the comparison's decided requirements, and required
+	// the objects this projection kept for a requirement alone.
+	requirements Requirements
+	required     []objectidentity.ID
 	// vocabulary is the run's owners' selector types.
 	vocabulary vocabulary
 }
@@ -569,6 +618,7 @@ func newScopeSelection(scope Scope, selectors []resourcePattern) *scopeSelection
 		def:              strings.TrimSpace(scope.DefaultSchema),
 		extensionSupport: scope.ExtensionSupport,
 		bindings:         scope.Bindings,
+		requirements:     scope.Requirements,
 		vocabulary:       vocabulary{selections: scope.Selections},
 	}
 }

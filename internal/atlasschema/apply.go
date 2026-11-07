@@ -744,15 +744,16 @@ func scopeApplyStates(
 		result.desiredErr != nil && !emptySelection(result.desiredErr) {
 		return result
 	}
-	supportScope, changed := extensionSupportScope(
+	supportScope, supportChanged := extensionSupportScope(
 		scope,
 		result.currentReports.Selection,
 		result.desiredReports.Selection,
 	)
-	if !changed {
+	pairScope, requirementsChanged := requirementScope(supportScope, result.desiredReports.Selection, result.currentReports.Selection)
+	if !supportChanged && !requirementsChanged {
 		return result
 	}
-	return project(supportScope)
+	return project(pairScope)
 }
 
 func validateCurrentApplyState(

@@ -1107,9 +1107,11 @@ type scopedDiffState struct {
 
 // scopeDiffStates projects both original comparison sides and repeats both
 // projections in extension-support mode when either side matched a
-// non-extension resource. The second pass is deliberately pair-wide: a match
-// can exist on only one side while an unselected extension already exists on
-// both, and filtering the other side would manufacture a change.
+// non-extension resource, and with the --to side's requirements when either
+// side kept an object for a requirement alone (see [requirementScope]). The
+// second pass is deliberately pair-wide: a match can exist on only one side
+// while an unselected extension already exists on both, and filtering the
+// other side would manufacture a change.
 func scopeDiffStates(
 	ctx context.Context,
 	fromState, toState atlassource.State,
@@ -1122,12 +1124,13 @@ func scopeDiffStates(
 	if fromSide.err != nil || toSide.err != nil {
 		return fromSide, toSide
 	}
-	supportScope, changed := extensionSupportScope(scope, fromSide.selection, toSide.selection)
-	if !changed {
+	supportScope, supportChanged := extensionSupportScope(scope, fromSide.selection, toSide.selection)
+	pairScope, requirementsChanged := requirementScope(supportScope, toSide.selection, fromSide.selection)
+	if !supportChanged && !requirementsChanged {
 		return fromSide, toSide
 	}
-	return scopeDiffState(ctx, fromState, supportScope, "--from schema", dialect, runtime),
-		scopeDiffState(ctx, toState, supportScope, "--to schema", dialect, runtime)
+	return scopeDiffState(ctx, fromState, pairScope, "--from schema", dialect, runtime),
+		scopeDiffState(ctx, toState, pairScope, "--to schema", dialect, runtime)
 }
 
 // withDocumentBaseline returns the --from side with what a server gives every

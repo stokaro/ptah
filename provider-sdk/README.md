@@ -2855,7 +2855,9 @@ parses a selector.
   underscores, such as `on_topic`.
 - `keeps_required` lists the kinds of the engine's other selections whose
   objects a kept object keeps when its normalized value requires them, unless
-  an exclusion names them.
+  an exclusion names them. In a comparison the host keeps what the desired
+  side's kept objects require on both sides, where each side holds it, and
+  nothing for an object only the current side requires (ADR 0117).
 
 Both transport boundaries refuse a selection of a kind the engine does not
 model as desired and observed, a kind selected twice, an unknown naming, a
