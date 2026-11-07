@@ -48,7 +48,9 @@ func validateViewQueryEquivalenceEngine(description *protocol.Description, engin
 // and invalid identifier facts. Each pair holds a view of the engine, of a
 // kind the engine carries as a common object, as a read reports it: with its
 // query and without captured facets; and a declared query. No two pairs name
-// one view, a view and a materialized view sharing their names.
+// one view, a view and a materialized view sharing their names. Declared
+// columns need ViewQueryContextFeature on both sides (see
+// validateViewQueryColumns).
 func ValidateCompareViewQueriesRequest(description *protocol.Description, request *protocol.CompareViewQueriesRequest) error {
 	if request == nil {
 		return viewQueryError("the request is missing")
@@ -84,7 +86,7 @@ func ValidateCompareViewQueriesRequest(description *protocol.Description, reques
 		}
 		seen[key] = true
 	}
-	return nil
+	return validateViewQueryColumns(description, request)
 }
 
 // validateHeldView checks the held view of the pair at index: a view or a
@@ -125,8 +127,9 @@ func ValidateComparedViewQueries(description *protocol.Description, request *pro
 // request that [ValidateCompareViewQueriesRequest] accepted with description
 // and that has not changed since: it checks the reply and not the request
 // again. The SDK's client and server validate each request once and call it
-// for the reply.
-func ValidateComparedViewQueriesReply(_ *protocol.Description, request *protocol.CompareViewQueriesRequest, result *protocol.ComparedViewQueries) error {
+// for the reply. An undecided answer needs ViewQueryContextFeature on both
+// sides and is not equivalent.
+func ValidateComparedViewQueriesReply(description *protocol.Description, request *protocol.CompareViewQueriesRequest, result *protocol.ComparedViewQueries) error {
 	if result == nil || !result.GetComplete() || len(result.GetQueries()) != len(request.GetPairs()) {
 		return viewQueryError("the reply does not answer every pair")
 	}
@@ -136,7 +139,7 @@ func ValidateComparedViewQueriesReply(_ *protocol.Description, request *protocol
 			return viewQueryError(fmt.Sprintf("answer %d names %q where the request names %q", i, answered.GetName(), held.GetName()))
 		}
 	}
-	return nil
+	return validateUndecidedViewQueries(description, request, result)
 }
 
 // sameReference reports whether two references name one object in the same

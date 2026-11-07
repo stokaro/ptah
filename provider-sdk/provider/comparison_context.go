@@ -86,7 +86,8 @@ func validateComparisonDefinitions(request *protocol.CompareModelsRequest, servi
 
 func validateComparisonContextPlacement(request *protocol.CompareModelsRequest, service *protocol.ModelComparison) error {
 	if service.GetPlacement() == protocol.ModelComparison_FACETS && (len(request.GetRequests()) != 0 || len(request.GetDeclaredRelations()) != 0 || len(request.GetDeclaredRoles()) != 0 ||
-		request.GetDatabasePath() != "" || len(request.GetExclusions()) != 0 || len(request.GetDeclaredColumns()) != 0 || len(request.GetRequired()) != 0) {
+		request.GetDatabasePath() != "" || len(request.GetExclusions()) != 0 || len(request.GetDeclaredColumns()) != 0 || len(request.GetRequired()) != 0 ||
+		len(request.GetDeclaredFacets()) != 0) {
 		return fmt.Errorf("%w: facet comparison contains native object context", ErrProtocol)
 	}
 	if service.GetPlacement() == protocol.ModelComparison_OBJECTS && (len(request.GetDesiredConstraints()) != 0 || len(request.GetCurrentConstraints()) != 0) {

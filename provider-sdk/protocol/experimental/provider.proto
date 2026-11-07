@@ -1847,6 +1847,13 @@ message ModelComparison {
   // CompareModelsRequest.declared_objects. Contract 25.33, under
   // models.declared-objects.
   repeated string declared_kinds = 7;
+  // Facet model kinds of the same engine, each assigned to a facet
+  // comparison, whose declared facets this object comparison reads: a host
+  // sends every desired facet value of these kinds in
+  // CompareModelsRequest.declared_facets. A transfer that reads a table's
+  // changefeed, a facet of the table, then knows whether the declaration
+  // declares the changefeed. Contract 25.36, under models.declared-facets.
+  repeated string declared_facet_kinds = 8;
 }
 
 // ComparisonPart records an already-bound identity component. These facts keep
@@ -2003,6 +2010,12 @@ message CompareModelsRequest {
   // relations, so declared_relations never lists them. Contract 25.33, under
   // models.declared-objects.
   repeated ComparisonIdentity declared_objects = 19;
+  // Every desired facet whose kind the comparison names in
+  // ModelComparison.declared_facet_kinds, each with its owner, its kind and
+  // its value, once and in kind and owner order. A facet the declaration
+  // excludes on purpose has no value and is not listed. Contract 25.36,
+  // under models.declared-facets.
+  repeated ComparisonRecord declared_facets = 20;
 }
 message ChangeSemantics {
   optional bool replaces_owner = 1;
@@ -4778,6 +4791,11 @@ message CompareViewQueriesRequest {
   map<string, bool> capabilities = 3;
   repeated string target_features = 4;
   repeated ViewQueryPair pairs = 5;
+  // The columns of every table the declaration declares, each named by its
+  // table's identity, in the order the declaration lists them: what a `*` of
+  // a declared query stands for, and which relation each column a server
+  // qualifies belongs to. Contract 25.36, under schema.view-query-context.
+  repeated ComparisonColumn declared_columns = 6;
 }
 // ViewQueryPair pairs a declared view's query with the view the database holds
 // under its name.
@@ -4800,4 +4818,9 @@ message ComparedViewQuery {
   // Whether the declared query and the held one are one query on the engine:
   // the view stays when they are, and is replaced when they are not.
   bool equivalent = 2;
+  // The owner cannot decide this pair from the request, and the host compares
+  // the two queries by its own reading of their texts, as it does for an
+  // engine that does not compare view queries. equivalent is false. Contract
+  // 25.36, under schema.view-query-context.
+  bool undecided = 3;
 }

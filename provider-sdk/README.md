@@ -68,7 +68,7 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.35. Each released SDK speaks one contract:
+speaks contract 25.36. Each released SDK speaks one contract:
 
 | SDK release | Contract |
 | --- | --- |
@@ -181,6 +181,8 @@ returns to 0.
   [render omissions](#render-omissions), [table grants](#table-grants),
   [SQL role passwords](#sql-role-passwords) and
   [SQL statement facts](#sql-statement-facts).
+  Contract 25.36 adds [view query context](#view-query-context) and
+  [declared facets](#declared-facets).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -227,8 +229,9 @@ does not oblige a peer to use it.
   `schema.column-collations`, `schema.view-check-options`,
   `models.declared-relations`, `planning.table-ownership`,
   `models.declared-objects`, `render.omissions`, `planning.table-grants`,
-  `source.sql-role-passwords`, `source.sql-statement-facts`, `query.lexical`
-  and `engine.connection-capability-source`. The embedding
+  `source.sql-role-passwords`, `source.sql-statement-facts`, `query.lexical`,
+  `engine.connection-capability-source`, `schema.view-query-context` and
+  `models.declared-facets`. The embedding
   store's calls,
   `PrepareCommonObjects`, `ReverseChanges` and `ReportValues` are new, and each
   comes with an addition to `Engine`, so a host lists the feature to receive
@@ -1229,6 +1232,32 @@ declared object. The SDK refuses:
 - in `ValidateComparisonRequest`, declared objects the engine or the
   request's target did not negotiate, an identity named twice and one of a
   kind the comparison does not name.
+
+### Declared facets
+
+[ADR 0119](../docs/adr/0119-a-comparison-reads-the-declared-facets-of-another-comparisons-models.md)
+decides this feature. A facet, such as the changefeeds of a table, belongs to
+a facet comparison, and `declared_objects` names objects only, so a
+comparison of transfers cannot tell whether the declaration declares the
+changefeed a transfer reads. Under `models.declared-facets` an object
+comparison names those facet models in `ModelComparison.declared_facet_kinds`,
+and `CompareModelsRequest.declared_facets` carries every desired facet of
+those kinds as a `ComparisonRecord`: the owner, the kind, the targets and the
+value, after the run's scope. A facet the declaration excludes on purpose has
+no value and is not listed.
+
+The provider and each engine with such a comparison declare this two-way
+feature. A host that does not list it sees no declared facet kinds and sends
+no declared facet. The SDK refuses:
+
+- in `ValidateDescription`, declared facet kinds on an engine without the
+  feature, on a facet comparison, a kind named twice and a kind no facet
+  comparison of the engine owns;
+- in `ValidateComparisonRequest`, declared facets the engine or the request's
+  target did not negotiate, a facet of a kind the comparison does not name, an
+  owner of a kind the facet's comparison does not own, a facet without a value
+  of its kind, a facet listed twice, and declared facets sent to a facet
+  comparison.
 
 Bound identity components retain source and normalized spelling, quoting, and
 connection defaults. Parent, namespace path, and signature remain separate.
@@ -3174,6 +3203,32 @@ text.
 
 `ValidateComparedViewQueries` refuses a reply that leaves a pair out, reorders
 the pairs or names another view.
+
+### View query context
+
+[ADR 0118](../docs/adr/0118-a-view-query-comparison-receives-the-declared-columns-and-may-leave-a-pair-undecided.md)
+decides this feature. A server that rewrites a stored query keeps a text its
+owner cannot always match from the two queries alone: Spanner names every
+column of a `SELECT *` and qualifies the columns of a `UNION`, so the owner
+needs the columns of the declared tables, and a shape its owner does not
+recognize is better read by the host's text comparison than replaced on every
+plan. `schema.view-query-context` adds both:
+
+- `CompareViewQueriesRequest.declared_columns` carries the columns of every
+  table the declaration declares, each named by its table's identity, with its
+  declared type, in the order the declaration lists them;
+- `ComparedViewQuery.undecided` leaves a pair to the host, which then compares
+  the two queries by its own reading of their texts, as it does for an engine
+  that does not compare view queries. An undecided pair is not equivalent.
+
+The provider and each engine that compares view queries under it list this
+two-way feature, beside `schema.view-query-equivalence`. A host that does not
+list it sends no columns and accepts no undecided answer.
+`ValidateCompareViewQueriesRequest` refuses declared columns the engine or the
+request's target did not negotiate, a column of anything but a table, a column
+without a name or a type, and a table's column named twice;
+`ValidateComparedViewQueries` refuses an undecided answer without the feature
+and one that is also equivalent.
 
 ## Common index observations
 
