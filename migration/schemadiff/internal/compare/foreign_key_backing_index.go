@@ -68,19 +68,19 @@ func ForeignKeyBackingIndexesLeaving(
 }
 
 // ForeignKeyBackingIndexesTakenOver writes the index the server built for a foreign
-// key into the statement of an index the plan adds that the key can stand on, on a
-// target whose server keeps an index for every foreign key; see
-// [difftypes.IndexChange.Replaces]. Measured on MySQL 8.4 and 26.10 and MariaDB 12.3,
-// CREATE INDEX over the key's columns makes the server drop the index it built by
-// itself, also after DROP FOREIGN KEY. A later DROP INDEX of that index then answers
-// Error 1091, and the rollback's DROP INDEX of the new index answers Error 1553 while
-// a key stands on it. An index the author named the same way stays, and the catalog
-// cannot tell the two apart, so the statement that adds the new index drops the old
-// one itself.
+// key into each addition the plan makes that the key can stand on, on a target whose
+// server keeps an index for every foreign key: an index, a UNIQUE or PRIMARY KEY
+// constraint, the own UNIQUE a column gains; see [difftypes.IndexChange.Replaces].
+// Measured on MySQL 8.4 and 26.10 and MariaDB 12.3, any of them over the key's
+// columns makes the server drop the index it built by itself, also after DROP FOREIGN
+// KEY. A later DROP INDEX of that index then answers Error 1091, and the rollback's
+// removal of the addition answers Error 1553 while a key stands on it. An index the
+// author named the same way stays, and the catalog cannot tell the two apart, so the
+// first statement that adds one of them drops the old index itself.
 //
 // The index of a key the plan removes is among the removals already; see
 // [ForeignKeyBackingIndexesLeaving]. For a key the plan keeps, the index joins them:
-// with the new index there, the old one is no longer the key's, and the next
+// with the addition there, the old one is no longer the key's, and the next
 // comparison would plan its removal. An index stays where the declaration holds it,
 // where its table leaves, and where the plan adds or changes a foreign key over its
 // leading columns, since the server may build the new key an index in its place. It
@@ -95,7 +95,7 @@ func ForeignKeyBackingIndexesTakenOver(
 	semantics identifier.Semantics,
 ) {
 	described, _ := platform.Lookup(dialect)
-	if described.ForeignKeyNaming != descriptor.ForeignKeyNamingTableNumbered || foreignKeys == nil || database == nil || len(diff.IndexesAdded) == 0 {
+	if described.ForeignKeyNaming != descriptor.ForeignKeyNamingTableNumbered || foreignKeys == nil || database == nil {
 		return
 	}
 	declared := generatedIndexIdentities(desired, semantics)
@@ -112,8 +112,8 @@ func ForeignKeyBackingIndexesTakenOver(
 		if !strings.EqualFold(key.Type, "FOREIGN KEY") || tableLeaves(diff, key.QualifiedTableName(), semantics) {
 			continue
 		}
-		position := indexAdditionUnder(diff, key, described, semantics)
-		if position < 0 {
+		additions := additionsUnder(diff, key, described, semantics)
+		if len(additions) == 0 {
 			continue
 		}
 		keyLeaves := removedKeys[constraintIdentity(key.QualifiedTableName(), key.Name, semantics)]
@@ -128,25 +128,73 @@ func ForeignKeyBackingIndexesTakenOver(
 				diff.IndexesRemoved = append(diff.IndexesRemoved, ref)
 				removedIndexes[identity] = true
 			}
-			diff.IndexesAdded[position].Replaces = append(diff.IndexesAdded[position].Replaces, ref)
+			for _, replaces := range additions {
+				*replaces = append(*replaces, ref)
+			}
 			takenOver[identity] = true
 		}
 	}
 }
 
-// indexAdditionUnder answers the position of the first index the plan adds that key
-// can stand on, or -1. An addition that rebuilds a removed index under its own name is
-// left out, as its statement drops that index.
-func indexAdditionUnder(diff *difftypes.SchemaDiff, key catalog.Constraint, described descriptor.Dialect, semantics identifier.Semantics) int {
+// additionsUnder answers the Replaces of every addition the plan makes on key's table
+// that key can stand on, in the order the diff lists them: the own UNIQUE a column
+// gains where key is over that column alone, a UNIQUE or PRIMARY KEY constraint
+// whose columns begin with key's, and an index that serves key; see [indexServes]. An
+// addition that rebuilds a removed index under its own name is left out, as its
+// statement drops that index.
+func additionsUnder(diff *difftypes.SchemaDiff, key catalog.Constraint, described descriptor.Dialect, semantics identifier.Semantics) []*[]difftypes.IndexRef {
 	table := semantics.QualifiedTableIdentityKey(key.QualifiedTableName())
-	return slices.IndexFunc(diff.IndexesAdded, func(change difftypes.IndexChange) bool {
-		ref := difftypes.IndexRef{Name: change.Index.Name, TableName: change.TableName}
-		return semantics.QualifiedTableIdentityKey(change.TableName) == table &&
-			indexServes(change.Index, key.ColumnNamesOrDefault(), described) &&
-			!slices.ContainsFunc(diff.IndexesRemoved, func(removed difftypes.IndexRef) bool {
-				return indexscope.IdentityKeyWithSemantics(semantics, removed) == indexscope.IdentityKeyWithSemantics(semantics, ref)
-			})
-	})
+	columns := key.ColumnNamesOrDefault()
+	if len(columns) == 0 {
+		return nil
+	}
+	rebuilds := func(name, onTable string) bool {
+		ref := indexscope.IdentityKeyWithSemantics(semantics, difftypes.IndexRef{Name: name, TableName: onTable})
+		return slices.ContainsFunc(diff.IndexesRemoved, func(removed difftypes.IndexRef) bool {
+			return indexscope.IdentityKeyWithSemantics(semantics, removed) == ref
+		})
+	}
+	sameColumns := func(held []string) bool {
+		return len(columns) <= len(held) && slices.EqualFunc(held[:len(columns)], columns, func(a, b string) bool {
+			return semantics.ColumnIdentityKey(a) == semantics.ColumnIdentityKey(b)
+		})
+	}
+	var additions []*[]difftypes.IndexRef
+	for position := range diff.TablesModified {
+		tableDiff := &diff.TablesModified[position]
+		if semantics.QualifiedTableIdentityKey(tableDiff.TableName) != table || len(columns) != 1 {
+			continue
+		}
+		for columnPosition := range tableDiff.ColumnsModified {
+			column := &tableDiff.ColumnsModified[columnPosition]
+			if gainsOwnUnique(*column) && semantics.ColumnIdentityKey(column.ColumnName) == semantics.ColumnIdentityKey(columns[0]) {
+				additions = append(additions, &column.Replaces)
+			}
+		}
+	}
+	for position := range diff.ConstraintsAdded {
+		add := &diff.ConstraintsAdded[position]
+		if (strings.EqualFold(add.Type, "UNIQUE") || strings.EqualFold(add.Type, "PRIMARY KEY")) &&
+			semantics.QualifiedTableIdentityKey(add.TableName) == table && sameColumns(add.Columns) &&
+			!rebuilds(add.Name, add.TableName) {
+			additions = append(additions, &add.Replaces)
+		}
+	}
+	for position := range diff.IndexesAdded {
+		change := &diff.IndexesAdded[position]
+		if semantics.QualifiedTableIdentityKey(change.TableName) == table && indexServes(change.Index, columns, described) &&
+			!rebuilds(change.Index.Name, change.TableName) {
+			additions = append(additions, &change.Replaces)
+		}
+	}
+	return additions
+}
+
+// gainsOwnUnique reports whether column changes to carry its own UNIQUE over the raw
+// column. A column declaring unique_expr takes its key over an expression instead.
+func gainsOwnUnique(column difftypes.ColumnDiff) bool {
+	_, changed := column.Changes["unique"]
+	return changed && column.Desired.Unique && strings.TrimSpace(column.Desired.UniqueExpr) == ""
 }
 
 // indexServes reports whether a foreign key over columns can stand on index: its

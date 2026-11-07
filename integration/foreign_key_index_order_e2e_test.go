@@ -254,3 +254,88 @@ func TestForeignKeyIndexOrderE2E_AColumnTakesTheNameOfTheIndexAKeyStandsOn(t *te
 		},
 	})
 }
+
+// TestForeignKeyIndexOrderE2E_AKeyThePlanAddsTakesOverABuiltIndex adds a UNIQUE, a
+// column's own UNIQUE or a primary key over the column of a foreign key whose index the
+// server built. The server drops that index once the key is in, also after DROP FOREIGN
+// KEY. The plan's DROP INDEX after the addition stopped at Error 1091 where the foreign
+// key left, and the rollback's removal of the key stopped at Error 1553 where it stayed.
+// A second addition over the column made the server drop the index too, and the
+// statement that took it over then stopped at Error 1091. On a table that loses a column,
+// a removed index can leave ahead of the column changes; one a key takes over waits for
+// the key's statement, since the kept key stands on it until then.
+func TestForeignKeyIndexOrderE2E_AKeyThePlanAddsTakesOverABuiltIndex(t *testing.T) {
+	const (
+		key     = ", CONSTRAINT c_fk FOREIGN KEY (pid) REFERENCES parent (id)"
+		unique  = "CREATE TABLE child (id bigint PRIMARY KEY, pid bigint UNIQUE, qid bigint, rid bigint"
+		keyless = "CREATE TABLE child (id bigint NOT NULL, pid bigint NOT NULL, qid bigint, rid bigint"
+	)
+	runIndexOrderRows(t, []indexOrderRow{
+		{
+			name:    "a UNIQUE, the key removed",
+			built:   indexOrderChild + key + ");\n",
+			desired: indexOrderChild + ", CONSTRAINT u UNIQUE (pid));\n",
+			want:    "u(pid)! | ",
+		},
+		{
+			name:    "the column's own UNIQUE, the key removed",
+			built:   indexOrderChild + key + ");\n",
+			desired: unique + ");\n",
+			want:    "pid(pid)! | ",
+		},
+		{
+			name:    "a UNIQUE, the key kept",
+			built:   indexOrderChild + key + ");\n",
+			desired: indexOrderChild + ", CONSTRAINT u UNIQUE (pid)" + key + ");\n",
+			want:    "u(pid)! | c_fk(pid)",
+		},
+		{
+			name:    "the column's own UNIQUE, the key kept",
+			built:   indexOrderChild + key + ");\n",
+			desired: unique + key + ");\n",
+			want:    "pid(pid)! | c_fk(pid)",
+		},
+		{
+			name:    "a UNIQUE, the key kept, on a table that loses a column",
+			built:   indexOrderChild + key + ");\n",
+			desired: "CREATE TABLE child (id bigint PRIMARY KEY, pid bigint, qid bigint, CONSTRAINT u UNIQUE (pid)" + key + ");\n",
+			want:    "u(pid)! | c_fk(pid)",
+		},
+		{
+			name:    "a wider UNIQUE, the key kept",
+			built:   indexOrderChild + key + ");\n",
+			desired: indexOrderChild + ", CONSTRAINT u UNIQUE (pid, qid)" + key + ");\n",
+			want:    "u(pid,qid)! | c_fk(pid)",
+		},
+		{
+			name:    "the author's index under the key's name",
+			built:   indexOrderChild + ", KEY c_fk (pid)" + key + ");\n",
+			desired: indexOrderChild + ", CONSTRAINT u UNIQUE (pid)" + key + ");\n",
+			want:    "u(pid)! | c_fk(pid)",
+		},
+		{
+			name:    "a primary key, the key kept",
+			built:   keyless + key + ");\n",
+			desired: keyless + ", PRIMARY KEY (pid, id)" + key + ");\n",
+			want:    " | c_fk(pid)",
+		},
+		{
+			name:    "the key moves to another column under its name",
+			built:   indexOrderChild + key + ");\n",
+			desired: indexOrderChild + ", CONSTRAINT u UNIQUE (pid), CONSTRAINT c_fk FOREIGN KEY (qid) REFERENCES parent (id));\n",
+			want:    "c_fk(qid),u(pid)! | c_fk(qid)",
+		},
+		{
+			name:    "a UNIQUE and an index, the key kept",
+			built:   indexOrderChild + key + ");\n",
+			desired: indexOrderChild + ", CONSTRAINT u UNIQUE (pid), KEY w (pid, qid)" + key + ");\n",
+			want:    "u(pid)!,w(pid,qid) | c_fk(pid)",
+		},
+		{
+			name:    "two indexes, the key kept",
+			built:   indexOrderChild + key + ");\n",
+			desired: indexOrderChild + ", KEY a (pid), KEY w (pid, qid)" + key + ");\n",
+			want:    "a(pid),w(pid,qid) | c_fk(pid)",
+		},
+	})
+}

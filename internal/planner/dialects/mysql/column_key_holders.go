@@ -120,15 +120,14 @@ func (h columnKeyHolders) columnsOf(table difftypes.TableDiff, name string) []st
 }
 
 // droppedWith is the drops the statement that gives column its own UNIQUE holds. A
-// plain index is dropped as a unique key's is: DROP INDEX, in a clause.
-func (h columnKeyHolders) droppedWith(table, column string) []ast.AlterOperation {
+// plain index is dropped as a unique key's is: DROP INDEX, in a clause. Each counts as
+// dropped in taken, so the key, or an addition written later, that also takes over
+// from it leaves it out.
+func (h columnKeyHolders) droppedWith(table, column string, taken *takeoverLedger) []ast.AlterOperation {
 	held := h.byColumn[h.key(table, column)]
-	operations := make([]ast.AlterOperation, 0, len(held.Constraints)+len(held.Indexes))
+	refs := make([]difftypes.IndexRef, 0, len(held.Constraints)+len(held.Indexes))
 	for _, info := range held.Constraints {
-		operations = append(operations, &ast.DropConstraintOperation{ConstraintName: info.Name, Unique: true})
+		refs = append(refs, difftypes.IndexRef{Name: info.Name, TableName: info.TableName})
 	}
-	for _, ref := range held.Indexes {
-		operations = append(operations, &ast.DropConstraintOperation{ConstraintName: ref.Name, Unique: true})
-	}
-	return operations
+	return taken.drops(append(refs, held.Indexes...))
 }

@@ -180,8 +180,8 @@ func UnderAddedForeignKeys(diff *difftypes.SchemaDiff, dialect string) Releases 
 // statement is written for it. A constraint the plan adds back moves too, since its drop
 // only moves ahead of the column changes, and an index a UNIQUE constraint rebuilds does
 // the same. An index rebuilt under its own name stays out: a foreign key may need it at
-// every moment, so a planner moves its one statement instead. So does an index another
-// takes over from, which leaves in the statement that adds the other; see
+// every moment, so a planner moves its one statement instead. So does an index an
+// addition takes over from, which leaves in the statement of an addition; see
 // [difftypes.IndexChange.Replaces].
 func UnderColumnDrops(diff *difftypes.SchemaDiff, dialect string) Releases {
 	if diff == nil {
@@ -194,7 +194,7 @@ func UnderColumnDrops(diff *difftypes.SchemaDiff, dialect string) Releases {
 	}
 	var released Releases
 	takenWithColumn := DroppedWithColumns(diff, dialect)
-	takenOver := takenOverByIndexes(diff, semantics)
+	takenOver := takenOverByAdditions(diff, semantics)
 	for _, info := range diff.ConstraintsRemoved {
 		if !losing[semantics.QualifiedTableIdentityKey(info.TableName)] ||
 			(!strings.EqualFold(info.Type, "UNIQUE") && !strings.EqualFold(info.Type, "CHECK")) {
@@ -217,16 +217,16 @@ func UnderColumnDrops(diff *difftypes.SchemaDiff, dialect string) Releases {
 	return released
 }
 
-// UniquesTakenOver keys the removed UNIQUE constraints an index the plan adds takes over
+// UniquesTakenOver keys the removed UNIQUE constraints an addition of the plan takes over
 // from; see [difftypes.IndexChange.Replaces]. A planner writes each one in the statement
-// that adds that index, so its constraint removals leave it out. A foreign key can hold
+// of such an addition, so its constraint removals leave it out. A foreign key can hold
 // the name of an index taken over and still has to leave, so only a UNIQUE counts.
 func UniquesTakenOver(diff *difftypes.SchemaDiff, dialect string) map[difftypes.ConstraintIdentity]struct{} {
 	if diff == nil {
 		return nil
 	}
 	semantics := diff.EffectiveIdentifierSemantics(dialect)
-	replaced := takenOverByIndexes(diff, semantics)
+	replaced := takenOverByAdditions(diff, semantics)
 	taken := make(map[difftypes.ConstraintIdentity]struct{})
 	for _, info := range diff.ConstraintsRemoved {
 		identity := constraintscope.Identity(semantics, info.TableName, info.Name)
@@ -237,13 +237,12 @@ func UniquesTakenOver(diff *difftypes.SchemaDiff, dialect string) map[difftypes.
 	return taken
 }
 
-// takenOverByIndexes keys everything an index the plan adds takes over from.
-func takenOverByIndexes(diff *difftypes.SchemaDiff, semantics identifier.Semantics) map[difftypes.ConstraintIdentity]struct{} {
+// takenOverByAdditions keys everything an addition of the plan takes over from; see
+// [difftypes.SchemaDiff.IndexesTakenOver].
+func takenOverByAdditions(diff *difftypes.SchemaDiff, semantics identifier.Semantics) map[difftypes.ConstraintIdentity]struct{} {
 	taken := make(map[difftypes.ConstraintIdentity]struct{})
-	for _, change := range diff.IndexesAdded {
-		for _, ref := range change.Replaces {
-			taken[constraintscope.Identity(semantics, ref.TableName, ref.Name)] = struct{}{}
-		}
+	for ref := range diff.IndexesTakenOver() {
+		taken[constraintscope.Identity(semantics, ref.TableName, ref.Name)] = struct{}{}
 	}
 	return taken
 }

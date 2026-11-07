@@ -305,17 +305,21 @@ SQL:
   answers `ERROR 1553`, and an index added first can make the server drop one it
   built by itself, so that a later `DROP INDEX` answers `ERROR 1091`. The new
   index takes the name the server gives the index it builds for that key.
-- A plan that adds an index the foreign key can stand on drops the index the
-  server built for the key in the statement that adds the new one: `ALTER TABLE
-  t DROP INDEX k, ADD INDEX i (a)`. Once the new index is there, the server
-  drops the one it built by itself, also after `DROP FOREIGN KEY`, so a later
-  `DROP INDEX k` answers `ERROR 1091`, and the rollback's `DROP INDEX i` answers
-  `ERROR 1553` while a key the plan kept stands on `i` alone. An index the
+- A plan that adds an index or a key the foreign key can stand on drops the
+  index the server built for the key in the statement that adds it: `ALTER
+  TABLE t DROP INDEX k, ADD INDEX i (a)`, and in the same way with `ADD
+  CONSTRAINT u UNIQUE (a)`, with `MODIFY COLUMN a INT UNIQUE` and with `ADD
+  PRIMARY KEY (a, id)`. Once the addition is there, the server drops the index
+  it built by itself, also after `DROP FOREIGN KEY`, so a later `DROP INDEX k`
+  answers `ERROR 1091`, and the rollback's removal of the addition answers
+  `ERROR 1553` while a key the plan kept stands on it alone. An index the
   author named `k` stays, and the catalog does not tell the two apart, so the
-  plan drops it either way. For a key the plan removes, the statement comes
-  after the key's drop; the rollback adds `k` back before it drops `i`. A
-  descending index takes nothing over on MySQL, which stands no key on it, and
-  takes the index over on MariaDB, which does.
+  plan drops it either way. Where the plan makes several such additions, the
+  first statement drops `k` and the others leave it out. For a key the plan
+  removes, a new index comes after the key's drop and a new key comes before
+  it; the rollback adds `k` back before it removes the addition. A descending
+  index takes nothing over on MySQL, which stands no key on it, and takes the
+  index over on MariaDB, which does.
 - A foreign key that moves to another column under its name takes that name for
   its new index, so a plan drops the key, then the old index, then adds the key.
   With the old index in place `ADD CONSTRAINT` answers `ERROR 1061: Duplicate key
