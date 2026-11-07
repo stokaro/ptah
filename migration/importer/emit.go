@@ -59,6 +59,19 @@ type plannedFile struct {
 	content []byte
 }
 
+// downFileSQL is what a migration's down file holds: its rollback, the statement
+// that it has none, or the placeholder for a source that said neither.
+func downFileSQL(migration SourceMigration) string {
+	switch {
+	case migration.DownSQL != "":
+		return migration.DownSQL
+	case migration.EmptyRollback:
+		return statedEmptyDownSQL
+	default:
+		return emptyDownSQL
+	}
+}
+
 // Emit writes each migration as a Ptah NNNNNNNNNN_description.up.sql / .down.sql
 // pair into outDir and refreshes ptah.sum. Migrations must already be Normalized.
 //
@@ -125,13 +138,7 @@ func Emit(outDir string, migrations []SourceMigration, declined []DeclinedFile, 
 				return nil, fmt.Errorf("cannot import migration %q as Ptah file %q: %w", migration.Name, name, err)
 			}
 		}
-		downSQL := migration.DownSQL
-		if downSQL == "" {
-			downSQL = emptyDownSQL
-			if migration.EmptyRollback {
-				downSQL = statedEmptyDownSQL
-			}
-		}
+		downSQL := downFileSQL(migration)
 		upSQL := migration.UpSQL
 		if migration.UpNoTransaction {
 			upSQL = addImportedNoTransactionDirective(upSQL)

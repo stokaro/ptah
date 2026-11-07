@@ -114,15 +114,30 @@ func TestLiquibaseImport_ANoTransactionChangesetStatesBoth(t *testing.T) {
 }
 
 // TestLiquibaseParse_AnEmptyXMLRollbackStatesIt pins the difference an empty DownSQL
-// cannot carry, on the parse a typed changeset takes.
+// cannot carry, on the parse a typed changeset takes. A rollback holding SQL states
+// nothing of the kind.
 func TestLiquibaseParse_AnEmptyXMLRollbackStatesIt(t *testing.T) {
-	c := qt.New(t)
+	tests := []struct {
+		name     string
+		rollback string
+		wantDown string
+		want     bool
+	}{
+		{name: "an empty rollback", rollback: `<rollback/>`, want: true},
+		{name: "a rollback holding SQL", rollback: `<rollback>DROP TABLE t;</rollback>`, wantDown: "DROP TABLE t;", want: false},
+	}
 
-	parsed, err := parseLiquibaseFor(c, "postgres", liquibaseXMLOneChangeSet(
-		`<createTable tableName="t"><column name="a" type="int"/></createTable><rollback/>`,
-	))
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 
-	c.Assert(err, qt.IsNil)
-	c.Assert(parsed.Migrations[0].DownSQL, qt.Equals, "")
-	c.Assert(parsed.Migrations[0].EmptyRollback, qt.IsTrue)
+			parsed, err := parseLiquibaseFor(c, "postgres", liquibaseXMLOneChangeSet(
+				`<createTable tableName="t"><column name="a" type="int"/></createTable>`+test.rollback,
+			))
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(parsed.Migrations[0].DownSQL, qt.Equals, test.wantDown)
+			c.Assert(parsed.Migrations[0].EmptyRollback, qt.Equals, test.want)
+		})
+	}
 }
