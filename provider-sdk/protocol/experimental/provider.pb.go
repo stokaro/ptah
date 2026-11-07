@@ -4972,9 +4972,17 @@ type Engine struct {
 	// exactly when the engine lists schema.enum-columns, and sent only to a host
 	// that lists it. Absent leaves the enum a type of its own, as the host
 	// keeps it for an engine of contract 25.30. Contract 25.31.
-	EnumColumns   *EnumColumns `protobuf:"bytes,27,opt,name=enum_columns,json=enumColumns,proto3" json:"enum_columns,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	EnumColumns *EnumColumns `protobuf:"bytes,27,opt,name=enum_columns,json=enumColumns,proto3" json:"enum_columns,omitempty"`
+	// Where the engine's connection reads capabilities that differ from its
+	// release line's, as the one line a host prints beneath them, such as
+	// "read from this cluster's feature flags at its monitoring endpoint, not
+	// from its release line". Present exactly when the engine lists
+	// engine.connection-capability-source, and sent only to a host that lists
+	// it. Absent, a host prints its own sentence for a provider's connection.
+	// Contract 25.35.
+	ConnectionCapabilitySource string `protobuf:"bytes,28,opt,name=connection_capability_source,json=connectionCapabilitySource,proto3" json:"connection_capability_source,omitempty"`
+	unknownFields              protoimpl.UnknownFields
+	sizeCache                  protoimpl.SizeCache
 }
 
 func (x *Engine) Reset() {
@@ -5194,6 +5202,13 @@ func (x *Engine) GetEnumColumns() *EnumColumns {
 		return x.EnumColumns
 	}
 	return nil
+}
+
+func (x *Engine) GetConnectionCapabilitySource() string {
+	if x != nil {
+		return x.ConnectionCapabilitySource
+	}
+	return ""
 }
 
 // EnumColumns is how an engine builds a column a source declares as an enum:
@@ -36236,7 +36251,7 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\x11semantic_identity\x18\x04 \x01(\tR\x10semanticIdentity\x12<\n" +
 	"\aengines\x18\x05 \x03(\v2\".ptah.provider.experimental.EngineR\aengines\x12\x1a\n" +
 	"\bfeatures\x18\x06 \x03(\tR\bfeatures\x12N\n" +
-	"\fmin_contract\x18\a \x01(\v2+.ptah.provider.experimental.ContractVersionR\vminContract\"\xb8\x0f\n" +
+	"\fmin_contract\x18\a \x01(\v2+.ptah.provider.experimental.ContractVersionR\vminContract\"\xfa\x0f\n" +
 	"\x06Engine\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
 	"\aaliases\x18\x02 \x03(\tR\aaliases\x12%\n" +
@@ -36271,7 +36286,8 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\vindex_kinds\x18\x19 \x03(\v2+.ptah.provider.experimental.SourceIndexKindR\n" +
 	"indexKinds\x12[\n" +
 	"\x12model_predecessors\x18\x1a \x03(\v2,.ptah.provider.experimental.ModelPredecessorR\x11modelPredecessors\x12J\n" +
-	"\fenum_columns\x18\x1b \x01(\v2'.ptah.provider.experimental.EnumColumnsR\venumColumns\x1aF\n" +
+	"\fenum_columns\x18\x1b \x01(\v2'.ptah.provider.experimental.EnumColumnsR\venumColumns\x12@\n" +
+	"\x1cconnection_capability_source\x18\x1c \x01(\tR\x1aconnectionCapabilitySource\x1aF\n" +
 	"\x18DefaultCapabilitiesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\bR\x05value:\x028\x01\"\xb5\x01\n" +
