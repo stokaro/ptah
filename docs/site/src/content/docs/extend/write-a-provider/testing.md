@@ -1,19 +1,21 @@
 ---
 title: Test a provider
-description: Test a provider's services with the SDK's validators, through its own process, and through a Ptah binary, including against host changes that have not been released.
+description: Test a provider's services with the SDK's validators, with the SDK's conformance suite, through its own process, and through a Ptah binary, including against host changes that have not been released.
 type: how-to
 sourceMode: source-neutral
 audience:
   - "go-developer"
   - "integration-developer"
 readerQuestion: "How do I test a provider before Ptah depends on it?"
-goal: "Cover a provider with service tests that use the SDK's validators, process tests through the SDK client, and tests that drive a ptah binary."
+goal: "Cover a provider with service tests that use the SDK's validators, the SDK's conformance suite, process tests through the SDK client, and tests that drive a ptah binary."
 sourceOfTruth:
   - "examples/minimal-provider/backend"
   - "examples/minimal-provider/integration"
   - "provider-sdk/provider"
   - "provider-sdk/runtime"
   - "provider-sdk/integration"
+  - "provider-sdk/conformance"
+  - "provider-sdk/cmd/ptah-provider-conformance"
   - "scripts/check-examples.sh"
   - "github:stokaro/ptah-ydb-plugin"
 generated: false
@@ -34,12 +36,12 @@ module of your own built with the SDK.
 
 ## What a passing provider does
 
-Ptah has no separate conformance suite for providers. The contract is enforced
-while Ptah runs: the SDK validates every request and every reply on both sides
-of the process boundary, and Ptah checks the description and what it plans
-with. A reply that fails a check is an error, or an unknown outcome, in the
-operator's command. Tests catch the same failures earlier. Cover at least
-these behaviors:
+The contract is enforced while Ptah runs: the SDK validates every request and
+every reply on both sides of the process boundary, and Ptah checks the
+description and what it plans with. A reply that fails a check is an error, or
+an unknown outcome, in the operator's command. Tests catch the same failures
+earlier, and the SDK's [conformance suite](#run-the-conformance-suite) checks
+most of them for you. Cover at least these behaviors:
 
 - A read of an empty database is complete, and an object the provider cannot
   describe fails the read rather than disappearing from it.
@@ -249,6 +251,51 @@ provider while you debug it, have it write a log file that an environment
 variable names, and pass the variable through `runtime.Options.Environment`
 in a test, or through the manifest entry's `environment` list under Ptah. The
 process receives no other variable from the command that starts it.
+
+## Run the conformance suite
+
+The SDK's package `conformance` checks a provider against the contract Ptah
+relies on, acting as a strict host. It describes the provider to several
+hosts, among them one that lists no two-way feature and one for each two-way
+feature that lists every other, and requires the description each of them
+receives. It calls every RPC of the protocol, sends your requests to the
+offline services under each of those hosts and twice to each, and reads every
+refusal, including what the SDK's client would not show. Given a database, it
+also opens sessions, reads, takes locks, runs transactions and applies your
+changes. The
+[README in the latest development source](https://github.com/stokaro/ptah/blob/master/provider-sdk/README.md#conformance-suite)
+lists each check.
+
+The suite knows no engine, so it works with what you give it:
+
+- requests to your offline services, each marked as one the provider answers
+  or refuses;
+- the model identities your last release described, which every later
+  release must still read;
+- an address whose credential is the suite's canary, which nothing the
+  provider sends back may quote;
+- the address of a database it may change, with changes to apply and revert
+  and statements the database refuses.
+
+With none of them, it still checks the handshake, the description, the
+negotiation and every service the description offers, without a database.
+
+From a test, `conformance.Run` reports each check as a subtest, and
+`conformance.Check` returns the report. The target is your executable,
+started as Ptah starts it, or your `runtime.Server` in the test process.
+Outside Go, or in a pipeline, the command runs the suite against an
+executable and prints the report as JSON:
+
+```bash
+go run github.com/stokaro/ptah/provider-sdk/cmd/ptah-provider-conformance \
+  -executable ./ptah-tutorial-provider -provider-id example.com/ptah-tutorial-provider -json
+```
+
+The command reads the address of a live database from
+`PTAH_CONFORMANCE_ADDRESS` and the canary address from
+`PTAH_CONFORMANCE_CREDENTIAL_ADDRESS`, and the rest from `-fixtures`, a JSON
+file of protocol messages. It exits 1 when a check failed. Run the offline
+part with your unit tests and the live part where your live tests run.
 
 ## Drive the provider through Ptah
 

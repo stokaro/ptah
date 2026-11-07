@@ -15,6 +15,7 @@ import (
 
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-plugin"
+	"github.com/stokaro/ptah/provider-sdk/internal/bootstrap"
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"github.com/stokaro/ptah/provider-sdk/provider"
 	"google.golang.org/grpc"
@@ -45,16 +46,8 @@ const (
 	// ProvisionTimeout bounds a dev database call that has no earlier deadline:
 	// starting a container may pull an image, and a cleanup drops every object
 	// a run left.
-	ProvisionTimeout  = 10 * time.Minute
-	transportName     = "ptah-provider"
-	parentEnvironment = "PTAH_PROVIDER_PARENT_PID"
+	ProvisionTimeout = 10 * time.Minute
 )
-
-var handshake = plugin.HandshakeConfig{
-	ProtocolVersion:  1,
-	MagicCookieKey:   "PTAH_PROVIDER_BOOTSTRAP",
-	MagicCookieValue: "ptah-provider-experimental-1",
-}
 
 // Server supplies the services exposed by one provider process. Description is
 // copied before serving. Advertised services must have implementations. Service
@@ -179,8 +172,8 @@ func Serve(server Server) error {
 	server.Description = proto.CloneOf(server.Description)
 	adapter := newServerAdapter(server)
 	plugin.Serve(&plugin.ServeConfig{
-		HandshakeConfig: handshake,
-		Plugins:         map[string]plugin.Plugin{transportName: &transport{adapter: adapter}},
+		HandshakeConfig: bootstrap.Handshake,
+		Plugins:         map[string]plugin.Plugin{bootstrap.ServiceName: &bootstrap.Binding{Service: adapter}},
 		Logger:          hclog.NewNullLogger(),
 		GRPCServer:      grpcServer(adapter),
 	})
@@ -197,22 +190,6 @@ func grpcServer(adapter *serverAdapter) func([]grpc.ServerOption) *grpc.Server {
 		options = append(options, grpc.MaxRecvMsgSize(LargeMessageBytes), grpc.MaxSendMsgSize(LargeMessageBytes), grpc.ChainUnaryInterceptor(adapter.references, adapter.reasons))
 		return grpc.NewServer(options...)
 	}
-}
-
-// transport is the go-plugin binding of the provider service. A host's
-// transport has no adapter; it only dials.
-type transport struct {
-	plugin.NetRPCUnsupportedPlugin
-	adapter *serverAdapter
-}
-
-func (t *transport) GRPCServer(_ *plugin.GRPCBroker, server *grpc.Server) error {
-	protocol.RegisterProviderServer(server, t.adapter)
-	return nil
-}
-
-func (*transport) GRPCClient(_ context.Context, _ *plugin.GRPCBroker, conn *grpc.ClientConn) (any, error) {
-	return protocol.NewProviderClient(conn), nil
 }
 
 type serverAdapter struct {

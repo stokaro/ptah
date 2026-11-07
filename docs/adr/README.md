@@ -101,6 +101,7 @@ a new record that names it, and its own status line is updated to point there.
 | [0089](0089-a-provider-plans-the-constraint-changes-of-a-table-it-owns.md) | A provider plans the constraint changes of a table it owns | Proposed |
 | [0090](0090-a-provider-decides-whether-two-checks-are-one.md) | A provider decides whether two checks are one | Proposed |
 | [0091](0091-an-engine-states-the-nulls-order-of-every-index-key.md) | An engine states the NULLS order of every index key | Proposed |
+| [0092](0092-a-provider-is-checked-by-a-suite-that-acts-as-a-strict-host.md) | A provider is checked by a suite that acts as a strict host | Proposed |
 
 ## Writing one
 

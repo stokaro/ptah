@@ -97,6 +97,12 @@ var nonBooleanPtahVars = []string{
 	"PTAH_TARGET_VERSION",       // migration version, passed to preflight hooks
 	"PTAH_TO_TAG",               // tag name, an Atlas capability Ptah refuses
 	"PTAH_VAR",                  // repeatable name=value assignment
+
+	// The provider SDK's conformance command reads its live addresses from
+	// the environment, so that a credential in one never reaches a process
+	// list.
+	"PTAH_CONFORMANCE_ADDRESS",            // database the suite may change
+	"PTAH_CONFORMANCE_CREDENTIAL_ADDRESS", // address carrying the suite's canary as its credential
 }
 
 // ptahVarPattern finds a variable name anywhere inside a string literal, so

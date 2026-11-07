@@ -39,6 +39,9 @@ unreleased contract without changing the independent fixture's published pin.
 `provider` defines service contracts and validates complete results.
 `runtime` starts and serves authenticated subprocesses. The runtime does not
 compare schemas, order migration dependencies, or maintain migration history.
+`conformance` checks a provider against this contract, and the command
+`cmd/ptah-provider-conformance` runs it against an executable; see
+[Conformance suite](#conformance-suite).
 
 ## Versions
 
@@ -738,6 +741,103 @@ provider can establish that its tokens match what its database reads.
 `COMMON_DDL` permits the host's common DDL assessment. It does not mean safe.
 Native behavioral and destructive effects carry explicit reasons. `UNKNOWN`
 counts as destructive for approval policy.
+
+## Conformance suite
+
+[ADR 0092](../docs/adr/0092-a-provider-is-checked-by-a-suite-that-acts-as-a-strict-host.md)
+decides this suite. Package `conformance` checks a provider against what a host
+relies on. It acts as a strict host on the raw wire: it sends `Describe` itself,
+calls each RPC with the generated client, runs the validator the SDK's client
+runs on every reply, and reads the status of every refusal, which the SDK's
+client turns into its own error. It imports no Ptah package and knows no
+engine.
+
+A target is how the suite reaches the provider:
+
+- `conformance.Executable(path, sha256, environment...)` starts the executable
+  through the bootstrap a host uses, once for each connection a check needs;
+- `conformance.InProcess(server)` serves a `runtime.Server` in the test
+  process through `runtime.ServeInMemory`, which applies the checks,
+  interceptors and limits `Serve` applies, over a connection that never leaves
+  the process;
+- `conformance.Wire(newServer)` serves a `protocol.ProviderServer` with no SDK
+  server in front of it, for a provider that implements the wire service
+  itself.
+
+`conformance.Check` returns a `Report`: the contract version, the provider's
+identity and one result per check, `passed`, `failed` or `not-applicable`,
+with a detail that never quotes the live address or the canary. It marshals
+to JSON. `conformance.Run` reports each check that applies as a subtest and
+logs the others, so a test runner that refuses skipped tests still runs it.
+`conformance.Checks` lists every check with what it requires.
+
+The offline part needs no database. It checks:
+
+- the bootstrap; the refusal of a host of another major, of a contract major
+  that differs from the revision, of a repeated or malformed host feature and
+  of a required feature the provider does not offer; that an unknown host
+  feature is ignored; what a host that announces no contract receives; and
+  that the minimum contract is one this SDK speaks;
+- the description under every host profile with `ValidateDescription`, the
+  identity a manifest names, and that two starts describe the provider the
+  same way;
+- that under a host that lists no two-way feature, and under each host that
+  lists every one but one, the description is the full one narrowed by
+  `NegotiatedDescription`. Where that narrowed description is one
+  `ValidateDescription` refuses, because a feature the host lists needs the
+  one it left out, the provider must refuse the host;
+- every RPC of the protocol with an empty request: a service the description
+  offers must not answer `Unimplemented`, and one it does not offer must not
+  succeed;
+- that a session-bound call naming a session the provider never opened is
+  refused;
+- with `Config.Calls`, each request to an offline service: under a host that
+  lists every two-way feature, a reply the SDK's validator accepts and the
+  same reply from a second call and from a second process, or the refusal the
+  call expects; under every narrowed host, a refusal of a request that uses an
+  addition the host did not list, and otherwise a reply that uses none;
+- with `Config.Models`, that every desired and observed model identity an
+  earlier release described, as `ModelIdentities` returns them, is still a
+  model the provider describes or a predecessor one names;
+- with `Config.CredentialAddress`, which carries `conformance.Canary` where a
+  credential goes, that the resolved database context does not quote it.
+
+With `Config.Live`, an address of a database the suite may change, the live
+part opens and closes sessions, reads the database under every host profile,
+takes one lock from two sessions in two processes, begins and finishes
+transactions, applies and reverts the author's changes, runs units the
+database refuses, opens the credential address, and sends session-bound reads.
+
+Across the run, a refusal or a result carries a reason only when both sides
+list `errors.reasons`, and then one reason of the valid shape; no reason,
+execution or transaction message or session field quotes the live address, a
+credential in it, or the canary.
+
+Under a host that lists fewer features, a provider may refuse what it cannot
+serve without them, as long as it does not use what the host did not list. A
+refusal with `Internal`, or one whose message is the text of
+`provider.ErrProtocol`, is not such a refusal: it is how the SDK's server
+answers a reply its validator refuses, and how a provider answers a defect of
+its own.
+
+The command takes the same configuration from flags, a fixture file and the
+environment:
+
+```bash
+go run github.com/stokaro/ptah/provider-sdk/cmd/ptah-provider-conformance \
+  -executable ./bin/provider -provider-id example.com/provider -json
+```
+
+`-fixtures` names a JSON file with `calls` (a `name`, a protocol `method`, its
+`request` in the Protobuf JSON mapping and `refused`), `models`, and `live`
+with `schemas`, `lock_name`, `changes` (each `apply` and `revert` a `render`
+request or a list of `units`) and `refused` units.
+`PTAH_CONFORMANCE_ADDRESS` names the live database and
+`PTAH_CONFORMANCE_CREDENTIAL_ADDRESS` the credential address; neither is a
+flag, so a credential never appears in a process list. `models` as the first
+argument prints the provider's model identities for a later release's
+fixtures. The command exits 0 when no check failed, 1 when one did and 2 when
+it could not run.
 
 ## Owner-defined value normalization
 
