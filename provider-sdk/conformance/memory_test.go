@@ -45,6 +45,9 @@ type memoryDefects struct {
 	namespacesRegardless bool
 	// seedsRegardless reserves the seed ledger whatever the host listed.
 	seedsRegardless bool
+	// prepareIncomplete answers PrepareCommonObjects with an incomplete
+	// reply.
+	prepareIncomplete bool
 }
 
 type memoryProvider struct {
@@ -202,7 +205,7 @@ func (m *memoryProvider) Inspect(ctx context.Context, request *protocol.InspectR
 // PrepareCommonObjects returns the declaration as it is: a namespace's name
 // is spelled one way on the memory engine.
 func (m *memoryProvider) PrepareCommonObjects(_ context.Context, request *protocol.PrepareCommonObjectsRequest) (*protocol.PreparedCommonObjects, error) {
-	return &protocol.PreparedCommonObjects{Complete: true, Prepared: proto.CloneOf(request.GetDeclared())}, nil
+	return &protocol.PreparedCommonObjects{Complete: !m.defects.prepareIncomplete, Prepared: proto.CloneOf(request.GetDeclared())}, nil
 }
 
 // ListSeedTables lists the tables of the session's database, the seed ledger

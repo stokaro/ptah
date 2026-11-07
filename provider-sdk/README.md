@@ -819,7 +819,10 @@ The offline part needs no database. It checks:
   lists every two-way feature, a reply the SDK's validator accepts and the
   same reply from a second call and from a second process, or the refusal the
   call expects; under every narrowed host, a refusal of a request that uses an
-  addition the host did not list, and otherwise a reply that uses none;
+  addition the host did not list, and otherwise a reply that uses none. A
+  call may need a two-way feature, such as `PrepareCommonObjects`: a narrowed
+  host that did not list it sends a request the SDK's server refuses before
+  the provider sees it, and that refusal passes;
 - with `Config.Models`, that every desired and observed model identity an
   earlier release described, as `ModelIdentities` returns them, is still a
   model the provider describes or a predecessor one names;
@@ -842,7 +845,12 @@ serve without them, as long as it does not use what the host did not list. A
 refusal with `Internal`, or one whose message is the text of
 `provider.ErrProtocol`, is not such a refusal: it is how the SDK's server
 answers a reply its validator refuses, and how a provider answers a defect of
-its own.
+its own. The one exception is the SDK server's refusal of a request: where
+the SDK's validator refuses a call's request under the narrowed host's
+description, the call passes when the provider answers `InvalidArgument` with
+exactly the validator's text, which is what the SDK's server sends before any
+provider code runs
+([ADR 0101](../docs/adr/0101-the-sdk-servers-refusal-of-a-request-is-not-the-providers.md)).
 
 The command takes the same configuration from flags, a fixture file and the
 environment:

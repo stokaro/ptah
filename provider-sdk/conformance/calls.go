@@ -8,6 +8,8 @@ import (
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"github.com/stokaro/ptah/provider-sdk/provider"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
@@ -225,13 +227,17 @@ func (r *run) answered(ctx context.Context, entry *rpc, request proto.Message, r
 	return failures
 }
 
-// narrowed sends request under a host that lists no two-way feature.
+// narrowed sends request under a host that does not list every two-way
+// feature.
 func (r *run) narrowed(ctx context.Context, entry *rpc, request proto.Message, refused bool, c *conn) []string {
 	offered := slices.Contains(c.description.GetFeatures(), entry.feature)
-	valid := offered && entry.validRequest(c.description, request) == nil
+	invalid := entry.validRequest(c.description, request)
+	valid := offered && invalid == nil
 	reply, err := entry.call(ctx, r, c, proto.CloneOf(request))
 	under := " under " + c.profile.name
 	switch {
+	case err != nil && refusedByServer(invalid, err):
+		return nil
 	case err != nil && !deliberate(err):
 		return []string{fmt.Sprintf("%s failed%s: %s", entry.method, under, errorText(err))}
 	case err != nil:
@@ -247,4 +253,19 @@ func (r *run) narrowed(ctx context.Context, entry *rpc, request proto.Message, r
 		return []string{fmt.Sprintf("the reply%s uses what the host did not negotiate: %v", under, err)}
 	}
 	return nil
+}
+
+// refusedByServer reports err as the refusal the SDK's server sends before
+// the provider sees a request that needs what the host did not list: invalid
+// is the SDK validator's verdict on the request under the host's negotiated
+// description, and err is InvalidArgument with exactly its text. The
+// provider never wrote that refusal, so it says nothing against the
+// provider. A reply the provider wrote and the server refused is Internal,
+// and a refusal of the provider's own has another text, so neither is this.
+func refusedByServer(invalid, err error) bool {
+	if invalid == nil {
+		return false
+	}
+	reported, isStatus := status.FromError(err)
+	return isStatus && reported.Code() == codes.InvalidArgument && reported.Message() == invalid.Error()
 }

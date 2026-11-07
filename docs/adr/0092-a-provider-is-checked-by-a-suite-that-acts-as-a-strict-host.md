@@ -182,3 +182,12 @@ through the validators.
 - Telling a refusal the provider meant from a reply the SDK refused reads the
   status message for the text of `provider.ErrProtocol`. A provider that puts
   that text in a refusal of its own under a narrowed host fails the check.
+
+## Amendments
+
+- The rule that a refusal whose message is the text of `provider.ErrProtocol`
+  is not one a provider meant has one exception under a narrowed host: the
+  refusal the SDK's server sends, with `InvalidArgument` and the request
+  validator's exact text, for a request that needs what the host did not
+  list. [ADR 0101](0101-the-sdk-servers-refusal-of-a-request-is-not-the-providers.md)
+  decides it.
