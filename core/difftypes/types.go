@@ -1855,6 +1855,15 @@ type ColumnDiff struct {
 	// changed (stokaro/ptah#2161).
 	NotNullConstraintNameChange *NotNullConstraintNameChange `json:"not_null_constraint_name_change,omitzero"`
 
+	// ReleasedNotNullConstraintName is the name the database holds for the NOT NULL
+	// of a column this change makes nullable, and is empty otherwise.
+	//
+	// The column holds the name until its own statement runs, so a statement ahead
+	// of that one cannot give the name to another column. It rides off the wire: it
+	// is an operand of the plan, like Desired, and the display shape already says the
+	// column became nullable.
+	ReleasedNotNullConstraintName string `json:"-"`
+
 	// CurrentSequenceRestart is the value the database's last RESTART of this
 	// Serial column's sequence moved it to, carried with a change to the
 	// sequence's start or increment and empty otherwise. YDB replays that
