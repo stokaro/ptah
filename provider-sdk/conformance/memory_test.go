@@ -85,11 +85,14 @@ func memoryDescription() *protocol.Description {
 		Revision: provider.Revision, ProviderId: memoryProviderID, Version: "1.0.0", SemanticIdentity: "memory-1",
 		Engines: []*protocol.Engine{{Id: memoryEngine, DefaultSchema: "main", Identifiers: memoryRules(),
 			Features: []string{provider.CommonTableIdentityFeature, provider.LocksFeature, provider.TransactionsFeature, provider.UnreadTablesFeature,
-				provider.CommonObjectsFeature, provider.CommonNamespacesFeature, provider.SeedsFeature, provider.ReservedSeedsFeature},
-			CommonObjects: &protocol.CommonObjectSupport{Kinds: []protocol.CommonObjectSupport_Kind{protocol.CommonObjectSupport_SCHEMA}}}},
+				provider.CommonObjectsFeature, provider.CommonNamespacesFeature, provider.SeedsFeature, provider.ReservedSeedsFeature, provider.LinkedReleaseLinesFeature},
+			CommonObjects: &protocol.CommonObjectSupport{Kinds: []protocol.CommonObjectSupport_Kind{protocol.CommonObjectSupport_SCHEMA}},
+			// The memory engine runs in the provider's process, so the line it
+			// certifies names the version linked, not an image.
+			ReleaseLines: []*protocol.ReleaseLine{{Line: "1", Support: protocol.ReleaseLine_CERTIFIED, Linked: "1.0.0"}}}},
 		Features: []string{provider.InspectFeature, provider.RenderFeature, provider.ExecuteFeature, provider.LocksFeature, provider.TransactionsFeature,
 			provider.ErrorReasonsFeature, provider.UnreadTablesFeature, provider.CommonObjectsFeature, provider.CommonNamespacesFeature,
-			provider.SeedsFeature, provider.ReservedSeedsFeature},
+			provider.SeedsFeature, provider.ReservedSeedsFeature, provider.LinkedReleaseLinesFeature},
 	}
 }
 

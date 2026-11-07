@@ -219,6 +219,11 @@ func TestCheck_WireFailurePath(t *testing.T) {
 			want:    []string{"reasons.negotiated"},
 		},
 		{
+			name:    "a certified release line that names an image and a linked engine",
+			defects: wireDefects{imageAndLinked: true},
+			want:    []string{"description.valid", "handshake.contract-25.0-host", "negotiation.description"},
+		},
+		{
 			name:    "an offered service that answers Unimplemented",
 			defects: wireDefects{renderUnimplemented: true},
 			want:    []string{"calls.render-create", "live.changes.notes", "live.refused", "services.advertised"},
