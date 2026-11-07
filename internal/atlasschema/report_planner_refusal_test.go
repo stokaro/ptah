@@ -8,9 +8,11 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemavalidation"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/errorkind"
 	"ptah.run/internal/planrefusal"
+	"ptah.run/migration/schemadiff"
 )
 
 // plannerRefusals are the refusals a planner raises, wrapped the way the plan
@@ -36,6 +38,11 @@ func plannerRefusals() []struct {
 			name: "an object something else depends on",
 			err:  fmt.Errorf("generate schema apply operations: %w", &planrefusal.DependentObjectError{Err: cause}),
 			want: &atlasschema.Refusal{Code: atlasschema.RefusalDependentObject},
+		},
+		{
+			name: "a declaration the comparison refused",
+			err:  fmt.Errorf("compare database schema: %w", &planrefusal.DeclarationError{Err: cause}),
+			want: &atlasschema.Refusal{Code: atlasschema.RefusalDeclarationRefused},
 		},
 	}
 }
@@ -92,6 +99,33 @@ func TestNewPlanReport_ReadsTheTypeOfAPlannerRefusal(t *testing.T) {
 
 	c.Assert(got.Outcome, qt.Equals, atlasschema.PlanOutcomeFailed)
 	c.Assert(got.Refusal, qt.IsNil)
+}
+
+// TestNewPlanReport_ReadsTheDeclarationMarkNotTheRefusalsUnderIt is the control
+// for the declaration refusal: a completed refusal of a schema, of either type,
+// names no code until the plan computation marks it, because `schema diff` raises
+// both over two documents with no target at all.
+func TestNewPlanReport_ReadsTheDeclarationMarkNotTheRefusalsUnderIt(t *testing.T) {
+	validation := schemavalidation.Result{Complete: true, Diagnostics: []schemavalidation.Diagnostic{
+		{Code: schemavalidation.UnsupportedFeature, Kind: "schema", Feature: "f", Message: "the target has no f"},
+	}}.Err("custom")
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{name: "the selected validator's refusal", err: fmt.Errorf("render: %w", validation)},
+		{name: "the comparison's own refusal", err: fmt.Errorf("compare: %w", &schemadiff.RefusalError{})},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got := atlasschema.NewPlanReport(atlasschema.PlanEvidence{Err: test.err})
+
+			c.Assert(got.Outcome, qt.Equals, atlasschema.PlanOutcomeFailed)
+			c.Assert(got.Refusal, qt.IsNil)
+		})
+	}
 }
 
 // TestRefusal_ViewOptionsWireNames pins the field names a consumer parses, as

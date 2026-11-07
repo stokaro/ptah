@@ -17,6 +17,7 @@ import (
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemavalidation"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
 	"ptah.run/engine"
@@ -31,6 +32,7 @@ import (
 	"ptah.run/internal/errorkind"
 	"ptah.run/internal/featureselect"
 	"ptah.run/internal/pgsystemschema"
+	"ptah.run/internal/planrefusal"
 	"ptah.run/internal/planstyle"
 	"ptah.run/internal/protectedtable"
 	"ptah.run/internal/providerurl"
@@ -541,7 +543,7 @@ func computeApplyPlan(
 	withSecretRotation(compareOpts, opts.Policy)
 	compared, undecided, err := schemadiff.CompareWithDatabaseReportingUndecidedAdditions(ctx, conn, desired, current, compareOpts, opts.Runtime)
 	if err != nil {
-		return applyComputation{}, fmt.Errorf("compare database schema: %w", err)
+		return applyComputation{}, fmt.Errorf("compare database schema: %w", comparisonRefusal(err))
 	}
 	// No statement is planned for a withheld object, so a plan that says
 	// nothing about it quietly does less than the desired schema asks for. The
@@ -806,6 +808,24 @@ func applyCurrentState(
 		readScope:        readScope,
 		schemasBeyondURL: schemascope.BeyondURL(conn.Info(), urlScope, readScope),
 	}, nil
+}
+
+// comparisonRefusal marks a refusal the comparison completed as a refused
+// declaration, and returns any other error as it came.
+//
+// The mark belongs here because this comparison runs after the target was read,
+// which is what a refusal code promises. Both types below are raised elsewhere,
+// and `schema diff` raises them over two documents with no target at all, so a
+// report that read them directly could break that promise. An error the
+// comparison could not complete, such as a provider that failed to answer, is
+// neither type.
+func comparisonRefusal(err error) error {
+	_, declaration := errors.AsType[*schemadiff.RefusalError](err)
+	_, validation := errors.AsType[*schemavalidation.RefusalError](err)
+	if declaration || validation {
+		return &planrefusal.DeclarationError{Err: err}
+	}
+	return err
 }
 
 // loadDesiredApplySchema materializes the desired schema for apply planning.

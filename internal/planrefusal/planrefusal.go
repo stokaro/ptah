@@ -8,8 +8,9 @@
 // are the same with it and without it.
 //
 // A refusal code promises a caller that the target was read and that nothing
-// reached it. Raise these only from a planner, which runs after the read and
-// before any statement is sent.
+// reached it. Raise these only from a planner, or from the plan computation
+// around the comparison it runs first, which both run after the read and before
+// any statement is sent.
 package planrefusal
 
 // ViewOption is one security option a plan would take from a view.
@@ -49,3 +50,23 @@ func (e *DependentObjectError) Error() string { return e.Err.Error() }
 
 // Unwrap returns the wrapped refusal.
 func (e *DependentObjectError) Unwrap() error { return e.Err }
+
+// DeclarationError is the refusal of a declaration by the comparison a plan
+// starts with: a check of what the schema states completed and found that this
+// target cannot host it or plan it.
+//
+// The errors it wraps are raised on other paths too, and `schema diff` raises
+// them over two documents with no target at all. So the plan computation sets
+// this type at its comparison, and a report reads this type rather than the ones
+// under it.
+type DeclarationError struct {
+	// Err is the refusal as the command reports it, naming what the schema
+	// states.
+	Err error
+}
+
+// Error returns the message of the wrapped refusal.
+func (e *DeclarationError) Error() string { return e.Err.Error() }
+
+// Unwrap returns the wrapped refusal.
+func (e *DeclarationError) Unwrap() error { return e.Err }
