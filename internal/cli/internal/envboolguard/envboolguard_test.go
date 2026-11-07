@@ -51,32 +51,33 @@ var nonBooleanPtahVars = []string{
 	// Two spellings, because the rename in stokaro/ptah#1887 honors the old one
 	// so a checkout configured before it keeps working -- and both have to be
 	// classified, or this guard reports the compatibility as an oversight.
-	"PTAH_ASSIST_CONFIG",       // path to the operator's Ptah Assist provider profiles
-	"PTAH_ASSIST_MODEL",        // model identifier for a profile that states none
-	"PTAH_ASSIST_PROFILE",      // provider profile to use when nothing else selects one
-	"PTAH_ATLAS_REFERENCE",     // path to the pinned Atlas CE binary
-	"PTAH_ATLAS_REGISTRY",      // OCI namespace an atlas:// reference resolves against
-	"PTAH_CURRENT_VERSION",     // migration version, passed to preflight hooks
-	"PTAH_DB_URL",              // database URL
-	"PTAH_DIALECT",             // dialect name
-	"PTAH_DIR",                 // migration directory URL
-	"PTAH_FIXTURE_HOST_SECRET", // test-provider secret used to prove environment isolation
-	"PTAH_FIXTURE_LINT_RULES",  // test-provider lint rule catalog, as JSON
-	"PTAH_FIXTURE_OMITTED",     // test-provider features left out of its description, comma-separated
-	"PTAH_FIXTURE_PID_FILE",    // test-provider process identity output path
-	"PTAH_FORMAT",              // Go template
-	"PTAH_GIT_PASSWORD",        // Git password or token for a git+https pull, used with PTAH_GIT_USERNAME
-	"PTAH_GIT_SSH_KEY_FILE",    // file of the unencrypted key a git+ssh pull authenticates with
-	"PTAH_GIT_USERNAME",        // Git username for a git+https pull
-	"PTAH_LOG_FORMAT",          // log format name
-	"PTAH_LOG_LEVEL",           // log level name
-	"PTAH_MIGRATIONS_DIR",      // native migration directory path
-	"PTAH_MIGRATIONS_ENGINE",   // storage engine for the revision table (ClickHouse)
-	"PTAH_OCI_BUILD_RUN",       // build identifier recorded on a published artifact
-	"PTAH_OCI_CA_FILE",         // PEM bundle trusted in addition to the system roots
-	"PTAH_OCI_CLIENT_CERT",     // mutual-TLS client certificate
-	"PTAH_OCI_CLIENT_KEY",      // mutual-TLS client key
-	"PTAH_OCI_CONFIG",          // path to Ptah's own registry credential file
+	"PTAH_ASSIST_CONFIG",         // path to the operator's Ptah Assist provider profiles
+	"PTAH_ASSIST_MODEL",          // model identifier for a profile that states none
+	"PTAH_ASSIST_PROFILE",        // provider profile to use when nothing else selects one
+	"PTAH_ATLAS_REFERENCE",       // path to the pinned Atlas CE binary
+	"PTAH_ATLAS_REGISTRY",        // OCI namespace an atlas:// reference resolves against
+	"PTAH_CURRENT_VERSION",       // migration version, passed to preflight hooks
+	"PTAH_DB_URL",                // database URL
+	"PTAH_DIALECT",               // dialect name
+	"PTAH_DIR",                   // migration directory URL
+	"PTAH_FIXTURE_HOST_SECRET",   // test-provider secret used to prove environment isolation
+	"PTAH_FIXTURE_LINT_RULES",    // test-provider lint rule catalog, as JSON
+	"PTAH_FIXTURE_OMITTED",       // test-provider features left out of its description, comma-separated
+	"PTAH_FIXTURE_PID_FILE",      // test-provider process identity output path
+	"PTAH_FIXTURE_STARTUP_DELAY", // test-provider delay before its handshake, a duration
+	"PTAH_FORMAT",                // Go template
+	"PTAH_GIT_PASSWORD",          // Git password or token for a git+https pull, used with PTAH_GIT_USERNAME
+	"PTAH_GIT_SSH_KEY_FILE",      // file of the unencrypted key a git+ssh pull authenticates with
+	"PTAH_GIT_USERNAME",          // Git username for a git+https pull
+	"PTAH_LOG_FORMAT",            // log format name
+	"PTAH_LOG_LEVEL",             // log level name
+	"PTAH_MIGRATIONS_DIR",        // native migration directory path
+	"PTAH_MIGRATIONS_ENGINE",     // storage engine for the revision table (ClickHouse)
+	"PTAH_OCI_BUILD_RUN",         // build identifier recorded on a published artifact
+	"PTAH_OCI_CA_FILE",           // PEM bundle trusted in addition to the system roots
+	"PTAH_OCI_CLIENT_CERT",       // mutual-TLS client certificate
+	"PTAH_OCI_CLIENT_KEY",        // mutual-TLS client key
+	"PTAH_OCI_CONFIG",            // path to Ptah's own registry credential file
 	// The value is `file`, not a boolean: a keychain, a file, and any store
 	// added later are more than two answers, and a boolean would have to be
 	// renamed the first time a third appears.
