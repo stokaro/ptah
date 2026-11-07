@@ -22,6 +22,7 @@ import (
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/diffreport"
@@ -52,6 +53,8 @@ const (
 	devURLFlag       = "dev-url"
 	exitCodeFlag     = "exit-code"
 	plainHTTPFlag    = "plain-http"
+	includeFlag      = "include"
+	excludeFlag      = "exclude"
 )
 
 type options struct {
@@ -64,6 +67,8 @@ type options struct {
 	exitOnDiff       bool
 	connectTimeout   string
 	schemas          string
+	include          []string
+	exclude          []string
 	plainHTTP        bool
 	ignoreExtensions []string
 }
@@ -101,6 +106,8 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	dbcli.RegisterExternalSchemaOptInFlag(flags)
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
 	dbcli.RegisterURLScopedSchemasFlag(flags, &opts.schemas)
+	flags.StringArrayVar(&opts.include, includeFlag, nil, "Schema objects to include in the comparison (Atlas-style selectors)")
+	flags.StringArrayVar(&opts.exclude, excludeFlag, nil, "Schema objects to exclude from the comparison (Atlas-style selectors)")
 	dbcli.RegisterIgnoreExtensionFlag(flags, &opts.ignoreExtensions)
 	tablerebuild.Register(cmd)
 	secretrotation.Register(cmd)
@@ -162,6 +169,17 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return err
 	}
+	requested := dbcli.ParseSchemas(schemasValue)
+	selection := atlasschema.LiveSelection{
+		Schemas:     requested,
+		Include:     opts.include,
+		Exclude:     opts.exclude,
+		Diagnostics: cmd.ErrOrStderr(),
+	}
+	if err := selection.Validate(runtime.Selections()); err != nil {
+		return err
+	}
+	ctx := selection.ReadContext(cmd.Context(), runtime.Selections())
 
 	declaredVars, err := dbcli.DeclaredVars(cmd)
 	if err != nil {
@@ -189,7 +207,7 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 	// apply` and `schema plan` read the file the same way. A MySQL or MariaDB
 	// URL that names no database is the whole server, as `schema apply` reads
 	// it, so the comparison reports the changes apply would make there.
-	connectCtx, cancelConnect := dbcli.ConnectContext(cmd.Context(), connectTimeout)
+	connectCtx, cancelConnect := dbcli.ConnectContext(ctx, connectTimeout)
 	conn, err := dbschema.ConnectToServer(connectCtx, dbURL)
 	cancelConnect()
 	if err != nil {
@@ -201,27 +219,30 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 	// external command into one composite schema, then read the database.
 	loadOpts.Dialect = conn.Info().Dialect
 	loadOpts.DatabaseURL = conn.Info().URL
-	result, err := schemaload.LoadContext(cmd.Context(), loadOpts)
+	result, err := schemaload.LoadContext(ctx, loadOpts)
 	if err != nil {
 		return err
 	}
 
-	requested := dbcli.ParseSchemas(schemasValue)
-	schemas, err := schemascope.ComparisonReadNames(cmd.Context(), conn.Info(), requested, conn, result)
+	schemas, err := schemascope.ComparisonReadNames(ctx, conn.Info(), requested, conn, result)
 	if err != nil {
 		return fmt.Errorf("error reading database schema: %w", err)
 	}
-	dbSchema, err := dbschema.ReadSchemaWithSchemasContext(cmd.Context(), conn, schemas)
+	dbSchema, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, schemas)
 	if err != nil {
 		return fmt.Errorf("error reading database schema: %w", err)
 	}
 
 	// 3. Compare schemas (dialect-aware: MySQL/MariaDB RESTRICT == NO ACTION)
 	info := conn.Info()
+	dbSchema, result, err = selection.Apply(ctx, runtime, info, dbSchema, result)
+	if err != nil {
+		return err
+	}
 	if err := schemascope.RefuseOutsideTargetDatabase(info, result); err != nil {
 		return err
 	}
-	compareOpts, err := resolveGeneratedExpressions(cmd.Context(), runtime, opts, connectTimeout, info, result)
+	compareOpts, err := resolveGeneratedExpressions(ctx, runtime, opts, connectTimeout, info, result)
 	if err != nil {
 		return err
 	}
@@ -230,7 +251,7 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 		return err
 	}
 	diff, undecided, err := schemadiff.CompareWithDatabaseReportingUndecidedAdditions(
-		cmd.Context(), conn, result, dbSchema, compareOpts, runtime,
+		ctx, conn, result, dbSchema, compareOpts, runtime,
 	)
 	if err != nil {
 		return fmt.Errorf("error comparing schemas: %w", err)

@@ -124,6 +124,18 @@ func orList(values []string) string {
 	return strings.Join(values[:len(values)-1], ", ") + ", or " + values[len(values)-1]
 }
 
+// comparisonSelectionHelp closes the help of the verbs that compare a desired
+// schema with a live database and change neither. It describes
+// [ptah.run/internal/atlasschema.LiveSelection].
+const comparisonSelectionHelp = `--include and --exclude take the selectors "schema diff" takes. --include
+positively selects what both comparison sides see, and --exclude subtracts from
+the result. Beside either of them --schemas selects too, so an object outside
+the named schemas leaves both sides. Under --include or --schemas, a selected
+object that depends on an unselected object is refused with an explicit
+diagnostic. An --exclude selection that matches nothing warns on standard error.
+An --include selection that matches nothing on either side is refused instead of
+reporting a synced schema.`
+
 // NewSchemaCommand returns the native schema command tree.
 func NewSchemaCommand() *cobra.Command {
 	cmd := &cobra.Command{
@@ -145,11 +157,11 @@ in the separate ptah-compat binary.`,
 
 	compareCmd := compare.NewCompareCommand()
 	compareCmd.Short = "Compare desired schema with a live database"
-	compareCmd.Long = "Compare desired schema with a live database."
+	compareCmd.Long = "Compare desired schema with a live database.\n\n" + comparisonSelectionHelp
 
 	driftCmd := drift.NewDriftCommand()
 	driftCmd.Short = "Check live database drift against desired schema"
-	driftCmd.Long = "Check live database drift against desired schema."
+	driftCmd.Long = "Check live database drift against desired schema.\n\n" + comparisonSelectionHelp
 
 	// Every verb that loads a schema, reads a database or names a dialect
 	// selects a provider for the engine it names, and reports a selection that

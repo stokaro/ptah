@@ -370,6 +370,35 @@ The refinement reports; it does not change the server. Ptah reads settings and
 plans by them, and never enables a database feature or writes a server
 variable.
 
+## Selecting what a comparison holds
+
+`ptah schema compare` and `ptah schema drift` take the selectors `ptah schema diff`
+takes, with the same meaning. Liquibase keeps `databasechangelog` and
+`databasechangeloglock` in the selected schema by default, and Flyway keeps
+`flyway_schema_history` there. The desired schema declares none of them, so without
+a selection `schema drift` reports `tables_removed` and `schema compare` prints
+`DROP TABLE` for each:
+
+```bash illustration
+ptah schema drift --schema-file schema.sql --db-url "$DATABASE_URL" --schemas public \
+  --exclude public.databasechangelog --exclude public.databasechangeloglock
+```
+
+An excluded object leaves the exit code, the findings, the inventory and the
+reconciling SQL, and a table's declared reference rows leave with it. Any other
+difference is still reported.
+
+| Flag | What it does | When it selects nothing |
+| --- | --- | --- |
+| `--exclude` | Subtracts from both sides | A warning on standard error, and nothing else changes |
+| `--include` | Keeps only what it selects on both sides | Refused with exit `2` |
+| `--schemas` | Alone, says where the database is read. Beside a selector it selects too: an object outside the named schemas leaves both sides | No refusal |
+
+Under `--include` or `--schemas`, a selected object that depends on an object the
+selection leaves out is refused with exit `2`, and the diagnostic names both. An
+account that cannot see a whole kind on MySQL or MariaDB
+[can leave the kind out](../../databases/mysql/#a-run-that-does-not-depend-on-a-kind).
+
 ## What a machine reads, and from where
 
 Every verb that has a machine-readable format writes that document to

@@ -684,8 +684,7 @@ trigger cannot say what it is called: `--exclude 'audit_*[type=trigger]'` still 
 hides a foreign key from a MariaDB account hides a primary key with it.
 
 `diff.skip` relieves nothing. It leaves destructive changes out of a plan, and the
-comparison still reads the kind to find what to add. `schema compare` and `schema
-drift` take no kind-level selector, so they need every privilege in the table.
+comparison still reads the kind to find what to add.
 
 `schema apply` refuses a selector that matched nothing, and an account that cannot
 see a trigger matches none with `--exclude '*[type=trigger]'`. Set
@@ -762,7 +761,10 @@ error 1577, and MySQL answers it.
 To have a report name the events, add `GRANT EVENT ON app.* TO reader`. `EVENT` also
 lets the account create and drop events, and neither engine has a privilege that
 only shows them. A run that does not depend on them can say so with
-`--exclude '*[type=event]'`, as for any other kind.
+`--exclude '*[type=event]'`, as for any other kind, and nothing reads or reports
+events then. A selector naming one event, such as `--exclude 'e_tick[type=event]'`,
+counts as a match and leaves the report as it is: the database still holds the
+event, and no selection changes that.
 
 ## Dev-database cleanup privileges
 

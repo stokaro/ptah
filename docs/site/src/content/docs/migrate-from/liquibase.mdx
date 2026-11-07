@@ -438,7 +438,9 @@ once the changelog is split along that line each half converts.
 
 If a database already has Liquibase's `DATABASECHANGELOG` table, do not run
 `ptah migrations up` against it. Record the history as already applied first:
-see [Adopt an existing database](../../start/adopt-an-existing-database/).
+see [Adopt an existing database](../../start/adopt-an-existing-database/). A read-only
+check beside Liquibase
+[leaves its two tables out](../../reference/native-commands/#selecting-what-a-comparison-holds).
 
 [Import an existing migration directory](../../versioned/import/) covers the
 other source tools and the format table.
