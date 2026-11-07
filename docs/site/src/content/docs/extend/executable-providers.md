@@ -554,9 +554,12 @@ names no metric adds no gauge, and a metric named like a common one, such as
 model, such as a YDB vector index, and the count adds to the indexes Ptah read.
 
 An engine can declare its release lines in the description. Each line names a
-support level and, for a line that claims testing, the image that runs it. A line
-the provider keeps without running it is best effort and carries the reason. The
-host refuses a description that claims testing nothing runs.
+support level and, for a line that claims testing, the image that runs it. An
+engine that runs inside the provider's process, such as DuckDB, has no image:
+with `engine.linked-release-lines` its certified line names the version of the
+library the provider links instead, which the provider's own tests run. A line
+the provider keeps without running it is best effort and carries the reason.
+The host refuses a description that claims testing nothing runs.
 `ptah providers check` prints the lines a provider declares, and
 `ptah db capabilities` certifies a server against them: the line its version
 names gives the preset its name, which is the line's label, and the support
@@ -723,7 +726,9 @@ The executable path must be absolute. A checksum detects changed bytes; it does
 not verify a publisher. Providers run with your operating-system permissions.
 Only environment entries explicitly listed as `NAME=value` reach the provider.
 Database credentials belong in the database address, which travels in the session
-request rather than process arguments.
+request rather than process arguments. Ptah starts the provider in its own
+working directory, so a relative file address, such as `duckdb://./app.db` for
+an engine that runs inside the provider, names the file it names for Ptah.
 
 Pass `--provider-config providers.json` on each supported command. This flag has
 no environment-variable binding. Ptah does not discover providers from `PATH` or
