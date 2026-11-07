@@ -57,6 +57,15 @@ Two type mappings are worth knowing because Oracle has no direct equivalent:
 `BOOLEAN` becomes `NUMBER(1)`, with `true` and `false` written as `1` and `0`,
 and an enum becomes `VARCHAR2(255)` with a `CHECK` listing its values.
 
+A column's size is compared by what it holds. `NUMBER` holds any number, `NUMBER(*,0)`
+and a column built as `INTEGER` hold no fraction, `FLOAT` is `FLOAT(126)`, `CHAR` and
+`NCHAR` hold one character, and `TIMESTAMP` holds six digits. `INTERVAL DAY TO SECOND`
+is `INTERVAL DAY(2) TO SECOND(6)` and `INTERVAL YEAR TO MONTH` is `INTERVAL YEAR(2) TO
+MONTH`. A lower size on a column with a row is refused by the server with `ORA-30082`
+for a date or an interval and `ORA-01440` for a number, so the plan rated destructive
+stops there and every value stays. See
+[how a column change is rated](../../direct/plan-and-approve/#how-a-column-change-is-rated).
+
 ## What the 23 and 21 lines do differently
 
 The `IF [NOT] EXISTS` guards are a 23-line feature. On 21 they are refused, and

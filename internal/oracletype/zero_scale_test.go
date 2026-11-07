@@ -32,6 +32,8 @@ func TestMap_DropsAnExplicitZeroScale(t *testing.T) {
 		{name: "a real scale survives", declared: "number(10,2)", want: "NUMBER(10,2)"},
 		{name: "a precision alone is unchanged", declared: "number(10)", want: "NUMBER(10)"},
 		{name: "a bare NUMBER is unchanged", declared: "number", want: "NUMBER"},
+		// NUMBER(*) is a bare NUMBER, which holds a fraction NUMBER(*,0) does not.
+		{name: "a star keeps its zero scale", declared: "number(*,0)", want: "NUMBER(*,0)"},
 	}
 
 	for _, test := range tests {

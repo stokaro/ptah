@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"ptah.run/internal/normalize"
 )
 
 var typeArgRe = regexp.MustCompile(`^([a-zA-Z0-9_ ]+)\(([^)]*)\)$`)
@@ -14,30 +16,33 @@ var typeArgRe = regexp.MustCompile(`^([a-zA-Z0-9_ ]+)\(([^)]*)\)$`)
 // by reducing the representable range or length.
 //
 // A temporal type counts when its precision, its range or the fields it keeps go down.
-// A precision that only one side declares means what the engine says it means, so
-// without an engine that transition is not answered here; see [IsNarrowingOn].
+// A size that only one side declares means what the engine says it means, so without an
+// engine that transition is not answered here; see [Engine.Narrows].
 func IsNarrowing(oldType, newType string) bool {
+	return narrows(oldType, newType, nil)
+}
+
+func narrows(oldType, newType string, engine *Engine) bool {
 	if oldInt, newInt, ok := fixedWidthIntegers(oldType, newType); ok {
 		return fixedWidthNarrows(oldInt, newInt)
 	}
 	if old, ok := parseTemporal(oldType); ok {
 		if updated, ok := parseTemporal(newType); ok {
-			return temporalNarrows(old, updated, bareDigits{})
+			return temporalNarrows(old, updated, engine)
 		}
 	}
-	oldSpec := parseSpec(oldType)
-	newSpec := parseSpec(newType)
-	if oldSpec.name == "" || newSpec.name == "" || oldSpec.name == newSpec.name && oldSpec.arg == 0 && newSpec.arg == 0 {
+	oldSpec, newSpec, ok := parseElementSpecs(oldType, newType)
+	if !ok {
 		return false
 	}
 	if isTextType(oldSpec.name) && isSizedString(newSpec.name) {
 		// A bare VARCHAR has no limit, so a text value keeps every character there.
-		newLen, bounded := stringLength(newSpec)
+		newLen, bounded := stringLength(newSpec, engine)
 		return !bounded || newLen != unboundedStringLength
 	}
 	if oldSpec.kind == "string" && newSpec.kind == "string" {
-		oldLen, oldOK := stringLength(oldSpec)
-		newLen, newOK := stringLength(newSpec)
+		oldLen, oldOK := stringLength(oldSpec, engine)
+		newLen, newOK := stringLength(newSpec, engine)
 		if oldOK && newOK {
 			return newLen < oldLen
 		}
@@ -46,7 +51,7 @@ func IsNarrowing(oldType, newType string) bool {
 		return integerRank(newSpec.name) < integerRank(oldSpec.name)
 	}
 	if oldSpec.kind == "decimal" && newSpec.kind == "decimal" {
-		return decimalNarrows(oldSpec.args, newSpec.args)
+		return decimalNarrows(oldSpec, newSpec, engine)
 	}
 	return false
 }
@@ -63,22 +68,25 @@ func IsNarrowing(oldType, newType string) bool {
 // would apply. Reusing integerRank keeps the alias folding intact: INT, INTEGER
 // and INT4 share a rank, so widening compares range, not spelling.
 func IsWidening(oldType, newType string) bool {
+	return widens(oldType, newType, nil)
+}
+
+func widens(oldType, newType string, engine *Engine) bool {
 	if oldInt, newInt, ok := fixedWidthIntegers(oldType, newType); ok {
 		return oldInt != newInt && !fixedWidthNarrows(oldInt, newInt)
 	}
 	if old, ok := parseTemporal(oldType); ok {
 		if updated, ok := parseTemporal(newType); ok {
-			return temporalWidens(old, updated)
+			return temporalWidens(old, updated, engine)
 		}
 	}
-	oldSpec := parseSpec(oldType)
-	newSpec := parseSpec(newType)
-	if oldSpec.name == "" || newSpec.name == "" || oldSpec.name == newSpec.name && oldSpec.arg == 0 && newSpec.arg == 0 {
+	oldSpec, newSpec, ok := parseElementSpecs(oldType, newType)
+	if !ok {
 		return false
 	}
 	if oldSpec.kind == "string" && newSpec.kind == "string" {
-		oldLen, oldOK := stringLength(oldSpec)
-		newLen, newOK := stringLength(newSpec)
+		oldLen, oldOK := stringLength(oldSpec, engine)
+		newLen, newOK := stringLength(newSpec, engine)
 		if oldOK && newOK {
 			return newLen > oldLen
 		}
@@ -87,9 +95,27 @@ func IsWidening(oldType, newType string) bool {
 		return integerRank(newSpec.name) > integerRank(oldSpec.name)
 	}
 	if oldSpec.kind == "decimal" && newSpec.kind == "decimal" {
-		return decimalWidens(oldSpec.args, newSpec.args)
+		return decimalWidens(oldSpec, newSpec, engine)
 	}
 	return false
+}
+
+// parseElementSpecs reads two types to compare, or their elements if both are arrays. An
+// array against its element, and two bare spellings of one name, have no answer.
+func parseElementSpecs(oldType, newType string) (oldSpec, newSpec spec, ok bool) {
+	oldElement, oldArray := normalize.ArrayElement(normalizeName(oldType))
+	newElement, newArray := normalize.ArrayElement(normalizeName(newType))
+	if oldArray != newArray {
+		return spec{}, spec{}, false
+	}
+	oldSpec, newSpec = parseSpec(oldElement), parseSpec(newElement)
+	switch {
+	case oldSpec.name == "" || newSpec.name == "":
+		return spec{}, spec{}, false
+	case oldSpec.name == newSpec.name && oldSpec.bare() && newSpec.bare():
+		return spec{}, spec{}, false
+	}
+	return oldSpec, newSpec, true
 }
 
 // VectorDimensionChange reports a pgvector column whose declared dimension
@@ -150,6 +176,13 @@ type spec struct {
 	kind string
 	arg  int
 	args []int
+	// unlimited reports SQL Server's (MAX).
+	unlimited bool
+}
+
+// bare reports a type that declares no size.
+func (s spec) bare() bool {
+	return s.arg == 0 && !s.unlimited
 }
 
 func parseSpec(raw string) spec {
@@ -159,16 +192,12 @@ func parseSpec(raw string) spec {
 	}
 	name := clean
 	var args []int
+	unlimited := false
 	if match := typeArgRe.FindStringSubmatch(clean); match != nil {
 		name = strings.TrimSpace(match[1])
-		for token := range strings.SplitSeq(match[2], ",") {
-			value, err := strconv.Atoi(strings.TrimSpace(token))
-			if err == nil {
-				args = append(args, value)
-			}
-		}
+		args, unlimited = parseTypeArguments(match[2])
 	}
-	parsed := spec{name: name, args: args}
+	parsed := spec{name: name, args: args, unlimited: unlimited}
 	if len(args) > 0 {
 		parsed.arg = args[0]
 	}
@@ -181,6 +210,35 @@ func parseSpec(raw string) spec {
 		parsed.kind = "decimal"
 	}
 	return parsed
+}
+
+// oracleStarDigits is the digits Oracle's NUMBER(*,s) holds.
+const oracleStarDigits = 38
+
+// parseTypeArguments reads what a type's parentheses hold. Each argument is a number,
+// perhaps with Oracle's length semantics behind it (`100 CHAR`), or SQL Server's MAX.
+// Oracle's star is its largest precision where a scale follows it: `NUMBER(*)` is a bare
+// NUMBER.
+func parseTypeArguments(list string) (args []int, unlimited bool) {
+	star := false
+	for token := range strings.SplitSeq(list, ",") {
+		fields := strings.Fields(token)
+		switch {
+		case len(fields) == 0:
+		case fields[0] == "max":
+			unlimited = true
+		case fields[0] == "*":
+			star = true
+		default:
+			if value, err := strconv.Atoi(fields[0]); err == nil {
+				args = append(args, value)
+			}
+		}
+	}
+	if star && len(args) > 0 {
+		args = append([]int{oracleStarDigits}, args...)
+	}
+	return args, unlimited
 }
 
 func normalizeName(raw string) string {
@@ -206,7 +264,7 @@ func normalizeName(raw string) string {
 // and a width change on an Oracle column -- in either direction -- was never
 // reported (stokaro/ptah#1875).
 func isSizedString(name string) bool {
-	return name == "varchar" || name == "char" || name == "character" ||
+	return name == "varchar" || name == "char" || name == "character" || name == "bpchar" ||
 		name == "varchar2" || name == "nvarchar2" || name == "nchar" || name == "nvarchar"
 }
 
@@ -285,41 +343,58 @@ func fixedWidthNarrows(oldInt, newInt fixedWidthInteger) bool {
 	}
 }
 
-func decimalNarrows(oldArgs, newArgs []int) bool {
-	oldP, oldS, oldOK := decimalPrecisionScale(oldArgs)
-	newP, newS, newOK := decimalPrecisionScale(newArgs)
-	if !oldOK || !newOK {
+func decimalNarrows(oldSpec, newSpec spec, engine *Engine) bool {
+	oldSize, oldOK := decimalSizeOf(oldSpec, engine)
+	newSize, newOK := decimalSizeOf(newSpec, engine)
+	if !oldOK || !newOK || newSize.unlimited {
 		return false
 	}
-	oldIntegerDigits := oldP - oldS
-	newIntegerDigits := newP - newS
-	return newP < oldP || newS < oldS || newIntegerDigits < oldIntegerDigits
+	if oldSize.unlimited {
+		return true
+	}
+	oldIntegerDigits := oldSize.precision - oldSize.scale
+	newIntegerDigits := newSize.precision - newSize.scale
+	return newSize.precision < oldSize.precision || newSize.scale < oldSize.scale || newIntegerDigits < oldIntegerDigits
 }
 
-func decimalWidens(oldArgs, newArgs []int) bool {
-	oldP, oldS, oldOK := decimalPrecisionScale(oldArgs)
-	newP, newS, newOK := decimalPrecisionScale(newArgs)
-	if !oldOK || !newOK {
+func decimalWidens(oldSpec, newSpec spec, engine *Engine) bool {
+	oldSize, oldOK := decimalSizeOf(oldSpec, engine)
+	newSize, newOK := decimalSizeOf(newSpec, engine)
+	if !oldOK || !newOK || oldSize.unlimited {
 		return false
 	}
-	oldIntegerDigits := oldP - oldS
-	newIntegerDigits := newP - newS
-	return newP > oldP || newS > oldS || newIntegerDigits > oldIntegerDigits
+	if newSize.unlimited {
+		return true
+	}
+	oldIntegerDigits := oldSize.precision - oldSize.scale
+	newIntegerDigits := newSize.precision - newSize.scale
+	return newSize.precision > oldSize.precision || newSize.scale > oldSize.scale || newIntegerDigits > oldIntegerDigits
 }
 
-// decimalPrecisionScale returns the precision and scale carried by a decimal
-// type's parsed arguments. A precision given without a scale defaults the scale
-// to 0 (NUMERIC(10) is NUMERIC(10,0)), so a later scale addition or removal is
-// still a comparable change. ok is false for a bare NUMERIC with no precision at
-// all, whose unbounded precision cannot be compared against a sized one.
-func decimalPrecisionScale(args []int) (precision, scale int, ok bool) {
-	switch len(args) {
+// decimalSize is what a decimal type holds.
+type decimalSize struct {
+	precision, scale int
+	unlimited        bool
+}
+
+// decimalSizeOf reads the size a decimal type declares. A precision given without a scale
+// defaults the scale to 0 (NUMERIC(10) is NUMERIC(10,0)), so a later scale addition or
+// removal is still a comparable change. A bare NUMERIC holds what the engine says, and ok
+// is false where no engine says.
+func decimalSizeOf(s spec, engine *Engine) (size decimalSize, ok bool) {
+	switch len(s.args) {
 	case 0:
-		return 0, 0, false
+		if engine == nil || !engine.Bare.Stated {
+			return decimalSize{}, false
+		}
+		if engine.Bare.DecimalPrecision == 0 {
+			return decimalSize{unlimited: true}, true
+		}
+		return decimalSize{precision: engine.Bare.DecimalPrecision}, true
 	case 1:
-		return args[0], 0, true
+		return decimalSize{precision: s.args[0]}, true
 	default:
-		return args[0], args[1], true
+		return decimalSize{precision: s.args[0], scale: s.args[1]}, true
 	}
 }
 
@@ -327,15 +402,29 @@ func decimalPrecisionScale(args []int) (precision, scale int, ok bool) {
 // limit); it compares greater than any real column length.
 const unboundedStringLength = math.MaxInt
 
-// stringLength returns the effective character length of a sized-string spec.
-// A declared length is used as-is; a bare VARCHAR is unbounded. ok is false for
-// a bare CHAR / CHARACTER, whose implicit length is dialect-defined, so such a
-// type is not compared on length.
-func stringLength(s spec) (length int, ok bool) {
-	if s.arg > 0 {
+// stringLength returns the effective character length of a sized-string spec. A declared
+// length is used as-is, and SQL Server's (MAX) and PostgreSQL's bare bpchar have no limit.
+// A bare VARCHAR has no limit unless the engine says otherwise, and a bare CHAR or NCHAR
+// holds one character on every engine. Without an engine, ok is false for a bare CHAR.
+func stringLength(s spec, engine *Engine) (length int, ok bool) {
+	switch {
+	case s.unlimited:
+		return unboundedStringLength, true
+	case s.arg > 0:
 		return s.arg, true
-	}
-	if s.name == "varchar" {
+	case s.name == "bpchar":
+		return unboundedStringLength, true
+	case engine != nil && engine.Bare.Stated:
+		switch s.name {
+		case "char", "character", "nchar":
+			return 1, true
+		case "varchar", "nvarchar", "varchar2", "nvarchar2":
+			if engine.Bare.VariableLength > 0 {
+				return engine.Bare.VariableLength, true
+			}
+			return unboundedStringLength, true
+		}
+	case s.name == "varchar":
 		return unboundedStringLength, true
 	}
 	return 0, false

@@ -2722,9 +2722,9 @@ statement's words cannot say, or a zero assessment: a verdict the node reports a
 whatever type it replaces. A node that renders several statements gives its verdict
 only to one that changes the type or restates the column. `core/difftypes.ColumnDiff`
 and `core/ast.ModifyColumnOperation` carry `TypeNarrows`, the comparison's answer on
-the target engine, since a temporal type that declares no precision holds what the
+the target engine, since a type that declares no size or precision holds what the
 engine says. `safety.IsTypeNarrowing` has no engine, and answers false for a transition
-that declares a precision on one side only.
+that declares a size or a precision on one side only.
 
 A saved schema plan uses `OwnerVerdicts`, `ColumnVerdicts` and `Fold`, and the column
 verdict marks no statement `owned`. The JSON plan marks each

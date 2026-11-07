@@ -1241,10 +1241,10 @@ func severityOutranks(candidate, current Severity) bool {
 // IsTypeNarrowing reports whether changing from oldType to newType can lose
 // data by reducing the representable range, length or temporal precision.
 //
-// A temporal type that declares no precision holds what its engine says, so a
-// transition that declares one on one side only answers false here: such a type
-// narrows on one engine and widens on another, and a planned operation carries the
-// comparison's answer in [ast.ModifyColumnOperation.TypeNarrows].
+// A type that declares no size or precision holds what its engine says, so a transition
+// that declares one on one side only answers false here: such a type narrows on one
+// engine and widens on another, and a planned operation carries the comparison's answer
+// in [ast.ModifyColumnOperation.TypeNarrows].
 func IsTypeNarrowing(oldType, newType string) bool {
 	return typechange.IsNarrowing(oldType, newType)
 }

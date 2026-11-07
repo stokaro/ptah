@@ -39,6 +39,9 @@ func Map(declaredType string) string {
 	declared := strings.TrimSpace(declaredType)
 	base, arguments := splitTypeArguments(strings.ToUpper(declared))
 
+	if qualified, ok := zonedPrecision(base, arguments); ok {
+		return qualified
+	}
 	if mapped, ok := fixedTypes[base]; ok {
 		return mapped
 	}
@@ -101,6 +104,24 @@ var fixedTypes = map[string]string{
 	"JSON":  "JSON",
 	"JSONB": "JSON",
 	"XML":   "XMLTYPE",
+}
+
+// zonedPrecision writes a precision a declared name carries where Oracle's spelling of
+// that name holds it, behind TIMESTAMP. Taken from fixedTypes, `timestamptz(3)` would
+// lose its digits: the column built holds six, and a declaration of three never matches
+// it.
+func zonedPrecision(base, arguments string) (string, bool) {
+	if arguments == "" {
+		return "", false
+	}
+	switch base {
+	case "TIMESTAMPTZ":
+		return "TIMESTAMP" + arguments + " WITH TIME ZONE", true
+	case "DATETIME":
+		return "TIMESTAMP" + arguments, true
+	default:
+		return "", false
+	}
 }
 
 // parameterizedType answers the types that carry the declaration's own
@@ -180,7 +201,9 @@ func withoutZeroScale(arguments string) string {
 		return arguments
 	}
 	precision, scale, split := strings.Cut(trimmed[1:len(trimmed)-1], ",")
-	if !split || strings.TrimSpace(scale) != "0" {
+	// `NUMBER(*,0)` is the one spelling the zero belongs to: it holds no fraction, where
+	// `NUMBER(*)` is a bare NUMBER and holds one.
+	if !split || strings.TrimSpace(scale) != "0" || strings.TrimSpace(precision) == "*" {
 		return arguments
 	}
 	return "(" + strings.TrimSpace(precision) + ")"

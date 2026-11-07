@@ -111,6 +111,7 @@ func spanner() descriptor.Dialect {
 			RolePasswords:          true,
 			RoutineTypeAliases:     "pg-aliases",
 			SingleStringType:       true,
+			BareTypes:              descriptor.BareTypes{Stated: true, FloatBits: 53, RealBits: 24},
 		},
 
 		// The PostgreSQL interface has no enum type, so an enum column is TEXT
