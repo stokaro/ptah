@@ -6,19 +6,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"math"
-	"os"
-	"os/exec"
 	"path/filepath"
-	"slices"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
-	"github.com/hashicorp/go-hclog"
-	"github.com/hashicorp/go-plugin"
+	"github.com/stokaro/ptah/provider-sdk/internal/bootstrap"
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"github.com/stokaro/ptah/provider-sdk/provider"
 	"google.golang.org/grpc"
@@ -53,10 +46,9 @@ type Options struct {
 // concurrent. Close ends the subprocess and invalidates every session handle.
 // A client is never reconnected or retried automatically.
 type Client struct {
-	process     *plugin.Client
+	process     *bootstrap.Process
 	rpc         protocol.ProviderClient
 	description *protocol.Description
-	cancel      context.CancelFunc
 	closeOnce   sync.Once
 }
 
@@ -77,39 +69,19 @@ func Start(ctx context.Context, options Options) (*Client, error) {
 	}
 	startup, cancelStartup := context.WithTimeout(ctx, timeout)
 	defer cancelStartup()
-	life, cancelLife := context.WithCancel(context.Background())
-	stopCancel := context.AfterFunc(startup, cancelLife)
-	defer stopCancel()
-	command := exec.CommandContext(life, options.Executable) // #nosec G204 -- the caller explicitly authorizes an absolute, checksum-pinned executable
-	command.Env = append(slices.Clone(options.Environment), parentEnvironment+"="+strconv.Itoa(os.Getpid()))
 	exchange := &negotiatedTransport{}
-	process := plugin.NewClient(&plugin.ClientConfig{
-		HandshakeConfig: handshake,
-		Plugins:         map[string]plugin.Plugin{transportName: &transport{}},
-		Cmd:             command, AllowedProtocols: []plugin.Protocol{plugin.ProtocolGRPC},
-		SecureConfig: &plugin.SecureConfig{Checksum: checksum, Hash: sha256.New()},
-		AutoMTLS:     true, SkipHostEnv: true, StartTimeout: timeout,
-		Logger: hclog.NewNullLogger(), SyncStdout: io.Discard, SyncStderr: io.Discard,
-		GRPCDialOptions: dialOptions(exchange),
+	process, err := bootstrap.Start(startup, bootstrap.Options{
+		Executable: options.Executable, Checksum: checksum, Environment: options.Environment,
+		Timeout: timeout, DialOptions: dialOptions(exchange),
 	})
-	client := &Client{process: process, cancel: cancelLife}
-	connection, err := process.Client()
-	if err != nil {
-		client.Close()
+	switch {
+	case errors.Is(err, bootstrap.ErrService), errors.Is(err, bootstrap.ErrServiceType):
+		return nil, fmt.Errorf("%w: %w", provider.ErrProtocol, err)
+	case err != nil:
 		return nil, startupError(startup)
 	}
-	dispensed, err := connection.Dispense(transportName)
-	if err != nil {
-		client.Close()
-		return nil, fmt.Errorf("%w: provider service was not available", provider.ErrProtocol)
-	}
-	rpc, ok := dispensed.(protocol.ProviderClient)
-	if !ok {
-		client.Close()
-		return nil, fmt.Errorf("%w: invalid provider service", provider.ErrProtocol)
-	}
-	client.rpc = rpc
-	description, err := rpc.Describe(startup, &protocol.DescribeRequest{Revision: provider.Revision, RequiredFeatures: options.RequiredFeatures,
+	client := &Client{process: process, rpc: process.Provider()}
+	description, err := client.rpc.Describe(startup, &protocol.DescribeRequest{Revision: provider.Revision, RequiredFeatures: options.RequiredFeatures,
 		HostContract: provider.Contract(), HostFeatures: options.HostFeatures})
 	if err != nil {
 		client.Close()
@@ -126,7 +98,7 @@ func Start(ctx context.Context, options Options) (*Client, error) {
 	}
 	client.description = proto.CloneOf(description)
 	exchange.negotiated(client.description)
-	if !stopCancel() || startup.Err() != nil {
+	if !process.Keep() || startup.Err() != nil {
 		client.Close()
 		return nil, startupError(startup)
 	}
@@ -171,7 +143,7 @@ func (c *Client) Description() *protocol.Description {
 // Close terminates the subprocess. Callers close their sessions first when
 // possible. Repeated closes are harmless; termination never proves rollback.
 func (c *Client) Close() {
-	c.closeOnce.Do(func() { defer c.cancel(); c.process.Kill() })
+	c.closeOnce.Do(func() { c.process.Kill() })
 }
 
 // Open starts a session after negotiation. It returns no usable handle on an
@@ -308,14 +280,8 @@ func validateOptions(options Options) ([]byte, error) {
 	if !filepath.IsAbs(options.Executable) || options.ProviderID == "" || options.StartupTimeout < 0 {
 		return nil, fmt.Errorf("%w: absolute executable, provider identity, and nonnegative startup timeout are required", provider.ErrProtocol)
 	}
-	names := make(map[string]bool)
-	for _, entry := range options.Environment {
-		name, _, ok := strings.Cut(entry, "=")
-		name = strings.ToUpper(name)
-		if !ok || name == "" || strings.ContainsAny(entry, "\x00\r\n") || strings.HasPrefix(name, "PLUGIN_") || strings.HasPrefix(name, "PTAH_PROVIDER_") || names[name] {
-			return nil, fmt.Errorf("%w: invalid or reserved provider environment entry", provider.ErrProtocol)
-		}
-		names[name] = true
+	if err := bootstrap.ValidateEnvironment(options.Environment); err != nil {
+		return nil, fmt.Errorf("%w: %w", provider.ErrProtocol, err)
 	}
 	if err := provider.ValidateHostFeatures(options.HostFeatures); err != nil {
 		return nil, err

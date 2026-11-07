@@ -97,6 +97,7 @@ a new record that names it, and its own status line is updated to point there.
 | [0085](0085-a-schema-read-does-not-depend-on-the-connecting-role.md) | A schema read does not depend on the connecting role | Accepted |
 | [0086](0086-a-rehearsal-moves-the-targets-values-into-its-dev-realm.md) | A rehearsal moves the target's values into its dev realm | Proposed |
 | [0087](0087-a-mysql-family-read-refuses-what-the-account-cannot-see.md) | A MySQL-family read refuses what the account cannot see | Accepted |
+| [0088](0088-a-provider-is-checked-by-a-suite-that-acts-as-a-strict-host.md) | A provider is checked by a suite that acts as a strict host | Proposed |
 
 ## Writing one
 
