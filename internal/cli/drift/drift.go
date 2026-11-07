@@ -65,6 +65,8 @@ func NewDriftCommand() *cobra.Command {
 	var format string
 	var severity string
 	var ignored []string
+	var include []string
+	var exclude []string
 	var ignoreExtensions []string
 	var useExitCode bool
 	var connectTimeoutRaw string
@@ -87,6 +89,8 @@ func NewDriftCommand() *cobra.Command {
 				format:            format,
 				severity:          severity,
 				ignored:           ignored,
+				include:           include,
+				exclude:           exclude,
 				useExitCode:       useExitCode,
 				connectTimeoutRaw: connectTimeoutRaw,
 				schemasRaw:        schemasRaw,
@@ -105,6 +109,8 @@ func NewDriftCommand() *cobra.Command {
 	cmd.Flags().StringVar(&format, "format", formatText, "Output format: text, json, github-actions")
 	cmd.Flags().StringVar(&severity, "severity", severityAll, "Failing drift threshold: all or destructive")
 	cmd.Flags().StringArrayVar(&ignored, "ignore", nil, "Ignore drift for a scope, for example tables=audit_log,auth.users")
+	cmd.Flags().StringArrayVar(&include, "include", nil, "Schema objects to include in the check (Atlas-style selectors)")
+	cmd.Flags().StringArrayVar(&exclude, "exclude", nil, "Schema objects to exclude from the check (Atlas-style selectors)")
 	dbcli.RegisterURLScopedSchemasFlag(cmd.Flags(), &schemasRaw)
 	cmd.Flags().BoolVar(&useExitCode, "exit-code", true, "Return 1 when drift exceeds --severity; errors still return 2")
 	cmd.Flags().StringVar(
@@ -132,6 +138,8 @@ type runOptions struct {
 	format            string
 	severity          string
 	ignored           []string
+	include           []string
+	exclude           []string
 	useExitCode       bool
 	connectTimeoutRaw string
 	schemasRaw        string
@@ -257,6 +265,9 @@ func runDrift(cmd *cobra.Command, opts runOptions) error {
 		ConnectTimeout:  connectTimeout,
 		IgnoredTables:   ignoredTables,
 		Schemas:         schemas,
+		Include:         opts.include,
+		Exclude:         opts.exclude,
+		Diagnostics:     cmd.ErrOrStderr(),
 		PlainHTTP:       opts.plainHTTP,
 		Vars:            declaredVars,
 		ManagedData:     true,

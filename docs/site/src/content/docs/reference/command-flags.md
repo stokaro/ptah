@@ -1533,8 +1533,10 @@ Read the columns as follows.
 | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
 | `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
 | `--env` | `string` | — | `PTAH_ENV` | — |
+| `--exclude` | `stringArray` | `[]` | `PTAH_EXCLUDE` | — |
 | `--exit-code` | `bool` | `false` | `PTAH_EXIT_CODE` | — |
 | `--ignore-extension` | `stringArray` | `[]` | `PTAH_IGNORE_EXTENSION` | — |
+| `--include` | `stringArray` | `[]` | `PTAH_INCLUDE` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
@@ -1584,10 +1586,12 @@ Read the columns as follows.
 | `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
 | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
 | `--env` | `string` | — | `PTAH_ENV` | — |
+| `--exclude` | `stringArray` | `[]` | `PTAH_EXCLUDE` | — |
 | `--exit-code` | `bool` | `true` | `PTAH_EXIT_CODE` | — |
 | `--format` | `string` | `text` | `PTAH_FORMAT` | — |
 | `--ignore` | `stringArray` | `[]` | `PTAH_IGNORE` | — |
 | `--ignore-extension` | `stringArray` | `[]` | `PTAH_IGNORE_EXTENSION` | — |
+| `--include` | `stringArray` | `[]` | `PTAH_INCLUDE` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |

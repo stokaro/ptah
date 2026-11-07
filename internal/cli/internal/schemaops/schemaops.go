@@ -4,6 +4,7 @@ package schemaops
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -15,7 +16,9 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemasource"
+	"ptah.run/core/selectext"
 	"ptah.run/dbschema"
+	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/datamigrate"
@@ -34,6 +37,7 @@ type Runtime interface {
 	dataext.Runtime
 	schemadiff.DatabaseRuntime
 	schemaload.Owners
+	selectext.Runtime
 }
 
 // CompareOptions configures a live schema comparison.
@@ -49,8 +53,16 @@ type CompareOptions struct {
 	// Schemas names the schemas the database is read at. Empty reads what
 	// `schema apply` reads: the schemas the URL covers, every schema of the
 	// database when it pins none, and every schema the desired schema names.
-	Schemas   []string
-	PlainHTTP bool
+	Schemas []string
+	// Include and Exclude select what both comparison sides keep, with the
+	// selectors `schema diff` takes. See [atlasschema.LiveSelection], which says
+	// how Schemas joins them.
+	Include []string
+	Exclude []string
+	// Diagnostics receives the warning for an Exclude selector that matched
+	// nothing. Nil writes no warning.
+	Diagnostics io.Writer
+	PlainHTTP   bool
 	// ProjectEnv is the atlas.hcl environment an `env://` schema file is
 	// expanded through; the zero value keeps the refusal (stokaro/ptah#1760).
 	ProjectEnv atlassource.ProjectEnv
@@ -147,6 +159,16 @@ func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
 	if opts.DatabaseURL == "" {
 		return nil, fmt.Errorf("database URL is required")
 	}
+	selection := atlasschema.LiveSelection{
+		Schemas:     opts.Schemas,
+		Include:     opts.Include,
+		Exclude:     opts.Exclude,
+		Diagnostics: opts.Diagnostics,
+	}
+	if err := selection.Validate(opts.Runtime.Selections()); err != nil {
+		return nil, err
+	}
+	ctx = selection.ReadContext(ctx, opts.Runtime.Selections())
 	dialect, err := comparisonDialect(ctx, opts.DatabaseURL)
 	if err != nil {
 		return nil, err
@@ -195,12 +217,18 @@ func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
 		return nil, fmt.Errorf("error reading database schema: %w", errorkind.TargetRead(err))
 	}
 
+	// Ahead of --ignore, so a selector is measured against what the read found:
+	// a table both flags name is not a selector that matched nothing.
+	info := conn.Info()
+	dbSchema, desired, err = selection.Apply(ctx, opts.Runtime, info, dbSchema, desired)
+	if err != nil {
+		return nil, err
+	}
 	if len(opts.IgnoredTables) > 0 {
 		desired = FilterGeneratedTables(desired, opts.IgnoredTables)
 		dbSchema = FilterDatabaseTables(dbSchema, opts.IgnoredTables)
 	}
 
-	info := conn.Info()
 	if err := schemascope.RefuseOutsideTargetDatabase(info, desired); err != nil {
 		return nil, err
 	}
@@ -247,8 +275,8 @@ func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
 // table when the caller asked for it, and answers nil when it did not.
 //
 // It reads the filtered desired schema and the filtered live schema, so a table
-// excluded with --ignore is excluded from the row comparison the same way it is
-// excluded from the structural one.
+// excluded with --ignore or --exclude is excluded from the row comparison the
+// same way it is excluded from the structural one.
 func compareManagedData(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
