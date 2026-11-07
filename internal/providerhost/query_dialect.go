@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/query"
+	"ptah.run/internal/capabilitysource"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/sqlident"
 )
@@ -115,4 +116,33 @@ func querySpelling(declared *protocol.QueryDialect) query.Spelling {
 		result.Query.UnsupportedJoins = joins
 	}
 	return result
+}
+
+// declareCapabilitySources registers the line each engine states about where
+// its connection reads refined capabilities
+// (provider.ConnectionCapabilitySourceFeature) with internal/capabilitysource,
+// under the engine's ID and aliases, and returns what releases them. An engine
+// the process registry describes keeps the host's sentence. A line the
+// registry refuses refuses the provider, and releases what was registered
+// before it.
+func declareCapabilitySources(engines []*protocol.Engine) ([]func(), error) {
+	var releases []func()
+	for _, engine := range engines {
+		source := engine.GetConnectionCapabilitySource()
+		if source == "" {
+			continue
+		}
+		if _, described := platform.Lookup(engine.GetId()); described {
+			continue
+		}
+		release, err := capabilitysource.Declare(source, append([]string{engine.GetId()}, engine.GetAliases()...)...)
+		if err != nil {
+			for _, registered := range releases {
+				registered()
+			}
+			return nil, fmt.Errorf("%w: engine %s states a capability source the host cannot register: %w", provider.ErrProtocol, engine.GetId(), err)
+		}
+		releases = append(releases, release)
+	}
+	return releases, nil
 }

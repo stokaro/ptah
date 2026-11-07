@@ -23,6 +23,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/dbschema"
 	"ptah.run/internal/capabilityprobe"
+	"ptah.run/internal/capabilitysource"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/providerhost"
@@ -185,18 +186,17 @@ const extensionRefinementReason = "read from the extensions installed in this da
 // otherwise be reported as a session setting.
 const connectionRefinementReason = "read from this server when Ptah connected, not from its release line"
 
-// ydbRefinementReason names the monitoring endpoint the YDB provider reads
-// when its connection capabilities differ from the release-line preset.
-const ydbRefinementReason = "read from this cluster's feature flags at its monitoring endpoint, not from its release line"
-
 // ConnectionReading is what the connection read about the server before any
 // session, with the reason that names where it read it. It is exported, with
 // [SessionReading], because the reasons are what an operator acts on and the
 // path that takes the readings needs a live server.
 func ConnectionReading(dialect string, capabilities capability.Capabilities) serverprofile.Reading {
 	reason := connectionRefinementReason
-	if dialect == "ydb" {
-		reason = ydbRefinementReason
+	if source, declared := capabilitysource.Lookup(dialect); declared {
+		// An executable provider states where its engine's connection
+		// read them (engine.connection-capability-source), such as the
+		// YDB provider's monitoring endpoint.
+		reason = source
 	} else if platform.NormalizeDialect(dialect) == platform.Postgres {
 		reason = extensionRefinementReason
 	}

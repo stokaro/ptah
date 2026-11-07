@@ -52,6 +52,13 @@ func main() {
 			{Line: "1.4", Label: "Fixture 1.4", Support: protocol.ReleaseLine_BEST_EFFORT, Unprobed: "a fixture line", Capabilities: map[string]bool{"transactional_ddl": true}},
 		}
 	}
+	// FIXTURE_CAPABILITY_SOURCE is the line the engine states about where its
+	// connection reads refined capabilities (contract 25.35).
+	if source := os.Getenv("FIXTURE_CAPABILITY_SOURCE"); source != "" {
+		description.Features = append(description.Features, provider.ConnectionCapabilitySourceFeature)
+		served.Features = append(served.Features, provider.ConnectionCapabilitySourceFeature)
+		served.ConnectionCapabilitySource = source
+	}
 	err := runtime.Serve(runtime.Server{Description: description, Sessions: owner, Inspector: owner, Renderer: owner, Executor: owner,
 		SQLAnalyzer: owner, ValueNormalizer: owner, SourceDecoder: owner, ValueConverter: owner})
 	if err != nil {
@@ -71,6 +78,15 @@ func (r *establishedRenderer) Open(ctx context.Context, request *protocol.OpenRe
 	}
 	if version := os.Getenv("FIXTURE_SERVER_VERSION"); version != "" {
 		session.ServerVersion = version
+	}
+	// FIXTURE_SESSION_TRANSACTIONAL_DDL=true has the connection answer
+	// transactional_ddl as supported, which line 2.1 answers unsupported: a
+	// capability the connection refines.
+	if os.Getenv("FIXTURE_SESSION_TRANSACTIONAL_DDL") == "true" {
+		if session.Capabilities == nil {
+			session.Capabilities = make(map[string]bool)
+		}
+		session.Capabilities["transactional_ddl"] = true
 	}
 	return session, nil
 }
