@@ -195,15 +195,39 @@ func TestCompare_SourceWithNoPartitionSyntaxKeepsComparingColumns(t *testing.T) 
 	}
 }
 
+// A partition the document gives another parent, or declares as an ordinary
+// table, is a move on the kept table: the diff carries it as a change of its
+// partition membership, with the parent it holds and the one it is given.
+func TestCompare_PartitionMembership_HappyPath(t *testing.T) {
+	for _, test := range []struct {
+		name, source string
+		want         *pgtable.PartitionMemberChange
+	}{
+		{name: "another parent", source: partitionedParent + `CREATE TABLE other (id bigint) PARTITION BY LIST (id);
+CREATE TABLE e1 PARTITION OF other FOR VALUES IN (1);`,
+			want: &pgtable.PartitionMemberChange{Before: &pgtable.ObservedPartitionMember{Parent: "events", Bound: "FOR VALUES FROM (1) TO (10)"},
+				After: &pgtable.DesiredPartitionMember{PartitionMember: pgtable.PartitionMember{Parent: "other", Bound: "FOR VALUES IN (1)"}}}},
+		{name: "an ordinary table", source: partitionedParent + `CREATE TABLE e1 (id bigint NOT NULL, note text);`,
+			want: &pgtable.PartitionMemberChange{Before: &pgtable.ObservedPartitionMember{Parent: "events", Bound: "FOR VALUES FROM (1) TO (10)"}}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			diff, err := schemadiff.CompareWithDialect(t.Context(), partitionDocument(c, test.source), partitionedCatalog(), "postgres", must.Must(builtin.New()))
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(diff.TablesModified, qt.HasLen, 1)
+			c.Assert(diff.TablesModified[0].TableName, qt.Equals, "e1")
+			c.Assert(diff.TablesModified[0].FeatureChanges, qt.HasLen, 1)
+			c.Assert(diff.TablesModified[0].FeatureChanges[0].Value, qt.DeepEquals, schemaext.ChangeValue(test.want))
+		})
+	}
+}
+
 func TestCompare_PartitionMembership_FailurePath(t *testing.T) {
 	for _, test := range []struct {
 		name, source, want string
 	}{
-		{name: "another bound", source: partitionedParent + `CREATE TABLE other (id bigint) PARTITION BY LIST (id);
-CREATE TABLE e1 PARTITION OF other FOR VALUES IN (1);`,
-			want: `.*table public\.e1 is a partition of events, and the declaration makes it a partition of other; a reviewed manual partition cutover is required`},
-		{name: "an ordinary table", source: partitionedParent + `CREATE TABLE e1 (id bigint NOT NULL, note text);`,
-			want: `.*table public\.e1 is a partition of events, and the declaration makes it an ordinary table; a reviewed manual partition cutover is required`},
 		{name: "a parent the document removes", source: `CREATE TABLE e1 PARTITION OF events FOR VALUES FROM (1) TO (10);`,
 			want: `.*table public\.e1 is declared a partition of public\.events, which the database holds and the desired schema does not declare; dropping a partitioned table drops its partitions`},
 	} {

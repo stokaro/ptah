@@ -29,7 +29,7 @@ var (
 		return renderer.NewExtensions(postgresFamilyHandlers(pgtablerender.Handlers()...)...)
 	})
 	postgresFamilyRegistry = sync.OnceValues(func() (renderer.Extensions, error) {
-		return renderer.NewExtensions(postgresFamilyHandlers(pgtablerender.DeleteColumnsHandlers()...)...)
+		return renderer.NewExtensions(postgresFamilyHandlers(slices.Concat(pgtablerender.DeleteColumnsHandlers(), pgtablerender.PartitionMoveHandlers())...)...)
 	})
 	cockroachDBRegistry = sync.OnceValues(func() (renderer.Extensions, error) {
 		return renderer.NewExtensions(postgresFamilyHandlers(crdbrender.Handlers()...)...)

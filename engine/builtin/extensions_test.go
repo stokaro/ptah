@@ -110,8 +110,16 @@ func mysqlReplaceIndexFixture() extensionFixture {
 		TableCopy: true}, wantSQL: "ALTER TABLE `items` DROP INDEX `k`, ADD INDEX `k` (`a`) KEY_BLOCK_SIZE=8, ALGORITHM=COPY;\n\n"}
 }
 
+// partitionMoveFixture attaches a table to a parent under the bound the
+// declaration gives it, the second statement of a partition move.
+func partitionMoveFixture() extensionFixture {
+	return extensionFixture{payload: &pgtable.MovePartition{Step: pgtable.PartitionAttach, Change: pgtable.PartitionMemberChange{
+		After: &pgtable.DesiredPartitionMember{PartitionMember: pgtable.PartitionMember{Parent: "events", Bound: "DEFAULT"}}}},
+		wantSQL: "ALTER TABLE \"events\" ATTACH PARTITION \"items\" DEFAULT;\n"}
+}
+
 func allExtensionFixtures() []extensionFixture {
-	return []extensionFixture{exclusionFixture(), {payload: &pgtable.ReplaceDeleteColumns{Name: "fk_parent", Columns: []string{"parent_id"}, ForeignTable: "parents", ForeignColumns: []string{"id"}, OnDelete: "SET NULL", DeleteColumns: []string{"parent_id"}}}, {payload: &pgtable.AlterPersistence{Change: pgtable.PersistenceChange{After: &pgtable.DesiredPersistence{Unlogged: true}}}}, mysqlReplaceIndexFixture(), clickhouseTTLFixture(), clickhouseIndexFixture(), clickhouseDropIndexFixture(), clickhouseRefreshFixture(), clickhouseRowPolicyFixture(), clickhouseRowPolicyCommandFixture(), cockroachDBRowTTLFixture(),
+	return []extensionFixture{exclusionFixture(), {payload: &pgtable.ReplaceDeleteColumns{Name: "fk_parent", Columns: []string{"parent_id"}, ForeignTable: "parents", ForeignColumns: []string{"id"}, OnDelete: "SET NULL", DeleteColumns: []string{"parent_id"}}}, {payload: &pgtable.AlterPersistence{Change: pgtable.PersistenceChange{After: &pgtable.DesiredPersistence{Unlogged: true}}}}, partitionMoveFixture(), mysqlReplaceIndexFixture(), clickhouseTTLFixture(), clickhouseIndexFixture(), clickhouseDropIndexFixture(), clickhouseRefreshFixture(), clickhouseRowPolicyFixture(), clickhouseRowPolicyCommandFixture(), cockroachDBRowTTLFixture(),
 		hypertableFixture(), continuousAggregateFixture(), policyFixture(), policyCommentFixture(), tableStateFixture(), securityPolicyFixture(), extendedPropertyFixture(), synonymFixture(),
 		defaultPrivilegeFixture(), pgExtensionFixture(), pgExtensionCommentFixture(), pgTypeCreateDomainFixture(), pgTypeAlterDomainFixture(), pgTypeCreateCompositeFixture(),
 		pgTypeAlterCompositeFixture(), pgTypeCreateRangeFixture(), pgTypeDropFixture(), pgTypeCommentFixture(),

@@ -181,14 +181,11 @@ migration nobody asked for.
 
 ### Compared fields that do not reach a plan by design
 
-54 exemptions, each with the reason it is right.
+51 exemptions, each with the reason it is right.
 
 | Field | Dialects | Directions | Why |
 | --- | --- | --- | --- |
-| `pgtable.DesiredPartitionMember.PartitionMember` | `postgres`, `yugabytedb` | both | a partition's parent and bound cannot change in place; the owner refuses a change or requests connected normalization |
-| `pgtable.PartitionMember.ParentSchema` | `postgres`, `yugabytedb` | both | a partition's parent and bound cannot change in place; the owner refuses a change or requests connected normalization |
-| `pgtable.PartitionMember.Parent` | `postgres`, `yugabytedb` | both | a partition's parent and bound cannot change in place; the owner refuses a change or requests connected normalization |
-| `pgtable.PartitionMember.Bound` | `postgres`, `yugabytedb` | both | a partition's parent and bound cannot change in place; the owner refuses a change or requests connected normalization |
+| `pgtable.PartitionMember.Bound` | `postgres`, `yugabytedb` | both | a changed bound is compared once a connected server normalizes it; without one the owner leaves the change undecided |
 | `pgtable.DesiredPartition.Type` | `clickhouse`, `mariadb`, `mysql`, `oracle`, `sqlite`, `sqlserver` | both | the target reports PostgreSQL partition declarations as omitted and does not manage their keys |
 | `pgtable.DesiredPartition.Type` | `postgres`, `yugabytedb` | both | partition keys cannot change in place; the owner refuses a changed key or requests connected normalization |
 | `pgtable.DesiredPartition.Parts` | `clickhouse`, `mariadb`, `mysql`, `oracle`, `sqlite`, `sqlserver` | both | the target reports PostgreSQL partition declarations as omitted and does not manage their keys |

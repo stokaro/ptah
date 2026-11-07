@@ -14,7 +14,8 @@ import (
 )
 
 func postgresTableProvider() engine.Provider {
-	provider := engine.Provider{ID: pgtable.Owner, Codecs: append(pgtable.PartitionCodecs(), pgtable.PartitionMemberCodecs()...),
+	provider := engine.Provider{ID: pgtable.Owner, Codecs: append(append(pgtable.PartitionCodecs(), pgtable.PartitionMemberCodecs()...),
+		pgtable.PartitionMemberChangeCodec(), pgtable.MovePartitionCodec()),
 		Annotations: []annotation.Extension{pgtablesource.Annotations(), pgtablesource.ExclusionAnnotations(), pgtablesource.DeleteColumnsAnnotations()},
 		HCL:         []hclext.Extension{pgtablesource.HCL(), pgtablesource.ExclusionHCL(), pgtablesource.DeleteColumnsHCL()},
 		YAML:        []yamlext.Extension{pgtablesource.YAML(), pgtablesource.ExclusionYAML(), pgtablesource.DeleteColumnsYAML()},
@@ -67,15 +68,19 @@ func postgresTableProvider() engine.Provider {
 }
 
 // registerPartitionMembers serves a partition's parent and bound on a target that
-// has the statement. Every other target refuses a declared partition before a
-// comparison or a plan can read one, so no service answers there.
+// has the statement, and its moves in the partition tree. Every other target
+// refuses a declared partition before a comparison or a plan can read one, so no
+// service answers there.
 func registerPartitionMembers(provider *engine.Provider, target string) {
 	kinds := []schemaext.Kind{pgtable.PartitionMemberKind}
+	changes := []schemaext.Kind{pgtable.PartitionMemberChangeKind}
 	service := pgtable.PartitionMemberService{}
-	provider.Planning = append(provider.Planning, engine.Planning{Target: target, ParentKinds: kinds, Service: service})
+	provider.Planning = append(provider.Planning, engine.Planning{Target: target, Kinds: changes, ParentKinds: kinds,
+		OperationKinds: []schemaext.Kind{pgtable.PartitionMoveOperationKind}, Service: service})
+	provider.Reversals = append(provider.Reversals, engine.Reversal{Target: target, Kinds: changes, Service: service})
 	provider.Conversions = append(provider.Conversions, engine.Conversion{Target: target, Kinds: kinds, Service: service})
 	provider.FacetComparisons = append(provider.FacetComparisons, engine.FacetComparison{Target: target,
-		OwnerKinds: []objectidentity.Kind{objectidentity.KindTable}, Kinds: kinds, Service: service})
+		OwnerKinds: []objectidentity.Kind{objectidentity.KindTable}, Kinds: kinds, ChangeKinds: changes, Service: service})
 	provider.FacetNormalizations = append(provider.FacetNormalizations, engine.FacetNormalization{Target: target,
 		Kinds: kinds, OwnerKinds: []objectidentity.Kind{objectidentity.KindTable}, Service: pgtableprobe.PartitionMemberService{}})
 }

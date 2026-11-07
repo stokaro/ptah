@@ -946,11 +946,31 @@ mark it destructive and the destructive gates hold it as they hold any `DROP TAB
 A `schema inspect --format sql` writes `CREATE TABLE ... PARTITION OF`, and that
 document rebuilds the tree on an empty database.
 
-Some changes have no plan. Ptah refuses each one by name, and a reviewed manual
-partition cutover makes it: a partition with another bound or another parent, and a
-partition on one side with an ordinary table on the other. A document that keeps a
-partition and leaves out a parent the database holds is refused too, because dropping
-a partitioned table drops its partitions.
+A table that moves in its tree is detached and attached. This covers a partition with
+another bound or another parent, a partition the document declares as an ordinary
+table, and an ordinary table it declares as a partition. PostgreSQL has no statement
+that changes a bound in place, so a bound change detaches the partition and attaches
+it again under the same parent:
+
+```sql
+ALTER TABLE "events" DETACH PARTITION "e1";
+ALTER TABLE "events" ATTACH PARTITION "e1" FOR VALUES FROM ('2026-01-01') TO ('2028-01-01');
+```
+
+The table keeps its rows. Both statements run in the plan's transaction, so a move
+that fails leaves the tree as it was. `DETACH ... CONCURRENTLY` cannot run in a
+transaction, and Ptah does not write it. Every detachment of a plan runs before every
+attachment, so two partitions can trade bounds. A detachment runs before the table's
+other changes, which a partition refuses, and an attachment runs after them.
+
+A plan rates each statement as a warning. Both lock the parent table. `ATTACH`
+reads every row of the partition to check it against the bound, and reads a
+default partition too when the parent has one. A row outside the declared bound
+makes the server refuse the attachment, and the transaction rolls the move back. A
+rollback moves the table back to the parent and bound it held.
+
+A document that keeps a partition and leaves out a parent the database holds is
+refused, because dropping a partitioned table drops its partitions.
 
 Some forms are refused because the declaration has no place for them:
 

@@ -2,6 +2,7 @@ package pgtable_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -10,6 +11,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/plangraph"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemacapture"
@@ -266,34 +268,33 @@ func TestPartitionMemberComparison_HappyPath(t *testing.T) {
 	}
 }
 
-func TestPartitionMemberComparison_FailurePath(t *testing.T) {
+// A table whose parent or normalized bound changes, or which turns from a
+// partition into an ordinary table or back, is a move the plan carries out.
+func TestPartitionMemberComparison_ReportsAMove(t *testing.T) {
 	other := "FOR VALUES FROM ('2028-01-01') TO ('2029-01-01')"
+	normalized := &pgtable.DesiredPartitionMember{PartitionMember: member("events", other),
+		Normalized: &pgtable.NormalizedPartitionBound{SourceKey: pgtable.PartitionBoundKey(other), Key: pgtable.PartitionBoundKey(other)}}
+	held := &pgtable.ObservedPartitionMember{Parent: "events", Bound: january}
 	for _, test := range []struct {
 		name    string
 		desired *pgtable.DesiredPartitionMember
 		current *pgtable.ObservedPartitionMember
-		want    string
 	}{
-		{name: "another bound the server normalized", desired: &pgtable.DesiredPartitionMember{PartitionMember: member("events", other),
-			Normalized: &pgtable.NormalizedPartitionBound{SourceKey: pgtable.PartitionBoundKey(other), Key: pgtable.PartitionBoundKey(other)}},
-			current: &pgtable.ObservedPartitionMember{Parent: "events", Bound: january},
-			want:    `.*table public\.e1 is a partition with bound FOR VALUES FROM \('2026-01-01'\) TO \('2027-01-01'\), and the declaration gives it FOR VALUES FROM \('2028-01-01'\) TO \('2029-01-01'\); a reviewed manual partition cutover is required`},
-		{name: "another parent", desired: &pgtable.DesiredPartitionMember{PartitionMember: member("other", january)},
-			current: &pgtable.ObservedPartitionMember{Parent: "events", Bound: january},
-			want:    `.*table public\.e1 is a partition of events, and the declaration makes it a partition of other; a reviewed manual partition cutover is required`},
-		{name: "a partition declared as an ordinary table", current: &pgtable.ObservedPartitionMember{Parent: "events", Bound: january},
-			want: `.*table public\.e1 is a partition of events, and the declaration makes it an ordinary table; a reviewed manual partition cutover is required`},
-		{name: "an ordinary table declared as a partition", desired: &pgtable.DesiredPartitionMember{PartitionMember: member("events", january)},
-			want: `.*table public\.e1 is an ordinary table, and the declaration makes it a partition of events; a reviewed manual partition cutover is required`},
+		{name: "another bound the server normalized", desired: normalized, current: held},
+		{name: "another parent", desired: &pgtable.DesiredPartitionMember{PartitionMember: member("other", january)}, current: held},
+		{name: "a partition declared as an ordinary table", current: held},
+		{name: "an ordinary table declared as a partition", desired: &pgtable.DesiredPartitionMember{PartitionMember: member("events", january)}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
 			result, err := (pgtable.PartitionMemberService{}).CompareFacets(t.Context(), memberRequest(test.desired, test.current, declaredMembers(), observedMembers()))
 
-			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-			c.Assert(err, qt.ErrorMatches, test.want)
-			c.Assert(result, qt.DeepEquals, schemaext.FacetComparisonResult{})
+			c.Assert(err, qt.IsNil)
+			c.Assert(result.Undecided, qt.HasLen, 0)
+			c.Assert(result.Changes, qt.HasLen, 1)
+			c.Assert(result.Changes[0].Kind, qt.Equals, pgtable.PartitionMemberKind)
+			c.Assert(result.Changes[0].Change.Value, qt.DeepEquals, schemaext.ChangeValue(&pgtable.PartitionMemberChange{Before: test.current, After: test.desired}))
 		})
 	}
 }
@@ -355,7 +356,7 @@ func TestPartitionMemberPlanning_HappyPath(t *testing.T) {
 	}{
 		{action: featureplan.CreateTable, strategy: "CREATE TABLE carries the declared parent and bound"},
 		{action: featureplan.DropTable, strategy: "remove the partition and its rows with the table"},
-		{action: featureplan.AlterTable, strategy: "retain the table's parent and bound"},
+		{action: featureplan.AlterTable, strategy: "retain the table's parent and bound unless a planned partition move replaces them"},
 	} {
 		t.Run(string(test.action), func(t *testing.T) {
 			c := qt.New(t)
@@ -367,6 +368,104 @@ func TestPartitionMemberPlanning_HappyPath(t *testing.T) {
 			c.Assert(result.Complete, qt.IsTrue)
 			c.Assert(result.Parents, qt.HasLen, 1)
 			c.Assert(result.Parents[0].Strategy, qt.Equals, test.strategy)
+		})
+	}
+}
+
+// movedTable is a kept table named name, held as a partition of events and
+// declared as a partition of other.
+func movedTable(name string) featureplan.Table {
+	table := memberTable(featureplan.AlterTable)
+	table.Subject = memberSubject(name)
+	table.Desired.Table.Name, table.Current.Table.Name = name, name
+	return table
+}
+
+// Each move plans its statements: a detachment from the parent the table holds,
+// placed early, and an attachment to the declared parent, and every detachment
+// of the plan runs before every attachment.
+func TestPartitionMemberPlanning_PlansAMove(t *testing.T) {
+	c := qt.New(t)
+	held := &pgtable.ObservedPartitionMember{Parent: "events", Bound: january}
+	declared := &pgtable.DesiredPartitionMember{PartitionMember: member("other", january)}
+	request := featureplan.Request{Target: "postgres", Identifiers: identifier.ForDialect("postgres"),
+		Tables: []featureplan.Table{movedTable("e1"), movedTable("e2")},
+		Changes: []schemaext.ChangeRecord{
+			{Subject: memberSubject("e1"), Value: &pgtable.PartitionMemberChange{Before: held, After: declared}},
+			{Subject: memberSubject("e2"), Value: &pgtable.PartitionMemberChange{Before: held}},
+		}}
+
+	result, err := (pgtable.PartitionMemberService{}).PlanFeatures(t.Context(), request)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Diagnostics, qt.HasLen, 0)
+	c.Assert(result.Contributions, qt.HasLen, 1)
+	steps := result.Contributions[0].Steps
+	c.Assert(steps, qt.HasLen, 3)
+	var shape []string
+	for _, step := range steps {
+		move := step.Payload.Payload.(*pgtable.MovePartition)
+		shape = append(shape, fmt.Sprintf("%s %s %s %s", step.ID.Name, move.Step, step.Payload.Parent.Name.Source, step.Placement))
+	}
+	c.Assert(shape, qt.DeepEquals, []string{
+		"partition-move/000000/detach detach e1 early",
+		"partition-move/000000/attach attach e1 ",
+		"partition-move/000001/detach detach e2 early",
+	})
+	c.Assert(result.Contributions[0].Dependencies, qt.DeepEquals, []plangraph.Dependency{
+		{Before: steps[0].ID, After: steps[1].ID},
+		{Before: steps[2].ID, After: steps[1].ID},
+	})
+	c.Assert(result.Changes, qt.HasLen, 2)
+	c.Assert(result.Changes[0].Steps, qt.DeepEquals, []plangraph.StepID{steps[0].ID, steps[1].ID})
+	c.Assert(steps[0].Impact.Impact, qt.Equals, schemaext.Behavioral)
+}
+
+// A move of a table the plan does not keep is refused by name.
+func TestPartitionMemberPlanning_RefusesAMoveOfADroppedTable(t *testing.T) {
+	c := qt.New(t)
+	table := memberTable(featureplan.DropTable)
+	request := featureplan.Request{Target: "postgres", Identifiers: identifier.ForDialect("postgres"), Tables: []featureplan.Table{table},
+		Changes: []schemaext.ChangeRecord{{Subject: table.Subject, Value: &pgtable.PartitionMemberChange{Before: &pgtable.ObservedPartitionMember{Parent: "events", Bound: january}}}}}
+
+	result, err := (pgtable.PartitionMemberService{}).PlanFeatures(t.Context(), request)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Contributions, qt.HasLen, 0)
+	c.Assert(result.Diagnostics, qt.HasLen, 1)
+	c.Assert(result.Diagnostics[0].Problem.Message, qt.Matches, `.*PostgreSQL table public\.e1 moves in its partition tree only while it is kept; a table the plan drop-table cannot be detached or attached`)
+}
+
+// A move reverses to the parent and bound the table held, and an inverse of a
+// detachment is an attachment.
+func TestPartitionMemberChange_Reverse(t *testing.T) {
+	c := qt.New(t)
+	held := &pgtable.ObservedPartitionMember{Parent: "events", Bound: january}
+
+	inverse, err := (&pgtable.PartitionMemberChange{Before: held}).Reverse()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(inverse, qt.DeepEquals, &pgtable.PartitionMemberChange{After: &pgtable.DesiredPartitionMember{PartitionMember: member("events", january)}})
+}
+
+// A change whose operands name the same parent and bound, or none, is refused.
+func TestValidatePartitionMemberChange_FailurePath(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		change *pgtable.PartitionMemberChange
+		want   string
+	}{
+		{name: "no operand", change: &pgtable.PartitionMemberChange{}, want: `.*partition member change requires an operand`},
+		{name: "the same place", change: &pgtable.PartitionMemberChange{Before: &pgtable.ObservedPartitionMember{Parent: "events", Bound: january},
+			After: &pgtable.DesiredPartitionMember{PartitionMember: member("events", january)}}, want: `.*partition member change requires a different parent or bound`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			err := pgtable.ValidatePartitionMemberChange(test.change)
+
+			c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+			c.Assert(err, qt.ErrorMatches, test.want)
 		})
 	}
 }
