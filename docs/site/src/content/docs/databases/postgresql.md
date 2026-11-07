@@ -1460,7 +1460,8 @@ password in only when it sends the statement:
   declared password and needs no variable;
 - `schema apply --plan`, `migrations up` and a replay read the variable the
   statement names, so export it on the machine that runs them. A variable that
-  is not set refuses the statement before anything is sent.
+  is not set refuses the statement before anything is sent, and `schema apply
+  --dry-run` refuses it too.
 
 PostgreSQL refuses the statement as written, so a migration file run without
 Ptah sets no other password. Ptah writes a value only after `PASSWORD` in

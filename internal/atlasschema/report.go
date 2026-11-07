@@ -81,8 +81,10 @@ const (
 	// the report's Undecided names objects the read could not check.
 	ApplyOutcomeNoChanges ApplyOutcome = "no-changes"
 	// ApplyOutcomeDryRun means the run was asked to change nothing, and did
-	// not. For a plan file the source fingerprint was verified first, so a
-	// dry run also says the plan was not stale when it was read.
+	// not, and that the checks a real run makes ahead of its prompt passed. A
+	// plan a real run would refuse reports that refusal instead. For a plan file
+	// the source fingerprint is among those checks, so a dry run also says the
+	// plan was not stale when it was read.
 	ApplyOutcomeDryRun ApplyOutcome = "dry-run"
 	// ApplyOutcomeCanceled means the confirmation prompt was declined.
 	ApplyOutcomeCanceled ApplyOutcome = "canceled"

@@ -171,8 +171,9 @@ typed --lock-timeout against a dialect that takes no such lock rather than
 applying unlocked with it); when --dev-url is set the exact ordered plan is
 rehearsed on the dev database first and a failed rehearsal refuses the apply
 with the target unchanged; the plan must be confirmed interactively unless
---auto-approve is set; --dry-run prints the plan without applying, and takes
-a lock only where taking it writes nothing, so a target served by an
+--auto-approve is set; --dry-run prints the plan without applying, refuses
+what a real run refuses ahead of its prompt, the --dev-url rehearsal included,
+and takes a lock only where taking it writes nothing, so a target served by an
 executable provider is previewed without one. With --edit the
 planned SQL opens in $VISUAL or $EDITOR before confirmation, and the edited
 SQL is what gets applied. With --plan <path>, a pre-approved plan file saved
@@ -618,9 +619,6 @@ func runSchemaApplyOnLockedSession(
 	}
 	printSchemaApplyPlan(run.human, sqlText)
 	run.evidence.Units = atlasschema.SQLApplyUnitReports(statements)
-	if opts.dryRun {
-		return atlasschema.ApplyOutcomeDryRun, nil
-	}
 	if err := plan.PreflightExecution(sqlText); err != nil {
 		return "", err
 	}
@@ -639,6 +637,16 @@ func runSchemaApplyOnLockedSession(
 		DevServerDisposable: opts.devServerDisposable,
 	}); err != nil {
 		return "", err
+	}
+	// Every check a real run makes ahead of its prompt sits above this exit, so a
+	// dry run refuses what the real run refuses, in the same words and under the
+	// same outcome. A statement the writer would refuse is asked here: a real run
+	// asks as it sends.
+	if opts.dryRun {
+		if err := plan.CheckStatements(ctx, statements); err != nil {
+			return "", fmt.Errorf("apply schema changes: %w", err)
+		}
+		return atlasschema.ApplyOutcomeDryRun, nil
 	}
 
 	ok, err := confirmSchemaApply(cmd, opts, run.human, func() (atlasschema.PlanRating, error) {
@@ -772,9 +780,6 @@ func runSchemaApplyPlanFileOnLockedSession(
 	if plan.HasNative() || plan.HasInputReferences() {
 		return runSchemaApplyNativePlanFile(ctx, cmd, opts, conn, plan, txMode, run)
 	}
-	if opts.dryRun {
-		return atlasschema.ApplyOutcomeDryRun, nil
-	}
 	if err := plan.PreflightTransaction(txMode, conn); err != nil {
 		return "", err
 	}
@@ -783,6 +788,13 @@ func runSchemaApplyPlanFileOnLockedSession(
 		info.Dialect, info.Capabilities, txMode, plan.StatementSQL(),
 	); err != nil {
 		return "", err
+	}
+	// As on a computed plan: the checks of a real run sit above this exit.
+	if opts.dryRun {
+		if err := atlasschema.CheckApplyStatements(ctx, conn, plan.StatementSQL()); err != nil {
+			return "", fmt.Errorf("apply schema changes: %w", err)
+		}
+		return atlasschema.ApplyOutcomeDryRun, nil
 	}
 	ok, err := confirmSchemaApply(cmd, opts, run.human, savedPlanRating(ctx, opts, conn, plan))
 	if err != nil {
