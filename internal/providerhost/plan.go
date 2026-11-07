@@ -110,10 +110,7 @@ func (p commonPlanner) GenerateMigrationAST(ctx context.Context, runtime feature
 	ahead, behind := indexRemovalPlacement(diff.EffectiveIdentifierSemantics(p.target), slices.Concat(indexes.removals, indexes.renames))
 	// A schema is created before anything the plan puts in it, and removed
 	// after everything the plan removes, which may be in it.
-	var namespaceCreations, namespaceRemovals []ast.Node
-	if p.namespaces {
-		namespaceCreations, namespaceRemovals = p.namespaceSteps(diff)
-	}
+	namespaceCreations, namespaceRemovals := p.namespaceSteps(diff)
 	nodes := slices.Concat(namespaceCreations, common.before, ahead, common.prepared)
 	var columnRemovals []ast.Node
 	ordered := diff.TablesAdded.InDependencyOrder()

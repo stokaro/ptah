@@ -43,8 +43,12 @@ func (n *namespaceRemoval) Accept(ast.Visitor) error {
 // planner creates the schema of a created table. The schema the connection
 // resolved, the engine's default one and a schema the read holds get no
 // creation. Removals come only from reversing a creation and run last; see
-// difftypes.SchemaDiff.SchemasRemoved.
+// difftypes.SchemaDiff.SchemasRemoved. A planner whose provider does not
+// carry namespaces plans none.
 func (p commonPlanner) namespaceSteps(diff *difftypes.SchemaDiff) (creations, removals []ast.Node) {
+	if !p.namespaces {
+		return nil, nil
+	}
 	semantics := diff.EffectiveIdentifierSemantics(p.target)
 	held := make(map[string]bool, len(diff.HeldSchemas)+1)
 	for _, schema := range diff.HeldSchemas {
@@ -106,27 +110,36 @@ func namespaceIdentity(builder objectidentity.Builder, name string) objectidenti
 // on the wire, so a declaration that states them is refused rather than
 // created without them.
 func (t *target) namespaceOperation(node ast.Node) (*protocol.CommonObjectChange, *protocol.Reference, error) {
-	var name string
 	switch typed := node.(type) {
 	case *ast.CreateSchemaNode:
-		name = typed.Name
+		object, err := t.namespaceObject(typed.Name)
+		if err != nil {
+			return nil, nil, err
+		}
+		if typed.Charset != "" || typed.Collate != "" {
+			return nil, nil, unsupported(fmt.Sprintf("the character set or collation of schema %q", typed.Name))
+		}
+		creation := &protocol.NamespaceCreation{Name: typed.Name, Comment: typed.Comment}
+		return &protocol.CommonObjectChange{Operation: &protocol.CommonObjectChange_CreateSchema{CreateSchema: creation}}, object, nil
 	case *namespaceRemoval:
-		name = typed.name
+		object, err := t.namespaceObject(typed.name)
+		if err != nil {
+			return nil, nil, err
+		}
+		return &protocol.CommonObjectChange{Operation: &protocol.CommonObjectChange_DropSchema{DropSchema: object}}, object, nil
 	default:
 		return nil, nil, nil
 	}
+}
+
+// namespaceObject is the reference of the schema name on the target's engine,
+// or the refusal of a schema step on an engine that does not carry
+// namespaces.
+func (t *target) namespaceObject(name string) (*protocol.Reference, error) {
 	if !t.carriesNamespaces() {
-		return nil, nil, unsupported(fmt.Sprintf("schema %q on the %s engine, whose provider does not carry namespaces", name, t.engine.GetId()))
+		return nil, unsupported(fmt.Sprintf("schema %q on the %s engine, whose provider does not carry namespaces", name, t.engine.GetId()))
 	}
-	object := &protocol.Reference{Engine: t.engine.GetId(), Kind: provider.NamespaceKind, Name: name}
-	if _, isRemoval := node.(*namespaceRemoval); isRemoval {
-		return &protocol.CommonObjectChange{Operation: &protocol.CommonObjectChange_DropSchema{DropSchema: object}}, object, nil
-	}
-	creation := node.(*ast.CreateSchemaNode)
-	if creation.Charset != "" || creation.Collate != "" {
-		return nil, nil, unsupported(fmt.Sprintf("the character set or collation of schema %q", name))
-	}
-	return &protocol.CommonObjectChange{Operation: &protocol.CommonObjectChange_CreateSchema{CreateSchema: &protocol.NamespaceCreation{Name: name, Comment: creation.Comment}}}, object, nil
+	return &protocol.Reference{Engine: t.engine.GetId(), Kind: provider.NamespaceKind, Name: name}, nil
 }
 
 // declaredNamespaceCreations creates the schemas a whole declaration needs,

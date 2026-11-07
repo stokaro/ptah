@@ -159,7 +159,7 @@ func compareReportingUndecidedAdditions(
 	if opts.ServerSchemas && comparesServerDatabases(opts.Dialect) {
 		compare.ServerSchemas(diff, desired, database.Schemas, identifierSemantics)
 	}
-	addDeclaredSchemas(diff, desired, database, cov, opts.Dialect, identifierSemantics, rules.Namespaces)
+	addDeclaredSchemas(diff, desired, database, cov, opts.Dialect, identifierSemantics, rules)
 
 	columnFacts, err := compare.ResolveColumnFacts(ctx, desired, database, opts.Dialect, identifierSemantics, caps, prepared.bySubject, rules.ColumnService)
 	if err != nil {
@@ -531,13 +531,13 @@ func addDeclaredSchemas(
 	cov compare.Coverage,
 	dialect string,
 	semantics identifier.Semantics,
-	namespaces bool,
+	rules schemacomparison.Rules,
 ) {
 	if described, _ := platform.Lookup(dialect); described.Comparison.DeclaredSchemas {
 		compare.DeclaredSchemas(diff, desired, database.Schemas, cov, semantics)
 		return
 	}
-	if namespaces {
+	if rules.Namespaces {
 		compare.DeclaredNamespaces(diff, desired, database.Schemas, cov, semantics)
 	}
 }
