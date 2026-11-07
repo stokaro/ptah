@@ -860,3 +860,12 @@ func TestWriteProfile_RefinementsNameTheirSource(t *testing.T) {
 		})
 	}
 }
+
+func TestConnectionReadingNamesYDBFeatureFlags(t *testing.T) {
+	c := qt.New(t)
+	reading := dbcapabilities.ConnectionReading("ydb", capability.Of(map[capability.Capability]bool{
+		capability.UniqueIndexOnExistingTable: true,
+	}))
+	c.Assert(reading.Reason, qt.Equals,
+		"read from this cluster's feature flags at its monitoring endpoint, not from its release line")
+}
