@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/spf13/cobra"
 
 	"ptah.run/internal/cli/internal/cmdutil"
@@ -14,13 +15,23 @@ import (
 	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/cli/internal/gitpull"
 	"ptah.run/internal/gitsource"
+	"ptah.run/internal/ociartifact"
 	"ptah.run/internal/schemaartifact"
 )
+
+// skipParseFlag writes an OCI artifact without reading its schema.
+const skipParseFlag = "skip-parse"
+
+// ociOnlyFlags mean nothing for a Git reference: its file is fetched over Git's
+// own transport, and its bytes are written unchanged, so there is no parse to
+// skip.
+var ociOnlyFlags = []string{dbcli.PlainHTTPFlagName, skipParseFlag}
 
 type options struct {
 	output    string
 	plainHTTP bool
 	json      bool
+	skipParse bool
 	git       gitpull.Flags
 }
 
@@ -35,6 +46,13 @@ func NewSchemaPullCommand() *cobra.Command {
 An oci:// reference names a Ptah desired-schema artifact, which is validated
 and written as canonical HCL. Authentication comes from the Docker credential
 store.
+
+--skip-parse writes an oci:// artifact without reading its schema, for a step
+that holds registry credentials and must not report what an artifact says. The
+manifest, artifact type, format, layer media types, sizes, digests and file names
+are still checked. The next command that reads the file reports what it cannot
+read. The schema goes to --out, which has to end in .hcl, and managed-data.json is
+always written beside it, empty when the artifact carries no rows.
 
 A git+https:// or git+ssh:// reference names a repository. --branch, --tag or
 --commit says which commit, and --path the schema file in its tree; the file's
@@ -54,6 +72,8 @@ SSH with the unencrypted key PTAH_GIT_SSH_KEY_FILE names, and SSH requires
 	flags := cmd.Flags()
 	flags.StringVar(&opts.output, "out", "", "Output file to create (required)")
 	flags.BoolVar(&opts.json, "json", false, "Print what was pulled as one JSON document")
+	flags.BoolVar(&opts.skipParse, skipParseFlag, false,
+		"OCI: write the artifact without reading its schema; the next command that reads the file reports what it cannot read")
 	dbcli.RegisterPlainHTTPFlag(flags, &opts.plainHTTP)
 	gitpull.Register(flags, &opts.git, "schema file")
 	return cmd
@@ -61,8 +81,10 @@ SSH with the unencrypted key PTAH_GIT_SSH_KEY_FILE names, and SSH requires
 
 func run(cmd *cobra.Command, reference string, opts *options) error {
 	if gitsource.IsReference(reference) {
-		if cmd.Flags().Changed("plain-http") {
-			return fmt.Errorf("--plain-http is for an oci:// reference")
+		for _, name := range ociOnlyFlags {
+			if cmd.Flags().Changed(name) {
+				return fmt.Errorf("--%s is for an oci:// reference", name)
+			}
 		}
 		result, err := gitpull.Fetch(cmd.Context(), reference, opts.git, gitsource.File)
 		if err != nil {
@@ -80,6 +102,15 @@ func run(cmd *cobra.Command, reference string, opts *options) error {
 	if err := gitpull.RefuseOnOtherSource(cmd.Flags()); err != nil {
 		return err
 	}
+	// An unparsed pull resolves no runtime: the runtime is what a parse reads the
+	// schema with.
+	if opts.skipParse {
+		artifact, written, err := schemaartifact.PullUnparsedToFile(cmd.Context(), reference, opts.output, opts.plainHTTP)
+		if err != nil {
+			return err
+		}
+		return printOCIReport(cmd, opts, artifact.Reference, artifact.Descriptor, written)
+	}
 	owners, err := engineruntime.Resolve(cmd.Context())
 	if err != nil {
 		return err
@@ -95,11 +126,15 @@ func run(cmd *cobra.Command, reference string, opts *options) error {
 	if err != nil {
 		return err
 	}
+	return printOCIReport(cmd, opts, artifact.Reference, artifact.Descriptor, written)
+}
+
+func printOCIReport(cmd *cobra.Command, opts *options, reference ociartifact.Reference, descriptor ocispec.Descriptor, written []string) error {
 	if opts.json {
 		encoder := json.NewEncoder(cmd.OutOrStdout())
 		encoder.SetIndent("", "  ")
 		return encoder.Encode(ociReport{
-			Source: "oci", Reference: artifact.Reference.String(), Digest: artifact.Descriptor.Digest.String(), Written: written,
+			Source: "oci", Reference: reference.String(), Digest: descriptor.Digest.String(), Written: written, Unparsed: opts.skipParse,
 		})
 	}
 	// Every path is printed, not only the one --out named. An artifact that
@@ -108,17 +143,22 @@ func run(cmd *cobra.Command, reference string, opts *options) error {
 	fmt.Fprintf(
 		cmd.OutOrStdout(),
 		"Pulled %s to %s\nDigest: %s\n",
-		artifact.Reference,
+		reference,
 		strings.Join(written, ", "),
-		artifact.Descriptor.Digest,
+		descriptor.Digest,
 	)
+	if opts.skipParse {
+		fmt.Fprintln(cmd.OutOrStdout(), "Not parsed: the next command that reads the file reports what it cannot read.")
+	}
 	return nil
 }
 
-// ociReport is the --json document of an OCI pull.
+// ociReport is the --json document of an OCI pull. Unparsed is present only on
+// a pull that did not read the schema.
 type ociReport struct {
 	Source    string   `json:"source"`
 	Reference string   `json:"reference"`
 	Digest    string   `json:"digest"`
 	Written   []string `json:"written"`
+	Unparsed  bool     `json:"unparsed,omitempty"`
 }

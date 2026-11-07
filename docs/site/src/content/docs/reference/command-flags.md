@@ -1742,6 +1742,7 @@ Read the columns as follows.
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--skip-parse` | `bool` | `false` | `PTAH_SKIP_PARSE` | — |
 | `--tag` | `string` | — | `PTAH_TAG` | — |
 
 </div>
