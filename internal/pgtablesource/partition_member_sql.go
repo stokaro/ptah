@@ -13,15 +13,16 @@ import (
 	"ptah.run/internal/lexer"
 )
 
-// partitionMemberSQLExtension reads `CREATE TABLE ... PARTITION OF` on the targets
-// that take it. A document of another target reaches the shared grammar's refusal.
-// PARTITION BY and TABLESPACE after the bound stay table suffixes, which the
-// frontend reads for this table as it does for any other.
+// partitionMemberSQLExtension reads `CREATE TABLE ... PARTITION OF` and `ALTER
+// TABLE ... ATTACH PARTITION` on the targets that take them. A document of another
+// target reaches the shared grammar's refusal. PARTITION BY and TABLESPACE after the
+// bound stay table suffixes, which the frontend reads for this table as it does for
+// any other.
 func partitionMemberSQLExtension() sqlext.Extension {
 	return sqlext.Extension{Owner: pgtable.Owner, Targets: []string{platform.Postgres, platform.YugabyteDB},
 		Facets: []schemaext.Kind{pgtable.PartitionMemberKind},
-		Patterns: []sqlext.Pattern{{Name: "partition-member", Site: sqlext.TableOption,
-			Words: []string{"PARTITION", "OF"}, Stops: []string{"PARTITION", "TABLESPACE"}}},
+		Patterns: append([]sqlext.Pattern{{Name: "partition-member", Site: sqlext.TableOption,
+			Words: []string{"PARTITION", "OF"}, Stops: []string{"PARTITION", "TABLESPACE"}}}, attachPartitionPatterns()...),
 		Parser: partitionMemberSQL{},
 		Coverage: func(sqlext.CoverageRequest) (schemaext.Coverage, error) {
 			return pgtable.PartitionMemberCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)
@@ -110,6 +111,14 @@ func (partitionMemberSQL) ParseSQL(ctx context.Context, request sqlext.Request) 
 	for _, claim := range request.Claims {
 		if err := ctx.Err(); err != nil {
 			return sqlext.Result{}, err
+		}
+		if claim.Site == sqlext.Statement && strings.HasPrefix(claim.Pattern, attachPartitionPattern) {
+			value, err := attachPartitionValue(claim)
+			if err != nil {
+				return sqlext.Result{}, err
+			}
+			result.Values = append(result.Values, value)
+			continue
 		}
 		if claim.Pattern != "partition-member" || claim.Site != sqlext.TableOption {
 			return sqlext.Result{}, partitionSyntax("unexpected SQL claim")

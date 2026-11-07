@@ -94,6 +94,9 @@ func (t *target) registration() engine.Target {
 	}
 	if slices.Contains(t.engine.GetFeatures(), provider.ColumnsFeature) {
 		result.Comparison.ColumnService = columnService{target: t}
+		// The engine answers the collation apart from the type; see
+		// columnAspects.
+		result.Comparison.ColumnCollations = t.offers(provider.ColumnCollationsFeature)
 	}
 	if t.offers(provider.CheckEquivalenceFeature) {
 		result.Comparison.Checks = checkService{target: t}
@@ -131,9 +134,12 @@ func (t *target) commonDeclaration(declaration schemacapture.TableDeclaration) s
 }
 
 // assessesParents reports an engine with a planning service that owns table
-// settings, which the host hands every table it creates, changes or drops.
+// settings or, under provider.TableOwnershipFeature, the tables themselves,
+// which the host hands every table it creates, changes or drops.
 func (t *target) assessesParents() bool {
-	return slices.ContainsFunc(t.engine.GetPlanning(), func(assignment *protocol.ModelPlanning) bool { return len(assignment.GetParentKinds()) > 0 })
+	return slices.ContainsFunc(t.engine.GetPlanning(), func(assignment *protocol.ModelPlanning) bool {
+		return len(assignment.GetParentKinds()) > 0 || assignment.GetOwnsTables()
+	})
 }
 
 // rendersAuthoredSchemas reports an engine whose whole schema renders through

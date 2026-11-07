@@ -301,11 +301,8 @@ func renderGeneratedDownMigrationSQL(
 	if err != nil {
 		return "", err
 	}
-	if len(statements) == 0 {
-		return fmt.Sprintf(
-			"-- Migration rollback\n-- Generated on: %s\n-- Direction: DOWN\n-- +ptah %s\n\n-- No rollback operations needed\n",
-			time.Now().Format(time.RFC3339), migrationfile.DirectiveEmptyRollback,
-		), nil
+	if !hasActualSQLStatements(statements) {
+		return emptyGeneratedDown(statements, plan.Dialect), nil
 	}
 	header := fmt.Sprintf(
 		"-- Migration rollback\n-- Generated on: %s\n-- Direction: DOWN\n\n",
@@ -317,6 +314,25 @@ func renderGeneratedDownMigrationSQL(
 		plan.Dialect,
 		directives,
 	), nil
+}
+
+// emptyGeneratedDown is the down file of a reverse plan with no statement to
+// run. The reverse planned every forward change: a change its owner cannot
+// undo refuses the plan, and a change whose rollback leaves what the forward
+// change left, such as a secret value the server never returns, runs nothing
+// and says so in a note. So the file states that it has no rollback on
+// purpose, in the form `migrations down` reads, and keeps the notes, which say
+// what the rollback leaves. A down file nobody decided on carries no such
+// statement, and `migrations down` refuses it.
+func emptyGeneratedDown(notes []string, dialect string) string {
+	body := "-- No rollback operations needed\n"
+	if len(notes) > 0 {
+		body = joinScriptStatements(notes, dialect) + "\n"
+	}
+	return fmt.Sprintf(
+		"-- Migration rollback\n-- Generated on: %s\n-- Direction: DOWN\n-- +ptah %s\n\n%s",
+		time.Now().Format(time.RFC3339), migrationfile.DirectiveEmptyRollback, body,
+	)
 }
 
 func renderGeneratedMigrationSQL(

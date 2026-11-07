@@ -313,8 +313,10 @@ There are two ways out. Each edits a file, so run `ptah migrations hash` afterwa
 
 The refusal is about the file. `--plan` derives a rollback from the dev database
 instead of running the down files, so it does not read this one. A migration
-registered with a Go function decides for itself, and a generated migration whose
-reverse has nothing to undo carries the directive.
+registered with a Go function decides for itself. A generated migration whose
+reverse runs nothing carries the directive: one with nothing to undo, and one
+whose rollback leaves what the up file changed, such as a secret value the server
+never returns, which keeps a comment saying what stays.
 
 A [checkpoint](../checkpoints/) adds one more boundary: history squashed
 below a checkpoint no longer has individually applied migrations to reverse,

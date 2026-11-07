@@ -11,6 +11,21 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// ownSettings reports whether every setting of an added column is a retention
+// value the column itself owns. The host sends an added column as a
+// declaration and refuses a value of another representation before the
+// request, so the fixture takes each setting as declared. SQLite keeps no
+// retention, so the column the fixture adds carries none.
+func ownSettings(column *protocol.PlanningColumn) bool {
+	for _, facet := range column.GetFacets() {
+		owner := facet.GetValue().GetValue().GetOwner()
+		if facet.GetKind() != "example.org/fixture/retention" || owner.GetKind() != "column" || owner.GetName() != column.GetName() {
+			return false
+		}
+	}
+	return true
+}
+
 // A parent assessment can replace a common operand without a native change.
 // This fixture deliberately supports only plain column additions.
 func (p *owner) planColumnRewrites(request *protocol.PlanFeaturesRequest, table *protocol.PlanningTable) ([]*protocol.PlanningStep, []*protocol.PlanningRewrite, error) {
@@ -65,8 +80,8 @@ func (p *owner) planColumnRewrites(request *protocol.PlanFeaturesRequest, table 
 		if table.GetAction() != protocol.PlanningTable_ALTER || table.GetDesired() == nil {
 			return nil, nil, fmt.Errorf("column rewrite requires an altered table declaration")
 		}
-		plain := &protocol.PlanningColumn{Name: column.GetName(), Type: column.GetType(), Nullable: column.GetNullable()}
-		if !proto.Equal(column, plain) {
+		plain := &protocol.PlanningColumn{Name: column.GetName(), Type: column.GetType(), Nullable: column.GetNullable(), Facets: column.GetFacets()}
+		if !proto.Equal(column, plain) || !ownSettings(column) {
 			return nil, nil, fmt.Errorf("unsupported added column properties")
 		}
 		payload, err := json.Marshal(operation{Action: "add-column", Column: &addedColumn{Name: plain.Name, Type: plain.Type, Nullable: new(plain.Nullable)}})

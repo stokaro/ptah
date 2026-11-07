@@ -164,3 +164,30 @@ func TestTableOwnershipNegotiation_HappyPath(t *testing.T) {
 	only, _, _ := lifecycleOnlyExchange()
 	c.Assert(provider.ValidateDescription(provider.NegotiatedDescription(only, unlisted), nil), qt.ErrorMatches, `.*missing or duplicate planning service`)
 }
+
+// An owner without a parent kind is the planning service that owns the
+// engine's tables for the features that require one, constraint and primary
+// key changes, and a host that does not list planning.object-context keeps
+// it, since it plans the tables rather than an object context.
+func TestTableOwnerWithoutParentKinds_HappyPath(t *testing.T) {
+	t.Run("constraint and primary key changes", func(t *testing.T) {
+		c := qt.New(t)
+		d, _, _ := lifecycleOnlyExchange()
+		features := []string{provider.ObservedColumnsFeature, provider.ObservedConstraintsFeature, provider.ConstraintChangesFeature,
+			provider.ObservedPrimaryKeysFeature, provider.PrimaryKeyChangesFeature}
+		d.Features = append(d.Features, features...)
+		d.Engines[0].Features = append(d.Engines[0].Features, features...)
+
+		c.Assert(provider.ValidateDescription(d, nil), qt.IsNil)
+	})
+	t.Run("a host that does not list planning.object-context", func(t *testing.T) {
+		c := qt.New(t)
+		d, _, _ := lifecycleOnlyExchange()
+
+		negotiated := provider.NegotiatedDescription(d, withoutFeature(provider.TwoWayFeatures(), provider.PlanningObjectContextFeature))
+
+		c.Assert(negotiated.Engines[0].Planning, qt.HasLen, 1)
+		c.Assert(negotiated.Engines[0].Planning[0].GetOwnsTables(), qt.IsTrue)
+		c.Assert(provider.ValidateDescription(negotiated, nil), qt.IsNil)
+	})
+}

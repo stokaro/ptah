@@ -229,12 +229,13 @@ func snapshotRequired(refs []objectidentity.ID) ([]objectidentity.ID, error) {
 	return slices.CompactFunc(refs, func(a, b objectidentity.ID) bool { return schemaext.CompareRefs(a, b) == 0 }), nil
 }
 
-// snapshotDeclaredRelations copies and orders the declared views and
+// snapshotDeclaredRelations copies and orders the declared tables, views and
 // materialized views, refusing a reference that is not one.
 func snapshotDeclaredRelations(refs []objectidentity.ID) ([]objectidentity.ID, error) {
 	refs = slices.Clone(refs)
 	for _, ref := range refs {
-		if (ref.Kind != objectidentity.KindView && ref.Kind != objectidentity.KindMatView) || ref.Name.Source == "" || ref.Name.Normalized == "" || !ref.Parent.Empty() || !ref.Signature.IsZero() {
+		if !slices.Contains([]objectidentity.Kind{objectidentity.KindTable, objectidentity.KindView, objectidentity.KindMatView}, ref.Kind) ||
+			ref.Name.Source == "" || ref.Name.Normalized == "" || !ref.Parent.Empty() || !ref.Signature.IsZero() {
 			return nil, fmt.Errorf("%w: invalid declared relation %s", schemaext.ErrInvalidValue, ref)
 		}
 	}

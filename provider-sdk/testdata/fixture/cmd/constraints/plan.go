@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	"github.com/stokaro/ptah/provider-sdk/provider"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -37,7 +38,11 @@ func (o *owner) PlanFeatures(ctx context.Context, request *protocol.PlanFeatures
 		for _, step := range steps {
 			ids = append(ids, proto.CloneOf(step.GetId()))
 		}
-		for _, kind := range request.GetParentKinds() {
+		kinds := slices.Clone(request.GetParentKinds())
+		if o.ownsTables {
+			kinds = append(kinds, provider.TableReceiptKind)
+		}
+		for _, kind := range kinds {
 			result.Parents = append(result.Parents, &protocol.PlanningParentReceipt{Action: table.GetAction(), Receipt: &protocol.PlanningReceipt{
 				Subject: proto.CloneOf(table.GetSubject()), Kind: kind, Strategy: "Rebuild the table with its declared constraints", Steps: ids}})
 		}
