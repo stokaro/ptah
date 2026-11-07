@@ -58,7 +58,8 @@ func (r *Reader) readSessionAccount(ctx context.Context) (sessionAccount, error)
 	}
 	account.mariaDB = capability.BannerPlatform(version) == platform.MariaDB
 
-	grants, err := mysqlgrants.Read(ctx, r.db, account.mariaDB)
+	// MariaDB prints a role's rows under the role's name.
+	grants, err := mysqlgrants.Read(ctx, r.db, !account.mariaDB)
 	if err != nil {
 		return sessionAccount{}, err
 	}

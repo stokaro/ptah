@@ -9,14 +9,15 @@ import (
 )
 
 // Read asks the server what the session on q holds, with the settings that decide
-// how each row of the answer applies. mariaDB says the server is MariaDB, which
-// prints a role's rows under the role's name; MySQL prints them as the account's own.
+// how each row of the answer applies. mergedRoles is [Options.MergedRoles]: the server
+// prints an active role's rows as the account's own, as MySQL does and MariaDB does
+// not.
 //
 // It is the one way into [Parse] for a live session, so every question about what
 // a session may see reads the same rows under the same settings. SHOW GRANTS about
 // oneself needs no privilege, so a failure here means the question could not be
 // asked, and the caller decides what that costs.
-func Read(ctx context.Context, q dbreset.Querier, mariaDB bool) (Grants, error) {
+func Read(ctx context.Context, q dbreset.Querier, mergedRoles bool) (Grants, error) {
 	lines, err := dbreset.QueryNames(ctx, q, "SHOW GRANTS")
 	if err != nil {
 		return Grants{}, fmt.Errorf("failed to read the connecting account's grants: %w", err)
@@ -25,7 +26,7 @@ func Read(ctx context.Context, q dbreset.Querier, mariaDB bool) (Grants, error) 
 	if err != nil {
 		return Grants{}, fmt.Errorf("failed to read the settings grants depend on: %w", err)
 	}
-	options.MergedRoles = !mariaDB
+	options.MergedRoles = mergedRoles
 	return Parse(lines, options), nil
 }
 

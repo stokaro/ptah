@@ -8,8 +8,6 @@ import (
 	"slices"
 	"strings"
 
-	"ptah.run/core/platform"
-	"ptah.run/core/platform/capability"
 	"ptah.run/core/sqlutil"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/migratorext"
@@ -443,9 +441,11 @@ func (m *Migrator) collectMySQLSchemaObjects(
 // hides a table's triggers from. What the session holds on schema is read by the
 // rules the server applies, so a privilege a wildcard row carries counts and a row
 // a more specific one hides does not, as it does not on the server.
+//
+// Only an engine whose services state TriggerGrant reaches this, and that engine
+// prints an active role's rows as the account's own.
 func (m *Migrator) requireMySQLTriggerCatalogVisibility(ctx context.Context, schema string) error {
-	mariaDB := capability.BannerPlatform(m.conn.Info().Version) == platform.MariaDB
-	grants, err := mysqlgrants.Read(ctx, m.conn, mariaDB)
+	grants, err := mysqlgrants.Read(ctx, m.conn, true)
 	if err != nil {
 		return fmt.Errorf("failed to prove MySQL-family trigger catalog visibility: %w", err)
 	}
