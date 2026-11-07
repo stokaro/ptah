@@ -3,7 +3,6 @@ package migrator_test
 import (
 	"context"
 	"path/filepath"
-	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -209,5 +208,5 @@ func TestMigrateDown_ACreatedMigrationIsHeldToTheSameRule(t *testing.T) {
 
 	var refused *migrator.EmptyRollbackError
 	c.Assert(err, qt.ErrorAs, &refused)
-	c.Assert(strings.Contains(err.Error(), "in_code"), qt.IsTrue)
+	c.Assert(err.Error(), qt.Contains, "in_code")
 }
