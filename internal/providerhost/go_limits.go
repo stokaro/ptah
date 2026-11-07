@@ -3,6 +3,7 @@ package providerhost
 import (
 	"fmt"
 	"slices"
+	"strings"
 
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"github.com/stokaro/ptah/provider-sdk/provider"
@@ -31,10 +32,15 @@ func (h *Host) goCoverage(limits []coverage.Object) (schemaext.Coverage, error) 
 		return h.goBaseCoverage()
 	}
 	claimed := goHeaderKinds(h.description)
-	for _, limit := range limits {
+	normalized := make([]coverage.Object, len(limits))
+	for i, limit := range limits {
+		// The Go annotation parser accepts a coverage kind in any letter case.
+		// The provider contract names the same kind in lower case.
+		limit.Kind = coverage.Kind(strings.ToLower(string(limit.Kind)))
 		if !slices.Contains(claimed, string(limit.Kind)) || !limit.Reason.Valid() || !limit.Provenance.Valid() {
 			return schemaext.Coverage{}, fmt.Errorf("%w: unclaimed or invalid Go source limit", provider.ErrProtocol)
 		}
+		normalized[i] = limit
 	}
 	var combined schemaext.Coverage
 	for _, engine := range h.description.GetEngines() {
@@ -42,7 +48,7 @@ func (h *Host) goCoverage(limits []coverage.Object) (schemaext.Coverage, error) 
 			continue
 		}
 		var selected []coverage.Object
-		for _, limit := range limits {
+		for _, limit := range normalized {
 			if slices.Contains(engine.GetGoHeaderKinds(), string(limit.Kind)) {
 				selected = append(selected, limit)
 			}
