@@ -127,11 +127,31 @@ func (r *renderer) renderRoles() {
 		if role.Replication {
 			r.trueAttr(1, "replication")
 		}
+		if role.Group {
+			r.trueAttr(1, "group")
+		}
+		r.roleMemberships(role)
 		r.rolePassword(role)
 		r.stringAttr(1, "comment", role.Comment)
 		r.line("}")
 		r.line("")
 	}
+}
+
+// roleMemberships writes the groups a role is a member of, each as a
+// reference to its block where the document declares one and as a quoted name
+// where it does not, as a grantee is written ([renderer.roleTarget]): a YDB
+// group such as DATA-READERS is one a role can join without the document
+// declaring it.
+func (r *renderer) roleMemberships(role schemamodel.Role) {
+	if len(role.MemberOf) == 0 {
+		return
+	}
+	groups := make([]string, len(role.MemberOf))
+	for i, group := range role.MemberOf {
+		groups[i] = r.roleTarget(group)
+	}
+	r.rawAttr(1, "member_of", "["+strings.Join(groups, ", ")+"]")
 }
 
 // rolePassword writes a role's password the way every statement names it:

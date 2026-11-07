@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"slices"
 
 	"ptah.run/catalog"
@@ -59,17 +60,20 @@ func attachFeatureJSONLoss(ctx context.Context, realm *atlasSchemaInspectJSONRea
 			destinations = append(destinations, destination)
 		}
 	}
-	labels, err := schemaexportloss.FeatureLabels(ctx, info.Dialect, values, runtime)
+	omissions, err := schemaexportloss.FeatureOmissions(ctx, info.Dialect, values, runtime)
 	if err != nil {
 		return err
 	}
 	counts := make(map[*inspectJSONLoss]map[string]int)
-	for i, label := range labels {
+	for i, omission := range omissions {
 		destination := destinations[i]
 		if counts[destination] == nil {
 			counts[destination] = make(map[string]int)
 		}
-		counts[destination][label]++
+		if counts[destination][omission.Label] > math.MaxInt-omission.Count {
+			return fmt.Errorf("%w: omitted feature count overflows", schemaext.ErrInvalidValue)
+		}
+		counts[destination][omission.Label] += omission.Count
 	}
 	for destination, labels := range counts {
 		destination.omitted = append(destination.omitted, schemaexportloss.Descriptions(labels)...)

@@ -98,7 +98,11 @@ current schema IR:
 - PostgreSQL `extension` blocks with `schema`, `if_not_exists`, `version`, and
   `comment`
 - PostgreSQL `role` blocks with `login`, `superuser`, `create_db`,
-  `create_role`, `inherit`, `replication`, `password`, and `comment`
+  `create_role`, `inherit`, `replication`, `password`, and `comment`. On YDB,
+  `group = true` declares a group, and `member_of` lists the groups a role
+  joins, each as `role.<name>` for a group the document declares or as a
+  quoted name, such as `"DATA-READERS"`, for one it does not. A target without
+  groups or memberships refuses either attribute
 - PostgreSQL `permission` blocks for table, schema, and sequence targets with
   `to`, `for`, `privileges`, `grantable`, and `comment`
 - PostgreSQL `function` blocks with `schema`, `lang`, `arg`, `return`,
