@@ -99,6 +99,10 @@ func validateModelReports(description *protocol.Description, engine *protocol.En
 			if !sameMetrics(mine.GetMetrics(), theirs.GetMetrics()) {
 				return reportCountsError("engines that share a model report other metrics for it")
 			}
+			if mine.GetOmissionLabel() != theirs.GetOmissionLabel() ||
+				mine.GetOmissionCountMetric() != theirs.GetOmissionCountMetric() {
+				return reportCountsError("engines that share a model report other omission metadata for it")
+			}
 		}
 	}
 	return nil
@@ -127,6 +131,12 @@ func validateModelReport(description *protocol.Description, engine *protocol.Eng
 		if !metricHelp(metric.GetHelp()) {
 			return reportCountsError("a metric's help is not one line")
 		}
+	}
+	if label := report.GetOmissionLabel(); label != "" && !metricHelp(label) {
+		return reportCountsError("an omission label is not one line")
+	}
+	if name := report.GetOmissionCountMetric(); name != "" && !seen[name] {
+		return reportCountsError("an omission count metric is not declared")
 	}
 	return nil
 }
