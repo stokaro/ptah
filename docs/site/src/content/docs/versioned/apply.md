@@ -447,7 +447,9 @@ read from.
 `ptah migrations up --json` prints one document describing the run, on the
 successful path and on the failing one. Under this flag the document is standard
 output and everything written for a person goes to standard error, so a caller
-parses one stream and reads the other.
+parses one stream and reads the other. `ptah migrations down --json` prints the
+same document for a rollback, which
+[Rollback](../rollback/#the-document-a-rollback-leaves) describes.
 
 ```json
 {

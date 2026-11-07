@@ -190,6 +190,132 @@ func TestNewRunResult_AppliedNamesOnlyWhatWasSelected(t *testing.T) {
 	c.Assert(result.Outcome, qt.Equals, migrator.RunOutcomeApplied)
 }
 
+// A rollback is classified by what it took away: the selected migrations the
+// history no longer records as applied. A migration below the target, which
+// the history keeps, says nothing about the run.
+func TestNewRunResult_ClassifiesARollback(t *testing.T) {
+	runErr := errors.New("rollback failed")
+	tests := []struct {
+		name           string
+		evidence       migrator.RunEvidence
+		outcome        migrator.RunOutcome
+		rolledBack     []int64
+		rolledBackKeys []string
+	}{
+		{
+			name: "nothing above the target",
+			evidence: migrator.RunEvidence{
+				Plan:  &migrator.MigrationPlan{},
+				After: &migrator.MigrationStatus{AppliedMigrations: []int64{1}},
+			},
+			outcome: migrator.RunOutcomeUpToDate,
+		},
+		{
+			name: "every selected migration rolled back",
+			evidence: migrator.RunEvidence{
+				Plan:  &migrator.MigrationPlan{Versions: []int64{3, 2}},
+				After: &migrator.MigrationStatus{AppliedMigrations: []int64{1}},
+			},
+			outcome:    migrator.RunOutcomeApplied,
+			rolledBack: []int64{3, 2},
+		},
+		{
+			name: "a rollback identified by keys",
+			evidence: migrator.RunEvidence{
+				Plan: &migrator.MigrationPlan{Versions: []int64{2, 2}, VersionKeys: []string{"2.b", "2.a"}},
+				After: &migrator.MigrationStatus{
+					AppliedMigrations: []int64{1, 2}, AppliedMigrationKeys: []string{"1", "2.a"},
+				},
+				Err: runErr,
+			},
+			outcome:        migrator.RunOutcomeFailed,
+			rolledBack:     []int64{2},
+			rolledBackKeys: []string{"2.b"},
+		},
+		{
+			name: "stopped after the first of two",
+			evidence: migrator.RunEvidence{
+				Plan:  &migrator.MigrationPlan{Versions: []int64{3, 2}},
+				After: &migrator.MigrationStatus{AppliedMigrations: []int64{1, 2}},
+				Err:   runErr,
+			},
+			outcome:    migrator.RunOutcomeFailed,
+			rolledBack: []int64{3},
+		},
+		{
+			name: "the second rollback stopped and left its row dirty",
+			evidence: migrator.RunEvidence{
+				Plan: &migrator.MigrationPlan{Versions: []int64{3, 2}},
+				After: &migrator.MigrationStatus{
+					AppliedMigrations: []int64{1},
+					DirtyRevision:     &migrator.MigrationRevision{Version: 2, Direction: migrator.MigrationDirectionDown, Applied: 0, Total: 1},
+				},
+				Err: runErr,
+			},
+			outcome:    migrator.RunOutcomeFailed,
+			rolledBack: []int64{3},
+		},
+		{
+			name: "a dry run took nothing away",
+			evidence: migrator.RunEvidence{
+				Plan:   &migrator.MigrationPlan{Versions: []int64{3, 2}},
+				After:  &migrator.MigrationStatus{AppliedMigrations: []int64{1, 2, 3}},
+				DryRun: true,
+			},
+			outcome: migrator.RunOutcomeDryRun,
+		},
+		{
+			name: "returned cleanly and one is still applied",
+			evidence: migrator.RunEvidence{
+				Plan:  &migrator.MigrationPlan{Versions: []int64{3, 2}},
+				After: &migrator.MigrationStatus{AppliedMigrations: []int64{1, 2}},
+			},
+			outcome:    migrator.RunOutcomePartial,
+			rolledBack: []int64{3},
+		},
+		{
+			name: "status could not be read",
+			evidence: migrator.RunEvidence{
+				Plan: &migrator.MigrationPlan{Versions: []int64{3}},
+				Err:  runErr,
+			},
+			outcome: migrator.RunOutcomeUnknown,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			test.evidence.Direction = migrator.MigrationDirectionDown
+
+			result := migrator.NewRunResult(test.evidence)
+
+			c.Assert(result.Direction, qt.Equals, migrator.MigrationDirectionDown)
+			c.Assert(result.Outcome, qt.Equals, test.outcome)
+			c.Assert(result.RolledBack, qt.DeepEquals, test.rolledBack)
+			c.Assert(result.RolledBackKeys, qt.DeepEquals, test.rolledBackKeys)
+			c.Assert(result.Applied, qt.IsNil)
+			c.Assert(result.AppliedKeys, qt.IsNil)
+		})
+	}
+}
+
+// An up run reports what it applied and nothing as rolled back, whatever the
+// history lost below its plan.
+func TestNewRunResult_AnUpRunRollsNothingBack(t *testing.T) {
+	c := qt.New(t)
+
+	result := migrator.NewRunResult(migrator.RunEvidence{
+		Direction: migrator.MigrationDirectionUp,
+		Plan:      &migrator.MigrationPlan{Versions: []int64{2, 3}},
+		After:     &migrator.MigrationStatus{AppliedMigrations: []int64{2}},
+	})
+
+	c.Assert(result.Applied, qt.DeepEquals, []int64{2})
+	c.Assert(result.RolledBack, qt.IsNil)
+	c.Assert(result.Outcome, qt.Equals, migrator.RunOutcomePartial)
+}
+
 // TestRunResultOverARealFailure measures the shapes the classification reads,
 // against sqlite, rather than trusting the table above to describe them.
 func TestRunResultOverARealFailure(t *testing.T) {
