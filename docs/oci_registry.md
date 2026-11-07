@@ -761,6 +761,8 @@ represented without loss. In particular:
 
 - a managed-data declaration whose row file was never read is rejected, so a
   table is never published with no rows;
+- a managed-data declaration whose row file is outside the project is rejected,
+  so a schema cannot carry a file off the machine;
 - a row that does not declare its key columns, declares one as null, or repeats
   the key of another row is rejected before any database sees it;
 - role passwords are rejected so credentials cannot be published in an

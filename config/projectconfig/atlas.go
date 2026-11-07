@@ -25,6 +25,7 @@ import (
 	"ptah.run/internal/atlasprojectpath"
 	"ptah.run/internal/atlasregistry"
 	"ptah.run/internal/hcldiag"
+	"ptah.run/internal/pathguard"
 )
 
 // AtlasLoadOptions selects Atlas project config evaluation settings.
@@ -3504,36 +3505,10 @@ func atlasLocalPathRule(value, hint string) error {
 }
 
 // leavesTheProjectDirectory reports whether a path starts at a root rather than
-// inside the project.
-//
-// filepath.IsAbs alone is not that question, and the difference is not
-// cosmetic. On Windows "/tmp/secret.txt" has no volume name, so IsAbs answers
-// false -- while the path still resolves to C:\tmp\secret.txt, outside every
-// project. An atlas.hcl refused on Linux would have been read on Windows.
-//
-// The rule is deliberately the same on every operating system: what a project
-// file is allowed to name must not depend on which machine opens it. A leading
-// backslash counts too, which on Unix rules out a file literally named "\tmp"
-// -- an acceptable loss for a rule whose whole job is to fail closed.
+// inside the project. [pathguard.StartsAtRoot] says why the answer is the same on
+// every operating system.
 func leavesTheProjectDirectory(path string) bool {
-	return filepath.IsAbs(path) ||
-		strings.HasPrefix(path, "/") ||
-		strings.HasPrefix(path, `\`) ||
-		hasVolumeName(path)
-}
-
-// hasVolumeName reports whether path begins with a Windows drive letter.
-//
-// filepath.VolumeName answers "" for `C:\x` on Unix, so the check is written
-// out rather than delegated: a project file naming a drive is refused
-// everywhere, including on the host where that spelling happens to be an
-// ordinary directory called "C:".
-func hasVolumeName(path string) bool {
-	if len(path) < 2 || path[1] != ':' {
-		return false
-	}
-	drive := path[0]
-	return (drive >= 'A' && drive <= 'Z') || (drive >= 'a' && drive <= 'z')
+	return pathguard.StartsAtRoot(path)
 }
 
 // atlasLocalFileURL turns a data.hcl_schema path into a file:// URL, or reports

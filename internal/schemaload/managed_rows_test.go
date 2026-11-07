@@ -8,6 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/manageddata"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/schemaload"
@@ -29,7 +30,7 @@ func TestReadManagedRows_ReadsWhatTheAnnotationNames(t *testing.T) {
 	c.Assert(db.ManagedData, qt.HasLen, 1)
 	c.Assert(db.ManagedData[0].Rows, qt.IsNil, qt.Commentf("loading a schema does not read row files"))
 
-	err = schemaload.ReadManagedRows(db)
+	err = schemaload.ReadManagedRows(db, []string{root})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.ManagedData[0].Rows, qt.HasLen, 2)
@@ -46,7 +47,7 @@ func TestReadManagedRows_EmptyFileIsNotAnUnreadOne(t *testing.T) {
 	db, err := schemaload.LoadContext(context.Background(), schemaload.Options{Owners: builtintest.Runtime(), RootDirs: []string{root}})
 	c.Assert(err, qt.IsNil)
 
-	err = schemaload.ReadManagedRows(db)
+	err = schemaload.ReadManagedRows(db, []string{root})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.ManagedData[0].Rows, qt.HasLen, 0)
@@ -60,9 +61,52 @@ func TestReadManagedRows_MissingFile(t *testing.T) {
 	db, err := schemaload.LoadContext(context.Background(), schemaload.Options{Owners: builtintest.Runtime(), RootDirs: []string{root}})
 	c.Assert(err, qt.IsNil)
 
-	err = schemaload.ReadManagedRows(db)
+	err = schemaload.ReadManagedRows(db, []string{root})
 
 	c.Assert(err, qt.ErrorMatches, `read managed data file .*countries.yaml" for table "countries": .*`)
+}
+
+// TestReadManagedRows_RefusesARowFileOutsideTheRoots keeps publication from carrying
+// a file off the machine. The rows read here leave for a registry, so a declaration
+// that reaches out of the project would upload whatever it named.
+func TestReadManagedRows_RefusesARowFileOutsideTheRoots(t *testing.T) {
+	setup := qt.New(t)
+	root := goRootWithManagedData(setup, "- code: US\n  name: United States\n")
+	other := t.TempDir()
+
+	tests := []struct {
+		name  string
+		roots []string
+	}{
+		{name: "another root", roots: []string{other}},
+		{name: "no root", roots: nil},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			db, err := schemaload.LoadContext(context.Background(), schemaload.Options{Owners: builtintest.Runtime(), RootDirs: []string{root}})
+			c.Assert(err, qt.IsNil)
+
+			err = schemaload.ReadManagedRows(db, test.roots)
+
+			c.Assert(err, qt.ErrorIs, manageddata.ErrOutsideRoot)
+			c.Assert(db.ManagedData[0].Rows, qt.IsNil)
+		})
+	}
+}
+
+// TestReadManagedRows_ReadsThroughTheRootThatHoldsTheFile is the composite schema:
+// every --root-dir is merged into it, so a file under the second reads too.
+func TestReadManagedRows_ReadsThroughTheRootThatHoldsTheFile(t *testing.T) {
+	c := qt.New(t)
+	root := goRootWithManagedData(c, "- code: US\n  name: United States\n")
+	db, err := schemaload.LoadContext(context.Background(), schemaload.Options{Owners: builtintest.Runtime(), RootDirs: []string{root}})
+	c.Assert(err, qt.IsNil)
+
+	err = schemaload.ReadManagedRows(db, []string{t.TempDir(), root})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.ManagedData[0].Rows, qt.HasLen, 1)
 }
 
 func goRootWithManagedData(c *qt.C, rows string) string {

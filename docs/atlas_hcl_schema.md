@@ -418,9 +418,9 @@ data {
 }
 ```
 
-The `data.file` path is relative to the HCL file. Go annotation export rebases
-paths that were relative to a Go source file so the same data file is loaded
-after migration. Role passwords remain string literals in the exported HCL;
+The `data.file` path is relative to the HCL file, and a path outside the project
+is refused. Go annotation export rebases paths that were relative to a Go source
+file so the same data file is loaded after migration. Role passwords remain string literals in the exported HCL;
 treat those files as sensitive.
 
 ### API export metadata

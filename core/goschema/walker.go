@@ -33,7 +33,7 @@ import (
 //
 // Managed-data annotations record an absolute SourceDir anchored at rootDir,
 // so [ptah.run/core/manageddata.LoadRows] resolves them from any
-// working directory.
+// working directory, given a root that holds the file.
 //
 // annotations selects the feature owners whose directives the walk reads, as
 // it does for [ParseFile].

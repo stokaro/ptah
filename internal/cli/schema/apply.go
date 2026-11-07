@@ -24,7 +24,6 @@ import (
 	"ptah.run/internal/cli/internal/editor"
 	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/cli/internal/migrateflags"
-	"ptah.run/internal/cli/internal/schemaroot"
 	"ptah.run/internal/cli/internal/secretrotation"
 	"ptah.run/internal/cli/internal/tablerebuild"
 	"ptah.run/internal/devdocker"
@@ -32,6 +31,7 @@ import (
 	"ptah.run/internal/errorkind"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/schemaload"
+	"ptah.run/internal/schemaroot"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/internal/undecidednote"
 	"ptah.run/migration/migrator"
@@ -563,7 +563,7 @@ func runSchemaApplyOnLockedSession(
 	}
 	plan, err := atlasschema.PrepareApply(ctx, conn, atlasschema.ApplyRuntimeOptions{
 		Runtime:             opts.runtime,
-		ProjectRoot:         schemaroot.Of(opts.rootDirs),
+		ProjectRoots:        schemaroot.Of(opts.rootDirs),
 		DevURL:              opts.devURL,
 		DevServerDisposable: opts.devServerDisposable,
 		ToURLs:              opts.toURLs,

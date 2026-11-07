@@ -271,7 +271,7 @@ type Country struct {
 	c.Assert(err, qt.IsNil)
 	c.Assert(parsed.ManagedData, qt.HasLen, 1)
 	c.Assert(parsed.ManagedData[0].File, qt.Equals, "../models/countries.yaml")
-	rows, err := manageddata.LoadRows("", parsed.ManagedData[0])
+	rows, err := manageddata.LoadRows(root, parsed.ManagedData[0])
 	c.Assert(err, qt.IsNil)
 	c.Assert(rows, qt.DeepEquals, []map[string]any{{"code": "CZ"}})
 }
