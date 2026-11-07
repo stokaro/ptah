@@ -690,12 +690,10 @@ and pipelines share a directory:
   global scope so Ptah can see a complete trigger catalog. MariaDB exposes each
   trigger's identity and target table without `TRIGGER`, so it does not require
   that privilege for this catalog check. Ptah refuses MySQL `file` mode when it
-  cannot prove complete visibility. The MySQL grant must be global or must name
-  the selected database exactly in `SHOW GRANTS`. Ptah decodes escaped literal
-  wildcard characters in the database name, but deliberately does not infer
-  coverage from an unescaped `%` or `_` pattern because MySQL's
-  `partial_revokes` setting changes that pattern's meaning. Every `sql_mode`
-  assignment is also refused because changing grammar or quoting rules after
+  cannot prove complete visibility. Ptah reads a grant as the server applies it:
+  a pattern such as ``GRANT ALL ON `app%`.*`` covers `app`, a more specific row
+  that leaves `TRIGGER` out hides the pattern, and with `partial_revokes` on a
+  name in a grant is literal. Every `sql_mode` assignment is also refused because changing grammar or quoting rules after
   preflight can make the server execute SQL that Ptah did not inspect. A session
   that already enables parser-changing `ANSI_QUOTES`, `MSSQL`, or
   `NO_BACKSLASH_ESCAPES` behavior through the connection DSN or server default
