@@ -469,7 +469,7 @@ message QueryLexical {
   // it, so 1--1 is a subtraction.
   bool dash_comment_needs_space = 6;
   // How a block comment marks text the server runs: "bang" for /*! ... */,
-  // "mbang" for MariaDB's /*M! ... */ beside it. Empty, every block comment
+  // "m-bang" for MariaDB's /*M! ... */ beside it. Empty, every block comment
   // is a comment.
   string executable_comments = 7;
   // A pair of square brackets quotes an identifier.

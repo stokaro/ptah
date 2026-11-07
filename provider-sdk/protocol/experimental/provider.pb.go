@@ -5998,7 +5998,7 @@ type QueryLexical struct {
 	// it, so 1--1 is a subtraction.
 	DashCommentNeedsSpace bool `protobuf:"varint,6,opt,name=dash_comment_needs_space,json=dashCommentNeedsSpace,proto3" json:"dash_comment_needs_space,omitempty"`
 	// How a block comment marks text the server runs: "bang" for /*! ... */,
-	// "mbang" for MariaDB's /*M! ... */ beside it. Empty, every block comment
+	// "m-bang" for MariaDB's /*M! ... */ beside it. Empty, every block comment
 	// is a comment.
 	ExecutableComments string `protobuf:"bytes,7,opt,name=executable_comments,json=executableComments,proto3" json:"executable_comments,omitempty"`
 	// A pair of square brackets quotes an identifier.
