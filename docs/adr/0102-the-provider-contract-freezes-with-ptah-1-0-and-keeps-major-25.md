@@ -219,10 +219,10 @@ need a two-way feature, and how a provider engine builds an enum column
 | Removals ignore observed foreign keys (DuckDB, item 7) | The host orders table removals by declared dependencies and chains the steps; observed constraints are on the wire (25.28) | Yes: host planning only, and the contract promises no removal order | Host fix at any time; DuckDB's single `drop-tables` step stays valid. Not blocking |
 | `live.locks` needs a second process (DuckDB, item 8) | SDK `conformance`: the check opens the database from a second process, which an embedded engine refuses | Yes: a `conformance` configuration field, Go API only | SDK change at any time, before DuckDB adopts the frozen contract (stokaro/ptah#5667). Not blocking |
 | The view check-option level (stokaro/ptah#5647) | Desired `SQLView.with_check` is a bool; observed `ObservedView.check_option` is a string | Yes: an enum beside the bool under a two-way feature | Contract 25.32: an enum of none, `CASCADED` and `LOCAL` beside the bool, under a two-way feature. Not blocking |
-| View queries compared with the host's case folds (G204) | No engine field states how a view query compares; the host folds unquoted text | Yes: an engine declaration under a two-way feature | A later minor, before or after the freeze. Not blocking |
-| A transfer into an undeclared table or topic (G211) | `CompareModelsRequest.declared_relations` carries views only, by the host's choice, and no comment says what it holds | Only as a new field: once frozen, another kind in this list reaches a provider that assumed views | Contract 25.32: state that the list holds every declared relation, each with its kind, and have the host fill it so under a two-way feature |
+| View queries compared with the host's case folds (G204) | No engine field states how a view query compares; the host folds unquoted text | Yes: an engine declaration under a two-way feature | Contract 25.33: the engine's owner decides whether two view queries are one (`CompareViewQueries`, ADR 0108). Not blocking |
+| A transfer into an undeclared table or topic (G211) | `CompareModelsRequest.declared_relations` carries views only, by the host's choice, and no comment says what it holds | Only as a new field: once frozen, another kind in this list reaches a provider that assumed views | Contract 25.32: state that the list holds every declared relation, each with its kind, and have the host fill it so under a two-way feature. Contract 25.33 hands a comparison the declared objects of another comparison's models, such as topics (ADR 0109) |
 | A `docker://` dev URL in context resolution (G215) | `DatabaseContextRequest.address` receives the dev URL raw; no rule says which side resolves `docker://` | Yes: the host resolving the address first changes nothing a provider relies on | Before the freeze, write that the host resolves a dev URL before asking for its context. Not blocking |
-| Omissions of a rendering (G219, G220) | No field reports a declared fact a rendering leaves out, such as a type modifier or sequence settings | Yes: a list on the render result under a two-way feature | A later minor, before or after the freeze. Not blocking |
+| Omissions of a rendering (G219, G220) | No field reports a declared fact a rendering leaves out, such as a type modifier or sequence settings | Yes: a list on the render result under a two-way feature | Contract 25.33: `RenderResult.omissions` under `render.omissions` (ADR 0110). Not blocking |
 | The server's message on a failed execution (S74) | `Execution` carries the provider's reason and SQLSTATE, no redacted server text | Yes: a new field | Decide whether operators need it; a later minor if so |
 | Change streams (S16, S47) | No model the planner or the export sees | Yes: a native context kind through `planning.object-context`, or a field on the observed table | Provider work. Not blocking |
 
@@ -230,7 +230,12 @@ None of these gaps needs what only a new major could do, so the freeze waits
 for none of them. Four are cheaper before it than after it, and contract
 25.32 adds them as negotiated additions: the check-option enum, the collation
 aspect, the table-lifecycle declaration and the meaning of
-`declared_relations`.
+`declared_relations`. Contract 25.33 closes three more as negotiated
+additions: view query equivalence, the declared objects of another
+comparison's models, and the omissions of a rendering. It also adds the
+grants of a held table to planning (ADR 0111), the password a SQL document
+gives a role (ADR 0112) and the statement facts of a SQL grammar
+(ADR 0113), which the gap registers found after this record was written.
 
 ## Alternatives considered
 

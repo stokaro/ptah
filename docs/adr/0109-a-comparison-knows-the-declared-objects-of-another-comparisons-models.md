@@ -51,12 +51,12 @@ desired object of those kinds, each once, in identity order, the identity's
 kind naming its model. The provider lists the two-way feature, and so does
 each engine with a comparison that names declared kinds.
 
-The list holds what the desired state the comparison request is built from
+The list holds what the desired schema the comparison request is built from
 holds: the run's scope applies first. A topic a `--include` or `--schemas`
 scope leaves out is not declared to the comparison, as it is not declared to
 the topic comparison either; a provider that refuses a transfer of an
 undeclared topic refuses it under such a scope too, which is what the
-built-in engine did with the same desired state.
+built-in engine did with the same desired schema.
 
 A relation stays in `declared_relations`, and a provider's own model never
 goes there: a topic is not a relation. The two lists answer one question for
@@ -74,7 +74,7 @@ feature. `ValidateDescription` refuses the engine's feature without the
 provider's or without a model comparison, and declared kinds on an engine that
 does not list the feature, on a facet comparison, which receives no object
 context, a kind named twice or blank, the comparison's own kind, whose
-declared objects its desired state already holds, and a kind no object
+declared objects its desired schema already holds, and a kind no object
 comparison of the engine owns. `ValidateComparisonRequest` refuses declared
 objects that the engine or the request's target did not negotiate, an
 identity named twice, an invalid identity and an identity of a kind the

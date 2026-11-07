@@ -68,10 +68,11 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.32. Each released SDK speaks one contract:
+speaks contract 25.33. Each released SDK speaks one contract:
 
 | SDK release | Contract |
 | --- | --- |
+| `provider-sdk/v0.31.0` | 25.33 |
 | `provider-sdk/v0.30.0` | 25.32 |
 | `provider-sdk/v0.29.0` | 25.31 |
 | `provider-sdk/v0.28.0` | 25.30 |
@@ -175,6 +176,11 @@ returns to 0.
   [view check options](#view-check-options),
   [declared relations](#declared-relations) and
   [table ownership](#table-ownership).
+  Contract 25.33 adds [view query equivalence](#view-query-equivalence),
+  [declared objects](#declared-objects),
+  [render omissions](#render-omissions), [table grants](#table-grants),
+  [SQL role passwords](#sql-role-passwords) and
+  [SQL statement facts](#sql-statement-facts).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -217,7 +223,11 @@ does not oblige a peer to use it.
   `schema.index-nulls-order`, `schema.common-namespaces`,
   `source.sql-table-clauses`, `schema.reserved-seeds`,
   `schema.index-predicates`, `engine.linked-release-lines`,
-  `schema.enum-columns` and `schema.observed-unique-constraints`. The embedding
+  `schema.enum-columns`, `schema.observed-unique-constraints`,
+  `schema.column-collations`, `schema.view-check-options`,
+  `models.declared-relations`, `planning.table-ownership`,
+  `models.declared-objects`, `render.omissions`, `planning.table-grants`,
+  `source.sql-role-passwords` and `source.sql-statement-facts`. The embedding
   store's calls,
   `PrepareCommonObjects`, `ReverseChanges` and `ReportValues` are new, and each
   comes with an addition to `Engine`, so a host lists the feature to receive
@@ -1189,10 +1199,12 @@ reference a relation, such as a transfer into a table, knows whether the
 relation is declared. An object of the provider's own models, such as a
 topic, is not a relation and is never listed: the comparison's state carries
 the objects of its own models, and [declared objects](#declared-objects)
-those of a model another comparison owns. The provider and each engine whose
-comparisons read the list declare this two-way feature, and the engine needs
-a model comparison. `ValidateComparisonRequest` refuses a table without the
-feature and any other kind.
+those of a model another comparison owns.
+
+The provider and each engine whose comparisons read the list declare this
+two-way feature, and the engine needs a model comparison.
+`ValidateComparisonRequest` refuses a table without the feature and any other
+kind.
 
 ### Declared objects
 
@@ -1203,16 +1215,19 @@ comparison of the engine owns. Under `models.declared-objects` a comparison
 names those object models in `ModelComparison.declared_kinds`, and
 `CompareModelsRequest.declared_objects` carries the identity of every desired
 object of those kinds, each once, the kind of each naming its model: the
-objects of the desired state the comparison request is built from, after the
-run's scope, so a topic a scope leaves out is not declared. The provider and
-each engine with such a comparison declare this two-way feature. A host that
-does not list it sees no declared kinds and sends no declared object.
-`ValidateDescription` refuses declared kinds on an engine without the
-feature, on a facet comparison, a kind named twice, the comparison's own
-kind and a kind no object comparison of the engine owns.
-`ValidateComparisonRequest` refuses declared objects the engine or the
-request's target did not negotiate, an identity named twice and one of a kind
-the comparison does not name.
+objects of the desired schema the comparison request is built from, after the
+run's scope, so a topic a scope leaves out is not declared.
+
+The provider and each engine with such a comparison declare this two-way
+feature. A host that does not list it sees no declared kinds and sends no
+declared object. The SDK refuses:
+
+- in `ValidateDescription`, declared kinds on an engine without the feature,
+  on a facet comparison, a kind named twice, the comparison's own kind and a
+  kind no object comparison of the engine owns;
+- in `ValidateComparisonRequest`, declared objects the engine or the
+  request's target did not negotiate, an identity named twice and one of a
+  kind the comparison does not name.
 
 Bound identity components retain source and normalized spelling, quoting, and
 connection defaults. Parent, namespace path, and signature remain separate.

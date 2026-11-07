@@ -117,6 +117,13 @@ a new record that names it, and its own status line is updated to point there.
 | [0105](0105-a-comparison-knows-every-relation-the-desired-schema-declares.md) | A comparison knows every relation the desired schema declares | Proposed |
 | [0106](0106-a-planning-service-owns-tables-without-a-table-setting.md) | A planning service owns tables without a table setting | Proposed |
 | [0107](0107-the-lock-check-of-an-engine-one-process-holds-contends-from-that-process.md) | The lock check of an engine one process holds contends from that process | Proposed |
+| [0108](0108-a-provider-decides-whether-two-view-queries-are-one.md) | A provider decides whether two view queries are one | Proposed |
+| [0109](0109-a-comparison-knows-the-declared-objects-of-another-comparisons-models.md) | A comparison knows the declared objects of another comparison's models | Proposed |
+| [0110](0110-a-render-reports-what-it-leaves-out.md) | A render reports what it leaves out | Proposed |
+| [0111](0111-a-planning-service-receives-the-grants-of-each-held-table.md) | A planning service receives the grants of each held table | Proposed |
+| [0112](0112-a-sql-reading-returns-the-password-a-document-gives-a-role.md) | A SQL reading returns the password a document gives a role | Proposed |
+| [0113](0113-an-engine-states-how-its-server-reads-a-schema-documents-statements.md) | An engine states how its server reads a schema document's statements | Proposed |
+| [0114](0114-a-host-that-lists-no-two-way-feature-is-the-narrowest-host.md) | A host that lists no two-way feature is the narrowest host | Proposed |
 
 ## Writing one
 
