@@ -439,6 +439,43 @@ message QueryDialect {
   // without a target's capabilities. A present false is an established
   // answer; an absent key is unknown, and a clause it gates is refused.
   map<string, bool> default_capabilities = 4;
+  // The rules the host's shared SQL lexer reads the engine's text with,
+  // where they differ from the SQL standard. Absent, the host reads the text
+  // by the standard's rules alone. Contract 25.34, under query.lexical.
+  QueryLexical lexical = 5;
+}
+// QueryLexical is the descriptor's lexical section, with its JSON names: the
+// rules of an engine whose text the host reads with its shared lexer, such as
+// a SQL schema document in FRAGMENTS mode and a migration body the host scans
+// for its directives. An engine that scans its own SQL (sql.scan) states
+// none, since its scanner reads the text in place of the shared lexer.
+message QueryLexical {
+  // A backslash escapes the next character inside a string literal.
+  bool backslash_escapes = 1;
+  // E'...' is a string literal in which a backslash escapes the next
+  // character, whatever backslash_escapes says.
+  bool escape_strings = 2;
+  // Two quoted strings separated only by white space holding a line ending
+  // are one constant, a -- comment counting as white space. The host reads
+  // this form only together with unicode_strings.
+  bool continued_strings = 3;
+  // U&'...' is a string literal whose escapes name code points, with the
+  // UESCAPE clause that may follow it. The host reads it only together with
+  // continued_strings.
+  bool unicode_strings = 4;
+  // A block comment may hold block comments, each closed by its own */.
+  bool nested_comments = 5;
+  // -- opens a comment only when white space or a control character follows
+  // it, so 1--1 is a subtraction.
+  bool dash_comment_needs_space = 6;
+  // How a block comment marks text the server runs: "bang" for /*! ... */,
+  // "mbang" for MariaDB's /*M! ... */ beside it. Empty, every block comment
+  // is a comment.
+  string executable_comments = 7;
+  // A pair of square brackets quotes an identifier.
+  bool bracket_identifiers = 8;
+  // A name may begin with #, so # opens no comment.
+  bool hash_names = 9;
 }
 // QueryQuoting is the descriptor's quoting section.
 message QueryQuoting {
