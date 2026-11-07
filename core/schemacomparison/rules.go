@@ -21,6 +21,9 @@ type Rules struct {
 	Columns Columns
 	// ColumnService owns contextful column batches. It cannot coexist with Columns.
 	ColumnService ColumnService
+	// Checks decides whether a declared CHECK and the held one are one
+	// constraint.
+	Checks Checks
 	// Indexes compares index definitions.
 	Indexes Indexes
 	// IndexDefinitions compares whole index definitions, in place of the

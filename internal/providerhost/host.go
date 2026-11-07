@@ -162,13 +162,23 @@ var hostFeatures = []string{
 	// Inspection reports a provider table's primary key in key order, which
 	// the catalog keeps as the table's PRIMARY KEY constraint, and the
 	// planner hands a change of it to the table's owner as an alteration of
-	// the table; see reader.tables and commonPlanner.keyChanges.
+	// the table; see reader.tables and commonPlanner.constraintChanges.
 	provider.ObservedPrimaryKeysFeature,
 	provider.PrimaryKeyChangesFeature,
+	// Inspection reports the foreign keys and CHECKs a provider table holds,
+	// which the catalog keeps as the table's constraints, and the planner
+	// hands a change of one to the table's owner as an alteration of the
+	// table; see reader.constraints and commonPlanner.constraintChanges.
+	provider.ObservedConstraintsFeature,
+	provider.ConstraintChangesFeature,
 	// Table preparation states the kind of each declared index, and the
 	// index rules compare it with the held index's method; see
 	// observedIndexRules.
 	provider.IndexMethodsFeature,
+	// Inspection states the NULLS order of every key part of a held index,
+	// and table preparation states it for every key part of a declared one,
+	// which the index rules compare exactly; see observedIndexRules.
+	provider.IndexNullsOrderFeature,
 	provider.DatabaseContextFeature,
 	provider.ValueContextFeature,
 	// A command's scope names a provider's objects by the selector types its

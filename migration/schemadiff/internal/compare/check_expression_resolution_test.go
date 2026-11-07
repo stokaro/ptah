@@ -54,6 +54,17 @@ func TestConstraints_ACheckIsComparedThroughTheServerWhenOneAnswered(t *testing.
 			wantRemove: []string{"ck_score"},
 		},
 		{
+			// A target that decides equivalence itself says the two are two
+			// constraints, though the texts read alike: its answer stands.
+			name:     "the target decided the declaration differs",
+			declared: "score BETWEEN 1 AND 10",
+			checks: map[string]config.CheckExpression{
+				checkKey("t", "ck_score"): {Expression: stored, Resolved: true, Differs: true},
+			},
+			wantAdded:  []string{"ck_score"},
+			wantRemove: []string{"ck_score"},
+		},
+		{
 			// A refusal says nothing about whether the two agree, so it falls
 			// back rather than being read as a difference. The old textual
 			// rule then reports this pair, which is the behavior that shipped.

@@ -125,3 +125,62 @@ func TestAcceptIndexMethods_FailurePath(t *testing.T) {
 		c.Assert(capture, qt.DeepEquals, schemapreparation.Capture{})
 	})
 }
+
+// indexNullsRequest is one table declaring index by_status over two parts, and
+// its reply stating the NULLS order of each.
+func indexNullsRequest() (schemapreparation.Request, schemapreparation.Result) {
+	request := schemapreparation.Request{Tables: []schemapreparation.Table{{Desired: schemacapture.TableDeclaration{
+		Table: schemamodel.Table{Name: "events"},
+		Indexes: []schemamodel.Index{{Name: "by_status", Parts: []schemamodel.IndexPart{{Name: "status", NullsOrder: schemamodel.NullsOrderFirst},
+			{Name: "id", Desc: true}}}},
+	}}}}
+	reply := request.Clone()
+	reply.Tables[0].IndexNulls = map[string][]string{"by_status": {"", schemamodel.NullsOrderFirst}}
+	return request, schemapreparation.Result{Complete: true, Tables: reply.Tables}
+}
+
+func TestAcceptIndexNulls_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	request, result := indexNullsRequest()
+	capture, err := schemapreparation.Accept(request, result)
+	c.Assert(err, qt.IsNil)
+	c.Assert(capture.Prepared[0].IndexNulls, qt.DeepEquals, map[string][]string{"by_status": {"", schemamodel.NullsOrderFirst}})
+	c.Assert(capture.Source[0].IndexNulls, qt.IsNil)
+	// The declaration keeps the orders the source wrote, and the capture its
+	// own copy of the stated ones.
+	c.Assert(capture.Prepared[0].Desired.Indexes[0].Parts[0].NullsOrder, qt.Equals, schemamodel.NullsOrderFirst)
+	result.Tables[0].IndexNulls["by_status"][1] = "changed"
+	c.Assert(capture.Prepared[0].IndexNulls["by_status"][1], qt.Equals, schemamodel.NullsOrderFirst)
+	clone := capture.Clone()
+	clone.Prepared[0].IndexNulls["by_status"][1] = "changed"
+	c.Assert(capture.Prepared[0].IndexNulls["by_status"][1], qt.Equals, schemamodel.NullsOrderFirst)
+}
+
+func TestAcceptIndexNulls_FailurePath(t *testing.T) {
+	for _, row := range []struct {
+		name    string
+		wantErr string
+		nulls   map[string][]string
+		stated  map[string][]string
+	}{
+		{name: "orders of an index the table does not declare", wantErr: `.*states the NULLS orders of index "by_other", which the table does not declare`,
+			nulls: map[string][]string{"by_other": {"", ""}}},
+		{name: "fewer orders than key parts", wantErr: `.*states 1 NULLS orders for the 2 key parts of index "by_status"`,
+			nulls: map[string][]string{"by_status": {""}}},
+		{name: "an order in another spelling", wantErr: `.*states NULLS order "nulls first" for index "by_status"`,
+			nulls: map[string][]string{"by_status": {"", "nulls first"}}},
+		{name: "an input that already states orders", wantErr: `.*preparation input already states index NULLS orders`,
+			nulls: map[string][]string{"by_status": {"", ""}}, stated: map[string][]string{"by_status": {"", ""}}},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+			request, result := indexNullsRequest()
+			result.Tables[0].IndexNulls = row.nulls
+			request.Tables[0].IndexNulls = row.stated
+			capture, err := schemapreparation.Accept(request, result)
+			c.Assert(err, qt.ErrorIs, schemapreparation.ErrInvalid)
+			c.Assert(err, qt.ErrorMatches, row.wantErr)
+			c.Assert(capture, qt.DeepEquals, schemapreparation.Capture{})
+		})
+	}
+}
