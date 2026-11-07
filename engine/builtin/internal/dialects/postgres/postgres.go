@@ -3110,7 +3110,10 @@ func (r *Renderer) renderCreateView(node *ast.CreateViewNode) error {
 	target := r.escapeQualifiedIdentifier(node.Name)
 	r.w.WriteLinef("%s %s%s AS", create, target, options)
 	r.w.WriteLine(strings.TrimSpace(node.Body))
-	if node.WithCheck {
+	switch {
+	case node.WithCheck && node.LocalCheck:
+		r.w.WriteLine("WITH LOCAL CHECK OPTION")
+	case node.WithCheck:
 		r.w.WriteLine("WITH CHECK OPTION")
 	}
 	r.w.WriteLine(";")

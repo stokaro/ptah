@@ -1839,8 +1839,8 @@ func (p *Parser) parseCreateViewNode() (*ast.CreateViewNode, error) {
 		return nil, fmt.Errorf("expected AS after view name: %w", err)
 	}
 
-	body := p.collectStatementBody()
-	if strings.TrimSpace(body) == "" {
+	body, check := p.collectViewBody()
+	if body == "" {
 		return nil, ptaherr.At(p.current.Start, fmt.Errorf("expected view body after AS"))
 	}
 
@@ -1852,9 +1852,75 @@ func (p *Parser) parseCreateViewNode() (*ast.CreateViewNode, error) {
 		return nil, fmt.Errorf("view %s: %w", viewName, err)
 	}
 
-	view := ast.NewCreateView(viewName).SetBody(body)
+	view := ast.NewCreateView(viewName).SetBody(body).SetWithCheck(check != viewCheckNone)
+	view.LocalCheck = check == viewCheckLocal
 	view.Options = options
 	return view, nil
+}
+
+// viewCheck is the check option a view statement ends with.
+type viewCheck int
+
+const (
+	viewCheckNone viewCheck = iota
+	// viewCheckCascaded is WITH CHECK OPTION and WITH CASCADED CHECK OPTION,
+	// which states the level the shorter form means.
+	viewCheckCascaded
+	// viewCheckLocal is WITH LOCAL CHECK OPTION.
+	viewCheckLocal
+)
+
+// collectViewBody reads a view's query to the end of the statement and splits
+// off the WITH [CASCADED | LOCAL] CHECK OPTION clause that may end it. The
+// clause is not part of the query: the server stores it apart from the body
+// (information_schema.views.check_option), so a body that kept it would
+// never match the body the server reports.
+func (p *Parser) collectViewBody() (string, viewCheck) {
+	var tokens []lexer.Token
+	for !p.isAtEnd() && p.current.Type != lexer.TokenSemicolon {
+		tokens = append(tokens, p.current)
+		p.advance()
+	}
+	end, check := trailingViewCheck(tokens)
+	var body strings.Builder
+	for _, token := range tokens[:end] {
+		body.WriteString(token.Value)
+	}
+	return strings.TrimSpace(body.String()), check
+}
+
+// trailingViewCheck finds the check option clause that ends tokens. It returns
+// the index of the clause's WITH and the level the clause names, or
+// len(tokens) and viewCheckNone when tokens do not end in the clause.
+//
+// The clause is matched on tokens, as the statement's last words, with
+// whitespace and comments between them skipped. A string literal or a quoted
+// identifier is one token that is not a keyword, and a clause inside a
+// subquery is followed by its closing parenthesis, so a query that carries
+// the words anywhere else keeps them.
+func trailingViewCheck(tokens []lexer.Token) (int, viewCheck) {
+	const clauseWords = 4 // WITH, the level, CHECK, OPTION
+	words := make([]int, 0, clauseWords)
+	for i := len(tokens) - 1; i >= 0 && len(words) < clauseWords; i-- {
+		if tokens[i].Type != lexer.TokenWhitespace && tokens[i].Type != lexer.TokenComment {
+			words = append(words, i)
+		}
+	}
+	none := len(tokens)
+	if len(words) < 3 || !tokens[words[0]].MatchIdentifierValue("OPTION") || !tokens[words[1]].MatchIdentifierValue("CHECK") {
+		return none, viewCheckNone
+	}
+	check, with := viewCheckCascaded, 2
+	switch level := &tokens[words[2]]; {
+	case level.MatchIdentifierValue("LOCAL"):
+		check, with = viewCheckLocal, 3
+	case level.MatchIdentifierValue("CASCADED"):
+		with = 3
+	}
+	if with >= len(words) || !tokens[words[with]].MatchIdentifierValue("WITH") {
+		return none, viewCheckNone
+	}
+	return words[with], check
 }
 
 // parseRelationOptions reads the option list PostgreSQL takes between a view's
