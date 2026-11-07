@@ -67,21 +67,31 @@ if [ -n "$hits" ]; then
 	status=1
 fi
 
-# Application modules declare the current path. The neutral provider SDK has
-# its own publicly resolvable module identity (#4204), pinned to one exact
-# directory below. Neither another module nor another SDK spelling is exempt.
-# Module discovery still covers every tracked or untracked declaration.
+# Application modules declare the current path. The modules a provider
+# depends on without the host -- the neutral provider SDK (#4204) and the SQL
+# syntax module (#5586) -- have their own publicly resolvable identities, each
+# pinned to one exact directory below. Neither another module nor another
+# spelling of these identities is exempt. Module discovery still covers every
+# tracked or untracked declaration.
+independent_identity() {
+	case "$1" in
+	provider-sdk/go.mod) echo "github.com/stokaro/ptah/provider-sdk" ;;
+	sqlsyntax/go.mod) echo "github.com/stokaro/ptah/sqlsyntax" ;;
+	*) echo "" ;;
+	esac
+}
 while IFS= read -r modfile; do
 	declared="$(sed -n 's/^module //p' "$modfile" | head -1)"
- if [[ "$modfile" == "provider-sdk/go.mod" ]]; then
-  if [[ "$declared" != "github.com/stokaro/ptah/provider-sdk" ]]; then
-   echo "check-module-path: provider SDK must declare github.com/stokaro/ptah/provider-sdk" >&2
-   status=1
-  else
-   independent=$((independent + 1))
-  fi
-  continue
- fi
+	want="$(independent_identity "$modfile")"
+	if [ -n "$want" ]; then
+		if [[ "$declared" != "$want" ]]; then
+			echo "check-module-path: ${modfile%/go.mod} must declare ${want}" >&2
+			status=1
+		else
+			independent=$((independent + 1))
+		fi
+		continue
+	fi
  case "$declared" in
 	"${current_module}" | "${current_module}"/*)
 		ours=$((ours + 1))
@@ -112,4 +122,4 @@ fi
 # The counts are separate because they are different claims. A run that folded
 # the fixture module into the total would report more agreement than it measured.
 echo "check-module-path: OK (${files} files name no retired organisation;" \
-	"${ours} of ${modules} modules declare ${current_module}, ${foreign} stand for other code, ${independent} independent provider SDK)"
+	"${ours} of ${modules} modules declare ${current_module}, ${foreign} stand for other code, ${independent} independent modules)"
