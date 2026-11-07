@@ -2,12 +2,12 @@
 // session and answers which privileges the session holds on a database or a
 // table.
 //
-// A schema reader needs this because information_schema lists only what an
-// account holds a privilege on, and neither engine has a catalog an ordinary
-// account can read instead. SHOW GRANTS is the one statement every account may
-// run about itself, and it covers what the session holds through a role: both
-// engines print an active role's privileges, and neither prints an inactive
-// role's.
+// A schema reader and the migrator's preflight need this because
+// information_schema lists only what an account holds a privilege on, and neither
+// engine has a catalog an ordinary account can read instead. SHOW GRANTS is the one
+// statement every account may run about itself, and it covers what the session
+// holds through a role: both engines print an active role's privileges, and neither
+// prints an inactive role's.
 //
 // Privileges on one object are not simply added up. These rules were measured on
 // MySQL 8.4 and 26.10 and on MariaDB 11.8 and 12.3:

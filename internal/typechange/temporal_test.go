@@ -126,11 +126,11 @@ func TestIsNarrowing_Temporal(t *testing.T) {
 	}
 }
 
-// TestIsNarrowingOn_ABareTypeIsTheEnginesAnswer holds a precision declared on one side
+// TestEngineNarrows_ABareTemporalTypeIsTheEnginesAnswer holds a precision declared on one side
 // to what each engine's server answered, read back from a column of each spelling:
 // PostgreSQL 17.11, CockroachDB 26.3 and YugabyteDB 2026.1 hold six digits, MySQL 8.4 and
 // MariaDB 12.3 none, SQL Server 2025 seven, Oracle 23.26 six.
-func TestIsNarrowingOn_ABareTypeIsTheEnginesAnswer(t *testing.T) {
+func TestEngineNarrows_ABareTemporalTypeIsTheEnginesAnswer(t *testing.T) {
 	const postgres, mysql, sqlServer, oracle = 6, 0, 7, 6
 	tests := []struct {
 		name    string
@@ -180,7 +180,7 @@ func TestIsNarrowingOn_ABareTypeIsTheEnginesAnswer(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(typechange.IsNarrowingOn(test.oldType, test.newType, test.bare), qt.Equals, test.want)
+			c.Assert(typechange.Engine{TimeDigits: test.bare}.Narrows(test.oldType, test.newType), qt.Equals, test.want)
 		})
 	}
 }

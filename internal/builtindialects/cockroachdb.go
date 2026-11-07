@@ -144,6 +144,7 @@ func cockroachDB() descriptor.Dialect {
 		Comparison: descriptor.Comparison{
 			DeclaredSchemas:    true,
 			TimePrecision:      descriptor.TimePrecision{Compared: true, Default: 6},
+			BareTypes:          descriptor.BareTypes{Stated: true, FloatBits: 53, RealBits: 24},
 			PrimaryKeyRenames:  true,
 			IdentityColumns:    true,
 			SerialDefault:      "unique_rowid()",

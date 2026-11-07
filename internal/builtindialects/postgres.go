@@ -145,6 +145,7 @@ func postgres() descriptor.Dialect {
 		Comparison: descriptor.Comparison{
 			DeclaredSchemas:    true,
 			TimePrecision:      descriptor.TimePrecision{Compared: true, Default: 6},
+			BareTypes:          descriptor.BareTypes{Stated: true, FloatBits: 53, RealBits: 24},
 			ForeignKeysOutside: true,
 			// pg_constraint.conindid names the index, and `DROP CONSTRAINT`
 			// on it answers `cannot drop constraint parent_pkey on table

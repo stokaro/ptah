@@ -123,6 +123,9 @@ type Comparison struct {
 	// TimePrecision says how the engine reads a temporal column's fractional-seconds
 	// precision. The zero value compares none.
 	TimePrecision TimePrecision `json:"time_precision,omitzero"`
+	// BareTypes says what a column holds whose type declares no length, precision or
+	// scale. The zero value states nothing, and such a type is compared by its name.
+	BareTypes BareTypes `json:"bare_types,omitzero"`
 	// PrimaryKeyNullable reports that a primary key column may hold NULL
 	// unless the table's shape says otherwise, so a key does not imply NOT
 	// NULL.
@@ -186,4 +189,33 @@ type TimePrecision struct {
 	// change the comparison reports for another reason narrows the column, so an
 	// engine that does not compare a precision can still state one.
 	Default int `json:"default,omitempty"`
+}
+
+// BareTypes states what a column holds whose type declares no size, which decides both
+// whether two spellings are one type and which way a change between them goes. `decimal`
+// is `decimal(10,0)` on MySQL and `decimal(18,0)` on SQL Server, and it holds any number
+// on PostgreSQL, so `decimal(10,2)` declared `decimal` loses the fraction on the first
+// two and on the third keeps every value.
+//
+// What SQL fixes for every engine needs no field: a bare CHAR, NCHAR, BINARY or BIT holds
+// one.
+type BareTypes struct {
+	// Stated reports that the fields below hold the engine's answers.
+	Stated bool `json:"stated,omitempty"`
+	// DecimalPrecision is the digits of a DECIMAL that declares none, which then holds
+	// no fraction. Zero means it holds a number of any size.
+	DecimalPrecision int `json:"decimal_precision,omitempty"`
+	// VariableLength is the length of a VARCHAR or VARBINARY that declares none. Zero
+	// means it has no limit, or that the server refuses the spelling.
+	VariableLength int `json:"variable_length,omitempty"`
+	// FloatBits and RealBits are the mantissa bits of a FLOAT that declares no precision
+	// and of a REAL.
+	FloatBits int `json:"float_bits,omitempty"`
+	RealBits  int `json:"real_bits,omitempty"`
+	// FloatKeepsPrecision reports that FLOAT(p) holds p bits. Elsewhere the server
+	// builds the 4-byte type for a p up to 24 and the 8-byte type above it.
+	FloatKeepsPrecision bool `json:"float_keeps_precision,omitempty"`
+	// IntervalLeading is the digits of an interval's leading field where it declares
+	// none, on an engine whose catalog reports them.
+	IntervalLeading int `json:"interval_leading,omitempty"`
 }

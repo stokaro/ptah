@@ -115,6 +115,30 @@ func TestOnDatabase(t *testing.T) {
 			want:      true,
 		},
 		{
+			name:      "ALL PRIVILEGES through a trailing wildcard",
+			lines:     []string{"GRANT USAGE ON *.* TO `a`@`%`", "GRANT ALL PRIVILEGES ON `txa%`.* TO `a`@`%`"},
+			database:  "txa",
+			privilege: "TRIGGER",
+			want:      true,
+		},
+		{
+			name:      "ALL PRIVILEGES through escaped underscores and a trailing wildcard",
+			lines:     []string{"GRANT USAGE ON *.* TO `a`@`%`", "GRANT ALL PRIVILEGES ON `ptah\\_rt\\_%`.* TO `a`@`%`"},
+			database:  "ptah_rt_x",
+			privilege: "TRIGGER",
+			want:      true,
+		},
+		{
+			// Measured on MySQL 26.10 and MariaDB 12.3: the server stores what
+			// the statement wrote, which matches a literal backslash, and it
+			// answers ERROR 1044 for ptah_rt_x.
+			name:      "a doubled backslash in a row is a literal backslash",
+			lines:     []string{"GRANT ALL PRIVILEGES ON `ptah\\\\_rt\\\\_%`.* TO `a`@`%`"},
+			database:  "ptah_rt_x",
+			privilege: "TRIGGER",
+			want:      false,
+		},
+		{
 			name:      "a name is case-sensitive by default",
 			lines:     []string{"GRANT SELECT ON `FX`.* TO `a`@`%`"},
 			privilege: "SELECT",

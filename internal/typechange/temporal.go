@@ -14,7 +14,7 @@ import (
 // What a type that declares no precision holds is the engine's answer and differs by
 // engine: six digits on PostgreSQL, none on MySQL and seven on SQL Server. So
 // `timestamp(3)` to `timestamp` loses digits on MySQL and gains them on PostgreSQL, and
-// only [IsNarrowingOn] can say which.
+// only [Engine.Narrows] can say which.
 
 // temporalFamily is what a value of a temporal type is made of.
 type temporalFamily int
@@ -161,17 +161,10 @@ func (t temporalType) holdsOffset() bool {
 	return t.name == "timetz" || t.name == "datetimeoffset"
 }
 
-// bareDigits is what an engine says a temporal type that declares no precision holds.
-// The zero value names no engine, and such a type then has no answer.
-type bareDigits struct {
-	digits int
-	known  bool
-}
-
 // resolvedDigits is how many fractional-second digits a value of the type holds, and
 // false when that depends on an engine nobody named. A negative answer is coarser than
 // a whole second.
-func (t temporalType) resolvedDigits(bare bareDigits) (int, bool) {
+func (t temporalType) resolvedDigits(engine *Engine) (int, bool) {
 	switch {
 	case t.family == familyDate:
 		return 0, true
@@ -184,15 +177,30 @@ func (t temporalType) resolvedDigits(bare bareDigits) (int, bool) {
 	case t.name == "datetime64":
 		// A bare DateTime64 is DateTime64(3); chtype.Canonical says so too.
 		return 3, true
+	case engine == nil:
+		return 0, false
 	default:
-		return bare.digits, bare.known
+		return engine.TimeDigits, true
+	}
+}
+
+// resolvedLeading is how many digits an interval's leading field holds, and false where
+// neither the spelling nor the engine says.
+func (t temporalType) resolvedLeading(engine *Engine) (int, bool) {
+	switch {
+	case t.leading != undeclared:
+		return t.leading, true
+	case engine != nil && engine.Bare.IntervalLeading > 0:
+		return engine.Bare.IntervalLeading, true
+	default:
+		return 0, false
 	}
 }
 
 // temporalNarrows reports whether some value of old is not a value of updated. A family
 // the two do not share loses the date, or the time of day, that updated has no room
 // for; a date becoming a datetime and a time becoming one lose nothing.
-func temporalNarrows(old, updated temporalType, bare bareDigits) bool {
+func temporalNarrows(old, updated temporalType, engine *Engine) bool {
 	if old.array != updated.array {
 		return false
 	}
@@ -216,12 +224,14 @@ func temporalNarrows(old, updated temporalType, bare bareDigits) bool {
 		if updated.smallest > old.smallest {
 			return true
 		}
-		if old.leading != undeclared && updated.leading != undeclared && updated.leading < old.leading {
+		oldLeading, oldOK := old.resolvedLeading(engine)
+		newLeading, newOK := updated.resolvedLeading(engine)
+		if oldOK && newOK && newLeading < oldLeading {
 			return true
 		}
 	}
-	oldDigits, oldOK := old.resolvedDigits(bare)
-	newDigits, newOK := updated.resolvedDigits(bare)
+	oldDigits, oldOK := old.resolvedDigits(engine)
+	newDigits, newOK := updated.resolvedDigits(engine)
 	// SQL Server's datetime takes no precision, and holds three digits rounded to
 	// 1/300 of a second: measured on SQL Server 2025, .123 reads .1233333 under
 	// datetime2(7) and is gone under datetime2(0). MySQL's and ClickHouse's datetime
@@ -234,15 +244,15 @@ func temporalNarrows(old, updated temporalType, bare bareDigits) bool {
 
 // temporalWidens reports a type of the same family that keeps more digits or spans a
 // wider range, and loses nothing.
-func temporalWidens(old, updated temporalType) bool {
-	if old.array != updated.array || old.family != updated.family || temporalNarrows(old, updated, bareDigits{}) {
+func temporalWidens(old, updated temporalType, engine *Engine) bool {
+	if old.array != updated.array || old.family != updated.family || temporalNarrows(old, updated, engine) {
 		return false
 	}
 	if temporalRangeRank[updated.name] > temporalRangeRank[old.name] {
 		return true
 	}
-	oldDigits, oldOK := old.resolvedDigits(bareDigits{})
-	newDigits, newOK := updated.resolvedDigits(bareDigits{})
+	oldDigits, oldOK := old.resolvedDigits(engine)
+	newDigits, newOK := updated.resolvedDigits(engine)
 	return oldOK && newOK && newDigits > oldDigits
 }
 
@@ -251,16 +261,4 @@ func temporalWidens(old, updated temporalType) bool {
 func IsTemporal(typeName string) bool {
 	_, ok := parseTemporal(typeName)
 	return ok
-}
-
-// IsNarrowingOn is [IsNarrowing], on an engine where a temporal type that declares no
-// precision holds digits fractional-second digits. It also answers a transition that
-// declares a precision on one side only, which [IsNarrowing] cannot.
-func IsNarrowingOn(oldType, newType string, digits int) bool {
-	if old, ok := parseTemporal(oldType); ok {
-		if updated, ok := parseTemporal(newType); ok {
-			return temporalNarrows(old, updated, bareDigits{digits: digits, known: true})
-		}
-	}
-	return IsNarrowing(oldType, newType)
 }

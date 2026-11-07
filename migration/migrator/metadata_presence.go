@@ -12,6 +12,7 @@ import (
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/migratorext"
 	"ptah.run/internal/migratorext/builtin"
+	"ptah.run/internal/mysqlgrants"
 )
 
 func (m *Migrator) migrationsTableExists(ctx context.Context) (bool, error) {
@@ -436,116 +437,25 @@ func (m *Migrator) collectMySQLSchemaObjects(
 	return nil
 }
 
+// requireMySQLTriggerCatalogVisibility refuses a run on an account the catalog
+// hides a table's triggers from. What the session holds on schema is read by the
+// rules the server applies, so a privilege a wildcard row carries counts and a row
+// a more specific one hides does not, as it does not on the server.
+//
+// Only an engine whose services state TriggerGrant reaches this, and that engine
+// prints an active role's rows as the account's own.
 func (m *Migrator) requireMySQLTriggerCatalogVisibility(ctx context.Context, schema string) error {
-	rows, err := m.conn.QueryContext(ctx, "SHOW GRANTS")
+	grants, err := mysqlgrants.Read(ctx, m.conn, true)
 	if err != nil {
 		return fmt.Errorf("failed to prove MySQL-family trigger catalog visibility: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
-
-	grants := make([]string, 0)
-	for rows.Next() {
-		var grant string
-		if err := rows.Scan(&grant); err != nil {
-			return fmt.Errorf("failed to scan MySQL-family grants: %w", err)
-		}
-		grants = append(grants, grant)
-	}
-	if err := rows.Err(); err != nil {
-		return fmt.Errorf("failed to inspect MySQL-family grants: %w", err)
-	}
-	if !mysqlGrantsProvideTriggerCatalogVisibility(grants, schema, m.connectionDialect()) {
-		return fmt.Errorf(
+	if !grants.OnDatabase(schema).Holds("TRIGGER") {
+		return errors.New(
 			"tx-mode file requires the TRIGGER privilege at database or global scope on MySQL " +
 				"so Ptah can prove that target tables have no hidden indirect writers",
 		)
 	}
 	return nil
-}
-
-func mysqlGrantsProvideTriggerCatalogVisibility(grants []string, schema, dialect string) bool {
-	provided := false
-	revoked := false
-	for _, grant := range grants {
-		tokens := significantSQLTokens(grant, dialect)
-		if mysqlPrivilegeStatementCoversSchema(tokens, "GRANT", schema) {
-			provided = true
-		}
-		if mysqlPrivilegeStatementCoversSchema(tokens, "REVOKE", schema) {
-			revoked = true
-		}
-	}
-	return provided && !revoked
-}
-
-func mysqlPrivilegeStatementCoversSchema(tokens []lexer.Token, verb, schema string) bool {
-	if len(tokens) == 0 || !tokens[0].MatchIdentifierValue(verb) {
-		return false
-	}
-	on := -1
-	hasTrigger := false
-	for i, token := range tokens[1:] {
-		if token.MatchIdentifierValue("ON") {
-			on = i + 1
-			break
-		}
-		if matchesAnyKeyword(token, "ALL", "TRIGGER") {
-			hasTrigger = true
-		}
-	}
-	if !hasTrigger || on < 0 || on+3 >= len(tokens) || tokens[on+2].Value != "." || tokens[on+3].Value != "*" {
-		return false
-	}
-	if tokens[on+1].Value == "*" {
-		return true
-	}
-	grantedSchema, identifier := mysqlGrantSchemaValue(tokens[on+1])
-	return identifier && grantedSchema == schema
-}
-
-// mysqlGrantSchemaValue accepts ANSI_QUOTES output because SHOW GRANTS uses
-// the session SQL mode when it renders identifiers. This decoder is deliberately
-// local to server-generated grants; double quotes remain string delimiters in
-// ordinary MySQL migration SQL unless the session explicitly changes that mode.
-func mysqlGrantSchemaValue(token lexer.Token) (string, bool) {
-	if value, identifier := mysqlIdentifierValue(token); identifier {
-		return mysqlUnescapeGrantSchema(value)
-	}
-	if token.Type != lexer.TokenString || len(token.Value) < 2 ||
-		token.Value[0] != '"' || token.Value[len(token.Value)-1] != '"' {
-		return "", false
-	}
-	return mysqlUnescapeGrantSchema(strings.ReplaceAll(token.Value[1:len(token.Value)-1], `""`, `"`))
-}
-
-// SHOW GRANTS renders privilege-pattern escapes through SQL identifier
-// escaping, so a literal wildcard can require two decoding passes.
-func mysqlUnescapeGrantSchema(value string) (string, bool) {
-	for range 2 {
-		unescaped, valid := mysqlUnescapeGrantSchemaLayer(value)
-		if !valid {
-			return "", false
-		}
-		value = unescaped
-	}
-	return value, true
-}
-
-func mysqlUnescapeGrantSchemaLayer(value string) (string, bool) {
-	var schema strings.Builder
-	schema.Grow(len(value))
-	for i := 0; i < len(value); i++ {
-		if value[i] != '\\' {
-			schema.WriteByte(value[i])
-			continue
-		}
-		if i+1 >= len(value) || !strings.ContainsRune(`_%\\`, rune(value[i+1])) {
-			return "", false
-		}
-		i++
-		schema.WriteByte(value[i])
-	}
-	return schema.String(), true
 }
 
 func (m *Migrator) collectMySQLCatalogNames(

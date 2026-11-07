@@ -299,13 +299,35 @@ PostgreSQL:
 | SQL Server | `datetime2`, `datetimeoffset`, `time` | 7 |
 | ClickHouse | `DateTime` holds none, and a bare `DateTime64` is `DateTime64(3)` | 0 or 3 |
 
-Oracle, Spanner and SQLite compare no temporal precision, so a change of one
-alone plans nothing there. Oracle refuses to lower one on a column that holds a
-row (`ORA-30082`), Spanner has one timestamp type, and SQLite stores the
-declaration without reading it. A change of type on these engines is rated as
-above. Oracle's `TIMESTAMP(0)` under `DATE` keeps every second and is rated
-destructive all the same, since the rating reads the two as a time of day going
-away.
+Spanner and SQLite compare no temporal precision, so a change of one alone plans
+nothing there. Spanner has one timestamp type, and SQLite stores the declaration
+without reading it. A change of type on these engines is rated as above.
+
+A type that declares no size holds what its engine says as well. The plan compares
+what the two sides hold, so `numeric` declared `numeric(10,2)` is a change and
+`decimal(10,0)` declared `decimal` on MySQL is not:
+
+| Engine | `decimal`, `numeric`, `NUMBER` | `varchar`, `nvarchar` | `float` | `real` |
+| --- | --- | --- | --- | --- |
+| PostgreSQL, CockroachDB, YugabyteDB, Spanner | Any number | No limit | 8 bytes | 4 bytes |
+| MySQL, MariaDB | `decimal(10,0)` | The server refuses it | 4 bytes | 8 bytes |
+| SQL Server | `decimal(18,0)` | One character, and `(max)` has no limit | 8 bytes | 4 bytes |
+| Oracle | Any number, and `NUMBER(*,0)` no fraction | `VARCHAR2(4000)` for `VARCHAR` | `FLOAT(126)` | `BINARY_FLOAT` |
+
+A bare `char`, `nchar`, `binary` or `bit` holds one on every engine. `float(p)` is the
+4-byte type up to a `p` of 24 and the 8-byte type above it, except on Oracle, where
+it keeps `p`. SQLite stores the declaration without reading it, and ClickHouse
+compares its own type names.
+
+Oracle lowers a size only on a column with no row. `TIMESTAMP(6)` declared
+`TIMESTAMP(0)` and `NUMBER` declared `NUMBER(10,2)` plan a `MODIFY` rated
+destructive, and while a row exists `ptah schema apply` stops with the server's
+`ORA-30082` or `ORA-01440`. No value is lost and the plan does not run: empty the
+column, or rebuild it by hand, and plan again. Raising a size runs with the rows in
+place. Oracle's `TIMESTAMP(0)` under `DATE` keeps every second and is rated destructive
+all the same, since the rating reads the two as a time of day going away. Spanner has no
+`numeric(p,s)`: the plan rates the change destructive and the server refuses the
+statement.
 
 `ptah schema apply` prints the planned SQL and no rating, so read the plan to see
 one. Plan with `ptah schema plan`, review the file, and run it with `ptah schema

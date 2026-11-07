@@ -19,6 +19,7 @@ import (
 func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 	mysqlFamily := descriptor.Comparison{
 		TimePrecision:                  descriptor.TimePrecision{Compared: true},
+		BareTypes:                      descriptor.BareTypes{Stated: true, DecimalPrecision: 10, FloatBits: 24, RealBits: 53},
 		ColumnPrimaryKeyIsTheTablesKey: true,
 		ForeignKeysOutside:             true,
 		ForeignKeyBackingIndex:         true,
@@ -33,10 +34,12 @@ func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 		DefaultGeneratedKind:           "VIRTUAL",
 		ServerDatabases:                true,
 	}
+	postgresFloats := descriptor.BareTypes{Stated: true, FloatBits: 53, RealBits: 24}
 	want := map[string]descriptor.Comparison{
 		"postgres": {
 			DeclaredSchemas:                true,
 			TimePrecision:                  descriptor.TimePrecision{Compared: true, Default: 6},
+			BareTypes:                      postgresFloats,
 			SerialOwnsSequence:             true,
 			ForeignKeysOutside:             true,
 			ForeignKeyMatchesKeyInAnyOrder: true,
@@ -54,6 +57,7 @@ func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 		"cockroachdb": {
 			DeclaredSchemas:                true,
 			TimePrecision:                  descriptor.TimePrecision{Compared: true, Default: 6},
+			BareTypes:                      postgresFloats,
 			PrimaryKeyRenames:              true,
 			IdentityColumns:                true,
 			SerialDefault:                  "unique_rowid()",
@@ -72,6 +76,7 @@ func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 		"yugabytedb": {
 			DeclaredSchemas:    true,
 			TimePrecision:      descriptor.TimePrecision{Compared: true, Default: 6},
+			BareTypes:          postgresFloats,
 			ExpressionProbes:   "pg-catalog",
 			RolePasswords:      true,
 			RoutineTypeAliases: "pg-aliases",
@@ -83,6 +88,7 @@ func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 			RolePasswords:          true,
 			RoutineTypeAliases:     "pg-aliases",
 			SingleStringType:       true,
+			BareTypes:              postgresFloats,
 		},
 		"mysql":   mysqlFamily,
 		"mariadb": mysqlFamily,
@@ -98,6 +104,7 @@ func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 		},
 		"sqlserver": {
 			TimePrecision:                  descriptor.TimePrecision{Compared: true, Default: 7},
+			BareTypes:                      descriptor.BareTypes{Stated: true, DecimalPrecision: 18, VariableLength: 1, FloatBits: 53, RealBits: 24},
 			DeclaredSchemas:                true,
 			ColumnPrimaryKeyIsTheTablesKey: true,
 			UniqueIndexStandsAlone:         true,
@@ -108,7 +115,8 @@ func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 		},
 		"clickhouse": {NullableTypes: true},
 		"oracle": {
-			TimePrecision:                descriptor.TimePrecision{Default: 6},
+			TimePrecision:                descriptor.TimePrecision{Compared: true, Default: 6},
+			BareTypes:                    descriptor.BareTypes{Stated: true, FloatBits: 126, FloatKeepsPrecision: true, IntervalLeading: 2},
 			RewritesGeneratedExpressions: true,
 			RoutineNamesFold:             true,
 			ArgumentModeAfterName:        true,

@@ -403,6 +403,14 @@ list holds, so a declaration that does not name them applies. Only the removal
 is withheld: a declaration that names `postgres_fdw` creates it on a line that
 does not install it.
 
+## A column's size
+
+`decimal` and `numeric` hold any number where a column declares no precision, on all
+three engines, so `numeric` declared `numeric(10,2)` is a change rated destructive and
+`numeric(10,2)` declared `numeric` is a change rated safe. Spanner has no `numeric(p,s)`:
+its server refuses that statement. See
+[how a column change is rated](../../direct/plan-and-approve/#how-a-column-change-is-rated).
+
 ## Next steps
 
 - Which release lines are declared and at what support level: [Database support matrix](../support-matrix/).

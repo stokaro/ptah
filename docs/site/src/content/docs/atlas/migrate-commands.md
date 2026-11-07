@@ -213,11 +213,11 @@ identity and target table without `TRIGGER`, so it does not require that
 privilege for this catalog check. Ptah refuses MySQL `file` mode when it cannot
 prove complete visibility.
 
-The MySQL grant must be global or must name the selected database exactly in
-`SHOW GRANTS`. Ptah decodes escaped literal wildcard characters in the database
-name, but deliberately does not infer coverage from an unescaped `%` or `_`
-pattern because MySQL's `partial_revokes` setting changes that pattern's
-meaning.
+Ptah reads a grant as the server applies it. A pattern such as ``GRANT ALL ON
+`app%`.*`` covers `app`, a more specific row that leaves `TRIGGER` out hides the
+pattern, and with `partial_revokes` on a name in a grant is literal. See
+[what a grant proves](../../databases/mysql/#what-the-connecting-account-needs)
+for the rules.
 
 MySQL-family `file` bodies fail closed on SQL whose effects Ptah cannot tie to
 the InnoDB witness:

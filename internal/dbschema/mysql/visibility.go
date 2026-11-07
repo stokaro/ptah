@@ -11,7 +11,6 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/internal/dbreset"
 	"ptah.run/internal/errorkind"
 	"ptah.run/internal/mysqlgrants"
 	"ptah.run/internal/readscope"
@@ -59,40 +58,13 @@ func (r *Reader) readSessionAccount(ctx context.Context) (sessionAccount, error)
 	}
 	account.mariaDB = capability.BannerPlatform(version) == platform.MariaDB
 
-	lines, err := dbreset.QueryNames(ctx, r.db, "SHOW GRANTS")
-	if err != nil {
-		return sessionAccount{}, fmt.Errorf("failed to read the connecting account's grants: %w", err)
-	}
-	options, err := r.readGrantOptions(ctx)
-	if err != nil {
-		return sessionAccount{}, fmt.Errorf("failed to read the settings grants depend on: %w", err)
-	}
 	// MariaDB prints a role's rows under the role's name.
-	options.MergedRoles = !account.mariaDB
-	account.grants = mysqlgrants.Parse(lines, options)
-	return account, nil
-}
-
-func (r *Reader) readGrantOptions(ctx context.Context) (mysqlgrants.Options, error) {
-	rows, err := r.db.QueryContext(ctx, `SHOW VARIABLES WHERE Variable_name IN ('partial_revokes', 'lower_case_table_names')`)
+	grants, err := mysqlgrants.Read(ctx, r.db, !account.mariaDB)
 	if err != nil {
-		return mysqlgrants.Options{}, err
+		return sessionAccount{}, err
 	}
-	defer rows.Close()
-	var options mysqlgrants.Options
-	for rows.Next() {
-		var name, value string
-		if err := rows.Scan(&name, &value); err != nil {
-			return mysqlgrants.Options{}, err
-		}
-		switch strings.ToLower(name) {
-		case "partial_revokes":
-			options.LiteralDatabaseNames = strings.EqualFold(value, "ON")
-		case "lower_case_table_names":
-			options.FoldCase = value != "0"
-		}
-	}
-	return options, rows.Err()
+	account.grants = grants
+	return account, nil
 }
 
 // missingPrivilege is one line of a refusal: what the account cannot see, in the

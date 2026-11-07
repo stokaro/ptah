@@ -265,7 +265,10 @@ func (r *Reader) readTables(ctx context.Context) ([]catalog.Table, error) {
 // DATA_DEFAULT is a LONG and is selected as itself rather than through
 // DATA_DEFAULT_VC, which does not exist on 21.3. CHAR_LENGTH rather than
 // DATA_LENGTH is the character count a VARCHAR2 was declared with; DATA_LENGTH
-// is the byte width, and reports 22 for every NUMBER.
+// is the byte width, and reports 22 for every NUMBER. A RAW counts bytes, so its
+// CHAR_LENGTH is 0 and DATA_LENGTH is what it was declared with: measured on 23.26,
+// RAW(16) reports 16 there. Read from CHAR_LENGTH it comes back as a bare RAW, which
+// the server refuses and which no declaration matches.
 const columnQueryHead = `
 SELECT c.table_name,
        c.column_name,
@@ -273,7 +276,7 @@ SELECT c.table_name,
        `
 
 const columnQueryTail = `,
-       c.char_length,
+       CASE c.data_type WHEN 'RAW' THEN c.data_length ELSE c.char_length END,
        c.data_precision,
        c.data_scale,
        c.nullable,
@@ -795,6 +798,11 @@ func formatColumnType(dataType string, vectorInfo sql.NullString, charLength, pr
 		return dataType
 	case "NUMBER", "FLOAT", "DECIMAL":
 		if !precision.Valid {
+			// A scale with no precision is NUMBER(*,s), which INTEGER is built as: it
+			// holds no fraction, where a NUMBER that reports neither holds any.
+			if dataType == "NUMBER" && scale.Valid {
+				return fmt.Sprintf("NUMBER(*,%d)", scale.Int64)
+			}
 			return dataType
 		}
 		if scale.Valid && scale.Int64 != 0 {

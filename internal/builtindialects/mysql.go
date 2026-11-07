@@ -154,6 +154,7 @@ func mysql() descriptor.Dialect {
 		// and read back with that database's name (stokaro/ptah#3891).
 		Comparison: descriptor.Comparison{
 			TimePrecision:                  descriptor.TimePrecision{Compared: true},
+			BareTypes:                      descriptor.BareTypes{Stated: true, DecimalPrecision: 10, FloatBits: 24, RealBits: 53},
 			ColumnPrimaryKeyIsTheTablesKey: true,
 			ForeignKeysOutside:             true,
 			ForeignKeyBackingIndex:         true,

@@ -135,6 +135,7 @@ END`,
 		// neither backs the other.
 		Comparison: descriptor.Comparison{
 			TimePrecision:                  descriptor.TimePrecision{Compared: true, Default: 7},
+			BareTypes:                      descriptor.BareTypes{Stated: true, DecimalPrecision: 18, VariableLength: 1, FloatBits: 53, RealBits: 24},
 			DeclaredSchemas:                true,
 			ColumnPrimaryKeyIsTheTablesKey: true,
 			UniqueIndexStandsAlone:         true,

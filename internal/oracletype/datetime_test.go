@@ -35,3 +35,27 @@ func TestIsDatetime(t *testing.T) {
 		})
 	}
 }
+
+// TestMap_KeepsAPrecisionAPortableNameCarries pins the digits of a name Oracle spells
+// otherwise. The comparison reads a temporal precision, and a declaration whose digits
+// the map dropped would differ from the column on every run.
+func TestMap_KeepsAPrecisionAPortableNameCarries(t *testing.T) {
+	tests := []struct {
+		declared string
+		want     string
+	}{
+		{declared: "timestamptz(3)", want: "TIMESTAMP(3) WITH TIME ZONE"},
+		{declared: "timestamptz", want: "TIMESTAMP WITH TIME ZONE"},
+		{declared: "datetime(3)", want: "TIMESTAMP(3)"},
+		{declared: "datetime", want: "TIMESTAMP"},
+		{declared: "TIMESTAMP(3) WITH TIME ZONE", want: "TIMESTAMP(3) WITH TIME ZONE"},
+		{declared: "TIMESTAMP(3)", want: "TIMESTAMP(3)"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.declared, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(oracletype.Map(tt.declared), qt.Equals, tt.want)
+		})
+	}
+}
