@@ -227,7 +227,8 @@ does not oblige a peer to use it.
   `schema.column-collations`, `schema.view-check-options`,
   `models.declared-relations`, `planning.table-ownership`,
   `models.declared-objects`, `render.omissions`, `planning.table-grants`,
-  `source.sql-role-passwords` and `source.sql-statement-facts`. The embedding
+  `source.sql-role-passwords`, `source.sql-statement-facts` and
+  `query.lexical`. The embedding
   store's calls,
   `PrepareCommonObjects`, `ReverseChanges` and `ReportValues` are new, and each
   comes with an addition to `Engine`, so a host lists the feature to receive
@@ -1751,6 +1752,23 @@ value, one line of text in every spelling and refusal, no repeated keyword or
 join, and capability names a host can read. The host owns the vocabulary and
 refuses a value it does not know. A host lists `query.dialect` to receive the
 declaration; otherwise the SDK server leaves it out of the description.
+
+`QueryDialect.lexical` (contract 25.34, `query.lexical`) states the rules the
+host's shared SQL lexer reads the engine's text with. It is the descriptor's
+lexical section, with its JSON names: escape strings, continued and Unicode
+strings, nested block comments, backslash escapes, `--` that needs a space,
+executable comments, bracket identifiers and names that begin with `#`.
+
+- The host reads a SQL schema document in FRAGMENTS mode, a migration body's
+  directives and lint input with these rules. Without them it reads the text
+  by the SQL standard alone.
+- The provider and each engine that states the rules list the feature, and so
+  does the host.
+- An engine that lists `sql.scan` states none: its scanner reads the text in
+  place of the shared lexer, and the host does not read its documents with the
+  shared grammar at all.
+- The SDK checks the shape. The host refuses an executable comment style it
+  does not know.
 
 The SDK conformance tests in `runtime` read pages and resume them, separate an
 empty table from a missing one, type two spellings into one form, render each

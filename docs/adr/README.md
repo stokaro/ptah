@@ -124,6 +124,7 @@ a new record that names it, and its own status line is updated to point there.
 | [0112](0112-a-sql-reading-returns-the-password-a-document-gives-a-role.md) | A SQL reading returns the password a document gives a role | Proposed |
 | [0113](0113-an-engine-states-how-its-server-reads-a-schema-documents-statements.md) | An engine states how its server reads a schema document's statements | Proposed |
 | [0114](0114-a-host-that-lists-no-two-way-feature-is-the-narrowest-host.md) | A host that lists no two-way feature is the narrowest host | Proposed |
+| [0115](0115-a-provider-engine-states-the-lexical-rules-of-its-text.md) | A provider engine states the lexical rules of its text | Proposed |
 
 ## Writing one
 

@@ -224,6 +224,7 @@ need a two-way feature, and how a provider engine builds an enum column
 | A `docker://` dev URL in context resolution (G215) | `DatabaseContextRequest.address` receives the dev URL raw; no rule says which side resolves `docker://` | Yes: the host resolving the address first changes nothing a provider relies on | Before the freeze, write that the host resolves a dev URL before asking for its context. Not blocking |
 | Omissions of a rendering (G219, G220) | No field reports a declared fact a rendering leaves out, such as a type modifier or sequence settings | Yes: a list on the render result under a two-way feature | Contract 25.33: `RenderResult.omissions` under `render.omissions` (ADR 0110). Not blocking |
 | The server's message on a failed execution (S74) | `Execution` carries the provider's reason and SQLSTATE, no redacted server text | Yes: a new field | Decide whether operators need it; a later minor if so |
+| The lexical rules of a provider engine (stokaro/ptah#5754) | The shared lexer reads a provider engine's text by the SQL standard alone, and `sql.scan` makes the host refuse the engine's SQL schema documents | Yes: a field on the query dialect under a two-way feature | Contract 25.34: `QueryDialect.lexical` under `query.lexical` (ADR 0115). Not blocking |
 | Change streams (S16, S47) | No model the planner or the export sees | Yes: a native context kind through `planning.object-context`, or a field on the observed table | Provider work. Not blocking |
 
 None of these gaps needs what only a new major could do, so the freeze waits
@@ -236,6 +237,8 @@ comparison's models, and the omissions of a rendering. It also adds the
 grants of a held table to planning (ADR 0111), the password a SQL document
 gives a role (ADR 0112) and the statement facts of a SQL grammar
 (ADR 0113), which the gap registers found after this record was written.
+Contract 25.34 lets a provider engine state the lexical rules of its text
+(ADR 0115).
 
 ## Alternatives considered
 

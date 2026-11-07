@@ -15,7 +15,7 @@ import (
 // counts the compatible additions within the major Revision. A host built
 // with this SDK announces Revision.ContractMinor, and a provider built with it
 // may require at most that minor from its host.
-const ContractMinor uint32 = 33
+const ContractMinor uint32 = 34
 
 // The features below each enable an addition to an existing message. An
 // addition is used only when both sides list its feature: the provider in its
@@ -54,7 +54,8 @@ func TwoWayFeatures() []string {
 		LargeMessagesFeature, TableOutlinesFeature, SharedCoverageFeature, OwnPredecessorsFeature, ObservedConstraintsFeature, ConstraintChangesFeature,
 		IndexNullsOrderFeature, CommonNamespacesFeature, SQLTableClausesFeature, ReservedSeedsFeature, IndexPredicatesFeature, LinkedReleaseLinesFeature,
 		EnumColumnsFeature, ObservedUniqueConstraintsFeature, ColumnCollationsFeature, ViewCheckOptionsFeature, DeclaredRelationsFeature,
-		TableOwnershipFeature, DeclaredObjectsFeature, RenderOmissionsFeature, TableGrantsFeature, SQLRolePasswordsFeature, SQLStatementFactsFeature}
+		TableOwnershipFeature, DeclaredObjectsFeature, RenderOmissionsFeature, TableGrantsFeature, SQLRolePasswordsFeature, SQLStatementFactsFeature,
+		QueryLexicalFeature}
 }
 
 // ContractError reports a host and a provider that cannot work together:
@@ -143,7 +144,8 @@ func ValidateHostFeatures(features []string) error {
 // NegotiatedDescription returns a copy of description with every two-way
 // feature the host did not list removed, from the provider's features and
 // from each engine's. The query dialects are removed unless the host lists
-// QueryDialectFeature, the embedding store declarations unless it lists
+// QueryDialectFeature and their lexical rules unless it lists
+// QueryLexicalFeature, the embedding store declarations unless it lists
 // EmbeddingStoreFeature, the common-object declarations unless it lists
 // CommonObjectsFeature, the HCL claims unless it lists HCLSourceFeature, the
 // claims of a table's platform group unless it lists HCLPlatformFeature, the
@@ -220,8 +222,9 @@ func NegotiatedDescription(description *protocol.Description, hostFeatures []str
 // capability facts of the engine and of its release lines, the table
 // outlines of its planning services, the table clauses and the statement
 // facts of its SQL grammar, the linked engines of its release lines, its enum
-// columns, the table ownership of its planning services and the declared
-// kinds of its comparisons. It also removes TableGrantsFeature from an engine
+// columns, the table ownership of its planning services, the declared
+// kinds of its comparisons and the lexical rules of its query dialect. It
+// also removes TableGrantsFeature from an engine
 // the negotiation left without GRANT common objects.
 func negotiateLaterAdditions(engine *protocol.Engine, hostFeatures []string) {
 	negotiateTableOutlines(engine, hostFeatures)
@@ -231,6 +234,7 @@ func negotiateLaterAdditions(engine *protocol.Engine, hostFeatures []string) {
 	negotiateSQLStatementFacts(engine, hostFeatures)
 	negotiateLinkedReleaseLines(engine, hostFeatures)
 	negotiateEnumColumns(engine, hostFeatures)
+	negotiateQueryLexical(engine, hostFeatures)
 	negotiateTableGrants(engine)
 	if !slices.Contains(hostFeatures, ReverseChangesFeature) {
 		engine.Reversals = nil
