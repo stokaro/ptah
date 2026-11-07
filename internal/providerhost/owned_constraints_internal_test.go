@@ -78,6 +78,8 @@ func TestOwnedLifecycleConstraintsOfCreatedAndRemovedTables_HappyPath(t *testing
 		{"a CHECK of a removed table", commonPlanner{target: "fixture", assessParents: true, observedConstraints: true},
 			&difftypes.SchemaDiff{IdentifierSemantics: &rules, TablesRemoved: removed,
 				ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "records_check", TableName: "main.records", Type: "CHECK"}}}, featureplan.DropTable},
+		{"a foreign key of a created table, the engine reporting no constraints", keyPlanner(),
+			&difftypes.SchemaDiff{IdentifierSemantics: &rules, TablesAdded: created, ConstraintsAdded: recordsForeignKey()}, featureplan.CreateTable},
 		{"the primary key of a removed table", commonPlanner{target: "fixture", assessParents: true, observedKeys: true},
 			&difftypes.SchemaDiff{IdentifierSemantics: &rules, TablesRemoved: removed,
 				ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "records_pkey", TableName: "main.records", Type: "PRIMARY KEY"}}}, featureplan.DropTable},
@@ -120,6 +122,10 @@ func TestConstraintChangeWithoutAnOwnerThatPlansIt_FailurePath(t *testing.T) {
 		{"a unique constraint", constraintPlanner(), &difftypes.SchemaDiff{ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "records_email", TableName: "main.records", Type: "UNIQUE"}}},
 			`.*does not support SchemaDiff\.ConstraintsRemoved`},
 		{"a primary key without the key read", constraintPlanner(), keyOrderChange(preparedRecords()), `.*does not support SchemaDiff\.ConstraintsAdded`},
+		{"a foreign key of a table the host creates itself", commonPlanner{target: "fixture", assessParents: true, commonTables: true, observedConstraints: true, constraints: true},
+			&difftypes.SchemaDiff{IdentifierSemantics: new(ownedIndexRules()), TablesAdded: difftypes.TableChanges{{Name: "main.records", Table: schemamodel.Table{Name: "records", Schema: "main"}}},
+				ConstraintsAdded: recordsForeignKey()},
+			`.*does not support changing constraint records_owner_fk of table main\.records on the fixture engine, whose provider does not plan it`},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -138,8 +144,9 @@ func TestOwnedLifecycleConstraintOfAnUnheldTable_FailurePath(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `.*a change of constraint elsewhere_check names table "main\.elsewhere", which the provider plan does not hold`)
 }
 
-// The declared foreign keys and the columns of a removed one are context a
-// planner receives where the engine reports constraints.
+// The declared foreign keys are context every planner receives, and the
+// columns of a removed foreign key context one receives where the engine
+// reports constraints.
 func TestOwnedLifecycleForeignKeyContext_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	diff := preparedRecords()
@@ -152,16 +159,16 @@ func TestOwnedLifecycleForeignKeyContext_HappyPath(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 }
 
-// A planner of an engine that reports no constraints keeps the declared
-// foreign keys refused: the engine models none.
+// A planner of an engine that reports no constraints keeps a removed foreign
+// key's columns refused: the engine models no foreign key to remove.
 func TestOwnedLifecycleForeignKeyContext_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	diff := preparedRecords()
-	diff.DeclaredForeignKeys = []difftypes.ForeignKeyDeclaration{{TableName: "main.records", Name: "records_owner_fk"}}
+	diff.ForeignKeysRemovedWithTables = []difftypes.ForeignKeyRemovalInfo{{Name: "records_owner_fk", TableName: "main.records", Columns: []string{"owner_id"}}}
 
 	_, err := commonPlanner{target: "fixture", assessParents: true, observedKeys: true, keys: true}.commonObjectSteps(diff)
 
-	c.Assert(err, qt.ErrorMatches, `.*does not support SchemaDiff\.DeclaredForeignKeys`)
+	c.Assert(err, qt.ErrorMatches, `.*does not support SchemaDiff\.ForeignKeysRemovedWithTables`)
 }
 
 // A read that negotiated constraints gives the catalog each foreign key and
