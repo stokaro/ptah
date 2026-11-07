@@ -130,8 +130,9 @@ func TestProviderNamespacesInADownFile(t *testing.T) {
 }
 
 // A rehearsal on the dev database creates the schemas the plan creates, and
-// the cleanup after it removes them with what they hold, where it used to
-// empty the session's own schema alone and leave them on the dev database.
+// the cleanup after it removes them with what they hold. A cleanup of the
+// session's own schema alone would leave them, tables included, on the dev
+// database.
 func TestProviderNamespacesLeaveNoSchemaOnTheDevDatabase(t *testing.T) {
 	c := qt.New(t)
 	f := namespacesFixture(c, "")

@@ -40,7 +40,7 @@ func TestProviderCheckListsReleaseLines(t *testing.T) {
 func TestProviderCheckListsALinkedReleaseLine(t *testing.T) {
 	c := qt.New(t)
 	spec := migrationProviderCommandSpec(c, "devdb")
-	spec.Environment = append(spec.Environment, "FIXTURE_LINKED_LINE=true")
+	spec.Environment = append(spec.Environment, "FIXTURE_RELEASE_LINES=linked")
 	f := newProviderCLI(c, spec)
 	out, stderr, code := executeProviderCLI(c.Context(), []string{"providers", "check", "--provider-config", f.manifestPath, "--provider-engine", "fixture", "--json"})
 	c.Assert(code, qt.Equals, 0, qt.Commentf("%s", stderr))

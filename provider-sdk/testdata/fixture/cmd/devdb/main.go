@@ -3,7 +3,7 @@
 // timeouts. FIXTURE_DEV_ENGINE=bare serves an engine that declares none of
 // the cleanup, the guard and realms, which the provider still declares, and
 // any other value serves the engine under that name, as the provider
-// FIXTURE_DEV_PROVIDER_ID names when it is set. FIXTURE_LINKED_LINE=true
+// FIXTURE_DEV_PROVIDER_ID names when it is set. FIXTURE_RELEASE_LINES=linked
 // declares the engine as one linked into the provider, which certifies its
 // line by the version it links.
 package main
@@ -48,7 +48,7 @@ func main() {
 			description.ProviderId = id
 		}
 	}
-	if os.Getenv("FIXTURE_LINKED_LINE") == "true" {
+	if os.Getenv("FIXTURE_RELEASE_LINES") == "linked" {
 		description.Features = append(description.Features, provider.LinkedReleaseLinesFeature)
 		engine := description.Engines[0]
 		engine.Features = append(engine.Features, provider.LinkedReleaseLinesFeature)
