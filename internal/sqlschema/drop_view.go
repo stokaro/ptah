@@ -47,7 +47,7 @@ func applyDropMaterializedView(ctx context.Context, database *schemamodel.Databa
 //   - a name a table or the other kind of view holds. IF EXISTS does not help, except
 //     where the descriptor says the server skips the statement;
 //   - where a view blocks the drop of what it reads, a view or a materialized view
-//     another one still reads.
+//     another one still reads; see viewsBlockDrop.
 //
 // CASCADE is refused as it is on DROP TABLE: it drops objects the file does not list.
 // On ClickHouse, which has no DROP MATERIALIZED VIEW, DROP VIEW reaches a materialized
@@ -135,7 +135,7 @@ func declaredViews(databases []*schemamodel.Database, sourcePlatform string) dec
 // viewReader names the first view that keeps the server from dropping the view, or
 // returns "". The view does not keep itself.
 func viewReader(databases []*schemamodel.Database, name, sourcePlatform string) string {
-	if !factsOf(sourcePlatform).statements.ViewsBlockDropTable {
+	if !viewsBlockDrop(sourcePlatform) {
 		return ""
 	}
 	bare := name

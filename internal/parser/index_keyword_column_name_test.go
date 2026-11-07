@@ -30,6 +30,11 @@ func inlineIndexDocument(element string) string {
 	return fmt.Sprintf("CREATE TABLE t (\n  a INT NOT NULL,\n  b INT NOT NULL,\n  %s\n);", element)
 }
 
+// providerEngine names an engine a provider serves. No descriptor describes it,
+// so the parser has only what the provider states about its grammar, and no
+// provider states a word that opens an index inside CREATE TABLE.
+const providerEngine = "fixture"
+
 // mysqlInlineKeyDocument declares the same table with a MySQL table-body index,
 // which is the reading these keywords must keep where the dialect writes them.
 const mysqlInlineKeyDocument = "CREATE TABLE t (\n  a INT NOT NULL,\n  b INT NOT NULL,\n  KEY idx_ab (a, b)\n);"
@@ -81,10 +86,12 @@ func parsedIndexNames(c *qt.C, sql string, opts ...parser.Option) []string {
 //
 // An engine with no table element opening with one of MySQL's index keywords
 // can only mean a column there, and each row is a column name its engine
-// accepts: measured on PostgreSQL, SQLite, CockroachDB, Spanner, ClickHouse,
-// Oracle and SQL Server. YugabyteDB takes PostgreSQL's grammar and was not
-// measured. A word an engine reserves is absent from its rows rather than
-// asserted to parse.
+// accepts: measured on PostgreSQL, SQLite, CockroachDB, ClickHouse, Oracle and
+// SQL Server. YugabyteDB takes PostgreSQL's grammar and was not measured. A
+// word an engine reserves is absent from its rows rather than asserted to
+// parse. The provider engine rows are what the Spanner emulator and DuckDB
+// 2.0.0 accept, the two engines a provider serves whose documents this parser
+// reads.
 //
 // Read as an index instead, `key TEXT NOT NULL` is refused at the type while
 // the engine creates the column (stokaro/ptah#3089, stokaro/ptah#3299).
@@ -117,6 +124,10 @@ func TestIndexKeywordIsAColumnName_HappyPath(t *testing.T) {
 		{name: "oracle fulltext", dialect: platform.Oracle, column: "fulltext"},
 		{name: "sqlserver spatial", dialect: platform.SQLServer, column: "spatial"},
 		{name: "sqlserver fulltext", dialect: platform.SQLServer, column: "fulltext"},
+		{name: "provider engine key", dialect: providerEngine, column: "key"},
+		{name: "provider engine index", dialect: providerEngine, column: "index"},
+		{name: "provider engine spatial", dialect: providerEngine, column: "spatial"},
+		{name: "provider engine fulltext", dialect: providerEngine, column: "fulltext"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -151,6 +162,8 @@ func TestIndexKeywordColumnWithParenthesizedTypeKeepsTheColumn_HappyPath(t *test
 		{name: "cockroachdb key", dialect: platform.CockroachDB, column: "key", columnType: "VARCHAR(32)"},
 		{name: "yugabytedb index", dialect: platform.YugabyteDB, column: "index", columnType: "VARCHAR(32)"},
 		{name: "clickhouse spatial", dialect: platform.ClickHouse, column: "spatial", columnType: "FixedString(32)"},
+		{name: "provider engine spatial", dialect: providerEngine, column: "spatial", columnType: "VARCHAR(32)"},
+		{name: "provider engine index", dialect: providerEngine, column: "index", columnType: "VARCHAR(32)"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -186,6 +199,22 @@ func TestIndexKeywordStaysAnIndex_HappyPath(t *testing.T) {
 			c.Assert(parsedIndexNames(c, mysqlInlineKeyDocument, test.opts...), qt.DeepEquals, []string{"idx_ab"})
 		})
 	}
+}
+
+// TestIndexKeywordElementOfAProviderEngineIsRefused_FailurePath holds MySQL's
+// inline index to what an engine a provider serves makes of it. The Spanner
+// emulator answers `KEY idx_ab (a, b)` with `Type <idx_ab> does not exist` and
+// DuckDB 2.0.0 with `Expected a constant as type modifier`: both read a column
+// named after the word, of a type the element names. Read so here, the type
+// names columns of the table, which no type does, and the document is refused
+// rather than read as an index the server would not build.
+func TestIndexKeywordElementOfAProviderEngineIsRefused_FailurePath(t *testing.T) {
+	c := qt.New(t)
+
+	statements, err := parser.NewParser(mysqlInlineKeyDocument, parser.WithDialect(providerEngine)).Parse()
+
+	c.Assert(err, qt.ErrorMatches, `line 5, column 1: table "t" declares "KEY" with type "idx_ab\(a, b\)", and "a", "b" are each a column of "t": .*`)
+	c.Assert(statements, qt.IsNil)
 }
 
 // TestInlineIndexElementStaysAnIndex_HappyPath is the control for the two

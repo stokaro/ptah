@@ -40,8 +40,9 @@ import (
 //   - a table another table's foreign key still refers to, unless the same
 //     statement drops that table too: `ERROR 3730` on MySQL, `other objects
 //     depend on it` on PostgreSQL;
-//   - on the PostgreSQL family, a table a view or a materialized view reads.
-//     MySQL and MariaDB keep such a view, invalid, and so does the model.
+//   - a table a view or a materialized view reads, on the PostgreSQL family and
+//     on an engine a provider serves (see viewsBlockDrop). MySQL and MariaDB
+//     keep such a view, invalid, and so does the model.
 //
 // CASCADE is refused as it is on DROP COLUMN: it drops objects the file does
 // not list.
@@ -142,7 +143,7 @@ func tableReference(target alterTarget, dropped func(structName string) bool) st
 			}
 		}
 	}
-	if !factsOf(target.sourcePlatform).statements.ViewsBlockDropTable {
+	if !viewsBlockDrop(target.sourcePlatform) {
 		return ""
 	}
 	for _, database := range target.databases {

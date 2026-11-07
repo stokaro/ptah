@@ -6093,10 +6093,9 @@ func (p *Parser) describeIndexKeywordElement(keyword string, start int, err erro
 //
 //   - MySQL 8 and MariaDB refuse all four words as column names and read
 //     `KEY idx_ab (a, b)` as an index, so the family keeps every keyword.
-//   - PostgreSQL and Spanner accept all four as columns. Neither declares an
-//     index inside CREATE TABLE: Spanner answers `INDEX idx_b (b)` with
-//     `Type <idx_b> does not exist`. YugabyteDB takes PostgreSQL's grammar and
-//     is read as PostgreSQL; it is the one engine here that was not measured.
+//   - PostgreSQL accepts all four as columns and declares no index inside
+//     CREATE TABLE. YugabyteDB takes PostgreSQL's grammar and is read as
+//     PostgreSQL; it is the one engine here that was not measured.
 //   - ClickHouse accepts key, spatial and fulltext as columns. Its INDEX is the
 //     data-skipping index, which parseTableElement reads before asking this.
 //   - SQLite and Oracle accept key, spatial and fulltext as columns and reserve
@@ -6112,11 +6111,21 @@ func (p *Parser) describeIndexKeywordElement(keyword string, start int, err erro
 // A word the engine reserves keeps the index reading, because no document the
 // engine accepts carries it as a column.
 //
-// The dialect-neutral mode, and a dialect name Ptah does not know, keep the
-// index reading. There is no grammar to ask, and turning an unrecognized KEY
-// into a column would drop an index without a word -- the defect
-// stokaro/ptah#2778 fixed on the ALTER path, whose isAlterAddConstraintStart
-// asks this same question for ALTER TABLE ADD.
+// A dialect no descriptor describes is an engine a provider serves: the host
+// reads its documents with this grammar, and the provider states no word that
+// opens an index inside CREATE TABLE, so each of the four names a column. Both
+// such engines whose documents this grammar reads answer so, measured with the
+// statements above: the Spanner emulator behind PGAdapter 0.56.2 and DuckDB
+// 2.0.0 take all four as column names, and refuse `KEY idx_b (b)` at the type,
+// with `Type <idx_b> does not exist` and `Expected a constant as type modifier`.
+// Read as a column, that element names a column of the table in its type, which
+// refuseTableElementTypo refuses. isAlterAddConstraintStart gives ALTER TABLE
+// ADD the same answer, since such a dialect states no AlterTable.AddIndex
+// either.
+//
+// A document read with no dialect keeps the index reading. There is no target
+// to ask, and turning a MySQL document's KEY into a column would drop the index
+// without a word.
 func (p *Parser) tableBodyReadsKeywordAsIndex(keyword string) bool {
 	switch keyword {
 	case "KEY", "SPATIAL", "FULLTEXT", "INDEX":
@@ -6125,7 +6134,7 @@ func (p *Parser) tableBodyReadsKeywordAsIndex(keyword string) bool {
 	}
 	keys := p.target.grammar.Keys
 	switch {
-	case !p.target.known:
+	case p.dialect == "":
 		return true
 	case !slices.Contains(keys.IndexKeywords, keyword):
 		return false

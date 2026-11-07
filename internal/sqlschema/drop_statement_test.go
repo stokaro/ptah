@@ -83,6 +83,16 @@ func TestRead_DropTable_HappyPath(t *testing.T) {
 			sql:        "CREATE TABLE a (id int PRIMARY KEY);\nCREATE TABLE c (id int PRIMARY KEY);\nCREATE VIEW v AS SELECT id FROM a;\nDROP TABLE a;",
 			wantTables: []string{"c"}, wantFields: 1,
 		},
+		{
+			name: "no dialect, a table a view reads", dialect: "",
+			sql:        "CREATE TABLE a (id int PRIMARY KEY);\nCREATE TABLE c (id int PRIMARY KEY);\nCREATE VIEW v AS SELECT id FROM a;\nDROP TABLE a;",
+			wantTables: []string{"c"}, wantFields: 1,
+		},
+		{
+			name: "an engine a provider serves", dialect: providerEngine,
+			sql:        "CREATE TABLE a (id int PRIMARY KEY);\nCREATE TABLE c (id int PRIMARY KEY);\nDROP TABLE a;",
+			wantTables: []string{"c"}, wantFields: 1,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -174,6 +184,13 @@ func TestRead_DropTable_FailurePath(t *testing.T) {
 		{
 			// view v depends on table a.
 			name: "PostgreSQL, a table a view reads", dialect: "postgres",
+			sql:     "CREATE TABLE a (id int PRIMARY KEY);\nCREATE VIEW v AS SELECT id FROM a;\nDROP TABLE a;",
+			wantErr: `line 3, column 1: DROP TABLE a: view v still refers to the table`,
+		},
+		{
+			// Cannot drop TABLE a on which there are dependent views: v, on the
+			// Spanner emulator; no provider states the answer.
+			name: "an engine a provider serves, a table a view reads", dialect: providerEngine,
 			sql:     "CREATE TABLE a (id int PRIMARY KEY);\nCREATE VIEW v AS SELECT id FROM a;\nDROP TABLE a;",
 			wantErr: `line 3, column 1: DROP TABLE a: view v still refers to the table`,
 		},

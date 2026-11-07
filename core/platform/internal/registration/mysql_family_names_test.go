@@ -45,8 +45,8 @@ func foreignKeyNames(database schemamodel.Database) []string {
 // variants, and the SQL reader names its keys and indexes by what the
 // descriptor states, though nothing names the engine. The reader is asked
 // first: the parser refuses an index name after FOREIGN KEY, an unnamed key
-// keeps no name, and two unnamed indexes over one column read as one unnamed
-// index, as on any engine that states no index naming.
+// keeps no name, and KEY names a column, as on any engine that states no
+// index keyword, so `KEY (col)` is refused at the type.
 func TestRegister_NamesTheForeignKeysOfAnEngineNobodyShipsByItsRules(t *testing.T) {
 	const parents = "CREATE TABLE p (id int PRIMARY KEY);\n"
 	clause := parents + "CREATE TABLE c (id int PRIMARY KEY, p_id int, FOREIGN KEY idx_c_p (p_id) REFERENCES p (id));"
@@ -62,8 +62,8 @@ func TestRegister_NamesTheForeignKeysOfAnEngineNobodyShipsByItsRules(t *testing.
 	c.Assert(err, qt.IsNil)
 	c.Assert(foreignKeyNames(database), qt.DeepEquals, []string{""})
 	database, _, err = sqlschema.Read([]byte(cut), "numberdb")
-	c.Assert(err, qt.IsNil)
-	c.Assert(indexNames(database), qt.DeepEquals, []string{""})
+	c.Assert(err, qt.ErrorMatches, `line 1, column \d+: expected column type.*`)
+	c.Assert(database, qt.DeepEquals, schemamodel.Database{})
 
 	c.Assert(platform.Register(numberingFamily("numbering", "numberdb")), qt.IsNil)
 

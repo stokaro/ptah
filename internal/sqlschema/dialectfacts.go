@@ -1,6 +1,7 @@
 package sqlschema
 
 import (
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -80,6 +81,27 @@ func factsOf(sourcePlatform string) readingFacts {
 	}
 	readingFactsCache.Store(sourcePlatform, facts)
 	return facts
+}
+
+// viewsBlockDrop reports whether the server of sourcePlatform refuses a plain
+// DROP TABLE or DROP VIEW of an object a view or a materialized view reads, so a
+// read refuses the statement too.
+//
+// A descriptor states it ([descriptor.Statements.ViewsBlockDropTable]), and a
+// read with no dialect takes the zero answer. A dialect no descriptor describes
+// is an engine a provider serves, and no provider states it, so the read takes
+// the answer that cannot accept what the server refuses. Measured with `DROP
+// VIEW a` while view c reads a: the Spanner emulator behind PGAdapter 0.56.2
+// refuses it (`Cannot drop VIEW a on which there are dependent views: c`), as it
+// refuses DROP TABLE of a table a view reads. DuckDB 2.0.0 takes both, and then
+// refuses `CREATE VIEW c AS SELECT id FROM a` with `Table with name a does not
+// exist`, so a read that took the drop would end with a view no plan can create.
+func viewsBlockDrop(sourcePlatform string) bool {
+	facts := factsOf(sourcePlatform)
+	if facts.name == "" {
+		return strings.TrimSpace(sourcePlatform) != ""
+	}
+	return facts.statements.ViewsBlockDropTable
 }
 
 // optionOwner is a dialect whose grammar writes table options, and the

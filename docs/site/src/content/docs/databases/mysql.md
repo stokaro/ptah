@@ -484,9 +484,12 @@ SQL:
   column on PostgreSQL and YugabyteDB, and on CockroachDB unless a
   column list follows it, directly or after a name. SQL Server reads `index` as
   its own inline index and ClickHouse as a data-skipping index, and SQLite and
-  Oracle reserve it. Read as an index on the other dialects, `key text` would be
-  refused, and `spatial nvarchar(32)` has the shape of an index named after its
-  type over a column named `32` (stokaro/ptah#3089, stokaro/ptah#3299). An index
+  Oracle reserve it. All four are columns on an engine a provider serves,
+  since no provider states a word that opens an index inside `CREATE TABLE`;
+  the Spanner emulator and DuckDB take them so. Read as an index on the other
+  dialects, `key text` would be refused, and `spatial nvarchar(32)` has the
+  shape of an index named after its type over a column named `32`
+  (stokaro/ptah#3089, stokaro/ptah#3299). An index
   names columns, so a column list that is a number is refused, and the refusal
   names the keyword. MySQL and MariaDB answer the same statement with
   `Error 1064`.
