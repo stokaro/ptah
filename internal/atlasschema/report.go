@@ -133,6 +133,10 @@ const (
 	// depends on, where the drop would stop on the dependent or take it with
 	// nothing to create it again. Change the dependent first.
 	RefusalDependentObject RefusalCode = "dependent-object"
+	// RefusalDeclarationRefused means the comparison refused what the schema
+	// states, because this target cannot host it or plan it. The error message
+	// names the declaration. Change it or target another engine.
+	RefusalDeclarationRefused RefusalCode = "declaration-refused"
 )
 
 // Refusal is the reason a plan or an apply refused, with the details a caller
@@ -488,6 +492,7 @@ func refusalFor(err error) *Refusal {
 	var simulation *SimulationError
 	var lostViewSecurity *planrefusal.LostViewSecurityError
 	var dependentObject *planrefusal.DependentObjectError
+	var declaration *planrefusal.DeclarationError
 	switch {
 	case errors.As(err, &stale):
 		changed := "schema"
@@ -514,6 +519,8 @@ func refusalFor(err error) *Refusal {
 		return &Refusal{Code: RefusalViewSecurityOption, ViewOptions: lostViewSecurity.Options}
 	case errors.As(err, &dependentObject):
 		return &Refusal{Code: RefusalDependentObject}
+	case errors.As(err, &declaration):
+		return &Refusal{Code: RefusalDeclarationRefused}
 	default:
 		return nil
 	}
