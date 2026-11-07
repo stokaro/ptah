@@ -16,6 +16,7 @@ import (
 	"ptah.run/engine/builtin/internal/dialects/internal/grantrefusal"
 	"ptah.run/engine/builtin/internal/dialects/internal/viewrefusal"
 	"ptah.run/internal/renderdiag"
+	"ptah.run/internal/sqlservertype"
 	"ptah.run/internal/triggerdef"
 )
 
@@ -1245,7 +1246,7 @@ func renderGeneratedColumn(column *ast.ColumnNode) string {
 // columnTypeFor writes a type the caller named for this target as it stands,
 // and maps everything else.
 //
-// mapColumnType exists for a PORTABLE declaration: VARCHAR there is the
+// [sqlservertype.Map] exists for a PORTABLE declaration: VARCHAR there is the
 // spelling a schema written for several engines uses, and PostgreSQL's and
 // MySQL's varchar hold Unicode, so NVARCHAR is what preserves the meaning. The
 // same conversion applied to a type somebody named for SQL Server ITSELF is a
@@ -1273,49 +1274,7 @@ func renderGeneratedColumn(column *ast.ColumnNode) string {
 // portable case, and deciding it differently is a separate question about which
 // #2147 has the measurements.
 func columnTypeFor(column *ast.ColumnNode) string {
-	if (column.TypeIsDeclaredText || column.TypeRawSQL) && strings.TrimSpace(column.Type) != "" {
-		return strings.TrimSpace(column.Type)
-	}
-	return mapColumnType(column.Type)
-}
-
-func mapColumnType(columnType string) string {
-	upper := strings.ToUpper(strings.TrimSpace(columnType))
-	base := upper
-	if idx := strings.Index(base, "("); idx >= 0 {
-		base = strings.TrimSpace(base[:idx])
-	}
-	switch base {
-	case "INTEGER", "INT4", "SERIAL":
-		return "INT"
-	case "BIGSERIAL":
-		return "BIGINT"
-	case "BOOLEAN", "BOOL":
-		return "BIT"
-	case "TEXT", "CITEXT":
-		return "NVARCHAR(MAX)"
-	case "VARCHAR", "CHARACTER VARYING":
-		return replaceTypeName(columnType, "NVARCHAR")
-	case "CHAR", "CHARACTER":
-		return replaceTypeName(columnType, "NCHAR")
-	case "BYTEA", "BLOB":
-		return "VARBINARY(MAX)"
-	case "DOUBLE PRECISION":
-		return "FLOAT"
-	case "TIMESTAMPTZ", "TIMESTAMP WITH TIME ZONE":
-		return "DATETIMEOFFSET"
-	case "TIMESTAMP", "TIMESTAMP WITHOUT TIME ZONE":
-		return "DATETIME2"
-	default:
-		return columnType
-	}
-}
-
-func replaceTypeName(original, replacement string) string {
-	if idx := strings.Index(original, "("); idx >= 0 {
-		return replacement + original[idx:]
-	}
-	return replacement
+	return sqlservertype.Declaration{Type: column.Type, Verbatim: column.TypeIsDeclaredText || column.TypeRawSQL}.Rendered()
 }
 
 func renderDefaultLiteral(value string) string {
