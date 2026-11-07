@@ -1,14 +1,15 @@
 ---
 title: Configure the Spanner provider
-description: Diagnose an absent or unusable Spanner executable provider and verify an explicitly trusted installation.
+description: Install, select and verify the Spanner executable provider, diagnose an absent or unusable installation, and find where the provider documents what Spanner does in Ptah.
 type: how-to
 audience:
   - database-engineer
-readerQuestion: "How do I configure and verify the Spanner executable provider?"
-goal: "Verify an explicitly trusted Spanner provider installation."
+readerQuestion: "How do I install, configure and verify the Spanner executable provider?"
+goal: "Install the Spanner provider and verify that Ptah selects it."
 sourceOfTruth:
   - internal/providercatalog
   - internal/providerconfig
+  - internal/providerinstall
   - internal/cli/providers
   - stokaro/ptah#4204
 generated: false
@@ -16,9 +17,14 @@ overlaps: []
 disposition: keep
 ---
 
-Use this page when an explicit Spanner provider selection reports a missing or
-unusable installation. You need a trusted executable artifact, its checksum, and
-a host that supports the artifact's protocol.
+The Spanner provider serves Spanner's PostgreSQL interface, through PGAdapter,
+as a separate executable: it reads a live database, compares and plans, renders
+and applies changes, keeps the migration history and the migration lock, lints
+migrations and writes declared rows. Its support level is best effort, measured
+against the emulator. Use this page to install it, to select a reviewed build
+with a manifest, and to correct a selection that reports a missing or unusable
+installation. What Spanner does in Ptah is the provider's to document; see
+[Where the provider documents Spanner](#where-the-provider-documents-spanner).
 
 ## Check availability
 
@@ -26,13 +32,19 @@ The official provider ID is `github.com/stokaro/ptah-spanner-plugin`. Its design
 is [stokaro/ptah-spanner-plugin](https://github.com/stokaro/ptah-spanner-plugin).
 The catalog recognizes `spanner`, `cloudspanner`, `google-spanner`, and `google_spanner` as engine names.
 
-Official Spanner executable artifacts remain under development in
-[issue #4204](https://github.com/stokaro/ptah/issues/4204). The catalog reserves
-this identity. Its repository publishes no release with `ptah-provider.json`,
-so `ptah providers install spanner` refuses with `provider_no_release`.
+The provider is optional and installed separately from Ptah. Install the newest
+release this Ptah can run with `ptah providers install spanner`, or a chosen one
+with `--version`. The
+[install procedure](../../executable-providers/#install-an-official-provider)
+covers how a release is chosen, the checks, and where the file is stored.
+Remaining work on official providers is tracked in
+[issue #4204](https://github.com/stokaro/ptah/issues/4204).
 
-This provider is optional. Select it explicitly for Spanner work. A PostgreSQL
-URL does not select Spanner, and a failed provider never falls back to PostgreSQL.
+A PostgreSQL URL does not select Spanner, and a failed provider never falls back
+to PostgreSQL. While a Ptah release still builds in a Spanner engine of its own,
+the provider page
+[On a Ptah with a built-in Spanner engine](usage/#on-a-ptah-with-a-built-in-spanner-engine)
+says which commands reach the provider and which reach the built-in engine.
 
 List the catalog without executing providers:
 
@@ -83,5 +95,22 @@ native schema commands. This explicitly requires the executable provider;
 an absent or failed installation cannot select an embedded implementation.
 
 The [native provider workflow](../../executable-providers/) describes inspection,
-saved plans, application, and its protocol limitations. The catalog does not add
-provider selection to Atlas-compatible commands or the language server.
+saved plans, application, and its protocol limitations.
+
+## Where the provider documents Spanner
+
+What Spanner does in Ptah is the provider's to document: which statements a plan
+renders, which changes it plans and which it refuses, and what is not supported
+yet. The pages below live in the provider's repository and are published here
+with the release of the provider this documentation describes. They start from
+these questions:
+
+| Question | Provider page |
+| --- | --- |
+| How do a `spanner://` URL, a dev database and `ptah-compat` reach Spanner? | [Using the Spanner provider with Ptah](usage/) |
+| Which declarations describe Spanner objects? | [Declaring Spanner objects](declarations/) |
+| How is a Spanner migration split, recorded and locked? | [Migrations on Spanner](migrations/) |
+| What does the provider refuse, and why? | [What the Spanner provider refuses](limitations/) |
+
+The provider's [README](https://github.com/stokaro/ptah-spanner-plugin#readme)
+holds the rest of its reference.
