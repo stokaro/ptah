@@ -635,20 +635,12 @@ func plannedData(
 // A standalone feature object is kept or left out whole by the tables it binds
 // on either side, and a selection that would split one is refused.
 func selectApplyStates(ctx context.Context, dialect string, current *catalog.Database, desired *schemamodel.Database, scope atlasfilter.Scope, opts ApplyOptions) (*catalog.Database, *schemamodel.Database, error) {
-	var err error
-	scope.Bindings, err = scopeBindings(ctx, opts.Runtime, dialect, scope, databaseSide(current), generatedSide(desired))
+	scoped, err := projectLiveStates(ctx, opts.Runtime, dialect, current, desired, scope)
 	if err != nil {
 		return nil, nil, err
 	}
-	scoped := scopeApplyStates(current, desired, scope)
 	current, currentReports, currentErr := scoped.current, scoped.currentReports, scoped.currentErr
-	if currentErr != nil && !emptySelection(currentErr) {
-		return nil, nil, currentErr
-	}
 	desired, desiredReports, desiredErr := scoped.desired, scoped.desiredReports, scoped.desiredErr
-	if desiredErr != nil && !emptySelection(desiredErr) {
-		return nil, nil, desiredErr
-	}
 	// An --exclude selector that named nothing in the database and nothing in
 	// the desired state protected nothing, and apply is the verb that carries
 	// the plan out. Refusing is the safe answer there; the opt-in named in the
@@ -697,6 +689,32 @@ type scopedApplyStates struct {
 	desiredReports atlasfilter.ScopeReports
 	currentErr     error
 	desiredErr     error
+}
+
+// projectLiveStates captures the bindings of both sides of a comparison with a
+// live read and projects both through scope. An empty selection is not an error
+// here: it stays in the result, for the caller that can see both sides.
+func projectLiveStates(
+	ctx context.Context,
+	runtime any,
+	dialect string,
+	current *catalog.Database,
+	desired *schemamodel.Database,
+	scope atlasfilter.Scope,
+) (scopedApplyStates, error) {
+	var err error
+	scope.Bindings, err = scopeBindings(ctx, runtime, dialect, scope, databaseSide(current), generatedSide(desired))
+	if err != nil {
+		return scopedApplyStates{}, err
+	}
+	scoped := scopeApplyStates(current, desired, scope)
+	if scoped.currentErr != nil && !emptySelection(scoped.currentErr) {
+		return scopedApplyStates{}, scoped.currentErr
+	}
+	if scoped.desiredErr != nil && !emptySelection(scoped.desiredErr) {
+		return scopedApplyStates{}, scoped.desiredErr
+	}
+	return scoped, nil
 }
 
 func scopeApplyStates(

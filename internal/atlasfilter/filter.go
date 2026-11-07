@@ -230,6 +230,7 @@ func excludeGenerated(
 	// protect.
 	filtered.Schemas = state.filterGeneratedSchemas(filtered.Schemas)
 	filtered.Tables = state.filterGeneratedTables(filtered.Tables)
+	filtered.ManagedData = state.filterGeneratedManagedData(filtered.ManagedData)
 	tableByStruct := generatedTableByStruct(filtered.Tables)
 	filtered.Fields = state.filterGeneratedFields(tableByStruct, filtered.Fields)
 	state.excludeGeneratedColumnSequences(schema.Tables, schema.Fields)
@@ -1221,6 +1222,17 @@ func (s *exclusionState) filterGeneratedTables(tables []schemamodel.Table) []sch
 		result = append(result, table)
 	}
 	return result
+}
+
+// filterGeneratedManagedData drops the rows a desired state declares for an
+// excluded table. The table has left the other side too, so a row left here
+// compares with nothing: `schema drift` reports it and `schema apply` plans its
+// INSERT. A declaration can name a table the desired state does not define, so it
+// is asked the question its table is asked instead of looking the table up.
+func (s *exclusionState) filterGeneratedManagedData(declarations []schemamodel.ManagedData) []schemamodel.ManagedData {
+	return keep(declarations, func(data schemamodel.ManagedData) bool {
+		return !s.matches("table", s.nameCandidates(data.Schema, data.Table)...) && !s.schemaExcluded(data.Schema)
+	})
 }
 
 // noteGeneratedChild asks the patterns whether they name a child of a generated

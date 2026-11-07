@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
+	"strings"
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
@@ -13,10 +15,90 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/selectext"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/featureselect"
+	"ptah.run/internal/readscope"
 	"ptah.run/internal/schemaselection"
 )
+
+// LiveSelection is the selection a verb takes that compares a desired state with
+// a live database and changes neither: the selectors `schema diff` takes, with
+// the same meaning and the same diagnostics. Its zero value selects nothing.
+type LiveSelection struct {
+	// Schemas names the schemas the run reads. It joins the selection beside a
+	// selector, as --schemas does on `schema diff`, so an object outside them
+	// leaves both sides and a selected object that depends on one is refused.
+	// Alone it is no selection: it says where the database is read, and the
+	// desired state stays whole.
+	Schemas []string
+	// Include positively selects what both sides keep.
+	Include []string
+	// Exclude subtracts from what both sides keep.
+	Exclude []string
+	// Diagnostics receives the warning for an Exclude selector that matched
+	// nothing on either side. Nil writes no warning.
+	Diagnostics io.Writer
+}
+
+// Validate refuses a malformed selector, for a caller that has not contacted a
+// database yet. A pattern's depth depends on the connection, so [LiveSelection.Apply]
+// can still refuse one that passes here.
+func (s LiveSelection) Validate(selections selectext.Set) error {
+	if err := atlasfilter.ValidateExcludeSelectors(s.Exclude, selections); err != nil {
+		return err
+	}
+	return atlasfilter.ValidateIncludeSelectors(s.Include, selections)
+}
+
+// ReadContext marks ctx with the object kinds a selector leaves out whole, so a
+// schema read does not have to answer for them. An account that cannot see a
+// MySQL trigger reads the rest of the database under --exclude '*[type=trigger]'.
+func (s LiveSelection) ReadContext(ctx context.Context, selections selectext.Set) context.Context {
+	return readscope.Without(ctx, atlasfilter.KindsLeftOut(selections, s.Exclude, s.Include)...)
+}
+
+// Apply projects a live read and a desired state through the selection, and
+// returns both unchanged when no selector was given.
+//
+// An Exclude selector that matched nothing on either side is a warning, because
+// the verbs that take this selection only report. Include selectors that matched
+// nothing on either side return the [atlasfilter.EmptySelectionError], because a
+// comparison of nothing would report a synced database. A selected object that
+// depends on an unselected one returns the [atlasfilter.CrossScopeError].
+func (s LiveSelection) Apply(
+	ctx context.Context,
+	runtime selectext.Runtime,
+	info catalog.ServerInfo,
+	current *catalog.Database,
+	desired *schemamodel.Database,
+) (*catalog.Database, *schemamodel.Database, error) {
+	if !slices.ContainsFunc(s.Include, isSelector) && !slices.ContainsFunc(s.Exclude, isSelector) {
+		return current, desired, nil
+	}
+	scoped, err := projectLiveStates(ctx, runtime, info.Dialect, current, desired, atlasfilter.Scope{
+		Schemas:               s.Schemas,
+		Include:               s.Include,
+		Exclude:               s.Exclude,
+		DefaultSchema:         info.Schema,
+		RealmRelativePatterns: ConnectionIsRealmScoped(info),
+		Selections:            runtime.Selections(),
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	reportUnmatchedExclude(s.Diagnostics, atlasfilter.UnmatchedAcrossStates(scoped.currentReports.Exclude, scoped.desiredReports.Exclude))
+	if emptySelection(scoped.currentErr) && emptySelection(scoped.desiredErr) {
+		return nil, nil, scoped.currentErr
+	}
+	applyExtensionSupportCoverage(scoped.desired, scoped.currentReports.Selection, scoped.desiredReports.Selection)
+	return scoped.current, scoped.desired, nil
+}
+
+// isSelector reports whether a selector flag's value says anything.
+func isSelector(value string) bool {
+	return strings.Trim(value, ", \t") != ""
+}
 
 // scopeGeneratedSide filters one generated-schema comparison side. Positive
 // scopes (--schema/--include) run the full projection with cross-scope

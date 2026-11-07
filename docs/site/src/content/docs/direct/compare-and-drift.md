@@ -182,17 +182,16 @@ Findings:
 ```
 
 Once the database gains the column — through a migration or a direct apply —
-the check passes at either threshold. The next section reconciles it and runs
-the check again.
+the check passes at either threshold, as the next section shows.
 
-Three more flags shape the check:
+These flags shape the check:
 
-- `--ignore` excludes scopes from the check, for example
-  `--ignore tables=audit_log`. An excluded table's declared reference rows are
-  excluded with it.
-- `--ignore-extension` names a database extension the comparison leaves alone,
-  and is repeatable. See [An extension the schema does not
-  describe](#an-extension-the-schema-does-not-describe).
+- `--exclude` and `--include` select what both sides hold, on `schema compare` too.
+  See [Selecting what a comparison holds](../../reference/native-commands/#selecting-what-a-comparison-holds).
+- `--ignore tables=audit_log` excludes a table from the check, with its declared
+  reference rows.
+- `--ignore-extension` names a database extension the comparison leaves alone; see
+  [below](#an-extension-the-schema-does-not-describe).
 - `--format` selects `text`, `json` (the findings, the
   [inventory](#how-much-each-side-holds) and the full structured diff, for
   tooling, under `contract_version` and `command`), or `github-actions`
@@ -261,8 +260,8 @@ an entry, and an error report carries none.
 The counts come from the comparison, so they describe the same objects the
 findings do:
 
-- an object `--ignore` excludes, or one the comparison withholds as undecided,
-  is counted on neither side;
+- an object `--exclude` or `--ignore` leaves out, or one the comparison withholds
+  as undecided, is counted on neither side;
 - with no difference, each kind counts the same on both sides;
 - columns are counted in the tables both sides hold, and enum values in the enum
   types both sides hold, so a table only one side holds counts under `tables`
