@@ -101,6 +101,22 @@ func Scan(text string, options Options) ([]Token, error) {
 	return tokens, nil
 }
 
+// Next reads the first token of text: a reader that keeps its own scanner, such
+// as Ptah's lexer, reads one construct by these rules and goes on with its own.
+// Text that holds no token returns a zero Token, and a construct that does not
+// close returns a [*SyntaxError].
+func Next(text string, options Options) (Token, error) {
+	if text == "" {
+		return Token{}, nil
+	}
+	s := scanner{text: text, options: options}
+	kind, err := s.next()
+	if err != nil {
+		return Token{}, err
+	}
+	return Token{Kind: kind, Start: 0, End: s.pos}, nil
+}
+
 // Statement is one statement of a text: its byte offsets, the terminating
 // semicolon excluded, and its text without the white space and comments
 // around it. A statement holds at least one token that is neither white space
