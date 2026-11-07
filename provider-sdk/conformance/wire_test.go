@@ -27,6 +27,9 @@ type wireDefects struct {
 	// imageAndLinked describes the certified release line with an image
 	// beside the linked engine it names.
 	imageAndLinked bool
+	// enumColumnsRegardless describes the memory engine's enum columns to a
+	// host that did not list schema.enum-columns.
+	enumColumnsRegardless bool
 	// ownProtocolRefusal refuses PrepareCommonObjects for a host that did not
 	// list schema.common-objects itself, as InvalidArgument with a protocol
 	// error of its own words, before the SDK's server sees the request.
@@ -82,6 +85,12 @@ func (w *wireProvider) Describe(ctx context.Context, request *protocol.DescribeR
 		request.HostFeatures = provider.TwoWayFeatures()
 	}
 	reply, err := w.inner.Describe(ctx, request)
+	if err == nil && w.defects.enumColumnsRegardless && !slices.Contains(reply.GetFeatures(), provider.EnumColumnsFeature) {
+		engine := reply.GetEngines()[0]
+		reply.Features = append(reply.Features, provider.EnumColumnsFeature)
+		engine.Features = append(engine.Features, provider.EnumColumnsFeature)
+		engine.EnumColumns = &protocol.EnumColumns{Form: protocol.EnumColumns_CHECK, CheckType: "TEXT"}
+	}
 	if err == nil && w.defects.imageAndLinked {
 		for _, line := range reply.GetEngines()[0].GetReleaseLines() {
 			line.Image = "example.com/memory:1"
@@ -171,5 +180,10 @@ func (w *wireProvider) RecordSeed(ctx context.Context, request *protocol.RecordS
 
 func (w *wireProvider) ReadSeedLedger(ctx context.Context, request *protocol.ReadSeedLedgerRequest) (*protocol.SeedLedger, error) {
 	reply, err := w.inner.ReadSeedLedger(ctx, request)
+	return reply, w.refusal(err)
+}
+
+func (w *wireProvider) NormalizeValues(ctx context.Context, request *protocol.NormalizeValuesRequest) (*protocol.NormalizedValues, error) {
+	reply, err := w.inner.NormalizeValues(ctx, request)
 	return reply, w.refusal(err)
 }
