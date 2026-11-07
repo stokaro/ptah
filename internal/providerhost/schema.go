@@ -109,9 +109,7 @@ func (t *target) registration() engine.Target {
 		result.Comparison.Indexes = observedIndexRules{methods: t.offers(provider.IndexMethodsFeature), facets: t.offers(provider.ObservedIndexFacetsFeature),
 			nulls: t.offers(provider.IndexNullsOrderFeature)}
 	}
-	if t.offers(provider.ObservedIndexesFeature) || t.offers(provider.EnumColumnsFeature) {
-		result.Lowering = providerLowering{target: t, uniqueIndexes: t.offers(provider.ObservedIndexesFeature)}
-	}
+	result.Lowering = providerLowering{target: t, uniqueIndexes: t.offers(provider.ObservedIndexesFeature)}
 	if t.offers(provider.IndexMethodsFeature) {
 		result.ReadBack = indexKindReadBack{}
 	}

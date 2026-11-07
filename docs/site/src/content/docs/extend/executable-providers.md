@@ -595,8 +595,17 @@ tables, views and sequences in it, and so is the schema of a table the plan
 creates in a schema nobody declared. A schema the declaration no longer names
 stays; a down file removes the schema its up file created, after everything
 in it, without `CASCADE`. A rehearsal on a dev database removes the schemas it
-created when it cleans up. Without the feature, a declared schema other than
-the engine's default is refused, since nothing could create it.
+created when it cleans up.
+
+Without the feature, nothing creates a declared schema. A schema that holds a
+table, view, sequence or provider object reaches the provider as the schema of
+that object, which is how a YDB directory comes to exist. A declared schema
+other than the engine's default and the session's, in which neither the
+declaration nor the read has an object, reaches the provider through nothing,
+so a comparison refuses it by name rather than report the database synced. A
+render from nothing, and the validation of an engine without `schema.validate`,
+which renders the declaration, refuse every declared schema other than the
+engine's default.
 
 `models.report-counts` lets an engine name the count metrics each value of one
 of its models contributes to, such as a topic and the number of its consumers.
