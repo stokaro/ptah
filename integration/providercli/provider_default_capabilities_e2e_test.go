@@ -164,3 +164,34 @@ func TestProviderDatabaseCapabilitiesReportTheDeclaredLine_HappyPath(t *testing.
 		})
 	}
 }
+
+// TestProviderDatabaseCapabilitiesNameTheSourceTheProviderStates is a connection
+// that answers transactional_ddl as supported where line 2.1 answers
+// unsupported. The refinement is printed under the line the provider states
+// about where its connection read it (engine.connection-capability-source), as
+// the YDB provider names its monitoring endpoint; a provider that states none
+// gets the host's sentence for a provider's connection (stokaro/ptah#5770).
+func TestProviderDatabaseCapabilitiesNameTheSourceTheProviderStates(t *testing.T) {
+	for _, test := range []struct {
+		name, source, want string
+	}{
+		{name: "a stated source", source: "read from the fixture's switch file, not from its release line",
+			want: "read from the fixture's switch file, not from its release line"},
+		{name: "no stated source", want: "read from this server when Ptah connected, not from its release line"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := c.TempDir()
+			manifest := defaultsManifest(c, dir, "fixture-defaults", []string{"FIXTURE_SERVER_VERSION=2.1.7",
+				"FIXTURE_SESSION_TRANSACTIONAL_DDL=true", "FIXTURE_CAPABILITY_SOURCE=" + test.source})
+			address := (&url.URL{Scheme: "fixture-defaults", Path: "/" + strings.TrimPrefix(filepath.ToSlash(filepath.Join(dir, "server.db")), "/")}).String()
+
+			out, diagnostics, code := executeProviderCLI(c.Context(), []string{"db", "capabilities", "--provider-config", manifest,
+				"--db-url", address})
+
+			c.Assert(code, qt.Equals, 0, qt.Commentf("%s", diagnostics))
+			c.Assert(out, qt.Contains, "Set by this server rather than by its release line:\n")
+			c.Assert(out, qt.Contains, "  "+test.want+"\n")
+		})
+	}
+}

@@ -114,6 +114,10 @@ var hostFeatures = []string{
 	// The shared SQL lexer reads an engine's text by the lexical rules its
 	// provider states in the query dialect; see declareLexicalRules.
 	provider.QueryLexicalFeature,
+	// ptah db capabilities names where an engine's connection read refined
+	// capabilities in the line its provider states; see
+	// declareCapabilitySources.
+	provider.ConnectionCapabilitySourceFeature,
 	// The note that counts the roles a read leaves out names the reason the
 	// provider gives; see rolescope.ReportUndescribed.
 	provider.RoleScopeReasonsFeature,
@@ -421,6 +425,15 @@ func Start(ctx context.Context, spec Spec) (*Host, error) {
 		client.Close()
 		return nil, err
 	}
+	sources, err := declareCapabilitySources(host.description.GetEngines())
+	if err != nil {
+		for _, release := range host.releases {
+			release()
+		}
+		client.Close()
+		return nil, err
+	}
+	host.releases = append(host.releases, sources...)
 	host.releases = append(host.releases, host.provideScanners()...)
 	return host, nil
 }

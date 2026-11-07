@@ -375,8 +375,8 @@ github.com/spf13/cobra v1.10.2/go.mod h1:7C1pvHqHw5A4vrJfjNwvOdzYu0Gml16OCs2GRiT
 github.com/spf13/pflag v1.0.9/go.mod h1:McXfInJRrz4CZXVZOBLb0bTZqETkiAhM9Iw0y3An2Bg=
 github.com/spf13/pflag v1.1.0 h1:6W6MbVUrnMb8PEhjkqwsVLY7ryuzRfFHF4mQd7L94ag=
 github.com/spf13/pflag v1.1.0/go.mod h1:McXfInJRrz4CZXVZOBLb0bTZqETkiAhM9Iw0y3An2Bg=
-github.com/stokaro/ptah/provider-sdk v0.32.0 h1:kZB20PV3+zc+cGaZNDFZrgFaSKWvH1Dv5NRWqk5Pq+o=
-github.com/stokaro/ptah/provider-sdk v0.32.0/go.mod h1:v2kbjNjUNtmEE0ETRNOVN4KzFCcAkmTNjb24nrjCtk0=
+github.com/stokaro/ptah/provider-sdk v0.33.0 h1:bLBfGEXeM/z2D9xJ7Zik9rsnMCOUN2CwwbEwMK2Ttl0=
+github.com/stokaro/ptah/provider-sdk v0.33.0/go.mod h1:v2kbjNjUNtmEE0ETRNOVN4KzFCcAkmTNjb24nrjCtk0=
 github.com/stokaro/ptah/sqlsyntax v0.1.0 h1:VcLCK/BWLvsajiyjFcPYJUfRMzaUSZo+ic3C5u9KuIY=
 github.com/stokaro/ptah/sqlsyntax v0.1.0/go.mod h1:Tg/u/Q2kw4tovq/aKYqPO9PeUNKnieYmV3v73wZ2p3M=
 github.com/stokaro/teststyle v0.2.0 h1:jCyBstcPX+doEkmw5jRoiwPj/9I3srYyI27avIB+7kY=

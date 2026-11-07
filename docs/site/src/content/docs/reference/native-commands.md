@@ -347,6 +347,12 @@ Set by this server rather than by its release line:
 Without the `monitoring` parameter Ptah does not read the flags, and the
 section is absent.
 
+The last line of the section names where the connection read the keys. For an
+engine a provider serves, it is the line the provider states for its engine
+(`engine.connection-capability-source`), as the YDB provider names its
+monitoring endpoint above. A provider that states none gets `read from this
+server when Ptah connected, not from its release line`.
+
 A PostgreSQL database with the TimescaleDB extension installed reports
 `hypertables` and `continuous_aggregates` in the same section, read from
 `pg_extension` rather than from a session setting:

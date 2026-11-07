@@ -16,6 +16,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/internal/capabilitysource"
 	"ptah.run/internal/cli/dbcapabilities"
 	"ptah.run/internal/serverprofile"
 )
@@ -861,11 +862,19 @@ func TestWriteProfile_RefinementsNameTheirSource(t *testing.T) {
 	}
 }
 
-func TestConnectionReadingNamesYDBFeatureFlags(t *testing.T) {
+// An engine whose provider states where its connection reads refined
+// capabilities (engine.connection-capability-source) is worded by that line,
+// as the YDB provider names its monitoring endpoint; once the registration
+// ends, the host's sentence for a provider's connection stands again.
+func TestConnectionReadingNamesTheSourceItsProviderStates(t *testing.T) {
 	c := qt.New(t)
-	reading := dbcapabilities.ConnectionReading("ydb", capability.Of(map[capability.Capability]bool{
-		capability.UniqueIndexOnExistingTable: true,
-	}))
-	c.Assert(reading.Reason, qt.Equals,
-		"read from this cluster's feature flags at its monitoring endpoint, not from its release line")
+	const source = "read from this cluster's feature flags at its monitoring endpoint, not from its release line"
+	release, err := capabilitysource.Declare(source, "monitored-engine")
+	c.Assert(err, qt.IsNil)
+	refined := capability.Of(map[capability.Capability]bool{capability.UniqueIndexOnExistingTable: true})
+
+	c.Assert(dbcapabilities.ConnectionReading("monitored-engine", refined).Reason, qt.Equals, source)
+	release()
+	c.Assert(dbcapabilities.ConnectionReading("monitored-engine", refined).Reason, qt.Equals,
+		"read from this server when Ptah connected, not from its release line")
 }
