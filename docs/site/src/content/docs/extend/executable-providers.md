@@ -243,6 +243,14 @@ whether each declared CHECK and the CHECK the table holds under the same name
 are one constraint, and keeps the held one or replaces it as the provider
 answers. Without the feature the host compares the two texts by its own rules.
 
+The host's own rules for a view's query fold case, which is wrong for an
+engine whose names keep their case. With `schema.view-query-equivalence`, the
+host asks the provider whether each declared view's query and the query of
+the view the database holds under its name are one query, a materialized
+view's without its data clause, and keeps the view or replaces it as the
+provider answers. Without the feature the host compares the two queries by its
+own rules.
+
 With `planning.index-renames` as well, a provider renames an index in place.
 When its session reports `index_rename`, the comparison pairs an index the
 table holds with one the declaration states under another name and with one

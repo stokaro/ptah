@@ -216,12 +216,9 @@ func compareReportingUndecidedAdditions(
 	compare.OwnedDefaultSequences(database, diff, identifierSemantics)
 
 	// Compare views, materialized views, and triggers
-	compare.ViewsWithSemantics(desired, database, diff, opts.Dialect, identifierSemantics, opts.ViewBodies, rules.Views)
 	compare.Features(desired, database, diff)
-
-	// Compare SQL Server extended properties (schema, table and column scope)
-	compare.MaterializedViewsWithSemantics(desired, database, diff, opts.Dialect, identifierSemantics, opts.ViewBodies, rules.Views)
-	if err := attachMaterializedViewChanges(diff, desired, database, comparisonChanges(featureResult), identifierSemantics); err != nil {
+	if err := compareViewLikes(ctx, viewLikeComparison{desired: desired, database: database, diff: diff, opts: opts, semantics: identifierSemantics,
+		caps: caps, rules: rules, changes: comparisonChanges(featureResult)}); err != nil {
 		return nil, Diagnostics{}, err
 	}
 	compare.TriggersWithSemanticsAndConditions(desired, database, diff, identifierSemantics, opts.TriggerConditions, caps)

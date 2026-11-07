@@ -1,6 +1,7 @@
 // Package main serves the fixture with the common-object wire of contract
-// 25.3: views, roles and groups, grants and comments, and with
-// FIXTURE_MATERIALIZED_VIEWS=true materialized views.
+// 25.3: views, roles and groups, grants and comments, with
+// FIXTURE_MATERIALIZED_VIEWS=true materialized views, and with
+// FIXTURE_VIEW_QUERIES=exact its own comparison of view queries.
 //
 // SQLite has views and nothing else of these, so the program keeps roles,
 // grants, comments and materialized views in a file of its own beside the
@@ -56,10 +57,16 @@ func main() {
 	engine.Features = append(engine.Features, added...)
 	engine.CommonObjects = &protocol.CommonObjectSupport{Kinds: commonKinds()}
 	owner := &commonObjects{Provider: &backend.Provider{ViewsElsewhere: true}}
-	if err := runtime.Serve(runtime.Server{
+	server := runtime.Server{
 		Description: description, Sessions: owner, Inspector: owner, Renderer: owner, Executor: owner, Locks: owner, SQLAnalyzer: owner,
 		ValueNormalizer: owner, SourceDecoder: owner, ValueConverter: owner, CommonObjects: owner,
-	}); err != nil {
+	}
+	if viewQueries() {
+		description.Features = append(description.Features, provider.ViewQueryEquivalenceFeature)
+		engine.Features = append(engine.Features, provider.ViewQueryEquivalenceFeature)
+		server.ViewComparer = owner
+	}
+	if err := runtime.Serve(server); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

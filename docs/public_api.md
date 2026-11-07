@@ -2304,7 +2304,10 @@ The index rules decide when an index is the declared one:
 `Rules.GeneratedExpressions` gives a generated column's expression the spelling
 both sides share on the target, and a reported change quotes that spelling.
 `Rules.Views` compares view and materialized view queries in place of the
-shared reading.
+shared reading. `Rules.ViewQueries` decides them instead, in one batch of
+`ViewQueryPair` values: each declared view the comparison matches with a held
+one, a materialized view's query without its data clause. The comparison then
+reads its answers alone, and a target registers one of the two.
 
 `Rules.Routines` states the language and the security mode the target applies
 to a routine that declares none, and the shared comparison reads an omitted

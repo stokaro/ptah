@@ -448,6 +448,9 @@ func (r *Runtime) register(owner string, declared Target) error {
 	if declared.Comparison.Columns != nil && declared.Comparison.ColumnService != nil {
 		return fmt.Errorf("%w: a target cannot select both column rules and a column batch owner", ErrInvalidRegistration)
 	}
+	if declared.Comparison.Views != nil && declared.Comparison.ViewQueries != nil {
+		return fmt.Errorf("%w: a target cannot select both view rules and a view query owner", ErrInvalidRegistration)
+	}
 	selection, err := schemaext.NewTargetSelection(declared.Name, declared.Aliases...)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalidRegistration, err)
@@ -474,6 +477,7 @@ func (r *Runtime) register(owner string, declared Target) error {
 		{"foreign key index comparison", declared.Comparison.ForeignKeyIndexes},
 		{"generated expression comparison", declared.Comparison.GeneratedExpressions},
 		{"view comparison", declared.Comparison.Views},
+		{"view query comparison", declared.Comparison.ViewQueries},
 		{"routine comparison", declared.Comparison.Routines},
 		{"statement splitter", declared.Splitter},
 		{"statement annotator", declared.Annotator},

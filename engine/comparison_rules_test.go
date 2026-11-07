@@ -1,6 +1,7 @@
 package engine_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -50,6 +51,17 @@ func (plainExpressions) Spelling(expression string) string { return expression }
 type equalViews struct{}
 
 func (equalViews) QueryEqual(_, _ string) bool { return true }
+
+// equalViewQueries calls every pair of queries one query.
+type equalViewQueries struct{}
+
+func (equalViewQueries) EquivalentViewQueries(_ context.Context, request schemacomparison.ViewQueriesRequest) ([]bool, error) {
+	answers := make([]bool, len(request.Pairs))
+	for i := range answers {
+		answers[i] = true
+	}
+	return answers, nil
+}
 
 // sqlRoutines gives a routine that states no language SQL.
 type sqlRoutines struct{}
@@ -104,6 +116,7 @@ func TestNew_RefusesTypedNilComparisonRules(t *testing.T) {
 	var batch *batchColumns
 	var indexes *equalIndexes
 	var views *equalViews
+	var viewQueries *equalViewQueries
 	var routines *sqlRoutines
 	var definitions *keyedDefinitions
 	var predicates *plainPredicates
@@ -118,6 +131,7 @@ func TestNew_RefusesTypedNilComparisonRules(t *testing.T) {
 		{name: "column rules", rules: schemacomparison.Rules{Columns: columns}, message: `.*typed-nil column comparison service`},
 		{name: "index rules", rules: schemacomparison.Rules{Indexes: indexes}, message: `.*typed-nil index comparison service`},
 		{name: "view rules", rules: schemacomparison.Rules{Views: views}, message: `.*typed-nil view comparison service`},
+		{name: "view query owner", rules: schemacomparison.Rules{ViewQueries: viewQueries}, message: `.*typed-nil view query comparison service`},
 		{name: "routine rules", rules: schemacomparison.Rules{Routines: routines}, message: `.*typed-nil routine comparison service`},
 		{name: "index definition rules", rules: schemacomparison.Rules{IndexDefinitions: definitions}, message: `.*typed-nil index definition comparison service`},
 		{name: "index predicate rules", rules: schemacomparison.Rules{IndexPredicates: predicates}, message: `.*typed-nil index predicate comparison service`},
@@ -145,5 +159,15 @@ func TestNewRefusesCompetingColumnOwners(t *testing.T) {
 	c := qt.New(t)
 	runtime, err := engine.New(rulesProvider(schemacomparison.Rules{Columns: sequenceColumns{}, ColumnService: batchColumns{}}))
 	c.Assert(err, qt.ErrorIs, engine.ErrInvalidRegistration)
+	c.Assert(runtime, qt.IsNil)
+}
+
+// A target reads its view queries through one owner: rules that answer a pair
+// at a time, or an owner that answers the comparison's pairs in one batch.
+func TestNewRefusesCompetingViewOwners(t *testing.T) {
+	c := qt.New(t)
+	runtime, err := engine.New(rulesProvider(schemacomparison.Rules{Views: equalViews{}, ViewQueries: equalViewQueries{}}))
+	c.Assert(err, qt.ErrorIs, engine.ErrInvalidRegistration)
+	c.Assert(err, qt.ErrorMatches, `.*a target cannot select both view rules and a view query owner`)
 	c.Assert(runtime, qt.IsNil)
 }
