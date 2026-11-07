@@ -27,7 +27,7 @@ it. The rules themselves live in the README. The tables describe the SDK
 release that the [minimal provider example](../tutorial/) requires:
 
 ```text title="go.mod"
-	github.com/stokaro/ptah/provider-sdk v0.24.0
+	github.com/stokaro/ptah/provider-sdk v0.24.1-0.20261107005545-32129ac071f5
 ```
 
 The README links below open that release. The
