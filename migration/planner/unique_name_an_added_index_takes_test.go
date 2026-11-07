@@ -48,7 +48,9 @@ func rollbackOfPlan(c *qt.C, dialect, held, desired string) []string {
 
 // TestUniqueNameAnAddedIndexTakes_HappyPath pins the rollback of an index turned into a
 // UNIQUE under one name: it adds the index and removes the UNIQUE. A UNIQUE is an index
-// of its name, so the addition stops at the server while the UNIQUE stands.
+// of its name, so the addition stops at the server while the UNIQUE stands. On MySQL and
+// MariaDB one statement does both, as for an index rebuilt under its own name, since a
+// foreign key may stand on the UNIQUE and on nothing else.
 func TestUniqueNameAnAddedIndexTakes_HappyPath(t *testing.T) {
 	const (
 		held    = `CREATE TABLE t (id int PRIMARY KEY, a int); CREATE INDEX u ON t (a);`
@@ -58,8 +60,8 @@ func TestUniqueNameAnAddedIndexTakes_HappyPath(t *testing.T) {
 		dialect string
 		want    []string
 	}{
-		{dialect: "mysql", want: []string{"ALTER TABLE `t` DROP INDEX `u`", "CREATE INDEX `u` ON `t` (`a`)"}},
-		{dialect: "mariadb", want: []string{"ALTER TABLE `t` DROP INDEX `u`", "CREATE INDEX `u` ON `t` (`a`)"}},
+		{dialect: "mysql", want: []string{"ALTER TABLE `t` DROP INDEX `u`, ADD INDEX `u` (`a`)"}},
+		{dialect: "mariadb", want: []string{"ALTER TABLE `t` DROP INDEX `u`, ADD INDEX `u` (`a`)"}},
 		{dialect: "postgres", want: []string{`ALTER TABLE "t" DROP CONSTRAINT "u"`, `CREATE INDEX "u" ON "t" ("a")`}},
 	}
 	for _, test := range tests {

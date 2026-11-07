@@ -250,3 +250,118 @@ func TestForeignKeyMoved_TwoKeysTakeTheNamesOfTheIndexesAKeptKeyStandsOn(t *test
 		}
 	}
 }
+
+// childKey is the foreign key name of child over column, referencing parent's referenced.
+func childKey(name, column, referenced string) catalog.Constraint {
+	return catalog.Constraint{
+		Name: name, TableName: "child", Type: "FOREIGN KEY", ColumnName: column, ColumnNames: []string{column},
+		ForeignTable: new("parent"), ForeignColumn: new(referenced),
+	}
+}
+
+// declaredChildKey declares the foreign key name of child over column, referencing
+// parent's referenced.
+func declaredChildKey(name, column, referenced string) schemamodel.Constraint {
+	return schemamodel.Constraint{
+		StructName: "Child", Name: name, Type: "FOREIGN KEY", Table: "child", Columns: []string{column},
+		ForeignTable: "parent", ForeignColumn: referenced,
+	}
+}
+
+// TestForeignKeyMoved_AnotherChangedKeyStandsOnTheOldIndex pins the order for a key moved
+// under its name whose old index another key the plan moves or removes stands on. The old
+// index leaves at the moved key's addition, ahead of the plan's constraint removals, and
+// the server answered its drop with Error 1553 while the other key stood, on MySQL 8.4 and
+// 26.10 and MariaDB 12.3. Every key the plan moves or removes on the table leaves first.
+func TestForeignKeyMoved_AnotherChangedKeyStandsOnTheOldIndex(t *testing.T) {
+	tests := []struct {
+		name     string
+		index    string
+		keys     []catalog.Constraint
+		declared []schemamodel.Constraint
+		want     []string
+	}{
+		{
+			name:     "both keys move under their names",
+			index:    "c_fk",
+			keys:     []catalog.Constraint{childKey("d_fk", "pid", "code"), childKey("c_fk", "pid", "id")},
+			declared: []schemamodel.Constraint{declaredChildKey("c_fk", "qid", "id"), declaredChildKey("d_fk", "rid", "code")},
+			want: []string{
+				"ALTER TABLE `child` DROP FOREIGN KEY `c_fk`",
+				"ALTER TABLE `child` DROP FOREIGN KEY `d_fk`",
+				"DROP INDEX `c_fk` ON `child`",
+				"ALTER TABLE `child` ADD CONSTRAINT `c_fk` FOREIGN KEY (`qid`) REFERENCES `parent`(`id`)",
+				"ALTER TABLE `child` ADD CONSTRAINT `d_fk` FOREIGN KEY (`rid`) REFERENCES `parent`(`code`)",
+			},
+		},
+		{
+			name:     "a removed key stands on it too",
+			index:    "d_fk",
+			keys:     []catalog.Constraint{childKey("c_fk", "pid", "id"), childKey("d_fk", "pid", "code")},
+			declared: []schemamodel.Constraint{declaredChildKey("d_fk", "qid", "code")},
+			want: []string{
+				"ALTER TABLE `child` DROP FOREIGN KEY `c_fk`",
+				"ALTER TABLE `child` DROP FOREIGN KEY `d_fk`",
+				"DROP INDEX `d_fk` ON `child`",
+				"ALTER TABLE `child` ADD CONSTRAINT `d_fk` FOREIGN KEY (`qid`) REFERENCES `parent`(`code`)",
+			},
+		},
+		{
+			name:     "two keys move and a third leaves",
+			index:    "c_fk",
+			keys:     []catalog.Constraint{childKey("d_fk", "pid", "code"), childKey("e_fk", "pid", "alt"), childKey("c_fk", "pid", "id")},
+			declared: []schemamodel.Constraint{declaredChildKey("c_fk", "qid", "id"), declaredChildKey("d_fk", "rid", "code")},
+			want: []string{
+				"ALTER TABLE `child` DROP FOREIGN KEY `c_fk`",
+				"ALTER TABLE `child` DROP FOREIGN KEY `d_fk`",
+				"ALTER TABLE `child` DROP FOREIGN KEY `e_fk`",
+				"DROP INDEX `c_fk` ON `child`",
+				"ALTER TABLE `child` ADD CONSTRAINT `c_fk` FOREIGN KEY (`qid`) REFERENCES `parent`(`id`)",
+				"ALTER TABLE `child` ADD CONSTRAINT `d_fk` FOREIGN KEY (`rid`) REFERENCES `parent`(`code`)",
+			},
+		},
+	}
+	for _, dialect := range []string{"mysql", "mariadb"} {
+		for _, test := range tests {
+			t.Run(dialect+" "+test.name, func(t *testing.T) {
+				c := qt.New(t)
+				held := heldKeptKeyOnTwoIndexes()
+				held.Indexes = []catalog.Index{{Name: test.index, TableName: "child", Columns: []string{"pid"}}}
+				held.Constraints = test.keys
+				declared := declaredKeptKeyBesideTwoKeys()
+				declared.Constraints = test.declared
+
+				got := plannedOverHeld(c, dialect, declared, held)
+
+				c.Assert(got, qt.DeepEquals, test.want)
+			})
+		}
+	}
+}
+
+// TestForeignKeyMoved_TheRollbackOfTwoKeysMovedOntoOneColumn pins the rollback of two keys
+// moved onto one column under their names. The server builds the second key an index in
+// place of the one it built for the first, so the migration leaves one index under the
+// second key's name, measured on MySQL 8.4 and 26.10 and MariaDB 12.3. The rollback added
+// the old index under that name while the new one held it, and the server answered Error
+// 1061. It rebuilds that index in one statement, with both keys gone.
+func TestForeignKeyMoved_TheRollbackOfTwoKeysMovedOntoOneColumn(t *testing.T) {
+	c := qt.New(t)
+	const parent = `CREATE TABLE parent (id bigint PRIMARY KEY, code bigint NOT NULL, CONSTRAINT parent_code UNIQUE (code));`
+
+	got := rollbackOfPlan(c, "mysql",
+		parent+`CREATE TABLE child (id bigint PRIMARY KEY, pid bigint, qid bigint,
+			CONSTRAINT c_fk FOREIGN KEY (pid) REFERENCES parent (id), CONSTRAINT d_fk FOREIGN KEY (pid) REFERENCES parent (code));
+			CREATE INDEX d_fk ON child (pid);`,
+		parent+`CREATE TABLE child (id bigint PRIMARY KEY, pid bigint, qid bigint,
+			CONSTRAINT c_fk FOREIGN KEY (qid) REFERENCES parent (id), CONSTRAINT d_fk FOREIGN KEY (qid) REFERENCES parent (code));`,
+	)
+
+	c.Assert(got, qt.DeepEquals, []string{
+		"ALTER TABLE `child` DROP FOREIGN KEY `c_fk`",
+		"ALTER TABLE `child` DROP FOREIGN KEY `d_fk`",
+		"ALTER TABLE `child` DROP INDEX `d_fk`, ADD INDEX `d_fk` (`pid`)",
+		"ALTER TABLE `child` ADD CONSTRAINT `c_fk` FOREIGN KEY (`pid`) REFERENCES `parent`(`id`)",
+		"ALTER TABLE `child` ADD CONSTRAINT `d_fk` FOREIGN KEY (`pid`) REFERENCES `parent`(`code`)",
+	})
+}

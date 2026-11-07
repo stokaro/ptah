@@ -104,7 +104,15 @@ SQL:
   migration that names the key `c_x_uq` and a schema file that writes
   `x INT UNIQUE`, the plan drops `c_x_uq` and adds `x`. Where a key the plan
   drops holds the column's name, the plan drops it first, so the server gives
-  the column's key that name. Both engines compare index names without case,
+  the column's key that name. Where a foreign key stands on that key, the drop
+  goes in the statement that gives the column its key, `ALTER TABLE t DROP
+  INDEX x, MODIFY COLUMN x INT UNIQUE`, because `DROP INDEX` alone answers
+  `ERROR 1553`, and the foreign key then stands on the column's key. A foreign
+  key the column's key cannot serve, one over more columns, gets an index of
+  its own in the statement that drops the old one, ahead of the column change.
+  A plan that turns a `UNIQUE` into an index under the same name, as the
+  rollback of such a column does, writes one statement as well: `ALTER TABLE t
+  DROP INDEX x, ADD INDEX x (x)`. Both engines compare index names without case,
   so a key named `X` over `x` is the column's key; Atlas CE renames it to `x`,
   and Ptah keeps it, because the server does not tell the two names apart.
 - A column-level `UNIQUE` accounts for one key over its column alone. Every
@@ -297,10 +305,27 @@ SQL:
   answers `ERROR 1553`, and an index added first can make the server drop one it
   built by itself, so that a later `DROP INDEX` answers `ERROR 1091`. The new
   index takes the name the server gives the index it builds for that key.
+- A plan that adds an index the foreign key can stand on drops the index the
+  server built for the key in the statement that adds the new one: `ALTER TABLE
+  t DROP INDEX k, ADD INDEX i (a)`. Once the new index is there, the server
+  drops the one it built by itself, also after `DROP FOREIGN KEY`, so a later
+  `DROP INDEX k` answers `ERROR 1091`, and the rollback's `DROP INDEX i` answers
+  `ERROR 1553` while a key the plan kept stands on `i` alone. An index the
+  author named `k` stays, and the catalog does not tell the two apart, so the
+  plan drops it either way. For a key the plan removes, the statement comes
+  after the key's drop; the rollback adds `k` back before it drops `i`. A
+  descending index takes nothing over on MySQL, which stands no key on it, and
+  takes the index over on MariaDB, which does.
 - A foreign key that moves to another column under its name takes that name for
   its new index, so a plan drops the key, then the old index, then adds the key.
   With the old index in place `ADD CONSTRAINT` answers `ERROR 1061: Duplicate key
   name`. The same order serves a new key named after an index that leaves.
+  Every other key the plan moves or removes on that table is dropped first as
+  well, since the server answers the index's drop with `ERROR 1553` while one of
+  them stands on it. Two keys moved onto one column end on one index under the
+  second key's name, as the server builds a key an index of its own in place of
+  one it built for another key over the same columns. A rollback drops both keys
+  and rebuilds that index under its name in one statement.
   Where a key the plan keeps stands on that index, the statement that gives the
   kept key an index of its own takes the old one out at that point, and a rollback
   drops the moved key first, then rebuilds the index under its name in one

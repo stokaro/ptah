@@ -153,3 +153,115 @@ func TestRemovedForeignKeyBackingIndex_AServerThatDropsItWithTheKey(t *testing.T
 
 	c.Assert(strings.Join(got, "\n"), qt.Not(qt.Contains), "DROP INDEX")
 }
+
+// TestRemovedForeignKeyBackingIndex_AnIndexThePlanAddsTakesItOver pins the statement
+// that drops a removed key's index when the plan adds an index over the key's columns.
+// The new index makes the server drop the index it built for the key by itself, also
+// after DROP FOREIGN KEY, so a DROP INDEX after the addition answered `Error 1091: Can't
+// DROP` on MySQL 8.4 and 26.10 and MariaDB 12.3. The statement that adds the new index
+// drops the old one, after the key.
+func TestRemovedForeignKeyBackingIndex_AnIndexThePlanAddsTakesItOver(t *testing.T) {
+	const dropKey = "ALTER TABLE `child` DROP FOREIGN KEY `child_fk`"
+	unnamed := heldBackedForeignKey()
+	unnamed.Constraints[0].Name = "child_ibfk_1"
+	unnamed.Indexes[0].Name = "pid"
+	withIndex := func(name string, fields ...string) func(*schemamodel.Database) {
+		return func(d *schemamodel.Database) {
+			d.Fields = append(d.Fields, schemamodel.Field{StructName: "Child", Name: "qid", Type: "bigint", Nullable: true})
+			d.Indexes = append(d.Indexes, schemamodel.Index{StructName: "Child", Name: name, Fields: fields})
+		}
+	}
+	movedWithIndex := declaredMovedForeignKey("child_fk")
+	movedWithIndex.Indexes = []schemamodel.Index{{StructName: "Child", Name: "idx_pid", Fields: []string{"pid"}}}
+	tests := []struct {
+		name     string
+		held     *catalog.Database
+		declared *schemamodel.Database
+		want     []string
+	}{
+		{
+			name:     "an index over the key's column",
+			held:     heldMovedForeignKey(),
+			declared: declaredWithoutForeignKey(withIndex("idx_pid", "pid")),
+			want:     []string{dropKey, "ALTER TABLE `child` DROP INDEX `child_fk`, ADD INDEX `idx_pid` (`pid`)"},
+		},
+		{
+			name:     "a wider index",
+			held:     heldMovedForeignKey(),
+			declared: declaredWithoutForeignKey(withIndex("w", "pid", "qid")),
+			want:     []string{dropKey, "ALTER TABLE `child` DROP INDEX `child_fk`, ADD INDEX `w` (`pid`, `qid`)"},
+		},
+		{
+			name: "an unnamed key, whose index the server named after the column",
+			held: unnamed,
+			declared: declaredWithoutForeignKey(func(d *schemamodel.Database) {
+				d.Indexes = []schemamodel.Index{{StructName: "Child", Name: "idx_pid", Fields: []string{"pid"}}}
+			}),
+			want: []string{
+				"ALTER TABLE `child` DROP FOREIGN KEY `child_ibfk_1`",
+				"ALTER TABLE `child` DROP INDEX `pid`, ADD INDEX `idx_pid` (`pid`)",
+			},
+		},
+		{
+			name:     "the key moves to another column under its name",
+			held:     heldMovedForeignKey(),
+			declared: movedWithIndex,
+			want: []string{
+				dropKey,
+				"ALTER TABLE `child` DROP INDEX `child_fk`, ADD INDEX `idx_pid` (`pid`)",
+				"ALTER TABLE `child` ADD CONSTRAINT `child_fk` FOREIGN KEY (`qid`) REFERENCES `parent`(`id`)",
+			},
+		},
+	}
+	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
+		for _, test := range tests {
+			t.Run(dialect+" "+test.name, func(t *testing.T) {
+				c := qt.New(t)
+
+				got := plannedOverHeld(c, dialect, test.declared, test.held)
+
+				c.Assert(got, qt.DeepEquals, test.want)
+			})
+		}
+	}
+}
+
+// TestRemovedForeignKeyBackingIndex_AnIndexThePlanAddsLeavesItAlone pins the plans in
+// which an added index takes nothing over: one over another column, and one the server
+// cannot stand the key on, a descending index on MySQL. The server keeps its own index
+// until the key leaves, and the removals drop it.
+func TestRemovedForeignKeyBackingIndex_AnIndexThePlanAddsLeavesItAlone(t *testing.T) {
+	tests := []struct {
+		name  string
+		index schemamodel.Index
+		want  string
+	}{
+		{
+			name:  "an index over another column",
+			index: schemamodel.Index{StructName: "Child", Name: "idx_qid", Fields: []string{"qid"}},
+			want:  "CREATE INDEX `idx_qid` ON `child` (`qid`)",
+		},
+		{
+			name:  "a descending index",
+			index: schemamodel.Index{StructName: "Child", Name: "idx_pid", Fields: []string{"pid"}, Parts: []schemamodel.IndexPart{{Name: "pid", Desc: true}}},
+			want:  "CREATE INDEX `idx_pid` ON `child` (`pid` DESC)",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			declared := declaredWithoutForeignKey(func(d *schemamodel.Database) {
+				d.Fields = append(d.Fields, schemamodel.Field{StructName: "Child", Name: "qid", Type: "bigint", Nullable: true})
+				d.Indexes = []schemamodel.Index{test.index}
+			})
+
+			got := plannedOverHeld(c, platform.MySQL, declared, heldMovedForeignKey())
+
+			c.Assert(got, qt.DeepEquals, []string{
+				test.want,
+				"ALTER TABLE `child` DROP FOREIGN KEY `child_fk`",
+				"DROP INDEX `child_fk` ON `child`",
+			})
+		})
+	}
+}
