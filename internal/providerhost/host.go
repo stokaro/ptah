@@ -176,6 +176,15 @@ var hostFeatures = []string{
 	// table; see reader.constraints and commonPlanner.constraintChanges.
 	provider.ObservedConstraintsFeature,
 	provider.ConstraintChangesFeature,
+	// Inspection reports the UNIQUE constraints a provider table holds apart
+	// from its indexes, which the catalog keeps beside its foreign keys and
+	// CHECKs, and the planner hands a change of one to the table's owner as
+	// it hands theirs; see reader.constraints and commonPlanner.readConstraintType.
+	provider.ObservedUniqueConstraintsFeature,
+	// An engine's enum column reaches its provider as the column the engine
+	// builds, a type that lists the values or a column under a CHECK, or is
+	// refused by table and column; see target.enumColumns.
+	provider.EnumColumnsFeature,
 	// A read reports the ledger the engine's seed service keeps as reserved
 	// storage, which every comparison leaves out, so a plan never drops it;
 	// see reader.reservedNames.

@@ -15,6 +15,13 @@ import (
 )
 
 func (t *target) validateOwnedSchema(ctx context.Context, request schemavalidation.Request) (schemavalidation.Result, error) {
+	// The provider validates the enum columns the plan creates; see
+	// enumColumns.
+	schema, err := t.enumColumns(request.Schema)
+	if err != nil {
+		return schemavalidation.Result{}, err
+	}
+	request.Schema = schema
 	profile, err := (modelComparer{target: t}).request(request.Target, request.Identifiers, request.Capabilities, nil)
 	if err != nil {
 		return schemavalidation.Result{}, err

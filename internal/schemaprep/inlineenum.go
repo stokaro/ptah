@@ -94,37 +94,75 @@ func InlineEnumValues(field schemamodel.Field, enums []schemamodel.Enum, dialect
 // same enum on MySQL, a varchar and a CHECK on SQL Server and Oracle, and a
 // table rebuild on SQLite.
 //
-// Which columns are enums, and with which values, is [InlineEnumValues].
+// Which columns are enums, and with which values, is [InlineEnumValues]; how
+// each is built is [LowerEnumColumns] in the form the descriptor states.
 func LowerInlineEnums(fields []schemamodel.Field, enums []schemamodel.Enum, dialect string) []schemamodel.Field {
 	if !InlineEnumDialect(dialect) {
 		return fields
 	}
 	target := describe(dialect)
-	style := inlineEnumStyle(dialect)
+	form := EnumForm{Style: inlineEnumStyle(dialect), CheckType: target.preparation.EnumCheckType}
+	if target.preparation.EnumCheckQuotesColumn {
+		// A dialect that refuses a CHECK whose spelling of the column
+		// disagrees with the column, as Oracle does, names it by
+		// sqlident.Ident, which is what the renderer and
+		// modelast.applyInlineEnumModel call for the same expression; SQL
+		// Server brackets it the same way.
+		form.CheckColumn = func(name string) string { return sqlident.Ident(target.name, name) }
+	}
+	return LowerEnumColumns(fields, enums, form)
+}
+
+// EnumForm is how a target builds an enum column inline, with no enum type
+// of its own: the column's type lists the values, or numbers them, or the
+// column is of CheckType and holds the values under its CHECK.
+type EnumForm struct {
+	// Style is descriptor.EnumColumnType, descriptor.EnumNumbered or
+	// descriptor.EnumCheck. Any other style builds no enum column.
+	Style descriptor.EnumStyle
+	// CheckType is the type of a descriptor.EnumCheck column, such as TEXT.
+	CheckType string
+	// CheckColumn spells the column inside a descriptor.EnumCheck column's
+	// CHECK. Nil names the column bare.
+	CheckColumn func(name string) string
+}
+
+// LowerEnumColumns returns a copy of fields with every enum column, as
+// [EnumColumnValues] finds it, built in form: typed enum('a','b') for
+// descriptor.EnumColumnType, with the ClickHouse type of [ClickHouseEnumType]
+// for descriptor.EnumNumbered, and typed form.CheckType with the CHECK
+// `<column> IN ('a', 'b')`, joined to the column's own CHECK, for
+// descriptor.EnumCheck. Each built column keeps its values in Enum. A form of
+// another style returns fields itself.
+//
+// A built column is no enum column, so lowering a lowered column changes
+// nothing. The enums themselves are the caller's to drop: a target that
+// builds enum columns this way keeps no enum type.
+func LowerEnumColumns(fields []schemamodel.Field, enums []schemamodel.Enum, form EnumForm) []schemamodel.Field {
+	switch form.Style {
+	case descriptor.EnumColumnType, descriptor.EnumNumbered, descriptor.EnumCheck:
+	default:
+		return fields
+	}
 	lowered := append([]schemamodel.Field(nil), fields...)
 	for i := range lowered {
 		field := &lowered[i]
-		values := InlineEnumValues(*field, enums, dialect)
+		values, _ := EnumColumnValues(*field, enums)
 		if len(values) == 0 {
 			continue
 		}
 		field.Enum = values
-		switch style {
+		switch form.Style {
 		case descriptor.EnumColumnType:
 			field.Type = enumColumnType(field.Enum)
 		case descriptor.EnumNumbered:
 			field.Type = ClickHouseEnumType(field.Enum)
 		case descriptor.EnumCheck:
-			// A dialect that refuses a CHECK whose spelling of the column
-			// disagrees with the column, as Oracle does, names it by
-			// sqlident.Ident, which is what the renderer and
-			// modelast.applyInlineEnumModel call for the same expression; SQL
-			// Server brackets it the same way.
 			column := field.Name
-			if target.preparation.EnumCheckQuotesColumn {
-				column = sqlident.Ident(target.name, field.Name)
+			if form.CheckColumn != nil {
+				column = form.CheckColumn(field.Name)
 			}
-			field.Type = target.preparation.EnumCheckType
+			field.Type = form.CheckType
 			field.Check = inlineEnumCheck(*field, column)
 		}
 	}

@@ -16,9 +16,10 @@ func (p commonPlanner) ownsKeys() bool {
 }
 
 // ownsConstraints reports whether the provider plans the foreign key and
-// CHECK changes of the tables it owns: it reports the constraints a table
-// holds, so the comparison has a current side, and it states that it plans
-// the change it is handed.
+// CHECK changes of the tables it owns, and their UNIQUE changes where it
+// reports UNIQUE constraints: it reports the constraints a table holds, so the
+// comparison has a current side, and it states that it plans the change it is
+// handed.
 func (p commonPlanner) ownsConstraints() bool {
 	return p.ownsColumns() && p.observedConstraints && p.constraints
 }
@@ -26,7 +27,7 @@ func (p commonPlanner) ownsConstraints() bool {
 // ownsConstraintChange reports whether the owner of a kept table plans a
 // change of a constraint of kind.
 func (p commonPlanner) ownsConstraintChange(kind string) bool {
-	return primaryKeyType(kind) && p.ownsKeys() || reportedConstraintType(kind) && p.ownsConstraints()
+	return primaryKeyType(kind) && p.ownsKeys() || p.readConstraintType(kind) && p.ownsConstraints()
 }
 
 // constraintChanges accepts the constraint changes of a diff that reach an
@@ -34,8 +35,9 @@ func (p commonPlanner) ownsConstraintChange(kind string) bool {
 // travels in the declaration it creates the table from, and one of a table it
 // drops leaves with the table, so neither is a change. A change of a kept
 // table's constraint is handed to the table's owner as an alteration of the
-// table: a primary key where the engine reports ordered keys, and a FOREIGN
-// KEY or CHECK where it reports constraints; see planningContext.
+// table: a primary key where the engine reports ordered keys, a FOREIGN KEY or
+// CHECK where it reports constraints, and a UNIQUE where it reports those as
+// well; see planningContext.
 //
 // It refuses a change of any other constraint, and one of a kind no read
 // reports, as the planner does without the read; and a change of a kept
@@ -58,8 +60,8 @@ func (p commonPlanner) constraintChanges(diff *difftypes.SchemaDiff) error {
 		switch {
 		case lifecycle[key]:
 			return nil
-		case primaryKeyType(kind) && !p.observedKeys, reportedConstraintType(kind) && !p.observedConstraints,
-			!primaryKeyType(kind) && !reportedConstraintType(kind):
+		case primaryKeyType(kind) && !p.observedKeys, p.readConstraintType(kind) && !p.observedConstraints,
+			!primaryKeyType(kind) && !p.readConstraintType(kind):
 			return unsupported("SchemaDiff." + field)
 		case p.ownsConstraintChange(kind):
 			return nil
@@ -107,8 +109,17 @@ func primaryKeyType(constraintType string) bool {
 	return strings.EqualFold(strings.TrimSpace(constraintType), "PRIMARY KEY")
 }
 
+// readConstraintType reports whether a read of the provider reports a
+// constraint of this type beside the primary key: a FOREIGN KEY or a CHECK
+// under observed constraints, and a UNIQUE as well under observed UNIQUE
+// constraints.
+func (p commonPlanner) readConstraintType(constraintType string) bool {
+	return reportedConstraintType(constraintType) || p.observedUnique && strings.EqualFold(strings.TrimSpace(constraintType), "UNIQUE")
+}
+
 // reportedConstraintType reports whether a read under observed constraints
-// reports a constraint of this type: a FOREIGN KEY or a CHECK.
+// reports a constraint of this type: a FOREIGN KEY or a CHECK. A rollback
+// prediction reads it alone, since the host predicts no UNIQUE constraint.
 func reportedConstraintType(constraintType string) bool {
 	kind := strings.TrimSpace(constraintType)
 	return strings.EqualFold(kind, "FOREIGN KEY") || strings.EqualFold(kind, "CHECK")

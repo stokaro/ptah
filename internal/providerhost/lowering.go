@@ -23,6 +23,31 @@ import (
 // absence of an answer is not an engine without UNIQUE constraints.
 type uniqueIndexLowering struct{}
 
+// providerLowering is a provider engine's lowering before comparison: its
+// enum columns in the form the engine states (see target.enumColumns), then,
+// for an engine that reports its indexes, its UNIQUE constraints as the
+// unique indexes of uniqueIndexLowering.
+type providerLowering struct {
+	target *target
+	// uniqueIndexes applies uniqueIndexLowering after the enum columns.
+	uniqueIndexes bool
+}
+
+func (l providerLowering) LowerDesired(ctx context.Context, request schemapreparation.LoweringRequest) (*schemamodel.Database, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	desired, err := l.target.enumColumns(request.Desired)
+	if err != nil {
+		return nil, err
+	}
+	if !l.uniqueIndexes {
+		return desired, nil
+	}
+	request.Desired = desired
+	return uniqueIndexLowering{}.LowerDesired(ctx, request)
+}
+
 func (uniqueIndexLowering) LowerDesired(ctx context.Context, request schemapreparation.LoweringRequest) (*schemamodel.Database, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
