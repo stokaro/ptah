@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"slices"
 	"strings"
 
 	"ptah.run/catalog"
@@ -14,6 +15,7 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
+	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/dbexprprobe"
@@ -103,15 +105,20 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 	if err != nil {
 		return nil, Diagnostics{}, err
 	}
-	checks, err := resolveCheckExpressions(ctx, conn, desired, database, info.Dialect, semantics)
+	rules, err := runtime.ComparisonRules(target.Name())
+	if err != nil {
+		return nil, Diagnostics{}, err
+	}
+	var checks map[string]config.CheckExpression
+	if rules.Checks != nil {
+		checks, err = decideCheckEquivalence(ctx, rules.Checks, desired, database, info, semantics)
+	} else {
+		checks, err = resolveCheckExpressions(ctx, conn, desired, database, info.Dialect, semantics)
+	}
 	if err != nil {
 		return nil, Diagnostics{}, err
 	}
 	indexes, err := resolveIndexExpressions(ctx, conn, desired, database, semantics)
-	if err != nil {
-		return nil, Diagnostics{}, err
-	}
-	rules, err := runtime.ComparisonRules(target.Name())
 	if err != nil {
 		return nil, Diagnostics{}, err
 	}
@@ -726,6 +733,62 @@ func resolveCheckExpressions(
 		return nil, err
 	}
 	return checks, nil
+}
+
+// decideCheckEquivalence asks a target that decides CHECK equivalence itself
+// about every CHECK the comparison compares that the database also holds, the
+// set [resolveCheckExpressions] asks a server to spell, and records each
+// answer: the held CHECK where the target calls the two one constraint, and
+// the declaration marked as differing where it does not. The comparison then
+// compares no CHECK of the target by its text.
+func decideCheckEquivalence(
+	ctx context.Context,
+	service schemacomparison.Checks,
+	desired *schemamodel.Database,
+	database *catalog.Database,
+	info catalog.ServerInfo,
+	semantics identifier.Semantics,
+) (map[string]config.CheckExpression, error) {
+	if desired == nil || database == nil {
+		return nil, nil
+	}
+	held := make(map[string]catalog.Constraint, len(database.Constraints))
+	for _, constraint := range database.Constraints {
+		if strings.EqualFold(constraint.Type, "CHECK") && constraint.CheckClause != nil && strings.TrimSpace(*constraint.CheckClause) != "" {
+			held[exprkey.CheckParts(semantics, constraint.Schema, constraint.TableName, constraint.Name)] = constraint
+		}
+	}
+	request := schemacomparison.ChecksRequest{Target: info.Dialect, Identifiers: semantics, Capabilities: info.Capabilities, Current: database}
+	var keys []string
+	for _, constraint := range compare.ComparedCheckConstraints(desired, database, info.Dialect, semantics) {
+		key := exprkey.Check(semantics, constraint.Table, constraint.Name)
+		current, exists := held[key]
+		if !exists || strings.TrimSpace(constraint.CheckExpression) == "" || slices.Contains(keys, key) {
+			continue
+		}
+		keys = append(keys, key)
+		request.Pairs = append(request.Pairs, schemacomparison.CheckPair{Held: current, Declared: strings.TrimSpace(constraint.CheckExpression)})
+	}
+	if len(request.Pairs) == 0 {
+		return nil, nil
+	}
+	answers, err := service.EquivalentChecks(ctx, request)
+	if err != nil {
+		return nil, fmt.Errorf("compare schemas: %w", err)
+	}
+	if len(answers) != len(request.Pairs) {
+		return nil, fmt.Errorf("compare schemas: the target answered %d of %d CHECK comparisons", len(answers), len(request.Pairs))
+	}
+	result := make(map[string]config.CheckExpression, len(keys))
+	for i, key := range keys {
+		pair := request.Pairs[i]
+		if answers[i] {
+			result[key] = config.CheckExpression{Expression: strings.TrimSpace(*pair.Held.CheckClause), Resolved: true}
+			continue
+		}
+		result[key] = config.CheckExpression{Expression: pair.Declared, Resolved: true, Differs: true}
+	}
+	return result, nil
 }
 
 // The second pass asks about two expressions per constraint, under the

@@ -388,6 +388,9 @@ data {
 }
 ```
 
+The `file` path is relative to the HCL file and has to stay inside the project;
+see [Reference data](../../versioned/reference-data/#declaring-managed-data).
+
 Embedded Go annotations export as finalized concrete columns and foreign keys.
 Go struct and field names are provenance rather than schema semantics and are
 intentionally not written to HCL. A role password, or a password hash, is

@@ -114,6 +114,70 @@ func ResolveWithinRoot(path, allowedRoot string) (string, error) {
 	return resolved, nil
 }
 
+// ReadFileWithinRoot returns the contents of the file path names, refusing one
+// that resolves outside allowedRoot with an error matching [ErrOutsideRoot].
+//
+// It is the read that goes with [ResolveWithinRoot], for a path that is data
+// rather than something an operator typed. The check resolves existing symbolic
+// links, so a link leaving the root is refused and one staying inside it is
+// followed. The read then goes through a handle on the root, so a link swapped
+// in after the check cannot redirect it.
+//
+// Unlike [ResolveWithinRoot], an empty allowedRoot is an error: a read that was
+// offered no boundary must not become a read with none.
+func ReadFileWithinRoot(path, allowedRoot string) (data []byte, err error) {
+	if strings.TrimSpace(allowedRoot) == "" {
+		return nil, errors.New("allowed root is required")
+	}
+	resolved, err := ResolveWithinRoot(path, allowedRoot)
+	if err != nil {
+		return nil, err
+	}
+	resolvedRoot, err := resolvePath(allowedRoot)
+	if err != nil {
+		return nil, fmt.Errorf("resolve allowed root: %w", err)
+	}
+	relative, err := filepath.Rel(resolvedRoot, resolved)
+	if err != nil {
+		return nil, fmt.Errorf("resolve path relative to allowed root: %w", err)
+	}
+	root, err := OpenDirectory(resolvedRoot)
+	if err != nil {
+		return nil, fmt.Errorf("open allowed root: %w", err)
+	}
+	defer func() { err = errors.Join(err, root.Close()) }()
+	data, err = root.root.ReadFile(relative)
+	if err != nil {
+		if _, containmentErr := ResolveWithinRoot(path, allowedRoot); errors.Is(containmentErr, ErrOutsideRoot) {
+			return nil, containmentErr
+		}
+		return nil, err
+	}
+	return data, nil
+}
+
+// StartsAtRoot reports whether path starts at a filesystem root rather than
+// inside a directory: a leading slash, a leading backslash or a drive letter.
+//
+// filepath.IsAbs alone is not that question. On Windows "/tmp/secret.txt" has no
+// volume name, so IsAbs answers false while the path resolves to
+// C:\tmp\secret.txt, and on Unix filepath.VolumeName answers "" for `C:\x`.
+//
+// The answer is the same on every operating system, because what a project file
+// may name must not depend on which machine opens it. That rules out a Unix file
+// literally named "\tmp" and a Unix directory literally named "C:", which is an
+// acceptable loss for a rule whose job is to fail closed.
+func StartsAtRoot(path string) bool {
+	if strings.HasPrefix(path, "/") || strings.HasPrefix(path, `\`) {
+		return true
+	}
+	if len(path) < 2 || path[1] != ':' {
+		return false
+	}
+	drive := path[0]
+	return (drive >= 'A' && drive <= 'Z') || (drive >= 'a' && drive <= 'z')
+}
+
 // ResolveCLIPath resolves a CLI path to an absolute, cleaned pathname, with
 // existing symlinks followed. It imposes no boundary of any kind, and both
 // spellings of one destination answer identically.

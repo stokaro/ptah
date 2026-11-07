@@ -114,6 +114,8 @@ func offlineRPCs() []rpc {
 		described("ScanSQL", provider.ScanSQLFeature, protocol.ProviderClient.ScanSQL, provider.ValidateScanSQLRequest, provider.ValidateSQLScanReply),
 		described("ResolveDatabaseContext", provider.DatabaseContextFeature, protocol.ProviderClient.ResolveDatabaseContext, provider.ValidateDatabaseContextRequest,
 			provider.ValidateResolvedDatabaseContextReply),
+		described("CompareChecks", provider.CheckEquivalenceFeature, protocol.ProviderClient.CompareChecks, provider.ValidateCompareChecksRequest,
+			provider.ValidateComparedChecksReply),
 	}
 }
 

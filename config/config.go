@@ -372,6 +372,13 @@ type CheckExpression struct {
 	// Resolved reports that a server answered for this constraint. A false
 	// value on a present key is a declaration the server refused.
 	Resolved bool
+	// Differs reports, on a resolved entry, that the target decided the
+	// declaration and the CHECK the database holds are two constraints,
+	// whatever their texts. A target that decides equivalence itself
+	// ([ptah.run/core/schemacomparison.Checks]) states the held CHECK in
+	// Expression where the two are one, so the texts compare equal, and sets
+	// Differs where they are not.
+	Differs bool
 }
 
 // ColumnSpelling is one column's type and default in the target server's own

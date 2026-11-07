@@ -346,7 +346,7 @@ func (m *Migrator) commitOneQueryEnd(
 		return failed("before", err)
 	}
 	if err := session.finish(ctx); err != nil {
-		return failed("commit", markedStatementFailure(ctx, err))
+		return failed("commit", markedStatementFailure(ctx, &failedCommitError{statements: total, err: err}))
 	}
 	checkpoint := StatementEvent{Statement: first, Index: total, Total: total}
 	if err := m.checkpointMigrationRevision(ctx, migration, startedAt, checkpoint, MigrationDirectionUp); err != nil {

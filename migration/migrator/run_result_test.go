@@ -249,6 +249,73 @@ func TestRunResultDocumentNamesTheFailedStatement(t *testing.T) {
 	c.Assert(string(encoded), qt.Contains, `"failure":{"version":2,"version_key":"2","statement":2,"statements":2}`)
 }
 
+// TestRunResultNamesAFailedCommit fails the commit with a deferred foreign key,
+// which SQLite answers there. Every statement ran, so the record names the commit
+// and no position, and under one transaction for the run it names the last
+// migration of the batch.
+func TestRunResultNamesAFailedCommit(t *testing.T) {
+	tests := []struct {
+		name string
+		mode migrator.MigrationTxMode
+	}{
+		{name: "the per-file transaction", mode: migrator.MigrationTxModeFile},
+		{name: "one transaction for the run", mode: migrator.MigrationTxModeAll},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := runSQLiteConnection(c, "run-commit.sqlite")
+			_, err := conn.ExecContext(c.Context(), "CREATE TABLE parents (id INTEGER PRIMARY KEY)")
+			c.Assert(err, qt.IsNil)
+			_, err = conn.ExecContext(c.Context(), "CREATE TABLE children (id INTEGER PRIMARY KEY, parent INTEGER REFERENCES parents (id) DEFERRABLE INITIALLY DEFERRED)")
+			c.Assert(err, qt.IsNil)
+			mig, err := migrator.NewFSMigrator(conn, fstest.MapFS{
+				"0000000001_plain.up.sql":      {Data: []byte("CREATE TABLE plain (id INTEGER PRIMARY KEY);\n")},
+				"0000000001_plain.down.sql":    {Data: []byte("DROP TABLE plain;\n")},
+				"0000000002_deferred.up.sql":   {Data: []byte("INSERT INTO children (id, parent) VALUES (1, 999);\nINSERT INTO children (id, parent) VALUES (2, 999);\n")},
+				"0000000002_deferred.down.sql": {Data: []byte("DELETE FROM children;\n")},
+			})
+			c.Assert(err, qt.IsNil)
+
+			runErr := mig.WithTransactionMode(test.mode).MigrateUp(c.Context())
+
+			c.Assert(runErr, qt.IsNotNil)
+			result := migrator.NewRunResult(migrator.RunEvidence{Err: runErr})
+			c.Assert(result.Failure, qt.DeepEquals, &migrator.RunFailure{Version: 2, VersionKey: "2", Statements: 2, Commit: true})
+		})
+	}
+}
+
+// TestRunResultKeepsTheStatementWhenItsFailureCannotBeRecorded fails a statement of
+// a batch, and then the write that records it, which a trigger refuses. The
+// message says both, and the statement is still what stopped the run.
+func TestRunResultKeepsTheStatementWhenItsFailureCannotBeRecorded(t *testing.T) {
+	c := qt.New(t)
+	conn := runSQLiteConnection(c, "run-unrecorded.sqlite")
+	files := fstest.MapFS{
+		"0000000001_plain.up.sql":   {Data: []byte("CREATE TABLE plain (id INTEGER PRIMARY KEY);\n")},
+		"0000000001_plain.down.sql": {Data: []byte("DROP TABLE plain;\n")},
+	}
+	mig, err := migrator.NewFSMigrator(conn, files)
+	c.Assert(err, qt.IsNil)
+	c.Assert(mig.MigrateUp(c.Context()), qt.IsNil)
+	for _, operation := range []string{"INSERT", "UPDATE"} {
+		_, err = conn.ExecContext(c.Context(), "CREATE TRIGGER refuse_"+operation+" BEFORE "+operation+
+			" ON schema_migrations BEGIN SELECT RAISE(ABORT, 'no revision rows'); END")
+		c.Assert(err, qt.IsNil)
+	}
+	files["0000000002_broken.up.sql"] = &fstest.MapFile{Data: []byte("CREATE TABLE second (id INTEGER PRIMARY KEY);\nNOT SQL;\n")}
+	files["0000000002_broken.down.sql"] = &fstest.MapFile{Data: []byte("DROP TABLE second;\n")}
+	mig, err = migrator.NewFSMigrator(conn, files)
+	c.Assert(err, qt.IsNil)
+
+	runErr := mig.WithTransactionMode(migrator.MigrationTxModeAll).MigrateUp(c.Context())
+
+	c.Assert(runErr, qt.ErrorMatches, "(?s).*additionally failed to record pending migration 2.*")
+	result := migrator.NewRunResult(migrator.RunEvidence{Err: runErr})
+	c.Assert(result.Failure, qt.DeepEquals, &migrator.RunFailure{Version: 2, VersionKey: "2", Statement: 2, Statements: 2})
+}
+
 // TestRunResultHasNoFailureForARefusalBeforeAnyStatement keeps the failure
 // object about statements the database saw. A statement validator refuses a
 // statement by position too, before any statement runs, so the database never

@@ -2,7 +2,7 @@
 
 Status: Proposed
 
-Contract: 25.27
+Contract: 25.28 (no change of its own)
 
 Deciders: Ptah maintainers
 
@@ -137,7 +137,7 @@ skipping them, because Ptah's test contour fails a skipped test.
 
 ### No contract change
 
-The contract stays 25.27. `runtime.ServeInMemory`, package `conformance` and
+The contract is unchanged. `runtime.ServeInMemory`, package `conformance` and
 the command are Go API, so they ship in the next SDK tag and raise its minor
 version.
 

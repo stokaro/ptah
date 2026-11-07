@@ -55,6 +55,8 @@ func oneMigration(c *qt.C, table string) string {
 // for the migration.
 type failedRun struct {
 	diagnostics, message, recorded string
+	// failure is the run document's record, which holds none of those texts.
+	failure *migrator.RunFailure
 }
 
 // all is every text of the run.
@@ -71,7 +73,7 @@ func failedUp(c *qt.C, f providerCLI, dir string) failedRun {
 	c.Assert(result.Outcome, qt.Equals, migrator.RunOutcomeFailed)
 	c.Assert(result.Error, qt.IsNotNil)
 	c.Assert(result.Status.DirtyRevision, qt.IsNotNil, qt.Commentf("%s", out))
-	return failedRun{diagnostics: diagnostics, message: result.Error.Message, recorded: result.Status.DirtyRevision.Error}
+	return failedRun{diagnostics: diagnostics, message: result.Error.Message, recorded: result.Status.DirtyRevision.Error, failure: result.Failure}
 }
 
 // tableHeld reports whether the fixture's database holds table.
@@ -101,6 +103,7 @@ func TestProviderExecutionReasons_HappyPath(t *testing.T) {
 		c.Assert(run.message, qt.Contains, want)
 		c.Assert(run.recorded, qt.Contains, want)
 		c.Assert(run.all(), qt.Not(qt.Contains), fixtureCredential)
+		c.Assert(run.failure, qt.DeepEquals, &migrator.RunFailure{Version: 1, VersionKey: "1", Statement: 1, Statements: 1})
 		c.Assert(tableHeld(c, f, "refused"), qt.IsFalse)
 	})
 	t.Run("a commit that rolled back", func(t *testing.T) {
@@ -117,6 +120,7 @@ func TestProviderExecutionReasons_HappyPath(t *testing.T) {
 		// before the body ran.
 		c.Assert(run.recorded, qt.Contains, want)
 		c.Assert(run.all(), qt.Not(qt.Contains), fixtureCredential)
+		c.Assert(run.failure, qt.DeepEquals, &migrator.RunFailure{Version: 1, VersionKey: "1", Statements: 1, Commit: true})
 		c.Assert(tableHeld(c, f, "uncommitted"), qt.IsFalse)
 	})
 }

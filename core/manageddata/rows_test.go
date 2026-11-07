@@ -246,3 +246,129 @@ func writeRowFile(c *qt.C, dir, name, contents string) {
 	err := os.WriteFile(filepath.Join(dir, name), []byte(contents), 0o600)
 	c.Assert(err, qt.IsNil)
 }
+
+// loaders drives both readers of a row file through one table: the boundary is
+// the property they share, and one of them losing it is the defect.
+func loaders() []struct {
+	name string
+	load func(string, schemamodel.ManagedData) (int, error)
+} {
+	return []struct {
+		name string
+		load func(string, schemamodel.ManagedData) (int, error)
+	}{
+		{name: "LoadRows", load: func(root string, md schemamodel.ManagedData) (int, error) {
+			rows, err := manageddata.LoadRows(root, md)
+			return len(rows), err
+		}},
+		{name: "LoadRowValues", load: func(root string, md schemamodel.ManagedData) (int, error) {
+			rows, err := manageddata.LoadRowValues(root, md)
+			return len(rows), err
+		}},
+	}
+}
+
+// rowFileProject lays out one project and a row file on each side of its boundary.
+func rowFileProject(c *qt.C) (project, sourceDir, outside string) {
+	c.Helper()
+	parent := c.TempDir()
+	project = filepath.Join(parent, "project")
+	sourceDir = filepath.Join(project, "models")
+	c.Assert(os.MkdirAll(sourceDir, 0o750), qt.IsNil)
+	c.Assert(os.Mkdir(filepath.Join(project, "exported"), 0o750), qt.IsNil)
+	c.Assert(os.Mkdir(filepath.Join(sourceDir, "sub"), 0o750), qt.IsNil)
+	writeRowFile(c, sourceDir, "rows.yaml", "- code: INSIDE\n")
+	writeRowFile(c, filepath.Join(sourceDir, "sub"), "rows.yaml", "- code: INSIDE\n")
+	outside = filepath.Join(parent, "secret.yaml")
+	writeRowFile(c, parent, "secret.yaml", "- code: OUTSIDE\n")
+	return project, sourceDir, outside
+}
+
+// TestLoaders_RefuseAFileOutsideTheRoot holds the spellings that leave the project.
+// A Windows spelling refuses here on every platform, which is the rule: what a
+// schema may name must not depend on the machine reading it.
+func TestLoaders_RefuseAFileOutsideTheRoot(t *testing.T) {
+	setup := qt.New(t)
+	project, sourceDir, outside := rowFileProject(setup)
+
+	tests := []struct {
+		name string
+		file string
+	}{
+		{name: "climbs out", file: "../../secret.yaml"},
+		{name: "climbs out from a subdirectory", file: "sub/../../../secret.yaml"},
+		{name: "leading slash on the real path", file: filepath.ToSlash(outside)},
+		{name: "leading slash", file: "/etc/passwd"},
+		{name: "leading backslash", file: `\etc\passwd`},
+		{name: "network path", file: `\\server\share\rows.yaml`},
+		{name: "drive letter with backslash", file: `C:\secret\rows.yaml`},
+		{name: "drive letter with slash", file: "C:/secret/rows.yaml"},
+		{name: "drive relative", file: "C:rows.yaml"},
+		{name: "climbs out in Windows spelling", file: `..\..\secret.yaml`},
+		{name: "climbs out in mixed spelling", file: `sub\../../../secret.yaml`},
+	}
+	for _, loader := range loaders() {
+		for _, test := range tests {
+			t.Run(loader.name+"/"+test.name, func(t *testing.T) {
+				c := qt.New(t)
+				count, err := loader.load(project, schemamodel.ManagedData{
+					Table: "countries", File: test.file, SourceDir: sourceDir,
+				})
+				c.Assert(err, qt.ErrorIs, manageddata.ErrOutsideRoot)
+				c.Assert(err, qt.ErrorMatches, `managed data file .* for table countries: .*outside allowed root.*`)
+				c.Assert(count, qt.Equals, 0)
+			})
+		}
+	}
+}
+
+// TestLoaders_RefuseWithNoRoot is the fail-closed half: the file is beside the
+// declaration and would read, so only the missing boundary can refuse it.
+func TestLoaders_RefuseWithNoRoot(t *testing.T) {
+	setup := qt.New(t)
+	_, sourceDir, _ := rowFileProject(setup)
+
+	for _, loader := range loaders() {
+		t.Run(loader.name, func(t *testing.T) {
+			c := qt.New(t)
+			count, err := loader.load("", schemamodel.ManagedData{
+				Table: "countries", File: "rows.yaml", SourceDir: sourceDir,
+			})
+			c.Assert(err, qt.ErrorIs, manageddata.ErrOutsideRoot)
+			c.Assert(err, qt.ErrorMatches, `.*no root was given`)
+			c.Assert(count, qt.Equals, 0)
+		})
+	}
+}
+
+// TestLoaders_ReadAFileInsideTheRoot is the control: the boundary is the project,
+// not the declaration's own directory, because `schema export` writes a path back
+// out of the directory it exports into.
+func TestLoaders_ReadAFileInsideTheRoot(t *testing.T) {
+	setup := qt.New(t)
+	project, sourceDir, _ := rowFileProject(setup)
+
+	tests := []struct {
+		name      string
+		file      string
+		sourceDir string
+	}{
+		{name: "beside the declaration", file: "rows.yaml", sourceDir: sourceDir},
+		{name: "below the declaration", file: "sub/rows.yaml", sourceDir: sourceDir},
+		{name: "backslash separates on every platform", file: `sub\rows.yaml`, sourceDir: sourceDir},
+		{name: "across the project", file: "../models/rows.yaml", sourceDir: filepath.Join(project, "exported")},
+		{name: "relative source directory", file: "rows.yaml", sourceDir: "models"},
+	}
+	for _, loader := range loaders() {
+		for _, test := range tests {
+			t.Run(loader.name+"/"+test.name, func(t *testing.T) {
+				c := qt.New(t)
+				count, err := loader.load(project, schemamodel.ManagedData{
+					Table: "countries", File: test.file, SourceDir: test.sourceDir,
+				})
+				c.Assert(err, qt.IsNil)
+				c.Assert(count, qt.Equals, 1)
+			})
+		}
+	}
+}

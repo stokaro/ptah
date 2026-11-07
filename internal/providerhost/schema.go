@@ -69,7 +69,8 @@ func (t *target) registration() engine.Target {
 				commonTables: t.supportsCommonTables(), commonObjects: len(t.commonKinds()) > 0, comments: t.commonKinds()[protocol.CommonObjectSupport_COMMENT],
 				indexes: t.offers(provider.ObservedIndexesFeature), renames: t.offers(provider.IndexRenamesFeature),
 				observedKeys: t.offers(provider.ObservedPrimaryKeysFeature), keys: t.offers(provider.PrimaryKeyChangesFeature),
-				assessParents: slices.ContainsFunc(t.engine.GetPlanning(), func(assignment *protocol.ModelPlanning) bool { return len(assignment.GetParentKinds()) > 0 })}
+				observedConstraints: t.offers(provider.ObservedConstraintsFeature), constraints: t.offers(provider.ConstraintChangesFeature),
+				assessParents: t.assessesParents()}
 		},
 	}
 	if t.offers(provider.DatabaseContextFeature) {
@@ -79,7 +80,7 @@ func (t *target) registration() engine.Target {
 		result.SchemaRendering, result.Validation = t, t
 		result.Preparation, result.Creations = t, t
 	}
-	if len(t.engine.GetDeclarations()) > 0 {
+	if t.rendersAuthoredSchemas() {
 		result.SchemaRendering = t
 	}
 	if slices.Contains(t.engine.GetFeatures(), provider.ValidateSchemaFeature) {
@@ -94,8 +95,12 @@ func (t *target) registration() engine.Target {
 	if slices.Contains(t.engine.GetFeatures(), provider.ColumnsFeature) {
 		result.Comparison.ColumnService = columnService{target: t}
 	}
+	if t.offers(provider.CheckEquivalenceFeature) {
+		result.Comparison.Checks = checkService{target: t}
+	}
 	if t.offers(provider.ObservedIndexesFeature) {
-		result.Comparison.Indexes = observedIndexRules{methods: t.offers(provider.IndexMethodsFeature), facets: t.offers(provider.ObservedIndexFacetsFeature)}
+		result.Comparison.Indexes = observedIndexRules{methods: t.offers(provider.IndexMethodsFeature), facets: t.offers(provider.ObservedIndexFacetsFeature),
+			nulls: t.offers(provider.IndexNullsOrderFeature)}
 		result.Lowering = uniqueIndexLowering{}
 	}
 	if t.offers(provider.IndexMethodsFeature) {
@@ -121,6 +126,22 @@ func (t *target) commonDeclaration(declaration schemacapture.TableDeclaration) s
 	return declaration
 }
 
+// assessesParents reports an engine with a planning service that owns table
+// settings, which the host hands every table it creates, changes or drops.
+func (t *target) assessesParents() bool {
+	return slices.ContainsFunc(t.engine.GetPlanning(), func(assignment *protocol.ModelPlanning) bool { return len(assignment.GetParentKinds()) > 0 })
+}
+
+// rendersAuthoredSchemas reports an engine whose whole schema renders through
+// its provider's planning, as a plan that creates every declared object: one
+// with declaration services, or one whose provider owns the lifecycle of its
+// tables, which leaves the host no common table to render. A schema rendering
+// of either needs schema validation; renderDeclarations names it when it is
+// missing.
+func (t *target) rendersAuthoredSchemas() bool {
+	return len(t.engine.GetDeclarations()) > 0 || (!t.supportsCommonTables() && t.assessesParents())
+}
+
 // supportsCommonTables gates shared table interpretation, not native services.
 // Rendering and planning also use this contract because they accept both common
 // table changes and provider-owned operations.
@@ -139,7 +160,7 @@ func (t *target) RenderSchema(ctx context.Context, request renderer.SchemaReques
 	if request.Schema == nil {
 		return renderer.SchemaResult{}, fmt.Errorf("provider schema is required")
 	}
-	if len(t.engine.GetDeclarations()) > 0 {
+	if t.rendersAuthoredSchemas() {
 		return t.renderDeclarations(ctx, request)
 	}
 	if _, err := t.declaredCommonObjects(request.Schema); err != nil {

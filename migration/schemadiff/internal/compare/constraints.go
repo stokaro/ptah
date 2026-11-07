@@ -552,7 +552,7 @@ func checkConstraintChanged(
 		return false
 	}
 	if resolved, ok := resolvedCheckExpression(checks, genConstraint, semantics); ok {
-		return normalizeCheckExpression(resolved) != normalizeCheckExpression(dbClause)
+		return resolved.Differs || normalizeCheckExpression(resolved.Expression) != normalizeCheckExpression(dbClause)
 	}
 	if checkExpressionHasUnsupportedRewrite(genConstraint.CheckExpression, dbClause) {
 		return false
@@ -561,7 +561,8 @@ func checkConstraintChanged(
 }
 
 // resolvedCheckExpression looks up the server's spelling of one declared
-// check, and reports whether there is one to use.
+// check, or the target's decision on it, and reports whether there is one to
+// use.
 //
 // A present key that is not Resolved is a declaration the server refused, and
 // it falls back rather than being read as a difference: the refusal says
@@ -570,12 +571,12 @@ func resolvedCheckExpression(
 	checks map[string]config.CheckExpression,
 	constraint schemamodel.Constraint,
 	semantics identifier.Semantics,
-) (string, bool) {
+) (config.CheckExpression, bool) {
 	resolved, ok := checks[exprkey.Check(semantics, constraint.Table, constraint.Name)]
 	if !ok || !resolved.Resolved {
-		return "", false
+		return config.CheckExpression{}, false
 	}
-	return resolved.Expression, true
+	return resolved, true
 }
 
 // checkExpressionsOf reads the resolved map out of the options, which may be

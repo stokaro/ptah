@@ -32,13 +32,43 @@ import (
 // compares them under the name the declaration gives it. Without facets an
 // index that carries a facet is not renamed in place, because the host cannot
 // say the rename keeps it.
+//
+// With nulls (schema.index-nulls-order) the engine states the NULLS order of
+// every key part of a held index, and its table preparation states it for
+// every key part of a declared one, each empty where it is the engine's
+// default. The comparison hands the prepared orders to OptionsEqual in the
+// declared index's Parts, and the two sides are compared exactly, so a change
+// of a key's NULLS order alone drops the index and builds it again. Without
+// nulls no order is compared.
 type observedIndexRules struct {
 	methods bool
 	facets  bool
+	nulls   bool
 }
 
 func (r observedIndexRules) OptionsEqual(desired schemamodel.Index, current catalog.Index) bool {
-	return !r.methods || desired.Type == current.Method
+	return (!r.methods || desired.Type == current.Method) && (!r.nulls || nullsOrdersEqual(desired, current))
+}
+
+// nullsOrdersEqual compares the NULLS order of each key part of a declared
+// index, as its table's preparation stated them, with the held index's. A
+// declared index whose orders the preparation did not state compares equal,
+// and so do keys of different lengths, which the shared comparison reports
+// as a key change.
+func nullsOrdersEqual(desired schemamodel.Index, current catalog.Index) bool {
+	held := current.Parts
+	if len(held) == 0 {
+		held = make([]catalog.IndexPart, len(current.Columns))
+	}
+	if len(desired.Parts) == 0 || len(desired.Parts) != len(held) {
+		return true
+	}
+	for i, part := range desired.Parts {
+		if part.NullsOrder != held[i].NullsOrder {
+			return false
+		}
+	}
+	return true
 }
 
 func (r observedIndexRules) RenameCarries(schemaext.Kind) bool { return r.facets }

@@ -32,6 +32,7 @@ import (
 	"ptah.run/internal/managedrows"
 	"ptah.run/internal/protectedtable"
 	"ptah.run/internal/readscope"
+	"ptah.run/internal/schemaroot"
 	"ptah.run/migration/datadiff"
 	"ptah.run/migration/safety"
 )
@@ -39,12 +40,16 @@ import (
 // Options configures [Generate] and [Inspect].
 type Options struct {
 	// RootDir is the directory of Go sources carrying //ptah:schema:data
-	// annotations. It is passed verbatim to goschema.ParseDir and reused to
-	// resolve each annotation's YAML row-data file, so it must be the same root
-	// the annotations were authored against. Desired replaces the parse; the
-	// row files still resolve against RootDir for an annotation whose recorded
-	// source directory is relative.
+	// annotations. It is passed verbatim to goschema.ParseDir, so it must be the
+	// same root the annotations were authored against. Desired replaces the
+	// parse.
 	RootDir string
+	// RowRoots bounds the row files a declaration may make this process read,
+	// and anchors one whose recorded source directory is relative. A schema is
+	// not always one the reader wrote, so the path a declaration names is confined
+	// rather than followed anywhere. Empty means RootDir is the one root, and a
+	// caller with neither has every row file refused.
+	RowRoots []string
 	// Annotations selects the feature owners whose directives the RootDir
 	// parse reads. It is required when Desired is nil; pass annotation.None
 	// for the frontend's own directives only.
@@ -271,7 +276,7 @@ func inspect(ctx context.Context, conn *dbschema.DatabaseConnection, opts Option
 
 	result := inspection{desired: db, diffs: make([]*datadiff.DataDiff, 0, len(managed))}
 	for _, md := range managed {
-		desired, err := desiredRows(opts.RootDir, md)
+		desired, err := desiredRows(opts.rowRoots(), md)
 		if err != nil {
 			return inspection{}, err
 		}
@@ -427,11 +432,19 @@ func readColumnCatalog(
 // The two forms resolve to the same values for the same declaration, which is
 // [manageddata.ResolveRows]'s contract, so an artifact-sourced run and a
 // root-sourced run of one declaration report the same drift.
-func desiredRows(rootDir string, md schemamodel.ManagedData) ([]map[string]any, error) {
+func desiredRows(roots []string, md schemamodel.ManagedData) ([]map[string]any, error) {
 	if md.Rows != nil {
 		return manageddata.ResolveRows(md)
 	}
-	return manageddata.LoadRows(rootDir, md)
+	return schemaroot.Load(roots, md, manageddata.LoadRows)
+}
+
+// rowRoots returns the directories a declaration's row file may be read from.
+func (o Options) rowRoots() []string {
+	if len(o.RowRoots) > 0 {
+		return o.RowRoots
+	}
+	return []string{o.RootDir}
 }
 
 // schemaScope returns the schema allow-list to introspect for a managed table:

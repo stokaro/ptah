@@ -17,6 +17,7 @@ import (
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemavalidation"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
 	"ptah.run/engine"
@@ -31,6 +32,7 @@ import (
 	"ptah.run/internal/errorkind"
 	"ptah.run/internal/featureselect"
 	"ptah.run/internal/pgsystemschema"
+	"ptah.run/internal/planrefusal"
 	"ptah.run/internal/planstyle"
 	"ptah.run/internal/protectedtable"
 	"ptah.run/internal/providerurl"
@@ -58,14 +60,14 @@ type ApplyOptions struct {
 	Shape   planext.StatementShape
 	ToURLs  []string
 	Exclude []string
-	// ProjectRoot bounds the files a desired state may make this process read.
+	// ProjectRoots bounds the files a desired state may make this process read.
 	//
 	// A declaration names the file that carries its rows, and a schema is not
 	// always one the reader wrote, so the path it names is confined to the
 	// project the caller is operating in rather than followed anywhere. That is
-	// the boundary `file()` in atlas.hcl already has. An empty value confines
-	// nothing, for a caller that has no project to name.
-	ProjectRoot string
+	// the boundary `file()` in atlas.hcl already has. With no value a declaration
+	// that still has to read its file is refused.
+	ProjectRoots []string
 	// Schemas restricts both comparison sides to the named schema scopes.
 	Schemas []string
 	// Include restricts both comparison sides to resources matched by
@@ -200,9 +202,9 @@ type ApplyRuntimeOptions struct {
 	// DevURL names is the run's own; see
 	// [ptah.run/internal/migrationreplay.Options.DevServerDisposable].
 	DevServerDisposable bool
-	// ProjectRoot bounds the files a desired state may make this process read;
-	// see [ApplyOptions.ProjectRoot].
-	ProjectRoot string
+	// ProjectRoots bounds the files a desired state may make this process read;
+	// see [ApplyOptions.ProjectRoots].
+	ProjectRoots []string
 	// Schemas restricts both comparison sides to the named schema scopes.
 	Schemas []string
 	// Include restricts both comparison sides to resources matched by
@@ -541,7 +543,7 @@ func computeApplyPlan(
 	withSecretRotation(compareOpts, opts.Policy)
 	compared, undecided, err := schemadiff.CompareWithDatabaseReportingUndecidedAdditions(ctx, conn, desired, current, compareOpts, opts.Runtime)
 	if err != nil {
-		return applyComputation{}, fmt.Errorf("compare database schema: %w", err)
+		return applyComputation{}, fmt.Errorf("compare database schema: %w", comparisonRefusal(err))
 	}
 	// No statement is planned for a withheld object, so a plan that says
 	// nothing about it quietly does less than the desired schema asks for. The
@@ -627,7 +629,7 @@ func plannedData(
 	if opts.withoutData {
 		return nil, nil, nil
 	}
-	return managedDataStatements(ctx, conn, opts.Runtime, desired, current, opts.ProjectRoot, protectedtable.New(opts.ProtectedTables))
+	return managedDataStatements(ctx, conn, opts.Runtime, desired, current, opts.ProjectRoots, protectedtable.New(opts.ProtectedTables))
 }
 
 // selectApplyStates checks selectors against both sides before planning. One
@@ -806,6 +808,24 @@ func applyCurrentState(
 		readScope:        readScope,
 		schemasBeyondURL: schemascope.BeyondURL(conn.Info(), urlScope, readScope),
 	}, nil
+}
+
+// comparisonRefusal marks a refusal the comparison completed as a refused
+// declaration, and returns any other error as it came.
+//
+// The mark belongs here because this comparison runs after the target was read,
+// which is what a refusal code promises. Both types below are raised elsewhere,
+// and `schema diff` raises them over two documents with no target at all, so a
+// report that read them directly could break that promise. An error the
+// comparison could not complete, such as a provider that failed to answer, is
+// neither type.
+func comparisonRefusal(err error) error {
+	_, declaration := errors.AsType[*schemadiff.RefusalError](err)
+	_, validation := errors.AsType[*schemavalidation.RefusalError](err)
+	if declaration || validation {
+		return &planrefusal.DeclarationError{Err: err}
+	}
+	return err
 }
 
 // loadDesiredApplySchema materializes the desired schema for apply planning.
@@ -1040,7 +1060,7 @@ func PrepareApply(
 	planning := ApplyOptions{
 		Runtime:                   opts.Runtime,
 		Shape:                     opts.Shape,
-		ProjectRoot:               opts.ProjectRoot,
+		ProjectRoots:              opts.ProjectRoots,
 		ToURLs:                    opts.ToURLs,
 		Exclude:                   opts.Exclude,
 		Schemas:                   opts.Schemas,
@@ -1252,17 +1272,49 @@ func applyStatements(
 	txMode migrator.MigrationTxMode,
 	statements []string,
 ) error {
-	return applyUnits(ctx, conn, txMode, renderer.SQLFragments(executableStatements(statements, conn.Info().Dialect)))
+	executable, positions := executableStatements(statements, conn.Info().Dialect)
+	if err := applyUnits(ctx, conn, txMode, renderer.SQLFragments(executable)); err != nil {
+		return &listedStatementsError{err: err, positions: positions, total: len(statements)}
+	}
+	return nil
 }
 
-func executableStatements(statements []string, dialect string) []string {
+// executableStatements returns the statements that hold something to send, and
+// the 1-based position of each among the statements it was given. A plan file
+// written by hand can list a statement that holds only comments.
+func executableStatements(statements []string, dialect string) ([]string, []int) {
 	filtered := make([]string, 0, len(statements))
-	for _, statement := range statements {
+	positions := make([]int, 0, len(statements))
+	for i, statement := range statements {
 		if strings.TrimSpace(sqlutil.StripCommentsForDialect(statement, dialect)) != "" {
 			filtered = append(filtered, statement)
+			positions = append(positions, i+1)
 		}
 	}
-	return filtered
+	return filtered, positions
+}
+
+// listedStatementsError is a failure of a run over the list of statements it was
+// given, some of which it may have left out because they hold only comments. The
+// report lists every statement, so a position it gives has to count them. It adds
+// nothing to the message.
+type listedStatementsError struct {
+	err       error
+	positions []int
+	total     int
+}
+
+func (e *listedStatementsError) Error() string { return e.err.Error() }
+
+func (e *listedStatementsError) Unwrap() error { return e.err }
+
+// position is the position among the listed statements of the statement at the
+// 1-based position executed among the ones that ran. Zero names no statement.
+func (e *listedStatementsError) position(executed int) int {
+	if executed < 1 || executed > len(e.positions) {
+		return 0
+	}
+	return e.positions[executed-1]
 }
 
 func SplitApplyStatements(sqlText, dialect string) []string {

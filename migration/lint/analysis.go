@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"ptah.run/core/lintext"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/sqlext"
 	"ptah.run/internal/atlaslint"
 	"ptah.run/internal/filetx"
@@ -20,6 +21,7 @@ import (
 	"ptah.run/internal/lintkit"
 	"ptah.run/internal/lintscan"
 	"ptah.run/internal/migrationsnapshot"
+	"ptah.run/internal/sqlsyntax"
 	"ptah.run/migration/migrationfile"
 )
 
@@ -154,6 +156,9 @@ type Statement struct {
 	// effects are the facts the statement's owner reported about it; see
 	// [lintext.Effect].
 	effects []lintext.Effect
+	// unparsed is why the parser could not read a statement [Options.Unparsed]
+	// covers, and empty otherwise.
+	unparsed string
 }
 
 // hasEffect reports whether the statement's owner reported fact about it.
@@ -558,7 +563,7 @@ func AnalyzeFS(ctx context.Context, runtime Runtime, fsys fs.FS, opts Options) (
 		return Analysis{}, err
 	}
 	withOwners(files, runtime.SQL())
-	attachStatements(files, split, opts.Dialect, target, opts.Compatibility, registered, scope)
+	attachStatements(files, split, opts.Dialect, target, opts.Compatibility, registered, scope, opts.Unparsed)
 	markAloneOutsideATransaction(files, opts)
 	owners, err := checkOwnedRules(ctx, runtime, files, rules, opts, target, registered)
 	if err != nil {
@@ -917,6 +922,7 @@ func attachStatements(
 	compatibility CompatibilityProfile,
 	registered map[string]struct{},
 	scope schemaScope,
+	unparsed UnparsedScope,
 ) {
 	next := 0
 	for i := range files {
@@ -948,6 +954,7 @@ func attachStatements(
 				sourceWords:     statement.SourceWords,
 				effects:         statement.Effects,
 				suppressedRules: suppressed,
+				unparsed:        unparsedReason(file, statement.SQL, dialect, unparsed),
 			})
 		}
 		next++
@@ -955,6 +962,24 @@ func attachStatements(
 			file.Changes, file.scopeExcluded = extractSchemaChanges(file, dialect, scope)
 		}
 	}
+}
+
+// unparsedReason returns why the parser could not read a statement in scope, and
+// the empty string for a statement it read, for one out of scope, and for a dialect
+// whose statements it does not hold a grammar for. The reason is the parser's own
+// words without its position, which counts from the statement rather than the file.
+func unparsedReason(file *File, sql, dialect string, scope UnparsedScope) string {
+	if !scope.covers(file) || !sqlsyntax.Reads(dialect) {
+		return ""
+	}
+	_, err := parseStatement(file, sql, dialect)
+	if err == nil {
+		return ""
+	}
+	if at, ok := errors.AsType[*ptaherr.ParseError](err); ok {
+		return at.Err.Error()
+	}
+	return err.Error()
 }
 
 func selectionIncludes(selection VersionSelection, version int64, revisionVersion string, hasVersion bool) bool {

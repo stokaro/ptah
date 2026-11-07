@@ -4,8 +4,8 @@
 package manageddata
 
 import (
+	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -13,6 +13,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/pathguard"
 )
 
 const (
@@ -23,6 +24,10 @@ const (
 	stringTag = "!!str"
 )
 
+// ErrOutsideRoot reports a row file [LoadRows] or [LoadRowValues] refused to
+// read because the path a declaration names leaves the root the caller gave.
+var ErrOutsideRoot = pathguard.ErrOutsideRoot
+
 // LoadRows reads the YAML row-data file referenced by md and returns its
 // rows as an ordered slice of column maps.
 //
@@ -30,7 +35,17 @@ const (
 // preserving the originating root when several Go roots are merged. Its
 // ParseFS and ParseSource
 // cannot provide a host-filesystem root, so their relative SourceDir is resolved
-// against rootDir. md.File is always resolved relative to that source directory.
+// against rootDir. md.File is always resolved relative to that source directory,
+// and a backslash in it separates components as a forward slash does, on every
+// platform.
+//
+// rootDir also bounds the read. A declaration's path is data, and a schema is not
+// always one the reader wrote, so a file outside rootDir is refused with an error
+// matching [ErrOutsideRoot] and none of it is read. That covers a path that climbs
+// out, a symbolic link that leaves, and a path starting at a root (a leading slash,
+// a leading backslash or a drive letter, on every platform). An empty rootDir has
+// nothing to bound the read with and is refused the same way.
+//
 // The file must be a top-level YAML list of mappings, one mapping per row:
 //
 //   - code: US
@@ -46,15 +61,9 @@ const (
 // or unreadable file, or malformed YAML, is returned as a wrapped error that
 // names the resolved path and target table.
 func LoadRows(rootDir string, md schemamodel.ManagedData) ([]map[string]any, error) {
-	sourceDir := md.SourceDir
-	if !filepath.IsAbs(sourceDir) {
-		sourceDir = filepath.Join(rootDir, sourceDir)
-	}
-	path := filepath.Join(sourceDir, md.File)
-
-	content, err := os.ReadFile(path)
+	path, content, err := readRowFile(rootDir, md)
 	if err != nil {
-		return nil, fmt.Errorf("read managed data file %q for table %q: %w", path, md.Table, err)
+		return nil, err
 	}
 
 	var rows []map[string]any
@@ -68,8 +77,8 @@ func LoadRows(rootDir string, md schemamodel.ManagedData) ([]map[string]any, err
 // LoadRowValues reads the YAML row-data file referenced by md and
 // returns its rows with every value preserved as the scalar that declared it.
 //
-// Paths resolve exactly as [LoadRows] resolves them. The two loaders
-// read the same file and differ in what they keep: this one preserves the
+// Paths resolve and are bounded exactly as [LoadRows] resolves and bounds them. The
+// two loaders read the same file and differ in what they keep: this one preserves the
 // declaration, so it is what publication and planning read, while
 // LoadRows resolves to Go values for callers that compare against a
 // live row set.
@@ -79,15 +88,9 @@ func LoadRows(rootDir string, md schemamodel.ManagedData) ([]map[string]any, err
 // column are refused by name: each of them would publish a row whose meaning
 // depends on who read it.
 func LoadRowValues(rootDir string, md schemamodel.ManagedData) ([]schemamodel.ManagedRow, error) {
-	sourceDir := md.SourceDir
-	if !filepath.IsAbs(sourceDir) {
-		sourceDir = filepath.Join(rootDir, sourceDir)
-	}
-	path := filepath.Join(sourceDir, md.File)
-
-	content, err := os.ReadFile(path)
+	path, content, err := readRowFile(rootDir, md)
 	if err != nil {
-		return nil, fmt.Errorf("read managed data file %q for table %q: %w", path, md.Table, err)
+		return nil, err
 	}
 	var document yaml.Node
 	if err := yaml.Unmarshal(content, &document); err != nil {
@@ -118,6 +121,36 @@ func LoadRowValues(rootDir string, md schemamodel.ManagedData) ([]schemamodel.Ma
 		rows = append(rows, row)
 	}
 	return rows, nil
+}
+
+// readRowFile is the one read of a row file both loaders share, so no caller of
+// either can reach the file without the boundary. It returns the resolved path for
+// the loaders' own errors.
+func readRowFile(rootDir string, md schemamodel.ManagedData) (string, []byte, error) {
+	table := schemamodel.QualifyTableName(md.Schema, md.Table)
+	if strings.TrimSpace(rootDir) == "" {
+		return "", nil, fmt.Errorf("managed data file %q for table %s: %w: no root was given", md.File, table, ErrOutsideRoot)
+	}
+	if pathguard.StartsAtRoot(md.File) {
+		return "", nil, fmt.Errorf(
+			"managed data file %q for table %s: a path starting at a root is %w %q",
+			md.File, table, ErrOutsideRoot, rootDir,
+		)
+	}
+	sourceDir := md.SourceDir
+	if !filepath.IsAbs(sourceDir) {
+		sourceDir = filepath.Join(rootDir, sourceDir)
+	}
+	path := filepath.Join(sourceDir, filepath.FromSlash(strings.ReplaceAll(md.File, `\`, "/")))
+
+	content, err := pathguard.ReadFileWithinRoot(path, rootDir)
+	if errors.Is(err, ErrOutsideRoot) {
+		return "", nil, fmt.Errorf("managed data file %q for table %s: %w", md.File, table, err)
+	}
+	if err != nil {
+		return "", nil, fmt.Errorf("read managed data file %q for table %q: %w", path, md.Table, err)
+	}
+	return path, content, nil
 }
 
 // ResolveRows returns the rows md carries as the column maps a row
