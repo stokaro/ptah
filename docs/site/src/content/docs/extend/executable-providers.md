@@ -428,6 +428,19 @@ feature. While the provider is selected, Ptah asks `ScanSQL` for the tokens of
 each text of the engine it reads, and caches them by text. A scan that fails
 reads the rest of the text as unknown, never by the shared rules.
 
+`query.lexical` is for an engine whose text the shared rules read once they
+are told the engine's switches, as a PostgreSQL-family engine's is. The
+engine's `query_dialect` states them in `lexical`, with the names of a dialect
+descriptor's lexical section: escape strings, continued and Unicode strings,
+nested block comments, backslash escapes, a `--` that needs a space,
+executable comments, bracketed names and names that begin with `#`. While the
+provider is selected, every reader above reads the engine's text by them, and
+so does the shared grammar that reads its SQL schema documents in the
+`FRAGMENTS` mode. Without them the text is read by the SQL standard alone, so
+`DEFAULT E'it\'s'` and a nested comment break a document. An engine lists
+`sql.scan` or `query.lexical`, never both: Ptah reads no SQL schema document
+of an engine that scans its own text with the shared grammar.
+
 `lint.migrations` lets a provider own the lint rules of its engine. The provider
 declares the rule catalog in its description, splits migration files with its own
 lexing, and returns findings for the rule codes the host enables. A result that

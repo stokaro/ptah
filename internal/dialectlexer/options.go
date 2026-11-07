@@ -13,13 +13,16 @@ import (
 )
 
 // Options returns the lexer behavior for dialect-sensitive SQL tokenization:
-// the scanner a provider registered for dialect (lexerext.Provide), or
-// [FromDescriptor] over the descriptor the process registry holds for
-// dialect. An empty or unknown dialect gets SQL-standard strings and nothing
-// else.
+// the scanner a provider registered for dialect (lexerext.Provide), the
+// rules a provider declared for it ([RegisterLexical]), or [FromDescriptor]
+// over the descriptor the process registry holds for dialect. An empty or
+// unknown dialect gets SQL-standard strings and nothing else.
 func Options(dialect string) lexer.Options {
 	if scanner := lexerext.Provided(dialect); scanner != nil {
 		return lexer.Options{Scanner: scanner}
+	}
+	if options, found := declaredOptions(dialect); found {
+		return options
 	}
 	return optionsByDialect.Get(dialect)
 }

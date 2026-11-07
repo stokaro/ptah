@@ -77,7 +77,8 @@ type Host struct {
 	// for; see session.SplitMigration.
 	splits migrationSplits
 	// releases end the registrations the host made for its engines, such as
-	// their scanners; see provideScanners.
+	// their lexical rules and scanners; see declareLexicalRules and
+	// provideScanners.
 	releases []func()
 }
 
@@ -110,6 +111,9 @@ var hostFeatures = []string{
 	// The query builder renders an engine from the spelling its provider
 	// declares; see registerQueryDialects.
 	provider.QueryDialectFeature,
+	// The shared SQL lexer reads an engine's text by the lexical rules its
+	// provider states in the query dialect; see declareLexicalRules.
+	provider.QueryLexicalFeature,
 	// The note that counts the roles a read leaves out names the reason the
 	// provider gives; see rolescope.ReportUndescribed.
 	provider.RoleScopeReasonsFeature,
@@ -413,7 +417,11 @@ func Start(ctx context.Context, spec Spec) (*Host, error) {
 		client.Close()
 		return nil, err
 	}
-	host.releases = host.provideScanners()
+	if host.releases, err = declareLexicalRules(host.description.GetEngines()); err != nil {
+		client.Close()
+		return nil, err
+	}
+	host.releases = append(host.releases, host.provideScanners()...)
 	return host, nil
 }
 
