@@ -52,7 +52,7 @@ func TestProviderConversionPreservesObjectsFacetsAndBoundedKnowledge(t *testing.
 		}
 		c.Assert(json.Unmarshal(encoded[0].Value.Payload, &record), qt.IsNil)
 		c.Assert(string(record.Payload), qt.Equals, `{"seconds":9007199254740993}`)
-		c.Assert(record.Features, qt.DeepEquals, []string{"tables"})
+		c.Assert(record.Features, qt.DeepEquals, []string{"schema.common-table-identity.v1"})
 	}
 	// A reverse conversion retains the same bounded knowledge and identities.
 	roundtrip, knowledge, err := features.Convert(c.Context(), runtime, "fixture", schemaext.Desired, schemaext.Observed, objects, coverage, []*schemaext.Facets{&table, &column})
@@ -82,7 +82,7 @@ func TestProviderConversionRefusesMixedCapturedProfiles(t *testing.T) {
 	second := providerModelEnvelope(c, definition, `{"minutes":2}`)
 	var wire map[string]any
 	c.Assert(json.Unmarshal(second.Payload, &wire), qt.IsNil)
-	wire["features"] = []string{"tables"}
+	wire["features"] = []string{"schema.common-table-identity.v1"}
 	data, err := json.Marshal(wire)
 	c.Assert(err, qt.IsNil)
 	second.Payload = data

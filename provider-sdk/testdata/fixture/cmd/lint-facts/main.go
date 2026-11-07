@@ -42,7 +42,7 @@ func main() {
 		server.Description = &protocol.Description{Revision: description.Revision, ProviderId: "github.com/stokaro/ptah-ydb-plugin",
 			Version: description.Version, SemanticIdentity: description.SemanticIdentity,
 			Engines: []*protocol.Engine{{Id: "ydb", DefaultSchema: engine.DefaultSchema, Identifiers: engine.Identifiers, LintRules: engine.LintRules,
-				Features:            []string{"tables", "columns", provider.LintFeature, provider.LintStatementFactsFeature, provider.DefaultCapabilitiesFeature},
+				Features:            []string{provider.LintFeature, provider.LintStatementFactsFeature, provider.DefaultCapabilitiesFeature},
 				DefaultCapabilities: map[string]bool{"parameterized_decimal": true},
 				ReleaseLines: []*protocol.ReleaseLine{
 					{Line: "25.1", Label: "YDB 25.1", Support: protocol.ReleaseLine_BEST_EFFORT, Unprobed: "a fixture line", Capabilities: map[string]bool{"parameterized_decimal": false}},

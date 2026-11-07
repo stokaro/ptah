@@ -23,7 +23,7 @@ func authoredObject(c *qt.C, runtime *engine.Runtime, name string) schemaext.Obj
 	c.Helper()
 	identity, found := runtime.Codecs().Identity(authoredObjectKind, schemaext.Desired)
 	c.Assert(found, qt.IsTrue)
-	wire := map[string]any{"format": 1, "engine": "fixture", "features": []string{"tables", "columns", "schema.declarations", "schema.validate", "render.text-units", "planning.lifecycle"}, "required_features": make([]string, 0), "payload": []byte(`{"action":"create"}`), "subject": map[string]any{"engine": "fixture", "kind": string(authoredObjectKind), "name": name, "schema": "main"}}
+	wire := map[string]any{"format": 1, "engine": "fixture", "features": []string{"schema.declarations", "schema.validate", "render.text-units", "planning.lifecycle"}, "required_features": make([]string, 0), "payload": []byte(`{"action":"create"}`), "subject": map[string]any{"engine": "fixture", "kind": string(authoredObjectKind), "name": name, "schema": "main"}}
 	data, err := json.Marshal(wire)
 	c.Assert(err, qt.IsNil)
 	values, err := runtime.Codecs().Decode(c.Context(), []schemaext.Envelope{{Format: 1, Owner: identity.Owner, Kind: identity.Kind, Representation: identity.Representation, Version: identity.Version, Definition: identity.Definition, Payload: data}})

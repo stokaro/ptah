@@ -82,6 +82,19 @@ feature with no service changes messages that already exist.
 without its service, and `provider.TwoWayFeatures()` returns the features a
 host must also list.
 
+<!-- When examples/minimal-provider requires an SDK tag that has these sections, link them from the tables below and delete this table. -->
+
+The README in the latest development source gives these subjects sections that
+the release does not have. The tables below link the section of the release that
+holds the rules.
+
+| Subject | Section of the release | Section in the latest development source |
+| --- | --- | --- |
+| `sql.analyze` | Validation | [SQL analysis (latest development source)](https://github.com/stokaro/ptah/blob/master/provider-sdk/README.md#sql-analysis) |
+| The table policies | Validation | [Table policies (latest development source)](https://github.com/stokaro/ptah/blob/master/provider-sdk/README.md#table-policies) |
+| `lint.migrations` | Service contract | [Migration lint (latest development source)](https://github.com/stokaro/ptah/blob/master/provider-sdk/README.md#migration-lint) |
+| `Engine.release_lines` | Offline capabilities | [Release lines (latest development source)](https://github.com/stokaro/ptah/blob/master/provider-sdk/README.md#release-lines) |
+
 ### Services Ptah requires
 
 Ptah starts a provider only when it offers these services, and every provider has the session service.
