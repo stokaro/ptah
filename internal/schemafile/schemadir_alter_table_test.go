@@ -68,6 +68,6 @@ func TestLoadPathAltersAnEarlierTableFromALaterFile_FailurePath(t *testing.T) {
 	db, err := schemafile.LoadPath(t.Context(), dir, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: "postgres"})
 
 	c.Assert(err, qt.ErrorMatches,
-		`read SQL schema file .*2_b\.sql: ALTER TABLE users ALTER COLUMN note names a column the table does not declare`)
+		`read SQL schema file .*2_b\.sql:1:1: ALTER TABLE users ALTER COLUMN note names a column the table does not declare`)
 	c.Assert(db, qt.IsNil)
 }

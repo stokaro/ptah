@@ -32,7 +32,7 @@ func TestReadOnto_AlterIndexOntoAnOwnersType_FailurePath(t *testing.T) {
 
 	_, _, err := sqlschema.ReadOnto([]byte("ALTER INDEX ix RENAME TO pair;"), "postgres", sqlschema.NewDocument(&earlier))
 
-	c.Assert(err, qt.ErrorMatches, `ALTER INDEX ix RENAME TO pair: the schema already holds a relation named pair`)
+	c.Assert(err, qt.ErrorMatches, `line 1, column 1: ALTER INDEX ix RENAME TO pair: the schema already holds a relation named pair`)
 }
 
 // The control: a domain of the same name is a type and not a relation, so the

@@ -111,7 +111,7 @@ func TestReadWith_DropTableWithoutRelationsIsRefused(t *testing.T) {
 		sqlschema.Options{Owners: badgeRuntime().SQL()})
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(err, qt.ErrorMatches, `DROP TABLE a: .*no runtime can say which tables the standalone feature objects bind or are attached to`)
+	c.Assert(err, qt.ErrorMatches, `line 5, column 1: DROP TABLE a: .*no runtime can say which tables the standalone feature objects bind or are attached to`)
 	c.Assert(database.Tables, qt.HasLen, 0)
 	c.Assert(statements, qt.IsNil)
 }

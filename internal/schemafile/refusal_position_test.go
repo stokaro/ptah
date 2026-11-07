@@ -79,6 +79,28 @@ func TestLoadPath_RefusalNamesTheFileLineAndColumn(t *testing.T) {
 			wantColumn: 16,
 			wantOffset: 78,
 		},
+		{
+			name:  "a clause the reader refuses, on the line after its statement starts",
+			files: map[string]string{"schema.sql": "CREATE TABLE users (id INTEGER PRIMARY KEY);\n\nALTER TABLE users\n  DISABLE ROW LEVEL SECURITY;\n"},
+			entry: "schema.sql",
+
+			wantErr:    `read SQL schema file .*schema\.sql:4:3: unsupported ALTER operation: DISABLE ROW LEVEL SECURITY`,
+			wantFile:   "schema.sql",
+			wantLine:   4,
+			wantColumn: 3,
+			wantOffset: 66,
+		},
+		{
+			name:  "a refusal of what a statement declares, raised after the parse",
+			files: map[string]string{"schema.sql": "CREATE TABLE users (id INTEGER PRIMARY KEY, note TEXT);\n\n  ALTER TABLE users ADD COLUMN note TEXT;\n"},
+			entry: "schema.sql",
+
+			wantErr:    `read SQL schema file .*schema\.sql:3:3: ALTER TABLE users ADD COLUMN note names a column the table already declares`,
+			wantFile:   "schema.sql",
+			wantLine:   3,
+			wantColumn: 3,
+			wantOffset: 59,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

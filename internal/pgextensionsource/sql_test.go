@@ -152,7 +152,7 @@ func TestSQL_FailurePath(t *testing.T) {
 		{name: "a comment that is not a string", sql: "CREATE EXTENSION pg_trgm;\nCOMMENT ON EXTENSION pg_trgm IS NULL;",
 			wantErr: `line 2, column 33: expected a string constant for the extension comment`},
 		{name: "two declarations that differ", sql: "CREATE EXTENSION pg_trgm VERSION '1.5';\nCREATE EXTENSION pg_trgm VERSION '1.6';",
-			wantErr: `duplicate feature identity: conflicting definitions of ptah.run/pgextension/extension pg_trgm`},
+			wantErr: `line 2, column 1: duplicate feature identity: conflicting definitions of ptah.run/pgextension/extension pg_trgm`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -183,7 +183,7 @@ func TestSQL_ACommentOnNothingDeclaredIsRefused(t *testing.T) {
 
 			db, _, err := readSQL(c, platform.Postgres, test.sql)
 
-			c.Assert(err, qt.ErrorMatches, `COMMENT ON EXTENSION citext IS 'x': extension "citext" is not declared in this schema`)
+			c.Assert(err, qt.ErrorMatches, `line 1, column 1: COMMENT ON EXTENSION citext IS 'x': extension "citext" is not declared in this schema`)
 			c.Assert(err, qt.ErrorIs, sqlext.ErrUndeclared)
 			c.Assert(db.FeatureObjects.Len(), qt.Equals, 0)
 		})

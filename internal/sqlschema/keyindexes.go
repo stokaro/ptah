@@ -66,6 +66,7 @@ type parseNotes interface {
 	DeclaredObjects(operation *ast.ExtensionAlterOperation) schemaext.Objects
 	DeclaredConstraint(operation *ast.ExtensionAlterOperation) *ast.OwnedIndexConstraint
 	OwnerStatement(statement *ast.ExtensionStatement) (parser.OwnerStatement, bool)
+	StatementStart(node ast.Node) (int, bool)
 }
 
 // foreignKeyIndex reports whether the parse found index named by a foreign key
