@@ -45,13 +45,6 @@ func withEnumRebuild(change styleChange) styleChange {
 	return change
 }
 
-// keepingGuardsAfterEnumRebuild asks for the guards ptah-compat writes after an
-// enum rebuild.
-func keepingGuardsAfterEnumRebuild(change styleChange) styleChange {
-	change.opts.EnumRebuildKeepsGuards = true
-	return change
-}
-
 // removedViewUnderRemovedView removes owner_ids and owner_list, which reads
 // it. The reader's name sorts after the view it reads.
 func removedViewUnderRemovedView() styleChange {
@@ -78,9 +71,8 @@ func drops(plan []string) []string {
 // pins each reason the exact style keeps IF EXISTS on a drop: an earlier
 // statement of the plan may have removed the object already. A dropped table
 // takes the sequence its column owns, and a view a column type change rebuilds
-// takes its triggers. On the surface that asks for it, a drop after an enum
-// rebuild keeps its guard too. Removed views are dropped readers first, so neither
-// drop needs a guard or CASCADE.
+// takes its triggers. Removed views are dropped readers first, so neither drop
+// needs a guard or CASCADE.
 func TestGenerateSchemaDiffSQLStatementsWithOptions_ExactStyleKeepsGuards_HappyPath(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -95,10 +87,6 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_ExactStyleKeepsGuards_HappyP
 			`DROP VIEW "item_sku_count"`,
 			`DROP VIEW "item_skus"`,
 			`DROP TRIGGER IF EXISTS "item_skus_insert" ON "public"."item_skus"`,
-		}},
-		{name: "a table dropped after an enum rebuild that keeps guards", change: keepingGuardsAfterEnumRebuild(withEnumRebuild(droppedTable())), want: []string{
-			`DROP TYPE "status__ptah_old"`,
-			`DROP TABLE IF EXISTS "public"."archive"`,
 		}},
 		{name: "a view a removed view reads", change: removedViewUnderRemovedView(), want: []string{
 			`DROP VIEW "public"."owner_list"`,
@@ -212,6 +200,64 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_ARawStatementBesideAnEnumReb
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(got, qt.Contains, `DROP INDEX "i"`, qt.Commentf("%q", got))
+	c.Assert(got, qt.Contains, `DROP TABLE IF EXISTS "archive"`, qt.Commentf("%q", got))
+}
+
+// keyLeavingForRowIDDiff removes the primary key of table, which CockroachDB holds on
+// every table, so the plan moves it to a hidden column in a raw statement. It removes
+// the view v and the table archive after that.
+func keyLeavingForRowIDDiff(table string) *difftypes.SchemaDiff {
+	return &difftypes.SchemaDiff{
+		ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "t_pkey", TableName: table, Type: "PRIMARY KEY"}},
+		ViewsRemoved:       difftypes.ViewChanges{{Name: "v"}},
+		TablesRemoved:      difftypes.TableRemovals{{Name: "archive"}},
+	}
+}
+
+// TestGenerateSchemaDiffSQLStatementsWithOptions_ACockroachDBKeyLeavingForRowIDMakesNoGuardNecessary_HappyPath
+// holds the drops behind that raw statement to what they get without it. ADD COLUMN
+// removes nothing a later drop names.
+func TestGenerateSchemaDiffSQLStatementsWithOptions_ACockroachDBKeyLeavingForRowIDMakesNoGuardNecessary_HappyPath(t *testing.T) {
+	tests := []struct {
+		name, table string
+		// quoted is how the statements write the table.
+		quoted string
+	}{
+		{name: "a table in the default schema", table: "t", quoted: `"t"`},
+		{name: "a table of a named schema", table: "app.t", quoted: `"app"."t"`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(c.Context(), must.Must(builtin.New()), keyLeavingForRowIDDiff(test.table), platform.CockroachDB,
+				planext.Options{Capabilities: capability.ForDialect(platform.CockroachDB), Statements: planext.StatementStyleExact})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.DeepEquals, []string{
+				"ALTER TABLE " + test.quoted + ` ADD COLUMN "rowid" INT8 NOT VISIBLE NOT NULL DEFAULT unique_rowid()`,
+				"ALTER TABLE " + test.quoted + ` DROP CONSTRAINT "t_pkey", ADD CONSTRAINT "t_pkey" PRIMARY KEY ("rowid")`,
+				`DROP VIEW "v"`,
+				`DROP TABLE "archive"`,
+			})
+		})
+	}
+}
+
+// TestGenerateSchemaDiffSQLStatementsWithOptions_ARawStatementBesideAKeyLeavingForRowIDKeepsTheGuard_HappyPath
+// is the name-only constraint drop again, which may take an index, in a plan that
+// also moves a key: only the statement that adds the column is known to remove
+// nothing.
+func TestGenerateSchemaDiffSQLStatementsWithOptions_ARawStatementBesideAKeyLeavingForRowIDKeepsTheGuard_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	diff := keyLeavingForRowIDDiff("t")
+	diff.ConstraintsRemoved = append(diff.ConstraintsRemoved, difftypes.ConstraintRemovalInfo{Name: "uq"})
+
+	got, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(c.Context(), must.Must(builtin.New()), diff, platform.CockroachDB,
+		planext.Options{Capabilities: capability.ForDialect(platform.CockroachDB), Statements: planext.StatementStyleExact})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.Contains, `DROP VIEW "v"`, qt.Commentf("%q", got))
 	c.Assert(got, qt.Contains, `DROP TABLE IF EXISTS "archive"`, qt.Commentf("%q", got))
 }
 

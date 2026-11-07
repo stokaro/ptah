@@ -436,7 +436,7 @@ func SourceWordAt(words, sourceWords []string, index int) string {
 
 // NormalizeIdent strips identifier quoting and uppercases for comparison.
 func NormalizeIdent(word string) string {
-	return strings.ToUpper(strings.Trim(word, "`\""))
+	return strings.ToUpper(strings.Trim(word, "`\"[]"))
 }
 
 // RefersToCreated reports whether ref names one of the created tables,
@@ -480,6 +480,27 @@ func AlterColumnTypeClause(w []string, i int) bool {
 		k += 2
 	}
 	return k < len(w) && w[k] == "TYPE"
+}
+
+// RestatedColumnClause reports SQL Server's ALTER COLUMN name type ..., which names the
+// type with no word before it and has to, whatever else the clause changes. It returns
+// the column and where the type starts. The words it refuses begin every other engine's
+// clause of the same shape, and a MASKED or SPARSE clause on SQL Server itself.
+func RestatedColumnClause(w, sourceWords []string, i int) (column TableReference, typeStart int, ok bool) {
+	end := ClauseEnd(w, i)
+	if i+1 >= end || w[i] != "ALTER" || w[i+1] != "COLUMN" {
+		return TableReference{}, 0, false
+	}
+	column, typeStart, ok = IdentifierAt(w, sourceWords, SkipIfExists(w, i+2))
+	if !ok || typeStart >= end {
+		return TableReference{}, 0, false
+	}
+	switch w[typeStart] {
+	case "SET", "DROP", "TYPE", "ADD", "RESET", "RESTART":
+		return TableReference{}, 0, false
+	default:
+		return column, typeStart, true
+	}
 }
 
 // RedefinesPrimaryKey reports one statement that drops a primary key

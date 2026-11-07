@@ -54,10 +54,6 @@ type DiffPolicy struct {
 	// refusal of a change only a rebuild can make names it. Empty names the
 	// native flag. See [ptah.run/migration/planext.Options.TableRebuildRequest].
 	TableRebuildRequest string
-	// EnumRebuildKeepsGuards is
-	// [ptah.run/core/planext.Options.EnumRebuildKeepsGuards], which the
-	// compatibility surface sets.
-	EnumRebuildKeepsGuards bool
 
 	// RotateSecrets names the secrets, as the operator wrote them, the plan
 	// gives the value their declared variable holds now. A comparison cannot

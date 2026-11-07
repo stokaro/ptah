@@ -304,7 +304,8 @@ SQL:
   Where a key the plan keeps stands on that index, the statement that gives the
   kept key an index of its own takes the old one out at that point, and a rollback
   drops the moved key first, then rebuilds the index under its name in one
-  statement.
+  statement. Where that statement takes out several indexes, each under the name
+  of a key the plan moves or adds, it goes once, at the first of those keys.
 - MariaDB 12.1 and later name an unnamed key `<n>` rather than
   `<table>_ibfk_<n>`, and the name belongs to the table rather than to the
   database. A schema file does not say which line it is for, so Ptah reads the
@@ -712,14 +713,18 @@ and `schema serve` lists them under `Not compared`. `schema diff`, `schema inspe
 is and name them in a warning on standard error. `migrations generate` writes files
 for what differs and does not name them.
 
-What a report says depends on what the read can list:
+What a report says depends on what the read can list. `schema drift`, `schema compare`
+and `schema serve` claim to have compared, so they say when the read could not list
+events. The verbs that warn on standard error claim nothing about them, so they warn
+only about an event the read saw, and an account without `EVENT` runs them without
+this warning:
 
-| Read | `schema drift` |
-| --- | --- |
-| The account holds `EVENT` and the database has none | `No schema drift detected.` |
-| The account holds `EVENT` and the database has some | Names each one under `Not compared` |
-| The account holds no `EVENT` on the database | An entry with no `name`, whose `reason` asks for the privilege |
-| The server refuses the catalog | An entry with no `name`, whose `reason` gives the server's answer |
+| Read | `schema drift` | The verbs that warn on standard error |
+| --- | --- | --- |
+| The account holds `EVENT` and the database has none | `No schema drift detected.` | Nothing |
+| The account holds `EVENT` and the database has some | Names each one under `Not compared` | Names each one |
+| The account holds no `EVENT` on the database | An entry with no `name`, whose `reason` asks for the privilege | Nothing |
+| The server refuses the catalog | An entry with no `name`, whose `reason` gives the server's answer | Nothing |
 
 `information_schema.EVENTS` lists a database's events only to an account holding
 `EVENT` on it, at the database level, on a pattern or globally. Measured on MySQL

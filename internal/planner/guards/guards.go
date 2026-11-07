@@ -59,8 +59,8 @@ type Options struct {
 	// owner statement as one that may remove objects the pass cannot name.
 	HarmlessOwner func(ast.Node) bool
 	// HarmlessRaw reports a raw statement that removes no object a later drop
-	// names, such as a pragma, a copy of a table's rows or an enum rebuild. Nil
-	// treats every raw statement as one that may.
+	// names, such as a pragma, a copy of a table's rows, an enum rebuild or an added
+	// column. Nil treats every raw statement as one that may.
 	HarmlessRaw func(*ast.RawSQLNode) bool
 }
 

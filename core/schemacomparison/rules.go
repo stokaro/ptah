@@ -13,9 +13,9 @@ import (
 	"ptah.run/core/schemamodel"
 )
 
-// Rules are one target's comparison rules. A nil member leaves the shared
-// comparison's own rule for that area in place. The zero value is a target
-// with no rules of its own.
+// Rules are one target's comparison rules. A nil member, and a false switch,
+// leave the shared comparison's own rule for that area in place. The zero
+// value is a target with no rules of its own.
 type Rules struct {
 	// Columns compares column definitions and reads a reported default.
 	Columns Columns

@@ -306,6 +306,16 @@ const (
 		"CREATE TABLE t (id int PRIMARY KEY, a int, s e);\n"
 )
 
+// enumRebuildReadBack is what the database holds after that plan ran: each query
+// and the count it answers.
+var enumRebuildReadBack = map[string]int{
+	"SELECT count(*) FROM pg_enum WHERE enumlabel = 'y'":             0,
+	"SELECT count(*) FROM pg_type WHERE typname = 'e__ptah_old'":     0,
+	"SELECT count(*) FROM pg_class WHERE relname IN ('i', 'v')":      0,
+	"SELECT count(*) FROM pg_constraint WHERE conname = 't_a_check'": 0,
+	"SELECT count(*) FROM t WHERE id = 1 AND s = 'x'":                1,
+}
+
 // TestNativePlanningVerbsE2E_AnEnumRebuildLeavesTheOtherDropsWithoutAGuard holds
 // every verb to the drops the same plan gets without the rebuild. The rebuild is
 // one raw statement ahead of them, and it removes only the type it renamed.
@@ -340,13 +350,7 @@ func TestSchemaApplyExactDropsE2E_AnEnumRebuildRunsWithTheOtherDrops(t *testing.
 	target, run := runExactApply(c, enumRebuildBuilt, enumRebuildDesired)
 
 	c.Assert(run.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", run.Stdout, run.Stderr))
-	for query, want := range map[string]int{
-		"SELECT count(*) FROM pg_enum WHERE enumlabel = 'y'":             0,
-		"SELECT count(*) FROM pg_type WHERE typname = 'e__ptah_old'":     0,
-		"SELECT count(*) FROM pg_class WHERE relname IN ('i', 'v')":      0,
-		"SELECT count(*) FROM pg_constraint WHERE conname = 't_a_check'": 0,
-		"SELECT count(*) FROM t WHERE id = 1 AND s = 'x'":                1,
-	} {
+	for query, want := range enumRebuildReadBack {
 		c.Assert(readInt(c, target, query), qt.Equals, want, qt.Commentf("%s", query))
 	}
 	schema := filepath.Join(c.TempDir(), "schema.sql")

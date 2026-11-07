@@ -291,6 +291,7 @@ func TestSchemaPlanE2E_ATypeAndItsSizeAreOneType(t *testing.T) {
 			pairs: [][2]string{
 				{"decimal", "decimal"}, {"numeric", "decimal"}, {"decimal(10)", "decimal(10,0)"},
 				{"char", "char"}, {"char(1)", "char"}, {"bit", "bit"}, {"float8", "float"}, {"float8", "float(53)"}, {"float4", "float(10)"},
+				{"string(5)[]", "string(5)[]"}, {"string[]", "string[]"}, {"varchar(5)[]", "varchar(5)[]"},
 			},
 		},
 		{
@@ -348,6 +349,10 @@ func TestSchemaPlanE2E_ATypeAndItsSizeAreOneType(t *testing.T) {
 	oraclePairs := [][2]string{
 		{"NUMBER", "NUMBER"}, {"NUMBER", "NUMBER(*)"}, {"NUMBER(10)", "NUMBER(10,0)"}, {"NUMBER(*,0)", "NUMBER(*,0)"},
 		{"RAW(16)", "RAW(16)"}, {"RAW(16)", "UUID"},
+		{"INTEGER", "INTEGER"}, {"NUMBER(10)", "INTEGER"}, {"SMALLINT", "SMALLINT"}, {"NUMBER(5)", "SMALLINT"},
+		{"DECIMAL", "DECIMAL"}, {"NUMERIC", "NUMERIC"}, {"NUMBER", "DECIMAL"},
+		{"DOUBLE PRECISION", "DOUBLE PRECISION"}, {"BINARY_DOUBLE", "DOUBLE PRECISION"},
+		{"REAL", "REAL"}, {"BINARY_FLOAT", "REAL"}, {"BOOLEAN", "BOOLEAN"}, {"NUMBER(1)", "BOOLEAN"},
 		{"FLOAT", "FLOAT"}, {"FLOAT(126)", "FLOAT"}, {"CHAR", "CHAR"}, {"CHAR(1)", "CHAR"}, {"NCHAR(1)", "NCHAR"},
 		{"TIMESTAMP(6)", "TIMESTAMP"}, {"TIMESTAMP", "TIMESTAMP(6)"}, {"TIMESTAMP WITH TIME ZONE", "TIMESTAMP(6) WITH TIME ZONE"},
 		{"INTERVAL DAY TO SECOND", "INTERVAL DAY TO SECOND"}, {"INTERVAL DAY(2) TO SECOND(6)", "INTERVAL DAY TO SECOND"},

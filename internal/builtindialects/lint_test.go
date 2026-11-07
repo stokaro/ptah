@@ -24,7 +24,7 @@ func TestLint_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 		"mariadb":     {analyzed: true, scanner: "hash", dynamicSQL: "prepare-from", notNull: true, online: true, types: "mytype", atlas: "MY"},
 		"clickhouse":  {analyzed: true, notNull: true, byType: true},
 		"sqlite":      {analyzed: true, rebuilds: true},
-		"sqlserver":   {analyzed: true, dynamicSQL: "exec", notNull: true},
+		"sqlserver":   {analyzed: true, dynamicSQL: "exec", notNull: true, types: "restated"},
 		"cockroachdb": {analyzed: true},
 		"yugabytedb":  {analyzed: true},
 		"spanner":     {analyzed: true},

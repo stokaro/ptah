@@ -184,10 +184,6 @@ var hostFeatures = []string{
 	// claims reaches the provider whole, and the facets it decodes are the
 	// table's; see Host.tableClauseExtension.
 	provider.SQLTableClausesFeature,
-	// A release line of an engine linked into its provider names the version
-	// it links as its evidence, which `ptah providers check` reports; see
-	// Host.ReleaseLines.
-	provider.LinkedReleaseLinesFeature,
 	// Table preparation states the kind of each declared index, and the
 	// index rules compare it with the held index's method; see
 	// observedIndexRules.

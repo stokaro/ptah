@@ -315,8 +315,8 @@ func TestParser_ParseDropIndexRefusesShapesItCannotRecord(t *testing.T) {
 		},
 		{
 			name: "a DROP target that is still unmodeled",
-			sql:  "DROP VIEW users;",
-			want: "line 1, column 6: unsupported DROP target: VIEW",
+			sql:  "DROP AGGREGATE users;",
+			want: "line 1, column 6: unsupported DROP target: AGGREGATE",
 		},
 	}
 

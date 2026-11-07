@@ -157,6 +157,10 @@ type Statements struct {
 	// ViewsBlockDropTable reports that a plain DROP TABLE is refused while a
 	// view or a materialized view reads the table.
 	ViewsBlockDropTable bool `json:"views_block_drop_table,omitempty"`
+	// DropViewIfExistsSkipsOtherKinds reports that DROP VIEW IF EXISTS does nothing
+	// when another kind of object holds the name. Without it the server refuses the
+	// statement, as it refuses one with no IF EXISTS.
+	DropViewIfExistsSkipsOtherKinds bool `json:"drop_view_if_exists_skips_other_kinds,omitempty"`
 	// RelationsShareNames reports that tables, views, materialized views and
 	// sequences take their names from one namespace per schema, and that a
 	// CREATE TABLE IF NOT EXISTS or a CREATE SEQUENCE IF NOT EXISTS is skipped

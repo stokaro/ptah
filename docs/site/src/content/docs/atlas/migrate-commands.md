@@ -1484,10 +1484,6 @@ and neither does the schema the connection resolves unqualified names to, usuall
 does, and a role that may create tables in it does not need `CREATE` on the
 database.
 
-On the PostgreSQL family this surface also keeps the guard on every drop after an
-enum rebuild, which writes `ALTER TYPE ... RENAME TO`. Native Ptah leaves it out
-there, because the rebuild removes only the type it renamed.
-
 In the exact style, the PostgreSQL type and extension owners omit `IF EXISTS`
 from drops, and type drops omit `CASCADE`. PostgreSQL refuses a domain or
 composite type drop while an undeclared column still uses the type. A provider
@@ -1979,13 +1975,14 @@ This is one place the two outputs deliberately describe different statements —
 the constraint lands on `app.child`, so the reviewed schema still counts zero
 changes for it. A count of zero is not a statement of safety.
 
-Silence is not exclusion. A statement outside Ptah's SQL grammar is left under
-review whatever schema it names, because a boundary that could not be read must
-not be able to drop a diagnostic. That grammar boundary is why
-`TRUNCATE app.users;` and `DROP FUNCTION app.recalc();` are reported under
+Silence is not exclusion. A statement that gives Ptah's SQL grammar no object to
+read is left under review whatever schema it names, because a boundary that could
+not be read must not be able to drop a diagnostic. That grammar boundary is why
+`TRUNCATE app.users;` and `DROP SCHEMA app;` are reported under
 `search_path=public` while counting no schema change.
 
-`DROP INDEX` is not an example of it: the parser models the statement, so
+`DROP INDEX` is not an example of it, and neither are `DROP VIEW`,
+`DROP FUNCTION` and the other drops the parser reads: it models the statement, so
 `DROP INDEX public.idx;` counts one schema change,
 matching the pinned community binary v1.3.0, and `DROP INDEX app.idx;` is
 scoped out whole — no schema change and no `PG106`, which is also what the

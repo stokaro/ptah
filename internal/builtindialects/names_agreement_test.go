@@ -74,12 +74,14 @@ func TestDescriptors_SchemaFileFactsAgreeWithTheSwitchesTheyReplace(t *testing.T
 			},
 			checkNaming: descriptor.CheckNamingTableNumbered,
 			columns:     descriptor.Columns{CheckOwnColumnOnly: true},
+			statements:  descriptor.Statements{DropViewIfExistsSkipsOtherKinds: true},
 		},
 		{
 			dialect:     platform.MariaDB,
 			names:       descriptor.Names{Lookup: "unicode_case_insensitive"},
 			indexNaming: descriptor.IndexNaming{MaxBytes: 64, DescendingCovers: true, UniqueIsIndex: true},
 			checkNaming: descriptor.CheckNamingColumnOrConstraint,
+			statements:  descriptor.Statements{DropViewIfExistsSkipsOtherKinds: true},
 		},
 		{dialect: platform.ClickHouse},
 		{
@@ -115,7 +117,7 @@ func TestDescriptors_SchemaFileFactsAgreeWithTheSwitchesTheyReplace(t *testing.T
 			dialect:     platform.Spanner,
 			names:       descriptor.Names{PublicKeyword: true},
 			indexNaming: pgFamily,
-			statements:  descriptor.Statements{ViewsBlockDropTable: true},
+			statements:  descriptor.Statements{ViewsBlockDropTable: true, DropViewIfExistsSkipsOtherKinds: true},
 		},
 		{dialect: platform.Oracle, names: descriptor.Names{Lookup: "ascii_case_insensitive"}},
 	}

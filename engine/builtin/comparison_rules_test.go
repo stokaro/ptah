@@ -13,12 +13,14 @@ import (
 )
 
 // registeredRules names the members of rules a target registered, in the
-// order Rules declares them.
+// order Rules declares them: each rule that is not nil, and each switch that
+// is true.
 func registeredRules(rules schemacomparison.Rules) []string {
 	value := reflect.ValueOf(rules)
 	var names []string
 	for position := range value.NumField() {
-		if !value.Field(position).IsNil() {
+		field := value.Field(position)
+		if field.Kind() == reflect.Bool && field.Bool() || field.Kind() != reflect.Bool && !field.IsNil() {
 			names = append(names, value.Type().Field(position).Name)
 		}
 	}

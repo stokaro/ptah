@@ -83,10 +83,8 @@ func (p commonPlanner) GenerateMigrationAST(ctx context.Context, runtime feature
 	// the planning entry in migration/planner removes those changes before
 	// this planner is built and passes no kinds, so options that still carry
 	// them are refused. The shape is the entry's too: it rewrites what this planner
-	// returns, and an engine that states no catalog form keeps it as it is. An enum
-	// rebuild is written only by the PostgreSQL-family planner, so the choice about
-	// its guards changes nothing here.
-	if err := onlyFields(p.options, "Shape", "EnumRebuildKeepsGuards", "TableRebuildRequest", "Capabilities", "Statements", "AllowTableRebuild", "OnlineAlter",
+	// returns, and an engine that states no catalog form keeps it as it is.
+	if err := onlyFields(p.options, "Shape", "TableRebuildRequest", "Capabilities", "Statements", "AllowTableRebuild", "OnlineAlter",
 		"ConcurrentIndexes", "ConcurrentIndexRefs", "ConcurrentIndexDrops", "ConcurrentIndexDropRefs", "OmitNullBackfill"); err != nil {
 		return nil, err
 	}

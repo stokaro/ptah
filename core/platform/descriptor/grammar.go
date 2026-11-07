@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 	"unicode"
+
+	"ptah.run/internal/statementform"
 )
 
 // Grammar states where the engine's DDL grammar differs, as the shared DDL
@@ -40,6 +42,8 @@ type Grammar struct {
 	// Statements states which statements of the shared grammar the engine
 	// writes as it does.
 	Statements StatementGrammar `json:"statements,omitzero"`
+	// Forms states the statements the engine writes in a form of its own.
+	Forms StatementForms `json:"forms,omitzero"`
 	// Routines states how a routine, a trigger and an anonymous code block
 	// are read.
 	Routines RoutineGrammar `json:"routines,omitzero"`
@@ -231,6 +235,12 @@ type IndexGrammar struct {
 	// is table.index rather than schema.index, as SQL Server's backward
 	// compatible spelling has it. The parser refuses such a name.
 	DropNamesTable bool `json:"drop_names_table,omitempty"`
+	// Storing reports that CREATE INDEX spells its INCLUDE columns STORING too,
+	// as CockroachDB does.
+	Storing bool `json:"storing,omitempty"`
+	// Nonclustered reports that NONCLUSTERED may stand before INDEX, as T-SQL
+	// writes the kind of index a plain CREATE INDEX makes.
+	Nonclustered bool `json:"nonclustered,omitempty"`
 }
 
 const (
@@ -314,6 +324,85 @@ type StatementGrammar struct {
 	GrantTargetLists bool `json:"grant_target_lists,omitempty"`
 	// RoleIfNotExists reports that CREATE ROLE takes IF NOT EXISTS.
 	RoleIfNotExists bool `json:"role_if_not_exists,omitempty"`
+}
+
+// StatementForms states the statements the parser reads as the engine writes them,
+// beside the DDL it reads on every engine. The zero value states none, and each is then
+// refused.
+type StatementForms struct {
+	// Drops states how DROP reads each kind of object it takes beyond a table
+	// and an index, which every engine's grammar has. A [DropKindTable] entry
+	// states the one clause a DROP TABLE adds on the engine. A kind not listed
+	// is refused.
+	Drops []Drop `json:"drops,omitempty"`
+	// Operations are the statements the engine runs that change no schema
+	// object and that the parser reads to their end, each written as the
+	// engine's manual writes it, one form per opening keyword, such as
+	// `SAVEPOINT <name>`. A word in capitals is that keyword, `<name>` a
+	// possibly qualified name, `<names>` a comma-separated list of them, `[a|b]`
+	// at most one of its alternatives, `{a|b}` exactly one, and `(a b),...` a
+	// comma-separated list of what the parentheses hold. Each alternative opens
+	// with a keyword of its own, so a form is read one token at a time. A
+	// statement no form opens with is refused.
+	Operations []string `json:"operations,omitempty"`
+	// UnreadStatements are the opening keywords of further statements that
+	// write rows and change no schema object, beside the ones every engine has,
+	// such as MySQL's REPLACE. The parser steps over each to its semicolon, as
+	// it does an INSERT, so a statement here says nothing about its own syntax.
+	UnreadStatements []string `json:"unread_statements,omitempty"`
+	// RenameTable reports that RENAME TABLE a TO b, with further pairs after a
+	// comma, renames a table, as ALTER TABLE a RENAME TO b does.
+	RenameTable bool `json:"rename_table,omitempty"`
+}
+
+// Drop states how DROP reads one kind of object.
+type Drop struct {
+	// Kind is the kind of object: one of [DropKinds].
+	Kind string `json:"kind"`
+	// IfExists reports that the kind takes IF EXISTS.
+	IfExists bool `json:"if_exists,omitempty"`
+	// List reports that one statement may name several objects.
+	List bool `json:"list,omitempty"`
+	// Behavior reports that the kind takes CASCADE or RESTRICT after its names.
+	Behavior bool `json:"behavior,omitempty"`
+	// OnTable reports that the name is the one of a trigger on a table, so
+	// `ON table` follows it, and that the statement names one trigger.
+	OnTable bool `json:"on_table,omitempty"`
+	// Arguments reports that a routine's name may take its argument list.
+	Arguments bool `json:"arguments,omitempty"`
+	// Sync reports that the statement may end in SYNC.
+	Sync bool `json:"sync,omitempty"`
+}
+
+// The kinds of object a [Drop] states.
+const (
+	// DropKindTable is DROP TABLE, which the parser reads on every engine. An
+	// entry for it states only [Drop.Sync].
+	DropKindTable = "TABLE"
+	// DropKindView is DROP VIEW.
+	DropKindView = "VIEW"
+	// DropKindMaterializedView is DROP MATERIALIZED VIEW.
+	DropKindMaterializedView = "MATERIALIZED VIEW"
+	// DropKindTrigger is DROP TRIGGER.
+	DropKindTrigger = "TRIGGER"
+	// DropKindFunction is DROP FUNCTION.
+	DropKindFunction = "FUNCTION"
+	// DropKindProcedure is DROP PROCEDURE.
+	DropKindProcedure = "PROCEDURE"
+	// DropKindProc is T-SQL's short spelling of DROP PROCEDURE.
+	DropKindProc = "PROC"
+	// DropKindSequence is DROP SEQUENCE.
+	DropKindSequence = "SEQUENCE"
+	// DropKindType is DROP TYPE.
+	DropKindType = "TYPE"
+)
+
+// DropKinds returns the values a [Drop.Kind] may be.
+func DropKinds() []string {
+	return []string{
+		DropKindTable, DropKindView, DropKindMaterializedView, DropKindTrigger,
+		DropKindFunction, DropKindProcedure, DropKindProc, DropKindSequence, DropKindType,
+	}
 }
 
 // RoutineGrammar states how the engine reads a routine, a trigger and an
@@ -405,6 +494,7 @@ func KeyVisibilityClauses() []string {
 func (d Dialect) validateGrammar() error {
 	for _, check := range []func(Grammar) error{
 		validateColumnGrammar, validateConstraintGrammar, validateKeyGrammar, validateGrammarNames, validateRoutineGrammar,
+		validateStatementForms,
 	} {
 		if err := check(d.Grammar); err != nil {
 			return fmt.Errorf("%w: dialect %q: grammar: %w", ErrInvalidDescriptor, d.Name, err)
@@ -511,6 +601,31 @@ func validateRoutineGrammar(grammar Grammar) error {
 	default:
 		return nil
 	}
+}
+
+// validateStatementForms checks the kinds a DROP states, each once, and each
+// form of a statement, one per opening keyword.
+func validateStatementForms(grammar Grammar) error {
+	statements := grammar.Forms
+	kinds := make([]string, 0, len(statements.Drops))
+	for _, drop := range statements.Drops {
+		kinds = append(kinds, drop.Kind)
+	}
+	if err := validateWords("DROP kind", kinds, DropKinds()); err != nil {
+		return err
+	}
+	openings := make([]string, 0, len(statements.Operations))
+	for _, form := range statements.Operations {
+		terms, err := statementform.Parse(form)
+		if err != nil {
+			return err
+		}
+		if slices.Contains(openings, terms[0].Word) {
+			return fmt.Errorf("two statement forms open with %s", terms[0].Word)
+		}
+		openings = append(openings, terms[0].Word)
+	}
+	return nil
 }
 
 // validateWords refuses a word of words that is not one of allowed, and one

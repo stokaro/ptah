@@ -212,6 +212,7 @@ func mariaDB() descriptor.Dialect {
 		// before REFERENCES alone and before nothing in a MODIFY
 		// (stokaro/ptah#3745, #3759). It spells a hidden index IGNORED, and
 		// takes IF [NOT] EXISTS on a column (stokaro/ptah#3877).
+		Statements: descriptor.Statements{DropViewIfExistsSkipsOtherKinds: true},
 		Grammar: descriptor.Grammar{
 			Columns: descriptor.ColumnGrammar{
 				SecondCheckRefusal: "MariaDB accepts one CHECK on a column and answers ERROR 1064 (42000) to the " +
@@ -252,6 +253,7 @@ func mariaDB() descriptor.Dialect {
 				ColumnGuards:       true,
 			},
 			Statements: descriptor.StatementGrammar{UseSelectsDatabase: true, RoleIfNotExists: true},
+			Forms:      mariaDBStatementForms(),
 			Routines: descriptor.RoutineGrammar{
 				Body:                 descriptor.RoutineCompoundStatement,
 				TriggerStatementBody: true,

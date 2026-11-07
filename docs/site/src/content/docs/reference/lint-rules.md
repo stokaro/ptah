@@ -191,11 +191,11 @@ the same way, for a team that applies it with golang-migrate.
 
 ### A statement the parser could not read
 
-`AC102` reports a statement the SQL parser could not read and no server ran. Text
-that is no SQL and valid SQL the parser does not model read alike to it: it refuses
-`CREATE TABLE b BOGUS`, and it also refuses `DROP VIEW`, `TRUNCATE` and
-`RENAME TABLE`, which servers run. So the rule reports at `info` severity and keeps
-the exit code. A refusal would fail correct files.
+`AC102` reports a statement the SQL parser could not read and no server ran. Past a
+statement's opening words, text that is no SQL and valid SQL the parser does not model
+read alike to it: it refuses `CREATE TABLE b BOGUS`, and it also refuses
+`CREATE COLLATION` and `ALTER TABLE t ENGINE=InnoDB`, which servers run. So the rule
+reports at `info` severity and keeps the exit code. A refusal would fail correct files.
 
 `--dev-url` settles it for the up files, since a server runs them and refuses what
 is not SQL, and `AC102` then reports only the down files, which no server runs.
@@ -204,9 +204,21 @@ or `--fail-on any` makes it a gate, and `-- ptah:nolint AC102` above a statement
 silences it.
 
 `ptah-compat migrate lint` with a dev database reports none, because the pinned
-binary says nothing about a statement that replayed. `ptah sql lint` has no replay
-to defer to, so it reports the same failure as `SQL001` or `SQL002` at error
-severity.
+binary says nothing about a statement that replayed.
+
+`ptah sql lint` has no replay to defer to, so a statement nothing read is an error
+there. The parser tells two of the failures apart:
+
+| The statement | Example | Finding | Exit code |
+| --- | --- | --- | --- |
+| Reads to its end | `DROP VIEW v`, `TRUNCATE t` | `SQL004` at `info`, for no rule looked at it | 0 |
+| Opens with words no engine has, or is malformed | `DROP TABEL t`, `DROP VIEW @@@` | `SQL001` | 1 |
+| Nothing read it, and a server may accept it | `CREATE COLLATION c (...)`, `CREATE TABLE b BOGUS`, `SELECT 1` | `SQL002` | 1 |
+
+`SQL002` keeps the exit code because nothing checked the statement. A form the parser
+does not hold is also where a real mistake sits, and only a server can tell them apart.
+A dialect's form decides what reads: `TRUNCATE t` reads on PostgreSQL, and is `SQL002` on
+SQLite, whose server refuses it.
 
 <!-- BEGIN GENERATED LINT RULES -->
 ## Identifier families
@@ -456,8 +468,8 @@ A YDB run reads migrations as YQL. The `YD` family above is YDB's own, and every
 | `DDL002` | an index names a column the schema does not declare | native only | Ptah |
 | `DDL003` | a name longer than the identifier limit of a server that cuts long names, which stores the object under its first bytes | native only | Ptah |
 | `DDL004` | a name the server cuts to a name already in use where it refuses the second declaration | native only | Ptah |
-| `SQL001` | the SQL parser could not build an AST, so no rule could inspect the statement | native only | Ptah |
-| `SQL002` | the statement uses a sub-language `ptah sql lint` does not model yet | native only | Ptah |
+| `SQL001` | the statement is malformed or opens with words no engine Ptah reads has, so no rule could inspect it | native only | Ptah |
+| `SQL002` | nothing read the statement, which a server may still accept: the parser holds no grammar for it, or steps over it as it does a SELECT | native only | Ptah |
 | `SQL003` | a routine body builds SQL at run time, so static analysis of that routine stops there | native only | Ptah |
 | `SQL004` | the file carried statement kinds no rule examined, so a clean result would not mean it was checked | native only | Ptah |
 

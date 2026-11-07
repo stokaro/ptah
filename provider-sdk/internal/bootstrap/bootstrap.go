@@ -122,19 +122,10 @@ type Process struct {
 // bounds the launch: until Keep is called, the process ends when ctx ends.
 // The provider's standard output and standard error are discarded, because
 // they may contain credentials.
-//
-// The provider starts in the host's working directory, which the contract
-// promises a provider: a relative file address, such as duckdb://./app.db,
-// resolves for the provider as it does for the host.
 func Start(ctx context.Context, options Options) (*Process, error) {
-	directory, err := os.Getwd()
-	if err != nil {
-		return nil, ErrBootstrap
-	}
 	life, cancelLife := context.WithCancel(context.Background())
 	stopCancel := context.AfterFunc(ctx, cancelLife)
 	command := exec.CommandContext(life, options.Executable) // #nosec G204 -- the caller explicitly authorizes an absolute, checksum-pinned executable
-	command.Dir = directory
 	command.Env = append(slices.Clone(options.Environment), ParentEnvironment+"="+strconv.Itoa(os.Getpid()))
 	launched := &Process{stopCancel: stopCancel, cancel: cancelLife}
 	launched.client = plugin.NewClient(&plugin.ClientConfig{

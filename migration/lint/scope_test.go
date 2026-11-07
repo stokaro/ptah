@@ -60,6 +60,34 @@ func TestAnalyzeFS_SchemaScopeFiltersFindings(t *testing.T) {
 		want  []string
 	}{
 		{
+			name:  "a dropped function outside the scope is not reported",
+			base:  appBase,
+			sql:   "DROP FUNCTION app.recalc();\n",
+			scope: "public",
+			want:  make([]string, 0),
+		},
+		{
+			name:  "a dropped function under review is reported",
+			base:  publicBase,
+			sql:   "DROP FUNCTION recalc();\n",
+			scope: "public",
+			want:  []string{"DS107"},
+		},
+		{
+			name:  "a dropped trigger is measured by its table, outside the scope",
+			base:  appBase,
+			sql:   "DROP TRIGGER t ON app.audit_log;\n",
+			scope: "public",
+			want:  make([]string, 0),
+		},
+		{
+			name:  "a dropped trigger is measured by its table, under review",
+			base:  publicBase,
+			sql:   "DROP TRIGGER t ON audit_log;\n",
+			scope: "public",
+			want:  []string{"DS107"},
+		},
+		{
 			name:  "multi-target drop outside the scope is not reported",
 			base:  appBase,
 			sql:   "DROP TABLE app.\"Users\", app.audit_log;\n",
@@ -155,6 +183,20 @@ func TestAnalyzeFS_SchemaScopeFiltersChanges(t *testing.T) {
 		scope string
 		want  []changeProjection
 	}{
+		{
+			name:  "one statement dropping two views counts each of them",
+			base:  "CREATE TABLE seed (id int);\n",
+			sql:   "DROP VIEW a, b;\n",
+			scope: "public",
+			want:  []changeProjection{{lint.SchemaChangeDrop, "a"}, {lint.SchemaChangeDrop, "b"}},
+		},
+		{
+			name:  "a rename counts as ALTER TABLE ... RENAME TO does",
+			base:  "CREATE TABLE seed (id int);\n",
+			sql:   "ALTER TABLE seed RENAME TO seed2;\n",
+			scope: "public",
+			want:  []changeProjection{{lint.SchemaChangeDrop, "seed"}, {lint.SchemaChangeAdd, "seed2"}},
+		},
 		{
 			name:  "creating a schema and its table counts only the in-scope table",
 			base:  "CREATE TABLE seed (id int);\n",
@@ -685,9 +727,9 @@ func TestAnalyzeFS_SchemaScopeKeepsUnattributableFindings(t *testing.T) {
 			want: []string{"DS108"},
 		},
 		{
-			name: "dropping an out-of-scope database object stays reported",
+			name: "dropping an out-of-scope database object the parser does not read stays reported",
 			base: "CREATE SCHEMA app;\nCREATE TABLE app.users (id int);\n",
-			sql:  "DROP FUNCTION app.recalc();\n",
+			sql:  "DROP SCHEMA app;\n",
 			want: []string{"DS107"},
 		},
 	}

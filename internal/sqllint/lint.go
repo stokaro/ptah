@@ -197,15 +197,15 @@ func LintSource(ctx context.Context, source Source, opts Options) ([]Finding, er
 	var items []sourceItem
 	for _, statement := range splitSourceStatements(source, opts.Dialect) {
 		keyword, keywordOffset := firstKeyword(statement.sql)
-		if keyword == "" {
+		if keywordOffset < 0 {
 			continue
 		}
-		if !isSupportedTopLevelKeyword(keyword) {
+		if parser.SkipsUnread(keyword, opts.Dialect) {
 			items = append(items, sourceItem{statement: statement,
 				findings: []Finding{unsupportedStatementFinding(source, statement, opts, keyword, keywordOffset)}})
 			continue
 		}
-		items = append(items, parseSourceStatement(source, statement, opts, caps))
+		items = append(items, parseSourceStatement(source, statement, opts, caps, keyword))
 	}
 	bodies, err := readRoutineBodies(ctx, items, opts)
 	if err != nil {
@@ -227,6 +227,7 @@ func LintSource(ctx context.Context, source Source, opts Options) ([]Finding, er
 			findings = append(findings, nameFindings[i]...)
 		}
 		unanalyzedKinds = appendUnanalyzed(unanalyzedKinds, unanalyzed)
+		unanalyzedKinds = appendUnanalyzed(unanalyzedKinds, nodelessStatement(item))
 	}
 	if len(unanalyzedKinds) > 0 {
 		findings = append(findings, statementsNotAnalyzedFinding(source, opts, unanalyzedKinds))
@@ -389,20 +390,30 @@ func unsupportedStatementFinding(source Source, statement sourceStatement, opts 
 }
 
 // sourceItem is one statement of a file: the findings it ends with before any
-// rule runs, or the nodes it parsed into.
+// rule runs, or the nodes it parsed into, with the word it opens with.
 type sourceItem struct {
 	statement sourceStatement
 	findings  []Finding
 	nodes     []ast.Node
+	keyword   string
 }
 
 // parseSourceStatement parses one statement, or reports why it could not.
-func parseSourceStatement(source Source, statement sourceStatement, opts Options, caps capability.Capabilities) sourceItem {
+func parseSourceStatement(source Source, statement sourceStatement, opts Options, caps capability.Capabilities, keyword string) sourceItem {
 	stmtList, err := parser.NewParser(statementParserSQL(statement.sql), parserOptions(opts, caps)...).Parse()
 	if err != nil {
 		return sourceItem{statement: statement, findings: []Finding{parseErrorFinding(source, statement, opts, err)}}
 	}
-	return sourceItem{statement: statement, nodes: stmtList.Statements}
+	return sourceItem{statement: statement, nodes: stmtList.Statements, keyword: keyword}
+}
+
+// nodelessStatement names a statement the parser read and that gave no rule a node to
+// look at, such as a TRUNCATE. A batch separator is no statement.
+func nodelessStatement(item sourceItem) []string {
+	if len(item.nodes) > 0 || item.keyword == "" || item.keyword == "GO" {
+		return nil
+	}
+	return []string{item.keyword}
 }
 
 // readRoutineBodies asks the owner of the run's dialect to read every routine
@@ -519,6 +530,9 @@ func unanalyzedStatementLabel(ctx Context, stmt ast.Node) (string, bool) {
 	if _, owned := stmt.(*ast.ExtensionStatement); owned {
 		return extensionStatementLabel(ctx.statement.sql), true
 	}
+	if drop, ok := stmt.(*ast.DropFunctionNode); ok && drop.IsProcedure() {
+		return "DROP PROCEDURE", true
+	}
 	return statementLabel(stmt), true
 }
 
@@ -526,7 +540,7 @@ func unanalyzedStatementLabel(ctx Context, stmt ast.Node) (string, bool) {
 // host node names the ownership boundary rather than the SQL statement.
 func extensionStatementLabel(source string) string {
 	first, offset := firstKeyword(source)
-	second, _ := firstKeyword(source[offset+len(first):])
+	second, _ := firstKeyword(source[max(offset, 0)+len(first):])
 	return strings.TrimSpace(first + " " + second)
 }
 
@@ -603,13 +617,16 @@ func ruleDisabled(ruleID string, disabled []string) bool {
 	return false
 }
 
+// firstKeyword returns the word a statement opens with and where it stands. A
+// statement that opens with anything else has no keyword and an offset, and the parser
+// answers for it. One that holds only comments has neither, and a negative offset.
 func firstKeyword(statement string) (keyword string, offset int) {
 	l := lexer.NewLexer(statement)
 	for {
 		token := l.NextToken()
 		switch token.Type {
 		case lexer.TokenEOF:
-			return "", 0
+			return "", -1
 		case lexer.TokenWhitespace, lexer.TokenComment:
 			continue
 		case lexer.TokenIdentifier:
@@ -617,15 +634,6 @@ func firstKeyword(statement string) (keyword string, offset int) {
 		default:
 			return "", token.Start
 		}
-	}
-}
-
-func isSupportedTopLevelKeyword(keyword string) bool {
-	switch keyword {
-	case "ALTER", "COMMENT", "CREATE", "DO", "DROP", "GO":
-		return true
-	default:
-		return false
 	}
 }
 
@@ -639,9 +647,9 @@ func parseErrorFinding(source Source, statement sourceStatement, opts Options, e
 		offset, message = offset+at.Offset, at.Err.Error()
 	}
 	line, column := sourcepos.Locate(source.SQL, offset)
-	return Finding{
-		Rule:      parseErrorRule(err),
-		Title:     parseErrorTitle(err),
+	finding := Finding{
+		Rule:      RuleParseError,
+		Title:     "SQL parse error",
 		Severity:  SeverityError,
 		File:      source.Name,
 		Line:      line,
@@ -650,20 +658,18 @@ func parseErrorFinding(source Source, statement sourceStatement, opts Options, e
 		Message:   message,
 		Rationale: "The SQL parser could not build an AST, so no rule can safely treat this statement as clean.",
 	}
-}
-
-func parseErrorRule(err error) string {
+	if unknown, ok := errors.AsType[*parser.UnknownStatementError](err); ok {
+		finding.Message = "no engine Ptah reads has this statement: " + unknown.Head
+		return finding
+	}
 	if strings.Contains(strings.ToLower(err.Error()), "unsupported") {
-		return RuleUnsupportedStatement
+		finding.Rule = RuleUnsupportedStatement
+		finding.Title = "Unsupported SQL statement"
+		finding.Message = "the SQL parser does not read this statement, which a server may still accept: " + message
+		finding.Rationale = "The parser holds no grammar for this, and past a statement's opening words it cannot " +
+			"tell SQL it does not model from a mistake. Nothing checked the statement, so the file is not reported clean."
 	}
-	return RuleParseError
-}
-
-func parseErrorTitle(err error) string {
-	if parseErrorRule(err) == RuleUnsupportedStatement {
-		return "Unsupported SQL statement"
-	}
-	return "SQL parse error"
+	return finding
 }
 
 type tablePrimaryKeyRule struct{}

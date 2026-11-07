@@ -18,9 +18,9 @@ type statementsOperation struct {
 	Statements []string `json:"statements"`
 }
 
-// statements is the normalized operation that runs statements on table, the
-// value of the step named id.
-func (o *owner) statements(engine, table, id string, statements []string) (*protocol.NormalizedValue, error) {
+// statements is the normalized operation of the step id that runs statements
+// on table.
+func (o *owner) statements(engine, id, table string, statements []string) (*protocol.NormalizedValue, error) {
 	payload, err := json.Marshal(statementsOperation{Statements: statements})
 	if err != nil {
 		return nil, err
@@ -82,7 +82,8 @@ func (o *owner) NormalizeValues(ctx context.Context, request *protocol.Normalize
 }
 
 // Render passes a statements operation on as a native unit, which Execute
-// runs, and refuses every other change.
+// runs, or as the text of its statements where the host asks for text, and
+// refuses every other change.
 func (o *owner) Render(ctx context.Context, request *protocol.RenderRequest) (*protocol.RenderResult, error) {
 	result := &protocol.RenderResult{Complete: true}
 	for _, change := range request.GetChanges() {
@@ -92,6 +93,14 @@ func (o *owner) Render(ctx context.Context, request *protocol.RenderRequest) (*p
 		native := change.GetNative()
 		if native.GetValue().GetValue().GetKind() != statementsKind {
 			return nil, fmt.Errorf("the constraints fixture renders its statements operations only")
+		}
+		if request.GetForm() == protocol.RenderRequest_TEXT {
+			var operation statementsOperation
+			if err := json.Unmarshal(native.GetValue().GetValue().GetPayload(), &operation); err != nil {
+				return nil, err
+			}
+			result.Units = append(result.Units, &protocol.Unit{ChangeId: change.GetId(), Body: &protocol.Unit_Sql{Sql: strings.Join(operation.Statements, "\n")}})
+			continue
 		}
 		result.Units = append(result.Units, &protocol.Unit{ChangeId: change.GetId(), Body: &protocol.Unit_Native{Native: proto.CloneOf(native.GetValue().GetValue())}})
 	}
@@ -120,4 +129,49 @@ func (o *owner) Execute(ctx context.Context, request *protocol.ExecuteRequest) (
 		unit.Body = &protocol.Unit_Sql{Sql: strings.Join(operation.Statements, " ")}
 	}
 	return o.Provider.Execute(ctx, translated)
+}
+
+// AnalyzeSQL reads the statements the backend reads. In the text mode it also
+// reads the statements of a rebuild, which the backend does not: each is one
+// statement, marked behavioral, because a rebuild copies the rows of a table
+// and drops it.
+func (o *owner) AnalyzeSQL(ctx context.Context, request *protocol.AnalyzeSQLRequest) (*protocol.SQLAnalysis, error) {
+	result, err := o.Provider.AnalyzeSQL(ctx, request)
+	if err == nil || !o.text {
+		return result, err
+	}
+	analysis := &protocol.SQLAnalysis{Complete: true}
+	for _, source := range request.GetSources() {
+		analysis.Files = append(analysis.Files, rebuildFile(source))
+	}
+	return analysis, nil
+}
+
+// rebuildFile splits a rebuild's text into its statements, each ending at its
+// semicolon.
+func rebuildFile(source string) *protocol.SQLFile {
+	file := &protocol.SQLFile{}
+	start := 0
+	for start < len(source) {
+		end := strings.IndexByte(source[start:], ';')
+		if end < 0 {
+			end = len(source)
+		} else {
+			end += start + 1
+		}
+		text := source[start:end]
+		if words := strings.Fields(text); len(words) > 0 {
+			offset := start + len(text) - len(strings.TrimLeft(text, " \t\r\n"))
+			upper := make([]string, len(words))
+			for i, word := range words {
+				upper[i] = strings.ToUpper(word)
+			}
+			file.Statements = append(file.Statements, &protocol.SQLStatement{
+				Start: uint32(offset), End: uint32(end), Line: uint32(1 + strings.Count(source[:offset], "\n")), // #nosec G115 -- a fixture migration is far shorter than math.MaxUint32
+				Words: upper, SourceWords: words, Canonical: strings.Join(upper, " "), Safety: protocol.SQLStatement_BEHAVIORAL, Reason: "a rebuild copies a table and drops it",
+			})
+		}
+		start = end
+	}
+	return file
 }

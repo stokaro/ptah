@@ -82,7 +82,11 @@ func applyDropTable(
 	if len(targets) == 0 {
 		return nil
 	}
-	if err := detachFromDropped(ctx, document, targets, sourcePlatform); err != nil {
+	dropsTable := func(schema, table string) bool {
+		qualified := schemamodel.QualifyTableName(schema, table)
+		return slices.ContainsFunc(targets, func(target alterTarget) bool { return target.reachesTable(qualified) })
+	}
+	if err := detachFrom(ctx, document, targets[0].databases, dropsTable, sourcePlatform); err != nil {
 		return fmt.Errorf("DROP TABLE %s: %w", strings.Join(names, ", "), err)
 	}
 	for _, target := range targets {
@@ -93,18 +97,19 @@ func applyDropTable(
 	return nil
 }
 
-// detachFromDropped removes the feature objects attached to a dropped table
-// from every database of the targets, before the tables go, since an
-// attachment is matched by resolving the table name it carries. Their owners'
-// relation discovery says which table an object is attached to, once for the
-// whole statement. Relation discovery is registered per target, so a document
-// that names no target detaches nothing.
-func detachFromDropped(ctx context.Context, document *Document, targets []alterTarget, sourcePlatform string) error {
+// detachFrom removes the feature objects attached to a dropped relation from every
+// database, before the relation goes, since an attachment is matched by resolving the
+// name it carries. Their owners' relation discovery says which relation an object is
+// attached to, once for the whole statement. Relation discovery is registered per
+// target, so a document that names no target detaches nothing.
+func detachFrom(
+	ctx context.Context, document *Document, databases []*schemamodel.Database,
+	dropped func(schema, table string) bool, sourcePlatform string,
+) error {
 	targetName := ownerTarget(sourcePlatform)
 	if targetName == "" {
 		return nil
 	}
-	databases := targets[0].databases
 	sides := make([]featureselect.Side, 0, len(databases))
 	for _, database := range databases {
 		sides = append(sides, featureselect.Side{Representation: schemaext.Desired, Objects: database.FeatureObjects, Coverage: database.FeatureCoverage})
@@ -112,10 +117,6 @@ func detachFromDropped(ctx context.Context, document *Document, targets []alterT
 	bindings, err := featureselect.CaptureBindings(ctx, document.relations, targetName, identifier.ForDialect(sourcePlatform), sides...)
 	if err != nil {
 		return err
-	}
-	dropped := func(schema, table string) bool {
-		qualified := schemamodel.QualifyTableName(schema, table)
-		return slices.ContainsFunc(targets, func(target alterTarget) bool { return target.reachesTable(qualified) })
 	}
 	for _, database := range databases {
 		database.FeatureObjects, database.FeatureCoverage = bindings.Detach(database.FeatureObjects, database.FeatureCoverage, dropped)

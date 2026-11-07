@@ -98,6 +98,9 @@ func (t *target) registration() engine.Target {
 	if t.offers(provider.CheckEquivalenceFeature) {
 		result.Comparison.Checks = checkService{target: t}
 	}
+	if t.offers(provider.ObservedConstraintsFeature) {
+		result.Constraints = constraintProjection{}
+	}
 	result.Comparison.Namespaces = t.carriesNamespaces()
 	if t.offers(provider.ObservedIndexesFeature) {
 		result.Comparison.Indexes = observedIndexRules{methods: t.offers(provider.IndexMethodsFeature), facets: t.offers(provider.ObservedIndexFacetsFeature),

@@ -168,6 +168,7 @@ func clickHouse() descriptor.Dialect {
 		Grammar: descriptor.Grammar{
 			Columns:    descriptor.ColumnGrammar{TypeArgumentsAreTypes: true, StoredStringDefaults: true, StoredStringEscapes: true},
 			AlterTable: descriptor.AlterTableGrammar{Modify: descriptor.ModifyOther},
+			Forms:      clickHouseStatementForms(),
 		},
 
 		// Clean checks: what internal/migrateclean reads. The pinned

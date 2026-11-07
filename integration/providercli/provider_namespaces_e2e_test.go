@@ -161,14 +161,3 @@ func TestProviderNamespacesWithoutTheFeature_FailurePath(t *testing.T) {
 	c.Assert(tables(c, f.databasePath), qt.HasLen, 0)
 	c.Assert(heldSchemas(c, f.databasePath), qt.HasLen, 0)
 }
-
-// downMigration returns the text of the one down migration in dir.
-func downMigration(c *qt.C, dir string) string {
-	c.Helper()
-	files, err := filepath.Glob(filepath.Join(dir, "*.down.sql"))
-	c.Assert(err, qt.IsNil)
-	c.Assert(files, qt.HasLen, 1)
-	data, err := os.ReadFile(files[0])
-	c.Assert(err, qt.IsNil)
-	return string(data)
-}

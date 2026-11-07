@@ -258,23 +258,63 @@ func (f fixture) count(c *qt.C, view, column, database string) int {
 // reports on standard output, and a verb whose output is a document or a plan says
 // so on standard error. The stream the answer goes to stays what it was.
 func TestEverySurfaceThatReadsNamesAnEventE2E(t *testing.T) {
-	const leftOut = "event \"e_tick\" in the database is left out: Ptah does not model events"
-	type surface struct {
-		name       string
-		binary     clirun.Target
-		args       func(url, atlas, file string) []string
-		wantStdout string
-		wantStderr string
-	}
-	surfaces := []surface{
-		{
-			name:   "schema compare",
-			binary: clirun.Ptah,
-			args: func(u, _, file string) []string {
-				return []string{"schema", "compare", "--db-url", u, "--schema-file", file}
-			},
-			wantStdout: "No schema differences detected, but 1 event was not compared:\n  event \"e_tick\": Ptah does not model events",
+	surfaces := append([]surface{{
+		name:   "schema compare",
+		binary: clirun.Ptah,
+		args: func(u, _, file string) []string {
+			return []string{"schema", "compare", "--db-url", u, "--schema-file", file}
 		},
+		wantStdout: "No schema differences detected, but 1 event was not compared:\n  event \"e_tick\": Ptah does not model events",
+	}}, surfacesThatWarn()...)
+
+	for _, s := range servers() {
+		t.Run(s.name, func(t *testing.T) {
+			c := qt.New(t)
+			f := newFixture(c, s)
+			file := declaredAsItIs(c, f, f.right)
+			f.execIn(c, f.right, createEvent)
+			address, atlas := f.url("", f.right), atlasURL(c, f, "", f.right)
+
+			for _, surface := range surfaces {
+				t.Run(surface.name, func(t *testing.T) {
+					c := qt.New(t)
+
+					got := clirun.Run(c, surface.binary, clirun.Options{Dir: c.TempDir()}, surface.args(address, atlas, file)...)
+
+					comment := qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr)
+					c.Assert(got.ExitCode, qt.Equals, 0, comment)
+					c.Assert(got.Stdout, qt.Contains, surface.wantStdout, comment)
+					c.Assert(got.Stderr, qt.Contains, surface.wantStderr, comment)
+				})
+			}
+
+			t.Run("a run that leaves events out", func(t *testing.T) {
+				c := qt.New(t)
+
+				got := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: c.TempDir()},
+					"schema", "inspect", "--db-url", address, "--format", "sql", "--exclude", "*[type=event]")
+
+				c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", got.Stderr))
+				c.Assert(got.Stderr, qt.Not(qt.Contains), "left out")
+			})
+		})
+	}
+}
+
+// surface is one verb that reads a database through the path that lists events.
+type surface struct {
+	name       string
+	binary     clirun.Target
+	args       func(url, atlas, file string) []string
+	wantStdout string
+	wantStderr string
+}
+
+// surfacesThatWarn are the verbs whose answer has no place for an event, each with
+// what it says over a database that holds one, to an account that can see it.
+func surfacesThatWarn() []surface {
+	const leftOut = "event \"e_tick\" in the database is left out: Ptah does not model events"
+	return []surface{
 		{
 			name:       "schema inspect",
 			binary:     clirun.Ptah,
@@ -347,16 +387,24 @@ func TestEverySurfaceThatReadsNamesAnEventE2E(t *testing.T) {
 			wantStderr: "2 objects were left out: event \"e_tick\" in --from, event \"e_tick\" in --to (Ptah does not model events",
 		},
 	}
+}
 
+// TestAnAccountWithoutEventHearsItOnlyFromAReportE2E is a least-privilege account
+// on the verbs that claim nothing about events. A warning there would be the same
+// sentence on every run, and it would change nothing the account could do. The
+// reports that claim to have compared still say what they did not look at; the
+// statement of `schema drift` is held by [TestAnAccountWithoutEventIsToldE2E].
+func TestAnAccountWithoutEventHearsItOnlyFromAReportE2E(t *testing.T) {
 	for _, s := range servers() {
 		t.Run(s.name, func(t *testing.T) {
 			c := qt.New(t)
 			f := newFixture(c, s)
 			file := declaredAsItIs(c, f, f.right)
 			f.execIn(c, f.right, createEvent)
-			address, atlas := f.url("", f.right), atlasURL(c, f, "", f.right)
+			account := f.newAccount(c, "quiet", "GRANT SELECT, SHOW VIEW, TRIGGER ON {db}.* TO {account}", s.routineGrant)
+			address, atlas := f.url(account, f.right), atlasURL(c, f, account, f.right)
 
-			for _, surface := range surfaces {
+			for _, surface := range surfacesThatWarn() {
 				t.Run(surface.name, func(t *testing.T) {
 					c := qt.New(t)
 
@@ -365,19 +413,45 @@ func TestEverySurfaceThatReadsNamesAnEventE2E(t *testing.T) {
 					comment := qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr)
 					c.Assert(got.ExitCode, qt.Equals, 0, comment)
 					c.Assert(got.Stdout, qt.Contains, surface.wantStdout, comment)
-					c.Assert(got.Stderr, qt.Contains, surface.wantStderr, comment)
+					c.Assert(got.Stderr, qt.Not(qt.Contains), "left out", comment)
+					c.Assert(got.Stderr, qt.Not(qt.Contains), "EVENT", comment)
 				})
 			}
 
-			t.Run("a run that leaves events out", func(t *testing.T) {
+			t.Run("schema compare", func(t *testing.T) {
 				c := qt.New(t)
 
 				got := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: c.TempDir()},
-					"schema", "inspect", "--db-url", address, "--format", "sql", "--exclude", "*[type=event]")
+					"schema", "compare", "--db-url", address, "--schema-file", file)
 
 				c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", got.Stderr))
-				c.Assert(got.Stderr, qt.Not(qt.Contains), "left out")
+				c.Assert(got.Stdout, qt.Contains, "No schema differences detected, but events were not compared:\n")
+				c.Assert(got.Stdout, qt.Contains, "holds no EVENT privilege")
 			})
+		})
+	}
+}
+
+// TestAWholeServerReadWarnsAboutWhatItSawE2E is the read that may list events in
+// one database and not in another. The verb names the one it saw, and the database
+// it could not list leaves no line.
+func TestAWholeServerReadWarnsAboutWhatItSawE2E(t *testing.T) {
+	for _, s := range servers() {
+		t.Run(s.name, func(t *testing.T) {
+			c := qt.New(t)
+			f := newFixture(c, s)
+			f.execIn(c, f.left, createEvent)
+			f.execIn(c, f.right, createEvent)
+			account := f.newAccount(c, "seen", "GRANT SELECT, SHOW VIEW, TRIGGER ON {db}.* TO {account}", s.routineGrant)
+			f.exec(c, "GRANT EVENT ON `"+f.left+"`.* TO '"+account+"'@'%'")
+
+			got := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: c.TempDir()},
+				"schema", "inspect", "--db-url", f.url(account, ""), "--format", "sql")
+
+			comment := qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr)
+			c.Assert(got.ExitCode, qt.Equals, 0, comment)
+			c.Assert(got.Stderr, qt.Contains, "event \""+f.left+".e_tick\" in the database is left out: Ptah does not model events", comment)
+			c.Assert(got.Stderr, qt.Not(qt.Contains), f.right, comment)
 		})
 	}
 }

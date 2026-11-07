@@ -28,6 +28,9 @@ type targetGrammar struct {
 	// defaultSchema is the descriptor's DefaultSchema, the schema an
 	// unqualified table name resolves to.
 	defaultSchema string
+	// batches reports the descriptor's Scripts.BatchSeparator: a client sends a
+	// batch of statements, and a statement needs no semicolon after it.
+	batches bool
 }
 
 // targetGrammars derives each dialect's grammar once per registry. A parser is
@@ -41,6 +44,7 @@ var targetGrammars = descriptortable.New(func(described descriptor.Dialect) targ
 		checkOwnColumnOnly: described.Columns.CheckOwnColumnOnly,
 		family:             described.Family,
 		defaultSchema:      described.DefaultSchema,
+		batches:            described.Scripts.BatchSeparator != "",
 	}
 })
 

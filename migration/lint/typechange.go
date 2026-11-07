@@ -1,18 +1,21 @@
 package lint
 
 import (
+	"slices"
+	"strings"
+
 	"ptah.run/core/platform"
 	"ptah.run/internal/lintkit"
 	"ptah.run/internal/lintkit/mytype"
 	"ptah.run/internal/lintkit/pgtype"
 )
 
-// DS103 reads the statement text: every MODIFY, CHANGE and ALTER COLUMN ...
-// TYPE is a column type change to it, and the finding says the change can
-// truncate or reject existing values. On the MySQL family a MODIFY restates
-// the whole column, so `MODIFY total INT NOT NULL` on an INT column changes
-// the nullability and not the type, and the finding is wrong about what the
-// statement did (stokaro/ptah#2959).
+// DS103 reads the statement text: every MODIFY, CHANGE, ALTER COLUMN ... TYPE and
+// SQL Server's ALTER COLUMN name type is a column type change to it, and the finding
+// says the change can truncate or reject existing values. On the MySQL family a MODIFY
+// restates the whole column, so `MODIFY total INT NOT NULL` on an INT column changes
+// the nullability and not the type, and the finding is wrong about what the statement
+// did (stokaro/ptah#2959). SQL Server's clause restates the type the same way.
 //
 // The schema state the version starts from refines that. A statement whose
 // every type clause names the type the column already has, as the same
@@ -36,7 +39,7 @@ func typeChangeStatements(file *File) []int {
 		if !lintkit.IsAlterTable(stmt.Words) {
 			continue
 		}
-		if lintkit.ScanModifyChange(stmt.Words) || scanAlterColumnType(stmt.Words) {
+		if lintkit.ScanModifyChange(stmt.Words) || scanAlterColumnType(stmt.Words) || scanRestatedColumn(stmt.Words) {
 			indexes = append(indexes, index)
 		}
 	}
@@ -58,6 +61,8 @@ func typeUnchangedByState(file *File, index int) bool {
 		return pgTypesUnchanged(file, index, clauses)
 	case "mytype":
 		return mysqlTypesUnchanged(file, index, clauses)
+	case "restated":
+		return restatedTypesUnchanged(file, index, clauses)
 	default:
 		return false
 	}
@@ -69,11 +74,20 @@ func typeUnchangedByState(file *File, index int) bool {
 func typeChangeClauses(w []string) int {
 	count := 0
 	for _, i := range lintkit.ClauseStarts(w) {
-		if modifyChangeClause(w, i) || lintkit.AlterColumnTypeClause(w, i) {
+		_, _, restated := lintkit.RestatedColumnClause(w, w, i)
+		if modifyChangeClause(w, i) || lintkit.AlterColumnTypeClause(w, i) || restated {
 			count++
 		}
 	}
 	return count
+}
+
+// scanRestatedColumn reports SQL Server's ALTER COLUMN name type.
+func scanRestatedColumn(w []string) bool {
+	return slices.ContainsFunc(lintkit.ClauseStarts(w), func(i int) bool {
+		_, _, restated := lintkit.RestatedColumnClause(w, w, i)
+		return restated
+	})
 }
 
 func modifyChangeClause(w []string, i int) bool {
@@ -139,4 +153,43 @@ func mysqlTypesUnchanged(file *File, index, clauses int) bool {
 		resolved++
 	}
 	return resolved > 0 && resolved == clauses
+}
+
+// restatedTypesUnchanged judges SQL Server's ALTER COLUMN clause against the column's
+// current type. The clause has to name a type to change a nullability, so `ALTER COLUMN
+// total int NOT NULL` over an int changes no type. The two are compared as written, with
+// case and space folded, since a spelling they do not share leaves the finding standing.
+func restatedTypesUnchanged(file *File, index, clauses int) bool {
+	stmt := &file.Statements[index]
+	w := stmt.Words
+	table := lintkit.AlterTableReference(w, stmt.sourceWords)
+	resolved := 0
+	for _, i := range lintkit.ClauseStarts(w) {
+		name, typeStart, ok := lintkit.RestatedColumnClause(w, stmt.sourceWords, i)
+		if !ok {
+			continue
+		}
+		column, known := file.baseline.Column(table.Normalized, name.Normalized)
+		if !known || !strings.EqualFold(restatedType(w[typeStart:lintkit.ClauseEnd(w, i)]), foldedSpaces(column.ColumnType)) {
+			return false
+		}
+		resolved++
+	}
+	return resolved > 0 && resolved == clauses
+}
+
+// restatedType is the type a clause names, up to the words that say something else about
+// the column.
+func restatedType(words []string) string {
+	end := slices.IndexFunc(words, func(word string) bool {
+		return word == "NULL" || word == "NOT" || word == "COLLATE" || word == "SPARSE"
+	})
+	if end < 0 {
+		end = len(words)
+	}
+	return strings.Join(words[:end], "")
+}
+
+func foldedSpaces(spelling string) string {
+	return strings.Join(strings.Fields(spelling), "")
 }

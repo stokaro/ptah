@@ -176,6 +176,23 @@ constraints and the current table the held ones, and no common step stands for
 the change. Without the feature the host refuses a change of a kept table's
 constraint before it plans, naming the constraint and the table.
 
+A rollback plan starts from the tables the forward plan leaves, which the host
+predicts. For a provider with `schema.observed-constraints`, a foreign key the
+forward plan adds or replaces changes the table's constraints and nothing else,
+because the read leaves the index an engine builds for the key out of the
+table's indexes. The host predicts the key in the spelling a read reports: the
+referenced schema stated, the default schema where the declaration names none,
+and both rules stated, an absent rule being `NO ACTION`. So `ptah migrations
+generate` writes the down file of a schema with foreign keys. A primary key or
+UNIQUE constraint the forward plan adds or removes has no such prediction,
+since a read reports the index behind it, and neither has a constraint that
+carries facets of its engine.
+
+Listing `schema.observed-constraints` therefore promises more than a read: a
+provider that lists it keeps reporting a foreign key in that spelling and
+keeps the index behind it out of the table's indexes, or the down files the
+host writes for it start from a table the database does not hold.
+
 A server often keeps a CHECK in a form of its own, with literals cast or a
 list rewritten. With `schema.check-equivalence`, the host asks the provider
 whether each declared CHECK and the CHECK the table holds under the same name
@@ -537,12 +554,9 @@ names no metric adds no gauge, and a metric named like a common one, such as
 model, such as a YDB vector index, and the count adds to the indexes Ptah read.
 
 An engine can declare its release lines in the description. Each line names a
-support level and, for a line that claims testing, the image that runs it. An
-engine that runs inside the provider's process, such as DuckDB, has no image:
-with `engine.linked-release-lines` its certified line names the version of the
-library the provider links instead, which the provider's own tests run. A line
-the provider keeps without running it is best effort and carries the reason.
-The host refuses a description that claims testing nothing runs.
+support level and, for a line that claims testing, the image that runs it. A line
+the provider keeps without running it is best effort and carries the reason. The
+host refuses a description that claims testing nothing runs.
 `ptah providers check` prints the lines a provider declares, and
 `ptah db capabilities` certifies a server against them: the line its version
 names gives the preset its name, which is the line's label, and the support
@@ -709,9 +723,7 @@ The executable path must be absolute. A checksum detects changed bytes; it does
 not verify a publisher. Providers run with your operating-system permissions.
 Only environment entries explicitly listed as `NAME=value` reach the provider.
 Database credentials belong in the database address, which travels in the session
-request rather than process arguments. Ptah starts the provider in its own
-working directory, so a relative file address, such as `duckdb://./app.db` for
-an engine that runs inside the provider, names the file it names for Ptah.
+request rather than process arguments.
 
 Pass `--provider-config providers.json` on each supported command. This flag has
 no environment-variable binding. Ptah does not discover providers from `PATH` or

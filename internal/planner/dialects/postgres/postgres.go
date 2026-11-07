@@ -119,9 +119,6 @@ type Planner struct {
 	// value is the annotated style; see statementstyle.go for what the exact
 	// style leaves out and why.
 	statements planext.StatementStyle
-	// enumRebuildKeepsGuards treats an enum rebuild like any other raw statement
-	// when an exact plan settles its guards; see [Planner.settleGuards].
-	enumRebuildKeepsGuards bool
 }
 
 // New returns a planner configured with the current PostgreSQL line preset
@@ -234,15 +231,6 @@ func (p *Planner) WithConcurrentIndexDropRefs(indexRefs ...difftypes.IndexRef) *
 func (p *Planner) WithStatementStyle(style planext.StatementStyle) *Planner {
 	cp := *p
 	cp.statements = style
-	return &cp
-}
-
-// WithEnumRebuildKeepingGuards returns a copy of the planner that keeps IF EXISTS
-// on the drops an exact plan writes after it rebuilds an enum; see
-// [planext.Options.EnumRebuildKeepsGuards]. The receiver is not modified.
-func (p *Planner) WithEnumRebuildKeepingGuards() *Planner {
-	cp := *p
-	cp.enumRebuildKeepsGuards = true
 	return &cp
 }
 
@@ -3518,13 +3506,18 @@ func keyLeavingForRowID(info difftypes.ConstraintRemovalInfo) []ast.Node {
 	key := ast.NewPrimaryKeyConstraint(rowIDColumn)
 	key.Name = pgname.Object(table, "", "pkey")
 	return []ast.Node{
-		ast.NewRawSQL(fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s INT8 NOT VISIBLE NOT NULL DEFAULT unique_rowid();`,
-			quotePostgresIdentifierPath(info.TableName), quotePostgresIdentifier(rowIDColumn))),
+		ast.NewRawSQL(rowIDColumnStatement(info.TableName)),
 		&ast.AlterTableNode{Name: info.TableName, Operations: []ast.AlterOperation{
 			&ast.DropConstraintOperation{ConstraintName: info.Name},
 			&ast.AddConstraintOperation{Constraint: key},
 		}},
 	}
+}
+
+// rowIDColumnStatement adds the hidden column [keyLeavingForRowID] moves a key to.
+func rowIDColumnStatement(table string) string {
+	return fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s INT8 NOT VISIBLE NOT NULL DEFAULT unique_rowid();`,
+		quotePostgresIdentifierPath(table), quotePostgresIdentifier(rowIDColumn))
 }
 
 // writtenPrimaryKeyName is the name an added primary key is written with: the

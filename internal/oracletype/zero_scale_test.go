@@ -44,3 +44,36 @@ func TestMap_DropsAnExplicitZeroScale(t *testing.T) {
 		})
 	}
 }
+
+// TestServerBuilt holds a declared name to the column the server builds from it, read back
+// from user_tab_columns on 23.26, and to nothing else. A name with no such column, or a
+// column another name builds, is the comparison's to ask about.
+func TestServerBuilt(t *testing.T) {
+	tests := []struct {
+		name     string
+		declared string
+		catalog  string
+		want     bool
+	}{
+		{name: "INTEGER", declared: "INTEGER", catalog: "NUMBER(*,0)", want: true},
+		{name: "a lower-case name", declared: "integer", catalog: "NUMBER(*,0)", want: true},
+		{name: "INT", declared: "INT", catalog: "NUMBER(*,0)", want: true},
+		{name: "SMALLINT", declared: "SMALLINT", catalog: "NUMBER(*,0)", want: true},
+		{name: "DECIMAL", declared: "DECIMAL", catalog: "NUMBER(*,0)", want: true},
+		{name: "NUMERIC", declared: "NUMERIC", catalog: "NUMBER(*,0)", want: true},
+		{name: "DOUBLE PRECISION", declared: "DOUBLE PRECISION", catalog: "FLOAT(126)", want: true},
+		{name: "REAL", declared: "REAL", catalog: "FLOAT(63)", want: true},
+		{name: "BOOLEAN", declared: "BOOLEAN", catalog: "BOOLEAN", want: true},
+		{name: "another size under INTEGER", declared: "INTEGER", catalog: "NUMBER(19)", want: false},
+		{name: "another float under DOUBLE PRECISION", declared: "DOUBLE PRECISION", catalog: "FLOAT(63)", want: false},
+		{name: "a declared size is not the word", declared: "DECIMAL(10)", catalog: "NUMBER(*,0)", want: false},
+		{name: "a name Oracle spells itself", declared: "NUMBER", catalog: "NUMBER(*,0)", want: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(oracletype.ServerBuilt(test.declared, test.catalog), qt.Equals, test.want)
+		})
+	}
+}

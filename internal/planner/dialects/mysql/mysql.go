@@ -2415,6 +2415,11 @@ func (p *Planner) addForeignKeyConstraintsWithTables(
 	additions difftypes.ConstraintAdditions,
 	state constraintPlanState,
 ) []ast.Node {
+	// The indexes one statement takes over from can hold the names of several foreign
+	// keys the plan adds, and the statement drops them all, so it goes once, at the first
+	// of those keys. Written again at the next, it answers `Error 1091: Can't DROP` on
+	// MySQL 8.4 and 26.10 and MariaDB 12.3, after the keys before it are in.
+	takeovers := make(map[difftypes.IndexRef]struct{})
 	for _, add := range additions {
 		if add.Type != "FOREIGN KEY" || add.TableName == "" {
 			continue
@@ -2431,7 +2436,11 @@ func (p *Planner) addForeignKeyConstraintsWithTables(
 			// A foreign key the plan keeps may stand on that index too, and its new
 			// index then goes in the same statement, here rather than with the removals.
 			if change, takenOver := indexTakingOverFrom(state.diff, ref); takenOver {
-				result = append(result, indexTakingOverNode(state.diff, change))
+				takeover := difftypes.IndexRef{Name: change.Index.Name, TableName: change.TableName}
+				if _, written := takeovers[takeover]; !written {
+					result = append(result, indexTakingOverNode(state.diff, change))
+					takeovers[takeover] = struct{}{}
+				}
 			} else {
 				result = append(result, ast.NewDropIndex(add.Name).SetTable(add.TableName))
 			}

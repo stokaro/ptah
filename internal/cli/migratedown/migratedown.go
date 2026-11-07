@@ -96,23 +96,10 @@ type options struct {
 	logFormat            string
 	logLevel             string
 	metricsAddr          string
-	// enumRebuildKeepsGuards is [shadow.DynamicRollbackOptions.EnumRebuildKeepsGuards].
-	enumRebuildKeepsGuards bool
 }
 
-// NewMigrateDownCommand returns the native `migrations down`.
 func NewMigrateDownCommand() *cobra.Command {
-	return newMigrateDownCommand(options{})
-}
-
-// NewCompatMigrateDownCommand returns the command `ptah-compat migrate down`
-// forwards to. A rollback it derives keeps its guards after an enum rebuild, as
-// every other plan of that surface does.
-func NewCompatMigrateDownCommand() *cobra.Command {
-	return newMigrateDownCommand(options{enumRebuildKeepsGuards: true})
-}
-
-func newMigrateDownCommand(opts options) *cobra.Command {
+	opts := options{}
 	cmd := &cobra.Command{
 		Use:   "down",
 		Short: "Roll back migrations to a specific version",
@@ -926,8 +913,6 @@ type dynamicRollback struct {
 	connectTimeout time.Duration
 	dryRun         bool
 	revisionsOpts  atlasmigrate.SetOptions
-	// enumRebuildKeepsGuards is [shadow.DynamicRollbackOptions.EnumRebuildKeepsGuards].
-	enumRebuildKeepsGuards bool
 }
 
 // runDynamicRollback derives the rollback from the schema difference and
@@ -963,8 +948,6 @@ func runDynamicRollback(cmd *cobra.Command, r rollbackExecution, emit cliobs.Emi
 		},
 		ConnectTimeout: r.connectTimeout,
 		RevisionsTable: r.revisionsOpts.RevisionsTable,
-
-		EnumRebuildKeepsGuards: r.enumRebuildKeepsGuards,
 	})
 	if err != nil {
 		return err
@@ -1069,8 +1052,6 @@ func buildRollbackExecution(
 			atlasEnv:       in.atlasEnv,
 			connectTimeout: in.connectTimeout,
 			dryRun:         opts.dryRun,
-
-			enumRebuildKeepsGuards: opts.enumRebuildKeepsGuards,
 			revisionsOpts: atlasmigrate.SetOptions{
 				Dir:             in.migrationsDir,
 				FS:              in.migrationsFS,

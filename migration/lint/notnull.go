@@ -119,15 +119,11 @@ func notNullSites(file *File) []notNullSite {
 // sqlServerNotNullClause reads ALTER COLUMN name type ... NOT NULL, the SQL
 // Server spelling, which names the type again and never says SET.
 func sqlServerNotNullClause(w, sourceWords []string, i int) (string, bool) {
-	end := lintkit.ClauseEnd(w, i)
-	if i+2 >= end || w[i] != "ALTER" || w[i+1] != "COLUMN" || !lintkit.IdentLike(w[i+2]) {
+	column, typeStart, ok := lintkit.RestatedColumnClause(w, sourceWords, i)
+	if !ok || !lintkit.HasWordSeq(w[typeStart:lintkit.ClauseEnd(w, i)], "NOT", "NULL") {
 		return "", false
 	}
-	rest := w[i+3 : end]
-	if len(rest) == 0 || rest[0] == "SET" || rest[0] == "DROP" || rest[0] == "TYPE" || !lintkit.HasWordSeq(rest, "NOT", "NULL") {
-		return "", false
-	}
-	return lintkit.SourceWordAt(w, sourceWords, i+2), true
+	return column.Name, true
 }
 
 func notNullStatements(file *File) []int {

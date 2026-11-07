@@ -147,21 +147,16 @@ func TestAC102_ValidStatementsThatMeetAParserGapStayGreen(t *testing.T) {
 		dialect   string
 		statement string
 	}{
-		{dialect: "postgres", statement: "DROP VIEW v;"},
-		{dialect: "postgres", statement: "LOCK TABLE t IN ACCESS EXCLUSIVE MODE;"},
+		{dialect: "postgres", statement: "DROP AGGREGATE a(int);"},
 		{dialect: "postgres", statement: "CREATE COLLATION c (locale = 'C');"},
 		{dialect: "postgres", statement: "CREATE TABLE t3 (LIKE t INCLUDING ALL);"},
-		{dialect: "mysql", statement: "RENAME TABLE t TO u;"},
 		{dialect: "mysql", statement: "ALTER TABLE t ENGINE=InnoDB;"},
 		{dialect: "mariadb", statement: "CREATE TABLE s (a INT) WITH SYSTEM VERSIONING;"},
-		{dialect: "sqlite", statement: "SAVEPOINT s;"},
-		{dialect: "sqlite", statement: "DROP VIEW v;"},
+		{dialect: "sqlite", statement: "ATTACH DATABASE 'x.db' AS x;"},
 		{dialect: "sqlserver", statement: "CREATE CLUSTERED INDEX i ON t (a);"},
 		{dialect: "sqlserver", statement: "EXEC sp_rename 't.b', 'c', 'COLUMN';"},
-		{dialect: "clickhouse", statement: "OPTIMIZE TABLE t FINAL;"},
 		{dialect: "clickhouse", statement: "ALTER TABLE t ADD COLUMN b Int32 AFTER a;"},
-		{dialect: "cockroachdb", statement: "UPSERT INTO t VALUES (1, 2);"},
-		{dialect: "cockroachdb", statement: "CREATE INDEX i ON t (b) STORING (a);"},
+		{dialect: "cockroachdb", statement: "ALTER TABLE t SPLIT AT VALUES (1);"},
 		{dialect: "yugabytedb", statement: "CREATE TABLE u (a INT) SPLIT INTO 4 TABLETS;"},
 		{dialect: "spanner", statement: "CREATE NULL_FILTERED INDEX i ON t (a);"},
 	}

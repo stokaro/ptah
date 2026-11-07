@@ -277,3 +277,68 @@ func TestCompatMigrateDiffForeignKeyMovedE2E_AKeptKeyStandsOnTheOldIndex(t *test
 		})
 	}
 }
+
+// TestMigrationsForeignKeyMovedE2E_TwoKeysTakeTheNamesOfTheIndexesAKeptKeyStandsOn removes
+// both indexes a kept key stands on, each under the name of a foreign key the plan moves
+// or adds. One statement gives the kept key an index of its own and drops both, and the
+// plan wrote it again at the second key, which the server stopped with Error 1091. Each
+// row runs the plan through schema apply, and through a migration and its rollback.
+func TestMigrationsForeignKeyMovedE2E_TwoKeysTakeTheNamesOfTheIndexesAKeptKeyStandsOn(t *testing.T) {
+	const (
+		parent  = "CREATE TABLE parent (id bigint PRIMARY KEY, code bigint NOT NULL UNIQUE, alt bigint NOT NULL UNIQUE);\n"
+		indexes = "CREATE TABLE child (id bigint PRIMARY KEY, pid bigint, qid bigint, rid bigint, KEY x_fk (pid), KEY y_fk (pid), " +
+			"CONSTRAINT k_fk FOREIGN KEY (pid) REFERENCES parent (alt)"
+		desired = parent + "CREATE TABLE child (id bigint PRIMARY KEY, pid bigint, qid bigint, rid bigint, " +
+			"CONSTRAINT k_fk FOREIGN KEY (pid) REFERENCES parent (alt), CONSTRAINT x_fk FOREIGN KEY (qid) REFERENCES parent (id), " +
+			"CONSTRAINT y_fk FOREIGN KEY (rid) REFERENCES parent (code));\n"
+		rows  = "INSERT INTO parent VALUES (1, 1, 1);\nINSERT INTO child (id, pid) VALUES (1, 1);\n"
+		ended = "k_fk(pid),x_fk(qid),y_fk(rid) | k_fk(pid),x_fk(qid),y_fk(rid)"
+	)
+	tests := []struct{ name, built, afterDown string }{
+		{
+			name:      "two keys move under their names",
+			built:     indexes + ", CONSTRAINT x_fk FOREIGN KEY (pid) REFERENCES parent (id), CONSTRAINT y_fk FOREIGN KEY (pid) REFERENCES parent (code));\n",
+			afterDown: "x_fk(pid),y_fk(pid) | k_fk(pid),x_fk(pid),y_fk(pid)",
+		},
+		{
+			name:      "two new keys take the names",
+			built:     indexes + ");\n",
+			afterDown: "x_fk(pid),y_fk(pid) | k_fk(pid)",
+		},
+	}
+	for _, engine := range removedForeignKeyEngines {
+		for _, test := range tests {
+			t.Run(engine.name+" "+test.name+" through schema apply", func(t *testing.T) {
+				c := qt.New(t)
+				_, target := newMySQLFamilyScratch(c, engine.engine).builtFrom(c, parent+test.built+rows)
+
+				run := removedForeignKeyApply(c, target, desired)
+
+				c.Assert(run.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", run.Stdout, run.Stderr))
+				c.Assert(columnKeyString(c, target, foreignKeyMovedRead), qt.Equals, ended)
+				again := removedForeignKeyApply(c, target, desired)
+				c.Assert(again.Stdout, qt.Contains, "Schema is synced")
+			})
+			t.Run(engine.name+" "+test.name+" through a migration", func(t *testing.T) {
+				c := qt.New(t)
+				_, target := newMySQLFamilyScratch(c, engine.engine).builtFrom(c, parent+test.built+rows)
+				dir := filepath.Join(c.TempDir(), "migrations")
+				c.Assert(os.MkdirAll(dir, 0o750), qt.IsNil)
+				schema := filepath.Join(c.TempDir(), "schema.sql")
+				c.Assert(os.WriteFile(schema, []byte(desired), 0o600), qt.IsNil)
+
+				generated := runPtahIn(c, "migrations", "generate", "--db-url", target, "--schema-file", schema, "--migrations-dir", dir, "--name", "fk")
+				c.Assert(generated.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", generated.Stdout, generated.Stderr))
+				up := runPtahIn(c, "migrations", "up", "--db-url", target, "--migrations-dir", dir, "--allow-destructive")
+				c.Assert(up.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", up.Stdout, up.Stderr))
+				c.Assert(columnKeyString(c, target, foreignKeyMovedRead), qt.Equals, ended)
+
+				down := runPtahIn(c, "migrations", "down", "--db-url", target, "--migrations-dir", dir, "--target", "0", "--confirm")
+
+				c.Assert(down.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", down.Stdout, down.Stderr))
+				c.Assert(columnKeyString(c, target, foreignKeyMovedRead), qt.Equals, test.afterDown)
+				c.Assert(readInt(c, target, "SELECT count(*) FROM child"), qt.Equals, 1)
+			})
+		}
+	}
+}
