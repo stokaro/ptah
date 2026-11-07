@@ -1460,10 +1460,11 @@ message ModelReport {
   ValueInput.Representation representation = 2;
   repeated ModelMetric metrics = 3;
   // Optional label for export omission diagnostics. Empty uses the model's
-  // display_name. Contract 25.35, under models.report-counts.
+  // display_name. Contract 25.36, under models.omission-counts.
   string omission_label = 4;
   // Optional name of a declared metric whose per-value count gives the
-  // number of omitted objects. Empty counts one per value. Contract 25.35.
+  // number of omitted objects. Empty counts one per value. Contract 25.36,
+  // under models.omission-counts.
   string omission_count_metric = 5;
 }
 // ModelMetric is one object-count metric: name is a lowercase ASCII suffix of
