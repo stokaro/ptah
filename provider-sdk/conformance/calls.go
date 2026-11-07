@@ -118,6 +118,8 @@ func offlineRPCs() []rpc {
 			provider.ValidateResolvedDatabaseContextReply),
 		described("CompareChecks", provider.CheckEquivalenceFeature, protocol.ProviderClient.CompareChecks, provider.ValidateCompareChecksRequest,
 			provider.ValidateComparedChecksReply),
+		described("CompareViewQueries", provider.ViewQueryEquivalenceFeature, protocol.ProviderClient.CompareViewQueries, provider.ValidateCompareViewQueriesRequest,
+			provider.ValidateComparedViewQueriesReply),
 	}
 }
 

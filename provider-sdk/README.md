@@ -334,6 +334,7 @@ this SDK, and a host of this SDK against a provider of contract 25.0.
 | `ReportValues` | Offline: one count for each metric of a value's model report, for every value of the request, in order. |
 | `ScanSQL` | Offline: the tokens of one text of the engine's SQL, in order, covering the text with no gap and no overlap. |
 | `CompareChecks` | Offline: for each declared CHECK expression paired with a held CHECK, whether the two are one constraint on the engine, in request order. |
+| `CompareViewQueries` | Offline: for each declared view query paired with the view the database holds under its name, whether the two are one query on the engine, in request order. |
 
 Session capabilities preserve presence: an explicit `false` is an established
 answer, while an absent key remains unknown. The SDK validates names and the host
@@ -3024,6 +3025,39 @@ refuses a pair that names no CHECK the table holds with an expression, a
 blank declared expression, a constraint named twice, a table without pairs and
 two tables of one subject; `ValidateComparedChecks` refuses a reply that
 leaves a table or a pair out, reorders them or names another.
+
+## View query equivalence
+
+[ADR 0108](../docs/adr/0108-a-provider-decides-whether-two-view-queries-are-one.md)
+decides this feature. `schema.view-query-equivalence` enables
+`CompareViewQueries`, by which the owner of an engine decides whether the
+query a declared view states and the query the view of the same name holds
+are one query. The host's own comparison folds the two texts by shared rules,
+which lower-case unquoted text; on an engine whose identifiers keep case, a
+query that changes only the case of a name is then never reported. The
+provider and each engine that compares view queries list it; a host that does
+not know the call never makes it, so it is not a two-way feature.
+
+A request names the engine, its identifier facts and capabilities, and the
+pairs to compare: each the held view, a view or a materialized view as a read
+reported it, without its facets, and the query the declaration states, without
+`CREATE VIEW`, the view's name, its options or a materialized view's data
+clause. The owner reads the request alone and runs nothing. The reply answers
+each pair in the request's order with the held view's identity and
+`equivalent`; the host keeps a view whose query the owner calls equivalent and
+replaces one it does not, and compares no view query of the engine by its
+text.
+
+`ValidateCompareViewQueriesRequest` refuses:
+
+- a pair whose held view is not a view or a materialized view of the engine,
+  is of a kind the engine does not carry as a common object, has no query or
+  carries facets;
+- a blank declared query;
+- two pairs of one view, a view and a materialized view sharing their names.
+
+`ValidateComparedViewQueries` refuses a reply that leaves a pair out, reorders
+the pairs or names another view.
 
 ## Common index observations
 
