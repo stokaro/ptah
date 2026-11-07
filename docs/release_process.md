@@ -85,8 +85,9 @@ waiting on one is a reason to cut it rather than a note on its own backlog
 
 4. Wait for the `Release` workflow to finish. Its changelog runs from the
    nearest earlier `v*` tag, which the workflow passes to GoReleaser as
-   `GORELEASER_PREVIOUS_TAG`. `provider-sdk/v*` tags also sit on `master`, and
-   GoReleaser would otherwise start the changelog at the newest of them.
+   `GORELEASER_PREVIOUS_TAG`. `provider-sdk/v*` and `sqlsyntax/v*` tags also sit
+   on `master`, and GoReleaser would otherwise start the changelog at the newest
+   of them.
 5. Verify the GitHub Release contains archives for Linux, macOS, and Windows,
    the source archive, `checksums.txt`, SBOM artifacts, and one
    `<artifact>.sigstore.json` cosign bundle per checksum and SBOM file. Verify a
