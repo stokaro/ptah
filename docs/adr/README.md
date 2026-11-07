@@ -112,6 +112,10 @@ a new record that names it, and its own status line is updated to point there.
 | [0100](0100-a-read-reports-the-unique-constraints-an-engine-keeps-apart-from-its-indexes.md) | A read reports the UNIQUE constraints an engine keeps apart from its indexes | Proposed |
 | [0101](0101-the-sdk-servers-refusal-of-a-request-is-not-the-providers.md) | The SDK server's refusal of a request is not the provider's | Proposed |
 | [0102](0102-the-provider-contract-freezes-with-ptah-1-0-and-keeps-major-25.md) | The provider contract freezes with Ptah 1.0 and keeps major 25 | Accepted |
+| [0103](0103-a-column-comparison-states-collation-apart-from-the-type.md) | A column comparison states collation apart from the type | Proposed |
+| [0104](0104-a-declared-view-states-the-level-of-its-check-option.md) | A declared view states the level of its check option | Proposed |
+| [0105](0105-a-comparison-knows-every-relation-the-desired-schema-declares.md) | A comparison knows every relation the desired schema declares | Proposed |
+| [0106](0106-a-planning-service-owns-tables-without-a-table-setting.md) | A planning service owns tables without a table setting | Proposed |
 
 ## Writing one
 

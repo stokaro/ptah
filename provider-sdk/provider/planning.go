@@ -188,15 +188,15 @@ func ValidatePlannedFeaturesReply(description *protocol.Description, request *pr
 	if result == nil || !result.GetComplete() {
 		return fmt.Errorf("%w: incomplete feature planning", ErrProtocol)
 	}
-	if len(result.GetDiagnostics()) > 0 {
-		return validatePlanningDiagnostics(request, result)
-	}
 	service := findModelPlanning(description, request.GetEngine(), request.GetPlanningId())
+	if len(result.GetDiagnostics()) > 0 {
+		return validatePlanningDiagnostics(request, service, result)
+	}
 	steps, err := validatePlanningContributions(description, request, service, result.GetContributions())
 	if err != nil {
 		return err
 	}
-	if err := validatePlanningReceipts(request, result, steps); err != nil {
+	if err := validatePlanningReceipts(request, service, result, steps); err != nil {
 		return err
 	}
 	return validatePlanningRewrites(request, result, steps)

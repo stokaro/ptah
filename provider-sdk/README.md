@@ -68,10 +68,11 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.31. Each released SDK speaks one contract:
+speaks contract 25.32. Each released SDK speaks one contract:
 
 | SDK release | Contract |
 | --- | --- |
+| `provider-sdk/v0.30.0` | 25.32 |
 | `provider-sdk/v0.29.0` | 25.31 |
 | `provider-sdk/v0.28.0` | 25.30 |
 | `provider-sdk/v0.27.0` | 25.29 |
@@ -170,6 +171,10 @@ returns to 0.
   the provider's [working directory](#working-directory).
   Contract 25.31 adds [enum columns](#enum-columns) and
   [observed UNIQUE constraints](#observed-unique-constraints).
+  Contract 25.32 adds [column collations](#column-collations),
+  [view check options](#view-check-options),
+  [declared relations](#declared-relations) and
+  [table ownership](#table-ownership).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -1114,6 +1119,22 @@ context includes explicit actions, declared relations, roles, columns, required
 objects, exclusions, and the database path. Facet context includes common
 constraint definitions. A missing capability differs from an explicit false.
 
+### Declared relations
+
+[ADR 0105](../docs/adr/0105-a-comparison-knows-every-relation-the-desired-schema-declares.md)
+decides this feature. `CompareModelsRequest.declared_relations` names the
+relations the desired schema declares, each identity's kind saying which.
+Without `models.declared-relations` it holds the declared views and
+materialized views alone (kinds `view` and `materialized view`). Under the
+feature it holds every declared table, view and materialized view (kinds
+`table`, `view` and `materialized view`), so a comparison of models that
+reference a relation, such as a transfer into a table, knows whether the
+relation is declared. A relation of the provider's own models, such as a
+topic, is not listed: the comparison's state carries it. The provider and
+each engine whose comparisons read the list declare this two-way feature, and
+the engine needs a model comparison. `ValidateComparisonRequest` refuses a
+table without the feature and any other kind.
+
 Bound identity components retain source and normalized spelling, quoting, and
 connection defaults. Parent, namespace path, and signature remain separate.
 Coverage retains each independent source and its outside and bounded claims.
@@ -1432,6 +1453,27 @@ cancellation. The independent transaction fixture checks real commit, rollback,
 session cleanup, handle isolation, late-begin fencing, and native schema apply
 with `file` and `all` transaction modes.
 
+### Table ownership
+
+[ADR 0106](../docs/adr/0106-a-planning-service-owns-tables-without-a-table-setting.md)
+decides this feature. `planning.table-ownership` adds
+`ModelPlanning.owns_tables`: the service owns the lifecycle of every table of
+its engine, as a service with a parent kind does, without a table setting
+model that never holds a value. The provider and the engine list this two-way
+feature. Under it:
+
+- the host hands such a service every table it creates, alters, rebuilds or
+  drops;
+- the service answers one parent receipt of kind `table`
+  (`provider.TableReceiptKind`) for each, after the receipts of its parent
+  kinds, and a refusal names the table with a parent diagnostic of that kind;
+- a service that owns tables may plan no change, parent or context kind,
+  reads whole tables and is never outlined;
+- an engine has at most one such service.
+
+A host that does not list the feature sees no service own tables this way, so
+a provider whose only claim on its tables is this one needs a host that lists
+it.
 
 ### Migration logs and tags
 
@@ -1977,6 +2019,28 @@ current operand must equal a captured current view. A missing operand means
 unknown current state, including an authored `CREATE OR REPLACE`; it establishes
 no absence. Providers refuse replacements whose preservation requirements need
 unavailable current facts.
+
+### View check options
+
+[ADR 0104](../docs/adr/0104-a-declared-view-states-the-level-of-its-check-option.md)
+decides this feature. `schema.view-check-options` adds `SQLView.check_option`:
+`CASCADED`, `LOCAL`, or `CHECK_OPTION_NONE` for a view without a check option.
+`LOCAL` checks a row written through the view against the view's own
+condition; `CASCADED` checks it against the conditions of the views it reads
+as well, and is what `WITH CHECK OPTION` means when it names no level. The
+provider and each engine whose views carry the level list this two-way
+feature. Under it every `SQLView` states the level, in a host's view creation
+and declared common objects and in the views a provider reads from SQL, and
+`with_check` is true exactly when the level is `CASCADED` or `LOCAL`.
+
+A peer that does not list the feature sends `CHECK_OPTION_NONE`, and
+`with_check` alone says whether a view has a check option, as it does for a
+peer of contract 25.31. An observed view already reports the level as text in
+`ObservedView.check_option`.
+
+The validators refuse a level sent to a target that does not list the feature,
+a level that disagrees with `with_check`, and a level this SDK does not know.
+`PrepareCommonObjects` keeps the level each declared view has.
 
 ### Common namespaces
 
@@ -2672,6 +2736,26 @@ literals and expressions. Empty literals are valid. Absence requires absent
 input and empty output; an expression requires nonempty input and output.
 Neither service reads a database or substitutes defaults for unavailable facts.
 Cancellation and incomplete replies expose no successful prefix.
+
+### Column collations
+
+[ADR 0103](../docs/adr/0103-a-column-comparison-states-collation-apart-from-the-type.md)
+decides this feature. `schema.column-collations` adds the aspect
+`COLUMN_COLLATION`. The provider and each engine whose column comparison
+states collation list this two-way feature beside `schema.columns`. Under it a
+host asks the collation of each column pair it sends, and the provider answers
+a `ColumnDifference` whose spellings are the declared and the held collation,
+empty where a side leaves the engine's default. Its `COLUMN_TYPE` answer then
+leaves collation out, so a column whose collation alone changes has a
+collation change and no type change. A host that does not list the feature
+asks no collation, and an engine compares collation inside the type, as it
+does for a host of contract 25.31.
+
+`ValidateColumnsRequest` refuses the aspect when the engine or the request's
+target features do not list the feature. A reply's collation receipt needs
+`SAME` or `CHANGED`, each spelling on one line without surrounding white space,
+and two different spellings for `CHANGED`. `ValidateDescription` refuses the
+engine's feature without the provider's or without the column comparison.
 
 With this feature negotiated, every `ProjectedTableCreation.columns` list
 predicts the complete declared column inventory in order. Names remain exact;

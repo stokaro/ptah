@@ -475,7 +475,10 @@ func ValidatePreparedCommonObjectsReply(description *protocol.Description, reque
 	if err := validatePreparedIdentities(request.GetDeclared(), result.GetPrepared()); err != nil {
 		return err
 	}
-	_, kinds, _ := commonObjectEngine(description, request.GetEngine(), request.GetTargetFeatures())
+	engine, kinds, _ := commonObjectEngine(description, request.GetEngine(), request.GetTargetFeatures())
+	if err := validateViewCheckOptions(description, engine, request.GetTargetFeatures(), result.GetPrepared().GetViews()); err != nil {
+		return err
+	}
 	return validateDeclaredCommonObjects(request.GetIdentifiers(), kinds, result.GetPrepared())
 }
 
@@ -490,6 +493,9 @@ func validatePreparedIdentities(before, after *protocol.DeclaredCommonObjects) e
 		prepared := after.GetViews()[i]
 		if prepared.GetSchema() != view.GetSchema() || prepared.GetName() != view.GetName() || prepared.GetMaterialized() != view.GetMaterialized() || !proto.Equal(prepared.GetFeatures(), view.GetFeatures()) {
 			return commonObjectError("preparation changed a view's identity")
+		}
+		if prepared.GetCheckOption() != view.GetCheckOption() {
+			return commonObjectError("preparation changed the check option level of view " + view.GetName())
 		}
 	}
 	for i, sequence := range before.GetSequences() {
