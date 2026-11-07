@@ -31,6 +31,10 @@ func materializedViewNamesOf(database schemamodel.Database) []string {
 	return names
 }
 
+// providerEngine names an engine a provider serves, which no descriptor
+// describes.
+const providerEngine = "fixture"
+
 const (
 	viewFixture    = "CREATE TABLE t (id int PRIMARY KEY);\nCREATE VIEW v AS SELECT id FROM t;\nCREATE VIEW w AS SELECT id FROM t;\n"
 	matViewFixture = "CREATE TABLE t (id int PRIMARY KEY);\nCREATE MATERIALIZED VIEW m AS SELECT id FROM t;\nCREATE MATERIALIZED VIEW n AS SELECT id FROM t;\n"
@@ -79,6 +83,13 @@ func TestRead_DropView_HappyPath(t *testing.T) {
 			sql:       viewFixture + "CREATE VIEW x AS SELECT id FROM v;\nDROP VIEW v;",
 			wantViews: []string{"w", "x"},
 		},
+		{
+			// A read with no dialect has no server to ask, and takes the drop.
+			name: "no dialect, a view another view reads", dialect: "",
+			sql:       viewFixture + "CREATE VIEW x AS SELECT id FROM v;\nDROP VIEW v;",
+			wantViews: []string{"w", "x"},
+		},
+		{name: "an engine a provider serves", dialect: providerEngine, sql: viewFixture + "DROP VIEW v;", wantViews: []string{"w"}},
 		{
 			// MySQL answers `Unknown table` for the view and drops nothing only
 			// without IF EXISTS.
@@ -199,6 +210,14 @@ func TestRead_DropView_FailurePath(t *testing.T) {
 			name: "a view a materialized view reads, CockroachDB", dialect: "cockroachdb",
 			sql:     viewFixture + "CREATE MATERIALIZED VIEW x AS SELECT id FROM v;\nDROP VIEW v;",
 			wantErr: `line 5, column 1: DROP VIEW v: materialized view x still reads the view`,
+		},
+		{
+			// No provider states whether a view blocks the drop of what it reads,
+			// so the read refuses what the Spanner emulator refuses: `Cannot drop
+			// VIEW v on which there are dependent views: x`.
+			name: "a view another view reads, an engine a provider serves", dialect: providerEngine,
+			sql:     viewFixture + "CREATE VIEW x AS SELECT id FROM v;\nDROP VIEW v;",
+			wantErr: `line 5, column 1: DROP VIEW v: view x still reads the view`,
 		},
 	}
 	for _, test := range tests {
