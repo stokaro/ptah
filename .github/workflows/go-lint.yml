@@ -458,6 +458,20 @@ jobs:
           version: v2.15.0
           working-directory: provider-sdk/testdata/fixture
 
+      - name: Golint (SQL syntax module)
+        uses: golangci/golangci-lint-action@v9
+        with:
+          args: --timeout=30m
+          version: v2.15.0
+          working-directory: sqlsyntax
+
+      - name: Golint (SQL syntax module, tagged contour)
+        uses: golangci/golangci-lint-action@v9
+        with:
+          args: --timeout=30m --build-tags=integration,observability
+          version: v2.15.0
+          working-directory: sqlsyntax
+
   go-lint-gate:
     name: Go lint gate
     if: ${{ !cancelled() && github.event_name == 'pull_request' }}
@@ -665,3 +679,19 @@ jobs:
           version: v2.15.0
           skip-cache: true
           working-directory: provider-sdk/testdata/fixture
+
+      - name: Golint (SQL syntax module)
+        uses: golangci/golangci-lint-action@v9
+        with:
+          args: --timeout=30m
+          version: v2.15.0
+          skip-cache: true
+          working-directory: sqlsyntax
+
+      - name: Golint (SQL syntax module, tagged contour)
+        uses: golangci/golangci-lint-action@v9
+        with:
+          args: --timeout=30m --build-tags=integration,observability
+          version: v2.15.0
+          skip-cache: true
+          working-directory: sqlsyntax
