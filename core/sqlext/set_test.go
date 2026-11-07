@@ -397,3 +397,44 @@ func TestSet_Parse_CarriesWhereTheDocumentIsWritten(t *testing.T) {
 	c.Assert(requests[0].Claims[0].Written, qt.Equals, written)
 	c.Assert(requests[0].Claims[0].Offset, qt.Equals, 12)
 }
+
+// TestSet_Statements answers with the statement facts the owner of a target
+// states, and with the zero facts for a target no owner states facts for and
+// for a document that names no target.
+func TestSet_Statements(t *testing.T) {
+	skips := sqlext.StatementFacts{DropViewIfExistsSkipsOtherKinds: true}
+	set := must.Must(sqlext.NewSet(
+		sqlext.Extension{Owner: "example.org/a", Targets: []string{"a"}, Statements: skips},
+		extension("example.org/b", "b", shortParser{}, sqlext.Pattern{Name: "index", Site: sqlext.TableElement, Words: []string{"INDEX"}, Targeted: true}),
+	))
+	for _, test := range []struct {
+		name, target string
+		want         sqlext.StatementFacts
+	}{
+		{"a target whose owner states a fact", "a", skips},
+		{"a target whose owner states none", "b", sqlext.StatementFacts{}},
+		{"a target no owner registers", "c", sqlext.StatementFacts{}},
+		{"a document that names no target", "", sqlext.StatementFacts{}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(set.Statements(test.target), qt.Equals, test.want)
+		})
+	}
+}
+
+// TestNewSet_RefusesTwoOwnersOfOneTargetsStatementFacts refuses a second owner
+// stating facts for a target: a false answer of one could not be told from an
+// answer it does not give.
+func TestNewSet_RefusesTwoOwnersOfOneTargetsStatementFacts(t *testing.T) {
+	c := qt.New(t)
+	skips := sqlext.StatementFacts{DropViewIfExistsSkipsOtherKinds: true}
+
+	set, err := sqlext.NewSet(
+		sqlext.Extension{Owner: "example.org/a", Targets: []string{"a"}, Statements: skips},
+		sqlext.Extension{Owner: "example.org/b", Targets: []string{"b", "a"}, Statements: skips},
+	)
+
+	c.Assert(err, qt.ErrorMatches, `duplicate.*: SQL statement facts of target "a" are stated by example.org/a and example.org/b`)
+	c.Assert(set.Selected(), qt.IsFalse)
+}

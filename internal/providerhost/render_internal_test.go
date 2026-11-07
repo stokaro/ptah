@@ -69,3 +69,36 @@ func TestRenderedNativeUnitRefusesChangedOrUnboundEnvelope(t *testing.T) {
 		})
 	}
 }
+
+// TestRenderedOmissionsNameTheEngine pins the conversion of a provider's
+// omissions: each becomes the host's omission with the engine as the target
+// the render was for and every field kept, in the provider's order, and a
+// reply without omissions reports none.
+func TestRenderedOmissionsNameTheEngine(t *testing.T) {
+	tests := []struct {
+		name      string
+		omissions []*protocol.RenderOmission
+		want      []renderer.Omission
+	}{
+		{name: "no omission"},
+		{
+			name: "a lost property and a lost object",
+			omissions: []*protocol.RenderOmission{
+				{Reason: "unsupported", Kind: "column", Name: "accounts.email", Property: "type modifier", Detail: "VARCHAR(255): length 255"},
+				{Reason: "unsupported", Kind: "trigger", Name: "audit", Remedy: "declare it in a migration"},
+			},
+			want: []renderer.Omission{
+				{Dialect: "fixture", Reason: "unsupported", Kind: "column", Name: "accounts.email", Property: "type modifier", Detail: "VARCHAR(255): length 255"},
+				{Dialect: "fixture", Reason: "unsupported", Kind: "trigger", Name: "audit", Remedy: "declare it in a migration"},
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			selected, _, _ := nativeRenderFixture()
+
+			c.Assert(selected.renderedOmissions(test.omissions), qt.DeepEquals, test.want)
+		})
+	}
+}

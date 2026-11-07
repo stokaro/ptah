@@ -28,6 +28,7 @@ func (s modelComparer) CompareObjects(ctx context.Context, request schemaext.Obj
 	}
 	remote.Parents = comparisonParents(request.Parents)
 	remote.DeclaredRelations, remote.DeclaredRoles, remote.Required = s.declaredRelations(remote.GetTargetFeatures(), request.DeclaredRelations), comparisonIdentities(request.DeclaredRoles), comparisonIdentities(request.Required)
+	remote.DeclaredObjects = s.declaredObjects(remote.GetTargetFeatures(), request.DeclaredObjects)
 	remote.DatabasePath = request.DatabasePath
 	sent := s.writtenRequests(request.Requests)
 	for _, index := range sent {
@@ -78,6 +79,19 @@ func (s modelComparer) declaredRelations(targetFeatures []string, relations []ob
 		relations = slices.DeleteFunc(slices.Clone(relations), func(relation objectidentity.ID) bool { return relation.Kind == objectidentity.KindTable })
 	}
 	return comparisonIdentities(relations)
+}
+
+// declaredObjects returns the declared objects a provider receives: every one
+// the runtime gave a comparison whose declared kinds the description names,
+// when the provider and the engine negotiated provider.DeclaredObjectsFeature
+// and the request's target features list it too; none otherwise. The SDK
+// keeps no declared kind for a host that did not list the feature, so the
+// runtime gives such a comparison nothing to send.
+func (s modelComparer) declaredObjects(targetFeatures []string, objects []objectidentity.ID) []*protocol.ComparisonIdentity {
+	if len(objects) == 0 || !s.target.negotiated(provider.DeclaredObjectsFeature) || !slices.Contains(targetFeatures, provider.DeclaredObjectsFeature) {
+		return nil
+	}
+	return comparisonIdentities(objects)
 }
 
 // boundCounts converts the counts a provider's comparison stated. The SDK
@@ -155,10 +169,11 @@ func (t *target) registerComparisons(result *engine.Provider) {
 		case protocol.ModelComparison_OBJECTS:
 			result.Comparisons = append(result.Comparisons,
 				engine.ObjectComparison{Target: t.engine.GetId(),
-					Kinds:       boundKinds(declaration.GetKinds()),
-					ChangeKinds: boundKinds(declaration.GetChangeKinds()),
-					Actions:     slices.Clone(declaration.GetActions()),
-					Service:     service})
+					Kinds:         boundKinds(declaration.GetKinds()),
+					ChangeKinds:   boundKinds(declaration.GetChangeKinds()),
+					Actions:       slices.Clone(declaration.GetActions()),
+					DeclaredKinds: boundKinds(declaration.GetDeclaredKinds()),
+					Service:       service})
 		case protocol.ModelComparison_FACETS:
 			owners := make([]objectidentity.Kind, len(declaration.GetOwnerKinds()))
 			for i, kind := range declaration.GetOwnerKinds() {

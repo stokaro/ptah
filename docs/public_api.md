@@ -472,6 +472,12 @@ indexes by. A bare table reference reaches a table in a schema only when the
 child names no struct or that table's struct, so same-named tables in two
 schemas keep their own children.
 `difftypes.TableObservationFor` assembles comparison-time observations.
+
+An observation also holds the grants the read found on the table itself, one
+row for each column of a column privilege, and `GrantsDescribed`, which is
+false when the read did not describe grants: an empty list then says nothing
+about the table. A plan that replaces the table reads them to give the new
+table the old one's grants.
 `difftypes.TableRemovals.ObservedReferences` reads the foreign keys the captures
 of removed tables hold between them, so a planner drops a referenced table after
 the tables that reference it, which a declaration that no longer names them
@@ -2304,7 +2310,10 @@ The index rules decide when an index is the declared one:
 `Rules.GeneratedExpressions` gives a generated column's expression the spelling
 both sides share on the target, and a reported change quotes that spelling.
 `Rules.Views` compares view and materialized view queries in place of the
-shared reading.
+shared reading. `Rules.ViewQueries` decides them instead, in one batch of
+`ViewQueryPair` values: each declared view the comparison matches with a held
+one, a materialized view's query without its data clause. The comparison then
+reads its answers alone, and a target registers one of the two.
 
 `Rules.Routines` states the language and the security mode the target applies
 to a routine that declares none, and the shared comparison reads an omitted
@@ -2479,10 +2488,11 @@ semantics. A `dbschema.DatabaseConnection` implements it, and the comparison
 does not link the schema readers through it. A nil `Connection` is refused.
 
 `schemaext.ComparisonRequest.DeclaredRelations` and
-`schemaext.ObjectComparisonRequest.DeclaredRelations` name the views and
-materialized views the desired schema declares, for an owner whose objects
-hold their names as relations; tables are in `Parents`. The runtime refuses an
-entry that is not a named view or materialized view with
+`schemaext.ObjectComparisonRequest.DeclaredRelations` name the tables, views and
+materialized views the desired schema declares, each identity's kind saying
+which, for an owner whose objects hold their names as relations or reference
+one. A table has the identity its parent has. The runtime refuses an entry that
+is not a named table, view or materialized view with
 `schemaext.ErrInvalidValue`, sends the owner a copy in identity order, and
 leaves the caller's slice unchanged. A nil list declares none.
 
@@ -2493,6 +2503,16 @@ roles found only in the catalog or named only by a privilege. An empty list
 manages none. The runtime validates unqualified role identities, orders them,
 and gives each service an independent copy. Owners can decide which existing
 state they may remove from this captured batch without reading the server.
+
+`schemaext.ObjectComparisonRequest.DeclaredObjects` names the desired objects
+of the models an owner reads beside its own, the kinds its
+`engine.ObjectComparison.DeclaredKinds` lists, such as the topics another owner
+compares for an owner of transfers that read them. The runtime fills it for
+each owner from the request's whole desired schema, in identity order and each
+once, and replaces what a caller set; an owner that lists no declared kind
+receives none. Registration refuses a declared kind the owner does not register
+a desired model for, one named twice and one of the owner's own kinds with
+`engine.ErrInvalidRegistration`.
 
 `schemaext.ComparisonRequest.Exclusions` and `DeclaredColumns`, and the same
 fields of `schemaext.ObjectComparisonRequest`, give an owner the run's context.
@@ -3359,6 +3379,13 @@ a SQL document carries. An `Extension` names its owner and targets and
 registers each piece of syntax as a `Pattern`: a `Site` where it stands, the
 words it opens with, the words that may or may not follow them, the words that
 end it, and whether a document that names no target consults it too.
+
+An `Extension` may also state `Statements`, the `StatementFacts` of its
+targets' servers that the reader follows for a target no dialect descriptor
+describes, such as whether `DROP VIEW IF EXISTS` of a table's name is skipped.
+One owner states them for a target, `Set.Statements` answers them, and the zero
+value is the answer that accepts nothing a server could refuse.
+
 Matching is data, so the reader finds every span with its own lexer. It hands
 an owner's `Parser` every span of one document in one call and applies the
 `Value` it returns for each: an index or named child objects a table element

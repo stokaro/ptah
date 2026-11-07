@@ -131,7 +131,8 @@ func (o *owner) planTable(request *protocol.PlanFeaturesRequest, table *protocol
 		}
 		return o.planIndexes(request.GetEngine(), declared, common)
 	}
-	value, err := o.statements(request.GetEngine(), "rebuild/"+declared.GetName(), declared.GetName(), rebuildStatements(declared, held, wanted))
+	statements := append(rebuildStatements(declared, held, wanted), regrants(declared.GetName(), table.GetCurrentGrants())...)
+	value, err := o.statements(request.GetEngine(), "rebuild/"+declared.GetName(), declared.GetName(), statements)
 	if err != nil {
 		return nil, nil, err.Error()
 	}
@@ -383,4 +384,21 @@ func columnType(declared string) string {
 		return declared
 	}
 	return strings.ToUpper(declared)
+}
+
+// regrants give a rebuilt table the grants the old one held, which the
+// request carries under planning.table-grants: SQLite keeps no grant, and the
+// drop of the old table takes its own, as on an engine that keeps them in a
+// table's access list. A request without them, from a host that did not
+// negotiate the feature, gets none back. The statements are text a
+// migration file holds; the fixture never runs them.
+func regrants(table string, grants *protocol.PlanningTableGrants) []string {
+	var statements []string
+	for _, grant := range grants.GetGrants() {
+		if grant.GetImplicit() {
+			continue
+		}
+		statements = append(statements, "GRANT "+grant.GetPrivilege()+" ON "+quote(table)+" TO "+quote(grant.GetRole())+";")
+	}
+	return statements
 }

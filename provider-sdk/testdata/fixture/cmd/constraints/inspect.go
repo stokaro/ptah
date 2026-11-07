@@ -46,6 +46,9 @@ func (o *owner) Inspect(ctx context.Context, request *protocol.InspectRequest) (
 			}
 			result.Tables = append(result.Tables, table)
 		}
+		if o.grants {
+			result.CommonObjects = heldGrants(tables)
+		}
 		for _, selector := range request.GetSchemas() {
 			bound := &protocol.NamespaceComponent{}
 			if selector != "main" {
@@ -176,4 +179,30 @@ func inspectIndexes(ctx context.Context, db backend.Querier, table string) ([]*p
 		result = append(result, observed)
 	}
 	return result, nil
+}
+
+// heldGrant is the privilege and the role of the grant the read reports on
+// every table in a table grants mode.
+const heldGrantRole, heldGrantPrivilege = "reader", "SELECT"
+
+// heldGrants are the common objects a read in a table grants mode reports:
+// heldGrant on each table, complete, since the fixture holds no other.
+func heldGrants(tables []stored) *protocol.ObservedCommonObjects {
+	observed := &protocol.ObservedCommonObjects{Coverage: []*protocol.CommonObjectCoverage{{Kind: protocol.CommonObjectSupport_GRANT,
+		Knowledge: &protocol.ModelKnowledge{State: protocol.ModelKnowledge_COMPLETE}}}}
+	for _, table := range tables {
+		observed.Grants = append(observed.Grants, &protocol.ObservedGrant{Role: heldGrantRole, Privilege: heldGrantPrivilege,
+			Target: &protocol.Reference{Engine: "fixture", Kind: "table", Name: table.name}})
+	}
+	return observed
+}
+
+// PrepareCommonObjects keeps a declaration as it is: the grants are the only
+// common objects of a table grants mode, and the fixture reads one back in
+// the spelling the read reports.
+func (o *owner) PrepareCommonObjects(ctx context.Context, request *protocol.PrepareCommonObjectsRequest) (*protocol.PreparedCommonObjects, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return &protocol.PreparedCommonObjects{Complete: true, Prepared: proto.CloneOf(request.GetDeclared())}, nil
 }

@@ -42,6 +42,10 @@ type Rules struct {
 	GeneratedExpressions GeneratedExpressions
 	// Views compares the queries of views and materialized views.
 	Views Views
+	// ViewQueries decides the queries of views and materialized views the
+	// comparison pairs, in one batch, in place of Views and the shared
+	// reading. A target registers one of the two.
+	ViewQueries ViewQueries
 	// Routines gives a routine the attributes the target applies where its
 	// declaration states none.
 	Routines Routines

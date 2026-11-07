@@ -21,16 +21,24 @@ import (
 // SQL schema documents whole (the DOCUMENT mode). Ptah does not lex or parse
 // such a document: the extension's grammar sends the text to the provider and
 // maps its reading back. An engine without the declaration is read with the
-// shared grammar, and contributes the clauses of CREATE TABLE it claims; see
-// Host.tableClauseExtension.
+// shared grammar, and contributes the clauses of CREATE TABLE it claims (see
+// Host.tableClauseExtension) and the statement facts it states (see
+// statementFacts).
 func (h *Host) sqlExtensions() []sqlext.Extension {
 	var result []sqlext.Extension
 	for _, engine := range h.description.GetEngines() {
 		declaration := engine.GetSqlSchema()
 		if declaration.GetMode() != protocol.SQLSchemaDeclaration_DOCUMENT {
-			if extension, claims := h.tableClauseExtension(engine); claims {
-				result = append(result, extension)
+			extension, claims := h.tableClauseExtension(engine)
+			facts := statementFacts(engine)
+			if !claims && facts == (sqlext.StatementFacts{}) {
+				continue
 			}
+			if !claims {
+				extension = sqlext.Extension{Owner: h.description.GetProviderId(), Targets: []string{engine.GetId()}}
+			}
+			extension.Statements = facts
+			result = append(result, extension)
 			continue
 		}
 		extension := sqlext.Extension{Owner: h.description.GetProviderId(), Targets: []string{engine.GetId()}, Grammar: sqlGrammar{target: h.targets[engine.GetId()]}}
@@ -40,6 +48,16 @@ func (h *Host) sqlExtensions() []sqlext.Extension {
 		result = append(result, extension)
 	}
 	return result
+}
+
+// statementFacts are the answers an engine that reads the shared SQL grammar
+// gives about its server's statements (provider.SQLStatementFactsFeature),
+// which the SQL reader follows for its documents, since no descriptor
+// describes a provider's engine. The SDK keeps none unless both sides listed
+// the feature, so an engine that states nothing reads every answer as the one
+// that accepts nothing a server could refuse.
+func statementFacts(engine *protocol.Engine) sqlext.StatementFacts {
+	return sqlext.StatementFacts{DropViewIfExistsSkipsOtherKinds: engine.GetSqlSchema().GetDropViewIfExistsSkipsOtherKinds()}
 }
 
 // checkSQLHeaderKinds refuses a header kind no header can hand to the owner:

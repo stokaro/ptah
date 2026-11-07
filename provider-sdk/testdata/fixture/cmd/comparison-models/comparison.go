@@ -20,6 +20,9 @@ func (p *comparer) CompareModels(ctx context.Context, request *protocol.CompareM
 	if err := refuseTableNames(request); err != nil {
 		return nil, err
 	}
+	if err := refuseUndeclaredAnchors(request); err != nil {
+		return nil, err
+	}
 	result := &protocol.ComparedModels{Complete: true, Desired: proto.CloneOf(request.GetDesired()), ResolvedRequests: resolveWritten(request)}
 	for _, desired := range request.GetDesired().GetRecords() {
 		if err := ctx.Err(); err != nil {
@@ -180,6 +183,31 @@ func refuseTableNames(request *protocol.CompareModelsRequest) error {
 					fmt.Sprintf("Retention object %s takes the name of declared table %s", record.GetSubject().GetName().GetSource(), relation.GetName().GetSource()))
 			}
 		}
+	}
+	return nil
+}
+
+// refuseUndeclaredAnchors refuses a declared retention object whose anchor,
+// the anchor of its name, the schema does not declare. The host names the
+// declared anchors in declared_objects for a target whose features list
+// provider.DeclaredObjectsFeature; another target leaves the question open,
+// and the object is compared as before.
+func refuseUndeclaredAnchors(request *protocol.CompareModelsRequest) error {
+	if !slices.Contains(request.GetTargetFeatures(), provider.DeclaredObjectsFeature) {
+		return nil
+	}
+	for _, record := range request.GetDesired().GetRecords() {
+		if record.GetValue() == nil || record.GetKind() != nativeKind {
+			continue
+		}
+		if slices.ContainsFunc(request.GetDeclaredObjects(), func(object *protocol.ComparisonIdentity) bool {
+			return object.GetKind() == anchorKind && object.GetName().GetNormalized() == record.GetSubject().GetName().GetNormalized()
+		}) {
+			continue
+		}
+		return runtime.ErrorWithReason(codes.FailedPrecondition,
+			fmt.Sprintf("Retention object %s keeps its rows in anchor %s, which the schema does not declare", record.GetSubject().GetName().GetSource(),
+				record.GetSubject().GetName().GetSource()))
 	}
 	return nil
 }

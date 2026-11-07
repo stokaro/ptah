@@ -101,6 +101,9 @@ func (t *target) registration() engine.Target {
 	if t.offers(provider.CheckEquivalenceFeature) {
 		result.Comparison.Checks = checkService{target: t}
 	}
+	if t.offers(provider.ViewQueryEquivalenceFeature) {
+		result.Comparison.ViewQueries = viewQueryService{target: t}
+	}
 	if t.offers(provider.ObservedConstraintsFeature) {
 		result.Constraints = constraintProjection{}
 	}
@@ -194,7 +197,7 @@ func (t *target) RenderSchema(ctx context.Context, request renderer.SchemaReques
 	if err != nil {
 		return renderer.SchemaResult{}, err
 	}
-	return renderer.SchemaResult{Complete: true, Statements: fragments}, nil
+	return renderer.SchemaResult{Complete: true, Statements: fragments, Omissions: rendered.Omissions}, nil
 }
 
 func (t *target) ValidateSchema(ctx context.Context, request schemavalidation.Request) (schemavalidation.Result, error) {

@@ -422,6 +422,45 @@ func TestSQLExtensionsServeDocumentEnginesAlone(t *testing.T) {
 	c.Assert(string(extensions[0].Header[0]), qt.Equals, "topic")
 }
 
+// TestSQLExtensionsCarryTheStatementFactsAnEngineStates gives an engine that
+// reads the shared grammar and states a statement fact an extension of its
+// own, with the fact and no syntax, so the SQL reader follows the fact for its
+// documents. An engine that states nothing gets no extension; see
+// TestSQLExtensionsServeDocumentEnginesAlone.
+func TestSQLExtensionsCarryTheStatementFactsAnEngineStates(t *testing.T) {
+	c := qt.New(t)
+	host := sqlDocumentTarget().host
+	fragments := &protocol.Engine{Id: "fragments", SqlSchema: &protocol.SQLSchemaDeclaration{Mode: protocol.SQLSchemaDeclaration_FRAGMENTS,
+		DropViewIfExistsSkipsOtherKinds: true}}
+	host.description.Engines = append(host.description.Engines, fragments)
+	host.targets["fragments"] = &target{host: host, engine: fragments}
+
+	extensions := host.sqlExtensions()
+
+	c.Assert(extensions, qt.HasLen, 2)
+	c.Assert(extensions[1].Owner, qt.Equals, "example.org/fixture")
+	c.Assert(extensions[1].Targets, qt.DeepEquals, []string{"fragments"})
+	c.Assert(extensions[1].Statements, qt.Equals, sqlext.StatementFacts{DropViewIfExistsSkipsOtherKinds: true})
+	c.Assert(extensions[1].Grammar, qt.IsNil)
+	c.Assert(extensions[1].Patterns, qt.HasLen, 0)
+}
+
+// TestSQLSchemaCommonHoldsTheRolePasswordAReadingReturns puts the password a
+// reading returns for a role into the model, where a Go, YAML or HCL source
+// puts its own, so the plan binds it as an execution input.
+func TestSQLSchemaCommonHoldsTheRolePasswordAReadingReturns(t *testing.T) {
+	c := qt.New(t)
+	reply := &protocol.SQLSchema{Complete: true, Roles: []*protocol.SQLRole{
+		{Name: "app", Login: true, PasswordDeclared: true, Password: "s3cret-pw"},
+		{Name: "reader", Login: true},
+	}}
+
+	database, err := sqlSchemaCommon(reply)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(database.Roles, qt.DeepEquals, []schemamodel.Role{{Name: "app", Login: true, Password: "s3cret-pw"}, {Name: "reader", Login: true}})
+}
+
 func TestContractIdentityBindsHowSQLDocumentsAreRead(t *testing.T) {
 	for _, test := range []struct {
 		name   string

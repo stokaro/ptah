@@ -225,6 +225,15 @@ var hostFeatures = []string{
 	// objects reference a table can tell a declared one; see
 	// modelComparer.declaredRelations.
 	provider.DeclaredRelationsFeature,
+	// A comparison that names the models of another comparison it reads, such
+	// as the topics a transfer reads, receives the identity of every declared
+	// object of those models; see engine.ObjectComparison.DeclaredKinds and
+	// modelComparer.declaredObjects.
+	provider.DeclaredObjectsFeature,
+	// A planning service receives the grants the read found on each held
+	// table, so a plan that replaces the table can give them back, even in
+	// the text of a migration file; see planningTableGrants.
+	provider.TableGrantsFeature,
 	// A column comparison answers the collation apart from the type, and
 	// the comparison records a changed collation as a change of its own;
 	// see columnAspects and Rules.ColumnCollations.
@@ -234,6 +243,10 @@ var hostFeatures = []string{
 	// keeps the level it states; see target.declaredCheckOption,
 	// target.createdCheckOption and localCheckOption.
 	provider.ViewCheckOptionsFeature,
+	// A complete render reports the declarations it left out, which the host
+	// carries into the render's result as a built-in engine's omissions; see
+	// target.renderedOmissions.
+	provider.RenderOmissionsFeature,
 	// A read reports the ledger the engine's seed service keeps as reserved
 	// storage, which every comparison leaves out, so a plan never drops it;
 	// see reader.reservedNames.
@@ -242,6 +255,11 @@ var hostFeatures = []string{
 	// claims reaches the provider whole, and the facets it decodes are the
 	// table's; see Host.tableClauseExtension.
 	provider.SQLTableClausesFeature,
+	// An engine that reads the shared SQL grammar states how its server
+	// treats a statement servers treat differently, such as DROP VIEW IF
+	// EXISTS of a table's name, and the SQL reader follows it; see
+	// statementFacts.
+	provider.SQLStatementFactsFeature,
 	// A release line of an engine linked into its provider names the version
 	// it links as its evidence, which `ptah providers check` reports; see
 	// Host.ReleaseLines.
@@ -302,6 +320,11 @@ var hostFeatures = []string{
 	// indexes, which the host places where a YAML source places them; see
 	// target.sqlFacets.
 	provider.SQLFacetsFeature,
+	// A SQL schema reading carries the password a document gives a role,
+	// which the host holds as it holds one a Go, YAML or HCL source
+	// declares, so a plan binds it and no output prints it; see
+	// sqlSchemaCommon.
+	provider.SQLRolePasswordsFeature,
 	// A provider model's count metrics join the reporting runtime, and the
 	// provider counts the model's values; see modelReporter.
 	provider.ReportCountsFeature,

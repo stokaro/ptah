@@ -237,8 +237,8 @@ func convertStatements(
 	ctx context.Context, statements *ast.StatementList, notes parseNotes, dialect string, document *Document,
 	owners sqlext.Set, relations featureselect.RelationRuntime,
 ) (schemamodel.Database, error) {
-	document.notes, document.relations = notes, relations
-	defer func() { document.notes, document.relations = nil, nil }()
+	document.notes, document.relations, document.statements = notes, relations, owners.Statements(ownerTarget(dialect))
+	defer func() { document.notes, document.relations, document.statements = nil, nil, sqlext.StatementFacts{} }()
 	document.comments = make(map[objectidentity.Key]string)
 	defer func() { document.comments = nil }()
 	database, err := toDatabase(ctx, statements, dialect, document)

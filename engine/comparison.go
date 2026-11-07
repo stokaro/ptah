@@ -20,12 +20,18 @@ import (
 // Actions lists the [schemaext.ChangeRequest] actions the service accepts for
 // its kinds. A request whose action the owner of its kind does not list is
 // refused before any service runs. A service with no actions accepts none.
+//
+// DeclaredKinds lists the models, beside its own, whose declared objects the
+// service reads: the runtime gives it the identity of every desired object of
+// those kinds in [schemaext.ObjectComparisonRequest.DeclaredObjects]. Each is a
+// model the same owner registers, named once, and none is one of Kinds.
 type ObjectComparison struct {
-	Target      string
-	Kinds       []schemaext.Kind
-	ChangeKinds []schemaext.Kind
-	Actions     []string
-	Service     schemaext.ObjectComparisonService
+	Target        string
+	Kinds         []schemaext.Kind
+	ChangeKinds   []schemaext.Kind
+	Actions       []string
+	DeclaredKinds []schemaext.Kind
+	Service       schemaext.ObjectComparisonService
 }
 
 func (r *Runtime) registerComparison(owner string, declaration ObjectComparison) error {
@@ -62,10 +68,28 @@ func (r *Runtime) registerComparison(owner string, declaration ObjectComparison)
 		}
 		actions[action] = true
 	}
+	if err := r.validateDeclaredKinds(owner, declaration); err != nil {
+		return err
+	}
+	declaration.DeclaredKinds = slices.Clone(declaration.DeclaredKinds)
 	declaration.Kinds = slices.Clone(declaration.Kinds)
 	declaration.ChangeKinds = slices.Clone(declaration.ChangeKinds)
 	declaration.Actions = slices.Clone(declaration.Actions)
 	r.comparisonServices = append(r.comparisonServices, declaration)
+	return nil
+}
+
+// validateDeclaredKinds refuses a declared kind of declaration that its owner
+// does not register a desired model for, one named twice, and one of the
+// service's own kinds, whose objects its batch of the desired state holds.
+func (r *Runtime) validateDeclaredKinds(owner string, declaration ObjectComparison) error {
+	declared := make(map[schemaext.Kind]bool, len(declaration.DeclaredKinds))
+	for _, kind := range declaration.DeclaredKinds {
+		if declared[kind] || slices.Contains(declaration.Kinds, kind) || !r.ownsCodec(owner, kind, schemaext.Desired) {
+			return fmt.Errorf("%w: invalid declared kind %q for %q", ErrInvalidRegistration, kind, owner)
+		}
+		declared[kind] = true
+	}
 	return nil
 }
 
@@ -124,6 +148,7 @@ func (r *Runtime) compareObjects(ctx context.Context, request schemaext.ObjectCo
 		batch.Desired = selectObjectState(request.Desired, kinds)
 		batch.Current = selectObjectState(request.Current, kinds)
 		batch.Requests = selectRequests(request.Requests, kinds, r.comparisonServices[service].Actions)
+		batch.DeclaredObjects = declaredObjects(request.Desired, r.comparisonServices[service].DeclaredKinds)
 		// The host's validation copy never aliases service-owned slices or maps.
 		sent, err := r.snapshotComparison(ctx, batch)
 		if err != nil {
@@ -210,10 +235,29 @@ func (r *Runtime) snapshotComparison(ctx context.Context, request schemaext.Obje
 	if err != nil {
 		return schemaext.ObjectComparisonRequest{}, err
 	}
+	request.DeclaredObjects = slices.Clone(request.DeclaredObjects)
 	if err := comparisonInputSubjects(request); err != nil {
 		return schemaext.ObjectComparisonRequest{}, err
 	}
 	return request, nil
+}
+
+// declaredObjects returns the identity of every object of desired whose kind
+// is one of kinds, in identity order: the declared objects a service that
+// lists kinds as its declared kinds receives. The request's desired state is
+// the whole one, before the runtime selects a service's own kinds.
+func declaredObjects(desired schemaext.ObjectState, kinds []schemaext.Kind) []objectidentity.ID {
+	if len(kinds) == 0 {
+		return nil
+	}
+	var result []objectidentity.ID
+	for _, ref := range desired.Objects.Refs() {
+		if slices.Contains(kinds, schemaext.Kind(ref.Kind)) {
+			result = append(result, ref)
+		}
+	}
+	slices.SortFunc(result, schemaext.CompareRefs)
+	return result
 }
 
 // snapshotRequired copies the objects the desired values require, ordered by

@@ -20,6 +20,18 @@ const nativeKind = "example.org/fixture/retention-object"
 const facetKind = "example.org/fixture/retention"
 const changeKind = "example.org/fixture/retention-change"
 
+// anchorKind is the object model of the anchors comparison, which the
+// fixture declares only with FIXTURE_DECLARED_OBJECTS=on.
+const anchorKind = "example.org/fixture/retention-anchor"
+
+// declaredObjects reports the mode in which the objects comparison reads the
+// declared anchors (provider.DeclaredObjectsFeature): each retention object
+// keeps its rows in the anchor of its name, so it refuses one whose anchor
+// the schema does not declare.
+func declaredObjects() bool {
+	return os.Getenv("FIXTURE_DECLARED_OBJECTS") == "on"
+}
+
 func main() {
 	description := comparisonDescription()
 	owner := &comparer{Provider: &backend.Provider{}, description: description}
@@ -78,5 +90,27 @@ func comparisonDescription() *protocol.Description {
 		{Id: "objects", Placement: protocol.ModelComparison_OBJECTS, Kinds: []string{nativeKind}, ChangeKinds: []string{changeKind}, Actions: []string{"rotate"}},
 		{Id: "facets", Placement: protocol.ModelComparison_FACETS, Kinds: []string{facetKind}, ChangeKinds: []string{changeKind}, OwnerKinds: []string{"table", "column", "constraint"}},
 	}
+	if declaredObjects() {
+		withAnchors(description)
+	}
 	return description
+}
+
+// withAnchors adds the anchors comparison, whose declared objects the objects
+// comparison reads under provider.DeclaredObjectsFeature.
+func withAnchors(description *protocol.Description) {
+	description.Features = append(description.Features, provider.DeclaredObjectsFeature)
+	engine := description.Engines[0]
+	engine.Features = append(engine.Features, provider.DeclaredObjectsFeature)
+	for _, model := range engine.GetValueModels() {
+		if model.GetKind() != nativeKind {
+			continue
+		}
+		anchor := proto.CloneOf(model)
+		anchor.Kind = anchorKind
+		engine.ValueModels = append(engine.ValueModels, anchor)
+	}
+	engine.Comparisons[0].DeclaredKinds = []string{anchorKind}
+	engine.Comparisons = append(engine.Comparisons,
+		&protocol.ModelComparison{Id: "anchors", Placement: protocol.ModelComparison_OBJECTS, Kinds: []string{anchorKind}, ChangeKinds: []string{changeKind}})
 }

@@ -243,6 +243,14 @@ whether each declared CHECK and the CHECK the table holds under the same name
 are one constraint, and keeps the held one or replaces it as the provider
 answers. Without the feature the host compares the two texts by its own rules.
 
+The host's own rules for a view's query fold case, which is wrong for an
+engine whose names keep their case. With `schema.view-query-equivalence`, the
+host asks the provider whether each declared view's query and the query of
+the view the database holds under its name are one query, a materialized
+view's without its data clause, and keeps the view or replaces it as the
+provider answers. Without the feature the host compares the two queries by its
+own rules.
+
 With `planning.index-renames` as well, a provider renames an index in place.
 When its session reports `index_rename`, the comparison pairs an index the
 table holds with one the declaration states under another name and with one
@@ -351,6 +359,15 @@ object after the common steps; the other grants keep their place. A missing
 receipt, an unclaimed table creation, a dependency cycle, or a provider refusal
 returns no SQL prefix. A provider-only operation without a text form cannot
 appear in a rendered schema.
+
+A render can go on without a declaration the engine keeps only in part, such as
+the length of a column type the engine does not have. A provider that lists
+`render.omissions` reports each one, and Ptah carries it into the render's
+result as it carries a built-in engine's: a caller that must not lose anything,
+such as a comparison probe, refuses the rendering, and an embedder of the
+engine runtime reads the list beside the statements. `ptah schema render`
+writes the statements alone, as it does for a built-in engine. A provider
+without the feature renders what it can and reports nothing.
 
 Declared rows (`//ptah:schema:data`) and seed files reach a provider through
 four services. The host keeps the row diff, the order across tables, protected
@@ -534,6 +551,16 @@ the tables only in a request whose `target_features` list the feature; a
 provider without the feature receives the declared views and materialized views
 alone.
 
+`models.declared-objects` tells a provider's object comparison which objects of
+another comparison's models the desired schema declares. A comparison receives
+the objects of its own models only, so one that compares transfers does not see
+the topics another comparison of the engine owns. A comparison that names those
+models among its declared kinds receives the identity of each declared object of
+them, so it can refuse a transfer of a topic the schema does not declare. The
+list holds what the desired schema holds after the run's scope: a topic that
+`--include` or `--schemas` leaves out is not declared. Ptah sends the list only
+in a request whose `target_features` list the feature.
+
 `planning.policy` hands the provider's planner the operator's planning policy:
 whether to rebuild a table, with the words a refusal names to say how to ask
 (`--allow-table-rebuild`, or `PTAH_ALLOW_TABLE_REBUILD=1` on `ptah-compat`),
@@ -589,6 +616,15 @@ provider reads from SQL keeps the level it states. Without the feature a
 
 A planning request does not carry the declared and observed objects as
 context.
+
+With `planning.table-grants`, a planning service that reads whole tables
+receives the grants the read found on each held table, beside the table: every
+grant on the table or on some of its columns, or an empty list marked not
+complete when the read did not describe grants. A plan that replaces a table,
+such as a rebuild a migration file runs later as SQL text, gives the new table
+those grants, except one the same plan revokes. The engine must carry `GRANT`
+common objects. Without the feature the request carries no grants, and a
+rebuild written as text cannot give them back.
 
 With `schema.common-namespaces`, an engine also carries its namespaces, such as
 the schemas of a DuckDB catalog or of Spanner's PostgreSQL interface, as the
@@ -1640,9 +1676,19 @@ each claimed clause, bound to its table, to `DecodeSource`, and places the
 facets it returns on the table. A document of the engine states each claimed
 facet for every table it declares, so removing the clause removes the facet. A
 clause the provider refuses stops the load with its position. ClickHouse keeps
-reading `TTL` as its own table option. An engine whose grammar the shared one
-cannot read, such as YQL, declares the `DOCUMENT` mode and the feature
-`schema.read-sql`, and Ptah does not parse the text.
+reading `TTL` as its own table option.
+
+With `source.sql-statement-facts` a `FRAGMENTS` engine also states how its
+server treats a statement servers disagree on, and
+Ptah reads the engine's documents the way its server runs them:
+`drop_view_if_exists_skips_other_kinds` says that `DROP VIEW IF EXISTS t` does
+nothing when `t` is a table, as the Spanner emulator does, so the table stays.
+An engine that states nothing, or a host that does not list the feature, keeps
+the refusal `the schema declares t as another kind of object`, which is what
+DuckDB answers.
+
+An engine whose grammar the shared one cannot read, such as YQL, declares the `DOCUMENT` mode and the feature `schema.read-sql`, and Ptah
+does not parse the text.
 
 Ptah reads the files of a load, a schema file with its imports or a schema
 directory, and sends them in load order to `ReadSQLSchema` with the engine's
@@ -1651,7 +1697,12 @@ identifier rules and the `ptah:not-described` entries of the kinds listed in
 reply as follows:
 
 - Tables, namespaces, enums, views, sequences, roles and grants enter the
-  common model.
+  common model. Under `source.sql-role-passwords` a role carries the password
+  its document gives it, such as `CREATE USER app PASSWORD '...'`, and Ptah
+  holds it as it holds a password a Go, YAML or HCL source declares: the plan
+  names the execution input `$PTAH_SECRET_PASSWORD_<ROLE>`, or the reference
+  the password writes, and no output prints the value. Without the feature a
+  reading says only that the role declares a password.
 - The provider's own objects are normalized by the provider.
 - Under `schema.sql-facets`, the facets of a table, a column or an index, such
   as a YDB table's changefeeds, are normalized by the provider and placed

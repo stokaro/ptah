@@ -78,6 +78,15 @@ type TableObservation struct {
 	Triggers        []catalog.Trigger
 	OwnedObjects    schemaext.Objects
 	FeatureCoverage schemaext.Coverage
+	// Grants are the privileges the read found granted on the table itself,
+	// as catalog.Database.Grants holds them: one row for each column of a
+	// column privilege. A plan that replaces the table reads them to give the
+	// new table the grants of the old one.
+	Grants []catalog.Grant
+	// GrantsDescribed reports that the read described grants. When it is
+	// false the read did not look at them, and an empty Grants says nothing
+	// about the table.
+	GrantsDescribed bool
 }
 
 // HasTable reports whether an observation was captured at comparison time.
@@ -96,5 +105,6 @@ func (o TableObservation) Clone() TableObservation {
 		o.Constraints[i] = o.Constraints[i].Clone()
 	}
 	o.Triggers = slices.Clone(o.Triggers)
+	o.Grants = slices.Clone(o.Grants)
 	return o
 }
