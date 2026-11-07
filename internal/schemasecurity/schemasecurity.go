@@ -141,6 +141,20 @@ type RoleMembership struct {
 // Passed in for the same reason memberships are: Ptah models no ownership in a
 // desired state, so a caller holding a catalog read has it and one holding a
 // schema file does not (stokaro/ptah#1950).
+// OwnerRevoke is one privilege an object's owner holds by default and revoked
+// from itself.
+type OwnerRevoke struct {
+	// Kind is the object kind: table, sequence, schema. A view's privileges
+	// are a table's.
+	Kind string
+	// Name is the object's name.
+	Name string
+	// Owner is the role that owns it.
+	Owner string
+	// Privilege is the privilege the owner gave up.
+	Privilege string
+}
+
 type ObjectOwner struct {
 	// Kind is the object kind: table, view, sequence, schema.
 	Kind string
@@ -188,6 +202,12 @@ type RoleObjectUsage struct {
 
 // Options selects what the analysis can check.
 type Options struct {
+	// OwnerRevokes are the privileges an object's owner holds by default and
+	// revoked from itself, as the read reports them apart from the grants.
+	// OWN02 reads them, under the same gate as OWN01: it runs where the read
+	// reports object owners, and an empty slice then means no owner revoked
+	// anything.
+	OwnerRevokes []OwnerRevoke
 	// ObjectOwners are the owners of the objects under analysis.
 	//
 	// Nil means the caller did not read them and OWN01 reports itself skipped;
@@ -258,6 +278,7 @@ func Analyze(db *schemamodel.Database, opts Options) Report {
 	}
 
 	if opts.ObjectOwners != nil {
+		report.Findings = append(report.Findings, findOwnersMissingDefaultPrivileges(opts.OwnerRevokes)...)
 		report.Findings = append(report.Findings, findObjectsOwnedByALoginRole(opts.ObjectOwners)...)
 		if unknown := ownersWithUnknownLogin(opts.ObjectOwners); len(unknown) > 0 {
 			report.SkippedRules = append(report.SkippedRules, SkippedRule{
@@ -268,7 +289,8 @@ func Analyze(db *schemamodel.Database, opts Options) Report {
 		}
 	} else {
 		report.SkippedRules = append(report.SkippedRules,
-			SkippedRule{Code: "OWN01", Reason: "object ownership was not read for this source"})
+			SkippedRule{Code: "OWN01", Reason: "object ownership was not read for this source"},
+			SkippedRule{Code: "OWN02", Reason: "object ownership was not read for this source"})
 	}
 
 	if opts.RoleObjectUsage != nil {
@@ -473,6 +495,50 @@ func findObjectsOwnedByALoginRole(owners []ObjectOwner) []Finding {
 				" object(s), so whoever holds its password can drop or alter them",
 			Detail:     Detail{Roles: []string{role}, Privileges: objects},
 			Suggestion: "own them with a role that cannot log in and grant membership in it instead",
+		})
+	}
+	return findings
+}
+
+// findOwnersMissingDefaultPrivileges reports OWN02: an object whose owner
+// revoked from itself privileges the object type gives its owner by default.
+// The owner keeps what ownership itself grants -- it may still alter or drop
+// the object, and grant the privileges back -- but a statement that needs a
+// revoked privilege fails for it, which an application connecting as the owner
+// meets as "permission denied" on its own table.
+//
+// One finding per object, naming the owner and the privileges it lacks. The
+// read reports the owner's direct ACL entry, so a privilege the owner reaches
+// through PUBLIC or through a role it belongs to is still reported as missing:
+// that path is somebody else's grant and changes without the owner. Ptah plans
+// no GRANT for a privilege a schema does not manage, so the finding is the only
+// place such a revoke shows; a schema comparison reports the same objects as
+// unmanaged owner privileges.
+func findOwnersMissingDefaultPrivileges(revokes []OwnerRevoke) []Finding {
+	type object struct{ kind, name, owner string }
+	missing := make(map[object]map[string]bool)
+	for _, revoke := range revokes {
+		at := object{kind: strings.TrimSpace(revoke.Kind), name: strings.TrimSpace(revoke.Name), owner: strings.TrimSpace(revoke.Owner)}
+		if at.name == "" || at.owner == "" || strings.TrimSpace(revoke.Privilege) == "" {
+			continue
+		}
+		if missing[at] == nil {
+			missing[at] = make(map[string]bool)
+		}
+		missing[at][strings.ToUpper(strings.TrimSpace(revoke.Privilege))] = true
+	}
+	findings := make([]Finding, 0, len(missing))
+	for at, privileges := range missing {
+		names := sortedKeys(privileges)
+		findings = append(findings, Finding{
+			Code:     "OWN02",
+			Severity: risk.Warning,
+			Subject:  Subject{Kind: at.kind, Name: at.name},
+			Message: "owner " + at.owner + " of " + at.kind + " " + at.name + " lacks " + strings.Join(names, ", ") +
+				", which PostgreSQL gives an owner by default",
+			Detail: Detail{Roles: []string{at.owner}, Privileges: names},
+			Suggestion: "declare the privileges the owner should hold, grant them back if the revoke was an accident, " +
+				"or leave them revoked if it was deliberate",
 		})
 	}
 	return findings

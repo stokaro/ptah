@@ -10,6 +10,7 @@ package difftypes
 
 import (
 	"encoding/json"
+	"fmt"
 	"maps"
 	"slices"
 	"strings"
@@ -678,6 +679,29 @@ type RoutineRemoval struct {
 	Signature *string `json:"signature,omitempty"`
 }
 
+// OwnerPrivilegeDeviation is a declared object whose owner revoked from itself
+// privileges the object type gives its owner by default, which the desired
+// state does not manage. It is what [SchemaDiff.UnmanagedOwnerPrivileges]
+// lists.
+type OwnerPrivilegeDeviation struct {
+	// ObjectType is the grant object type, such as TABLE or SEQUENCE. A
+	// view's privileges are a table's.
+	ObjectType string
+	// Object is the object's name as the database reads it, schema-qualified
+	// where the read qualifies it.
+	Object string
+	// Owner is the role that owns the object.
+	Owner string
+	// Missing are the privileges the owner revoked from itself, sorted.
+	Missing []string
+}
+
+// Note is the line a report writes for the deviation.
+func (d OwnerPrivilegeDeviation) Note() string {
+	return fmt.Sprintf("%s %s: owner %s lacks %s, which PostgreSQL gives an owner by default; the schema does not manage them, so nothing is planned",
+		strings.ToLower(d.ObjectType), d.Object, d.Owner, strings.Join(d.Missing, ", "))
+}
+
 // SchemaDiff represents comprehensive differences between two database schemas.
 //
 // This structure captures all types of schema changes that can occur between a target
@@ -728,6 +752,14 @@ type SchemaDiff struct {
 	// result, and [SchemaDiff.HasChanges] does not count them. Like the
 	// planner inputs below it is not on the wire.
 	SkippedFeatures []schemaext.SkippedObject `json:"-"`
+	// UnmanagedOwnerPrivileges are the declared objects whose owner holds
+	// less than the object type gives its owner by default, in privileges the
+	// desired state neither grants nor revokes. They are diagnostics, not
+	// changes: Ptah plans no GRANT for a privilege the desired state does not
+	// manage, a report writes one line for each beside its result, and
+	// [SchemaDiff.HasChanges] does not count them. Like SkippedFeatures it is
+	// not on the wire.
+	UnmanagedOwnerPrivileges []OwnerPrivilegeDeviation `json:"-"`
 	// IdentifierSemantics records live catalog identifier rules used to produce
 	// this diff. It is absent for dialect-only comparisons, whose planners use
 	// conservative offline defaults.

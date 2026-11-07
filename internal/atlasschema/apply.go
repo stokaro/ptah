@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/planext"
 	"ptah.run/core/plangraph"
 	"ptah.run/core/platform/capability"
@@ -572,6 +573,9 @@ func computeApplyPlan(
 		ReportOmitted(opts.Diagnostics, omitted)
 		reportSkipped(opts.Diagnostics, diff.SkippedFeatures)
 	}
+	// An owner privilege the desired state does not manage is never a change,
+	// with or without one, so its line is written either way.
+	ReportUnmanagedOwnerPrivileges(opts.Diagnostics, diff.UnmanagedOwnerPrivileges)
 	if diff.HasChanges() {
 		// The planner is handed the comparison as it came back, with the
 		// kinds the policy skips: it removes the same changes the filter
@@ -1427,6 +1431,19 @@ func checkStatement(ctx context.Context, executor catalog.SchemaExecutor, stmt s
 // reportSkipped writes one line for each object the comparison left out
 // because the target does not serve its model and its owner skips it there,
 // as a plan writes it.
+// ReportUnmanagedOwnerPrivileges writes one line for each declared object whose
+// owner lacks privileges PostgreSQL gives an owner by default, which the desired
+// state does not manage. Ptah plans nothing for them, and the line keeps a
+// synced result from reading as if the owner held them (stokaro/ptah#5765).
+func ReportUnmanagedOwnerPrivileges(diagnostics io.Writer, deviations []difftypes.OwnerPrivilegeDeviation) {
+	if diagnostics == nil {
+		return
+	}
+	for _, deviation := range deviations {
+		_, _ = fmt.Fprintln(diagnostics, "UNMANAGED: "+deviation.Note())
+	}
+}
+
 func reportSkipped(diagnostics io.Writer, skipped []schemaext.SkippedObject) {
 	if diagnostics == nil {
 		return

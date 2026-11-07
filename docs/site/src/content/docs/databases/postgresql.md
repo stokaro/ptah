@@ -1491,6 +1491,54 @@ side, nothing is planned for either owner. The privileges of a server's own rele
 are the ones compared: PostgreSQL 16 has no `MAINTAIN`, so a difference in it against
 a later release plans nothing.
 
+### Owner privileges a schema file does not manage
+
+Ownership and the owner's privileges are separate. An owner may revoke its own
+`INSERT` on a table and still alter, drop or grant on it, because ownership is not
+an ACL entry. A schema file manages only the privileges it names:
+
+- a `GRANT ... TO` the owner is reconciled, so a privilege the owner revoked is
+  granted back;
+- a `REVOKE ... FROM` the owner is reconciled, so the privilege stays revoked;
+- a privilege the file names neither way is not managed, and Ptah plans nothing
+  for it.
+
+Declaring the table or its owner role does not make Ptah give the owner back what
+PostgreSQL gives a new table's owner. A file that leaves the
+owner's privileges out says nothing about them, and restoring them would overwrite
+a revoke somebody made on purpose.
+
+What the owner lacks is still reported. Against a table whose owner ran
+`REVOKE INSERT, UPDATE ON orders FROM app_owner`, a file that declares `orders` and
+names no privilege of `app_owner` gets a synced plan and one line on standard error,
+from `schema plan`, `schema apply` and `schema compare`:
+
+```text
+UNMANAGED: table orders: owner app_owner lacks INSERT, UPDATE, which PostgreSQL gives an owner by default; the schema does not manage them, so nothing is planned
+```
+
+The line is a diagnostic, not drift: it changes neither the plan nor the exit
+code. It reports the owner's own ACL entry, so a privilege the owner reaches
+through `PUBLIC` or through a role it belongs to is still listed as missing.
+`schema security` reports the same object as `OWN02` from the database alone,
+without a schema file, so it cannot tell a revoke a file declares from an
+accident.
+
+To end the report, decide what the owner should hold and say it:
+
+```sql
+-- the revoke was an accident: give the privileges back and keep them managed
+GRANT INSERT, UPDATE ON orders TO app_owner;
+
+-- the revoke was deliberate: keep it managed
+REVOKE INSERT, UPDATE ON orders FROM app_owner;
+```
+
+Either line in the schema file makes the privilege managed, and the next plan
+reconciles it. Running the `GRANT` once by hand ends the report too, without
+managing the privilege. `OWN02` is a warning, so it fails `schema security` only
+with `--fail-on any`; there is no switch that hides one finding.
+
 ### Role passwords
 
 A role's `password` may be a password or a hash PostgreSQL takes as one, such

@@ -30,6 +30,8 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 		memberships []schemasecurity.RoleMembership
 		// owners is what the caller read about object ownership.
 		owners []schemasecurity.ObjectOwner
+		// revokes are the privileges owners revoked from themselves.
+		revokes []schemasecurity.OwnerRevoke
 		// wantCodes are the finding codes, in the order Analyze sorts them.
 		wantCodes []string
 		// wantSkipped are the rules SkippedRules names.
@@ -45,7 +47,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 				RLSEnabledTables: []schemamodel.RLSEnabledTable{{Table: "users"}},
 			},
 			wantCodes:   []string{"PRV03"},
-			wantSkipped: []string{"OWN01", "ROL01", "ROL03", "ROL04"},
+			wantSkipped: []string{"OWN01", "OWN02", "ROL01", "ROL03", "ROL04"},
 		},
 		{
 			name:    "the same grant to a named role is not",
@@ -57,7 +59,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 				RLSEnabledTables: []schemamodel.RLSEnabledTable{{Table: "users"}},
 			},
 			wantCodes:   make([]string, 0),
-			wantSkipped: []string{"OWN01", "ROL01", "ROL03", "ROL04"},
+			wantSkipped: []string{"OWN01", "OWN02", "ROL01", "ROL03", "ROL04"},
 		},
 		{
 			name:    "a SECURITY DEFINER routine is reported",
@@ -68,7 +70,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 				},
 			},
 			wantCodes:   []string{"PRV02"},
-			wantSkipped: []string{"OWN01", "ROL01", "ROL03", "ROL04"},
+			wantSkipped: []string{"OWN01", "OWN02", "ROL01", "ROL03", "ROL04"},
 		},
 		{
 			name:    "a SECURITY INVOKER routine is not",
@@ -79,7 +81,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 				},
 			},
 			wantCodes:   make([]string, 0),
-			wantSkipped: []string{"OWN01", "ROL01", "ROL03", "ROL04"},
+			wantSkipped: []string{"OWN01", "OWN02", "ROL01", "ROL03", "ROL04"},
 		},
 		{
 			name:    "a granted table with no row-level security is reported",
@@ -90,7 +92,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 				},
 			},
 			wantCodes:   []string{"PRV01"},
-			wantSkipped: []string{"OWN01", "ROL01", "ROL03", "ROL04"},
+			wantSkipped: []string{"OWN01", "OWN02", "ROL01", "ROL03", "ROL04"},
 		},
 		{
 			name:    "the same table with the row-security owner's switch on is not",
@@ -102,7 +104,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 				},
 			},
 			wantCodes:   make([]string, 0),
-			wantSkipped: []string{"OWN01", "ROL01", "ROL03", "ROL04"},
+			wantSkipped: []string{"OWN01", "OWN02", "ROL01", "ROL03", "ROL04"},
 		},
 		{
 			name:    "the same table with the row-security owner's switch off is reported",
@@ -114,7 +116,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 				},
 			},
 			wantCodes:   []string{"PRV01"},
-			wantSkipped: []string{"OWN01", "ROL01", "ROL03", "ROL04"},
+			wantSkipped: []string{"OWN01", "OWN02", "ROL01", "ROL03", "ROL04"},
 		},
 		{
 			name:    "the same table with row-level security enabled is not",
@@ -126,7 +128,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 				RLSEnabledTables: []schemamodel.RLSEnabledTable{{Table: "users"}},
 			},
 			wantCodes:   make([]string, 0),
-			wantSkipped: []string{"OWN01", "ROL01", "ROL03", "ROL04"},
+			wantSkipped: []string{"OWN01", "OWN02", "ROL01", "ROL03", "ROL04"},
 		},
 		{
 			// The rule cannot be answered where the target has no such
@@ -140,7 +142,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 				},
 			},
 			wantCodes:   make([]string, 0),
-			wantSkipped: []string{"PRV01", "OWN01", "ROL01", "ROL03", "ROL04"},
+			wantSkipped: []string{"PRV01", "OWN01", "OWN02", "ROL01", "ROL03", "ROL04"},
 		},
 		{
 			// PostgreSQL creates this grant in every database; a rule that
@@ -153,7 +155,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 				},
 			},
 			wantCodes:   make([]string, 0),
-			wantSkipped: []string{"OWN01", "ROL01", "ROL03", "ROL04"},
+			wantSkipped: []string{"OWN01", "OWN02", "ROL01", "ROL03", "ROL04"},
 		},
 		{
 			// CREATE was revoked from PUBLIC by default in PostgreSQL 15, so a
@@ -166,7 +168,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 				},
 			},
 			wantCodes:   []string{"PRV03"},
-			wantSkipped: []string{"OWN01", "ROL01", "ROL03", "ROL04"},
+			wantSkipped: []string{"OWN01", "OWN02", "ROL01", "ROL03", "ROL04"},
 		},
 		{
 			name:    "a role nobody holds and that cannot log in is reported",
@@ -176,7 +178,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 			},
 			memberships: make([]schemasecurity.RoleMembership, 0),
 			wantCodes:   []string{"ROL04"},
-			wantSkipped: []string{"OWN01", "ROL01"},
+			wantSkipped: []string{"OWN01", "OWN02", "ROL01"},
 		},
 		{
 			name:    "the same role with a member is not",
@@ -186,7 +188,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 			},
 			memberships: []schemasecurity.RoleMembership{{Role: "reporting", Member: "alice"}},
 			wantCodes:   make([]string, 0),
-			wantSkipped: []string{"OWN01", "ROL01"},
+			wantSkipped: []string{"OWN01", "OWN02", "ROL01"},
 		},
 		{
 			// A login role is its own principal. Reporting every application
@@ -198,7 +200,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 			},
 			memberships: make([]schemasecurity.RoleMembership, 0),
 			wantCodes:   make([]string, 0),
-			wantSkipped: []string{"OWN01", "ROL01"},
+			wantSkipped: []string{"OWN01", "OWN02", "ROL01"},
 		},
 		{
 			name:    "two roles held by one member that grant the same privileges are reported",
@@ -222,7 +224,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 				{Role: "analyst", Member: "alice"},
 			},
 			wantCodes:   []string{"ROL03"},
-			wantSkipped: []string{"OWN01", "ROL01"},
+			wantSkipped: []string{"OWN01", "OWN02", "ROL01"},
 		},
 		{
 			// One shared privilege out of two is a coincidence, not a
@@ -250,7 +252,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 				{Role: "writer", Member: "alice"},
 			},
 			wantCodes:   make([]string, 0),
-			wantSkipped: []string{"OWN01", "ROL01"},
+			wantSkipped: []string{"OWN01", "OWN02", "ROL01"},
 		},
 		{
 			// Measured on MariaDB 11.8: CREATE ROLE inserts an admin edge from
@@ -265,7 +267,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 				{Role: "reporting", Member: "root", AdminOption: true},
 			},
 			wantCodes:   []string{"ROL04"},
-			wantSkipped: []string{"OWN01", "ROL01"},
+			wantSkipped: []string{"OWN01", "OWN02", "ROL01"},
 		},
 		{
 			name:    "two roles held only with admin option are not an overlap",
@@ -294,7 +296,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 			// alice only: root holds both roles with admin option, which is the
 			// right to grant them rather than evidence anybody uses them.
 			wantCodes:   []string{"ROL03"},
-			wantSkipped: []string{"OWN01", "ROL01"},
+			wantSkipped: []string{"OWN01", "OWN02", "ROL01"},
 		},
 		{
 			name:     "objects owned by a login role are reported once for that role",
@@ -337,11 +339,35 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 			wantSkipped: []string{"OWN01", "ROL01", "ROL03", "ROL04"},
 		},
 		{
+			// The read reports the owner's direct ACL entry: a privilege the
+			// owner revoked from itself is missing, whatever it reaches through
+			// PUBLIC or a group, and one finding names every privilege it lacks.
+			name:     "an owner that revoked privileges from itself is reported once per object",
+			dialect:  "postgres",
+			database: &schemamodel.Database{},
+			owners:   []schemasecurity.ObjectOwner{{Kind: "table", Name: "public.orders", Owner: "app_owner", OwnerCanLogin: new(false)}},
+			revokes: []schemasecurity.OwnerRevoke{
+				{Kind: "table", Name: "public.orders", Owner: "app_owner", Privilege: "INSERT"},
+				{Kind: "table", Name: "public.orders", Owner: "app_owner", Privilege: "DELETE"},
+			},
+			wantCodes:   []string{"OWN02"},
+			wantSkipped: []string{"ROL01", "ROL03", "ROL04"},
+		},
+		{
+			name:        "an owner that holds every default privilege is not",
+			dialect:     "postgres",
+			database:    &schemamodel.Database{},
+			owners:      []schemasecurity.ObjectOwner{{Kind: "table", Name: "public.orders", Owner: "app_owner", OwnerCanLogin: new(false)}},
+			revokes:     make([]schemasecurity.OwnerRevoke, 0),
+			wantCodes:   make([]string, 0),
+			wantSkipped: []string{"ROL01", "ROL03", "ROL04"},
+		},
+		{
 			name:        "an empty schema reports nothing",
 			dialect:     "postgres",
 			database:    &schemamodel.Database{},
 			wantCodes:   make([]string, 0),
-			wantSkipped: []string{"OWN01", "ROL01", "ROL03", "ROL04"},
+			wantSkipped: []string{"OWN01", "OWN02", "ROL01", "ROL03", "ROL04"},
 		},
 	}
 
@@ -353,6 +379,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 				Capabilities:    capability.ForDialect(test.dialect),
 				RoleMemberships: test.memberships,
 				ObjectOwners:    test.owners,
+				OwnerRevokes:    test.revokes,
 			})
 
 			codes := make([]string, 0, len(report.Findings))
@@ -468,4 +495,29 @@ func TestAnalyze_OrdersFindingsSoTwoRunsAgreeIsTheDiffableProperty(t *testing.T)
 	c.Assert(subjects, qt.DeepEquals, []string{
 		"PRV01 accounts", "PRV01 invoices", "PRV01 orders", "PRV03 accounts", "PRV03 orders",
 	})
+}
+
+// OWN02 names the object, its owner and every privilege the owner lacks,
+// sorted, as the warning the operator acts on (stokaro/ptah#5765).
+func TestAnalyze_OwnerMissingDefaultPrivilegesNamesWhatItLacks(t *testing.T) {
+	c := qt.New(t)
+
+	report := schemasecurity.Analyze(&schemamodel.Database{}, schemasecurity.Options{
+		Capabilities: capability.ForDialect("postgres"),
+		ObjectOwners: []schemasecurity.ObjectOwner{{Kind: "table", Name: "public.orders", Owner: "app_owner", OwnerCanLogin: new(false)}},
+		OwnerRevokes: []schemasecurity.OwnerRevoke{
+			{Kind: "table", Name: "public.orders", Owner: "app_owner", Privilege: "UPDATE"},
+			{Kind: "table", Name: "public.orders", Owner: "app_owner", Privilege: "delete"},
+			{Kind: "table", Name: "public.orders", Owner: "app_owner", Privilege: "INSERT"},
+		},
+	})
+
+	c.Assert(report.Findings, qt.HasLen, 1)
+	finding := report.Findings[0]
+	c.Assert(finding.Code, qt.Equals, "OWN02")
+	c.Assert(finding.Severity, qt.Equals, risk.Warning)
+	c.Assert(finding.Subject, qt.Equals, schemasecurity.Subject{Kind: "table", Name: "public.orders"})
+	c.Assert(finding.Message, qt.Equals, "owner app_owner of table public.orders lacks DELETE, INSERT, UPDATE, which PostgreSQL gives an owner by default")
+	c.Assert(finding.Detail.Privileges, qt.DeepEquals, []string{"DELETE", "INSERT", "UPDATE"})
+	c.Assert(finding.Detail.Roles, qt.DeepEquals, []string{"app_owner"})
 }

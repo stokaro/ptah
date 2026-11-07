@@ -641,6 +641,7 @@ The rules:
 | `ROL03` | two roles held by one member that grant nearly the same privileges | info |
 | `ROL04` | a role that cannot log in and that nobody holds | info |
 | `OWN01` | objects owned by a role that can log in | info |
+| `OWN02` | an object whose owner revoked from itself privileges PostgreSQL gives an owner by default | warning |
 
 `ROL01` needs something no catalog keeps. A privilege is not use: a role holding
 `SELECT` on a table it has never read looks identical, in every catalog Ptah
@@ -679,6 +680,13 @@ on the resource pool `default`, has a login state the read cannot establish.
 others. MySQL has no object owner to read — a routine has a `DEFINER` and a table has nothing — so the
 rule reports itself skipped there rather than answering from a concept the engine
 does not have.
+
+`OWN02` reports one finding per object whose owner revoked from itself privileges
+PostgreSQL gives an owner by default, naming the owner and what it lacks. It reads
+the owner's own ACL entry, so a privilege the owner reaches through `PUBLIC` or a
+group is still missing. It reads the database alone: a revoke a schema file
+declares is reported too, and `schema compare` is where a file decides whether the
+privilege is managed. It runs where `OWN01` runs.
 
 `OWN01` reports **one finding per owning role**, not one per object: an owner is
 not a grant, so whoever holds that role's password can drop or alter everything

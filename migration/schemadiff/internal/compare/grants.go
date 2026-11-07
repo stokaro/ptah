@@ -1,6 +1,7 @@
 package compare
 
 import (
+	"cmp"
 	"slices"
 	"sort"
 	"strings"
@@ -228,6 +229,9 @@ func GrantsWithOptions(
 
 	planGrantAdditions(generatedGrantMap, databaseGrantMapForAdditions, managedRoles, diff)
 	diff.GrantsAdded = append(diff.GrantsAdded, ownerPrivilegesToGrantBack(options.DesiredRead, database, sequences, semantics)...)
+	if options.DesiredRead == nil {
+		diff.UnmanagedOwnerPrivileges = unmanagedOwnerPrivileges(desired, database, generatedGrantMap, revokedGrants, sequences, semantics)
+	}
 	sequences.nameAsDatabase(diff.GrantsAdded, semantics)
 	sequences.nameAsDatabase(diff.GrantOptionsAdded, semantics)
 	for key, ref := range databaseGrantMapForRemovals {
@@ -287,6 +291,72 @@ func ownerPrivilegesToGrantBack(
 		}
 	}
 	return refs
+}
+
+// unmanagedOwnerPrivileges reports, against a desired state that is not a
+// server read, each declared table, view or sequence whose owner revoked from
+// itself a privilege the object type gives its owner by default, where the
+// desired state neither grants that privilege to the owner nor revokes it.
+// The desired state does not manage such a privilege, so nothing is planned
+// for it: an absent declaration leaves a privilege alone rather than granting
+// it, and restoring what PostgreSQL gives a new object's owner would overwrite
+// a revoke somebody made on purpose. The report says what the owner lacks, so
+// an owner refused its own table does not read as converged without a word
+// (stokaro/ptah#5765). A privilege the desired state does name is a change
+// the plan carries and is not reported here.
+func unmanagedOwnerPrivileges(
+	desired *schemamodel.Database,
+	database *catalog.Database,
+	declared map[grantIdentity]difftypes.GrantRef,
+	revoked map[grantIdentity]bool,
+	sequences columnSequences,
+	semantics identifier.Semantics,
+) []difftypes.OwnerPrivilegeDeviation {
+	type object struct{ objectType, name, owner string }
+	var order []object
+	missing := make(map[object][]string)
+	for _, grant := range database.Grants {
+		if !grant.OwnerRevoked() {
+			continue
+		}
+		ref := grantRefFromDatabase(grant)
+		key := sequences.databaseKey(newGrantIdentity(ref, semantics))
+		if declaredGrant(key, declared) || revoked[key] || !declaresGrantObject(desired, ref, semantics) {
+			continue
+		}
+		at := object{objectType: strings.ToUpper(ref.ObjectType), name: ref.ObjectName, owner: ref.Role}
+		if _, seen := missing[at]; !seen {
+			order = append(order, at)
+		}
+		missing[at] = append(missing[at], strings.ToUpper(ref.Privilege))
+	}
+	deviations := make([]difftypes.OwnerPrivilegeDeviation, 0, len(order))
+	for _, at := range order {
+		privileges := missing[at]
+		slices.Sort(privileges)
+		deviations = append(deviations, difftypes.OwnerPrivilegeDeviation{ObjectType: at.objectType, Object: at.name, Owner: at.owner,
+			Missing: slices.Compact(privileges)})
+	}
+	slices.SortFunc(deviations, func(a, b difftypes.OwnerPrivilegeDeviation) int {
+		return cmp.Or(cmp.Compare(a.Object, b.Object), cmp.Compare(a.ObjectType, b.ObjectType), cmp.Compare(a.Owner, b.Owner))
+	})
+	return deviations
+}
+
+// declaresGrantObject reports whether desired declares the table, view or
+// sequence ref is on. PostgreSQL names a view's privileges as a table's.
+func declaresGrantObject(desired *schemamodel.Database, ref difftypes.GrantRef, semantics identifier.Semantics) bool {
+	target := newQualifiedTableIdentity(ref.ObjectName, semantics)
+	named := func(name string) bool { return newQualifiedTableIdentity(name, semantics) == target }
+	switch strings.ToUpper(strings.TrimSpace(ref.ObjectType)) {
+	case "TABLE":
+		return slices.ContainsFunc(desired.Tables, func(table schemamodel.Table) bool { return named(table.QualifiedName()) }) ||
+			slices.ContainsFunc(desired.Views, func(view schemamodel.View) bool { return named(view.Name) })
+	case "SEQUENCE":
+		return slices.ContainsFunc(desired.Sequences, func(sequence schemamodel.Sequence) bool { return named(sequence.QualifiedName()) })
+	default:
+		return false
+	}
 }
 
 // planGrantAdditions plans each declared grant the database does not hold,
