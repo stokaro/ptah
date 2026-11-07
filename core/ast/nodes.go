@@ -1676,7 +1676,20 @@ type CreateViewNode struct {
 	// WithCheck asks for the WITH CHECK OPTION clause. A target without the
 	// clause refuses the node rather than rendering a view that silently does
 	// not check.
+	//
+	// Without LocalCheck the clause is written as WITH CHECK OPTION, which
+	// PostgreSQL, MySQL and MariaDB read as WITH CASCADED CHECK OPTION: a row
+	// written through the view is checked against the conditions of the views
+	// it reads too.
 	WithCheck bool
+	// LocalCheck narrows WithCheck to WITH LOCAL CHECK OPTION, which checks a
+	// row against this view's own condition alone. It means nothing without
+	// WithCheck. A target with no LOCAL level refuses the node rather than
+	// rendering the stricter CASCADED check.
+	//
+	// The model has no place for the level, so no node built from a model sets
+	// it: the SQL schema reader refuses a view that asks for LOCAL.
+	LocalCheck bool
 	// Comment is an optional comment emitted as a SQL comment above the
 	// statement.
 	Comment string

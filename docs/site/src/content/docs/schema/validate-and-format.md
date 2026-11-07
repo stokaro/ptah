@@ -288,7 +288,10 @@ A NOT NULL constraint name is the one case where a target refuses instead of
 reporting. The PostgreSQL family accepts the syntax on a server that stores no
 such name and would lose it on the way in, so it fails the render rather than
 carrying on; every other target drops the name, keeps the constraint, and
-reports the loss.
+reports the loss. The name PostgreSQL 18 gives a `NOT NULL` nobody named,
+`<table>_<column>_not_null`, is not refused, because a server that keeps names
+gives the column the same one; see
+[a NOT NULL name on PostgreSQL 17](../../databases/postgresql/#a-not-null-name-on-postgresql-17).
 
 ## Format HCL schema files
 

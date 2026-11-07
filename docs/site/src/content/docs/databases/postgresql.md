@@ -730,6 +730,24 @@ depends on their order. PostgreSQL runs the drops of a statement first, so that
 statement needs no rename. PostgreSQL 17 and earlier keep no such name, so a plan
 between two of them has nothing to move.
 
+## A NOT NULL name on PostgreSQL 17
+
+PostgreSQL 17 accepts `CONSTRAINT c NOT NULL` and stores no name, and a read of
+PostgreSQL 18 names every `NOT NULL`. So `schema diff --from <17> --to <18>` sees
+a name on every column, most of which nobody wrote.
+
+- **The name the server gives.** `<table>_<column>_not_null`, cut to 63 bytes as
+  the server cuts it, asks for nothing. The plan writes `NOT NULL`, and the next
+  plan reads synced.
+- **Any other name on a column the plan adds or creates** is refused, because the
+  target would lose it. A name the server numbered, such as `t_c_not_null1`, is
+  refused too: the catalog does not say who wrote a name, so it reads as written.
+- **Any other name on a column that exists.** The plan writes a `WARNING` comment
+  in place of a statement, and the next plan writes it again.
+
+From PostgreSQL 18 toward PostgreSQL 17 the desired side names nothing. An added
+column takes the name the server gives it, and a name the left side holds stays.
+
 ## Making a column NOT NULL
 
 A plan that makes an existing column `NOT NULL` writes
@@ -748,6 +766,20 @@ runs, and fails it with SQLSTATE 23502 if a row holds `NULL`.
   comment saying the statement fails on a `NULL` row, and the safety report
   lists it as a warning. Update those rows in a migration of their own first,
   or declare a default.
+
+A declared name that is not the one the server would give takes the same steps and
+a different statement, because `SET NOT NULL` leaves the name to the server:
+
+```sql
+ALTER TABLE "t" ADD CONSTRAINT "nn" NOT NULL "a";
+```
+
+It fails on a `NULL` row as `SET NOT NULL` does, with the same SQLSTATE, and the
+safety report and lint rule `PG303` read it the same way. PostgreSQL 18 added the
+statement, and a target that keeps no name writes `SET NOT NULL` with a `WARNING`
+comment. A rename after `SET NOT NULL` would have to guess the name the server picked:
+it picks `t_a_not_null1` where another constraint holds `t_a_not_null`, and the
+rename would then move that other constraint's name.
 
 A plan that adds a `NOT NULL` column with no default writes the statement as it
 is, because it is valid on an empty table. On a table that holds a row it fails

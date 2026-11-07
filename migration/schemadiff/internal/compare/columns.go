@@ -32,7 +32,9 @@ import (
 	"ptah.run/internal/normalize"
 	"ptah.run/internal/oracletype"
 	"ptah.run/internal/pgname"
+	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/sqlitekey"
+	"ptah.run/internal/sqlservertype"
 	"ptah.run/internal/typechange"
 	"ptah.run/migration/internal/generatedschema"
 )
@@ -295,10 +297,6 @@ func notNullConstraintNameChange(desired, current, generated string) *difftypes.
 	return &difftypes.NotNullConstraintNameChange{Current: current, Desired: desired}
 }
 
-// notNullLabel is the label PostgreSQL ends the name of an unnamed NOT NULL
-// with.
-const notNullLabel = "not_null"
-
 // generatedNotNullName answers the name the server of dialect gives a NOT NULL
 // on column of table that nothing names, and "" for a dialect whose descriptor
 // states no such naming. PostgreSQL 18 names it as it names an unnamed CHECK
@@ -308,7 +306,7 @@ func generatedNotNullName(dialect, table, column string) string {
 	if constraintNamingOf(dialect) != descriptor.ConstraintNamingTableColumnsSuffix {
 		return ""
 	}
-	return pgname.Object(table, column, notNullLabel)
+	return pgname.NotNull(table, column)
 }
 
 func commentChange(desired, current string) *difftypes.CommentChange {
@@ -532,7 +530,7 @@ func columnsWithDesiredDomains(
 		applyColumnDifference(colDiff.Changes, "type", receipt.Difference)
 	} else if change := columnTypeChange(declared, dbCol, dbRawType, dialect, desiredDomains, ctx.rules); change != "" && !sameType {
 		colDiff.Changes["type"] = change
-		colDiff.TypeNarrows = typeChangeNarrows(change, dbRawType, declared.Type, dialect)
+		colDiff.TypeNarrows = typeChangeNarrows(change, dbRawType, renderedDeclaredType(declared, dialect), dialect)
 		colDiff.PreviousType = strings.TrimSpace(dbRawType)
 	}
 
@@ -962,6 +960,14 @@ func columnTypeChange(
 	if comparisonOf(dialect).NullableTypes {
 		return clickHouseColumnTypeChange(genCol, dbCol, dbRawType)
 	}
+	if comparisonOf(dialect).MapsPortableTypes {
+		return portableColumnTypeChange(genCol, dbCol, dbRawType, dialect)
+	}
+	return declaredColumnTypeChange(genCol, dbRawType, dialect)
+}
+
+// declaredColumnTypeChange compares a catalog type with a declared one, as written.
+func declaredColumnTypeChange(genCol schemamodel.Field, dbRawType, dialect string) string {
 	// A type spelled with its size and one spelled without it name what the engine builds
 	// for both, as `char` and `char(1)` do everywhere and `float` and `float(53)` do on
 	// PostgreSQL. Compared as words, each plans a statement that changes nothing on every
@@ -991,16 +997,77 @@ func columnTypeChange(
 // type, as this engine reads the two. The raw spellings are asked rather than change,
 // which may hold a normalized spelling with the precision gone. ClickHouse's change is
 // the exception, since it holds the canonical types and the raw ones may not be.
-func typeChangeNarrows(change, dbRawType, declaredType, dialect string) bool {
-	comparison := comparisonOf(dialect)
-	if comparison.NullableTypes {
+func typeChangeNarrows(change, dbRawType, renderedType, dialect string) bool {
+	if comparisonOf(dialect).NullableTypes {
 		before, after, _ := strings.Cut(change, " -> ")
 		return typeEngineOf(dialect).Narrows(before, after)
 	}
-	if comparison.MapsDeclaredTypes {
-		declaredType = oracletype.Map(declaredType)
+	return typeEngineOf(dialect).Narrows(dbRawType, renderedType)
+}
+
+// renderedDeclaredType is the type the renderer writes for a declaration, on an engine
+// whose renderer maps declared names. On any other engine it is the declared type.
+func renderedDeclaredType(field schemamodel.Field, dialect string) string {
+	switch comparison := comparisonOf(dialect); {
+	case comparison.MapsDeclaredTypes:
+		return oracletype.Map(field.Type)
+	case comparison.MapsPortableTypes:
+		// The preparation writes a type of its own for some names first: SQL Server's
+		// exact `VARCHAR` is NVARCHAR(MAX), where `varchar` is NVARCHAR, one character.
+		effective := schemaprep.EffectiveFieldForPlatform(field, dialect)
+		return sqlservertype.Declaration{Type: effective.Type, Verbatim: effective.TypeRawSQL || effective.TypeIsDeclaredText}.Rendered()
+	default:
+		return field.Type
 	}
-	return typeEngineOf(dialect).Narrows(dbRawType, declaredType)
+}
+
+// portableColumnTypeChange compares a column with a declaration on an engine whose
+// renderer writes a portable name as a type of its own. Compared as words, `datetime2`
+// and `timestamp` differ, and the plan rewrites the column to the type it holds on every
+// run. So a declaration matches the type the renderer writes for it.
+//
+// A word the server also takes as a type of its own has a second column that matches: the
+// one the server builds from it. `char(5)` matches CHAR(5) and NCHAR(5), and `text` matches
+// TEXT and NVARCHAR(MAX). The comparison folds NVARCHAR and VARCHAR into one family, so each
+// of the two asks only about a column of its own name. VARCHAR(MAX) under `text` keeps its
+// change, since the word does not build it and the renderer writes a Unicode column.
+//
+// A name the renderer leaves alone compares as declared. In a comparison of two files the
+// current side is a declaration too, and it reads as the type it writes. A read of a server
+// marks its side with [catalog.Column.TypeIsDeclaredText].
+func portableColumnTypeChange(genCol schemamodel.Field, dbCol catalog.Column, dbRawType, dialect string) string {
+	declared := strings.TrimSpace(genCol.Type)
+	current := strings.TrimSpace(dbRawType)
+	if strings.EqualFold(declared, current) {
+		return ""
+	}
+	if !dbCol.TypeIsDeclaredText {
+		current = strings.TrimSpace(sqlservertype.Map(current))
+	}
+	rendered := renderedDeclaredType(genCol, dialect)
+	if strings.EqualFold(rendered, declared) {
+		return declaredColumnTypeChange(genCol, current, dialect)
+	}
+	change := writtenColumnTypeChange(genCol, rendered, current, dialect)
+	sameName := sqlservertype.Base(rendered) == sqlservertype.Base(current)
+	if sameName && change == "" {
+		return ""
+	}
+	if built, named := sqlservertype.ServerBuilt(declared); named && sqlservertype.Base(built) == sqlservertype.Base(current) &&
+		writtenColumnTypeChange(genCol, built, current, dialect) == "" {
+		return ""
+	}
+	if change == "" {
+		return fmt.Sprintf("%s -> %s", current, rendered)
+	}
+	return change
+}
+
+// writtenColumnTypeChange compares a catalog type with the type a declaration writes,
+// where that is not the spelling it declares.
+func writtenColumnTypeChange(genCol schemamodel.Field, written, dbRawType, dialect string) string {
+	genCol.Type = written
+	return declaredColumnTypeChange(genCol, dbRawType, dialect)
 }
 
 // typeEngineOf is what dialect's descriptor says a type that declares no size holds.

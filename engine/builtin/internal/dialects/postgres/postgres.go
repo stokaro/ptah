@@ -21,6 +21,7 @@ import (
 	"ptah.run/engine/builtin/internal/dialects/internal/viewrefusal"
 	"ptah.run/internal/defaultlit"
 	"ptah.run/internal/notnullfill"
+	"ptah.run/internal/pgname"
 	"ptah.run/internal/pgtypealias"
 	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/rlspolicy"
@@ -853,7 +854,7 @@ func (r *Renderer) renderCreateTableLines(node *ast.CreateTableNode, owned []str
 	positions := make(map[any]int)
 	lines = make([]string, 0, len(node.Columns)+len(node.Constraints)+len(owned))
 	for _, column := range node.Columns {
-		line, err := r.renderColumn(column)
+		line, err := r.renderColumn(r.withoutDefaultNotNullName(node.Name, column))
 		if err != nil {
 			return nil, nil, fmt.Errorf("error rendering column %s: %w", column.Name, err)
 		}
@@ -1119,6 +1120,11 @@ func (r *Renderer) writeColumnOperation(tableName string, operation ast.AlterOpe
 		}
 		r.w.WriteLinef("%s;", dropSQL)
 	case *ast.AlterColumnOperation:
+		if op.NotNullConstraintName != "" {
+			r.w.WriteLinef("ALTER TABLE %s ADD CONSTRAINT %s NOT NULL %s;", table,
+				r.escapeIdentifier(op.NotNullConstraintName), r.escapeIdentifier(op.ColumnName))
+			return
+		}
 		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s %s;", table, r.escapeIdentifier(op.ColumnName), r.alterColumnAction(op))
 	}
 }
@@ -1595,6 +1601,30 @@ func (r *Renderer) notNullClause(column *ast.ColumnNode) (string, error) {
 	return fmt.Sprintf("CONSTRAINT %s NOT NULL", r.escapeIdentifier(column.NotNullConstraintName)), nil
 }
 
+// withoutDefaultNotNullName leaves out the NOT NULL name of column where the
+// target keeps no such name and the name is the one PostgreSQL 18 gives a NOT
+// NULL nobody named.
+//
+// A read of PostgreSQL 18 names every NOT NULL, so a plan from PostgreSQL 17
+// toward such a database carries that name on every column it adds. Nothing is
+// lost by leaving it out: a server that keeps names gives the column the same
+// one. [Renderer.notNullClause] still refuses any other name, which this target
+// would lose. No catalog says who wrote a name, so the spelling decides, as it
+// does in the comparison, and a name the server numbered counts as written.
+//
+// A nullable or primary-key column keeps its name here, and the refusals that
+// answer it.
+func (r *Renderer) withoutDefaultNotNullName(table string, column *ast.ColumnNode) *ast.ColumnNode {
+	if column == nil || column.NotNullConstraintName == "" || column.Nullable || column.Primary ||
+		r.capabilities().Has(capability.NamedNotNullConstraints) ||
+		column.NotNullConstraintName != pgname.NotNull(unqualifiedTable(table), column.Name) {
+		return column
+	}
+	bare := *column
+	bare.NotNullConstraintName = ""
+	return &bare
+}
+
 func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 	var parts []string
 
@@ -1674,7 +1704,7 @@ func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 
 // writeAddColumn writes ALTER TABLE ... ADD COLUMN for op.
 func (r *Renderer) writeAddColumn(table string, op *ast.AddColumnOperation) error {
-	column := op.Column
+	column := r.withoutDefaultNotNullName(table, op.Column)
 	line, err := r.renderColumn(column)
 	if err != nil {
 		return fmt.Errorf("error rendering add column: %w", err)
@@ -1709,6 +1739,14 @@ func addFailsOnARow(column *ast.ColumnNode) bool {
 		return false
 	}
 	return column.EnumType || pgtypealias.Builtin(column.Type)
+}
+
+// unqualifiedTable is table without its schema.
+func unqualifiedTable(table string) string {
+	if dot := strings.LastIndexByte(table, '.'); dot >= 0 {
+		return table[dot+1:]
+	}
+	return table
 }
 
 func (r *Renderer) renderIdentity(column *ast.ColumnNode) (string, error) {
@@ -2211,6 +2249,11 @@ func (r *Renderer) writeColumnNullabilityChange(tableName string, op *ast.Modify
 		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s DROP NOT NULL;", r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name))
 	} else {
 		r.updateNullValuesBeforeNotNull(tableName, op)
+		if op.NotNullConstraintName != "" {
+			r.w.WriteLinef("ALTER TABLE %s ADD CONSTRAINT %s NOT NULL %s;", r.escapeQualifiedIdentifier(tableName),
+				r.escapeIdentifier(op.NotNullConstraintName), r.escapeIdentifier(column.Name))
+			return
+		}
 		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s SET NOT NULL;", r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name))
 	}
 }
@@ -2253,8 +2296,12 @@ func (r *Renderer) updateNullValuesBeforeNotNull(tableName string, op *ast.Modif
 		if notnullfill.DeclaresDefault(column) {
 			reason = "this plan does not fill it with the column's default"
 		}
-		r.w.WriteLinef("-- %s: SET NOT NULL fails if any row of %s holds NULL in %s; %s.",
-			r.dialectUpper, commentFragment(r.escapeQualifiedIdentifier(tableName)), commentFragment(r.escapeIdentifier(column.Name)), reason)
+		statement := "SET NOT NULL"
+		if op.NotNullConstraintName != "" {
+			statement = "ADD CONSTRAINT " + commentFragment(r.escapeIdentifier(op.NotNullConstraintName)) + " NOT NULL"
+		}
+		r.w.WriteLinef("-- %s: %s fails if any row of %s holds NULL in %s; %s.",
+			r.dialectUpper, statement, commentFragment(r.escapeQualifiedIdentifier(tableName)), commentFragment(r.escapeIdentifier(column.Name)), reason)
 		return
 	}
 	value := r.nullBackfillValue(column)
@@ -2984,7 +3031,10 @@ func (r *Renderer) renderCreateView(node *ast.CreateViewNode) error {
 	target := r.escapeQualifiedIdentifier(node.Name)
 	r.w.WriteLinef("%s %s%s AS", create, target, options)
 	r.w.WriteLine(strings.TrimSpace(node.Body))
-	if node.WithCheck {
+	switch {
+	case node.WithCheck && node.LocalCheck:
+		r.w.WriteLine("WITH LOCAL CHECK OPTION")
+	case node.WithCheck:
 		r.w.WriteLine("WITH CHECK OPTION")
 	}
 	r.w.WriteLine(";")

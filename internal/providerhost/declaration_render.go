@@ -171,13 +171,9 @@ type authoredCreation struct {
 
 func (t *target) authoredCreationContext(request renderer.SchemaRequest) (authoredCreation, error) {
 	source := request.Schema
-	for _, namespace := range source.Schemas {
-		if namespace.Name != t.engine.GetDefaultSchema() {
-			return authoredCreation{}, unsupported("schema creation")
-		}
-		if err := onlyFields(namespace, "Name"); err != nil {
-			return authoredCreation{}, err
-		}
+	namespaces, err := t.declaredNamespaceCreations(source)
+	if err != nil {
+		return authoredCreation{}, err
 	}
 	plan := featureplan.Request{Target: request.Target, Identifiers: request.Identifiers, Capabilities: request.Capabilities, DatabasePath: request.DatabasePath,
 		Types:  featureplan.TypeContext{Desired: schemaext.DefinedTypes(source.FeatureObjects)},
@@ -203,7 +199,7 @@ func (t *target) authoredCreationContext(request renderer.SchemaRequest) (author
 	before, after := commonObjectCreations(source)
 	bindGrantDatabasePath(before, request.DatabasePath)
 	bindGrantDatabasePath(after, request.DatabasePath)
-	nodes := slices.Clone(before)
+	nodes := slices.Concat(namespaces, before)
 	for _, creation := range ordered {
 		subject := builder.TableParts(creation.Table.Schema, creation.Table.Name)
 		plan.Tables = append(plan.Tables, featureplan.Table{Subject: subject, Desired: captured[creation.Name], Action: featureplan.CreateTable})

@@ -458,7 +458,8 @@ func (s Set) Parse(ctx context.Context, target string, matches []Match, document
 		if err != nil {
 			return nil, err
 		}
-		request := Request{Target: target, Claims: make([]Claim, 0, len(positions[index])), Declared: owned, DroppedTables: slices.Clone(document.DroppedTables)}
+		request := Request{Target: target, Claims: make([]Claim, 0, len(positions[index])), Declared: owned, DroppedTables: slices.Clone(document.DroppedTables),
+			Length: document.Length}
 		for _, position := range positions[index] {
 			claim := matches[position].Claim
 			if claim.Reference != nil {

@@ -1251,6 +1251,12 @@ schema files, prints the planned SQL, and applies it after interactive
 confirmation. Use `--dry-run` to print the plan without applying it, or
 `--auto-approve` to skip the prompt explicitly.
 
+A plan with a statement rated above safe writes the rating to standard error ahead
+of the prompt: `Plan rating: destructive`, then each such statement with its rating
+and reason, by the rule `schema plan` records. Standard output holds the same bytes
+with the rating and without it. `--auto-approve` prints no rating, and
+`PTAH_ATLAS_STRICT_COMPAT=1` leaves it out.
+
 ### Which schemas the current side is read at
 
 The database is read at the scope the desired state names, so both sides of the

@@ -3358,6 +3358,14 @@ an owner's `Parser` every span of one document in one call and applies the
 or an ALTER TABLE operation declares, the owner's operation payload, or facets of a view, a
 table, a column, a key or a routine.
 
+A `Claim` states its place twice. `Offset` is where the span starts in the
+text the reader read, which an owner's refusal states with `ptaherr.At`.
+`Written` is a `Position` in the document as its author wrote it: the byte
+offset, and the line and the column counted in bytes, which differ from
+`Offset` where the reader rewrote a client delimiter directive.
+`Request.Length` is that document's length. An owner that records where a span
+stands, such as a provider that sends the span over its own wire, reads those.
+
 A `TableElement` returns one of `Index`, `Objects` or `Constraint`. An
 `AlterOperation` requires its operation payload and may also declare an index
 or child objects. Each child uses an extension's declared kind and identifies

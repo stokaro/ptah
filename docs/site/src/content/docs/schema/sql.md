@@ -306,6 +306,9 @@ These operations are read:
 
 - `ADD COLUMN`, `ADD PRIMARY KEY` and `ADD CONSTRAINT` (`UNIQUE`, `CHECK`,
   `FOREIGN KEY`);
+- on PostgreSQL, `ADD [CONSTRAINT name] NOT NULL column`, which does what `SET
+  NOT NULL` does and keeps the name. `NOT VALID` and `NO INHERIT` after the column
+  are refused, because the model has no field for them;
 - `ALTER [COLUMN] ... SET DEFAULT`, `DROP DEFAULT`, `SET NOT NULL`,
   `DROP NOT NULL` and `[SET DATA] TYPE`, with an optional `USING`;
 - `DROP [COLUMN] [IF EXISTS]` and `RENAME [COLUMN] ... TO`;
@@ -355,6 +358,34 @@ a security option the view holds on: write `security_invoker = false` for that.
 [View options and storage
 parameters](../../databases/postgresql/#view-options-and-storage-parameters) says
 how they are compared and changed, and which engines take them.
+
+## Declare a check option
+
+A view that ends in `WITH CHECK OPTION` or `WITH CASCADED CHECK OPTION`
+declares a check option, as `with_check` does in Go annotations and YAML:
+
+```sql
+CREATE VIEW positive_orders AS
+  SELECT id, amount FROM orders WHERE amount > 0
+  WITH CHECK OPTION;
+```
+
+The clause is not part of the view's query. PostgreSQL, MySQL and MariaDB
+store it apart from the query, in `information_schema.views.check_option`, and
+the comparison reads it from there. The plan creates the view `WITH CHECK
+OPTION`, which these engines store as `CASCADED`. The words inside a string
+literal, a quoted name, a comment or a subquery stay part of the query.
+
+`WITH LOCAL CHECK OPTION` is refused by name:
+
+```text
+view positive_orders: WITH LOCAL CHECK OPTION: a declared view holds its check option without a level and is created WITH CHECK OPTION, which checks the views it reads too (CASCADED); declare WITH CHECK OPTION, or create the view in a migration
+```
+
+A declaration keeps the check option without its level, so the view would be
+created with the `CASCADED` check. That check also applies the conditions of
+the views it reads, and refuses rows the `LOCAL` view takes
+([stokaro/ptah#5647](https://github.com/stokaro/ptah/issues/5647)).
 
 ## Comments
 

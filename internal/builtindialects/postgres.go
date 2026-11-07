@@ -242,7 +242,7 @@ func postgres() descriptor.Dialect {
 				Match:       descriptor.Match{Clause: true},
 			},
 			Indexes:    descriptor.IndexGrammar{Alter: descriptor.AlterIndexRename},
-			AlterTable: descriptor.AlterTableGrammar{KeyUsingIndex: true},
+			AlterTable: descriptor.AlterTableGrammar{KeyUsingIndex: true, AddNotNull: true},
 			Statements: descriptor.StatementGrammar{Extensions: true, UserTypes: true, GrantTargetLists: true},
 			Forms:      postgresStatementForms(),
 			Routines: descriptor.RoutineGrammar{

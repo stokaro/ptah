@@ -334,9 +334,9 @@ column, or rebuild it by hand, and plan again. Raising a size runs with the rows
 place. Oracle's `TIMESTAMP(0)` under `DATE` keeps every second and is rated destructive
 all the same, since the rating reads the two as a time of day going away.
 
-`ptah schema apply` prints the planned SQL and no rating, so read the plan to see
-one. Plan with `ptah schema plan`, review the file, and run it with `ptah schema
-apply --plan`.
+`ptah schema apply` shows this rating beside its confirmation prompt. With
+`--auto-approve` there is no prompt and no rating, so read the plan to see one. Plan
+with `ptah schema plan`, review the file, and run it with `ptah schema apply --plan`.
 
 ## List the approvers
 

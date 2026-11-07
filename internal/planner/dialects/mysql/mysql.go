@@ -459,6 +459,7 @@ func (p *Planner) modifyExistingColumns(
 	diff *difftypes.SchemaDiff,
 	tableDiff *difftypes.TableDiff,
 	semantics identifier.Semantics,
+	holders columnKeyHolders,
 ) ([]ast.Node, error) {
 	commentRidesAlong := p.columnCommentRidesWithTheColumn()
 	for _, colDiff := range tableDiff.ColumnsModified {
@@ -568,7 +569,8 @@ func (p *Planner) modifyExistingColumns(
 			result = append(result, oneStatement(tableDiff.TableName, modify, key))
 			continue
 		}
-		if drops := keys.droppedWith(tableDiff.TableName, colDiff.ColumnName); len(drops) > 0 {
+		drops := append(holders.droppedWith(tableDiff.TableName, colDiff.ColumnName), keys.droppedWith(tableDiff.TableName, colDiff.ColumnName)...)
+		if len(drops) > 0 {
 			result = append(result, oneStatement(tableDiff.TableName, append(drops, modify)...))
 			continue
 		}
@@ -932,7 +934,7 @@ func appendTableComment(result []ast.Node, tableDiff difftypes.TableDiff) []ast.
 // it reads goes away (see [Planner.planTriggers]). Each half carries the
 // table's header, and a table whose only change is a drop has no header in
 // result.
-func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.SchemaDiff) (_, columnDrops []ast.Node, _ error) {
+func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.SchemaDiff, holders columnKeyHolders) (_, columnDrops []ast.Node, _ error) {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	keys := p.autoIncrementKeysOf(diff)
 	for _, tableDiff := range diff.TablesModified {
@@ -949,7 +951,7 @@ func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.Schema
 		inPlace = p.addNewTableColumns(inPlace, &tableDiff, diff.DeclaredTables, diff.DeclaredUserTypes, semantics, keys)
 
 		// Modify existing columns
-		inPlace, err := p.modifyExistingColumns(inPlace, diff, &tableDiff, semantics)
+		inPlace, err := p.modifyExistingColumns(inPlace, diff, &tableDiff, semantics, holders)
 		if err != nil {
 			return result, nil, err
 		}
@@ -1092,12 +1094,14 @@ func (p *Planner) planColumnTypeForeignKeyChanges(diff *difftypes.SchemaDiff) co
 // [keyrelease.UnderColumnDrops] finds leave ahead of the column changes, where one may
 // still serve the foreign key.
 //
-// A foreign key also leaves ahead of the rebuild of an index under its name, which it
-// stands on until then: `DROP INDEX k, ADD INDEX k (b)` answers Error 1553 while a
-// foreign key over `a` holds k. Measured on MySQL 8.4 and MariaDB 12.3. A rollback of a
-// key moved over another key the plan keeps has this shape. So does a foreign key on a
-// table whose kept key takes over at an addition, ahead of the plan's constraint removals:
-// the index it leaves may be the only one that serves the key.
+// The foreign keys of a table also leave ahead of the rebuild of the index under one
+// key's name: `DROP INDEX k, ADD INDEX k (b)` answers Error 1553 while a foreign key over
+// `a` holds k. Measured on MySQL 8.4 and MariaDB 12.3. A rollback of a key moved over
+// another key the plan keeps has this shape, and the server may have built k for two
+// keys that both move. The same holds for a table with an index under the name of a
+// foreign key the plan adds, which leaves at that addition, ahead of the plan's
+// constraint removals: every key the plan moves or removes may still stand on it, and
+// the server answers Error 1553 to its drop while one does.
 func (p *Planner) releaseForeignKeysOverMovedKeys(diff *difftypes.SchemaDiff, plan *columnTypeForeignKeyPlan) {
 	if diff == nil || !p.isMySQLFamily() {
 		return
@@ -1111,14 +1115,18 @@ func (p *Planner) releaseForeignKeysOverMovedKeys(diff *difftypes.SchemaDiff, pl
 	}
 	losesColumn := keyrelease.TablesLosingColumns(diff, semantics)
 	rebuilt := indexscope.NewConflictSetWithSemantics(semantics, diff.IndexRemovals())
-	takesOverEarly := tablesTakingOverAtAnAddition(diff, p.targetDialect(), semantics)
+	dropsKeyIndexEarly := tablesDroppingAnIndexAtAnAddition(diff, p.targetDialect(), semantics)
+	for _, info := range diff.ForeignKeysRemovedWithTables {
+		ownIndex := difftypes.IndexRef{Name: info.Name, TableName: info.TableName}
+		if rebuilt.Contains(ownIndex) && slices.Contains(diff.IndexAdditions(), ownIndex) {
+			dropsKeyIndexEarly[semantics.QualifiedTableIdentityKey(info.TableName)] = true
+		}
+	}
 	for _, info := range diff.ForeignKeysRemovedWithTables {
 		foreign := semantics.QualifiedTableIdentityKey(info.ForeignTable)
 		host := semantics.QualifiedTableIdentityKey(info.TableName)
-		ownIndex := difftypes.IndexRef{Name: info.Name, TableName: info.TableName}
-		rebuildsOwnIndex := rebuilt.Contains(ownIndex) && slices.Contains(diff.IndexAdditions(), ownIndex)
 		if _, done := plan.dropped[info.Identity]; done ||
-			(!losesKey[foreign] && !losesColumn[foreign] && !losesColumn[host] && !takesOverEarly[host] && !rebuildsOwnIndex) {
+			(!losesKey[foreign] && !losesColumn[foreign] && !losesColumn[host] && !dropsKeyIndexEarly[host]) {
 			continue
 		}
 		plan.drops = append(plan.drops, p.dropConstraintNode(difftypes.ConstraintRemovalInfo{
@@ -1368,11 +1376,15 @@ func (p *Planner) addNewIndexes(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
 	additions difftypes.IndexChanges,
+	uniquesRebuilt keyrelease.Releases,
 ) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
-	replacements := indexscope.NewConflictSetWithSemantics(semantics, diff.IndexRemovals())
+	replacements := indexscope.NewConflictSetWithSemantics(semantics, rebuiltRemovals(diff, uniquesRebuilt))
 	guardedDrops := p.capabilities().Has(capability.DropIndexIfExists)
 	constraintBacked := diff.ConstraintBackedIndexRemovalSet()
+	for _, info := range uniquesRebuilt.Constraints {
+		constraintBacked[difftypes.IndexRef{Name: info.Name, TableName: info.TableName}] = struct{}{}
+	}
 	autoIncrement := p.autoIncrementKeysOf(diff)
 	// The declaration travels WITH the addition (stokaro/ptah#2315).
 	for _, change := range additions {
@@ -1420,9 +1432,9 @@ func (p *Planner) addNewIndexes(
 // that index may have left with a column the plan drops, so the drop answers `Error
 // 1091: Can't DROP`, measured on MySQL 8.4 and MariaDB 12.3. It goes ahead of the column
 // drops: the new index reads only columns the table keeps or has gained by then.
-func (p *Planner) splitIndexAdditions(diff *difftypes.SchemaDiff) (ahead, others difftypes.IndexChanges) {
+func (p *Planner) splitIndexAdditions(diff *difftypes.SchemaDiff, uniquesRebuilt keyrelease.Releases) (ahead, others difftypes.IndexChanges) {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
-	replacements := indexscope.NewConflictSetWithSemantics(semantics, diff.IndexRemovals())
+	replacements := indexscope.NewConflictSetWithSemantics(semantics, rebuiltRemovals(diff, uniquesRebuilt))
 	for _, change := range diff.IndexesAdded {
 		switch {
 		case len(change.Replaces) > 0:
@@ -1436,15 +1448,45 @@ func (p *Planner) splitIndexAdditions(diff *difftypes.SchemaDiff) (ahead, others
 	return ahead, others
 }
 
+// uniquesRebuiltAsIndexes answers the removed UNIQUE constraints of diff under the name
+// of an index the plan adds on their table, on MySQL and MariaDB, where a UNIQUE is an
+// index of its name. The index rebuilds the key in one statement, `ALTER TABLE t DROP
+// INDEX u, ADD INDEX u (a)`, as an index rebuilt under its own name is: dropped ahead
+// of the addition, the key leaves a foreign key that stands on it without an index,
+// and the server answers Error 1553. Measured on MySQL 8.4 and 26.10 and MariaDB 12.3,
+// with the rollback of a column that took its own UNIQUE under the name of an index a
+// foreign key stood on. A key released ahead of the column changes for another reason
+// is left to that; see [keyrelease.NamesIndexesTake] for the order the other dialects
+// of this planner keep.
+func (p *Planner) uniquesRebuiltAsIndexes(diff *difftypes.SchemaDiff, released keyrelease.Releases) keyrelease.Releases {
+	switch platform.NormalizeDialect(p.targetDialect()) {
+	case platform.MySQL, platform.MariaDB:
+		return keyrelease.NamesIndexesTake(diff, p.targetDialect()).Without(released)
+	default:
+		return keyrelease.Releases{}
+	}
+}
+
+// rebuiltRemovals is the removals an index addition under the same name rebuilds: the
+// removed indexes, and the UNIQUE constraints rebuilt as indexes.
+func rebuiltRemovals(diff *difftypes.SchemaDiff, uniquesRebuilt keyrelease.Releases) []difftypes.IndexRef {
+	removals := diff.IndexRemovals()
+	for _, info := range uniquesRebuilt.Constraints {
+		removals = append(removals, difftypes.IndexRef{Name: info.Name, TableName: info.TableName})
+	}
+	return removals
+}
+
 // indexesTakingOver writes each index that takes over from removed ones in the
 // statement that drops them; see [difftypes.IndexChange.Replaces]. A foreign key the
 // plan removes may stand on one of them, so this runs after the constraint removals,
 // and a foreign key the plan keeps is never left without an index. It answers what it
-// dropped, for the removal step to leave out.
+// dropped, for the removal step to leave out. A statement that went ahead with a
+// released index or with a foreign key's addition is not written again.
 func indexesTakingOver(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
-	namedByForeignKeys map[difftypes.IndexRef]struct{},
+	namedByForeignKeys, released map[difftypes.IndexRef]struct{},
 ) ([]ast.Node, map[difftypes.IndexRef]struct{}) {
 	dropped := make(map[difftypes.IndexRef]struct{})
 	for _, change := range diff.IndexesAdded {
@@ -1457,7 +1499,7 @@ func indexesTakingOver(
 		if !slices.ContainsFunc(change.Replaces, func(ref difftypes.IndexRef) bool {
 			_, named := namedByForeignKeys[ref]
 			return named
-		}) {
+		}) && !writtenAtRelease(change, released) {
 			result = append(result, indexTakingOverNode(diff, change))
 		}
 	}
@@ -1487,17 +1529,13 @@ func indexTakingOverNode(diff *difftypes.SchemaDiff, change difftypes.IndexChang
 	return &ast.AlterTableNode{Name: change.TableName, Operations: []ast.AlterOperation{op}}
 }
 
-// tablesTakingOverAtAnAddition keys the tables with an index that takes over from one a
-// foreign key the plan adds takes the name of; see [indexTakingOverNode].
-func tablesTakingOverAtAnAddition(diff *difftypes.SchemaDiff, dialect string, semantics identifier.Semantics) map[string]bool {
-	named := indexesNamedByForeignKeys(diff, dialect)
+// tablesDroppingAnIndexAtAnAddition keys the tables with an index a foreign key the plan
+// adds takes the name of, which leaves at that addition, alone or in the statement of an
+// index that takes over from it; see [indexesNamedByForeignKeys].
+func tablesDroppingAnIndexAtAnAddition(diff *difftypes.SchemaDiff, dialect string, semantics identifier.Semantics) map[string]bool {
 	tables := make(map[string]bool)
-	for _, change := range diff.IndexesAdded {
-		for _, ref := range change.Replaces {
-			if _, held := named[ref]; held {
-				tables[semantics.QualifiedTableIdentityKey(change.TableName)] = true
-			}
-		}
+	for ref := range indexesNamedByForeignKeys(diff, dialect) {
+		tables[semantics.QualifiedTableIdentityKey(ref.TableName)] = true
 	}
 	return tables
 }
@@ -1553,7 +1591,7 @@ func (p *Planner) removeIndexes(
 	)
 	rebuiltAsConstraint := diff.IndexRemovalsRebuiltAsUniqueConstraints()
 	namedByForeignKeys := indexesNamedByForeignKeys(diff, p.targetDialect())
-	result, takenOver := indexesTakingOver(result, diff, namedByForeignKeys)
+	result, takenOver := indexesTakingOver(result, diff, namedByForeignKeys, released)
 	autoIncrement := p.autoIncrementKeysOf(diff)
 	for _, ref := range diff.IndexRemovals() {
 		if _, written := takenOver[ref]; written || replacements.Contains(ref) || autoIncrement.writes(ref) {
@@ -1607,15 +1645,36 @@ func (p *Planner) dropIndexNode(diff *difftypes.SchemaDiff, ref difftypes.IndexR
 }
 
 // releaseKeyNames drops the removed keys released holds, each as its removal
-// step would drop it; see [keyrelease.Find].
+// step would drop it; see [keyrelease.Find]. An index another takes over from goes in
+// the statement that adds the other, here rather than with the removals: a foreign key
+// the plan keeps stands on it, and DROP INDEX alone answers Error 1553.
 func (p *Planner) releaseKeyNames(result []ast.Node, diff *difftypes.SchemaDiff, released keyrelease.Releases) []ast.Node {
 	for _, info := range released.Constraints {
 		result = append(result, p.dropConstraintNode(info))
 	}
+	written := make(map[difftypes.IndexRef]struct{})
 	for _, ref := range released.Indexes {
-		result = append(result, p.dropIndexNode(diff, ref))
+		change, over := indexTakingOverFrom(diff, ref)
+		if !over {
+			result = append(result, p.dropIndexNode(diff, ref))
+			continue
+		}
+		takeover := difftypes.IndexRef{Name: change.Index.Name, TableName: change.TableName}
+		if _, done := written[takeover]; !done {
+			result = append(result, indexTakingOverNode(diff, change))
+			written[takeover] = struct{}{}
+		}
 	}
 	return result
+}
+
+// writtenAtRelease reports whether the statement of change went ahead of the column
+// changes, with an index it takes over from; see [Planner.releaseKeyNames].
+func writtenAtRelease(change difftypes.IndexChange, released map[difftypes.IndexRef]struct{}) bool {
+	return slices.ContainsFunc(change.Replaces, func(ref difftypes.IndexRef) bool {
+		_, early := released[ref]
+		return early
+	})
 }
 
 func (p *Planner) removeTables(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
@@ -1821,15 +1880,20 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	// before the column changes below add that key. Otherwise the server names
 	// the column's key `x_2`, and the next comparison plans the key again.
 	// Steps 6 and 6.7 skip what this drops.
-	released := keyrelease.Find(diff, p.targetDialect()).
+	// A holder a foreign key still stands on goes in the statement that gives the
+	// column its key instead; see [columnKeyHolders].
+	nameHolders := keyrelease.Find(diff, p.targetDialect())
+	released := nameHolders.
 		With(keyrelease.PrimaryKeysUnderColumnChanges(diff, p.targetDialect())).
-		With(keyrelease.UnderColumnDrops(diff, p.targetDialect())).
-		With(keyrelease.NamesIndexesTake(diff, p.targetDialect()))
+		With(keyrelease.UnderColumnDrops(diff, p.targetDialect()))
+	uniquesRebuilt := p.uniquesRebuiltAsIndexes(diff, released)
+	released = released.With(keyrelease.NamesIndexesTake(diff, p.targetDialect()).Without(uniquesRebuilt))
 	autoIncrement := p.autoIncrementKeysOf(diff)
 	released.Indexes = slices.DeleteFunc(released.Indexes, autoIncrement.writes)
-	result = p.releaseKeyNames(result, diff, released)
+	holders := p.columnKeyHoldersOf(diff, nameHolders, fkPlan.dropped)
+	result = p.releaseKeyNames(result, diff, released.Without(holders.all))
 
-	result, columnDrops, err := p.modifyExistingTables(result, diff)
+	result, columnDrops, err := p.modifyExistingTables(result, diff, holders)
 	if err != nil {
 		return nil, err
 	}
@@ -1856,12 +1920,12 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	// and before any column, view, table or routine it names is removed. Their
 	// owner orders its creations and drops among themselves.
 	windows.Dependent = len(result)
-	rebuiltAhead, otherIndexes := p.splitIndexAdditions(diff)
-	result = p.addNewIndexes(result, diff, rebuiltAhead)
+	rebuiltAhead, otherIndexes := p.splitIndexAdditions(diff, uniquesRebuilt)
+	result = p.addNewIndexes(result, diff, rebuiltAhead, uniquesRebuilt)
 	result = append(result, columnDrops...)
 
 	// 5. Add new indexes
-	result = p.addNewIndexes(result, diff, otherIndexes)
+	result = p.addNewIndexes(result, diff, otherIndexes, uniquesRebuilt)
 	result = changeIndexVisibility(result, diff)
 
 	// 5.5. Add new constraints (must be done after tables and columns exist).
@@ -1874,6 +1938,7 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	maps.Copy(alreadyDropped, keyrelease.DroppedWithColumns(diff, p.targetDialect()))
 	maps.Copy(alreadyDropped, keyrelease.UniquesTakenOver(diff, p.targetDialect()))
 	maps.Copy(alreadyDropped, released.ConstraintSet())
+	maps.Copy(alreadyDropped, uniquesRebuilt.ConstraintSet())
 	result, err = p.addNewConstraints(result, diff, alreadyDropped, released.IndexSet())
 	if err != nil {
 		return nil, err
@@ -2155,6 +2220,7 @@ func (p *Planner) addNewConstraints(
 	state := newConstraintPlanState(diff, diff.EffectiveIdentifierSemantics(p.targetDialect()))
 	state.indexesNamedByForeignKeys = indexesNamedByForeignKeys(diff, p.targetDialect())
 	state.diff = diff
+	state.releasedIndexes = releasedIndexes
 
 	// A foreign key whose column also changes type was already dropped before
 	// the column modifications (issue #694, step 4). Seeding those (table, name)
@@ -2216,7 +2282,9 @@ type constraintPlanState struct {
 	// indexesNamedByForeignKeys is what [indexesNamedByForeignKeys] answers.
 	indexesNamedByForeignKeys map[difftypes.IndexRef]struct{}
 	// diff is the plan's diff, which says what an index takes over from.
-	diff               *difftypes.SchemaDiff
+	diff *difftypes.SchemaDiff
+	// releasedIndexes is the indexes the plan drops ahead of its column changes.
+	releasedIndexes    map[difftypes.IndexRef]struct{}
 	semantics          identifier.Semantics
 	removedNames       map[string]struct{}
 	removalByTableName map[constraintHostKey]difftypes.ConstraintRemovalInfo
@@ -2437,7 +2505,7 @@ func (p *Planner) addForeignKeyConstraintsWithTables(
 			// index then goes in the same statement, here rather than with the removals.
 			if change, takenOver := indexTakingOverFrom(state.diff, ref); takenOver {
 				takeover := difftypes.IndexRef{Name: change.Index.Name, TableName: change.TableName}
-				if _, written := takeovers[takeover]; !written {
+				if _, written := takeovers[takeover]; !written && !writtenAtRelease(change, state.releasedIndexes) {
 					result = append(result, indexTakingOverNode(state.diff, change))
 					takeovers[takeover] = struct{}{}
 				}

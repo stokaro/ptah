@@ -12,6 +12,8 @@ import (
 	"github.com/stokaro/ptah/provider-sdk/provider"
 	providerruntime "github.com/stokaro/ptah/provider-sdk/runtime"
 
+	"ptah.run/core/ast"
+	"ptah.run/core/renderer"
 	"ptah.run/internal/dbreset"
 	"ptah.run/internal/devclean/replay"
 )
@@ -73,6 +75,84 @@ func (s *session) DropAllTables(ctx context.Context) error {
 func (s *session) cleanupSchemas() []string {
 	if schema := strings.TrimSpace(s.info.Schema); schema != "" {
 		return []string{schema}
+	}
+	return nil
+}
+
+// UserSchemas lists the schemas a read of the session's whole database
+// reports, for a provider that carries namespaces, so a claim of a dev
+// database whose URL pinned one schema records the others; see
+// devclean.Baseline. A provider that does not carry namespaces reports none,
+// and its cleanups touch the pinned schema alone.
+func (s *session) UserSchemas(ctx context.Context) ([]string, error) {
+	if !s.target.carriesNamespaces() {
+		return nil, nil
+	}
+	return s.heldNamespaces(ctx)
+}
+
+// heldNamespaces names each schema a read of the whole database reports. A
+// read that leaves namespaces uninspected reports none.
+func (s *session) heldNamespaces(ctx context.Context) ([]string, error) {
+	read, err := s.Reader(nil).ReadSchemaContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(read.Schemas))
+	for _, schema := range read.Schemas {
+		names = append(names, schema.Name)
+	}
+	return names, nil
+}
+
+// DropAllTablesKeeping empties the session's schema, as DropAllTables does,
+// and on a provider that carries namespaces removes each schema the run
+// created: one a read now holds that the claim did not record (kept.Schemas),
+// other than the session's own and the engine's default. The provider empties
+// the created schemas with the session's in one cleanup, and each is then
+// removed through the provider. Without this a rehearsal that created a
+// schema left it, with what it held, on the dev database, and the next claim
+// of the database found it.
+func (s *session) DropAllTablesKeeping(ctx context.Context, kept dbreset.Kept) error {
+	if s.IsDryRun() {
+		return nil
+	}
+	scope := s.cleanupSchemas()
+	if len(scope) == 0 || !s.target.carriesNamespaces() {
+		return s.cleanDev(ctx, scope)
+	}
+	held, err := s.heldNamespaces(ctx)
+	if err != nil {
+		return err
+	}
+	var created []string
+	for _, name := range held {
+		if !slices.Contains(kept.Schemas, name) && !slices.Contains(scope, name) && name != s.target.engine.GetDefaultSchema() {
+			created = append(created, name)
+		}
+	}
+	if err := s.cleanDev(ctx, slices.Concat(scope, created)); err != nil {
+		return err
+	}
+	return s.dropNamespaces(ctx, created)
+}
+
+// dropNamespaces removes each named schema through the provider, which
+// renders the removal; the cleanup before it emptied them.
+func (s *session) dropNamespaces(ctx context.Context, names []string) error {
+	if len(names) == 0 {
+		return nil
+	}
+	nodes := make([]ast.Node, 0, len(names))
+	for _, name := range names {
+		nodes = append(nodes, &namespaceRemoval{name: name})
+	}
+	rendered, err := s.target.Render(ctx, renderer.Request{Target: s.target.engine.GetId(), Nodes: nodes})
+	if err != nil {
+		return fmt.Errorf("remove the schemas the run created from the dev database: %w", err)
+	}
+	if err := s.ExecuteUnits(ctx, rendered.Fragments); err != nil {
+		return fmt.Errorf("remove the schemas the run created from the dev database: %w", err)
 	}
 	return nil
 }

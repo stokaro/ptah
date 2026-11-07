@@ -13,6 +13,7 @@ import (
 	"example.com/ptah-fixture-provider/backend"
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"github.com/stokaro/ptah/provider-sdk/provider"
+	"google.golang.org/protobuf/proto"
 )
 
 // LedgerTable is the table the fixture keeps its seed ledger in. Its layout is
@@ -28,6 +29,10 @@ type Provider struct {
 	// SQL text, for a host test of the refusal that answers it. A host that
 	// asks for the text form receives SQL text.
 	NativeWrites bool
+	// ReservedSeeds reports the seed ledger as reserved storage of purpose
+	// SEEDS to a host that negotiated it, rather than leaving it out of the
+	// read unsaid.
+	ReservedSeeds bool
 }
 
 // Features are the services this package adds, which the provider and its
@@ -60,15 +65,47 @@ func QueryDialect() *protocol.QueryDialect {
 	}
 }
 
-// Inspect leaves the seed ledger out of the snapshot.
+// Open opens a session that, with ReservedSeeds, states the reserved seed
+// ledger among its read features where the host negotiated it, as a read of
+// it then does.
+func (p *Provider) Open(ctx context.Context, request *protocol.OpenRequest) (*protocol.Session, error) {
+	session, err := p.TransactionalProvider.Open(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	if p.reservesSeeds(ctx) {
+		session.Features = append(session.Features, provider.ReservedSeedsFeature)
+	}
+	return session, nil
+}
+
+// reservesSeeds reports ReservedSeeds under a host that lists the feature.
+func (p *Provider) reservesSeeds(ctx context.Context) bool {
+	return p.ReservedSeeds && slices.Contains(provider.HostFeatures(ctx), provider.ReservedSeedsFeature)
+}
+
+// Inspect leaves the seed ledger out of the snapshot's tables. With
+// ReservedSeeds, and a host that lists schema.reserved-seeds, it reports the
+// ledger as reserved storage of purpose SEEDS instead.
 func (p *Provider) Inspect(ctx context.Context, request *protocol.InspectRequest) (*protocol.Schema, error) {
 	snapshot, err := p.TransactionalProvider.Inspect(ctx, request)
 	if err != nil {
 		return nil, err
 	}
+	reserve := p.reservesSeeds(ctx)
 	snapshot.Tables = slices.DeleteFunc(snapshot.Tables, func(table *protocol.Table) bool {
-		return strings.EqualFold(table.GetIdentity().GetName(), LedgerTable)
+		if !strings.EqualFold(table.GetIdentity().GetName(), LedgerTable) {
+			return false
+		}
+		if reserve {
+			snapshot.ReservedObjects = append(snapshot.ReservedObjects, &protocol.ReservedObject{Object: proto.CloneOf(table.GetIdentity()),
+				NormalizedObject: proto.CloneOf(table.GetNormalizedIdentity()), Purpose: protocol.ReservedObject_SEEDS, ConflictKinds: []string{"table"}})
+		}
+		return true
 	})
+	if reserve {
+		snapshot.TargetFeatures = append(snapshot.TargetFeatures, provider.ReservedSeedsFeature)
+	}
 	return snapshot, nil
 }
 

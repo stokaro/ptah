@@ -923,16 +923,17 @@ func (p *Planner) modifyExistingTableColumns(
 			result = append(result, &ast.AlterTableNode{
 				Name: tableDiff.TableName,
 				Operations: []ast.AlterOperation{&ast.ModifyColumnOperation{
-					Column:              columnNode,
-					PreviousType:        columnchange.PreviousType(colDiff),
-					TypeNarrows:         colDiff.TypeNarrows,
-					PreviousNullable:    previousColumnNullable(colDiff.Changes["nullable"]),
-					HasPreviousNullable: colDiff.Changes["nullable"] != "",
-					PreviousIdentity:    previousColumnType(colDiff.Changes["identity"]),
-					SeedsSequence:       serialSequencePath(tableDiff.TableName, colDiff.SerialSequence),
-					DropsSequence:       sequenceGivingWayToIdentity(tableDiff.TableName, colDiff, removedSequences),
-					Changed:             changed,
-					HasChanged:          true,
+					Column:                columnNode,
+					PreviousType:          columnchange.PreviousType(colDiff),
+					TypeNarrows:           colDiff.TypeNarrows,
+					PreviousNullable:      previousColumnNullable(colDiff.Changes["nullable"]),
+					HasPreviousNullable:   colDiff.Changes["nullable"] != "",
+					PreviousIdentity:      previousColumnType(colDiff.Changes["identity"]),
+					SeedsSequence:         serialSequencePath(tableDiff.TableName, colDiff.SerialSequence),
+					DropsSequence:         sequenceGivingWayToIdentity(tableDiff.TableName, colDiff, removedSequences),
+					Changed:               changed,
+					HasChanged:            true,
+					NotNullConstraintName: p.addedNotNullName(colDiff),
 				}},
 			})
 		}
@@ -1180,7 +1181,8 @@ func (p *Planner) appendNotNullConstraintRename(
 	}
 	// Nothing to rename FROM. The catalog reported no name, so the constraint
 	// has to be established under the declared one instead, which is the
-	// column's own NOT NULL change rather than a rename.
+	// column's own NOT NULL change rather than a rename; see
+	// [Planner.addedNotNullName].
 	if colDiff.NotNullConstraintNameChange.Current == "" {
 		return result
 	}
@@ -1191,6 +1193,20 @@ func (p *Planner) appendNotNullConstraintRename(
 			To:   colDiff.NotNullConstraintNameChange.Desired,
 		}},
 	})
+}
+
+// addedNotNullName is the name of the NOT NULL a modification adds to a column
+// that holds none, or empty where the server is left to name it.
+//
+// The comparison asks for a name here only when it is not the one the server would
+// give, so an ordinary SET NOT NULL stays as it is.
+func (p *Planner) addedNotNullName(colDiff difftypes.ColumnDiff) string {
+	change := colDiff.NotNullConstraintNameChange
+	if change == nil || change.Current != "" || colDiff.Changes["nullable"] == "" ||
+		!p.caps.Has(capability.NamedNotNullConstraints) {
+		return ""
+	}
+	return change.Desired
 }
 
 // appendColumnComment emits the column's comment transition, if it has one.

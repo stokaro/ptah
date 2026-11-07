@@ -12,7 +12,7 @@ import (
 // TestCreateTable_ATypeNamedForThisTargetIsWrittenAsItStands pins which types
 // go through the portable mapping and which do not.
 //
-// mapColumnType exists for a portable declaration: VARCHAR there is the
+// [sqlservertype.Map] exists for a portable declaration: VARCHAR there is the
 // spelling a schema written for several engines uses, and PostgreSQL's and
 // MySQL's varchar hold Unicode, so NVARCHAR preserves the meaning. Applied to a
 // type somebody named for SQL Server itself it produces a different column --

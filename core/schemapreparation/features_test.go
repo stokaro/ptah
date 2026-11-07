@@ -184,3 +184,65 @@ func TestAcceptIndexNulls_FailurePath(t *testing.T) {
 		})
 	}
 }
+
+// indexConditionsRequest is one table declaring the partial index by_status
+// and the full index by_id, and its reply stating each predicate as the
+// target holds it.
+func indexConditionsRequest() (schemapreparation.Request, schemapreparation.Result) {
+	request := schemapreparation.Request{Tables: []schemapreparation.Table{{Desired: schemacapture.TableDeclaration{
+		Table: schemamodel.Table{Name: "events"},
+		Indexes: []schemamodel.Index{{Name: "by_status", Fields: []string{"status"}, Condition: " status > 0 "},
+			{Name: "by_id", Fields: []string{"id"}}},
+	}}}}
+	reply := request.Clone()
+	reply.Tables[0].IndexConditions = map[string]string{"by_status": "(status > '0'::bigint)", "by_id": ""}
+	return request, schemapreparation.Result{Complete: true, Tables: reply.Tables}
+}
+
+func TestAcceptIndexConditions_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	request, result := indexConditionsRequest()
+	capture, err := schemapreparation.Accept(request, result)
+	c.Assert(err, qt.IsNil)
+	c.Assert(capture.Prepared[0].IndexConditions, qt.DeepEquals, map[string]string{"by_status": "(status > '0'::bigint)", "by_id": ""})
+	c.Assert(capture.Source[0].IndexConditions, qt.IsNil)
+	// The declaration keeps the predicate the source wrote, and the capture
+	// its own copy of the stated ones.
+	c.Assert(capture.Prepared[0].Desired.Indexes[0].Condition, qt.Equals, " status > 0 ")
+	result.Tables[0].IndexConditions["by_status"] = "changed"
+	c.Assert(capture.Prepared[0].IndexConditions["by_status"], qt.Equals, "(status > '0'::bigint)")
+	clone := capture.Clone()
+	clone.Prepared[0].IndexConditions["by_status"] = "changed"
+	c.Assert(capture.Prepared[0].IndexConditions["by_status"], qt.Equals, "(status > '0'::bigint)")
+}
+
+func TestAcceptIndexConditions_FailurePath(t *testing.T) {
+	for _, row := range []struct {
+		name       string
+		wantErr    string
+		conditions map[string]string
+		stated     map[string]string
+	}{
+		{name: "a predicate of an index the table does not declare", wantErr: `.*states the predicate of index "by_other", which the table does not declare`,
+			conditions: map[string]string{"by_other": "a > 0"}},
+		{name: "no predicate for a partial index", wantErr: `.*states a predicate for index "by_status" exactly when the index declares one`,
+			conditions: map[string]string{"by_status": ""}},
+		{name: "a predicate for a full index", wantErr: `.*states a predicate for index "by_id" exactly when the index declares one`,
+			conditions: map[string]string{"by_status": "status > 0", "by_id": "id > 0"}},
+		{name: "a predicate with surrounding white space", wantErr: `.*states the predicate of index "by_status" with surrounding white space`,
+			conditions: map[string]string{"by_status": "status > 0 "}},
+		{name: "an input that already states predicates", wantErr: `.*preparation input already states index predicates`,
+			conditions: map[string]string{"by_status": "status > 0"}, stated: map[string]string{"by_status": "status > 0"}},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+			request, result := indexConditionsRequest()
+			result.Tables[0].IndexConditions = row.conditions
+			request.Tables[0].IndexConditions = row.stated
+			capture, err := schemapreparation.Accept(request, result)
+			c.Assert(err, qt.ErrorIs, schemapreparation.ErrInvalid)
+			c.Assert(err, qt.ErrorMatches, row.wantErr)
+			c.Assert(capture, qt.DeepEquals, schemapreparation.Capture{})
+		})
+	}
+}

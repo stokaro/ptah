@@ -61,6 +61,10 @@ type Parser struct {
 	// addedNotValid is set when the constraint ALTER TABLE ... ADD reads ends
 	// in `NOT VALID`, and the ADD operation carries it onto the constraint.
 	addedNotValid bool
+	// addedNotNull is what ALTER TABLE ... ADD read for a NOT NULL, which is an
+	// action on a column rather than a table element; see
+	// [Parser.readAddedNotNull].
+	addedNotNull *ast.AlterColumnOperation
 	// columnChecks are the CHECKs the table body being read wrote on its
 	// columns, the ones read at table level included. MySQL's rule for them
 	// needs every column of the table, so they are checked once the body is
@@ -1835,8 +1839,8 @@ func (p *Parser) parseCreateViewNode() (*ast.CreateViewNode, error) {
 		return nil, fmt.Errorf("expected AS after view name: %w", err)
 	}
 
-	body := p.collectStatementBody()
-	if strings.TrimSpace(body) == "" {
+	body, check := p.collectViewBody()
+	if body == "" {
 		return nil, ptaherr.At(p.current.Start, fmt.Errorf("expected view body after AS"))
 	}
 
@@ -1848,9 +1852,75 @@ func (p *Parser) parseCreateViewNode() (*ast.CreateViewNode, error) {
 		return nil, fmt.Errorf("view %s: %w", viewName, err)
 	}
 
-	view := ast.NewCreateView(viewName).SetBody(body)
+	view := ast.NewCreateView(viewName).SetBody(body).SetWithCheck(check != viewCheckNone)
+	view.LocalCheck = check == viewCheckLocal
 	view.Options = options
 	return view, nil
+}
+
+// viewCheck is the check option a view statement ends with.
+type viewCheck int
+
+const (
+	viewCheckNone viewCheck = iota
+	// viewCheckCascaded is WITH CHECK OPTION and WITH CASCADED CHECK OPTION,
+	// which states the level the shorter form means.
+	viewCheckCascaded
+	// viewCheckLocal is WITH LOCAL CHECK OPTION.
+	viewCheckLocal
+)
+
+// collectViewBody reads a view's query to the end of the statement and splits
+// off the WITH [CASCADED | LOCAL] CHECK OPTION clause that may end it. The
+// clause is not part of the query: the server stores it apart from the body
+// (information_schema.views.check_option), so a body that kept it would
+// never match the body the server reports.
+func (p *Parser) collectViewBody() (string, viewCheck) {
+	var tokens []lexer.Token
+	for !p.isAtEnd() && p.current.Type != lexer.TokenSemicolon {
+		tokens = append(tokens, p.current)
+		p.advance()
+	}
+	end, check := trailingViewCheck(tokens)
+	var body strings.Builder
+	for _, token := range tokens[:end] {
+		body.WriteString(token.Value)
+	}
+	return strings.TrimSpace(body.String()), check
+}
+
+// trailingViewCheck finds the check option clause that ends tokens. It returns
+// the index of the clause's WITH and the level the clause names, or
+// len(tokens) and viewCheckNone when tokens do not end in the clause.
+//
+// The clause is matched on tokens, as the statement's last words, with
+// whitespace and comments between them skipped. A string literal or a quoted
+// identifier is one token that is not a keyword, and a clause inside a
+// subquery is followed by its closing parenthesis, so a query that carries
+// the words anywhere else keeps them.
+func trailingViewCheck(tokens []lexer.Token) (int, viewCheck) {
+	const clauseWords = 4 // WITH, the level, CHECK, OPTION
+	words := make([]int, 0, clauseWords)
+	for i := len(tokens) - 1; i >= 0 && len(words) < clauseWords; i-- {
+		if tokens[i].Type != lexer.TokenWhitespace && tokens[i].Type != lexer.TokenComment {
+			words = append(words, i)
+		}
+	}
+	none := len(tokens)
+	if len(words) < 3 || !tokens[words[0]].MatchIdentifierValue("OPTION") || !tokens[words[1]].MatchIdentifierValue("CHECK") {
+		return none, viewCheckNone
+	}
+	check, with := viewCheckCascaded, 2
+	switch level := &tokens[words[2]]; {
+	case level.MatchIdentifierValue("LOCAL"):
+		check, with = viewCheckLocal, 3
+	case level.MatchIdentifierValue("CASCADED"):
+		with = 3
+	}
+	if with >= len(words) || !tokens[words[with]].MatchIdentifierValue("WITH") {
+		return none, viewCheckNone
+	}
+	return words[with], check
 }
 
 // parseRelationOptions reads the option list PostgreSQL takes between a view's
@@ -4655,6 +4725,15 @@ func (p *Parser) parseTableConstraint() (*ast.ConstraintNode, *ast.IndexNode, er
 		return nil, nil, err
 	}
 
+	if p.addingConstraint && p.current.MatchIdentifierValue("NOT") && p.takesAddNotNull() {
+		return nil, nil, p.readAddedNotNull(constraint.Name)
+	}
+	return p.parseConstraintAfterName(constraint)
+}
+
+// parseConstraintAfterName parses a table element from the word after its optional
+// CONSTRAINT name.
+func (p *Parser) parseConstraintAfterName(constraint *ast.ConstraintNode) (*ast.ConstraintNode, *ast.IndexNode, error) {
 	// Parse constraint type
 	if p.current.Type != lexer.TokenIdentifier {
 		return nil, nil, ptaherr.At(p.current.Start, fmt.Errorf("expected constraint type, got %s", p.current.Type))
@@ -5801,6 +5880,11 @@ func (p *Parser) parseAddOperation() ([]ast.AlterOperation, error) {
 		if err != nil {
 			return nil, err
 		}
+		if p.addedNotNull != nil {
+			operation := p.addedNotNull
+			p.addedNotNull = nil
+			return []ast.AlterOperation{operation}, nil
+		}
 		if constraint != nil {
 			constraint.NotValid = p.addedNotValid
 		}
@@ -5862,6 +5946,8 @@ func (p *Parser) isAlterAddConstraintStart() bool {
 	switch strings.ToUpper(p.current.Value) {
 	case "CONSTRAINT", "PRIMARY", "UNIQUE", "FOREIGN", "CHECK", "EXCLUDE":
 		return true
+	case "NOT":
+		return p.takesAddNotNull()
 	case "KEY", "SPATIAL", "FULLTEXT":
 		// MySQL and MariaDB add a secondary index this way, and both accept
 		// every one of these spellings -- measured on 8.4 and 11.8. Left out of
@@ -5876,6 +5962,31 @@ func (p *Parser) isAlterAddConstraintStart() bool {
 	default:
 		return false
 	}
+}
+
+// takesAddNotNull reports whether the dialect reads ADD [CONSTRAINT name] NOT NULL
+// column. A document read with no dialect takes what any of them does.
+func (p *Parser) takesAddNotNull() bool {
+	return !p.target.known || p.target.grammar.AlterTable.AddNotNull
+}
+
+// readAddedNotNull reads the rest of ADD [CONSTRAINT name] NOT NULL column, from
+// NOT, into [Parser.addedNotNull]. The clause does what SET NOT NULL does and states
+// the name. NOT VALID and NO INHERIT, which PostgreSQL 18 takes after the column,
+// describe a NOT NULL the model has no field for, and the statement stops on them.
+func (p *Parser) readAddedNotNull(name string) error {
+	if err := p.expectWords("NOT", "NULL"); err != nil {
+		return err
+	}
+	p.skipWhitespace()
+	column, err := p.expectIdentifier()
+	if err != nil {
+		return fmt.Errorf("expected column name after NOT NULL: %w", err)
+	}
+	p.addedNotNull = &ast.AlterColumnOperation{
+		ColumnName: column, Action: ast.AlterColumnSetNotNull, NotNullConstraintName: name,
+	}
+	return nil
 }
 
 // errConstraintColumnListMissing marks the one failure that means a table

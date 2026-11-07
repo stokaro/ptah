@@ -302,9 +302,15 @@ func AddsForeignKey(clause []string) bool {
 		HasWordPrefix(clause, "ADD", "CONSTRAINT") && HasWordSeq(clause, "FOREIGN", "KEY")
 }
 
-// ScanSetNotNull reports whether an ALTER TABLE sets a column NOT NULL.
+// ScanSetNotNull reports whether an ALTER TABLE sets a column NOT NULL, which
+// PostgreSQL 18 also spells `ADD CONSTRAINT name NOT NULL column` and `ADD NOT NULL
+// column`. Each scans the rows and fails on a NULL, measured on PostgreSQL 18.6.
 func ScanSetNotNull(w []string) bool {
 	for _, i := range ClauseStarts(w) {
+		if HasWordPrefix(w[i:], "ADD", "NOT", "NULL") ||
+			HasWordPrefix(w[i:], "ADD", "CONSTRAINT") && i+3 < len(w) && HasWordPrefix(w[i+3:], "NOT", "NULL") {
+			return true
+		}
 		if HasWordPrefix(w[i:], "ALTER", "COLUMN") && HasWordSeq(w[i:], "SET", "NOT", "NULL") {
 			return true
 		}

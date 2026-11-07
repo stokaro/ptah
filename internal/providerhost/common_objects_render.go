@@ -33,7 +33,7 @@ func (t *target) commonObjectChange(node ast.Node) (*protocol.Change, bool, erro
 // nil for a node that changes no common object beyond tables.
 func (t *target) commonOperation(node ast.Node) (*protocol.CommonObjectChange, *protocol.Reference, error) {
 	for _, family := range []func(ast.Node) (*protocol.CommonObjectChange, *protocol.Reference, error){
-		t.relationOperation, t.principalOperation, t.accessOperation,
+		t.relationOperation, t.principalOperation, t.accessOperation, t.namespaceOperation,
 	} {
 		if operation, object, err := family(node); operation != nil || err != nil {
 			return operation, object, err
@@ -56,6 +56,11 @@ func (t *target) relationOperation(node ast.Node) (*protocol.CommonObjectChange,
 		// declares some is refused rather than created without them.
 		if len(typed.Options) > 0 {
 			return nil, nil, unsupported(fmt.Sprintf("the options %s of view %q", strings.Join(typed.Options, ", "), typed.Name))
+		}
+		// The common view's check option has no level, so LOCAL is refused
+		// rather than sent as the stricter CASCADED check.
+		if typed.WithCheck && typed.LocalCheck {
+			return nil, nil, unsupported(fmt.Sprintf("WITH LOCAL CHECK OPTION of view %q", typed.Name))
 		}
 		object := t.relation("view", typed.Name)
 		view := &protocol.SQLView{Schema: object.GetSchema(), Name: object.GetName(), Body: typed.Body, WithCheck: typed.WithCheck, Comment: typed.Comment,
