@@ -687,7 +687,10 @@ func (r *Renderer) renderCreateView(node *ast.CreateViewNode) error {
 	}
 	r.w.WriteLinef("%s %s AS", create, escapeQualifiedIdentifier(node.Name))
 	r.w.WriteLine(strings.TrimSpace(node.Body))
-	if node.WithCheck {
+	switch {
+	case node.WithCheck && node.LocalCheck:
+		r.w.WriteLine("WITH LOCAL CHECK OPTION")
+	case node.WithCheck:
 		r.w.WriteLine("WITH CHECK OPTION")
 	}
 	r.w.WriteLine(";")

@@ -57,6 +57,11 @@ func (t *target) relationOperation(node ast.Node) (*protocol.CommonObjectChange,
 		if len(typed.Options) > 0 {
 			return nil, nil, unsupported(fmt.Sprintf("the options %s of view %q", strings.Join(typed.Options, ", "), typed.Name))
 		}
+		// The common view's check option has no level, so LOCAL is refused
+		// rather than sent as the stricter CASCADED check.
+		if typed.WithCheck && typed.LocalCheck {
+			return nil, nil, unsupported(fmt.Sprintf("WITH LOCAL CHECK OPTION of view %q", typed.Name))
+		}
 		object := t.relation("view", typed.Name)
 		view := &protocol.SQLView{Schema: object.GetSchema(), Name: object.GetName(), Body: typed.Body, WithCheck: typed.WithCheck, Comment: typed.Comment,
 			Attributes: slices.Clone(typed.Attributes)}
