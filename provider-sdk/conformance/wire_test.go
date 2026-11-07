@@ -120,3 +120,28 @@ func (w *wireProvider) FinishTransaction(ctx context.Context, request *protocol.
 	reply, err := w.inner.FinishTransaction(ctx, request)
 	return reply, w.refusal(err)
 }
+
+func (w *wireProvider) PrepareCommonObjects(ctx context.Context, request *protocol.PrepareCommonObjectsRequest) (*protocol.PreparedCommonObjects, error) {
+	reply, err := w.inner.PrepareCommonObjects(ctx, request)
+	return reply, w.refusal(err)
+}
+
+func (w *wireProvider) ListSeedTables(ctx context.Context, request *protocol.ListSeedTablesRequest) (*protocol.SeedTables, error) {
+	reply, err := w.inner.ListSeedTables(ctx, request)
+	return reply, w.refusal(err)
+}
+
+func (w *wireProvider) ApplySeed(ctx context.Context, request *protocol.ApplySeedRequest) (*protocol.SeedResult, error) {
+	reply, err := w.inner.ApplySeed(ctx, request)
+	return reply, w.refusal(err)
+}
+
+func (w *wireProvider) RecordSeed(ctx context.Context, request *protocol.RecordSeedRequest) (*protocol.SeedResult, error) {
+	reply, err := w.inner.RecordSeed(ctx, request)
+	return reply, w.refusal(err)
+}
+
+func (w *wireProvider) ReadSeedLedger(ctx context.Context, request *protocol.ReadSeedLedgerRequest) (*protocol.SeedLedger, error) {
+	reply, err := w.inner.ReadSeedLedger(ctx, request)
+	return reply, w.refusal(err)
+}

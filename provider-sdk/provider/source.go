@@ -169,6 +169,9 @@ func foreignGrammarClaim(format protocol.SourceDocument_Format, fragment *protoc
 	if format != protocol.SourceDocument_HCL && fragment.GetHclBlock() != nil {
 		return sourceError("HCL block claim on another source format")
 	}
+	if fragment.GetSqlTableClause() != nil && (format != protocol.SourceDocument_SQL || fragment.GetIndexKind() != nil) {
+		return sourceError("a table-clause claim outside a SQL document or beside another claim")
+	}
 	return nil
 }
 

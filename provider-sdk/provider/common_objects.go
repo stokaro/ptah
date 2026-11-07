@@ -259,6 +259,7 @@ func validateObservedCommonObjects(engine *protocol.Engine, observed *protocol.O
 		func() error { return validateObservedGrants(complete, observed.GetGrants()) },
 		func() error { return validateObservedComments(engine.GetId(), complete, observed.GetComments()) },
 		func() error { return validateObservedAccess(engine, kinds, complete, observed) },
+		func() error { return validateObservedNamespaces(engine, complete, observed.GetNamespaces()) },
 		func() error { return validateRolesOutOfScopeReason(engine, observed) },
 	} {
 		if err := check(); err != nil {
@@ -544,7 +545,7 @@ func validateCommonObjectChange(engine string, kinds commonKinds, object *protoc
 // object it changes.
 func commonChangeSubject(engine string, kinds commonKinds, change *protocol.CommonObjectChange) (*protocol.Reference, error) {
 	for _, family := range []func(string, commonKinds, *protocol.CommonObjectChange) (*protocol.Reference, bool, error){
-		relationChangeSubject, principalChangeSubject, accessChangeSubject,
+		relationChangeSubject, principalChangeSubject, accessChangeSubject, namespaceChangeSubject,
 	} {
 		if subject, matched, err := family(engine, kinds, change); matched {
 			return subject, err

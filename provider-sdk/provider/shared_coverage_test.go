@@ -129,7 +129,11 @@ func TestResolveSharedCoverage_HappyPath(t *testing.T) {
 }
 
 // A message whose shared lists do not resolve is refused, before any service
-// or validator reads it.
+// or validator reads it. The key a list takes is the order of the walk that
+// shares it, and protobuf-go's Range swaps the order of two fields of a
+// message by a seed taken from the test binary, so a change anywhere in the
+// package can give the first table's current state key 1 instead of its
+// desired one. The rows name either key of the two lists for that reason.
 func TestResolveSharedCoverage_FailurePath(t *testing.T) {
 	for _, test := range []struct {
 		name string
@@ -138,13 +142,13 @@ func TestResolveSharedCoverage_FailurePath(t *testing.T) {
 		change  func(first, second *protocol.ComparisonCoverage)
 		wantErr string
 	}{
-		{name: "a key two coverages define", wantErr: `.*shared coverage key 1 is defined twice or without kinds`,
+		{name: "a key two coverages define", wantErr: `.*shared coverage key [12] is defined twice or without kinds`,
 			change: func(first, second *protocol.ComparisonCoverage) {
 				second.Kinds, second.KindsKey, second.KindsOf = first.Kinds, first.KindsKey, 0
 			}},
-		{name: "a key defined without kinds", wantErr: `.*shared coverage key 1 is defined twice or without kinds`,
+		{name: "a key defined without kinds", wantErr: `.*shared coverage key [12] is defined twice or without kinds`,
 			change: func(first, _ *protocol.ComparisonCoverage) { first.Kinds = nil }},
-		{name: "kinds beside the key of other kinds", wantErr: `.*shared coverage names no kinds of the message under key 1`,
+		{name: "kinds beside the key of other kinds", wantErr: `.*shared coverage names no kinds of the message under key [12]`,
 			change: func(first, second *protocol.ComparisonCoverage) { second.Kinds = first.Kinds }},
 		{name: "a key no coverage defines", wantErr: `.*shared coverage names no kinds of the message under key 9`,
 			change: func(_, second *protocol.ComparisonCoverage) { second.KindsOf = 9 }},

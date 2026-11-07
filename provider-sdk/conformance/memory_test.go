@@ -12,6 +12,7 @@ import (
 	"github.com/stokaro/ptah/provider-sdk/provider"
 	"github.com/stokaro/ptah/provider-sdk/runtime"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/protobuf/proto"
 )
 
 // The memory provider is the suite's own subject: an engine whose databases
@@ -23,6 +24,8 @@ const (
 	memoryProviderID = "example.com/conformance-memory"
 	memoryEngine     = "memory"
 	unreadTable      = "ptah_unread"
+	// seedLedger is the table the memory engine keeps its seed ledger in.
+	seedLedger = "ptah_seeds"
 )
 
 // memoryDefects are the ways the memory provider can break the contract.
@@ -37,6 +40,11 @@ type memoryDefects struct {
 	unreadRegardless bool
 	// sharedLocks hands a held lock to every session that asks.
 	sharedLocks bool
+	// namespacesRegardless lists the database's namespaces whatever the
+	// host listed.
+	namespacesRegardless bool
+	// seedsRegardless reserves the seed ledger whatever the host listed.
+	seedsRegardless bool
 }
 
 type memoryProvider struct {
@@ -76,15 +84,19 @@ func memoryDescription() *protocol.Description {
 	return &protocol.Description{
 		Revision: provider.Revision, ProviderId: memoryProviderID, Version: "1.0.0", SemanticIdentity: "memory-1",
 		Engines: []*protocol.Engine{{Id: memoryEngine, DefaultSchema: "main", Identifiers: memoryRules(),
-			Features: []string{provider.CommonTableIdentityFeature, provider.LocksFeature, provider.TransactionsFeature, provider.UnreadTablesFeature}}},
+			Features: []string{provider.CommonTableIdentityFeature, provider.LocksFeature, provider.TransactionsFeature, provider.UnreadTablesFeature,
+				provider.CommonObjectsFeature, provider.CommonNamespacesFeature, provider.SeedsFeature, provider.ReservedSeedsFeature},
+			CommonObjects: &protocol.CommonObjectSupport{Kinds: []protocol.CommonObjectSupport_Kind{protocol.CommonObjectSupport_SCHEMA}}}},
 		Features: []string{provider.InspectFeature, provider.RenderFeature, provider.ExecuteFeature, provider.LocksFeature, provider.TransactionsFeature,
-			provider.ErrorReasonsFeature, provider.UnreadTablesFeature},
+			provider.ErrorReasonsFeature, provider.UnreadTablesFeature, provider.CommonObjectsFeature, provider.CommonNamespacesFeature,
+			provider.SeedsFeature, provider.ReservedSeedsFeature},
 	}
 }
 
 // server joins the memory provider with its description.
 func (m *memoryProvider) server() runtime.Server {
-	return runtime.Server{Description: memoryDescription(), Sessions: m, Inspector: m, Renderer: m, Executor: m, Locks: m, Transactions: m}
+	return runtime.Server{Description: memoryDescription(), Sessions: m, Inspector: m, Renderer: m, Executor: m, Locks: m, Transactions: m,
+		CommonObjects: m, Seeds: m}
 }
 
 func refuse(code codes.Code, reason string) error { return runtime.ErrorWithReason(code, reason) }
@@ -156,14 +168,86 @@ func (m *memoryProvider) Inspect(ctx context.Context, request *protocol.InspectR
 		identity := &protocol.Reference{Engine: memoryEngine, Database: session.database, Kind: "table", Name: name, DisplayName: name}
 		snapshot.Tables = append(snapshot.Tables, &protocol.Table{Identity: identity, NormalizedIdentity: identity, Columns: tables[name]})
 	}
-	if m.defects.unreadRegardless || slices.Contains(provider.HostFeatures(ctx), provider.UnreadTablesFeature) {
-		snapshot.TargetFeatures = []string{provider.UnreadTablesFeature}
+	listed := provider.HostFeatures(ctx)
+	if m.defects.unreadRegardless || slices.Contains(listed, provider.UnreadTablesFeature) {
+		snapshot.TargetFeatures = append(snapshot.TargetFeatures, provider.UnreadTablesFeature)
 		snapshot.UnreadTables = []*protocol.UnreadTable{{
 			Table:      &protocol.Reference{Engine: memoryEngine, Database: session.database, Kind: "table", Name: unreadTable, DisplayName: unreadTable},
 			Diagnostic: &protocol.ProviderDiagnostic{Reason: "the memory engine keeps this table for itself"},
 		}}
 	}
+	// A host that lists the common-object wire and namespaces reads the one
+	// namespace a memory database has; any other host negotiated the kind
+	// away and reads no common object.
+	if m.defects.namespacesRegardless || slices.Contains(listed, provider.CommonObjectsFeature) && slices.Contains(listed, provider.CommonNamespacesFeature) {
+		snapshot.TargetFeatures = append(snapshot.TargetFeatures, provider.CommonObjectsFeature, provider.CommonNamespacesFeature)
+		snapshot.CommonObjects = &protocol.ObservedCommonObjects{
+			Namespaces: []*protocol.ObservedNamespace{{Identity: &protocol.Reference{Engine: memoryEngine, Database: session.database, Kind: provider.NamespaceKind, Name: "main"}}},
+			Coverage: []*protocol.CommonObjectCoverage{{Kind: protocol.CommonObjectSupport_SCHEMA,
+				Knowledge: &protocol.ModelKnowledge{State: protocol.ModelKnowledge_COMPLETE}}},
+		}
+	}
+	if m.defects.seedsRegardless || slices.Contains(listed, provider.ReservedSeedsFeature) {
+		snapshot.TargetFeatures = append(snapshot.TargetFeatures, provider.SeedsFeature, provider.ReservedSeedsFeature)
+		ledger := &protocol.Reference{Engine: memoryEngine, Database: session.database, Kind: "table", Name: seedLedger}
+		snapshot.ReservedObjects = []*protocol.ReservedObject{{Object: ledger, NormalizedObject: proto.CloneOf(ledger), Purpose: protocol.ReservedObject_SEEDS,
+			ConflictKinds: []string{"table"}}}
+	}
 	return snapshot, nil
+}
+
+// PrepareCommonObjects returns the declaration as it is: a namespace's name
+// is spelled one way on the memory engine.
+func (m *memoryProvider) PrepareCommonObjects(_ context.Context, request *protocol.PrepareCommonObjectsRequest) (*protocol.PreparedCommonObjects, error) {
+	return &protocol.PreparedCommonObjects{Complete: true, Prepared: proto.CloneOf(request.GetDeclared())}, nil
+}
+
+// ListSeedTables lists the tables of the session's database, the seed ledger
+// left out.
+func (m *memoryProvider) ListSeedTables(_ context.Context, request *protocol.ListSeedTablesRequest) (*protocol.SeedTables, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	session, err := m.lookup(request.GetSessionId())
+	if err != nil {
+		return nil, err
+	}
+	result := &protocol.SeedTables{}
+	for name := range m.databases[session.database] {
+		result.Tables = append(result.Tables, &protocol.Reference{Engine: memoryEngine, Database: session.database, Kind: "table", Name: name})
+	}
+	slices.SortFunc(result.Tables, func(a, b *protocol.Reference) int { return strings.Compare(a.GetName(), b.GetName()) })
+	return result, nil
+}
+
+// ApplySeed runs no seed file: the memory engine has no rows to write.
+func (m *memoryProvider) ApplySeed(_ context.Context, request *protocol.ApplySeedRequest) (*protocol.SeedResult, error) {
+	return m.notSeeded(request.GetSessionId(), request.GetRequestId(), request.GetSeed())
+}
+
+// RecordSeed records nothing, for the same reason.
+func (m *memoryProvider) RecordSeed(_ context.Context, request *protocol.RecordSeedRequest) (*protocol.SeedResult, error) {
+	return m.notSeeded(request.GetSessionId(), request.GetRequestId(), request.GetSeed())
+}
+
+// notSeeded answers a seed request of an open session with NOT_APPLIED.
+func (m *memoryProvider) notSeeded(sessionID, requestID string, seed *protocol.Seed) (*protocol.SeedResult, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, err := m.lookup(sessionID); err != nil {
+		return nil, err
+	}
+	return &protocol.SeedResult{RequestId: requestID, Path: seed.GetPath(), Outcome: protocol.SeedResult_NOT_APPLIED,
+		Reason: "the memory engine has no rows to write"}, nil
+}
+
+// ReadSeedLedger reads an empty ledger.
+func (m *memoryProvider) ReadSeedLedger(_ context.Context, request *protocol.ReadSeedLedgerRequest) (*protocol.SeedLedger, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, err := m.lookup(request.GetSessionId()); err != nil {
+		return nil, err
+	}
+	return &protocol.SeedLedger{Exists: true, Complete: true}, nil
 }
 
 func (m *memoryProvider) Render(_ context.Context, request *protocol.RenderRequest) (*protocol.RenderResult, error) {

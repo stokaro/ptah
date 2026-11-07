@@ -15,7 +15,7 @@ import (
 // counts the compatible additions within the major Revision. A host built
 // with this SDK announces Revision.ContractMinor, and a provider built with it
 // may require at most that minor from its host.
-const ContractMinor uint32 = 28
+const ContractMinor uint32 = 29
 
 // The features below each enable an addition to an existing message. An
 // addition is used only when both sides list its feature: the provider in its
@@ -52,7 +52,7 @@ func TwoWayFeatures() []string {
 		ObservedIndexFacetsFeature, SchemaSubtreeCoverageFeature, PasswordInputsFeature, HCLPlatformFeature, DefaultCapabilitiesFeature, LintTransactionOwnerFeature,
 		IndexKindsFeature, ModelPredecessorsFeature, RoleScopeReasonsFeature, GoPlacementsFeature, PrimaryKeyChangesFeature, ModelReferencesFeature,
 		LargeMessagesFeature, TableOutlinesFeature, SharedCoverageFeature, OwnPredecessorsFeature, ObservedConstraintsFeature, ConstraintChangesFeature,
-		IndexNullsOrderFeature}
+		IndexNullsOrderFeature, CommonNamespacesFeature, SQLTableClausesFeature, ReservedSeedsFeature, IndexPredicatesFeature}
 }
 
 // ContractError reports a host and a provider that cannot work together:
@@ -180,6 +180,7 @@ func NegotiatedDescription(description *protocol.Description, hostFeatures []str
 			engine.Embeddings = nil
 		}
 		negotiateCommonObjects(engine, hostFeatures)
+		negotiateCommonNamespaces(engine, hostFeatures)
 		negotiatePlanningObjects(engine, hostFeatures)
 		negotiateHCLSource(engine, hostFeatures)
 		negotiateIndexKinds(engine, hostFeatures)
@@ -214,6 +215,7 @@ func NegotiatedDescription(description *protocol.Description, hostFeatures []str
 // outlines of its planning services.
 func negotiateLaterAdditions(engine *protocol.Engine, hostFeatures []string) {
 	negotiateTableOutlines(engine, hostFeatures)
+	negotiateSQLTableClauses(engine, hostFeatures)
 	if !slices.Contains(hostFeatures, ReverseChangesFeature) {
 		engine.Reversals = nil
 	}
@@ -294,7 +296,7 @@ func negotiateCommonObjects(engine *protocol.Engine, hostFeatures []string) {
 	if !slices.Contains(hostFeatures, CommonObjectsFeature) {
 		engine.CommonObjects = nil
 		engine.Features = slices.DeleteFunc(engine.Features, func(feature string) bool {
-			return feature == CommonAccessFeature || feature == CommonViewFacetsFeature || feature == RoleScopeReasonsFeature
+			return feature == CommonAccessFeature || feature == CommonViewFacetsFeature || feature == RoleScopeReasonsFeature || feature == CommonNamespacesFeature
 		})
 	}
 	if !slices.Contains(hostFeatures, CommonAccessFeature) && engine.CommonObjects != nil {

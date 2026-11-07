@@ -298,6 +298,10 @@ message CommonObjectSupport {
     // Contract 25.5, under schema.common-access. Each has its own coverage.
     OBJECT_OWNER = 7;
     ROLE_MEMBERSHIP = 8;
+    // The namespaces of the session's database, such as the schemas of a
+    // PostgreSQL-family database. Contract 25.29, under
+    // schema.common-namespaces.
+    SCHEMA = 9;
   }
   repeated Kind kinds = 1;
 }
@@ -429,6 +433,30 @@ message SQLSchemaDeclaration {
   // parses the header and sends the entries of these kinds as limits. Empty
   // for FRAGMENTS.
   repeated string header_kinds = 2;
+  // The clauses of CREATE TABLE a FRAGMENTS engine reads itself, each after
+  // the column list among the table's options. Empty for DOCUMENT. Non-empty
+  // only when the engine lists source.sql-table-clauses, and sent only to a
+  // host that lists it. Contract 25.29.
+  repeated SQLTableClause table_clauses = 3;
+}
+// SQLTableClause is a FRAGMENTS engine's claim on a clause of CREATE TABLE,
+// such as a row deletion policy. In a SQL document of the engine the host
+// reads the clause that opens with the words among the options after the
+// column list, ends it at the next top-level comma or at the end of the
+// statement, and sends its text, opening words included, as one fragment
+// that carries this claim. The table is the fragment's binding and its
+// subject. Contract 25.29, under source.sql-table-clauses.
+message SQLTableClause {
+  // The words the clause opens with, in order: each one word of ASCII
+  // letters, digits and underscores, in upper case. The host matches them
+  // without regard to case. No two claims of an engine open with the same
+  // first word.
+  repeated string words = 1;
+  string selector = 2;
+  // DESIRED models a fragment of the claim declares, each a facet owned by
+  // the table. A SQL document of the engine states the whole of each of them
+  // for every table it declares: a table without the clause has none.
+  repeated string models = 3;
 }
 // ReleaseLine is one release line of an engine and how much testing stands
 // behind it. A level of CERTIFIED or LEGACY_TESTED claims that something runs
@@ -648,6 +676,19 @@ message ObservedCommonObjects {
   // ends without a period. Empty when roles_out_of_scope is. Contract 25.26,
   // under schema.role-scope-reasons.
   string roles_out_of_scope_reason = 10;
+  // The namespaces the read covers, each once: every schema of the session's
+  // database within the read's scope, the session's default schema included
+  // when the scope holds it. A namespace of the scope this list does not name
+  // is absent. Listed only when the engine declares SCHEMA and the read covers
+  // it. Contract 25.29, under schema.common-namespaces.
+  repeated ObservedNamespace namespaces = 11;
+}
+// ObservedNamespace is one namespace a read found. Contract 25.29, under
+// schema.common-namespaces.
+message ObservedNamespace {
+  // Kind "schema", the session's database, and the namespace's name. Its
+  // schema, catalog and path are empty.
+  Reference identity = 1;
 }
 message ObjectOwner {
   Reference object = 1;
@@ -797,7 +838,21 @@ message CommonObjectChange {
     RoleMembership remove_member = 12;
     // An empty text removes the comment.
     ObjectComment set_comment = 13;
+    // Contract 25.29, under schema.common-namespaces. The change's object is
+    // the namespace: kind "schema" and its name.
+    NamespaceCreation create_schema = 14;
+    // Kind "schema". The plan removes what the namespace holds first; the
+    // removal never cascades.
+    Reference drop_schema = 15;
   }
+}
+// NamespaceCreation creates one namespace the declaration holds and a read
+// did not find. Contract 25.29, under schema.common-namespaces.
+message NamespaceCreation {
+  string name = 1;
+  // The comment the declaration gives the namespace. Non-empty only when the
+  // engine carries COMMENT objects.
+  string comment = 2;
 }
 message ViewCreation {
   SQLView view = 1;
@@ -1182,6 +1237,11 @@ message SourceFragment {
   // ptah:schema:index, its INDEX-scope YAML keys, or its INDEX_ATTRIBUTES HCL
   // claim. Contract 25.24, under source.index-kinds.
   SourceIndexKind index_kind = 13;
+  // Frozen negotiated table-clause claim of a fragment in a SQL document. Such
+  // a fragment carries no other claim, its content is the clause's text, its
+  // binding is the table the clause belongs to and its subject that table.
+  // Contract 25.29, under source.sql-table-clauses.
+  SQLTableClause sql_table_clause = 14;
   string id = 1;
   string selector = 2;
   // The shared frontend's attachment context, if already known. An owner may
@@ -2343,6 +2403,10 @@ message ObservedIndex {
   bool primary = 8;
   string definition = 9;
   bool key_parts_incomplete = 10;
+  // The predicate of a partial index, without the WHERE keyword. Under
+  // schema.index-predicates it leaves out what the engine adds to the index by
+  // itself, and is spelled as PreparedIndex.condition spells a declared one.
+  // Contract 25.29.
   string condition = 11;
   string comment = 12;
   bool invisible = 13;
@@ -2661,6 +2725,9 @@ message ReservedObject {
     LOCK = 2;
     LOG = 3;
     TAG = 4;
+    // The ledger of the seed files the engine's seed service recorded.
+    // Contract 25.29, under schema.reserved-seeds.
+    SEEDS = 5;
   }
   Purpose purpose = 3;
   repeated string conflict_kinds = 4;
@@ -2714,6 +2781,14 @@ message PreparedIndex {
   // states CapturedIndexPart.nulls of a held index the same way. Contract
   // 25.28, negotiated under schema.index-nulls-order.
   repeated string nulls = 3;
+  // The predicate of the declaration's partial index, DeclaredIndex.condition,
+  // as the engine holds it: in the spelling a read under the same feature
+  // states ObservedIndex.condition in, without the WHERE keyword. Empty
+  // exactly when the declaration states no predicate. A read leaves out of
+  // ObservedIndex.condition what the engine adds to an index by itself, so
+  // the two compare exactly. Contract 25.29, negotiated under
+  // schema.index-predicates.
+  string condition = 4;
 }
 message PreparedTables {
   bool complete = 1;

@@ -188,7 +188,7 @@ func validateEngineAdditions(description *protocol.Description, engine *protocol
 		validateObservedIndexFacetsFeature, validateSchemaSubtreeFeature, validatePasswordInputsEngine, validateSQLScanEngine, validateDefaultCapabilities,
 		validateIndexKinds, validateModelPredecessors, validateRoleScopeReasonsFeature, validateGoPlacementsFeature, validatePrimaryKeyChangesFeature,
 		validateTableOutlinesFeature, validateObservedConstraintsFeature, validateConstraintChangesFeature, validateCheckEquivalenceEngine,
-		validateIndexNullsOrderFeature,
+		validateIndexNullsOrderFeature, validateCommonNamespacesFeature, validateSQLTableClauses, validateReservedSeedsFeature, validateIndexPredicatesFeature,
 	} {
 		if err := check(description, engine); err != nil {
 			return err

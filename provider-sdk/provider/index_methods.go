@@ -28,12 +28,13 @@ func validateIndexMethodsFeature(description *protocol.Description, engine *prot
 }
 
 // validatePreparedIndexes checks the indexes a prepared table states: their
-// kinds under IndexMethodsFeature and their NULLS orders under
-// IndexNullsOrderFeature. With neither negotiated a table states no index.
-// With either, a table states one entry for each index it declares, in the
-// declared order, so an entry is never missing, stated twice or stated for an
-// index the table does not declare. An entry states a kind only under index
-// methods, and NULLS orders only under the NULLS order.
+// kinds under IndexMethodsFeature, their NULLS orders under
+// IndexNullsOrderFeature and their predicates under IndexPredicatesFeature.
+// With none negotiated a table states no index. With any, a table states one
+// entry for each index it declares, in the declared order, so an entry is
+// never missing, stated twice or stated for an index the table does not
+// declare. An entry states a kind only under index methods, NULLS orders only
+// under the NULLS order, and a predicate only under index predicates.
 func validatePreparedIndexes(description *protocol.Description, engine *protocol.Engine, request *protocol.PrepareTablesRequest,
 	input *protocol.TablePreparationInput, output *protocol.PreparedTable,
 ) error {
@@ -41,8 +42,9 @@ func validatePreparedIndexes(description *protocol.Description, engine *protocol
 	negotiated := func(feature string) bool {
 		return EngineOffers(description, engine.GetId(), feature) && slices.Contains(request.GetTargetFeatures(), feature)
 	}
-	methods, nulls := negotiated(IndexMethodsFeature), negotiated(IndexNullsOrderFeature)
-	if !methods && !nulls {
+	features := preparedIndexFeatures{methods: negotiated(IndexMethodsFeature), nulls: negotiated(IndexNullsOrderFeature),
+		predicates: negotiated(IndexPredicatesFeature)}
+	if !features.methods && !features.nulls && !features.predicates {
 		if len(prepared) != 0 {
 			return fmt.Errorf("%w: prepared index methods need %s", ErrProtocol, IndexMethodsFeature)
 		}
@@ -56,17 +58,39 @@ func validatePreparedIndexes(description *protocol.Description, engine *protocol
 		if index.GetName() != declared[i].GetName() {
 			return fmt.Errorf("%w: prepared index method %d names %q, and the declared index there is %q", ErrProtocol, i, index.GetName(), declared[i].GetName())
 		}
-		if !methods && index.GetMethod() != "" {
+		if !features.methods && index.GetMethod() != "" {
 			return fmt.Errorf("%w: prepared index %q states a method, which needs %s", ErrProtocol, index.GetName(), IndexMethodsFeature)
 		}
-		if !nulls && len(index.GetNulls()) != 0 {
-			return fmt.Errorf("%w: prepared index NULLS orders need %s", ErrProtocol, IndexNullsOrderFeature)
+		if err := features.check(declared[i], index); err != nil {
+			return err
 		}
-		if nulls {
-			if err := validatePreparedIndexNulls(declared[i], index); err != nil {
-				return err
-			}
+	}
+	return nil
+}
+
+// preparedIndexFeatures are the features a table preparation negotiated
+// that a prepared index states something under.
+type preparedIndexFeatures struct {
+	methods, nulls, predicates bool
+}
+
+// check checks the NULLS orders and the predicate one prepared index states:
+// each only under its negotiated feature, and in the form the feature asks
+// for.
+func (f preparedIndexFeatures) check(declared *protocol.DeclaredIndex, index *protocol.PreparedIndex) error {
+	if !f.nulls && len(index.GetNulls()) != 0 {
+		return fmt.Errorf("%w: prepared index NULLS orders need %s", ErrProtocol, IndexNullsOrderFeature)
+	}
+	if !f.predicates && index.GetCondition() != "" {
+		return fmt.Errorf("%w: prepared index predicates need %s", ErrProtocol, IndexPredicatesFeature)
+	}
+	if f.nulls {
+		if err := validatePreparedIndexNulls(declared, index); err != nil {
+			return err
 		}
+	}
+	if f.predicates {
+		return validatePreparedIndexCondition(declared, index)
 	}
 	return nil
 }
