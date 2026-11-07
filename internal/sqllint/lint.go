@@ -18,6 +18,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlext"
 	"ptah.run/core/sqlutil"
+	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/parser"
 	"ptah.run/internal/servertarget"
@@ -196,7 +197,7 @@ func LintSource(ctx context.Context, source Source, opts Options) ([]Finding, er
 	}
 	var items []sourceItem
 	for _, statement := range splitSourceStatements(source, opts.Dialect) {
-		keyword, keywordOffset := firstKeyword(statement.sql)
+		keyword, keywordOffset := firstKeyword(statement.sql, opts.Dialect)
 		if keywordOffset < 0 {
 			continue
 		}
@@ -528,7 +529,7 @@ func unanalyzedStatementLabel(ctx Context, stmt ast.Node) (string, bool) {
 		return "", false
 	}
 	if _, owned := stmt.(*ast.ExtensionStatement); owned {
-		return extensionStatementLabel(ctx.statement.sql), true
+		return extensionStatementLabel(ctx.statement.sql, ctx.Dialect), true
 	}
 	if drop, ok := stmt.(*ast.DropFunctionNode); ok && drop.IsProcedure() {
 		return "DROP PROCEDURE", true
@@ -538,9 +539,9 @@ func unanalyzedStatementLabel(ctx Context, stmt ast.Node) (string, bool) {
 
 // extensionStatementLabel uses the statement's opening words, since the
 // host node names the ownership boundary rather than the SQL statement.
-func extensionStatementLabel(source string) string {
-	first, offset := firstKeyword(source)
-	second, _ := firstKeyword(source[max(offset, 0)+len(first):])
+func extensionStatementLabel(source, dialect string) string {
+	first, offset := firstKeyword(source, dialect)
+	second, _ := firstKeyword(source[max(offset, 0)+len(first):], dialect)
 	return strings.TrimSpace(first + " " + second)
 }
 
@@ -620,8 +621,13 @@ func ruleDisabled(ruleID string, disabled []string) bool {
 // firstKeyword returns the word a statement opens with and where it stands. A
 // statement that opens with anything else has no keyword and an offset, and the parser
 // answers for it. One that holds only comments has neither, and a negative offset.
-func firstKeyword(statement string) (keyword string, offset int) {
-	l := lexer.NewLexer(statement)
+//
+// The statement is read by the dialect's lexical rules, as the splitter that
+// cut it read the file: by the SQL standard's, a PostgreSQL comment that holds
+// a comment ends at the first */, and its text reads as the statement's first
+// word (stokaro/ptah#5586).
+func firstKeyword(statement, dialect string) (keyword string, offset int) {
+	l := lexer.NewLexerWithOptions(statement, dialectlexer.Options(dialect))
 	for {
 		token := l.NextToken()
 		switch token.Type {
@@ -729,7 +735,7 @@ func (unsupportedRoutineRule) ID() string {
 func (unsupportedRoutineRule) CheckStatement(ctx Context, stmt ast.Node) []Finding {
 	switch node := stmt.(type) {
 	case *ast.RawSQLNode:
-		keyword, keywordOffset := firstKeyword(node.SQL)
+		keyword, keywordOffset := firstKeyword(node.SQL, ctx.Dialect)
 		if keyword == "" {
 			keyword = "raw SQL"
 		}
