@@ -1241,7 +1241,9 @@ it reports `"outcome": "failed"`, because no unit has left the host: a transacti
 the provider refuses to begin or dies beginning, an input variable that is not
 set, a lock lost before the request. A reply of `NOT_STARTED` comes after it and
 stays `unknown`, because the units left the host and the provider's answer is the
-only evidence they did not run.
+only evidence they did not run. The document's `failure` names the first unit the
+provider did not confirm, and carries no code, because the protocol has no field for
+one; see [Where a run stopped](../../reference/exit-codes/#where-a-run-stopped).
 
 YAML loading accepts document and table keys explicitly declared by the selected
 provider. It preserves exact numbers and source locations and requires complete

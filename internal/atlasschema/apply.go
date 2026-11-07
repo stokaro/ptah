@@ -1252,17 +1252,49 @@ func applyStatements(
 	txMode migrator.MigrationTxMode,
 	statements []string,
 ) error {
-	return applyUnits(ctx, conn, txMode, renderer.SQLFragments(executableStatements(statements, conn.Info().Dialect)))
+	executable, positions := executableStatements(statements, conn.Info().Dialect)
+	if err := applyUnits(ctx, conn, txMode, renderer.SQLFragments(executable)); err != nil {
+		return &listedStatementsError{err: err, positions: positions, total: len(statements)}
+	}
+	return nil
 }
 
-func executableStatements(statements []string, dialect string) []string {
+// executableStatements returns the statements that hold something to send, and
+// the 1-based position of each among the statements it was given. A plan file
+// written by hand can list a statement that holds only comments.
+func executableStatements(statements []string, dialect string) ([]string, []int) {
 	filtered := make([]string, 0, len(statements))
-	for _, statement := range statements {
+	positions := make([]int, 0, len(statements))
+	for i, statement := range statements {
 		if strings.TrimSpace(sqlutil.StripCommentsForDialect(statement, dialect)) != "" {
 			filtered = append(filtered, statement)
+			positions = append(positions, i+1)
 		}
 	}
-	return filtered
+	return filtered, positions
+}
+
+// listedStatementsError is a failure of a run over the list of statements it was
+// given, some of which it may have left out because they hold only comments. The
+// report lists every statement, so a position it gives has to count them. It adds
+// nothing to the message.
+type listedStatementsError struct {
+	err       error
+	positions []int
+	total     int
+}
+
+func (e *listedStatementsError) Error() string { return e.err.Error() }
+
+func (e *listedStatementsError) Unwrap() error { return e.err }
+
+// position is the position among the listed statements of the statement at the
+// 1-based position executed among the ones that ran. Zero names no statement.
+func (e *listedStatementsError) position(executed int) int {
+	if executed < 1 || executed > len(e.positions) {
+		return 0
+	}
+	return e.positions[executed-1]
 }
 
 func SplitApplyStatements(sqlText, dialect string) []string {

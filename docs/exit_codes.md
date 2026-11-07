@@ -70,6 +70,71 @@ names, has no kind and no `missing_privileges`.
 The list may grow. A reader treats a kind it does not know as no kind. The exit
 code is `2` for every kind.
 
+## Where a Run Stopped
+
+`ptah schema apply --json` and `ptah migrations up --json` carry a `failure`
+object when a statement reached the database and failed, or the commit that ends
+the statements did. `error.message` can quote a row of data and ends with the
+statement, so a caller that must not publish data reads this object instead. It
+holds no text from the statement or from what the server said.
+
+```json
+{
+  "statement": 3,
+  "statements": 5,
+  "sqlstate": "23505"
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `statement`, `statements` | The 1-based position of the statement the run stopped at, and how many there are. `statement` is `0` when no statement is to blame |
+| `commit` | Present and `true` when the statements ran and the commit that ends them failed, as a deferred constraint does |
+| `sqlstate` | The SQLSTATE the server answered with |
+| `error_number` | The server's error number. It means something only on the engine that gave it: `1205` is a deadlock on SQL Server and a lock wait timeout on MySQL |
+| `version`, `version_key` | `migrations up` only: the migration that failed |
+
+The positions of `schema apply` count the entries of the document's `units`, so
+`units[statement - 1]` is the one that failed. One entry goes to the server as one
+request, whatever the planner merged into it or split out of it: a merged `ALTER
+TABLE` is one position, and each statement of a SQLite table rebuild is its own. A
+statement of a plan file that holds only comments is not sent and is still counted,
+because `units` lists it. The positions of `migrations up` count the statements of
+the migration's body. An executable provider's split of a body into units decides
+what its statements are.
+
+Which codes appear depends on what the engine's driver gives. A key the engine has
+no value for is absent, never empty:
+
+| Engine | `sqlstate` | `error_number` |
+| --- | --- | --- |
+| PostgreSQL, CockroachDB, YugabyteDB | Yes | Absent |
+| MySQL, MariaDB | Yes | Yes |
+| SQL Server | Absent | Yes |
+| Oracle | Absent | Yes: `1` for `ORA-00001` |
+| ClickHouse | Absent | Yes: the exception code |
+| SQLite | Absent | Absent |
+
+Both are absent when the server gave no answer, such as after a lost connection or
+a canceled statement, so a position with no code means the outcome of that statement
+is not known.
+
+An executable provider reports how many units it confirmed, and gives no SQLSTATE
+and no number: the protocol has no field for either. `statement` is then the first
+unit it did not confirm, so the provider stopped there or later, and `0` when it
+confirmed every unit and its answer was still not a success.
+
+These runs carry no `failure`:
+
+- A run that stopped before its first statement left: a refusal, a failed rehearsal
+  on a dev database, a transaction that could not begin. `outcome` already says
+  that nothing reached the database.
+- A run that stopped at something other than a statement or that commit: a lock lost
+  after every statement succeeded, and for `migrations up` a write to the revision
+  table or a failed check.
+
+`failure` says where the run stopped, not what the database holds.
+
 ## Interrupts
 
 SIGINT and SIGTERM cancel the running command instead of killing the process

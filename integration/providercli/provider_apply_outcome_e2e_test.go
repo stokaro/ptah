@@ -112,6 +112,10 @@ func TestProviderSchemaApply_ReportsWhereTheRunStopped(t *testing.T) {
 		wantRefusal atlasschema.RefusalCode
 		wantError   string
 		wantTables  []string
+		// wantFailure is where the record says the run stopped. A provider confirms
+		// a prefix and gives no code, so the position is the first unit it did not
+		// confirm, whatever became of that unit.
+		wantFailure *atlasschema.ApplyFailure
 	}{
 		{
 			name: "no transactions, a computed plan in the default mode", spec: withoutTransactions, args: computedArgs,
@@ -165,22 +169,27 @@ func TestProviderSchemaApply_ReportsWhereTheRunStopped(t *testing.T) {
 		{
 			name: "the provider dies after a statement, a computed plan", spec: withoutTransactions, fault: "crash-after", args: computedArgs, mode: []string{"--tx-mode", "none"},
 			wantOutcome: atlasschema.ApplyOutcomeUnknown, wantError: "UNKNOWN", wantTables: []string{"items"},
+			wantFailure: &atlasschema.ApplyFailure{Statement: 1, Statements: 2},
 		},
 		{
 			name: "the provider dies after a statement, a saved plan", spec: withoutTransactions, fault: "crash-after", args: savedArgs, mode: []string{"--tx-mode", "none"},
 			wantOutcome: atlasschema.ApplyOutcomeUnknown, wantError: "UNKNOWN", wantTables: []string{"items"},
+			wantFailure: &atlasschema.ApplyFailure{Statement: 1, Statements: 2},
 		},
 		{
 			name: "the first unit applied and the next did not", spec: withoutTransactions, fault: "partial", args: savedArgs, mode: []string{"--tx-mode", "none"},
 			wantOutcome: atlasschema.ApplyOutcomeUnknown, wantError: "PARTIAL", wantTables: []string{"items"},
+			wantFailure: &atlasschema.ApplyFailure{Statement: 2, Statements: 2},
 		},
 		{
 			name: "a commit whose reply was lost", spec: withTransactions, fault: "lost-commit", args: savedArgs,
 			wantOutcome: atlasschema.ApplyOutcomeUnknown, wantError: "UNKNOWN", wantTables: []string{"items", "second"},
+			wantFailure: &atlasschema.ApplyFailure{Statements: 2, Commit: true},
 		},
 		{
 			name: "a commit that never ran", spec: withTransactions, fault: "lost-before-commit", args: savedArgs,
 			wantOutcome: atlasschema.ApplyOutcomeUnknown, wantError: "UNKNOWN",
+			wantFailure: &atlasschema.ApplyFailure{Statements: 2, Commit: true},
 		},
 		// The units left the host, and only the provider's answer says they did
 		// not run. The report does not take a provider's word over its own
@@ -188,6 +197,7 @@ func TestProviderSchemaApply_ReportsWhereTheRunStopped(t *testing.T) {
 		{
 			name: "the provider answers that it did not start", spec: withoutTransactions, fault: "reject", args: savedArgs, mode: []string{"--tx-mode", "none"},
 			wantOutcome: atlasschema.ApplyOutcomeUnknown, wantError: "NOT_STARTED",
+			wantFailure: &atlasschema.ApplyFailure{Statement: 1, Statements: 2},
 		},
 	}
 	for _, test := range tests {
@@ -203,6 +213,7 @@ func TestProviderSchemaApply_ReportsWhereTheRunStopped(t *testing.T) {
 			c.Assert(report.Outcome, qt.Equals, test.wantOutcome, qt.Commentf("%s", diagnostics))
 			c.Assert(refusalCode(report), qt.Equals, test.wantRefusal)
 			c.Assert(diagnostics, qt.Contains, test.wantError)
+			c.Assert(report.Failure, qt.DeepEquals, test.wantFailure)
 			c.Assert(report.Units, qt.HasLen, 2)
 			c.Assert(databaseTables(c, f.databasePath, "items", "second"), qt.DeepEquals, test.wantTables)
 		})
@@ -306,6 +317,7 @@ func TestProviderSchemaApply_ApprovedInputPathKeepsItsReport(t *testing.T) {
 		wantOutcome atlasschema.ApplyOutcome
 		wantRefusal atlasschema.RefusalCode
 		wantTables  []string
+		wantFailure *atlasschema.ApplyFailure
 	}{
 		{
 			name: "the default mode, a computed plan", args: computedArgs,
@@ -318,10 +330,12 @@ func TestProviderSchemaApply_ApprovedInputPathKeepsItsReport(t *testing.T) {
 		{
 			name: "the provider dies after the statement, a computed plan", fault: "crash-after", args: computedArgs, mode: []string{"--tx-mode", "none"},
 			wantOutcome: atlasschema.ApplyOutcomeUnknown, wantTables: []string{"needs_input"},
+			wantFailure: &atlasschema.ApplyFailure{Statement: 1, Statements: 1},
 		},
 		{
 			name: "the provider dies after the statement, a saved plan", fault: "crash-after", args: savedArgs, mode: []string{"--tx-mode", "none"},
 			wantOutcome: atlasschema.ApplyOutcomeUnknown, wantTables: []string{"needs_input"},
+			wantFailure: &atlasschema.ApplyFailure{Statement: 1, Statements: 1},
 		},
 	}
 	for _, test := range tests {
@@ -335,6 +349,7 @@ func TestProviderSchemaApply_ApprovedInputPathKeepsItsReport(t *testing.T) {
 			report := applyReport(c, out)
 			c.Assert(report.Outcome, qt.Equals, test.wantOutcome, qt.Commentf("%s", diagnostics))
 			c.Assert(refusalCode(report), qt.Equals, test.wantRefusal)
+			c.Assert(report.Failure, qt.DeepEquals, test.wantFailure)
 			c.Assert(databaseTables(c, f.databasePath, "needs_input"), qt.DeepEquals, test.wantTables)
 		})
 	}
