@@ -126,6 +126,7 @@ a new record that names it, and its own status line is updated to point there.
 | [0114](0114-a-host-that-lists-no-two-way-feature-is-the-narrowest-host.md) | A host that lists no two-way feature is the narrowest host | Proposed |
 | [0115](0115-a-provider-engine-states-the-lexical-rules-of-its-text.md) | A provider engine states the lexical rules of its text | Proposed |
 | [0116](0116-an-engine-states-where-its-connection-reads-capabilities.md) | An engine states where its connection reads capabilities | Proposed |
+| [0117](0117-a-comparison-keeps-what-its-desired-side-requires-on-both-sides.md) | A comparison keeps what its desired side requires on both sides | Proposed |
 
 ## Writing one
 

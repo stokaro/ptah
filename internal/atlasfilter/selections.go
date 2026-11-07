@@ -124,11 +124,12 @@ func (s *exclusionState) clearOwnerFields(objects schemaext.Objects) (schemaext.
 
 // selectOwnerFeatures keeps the owners' objects that the scope's selectors
 // name under their type, in the schema universe, and the objects the kept
-// ones require, which the owners name in one call: a resource pool a kept
+// ones require (see [scopeSelection.requiredObjects]): a resource pool a kept
 // classifier routes to. It keeps as well an owner's type a kept column
 // names, as the common types are kept; referenced holds the kept columns'
 // type names. A required or referenced object comes back only when the side
-// holds it, with its knowledge.
+// holds it, with its knowledge. It records in s.required each object it kept
+// for a requirement alone, which [SelectionReport.Required] reports.
 func (s *scopeSelection) selectOwnerFeatures(
 	objects schemaext.Objects, coverage schemaext.Coverage, referenced map[string]struct{},
 ) (featureSelection, error) {
@@ -159,7 +160,7 @@ func (s *scopeSelection) selectOwnerFeatures(
 	if len(selections) == 0 {
 		return featureSelection{objects: objects, coverage: coverage, roles: projection.roles, schemas: projection.schemas}, nil
 	}
-	result, err := s.vocabulary.selections.SelectObjects(ownerContext(), selectext.Request{Kept: objects})
+	requirements, err := s.requiredObjects(objects)
 	if err != nil {
 		return featureSelection{}, err
 	}
@@ -167,8 +168,8 @@ func (s *scopeSelection) selectOwnerFeatures(
 	if err != nil {
 		return featureSelection{}, err
 	}
-	for _, ref := range result.Requires {
-		required[ref.Key()] = true
+	for key := range requirements {
+		required[key] = true
 	}
 	if len(required) == 0 {
 		return featureSelection{objects: objects, coverage: coverage, roles: projection.roles, schemas: projection.schemas}, nil
@@ -187,7 +188,51 @@ func (s *scopeSelection) selectOwnerFeatures(
 	keep := func(ref objectidentity.ID) bool {
 		return !owned[ref.Kind] || kept[ref.Key()] || required[ref.Key()]
 	}
-	return featureSelection{objects: originalObjects.Select(keep), coverage: originalCoverage.SelectSubjects(keep), roles: projection.roles, schemas: projection.schemas}, nil
+	selected := featureSelection{objects: originalObjects.Select(keep), coverage: originalCoverage.SelectSubjects(keep), roles: projection.roles, schemas: projection.schemas}
+	s.recordRequired(selected, requirements, kept)
+	return selected, nil
+}
+
+// requiredObjects are the objects the owners require for kept, the objects
+// a scope keeps though no selector names them. A comparison that decided its
+// requirements ([Scope.Requirements]) supplies them, the same for both of its
+// sides; otherwise the owners name them in one call, for this side's kept
+// objects alone.
+func (s *scopeSelection) requiredObjects(kept schemaext.Objects) (map[objectidentity.Key]bool, error) {
+	if s.requirements.decided {
+		return maps.Clone(s.requirements.keys), nil
+	}
+	result, err := s.vocabulary.selections.SelectObjects(ownerContext(), selectext.Request{Kept: kept})
+	if err != nil {
+		return nil, err
+	}
+	required := make(map[objectidentity.Key]bool, len(result.Requires))
+	for _, ref := range result.Requires {
+		required[ref.Key()] = true
+	}
+	return required, nil
+}
+
+// recordRequired adds to s.required each object of selected that a
+// requirement alone kept: one requirements names, which no selector kept.
+func (s *scopeSelection) recordRequired(selected featureSelection, requirements, kept map[objectidentity.Key]bool) {
+	if len(requirements) == 0 {
+		return
+	}
+	recorded := make(map[objectidentity.Key]bool)
+	record := func(ref objectidentity.ID) {
+		key := ref.Key()
+		if requirements[key] && !kept[key] && !recorded[key] {
+			recorded[key] = true
+			s.required = append(s.required, ref)
+		}
+	}
+	for _, ref := range selected.objects.Refs() {
+		record(ref)
+	}
+	for _, subject := range selected.coverage.SubjectRecords() {
+		record(subject.Subject)
+	}
 }
 
 // selectNamedFeatures keeps the objects of kind keepNode keeps, with their

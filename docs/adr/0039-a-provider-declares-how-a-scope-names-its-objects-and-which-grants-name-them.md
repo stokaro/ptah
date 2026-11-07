@@ -236,3 +236,11 @@ A native operation can order its captured access check before a grant without
 claiming that the grant changes native settings. A provider that replaces a
 common revoke with a drop must account for the access effect explicitly;
 the graph does not treat every drop as a replacement for an alteration.
+
+## Amendments
+
+- [ADR 0117](0117-a-comparison-keeps-what-its-desired-side-requires-on-both-sides.md)
+  changes "What a kept object keeps" for a comparison: the requirements of the
+  desired side's kept objects are kept on both sides, where each side holds
+  them, in place of each side's own. A projection of one state still keeps its
+  own.

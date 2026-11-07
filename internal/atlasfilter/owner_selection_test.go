@@ -170,6 +170,87 @@ func TestScopeDatabase_SelectsAnOwnersObjectsByItsSelections(t *testing.T) {
 	}
 }
 
+// requiredNames names the objects a selection report says a requirement
+// alone kept, by their names.
+func requiredNames(report atlasfilter.SelectionReport) []string {
+	names := make([]string, 0, len(report.Required))
+	for _, ref := range report.Required {
+		names = append(names, ref.Name.Source)
+	}
+	return names
+}
+
+// TestScopeDatabaseSelectionReport_ListsWhatARequirementKept reports the
+// depots a projection kept only because a kept gadget routes to them: not a
+// depot a selector named, and not one no kept gadget requires.
+func TestScopeDatabaseSelectionReport_ListsWhatARequirementKept(t *testing.T) {
+	tests := []struct {
+		name    string
+		include []string
+		want    []string
+	}{
+		{name: "a gadget's depot", include: []string{"app.g1"}, want: []string{"app.d1"}},
+		{name: "every gadget's depot", include: []string{"*[type=gadget]"}, want: []string{"app.d1", "d2"}},
+		{name: "a depot a selector names", include: []string{"app.g1", "app.d1[type=depot]"}, want: make([]string, 0)},
+		{name: "a depot alone", include: []string{"d3[type=depot]"}, want: make([]string, 0)},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			_, report, err := atlasfilter.ScopeDatabaseSelectionReport(customDatabase(),
+				atlasfilter.Scope{Include: test.include, Selections: customSelections()})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(requiredNames(report.Selection), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// decidedRequirements are the requirements of a comparison whose desired side
+// kept the named depots for a requirement.
+func decidedRequirements(depots ...string) atlasfilter.Requirements {
+	report := atlasfilter.SelectionReport{}
+	for _, name := range depots {
+		report.Required = append(report.Required, customRef(depotKind, "", name))
+	}
+	return atlasfilter.DesiredRequirements(report)
+}
+
+// TestScopeDatabase_KeepsTheRequirementsAComparisonDecided keeps, on a
+// side projected for a comparison, the depots the comparison's desired side
+// requires, where the side holds them, in place of the ones the side's own
+// kept gadgets require. Undecided, a projection keeps its own.
+func TestScopeDatabase_KeepsTheRequirementsAComparisonDecided(t *testing.T) {
+	tests := []struct {
+		name         string
+		include      []string
+		requirements atlasfilter.Requirements
+		want         []string
+	}{
+		{name: "undecided, each side's own", include: []string{"app.g1"}, want: []string{"app|g1=one", "|app.d1"}},
+		{name: "a depot the desired side requires and no gadget here does", include: []string{"other.g2"},
+			requirements: decidedRequirements("app.d1"), want: []string{"other|g2=two", "|app.d1"}},
+		{name: "a desired side that requires nothing", include: []string{"app.g1"},
+			requirements: decidedRequirements(), want: []string{"app|g1=one"}},
+		{name: "a required depot the database does not hold", include: []string{"app.g1"},
+			requirements: decidedRequirements("d9"), want: []string{"app|g1=one"}},
+		{name: "an exclusion of a required depot stays", include: []string{"app.g1"}, requirements: decidedRequirements("app.d1", "d2"),
+			want: []string{"app|g1=one", "|app.d1"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			scope := atlasfilter.Scope{Include: test.include, Exclude: []string{"d2"}, Requirements: test.requirements, Selections: customSelections()}
+
+			got, err := atlasfilter.ScopeDatabase(customDatabase(), scope)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(customObjects(c, got), qt.ContentEquals, test.want)
+		})
+	}
+}
+
 // TestExcludeDatabase_ExcludesAnOwnersObjectsBySelector drops an owner's
 // object an exclusion names under its type, in its schema or by a schema it
 // is in, a depot by its whole name, and subtracts the field a field selector
