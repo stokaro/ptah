@@ -418,7 +418,41 @@ func TestPartitionMemberPlanning_PlansAMove(t *testing.T) {
 	})
 	c.Assert(result.Changes, qt.HasLen, 2)
 	c.Assert(result.Changes[0].Steps, qt.DeepEquals, []plangraph.StepID{steps[0].ID, steps[1].ID})
-	c.Assert(steps[0].Impact.Impact, qt.Equals, schemaext.Behavioral)
+	c.Assert([]schemaext.Impact{steps[0].Impact.Impact, steps[1].Impact.Impact, steps[2].Impact.Impact}, qt.DeepEquals,
+		[]schemaext.Impact{schemaext.Destructive, schemaext.Behavioral, schemaext.Destructive})
+	c.Assert(steps[0].Impact.Reason, qt.Equals, "DETACH PARTITION takes the partition's rows out of what events returns; they stay in the table")
+}
+
+// A move rates by what a reader of the parent sees: a detachment that takes the
+// table out of its parent is destructive, and one that a bound change under the
+// same parent attaches again in the same transaction is a warning, as the
+// attachment is. A parent one side writes without its schema is the same parent.
+func TestPartitionMemberChange_EffectFollowsTheParent(t *testing.T) {
+	held := &pgtable.ObservedPartitionMember{ParentSchema: "public", Parent: "events", Bound: january}
+	for _, test := range []struct {
+		name   string
+		change *pgtable.PartitionMemberChange
+		want   schemaext.Impact
+	}{
+		{name: "a bound change under the same parent", want: schemaext.Behavioral, change: &pgtable.PartitionMemberChange{Before: held,
+			After: &pgtable.DesiredPartitionMember{PartitionMember: member("events", "FOR VALUES FROM ('2026-01-01') TO ('2028-01-01')")}}},
+		{name: "another parent", want: schemaext.Destructive, change: &pgtable.PartitionMemberChange{Before: held,
+			After: &pgtable.DesiredPartitionMember{PartitionMember: member("other", january)}}},
+		{name: "the same name in another schema", want: schemaext.Destructive, change: &pgtable.PartitionMemberChange{Before: held,
+			After: &pgtable.DesiredPartitionMember{PartitionMember: pgtable.PartitionMember{ParentSchema: "archive", Parent: "events", Bound: january}}}},
+		{name: "an ordinary table", want: schemaext.Destructive, change: &pgtable.PartitionMemberChange{Before: held}},
+		{name: "a table attached to a parent", want: schemaext.Behavioral, change: &pgtable.PartitionMemberChange{
+			After: &pgtable.DesiredPartitionMember{PartitionMember: member("events", january)}}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			effect := test.change.Effect()
+
+			c.Assert(effect.Impact, qt.Equals, test.want)
+			c.Assert((&pgtable.MovePartition{Change: *test.change, Step: pgtable.PartitionAttach}).Effect().Impact, qt.Equals, schemaext.Behavioral)
+		})
+	}
 }
 
 // A move of a table the plan does not keep is refused by name.
