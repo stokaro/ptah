@@ -16,6 +16,8 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/featureplan"
+	"ptah.run/core/schemacapture"
+	"ptah.run/core/schemamodel"
 )
 
 // keyPlanner plans for a provider that owns the table lifecycle, reports the
@@ -102,6 +104,54 @@ func TestKeyChangeWithoutAnOwnerThatPlansIt_FailurePath(t *testing.T) {
 			c.Assert(err, qt.ErrorMatches, row.want)
 		})
 	}
+}
+
+// A foreign key or a CHECK of a table the plan creates travels in the table's
+// declaration, which its owner creates the table from, and a constraint of a
+// table the plan drops goes with the table: neither is a constraint change of
+// a kept table, which stays refused. The declared foreign keys the diff
+// carries as context do not refuse the plan either.
+func TestOwnedLifecycleConstraintsOfCreatedAndDroppedTables_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	rules := ownedIndexRules()
+	foreign := schemamodel.Constraint{Name: "orders_customer", Type: "FOREIGN KEY", Table: "orders", Columns: []string{"customer_id"},
+		ForeignTable: "customers", ForeignColumns: []string{"id"}}
+	diff := &difftypes.SchemaDiff{IdentifierSemantics: &rules,
+		TablesAdded: difftypes.TableChanges{{Name: "main.orders", Table: schemamodel.Table{Name: "orders", Schema: "main"},
+			Constraints: []schemamodel.Constraint{foreign}}},
+		TablesRemoved: difftypes.TableRemovals{{Name: "main.legacy", Current: schemacapture.TableObservation{Table: catalog.Table{Name: "legacy", Schema: "main"}}}},
+		ConstraintsAdded: difftypes.ConstraintAdditions{
+			{Name: "orders_customer", TableName: "main.orders", Type: "FOREIGN KEY", Columns: []string{"customer_id"}},
+			{Name: "orders_total_check", TableName: "main.orders", Type: "CHECK"},
+		},
+		ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "legacy_check", TableName: "main.legacy", Type: "CHECK"}},
+		// Every foreign key the declaration states is context the
+		// comparison carries, changed or not.
+		DeclaredForeignKeys: []difftypes.ForeignKeyDeclaration{{TableName: "main.orders", Name: "orders_customer", Columns: []string{"customer_id"},
+			ForeignTable: "main.customers", ForeignColumn: "id"}},
+	}
+	_, err := keyPlanner().commonObjectSteps(diff)
+	c.Assert(err, qt.IsNil)
+	request, _, err := keyPlanner().planningContext(diff)
+	c.Assert(err, qt.IsNil)
+	c.Assert(request.Tables, qt.HasLen, 2)
+	c.Assert(request.Tables[0].Action, qt.Equals, featureplan.CreateTable)
+	c.Assert(request.Tables[0].Desired.Constraints, qt.DeepEquals, []schemamodel.Constraint{foreign})
+	c.Assert(request.Tables[1].Action, qt.Equals, featureplan.DropTable)
+}
+
+// The host that plans a provider's tables itself has no owner to hand a
+// created table's foreign key to, so it keeps refusing it.
+func TestCreatedTableConstraintWithoutAnOwner_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	rules := ownedIndexRules()
+	diff := &difftypes.SchemaDiff{IdentifierSemantics: &rules,
+		TablesAdded:      difftypes.TableChanges{{Name: "main.orders", Table: schemamodel.Table{Name: "orders", Schema: "main"}}},
+		ConstraintsAdded: difftypes.ConstraintAdditions{{Name: "orders_customer", TableName: "main.orders", Type: "FOREIGN KEY"}},
+	}
+	planner := commonPlanner{target: "fixture", assessParents: true, commonTables: true, observedKeys: true, keys: true}
+	_, err := planner.commonObjectSteps(diff)
+	c.Assert(err, qt.ErrorMatches, `.*does not support SchemaDiff\.ConstraintsAdded`)
 }
 
 // A read that negotiated ordered keys gives the catalog the table's key as a
