@@ -64,6 +64,7 @@ func TestServerBuilt(t *testing.T) {
 		{name: "DOUBLE PRECISION", declared: "DOUBLE PRECISION", catalog: "FLOAT(126)", want: true},
 		{name: "REAL", declared: "REAL", catalog: "FLOAT(63)", want: true},
 		{name: "BOOLEAN", declared: "BOOLEAN", catalog: "BOOLEAN", want: true},
+		{name: "BOOL", declared: "bool", catalog: "BOOLEAN", want: true},
 		{name: "another size under INTEGER", declared: "INTEGER", catalog: "NUMBER(19)", want: false},
 		{name: "another float under DOUBLE PRECISION", declared: "DOUBLE PRECISION", catalog: "FLOAT(63)", want: false},
 		{name: "a declared size is not the word", declared: "DECIMAL(10)", catalog: "NUMBER(*,0)", want: false},

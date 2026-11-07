@@ -137,6 +137,7 @@ var serverBuilt = map[string]string{
 	"DOUBLE PRECISION": "FLOAT(126)",
 	"REAL":             "FLOAT(63)",
 	"BOOLEAN":          "BOOLEAN",
+	"BOOL":             "BOOLEAN",
 }
 
 // ServerBuilt reports whether catalogType is what the server builds when a column is

@@ -19,6 +19,7 @@ import (
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/mysqlroutine"
 	"ptah.run/internal/renderdiag"
+	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/sqlscript"
 	"ptah.run/internal/triggerdef"
 )
@@ -1030,11 +1031,11 @@ func columnSettings(column *ast.ColumnNode) (charset, onUpdate string) {
 }
 
 func (r *Renderer) isMariaDBJSONColumn(column *ast.ColumnNode) bool {
-	return r.dialect == "mariadb" && strings.EqualFold(column.Type, "json")
+	return schemaprep.JSONHeldAsText(column.Type, r.dialect)
 }
 
 func (r *Renderer) needsMariaDBJSONCheck(column *ast.ColumnNode) bool {
-	return r.isMariaDBJSONColumn(column) && !strings.Contains(strings.ToLower(column.Check), "json_valid(")
+	return schemaprep.NeedsJSONCheck(column.Type, column.Check, r.dialect)
 }
 
 func renderGeneratedColumn(column *ast.ColumnNode) string {
