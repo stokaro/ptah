@@ -58,14 +58,14 @@ type ApplyOptions struct {
 	Shape   planext.StatementShape
 	ToURLs  []string
 	Exclude []string
-	// ProjectRoot bounds the files a desired state may make this process read.
+	// ProjectRoots bounds the files a desired state may make this process read.
 	//
 	// A declaration names the file that carries its rows, and a schema is not
 	// always one the reader wrote, so the path it names is confined to the
 	// project the caller is operating in rather than followed anywhere. That is
-	// the boundary `file()` in atlas.hcl already has. An empty value confines
-	// nothing, for a caller that has no project to name.
-	ProjectRoot string
+	// the boundary `file()` in atlas.hcl already has. With no value a declaration
+	// that still has to read its file is refused.
+	ProjectRoots []string
 	// Schemas restricts both comparison sides to the named schema scopes.
 	Schemas []string
 	// Include restricts both comparison sides to resources matched by
@@ -200,9 +200,9 @@ type ApplyRuntimeOptions struct {
 	// DevURL names is the run's own; see
 	// [ptah.run/internal/migrationreplay.Options.DevServerDisposable].
 	DevServerDisposable bool
-	// ProjectRoot bounds the files a desired state may make this process read;
-	// see [ApplyOptions.ProjectRoot].
-	ProjectRoot string
+	// ProjectRoots bounds the files a desired state may make this process read;
+	// see [ApplyOptions.ProjectRoots].
+	ProjectRoots []string
 	// Schemas restricts both comparison sides to the named schema scopes.
 	Schemas []string
 	// Include restricts both comparison sides to resources matched by
@@ -627,7 +627,7 @@ func plannedData(
 	if opts.withoutData {
 		return nil, nil, nil
 	}
-	return managedDataStatements(ctx, conn, opts.Runtime, desired, current, opts.ProjectRoot, protectedtable.New(opts.ProtectedTables))
+	return managedDataStatements(ctx, conn, opts.Runtime, desired, current, opts.ProjectRoots, protectedtable.New(opts.ProtectedTables))
 }
 
 // selectApplyStates checks selectors against both sides before planning. One
@@ -1040,7 +1040,7 @@ func PrepareApply(
 	planning := ApplyOptions{
 		Runtime:                   opts.Runtime,
 		Shape:                     opts.Shape,
-		ProjectRoot:               opts.ProjectRoot,
+		ProjectRoots:              opts.ProjectRoots,
 		ToURLs:                    opts.ToURLs,
 		Exclude:                   opts.Exclude,
 		Schemas:                   opts.Schemas,

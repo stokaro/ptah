@@ -10,6 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/manageddata"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
@@ -146,7 +147,9 @@ func TestPreparePlanFile_ReadsRowsADeclarationStillNames(t *testing.T) {
 	desired.ManagedData[0].Rows = nil
 	desired.ManagedData[0].SourceDir = sourceDir
 
-	plan, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{Desired: desired, Runtime: must.Must(builtin.New())})
+	plan, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{
+		Desired: desired, ProjectRoots: []string{sourceDir},
+		Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
 	declared := make([]string, 0, len(plan.Statements))
@@ -176,19 +179,18 @@ func TestPreparePlanFile_RefusesARowFileOutsideTheProject(t *testing.T) {
 	desired.ManagedData[0].File = filepath.Join("..", "..", "secret.yaml")
 
 	_, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{
-		Desired: desired, ProjectRoot: project,
+		Desired: desired, ProjectRoots: []string{project},
 		Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.ErrorMatches, `.*outside.*`)
 }
 
-// TestPreparePlanFile_ResolvesAnAbsoluteRowFileUnderItsSource records why the
-// refusal above names only one shape. An absolute file is not a second escape:
-// the loader joins it to the source directory, and filepath.Join drops the
-// leading separator, so `/etc/passwd` reaches for `<source>/etc/passwd` and
-// leaves the project no more than a relative name does. Asserting a refusal for
-// it would be asserting a branch nothing can reach.
-func TestPreparePlanFile_ResolvesAnAbsoluteRowFileUnderItsSource(t *testing.T) {
+// TestPreparePlanFile_RefusesARowFileStartingAtARoot holds the rule to the same
+// answer on every platform. filepath.Join drops a leading slash on Unix and keeps a
+// drive letter as a path component, so the same declaration reaches for a different
+// file on each machine, and a rule about what a schema may name must not depend on
+// which machine opens it.
+func TestPreparePlanFile_RefusesARowFileStartingAtARoot(t *testing.T) {
 	c := qt.New(t)
 	conn := managedDataConnection(c, "absolute.db")
 	project := c.TempDir()
@@ -202,18 +204,37 @@ func TestPreparePlanFile_ResolvesAnAbsoluteRowFileUnderItsSource(t *testing.T) {
 	desired := regionsSchema()
 	desired.ManagedData[0].Rows = nil
 	desired.ManagedData[0].SourceDir = sourceDir
-	desired.ManagedData[0].File = filepath.Join(string(filepath.Separator), "etc", "passwd")
+	desired.ManagedData[0].File = "/etc/passwd"
 
-	plan, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{
-		Desired: desired, ProjectRoot: project,
+	_, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{
+		Desired: desired, ProjectRoots: []string{project},
 		Runtime: must.Must(builtin.New())})
 
-	c.Assert(err, qt.IsNil, qt.Commentf("the absolute name was read under the source directory"))
-	declared := make([]string, 0, len(plan.Statements))
-	for _, statement := range plan.Statements {
-		declared = append(declared, statement.SQL)
-	}
-	c.Assert(strings.Join(declared, "\n"), qt.Contains, "'CZ'")
+	c.Assert(err, qt.ErrorIs, manageddata.ErrOutsideRoot)
+}
+
+// TestPreparePlanFile_RefusesARowFileWithNoProjectToBoundIt keeps a caller that
+// named no project from reading everywhere. The file sits beside the declaration
+// and would read, so only the missing boundary can refuse it.
+func TestPreparePlanFile_RefusesARowFileWithNoProjectToBoundIt(t *testing.T) {
+	c := qt.New(t)
+	conn := managedDataConnection(c, "unbounded.db")
+	sourceDir := c.TempDir()
+	c.Assert(os.WriteFile(
+		filepath.Join(sourceDir, "regions.yaml"),
+		[]byte("- code: CZ\n  name: Czechia\n  rank: 1\n"),
+		0o600,
+	), qt.IsNil)
+	desired := regionsSchema()
+	desired.ManagedData[0].Rows = nil
+	desired.ManagedData[0].SourceDir = sourceDir
+	desired.ManagedData[0].File = "regions.yaml"
+
+	_, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{
+		Desired: desired,
+		Runtime: must.Must(builtin.New())})
+
+	c.Assert(err, qt.ErrorIs, manageddata.ErrOutsideRoot)
 }
 
 // TestPreparePlanFile_ReadsARowFileTheProjectStillContains is the control that
@@ -239,7 +260,7 @@ func TestPreparePlanFile_ReadsARowFileTheProjectStillContains(t *testing.T) {
 	desired.ManagedData[0].File = filepath.Join("..", "models", "regions.yaml")
 
 	plan, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{
-		Desired: desired, ProjectRoot: project,
+		Desired: desired, ProjectRoots: []string{project},
 		Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)

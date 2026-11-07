@@ -44,20 +44,30 @@ type Country struct {
 }
 ```
 
-The row-data file is resolved relative to the Go source directory, and planning
-reads it from there. A path that leaves the project the command was pointed at
-is refused, naming what it reached for:
+The row-data file is resolved relative to the Go source directory. Every command
+that reads it applies one boundary: `ptah schema plan`, `schema apply`, `schema
+drift`, `schema push`, `ptah migrations data`, and `ptah-compat schema apply` and
+`schema plan`. A path that leaves the project the command was pointed at is
+refused, naming what it reached for, and nothing in the file reaches a report, a
+plan, a registry or the database:
 
 ```text
 error: managed data file "../../secret.yaml" for table regions: ".../secret.yaml" is outside allowed root ".../project"
 ```
 
-The project is the first `--root-dir`, or the working directory when only
-`--schema-file` was given. It is the project rather than the directory holding
+The project is every `--root-dir`, or the working directory when only
+`--schema-file` was given. On `ptah-compat` it is the working directory and the
+directory holding `atlas.hcl`. It is the project rather than the directory holding
 the schema because `ptah schema export` writes a row path back out of the
 directory it exports into, and both spellings stay readable as long as they stay
 inside the project. This is the boundary `file()` in `atlas.hcl` already has: a
 declaration is data, and a desired schema is not always one the reader wrote.
+
+The answer does not depend on the machine reading the schema. A path starting at
+a root is refused on every platform: a leading slash, a leading backslash or a
+drive letter. A backslash separates path components as a forward slash does. A
+symbolic link is followed only while it stays inside the project. A schema pulled
+from a registry carries its rows in its own layer, so its `file` is never read.
 
 The file itself is a top-level YAML list of column maps:
 

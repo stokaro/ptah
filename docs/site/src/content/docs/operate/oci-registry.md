@@ -464,7 +464,8 @@ reference data.
 That second layer carries the declared rows themselves, under
 `application/vnd.stokaro.ptah.managed-data.v1+json`. A `data` block names a file
 in the working copy that declared it, and an artifact travels without that
-working copy, so the rows travel instead. Each value keeps the YAML tag it
+working copy, so the rows travel instead. A file outside the project is
+[refused](../../versioned/reference-data/#declaring-managed-data). Each value keeps the YAML tag it
 resolved to and the text that declared it: `007` and `"007"` are different
 values in the same column, and resolving them to Go values loses the
 difference. A column absent from a row was not declared, and a column written as

@@ -184,7 +184,7 @@ func TestExport_HappyPath_PreservesGoAnnotationSemantics(t *testing.T) {
 	c.Assert(after.ManagedData[0].Schema, qt.Equals, "app")
 	c.Assert(after.ManagedData[0].Table, qt.Equals, "users")
 	c.Assert(after.ManagedData[0].Keys, qt.DeepEquals, []string{"id", "email"})
-	rows, err := manageddata.LoadRows("", after.ManagedData[0])
+	rows, err := manageddata.LoadRows(".", after.ManagedData[0])
 	c.Assert(err, qt.IsNil)
 	c.Assert(rows, qt.HasLen, 1)
 

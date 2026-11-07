@@ -287,8 +287,9 @@ pre-v1 compatibility is not owed.
 
 `core/manageddata.LoadRowValues` reads a managed-data YAML file while retaining
 scalar spelling and tags in `schemamodel.ManagedRow`. `LoadRows` reads resolved Go
-values for row comparison. `ResolveRows` resolves carried declarations without
-opening a file. The schema model owns the data types; this parser package owns
+values for row comparison. Both bound the read by their `rootDir` argument and
+refuse a file outside it with `ErrOutsideRoot`, because a declaration's path is
+data. `ResolveRows` resolves carried declarations without opening a file. The schema model owns the data types; this parser package owns
 YAML interpretation and source-file access. Captured schema contracts therefore
 do not import a parser to carry a declaration.
 

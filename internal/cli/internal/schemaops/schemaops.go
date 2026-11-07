@@ -23,6 +23,7 @@ import (
 	"ptah.run/internal/errorkind"
 	"ptah.run/internal/providerurl"
 	"ptah.run/internal/schemaload"
+	"ptah.run/internal/schemaroot"
 	"ptah.run/internal/schemascope"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/migration/schemadiff"
@@ -264,9 +265,10 @@ func compareManagedData(
 		return nil, fmt.Errorf("error comparing declared rows: %w", err)
 	}
 	summary, err := datamigrate.Inspect(ctx, conn, datamigrate.Options{
-		Desired: desired,
-		Live:    live,
-		Data:    data,
+		Desired:  desired,
+		RowRoots: schemaroot.Of(opts.RootDirs),
+		Live:     live,
+		Data:     data,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("error comparing declared rows: %w", err)

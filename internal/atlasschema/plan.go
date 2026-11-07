@@ -175,9 +175,9 @@ type PlanFileOptions struct {
 	// [ApplyOptions.ProtectedTables]. A plan is refused rather than saved,
 	// because a saved plan is applied later by whoever holds it.
 	ProtectedTables []string
-	// ProjectRoot bounds the files a desired state may make this process read;
-	// see [ApplyOptions.ProjectRoot].
-	ProjectRoot string
+	// ProjectRoots bounds the files a desired state may make this process read;
+	// see [ApplyOptions.ProjectRoots].
+	ProjectRoots []string
 	// ToSources carries the same sources as ToURLs with their atlas.hcl
 	// variable scopes; see [ApplyOptions.ToSources].
 	ToSources []schemafile.Source
@@ -325,8 +325,8 @@ func PreparePlanFileReportingUndecided(
 		LocalFilesOnly: true,
 		// A saved plan records each statement's risk, and the risk of an owned
 		// operation is the owner's verdict rather than what its SQL text says.
-		Desired:     opts.Desired,
-		ProjectRoot: opts.ProjectRoot,
+		Desired:      opts.Desired,
+		ProjectRoots: opts.ProjectRoots,
 
 		IgnoreUnknownHCLNames:  opts.IgnoreUnknownHCLNames,
 		Vars:                   opts.Vars,
