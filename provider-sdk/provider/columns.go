@@ -71,8 +71,7 @@ func ValidateColumnsRequest(description *protocol.Description, request *protocol
 		if err := validateColumnParent(table.GetCurrentSubject(), table.GetCurrent().GetName(), table.GetCurrent().GetSchema(), request.GetIdentifiers()); err != nil {
 			return err
 		}
-		collations := EngineOffers(description, request.GetEngine(), ColumnCollationsFeature) && slices.Contains(request.GetTargetFeatures(), ColumnCollationsFeature)
-		if err := validateColumnPairs(table, request.GetIdentifiers(), collations); err != nil {
+		if err := validateColumnPairs(table, request.GetIdentifiers(), negotiatedColumnAspects(description, request)); err != nil {
 			return err
 		}
 		captured.Tables = append(captured.Tables, &protocol.PlanningTable{Subject: table.Subject, Desired: table.Desired, Current: table.Current, Action: protocol.PlanningTable_CONTEXT})
@@ -84,10 +83,21 @@ func ValidateColumnsRequest(description *protocol.Description, request *protocol
 	return validatePlanningTables(description, captured, engine)
 }
 
+// negotiatedColumnAspects are the aspects a request may ask: the four of
+// schema.columns, and the collation when the engine and the request's target
+// list ColumnCollationsFeature.
+func negotiatedColumnAspects(description *protocol.Description, request *protocol.CompareColumnsRequest) []protocol.ColumnAspect {
+	aspects := []protocol.ColumnAspect{protocol.ColumnAspect_COLUMN_TYPE, protocol.ColumnAspect_COLUMN_DEFAULT, protocol.ColumnAspect_COLUMN_NULLABILITY,
+		protocol.ColumnAspect_COLUMN_SEQUENCE}
+	if EngineOffers(description, request.GetEngine(), ColumnCollationsFeature) && slices.Contains(request.GetTargetFeatures(), ColumnCollationsFeature) {
+		aspects = append(aspects, protocol.ColumnAspect_COLUMN_COLLATION)
+	}
+	return aspects
+}
+
 // validateColumnPairs checks each pair of a table: columns of its captured
-// parents, bound identities, and aspects the negotiation allows, collation
-// only when collations is true.
-func validateColumnPairs(table *protocol.ColumnComparisonTable, identifiers *protocol.ComparisonIdentifiers, collations bool) error {
+// parents, bound identities, and aspects among those the negotiation allows.
+func validateColumnPairs(table *protocol.ColumnComparisonTable, identifiers *protocol.ComparisonIdentifiers, allowed []protocol.ColumnAspect) error {
 	var desired, current []*protocol.ComparisonIdentity
 	for _, pair := range table.GetPairs() {
 		if !slices.ContainsFunc(table.GetDesired().GetColumns(), func(column *protocol.DeclaredColumn) bool { return column.GetName() == pair.GetDesiredColumn() }) ||
@@ -100,7 +110,7 @@ func validateColumnPairs(table *protocol.ColumnComparisonTable, identifiers *pro
 		if err := validateBoundColumn(pair.GetCurrentSubject(), table.GetCurrentSubject(), pair.GetCurrentColumn(), identifiers); err != nil {
 			return err
 		}
-		if err := validateColumnAspects(pair.GetAspects(), collations); err != nil {
+		if err := validateColumnAspects(pair.GetAspects(), allowed); err != nil {
 			return err
 		}
 		for _, column := range table.GetCurrent().GetColumns() {
@@ -118,7 +128,7 @@ func validateColumnPairs(table *protocol.ColumnComparisonTable, identifiers *pro
 	return validateComparisonIdentities(current)
 }
 
-func validateColumnAspects(aspects []protocol.ColumnAspect, collations bool) error {
+func validateColumnAspects(aspects, allowed []protocol.ColumnAspect) error {
 	if len(aspects) == 0 {
 		return columnsError("a pair needs requested aspects")
 	}
@@ -126,8 +136,8 @@ func validateColumnAspects(aspects []protocol.ColumnAspect, collations bool) err
 		if aspect < protocol.ColumnAspect_COLUMN_TYPE || aspect > protocol.ColumnAspect_COLUMN_COLLATION || slices.Contains(aspects[:i], aspect) {
 			return columnsError("an aspect is unknown or repeated")
 		}
-		if aspect == protocol.ColumnAspect_COLUMN_COLLATION && !collations {
-			return columnsError("a collation aspect was not negotiated")
+		if !slices.Contains(allowed, aspect) {
+			return columnsError("aspect " + aspect.String() + " was not negotiated")
 		}
 	}
 	return nil

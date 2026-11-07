@@ -84,7 +84,7 @@ func TestColumnCollationRequest_FailurePath(t *testing.T) {
 
 		err := provider.ValidateColumnsRequest(d, request)
 
-		c.Assert(err, qt.ErrorMatches, `.*a collation aspect was not negotiated`)
+		c.Assert(err, qt.ErrorMatches, `.*aspect COLUMN_COLLATION was not negotiated`)
 	})
 	t.Run("a host that does not list the feature", func(t *testing.T) {
 		c := qt.New(t)
@@ -97,7 +97,7 @@ func TestColumnCollationRequest_FailurePath(t *testing.T) {
 
 		err := provider.ValidateColumnsRequest(negotiated, request)
 
-		c.Assert(err, qt.ErrorMatches, `.*a collation aspect was not negotiated`)
+		c.Assert(err, qt.ErrorMatches, `.*aspect COLUMN_COLLATION was not negotiated`)
 		c.Assert(negotiated.Engines[0].Features, qt.Not(qt.Contains), provider.ColumnCollationsFeature)
 	})
 }

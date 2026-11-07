@@ -93,28 +93,29 @@ func TestTableOwnershipReceipts_FailurePath(t *testing.T) {
 // still refused.
 func TestTableOwnershipDescription_FailurePath(t *testing.T) {
 	for _, test := range []struct {
-		name          string
-		engineFeature bool
-		owners        int
-		outlined      bool
-		want          string
+		name string
+		// removed is an engine feature the row takes away, and added the
+		// features it lists on the provider and the engine.
+		removed string
+		added   []string
+		tables  protocol.PlanningTables
+		owners  int
+		want    string
 	}{
-		{"an owner without the engine's feature", false, 1, false, `.*planning service retention owns tables without the engine's planning\.table-ownership`},
-		{"two owners on one engine", true, 2, false, `.*engine fixture has more than one planning service that owns its tables`},
-		{"an owner that reads outlines", true, 1, true, `.*planning service retention owns tables and reads outlines, which leave out what it plans`},
+		{"an owner without the engine's feature", provider.TableOwnershipFeature, nil, protocol.PlanningTables_PLANNING_TABLES_CAPTURED, 1,
+			`.*planning service retention owns tables without the engine's planning\.table-ownership`},
+		{"two owners on one engine", "", nil, protocol.PlanningTables_PLANNING_TABLES_CAPTURED, 2,
+			`.*engine fixture has more than one planning service that owns its tables`},
+		{"an owner that reads outlines", "", []string{provider.TableOutlinesFeature}, protocol.PlanningTables_PLANNING_TABLES_OUTLINED, 1,
+			`.*planning service retention owns tables and reads outlines, which leave out what it plans`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			d, _, _ := lifecycleOnlyExchange()
 			engine := d.Engines[0]
-			if !test.engineFeature {
-				engine.Features = slices.DeleteFunc(engine.Features, func(feature string) bool { return feature == provider.TableOwnershipFeature })
-			}
-			if test.outlined {
-				engine.Features = append(engine.Features, provider.TableOutlinesFeature)
-				d.Features = append(d.Features, provider.TableOutlinesFeature)
-				engine.Planning[0].Tables = protocol.PlanningTables_PLANNING_TABLES_OUTLINED
-			}
+			engine.Features = append(withoutFeature(engine.Features, test.removed), test.added...)
+			d.Features = append(d.Features, test.added...)
+			engine.Planning[0].Tables = test.tables
 			for range test.owners - 1 {
 				second := proto.CloneOf(engine.Planning[0])
 				second.Id = "second"
