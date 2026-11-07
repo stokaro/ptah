@@ -124,6 +124,29 @@ func zonedPrecision(base, arguments string) (string, bool) {
 	}
 }
 
+// serverBuilt holds the declared names the server builds another way than [Map] does,
+// as the catalog then spells the column. Measured on 23.26, by creating a column of each
+// name and reading it back. A column built by hand under one of these names holds what
+// the name means to the server, and declaring the same name changes nothing about it.
+var serverBuilt = map[string]string{
+	"INTEGER":          "NUMBER(*,0)",
+	"INT":              "NUMBER(*,0)",
+	"SMALLINT":         "NUMBER(*,0)",
+	"DECIMAL":          "NUMBER(*,0)",
+	"NUMERIC":          "NUMBER(*,0)",
+	"DOUBLE PRECISION": "FLOAT(126)",
+	"REAL":             "FLOAT(63)",
+	"BOOLEAN":          "BOOLEAN",
+}
+
+// ServerBuilt reports whether catalogType is what the server builds when a column is
+// declared with this name. A name [Map] writes otherwise has two columns that match it:
+// the one Ptah renders, and the one the server builds from the same word.
+func ServerBuilt(declaredType, catalogType string) bool {
+	built, named := serverBuilt[strings.ToUpper(strings.TrimSpace(declaredType))]
+	return named && strings.EqualFold(built, strings.TrimSpace(catalogType))
+}
+
 // parameterizedType answers the types that carry the declaration's own
 // argument list.
 func parameterizedType(base, arguments, declared string) string {
