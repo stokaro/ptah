@@ -104,6 +104,9 @@ service Provider {
   // Contract 25.28. A host calls it only for an engine that lists
   // schema.check-equivalence.
   rpc CompareChecks(CompareChecksRequest) returns (ComparedChecks);
+  // Contract 25.33. A host calls it only for an engine that lists
+  // schema.view-query-equivalence.
+  rpc CompareViewQueries(CompareViewQueriesRequest) returns (ComparedViewQueries);
 }
 
 message Empty {}
@@ -473,6 +476,13 @@ message SQLSchemaDeclaration {
   // only when the engine lists source.sql-table-clauses, and sent only to a
   // host that lists it. Contract 25.29.
   repeated SQLTableClause table_clauses = 3;
+  // A FRAGMENTS engine's server does nothing for DROP VIEW IF EXISTS of a
+  // name another kind of object holds, such as a table. False means it
+  // refuses that statement as it refuses one without IF EXISTS, and the
+  // host's reading refuses it too. False for DOCUMENT. Set only when the
+  // engine lists source.sql-statement-facts, and sent only to a host that
+  // lists it. Contract 25.33.
+  bool drop_view_if_exists_skips_other_kinds = 4;
 }
 // SQLTableClause is a FRAGMENTS engine's claim on a clause of CREATE TABLE,
 // such as a row deletion policy. In a SQL document of the engine the host
@@ -989,6 +999,32 @@ message RenderResult {
   // TEXT form with the reason NO_TEXT_FORM: complete is false and there is no
   // unit. Contract 25.1; Render's use is contract 25.3.
   RenderRefusal refusal = 3;
+  // What a complete Render left out of its units: each declared property or
+  // object the engine has no statement for, which the units go on without.
+  // Only Render sets it. Contract 25.33, under render.omissions.
+  repeated RenderOmission omissions = 4;
+}
+// RenderOmission is one declaration a render did not write. It names the
+// object that owned the declaration and, for a lost property, the property;
+// the object itself was lost when property is empty. Contract 25.33, under
+// render.omissions.
+message RenderOmission {
+  // Why the declaration did not reach the units, as a stable lower-case
+  // token, such as "unsupported": the engine has no representation for it.
+  string reason = 1;
+  // The owning object's kind, such as "table", "column" or "index".
+  string kind = 2;
+  // The owning object's name as the declaration spells it; a column is
+  // written "<table>.<column>".
+  string name = 3;
+  // The lost property, such as "type modifier", empty when the whole object
+  // was lost.
+  string property = 4;
+  // The declared value, where repeating it helps a reader, such as
+  // "VARCHAR(255): (255)". Never a secret.
+  string detail = 5;
+  // How to keep the declaration on this engine, empty when nothing does.
+  string remedy = 6;
 }
 message ExecuteRequest {
   string session_id = 1;
@@ -1617,6 +1653,12 @@ message SQLRole {
   // The declaration gives the role a password. The password never travels in
   // a declaration. Contract 25.3, under schema.common-objects.
   bool password_declared = 11;
+  // The password a SQL schema document gives the role, as written: a literal,
+  // or a reference to an execution input. Set only in a ReadSQLSchema reply,
+  // where password_declared is true exactly when it is not empty, and never
+  // in a message a host sends. Diagnostics never print it. Contract 25.33,
+  // under source.sql-role-passwords.
+  string password = 12;
 }
 // SQLGrant is one GRANT or REVOKE. A REVOKE asserts the privilege absent, which
 // is a statement of its own and not the absence of a grant.
@@ -1746,6 +1788,12 @@ message ModelComparison {
   repeated string change_kinds = 4;
   repeated string owner_kinds = 5;
   repeated string actions = 6;
+  // Object model kinds of the same engine, each assigned to another
+  // comparison, whose declared objects this comparison reads: a host sends the
+  // identity of every desired object of these kinds in
+  // CompareModelsRequest.declared_objects. Contract 25.33, under
+  // models.declared-objects.
+  repeated string declared_kinds = 7;
 }
 
 // ComparisonPart records an already-bound identity component. These facts keep
@@ -1894,6 +1942,12 @@ message CompareModelsRequest {
   repeated ComparisonIdentity required = 16;
   repeated ComparisonConstraint desired_constraints = 17;
   repeated ComparisonConstraint current_constraints = 18;
+  // The identity of every desired object whose kind the comparison names in
+  // ModelComparison.declared_kinds, each once and in identity order, the
+  // kind of each naming its model. A provider's own models are not
+  // relations, so declared_relations never lists them. Contract 25.33, under
+  // models.declared-objects.
+  repeated ComparisonIdentity declared_objects = 19;
 }
 message ChangeSemantics {
   optional bool replaces_owner = 1;
@@ -2203,6 +2257,21 @@ message PlanningTable {
   // Missing captures are unknown, never proof of absence.
   DeclaredTable desired = 3;
   ObservedTable current = 4;
+  // The grants the read found on the held table. Present exactly when
+  // current is and both sides list planning.table-grants. Contract 25.33.
+  PlanningTableGrants current_grants = 5;
+}
+// PlanningTableGrants are the grants a held table holds itself, as the read
+// reported them in ObservedCommonObjects.grants: every grant whose target is
+// the table, a grant on some of its columns included. A plan that replaces
+// the table gives the new one these grants, except one the plan revokes.
+// Contract 25.33, under planning.table-grants.
+message PlanningTableGrants {
+  // Whether the read described the grants of the engine's objects. When it
+  // did not, grants is empty and says nothing about the table.
+  bool complete = 1;
+  // Each with a target of kind "table" naming the table.
+  repeated ObservedGrant grants = 2;
 }
 // PlanFeatures is offline. The host provides the complete captured context and
 // common steps; the owner contributes operations, never a separately scheduled
@@ -4641,5 +4710,39 @@ message ComparedCheck {
   // Whether the declared expression and the held one are one constraint on
   // the engine: the held CHECK stays when they are, and is replaced when they
   // are not.
+  bool equivalent = 2;
+}
+
+// CompareViewQueriesRequest asks the owner of an engine whether the query each
+// declared view states and the query the view of the same name holds are one
+// query. The owner decides from the request alone: no session, no server and
+// no database. Contract 25.33, under schema.view-query-equivalence.
+message CompareViewQueriesRequest {
+  string engine = 1;
+  ComparisonIdentifiers identifiers = 2;
+  map<string, bool> capabilities = 3;
+  repeated string target_features = 4;
+  repeated ViewQueryPair pairs = 5;
+}
+// ViewQueryPair pairs a declared view's query with the view the database holds
+// under its name.
+message ViewQueryPair {
+  // The held view, a view or a materialized view, as the read reported it.
+  ObservedView current = 1;
+  // The query the declaration states, as written: without CREATE VIEW, the
+  // view's name and its options, and for a materialized view without its
+  // data clause.
+  string declared = 2;
+}
+// ComparedViewQueries answers every pair of the request, in its order.
+message ComparedViewQueries {
+  bool complete = 1;
+  repeated ComparedViewQuery queries = 2;
+}
+message ComparedViewQuery {
+  // The held view the pair names.
+  Reference identity = 1;
+  // Whether the declared query and the held one are one query on the engine:
+  // the view stays when they are, and is replaced when they are not.
   bool equivalent = 2;
 }
