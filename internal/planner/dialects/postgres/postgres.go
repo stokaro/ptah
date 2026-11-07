@@ -3506,13 +3506,18 @@ func keyLeavingForRowID(info difftypes.ConstraintRemovalInfo) []ast.Node {
 	key := ast.NewPrimaryKeyConstraint(rowIDColumn)
 	key.Name = pgname.Object(table, "", "pkey")
 	return []ast.Node{
-		ast.NewRawSQL(fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s INT8 NOT VISIBLE NOT NULL DEFAULT unique_rowid();`,
-			quotePostgresIdentifierPath(info.TableName), quotePostgresIdentifier(rowIDColumn))),
+		ast.NewRawSQL(rowIDColumnStatement(info.TableName)),
 		&ast.AlterTableNode{Name: info.TableName, Operations: []ast.AlterOperation{
 			&ast.DropConstraintOperation{ConstraintName: info.Name},
 			&ast.AddConstraintOperation{Constraint: key},
 		}},
 	}
+}
+
+// rowIDColumnStatement adds the hidden column [keyLeavingForRowID] moves a key to.
+func rowIDColumnStatement(table string) string {
+	return fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s INT8 NOT VISIBLE NOT NULL DEFAULT unique_rowid();`,
+		quotePostgresIdentifierPath(table), quotePostgresIdentifier(rowIDColumn))
 }
 
 // writtenPrimaryKeyName is the name an added primary key is written with: the
