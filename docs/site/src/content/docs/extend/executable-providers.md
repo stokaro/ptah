@@ -559,6 +559,13 @@ the engine. The work is split this way:
   by rendering it, so the provider refuses there an object it cannot hold, and
   the error names the render.
 
+With `schema.view-check-options`, a declared view states the level of its
+check option. Ptah's view model holds no level, so a view with a check option
+reaches the provider as `CASCADED`, which is what `WITH CHECK OPTION` means
+without a level. A view a provider reads from SQL with `WITH LOCAL CHECK
+OPTION` is refused by name rather than kept as the stricter `CASCADED` check.
+Without the feature a `LOCAL` view is refused before it is sent.
+
 A planning request does not carry the declared and observed objects as
 context.
 

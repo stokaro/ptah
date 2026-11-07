@@ -189,6 +189,12 @@ var hostFeatures = []string{
 	// the comparison records a changed collation as a change of its own;
 	// see columnAspects and Rules.ColumnCollations.
 	provider.ColumnCollationsFeature,
+	// A declared view states the level of its check option: CASCADED for a
+	// view the host model gives one, since that model has no LOCAL, and a
+	// LOCAL view a SQL reading reports is refused by name; see
+	// target.declaredCheckOption, target.createdCheckOption and
+	// readCheckOption.
+	provider.ViewCheckOptionsFeature,
 	// A read reports the ledger the engine's seed service keeps as reserved
 	// storage, which every comparison leaves out, so a plan never drops it;
 	// see reader.reservedNames.

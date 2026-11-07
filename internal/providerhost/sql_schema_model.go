@@ -209,6 +209,9 @@ func addSQLView(database *schemamodel.Database, view *protocol.SQLView) error {
 		return unsupported(fmt.Sprintf("settings of %s %q in a SQL schema reading", kind, name))
 	}
 	if !view.GetMaterialized() {
+		if err := readCheckOption(name, view); err != nil {
+			return err
+		}
 		database.Views = append(database.Views, schemamodel.View{Name: name, Body: view.GetBody(), WithCheck: view.GetWithCheck(), Comment: view.GetComment(),
 			Attributes: slices.Clone(view.GetAttributes()), DependsOn: slices.Clone(view.GetDependsOn())})
 		return nil
