@@ -32,6 +32,9 @@ import (
 // already exists`, and, for the index behind a constraint, a name another
 // constraint of the table holds.
 func applyAlterIndex(database *schemamodel.Database, document *Document, node *ast.AlterIndexNode, sourcePlatform string) error {
+	if node.AttachPartition != "" {
+		return attachIndexPartition(database, document, node, sourcePlatform)
+	}
 	schema, name := normalizeSQLTableIdentifier(sourcePlatform, node.Name)
 	to := normalizeSQLIdentifier(sourcePlatform, node.NewName)
 	databases := []*schemamodel.Database{database}
