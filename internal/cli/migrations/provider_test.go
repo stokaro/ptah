@@ -53,11 +53,20 @@ func TestProviderSetupFailurePreservesMigrationJSON(t *testing.T) {
 	}
 }
 
+// TestProviderMigrationSetupReportsOfficialInstallation reports
+// provider_missing for each official engine, with its setup page. The user
+// cache, where `ptah providers install` stores a provider, is an empty
+// directory of the test's own: a provider installed on the machine that runs
+// the test would otherwise be selected and the run would not report it
+// missing.
 func TestProviderMigrationSetupReportsOfficialInstallation(t *testing.T) {
 	for _, entry := range providercatalog.Entries() {
 		for _, verb := range []string{"up", "down", "status", "log"} {
 			t.Run(entry.EngineID+"/"+verb, func(t *testing.T) {
 				c := qt.New(t)
+				c.Setenv("XDG_CACHE_HOME", c.TempDir())
+				c.Setenv("HOME", c.TempDir())
+				c.Setenv("LocalAppData", c.TempDir())
 				command := migrations.NewMigrationsCommand()
 				var out, diagnostics bytes.Buffer
 				command.SetOut(&out)
