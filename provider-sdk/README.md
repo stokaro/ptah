@@ -63,10 +63,11 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.29. Each released SDK speaks one contract:
+speaks contract 25.30. Each released SDK speaks one contract:
 
 | SDK release | Contract |
 | --- | --- |
+| `provider-sdk/v0.27.0` | 25.29 |
 | `provider-sdk/v0.26.0` | 25.28 |
 | `provider-sdk/v0.25.0` | 25.28 |
 | `provider-sdk/v0.24.0` | 25.27 |
@@ -158,6 +159,8 @@ returns to 0.
   [SQL table clauses](#sql-table-clauses),
   [the reserved seed ledger](#reserved-seed-ledger) and
   [index predicates](#index-predicates).
+  Contract 25.30 adds [linked release lines](#linked-release-lines) and states
+  the provider's [working directory](#working-directory).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -198,8 +201,8 @@ does not oblige a peer to use it.
   `transport.shared-coverage`, `models.own-predecessors`,
   `schema.observed-constraints`, `planning.constraint-changes`,
   `schema.index-nulls-order`, `schema.common-namespaces`,
-  `source.sql-table-clauses`, `schema.reserved-seeds` and
-  `schema.index-predicates`. The embedding
+  `source.sql-table-clauses`, `schema.reserved-seeds`,
+  `schema.index-predicates` and `engine.linked-release-lines`. The embedding
   store's calls,
   `PrepareCommonObjects`, `ReverseChanges` and `ReportValues` are new, and each
   comes with an addition to `Engine`, so a host lists the feature to receive
@@ -612,6 +615,18 @@ services. The pinned upstream
 [`grpc_*` protocol files](https://github.com/hashicorp/go-plugin/tree/v1.8.0/internal/plugin)
 define those control messages. Application traffic uses only gRPC and Protobuf;
 net/rpc and gob are not supported.
+
+### Working directory
+
+[ADR 0097](../docs/adr/0097-a-provider-starts-in-the-hosts-working-directory.md)
+decides this rule. The host starts the provider in its own working directory,
+the one it resolves its own relative paths against, and `runtime.Start` sets
+it explicitly. A relative file path in `OpenRequest.address`, such as
+`duckdb://./app.db` for an engine that runs inside the provider, therefore
+resolves for the provider as it does for the host, and a provider resolves it
+against its working directory without asking the host. A provider must not
+change its working directory while it serves. `TestProviderStartsInTheHostsWorkingDirectory`
+in `integration` holds the rule.
 
 ## Validation
 
@@ -3283,11 +3298,12 @@ none.
 | `unprobed` | Why the provider keeps the line without running it. |
 | `note` | The reason `ptah db capabilities` prints with the level. Without a note it prints the level's general meaning. For `CERTIFIED` that sentence names Ptah's own CI, so give a certified line a note. |
 | `capabilities` | The line's capability facts; see [Offline capabilities](#offline-capabilities). |
+| `linked` | The version of the engine's library the provider executable links, for an engine that runs in the provider's process; see [Linked release lines](#linked-release-lines). |
 
-| Level | What it claims | `image` | `unprobed` |
+| Level | What it claims | `image` or `linked` | `unprobed` |
 | --- | --- | --- | --- |
-| `CERTIFIED` | Something runs against the line. | Required | Refused |
-| `LEGACY_TESTED` | Something runs against a line past its upstream end of life. | Required | Refused |
+| `CERTIFIED` | Something runs against the line. | One of them required | Refused |
+| `LEGACY_TESTED` | Something runs against a line past its upstream end of life. | One of them required | Refused |
 | `BEST_EFFORT` | The provider keeps the line and runs nothing against it. | Only with `unprobed` | Optional |
 | `KNOWN_INCOMPATIBLE` | The line has a concrete technical incompatibility, which `note` can state. | Refused | Refused |
 
@@ -3298,8 +3314,31 @@ valid UTF-8 (`TestReleaseLines_FailurePath`). `Server.Validate`, the provider's
 with `provider.ErrProtocol` before a session opens.
 
 The check reads the declaration. It confirms that a line claiming testing names
-an image, and it cannot see whether anything runs that image. `release_lines`
-reaches every host: only `capabilities` is negotiated.
+an image or a linked engine, and it cannot see whether anything runs either.
+`release_lines` reaches every host: only `capabilities` and `linked` are
+negotiated.
+
+### Linked release lines
+
+[ADR 0098](../docs/adr/0098-a-linked-engine-is-a-release-lines-evidence.md)
+decides this feature. An engine that runs inside the provider's process, such
+as DuckDB or SQLite, has no server image: the provider executable links the
+engine's library, and the provider's own tests run that library. Under
+`engine.linked-release-lines` a line names the version it links in `linked`,
+and a `CERTIFIED` or `LEGACY_TESTED` line may state that version as its
+evidence in place of `image`. The provider and the engine list the two-way
+feature.
+
+`ValidateDescription` refuses a line that names both an image and a linked
+engine, a linked version that does not equal the line or start with the line
+and a dot, a version with white space, two lines of one engine that name a
+linked engine (an executable links one version of a library), and the feature
+without a linked line or a linked line without the feature. A host that does
+not list the feature receives the line without `linked`; a line that claimed
+testing by it alone reaches that host as `BEST_EFFORT`, with an `unprobed`
+reason that names the version. The rule that a certified line is something CI
+runs stays the provider's to keep: the version it names is the one its tests
+link.
 
 A level describes testing and not the server. No command reads it to decide
 whether to proceed, on `KNOWN_INCOMPATIBLE` as on the others. To refuse a server
