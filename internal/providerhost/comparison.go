@@ -3,6 +3,7 @@ package providerhost
 import (
 	"context"
 	"slices"
+	"strconv"
 
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"github.com/stokaro/ptah/provider-sdk/provider"
@@ -29,6 +30,10 @@ func (s modelComparer) CompareObjects(ctx context.Context, request schemaext.Obj
 	remote.Parents = comparisonParents(request.Parents)
 	remote.DeclaredRelations, remote.DeclaredRoles, remote.Required = s.declaredRelations(remote.GetTargetFeatures(), request.DeclaredRelations), comparisonIdentities(request.DeclaredRoles), comparisonIdentities(request.Required)
 	remote.DeclaredObjects = s.declaredObjects(remote.GetTargetFeatures(), request.DeclaredObjects)
+	remote.DeclaredFacets, err = s.declaredFacets(capture, request.DeclaredFacets)
+	if err != nil {
+		return schemaext.ObjectComparisonResult{}, err
+	}
 	remote.DatabasePath = request.DatabasePath
 	sent := s.writtenRequests(request.Requests)
 	for _, index := range sent {
@@ -92,6 +97,36 @@ func (s modelComparer) declaredObjects(targetFeatures []string, objects []object
 		return nil
 	}
 	return comparisonIdentities(objects)
+}
+
+// declaredFacets returns the declared facets a provider receives: every facet
+// the runtime gave a comparison whose declared facet kinds the description
+// names, each with its desired value, when the provider and the engine
+// negotiated provider.DeclaredFacetsFeature and the request's target features
+// list it too; none otherwise. The SDK keeps no declared facet kind for a host
+// that did not list the feature, so the runtime gives such a comparison
+// nothing to send.
+func (s modelComparer) declaredFacets(capture comparisonCapture, records []schemaext.FacetRecord) ([]*protocol.ComparisonRecord, error) {
+	if len(records) == 0 || !s.target.negotiated(provider.DeclaredFacetsFeature) ||
+		!slices.Contains(capture.request.GetTargetFeatures(), provider.DeclaredFacetsFeature) {
+		return nil, nil
+	}
+	var result []*protocol.ComparisonRecord
+	for _, record := range records {
+		for _, kind := range record.Values.Kinds() {
+			value, _, err := record.Values.Get(kind)
+			if err != nil {
+				return nil, err
+			}
+			captured, err := capture.value(schemaext.Desired, value, "declared-facet-"+strconv.Itoa(len(result)))
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, &protocol.ComparisonRecord{Kind: string(kind), Subject: comparisonIdentity(record.Subject),
+				Targets: record.Values.TargetScope(kind), Value: captured})
+		}
+	}
+	return result, nil
 }
 
 // boundCounts converts the counts a provider's comparison stated. The SDK
@@ -169,11 +204,12 @@ func (t *target) registerComparisons(result *engine.Provider) {
 		case protocol.ModelComparison_OBJECTS:
 			result.Comparisons = append(result.Comparisons,
 				engine.ObjectComparison{Target: t.engine.GetId(),
-					Kinds:         boundKinds(declaration.GetKinds()),
-					ChangeKinds:   boundKinds(declaration.GetChangeKinds()),
-					Actions:       slices.Clone(declaration.GetActions()),
-					DeclaredKinds: boundKinds(declaration.GetDeclaredKinds()),
-					Service:       service})
+					Kinds:              boundKinds(declaration.GetKinds()),
+					ChangeKinds:        boundKinds(declaration.GetChangeKinds()),
+					Actions:            slices.Clone(declaration.GetActions()),
+					DeclaredKinds:      boundKinds(declaration.GetDeclaredKinds()),
+					DeclaredFacetKinds: boundKinds(declaration.GetDeclaredFacetKinds()),
+					Service:            service})
 		case protocol.ModelComparison_FACETS:
 			owners := make([]objectidentity.Kind, len(declaration.GetOwnerKinds()))
 			for i, kind := range declaration.GetOwnerKinds() {

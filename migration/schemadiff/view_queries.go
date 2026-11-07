@@ -46,10 +46,12 @@ func compareViewLikes(ctx context.Context, comparison viewLikeComparison) error 
 // decideViewQueries returns the view rule the comparison of views and
 // materialized views reads. A target that decides view queries itself
 // ([schemacomparison.Rules.ViewQueries]) is asked about every query the
-// comparison pairs, in one batch, and the comparison then reads its answers
-// alone: a held view whose query the target calls equivalent stays, and one
-// it does not is replaced, whatever the shared reading of the two texts
-// says. Any other target keeps its own rule, nil where it registers none.
+// comparison pairs, in one batch, with the columns of every declared table,
+// and the comparison then reads its answers: a held view whose query the
+// target calls equivalent stays, and one it calls different is replaced,
+// whatever the shared reading of the two texts says. A pair the target
+// leaves undecided is read as the texts read for a target with no view
+// rules. Any other target keeps its own rule, nil where it registers none.
 func decideViewQueries(
 	ctx context.Context,
 	rules schemacomparison.Rules,
@@ -67,7 +69,7 @@ func decideViewQueries(
 		return compare.AnsweredViewQueries(nil, nil), nil
 	}
 	answers, err := rules.ViewQueries.EquivalentViewQueries(ctx, schemacomparison.ViewQueriesRequest{
-		Target: dialect, Identifiers: semantics, Capabilities: caps, Pairs: pairs,
+		Target: dialect, Identifiers: semantics, Capabilities: caps, Pairs: pairs, Columns: declaredColumns(desired, semantics),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("compare schemas: %w", err)

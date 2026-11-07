@@ -6,6 +6,7 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 )
 
 // ViewQueries decides whether the query a declared view states and the query
@@ -16,11 +17,30 @@ import (
 // of the two texts. It cannot be registered beside [Views].
 type ViewQueries interface {
 	// EquivalentViewQueries answers each pair of request, in order: whether
-	// the declared query and the held one are one query on the target. The
-	// answer has one entry for each pair. A failure decides nothing, and the
-	// comparison fails with it. It must not modify the request.
-	EquivalentViewQueries(ctx context.Context, request ViewQueriesRequest) ([]bool, error)
+	// the declared query and the held one are one query on the target, or
+	// that the target cannot decide it. The answer has one entry for each
+	// pair. A failure decides nothing, and the comparison fails with it. It
+	// must not modify the request.
+	EquivalentViewQueries(ctx context.Context, request ViewQueriesRequest) ([]ViewQueryAnswer, error)
 }
+
+// ViewQueryAnswer is a target's answer about one view query pair. The zero
+// value says the two queries differ, so an answer nobody set replaces the
+// view rather than hiding a change.
+type ViewQueryAnswer int
+
+// The answers a target gives.
+const (
+	// ViewQueryDifferent says the queries are not one query: the view is
+	// replaced.
+	ViewQueryDifferent ViewQueryAnswer = iota
+	// ViewQueryEquivalent says the queries are one query: the view stays.
+	ViewQueryEquivalent
+	// ViewQueryUndecided says the target cannot decide the pair, and the
+	// comparison reads the two texts as it does for a target that registers
+	// no view rules.
+	ViewQueryUndecided
+)
 
 // ViewQueriesRequest asks a target about the view queries a comparison pairs.
 type ViewQueriesRequest struct {
@@ -32,6 +52,12 @@ type ViewQueriesRequest struct {
 	Capabilities capability.Capabilities
 	// Pairs are the queries to decide, each held view named once.
 	Pairs []ViewQueryPair
+	// Columns are the columns of every table the desired schema declares,
+	// each named by its table under Identifiers, in the order the declaration
+	// lists them: what a `*` of a declared query stands for, and the relation
+	// a column a server qualifies belongs to. A target that does not read
+	// them ignores them.
+	Columns []schemaext.DeclaredColumn
 }
 
 // ViewQueryPair is a declared view's query and the view the database holds

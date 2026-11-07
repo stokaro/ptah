@@ -79,6 +79,14 @@ type ObjectComparisonRequest struct {
 	DeclaredColumns []DeclaredColumn
 	Required        []objectidentity.ID
 	DeclaredObjects []objectidentity.ID
+	// DeclaredFacets are desired facets, each record its owner and values. A
+	// caller names the desired facets of the whole comparison here. The
+	// runtime gives each service the records of the facet models its
+	// declaration lists as declared facet kinds, each record holding only
+	// those kinds with a value, in owner order: the changefeeds of each
+	// declared table for a service that compares transfers that read them. A
+	// service that lists no declared facet kind receives none.
+	DeclaredFacets []FacetRecord
 }
 
 // Exclusion is one subject the run's configuration leaves out of a

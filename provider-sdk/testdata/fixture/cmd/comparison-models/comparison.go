@@ -23,6 +23,9 @@ func (p *comparer) CompareModels(ctx context.Context, request *protocol.CompareM
 	if err := refuseUndeclaredAnchors(request); err != nil {
 		return nil, err
 	}
+	if err := refuseUndeclaredFacets(request); err != nil {
+		return nil, err
+	}
 	result := &protocol.ComparedModels{Complete: true, Desired: proto.CloneOf(request.GetDesired()), ResolvedRequests: resolveWritten(request)}
 	for _, desired := range request.GetDesired().GetRecords() {
 		if err := ctx.Err(); err != nil {
@@ -207,6 +210,31 @@ func refuseUndeclaredAnchors(request *protocol.CompareModelsRequest) error {
 		}
 		return runtime.ErrorWithReason(codes.FailedPrecondition,
 			fmt.Sprintf("Retention object %s keeps its rows in anchor %s, which the schema does not declare", record.GetSubject().GetName().GetSource(),
+				record.GetSubject().GetName().GetSource()))
+	}
+	return nil
+}
+
+// refuseUndeclaredFacets refuses, for a request that carries declared facets,
+// a retention object whose table of the same name declares no retention
+// facet: the object follows that facet, and the facet belongs to the facets
+// comparison, so only the declared facets say whether it is there.
+func refuseUndeclaredFacets(request *protocol.CompareModelsRequest) error {
+	if !slices.Contains(request.GetTargetFeatures(), provider.DeclaredFacetsFeature) {
+		return nil
+	}
+	for _, record := range request.GetDesired().GetRecords() {
+		if record.GetValue() == nil || record.GetKind() != nativeKind {
+			continue
+		}
+		if slices.ContainsFunc(request.GetDeclaredFacets(), func(facet *protocol.ComparisonRecord) bool {
+			return facet.GetKind() == facetKind && facet.GetSubject().GetKind() == "table" &&
+				facet.GetSubject().GetName().GetNormalized() == record.GetSubject().GetName().GetNormalized()
+		}) {
+			continue
+		}
+		return runtime.ErrorWithReason(codes.FailedPrecondition,
+			fmt.Sprintf("Retention object %s follows the retention of table %s, which the schema does not declare", record.GetSubject().GetName().GetSource(),
 				record.GetSubject().GetName().GetSource()))
 	}
 	return nil

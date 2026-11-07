@@ -209,6 +209,9 @@ func (r *Runtime) prepareFeatureComparisons(ctx context.Context, request schemae
 		DeclaredColumns:   request.DeclaredColumns,
 		Required:          required,
 	}
+	if r.readsDeclaredFacets(request.Target) {
+		objects.DeclaredFacets = request.Desired.Facets
+	}
 	for _, owner := range request.Owners {
 		if owner.Subject.Kind == objectidentity.KindTable {
 			objects.Parents = append(objects.Parents, owner)
