@@ -94,14 +94,13 @@ stopping a migration over its note would turn an investigation aid into an
 outage. Nothing in the table can record that it was not written to, so the run
 reports it:
 
-- `ptah migrations up --json` names each lost entry under `migration_log` in
+- `ptah migrations up --json` and `ptah migrations down --json` name each lost
+  entry under `migration_log` in
   [the run document](../apply/#the-evidence-a-run-leaves), against the migration
   it belongs to. A table with no rows then has two different readings, and the
   document says which one applies.
-- Without `--json`, `ptah migrations up` and `ptah migrations down` close with a
-  notice that names the migrations, after the line that says the run succeeded.
-- `ptah migrations down` prints no document, so that notice and the warnings on
-  the log stream are its whole report.
+- Without `--json`, both commands close with a notice that names the
+  migrations, after the line that says the run succeeded.
 - A program using the library asks `Migrator.MigrationLogReport`.
 
 The exit status does not change. A lost entry says nothing about the migration:

@@ -338,6 +338,42 @@ body back — and the row carries `direction=down`. So:
 - A later `ptah migrations up` refuses to run over the unfinished rollback
   instead of stacking new work on unknown state.
 
+### The document a rollback leaves
+
+`ptah migrations down --json` prints the document
+[`ptah migrations up --json` prints](../apply/#the-evidence-a-run-leaves), with
+`"command": "migrations down"` and `"direction": "down"`. The document is
+standard output, and everything written for a person goes to standard error,
+the output of a pre-flight hook included. `--json` needs `--confirm` or
+`--dry-run`: a program reading the document cannot answer the confirmation
+prompt, so a run with neither is refused before it connects, and its document
+says `failed`. A rollback whose second down file failed:
+
+```json
+{
+  "contract_version": 2,
+  "command": "migrations down",
+  "direction": "down",
+  "outcome": "failed",
+  "planned": [2, 1],
+  "rolled_back": [2],
+  "error": { "message": "error running down migrations: failed to revert migration 1: ..." },
+  "failure": { "version": 1, "version_key": "1", "statement": 1, "statements": 1 },
+  "migration_log": { "written": 4 },
+  "status": { "…": "the history after the run, with the dirty row of version 1" }
+}
+```
+
+`planned` is what the migrator selected while holding the migration lock: the
+applied migrations above the target, newest first. `rolled_back` names the
+selected migrations the history no longer records as applied, and `applied`
+stays absent. A migration whose rollback stopped keeps its dirty row, so it is
+not in `rolled_back`. The outcomes mean what they mean for `up`, read for a
+rollback: `up-to-date` says nothing above the target was applied, and `applied`
+says every selected migration was rolled back. A rollback derived with `--plan`
+does not go through the migrator, so its `planned` is the versions above the
+target the run read before it started.
+
 ### Finishing an interrupted rollback
 
 `repair --resume-from <n>` runs the remaining statements of **the body that

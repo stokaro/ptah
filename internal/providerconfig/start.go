@@ -18,11 +18,14 @@ func Start(ctx context.Context, installation Installation, target string) (*prov
 	}
 	host, err := providerhost.Start(ctx, installation.Spec)
 	if err != nil {
-		code := "provider_start_failed"
+		code, message := "provider_start_failed", err.Error()
 		if errors.Is(err, provider.ErrProtocol) {
 			code = "provider_incompatible"
 		}
-		diagnostic := installation.Diagnostic(target, code, err.Error())
+		if errors.Is(err, providerhost.ErrStartupTimeout) {
+			code, message = "provider_start_timeout", "the "+target+" "+message
+		}
+		diagnostic := installation.Diagnostic(target, code, message)
 		diagnostic.Cause = err
 		return nil, diagnostic
 	}

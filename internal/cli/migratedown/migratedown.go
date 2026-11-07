@@ -4,6 +4,7 @@ package migratedown
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -18,11 +19,13 @@ import (
 	"ptah.run/engine"
 	"ptah.run/internal/atlasmigrate"
 	"ptah.run/internal/cli/cliobs"
+	"ptah.run/internal/cli/internal/cmdflags"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/cli/internal/migrateflags"
 	"ptah.run/internal/cli/internal/migratelock"
+	"ptah.run/internal/cli/internal/migraterun"
 	"ptah.run/internal/cli/internal/migratetimeout"
 	"ptah.run/internal/cli/internal/migrationsource"
 	"ptah.run/internal/dburldisplay"
@@ -48,6 +51,7 @@ const (
 	dryRunFlag               = "dry-run"
 	verboseFlag              = "verbose"
 	confirmFlag              = "confirm"
+	jsonFlag                 = "json"
 	execOrderFlag            = "exec-order"
 	migrationLockTimeoutFlag = "migration-lock-timeout"
 	lockTimeoutFlag          = "lock-timeout"
@@ -74,6 +78,7 @@ type options struct {
 	dryRun               bool
 	verbose              bool
 	skipConfirm          bool
+	jsonOutput           bool
 	execOrder            string
 	migrationLockTimeout string
 	lockTimeout          string
@@ -115,8 +120,9 @@ be rolled back and the migration process will stop.
 ⚠️  WARNING: This operation can result in data loss! Make sure you have backups
 before running down migrations in production.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if err := migrateDownCommand(cmd, &opts); err != nil {
-				return err
+			document := &migraterun.Document{Enabled: opts.jsonOutput, Out: cmd.OutOrStdout(), Command: Command, Direction: migrator.MigrationDirectionDown}
+			if err := migrateDownCommand(cmd, &opts, document); err != nil {
+				return document.FailBeforeRun(err, opts.dryRun)
 			}
 			// The work is finite and it is done, so an interrupt arriving
 			// between here and the process exit stopped nothing. See
@@ -148,6 +154,13 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.BoolVar(&opts.dryRun, dryRunFlag, false, "Show what migrations would be rolled back without actually running them")
 	flags.BoolVar(&opts.verbose, verboseFlag, false, "Enable verbose output")
 	flags.BoolVar(&opts.skipConfirm, confirmFlag, false, "Skip confirmation prompt (use with caution!)")
+	flags.BoolVar(&opts.jsonOutput, jsonFlag, false, "Print the run's evidence as one JSON document, on success and on failure; needs --confirm or --dry-run")
+	// --json decides what standard output is, so it belongs to the invocation:
+	// an environment that exported PTAH_JSON for another verb's document would
+	// otherwise turn every rollback there into a JSON run.
+	if err := cmdflags.DisableEnvBinding(flags, jsonFlag); err != nil {
+		panic(err)
+	}
 	flags.StringVar(&opts.execOrder, execOrderFlag, string(migrator.ExecOrderLinear), "Execution order policy for pending migrations below the current version: linear, linear-skip, or non-linear")
 	flags.StringVar(&opts.migrationLockTimeout, migrationLockTimeoutFlag, "", "Timeout for acquiring the session-level migration advisory lock, such as 10s or 2m; "+
 		"refused against a dialect that takes no such lock")
@@ -284,7 +297,19 @@ func parseRollbackSettings(values rollbackSettingValues) (parsedRollbackSettings
 	}, nil
 }
 
-func migrateDownCommand(cmd *cobra.Command, opts *options) error {
+// Command is the command a run document names.
+const Command = "migrations down"
+
+// errJSONNeedsConfirmation refuses a document run that would stop to ask a
+// person: the caller reading the document cannot answer the prompt, and a run
+// that ends at a declined prompt has no outcome the document can name.
+var errJSONNeedsConfirmation = fmt.Errorf("--%s needs --%s or --%s: a run that prints a document for a program cannot stop to ask for confirmation",
+	jsonFlag, confirmFlag, dryRunFlag)
+
+func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.Document) error {
+	if opts.jsonOutput && !opts.skipConfirm && !opts.dryRun {
+		return errJSONNeedsConfirmation
+	}
 	integrityPolicy, err := migrationintegrity.Resolve()
 	if err != nil {
 		return err
@@ -312,7 +337,9 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 		return err
 	}
 	defer shutdownObservability(runtime)
-	emit := cliobs.NewEmitter(cmd.OutOrStdout(), runtime)
+	// Under --json the document is the output, so everything written for a
+	// person goes to standard error.
+	emit := cliobs.NewEmitter(humanOutput(cmd, opts), runtime)
 
 	if dbURL == "" {
 		return fmt.Errorf("database URL is required")
@@ -465,6 +492,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 		WithMigrationLockTimeout(settings.migrationLockTimeout).
 		WithLogger(runtime.Logger()).
 		WithObserver(runtime.Observer())
+	document.Migrator = mig
 
 	// Get migration status before running
 	status, err := mig.GetMigrationStatus(cmd.Context())
@@ -476,14 +504,17 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 	emit.Printf("Total migrations: %d\n", status.TotalMigrations)
 
 	if status.CurrentVersion <= targetVersion {
-		return finishDownAtOrBelowTarget(cmd.Context(), downNoopInputs{
+		if err := finishDownAtOrBelowTarget(cmd.Context(), downNoopInputs{
 			migrator:       mig,
 			runtime:        runtime,
 			emit:           emit,
 			dialect:        conn.Info().Dialect,
 			currentVersion: status.CurrentVersion,
 			targetVersion:  targetVersion,
-		})
+		}); err != nil {
+			return err
+		}
+		return document.Write(migrator.RunEvidence{Plan: &migrator.MigrationPlan{}, After: status, DryRun: opts.dryRun})
 	}
 
 	// Get applied migrations from the database
@@ -529,32 +560,102 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 		return nil
 	}
 
-	preflightHook := downPreflightHook(cmd, opts, runtime, conn, dbURL, resolvedOpts, emit)
-
-	// Last on every path from here, so it follows any line that says success.
-	defer emitLostLogEntries(emit, mig)
-
-	// Run down migrations
-	if err = executeRollback(cmd, buildRollbackExecution(
-		resolvedOpts, opts, mig, preflightHook, conn, rollbackInputs{
+	return runRollback(cmd, rollbackRun{
+		opts: opts, resolved: resolvedOpts, migrator: mig, conn: conn, runtime: runtime, emit: emit,
+		document: document, dbURL: dbURL, selected: migrationsToRollback,
+		inputs: rollbackInputs{
 			migrationsFS: migrationsFS, migrationsDir: migrationsDir,
 			targetVersion: targetVersion, dirFormat: dirFormat, atlasEnv: resolvedOpts.atlasEnv,
 			connectTimeout: settings.connectTimeout, migrationsSchema: migrationsSchema,
 			migrationsTable: migrationsTable, revisionFormat: revisionFormat,
-		}), emit); err != nil {
-		return fmt.Errorf("error running down migrations: %w", err)
+		},
+	})
+}
+
+// rollbackRun is what the rollback and its report need once the operator has
+// confirmed it.
+type rollbackRun struct {
+	opts     *options
+	resolved options
+	migrator *migrator.Migrator
+	conn     *dbschema.DatabaseConnection
+	runtime  *cliobs.Runtime
+	emit     cliobs.Emitter
+	document *migraterun.Document
+	dbURL    string
+	// selected is the versions above the target the run read before the lock.
+	selected []int64
+	inputs   rollbackInputs
+}
+
+// runRollback rolls back, reads the history it left, and reports both: in the
+// document under --json, and in the closing summary.
+func runRollback(cmd *cobra.Command, r rollbackRun) error {
+	opts, mig, emit := r.opts, r.migrator, r.emit
+	// The plan the migrator selects under its lock is what the document
+	// reports, and none when it selected nothing there. A derived rollback
+	// does not go through the migrator, so it reports the versions above the
+	// target this run read.
+	var plan *migrator.MigrationPlan
+	if r.resolved.plan {
+		plan = &migrator.MigrationPlan{Direction: migrator.MigrationDirectionDown, Versions: r.selected}
+	}
+	preflightHook := capturePlan(&plan, downPreflightHook(cmd, opts, r.runtime, r.conn, r.dbURL, r.resolved, emit))
+
+	// Last on every path from here, so it follows any line that says success.
+	// Under --json the document carries the same report.
+	if !opts.jsonOutput {
+		defer emitLostLogEntries(emit, mig)
+	}
+
+	// Run down migrations
+	runErr := executeRollback(cmd, buildRollbackExecution(r.resolved, opts, mig, preflightHook, r.conn, r.inputs), emit)
+	if runErr != nil {
+		runErr = fmt.Errorf("error running down migrations: %w", runErr)
 	}
 
 	// The final status read does not inherit the cancelation: a rollback that
 	// committed before an interrupt still reports the version it left behind.
-	finalStatus, err := mig.GetMigrationStatus(context.WithoutCancel(cmd.Context()))
-	if err != nil {
-		return fmt.Errorf("error getting final migration status: %w", err)
+	// It is read after a failure too, because the run that stopped is the one
+	// whose caller most needs to know what the database holds.
+	finalStatus, statusErr := mig.GetMigrationStatus(context.WithoutCancel(cmd.Context()))
+	if statusErr != nil {
+		finalStatus = nil
+	}
+	if err := r.document.Write(migrator.RunEvidence{Plan: plan, After: finalStatus, Err: runErr, DryRun: opts.dryRun}); err != nil {
+		return errors.Join(runErr, err)
+	}
+	if runErr != nil {
+		return runErr
+	}
+	if statusErr != nil {
+		return fmt.Errorf("error getting final migration status: %w", statusErr)
 	}
 
-	emitMigrateDownSummary(emit, opts, targetVersion, migrationsToRollback, finalStatus)
+	emitMigrateDownSummary(emit, opts, r.inputs.targetVersion, r.selected, finalStatus)
 
 	return nil
+}
+
+// capturePlan records the plan the migrator selected under its lock in *into,
+// then runs next. The hook is the one place the migrator hands a rollback's
+// selection out, and it runs before any rollback SQL does.
+func capturePlan(into **migrator.MigrationPlan, next migrator.PreMigrationHook) migrator.PreMigrationHook {
+	return func(ctx context.Context, plan migrator.MigrationPlan) error {
+		*into = &plan
+		if next == nil {
+			return nil
+		}
+		return next(ctx, plan)
+	}
+}
+
+// humanOutput selects where this command's human-facing output goes.
+func humanOutput(cmd *cobra.Command, opts *options) io.Writer {
+	if opts.jsonOutput {
+		return cmd.ErrOrStderr()
+	}
+	return cmd.OutOrStdout()
 }
 
 // emitMigrateDownSummary says how the rollback ended.
@@ -579,8 +680,8 @@ func emitMigrateDownSummary(
 }
 
 // emitLostLogEntries tells a person that the migration log did not get
-// everything the rollback tried to write. This command prints no run document,
-// so this and the warnings above it are the whole report.
+// everything the rollback tried to write. Without --json this and the warnings
+// above it are the whole report.
 func emitLostLogEntries(emit cliobs.Emitter, mig *migrator.Migrator) {
 	if notice := dbcli.LostLogEntriesNotice(mig.MigrationLogReport()); notice != "" {
 		emit.Println(notice)
@@ -783,7 +884,7 @@ func startObservability(cmd *cobra.Command, opts *options) (*cliobs.Runtime, err
 // under JSON log format where stdout carries structured output.
 func confirmRollbackPrompt(cmd *cobra.Command, opts *options, currentVersion, targetVersion int64, migrationsToRollback []int64) (bool, error) {
 	promptWriter := cmd.OutOrStdout()
-	if opts.logFormat == "json" {
+	if opts.logFormat == "json" || opts.jsonOutput {
 		promptWriter = cmd.ErrOrStderr()
 	}
 	return confirmRollback(opts, promptWriter, cmd.InOrStdin(), currentVersion, targetVersion, migrationsToRollback)
@@ -1086,5 +1187,5 @@ func downPreflightHook(
 		PostgresDumpDir:    resolved.pgDumpTo,
 		MySQLDumpDir:       resolved.mySQLDumpTo,
 		WebhookURL:         resolved.webhook,
-	}, emit, cliobs.NewOutputWriter(cmd.OutOrStdout(), runtime, "pre-flight output"))
+	}, emit, cliobs.NewOutputWriter(humanOutput(cmd, opts), runtime, "pre-flight output"))
 }

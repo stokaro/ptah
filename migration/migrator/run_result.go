@@ -30,10 +30,11 @@ type RunOutcome string
 
 const (
 	// RunOutcomeUpToDate means the run selected nothing because nothing was
-	// pending.
+	// pending, or for a rollback, because nothing above the target is applied.
 	RunOutcomeUpToDate RunOutcome = "up-to-date"
-	// RunOutcomeApplied means every selected migration is recorded applied and
-	// no revision row is dirty.
+	// RunOutcomeApplied means every selected migration took effect and no
+	// revision row is dirty: an up run's migrations are recorded applied, and a
+	// rollback's are no longer recorded applied.
 	RunOutcomeApplied RunOutcome = "applied"
 	// RunOutcomeDryRun means the run was asked to change nothing, and did not.
 	RunOutcomeDryRun RunOutcome = "dry-run"
@@ -75,9 +76,15 @@ type RunResult struct {
 	Planned     []int64  `json:"planned,omitempty"`
 	PlannedKeys []string `json:"planned_keys,omitempty"`
 	// Applied and AppliedKeys are the selected migrations the history records
-	// as applied after the run, in selection order.
+	// as applied after an up run, in selection order. A rollback leaves them
+	// empty and reports RolledBack.
 	Applied     []int64  `json:"applied,omitempty"`
 	AppliedKeys []string `json:"applied_keys,omitempty"`
+	// RolledBack and RolledBackKeys are the selected migrations the history no
+	// longer records as applied after a rollback, in selection order. An up run
+	// leaves them empty.
+	RolledBack     []int64  `json:"rolled_back,omitempty"`
+	RolledBackKeys []string `json:"rolled_back_keys,omitempty"`
 	// Error is the run's error, present whenever the run failed. It is not
 	// evidence about the database.
 	Error *ErrorReport `json:"error,omitempty"`
@@ -206,7 +213,11 @@ func NewRunResult(evidence RunEvidence) RunResult {
 		result.Planned = slices.Clone(evidence.Plan.Versions)
 		result.PlannedKeys = slices.Clone(evidence.Plan.VersionKeys)
 	}
-	result.Applied, result.AppliedKeys = appliedFromPlan(result.Planned, result.PlannedKeys, evidence.After)
+	if result.Direction == MigrationDirectionDown {
+		result.RolledBack, result.RolledBackKeys = rolledBackFromPlan(result.Planned, result.PlannedKeys, evidence.After)
+	} else {
+		result.Applied, result.AppliedKeys = appliedFromPlan(result.Planned, result.PlannedKeys, evidence.After)
+	}
 	result.Outcome = runOutcome(evidence, result)
 	return result
 }
@@ -237,10 +248,62 @@ func runOutcome(evidence RunEvidence, result RunResult) RunOutcome {
 	if len(result.Planned) == 0 {
 		return RunOutcomeUpToDate
 	}
-	if len(result.Applied) == len(result.Planned) {
+	if len(result.Applied)+len(result.RolledBack) == len(result.Planned) {
 		return RunOutcomeApplied
 	}
 	return RunOutcomePartial
+}
+
+// rolledBackFromPlan names the selected migrations the history no longer
+// records as applied, in selection order: what a rollback took effect on. It
+// reads identities as [appliedFromPlan] does, and is its complement over the
+// plan, less the migration a dirty row names: a rollback that stopped there
+// left its row in place, so that migration was not rolled back.
+func rolledBackFromPlan(planned []int64, plannedKeys []string, after *MigrationStatus) ([]int64, []string) {
+	if after == nil || len(planned) == 0 {
+		return nil, nil
+	}
+	stillVersions, stillKeys := appliedFromPlan(planned, plannedKeys, after)
+	versions := make([]int64, 0, len(planned))
+	keys := make([]string, 0, len(plannedKeys))
+	for index, version := range planned {
+		key := ""
+		if index < len(plannedKeys) {
+			key = plannedKeys[index]
+		}
+		if namesDirtyRow(after.DirtyRevision, version, key) {
+			continue
+		}
+		if key != "" {
+			if slices.Contains(stillKeys, key) {
+				continue
+			}
+			keys = append(keys, key)
+		} else if slices.Contains(stillVersions, version) {
+			continue
+		}
+		versions = append(versions, version)
+	}
+	if len(versions) == 0 {
+		return nil, nil
+	}
+	if len(keys) == 0 {
+		return versions, nil
+	}
+	return versions, keys
+}
+
+// namesDirtyRow reports whether dirty is the row of the migration with version
+// and key. A row that records an exact identity is matched by it, and one that
+// records none by its version.
+func namesDirtyRow(dirty *MigrationRevision, version int64, key string) bool {
+	if dirty == nil {
+		return false
+	}
+	if dirty.AtlasVersion != "" && key != "" {
+		return dirty.AtlasVersion == key
+	}
+	return dirty.Version == version
 }
 
 // appliedFromPlan names the selected migrations the history records as

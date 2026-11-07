@@ -310,7 +310,7 @@ func TestProjectInspectPrintsNoPasswordE2E(t *testing.T) {
 // the verb table above measures.
 func formsTheServerStartsWith() []addressForm {
 	return slices.DeleteFunc(slices.Clone(addressForms), func(form addressForm) bool {
-		return strings.HasPrefix(form.address, "ydb://")
+		return strings.HasPrefix(form.address, "ydb://") || strings.HasPrefix(form.address, "spanner://")
 	})
 }
 

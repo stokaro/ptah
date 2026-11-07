@@ -764,6 +764,7 @@ Read the columns as follows.
 | `--dry-run` | `bool` | `false` | `PTAH_DRY_RUN` | — |
 | `--env` | `string` | — | `PTAH_ENV` | — |
 | `--exec-order` | `string` | `linear` | `PTAH_EXEC_ORDER` | — |
+| `--json` | `bool` | `false` | — | — |
 | `--lock-timeout` | `string` | — | `PTAH_LOCK_TIMEOUT` | — |
 | `--log-format` | `string` | `text` | `PTAH_LOG_FORMAT` | — |
 | `--log-level` | `string` | `info` | `PTAH_LOG_LEVEL` | — |

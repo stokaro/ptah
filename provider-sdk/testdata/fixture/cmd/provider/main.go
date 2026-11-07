@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"time"
 
 	"example.com/ptah-fixture-provider/backend"
 	"github.com/stokaro/ptah/provider-sdk/provider"
@@ -17,6 +18,10 @@ func main() {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
+	}
+	// A delay before the handshake stands for a provider the host gives up on.
+	if delay, err := time.ParseDuration(os.Getenv("PTAH_FIXTURE_STARTUP_DELAY")); err == nil {
+		time.Sleep(delay)
 	}
 	owner := &backend.Provider{}
 	description := backend.Description()
