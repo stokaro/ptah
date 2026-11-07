@@ -137,7 +137,7 @@ func TestViewCheckOptionReading(t *testing.T) {
 			reply := fullSQLSchemaReply()
 			reply.Views[0].WithCheck, reply.Views[0].CheckOption = test.withCheck, test.option
 
-			database, err := sqlSchemaCommon(reply)
+			database, err := sqlSchemaCommon(reply, nil)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(database.Views[0].WithCheck, qt.Equals, test.wantWithCheck)

@@ -25,7 +25,7 @@ import (
 // the load's coverage. A field the host model has no home for is refused by
 // name rather than dropped.
 func (t *target) sqlSchemaResult(ctx context.Context, request sqlext.GrammarRequest, reply *protocol.SQLSchema) (sqlext.GrammarResult, error) {
-	database, err := sqlSchemaCommon(reply)
+	database, err := sqlSchemaCommon(reply, t.host.selections)
 	if err != nil {
 		return sqlext.GrammarResult{}, err
 	}
@@ -50,7 +50,7 @@ func (t *target) sqlSchemaResult(ctx context.Context, request sqlext.GrammarRequ
 // sqlSchemaCommon maps the common objects of a reading: tables with their
 // columns, keys, indexes, constraints and triggers, namespaces, enums, views,
 // sequences, roles, and grants and revocations.
-func sqlSchemaCommon(reply *protocol.SQLSchema) (schemamodel.Database, error) {
+func sqlSchemaCommon(reply *protocol.SQLSchema, selections *scopeSelections) (schemamodel.Database, error) {
 	var database schemamodel.Database
 	for _, table := range reply.GetTables() {
 		if err := addSQLTable(&database, table); err != nil {
@@ -85,7 +85,7 @@ func sqlSchemaCommon(reply *protocol.SQLSchema) (schemamodel.Database, error) {
 			Group: role.GetGroup(), MemberOf: slices.Clone(role.GetMemberOf())})
 	}
 	for _, declared := range reply.GetGrants() {
-		grant, err := sqlGrant(declared)
+		grant, err := sqlGrant(declared, selections)
 		if err != nil {
 			return schemamodel.Database{}, err
 		}
@@ -230,7 +230,9 @@ func addSQLView(database *schemamodel.Database, view *protocol.SQLView) error {
 // to case. A target the host model names by a field of its own takes that
 // field; an object kind of [schemamodel.GrantObjectKinds], such as
 // "coordination node", takes OnObject with the kind as the model spells it.
-func sqlGrant(declared *protocol.SQLGrant) (schemamodel.Grant, error) {
+// A provider-owned database-wide kind keeps its literal name because dots
+// do not qualify a schema there.
+func sqlGrant(declared *protocol.SQLGrant, selections *scopeSelections) (schemamodel.Grant, error) {
 	target := declared.GetTarget()
 	grant := schemamodel.Grant{Role: declared.GetRole(), Privileges: slices.Clone(declared.GetPrivileges()), WithOption: declared.GetWithGrantOption(), Comment: declared.GetComment()}
 	if target.GetDatabase() != "" || target.GetCatalog() != "" || len(target.GetPath()) != 0 {
@@ -256,6 +258,15 @@ func sqlGrant(declared *protocol.SQLGrant) (schemamodel.Grant, error) {
 		index := slices.IndexFunc(objects, func(object schemamodel.GrantObjectKind) bool { return strings.EqualFold(object.Kind, kind) })
 		if index < 0 {
 			return schemamodel.Grant{}, unsupported(fmt.Sprintf("a grant on a %q target", target.GetKind()))
+		}
+		if selections != nil {
+			selected, ok := (grantObjects{selected: selections.selected}).kindOf(kind)
+			if ok && selected.declared.GetNaming() == protocol.ScopeSelection_DATABASE_WIDE {
+				if target.GetSchema() != "" {
+					return schemamodel.Grant{}, unsupported(fmt.Sprintf("a database-wide grant target %q qualified by a schema", target.GetName()))
+				}
+				qualified = target.GetName()
+			}
 		}
 		grant.OnObject, grant.ObjectKind = qualified, objects[index].Kind
 	}
