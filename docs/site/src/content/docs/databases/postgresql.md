@@ -979,8 +979,8 @@ partition, and `ALTER INDEX parent_index ATTACH PARTITION copy` for each copy:
   its August 2025 minor releases on, 17.6 and 18 among them, are psql commands that
   declare nothing, and the reader skips them. Any other psql command is refused.
 
-YugabyteDB reads the attachment of a table. Its grammar reads no `ALTER INDEX`
-(stokaro/ptah#5716), so a dump that attaches index copies does not read there yet.
+YugabyteDB reads a dump the same way, and `ALTER INDEX ... RENAME TO` as PostgreSQL
+does.
 
 HCL, DBML, YAML and Go annotations have no spelling for a partition. A source in one
 of them compares the table as it declares it and claims nothing about its parent or
