@@ -169,7 +169,8 @@ func yugabyteDB() descriptor.Dialect {
 		// read. Nobody has measured PostgreSQL's continued and U&'...' strings
 		// on YugabyteDB, so a text that writes one is two tokens and is
 		// refused rather than read by a rule the server may not share.
-		Lexical: descriptor.Lexical{EscapeStrings: true},
+		// 2026.1.2 reads a block comment that holds another as one comment.
+		Lexical: descriptor.Lexical{EscapeStrings: true, NestedComments: true},
 		Reach:   postgresReach(),
 
 		// Database URLs: what internal/atlasurl reads.

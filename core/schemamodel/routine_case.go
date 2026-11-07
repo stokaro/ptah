@@ -37,11 +37,12 @@ func lowerOutsideQuotes(text string) string {
 }
 
 // postgresQuoting is how lowerOutsideQuotes reads quotes: PostgreSQL's
-// standard strings, E-strings, dollar quotes and string constants, which is
-// the lexer mode internal/dialectlexer gives PostgreSQL. A test pins the two
-// together.
+// standard strings, E-strings, dollar quotes, string constants and nested
+// comments, which is the lexer mode internal/dialectlexer gives PostgreSQL. A
+// test pins the two together.
 var postgresQuoting = lexer.Options{
 	StandardStrings:           true,
 	PostgreSQLEscapeStrings:   true,
 	PostgreSQLStringConstants: true,
+	NestedBlockComments:       true,
 }
