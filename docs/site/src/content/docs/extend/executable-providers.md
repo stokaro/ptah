@@ -1328,6 +1328,7 @@ preserve these fields in `provider_diagnostic`. Installation checks use `diagnos
 | `provider_unreadable` | Check file permissions and ensure the path names a regular file. |
 | `provider_untrusted` | For a manifest entry, verify provenance before accepting a different checksum. For a stored provider, run `ptah providers install <engine>`. |
 | `provider_start_failed` | Check the executable platform and startup environment. |
+| `provider_start_timeout` | The provider did not finish its handshake within ten seconds; the message names the provider, its executable and how long it ran. The first start of a new executable can take longer while the system checks it, so run the command again, and if it fails again, run `ptah providers check`. |
 | `provider_incompatible` | Select an artifact with the required identity and contract. For a stored provider whose minimum contract this Ptah does not meet, run `ptah providers install <engine>`. |
 | `provider_identity_mismatch` | Correct the declared engines and aliases after reviewing the artifact. |
 | `provider_target_mismatch` | Make the database target agree with the selected engine. |
