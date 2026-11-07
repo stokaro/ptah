@@ -617,6 +617,15 @@ provider reads from SQL keeps the level it states. Without the feature a
 A planning request does not carry the declared and observed objects as
 context.
 
+With `planning.table-grants`, a planning service that reads whole tables
+receives the grants the read found on each held table, beside the table: every
+grant on the table or on some of its columns, or an empty list marked not
+complete when the read did not describe grants. A plan that replaces a table,
+such as a rebuild a migration file runs later as SQL text, gives the new table
+those grants, except one the same plan revokes. The engine must carry `GRANT`
+common objects. Without the feature the request carries no grants, and a
+rebuild written as text cannot give them back.
+
 With `schema.common-namespaces`, an engine also carries its namespaces, such as
 the schemas of a DuckDB catalog or of Spanner's PostgreSQL interface, as the
 common kind `SCHEMA`. A read lists every schema of its scope, the default one

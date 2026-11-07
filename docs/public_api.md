@@ -472,6 +472,11 @@ indexes by. A bare table reference reaches a table in a schema only when the
 child names no struct or that table's struct, so same-named tables in two
 schemas keep their own children.
 `difftypes.TableObservationFor` assembles comparison-time observations.
+An observation also holds the grants the read found on the table itself, one
+row for each column of a column privilege, and `GrantsDescribed`, which is
+false when the read did not describe grants: an empty list then says nothing
+about the table. A plan that replaces the table reads them to give the new
+table the old one's grants.
 `difftypes.TableRemovals.ObservedReferences` reads the foreign keys the captures
 of removed tables hold between them, so a planner drops a referenced table after
 the tables that reference it, which a declaration that no longer names them

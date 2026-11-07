@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	"github.com/stokaro/ptah/provider-sdk/provider"
 
 	"ptah.run/core/featureplan"
 	"ptah.run/core/objectidentity"
@@ -58,6 +59,9 @@ func (c *planningCapture) table(table featureplan.Table) (*protocol.PlanningTabl
 		result.Current, err = c.observation(table.Subject, table.Current)
 		if err != nil {
 			return nil, err
+		}
+		if c.target.negotiated(provider.TableGrantsFeature) {
+			result.CurrentGrants = planningTableGrants(c.target.engine.GetId(), table.Current)
 		}
 	} else if err := onlyFields(table.Current); err != nil {
 		return nil, err
@@ -209,7 +213,9 @@ func (c *planningCapture) declaration(parent objectidentity.ID, source schemacap
 }
 
 func (c *planningCapture) observation(parent objectidentity.ID, source schemacapture.TableObservation) (*protocol.ObservedTable, error) {
-	if err := onlyFields(source, "Table", "Constraints", "Indexes", "Triggers", "OwnedObjects", "FeatureCoverage"); err != nil {
+	// The grants travel beside the table, in PlanningTable.current_grants; see
+	// planningTableGrants.
+	if err := onlyFields(source, "Table", "Constraints", "Indexes", "Triggers", "OwnedObjects", "FeatureCoverage", "Grants", "GrantsDescribed"); err != nil {
 		return nil, err
 	}
 	table := source.Table

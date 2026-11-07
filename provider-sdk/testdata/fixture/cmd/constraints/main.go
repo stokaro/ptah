@@ -5,7 +5,10 @@
 // builds an enum column where FIXTURE_ENUM_COLUMNS names a form (contract
 // 25.31). Where FIXTURE_TABLE_OWNERSHIP=service its planning service owns the
 // tables with no table setting (contract 25.32), in place of the backend's
-// retention facet. It reads the constraints back from the SQLite tables it writes, in
+// retention facet. Where FIXTURE_TABLE_GRANTS names a mode its read reports one
+// grant on every table, and with the mode listed it lists planning.table-grants
+// and gives a rebuilt table the grants the request carries (contract 25.33).
+// It reads the constraints back from the SQLite tables it writes, in
 // the table text it writes itself, and changes a constraint or an index by
 // rebuilding its table, since SQLite adds no constraint to a table in place.
 // It establishes no support for an official engine.
@@ -84,6 +87,11 @@ func main() {
 		fmt.Fprintln(os.Stderr, "unknown fixture table ownership")
 		os.Exit(1)
 	}
+	grants := os.Getenv("FIXTURE_TABLE_GRANTS")
+	if grants != "" && grants != "listed" && grants != "unlisted" {
+		fmt.Fprintln(os.Stderr, "unknown fixture table grants mode")
+		os.Exit(1)
+	}
 	enumForm := os.Getenv("FIXTURE_ENUM_COLUMNS")
 	enums, known := enumForms[enumForm]
 	if !known {
@@ -127,13 +135,30 @@ func main() {
 		engine.Features = append(engine.Features, provider.TableOwnershipFeature)
 		engine.Planning = []*protocol.ModelPlanning{{Id: "tables", OwnsTables: true, OperationKinds: []string{statementsKind}}}
 	}
+	if grants != "" {
+		// The read reports a grant on every table, which SQLite cannot hold:
+		// GRANT is the only common object the engine carries. Unlisted, the
+		// feature is left out, so a rebuild gives the new table no grant.
+		description.SemanticIdentity += "-grants-" + grants
+		added := []string{provider.CommonObjectsFeature}
+		if grants == "listed" {
+			added = append(added, provider.TableGrantsFeature)
+		}
+		description.Features = append(description.Features, added...)
+		engine.Features = append(engine.Features, added...)
+		engine.CommonObjects = &protocol.CommonObjectSupport{Kinds: []protocol.CommonObjectSupport_Kind{protocol.CommonObjectSupport_GRANT}}
+	}
 	owner := &owner{Provider: &backend.Provider{}, description: description, text: mode == "text", ownsTables: ownership == "service",
-		otherSchemas: mode == "schemas",
-		operation:    &protocol.Envelope{ProviderId: description.GetProviderId(), Kind: statementsKind, SchemaVersion: 1, Encoding: "json", DefinitionSha256: hex.EncodeToString(digest[:])}}
-	err = runtime.Serve(runtime.Server{Description: description, Sessions: owner, Inspector: owner, Renderer: owner, Executor: owner, SQLAnalyzer: owner,
+		otherSchemas: mode == "schemas", grants: grants != "",
+		operation: &protocol.Envelope{ProviderId: description.GetProviderId(), Kind: statementsKind, SchemaVersion: 1, Encoding: "json", DefinitionSha256: hex.EncodeToString(digest[:])}}
+	server := runtime.Server{Description: description, Sessions: owner, Inspector: owner, Renderer: owner, Executor: owner, SQLAnalyzer: owner,
 		ValueNormalizer: owner, SourceDecoder: owner, ValueConverter: owner, FeaturePlanner: owner, TablePreparer: owner, TableCreations: owner, SchemaValidator: owner,
-		Locks: owner, CheckComparer: owner})
-	if err != nil {
+		Locks: owner, CheckComparer: owner}
+	if grants != "" {
+		// An engine that carries common objects serves their preparation.
+		server.CommonObjects = owner
+	}
+	if err := runtime.Serve(server); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
@@ -156,4 +181,6 @@ type owner struct {
 	// otherSchemas reads a schema other than main as one that holds nothing,
 	// where the fixture otherwise refuses the read.
 	otherSchemas bool
+	// grants reports heldGrant on every table the read finds.
+	grants bool
 }

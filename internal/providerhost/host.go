@@ -230,6 +230,10 @@ var hostFeatures = []string{
 	// object of those models; see engine.ObjectComparison.DeclaredKinds and
 	// modelComparer.declaredObjects.
 	provider.DeclaredObjectsFeature,
+	// A planning service receives the grants the read found on each held
+	// table, so a plan that replaces the table can give them back, even in
+	// the text of a migration file; see planningTableGrants.
+	provider.TableGrantsFeature,
 	// A column comparison answers the collation apart from the type, and
 	// the comparison records a changed collation as a change of its own;
 	// see columnAspects and Rules.ColumnCollations.

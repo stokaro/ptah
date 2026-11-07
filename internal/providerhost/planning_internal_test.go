@@ -636,3 +636,95 @@ func TestPlanningRequestOutlinesTheTablesOfAnOutlinedService(t *testing.T) {
 	c.Assert(outlined.Tables[0].Current.GetName(), qt.Equals, "Records")
 	c.Assert(outlined.Tables[0].Action, qt.Equals, protocol.PlanningTable_ALTER)
 }
+
+// grantsPlanningRequest is a request for one altered table that holds the
+// grants rows, as the read described them when described is true.
+func grantsPlanningRequest(rows []catalog.Grant, described bool) featureplan.Request {
+	return featureplan.Request{
+		Target:      "fixture",
+		Identifiers: identifier.Semantics{TableNames: identifier.ComparisonExact, ColumnNames: identifier.ComparisonExact, IndexNames: identifier.ComparisonExact, IndexNamespace: identifier.IndexNamespaceTable},
+		Tables: []featureplan.Table{{
+			Subject: planningParent(),
+			Action:  featureplan.AlterTable,
+			Desired: schemacapture.TableDeclaration{
+				Table:  schemamodel.Table{Name: "Records", Schema: "Main", PrimaryKey: []string{"id"}},
+				Fields: []schemamodel.Field{{Name: "id", Type: "text"}, {Name: "note", Type: "text"}},
+			},
+			Current: schemacapture.TableObservation{
+				Table:  catalog.Table{Name: "Records", Schema: "Main", Columns: []catalog.Column{{Name: "id", DataType: "text"}, {Name: "note", DataType: "text"}}},
+				Grants: rows, GrantsDescribed: described,
+			},
+		}},
+	}
+}
+
+// negotiateTableGrants lists planning.table-grants on both sides of service.
+func negotiateTableGrants(service modelPlanner) {
+	service.target.host.description.Features = append(service.target.host.description.Features, provider.TableGrantsFeature)
+	service.target.engine.Features = append(service.target.engine.Features, provider.TableGrantsFeature)
+}
+
+// Under planning.table-grants a held table carries the grants its read found,
+// the rows of one column privilege joined again into one grant that lists its
+// columns, each naming the table as the observed table beside it names
+// itself.
+func TestPlanningRequestCarriesTheGrantsOfAHeldTable_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	service, _ := planningFixture(c)
+	negotiateTableGrants(service)
+	rows := []catalog.Grant{
+		{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", Schema: "Main", ObjectName: "Records"},
+		{Role: "writer", Privilege: "UPDATE", ObjectType: "TABLE", Schema: "Main", ObjectName: "Records", Column: "id", WithOption: true, GrantedBy: "admin"},
+		{Role: "writer", Privilege: "UPDATE", ObjectType: "TABLE", Schema: "Main", ObjectName: "Records", Column: "note", WithOption: true, GrantedBy: "admin"},
+		{Role: "writer", Privilege: "UPDATE", ObjectType: "TABLE", Schema: "Main", ObjectName: "Records", Column: "note", WithOption: true, GrantedBy: "admin"},
+	}
+
+	wire, err := service.planningRequest(grantsPlanningRequest(rows, true))
+
+	c.Assert(err, qt.IsNil)
+	target := &protocol.Reference{Engine: "fixture", Kind: "table", Schema: "Main", Name: "Records"}
+	want := &protocol.PlanningTableGrants{Complete: true, Grants: []*protocol.ObservedGrant{
+		{Role: "reader", Privilege: "SELECT", Target: target},
+		{Role: "writer", Privilege: "UPDATE", Target: target, Columns: []string{"id", "note"}, WithGrantOption: true, GrantedBy: "admin"},
+	}}
+	c.Assert(proto.Equal(wire.Tables[0].CurrentGrants, want), qt.IsTrue, qt.Commentf("%v", wire.Tables[0].CurrentGrants))
+	c.Assert(wire.Tables[0].Current.GetName(), qt.Equals, "Records")
+	c.Assert(wire.Tables[0].Current.GetSchema(), qt.Equals, "Main")
+}
+
+// A read that did not describe grants sends an empty list marked not
+// complete, which says nothing about the table; a host the provider did not
+// negotiate the feature with sends none, as before it.
+func TestPlanningRequestLeavesUnknownOrUnnegotiatedGrantsOut_HappyPath(t *testing.T) {
+	rows := []catalog.Grant{{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", Schema: "Main", ObjectName: "Records"}}
+	t.Run("a read that did not describe grants", func(t *testing.T) {
+		c := qt.New(t)
+		service, _ := planningFixture(c)
+		negotiateTableGrants(service)
+
+		wire, err := service.planningRequest(grantsPlanningRequest(nil, false))
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(proto.Equal(wire.Tables[0].CurrentGrants, &protocol.PlanningTableGrants{}), qt.IsTrue)
+	})
+	t.Run("a provider that does not list the feature", func(t *testing.T) {
+		c := qt.New(t)
+		service, _ := planningFixture(c)
+
+		wire, err := service.planningRequest(grantsPlanningRequest(rows, true))
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(wire.Tables[0].CurrentGrants, qt.IsNil)
+	})
+	t.Run("a service that reads outlines", func(t *testing.T) {
+		c := qt.New(t)
+		service, _ := planningFixture(c)
+		negotiateTableGrants(service)
+		service.declaration = &protocol.ModelPlanning{Id: "plan", Tables: protocol.PlanningTables_PLANNING_TABLES_OUTLINED}
+
+		wire, err := service.planningRequest(grantsPlanningRequest(rows, true))
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(wire.Tables[0].CurrentGrants, qt.IsNil)
+	})
+}
