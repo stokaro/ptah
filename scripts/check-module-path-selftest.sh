@@ -108,10 +108,26 @@ if ! (cd "$work_dir/repo" && bash scripts/check-module-path.sh) >"$work_dir/out"
 fi
 printf '  %-46s accepted\n' "the independent SDK"
 printf 'module example.invalid/other\n\ngo 1.26.5\n' >"$work_dir/repo/provider-sdk/go.mod"
-assert_rejected "a different SDK identity" "provider SDK must declare"
+assert_rejected "a different SDK identity" "provider-sdk must declare"
 write_repo
 printf 'module github.com/stokaro/ptah/provider-sdk\n\ngo 1.26.5\n' >"$work_dir/repo/nested/go.mod"
 assert_rejected "SDK identity in another module" "every module here belongs to"
+
+# The SQL syntax module is independent the same way, at its own directory.
+write_repo
+mkdir -p "$work_dir/repo/sqlsyntax"
+printf 'module github.com/stokaro/ptah/sqlsyntax\n\ngo 1.26.5\n' >"$work_dir/repo/sqlsyntax/go.mod"
+if ! (cd "$work_dir/repo" && bash scripts/check-module-path.sh) >"$work_dir/out" 2>"$work_dir/err"; then
+	echo 'module path self-test: the independent syntax module was rejected:' >&2
+	cat "$work_dir/err" >&2
+	exit 1
+fi
+printf '  %-46s accepted\n' "the independent syntax module"
+printf 'module example.invalid/other\n\ngo 1.26.5\n' >"$work_dir/repo/sqlsyntax/go.mod"
+assert_rejected "a different syntax module identity" "sqlsyntax must declare"
+write_repo
+printf 'module github.com/stokaro/ptah/sqlsyntax\n\ngo 1.26.5\n' >"$work_dir/repo/nested/go.mod"
+assert_rejected "syntax module identity in another module" "every module here belongs to"
 
 # 6. Not staged. Nothing here stages the fixture, which is the whole point.
 write_repo
@@ -138,4 +154,4 @@ grep -qF "is not reporting on it" "$work_dir/err" || {
 }
 printf '  %-46s rejected\n' "a corpus too small to be this repository"
 
-echo "check-module-path-selftest: OK (9 broken rules each noticed, controls accepted)"
+echo "check-module-path-selftest: OK (11 broken rules each noticed, controls accepted)"
