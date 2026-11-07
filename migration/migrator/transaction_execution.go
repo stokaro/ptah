@@ -62,7 +62,7 @@ func (m *Migrator) runTransactionalMigration(ctx context.Context, migration *Mig
 	if err := run.record(ctx, txConn); err != nil {
 		return rollback(err, fmt.Sprintf("%s %d", run.recordFailure, migration.Version))
 	}
-	if err := commitMigrationTransaction(tx); err != nil {
+	if err := m.commitMigrationTransaction(tx, sqlText); err != nil {
 		return fail(migrationFailureAfterCommit(migration.Version, err, tx), fmt.Sprintf("failed to commit transaction for migration %d", migration.Version))
 	}
 	m.logger.Info(run.success, "version", migration.Version, "description", migration.Description)

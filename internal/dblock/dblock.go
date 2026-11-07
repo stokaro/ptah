@@ -276,17 +276,38 @@ func (l *Lock) Guard(ctx context.Context) (context.Context, func()) {
 // what the work reported when that was something other than the loss or the
 // cancellation the loss sent. Settle before releasing the lock: a release is
 // not a loss, and a released lock reports none.
+//
+// The result still answers errors.As for what the work reported, whether or not
+// it says so, so a caller can read where the work stopped. errors.Is sees the
+// loss alone: a statement the loss canceled is not a run somebody interrupted.
 func (l *Lock) Settle(subject, work string, workErr error) error {
 	lostErr := l.Err()
 	if lostErr == nil {
 		return workErr
 	}
 	lostErr = fmt.Errorf("%s: %w; %s stopped there", subject, lostErr, work)
-	if workErr != nil && !IsLost(workErr) && !errors.Is(workErr, context.Canceled) {
-		return fmt.Errorf("%w (%s reported: %v)", lostErr, work, workErr)
+	if workErr == nil {
+		return lostErr
 	}
-	return lostErr
+	if !IsLost(workErr) && !errors.Is(workErr, context.Canceled) {
+		lostErr = fmt.Errorf("%w (%s reported: %v)", lostErr, work, workErr)
+	}
+	return &settledLossError{loss: lostErr, work: workErr}
 }
+
+// settledLossError is the loss of a lock, with the error of the work that ran
+// under it. See [Lock.Settle].
+type settledLossError struct {
+	loss error
+	work error
+}
+
+func (e *settledLossError) Error() string { return e.loss.Error() }
+
+func (e *settledLossError) Unwrap() error { return e.loss }
+
+// As reaches what the work reported.
+func (e *settledLossError) As(target any) bool { return errors.As(e.work, target) }
 
 // Name returns the advisory lock name this lock was acquired under, after the
 // trimming [Acquire] applies. It is recorded on the no-op path too, so a

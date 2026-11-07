@@ -162,7 +162,7 @@ var hostFeatures = []string{
 	// Inspection reports a provider table's primary key in key order, which
 	// the catalog keeps as the table's PRIMARY KEY constraint, and the
 	// planner hands a change of it to the table's owner as an alteration of
-	// the table; see reader.tables and commonPlanner.keyChanges.
+	// the table; see reader.tables and commonPlanner.constraintChanges.
 	provider.ObservedPrimaryKeysFeature,
 	provider.PrimaryKeyChangesFeature,
 	// Inspection reports the foreign keys and CHECKs a provider table holds,

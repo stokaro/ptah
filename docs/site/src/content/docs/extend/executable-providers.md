@@ -150,6 +150,10 @@ constraint, and no common step stands for the change. The provider plans it,
 for example as a rebuild, or refuses it in its own words. Without the feature
 the host refuses a key change before it plans, naming the table.
 
+A provider that owns its tables receives the foreign keys and CHECK
+constraints a created table declares in that table's declaration, and creates
+them with the table; a dropped table takes its constraints with it.
+
 With `schema.observed-constraints`, a read reports the foreign keys and CHECKs
 each table holds, and the host keeps them as the table's constraints: an
 export writes them, and the comparison compares them with the declared ones.
@@ -158,10 +162,8 @@ compares them as it does for every engine. A provider that owns its tables and
 lists `planning.constraint-changes` receives a change of one on a table the
 plan keeps as an altered table: the desired table carries the declared
 constraints and the current table the held ones, and no common step stands for
-the change. A constraint of a created table travels in its declaration, and
-one of a removed table leaves with it. Without the feature the host refuses a
-change of a kept table's constraint before it plans, naming the constraint and
-the table.
+the change. Without the feature the host refuses a change of a kept table's
+constraint before it plans, naming the constraint and the table.
 
 A server often keeps a CHECK in a form of its own, with literals cast or a
 list rewritten. With `schema.check-equivalence`, the host asks the provider
@@ -264,7 +266,9 @@ declaration does not establish that its migration can be planned or applied.
 `schema.declarations` gives `ptah schema render` an offline creation path for
 provider-owned objects. The host validates the whole schema, sends complete
 captured tables to their creation planners, and asks declaration planners for
-standalone objects and assigned table children. This path requires
+standalone objects and assigned table children. A provider that owns its
+tables takes the same path without declaration services, and so does the SQL
+that `ptah db read` writes for such an engine. This path requires
 `schema.validate` and uses the caller's capability facts. It opens no database
 session and makes no claim about objects that already exist.
 
@@ -1268,7 +1272,9 @@ it reports `"outcome": "failed"`, because no unit has left the host: a transacti
 the provider refuses to begin or dies beginning, an input variable that is not
 set, a lock lost before the request. A reply of `NOT_STARTED` comes after it and
 stays `unknown`, because the units left the host and the provider's answer is the
-only evidence they did not run.
+only evidence they did not run. The document's `failure` names the first unit the
+provider did not confirm, and carries no code, because the protocol has no field for
+one; see [Where a run stopped](../../reference/exit-codes/#where-a-run-stopped).
 
 YAML loading accepts document and table keys explicitly declared by the selected
 provider. It preserves exact numbers and source locations and requires complete

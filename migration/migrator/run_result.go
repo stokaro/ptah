@@ -4,10 +4,8 @@ import (
 	"errors"
 	"slices"
 
-	mysqldriver "github.com/go-sql-driver/mysql"
-	"github.com/jackc/pgx/v5/pgconn"
-
 	"ptah.run/internal/errorkind"
+	"ptah.run/internal/servercode"
 )
 
 // RunContractVersion is the version of the machine-readable migration run
@@ -82,9 +80,11 @@ type RunResult struct {
 	// Error is the run's error, present whenever the run failed. It is not
 	// evidence about the database.
 	Error *ErrorReport `json:"error,omitempty"`
-	// Failure names the statement the run stopped at and the code the database
-	// answered with. It is present only when a statement of a migration was
-	// sent and failed; a run that stopped before any statement ran has none.
+	// Failure names the statement or the commit the run stopped at and the code
+	// the database answered with. It is present only when a statement of a
+	// migration was sent and failed, or the commit that ends them did. A run that
+	// stopped before any statement ran has none, and neither does one that stopped
+	// at something else: a write to the revision table, a check, a lost lock.
 	Failure *RunFailure `json:"failure,omitempty"`
 	// MigrationLog says which of the run's entries reached the migration log and
 	// which did not. It is absent when the run keeps no log: the log is turned
@@ -113,14 +113,16 @@ type ErrorReport struct {
 	Message string `json:"message"`
 }
 
-// RunFailure identifies the statement a failed run stopped at, and the code
-// the database answered with.
+// RunFailure identifies the statement or the commit a failed run stopped at,
+// and the code the database answered with.
 //
 // It carries no text. The message of [RunResult.Error] quotes what the
 // database said, and that can include a row of data or the statement itself; a
 // caller that must not publish data reads this instead.
 type RunFailure struct {
-	// Version is the version of the migration that failed.
+	// Version is the version of the migration that failed. One transaction for
+	// the whole run has one commit, and a failure of that commit names the last
+	// migration in it.
 	Version int64 `json:"version"`
 	// VersionKey is that migration's exact revision identity, spelled as
 	// [RunResult.PlannedKeys] spells it. It is always present, because an
@@ -128,15 +130,21 @@ type RunFailure struct {
 	VersionKey string `json:"version_key"`
 	// Statement is the 1-based position of the failed statement in the
 	// migration body, and Statements is how many statements the body holds.
+	// Statement is zero when Commit is set: no statement failed.
 	Statement  int `json:"statement"`
 	Statements int `json:"statements"`
+	// Commit reports that the statements ran and the commit that ends them
+	// failed, as a deferred constraint does.
+	Commit bool `json:"commit,omitempty"`
 	// SQLState is the SQLSTATE the server answered with, read from a
 	// PostgreSQL-protocol or MySQL-protocol driver error. It is empty when the
 	// server gave no answer, such as after a lost connection or a canceled
-	// statement, and on other engines.
+	// statement, and on an engine with no SQLSTATE, such as SQL Server.
 	SQLState string `json:"sqlstate,omitempty"`
-	// ErrorNumber is the server's error number on the MySQL protocol, such as
-	// 1146 for a table that does not exist. It is zero on other engines.
+	// ErrorNumber is the server's error number, such as 1146 for a table that
+	// does not exist on MySQL and 208 on SQL Server. It is read from a
+	// MySQL-protocol, SQL Server, Oracle or ClickHouse driver error, means
+	// something only on that engine, and is zero on other engines.
 	ErrorNumber int `json:"error_number,omitempty"`
 }
 
@@ -277,43 +285,31 @@ func appliedFromPlan(planned []int64, plannedKeys []string, after *MigrationStat
 	return versions, keys
 }
 
-// runFailure reads the failed statement out of a run's error.
+// runFailure reads the failed statement or commit out of a run's error.
 //
 // Both halves have to be in the chain: the migration the migrator was running,
-// and a statement it sent. A refusal raised before any statement ran -- the
-// transaction preflight, a statement validator -- names a statement too, but
-// the database never saw it, so it is not a failure the database answered.
+// and a statement it sent or a commit it asked for. A refusal raised before any
+// statement ran -- the transaction preflight, a statement validator -- names a
+// statement too, but the database never saw it, so it is not a failure the
+// database answered.
 func runFailure(err error) *RunFailure {
 	migration, ok := errors.AsType[*failedMigrationError](err)
 	if !ok {
 		return nil
 	}
+	failure := &RunFailure{Version: migration.version, VersionKey: migration.versionKey}
+	if commit, ok := errors.AsType[*failedCommitError](migration.err); ok {
+		failure.Statements = commit.statements
+		failure.Commit = true
+		failure.SQLState, failure.ErrorNumber = servercode.Read(commit.err)
+		return failure
+	}
 	statement, ok := errors.AsType[*MigrationExecutionError](migration.err)
 	if !ok || !statement.sent {
 		return nil
 	}
-	failure := &RunFailure{
-		Version:    migration.version,
-		VersionKey: migration.versionKey,
-		Statement:  statement.StatementIndex,
-		Statements: statement.Total,
-	}
-	failure.SQLState, failure.ErrorNumber = serverErrorCodes(statement.Err)
+	failure.Statement = statement.StatementIndex
+	failure.Statements = statement.Total
+	failure.SQLState, failure.ErrorNumber = servercode.Read(statement.Err)
 	return failure
-}
-
-// serverErrorCodes reads the SQLSTATE and the error number a server answered
-// with out of a driver's error. Both are empty when the server gave no answer,
-// and on an engine whose driver error carries neither.
-func serverErrorCodes(err error) (sqlState string, errorNumber int) {
-	if serverErr, ok := errors.AsType[*pgconn.PgError](err); ok {
-		sqlState = serverErr.Code
-	}
-	if serverErr, ok := errors.AsType[*mysqldriver.MySQLError](err); ok {
-		errorNumber = int(serverErr.Number)
-		if serverErr.SQLState != [5]byte{} {
-			sqlState = string(serverErr.SQLState[:])
-		}
-	}
-	return sqlState, errorNumber
 }

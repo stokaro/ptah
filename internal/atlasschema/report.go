@@ -7,10 +7,13 @@ import (
 	digest "github.com/opencontainers/go-digest"
 
 	"ptah.run/core/renderer"
+	"ptah.run/dbschema"
 	"ptah.run/internal/errorkind"
 	"ptah.run/internal/planrefusal"
 	"ptah.run/internal/providerdiagnostic"
+	"ptah.run/internal/servercode"
 	"ptah.run/internal/txrequire"
+	"ptah.run/migration/migrator"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -91,10 +94,11 @@ const (
 	// error says why.
 	ApplyOutcomeFailed ApplyOutcome = "failed"
 	// ApplyOutcomeUnknown means the statements were sent to the database and
-	// the run returned an error. Nothing in the report says how far they got:
-	// with a transaction the database may have rolled them all back, without
-	// one it may hold some of them, and a lost connection hides even that.
-	// Read the database before deciding anything.
+	// the run returned an error. The report's [ApplyFailure] says where the run
+	// stopped, and nothing in the report says what the database holds: with a
+	// transaction it may have rolled them all back, without one it may hold some
+	// of them, and a lost connection hides even that. Read the database before
+	// deciding anything.
 	ApplyOutcomeUnknown ApplyOutcome = "unknown"
 )
 
@@ -296,10 +300,52 @@ type ApplyReport struct {
 	// unknown: its kind, when the failure is one [errorkind] names, and the
 	// sentence the command prints on standard error.
 	Error *errorkind.Report `json:"error,omitempty"`
+	// Failure names the unit or the commit the run stopped at and the code the
+	// database answered with. It is present only when Outcome is unknown and a
+	// statement or the commit failed. A run that stopped before any statement
+	// left has none, and neither does one that stopped at something else, such as
+	// a lock lost after every statement succeeded.
+	Failure *ApplyFailure `json:"failure,omitempty"`
 	// ProviderDiagnostic preserves structured provider setup and trust failures.
 	ProviderDiagnostic *providerdiagnostic.Diagnostic `json:"provider_diagnostic,omitempty"`
 	// SchemaDiagnostics is [PlanReport.SchemaDiagnostics] for this run.
 	SchemaDiagnostics []providerdiagnostic.SchemaDiagnostic `json:"schema_diagnostics,omitempty"`
+}
+
+// ApplyFailure identifies the unit or the commit a dispatched apply stopped at,
+// and the code the database answered with.
+//
+// It carries no text. The message of [ApplyReport.Error] quotes what the database
+// said, and that can include a row of data or the statement itself; a caller that
+// must not publish data reads this instead. It says where the run stopped, which
+// is not what the database holds: see [ApplyOutcomeUnknown].
+type ApplyFailure struct {
+	// Statement is the 1-based position in [ApplyReport.Units] of the unit the run
+	// stopped at, and Statements is how many entries Units holds. Each entry is
+	// one request to the database, however many changes the planner merged into it
+	// or split out of it, so Units[Statement-1] is the one that failed.
+	//
+	// An executable provider reports a confirmed prefix rather than a failed unit,
+	// so there Statement is the first unit it did not confirm: the provider
+	// stopped there or later. Statement is zero when no unit is to blame: the
+	// commit failed, or the provider confirmed every unit and its answer was still
+	// not a success.
+	Statement  int `json:"statement"`
+	Statements int `json:"statements"`
+	// Commit reports that every unit ran and the commit that ends them failed, as
+	// a deferred constraint does.
+	Commit bool `json:"commit,omitempty"`
+	// SQLState is the SQLSTATE the server answered with, read from a
+	// PostgreSQL-protocol or MySQL-protocol driver error. It is empty when the
+	// server gave no answer, such as after a lost connection or a canceled
+	// statement, on an engine with no SQLSTATE, such as SQL Server, and from an
+	// executable provider, whose protocol has no field for one.
+	SQLState string `json:"sqlstate,omitempty"`
+	// ErrorNumber is the server's error number, such as 1062 for a duplicate key
+	// on MySQL and 2627 on SQL Server. It is read from a MySQL-protocol, SQL
+	// Server, Oracle or ClickHouse driver error, means something only on that
+	// engine, and is zero everywhere else.
+	ErrorNumber int `json:"error_number,omitempty"`
 }
 
 // ApplyEvidence is what a caller saw of one `schema apply` run.
@@ -359,6 +405,7 @@ func NewApplyReport(evidence ApplyEvidence) ApplyReport {
 	report.SchemaDiagnostics = schemaDiagnostics(evidence.Err)
 	if evidence.Dispatched {
 		report.Outcome = ApplyOutcomeUnknown
+		report.Failure = applyFailure(evidence.Err)
 		return report
 	}
 	report.Refusal = refusalFor(evidence.Err)
@@ -367,6 +414,50 @@ func NewApplyReport(evidence ApplyEvidence) ApplyReport {
 		report.Outcome = ApplyOutcomeRefused
 	}
 	return report
+}
+
+// applyFailure reads where a dispatched run stopped out of its error, and nil
+// when no statement and no commit failed.
+//
+// It is asked only after dispatch. Before dispatch an error can name a statement
+// too, a transaction preflight or a failed rehearsal on the dev database, and the
+// target never saw it.
+//
+// The codes are read off the failing step's own error, because a rollback's
+// failure joined beside it is not the answer to that step.
+func applyFailure(err error) *ApplyFailure {
+	failure := applyFailureAt(err)
+	if failure == nil {
+		return nil
+	}
+	if listed, ok := errors.AsType[*listedStatementsError](err); ok {
+		failure.Statement = listed.position(failure.Statement)
+		failure.Statements = listed.total
+	}
+	return failure
+}
+
+// applyFailureAt is the failure err names, in positions among the units the run
+// executed.
+func applyFailureAt(err error) *ApplyFailure {
+	if commit, ok := errors.AsType[*failedCommitError](err); ok {
+		failure := &ApplyFailure{Statements: commit.statements, Commit: true}
+		failure.SQLState, failure.ErrorNumber = servercode.Read(commit.err)
+		return failure
+	}
+	if statement, ok := errors.AsType[*migrator.MigrationExecutionError](err); ok {
+		failure := &ApplyFailure{Statement: statement.StatementIndex, Statements: statement.Total}
+		failure.SQLState, failure.ErrorNumber = servercode.Read(statement.Err)
+		return failure
+	}
+	if batch, ok := errors.AsType[*dbschema.UnitExecutionError](err); ok {
+		failure := &ApplyFailure{Statements: batch.Total}
+		if batch.Applied < batch.Total {
+			failure.Statement = batch.Applied + 1
+		}
+		return failure
+	}
+	return nil
 }
 
 // schemaDiagnostics returns every diagnostic of a provider's refusal of the SQL

@@ -78,11 +78,12 @@ func InspectionValues(description *protocol.Description, request *protocol.Inspe
 }
 
 // validateInspectedTables checks what a snapshot says about its tables beyond
-// their facets: the common columns, primary keys and indexes it observed, and
-// the tables it found and does not describe.
+// their facets: the common columns, primary keys, indexes and constraints it
+// observed, and the tables it found and does not describe.
 func validateInspectedTables(description *protocol.Description, engine *protocol.Engine, snapshot *protocol.Schema) error {
 	for _, check := range []func(*protocol.Description, *protocol.Engine, *protocol.Schema) error{
-		validateInspectedColumns, validateInspectedPrimaryKeys, validateInspectedIndexes, validateUnreadTables,
+		validateInspectedColumns, validateInspectedPrimaryKeys, validateInspectedIndexes, validateInspectedIndexNulls, validateInspectedConstraints,
+		validateUnreadTables,
 	} {
 		if err := check(description, engine, snapshot); err != nil {
 			return err

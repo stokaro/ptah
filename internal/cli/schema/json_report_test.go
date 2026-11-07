@@ -466,6 +466,7 @@ func TestSchemaApplyJSONReportsAnExecutionFailureAsUnknown(t *testing.T) {
 		PlanDigest:      digest.FromBytes(document).String(),
 		Units:           atlasschema.SQLApplyUnitReports(plan.StatementSQL()),
 		Error:           &errorkind.Report{Message: err.Error()},
+		Failure:         &atlasschema.ApplyFailure{Statement: 2, Statements: 2},
 	})
 	c.Assert(stderr, qt.Not(qt.Contains), "Schema apply completed successfully.")
 }

@@ -338,6 +338,10 @@ type Options struct {
 	// here, because a run that proved nothing and found nothing is the one
 	// answer this family must never give.
 	RequireOnline bool
+	// Unparsed selects the statements rule AC102 reports when the SQL parser
+	// could not read them. The zero value reports none, for a caller whose
+	// statements a server reads next or that wrote them itself.
+	Unparsed UnparsedScope
 	// Baseline carries the schema state each analyzed version starts from,
 	// normally read from the dev database after replaying the migrations that
 	// precede that version. Empty analyzes SQL text alone, which is what every
@@ -852,6 +856,36 @@ func nativeNoLintTargets(registered map[string]struct{}) func(string) []atlaslin
 
 func isNoLintSeparator(r rune) bool {
 	return strings.ContainsRune(",;:/*)([]{}\"'` \t\r\n", r)
+}
+
+// UnparsedScope says which statements of a run no server reads, so that a parse
+// failure on one of them is the only thing anyone will learn about it.
+//
+// A parse failure does not say the statement is wrong. The parser refuses valid
+// SQL it does not model as well as text that is no SQL at all, and the two read
+// alike to it, so the answer is a report rather than a refusal.
+type UnparsedScope uint8
+
+const (
+	// UnparsedNone reports no statement. It is the zero value.
+	UnparsedNone UnparsedScope = iota
+	// UnparsedDown reports the down files alone, for a run that replays the up
+	// files on a dev database, which never runs a down file.
+	UnparsedDown
+	// UnparsedAll reports every statement, for a run with no dev database.
+	UnparsedAll
+)
+
+// covers reports whether the statements of file are in the scope.
+func (s UnparsedScope) covers(file *File) bool {
+	switch s {
+	case UnparsedAll:
+		return true
+	case UnparsedDown:
+		return file.IsDown
+	default:
+		return false
+	}
 }
 
 // onlineRuleSelected reports whether an ON rule may run.

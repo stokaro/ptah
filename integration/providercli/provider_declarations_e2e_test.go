@@ -76,3 +76,21 @@ func TestProviderAuthoredRefusalsDiscardTheCompleteSchema(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, context.Canceled)
 	c.Assert(rendered, qt.DeepEquals, renderer.SchemaResult{})
 }
+
+// A provider that owns the lifecycle of its tables and validates a schema
+// renders the whole schema through its planning service, as a plan that
+// creates every table, though it declares no declaration service: the table
+// creation is the owner's, and the host has no common table to render.
+// Without it, a read of such an engine could not be written as SQL: the
+// target had no schema rendering service.
+func TestProviderOwningTablesRendersAnAuthoredSchema(t *testing.T) {
+	c := qt.New(t)
+	_, runtime := yamlProviderEnvironment(c, "operation-models", []string{"FIXTURE_RENDER_MODE=owned-comments", "FIXTURE_SCHEMA_VALIDATION=1"})
+	request := renderer.SchemaRequest{Target: "fixture", Capabilities: unwrappedOperationTarget(), Identifiers: identifier.Semantics{DefaultSchema: "main",
+		TableNames: identifier.ComparisonExact, ColumnNames: identifier.ComparisonExact, IndexNames: identifier.ComparisonExact, IndexNamespace: identifier.IndexNamespaceTable},
+		Schema: &schemamodel.Database{Tables: []schemamodel.Table{{Name: "users", Schema: "main", StructName: "Users"}},
+			Fields: []schemamodel.Field{{StructName: "Users", Name: "id", Type: "INTEGER", Primary: true}}}}
+	rendered, err := runtime.RenderSchema(c.Context(), request)
+	c.Assert(err, qt.IsNil)
+	c.Assert(rendered.Statements, qt.DeepEquals, []string{`CREATE TABLE "users" ("id" INTEGER NOT NULL PRIMARY KEY);`})
+}
