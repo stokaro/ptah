@@ -83,6 +83,13 @@ for file-to-file comparison. Missing facts refuse the operation; they do not
 select a built-in parser or a live spelling probe. Domain identities and
 generated expressions remain separately owned.
 
+With `schema.column-collations` as well, the host also asks each pair's
+collation, and the provider answers it apart from the type: a column whose
+collation alone changes has a collation change, which a plan and a diff name as
+such, and no type change. Without the feature the host asks no collation, and a
+provider that compares one compares it inside the type, so the change reads as
+a type change.
+
 Providers can negotiate `schema.observed-columns` to return complete common
 column facts during inspection. The host preserves type metadata, default
 presence, generated expressions, identity and sequence settings, comments, and
@@ -560,6 +567,13 @@ the engine. The work is split this way:
   Ptah creates is a step of its own after the table. A declaration is validated
   by rendering it, so the provider refuses there an object it cannot hold, and
   the error names the render.
+
+With `schema.view-check-options`, a declared view states the level of its
+check option. Ptah's view model holds no level, so a view with a check option
+reaches the provider as `CASCADED`, which is what `WITH CHECK OPTION` means
+without a level. A view a provider reads from SQL with `WITH LOCAL CHECK
+OPTION` is refused by name rather than kept as the stricter `CASCADED` check.
+Without the feature a `LOCAL` view is refused before it is sent.
 
 A planning request does not carry the declared and observed objects as
 context.

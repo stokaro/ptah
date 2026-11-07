@@ -72,7 +72,7 @@ func TestColumnOwnerReceivesFormattedTypesOutsideDomainTargets(t *testing.T) {
 				FormattedType: test.typeName, DomainName: test.domain, IsNullable: "NO", OrdinalPosition: 1}}}}}
 			owner := &columnRouteOwner{}
 			facts, err := compare.ResolveColumnFacts(c.Context(), desired, current, "fixture", identifier.Semantics{},
-				test.caps, nil, owner)
+				test.caps, nil, schemacomparison.Rules{ColumnService: owner})
 			c.Assert(err, qt.IsNil)
 			c.Assert(owner.request.Tables, qt.HasLen, 1)
 			c.Assert(owner.request.Tables[0].Pairs, qt.HasLen, 1)
@@ -80,6 +80,41 @@ func TestColumnOwnerReceivesFormattedTypesOutsideDomainTargets(t *testing.T) {
 			c.Assert(slices.Contains(pair.Aspects, schemacomparison.ColumnType), qt.Equals, test.ownedType)
 			_, accepted := facts.Compared[pair.Desired.Key()][schemacomparison.ColumnType]
 			c.Assert(accepted, qt.Equals, test.ownedType)
+		})
+	}
+}
+
+// An owner that answers the collation is asked it for each pair, after the
+// shared aspects, and its receipt is accepted beside them; one that does not
+// is asked none.
+func TestColumnOwnerIsAskedTheCollationItAnswers(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name       string
+		collations bool
+		want       []schemacomparison.ColumnAspect
+	}{
+		{"an owner that answers the collation", true,
+			[]schemacomparison.ColumnAspect{schemacomparison.ColumnDefault, schemacomparison.ColumnNullability, schemacomparison.ColumnType, schemacomparison.ColumnCollation}},
+		{"an owner that does not", false,
+			[]schemacomparison.ColumnAspect{schemacomparison.ColumnDefault, schemacomparison.ColumnNullability, schemacomparison.ColumnType}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			desired := &schemamodel.Database{Tables: []schemamodel.Table{{Name: "items", StructName: "Item"}},
+				Fields: []schemamodel.Field{{StructName: "Item", Name: "name", Type: "VARCHAR", Collate: "NOCASE"}}}
+			current := &catalog.Database{Tables: []catalog.Table{{Name: "items", Columns: []catalog.Column{{Name: "name", DataType: "VARCHAR",
+				IsNullable: "YES", OrdinalPosition: 1}}}}}
+			owner := &columnRouteOwner{}
+
+			facts, err := compare.ResolveColumnFacts(c.Context(), desired, current, "fixture", identifier.Semantics{},
+				capability.Capabilities{}, nil, schemacomparison.Rules{ColumnService: owner, ColumnCollations: test.collations})
+
+			c.Assert(err, qt.IsNil)
+			pair := owner.request.Tables[0].Pairs[0]
+			c.Assert(pair.Aspects, qt.DeepEquals, test.want)
+			_, accepted := facts.Compared[pair.Desired.Key()][schemacomparison.ColumnCollation]
+			c.Assert(accepted, qt.Equals, test.collations)
 		})
 	}
 }
