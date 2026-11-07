@@ -83,7 +83,23 @@ func (t *target) Render(ctx context.Context, request renderer.Request) (renderer
 		}
 		fragments[indexes[i]] = fragment
 	}
-	return renderer.Result{Complete: true, Fragments: fragments, ExecutableUnits: true}, nil
+	return renderer.Result{Complete: true, Fragments: fragments, ExecutableUnits: true, Omissions: t.renderedOmissions(result.GetOmissions())}, nil
+}
+
+// renderedOmissions are the declarations a provider's render left out
+// (provider.RenderOmissionsFeature), each with the engine as the target the
+// render was for, in the provider's order. The SDK client accepts omissions
+// only from an engine that negotiated the feature, in a complete reply.
+func (t *target) renderedOmissions(omissions []*protocol.RenderOmission) []renderer.Omission {
+	if len(omissions) == 0 {
+		return nil
+	}
+	result := make([]renderer.Omission, len(omissions))
+	for i, omission := range omissions {
+		result[i] = renderer.Omission{Dialect: t.engine.GetId(), Reason: omission.GetReason(), Kind: omission.GetKind(), Name: omission.GetName(),
+			Property: omission.GetProperty(), Detail: omission.GetDetail(), Remedy: omission.GetRemedy()}
+	}
+	return result
 }
 
 // textRefusal reports a change the provider performs only through a native

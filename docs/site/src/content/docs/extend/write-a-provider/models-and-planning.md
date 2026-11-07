@@ -190,7 +190,9 @@ operations. Every command that plans asks for the exact statement style, so a
 provider that plans lists `planning.statement-style`. Where Ptah writes text,
 such as a migration file or `ptah schema render`, it asks `Render` for the text
 form under `render.text-units`, and a change the engine makes only through a
-native call is refused there by name.
+native call is refused there by name. A render that goes on without a
+declaration the engine keeps only in part, such as a type's length, reports it
+under `render.omissions`, as a built-in engine's render does.
 
 The README's
 [Table policies (latest development source)](https://github.com/stokaro/ptah/blob/master/provider-sdk/README.md#table-policies),

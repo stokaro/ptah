@@ -138,7 +138,7 @@ func (t *target) renderDeclarations(ctx context.Context, request renderer.Schema
 	if err != nil {
 		return renderer.SchemaResult{}, err
 	}
-	return renderer.SchemaResult{Complete: true, Statements: statements}, nil
+	return renderer.SchemaResult{Complete: true, Statements: statements, Omissions: rendered.Omissions}, nil
 }
 
 // takeDeclaredObjectPermissions takes out of the common statements that follow

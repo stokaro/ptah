@@ -239,6 +239,10 @@ var hostFeatures = []string{
 	// keeps the level it states; see target.declaredCheckOption,
 	// target.createdCheckOption and localCheckOption.
 	provider.ViewCheckOptionsFeature,
+	// A complete render reports the declarations it left out, which the host
+	// carries into the render's result as a built-in engine's omissions; see
+	// target.renderedOmissions.
+	provider.RenderOmissionsFeature,
 	// A read reports the ledger the engine's seed service keeps as reserved
 	// storage, which every comparison leaves out, so a plan never drops it;
 	// see reader.reservedNames.

@@ -352,6 +352,15 @@ receipt, an unclaimed table creation, a dependency cycle, or a provider refusal
 returns no SQL prefix. A provider-only operation without a text form cannot
 appear in a rendered schema.
 
+A render can go on without a declaration the engine keeps only in part, such as
+the length of a column type the engine does not have. A provider that lists
+`render.omissions` reports each one, and Ptah carries it into the render's
+result as it carries a built-in engine's: a caller that must not lose anything,
+such as a comparison probe, refuses the rendering, and an embedder of the
+engine runtime reads the list beside the statements. `ptah schema render`
+writes the statements alone, as it does for a built-in engine. A provider
+without the feature renders what it can and reports nothing.
+
 Declared rows (`//ptah:schema:data`) and seed files reach a provider through
 four services. The host keeps the row diff, the order across tables, protected
 tables and the saved plan.
