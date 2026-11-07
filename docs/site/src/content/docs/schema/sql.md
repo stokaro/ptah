@@ -287,10 +287,16 @@ ALTER TABLE items ALTER COLUMN note TYPE varchar(200);
 ALTER TABLE items DROP COLUMN legacy;
 ```
 
-`DROP TABLE` and `DROP INDEX` remove the object and what the server drops with
-it. A drop the server refuses is refused: an undeclared object without
-`IF EXISTS`, a table a foreign key or a PostgreSQL view still reads, the index
-behind a constraint, and the last index a MySQL or MariaDB foreign key needs.
+`DROP TABLE`, `DROP INDEX`, `DROP VIEW` and `DROP MATERIALIZED VIEW` remove the
+object and what the server drops with it. A drop the server refuses is refused:
+an undeclared object without `IF EXISTS`, a table a foreign key or a PostgreSQL
+view still reads, a view another view reads there, the index behind a
+constraint, and the last index a MySQL or MariaDB foreign key needs.
+
+`DROP TRIGGER`, `DROP FUNCTION`, `DROP PROCEDURE`, `DROP SEQUENCE` and `DROP TYPE`
+are refused by name: the model does not follow them, and stepping over one would
+keep an object the script removes. `TRUNCATE`, `LOCK`, `SAVEPOINT` and the other
+statements that change no schema object change nothing the read returns.
 
 On PostgreSQL, `ALTER INDEX ... RENAME TO` renames an index, and the constraint
 it backs. A column's own `UNIQUE` becomes a named one. A name another relation

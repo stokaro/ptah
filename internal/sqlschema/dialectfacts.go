@@ -30,6 +30,8 @@ type readingFacts struct {
 	identifierLimit     descriptor.IdentifierLimit
 	columns             descriptor.Columns
 	statements          descriptor.Statements
+	// grammarDrops is what the grammar states about DROP.
+	grammarDrops []descriptor.Drop
 	// routines is the routine grammar the dialect writes its routines in,
 	// which says how a routine node's header converts.
 	routines string
@@ -73,6 +75,7 @@ func factsOf(sourcePlatform string) readingFacts {
 		identifierLimit:     described.IdentifierLimit,
 		columns:             described.Columns,
 		statements:          described.Statements,
+		grammarDrops:        described.Grammar.Forms.Drops,
 		routines:            described.Grammar.Routines.Body,
 	}
 	readingFactsCache.Store(sourcePlatform, facts)

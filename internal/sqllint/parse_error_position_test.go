@@ -10,6 +10,9 @@ import (
 	"ptah.run/internal/sqllint"
 )
 
+// notRead opens the message of a statement the parser could not tell from valid SQL.
+const notRead = "the SQL parser does not read this statement, which a server may still accept: "
+
 // A statement the parser refuses is reported at its place in the file, though the
 // parser read the statement alone, and the finding's message is the reason: the
 // position the finding states is the only one a reader sees.
@@ -30,7 +33,7 @@ func TestParseError_ReportsThePlaceInTheFile(t *testing.T) {
 			wantLine:   1,
 			wantColumn: 16,
 			wantRule:   sqllint.RuleUnsupportedStatement,
-			wantText:   "unsupported table option: BOGUS",
+			wantText:   notRead + "unsupported table option: BOGUS",
 		},
 		{
 			name:       "a statement after one with a multi-line body",
@@ -39,7 +42,7 @@ func TestParseError_ReportsThePlaceInTheFile(t *testing.T) {
 			wantLine:   9,
 			wantColumn: 16,
 			wantRule:   sqllint.RuleUnsupportedStatement,
-			wantText:   "unsupported table option: BOGUS",
+			wantText:   notRead + "unsupported table option: BOGUS",
 		},
 		{
 			name:       "CR line endings",
@@ -48,7 +51,7 @@ func TestParseError_ReportsThePlaceInTheFile(t *testing.T) {
 			wantLine:   4,
 			wantColumn: 16,
 			wantRule:   sqllint.RuleUnsupportedStatement,
-			wantText:   "unsupported table option: BOGUS",
+			wantText:   notRead + "unsupported table option: BOGUS",
 		},
 		{
 			name:       "a multi-byte name and a tab",
@@ -57,7 +60,7 @@ func TestParseError_ReportsThePlaceInTheFile(t *testing.T) {
 			wantLine:   1,
 			wantColumn: 21,
 			wantRule:   sqllint.RuleUnsupportedStatement,
-			wantText:   "unsupported table option: BOGUS",
+			wantText:   notRead + "unsupported table option: BOGUS",
 		},
 		{
 			name:       "after a client delimiter directive",
@@ -66,7 +69,7 @@ func TestParseError_ReportsThePlaceInTheFile(t *testing.T) {
 			wantLine:   5,
 			wantColumn: 16,
 			wantRule:   sqllint.RuleUnsupportedStatement,
-			wantText:   "unsupported table option: BOGUS",
+			wantText:   notRead + "unsupported table option: BOGUS",
 		},
 		{
 			name:       "a syntax error",

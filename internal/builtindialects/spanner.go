@@ -91,7 +91,7 @@ func spanner() descriptor.Dialect {
 		// How a schema file's names are read, and how unnamed indexes and CHECKs are named.
 		IndexNaming: descriptor.IndexNaming{PrimaryKeySuffix: "pkey"},
 		Names:       descriptor.Names{PublicKeyword: true},
-		Statements:  descriptor.Statements{ViewsBlockDropTable: true},
+		Statements:  descriptor.Statements{ViewsBlockDropTable: true, DropViewIfExistsSkipsOtherKinds: true},
 
 		// Dev databases.
 		DevRealm: descriptor.DevRealm{
@@ -154,6 +154,7 @@ func spanner() descriptor.Dialect {
 		Grammar: descriptor.Grammar{
 			Columns:    descriptor.ColumnGrammar{CurrentTimeKeywords: true, StoredStringDefaults: true},
 			Statements: descriptor.StatementGrammar{Extensions: true, UserTypes: true, GrantTargetLists: true},
+			Forms:      spannerStatementForms(),
 			Routines: descriptor.RoutineGrammar{
 				Body:                   descriptor.RoutineQuotedBody,
 				TriggerConditions:      true,

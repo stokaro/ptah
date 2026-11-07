@@ -712,10 +712,10 @@ var sqlRuleMeta = map[string]ruleMeta{
 		Summary: "a name the server cuts to a name already in use where it refuses the second declaration",
 	},
 	"SQL001": {
-		Summary: "the SQL parser could not build an AST, so no rule could inspect the statement",
+		Summary: "the statement is malformed or opens with words no engine Ptah reads has, so no rule could inspect it",
 	},
 	"SQL002": {
-		Summary: "the statement uses a sub-language `ptah sql lint` does not model yet",
+		Summary: "nothing read the statement, which a server may still accept: the parser holds no grammar for it, or steps over it as it does a SELECT",
 	},
 	"DDL001": {
 		Summary: "the created table declares no primary key",

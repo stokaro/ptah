@@ -216,8 +216,9 @@ func cockroachDB() descriptor.Dialect {
 				},
 			},
 			Keys:       descriptor.KeyGrammar{IndexKeywords: []string{"INDEX"}, IndexKeywordsNeedColumns: true},
-			Indexes:    descriptor.IndexGrammar{TrailingVisibility: true, Alter: descriptor.AlterIndexVisibility},
+			Indexes:    descriptor.IndexGrammar{TrailingVisibility: true, Alter: descriptor.AlterIndexVisibility, Storing: true},
 			Statements: descriptor.StatementGrammar{Extensions: true, UserTypes: true, GrantTargetLists: true},
+			Forms:      cockroachStatementForms(),
 			Routines: descriptor.RoutineGrammar{
 				Body:                   descriptor.RoutineQuotedBody,
 				TriggerConditions:      true,
