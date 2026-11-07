@@ -961,8 +961,8 @@ A dry run takes no lock.
 A provider can support `--tx-mode file` and `--tx-mode all` by advertising
 transaction sessions for the selected engine and establishing transactional DDL
 on the opened session. Otherwise these modes are refused before rehearsal,
-approval or execution, with the refusal code `transaction-unavailable` under
-`--json`.
+approval or execution, under `--dry-run` too, with the refusal code
+`transaction-unavailable` under `--json`.
 
 A provider whose session establishes `ddl_inside_transaction` as false states
 that its server refuses a schema statement inside an explicit transaction. The
@@ -1219,8 +1219,9 @@ each value when its unit is dispatched on the dev database, and so does a
 migration replayed on a dev database, which approves the inputs each statement
 reads before the first statement runs, as `migrations up` does.
 
-`--dry-run` lists the planned operations, decodes and preflights a saved plan,
-and writes nothing. The protocol does not establish a lock acquisition that
+`--dry-run` lists the planned operations, makes the checks a real run makes ahead
+of its prompt, the rehearsal on `--dev-url` among them, and writes nothing to the
+target. The protocol does not establish a lock acquisition that
 writes nothing, so a preview on a provider-served target takes no lock and does
 not wait for a running apply. Native execution support alone does not qualify
 an official provider's schema models or live database behavior.

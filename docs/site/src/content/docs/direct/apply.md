@@ -89,8 +89,7 @@ require a reviewer's signature on the plan with
 
 The native verbs use Ptah's own flag spellings — `--db-url` for the target
 database, `--schema-file` (SQL, YAML, HCL, DBML, or OCI sources; repeatable),
-and `--root-dir` (Go annotations; repeatable) for the desired schema. These
-selectors match `schema compare` and `migrations generate`:
+and `--root-dir` (Go annotations; repeatable) for the desired schema:
 
 ```bash illustration
 ptah schema apply --db-url "sqlite://app.db" --schema-file schema.sql --dry-run
@@ -106,11 +105,8 @@ touched, and a failed rehearsal refuses the apply. A dev database that is the
 target, by its URL or by what the two servers answer about the database each
 session selected, is refused before it is reset. The rehearsal runs entirely
 inside the dev database, which is handed back empty afterwards — see
-[Atlas schema commands](../../atlas/schema-commands/). `--lock-timeout`
-bounds the session advisory lock that serializes concurrent applies,
-`--tx-mode` selects the transaction mode, `--edit` opens the planned SQL in
-`$VISUAL`/`$EDITOR`, and `--schemas` (or `schemas` in `ptah.yaml`),
-`--include`, and `--exclude` scope both comparison sides.
+[Atlas schema commands](../../atlas/schema-commands/). `--schemas` (or `schemas`
+in `ptah.yaml`), `--include`, and `--exclude` scope both comparison sides.
 
 A plan statement whose effect reaches past the dev database, such as a role or
 a routine body, is refused before anything runs unless the dev server is the
@@ -186,7 +182,9 @@ dialect that cannot lock is not measured here.
 
 ## Preview the plan
 
-`--dry-run` prints the planned SQL and stops:
+`--dry-run` prints the planned SQL and stops where the prompt would be. A plan a
+real run refuses ahead of the prompt fails here too, at the same exit code and
+`--json` outcome:
 
 ```console
 ptah schema apply --db-url "sqlite://app.db" --schema-file schema.sql --dry-run
@@ -533,7 +531,7 @@ format.
 | --- | --- |
 | `applied` | Every operation ran |
 | `no-changes` | No operation was planned. The database matches the desired schema unless `undecided` is present |
-| `dry-run` | Nothing ran. With `--plan`, the fingerprint was verified first |
+| `dry-run` | Nothing ran, and the checks ahead of the prompt passed |
 | `canceled` | The confirmation prompt was declined |
 | `refused` | Nothing reached the database, for the reason `refusal` names |
 | `failed` | Nothing reached the database, for a reason with no refusal code |

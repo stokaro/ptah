@@ -38,13 +38,15 @@ func applyNativeSchemaPlan(ctx context.Context, cmd *cobra.Command, opts schemaA
 	run.evidence.Units = units
 	fmt.Fprintln(run.human, plannedSchemaChanges)
 	printApplyUnits(run.human, units, plan.Annotations())
-	if opts.dryRun {
-		return atlasschema.ApplyOutcomeDryRun, nil
-	}
 	if err := plan.SimulateOnDev(ctx, atlasschema.SimulateOptions{
 		DevURL: opts.devURL, TargetURL: opts.dbURL, DesiredURLs: opts.toURLs, DevServerDisposable: opts.devServerDisposable,
 	}); err != nil {
 		return "", err
+	}
+	// The rehearsal precedes this exit, so a dry run reports the refusal a real run
+	// would meet, as it does for a plan of SQL text.
+	if opts.dryRun {
+		return atlasschema.ApplyOutcomeDryRun, nil
 	}
 	approved, err := confirmSchemaApply(cmd, opts, run.human, func() (atlasschema.PlanRating, error) {
 		return plan.Rating(ctx)

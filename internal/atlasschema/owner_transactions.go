@@ -71,6 +71,12 @@ func (p ApplyRuntimePlan) PreflightExecution(sqlText string) error {
 	return checkTransactionAvailable(p.txMode, p.conn)
 }
 
+// CheckStatements is [CheckApplyStatements] with the passwords the plan's statements
+// read, for a dry run of them.
+func (p ApplyRuntimePlan) CheckStatements(ctx context.Context, statements []string) error {
+	return CheckApplyStatements(rolepassword.With(ctx, p.passwords), p.conn, statements)
+}
+
 // ExecuteSQL executes the prepared SQL or an edit that PreflightExecution can
 // assess. It repeats preflight at the execution boundary. An unchanged plan
 // retains its statement boundaries, including provider execution units.
