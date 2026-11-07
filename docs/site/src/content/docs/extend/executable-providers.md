@@ -117,6 +117,17 @@ part and table preparation the order of every declared one, each `FIRST` or
 The host compares the two exactly, and a change of a key's order alone drops
 the index and builds it again. Without the feature the host compares no order.
 
+A partial index's predicate is spelled by the engine as well: a server keeps
+`score > 0` in a form of its own, such as `(score > '0'::bigint)`, and may add a
+filter of its own to a unique index. With `schema.index-predicates` beside the
+same two features, table preparation states each declared predicate as the
+server would hold it, and inspection states each held predicate in that
+spelling, without what the engine added. The host compares the two exactly, so
+a predicate the server rewrote converges, and a changed predicate drops the
+index and builds it again. The plan creates the index with the predicate the
+source wrote. Without the feature the host compares predicates by its rules for
+CHECK expressions.
+
 A provider that owns the table lifecycle without
 `schema.common-table-identity.v1` also receives altered tables. The planning
 request carries the captured desired and current state of each altered table,
@@ -294,7 +305,10 @@ tables and the saved plan.
   in one step. It reports a key conflict, which `--idempotent` tolerates, and
   refuses a file before it runs when the engine cannot run one of its
   statements in a transaction. An outcome the provider cannot confirm is
-  reported as such, and the file is not sent again.
+  reported as such, and the file is not sent again. With
+  `schema.reserved-seeds` a read reports the ledger as reserved storage, as it
+  reports the migration history, so no plan drops it and a declaration of a
+  table of its name is refused.
 
 A provider without these features refuses declared rows and seed files: the
 host does not write its own `INSERT` text or `schema_seeds` table for it. An
@@ -500,6 +514,18 @@ the engine. The work is split this way:
 A planning request does not carry the declared and observed objects as
 context.
 
+With `schema.common-namespaces`, an engine also carries its namespaces, such as
+the schemas of a DuckDB catalog or of Spanner's PostgreSQL interface, as the
+common kind `SCHEMA`. A read lists every schema of its scope, the default one
+included, and Ptah compares them as it compares PostgreSQL schemas: a schema
+the declaration names and the read does not hold is created, before the
+tables, views and sequences in it, and so is the schema of a table the plan
+creates in a schema nobody declared. A schema the declaration no longer names
+stays; a down file removes the schema its up file created, after everything
+in it, without `CASCADE`. A rehearsal on a dev database removes the schemas it
+created when it cleans up. Without the feature, a declared schema other than
+the engine's default is refused, since nothing could create it.
+
 `models.report-counts` lets an engine name the count metrics each value of one
 of its models contributes to, such as a topic and the number of its consumers.
 `ptah schema stats` then writes one gauge per metric, and the provider counts
@@ -511,9 +537,12 @@ names no metric adds no gauge, and a metric named like a common one, such as
 model, such as a YDB vector index, and the count adds to the indexes Ptah read.
 
 An engine can declare its release lines in the description. Each line names a
-support level and, for a line that claims testing, the image that runs it. A line
-the provider keeps without running it is best effort and carries the reason. The
-host refuses a description that claims testing nothing runs.
+support level and, for a line that claims testing, the image that runs it. An
+engine that runs inside the provider's process, such as DuckDB, has no image:
+with `engine.linked-release-lines` its certified line names the version of the
+library the provider links instead, which the provider's own tests run. A line
+the provider keeps without running it is best effort and carries the reason.
+The host refuses a description that claims testing nothing runs.
 `ptah providers check` prints the lines a provider declares, and
 `ptah db capabilities` certifies a server against them: the line its version
 names gives the preset its name, which is the line's label, and the support
@@ -680,7 +709,9 @@ The executable path must be absolute. A checksum detects changed bytes; it does
 not verify a publisher. Providers run with your operating-system permissions.
 Only environment entries explicitly listed as `NAME=value` reach the provider.
 Database credentials belong in the database address, which travels in the session
-request rather than process arguments.
+request rather than process arguments. Ptah starts the provider in its own
+working directory, so a relative file address, such as `duckdb://./app.db` for
+an engine that runs inside the provider, names the file it names for Ptah.
 
 Pass `--provider-config providers.json` on each supported command. This flag has
 no environment-variable binding. Ptah does not discover providers from `PATH` or
@@ -1514,10 +1545,17 @@ Attribute values arrive as text, exactly as written, and the provider decides wh
 means. The source position of an attribute is the position of its comment.
 
 An engine declares in `sql_schema` how its SQL schema documents are read. In the
-`FRAGMENTS` mode, the default, Ptah parses a document with the shared grammar
-and sends the statements it does not model to `DecodeSource`. An engine whose
-grammar the shared one cannot read, such as YQL, declares the `DOCUMENT` mode
-and the feature `schema.read-sql`, and Ptah does not parse the text.
+`FRAGMENTS` mode, the default, Ptah parses a document with the shared grammar.
+With `source.sql-table-clauses` such an engine claims clauses of CREATE TABLE by
+the words they open with, such as Spanner's row deletion policy
+`TTL INTERVAL '30 days' ON created_at`: in a document of the engine Ptah sends
+each claimed clause, bound to its table, to `DecodeSource`, and places the
+facets it returns on the table. A document of the engine states each claimed
+facet for every table it declares, so removing the clause removes the facet. A
+clause the provider refuses stops the load with its position. ClickHouse keeps
+reading `TTL` as its own table option. An engine whose grammar the shared one
+cannot read, such as YQL, declares the `DOCUMENT` mode and the feature
+`schema.read-sql`, and Ptah does not parse the text.
 
 Ptah reads the files of a load, a schema file with its imports or a schema
 directory, and sends them in load order to `ReadSQLSchema` with the engine's
