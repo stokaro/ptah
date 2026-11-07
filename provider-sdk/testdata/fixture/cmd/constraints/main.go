@@ -3,7 +3,9 @@
 // orders (contract 25.28), the predicates of their partial indexes (contract
 // 25.29) and their UNIQUE constraints (contract 25.31), and states how it
 // builds an enum column where FIXTURE_ENUM_COLUMNS names a form (contract
-// 25.31). It reads the constraints back from the SQLite tables it writes, in
+// 25.31). Where FIXTURE_TABLE_OWNERSHIP=service its planning service owns the
+// tables with no table setting (contract 25.32), in place of the backend's
+// retention facet. It reads the constraints back from the SQLite tables it writes, in
 // the table text it writes itself, and changes a constraint or an index by
 // rebuilding its table, since SQLite adds no constraint to a table in place.
 // It establishes no support for an official engine.
@@ -74,6 +76,11 @@ func main() {
 		fmt.Fprintln(os.Stderr, "unknown fixture constraint mode")
 		os.Exit(1)
 	}
+	ownership := os.Getenv("FIXTURE_TABLE_OWNERSHIP")
+	if ownership != "" && ownership != "service" {
+		fmt.Fprintln(os.Stderr, "unknown fixture table ownership")
+		os.Exit(1)
+	}
 	enumForm := os.Getenv("FIXTURE_ENUM_COLUMNS")
 	enums, known := enumForms[enumForm]
 	if !known {
@@ -109,7 +116,15 @@ func main() {
 	engine.ValueModels = append(engine.ValueModels, &protocol.ValueModel{Kind: statementsKind, Representation: protocol.ValueInput_OPERATION,
 		SchemaVersion: 1, Encoding: "json", DefinitionJson: definition, DefinitionSha256: hex.EncodeToString(digest[:]), CanonicalFormat: "constraint-statements-v1"})
 	engine.Planning = []*protocol.ModelPlanning{{Id: "tables", ParentKinds: []string{retentionKind}, OperationKinds: []string{statementsKind}}}
-	owner := &owner{Provider: &backend.Provider{}, description: description, text: mode == "text",
+	if ownership == "service" {
+		// The service then owns the tables through owns_tables alone, with no
+		// table setting model, and stays the owner constraint changes need.
+		description.SemanticIdentity += "-owned"
+		description.Features = append(description.Features, provider.TableOwnershipFeature)
+		engine.Features = append(engine.Features, provider.TableOwnershipFeature)
+		engine.Planning = []*protocol.ModelPlanning{{Id: "tables", OwnsTables: true, OperationKinds: []string{statementsKind}}}
+	}
+	owner := &owner{Provider: &backend.Provider{}, description: description, text: mode == "text", ownsTables: ownership == "service",
 		operation: &protocol.Envelope{ProviderId: description.GetProviderId(), Kind: statementsKind, SchemaVersion: 1, Encoding: "json", DefinitionSha256: hex.EncodeToString(digest[:])}}
 	err = runtime.Serve(runtime.Server{Description: description, Sessions: owner, Inspector: owner, Renderer: owner, Executor: owner, SQLAnalyzer: owner,
 		ValueNormalizer: owner, SourceDecoder: owner, ValueConverter: owner, FeaturePlanner: owner, TablePreparer: owner, TableCreations: owner, SchemaValidator: owner,
@@ -131,4 +146,7 @@ type owner struct {
 	// text renders a statements operation as text where the host asks for
 	// it, and reads the statements of a rebuild back.
 	text bool
+	// ownsTables answers a receipt of kind provider.TableReceiptKind for each
+	// table, as a planning service that owns the tables does.
+	ownsTables bool
 }

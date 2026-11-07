@@ -161,7 +161,7 @@ func compareReportingUndecidedAdditions(
 	}
 	addDeclaredSchemas(diff, desired, database, cov, opts.Dialect, identifierSemantics, rules)
 
-	columnFacts, err := compare.ResolveColumnFacts(ctx, desired, database, opts.Dialect, identifierSemantics, caps, prepared.bySubject, rules.ColumnService)
+	columnFacts, err := compare.ResolveColumnFacts(ctx, desired, database, opts.Dialect, identifierSemantics, caps, prepared.bySubject, rules)
 	if err != nil {
 		return nil, Diagnostics{}, err
 	}

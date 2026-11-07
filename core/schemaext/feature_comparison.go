@@ -21,8 +21,8 @@ type FeatureState struct {
 // ComparisonRequest is the common feature comparison boundary. Providers keep
 // distinct object and facet semantics while the caller supplies one captured
 // state and receives one complete accounting of changes and limitations.
-// DeclaredRelations names the views and materialized views the desired schema
-// declares; see [ObjectComparisonRequest].
+// DeclaredRelations names the tables, views and materialized views the desired
+// schema declares; see [ObjectComparisonRequest].
 type ComparisonRequest struct {
 	Target       string
 	Identifiers  identifier.Semantics

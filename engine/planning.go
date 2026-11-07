@@ -24,7 +24,13 @@ type Planning struct {
 	// Each kind has one planner and owned desired and observed codecs.
 	ContextKinds   []schemaext.Kind
 	OperationKinds []schemaext.Kind
-	Service        featureplan.Service
+	// OwnsTables assigns the lifecycle of every table of the target to the
+	// service without a parent kind: the service receives each table with an
+	// action as a parent planner does and answers one receipt of kind
+	// featureplan.TableKind for it ([featureplan.Request.OwnsTables]). A
+	// target has at most one such service, and it may plan nothing else.
+	OwnsTables bool
+	Service    featureplan.Service
 }
 
 type ownedPlanning struct {
@@ -33,9 +39,9 @@ type ownedPlanning struct {
 }
 
 func (r *Runtime) registerPlanning(owner string, declaration Planning) error {
-	target, found := r.targets[declaration.Target]
-	if !found || target.name != declaration.Target || (len(declaration.Kinds) == 0 && len(declaration.ParentKinds) == 0 && len(declaration.ContextKinds) == 0) || declaration.Service == nil || nilService(declaration.Service) {
-		return fmt.Errorf("%w: incomplete planning registration for %q", ErrInvalidRegistration, declaration.Target)
+	target, err := r.planningTarget(declaration)
+	if err != nil {
+		return err
 	}
 	if len(declaration.Kinds) > 0 && len(declaration.OperationKinds) == 0 {
 		return fmt.Errorf("%w: change planning requires an operation vocabulary", ErrInvalidRegistration)
@@ -73,6 +79,21 @@ func (r *Runtime) registerPlanning(owner string, declaration Planning) error {
 	declaration.OperationKinds = slices.Clone(declaration.OperationKinds)
 	r.planningServices = append(r.planningServices, ownedPlanning{owner, declaration})
 	return nil
+}
+
+// planningTarget returns the target a planning registration names, and
+// refuses one that claims nothing, names no service, or owns the tables of a
+// target another service already owns.
+func (r *Runtime) planningTarget(declaration Planning) (target, error) {
+	selected, found := r.targets[declaration.Target]
+	if !found || selected.name != declaration.Target || (len(declaration.Kinds) == 0 && len(declaration.ParentKinds) == 0 && len(declaration.ContextKinds) == 0 && !declaration.OwnsTables) ||
+		declaration.Service == nil || nilService(declaration.Service) {
+		return target{}, fmt.Errorf("%w: incomplete planning registration for %q", ErrInvalidRegistration, declaration.Target)
+	}
+	if declaration.OwnsTables && slices.ContainsFunc(r.planningServices, func(service ownedPlanning) bool { return service.Target == selected.name && service.OwnsTables }) {
+		return target{}, fmt.Errorf("%w: a second planning service owns the tables of %q", ErrInvalidRegistration, selected.name)
+	}
+	return selected, nil
 }
 
 func (r *Runtime) validatePlanningOperations(owner string, kinds []schemaext.Kind) error {
@@ -119,6 +140,7 @@ func (r *Runtime) PlanFeatures(ctx context.Context, request featureplan.Request)
 	request.Target = target.name
 	// Assignment is runtime-owned. An input cannot suppress a registered model.
 	request.ParentKinds = nil
+	request.OwnsTables = false
 	request.ContextKinds = nil
 	request.Objects.ChangedSubjects = nil
 	request, err := r.snapshotPlanning(ctx, request)
@@ -133,7 +155,7 @@ func (r *Runtime) PlanFeatures(ctx context.Context, request featureplan.Request)
 	result := featureplan.Result{Complete: true, Changes: make([]featureplan.ChangePlan, len(request.Changes))}
 	for service, indices := range batches {
 		owner := r.planningServices[service]
-		assessParents := owner.Target == target.name && len(owner.ParentKinds) > 0 && hasParentActions(request.Tables)
+		assessParents := owner.Target == target.name && owner.plansParents() && hasParentActions(request.Tables)
 		assessObjects := owner.Target == target.name && len(owner.ContextKinds) > 0
 		if len(indices) == 0 && !assessParents && !assessObjects {
 			continue
@@ -184,8 +206,9 @@ func (r *Runtime) planningBatch(owner ownedPlanning, request featureplan.Request
 		// service does not assess.
 		batch.Objects.Context = selectObjectState(batch.Objects.Context, owner.ContextKinds)
 	}
-	if len(owner.ParentKinds) > 0 && hasParentActions(request.Tables) {
+	if owner.plansParents() && hasParentActions(request.Tables) {
 		batch.ParentKinds = slices.Clone(owner.ParentKinds)
+		batch.OwnsTables = owner.OwnsTables
 	}
 	batch.Changes = make([]schemaext.ChangeRecord, len(indices))
 	for i, index := range indices {

@@ -38,10 +38,11 @@ func (t *target) commonKinds() map[protocol.CommonObjectSupport_Kind]bool {
 	return kinds
 }
 
-// declaredViews is the views and materialized views of source on the wire.
-// The common view carries no settings and no PostgreSQL options, so a view
-// that declares either is refused by name rather than sent without them.
-func declaredViews(source *schemamodel.Database) ([]*protocol.SQLView, error) {
+// declaredViews is the views and materialized views of source on the wire,
+// each view with the level of its check option the engine receives. The
+// common view carries no settings and no PostgreSQL options, so a view that
+// declares either is refused by name rather than sent without them.
+func (t *target) declaredViews(source *schemamodel.Database) ([]*protocol.SQLView, error) {
 	var views []*protocol.SQLView
 	for _, view := range source.Views {
 		if !view.Facets.IsZero() {
@@ -51,8 +52,8 @@ func declaredViews(source *schemamodel.Database) ([]*protocol.SQLView, error) {
 			return nil, unsupported(fmt.Sprintf("the options %s of view %q", strings.Join(view.Options, ", "), view.Name))
 		}
 		schema, name := splitQualified(view.Name)
-		views = append(views, &protocol.SQLView{Schema: schema, Name: name, Body: view.Body, WithCheck: view.WithCheck, Comment: view.Comment,
-			Attributes: slices.Clone(view.Attributes), DependsOn: slices.Clone(view.DependsOn)})
+		views = append(views, &protocol.SQLView{Schema: schema, Name: name, Body: view.Body, WithCheck: view.WithCheck, CheckOption: t.declaredCheckOption(view),
+			Comment: view.Comment, Attributes: slices.Clone(view.Attributes), DependsOn: slices.Clone(view.DependsOn)})
 	}
 	for _, view := range source.MaterializedViews {
 		if !view.Facets.IsZero() {
@@ -96,7 +97,7 @@ func (t *target) declaredCommonObjects(source *schemamodel.Database) (*protocol.
 			return nil, check
 		}
 	}
-	views, err := declaredViews(source)
+	views, err := t.declaredViews(source)
 	if err != nil {
 		return nil, err
 	}

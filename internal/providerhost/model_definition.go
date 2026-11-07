@@ -180,6 +180,9 @@ type planningIdentityContract struct {
 	Changes    []string `json:"changes"`
 	Parents    []string `json:"parents"`
 	Operations []string `json:"operations"`
+	// OwnsTables is left out when false, so the identity of a service that
+	// does not own tables reads as it did before the field existed.
+	OwnsTables bool `json:"owns_tables,omitempty"`
 }
 
 func planningContracts(declarations []*protocol.ModelPlanning) []planningIdentityContract {
@@ -188,7 +191,7 @@ func planningContracts(declarations []*protocol.ModelPlanning) []planningIdentit
 		result = append(result, planningIdentityContract{
 			ID: declaration.GetId(), Changes: featureSet(declaration.GetChangeKinds()),
 			Parents: featureSet(declaration.GetParentKinds()), Context: featureSet(declaration.GetContextKinds()),
-			Operations: featureSet(declaration.GetOperationKinds()),
+			Operations: featureSet(declaration.GetOperationKinds()), OwnsTables: declaration.GetOwnsTables(),
 		})
 	}
 	slices.SortFunc(result, func(a, b planningIdentityContract) int { return strings.Compare(a.ID, b.ID) })

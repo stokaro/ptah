@@ -18,8 +18,9 @@ func declaredRelation(kind objectidentity.Kind, name string) objectidentity.ID {
 }
 
 // TestObjectComparison_DeliversDeclaredRelations pins that an owner receives
-// the views and materialized views a declaration names, in identity order and
-// as a copy, so a model that shares their namespace can refuse a collision.
+// the tables, views and materialized views a declaration names, in identity
+// order and as a copy, so a model that shares their namespace can refuse a
+// collision and one that references a table can tell a declared one.
 func TestObjectComparison_DeliversDeclaredRelations(t *testing.T) {
 	c := qt.New(t)
 	var received schemaext.ObjectComparisonRequest
@@ -28,26 +29,27 @@ func TestObjectComparison_DeliversDeclaredRelations(t *testing.T) {
 		return unchangedComparison(ctx, r)
 	})))
 	request := comparisonRequest(c)
-	request.DeclaredRelations = []objectidentity.ID{declaredRelation(objectidentity.KindView, "recent"), declaredRelation(objectidentity.KindMatView, "daily")}
+	request.DeclaredRelations = []objectidentity.ID{declaredRelation(objectidentity.KindView, "recent"), declaredRelation(objectidentity.KindMatView, "daily"),
+		declaredRelation(objectidentity.KindTable, "orders")}
 
 	_, err := runtime.CompareObjects(t.Context(), request)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(received.DeclaredRelations, qt.DeepEquals, []objectidentity.ID{
-		declaredRelation(objectidentity.KindMatView, "daily"), declaredRelation(objectidentity.KindView, "recent"),
+		declaredRelation(objectidentity.KindMatView, "daily"), declaredRelation(objectidentity.KindTable, "orders"), declaredRelation(objectidentity.KindView, "recent"),
 	})
 	c.Assert(request.DeclaredRelations[0], qt.DeepEquals, declaredRelation(objectidentity.KindView, "recent"))
 }
 
 // TestObjectComparison_RefusesARelationThatIsNotOne pins the shape a declared
-// relation must have: a named view or materialized view. A table belongs in
-// Parents, and an unnamed relation names nothing.
+// relation must have: a named table, view or materialized view. An index is
+// no relation, and an unnamed relation names nothing.
 func TestObjectComparison_RefusesARelationThatIsNotOne(t *testing.T) {
 	tests := []struct {
 		name     string
 		relation objectidentity.ID
 	}{
-		{name: "a table", relation: declaredRelation(objectidentity.KindTable, "orders")},
+		{name: "an index", relation: declaredRelation(objectidentity.KindIndex, "orders_idx")},
 		{name: "an unnamed view", relation: objectidentity.ID{Kind: objectidentity.KindView}},
 	}
 

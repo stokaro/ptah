@@ -35,6 +35,12 @@ const (
 	ColumnNullability ColumnAspect = "nullable"
 	// ColumnSequence delegates sequence start and increment comparison.
 	ColumnSequence ColumnAspect = "sequence"
+	// ColumnCollation delegates collation equivalence. Its receipt is a
+	// [ColumnDifference] whose spellings are the declared and the held
+	// collation, empty for the target's default. A comparison asks it only of
+	// a [ColumnService] whose target's [Rules.ColumnCollations] is set, and
+	// that service's ColumnType answer then leaves collation out.
+	ColumnCollation ColumnAspect = "collation"
 )
 
 // ColumnPair binds the host's chosen desired and observed columns, including

@@ -53,6 +53,9 @@ type Document struct {
 	// redeclared receives each such constraint added with another
 	// definition, and is [Options.Redeclared] while a file is converted.
 	redeclared func(Redeclaration)
+	// attached follows the partition indexes of the document; see
+	// [Document.settleAttachedPartitions].
+	attached attachedIndexes
 }
 
 // parseNotes is what a parse of one file found about the AST it returned that

@@ -38,6 +38,23 @@ func (r *Runtime) ParentKinds(targetName string) ([]schemaext.Kind, error) {
 	return kinds, nil
 }
 
+// plansParents reports a service that the host hands every table with an
+// action: one with a parent kind, or one that owns the target's tables.
+func (p Planning) plansParents() bool {
+	return len(p.ParentKinds) > 0 || p.OwnsTables
+}
+
+// parentReceiptKinds returns the kinds of the parent receipts a service
+// answers for each table with an action: its parent kinds, then the table
+// itself when it owns the target's tables.
+func parentReceiptKinds(request featureplan.Request) []schemaext.Kind {
+	kinds := slices.Clone(request.ParentKinds)
+	if request.OwnsTables {
+		kinds = append(kinds, featureplan.TableKind)
+	}
+	return kinds
+}
+
 func hasParentActions(tables []featureplan.Table) bool {
 	return slices.ContainsFunc(tables, func(table featureplan.Table) bool { return table.Action != "" })
 }
@@ -46,7 +63,7 @@ func hasParentActions(tables []featureplan.Table) bool {
 // from source coverage. Concrete unassigned state must not bypass that dispatch.
 func (r *Runtime) validateParentPlanningOwnership(request featureplan.Request) error {
 	if hasParentActions(request.Tables) && !slices.ContainsFunc(r.planningServices, func(service ownedPlanning) bool {
-		return service.Target == request.Target && len(service.ParentKinds) > 0
+		return service.Target == request.Target && service.plansParents()
 	}) {
 		return fmt.Errorf("%w: no parent planning service for %q", ptaherr.ErrUnsupportedFeature, request.Target)
 	}
@@ -73,7 +90,7 @@ func validatePlannedParents(request featureplan.Request, parents []featureplan.P
 		if table.Action == "" {
 			continue
 		}
-		for _, kind := range request.ParentKinds {
+		for _, kind := range parentReceiptKinds(request) {
 			if index >= len(parents) {
 				return fmt.Errorf("%w: planning omitted a parent receipt", schemaext.ErrInvalidValue)
 			}
