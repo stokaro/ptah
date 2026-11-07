@@ -44,6 +44,7 @@ type Lint struct {
 	AtlasAnalyzer string `json:"atlas_analyzer,omitempty"`
 	// TypeRestatements is the type grammar that proves a type clause
 	// restates a column's current type, named for the package that reads it:
-	// "pgtype" or "mytype" under internal/lintkit, or empty for none.
+	// "pgtype" or "mytype" under internal/lintkit, "restated" for an ALTER COLUMN that
+	// names the type with no word before it, compared as written, or empty for none.
 	TypeRestatements string `json:"type_restatements,omitempty"`
 }

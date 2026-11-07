@@ -75,6 +75,12 @@ func TestNullableMadeNotNullRule_ReportsTheColumnsThatWereNullable(t *testing.T)
 			want:      []string{"strict SQL mode MariaDB defaults to (Data truncated for column)"},
 		},
 		{
+			name:      "SQL Server ALTER COLUMN in Ptah's own spelling",
+			dialect:   "sqlserver",
+			migration: "ALTER TABLE [orders] ALTER COLUMN [total] int NOT NULL;",
+			want:      []string{"ALTER COLUMN [orders].[total] makes a nullable column NOT NULL"},
+		},
+		{
 			name:      "SQL Server ALTER COLUMN",
 			dialect:   "sqlserver",
 			migration: "ALTER TABLE orders ALTER COLUMN total int NOT NULL;",
@@ -140,6 +146,12 @@ func TestNullableMadeNotNullRule_StaysQuietWhereNoRowCanChange(t *testing.T) {
 			dialect:   "postgres",
 			migration: "ALTER TABLE orders ALTER COLUMN total SET NOT NULL;",
 			column:    notNullColumn("total", "integer", false),
+		},
+		{
+			name:      "the PostgreSQL TYPE word under a SQL Server run restates no column",
+			dialect:   "sqlserver",
+			migration: "ALTER TABLE orders ALTER COLUMN total TYPE int NOT NULL;",
+			column:    notNullColumn("total", "int", false),
 		},
 		{
 			// SQL Server has no SET NOT NULL; the statement fails to parse

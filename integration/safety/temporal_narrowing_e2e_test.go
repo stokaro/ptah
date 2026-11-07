@@ -376,9 +376,7 @@ func TestSchemaPlanE2E_OneTypeInTwoSpellingsPlansNothing(t *testing.T) {
 // TestRatingE2E_ANarrowingReachesEveryReader asks each surface that reads the rating
 // about the same plan, on an engine where the type a declaration leaves bare holds fewer
 // digits and on one where it holds as many. Lint reports the type change by DS103
-// whichever way it goes: a file holds no previous type to compare with. DS103 reads
-// ALTER COLUMN ... TYPE, MODIFY and CHANGE, and SQL Server's ALTER COLUMN is none of them,
-// so its row asks only that lint ran.
+// whichever way it goes: a file holds no previous type to compare with.
 func TestRatingE2E_ANarrowingReachesEveryReader(t *testing.T) {
 	engines := []struct {
 		name            string
@@ -389,7 +387,7 @@ func TestRatingE2E_ANarrowingReachesEveryReader(t *testing.T) {
 	}{
 		{name: "postgres", engine: postgresTemporal, dialect: "postgres", before: "timestamp(3)", narrow: "timestamp(0)", widen: "timestamp", wantLint: `"DS103"`},
 		{name: "mysql", engine: mysqlTemporal, dialect: "mysql", before: "datetime(3)", narrow: "datetime", widen: "datetime(6)", wantLint: `"DS103"`},
-		{name: "sqlserver", engine: sqlServerTemporal, dialect: "sqlserver", before: "datetime2(3)", narrow: "datetime2(0)", widen: "datetime2", wantLint: `"findings"`},
+		{name: "sqlserver", engine: sqlServerTemporal, dialect: "sqlserver", before: "datetime2(3)", narrow: "datetime2(0)", widen: "datetime2", wantLint: `"DS103"`},
 	}
 	for _, engine := range engines {
 		t.Run(engine.name, func(t *testing.T) {
