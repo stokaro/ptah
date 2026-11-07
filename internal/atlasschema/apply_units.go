@@ -46,13 +46,25 @@ func applyUnits(ctx context.Context, conn *dbschema.DatabaseConnection, mode mig
 			return errors.Join(err, tx.Rollback())
 		}
 		if err := tx.Commit(); err != nil {
-			return fmt.Errorf("commit schema apply transaction: %w", errors.Join(err, tx.Rollback()))
+			failed := &failedCommitError{statements: len(prepared), err: err}
+			return fmt.Errorf("commit schema apply transaction: %w", errors.Join(failed, tx.Rollback()))
 		}
 		return nil
 	default:
 		return fmt.Errorf("invalid tx-mode %q", mode)
 	}
 }
+
+// failedCommitError is the failure of the commit that ends an apply, which the
+// report tells from a failed statement. It adds nothing to the message.
+type failedCommitError struct {
+	statements int
+	err        error
+}
+
+func (e *failedCommitError) Error() string { return e.err.Error() }
+
+func (e *failedCommitError) Unwrap() error { return e.err }
 
 // A nil statement projection marks a native batch; an empty SQL batch has an
 // allocated empty projection. No native value is represented by a SQL string.

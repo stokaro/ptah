@@ -14,6 +14,7 @@ import (
 
 	"ptah.run/core/sqlutil"
 	"ptah.run/internal/revisiontable"
+	"ptah.run/internal/servercode"
 )
 
 // The revision table answers what is applied. It cannot answer what happened:
@@ -172,12 +173,11 @@ type MigrationLogLoss struct {
 	// Version zero, when a rollback could not name the migrations it undoes, so
 	// this one loss stands for all of their entries.
 	State MigrationLogState `json:"state,omitempty"`
-	// SQLState is the SQLSTATE the server answered with, read from a
-	// PostgreSQL-protocol or MySQL-protocol driver error. It is empty when the
-	// server gave no answer, and on other engines.
+	// SQLState is the SQLSTATE the server answered with, as in
+	// [RunFailure.SQLState].
 	SQLState string `json:"sqlstate,omitempty"`
-	// ErrorNumber is the server's error number on the MySQL protocol, such as
-	// 1406 for a value too long for its column. It is zero on other engines.
+	// ErrorNumber is the server's error number, such as 1406 for a value too long
+	// for its column on MySQL, as in [RunFailure.ErrorNumber].
 	ErrorNumber int `json:"error_number,omitempty"`
 	// Message is the failure written for a person. It can quote what the
 	// database said, including part of the value it refused. A caller that must
@@ -238,7 +238,7 @@ func (m *Migrator) MigrationLogReport() *MigrationLogReport {
 // which entry, and cause says why.
 func (m *Migrator) reportLostLogEntry(loss MigrationLogLoss, cause error) {
 	loss.Message = cause.Error()
-	loss.SQLState, loss.ErrorNumber = serverErrorCodes(cause)
+	loss.SQLState, loss.ErrorNumber = servercode.Read(cause)
 	m.migrationLogTally.lost(loss)
 }
 

@@ -188,8 +188,9 @@ did not happen.
 
 --json prints one versioned JSON document on standard output once the run
 starts, on success and on failure: the outcome, the statements the run listed,
-the plan file's name and digest with --plan, and a typed refusal code when the
-apply refused before anything reached the database. Everything written for a
+the plan file's name and digest with --plan, a typed refusal code when the
+apply refused before anything reached the database, and the position and the
+server's code when a statement or the commit failed. Everything written for a
 person, including the confirmation prompt, goes to standard error. A command
 line refused before the run starts -- an unknown flag, a flag value that does
 not parse, flags that cannot be combined, a positional argument -- prints no

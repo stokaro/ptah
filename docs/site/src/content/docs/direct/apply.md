@@ -443,17 +443,17 @@ Expected output includes, on standard output:
 `contract_version` is the version of the document, not of Ptah. A consumer that
 does not know the version it reads should refuse the document. The version rises
 when a field changes meaning or leaves, and when an outcome gains a value. A new
-field does not raise it, and neither does a new refusal code, because every
-refusal means that nothing reached the database. A new error kind does not
-raise it either: a consumer reads a kind it does not know as no kind.
+field does not raise it. Neither does a new refusal code, because every refusal
+means that nothing reached the database, or a new error kind, which a consumer
+reads as no kind.
 
 `command` names the command that wrote the document, `schema plan` or `schema
 apply`, so a consumer can refuse a document it did not ask for.
 
 A run that fails carries `error`, an object with two fields. `message` is the
 sentence printed on standard error. It can quote the database, so a consumer
-that must not publish what the database said reads `kind` instead. `kind` says
-why the target database could not be opened or read, from a closed list:
+that must not publish what the database said reads `kind` and `failure`. `kind`
+says why the target database could not be opened or read, from a closed list:
 `database_unreachable`, `authentication_failed`, `database_not_found`,
 `permission_denied` or `tls_failed`. It is absent for every other failure.
 [Why a command failed](../../reference/exit-codes/#why-a-command-failed)
@@ -489,16 +489,15 @@ Against a database whose password the URL gets wrong, the plan reports:
 
 `plan` also appears with `no-changes` when it contains notes. A saved or
 previewed document includes `plan_digest`, and a saved file includes `plan_path`.
-`no-changes` means no statement was planned. A plan with notes alone can
-still be saved. The database matches
-the desired schema unless `undecided` is present.
+`no-changes` means no statement was planned, and a plan with notes alone can
+still be saved. The database matches the desired schema unless `undecided` is
+present.
 `failed` means the plan could not be computed or saved, for a reason that has
-no refusal code. The document does not depend on when it was written, so two
-plans against an unchanged database print the same bytes.
+no refusal code. Two plans against an unchanged database print the same bytes.
 
 `plan` is the plan's content, not its bytes. `plan_digest` covers the bytes of
 the plan file, and those are not in the document: encoding `plan` again does not
-reproduce them, and no encoder is promised to. A caller that needs the bytes, to
+reproduce them. A caller that needs the bytes, to
 compare them with `plan_digest`, to sign them with `ptah schema approve` or to
 pass them to `ptah schema apply --plan`, runs `ptah schema plan --output <path>
 --json` and reads the file.
@@ -521,6 +520,7 @@ format.
 | `command` | `schema apply` |
 | `refusal` | Why the apply refused; see below |
 | `error` | The failure, for `refused`, `failed` and `unknown`: `message`, printed on standard error, and `kind` when the target database could not be opened or the account cannot see what the command reads there |
+| `failure` | [Where a run stopped](../../reference/exit-codes/#where-a-run-stopped), for `unknown`: a position in `units` and the server's codes, and no text |
 | `schema_diagnostics` | As in the plan document |
 
 | Outcome | Meaning |
@@ -534,11 +534,11 @@ format.
 | `unknown` | The operations were dispatched and the run returned an error |
 
 `unknown` is the outcome a caller must not retry from. The operations were
-sent, and the document cannot say how far they got: a transaction may have
-rolled them all back, a run without one may have left some, and a lost
-connection hides even that. Read the database before deciding. A lock session
-that fails after every operation committed is reported this way too, rather
-than as `applied`.
+sent, and `failure` says where the run stopped, not what the database holds: a
+transaction may have rolled them all back, a run without one may have left some,
+and a lost connection hides even that. Read the database before deciding. A lock
+session that fails after every operation committed is reported this way too,
+rather than as `applied`.
 
 Stopping before the first statement, even during `BEGIN`, is `refused` or
 `failed`.

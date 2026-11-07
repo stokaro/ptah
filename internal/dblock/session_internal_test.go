@@ -264,6 +264,42 @@ func TestLock_Settle(t *testing.T) {
 	}
 }
 
+// workFailure stands for the error of a statement a run stopped at.
+type workFailure struct{ statement int }
+
+func (e *workFailure) Error() string { return "the statement failed" }
+
+// A settled loss answers errors.As for what the work reported, so a caller can read
+// where the work stopped, whether or not the message repeats it. errors.Is sees the
+// loss alone: a statement the loss canceled is not a run somebody interrupted.
+func TestLock_SettleKeepsTheWorksError(t *testing.T) {
+	tests := []struct {
+		name    string
+		workErr error
+	}{
+		{name: "the work failed on its own", workErr: fmt.Errorf("apply: %w", &workFailure{statement: 2})},
+		{name: "the loss canceled the work", workErr: fmt.Errorf("apply: %w", errors.Join(&workFailure{statement: 2}, context.Canceled))},
+		{name: "the work saw the loss", workErr: fmt.Errorf("apply: %w", errors.Join(&workFailure{statement: 2}, &LostError{Dialect: "postgres", Name: "ptah_migrate"}))},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			hold, session, _ := newFakeSessionHold()
+			lock := &Lock{name: "ptah_migrate", dialect: "postgres", release: hold.release, holding: hold}
+			session.fail(driver.ErrBadConn)
+			hold.check()
+
+			got := lock.Settle("apply lock", "the apply", test.workErr)
+
+			stopped, ok := errors.AsType[*workFailure](got)
+			c.Assert(ok, qt.IsTrue)
+			c.Assert(stopped.statement, qt.Equals, 2)
+			c.Assert(IsLost(got), qt.IsTrue)
+			c.Assert(got, qt.Not(qt.ErrorIs), context.Canceled)
+		})
+	}
+}
+
 // A lock that reports no loss, such as one WithLockSession took, answers none
 // of Done, Err and the context Guard returns.
 func TestLock_WithoutALossToReport(t *testing.T) {

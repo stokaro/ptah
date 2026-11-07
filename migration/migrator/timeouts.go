@@ -188,7 +188,7 @@ func (m *Migrator) restoreTimeoutsAfterFailure(ctx context.Context, version int6
 		return failure
 	}
 	if err := restore(ctx); err != nil {
-		return fmt.Errorf("failed to restore timeouts after migration %d failed: %w (original error: %v)", version, err, failure)
+		return fmt.Errorf("failed to restore timeouts after migration %d failed: %w (original error: %w)", version, err, failure)
 	}
 	return failure
 }
