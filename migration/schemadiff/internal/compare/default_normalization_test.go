@@ -16,10 +16,10 @@ import (
 //
 // A default's meaning depends on the column's type -- `0` is `false` on a
 // boolean and `0` on an integer -- so normalizing each side under its own type
-// could answer "changed" for two spellings of one value. Measured on SQLite: a
-// hand-made `b BOOLEAN DEFAULT 0` compared against Ptah's own description of
-// it, whose rendered type is `integer`, reported `default_expr: 0 -> 0` beside
-// the type change that was real (stokaro/ptah#2041).
+// could answer "changed" for two spellings of one value. On SQLite a hand-made
+// `b NUMERIC DEFAULT 0` compared against a declared `boolean`, whose rendered
+// type is `integer`, would report `default_expr: 0 -> 0` beside the type change
+// that is real (stokaro/ptah#2041).
 func TestColumns_ADefaultIsNormalizedUnderOneType(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -34,8 +34,8 @@ func TestColumns_ADefaultIsNormalizedUnderOneType(t *testing.T) {
 			name:    "a boolean column whose declaration renders as integer",
 			dialect: platform.SQLite,
 			genCol:  schemamodel.Field{Name: "b", Type: "boolean", Nullable: true, DefaultExpr: "0"},
-			dbCol:   catalog.Column{Name: "b", DataType: "BOOLEAN", IsNullable: "YES", ColumnDefault: new("0")},
-			want:    map[string]string{"type": "BOOLEAN -> boolean"},
+			dbCol:   catalog.Column{Name: "b", DataType: "NUMERIC", IsNullable: "YES", ColumnDefault: new("0")},
+			want:    map[string]string{"type": "NUMERIC -> boolean"},
 		},
 		{
 			// The control that keeps the fix from being a blanket silence: a
@@ -43,8 +43,8 @@ func TestColumns_ADefaultIsNormalizedUnderOneType(t *testing.T) {
 			name:    "a default that changed",
 			dialect: platform.SQLite,
 			genCol:  schemamodel.Field{Name: "b", Type: "boolean", Nullable: true, DefaultExpr: "1"},
-			dbCol:   catalog.Column{Name: "b", DataType: "BOOLEAN", IsNullable: "YES", ColumnDefault: new("0")},
-			want:    map[string]string{"type": "BOOLEAN -> boolean", "default_expr": "0 -> 1"},
+			dbCol:   catalog.Column{Name: "b", DataType: "NUMERIC", IsNullable: "YES", ColumnDefault: new("0")},
+			want:    map[string]string{"type": "NUMERIC -> boolean", "default_expr": "0 -> 1"},
 		},
 		{
 			// The other control: with the types agreeing, boolean

@@ -33,7 +33,8 @@ import (
 // Measured on MySQL 8.4.11 and MariaDB 11.8.9, a table whose columns `a` and
 // `b` each carry an unnamed CHECK holds `e_chk_1` and `e_chk_2` on MySQL and
 // `a` and `b` on MariaDB (stokaro/ptah#3792). Every other target keeps
-// `<table>_<column>_check`.
+// `<table>_<column>_check`. A JSON column MariaDB holds as text carries the CHECK its type
+// implies ([WithJSONCheck]), so it has a name here too.
 //
 // A name the table declares for a constraint written after the columns is
 // claimed although the server has not seen it yet, so the two can disagree
@@ -53,6 +54,7 @@ func ColumnCheckNames(
 		if field.StructName != table.StructName {
 			continue
 		}
+		field = WithJSONCheck(field, dialect)
 		own = append(own, field)
 		columns = append(columns, field.Name)
 		if field.Check != "" && field.CheckName != "" {

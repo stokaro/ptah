@@ -579,7 +579,7 @@ func toDBConstraints(declared *schemamodel.Database, tables map[string]schemamod
 		// document compared with itself pairs every one of them.
 		checkNames := schemaprep.ColumnCheckNames(table, fields, constraints, dialect)
 		for _, field := range fieldsByStruct[table.StructName] {
-			for _, constraint := range toDBFieldConstraints(table, field, checkNames[field.Name]) {
+			for _, constraint := range toDBFieldConstraints(table, schemaprep.WithJSONCheck(field, dialect), checkNames[field.Name]) {
 				appendConstraint(constraint)
 			}
 		}

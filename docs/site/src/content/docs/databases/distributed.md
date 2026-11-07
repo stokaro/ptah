@@ -41,7 +41,8 @@ anything is read, and is never inspected or planned as PostgreSQL.
   sets: `INT8` by default, `INT4` when the session sets 4. A declared width
   such as `INT4` or `BIGINT` is compared as written. A column declared in
   CockroachDB's own names, `STRING`, `BYTES` or `STRING[]`, is compared as the
-  `text`, `bytea` or `text[]` the catalog reports. A sized `STRING(10)` is a
+  `text`, `bytea` or `text[]` the catalog reports, and `BLOB` and `JSON` as the
+  `bytea` and `jsonb` it builds from them. A sized `STRING(10)` is a
   `text` column with a width rather than a `VARCHAR(10)`, and it is read and
   inspected as `STRING(10)`, so a width change is still a change.
   An index is compared by its uniqueness, its keys (column or expression, and
@@ -69,6 +70,8 @@ anything is read, and is never inspected or planned as PostgreSQL.
   An ascending key with a NULLS ordering is written with `ASC`: without a
   direction, YugabyteDB builds a leading key as a hash key and ignores the
   ordering.
+  A column of a serial type is `NOT NULL` whether or not the file says so, as
+  the server builds it.
 
 CockroachDB and YugabyteDB open a transaction around a migration body, and a
 schema statement does not wait for it to end. See

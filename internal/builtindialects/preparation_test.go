@@ -36,9 +36,15 @@ func TestDescriptors_PreparationAgreesWithTheRetiredSwitches(t *testing.T) {
 		platform.CockroachDB: {PostgresBuiltInTypes: true, NonUniqueIndexMethods: []string{"gin", "gist"}},
 		platform.YugabyteDB:  {PostgresBuiltInTypes: true, NonUniqueIndexMethods: []string{"gin", "ybgin"}},
 		platform.MySQL:       mysqlFamily,
-		platform.MariaDB:     mysqlFamily,
-		platform.ClickHouse:  {Enums: descriptor.EnumNumbered},
-		platform.SQLite:      {Enums: descriptor.EnumCheck, EnumCheckType: "TEXT"},
+		platform.MariaDB: {
+			Enums:                   descriptor.EnumColumnType,
+			SerialAutoIncrement:     true,
+			ForeignKeyNamespace:     descriptor.NamespaceDatabase,
+			ForeignKeyNamesFoldCase: true,
+			JSONHeldAsText:          true,
+		},
+		platform.ClickHouse: {Enums: descriptor.EnumNumbered},
+		platform.SQLite:     {Enums: descriptor.EnumCheck, EnumCheckType: "TEXT"},
 		platform.SQLServer: {
 			Enums:                   descriptor.EnumCheck,
 			EnumCheckType:           "NVARCHAR(255)",

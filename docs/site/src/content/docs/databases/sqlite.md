@@ -95,6 +95,11 @@ two spellings are one table, so a comparison between them plans nothing. Any
 other key column keeps its flag: `id TEXT PRIMARY KEY` holds `NULL` on a rowid
 table, and making it `NOT NULL` rebuilds the table.
 
+A column's type is compared by the affinity it gives the column, so `VARCHAR(80)` and
+`TEXT` are one type. A portable name such as `boolean` or `bytea` writes `INTEGER` or
+`BLOB`. A column built by hand under that same word plans nothing either, since SQLite
+keeps the word as the column's type.
+
 A rebuild of a table that other tables reference drops the original table,
 which is a foreign-key violation while enforcement is on. The plan therefore
 starts with `PRAGMA foreign_keys = off;` and ends with
