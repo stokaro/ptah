@@ -46,33 +46,55 @@ func digestOf(c *qt.C, path string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// fixtureRequiredFeatures are the features the conformance runs of the
+// fixture provider require.
+func fixtureRequiredFeatures() []string {
+	return []string{provider.InspectFeature, provider.RenderFeature, provider.ExecuteFeature}
+}
+
+// fixtureCalls are the offline calls the conformance runs of the fixture
+// provider send: a rendering it accepts and one it refuses.
+func fixtureCalls() []conformance.Call {
+	return []conformance.Call{
+		{Name: "render-create", Request: &protocol.RenderRequest{Engine: "fixture", Changes: []*protocol.Change{createFixtureTable()}}},
+		{Name: "render-nullable-key", Request: &protocol.RenderRequest{Engine: "fixture", Changes: []*protocol.Change{{
+			Id: "create", Object: fixtureTable(), Operation: &protocol.Change_CreateTable{CreateTable: &protocol.Table{Columns: []*protocol.Column{
+				{Name: "id", Type: "INTEGER", PrimaryKey: true, Nullable: true},
+			}}},
+		}}}, Refused: true},
+	}
+}
+
+// fixtureChanges are the changes the live conformance runs of the fixture
+// provider apply and revert.
+func fixtureChanges() []conformance.Change {
+	return []conformance.Change{{
+		Name:   "items",
+		Apply:  conformance.Step{Render: &protocol.RenderRequest{Changes: []*protocol.Change{createFixtureTable()}}},
+		Revert: conformance.Step{Render: &protocol.RenderRequest{Changes: []*protocol.Change{{Id: "drop", Object: fixtureTable(), Operation: &protocol.Change_DropTable{DropTable: &protocol.Empty{}}}}}},
+	}}
+}
+
+// fixtureConformance is the configuration that checks a fixture provider
+// executable, offline and against a database file.
+func fixtureConformance(c *qt.C, binary string) conformance.Config {
+	c.Helper()
+	return conformance.Config{
+		Target:           conformance.Executable(binary, digestOf(c, binary)),
+		ProviderID:       "example.org/fixture",
+		RequiredFeatures: fixtureRequiredFeatures(),
+		Calls:            fixtureCalls(),
+		Live:             &conformance.Live{Address: fixtureDatabase(c), Changes: fixtureChanges()},
+	}
+}
+
 // The independent fixture provider passes the suite through its executable,
 // offline and against a database file. It makes no claim about reasons or
 // transactions, so those checks do not apply to it.
 func TestConformanceOfTheFixtureProvider(t *testing.T) {
 	c := qt.New(t)
 	binary := buildFixture(c, "provider")
-	config := conformance.Config{
-		Target:           conformance.Executable(binary, digestOf(c, binary)),
-		ProviderID:       "example.org/fixture",
-		RequiredFeatures: []string{provider.InspectFeature, provider.RenderFeature, provider.ExecuteFeature},
-		Calls: []conformance.Call{
-			{Name: "render-create", Request: &protocol.RenderRequest{Engine: "fixture", Changes: []*protocol.Change{createFixtureTable()}}},
-			{Name: "render-nullable-key", Request: &protocol.RenderRequest{Engine: "fixture", Changes: []*protocol.Change{{
-				Id: "create", Object: fixtureTable(), Operation: &protocol.Change_CreateTable{CreateTable: &protocol.Table{Columns: []*protocol.Column{
-					{Name: "id", Type: "INTEGER", PrimaryKey: true, Nullable: true},
-				}}},
-			}}}, Refused: true},
-		},
-		Live: &conformance.Live{
-			Address: fixtureDatabase(c),
-			Changes: []conformance.Change{{
-				Name:   "items",
-				Apply:  conformance.Step{Render: &protocol.RenderRequest{Changes: []*protocol.Change{createFixtureTable()}}},
-				Revert: conformance.Step{Render: &protocol.RenderRequest{Changes: []*protocol.Change{{Id: "drop", Object: fixtureTable(), Operation: &protocol.Change_DropTable{DropTable: &protocol.Empty{}}}}}},
-			}},
-		},
-	}
+	config := fixtureConformance(c, binary)
 
 	report, err := conformance.Check(c.Context(), config)
 

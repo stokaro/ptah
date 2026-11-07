@@ -27,24 +27,37 @@ import (
 // the exchange is a peer of an older contract minor.
 const contract25SDK = "v0.2.0"
 
-// buildContract25Fixture builds a fixture program against [contract25SDK],
-// from a copy of the fixture module, with no workspace. Such a program speaks
-// contract 25.0 and knows none of the features a later minor adds. Only a
-// program whose packages use nothing of a later minor builds this way:
-// provider, lint and contract-host.
+// buildContract25Fixture builds a fixture program against [contract25SDK].
+// Such a program speaks contract 25.0 and knows none of the features a later
+// minor adds.
 func buildContract25Fixture(c *qt.C, program string) string {
+	c.Helper()
+	return buildReleasedFixture(c, contract25SDK, program)
+}
+
+// buildReleasedFixture builds a fixture program against an SDK release, from
+// a copy of the fixture module, with no workspace. Only a program whose
+// packages use nothing of a later minor builds this way: provider, lint and
+// contract-host.
+func buildReleasedFixture(c *qt.C, version, program string) string {
 	c.Helper()
 	_, source, _, ok := runtime.Caller(0)
 	c.Assert(ok, qt.IsTrue)
 	dir := c.TempDir()
 	c.Assert(os.CopyFS(dir, os.DirFS(filepath.Join(filepath.Dir(source), "..", "testdata", "fixture"))), qt.IsNil)
-	runGo(c, dir, "get", "github.com/stokaro/ptah/provider-sdk@"+contract25SDK)
-	binary := filepath.Join(c.TempDir(), program+"-contract25.exe")
+	runGo(c, dir, "get", "github.com/stokaro/ptah/provider-sdk@"+version)
+	binary := filepath.Join(c.TempDir(), program+"-"+version+".exe")
 	runGo(c, dir, "build", "-o", binary, "./cmd/"+program)
-	// The build records the module versions it linked, which is what shows
-	// that this side of the exchange is the older peer.
-	c.Assert(runGo(c, dir, "version", "-m", binary), qt.Matches, `(?s).*\sgithub\.com/stokaro/ptah/provider-sdk\s+`+regexp.QuoteMeta(contract25SDK)+`\s.*`)
+	assertLinkedSDK(c, dir, binary, version)
 	return binary
+}
+
+// assertLinkedSDK asserts the SDK version a binary linked. The build records
+// the module versions it linked, which is what shows that this side of the
+// exchange is the peer of that release.
+func assertLinkedSDK(c *qt.C, dir, binary, version string) {
+	c.Helper()
+	c.Assert(runGo(c, dir, "version", "-m", binary), qt.Matches, `(?s).*\sgithub\.com/stokaro/ptah/provider-sdk\s+`+regexp.QuoteMeta(version)+`\s.*`)
 }
 
 func runGo(c *qt.C, dir string, args ...string) string {
