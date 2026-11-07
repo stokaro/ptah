@@ -42,7 +42,7 @@ func (p *observedProvider) Open(ctx context.Context, request *protocol.OpenReque
 	if err != nil {
 		return nil, err
 	}
-	session.Features = []string{"tables"}
+	session.Features = []string{provider.CommonTableIdentityFeature}
 	return session, nil
 }
 
@@ -51,7 +51,7 @@ func (p *observedProvider) Inspect(ctx context.Context, request *protocol.Inspec
 	if err != nil {
 		return nil, err
 	}
-	snapshot.TargetFeatures = []string{"tables"}
+	snapshot.TargetFeatures = []string{provider.CommonTableIdentityFeature}
 	if len(snapshot.Tables) == 0 {
 		return snapshot, nil
 	}
@@ -104,7 +104,7 @@ func (p *observedProvider) Inspect(ctx context.Context, request *protocol.Inspec
 	case "coverage-mismatch":
 		snapshot.Coverage.Subjects[0].NormalizedSubject.Name = "another"
 	case "bad-feature":
-		snapshot.TargetFeatures = []string{"columns"}
+		snapshot.TargetFeatures = nil
 	case "missing-coverage":
 		snapshot.Coverage = nil
 	case "bad-payload":
