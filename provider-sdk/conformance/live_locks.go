@@ -69,19 +69,22 @@ func (r *run) lock(ctx context.Context, h *lockHolder, lockID string, step lockS
 	return fmt.Sprintf("%s: %s answered %s", step.what, method, result.GetOutcome())
 }
 
-// liveLocks takes one lock from two sessions in two processes.
+// liveLocks takes one lock from two sessions: of two processes, or of one
+// process under Live.InProcessLocks.
 func (r *run) liveLocks(ctx context.Context) {
 	if !provider.EngineOffers(r.full, r.engine, provider.LocksFeature) {
 		r.add(checkLocks, NotApplicable, "the engine does not offer sessions.locks")
 		return
 	}
-	other := r.second
-	if other == nil {
+	inProcess := r.config.Live.InProcessLocks
+	other, contender := r.all, "another session of the same process"
+	if !inProcess {
 		var err error
-		if other, err = r.connect(ctx, listedAll()); err != nil {
+		if other, err = r.secondProcess(ctx); err != nil {
 			r.add(checkLocks, Failed, "a second process: "+err.Error())
 			return
 		}
+		contender = "a session of another process"
 	}
 	first, err := r.openSession(ctx, r.all, r.config.Live.Address)
 	if err != nil {
@@ -89,17 +92,54 @@ func (r *run) liveLocks(ctx context.Context) {
 		return
 	}
 	defer func() { _ = r.closeSession(ctx, r.all, first.GetId()) }()
+	if inProcess {
+		if failure := r.secondProcessKeptOut(ctx); failure != "" {
+			r.add(checkLocks, Failed, failure)
+			return
+		}
+	}
 	second, err := r.openSession(ctx, other, r.config.Live.Address)
 	if err != nil {
-		r.add(checkLocks, Failed, "a session of a second process: "+err.Error())
+		r.add(checkLocks, Failed, contender+": "+err.Error())
 		return
 	}
 	a, b := &lockHolder{c: r.all, session: first}, &lockHolder{c: other, session: second}
-	failures := r.lockSequence(ctx, a, b)
+	failures := r.lockSequence(ctx, a, b, contender)
 	r.result(checkLocks, failures)
 }
 
-func (r *run) lockSequence(ctx context.Context, a, b *lockHolder) []string {
+// secondProcess returns the second process the run started, or a new one.
+func (r *run) secondProcess(ctx context.Context) (*conn, error) {
+	if r.second != nil {
+		return r.second, nil
+	}
+	return r.connect(ctx, listedAll())
+}
+
+// secondProcessKeptOut requires that a second process cannot open the
+// database while the first holds a session of it, where each connection of
+// the target is a process of its own. It returns what failed, or the empty
+// string. An in-process target serves every connection from one server, so
+// it has no second process to keep out.
+func (r *run) secondProcessKeptOut(ctx context.Context) string {
+	if r.config.Target.kind == "in-process" {
+		return ""
+	}
+	other, err := r.secondProcess(ctx)
+	if err != nil {
+		return "a second process: " + err.Error()
+	}
+	session, err := r.openSession(ctx, other, r.config.Live.Address)
+	if err != nil {
+		return ""
+	}
+	_ = r.closeSession(ctx, other, session.GetId())
+	return "a second process opened the database while a session of the first held it; Live.InProcessLocks is for an engine whose database one process holds at a time"
+}
+
+// lockSequence runs the lock steps with a as the first holder and b as the
+// contender, which contender describes.
+func (r *run) lockSequence(ctx context.Context, a, b *lockHolder, contender string) []string {
 	acquired := []protocol.LockResult_Outcome{protocol.LockResult_ACQUIRED}
 	notAcquired := []protocol.LockResult_Outcome{protocol.LockResult_BUSY, protocol.LockResult_RELEASED, protocol.LockResult_NOT_ACQUIRED, protocol.LockResult_LOST}
 	released := []protocol.LockResult_Outcome{protocol.LockResult_RELEASED, protocol.LockResult_NOT_ACQUIRED}
@@ -109,7 +149,7 @@ func (r *run) lockSequence(ctx context.Context, a, b *lockHolder) []string {
 	}
 	failures := collect(
 		r.lock(ctx, a, "a1", lockStep{what: "the first session checks the lock it holds", operation: provider.LockCheck, want: acquired}),
-		r.lock(ctx, b, "b1", lockStep{what: "a session of another process asks for the held lock", operation: provider.LockTry, want: []protocol.LockResult_Outcome{protocol.LockResult_BUSY}}),
+		r.lock(ctx, b, "b1", lockStep{what: contender + " asks for the held lock", operation: provider.LockTry, want: []protocol.LockResult_Outcome{protocol.LockResult_BUSY}}),
 		r.lock(ctx, a, "a1", lockStep{what: "the first session releases the lock", operation: provider.LockRelease, want: []protocol.LockResult_Outcome{protocol.LockResult_RELEASED}}),
 		r.lock(ctx, a, "a1", lockStep{what: "the first session releases the lock again", operation: provider.LockRelease, want: released}),
 		r.lock(ctx, a, "a1", lockStep{what: "the first session reuses a released lock ID", operation: provider.LockTry, want: notAcquired, refusable: true}),

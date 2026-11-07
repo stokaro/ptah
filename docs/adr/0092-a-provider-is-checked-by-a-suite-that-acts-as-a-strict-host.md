@@ -191,3 +191,9 @@ through the validators.
   validator's exact text, for a request that needs what the host did not
   list. [ADR 0101](0101-the-sdk-servers-refusal-of-a-request-is-not-the-providers.md)
   decides it.
+- The lock check contends from a second session of the same process, rather
+  than of a second process, when the configuration says that one process
+  holds the engine's database at a time, and then requires a second process
+  to fail to open the database.
+  [ADR 0107](0107-the-lock-check-of-an-engine-one-process-holds-contends-from-that-process.md)
+  decides it.
