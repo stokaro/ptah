@@ -110,7 +110,6 @@ func commonTable(declaration schemacapture.TableDeclaration) (*ast.CreateTableNo
 // tables in dependency order, each followed by the steps that set its
 // comments where the engine carries them on the common-object wire.
 func (t *target) commonSchema(schema *schemamodel.Database) ([]ast.Node, error) {
-	defaultSchema := t.engine.GetDefaultSchema()
 	if schema == nil {
 		return nil, fmt.Errorf("provider schema is required")
 	}
@@ -122,13 +121,9 @@ func (t *target) commonSchema(schema *schemamodel.Database) ([]ast.Node, error) 
 		"Views", "MaterializedViews", "Sequences", "Roles", "Grants", "RevokedGrants"); err != nil {
 		return nil, err
 	}
-	for _, namespace := range schema.Schemas {
-		if namespace.Name != defaultSchema {
-			return nil, unsupported("schema creation")
-		}
-		if err := onlyFields(namespace, "Name"); err != nil {
-			return nil, err
-		}
+	namespaces, err := t.declaredNamespaceCreations(schema)
+	if err != nil {
+		return nil, err
 	}
 	creations := make(difftypes.TableChanges, 0, len(schema.Tables))
 	assigned := 0
@@ -155,8 +150,8 @@ func (t *target) commonSchema(schema *schemamodel.Database) ([]ast.Node, error) 
 		return nil, fmt.Errorf("provider schema contains duplicate tables")
 	}
 	before, after := commonObjectCreations(schema)
-	nodes := make([]ast.Node, 0, len(before)+len(ordered)+len(after))
-	nodes = append(nodes, before...)
+	nodes := make([]ast.Node, 0, len(namespaces)+len(before)+len(ordered)+len(after))
+	nodes = append(append(nodes, namespaces...), before...)
 	for _, creation := range ordered {
 		declaration := schemacapture.TableDeclaration{Table: creation.Table, Fields: creation.Fields}
 		var comments []ast.Node

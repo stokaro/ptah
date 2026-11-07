@@ -48,7 +48,10 @@ type commonPlanner struct {
 	observedConstraints bool
 	// constraints hands such a change to the table's owner, which plans it.
 	constraints bool
-	selections  *scopeSelections
+	// namespaces plans the schemas a plan needs and the ones it reverses
+	// through a provider whose reads list them; see namespaceSteps.
+	namespaces bool
+	selections *scopeSelections
 }
 
 // commonObjectFields are the diff fields of the common objects beyond
@@ -105,7 +108,13 @@ func (p commonPlanner) GenerateMigrationAST(ctx context.Context, runtime feature
 	// neither frees nor takes a name another index change uses: the
 	// comparison pairs only names the other side does not hold.
 	ahead, behind := indexRemovalPlacement(diff.EffectiveIdentifierSemantics(p.target), slices.Concat(indexes.removals, indexes.renames))
-	nodes := slices.Concat(common.before, ahead, common.prepared)
+	// A schema is created before anything the plan puts in it, and removed
+	// after everything the plan removes, which may be in it.
+	var namespaceCreations, namespaceRemovals []ast.Node
+	if p.namespaces {
+		namespaceCreations, namespaceRemovals = p.namespaceSteps(diff)
+	}
+	nodes := slices.Concat(namespaceCreations, common.before, ahead, common.prepared)
 	var columnRemovals []ast.Node
 	ordered := diff.TablesAdded.InDependencyOrder()
 	if len(ordered) != len(diff.TablesAdded) {
@@ -145,6 +154,7 @@ func (p commonPlanner) GenerateMigrationAST(ctx context.Context, runtime feature
 		nodes = append(nodes, &ast.DropTableNode{Name: name})
 	}
 	nodes = append(nodes, common.last...)
+	nodes = append(nodes, namespaceRemovals...)
 	return p.schedule(ctx, runtime, diff, nodes, creationStart, removalStart)
 }
 
@@ -174,10 +184,15 @@ func (p commonPlanner) commonObjectSteps(diff *difftypes.SchemaDiff) (commonObje
 	// context a planner reads, not changes: DeclaredForeignKeys holds every
 	// foreign key the declaration states, changed or not.
 	fields := []string{"TablePreparation", "IdentifierSemantics", "TablesAdded", "TablesRemoved", "TablesModified",
-		"DeclaredTables", "DeclaredSchemas", "DeclaredForeignKeys", "DeclaredConstraintHosts", "ObservedConstraintHosts",
+		"DeclaredTables", "DeclaredSchemas", "HeldSchemas", "DeclaredForeignKeys", "DeclaredConstraintHosts", "ObservedConstraintHosts",
 		"DeclaredTableDependencies", "Features", "FeatureChanges", "CurrentDatabasePath", "CurrentNotDescribed", "Matched", "FeatureCounts"}
 	if p.commonObjects {
 		fields = append(fields, commonObjectFields...)
+	}
+	if p.namespaces {
+		// A schema the comparison adds, or a rollback removes, is a step of
+		// its own; see namespaceSteps.
+		fields = append(fields, "SchemasAdded", "SchemasRemoved")
 	}
 	if p.ownsIndexes() {
 		// An owner of the table lifecycle receives a table's indexes in the

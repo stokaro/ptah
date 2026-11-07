@@ -70,7 +70,7 @@ func (t *target) registration() engine.Target {
 				indexes: t.offers(provider.ObservedIndexesFeature), renames: t.offers(provider.IndexRenamesFeature),
 				observedKeys: t.offers(provider.ObservedPrimaryKeysFeature), keys: t.offers(provider.PrimaryKeyChangesFeature),
 				observedConstraints: t.offers(provider.ObservedConstraintsFeature), constraints: t.offers(provider.ConstraintChangesFeature),
-				assessParents: t.assessesParents()}
+				namespaces: t.carriesNamespaces(), assessParents: t.assessesParents()}
 		},
 	}
 	if t.offers(provider.DatabaseContextFeature) {
@@ -98,6 +98,7 @@ func (t *target) registration() engine.Target {
 	if t.offers(provider.CheckEquivalenceFeature) {
 		result.Comparison.Checks = checkService{target: t}
 	}
+	result.Comparison.Namespaces = t.carriesNamespaces()
 	if t.offers(provider.ObservedIndexesFeature) {
 		result.Comparison.Indexes = observedIndexRules{methods: t.offers(provider.IndexMethodsFeature), facets: t.offers(provider.ObservedIndexFacetsFeature),
 			nulls: t.offers(provider.IndexNullsOrderFeature)}

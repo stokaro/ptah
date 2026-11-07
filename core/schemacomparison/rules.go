@@ -40,6 +40,13 @@ type Rules struct {
 	// Routines gives a routine the attributes the target applies where its
 	// declaration states none.
 	Routines Routines
+	// Namespaces reports that a read of the target lists every schema of its
+	// scope, so the comparison adds a schema the desired schema declares and
+	// the read does not hold, as it does on a target whose dialect descriptor
+	// states [ptah.run/core/platform/descriptor.Comparison.DeclaredSchemas].
+	// A schema a read left undescribed is withheld, not added. False leaves
+	// the descriptor's answer in place.
+	Namespaces bool
 }
 
 // Columns compares the column definitions of one target, and reads back the

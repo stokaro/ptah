@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/coverage"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
@@ -55,5 +56,27 @@ func DeclaredSchemas(
 		held[key] = struct{}{}
 		diff.SchemasAdded = append(diff.SchemasAdded, schema)
 	}
+	slices.SortFunc(diff.SchemasAdded, func(a, b schemamodel.Schema) int { return cmp.Compare(a.Name, b.Name) })
+}
+
+// DeclaredNamespaces is [DeclaredSchemas] for a target whose reads list the
+// schemas of their scope through an executable provider. A read can leave the
+// namespaces uninspected, and then its silence says nothing: a declared schema
+// such a read does not describe is withheld and recorded as an undecided
+// addition, not created, since creating a schema that exists fails.
+func DeclaredNamespaces(
+	diff *difftypes.SchemaDiff,
+	desired *schemamodel.Database,
+	current []catalog.Schema,
+	cov Coverage,
+	semantics identifier.Semantics,
+) {
+	var found difftypes.SchemaDiff
+	DeclaredSchemas(&found, desired, current, cov, semantics)
+	kept, withheld := keepPlannedAdditions(cov, coverage.Schema, found.SchemasAdded,
+		func(schema schemamodel.Schema) (string, []string) { return schema.Name, []string{schema.Name} },
+		func(schema schemamodel.Schema) string { return schema.Name }, unguardedCreations())
+	cov.recordUndecidedAdditions(withheld)
+	diff.SchemasAdded = append(diff.SchemasAdded, kept...)
 	slices.SortFunc(diff.SchemasAdded, func(a, b schemamodel.Schema) int { return cmp.Compare(a.Name, b.Name) })
 }

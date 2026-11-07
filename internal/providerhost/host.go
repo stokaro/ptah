@@ -119,6 +119,11 @@ var hostFeatures = []string{
 	// target.commonObjectChange.
 	provider.CommonObjectsFeature,
 	provider.CommonAccessFeature,
+	// A provider's read lists the namespaces of its scope, which the catalog
+	// keeps as its schemas, and a plan creates a declared schema the read
+	// does not hold, and the schema of a created object, through the
+	// provider; see reader.commonObjects and commonPlanner.namespaceSteps.
+	provider.CommonNamespacesFeature,
 	// A declared role password reaches a provider as an execution input it
 	// renders a reference to, and its value only as an execution binding; see
 	// target.passwordInput and session.bindExecutionInputs.
