@@ -42,7 +42,8 @@ const (
 	Parameter
 	// Operator is a run of operator characters.
 	Operator
-	// Punctuation is one of `( ) [ ] , ; : .`, or `..`.
+	// Punctuation is one of `( ) [ ] , ; : .`, or `..`, `::` or `:=`, which
+	// the server reads as one token each.
 	Punctuation
 )
 
@@ -225,9 +226,9 @@ func (s *scanner) next() (Kind, error) {
 		return Whitespace, nil
 	case c == '$':
 		return s.dollar()
-	case c == '.' && s.peek(1) == '.':
+	case c == '.' && s.peek(1) == '.' || c == ':' && (s.peek(1) == ':' || s.peek(1) == '='):
 		// PostgreSQL reads `..` as one token, as in `1..10`, so the second dot
-		// does not start a fraction.
+		// does not start a fraction, and so are the cast `::` and `:=`.
 		s.pos += 2
 		return Punctuation, nil
 	case isDigit(c) || c == '.' && isDigit(s.peek(1)):
