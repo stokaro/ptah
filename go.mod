@@ -51,7 +51,7 @@ require (
 	golang.org/x/sys v0.49.0
 	golang.org/x/term v0.47.0
 	golang.org/x/text v0.43.0
-	golang.org/x/tools v0.52.0
+	golang.org/x/tools v0.52.1-0.20261106145633-d407941a339a
 	google.golang.org/protobuf v1.36.12
 	modernc.org/sqlite v1.61.1
 	oras.land/oras-go/v2 v2.7.0
@@ -176,7 +176,7 @@ require (
 	go.opentelemetry.io/otel/log v1.47.0 // indirect
 	go.opentelemetry.io/otel/metric v1.47.0 // indirect
 	go.opentelemetry.io/otel/sdk/metric v1.47.0 // indirect
-	golang.org/x/exp v0.0.0-20261106112924-d498a4c2cc9a // indirect
+	golang.org/x/exp v0.0.0-20261106192419-47ce03d25ef0 // indirect
 	golang.org/x/net v0.62.0 // indirect
 	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/telemetry v0.0.0-20261021172232-6cd571d43fbb // indirect
