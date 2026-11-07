@@ -230,5 +230,5 @@ func TestProviderDecodedFacetCarriesTheEngineProfile(t *testing.T) {
 	c.Assert(encoded, qt.HasLen, 1)
 	var wire struct{ Features []string }
 	c.Assert(json.Unmarshal(encoded[0].Value.Payload, &wire), qt.IsNil)
-	c.Assert(wire.Features, qt.DeepEquals, []string{"columns", "schema.common-table-identity.v1", "tables"})
+	c.Assert(wire.Features, qt.DeepEquals, []string{"schema.common-table-identity.v1"})
 }

@@ -29,7 +29,7 @@ func operationEnvelope(c *qt.C, runtime *engine.Runtime, name, payload string, f
 	var wire map[string]any
 	c.Assert(json.Unmarshal(envelope.Payload, &wire), qt.IsNil)
 	wire["subject"] = map[string]any{"engine": "fixture", "kind": "table", "name": name}
-	wire["features"] = append([]string{"tables", "columns", "schema.common-table-identity.v1"}, features...)
+	wire["features"] = append([]string{"schema.common-table-identity.v1"}, features...)
 	data, err := json.Marshal(wire)
 	c.Assert(err, qt.IsNil)
 	envelope.Payload = data

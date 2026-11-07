@@ -25,7 +25,7 @@ func dependentObject(c *qt.C, runtime *engine.Runtime, representation schemaext.
 	c.Helper()
 	identity, found := runtime.Codecs().Identity(dependentObjectKind, representation)
 	c.Assert(found, qt.IsTrue)
-	wire := map[string]any{"format": 1, "engine": "fixture", "features": []string{"tables", "columns", "schema.common-table-identity.v1", "planning.object-context", "planning.lifecycle", "render.text-units"}, "required_features": make([]string, 0), "payload": []byte(`{"action":"create"}`), "subject": map[string]any{"engine": "fixture", "kind": string(dependentObjectKind), "schema": "main", "name": name}}
+	wire := map[string]any{"format": 1, "engine": "fixture", "features": []string{"schema.common-table-identity.v1", "planning.object-context", "planning.lifecycle", "render.text-units"}, "required_features": make([]string, 0), "payload": []byte(`{"action":"create"}`), "subject": map[string]any{"engine": "fixture", "kind": string(dependentObjectKind), "schema": "main", "name": name}}
 	data, err := json.Marshal(wire)
 	c.Assert(err, qt.IsNil)
 	values, err := runtime.Codecs().Decode(c.Context(), []schemaext.Envelope{{Format: 1, Owner: identity.Owner, Kind: identity.Kind, Representation: representation, Version: identity.Version, Definition: identity.Definition, Payload: data}})
