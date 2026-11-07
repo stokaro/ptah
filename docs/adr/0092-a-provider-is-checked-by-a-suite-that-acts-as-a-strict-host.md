@@ -197,3 +197,8 @@ through the validators.
   to fail to open the database.
   [ADR 0107](0107-the-lock-check-of-an-engine-one-process-holds-contends-from-that-process.md)
   decides it.
+- A host that lists no two-way feature, and a contract 25.0 host, may be
+  refused where the full description without every two-way feature is one the
+  SDK refuses, as a host that leaves out one feature may.
+  [ADR 0114](0114-a-host-that-lists-no-two-way-feature-is-the-narrowest-host.md)
+  decides it.

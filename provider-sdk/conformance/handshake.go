@@ -100,6 +100,7 @@ func (r *run) firstMinorHost(ctx context.Context) {
 	request := &protocol.DescribeRequest{Revision: provider.Revision, RequiredFeatures: slices.Clone(r.config.RequiredFeatures)}
 	reply, err := r.describeOnce(ctx, request)
 	refuses := provider.CheckContract(provider.HostContract(request), provider.MinimumContract(r.full)) != nil
+	consistent := narrowsValidly(r.full, r.config.RequiredFeatures, nil)
 	switch {
 	case errors.Is(err, errNotStarted):
 		r.add(checkFirstMinorHost, Failed, err.Error())
@@ -107,8 +108,12 @@ func (r *run) firstMinorHost(ctx context.Context) {
 		r.add(checkFirstMinorHost, Failed, "Describe answered a contract 25.0 host although the provider's minimum is "+provider.ContractString(provider.MinimumContract(r.full)))
 	case refuses:
 		r.pass(checkFirstMinorHost)
+	case err != nil && !consistent:
+		r.pass(checkFirstMinorHost)
 	case err != nil:
 		r.add(checkFirstMinorHost, Failed, "Describe refused a contract 25.0 host: "+errorText(err))
+	case !consistent:
+		r.add(checkFirstMinorHost, Failed, "Describe answered a contract 25.0 host, which lists no two-way feature that a feature of the provider needs")
 	case !proto.Equal(reply, provider.NegotiatedDescription(r.full, nil)):
 		r.add(checkFirstMinorHost, Failed, "a contract 25.0 host received more than the full description without its two-way features")
 	default:
@@ -124,9 +129,15 @@ func (r *run) descriptionChecks(ctx context.Context) {
 		invalid = append(invalid, fmt.Sprintf("under %s: %v", r.all.profile.name, err))
 	}
 	none, err := r.connect(ctx, listedNone())
-	if err != nil {
+	switch {
+	case errors.Is(err, errDescribeRefused) && !narrowsValidly(r.full, r.config.RequiredFeatures, nil):
+		// A feature the provider lists needs a two-way feature, so it cannot
+		// describe itself to a host that lists none, and the refusal is the
+		// answer negotiation asks for, as it is from a host that leaves out
+		// that one feature.
+	case err != nil:
 		invalid = append(invalid, err.Error())
-	} else {
+	default:
 		r.none = none
 		if err := provider.ValidateDescription(none.reply, r.config.RequiredFeatures); err != nil {
 			invalid = append(invalid, fmt.Sprintf("under %s: %v", none.profile.name, err))
@@ -194,7 +205,7 @@ const negotiationParallelism = 8
 func (r *run) withoutFeature(ctx context.Context, feature string) string {
 	p := profile{name: "a host that does not list " + feature, features: slices.DeleteFunc(provider.TwoWayFeatures(), func(name string) bool { return name == feature })}
 	expected := provider.NegotiatedDescription(r.full, p.features)
-	consistent := provider.ValidateDescription(expected, r.config.RequiredFeatures) == nil
+	consistent := narrowsValidly(r.full, r.config.RequiredFeatures, p.features)
 	opened, err := r.config.Target.connect(ctx)
 	if err != nil {
 		return "the provider did not start for " + p.name + ": " + err.Error()

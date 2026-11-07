@@ -814,11 +814,12 @@ The offline part needs no database. It checks:
 - the bootstrap; the refusal of a host of another major, of a contract major
   that differs from the revision, of a repeated or malformed host feature and
   of a required feature the provider does not offer; that an unknown host
-  feature is ignored; what a host that announces no contract receives; and
-  that the minimum contract is one this SDK speaks;
-- the description under every host profile with `ValidateDescription`, the
-  identity a manifest names, and that two starts describe the provider the
-  same way;
+  feature is ignored; what a host that announces no contract receives, or
+  its refusal where the provider needs a two-way feature; and that the
+  minimum contract is one this SDK speaks;
+- the description under every host profile the provider describes itself to
+  with `ValidateDescription`, the identity a manifest names, and that two
+  starts describe the provider the same way;
 - that under a host that lists no two-way feature, and under each host that
   lists every one but one, the description is the full one narrowed by
   `NegotiatedDescription`. Where that narrowed description is one

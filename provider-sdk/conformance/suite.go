@@ -213,11 +213,25 @@ func (r *run) connect(ctx context.Context, p profile) (*conn, error) {
 	r.track(c)
 	reply, err := r.describe(ctx, opened, p.request(r.config.RequiredFeatures))
 	if err != nil {
-		return nil, fmt.Errorf("Describe under %s failed: %s", p.name, errorText(err))
+		return nil, fmt.Errorf("%w under %s: %s", errDescribeRefused, p.name, errorText(err))
 	}
 	c.reply = reply
 	c.description = provider.NegotiatedDescription(reply, p.features)
 	return c, nil
+}
+
+// errDescribeRefused marks a provider that started and refused the
+// Describe of a profile, as opposed to one that did not start.
+var errDescribeRefused = errors.New("Describe refused")
+
+// narrowsValidly reports whether the full description, without the two-way
+// features a host that lists features did not list, is one the SDK accepts.
+// When it is not, a feature the host still lists needs one it left out, and
+// the provider has to refuse that host rather than describe itself: the SDK's
+// server does so. A host that lists no two-way feature is the narrowest such
+// host, and is held to the same rule as one that leaves out one feature.
+func narrowsValidly(full *protocol.Description, required, features []string) bool {
+	return provider.ValidateDescription(provider.NegotiatedDescription(full, features), required) == nil
 }
 
 func (r *run) track(c *conn) {

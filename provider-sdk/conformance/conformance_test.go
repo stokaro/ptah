@@ -142,6 +142,20 @@ func TestCheck_HappyPath(t *testing.T) {
 	})
 }
 
+// A provider that needs a two-way feature refuses a host that lists none, as
+// it refuses a host that leaves out that one feature, and the suite holds
+// both refusals to one rule.
+func TestCheck_HostWithoutTwoWayFeatures_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	target := conformance.InProcess(newMemoryProvider(memoryDefects{}).tableOwnerServer())
+
+	report, err := conformance.Check(c.Context(), memoryConfig(target, "owner"))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(report.Err(), qt.IsNil)
+	c.Assert(statuses(report), qt.DeepEquals, conforming())
+}
+
 // Each row breaks the memory provider in one way, and the suite fails
 // exactly the checks that exist to find that defect. Without the defect,
 // TestCheck_HappyPath passes every one of them.
