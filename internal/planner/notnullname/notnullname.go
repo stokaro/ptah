@@ -7,7 +7,8 @@
 // display_name under a name full_name keeps until the plan's removals run. The
 // server answers `constraint "t_full_name_not_null" for relation "t" already
 // exists`. A column whose constraint the plan renames holds its name in the same
-// way until that rename runs.
+// way until that rename runs, and a column the plan makes nullable holds it until
+// DROP NOT NULL runs.
 //
 // The plan keeps its order, because a removal goes last for a reason: the views,
 // routines and policies that read a removed column move to what the plan adds
@@ -99,6 +100,8 @@ func Unfree(nodes []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 type holders struct {
 	// removed is the name each removed column holds.
 	removed map[string]string
+	// released is the name each column the plan makes nullable holds.
+	released map[string]string
 	// held is the names a later statement of the plan frees.
 	held map[string]bool
 	// moved is the names [Free] has moved to their interim name.
@@ -114,9 +117,10 @@ func heldNames(diff *difftypes.SchemaDiff) map[string]*holders {
 	tables := make(map[string]*holders)
 	for _, table := range diff.TablesModified {
 		found := holders{
-			removed: make(map[string]string),
-			held:    make(map[string]bool),
-			moved:   make(map[string]bool),
+			removed:  make(map[string]string),
+			released: make(map[string]string),
+			held:     make(map[string]bool),
+			moved:    make(map[string]bool),
 		}
 		for _, column := range table.ColumnsRemoved {
 			if column.NotNullConstraintName != "" {
@@ -127,6 +131,10 @@ func heldNames(diff *difftypes.SchemaDiff) map[string]*holders {
 		for _, column := range table.ColumnsModified {
 			if change := column.NotNullConstraintNameChange; change != nil && change.Current != "" {
 				found.held[change.Current] = true
+			}
+			if name := column.ReleasedNotNullConstraintName; name != "" {
+				found.released[column.ColumnName] = name
+				found.held[name] = true
 			}
 		}
 		if len(found.held) > 0 {
@@ -146,10 +154,25 @@ func addedName(table string, column *ast.ColumnNode) string {
 	if column.NotNullConstraintName != "" {
 		return column.NotNullConstraintName
 	}
+	return serverName(table, column.Name)
+}
+
+// setName is the name a modification gives the NOT NULL it adds, by the rule
+// [addedName] states: the name it states, or the one the server gives.
+func setName(table string, op *ast.ModifyColumnOperation) string {
+	if op.NotNullConstraintName != "" {
+		return op.NotNullConstraintName
+	}
+	return serverName(table, op.Column.Name)
+}
+
+// serverName is the name the server gives a NOT NULL nobody named on column of table,
+// which a statement may name with its schema.
+func serverName(table, column string) string {
 	if ref, ok := tableref.Parse(table); ok {
 		table = ref.Name
 	}
-	return pgname.NotNull(table, column.Name)
+	return pgname.NotNull(table, column)
 }
 
 // freedFor advances the table's state over one statement and answers the names
@@ -178,7 +201,13 @@ func (h *holders) freedFor(alter *ast.AlterTableNode) []string {
 				take(addedName(alter.Name, op.Column))
 			}
 		case *ast.ModifyColumnOperation:
-			take(op.NotNullConstraintName)
+			switch {
+			case !op.Changed.Nullability:
+			case op.Column.Nullable:
+				delete(h.held, h.released[op.Column.Name])
+			default:
+				take(setName(alter.Name, op))
+			}
 		case *ast.RenameConstraintOperation:
 			take(op.To)
 			delete(h.held, op.From)

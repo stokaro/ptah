@@ -163,6 +163,7 @@ func mariaDB() descriptor.Dialect {
 			SerialAutoIncrement:     true,
 			ForeignKeyNamespace:     descriptor.NamespaceDatabase,
 			ForeignKeyNamesFoldCase: true,
+			JSONHeldAsText:          true,
 		},
 
 		// A table directive's engine and comment attributes, and a field's

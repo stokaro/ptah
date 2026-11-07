@@ -51,13 +51,17 @@ about the engine before it opens a session comes from it:
 - **Other declarations.** `query_dialect` tells the query builder how to spell
   statements for the engine. `scope_selections` lets `--include`, `--exclude`
   and `--schema` name the engine's own objects. `lint_rules` lists the rules
-  of `lint.migrations`.
+  of `lint.migrations`. `enum_columns` says how the engine builds a column a
+  source declares as an enum: a type that lists the values, a column under a
+  CHECK, or not at all, in which case Ptah refuses the column by name.
 
 The README's
 [Captured extension sources (latest development source)](https://github.com/stokaro/ptah/blob/master/provider-sdk/README.md#captured-extension-sources)
 section states the source claims,
 [Release lines (latest development source)](https://github.com/stokaro/ptah/blob/master/provider-sdk/README.md#release-lines)
-states the release lines, and
+states the release lines,
+[Enum columns (latest development source)](https://github.com/stokaro/ptah/blob/master/provider-sdk/README.md#enum-columns)
+states the enum forms, and
 [Migration lint (latest development source)](https://github.com/stokaro/ptah/blob/master/provider-sdk/README.md#migration-lint)
 states the rule catalog.
 

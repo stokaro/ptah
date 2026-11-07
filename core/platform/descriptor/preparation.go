@@ -38,6 +38,9 @@ type Preparation struct {
 	// or grammar defines names that built-in type, so a user type of the same
 	// name is not assumed.
 	PostgresBuiltInTypes bool `json:"postgres_built_in_types,omitempty"`
+	// JSONHeldAsText reports that a JSON column is a LONGTEXT with a CHECK of json_valid,
+	// as MariaDB builds one and reads it back.
+	JSONHeldAsText bool `json:"json_held_as_text,omitempty"`
 	// NonUniqueIndexMethods are the index access methods, in lower case,
 	// that the server builds no UNIQUE index with, as PostgreSQL refuses one
 	// with `access method "hash" does not support unique indexes`. A UNIQUE

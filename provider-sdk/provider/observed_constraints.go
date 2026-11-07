@@ -51,6 +51,8 @@ func validateInspectedConstraints(description *protocol.Description, engine *pro
 	if negotiated && !slices.Contains(snapshot.GetTargetFeatures(), ObservedColumnsFeature) {
 		return fmt.Errorf("%w: observed constraints require negotiated column observations", ErrProtocol)
 	}
+	unique := negotiated && EngineOffers(description, engine.GetId(), ObservedUniqueConstraintsFeature) &&
+		slices.Contains(snapshot.GetTargetFeatures(), ObservedUniqueConstraintsFeature)
 	for _, table := range snapshot.GetTables() {
 		if !negotiated {
 			if len(table.GetConstraints()) != 0 {
@@ -58,14 +60,17 @@ func validateInspectedConstraints(description *protocol.Description, engine *pro
 			}
 			continue
 		}
-		if err := validateInspectedTableConstraints(table); err != nil {
+		if err := validateInspectedTableConstraints(table, unique); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func validateInspectedTableConstraints(table *protocol.Table) error {
+// validateInspectedTableConstraints checks the constraints of one table of a
+// negotiated read. unique admits UNIQUE constraints beside the foreign keys
+// and CHECKs.
+func validateInspectedTableConstraints(table *protocol.Table, unique bool) error {
 	columns := make(map[string]bool, len(table.GetColumns()))
 	for _, column := range table.GetColumns() {
 		columns[column.GetName()] = true
@@ -86,26 +91,38 @@ func validateInspectedTableConstraints(table *protocol.Table) error {
 		if err := validateConstraintColumns(name, constraint, constraint.GetColumnNames(), columns); err != nil {
 			return err
 		}
-		if constraint.NullsDistinct != nil || len(constraint.GetIncludeColumns()) != 0 || constraint.UsingMethod != nil || constraint.GetHashShardBuckets() != 0 {
+		// NULLS [NOT] DISTINCT is a UNIQUE constraint's own; the rest are an
+		// index's.
+		if (constraint.NullsDistinct != nil && constraint.GetType() != uniqueConstraint) || len(constraint.GetIncludeColumns()) != 0 ||
+			constraint.UsingMethod != nil || constraint.GetHashShardBuckets() != 0 {
 			return constraintsError(name, constraint.GetName(), "carries index attributes")
 		}
 		if err := validateComparisonIdentities(constraint.GetRequires()); err != nil {
 			return err
 		}
-		var err error
-		switch constraint.GetType() {
-		case foreignKeyConstraint:
-			err = validateObservedForeignKey(name, constraint)
-		case checkConstraint:
-			err = validateObservedCheck(name, constraint)
-		default:
-			err = constraintsError(name, constraint.GetName(), "is neither a FOREIGN KEY nor a CHECK")
-		}
-		if err != nil {
+		if err := validateConstraintType(table, constraint, unique); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// validateConstraintType checks a constraint by its type: a FOREIGN KEY, a
+// CHECK, and a UNIQUE constraint where unique admits one.
+func validateConstraintType(table *protocol.Table, constraint *protocol.ObservedConstraint, unique bool) error {
+	name := table.GetIdentity().GetName()
+	switch kind := constraint.GetType(); {
+	case kind == foreignKeyConstraint:
+		return validateObservedForeignKey(name, constraint)
+	case kind == checkConstraint:
+		return validateObservedCheck(name, constraint)
+	case unique && kind == uniqueConstraint:
+		return validateObservedUnique(table, constraint)
+	case unique:
+		return constraintsError(name, constraint.GetName(), "is not a FOREIGN KEY, a CHECK or a UNIQUE constraint")
+	default:
+		return constraintsError(name, constraint.GetName(), "is neither a FOREIGN KEY nor a CHECK")
+	}
 }
 
 // validateConstraintColumns refuses a column the table does not hold, and one

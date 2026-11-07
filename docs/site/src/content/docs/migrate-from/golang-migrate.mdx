@@ -208,7 +208,51 @@ describes is the converted one.
 
 ## What the missing rollback costs
 
-### Roll back past the empty rollback
+### Rolling back past the empty rollback is refused
+
+```console exits=2
+ptah migrations down --db-url sqlite://app.db --migrations-dir ./migrations --target 1 --confirm
+```
+
+Expected output includes, on standard error:
+
+```text
+error: error running down migrations: migration 2 has a down file with no statements (0000000002_add_users_email_index.down.sql), so a rollback would change nothing and still move the version; write the rollback, or state that it has none with `-- +ptah empty_rollback` at the top of the down file
+```
+
+Nothing changed. A rollback that ran nothing and moved the version would leave the
+index in place, and the next apply of the second migration would fail on it.
+
+### Write the rollback
+
+Write the `DROP INDEX` the source never had:
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+cat > migrations/0000000002_add_users_email_index.down.sql <<'SQL'
+DROP INDEX users_email_idx;
+SQL
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+@'
+DROP INDEX users_email_idx;
+'@ | Set-Content migrations/0000000002_add_users_email_index.down.sql
+```
+
+</TabItem>
+</Tabs>
+
+Seal the directory again, and roll back:
+
+```console
+ptah migrations hash --dir ./migrations
+```
 
 ```console
 ptah migrations down --db-url sqlite://app.db --migrations-dir ./migrations --target 1 --confirm
@@ -223,31 +267,9 @@ Migrations to roll back: 1
 Database is now at version: 1
 ```
 
-The rollback succeeded, and the index it was supposed to remove is still there,
-because the file Ptah generated has no statement in it. The revision table and
-the database now disagree.
-
-### Watch the next apply fail
-
-Rolling forward again re-runs the second migration against a database that
-still has its index:
-
-```console exits=2
-ptah migrations up --db-url sqlite://app.db --migrations-dir ./migrations
-```
-
-Expected output includes, on standard error:
-
-```text
-error: error running migrations: failed to apply migration 2: failed to execute migration SQL: sqlite: SQL execution failed: SQL logic error: index users_email_idx already exists (1)
-SQL: CREATE UNIQUE INDEX users_email_idx ON users (email)
-```
-
-This is the cost of the missing down file, and it is why the generated
-rollback is worth writing before the directory reaches an environment you
-cannot rebuild. Write the `DROP INDEX` into
-`migrations/0000000002_add_users_email_index.down.sql`, re-run `ptah migrations
-hash --dir ./migrations`, and the pair becomes reversible.
+The rollback is worth writing before the directory reaches an environment you
+cannot rebuild. A migration with nothing to undo
+[says so instead](../../versioned/rollback/#a-down-file-with-no-statements).
 
 ## Clean up
 

@@ -874,6 +874,11 @@ bytes a character, which is utf8mb4. `double` declared `float` reads
 sign (`int` declared `int unsigned`), half a range lost (`int unsigned` declared `int`),
 and a member an `enum` or a `set` stops naming.
 
+On MariaDB a `json` column is a `longtext` with `CHECK (json_valid(c))` under the column's
+own name, and a column declared `json` plans nothing against that shape. A `longtext` with
+no such `CHECK` plans the `ADD CONSTRAINT`, and any other type plans a `MODIFY COLUMN` that
+writes the `CHECK` with the type.
+
 ## Making a column NOT NULL
 
 A plan that makes an existing column `NOT NULL` writes `MODIFY COLUMN` with

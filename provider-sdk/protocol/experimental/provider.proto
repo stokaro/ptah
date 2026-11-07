@@ -212,6 +212,41 @@ message Engine {
   // when the engine lists models.predecessors, and sent only to a host that
   // lists it. Contract 25.25.
   repeated ModelPredecessor model_predecessors = 26;
+  // How the engine builds a column a source declares as an enum. Present
+  // exactly when the engine lists schema.enum-columns, and sent only to a host
+  // that lists it. Absent leaves the enum a type of its own, as the host
+  // keeps it for an engine of contract 25.30. Contract 25.31.
+  EnumColumns enum_columns = 27;
+}
+// EnumColumns is how an engine builds a column a source declares as an enum:
+// one typed ENUM with its values, such as a Go field with enum="a,b,c", or one
+// typed with the name of an enum the source declares. The host builds every
+// such column in this form before it validates, compares, plans or renders
+// the declaration, and keeps no enum type for the engine: the provider
+// receives an ordinary column. Contract 25.31, under schema.enum-columns.
+message EnumColumns {
+  enum Form {
+    FORM_UNSPECIFIED = 0;
+    // The column's type lists the values, as the engine's enum type does:
+    // enum('a','b','c'), the values in declaration order, each a SQL string
+    // literal with a quote doubled, joined by commas without spaces. The
+    // engine compares the type with the one a read reports in its own
+    // spelling.
+    VALUES_TYPE = 1;
+    // The column is of check_type and holds the values under its CHECK:
+    // kind IN ('a', 'b', 'c'), the column named bare, the values in
+    // declaration order. A column with a CHECK of its own holds
+    // (<own>) AND kind IN ('a', 'b', 'c').
+    CHECK = 2;
+    // The engine builds no enum. The host refuses an enum column, by table
+    // and column, and an enum the source declares, by name, before it
+    // validates, compares or renders the declaration.
+    REFUSED = 3;
+  }
+  Form form = 1;
+  // The type of a CHECK column, such as TEXT: one line, without leading or
+  // trailing white space. Set exactly when form is CHECK.
+  string check_type = 2;
 }
 // ModelPredecessor is an identity under which a document captured claims of
 // one of the engine's models: the owner, the kind, the schema version and the
@@ -786,7 +821,10 @@ message Table {
   // this table. A constraint of those types this list does not name is
   // absent. The primary key stays in primary_key, and an index the engine
   // builds to enforce a constraint is neither here nor in indexes. Contract
-  // 25.28, negotiated under schema.observed-constraints.
+  // 25.28, negotiated under schema.observed-constraints. Under
+  // schema.observed-unique-constraints, contract 25.31, the list carries every
+  // UNIQUE constraint the table holds too, over one column or several, and a
+  // column a UNIQUE over it alone covers states ObservedColumn.unique.
   repeated ObservedConstraint constraints = 7;
 }
 message Column {

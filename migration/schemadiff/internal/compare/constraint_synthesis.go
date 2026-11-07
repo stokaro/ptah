@@ -47,18 +47,15 @@ func synthesizeFieldLevelCheckConstraints(
 		checkNames[t.StructName] = schemaprep.ColumnCheckNames(t, desired.Fields, desired.Constraints, dialect)
 	}
 
-	dbColumns := make(map[tableMemberKey]struct{}, 16)
+	dbColumns := make(map[tableMemberKey]string, 16)
 	for _, t := range database.Tables {
 		for _, c := range t.Columns {
-			dbColumns[newTableMemberKey(t.QualifiedName(), c.Name, semantics)] = struct{}{}
+			dbColumns[newTableMemberKey(t.QualifiedName(), c.Name, semantics)] = c.RawType()
 		}
 	}
 
 	var synthesized []schemamodel.Constraint
 	for _, f := range desired.Fields {
-		if f.Check == "" {
-			continue
-		}
 		table, ok := structToTable[f.StructName]
 		tableName := table.QualifiedName()
 		tableLeafName := table.Name
@@ -66,7 +63,11 @@ func synthesizeFieldLevelCheckConstraints(
 			tableName = f.StructName
 			tableLeafName = f.StructName
 		}
-		if _, exists := dbColumns[newTableMemberKey(tableName, f.Name, semantics)]; !exists {
+		currentType, exists := dbColumns[newTableMemberKey(tableName, f.Name, semantics)]
+		if schemaprep.HoldsJSONText(currentType, dialect) {
+			f = schemaprep.WithJSONCheck(f, dialect)
+		}
+		if f.Check == "" || !exists {
 			continue
 		}
 		name, named := checkNames[f.StructName][f.Name]

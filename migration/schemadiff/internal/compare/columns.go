@@ -545,6 +545,8 @@ func columnsWithDesiredDomains(
 		// A rule above may hold the column NOT NULL whatever the field says, and the
 		// plan writes the clause from the field.
 		colDiff.Desired.Nullable = genNullable
+		// Empty on a column the change makes NOT NULL, whose read reports no name.
+		colDiff.ReleasedNotNullConstraintName = dbCol.NotNullConstraintName
 	}
 	applyColumnSequence(&colDiff, genCol, dbCol, ctx)
 	if change := identityChange(genCol, dbCol, dialect); change != "" {
@@ -956,6 +958,16 @@ func columnTypeChange(
 	// does through its own type map.
 	if rules != nil {
 		return rules.TypeChange(genCol, dbCol, dbRawType)
+	}
+	if schemaprep.JSONHeldAsText(genCol.Type, dialect) && schemaprep.HoldsJSONText(dbRawType, dialect) {
+		return ""
+	}
+	// SQLite keeps the declaration as the column's type, so a column built under the word
+	// it is declared by is that column, whatever affinity the renderer would give the word.
+	// Compared by affinity, a table built by hand with `boolean` is copied to a new table to
+	// change nothing an application can observe.
+	if comparisonOf(dialect).TypeAffinity && strings.EqualFold(strings.TrimSpace(genCol.Type), strings.TrimSpace(dbRawType)) {
+		return ""
 	}
 	if comparisonOf(dialect).NullableTypes {
 		return clickHouseColumnTypeChange(genCol, dbCol, dbRawType)
@@ -1451,14 +1463,17 @@ func normalizeColumnTypesForDialect(
 // as text, STRING[] as text[], and BYTES as bytea. Compared as declared, each
 // planned ALTER COLUMN ... TYPE to the type the column had, on every run
 // (stokaro/ptah#4059). A sized STRING(n) is not folded: it is a text column
-// with a width, read back as STRING(n), not the varchar(n) it resembles.
+// with a width, read back as STRING(n), not the varchar(n) it resembles. Measured on
+// v26.3.5, BLOB reads back as bytea and JSON as jsonb too.
 func cockroachCatalogTypeName(typeName string) string {
 	base, depth := splitArrayDepth(typeName)
 	switch strings.ToLower(strings.TrimSpace(base)) {
 	case "string":
 		base = "text"
-	case "bytes":
+	case "bytes", "blob":
 		base = "bytea"
+	case "json":
+		base = "jsonb"
 	default:
 		return typeName
 	}

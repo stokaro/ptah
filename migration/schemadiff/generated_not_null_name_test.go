@@ -100,3 +100,42 @@ func notNullNameChanges(diff *difftypes.SchemaDiff) []*difftypes.NotNullConstrai
 	}
 	return changes
 }
+
+// TestCompareReportsTheNameOfAColumnMadeNullable carries the name a column gives up, which
+// it holds until its statement runs. A column that stays NOT NULL gives up nothing, and
+// neither does one the database reports no name for.
+func TestCompareReportsTheNameOfAColumnMadeNullable(t *testing.T) {
+	tests := []struct {
+		name       string
+		nullable   bool
+		isNullable string
+		current    string
+		want       string
+	}{
+		{name: "a column made nullable", nullable: true, isNullable: "NO", current: "t1_id_not_null", want: "t1_id_not_null"},
+		{name: "a column made nullable that reports no name", nullable: true, isNullable: "NO"},
+		{name: "a column made NOT NULL", isNullable: "YES"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			desired := &schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "T1", Name: "t1"}},
+				Fields: []schemamodel.Field{{StructName: "T1", Name: "id", Type: "integer", Nullable: test.nullable}},
+			}
+			current := &catalog.Database{Tables: []catalog.Table{{
+				Name: "t1", Schema: "public",
+				Columns: []catalog.Column{{
+					Name: "id", DataType: "integer", UDTName: "int4", ColumnType: "integer",
+					IsNullable: test.isNullable, NotNullConstraintName: test.current,
+				}},
+			}}}
+
+			diff, err := schemadiff.CompareWithDialect(t.Context(), desired, current, "postgres", must.Must(builtin.New()))
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(diff.TablesModified, qt.HasLen, 1)
+			c.Assert(diff.TablesModified[0].ColumnsModified[0].ReleasedNotNullConstraintName, qt.Equals, test.want)
+		})
+	}
+}

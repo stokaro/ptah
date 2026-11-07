@@ -45,6 +45,12 @@ type memoryDefects struct {
 	namespacesRegardless bool
 	// seedsRegardless reserves the seed ledger whatever the host listed.
 	seedsRegardless bool
+	// prepareIncomplete answers PrepareCommonObjects with an incomplete
+	// reply.
+	prepareIncomplete bool
+	// uniqueRegardless reports each table's UNIQUE constraint whatever the
+	// host listed.
+	uniqueRegardless bool
 }
 
 type memoryProvider struct {
@@ -85,21 +91,26 @@ func memoryDescription() *protocol.Description {
 		Revision: provider.Revision, ProviderId: memoryProviderID, Version: "1.0.0", SemanticIdentity: "memory-1",
 		Engines: []*protocol.Engine{{Id: memoryEngine, DefaultSchema: "main", Identifiers: memoryRules(),
 			Features: []string{provider.CommonTableIdentityFeature, provider.LocksFeature, provider.TransactionsFeature, provider.UnreadTablesFeature,
-				provider.CommonObjectsFeature, provider.CommonNamespacesFeature, provider.SeedsFeature, provider.ReservedSeedsFeature, provider.LinkedReleaseLinesFeature},
+				provider.CommonObjectsFeature, provider.CommonNamespacesFeature, provider.SeedsFeature, provider.ReservedSeedsFeature, provider.LinkedReleaseLinesFeature,
+				provider.ObservedColumnsFeature, provider.ObservedConstraintsFeature, provider.ObservedUniqueConstraintsFeature, provider.EnumColumnsFeature},
 			CommonObjects: &protocol.CommonObjectSupport{Kinds: []protocol.CommonObjectSupport_Kind{protocol.CommonObjectSupport_SCHEMA}},
+			// The memory engine has no enum type, and holds an enum column's
+			// values under a CHECK of a TEXT column.
+			EnumColumns: &protocol.EnumColumns{Form: protocol.EnumColumns_CHECK, CheckType: "TEXT"},
 			// The memory engine runs in the provider's process, so the line it
 			// certifies names the version linked, not an image.
 			ReleaseLines: []*protocol.ReleaseLine{{Line: "1", Support: protocol.ReleaseLine_CERTIFIED, Linked: "1.0.0"}}}},
 		Features: []string{provider.InspectFeature, provider.RenderFeature, provider.ExecuteFeature, provider.LocksFeature, provider.TransactionsFeature,
 			provider.ErrorReasonsFeature, provider.UnreadTablesFeature, provider.CommonObjectsFeature, provider.CommonNamespacesFeature,
-			provider.SeedsFeature, provider.ReservedSeedsFeature, provider.LinkedReleaseLinesFeature},
+			provider.SeedsFeature, provider.ReservedSeedsFeature, provider.LinkedReleaseLinesFeature, provider.NormalizeValuesFeature,
+			provider.ObservedColumnsFeature, provider.ObservedConstraintsFeature, provider.ObservedUniqueConstraintsFeature, provider.EnumColumnsFeature},
 	}
 }
 
 // server joins the memory provider with its description.
 func (m *memoryProvider) server() runtime.Server {
 	return runtime.Server{Description: memoryDescription(), Sessions: m, Inspector: m, Renderer: m, Executor: m, Locks: m, Transactions: m,
-		CommonObjects: m, Seeds: m}
+		CommonObjects: m, Seeds: m, ValueNormalizer: m}
 }
 
 func refuse(code codes.Code, reason string) error { return runtime.ErrorWithReason(code, reason) }
@@ -167,11 +178,26 @@ func (m *memoryProvider) Inspect(ctx context.Context, request *protocol.InspectR
 		names = append(names, name)
 	}
 	slices.Sort(names)
+	listed := provider.HostFeatures(ctx)
+	observed := slices.Contains(listed, provider.ObservedColumnsFeature)
+	constraints := observed && slices.Contains(listed, provider.ObservedConstraintsFeature)
+	unique := m.defects.uniqueRegardless || constraints && slices.Contains(listed, provider.ObservedUniqueConstraintsFeature)
+	read := memoryRead{observed: observed, unique: unique}
 	for _, name := range names {
 		identity := &protocol.Reference{Engine: memoryEngine, Database: session.database, Kind: "table", Name: name, DisplayName: name}
-		snapshot.Tables = append(snapshot.Tables, &protocol.Table{Identity: identity, NormalizedIdentity: identity, Columns: tables[name]})
+		snapshot.Tables = append(snapshot.Tables, read.table(identity, tables[name]))
 	}
-	listed := provider.HostFeatures(ctx)
+	switch {
+	case unique && !constraints:
+		snapshot.TargetFeatures = append(snapshot.TargetFeatures, provider.ObservedUniqueConstraintsFeature)
+	case unique:
+		snapshot.TargetFeatures = append(snapshot.TargetFeatures, provider.ObservedColumnsFeature, provider.ObservedConstraintsFeature,
+			provider.ObservedUniqueConstraintsFeature)
+	case constraints:
+		snapshot.TargetFeatures = append(snapshot.TargetFeatures, provider.ObservedColumnsFeature, provider.ObservedConstraintsFeature)
+	case observed:
+		snapshot.TargetFeatures = append(snapshot.TargetFeatures, provider.ObservedColumnsFeature)
+	}
 	if m.defects.unreadRegardless || slices.Contains(listed, provider.UnreadTablesFeature) {
 		snapshot.TargetFeatures = append(snapshot.TargetFeatures, provider.UnreadTablesFeature)
 		snapshot.UnreadTables = []*protocol.UnreadTable{{
@@ -199,10 +225,49 @@ func (m *memoryProvider) Inspect(ctx context.Context, request *protocol.InspectR
 	return snapshot, nil
 }
 
+// memoryRead is what a read reports of a table: each column whole where
+// observed, and the table's UNIQUE constraint where unique.
+type memoryRead struct {
+	observed, unique bool
+}
+
+// table is one table as the read reports it. The memory engine keeps the
+// first column of every table unique, under the UNIQUE constraint
+// <table>_<column>_key, and holds no other constraint. A host that lists
+// observed columns reads each column whole, and one that lists UNIQUE
+// constraints as well reads the constraint and the column's uniqueness.
+func (read memoryRead) table(identity *protocol.Reference, columns []*protocol.Column) *protocol.Table {
+	table := &protocol.Table{Identity: identity, NormalizedIdentity: identity, Columns: columns}
+	unique := read.unique
+	if !read.observed && !unique {
+		return table
+	}
+	table.Columns = make([]*protocol.Column, len(columns))
+	for i, column := range columns {
+		table.Columns[i] = &protocol.Column{Name: column.GetName(), Observed: &protocol.ObservedColumn{Name: column.GetName(), DataType: column.GetType(),
+			IsNullable: "YES", OrdinalPosition: int64(i + 1), Unique: unique && i == 0}}
+	}
+	if unique && len(columns) > 0 {
+		first := columns[0].GetName()
+		table.Constraints = []*protocol.ObservedConstraint{{Name: identity.GetName() + "_" + first + "_key", TableName: identity.GetName(),
+			Type: "UNIQUE", ColumnNames: []string{first}}}
+	}
+	return table
+}
+
+// NormalizeValues normalizes the values of no model: the memory engine
+// declares none, so a request carries no value.
+func (m *memoryProvider) NormalizeValues(_ context.Context, request *protocol.NormalizeValuesRequest) (*protocol.NormalizedValues, error) {
+	if len(request.GetValues()) != 0 {
+		return nil, refuse(codes.InvalidArgument, "the memory engine declares no value model")
+	}
+	return &protocol.NormalizedValues{Complete: true}, nil
+}
+
 // PrepareCommonObjects returns the declaration as it is: a namespace's name
 // is spelled one way on the memory engine.
 func (m *memoryProvider) PrepareCommonObjects(_ context.Context, request *protocol.PrepareCommonObjectsRequest) (*protocol.PreparedCommonObjects, error) {
-	return &protocol.PreparedCommonObjects{Complete: true, Prepared: proto.CloneOf(request.GetDeclared())}, nil
+	return &protocol.PreparedCommonObjects{Complete: !m.defects.prepareIncomplete, Prepared: proto.CloneOf(request.GetDeclared())}, nil
 }
 
 // ListSeedTables lists the tables of the session's database, the seed ledger

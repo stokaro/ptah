@@ -306,8 +306,9 @@ func (cs *liquibaseFormattedChangeSet) finish(fileName, dbms string) (SourceMigr
 //
 // The down is the rollback's SQL ([liquibaserun.Rollback.SQL]), which is empty
 // for a rollback of "empty" or "not required": Liquibase runs nothing to roll
-// such a changeset back, and the down migration the emitter writes for an
-// empty down runs nothing either.
+// such a changeset back, and the down migration the emitter writes for it runs
+// nothing either. A changeset with no rollback at all is empty too, and Liquibase
+// refuses to roll that one back, so only the first carries the statement.
 func (cs *liquibaseFormattedChangeSet) migration(fileName string) (SourceMigration, error) {
 	if err := cs.run.Err(cs.author+":"+cs.id, fileName); err != nil {
 		return SourceMigration{}, err
@@ -331,6 +332,7 @@ func (cs *liquibaseFormattedChangeSet) migration(fileName string) (SourceMigrati
 		DownSQL:           downSQL,
 		UpNoTransaction:   noTransaction,
 		DownNoTransaction: noTransaction,
+		EmptyRollback:     cs.rollback.Kind() == liquibaserun.EmptyRollback,
 		Path:              fileName,
 		Changeset:         cs.author + ":" + cs.id,
 	}, nil

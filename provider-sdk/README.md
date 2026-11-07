@@ -63,10 +63,11 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.30. Each released SDK speaks one contract:
+speaks contract 25.31. Each released SDK speaks one contract:
 
 | SDK release | Contract |
 | --- | --- |
+| `provider-sdk/v0.29.0` | 25.31 |
 | `provider-sdk/v0.28.0` | 25.30 |
 | `provider-sdk/v0.27.0` | 25.29 |
 | `provider-sdk/v0.26.0` | 25.28 |
@@ -162,6 +163,8 @@ returns to 0.
   [index predicates](#index-predicates).
   Contract 25.30 adds [linked release lines](#linked-release-lines) and states
   the provider's [working directory](#working-directory).
+  Contract 25.31 adds [enum columns](#enum-columns) and
+  [observed UNIQUE constraints](#observed-unique-constraints).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -203,7 +206,8 @@ does not oblige a peer to use it.
   `schema.observed-constraints`, `planning.constraint-changes`,
   `schema.index-nulls-order`, `schema.common-namespaces`,
   `source.sql-table-clauses`, `schema.reserved-seeds`,
-  `schema.index-predicates` and `engine.linked-release-lines`. The embedding
+  `schema.index-predicates`, `engine.linked-release-lines`,
+  `schema.enum-columns` and `schema.observed-unique-constraints`. The embedding
   store's calls,
   `PrepareCommonObjects`, `ReverseChanges` and `ReportValues` are new, and each
   comes with an addition to `Engine`, so a host lists the feature to receive
@@ -819,7 +823,10 @@ The offline part needs no database. It checks:
   lists every two-way feature, a reply the SDK's validator accepts and the
   same reply from a second call and from a second process, or the refusal the
   call expects; under every narrowed host, a refusal of a request that uses an
-  addition the host did not list, and otherwise a reply that uses none;
+  addition the host did not list, and otherwise a reply that uses none. A
+  call may need a two-way feature, such as `PrepareCommonObjects`: a narrowed
+  host that did not list it sends a request the SDK's server refuses before
+  the provider sees it, and that refusal passes;
 - with `Config.Models`, that every desired and observed model identity an
   earlier release described, as `ModelIdentities` returns them, is still a
   model the provider describes or a predecessor one names;
@@ -842,7 +849,12 @@ serve without them, as long as it does not use what the host did not list. A
 refusal with `Internal`, or one whose message is the text of
 `provider.ErrProtocol`, is not such a refusal: it is how the SDK's server
 answers a reply its validator refuses, and how a provider answers a defect of
-its own.
+its own. The one exception is the SDK server's refusal of a request: where
+the SDK's validator refuses a call's request under the narrowed host's
+description, the call passes when the provider answers `InvalidArgument` with
+exactly the validator's text, which is what the SDK's server sends before any
+provider code runs
+([ADR 0101](../docs/adr/0101-the-sdk-servers-refusal-of-a-request-is-not-the-providers.md)).
 
 The command takes the same configuration from flags, a fixture file and the
 environment:
@@ -2663,6 +2675,35 @@ unchanged, and predictions establish no catalog inspection. An unnegotiated
 peer refuses these new fields. The host consumes effective receipts separately
 from the source fields used for export and operation operands.
 
+## Enum columns
+
+[ADR 0099](../docs/adr/0099-an-engine-states-how-it-builds-an-enum-column.md)
+decides this feature. `schema.enum-columns` enables `Engine.enum_columns`: how
+the engine builds a column a source declares as an enum, typed `ENUM` with its
+values (`enum="a,b,c"` on a Go field) or typed with the name of an enum the
+source declares. The provider and the engine list this two-way feature, and
+an engine states `enum_columns` exactly when it lists it. The engine states
+one form:
+
+- `VALUES_TYPE`: the column's type lists the values, `enum('a','b','c')`, in
+  declaration order. The engine compares that type with the one a read reports
+  in its own spelling, such as DuckDB's `ENUM('a', 'b', 'c')`.
+- `CHECK`: the column is of `check_type`, such as `TEXT`, and holds the values
+  under its CHECK, `kind IN ('a', 'b', 'c')`, with the column named bare. A
+  column with a CHECK of its own holds `(<own>) AND kind IN (...)`.
+- `REFUSED`: the engine has no enum.
+
+A host builds every enum column of the engine's declarations in that form
+before it validates, compares, plans or renders them, and keeps no enum type
+for the engine, so the provider receives an ordinary column. Under `REFUSED`
+the host refuses an enum column by table and column, and a declared enum by
+name, before it calls the provider. A host that does not list the feature
+keeps the enum a type of its own, as it does for an engine of contract 25.30.
+`ValidateDescription` refuses the field without the feature or the feature
+without the field, the engine's feature without the provider's, a form left
+unspecified, a `CHECK` without a column type on one line, and a column type
+beside another form.
+
 ## Complete column observations
 
 [ADR 0048](../docs/adr/0048-common-column-observations-have-one-complete-wire-representation.md)
@@ -2785,6 +2826,37 @@ or refuses it in its own words. A constraint of a table the plan creates
 travels in the creation's declaration, and one of a table it removes leaves
 with the table. A host that has not negotiated the feature refuses a plan
 with such a change of a provider table before it plans, naming the table.
+
+## Observed UNIQUE constraints
+
+[ADR 0100](../docs/adr/0100-a-read-reports-the-unique-constraints-an-engine-keeps-apart-from-its-indexes.md)
+decides this feature. `schema.observed-unique-constraints` adds the UNIQUE
+constraints a table holds to `Table.constraints`, for an engine that keeps
+such a constraint apart from its indexes, as DuckDB does. The provider and the
+engine list this two-way feature, and the engine needs
+`schema.observed-constraints`. Without it a peer refuses a UNIQUE in the list,
+as before.
+
+With the feature negotiated the list carries every UNIQUE constraint of the
+table, over one column or several, and a UNIQUE the list does not name is
+absent. The SDK checks each one as it checks a foreign key or a CHECK, and
+also:
+
+- it lists at least one column;
+- it carries no foreign key attribute and no `check_clause`;
+- `nulls_distinct` may state NULLS [NOT] DISTINCT, which is the constraint's
+  own; `include_columns`, `using_method` and `hash_shard_buckets` are an
+  index's and stay empty;
+- its deferral follows the rule of a foreign key;
+- a column that a UNIQUE over it alone covers states `unique` in its
+  observation, as a read of the column reports it.
+
+An index the engine builds to enforce a UNIQUE constraint stays out of
+`Table.indexes`. Where the engine lists `planning.constraint-changes` as well,
+it plans the addition and the removal of a UNIQUE constraint on a table the
+plan keeps as it plans those of a foreign key or a CHECK: the declared ones
+travel in the desired declaration and the held ones in the current
+observation.
 
 ## CHECK equivalence
 

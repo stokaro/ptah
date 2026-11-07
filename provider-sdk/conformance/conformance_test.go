@@ -186,6 +186,11 @@ func TestCheck_FailurePath(t *testing.T) {
 			defects: memoryDefects{seedsRegardless: true},
 			want:    []string{"live.inspect"},
 		},
+		{
+			name:    "a UNIQUE constraint a host that did not list it reads",
+			defects: memoryDefects{uniqueRegardless: true},
+			want:    []string{"live.inspect"},
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -222,6 +227,11 @@ func TestCheck_WireFailurePath(t *testing.T) {
 			name:    "a certified release line that names an image and a linked engine",
 			defects: wireDefects{imageAndLinked: true},
 			want:    []string{"description.valid", "handshake.contract-25.0-host", "negotiation.description"},
+		},
+		{
+			name:    "enum columns a host that did not list them receives",
+			defects: wireDefects{enumColumnsRegardless: true},
+			want:    []string{"handshake.contract-25.0-host", "negotiation.description"},
 		},
 		{
 			name:    "an offered service that answers Unimplemented",

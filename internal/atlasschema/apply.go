@@ -1372,12 +1372,7 @@ func executeApplyStatements(ctx context.Context, executor catalog.SchemaExecutor
 			err = executor.ExecuteSQL(ctx, stmt)
 		}
 		if err != nil {
-			return &migrator.MigrationExecutionError{
-				Err:            fmt.Errorf("failed to execute SQL statement: %w", err),
-				Statement:      stmt,
-				StatementIndex: i + 1,
-				Total:          len(statements),
-			}
+			return statementFailure(stmt, i, len(statements), err)
 		}
 	}
 	return nil
@@ -1387,6 +1382,36 @@ func executeApplyStatements(ctx context.Context, executor catalog.SchemaExecutor
 // it, the way its ExecuteSQL would before anything reached the server.
 type statementChecker interface {
 	CheckStatement(ctx context.Context, statement string) error
+}
+
+// CheckApplyStatements answers whether a run of the statements would stop at one of
+// them before sending it, in the words the run would use, and sends nothing. A dry
+// run asks it because it never reaches the executor that asks for itself. ctx carries
+// what the statements read, as the run's own does.
+func CheckApplyStatements(ctx context.Context, conn *dbschema.DatabaseConnection, statements []string) error {
+	if conn == nil {
+		return errors.New("schema apply execution requires database connection")
+	}
+	for i, stmt := range statements {
+		stmt = strings.TrimSpace(stmt)
+		if stmt == "" {
+			continue
+		}
+		if err := checkStatement(ctx, conn.Writer(), stmt); err != nil {
+			return statementFailure(stmt, i, len(statements), err)
+		}
+	}
+	return nil
+}
+
+// statementFailure is the error of the statement at index i of total.
+func statementFailure(stmt string, i, total int, err error) error {
+	return &migrator.MigrationExecutionError{
+		Err:            fmt.Errorf("failed to execute SQL statement: %w", err),
+		Statement:      stmt,
+		StatementIndex: i + 1,
+		Total:          total,
+	}
 }
 
 // checkStatement asks an executor that can answer whether it would refuse stmt

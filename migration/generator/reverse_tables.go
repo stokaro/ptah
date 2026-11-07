@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/objectlookup"
+	"ptah.run/internal/pgname"
 	"ptah.run/internal/tableref"
 	"ptah.run/migration/internal/generatedschema"
 )
@@ -171,8 +172,9 @@ func reverseColumnDiffs(
 			SerialSequence: restoredSerialSequence(columnDiff.Changes["default_expr"]),
 			// The rollback alters the same sequence of the same database,
 			// whose restart is replayed by its ALTER as by the forward one.
-			CurrentSequenceRestart:      columnDiff.CurrentSequenceRestart,
-			NotNullConstraintNameChange: reverseNotNullConstraintName(columnDiff.NotNullConstraintNameChange),
+			CurrentSequenceRestart:        columnDiff.CurrentSequenceRestart,
+			NotNullConstraintNameChange:   reverseNotNullConstraintName(tableName, columnDiff),
+			ReleasedNotNullConstraintName: reverseAddedNotNullName(tableName, columnDiff),
 		}
 	}
 	return reversed
@@ -181,11 +183,46 @@ func reverseColumnDiffs(
 // reverseNotNullConstraintName swaps a NOT NULL constraint's name transition, so a
 // rollback gives the constraint back the name it held. A transition from no name has
 // none to give back, and a target that reported none cannot be asked to hold one.
-func reverseNotNullConstraintName(change *difftypes.NotNullConstraintNameChange) *difftypes.NotNullConstraintNameChange {
+//
+// A column the forward plan made nullable held a name too, and takes it back with the
+// NOT NULL the rollback adds. The name the server gives such a NOT NULL needs no
+// statement of its own, so the rollback keeps SET NOT NULL for it.
+func reverseNotNullConstraintName(table string, columnDiff difftypes.ColumnDiff) *difftypes.NotNullConstraintNameChange {
+	if released := columnDiff.ReleasedNotNullConstraintName; released != "" && released != defaultNotNullName(table, columnDiff.ColumnName) {
+		return &difftypes.NotNullConstraintNameChange{Desired: released}
+	}
+	change := columnDiff.NotNullConstraintNameChange
 	if change == nil || change.Current == "" {
 		return nil
 	}
 	return &difftypes.NotNullConstraintNameChange{Current: change.Desired, Desired: change.Current}
+}
+
+// reverseAddedNotNullName is the name a column the forward plan made NOT NULL holds at
+// the start of the rollback, which makes it nullable again, and is empty for any other
+// column. It is the name the plan stated, the one the database the plan moves toward
+// holds, or else the one the server gave.
+func reverseAddedNotNullName(table string, columnDiff difftypes.ColumnDiff) string {
+	if columnDiff.Changes["nullable"] != "true -> false" {
+		return ""
+	}
+	if change := columnDiff.NotNullConstraintNameChange; change != nil {
+		return change.Desired
+	}
+	if columnDiff.Desired.NotNullConstraintName != "" {
+		return columnDiff.Desired.NotNullConstraintName
+	}
+	return defaultNotNullName(table, columnDiff.ColumnName)
+}
+
+// defaultNotNullName is the name PostgreSQL 18 gives a NOT NULL nobody named on column
+// of table, as the table's diff names it. A target that keeps no such name gives this
+// name no statement to act on.
+func defaultNotNullName(table, column string) string {
+	if ref, ok := tableref.Parse(table); ok {
+		table = ref.Name
+	}
+	return pgname.NotNull(table, column)
 }
 
 // restoredSerialSequence names the sequence a rollback builds again for a column the
