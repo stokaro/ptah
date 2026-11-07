@@ -117,6 +117,24 @@ func TestFree_HappyPath(t *testing.T) {
 			want:  []string{"t: rename n to n__ptah_old", "t: set a as n", "t: rename n__ptah_old to m"},
 		},
 		{
+			name:  "an added column left to the server, whose default name a removed column holds",
+			table: removed(holding("a", "t_b_not_null")),
+			nodes: []ast.Node{add("b", ""), drop("a")},
+			want:  []string{"t: rename t_b_not_null to t_b_not_null__ptah_old", "t: add b as ", "t: drop a"},
+		},
+		{
+			name:  "an added key column left to the server, whose default name a removed column holds",
+			table: removed(holding("a", "t_b_not_null")),
+			nodes: []ast.Node{alterT(&ast.AddColumnOperation{Column: ast.NewColumn("b", "int").SetPrimary()}), drop("a")},
+			want:  []string{"t: rename t_b_not_null to t_b_not_null__ptah_old", "t: add b as ", "t: drop a"},
+		},
+		{
+			name:  "a table in a schema, whose default names do not carry the schema",
+			table: difftypes.TableDiff{TableName: "app.t", ColumnsRemoved: []schemamodel.Field{holding("a", "t_b_not_null")}},
+			nodes: []ast.Node{&ast.AlterTableNode{Name: "app.t", Operations: []ast.AlterOperation{&ast.AddColumnOperation{Column: ast.NewColumn("b", "int").SetNotNull()}}}},
+			want:  []string{"app.t: rename t_b_not_null to t_b_not_null__ptah_old", "app.t: add b as "},
+		},
+		{
 			name:  "a renamed constraint takes the name of a column the plan removes later",
 			table: renaming(removed(holding("a_new", "m")), "n", "m"),
 			nodes: []ast.Node{rename("n", "m"), drop("a_new")},
@@ -194,6 +212,12 @@ func TestFree_LeavesAPlanThatRuns_HappyPath(t *testing.T) {
 			table: removed(holding("b", "n")),
 			nodes: []ast.Node{setNotNull("a", ""), drop("b")},
 			want:  []string{"t: set a as ", "t: drop b"},
+		},
+		{
+			name:  "a nullable column takes no name",
+			table: removed(holding("a", "t_b_not_null")),
+			nodes: []ast.Node{alterT(&ast.AddColumnOperation{Column: ast.NewColumn("b", "int")}), drop("a")},
+			want:  []string{"t: add b as ", "t: drop a"},
 		},
 		{
 			name:  "the holder's rename runs first",

@@ -748,6 +748,21 @@ a name on every column, most of which nobody wrote.
 From PostgreSQL 18 toward PostgreSQL 17 the desired side names nothing. An added
 column takes the name the server gives it, and a name the left side holds stays.
 
+## A NOT NULL name on a primary key column
+
+A primary key column's `NOT NULL` holds a name on PostgreSQL 18 as any other does,
+so `RENAME COLUMN id TO pk` leaves `pk` holding `t_id_not_null`, and
+`id int CONSTRAINT nn NOT NULL PRIMARY KEY` holds `nn`. A plan that adds such a
+column or creates its table writes the name, and `ptah db read` prints it:
+
+```sql
+"pk" integer PRIMARY KEY CONSTRAINT "t_id_not_null" NOT NULL
+```
+
+The name the server gives, `<table>_<column>_not_null`, stays out of the statement.
+A target that keeps no such name refuses any other name here too, because it would
+lose it.
+
 ## Making a column NOT NULL
 
 A plan that makes an existing column `NOT NULL` writes
