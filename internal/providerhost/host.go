@@ -315,6 +315,11 @@ var hostFeatures = []string{
 	// indexes, which the host places where a YAML source places them; see
 	// target.sqlFacets.
 	provider.SQLFacetsFeature,
+	// A SQL schema reading carries the password a document gives a role,
+	// which the host holds as it holds one a Go, YAML or HCL source
+	// declares, so a plan binds it and no output prints it; see
+	// sqlSchemaCommon.
+	provider.SQLRolePasswordsFeature,
 	// A provider model's count metrics join the reporting runtime, and the
 	// provider counts the model's values; see modelReporter.
 	provider.ReportCountsFeature,

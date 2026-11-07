@@ -1687,7 +1687,12 @@ identifier rules and the `ptah:not-described` entries of the kinds listed in
 reply as follows:
 
 - Tables, namespaces, enums, views, sequences, roles and grants enter the
-  common model.
+  common model. Under `source.sql-role-passwords` a role carries the password
+  its document gives it, such as `CREATE USER app PASSWORD '...'`, and Ptah
+  holds it as it holds a password a Go, YAML or HCL source declares: the plan
+  names the execution input `$PTAH_SECRET_PASSWORD_<ROLE>`, or the reference
+  the password writes, and no output prints the value. Without the feature a
+  reading says only that the role declares a password.
 - The provider's own objects are normalized by the provider.
 - Under `schema.sql-facets`, the facets of a table, a column or an index, such
   as a YDB table's changefeeds, are normalized by the provider and placed

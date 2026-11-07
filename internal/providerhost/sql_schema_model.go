@@ -76,8 +76,13 @@ func sqlSchemaCommon(reply *protocol.SQLSchema) (schemamodel.Database, error) {
 			MaxValue: copyPlanningPointer(sequence.MaxValue), Cache: copyPlanningPointer(sequence.Cache), Cycle: sequence.GetCycle(), OwnedBy: sequence.GetOwnedBy(), Comment: sequence.GetComment()})
 	}
 	for _, role := range reply.GetRoles() {
-		database.Roles = append(database.Roles, schemamodel.Role{Name: role.GetName(), Login: role.GetLogin(), Superuser: role.GetSuperuser(), CreateDB: role.GetCreateDb(),
-			CreateRole: role.GetCreateRole(), Inherit: role.GetInherit(), Replication: role.GetReplication(), Comment: role.GetComment(), Group: role.GetGroup(), MemberOf: slices.Clone(role.GetMemberOf())})
+		// The password a document gives the role arrives under
+		// provider.SQLRolePasswordsFeature, and the SDK refuses one otherwise.
+		// The model holds it as a Go, YAML or HCL source's, so a plan binds
+		// it as an execution input and no output prints it.
+		database.Roles = append(database.Roles, schemamodel.Role{Name: role.GetName(), Login: role.GetLogin(), Password: role.GetPassword(), Superuser: role.GetSuperuser(),
+			CreateDB: role.GetCreateDb(), CreateRole: role.GetCreateRole(), Inherit: role.GetInherit(), Replication: role.GetReplication(), Comment: role.GetComment(),
+			Group: role.GetGroup(), MemberOf: slices.Clone(role.GetMemberOf())})
 	}
 	for _, declared := range reply.GetGrants() {
 		grant, err := sqlGrant(declared)

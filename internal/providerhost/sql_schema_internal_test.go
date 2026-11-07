@@ -422,6 +422,22 @@ func TestSQLExtensionsServeDocumentEnginesAlone(t *testing.T) {
 	c.Assert(string(extensions[0].Header[0]), qt.Equals, "topic")
 }
 
+// TestSQLSchemaCommonHoldsTheRolePasswordAReadingReturns puts the password a
+// reading returns for a role into the model, where a Go, YAML or HCL source
+// puts its own, so the plan binds it as an execution input.
+func TestSQLSchemaCommonHoldsTheRolePasswordAReadingReturns(t *testing.T) {
+	c := qt.New(t)
+	reply := &protocol.SQLSchema{Complete: true, Roles: []*protocol.SQLRole{
+		{Name: "app", Login: true, PasswordDeclared: true, Password: "s3cret-pw"},
+		{Name: "reader", Login: true},
+	}}
+
+	database, err := sqlSchemaCommon(reply)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(database.Roles, qt.DeepEquals, []schemamodel.Role{{Name: "app", Login: true, Password: "s3cret-pw"}, {Name: "reader", Login: true}})
+}
+
 func TestContractIdentityBindsHowSQLDocumentsAreRead(t *testing.T) {
 	for _, test := range []struct {
 		name   string
