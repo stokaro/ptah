@@ -12,9 +12,11 @@ import (
 // spelling the contract carries.
 var referentialRules = []string{"NO ACTION", "RESTRICT", "CASCADE", "SET NULL", "SET DEFAULT"}
 
-// tableConstraints reads the CHECKs and foreign keys of a table's text, each
-// in the form the fixture writes.
-func tableConstraints(table stored) ([]*protocol.ObservedConstraint, error) {
+// tableConstraints reads the CHECKs, foreign keys and UNIQUE constraints of a
+// table's text, each in the form the fixture writes. A UNIQUE constraint is
+// read only for a host that negotiated it; any other host is refused the read,
+// since the table holds what it cannot be told.
+func tableConstraints(table stored, unique bool) ([]*protocol.ObservedConstraint, error) {
 	elements, err := tableElements(table.sql)
 	if err != nil {
 		return nil, fmt.Errorf("table %s: %w", table.name, err)
@@ -37,6 +39,11 @@ func tableConstraints(table stored) ([]*protocol.ObservedConstraint, error) {
 		case strings.HasPrefix(rest, "FOREIGN KEY ("):
 			if err := readForeignKey(constraint, rest); err != nil {
 				return nil, fmt.Errorf("table %s: %w", table.name, err)
+			}
+		case strings.HasPrefix(rest, "UNIQUE (") && strings.HasSuffix(rest, ")") && unique:
+			constraint.Type = "UNIQUE"
+			for column := range strings.SplitSeq(strings.TrimSuffix(strings.TrimPrefix(rest, "UNIQUE ("), ")"), ", ") {
+				constraint.ColumnNames = append(constraint.ColumnNames, strings.ReplaceAll(strings.Trim(column, `"`), `""`, `"`))
 			}
 		default:
 			return nil, fmt.Errorf("table %s: the fixture reads no constraint %q", table.name, element)

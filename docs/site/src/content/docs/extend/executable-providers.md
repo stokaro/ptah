@@ -176,6 +176,30 @@ constraints and the current table the held ones, and no common step stands for
 the change. Without the feature the host refuses a change of a kept table's
 constraint before it plans, naming the constraint and the table.
 
+With `schema.observed-unique-constraints` as well, a read reports the UNIQUE
+constraints each table holds apart from its indexes, as DuckDB keeps them, over
+one column or several, and the host keeps them beside the foreign keys and
+CHECKs: an export writes them, and the comparison pairs them by name with the
+declared ones. A column that a UNIQUE over it alone covers is unique in the
+read. A provider that lists `planning.constraint-changes` receives a change of
+a UNIQUE constraint on a kept table as an altered table, as it receives a
+foreign key's; without that feature the host refuses the change, naming the
+constraint and the table.
+
+An enum column, typed `ENUM` with its values or typed with the name of an enum
+the source declares, reaches a provider as the column its engine builds. An
+engine that lists `schema.enum-columns` states the form: a type that lists the
+values, `enum('a','b','c')`; a column of a stated type, such as `TEXT`, that
+holds the values under its CHECK, `kind IN ('a', 'b', 'c')`, which the host
+then compares and the provider creates as any column CHECK; or no enum at all.
+
+The host builds every enum column in that form before it validates, compares,
+plans or renders a declaration, so a render and a plan create the same column,
+and it keeps no enum type for the engine. An engine without enums has an enum
+column refused by its table and column, and a declared enum by its name,
+before the host calls its provider. Without the feature the host keeps an enum
+a type of its own, and the provider path refuses the type.
+
 A rollback plan starts from the tables the forward plan leaves, which the host
 predicts. For a provider with `schema.observed-constraints`, a foreign key the
 forward plan adds or replaces changes the table's constraints and nothing else,
@@ -185,8 +209,8 @@ referenced schema stated, the default schema where the declaration names none,
 and both rules stated, an absent rule being `NO ACTION`. So `ptah migrations
 generate` writes the down file of a schema with foreign keys. A primary key or
 UNIQUE constraint the forward plan adds or removes has no such prediction,
-since a read reports the index behind it, and neither has a constraint that
-carries facets of its engine.
+since an engine may report the index behind it, and neither has a constraint
+that carries facets of its engine.
 
 Listing `schema.observed-constraints` therefore promises more than a read: a
 provider that lists it keeps reporting a foreign key in that spelling and

@@ -1,10 +1,12 @@
 // Package main serves the fixture engine as a provider that owns its tables
 // and reports, compares and plans their foreign keys, CHECKs and index NULLS
-// orders (contract 25.28) and the predicates of their partial indexes
-// (contract 25.29). It reads the constraints back from the SQLite tables it
-// writes, in the table text it writes itself, and changes a constraint or an
-// index by rebuilding its table, since SQLite adds no constraint to a table in
-// place. It establishes no support for an official engine.
+// orders (contract 25.28), the predicates of their partial indexes (contract
+// 25.29) and their UNIQUE constraints (contract 25.31), and states how it
+// builds an enum column where FIXTURE_ENUM_COLUMNS names a form (contract
+// 25.31). It reads the constraints back from the SQLite tables it writes, in
+// the table text it writes itself, and changes a constraint or an index by
+// rebuilding its table, since SQLite adds no constraint to a table in place.
+// It establishes no support for an official engine.
 package main
 
 import (
@@ -29,14 +31,14 @@ const statementsKind = "example.org/fixture/constraint-statements"
 // assesses as the parent of the tables it owns.
 const retentionKind = "example.org/fixture/retention"
 
-// engineFeatures are the features of 25.28 and 25.29 the fixture serves and
-// the ones they need. The mode FIXTURE_CONSTRAINT_MODE=unplanned leaves out
+// engineFeatures are the features of 25.28, 25.29 and 25.31 the fixture
+// serves and the ones they need. The mode FIXTURE_CONSTRAINT_MODE=unplanned leaves out
 // the constraint changes, so a host refuses a change of a constraint the read
 // reports, unpredicated leaves out the index predicates, so a host compares
 // them by its own rules, and the mode text adds text units, so a migration
 // file holds the statements of a rebuild.
 func engineFeatures(mode string) []string {
-	features := []string{provider.ObservedColumnsFeature, provider.ObservedConstraintsFeature, provider.ConstraintChangesFeature,
+	features := []string{provider.ObservedColumnsFeature, provider.ObservedConstraintsFeature, provider.ObservedUniqueConstraintsFeature, provider.ConstraintChangesFeature,
 		provider.CheckEquivalenceFeature, provider.ObservedIndexesFeature, provider.IndexNullsOrderFeature, provider.IndexPredicatesFeature,
 		provider.PrepareTablesFeature, provider.ProjectTableCreationsFeature, provider.ValidateSchemaFeature, provider.PlanningPolicyFeature,
 		provider.PlanningStatementStyleFeature, provider.PlanningLifecycleFeature, provider.LocksFeature}
@@ -51,6 +53,15 @@ func engineFeatures(mode string) []string {
 	return features
 }
 
+// enumForms are the forms FIXTURE_ENUM_COLUMNS names. The empty name states
+// none, so a host keeps the enum a type of its own.
+var enumForms = map[string]*protocol.EnumColumns{
+	"":        nil,
+	"check":   {Form: protocol.EnumColumns_CHECK, CheckType: "TEXT"},
+	"values":  {Form: protocol.EnumColumns_VALUES_TYPE},
+	"refused": {Form: protocol.EnumColumns_REFUSED},
+}
+
 func main() {
 	if path := os.Getenv("PTAH_FIXTURE_PID_FILE"); path != "" {
 		if err := os.WriteFile(path, []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil { // #nosec G703 -- the host selects this fixture PID file in its private test directory
@@ -63,6 +74,12 @@ func main() {
 		fmt.Fprintln(os.Stderr, "unknown fixture constraint mode")
 		os.Exit(1)
 	}
+	enumForm := os.Getenv("FIXTURE_ENUM_COLUMNS")
+	enums, known := enumForms[enumForm]
+	if !known {
+		fmt.Fprintln(os.Stderr, "unknown fixture enum form")
+		os.Exit(1)
+	}
 	description := backend.Description()
 	description.SemanticIdentity += "-constraints"
 	if mode != "" {
@@ -73,6 +90,12 @@ func main() {
 	engine.Features = append(engine.Features, engineFeatures(mode)...)
 	description.Features = append(description.Features, engineFeatures(mode)...)
 	description.Features = append(description.Features, provider.PlanFeaturesFeature)
+	if enums != nil {
+		description.SemanticIdentity += "-enums-" + enumForm
+		description.Features = append(description.Features, provider.EnumColumnsFeature)
+		engine.Features = append(engine.Features, provider.EnumColumnsFeature)
+		engine.EnumColumns = enums
+	}
 	definition, err := modeljson.Canonical([]byte(`{
 		"additionalProperties": false,
 		"properties": {"statements": {"items": {"type": "string"}, "minItems": 1, "type": "array"}},

@@ -233,16 +233,24 @@ func sameConstraints(wanted []constraint, held *protocol.ObservedTable) bool {
 	return true
 }
 
-// constraint is a foreign key or CHECK as the fixture writes it.
+// constraint is a foreign key, CHECK or UNIQUE as the fixture writes it.
 type constraint struct {
 	name, check                         string
 	column, table, referenced, onDelete string
+	unique                              []string
 }
 
 // text is the constraint as a table element.
 func (c constraint) text() string {
 	if c.check != "" {
 		return fmt.Sprintf(`CONSTRAINT %s CHECK (%s)`, quote(c.name), c.check)
+	}
+	if len(c.unique) != 0 {
+		columns := make([]string, len(c.unique))
+		for i, column := range c.unique {
+			columns[i] = quote(column)
+		}
+		return fmt.Sprintf(`CONSTRAINT %s UNIQUE (%s)`, quote(c.name), strings.Join(columns, ", "))
 	}
 	text := fmt.Sprintf(`CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s)`, quote(c.name), quote(c.column), quote(c.table), quote(c.referenced))
 	if c.onDelete != "" && c.onDelete != "NO ACTION" {
@@ -252,12 +260,18 @@ func (c constraint) text() string {
 }
 
 // declaredConstraints are the CHECKs and foreign keys a declaration states on
-// its columns and as constraints of the table, each named.
+// its columns, and the CHECKs, foreign keys and UNIQUE constraints it states
+// as constraints of the table, each named. A column's CHECK without a name
+// takes the name the host compares it under, <table>_<column>_check.
 func declaredConstraints(declared *protocol.DeclaredTable) ([]constraint, error) {
 	var result []constraint
 	for _, column := range declared.GetColumns() {
 		if column.GetCheck() != "" {
-			result = append(result, constraint{name: column.GetCheckName(), check: column.GetCheck()})
+			name := column.GetCheckName()
+			if name == "" {
+				name = declared.GetName() + "_" + column.GetName() + "_check"
+			}
+			result = append(result, constraint{name: name, check: column.GetCheck()})
 		}
 		if reference := column.GetForeignReference(); reference != "" {
 			table, referenced, found := strings.Cut(strings.TrimSuffix(reference, ")"), "(")
@@ -282,6 +296,8 @@ func declaredConstraints(declared *protocol.DeclaredTable) ([]constraint, error)
 			}
 			result = append(result, constraint{name: declaredConstraint.GetName(), column: declaredConstraint.GetColumns()[0], table: declaredConstraint.GetForeignTable(),
 				referenced: referenced, onDelete: strings.ToUpper(declaredConstraint.GetOnDelete())})
+		case "UNIQUE":
+			result = append(result, constraint{name: declaredConstraint.GetName(), unique: slices.Clone(declaredConstraint.GetColumns())})
 		default:
 			return nil, fmt.Errorf("the fixture writes no %s constraint", declaredConstraint.GetType())
 		}
@@ -303,7 +319,7 @@ func createStatement(name string, declared *protocol.DeclaredTable, wanted []con
 	var elements []string
 	for _, column := range declared.GetColumns() {
 		primary := column.GetPrimary() || slices.Contains(declared.GetPrimaryKey(), column.GetName())
-		element := quote(column.GetName()) + " " + strings.ToUpper(column.GetType())
+		element := quote(column.GetName()) + " " + columnType(column.GetType())
 		if !column.GetNullable() || primary {
 			element += " NOT NULL"
 		}
@@ -354,3 +370,12 @@ func rebuildStatements(declared *protocol.DeclaredTable, held *protocol.Observed
 }
 
 func quote(value string) string { return `"` + strings.ReplaceAll(value, `"`, `""`) + `"` }
+
+// columnType is a declared type as the fixture writes it: in upper case, and
+// as written where it quotes values, as enum('a','b') does.
+func columnType(declared string) string {
+	if strings.ContainsRune(declared, '\'') {
+		return declared
+	}
+	return strings.ToUpper(declared)
+}

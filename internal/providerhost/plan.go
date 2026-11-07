@@ -48,6 +48,9 @@ type commonPlanner struct {
 	observedConstraints bool
 	// constraints hands such a change to the table's owner, which plans it.
 	constraints bool
+	// observedUnique reads the UNIQUE constraints a provider table holds as
+	// well, and constraints hands their change to the owner too.
+	observedUnique bool
 	// namespaces plans the schemas a plan needs and the ones it reverses
 	// through a provider whose reads list them; see namespaceSteps.
 	namespaces bool

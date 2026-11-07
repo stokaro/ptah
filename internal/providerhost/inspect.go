@@ -155,9 +155,10 @@ func (r reader) primaryKey(value *protocol.Table) *catalog.Constraint {
 }
 
 // constraints reads the foreign keys and CHECKs a table holds as catalog
-// constraints, when the session negotiated them. The SDK has checked each
-// against the table's columns. Without the feature a table reports none, and
-// the planner refuses a change of one rather than compare against nothing.
+// constraints, when the session negotiated them, and its UNIQUE constraints
+// where the session negotiated those too. The SDK has checked each against
+// the table's columns. Without the feature a table reports none, and the
+// planner refuses a change of one rather than compare against nothing.
 func (r reader) constraints(value *protocol.Table) []catalog.Constraint {
 	if !slices.Contains(r.session.remote.GetFeatures(), provider.ObservedConstraintsFeature) {
 		return nil
@@ -169,9 +170,9 @@ func (r reader) constraints(value *protocol.Table) []catalog.Constraint {
 	return result
 }
 
-// catalogConstraint is an observed foreign key or CHECK as the catalog keeps
-// it. The singular column names are the first members, as the catalog readers
-// write them.
+// catalogConstraint is an observed foreign key, CHECK or UNIQUE as the
+// catalog keeps it. The singular column names are the first members, as the
+// catalog readers write them.
 func catalogConstraint(source *protocol.ObservedConstraint) catalog.Constraint {
 	result := catalog.Constraint{
 		Name: source.GetName(), TableName: source.GetTableName(), Schema: source.GetSchema(), Type: source.GetType(),
@@ -179,6 +180,7 @@ func catalogConstraint(source *protocol.ObservedConstraint) catalog.Constraint {
 		ForeignColumns: slices.Clone(source.GetForeignColumns()), DeleteRule: copyPlanningPointer(source.DeleteRule), UpdateRule: copyPlanningPointer(source.UpdateRule),
 		Deferrable: source.GetDeferrable(), Initially: source.GetInitially(), Match: source.GetMatch(), NotEnforced: source.GetNotEnforced(),
 		NotValid: source.GetNotValid(), CheckClause: copyPlanningPointer(source.CheckClause), Comment: source.GetComment(),
+		NullsDistinct: copyPlanningPointer(source.NullsDistinct),
 	}
 	if len(result.ColumnNames) > 0 {
 		result.ColumnName = result.ColumnNames[0]

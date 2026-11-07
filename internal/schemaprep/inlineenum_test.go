@@ -6,6 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/schemaprep"
 )
@@ -79,6 +80,65 @@ func TestLowerInlineEnums(t *testing.T) {
 			fields := []schemamodel.Field{test.field}
 
 			lowered := schemaprep.LowerInlineEnums(fields, enums, test.dialect)
+
+			c.Assert(lowered, qt.HasLen, 1)
+			c.Assert(lowered[0].Type, qt.Equals, test.wantType)
+			c.Assert(lowered[0].Check, qt.Equals, test.wantCheck)
+			c.Assert(fields[0], qt.DeepEquals, test.field)
+		})
+	}
+}
+
+// TestLowerEnumColumns covers each form a target without a descriptor states,
+// as an executable provider's engine does: the form decides the column, never
+// a dialect name.
+func TestLowerEnumColumns(t *testing.T) {
+	enums := []schemamodel.Enum{{Name: "status", Values: []string{"a", "b"}}}
+	tests := []struct {
+		name      string
+		form      schemaprep.EnumForm
+		field     schemamodel.Field
+		wantType  string
+		wantCheck string
+	}{
+		{
+			name: "a type that lists the values", form: schemaprep.EnumForm{Style: descriptor.EnumColumnType},
+			field:    schemamodel.Field{Name: "kind", Type: "ENUM", Enum: []string{"a", "it's"}},
+			wantType: "enum('a','it''s')",
+		},
+		{
+			name: "a text column under a CHECK", form: schemaprep.EnumForm{Style: descriptor.EnumCheck, CheckType: "TEXT"},
+			field:    schemamodel.Field{Name: "kind", Type: "status"},
+			wantType: "TEXT", wantCheck: "kind IN ('a', 'b')",
+		},
+		{
+			name: "a CHECK beside the column's own", form: schemaprep.EnumForm{Style: descriptor.EnumCheck, CheckType: "TEXT"},
+			field:    schemamodel.Field{Name: "kind", Type: "ENUM", Enum: []string{"a"}, Check: "kind <> ''"},
+			wantType: "TEXT", wantCheck: "(kind <> '') AND kind IN ('a')",
+		},
+		{
+			name: "a CHECK that spells the column", form: schemaprep.EnumForm{Style: descriptor.EnumCheck, CheckType: "TEXT",
+				CheckColumn: strconv.Quote},
+			field:    schemamodel.Field{Name: "kind", Type: "status"},
+			wantType: "TEXT", wantCheck: `"kind" IN ('a', 'b')`,
+		},
+		{
+			name: "no form", form: schemaprep.EnumForm{},
+			field:    schemamodel.Field{Name: "kind", Type: "status"},
+			wantType: "status",
+		},
+		{
+			name: "a lowered column", form: schemaprep.EnumForm{Style: descriptor.EnumCheck, CheckType: "TEXT"},
+			field:    schemamodel.Field{Name: "kind", Type: "TEXT", Enum: []string{"a"}, Check: "kind IN ('a')"},
+			wantType: "TEXT", wantCheck: "kind IN ('a')",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			fields := []schemamodel.Field{test.field}
+
+			lowered := schemaprep.LowerEnumColumns(fields, enums, test.form)
 
 			c.Assert(lowered, qt.HasLen, 1)
 			c.Assert(lowered[0].Type, qt.Equals, test.wantType)

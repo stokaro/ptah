@@ -4,18 +4,23 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"slices"
 	"strings"
 
 	"example.com/ptah-fixture-provider/backend"
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	"github.com/stokaro/ptah/provider-sdk/provider"
 	"google.golang.org/protobuf/proto"
 )
 
 // Inspect reads every table of the database file with its columns, its
-// foreign keys and CHECKs, and its indexes. The constraints come from the
-// table text the fixture and its tests write, `CONSTRAINT "<name>" CHECK
-// (<expression>)` and `CONSTRAINT "<name>" FOREIGN KEY ("<column>") REFERENCES
-// "<table>" ("<column>") [ON DELETE <rule>]`, which SQLite keeps as written.
+// foreign keys, CHECKs and UNIQUE constraints, and its indexes. The
+// constraints come from the table text the fixture and its tests write,
+// `CONSTRAINT "<name>" CHECK (<expression>)`, `CONSTRAINT "<name>" FOREIGN KEY
+// ("<column>") REFERENCES "<table>" ("<column>") [ON DELETE <rule>]` and
+// `CONSTRAINT "<name>" UNIQUE ("<column>", ...)`, which SQLite keeps as
+// written; the index SQLite builds for a UNIQUE is its own, and stays out of
+// the indexes.
 // SQLite keeps no NULLS order in an index key, so every key part is in the
 // default order. A partial index's predicate is the text after WHERE in the
 // statement SQLite keeps, the spelling the fixture builds an index with.
@@ -25,7 +30,9 @@ func (o *owner) Inspect(ctx context.Context, request *protocol.InspectRequest) (
 			return nil, fmt.Errorf("fixture supports only the main schema")
 		}
 	}
-	result := &protocol.Schema{Complete: true, Engine: "fixture", TargetFeatures: o.negotiatedReads(ctx),
+	reads := o.negotiatedReads(ctx)
+	unique := slices.Contains(reads, provider.ObservedUniqueConstraintsFeature)
+	result := &protocol.Schema{Complete: true, Engine: "fixture", TargetFeatures: reads,
 		Coverage: &protocol.ModelCoverage{Representation: protocol.ValueInput_OBSERVED}}
 	err := o.WithSession(ctx, request.GetSessionId(), "", func(access backend.Access) error {
 		tables, err := storedTables(ctx, access.Querier, "table", "")
@@ -33,7 +40,7 @@ func (o *owner) Inspect(ctx context.Context, request *protocol.InspectRequest) (
 			return err
 		}
 		for _, stored := range tables {
-			table, err := inspectTable(ctx, access, stored)
+			table, err := inspectTable(ctx, access, stored, unique)
 			if err != nil {
 				return err
 			}
@@ -76,7 +83,7 @@ func storedTables(ctx context.Context, db backend.Querier, kind, table string) (
 	return result, rows.Err()
 }
 
-func inspectTable(ctx context.Context, access backend.Access, table stored) (*protocol.Table, error) {
+func inspectTable(ctx context.Context, access backend.Access, table stored, unique bool) (*protocol.Table, error) {
 	identity := &protocol.Reference{Engine: "fixture", Database: access.Path, Kind: "table", Name: table.name, DisplayName: table.name}
 	normalized := proto.CloneOf(identity)
 	normalized.Name = backend.NormalizeCommonIdentifier(table.name)
@@ -86,9 +93,20 @@ func inspectTable(ctx context.Context, access backend.Access, table stored) (*pr
 		return nil, err
 	}
 	result.Columns = columns
-	result.Constraints, err = tableConstraints(table)
+	result.Constraints, err = tableConstraints(table, unique)
 	if err != nil {
 		return nil, err
+	}
+	// A column a UNIQUE over it alone covers is unique, as the contract asks.
+	for _, constraint := range result.Constraints {
+		if constraint.GetType() != "UNIQUE" || len(constraint.GetColumnNames()) != 1 {
+			continue
+		}
+		for _, column := range result.Columns {
+			if column.GetName() == constraint.GetColumnNames()[0] {
+				column.Observed.Unique = true
+			}
+		}
 	}
 	result.Indexes, err = inspectIndexes(ctx, access.Querier, table.name)
 	return result, err

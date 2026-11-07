@@ -70,7 +70,7 @@ func (t *target) registration() engine.Target {
 				indexes: t.offers(provider.ObservedIndexesFeature), renames: t.offers(provider.IndexRenamesFeature),
 				observedKeys: t.offers(provider.ObservedPrimaryKeysFeature), keys: t.offers(provider.PrimaryKeyChangesFeature),
 				observedConstraints: t.offers(provider.ObservedConstraintsFeature), constraints: t.offers(provider.ConstraintChangesFeature),
-				namespaces: t.carriesNamespaces(), assessParents: t.assessesParents()}
+				observedUnique: t.offers(provider.ObservedUniqueConstraintsFeature), namespaces: t.carriesNamespaces(), assessParents: t.assessesParents()}
 		},
 	}
 	if t.offers(provider.DatabaseContextFeature) {
@@ -105,7 +105,9 @@ func (t *target) registration() engine.Target {
 	if t.offers(provider.ObservedIndexesFeature) {
 		result.Comparison.Indexes = observedIndexRules{methods: t.offers(provider.IndexMethodsFeature), facets: t.offers(provider.ObservedIndexFacetsFeature),
 			nulls: t.offers(provider.IndexNullsOrderFeature)}
-		result.Lowering = uniqueIndexLowering{}
+	}
+	if t.offers(provider.ObservedIndexesFeature) || t.offers(provider.EnumColumnsFeature) {
+		result.Lowering = providerLowering{target: t, uniqueIndexes: t.offers(provider.ObservedIndexesFeature)}
 	}
 	if t.offers(provider.IndexMethodsFeature) {
 		result.ReadBack = indexKindReadBack{}
@@ -164,6 +166,12 @@ func (t *target) RenderSchema(ctx context.Context, request renderer.SchemaReques
 	if request.Schema == nil {
 		return renderer.SchemaResult{}, fmt.Errorf("provider schema is required")
 	}
+	// A render creates the enum columns a plan creates; see enumColumns.
+	schema, err := t.enumColumns(request.Schema)
+	if err != nil {
+		return renderer.SchemaResult{}, err
+	}
+	request.Schema = schema
 	if t.rendersAuthoredSchemas() {
 		return t.renderDeclarations(ctx, request)
 	}
