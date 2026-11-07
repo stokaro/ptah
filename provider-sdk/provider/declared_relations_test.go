@@ -9,24 +9,27 @@ import (
 	"github.com/stokaro/ptah/provider-sdk/provider"
 )
 
-// declaredRelationsExchange is an object comparison under negotiated declared
-// relations, when listed is true: the provider, the engine and the request
-// list the feature. The request names one declared relation of each kind
-// given.
-func declaredRelationsExchange(listed bool, kinds ...string) (*protocol.Description, *protocol.CompareModelsRequest) {
+// declaredRelationsExchange is an object comparison of an engine that lists
+// declared relations, for a target whose features are targetFeatures. The
+// request names one declared relation of each kind given.
+func declaredRelationsExchange(targetFeatures []string, kinds ...string) (*protocol.Description, *protocol.CompareModelsRequest) {
 	d, request, _ := comparisonExchange()
 	service := d.Engines[0].Comparisons[0]
 	service.Placement, service.OwnerKinds = protocol.ModelComparison_OBJECTS, nil
 	d.Features = append(d.Features, provider.DeclaredRelationsFeature)
 	d.Engines[0].Features = append(d.Engines[0].Features, provider.DeclaredRelationsFeature)
-	if listed {
-		request.TargetFeatures = append(request.TargetFeatures, provider.DeclaredRelationsFeature)
-	}
+	request.TargetFeatures = targetFeatures
 	for _, kind := range kinds {
 		request.DeclaredRelations = append(request.DeclaredRelations, &protocol.ComparisonIdentity{Kind: kind,
 			Name: &protocol.ComparisonPart{Source: "orders", Normalized: "orders"}, Schema: &protocol.ComparisonPart{Source: "app", Normalized: "app"}})
 	}
 	return d, request
+}
+
+// relationTargets are the target features of the exchange's request: the
+// comparison's own, and declared relations as well for a listed target.
+func relationTargets(listed bool) []string {
+	return map[bool][]string{false: {"retention"}, true: {"retention", provider.DeclaredRelationsFeature}}[listed]
 }
 
 func TestDeclaredRelations_HappyPath(t *testing.T) {
@@ -41,7 +44,7 @@ func TestDeclaredRelations_HappyPath(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			d, request := declaredRelationsExchange(test.listed, test.kinds...)
+			d, request := declaredRelationsExchange(relationTargets(test.listed), test.kinds...)
 
 			c.Assert(provider.ValidateDescription(d, nil), qt.IsNil)
 			c.Assert(provider.ValidateComparisonRequest(d, request), qt.IsNil)
@@ -64,7 +67,7 @@ func TestDeclaredRelations_FailurePath(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			d, request := declaredRelationsExchange(test.listed, test.kind)
+			d, request := declaredRelationsExchange(relationTargets(test.listed), test.kind)
 
 			err := provider.ValidateComparisonRequest(d, request)
 
@@ -80,7 +83,7 @@ func TestDeclaredRelations_FailurePath(t *testing.T) {
 func TestDeclaredRelationsNegotiation_FailurePath(t *testing.T) {
 	t.Run("a host that does not list the feature", func(t *testing.T) {
 		c := qt.New(t)
-		d, request := declaredRelationsExchange(false, "table")
+		d, request := declaredRelationsExchange(relationTargets(false), "table")
 		negotiated := provider.NegotiatedDescription(d, slices.DeleteFunc(provider.TwoWayFeatures(), func(feature string) bool {
 			return feature == provider.DeclaredRelationsFeature
 		}))
@@ -89,14 +92,14 @@ func TestDeclaredRelationsNegotiation_FailurePath(t *testing.T) {
 	})
 	t.Run("an engine feature without the provider's", func(t *testing.T) {
 		c := qt.New(t)
-		d, _ := declaredRelationsExchange(true)
+		d, _ := declaredRelationsExchange(relationTargets(true))
 		d.Features = slices.DeleteFunc(d.Features, func(feature string) bool { return feature == provider.DeclaredRelationsFeature })
 
 		c.Assert(provider.ValidateDescription(d, nil), qt.ErrorMatches, `.*declared relations require the provider's feature and a model comparison`)
 	})
 	t.Run("an engine without a model comparison", func(t *testing.T) {
 		c := qt.New(t)
-		d, _ := declaredRelationsExchange(true)
+		d, _ := declaredRelationsExchange(relationTargets(true))
 		d.Engines[0].Comparisons = nil
 
 		c.Assert(provider.ValidateDescription(d, nil), qt.ErrorMatches, `.*declared relations require the provider's feature and a model comparison`)

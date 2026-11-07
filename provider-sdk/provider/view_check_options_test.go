@@ -23,9 +23,7 @@ func checkOptionDescription() *protocol.Description {
 func checkOptionRequest(withCheck bool, option protocol.SQLView_CheckOption, listed bool) *protocol.PrepareCommonObjectsRequest {
 	request := prepareRequest()
 	request.Declared.Views[0].WithCheck, request.Declared.Views[0].CheckOption = withCheck, option
-	if listed {
-		request.TargetFeatures = []string{provider.CommonObjectsFeature, provider.ViewCheckOptionsFeature}
-	}
+	request.TargetFeatures = map[bool][]string{true: {provider.CommonObjectsFeature, provider.ViewCheckOptionsFeature}}[listed]
 	return request
 }
 
