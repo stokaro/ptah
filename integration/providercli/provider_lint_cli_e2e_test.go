@@ -224,7 +224,12 @@ func TestMigrationsLintReportsAProviderThatDoesNotStart(t *testing.T) {
 // catalogSource lists the bundled owners' rules and the rules a provider
 // published beside them: the source the rule catalog reads from a started
 // provider. It lists rules and runs none.
-type catalogSource struct{ bundled, provider lintext.Runtime }
+type catalogSource struct {
+	bundled, provider lintext.Runtime
+	// recorded is the rules of the engines no process here serves, which the
+	// catalog reads from the record whatever this test starts.
+	recorded []lintext.Rule
+}
 
 var errCatalogOnly = errors.New("a rule catalog runs no rule")
 
@@ -237,7 +242,7 @@ func (s catalogSource) LintRules(target string) ([]lintext.Rule, error) {
 	if err != nil {
 		return nil, err
 	}
-	rules := append(bundled, published...)
+	rules := slices.Concat(bundled, published, s.recorded)
 	slices.SortFunc(rules, func(a, b lintext.Rule) int { return strings.Compare(a.Code, b.Code) })
 	return rules, nil
 }
@@ -280,11 +285,30 @@ func publishedYDBFamily(c *qt.C) string {
 // bundled owner serves.
 func recordedYDBRules(c *qt.C) []lintext.Rule {
 	c.Helper()
+	rules := slices.DeleteFunc(recordedRules(c), func(rule lintext.Rule) bool {
+		return !slices.Contains(rule.Targets, "ydb")
+	})
+	c.Assert(rules, qt.Not(qt.HasLen), 0)
+	return rules
+}
+
+// recordedRulesOfOtherEngines is what the record holds beside the YD family.
+func recordedRulesOfOtherEngines(c *qt.C) []lintext.Rule {
+	c.Helper()
+	rules := slices.DeleteFunc(recordedRules(c), func(rule lintext.Rule) bool {
+		return slices.Contains(rule.Targets, "ydb")
+	})
+	c.Assert(rules, qt.Not(qt.HasLen), 0)
+	return rules
+}
+
+// recordedRules is the rules of every recorded provider no bundled owner serves.
+func recordedRules(c *qt.C) []lintext.Rule {
+	c.Helper()
 	bundled, err := builtin.New()
 	c.Assert(err, qt.IsNil)
 	rules, err := providerpublished.LintRules(bundled)
 	c.Assert(err, qt.IsNil)
-	c.Assert(rules, qt.Not(qt.HasLen), 0)
 	return rules
 }
 
@@ -310,7 +334,7 @@ func TestRuleCatalogReadsAProvidersPublishedRules(t *testing.T) {
 	want, err := lintcatalog.MigrationEntries()
 	c.Assert(err, qt.IsNil)
 
-	got, err := lintcatalog.MigrationEntriesFrom(catalogSource{bundled: bundled, provider: provider})
+	got, err := lintcatalog.MigrationEntriesFrom(catalogSource{bundled: bundled, provider: provider, recorded: recordedRulesOfOtherEngines(c)})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(got, qt.DeepEquals, want)
