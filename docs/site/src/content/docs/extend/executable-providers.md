@@ -403,7 +403,9 @@ replays a migration directory on it, and `ptah-compat schema plan lint` and
   database and refuses one whose effects reach past it. Without the guard the
   host runs nothing there.
 - The host tells the dev database from the target by the database each session
-  reports, since it reads no provider address.
+  reports, since it reads no provider address. It does the same for a provider
+  of an engine Ptah also builds in, such as Spanner: the built-in engine's way
+  of naming a dev database is not used for a provider's session.
 
 `ptah db drop-all` and `ptah-compat schema clean` empty a database the provider
 serves through the same `database.dev-cleanup`. The plan is the provider's

@@ -65,25 +65,25 @@ func SameRealm(
 	if leftDialect != rightDialect {
 		return false, nil
 	}
-	realm := devRealm(leftDialect)
+	leftRealm, rightRealm := devRealm(left), devRealm(right)
 	// A whole server holds every database on it, so a server and any
 	// database on the same server are one realm: compare the servers.
-	if realm.ServerQuery != "" && (left.Info().WholeServer || right.Info().WholeServer) {
-		leftServer, err := serverIdentity(ctx, left, leftDialect, realm)
+	if leftRealm.ServerQuery != "" && rightRealm.ServerQuery != "" && (left.Info().WholeServer || right.Info().WholeServer) {
+		leftServer, err := serverIdentity(ctx, left, leftDialect, leftRealm)
 		if err != nil {
 			return false, err
 		}
-		rightServer, err := serverIdentity(ctx, right, rightDialect, realm)
+		rightServer, err := serverIdentity(ctx, right, rightDialect, rightRealm)
 		if err != nil {
 			return false, err
 		}
 		return leftServer == rightServer, nil
 	}
-	leftIdentity, err := realmIdentity(ctx, left, leftDialect, realm)
+	leftIdentity, err := realmIdentity(ctx, left, leftDialect, leftRealm)
 	if err != nil {
 		return false, err
 	}
-	rightIdentity, err := realmIdentity(ctx, right, rightDialect, realm)
+	rightIdentity, err := realmIdentity(ctx, right, rightDialect, rightRealm)
 	if err != nil {
 		return false, err
 	}
@@ -102,7 +102,7 @@ func Acquire(
 		return nil, errors.New("dev database locking requires a database connection")
 	}
 	dialect := platform.NormalizeDialect(conn.Info().Dialect)
-	realm := devRealm(dialect)
+	realm := devRealm(conn)
 	if realm.FileLock == fileLockLoopback {
 		if err := validateLocalFileLockURL(dialect, conn.Info().URL); err != nil {
 			return nil, err
@@ -254,10 +254,17 @@ const (
 	fileLockLoopback = "loopback"
 )
 
-// devRealm is what the descriptor of dialect states about its dev
-// databases, and the zero value for a dialect no descriptor describes.
-func devRealm(dialect string) descriptor.DevRealm {
-	described, _ := platform.Lookup(dialect)
+// devRealm is what the descriptor of conn's dialect states about its dev
+// databases, and the zero value for a dialect no descriptor describes. A
+// connection an executable provider serves gets the zero value too, whatever
+// a built-in descriptor of the same engine name states: the provider's
+// session names its database and takes its locks, and the descriptor's query
+// would run on a connection that has no database/sql operations.
+func devRealm(conn *dbschema.DatabaseConnection) descriptor.DevRealm {
+	if !conn.Info().Provider.IsZero() {
+		return descriptor.DevRealm{}
+	}
+	described, _ := platform.Lookup(platform.NormalizeDialect(conn.Info().Dialect))
 	return described.DevRealm
 }
 
@@ -273,8 +280,8 @@ func realmIdentity(
 	if realm.ServerQuery != "" && conn.Info().WholeServer {
 		return serverIdentity(ctx, conn, dialect, realm)
 	}
-	// An engine an executable provider serves has no descriptor here, and
-	// its session names the database it selected.
+	// A connection an executable provider serves has no descriptor here
+	// (see devRealm), and its session names the database it selected.
 	if realm.Identity == "" && !conn.Info().Provider.IsZero() {
 		return writerIdentity(ctx, conn, dialect)
 	}

@@ -1,7 +1,9 @@
 // Package main serves the fixture's dev databases through an independent
 // process: provisioning, cleanup, the replay guard, realms and statement
 // timeouts. FIXTURE_DEV_ENGINE=bare serves an engine that declares none of
-// the cleanup, the guard and realms, which the provider still declares.
+// the cleanup, the guard and realms, which the provider still declares, and
+// any other value serves the engine under that name, as the provider
+// FIXTURE_DEV_PROVIDER_ID names when it is set.
 package main
 
 import (
@@ -27,8 +29,20 @@ func main() {
 	}
 	owner := &devdb.Provider{Dir: dir}
 	description := devdb.Description()
-	if os.Getenv("FIXTURE_DEV_ENGINE") == "bare" {
+	switch engine := os.Getenv("FIXTURE_DEV_ENGINE"); engine {
+	case "":
+	case "bare":
 		description = devdb.BareDescription()
+	default:
+		// The engine serves under the name of an engine Ptah builds in, as
+		// a provider that replaces a built-in engine does, with the identity
+		// of the provider the catalog lists for it.
+		owner.Engine = engine
+		description.SemanticIdentity += "-" + engine
+		description.Engines[0].Id = engine
+		if id := os.Getenv("FIXTURE_DEV_PROVIDER_ID"); id != "" {
+			description.ProviderId = id
+		}
 	}
 	err := runtime.Serve(runtime.Server{
 		Description: description, Sessions: owner, Inspector: owner, Renderer: owner, Executor: owner, Transactions: owner, History: owner, Locks: owner,
