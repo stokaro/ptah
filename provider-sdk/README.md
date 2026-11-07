@@ -68,7 +68,7 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.33. Each released SDK speaks one contract:
+speaks contract 25.35. Each released SDK speaks one contract:
 
 | SDK release | Contract |
 | --- | --- |
@@ -3451,6 +3451,14 @@ name one help text, and engines that share a model report the same metrics for
 it. A name the host counts itself, such as `tables`, makes `schema stats`
 refuse. The reports sit on the engine rather than on the model, so a model's
 copy in coverage or a request is the same whether or not the host counts.
+
+For export omission diagnostics, a report may give an `omission_label` and
+`omission_count_metric`. The label defaults to the model's `display_name`;
+the count defaults to one per value. When set, the count metric must be one
+of the report's declared metrics, and its value gives the number of omitted
+objects represented by each captured value. This lets a single value holding
+multiple objects report their actual number without interpreting its payload
+in the host. Both fields were added in contract 25.35.
 
 `ReportValues` is offline: no session, no database. The host sends the values
 of one engine and one representation, each of a reported model, and the

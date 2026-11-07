@@ -12511,8 +12511,14 @@ type ModelReport struct {
 	Kind           string                    `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
 	Representation ValueInput_Representation `protobuf:"varint,2,opt,name=representation,proto3,enum=ptah.provider.experimental.ValueInput_Representation" json:"representation,omitempty"`
 	Metrics        []*ModelMetric            `protobuf:"bytes,3,rep,name=metrics,proto3" json:"metrics,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Optional label for export omission diagnostics. Empty uses the model's
+	// display_name. Contract 25.35, under models.report-counts.
+	OmissionLabel string `protobuf:"bytes,4,opt,name=omission_label,json=omissionLabel,proto3" json:"omission_label,omitempty"`
+	// Optional name of a declared metric whose per-value count gives the
+	// number of omitted objects. Empty counts one per value. Contract 25.35.
+	OmissionCountMetric string `protobuf:"bytes,5,opt,name=omission_count_metric,json=omissionCountMetric,proto3" json:"omission_count_metric,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *ModelReport) Reset() {
@@ -12564,6 +12570,20 @@ func (x *ModelReport) GetMetrics() []*ModelMetric {
 		return x.Metrics
 	}
 	return nil
+}
+
+func (x *ModelReport) GetOmissionLabel() string {
+	if x != nil {
+		return x.OmissionLabel
+	}
+	return ""
+}
+
+func (x *ModelReport) GetOmissionCountMetric() string {
+	if x != nil {
+		return x.OmissionCountMetric
+	}
+	return ""
 }
 
 // ModelMetric is one object-count metric: name is a lowercase ASCII suffix of
@@ -37031,11 +37051,13 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\x10canonical_format\x18\x06 \x01(\tR\x0fcanonicalFormat\x12X\n" +
 	"\x0esource_formats\x18\a \x03(\x0e21.ptah.provider.experimental.SourceDocument.FormatR\rsourceFormats\x12'\n" +
 	"\x0fdefinition_json\x18\b \x01(\fR\x0edefinitionJson\x12!\n" +
-	"\fdisplay_name\x18\t \x01(\tR\vdisplayName\"\xc3\x01\n" +
+	"\fdisplay_name\x18\t \x01(\tR\vdisplayName\"\x9e\x02\n" +
 	"\vModelReport\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12]\n" +
 	"\x0erepresentation\x18\x02 \x01(\x0e25.ptah.provider.experimental.ValueInput.RepresentationR\x0erepresentation\x12A\n" +
-	"\ametrics\x18\x03 \x03(\v2'.ptah.provider.experimental.ModelMetricR\ametrics\"5\n" +
+	"\ametrics\x18\x03 \x03(\v2'.ptah.provider.experimental.ModelMetricR\ametrics\x12%\n" +
+	"\x0eomission_label\x18\x04 \x01(\tR\romissionLabel\x122\n" +
+	"\x15omission_count_metric\x18\x05 \x01(\tR\x13omissionCountMetric\"5\n" +
 	"\vModelMetric\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04help\x18\x02 \x01(\tR\x04help\"\x96\x01\n" +
