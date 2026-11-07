@@ -25,10 +25,13 @@ import (
 
 // dropClaimer plays a provider that owns the table lifecycle. It replaces
 // every common table removal with an owned operation, unless left unclaimed.
+// byTable names each operation for the table it drops rather than for the
+// host's step.
 type dropClaimer struct {
 	*engine.Runtime
 	request featureplan.Request
 	leave   bool
+	byTable bool
 }
 
 func (r *dropClaimer) PlanFeatures(_ context.Context, request featureplan.Request) (featureplan.Result, error) {
@@ -40,6 +43,9 @@ func (r *dropClaimer) PlanFeatures(_ context.Context, request featureplan.Reques
 			continue
 		}
 		id := plangraph.StepID{Owner: contribution.Owner, Name: common.ID.Name}
+		if r.byTable {
+			id.Name = "drop/" + common.Parent.Name.Source
+		}
 		contribution.Steps = append(contribution.Steps, plangraph.Step[featureplan.Operation]{ID: id,
 			Payload:     featureplan.Operation{Role: ast.StatementExtension, Payload: &creationOperation{name: id.Name}},
 			Effects:     common.Effects,
@@ -108,4 +114,66 @@ func TestOwnedLifecycleRemovedTableWithoutCapture_FailurePath(t *testing.T) {
 	nodes, err := ownedPlanner().GenerateMigrationAST(c.Context(), &dropClaimer{Runtime: base}, diff)
 	c.Assert(err, qt.ErrorMatches, `provider planner requires captured table state`)
 	c.Assert(nodes, qt.IsNil)
+}
+
+// referencedDropDiff removes main.accounts and main.orders, whose captured
+// foreign key references accounts. A comparison lists removals by name, so
+// accounts comes first.
+func referencedDropDiff() *difftypes.SchemaDiff {
+	diff := ownedDropDiff()
+	accounts := "accounts"
+	diff.TablesRemoved = difftypes.TableRemovals{
+		{Name: "main.accounts", Current: schemacapture.TableObservation{Table: catalog.Table{Name: "accounts", Schema: "main"}}},
+		{Name: "main.orders", Current: schemacapture.TableObservation{Table: catalog.Table{Name: "orders", Schema: "main"},
+			Constraints: []catalog.Constraint{{Name: "orders_account_fk", TableName: "orders", Schema: "main", Type: "FOREIGN KEY", ForeignTable: &accounts}}}},
+	}
+	return diff
+}
+
+// droppedTables names the table each node of a plan drops: the table of a
+// common drop, or the step an owner planned in place of one.
+func droppedTables(nodes []ast.Node) []string {
+	var names []string
+	for _, node := range nodes {
+		switch typed := node.(type) {
+		case *ast.DropTableNode:
+			names = append(names, typed.Name)
+		case *ast.ExtensionStatement:
+			names = append(names, typed.Payload.(*creationOperation).name)
+		}
+	}
+	return names
+}
+
+// Two removed tables are dropped referencing table first, by the foreign key
+// the read captured, whether the host drops them or an owner drops each in
+// place of the host's step. In the order the comparison lists them, accounts
+// would go first, and an engine that enforces the key refuses that drop
+// while orders references a row of it.
+func TestRemovedTablesDropInObservedForeignKeyOrder_HappyPath(t *testing.T) {
+	tests := []struct {
+		name    string
+		planner commonPlanner
+		claimer dropClaimer
+		want    []string
+	}{
+		{name: "the host drops the tables", planner: commonPlanner{target: "fixture", commonTables: true}, claimer: dropClaimer{leave: true},
+			want: []string{"main.orders", "main.accounts"}},
+		{name: "the owner drops each table in place of the host's step", planner: ownedPlanner(), claimer: dropClaimer{byTable: true},
+			want: []string{"drop/orders", "drop/accounts"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			base, err := engine.New()
+			c.Assert(err, qt.IsNil)
+			claimer := test.claimer
+			claimer.Runtime = base
+
+			nodes, err := test.planner.GenerateMigrationAST(c.Context(), &claimer, referencedDropDiff())
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(droppedTables(nodes), qt.DeepEquals, test.want)
+		})
+	}
 }

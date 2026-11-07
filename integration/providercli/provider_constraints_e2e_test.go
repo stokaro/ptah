@@ -288,3 +288,54 @@ func downMigration(c *qt.C, dir string) string {
 	c.Assert(err, qt.IsNil)
 	return string(data)
 }
+
+const (
+	// heldAccounts is a table another table references. It sorts before the
+	// table that references it, which is the order a comparison lists
+	// removals in.
+	heldAccounts = `CREATE TABLE "accounts" ("id" INTEGER NOT NULL PRIMARY KEY)`
+	// heldOrders references accounts through a foreign key the read reports.
+	heldOrders = `CREATE TABLE "orders" ("id" INTEGER NOT NULL PRIMARY KEY, "account_id" INTEGER NOT NULL, ` +
+		`CONSTRAINT "orders_account_fk" FOREIGN KEY ("account_id") REFERENCES "accounts" ("id"))`
+	// heldKept is a table the declaration keeps.
+	heldKept = `CREATE TABLE "kept" ("id" INTEGER NOT NULL PRIMARY KEY)`
+	// declaredKept declares kept alone, so a plan removes accounts and orders.
+	declaredKept = "tables:\n  kept:\n    columns:\n      id: {type: INTEGER, primary: true, not_null: true}\n"
+)
+
+// referencedRemovalFixture is the CLI over accounts, orders and kept, with a
+// row in orders that references a row in accounts, served by a provider whose
+// sessions enforce foreign keys. mode selects the provider's features.
+func referencedRemovalFixture(c *qt.C, mode string) providerCLI {
+	c.Helper()
+	spec := fixtureReleaseSpec(c, "constraints", testutils.FixtureRelease{})
+	spec.Environment = append(spec.Environment, "FIXTURE_CONSTRAINT_MODE="+mode, "FIXTURE_FOREIGN_KEYS=on")
+	f := newProviderCLI(c, spec)
+	db, err := sql.Open("sqlite", f.databasePath)
+	c.Assert(err, qt.IsNil)
+	defer func() { c.Assert(db.Close(), qt.IsNil) }()
+	for _, statement := range []string{heldAccounts, heldOrders, heldKept, `INSERT INTO "accounts" ("id") VALUES (1)`,
+		`INSERT INTO "orders" ("id", "account_id") VALUES (1, 1)`} {
+		_, err := db.ExecContext(c.Context(), statement)
+		c.Assert(err, qt.IsNil, qt.Commentf("%s", statement))
+	}
+	return f
+}
+
+// Two removed tables, one referencing the other through a foreign key the
+// read reports, are dropped referencing table first when the provider drops
+// each table in its own step, in place of the host's. The host chains those
+// steps in its removal order. In the order the comparison lists the removals,
+// accounts goes first, and SQLite refuses that drop while orders still
+// references its row, so the apply fails and both tables stay.
+func TestProviderRemovesAReferencedTableAfterItsReferences_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	f := referencedRemovalFixture(c, "text")
+	f.declare(c, declaredKept)
+
+	c.Assert(f.plan(c), qt.Contains, `"outcome": "changes"`)
+	f.success(c, "apply", "--plan", f.planPath, "--tx-mode", "none", "--auto-approve")
+
+	c.Assert(f.tableNames(c), qt.DeepEquals, []string{"kept"})
+	c.Assert(f.plan(c), qt.Contains, `"outcome": "no-changes"`)
+}
