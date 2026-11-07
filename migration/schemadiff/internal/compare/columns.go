@@ -545,6 +545,8 @@ func columnsWithDesiredDomains(
 		// A rule above may hold the column NOT NULL whatever the field says, and the
 		// plan writes the clause from the field.
 		colDiff.Desired.Nullable = genNullable
+		// Empty on a column the change makes NOT NULL, whose read reports no name.
+		colDiff.ReleasedNotNullConstraintName = dbCol.NotNullConstraintName
 	}
 	applyColumnSequence(&colDiff, genCol, dbCol, ctx)
 	if change := identityChange(genCol, dbCol, dialect); change != "" {

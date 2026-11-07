@@ -25,7 +25,12 @@ func drop(column string) *ast.AlterTableNode {
 
 // setNotNull is one statement on t that makes a column NOT NULL under the name.
 func setNotNull(column, name string) *ast.AlterTableNode {
-	return alterT(&ast.ModifyColumnOperation{Column: ast.NewColumn(column, "text").SetNotNull(), NotNullConstraintName: name})
+	return alterT(&ast.ModifyColumnOperation{
+		Column:                ast.NewColumn(column, "text").SetNotNull(),
+		Changed:               ast.ColumnProperties{Nullability: true},
+		HasChanged:            true,
+		NotNullConstraintName: name,
+	})
 }
 
 // rename is one RENAME CONSTRAINT statement on t.
@@ -56,6 +61,32 @@ func renaming(table difftypes.TableDiff, current, desired string) difftypes.Tabl
 	return table
 }
 
+// releasing adds to table a column the plan makes nullable, which holds name until then.
+func releasing(table difftypes.TableDiff, column, name string) difftypes.TableDiff {
+	table.ColumnsModified = append(table.ColumnsModified, difftypes.ColumnDiff{
+		ColumnName:                    column,
+		ReleasedNotNullConstraintName: name,
+	})
+	return table
+}
+
+// makeNullable is one statement on t that takes away a column's NOT NULL.
+func makeNullable(column string) *ast.AlterTableNode {
+	return alterT(&ast.ModifyColumnOperation{
+		Column:  ast.NewColumn(column, "text"),
+		Changed: ast.ColumnProperties{Nullability: true}, HasChanged: true,
+	})
+}
+
+// setDefaultNotNull is one statement on t that makes a column NOT NULL and leaves the
+// name to the server.
+func setDefaultNotNull(column string) *ast.AlterTableNode {
+	return alterT(&ast.ModifyColumnOperation{
+		Column:  ast.NewColumn(column, "text").SetNotNull(),
+		Changed: ast.ColumnProperties{Nullability: true}, HasChanged: true,
+	})
+}
+
 // statements lists what nodes do, one line per statement and operation.
 func statements(nodes []ast.Node) []string {
 	lines := make([]string, 0, len(nodes))
@@ -75,6 +106,10 @@ func statements(nodes []ast.Node) []string {
 			case *ast.RenameConstraintOperation:
 				line += " rename " + op.From + " to " + op.To
 			case *ast.ModifyColumnOperation:
+				if op.Column.Nullable {
+					line += " release " + op.Column.Name
+					continue
+				}
 				line += " set " + op.Column.Name + " as " + op.NotNullConstraintName
 			}
 		}
@@ -133,6 +168,52 @@ func TestFree_HappyPath(t *testing.T) {
 			table: difftypes.TableDiff{TableName: "app.t", ColumnsRemoved: []schemamodel.Field{holding("a", "t_b_not_null")}},
 			nodes: []ast.Node{&ast.AlterTableNode{Name: "app.t", Operations: []ast.AlterOperation{&ast.AddColumnOperation{Column: ast.NewColumn("b", "int").SetNotNull()}}}},
 			want:  []string{"app.t: rename t_b_not_null to t_b_not_null__ptah_old", "app.t: add b as "},
+		},
+		{
+			name:  "an added column takes the name of a column the plan makes nullable later",
+			table: releasing(difftypes.TableDiff{TableName: "t"}, "a", "n"),
+			nodes: []ast.Node{add("b", "n"), makeNullable("a")},
+			want:  []string{"t: rename n to n__ptah_old", "t: add b as n", "t: release a"},
+		},
+		{
+			name:  "a column made NOT NULL takes the name of one the plan makes nullable later",
+			table: releasing(difftypes.TableDiff{TableName: "t"}, "b", "n"),
+			nodes: []ast.Node{setNotNull("a", "n"), makeNullable("b")},
+			want:  []string{"t: rename n to n__ptah_old", "t: set a as n", "t: release b"},
+		},
+		{
+			name:  "SET NOT NULL, whose default name a column the plan removes holds",
+			table: removed(holding("b", "t_a_not_null")),
+			nodes: []ast.Node{setDefaultNotNull("a"), drop("b")},
+			want:  []string{"t: rename t_a_not_null to t_a_not_null__ptah_old", "t: set a as ", "t: drop b"},
+		},
+		{
+			name:  "SET NOT NULL, whose default name a column made nullable holds",
+			table: releasing(difftypes.TableDiff{TableName: "t"}, "b", "t_a_not_null"),
+			nodes: []ast.Node{setDefaultNotNull("a"), makeNullable("b")},
+			want:  []string{"t: rename t_a_not_null to t_a_not_null__ptah_old", "t: set a as ", "t: release b"},
+		},
+		{
+			name:  "a change to another property of the holder ends no hold",
+			table: releasing(difftypes.TableDiff{TableName: "t"}, "a", "n"),
+			nodes: []ast.Node{
+				alterT(&ast.ModifyColumnOperation{Column: ast.NewColumn("a", "text"), Changed: ast.ColumnProperties{Identity: true}, HasChanged: true}),
+				add("b", "n"),
+				makeNullable("a"),
+			},
+			want: []string{"t: release a", "t: rename n to n__ptah_old", "t: add b as n", "t: release a"},
+		},
+		{
+			name:  "SET NOT NULL on a table in a schema, whose default name does not carry the schema",
+			table: difftypes.TableDiff{TableName: "app.t", ColumnsRemoved: []schemamodel.Field{holding("b", "t_a_not_null")}},
+			nodes: []ast.Node{&ast.AlterTableNode{Name: "app.t", Operations: setDefaultNotNull("a").Operations}},
+			want:  []string{"app.t: rename t_a_not_null to t_a_not_null__ptah_old", "app.t: set a as "},
+		},
+		{
+			name:  "one statement that adds the column ahead of the release still frees the name",
+			table: releasing(difftypes.TableDiff{TableName: "t"}, "a", "n"),
+			nodes: []ast.Node{alterT(add("b", "n").Operations[0], makeNullable("a").Operations[0])},
+			want:  []string{"t: rename n to n__ptah_old", "t: add b as n release a"},
 		},
 		{
 			name:  "a renamed constraint takes the name of a column the plan removes later",
@@ -220,6 +301,36 @@ func TestFree_LeavesAPlanThatRuns_HappyPath(t *testing.T) {
 			want:  []string{"t: add b as ", "t: drop a"},
 		},
 		{
+			name:  "the holder is made nullable first",
+			table: releasing(difftypes.TableDiff{TableName: "t"}, "a", "n"),
+			nodes: []ast.Node{makeNullable("a"), add("b", "n")},
+			want:  []string{"t: release a", "t: add b as n"},
+		},
+		{
+			name:  "one statement makes the holder nullable and then adds the column",
+			table: releasing(difftypes.TableDiff{TableName: "t"}, "a", "n"),
+			nodes: []ast.Node{alterT(makeNullable("a").Operations[0], add("b", "n").Operations[0])},
+			want:  []string{"t: release a add b as n"},
+		},
+		{
+			name:  "a nullable column of the same name holds nothing, and another column's release frees nothing",
+			table: releasing(difftypes.TableDiff{TableName: "t"}, "a", "n"),
+			nodes: []ast.Node{makeNullable("c"), add("b", "m")},
+			want:  []string{"t: release c", "t: add b as m"},
+		},
+		{
+			name:  "SET NOT NULL, whose default name nobody holds",
+			table: removed(holding("b", "n")),
+			nodes: []ast.Node{setDefaultNotNull("a"), drop("b")},
+			want:  []string{"t: set a as ", "t: drop b"},
+		},
+		{
+			name:  "a modification that leaves nullability alone takes no name",
+			table: removed(holding("b", "t_a_not_null")),
+			nodes: []ast.Node{alterT(&ast.ModifyColumnOperation{Column: ast.NewColumn("a", "text").SetNotNull(), Changed: ast.ColumnProperties{Type: true}, HasChanged: true}), drop("b")},
+			want:  []string{"t: set a as ", "t: drop b"},
+		},
+		{
 			name:  "the holder's rename runs first",
 			table: renaming(difftypes.TableDiff{TableName: "t"}, "n", "m"),
 			nodes: []ast.Node{rename("n", "m"), add("b", "n")},
@@ -284,6 +395,12 @@ func TestUnfree_HappyPath(t *testing.T) {
 			table: removed(holding("full_name", "n")),
 			nodes: []ast.Node{add("display_name", "n"), drop("full_name")},
 			want:  []string{"t: add display_name as n", "t: drop full_name"},
+		},
+		{
+			name:  "a name freed from a column the plan makes nullable",
+			table: releasing(difftypes.TableDiff{TableName: "t"}, "a", "n"),
+			nodes: []ast.Node{add("b", "n"), makeNullable("a")},
+			want:  []string{"t: add b as n", "t: release a"},
 		},
 		{
 			name:  "a rename that started from an interim name",

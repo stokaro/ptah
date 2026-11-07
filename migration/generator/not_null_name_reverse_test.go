@@ -64,3 +64,108 @@ func TestPlanBidirectionalSchemaDiff_NotNullNameRollsBack(t *testing.T) {
 		})
 	}
 }
+
+// notNullRollback renders the rollback of diff, whose prior database holds the columns of
+// t the table lists.
+func notNullRollback(c *qt.C, diff *difftypes.SchemaDiff, current []catalog.Column) string {
+	c.Helper()
+	caps := capability.Postgres18()
+	plan, err := generator.PlanBidirectionalSchemaDiff(c.Context(),
+		generator.BidirectionalSchemaPlanOptions{
+			Runtime:       must.Must(builtin.New()),
+			Diff:          diff,
+			DesiredSchema: &schemamodel.Database{},
+			CurrentSchema: &catalog.Database{Tables: []catalog.Table{{Name: "t", Schema: "public", Columns: current}}},
+			Dialect:       platform.Postgres,
+			Capabilities:  caps,
+		})
+	c.Assert(err, qt.IsNil)
+	return must.Must(builtin.RenderSQLWithCapabilities(platform.Postgres, caps, plan.Reverse.Nodes...))
+}
+
+// A rollback gives a column the forward plan made nullable the name it held. The name
+// the server gives needs no statement of its own, and SET NOT NULL lands on it. That name
+// does not carry the table's schema.
+func TestPlanBidirectionalSchemaDiff_AColumnMadeNullableRollsBackToItsName(t *testing.T) {
+	tests := []struct {
+		name     string
+		table    string
+		released string
+		want     string
+	}{
+		{name: "a chosen name", table: "t", released: "nn", want: `ALTER TABLE "t" ADD CONSTRAINT "nn" NOT NULL "a";`},
+		{name: "the name the server gave", table: "t", released: "t_a_not_null", want: `ALTER TABLE "t" ALTER COLUMN "a" SET NOT NULL;`},
+		{name: "the name the server gave, in a schema", table: "public.t", released: "t_a_not_null", want: `ALTER TABLE "public"."t" ALTER COLUMN "a" SET NOT NULL;`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			diff := &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
+				TableName: test.table,
+				ColumnsModified: []difftypes.ColumnDiff{{
+					ColumnName:                    "a",
+					Changes:                       map[string]string{"nullable": "false -> true"},
+					ReleasedNotNullConstraintName: test.released,
+				}},
+			}}}
+
+			rollback := notNullRollback(c, diff, []catalog.Column{{Name: "a", DataType: "text", IsNullable: "NO", NotNullConstraintName: test.released}})
+
+			c.Assert(rollback, qt.Contains, test.want)
+		})
+	}
+}
+
+// A rollback that adds a column under a name holds the column the forward plan made NOT
+// NULL as the holder of that name, until the rollback makes it nullable: the name the
+// plan stated, the one the desired side holds, or the one the server gave.
+func TestPlanBidirectionalSchemaDiff_AColumnMadeNotNullHoldsItsNameInTheRollback(t *testing.T) {
+	tests := []struct {
+		name    string
+		change  *difftypes.NotNullConstraintNameChange
+		desired string
+		held    string
+	}{
+		{name: "the name the plan stated", change: &difftypes.NotNullConstraintNameChange{Desired: "nn"}, held: "nn"},
+		{name: "the name the desired side holds", desired: "kept", held: "kept"},
+		{name: "the name the server gave", held: "t_a_not_null"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			diff := &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
+				TableName:      "t",
+				ColumnsRemoved: []schemamodel.Field{{Name: "b", Type: "text", NotNullConstraintName: test.held}},
+				ColumnsModified: []difftypes.ColumnDiff{{
+					ColumnName:                  "a",
+					Changes:                     map[string]string{"nullable": "true -> false"},
+					NotNullConstraintNameChange: test.change,
+					Desired:                     schemamodel.Field{Name: "a", Type: "text", NotNullConstraintName: test.desired},
+				}},
+			}}}
+
+			rollback := notNullRollback(c, diff, []catalog.Column{{Name: "a", DataType: "text", IsNullable: "YES"}})
+
+			c.Assert(rollback, qt.Contains, `RENAME CONSTRAINT "`+test.held+`" TO "`+test.held+`__ptah_old"`)
+		})
+	}
+}
+
+// A column the forward plan changed in another way holds nothing it did not hold, so the
+// rollback moves no name for it.
+func TestPlanBidirectionalSchemaDiff_AColumnThatStaysNullableHoldsNoName(t *testing.T) {
+	c := qt.New(t)
+	diff := &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
+		TableName:      "t",
+		ColumnsRemoved: []schemamodel.Field{{Name: "b", Type: "text", NotNullConstraintName: "t_a_not_null"}},
+		ColumnsModified: []difftypes.ColumnDiff{{
+			ColumnName: "a",
+			Changes:    map[string]string{"type": "varchar -> text"},
+			Desired:    schemamodel.Field{Name: "a", Type: "text", Nullable: true},
+		}},
+	}}}
+
+	rollback := notNullRollback(c, diff, []catalog.Column{{Name: "a", DataType: "text", IsNullable: "YES"}})
+
+	c.Assert(rollback, qt.Not(qt.Contains), "RENAME CONSTRAINT")
+}

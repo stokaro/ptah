@@ -722,8 +722,15 @@ ALTER TABLE "t" DROP COLUMN "full_name";
 ```
 
 A column whose `NOT NULL` the plan renames holds its name in the same way until
-that rename runs, and it goes through the interim name too when another statement
-takes the name first.
+that rename runs, and a column the plan makes nullable holds it until
+`DROP NOT NULL` runs. Each goes through the interim name too when another statement
+takes the name first. The name the server would give a column left to it counts as
+taken as well, so `SET NOT NULL` does not land on a numbered name while a column the
+plan removes holds the plain one.
+
+A rollback gives a column the plan made nullable the name it held, by the statement
+in [Making a column NOT NULL](#making-a-column-not-null). A name the server would give
+needs no statement of its own.
 
 `ptah-compat` writes one `ALTER TABLE` for the drop and the addition where nothing
 depends on their order. PostgreSQL runs the drops of a statement first, so that
