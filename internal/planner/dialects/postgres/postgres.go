@@ -783,7 +783,8 @@ func (p *Planner) addNewTableColumns(
 	// `reporting.users` must write no DDL, because the statement would apply
 	// cleanly to a relation nobody declared. Measured on
 	// PostgreSQL 17.10; see TestPlannerWritesNoDDLForARelationTheSchemaDoesNotDeclare.
-	if findGeneratedTableByDiffName(declared, tableDiff.TableName, semantics) == nil {
+	table := findGeneratedTableByDiffName(declared, tableDiff.TableName, semantics)
+	if table == nil {
 		return result
 	}
 
@@ -792,6 +793,9 @@ func (p *Planner) addNewTableColumns(
 	// reaching into the planner (stokaro/ptah#2315).
 	for _, column := range tableDiff.ColumnsAdded {
 		columnNode := modelast.FromFieldWithoutForeignKeys(column, vocabulary.Enums, "postgres")
+		if column.Primary {
+			columnNode.SetNotNullConstraintName(modelast.KeyColumnNotNullName(table.Name, column))
+		}
 
 		// Only add the column - foreign key constraints will be added separately
 		// to ensure proper dependency ordering (columns must exist before FK constraints)

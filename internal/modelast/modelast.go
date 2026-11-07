@@ -24,6 +24,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/deporder"
+	"ptah.run/internal/pgname"
 	"ptah.run/internal/pgsystemschema"
 	"ptah.run/internal/routinebody"
 	"ptah.run/internal/schemaprep"
@@ -667,7 +668,11 @@ func fromTableWithFieldConverter(
 				field.Primary = false
 			}
 			field = schemaprep.WithDefaultFieldForeignKeyName(newTable.Name, field, targetPlatform)
-			createTable.AddColumn(convertField(field, enums, targetPlatform))
+			column := convertField(field, enums, targetPlatform)
+			if field.Primary {
+				column.SetNotNullConstraintName(KeyColumnNotNullName(newTable.Name, field))
+			}
+			createTable.AddColumn(column)
 		}
 	}
 
@@ -2468,21 +2473,29 @@ func validateEnumField(field schemamodel.Field, enums []schemamodel.Enum) {
 }
 
 // keptNotNullConstraintName is the NOT NULL constraint name this column carries
-// into the AST, which is the declared one unless the column is a primary key.
-//
-// The renderer refuses a named NOT NULL on a primary-key column, and it is right
-// to: the NOT NULL there is synthesized for comparison rather than declared, the
-// key is the constraint the column actually has, and its name is the addressable
-// one. A reader supplies such a name on every PostgreSQL 18 primary key, because
-// that server names every NOT NULL, so carrying it through would turn reading a
-// database back into a refusal.
-//
-// Dropping it here is therefore the deliberate half of the same rule, and it is
-// the only place where dropping a name is correct: on any other column the name
-// travels, and a target that cannot keep it refuses rather than losing it
-// silently (stokaro/ptah#2590, stokaro/ptah#2161).
+// into the AST, which is the declared one unless the column is a primary key. A
+// caller that knows the table asks [KeyColumnNotNullName] about a key column.
 func keptNotNullConstraintName(field schemamodel.Field) string {
 	if field.Primary {
+		return ""
+	}
+	return field.NotNullConstraintName
+}
+
+// KeyColumnNotNullName is the NOT NULL constraint name a primary-key column of the
+// named table carries into the AST: the declared one, unless it is the name the
+// server gives a NOT NULL nobody named.
+//
+// A reader supplies such a name on every PostgreSQL 18 primary key, because that
+// server names every NOT NULL, so carrying it through would write the server's own
+// name into every table a plan creates. Any other name is one the catalog keeps and
+// a later plan compares, written by an author or left behind by RENAME COLUMN, and
+// without it the plan lands on the name the server gives and takes a second plan to
+// move it. A target that cannot keep the name refuses it, as it does on any column.
+//
+// table is the bare relation name, without its schema.
+func KeyColumnNotNullName(table string, field schemamodel.Field) string {
+	if field.NotNullConstraintName == pgname.NotNull(table, field.Name) {
 		return ""
 	}
 	return field.NotNullConstraintName

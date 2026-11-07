@@ -34,6 +34,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/difftypes"
 	"ptah.run/internal/pgname"
+	"ptah.run/internal/tableref"
 )
 
 // Free returns nodes with a RENAME CONSTRAINT ahead of each statement that takes
@@ -135,6 +136,22 @@ func heldNames(diff *difftypes.SchemaDiff) map[string]*holders {
 	return tables
 }
 
+// addedName is the name a column holds once a statement adds it: the name it declares,
+// or the one the server gives a NOT NULL nobody named. Left to the server while another
+// column holds that name, the column comes out as `<table>_<column>_not_null1`.
+func addedName(table string, column *ast.ColumnNode) string {
+	if column.Nullable && !column.Primary {
+		return ""
+	}
+	if column.NotNullConstraintName != "" {
+		return column.NotNullConstraintName
+	}
+	if ref, ok := tableref.Parse(table); ok {
+		table = ref.Name
+	}
+	return pgname.NotNull(table, column.Name)
+}
+
 // freedFor advances the table's state over one statement and answers the names
 // that have to move before it runs. The operations are read in the order they run
 // when each is a statement of its own, and a statement that merges them runs its
@@ -158,7 +175,7 @@ func (h *holders) freedFor(alter *ast.AlterTableNode) []string {
 			delete(h.held, h.removed[op.ColumnName])
 		case *ast.AddColumnOperation:
 			if op.Column != nil {
-				take(op.Column.NotNullConstraintName)
+				take(addedName(alter.Name, op.Column))
 			}
 		case *ast.ModifyColumnOperation:
 			take(op.NotNullConstraintName)

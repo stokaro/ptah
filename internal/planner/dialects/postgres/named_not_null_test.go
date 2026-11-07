@@ -213,3 +213,44 @@ func modifiedNotNullNames(nodes []ast.Node) []string {
 	}
 	return names
 }
+
+// addedKeyColumnDiff adds a primary-key column whose NOT NULL holds name to the declared
+// table widget.
+func addedKeyColumnDiff(name string) *difftypes.SchemaDiff {
+	return &difftypes.SchemaDiff{
+		DeclaredTables: []schemamodel.Table{{StructName: "Widget", Name: "widget"}},
+		TablesModified: []difftypes.TableDiff{{
+			TableName: "widget",
+			ColumnsAdded: []schemamodel.Field{{
+				StructName: "Widget", Name: "a", Type: "INTEGER", Primary: true, NotNullConstraintName: name,
+			}},
+		}},
+	}
+}
+
+// TestPlanner_AnAddedKeyColumnKeepsAWrittenName carries a name the server would not give
+// the column into ADD COLUMN, where a plan without it lands on the name the server gives
+// and takes a second plan to move it. The name the server gives stays out of the statement.
+func TestPlanner_AnAddedKeyColumnKeepsAWrittenName(t *testing.T) {
+	tests := []struct {
+		name string
+		want string
+	}{
+		{name: "c_old", want: `ALTER TABLE "widget" ADD COLUMN "a" INTEGER PRIMARY KEY CONSTRAINT "c_old" NOT NULL;`},
+		{name: "widget_a_not_null", want: `ALTER TABLE "widget" ADD COLUMN "a" INTEGER PRIMARY KEY NOT NULL;`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			caps := capability.Postgres18()
+
+			nodes, err := postgres.NewForDialect(platform.Postgres, caps).GenerateMigrationAST(
+				context.Background(), must.Must(builtin.New()), addedKeyColumnDiff(test.name))
+			c.Assert(err, qt.IsNil)
+			sql, err := builtin.RenderSQLWithCapabilities(platform.Postgres, caps, nodes...)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(sql, qt.Contains, test.want)
+		})
+	}
+}

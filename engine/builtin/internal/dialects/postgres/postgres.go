@@ -1528,20 +1528,15 @@ func (r *Renderer) renderDropType(node *ast.DropTypeNode) error {
 // exists to prevent (stokaro/ptah#2161).
 func (r *Renderer) columnKeyAndNullability(column *ast.ColumnNode) ([]string, error) {
 	if column.Primary {
-		if column.NotNullConstraintName != "" {
-			// The NOT NULL emitted here is synthesized for comparison, not
-			// declared -- the primary key is the constraint the column actually
-			// has, and its own name is the addressable one. Naming a constraint
-			// Ptah invents would hand back a name no catalog answers to.
-			return nil, fmt.Errorf(
-				"postgres column %s: a NOT NULL constraint name (%s) cannot be kept on a "+
-					"primary-key column, whose NOT NULL is implied by the key; name the "+
-					"primary key instead",
-				column.Name, column.NotNullConstraintName)
-		}
 		// Primary keys are always NOT NULL in PostgreSQL, show it explicitly for
-		// schema comparison.
-		return []string{"PRIMARY KEY", "NOT NULL"}, nil
+		// schema comparison. PostgreSQL 18 keeps a name on this NOT NULL as on any
+		// other, measured on 18.6, and a column renamed on the server holds the name
+		// of the column it was.
+		clause, err := r.notNullClause(column)
+		if err != nil {
+			return nil, err
+		}
+		return []string{"PRIMARY KEY", clause}, nil
 	}
 
 	var parts []string
@@ -1612,10 +1607,9 @@ func (r *Renderer) notNullClause(column *ast.ColumnNode) (string, error) {
 // would lose. No catalog says who wrote a name, so the spelling decides, as it
 // does in the comparison, and a name the server numbered counts as written.
 //
-// A nullable or primary-key column keeps its name here, and the refusals that
-// answer it.
+// A nullable column keeps its name here, and the refusal that answers it.
 func (r *Renderer) withoutDefaultNotNullName(table string, column *ast.ColumnNode) *ast.ColumnNode {
-	if column == nil || column.NotNullConstraintName == "" || column.Nullable || column.Primary ||
+	if column == nil || column.NotNullConstraintName == "" || (column.Nullable && !column.Primary) ||
 		r.capabilities().Has(capability.NamedNotNullConstraints) ||
 		column.NotNullConstraintName != pgname.NotNull(unqualifiedTable(table), column.Name) {
 		return column

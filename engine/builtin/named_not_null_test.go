@@ -29,9 +29,8 @@ func nullableTableNamingItsNotNull(constraintName string) *ast.CreateTableNode {
 	return ast.NewCreateTable("widget").AddColumn(column)
 }
 
-// primaryTableNamingItsNotNull is the other inconsistent declaration: a NOT NULL
-// constraint name on a primary-key column, whose NOT NULL the key already
-// implies.
+// primaryTableNamingItsNotNull is a primary-key column whose NOT NULL has a name,
+// which PostgreSQL 18 keeps as it does on any other column.
 func primaryTableNamingItsNotNull(constraintName string) *ast.CreateTableNode {
 	column := ast.NewColumn("a", "INTEGER").SetNotNull().SetPrimary()
 	column.SetNotNullConstraintName(constraintName)
@@ -133,6 +132,12 @@ func TestNamedNotNull_ATargetThatRecordsNothingLeavesOutTheDefaultName(t *testin
 			want: `ALTER TABLE "t" ADD COLUMN "` + longColumn + `" INTEGER NOT NULL;`,
 		},
 		{
+			name: "a primary-key column",
+			node: primaryTableNamingItsNotNull("widget_a_not_null"),
+			caps: postgresCaps(false),
+			want: `"a" INTEGER PRIMARY KEY NOT NULL`,
+		},
+		{
 			name: "a target that keeps the name",
 			node: addedNotNullColumn("widget", "a", "widget_a_not_null"),
 			caps: postgresCaps(true),
@@ -155,8 +160,8 @@ func TestNamedNotNull_ATargetThatRecordsNothingLeavesOutTheDefaultName(t *testin
 
 // TestNamedNotNull_ATargetThatRecordsNothingRefusesEveryOtherName keeps the refusal for
 // a name the target would lose: one the server numbered, the default of another table
-// or column, the uncut spelling of a name the server cuts, and each of the two
-// contradictions a default spelling must not hide.
+// or column, the uncut spelling of a name the server cuts, and the contradiction a
+// default spelling must not hide.
 func TestNamedNotNull_ATargetThatRecordsNothingRefusesEveryOtherName(t *testing.T) {
 	const longColumn = "a_column_name_that_is_much_longer_than_fifty_four_bytes_x"
 	tests := []struct {
@@ -188,11 +193,6 @@ func TestNamedNotNull_ATargetThatRecordsNothingRefusesEveryOtherName(t *testing.
 			name: "a default name on a nullable column",
 			node: nullableTableNamingItsNotNull("widget_a_not_null"),
 			want: "names no constraint",
-		},
-		{
-			name: "a default name on a primary-key column",
-			node: primaryTableNamingItsNotNull("widget_a_not_null"),
-			want: "cannot be kept on a primary-key column",
 		},
 	}
 	for _, test := range tests {
@@ -329,33 +329,36 @@ func TestNamedNotNull_ANameOnANullableColumnNamesNothing(t *testing.T) {
 	c.Assert(renderErr.Error(), qt.Contains, "names no constraint")
 }
 
-// TestNamedNotNull_ANameOnAPrimaryKeyColumnIsRefused keeps the third refusal
-// reachable.
-//
-// This is the layer that refusal belongs to. A caller building the AST by hand
-// has stated the contradiction itself, and nothing downstream can tell that it
-// was a mistake rather than a description. The model path cannot reach it,
-// because PostgreSQL 18 names the NOT NULL on every primary-key column and a
-// read carries that name in: refusing there turned `ptah db read` against any
-// PG18 database into an error, so the model-to-AST conversion drops it and
-// TestModelNamedNotNull_APrimaryKeyColumnDropsTheName pins that.
-//
-// Without this test the guard has no caller at all, which is the state
-// AGENTS.md calls a rule that is not in effect.
-func TestNamedNotNull_ANameOnAPrimaryKeyColumnIsRefused(t *testing.T) {
+// TestNamedNotNull_APrimaryKeyColumnKeepsItsName writes the name on a target that keeps
+// one. Measured on PostgreSQL 18.6, `id int PRIMARY KEY CONSTRAINT idnn NOT NULL` holds
+// idnn beside the key's own constraint, and a column renamed on the server holds the
+// name of the column it was.
+func TestNamedNotNull_APrimaryKeyColumnKeepsItsName(t *testing.T) {
 	c := qt.New(t)
 	r, err := builtin.NewRendererWithCapabilities("postgres", postgresCaps(true))
 	c.Assert(err, qt.IsNil)
 
 	sql, renderErr := r.Render(primaryTableNamingItsNotNull("c_pk"))
 
-	c.Assert(renderErr, qt.IsNotNil)
-	c.Assert(renderErr.Error(), qt.Contains, "cannot be kept on a primary-key column")
+	c.Assert(renderErr, qt.IsNil)
+	c.Assert(sql, qt.Contains, `"a" INTEGER PRIMARY KEY CONSTRAINT "c_pk" NOT NULL`)
+}
+
+// TestNamedNotNull_APrimaryKeyColumnOnATargetThatKeepsNoNameIsRefused holds the column to
+// the refusal any other column meets, because the target would lose the name.
+func TestNamedNotNull_APrimaryKeyColumnOnATargetThatKeepsNoNameIsRefused(t *testing.T) {
+	c := qt.New(t)
+	r, err := builtin.NewRendererWithCapabilities("postgres", postgresCaps(false))
+	c.Assert(err, qt.IsNil)
+
+	sql, renderErr := r.Render(primaryTableNamingItsNotNull("c_pk"))
+
+	c.Assert(renderErr, qt.ErrorMatches, ".*does not keep a NOT NULL constraint name .c_pk.*")
 	c.Assert(sql, qt.Equals, "")
 }
 
-// TestNamedNotNull_AnUnnamedPrimaryKeyColumnIsUnaffected is its control: the
-// refusal is about the name, not about a primary key rendering at all.
+// TestNamedNotNull_AnUnnamedPrimaryKeyColumnIsUnaffected is the control: with no name to
+// state, the column writes no CONSTRAINT clause.
 func TestNamedNotNull_AnUnnamedPrimaryKeyColumnIsUnaffected(t *testing.T) {
 	c := qt.New(t)
 	r, err := builtin.NewRendererWithCapabilities("postgres", postgresCaps(true))

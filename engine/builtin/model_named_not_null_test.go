@@ -65,36 +65,36 @@ func TestModelNamedNotNull_AnUnnamedConstraintIsUnaffected(t *testing.T) {
 	c.Assert(sql, qt.Not(qt.Contains), "CONSTRAINT")
 }
 
-// TestModelNamedNotNull_APrimaryKeyColumnDropsTheName is the one column where
-// dropping is right, and it is why the model path cannot simply carry the name
-// through to the renderer's refusal.
+// TestModelNamedNotNull_APrimaryKeyColumn keeps a name the server would not give the
+// column, and leaves out the one it would.
 //
-// PostgreSQL 18 names the NOT NULL on a primary-key column by itself. Measured
-// on 18.6, `CREATE TABLE accounts (id BIGINT PRIMARY KEY, email TEXT NOT NULL)`
-// leaves pg_constraint holding `accounts_id_not_null` with contype 'n' beside
-// the key's own `accounts_pkey`. So every PG18 table with a primary key
-// produces such a name on the way in, and refusing it here made `ptah db read`
-// against any of them exit non-zero rather than describe the database.
-//
-// The refusal itself is right and still reachable; it belongs to an AST a
-// caller built, which is
-// TestNamedNotNull_ANameOnAPrimaryKeyColumnIsRefused in
-// engine/builtin/named_not_null_test.go.
-func TestModelNamedNotNull_APrimaryKeyColumnDropsTheName(t *testing.T) {
-	c := qt.New(t)
+// PostgreSQL 18 names the NOT NULL on a primary-key column by itself. Measured on 18.6,
+// `CREATE TABLE accounts (id BIGINT PRIMARY KEY, email TEXT NOT NULL)` leaves pg_constraint
+// holding `accounts_id_not_null` with contype 'n' beside the key's own `accounts_pkey`. A
+// read carries that name in from every table, and writing it would change the statement
+// of every table with a primary key, so it stays out. A name the server would not give is
+// one a later plan compares, so a plan that left it out would take a second plan to move it.
+func TestModelNamedNotNull_APrimaryKeyColumn(t *testing.T) {
+	tests := []struct {
+		name string
+		want string
+	}{
+		{name: "widgets_a_nn", want: `"a" INTEGER PRIMARY KEY CONSTRAINT "widgets_a_nn" NOT NULL`},
+		{name: "widgets_a_not_null", want: `"a" INTEGER PRIMARY KEY NOT NULL`},
+		{name: "widgets_a_not_null1", want: `"a" INTEGER PRIMARY KEY CONSTRAINT "widgets_a_not_null1" NOT NULL`},
+		{name: "other_a_not_null", want: `"a" INTEGER PRIMARY KEY CONSTRAINT "other_a_not_null" NOT NULL`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 
-	statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(
-		namedNotNullDatabase("widgets_a_nn", false, true), "postgres", capability.Postgres18())
+			statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(
+				namedNotNullDatabase(test.name, false, true), "postgres", capability.Postgres18())
 
-	c.Assert(err, qt.IsNil)
-	sql := strings.Join(statements, "\n")
-	c.Assert(sql, qt.Not(qt.Contains), "widgets_a_nn")
-	// The name is dropped for being on a key column, not because carrying it
-	// stopped working: a non-key column in the same table still keeps one.
-	nonKey, err := builtin.GetOrderedCreateStatementsWithCapabilities(
-		namedNotNullDatabase("widgets_a_nn", false, false), "postgres", capability.Postgres18())
-	c.Assert(err, qt.IsNil)
-	c.Assert(strings.Join(nonKey, "\n"), qt.Contains, `CONSTRAINT "widgets_a_nn" NOT NULL`)
+			c.Assert(err, qt.IsNil)
+			c.Assert(strings.Join(statements, "\n"), qt.Contains, test.want)
+		})
+	}
 }
 
 // TestModelNamedNotNull_FailurePath drives the two refusals the name makes

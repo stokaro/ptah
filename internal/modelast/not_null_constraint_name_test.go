@@ -50,26 +50,30 @@ func TestCollectDatabase_NotNullConstraintNameReachesTheDDL(t *testing.T) {
 	c.Assert(statements[0], qt.Contains, `CONSTRAINT "accounts_email_nn" NOT NULL`)
 }
 
-// TestCollectDatabase_NotNullConstraintNameIsDroppedOnAKeyColumn is the half that
-// keeps the fix from turning a database read into a refusal.
-//
-// PostgreSQL 18 names the key column's NOT NULL as well, and the renderer
-// refuses such a name: the NOT NULL there is synthesized for comparison, the key
-// is the constraint the column has, and its name is the addressable one. So the
-// conversion drops it deliberately, and this is the one column where dropping is
-// right.
-func TestCollectDatabase_NotNullConstraintNameIsDroppedOnAKeyColumn(t *testing.T) {
-	c := qt.New(t)
+// TestCollectDatabase_NotNullConstraintNameOnAKeyColumn leaves out the name the server
+// gives a key column, which a PostgreSQL 18 read reports on every table, and carries any
+// other, which a later plan compares. The non-key column beside it keeps its name in
+// both rows.
+func TestCollectDatabase_NotNullConstraintNameOnAKeyColumn(t *testing.T) {
+	tests := []struct {
+		name string
+		want string
+	}{
+		{name: "accounts_id_not_null", want: `"id" BIGINT PRIMARY KEY NOT NULL`},
+		{name: "accounts_id_nn", want: `"id" BIGINT PRIMARY KEY CONSTRAINT "accounts_id_nn" NOT NULL`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 
-	statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(
-		namedNotNullSchema("accounts_id_nn"), platform.Postgres, capability.Postgres18())
+			statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(
+				namedNotNullSchema(test.name), platform.Postgres, capability.Postgres18())
 
-	c.Assert(err, qt.IsNil)
-	c.Assert(statements[0], qt.Contains, `"id" BIGINT PRIMARY KEY NOT NULL`)
-	c.Assert(statements[0], qt.Not(qt.Contains), "accounts_id_nn")
-	// The non-key column beside it still carries its name, so this is the key
-	// column being treated differently rather than the copy being switched off.
-	c.Assert(statements[0], qt.Contains, `CONSTRAINT "accounts_email_nn" NOT NULL`)
+			c.Assert(err, qt.IsNil)
+			c.Assert(statements[0], qt.Contains, test.want)
+			c.Assert(statements[0], qt.Contains, `CONSTRAINT "accounts_email_nn" NOT NULL`)
+		})
+	}
 }
 
 // TestCollectDatabase_NotNullConstraintNameIsRefusedWhereItCannotBeKept pins the
