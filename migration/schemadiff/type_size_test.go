@@ -45,6 +45,9 @@ func TestCompareTypeSize_ASizeOnOneSideIsAChange(t *testing.T) {
 		{"Oracle no fraction to any number", "oracle", "NUMBER(*,0)", "NUMBER", false},
 		{"Oracle any number to no fraction", "oracle", "NUMBER", "NUMBER(*,0)", true},
 		{"Oracle a length in characters", "oracle", "VARCHAR2(100)", "VARCHAR2(50 CHAR)", true},
+		{"Oracle another column under INTEGER", "oracle", "NUMBER(19)", "INTEGER", true},
+		{"Oracle another float under DOUBLE PRECISION", "oracle", "FLOAT(63)", "DOUBLE PRECISION", true},
+		{"Oracle a number under REAL", "oracle", "NUMBER(*,0)", "REAL", true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -123,6 +126,15 @@ func TestCompareTypeSize_OneTypeInTwoSpellingsIsNoChange(t *testing.T) {
 		{"Oracle NCHAR", "oracle", "NCHAR(1)", "NCHAR"},
 		{"Oracle a length in characters", "oracle", "VARCHAR2(100)", "VARCHAR2(100 CHAR)"},
 		{"Oracle a RAW's bytes", "oracle", "RAW(16)", "RAW(16)"},
+		{"Oracle a column the server built as INTEGER", "oracle", "NUMBER(*,0)", "INTEGER"},
+		{"Oracle a column Ptah built as INTEGER", "oracle", "NUMBER(10)", "INTEGER"},
+		{"Oracle a column the server built as SMALLINT", "oracle", "NUMBER(*,0)", "smallint"},
+		{"Oracle a column the server built as DECIMAL", "oracle", "NUMBER(*,0)", "DECIMAL"},
+		{"Oracle a bare DECIMAL Ptah built", "oracle", "NUMBER", "DECIMAL"},
+		{"Oracle a column the server built as DOUBLE PRECISION", "oracle", "FLOAT(126)", "DOUBLE PRECISION"},
+		{"Oracle a column Ptah built as DOUBLE PRECISION", "oracle", "BINARY_DOUBLE", "DOUBLE PRECISION"},
+		{"Oracle a column the server built as REAL", "oracle", "FLOAT(63)", "REAL"},
+		{"Oracle a column the server built as BOOLEAN", "oracle", "BOOLEAN", "BOOLEAN"},
 		{"Oracle a UUID's bytes", "oracle", "RAW(16)", "UUID"},
 	}
 	for _, test := range tests {

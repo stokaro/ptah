@@ -823,8 +823,10 @@ func (r *Reader) formattedTypeExpr() string {
 	}
 	if r.dialect == platform.CockroachDB {
 		// format_type answers `interval` for `interval year to month` here, and the
-		// catalog's own column keeps the fields. Measured on v26.3.5.
+		// catalog's own column keeps the fields. It answers `text(9)[]` for a
+		// `string(5)[]`, a width with four bytes of header in it. Measured on v26.3.5.
 		return `CASE WHEN data_type = 'interval' AND col.crdb_sql_type LIKE 'INTERVAL %' THEN col.crdb_sql_type
+				WHEN data_type = 'ARRAY' AND col.crdb_sql_type LIKE 'STRING(%' THEN col.crdb_sql_type
 				WHEN data_type = 'ARRAY' OR col.domain_name IS NOT NULL
 				OR (data_type = 'USER-DEFINED' AND a.atttypmod <> -1)
 				THEN format_type(a.atttypid, a.atttypmod)

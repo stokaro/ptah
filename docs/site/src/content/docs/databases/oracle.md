@@ -57,8 +57,12 @@ Two type mappings are worth knowing because Oracle has no direct equivalent:
 `BOOLEAN` becomes `NUMBER(1)`, with `true` and `false` written as `1` and `0`,
 and an enum becomes `VARCHAR2(255)` with a `CHECK` listing its values.
 
-A column's size is compared by what it holds. `NUMBER` holds any number, `NUMBER(*,0)`
-and a column built as `INTEGER` hold no fraction, `FLOAT` is `FLOAT(126)`, `CHAR` and
+A column's size is compared by what it holds. `INTEGER`, `SMALLINT` and `DECIMAL` render
+as `NUMBER(10)`, `NUMBER(5)` and `NUMBER` here, and the server builds `NUMBER(*,0)` from
+each, as it builds `FLOAT(126)` from `DOUBLE PRECISION` and `FLOAT(63)` from `REAL`. Either
+column matches the word, so declaring it over a column built by hand plans nothing.
+
+`NUMBER` holds any number, `NUMBER(*,0)` holds no fraction, `FLOAT` is `FLOAT(126)`, `CHAR` and
 `NCHAR` hold one character, and `TIMESTAMP` holds six digits. `INTERVAL DAY TO SECOND`
 is `INTERVAL DAY(2) TO SECOND(6)` and `INTERVAL YEAR TO MONTH` is `INTERVAL YEAR(2) TO
 MONTH`. A lower size on a column with a row is refused by the server with `ORA-30082`

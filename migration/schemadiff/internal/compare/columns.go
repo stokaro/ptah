@@ -969,6 +969,9 @@ func columnTypeChange(
 	if typeEngineOf(dialect).Same(dbRawType, genCol.Type) {
 		return ""
 	}
+	if comparisonOf(dialect).MapsDeclaredTypes && oracletype.ServerBuilt(genCol.Type, dbRawType) {
+		return ""
+	}
 	precision := comparisonOf(dialect).TimePrecision
 	bareDeclared := genCol
 	bareDeclared.Type = withoutTimePrecision(genCol.Type, precision)
