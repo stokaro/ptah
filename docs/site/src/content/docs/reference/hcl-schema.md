@@ -111,7 +111,7 @@ for the message and the flag it names.
 | `permission` | PostgreSQL table, schema, sequence, function and procedure permissions. A routine is `for = function.<name>` or `procedure.<name>`, with its argument types in the Ptah attribute `args`, because PostgreSQL overloads a name by them. The Ptah `columns` attribute limits a privilege to columns of a table. |
 | `revoke` | Ptah block: privileges a role must not hold, with `from`, `for`, `args`, `privileges`, `columns` and `comment`. The Atlas community CLI has no such block and ignores it. |
 | `default_privilege` | Ptah block: a PostgreSQL default privilege, with `for_role`, `schema`, `object_type`, `to`, `privileges`, `grantable`, `revoked` (privileges the grantee must not hold by default) and `comment`. Without `schema` it is the global default, which applies in every schema. |
-| `function` | PostgreSQL metadata and raw body, with Atlas-style `arg` blocks or a Ptah raw `params` string. |
+| `function` | PostgreSQL metadata and raw body, with Atlas-style `arg` blocks or a Ptah raw `params` string. Its `set` holds the [routine's settings](#routine-settings). |
 | `procedure` | The same shape as `function` without `return`, which a procedure does not have. Ptah block: the Atlas community CLI has no procedure block and ignores this one. |
 | `view` / `materialized` | SQL body plus schema and comments. A `materialized` block accepts a ClickHouse `refresh` clause. |
 | `trigger` | Trigger timing and every event its timing block sets (`insert`, `update`, `delete`, `truncate`), target, execution mode, function body, and comments. |
@@ -421,6 +421,43 @@ table "users" {
 Ptah preserves supported include columns through HCL parsing, SQL rendering,
 SQL parsing, schema diffing, and database introspection paths where the dialect
 supports the feature.
+
+## Routine settings
+
+A `function` or `procedure` takes `set`, an object of `name = value` pairs that
+renders as the routine's `SET` clauses. PostgreSQL and YugabyteDB keep them in
+`pg_proc.proconfig`. CockroachDB answers `unimplemented` to the clause.
+
+Write each value as the catalog keeps it, which is the spelling `schema inspect`
+exports. Ptah adds the quotes SQL needs, so this routine renders `SET TimeZone =
+'Europe/Prague'`, `SET search_path = 'App', 'pg_temp'` and `SET work_mem = '8MB'`:
+
+```hcl
+function "local_zone" {
+  schema   = schema.app
+  lang     = SQL
+  return   = text
+  security = DEFINER
+  as       = "SELECT current_setting('TimeZone')"
+  set = {
+    work_mem    = "8MB"
+    TimeZone    = "Europe/Prague"
+    search_path = "\"App\", pg_temp"
+  }
+}
+```
+
+`search_path`, `temp_tablespaces`, `local_preload_libraries` and
+`session_preload_libraries` hold lists of names and follow the server's rules for a
+list. A bare name is read in lower case. A name that keeps its case or holds a
+comma goes in double quotes, so `search_path = "a, b"` names two schemas and
+`search_path = "\"a, b\""` names one. A list the server cannot read is refused, and
+so is a name in SQL's single quotes, such as `search_path = "'public'"`. Every
+other setting's value is one string.
+
+A plan compares what the server stores. A quoted setting name equals the plain one,
+the order of the settings does not count, and a name set twice counts with its
+last value.
 
 ## Procedures
 

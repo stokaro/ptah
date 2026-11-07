@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/rolepassword"
 	"ptah.run/internal/routineargs"
+	"ptah.run/internal/routinesetting"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/triggerdef"
 	"ptah.run/internal/viewoptions"
@@ -260,16 +261,17 @@ func (r *renderer) renderFunction(function schemamodel.Function) {
 }
 
 // renderRoutineSettings writes a routine's settings as the object the reader
-// takes, `set = { "name" = "value" }`. Each name is quoted, because a setting
-// name may carry a dot that an HCL identifier cannot.
+// takes, `set = { "name" = "value" }`, each value as the server keeps it in
+// pg_proc.proconfig; see [routinesetting.ToCatalog]. Each name is quoted,
+// because a setting name may carry a dot that an HCL identifier cannot.
 func (r *renderer) renderRoutineSettings(settings []string) {
 	if len(settings) == 0 {
 		return
 	}
 	r.line("  set = {")
 	for _, setting := range settings {
-		name, value, _ := strings.Cut(setting, "=")
-		r.linef("    %s = %s", quote(strings.TrimSpace(name)), quote(strings.TrimSpace(value)))
+		name, value, _ := strings.Cut(routinesetting.ToCatalog(setting), "=")
+		r.linef("    %s = %s", quote(name), quote(value))
 	}
 	r.line("  }")
 }

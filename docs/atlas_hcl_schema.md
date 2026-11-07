@@ -114,7 +114,12 @@ current schema IR:
   `name = value` pairs and renders as the routine's `SET` clauses, read back
   from `pg_proc.proconfig`; pin `search_path` here on a `SECURITY DEFINER`
   routine, which otherwise resolves unqualified names through whatever the
-  caller had set
+  caller had set. Each value is written as that catalog keeps it, and Ptah adds
+  the quotes SQL needs: `work_mem = "8MB"` renders `SET work_mem = '8MB'`. In a
+  list setting a bare name is read in lower case and a name in double quotes is
+  kept whole, so `search_path = "a, b"` names two schemas and `search_path =
+  "\"a, b\""` names one; a list the server cannot read, or a name in single
+  quotes, is refused
 - `procedure` blocks, taking every attribute `function` takes except `return`,
   `leakproof`, `parallel`, `return_set` and `return_table`, each of which is
   refused inside one. Measured on

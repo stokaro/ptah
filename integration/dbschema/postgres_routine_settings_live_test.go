@@ -76,7 +76,7 @@ func TestPostgresLiveRoutineSettingsConverge(t *testing.T) {
 	// 1. The rendered statements are the ones the server is given.
 	statements, err := builtin.GetOrderedCreateStatements(description, platform.Postgres)
 	c.Assert(err, qt.IsNil)
-	c.Assert(strings.Join(statements, "\n"), qt.Contains, "SET search_path = "+schemaName)
+	c.Assert(strings.Join(statements, "\n"), qt.Contains, "SET search_path = '"+schemaName+"'")
 	for _, statement := range statements {
 		_, execErr := conn.ExecContext(ctx, statement)
 		c.Assert(execErr, qt.IsNil, qt.Commentf("statement:\n%s", statement))
