@@ -3,29 +3,53 @@ package schemaexportloss
 import (
 	"context"
 	"fmt"
+	"math"
+	"slices"
 
 	"ptah.run/core/schemaext"
 )
 
-// FeatureCounts describes each omitted value through its selected provider.
-// The labels are display text; kinds remain the identities while reports are
-// matched to input values. No concrete model is imported by this boundary.
+// FeatureCounts adds the owner-declared omitted object counts by label.
+// Kinds remain the identities while reports are matched to input values.
+// No concrete model is imported by this boundary.
 func FeatureCounts(ctx context.Context, target string, values []schemaext.Value, runtime schemaext.ReportingRuntime) (map[string]int, error) {
-	labels, err := FeatureLabels(ctx, target, values, runtime)
+	omissions, err := FeatureOmissions(ctx, target, values, runtime)
 	if err != nil {
 		return nil, err
 	}
 	counts := make(map[string]int)
-	for _, label := range labels {
-		counts[label]++
+	for _, omission := range omissions {
+		if counts[omission.Label] > math.MaxInt-omission.Count {
+			return nil, fmt.Errorf("%w: omitted feature count overflows", schemaext.ErrInvalidValue)
+		}
+		counts[omission.Label] += omission.Count
 	}
 	return counts, nil
 }
 
 // FeatureLabels returns one owner-declared omission label per value in input
-// order. A caller can attach the result to its own projection scopes without
-// splitting one semantic reporting request into per-object service calls.
+// order. It preserves the label-only API for callers that do not need counts.
 func FeatureLabels(ctx context.Context, target string, values []schemaext.Value, runtime schemaext.ReportingRuntime) ([]string, error) {
+	omissions, err := FeatureOmissions(ctx, target, values, runtime)
+	if err != nil {
+		return nil, err
+	}
+	labels := make([]string, len(omissions))
+	for i, omission := range omissions {
+		labels[i] = omission.Label
+	}
+	return labels, nil
+}
+
+// FeatureOmission is the owner-declared label and object count for one value.
+type FeatureOmission struct {
+	Label string
+	Count int
+}
+
+// FeatureOmissions reports each value in input order. A caller can attach the
+// counts to projection scopes without splitting the provider request.
+func FeatureOmissions(ctx context.Context, target string, values []schemaext.Value, runtime schemaext.ReportingRuntime) ([]FeatureOmission, error) {
 	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
 		return nil, err
 	}
@@ -39,17 +63,34 @@ func FeatureLabels(ctx context.Context, target string, values []schemaext.Value,
 	if len(report.Values) != len(values) {
 		return nil, fmt.Errorf("%w: omitted feature report changed the value count", schemaext.ErrInvalidValue)
 	}
-	labels := make(map[schemaext.Kind]string, len(report.Definitions))
+	definitions := make(map[schemaext.Kind]schemaext.ReportDefinition, len(report.Definitions))
 	for _, definition := range report.Definitions {
-		labels[definition.Kind] = definition.DisplayName
+		definitions[definition.Kind] = definition
 	}
-	result := make([]string, len(values))
+	result := make([]FeatureOmission, len(values))
 	for i, described := range report.Values {
-		label, found := labels[described.Kind]
-		if !found || label == "" || described.Kind != values[i].Kind() {
+		definition, found := definitions[described.Kind]
+		if !found || definition.DisplayName == "" || described.Kind != values[i].Kind() {
 			return nil, fmt.Errorf("%w: omitted feature has no matching report definition", schemaext.ErrInvalidValue)
 		}
-		result[i] = label
+		label := definition.DisplayName
+		if definition.OmissionLabel != "" {
+			label = definition.OmissionLabel
+		}
+		count := 1
+		if definition.OmissionCountMetric != "" {
+			position := slices.IndexFunc(described.Counts, func(metric schemaext.MetricCount) bool {
+				return metric.Name == definition.OmissionCountMetric
+			})
+			if position < 0 {
+				return nil, fmt.Errorf("%w: omitted feature has no count metric", schemaext.ErrInvalidValue)
+			}
+			count = described.Counts[position].Value
+		}
+		if count < 0 {
+			return nil, fmt.Errorf("%w: omitted feature has a negative count", schemaext.ErrInvalidValue)
+		}
+		result[i] = FeatureOmission{Label: label, Count: count}
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err

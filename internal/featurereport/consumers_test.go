@@ -136,6 +136,53 @@ func TestConsumers_ReportAnExternalModelWithoutTargetRegistration(t *testing.T) 
 	c.Assert(reporter.sizes, qt.DeepEquals, []int{6, 6, 2, 6})
 }
 
+func TestConsumers_CountOmittedObjectsWithinValues(t *testing.T) {
+	c := qt.New(t)
+	provider := tuningProvider(&tuningReporter{metric: "tuning_units"})
+	definition := &provider.Reporting[0].Definitions[0]
+	definition.OmissionLabel = "tuning units"
+	definition.OmissionCountMetric = "tuning_units"
+	runtime, err := engine.New(provider)
+	c.Assert(err, qt.IsNil)
+	db, observed := tuningFixture(c)
+
+	document, err := dbmlrender.Render(t.Context(), db, dbmlrender.Options{}, runtime)
+	c.Assert(err, qt.IsNil)
+	c.Assert(document.Omitted, qt.DeepEquals, []string{"tuning units (21)"})
+	filtered, err := dbmlrender.Render(t.Context(), db, dbmlrender.Options{ExcludeTables: []string{"events"}}, runtime)
+	c.Assert(err, qt.IsNil)
+	c.Assert(filtered.Omitted, qt.DeepEquals, []string{"tuning units (6)"})
+
+	var warnings bytes.Buffer
+	report, err := atlasreport.NewSchemaInspectReport(t.Context(), db, observed, catalog.ServerInfo{Dialect: "postgres"}, &warnings, atlasreport.SchemaInspectReportOptions{}, runtime)
+	c.Assert(err, qt.IsNil)
+	_, err = report.MarshalJSON()
+	c.Assert(err, qt.IsNil)
+	c.Assert(warnings.String(), qt.Equals,
+		"warning: JSON schema inspection leaves out tuning units (6)\n"+
+			"warning: JSON schema inspection leaves out tuning units (8) from table \"app.events\"\n"+
+			"warning: JSON schema inspection leaves out tuning units (3) from column \"id\" of table \"app.events\"\n"+
+			"warning: JSON schema inspection leaves out tuning units (4) from index \"lookup\" of table \"app.events\"\n")
+}
+
+func TestConsumers_RefuseOverflowingOmissionCounts(t *testing.T) {
+	c := qt.New(t)
+	provider := tuningProvider(&tuningReporter{metric: "tuning_units"})
+	provider.Reporting[0].Definitions[0].OmissionCountMetric = "tuning_units"
+	runtime, err := engine.New(provider)
+	c.Assert(err, qt.IsNil)
+	db, observed := tuningFixture(c)
+	db.Facets, err = schemaext.NewFacets(&tuningValue{Count: math.MaxInt})
+	c.Assert(err, qt.IsNil)
+
+	document, err := dbmlrender.Render(t.Context(), db, dbmlrender.Options{}, runtime)
+	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+	c.Assert(document, qt.DeepEquals, dbmlrender.Result{})
+	report, err := atlasreport.NewSchemaInspectReport(t.Context(), db, observed, catalog.ServerInfo{Dialect: "postgres"}, nil, atlasreport.SchemaInspectReportOptions{}, runtime)
+	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+	c.Assert(report, qt.IsNil)
+}
+
 func TestConsumers_RefuseMissingReportersAndProviderFailures(t *testing.T) {
 	failure := errors.New("provider unavailable")
 	missing := tuningProvider(&tuningReporter{metric: "tuning_units"})

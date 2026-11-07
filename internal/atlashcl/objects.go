@@ -675,6 +675,13 @@ func (p *parser) parseRole(block *hclsyntax.Block) error {
 	if err != nil {
 		return err
 	}
+	memberOf, err := p.rawListAttr(block, "member_of")
+	if err != nil {
+		return err
+	}
+	for i, group := range memberOf {
+		memberOf[i] = roleTargetName(group)
+	}
 	p.db.Roles = append(p.db.Roles, schemamodel.Role{
 		Name:        name,
 		Login:       attrs.login,
@@ -685,6 +692,8 @@ func (p *parser) parseRole(block *hclsyntax.Block) error {
 		Inherit:     attrs.inherit,
 		Replication: attrs.replication,
 		Comment:     p.optionalString(block.Body.Attributes["comment"]),
+		Group:       attrs.group,
+		MemberOf:    memberOf,
 	})
 	return nil
 }
@@ -696,6 +705,8 @@ type roleBoolAttrs struct {
 	createRole  bool
 	inherit     bool
 	replication bool
+	// group declares a YDB group; see [schemamodel.Role.Group].
+	group bool
 }
 
 func (p *parser) parseRoleBoolAttrs(block *hclsyntax.Block) (roleBoolAttrs, error) {
@@ -723,6 +734,10 @@ func (p *parser) parseRoleBoolAttrs(block *hclsyntax.Block) (roleBoolAttrs, erro
 	if err != nil {
 		return roleBoolAttrs{}, err
 	}
+	group, err := p.boolAttr(block, "group", "role", false)
+	if err != nil {
+		return roleBoolAttrs{}, err
+	}
 	return roleBoolAttrs{
 		login:       login,
 		superuser:   superuser,
@@ -730,6 +745,7 @@ func (p *parser) parseRoleBoolAttrs(block *hclsyntax.Block) (roleBoolAttrs, erro
 		createRole:  createRole,
 		inherit:     inherit,
 		replication: replication,
+		group:       group,
 	}, nil
 }
 
@@ -1132,6 +1148,8 @@ func (p *parser) rejectUnsupportedRoleAttrs(block *hclsyntax.Block) error {
 		"inherit":     true,
 		"replication": true,
 		"comment":     true,
+		"group":       true,
+		"member_of":   true,
 	}, "role")
 }
 
