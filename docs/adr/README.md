@@ -125,6 +125,7 @@ a new record that names it, and its own status line is updated to point there.
 | [0113](0113-an-engine-states-how-its-server-reads-a-schema-documents-statements.md) | An engine states how its server reads a schema document's statements | Proposed |
 | [0114](0114-a-host-that-lists-no-two-way-feature-is-the-narrowest-host.md) | A host that lists no two-way feature is the narrowest host | Proposed |
 | [0115](0115-a-provider-engine-states-the-lexical-rules-of-its-text.md) | A provider engine states the lexical rules of its text | Proposed |
+| [0116](0116-an-engine-states-where-its-connection-reads-capabilities.md) | An engine states where its connection reads capabilities | Proposed |
 
 ## Writing one
 

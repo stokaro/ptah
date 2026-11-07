@@ -220,6 +220,14 @@ message Engine {
   // that lists it. Absent leaves the enum a type of its own, as the host
   // keeps it for an engine of contract 25.30. Contract 25.31.
   EnumColumns enum_columns = 27;
+  // Where the engine's connection reads capabilities that differ from its
+  // release line's, as the one line a host prints beneath them, such as
+  // "read from this cluster's feature flags at its monitoring endpoint, not
+  // from its release line". Present exactly when the engine lists
+  // engine.connection-capability-source, and sent only to a host that lists
+  // it. Absent, a host prints its own sentence for a provider's connection.
+  // Contract 25.35.
+  string connection_capability_source = 28;
 }
 // EnumColumns is how an engine builds a column a source declares as an enum:
 // one typed ENUM with its values, such as a Go field with enum="a,b,c", or one

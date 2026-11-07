@@ -227,8 +227,8 @@ does not oblige a peer to use it.
   `schema.column-collations`, `schema.view-check-options`,
   `models.declared-relations`, `planning.table-ownership`,
   `models.declared-objects`, `render.omissions`, `planning.table-grants`,
-  `source.sql-role-passwords`, `source.sql-statement-facts` and
-  `query.lexical`. The embedding
+  `source.sql-role-passwords`, `source.sql-statement-facts`, `query.lexical`
+  and `engine.connection-capability-source`. The embedding
   store's calls,
   `PrepareCommonObjects`, `ReverseChanges` and `ReportValues` are new, and each
   comes with an addition to `Engine`, so a host lists the feature to receive
@@ -1738,6 +1738,18 @@ its name. The provider and each engine whose seed service keeps a ledger in
 the database list the two-way feature beside `data.seeds`. The SDK refuses the
 engine's feature without the provider's or without the seed service, and a
 `SEEDS` reservation in a read that did not negotiate the feature.
+
+### Connection capability source
+
+`Engine.connection_capability_source` (contract 25.35,
+`engine.connection-capability-source`) is the one line `ptah db capabilities`
+prints beneath the capabilities a server answers differently from its release
+line, saying where the connection read them, such as the YDB provider's "read
+from this cluster's feature flags at its monitoring endpoint, not from its
+release line". The provider and each engine that states the line list the
+feature, and so does the host; a host that does not list it prints its own
+sentence for a provider's connection. The SDK refuses a line that is not one
+line of text or is longer than 512 bytes.
 
 ### Query-builder spelling
 
