@@ -16,9 +16,18 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
+	"ptah.run/core/coverage"
 	"ptah.run/core/difftypes"
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 )
+
+// uncarriedApp is the refusal of schema app on the fixture engine, which does
+// not carry namespaces.
+const uncarriedApp = `unsupported feature: the experimental provider contract does not support schema "app" on the fixture engine, ` +
+	`whose provider does not carry namespaces \(schema\.common-namespaces\)`
 
 // namespacePlanner plans for a provider that owns the table lifecycle and
 // carries its namespaces.
@@ -148,10 +157,8 @@ func TestNamespaceChange_FailurePath(t *testing.T) {
 		node   ast.Node
 		want   string
 	}{
-		{"a creation on an engine without namespaces", withoutNamespaces, &ast.CreateSchemaNode{Name: "app"},
-			`.*does not support schema "app" on the fixture engine, whose provider does not carry namespaces`},
-		{"a removal on an engine without namespaces", withoutNamespaces, &namespaceRemoval{name: "app"},
-			`.*does not support schema "app" on the fixture engine, whose provider does not carry namespaces`},
+		{"a creation on an engine without namespaces", withoutNamespaces, &ast.CreateSchemaNode{Name: "app"}, uncarriedApp},
+		{"a removal on an engine without namespaces", withoutNamespaces, &namespaceRemoval{name: "app"}, uncarriedApp},
 		{"a character set", namespaceTarget(), &ast.CreateSchemaNode{Name: "app", Charset: "utf8mb4"},
 			`.*does not support the character set or collation of schema "app"`},
 	} {
@@ -217,7 +224,7 @@ func TestDeclaredNamespaceCreations_FailurePath(t *testing.T) {
 		want   string
 	}{
 		{"an engine without namespaces", commonObjectTarget(everyCommonKind...), &schemamodel.Database{Schemas: []schemamodel.Schema{{Name: "app"}}},
-			`.*does not support schema creation`},
+			uncarriedApp},
 		{"a character set", namespaceTarget(), &schemamodel.Database{Schemas: []schemamodel.Schema{{Name: "app", Charset: "utf8mb4"}}},
 			`.*does not support Schema\.Charset`},
 		{"a comment on the default schema", namespaceTarget(), &schemamodel.Database{Schemas: []schemamodel.Schema{{Name: "main", Comment: "Default"}}},
@@ -228,6 +235,120 @@ func TestDeclaredNamespaceCreations_FailurePath(t *testing.T) {
 			nodes, err := row.target.declaredNamespaceCreations(row.source)
 			c.Assert(err, qt.ErrorMatches, row.want)
 			c.Assert(nodes, qt.IsNil)
+		})
+	}
+}
+
+// heldNode is a provider object: the schema in its identity is all a check of
+// the schemas that hold an object reads.
+type heldNode struct{}
+
+func (heldNode) Kind() schemaext.Kind { return "example.org/node" }
+
+func (heldNode) Clone() schemaext.Value { return heldNode{} }
+
+func (heldNode) Equal(other schemaext.Value) bool { return other == heldNode{} }
+
+// nodeIn is a provider object named n in schema.
+func nodeIn(c *qt.C, schema string) schemaext.Objects {
+	c.Helper()
+	objects, err := schemaext.NewObjects(schemaext.Object{Ref: objectidentity.ID{Kind: "example.org/node",
+		Schema: objectidentity.Part{Source: schema, Normalized: schema}, Name: objectidentity.Part{Source: "n", Normalized: "n"}}, Value: heldNode{}})
+	c.Assert(err, qt.IsNil)
+	return objects
+}
+
+// nestedTarget is a target without namespaces whose schemas nest, a/b below a.
+func nestedTarget() *target {
+	result := commonObjectTarget(everyCommonKind...)
+	result.engine.Identifiers = &protocol.IdentifierRules{SchemaSeparator: "/"}
+	return result
+}
+
+// appSchema declares schema app.
+func appSchema() []schemamodel.Schema { return []schemamodel.Schema{{Name: "app"}} }
+
+// A declared schema is kept on an engine that carries namespaces, and on one
+// that does not where something exists in it or reaches the provider through
+// it: the default schema, the schema the session resolved, a schema the
+// declaration or the read has an object in, a schema below which another one
+// holds an object, and one the declaration leaves undescribed. A lowering with
+// no read compares nothing and refuses nothing.
+func TestRefuseUncarriedSchemas_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	rules := ownedIndexRules()
+	resolved := ownedIndexRules()
+	resolved.DefaultSchema = "app"
+	withoutNamespaces := commonObjectTarget(everyCommonKind...)
+	for _, row := range []struct {
+		name      string
+		target    *target
+		desired   *schemamodel.Database
+		current   *catalog.Database
+		semantics identifier.Semantics
+	}{
+		{name: "an engine that carries namespaces", target: namespaceTarget(), desired: &schemamodel.Database{Schemas: appSchema()}, current: &catalog.Database{}, semantics: rules},
+		{name: "no read", target: withoutNamespaces, desired: &schemamodel.Database{Schemas: appSchema()}, semantics: rules},
+		{name: "the default schema", target: withoutNamespaces, current: &catalog.Database{}, desired: &schemamodel.Database{Schemas: []schemamodel.Schema{{Name: "main"}}}, semantics: rules},
+		{name: "the schema the session resolved", target: withoutNamespaces, current: &catalog.Database{}, desired: &schemamodel.Database{Schemas: appSchema()}, semantics: resolved},
+		{name: "a declared table", target: withoutNamespaces, current: &catalog.Database{}, semantics: rules,
+			desired: &schemamodel.Database{Schemas: appSchema(), Tables: []schemamodel.Table{{Name: "t", Schema: "app"}}}},
+		{name: "a declared view", target: withoutNamespaces, current: &catalog.Database{}, semantics: rules,
+			desired: &schemamodel.Database{Schemas: appSchema(), Views: []schemamodel.View{{Name: "app.v", Body: "SELECT 1"}}}},
+		{name: "a declared materialized view", target: withoutNamespaces, current: &catalog.Database{}, semantics: rules,
+			desired: &schemamodel.Database{Schemas: appSchema(), MaterializedViews: []schemamodel.MaterializedView{{Name: "app.m", Body: "SELECT 1"}}}},
+		{name: "a declared sequence", target: withoutNamespaces, current: &catalog.Database{}, semantics: rules,
+			desired: &schemamodel.Database{Schemas: appSchema(), Sequences: []schemamodel.Sequence{{Name: "ids", Schema: "app"}}}},
+		{name: "a declared provider object", target: withoutNamespaces, current: &catalog.Database{}, semantics: rules,
+			desired: &schemamodel.Database{Schemas: appSchema(), FeatureObjects: nodeIn(c, "app")}},
+		{name: "a table the read reports", target: withoutNamespaces, semantics: rules,
+			desired: &schemamodel.Database{Schemas: appSchema()}, current: &catalog.Database{Tables: []catalog.Table{{Name: "t", Schema: "app"}}}},
+		{name: "a view the read reports", target: withoutNamespaces, semantics: rules,
+			desired: &schemamodel.Database{Schemas: appSchema()}, current: &catalog.Database{Views: []catalog.View{{Name: "v", Schema: "app"}}}},
+		{name: "a materialized view the read reports", target: withoutNamespaces, semantics: rules,
+			desired: &schemamodel.Database{Schemas: appSchema()}, current: &catalog.Database{MatViews: []catalog.MaterializedView{{Name: "m", Schema: "app"}}}},
+		{name: "a sequence the read reports", target: withoutNamespaces, semantics: rules,
+			desired: &schemamodel.Database{Schemas: appSchema()}, current: &catalog.Database{Sequences: []catalog.Sequence{{Name: "ids", Schema: "app"}}}},
+		{name: "a provider object the read reports", target: withoutNamespaces, semantics: rules,
+			desired: &schemamodel.Database{Schemas: appSchema()}, current: &catalog.Database{FeatureObjects: nodeIn(c, "app")}},
+		{name: "a table in a nested schema", target: nestedTarget(), current: &catalog.Database{}, semantics: rules,
+			desired: &schemamodel.Database{Schemas: []schemamodel.Schema{{Name: "a"}, {Name: "a/b"}}, Tables: []schemamodel.Table{{Name: "t", Schema: "a/b"}}}},
+		{name: "an undescribed schema", target: withoutNamespaces, current: &catalog.Database{}, semantics: rules,
+			desired: &schemamodel.Database{Schemas: appSchema(), NotDescribed: coverage.Set{}.WithObject(coverage.Schema, "app")}},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(row.target.refuseUncarriedSchemas(row.desired, row.current, row.semantics), qt.IsNil)
+		})
+	}
+}
+
+// A declared schema that nothing on either side is in is refused on an engine
+// that does not carry namespaces, by its name and the feature the engine
+// lacks: no plan step would create it. An object in a schema of a similar
+// name, or below the schema on an engine whose schemas do not nest, does not
+// hold it.
+func TestRefuseUncarriedSchemas_FailurePath(t *testing.T) {
+	rules := ownedIndexRules()
+	withoutNamespaces := commonObjectTarget(everyCommonKind...)
+	for _, row := range []struct {
+		name    string
+		target  *target
+		desired *schemamodel.Database
+		current *catalog.Database
+		want    string
+	}{
+		{name: "an empty schema", target: withoutNamespaces, current: &catalog.Database{}, desired: &schemamodel.Database{Schemas: appSchema()}, want: uncarriedApp},
+		{name: "a table of another schema", target: withoutNamespaces,
+			desired: &schemamodel.Database{Schemas: appSchema(), Tables: []schemamodel.Table{{Name: "t", Schema: "apps"}}},
+			current: &catalog.Database{Tables: []catalog.Table{{Name: "u", Schema: "main"}}}, want: uncarriedApp},
+		{name: "a table below it on an engine whose schemas do not nest", target: withoutNamespaces, current: &catalog.Database{},
+			desired: &schemamodel.Database{Schemas: []schemamodel.Schema{{Name: "app"}, {Name: "app/b"}}, Tables: []schemamodel.Table{{Name: "t", Schema: "app/b"}}},
+			want:    uncarriedApp},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(row.target.refuseUncarriedSchemas(row.desired, row.current, rules), qt.ErrorMatches, row.want)
 		})
 	}
 }
