@@ -34,7 +34,7 @@
 // table` for any other step on it, such as one that adds a column or a
 // changefeed. A step that only reads its table and creates or drops one index
 // of it is that index's change, `create index "orders_by_total" to table:
-// "orders"`, as the built-in YDB engine named its `ALTER TABLE ... ADD INDEX`.
+// "orders"`.
 // An operation on an object of a kind of the provider's own, or one that
 // carries no effects, is not named. Neither is a step of a table rebuild a
 // provider planned that only fills the new table or moves a table to another
@@ -181,16 +181,17 @@ func (w Words) Rollback(forward, plan []ast.Node) []string {
 
 // rebuildMoves finds the steps of the table rebuilds a provider planned that
 // take no name of their own, by their index in plan. A provider rebuilds a
-// table as the built-in YDB engine did: it creates a new table, fills it from
-// the old one, moves the old table to a spare name, moves the new table onto
-// the old one's name, and drops the old table. A move alters one table and
+// table in five steps: it creates a new table, fills it from the old one,
+// moves the old table to a spare name, moves the new table onto the old one's
+// name, and drops the old table. A move alters one table and
 // creates or drops a second one. The steps between the creation of a new
 // table and its move that only read or alter it or its indexes, or read the
 // table it replaces, fill it.
 //
-// The built-in YDB engine named the creation, any change to the replaced
-// table and the drop, and none of these steps: its rebuild wrote them as raw
-// statements. A name from a move's subject would also misstate it, since the
+// The creation, any change to the replaced table and the drop are named, and
+// none of these steps is: they are the rebuild's mechanics rather than changes
+// the schema asks for. A name from a move's subject would also misstate it,
+// since the
 // move of the new table drops that table's name and keeps the table, which
 // would read `drop "__ptah_rebuild_t" table`.
 func rebuildMoves(plan []ast.Node) map[int]bool {
@@ -801,8 +802,8 @@ func describeNative(payload ast.ExtensionPayload) (change, bool) {
 
 // indexOfTable names the change a step on table makes when its effects only
 // read the table and create or drop one index of it: the index's creation or
-// removal, the change the built-in YDB engine named above its `ALTER TABLE
-// ... ADD INDEX` and `ALTER TABLE ... DROP INDEX`. Any other footprint, such
+// removal, as for `ALTER TABLE ... ADD INDEX` and `ALTER TABLE ... DROP
+// INDEX`. Any other footprint, such
 // as one that also alters the table or touches a second object, is not one.
 func indexOfTable(table objectidentity.ID, effects []plangraph.Effect) (change, bool) {
 	if table.Kind != objectidentity.KindTable {

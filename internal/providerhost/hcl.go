@@ -262,9 +262,8 @@ func hclFacetOwner(fragment *protocol.SourceFragment, bound, owner *protocol.Ref
 // less than complete only through the document's header limits, so the
 // provider's account of a document without them would be complete for every
 // model, and a plan would drop each object of those models the document does
-// not declare. This is the built-in YDB engine's rule for its coordination
-// nodes. An export keeps its claim through the captured header the encoder
-// writes.
+// not declare. An export keeps its claim through the captured header the
+// encoder writes.
 func (o *hclOwner) coverage(request hclext.CoverageRequest) (schemaext.Coverage, error) {
 	if len(request.Captured) > 0 {
 		return o.capturedCoverage(request)
@@ -328,9 +327,8 @@ func (o *hclOwner) Recognizes(kind coverage.Kind) bool {
 // document's claim of the provider's models into every file a writer cuts the
 // document into, written again with the provider's codecs, and none for a
 // document that captured no claim: a file read on its own keeps the claim the
-// document made, as the built-in YDB engine's splitter keeps its own. A
-// document whose captured header comes with entries the provider reads is
-// refused, as reading it is.
+// document made. A document whose captured header comes with entries the
+// provider reads is refused, as reading it is.
 func (o *hclOwner) Restate(captured []string, limits []coverage.Object) ([]string, error) {
 	if len(captured) == 0 {
 		return nil, nil
