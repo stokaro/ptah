@@ -46,7 +46,9 @@ func applyNativeSchemaPlan(ctx context.Context, cmd *cobra.Command, opts schemaA
 	}); err != nil {
 		return "", err
 	}
-	approved, err := confirmSchemaApply(cmd, opts, run.human)
+	approved, err := confirmSchemaApply(cmd, opts, run.human, func() (atlasschema.PlanRating, error) {
+		return plan.Rating(ctx)
+	})
 	if err != nil {
 		return "", err
 	}
@@ -89,7 +91,7 @@ func runSchemaApplyNativePlanFile(
 	if opts.dryRun {
 		return atlasschema.ApplyOutcomeDryRun, nil
 	}
-	approved, err := confirmSchemaApply(cmd, opts, run.human)
+	approved, err := confirmSchemaApply(cmd, opts, run.human, savedPlanRating(ctx, opts, conn, plan))
 	if err != nil {
 		return "", err
 	}

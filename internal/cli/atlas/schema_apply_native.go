@@ -45,7 +45,9 @@ func applyAtlasNativeSchemaPlan(cmd *cobra.Command, opts atlasSchemaApplyOptions
 	if opts.dryRun {
 		return "", nil
 	}
-	approved, err := confirmAtlasSchemaApply(cmd, opts, "")
+	approved, err := confirmAtlasSchemaApply(cmd, opts, "", func() (atlasschema.PlanRating, error) {
+		return plan.Rating(cmd.Context())
+	})
 	if err != nil || !approved {
 		return "", err
 	}
@@ -72,7 +74,9 @@ func applyAtlasNativePlanFile(cmd *cobra.Command, opts atlasSchemaApplyOptions, 
 	if opts.dryRun {
 		return "", nil
 	}
-	approved, err := confirmAtlasSchemaApply(cmd, opts, "")
+	approved, err := confirmAtlasSchemaApply(cmd, opts, "", func() (atlasschema.PlanRating, error) {
+		return plan.Rating(cmd.Context(), opts.runtime, conn.Info().Dialect)
+	})
 	if err != nil || !approved {
 		return "", err
 	}
