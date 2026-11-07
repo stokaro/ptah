@@ -176,6 +176,16 @@ func TestCheck_FailurePath(t *testing.T) {
 			defects: memoryDefects{sharedLocks: true},
 			want:    []string{"live.locks"},
 		},
+		{
+			name:    "namespaces a host that did not list them reads",
+			defects: memoryDefects{namespacesRegardless: true},
+			want:    []string{"live.inspect"},
+		},
+		{
+			name:    "a seed ledger reserved for a host that did not list it",
+			defects: memoryDefects{seedsRegardless: true},
+			want:    []string{"live.inspect"},
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)

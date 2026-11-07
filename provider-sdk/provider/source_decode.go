@@ -53,6 +53,9 @@ func ValidateSourceRequest(description *protocol.Description, request *protocol.
 		if err := validateIndexKindFragments(description, request.GetEngine(), document, kinds); err != nil {
 			return err
 		}
+		if err := validateSQLTableClauseFragments(description, request.GetEngine(), document, kinds); err != nil {
+			return err
+		}
 		if err := validateSourceLimits(description, request.GetEngine(), document); err != nil {
 			return err
 		}
@@ -176,6 +179,10 @@ func validateSourceModelValue(
 			return sourceError("decoded value is outside its index-kind claim")
 		}
 		if err := validateIndexKindValue(document, fragment, value); err != nil {
+			return err
+		}
+	case fragment.GetSqlTableClause() != nil:
+		if err := validateSQLTableClauseValue(document, fragment, value); err != nil {
 			return err
 		}
 	case document.GetFormat() == protocol.SourceDocument_YAML && !slices.Contains(fragment.GetYamlKey().GetModels(), envelope.GetKind()):

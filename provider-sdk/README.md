@@ -63,7 +63,7 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.28. Each released SDK speaks one contract:
+speaks contract 25.29. Each released SDK speaks one contract:
 
 | SDK release | Contract |
 | --- | --- |
@@ -154,6 +154,10 @@ returns to 0.
   [constraint changes](#constraint-changes),
   [CHECK equivalence](#check-equivalence) and
   [index NULLS order](#index-nulls-order).
+  Contract 25.29 adds [common namespaces](#common-namespaces),
+  [SQL table clauses](#sql-table-clauses),
+  [the reserved seed ledger](#reserved-seed-ledger) and
+  [index predicates](#index-predicates).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -192,8 +196,10 @@ does not oblige a peer to use it.
   `source.go-placements`, `planning.primary-key-changes`, `models.references`,
   `transport.large-messages`, `planning.table-outlines`,
   `transport.shared-coverage`, `models.own-predecessors`,
-  `schema.observed-constraints`, `planning.constraint-changes` and
-  `schema.index-nulls-order`. The embedding
+  `schema.observed-constraints`, `planning.constraint-changes`,
+  `schema.index-nulls-order`, `schema.common-namespaces`,
+  `source.sql-table-clauses`, `schema.reserved-seeds` and
+  `schema.index-predicates`. The embedding
   store's calls,
   `PrepareCommonObjects`, `ReverseChanges` and `ReportValues` are new, and each
   comes with an addition to `Engine`, so a host lists the feature to receive
@@ -248,7 +254,7 @@ this SDK, and a host of this SDK against a provider of contract 25.0.
 | `Inspect` | A complete snapshot with explicit dispositions for observed fields. Incomplete state is an error, never an empty database. |
 | `Render` | One executable unit for every input change, in input order, or, in the `TEXT` form, a refusal of a change without a text form. A refused batch exposes no executable prefix. |
 | `AnalyzeSQL` | Complete owner-defined statement boundaries, tokens, and explicit safety dispositions. Unsupported syntax refuses the whole batch. |
-| `DecodeSource` | Complete offline interpretation of captured extension fragments, frozen model scope, and original source traces. |
+| `DecodeSource` | Complete offline interpretation of captured extension fragments, frozen model scope, and original source traces. Under `source.sql-table-clauses` a fragment may be a claimed clause of a SQL document. |
 | `EncodeSource` | Offline: every value written once by claimed syntax parts, with no position, or reported as one loss. |
 | `ReadSQLSchema` | A complete offline reading of every SQL schema document of an engine that declares the `DOCUMENT` mode: declared objects, per-document declarations, coverage and positioned diagnostics, or an error and no schema. |
 | `ConvertValues` | An offline conversion between desired and observed models with preserved identity and a complete normalized result. |
@@ -256,7 +262,7 @@ this SDK, and a host of this SDK against a provider of contract 25.0.
 | `PlanFeatures` | Complete offline graph contributions and ordered change and parent receipts, or diagnostics with no successful output. |
 | `PlanDeclarations` | Complete offline creation contributions and ordered authored-object receipts, without observed state. |
 | `DescribeExecutionInputs` | Complete offline discovery of the exact unit batch's sensitive input references, without reading values. |
-| `PrepareTables` | Complete prepared key membership, declared facet adjustments and, under `schema.index-methods` and `schema.index-nulls-order`, declared index kinds and key NULLS orders from captured table state. |
+| `PrepareTables` | Complete prepared key membership, declared facet adjustments and, under `schema.index-methods`, `schema.index-nulls-order` and `schema.index-predicates`, declared index kinds, key NULLS orders and predicates from captured table state. |
 | `PrepareCommonObjects` | Offline: the declared views, sequences, roles and grants in the engine's spelling, each entry keeping its identity. |
 | `ProjectTableCreations` | Complete predicted CREATE effects within the host's eligible facet owner inventory. |
 | `ValidateSchema` | A completed offline schema check with typed invalid, unsupported, or omitted-declaration diagnostics. |
@@ -905,8 +911,9 @@ A desired schema can be a SQL file. An engine declares in `Engine.sql_schema`
 how a provider takes part in reading it. A target has exactly one mode.
 
 - `FRAGMENTS` is the mode of an engine with no declaration. The host lexes and
-  parses the document with the shared grammar and sends the statements it does
-  not model to `DecodeSource` as `SQL` fragments.
+  parses the document with the shared grammar. Under `source.sql-table-clauses`
+  it sends the clauses of CREATE TABLE the engine claims to `DecodeSource` as
+  `SQL` fragments; see [SQL table clauses](#sql-table-clauses).
 - `DOCUMENT` is for a dialect whose grammar the shared one cannot read, such as
   YQL. The provider reads every SQL document of the engine in full through
   `ReadSQLSchema`, and the host does not lex or parse the text. The engine
@@ -916,7 +923,8 @@ how a provider takes part in reading it. A target has exactly one mode.
 
 `FRAGMENTS` declares neither the feature nor header kinds. The SDK refuses a
 description that names the feature without `DOCUMENT`, `DOCUMENT` without the
-feature, a feature no engine uses, and an unknown or duplicate header kind.
+feature, a feature no engine uses, an unknown or duplicate header kind, and
+table-clause claims in `DOCUMENT`.
 
 `ReadSQLSchema` is a pure function of its request. It has no session, address
 or credential. The host reads the files, applies its project-directory
@@ -1015,6 +1023,42 @@ without a trace. A refused load carries no facets. The host normalizes each
 facet with its owner and places it where a YAML source places it. Without the
 feature a provider cannot say a facet, and reports the construct that needs one
 as `UNSUPPORTED`.
+
+### SQL table clauses
+
+[ADR 0094](../docs/adr/0094-an-engine-claims-a-table-clause-of-the-shared-sql-grammar.md)
+decides this feature. `source.sql-table-clauses` lets an engine in the
+`FRAGMENTS` mode read a clause of CREATE TABLE itself, such as Spanner's row
+deletion policy `TTL INTERVAL '30 days' ON created_at`, while the host reads
+the rest of the document with the shared grammar.
+`SQLSchemaDeclaration.table_clauses` lists the claims. A `SQLTableClause`
+names the words the clause opens with, each one ASCII upper-case word, a
+selector, and the DESIRED models the clause declares, each a facet of the
+table with `SQL` among its source formats. No two claims of an engine open with
+the same word. The provider and the engine list the two-way feature beside
+`source.decode`.
+
+In a SQL document of the engine the host reads a clause that opens with a
+claim's words, matched without regard to case, among the options after the
+column list, up to the next top-level comma or the end of the statement.
+`provider.SQLTableClauseClaim` matches a clause's text to a claim the same way.
+The host sends the clause to `DecodeSource` as a fragment of a `SQL` document:
+`sql_table_clause` holds the claim, the content is the clause's text with its
+opening words, the binding is the table and the subject is that table. Each
+value the engine returns is a facet of that table, of a model of the claim. A
+document of the engine states each claimed model in full for every table it
+declares, so a table without the clause has none. A clause of another engine's
+document, or of a document of no engine, is read by the shared grammar as
+before; ClickHouse keeps its `TTL` table option.
+
+The SDK refuses a claim without the features or in the `DOCUMENT` mode, a claim
+without words, selector or models, a word that is not one upper-case word, two
+claims that open with one word, and a model that is unknown, repeated or not
+stated in SQL. A request refuses a table-clause fragment outside a `SQL`
+document or beside another claim, one whose claim or selector changed, one
+whose binding is not a table or whose subject is not that table, and one whose
+text does not open with the claim's words; a reply refuses a value that is not
+a facet of the fragment's table.
 
 The SDK conformance tests in `runtime` read a small table dialect through both
 transport boundaries: load order, a later document that alters an earlier one,
@@ -1490,6 +1534,18 @@ another layout, and replaces the entry of a path that runs again. Diagnostics
 carry the path, a position and one line of reason, never the statement or a
 value.
 
+### Reserved seed ledger
+
+[ADR 0095](../docs/adr/0095-a-read-reserves-the-seed-ledger.md) decides this
+feature. Under `schema.reserved-seeds` a read reports the seed ledger in
+`Schema.reserved_objects` with the purpose `SEEDS`, as it reports the
+migration history with `HISTORY`. The host leaves the ledger out of every
+comparison, so a plan never drops it, and refuses a declaration of a table of
+its name. The provider and each engine whose seed service keeps a ledger in
+the database list the two-way feature beside `data.seeds`. The SDK refuses the
+engine's feature without the provider's or without the seed service, and a
+`SEEDS` reservation in a read that did not negotiate the feature.
+
 ### Query-builder spelling
 
 `Engine.query_dialect` declares, as data, what the host's query builder reads
@@ -1888,6 +1944,36 @@ current operand must equal a captured current view. A missing operand means
 unknown current state, including an authored `CREATE OR REPLACE`; it establishes
 no absence. Providers refuse replacements whose preservation requirements need
 unavailable current facts.
+
+### Common namespaces
+
+[ADR 0093](../docs/adr/0093-an-engines-namespaces-travel-on-the-common-object-wire.md)
+decides this feature. `schema.common-namespaces` carries an engine's
+namespaces, such as the schemas of a PostgreSQL-family database or of a DuckDB
+catalog, as the common kind `SCHEMA`. The provider lists the two-way feature,
+and so does each engine that declares the kind beside `schema.common-objects`.
+A host that does not list it receives a description without the kind.
+
+- A read that covers the kind lists every namespace of its scope in
+  `ObservedCommonObjects.namespaces`, the session's default one included when
+  the scope holds it, each by a `Reference` of kind `schema` (the constant
+  `provider.NamespaceKind`) with its name and the session's database. A
+  namespace of the scope the list does not name is absent.
+- `CommonObjectChange.create_schema` creates a namespace with a
+  `NamespaceCreation`: its name and, on an engine that carries comments, its
+  comment. `drop_schema` removes one, named by a `schema` reference. The engine
+  renders both.
+
+The host compares namespaces as it compares PostgreSQL schemas: it adds a
+namespace the declaration holds and the read does not, and creates the
+namespace of a created table or view the read does not hold, before the
+objects in it. It never removes a namespace the declaration leaves out; a
+removal comes only from reversing a creation, after every other object of the
+plan, and never cascades. Both transport boundaries refuse the kind without the
+feature, a namespace of an uncovered kind, one that is not a `schema`
+reference with a name and no schema, catalog or path, a namespace listed twice
+under the engine's rules for table names, a creation without a name, and a
+comment on an engine without comments.
 
 ### Independent access observations
 
@@ -2798,6 +2884,33 @@ index whose orders do not match its key parts in number, and a spelling other
 than `FIRST`, `LAST` or empty. A read without the feature is checked as before
 it. The prepared orders serve the comparison alone: the declaration keeps the
 order it was written with.
+
+## Index predicates
+
+[ADR 0096](../docs/adr/0096-an-engine-states-a-partial-indexs-predicate-as-its-server-holds-it.md)
+decides this feature. `schema.index-predicates` has an engine state the
+predicate of a partial index on both sides in one spelling, the one its server
+holds, without the `WHERE` keyword. A server keeps a predicate in a form of its
+own, as it keeps a CHECK, and may add one the declaration never wrote, so only
+the engine can spell the two sides alike.
+
+- Table preparation states the predicate of each declared index in
+  `PreparedIndex.condition`, as the engine would hold the declared
+  `DeclaredIndex.condition`, empty exactly when the declaration states none.
+- A read states a held index's predicate in `ObservedIndex.condition` in the
+  same spelling, and leaves out what the engine adds by itself, such as a
+  filter a unique index carries implicitly.
+
+The host compares the two exactly, so a predicate the server rewrote converges
+and a changed one plans a rebuild of the index. The provider and the engine
+both declare this two-way feature, which requires `schema.observed-indexes` and
+`schema.prepare-tables` on the engine. A prepared table then states one
+`PreparedIndex` for each declared index, in the declared order, as under
+[prepared index kinds](#prepared-index-kinds). Both transport boundaries refuse
+a predicate without negotiation and, with it, a predicate for an index the
+declaration states none for, none for one it states one for, and a predicate
+with surrounding white space on either side. The prepared predicate serves the
+comparison alone: the declaration keeps the predicate it was written with.
 
 ## Index renames
 

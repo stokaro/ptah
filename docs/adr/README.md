@@ -102,6 +102,10 @@ a new record that names it, and its own status line is updated to point there.
 | [0090](0090-a-provider-decides-whether-two-checks-are-one.md) | A provider decides whether two checks are one | Proposed |
 | [0091](0091-an-engine-states-the-nulls-order-of-every-index-key.md) | An engine states the NULLS order of every index key | Proposed |
 | [0092](0092-a-provider-is-checked-by-a-suite-that-acts-as-a-strict-host.md) | A provider is checked by a suite that acts as a strict host | Proposed |
+| [0093](0093-an-engines-namespaces-travel-on-the-common-object-wire.md) | An engine's namespaces travel on the common-object wire | Proposed |
+| [0094](0094-an-engine-claims-a-table-clause-of-the-shared-sql-grammar.md) | An engine claims a table clause of the shared SQL grammar | Proposed |
+| [0095](0095-a-read-reserves-the-seed-ledger.md) | A read reserves the seed ledger | Proposed |
+| [0096](0096-an-engine-states-a-partial-indexs-predicate-as-its-server-holds-it.md) | An engine states a partial index's predicate as its server holds it | Proposed |
 
 ## Writing one
 
