@@ -104,7 +104,7 @@ func (m *Migrator) finalizeCompletedRollback(
 // schema before it stopped: either a down statement committed, or one was in
 // flight when the process died and whether it committed is unknown.
 func rollbackChangedSchema(revision *MigrationRevision) bool {
-	return revision.Applied > 0 || revision.Error == unknownStatementOutcomeError
+	return revision.Applied > 0 || revision.StatementOutcomeUnknown()
 }
 
 // rollbackRepairNeedsDirectionError renders the refusal to guess how a
@@ -116,6 +116,13 @@ func rollbackRepairNeedsDirectionError(migration *Migration, revision *Migration
 	const endings = "--force to record it applied if the schema it reverted was restored, " +
 		"or run \"ptah migrations set --version <previous>\" if the rollback was finished by hand " +
 		"(version 0 where this is the oldest migration in the directory)"
+	if revision.RollbackLeftUnknown() {
+		return fmt.Errorf(
+			"migration %d stopped while rolling back and the rollback of its transaction left some statements in place "+
+				"and undid others; inspect the database, then rerun with "+endings,
+			migration.Version,
+		)
+	}
 	if revision.Error == unknownStatementOutcomeError {
 		return fmt.Errorf(
 			"migration %d stopped while rolling back and the outcome of %q is unknown after an interruption; "+

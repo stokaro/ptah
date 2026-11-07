@@ -383,6 +383,19 @@ func (e *unknownOutcomeError) Error() string {
 		e.version, e.statement, e.version)
 }
 
+// rollbackLeftUnknownResumeError refuses to resume a migration whose transaction
+// rolled back and left statements in place that no count describes.
+type rollbackLeftUnknownResumeError struct {
+	version int64
+}
+
+func (e *rollbackLeftUnknownResumeError) Error() string {
+	return fmt.Sprintf(
+		"migration %d cannot resume automatically: the rollback of its transaction left some statements in place and "+
+			"undid others; inspect the database, then use 'ptah migrations repair --version %d'",
+		e.version, e.version)
+}
+
 // describeUnknownOutcome rewrites a refusal to resume after an unknown outcome
 // for a migration of a directory written for a runner that wraps nothing; see
 // [WithOwnTransactions]. When the recorded statement is the first of one of

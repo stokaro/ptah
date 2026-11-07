@@ -44,9 +44,10 @@ const (
 	// is failed too, with nothing planned and no status.
 	RunOutcomeFailed RunOutcome = "failed"
 	// RunOutcomePartial means the migration that failed committed some of its
-	// statements and not the rest. Recovery is Ptah's own resume path, which
-	// has the row's partial digest to prove which statements it may skip; it is
-	// never a retry of the whole file.
+	// statements and not the rest, which a rollback can leave too on an engine
+	// whose schema statements do not wait for the end of the transaction.
+	// Recovery is Ptah's own resume path, which has the row's partial digest to
+	// prove which statements it may skip; it is never a retry of the whole file.
 	RunOutcomePartial RunOutcome = "partial"
 	// RunOutcomeUnknown means the evidence could not be read, or a dirty row
 	// does not say how far it got. Nothing may decide from this that the
@@ -219,7 +220,7 @@ func runOutcome(evidence RunEvidence, result RunResult) RunOutcome {
 	}
 	if dirty := evidence.After.DirtyRevision; dirty != nil {
 		switch {
-		case dirty.Total <= 0:
+		case dirty.Total <= 0, dirty.StatementOutcomeUnknown():
 			return RunOutcomeUnknown
 		case dirty.Applied <= 0:
 			return RunOutcomeFailed

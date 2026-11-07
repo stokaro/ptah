@@ -65,7 +65,9 @@ func cockroachDB() descriptor.Dialect {
 		// Migrations: what the migrator reads.
 		// The PostgreSQL driver and the transactional migrator path PostgreSQL
 		// takes, so this is the contract that code implements; no live
-		// revision-completion test drives it yet.
+		// revision-completion test drives it yet. From v25 a schema statement
+		// commits that transaction first unless autocommit_before_ddl is off,
+		// and internal/migratorext/postgres reads what a rollback leaves.
 		DDLTransactions: "transactional",
 		RevisionTable:   postgresFamilyRevisionTable(),
 

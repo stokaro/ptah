@@ -22,8 +22,10 @@ import (
 // it is the SQL Server pair in sqlserver_tx_mode_all_live_test.go
 // (stokaro/ptah#3192). So a preset whose literal is wrong -- inherited from a
 // family it does not belong to, or left behind when a server changed -- reads
-// green everywhere. YugabyteDB, which takes the key from Postgres16 and has
-// never been measured on it, is the standing example.
+// green everywhere. YugabyteDB takes the key from Postgres16 and is the standing
+// example: at its default it keeps schema statements through a rollback, so a
+// failed `--tx-mode all` run there reports an unknown outcome
+// (integration/migrateup/schema_statement_rollback_e2e_test.go).
 //
 // The measurement is the key's own sentence: run one migration whose second
 // statement fails, and look for the first statement's table afterwards. A

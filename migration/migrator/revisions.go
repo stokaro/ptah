@@ -125,17 +125,32 @@ func (r MigrationRevision) RevisionVersion() string {
 	return strconv.FormatInt(r.Version, 10)
 }
 
-// StatementOutcomeUnknown reports whether the run that left this revision was
-// interrupted while a statement was executing, so whether that statement
-// committed was never recorded.
+// StatementOutcomeUnknown reports whether the row cannot say how far the
+// migration got: the run was interrupted while a statement was executing, so
+// whether that statement committed was never recorded, or the rollback of the
+// migration's transaction left some statements in place and undid others, as
+// [MigrationRevision.RollbackLeftUnknown] reports.
 //
 // It separates a revision that says nothing reached the database from one that
-// cannot say: [MigrationRevision.Applied] reads 0 in both. An interrupted
-// statement may have committed, so rerunning the migration can repeat committed
-// SQL and resuming past it can skip SQL that never ran. Such a revision is
-// ended by hand -- inspect the database, then repair it.
+// cannot say: [MigrationRevision.Applied] reads 0 in both. Rerunning the migration
+// can repeat committed SQL and resuming past it can skip SQL that never ran. Such
+// a revision is ended by hand -- inspect the database, then repair it.
 func (r MigrationRevision) StatementOutcomeUnknown() bool {
-	return r.Error == unknownStatementOutcomeError
+	return unknownOutcomeRecorded(r.Error)
+}
+
+// RollbackLeftUnknown reports the second cause [MigrationRevision.StatementOutcomeUnknown]
+// names: a schema statement of the migration stayed after its transaction rolled
+// back, and a statement ahead of it did not, so no count of leading statements
+// describes what the database holds.
+func (r MigrationRevision) RollbackLeftUnknown() bool {
+	return r.Error == rollbackLeftUnknownError
+}
+
+// unknownOutcomeRecorded reports whether a row's error says the row cannot tell
+// how far the migration got, in either of the two ways it can say so.
+func unknownOutcomeRecorded(recorded string) bool {
+	return recorded == unknownStatementOutcomeError || recorded == rollbackLeftUnknownError
 }
 
 // DirtyMigrationError reports that a previous migration run left a dirty row.
@@ -1608,6 +1623,9 @@ func resumeStatementFor(revision MigrationRevision, total int) (int, error) {
 	if err := validateRevisionProgress(revision, "resume automatically"); err != nil {
 		return 0, err
 	}
+	if revision.RollbackLeftUnknown() {
+		return 0, &rollbackLeftUnknownResumeError{version: revision.Version}
+	}
 	if revision.Error == unknownStatementOutcomeError {
 		return 0, &unknownOutcomeError{version: revision.Version, statement: revision.Applied + 1}
 	}
@@ -2189,7 +2207,7 @@ func (m *Migrator) failMigrationRevisionWithMode(
 	// was changed at all, so the down direction runs the same correction here.
 	// The up direction is left alone deliberately: it is the number the
 	// Atlas-shaped surface reports.
-	if direction == MigrationDirectionDown {
+	if _, kept := errors.AsType[*committedProgressFailure](failure); direction == MigrationDirectionDown && !kept {
 		applied = rolledBackApplied(m.conn.Info().Dialect, txMode, applied)
 	}
 	if usesTransactionalProgressWitness(m.conn.Info().Dialect, txMode) {
@@ -2246,7 +2264,7 @@ func (m *Migrator) failedRevisionStatement(failed failedRevision, applied int) (
 			applied,
 			failed.total,
 			time.Since(failed.startedAt).Nanoseconds(),
-			atlasFailureError(failed.failure),
+			failed.errorText(atlasFailureError),
 			atlasFailureStatement(failed.sqlText, m.grammar(), failed.failedIndex, failed.statement),
 			m.atlasDirtyPartialHashes(failed.sqlText, failed.direction, applied, failed.total),
 			atlasOperatorVersionForMigration(failed.migration, failed.direction),
@@ -2257,12 +2275,23 @@ func (m *Migrator) failedRevisionStatement(failed failedRevision, applied int) (
 		encodeRevisionState(migrationStateFailed, failed.direction),
 		applied,
 		failed.total,
-		revisiontext.ValidUTF8(strings.TrimSpace(failed.failure.Error())),
+		failed.errorText(func(failure error) string {
+			return revisiontext.ValidUTF8(strings.TrimSpace(failure.Error()))
+		}),
 		revisiontext.ValidUTF8(failed.statement),
 		time.Since(failed.startedAt).Milliseconds(),
 		m.dirtyRevisionChecksum(failed.migration, failed.direction, applied),
 		failed.migration.Version,
 	}
+}
+
+// errorText is what the row records as the failure, spelled by text for the
+// revision format, unless the row has to say that no count describes what stayed.
+func (r failedRevision) errorText(text func(error) string) string {
+	if _, unknown := errors.AsType[*rollbackLeftUnknownFailure](r.failure); unknown {
+		return rollbackLeftUnknownError
+	}
+	return text(r.failure)
 }
 
 func usesTransactionalProgressWitness(dialect string, txMode MigrationTxMode) bool {
@@ -2291,7 +2320,7 @@ func preservesProgressWitnessUnknownOutcome(
 	revision *MigrationRevision,
 	dialect string,
 ) bool {
-	if revision.Error != unknownStatementOutcomeError {
+	if !unknownOutcomeRecorded(revision.Error) {
 		return false
 	}
 	if _, ok := errors.AsType[*statementProgressError](failure); ok {
@@ -3383,8 +3412,15 @@ func (m *Migrator) resumeUpMigrationFrom(
 // Resuming would either repeat SQL that already committed or skip SQL that
 // never ran, and the row cannot say which.
 func refuseUnknownStatementOutcomeResume(migration *Migration, revision *MigrationRevision) error {
-	if revision == nil || revision.Error != unknownStatementOutcomeError {
+	if revision == nil || !revision.StatementOutcomeUnknown() {
 		return nil
+	}
+	if revision.RollbackLeftUnknown() {
+		return fmt.Errorf(
+			"migration %d stopped and the rollback of its transaction left some statements in place and undid others; "+
+				"inspect the database before repair and omit --resume-from, because no statement is the place to resume from",
+			migration.Version,
+		)
 	}
 	return fmt.Errorf(
 		"migration %d has an unknown statement outcome for %q; inspect the database before repair and omit --resume-from to avoid repeating committed SQL",

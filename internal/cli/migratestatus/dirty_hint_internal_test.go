@@ -40,6 +40,36 @@ func TestDirtyRevisionRecoveryHint(t *testing.T) {
 				"the migration applied -- rerunning it could repeat the statement that committed.",
 		},
 		{
+			name:    "a rollback left statements in place that no count describes",
+			dialect: "yugabytedb",
+			revision: migrator.MigrationRevision{
+				Version: 2,
+				Applied: 0,
+				Total:   3,
+				Error:   "the rollback of the migration's transaction left some statements in place and undid others",
+			},
+			want: "The migration stopped, and the rollback of its transaction left some statements in place " +
+				"and undid others. Inspect the database and apply what is missing, then run 'ptah migrations " +
+				"repair --version 2' to record the migration applied -- rerunning it could repeat a statement " +
+				"that stayed.",
+		},
+		{
+			name:    "a down migration's rollback left statements in place that no count describes",
+			dialect: "yugabytedb",
+			revision: migrator.MigrationRevision{
+				Version:   2,
+				Applied:   0,
+				Total:     3,
+				Direction: migrator.MigrationDirectionDown,
+				Error:     "the rollback of the migration's transaction left some statements in place and undid others",
+			},
+			want: "The rollback stopped, and the rollback of its transaction left some statements in place and " +
+				"undid others. Inspect the database, then run 'ptah migrations repair --version 2 --force' to " +
+				"record the migration applied if you restored what the rollback reverted, or 'ptah migrations " +
+				"set --version <previous>' (version 0 where this is the oldest migration in the directory) if " +
+				"you finished the rollback by hand.",
+		},
+		{
 			name:    "a rollback statement was in flight",
 			dialect: "postgres",
 			revision: migrator.MigrationRevision{

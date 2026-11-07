@@ -3,7 +3,8 @@
 // queries about the migrator's own tables, written around current_schema(),
 // the widening of an older revision table's version column, the owner check
 // and the spelling of a migration's timeouts. PostgreSQL alone also gives the
-// reading of a body's own transactions.
+// reading of a body's own transactions, and CockroachDB and YugabyteDB each say
+// what a rollback leaves of a body.
 package postgres
 
 import (
@@ -28,12 +29,27 @@ func Postgres() migratorext.Services {
 	return services
 }
 
+// CockroachDB returns the family's services and what a rollback leaves there.
+func CockroachDB() migratorext.Services {
+	services := Family()
+	services.Dialects = []string{platform.CockroachDB}
+	services.RollbackSurvivors = cockroachSurvivors{}
+	return services
+}
+
+// YugabyteDB returns the family's services and what a rollback leaves there.
+func YugabyteDB() migratorext.Services {
+	services := Family()
+	services.Dialects = []string{platform.YugabyteDB}
+	services.RollbackSurvivors = yugabyteSurvivors{}
+	return services
+}
+
 // Family returns the services CockroachDB and YugabyteDB share with
 // PostgreSQL. Spanner is in the family and is not served here: its
 // PostgreSQL interface has no current_schema() a query can call.
 func Family() migratorext.Services {
 	return migratorext.Services{
-		Dialects:       []string{platform.CockroachDB, platform.YugabyteDB},
 		Catalog:        catalog{},
 		VersionColumn:  catalog{},
 		Owners:         catalog{},

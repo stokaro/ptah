@@ -19,7 +19,8 @@ import (
 // once from the list below and never written again.
 var services = index(
 	postgres.Postgres(),
-	postgres.Family(),
+	postgres.CockroachDB(),
+	postgres.YugabyteDB(),
 	mysql.MySQL(),
 	mysql.MariaDB(),
 	clickhouse.Services(),
