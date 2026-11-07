@@ -167,11 +167,20 @@ constraint before it plans, naming the constraint and the table.
 
 A rollback plan starts from the tables the forward plan leaves, which the host
 predicts. For a provider with `schema.observed-constraints`, a foreign key the
-forward plan adds changes the table's constraints and nothing else, because the
-read leaves the index an engine builds for the key out of the table's indexes.
-So `ptah migrations generate` writes the down file of a schema with foreign
-keys. A primary key or UNIQUE constraint the forward plan adds has no such
-prediction, since a read reports the index behind it.
+forward plan adds or replaces changes the table's constraints and nothing else,
+because the read leaves the index an engine builds for the key out of the
+table's indexes. The host predicts the key in the spelling a read reports: the
+referenced schema stated, the default schema where the declaration names none,
+and both rules stated, an absent rule being `NO ACTION`. So `ptah migrations
+generate` writes the down file of a schema with foreign keys. A primary key or
+UNIQUE constraint the forward plan adds or removes has no such prediction,
+since a read reports the index behind it, and neither has a constraint that
+carries facets of its engine.
+
+Listing `schema.observed-constraints` therefore promises more than a read: a
+provider that lists it keeps reporting a foreign key in that spelling and
+keeps the index behind it out of the table's indexes, or the down files the
+host writes for it start from a table the database does not hold.
 
 A server often keeps a CHECK in a form of its own, with literals cast or a
 list rewritten. With `schema.check-equivalence`, the host asks the provider

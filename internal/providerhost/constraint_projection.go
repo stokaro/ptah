@@ -24,8 +24,15 @@ import (
 type constraintProjection struct{}
 
 // ProjectConstraints returns the table after the change, each foreign key
-// the change adds in the spelling a read reports: its referenced schema and
-// rules stated, an absent rule being NO ACTION.
+// the change writes, added or replaced, in the spelling a read reports: its
+// referenced schema stated, the default schema where the declaration names
+// none, its first referenced column in ForeignColumn, and its rules stated, an
+// absent rule being NO ACTION. A constraint the change leaves alone keeps the
+// captured spelling. A CHECK the change writes keeps the declared clause,
+// although a read reports the server's spelling: the reverse plan compares it
+// with the captured clause the way the forward plan compared the declared
+// clause with the read one (through CompareChecks where the provider offers
+// schema.check-equivalence), so it plans the reverse of the forward change.
 func (constraintProjection) ProjectConstraints(ctx context.Context, request schemaprojection.ConstraintRequest) (schemaprojection.ConstraintResult, error) {
 	if ctx == nil {
 		return schemaprojection.ConstraintResult{}, fmt.Errorf("%w: context is required", schemaprojection.ErrInvalid)
@@ -35,16 +42,21 @@ func (constraintProjection) ProjectConstraints(ctx context.Context, request sche
 	}
 	for _, change := range request.Changes {
 		for _, operand := range []*catalog.Constraint{change.Before, change.After} {
-			if operand != nil && (!reportedConstraintType(operand.Type) || !operand.Facets.IsZero()) {
+			switch {
+			case operand == nil:
+			case !reportedConstraintType(operand.Type):
 				return schemaprojection.ConstraintResult{Unavailable: fmt.Sprintf(
 					"a provider read reports the effect of a %s constraint %s on its table's indexes, which the host cannot predict", operand.Type, operand.Name)}, nil
+			case !operand.Facets.IsZero():
+				return schemaprojection.ConstraintResult{Unavailable: fmt.Sprintf(
+					"the %s constraint %s carries facets its engine owns, whose effect on the table a provider read reports the host cannot predict", operand.Type, operand.Name)}, nil
 			}
 		}
 	}
 	state := request.After.Clone()
 	for i := range state.Constraints {
 		constraint := &state.Constraints[i]
-		if constraint.Type != "FOREIGN KEY" || !added(request, constraint.Name) {
+		if constraint.Type != "FOREIGN KEY" || !written(request, constraint.Name) {
 			continue
 		}
 		if constraint.ForeignSchema == "" {
@@ -63,8 +75,11 @@ func (constraintProjection) ProjectConstraints(ctx context.Context, request sche
 	return schemaprojection.ConstraintResult{State: &state}, nil
 }
 
-// added reports whether a change of the request adds the constraint name.
-func added(request schemaprojection.ConstraintRequest, name string) bool {
+// written reports whether a change of the request writes the constraint
+// name: adds it, or replaces it with a definition of the same name. Either
+// way the constraint after the change is the declared one, which a read would
+// report in its own spelling.
+func written(request schemaprojection.ConstraintRequest, name string) bool {
 	for _, change := range request.Changes {
 		if change.After != nil && request.Identifiers.IndexIdentityKey(change.After.Name) == request.Identifiers.IndexIdentityKey(name) {
 			return true
