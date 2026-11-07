@@ -50,9 +50,9 @@ func newServingBoth(c *qt.C) servingYDB {
 	return servingYDB{runtime}
 }
 
-// targeting returns the rules that target engine.
-func targeting(rules []lintext.Rule, engine string) []lintext.Rule {
-	return slices.DeleteFunc(slices.Clone(rules), func(rule lintext.Rule) bool { return !slices.Equal(rule.Targets, []string{engine}) })
+// targeting returns the rules that target name.
+func targeting(rules []lintext.Rule, name string) []lintext.Rule {
+	return slices.DeleteFunc(slices.Clone(rules), func(rule lintext.Rule) bool { return !slices.Equal(rule.Targets, []string{name}) })
 }
 
 func (servingYDB) LintRules(target string) ([]lintext.Rule, error) {
