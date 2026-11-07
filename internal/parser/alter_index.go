@@ -9,13 +9,14 @@ import (
 )
 
 // parseAlterIndex reads PostgreSQL's `ALTER INDEX [IF EXISTS] name RENAME TO
-// new_name`, with ALTER consumed and INDEX current.
+// new_name` and `ALTER INDEX name ATTACH PARTITION partition_index`, with ALTER
+// consumed and INDEX current.
 //
-// RENAME TO is the one action read. The others -- SET TABLESPACE, SET and
-// RESET of storage parameters, ATTACH PARTITION, ALTER COLUMN ... SET
-// STATISTICS, DEPENDS ON EXTENSION, and ALTER INDEX ALL IN TABLESPACE -- change
-// nothing a schema model holds, so a schema file that states one is refused by
-// name rather than read as nothing.
+// pg_dump writes ATTACH PARTITION for each index of a partition that copies an
+// index of its parent. The other actions -- SET TABLESPACE, SET and RESET of
+// storage parameters, ALTER COLUMN ... SET STATISTICS, DEPENDS ON EXTENSION,
+// and ALTER INDEX ALL IN TABLESPACE -- change nothing a schema model holds, so
+// a schema file that states one is refused by name rather than read as nothing.
 func (p *Parser) parseAlterIndex() (*ast.AlterIndexNode, error) {
 	if err := p.expect(lexer.TokenIdentifier, "INDEX"); err != nil {
 		return nil, err
@@ -40,9 +41,16 @@ func (p *Parser) parseAlterIndex() (*ast.AlterIndexNode, error) {
 	node.Name = name
 	p.skipWhitespace()
 
+	if p.current.MatchIdentifierValue("ATTACH") {
+		if node.IfExists {
+			return nil, ptaherr.At(p.current.Start, fmt.Errorf(
+				"ALTER INDEX IF EXISTS %s ATTACH PARTITION: PostgreSQL takes no IF EXISTS here", name))
+		}
+		return p.parseAttachIndexPartition(node)
+	}
 	if !p.current.MatchIdentifierValue("RENAME") {
 		return nil, ptaherr.At(p.current.Start, fmt.Errorf(
-			"ALTER INDEX %s %s: only RENAME TO is read; an index's other settings are not part of a schema file",
+			"ALTER INDEX %s %s: only RENAME TO and ATTACH PARTITION are read; an index's other settings are not part of a schema file",
 			name, p.current.Value))
 	}
 	p.advance()
@@ -61,5 +69,22 @@ func (p *Parser) parseAlterIndex() (*ast.AlterIndexNode, error) {
 			name, newName))
 	}
 	node.NewName = newName
+	return node, nil
+}
+
+// parseAttachIndexPartition reads `ATTACH PARTITION partition_index` after the
+// index name, with ATTACH current. PostgreSQL takes no IF EXISTS here.
+func (p *Parser) parseAttachIndexPartition(node *ast.AlterIndexNode) (*ast.AlterIndexNode, error) {
+	p.advance()
+	p.skipWhitespace()
+	if err := p.expect(lexer.TokenIdentifier, "PARTITION"); err != nil {
+		return nil, fmt.Errorf("expected PARTITION after ALTER INDEX %s ATTACH: %w", node.Name, err)
+	}
+	p.skipWhitespace()
+	partition, err := p.parseQualifiedIdentifier("partition index name")
+	if err != nil {
+		return nil, err
+	}
+	node.AttachPartition = partition
 	return node, nil
 }

@@ -477,10 +477,12 @@ CREATE TABLE events_2026 PARTITION OF events FOR VALUES FROM ('2026-01-01') TO (
 CREATE TABLE events_rest PARTITION OF events DEFAULT;
 ```
 
-The partition takes its columns from its parent, so it declares none. [PostgreSQL
-table partitions](../../databases/postgresql/#table-partitions) has the bound forms,
-how a bound is compared, and the forms that are refused. Every other target refuses
-the statement by name.
+The partition takes its columns from its parent, so it declares none. `ALTER TABLE
+parent ATTACH PARTITION partition bound`, which `pg_dump` writes after the partition's
+own `CREATE TABLE`, declares the same partition. [PostgreSQL table
+partitions](../../databases/postgresql/#table-partitions) has the bound forms, how a
+bound is compared, how a dump reads, and the forms that are refused. Every other
+target refuses the statement by name.
 
 ## API export metadata
 
