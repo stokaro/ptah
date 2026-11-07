@@ -91,8 +91,8 @@ sed -n '1,80p' /tmp/ptah-schema.sql
 
 Standard output contains SQL only. Source-loading progress, schema counts, and
 the dependency summary go to standard error, so the redirected file can be
-executed unchanged. For PostgreSQL-family, MySQL-family, SQL Server, and
-Spanner targets, Ptah creates all tables before adding foreign keys. SQLite
+executed unchanged. For PostgreSQL-family, MySQL-family, and SQL Server
+targets, Ptah creates all tables before adding foreign keys. SQLite
 keeps foreign keys inline because it cannot add them after table creation.
 
 Malformed foreign keys and constraints unsupported by the selected dialect
@@ -130,14 +130,14 @@ type AccountIndexes struct {
 }
 ```
 
-For PostgreSQL, YugabyteDB, CockroachDB, and the Spanner PostgreSQL dialect, the
+For PostgreSQL, YugabyteDB, and CockroachDB, the
 annotation renders `INCLUDE ("display_name", "created_at")`. PostgreSQL accepts
 the default, `BTREE`, and `GIST` access methods, plus `SPGIST` on PostgreSQL 14
 and newer. YugabyteDB accepts the default and `LSM`; `BTREE` is its documented
 alias for the default LSM and renders identically to the default. CockroachDB
 accepts the default and `BTREE`, which is also its default, and refuses `GIN`
 and `GIST` because both name an inverted index there and an inverted index
-stores no payload. The Spanner PostgreSQL dialect accepts only the default.
+stores no payload.
 SQL Server renders `INCLUDE ([display_name], [created_at])` on the nonclustered
 index Ptah builds, and accepts the default and `BTREE`. Every other dialect
 rejects `include` before emitting SQL. Omit `include` when
@@ -180,10 +180,9 @@ that accept it:
 error: error rendering mysql schema: mysql does not support INCLUDE columns on UNIQUE constraint "uq_accounts_email"; target postgres, yugabytedb, or cockroachdb
 ```
 
-The targets for a constraint are not the targets for an index. The Spanner
-PostgreSQL dialect takes `include` on an index and refuses it on a constraint,
-and CockroachDB takes it on an index and on a UNIQUE constraint but not on a
-primary key. Pick the object first, then read its list.
+The targets for a constraint are not the targets for an index. CockroachDB
+takes `include` on an index and on a UNIQUE constraint but not on a primary
+key. Pick the object first, then read its list.
 
 ### Install a PostgreSQL extension in a schema
 

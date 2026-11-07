@@ -67,7 +67,7 @@ func TestConvertFeatures_FailurePath(t *testing.T) {
 	}{
 		{name: "an unresolved role keyword", target: "postgres", want: schemaext.ErrInvalidValue,
 			message: `.*a policy TO CURRENT_USER has no observation until a server resolves the keyword`},
-		{name: "a target without row security", target: "spanner", want: ptaherr.ErrUnsupportedFeature, message: `.*`},
+		{name: "a target without row security", target: "rowless", want: ptaherr.ErrUnsupportedFeature, message: `.*`},
 	}
 
 	for _, test := range tests {

@@ -119,7 +119,7 @@ func TestRoundTrip_MeasuresMostOfTheCorpus(t *testing.T) {
 
 	trip := measuredRoundTrip()
 
-	c.Assert(len(trip.Pairs) > 990, qt.IsTrue, qt.Commentf("%d pairs in scope", len(trip.Pairs)))
+	c.Assert(len(trip.Pairs) > 890, qt.IsTrue, qt.Commentf("%d pairs in scope", len(trip.Pairs)))
 	c.Assert(reachedCount(trip) > 1500, qt.IsTrue, qt.Commentf("%d requirements reached", reachedCount(trip)))
 	c.Assert(reachedFieldCount(trip) > 300, qt.IsTrue, qt.Commentf("%d fields reached", reachedFieldCount(trip)))
 }
@@ -133,7 +133,7 @@ func TestAlternates_FitTheirFields(t *testing.T) {
 	misfits := alternatesThatDoNotFit()
 
 	c.Assert(misfits, qt.HasLen, 0, qt.Commentf("alternates that do not fit: %s", strings.Join(misfits, ", ")))
-	c.Assert(len(schemacensus.Alternates()) > 5, qt.IsTrue)
+	c.Assert(len(schemacensus.Alternates()) > 4, qt.IsTrue)
 }
 
 // TestPerturb_ChangesEveryInstanceAndLeavesItsInputAlone is the property the

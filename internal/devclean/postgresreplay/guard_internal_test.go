@@ -40,14 +40,9 @@ func TestValidatePostgresReplayStatement_HappyPath(t *testing.T) {
 		},
 		{
 			// crdb_internal is CockroachDB's own and a user's schema
-			// elsewhere: PostgreSQL 18 and the Spanner emulator create it.
+			// elsewhere: PostgreSQL 18 creates it.
 			name:      "a schema another member owns",
 			dialect:   platform.Postgres,
-			statement: `CREATE TABLE crdb_internal.users (id bigint PRIMARY KEY)`,
-		},
-		{
-			name:      "a schema another member owns, on Spanner",
-			dialect:   platform.Spanner,
 			statement: `CREATE TABLE crdb_internal.users (id bigint PRIMARY KEY)`,
 		},
 		{
@@ -174,12 +169,6 @@ func TestValidatePostgresReplayStatement_FailurePath(t *testing.T) {
 			dialect:   platform.CockroachDB,
 			statement: `DROP SCHEMA crdb_internal CASCADE`,
 			wantErr:   `cockroachdb migration replay rejects protected namespace "crdb_internal" mutation .*`,
-		},
-		{
-			name:      "a table in Spanner's catalog",
-			dialect:   platform.Spanner,
-			statement: `CREATE TABLE spanner_sys.users (id bigint PRIMARY KEY)`,
-			wantErr:   `spanner migration replay rejects protected namespace "spanner_sys" mutation .*`,
 		},
 		{
 			name:      "comment on pg catalog table",

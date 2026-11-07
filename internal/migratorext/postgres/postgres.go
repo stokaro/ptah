@@ -46,8 +46,7 @@ func YugabyteDB() migratorext.Services {
 }
 
 // Family returns the services CockroachDB and YugabyteDB share with
-// PostgreSQL. Spanner is in the family and is not served here: its
-// PostgreSQL interface has no current_schema() a query can call.
+// PostgreSQL.
 func Family() migratorext.Services {
 	return migratorext.Services{
 		Catalog:        catalog{},

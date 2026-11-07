@@ -290,7 +290,6 @@ func TestReportUndescribedOffersTheOptOutOnlyWhereItWorks(t *testing.T) {
 		{name: "postgres honors the variable", dialect: platform.Postgres, wantRemedy: true},
 		{name: "cockroachdb is the same family", dialect: platform.CockroachDB, wantRemedy: true},
 		{name: "yugabytedb is the same family", dialect: platform.YugabyteDB, wantRemedy: true},
-		{name: "spanner is the same family", dialect: platform.Spanner, wantRemedy: true},
 		{name: "postgresql alias", dialect: "postgresql", wantRemedy: true},
 		{name: "clickhouse consults no such variable", dialect: platform.ClickHouse, wantRemedy: false},
 		{name: "an unknown dialect promises nothing", dialect: "nonsense", wantRemedy: false},

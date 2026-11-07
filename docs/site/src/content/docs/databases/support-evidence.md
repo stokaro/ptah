@@ -69,9 +69,11 @@ tracks remaining version-specific refinement.
 
 ## Emulator evidence
 
-An emulator can prove compatibility with itself, not with a managed service.
-Spanner is the explicit example: the matrix can start the vendor emulator behind
-PGAdapter, but the declaration records that the evidence is emulated. The
+An emulator can prove compatibility with itself, not with a managed service. No
+declared line here runs an emulator. Spanner's PostgreSQL interface, whose only
+container is the vendor emulator behind PGAdapter, is served by the optional
+[Spanner provider](../../extend/providers/spanner/), which declares its own
+line at best effort and states that its evidence comes from the emulator. The
 reference service and emulator already differ on the database option required
 before creating a serial column; [issue 942](https://github.com/stokaro/ptah/issues/942)
 records that measurement.

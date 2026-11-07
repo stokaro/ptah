@@ -14,9 +14,9 @@ import (
 )
 
 // namespaceFixture are the schema names the fake catalog holds. Each is a
-// user's schema on PostgreSQL 18; crdb_internal is CockroachDB's own and
-// spanner_sys is Spanner's, as their descriptors state.
-var namespaceFixture = []string{"app", "crdb_internal", "public", "spanner_sys"}
+// user's schema on PostgreSQL 18; crdb_internal is CockroachDB's own, as its
+// descriptor states.
+var namespaceFixture = []string{"app", "crdb_internal", "public"}
 
 // answerNamespaces answers the user schema query with the fixture names the
 // query does not leave out by name.
@@ -40,10 +40,9 @@ func TestUserSchemas_LeavesTheDialectsSystemSchemas(t *testing.T) {
 		dialect string
 		want    []string
 	}{
-		{name: "PostgreSQL owns neither", dialect: platform.Postgres, want: []string{"app", "crdb_internal", "public", "spanner_sys"}},
-		{name: "CockroachDB owns crdb_internal", dialect: platform.CockroachDB, want: []string{"app", "public", "spanner_sys"}},
-		{name: "Spanner owns spanner_sys", dialect: platform.Spanner, want: []string{"app", "crdb_internal", "public"}},
-		{name: "a writer without a dialect leaves both", dialect: "", want: []string{"app", "public"}},
+		{name: "PostgreSQL owns none", dialect: platform.Postgres, want: []string{"app", "crdb_internal", "public"}},
+		{name: "CockroachDB owns crdb_internal", dialect: platform.CockroachDB, want: []string{"app", "public"}},
+		{name: "a writer without a dialect leaves every member's", dialect: "", want: []string{"app", "public"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

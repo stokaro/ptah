@@ -246,9 +246,8 @@ func describe(database *schemamodel.Database, data []byte, dialect string, opts 
 	// schedule, which its CREATE statement states, the YDB objects a YQL
 	// document declares except those its header leaves unmanaged, the
 	// virtual tables a SQLite document declares unless its header declines
-	// them, a Spanner table's row deletion policy, or the block size of a
-	// MySQL index. The owners' claims combine, since a Spanner document
-	// carries both its row deletion policies and its extensions.
+	// them, or the block size of a MySQL index. The owners' claims combine,
+	// since one document can carry the models of several owners.
 	claim, claimed, err := opts.Owners.Coverage(target, sqlext.CoverageRequest{Limits: owned, Declared: database.FeatureObjects})
 	if err != nil || !claimed {
 		return err

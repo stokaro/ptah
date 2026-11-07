@@ -24,7 +24,6 @@ func TestSupported_AnswersPerDialect(t *testing.T) {
 		{name: "postgresql spelling", dialect: "postgresql", want: true},
 		{name: "yugabytedb takes the keyword and creates an ordinary table", dialect: "yugabytedb", want: false},
 		{name: "cockroachdb speaks the wire protocol and has no unlogged table", dialect: "cockroachdb", want: false},
-		{name: "spanner speaks the wire protocol and has no unlogged table", dialect: "spanner", want: false},
 		{name: "mysql", dialect: "mysql", want: false},
 		{name: "mariadb", dialect: "mariadb", want: false},
 		{name: "sqlite", dialect: "sqlite", want: false},

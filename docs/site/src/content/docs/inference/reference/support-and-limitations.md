@@ -82,8 +82,8 @@ another engine: a generation's run state and its vectors need one of those, so
 there is nothing here to run against mysql
 ```
 
-The PostgreSQL family is refused too. CockroachDB, YugabyteDB and Spanner speak
-the wire protocol pgvector's driver connects with and have no pgvector.
+The PostgreSQL family is refused too. CockroachDB and YugabyteDB speak the wire
+protocol pgvector's driver connects with and have no pgvector.
 
 The `inference_plan` and `inference_status` tools of `ptah mcp` give the same
 answers for a configured target, before they connect to it.

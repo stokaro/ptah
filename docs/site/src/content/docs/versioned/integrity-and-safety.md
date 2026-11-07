@@ -706,7 +706,7 @@ does a write-shaped one. On SQL Server, `NEXT VALUE FOR` is refused statically
 because it advances a sequence.
 
 The read-only guarantee has two strengths depending on the target. PostgreSQL,
-CockroachDB, YugabyteDB, Spanner, MySQL and MariaDB run the assertion in a
+CockroachDB, YugabyteDB, MySQL and MariaDB run the assertion in a
 database-enforced read-only session. SQLite, SQL Server and ClickHouse get a
 plain session, so there the guarantee rests on the static shape check alone.
 

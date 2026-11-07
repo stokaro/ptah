@@ -24,7 +24,6 @@ func TestRenderSQL_ViewAttributes_FailurePath(t *testing.T) {
 		{name: "postgres replace", dialect: "postgres", replace: true},
 		{name: "cockroachdb", dialect: "cockroachdb"},
 		{name: "yugabytedb", dialect: "yugabytedb"},
-		{name: "spanner", dialect: "spanner"},
 		{name: "mysql", dialect: "mysql"},
 		{name: "mariadb replace", dialect: "mariadb", replace: true},
 		{name: "sqlite", dialect: "sqlite"},

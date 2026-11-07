@@ -92,7 +92,7 @@ func TestReadTableParents_ClaimsNothingWithoutThePartitionCatalog(t *testing.T) 
 		asked++
 		return dbtest.QueryResult{}, nil
 	})
-	reader := &Reader{db: db.SQL, dialect: platform.Spanner, schema: "public", caps: capability.ForDialect(platform.Spanner)}
+	reader := &Reader{db: db.SQL, dialect: platform.Postgres, schema: "public", caps: capability.Postgres18().With(capability.CatalogPartitions, false)}
 	database := &catalog.Database{Tables: []catalog.Table{{Name: "t"}}}
 
 	c.Assert(reader.readTableParents(t.Context(), database), qt.IsNil)
@@ -137,7 +137,7 @@ func TestMarkInheritedConstraints_AsksNothingWithoutPartitions(t *testing.T) {
 		dialect string
 		caps    capability.Capabilities
 	}{
-		{name: "a server whose catalog has no partition relation", dialect: platform.Spanner, caps: capability.ForDialect(platform.Spanner)},
+		{name: "a server whose catalog has no partition relation", dialect: platform.Postgres, caps: capability.Postgres18().With(capability.CatalogPartitions, false)},
 		{name: "a server with that relation and no partitions", dialect: platform.CockroachDB, caps: capability.CockroachDB26()},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -167,7 +167,7 @@ func TestReadTriggers_LeavesOutAPartitionsCopy(t *testing.T) {
 		want    bool
 	}{
 		{name: "a server with partitions", dialect: platform.Postgres, caps: capability.Postgres18(), want: true},
-		{name: "a server whose catalog has no partition relation", dialect: platform.Spanner, caps: capability.ForDialect(platform.Spanner)},
+		{name: "a server whose catalog has no partition relation", dialect: platform.Postgres, caps: capability.Postgres18().With(capability.CatalogPartitions, false)},
 		{name: "a server with that relation and no partitions", dialect: platform.CockroachDB, caps: capability.CockroachDB26()},
 	} {
 		t.Run(test.name, func(t *testing.T) {

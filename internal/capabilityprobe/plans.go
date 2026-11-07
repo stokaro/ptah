@@ -36,7 +36,7 @@ func planFor(dialect string) (plan, bool) {
 // comment keys every dialect answers the same way for its kind are added.
 func familyPlan(dialect string) (plan, bool) {
 	switch dialect {
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
+	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB:
 		return postgresFamilyPlan(dialect), true
 	case platform.MySQL, platform.MariaDB:
 		return mysqlFamilyPlan(dialect), true
@@ -59,83 +59,38 @@ func familyPlan(dialect string) (plan, bool) {
 // session entered, and every experiment creates its own objects rather than
 // borrowing another's: an experiment that depends on a neighbor's setup
 // reports that neighbor's failure as its own answer.
-// spannerSpelling writes the same experiments in the DDL Spanner accepts.
-//
-// Spanner reaches Ptah over the PostgreSQL WIRE and does not speak PostgreSQL
-// DDL. Two differences reach every experiment that needs a throwaway table, and
-// both were measured against a live endpoint rather than read anywhere:
-//
-//	CREATE TABLE rm_t (n int)  -> Primary key must be defined for table "rm_t"
-//	CONSTRAINT dcg_uq UNIQUE   -> <UNIQUE> constraint is not supported, create a unique index instead
-//
-// The first is mechanical. The second is not: spelling the unique constraint as
-// an index would make the drop-a-constraint experiment ask about an index, and
-// answer "Spanner cannot drop a constraint" on a server that can drop the CHECK
-// constraint it does have. So the spelling carries the experiment's MEANING --
-// "a table with a droppable named constraint" -- and each dialect picks a
-// constraint kind it actually supports (stokaro/ptah#942).
-var spannerSpelling = tableSpelling{keyed: true, dropCheckConstraint: true}
-
-// postgresFamilySpelling is the table spelling a PostgreSQL-family dialect's
-// experiments write: Spanner's, or the PostgreSQL one every other member takes.
-func postgresFamilySpelling(dialect string) tableSpelling {
-	if platform.NormalizeDialect(dialect) == platform.Spanner {
-		return spannerSpelling
-	}
-	return tableSpelling{}
-}
-
 // tableSpelling writes throwaway tables for one dialect. The zero value is the
 // PostgreSQL spelling, which is what Postgres, CockroachDB and YugabyteDB have
 // always been measured with.
 type tableSpelling struct {
-	// keyed adds a primary key to every table that declares none.
-	keyed bool
-	// dropCheckConstraint picks CHECK for the droppable-constraint experiment,
-	// on a dialect with no UNIQUE table constraint to drop.
-	dropCheckConstraint bool
 	// engine is the storage clause a dialect requires after the column list,
 	// with %s standing for the key column. ClickHouse has no default engine for
 	// a CREATE TABLE and refuses one without it.
 	engine string
 }
 
-// table spells a throwaway table. key names the column that becomes the primary
-// key on a dialect that requires one, and is unused where it does not.
+// table spells a throwaway table. key names the column the storage clause of a
+// dialect that requires one orders by, and is unused where it does not.
 func (t tableSpelling) table(name, columns, key string) string {
 	if t.engine != "" {
 		return fmt.Sprintf("CREATE TABLE %s (%s) %s", name, columns, fmt.Sprintf(t.engine, key))
 	}
-	if !t.keyed {
-		return fmt.Sprintf("CREATE TABLE %s (%s)", name, columns)
-	}
-	return fmt.Sprintf("CREATE TABLE %s (%s, PRIMARY KEY (%s))", name, columns, key)
+	return fmt.Sprintf("CREATE TABLE %s (%s)", name, columns)
 }
 
-// droppableConstraint spells a table carrying one named constraint this dialect
-// can drop, and the statement that drops it. The constraint KIND is the
-// dialect's choice; what the experiment decides is whether a named constraint
-// can be dropped generically, not which kind was available to try it on.
+// droppableConstraint spells a table carrying one named UNIQUE constraint, and
+// the statement that drops it. What the experiment decides is whether a named
+// constraint can be dropped generically.
 func (t tableSpelling) droppableConstraint(table, constraint string) (setup []string, drop string) {
 	clause := fmt.Sprintf("CONSTRAINT %s UNIQUE (n)", constraint)
-	if t.dropCheckConstraint {
-		clause = fmt.Sprintf("CONSTRAINT %s CHECK (n > 0)", constraint)
-	}
 	return []string{t.table(table, "n int, "+clause, "n")},
 		fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT %s", table, constraint)
 }
 
 // uniquelyReferenced spells a table whose column can be the target of a foreign
-// key, using the unique index a dialect without a UNIQUE table constraint
-// requires -- which is what that dialect's own refusal recommends.
+// key through a UNIQUE table constraint.
 func (t tableSpelling) uniquelyReferenced(table, constraint, column string) []string {
-	if !t.dropCheckConstraint {
-		return []string{t.table(table, fmt.Sprintf("%s int NOT NULL, CONSTRAINT %s UNIQUE (%s)", column, constraint, column), column)}
-	}
-	return []string{
-		t.table(table, column+" int NOT NULL", column),
-		fmt.Sprintf("CREATE UNIQUE INDEX %s ON %s (%s)", constraint, table, column),
-	}
+	return []string{t.table(table, fmt.Sprintf("%s int NOT NULL, CONSTRAINT %s UNIQUE (%s)", column, constraint, column), column)}
 }
 
 // deleteColumnListExperiment asks for the column list on ON DELETE SET NULL,
@@ -185,7 +140,7 @@ func rowDeletionPolicyProbe() experiment {
 }
 
 func postgresFamilyPlan(dialect string) plan {
-	t := postgresFamilySpelling(dialect)
+	t := tableSpelling{}
 	dcgSetup, dcgDrop := t.droppableConstraint("dcg", "dcg_uq")
 	experiments := []experiment{
 		acceptance(capability.DropConstraintGeneric, dcgSetup, dcgDrop),

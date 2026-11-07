@@ -45,13 +45,8 @@ type enforcementTableSpelling struct {
 
 func enforcementTables(dialect string) enforcementTableSpelling {
 	switch dialect {
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
-		spelling := postgresFamilySpelling(dialect)
-		parent := "id int PRIMARY KEY"
-		if spelling.keyed {
-			parent = "id int"
-		}
-		return enforcementTableSpelling{parentColumns: parent, childColumns: "n int, a int", spelling: spelling}
+	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB:
+		return enforcementTableSpelling{parentColumns: "id int PRIMARY KEY", childColumns: "n int, a int"}
 	case platform.ClickHouse:
 		return enforcementTableSpelling{
 			parentColumns: "id Int64", childColumns: "n Int64, a Int64", spelling: clickHouseSpelling,
@@ -84,7 +79,7 @@ func matchExperiment(
 	statement := fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s_fk FOREIGN KEY (a) REFERENCES %s (id) MATCH %s",
 		child, child, parent, match)
 	switch dialect {
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
+	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB:
 		return recordedExperiment(key, setup, statement, fmt.Sprintf(
 			"SELECT COUNT(*) FROM pg_constraint WHERE conname = '%s_fk' AND confmatchtype = '%s'",
 			child, postgresMatchType[match]))

@@ -82,7 +82,7 @@ func TestRenderSQL_RendersSynonymOperations(t *testing.T) {
 func TestRenderSQL_RefusesASynonymOperationElsewhere(t *testing.T) {
 	for _, dialect := range []string{
 		platform.Postgres, platform.MySQL, platform.MariaDB, platform.ClickHouse,
-		platform.SQLite, platform.CockroachDB, platform.YugabyteDB, platform.Spanner,
+		platform.SQLite, platform.CockroachDB, platform.YugabyteDB,
 	} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)

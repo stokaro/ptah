@@ -27,7 +27,6 @@ const dialectNames = {
   oracle: ['oracle'],
   cockroachdb: ['cockroachdb', 'cockroach'],
   yugabytedb: ['yugabytedb', 'yugabyte'],
-  spanner: ['spanner'],
   sqlserver: ['sql server', 'sqlserver'],
   sqlite: ['sqlite'],
 };

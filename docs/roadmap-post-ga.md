@@ -102,7 +102,7 @@ reports. It follows its children; it cannot be required while none of them is.
 
 **[#941 — Query builder dialect coverage](https://github.com/stokaro/ptah/issues/941).**
 `SELECT`, `INSERT`, `UPDATE` and `DELETE` render for every dialect the builder
-supports, SQL Server and Spanner among them, and the rendered statements are
+supports, SQL Server among them, and the rendered statements are
 executed against a live SQL Server and a live ClickHouse rather than compared
 with the renderer's own output. One refusal is left and it is the engine's
 rather than Ptah's: a plain `UPDATE` on ClickHouse runs only against a table

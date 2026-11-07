@@ -84,14 +84,15 @@ var atlasChecks = []AtlasCheck{
 	// because MODIFY, SQL Server's ALTER COLUMN and ClickHouse's MODIFY COLUMN
 	// restate the whole column and the text cannot tell a change from a
 	// restatement (migration/lint/notnull.go, stokaro/ptah#2942). PG303 names
-	// the three engines that speak PostgreSQL's wire protocol beside it, each
-	// measured to fail SET NOT NULL on a NULL row, and DD103 names ClickHouse,
-	// measured to fail the mutation and leave the table unreadable
-	// (stokaro/ptah#2958).
+	// the two built-in engines that speak PostgreSQL's wire protocol beside it,
+	// each measured to fail SET NOT NULL on a NULL row, and DD103 names
+	// ClickHouse, measured to fail the mutation and leave the table unreadable
+	// (stokaro/ptah#2958). SP101 is the official Spanner provider's rule for the
+	// same statement, recorded in internal/providerpublished.
 	{
 		Code: "MF104", Meaning: "modifying a nullable column to non-nullable might fail",
-		PtahRules: []string{"PG303", "LT101", "DD103"}, Status: StatusCovered,
-		Note: "PG303 on PostgreSQL, CockroachDB, YugabyteDB and Spanner, LT101 on SQLite, DD103 on MySQL, MariaDB, SQL Server and ClickHouse; every engine measured, each with its own failure named",
+		PtahRules: []string{"PG303", "LT101", "DD103", "SP101"}, Status: StatusCovered,
+		Note: "PG303 on PostgreSQL, CockroachDB and YugabyteDB, LT101 on SQLite, DD103 on MySQL, MariaDB, SQL Server and ClickHouse, SP101 on Spanner; every engine measured, each with its own failure named",
 	},
 
 	{Code: "BC101", Meaning: "renaming a table", PtahRules: []string{"BC101"}, Status: StatusCovered},

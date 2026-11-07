@@ -39,7 +39,7 @@ func TestDialects_ServeTheSpellings(t *testing.T) {
 	spellings := platform.DialectSpellings()
 
 	c.Assert(spellings, qt.DeepEquals, platform.Dialects().Spellings())
-	c.Assert(len(spellings) >= 32, qt.IsTrue, qt.Commentf("spellings %q", spellings))
+	c.Assert(len(spellings) >= 28, qt.IsTrue, qt.Commentf("spellings %q", spellings))
 	for _, spelling := range spellings {
 		described, found := platform.Lookup(spelling)
 		c.Assert(found, qt.IsTrue, qt.Commentf("spelling %q", spelling))

@@ -316,20 +316,20 @@ func TestComparePolicies_FailurePath(t *testing.T) {
 }
 
 // TestComparePolicies_OnlyOnRowSecurityTargets pins that the owner claims no
-// target without row security: spanner speaks the PostgreSQL dialect and the
-// runtime refuses a policy there, and the service refuses a target outside the
-// family when it is called directly.
+// target without row security: the runtime refuses a policy on a target the
+// owner does not serve, and the service refuses a target outside the family
+// when it is called directly.
 func TestComparePolicies_OnlyOnRowSecurityTargets(t *testing.T) {
 	c := qt.New(t)
 	request := comparison(c, []schemaext.Object{desiredPolicy(c, "orders", "tenant", pgpolicy.DesiredPolicy{Using: new("true")})}, nil, surviving("orders"))
-	request.Target = "spanner"
+	request.Target = "rowless"
 	request.Desired.Coverage = schemaext.Coverage{}
 	request.Current.Coverage = schemaext.Coverage{}
 
 	result, err := newRuntime(c).CompareObjects(t.Context(), request)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(err, qt.ErrorMatches, `.*no object comparison for "spanner"/"ptah.run/pgpolicy/policy"`)
+	c.Assert(err, qt.ErrorMatches, `.*no object comparison for "rowless"/"ptah.run/pgpolicy/policy"`)
 	c.Assert(result.Changes, qt.HasLen, 0)
 
 	request.Target = "mysql"

@@ -162,7 +162,7 @@ func TestRequestDecideFromURL_HappyPath(t *testing.T) {
 		url  string
 		args []string
 	}{
-		{name: "a PostgreSQL-wire URL may reach Spanner", url: "postgres://localhost/db",
+		{name: "a PostgreSQL-wire URL may reach another engine", url: "postgres://localhost/db",
 			args: []string{"--statement-timeout", "30s"}},
 		{name: "a MySQL URL", url: "mysql://localhost/db", args: []string{"--statement-timeout", "30s"}},
 		{name: "a URL Ptah cannot classify", url: "nosuch://x", args: []string{"--statement-timeout", "30s"}},

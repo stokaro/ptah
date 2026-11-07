@@ -64,10 +64,6 @@ const (
 	SQLServer
 	CockroachDB
 	YugabyteDB
-	// Spanner is the Cloud Spanner PostgreSQL interface, reached through the
-	// emulator behind PGAdapter -- the only Spanner endpoint a container can
-	// provide (stokaro/ptah#1719).
-	Spanner
 	// Oracle is a live Oracle server, which gvenzl/oracle-free:slim and
 	// gvenzl/oracle-xe:21-slim both provide (stokaro/ptah#1875).
 	Oracle
@@ -209,11 +205,6 @@ var sources = map[Engine]source{
 		canonical: "YUGABYTEDB_URL",
 		synonyms:  []string{"YUGABYTEDB_TEST_DSN"},
 		scheme:    []string{"postgres", "postgresql", "yugabytedb"},
-	},
-	Spanner: {
-		canonical: "SPANNER_URL",
-		synonyms:  []string{"SPANNER_TEST_DSN"},
-		scheme:    []string{"spanner", "postgres", "postgresql"},
 	},
 	// Oracle has no synonyms: it is new here, and the whole point of this
 	// package is that a second spelling of one address is how coverage goes
@@ -457,12 +448,9 @@ func driverForm(engine Engine, address string) string {
 			return address
 		}
 		return parsed.DSN()
-	case CockroachDB, YugabyteDB, Spanner:
+	case CockroachDB, YugabyteDB:
 		// pgx does not parse these aliases, and rewriting rather than removing
-		// is what dbschema does for the same reason. Spanner belongs here for
-		// the same reason the other two do: its endpoint speaks the PostgreSQL
-		// wire protocol, and a raw pgx caller handed `spanner://` cannot parse
-		// it (stokaro/ptah#1719).
+		// is what dbschema does for the same reason.
 		return postgresWireURL(address)
 	}
 	// Every other engine's driver reads the address as it stands: pgx parses
@@ -483,7 +471,7 @@ func postgresWireURL(address string) string {
 		return address
 	}
 	switch scheme {
-	case "cockroachdb", "yugabytedb", "spanner":
+	case "cockroachdb", "yugabytedb":
 		return "postgres://" + rest
 	}
 	return address

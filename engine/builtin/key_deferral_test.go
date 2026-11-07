@@ -91,7 +91,6 @@ func TestRenderKeyDeferral_UnsupportedTarget(t *testing.T) {
 	}{
 		{name: "YugabyteDB", dialect: "yugabytedb", caps: capability.YugabyteDB25(), wantErr: `yugabytedb does not support a DEFERRABLE PRIMARY KEY; an unnamed key of table "slots" declares one`},
 		{name: "CockroachDB", dialect: "cockroachdb", caps: capability.ForDialect("cockroachdb"), wantErr: `cockroachdb does not support a DEFERRABLE PRIMARY KEY; .*`},
-		{name: "Spanner", dialect: "spanner", caps: capability.ForDialect("spanner"), wantErr: `spanner does not support a DEFERRABLE PRIMARY KEY; .*`},
 		{name: "MySQL", dialect: "mysql", caps: capability.ForDialect("mysql"), wantErr: `mysql does not support a DEFERRABLE PRIMARY KEY; .*`},
 		{name: "MariaDB", dialect: "mariadb", caps: capability.ForDialect("mariadb"), wantErr: `mariadb does not support a DEFERRABLE PRIMARY KEY; .*`},
 		{name: "SQLite", dialect: "sqlite", caps: capability.ForDialect("sqlite"), wantErr: `sqlite does not support a DEFERRABLE PRIMARY KEY; .*`},

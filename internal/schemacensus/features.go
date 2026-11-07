@@ -13,7 +13,6 @@ import (
 	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/dialect/postgres/pgroutine"
 	"ptah.run/dialect/postgres/pgtable"
-	"ptah.run/dialect/spanner/spannerschema"
 	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/feature/oratype"
@@ -62,7 +61,6 @@ func featureCodecs() []schemaext.OwnedCodec {
 		{owner: pgtable.Owner, codecs: pgtable.ExclusionCodecs()},
 		{owner: pgtable.Owner, codecs: pgtable.DeleteColumnsCodecs()},
 		{owner: tsschema.Owner, codecs: tsschema.Codecs()},
-		{owner: spannerschema.Owner, codecs: spannerschema.Codecs()},
 	} {
 		for _, codec := range provider.codecs {
 			if codec.Representation == schemaext.Desired {

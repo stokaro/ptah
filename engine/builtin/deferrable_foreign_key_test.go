@@ -35,8 +35,7 @@ func deferrableTable(deferrable bool, initially string) ast.Node {
 // that the PostgreSQL family splits on it: CockroachDB v26.2.5 answers
 // `unimplemented: this syntax` to every form, including NOT DEFERRABLE, while
 // PostgreSQL 18.4 and YugabyteDB 2026.1 accept the clause and report
-// condeferrable and condeferred true. Spanner's PostgreSQL interface answers
-// `<DEFERRABLE> constraints are not supported`.
+// condeferrable and condeferred true.
 //
 // A target that cannot host one is REFUSED rather than rendered without the
 // clause. Dropping it would emit a constraint that rejects exactly the writes
@@ -52,7 +51,6 @@ func TestDeferrableForeignKey_EveryDialectAnswersItsMeasurement(t *testing.T) {
 		{name: "yugabytedb emits the clause", dialect: "yugabytedb", wantSQL: "DEFERRABLE INITIALLY DEFERRED"},
 		{name: "sqlite emits the clause", dialect: "sqlite", wantSQL: "DEFERRABLE INITIALLY DEFERRED"},
 		{name: "cockroachdb refuses it", dialect: "cockroachdb"},
-		{name: "spanner refuses it", dialect: "spanner"},
 		{name: "mysql refuses it", dialect: "mysql"},
 		{name: "mariadb refuses it", dialect: "mariadb"},
 		{name: "sqlserver refuses it", dialect: "sqlserver"},
@@ -120,7 +118,7 @@ func TestDeferrableForeignKey_TimingSpellings(t *testing.T) {
 // control: a foreign key that asks for no deferral renders exactly as it did
 // before, on every dialect including the ones that refuse the clause.
 func TestDeferrableForeignKey_UnchangedWithoutTheClause(t *testing.T) {
-	for _, dialect := range []string{"postgres", "cockroachdb", "yugabytedb", "spanner", "sqlite", "mysql", "mariadb", "sqlserver"} {
+	for _, dialect := range []string{"postgres", "cockroachdb", "yugabytedb", "sqlite", "mysql", "mariadb", "sqlserver"} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 

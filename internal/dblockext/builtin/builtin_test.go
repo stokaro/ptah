@@ -75,7 +75,7 @@ func TestLookup_FoldsSpellings(t *testing.T) {
 }
 
 func TestLookup_UnknownDialectTakesNoLock(t *testing.T) {
-	for _, dialect := range []string{"", "nonesuch", platform.SQLite, platform.CockroachDB, platform.Spanner, platform.Oracle} {
+	for _, dialect := range []string{"", "nonesuch", platform.SQLite, platform.CockroachDB, "spanner", platform.Oracle} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 			services := builtin.Lookup(dialect)

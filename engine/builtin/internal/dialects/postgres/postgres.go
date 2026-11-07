@@ -301,10 +301,10 @@ func (r *Renderer) Render(node ast.Node) (string, error) {
 // told apart from one this target skips on purpose.
 //
 // The table says which handler owns a kind, never what a target does with it.
-// One Renderer serves PostgreSQL, CockroachDB, YugabyteDB and the Spanner
-// PostgreSQL interface, and where they differ the handler reads the capability
-// set, writes the skip comment and records the omission. Lifting that decision
-// into the switch would give one kind four answers and leave the table unable
+// One Renderer serves PostgreSQL, CockroachDB and YugabyteDB, and where they
+// differ the handler reads the capability set, writes the skip comment and
+// records the omission. Lifting that decision into the switch would give one
+// kind three answers and leave the table unable
 // to state any of them.
 //
 // The last case is the fragments. An alter operation, a type definition and a
@@ -707,8 +707,7 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 	}
 
 	// An owned table clause takes this position: CockroachDB row-level TTL as
-	// a WITH clause of storage parameters, or the Spanner row deletion policy
-	// as a TTL clause; no engine has both. The table options the node carries
+	// a WITH clause of storage parameters. The table options the node carries
 	// are named above the statement instead, because this target renders none
 	// of them (see writeTableOptionsSkipped). The owner refuses a target
 	// without the capability rather than letting the clause drop
@@ -855,7 +854,7 @@ func (r *Renderer) renderCreateTableLines(node *ast.CreateTableNode, owned []str
 	positions := make(map[any]int)
 	lines = make([]string, 0, len(node.Columns)+len(node.Constraints)+len(owned))
 	for _, column := range node.Columns {
-		line, err := r.renderColumn(r.withoutDefaultNotNullName(node.Name, r.namedColumnCheck(node.Name, column)))
+		line, err := r.renderColumn(r.withoutDefaultNotNullName(node.Name, column))
 		if err != nil {
 			return nil, nil, fmt.Errorf("error rendering column %s: %w", column.Name, err)
 		}
@@ -1080,8 +1079,8 @@ func (r *Renderer) renderAlterTableStatements(node *ast.AlterTableNode, operatio
 			// budget; writeRename re-selects between them.
 			r.writeRename(node, operation)
 		case *ast.ExtensionAlterOperation:
-			// An owned operation, such as CockroachDB row-level TTL or the
-			// Spanner row deletion policy, is rendered by its owner
+			// An owned operation, such as CockroachDB row-level TTL, is
+			// rendered by its owner
 			// (stokaro/ptah#1027, stokaro/ptah#2236).
 			if err := r.writeExtensionOperation(node, op); err != nil {
 				return err
@@ -1274,7 +1273,7 @@ func (r *Renderer) renderIndex(node *ast.IndexNode) error {
 	// CONCURRENTLY precedes IF NOT EXISTS in the PostgreSQL grammar:
 	// CREATE [UNIQUE] INDEX [CONCURRENTLY] [IF NOT EXISTS] name ...
 	//
-	// CockroachDB and Spanner are in this family and have neither capability,
+	// CockroachDB is in this family and has neither capability,
 	// so the declaration is recorded rather than dropped in silence: the
 	// statement below is an ordinary CREATE INDEX whichever way this goes.
 	if node.Concurrently {
@@ -1704,33 +1703,8 @@ func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 }
 
 // writeAddColumn writes ALTER TABLE ... ADD COLUMN for op.
-//
-// Spanner refuses a CHECK inside ADD COLUMN ("Check constraint creation is
-// not supported in <ALTER TABLE ADD COLUMN> statement", measured on the
-// emulator behind PGAdapter v0.56.1) and accepts the same CHECK as a
-// constraint added next, so there the column is added without it and the
-// check follows under the name namedColumnCheck gives it.
-//
-// Spanner also refuses a NOT NULL column that declares no default ("Cannot
-// add NOT NULL column items.name to existing table items", measured on the
-// same emulator), whether or not the table holds a row. It accepts the column
-// added nullable and made NOT NULL next, so there the NOT NULL follows as its
-// own statement; see spannerDeferredNotNull.
 func (r *Renderer) writeAddColumn(table string, op *ast.AddColumnOperation) error {
-	column := r.withoutDefaultNotNullName(table, r.namedColumnCheck(table, op.Column))
-	var check *ast.ColumnNode
-	if r.dialect == platform.Spanner && column != nil && column.Check != "" {
-		check = column
-		bare := *column
-		bare.Check, bare.CheckName, bare.CheckNotEnforced = "", "", false
-		column = &bare
-	}
-	notNull := r.spannerDeferredNotNull(column)
-	if notNull != nil {
-		nullable := *column
-		nullable.Nullable = true
-		column = &nullable
-	}
+	column := r.withoutDefaultNotNullName(table, op.Column)
 	line, err := r.renderColumn(column)
 	if err != nil {
 		return fmt.Errorf("error rendering add column: %w", err)
@@ -1742,17 +1716,6 @@ func (r *Renderer) writeAddColumn(table string, op *ast.AddColumnOperation) erro
 			r.dialectUpper, commentFragment(r.escapeIdentifier(column.Name)), commentFragment(r.escapeQualifiedIdentifier(table)))
 	}
 	r.w.WriteLinef("ALTER TABLE %s %s %s;", r.escapeQualifiedIdentifier(table), addColumnClause(op), line)
-	if check != nil {
-		clause := fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s CHECK (%s)",
-			r.escapeQualifiedIdentifier(table), r.escapeIdentifier(check.CheckName), check.Check)
-		if check.CheckNotEnforced {
-			clause += " NOT ENFORCED"
-		}
-		r.w.WriteLinef("%s;", clause)
-	}
-	if notNull != nil {
-		r.writeColumnNullabilityChange(table, notNull)
-	}
 	return nil
 }
 
@@ -1776,48 +1739,6 @@ func addFailsOnARow(column *ast.ColumnNode) bool {
 		return false
 	}
 	return column.EnumType || pgtypealias.Builtin(column.Type)
-}
-
-// spannerDeferredNotNull is the SET NOT NULL a Spanner ADD COLUMN leaves for
-// the statement after it, or nil when the column can be added as declared.
-//
-// That is a NOT NULL column with no default, which Spanner refuses to add in
-// one statement. A default fills the rows that exist, and Spanner accepts
-// `ADD COLUMN c TEXT NOT NULL DEFAULT 'x'` on a table that holds rows, so a
-// column that declares one is added as declared. The SET NOT NULL is the one a
-// nullable column made NOT NULL gets: it carries the same comment, and it
-// fails the same way when a row holds NULL, which on a new column is any row.
-// A primary key column is not added this way, and a generated or identity
-// column computes its value.
-func (r *Renderer) spannerDeferredNotNull(column *ast.ColumnNode) *ast.ModifyColumnOperation {
-	if r.dialect != platform.Spanner || column == nil || column.Nullable || column.Primary ||
-		column.Default != nil || column.GeneratedExpression != "" || column.IdentityGeneration != "" {
-		return nil
-	}
-	return &ast.ModifyColumnOperation{
-		Column:     column,
-		Changed:    ast.ColumnProperties{Nullability: true},
-		HasChanged: true,
-	}
-}
-
-// namedColumnCheck gives an unnamed column CHECK on Spanner the name the
-// comparison looks for, <table>_<column>_check (see
-// schemaprep.ColumnCheckNames).
-//
-// PostgreSQL names an inline CHECK by its own convention, which the
-// comparison predicts. Spanner names it CK_<table>_<hash>_<n>, measured on
-// the emulator behind PGAdapter v0.56.1, so an unnamed check reads back under
-// a name the declaration does not carry, and the next plan drops it and adds
-// it again under the expected name. A declaration that names its own check
-// keeps that name.
-func (r *Renderer) namedColumnCheck(table string, column *ast.ColumnNode) *ast.ColumnNode {
-	if r.dialect != platform.Spanner || column == nil || column.Check == "" || column.CheckName != "" {
-		return column
-	}
-	named := *column
-	named.CheckName = unqualifiedTable(table) + "_" + column.Name + "_check"
-	return &named
 }
 
 // unqualifiedTable is table without its schema.
@@ -2315,7 +2236,7 @@ func (r *Renderer) writeColumnNullabilityChange(tableName string, op *ast.Modify
 	// Change nullability.
 	//
 	// A primary key column is NOT NULL on every engine this renderer serves --
-	// PostgreSQL, CockroachDB, YugabyteDB and Spanner -- and PostgreSQL refuses
+	// PostgreSQL, CockroachDB and YugabyteDB -- and PostgreSQL refuses
 	// to take that away: `ALTER TABLE "users" ALTER COLUMN "id" DROP NOT NULL`
 	// on a key column fails with `column "id" is in a primary key`
 	// (SQLSTATE 42P16), so emitting it makes the whole plan unappliable rather

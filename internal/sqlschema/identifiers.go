@@ -29,8 +29,7 @@ import (
 // created `"Docs"` and a comparison against the `docs` the server holds for
 // the same file planned `DROP TABLE "docs" CASCADE`.
 //
-// Other dialects keep an unquoted name as written. Spanner is in the
-// PostgreSQL family but was not measured, and MySQL, MariaDB, SQL Server,
+// Other dialects keep an unquoted name as written. MySQL, MariaDB, SQL Server,
 // ClickHouse, SQLite and Oracle each have their own case rules, which this
 // package does not model. A read with no dialect keeps names as written too,
 // so a file mixing conventions can be read at all.

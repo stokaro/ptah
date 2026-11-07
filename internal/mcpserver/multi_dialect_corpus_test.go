@@ -65,20 +65,13 @@ var corpusRows = []corpusRow{
 	{dialect: "sqlite"},
 	{dialect: "sqlserver"},
 	{dialect: "clickhouse", refusedBecause: "does not support foreign keys"},
-	// The four the surface accepts that this corpus did not ask about.
+	// The three the surface accepts that this corpus did not ask about.
 	// agentapi.normalizedDialect delegates to platform.NormalizeDialect, which
-	// knows all four, and engine/builtin has a renderer for each -- so a corpus
-	// stopping at six left four targets able to answer and never asked
+	// knows all three, and engine/builtin has a renderer for each -- so a
+	// corpus stopping at six left three targets able to answer and never asked
 	// (stokaro/ptah#1490).
 	{dialect: "cockroachdb"},
 	{dialect: "yugabytedb"},
-	// The corpus document declares a unique column, and the Spanner PostgreSQL
-	// interface has no UNIQUE constraint in either spelling -- measured, it
-	// answers `<UNIQUE> constraint is not supported, create a unique index
-	// instead.` Ptah refuses rather than emitting DDL the server rejects, so
-	// this row is a refusal for the same reason ClickHouse's is
-	// (stokaro/ptah#2585).
-	{dialect: "spanner", refusedBecause: "has no UNIQUE constraint"},
 	{dialect: "oracle"},
 }
 
@@ -159,7 +152,7 @@ func TestServer_TheDialectsAnswerDifferently(t *testing.T) {
 	// Oracle is the row that separates "this dialect was accepted" from "this
 	// dialect was used" most sharply, and it is why the corpus is worth
 	// widening rather than just longer: measured on this fixture, it emits
-	// `CREATE TABLE authors (` where the other nine quote every identifier. A
+	// `CREATE TABLE authors (` where the other eight quote every identifier. A
 	// renderer selected by name but not by behavior would collapse this
 	// (stokaro/ptah#1490).
 	c.Assert(answers["oracle"], qt.Not(qt.Equals), answers["postgres"])

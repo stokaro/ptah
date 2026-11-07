@@ -634,7 +634,6 @@ func TestStrictCEDatabaseDialectPolicy(t *testing.T) {
 		"cockroachdb://localhost/app",
 		"yugabytedb://localhost/app",
 		"sqlserver://localhost/app",
-		"spanner://localhost/app",
 		// A docker URL is judged by the engine it would start.
 		"docker+sqlserver://_/mssql:2022/dev",
 		"docker+clickhouse://_/clickhouse:24/dev",
@@ -701,6 +700,8 @@ func TestStrictCERefusesAYDBURLInTheBinarysWords(t *testing.T) {
 			want: `sql/sqlclient: unknown driver "ydbs". See: https://atlasgo.io/url`},
 		{name: "an engine only a provider serves", rawURL: "duckdb:///tmp/app.db",
 			want: `sql/sqlclient: unknown driver "duckdb". See: https://atlasgo.io/url`},
+		{name: "Spanner, which only its provider serves", rawURL: "spanner://localhost:5432/app",
+			want: `sql/sqlclient: unknown driver "spanner". See: https://atlasgo.io/url`},
 	}
 
 	for _, test := range tests {

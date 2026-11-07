@@ -20,8 +20,8 @@ import (
 // The reading is [filetx.Read], the one the apply of such a directory uses, so
 // a file replays without an enclosing transaction exactly when it would be
 // applied without one. A file it refuses is refused here as a
-// [*replay.TransactionStructureError]. Only PostgreSQL is read; on CockroachDB,
-// YugabyteDB and Spanner each statement stays refused on its own.
+// [*replay.TransactionStructureError]. Only PostgreSQL is read; on CockroachDB
+// and YugabyteDB each statement stays refused on its own.
 //
 // The statement that fails inside a transaction is not part of this reading:
 // the replay rolls the session back when a file fails.

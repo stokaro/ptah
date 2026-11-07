@@ -45,7 +45,6 @@ func TestGoverns_UnmeasuredDialects(t *testing.T) {
 	}{
 		{name: "clickhouse", dialect: "clickhouse"},
 		{name: "sqlserver", dialect: "sqlserver"},
-		{name: "spanner", dialect: "spanner"},
 		{name: "cockroachdb", dialect: "cockroachdb"},
 		{name: "yugabytedb", dialect: "yugabytedb"},
 		{name: "empty", dialect: ""},

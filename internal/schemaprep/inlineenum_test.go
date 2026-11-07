@@ -53,11 +53,6 @@ func TestLowerInlineEnums(t *testing.T) {
 			wantType: "Enum8('a' = 1, 'b' = 2)",
 		},
 		{
-			name: "spanner", dialect: "spanner",
-			field:    schemamodel.Field{Name: "s", Type: "ENUM", Enum: []string{"a", "it's"}},
-			wantType: "TEXT", wantCheck: "s IN ('a', 'it''s')",
-		},
-		{
 			name: "a standalone-enum dialect", dialect: "postgres",
 			field:    schemamodel.Field{Name: "s", Type: "status"},
 			wantType: "status",

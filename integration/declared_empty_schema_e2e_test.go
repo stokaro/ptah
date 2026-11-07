@@ -32,25 +32,16 @@ var declaredSchemaEngines = []declaredSchemaEngine{
 	{name: "postgresql", engine: dbtarget.PostgreSQL},
 	{name: "cockroachdb", engine: dbtarget.CockroachDB},
 	{name: "yugabytedb", engine: dbtarget.YugabyteDB},
-	{name: "spanner", engine: dbtarget.Spanner},
 }
-
-// declaredSchemaCommentEngines are the engines that read a schema's comment and
-// its privileges back through pg_namespace, and run a versioned migration here.
-var declaredSchemaCommentEngines = declaredSchemaEngines[:3]
 
 // declaredSchemaApp is the schema these tests declare. Each test has a database
 // of its own.
 const declaredSchemaApp = "es_app"
 
-// declaredSchemaTarget is a database for one test. The Spanner emulator creates
-// one for the name a URL gives it, and has no statement that removes it.
+// declaredSchemaTarget is a database for one test.
 func declaredSchemaTarget(c *qt.C, engine dbtarget.Engine) string {
 	c.Helper()
-	if engine != dbtarget.Spanner {
-		return newPolicyClauseDatabase(c, engine)
-	}
-	return renameInPath(c, dbtarget.URL(c, engine), devDialectScratchName())
+	return newPolicyClauseDatabase(c, engine)
 }
 
 // writeDeclaredSchemaFile writes body to a file of that name and returns its path.
@@ -146,7 +137,7 @@ func TestDeclaredEmptySchemaIsCreatedE2E(t *testing.T) {
 // it does not create is a GRANT the server refuses. The privilege and the comment
 // are read back from the server.
 func TestDeclaredEmptySchemaTakesItsCommentAndItsPrivilegeE2E(t *testing.T) {
-	for _, engine := range declaredSchemaCommentEngines {
+	for _, engine := range declaredSchemaEngines {
 		t.Run(engine.name, func(t *testing.T) {
 			c := qt.New(t)
 			schema := declaredSchemaApp
@@ -267,7 +258,7 @@ func TestDeclaredSchemaPlansNothingWhereItShouldNotE2E(t *testing.T) {
 // schema into each form a schema takes, and plans from it against the same
 // database. Declared and held is synced, on each engine, and the schema stays.
 func TestDeclaredEmptySchemaSurvivesAnInspectE2E(t *testing.T) {
-	for _, engine := range declaredSchemaCommentEngines {
+	for _, engine := range declaredSchemaEngines {
 		t.Run(engine.name+"/hcl", func(t *testing.T) {
 			c := qt.New(t)
 			target := declaredSchemaTarget(c, engine.engine)
@@ -316,7 +307,7 @@ func TestDeclaredEmptySchemaSurvivesAnInspectE2E(t *testing.T) {
 // schema. Its down file drops the schema, read back from the catalog, because the
 // comparison established that the database did not hold it.
 func TestDeclaredEmptySchemaRollsBackE2E(t *testing.T) {
-	for _, engine := range declaredSchemaCommentEngines {
+	for _, engine := range declaredSchemaEngines {
 		t.Run(engine.name, func(t *testing.T) {
 			c := qt.New(t)
 			target := declaredSchemaTarget(c, engine.engine)
@@ -346,7 +337,7 @@ func TestDeclaredEmptySchemaRollsBackE2E(t *testing.T) {
 // and the table survives. Once the operator moves the table, the repair the status
 // names finishes the rollback.
 func TestDeclaredEmptySchemaRollbackStopsAtATableE2E(t *testing.T) {
-	for _, engine := range declaredSchemaCommentEngines {
+	for _, engine := range declaredSchemaEngines {
 		t.Run(engine.name, func(t *testing.T) {
 			c := qt.New(t)
 			target := declaredSchemaTarget(c, engine.engine)

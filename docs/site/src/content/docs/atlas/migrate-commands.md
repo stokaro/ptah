@@ -616,7 +616,7 @@ serialization against another runner. The lock is taken before the pending set
 is computed, so a run with nothing left to apply still waits on a held lock,
 and exits `0` under `--skip-lock` in the same state. It cannot be combined with
 `--lock-name`, because there is no lock to name. On dialects with no
-advisory-lock semantics — SQLite, ClickHouse, CockroachDB, and Spanner — an
+advisory-lock semantics — SQLite, ClickHouse, and CockroachDB — an
 explicit `--lock-name` prints a note on stderr naming the lock that was not
 acquired.
 

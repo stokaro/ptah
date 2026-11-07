@@ -53,9 +53,6 @@ func (p *Planner) describes() bool {
 // cascades reports whether a drop carries CASCADE, given whether the plan
 // relies on it to remove a dependent it does not drop itself before the drop.
 func (p *Planner) cascades(relied bool) bool {
-	if !p.dropsWithCascade() {
-		return false
-	}
 	return relied || !p.exact()
 }
 

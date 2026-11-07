@@ -121,16 +121,6 @@ These packages are intended for application and tool embedders:
 - `ptah.run/dialect/postgres/pgtable`
 - `ptah.run/dialect/postgres/pgtableprobe`
 - `ptah.run/dialect/postgres/pgtablerender`
-- `ptah.run/dialect/spanner/spannerast`
-- `ptah.run/dialect/spanner/spannercompare`
-- `ptah.run/dialect/spanner/spannerconvert`
-- `ptah.run/dialect/spanner/spannerdiff`
-- `ptah.run/dialect/spanner/spannerplan`
-- `ptah.run/dialect/spanner/spannerrender`
-- `ptah.run/dialect/spanner/spannerreport`
-- `ptah.run/dialect/spanner/spannerreverse`
-- `ptah.run/dialect/spanner/spannerschema`
-- `ptah.run/dialect/spanner/spannersource`
 - `ptah.run/dialect/sqlite/sqlitetable`
 - `ptah.run/dialect/timescaledb/tsast`
 - `ptah.run/dialect/timescaledb/tscompare`
@@ -2157,41 +2147,6 @@ The former `ast.RowTTLSpec`, `ast.SetRowTTLOperation`,
 removed without aliases. This changes behavior; pre-v1, so no compatibility is
 owed.
 
-`dialect/spanner/spannerschema` owns Spanner's row deletion policy as a table
-facet under `RowDeletionKind`. `DesiredRowDeletion` and `ObservedRowDeletion`
-each hold a `Policy` of a column and an interval: a declaration keeps the
-interval as written, an observation as Spanner stored it. `ValidateDesired`
-refuses a policy without its column, a quote in either field, and an interval
-that is negative, is not a whole number of days, or is in a spelling the owner
-does not read. `ValidateObserved` accepts any stored spelling. `Equivalent`
-compares the column under the caller's identifier rule and the interval by the
-hours it denotes, at the server's arithmetic, and compares as text when either
-side cannot be read. `RowDeletionCoverage` builds coverage under the bundled
-provider identity `Owner`.
-
-`spannersource.Service` decodes and encodes the `platform.spanner` table
-properties `row_deletion_column` and `row_deletion_interval`, and claims every
-key that begins with `row_deletion`, so an unknown one is refused by name.
-`spannersource.SQL` reads a Spanner document's `TTL INTERVAL '<interval>' ON
-<column>` as the table's policy, at the `TableOption` site and only in a
-Spanner document, where a document of another target or of none reads TTL as
-ClickHouse's clause. `spannersource.Coverage` is the knowledge Spanner SQL
-enrolls through it, and Go annotations and YAML through
-`spannersource.Annotations` and `spannersource.YAML` when the parse selects
-the owner. HCL, hand-built schemas and a parse without the owner do not, and
-leave a live policy unmanaged.
-
-`spannercompare.Service` compares the facet with the same undecided cases as
-the CockroachDB owner, and `spannerdiff.RowDeletion` carries the change.
-`spannerast.AlterRowDeletion` carries it in `ast.ExtensionAlterOperation`, and
-`spannerrender` lowers it to `ADD TTL`, `ALTER TTL` or `DROP TTL` by which sides
-the change holds, since Spanner refuses each of the first two in the other's
-place. `spannerrender.CreateTableClause` renders the clause of a CREATE TABLE.
-`spannerplan.Service` plans changes in place, `spannerreverse.Service` restores
-the prior policy and reports that rows deleted under the forward policy cannot
-be recovered, and `spannerconvert.Service` and `spannerreport.Service` complete
-the provider.
-
 The former `ast.VectorIndexSpec` and the `Vector` fields of `ast.IndexNode`,
 `schemamodel.Index` and `catalog.Index` are removed without aliases. This
 changes behavior; pre-v1, so no compatibility is owed.
@@ -2876,8 +2831,7 @@ switch turned off are the changes that take state away (`RemovesState`).
 
 The bundled runtime selects these services on PostgreSQL, CockroachDB and
 YugabyteDB. No source or reader produces the models yet, so they act only on
-values a caller builds. Spanner speaks the PostgreSQL dialect without row
-security, so a declared policy or set of switches is refused there.
+values a caller builds.
 
 `dialect/mssql/mssqlproperty` owns SQL Server extended properties. A property
 is one feature object of `Kind`, addressed to the database, a schema, a table or
@@ -2928,8 +2882,8 @@ EXTENSION ... SET SCHEMA and DROP EXTENSION. Only a drop takes `IfExists` and
 and case-variant keys, and a refused value is a `schemaext.InvalidModelError`.
 
 `feature/pgextension/extensionrender` renders the payloads for the PostgreSQL
-family. CockroachDB and Spanner create an extension and do nothing else with
-one, so an installation schema and every alteration are refused there. The
+family. CockroachDB creates an extension and does nothing else with one, so
+an installation schema and every alteration are refused there. The
 builtin runtime selects the owner, its reports included, on every
 PostgreSQL-family target and composes the handlers there. The Go annotation,
 YAML, HCL and SQL sources hand an extension declaration to the owner, and the
@@ -2970,8 +2924,8 @@ the `extension` not-described kind onto the model.
 drop with the warning notes, and for a surviving extension the version, then
 the schema, then the comment. A lower version and a move of an extension that
 is not relocatable are refused, as the server refuses them, and so are an
-installation schema and every change of an installed extension on CockroachDB
-and Spanner. `feature/pgextension/extensionreverse` drops what the forward
+installation schema and every change of an installed extension on
+CockroachDB. `feature/pgextension/extensionreverse` drops what the forward
 plan installed, installs again what it dropped, and moves an extension and its
 comment back; a version stays where the forward plan put it, and the reversal
 says so in a limitation. `feature/pgextension/extensionreport` counts
@@ -3590,7 +3544,7 @@ none of these declarations. The owner preserves role selectors, policy
 expressions and comments, and records table switches as facets. FORCE requires
 ENABLE in the same file and table lifetime for a desired schema; syntax-only
 readers retain an independent FORCE operation. DROP TABLE ends that table's
-pending switches and policies. Spanner has no row-security SQL reader.
+pending switches and policies.
 
 `chsource.SQL` reads ClickHouse's data-skipping index inside a column list and
 in ALTER TABLE ... ADD INDEX, and a materialized view's refresh schedule and
@@ -3895,9 +3849,9 @@ ends in: `read state from "002.sql": extension "pg_trgm" already exists`.
 Whether the two declarations then combine is `Redeclarable`'s question.
 
 The constants of `core/coverage` are the common kinds. An owner that records
-state it does not model declares its own kinds, such as
-`spannerschema.CoverageChangeStream`, and registers the ones a document may
-name in `engine.Provider.CoverageKinds`. `Runtime.CoverageVocabulary` returns a
+state it does not model declares its own kinds, and registers the ones a
+document may name in `engine.Provider.CoverageKinds`.
+`Runtime.CoverageVocabulary` returns a
 `coverage.Vocabulary` of the common kinds and every selected provider's; two
 providers claiming one kind, or a provider claiming a common kind, is an
 invalid registration. The zero vocabulary holds the common kinds only, so an
@@ -4080,8 +4034,8 @@ typed need it, because two typed values naming two different servers are a
 contradiction no preset resolves. It is deliberately not the same answer as
 `VersionResolution.ResolvedDialect`, which reports the ladder the capabilities
 came from — a banner naming only PostgreSQL leaves an explicitly declared
-CockroachDB, YugabyteDB or Spanner target on its own preset, because all three
-speak the PostgreSQL wire protocol and may report exactly that banner.
+CockroachDB or YugabyteDB target on its own preset, because both speak the
+PostgreSQL wire protocol and may report exactly that banner.
 
 None of these functions names an engine. Each reads the dialect descriptors of
 the process registry: a descriptor names its default preset, the banner tokens
@@ -5419,8 +5373,8 @@ node's complete SQL.
 `Grammar.Routines.DefaultDoBlockLanguage` states the language of a DO block
 that omits `LANGUAGE`. It is valid only with the quoted-body routine grammar.
 An explicit `LANGUAGE` clause takes precedence. An empty default means that
-the parser assigns no language. PostgreSQL, CockroachDB, YugabyteDB, and
-Spanner state `plpgsql`.
+the parser assigns no language. PostgreSQL, CockroachDB and YugabyteDB state
+`plpgsql`.
 
 `Grammar.Routines.Trigger` states how CREATE TRIGGER is written.
 `descriptor.TriggerTransactSQL` is the T-SQL order, with the table before the

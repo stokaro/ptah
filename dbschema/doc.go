@@ -24,11 +24,13 @@
 //
 // The package connects to these database platforms:
 //
-//   - PostgreSQL, with CockroachDB, YugabyteDB, and Spanner reached over the
-//     same wire protocol; the product is detected from the server rather than
-//     assumed from the scheme, so a postgres:// URL to one of them resolves
-//     that product's dialect, and where the server identifies itself as
-//     nothing but PostgreSQL the scheme's dialect stands.
+//   - PostgreSQL, with CockroachDB and YugabyteDB reached over the same wire
+//     protocol; the product is detected from the server rather than assumed
+//     from the scheme, so a postgres:// URL to one of them resolves that
+//     product's dialect, and where the server identifies itself as nothing but
+//     PostgreSQL the scheme's dialect stands. A server whose banner names
+//     Spanner is refused with the official provider's diagnostic, since Ptah
+//     serves Spanner only through its provider.
 //   - MySQL and MariaDB, reached with one driver and told apart by the server
 //     itself.
 //   - SQLite: local file, URI, and in-memory databases with PRAGMA-backed

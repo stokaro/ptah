@@ -87,7 +87,6 @@ func TestRead_DropView_HappyPath(t *testing.T) {
 			wantViews: []string{"v", "w"},
 		},
 		{name: "MariaDB, IF EXISTS skips a table holding the name", dialect: "mariadb", sql: viewFixture + "DROP VIEW IF EXISTS t;", wantViews: []string{"v", "w"}},
-		{name: "Spanner, IF EXISTS skips a table holding the name", dialect: "spanner", sql: viewFixture + "DROP VIEW IF EXISTS t;", wantViews: []string{"v", "w"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

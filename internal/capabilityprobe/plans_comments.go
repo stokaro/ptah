@@ -19,8 +19,8 @@ const probeComment = "ptah capability probe"
 // records the refusal, and one where no statement could decide them says why.
 func withObjectComments(p plan, dialect string) plan {
 	switch dialect {
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
-		t := postgresFamilySpelling(dialect)
+	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB:
+		t := tableSpelling{}
 		p.experiments = append(p.experiments, objectCommentExperiments(t)...)
 		p.experiments = append(p.experiments, routineCommentExperiments(t)...)
 		p.experiments = append(p.experiments, indexComment(t), roleComment())

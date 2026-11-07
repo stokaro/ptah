@@ -699,7 +699,7 @@ func (c *serverTargetCollector) observe(info catalog.ServerInfo) error {
 	// has no measurement for, and the engine is only known here: the
 	// configuration validates the dialect it names itself, and a run that
 	// named none has nothing to validate. Without this a `postgres://` dev URL
-	// reaching CockroachDB, YugabyteDB or Spanner would lint as that product,
+	// reaching CockroachDB or YugabyteDB would lint as that product,
 	// find no ON rule that runs there, and report a clean directory for a
 	// guarantee nothing measured.
 	if c.requireOnline && c.deferred.dialect {
@@ -1889,7 +1889,7 @@ type declaration struct {
 //
 // Resolution waits for the connection when nothing but the dev URL named the
 // dialect, because a URL scheme is not a product: a `mysql://` connection can
-// reach MariaDB and a `postgres://` one CockroachDB, YugabyteDB or Spanner.
+// reach MariaDB and a `postgres://` one CockroachDB or YugabyteDB.
 // Resolving `10.11.6-MariaDB` against the scheme would refuse a pair that is
 // correct, and a CockroachDB version would select the PostgreSQL ladder.
 func declaredTarget(opts Options, cfg *lint.Config, dialect string) (declaration, error) {

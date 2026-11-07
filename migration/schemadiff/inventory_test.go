@@ -88,7 +88,6 @@ func TestCompareSchemas_ADocumentAgainstItselfCountsEveryKindAlike(t *testing.T)
 		{dialect: platform.SQLServer, want: inventoryWithoutEnums},
 		{dialect: platform.ClickHouse, want: inventoryWithoutEnums},
 		{dialect: platform.Oracle, want: inventoryWithoutEnums},
-		{dialect: platform.Spanner, want: inventoryWithoutEnums},
 	}
 	runtime := must.Must(builtin.New())
 

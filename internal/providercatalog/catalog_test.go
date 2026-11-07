@@ -100,15 +100,15 @@ func TestOfficialOwnersRegisterWithTheEngineRuntime(t *testing.T) {
 	c.Assert(providercatalog.CheckOwnership("stokaro/ptah-ydb-plugin", "ydb", nil), qt.IsNotNil)
 }
 
-// An official engine is provider-only while no built-in dialect serves it:
-// DuckDB and YDB are. Spanner keeps its built-in implementation here, so it is
-// not.
+// An official engine is provider-only while no built-in dialect serves it, and
+// no built-in dialect serves any of the three.
 func TestProviderOnly(t *testing.T) {
 	for _, test := range []struct{ selector, engine string }{
 		{"duckdb", "duckdb"}, {" DuckDB ", "duckdb"}, {"duckdb:///tmp/app.db", "duckdb"}, {"docker://duckdb/1", "duckdb"},
 		{"github.com/stokaro/ptah-duckdb-plugin", "duckdb"},
 		{"ydb", "ydb"}, {"ydbs://host/db", "ydb"}, {"docker://ydb/26", "ydb"}, {"github.com/stokaro/ptah-ydb-plugin", "ydb"},
-		{"spanner", ""}, {"cloudspanner://host/db", ""},
+		{"spanner", "spanner"}, {"cloudspanner://host/db", "spanner"}, {"google_spanner", "spanner"},
+		{"github.com/stokaro/ptah-spanner-plugin", "spanner"},
 		{"postgres", ""}, {"sqlite:///tmp/app.db", ""}, {"unknown", ""}, {"", ""},
 	} {
 		t.Run(test.selector, func(t *testing.T) {
@@ -118,4 +118,55 @@ func TestProviderOnly(t *testing.T) {
 			c.Assert(entry.EngineID, qt.Equals, test.engine)
 		})
 	}
+}
+
+// A banner names Spanner by its token in any case, and nothing else is
+// identified: PostgreSQL, CockroachDB and YugabyteDB banners are the built-in
+// engines' to read, and the emulator's plain PostgreSQL banner names no
+// product.
+func TestIdentifyBanner(t *testing.T) {
+	for _, test := range []struct{ banner, engine string }{
+		{"PostgreSQL 14.1 on Cloud Spanner", "spanner"},
+		{"Cloud Spanner PostgreSQL interface", "spanner"},
+		{"SPANNER", "spanner"},
+		{"PostgreSQL 14.1", ""},
+		{"PostgreSQL 17.5 (Debian 17.5-1.pgdg120+1)", ""},
+		{"CockroachDB CCL v25.4.0", ""},
+		{"PostgreSQL 15.12-YB-2025.2.0.0-b0", ""},
+		{"", ""},
+	} {
+		t.Run(test.banner, func(t *testing.T) {
+			c := qt.New(t)
+			entry, found := providercatalog.IdentifyBanner(test.banner)
+			c.Assert(found, qt.Equals, test.engine != "")
+			c.Assert(entry.EngineID, qt.Equals, test.engine)
+		})
+	}
+}
+
+// The diagnostic a connection gives a Spanner server behind a postgres:// URL
+// carries the catalog's identities and links in JSON, names the URL scheme
+// that selects the plugin, and never says the plugin is missing: the
+// connection cannot know.
+func TestIdentifiedDiagnosticPreservesGuidance(t *testing.T) {
+	c := qt.New(t)
+	entry, found := providercatalog.Lookup("spanner")
+	c.Assert(found, qt.IsTrue)
+
+	diagnostic := providercatalog.Identified(entry, "postgres")
+	data, err := json.Marshal(diagnostic)
+	c.Assert(err, qt.IsNil)
+	var decoded providerdiagnostic.Diagnostic
+	c.Assert(json.Unmarshal(data, &decoded), qt.IsNil)
+
+	c.Assert(decoded, qt.DeepEquals, *diagnostic)
+	c.Assert(decoded.Code, qt.Equals, "provider_engine_identified")
+	c.Assert(decoded.EngineID, qt.Equals, "spanner")
+	c.Assert(decoded.ProviderID, qt.Equals, "github.com/stokaro/ptah-spanner-plugin")
+	c.Assert(decoded.RepositoryURL, qt.Equals, entry.RepositoryURL)
+	c.Assert(decoded.SetupURL, qt.Equals, entry.SetupURL)
+	c.Assert(decoded.Error(), qt.Equals, "The server behind this postgres:// URL reports itself as Spanner. "+
+		"Spanner is supported through the official Ptah Spanner plugin, never through the engine a postgres:// URL selects. "+
+		"Connect with a spanner:// URL, which selects the plugin; if it is not installed, run `ptah providers install spanner`. "+
+		"Setup: https://docs.ptah.run/edge/extend/providers/spanner/. Plugin repository: https://github.com/stokaro/ptah-spanner-plugin.")
 }

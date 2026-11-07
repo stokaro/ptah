@@ -27,7 +27,6 @@ func TestLint_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 		"sqlserver":   {analyzed: true, dynamicSQL: "exec", notNull: true, types: "restated"},
 		"cockroachdb": {analyzed: true},
 		"yugabytedb":  {analyzed: true},
-		"spanner":     {analyzed: true},
 		"oracle":      {},
 	}
 	described := builtindialects.Descriptors()

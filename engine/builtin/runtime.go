@@ -92,9 +92,6 @@ func New(additional ...engine.Provider) (*engine.Runtime, error) {
 		if name == platform.CockroachDB {
 			registerCockroachDBServices(&provider, name)
 		}
-		if name == platform.Spanner {
-			registerSpannerServices(&provider, name)
-		}
 		if name == platform.ClickHouse {
 			registerClickHouseServices(&provider, name)
 		}

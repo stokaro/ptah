@@ -37,7 +37,7 @@ import (
 func TestRender_ObjectKindCapabilitiesAgreeWithTheGenerator(t *testing.T) {
 	dialects := []string{
 		platform.Postgres, platform.MySQL, platform.MariaDB, platform.ClickHouse,
-		platform.SQLite, platform.SQLServer, platform.CockroachDB, platform.YugabyteDB, platform.Spanner,
+		platform.SQLite, platform.SQLServer, platform.CockroachDB, platform.YugabyteDB,
 	}
 
 	for _, dialect := range dialects {

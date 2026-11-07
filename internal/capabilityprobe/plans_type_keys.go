@@ -83,7 +83,7 @@ func typeKeySpellingFor(dialect string) (typeKeySpelling, bool) {
 				capability.ParameterizedDecimal: sqliteTypeAffinity,
 			},
 		}, true
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner,
+	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB,
 		platform.MySQL, platform.MariaDB, platform.SQLServer:
 		return typeKeySpelling{
 			table: keyed("int"), integer: "int", smallInteger: "smallint", decimal: "DECIMAL(10,2)",

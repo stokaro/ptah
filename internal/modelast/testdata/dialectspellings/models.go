@@ -33,7 +33,7 @@
 // comparison is pinned in internal/sqlident/sqlident_test.go instead.
 package models
 
-//ptah:schema:extension name="pgcrypto" if_not_exists="true" dialects="postgres,cockroachdb,yugabytedb,spanner"
+//ptah:schema:extension name="pgcrypto" if_not_exists="true" dialects="postgres,cockroachdb,yugabytedb"
 type ExtensionsMarker struct{}
 
 //ptah:schema:enum name="enum_status" values="active,archived"
@@ -71,7 +71,7 @@ type User struct {
 	//ptah:schema:field name="ref_status" type="enum_status"
 	RefStatus string
 
-	//ptah:schema:field name="note" type="VARCHAR(64)" platform.postgres.type="VARCHAR(80)" platform.cockroachdb.type="VARCHAR(81)" platform.yugabytedb.type="VARCHAR(82)" platform.spanner.type="STRING(83)" platform.clickhouse.type="FixedString(9)" platform.sqlite.type="VARCHAR(85)" platform.sqlite.default="sqlite-only" platform.mysql.type="VARCHAR(86)" platform.mariadb.type="VARCHAR(87)" platform.sqlserver.type="NVARCHAR(88)"
+	//ptah:schema:field name="note" type="VARCHAR(64)" platform.postgres.type="VARCHAR(80)" platform.cockroachdb.type="VARCHAR(81)" platform.yugabytedb.type="VARCHAR(82)" platform.clickhouse.type="FixedString(9)" platform.sqlite.type="VARCHAR(85)" platform.sqlite.default="sqlite-only" platform.mysql.type="VARCHAR(86)" platform.mariadb.type="VARCHAR(87)" platform.sqlserver.type="NVARCHAR(88)"
 	Note string
 
 	//ptah:schema:field name="email_lower" type="TEXT" generated="LOWER(email)"

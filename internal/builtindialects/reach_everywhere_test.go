@@ -27,7 +27,6 @@ func TestDescriptors_EverywhereAgreesWithTheRulesItReplaces(t *testing.T) {
 		platform.Postgres:    postgresFamily,
 		platform.CockroachDB: postgresFamily,
 		platform.YugabyteDB:  postgresFamily,
-		platform.Spanner:     postgresFamily,
 		platform.MySQL: {
 			"LOAD DATA INFILE", "SELECT ... INTO OUTFILE", "SELECT ... INTO DUMPFILE", "LOAD_FILE",
 			"ENGINE=FEDERATED", "CREATE SERVER", "INSTALL PLUGIN", "INSTALL COMPONENT",

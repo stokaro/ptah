@@ -15,7 +15,6 @@ const (
 	SQLServer   = "sqlserver"
 	CockroachDB = "cockroachdb"
 	YugabyteDB  = "yugabytedb"
-	Spanner     = "spanner"
 	Oracle      = "oracle"
 )
 
@@ -46,8 +45,8 @@ func DialectSpellings() []string {
 // and catalog, which is what lets one reader and one renderer serve every
 // member. The answer is the descriptor's family; see [Lookup].
 //
-// It answers a question about the DIALECT, not about a feature: CockroachDB,
-// YugabyteDB and Spanner are in the family and each refuses things PostgreSQL
+// It answers a question about the DIALECT, not about a feature: CockroachDB
+// and YugabyteDB are in the family and each refuses things PostgreSQL
 // accepts. A caller deciding whether a capability exists reads the capability,
 // not this.
 func IsPostgresFamily(dialect string) bool {

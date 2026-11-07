@@ -106,17 +106,6 @@ func TestResolve_SaysWhatItPlannedInstead(t *testing.T) {
 				"capabilities fall back to the preset its ladder assigns (newest measured line: 26.10)",
 		},
 		{
-			// Spanner is the dialect with no ladder: it ships by date, and the
-			// number it announces over the PostgreSQL wire is PGAdapter's
-			// compatibility level, so the version is read and then spent on
-			// nothing.
-			name:     "a good version for a dialect with no ladder changed nothing",
-			dialect:  platform.Spanner,
-			version:  "14.1",
-			want:     capability.SpannerPostgres(),
-			wantNote: "the spanner dialect has no measured version ladder; the version did not refine capabilities",
-		},
-		{
 			// SQL Server has a ladder of one arm, so a declared line resolves
 			// version-specific and says nothing -- the control that keeps the
 			// row above about ladders rather than about any dialect the note
@@ -224,10 +213,19 @@ func TestResolve_RefusesABannerFromAnotherServer(t *testing.T) {
 			resolved: platform.YugabyteDB,
 		},
 		{
+			// Spanner is served only through its provider, so no dialect of
+			// this process claims the banner; the catalog identifies it, and
+			// the banner also naming PostgreSQL does not make it one.
 			name:     "Spanner banner on postgres",
 			dialect:  platform.Postgres,
 			version:  "Cloud Spanner PostgreSQL",
-			resolved: platform.Spanner,
+			resolved: "spanner",
+		},
+		{
+			name:     "Spanner banner on cockroachdb",
+			dialect:  platform.CockroachDB,
+			version:  "PostgreSQL 14.1 on Cloud Spanner",
+			resolved: "spanner",
 		},
 		{
 			name:     "PostgreSQL banner on mysql",
@@ -251,12 +249,6 @@ func TestResolve_RefusesABannerFromAnotherServer(t *testing.T) {
 			name:     "PostgreSQL banner on yugabytedb",
 			dialect:  platform.YugabyteDB,
 			version:  "PostgreSQL 16.3 (Debian)",
-			resolved: platform.Postgres,
-		},
-		{
-			name:     "PostgreSQL banner on spanner",
-			dialect:  platform.Spanner,
-			version:  "PostgreSQL 14.1",
 			resolved: platform.Postgres,
 		},
 	}
@@ -314,12 +306,6 @@ func TestResolve_AcceptsAMatchingBanner(t *testing.T) {
 			want:    capability.YugabyteDB25(),
 		},
 		{
-			name:    "Spanner banner on spanner",
-			dialect: platform.Spanner,
-			version: "Cloud Spanner PostgreSQL",
-			want:    capability.SpannerPostgres(),
-		},
-		{
 			name:    "PostgreSQL banner on postgres",
 			dialect: platform.Postgres,
 			version: "PostgreSQL 16.3 (Debian)",
@@ -357,7 +343,7 @@ func TestResolve_AcceptsAMatchingBanner(t *testing.T) {
 //
 // A PostgreSQL banner on a PostgreSQL-family dialect is two different events. On
 // a live connection it is one server describing itself less specifically than it
-// could: CockroachDB, YugabyteDB and Spanner all speak this protocol, so the
+// could: CockroachDB and YugabyteDB both speak this protocol, so the
 // dialect the operator connected with is the only product evidence there is and
 // the resolver keeps its preset. Typed on a command line it is two values naming
 // two servers, with nothing to prefer between them, so this package refuses.
@@ -388,12 +374,6 @@ func TestResolve_RefusesWhatTheLiveResolverDeliberatelyKeeps(t *testing.T) {
 			dialect: platform.YugabyteDB,
 			version: "PostgreSQL 11.2 on x86_64-pc-linux-gnu",
 			live:    capability.YugabyteDB24(),
-		},
-		{
-			name:    "spanner",
-			dialect: platform.Spanner,
-			version: "PostgreSQL 14.1",
-			live:    capability.SpannerPostgres(),
 		},
 	}
 
@@ -467,15 +447,6 @@ func TestResolve_MatchesTheDocumentedBannerPlatformRecipe(t *testing.T) {
 			version:               "PostgreSQL 11.2 on x86_64-pc-linux-gnu",
 			banner:                platform.Postgres,
 			normalized:            platform.YugabyteDB,
-			refused:               true,
-			resolvedDialectAgrees: true,
-		},
-		{
-			name:                  "PostgreSQL banner on spanner",
-			dialect:               platform.Spanner,
-			version:               "PostgreSQL 14.1",
-			banner:                platform.Postgres,
-			normalized:            platform.Spanner,
 			refused:               true,
 			resolvedDialectAgrees: true,
 		},

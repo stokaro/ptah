@@ -17,7 +17,7 @@ import (
 )
 
 func TestRender_IndexBlockSize_FailurePath(t *testing.T) {
-	for _, dialect := range []string{platform.Postgres, platform.SQLite, platform.CockroachDB, platform.YugabyteDB, platform.Spanner, platform.SQLServer, platform.Oracle, platform.ClickHouse} {
+	for _, dialect := range []string{platform.Postgres, platform.SQLite, platform.CockroachDB, platform.YugabyteDB, platform.SQLServer, platform.Oracle, platform.ClickHouse} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 			db := indexOptionsSchema()

@@ -9,7 +9,7 @@ The Ptah Migrator provides versioned database migration capabilities with up/dow
 - **Transaction Safety**: Global and per-file modes resolve before a migration changes schema or revision state
 - **SQL File Support**: Migrations can be defined as SQL files
 - **Go Function Support**: Migrations can also be defined as Go functions for complex logic
-- **Multiple Database Support**: Runs through Ptah's `dbschema` connections, with migrator-specific handling for PostgreSQL, CockroachDB, YugabyteDB, Spanner, MySQL, MariaDB, SQL Server, SQLite, ClickHouse, Oracle and YDB
+- **Multiple Database Support**: Runs through Ptah's `dbschema` connections, with migrator-specific handling for PostgreSQL, CockroachDB, YugabyteDB, MySQL, MariaDB, SQL Server, SQLite, ClickHouse and Oracle, and for the engines executable providers serve, such as YDB and Spanner
 - **Dry Run Mode**: Preview what migrations would do without actually applying them
 - **Migration Status**: Check current migration state and pending migrations
 - **Configurable Migration State**: Store migration history in a custom schema/table

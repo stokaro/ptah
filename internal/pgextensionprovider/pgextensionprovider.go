@@ -27,10 +27,10 @@ import (
 )
 
 // Targets are the targets the services are registered for: every target of
-// the PostgreSQL family. CockroachDB and Spanner create an extension and do
-// nothing else with one; the planning of the owner refuses the rest there.
+// the PostgreSQL family. CockroachDB creates an extension and does nothing
+// else with one; the planning of the owner refuses the rest there.
 func Targets() []string {
-	return []string{platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner}
+	return []string{platform.Postgres, platform.CockroachDB, platform.YugabyteDB}
 }
 
 // Provider returns a fresh descriptor of the owner. The runtime that selects

@@ -101,7 +101,7 @@ func TestRenderAlterColumnOperation_FailurePath(t *testing.T) {
 // operation rather than drop the guard, and so does one that does not render
 // the ALTER COLUMN operation.
 func TestRenderColumnGuards_UnsupportedDialect(t *testing.T) {
-	for _, dialect := range []string{"mysql", "mariadb", "sqlite", "sqlserver", "clickhouse", "oracle", "spanner"} {
+	for _, dialect := range []string{"mysql", "mariadb", "sqlite", "sqlserver", "clickhouse", "oracle"} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 

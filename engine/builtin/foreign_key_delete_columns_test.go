@@ -92,8 +92,6 @@ func TestRenderDeleteColumnList_UnsupportedTarget(t *testing.T) {
 		{name: "SQL Server", dialect: "sqlserver", caps: capability.ForDialect("sqlserver"), wantErr: `sqlserver does not support a foreign key ON DELETE column list`},
 		{name: "Oracle", dialect: "oracle", caps: capability.ForDialect("oracle"), wantErr: `oracle does not support a foreign key ON DELETE column list`},
 		{name: "ClickHouse", dialect: "clickhouse", caps: capability.ForDialect("clickhouse"), wantErr: `clickhouse does not support a foreign key ON DELETE column list`},
-		// Spanner refuses the action before it reaches the list.
-		{name: "Spanner", dialect: "spanner", caps: capability.ForDialect("spanner"), wantErr: `spanner does not support a foreign key ON DELETE column list`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

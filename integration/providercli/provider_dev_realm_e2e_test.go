@@ -15,14 +15,14 @@ import (
 	"ptah.run/internal/providerconfig"
 )
 
-// spannerProviderID is the provider Ptah's catalog lists for the spanner
-// engine, which a manifest that selects one for it must name.
-const spannerProviderID = "github.com/stokaro/ptah-spanner-plugin"
+// builtInNameProviderID names the third-party provider that serves an engine
+// under a built-in name; the official catalog claims no built-in name.
+const builtInNameProviderID = "example.com/ptah-postgres-fixture"
 
 // builtInNameCLI runs the fixture's dev database engine under the name of an
-// engine Ptah also builds in, spanner, whose built-in descriptor names a dev
-// database with a SQL query, as the Spanner provider is selected while the
-// built-in engine still exists.
+// engine Ptah also builds in, postgres, whose built-in descriptor names a dev
+// database with a SQL query, as a provider selected for a built-in engine
+// name is.
 type builtInNameCLI struct {
 	manifest, target, dev, schema string
 }
@@ -31,10 +31,10 @@ func newBuiltInNameCLI(c *qt.C) builtInNameCLI {
 	c.Helper()
 	dir := c.TempDir()
 	spec := migrationProviderCommandSpec(c, "devdb")
-	spec.ProviderID = spannerProviderID
-	spec.Environment = append(spec.Environment, "FIXTURE_DEV_DIR="+dir, "FIXTURE_DEV_ENGINE=spanner", "FIXTURE_DEV_PROVIDER_ID="+spannerProviderID)
+	spec.ProviderID = builtInNameProviderID
+	spec.Environment = append(spec.Environment, "FIXTURE_DEV_DIR="+dir, "FIXTURE_DEV_ENGINE=postgres", "FIXTURE_DEV_PROVIDER_ID="+builtInNameProviderID)
 	manifest, err := json.Marshal(providerconfig.Configuration{FormatVersion: providerconfig.FormatVersion,
-		Providers: []providerconfig.Installation{{Spec: spec, Engines: []providerconfig.Engine{{ID: "spanner"}}}}})
+		Providers: []providerconfig.Installation{{Spec: spec, Engines: []providerconfig.Engine{{ID: "postgres"}}}}})
 	c.Assert(err, qt.IsNil)
 	f := builtInNameCLI{manifest: filepath.Join(dir, "providers.json"), target: filepath.Join(dir, "target.db"), dev: filepath.Join(dir, "dev.db"),
 		schema: filepath.Join(dir, "schema.yaml")}
@@ -43,17 +43,17 @@ func newBuiltInNameCLI(c *qt.C) builtInNameCLI {
 	return f
 }
 
-// spannerAddress is a spanner URL of the fixture database at path. The
-// address pins its schema, because a spanner URL that pins none selects the
+// builtInNameAddress is a postgres URL of the fixture database at path. The
+// address pins its schema, because a postgres URL that pins none selects the
 // built-in engine's realm read.
-func spannerAddress(path string) string {
-	return (&url.URL{Scheme: "spanner", Path: "/" + strings.TrimPrefix(filepath.ToSlash(path), "/"), RawQuery: "search_path=main"}).String()
+func builtInNameAddress(path string) string {
+	return (&url.URL{Scheme: "postgres", Path: "/" + strings.TrimPrefix(filepath.ToSlash(path), "/"), RawQuery: "search_path=main"}).String()
 }
 
 func (f builtInNameCLI) apply(c *qt.C, devURL string) (string, int) {
 	c.Helper()
-	_, diagnostics, code := executeProviderCLI(c.Context(), []string{"schema", "apply", "--provider-config", f.manifest, "--provider-engine", "spanner",
-		"--db-url", spannerAddress(f.target), "--schema-file", f.schema, "--dev-url", devURL, "--auto-approve"})
+	_, diagnostics, code := executeProviderCLI(c.Context(), []string{"schema", "apply", "--provider-config", f.manifest, "--provider-engine", "postgres",
+		"--db-url", builtInNameAddress(f.target), "--schema-file", f.schema, "--dev-url", devURL, "--auto-approve"})
 	return diagnostics, code
 }
 
@@ -64,7 +64,7 @@ func (f builtInNameCLI) apply(c *qt.C, devURL string) (string, int) {
 func TestProviderOfABuiltInEngineNameRehearsesOnItsDevDatabase(t *testing.T) {
 	c := qt.New(t)
 	f := newBuiltInNameCLI(c)
-	diagnostics, code := f.apply(c, spannerAddress(f.dev))
+	diagnostics, code := f.apply(c, builtInNameAddress(f.dev))
 	c.Assert(code, qt.Equals, 0, qt.Commentf("%s", diagnostics))
 	c.Assert(tables(c, f.target), qt.DeepEquals, []string{"items"})
 	c.Assert(tables(c, f.dev), qt.HasLen, 0)
@@ -75,7 +75,7 @@ func TestProviderOfABuiltInEngineNameRehearsesOnItsDevDatabase(t *testing.T) {
 func TestProviderOfABuiltInEngineNameRefusesTheTargetAsItsDevDatabase(t *testing.T) {
 	c := qt.New(t)
 	f := newBuiltInNameCLI(c)
-	diagnostics, code := f.apply(c, spannerAddress(f.target))
+	diagnostics, code := f.apply(c, builtInNameAddress(f.target))
 	c.Assert(code, qt.Not(qt.Equals), 0)
 	c.Assert(diagnostics, qt.Contains, "--dev-url must not point at the target database")
 	c.Assert(tables(c, f.target), qt.HasLen, 0)

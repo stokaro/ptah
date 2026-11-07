@@ -435,8 +435,8 @@ replays a migration directory on it, and `ptah-compat schema plan lint` and
   host runs nothing there.
 - The host tells the dev database from the target by the database each session
   reports, since it reads no provider address. It does the same for a provider
-  of an engine Ptah also builds in, such as Spanner: the built-in engine's way
-  of naming a dev database is not used for a provider's session.
+  of an engine Ptah also builds in: the built-in engine's way of naming a dev
+  database is not used for a provider's session.
 
 `ptah db drop-all` and `ptah-compat schema clean` empty a database the provider
 serves through the same `database.dev-cleanup`. The plan is the provider's
@@ -665,7 +665,7 @@ then takes the first candidate that exists. Later candidates are not consulted.
 
 A command asks for an executable provider with `--provider-engine`, when a
 manifest entry claims the engine, or when it names an official engine with no
-built-in implementation, such as YDB or DuckDB. A built-in engine keeps its
+built-in implementation, such as YDB, DuckDB or Spanner. A built-in engine keeps its
 implementation when the command does none of these, and the presence of an
 installed provider changes nothing.
 

@@ -138,8 +138,6 @@ func TestRenderSQL_ViewOptions_FailurePath(t *testing.T) {
 			message: `unsupported feature: oracle: view v carries the PostgreSQL options security_invoker=true, which this target has no clause for`},
 		{name: "oracle materialized view", dialect: "oracle", node: materialized(), want: ptaherr.ErrUnsupportedFeature,
 			message: `unsupported feature: oracle: materialized view m carries the PostgreSQL options fillfactor=70, which this target has no clause for`},
-		{name: "spanner view", dialect: "spanner", node: view(), want: ptaherr.ErrUnsupportedFeature,
-			message: `spanner: view v carries the options security_invoker=true, which require target capability view_options, unavailable on this spanner target`},
 		{name: "cockroachdb materialized view", dialect: "cockroachdb", node: materialized(), want: ptaherr.ErrUnsupportedFeature,
 			message: `cockroachdb: materialized view m carries the options fillfactor=70, which require target capability materialized_view_options, unavailable on this cockroachdb target`},
 		{name: "cockroachdb materialized view option change", dialect: "cockroachdb",

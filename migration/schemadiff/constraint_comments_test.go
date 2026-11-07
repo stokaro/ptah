@@ -120,9 +120,8 @@ func TestCompareWithDialect_RecreatedConstraintCarriesItsCommentInTheAddition(t 
 }
 
 // A constraint's comment is compared only where the target stores it and reads
-// it back. The Spanner interface refuses COMMENT ON CONSTRAINT, and MySQL has
-// no statement for it, so a declared comment there would be a difference no
-// plan can close.
+// it back. MySQL has no statement for it, and a target without the key stores
+// none, so a declared comment there would be a difference no plan can close.
 func TestCompareWithDatabaseInfo_ConstraintCommentsFollowTheTargetsCapabilities(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -133,7 +132,6 @@ func TestCompareWithDatabaseInfo_ConstraintCommentsFollowTheTargetsCapabilities(
 		{name: "PostgreSQL 18", dialect: platform.Postgres, caps: capability.Postgres18(), want: constraintCommentChange("old", "new")},
 		{name: "CockroachDB 25.4", dialect: platform.CockroachDB, caps: capability.CockroachDB25(), want: constraintCommentChange("old", "new")},
 		{name: "YugabyteDB 2024.2", dialect: platform.YugabyteDB, caps: capability.YugabyteDB24(), want: constraintCommentChange("old", "new")},
-		{name: "the Spanner interface", dialect: platform.Spanner, caps: capability.SpannerPostgres(), want: nil},
 		{name: "a PostgreSQL target without the key", dialect: platform.Postgres, caps: capability.Postgres18().With(capability.ConstraintComments, false), want: nil},
 	}
 	for _, test := range tests {

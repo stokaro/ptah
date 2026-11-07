@@ -25,7 +25,7 @@ import (
 
 // Targets lists the PostgreSQL-family compositions that select this owner.
 func Targets() []string {
-	return []string{platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner}
+	return []string{platform.Postgres, platform.CockroachDB, platform.YugabyteDB}
 }
 
 // Provider returns fresh codecs and stateless services. The composition also

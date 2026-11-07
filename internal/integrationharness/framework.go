@@ -401,7 +401,7 @@ var ErrPreconditionUnavailable = errors.New("scenario precondition unavailable")
 
 func isPostgresDistributedSQL(dialect string) bool {
 	switch platform.NormalizeDialect(dialect) {
-	case platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
+	case platform.CockroachDB, platform.YugabyteDB:
 		return true
 	default:
 		return false

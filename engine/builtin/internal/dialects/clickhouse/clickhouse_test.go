@@ -231,8 +231,7 @@ func TestCreateTable_UniqueConstraintIsRefused(t *testing.T) {
 // dialect name.
 //
 // The key already carries this answer, and the PostgreSQL-family renderer
-// already refuses on it -- which is why the same declaration was refused on
-// Spanner (stokaro/ptah#2585) and dropped here. A renderer told the target has
+// already refuses on it (stokaro/ptah#2585). A renderer told the target has
 // the capability must stop refusing, or the gate is a dialect check wearing a
 // capability's name.
 func TestCreateTable_UniqueConstraintRefusalReadsTheCapability(t *testing.T) {

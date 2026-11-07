@@ -309,12 +309,6 @@ func TestRenderLiterals(t *testing.T) {
 			wantUp:  "INSERT INTO \"t\" (\"id\", \"v\") VALUES ('r1', '\\x'::bytea);\n",
 		},
 		{
-			name:    "byte slice spanner is a bytea literal",
-			dialect: "spanner",
-			value:   []byte{0x27, 0x5c, 0x5c},
-			wantUp:  "INSERT INTO \"t\" (\"id\", \"v\") VALUES ('r1', '\\x275c5c'::bytea);\n",
-		},
-		{
 			name:    "byte slice mysql is a hex literal",
 			dialect: "mysql",
 			value:   []byte{0x5c, 0xff, 0x41},

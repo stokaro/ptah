@@ -43,8 +43,8 @@ current schema IR:
   `CREATE UNLOGGED TABLE` on PostgreSQL, whose writes skip the
   write-ahead log; the table is truncated after a crash and is not replicated,
   so it suits a cache and nothing whose contents have to survive. Other
-  dialects render an ordinary table: CockroachDB and Spanner reach Ptah over
-  the same wire protocol and neither creates one, and YugabyteDB takes the
+  dialects render an ordinary table: CockroachDB reaches Ptah over the same
+  wire protocol and does not create one, and YugabyteDB takes the
   keyword and creates an ordinary table. `depends_on` takes table references --
   `[table.t]` -- and orders this table after each one. The ordering already
   reads every foreign key; a declared edge is for a dependency no reference
@@ -216,16 +216,9 @@ Ptah's generated HCL uses that spelling. CockroachDB likewise refuses its exact
 or `schema "CRDB_INTERNAL" {}` remain user schemas.
 
 A `schema` block with nothing in it declares the schema, so a plan on PostgreSQL,
-CockroachDB, YugabyteDB, Spanner or SQL Server creates it when the database lacks it. A plan
+CockroachDB, YugabyteDB or SQL Server creates it when the database lacks it. A plan
 never creates the schema the connection resolved, and never drops a schema the
 document does not mention.
-
-Spanner refuses the schema names its server refuses to create: `spanner_sys`,
-`spanner`, `default`, every name that starts with `spanner_` in lower case, and
-any spelling in another case of `public`, `information_schema`, `pg_catalog`,
-`spanner_sys`, `spanner` or `default`, such as `schema "Public" {}`. It accepts
-`schema "public" {}`, and `schema "SPANNER_APP" {}` and `schema "PG_TOAST" {}`,
-which the server creates.
 
 The `extension.schema` attribute accepts an HCL string template or an exact
 one-name schema traversal such as `schema.extensions` or

@@ -263,9 +263,9 @@ func (r *Resolver) orderBanners() *Resolver {
 // family, such as "PostgreSQL 16.3" for a CockroachDB connection. The head's
 // name is the family's, and a member may report a banner carrying no token of
 // its own, so the string is a less specific spelling of the declared server
-// and the declared dialect's ladder decides. Measured, claiming such a banner
-// for the head turned SpannerPostgres into Postgres14 across 19 keys, among
-// them the keys that stop Ptah emitting DDL Spanner refuses.
+// and the declared dialect's ladder decides: claiming such a banner for the
+// head would plan the member with the head's preset, including the keys that
+// stop Ptah emitting DDL the member refuses.
 //
 // A string naming no product climbs the declared dialect's ladder. A string
 // with no number in it at all receives the declared dialect's default preset,

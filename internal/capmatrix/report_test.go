@@ -28,7 +28,7 @@ func twoCellMatrix() capabilityprobe.Matrix {
 			},
 		},
 		Skipped: []capabilityprobe.CICell{
-			{ID: "spanner-0", Dialect: "spanner", Line: "0", Skip: "no container image is declared for this line"},
+			{ID: "oracle-21", Dialect: "oracle", Line: "21", Skip: "no container image is declared for this line"},
 		},
 	}
 }
@@ -62,7 +62,7 @@ func TestAggregate_HappyPath(t *testing.T) {
 	capmatrix.WriteAggregate(&out, aggregate)
 	c.Assert(out.String(), qt.Contains, "Declared release lines: 3. Runnable cells: 2. Results received: 2.")
 	c.Assert(out.String(), qt.Contains,
-		"- `spanner-0` (spanner 0) — no container image is declared for this line",
+		"- `oracle-21` (oracle 21) — no container image is declared for this line",
 		qt.Commentf("a line no tier can run has to stay visible in the report, or the pipeline "+
 			"silently shrinks to whatever it can already do"))
 }

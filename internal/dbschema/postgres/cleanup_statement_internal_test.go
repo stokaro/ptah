@@ -22,6 +22,8 @@ type builtDropRow struct {
 }
 
 func TestBuildCleanupStatementMatchesTheServerSideForm(t *testing.T) {
+	// A target that accepts the guard on DROP and refuses it inside ALTER.
+	alterWithoutGuard := capability.Postgres17().With(capability.DropConstraintIfExists, false)
 	rows := []builtDropRow{{
 		name:   "a table is dropped by its qualified name",
 		object: postgresCleanupObject{Kind: "table", Schema: "public", Name: "users"},
@@ -48,32 +50,27 @@ func TestBuildCleanupStatementMatchesTheServerSideForm(t *testing.T) {
 		caps: capability.Postgres17(),
 		want: `ALTER TABLE "public"."users" DROP CONSTRAINT IF EXISTS "users_parent_fkey" RESTRICT`,
 	}, {
-		// Spanner's PostgreSQL interface accepts the guard on DROP and refuses
-		// it inside ALTER, so the constraint drop is the one statement here
-		// that loses it. Measured: `<IF [NOT] EXISTS> is not supported in
-		// <ALTER> statement operations` (SQLSTATE P0001), while the same
-		// statement without the guard is accepted (stokaro/ptah#1811).
+		// On a target refusing the guard inside ALTER the constraint drop is
+		// the one statement here that loses it.
 		name: "a target refusing the guard inside ALTER drops the constraint unguarded",
 		object: postgresCleanupObject{
 			Kind: "constraint", Schema: "public", Name: "users_parent_fkey", Qualifier: "users",
 		},
-		caps: capability.SpannerPostgres(),
+		caps: alterWithoutGuard,
 		want: `ALTER TABLE "public"."users" DROP CONSTRAINT "users_parent_fkey" RESTRICT`,
 	}, {
 		// And the same target keeps the guard everywhere it is accepted, so the
 		// capability narrows one statement rather than the whole cleanup.
 		name:   "the same target keeps the guard on a table drop",
 		object: postgresCleanupObject{Kind: "table", Schema: "public", Name: "users"},
-		caps:   capability.SpannerPostgres(),
+		caps:   alterWithoutGuard,
 		want:   `DROP TABLE IF EXISTS "public"."users" RESTRICT`,
 	}, {
-		// Spanner accepts the guard here too, which is what lets the index
-		// drop stay unconditional. Measured on the emulator through PGAdapter
-		// 0.55.2: `DROP INDEX IF EXISTS "public"."absent" RESTRICT` answers ok
-		// on an index that was never there (stokaro/ptah#1901).
+		// And on an index drop, which is what lets the index drop stay
+		// unconditional.
 		name:   "an index is dropped by its qualified name",
 		object: postgresCleanupObject{Kind: "index", Schema: "public", Name: "users_email_idx"},
-		caps:   capability.SpannerPostgres(),
+		caps:   alterWithoutGuard,
 		want:   `DROP INDEX IF EXISTS "public"."users_email_idx" RESTRICT`,
 	}, {
 		// The identifiers come from a catalog, and %I in the query this

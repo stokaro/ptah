@@ -107,11 +107,9 @@ func day(year int, month time.Month, dayOfMonth int) time.Time {
 // lines it could not ask about instead of reporting them supported.
 //
 // SQLite publishes no end-of-life calendar at all and is compiled into the
-// binary rather than run as a server; Spanner is a managed service whose only
-// container is an emulator with no release line.
+// binary rather than run as a server.
 var Unlisted = map[string]string{
-	platform.SQLite:  "SQLite publishes no end-of-life calendar, and the engine is compiled in",
-	platform.Spanner: "a managed service; the cell names an emulator rather than a release line",
+	platform.SQLite: "SQLite publishes no end-of-life calendar, and the engine is compiled in",
 }
 
 // Cycle is one release line as endoflife.date reports it.

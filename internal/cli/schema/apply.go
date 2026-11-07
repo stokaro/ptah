@@ -994,10 +994,10 @@ func decideSchemaApplyLockRequest(cmd *cobra.Command, dbURL, dialect string) err
 // the server reported, which is the authoritative one.
 //
 // A PostgreSQL-wire URL does not name its product. [dbschema.ConnectToDatabase]
-// reads the server's own banner and answers cockroachdb, yugabytedb or spanner
-// for a server that names itself, so `postgres://` reaches a target that may
-// have no session advisory lock. Deciding from the URL alone applies unlocked
-// under an explicit --lock-timeout, against CockroachDB and Spanner.
+// reads the server's own banner and answers cockroachdb or yugabytedb for a
+// server that names itself, so `postgres://` reaches a target that may have no
+// session advisory lock. Deciding from the URL alone applies unlocked under an
+// explicit --lock-timeout, against CockroachDB.
 //
 // It runs only where the server disagrees with the URL, so the note an
 // environment-set timeout earns is written once rather than per decision. A URL

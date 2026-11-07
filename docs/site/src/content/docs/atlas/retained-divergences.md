@@ -878,7 +878,7 @@ written migrations and rolls both back.
 its reset would drop, not only a table. Each writer lists what its reset drops
 through the query the reset runs, and the check reads that list:
 
-- PostgreSQL, CockroachDB, YugabyteDB and Spanner: a view, a materialized view,
+- PostgreSQL, CockroachDB and YugabyteDB: a view, a materialized view,
   a function, a procedure, an aggregate, a sequence, a type, a collation, on
   PostgreSQL a large object, and a default privilege the reset would take
   away: one set in a schema when the URL pins no `search_path`, and on

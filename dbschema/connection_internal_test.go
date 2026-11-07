@@ -24,6 +24,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/connector"
 	"ptah.run/internal/dbschema/dbtest"
+	"ptah.run/internal/providerdiagnostic"
 	"ptah.run/internal/servertarget"
 	"ptah.run/internal/sqlrunner"
 )
@@ -487,10 +488,8 @@ func TestDatabaseConnectionWithSession_KeepsTheConnectionRefinement(t *testing.T
 // the preset the connection will plan with. When the two disagree, the second
 // answer silently wins and the connection is planned as a server it is not:
 // measured, "cockroachdb" plus "PostgreSQL-compatible server 25.4" resolved to
-// PostgreSQL capabilities, and "spanner" plus "PostgreSQL 14.1" replaced
-// SpannerPostgres with Postgres14 across 19 keys — materialized_views,
-// functions and triggers among them. Nothing in the suite noticed, because each
-// reader had its own table and each table was tested alone.
+// PostgreSQL capabilities. Nothing in the suite noticed, because each reader
+// had its own table and each table was tested alone.
 //
 // This asserts the fixed point rather than either table: whatever dialect the
 // detection settles on, the resolver handed that dialect must answer from it.
@@ -516,11 +515,6 @@ func TestWireDialectDetectionAgreesWithTheCapabilityResolver(t *testing.T) {
 			version:  "PostgreSQL 11.2-YB-2.25.1.0-b0 on x86_64-pc-linux-gnu, compiled by clang, YugabyteDB",
 		},
 		{
-			name:     "postgres wire, Spanner banner on a postgres URL",
-			declared: "postgres",
-			version:  "Cloud Spanner PostgreSQL interface",
-		},
-		{
 			name:     "postgres wire, explicit cockroachdb with a generic banner",
 			declared: "cockroachdb",
 			version:  "PostgreSQL-compatible server 25.4",
@@ -544,16 +538,6 @@ func TestWireDialectDetectionAgreesWithTheCapabilityResolver(t *testing.T) {
 			name:     "postgres wire, explicit yugabytedb with its own banner",
 			declared: "yugabytedb",
 			version:  "PostgreSQL 15.2-YB-2026.1.0.0-b0",
-		},
-		{
-			name:     "postgres wire, explicit spanner with a plain PostgreSQL banner",
-			declared: "spanner",
-			version:  "PostgreSQL 14.1",
-		},
-		{
-			name:     "postgres wire, explicit spanner with its own banner",
-			declared: "spanner",
-			version:  "Cloud Spanner PostgreSQL interface",
 		},
 		{
 			name:     "mysql wire, MySQL banner",
@@ -596,6 +580,34 @@ func TestWireDialectDetectionAgreesWithTheCapabilityResolver(t *testing.T) {
 			c.Assert(resolution.Capabilities, qt.DeepEquals, capability.ForServerVersion(detected, tt.version))
 		})
 	}
+}
+
+// TestWireDialectDetection_AProviderOnlyEngineBannerIsRefused pins that a
+// server whose banner names an engine Ptah serves only through its provider is
+// not described as the engine the URL named.
+//
+// Spanner's PostgreSQL interface answers a postgres:// URL. Read through the
+// PostgreSQL engine it would be inspected, planned and written with PostgreSQL
+// semantics, so describing the connection stops with the catalog's diagnostic,
+// which names the provider and its setup page, before the session's schema is
+// asked for.
+func TestWireDialectDetection_AProviderOnlyEngineBannerIsRefused(t *testing.T) {
+	c := qt.New(t)
+	db := bannerDB(c, "Cloud Spanner PostgreSQL interface")
+
+	info, err := getDatabaseInfo(
+		c.Context(), serviceFor(platform.Postgres), &connector.Pool{DB: db.SQL},
+		requestFor(c, "postgres://localhost/app"),
+	)
+
+	var diagnostic *providerdiagnostic.Diagnostic
+	c.Assert(err, qt.ErrorAs, &diagnostic)
+	c.Assert(diagnostic.Code, qt.Equals, "provider_engine_identified")
+	c.Assert(diagnostic.EngineID, qt.Equals, "spanner")
+	c.Assert(diagnostic.ProviderID, qt.Equals, "github.com/stokaro/ptah-spanner-plugin")
+	c.Assert(diagnostic.SetupURL, qt.Not(qt.Equals), "")
+	c.Assert(err, qt.ErrorMatches, `(?s).*Connect with a spanner:// URL.*`)
+	c.Assert(info.Schema, qt.Equals, "")
 }
 
 // bannerDB is a server that answers the questions a PostgreSQL-wire or

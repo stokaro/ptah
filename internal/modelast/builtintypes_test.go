@@ -294,7 +294,7 @@ func TestCollectDatabaseKeepsTheScalarEnumHalfWithIssue1276(t *testing.T) {
 //
 // The guard was keyed on the literal platform.Postgres while
 // [schemaprep.QualifyDeclaredUserTypes] runs for every dialect, so on the other
-// three PostgreSQL-family targets the PASS was present and only the GUARD was
+// PostgreSQL-family targets the PASS was present and only the GUARD was
 // absent. Measured with the shipped CLI on the commit before the fix, one
 // document declaring `CREATE DOMAIN advm.money` beside a `money` column and a
 // `money[]` column:
@@ -302,7 +302,6 @@ func TestCollectDatabaseKeepsTheScalarEnumHalfWithIssue1276(t *testing.T) {
 //	ptah schema render --dialect postgres     ->  "c" money       "arr" money[]
 //	ptah schema render --dialect cockroachdb  ->  "c" advm.money  "arr" advm.money[]
 //	ptah schema render --dialect yugabytedb   ->  "c" advm.money  "arr" advm.money[]
-//	ptah schema render --dialect spanner      ->  "c" advm.money  "arr" advm.money[]
 //
 // and the yugabytedb plan replayed into a live YugabyteDB 2026.1.0.0-b118 at
 // exit 0, where the catalog then read `c | advm.money | advm | d` against a
@@ -311,10 +310,10 @@ func TestCollectDatabaseKeepsTheScalarEnumHalfWithIssue1276(t *testing.T) {
 //
 // The spellings come from platform.DialectSpellings rather
 // than listed here, so this asserts over every spelling ptah accepts -- the
-// aliases `pgx`, `crdb`, `ysql` and `google_spanner` included -- and a family
+// aliases `pgx`, `crdb` and `ysql` included -- and a family
 // member added to platform.IsPostgresFamily later is covered without anyone
 // editing this file. That is the same reason the guard selects on that
-// predicate instead of naming four dialects.
+// predicate instead of naming the dialects.
 func TestQualifyDeclaredUserTypesGuardsEveryPostgresFamilySpelling(t *testing.T) {
 	c := qt.New(t)
 
@@ -325,7 +324,7 @@ func TestQualifyDeclaredUserTypesGuardsEveryPostgresFamilySpelling(t *testing.T)
 	// Extraction control: an empty or truncated family list would make the
 	// sweep below pass while comparing nothing.
 	for _, canonical := range []string{
-		platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner,
+		platform.Postgres, platform.CockroachDB, platform.YugabyteDB,
 	} {
 		c.Assert(family, qt.Contains, canonical)
 	}

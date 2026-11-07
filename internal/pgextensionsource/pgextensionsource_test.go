@@ -100,7 +100,7 @@ func TestReaders_ScopeDecidesTheOwner_FailurePath(t *testing.T) {
 				goSource(`//ptah:schema:extension name="vector" dialects="`+test.scope+`"`))
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
-			c.Assert(err, qt.ErrorMatches, `(?s).*`+test.want+`; scope the declaration to cockroachdb,postgres,spanner,yugabytedb, `+
+			c.Assert(err, qt.ErrorMatches, `(?s).*`+test.want+`; scope the declaration to cockroachdb,postgres,yugabytedb, `+
 				`or leave dialects out to declare it for every target`)
 			c.Assert(db.FeatureObjects.Len(), qt.Equals, 0)
 		})

@@ -176,10 +176,10 @@ func (r Request) DecideFromURL() error {
 // which is the authoritative one.
 //
 // A PostgreSQL-wire URL does not name its product. The connector reads the
-// server's own banner and answers cockroachdb, yugabytedb or spanner for a
-// server that names itself, so `postgres://` reaches a target that may have no
-// session advisory lock. Deciding from the URL alone runs unlocked under an
-// explicit timeout, against CockroachDB and Spanner.
+// server's own banner and answers cockroachdb or yugabytedb for a server that
+// names itself, so `postgres://` reaches a target that may have no session
+// advisory lock. Deciding from the URL alone runs unlocked under an explicit
+// timeout, against CockroachDB.
 //
 // It decides only where the server disagrees with the URL, so a request already
 // refused from the URL is not weighed twice, and a URL whose dialect did not

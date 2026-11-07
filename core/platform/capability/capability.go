@@ -4567,210 +4567,6 @@ func buildYugabyteDB24() Capabilities {
 		With(GeneratedColumns, false)
 }
 
-// SpannerPostgres is the conservative preset for Cloud Spanner's PostgreSQL
-// interface. Spanner's SQL surface is sufficiently different that Ptah only
-// routes the simplest PostgreSQL-family statements through this preset; enums,
-// sequences, RLS, advisory locks, and XML are disabled. Enforced foreign keys,
-// including circular relationships added with ALTER TABLE, are supported.
-//
-// Object kinds: views yes, the other three no, and this is the row that made
-// the four keys necessary. Spanner shares the PostgreSQL planner and renderer,
-// so before them nothing could stop a plpgsql function or a trigger from being
-// planned and rendered for it. Google documents CREATE VIEW and states in the
-// same place that a Spanner view is not a materialized view because it does
-// not store the query result; the PostgreSQL-interface migration guidance
-// states that Spanner does not run user code in the database, so triggers and
-// user-defined stored procedures and functions belong in the application.
-//
-// The object-kind rows above rest on that documentation. The rest of this
-// preset does not: every key carrying a "Measured" comment below was executed
-// against the Cloud Spanner emulator behind PGAdapter, which the capability
-// probe runs on every pull request (stokaro/ptah#942 closed on that).
-//
-// There is an integration target now as well, exercising render, apply, read
-// and compare against the same emulator (stokaro/ptah#1719).
-//
-// What is still not measured is the managed service. An emulator is evidence
-// about the PostgreSQL interface, not about hosted Spanner, and that is why the
-// line stays best-effort -- not for want of coverage.
-func SpannerPostgres() Capabilities { return presetSpannerPostgres() }
-
-var presetSpannerPostgres = sync.OnceValue(buildSpannerPostgres)
-
-// buildSpannerPostgres builds the [SpannerPostgres] set; the preset builds it once and shares it.
-func buildSpannerPostgres() Capabilities {
-	return Postgres16().
-		// Measured 2026-11-05 on the emulator behind PGAdapter 0.56.1: CREATE
-		// VIEW ... WITH (security_invoker = true) is taken and
-		// pg_class.reloptions reports nothing for the view, security_barrier
-		// is refused by name, and ALTER VIEW is `Object type is not supported`.
-		// A declared option would never read back, so the renderer refuses it.
-		With(ViewOptions, false).
-		With(MaterializedViewOptions, false).
-		// Unmeasured against a live emulator and false on the conservative
-		// side: the emulator refuses ALTER TABLE ... VALIDATE CONSTRAINT, and
-		// an unvalidated constraint nothing can complete is worse than the
-		// plain statement this leaves in place.
-		With(AddConstraintNotValid, false).
-		// Unmeasured against a live emulator and false on the conservative
-		// side: Spanner refuses the UNIQUE constraint spelling outright, so a
-		// clause on it cannot be reached, and its renderer already errors on
-		// this shape (stokaro/ptah#2820).
-		With(UniqueNullsDistinctClause, false).
-		// Unmeasured against a live emulator and false on the conservative
-		// side: the list is PostgreSQL 15 grammar, and Spanner's foreign keys
-		// take neither SET NULL nor SET DEFAULT at all.
-		With(ForeignKeyDeleteColumnList, false).
-		// Unmeasured against a live emulator and false on the conservative
-		// side: the emulator refuses DEFERRABLE on a foreign key, and a key
-		// is no likelier to take it.
-		With(DeferrableKeys, false).
-		// Unmeasured against a live emulator and false on the conservative
-		// side: a MATCH type is PostgreSQL grammar that Spanner's foreign keys
-		// are not known to record.
-		With(ForeignKeyMatchFull, false).
-		// Measured on the Cloud Spanner emulator behind PGAdapter 0.55.2:
-		// `TTL INTERVAL '30 days' ON created_at` is accepted and STORED, and
-		// reads back from information_schema.tables. It is the one row-expiry
-		// surface Spanner has -- RowLevelTTL stays false because the storage
-		// parameters it names are accepted and discarded (stokaro/ptah#2236).
-		// RowDeletionPolicyEpochColumn stays false: the clause has no unit, so
-		// it cannot say what an integer column counts.
-		With(RowDeletionPolicy, true).
-		// Measured on the Cloud Spanner emulator behind PGAdapter 0.55.2:
-		// `CREATE SCHEMA app` is accepted and `COMMENT ON SCHEMA app IS 'x'`
-		// immediately after it answers `Unknown statement`. PostgreSQL,
-		// CockroachDB v24.1.33 and YugabyteDB 2024.1.3.0 all accept it and read
-		// it back, so this is Spanner's alone (stokaro/ptah#2651).
-		With(SchemaComments, false).
-		// Measured 2026-09-25 on the same emulator behind PGAdapter 0.55.3:
-		// COMMENT ON VIEW, SEQUENCE, TYPE and EXTENSION all answer `Unknown
-		// statement`, as COMMENT ON TABLE and COLUMN do (stokaro/ptah#3627),
-		// and so, measured 2026-09-26, do COMMENT ON FUNCTION, PROCEDURE,
-		// MATERIALIZED VIEW, TRIGGER and POLICY (stokaro/ptah#3646).
-		With(ViewComments, false).
-		With(SequenceComments, false).
-		With(TypeComments, false).
-		With(DomainComments, false).
-		With(ExtensionComments, false).
-		With(FunctionComments, false).
-		With(ProcedureComments, false).
-		With(MaterializedViewComments, false).
-		With(TriggerComments, false).
-		With(PolicyComments, false).
-		// Measured 2026-09-26 on the same emulator behind PGAdapter 0.55.3:
-		// COMMENT ON CONSTRAINT answers `Unknown statement` for a CHECK and a
-		// FOREIGN KEY constraint (stokaro/ptah#3678).
-		With(ConstraintComments, false).
-		// Measured 2026-10-12 on the emulator behind PGAdapter 0.56.1:
-		// COMMENT ON INDEX answers `Unknown statement`, and CREATE ROLE
-		// `Statement is not supported`, so no role holds a comment.
-		With(IndexComments, false).
-		With(RoleComments, false).
-		// Measured on the Cloud Spanner emulator behind PGAdapter:
-		// `<DEFERRABLE> constraints are not supported` (stokaro/ptah#1624).
-		With(DeferrableConstraints, false).
-		// Measured on the Cloud Spanner emulator behind PGAdapter 0.55.2, both
-		// the table-level and the column-level spelling: `<UNIQUE> constraint
-		// is not supported, create a unique index instead.` The same statement
-		// without the UNIQUE creates, and CREATE UNIQUE INDEX on the same
-		// column creates (stokaro/ptah#2585).
-		With(UniqueConstraints, false).
-		// Measured: `Only <TABLE> is supported for renaming`.
-		With(RenameColumnClause, false).
-		// Measured on the Cloud Spanner emulator behind PGAdapter:
-		// `relation "information_schema.view_table_usage" does not exist`.
-		With(CatalogViewDependencies, false).
-		// Measured on the Cloud Spanner emulator through PGAdapter 0.55.2:
-		// `WITH RECURSIVE m AS (SELECT relname FROM pg_class) ...` answers
-		// `syntax error at or near "m"`, because PGAdapter prepends its own
-		// `WITH pg_class AS (...)` beside the query's WITH clause and the two
-		// only merge when the query's is not RECURSIVE (stokaro/ptah#1811).
-		With(CatalogRecursiveCTE, false).
-		// Measured on the Cloud Spanner emulator through PGAdapter 0.55.2:
-		// `relation "pg_inherits" does not exist` (stokaro/ptah#1811).
-		With(CatalogPartitions, false).
-		// Measured, unlike the rest of this preset: on the Cloud Spanner
-		// emulator through PGAdapter 0.55.2, `obj_description(2200,
-		// 'pg_namespace')` answers `The Postgres Type is not supported: name`.
-		With(PostgresCatalogFunctions, false).
-		With(CatalogRowStatistics, false).
-		With(CatalogDependencies, false).
-		// Measured on the same endpoint: `relation "pg_default_acl" does not
-		// exist` (stokaro/ptah#1811).
-		With(CatalogDefaultPrivileges, false).
-		// pg_trigger itself is missing on the emulator, so the function has
-		// nothing to print; Triggers is false here for the same reason.
-		With(CatalogTriggerDefinitions, false).
-		// Measured 2026-08-19 on the emulator behind PGAdapter 0.55.2, with
-		// CREATE TABLE as the control: all three user-type kinds answer
-		// `Statement is not supported` (stokaro/ptah#1717).
-		With(DomainTypes, false).
-		With(CompositeTypes, false).
-		With(RangeTypes, false).
-		// Measured on the emulator behind PGAdapter 0.56.1: `DECIMAL(10,2)`
-		// answers `Type modifier is not supported for type <numeric>`, and
-		// `smallint` answers `Type <int2> is not supported; use bigint or int8
-		// instead`, so there is no 16-bit column to carry a default.
-		With(ParameterizedDecimal, false).
-		With(SmallIntegerDefaults, false).
-		// Measured on the same endpoint AND confirmed against the PostgreSQL
-		// dialect's own reference, which is what separates these three from the
-		// assumptions below them: `ALTER TABLE Concerts DROP CONSTRAINT
-		// concert_id_gt_0`, `DROP INDEX [ IF EXISTS ] name`, and of a CHECK
-		// expression, "if the expression evaluates to FALSE, the data change is
-		// not allowed" (stokaro/ptah#942).
-		With(DropConstraintGeneric, true).
-		With(DropConstraintIfExists, false).
-		With(DropIndexIfExists, true).
-		With(CheckConstraintsEnforced, true).
-		With(EnumCustomType, false).
-		With(CreateIndexConcurrently, false).
-		With(DropIndexConcurrently, false).
-		With(IndexIncludeSPGiST, false).
-		With(MaterializedViews, false).
-		// Measured on the Cloud Spanner emulator behind PGAdapter 0.55.2:
-		// every declarative apply failed on its first statement with
-		// `DDL statements are only allowed outside explicit transactions`
-		// (SQLSTATE 25000). The same DDL applies when it is not wrapped, so
-		// what the server refuses is the wrapper (stokaro/ptah#1793).
-		With(DDLInsideTransaction, false).
-		// Neither runtime policy is measured on this endpoint, and the
-		// migrator excluded it from both before there were keys to say so.
-		// The key describes what Ptah supports on a target rather than what
-		// the wire protocol suggests (stokaro/ptah#1713).
-		With(MigrationLockTimeout, false).
-		With(MigrationStatementTimeout, false).
-		With(TransactionalDDL, false).
-		With(Functions, false).
-		// A procedure is the same routine object with its return type removed,
-		// so an endpoint that takes no CREATE FUNCTION takes no CREATE
-		// PROCEDURE either (stokaro/ptah#1722).
-		With(Procedures, false).
-		With(Triggers, false).
-		With(CreateOrReplaceTrigger, false).
-		With(RowLevelSecurity, false).
-		With(RoleManagement, false).
-		// The three halves the key requires all exist now. The endpoint writes
-		// and drops sequences, and the reader reads them back through the
-		// quoted spelling of information_schema.sequences -- the unquoted one
-		// is a stub PGAdapter answers with zero rows, which is what made this
-		// look impossible (stokaro/ptah#1856). What it does not take is the
-		// option clauses, hence the restriction beside it.
-		With(Sequences, true).
-		With(SequenceStartCounterOnly, true).
-		With(XMLType, false).
-		With(AdvisoryLocks, false).
-		With(ForeignKeysRequireUniqueReference, false).
-		With(ForeignKeysCreateBackingIndex, true).
-		// Measured against the PGAdapter emulator v0.56.1: `CREATE TABLE sc_nopk
-		// (n int)` is accepted, and `ALTER TABLE sc_pka DROP CONSTRAINT
-		// sc_pka_pkey, ADD PRIMARY KEY (a, b)` is refused, because a key is
-		// part of a Spanner table's storage layout.
-		With(PrimaryKeyRequired, false).
-		With(PrimaryKeyAlterable, false)
-}
-
 // Oracle23 is the capability set measured against Oracle 23.26.
 //
 // Every value below is a transcription of what the live server answered, taken
@@ -4819,8 +4615,7 @@ func buildOracle23() Capabilities {
 		DropConstraintGeneric: true,
 		// `ALTER TABLE t DROP CONSTRAINT IF EXISTS c` -> ORA-01735: invalid
 		// ALTER TABLE option. Oracle takes the guard on CREATE and DROP of an
-		// object and refuses it inside ALTER, which is the split SpannerPostgres
-		// carries for the same reason.
+		// object and refuses it inside ALTER.
 		DropConstraintIfExists: false,
 		DropIndexIfExists:      true,
 		ObjectExistenceGuards:  true,
@@ -5154,7 +4949,6 @@ func NamedPresets() []NamedPreset {
 		{"SQLite352", SQLite352()},
 		{"SQLite3", SQLite3()},
 		{"SQLServer2022", SQLServer2022()},
-		{"SpannerPostgres", SpannerPostgres()},
 		{"Oracle21", Oracle21()},
 		{"Oracle23", Oracle23()},
 	}
@@ -5224,9 +5018,9 @@ func ForDialect(dialect string) Capabilities {
 // the top of the ladder.
 //
 // Saturation is defined where a dialect's ladder names a newest measured line.
-// SQLite's ladder names none, and Spanner has no ladder and is resolved from
-// the banner without consulting a version at all; both report Saturated=false
-// and an empty NewestMeasured.
+// SQLite's ladder names none, and a dialect with no ladder is resolved without
+// consulting a version at all; both report Saturated=false and an empty
+// NewestMeasured.
 type VersionResolution struct {
 	// Capabilities is the resolved preset, never nil for a known dialect.
 	Capabilities Capabilities

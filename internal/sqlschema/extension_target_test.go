@@ -64,7 +64,7 @@ func TestRead_ACreateExtensionWithoutItsOwner_FailurePath(t *testing.T) {
 func TestRead_ACreateExtensionOutsideTheFamily_HappyPath(t *testing.T) {
 	for _, test := range []struct{ name, target string }{
 		{name: "postgres", target: platform.Postgres}, {name: "cockroachdb", target: platform.CockroachDB},
-		{name: "yugabytedb", target: platform.YugabyteDB}, {name: "spanner", target: platform.Spanner}, {name: "no target"},
+		{name: "yugabytedb", target: platform.YugabyteDB}, {name: "no target"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)

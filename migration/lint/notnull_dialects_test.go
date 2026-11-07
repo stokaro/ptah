@@ -18,7 +18,7 @@ func pg303Codes(codes []string) []string {
 	return kept
 }
 
-// TestSetNotNullRule_NamesEachEngineItWasMeasuredOn pins PG303 to the four
+// TestSetNotNullRule_NamesEachEngineItWasMeasuredOn pins PG303 to the three
 // engines that take the SET NOT NULL spelling, with the consequence each was
 // measured to have. Every other PG rule still names postgres alone.
 func TestSetNotNullRule_NamesEachEngineItWasMeasuredOn(t *testing.T) {
@@ -29,7 +29,6 @@ func TestSetNotNullRule_NamesEachEngineItWasMeasuredOn(t *testing.T) {
 		{dialect: "postgres", want: "scans the whole table under an ACCESS EXCLUSIVE lock"},
 		{dialect: "cockroachdb", want: "validates every existing row in a schema-change job, and a row holding NULL fails it (validation of column NOT NULL failed on row, SQLSTATE 23502)"},
 		{dialect: "yugabytedb", want: "checks every existing row, and a row holding NULL aborts it (column contains null values)"},
-		{dialect: "spanner", want: "runs as a schema change that validates every existing row, and a row holding NULL fails it (FAILED_PRECONDITION: Cannot specify a null value for column) and leaves the column nullable"},
 		{dialect: "", want: "scans the whole table under an ACCESS EXCLUSIVE lock"},
 	}
 

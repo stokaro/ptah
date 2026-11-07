@@ -531,15 +531,6 @@ func (r *selectRenderer) renderDelete(stmt *DeleteStatement) error {
 // lack the key and a non-empty RETURNING is rejected there rather than emitted
 // as SQL the engine cannot run. YDB 25.1 and 25.2 lack it for the same kind of
 // reason: UPDATE ... RETURNING fails there on a table with a unique index.
-//
-// "The PostgreSQL family" includes Cloud Spanner's PostgreSQL interface, which
-// is what Ptah targets when the dialect is spanner: RETURNING is emitted there
-// exactly as it is for PostgreSQL, rather than singled out for a refusal that
-// would make this the one place in the repository where Spanner is not
-// PostgreSQL. Spanner has no live coverage in this repository (stokaro/ptah#942)
-// and the databases support matrix already asks callers to review generated
-// Spanner SQL before relying on it; that caveat covers the whole statement, not
-// this clause in particular.
 func (r *selectRenderer) renderReturning(cols []ColumnRef) error {
 	if len(cols) == 0 {
 		return nil

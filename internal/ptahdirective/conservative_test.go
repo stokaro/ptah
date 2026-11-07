@@ -16,7 +16,7 @@ import (
 // name the same engines in registry order, which cannot change an
 // intersection.
 var retiredReaders = []string{
-	"postgres", "mysql", "mariadb", "sqlite", "clickhouse", "cockroachdb", "yugabytedb", "sqlserver", "spanner",
+	"postgres", "mysql", "mariadb", "sqlite", "clickhouse", "cockroachdb", "yugabytedb", "sqlserver",
 }
 
 // retiredConservativeMarkers is the reading the retired list gave: the markers

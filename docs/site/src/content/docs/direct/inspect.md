@@ -220,9 +220,9 @@ schema does, so silence about one of those in this format still removes it —
 except a hypertable, whose removal TimescaleDB has no statement for and which is
 refused instead. YAML has a key for none of the four.
 
-A table's row deletion policy, such as a Spanner one, is written as a
-`platform` block of its engine's properties, which a document read back
-declares; DBML has no spelling for it.
+A table's row deletion policy, such as one the Spanner provider reads, is
+written as a `platform` block of its engine's properties, which a document read
+back declares; DBML has no spelling for it.
 
 A YDB table's TTL, changefeeds, column families, partitioning, read replicas and
 key bloom filter have no HCL or DBML spelling through the YDB provider, and a

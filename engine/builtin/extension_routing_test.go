@@ -48,7 +48,6 @@ var extensionOwners = map[schemaext.Kind][]string{
 	"ptah.run/pgtype/create-domain":                           postgresFamilyStatements,
 	"ptah.run/pgtype/create-range":                            postgresFamilyStatements,
 	"ptah.run/pgtype/drop":                                    postgresFamilyStatements,
-	"ptah.run/spanner/alter-row-deletion-policy":              {"spanner/alter-table"},
 	"ptah.run/synonym/operation":                              {"oracle/statement", "sqlserver/statement"},
 	"ptah.run/oratype/create-domain":                          {"oracle/statement"},
 	"ptah.run/oratype/replace-object-type":                    {"oracle/statement"},
@@ -59,7 +58,7 @@ var extensionOwners = map[schemaext.Kind][]string{
 
 // postgresFamilyStatements are the targets that compose the TimescaleDB and
 // row-security owners, each in the statement role.
-var postgresFamilyStatements = []string{"cockroachdb/statement", "postgres/statement", "spanner/statement", "yugabytedb/statement"}
+var postgresFamilyStatements = []string{"cockroachdb/statement", "postgres/statement", "yugabytedb/statement"}
 
 // TestExtensionPayloads_RouteThroughTheBundledRuntime is the feature-routing
 // layer of the guard: every payload the owner packages declare, which the

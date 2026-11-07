@@ -133,8 +133,6 @@ func TestReadWith_PartitionOf_FailurePath(t *testing.T) {
 			want: `line 1, column 16: CREATE TABLE e PARTITION OF declares a PostgreSQL partition, which Ptah does not read on mariadb`},
 		{name: "cockroachdb", source: "CREATE TABLE e PARTITION OF events DEFAULT;", target: "cockroachdb",
 			want: `line 1, column 16: CREATE TABLE e PARTITION OF declares a PostgreSQL partition, which Ptah does not read on cockroachdb`},
-		{name: "spanner", source: "CREATE TABLE e PARTITION OF events DEFAULT;", target: "spanner",
-			want: `line 1, column 16: CREATE TABLE e PARTITION OF declares a PostgreSQL partition, which Ptah does not read on spanner`},
 		{name: "sqlite", source: "CREATE TABLE e PARTITION OF events DEFAULT;", target: "sqlite",
 			want: `line 1, column 16: CREATE TABLE e PARTITION OF declares a PostgreSQL partition, which Ptah does not read on sqlite`},
 		{name: "sqlserver", source: "CREATE TABLE e PARTITION OF events DEFAULT;", target: "sqlserver",

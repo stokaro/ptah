@@ -60,17 +60,17 @@ func TestPostgreSQLRenderer_SequenceCapability(t *testing.T) {
 		c.Assert(legacyPostgresSQL(sql), qt.Contains, "id SERIAL PRIMARY KEY NOT NULL")
 	})
 
-	t.Run("spanner rejects auto increment mapping", func(t *testing.T) {
+	t.Run("a start-counter-only target rejects auto increment mapping", func(t *testing.T) {
 		c := qt.New(t)
 
-		renderer := postgres.NewWithCapabilities(capability.SpannerPostgres(), platform.Spanner)
+		renderer := postgres.NewWithCapabilities(capability.Postgres17().With(capability.SequenceStartCounterOnly, true), platform.Postgres)
 		table := ast.NewCreateTable("users").
 			AddColumn(ast.NewColumn("id", "BIGINT AUTO_INCREMENT").SetPrimary())
 
 		_, err := renderer.Render(table)
 
 		c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-		c.Assert(err, qt.ErrorMatches, `error rendering column id: unsupported feature: spanner does not support sequence-backed type BIGINT AUTO_INCREMENT; use a platform-specific type override`)
+		c.Assert(err, qt.ErrorMatches, `error rendering column id: unsupported feature: postgres does not support sequence-backed type BIGINT AUTO_INCREMENT; use a platform-specific type override`)
 	})
 }
 
@@ -96,22 +96,22 @@ func TestPostgreSQLRenderer_RowLevelSecurityCapability(t *testing.T) {
 			node: ast.NewCreatePolicy("tenant_policy", "users").
 				SetPolicyFor("SELECT").
 				SetUsingExpression("tenant_id = current_setting('app.tenant_id')::uuid"),
-			skipped: "-- SPANNER: policy tenant_policy on users is not supported by this target; skipped.",
+			skipped: "-- POSTGRES: policy tenant_policy on users is not supported by this target; skipped.",
 		},
 		{
 			name:    "drop policy",
 			node:    ast.NewDropPolicy("tenant_policy", "users").SetIfExists(),
-			skipped: "-- SPANNER: policy tenant_policy on users is not supported by this target; skipped.",
+			skipped: "-- POSTGRES: policy tenant_policy on users is not supported by this target; skipped.",
 		},
 		{
 			name:    "enable RLS",
 			node:    ast.NewAlterTableEnableRLS("users"),
-			skipped: "-- SPANNER: row-level security on users is not supported by this target; skipped.",
+			skipped: "-- POSTGRES: row-level security on users is not supported by this target; skipped.",
 		},
 		{
 			name:    "disable RLS",
 			node:    ast.NewAlterTableDisableRLS("users"),
-			skipped: "-- SPANNER: row-level security on users is not supported by this target; skipped.",
+			skipped: "-- POSTGRES: row-level security on users is not supported by this target; skipped.",
 		},
 	}
 
@@ -119,7 +119,7 @@ func TestPostgreSQLRenderer_RowLevelSecurityCapability(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			renderer := postgres.NewWithCapabilities(capability.SpannerPostgres(), platform.Spanner)
+			renderer := postgres.NewWithCapabilities(withoutRowLevelSecurity(), platform.Postgres)
 			sql, err := renderer.Render(tt.node)
 
 			c.Assert(err, qt.IsNil)
@@ -137,27 +137,27 @@ func TestPostgreSQLRenderer_RoleManagementCapability(t *testing.T) {
 		{
 			name:    "create role",
 			node:    ast.NewCreateRole("app_role"),
-			skipped: "-- SPANNER: role app_role is not supported by this target; skipped.",
+			skipped: "-- POSTGRES: role app_role is not supported by this target; skipped.",
 		},
 		{
 			name:    "drop role",
 			node:    ast.NewDropRole("app_role").SetIfExists(),
-			skipped: "-- SPANNER: role app_role is not supported by this target; skipped.",
+			skipped: "-- POSTGRES: role app_role is not supported by this target; skipped.",
 		},
 		{
 			name:    "alter role",
 			node:    ast.NewAlterRole("app_role").AddOperation(ast.NewSetLoginOperation(true)),
-			skipped: "-- SPANNER: role app_role is not supported by this target; skipped.",
+			skipped: "-- POSTGRES: role app_role is not supported by this target; skipped.",
 		},
 		{
 			name:    "grant",
 			node:    ast.NewGrantPrivilege("app_role", "TABLE", "users", []string{"SELECT"}),
-			skipped: "-- SPANNER: grant on users to app_role is not supported by this target; skipped.",
+			skipped: "-- POSTGRES: grant on users to app_role is not supported by this target; skipped.",
 		},
 		{
 			name:    "revoke",
 			node:    ast.NewRevokePrivilege("app_role", "TABLE", "users", []string{"SELECT"}),
-			skipped: "-- SPANNER: revoke on users from app_role is not supported by this target; skipped.",
+			skipped: "-- POSTGRES: revoke on users from app_role is not supported by this target; skipped.",
 		},
 	}
 
@@ -165,7 +165,7 @@ func TestPostgreSQLRenderer_RoleManagementCapability(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			renderer := postgres.NewWithCapabilities(capability.SpannerPostgres(), platform.Spanner)
+			renderer := postgres.NewWithCapabilities(withoutRoleManagement(), platform.Postgres)
 			sql, err := renderer.Render(tt.node)
 
 			c.Assert(err, qt.IsNil)
@@ -216,7 +216,7 @@ func TestPostgreSQLRenderer_RoleManagementValidationPrecedesCapabilityRefusal(t 
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			renderer := postgres.NewWithCapabilities(capability.SpannerPostgres(), platform.Spanner)
+			renderer := postgres.NewWithCapabilities(withoutRoleManagement(), platform.Postgres)
 			sql, err := renderer.Render(tt.node)
 
 			c.Assert(err, qt.ErrorMatches, tt.wantErr)
@@ -228,23 +228,35 @@ func TestPostgreSQLRenderer_RoleManagementValidationPrecedesCapabilityRefusal(t 
 func TestPostgreSQLRenderer_SkipCommentNamesStayCommentOnly(t *testing.T) {
 	c := qt.New(t)
 
-	renderer := postgres.NewWithCapabilities(capability.SpannerPostgres(), platform.Spanner)
+	renderer := postgres.NewWithCapabilities(withoutRoleManagement(), platform.Postgres)
 	role := ast.NewCreateRole("app_role\nDROP TABLE users")
 
 	sql, err := renderer.Render(role)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(sql, qt.Contains, "-- SPANNER: role app_role DROP TABLE users is not supported by this target; skipped.")
+	c.Assert(sql, qt.Contains, "-- POSTGRES: role app_role DROP TABLE users is not supported by this target; skipped.")
 	c.Assert(sql, qt.Not(qt.Contains), "\nDROP TABLE users")
-	c.Assert(atlasschema.SplitApplyStatements(sql, platform.Spanner), qt.HasLen, 0)
+	c.Assert(atlasschema.SplitApplyStatements(sql, platform.Postgres), qt.HasLen, 0)
+}
+
+// withoutRowLevelSecurity is a PostgreSQL preset for a target that models no
+// row-level security, and so no policy comment either.
+func withoutRowLevelSecurity() capability.Capabilities {
+	return capability.Postgres17().With(capability.RowLevelSecurity, false).With(capability.PolicyComments, false)
+}
+
+// withoutRoleManagement is a PostgreSQL preset for a target that manages no
+// roles or object privileges, and so stores no role comment either.
+func withoutRoleManagement() capability.Capabilities {
+	return capability.Postgres17().With(capability.RoleManagement, false).With(capability.RoleComments, false)
 }
 
 // noForeignKeys is a PostgreSQL preset with foreign keys switched off.
 //
-// No shipped PostgreSQL-family preset refuses a foreign key -- Spanner's keeps
-// them, deliberately -- so the gate is reachable only through a
-// caller-supplied capability set, which is how engine/builtin's
-// TestGetOrderedCreateStatements_ForeignKeysDisabled_FailurePath reaches it.
+// No shipped PostgreSQL-family preset refuses a foreign key, so the gate is
+// reachable only through a caller-supplied capability set, which is how
+// engine/builtin's TestGetOrderedCreateStatements_ForeignKeysDisabled_FailurePath
+// reaches it.
 // Turning ForeignKeys off requires turning the reference policy off with it,
 // or capability.Validate refuses the set.
 func noForeignKeys() capability.Capabilities {

@@ -96,7 +96,7 @@ type Request struct {
 // The migrator bounds timeouts on the PostgreSQL and MySQL families and the
 // statement timeout on YDB, and a URL of any other dialect reaches a server of
 // that dialect. A PostgreSQL-wire URL does not settle it, since `postgres://`
-// may reach Spanner, which takes none; its preset carries the keys, so it
+// may reach another member of the family; its preset carries the keys, so it
 // passes here and [Request.Decide] answers it against the connected server. A
 // URL Ptah cannot classify makes no claim here.
 func (r Request) DecideFromURL(timeouts migrationfile.Timeouts) error {

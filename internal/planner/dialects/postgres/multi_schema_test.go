@@ -198,16 +198,10 @@ func connectedTo(dialect, schema string) *identifier.Semantics {
 	return &semantics
 }
 
-// A schema the target owns is reached without a precondition.
-//
-// On Spanner that is what makes the migration run at all: `public` there is the
-// implicit schema and cannot be created, so the statement Ptah emitted first
-// was the statement the server refused, and no schema-qualified document could
-// be applied to an empty database (stokaro/ptah#2072). Measured on the PGAdapter
-// emulator v0.55.2:
-//
-//	ERROR: Schema name not valid: public. (SQLSTATE P0001)
-//	SQL: CREATE SCHEMA IF NOT EXISTS "public"
+// A schema the target owns is reached without a precondition: a server-owned
+// schema such as PostgreSQL's pg_catalog or CockroachDB's crdb_internal cannot
+// be created, so asking for it first would make the migration fail on its first
+// statement.
 func TestPlanner_SchemaPreconditionsSkipTheNamesATargetOwns(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -215,8 +209,9 @@ func TestPlanner_SchemaPreconditionsSkipTheNamesATargetOwns(t *testing.T) {
 		schema   string
 		wantsPre bool
 	}{
-		{name: "Spanner does not create public", dialect: "spanner", schema: "public", wantsPre: false},
-		{name: "Spanner creates a user schema", dialect: "spanner", schema: "app", wantsPre: true},
+		{name: "PostgreSQL does not create pg_catalog", dialect: "postgres", schema: "pg_catalog", wantsPre: false},
+		{name: "CockroachDB does not create crdb_internal", dialect: "cockroachdb", schema: "crdb_internal", wantsPre: false},
+		{name: "CockroachDB creates a user schema", dialect: "cockroachdb", schema: "app", wantsPre: true},
 		{name: "PostgreSQL creates public", dialect: "postgres", schema: "public", wantsPre: true},
 		{name: "PostgreSQL creates a user schema", dialect: "postgres", schema: "app", wantsPre: true},
 	}

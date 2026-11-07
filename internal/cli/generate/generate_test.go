@@ -225,7 +225,8 @@ func TestGenerateCommand_OmittedDialectIncludesSQLServerReviewTarget(t *testing.
 
 	c.Assert(err, qt.IsNil, qt.Commentf("generate stderr:\n%s", stderr))
 	c.Assert(stdout, qt.Contains, "-- sqlserver schema")
-	c.Assert(stdout, qt.Contains, "-- spanner schema")
+	c.Assert(stdout, qt.Not(qt.Contains), "-- spanner schema",
+		qt.Commentf("an engine only its provider serves is not a built-in default target"))
 }
 
 // A SQL Server trigger's body runs to the end of its batch, so rendered with

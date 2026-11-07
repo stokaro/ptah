@@ -17,7 +17,7 @@ import (
 // with msdsn and ClickHouse with clickhouse-go; SameDatabaseEndpoint compared
 // SQLite by file. No built-in engine renames the database of a URL.
 var (
-	switchEndpoints = []string{"postgres", "cockroachdb", "yugabytedb", "spanner", "sqlserver", "clickhouse"}
+	switchEndpoints = []string{"postgres", "cockroachdb", "yugabytedb", "sqlserver", "clickhouse"}
 	switchDatabases = []string{"sqlite"}
 	switchRename    []string
 )

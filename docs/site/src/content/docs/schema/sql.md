@@ -54,7 +54,7 @@ CREATE SCHEMA IF NOT EXISTS "extensions";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto" WITH SCHEMA "extensions" VERSION '1.3';
 ```
 
-On PostgreSQL, CockroachDB, YugabyteDB, Spanner and SQL Server, a plan creates a
+On PostgreSQL, CockroachDB, YugabyteDB and SQL Server, a plan creates a
 schema the file declares and the database lacks, whether or not anything is in it, and a
 rollback drops it. A plan never drops a schema the file does not mention. [Atlas
 schema commands](../../atlas/schema-commands/#a-schema-with-nothing-in-it) has the
@@ -464,7 +464,7 @@ Both table flags are compared and planned in both directions. See
 
 `COMMENT ON POLICY name ON table IS 'text'` sets a declared policy's comment;
 `IS NULL` clears it. The declaration must precede the comment, including across
-SQL files. Spanner refuses row-security declarations.
+SQL files.
 
 ## Declare a partition
 
@@ -522,11 +522,10 @@ against a database it was applied to. The continuation follows PostgreSQL's
 rule: only whitespace between the two strings, with at least one newline in
 it, and a `--` comment counts as whitespace. Two strings on one line, or with a
 block comment between them, are refused, as PostgreSQL refuses them, and so is
-an escape the server rejects, such as `U&'\0000'`. With `--dialect cockroachdb`,
-`yugabytedb` or `spanner`, a comment, default or label written as a continued
-string or a `U&'...'` string is refused: CockroachDB applies a different
-continuation rule and has no `U&'...'` strings, and the other two have not been
-measured.
+an escape the server rejects, such as `U&'\0000'`. With `--dialect cockroachdb`
+or `yugabytedb`, a comment, default or label written as a continued string or a
+`U&'...'` string is refused: CockroachDB applies a different continuation rule
+and has no `U&'...'` strings, and YugabyteDB has not been measured.
 
 **A version-guarded span is stepped over, except among a key's options, where
 it is read as options.** `mysqldump` writes ``KEY `k` (`a`) /*!80000 INVISIBLE

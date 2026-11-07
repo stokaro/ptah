@@ -43,7 +43,6 @@ func TestComparisonRules_EachTargetRegistersItsOwnersRules(t *testing.T) {
 		"sqlserver":   {"IndexDefinitions", "IndexPredicates", "GeneratedExpressions", "Routines"},
 		"cockroachdb": {"Indexes", "Routines"},
 		"yugabytedb":  {"Indexes", "Routines"},
-		"spanner":     {"Indexes", "ForeignKeyIndexes", "Routines"},
 		"oracle":      {"Routines"},
 	}
 	runtime := must.Must(builtin.New())

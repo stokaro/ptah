@@ -1,7 +1,6 @@
 package planner_test
 
 import (
-	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -139,19 +138,6 @@ func TestRemovedForeignKeyBackingIndex_HappyPath(t *testing.T) {
 			c.Assert(backedForeignKeyPlan(c, platform.MySQL, declaredWithoutForeignKey(test.change)), qt.DeepEquals, test.want)
 		})
 	}
-}
-
-// TestRemovedForeignKeyBackingIndex_AServerThatDropsItWithTheKey is the control:
-// Spanner reports a backing index too and drops it with the key, so a drop of its own
-// would answer that it does not exist.
-func TestRemovedForeignKeyBackingIndex_AServerThatDropsItWithTheKey(t *testing.T) {
-	c := qt.New(t)
-	held := heldBackedForeignKey()
-	held.Indexes[0].Name = "IDX_child_pid_FBF4366D73F2084A"
-
-	got := plannedOverHeld(c, platform.Spanner, declaredWithoutForeignKey(func(*schemamodel.Database) {}), held)
-
-	c.Assert(strings.Join(got, "\n"), qt.Not(qt.Contains), "DROP INDEX")
 }
 
 // TestRemovedForeignKeyBackingIndex_AnIndexThePlanAddsTakesItOver pins the statement

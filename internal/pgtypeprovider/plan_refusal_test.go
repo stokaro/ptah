@@ -84,16 +84,16 @@ func TestPlanTypes_RefusesWhatTheTargetCannotCreate(t *testing.T) {
 			want: schemavalidation.Diagnostic{Code: schemavalidation.UnsupportedFeature, Kind: string(pgtype.DomainChangeKind), Object: "code",
 				Feature: "CREATE DOMAIN", Message: "cockroachdb: CREATE DOMAIN code: this target does not create it, and a column declared with the type " +
 					"would be left naming something the server has no definition of; scope the declaration to the dialects that host it"}},
-		{name: "a domain before a composite type", target: "spanner",
+		{name: "a domain before a composite type", target: "yugabytedb",
 			without: []capability.Capability{capability.DomainTypes, capability.CompositeTypes},
 			changes: []schemaext.ChangeRecord{composite, domain("email")}, index: 1,
 			want: schemavalidation.Diagnostic{Code: schemavalidation.UnsupportedFeature, Kind: string(pgtype.DomainChangeKind), Object: "email",
-				Feature: "CREATE DOMAIN", Message: "spanner: CREATE DOMAIN email: this target does not create it, and a column declared with the type " +
+				Feature: "CREATE DOMAIN", Message: "yugabytedb: CREATE DOMAIN email: this target does not create it, and a column declared with the type " +
 					"would be left naming something the server has no definition of; scope the declaration to the dialects that host it"}},
-		{name: "a composite type", target: "spanner", without: []capability.Capability{capability.CompositeTypes},
+		{name: "a composite type", target: "yugabytedb", without: []capability.Capability{capability.CompositeTypes},
 			changes: []schemaext.ChangeRecord{composite},
 			want: schemavalidation.Diagnostic{Code: schemavalidation.UnsupportedFeature, Kind: string(pgtype.CompositeChangeKind), Object: "addr",
-				Feature: "CREATE TYPE ... AS (...)", Message: "spanner: CREATE TYPE ... AS (...) addr: this target does not create it, and a column " +
+				Feature: "CREATE TYPE ... AS (...)", Message: "yugabytedb: CREATE TYPE ... AS (...) addr: this target does not create it, and a column " +
 					"declared with the type would be left naming something the server has no definition of; scope the declaration to the dialects that host it"}},
 		{name: "a range type", target: "cockroachdb", without: []capability.Capability{capability.RangeTypes},
 			changes: []schemaext.ChangeRecord{domain("email"), span}, index: 1,

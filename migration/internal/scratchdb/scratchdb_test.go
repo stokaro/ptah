@@ -22,7 +22,6 @@ func TestCanIsolate_HappyPath(t *testing.T) {
 		"postgres://localhost:5432/app",
 		"cockroachdb://localhost:26257/app",
 		"yugabytedb://localhost:5433/app",
-		"spanner://localhost:5432/app",
 		"mysql://localhost:3306/app",
 		"mariadb://localhost:3306/app",
 	} {

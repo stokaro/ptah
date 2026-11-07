@@ -33,8 +33,8 @@ const objectSkippedMarker = "is not supported by this target; skipped."
 // emitted a single CREATE TABLE while `schema apply --dry-run` against a live
 // YugabyteDB planned six statements, because the offline converter gated every
 // PostgreSQL object kind on a predicate matching only the literal strings
-// "postgres" and "postgresql" while the planner routed cockroachdb, yugabytedb
-// and spanner through the PostgreSQL planner with no such gate. The two
+// "postgres" and "postgresql" while the planner routed cockroachdb and
+// yugabytedb through the PostgreSQL planner with no such gate. The two
 // commands disagreed about the same file, and the omitting side said nothing.
 //
 // The comparison is a census rather than a text diff on purpose. The two
@@ -70,9 +70,7 @@ const objectSkippedMarker = "is not supported by this target; skipped."
 //
 // The live half of this measurement is
 // TestSchemaRenderAndPlanCatalogAgreementE2E in ./integration, which applies
-// both surfaces and reads the catalog back. This half exists because it needs
-// no server, so it covers spanner, the family member issue stokaro/ptah#942
-// records as having no live coverage at all.
+// both surfaces and reads the catalog back. This half needs no server.
 func TestRenderAndPlanAgreeOnEveryPostgresFamilyTarget(t *testing.T) {
 	c := qt.New(t)
 
@@ -83,8 +81,6 @@ func TestRenderAndPlanAgreeOnEveryPostgresFamilyTarget(t *testing.T) {
 	c.Assert(len(dialects) > 1, qt.IsTrue,
 		qt.Commentf("planner registry reported %d PostgreSQL-family dialects: %v",
 			len(dialects), dialects))
-	c.Assert(dialects, qt.Contains, platform.Spanner,
-		qt.Commentf("spanner has no live coverage, so this offline half is the only place it is measured"))
 
 	for _, dialect := range dialects {
 		t.Run(dialect, func(t *testing.T) {

@@ -34,7 +34,6 @@ func TestCleanCheck_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 		}},
 		"cockroachdb": postgresFamily,
 		"yugabytedb":  postgresFamily,
-		"spanner":     {check: postgresFamily.check, refused: true},
 		"mysql":       mysqlFamily,
 		"mariadb":     mysqlFamily,
 		"sqlite": {check: descriptor.CleanCheck{

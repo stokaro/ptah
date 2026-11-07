@@ -268,7 +268,7 @@ reason.
 | `Index.StorageParams` | PostgreSQL index storage parameters and the YDB provider's full-text analyzer options share the one map. |
 | `Index.Concurrently` | A plan-time request, not catalog state. `internal/concurrentindex` decides it for the PostgreSQL family, and migration lint, SQL lint and transaction routing read it for every target. |
 | `Index.NullsDistinct`, `Constraint.NullsDistinct` | PostgreSQL states it, and `internal/uniquelowering`, which writes a UNIQUE constraint as a global unique index for a provider without UNIQUE constraints, carries it. |
-| `Index.IncludeColumns`, `Constraint.IncludeColumns` | Covering columns on PostgreSQL, YugabyteDB and Spanner indexes and constraints, and the `COVER` list of an index the YDB provider creates. |
+| `Index.IncludeColumns`, `Constraint.IncludeColumns` | Covering columns on PostgreSQL and YugabyteDB indexes and constraints, the `INCLUDE` list of an index the Spanner provider creates, and the `COVER` list of an index the YDB provider creates. |
 | `Deferrable`, `Initially` (constraints and foreign-key fields) | PostgreSQL and Oracle render them, and `internal/uniquelowering` leaves a constraint that carries either for its provider to refuse. |
 | `Constraint.Match`, `Field.ForeignKeyMatch` | The shared SQL parser reads `MATCH` for the PostgreSQL family, MySQL, MariaDB and SQLite, and refuses the values a server records as `NONE`. |
 | `Constraint.NotValid` | The PostgreSQL family plans and renders it. `internal/uniquelowering` reads it to leave the constraint for its provider to refuse. An export with no way to say it reports it. |

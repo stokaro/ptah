@@ -69,8 +69,8 @@ func TestPlanner_CreatesADeclaredSchema(t *testing.T) {
 			want: "",
 		},
 		{
-			name: "a schema the target owns", dialect: "spanner",
-			diff: difftypes.SchemaDiff{SchemasAdded: []schemamodel.Schema{{Name: "public"}}},
+			name: "a schema the target owns", dialect: "cockroachdb",
+			diff: difftypes.SchemaDiff{SchemasAdded: []schemamodel.Schema{{Name: "crdb_internal"}}},
 			want: "",
 		},
 	}

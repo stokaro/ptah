@@ -30,11 +30,11 @@ type Departure struct {
 	// spelled as [ExtensionKinds] spells them, or the core/ast kind that holds
 	// the kind's statements since it was merged into that kind.
 	Successors []ExtensionKind
-	// Provider is the official executable provider that carries the kind's
-	// operations for an engine no package of this module serves, named by its
-	// provider ID. Its payloads live in the provider's own module, so no
+	// Providers are the official executable providers that carry the kind's
+	// operations for engines no package of this module serves, each named by
+	// its provider ID. Their payloads live in the providers' own modules, so no
 	// successor here names them.
-	Provider string
+	Providers []string
 }
 
 // Accounting is the node corpus measured against the extraction baseline.
@@ -88,9 +88,9 @@ func Account(baseline []BaselineKind, departures []Departure, nodes []NodeKind) 
 	recorded := make(map[string]bool, len(departures))
 	for _, departure := range departures {
 		marker, known := markers[departure.Node]
-		departure = Departure{Node: departure.Node, Marker: marker, Successors: slices.Clone(departure.Successors), Provider: departure.Provider}
+		departure = Departure{Node: departure.Node, Marker: marker, Successors: slices.Clone(departure.Successors), Providers: slices.Clone(departure.Providers)}
 		switch {
-		case !known || recorded[departure.Node] || (len(departure.Successors) == 0 && departure.Provider == ""):
+		case !known || recorded[departure.Node] || (len(departure.Successors) == 0 && len(departure.Providers) == 0):
 			result.Invalid = append(result.Invalid, departure)
 		case declared[departure.Node]:
 			result.Pending = append(result.Pending, departure)
@@ -133,7 +133,7 @@ func Baseline() []BaselineKind {
 func Departures() []Departure {
 	result := make([]Departure, 0, len(recordedDepartures))
 	for _, departure := range recordedDepartures {
-		result = append(result, Departure{Node: departure.Node, Successors: slices.Clone(departure.Successors), Provider: departure.Provider})
+		result = append(result, Departure{Node: departure.Node, Successors: slices.Clone(departure.Successors), Providers: slices.Clone(departure.Providers)})
 	}
 	return result
 }
@@ -155,64 +155,67 @@ const (
 	mssqlProperty  = "ptah.run/dialect/mssql/mssqlproperty"
 	oraTypeOwner   = "ptah.run/feature/oratype"
 	pgTypeOwner    = "ptah.run/feature/pgtype"
-	spannerAST     = "ptah.run/dialect/spanner/spannerast"
 	synonymOwner   = "ptah.run/feature/synonym"
 	timescaleAST   = "ptah.run/dialect/timescaledb/tsast"
 )
 
-// ydbProvider is the official YDB provider, which carries every operation of
-// the YDB node kinds.
-const ydbProvider = "github.com/stokaro/ptah-ydb-plugin"
+// The official providers that carry the operations of the node kinds their
+// engines introduced: ydbProvider every YDB node kind, and both of them the row
+// deletion policy.
+const (
+	spannerProvider = "github.com/stokaro/ptah-spanner-plugin"
+	ydbProvider     = "github.com/stokaro/ptah-ydb-plugin"
+)
 
 func payload(pkg, name string) ExtensionKind { return ExtensionKind{Package: pkg, Name: name} }
 
 // recordedDepartures is sorted by node name.
 var recordedDepartures = []Departure{
-	{Node: "AddChangefeedOperation", Provider: ydbProvider},
+	{Node: "AddChangefeedOperation", Providers: []string{ydbProvider}},
 	{Node: "AddSkippingIndexOperation", Successors: []ExtensionKind{payload(clickHouseAST, "AddSkippingIndex")}},
-	{Node: "AddTopicConsumerNode", Provider: ydbProvider},
-	{Node: "AlterAsyncReplicationNode", Provider: ydbProvider},
-	{Node: "AlterChangefeedTopicOperation", Provider: ydbProvider},
-	{Node: "AlterCoordinationNodeNode", Provider: ydbProvider},
+	{Node: "AddTopicConsumerNode", Providers: []string{ydbProvider}},
+	{Node: "AlterAsyncReplicationNode", Providers: []string{ydbProvider}},
+	{Node: "AlterChangefeedTopicOperation", Providers: []string{ydbProvider}},
+	{Node: "AlterCoordinationNodeNode", Providers: []string{ydbProvider}},
 	{Node: "AlterMaterializedViewRefreshNode", Successors: []ExtensionKind{payload(clickHouseAST, "ModifyRefresh")}},
-	{Node: "AlterResourcePoolClassifierNode", Provider: ydbProvider},
-	{Node: "AlterResourcePoolNode", Provider: ydbProvider},
-	{Node: "AlterSecretNode", Provider: ydbProvider},
-	{Node: "AlterTopicNode", Provider: ydbProvider},
-	{Node: "AlterTransferNode", Provider: ydbProvider},
+	{Node: "AlterResourcePoolClassifierNode", Providers: []string{ydbProvider}},
+	{Node: "AlterResourcePoolNode", Providers: []string{ydbProvider}},
+	{Node: "AlterSecretNode", Providers: []string{ydbProvider}},
+	{Node: "AlterTopicNode", Providers: []string{ydbProvider}},
+	{Node: "AlterTransferNode", Providers: []string{ydbProvider}},
 	{Node: "CompositeAttributeOperation", Successors: []ExtensionKind{payload(pgTypeOwner, "AlterComposite")}},
 	{Node: "CompositeTypeDef", Successors: []ExtensionKind{payload(oraTypeOwner, "ReplaceObjectType"), payload(pgTypeOwner, "CreateComposite")}},
-	{Node: "CreateAsyncReplicationNode", Provider: ydbProvider},
+	{Node: "CreateAsyncReplicationNode", Providers: []string{ydbProvider}},
 	{Node: "CreateContinuousAggregateNode", Successors: []ExtensionKind{payload(timescaleAST, "ContinuousAggregate")}},
-	{Node: "CreateCoordinationNodeNode", Provider: ydbProvider},
-	{Node: "CreateExternalDataSourceNode", Provider: ydbProvider},
-	{Node: "CreateExternalTableNode", Provider: ydbProvider},
+	{Node: "CreateCoordinationNodeNode", Providers: []string{ydbProvider}},
+	{Node: "CreateExternalDataSourceNode", Providers: []string{ydbProvider}},
+	{Node: "CreateExternalTableNode", Providers: []string{ydbProvider}},
 	{Node: "CreateHypertableNode", Successors: []ExtensionKind{payload(timescaleAST, "CreateHypertable")}},
-	{Node: "CreateResourcePoolClassifierNode", Provider: ydbProvider},
-	{Node: "CreateResourcePoolNode", Provider: ydbProvider},
-	{Node: "CreateSecretNode", Provider: ydbProvider},
+	{Node: "CreateResourcePoolClassifierNode", Providers: []string{ydbProvider}},
+	{Node: "CreateResourcePoolNode", Providers: []string{ydbProvider}},
+	{Node: "CreateSecretNode", Providers: []string{ydbProvider}},
 	{Node: "CreateSynonymNode", Successors: []ExtensionKind{payload(synonymOwner, "Operation")}},
-	{Node: "CreateTopicNode", Provider: ydbProvider},
-	{Node: "CreateTransferNode", Provider: ydbProvider},
+	{Node: "CreateTopicNode", Providers: []string{ydbProvider}},
+	{Node: "CreateTransferNode", Providers: []string{ydbProvider}},
 	{Node: "DefaultPrivilegeNode", Successors: []ExtensionKind{payload("ptah.run/feature/pgdefaultprivilege", "Operation")}},
 	{Node: "DomainConstraintOperation", Successors: []ExtensionKind{payload(pgTypeOwner, "AlterDomain")}},
 	{Node: "DomainDefaultOperation", Successors: []ExtensionKind{payload(pgTypeOwner, "AlterDomain")}},
 	{Node: "DomainNotNullOperation", Successors: []ExtensionKind{payload(pgTypeOwner, "AlterDomain")}},
 	{Node: "DomainTypeDef", Successors: []ExtensionKind{payload(oraTypeOwner, "CreateDomain"), payload(pgTypeOwner, "CreateDomain")}},
-	{Node: "DropAsyncReplicationNode", Provider: ydbProvider},
-	{Node: "DropChangefeedOperation", Provider: ydbProvider},
+	{Node: "DropAsyncReplicationNode", Providers: []string{ydbProvider}},
+	{Node: "DropChangefeedOperation", Providers: []string{ydbProvider}},
 	{Node: "DropContinuousAggregateNode", Successors: []ExtensionKind{payload(timescaleAST, "ContinuousAggregate")}},
-	{Node: "DropCoordinationNodeNode", Provider: ydbProvider},
+	{Node: "DropCoordinationNodeNode", Providers: []string{ydbProvider}},
 	{Node: "DropExtensionNode", Successors: []ExtensionKind{payload(extensionOwner, "Operation")}},
-	{Node: "DropExternalDataSourceNode", Provider: ydbProvider},
-	{Node: "DropExternalTableNode", Provider: ydbProvider},
-	{Node: "DropResourcePoolClassifierNode", Provider: ydbProvider},
-	{Node: "DropResourcePoolNode", Provider: ydbProvider},
-	{Node: "DropRowDeletionPolicyOperation", Successors: []ExtensionKind{payload(spannerAST, "AlterRowDeletion")}, Provider: ydbProvider},
-	{Node: "DropSecretNode", Provider: ydbProvider},
+	{Node: "DropExternalDataSourceNode", Providers: []string{ydbProvider}},
+	{Node: "DropExternalTableNode", Providers: []string{ydbProvider}},
+	{Node: "DropResourcePoolClassifierNode", Providers: []string{ydbProvider}},
+	{Node: "DropResourcePoolNode", Providers: []string{ydbProvider}},
+	{Node: "DropRowDeletionPolicyOperation", Providers: []string{spannerProvider, ydbProvider}},
+	{Node: "DropSecretNode", Providers: []string{ydbProvider}},
 	{Node: "DropSynonymNode", Successors: []ExtensionKind{payload(synonymOwner, "Operation")}},
-	{Node: "DropTopicNode", Provider: ydbProvider},
-	{Node: "DropTransferNode", Provider: ydbProvider},
+	{Node: "DropTopicNode", Providers: []string{ydbProvider}},
+	{Node: "DropTransferNode", Providers: []string{ydbProvider}},
 	{Node: "ExtendedPropertyNode", Successors: []ExtensionKind{payload(mssqlProperty, "Operation")}},
 	{Node: "ExtensionNode", Successors: []ExtensionKind{payload(extensionOwner, "Operation"), payload(extensionOwner, "CommentOperation")}},
 	{Node: "ModifyTTLOperation", Successors: []ExtensionKind{payload(clickHouseAST, "AlterStorage")}},
@@ -222,12 +225,12 @@ var recordedDepartures = []Departure{
 	{Node: "ResetRowTTLOperation", Successors: []ExtensionKind{payload(cockroachAST, "AlterRowTTL")}},
 	{Node: "RevokeDefaultPrivilegeNode", Successors: []ExtensionKind{payload("ptah.run/feature/pgdefaultprivilege", "Operation")}},
 	{Node: "SQLServerRoutineNode", Successors: []ExtensionKind{payload(coreAST, "RoutineNode")}},
-	{Node: "SetIndexPartitioningOperation", Provider: ydbProvider},
-	{Node: "SetRowDeletionPolicyOperation", Successors: []ExtensionKind{payload(spannerAST, "AlterRowDeletion")}, Provider: ydbProvider},
+	{Node: "SetIndexPartitioningOperation", Providers: []string{ydbProvider}},
+	{Node: "SetRowDeletionPolicyOperation", Providers: []string{spannerProvider, ydbProvider}},
 	{Node: "SetRowTTLOperation", Successors: []ExtensionKind{payload(cockroachAST, "AlterRowTTL")}},
 	{Node: "SetUnloggedOperation", Successors: []ExtensionKind{payload("ptah.run/dialect/postgres/pgtable", "AlterPersistence")}},
-	{Node: "SetYDBColumnFamiliesOperation", Provider: ydbProvider},
-	{Node: "SetYDBTablePartitioningOperation", Provider: ydbProvider},
+	{Node: "SetYDBColumnFamiliesOperation", Providers: []string{ydbProvider}},
+	{Node: "SetYDBTablePartitioningOperation", Providers: []string{ydbProvider}},
 }
 
 // extractionBaseline is what [NodeKinds] and [MarkedKinds] read from core/ast

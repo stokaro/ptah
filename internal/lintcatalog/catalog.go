@@ -94,6 +94,7 @@ var families = []Family{
 	{Prefix: "CAP", Origin: OriginPtah, Summary: "the target server version lacks a capability the statement needs"},
 	{Prefix: "AC", Origin: OriginPtah, Summary: "analysis coverage: what the linter did not read, so a clean result is not mistaken for a checked one"},
 	{Prefix: "ON", Origin: OriginPtah, Summary: "online-DDL proof: statements the online mode could not prove take no conflicting lock, reported only when that mode is selected"},
+	{Prefix: "SP", Origin: OriginPtah, Summary: "Spanner statements whose outcome depends on the rows a table holds or that drop what the statement does not name"},
 	{Prefix: "YD", Origin: OriginPtah, Summary: "YDB statements the server refuses, or runs with an effect the statement does not state"},
 }
 
@@ -618,6 +619,12 @@ var migrationRuleMeta = map[string]ruleMeta{
 	"TX201": {
 		Summary:   "an explicit BEGIN/COMMIT block fights the transaction the migrator opens around each file; in a golang-migrate directory, which opens none, only a block opened inside another",
 		AtlasCode: "TX201",
+	},
+	"SP101": {
+		Summary: "SET NOT NULL on Spanner validates every existing row in a schema change, and a row holding NULL fails it and leaves the column nullable",
+	},
+	"SP102": {
+		Summary: "`ALTER TABLE ... DROP TTL` drops a table's row deletion policy, so rows the policy would delete stay",
 	},
 	"YD101": {
 		Summary: "a unique index added to a table that exists, which a YDB line without `unique_index_on_existing_table` refuses",

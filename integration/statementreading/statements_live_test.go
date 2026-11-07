@@ -273,20 +273,6 @@ func engines() []engine {
 			inTransaction: []string{"SAVEPOINT a_{s}", "RELEASE a_{s}", "SAVEPOINT b_{s}", "RELEASE SAVEPOINT b_{s}"},
 			refuses:       []string{"TRUNCATE t_{s}", "DROP VIEW v1_{s}, v2_{s}", "DROP VIEW v1_{s} CASCADE", "DROP MATERIALIZED VIEW m_{s}", "DROP TABEL t_{s}"},
 		},
-		{
-			dialect: platform.Spanner, target: dbtarget.Spanner,
-			table: "CREATE TABLE {t} (id BIGINT PRIMARY KEY)",
-			views: standardViews,
-			fixture: []string{
-				"CREATE TABLE t_{s} (id BIGINT PRIMARY KEY)",
-				"CREATE VIEW v1_{s} AS SELECT id FROM t_{s}",
-				"CREATE VIEW v2_{s} AS SELECT id FROM t_{s}",
-				"CREATE SEQUENCE q_{s} BIT_REVERSED_POSITIVE",
-			},
-			reads:   []string{"DROP VIEW v1_{s}", "DROP VIEW IF EXISTS v2_{s}", "DROP SEQUENCE IF EXISTS q_{s}", "TRUNCATE t_{s}"},
-			refuses: []string{"DROP VIEW v1_{s}, v2_{s}", "DROP TRIGGER g_{s}", "DROP MATERIALIZED VIEW m_{s}", "DROP TABEL t_{s}"},
-			cleanup: []string{"DROP VIEW IF EXISTS v1_{s}", "DROP VIEW IF EXISTS v2_{s}", "DROP SEQUENCE IF EXISTS q_{s}", "DROP TABLE IF EXISTS t_{s}"},
-		},
 	}
 }
 

@@ -24,13 +24,11 @@ func acceptedSpellings(c *qt.C) []string {
 // TestDialectFromURL_AcceptsEveryAcceptedSpelling is the sweep the drift
 // survived.
 //
-// A hand-written scheme list here omitted fifteen spellings Ptah accepts
-// everywhere else, two of them canonical dialect names: `oracle://` and
-// `spanner://` were refused as a dev URL while `--dialect oracle` and
-// `--dialect spanner` both rendered. The other thirteen were documented aliases
-// -- `crdb`, `ch`, `pgx`, `tsql`, `ysql`, `sql-server`, `cloudspanner` and the
-// rest -- accepted by every other boundary and refused by this one
-// (stokaro/ptah#1875).
+// A hand-written scheme list here omitted spellings Ptah accepts everywhere
+// else: the canonical name `oracle://` was refused as a dev URL while
+// `--dialect oracle` rendered, and documented aliases -- `crdb`, `ch`, `pgx`,
+// `tsql`, `ysql`, `sql-server` and the rest -- were accepted by every other
+// boundary and refused by this one (stokaro/ptah#1875).
 func TestDialectFromURL_AcceptsEveryAcceptedSpelling(t *testing.T) {
 	c := qt.New(t)
 
@@ -50,11 +48,11 @@ func TestDialectFromURL_AcceptsEveryAcceptedSpelling(t *testing.T) {
 	}
 
 	// The other side of the partition, asserted rather than skipped.
-	c.Assert(unusable, qt.DeepEquals, []string{"google_spanner", "sql_server"})
+	c.Assert(unusable, qt.DeepEquals, []string{"sql_server"})
 }
 
-// TestDialectFromURL_RefusesASpellingNoURLCanCarry holds the two spellings that
-// are legal --dialect values and cannot be URL schemes.
+// TestDialectFromURL_RefusesASpellingNoURLCanCarry holds the spellings that are
+// legal --dialect values and cannot be URL schemes.
 //
 // A URL scheme may carry letters, digits, `+`, `-` and `.` and nothing else, so
 // Go's parser never reaches a scheme in `sql_server://…` and reads the whole

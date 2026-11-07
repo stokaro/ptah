@@ -67,8 +67,6 @@ func TestScan_RefusesWhatTheDescriptorStates(t *testing.T) {
 			statement: "SELECT pg_cancel_backend(42)", want: postgresControl},
 		{name: "a control function on YugabyteDB", dialect: "yugabytedb",
 			statement: "SELECT set_config('search_path', 'x', false)", want: postgresControl},
-		{name: "a replication function on Spanner", dialect: "spanner",
-			statement: "SELECT pg_drop_replication_slot('s')", want: postgresControl},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

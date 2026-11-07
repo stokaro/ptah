@@ -97,16 +97,6 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/cockroachdb/crdbreverse` | Reverse row-level TTL changes with recovery limits. |
 | `dialect/cockroachdb/crdbconvert` | Conversion between row-level TTL declarations and observations. |
 | `dialect/cockroachdb/crdbreport` | Captured row-level TTL counts and export omission labels. |
-| `dialect/spanner/spannerschema` | Desired and observed row deletion policies with versioned model codecs. |
-| `dialect/spanner/spannersource` | The row deletion policy as `platform.spanner` table properties, and source coverage. |
-| `dialect/spanner/spannercompare` | Row deletion policy comparison that reads rewritten intervals as values. |
-| `dialect/spanner/spannerdiff` | Captured prior and desired row deletion policies for directional changes. |
-| `dialect/spanner/spannerast` | Typed row deletion policy operation with an explicit codec. |
-| `dialect/spanner/spannerrender` | Owner-selected row deletion policy rendering for CREATE and ALTER. |
-| `dialect/spanner/spannerplan` | Row deletion policy planning in place. |
-| `dialect/spanner/spannerreverse` | Reverse row deletion policy changes with recovery limits. |
-| `dialect/spanner/spannerconvert` | Conversion between row deletion policy declarations and observations. |
-| `dialect/spanner/spannerreport` | Captured row deletion policy counts and export omission labels. |
 | `dialect/sqlite/sqlitetable` | SQLite STRICT and WITHOUT ROWID table options and virtual table declarations, with codecs, platform properties and every stage's service. |
 | `dialect/mssql/mssqllint` | The SQL Server owner's statement splitter, which judges PolyBase drops for safety assessments. |
 | `dialect/mssql/mssqlroutine` | The SQL Server owner's routine body reader for T-SQL bodies. |
@@ -390,7 +380,7 @@ uniqueness or whose key is one expression, as on ClickHouse; a target that
 registers neither has its indexes compared by name. `IndexPredicates` removes
 what a catalog adds to a stored predicate, such as the brackets SQL Server
 writes around every name. `ForeignKeyIndexes` finds the index a server builds
-for a foreign key, as MySQL, MariaDB and Spanner do, so a plan never drops it.
+for a foreign key, as MySQL and MariaDB do, so a plan never drops it.
 `GeneratedExpressions` gives a generated column's expression the spelling a
 declaration and the catalog share.
 

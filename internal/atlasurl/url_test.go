@@ -77,11 +77,6 @@ func TestDialectFromURL_FailurePath(t *testing.T) {
 		{name: "docker engine in capitals", rawURL: "docker://POSTGRES/16/dev", wantErr: `unsupported docker image "POSTGRES"`},
 		{name: "docker engine the binary has no driver for", rawURL: "docker://clickhouse/24.8/dev", wantErr: `unsupported docker image "clickhouse"`},
 		{name: "docker engine that is a dialect but not an image", rawURL: "docker://sqlite/dev", wantErr: `unsupported docker image "sqlite"`},
-		// "db2" rather than "spanner": Spanner lands here only when a
-		// hand-written scheme list has drifted from NormalizeDialect, not
-		// because a Spanner dev database is refused -- internal/devclean and
-		// internal/devlock both put it in the PostgreSQL family, and the
-		// dev-database page documents the URL form.
 		{name: "unsupported", rawURL: "db2://localhost/dev", wantErr: `unsupported --dev-url dialect "db2://localhost/dev"`},
 		// The pinned binary v1.3.0 answers `unknown driver "maria+tcp"`: the
 		// MariaDB spelling is a scheme of its own, not a prefix.
@@ -772,8 +767,8 @@ func TestSchemeDialectMatches_HappyPath(t *testing.T) {
 }
 
 // TestSchemeDialectMatches_FailurePath keeps the MySQL family a family of two.
-// The PostgreSQL-wire dialects are not joined: a CockroachDB or Spanner server
-// may announce itself as PostgreSQL, so there the scheme is evidence.
+// The PostgreSQL-wire dialects are not joined: a CockroachDB server may
+// announce itself as PostgreSQL, so there the scheme is evidence.
 func TestSchemeDialectMatches_FailurePath(t *testing.T) {
 	tests := []struct {
 		name          string

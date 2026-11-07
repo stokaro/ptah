@@ -2234,6 +2234,18 @@
               "description": "Attribute of ptah:schema:table, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"
             },
+            "platform.spanner.row_deletion_column": {
+              "description": "Attribute of ptah:schema:table, read by provider github.com/stokaro/ptah-spanner-plugin.",
+              "type": "string"
+            },
+            "platform.spanner.row_deletion_interval": {
+              "description": "Attribute of ptah:schema:table, read by provider github.com/stokaro/ptah-spanner-plugin.",
+              "type": "string"
+            },
+            "platform.spanner.row_deletion_unit": {
+              "description": "Attribute of ptah:schema:table, read by provider github.com/stokaro/ptah-spanner-plugin.",
+              "type": "string"
+            },
             "platform.ydb.row_deletion_column": {
               "description": "Attribute of ptah:schema:table, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"

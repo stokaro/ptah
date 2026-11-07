@@ -25,7 +25,7 @@ const (
 // them declares: the PostgreSQL family, as [platform.IsPostgresFamily] names
 // it.
 func Family() []string {
-	return []string{platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner}
+	return []string{platform.Postgres, platform.CockroachDB, platform.YugabyteDB}
 }
 
 // Annotations is the row-security owner's contribution to the Go annotation

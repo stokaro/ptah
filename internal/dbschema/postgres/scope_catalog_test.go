@@ -21,7 +21,7 @@ import (
 // dialects states a CleanCheck.Tables query, which the clean check would
 // otherwise read as a second answer about the same tables.
 func TestScopeCatalog_ServesEveryMemberOfTheFamily(t *testing.T) {
-	for _, dialect := range []string{platform.Postgres, "postgresql", platform.CockroachDB, platform.YugabyteDB, platform.Spanner, ""} {
+	for _, dialect := range []string{platform.Postgres, "postgresql", platform.CockroachDB, platform.YugabyteDB, ""} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 			described, _ := platform.Lookup(dialect)
@@ -105,7 +105,7 @@ func TestScopeCatalog_Tables_HappyPath(t *testing.T) {
 // system schemas of the dialect the writer is for: CockroachDB and
 // YugabyteDB own schemas PostgreSQL does not.
 func TestScopeCatalog_Realm_HappyPath(t *testing.T) {
-	for _, dialect := range []string{platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner} {
+	for _, dialect := range []string{platform.Postgres, platform.CockroachDB, platform.YugabyteDB} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 			caps := capability.ForDialect(dialect)
@@ -133,7 +133,7 @@ func TestScopeCatalog_Realm_HappyPath(t *testing.T) {
 // TestScopeCatalog_RealmSchemas_HappyPath lists every schema of the database
 // in the order the catalog returns them, through the predicate Realm reads.
 func TestScopeCatalog_RealmSchemas_HappyPath(t *testing.T) {
-	for _, dialect := range []string{platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner} {
+	for _, dialect := range []string{platform.Postgres, platform.CockroachDB, platform.YugabyteDB} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 			caps := capability.ForDialect(dialect)

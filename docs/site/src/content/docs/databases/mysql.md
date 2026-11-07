@@ -475,9 +475,9 @@ SQL:
   which have no family to ask. A `.sql` source read for another dialect gets a
   column wherever that engine has no table element opening with the word.
   `key`, `spatial` and `fulltext` are columns on PostgreSQL, YugabyteDB,
-  CockroachDB, Spanner, ClickHouse, SQLite and Oracle. SQL Server reserves
+  CockroachDB, ClickHouse, SQLite and Oracle. SQL Server reserves
   `key`, so only `spatial` and `fulltext` are columns there. `index` is a
-  column on PostgreSQL, YugabyteDB and Spanner, and on CockroachDB unless a
+  column on PostgreSQL and YugabyteDB, and on CockroachDB unless a
   column list follows it, directly or after a name. SQL Server reads `index` as
   its own inline index and ClickHouse as a data-skipping index, and SQLite and
   Oracle reserve it. Read as an index on the other dialects, `key text` would be

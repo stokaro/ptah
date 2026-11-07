@@ -12,6 +12,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/internal/providercatalog"
 )
 
 // RecognizedVersionShapes describes, in one sentence a person can act on, the
@@ -152,6 +153,12 @@ func Resolve(dialect, version string) (Target, error) {
 	}
 
 	normalized := platform.NormalizeDialect(dialect)
+	// A banner naming an engine Ptah serves only through its provider names a
+	// server the dialect cannot describe, whatever else it carries: Spanner's
+	// banner also names PostgreSQL.
+	if entry, identified := providercatalog.IdentifyBanner(version); identified {
+		return Target{}, &DialectMismatchError{Dialect: normalized, ResolvedDialect: entry.EngineID, Version: version}
+	}
 	resolution := capability.ResolveServerVersion(dialect, version)
 	if !resolution.Recognized {
 		return Target{}, &UnrecognizedVersionError{Dialect: dialect, Version: version}

@@ -17,7 +17,7 @@ import (
 //
 //   - internal/dialectlexer gave MySQL, MariaDB and ClickHouse backslash
 //     escapes; SQL Server bracketed names and no # comments; PostgreSQL,
-//     CockroachDB, YugabyteDB and Spanner the E'...' prefix, and PostgreSQL
+//     CockroachDB and YugabyteDB the E'...' prefix, and PostgreSQL
 //     alone its continued and U&'...' strings; MySQL and MariaDB the --
 //     rule and their own executable comments. YDB was read by the YQL lexer.
 //   - internal/deporder read ClickHouse's # and // comments and its
@@ -40,7 +40,6 @@ func TestDescriptors_LexicalFactsAgreeWithTheSwitchesTheyReplace(t *testing.T) {
 		platform.Postgres:    {EscapeStrings: true, ContinuedStrings: true, UnicodeStrings: true},
 		platform.CockroachDB: postgresFamily,
 		platform.YugabyteDB:  postgresFamily,
-		platform.Spanner:     postgresFamily,
 		platform.MySQL: {
 			LineComments: []string{"#"}, BackslashEscapes: true,
 			DashCommentNeedsSpace: true, ExecutableComments: descriptor.ExecutableCommentsBang,
@@ -90,7 +89,7 @@ func TestDescriptors_BodiesAgreeWithTheSwitchTheyReplace(t *testing.T) {
 // descriptor's Reach section against the rules of internal/sqlreach that
 // named their dialects: the ClickHouse remote table functions, the Oracle
 // network and server control packages, and the PostgreSQL server control
-// functions refused on PostgreSQL, CockroachDB, YugabyteDB and Spanner. The
+// functions refused on PostgreSQL, CockroachDB and YugabyteDB. The
 // names and the words of each refusal are written out as the rules held them.
 func TestDescriptors_ReachAgreesWithTheRulesItReplaces(t *testing.T) {
 	const (
@@ -110,7 +109,6 @@ func TestDescriptors_ReachAgreesWithTheRulesItReplaces(t *testing.T) {
 		platform.Postgres:    postgresFamily,
 		platform.CockroachDB: postgresFamily,
 		platform.YugabyteDB:  postgresFamily,
-		platform.Spanner:     postgresFamily,
 		platform.ClickHouse: {TableFunctions: descriptor.ReachCalls{
 			Construct: "ClickHouse remote table function",
 			Reach:     "reads over the network or from the host filesystem inside a query",

@@ -20,8 +20,8 @@ import (
 const pollInterval = 25 * time.Millisecond
 
 // Services returns the advisory lock of PostgreSQL and YugabyteDB.
-// CockroachDB and Spanner are in the family and are not served here: Ptah
-// takes no advisory lock on either, so a run there takes a no-op lock.
+// CockroachDB is in the family and is not served here: Ptah takes no advisory
+// lock on it, so a run there takes a no-op lock.
 func Services() dblockext.Services {
 	return dblockext.Services{
 		Dialects:  []string{platform.Postgres, platform.YugabyteDB},

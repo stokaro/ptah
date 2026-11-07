@@ -217,7 +217,6 @@ A comment is reported wherever the target does not store it, including where the
 render writes it as a `-- text` line. SQLite and SQL Server keep none of a
 table, column or index comment. Oracle and ClickHouse keep the first two and
 have no clause for the third. The MySQL family and PostgreSQL keep all three.
-The Spanner PostgreSQL interface has no statement for an index's comment.
 
 A partial index reports its condition wherever the target drops it. That one is
 worth a gate on its own: the MySQL family and ClickHouse render the index over

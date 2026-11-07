@@ -8,16 +8,11 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/goschema"
-	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/ptaherr"
-	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/dialect/spanner/spannerschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/builtintest"
-	"ptah.run/internal/sqlschema"
 )
 
 // policySource is one table keyed on id, with a timestamp column created_at
@@ -38,22 +33,20 @@ type Event struct {
 	return &database
 }
 
-// TestRowDeletionPolicy_PlatformPropertiesFollowTheTarget pins the source
-// spelling: each target's properties render on that target in its own
-// spelling, and are scoped away from every other target, as every platform
-// property is, a target no built-in engine serves included.
-func TestRowDeletionPolicy_PlatformPropertiesFollowTheTarget(t *testing.T) {
+// TestRowDeletionPolicy_ProviderPlatformPropertiesStayOnTheirTarget pins the
+// source spelling of a row deletion policy for engines a provider serves:
+// the properties of each engine's platform group are scoped to that engine,
+// as every platform property is, so no built-in target renders them.
+func TestRowDeletionPolicy_ProviderPlatformPropertiesStayOnTheirTarget(t *testing.T) {
 	database := policySource(`platform.spanner.row_deletion_column="created_at" platform.spanner.row_deletion_interval="30 days" ` +
 		`platform.ydb.row_deletion_column="expires" platform.ydb.row_deletion_interval="PT1H" platform.ydb.row_deletion_unit="seconds"`)
 	tests := []struct {
 		dialect string
 		caps    capability.Capabilities
-		want    string
 	}{
-		{dialect: platform.Spanner, caps: capability.SpannerPostgres(), want: `) TTL INTERVAL '30 days' ON "created_at";`},
-		{dialect: platform.Postgres, caps: capability.Postgres18(), want: ""},
-		{dialect: platform.CockroachDB, caps: capability.CockroachDB26(), want: ""},
-		{dialect: platform.MySQL, caps: capability.MySQL84(), want: ""},
+		{dialect: platform.Postgres, caps: capability.Postgres18()},
+		{dialect: platform.CockroachDB, caps: capability.CockroachDB26()},
+		{dialect: platform.MySQL, caps: capability.MySQL84()},
 	}
 	for _, test := range tests {
 		t.Run(test.dialect, func(t *testing.T) {
@@ -61,135 +54,8 @@ func TestRowDeletionPolicy_PlatformPropertiesFollowTheTarget(t *testing.T) {
 			statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(database, test.dialect, test.caps)
 			c.Assert(err, qt.IsNil)
 			rendered := strings.Join(statements, "\n")
-			c.Assert(strings.Contains(rendered, "TTL"), qt.Equals, test.want != "")
-			c.Assert(rendered, qt.Contains, test.want)
+			c.Assert(rendered, qt.Contains, "CREATE TABLE")
+			c.Assert(rendered, qt.Not(qt.Contains), "TTL")
 		})
 	}
-}
-
-// TestRowDeletionPolicy_AnUnboundPolicyIsRefusedElsewhere pins the other half:
-// a policy built in Go without a target binding claims every target, and a
-// target without an owner for it refuses rather than drops it.
-func TestRowDeletionPolicy_AnUnboundPolicyIsRefusedElsewhere(t *testing.T) {
-	tests := []struct {
-		name    string
-		value   schemaext.Value
-		dialect string
-		wantErr string
-	}{
-		{name: "Spanner policy on PostgreSQL", dialect: platform.Postgres, wantErr: `(?s).*ptah.run/spanner/row-deletion-policy.*`,
-			value: &spannerschema.DesiredRowDeletion{Policy: spannerschema.Policy{Column: "created_at", Interval: "30 days"}}},
-		{name: "Spanner policy on MySQL", dialect: platform.MySQL, wantErr: `(?s).*ptah.run/spanner/row-deletion-policy.*`,
-			value: &spannerschema.DesiredRowDeletion{Policy: spannerschema.Policy{Column: "created_at", Interval: "30 days"}}},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			database := &schemamodel.Database{
-				Tables: []schemamodel.Table{{StructName: "Event", Name: "events", Facets: must.Must(schemaext.NewFacets(test.value))}},
-				Fields: []schemamodel.Field{
-					{StructName: "Event", Name: "id", Type: "BIGINT", Primary: true},
-					{StructName: "Event", Name: "created_at", Type: "TIMESTAMP", Nullable: true},
-				},
-			}
-			statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(database, test.dialect, capability.ForDialect(test.dialect))
-			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-			c.Assert(err, qt.ErrorMatches, test.wantErr)
-			c.Assert(statements, qt.IsNil)
-		})
-	}
-}
-
-// TestRowDeletionPolicy_ATargetWithoutTheCapabilityRefuses pins the owner's
-// capability refusal: a policy on a target without row_deletion_policy.
-// Rendered without the setting, the server would keep every row the
-// declaration said to delete.
-func TestRowDeletionPolicy_ATargetWithoutTheCapabilityRefuses(t *testing.T) {
-	tests := []struct {
-		name       string
-		attributes string
-		dialect    string
-		caps       capability.Capabilities
-		wantErr    string
-	}{
-		{
-			name: "Spanner", dialect: platform.Spanner, caps: capability.SpannerPostgres().With(capability.RowDeletionPolicy, false),
-			attributes: `platform.spanner.row_deletion_column="created_at" platform.spanner.row_deletion_interval="30 days"`,
-			wantErr:    `(?s)spanner: table "events" declares a row deletion policy, which requires target capability row_deletion_policy; .*`,
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(policySource(test.attributes), test.dialect, test.caps)
-			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-			c.Assert(err, qt.ErrorMatches, test.wantErr)
-			c.Assert(statements, qt.IsNil)
-		})
-	}
-}
-
-// TestRowDeletionPolicy_AMisspelledPropertyIsRefused pins that each owner
-// claims every row_deletion-prefixed key of its platform group: a misspelled
-// or miscased property, and a unit Spanner's clause has no spelling for, is
-// refused by name rather than left as a table option nothing reads.
-func TestRowDeletionPolicy_AMisspelledPropertyIsRefused(t *testing.T) {
-	tests := []struct {
-		name       string
-		attributes string
-		dialect    string
-		wantErr    string
-	}{
-		{
-			name: "a misspelled name", dialect: platform.Spanner,
-			attributes: `platform.spanner.row_deletion_column="created_at" platform.spanner.row_deletion_intervall="30 days"`,
-			wantErr:    `(?s).*unknown row deletion property "row_deletion_intervall": the policy takes row_deletion_column, row_deletion_interval.*`,
-		},
-		{
-			name: "an upper-case name", dialect: platform.Spanner,
-			attributes: `platform.spanner.ROW_DELETION_COLUMN="created_at" platform.spanner.row_deletion_interval="30 days"`,
-			wantErr:    `(?s).*unknown row deletion property "ROW_DELETION_COLUMN": property names are lower case, as "row_deletion_column".*`,
-		},
-		{
-			name: "a unit on Spanner", dialect: platform.Spanner,
-			attributes: `platform.spanner.row_deletion_column="expires" platform.spanner.row_deletion_interval="30 days" platform.spanner.row_deletion_unit="SECONDS"`,
-			wantErr:    `(?s).*unknown row deletion property "row_deletion_unit": the policy takes row_deletion_column, row_deletion_interval.*`,
-		},
-		{
-			name: "an ISO 8601 interval on Spanner", dialect: platform.Spanner,
-			attributes: `platform.spanner.row_deletion_column="created_at" platform.spanner.row_deletion_interval="P30D"`,
-			wantErr:    `(?s).*interval "P30D" is not a number of months, weeks, days or hours, such as 30 days.*`,
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(policySource(test.attributes), test.dialect, capability.ForDialect(test.dialect))
-			c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
-			c.Assert(err, qt.ErrorMatches, test.wantErr)
-			c.Assert(statements, qt.IsNil)
-		})
-	}
-}
-
-// TestRowDeletionPolicy_ReadFromSpannerSQL reads a Spanner document's TTL
-// clause through the bundled runtime's SQL owners: the table carries the
-// Spanner owner's policy, and the document claims every table's policy, so a
-// table without one requests none.
-func TestRowDeletionPolicy_ReadFromSpannerSQL(t *testing.T) {
-	c := qt.New(t)
-	runtime := must.Must(builtin.New())
-	source := "CREATE TABLE events (id bigint PRIMARY KEY, created_at timestamptz) TTL INTERVAL '30 days' ON created_at;\n" +
-		"CREATE TABLE plain (id bigint PRIMARY KEY);\n"
-
-	database, _, err := sqlschema.ReadWith(c.Context(), []byte(source), platform.Spanner, nil,
-		sqlschema.Options{Owners: runtime.SQL(), Vocabulary: runtime.CoverageVocabulary()})
-
-	c.Assert(err, qt.IsNil)
-	c.Assert(database.Tables, qt.HasLen, 2)
-	policy, found, err := schemaext.FacetAs[*spannerschema.DesiredRowDeletion](database.Tables[0].Facets, spannerschema.RowDeletionKind)
-	c.Assert(err, qt.IsNil)
-	c.Assert(found, qt.IsTrue)
-	c.Assert(policy.Policy, qt.Equals, spannerschema.Policy{Column: "created_at", Interval: "30 days"})
-	c.Assert(database.FeatureCoverage.Lookup(spannerschema.RowDeletionKind, objectidentity.ID{}).State, qt.Equals, schemaext.Complete)
 }

@@ -113,12 +113,6 @@ func TestDescriptors_SchemaFileFactsAgreeWithTheSwitchesTheyReplace(t *testing.T
 			indexNaming: pgFamily,
 			statements:  descriptor.Statements{ViewsBlockDropTable: true, OwnerCreateOnce: true, RelationsShareNames: true},
 		},
-		{
-			dialect:     platform.Spanner,
-			names:       descriptor.Names{PublicKeyword: true},
-			indexNaming: pgFamily,
-			statements:  descriptor.Statements{ViewsBlockDropTable: true, DropViewIfExistsSkipsOtherKinds: true},
-		},
 		{dialect: platform.Oracle, names: descriptor.Names{Lookup: "ascii_case_insensitive"}},
 	}
 	c := qt.New(t)

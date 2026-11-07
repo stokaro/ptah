@@ -32,7 +32,6 @@ func TestCompareTypeCapacity_ALowerCapacityNarrows(t *testing.T) {
 		{"CockroachDB STRING up", "cockroachdb", "STRING(5)", "string(100)", false},
 		{"CockroachDB float down", "cockroachdb", "float8", "float4", true},
 		{"YugabyteDB double to real", "yugabytedb", "double precision", "real", true},
-		{"Spanner double to real", "spanner", "double precision", "real", true},
 		{"MySQL longtext to text", "mysql", "longtext", "text", true},
 		{"MySQL text to longtext", "mysql", "text", "longtext", false},
 		{"MySQL mediumtext to text", "mysql", "mediumtext", "text", true},

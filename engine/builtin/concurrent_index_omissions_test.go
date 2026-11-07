@@ -69,9 +69,9 @@ func TestGetOrderedCreateStatementsReportingOmissions_BuildsTheIndexConcurrently
 // TestGetOrderedCreateStatementsReportingOmissions_NamesAConcurrentBuildATargetCannotMake
 // covers the targets in this family that have no such build.
 //
-// The rows are measured rather than assumed: CockroachDB and Spanner speak the
-// PostgreSQL wire protocol and go through the same renderer, and neither
-// carries CreateIndexConcurrently. YugabyteDB does, so it is here as the row
+// The rows are measured rather than assumed: CockroachDB speaks the PostgreSQL
+// wire protocol and goes through the same renderer, and does not carry
+// CreateIndexConcurrently. YugabyteDB does, so it is here as the row
 // that must report nothing -- without it, a report firing for any concurrent
 // declaration at all would satisfy the table.
 func TestGetOrderedCreateStatementsReportingOmissions_NamesAConcurrentBuildATargetCannotMake(t *testing.T) {
@@ -83,11 +83,6 @@ func TestGetOrderedCreateStatementsReportingOmissions_NamesAConcurrentBuildATarg
 		{
 			name:    "cockroachdb builds under a lock",
 			dialect: platform.CockroachDB,
-			want:    []string{"index idx_docs_title concurrent index build"},
-		},
-		{
-			name:    "spanner builds under a lock",
-			dialect: platform.Spanner,
 			want:    []string{"index idx_docs_title concurrent index build"},
 		},
 		{

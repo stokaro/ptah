@@ -264,7 +264,7 @@ Each entry under `tables` declares one table.
 | `column_families` | Ordered map of a YDB table's column families; see [Column families](../../extend/providers/ydb/declarations/#column-families). |
 | `changefeeds` | Ordered map of a YDB table's changefeeds; see [Changefeeds](../../extend/providers/ydb/declarations/#changefeeds). |
 | `rls_enabled` | Enables row-level security for the table. |
-| `platform` / `overrides` | Dialect-specific override map. A [Spanner row deletion policy](../../databases/distributed/#spanner-row-deletion-policy) sits in its `spanner` group and a [YDB TTL](https://github.com/stokaro/ptah-ydb-plugin#ttl) in its `ydb` group, as `row_deletion_column`, `row_deletion_interval` and, on YDB, `row_deletion_unit`. |
+| `platform` / `overrides` | Dialect-specific override map. A [Spanner row deletion policy](../../extend/providers/spanner/declarations/#row-deletion-policies) sits in its `spanner` group and a [YDB TTL](https://github.com/stokaro/ptah-ydb-plugin#ttl) in its `ydb` group, as `row_deletion_column`, `row_deletion_interval` and, on YDB, `row_deletion_unit`. |
 | `auto_partitioning_by_size`, `auto_partitioning_partition_size_mb`, `auto_partitioning_by_load`, `auto_partitioning_min_partitions_count`, `auto_partitioning_max_partitions_count`, `read_replicas_settings`, `key_bloom_filter`, `uniform_partitions`, `partition_at_keys` | A YDB row table's [partitioning, read replicas and key bloom filter](https://github.com/stokaro/ptah-ydb-plugin#partitioning-settings-read-replicas-and-key-bloom-filter), with the values the annotation attributes of the same names take. Every other dialect refuses them. |
 
 Table-local `columns`, `fields`, `indexes`, and `constraints` preserve YAML

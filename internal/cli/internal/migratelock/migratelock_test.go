@@ -62,13 +62,6 @@ func TestEnsure_FailurePath(t *testing.T) {
 				`Remove --migration-lock-timeout to run without a lock`,
 		},
 		{
-			name:    "spanner",
-			dialect: "spanner",
-			wantErr: `--migration-lock-timeout requested the migration advisory lock, and dialect "spanner" has none: ` +
-				`only postgres, mysql, mariadb, sqlserver, yugabytedb take a session advisory lock. ` +
-				`Remove --migration-lock-timeout to run without a lock`,
-		},
-		{
 			name:    "oracle",
 			dialect: "oracle",
 			wantErr: `--migration-lock-timeout requested the migration advisory lock, and dialect "oracle" has none: ` +

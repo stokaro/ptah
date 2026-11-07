@@ -27,9 +27,7 @@ import (
 	"ptah.run/internal/pgpolicysource"
 )
 
-// Targets are the targets the services are registered for. Spanner speaks the
-// PostgreSQL dialect without row security, so it has no row-security state to
-// compare.
+// Targets are the targets the services are registered for.
 func Targets() []string {
 	return []string{platform.Postgres, platform.CockroachDB, platform.YugabyteDB}
 }

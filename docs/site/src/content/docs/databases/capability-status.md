@@ -34,8 +34,8 @@ over that run's cell results.
 - Measured: 2026-11-05T14:36:14Z
 - Commit: `21a3a31d36920742978bf9058860199b1db896c4`
 - Run: [42046604672](https://github.com/stokaro/ptah/actions/runs/42046604672)
-- Declared release lines: 34. Runnable cells: 31. Results received: 31.
-- 31 passed, 0 capability disagreements, 0 suite failures, 0 missing.
+- Declared release lines: 33. Runnable cells: 30. Results received: 30.
+- 30 passed, 0 capability disagreements, 0 suite failures, 0 missing.
 
 | Cell | Engine | Line | Verdict |
 | --- | --- | --- | --- |
@@ -69,7 +69,6 @@ over that run's cell results.
 | `yugabytedb-2025-2` | yugabytedb | 2025.2 | PASS |
 | `yugabytedb-2024-2` | yugabytedb | 2024.2 | PASS |
 | `sqlite-3` | sqlite | 3 | PASS |
-| `spanner-0` | spanner | 0 | PASS |
 
 ## Declared lines this tier cannot run
 

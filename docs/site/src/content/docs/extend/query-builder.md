@@ -70,7 +70,7 @@ that list of names:
 
 | Dialect | Placeholder | Identifiers | `LIMIT` / `OFFSET` |
 | --- | --- | --- | --- |
-| `postgresql` `postgres` `cockroachdb` `yugabytedb` `spanner` | `$1`, `$2`, … | `"id"` | `LIMIT $n OFFSET $n` |
+| `postgresql` `postgres` `cockroachdb` `yugabytedb` | `$1`, `$2`, … | `"id"` | `LIMIT $n OFFSET $n` |
 | `mysql` `mariadb` | `?` | `` `id` `` | `LIMIT ? OFFSET ?` |
 | `clickhouse` | `?` | `` `id` `` | `LIMIT ? OFFSET ?` |
 | `sqlite` `sqlite3` | `?` | `"id"` | `LIMIT ? OFFSET ?` |
@@ -93,10 +93,9 @@ provider registers:
   with `ORA-00923`. Identifiers are bare because a table created as `ora_posts`
   is `ORA_POSTS` in the catalog, and a query naming `"ora_posts"` would look for
   a table nobody created — the same decision the Oracle DDL renderer makes.
-- **Spanner** renders byte-identically to PostgreSQL, including `RETURNING`. It
-  has no live coverage in this repository, so the
-  [support matrix](../../databases/support-matrix/) caveat applies — review the
-  generated SQL before relying on it.
+- **Spanner** renders while its [provider](../providers/spanner/) is
+  selected, with the spelling the provider declares: `$1`, `$2`, … placeholders,
+  `"id"` quoting, `ON CONFLICT` for an upsert, and `RETURNING`.
 
 - **YDB** renders while its [provider](../providers/ydb/) is selected,
   with the spelling the provider declares, which the builder registers for the
@@ -300,7 +299,7 @@ that fails at execution time against the database.
 - **MySQL and MariaDB** have no `FULL [OUTER] JOIN` in any version — it must be
   emulated with a `UNION` of a `LEFT` and a `RIGHT` join — so `FULL` is rejected
   (`renderer: mysql does not support FULL OUTER JOIN`). `RIGHT` renders normally.
-- The **PostgreSQL family** (including CockroachDB, YugabyteDB, and Spanner),
+- The **PostgreSQL family** (including CockroachDB and YugabyteDB),
   **SQL Server**, **Oracle**, **ClickHouse** and **YDB** support all four.
 - **YDB** joins only on equalities between columns of the two joined tables, or
   a conjunction of them. Any other `ON` condition — an inequality, a comparison
@@ -514,8 +513,9 @@ execution time.
 
 | Dialect | `RETURNING` |
 | --- | --- |
-| PostgreSQL family (incl. CockroachDB, YugabyteDB, Spanner) | yes |
+| PostgreSQL family (incl. CockroachDB, YugabyteDB) | yes |
 | SQLite | yes (since 3.35, 2021) |
+| Spanner | as its provider states (yes) |
 | YDB | as its provider states (see note) |
 | MySQL | no |
 | MariaDB | no (see note) |

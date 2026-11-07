@@ -6,17 +6,23 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/coverage"
-	"ptah.run/dialect/spanner/spannerschema"
-	"ptah.run/internal/builtintest"
+	"ptah.run/engine"
 	"ptah.run/internal/schemafile"
 )
 
-// ownerCoverageKinds is every coverage kind an owner registers for a document
-// header, which the bundled runtime selects.
+// ownerCoverageKinds is every coverage kind the owner of [ownerRuntime]
+// registers for a document header.
 func ownerCoverageKinds() []coverage.Kind {
-	return spannerschema.CoverageKinds()
+	return []coverage.Kind{"changefeed", "topic"}
+}
+
+// ownerRuntime selects an owner of an engine no build ships, which registers
+// [ownerCoverageKinds].
+func ownerRuntime() *engine.Runtime {
+	return must.Must(engine.New(engine.Provider{ID: "example.org/feeds", CoverageKinds: ownerCoverageKinds()}))
 }
 
 // ownerKindDocument writes one named record of kind, encoded the way
@@ -37,11 +43,11 @@ func ownerKindDocument(c *qt.C, format string, kind coverage.Kind) (path, direct
 }
 
 // TestOwnerCoverageKinds_RoundTripThroughEachHeader reads every owner kind
-// back through the SQL and HCL headers with the bundled runtime's vocabulary,
-// as the record that was written. DBML has no header, and the kinds it
-// records as format limits are pinned beside the other formats' limits.
+// back through the SQL and HCL headers with the owner's vocabulary, as the
+// record that was written. DBML has no header, and the kinds it records as
+// format limits are pinned beside the other formats' limits.
 func TestOwnerCoverageKinds_RoundTripThroughEachHeader(t *testing.T) {
-	runtime := builtintest.Runtime()
+	runtime := ownerRuntime()
 	for _, kind := range ownerCoverageKinds() {
 		for _, format := range []string{"SQL", "HCL"} {
 			t.Run(format+" "+string(kind), func(t *testing.T) {
@@ -61,7 +67,7 @@ func TestOwnerCoverageKinds_RoundTripThroughEachHeader(t *testing.T) {
 // name where the run's vocabulary does not hold it, rather than reading the
 // header as one that makes no claim.
 func TestOwnerCoverageKinds_RefusedWithoutTheirOwner(t *testing.T) {
-	runtime := builtintest.Runtime()
+	runtime := ownerRuntime()
 	for _, kind := range ownerCoverageKinds() {
 		for _, format := range []string{"SQL", "HCL"} {
 			t.Run(format+" "+string(kind), func(t *testing.T) {

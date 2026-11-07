@@ -45,12 +45,15 @@ func TestPlanner_CapabilityGatesRoleManagement(t *testing.T) {
 		},
 	}
 
-	nodes, err := postgres.NewForDialect(platform.Spanner, capability.SpannerPostgres()).GenerateMigrationAST(
+	// A PostgreSQL-family target without role management, as a provider may
+	// state one; no built-in engine of the family lacks it.
+	noRoles := capability.Postgres17().With(capability.RoleManagement, false).With(capability.RoleComments, false)
+	nodes, err := postgres.NewForDialect(platform.Postgres, noRoles).GenerateMigrationAST(
 		context.Background(), must.Must(builtin.New()),
 		withDeclaredObjects(diff, desired),
 	)
 	c.Assert(err, qt.IsNil)
-	sql, err := builtin.RenderSQLWithCapabilities(platform.Spanner, capability.SpannerPostgres(), nodes...)
+	sql, err := builtin.RenderSQLWithCapabilities(platform.Postgres, noRoles, nodes...)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Not(qt.Contains), "CREATE ROLE")

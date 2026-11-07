@@ -44,7 +44,7 @@ from their declarations, not from counts here:
   `internal/connector/<engine>connect`; a `sqlite` URL may take `libsql`
   (`internal/connector/sqliteconnect`).
 - Rendering: `docs/capabilities.md`. Accepted is not promised: `SERIAL` is
-  refused by name on ClickHouse, CockroachDB and Spanner, never downgraded.
+  refused by name on ClickHouse and CockroachDB, never downgraded.
 
 ## Repository Layout
 

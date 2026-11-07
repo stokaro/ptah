@@ -267,7 +267,7 @@ func ToTable(table *ast.CreateTableNode, sourcePlatform string) schemamodel.Tabl
 		Schema:     tableSchemaName,
 		Comment:    table.Comment,
 		// Carried, because the SQL surface is where an owner's table setting,
-		// such as a Spanner row deletion policy, a YDB TTL, YDB column
+		// such as a provider's row deletion policy, a YDB TTL, YDB column
 		// families, a YDB table's partitioning or its column storage, is read
 		// back: `db read` emits the clause, and a schema file holding that
 		// output has to describe the same table it came from

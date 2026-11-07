@@ -39,7 +39,7 @@ func TestRefuse_CarriesTheSentinelAndTheReason(t *testing.T) {
 func TestReason_NamesNoDialect(t *testing.T) {
 	dialects := []string{
 		"postgres", "cockroachdb", "yugabytedb", "clickhouse",
-		"mysql", "mariadb", "sqlite", "sqlserver", "spanner",
+		"mysql", "mariadb", "sqlite", "sqlserver",
 	}
 
 	for _, dialect := range dialects {

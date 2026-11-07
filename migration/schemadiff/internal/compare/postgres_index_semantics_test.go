@@ -651,7 +651,6 @@ func TestPostgresIndexSemantics_OtherDialectsAreUnaffected(t *testing.T) {
 		{name: "sqlite", dialect: platform.SQLite},
 		{name: "clickhouse", dialect: platform.ClickHouse},
 		{name: "yugabytedb", dialect: platform.YugabyteDB},
-		{name: "spanner", dialect: platform.Spanner},
 		{name: "unset dialect", dialect: ""},
 	}
 

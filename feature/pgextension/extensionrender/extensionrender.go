@@ -5,9 +5,9 @@
 // Capability gating of a comment stays with the PostgreSQL-family renderer:
 // the comment payload names the capability it needs and the object a skip
 // line names, and a target without the key writes the skip and records the
-// omission, as it does for its own capability-gated objects. CockroachDB and
-// Spanner accept CREATE EXTENSION and nothing else about one, so a creation
-// that names a schema and every alteration are refused there.
+// omission, as it does for its own capability-gated objects. CockroachDB
+// accepts CREATE EXTENSION and nothing else about one, so a creation that
+// names a schema and every alteration are refused there.
 package extensionrender
 
 import (
@@ -37,7 +37,7 @@ func Registry() (renderer.Extensions, error) { return renderer.NewExtensions(Han
 
 // HostsAlterations reports whether a target speaks ALTER EXTENSION and
 // CREATE EXTENSION ... WITH SCHEMA. PostgreSQL and YugabyteDB do; CockroachDB
-// and Spanner create an extension and do nothing else with one.
+// creates an extension and does nothing else with one.
 func HostsAlterations(target string) bool {
 	switch platform.NormalizeDialect(target) {
 	case platform.Postgres, platform.YugabyteDB:

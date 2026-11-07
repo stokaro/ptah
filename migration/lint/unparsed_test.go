@@ -139,9 +139,9 @@ func TestAC102_StaysSilentWhereTheProviderReadsTheDialect(t *testing.T) {
 
 // TestAC102_ValidStatementsThatMeetAParserGapStayGreen holds why the rule does not
 // fail a run. Every row is a statement measured against a real server of its
-// dialect, except Spanner's, which no local server here checks: the server accepts
-// it and the parser refuses it. A refusal would turn these files red, so each one is
-// reported at a severity no default threshold fails on.
+// dialect: the server accepts it and the parser refuses it. A refusal would turn
+// these files red, so each one is reported at a severity no default threshold fails
+// on.
 func TestAC102_ValidStatementsThatMeetAParserGapStayGreen(t *testing.T) {
 	tests := []struct {
 		dialect   string
@@ -158,7 +158,6 @@ func TestAC102_ValidStatementsThatMeetAParserGapStayGreen(t *testing.T) {
 		{dialect: "clickhouse", statement: "ALTER TABLE t ADD COLUMN b Int32 AFTER a;"},
 		{dialect: "cockroachdb", statement: "ALTER TABLE t SPLIT AT VALUES (1);"},
 		{dialect: "yugabytedb", statement: "CREATE TABLE u (a INT) SPLIT INTO 4 TABLETS;"},
-		{dialect: "spanner", statement: "CREATE NULL_FILTERED INDEX i ON t (a);"},
 	}
 	for _, test := range tests {
 		t.Run(test.dialect+"/"+test.statement, func(t *testing.T) {

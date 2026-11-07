@@ -355,7 +355,7 @@ func TestRevisionTableProbeRefusesDialectsItCannotRead(t *testing.T) {
 	}{
 		{name: "sqlite has no probe", dialect: "sqlite"},
 		{name: "clickhouse has no probe", dialect: "clickhouse"},
-		{name: "an unmeasured dialect has no probe", dialect: "spanner"},
+		{name: "a dialect no descriptor describes has no probe", dialect: "nonesuch"},
 	}
 
 	for _, test := range tests {
@@ -456,7 +456,7 @@ func TestRevisionTableCoverageMatchesWriterBehavior(t *testing.T) {
 		{name: "sqlserver hides both revision tables and drops them", dialect: "sqlserver", want: true},
 		{name: "sqlite hides schema_migrations but keeps it", dialect: "sqlite", want: false},
 		{name: "clickhouse hides nothing", dialect: "clickhouse", want: false},
-		{name: "an unmeasured dialect probes nothing", dialect: "spanner", want: false},
+		{name: "a dialect no descriptor describes probes nothing", dialect: "nonesuch", want: false},
 	}
 
 	for _, test := range tests {

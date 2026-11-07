@@ -224,7 +224,7 @@ func TestGetOrderedCreateStatements_CompositeForeignKeyCardinalityMismatch_Failu
 		}},
 	}
 
-	for _, dialect := range []string{"postgres", "cockroachdb", "yugabytedb", "mysql", "mariadb", "sqlite", "sqlserver", "spanner"} {
+	for _, dialect := range []string{"postgres", "cockroachdb", "yugabytedb", "mysql", "mariadb", "sqlite", "sqlserver"} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 			statements, err := builtin.GetOrderedCreateStatements(database, dialect)
@@ -245,8 +245,6 @@ func TestGetOrderedCreateStatements_ReferentialAction_FailurePath(t *testing.T) 
 	}{
 		{name: "mysql set default", dialect: "mysql", onDelete: "SET DEFAULT", wantErr: "mysql does not support ON DELETE SET DEFAULT"},
 		{name: "mariadb set default", dialect: "mariadb", onUpdate: "SET DEFAULT", wantErr: "mariadb does not support ON UPDATE SET DEFAULT"},
-		{name: "spanner update action", dialect: "spanner", onUpdate: "CASCADE", wantErr: "spanner does not support ON UPDATE CASCADE"},
-		{name: "spanner set null", dialect: "spanner", onDelete: "SET NULL", wantErr: "spanner does not support ON DELETE SET NULL"},
 		{name: "unknown postgres action", dialect: "postgres", onDelete: "ARCHIVE", wantErr: "postgres does not support ON DELETE ARCHIVE"},
 	}
 
@@ -328,9 +326,8 @@ func TestGetOrderedCreateStatements_NormalizesAtlasActionTokensEveryDialect(t *t
 // Widening the accepted set to include the underscore tokens is the cheaper
 // wrong fix for "ptah refuses SET_NULL": it compiles, it clears the reported
 // symptom, and it renders at exit 0. What it also does is route SET_DEFAULT
-// past the MySQL-family refusal and SET_NULL past the Spanner one, so the
-// spelling that no server parses reaches a server that would have refused the
-// action even spelled correctly.
+// past the MySQL-family refusal, so the spelling that no server parses reaches
+// a server that would have refused the action even spelled correctly.
 func TestGetOrderedCreateStatements_UnderscoreActionReachesDialectGate_FailurePath(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -341,8 +338,6 @@ func TestGetOrderedCreateStatements_UnderscoreActionReachesDialectGate_FailurePa
 	}{
 		{name: "mysql set default", dialect: "mysql", onDelete: "SET_DEFAULT", wantErr: "mysql does not support ON DELETE SET DEFAULT"},
 		{name: "mariadb set default", dialect: "mariadb", onUpdate: "SET_DEFAULT", wantErr: "mariadb does not support ON UPDATE SET DEFAULT"},
-		{name: "spanner set null", dialect: "spanner", onDelete: "SET_NULL", wantErr: "spanner does not support ON DELETE SET NULL"},
-		{name: "spanner update cascade", dialect: "spanner", onUpdate: "NO_ACTION", wantErr: "spanner does not support ON UPDATE NO ACTION"},
 		{name: "unknown underscore token", dialect: "postgres", onDelete: "SET_ARCHIVE", wantErr: "postgres does not support ON DELETE SET ARCHIVE"},
 	}
 
@@ -358,22 +353,6 @@ func TestGetOrderedCreateStatements_UnderscoreActionReachesDialectGate_FailurePa
 			c.Assert(statements, qt.IsNil)
 		})
 	}
-}
-
-func TestGetOrderedCreateStatements_SpannerMutualCompositeForeignKeys(t *testing.T) {
-	c := qt.New(t)
-	database := mutualCompositeForeignKeyDatabase()
-	schemamodel.Finalize(database)
-
-	statements, err := builtin.GetOrderedCreateStatements(database, "spanner")
-
-	c.Assert(err, qt.IsNil)
-	c.Assert(statements, qt.HasLen, 4)
-	sql := strings.Join(statements, "\n")
-	c.Assert(strings.Count(sql, "CREATE TABLE"), qt.Equals, 2)
-	c.Assert(strings.Count(sql, "ALTER TABLE"), qt.Equals, 2)
-	c.Assert(strings.Count(sql, "FOREIGN KEY"), qt.Equals, 2)
-	c.Assert(sql, qt.Not(qt.Contains), "not supported")
 }
 
 func TestGetOrderedCreateStatements_UnnamedForeignKeyNamesAreUnique(t *testing.T) {
@@ -800,7 +779,6 @@ func TestGetOrderedCreateStatements_DuplicateForeignKeyNamesRespectDialectScope_
 		{name: "mysql database scope", dialect: "mysql"},
 		{name: "mariadb database scope", dialect: "mariadb"},
 		{name: "sql server schema scope", dialect: "sqlserver"},
-		{name: "spanner schema scope", dialect: "spanner"},
 	}
 
 	for _, test := range tests {
@@ -914,7 +892,6 @@ func TestGetOrderedCreateStatements_IncompatibleForeignKeyTypes_FailurePath(t *t
 		{name: "mysql", dialect: "mysql", childType: "BIGINT"},
 		{name: "mariadb", dialect: "mariadb", childType: "BIGINT"},
 		{name: "sql server", dialect: "sqlserver", childType: "BIGINT"},
-		{name: "spanner", dialect: "spanner", childType: "BIGINT"},
 	}
 
 	for _, test := range tests {
@@ -1196,8 +1173,6 @@ func TestGetOrderedCreateStatements_ExplicitForeignKeyIdentifierLimit_FailurePat
 		{name: "mariadb characters", dialect: "mariadb", fkName: strings.Repeat("é", 65), wantErr: `.*exceeds the mariadb identifier limit of 64 characters`},
 		{name: "sqlserver characters", dialect: "sqlserver", fkName: strings.Repeat("a", 129), wantErr: `.*exceeds the sqlserver identifier limit of 128 characters`},
 		{name: "sqlserver multibyte characters", dialect: "sqlserver", fkName: strings.Repeat("界", 129), wantErr: `.*exceeds the sqlserver identifier limit of 128 characters`},
-		{name: "spanner characters", dialect: "spanner", fkName: strings.Repeat("a", 129), wantErr: `.*exceeds the spanner identifier limit of 128 characters`},
-		{name: "spanner multibyte characters", dialect: "spanner", fkName: strings.Repeat("界", 129), wantErr: `.*exceeds the spanner identifier limit of 128 characters`},
 	}
 
 	for _, test := range tests {
@@ -1234,7 +1209,6 @@ func TestGetOrderedCreateStatements_ExplicitForeignKeyIdentifierLimit_HappyPath(
 		fkName  string
 	}{
 		{name: "sqlserver counts characters not bytes", dialect: "sqlserver", fkName: strings.Repeat("界", 100)},
-		{name: "spanner counts characters not bytes", dialect: "spanner", fkName: strings.Repeat("界", 100)},
 		{name: "postgres accepts 62 bytes", dialect: "postgres", fkName: strings.Repeat("é", 31)},
 		{name: "mysql accepts 64 characters", dialect: "mysql", fkName: strings.Repeat("é", 64)},
 		{name: "sqlite models no limit", dialect: "sqlite", fkName: strings.Repeat("a", 300)},
@@ -1259,7 +1233,6 @@ func TestGetOrderedCreateStatements_SchemaScopedForeignKeyNamesTreatDefaultSchem
 		defaultSchema string
 	}{
 		{name: "SQL Server", dialect: "sqlserver", defaultSchema: "dbo"},
-		{name: "Spanner", dialect: "spanner", defaultSchema: "public"},
 	}
 
 	for _, test := range tests {
@@ -1297,32 +1270,6 @@ func TestGetOrderedCreateStatements_SchemaScopedForeignKeyNamesTreatDefaultSchem
 			c.Assert(statements, qt.IsNil)
 		})
 	}
-}
-
-func TestGetOrderedCreateStatements_SpannerArrayForeignKey_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
-	statements, err := builtin.GetOrderedCreateStatements(
-		simpleForeignKeyDatabase("ARRAY<INT64>", "ARRAY<INT64>"),
-		"spanner",
-	)
-
-	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
-	c.Assert(err, qt.ErrorMatches, `invalid foreign key: Spanner type ARRAY<INT64> cannot participate in foreign keys: .*`)
-	c.Assert(statements, qt.IsNil)
-}
-
-func TestGetOrderedCreateStatements_SpannerFloat4ForeignKey_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
-	statements, err := builtin.GetOrderedCreateStatements(
-		simpleForeignKeyDatabase("FLOAT4", "FLOAT4"),
-		"spanner",
-	)
-
-	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
-	c.Assert(err, qt.ErrorMatches, `invalid foreign key: Spanner type FLOAT4 cannot participate in foreign keys: .*`)
-	c.Assert(statements, qt.IsNil)
 }
 
 func TestGetOrderedCreateStatements_SQLServerCascadeCycle_FailurePath(t *testing.T) {
@@ -1382,27 +1329,6 @@ func foreignKeyActionDatabase(onDelete, onUpdate string) *schemamodel.Database {
 				OnDelete:       onDelete,
 				OnUpdate:       onUpdate,
 			},
-		},
-	}
-}
-
-func mutualCompositeForeignKeyDatabase() *schemamodel.Database {
-	return &schemamodel.Database{
-		Tables: []schemamodel.Table{
-			{StructName: "Left", Name: "left_nodes", PrimaryKey: []string{"tenant_id", "id"}},
-			{StructName: "Right", Name: "right_nodes", PrimaryKey: []string{"tenant_id", "id"}},
-		},
-		Fields: []schemamodel.Field{
-			{StructName: "Left", Name: "tenant_id", Type: "BIGINT"},
-			{StructName: "Left", Name: "id", Type: "BIGINT"},
-			{StructName: "Left", Name: "right_id", Type: "BIGINT"},
-			{StructName: "Right", Name: "tenant_id", Type: "BIGINT"},
-			{StructName: "Right", Name: "id", Type: "BIGINT"},
-			{StructName: "Right", Name: "left_id", Type: "BIGINT"},
-		},
-		Constraints: []schemamodel.Constraint{
-			{StructName: "Left", Name: "fk_left_right", Type: "FOREIGN KEY", Columns: []string{"tenant_id", "right_id"}, ForeignTable: "right_nodes", ForeignColumns: []string{"tenant_id", "id"}},
-			{StructName: "Right", Name: "fk_right_left", Type: "FOREIGN KEY", Columns: []string{"tenant_id", "left_id"}, ForeignTable: "left_nodes", ForeignColumns: []string{"tenant_id", "id"}},
 		},
 	}
 }

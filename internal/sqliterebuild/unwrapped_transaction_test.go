@@ -12,15 +12,8 @@ import (
 // TestDDLInsideTransaction_IsDeclaredPerTarget states which engines take a
 // schema statement inside an explicit transaction.
 //
-// The key exists because Spanner's PostgreSQL interface does not, and every
-// declarative apply against it failed on its first statement:
-//
-//	ERROR: DDL statements are only allowed outside explicit transactions.
-//	       (SQLSTATE 25000)
-//
-// measured on the Cloud Spanner emulator behind PGAdapter 0.55.2. The same DDL
-// applies unwrapped, so what the server refuses is the wrapper
-// (stokaro/ptah#1793).
+// A target that does not refuses the wrapper and takes the same DDL
+// unwrapped (stokaro/ptah#1793).
 //
 // It is deliberately NOT capability.TransactionalDDL. That key answers whether
 // a failed migration rolls back as a unit, and it is false for MySQL -- which
@@ -45,8 +38,6 @@ func TestDDLInsideTransaction_IsDeclaredPerTarget(t *testing.T) {
 		// writer has answered BeginTransaction with a no-op for that reason
 		// since long before this key.
 		{dialect: platform.ClickHouse, want: false},
-		// Measured: SQLSTATE 25000.
-		{dialect: platform.Spanner, want: false},
 	}
 
 	for _, test := range tests {

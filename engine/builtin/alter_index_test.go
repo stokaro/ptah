@@ -58,7 +58,6 @@ func TestRenderSQL_AlterIndex_FailurePath(t *testing.T) {
 	}{
 		{dialect: platform.CockroachDB, wantErr: `unsupported feature: cockroachdb: ALTER INDEX ix RENAME TO other is written for PostgreSQL only`},
 		{dialect: platform.YugabyteDB, wantErr: `unsupported feature: yugabytedb: ALTER INDEX ix RENAME TO other is written for PostgreSQL only`},
-		{dialect: platform.Spanner, wantErr: `unsupported feature: spanner: ALTER INDEX ix RENAME TO other is written for PostgreSQL only`},
 		{dialect: platform.MySQL, wantErr: `unsupported feature: mysql: ALTER INDEX ix RENAME TO other is PostgreSQL's statement, and this renderer does not write it`},
 		{dialect: platform.MariaDB, wantErr: `unsupported feature: mariadb: ALTER INDEX ix RENAME TO other is PostgreSQL's statement, .*`},
 		{dialect: platform.SQLite, wantErr: `unsupported feature: sqlite: ALTER INDEX ix RENAME TO other is PostgreSQL's statement, .*`},

@@ -1,7 +1,7 @@
 // Package postgresreplay is the PostgreSQL family's migration replay guard:
-// it refuses a statement on PostgreSQL, CockroachDB, YugabyteDB or Spanner
-// whose effects cannot be confined to the dev database, and on a server the
-// run owns it lifts the refusals whose only reason is the rest of the server.
+// it refuses a statement on PostgreSQL, CockroachDB or YugabyteDB whose
+// effects cannot be confined to the dev database, and on a server the run owns
+// it lifts the refusals whose only reason is the rest of the server.
 // internal/devclean asks it through the internal/devclean/replay contract.
 package postgresreplay
 
@@ -15,7 +15,7 @@ import (
 // They share one reading of the SQL; CockroachDB and YugabyteDB each refuse
 // a few operations of their own besides.
 func Services() []replay.Service {
-	dialects := []string{platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner}
+	dialects := []string{platform.Postgres, platform.CockroachDB, platform.YugabyteDB}
 	services := make([]replay.Service, 0, len(dialects))
 	for _, dialect := range dialects {
 		services = append(services, replay.Service{Dialect: dialect, Guard: guard{dialect: dialect}})

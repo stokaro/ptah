@@ -27,7 +27,7 @@ The mode is refused on an engine it has no measurement for, rather than
 reporting a clean directory nothing proved. Where the run names a dialect the
 refusal comes from the configuration; where only a dev URL names one, it comes
 when the connection says which product answered, because a `postgres://` URL
-reaches CockroachDB, YugabyteDB and Spanner too.
+reaches CockroachDB and YugabyteDB too.
 
 ## What it proves
 

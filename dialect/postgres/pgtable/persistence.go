@@ -42,7 +42,7 @@ func SupportsPersistence(target string) bool {
 // PostgreSQL supports the setting. Other targets omit it with a diagnostic.
 // The returned slice is independent.
 func PersistenceTargets() []string {
-	return []string{platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner,
+	return []string{platform.Postgres, platform.CockroachDB, platform.YugabyteDB,
 		platform.MySQL, platform.MariaDB, platform.SQLite, platform.SQLServer, platform.Oracle, platform.ClickHouse}
 }
 

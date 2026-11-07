@@ -176,7 +176,7 @@ Rules:
 - **Every accepted spelling resolves to the same target.** `dialects="postgresql"`
   and `dialects="postgres"` select the same dialect.
 - **A dialect family is not implied.** `dialects="postgres"` does not include
-  `cockroachdb`, `yugabytedb` or `spanner`; name each target you mean.
+  `cockroachdb` or `yugabytedb`; name each target you mean.
 - **A scope that names no supported dialect is a parse error**, including an
   empty `dialects=""`. Reading a typo as "belongs to nothing" would drop the
   object from every target with every command still exiting 0.
@@ -191,7 +191,7 @@ Rules:
 not accept it.
 
 An `extension` scope may name only targets that can host an extension:
-`postgres`, `cockroachdb`, `yugabytedb` and `spanner`. A scope that names any
+`postgres`, `cockroachdb` and `yugabytedb`. A scope that names any
 other target is a parse error, because it asks for an extension where none can
 exist. An extension declared without `dialects` reaches every target, and a
 target that cannot host it leaves it out with a note, as a shared schema
@@ -199,7 +199,7 @@ needs.
 
 A `domain` or `composite` declaration is PostgreSQL's unless its scope names
 another target. One without `dialects`, or scoped only to `postgres`,
-`cockroachdb`, `yugabytedb` and `spanner`, is a PostgreSQL type, and a plan for
+`cockroachdb` and `yugabytedb`, is a PostgreSQL type, and a plan for
 any other target refuses it. One scoped to `oracle` is an Oracle domain or
 object type:
 
@@ -246,14 +246,15 @@ rest are refused without one. A table that names none declares no TTL.
 See [CockroachDB row-level TTL](../../databases/distributed/#cockroachdb-row-level-ttl).
 
 A Spanner row deletion policy and a YDB TTL are declared with the platform
-properties of their own engine: `platform.spanner.row_deletion_column` and
+properties of their own engine, which that engine's provider reads:
+`platform.spanner.row_deletion_column` and
 `platform.spanner.row_deletion_interval`, or `platform.ydb.row_deletion_column`,
 `platform.ydb.row_deletion_interval` and, for an integer column,
 `platform.ydb.row_deletion_unit`. A policy needs its column and its interval,
 and each engine reads the interval in its own spelling. The bare names are not
 attributes of the directive, and nothing turns one engine's policy into the
 other's. See
-[Spanner row deletion policy](../../databases/distributed/#spanner-row-deletion-policy)
+[Spanner row deletion policies](../../extend/providers/spanner/declarations/#row-deletion-policies)
 and [YDB TTL](https://github.com/stokaro/ptah-ydb-plugin#ttl).
 
 A YDB row table also takes its partitioning, its read replicas and its key bloom
@@ -354,7 +355,7 @@ properties; a selected provider validates their values.
 | `condition` | No | Partial index condition. |
 | `fields` | No | Comma-separated Go field or column names. |
 | `key_block_size` | No | MySQL-family index block-size hint. Zero uses the engine default. See [MySQL and MariaDB](../../databases/mysql/) for retention and range limits. |
-| `include` | No | Comma-separated INCLUDE columns for PostgreSQL, YugabyteDB, CockroachDB, or the Spanner PostgreSQL dialect, and `COVER` columns on YDB. Order is preserved, and a changed list rebuilds the index. |
+| `include` | No | Comma-separated INCLUDE columns for PostgreSQL, YugabyteDB, CockroachDB or Spanner, and `COVER` columns on YDB. Order is preserved, and a changed list rebuilds the index. |
 | `invisible` | No | Hides the index from the optimizer: `INVISIBLE` on MySQL, `IGNORED` on MariaDB, `NOT VISIBLE` on CockroachDB. `true`/`false`; bare form allowed. A target whose capability set does not carry `invisible_indexes` refuses it at render time rather than building a visible index. |
 | `name` | No | Index name. |
 | `nulls_distinct` | No | Controls NULLS DISTINCT behavior. `true`/`false`. The clause is PostgreSQL's; a target whose capability set does not carry `unique_nulls_distinct_clause` refuses it at render time rather than dropping it, in either spelling. |
@@ -373,9 +374,9 @@ default, `BTREE`, and `GIST`, plus `SPGIST` on PostgreSQL 14 and newer;
 YugabyteDB accepts the default and `LSM`, with `BTREE` normalized to its
 documented default-LSM alias; CockroachDB accepts the default and `BTREE`, and
 refuses `GIN` and `GIST`, both of which name an inverted index there; the
-Spanner PostgreSQL dialect accepts only the default; and YDB writes the columns
-as `COVER (...)` on a synchronous or an asynchronous global index. Every other
-dialect rejects `include` before emitting SQL.
+Spanner provider writes them as `INCLUDE (...)` with the default method; and
+YDB writes the columns as `COVER (...)` on a synchronous or an asynchronous global index.
+Every other dialect rejects `include` before emitting SQL.
 
 A YDB global index also takes its partitioning, in attributes spelled as YDB
 names the settings, in lower case. Every other dialect refuses an index that
@@ -455,18 +456,14 @@ on different targets:
 Every other target refuses the constraint before emitting SQL, naming the
 constraint and the targets that accept it. CockroachDB stores a covering UNIQUE
 constraint as a unique index with a `STORING` clause, which is its spelling of
-the same payload; it has no covering primary key, and the Spanner PostgreSQL
-dialect answers `<INCLUDE> clause is not supported in constraints` for either
-kind, so both are refused there.
+the same payload; it has no covering primary key.
 
 `include` on a CHECK or FOREIGN KEY constraint is refused on every
 target: those constraints carry no payload to render. Omit `include` when there
 are none; a present list with an empty element is refused rather than trimmed.
 
-The targets for a constraint are not the targets for an index. The Spanner
-PostgreSQL dialect takes `include` on an index and refuses it on a constraint,
-and CockroachDB takes it on an index and on a UNIQUE constraint but not on a
-primary key. See
+The targets for a constraint are not the targets for an index. CockroachDB
+takes it on an index and on a UNIQUE constraint but not on a primary key. See
 [`//ptah:schema:index`](#ptahschemaindex) for the index list.
 
 A PRIMARY KEY constraint's `name` is the name the key is built with on
@@ -579,9 +576,9 @@ That is the reason omission cannot mean removal.
 
 ### `//ptah:schema:schema`
 
-Declares a database schema or namespace. On PostgreSQL, CockroachDB, YugabyteDB,
-Spanner and SQL Server, a plan creates it when the database lacks it, whether or
-not anything is in it.
+Declares a database schema or namespace. On PostgreSQL, CockroachDB, YugabyteDB
+and SQL Server, a plan creates it when the database lacks it, whether or not
+anything is in it.
 
 | Attribute | Required | Description |
 | --- | --- | --- |
@@ -646,7 +643,7 @@ provider, the YDB kinds `coordination_node`, `streaming_query`, `resource_pool`,
 `external_table`. Dots in pool and classifier names are literal characters. It
 also recognizes the kinds an owner registers for state its read records and
 does not model: the YDB provider's kinds `changefeed`, `column_table`,
-`table_option` and `ttl`, and the Spanner kind `change_stream`. A run that does not select the owner refuses its kinds by
+`table_option` and `ttl`. A run that does not select the owner refuses its kinds by
 name, here and in a document's `ptah:not-described` header.
 
 A secret, a topic, an external data source or an external table is named by
@@ -913,7 +910,7 @@ always passes on the privileges of the roles granted to it. See
 [MySQL and MariaDB](../../databases/mysql/). On CockroachDB,
 `superuser="true"` and `inherit="false"` are refused, because a CockroachDB
 role is a superuser only as a member of `admin` and always inherits. See
-[CockroachDB, YugabyteDB, and Spanner](../../databases/distributed/).
+[CockroachDB and YugabyteDB](../../databases/distributed/).
 
 On YDB a role is a user, and `group="true"` declares a group instead. A user
 takes `login` and `password`; a group takes neither. `member_of` names the

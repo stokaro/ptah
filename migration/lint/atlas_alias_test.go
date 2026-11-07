@@ -28,7 +28,7 @@ func TestAtlasCodeAliases_CoverEveryMappedCodeThatCanBeAliased(t *testing.T) {
 	// reports, so the code has to reach that rule rather than a new one.
 	c.Assert(aliases, qt.HasLen, 3)
 	c.Assert(aliases["BC102"], qt.DeepEquals, []string{"BC101"})
-	c.Assert(aliases["MF104"], qt.DeepEquals, []string{"PG303", "LT101", "DD103"})
+	c.Assert(aliases["MF104"], qt.DeepEquals, []string{"PG303", "LT101", "DD103", "SP101"})
 	c.Assert(aliases["MY148"], qt.DeepEquals, []string{"MY130"})
 }
 
@@ -42,6 +42,7 @@ func TestAtlasCodeFor_AnswersEveryCodeARuleStandsFor(t *testing.T) {
 	c.Assert(lint.AtlasCodeFor("LT101"), qt.DeepEquals, []string{"MF104"})
 	c.Assert(lint.AtlasCodeFor("DD103"), qt.DeepEquals, []string{"MF104"})
 	c.Assert(lint.AtlasCodeFor("PG303"), qt.DeepEquals, []string{"MF104"})
+	c.Assert(lint.AtlasCodeFor("SP101"), qt.DeepEquals, []string{"MF104"})
 	c.Assert(lint.AtlasCodeFor("DS103"), qt.HasLen, 0)
 	c.Assert(lint.AtlasCodeFor("PG302"), qt.HasLen, 0)
 }

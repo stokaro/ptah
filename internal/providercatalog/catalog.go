@@ -17,14 +17,20 @@ import (
 // Entry contains recognition and setup metadata, never engine capabilities.
 // RepositoryURL is a GitHub repository; its releases are where the provider's
 // releases live.
+//
+// ServerBannerTokens identify a server of the engine that answers on another
+// engine's wire, as Spanner's PostgreSQL interface answers a postgres:// URL:
+// each is a lower-case substring of the version banner such a server reports.
+// They select nothing; see [IdentifyBanner].
 type Entry struct {
-	EngineID      string   `json:"engine_id"`
-	DisplayName   string   `json:"display_name"`
-	Aliases       []string `json:"aliases"`
-	URLSchemes    []string `json:"url_schemes"`
-	ProviderID    string   `json:"provider_id"`
-	RepositoryURL string   `json:"repository_url"`
-	SetupURL      string   `json:"setup_url"`
+	EngineID           string   `json:"engine_id"`
+	DisplayName        string   `json:"display_name"`
+	Aliases            []string `json:"aliases"`
+	URLSchemes         []string `json:"url_schemes"`
+	ServerBannerTokens []string `json:"server_banner_tokens,omitempty"`
+	ProviderID         string   `json:"provider_id"`
+	RepositoryURL      string   `json:"repository_url"`
+	SetupURL           string   `json:"setup_url"`
 }
 
 var entries = []Entry{
@@ -35,7 +41,7 @@ var entries = []Entry{
 	},
 	{
 		EngineID: "spanner", DisplayName: "Spanner", Aliases: []string{"cloudspanner", "google-spanner", "google_spanner"},
-		URLSchemes: []string{"spanner", "cloudspanner", "google-spanner"},
+		URLSchemes: []string{"spanner", "cloudspanner", "google-spanner"}, ServerBannerTokens: []string{"spanner"},
 		ProviderID: "github.com/stokaro/ptah-spanner-plugin", RepositoryURL: "https://github.com/stokaro/ptah-spanner-plugin",
 		SetupURL: "https://docs.ptah.run/edge/extend/providers/spanner/",
 	},
@@ -70,8 +76,8 @@ func (e Entry) GitHubRepository() (owner, repo string, ok bool) {
 // ProviderOnly recognizes, as [Lookup] does, an official engine that no
 // built-in implementation of this process serves: the engine is reached only
 // through its provider, whether or not one is installed. An official engine
-// that still has a built-in dialect, such as YDB while it is embedded, is not
-// one. The answer is recognition and authorizes nothing.
+// that a built-in dialect also serves is not one. The answer is recognition
+// and authorizes nothing.
 //
 // A policy that judges a name before any provider is selected, such as the
 // strict compatibility mode refusing an engine the community binary has no
@@ -82,6 +88,28 @@ func ProviderOnly(selector string) (Entry, bool) {
 		return Entry{}, false
 	}
 	return entry, true
+}
+
+// IdentifyBanner returns the provider-only official engine whose
+// [Entry.ServerBannerTokens] the version banner a server reported carries,
+// compared without regard to case.
+//
+// A connection that reached such a server through another engine's URL has
+// identified an engine Ptah serves only through its provider, and must stop
+// before it reads, plans or writes through the engine the URL named. The
+// answer is identification and selects no provider: the provider is chosen
+// from the URL, before anything connects.
+func IdentifyBanner(banner string) (Entry, bool) {
+	lower := strings.ToLower(banner)
+	for _, entry := range entries {
+		if platform.NormalizeDialect(entry.EngineID) != "" {
+			continue
+		}
+		if slices.ContainsFunc(entry.ServerBannerTokens, func(token string) bool { return strings.Contains(lower, token) }) {
+			return clone(entry), true
+		}
+	}
+	return Entry{}, false
 }
 
 // Lookup recognizes an explicit engine name, provider ID, database URL, or
@@ -127,5 +155,6 @@ func CheckOwnership(providerID, engineID string, aliases []string) error {
 func clone(entry Entry) Entry {
 	entry.Aliases = slices.Clone(entry.Aliases)
 	entry.URLSchemes = slices.Clone(entry.URLSchemes)
+	entry.ServerBannerTokens = slices.Clone(entry.ServerBannerTokens)
 	return entry
 }

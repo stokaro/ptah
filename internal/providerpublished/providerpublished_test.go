@@ -17,8 +17,11 @@ import (
 	"ptah.run/internal/providerpublished"
 )
 
-// ydbProvider is the official provider the YDB record was taken from.
-const ydbProvider = "github.com/stokaro/ptah-ydb-plugin"
+// The official providers the records were taken from.
+const (
+	spannerProvider = "github.com/stokaro/ptah-spanner-plugin"
+	ydbProvider     = "github.com/stokaro/ptah-ydb-plugin"
+)
 
 // servingYDB is a runtime that serves the ydb target itself, under both
 // spellings, and publishes one rule of its own for it: the shape of a runtime
@@ -33,6 +36,23 @@ func newServingYDB(c *qt.C) servingYDB {
 	})
 	c.Assert(err, qt.IsNil)
 	return servingYDB{runtime}
+}
+
+// newServingBoth is a runtime that serves both recorded engines itself, so no
+// record speaks for anything over it.
+func newServingBoth(c *qt.C) servingYDB {
+	c.Helper()
+	runtime, err := engine.New(
+		engine.Provider{ID: ydbProvider, Targets: []engine.Target{{Name: "ydb", Aliases: []string{"ydbs"}}}},
+		engine.Provider{ID: spannerProvider, Targets: []engine.Target{{Name: "spanner", Aliases: []string{"cloudspanner"}}}},
+	)
+	c.Assert(err, qt.IsNil)
+	return servingYDB{runtime}
+}
+
+// targeting returns the rules that target engine.
+func targeting(rules []lintext.Rule, engine string) []lintext.Rule {
+	return slices.DeleteFunc(slices.Clone(rules), func(rule lintext.Rule) bool { return !slices.Equal(rule.Targets, []string{engine}) })
 }
 
 func (servingYDB) LintRules(target string) ([]lintext.Rule, error) {
@@ -57,39 +77,52 @@ func publishedOf(rules []lintext.Rule) []published {
 	return out
 }
 
-func TestDescriptions_RecordTheOfficialYDBProvider(t *testing.T) {
+// The records are the official Spanner and YDB providers, ordered by provider
+// ID, each with its one engine and the aliases the catalog reserves.
+func TestDescriptions_RecordTheOfficialProviders(t *testing.T) {
 	c := qt.New(t)
 
 	descriptions, err := providerpublished.Descriptions()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(descriptions, qt.HasLen, 1)
-	c.Assert(descriptions[0].GetProviderId(), qt.Equals, ydbProvider)
+	c.Assert(descriptions, qt.HasLen, 2)
+	c.Assert(descriptions[0].GetProviderId(), qt.Equals, spannerProvider)
 	c.Assert(descriptions[0].GetEngines(), qt.HasLen, 1)
-	c.Assert(descriptions[0].GetEngines()[0].GetId(), qt.Equals, "ydb")
-	c.Assert(descriptions[0].GetEngines()[0].GetAliases(), qt.DeepEquals, []string{"ydbs"})
+	c.Assert(descriptions[0].GetEngines()[0].GetId(), qt.Equals, "spanner")
+	c.Assert(descriptions[0].GetEngines()[0].GetAliases(), qt.DeepEquals, []string{"cloudspanner", "google-spanner", "google_spanner"})
+	c.Assert(descriptions[1].GetProviderId(), qt.Equals, ydbProvider)
+	c.Assert(descriptions[1].GetEngines(), qt.HasLen, 1)
+	c.Assert(descriptions[1].GetEngines()[0].GetId(), qt.Equals, "ydb")
+	c.Assert(descriptions[1].GetEngines()[0].GetAliases(), qt.DeepEquals, []string{"ydbs"})
 }
 
-// The record speaks for YDB, which the bundle does not serve: every rule it
-// lists targets ydb. Over a runtime that serves YDB it speaks for nothing.
+// The records speak for Spanner and YDB, which the bundle does not serve: every
+// rule targets one of the two, the SP family Spanner and the YD family YDB.
+// Over a runtime that serves YDB only the Spanner record speaks, and over one
+// that serves both, nothing does.
 func TestLintRules_RecordSpeaksForAnEngineTheBundleDoesNotServe(t *testing.T) {
 	c := qt.New(t)
 
 	recorded, err := providerpublished.LintRules(builtintest.Runtime())
 	c.Assert(err, qt.IsNil)
-	served, err := providerpublished.LintRules(newServingYDB(c))
+	servedYDB, err := providerpublished.LintRules(newServingYDB(c))
+	c.Assert(err, qt.IsNil)
+	servedBoth, err := providerpublished.LintRules(newServingBoth(c))
 	c.Assert(err, qt.IsNil)
 
-	c.Assert(recorded, qt.Not(qt.HasLen), 0)
+	families := make(map[string][]string)
 	for _, rule := range recorded {
-		c.Assert(rule.Targets, qt.DeepEquals, []string{"ydb"}, qt.Commentf("%s", rule.Code))
+		families[rule.Code[:2]] = rule.Targets
 	}
-	c.Assert(served, qt.HasLen, 0)
+	c.Assert(families, qt.DeepEquals, map[string][]string{"SP": {"spanner"}, "YD": {"ydb"}})
+	c.Assert(publishedOf(servedYDB), qt.DeepEquals, publishedOf(targeting(recorded, "spanner")))
+	c.Assert(targeting(recorded, "spanner"), qt.Not(qt.HasLen), 0)
+	c.Assert(servedBoth, qt.HasLen, 0)
 }
 
-// The bundle, documented through the record, lists the recorded rules under
-// either YDB spelling, and its own rules with the recorded ones in the whole
-// catalog, ordered by code.
+// The bundle, documented through the records, lists each engine's recorded
+// rules under its ID and an alias, and its own rules with the recorded ones in
+// the whole catalog, ordered by code.
 func TestLintRuntime_RestoresTheRulesOfAnEngineTheRuntimeDoesNotServe(t *testing.T) {
 	bundled := builtintest.Runtime()
 	recorded, err := providerpublished.LintRules(bundled)
@@ -102,7 +135,10 @@ func TestLintRuntime_RestoresTheRulesOfAnEngineTheRuntimeDoesNotServe(t *testing
 		name, target string
 		want         []lintext.Rule
 	}{
-		{"every rule", "", every}, {"the engine ID", "ydb", recorded}, {"an alias", "ydbs", recorded},
+		{"every rule", "", every},
+		{"the YDB engine ID", "ydb", targeting(recorded, "ydb")}, {"a YDB alias", "ydbs", targeting(recorded, "ydb")},
+		{"the Spanner engine ID", "spanner", targeting(recorded, "spanner")},
+		{"a Spanner alias", "cloudspanner", targeting(recorded, "spanner")},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -117,11 +153,11 @@ func TestLintRuntime_RestoresTheRulesOfAnEngineTheRuntimeDoesNotServe(t *testing
 	}
 }
 
-// Over a runtime that serves YDB the record adds nothing, so the runtime's own
-// registration stays the source.
+// Over a runtime that serves both engines the records add nothing, so the
+// runtime's own registration stays the source.
 func TestLintRuntime_AddsNothingWhereTheRuntimeServesTheEngine(t *testing.T) {
 	c := qt.New(t)
-	serving := newServingYDB(c)
+	serving := newServingBoth(c)
 	want, err := serving.LintRules("")
 	c.Assert(err, qt.IsNil)
 	runtime, err := providerpublished.LintRuntime(serving, serving)
@@ -148,13 +184,14 @@ func TestLintRuntime_FailurePath_ACodeBothPublish(t *testing.T) {
 	c.Assert(rules, qt.IsNil)
 }
 
-// Over a runtime that serves YDB the record claims no directive. Over the
-// bundle, which does not, the record claims directives of its own, each owned
-// by the YDB provider.
+// Over a runtime that serves both engines the records claim no directive. Over
+// the bundle, which serves neither, the YDB record claims directives of its
+// own, each owned by the YDB provider; the Spanner record claims only
+// attributes of a common directive.
 func TestAnnotationSet_ClaimsTheDirectivesOfAnEngineTheBundleDoesNotServe(t *testing.T) {
 	c := qt.New(t)
 
-	served, err := providerpublished.AnnotationSet(newServingYDB(c))
+	served, err := providerpublished.AnnotationSet(newServingBoth(c))
 	c.Assert(err, qt.IsNil)
 	recorded, err := providerpublished.AnnotationSet(builtintest.Runtime())
 	c.Assert(err, qt.IsNil)

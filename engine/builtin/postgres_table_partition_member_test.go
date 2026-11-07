@@ -105,7 +105,7 @@ func TestPartitionOf_QuotesTheParentAsItsCatalogSpellsIt(t *testing.T) {
 // such statement. A partition key is reported as omitted on some of them, and that
 // is no answer here: a table with no columns and no parent is nothing they can create.
 func TestPartitionOf_FailurePath(t *testing.T) {
-	for _, target := range []string{"mysql", "mariadb", "sqlite", "sqlserver", "oracle", "clickhouse", "cockroachdb", "spanner"} {
+	for _, target := range []string{"mysql", "mariadb", "sqlite", "sqlserver", "oracle", "clickhouse", "cockroachdb"} {
 		t.Run(target, func(t *testing.T) {
 			c := qt.New(t)
 

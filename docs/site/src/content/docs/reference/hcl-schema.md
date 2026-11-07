@@ -259,16 +259,9 @@ Ptah's generated HCL uses that spelling. CockroachDB likewise refuses its exact
 or `schema "CRDB_INTERNAL" {}` remain user schemas.
 
 A `schema` block with nothing in it declares the schema, so a plan on PostgreSQL,
-CockroachDB, YugabyteDB, Spanner or SQL Server creates it when the database lacks it. A plan
+CockroachDB, YugabyteDB or SQL Server creates it when the database lacks it. A plan
 never creates the schema the connection resolved, and never drops a schema the
 document does not mention.
-
-Spanner refuses the schema names its server refuses to create: `spanner_sys`,
-`spanner`, `default`, every name that starts with `spanner_` in lower case, and
-any spelling in another case of `public`, `information_schema`, `pg_catalog`,
-`spanner_sys`, `spanner` or `default`, such as `schema "Public" {}`. It accepts
-`schema "public" {}`, and `schema "SPANNER_APP" {}` and `schema "PG_TOAST" {}`,
-which the server creates.
 
 The `extension.schema` attribute accepts an HCL string template or an exact
 one-name schema traversal such as `schema.extensions` or

@@ -237,7 +237,7 @@ func TestRender_ExtensionInstallationSchemaUnsupportedTargetsFailBeforeSQL(t *te
 	}
 	node := &ast.ExtensionStatement{Payload: &pgextension.Operation{Name: "pgcrypto", Action: pgextension.Create, Schema: "extensions"}}
 
-	for _, dialect := range []string{platform.CockroachDB, platform.Spanner} {
+	for _, dialect := range []string{platform.CockroachDB} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 			statements, err := builtin.GetOrderedCreateStatements(database, dialect)
@@ -260,7 +260,7 @@ func TestRender_WhitespaceOnlyExtensionInstallationSchemaUnsupportedTargetsFailB
 	}
 	node := &ast.ExtensionStatement{Payload: &pgextension.Operation{Name: "pgcrypto", Action: pgextension.Create, Schema: " "}}
 
-	for _, dialect := range []string{platform.CockroachDB, platform.Spanner} {
+	for _, dialect := range []string{platform.CockroachDB} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 			statements, err := builtin.GetOrderedCreateStatements(database, dialect)
@@ -399,7 +399,7 @@ var sequenceStart = int64(1000)
 func TestRender_SequencesCapabilityAgreesWithTheGenerator(t *testing.T) {
 	dialects := []string{
 		platform.Postgres, platform.MySQL, platform.MariaDB, platform.ClickHouse,
-		platform.SQLite, platform.SQLServer, platform.CockroachDB, platform.YugabyteDB, platform.Spanner,
+		platform.SQLite, platform.SQLServer, platform.CockroachDB, platform.YugabyteDB,
 	}
 
 	for _, dialect := range dialects {

@@ -37,7 +37,6 @@ func TestDescriptors_IdentifiersAgreeWithTheSwitchesTheyReplace(t *testing.T) {
 		{dialect: platform.SQLServer, style: descriptor.QuoteBracket},
 		{dialect: platform.CockroachDB, style: descriptor.QuoteDouble},
 		{dialect: platform.YugabyteDB, style: descriptor.QuoteDouble},
-		{dialect: platform.Spanner, style: descriptor.QuoteDouble},
 		{dialect: platform.Oracle, style: descriptor.QuoteDouble, bare: descriptor.BareEverywhere},
 	}
 	c := qt.New(t)
@@ -105,7 +104,6 @@ func TestDescriptors_KeywordsAgreeWithTheListsTheyReplace(t *testing.T) {
 		{dialect: platform.SQLServer},
 		{dialect: platform.CockroachDB},
 		{dialect: platform.YugabyteDB},
-		{dialect: platform.Spanner},
 		{dialect: platform.Oracle, keywords: oracle},
 	}
 	c := qt.New(t)

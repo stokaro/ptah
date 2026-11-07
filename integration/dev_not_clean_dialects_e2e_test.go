@@ -27,8 +27,8 @@ import (
 // its tables. The check that refuses a dev database holding a table covers
 // every engine Ptah replays or rehearses on. The pinned community binary
 // refuses a CockroachDB dev database holding a table when it reaches one
-// through a postgres:// URL, and does not open Spanner, SQL Server, ClickHouse
-// or Oracle at all. Without the check, the reset drops the table on each
+// through a postgres:// URL, and does not open SQL Server, ClickHouse or Oracle
+// at all. Without the check, the reset drops the table on each
 // engine below (stokaro/ptah#3811). Each test reads the table back after the
 // refusal.
 
@@ -64,8 +64,8 @@ func (d devDialectDatabase) keptRows(c *qt.C) int {
 	return rows
 }
 
-// devDialectScratchName is a database name unique to one test. Spanner takes
-// at most 30 characters.
+// devDialectScratchName is a database name unique to one test, at most 30
+// characters long.
 func devDialectScratchName() string {
 	return fmt.Sprintf("ptah_dc_%d", time.Now().UnixNano()%1_000_000_000_000_000)
 }
@@ -144,27 +144,6 @@ func yugabyteDevDatabase(c *qt.C) devDialectDatabase {
 		keepDDL:    []string{"CREATE TABLE keep_me (id int PRIMARY KEY)", "INSERT INTO keep_me VALUES (1)"},
 		keepRows:   "SELECT count(*) FROM keep_me",
 		droppedDDL: []string{"CREATE VIEW v AS SELECT 1 AS id", "CREATE SEQUENCE s"},
-		viewCount:  "SELECT count(*) FROM information_schema.views WHERE table_name = 'v'",
-	}
-}
-
-// spannerDevDatabase is a scratch database on the Spanner emulator, which
-// creates the database the URL names when a client first connects to it.
-// keep_me is dropped when the test ends, since the database cannot be.
-func spannerDevDatabase(c *qt.C) devDialectDatabase {
-	c.Helper()
-	devURL := renameInPath(c, dbtarget.URL(c, dbtarget.Spanner), devDialectScratchName())
-	conn := connectDevDialect(c, devURL)
-	c.Cleanup(func() {
-		_, err := conn.ExecContext(context.Background(), "DROP TABLE IF EXISTS keep_me")
-		c.Check(err, qt.IsNil)
-	})
-	return devDialectDatabase{
-		url:        devURL,
-		conn:       conn,
-		keepDDL:    []string{"CREATE TABLE keep_me (id bigint PRIMARY KEY)", "INSERT INTO keep_me VALUES (1)"},
-		keepRows:   "SELECT count(*) FROM keep_me",
-		droppedDDL: []string{"CREATE VIEW v SQL SECURITY INVOKER AS SELECT 1 AS id"},
 		viewCount:  "SELECT count(*) FROM information_schema.views WHERE table_name = 'v'",
 	}
 }
@@ -256,16 +235,14 @@ var devDialectReplayEngines = []devDialectEngine{
 	{name: "ClickHouse", server: clickHouseDevDatabase, reason: `found table "keep_me" in schema "ptah_dc_\d+"`},
 }
 
-// devDialectEngines adds a CockroachDB URL that pins a schema, and the engines
-// a replay refuses before it claims the dev database. On Spanner the replay's lock refuses it (`spanner replay cannot
-// safely serialize destructive dev database use`), and a rehearsal claims it.
-// On Oracle no run reaches a reset: the replay's lock and the rehearsal's
+// devDialectEngines adds a CockroachDB URL that pins a schema, and the engine
+// a replay refuses before it claims the dev database. On Oracle no run reaches
+// a reset: the replay's lock and the rehearsal's
 // identity check both refuse it first, with `unsupported dev database lock
 // dialect "oracle"`. The claim checks it all the same, so a path that reaches
 // the reset without them is refused too.
 var devDialectEngines = append(slices.Clone(devDialectReplayEngines),
 	devDialectEngine{name: "CockroachDB pinned to public", server: cockroachPinnedDevDatabase, reason: `found table "keep_me" in connected schema`},
-	devDialectEngine{name: "Spanner", server: spannerDevDatabase, reason: `found table "keep_me" in schema "public"`},
 	devDialectEngine{name: "Oracle", server: oracleDevDatabase, reason: `found table "KEEP_ME" in schema "PTAH_DC_\d+"`},
 )
 
@@ -313,7 +290,6 @@ var devDialectDroppingEngines = []devDialectEngine{
 	{name: "CockroachDB", server: cockroachDevDatabase, reason: `found sequence "s" in schema "public"`},
 	{name: "CockroachDB pinned to public", server: cockroachPinnedDevDatabase, reason: `found sequence "s" in connected schema`},
 	{name: "YugabyteDB", server: yugabyteDevDatabase, reason: `found sequence "s" in schema "public"`},
-	{name: "Spanner", server: spannerDevDatabase, reason: `found view "v" in schema "public"`},
 	{name: "SQL Server", server: sqlServerDevDatabase, reason: `found sequence "s" in schema "dbo"`},
 	{name: "ClickHouse", server: clickHouseDevDatabase, reason: `found materialized view "mv" in schema "ptah_dc_\d+"`},
 	{name: "Oracle", server: oracleDevDatabase, reason: `found view "V" in schema "PTAH_DC_\d+"`},
@@ -367,19 +343,4 @@ func TestCompatMigrateValidateRefusesADevDatabaseHoldingATableE2E(t *testing.T) 
 			c.Assert(dev.keptRows(c), qt.Equals, 1)
 		})
 	}
-}
-
-// TestCompatSchemaInspectLeavesSpannerSysOutE2E inspects a Spanner database at
-// realm scope. The realm is the schemas the dev database check judges, and
-// spanner_sys is the server's own: listed, it made an empty Spanner dev
-// database read as not clean, and `schema inspect` wrote a block for it.
-func TestCompatSchemaInspectLeavesSpannerSysOutE2E(t *testing.T) {
-	c := qt.New(t)
-	dev := spannerDevDatabase(c)
-
-	output, err := runCompatVerb("schema", "inspect", "-u", dev.url)
-
-	c.Assert(err, qt.IsNil, qt.Commentf("%s", output))
-	c.Assert(output, qt.Contains, `schema "public"`)
-	c.Assert(output, qt.Not(qt.Contains), "spanner_sys")
 }

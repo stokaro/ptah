@@ -18,7 +18,6 @@ var everyPlannedDialect = []string{
 	platform.Postgres,
 	platform.CockroachDB,
 	platform.YugabyteDB,
-	platform.Spanner,
 	platform.MySQL,
 	platform.MariaDB,
 	platform.ClickHouse,
@@ -31,10 +30,10 @@ var everyPlannedDialect = []string{
 //
 // The agreement matrix in object_capability_agreement_test.go asks a stricter
 // question -- that both paths write ONE canonical skip comment -- and it asks it
-// of the PostgreSQL family, whose four dialects share a renderer. That wording
+// of the PostgreSQL family, whose three dialects share a renderer. That wording
 // is not shared: the MySQL family writes "is not generated for this target",
 // SQLite writes "is not supported", ClickHouse writes its own. Requiring one
-// spelling across nine dialects would be a rename, not a fix.
+// spelling across eight dialects would be a rename, not a fix.
 //
 // What stokaro/ptah#1628 is actually about survives the difference: the
 // operator has to be able to SEE what happened to an object they declared. So

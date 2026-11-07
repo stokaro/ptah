@@ -204,7 +204,7 @@ error: --migration-lock-timeout requested the migration advisory lock, and diale
 Nothing is applied and the revision table is untouched. A URL that names its
 dialect is refused before the connection opens, which is why a `sqlite://`
 target that does not exist yet is left uncreated. A PostgreSQL-wire URL names no
-product: `postgres://` can reach CockroachDB or Spanner, and that target is
+product: `postgres://` can reach CockroachDB, and that target is
 decided once the server has named itself — after the connection, still before
 the first migration runs. Remove the flag to run unlocked, which is what such a
 target does anyway.
@@ -805,8 +805,8 @@ directive from that migration.
 
 The first row is the engine rather than a Ptah policy, and it is decided by the
 target's transactional-DDL capability rather than by a list of dialect names.
-MySQL, MariaDB, ClickHouse, Oracle and Spanner commit DDL as it runs, and YDB
-refuses DDL inside a transaction at all.
+MySQL, MariaDB, ClickHouse and Oracle commit DDL as it runs, and Spanner and
+YDB, which their providers serve, refuse DDL inside a transaction at all.
 CockroachDB refuses for a narrower reason: a target named with no server version
 in hand resolves to the newest measured line, where a schema statement inside a
 transaction commits itself first, so the rollback has nothing left to undo. A
@@ -824,10 +824,10 @@ target can carry one and not the other. Where a target lacks one,
 `migrations up` and `migrations down` refuse the timeout it lacks, naming the
 flag or the `ptah.yaml` key that set it, the engine and the capability, even
 when no migration is pending. Where the URL settles the answer the refusal comes
-before the command connects, so a `sqlite://` file is not created; a
-`postgres://` URL can reach Spanner, which takes neither, and is refused once
-connected, before anything is read or written. YDB takes the statement timeout
-and refuses the lock timeout, because no statement there waits for a lock.
+before the command connects, so a `sqlite://` file is not created. Spanner,
+through its provider, takes neither, and the refusal comes before anything is
+read or written. YDB takes the statement timeout and refuses the lock timeout,
+because no statement there waits for a lock.
 
 A value from `PTAH_LOCK_TIMEOUT` or `PTAH_STATEMENT_TIMEOUT` is refused by the
 migrator instead, on the first migration that would run under it:
@@ -1012,10 +1012,11 @@ skips is only ever the prefix that really survived:
   that failed. Oracle does not support `all`.
 - Under `file` on Spanner, Ptah opens no transaction around the body. Spanner's
   PostgreSQL interface refuses a schema statement inside an explicit
-  transaction, so the migrator applies the body unwrapped and each statement
-  commits as it runs, as under `none`. `applied` counts the statements that ran
-  before the one that failed, and those statements stay in the database.
-  Spanner does not support `all`.
+  transaction, so its [provider](../../extend/providers/spanner/) splits the
+  body and each statement commits as it runs, as under `none`. `applied` counts
+  the statements that ran before the one that failed, and those statements stay
+  in the database. Spanner does not support `all`; see
+  [Migrations on Spanner](../../extend/providers/spanner/migrations/).
 - On YDB, `file` runs a body the way `none` does. YDB runs no schema statement
   inside a transaction, so a file transaction could hold only data statements,
   and those already commit query by query. The unit is a query rather than a

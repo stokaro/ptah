@@ -1517,8 +1517,7 @@ func TestWriterDropDatabaseRealm_DialectRootSchema_FailurePath(t *testing.T) {
 		schema  string
 	}{
 		{name: "CockroachDB's own", dialect: platform.CockroachDB, schema: "crdb_internal"},
-		{name: "Spanner's own", dialect: platform.Spanner, schema: "spanner_sys"},
-		{name: "any member's, without a dialect", dialect: "", schema: "spanner_sys"},
+		{name: "any member's, without a dialect", dialect: "", schema: "crdb_internal"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

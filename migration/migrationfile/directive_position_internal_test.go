@@ -335,7 +335,6 @@ var headerScanDialects = []string{
 	platform.CockroachDB,
 	platform.YugabyteDB,
 	platform.SQLServer,
-	platform.Spanner,
 }
 
 // TestHashCommentHeaderFollowsTheLexerRatherThanAList is the header half of the
@@ -374,7 +373,6 @@ func TestHashCommentHeaderFollowsTheLexerRatherThanAList(t *testing.T) {
 		{name: "clickhouse", dialect: platform.ClickHouse, wantMode: FileTxModeNone},
 		{name: "cockroachdb", dialect: platform.CockroachDB, wantMode: FileTxModeNone},
 		{name: "yugabytedb", dialect: platform.YugabyteDB, wantMode: FileTxModeNone},
-		{name: "spanner", dialect: platform.Spanner, wantMode: FileTxModeNone},
 		{
 			// The one target whose options disable hash comments. `# ...` is
 			// not a comment there, so the directive really does sit below the
@@ -534,7 +532,6 @@ func TestDashDashWithNoBoundaryStillEndsTheMySQLHeader(t *testing.T) {
 		{name: "cockroachdb", dialect: platform.CockroachDB, wantHeader: wholeHeader},
 		{name: "yugabytedb", dialect: platform.YugabyteDB, wantHeader: wholeHeader},
 		{name: "sqlserver", dialect: platform.SQLServer, wantHeader: wholeHeader},
-		{name: "spanner", dialect: platform.Spanner, wantHeader: wholeHeader},
 	}
 
 	c := qt.New(t)

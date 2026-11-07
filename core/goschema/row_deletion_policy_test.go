@@ -12,9 +12,8 @@ import (
 // TestParse_RowDeletionPolicyIsAPlatformProperty pins the Go annotation
 // spelling: the Spanner policy and the YDB TTL are platform.spanner and
 // platform.ydb properties their owners decode, each in its own target's
-// spelling. The source claims complete knowledge of the YDB TTL, so a table
-// without the properties requests none; the Spanner claim belongs to the
-// Spanner owner, which spannersource tests.
+// spelling. Both owners are executable providers, so with no owner registered
+// the properties stay overrides and the table carries no facet.
 func TestParse_RowDeletionPolicyIsAPlatformProperty(t *testing.T) {
 	c := qt.New(t)
 

@@ -56,13 +56,13 @@ func TestPostgresRendersADeclaredType(t *testing.T) {
 // off-target policy, naming the targets that host the model.
 func TestDeclaredTypeRefusals(t *testing.T) {
 	scope := `PostgreSQL domain app.email cannot be planned on %s; scope its declaration to the targets that host it, ` +
-		`as dialects="cockroachdb,postgres,spanner,yugabytedb" does in a Go annotation`
+		`as dialects="cockroachdb,postgres,yugabytedb" does in a Go annotation`
 	tests := []struct {
 		name   string
 		target string
 		want   string
 	}{
-		{name: "Spanner", target: platform.Spanner, want: `(?s).*spanner: CREATE DOMAIN email: this target does not create it, and a column ` +
+		{name: "CockroachDB", target: platform.CockroachDB, want: `(?s).*cockroachdb: CREATE DOMAIN email: this target does not create it, and a column ` +
 			`declared with the type would be left naming something the server has no definition of; scope the declaration to the dialects that host it.*`},
 		{name: "MySQL", target: platform.MySQL, want: strings.Replace(scope, "%s", "mysql", 1)},
 		{name: "SQLite", target: platform.SQLite, want: strings.Replace(scope, "%s", "sqlite", 1)},

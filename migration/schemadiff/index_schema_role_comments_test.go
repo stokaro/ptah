@@ -8,7 +8,10 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/builtintest"
+	"ptah.run/migration/schemadiff"
 )
 
 // The PostgreSQL family keeps an index's, a schema's and a role's comment as
@@ -33,6 +36,17 @@ func reportedSchemaAndRole(comment string) *catalog.Database {
 	}
 }
 
+// compareWithCapabilities compares on PostgreSQL planned with caps, so a row can
+// state a target that stores fewer comments than any built-in engine of the
+// family, as a provider may.
+func compareWithCapabilities(c *qt.C, caps capability.Capabilities, desired *schemamodel.Database, current *catalog.Database) *difftypes.SchemaDiff {
+	c.Helper()
+	diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), desired, current,
+		catalog.ServerInfo{Dialect: platform.Postgres, Capabilities: caps}, nil, builtintest.Runtime())
+	c.Assert(err, qt.IsNil)
+	return diff
+}
+
 // TestCompare_IndexComment_HappyPath changes the comment of an index the plan
 // keeps.
 func TestCompare_IndexComment_HappyPath(t *testing.T) {
@@ -52,25 +66,28 @@ func TestCompare_IndexComment_HappyPath(t *testing.T) {
 }
 
 // TestCompare_IndexComment_NotInPlace records no comment change where none
-// is written in place: Spanner stores no index comment, and an index the plan
-// rebuilds takes its comment from the statement that creates it.
+// is written in place: a target without index comments stores none, and an
+// index the plan rebuilds takes its comment from the statement that creates it.
 func TestCompare_IndexComment_NotInPlace(t *testing.T) {
 	unique := optionedIndexTable("new", false)
 	unique.Indexes[0].Unique = true
 	tests := []struct {
 		name    string
-		dialect string
+		caps    capability.Capabilities
 		desired *schemamodel.Database
 		added   int
 	}{
-		{name: "Spanner", dialect: platform.Spanner, desired: optionedIndexTable("new", false)},
-		{name: "a rebuilt index", dialect: platform.Postgres, desired: unique, added: 1},
+		{
+			name: "a target without index comments", caps: capability.Postgres18().With(capability.IndexComments, false),
+			desired: optionedIndexTable("new", false),
+		},
+		{name: "a rebuilt index", caps: capability.Postgres18(), desired: unique, added: 1},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := compareForDialect(test.dialect, test.desired, liveOptionedIndexTable("old", false))
+			diff := compareWithCapabilities(c, test.caps, test.desired, liveOptionedIndexTable("old", false))
 
 			c.Assert(diff.IndexCommentsChanged, qt.HasLen, 0)
 			c.Assert(diff.IndexesAdded, qt.HasLen, test.added)
@@ -120,21 +137,25 @@ func TestCompare_SchemaAndRoleComments_HappyPath(t *testing.T) {
 }
 
 // TestCompare_SchemaAndRoleComments_Synced compares equal comments, and
-// compares none on Spanner, which stores neither.
+// compares none on a target that stores neither.
 func TestCompare_SchemaAndRoleComments_Synced(t *testing.T) {
 	tests := []struct {
 		name    string
-		dialect string
+		caps    capability.Capabilities
 		current *catalog.Database
 	}{
-		{name: "equal comments", dialect: platform.Postgres, current: reportedSchemaAndRole("new")},
-		{name: "Spanner", dialect: platform.Spanner, current: reportedSchemaAndRole("old")},
+		{name: "equal comments", caps: capability.Postgres18(), current: reportedSchemaAndRole("new")},
+		{
+			name:    "a target without schema or role comments",
+			caps:    capability.Postgres18().With(capability.SchemaComments, false).With(capability.RoleComments, false),
+			current: reportedSchemaAndRole("old"),
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := compareForDialect(test.dialect, commentedSchemaAndRole("new"), test.current)
+			diff := compareWithCapabilities(c, test.caps, commentedSchemaAndRole("new"), test.current)
 
 			c.Assert(diff.ObjectCommentsChanged, qt.HasLen, 0)
 		})

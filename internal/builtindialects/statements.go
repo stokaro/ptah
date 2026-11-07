@@ -7,8 +7,8 @@ import "ptah.run/core/platform/descriptor"
 // CI runs accepted, on a schema holding the objects it names, and what is left out of
 // one is what that server answered with a syntax error, or refused as unimplemented
 // whichever objects exist. Measured on PostgreSQL 18, YugabyteDB 2026.1, CockroachDB
-// 26.3, MySQL 26.10, MariaDB 12.3, ClickHouse 26.10, SQL Server 2025, SQLite 3.51 and
-// the Spanner emulator behind PGAdapter 0.56. Oracle is not measured and states none.
+// 26.3, MySQL 26.10, MariaDB 12.3, ClickHouse 26.10, SQL Server 2025 and SQLite 3.51.
+// Oracle is not measured and states none.
 
 // The forms more than one engine writes alike.
 const (
@@ -153,18 +153,5 @@ func sqliteStatementForms() descriptor.StatementForms {
 		},
 		Operations:       []string{savepointForm, releaseForm},
 		UnreadStatements: []string{"REPLACE"},
-	}
-}
-
-// spannerStatementForms is the PostgreSQL interface of Spanner, whose DROP names one
-// object: `<DROP> statements support deletion of only single object per statement`.
-func spannerStatementForms() descriptor.StatementForms {
-	return descriptor.StatementForms{
-		Drops: []descriptor.Drop{
-			{Kind: descriptor.DropKindView, IfExists: true},
-			{Kind: descriptor.DropKindFunction, IfExists: true},
-			{Kind: descriptor.DropKindSequence, IfExists: true},
-		},
-		Operations: []string{"TRUNCATE [TABLE] <name>", savepointForm, releaseForm},
 	}
 }

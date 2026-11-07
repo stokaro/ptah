@@ -97,7 +97,7 @@ func TestPostgresRemovedExtensionGoesLast(t *testing.T) {
 // TestPostgresFamilyRendersDeclaredExtensions pins every target of the family:
 // each installs a declared extension that names no schema.
 func TestPostgresFamilyRendersDeclaredExtensions(t *testing.T) {
-	for _, target := range []string{platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner} {
+	for _, target := range []string{platform.Postgres, platform.CockroachDB, platform.YugabyteDB} {
 		t.Run(target, func(t *testing.T) {
 			c := qt.New(t)
 
@@ -119,8 +119,6 @@ func TestDeclaredExtensionRefusals(t *testing.T) {
 	}{
 		{name: "a schema on CockroachDB", target: platform.CockroachDB,
 			want: `(?s).*cockroachdb does not support PostgreSQL extension installation schema "ext" for extension "pg_trgm".*`},
-		{name: "a schema on Spanner", target: platform.Spanner,
-			want: `(?s).*spanner does not support PostgreSQL extension installation schema "ext" for extension "pg_trgm".*`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -147,8 +145,6 @@ func TestDeclaredExtensionRefusalsFailValidation(t *testing.T) {
 	}{
 		{name: "a schema on CockroachDB", target: platform.CockroachDB,
 			want: `(?s).*cockroachdb does not support PostgreSQL extension installation schema "ext" for extension "pg_trgm".*`},
-		{name: "a schema on Spanner", target: platform.Spanner,
-			want: `(?s).*spanner does not support PostgreSQL extension installation schema "ext" for extension "pg_trgm".*`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

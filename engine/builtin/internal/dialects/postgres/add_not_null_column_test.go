@@ -136,18 +136,6 @@ func TestRenderer_AddColumnThatRunsOnARow_FailurePath(t *testing.T) {
 	}
 }
 
-// Spanner adds such a column nullable and sets NOT NULL next, and that statement says
-// what stops it. One comment is enough.
-func TestRenderer_AddNotNullColumnOnSpannerSaysItOnce(t *testing.T) {
-	c := qt.New(t)
-
-	got := renderAddColumn(c, platform.Spanner, capability.ForDialect(platform.Spanner), "t", ast.NewColumn("c", "text").SetNotNull())
-
-	c.Assert(got, qt.Equals, `ALTER TABLE "t" ADD COLUMN "c" text;`+"\n"+
-		`-- SPANNER: SET NOT NULL fails if any row of "t" holds NULL in "c"; the column declares no default to fill it with.`+"\n"+
-		`ALTER TABLE "t" ALTER COLUMN "c" SET NOT NULL;`+"\n\n")
-}
-
 // A line break in a name stays inside the comment on SET NOT NULL too. Written whole,
 // the rest of the name reaches the server as a statement, and PostgreSQL 18.6 answers
 // `syntax error at or near "b"`.

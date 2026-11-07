@@ -62,7 +62,7 @@ func TestGetOrderedCreateStatements_ALoggedTableRendersNoKeyword(t *testing.T) {
 // covers the other half of the predicate the renderer, the reader and the
 // comparison share.
 func TestGetOrderedCreateStatements_ADialectWithoutUnloggedTablesOmitsTheKeyword(t *testing.T) {
-	for _, dialect := range []string{"cockroachdb", "yugabytedb", "spanner", "mysql", "mariadb", "sqlite", "sqlserver"} {
+	for _, dialect := range []string{"cockroachdb", "yugabytedb", "mysql", "mariadb", "sqlite", "sqlserver"} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 			statements, err := builtin.GetOrderedCreateStatements(unloggedDatabase(true), dialect)
@@ -74,11 +74,11 @@ func TestGetOrderedCreateStatements_ADialectWithoutUnloggedTablesOmitsTheKeyword
 
 // TestGetOrderedCreateStatementsReportingOmissions_NamesAnUnloggedTableATargetDrops
 // covers every target that creates an ordinary table for the declaration:
-// CockroachDB and Spanner have no unlogged table, YugabyteDB takes the keyword
+// CockroachDB has no unlogged table, YugabyteDB takes the keyword
 // and creates an ordinary table, and the other engines have no such table
 // either. Each reports the declaration lost rather than dropping it unsaid.
 func TestGetOrderedCreateStatementsReportingOmissions_NamesAnUnloggedTableATargetDrops(t *testing.T) {
-	for _, dialect := range []string{"cockroachdb", "yugabytedb", "spanner", "mysql", "mariadb", "sqlite", "sqlserver", "oracle", "clickhouse"} {
+	for _, dialect := range []string{"cockroachdb", "yugabytedb", "mysql", "mariadb", "sqlite", "sqlserver", "oracle", "clickhouse"} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 			_, omissions, err := builtin.GetOrderedCreateStatementsReportingOmissions(

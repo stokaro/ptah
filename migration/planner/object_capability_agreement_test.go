@@ -11,6 +11,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
@@ -125,24 +126,27 @@ func objectKindFixture() schemamodel.Database {
 	}
 }
 
-// renderedSchema is what `ptah schema render --dialect <d>` produces: the
-// offline converter's AST for the whole desired schema, rendered.
-func renderedSchema(c *qt.C, database schemamodel.Database, dialect string) string {
-	statements, err := builtin.GetOrderedCreateStatements(&database, dialect)
-	c.Assert(err, qt.IsNil, qt.Commentf("render path failed for %s", dialect))
+// renderedSchema is what `ptah schema render --dialect <d>` produces for a
+// member: the offline converter's AST for the whole desired schema, rendered
+// with the member's capabilities.
+func renderedSchema(c *qt.C, database schemamodel.Database, member familyMember) string {
+	statements, err := builtin.GetOrderedCreateStatementsWithCapabilities(&database, member.dialect, member.caps)
+	c.Assert(err, qt.IsNil, qt.Commentf("render path failed for %s", member.name))
 	return strings.Join(statements, "\n")
 }
 
 // plannedSchema is what `ptah schema apply` plans for the same desired schema
 // against an empty database: the comparator's diff, through the dialect planner
-// and the same renderer.
-func plannedSchema(c *qt.C, database schemamodel.Database, dialect string) string {
-	diff := must.Must(schemadiff.CompareWithDialect(c.Context(), &database, &catalog.Database{FeatureCoverage: must.Must(pgdefaultprivilege.CompleteCoverage(schemaext.Observed))}, dialect, builtintest.Runtime()))
-	sql, err := planner.GenerateSchemaDiffSQL(
+// and the same renderer, with the member's capabilities.
+func plannedSchema(c *qt.C, database schemamodel.Database, member familyMember) string {
+	diff := must.Must(schemadiff.CompareWithDatabaseInfo(c.Context(), &database,
+		&catalog.Database{FeatureCoverage: must.Must(pgdefaultprivilege.CompleteCoverage(schemaext.Observed))},
+		catalog.ServerInfo{Dialect: member.dialect, Capabilities: member.caps}, nil, builtintest.Runtime()))
+	sql, err := planner.GenerateSchemaDiffSQLWithOptions(
 		context.Background(), builtintest.Runtime(),
-		diff, dialect,
+		diff, member.dialect, planext.Options{Capabilities: member.caps},
 	)
-	c.Assert(err, qt.IsNil, qt.Commentf("plan path failed for %s", dialect))
+	c.Assert(err, qt.IsNil, qt.Commentf("plan path failed for %s", member.name))
 	return sql
 }
 
@@ -233,10 +237,49 @@ func (gate objectKindGate) answer(sql, dialect string) string {
 	}[[2]bool{emitted, named}]
 }
 
-// postgresFamily is every canonical dialect registerBuiltInPlanners routes
-// through the PostgreSQL planner and renderer. That shared implementation is
-// the point: these four must still be allowed to answer differently.
-var postgresFamily = []string{platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner}
+// postgresFamilyDialects is every canonical dialect registerBuiltInPlanners
+// routes through the PostgreSQL planner and renderer.
+var postgresFamilyDialects = []string{platform.Postgres, platform.CockroachDB, platform.YugabyteDB}
+
+// familyMember is one target the object-kind agreement tests run: a
+// PostgreSQL-family dialect and the capability set it is planned with.
+type familyMember struct {
+	name    string
+	dialect string
+	caps    capability.Capabilities
+}
+
+// withoutObjectKinds names the member that refuses the gated object kinds.
+const withoutObjectKinds = "postgres without object kinds"
+
+// postgresFamily is every built-in family dialect with its default preset, and
+// one PostgreSQL target that refuses every gated object kind except plain views
+// and sequences and creates a sequence from its start counter only. The shared
+// planner and renderer are the point: these members must still be allowed to
+// answer differently. No built-in member refuses a gated kind, so without the
+// last member the refusing side of every gate would go unexercised; its set is
+// one a provider of the family may state.
+func postgresFamily() []familyMember {
+	members := make([]familyMember, 0, len(postgresFamilyDialects)+1)
+	for _, dialect := range postgresFamilyDialects {
+		members = append(members, familyMember{name: dialect, dialect: dialect, caps: capability.ForDialect(dialect)})
+	}
+	return append(members, familyMember{
+		name: withoutObjectKinds, dialect: platform.Postgres,
+		caps: capability.Postgres18().
+			With(capability.MaterializedViews, false).With(capability.MaterializedViewOptions, false).
+			With(capability.MaterializedViewComments, false).
+			With(capability.Functions, false).With(capability.FunctionComments, false).
+			With(capability.RoutineReplacementResetsDefiner, false).
+			With(capability.Procedures, false).With(capability.ProcedureComments, false).
+			With(capability.Triggers, false).With(capability.TriggerComments, false).
+			With(capability.CreateOrReplaceTrigger, false).
+			With(capability.RowLevelSecurity, false).With(capability.PolicyComments, false).
+			With(capability.RoleManagement, false).With(capability.RoleComments, false).
+			With(capability.CatalogDefaultPrivileges, false).
+			With(capability.SequenceStartCounterOnly, true),
+	})
+}
 
 // TestSpellingDeclaration_Controls pins representative aliases and canonical
 // names so an incomplete declaration cannot vacate the agreement tests.
@@ -248,12 +291,12 @@ func TestSpellingDeclaration_Controls(t *testing.T) {
 	aliases := nonCanonicalSpellings(c)
 
 	// Positive control: representative aliases from each engine family.
-	for _, alias := range []string{"pgx", "ch", "sqlite3", "tsql", "sql-server", "crdb", "ysql", "google_spanner"} {
+	for _, alias := range []string{"pgx", "ch", "sqlite3", "tsql", "sql-server", "crdb", "ysql"} {
 		c.Assert(spellings, qt.Contains, alias)
 		c.Assert(aliases, qt.Contains, alias)
 	}
 	// Positive control: canonical family names are accepted spellings too.
-	for _, canonical := range postgresFamily {
+	for _, canonical := range postgresFamilyDialects {
 		c.Assert(family, qt.Contains, canonical)
 		c.Assert(aliases, qt.Not(qt.Contains), canonical)
 	}
@@ -330,23 +373,23 @@ func TestEverySpelling_RendersAndPlansLikeItsCanonicalName(t *testing.T) {
 // Reading the expectation from the preset is what keeps a preset that changes
 // its mind about an object kind covered without anyone editing this test.
 func TestObjectKinds_RenderAndPlanAgree(t *testing.T) {
-	for _, dialect := range postgresFamily {
-		t.Run(dialect, func(t *testing.T) {
+	for _, member := range postgresFamily() {
+		t.Run(member.name, func(t *testing.T) {
 			for _, gate := range objectKindGates {
 				t.Run(gate.name, func(t *testing.T) {
 					c := qt.New(t)
 
 					database := objectKindFixture()
-					supported := capability.ForDialect(dialect).Has(gate.key)
-					skipped := gate.skipComment(dialect)
+					supported := member.caps.Has(gate.key)
+					skipped := gate.skipComment(member.dialect)
 
-					rendered := renderedSchema(c, database, dialect)
-					planned := plannedSchema(c, database, dialect)
+					rendered := renderedSchema(c, database, member)
+					planned := plannedSchema(c, database, member)
 
 					c.Assert(strings.Contains(rendered, skipped), qt.Equals, !supported,
-						qt.Commentf("render path for %s:\n%s", dialect, rendered))
+						qt.Commentf("render path for %s:\n%s", member.name, rendered))
 					c.Assert(strings.Contains(planned, skipped), qt.Equals, !supported,
-						qt.Commentf("plan path for %s:\n%s", dialect, planned))
+						qt.Commentf("plan path for %s:\n%s", member.name, planned))
 				})
 			}
 		})
@@ -367,18 +410,19 @@ func TestObjectKinds_RenderAndPlanAgree(t *testing.T) {
 // report in items 1 and 4 — is a failure and not a pass.
 //
 // The measurement the issue asked for was a COUNT of planned-but-not-rendered
-// cells, and this reports one: at the state #929 was triaged, cockroachdb had 6,
-// yugabytedb 9 and spanner 6. The assertion is on the list, so a regression
-// prints which cells and how many rather than a bare false.
+// cells, and this reports one: at the state #929 was triaged, cockroachdb had 6
+// and yugabytedb 9. The assertion is on the list, so a regression prints which
+// cells and how many rather than a bare false.
 func TestObjectKinds_NeitherPathLosesAnObject(t *testing.T) {
 	c := qt.New(t)
 
-	cells := objectKindMatrix(c, postgresFamily)
+	members := postgresFamily()
+	cells := objectKindMatrix(c, members)
 
 	// Control: the matrix really covers every family member and every gate. A
 	// fixture or extractor that produced no cells would make the assertions
 	// below pass while comparing nothing.
-	c.Assert(cells, qt.HasLen, len(postgresFamily)*len(objectKindGates))
+	c.Assert(cells, qt.HasLen, len(members)*len(objectKindGates))
 
 	disagreements := disagreeingCells(cells)
 	c.Assert(disagreements, qt.HasLen, 0,
@@ -393,28 +437,28 @@ func TestObjectKinds_NeitherPathLosesAnObject(t *testing.T) {
 	c.Assert(countAnswer(cells, "ddl"), qt.Equals, len(cells)-presetRefusalCount())
 }
 
-// objectKindCell is one (dialect, object) cell of the agreement matrix.
+// objectKindCell is one (member, object) cell of the agreement matrix.
 type objectKindCell struct {
-	dialect      string
+	member       string
 	gate         objectKindGate
 	renderAnswer string
 	planAnswer   string
 }
 
 // objectKindMatrix classifies what each path says about each object, for each
-// dialect: one cell per (dialect, gate) pair, with no filtering.
-func objectKindMatrix(c *qt.C, dialects []string) []objectKindCell {
-	cells := make([]objectKindCell, 0, len(dialects)*len(objectKindGates))
-	for _, dialect := range dialects {
+// member: one cell per (member, gate) pair, with no filtering.
+func objectKindMatrix(c *qt.C, members []familyMember) []objectKindCell {
+	cells := make([]objectKindCell, 0, len(members)*len(objectKindGates))
+	for _, member := range members {
 		database := objectKindFixture()
-		rendered := renderedSchema(c, database, dialect)
-		planned := plannedSchema(c, database, dialect)
+		rendered := renderedSchema(c, database, member)
+		planned := plannedSchema(c, database, member)
 		for _, gate := range objectKindGates {
 			cells = append(cells, objectKindCell{
-				dialect:      dialect,
+				member:       member.name,
 				gate:         gate,
-				renderAnswer: gate.answer(rendered, dialect),
-				planAnswer:   gate.answer(planned, dialect),
+				renderAnswer: gate.answer(rendered, member.dialect),
+				planAnswer:   gate.answer(planned, member.dialect),
 			})
 		}
 	}
@@ -430,7 +474,7 @@ func disagreeingCells(cells []objectKindCell) []string {
 	lines := make([]string, 0, len(disagreeing))
 	for _, cell := range disagreeing {
 		lines = append(lines, fmt.Sprintf("%-12s %-18s %-20s render=%s plan=%s",
-			cell.dialect, cell.gate.kind, cell.gate.object, cell.renderAnswer, cell.planAnswer))
+			cell.member, cell.gate.kind, cell.gate.object, cell.renderAnswer, cell.planAnswer))
 	}
 	return lines
 }
@@ -442,13 +486,13 @@ func countAnswer(cells []objectKindCell, answer string) int {
 	}))
 }
 
-// presetRefusalCount counts the (dialect, gate) pairs the capability presets
-// refuse, read from the registry rather than from any rendered output.
+// presetRefusalCount counts the (member, gate) pairs the members' capability
+// sets refuse, read from the sets rather than from any rendered output.
 func presetRefusalCount() int {
 	count := 0
-	for _, dialect := range postgresFamily {
+	for _, member := range postgresFamily() {
 		count += len(slices.DeleteFunc(slices.Clone(objectKindGates), func(gate objectKindGate) bool {
-			return capability.ForDialect(dialect).Has(gate.key)
+			return member.caps.Has(gate.key)
 		}))
 	}
 	return count
@@ -464,38 +508,35 @@ func presetRefusalCount() int {
 func TestObjectKinds_EveryGateIsExercised(t *testing.T) {
 	c := qt.New(t)
 
-	// Every gate but one has a refusing member, or the agreement tests would
+	// Every gate but two has a refusing member, or the agreement tests would
 	// only ever compare two absences for it.
-	c.Assert(refusingDialects(capability.MaterializedViews), qt.DeepEquals, []string{platform.Spanner})
-	c.Assert(refusingDialects(capability.Functions), qt.DeepEquals, []string{platform.Spanner})
-	c.Assert(refusingDialects(capability.Triggers), qt.DeepEquals, []string{platform.Spanner})
-	// Sequences lost its refusing member when Spanner earned the key: the
-	// endpoint writes, reads and drops a standalone sequence, so no member of
-	// this family refuses one any more (stokaro/ptah#1856). The gate is still
-	// exercised on both sides -- by the MySQL family, where MySQL refuses and
-	// MariaDB accepts -- and what Spanner exercises here now is the restriction
-	// beside it, which is asserted below rather than left to a vacuous pair of
-	// absences.
-	c.Assert(refusingDialects(capability.Sequences), qt.HasLen, 0)
-	c.Assert(acceptingDialects(capability.SequenceStartCounterOnly), qt.DeepEquals, []string{platform.Spanner})
-	c.Assert(refusingDialects(capability.RoleManagement), qt.DeepEquals, []string{platform.Spanner})
-	c.Assert(refusingDialects(capability.RowLevelSecurity), qt.DeepEquals, []string{platform.Spanner})
+	c.Assert(refusingMembers(capability.MaterializedViews), qt.DeepEquals, []string{withoutObjectKinds})
+	c.Assert(refusingMembers(capability.Functions), qt.DeepEquals, []string{withoutObjectKinds})
+	c.Assert(refusingMembers(capability.Triggers), qt.DeepEquals, []string{withoutObjectKinds})
+	c.Assert(refusingMembers(capability.RoleManagement), qt.DeepEquals, []string{withoutObjectKinds})
+	c.Assert(refusingMembers(capability.RowLevelSecurity), qt.DeepEquals, []string{withoutObjectKinds})
+	// No member of this family refuses a standalone sequence. The gate is
+	// exercised on both sides by the MySQL family, where MySQL refuses and
+	// MariaDB accepts, and the last member exercises the restriction beside
+	// it, a sequence created from its start counter only, rather than a
+	// vacuous pair of absences.
+	c.Assert(refusingMembers(capability.Sequences), qt.HasLen, 0)
+	c.Assert(acceptingMembers(capability.SequenceStartCounterOnly), qt.DeepEquals, []string{withoutObjectKinds})
 
 	// And each has accepting members, or "refuses everything" would pass as
 	// well as "consults the preset".
-	c.Assert(acceptingDialects(capability.MaterializedViews), qt.HasLen, 3)
-	c.Assert(acceptingDialects(capability.Functions), qt.HasLen, 3)
-	c.Assert(acceptingDialects(capability.Triggers), qt.HasLen, 3)
-	// Four, not three: Spanner joined the accepting side (stokaro/ptah#1856).
-	c.Assert(acceptingDialects(capability.Sequences), qt.HasLen, 4)
-	c.Assert(acceptingDialects(capability.RoleManagement), qt.HasLen, 3)
-	c.Assert(acceptingDialects(capability.RowLevelSecurity), qt.HasLen, 3)
+	c.Assert(acceptingMembers(capability.MaterializedViews), qt.HasLen, len(postgresFamilyDialects))
+	c.Assert(acceptingMembers(capability.Functions), qt.HasLen, len(postgresFamilyDialects))
+	c.Assert(acceptingMembers(capability.Triggers), qt.HasLen, len(postgresFamilyDialects))
+	c.Assert(acceptingMembers(capability.Sequences), qt.HasLen, len(postgresFamily()))
+	c.Assert(acceptingMembers(capability.RoleManagement), qt.HasLen, len(postgresFamilyDialects))
+	c.Assert(acceptingMembers(capability.RowLevelSecurity), qt.HasLen, len(postgresFamilyDialects))
 
 	// Plain views are the deliberate control: no family member refuses one, so
 	// that row asserts the gate stays out of the way of an object every one of
 	// these targets hosts.
-	c.Assert(refusingDialects(capability.Views), qt.HasLen, 0)
-	c.Assert(acceptingDialects(capability.Views), qt.HasLen, len(postgresFamily))
+	c.Assert(refusingMembers(capability.Views), qt.HasLen, 0)
+	c.Assert(acceptingMembers(capability.Views), qt.HasLen, len(postgresFamily()))
 
 	// Every gate the agreement tests iterate must be one of the keys checked
 	// above, so a gate added to objectKindGates without a line here cannot
@@ -508,16 +549,23 @@ func TestObjectKinds_EveryGateIsExercised(t *testing.T) {
 	}
 }
 
-// refusingDialects lists the family members whose preset denies key.
-func refusingDialects(key capability.Capability) []string {
-	return slices.DeleteFunc(slices.Clone(postgresFamily), func(dialect string) bool {
-		return capability.ForDialect(dialect).Has(key)
-	})
+// refusingMembers names the family members whose capability set denies key.
+func refusingMembers(key capability.Capability) []string {
+	return membersWhere(func(caps capability.Capabilities) bool { return !caps.Has(key) })
 }
 
-// acceptingDialects lists the family members whose preset allows key.
-func acceptingDialects(key capability.Capability) []string {
-	return slices.DeleteFunc(slices.Clone(postgresFamily), func(dialect string) bool {
-		return !capability.ForDialect(dialect).Has(key)
-	})
+// acceptingMembers names the family members whose capability set allows key.
+func acceptingMembers(key capability.Capability) []string {
+	return membersWhere(func(caps capability.Capabilities) bool { return caps.Has(key) })
+}
+
+// membersWhere names the family members whose capability set satisfies keep.
+func membersWhere(keep func(capability.Capabilities) bool) []string {
+	var names []string
+	for _, member := range postgresFamily() {
+		if keep(member.caps) {
+			names = append(names, member.name)
+		}
+	}
+	return names
 }

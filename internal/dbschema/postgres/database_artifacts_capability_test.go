@@ -48,12 +48,11 @@ func TestDatabaseScopedArtifactsReadsAServerWithTheCatalogsItJoins(t *testing.T)
 	c.Assert(artifacts, qt.DeepEquals, []dbreset.Object{{Kind: "event trigger", Name: "watch_ddl"}})
 }
 
-// TestDatabaseScopedArtifactsAsksNothingOfSpanner is the server the version
-// string misnames: Cloud Spanner's PostgreSQL interface reports PostgreSQL
-// 14.1 and has neither pg_publication nor pg_depend, so the query is not sent
-// and the answer is none. Sent, it failed every dev-database claim there with
-// `relation "pg_publication" does not exist`.
-func TestDatabaseScopedArtifactsAsksNothingOfSpanner(t *testing.T) {
+// TestDatabaseScopedArtifactsAsksNothingOfAServerWithoutDependencies covers a
+// server whose catalog has neither pg_publication nor pg_depend: the query is
+// not sent and the answer is none. Sent, it fails every dev-database claim
+// with `relation "pg_publication" does not exist`.
+func TestDatabaseScopedArtifactsAsksNothingOfAServerWithoutDependencies(t *testing.T) {
 	c := qt.New(t)
 	var asked bool
 	db := dbtest.Open(c, answerArtifacts(&asked))

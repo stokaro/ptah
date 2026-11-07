@@ -1,0 +1,48 @@
+{
+  "engines": [
+    {
+      "aliases": [
+        "cloudspanner",
+        "google-spanner",
+        "google_spanner"
+      ],
+      "goSourceDirectives": [
+        {
+          "attributes": [
+            "platform.spanner.row_deletion_column",
+            "platform.spanner.row_deletion_interval",
+            "platform.spanner.row_deletion_unit"
+          ],
+          "directive": "ptah:schema:table",
+          "models": [
+            "github.com/stokaro/ptah-spanner-plugin/row-deletion-policy"
+          ],
+          "scope": "TABLE",
+          "selector": "ptah:schema:table"
+        }
+      ],
+      "id": "spanner",
+      "lintRules": [
+        {
+          "appliesToDown": true,
+          "code": "SP101",
+          "severity": "WARNING",
+          "title": "not-null validation scans existing rows"
+        },
+        {
+          "appliesToDown": true,
+          "code": "SP102",
+          "severity": "INFO",
+          "subsumes": [
+            "BC104",
+            "DS102"
+          ],
+          "title": "row deletion policy dropped"
+        }
+      ]
+    }
+  ],
+  "providerId": "github.com/stokaro/ptah-spanner-plugin",
+  "revision": 25,
+  "version": "0.0.0-20261107062806-5e810c53e491"
+}

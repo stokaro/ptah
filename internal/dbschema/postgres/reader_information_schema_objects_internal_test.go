@@ -124,7 +124,7 @@ func TestReadInformationSchemaConstraints(t *testing.T) {
 			db := dbtest.Open(c, func(_ string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
 				return informationSchemaConstraintCatalog(), nil
 			})
-			reader := NewPostgreSQLReaderWithCapabilities(db.SQL, "public", capability.SpannerPostgres())
+			reader := NewPostgreSQLReaderWithCapabilities(db.SQL, "public", withoutCatalogFunctions())
 
 			constraints, err := reader.readInformationSchemaConstraints(t.Context(), "public")
 			c.Assert(err, qt.IsNil)
@@ -150,7 +150,7 @@ func TestReadInformationSchemaConstraintsSpellTheDefaultSchemaAsTheTablesDo(t *t
 	db := dbtest.Open(c, func(_ string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
 		return informationSchemaConstraintCatalog(), nil
 	})
-	reader := NewPostgreSQLReaderWithCapabilities(db.SQL, "public", capability.SpannerPostgres())
+	reader := NewPostgreSQLReaderWithCapabilities(db.SQL, "public", withoutCatalogFunctions())
 
 	constraints, err := reader.readInformationSchemaConstraints(t.Context(), "public")
 	c.Assert(err, qt.IsNil)
@@ -186,7 +186,7 @@ func TestReadInformationSchemaViews(t *testing.T) {
 					Rows:    [][]driver.Value{{"v_p", "SELECT id FROM p", tt.checkOption}},
 				}, nil
 			})
-			reader := NewPostgreSQLReaderWithCapabilities(db.SQL, "public", capability.SpannerPostgres())
+			reader := NewPostgreSQLReaderWithCapabilities(db.SQL, "public", withoutCatalogFunctions())
 
 			views, err := reader.readInformationSchemaViews(t.Context(), "public")
 			c.Assert(err, qt.IsNil)
@@ -207,7 +207,7 @@ func TestConstraintAndViewReadsPickTheCatalogTheServerHas(t *testing.T) {
 		caps     capability.Capabilities
 		standard bool
 	}{
-		{name: "spanner has no pg_catalog", caps: capability.SpannerPostgres(), standard: true},
+		{name: "a server without pg_catalog helpers", caps: withoutCatalogFunctions(), standard: true},
 		{name: "postgres has it", caps: capability.Postgres17(), standard: false},
 	}
 

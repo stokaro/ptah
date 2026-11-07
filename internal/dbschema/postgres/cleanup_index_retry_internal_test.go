@@ -159,7 +159,7 @@ func TestCollectAllObjects_EnumeratesIndexesAfterTheirTables(t *testing.T) {
 		caps capability.Capabilities
 	}{
 		{name: "a server that assembles its own drops", caps: capability.Postgres16()},
-		{name: "a server without format()", caps: capability.SpannerPostgres()},
+		{name: "a server without format()", caps: capability.Postgres16().With(capability.PostgresCatalogFunctions, false)},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {

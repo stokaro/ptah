@@ -38,13 +38,13 @@ func withInvisibleIndexes(p plan, dialect string) plan {
 			"index; this server takes INVISIBLE with a meaning of its own, which Ptah neither renders nor " +
 			"reads, so its acceptance would answer a different question"
 	case platform.CockroachDB:
-		table := postgresFamilySpelling(dialect).table("ivx", "n int", "n")
+		table := tableSpelling{}.table("ivx", "n int", "n")
 		p.experiments = append(p.experiments, recordedExperiment(capability.InvisibleIndexes, []string{table},
 			"CREATE INDEX ivx_k ON ivx (n) NOT VISIBLE",
 			"SELECT COUNT(DISTINCT index_name) FROM information_schema.statistics "+
 				"WHERE table_name = 'ivx' AND index_name = 'ivx_k' AND is_visible = 'NO'"))
-	case platform.Postgres, platform.YugabyteDB, platform.Spanner:
-		table := postgresFamilySpelling(dialect).table("ivx", "n int", "n")
+	case platform.Postgres, platform.YugabyteDB:
+		table := tableSpelling{}.table("ivx", "n int", "n")
 		p.experiments = append(p.experiments, acceptance(capability.InvisibleIndexes, []string{table}, create))
 	case platform.ClickHouse:
 		table := clickHouseSpelling.table("ivx", "n Int64", "n")

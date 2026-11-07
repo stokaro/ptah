@@ -37,8 +37,9 @@ covered.
 Each normalized dialect maps
 to an implementation family, and several engines deliberately share one —
 MySQL and MariaDB share a planner family that SQL Server and Oracle also ride,
-and CockroachDB, YugabyteDB, and Spanner ride the PostgreSQL family. An engine
-an executable provider serves, such as [YDB](../../extend/providers/ydb/), rides none:
+and CockroachDB and YugabyteDB ride the PostgreSQL family. An engine
+an executable provider serves, such as [YDB](../../extend/providers/ydb/) or
+[Spanner](../../extend/providers/spanner/), rides none:
 its provider renders, plans, reads and writes for it. Sharing a
 family is not sharing a dialect: each member keeps its own renderer and its own
 capability set, which is what lets Oracle write bare identifiers while the rest
@@ -74,8 +75,7 @@ rather than shipped.
   documented advisory operations, a loud `WARNING` comment. Schema rendering
   never replaces a declared foreign key with a comment.
 - **Foreign-key validity is target-specific.** Capability presets distinguish
-  candidate-key targets, MySQL-family indexed-left-prefix targets, and
-  Spanner's engine-managed backing indexes. Root MySQL 8.4+ connections retain
+  candidate-key targets and MySQL-family indexed-left-prefix targets. Root MySQL 8.4+ connections retain
   the conservative unique-key policy; a pinned `WithSession` callback refines
   it from `restrict_fk_on_non_standard_key` on the same physical connection
   used for execution. Ptah also

@@ -29,7 +29,7 @@ const Language = "plpgsql"
 const Security = "INVOKER"
 
 // Reader reads the routine bodies of the PostgreSQL family: postgres,
-// cockroachdb, yugabytedb and spanner. Its zero value is ready to use.
+// cockroachdb and yugabytedb. Its zero value is ready to use.
 type Reader struct{}
 
 // ReadBodies reads every body of the request. PostgreSQL resolves a name in a

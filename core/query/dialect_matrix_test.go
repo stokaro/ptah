@@ -270,7 +270,6 @@ func dmlMatrixRows() []dmlMatrixRow {
 		sqlServerCells("mssql"),
 		dollarCells("cockroachdb"),
 		dollarCells("yugabytedb"),
-		dollarCells("spanner"),
 		oracleCells("oracle"),
 	}
 }
@@ -303,10 +302,10 @@ func dmlGenericRefusalQuarantine() []string {
 // subtest
 // is what keeps the rows honest, and the cells follow from the rows.
 //
-// Revert the Spanner placeholder entry and the four spanner cells stop at the
-// first line of the cell check, printing
+// Remove a dialect's placeholder entry, yugabytedb's for example, and its four
+// cells stop at the first line of the cell check, printing
 //
-//	got:  `renderer: SELECT rendering is not supported for dialect "spanner"`
+//	got:  `renderer: SELECT rendering is not supported for dialect "yugabytedb"`
 //	want: ""
 //
 // Change a rendering instead of removing one — a quote style, a placeholder, a
@@ -346,8 +345,9 @@ func TestDMLDialectMatrix(t *testing.T) {
 // TestDMLGenericRefusalCensus pins which cells are still untaught dialects
 // rather than deliberate refusals.
 //
-// Revert the Spanner placeholder entry and this prints the observed list with
-// the four spanner entries back in it, against a want list without them —
+// Remove a dialect's placeholder entry, yugabytedb's for example, and this
+// prints the observed list with its four entries in it, against a want list
+// without them —
 // quicktest marks the four extra elements. Teach the renderer a dialect without
 // striking it from dmlGenericRefusalQuarantine and the diff runs the other way:
 // its cells are marked missing from the observed list, one per verb.
@@ -478,10 +478,11 @@ func assertRefusesButRebindKnows(c *qt.C, dialect, wantRebind string) {
 // first bound value against sqlutil.Rebind, the repository's other per-dialect
 // placeholder table.
 //
-// Revert the Spanner placeholder entry and the spanner row prints
+// Remove a dialect's placeholder entry, yugabytedb's for example, and its row
+// prints
 //
 //	error: got non-nil error, want nil
-//	error message: renderer: INSERT rendering is not supported for dialect "spanner"
+//	error message: renderer: INSERT rendering is not supported for dialect "yugabytedb"
 //
 // Give a dialect the wrong style — sqlserver with ?, say — and its row prints the
 // rendered SQL against the Rebind-derived string, `VALUES (?)` against
@@ -501,7 +502,6 @@ func TestDMLPlaceholderAgreesWithRebind(t *testing.T) {
 		{dialect: "mssql"},
 		{dialect: "cockroachdb"},
 		{dialect: "yugabytedb"},
-		{dialect: "spanner"},
 		{dialect: "oracle"},
 	}
 

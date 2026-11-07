@@ -14,11 +14,10 @@ import (
 // everyStatementGrammar is each dialect the rows below are measured on. Each row reads
 // on the dialects it names and is refused on every other: the servers took and refused
 // them as the rows say, on PostgreSQL 18, YugabyteDB 2026.1, CockroachDB 26.3, MySQL
-// 26.10, MariaDB 12.3, ClickHouse 26.10, SQL Server 2025, SQLite 3.51 and the Spanner
-// emulator behind PGAdapter 0.56.
+// 26.10, MariaDB 12.3, ClickHouse 26.10, SQL Server 2025 and SQLite 3.51.
 var everyStatementGrammar = []string{
 	platform.Postgres, platform.YugabyteDB, platform.CockroachDB, platform.MySQL, platform.MariaDB,
-	platform.ClickHouse, platform.SQLServer, platform.SQLite, platform.Spanner,
+	platform.ClickHouse, platform.SQLServer, platform.SQLite,
 }
 
 var (
@@ -53,7 +52,7 @@ var statementGrammarRows = []struct {
 	{sql: "DROP TRIGGER t, u", reads: []string{platform.SQLServer}},
 	{sql: "DROP TRIGGER t ON u", reads: postgresFamily},
 	{sql: "DROP TRIGGER IF EXISTS t ON u CASCADE", reads: postgresFamily},
-	{sql: "DROP FUNCTION f", reads: together(postgresFamily, mysqlFamily, []string{platform.ClickHouse, platform.SQLServer, platform.Spanner})},
+	{sql: "DROP FUNCTION f", reads: together(postgresFamily, mysqlFamily, []string{platform.ClickHouse, platform.SQLServer})},
 	{sql: "DROP FUNCTION f()", reads: postgresFamily},
 	{sql: "DROP FUNCTION f(int, text), g()", reads: postgresFamily},
 	{sql: "DROP FUNCTION f, g", reads: together(postgresFamily, []string{platform.SQLServer})},
@@ -61,24 +60,24 @@ var statementGrammarRows = []struct {
 	{sql: "DROP PROCEDURE p", reads: together(postgresFamily, mysqlFamily, []string{platform.SQLServer})},
 	{sql: "DROP PROCEDURE p, q", reads: together(postgresFamily, []string{platform.SQLServer})},
 	{sql: "DROP PROC p", reads: []string{platform.SQLServer}},
-	{sql: "DROP SEQUENCE s", reads: together(postgresFamily, []string{platform.MariaDB, platform.SQLServer, platform.Spanner})},
+	{sql: "DROP SEQUENCE s", reads: together(postgresFamily, []string{platform.MariaDB, platform.SQLServer})},
 	{sql: "DROP SEQUENCE s, u", reads: []string{platform.Postgres, platform.CockroachDB, platform.MariaDB, platform.SQLServer}},
 	{sql: "DROP SEQUENCE s CASCADE", reads: postgresFamily},
 	{sql: "DROP TYPE e", reads: together(postgresFamily, []string{platform.SQLServer})},
 	{sql: "DROP TYPE e, u", reads: postgresFamily},
 	{sql: "DROP TYPE e CASCADE", reads: []string{platform.Postgres, platform.YugabyteDB}},
 	{sql: "DROP TABLE t SYNC", reads: []string{platform.ClickHouse}},
-	{sql: "TRUNCATE t", reads: together(postgresFamily, mysqlFamily, []string{platform.ClickHouse, platform.Spanner})},
-	{sql: "TRUNCATE TABLE t", reads: together(postgresFamily, mysqlFamily, []string{platform.ClickHouse, platform.SQLServer, platform.Spanner})},
+	{sql: "TRUNCATE t", reads: together(postgresFamily, mysqlFamily, []string{platform.ClickHouse})},
+	{sql: "TRUNCATE TABLE t", reads: together(postgresFamily, mysqlFamily, []string{platform.ClickHouse, platform.SQLServer})},
 	{sql: "TRUNCATE t, u", reads: postgresFamily},
 	{sql: "TRUNCATE ONLY t", reads: postgresFamily},
 	{sql: "TRUNCATE TABLE t CASCADE", reads: postgresFamily},
 	{sql: "TRUNCATE t RESTART IDENTITY", reads: []string{platform.Postgres, platform.YugabyteDB}},
 	{sql: "TRUNCATE TABLE ONLY t, u RESTART IDENTITY CASCADE", reads: []string{platform.Postgres, platform.YugabyteDB}},
 	{sql: "TRUNCATE TABLE IF EXISTS t SYNC", reads: []string{platform.ClickHouse}},
-	{sql: "SAVEPOINT s", reads: together(postgresFamily, mysqlFamily, []string{platform.SQLite, platform.Spanner})},
-	{sql: "RELEASE SAVEPOINT s", reads: together(postgresFamily, mysqlFamily, []string{platform.SQLite, platform.Spanner})},
-	{sql: "RELEASE s", reads: together(postgresFamily, []string{platform.SQLite, platform.Spanner})},
+	{sql: "SAVEPOINT s", reads: together(postgresFamily, mysqlFamily, []string{platform.SQLite})},
+	{sql: "RELEASE SAVEPOINT s", reads: together(postgresFamily, mysqlFamily, []string{platform.SQLite})},
+	{sql: "RELEASE s", reads: together(postgresFamily, []string{platform.SQLite})},
 	{sql: "SAVE TRANSACTION s", reads: []string{platform.SQLServer}},
 	{sql: "SAVE TRAN s", reads: []string{platform.SQLServer}},
 	{sql: "LOCK t", reads: []string{platform.Postgres, platform.YugabyteDB}},

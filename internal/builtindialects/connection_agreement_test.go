@@ -13,7 +13,7 @@ import (
 // WireScheme against the switch dbschema chose a driver with before the
 // descriptors carried them, written out here as it stood: databaseDriverConfig
 // gave each dialect its database/sql driver, and convertPostgresWireURL spelled
-// the scheme of a CockroachDB, YugabyteDB or Spanner URL as postgres for pgx.
+// the scheme of a CockroachDB or YugabyteDB URL as postgres for pgx.
 // SQLite's libsql transport is the URL's choice rather than the dialect's, so
 // it is not a row here; internal/connector/sqliteconnect pins it.
 func TestDescriptors_ConnectionAgreesWithTheSwitchTheyReplace(t *testing.T) {
@@ -25,7 +25,6 @@ func TestDescriptors_ConnectionAgreesWithTheSwitchTheyReplace(t *testing.T) {
 		{dialect: platform.Postgres, driver: "pgx"},
 		{dialect: platform.CockroachDB, driver: "pgx", wireScheme: "postgres"},
 		{dialect: platform.YugabyteDB, driver: "pgx", wireScheme: "postgres"},
-		{dialect: platform.Spanner, driver: "pgx", wireScheme: "postgres"},
 		{dialect: platform.MySQL, driver: "mysql"},
 		{dialect: platform.MariaDB, driver: "mysql"},
 		{dialect: platform.ClickHouse, driver: "clickhouse"},

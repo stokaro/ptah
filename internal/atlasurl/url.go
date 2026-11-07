@@ -280,16 +280,9 @@ func DialectFromURL(rawURL string) (string, error) {
 		return dockerImageDrivers.Get()[driver], nil
 	}
 	// Every spelling platform.NormalizeDialect accepts, rather than a list
-	// copied from it.
-	//
-	// The copy had drifted by fifteen spellings, and two of them were canonical
-	// dialect names rather than aliases: `oracle://` and `spanner://` were
-	// refused as a dev URL while `ptah schema render --dialect oracle` and
-	// `--dialect spanner` both worked. The other thirteen were documented
-	// aliases -- `crdb`, `ch`, `pgx`, `tsql`, `ysql`, `sql-server`,
-	// `cloudspanner` and the rest -- refused here alone while every other
-	// boundary took them. That is the defect stokaro/ptah#270 fixed for lint
-	// dialects, in a second hand-maintained list (stokaro/ptah#1875).
+	// copied from it: a copy drifts from the registry, and a canonical name or
+	// a documented alias the copy lacks is refused as a dev URL here while
+	// every other boundary takes it (stokaro/ptah#1875).
 	//
 	// A scheme that names no dialect still fails: NormalizeDialect answers the
 	// empty string for it, which is what the refusal below reads.

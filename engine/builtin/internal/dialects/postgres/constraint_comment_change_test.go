@@ -39,8 +39,9 @@ func commentedConstraintAddition() *ast.AlterTableNode {
 
 // A changed constraint comment is one COMMENT ON CONSTRAINT on the table the
 // ALTER names, and a removed one sets it to NULL (stokaro/ptah#3678). A target
-// that does not store a constraint's comment gets the named skip rather than a
-// statement it refuses: the Spanner interface answers `Unknown statement`.
+// that does not store a constraint's comment, a set without
+// [capability.ConstraintComments], gets the named skip rather than a statement
+// it refuses.
 func TestPostgreSQLRenderer_ConstraintComment_HappyPath(t *testing.T) {
 	tests := []struct {
 		name string
@@ -67,14 +68,14 @@ func TestPostgreSQLRenderer_ConstraintComment_HappyPath(t *testing.T) {
 			want: alterStatements + "COMMENT ON CONSTRAINT \"orders_total_positive\" ON \"app\".\"orders\" IS 'note';\n\n",
 		},
 		{
-			name: "a comment changed on the Spanner interface",
-			caps: capability.SpannerPostgres(),
+			name: "a comment changed on a target without constraint comments",
+			caps: capability.Postgres18().With(capability.ConstraintComments, false),
 			node: setConstraintComment("note"),
 			want: alterStatements + "-- POSTGRES: constraint comment orders_total_positive on app.orders is not supported by this target; skipped.\n\n",
 		},
 		{
-			name: "a commented constraint added on the Spanner interface",
-			caps: capability.SpannerPostgres(),
+			name: "a commented constraint added on a target without constraint comments",
+			caps: capability.Postgres18().With(capability.ConstraintComments, false),
 			node: commentedConstraintAddition(),
 			want: alterStatements + "ALTER TABLE \"app\".\"orders\" ADD CONSTRAINT \"orders_total_positive\" CHECK (total > 0);\n" +
 				"-- POSTGRES: constraint comment orders_total_positive on app.orders is not supported by this target; skipped.\n\n",

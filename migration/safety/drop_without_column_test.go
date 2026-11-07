@@ -64,7 +64,7 @@ func TestAssessSQL_DropOfAnotherObjectIsNoColumnDrop(t *testing.T) {
 		{target: platform.MySQL, statement: "ALTER TABLE users DROP PARTITION p0", severity: safety.Safe, reason: safeReason},
 		{target: platform.MySQL, statement: "ALTER TABLE users ALTER COLUMN age DROP DEFAULT", severity: safety.Warning, reason: dropDefaultReason},
 		{target: platform.Postgres, statement: "ALTER TABLE users ALTER COLUMN age DROP EXPRESSION", severity: safety.Safe, reason: safeReason},
-		{target: platform.Spanner, statement: `ALTER TABLE "sessions" DROP TTL`, severity: safety.Safe, reason: safeReason},
+		{target: platform.Postgres, statement: `ALTER TABLE "sessions" DROP TTL`, severity: safety.Safe, reason: safeReason},
 		{target: platform.Postgres, statement: "ALTER TABLE users ALTER COLUMN id DROP IDENTITY IF EXISTS", severity: safety.Destructive, reason: dropIdentityReason},
 		{target: platform.Postgres, statement: "ALTER TABLE users ADD CONSTRAINT c CHECK (note <> 'a drop b c')", severity: safety.Safe,
 			reason: safeReason},

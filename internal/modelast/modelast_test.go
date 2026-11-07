@@ -1245,7 +1245,7 @@ func TestCollectDatabase_GeneratedForeignKeyNamesRespectMySQLFamilyCharacterLimi
 	}
 }
 
-func TestCollectDatabase_GeneratedForeignKeyNamesRespectSQLServerAndSpannerCharacterLimit(t *testing.T) {
+func TestCollectDatabase_GeneratedForeignKeyNamesRespectSQLServerCharacterLimit(t *testing.T) {
 	database := databaseWithGeneratedForeignKeys(
 		strings.Repeat("資料", 70),
 		strings.Repeat("欄位", 40),
@@ -1255,7 +1255,6 @@ func TestCollectDatabase_GeneratedForeignKeyNamesRespectSQLServerAndSpannerChara
 		dialect string
 	}{
 		{name: "SQL Server", dialect: platform.SQLServer},
-		{name: "Spanner", dialect: platform.Spanner},
 	}
 
 	for _, test := range tests {
@@ -1278,7 +1277,6 @@ func TestCollectDatabase_SchemaScopedForeignKeyNamesReserveExplicitNames(t *test
 		explicitSchema string
 	}{
 		{name: "SQL Server default dbo", dialect: platform.SQLServer, explicitSchema: "dbo"},
-		{name: "Spanner default public", dialect: platform.Spanner, explicitSchema: "public"},
 	}
 
 	for _, test := range tests {
@@ -1318,7 +1316,6 @@ func TestCollectDatabase_SchemaScopedForeignKeyNamesMayRepeatAcrossSchemas(t *te
 		dialect string
 	}{
 		{name: "SQL Server", dialect: platform.SQLServer},
-		{name: "Spanner", dialect: platform.Spanner},
 	}
 
 	for _, test := range tests {

@@ -129,7 +129,6 @@ func TestRender_RowTTLIsRefusedOnEveryOtherTarget(t *testing.T) {
 	}{
 		{platform.Postgres, capability.Postgres17()},
 		{platform.YugabyteDB, capability.YugabyteDB25()},
-		{platform.Spanner, capability.SpannerPostgres()},
 	}
 
 	for _, test := range tests {

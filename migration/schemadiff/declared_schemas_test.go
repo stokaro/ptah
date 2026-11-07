@@ -124,7 +124,6 @@ func TestCompareDeclaredSchemas_ByEngine(t *testing.T) {
 		{dialect: platform.Postgres, want: []schemamodel.Schema{app}},
 		{dialect: platform.CockroachDB, want: []schemamodel.Schema{app}},
 		{dialect: platform.YugabyteDB, want: []schemamodel.Schema{app}},
-		{dialect: platform.Spanner, want: []schemamodel.Schema{app}},
 		{dialect: platform.MySQL},
 		{dialect: platform.MariaDB},
 		{dialect: platform.SQLServer, want: []schemamodel.Schema{app}},

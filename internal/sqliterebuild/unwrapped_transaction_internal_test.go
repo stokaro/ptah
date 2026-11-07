@@ -44,11 +44,6 @@ func TestBeginWithoutTransaction_ReadsTheKeyAboutTheWrapper(t *testing.T) {
 			wantUnwapped: false,
 		},
 		{
-			name:         "a target that refuses the wrapper runs unwrapped",
-			caps:         capability.ForDialect(platform.Spanner),
-			wantUnwapped: true,
-		},
-		{
 			name:         "a target with no cross-statement transaction runs unwrapped",
 			caps:         capability.ForDialect(platform.ClickHouse),
 			wantUnwapped: true,
@@ -108,7 +103,6 @@ func TestOpensTransactionOn_AnswersAsBeginTransactionDoes(t *testing.T) {
 		{"PostgreSQL takes the wrapper", catalog.ServerInfo{Capabilities: capability.ForDialect(platform.Postgres)}, &recordingExecutor{}, true},
 		{"MySQL takes the wrapper", catalog.ServerInfo{Capabilities: capability.ForDialect(platform.MySQL)}, &recordingExecutor{}, true},
 		{"ClickHouse runs unwrapped", catalog.ServerInfo{Capabilities: capability.ForDialect(platform.ClickHouse)}, &recordingExecutor{}, false},
-		{"Spanner runs unwrapped", catalog.ServerInfo{Capabilities: capability.ForDialect(platform.Spanner)}, &recordingExecutor{}, false},
 		// An external provider's writer accepts or refuses the transaction it
 		// is asked for, unless its session states that the server refuses a
 		// schema statement inside one.
