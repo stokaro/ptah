@@ -29,6 +29,7 @@ import (
 	"ptah.run/internal/pathguard"
 	"ptah.run/internal/remotemigrationdir"
 	"ptah.run/internal/schemafile"
+	"ptah.run/internal/schemaroot"
 )
 
 const (
@@ -559,6 +560,28 @@ func atlasProjectConfigBaseDir(flags atlasProjectFlagValues) (string, error) {
 		return "", err
 	}
 	return filepath.Dir(configPath), nil
+}
+
+// atlasRowFileRoots bounds the row files a desired state may make a compatibility
+// command read: the working directory, as on the native surface, and the directory
+// holding atlas.hcl, which is what the schema sources it names are relative to. A
+// --config from another directory would otherwise refuse the rows beside the
+// schema it selected.
+//
+// A --config this cannot read leaves the working directory alone. The command
+// reports that value itself, and reading it here would only change which error
+// the operator sees.
+func atlasRowFileRoots(cmd *cobra.Command) []string {
+	roots := schemaroot.Of(nil)
+	flags, _, err := atlasProjectFlagsFromCommand(cmd)
+	if err != nil {
+		return roots
+	}
+	baseDir, err := atlasProjectConfigBaseDir(flags)
+	if err != nil {
+		return roots
+	}
+	return append(roots, schemaroot.Of([]string{baseDir})...)
 }
 
 type missingAtlasEnvSelectionMode int

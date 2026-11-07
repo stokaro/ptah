@@ -128,7 +128,7 @@ Go roots also keep separate type namespaces:
 - A single recursively scanned root remains one type namespace.
 - Managed-data annotations retain the absolute directory of their declaring Go
   source, so equal relative `file=` paths in different roots load the correct
-  row files after the merge.
+  row files after the merge. A row file has to stay inside one of the roots.
 
 ## Relation to Atlas
 

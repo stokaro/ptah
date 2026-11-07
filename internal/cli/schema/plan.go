@@ -16,11 +16,11 @@ import (
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/engineruntime"
-	"ptah.run/internal/cli/internal/schemaroot"
 	"ptah.run/internal/cli/internal/secretrotation"
 	"ptah.run/internal/cli/internal/tablerebuild"
 	"ptah.run/internal/errorkind"
 	"ptah.run/internal/schemaload"
+	"ptah.run/internal/schemaroot"
 	"ptah.run/internal/sqlitevirtual"
 )
 
@@ -285,7 +285,7 @@ func planSchema(cmd *cobra.Command, opts schemaPlanOptions, human io.Writer) (at
 	}
 	plan, undecided, err := atlasschema.PreparePlanFileReportingUndecided(cmd.Context(), conn, atlasschema.PlanFileOptions{
 		Runtime:         runtime,
-		ProjectRoot:     schemaroot.Of(opts.rootDirs),
+		ProjectRoots:    schemaroot.Of(opts.rootDirs),
 		Name:            opts.name,
 		DevURL:          opts.devURL,
 		Desired:         desired,

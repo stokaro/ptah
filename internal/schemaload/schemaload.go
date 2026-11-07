@@ -32,6 +32,7 @@ import (
 	"ptah.run/internal/ociartifact"
 	"ptah.run/internal/schemaartifact"
 	"ptah.run/internal/schemafile"
+	"ptah.run/internal/schemaroot"
 	"ptah.run/internal/sqlschema"
 	"ptah.run/internal/valuecontext"
 	"ptah.run/sourceformats"
@@ -355,18 +356,18 @@ func (o Options) loadGoRoots(rootDirs []string) (*schemamodel.Database, error) {
 // artifact travels without the working copy the annotation points into, so
 // publication is the caller that asks.
 //
-// ParseDirs records an absolute source directory, so the empty root here is the
-// one this function has to offer and the one the join never uses.
+// roots bounds the read: a declaration is data, and a file outside every root is
+// refused rather than published.
 //
 // A file that declares no rows yields an empty slice rather than a nil one. The
 // difference is the whole statement: nil means nobody read the file, and a
 // publisher refuses that rather than publishing a table with no rows.
-func ReadManagedRows(db *schemamodel.Database) error {
+func ReadManagedRows(db *schemamodel.Database, roots []string) error {
 	for index, declaration := range db.ManagedData {
 		if declaration.File == "" || declaration.Rows != nil {
 			continue
 		}
-		rows, err := manageddata.LoadRowValues("", declaration)
+		rows, err := schemaroot.Load(roots, declaration, manageddata.LoadRowValues)
 		if err != nil {
 			return err
 		}

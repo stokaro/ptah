@@ -186,7 +186,7 @@ type Country struct {
 	c.Assert(db.ManagedData, qt.HasLen, 1)
 	c.Assert(db.ManagedData[0].SourceDir, qt.Equals, sub)
 
-	rows, err := manageddata.LoadRows("", db.ManagedData[0])
+	rows, err := manageddata.LoadRows(root, db.ManagedData[0])
 	c.Assert(err, qt.IsNil)
 	c.Assert(rows, qt.DeepEquals, []map[string]any{{"code": "US", "name": "United States"}})
 }
@@ -226,9 +226,9 @@ type Country struct {
 	c.Assert(merged.ManagedData[0].SourceDir, qt.Equals, referenceA)
 	c.Assert(merged.ManagedData[1].SourceDir, qt.Equals, referenceB)
 
-	firstRows, err := manageddata.LoadRows("", merged.ManagedData[0])
+	firstRows, err := manageddata.LoadRows(rootA, merged.ManagedData[0])
 	c.Assert(err, qt.IsNil)
-	secondRows, err := manageddata.LoadRows("", merged.ManagedData[1])
+	secondRows, err := manageddata.LoadRows(rootB, merged.ManagedData[1])
 	c.Assert(err, qt.IsNil)
 	c.Assert(firstRows, qt.DeepEquals, []map[string]any{{"code": "US"}})
 	c.Assert(secondRows, qt.DeepEquals, []map[string]any{{"code": "CZ"}})

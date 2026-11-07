@@ -13,6 +13,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
 	"ptah.run/core/goschema"
+	"ptah.run/core/manageddata"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/internal/builtintest"
@@ -295,10 +296,12 @@ func TestInspect_DesiredReplacesTheRootParse(t *testing.T) {
 	desired := parseFixture(c, root)
 
 	// RootDir is left empty on purpose: the declaration records the directory it
-	// was authored in, so the row file resolves without it.
+	// was authored in, so the row file resolves without it, and RowRoots is what
+	// bounds the read.
 	summary, err := datamigrate.Inspect(context.Background(), conn, datamigrate.Options{
 		Annotations: builtintest.Annotations(),
 		Desired:     desired,
+		RowRoots:    []string{root},
 		Live:        liveSchema(c, conn),
 	})
 
@@ -306,6 +309,44 @@ func TestInspect_DesiredReplacesTheRootParse(t *testing.T) {
 	c.Assert(summary.Tables, qt.DeepEquals, []datamigrate.TableDrift{
 		{Table: "regions", Inserts: 0, Updates: 1, Deletes: 0},
 	})
+}
+
+// TestInspect_RefusesARowFileOutsideItsRoots is `schema drift` reading a schema it
+// did not write. The file is there and would read, so a report of this drift would
+// be a report about a file the schema has no business naming.
+func TestInspect_RefusesARowFileOutsideItsRoots(t *testing.T) {
+	parent := t.TempDir()
+	root := filepath.Join(parent, "project")
+	setup := qt.New(t)
+	setup.Assert(os.Mkdir(root, 0o750), qt.IsNil)
+	setup.Assert(os.WriteFile(filepath.Join(parent, "secret.yaml"), []byte("- code: XX\n  name: Secret\n"), 0o600), qt.IsNil)
+	writeRegionsFixture(t, root, "- code: US\n  name: United States\n")
+
+	tests := []struct {
+		name    string
+		options datamigrate.Options
+	}{
+		{name: "RowRoots bounds a resolved schema", options: datamigrate.Options{RowRoots: []string{root}}},
+		{name: "RootDir bounds it with no RowRoots", options: datamigrate.Options{RootDir: root}},
+		{name: "no root at all", options: datamigrate.Options{}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := newRegionsConn(t, nil)
+			desired := parseFixture(c, root)
+			desired.ManagedData[0].File = "../secret.yaml"
+			options := test.options
+			options.Annotations = builtintest.Annotations()
+			options.Desired = desired
+			options.Live = liveSchema(c, conn)
+
+			summary, err := datamigrate.Inspect(context.Background(), conn, options)
+
+			c.Assert(err, qt.ErrorIs, manageddata.ErrOutsideRoot)
+			c.Assert(summary, qt.IsNil)
+		})
+	}
 }
 
 // TestInspect_ReadsTheRowsTheDeclarationCarries drives the published-artifact
@@ -332,7 +373,7 @@ func TestInspect_ReadsTheRowsTheDeclarationCarries(t *testing.T) {
   name: Czechia
 `)
 	published := parseFixture(c, root)
-	c.Assert(schemaload.ReadManagedRows(published), qt.IsNil)
+	c.Assert(schemaload.ReadManagedRows(published, []string{root}), qt.IsNil)
 
 	store := memory.New()
 	_, err := schemaartifact.PushTo(ctx, store, published, schemaartifact.PushOptions{HCL: builtintest.Runtime().HCL(), Tags: []string{"stable"}})
