@@ -30,7 +30,7 @@ func (s *policySQLState) switches(t *policyTokens, index int) (sqlext.Value, err
 	if err != nil {
 		return sqlext.Value{}, err
 	}
-	word := t.current().Value
+	word, wordStart := t.current().Value, t.offset+t.current().Start
 	t.pos++
 	if err = t.words("ROW", "LEVEL", "SECURITY"); err != nil {
 		return sqlext.Value{}, err
@@ -46,7 +46,7 @@ func (s *policySQLState) switches(t *policyTokens, index int) (sqlext.Value, err
 	case strings.EqualFold(word, "FORCE"):
 		after.Forced = true
 	default:
-		return sqlext.Value{}, ptaherr.At(t.offset, fmt.Errorf("unsupported ALTER operation: %s ROW LEVEL SECURITY", word))
+		return sqlext.Value{}, ptaherr.At(wordStart, fmt.Errorf("unsupported ALTER operation: %s ROW LEVEL SECURITY", word))
 	}
 	access := pgpolicy.TableStateAccess(before, after)
 	if after.Forced {

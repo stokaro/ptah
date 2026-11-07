@@ -42,7 +42,7 @@ func TestReadSQL_RefusesADropTableWithoutRelations(t *testing.T) {
 	database, err := formats.ReadSQL(t.Context(), []byte(dropsBesideAnExtension), "postgres")
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(err, qt.ErrorMatches, `DROP TABLE a: .*no runtime can say which tables the standalone feature objects bind or are attached to`)
+	c.Assert(err, qt.ErrorMatches, `line 4, column 1: DROP TABLE a: .*no runtime can say which tables the standalone feature objects bind or are attached to`)
 	c.Assert(database, qt.IsNil)
 }
 

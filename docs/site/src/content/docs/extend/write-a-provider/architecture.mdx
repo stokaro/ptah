@@ -60,7 +60,9 @@ provider ID the process reports with the expected one.
   and standard error, because it can hold a credential.
 - **Message size.** One message is at most 4 MiB in each direction, or 64 MiB
   when both sides list `transport.large-messages`.
-- **Time.** Startup has ten seconds. A call whose work grows with the schema,
+- **Time.** Startup has ten seconds, counted from the launch of the executable
+  to the end of contract negotiation; a provider that takes longer is refused
+  with `provider_start_timeout`. A call whose work grows with the schema,
   such as inspection, comparison, planning, rendering or an execution without
   a statement timeout, runs until the caller's context ends. Every other call
   has 30 seconds (`runtime.CallTimeout`), and provisioning a dev database has

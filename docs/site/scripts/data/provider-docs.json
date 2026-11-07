@@ -1,6 +1,12 @@
 {
   "providers": [
     {
+      "engine": "duckdb",
+      "name": "DuckDB",
+      "repository": "stokaro/ptah-duckdb-plugin",
+      "release": "v0.1.0"
+    },
+    {
       "engine": "spanner",
       "name": "Spanner",
       "repository": "stokaro/ptah-spanner-plugin",

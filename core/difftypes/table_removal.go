@@ -3,7 +3,10 @@ package difftypes
 import (
 	"encoding/json"
 	"slices"
+	"strings"
 
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacapture"
 )
 
@@ -45,6 +48,46 @@ func (r TableRemovals) Names() []string {
 		names[i] = removal.Name
 	}
 	return names
+}
+
+// ObservedReferences returns, for each removal whose captured foreign keys
+// reference another table of the collection, the names of those tables, in
+// the order the keys were captured and each once. A table matches a reference
+// by semantics; a reference that names no schema means the referencing
+// table's schema. A key that references the table it is on, or a table the
+// collection does not remove, contributes nothing. The result is keyed by
+// [TableRemoval.Name], the names [TableRemovals.Names] returns, so a planner
+// can order the drops a declaration that no longer names these tables cannot
+// order.
+func (r TableRemovals) ObservedReferences(semantics identifier.Semantics) map[string][]string {
+	builder := objectidentity.NewBuilder(semantics)
+	names := make(map[objectidentity.Key]string, len(r))
+	for _, removal := range r {
+		if removal.Current.HasTable() {
+			names[builder.TableParts(removal.Current.Table.Schema, removal.Current.Table.Name).Key()] = removal.Name
+		}
+	}
+	var references map[string][]string
+	for _, removal := range r {
+		for _, constraint := range removal.Current.Constraints {
+			if !strings.EqualFold(constraint.Type, "FOREIGN KEY") || constraint.ForeignTable == nil {
+				continue
+			}
+			schema := constraint.ForeignSchema
+			if schema == "" {
+				schema = removal.Current.Table.Schema
+			}
+			referenced, removed := names[builder.TableParts(schema, *constraint.ForeignTable).Key()]
+			if !removed || referenced == removal.Name || slices.Contains(references[removal.Name], referenced) {
+				continue
+			}
+			if references == nil {
+				references = make(map[string][]string)
+			}
+			references[removal.Name] = append(references[removal.Name], referenced)
+		}
+	}
+	return references
 }
 
 // MarshalJSON writes the removal names for a diff report. A report is not a

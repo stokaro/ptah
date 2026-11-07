@@ -144,7 +144,12 @@ func (p commonPlanner) GenerateMigrationAST(ctx context.Context, runtime feature
 			return nil, fmt.Errorf("provider planner requires captured table state")
 		}
 	}
-	for _, name := range deporder.TableDropOrderWithDependencies(diff.TablesRemoved.Names(), diff.DeclaredTables, diff.DeclaredTableDependencies) {
+	// A removed table is dropped after the removed tables whose foreign keys,
+	// as the read reports them, reference it: the declaration names neither,
+	// and a provider that drops each table in its own step in place of the
+	// host's cannot reorder steps the host chains.
+	references := diff.TablesRemoved.ObservedReferences(diff.EffectiveIdentifierSemantics(p.target))
+	for _, name := range deporder.TableDropOrderWithObservedDependencies(diff.TablesRemoved.Names(), diff.DeclaredTables, diff.DeclaredTableDependencies, references) {
 		if !p.commonTables {
 			nodes = append(nodes, &pendingTableDrop{name: name})
 			continue

@@ -214,73 +214,73 @@ func TestRead_CommentOn_FailurePath(t *testing.T) {
 		{
 			name:      "an object the document does not declare",
 			statement: "COMMENT ON TABLE app.nope IS 'x';",
-			wantErr:   `the schema model has no place for this statement: COMMENT ON TABLE app.nope names an object this schema does not declare`,
+			wantErr:   `line 33, column 1: the schema model has no place for this statement: COMMENT ON TABLE app.nope names an object this schema does not declare`,
 		},
 		{
 			name:      "a column the table does not have",
 			statement: "COMMENT ON COLUMN app.t.zz IS 'x';",
-			wantErr:   `the schema model has no place for this statement: COMMENT ON COLUMN app.t.zz names an object this schema does not declare`,
+			wantErr:   `line 33, column 1: the schema model has no place for this statement: COMMENT ON COLUMN app.t.zz names an object this schema does not declare`,
 		},
 		{
 			name:      "a role the document does not declare",
 			statement: "COMMENT ON ROLE writer IS 'x';",
-			wantErr:   `the schema model has no place for this statement: COMMENT ON ROLE writer names an object this schema does not declare`,
+			wantErr:   `line 33, column 1: the schema model has no place for this statement: COMMENT ON ROLE writer names an object this schema does not declare`,
 		},
 		{
 			name:      "a schema the document does not declare",
 			statement: "COMMENT ON SCHEMA other IS 'x';",
-			wantErr:   `the schema model has no place for this statement: COMMENT ON SCHEMA other names an object this schema does not declare`,
+			wantErr:   `line 33, column 1: the schema model has no place for this statement: COMMENT ON SCHEMA other names an object this schema does not declare`,
 		},
 		{
 			name:      "a lower-case name for a quoted mixed-case view",
 			statement: "CREATE VIEW \"Recent\" AS SELECT 1;\nCOMMENT ON VIEW recent IS 'x';",
-			wantErr:   `the schema model has no place for this statement: COMMENT ON VIEW recent names an object this schema does not declare`,
+			wantErr:   `line 34, column 1: the schema model has no place for this statement: COMMENT ON VIEW recent names an object this schema does not declare`,
 		},
 		{
 			name:      "a lower-case name for a quoted mixed-case table",
 			statement: "CREATE TABLE \"Docs\" (id int);\nCOMMENT ON TABLE docs IS 'x';",
-			wantErr:   `the schema model has no place for this statement: COMMENT ON TABLE docs names an object this schema does not declare`,
+			wantErr:   `line 34, column 1: the schema model has no place for this statement: COMMENT ON TABLE docs names an object this schema does not declare`,
 		},
 		{
 			name:      "a kind the model has no comment for",
 			statement: "COMMENT ON DATABASE app IS 'x';",
-			wantErr:   `the schema model has no place for this statement: COMMENT ON DATABASE: Ptah keeps no comment for this kind of object`,
+			wantErr:   `line 33, column 1: the schema model has no place for this statement: COMMENT ON DATABASE: Ptah keeps no comment for this kind of object`,
 		},
 		{
 			name:      "an overload the document does not declare",
 			statement: "COMMENT ON FUNCTION app.f(bigint) IS 'x';",
-			wantErr:   `the schema model has no place for this statement: COMMENT ON FUNCTION app.f names an object this schema does not declare`,
+			wantErr:   `line 33, column 1: the schema model has no place for this statement: COMMENT ON FUNCTION app.f names an object this schema does not declare`,
 		},
 		{
 			name:      "a function named as a procedure",
 			statement: "COMMENT ON PROCEDURE app.g() IS 'x';",
-			wantErr:   `the schema model has no place for this statement: COMMENT ON PROCEDURE app.g names an object this schema does not declare`,
+			wantErr:   `line 33, column 1: the schema model has no place for this statement: COMMENT ON PROCEDURE app.g names an object this schema does not declare`,
 		},
 		{
 			name:      "a trigger on a table it is not on",
 			statement: "COMMENT ON TRIGGER audit ON app.w IS 'x';",
-			wantErr:   `the schema model has no place for this statement: COMMENT ON TRIGGER audit names an object this schema does not declare`,
+			wantErr:   `line 33, column 1: the schema model has no place for this statement: COMMENT ON TRIGGER audit names an object this schema does not declare`,
 		},
 		{
 			name:      "a domain's constraint",
 			statement: "COMMENT ON CONSTRAINT positive ON DOMAIN app.d IS 'x';",
-			wantErr: `the schema model has no place for this statement: COMMENT ON CONSTRAINT positive ON DOMAIN app.d: ` +
+			wantErr: `line 33, column 1: the schema model has no place for this statement: COMMENT ON CONSTRAINT positive ON DOMAIN app.d: ` +
 				`Ptah keeps no comment for a domain's constraint`,
 		},
 		{
 			name:      "a kind of more than one word the model has no comment for",
 			statement: "COMMENT ON FOREIGN TABLE app.ft IS 'x';",
-			wantErr:   `the schema model has no place for this statement: COMMENT ON FOREIGN TABLE: Ptah keeps no comment for this kind of object`,
+			wantErr:   `line 33, column 1: the schema model has no place for this statement: COMMENT ON FOREIGN TABLE: Ptah keeps no comment for this kind of object`,
 		},
 		{
 			name:      "a kind with a form of its own",
 			statement: "COMMENT ON CAST (int AS text) IS 'x';",
-			wantErr:   `the schema model has no place for this statement: COMMENT ON CAST: Ptah keeps no comment for this kind of object`,
+			wantErr:   `line 33, column 1: the schema model has no place for this statement: COMMENT ON CAST: Ptah keeps no comment for this kind of object`,
 		},
 		{
 			name:      "a view the document does not declare",
 			statement: "COMMENT ON VIEW app.nope IS 'x';",
-			wantErr:   `the schema model has no place for this statement: COMMENT ON VIEW app.nope names an object this schema does not declare`,
+			wantErr:   `line 33, column 1: the schema model has no place for this statement: COMMENT ON VIEW app.nope names an object this schema does not declare`,
 		},
 		{
 			name:      "a type in another schema",
@@ -425,7 +425,7 @@ func TestReadOnto_CommentOnAnAmbiguousOverload(t *testing.T) {
 	_, _, err := sqlschema.ReadOnto([]byte("COMMENT ON FUNCTION app.f IS 'x';"), "postgres", sqlschema.NewDocument(base))
 
 	c.Assert(err, qt.ErrorIs, sqlschema.ErrUnmodeledStatement)
-	c.Assert(err, qt.ErrorMatches, `the schema model has no place for this statement: COMMENT ON FUNCTION app.f names more than one `+
+	c.Assert(err, qt.ErrorMatches, `line 1, column 1: the schema model has no place for this statement: COMMENT ON FUNCTION app.f names more than one `+
 		`declared overload; write its argument types to name one`)
 	c.Assert([]string{base.Functions[0].Comment, base.Functions[1].Comment}, qt.DeepEquals, []string{"", ""})
 }

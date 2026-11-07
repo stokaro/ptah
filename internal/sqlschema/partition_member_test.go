@@ -148,7 +148,7 @@ func TestReadWith_PartitionOf_FailurePath(t *testing.T) {
 		{name: "a column added to a partition", source: "CREATE TABLE e PARTITION OF events DEFAULT;\nALTER TABLE e ADD COLUMN a int;", target: "postgres",
 			want: `.*ALTER TABLE e ADD COLUMN a adds a column to a table with no column list of its own; a partition takes its columns from its parent`},
 		{name: "a column of a partition changed", source: "CREATE TABLE e PARTITION OF events DEFAULT;\nALTER TABLE e ALTER COLUMN a SET DEFAULT 1;", target: "postgres",
-			want: `ALTER TABLE e ALTER COLUMN a names a column the table does not declare`},
+			want: `line 2, column 1: ALTER TABLE e ALTER COLUMN a names a column the table does not declare`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)

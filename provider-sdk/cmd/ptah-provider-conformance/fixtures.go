@@ -26,9 +26,10 @@ type fixtureFile struct {
 	} `json:"calls"`
 	Models []conformance.ModelIdentity `json:"models"`
 	Live   struct {
-		Schemas  []string `json:"schemas"`
-		LockName string   `json:"lock_name"`
-		Changes  []struct {
+		Schemas        []string `json:"schemas"`
+		LockName       string   `json:"lock_name"`
+		InProcessLocks bool     `json:"in_process_locks"`
+		Changes        []struct {
 			Name   string      `json:"name"`
 			Apply  fixtureStep `json:"apply"`
 			Revert fixtureStep `json:"revert"`
@@ -48,8 +49,10 @@ type fixtures struct {
 	models   []conformance.ModelIdentity
 	schemas  []string
 	lockName string
-	changes  []conformance.Change
-	refused  []*protocol.Unit
+	// inProcessLocks is live.in_process_locks: see conformance.Live.InProcessLocks.
+	inProcessLocks bool
+	changes        []conformance.Change
+	refused        []*protocol.Unit
 }
 
 func readFixtures(path string) (*fixtures, error) {
@@ -63,7 +66,7 @@ func readFixtures(path string) (*fixtures, error) {
 	if err := decoder.Decode(&file); err != nil {
 		return nil, fmt.Errorf("decode the fixtures: %w", err)
 	}
-	loaded := &fixtures{models: file.Models, schemas: file.Live.Schemas, lockName: file.Live.LockName}
+	loaded := &fixtures{models: file.Models, schemas: file.Live.Schemas, lockName: file.Live.LockName, inProcessLocks: file.Live.InProcessLocks}
 	for _, call := range file.Calls {
 		request, err := methodRequest(call.Method, call.Request)
 		if err != nil {

@@ -1,24 +1,30 @@
 ---
 title: Configure the DuckDB provider
-description: Diagnose an absent or unusable DuckDB executable provider and verify an explicitly trusted installation.
+description: Install, select and verify the DuckDB executable provider, diagnose an absent or unusable installation, and find where the provider documents what DuckDB does in Ptah.
 type: how-to
 audience:
   - database-engineer
-readerQuestion: "How do I configure and verify the DuckDB executable provider?"
-goal: "Verify an explicitly trusted DuckDB provider installation."
+readerQuestion: "How do I install, configure and verify the DuckDB executable provider?"
+goal: "Install the DuckDB provider and verify that Ptah selects it."
 sourceOfTruth:
   - internal/providercatalog
   - internal/providerconfig
+  - internal/providerinstall
   - internal/cli/providers
-  - stokaro/ptah#4204
+  - stokaro/ptah#5667
 generated: false
 overlaps: []
 disposition: keep
 ---
 
-Use this page when an explicit DuckDB provider selection reports a missing or
-unusable installation. You need a trusted executable artifact, its checksum, and
-a host that supports the artifact's protocol.
+Ptah serves DuckDB only through this optional provider, which embeds DuckDB in
+its own executable: Ptah itself carries no DuckDB code and no cgo. The provider
+reads a database file or an in-memory database, compares and plans, applies
+changes in a transaction, keeps the migration history, and provisions dev
+databases. Use this page to install it, to select a reviewed build with a
+manifest, and to correct a selection that reports a missing or unusable
+installation. What DuckDB does in Ptah is the provider's to document; see
+[Where the provider documents DuckDB](#where-the-provider-documents-duckdb).
 
 ## Check availability
 
@@ -26,13 +32,15 @@ The official provider ID is `github.com/stokaro/ptah-duckdb-plugin`. Its designa
 is [stokaro/ptah-duckdb-plugin](https://github.com/stokaro/ptah-duckdb-plugin).
 The catalog recognizes `duckdb` as engine names.
 
-Official DuckDB executable artifacts remain under development in
-[issue #4204](https://github.com/stokaro/ptah/issues/4204). The catalog reserves
-this identity. Its repository publishes no release with `ptah-provider.json`,
-so `ptah providers install duckdb` refuses with `provider_no_release`.
-
-This provider is optional. Installing the main Ptah binary does not establish
-a DuckDB provider installation.
+The provider is optional and installed separately from Ptah. Install the newest
+release this Ptah can run with `ptah providers install duckdb`, or a chosen one
+with `--version`. The
+[install procedure](../../executable-providers/#install-an-official-provider)
+covers how a release is chosen, the checks, and where the file is stored. The
+first release needs provider contract 25.30, which states that the host starts
+a provider in its own working directory, so a relative `duckdb://` path resolves
+against the directory you run Ptah in. Remaining work is tracked in
+[issue #5667](https://github.com/stokaro/ptah/issues/5667).
 
 List the catalog without executing providers:
 
@@ -88,3 +96,21 @@ The [native provider workflow](../../executable-providers/) describes inspection
 saved plans, application, and its protocol limitations. `ptah-compat` reads the
 manifest from `PTAH_PROVIDER_CONFIG`, and the language server selects no
 provider.
+
+## Where the provider documents DuckDB
+
+What DuckDB does in Ptah is the provider's to document: which statements a plan
+renders, which changes DuckDB cannot make and the provider refuses, and what is
+not supported yet. The pages below live in the provider's repository and are
+published here with the release of the provider this documentation describes.
+They start from these questions:
+
+| Question | Provider page |
+| --- | --- |
+| How do a `duckdb://` address, one writer at a time and a dev database work? | [Using the DuckDB provider with Ptah](usage/) |
+| Which declarations describe DuckDB objects? | [Declaring DuckDB objects](declarations/) |
+| How is a DuckDB migration recorded and run? | [Migrations on DuckDB](migrations/) |
+| What does the provider refuse, and why? | [What the DuckDB provider refuses](limitations/) |
+
+The provider's [README](https://github.com/stokaro/ptah-duckdb-plugin#readme)
+holds the rest of its reference.

@@ -7,9 +7,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"github.com/stokaro/ptah/provider-sdk/provider"
@@ -22,6 +24,34 @@ import (
 	"ptah.run/internal/providercatalog"
 	"ptah.run/internal/providersource"
 )
+
+// startupFailure names a startup that ran out of time. The SDK reports the end
+// of its startup context as a bare deadline, and its launcher can give up at
+// the same moment as an unspecified startup failure; a caller whose own context
+// ended gets the error unchanged, because the time was the caller's, not the
+// provider's.
+func startupFailure(ctx context.Context, spec Spec, elapsed time.Duration, err error) error {
+	timedOut := errors.Is(err, context.DeadlineExceeded) ||
+		(errors.Is(err, providerruntime.ErrStartup) && elapsed >= StartupTimeout)
+	if ctx.Err() != nil || !timedOut {
+		return err
+	}
+	return startupTimeoutError(fmt.Sprintf("provider %s (%s) did not finish its handshake within %s; it ran for %s. "+
+		"The first start of a new executable can take longer while the system checks it, so run the command again, "+
+		"and if it fails again, check the executable with `ptah providers check`",
+		spec.ProviderID, spec.Executable, StartupTimeout, elapsed.Round(100*time.Millisecond)))
+}
+
+// startupTimeoutError is the sentence [startupFailure] writes. It matches
+// [ErrStartupTimeout] and [context.DeadlineExceeded] without repeating either
+// text, which would only restate the sentence.
+type startupTimeoutError string
+
+func (e startupTimeoutError) Error() string { return string(e) }
+
+func (startupTimeoutError) Is(target error) bool {
+	return target == ErrStartupTimeout || target == context.DeadlineExceeded
+}
 
 // Spec selects executable bytes already trusted by the caller. Environment is
 // an explicit non-secret allowlist. Addresses belong to connection requests.
@@ -297,17 +327,29 @@ var hostFeatures = []string{
 	provider.SharedCoverageFeature,
 }
 
+// StartupTimeout is how long a provider has to finish its handshake: from the
+// launch of the executable to the end of contract negotiation.
+const StartupTimeout = 10 * time.Second
+
+// ErrStartupTimeout reports a provider that did not finish its handshake
+// within [StartupTimeout]. The error also matches [context.DeadlineExceeded].
+var ErrStartupTimeout = errors.New("provider startup timed out")
+
 // Start verifies the selected artifact and negotiates experimental services.
-// A failure releases the subprocess and returns no host.
+// A failure releases the subprocess and returns no host. A provider that does
+// not finish its handshake within [StartupTimeout] is refused with
+// [ErrStartupTimeout], naming the provider, its executable and how long it ran.
 func Start(ctx context.Context, spec Spec) (*Host, error) {
+	started := time.Now()
 	client, err := providerruntime.Start(ctx, providerruntime.Options{
 		Executable: spec.Executable, SHA256: spec.SHA256, ProviderID: spec.ProviderID,
 		Environment:      slices.Clone(spec.Environment),
 		RequiredFeatures: []string{provider.InspectFeature, provider.RenderFeature, provider.ExecuteFeature, provider.AnalyzeSQLFeature},
 		HostFeatures:     slices.Clone(hostFeatures),
+		StartupTimeout:   StartupTimeout,
 	})
 	if err != nil {
-		return nil, err
+		return nil, startupFailure(ctx, spec, time.Since(started), err)
 	}
 	host := &Host{client: client, description: client.Description(), artifact: strings.ToLower(spec.SHA256), targets: make(map[string]*target)}
 	for _, engine := range host.description.GetEngines() {

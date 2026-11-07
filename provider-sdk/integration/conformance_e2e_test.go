@@ -104,18 +104,25 @@ func TestConformanceOfTheFixtureProvider(t *testing.T) {
 	c.Assert(report.Provider.ID, qt.Equals, "example.org/fixture")
 }
 
-// The command runs the same suite against an executable and prints the
-// machine-readable report; a provider that describes another identity fails
-// it, and the command exits 1.
-func TestConformanceCommand(t *testing.T) {
-	c := qt.New(t)
-	binary := buildFixture(c, "provider")
+// buildConformanceCommand builds the suite's command from the in-tree SDK.
+func buildConformanceCommand(c *qt.C) string {
+	c.Helper()
 	command := filepath.Join(c.TempDir(), "ptah-provider-conformance.exe")
 	build := exec.CommandContext(c.Context(), "go", "build", "-o", command, "./cmd/ptah-provider-conformance")
 	build.Dir = fixtureSDK(c)
 	build.Env = append(os.Environ(), "GOWORK=off")
 	output, err := build.CombinedOutput()
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", output))
+	return command
+}
+
+// The command runs the same suite against an executable and prints the
+// machine-readable report; a provider that describes another identity fails
+// it, and the command exits 1.
+func TestConformanceCommand(t *testing.T) {
+	c := qt.New(t)
+	binary := buildFixture(c, "provider")
+	command := buildConformanceCommand(c)
 	for _, test := range []struct {
 		name       string
 		providerID string
@@ -143,4 +150,28 @@ func TestConformanceCommand(t *testing.T) {
 			c.Assert(report.Suite, qt.Equals, "ptah-provider-conformance")
 		})
 	}
+}
+
+// The fixture file's live.in_process_locks takes the lock from two sessions
+// of one process. The fixture engine is a database file that a second
+// process opens while the first holds a session of it, so the lock check
+// fails: the mode is for an engine one process holds at a time, and the suite
+// checks that it is one before it skips the second process.
+func TestConformanceCommandInProcessLocks_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	binary := buildFixture(c, "provider")
+	command := buildConformanceCommand(c)
+	fixtures := filepath.Join(c.TempDir(), "fixtures.json")
+	c.Assert(os.WriteFile(fixtures, []byte(`{"live":{"in_process_locks":true}}`), 0o600), qt.IsNil)
+	run := exec.CommandContext(c.Context(), command, "-json", "-executable", binary, "-provider-id", "example.org/fixture",
+		"-require", provider.InspectFeature, "-fixtures", fixtures)
+	run.Env = append(os.Environ(), "PTAH_CONFORMANCE_ADDRESS="+fixtureDatabase(c))
+
+	stdout, err := run.Output()
+
+	c.Assert(run.ProcessState.ExitCode(), qt.Equals, 1, qt.Commentf("%v: %s", err, stdout))
+	var report conformance.Report
+	c.Assert(json.Unmarshal(stdout, &report), qt.IsNil)
+	c.Assert(report.Failures(), qt.DeepEquals, []conformance.Result{{ID: "live.locks", Status: conformance.Failed,
+		Detail: "a second process opened the database while a session of the first held it; Live.InProcessLocks is for an engine whose database one process holds at a time"}})
 }

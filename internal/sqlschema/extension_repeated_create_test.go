@@ -52,7 +52,7 @@ func TestRead_AnExtensionCreatedTwice_FailurePath(t *testing.T) {
 			database, err := readCreatedExtensions(c, test.sql, test.target)
 
 			c.Assert(err, qt.ErrorIs, sqlschema.ErrNameInUse)
-			c.Assert(err, qt.ErrorMatches, `a name the file declares is already in use: extension "pgcrypto" is created again `+
+			c.Assert(err, qt.ErrorMatches, `line \d+, column 1: a name the file declares is already in use: extension "pgcrypto" is created again `+
 				`without IF NOT EXISTS, and the server refuses the second declaration`)
 			c.Assert(database.FeatureObjects.Len(), qt.Equals, 0)
 		})

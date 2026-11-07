@@ -151,36 +151,36 @@ func TestRead_DropTable_FailurePath(t *testing.T) {
 			// Unknown table 'k_src.nope'.
 			name: "MySQL, a table nothing declares", dialect: "mysql",
 			sql:     "CREATE TABLE c (id int PRIMARY KEY);\nDROP TABLE nope;",
-			wantErr: `DROP TABLE nope names a table this schema does not declare`,
+			wantErr: `line 2, column 1: DROP TABLE nope names a table this schema does not declare`,
 		},
 		{
 			// table "nope" does not exist.
 			name: "PostgreSQL, a table nothing declares", dialect: "postgres",
 			sql:     "CREATE TABLE c (id int PRIMARY KEY);\nDROP TABLE nope;",
-			wantErr: `DROP TABLE nope names a table this schema does not declare`,
+			wantErr: `line 2, column 1: DROP TABLE nope names a table this schema does not declare`,
 		},
 		{
 			// ERROR 3730: Cannot drop table 'p' referenced by a foreign key.
 			name: "MySQL, a table a foreign key refers to", dialect: "mysql",
 			sql:     "CREATE TABLE p (id int PRIMARY KEY);\nCREATE TABLE c (id int PRIMARY KEY, p_id int, CONSTRAINT fk FOREIGN KEY (p_id) REFERENCES p (id));\nDROP TABLE p;",
-			wantErr: `DROP TABLE p: the foreign key fk of c still refers to the table`,
+			wantErr: `line 3, column 1: DROP TABLE p: the foreign key fk of c still refers to the table`,
 		},
 		{
 			// cannot drop table p because other objects depend on it.
 			name: "PostgreSQL, a table a column's foreign key refers to", dialect: "postgres",
 			sql:     "CREATE TABLE p (id int PRIMARY KEY);\nCREATE TABLE c (id int PRIMARY KEY, p_id int REFERENCES p (id));\nDROP TABLE p;",
-			wantErr: `DROP TABLE p: the foreign key .* still refers to the table`,
+			wantErr: `line 3, column 1: DROP TABLE p: the foreign key .* still refers to the table`,
 		},
 		{
 			// view v depends on table a.
 			name: "PostgreSQL, a table a view reads", dialect: "postgres",
 			sql:     "CREATE TABLE a (id int PRIMARY KEY);\nCREATE VIEW v AS SELECT id FROM a;\nDROP TABLE a;",
-			wantErr: `DROP TABLE a: view v still refers to the table`,
+			wantErr: `line 3, column 1: DROP TABLE a: view v still refers to the table`,
 		},
 		{
 			name: "CASCADE", dialect: "postgres",
 			sql:     "CREATE TABLE a (id int PRIMARY KEY);\nDROP TABLE a CASCADE;",
-			wantErr: `DROP TABLE a CASCADE also drops the objects that depend on the table, which a schema file does not list; drop them by name`,
+			wantErr: `line 2, column 1: DROP TABLE a CASCADE also drops the objects that depend on the table, which a schema file does not list; drop them by name`,
 		},
 	}
 	for _, test := range tests {
@@ -252,56 +252,56 @@ func TestRead_DropIndex_FailurePath(t *testing.T) {
 			// index "nope" does not exist.
 			name: "PostgreSQL, an index nothing declares", dialect: "postgres",
 			sql:     "CREATE TABLE c (id int PRIMARY KEY, x int);\nDROP INDEX nope;",
-			wantErr: `DROP INDEX nope names an index this schema does not declare`,
+			wantErr: `line 2, column 1: DROP INDEX nope names an index this schema does not declare`,
 		},
 		{
 			// index "ix" does not exist: the bare name looks in public.
 			name: "PostgreSQL, an index of another schema by its bare name", dialect: "postgres",
 			sql:     "CREATE SCHEMA app;\nCREATE TABLE app.c (id int PRIMARY KEY, x int);\nCREATE INDEX ix ON app.c (x);\nDROP INDEX ix;",
-			wantErr: `DROP INDEX ix names an index this schema does not declare`,
+			wantErr: `line 4, column 1: DROP INDEX ix names an index this schema does not declare`,
 		},
 		{
 			// cannot drop index uq because constraint uq on table c requires it.
 			name: "PostgreSQL, the index behind a UNIQUE", dialect: "postgres",
 			sql:     "CREATE TABLE c (id int PRIMARY KEY, x int, CONSTRAINT uq UNIQUE (x));\nDROP INDEX uq;",
-			wantErr: `DROP INDEX uq: the index enforces unique constraint uq; drop the constraint instead`,
+			wantErr: `line 2, column 1: DROP INDEX uq: the index enforces unique constraint uq; drop the constraint instead`,
 		},
 		{
 			name: "PostgreSQL, the index behind a column's own UNIQUE", dialect: "postgres",
 			sql:     "CREATE TABLE c (id int PRIMARY KEY, x int UNIQUE);\nDROP INDEX c_x_key;",
-			wantErr: `DROP INDEX c_x_key: the index enforces unique constraint c_x_key; drop the constraint instead`,
+			wantErr: `line 2, column 1: DROP INDEX c_x_key: the index enforces unique constraint c_x_key; drop the constraint instead`,
 		},
 		{
 			name: "PostgreSQL, the index behind the primary key", dialect: "postgres",
 			sql:     "CREATE TABLE c (id int PRIMARY KEY, x int);\nDROP INDEX c_pkey;",
-			wantErr: `DROP INDEX c_pkey: the index enforces primary key constraint c_pkey; drop the constraint instead`,
+			wantErr: `line 2, column 1: DROP INDEX c_pkey: the index enforces primary key constraint c_pkey; drop the constraint instead`,
 		},
 		{
 			name: "CASCADE", dialect: "postgres",
 			sql:     "CREATE TABLE c (id int PRIMARY KEY, x int);\nCREATE INDEX ix ON c (x);\nDROP INDEX ix CASCADE;",
-			wantErr: `DROP INDEX ix CASCADE also drops the objects that depend on the index, which a schema file does not list; drop them by name`,
+			wantErr: `line 3, column 1: DROP INDEX ix CASCADE also drops the objects that depend on the index, which a schema file does not list; drop them by name`,
 		},
 		{
 			// SQL Server drops the index of a UNIQUE only with the constraint.
 			name: "SQL Server, the index behind a UNIQUE", dialect: "sqlserver",
 			sql:     "CREATE TABLE c (id int PRIMARY KEY, x int, CONSTRAINT uq UNIQUE (x));\nDROP INDEX uq ON c;",
-			wantErr: `DROP INDEX uq ON c: the index enforces unique constraint uq; drop the constraint instead`,
+			wantErr: `line 2, column 1: DROP INDEX uq ON c: the index enforces unique constraint uq; drop the constraint instead`,
 		},
 		{
 			name: "SQL Server, an index nothing declares", dialect: "sqlserver",
 			sql:     "CREATE TABLE c (id int PRIMARY KEY, x int);\nDROP INDEX nope ON c;",
-			wantErr: `DROP INDEX nope ON c names an index this schema does not declare`,
+			wantErr: `line 2, column 1: DROP INDEX nope ON c names an index this schema does not declare`,
 		},
 		{
 			// ERROR 1091: Can't DROP 'nope'.
 			name: "MySQL, an index nothing declares", dialect: "mysql",
 			sql:     "CREATE TABLE c (id int PRIMARY KEY, x int);\nDROP INDEX nope ON c;",
-			wantErr: `DROP INDEX nope ON c: ALTER TABLE c DROP CONSTRAINT nope names a constraint this schema does not declare by that name`,
+			wantErr: `line 2, column 1: DROP INDEX nope ON c: ALTER TABLE c DROP CONSTRAINT nope names a constraint this schema does not declare by that name`,
 		},
 		{
 			name: "MySQL, a table nothing declares", dialect: "mysql",
 			sql:     "CREATE TABLE c (id int PRIMARY KEY, x int);\nDROP INDEX ix ON nope;",
-			wantErr: `DROP INDEX ix ON nope names a table this schema does not declare`,
+			wantErr: `line 2, column 1: DROP INDEX ix ON nope names a table this schema does not declare`,
 		},
 	}
 	for _, test := range tests {

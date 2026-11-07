@@ -97,7 +97,7 @@ func (p *Provider) Open(ctx context.Context, request *protocol.OpenRequest) (*pr
 	if u.Scheme != p.engine() || u.Host != "" || !filepath.IsAbs(path) {
 		return nil, fmt.Errorf("fixture requires an absolute database file")
 	}
-	database, err := sql.Open("sqlite", path)
+	database, err := sql.Open("sqlite", dataSource(path))
 	if err != nil {
 		return nil, fmt.Errorf("open fixture database")
 	}
@@ -114,6 +114,16 @@ func (p *Provider) Open(ctx context.Context, request *protocol.OpenRequest) (*pr
 	}
 	p.sessions[id] = &session{db: database, path: path, fault: u.Query().Get("fault")}
 	return &protocol.Session{Id: id, Engine: p.engine(), Database: path, ServerVersion: "fixture-1", DefaultSchema: "main", Identifiers: identifierRules()}, nil
+}
+
+// dataSource is the SQLite address of path. FIXTURE_FOREIGN_KEYS=on has the
+// session enforce foreign keys, so the database refuses a statement order
+// that breaks one, such as dropping a table another table still references.
+func dataSource(path string) string {
+	if os.Getenv("FIXTURE_FOREIGN_KEYS") == "on" {
+		return path + "?_pragma=foreign_keys(1)"
+	}
+	return path
 }
 
 func (p *Provider) lookup(id string) (*session, error) {

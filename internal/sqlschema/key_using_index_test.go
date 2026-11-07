@@ -202,70 +202,70 @@ func TestReadKeyUsingIndex_FailurePath(t *testing.T) {
 		{
 			name:    "an index that is not unique",
 			sql:     "CREATE INDEX t_a ON t (a);\nALTER TABLE t ADD UNIQUE USING INDEX t_a;",
-			wantErr: `ALTER TABLE t ADD UNIQUE USING INDEX t_a: "t_a" is not a unique index`,
+			wantErr: `line 3, column 1: ALTER TABLE t ADD UNIQUE USING INDEX t_a: "t_a" is not a unique index`,
 		},
 		{
 			name:    "a partial index",
 			sql:     "CREATE UNIQUE INDEX t_a ON t (a) WHERE a > 0;\nALTER TABLE t ADD UNIQUE USING INDEX t_a;",
-			wantErr: `ALTER TABLE t ADD UNIQUE USING INDEX t_a: "t_a" is a partial index`,
+			wantErr: `line 3, column 1: ALTER TABLE t ADD UNIQUE USING INDEX t_a: "t_a" is a partial index`,
 		},
 		{
 			name:    "an index that is not a b-tree",
 			sql:     "CREATE UNIQUE INDEX t_a ON t USING hash (a);\nALTER TABLE t ADD UNIQUE USING INDEX t_a;",
-			wantErr: `ALTER TABLE t ADD UNIQUE USING INDEX t_a: index "t_a" is not a b-tree`,
+			wantErr: `line 3, column 1: ALTER TABLE t ADD UNIQUE USING INDEX t_a: index "t_a" is not a b-tree`,
 		},
 		{
 			name:    "an index over an expression",
 			sql:     "CREATE UNIQUE INDEX t_a ON t ((a + 1));\nALTER TABLE t ADD UNIQUE USING INDEX t_a;",
-			wantErr: `ALTER TABLE t ADD UNIQUE USING INDEX t_a: index "t_a" contains expressions`,
+			wantErr: `line 3, column 1: ALTER TABLE t ADD UNIQUE USING INDEX t_a: index "t_a" contains expressions`,
 		},
 		{
 			name:    "a descending column",
 			sql:     "CREATE UNIQUE INDEX t_a ON t (b, a DESC);\nALTER TABLE t ADD UNIQUE USING INDEX t_a;",
-			wantErr: `ALTER TABLE t ADD UNIQUE USING INDEX t_a: index "t_a" column number 2 does not have default sorting behavior`,
+			wantErr: `line 3, column 1: ALTER TABLE t ADD UNIQUE USING INDEX t_a: index "t_a" column number 2 does not have default sorting behavior`,
 		},
 		{
 			name:    "a column that sorts NULLs first",
 			sql:     "CREATE UNIQUE INDEX t_a ON t (a NULLS FIRST);\nALTER TABLE t ADD UNIQUE USING INDEX t_a;",
-			wantErr: `ALTER TABLE t ADD UNIQUE USING INDEX t_a: index "t_a" column number 1 does not have default sorting behavior`,
+			wantErr: `line 3, column 1: ALTER TABLE t ADD UNIQUE USING INDEX t_a: index "t_a" column number 1 does not have default sorting behavior`,
 		},
 		{
 			name: "a primary key over an index whose NULLs are not distinct",
 			sql:  "CREATE UNIQUE INDEX t_a ON t (a) NULLS NOT DISTINCT;\nALTER TABLE t ADD PRIMARY KEY USING INDEX t_a;",
-			wantErr: `ALTER TABLE t ADD PRIMARY KEY USING INDEX t_a: ` +
+			wantErr: `line 3, column 1: ALTER TABLE t ADD PRIMARY KEY USING INDEX t_a: ` +
 				`primary keys cannot use NULLS NOT DISTINCT indexes`,
 		},
 		{
 			name: "an operator class",
 			sql:  "CREATE UNIQUE INDEX t_a ON t (a int4_ops);\nALTER TABLE t ADD UNIQUE USING INDEX t_a;",
-			wantErr: `ALTER TABLE t ADD UNIQUE USING INDEX t_a: index "t_a" names operator class int4_ops ` +
+			wantErr: `line 3, column 1: ALTER TABLE t ADD UNIQUE USING INDEX t_a: index "t_a" names operator class int4_ops ` +
 				`for column number 1, .*`,
 		},
 		{
 			name:    "storage parameters",
 			sql:     "CREATE UNIQUE INDEX t_a ON t (a) WITH (fillfactor = 70);\nALTER TABLE t ADD UNIQUE USING INDEX t_a;",
-			wantErr: `ALTER TABLE t ADD UNIQUE USING INDEX t_a: index "t_a" has storage parameters, which a key does not keep; .*`,
+			wantErr: `line 3, column 1: ALTER TABLE t ADD UNIQUE USING INDEX t_a: index "t_a" has storage parameters, which a key does not keep; .*`,
 		},
 		{
 			name:    "a comment on the index",
 			sql:     "CREATE UNIQUE INDEX t_a ON t (a);\nCOMMENT ON INDEX t_a IS 'x';\nALTER TABLE t ADD UNIQUE USING INDEX t_a;",
-			wantErr: `ALTER TABLE t ADD UNIQUE USING INDEX t_a: index "t_a" has a comment, which a key does not keep; .*`,
+			wantErr: `line 4, column 1: ALTER TABLE t ADD UNIQUE USING INDEX t_a: index "t_a" has a comment, which a key does not keep; .*`,
 		},
 		{
 			name:    "an index of another table",
 			sql:     "CREATE TABLE u (a int);\nCREATE UNIQUE INDEX u_a ON u (a);\nALTER TABLE t ADD UNIQUE USING INDEX u_a;",
-			wantErr: `ALTER TABLE t ADD UNIQUE USING INDEX u_a names an index this schema does not declare on the table`,
+			wantErr: `line 4, column 1: ALTER TABLE t ADD UNIQUE USING INDEX u_a names an index this schema does not declare on the table`,
 		},
 		{
 			name: "an index that is already a key",
 			sql: "CREATE UNIQUE INDEX t_a ON t (a);\nALTER TABLE t ADD CONSTRAINT t_a_key UNIQUE USING INDEX t_a;\n" +
 				"ALTER TABLE t ADD CONSTRAINT again UNIQUE USING INDEX t_a_key;",
-			wantErr: `ALTER TABLE t ADD UNIQUE USING INDEX t_a_key: the index is already the key of a constraint`,
+			wantErr: `line 4, column 1: ALTER TABLE t ADD UNIQUE USING INDEX t_a_key: the index is already the key of a constraint`,
 		},
 		{
 			name:    "a second primary key",
 			sql:     "CREATE UNIQUE INDEX t_b ON t (b);\nALTER TABLE t ADD PRIMARY KEY (a);\nALTER TABLE t ADD PRIMARY KEY USING INDEX t_b;",
-			wantErr: `ALTER TABLE t ADD PRIMARY KEY: the table already declares a primary key`,
+			wantErr: `line 4, column 1: ALTER TABLE t ADD PRIMARY KEY: the table already declares a primary key`,
 		},
 	}
 	for _, test := range tests {

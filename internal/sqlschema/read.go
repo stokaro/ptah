@@ -192,6 +192,9 @@ func convert(
 	document.redeclared = opts.Redeclared
 	database, err := convertStatements(ctx, statements, parsed, dialect, document, owners, relations)
 	document.redeclared = nil
+	if refused, ok := errors.AsType[*positionedRefusal](err); ok {
+		return schemamodel.Database{}, nil, parsed.Locate(ptaherr.At(refused.start, refused.err))
+	}
 	if err != nil {
 		return schemamodel.Database{}, nil, err
 	}
@@ -199,6 +202,32 @@ func convert(
 		return schemamodel.Database{}, nil, redeclared
 	}
 	return database, statements, nil
+}
+
+// positionedRefusal is a refusal of what a statement declares, raised once the
+// parse is over, with where that statement begins. The model carries no
+// positions, so the statement is the most precise place it can name; [convert]
+// turns it into a line and column.
+type positionedRefusal struct {
+	start int
+	err   error
+}
+
+func (r *positionedRefusal) Error() string { return r.err.Error() }
+
+func (r *positionedRefusal) Unwrap() error { return r.err }
+
+// atStatement gives err the start of stmt, unless err already names a position
+// or the parse recorded none for stmt.
+func (d *Document) atStatement(stmt ast.Node, err error) error {
+	if _, positioned := errors.AsType[*ptaherr.ParseError](err); positioned || d == nil || d.notes == nil {
+		return err
+	}
+	start, found := d.notes.StatementStart(stmt)
+	if !found {
+		return err
+	}
+	return &positionedRefusal{start: start, err: err}
 }
 
 // convertStatements converts statements onto document. notes is what their
