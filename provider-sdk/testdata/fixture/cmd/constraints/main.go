@@ -117,12 +117,11 @@ func main() {
 		SchemaVersion: 1, Encoding: "json", DefinitionJson: definition, DefinitionSha256: hex.EncodeToString(digest[:]), CanonicalFormat: "constraint-statements-v1"})
 	engine.Planning = []*protocol.ModelPlanning{{Id: "tables", ParentKinds: []string{retentionKind}, OperationKinds: []string{statementsKind}}}
 	if ownership == "service" {
-		// The service then creates and drops tables and plans no change of a
-		// kept table's constraints, so the engine lists no constraint changes.
-		unplanned := func(feature string) bool { return feature == provider.ConstraintChangesFeature }
+		// The service then owns the tables through owns_tables alone, with no
+		// table setting model, and stays the owner constraint changes need.
 		description.SemanticIdentity += "-owned"
-		description.Features = append(slices.DeleteFunc(description.Features, unplanned), provider.TableOwnershipFeature)
-		engine.Features = append(slices.DeleteFunc(engine.Features, unplanned), provider.TableOwnershipFeature)
+		description.Features = append(description.Features, provider.TableOwnershipFeature)
+		engine.Features = append(engine.Features, provider.TableOwnershipFeature)
 		engine.Planning = []*protocol.ModelPlanning{{Id: "tables", OwnsTables: true, OperationKinds: []string{statementsKind}}}
 	}
 	owner := &owner{Provider: &backend.Provider{}, description: description, text: mode == "text", ownsTables: ownership == "service",
