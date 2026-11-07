@@ -91,13 +91,23 @@ func (r *Renderer) renderDropIndex(node *ast.DropIndexNode) error {
 	return nil
 }
 
-// renderAlterIndex writes ALTER INDEX ... RENAME TO. Ptah plans no index
-// rename, so the node comes from parsed SQL, and only PostgreSQL's reading of
-// the statement is measured: the other engines this renderer serves refuse it.
+// renderAlterIndex writes ALTER INDEX ... RENAME TO or ATTACH PARTITION. Ptah
+// plans neither, so the node comes from parsed SQL, and only PostgreSQL's
+// reading of the statement is measured: the other engines this renderer serves
+// refuse it.
 func (r *Renderer) renderAlterIndex(node *ast.AlterIndexNode) error {
+	action := "RENAME TO " + node.NewName
+	if node.AttachPartition != "" {
+		action = "ATTACH PARTITION " + node.AttachPartition
+	}
 	if r.dialect != platform.Postgres {
-		return fmt.Errorf("%w: %s: ALTER INDEX %s RENAME TO %s is written for PostgreSQL only",
-			ptaherr.ErrUnsupportedFeature, r.dialect, node.Name, node.NewName)
+		return fmt.Errorf("%w: %s: ALTER INDEX %s %s is written for PostgreSQL only",
+			ptaherr.ErrUnsupportedFeature, r.dialect, node.Name, action)
+	}
+	if node.AttachPartition != "" {
+		r.w.WriteLinef("ALTER INDEX %s ATTACH PARTITION %s;",
+			r.escapeQualifiedIdentifier(node.Name), r.escapeQualifiedIdentifier(node.AttachPartition))
+		return nil
 	}
 	guard := ""
 	if node.IfExists {

@@ -188,12 +188,11 @@ func refuseRelationNames(request schemaext.ObjectComparisonRequest, pairs []aggr
 			occupy("table", parent.Subject)
 		}
 	}
+	// A declared table arrives as a parent too, and the first occupant names
+	// the relation; either way it is reported as a table.
+	relationKinds := map[objectidentity.Kind]string{objectidentity.KindTable: "table", objectidentity.KindView: "view", objectidentity.KindMatView: "materialized view"}
 	for _, ref := range request.DeclaredRelations {
-		kind := "view"
-		if ref.Kind == objectidentity.KindMatView {
-			kind = "materialized view"
-		}
-		occupy(kind, ref)
+		occupy(relationKinds[ref.Kind], ref)
 	}
 	var problems []error
 	for _, pair := range pairs {

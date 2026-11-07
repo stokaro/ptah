@@ -38,14 +38,9 @@ func AcceptColumns(request ColumnsRequest, result ColumnsResult) (ColumnsResult,
 func acceptColumnAspect(receipt ColumnAspectReceipt) error {
 	switch receipt.Aspect {
 	case ColumnType, ColumnDefault:
-		if receipt.Difference == nil || receipt.Nullable != nil || receipt.Sequence != nil ||
-			(receipt.Difference.Relation != ColumnSame && receipt.Difference.Relation != ColumnChanged) {
-			return fmt.Errorf("%w: a difference needs one explicit relation", ErrColumns)
-		}
-		if receipt.Aspect == ColumnType && receipt.Difference.Relation == ColumnChanged &&
-			(strings.TrimSpace(receipt.Difference.Current) == "" || strings.TrimSpace(receipt.Difference.Desired) == "") {
-			return fmt.Errorf("%w: changed types need diagnostic spellings", ErrColumns)
-		}
+		return acceptColumnDifference(receipt)
+	case ColumnCollation:
+		return acceptColumnCollation(receipt)
 	case ColumnNullability:
 		if receipt.Nullable == nil || receipt.Difference != nil || receipt.Sequence != nil {
 			return fmt.Errorf("%w: nullability needs one explicit boolean", ErrColumns)
@@ -57,6 +52,39 @@ func acceptColumnAspect(receipt ColumnAspectReceipt) error {
 		return acceptSequenceChanges(receipt.Sequence.Changes)
 	default:
 		return fmt.Errorf("%w: unknown column aspect", ErrColumns)
+	}
+	return nil
+}
+
+// oneDifference reports a receipt that holds a difference with an explicit
+// relation and nothing else.
+func oneDifference(receipt ColumnAspectReceipt) bool {
+	return receipt.Difference != nil && receipt.Nullable == nil && receipt.Sequence == nil &&
+		(receipt.Difference.Relation == ColumnSame || receipt.Difference.Relation == ColumnChanged)
+}
+
+// acceptColumnDifference checks a type or default receipt: one difference,
+// and both spellings of a changed type.
+func acceptColumnDifference(receipt ColumnAspectReceipt) error {
+	if !oneDifference(receipt) {
+		return fmt.Errorf("%w: a difference needs one explicit relation", ErrColumns)
+	}
+	if receipt.Aspect == ColumnType && receipt.Difference.Relation == ColumnChanged &&
+		(strings.TrimSpace(receipt.Difference.Current) == "" || strings.TrimSpace(receipt.Difference.Desired) == "") {
+		return fmt.Errorf("%w: changed types need diagnostic spellings", ErrColumns)
+	}
+	return nil
+}
+
+// acceptColumnCollation checks a collation receipt: one difference, whose
+// spellings may be empty for the default, and two different collations for a
+// change.
+func acceptColumnCollation(receipt ColumnAspectReceipt) error {
+	if !oneDifference(receipt) {
+		return fmt.Errorf("%w: a collation needs one explicit relation", ErrColumns)
+	}
+	if receipt.Difference.Relation == ColumnChanged && receipt.Difference.Current == receipt.Difference.Desired {
+		return fmt.Errorf("%w: a changed collation names two different collations", ErrColumns)
 	}
 	return nil
 }

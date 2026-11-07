@@ -748,6 +748,11 @@ type IndexNode struct {
 	Name string
 	// Table is the qualified name of the table to index.
 	Table string
+	// Only is PostgreSQL's `ON ONLY`: the index of a partitioned table is
+	// created without the copies its partitions would get, which `ALTER INDEX
+	// ... ATTACH PARTITION` attaches one by one. It comes from parsed SQL;
+	// renderers write the index without it.
+	Only bool
 	// Columns contains the list of column names to include in the index
 	Columns []string
 	// Parts contains structured index elements. When empty, Columns remains
@@ -1282,15 +1287,15 @@ func (n *DropIndexNode) SetComment(comment string) *DropIndexNode {
 func (n *DropIndexNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // AlterIndexNode is PostgreSQL's `ALTER INDEX [IF EXISTS] name RENAME TO
-// new_name`.
+// new_name`, or `ALTER INDEX name ATTACH PARTITION partition_index`.
 //
 // The statement names the index alone, as PostgreSQL finds it: in the schema
 // Name spells, or in the default one when Name is bare. Renaming the index
 // behind a UNIQUE, a primary key or an EXCLUDE constraint renames the
-// constraint too. RENAME TO is the one action the node carries; the parser
-// refuses the others by name. Ptah plans no index rename, so the node comes
-// from parsed SQL. The PostgreSQL renderer writes it; the other renderers
-// refuse it.
+// constraint too. RENAME TO and ATTACH PARTITION are the actions the node
+// carries; the parser refuses the others by name. Ptah plans neither, so the
+// node comes from parsed SQL. The PostgreSQL renderer writes it; the other
+// renderers refuse it.
 type AlterIndexNode struct {
 	// Name is the index the statement names, as the statement spells it,
 	// schema-qualified or bare.
@@ -1301,6 +1306,10 @@ type AlterIndexNode struct {
 	// NewName is the name the index takes. It is bare, because the index
 	// stays in its schema.
 	NewName string
+	// AttachPartition is the index of a partition the statement attaches to
+	// this index, as `ALTER INDEX name ATTACH PARTITION partition_index` spells
+	// it, schema-qualified or bare. A statement sets it or NewName, never both.
+	AttachPartition string
 }
 
 // Accept hands the visitor this node.

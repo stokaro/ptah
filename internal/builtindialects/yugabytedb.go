@@ -176,7 +176,9 @@ func yugabyteDB() descriptor.Dialect {
 		URLs: descriptor.URLs{DefaultPort: 5433},
 
 		// Grammar: how the shared DDL parser reads the engine's DDL.
-		// 2026.1.2 takes NOT VALID and MATCH FULL. A DO block that writes no
+		// 2026.1.2 takes NOT VALID and MATCH FULL, and ALTER INDEX ... RENAME
+		// TO and ATTACH PARTITION, which a dump of a partitioned table writes
+		// for each partition's copy of an index. A DO block that writes no
 		// LANGUAGE is read as PL/pgSQL.
 		Grammar: descriptor.Grammar{
 			Columns: descriptor.ColumnGrammar{CurrentTimeKeywords: true, StoredStringDefaults: true},
@@ -184,6 +186,7 @@ func yugabyteDB() descriptor.Dialect {
 				NotValid: true,
 				Match:    descriptor.Match{Clause: true},
 			},
+			Indexes:    descriptor.IndexGrammar{Alter: descriptor.AlterIndexRename},
 			Statements: descriptor.StatementGrammar{Extensions: true, UserTypes: true, GrantTargetLists: true},
 			Forms:      yugabyteStatementForms(),
 			Routines: descriptor.RoutineGrammar{

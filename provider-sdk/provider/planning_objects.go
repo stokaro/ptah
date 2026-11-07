@@ -24,7 +24,7 @@ func negotiatePlanningObjects(engine *protocol.Engine, features []string) {
 		service.ContextKinds = nil
 	}
 	engine.Planning = slices.DeleteFunc(engine.Planning, func(service *protocol.ModelPlanning) bool {
-		return len(service.GetChangeKinds())+len(service.GetParentKinds()) == 0
+		return len(service.GetChangeKinds())+len(service.GetParentKinds()) == 0 && !service.GetOwnsTables()
 	})
 }
 

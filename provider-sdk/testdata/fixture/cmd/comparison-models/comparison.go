@@ -8,11 +8,16 @@ import (
 
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"github.com/stokaro/ptah/provider-sdk/provider"
+	"github.com/stokaro/ptah/provider-sdk/runtime"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/proto"
 )
 
 func (p *comparer) CompareModels(ctx context.Context, request *protocol.CompareModelsRequest) (*protocol.ComparedModels, error) {
 	if err := validateRequestedSubjects(request); err != nil {
+		return nil, err
+	}
+	if err := refuseTableNames(request); err != nil {
 		return nil, err
 	}
 	result := &protocol.ComparedModels{Complete: true, Desired: proto.CloneOf(request.GetDesired()), ResolvedRequests: resolveWritten(request)}
@@ -158,6 +163,25 @@ func requestedSubjects(request *protocol.CompareModelsRequest, resolved []*proto
 		subjects = append(subjects, answer.GetSubject())
 	}
 	return subjects
+}
+
+// refuseTableNames refuses a declared retention object whose name a declared
+// table holds: the fixture keeps its objects in the namespace of the tables.
+// The host names the declared tables in declared_relations because the
+// fixture lists provider.DeclaredRelationsFeature.
+func refuseTableNames(request *protocol.CompareModelsRequest) error {
+	for _, record := range request.GetDesired().GetRecords() {
+		if record.GetValue() == nil || record.GetKind() != nativeKind {
+			continue
+		}
+		for _, relation := range request.GetDeclaredRelations() {
+			if relation.GetKind() == "table" && relation.GetName().GetNormalized() == record.GetSubject().GetName().GetNormalized() {
+				return runtime.ErrorWithReason(codes.FailedPrecondition,
+					fmt.Sprintf("Retention object %s takes the name of declared table %s", record.GetSubject().GetName().GetSource(), relation.GetName().GetSource()))
+			}
+		}
+	}
+	return nil
 }
 
 func validateRequestedSubjects(request *protocol.CompareModelsRequest) error {

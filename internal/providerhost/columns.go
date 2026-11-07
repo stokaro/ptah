@@ -17,6 +17,7 @@ var columnAspects = map[schemacomparison.ColumnAspect]protocol.ColumnAspect{
 	schemacomparison.ColumnDefault:     protocol.ColumnAspect_COLUMN_DEFAULT,
 	schemacomparison.ColumnNullability: protocol.ColumnAspect_COLUMN_NULLABILITY,
 	schemacomparison.ColumnSequence:    protocol.ColumnAspect_COLUMN_SEQUENCE,
+	schemacomparison.ColumnCollation:   protocol.ColumnAspect_COLUMN_COLLATION,
 }
 
 func (s columnService) CompareColumns(ctx context.Context, request schemacomparison.ColumnsRequest) (schemacomparison.ColumnsResult, error) {
@@ -80,7 +81,7 @@ func comparedColumnAspect(source *protocol.ColumnAspectReceipt) schemacomparison
 		}
 	}
 	switch result.Aspect {
-	case schemacomparison.ColumnType, schemacomparison.ColumnDefault:
+	case schemacomparison.ColumnType, schemacomparison.ColumnDefault, schemacomparison.ColumnCollation:
 		difference := source.GetDifference()
 		relation := schemacomparison.ColumnSame
 		if difference.GetRelation() == protocol.ColumnDifference_CHANGED {

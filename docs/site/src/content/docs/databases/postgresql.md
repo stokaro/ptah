@@ -960,7 +960,27 @@ Some forms are refused because the declaration has no place for them:
 - `ALTER TABLE ... ADD COLUMN` on a partition, which the server refuses too.
 - `COMMENT ON COLUMN` on a partition, whose columns the declaration does not hold. An
   export leaves such a comment out.
-- `ALTER TABLE ... ATTACH PARTITION`, which `pg_dump` writes.
+
+A dump reads as the same declaration. `pg_dump` writes each partition as an
+ordinary `CREATE TABLE` with its columns, then `ALTER TABLE [ONLY] parent ATTACH
+PARTITION partition bound`, a copy of each of the parent's keys and indexes on the
+partition, and `ALTER INDEX parent_index ATTACH PARTITION copy` for each copy:
+
+- The attached table becomes a partition, as `PARTITION OF` declares one. Its columns
+  have to be its parent's, with the same type, nullability and default, as the server
+  requires; another column, or one that differs, is refused by name. The reader then
+  drops them, because a partition takes its columns from its parent.
+- An attached copy leaves the declarations, and the parent's key or index stays. The
+  copy has to be an index of a partition of the parent index's table.
+- `CREATE INDEX ... ON ONLY parent` creates the parent's index alone. Every partition
+  the same file declares has to attach a copy of it, or the server leaves the index
+  invalid, and the reader refuses the file.
+- The `\restrict` and `\unrestrict` lines around a dump, which `pg_dump` writes from
+  its August 2025 minor releases on, 17.6 and 18 among them, are psql commands that
+  declare nothing, and the reader skips them. Any other psql command is refused.
+
+YugabyteDB reads a dump the same way, and `ALTER INDEX ... RENAME TO` as PostgreSQL
+does.
 
 HCL, DBML, YAML and Go annotations have no spelling for a partition. A source in one
 of them compares the table as it declares it and claims nothing about its parent or
