@@ -7,7 +7,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/sqlschema"
 )
 
@@ -73,6 +75,39 @@ func TestRead_StringConstantSpellings_HappyPath(t *testing.T) {
 			c.Assert(firstEnumLabel(database), qt.Equals, test.want)
 			c.Assert(columnC(database).Default, qt.Equals, columnC(plain).Default)
 			c.Assert(columnC(database).DefaultExpr, qt.Equals, columnC(plain).DefaultExpr)
+		})
+	}
+}
+
+// A provider engine that states PostgreSQL's lexical rules (query.lexical)
+// takes the same spellings, and each default reaches its provider in the
+// single-quoted spelling of its text, as a PostgreSQL default is stored:
+// read as written, E'it\'s' reached the Spanner provider as the text
+// E'it\'s' and was stored as that text.
+func TestRead_StringConstantSpellingsOfAProviderEngine(t *testing.T) {
+	release, err := dialectlexer.DeclareLexical(descriptor.Lexical{EscapeStrings: true, ContinuedStrings: true, UnicodeStrings: true, NestedComments: true},
+		"spellings-provider")
+	qt.New(t).Assert(err, qt.IsNil)
+	t.Cleanup(release)
+	tests := []struct {
+		name     string
+		spelling string
+		want     string
+	}{
+		{name: "a doubled quote", spelling: "'it''s'", want: "'it''s'"},
+		{name: "an escape string", spelling: `E'it\'s'`, want: "'it''s'"},
+		{name: "a continued escape string", spelling: "E'a\\x41'\n'b'", want: "'aAb'"},
+		{name: "a dollar-quoted string", spelling: "$$it's$$", want: "'it''s'"},
+		{name: "a Unicode escape string with its escape character", spelling: `U&'d!0061t' UESCAPE '!'`, want: "'dat'"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			database, _, err := sqlschema.Read([]byte("CREATE TABLE t (c text DEFAULT "+test.spelling+");\n"), "spellings-provider")
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(columnC(database).Default, qt.Equals, test.want)
 		})
 	}
 }

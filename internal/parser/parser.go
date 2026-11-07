@@ -3559,11 +3559,17 @@ func isBareWord(value string) bool {
 
 func (p *Parser) handleStringLiteral() (*ast.DefaultValue, error) {
 	value := p.current.Value
-	if p.target.grammar.Columns.StoredStringDefaults && !isDoubleQuotedIdentifierToken(p.current) {
+	if (p.target.grammar.Columns.StoredStringDefaults || p.providerEngine()) && !isDoubleQuotedIdentifierToken(p.current) {
 		// The server stores one spelling of a string default whichever the
 		// file used, so the default is kept in that spelling: kept as
 		// written, `$$x$$` and `E'x'` compare unequal to the 'x' the server
 		// reports, and the plan writes their quoting into the default.
+		//
+		// A provider engine's default reaches its provider in the standard
+		// spelling, which every provider reads as a literal: the lexical
+		// rules a provider states (query.lexical) let its text hold E'x',
+		// U&'x' and $$x$$, and a provider that read one as written would
+		// store its quoting as the default's text.
 		text, err := p.stringConstant("the default value")
 		if err != nil {
 			return nil, err

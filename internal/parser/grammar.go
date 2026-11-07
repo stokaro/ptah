@@ -48,6 +48,12 @@ var targetGrammars = descriptortable.New(func(described descriptor.Dialect) targ
 	}
 })
 
+// providerEngine reports a document read for a named dialect no descriptor
+// describes: an engine an executable provider serves.
+func (p *Parser) providerEngine() bool {
+	return p.dialect != "" && !p.target.known
+}
+
 // grammarOf returns what the descriptor of dialect says about its DDL
 // grammar, and the zero value for a dialect no descriptor describes, the
 // empty name among them.
