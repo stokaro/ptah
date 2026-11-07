@@ -61,7 +61,8 @@ import (
 //     refuseUserType the family and Oracle.
 //   - ALTER INDEX renamed on PostgreSQL and changed visibility on CockroachDB,
 //     whose indexes alone end with a visibility; SQL Server alone read DROP
-//     INDEX t.idx as table.index.
+//     INDEX t.idx as table.index. YugabyteDB, which no switch read, takes
+//     PostgreSQL's ALTER INDEX, measured on 2026.1.2.
 //   - No switch answered SQL Server's trigger grammar, the T-SQL header with
 //     the table before the timing, or its IDENTITY column property; the
 //     descriptor is the one statement of each.
@@ -202,6 +203,7 @@ var oldParserSwitches = map[string]descriptor.Grammar{
 			NotValid: true,
 			Match:    descriptor.Match{Clause: true},
 		},
+		Indexes:    descriptor.IndexGrammar{Alter: descriptor.AlterIndexRename},
 		Statements: descriptor.StatementGrammar{Extensions: true, UserTypes: true, GrantTargetLists: true},
 		Routines: descriptor.RoutineGrammar{
 			Body: descriptor.RoutineQuotedBody, TriggerConditions: true, DefaultDoBlockLanguage: "plpgsql",

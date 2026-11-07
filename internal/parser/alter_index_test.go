@@ -9,10 +9,10 @@ import (
 	"ptah.run/internal/parser"
 )
 
-// PostgreSQL renames an index with ALTER INDEX, which names the index alone:
-// bare, schema-qualified, or quoted, and attaches a partition's copy of an
-// index with it. Each form is read into the node that carries it, the spelling
-// kept for the reader to fold.
+// PostgreSQL and YugabyteDB rename an index with ALTER INDEX, which names the
+// index alone: bare, schema-qualified, or quoted, and attach a partition's copy
+// of an index with it. Each form is read into the node that carries it, the
+// spelling kept for the reader to fold.
 func TestParse_AlterIndex_HappyPath(t *testing.T) {
 	rows := []struct {
 		name string
@@ -41,14 +41,16 @@ func TestParse_AlterIndex_HappyPath(t *testing.T) {
 		},
 	}
 	for _, row := range rows {
-		t.Run(row.name, func(t *testing.T) {
-			c := qt.New(t)
+		for _, dialect := range []string{"postgres", "yugabytedb"} {
+			t.Run(dialect+"/"+row.name, func(t *testing.T) {
+				c := qt.New(t)
 
-			statements, err := parser.NewParser(row.sql, parser.WithDialect("postgres")).Parse()
+				statements, err := parser.NewParser(row.sql, parser.WithDialect(dialect)).Parse()
 
-			c.Assert(err, qt.IsNil)
-			c.Assert(statements.Statements, qt.DeepEquals, []ast.Node{&row.want})
-		})
+				c.Assert(err, qt.IsNil)
+				c.Assert(statements.Statements, qt.DeepEquals, []ast.Node{&row.want})
+			})
+		}
 	}
 }
 

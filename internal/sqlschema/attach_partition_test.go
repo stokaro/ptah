@@ -1,6 +1,8 @@
 package sqlschema_test
 
 import (
+	"slices"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -70,6 +72,21 @@ func TestReadWith_AttachPartition_HappyPath(t *testing.T) {
 	events := database.Tables[slicesIndexTable(database.Tables, "events")]
 	c.Assert(events.PrimaryKeyName, qt.Equals, "events_pkey")
 	c.Assert(database.Tables[slicesIndexTable(database.Tables, "events_2026")].PrimaryKey, qt.HasLen, 0)
+}
+
+// A dump in the shape a PostgreSQL 15 release writes, with no restrict lines and
+// no NOT NULL names, reads on YugabyteDB as the PostgreSQL dump reads.
+func TestReadWith_AttachPartitionOnYugabyteDB_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	dump := strings.NewReplacer("CONSTRAINT events_id_not_null ", "", "CONSTRAINT events_at_not_null ", "").Replace(dumpOfPartitions)
+	dump = strings.Join(slices.DeleteFunc(strings.Split(dump, "\n"), func(line string) bool { return strings.HasPrefix(line, `\`) }), "\n")
+
+	database, err := readWithBuiltinOwners(c, dump, "yugabytedb")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(memberOfTable(c, database, "events_2026").Parent, qt.Equals, "events")
+	c.Assert(attachedColumnsOf(database, "events_2026"), qt.HasLen, 0)
+	c.Assert(attachedIndexNames(database), qt.DeepEquals, []string{"events_note"})
 }
 
 // A partition attached by itself, with no index of the parent to copy, reads the
