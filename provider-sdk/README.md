@@ -1144,6 +1144,25 @@ or `password_declared` without a password under it, and a password that holds
 a control character or is not UTF-8; and a password in any role a host sends
 or a preparation returns. Its messages name the role and never the password.
 
+### SQL statement facts
+
+[ADR 0113](../docs/adr/0113-an-engine-states-how-its-server-reads-a-schema-documents-statements.md)
+decides this feature. `source.sql-statement-facts` lets an engine in the
+`FRAGMENTS` mode state how its server treats a statement a schema document
+writes, so the host's reading of the document follows the server.
+`SQLSchemaDeclaration.drop_view_if_exists_skips_other_kinds` states that
+`DROP VIEW IF EXISTS` of a name another kind of object holds, such as a table,
+does nothing. False, the zero value, states that the server refuses the
+statement as it refuses one without `IF EXISTS`, and the reading refuses it
+too: `the schema declares t as another kind of object`. The provider and each
+engine that states facts list this two-way feature; a host that does not list
+it reads every fact as false.
+
+The SDK refuses the engine's feature without the provider's or in the
+`DOCUMENT` mode, whose grammar reads every statement itself, and a fact stated
+by an engine that does not list the feature. `NegotiatedDescription` clears
+the facts for a host that does not list it.
+
 ## Contextual model comparison
 
 The optional `models.compare` service uses a `ModelComparer`. Each engine names

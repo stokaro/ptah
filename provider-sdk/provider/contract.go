@@ -218,16 +218,17 @@ func NegotiatedDescription(description *protocol.Description, hostFeatures []str
 // later whose features the host does not list: the reversal services, the
 // database kinds, the model reports, the schema separator, the offline
 // capability facts of the engine and of its release lines, the table
-// outlines of its planning services, the table clauses of its SQL grammar,
-// the linked engines of its release lines, its enum columns, the table
-// ownership of its planning services and the declared kinds of its
-// comparisons. It also removes TableGrantsFeature from an engine the
-// negotiation left without GRANT common objects.
+// outlines of its planning services, the table clauses and the statement
+// facts of its SQL grammar, the linked engines of its release lines, its enum
+// columns, the table ownership of its planning services and the declared
+// kinds of its comparisons. It also removes TableGrantsFeature from an engine
+// the negotiation left without GRANT common objects.
 func negotiateLaterAdditions(engine *protocol.Engine, hostFeatures []string) {
 	negotiateTableOutlines(engine, hostFeatures)
 	negotiateTableOwnership(engine, hostFeatures)
 	negotiateDeclaredObjects(engine, hostFeatures)
 	negotiateSQLTableClauses(engine, hostFeatures)
+	negotiateSQLStatementFacts(engine, hostFeatures)
 	negotiateLinkedReleaseLines(engine, hostFeatures)
 	negotiateEnumColumns(engine, hostFeatures)
 	negotiateTableGrants(engine)
