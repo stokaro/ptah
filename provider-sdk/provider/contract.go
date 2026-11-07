@@ -15,7 +15,7 @@ import (
 // counts the compatible additions within the major Revision. A host built
 // with this SDK announces Revision.ContractMinor, and a provider built with it
 // may require at most that minor from its host.
-const ContractMinor uint32 = 36
+const ContractMinor uint32 = 37
 
 // The features below each enable an addition to an existing message. An
 // addition is used only when both sides list its feature: the provider in its
@@ -55,7 +55,7 @@ func TwoWayFeatures() []string {
 		IndexNullsOrderFeature, CommonNamespacesFeature, SQLTableClausesFeature, ReservedSeedsFeature, IndexPredicatesFeature, LinkedReleaseLinesFeature,
 		EnumColumnsFeature, ObservedUniqueConstraintsFeature, ColumnCollationsFeature, ViewCheckOptionsFeature, DeclaredRelationsFeature,
 		TableOwnershipFeature, DeclaredObjectsFeature, RenderOmissionsFeature, TableGrantsFeature, SQLRolePasswordsFeature, SQLStatementFactsFeature,
-		QueryLexicalFeature, ConnectionCapabilitySourceFeature, OmissionCountsFeature}
+		QueryLexicalFeature, ConnectionCapabilitySourceFeature, OmissionCountsFeature, ViewQueryContextFeature, DeclaredFacetsFeature}
 }
 
 // ContractError reports a host and a provider that cannot work together:
@@ -223,13 +223,14 @@ func NegotiatedDescription(description *protocol.Description, hostFeatures []str
 // outlines of its planning services, the table clauses and the statement
 // facts of its SQL grammar, the linked engines of its release lines, its enum
 // columns, the table ownership of its planning services, the declared
-// kinds of its comparisons, the lexical rules of its query dialect and the
-// source of its connection's capabilities. It also removes TableGrantsFeature from an engine
+// kinds and declared facet kinds of its comparisons, the lexical rules of its
+// query dialect and the source of its connection's capabilities. It also removes TableGrantsFeature from an engine
 // the negotiation left without GRANT common objects.
 func negotiateLaterAdditions(engine *protocol.Engine, hostFeatures []string) {
 	negotiateTableOutlines(engine, hostFeatures)
 	negotiateTableOwnership(engine, hostFeatures)
 	negotiateDeclaredObjects(engine, hostFeatures)
+	negotiateDeclaredFacets(engine, hostFeatures)
 	negotiateSQLTableClauses(engine, hostFeatures)
 	negotiateSQLStatementFacts(engine, hostFeatures)
 	negotiateLinkedReleaseLines(engine, hostFeatures)

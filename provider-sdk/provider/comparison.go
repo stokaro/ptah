@@ -56,6 +56,9 @@ func ValidateComparisonRequest(description *protocol.Description, request *proto
 	if err := validateDeclaredObjects(description, request, service); err != nil {
 		return err
 	}
+	if err := validateDeclaredFacets(description, request, engine, service); err != nil {
+		return err
+	}
 	if err := validateWrittenRequests(description, engine, request); err != nil {
 		return err
 	}
