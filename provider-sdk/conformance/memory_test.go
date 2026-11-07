@@ -113,6 +113,28 @@ func (m *memoryProvider) server() runtime.Server {
 		CommonObjects: m, Seeds: m, ValueNormalizer: m}
 }
 
+// tableOwnerServer is the memory provider with one planning service, which
+// owns the engine's tables and plans nothing else (planning.table-ownership).
+// Without that two-way feature the service plans nothing, which the SDK
+// refuses, so the provider cannot describe itself to a host that does not
+// list the feature, a host that lists no two-way feature among them.
+func (m *memoryProvider) tableOwnerServer() runtime.Server {
+	server := m.server()
+	description := server.Description
+	description.Features = append(description.Features, provider.PlanFeaturesFeature, provider.TableOwnershipFeature)
+	engine := description.Engines[0]
+	engine.Features = append(engine.Features, provider.TableOwnershipFeature)
+	engine.Planning = []*protocol.ModelPlanning{{Id: "memory-tables", OwnsTables: true}}
+	server.FeaturePlanner = m
+	return server
+}
+
+// PlanFeatures refuses every request: no check of the suite plans a table,
+// and a planning reply needs a host's tables to account for.
+func (m *memoryProvider) PlanFeatures(context.Context, *protocol.PlanFeaturesRequest) (*protocol.PlannedFeatures, error) {
+	return nil, refuse(codes.Unimplemented, "the memory engine plans no table change")
+}
+
 func refuse(code codes.Code, reason string) error { return runtime.ErrorWithReason(code, reason) }
 
 func (m *memoryProvider) Open(_ context.Context, request *protocol.OpenRequest) (*protocol.Session, error) {

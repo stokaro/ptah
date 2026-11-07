@@ -170,6 +170,7 @@ func ValidateSQLSchemaReply(description *protocol.Description, request *protocol
 		func() error { return validateSQLTables(rules, result) },
 		func() error { return validateSQLObjects(rules, result) },
 		func() error { return validateSQLCommonAdditions(engine, result) },
+		func() error { return validateSQLRolePasswords(description, engine, features, result.GetRoles()) },
 		func() error {
 			return validateDeclaredViewFacets(description, engine, request.GetTargetFeatures(), rules, result.GetViews())
 		},

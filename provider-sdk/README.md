@@ -68,10 +68,11 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.32. Each released SDK speaks one contract:
+speaks contract 25.33. Each released SDK speaks one contract:
 
 | SDK release | Contract |
 | --- | --- |
+| `provider-sdk/v0.31.0` | 25.33 |
 | `provider-sdk/v0.30.0` | 25.32 |
 | `provider-sdk/v0.29.0` | 25.31 |
 | `provider-sdk/v0.28.0` | 25.30 |
@@ -175,6 +176,11 @@ returns to 0.
   [view check options](#view-check-options),
   [declared relations](#declared-relations) and
   [table ownership](#table-ownership).
+  Contract 25.33 adds [view query equivalence](#view-query-equivalence),
+  [declared objects](#declared-objects),
+  [render omissions](#render-omissions), [table grants](#table-grants),
+  [SQL role passwords](#sql-role-passwords) and
+  [SQL statement facts](#sql-statement-facts).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -217,7 +223,11 @@ does not oblige a peer to use it.
   `schema.index-nulls-order`, `schema.common-namespaces`,
   `source.sql-table-clauses`, `schema.reserved-seeds`,
   `schema.index-predicates`, `engine.linked-release-lines`,
-  `schema.enum-columns` and `schema.observed-unique-constraints`. The embedding
+  `schema.enum-columns`, `schema.observed-unique-constraints`,
+  `schema.column-collations`, `schema.view-check-options`,
+  `models.declared-relations`, `planning.table-ownership`,
+  `models.declared-objects`, `render.omissions`, `planning.table-grants`,
+  `source.sql-role-passwords` and `source.sql-statement-facts`. The embedding
   store's calls,
   `PrepareCommonObjects`, `ReverseChanges` and `ReportValues` are new, and each
   comes with an addition to `Engine`, so a host lists the feature to receive
@@ -334,6 +344,7 @@ this SDK, and a host of this SDK against a provider of contract 25.0.
 | `ReportValues` | Offline: one count for each metric of a value's model report, for every value of the request, in order. |
 | `ScanSQL` | Offline: the tokens of one text of the engine's SQL, in order, covering the text with no gap and no overlap. |
 | `CompareChecks` | Offline: for each declared CHECK expression paired with a held CHECK, whether the two are one constraint on the engine, in request order. |
+| `CompareViewQueries` | Offline: for each declared view query paired with the view the database holds under its name, whether the two are one query on the engine, in request order. |
 
 Session capabilities preserve presence: an explicit `false` is an established
 answer, while an absent key remains unknown. The SDK validates names and the host
@@ -814,11 +825,12 @@ The offline part needs no database. It checks:
 - the bootstrap; the refusal of a host of another major, of a contract major
   that differs from the revision, of a repeated or malformed host feature and
   of a required feature the provider does not offer; that an unknown host
-  feature is ignored; what a host that announces no contract receives; and
-  that the minimum contract is one this SDK speaks;
-- the description under every host profile with `ValidateDescription`, the
-  identity a manifest names, and that two starts describe the provider the
-  same way;
+  feature is ignored; what a host that announces no contract receives, or
+  its refusal where the provider needs a two-way feature; and that the
+  minimum contract is one this SDK speaks;
+- the description under every host profile the provider describes itself to
+  with `ValidateDescription`, the identity a manifest names, and that two
+  starts describe the provider the same way;
 - that under a host that lists no two-way feature, and under each host that
   lists every one but one, the description is the full one narrowed by
   `NegotiatedDescription`. Where that narrowed description is one
@@ -1115,6 +1127,52 @@ prefix, and cancellation. The fixture's `sql-document` command declares the
 and the header kind `retention`. The process tests in `integration` read through
 it, and so does the host's adapter, which maps a reading into its common model.
 
+### SQL role passwords
+
+[ADR 0112](../docs/adr/0112-a-sql-reading-returns-the-password-a-document-gives-a-role.md)
+decides this feature. `source.sql-role-passwords` adds `SQLRole.password` to a
+`ReadSQLSchema` reply: the password a SQL schema document gives a role, as the
+document writes it, a literal or a reference to an execution input such as
+`$PTAH_SECRET_APP_PASSWORD`. The host holds it as it holds a password a Go,
+YAML or HCL source declares: a plan binds it at execution, under
+[password inputs](#password-inputs) where the engine takes them, and no
+output prints it. The provider and each engine whose reading returns
+passwords list this two-way feature, beside `schema.read-sql` and the
+common-object wire with roles.
+
+Under the feature a role carries a password exactly when it declares one
+(`password_declared`). Without it a reading says only that a role declares a
+password, as contract 25.32 does. The password travels in that reply and
+nowhere else: a role a host sends, in declared common objects, a preparation
+or a role change, carries none, and a role change carries its password in
+`RoleCreation` or `RoleAlteration`.
+
+The SDK refuses the engine's feature without the provider's, without SQL
+reading or without roles on the common-object wire; a reply's password for a
+target that does not list the feature, a password without `password_declared`
+or `password_declared` without a password under it, and a password that holds
+a control character or is not UTF-8; and a password in any role a host sends
+or a preparation returns. Its messages name the role and never the password.
+
+### SQL statement facts
+
+[ADR 0113](../docs/adr/0113-an-engine-states-how-its-server-reads-a-schema-documents-statements.md)
+decides this feature. `source.sql-statement-facts` lets an engine in the
+`FRAGMENTS` mode state how its server treats a statement a schema document
+writes, so the host's reading of the document follows the server.
+`SQLSchemaDeclaration.drop_view_if_exists_skips_other_kinds` states that
+`DROP VIEW IF EXISTS` of a name another kind of object holds, such as a table,
+does nothing. False, the zero value, states that the server refuses the
+statement as it refuses one without `IF EXISTS`, and the reading refuses it
+too: `the schema declares t as another kind of object`. The provider and each
+engine that states facts list this two-way feature; a host that does not list
+it reads every fact as false.
+
+The SDK refuses the engine's feature without the provider's or in the
+`DOCUMENT` mode, whose grammar reads every statement itself, and a fact stated
+by an engine that does not list the feature. `NegotiatedDescription` clears
+the facts for a host that does not list it.
+
 ## Contextual model comparison
 
 The optional `models.compare` service uses a `ModelComparer`. Each engine names
@@ -1138,11 +1196,38 @@ materialized views alone (kinds `view` and `materialized view`). Under the
 feature it holds every declared table, view and materialized view (kinds
 `table`, `view` and `materialized view`), so a comparison of models that
 reference a relation, such as a transfer into a table, knows whether the
-relation is declared. A relation of the provider's own models, such as a
-topic, is not listed: the comparison's state carries it. The provider and
-each engine whose comparisons read the list declare this two-way feature, and
-the engine needs a model comparison. `ValidateComparisonRequest` refuses a
-table without the feature and any other kind.
+relation is declared. An object of the provider's own models, such as a
+topic, is not a relation and is never listed: the comparison's state carries
+the objects of its own models, and [declared objects](#declared-objects)
+those of a model another comparison owns.
+
+The provider and each engine whose comparisons read the list declare this
+two-way feature, and the engine needs a model comparison.
+`ValidateComparisonRequest` refuses a table without the feature and any other
+kind.
+
+### Declared objects
+
+[ADR 0109](../docs/adr/0109-a-comparison-knows-the-declared-objects-of-another-comparisons-models.md)
+decides this feature. A comparison receives the records of its own models
+only, so a comparison of transfers does not see the topics another
+comparison of the engine owns. Under `models.declared-objects` a comparison
+names those object models in `ModelComparison.declared_kinds`, and
+`CompareModelsRequest.declared_objects` carries the identity of every desired
+object of those kinds, each once, the kind of each naming its model: the
+objects of the desired schema the comparison request is built from, after the
+run's scope, so a topic a scope leaves out is not declared.
+
+The provider and each engine with such a comparison declare this two-way
+feature. A host that does not list it sees no declared kinds and sends no
+declared object. The SDK refuses:
+
+- in `ValidateDescription`, declared kinds on an engine without the feature,
+  on a facet comparison, a kind named twice, the comparison's own kind and a
+  kind no object comparison of the engine owns;
+- in `ValidateComparisonRequest`, declared objects the engine or the
+  request's target did not negotiate, an identity named twice and one of a
+  kind the comparison does not name.
 
 Bound identity components retain source and normalized spelling, quoting, and
 connection defaults. Parent, namespace path, and signature remain separate.
@@ -1483,6 +1568,29 @@ feature. Under it:
 A host that does not list the feature sees no service own tables this way, so
 a provider whose only claim on its tables is this one needs a host that lists
 it.
+
+### Table grants
+
+[ADR 0111](../docs/adr/0111-a-planning-service-receives-the-grants-of-each-held-table.md)
+decides this feature. `planning.table-grants` adds
+`PlanningTable.current_grants`: the grants the read found on each held table,
+so a plan that replaces the table can give the new one its grants. The
+provider and the engine list this two-way feature, and the engine must carry
+`GRANT` common objects. Under it:
+
+- every table of a planning request whose current state is present carries
+  them, for a service that reads whole tables; an outlined table carries none;
+- `complete` with every grant whose target is the table, a grant on some of
+  its columns included, each target naming the table as the read named it
+  (kind `table`, the held table's schema and name);
+- not `complete` and empty when the read did not describe grants, so the
+  owner knows nothing about them rather than that there are none;
+- a grant the same plan revokes is in the list, and the revoke's common step
+  is in the request, so the owner can leave it out of what it gives back.
+
+A host that does not list the feature sends no grants, as a host of contract
+25.32 does, and the negotiation drops the engine's feature when the host's
+features leave the engine no `GRANT` common objects.
 
 ### Migration logs and tags
 
@@ -2115,6 +2223,28 @@ unit. `Render` sets a refusal only in the `TEXT` form.
 `render.text-units` is a two-way feature. The provider lists it, and so does
 each engine whose changes it can write as text. Without it the host sends the
 `ANY` form, which is the behavior of earlier minors.
+
+### Render omissions
+
+[ADR 0110](../docs/adr/0110-a-render-reports-what-it-leaves-out.md) decides
+this feature. A complete `Render` reply may carry `RenderResult.omissions`:
+each declared property or object its units go on without, such as a length
+the engine's string type does not keep or the start of an identity the engine
+cannot set. An omission names why with a lower-case token (`unsupported`), the
+owning object's kind and name, the lost property (empty when the whole object
+was lost), the declared value where repeating it helps, and a remedy where one
+exists on the engine. The host reports them as it reports a built-in engine's:
+in the result of a schema render and of a node render, where a caller that
+must not lose anything refuses the rendering.
+
+`render.omissions` is a two-way feature. The provider lists it, and so does
+each engine whose render reports omissions; the provider must offer `Render`.
+The reply validator refuses omissions the engine or the request's target does
+not negotiate, omissions in an incomplete reply or beside a refusal, an
+omission without a reason token, a kind or a name, a field that is not one
+line of text, and one omission reported twice. `RenderRowWrites` reports none.
+A host that does not list the feature receives no omissions, as a host of
+contract 25.32 receives none.
 
 ## Planning policy
 
@@ -2979,6 +3109,39 @@ refuses a pair that names no CHECK the table holds with an expression, a
 blank declared expression, a constraint named twice, a table without pairs and
 two tables of one subject; `ValidateComparedChecks` refuses a reply that
 leaves a table or a pair out, reorders them or names another.
+
+## View query equivalence
+
+[ADR 0108](../docs/adr/0108-a-provider-decides-whether-two-view-queries-are-one.md)
+decides this feature. `schema.view-query-equivalence` enables
+`CompareViewQueries`, by which the owner of an engine decides whether the
+query a declared view states and the query the view of the same name holds
+are one query. The host's own comparison folds the two texts by shared rules,
+which lower-case unquoted text; on an engine whose identifiers keep case, a
+query that changes only the case of a name is then never reported. The
+provider and each engine that compares view queries list it; a host that does
+not know the call never makes it, so it is not a two-way feature.
+
+A request names the engine, its identifier facts and capabilities, and the
+pairs to compare: each the held view, a view or a materialized view as a read
+reported it, without its facets, and the query the declaration states, without
+`CREATE VIEW`, the view's name, its options or a materialized view's data
+clause. The owner reads the request alone and runs nothing. The reply answers
+each pair in the request's order with the held view's identity and
+`equivalent`; the host keeps a view whose query the owner calls equivalent and
+replaces one it does not, and compares no view query of the engine by its
+text.
+
+`ValidateCompareViewQueriesRequest` refuses:
+
+- a pair whose held view is not a view or a materialized view of the engine,
+  is of a kind the engine does not carry as a common object, has no query or
+  carries facets;
+- a blank declared query;
+- two pairs of one view, a view and a materialized view sharing their names.
+
+`ValidateComparedViewQueries` refuses a reply that leaves a pair out, reorders
+the pairs or names another view.
 
 ## Common index observations
 

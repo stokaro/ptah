@@ -15,7 +15,7 @@ import (
 // counts the compatible additions within the major Revision. A host built
 // with this SDK announces Revision.ContractMinor, and a provider built with it
 // may require at most that minor from its host.
-const ContractMinor uint32 = 32
+const ContractMinor uint32 = 33
 
 // The features below each enable an addition to an existing message. An
 // addition is used only when both sides list its feature: the provider in its
@@ -54,7 +54,7 @@ func TwoWayFeatures() []string {
 		LargeMessagesFeature, TableOutlinesFeature, SharedCoverageFeature, OwnPredecessorsFeature, ObservedConstraintsFeature, ConstraintChangesFeature,
 		IndexNullsOrderFeature, CommonNamespacesFeature, SQLTableClausesFeature, ReservedSeedsFeature, IndexPredicatesFeature, LinkedReleaseLinesFeature,
 		EnumColumnsFeature, ObservedUniqueConstraintsFeature, ColumnCollationsFeature, ViewCheckOptionsFeature, DeclaredRelationsFeature,
-		TableOwnershipFeature}
+		TableOwnershipFeature, DeclaredObjectsFeature, RenderOmissionsFeature, TableGrantsFeature, SQLRolePasswordsFeature, SQLStatementFactsFeature}
 }
 
 // ContractError reports a host and a provider that cannot work together:
@@ -156,8 +156,10 @@ func ValidateHostFeatures(features []string) error {
 // it lists IndexKindsFeature, the model predecessors unless it lists
 // ModelPredecessorsFeature, those that name an earlier identity of their
 // own model unless it lists OwnPredecessorsFeature, the enum columns
-// unless it lists EnumColumnsFeature, and the table ownership of its planning
-// services unless it lists TableOwnershipFeature. A model keeps its
+// unless it lists EnumColumnsFeature, the table ownership of its planning
+// services unless it lists TableOwnershipFeature, and the declared kinds of
+// its comparisons unless it lists DeclaredObjectsFeature. An engine that
+// keeps no GRANT common objects loses TableGrantsFeature. A model keeps its
 // source formats without HCLPlatformFeature: a platform claim's models need
 // not list HCL. Without
 // EntryKeysFeature, the YAML claims of a COLUMN or INDEX scope and the
@@ -216,15 +218,20 @@ func NegotiatedDescription(description *protocol.Description, hostFeatures []str
 // later whose features the host does not list: the reversal services, the
 // database kinds, the model reports, the schema separator, the offline
 // capability facts of the engine and of its release lines, the table
-// outlines of its planning services, the table clauses of its SQL grammar,
-// the linked engines of its release lines, its enum columns and the table
-// ownership of its planning services.
+// outlines of its planning services, the table clauses and the statement
+// facts of its SQL grammar, the linked engines of its release lines, its enum
+// columns, the table ownership of its planning services and the declared
+// kinds of its comparisons. It also removes TableGrantsFeature from an engine
+// the negotiation left without GRANT common objects.
 func negotiateLaterAdditions(engine *protocol.Engine, hostFeatures []string) {
 	negotiateTableOutlines(engine, hostFeatures)
 	negotiateTableOwnership(engine, hostFeatures)
+	negotiateDeclaredObjects(engine, hostFeatures)
 	negotiateSQLTableClauses(engine, hostFeatures)
+	negotiateSQLStatementFacts(engine, hostFeatures)
 	negotiateLinkedReleaseLines(engine, hostFeatures)
 	negotiateEnumColumns(engine, hostFeatures)
+	negotiateTableGrants(engine)
 	if !slices.Contains(hostFeatures, ReverseChangesFeature) {
 		engine.Reversals = nil
 	}

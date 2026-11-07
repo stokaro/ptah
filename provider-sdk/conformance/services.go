@@ -116,6 +116,7 @@ func probes() []probe {
 		empty("ReportValues", provider.ReportCountsFeature, protocol.ProviderClient.ReportValues),
 		empty("ScanSQL", provider.ScanSQLFeature, protocol.ProviderClient.ScanSQL),
 		empty("CompareChecks", provider.CheckEquivalenceFeature, protocol.ProviderClient.CompareChecks),
+		empty("CompareViewQueries", provider.ViewQueryEquivalenceFeature, protocol.ProviderClient.CompareViewQueries),
 	}
 }
 
