@@ -26,6 +26,25 @@ func TestProviderSourceLimits_GoRoundTrip(t *testing.T) {
 	checkSourceLimitRoundTrip(c, before, after)
 }
 
+// The Go annotation parser accepts a kind in upper case, while a provider's
+// go_header_kinds list uses lower-case identifiers. The host passes the
+// normalized kind to the provider, so the two spellings leave the same
+// namespace uninspected. This also covers the provider path of the former
+// YDB TestGoSourceStandaloneLimitsPreventRemoval kind-case row.
+func TestProviderSourceLimits_GoKindCase(t *testing.T) {
+	c := qt.New(t)
+	_, runtime := yamlProviderEnvironment(c, "hcl-claims", []string{"FIXTURE_SOURCE_LIMITS=1"})
+	read := func(kind string) schemaext.Coverage {
+		c.Helper()
+		source := strings.Replace(hclExportSource, "package models", "package models\n\n//ptah:schema:notdescribed kind=\""+kind+"\"\ntype _ struct{}", 1)
+		parsed, err := goschema.ParseSource(runtime.Annotations(), "records.go", source)
+		c.Assert(err, qt.IsNil)
+		return parsed.FeatureCoverage
+	}
+
+	c.Assert(read("RETENTION").KindRecords(), qt.DeepEquals, read("retention").KindRecords())
+}
+
 func TestProviderSourceLimits_HCLRoundTrip(t *testing.T) {
 	c := qt.New(t)
 	_, runtime := yamlProviderEnvironment(c, "hcl-claims", []string{"FIXTURE_SOURCE_LIMITS=1"})
