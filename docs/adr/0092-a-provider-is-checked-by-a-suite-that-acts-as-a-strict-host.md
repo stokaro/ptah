@@ -1,4 +1,4 @@
-# ADR 0088: A provider is checked by a suite that acts as a strict host
+# ADR 0092: A provider is checked by a suite that acts as a strict host
 
 Status: Proposed
 
