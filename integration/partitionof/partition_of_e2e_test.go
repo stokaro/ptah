@@ -396,41 +396,147 @@ CREATE TRIGGER events_row BEFORE INSERT ON events FOR EACH ROW EXECUTE FUNCTION 
 	dev.assertSynced(c, parent)
 }
 
-// TestPartitionMembershipChangesAreRefusedE2E names each change Ptah does not plan, and
-// reads back that nothing moved.
-func TestPartitionMembershipChangesAreRefusedE2E(t *testing.T) {
+// TestPartitionMovesE2E moves a table in its partition tree for each change a
+// declaration can make: another bound, another parent, a partition declared as an
+// ordinary table, and a table declared as a partition. The plan detaches and
+// attaches the table, its row stays where it was, the catalog reads the declared
+// place, and the next plan is synced.
+func TestPartitionMovesE2E(t *testing.T) {
 	const parent = "CREATE TABLE events (id bigint NOT NULL, day date NOT NULL) PARTITION BY RANGE (day);\n"
 	const other = "CREATE TABLE other (id bigint NOT NULL, day date NOT NULL) PARTITION BY RANGE (day);\n"
 	const partition = "CREATE TABLE e1 PARTITION OF events FOR VALUES FROM ('2026-01-01') TO ('2027-01-01');\n"
 	const plain = "CREATE TABLE plain (id bigint NOT NULL, day date NOT NULL);\n"
 	current := parent + other + partition + plain
+	for _, engine := range []struct {
+		name   string
+		engine dbtarget.Engine
+	}{
+		{name: "postgres", engine: dbtarget.PostgreSQL},
+		{name: "yugabytedb", engine: dbtarget.YugabyteDB},
+	} {
+		for _, test := range []struct {
+			name, desired string
+			statements    []string
+			want          map[string]string
+		}{
+			{name: "another bound", desired: parent + other + plain + "CREATE TABLE e1 PARTITION OF events FOR VALUES FROM ('2026-01-01') TO ('2028-01-01');\n",
+				statements: []string{`ALTER TABLE "events" DETACH PARTITION "e1";`, `ALTER TABLE "events" ATTACH PARTITION "e1" FOR VALUES FROM ('2026-01-01') TO ('2028-01-01');`},
+				want:       map[string]string{"public.e1": "public.events FOR VALUES FROM ('2026-01-01') TO ('2028-01-01')"}},
+			{name: "another parent", desired: parent + other + plain + "CREATE TABLE e1 PARTITION OF other FOR VALUES FROM ('2026-01-01') TO ('2027-01-01');\n",
+				statements: []string{`ALTER TABLE "events" DETACH PARTITION "e1";`, `ALTER TABLE "other" ATTACH PARTITION "e1" FOR VALUES FROM ('2026-01-01') TO ('2027-01-01');`},
+				want:       map[string]string{"public.e1": "public.other FOR VALUES FROM ('2026-01-01') TO ('2027-01-01')"}},
+			{name: "a partition declared as a table", desired: parent + other + plain + "CREATE TABLE e1 (id bigint NOT NULL, day date NOT NULL);\n",
+				statements: []string{`ALTER TABLE "events" DETACH PARTITION "e1";`},
+				want:       make(map[string]string)},
+			{name: "a table declared as a partition", desired: parent + other + partition + "CREATE TABLE plain PARTITION OF events FOR VALUES FROM ('2030-01-01') TO ('2031-01-01');\n",
+				statements: []string{`ALTER TABLE "events" ATTACH PARTITION "plain" FOR VALUES FROM ('2030-01-01') TO ('2031-01-01');`},
+				want: map[string]string{"public.e1": "public.events FOR VALUES FROM ('2026-01-01') TO ('2027-01-01')",
+					"public.plain": "public.events FOR VALUES FROM ('2030-01-01') TO ('2031-01-01')"}},
+		} {
+			t.Run(engine.name+"/"+test.name, func(t *testing.T) {
+				c := qt.New(t)
+				dev := newScratch(c, engine.engine)
+				dev.apply(c, current)
+				dev.exec(c, "INSERT INTO events VALUES (1, '2026-06-01')")
+
+				out := dev.apply(c, test.desired)
+
+				for _, statement := range test.statements {
+					c.Assert(out, qt.Contains, statement)
+				}
+				c.Assert(dev.partitions(c), qt.DeepEquals, test.want)
+				c.Assert(dev.count(c, "SELECT count(*) FROM e1"), qt.Equals, 1)
+				dev.assertSynced(c, test.desired)
+			})
+		}
+	}
+}
+
+// TestPartitionsTradeBoundsE2E trades the bounds of two partitions, which only works
+// when both detach before either attaches: attached in any other order, each new bound
+// would overlap the bound its sibling still holds.
+func TestPartitionsTradeBoundsE2E(t *testing.T) {
+	c := qt.New(t)
+	dev := newScratch(c, dbtarget.PostgreSQL)
+	const parent = "CREATE TABLE events (id bigint NOT NULL, day date NOT NULL) PARTITION BY RANGE (day);\n"
+	dev.apply(c, parent+`CREATE TABLE e1 PARTITION OF events FOR VALUES FROM ('2026-01-01') TO ('2027-01-01');
+CREATE TABLE e2 PARTITION OF events FOR VALUES FROM ('2027-01-01') TO ('2028-01-01');
+`)
+	traded := parent + `CREATE TABLE e1 PARTITION OF events FOR VALUES FROM ('2027-01-01') TO ('2028-01-01');
+CREATE TABLE e2 PARTITION OF events FOR VALUES FROM ('2026-01-01') TO ('2027-01-01');
+`
+
+	dev.apply(c, traded)
+
+	c.Assert(dev.partitions(c), qt.DeepEquals, map[string]string{
+		"public.e1": "public.events FOR VALUES FROM ('2027-01-01') TO ('2028-01-01')",
+		"public.e2": "public.events FOR VALUES FROM ('2026-01-01') TO ('2027-01-01')",
+	})
+	dev.assertSynced(c, traded)
+}
+
+// TestPartitionMoveRefusalsE2E names the changes Ptah still refuses, and reads back
+// that nothing moved: a document that keeps a partition and leaves out the parent the
+// database holds, because dropping a partitioned table drops its partitions, and a
+// move the server refuses because a row breaks the declared bound.
+func TestPartitionMoveRefusalsE2E(t *testing.T) {
+	const parent = "CREATE TABLE events (id bigint NOT NULL, day date NOT NULL) PARTITION BY RANGE (day);\n"
+	const other = "CREATE TABLE other (id bigint NOT NULL, day date NOT NULL) PARTITION BY RANGE (day);\n"
+	const partition = "CREATE TABLE e1 PARTITION OF events FOR VALUES FROM ('2026-01-01') TO ('2027-01-01');\n"
 	for _, test := range []struct {
 		name, desired, want string
 	}{
-		{name: "another bound", desired: parent + other + plain + "CREATE TABLE e1 PARTITION OF events FOR VALUES FROM ('2026-01-01') TO ('2028-01-01');\n",
-			want: `is a partition with bound FOR VALUES FROM ('2026-01-01') TO ('2027-01-01'), and the declaration gives it FOR VALUES FROM ('2026-01-01') TO ('2028-01-01'); a reviewed manual partition cutover is required`},
-		{name: "another parent", desired: parent + other + plain + "CREATE TABLE e1 PARTITION OF other FOR VALUES FROM ('2026-01-01') TO ('2027-01-01');\n",
-			want: `is a partition of events, and the declaration makes it a partition of other; a reviewed manual partition cutover is required`},
-		{name: "a partition declared as a table", desired: parent + other + plain + "CREATE TABLE e1 (id bigint NOT NULL, day date NOT NULL);\n",
-			want: `is a partition of events, and the declaration makes it an ordinary table; a reviewed manual partition cutover is required`},
-		{name: "a table declared as a partition", desired: parent + other + partition + "CREATE TABLE plain PARTITION OF events FOR VALUES FROM ('2030-01-01') TO ('2031-01-01');\n",
-			want: `is an ordinary table, and the declaration makes it a partition of events; a reviewed manual partition cutover is required`},
-		{name: "a parent left out", desired: other + plain + partition,
+		{name: "a parent left out", desired: other + partition,
 			want: `is declared a partition of public.events, which the database holds and the desired schema does not declare; dropping a partitioned table drops its partitions`},
+		{name: "a row outside the declared bound", desired: parent + other + "CREATE TABLE e1 PARTITION OF events FOR VALUES FROM ('2027-01-01') TO ('2028-01-01');\n",
+			want: `partition constraint of relation "e1" is violated by some row`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			dev := newScratch(c, dbtarget.PostgreSQL)
-			dev.apply(c, current)
+			dev.apply(c, parent+other+partition)
+			dev.exec(c, "INSERT INTO events VALUES (1, '2026-06-01')")
 			before := dev.partitions(c)
 
 			out, err := ptah("schema", "apply", "--db-url", dev.url, "--schema-file", writeSchema(c, test.desired), "--schemas", "public", "--auto-approve")
 
 			c.Assert(err, qt.IsNotNil, qt.Commentf("%s", out))
-			c.Assert(err.Error(), qt.Contains, test.want)
+			c.Assert(err.Error()+out, qt.Contains, test.want)
 			c.Assert(dev.partitions(c), qt.DeepEquals, before)
 		})
 	}
+}
+
+// TestPartitionMoveMigrationsE2E generates a migration that moves a partition to
+// another bound, applies it, and rolls it back to the bound the partition held.
+func TestPartitionMoveMigrationsE2E(t *testing.T) {
+	c := qt.New(t)
+	dev := newScratch(c, dbtarget.PostgreSQL)
+	dir := c.TempDir()
+	const parent = "CREATE TABLE events (id bigint NOT NULL, day date NOT NULL) PARTITION BY RANGE (day);\n"
+	out, err := ptah("migrations", "generate", "--schema-file", writeSchema(c, parent+"CREATE TABLE e1 PARTITION OF events FOR VALUES FROM ('2026-01-01') TO ('2027-01-01');\n"),
+		"--db-url", dev.url, "--migrations-dir", dir, "--name", "init")
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	out, err = ptah("migrations", "up", "--db-url", dev.url, "--migrations-dir", dir)
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	first := migrationVersion(c, dir)
+
+	// A version names a second, so the second migration waits for the next one.
+	time.Sleep(1100 * time.Millisecond)
+	out, err = ptah("migrations", "generate", "--schema-file", writeSchema(c, parent+"CREATE TABLE e1 PARTITION OF events FOR VALUES FROM ('2026-01-01') TO ('2028-01-01');\n"),
+		"--db-url", dev.url, "--migrations-dir", dir, "--name", "widen")
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	up, down := migrationFile(c, dir, "widen", "up"), migrationFile(c, dir, "widen", "down")
+	c.Assert(up, qt.Contains, `ALTER TABLE "events" ATTACH PARTITION "e1" FOR VALUES FROM ('2026-01-01') TO ('2028-01-01');`)
+	c.Assert(down, qt.Contains, `ALTER TABLE "events" ATTACH PARTITION "e1" FOR VALUES FROM ('2026-01-01') TO ('2027-01-01');`)
+
+	out, err = ptah("migrations", "up", "--db-url", dev.url, "--migrations-dir", dir)
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(dev.partitions(c)["public.e1"], qt.Equals, "public.events FOR VALUES FROM ('2026-01-01') TO ('2028-01-01')")
+
+	out, err = ptah("migrations", "down", "--db-url", dev.url, "--migrations-dir", dir, "--target", first, "--confirm")
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(dev.partitions(c)["public.e1"], qt.Equals, "public.events FOR VALUES FROM ('2026-01-01') TO ('2027-01-01')")
 }
 
 // TestPartitionMigrationsE2E generates a partition's migrations, applies them, holds the

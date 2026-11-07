@@ -25,6 +25,7 @@ var extensionOwners = map[schemaext.Kind][]string{
 	"ptah.run/postgres/replace-foreign-key-delete-columns":    {"postgres/alter-table", "yugabytedb/alter-table"},
 	"ptah.run/postgres/exclusion-operation":                   {"postgres/alter-table"},
 	"ptah.run/postgres/alter-table-persistence":               {"postgres/alter-table"},
+	"ptah.run/postgres/alter-table-partition-move":            {"postgres/alter-table", "yugabytedb/alter-table"},
 	"ptah.run/clickhouse/add-skipping-index":                  {"clickhouse/alter-table"},
 	"ptah.run/clickhouse/alter-storage":                       {"clickhouse/alter-table"},
 	"ptah.run/clickhouse/drop-skipping-index":                 {"clickhouse/alter-table"},
