@@ -108,28 +108,39 @@ func isGenerated(column schemamodel.Field) bool {
 // settleGuards removes from an exact plan every IF EXISTS and IF NOT EXISTS no
 // earlier statement of the plan makes necessary; see [guards.Settle]. An owner's
 // drop of a policy or an exclusion constraint removes nothing a later drop names,
-// so a drop after it needs no guard for its sake. An enum rebuild is the same; see
-// [Planner.enumRebuildStatements].
+// so a drop after it needs no guard for its sake. Some raw statements are the same;
+// see [Planner.harmlessRawStatements].
 func (p *Planner) settleGuards(nodes []ast.Node, diff *difftypes.SchemaDiff) {
-	rebuilds := p.enumRebuildStatements(diff)
+	harmless := p.harmlessRawStatements(diff)
 	guards.Settle(nodes, guards.Options{
 		HarmlessOwner: isolatedOwnerDrop,
-		HarmlessRaw:   func(raw *ast.RawSQLNode) bool { return rebuilds[raw.SQL] },
+		HarmlessRaw:   func(raw *ast.RawSQLNode) bool { return harmless[raw.SQL] },
 	})
 }
 
-// enumRebuildStatements holds the raw statement of each enum diff rebuilds. A
-// rebuild renames the enum, creates it again, moves its columns to the new type
-// and drops the old type without CASCADE, and the old type is the only object it
-// removes: ALTER COLUMN TYPE rebuilds an index on the column and stops at a view
-// that reads it. A statement counts only when its whole text is one of these, so
-// every other raw statement of the plan may still remove what a later drop names.
-func (p *Planner) enumRebuildStatements(diff *difftypes.SchemaDiff) map[string]bool {
+// harmlessRawStatements holds the raw statements diff makes a plan write that remove
+// no object a later drop names:
+//
+//   - the rebuild of an enum, which renames it, creates it again, moves its columns
+//     to the new type and drops the old type without CASCADE. The old type is the
+//     only object it removes: ALTER COLUMN TYPE rebuilds an index on the column and
+//     stops at a view that reads it;
+//   - the column a removed primary key moves to on CockroachDB; see
+//     [keyLeavingForRowID]. ADD COLUMN removes nothing.
+//
+// A statement counts only when its whole text is one of these, so every other raw
+// statement of the plan may still remove what a later drop names.
+func (p *Planner) harmlessRawStatements(diff *difftypes.SchemaDiff) map[string]bool {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	statements := make(map[string]bool, len(diff.EnumsModified))
 	for _, enumDiff := range diff.EnumsModified {
 		if declared, rebuilt := enumRebuild(diff.DeclaredUserTypes, enumDiff, semantics); rebuilt {
 			statements[postgresEnumValueRemovalSQL(enumDiff.EnumName, declared.Values, enumDiff.Usages)] = true
+		}
+	}
+	for _, info := range diff.ConstraintsRemoved {
+		if strings.EqualFold(info.Type, "PRIMARY KEY") {
+			statements[rowIDColumnStatement(info.TableName)] = true
 		}
 	}
 	return statements

@@ -203,6 +203,64 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_ARawStatementBesideAnEnumReb
 	c.Assert(got, qt.Contains, `DROP TABLE IF EXISTS "archive"`, qt.Commentf("%q", got))
 }
 
+// keyLeavingForRowIDDiff removes the primary key of table, which CockroachDB holds on
+// every table, so the plan moves it to a hidden column in a raw statement. It removes
+// the view v and the table archive after that.
+func keyLeavingForRowIDDiff(table string) *difftypes.SchemaDiff {
+	return &difftypes.SchemaDiff{
+		ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "t_pkey", TableName: table, Type: "PRIMARY KEY"}},
+		ViewsRemoved:       difftypes.ViewChanges{{Name: "v"}},
+		TablesRemoved:      difftypes.TableRemovals{{Name: "archive"}},
+	}
+}
+
+// TestGenerateSchemaDiffSQLStatementsWithOptions_ACockroachDBKeyLeavingForRowIDMakesNoGuardNecessary_HappyPath
+// holds the drops behind that raw statement to what they get without it. ADD COLUMN
+// removes nothing a later drop names.
+func TestGenerateSchemaDiffSQLStatementsWithOptions_ACockroachDBKeyLeavingForRowIDMakesNoGuardNecessary_HappyPath(t *testing.T) {
+	tests := []struct {
+		name, table string
+		// quoted is how the statements write the table.
+		quoted string
+	}{
+		{name: "a table in the default schema", table: "t", quoted: `"t"`},
+		{name: "a table of a named schema", table: "app.t", quoted: `"app"."t"`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(c.Context(), must.Must(builtin.New()), keyLeavingForRowIDDiff(test.table), platform.CockroachDB,
+				planext.Options{Capabilities: capability.ForDialect(platform.CockroachDB), Statements: planext.StatementStyleExact})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.DeepEquals, []string{
+				"ALTER TABLE " + test.quoted + ` ADD COLUMN "rowid" INT8 NOT VISIBLE NOT NULL DEFAULT unique_rowid()`,
+				"ALTER TABLE " + test.quoted + ` DROP CONSTRAINT "t_pkey", ADD CONSTRAINT "t_pkey" PRIMARY KEY ("rowid")`,
+				`DROP VIEW "v"`,
+				`DROP TABLE "archive"`,
+			})
+		})
+	}
+}
+
+// TestGenerateSchemaDiffSQLStatementsWithOptions_ARawStatementBesideAKeyLeavingForRowIDKeepsTheGuard_HappyPath
+// is the name-only constraint drop again, which may take an index, in a plan that
+// also moves a key: only the statement that adds the column is known to remove
+// nothing.
+func TestGenerateSchemaDiffSQLStatementsWithOptions_ARawStatementBesideAKeyLeavingForRowIDKeepsTheGuard_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	diff := keyLeavingForRowIDDiff("t")
+	diff.ConstraintsRemoved = append(diff.ConstraintsRemoved, difftypes.ConstraintRemovalInfo{Name: "uq"})
+
+	got, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(c.Context(), must.Must(builtin.New()), diff, platform.CockroachDB,
+		planext.Options{Capabilities: capability.ForDialect(platform.CockroachDB), Statements: planext.StatementStyleExact})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.Contains, `DROP VIEW "v"`, qt.Commentf("%q", got))
+	c.Assert(got, qt.Contains, `DROP TABLE IF EXISTS "archive"`, qt.Commentf("%q", got))
+}
+
 // TestGenerateSchemaDiffSQLStatementsWithOptions_ExactStyleGuardsTheTriggerFunction_HappyPath
 // pins the guard on a routine a trigger's drop already took. A rollback of a
 // trigger declared with a body removes the trigger, whose statement drops the
