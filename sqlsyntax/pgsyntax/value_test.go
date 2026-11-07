@@ -64,6 +64,29 @@ func TestValue_HappyPath(t *testing.T) {
 	}
 }
 
+// Under PlainContinuations a continued segment is scanned as an ordinary
+// string, and its text still reads escapes once joined, as DuckDB 2.0 reads
+// it: E'a\n' and 'b\n' on the next line stand for a, a line ending, b and a
+// line ending, and E'a' and 'b\' for ab\.
+func TestValue_PlainContinuations(t *testing.T) {
+	for _, test := range []struct {
+		name, text, want, span string
+	}{
+		{name: "escapes in the continued segment", text: "E'a\\n'\n'b\\n'", want: "a\nb\n", span: "E'a\\n'\n'b\\n'"},
+		{name: "a backslash before the segment's closing quote", text: "E'a'\n'b\\'; x", want: "ab\\", span: "E'a'\n'b\\'"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			value, span, ok := valueAt(c, test.text, pgsyntax.Options{PlainContinuations: true})
+
+			c.Assert(ok, qt.IsTrue)
+			c.Assert(value, qt.Equals, test.want)
+			c.Assert(span, qt.Equals, test.span)
+		})
+	}
+}
+
 // With standard_conforming_strings off, an ordinary string reads backslash
 // escapes, in each of its segments.
 func TestValue_BackslashEscapes(t *testing.T) {
