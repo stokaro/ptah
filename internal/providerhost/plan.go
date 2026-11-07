@@ -42,8 +42,13 @@ type commonPlanner struct {
 	// order, so the comparison reports a change of it.
 	observedKeys bool
 	// keys hands such a change to the table's owner, which plans it.
-	keys       bool
-	selections *scopeSelections
+	keys bool
+	// observedConstraints reads the foreign keys and CHECKs a provider table
+	// holds, so the comparison reports a change of one.
+	observedConstraints bool
+	// constraints hands such a change to the table's owner, which plans it.
+	constraints bool
+	selections  *scopeSelections
 }
 
 // commonObjectFields are the diff fields of the common objects beyond
@@ -165,8 +170,11 @@ func indexRemovalPlacement(semantics identifier.Semantics, steps []ast.Node) (ah
 // context even when none of those objects is writable; refusing it would
 // block table changes merely because access was not inspected.
 func (p commonPlanner) commonObjectSteps(diff *difftypes.SchemaDiff) (commonObjectPlan, error) {
+	// The declared tables, schemas, foreign keys and constraint hosts are
+	// context a planner reads, not changes: DeclaredForeignKeys holds every
+	// foreign key the declaration states, changed or not.
 	fields := []string{"TablePreparation", "IdentifierSemantics", "TablesAdded", "TablesRemoved", "TablesModified",
-		"DeclaredTables", "DeclaredSchemas", "DeclaredConstraintHosts", "ObservedConstraintHosts",
+		"DeclaredTables", "DeclaredSchemas", "DeclaredForeignKeys", "DeclaredConstraintHosts", "ObservedConstraintHosts",
 		"DeclaredTableDependencies", "Features", "FeatureChanges", "CurrentDatabasePath", "CurrentNotDescribed", "Matched", "FeatureCounts"}
 	if p.commonObjects {
 		fields = append(fields, commonObjectFields...)
@@ -186,13 +194,18 @@ func (p commonPlanner) commonObjectSteps(diff *difftypes.SchemaDiff) (commonObje
 			fields = append(fields, "IndexCommentsChanged")
 		}
 	}
-	if p.observedKeys {
-		// A changed primary key reaches the table's owner as an alteration
-		// of the table; see keyChanges. Any other constraint stays refused.
-		if err := p.keyChanges(diff); err != nil {
-			return commonObjectPlan{}, err
-		}
-		fields = append(fields, "ConstraintsAdded", "ConstraintsRemoved")
+	// A constraint of a table an owner creates or drops travels with the
+	// table, and a changed primary key, foreign key or CHECK of a kept table
+	// reaches its owner as an alteration of the table; see
+	// constraintChanges. Any other constraint stays refused.
+	if err := p.constraintChanges(diff); err != nil {
+		return commonObjectPlan{}, err
+	}
+	fields = append(fields, "ConstraintsAdded", "ConstraintsRemoved")
+	if p.observedConstraints {
+		// A removed foreign key's columns, which order a built-in plan's
+		// column removals; the engine plans its own order.
+		fields = append(fields, "ForeignKeysRemovedWithTables")
 	}
 	if err := onlyFields(*diff, fields...); err != nil {
 		return commonObjectPlan{}, err

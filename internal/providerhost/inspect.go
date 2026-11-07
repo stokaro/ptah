@@ -98,6 +98,7 @@ func (r reader) tables(result *catalog.Database, snapshot *protocol.Schema, rema
 		if key := r.primaryKey(table); key != nil {
 			result.Constraints = append(result.Constraints, *key)
 		}
+		result.Constraints = append(result.Constraints, r.constraints(table)...)
 		indexes, err := r.indexes(table)
 		if err != nil {
 			return err
@@ -151,6 +152,44 @@ func (r reader) primaryKey(value *protocol.Table) *catalog.Constraint {
 		Deferrable: key.GetDeferrable(), Initially: key.GetInitially(), NotEnforced: key.GetNotEnforced(), UsingMethod: copyPlanningPointer(key.UsingMethod),
 		Comment: key.GetComment(), HashShardBuckets: int(key.GetHashShardBuckets()),
 	}
+}
+
+// constraints reads the foreign keys and CHECKs a table holds as catalog
+// constraints, when the session negotiated them. The SDK has checked each
+// against the table's columns. Without the feature a table reports none, and
+// the planner refuses a change of one rather than compare against nothing.
+func (r reader) constraints(value *protocol.Table) []catalog.Constraint {
+	if !slices.Contains(r.session.remote.GetFeatures(), provider.ObservedConstraintsFeature) {
+		return nil
+	}
+	result := make([]catalog.Constraint, 0, len(value.GetConstraints()))
+	for _, constraint := range value.GetConstraints() {
+		result = append(result, catalogConstraint(constraint))
+	}
+	return result
+}
+
+// catalogConstraint is an observed foreign key or CHECK as the catalog keeps
+// it. The singular column names are the first members, as the catalog readers
+// write them.
+func catalogConstraint(source *protocol.ObservedConstraint) catalog.Constraint {
+	result := catalog.Constraint{
+		Name: source.GetName(), TableName: source.GetTableName(), Schema: source.GetSchema(), Type: source.GetType(),
+		ColumnNames: slices.Clone(source.GetColumnNames()), ForeignTable: copyPlanningPointer(source.ForeignTable), ForeignSchema: source.GetForeignSchema(),
+		ForeignColumns: slices.Clone(source.GetForeignColumns()), DeleteRule: copyPlanningPointer(source.DeleteRule), UpdateRule: copyPlanningPointer(source.UpdateRule),
+		Deferrable: source.GetDeferrable(), Initially: source.GetInitially(), Match: source.GetMatch(), NotEnforced: source.GetNotEnforced(),
+		NotValid: source.GetNotValid(), CheckClause: copyPlanningPointer(source.CheckClause), Comment: source.GetComment(),
+	}
+	if len(result.ColumnNames) > 0 {
+		result.ColumnName = result.ColumnNames[0]
+	}
+	if len(result.ForeignColumns) > 0 {
+		result.ForeignColumn = new(result.ForeignColumns[0])
+	}
+	for _, required := range source.GetRequires() {
+		result.Requires = append(result.Requires, boundIdentity(required))
+	}
+	return result
 }
 
 // features reads the snapshot's feature objects, which lead values, their

@@ -115,18 +115,27 @@ type generatedIndexEntry struct {
 	// where kindStated reports that it stated one; see [withPreparedKinds].
 	kind       string
 	kindStated bool
+	// nulls are the NULLS orders the target's table preparation stated for
+	// the index's key parts, one per part, nil where it stated none.
+	nulls []string
 }
 
 // compared is the declared index as the target's index rules compare it:
-// with the kind its table's preparation stated in Type, where it stated one.
-// The entry's own index stays as declared, so the diff carries the type the
-// source wrote.
+// with the kind its table's preparation stated in Type, and the NULLS order it
+// stated for each key part in Parts, where it stated them. The entry's own
+// index stays as declared, so the diff carries what the source wrote.
 func (e generatedIndexEntry) compared() schemamodel.Index {
-	if !e.kindStated {
-		return e.index
-	}
 	index := e.index
-	index.Type = e.kind
+	if e.kindStated {
+		index.Type = e.kind
+	}
+	if e.nulls != nil {
+		parts := slices.Clone(effectiveGeneratedIndexParts(index))
+		for i := range parts {
+			parts[i].NullsOrder = e.nulls[i]
+		}
+		index.Parts = parts
+	}
 	return index
 }
 
@@ -232,8 +241,9 @@ func collectGeneratedIndexes(
 }
 
 // withPreparedKinds gives each declared index the kind its table's
-// preparation stated for it ([schemapreparation.Table.IndexMethods]), where it
-// stated one. A target spells the kind as its reader reports a held index's
+// preparation stated for it ([schemapreparation.Table.IndexMethods]), and the
+// NULLS orders of its key parts ([schemapreparation.Table.IndexNulls]), where
+// it stated them. A target spells the kind as its reader reports a held index's
 // method, so its rules compare the two spellings rather than the type the
 // source wrote; see [generatedIndexEntry.compared].
 func withPreparedKinds(
@@ -245,16 +255,24 @@ func withPreparedKinds(
 ) {
 	// An index's owner resolves to its table's qualified name.
 	kinds := make(map[string]map[string]string)
+	nulls := make(map[string]map[string][]string)
 	for _, table := range desired.Tables {
-		if methods := prepared[tableMapIdentity(table.Schema, table.Name, dialect, semantics)].IndexMethods; len(methods) != 0 {
+		preparedTable := prepared[tableMapIdentity(table.Schema, table.Name, dialect, semantics)]
+		if methods := preparedTable.IndexMethods; len(methods) != 0 {
 			kinds[table.QualifiedName()] = methods
+		}
+		if orders := preparedTable.IndexNulls; len(orders) != 0 {
+			nulls[table.QualifiedName()] = orders
 		}
 	}
 	for identity, entry := range entries {
 		if kind, stated := kinds[entry.ref.TableName][entry.index.Name]; stated {
 			entry.kind, entry.kindStated = kind, true
-			entries[identity] = entry
 		}
+		if orders, stated := nulls[entry.ref.TableName][entry.index.Name]; stated && len(orders) == len(effectiveGeneratedIndexParts(entry.index)) {
+			entry.nulls = orders
+		}
+		entries[identity] = entry
 	}
 }
 

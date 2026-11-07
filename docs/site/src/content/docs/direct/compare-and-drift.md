@@ -395,9 +395,9 @@ kinds the same way.
 
 A desired schema that declares reference rows — a `//ptah:schema:data`
 annotation, or a `data` block in an HCL schema — is checked against the rows the
-database holds as well as against its structure. A database whose tables match
-and whose lookup values somebody edited by hand is drift, and the check exits
-`1` for it.
+database holds and its structure. A database whose tables match and whose lookup
+values somebody edited by hand is drift, and the check exits `1`. A row file outside
+the project is [refused](../../versioned/reference-data/#declaring-managed-data).
 
 The report names the tables whose rows differ and how many rows moved. It
 carries no key, no column name and no value, so a pipeline may publish it

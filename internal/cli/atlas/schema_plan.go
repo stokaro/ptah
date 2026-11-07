@@ -214,13 +214,14 @@ func runAtlasSchemaPlan(cmd *cobra.Command, opts atlasSchemaPlanOptions) error {
 		return cmdutil.Fail(cmd, err)
 	}
 	plan, err := atlasschema.PreparePlanFile(cmd.Context(), conn, atlasschema.PlanFileOptions{
-		Runtime:   runtime,
-		Name:      opts.name,
-		DevURL:    opts.devURL,
-		ToURLs:    opts.toURLs,
-		ToSources: opts.toSources,
-		Exclude:   opts.exclude,
-		Policy:    policy,
+		Runtime:      runtime,
+		ProjectRoots: atlasRowFileRoots(cmd),
+		Name:         opts.name,
+		DevURL:       opts.devURL,
+		ToURLs:       opts.toURLs,
+		ToSources:    opts.toSources,
+		Exclude:      opts.exclude,
+		Policy:       policy,
 
 		// Atlas-compatible surface; see internal/cli/atlas/schema_apply.go.
 		IgnoreUnknownHCLNames: true,

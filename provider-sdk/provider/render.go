@@ -165,8 +165,8 @@ func ValidateRenderedBatchReply(description *protocol.Description, request *prot
 }
 
 // validateCreateTableOperand refuses a missing table, and the inspection
-// evidence a creation operand never carries: the observed primary key and
-// indexes.
+// evidence a creation operand never carries: the observed primary key,
+// indexes and constraints.
 func validateCreateTableOperand(operation *protocol.Change_CreateTable) error {
 	if operation == nil || operation.CreateTable == nil {
 		return fmt.Errorf("%w: missing table creation", ErrProtocol)
@@ -176,6 +176,9 @@ func validateCreateTableOperand(operation *protocol.Change_CreateTable) error {
 	}
 	if len(operation.CreateTable.GetIndexes()) != 0 {
 		return fmt.Errorf("%w: inspected indexes are not a table creation operand", ErrProtocol)
+	}
+	if len(operation.CreateTable.GetConstraints()) != 0 {
+		return fmt.Errorf("%w: inspected constraints are not a table creation operand", ErrProtocol)
 	}
 	return nil
 }

@@ -2637,8 +2637,9 @@ func (m *Migrator) applyUpMigrationsInSingleTransaction(ctx context.Context, mig
 			return nil, failure
 		}
 	}
-	if err := commitMigrationTransaction(tx); err != nil {
-		failure := fmt.Errorf("failed to commit tx-mode all transaction: %w", err)
+	last := migrations[len(migrations)-1]
+	if err := m.commitMigrationTransaction(tx, last.UpSQL); err != nil {
+		failure := newFailedMigrationError(last, fmt.Errorf("failed to commit tx-mode all transaction: %w", err))
 		m.logBatchOutcome(ctx, started, MigrationLogFailed, failure)
 		return nil, failure
 	}
@@ -2971,7 +2972,8 @@ func (m *Migrator) recordRolledBackBatchFailure(
 ) error {
 	ctx = withMigrationResume(ctx, plan.resumeFrom)
 	if beginErr := m.recordPendingMigrationRevisionOn(ctx, m.conn, migration, startedAt, plan); beginErr != nil {
-		return fmt.Errorf("%w; additionally failed to record pending migration %d after tx-mode all rollback: %w", failure, migration.Version, beginErr)
+		return fmt.Errorf("%w; additionally failed to record pending migration %d after tx-mode all rollback: %w",
+			newFailedMigrationError(migration, failure), migration.Version, beginErr)
 	}
 	return m.failMigrationWithDirtyStateWithMode(
 		ctx,
@@ -3084,12 +3086,27 @@ func (m *Migrator) withTransactionalMigrationSession(
 // transactions may remain active after a lost RPC. Cleanup preserves the commit
 // error and does not turn a possibly committed transaction into a rolled-back
 // one: some SQL writers return nil when asked to roll back a closed handle.
-func commitMigrationTransaction(tx catalog.SchemaTransaction) error {
+//
+// sqlText is the body whose statements the run document counts beside a failed
+// commit.
+func (m *Migrator) commitMigrationTransaction(tx catalog.SchemaTransaction, sqlText string) error {
 	if err := tx.Commit(); err != nil {
-		return errors.Join(err, tx.Rollback())
+		return errors.Join(&failedCommitError{statements: m.migrationStatementCount(sqlText), err: err}, tx.Rollback())
 	}
 	return nil
 }
+
+// failedCommitError is the failure of a commit, so the run document can tell it
+// from a failed statement and read the code the server answered it with, which a
+// rollback's failure beside it must not replace. It adds nothing to the message.
+type failedCommitError struct {
+	statements int
+	err        error
+}
+
+func (e *failedCommitError) Error() string { return e.err.Error() }
+
+func (e *failedCommitError) Unwrap() error { return e.err }
 
 type migrationTransactionRolledBackError struct {
 	version int64
@@ -3513,6 +3530,11 @@ func (e *failedMigrationError) Error() string { return e.err.Error() }
 
 func (e *failedMigrationError) Unwrap() error { return e.err }
 
+// newFailedMigrationError names migration as the one failure belongs to.
+func newFailedMigrationError(migration *Migration, failure error) *failedMigrationError {
+	return &failedMigrationError{version: migration.Version, versionKey: migration.RevisionVersion(), err: failure}
+}
+
 func (m *Migrator) failMigrationWithDirtyStateWithMode(
 	ctx context.Context,
 	migration *Migration,
@@ -3524,7 +3546,7 @@ func (m *Migrator) failMigrationWithDirtyStateWithMode(
 	direction MigrationDirection,
 ) error {
 	revisionErr := m.failMigrationRevisionWithMode(ctx, migration, startedAt, failure, sqlText, txMode, direction)
-	failure = &failedMigrationError{version: migration.Version, versionKey: migration.RevisionVersion(), err: failure}
+	failure = newFailedMigrationError(migration, failure)
 	if revisionErr != nil {
 		if prefix == "" {
 			return fmt.Errorf("%w; additionally failed to record dirty migration state: %w", failure, revisionErr)

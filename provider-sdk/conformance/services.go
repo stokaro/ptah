@@ -115,6 +115,7 @@ func probes() []probe {
 		empty("ReverseChanges", provider.ReverseChangesFeature, protocol.ProviderClient.ReverseChanges),
 		empty("ReportValues", provider.ReportCountsFeature, protocol.ProviderClient.ReportValues),
 		empty("ScanSQL", provider.ScanSQLFeature, protocol.ProviderClient.ScanSQL),
+		empty("CompareChecks", provider.CheckEquivalenceFeature, protocol.ProviderClient.CompareChecks),
 	}
 }
 

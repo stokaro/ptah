@@ -107,6 +107,11 @@ func beginMessage(message []byte) bool {
 	return bytes.Contains(message, []byte("begin\x00"))
 }
 
+// commitMessage matches the query that ends the apply's transaction.
+func commitMessage(message []byte) bool {
+	return bytes.Contains(message, []byte("commit\x00"))
+}
+
 // createOrdersMessage matches the plan's only statement.
 func createOrdersMessage(message []byte) bool {
 	return bytes.Contains(message, []byte("CREATE TABLE")) && bytes.Contains(message, []byte("orders"))
@@ -189,6 +194,9 @@ func TestSchemaApplyLostConnectionE2E(t *testing.T) {
 		// expects no table has nothing to wait for.
 		patience  time.Duration
 		wantTable bool
+		// wantFailure is where the record says the run stopped. The server gave no
+		// answer, so it carries no code.
+		wantFailure *atlasschema.ApplyFailure
 	}{
 		{
 			name: "during BEGIN", mode: "file", trigger: beginMessage,
@@ -197,11 +205,19 @@ func TestSchemaApplyLostConnectionE2E(t *testing.T) {
 		{
 			name: "during a statement in a transaction", mode: "file", forward: true, trigger: createOrdersMessage,
 			wantOutcome: atlasschema.ApplyOutcomeUnknown, wantError: "failed to execute SQL statement",
+			wantFailure: &atlasschema.ApplyFailure{Statement: 1, Statements: 1},
 		},
 		{
 			name: "during a statement without a transaction", mode: "none", forward: true, trigger: createOrdersMessage,
 			wantOutcome: atlasschema.ApplyOutcomeUnknown, wantError: "failed to execute SQL statement",
 			patience: 15 * time.Second, wantTable: true,
+			wantFailure: &atlasschema.ApplyFailure{Statement: 1, Statements: 1},
+		},
+		{
+			name: "during the commit", mode: "file", forward: true, trigger: commitMessage,
+			wantOutcome: atlasschema.ApplyOutcomeUnknown, wantError: "commit schema apply transaction: ",
+			patience: 15 * time.Second, wantTable: true,
+			wantFailure: &atlasschema.ApplyFailure{Statements: 1, Commit: true},
 		},
 	}
 	for _, test := range tests {
@@ -221,6 +237,7 @@ func TestSchemaApplyLostConnectionE2E(t *testing.T) {
 			c.Assert(report.Outcome, qt.Equals, test.wantOutcome, qt.Commentf("%s", diagnostics))
 			c.Assert(report.Refusal, qt.IsNil)
 			c.Assert(report.Error.Message, qt.Contains, test.wantError)
+			c.Assert(report.Failure, qt.DeepEquals, test.wantFailure)
 			c.Assert(report.Units, qt.HasLen, 1)
 			c.Assert(ordersTableWithin(c, direct, test.patience), qt.Equals, test.wantTable)
 		})

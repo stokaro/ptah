@@ -101,6 +101,9 @@ service Provider {
   rpc ReportValues(ReportValuesRequest) returns (ValueReports);
   // Contract 25.22. A host calls it only for an engine that lists sql.scan.
   rpc ScanSQL(ScanSQLRequest) returns (SQLScan);
+  // Contract 25.28. A host calls it only for an engine that lists
+  // schema.check-equivalence.
+  rpc CompareChecks(CompareChecksRequest) returns (ComparedChecks);
 }
 
 message Empty {}
@@ -728,6 +731,12 @@ message Table {
   // not name is absent. Contract 25.10, negotiated under
   // schema.observed-indexes.
   repeated ObservedIndex indexes = 6;
+  // Complete FOREIGN KEY and CHECK constraints in inspection, each bound to
+  // this table. A constraint of those types this list does not name is
+  // absent. The primary key stays in primary_key, and an index the engine
+  // builds to enforce a constraint is neither here nor in indexes. Contract
+  // 25.28, negotiated under schema.observed-constraints.
+  repeated ObservedConstraint constraints = 7;
 }
 message Column {
   string name = 1;
@@ -2694,8 +2703,17 @@ message PreparedIndex {
   string name = 1;
   // The kind, in the spelling of ObservedIndex.method. Empty is a kind like
   // any other when the provider reports a held index of that kind with no
-  // method.
+  // method. Empty without schema.index-methods.
   string method = 2;
+  // The NULLS order the engine gives each key part of the declaration, in
+  // key order: one for each DeclaredIndex.parts entry, or for each
+  // DeclaredIndex.fields entry of an index with no parts. It is FIRST or
+  // LAST where the order differs from the engine's default for the part's
+  // direction, and empty where it is the default, whether the declaration
+  // spells the default or leaves it out. A read under the same feature
+  // states CapturedIndexPart.nulls of a held index the same way. Contract
+  // 25.28, negotiated under schema.index-nulls-order.
+  repeated string nulls = 3;
 }
 message PreparedTables {
   bool complete = 1;
@@ -4420,4 +4438,53 @@ message SQLToken {
   // value: a string whose escape the server refuses, or text that is not one
   // whole name. Never present on another kind.
   optional string value = 3;
+}
+
+// CompareChecksRequest asks the owner of an engine whether each declared CHECK
+// expression and the CHECK a held table keeps under the same name are one
+// constraint. The owner decides from the request alone: no session, no server
+// and no database. Contract 25.28, under schema.check-equivalence.
+message CompareChecksRequest {
+  string engine = 1;
+  ComparisonIdentifiers identifiers = 2;
+  map<string, bool> capabilities = 3;
+  repeated string target_features = 4;
+  repeated CheckComparisonTable tables = 5;
+}
+// CheckComparisonTable is one held table and the CHECK constraints a host
+// asks about.
+message CheckComparisonTable {
+  // The held table.
+  ComparisonIdentity subject = 1;
+  // The table as held: its columns, which the expressions read, and its
+  // constraints, among them each CHECK a pair names.
+  ObservedTable current = 2;
+  repeated CheckComparisonPair pairs = 3;
+}
+// CheckComparisonPair pairs a declared CHECK expression with the held CHECK
+// the host compares it with.
+message CheckComparisonPair {
+  // The name of the held CHECK, as its ObservedConstraint names it.
+  string constraint = 1;
+  // The declared expression, without the CHECK keyword and its enclosing
+  // parentheses.
+  string declared = 2;
+}
+// ComparedChecks answers every pair of the request: one table for each
+// requested table and one check for each pair, in the request's order.
+message ComparedChecks {
+  bool complete = 1;
+  repeated ComparedCheckTable tables = 2;
+}
+message ComparedCheckTable {
+  ComparisonIdentity subject = 1;
+  repeated ComparedCheck checks = 2;
+}
+message ComparedCheck {
+  // The name of the held CHECK the pair names.
+  string constraint = 1;
+  // Whether the declared expression and the held one are one constraint on
+  // the engine: the held CHECK stays when they are, and is replaced when they
+  // are not.
+  bool equivalent = 2;
 }

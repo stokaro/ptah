@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -16,8 +15,8 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/internal/dataorder"
 	"ptah.run/internal/managedrows"
-	"ptah.run/internal/pathguard"
 	"ptah.run/internal/protectedtable"
+	"ptah.run/internal/schemaroot"
 	"ptah.run/migration/datadiff"
 	"ptah.run/migration/safety"
 )
@@ -70,7 +69,7 @@ func managedDataStatements(
 	runtime dataext.Runtime,
 	desired *schemamodel.Database,
 	current *catalog.Database,
-	projectRoot string,
+	projectRoots []string,
 	protected protectedtable.Set,
 ) ([]dataStatement, []PlanRowSet, error) {
 	if conn == nil || desired == nil || len(desired.ManagedData) == 0 {
@@ -104,7 +103,7 @@ func managedDataStatements(
 	// and refuse when they moved (stokaro/ptah#3378).
 	var covered []PlanRowSet
 	for _, declaration := range declarations {
-		declared, read, err := managedDataDiff(ctx, conn, services, declaration, desired, current, projectRoot)
+		declared, read, err := managedDataDiff(ctx, conn, services, declaration, desired, current, projectRoots)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -173,33 +172,6 @@ func (e *ProtectedTableError) Error() string {
 	)
 }
 
-// declaredRows reads the rows a declaration still names, bounded by the project
-// the caller is operating in.
-//
-// The path is data: a schema says which file carries its rows, and a schema is
-// not always one the reader wrote. Following it anywhere would let a desired
-// state read whatever this process can, on every plan and apply rather than
-// only where an author publishes their own work. The boundary is the one
-// `file()` in atlas.hcl already has, and it is the project rather than the
-// declaration's own directory because `schema export` writes a path back out of
-// the directory it exports into, and refusing Ptah's own output would be a rule
-// that contradicts the tool applying it.
-func declaredRows(
-	declaration schemamodel.ManagedData,
-	qualified, projectRoot string,
-) ([]schemamodel.ManagedRow, error) {
-	sourceDir := declaration.SourceDir
-	if sourceDir == "" {
-		sourceDir = "."
-	}
-	if _, err := pathguard.ResolveWithinRoot(
-		filepath.Join(sourceDir, declaration.File), projectRoot,
-	); err != nil {
-		return nil, fmt.Errorf("managed data file %q for table %s: %w", declaration.File, qualified, err)
-	}
-	return manageddata.LoadRowValues("", declaration)
-}
-
 // managedDataDiff reconciles one declaration against the database and renders
 // the statements that close the difference.
 //
@@ -215,7 +187,7 @@ func managedDataDiff(
 	declaration schemamodel.ManagedData,
 	desired *schemamodel.Database,
 	current *catalog.Database,
-	projectRoot string,
+	projectRoots []string,
 ) ([]dataStatement, managedrows.Read, error) {
 	qualified := managedDataTableName(declaration)
 	if declaration.Rows == nil {
@@ -235,7 +207,11 @@ func managedDataDiff(
 				qualified,
 			)
 		}
-		rows, err := declaredRows(declaration, qualified, projectRoot)
+		// The path is data: a schema says which file carries its rows, and a schema
+		// is not always one the reader wrote. The loader bounds it by the project
+		// the caller is operating in, on every plan and apply rather than only where
+		// an author publishes their own work.
+		rows, err := schemaroot.Load(projectRoots, declaration, manageddata.LoadRowValues)
 		if err != nil {
 			return nil, managedrows.Read{}, err
 		}

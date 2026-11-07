@@ -14,6 +14,7 @@ import (
 	"ptah.run/internal/cli/internal/pushreceipt"
 	"ptah.run/internal/schemaartifact"
 	"ptah.run/internal/schemaload"
+	"ptah.run/internal/schemaroot"
 )
 
 type options struct {
@@ -109,7 +110,7 @@ func run(cmd *cobra.Command, reference string, opts *options) error {
 	// An artifact travels without the working copy that declared it, so the
 	// declared rows are read here, where the working copy is still reachable,
 	// rather than wherever the artifact is later read.
-	if err := schemaload.ReadManagedRows(db); err != nil {
+	if err := schemaload.ReadManagedRows(db, schemaroot.Of(opts.rootDirs)); err != nil {
 		return err
 	}
 	checks, err := readChecks(opts.checks)

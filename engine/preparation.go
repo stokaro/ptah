@@ -39,6 +39,9 @@ func (r *Runtime) PrepareTables(ctx context.Context, request schemapreparation.R
 		if len(table.IndexMethods) != 0 {
 			return schemapreparation.Result{}, fmt.Errorf("%w: preparation input already states index kinds", schemapreparation.ErrInvalid)
 		}
+		if len(table.IndexNulls) != 0 {
+			return schemapreparation.Result{}, fmt.Errorf("%w: preparation input already states index NULLS orders", schemapreparation.ErrInvalid)
+		}
 	}
 	if err := r.validatePreparation(ctx, request); err != nil {
 		return schemapreparation.Result{}, err

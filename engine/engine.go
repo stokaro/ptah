@@ -467,6 +467,7 @@ func (r *Runtime) register(owner string, declared Target) error {
 		{"constraint projection", declared.Constraints},
 		{"column comparison", declared.Comparison.Columns},
 		{"column batch", declared.Comparison.ColumnService},
+		{"check comparison", declared.Comparison.Checks},
 		{"index comparison", declared.Comparison.Indexes},
 		{"index definition comparison", declared.Comparison.IndexDefinitions},
 		{"index predicate comparison", declared.Comparison.IndexPredicates},

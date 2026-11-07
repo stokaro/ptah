@@ -22,6 +22,7 @@ func TestRefusalsKeepTheErrorTheyWrap(t *testing.T) {
 	}{
 		{name: "a lost view security option", err: &planrefusal.LostViewSecurityError{Err: wrapped}},
 		{name: "a dependent object", err: &planrefusal.DependentObjectError{Err: wrapped}},
+		{name: "a refused declaration", err: &planrefusal.DeclarationError{Err: wrapped}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

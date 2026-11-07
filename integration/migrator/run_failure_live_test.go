@@ -130,3 +130,23 @@ func TestRunResultCarriesTheServerCodeLive(t *testing.T) {
 		})
 	}
 }
+
+// A directory that runs bodies as written sends a body as one query in the default
+// mode, so the statements after the file's last COMMIT commit at the end of the
+// file. That commit is where a deferred foreign key is answered: every statement
+// ran, and the record names the commit.
+func TestRunResultNamesTheCommitAtTheEndOfAFileLive(t *testing.T) {
+	c := qt.New(t)
+	run := newOwnTransactionsRun(c, postgresTestURL(t),
+		"BEGIN;\nCREATE TABLE owntx_a_%[1]s (id INT);\nCOMMIT;\nINSERT INTO owntx_d_%[1]s (id, parent) VALUES (1, 999);\n")
+	run.exec(c, "CREATE TABLE owntx_c_"+run.suffix+" (id INT PRIMARY KEY)")
+	run.exec(c, "CREATE TABLE owntx_d_"+run.suffix+" (id INT PRIMARY KEY, parent INT REFERENCES owntx_c_"+run.suffix+" (id) DEFERRABLE INITIALLY DEFERRED)")
+
+	runErr := run.migrator(c, migrator.WithOwnTransactions()).MigrateUp(context.Background())
+
+	c.Assert(runErr, qt.IsNotNil)
+	result := migrator.NewRunResult(migrator.RunEvidence{Err: runErr})
+	c.Assert(result.Failure, qt.DeepEquals, &migrator.RunFailure{
+		Version: 2, VersionKey: "2", Statements: 4, Commit: true, SQLState: "23503",
+	}, qt.Commentf("%s", runErr))
+}

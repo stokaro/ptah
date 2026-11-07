@@ -80,8 +80,8 @@ func (p commonPlanner) planningContext(diff *difftypes.SchemaDiff) (featureplan.
 			return featureplan.Request{}, nil, err
 		}
 	}
-	if p.ownsKeys() {
-		if err := parents.alterForKeys(builder, diff); err != nil {
+	if p.ownsKeys() || p.ownsConstraints() {
+		if err := parents.alterForConstraints(builder, diff, p.ownsConstraintChange); err != nil {
 			return featureplan.Request{}, nil, err
 		}
 	}
