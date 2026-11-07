@@ -53,7 +53,7 @@ func TestDescribe_RefusesAServerTheBannerNamesAsSpanner(t *testing.T) {
 	db, err := describe(c, "PostgreSQL 14.1 on Cloud Spanner")
 
 	var diagnostic *providerdiagnostic.Diagnostic
-	c.Assert(errors.As(err, &diagnostic), qt.IsTrue)
+	c.Assert(err, qt.ErrorAs, &diagnostic)
 	c.Assert(diagnostic.Code, qt.Equals, "provider_engine_identified")
 	c.Assert(diagnostic.EngineID, qt.Equals, "spanner")
 	c.Assert(diagnostic.ProviderID, qt.Equals, "github.com/stokaro/ptah-spanner-plugin")
