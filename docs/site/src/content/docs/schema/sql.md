@@ -361,31 +361,31 @@ how they are compared and changed, and which engines take them.
 
 ## Declare a check option
 
-A view that ends in `WITH CHECK OPTION` or `WITH CASCADED CHECK OPTION`
-declares a check option, as `with_check` does in Go annotations and YAML:
+A view that ends in `WITH CHECK OPTION` declares a check option, as
+`with_check` does in Go annotations and YAML, and the level the clause names
+is kept:
 
 ```sql
 CREATE VIEW positive_orders AS
   SELECT id, amount FROM orders WHERE amount > 0
-  WITH CHECK OPTION;
+  WITH LOCAL CHECK OPTION;
 ```
+
+`WITH LOCAL CHECK OPTION` checks a row written through the view against the
+view's own condition. `WITH CHECK OPTION` and `WITH CASCADED CHECK OPTION`
+check it against the conditions of the views it reads as well. Go annotations
+and YAML write the level in `with_check`: `true` or `cascaded`, `local`, or
+`false`. HCL writes `check_option = LOCAL` or `check_option = CASCADED`.
 
 The clause is not part of the view's query. PostgreSQL, MySQL and MariaDB
 store it apart from the query, in `information_schema.views.check_option`, and
-the comparison reads it from there. The plan creates the view `WITH CHECK
-OPTION`, which these engines store as `CASCADED`. The words inside a string
-literal, a quoted name, a comment or a subquery stay part of the query.
+the comparison reads it from there. A view whose level differs from the
+declared one is replaced. The plan writes `WITH LOCAL CHECK OPTION` for a
+`LOCAL` view and `WITH CHECK OPTION` for a `CASCADED` one. The words inside a
+string literal, a quoted name, a comment or a subquery stay part of the query.
 
-`WITH LOCAL CHECK OPTION` is refused by name:
-
-```text
-view positive_orders: WITH LOCAL CHECK OPTION: a declared view holds its check option without a level and is created WITH CHECK OPTION, which checks the views it reads too (CASCADED); declare WITH CHECK OPTION, or create the view in a migration
-```
-
-A declaration keeps the check option without its level, so the view would be
-created with the `CASCADED` check. That check also applies the conditions of
-the views it reads, and refuses rows the `LOCAL` view takes
-([stokaro/ptah#5647](https://github.com/stokaro/ptah/issues/5647)).
+SQL Server and Oracle have no `LOCAL` level, so the plan refuses a `LOCAL`
+view there by name rather than create it with the stricter `CASCADED` check.
 
 ## Comments
 

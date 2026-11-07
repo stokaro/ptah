@@ -665,7 +665,7 @@ var directives = []Directive{
 			attr("name", "View name.", valueString, true, false),
 			attr("schema", "Target schema/namespace.", valueString, false, false),
 			attr("body", "View SELECT body.", valueSQL, true, false),
-			attr("with_check", "Controls WITH CHECK OPTION where supported.", valueBoolean, false, false),
+			attr("with_check", "The view's check option: `true` or `cascaded` for WITH CHECK OPTION, `local` for WITH LOCAL CHECK OPTION, `false` for none.", valueString, false, false),
 			attr("options", "Comma-separated PostgreSQL view options, `name=value`, such as `security_invoker=true`; a bare name is true. PostgreSQL family.", valueList, false, false),
 			attr("depends_on", "Comma-separated objects this view must be created after.", valueList, false, false),
 			attr("comment", "View comment.", valueString, false, false),

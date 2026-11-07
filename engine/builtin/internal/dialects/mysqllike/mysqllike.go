@@ -687,7 +687,14 @@ func (r *Renderer) renderCreateView(node *ast.CreateViewNode) error {
 		create = "CREATE OR REPLACE VIEW"
 	}
 	r.w.WriteLinef("%s %s AS", create, escapeQualifiedIdentifier(node.Name))
-	r.w.WriteLine(strings.TrimSpace(node.Body))
+	body := strings.TrimSpace(node.Body)
+	if node.WithCheck {
+		// The check option is part of the statement the body ends, so a
+		// body that keeps a closing semicolon would leave the clause a
+		// statement of its own.
+		body = strings.TrimSpace(strings.TrimSuffix(body, ";"))
+	}
+	r.w.WriteLine(body)
 	switch {
 	case node.WithCheck && node.LocalCheck:
 		r.w.WriteLine("WITH LOCAL CHECK OPTION")

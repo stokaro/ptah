@@ -130,7 +130,9 @@ current schema IR:
   the one in the database
 - PostgreSQL `view` blocks with `schema`, `as`, `check_option`, `depends_on`,
   `comment`, a `security` block, and `column` blocks naming the view's output
-  columns. The `security` block is the spelling Atlas documents for a
+  columns. `check_option` is `LOCAL` or `CASCADED`, the level of the view's
+  check option; any other value is refused, and inspection writes the level
+  the view holds. The `security` block is the spelling Atlas documents for a
   PostgreSQL view's options: `invoker` and `barrier`, each a bool, at least one
   of them set, stand for `security_invoker` and `security_barrier`. A view
   without the block states no options, and the plan refuses to remove a security

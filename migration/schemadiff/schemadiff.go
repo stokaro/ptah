@@ -669,7 +669,7 @@ func restoreAuthored(diff *difftypes.SchemaDiff, authored *schemamodel.Database)
 	}
 	restoreView := func(view *schemamodel.View) {
 		if declared, found := views[view.Name]; found {
-			view.Body, view.WithCheck, view.Attributes = declared.Body, declared.WithCheck, slices.Clone(declared.Attributes)
+			view.Body, view.WithCheck, view.LocalCheck, view.Attributes = declared.Body, declared.WithCheck, declared.LocalCheck, slices.Clone(declared.Attributes)
 		}
 	}
 	restoreMatview := func(view *schemamodel.MaterializedView) {

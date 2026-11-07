@@ -72,9 +72,9 @@ func TestViewCheckOptionCreation_FailurePath(t *testing.T) {
 	c.Assert(change, qt.IsNil)
 }
 
-// A declared view carries CASCADED for a check option to an engine that lists
-// levels, since the host model holds no LOCAL, and the level of no check
-// option otherwise.
+// A declared view carries the level the model holds to an engine that lists
+// levels, and the level of no check option, beside with_check, to one that
+// does not.
 func TestViewCheckOptionDeclaration_HappyPath(t *testing.T) {
 	for _, test := range []struct {
 		name   string
@@ -82,7 +82,11 @@ func TestViewCheckOptionDeclaration_HappyPath(t *testing.T) {
 		view   schemamodel.View
 		want   protocol.SQLView_CheckOption
 	}{
+		{"a LOCAL check option to an engine that lists levels", checkOptionTarget(),
+			schemamodel.View{Name: "recent", Body: "SELECT 1", WithCheck: true, LocalCheck: true}, protocol.SQLView_LOCAL},
 		{"a check option to an engine that lists levels", checkOptionTarget(), schemamodel.View{Name: "recent", Body: "SELECT 1", WithCheck: true}, protocol.SQLView_CASCADED},
+		{"LOCAL without a check option to an engine that lists levels", checkOptionTarget(),
+			schemamodel.View{Name: "recent", Body: "SELECT 1", LocalCheck: true}, protocol.SQLView_CHECK_OPTION_NONE},
 		{"no check option to an engine that lists levels", checkOptionTarget(), schemamodel.View{Name: "recent", Body: "SELECT 1"}, protocol.SQLView_CHECK_OPTION_NONE},
 		{"a check option to an engine that does not list levels", commonObjectTarget(everyCommonKind...),
 			schemamodel.View{Name: "recent", Body: "SELECT 1", WithCheck: true}, protocol.SQLView_CHECK_OPTION_NONE},
@@ -99,31 +103,74 @@ func TestViewCheckOptionDeclaration_HappyPath(t *testing.T) {
 	}
 }
 
-// A SQL schema reading keeps a view with a CASCADED check option as one with a
-// check option, and refuses one with LOCAL by name: the host model holds no
-// level, and keeping it would make the check stricter.
+// A declared LOCAL view is refused by name for an engine that does not list
+// levels: it reads with_check as the stricter CASCADED check.
+func TestViewCheckOptionDeclaration_FailurePath(t *testing.T) {
+	c := qt.New(t)
+
+	declared, err := commonObjectTarget(everyCommonKind...).declaredCommonObjects(&schemamodel.Database{Views: []schemamodel.View{
+		{Name: "recent", Body: "SELECT 1", WithCheck: true, LocalCheck: true}}})
+
+	c.Assert(err, qt.ErrorMatches, `.*WITH LOCAL CHECK OPTION of view "recent"`)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(declared, qt.IsNil)
+}
+
+// A SQL schema reading keeps the level each view states. A view from an
+// engine that does not list levels states none, and its with_check is the
+// CASCADED level.
 func TestViewCheckOptionReading(t *testing.T) {
-	t.Run("a CASCADED check option", func(t *testing.T) {
-		c := qt.New(t)
-		reply := fullSQLSchemaReply()
-		reply.Views[0].WithCheck, reply.Views[0].CheckOption = true, protocol.SQLView_CASCADED
+	for _, test := range []struct {
+		name          string
+		withCheck     bool
+		option        protocol.SQLView_CheckOption
+		wantWithCheck bool
+		wantLocal     bool
+	}{
+		{name: "a CASCADED check option", withCheck: true, option: protocol.SQLView_CASCADED, wantWithCheck: true},
+		{name: "a LOCAL check option", withCheck: true, option: protocol.SQLView_LOCAL, wantWithCheck: true, wantLocal: true},
+		{name: "a check option without a level", withCheck: true, option: protocol.SQLView_CHECK_OPTION_NONE, wantWithCheck: true},
+		{name: "no check option", option: protocol.SQLView_CHECK_OPTION_NONE},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			reply := fullSQLSchemaReply()
+			reply.Views[0].WithCheck, reply.Views[0].CheckOption = test.withCheck, test.option
 
-		database, err := sqlSchemaCommon(reply)
+			database, err := sqlSchemaCommon(reply)
 
-		c.Assert(err, qt.IsNil)
-		c.Assert(database.Views[0].WithCheck, qt.IsTrue)
-	})
-	t.Run("a LOCAL check option", func(t *testing.T) {
-		c := qt.New(t)
-		reply := fullSQLSchemaReply()
-		reply.Views[0].WithCheck, reply.Views[0].CheckOption = true, protocol.SQLView_LOCAL
+			c.Assert(err, qt.IsNil)
+			c.Assert(database.Views[0].WithCheck, qt.Equals, test.wantWithCheck)
+			c.Assert(database.Views[0].LocalCheck, qt.Equals, test.wantLocal)
+		})
+	}
+}
 
-		database, err := sqlSchemaCommon(reply)
+// The comparison holds a declared view as the provider prepared it, with the
+// level the prepared view states rather than the one declared.
+func TestViewCheckOptionSpelling(t *testing.T) {
+	for _, test := range []struct {
+		name          string
+		declaredLocal bool
+		prepared      protocol.SQLView_CheckOption
+		wantLocal     bool
+	}{
+		{name: "prepared LOCAL", prepared: protocol.SQLView_LOCAL, wantLocal: true},
+		{name: "prepared CASCADED", declaredLocal: true, prepared: protocol.SQLView_CASCADED},
+		{name: "prepared without a level", declaredLocal: true, prepared: protocol.SQLView_CHECK_OPTION_NONE},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			source := &schemamodel.Database{Views: []schemamodel.View{{Name: "recent", Body: "SELECT 1", WithCheck: true, LocalCheck: test.declaredLocal}}}
+			prepared := &protocol.DeclaredCommonObjects{Views: []*protocol.SQLView{{Name: "recent", Body: "SELECT 1", WithCheck: true, CheckOption: test.prepared}}}
 
-		c.Assert(err, qt.ErrorMatches, `.*view "app\.visible" of the SQL schema reading has WITH LOCAL CHECK OPTION, and Ptah's view model holds no check option level`)
-		c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-		c.Assert(database, qt.DeepEquals, schemamodel.Database{})
-	})
+			spelled := spelledCommonObjects(source, prepared)
+
+			c.Assert(spelled.Views[0].WithCheck, qt.IsTrue)
+			c.Assert(spelled.Views[0].LocalCheck, qt.Equals, test.wantLocal)
+			c.Assert(source.Views[0].LocalCheck, qt.Equals, test.declaredLocal)
+		})
+	}
 }
 
 // The host lists the feature, so a provider that offers it keeps it in the

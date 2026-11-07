@@ -784,8 +784,11 @@ func toDBViews(views []schemamodel.View) []catalog.View {
 	for _, view := range views {
 		name, schema := splitTableIdentity(view.Name)
 		checkOption := "NONE"
-		if view.WithCheck {
+		switch {
+		case view.WithCheck && view.LocalCheck:
 			checkOption = "LOCAL"
+		case view.WithCheck:
+			checkOption = "CASCADED"
 		}
 		out = append(out, catalog.View{
 			Facets:      view.Facets,

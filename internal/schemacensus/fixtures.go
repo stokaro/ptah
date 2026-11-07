@@ -141,6 +141,7 @@ func corpus() []Fixture {
 		{Name: "view", Schema: viewFixture()},
 		{Name: "view-attributes", Schema: viewAttributesFixture()},
 		{Name: "view-options", Schema: viewOptionsFixture()},
+		{Name: "view-local-check", Schema: viewLocalCheckFixture()},
 		{Name: "matview", Schema: matViewFixture()},
 		{Name: "matview-options", Schema: matViewOptionsFixture()},
 		{Name: "matview-refresh", Schema: matViewRefreshFixture()},
@@ -1205,6 +1206,18 @@ func viewAttributesFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
 	db.Views = []schemamodel.View{{
 		StructName: "V", Name: "bound", Body: "SELECT id FROM t", Attributes: []string{"SCHEMABINDING"},
+	}}
+	return db
+}
+
+// viewLocalCheckFixture declares a view whose check option is LOCAL. It is
+// apart from viewFixture because the targets whose check option has no level
+// refuse the view, and a refused pair would take the view's other fields out
+// of the measurement there too.
+func viewLocalCheckFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	db.Views = []schemamodel.View{{
+		StructName: "V", Name: "own_rows", Body: "SELECT id FROM t", WithCheck: true, LocalCheck: true,
 	}}
 	return db
 }

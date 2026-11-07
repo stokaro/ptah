@@ -20,3 +20,14 @@ func CheckOptionRequestsCheck(checkOption string) bool {
 	value := strings.TrimSpace(checkOption)
 	return value != "" && !strings.EqualFold(value, "NONE")
 }
+
+// CheckOptionIsLocal reports whether a CHECK_OPTION a catalog reported names
+// the LOCAL level, which checks a row written through the view against the
+// view's own condition alone. The word is compared without regard to case or
+// surrounding space. Every other word that [CheckOptionRequestsCheck] reads as
+// a check option is the CASCADED level, which is what a check option written
+// without a level means on the engines that have levels; reading an unknown
+// word as LOCAL would plan a looser check than the view holds.
+func CheckOptionIsLocal(checkOption string) bool {
+	return strings.EqualFold(strings.TrimSpace(checkOption), "LOCAL")
+}

@@ -51,8 +51,12 @@ func (t *target) declaredViews(source *schemamodel.Database) ([]*protocol.SQLVie
 		if len(view.Options) > 0 {
 			return nil, unsupported(fmt.Sprintf("the options %s of view %q", strings.Join(view.Options, ", "), view.Name))
 		}
+		option, err := t.declaredCheckOption(view)
+		if err != nil {
+			return nil, err
+		}
 		schema, name := splitQualified(view.Name)
-		views = append(views, &protocol.SQLView{Schema: schema, Name: name, Body: view.Body, WithCheck: view.WithCheck, CheckOption: t.declaredCheckOption(view),
+		views = append(views, &protocol.SQLView{Schema: schema, Name: name, Body: view.Body, WithCheck: view.WithCheck, CheckOption: option,
 			Comment: view.Comment, Attributes: slices.Clone(view.Attributes), DependsOn: slices.Clone(view.DependsOn)})
 	}
 	for _, view := range source.MaterializedViews {
@@ -239,6 +243,7 @@ func spelledCommonObjects(source *schemamodel.Database, prepared *protocol.Decla
 	for i := range spelled.Views {
 		view := prepared.GetViews()[i]
 		spelled.Views[i].Body, spelled.Views[i].WithCheck, spelled.Views[i].Attributes = view.GetBody(), view.GetWithCheck(), slices.Clone(view.GetAttributes())
+		spelled.Views[i].LocalCheck = localCheckOption(view)
 	}
 	spelled.MaterializedViews = slices.Clone(source.MaterializedViews)
 	for i := range spelled.MaterializedViews {

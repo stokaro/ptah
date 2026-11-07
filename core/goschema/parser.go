@@ -27,6 +27,7 @@ import (
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/routinesetting"
 	"ptah.run/internal/tableref"
+	"ptah.run/internal/viewcheck"
 	"ptah.run/internal/viewoptions"
 )
 
@@ -1664,11 +1665,16 @@ func (s *schemaParseState) parseViewComment(comment *ast.Comment, structName str
 	if err != nil {
 		return err
 	}
+	withCheck, localCheck, err := parseViewCheck(kv, ctx)
+	if err != nil {
+		return err
+	}
 	s.views = append(s.views, schemamodel.View{
 		StructName: structName,
 		Name:       qualifiedObjectName(kv),
 		Body:       kv["body"],
-		WithCheck:  kv["with_check"] == "true",
+		WithCheck:  withCheck,
+		LocalCheck: localCheck,
 		Comment:    kv["comment"],
 		Options:    options,
 		DependsOn:  splitDependsOn(kv["depends_on"]),
@@ -2151,6 +2157,24 @@ func parseViewOptions(kv map[string]string, ctx annotationErrorContext) ([]strin
 		}
 	}
 	return options, nil
+}
+
+// parseViewCheck reads a view's with_check attribute, which names the level of
+// its check option; see [viewcheck.Parse].
+func parseViewCheck(kv map[string]string, ctx annotationErrorContext) (withCheck, local bool, err error) {
+	raw := kv["with_check"]
+	withCheck, local, err = viewcheck.Parse(raw)
+	if err != nil {
+		return false, false, &ptaherr.ParseError{
+			File:      ctx.file,
+			Line:      ctx.line,
+			Directive: strings.TrimPrefix(ctx.directive, "//"),
+			Attribute: "with_check",
+			Err:       ptaherr.ErrInvalidAttributeValue,
+			Message:   fmt.Sprintf("invalid %q value %q on %s at %s: %s", "with_check", raw, ctx.directive, ctx.location, err.Error()),
+		}
+	}
+	return withCheck, local, nil
 }
 
 func splitRoutineSettings(value string) []string {

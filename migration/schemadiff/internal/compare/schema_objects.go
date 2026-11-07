@@ -857,13 +857,15 @@ func viewDefinitions(genView schemamodel.View, dbView catalog.View, dialect stri
 			viewoptions.Describe(dbView.Options), viewoptions.Describe(genView.Options))
 	}
 
-	// The third place this rule was written, and the one #2315's view
-	// conversion missed: the same words decide whether a view asks for
-	// WITH CHECK OPTION, and a copy that answers differently is what
-	// sqlutil.CheckOptionRequestsCheck exists to prevent.
-	dbWithCheck := sqlutil.CheckOptionRequestsCheck(dbView.CheckOption)
-	if genView.WithCheck != dbWithCheck {
-		viewDiff.Changes["with_check"] = fmt.Sprintf("%t -> %t", dbWithCheck, genView.WithCheck)
+	// The same words decide whether a view asks for WITH CHECK OPTION, and at
+	// which level, here and in the conversion, and a copy that answers
+	// differently is what sqlutil.CheckOptionRequestsCheck and
+	// sqlutil.CheckOptionIsLocal exist to prevent. The level is compared too:
+	// a LOCAL view checks rows against its own condition alone, so reading it
+	// as the declared CASCADED one hides a check the database does not make.
+	held := checkOptionLevel(sqlutil.CheckOptionRequestsCheck(dbView.CheckOption), sqlutil.CheckOptionIsLocal(dbView.CheckOption))
+	if declared := checkOptionLevel(genView.WithCheck, genView.LocalCheck); declared != held {
+		viewDiff.Changes["with_check"] = held + " -> " + declared
 	}
 
 	// The view's own WITH clause. A view that gains or loses SCHEMABINDING is a
@@ -876,6 +878,19 @@ func viewDefinitions(genView schemamodel.View, dbView catalog.View, dialect stri
 	}
 
 	return viewDiff
+}
+
+// checkOptionLevel names a view's check option the way a catalog reports it:
+// NONE, CASCADED or LOCAL. LOCAL needs a check option to narrow.
+func checkOptionLevel(withCheck, local bool) string {
+	switch {
+	case withCheck && local:
+		return "LOCAL"
+	case withCheck:
+		return "CASCADED"
+	default:
+		return "NONE"
+	}
 }
 
 // sameViewAttributes compares two WITH clauses as SETS.

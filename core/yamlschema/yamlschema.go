@@ -88,6 +88,7 @@ import (
 	"ptah.run/internal/matviewrefresh"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/routinesetting"
+	"ptah.run/internal/viewcheck"
 	"ptah.run/internal/viewoptions"
 	"ptah.run/internal/yamlvalue"
 )
@@ -348,7 +349,9 @@ type viewSpec struct {
 	StructName stringScalar `yaml:"struct_name"`
 	Name       stringScalar `yaml:"name"`
 	Body       stringScalar `yaml:"body"`
-	WithCheck  bool         `yaml:"with_check"`
+	// WithCheck is the view's check option, read by [viewcheck.Parse]: true
+	// or cascaded, local, or false.
+	WithCheck stringScalar `yaml:"with_check"`
 	// Options are the view's PostgreSQL options, each `name=value`.
 	Options []stringScalar `yaml:"options"`
 	Comment stringScalar   `yaml:"comment"`
@@ -1069,11 +1072,16 @@ func (d document) addViews(db *schemamodel.Database) error {
 		if err != nil {
 			return fmt.Errorf("view %q: %w", key, err)
 		}
+		withCheck, localCheck, err := viewcheck.Parse(string(spec.WithCheck))
+		if err != nil {
+			return fmt.Errorf("view %q: with_check: %w", key, err)
+		}
 		db.Views = append(db.Views, schemamodel.View{
 			StructName: string(spec.StructName),
 			Name:       valueOrDefault(spec.Name, key),
 			Body:       string(spec.Body),
-			WithCheck:  spec.WithCheck,
+			WithCheck:  withCheck,
+			LocalCheck: localCheck,
 			Comment:    string(spec.Comment),
 			Options:    options,
 		})

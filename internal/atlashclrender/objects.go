@@ -312,8 +312,13 @@ func (r *renderer) renderViews() {
 		if len(view.Attributes) > 0 {
 			r.rawAttr(1, "attributes", stringList(view.Attributes))
 		}
-		if view.WithCheck {
+		// The level the view holds, as Atlas writes it: CASCADED is what WITH
+		// CHECK OPTION means when it names no level.
+		switch {
+		case view.WithCheck && view.LocalCheck:
 			r.rawAttr(1, "check_option", "LOCAL")
+		case view.WithCheck:
+			r.rawAttr(1, "check_option", "CASCADED")
 		}
 		r.renderViewSecurity(view)
 		r.stringAttr(1, "comment", view.Comment)
