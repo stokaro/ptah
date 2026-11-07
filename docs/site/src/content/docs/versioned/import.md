@@ -96,7 +96,16 @@ directory satisfies [the down-file contract](../rollback/):
 -- No rollback was provided by the source migration.
 ```
 
-Review placeholder downs before relying on rollback through those versions.
+The file holds no statements, so [`ptah migrations down` refuses
+it](../rollback/#a-down-file-with-no-statements) until you write the rollback or
+state that it has none. A Liquibase changeset that already says so, with
+`--rollback empty`, `--rollback not required` or an empty `<rollback/>`, is written
+with that statement instead:
+
+```text
+-- +ptah empty_rollback
+-- The source migration states that it has no rollback.
+```
 
 ## Supported source tools
 

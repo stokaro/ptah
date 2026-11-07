@@ -3841,6 +3841,27 @@ func migrationsToRollback(migrationsByVersion map[int64]*Migration, applied []in
 	return rollbackMigrations, nil
 }
 
+// refuseEmptyRollback refuses a down body of SQL that holds no statements and does
+// not say so on purpose, and one that says so and holds statements. A down written
+// as a Go function has no SQL to read and answers for itself.
+func (m *Migrator) refuseEmptyRollback(migration *Migration) error {
+	if migration.downSQLFunc == nil {
+		return nil
+	}
+	statements := m.migrationStatementCount(migration.DownSQL)
+	declared, err := migrationfile.DeclaresEmptyRollback(migration.DownSQL, m.connectionDialect())
+	if err != nil {
+		return fmt.Errorf("migration %d: %w", migration.Version, err)
+	}
+	switch {
+	case statements == 0 && !declared:
+		return &EmptyRollbackError{Version: migration.Version, Description: migration.Description, Path: migration.downSourcePath}
+	case statements > 0 && declared:
+		return &EmptyRollbackConflictError{Version: migration.Version, Path: migration.downSourcePath, Statements: statements}
+	}
+	return nil
+}
+
 func (m *Migrator) validateDownMigrations(ctx context.Context, migrations []*Migration) error {
 	if err := m.reportMisplacedDirectives(migrations, MigrationDirectionDown); err != nil {
 		return err
@@ -3861,6 +3882,9 @@ func (m *Migrator) validateDownMigrations(ctx context.Context, migrations []*Mig
 				Version:     migration.Version,
 				Description: migration.Description,
 			}
+		}
+		if err := m.refuseEmptyRollback(migration); err != nil {
+			return err
 		}
 		mode, err := m.resolveDownMigrationTxMode(migration)
 		if err != nil {

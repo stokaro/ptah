@@ -74,12 +74,12 @@ func ParseTimeoutsForDialect(sql, dialect string) (Timeouts, error) {
 // parseTimeoutDirectiveFields field-splits a single `-- +ptah` directive body
 // and folds any timeout key=value pairs into timeouts. Unknown key=value fields
 // belong to other directive families and are skipped; a bare field that is not
-// no_transaction is a typo'd directive and rejected.
+// no_transaction or empty_rollback is a typo'd directive and rejected.
 func parseTimeoutDirectiveFields(directive string, timeouts *Timeouts) error {
 	for field := range strings.FieldsSeq(directive) {
 		key, value, ok := strings.Cut(field, "=")
 		if !ok {
-			if field == DirectiveNoTransaction {
+			if field == DirectiveNoTransaction || field == DirectiveEmptyRollback {
 				continue
 			}
 			return fmt.Errorf("invalid +ptah directive %q", field)

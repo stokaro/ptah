@@ -19,6 +19,7 @@ import (
 	"ptah.run/internal/planstyle"
 	"ptah.run/internal/txrequire"
 	"ptah.run/migration/diffpolicy"
+	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/safety"
 	"ptah.run/migration/shadow"
@@ -302,8 +303,8 @@ func renderGeneratedDownMigrationSQL(
 	}
 	if len(statements) == 0 {
 		return fmt.Sprintf(
-			"-- Migration rollback\n-- Generated on: %s\n-- Direction: DOWN\n\n-- No rollback operations needed\n",
-			time.Now().Format(time.RFC3339),
+			"-- Migration rollback\n-- Generated on: %s\n-- Direction: DOWN\n-- +ptah %s\n\n-- No rollback operations needed\n",
+			time.Now().Format(time.RFC3339), migrationfile.DirectiveEmptyRollback,
 		), nil
 	}
 	header := fmt.Sprintf(
