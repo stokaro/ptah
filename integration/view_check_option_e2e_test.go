@@ -14,35 +14,28 @@ import (
 )
 
 // checkOptionEngine is one server that stores a view's check option apart
-// from its body (information_schema.views.check_option): how to get an empty
-// database there, a database built from SQL with nothing of Ptah's in
-// between, and the expression naming the schema its URL selects.
+// from its body (information_schema.views.check_option): how to get a
+// database built from SQL with nothing of Ptah's in between there, and the
+// expression naming the schema its URL selects.
 type checkOptionEngine struct {
 	name          string
-	emptyDB       func(c *qt.C) string
 	builtDB       func(c *qt.C, sql string) string
 	currentSchema string
 }
 
 var checkOptionEngines = []checkOptionEngine{
 	{
-		name: "PostgreSQL",
-		emptyDB: func(c *qt.C) string {
-			url, _ := scratchReplayDatabase(c)
-			return url
-		},
+		name:          "PostgreSQL",
 		builtDB:       databaseBuiltFrom,
 		currentSchema: "current_schema()",
 	},
 	{
 		name:          "MySQL",
-		emptyDB:       func(c *qt.C) string { return mysqlFamilyEmptyDatabase(c, dbtarget.MySQLAdmin) },
 		builtDB:       func(c *qt.C, sql string) string { return mysqlFamilyBuiltDatabase(c, dbtarget.MySQLAdmin, sql) },
 		currentSchema: "DATABASE()",
 	},
 	{
 		name:          "MariaDB",
-		emptyDB:       func(c *qt.C) string { return mysqlFamilyEmptyDatabase(c, dbtarget.MariaDBAdmin) },
 		builtDB:       func(c *qt.C, sql string) string { return mysqlFamilyBuiltDatabase(c, dbtarget.MariaDBAdmin, sql) },
 		currentSchema: "DATABASE()",
 	},
@@ -55,14 +48,17 @@ func checkOptionView(clause string) string {
 	return checkOptionTable + "CREATE VIEW v AS SELECT id, n FROM t WHERE n > 0 " + clause + ";\n"
 }
 
-// checkOptionSpellings are the spellings of the CASCADED check option a schema
-// file may end a view with.
+// checkOptionSpellings are the spellings of a check option a schema file may
+// end a view with, and the level the server stores for each.
 var checkOptionSpellings = []struct {
-	name   string
-	clause string
+	name       string
+	clause     string
+	wantStored string
 }{
-	{name: "without a level", clause: "WITH CHECK OPTION"},
-	{name: "the cascaded level in lower case, with a comment", clause: "with /* level */ cascaded check option"},
+	{name: "without a level", clause: "WITH CHECK OPTION", wantStored: "CASCADED"},
+	{name: "the cascaded level in lower case, with a comment", clause: "with /* level */ cascaded check option", wantStored: "CASCADED"},
+	{name: "the local level", clause: "WITH LOCAL CHECK OPTION", wantStored: "LOCAL"},
+	{name: "the local level in lower case, with a comment", clause: "with /* level */ local check option", wantStored: "LOCAL"},
 }
 
 // writeCheckOptionSchema writes content as a schema file and returns its path.
@@ -74,25 +70,25 @@ func writeCheckOptionSchema(c *qt.C, content string) string {
 }
 
 // storedCheckOption reads back the check option the server holds for view v
-// of the schema url selects, and the number of tables there.
-func storedCheckOption(c *qt.C, engine checkOptionEngine, url string) (checkOption string, tables int) {
+// of the schema url selects, empty when there is no such view.
+func storedCheckOption(c *qt.C, engine checkOptionEngine, url string) string {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(c.Context(), url)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
+	var checkOption string
 	err = conn.QueryRowContext(c.Context(), `SELECT
-		COALESCE((SELECT check_option FROM information_schema.views WHERE table_name = 'v' AND table_schema = `+engine.currentSchema+`), ''),
-		(SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 't' AND table_schema = `+engine.currentSchema+`)`,
-	).Scan(&checkOption, &tables)
+		COALESCE((SELECT check_option FROM information_schema.views WHERE table_name = 'v' AND table_schema = `+engine.currentSchema+`), '')`,
+	).Scan(&checkOption)
 	c.Assert(err, qt.IsNil)
-	return checkOption, tables
+	return checkOption
 }
 
 // TestSchemaApplyFindsAViewCheckOptionSyncedE2E plans a schema file whose view
-// ends in WITH CHECK OPTION against the database the server built from the
-// same file: nothing is planned. The server stores the clause apart from the
-// body, so a declaration that kept it in the body replaced the view on every
-// plan.
+// ends in a check option against the database the server built from the same
+// file: nothing is planned, at either level. The server stores the clause
+// apart from the body, so a declaration that kept it in the body replaced the
+// view on every plan.
 func TestSchemaApplyFindsAViewCheckOptionSyncedE2E(t *testing.T) {
 	for _, engine := range checkOptionEngines {
 		for _, spelling := range checkOptionSpellings {
@@ -102,18 +98,21 @@ func TestSchemaApplyFindsAViewCheckOptionSyncedE2E(t *testing.T) {
 				target := engine.builtDB(c, schema)
 
 				plan := runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", writeCheckOptionSchema(c, schema), "--dry-run")
-				stored, _ := storedCheckOption(c, engine, target)
+				stored := storedCheckOption(c, engine, target)
 
 				c.Assert(plan, qt.Contains, "Schema is synced")
-				c.Assert(stored, qt.Equals, "CASCADED")
+				c.Assert(stored, qt.Equals, spelling.wantStored)
 			})
 		}
 	}
 }
 
-// checkOptionChanges add and remove a view's check option. They are the
-// control for the synced rows above: the comparison sees the check option, and
-// the plan gives the server the one declared.
+// checkOptionChanges add and remove a view's check option and change its
+// level. They are the control for the synced rows above: the comparison sees
+// the check option and its level, and the plan gives the server the one
+// declared. A held LOCAL check option compared with a declared CASCADED one
+// planned nothing while the model held no level, so the view kept checking
+// less than the declaration asked (stokaro/ptah#5647).
 var checkOptionChanges = []struct {
 	name       string
 	live       string
@@ -125,6 +124,14 @@ var checkOptionChanges = []struct {
 		wantPlan: "SELECT id, n FROM t WHERE n > 0\nWITH CHECK OPTION;", wantStored: "CASCADED"},
 	{name: "removed", live: checkOptionView("WITH CASCADED CHECK OPTION"), declared: checkOptionView(""),
 		wantPlan: "SELECT id, n FROM t WHERE n > 0;", wantStored: "NONE"},
+	{name: "LOCAL added", live: checkOptionView(""), declared: checkOptionView("WITH LOCAL CHECK OPTION"),
+		wantPlan: "SELECT id, n FROM t WHERE n > 0\nWITH LOCAL CHECK OPTION;", wantStored: "LOCAL"},
+	{name: "LOCAL removed", live: checkOptionView("WITH LOCAL CHECK OPTION"), declared: checkOptionView(""),
+		wantPlan: "SELECT id, n FROM t WHERE n > 0;", wantStored: "NONE"},
+	{name: "LOCAL to CASCADED", live: checkOptionView("WITH LOCAL CHECK OPTION"), declared: checkOptionView("WITH CHECK OPTION"),
+		wantPlan: "SELECT id, n FROM t WHERE n > 0\nWITH CHECK OPTION;", wantStored: "CASCADED"},
+	{name: "CASCADED to LOCAL", live: checkOptionView("WITH CHECK OPTION"), declared: checkOptionView("WITH LOCAL CHECK OPTION"),
+		wantPlan: "SELECT id, n FROM t WHERE n > 0\nWITH LOCAL CHECK OPTION;", wantStored: "LOCAL"},
 }
 
 // TestSchemaApplyChangesAViewCheckOptionE2E applies each change and plans the
@@ -139,7 +146,7 @@ func TestSchemaApplyChangesAViewCheckOptionE2E(t *testing.T) {
 				schema := writeCheckOptionSchema(c, change.declared)
 
 				applied := runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", schema, "--auto-approve")
-				stored, _ := storedCheckOption(c, engine, target)
+				stored := storedCheckOption(c, engine, target)
 				replan := runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", schema, "--dry-run")
 
 				c.Assert(applied, qt.Contains, change.wantPlan)
@@ -150,24 +157,54 @@ func TestSchemaApplyChangesAViewCheckOptionE2E(t *testing.T) {
 	}
 }
 
-// TestSchemaApplyRefusesALocalViewCheckOptionE2E refuses WITH LOCAL CHECK
-// OPTION by name before a statement is sent. A declaration holds the check
-// option without a level and is created WITH CHECK OPTION, which the server
-// stores as CASCADED: the view would refuse rows the declared one takes.
-func TestSchemaApplyRefusesALocalViewCheckOptionE2E(t *testing.T) {
+// checkOptionInspections are the levels a database's view holds, with what
+// each export of the database writes for it.
+var checkOptionInspections = []struct {
+	name    string
+	clause  string
+	wantHCL string
+	wantSQL string
+	wantGo  string
+}{
+	{name: "CASCADED", clause: "WITH CHECK OPTION", wantHCL: "check_option = CASCADED", wantSQL: "\nWITH CHECK OPTION\n", wantGo: `with_check="true"`},
+	{name: "LOCAL", clause: "WITH LOCAL CHECK OPTION", wantHCL: "check_option = LOCAL", wantSQL: "\nWITH LOCAL CHECK OPTION\n", wantGo: `with_check="local"`},
+}
+
+// TestSchemaInspectKeepsTheViewCheckOptionLevelE2E exports a database whose
+// view holds each level as HCL, SQL and Go, and plans each export against the
+// same database: every export writes the level the view holds, and nothing is
+// planned. An HCL export wrote LOCAL for every check option and a SQL export
+// wrote WITH CHECK OPTION for every one, so one level in each came back as the
+// other.
+func TestSchemaInspectKeepsTheViewCheckOptionLevelE2E(t *testing.T) {
 	for _, engine := range checkOptionEngines {
-		t.Run(engine.name, func(t *testing.T) {
-			c := qt.New(t)
-			target := engine.emptyDB(c)
-			schema := writeCheckOptionSchema(c, checkOptionView("WITH LOCAL CHECK OPTION"))
+		for _, level := range checkOptionInspections {
+			t.Run(engine.name+"/"+level.name, func(t *testing.T) {
+				c := qt.New(t)
+				target := engine.builtDB(c, checkOptionView(level.clause))
+				documents := c.TempDir()
+				hclPath, sqlPath, models := filepath.Join(documents, "schema.hcl"), filepath.Join(documents, "schema.sql"), filepath.Join(documents, "models")
 
-			out, err := runPtahNativeWithError("schema", "apply", "--db-url", target, "--schema-file", schema, "--auto-approve")
-			stored, tables := storedCheckOption(c, engine, target)
+				hcl, hclNotes, hclErr := runPtahSplitStreams(c.Context(), []string{"schema", "inspect", "--db-url", target, "--format", "hcl"})
+				c.Assert(hclErr, qt.IsNil, qt.Commentf("%s", hclNotes))
+				described, sqlNotes, sqlErr := runPtahSplitStreams(c.Context(), []string{"schema", "inspect", "--db-url", target, "--format", "sql"})
+				c.Assert(sqlErr, qt.IsNil, qt.Commentf("%s", sqlNotes))
+				c.Assert(os.WriteFile(hclPath, []byte(hcl), 0o600), qt.IsNil)       // #nosec G703 -- the path is c.TempDir() plus a constant name
+				c.Assert(os.WriteFile(sqlPath, []byte(described), 0o600), qt.IsNil) // #nosec G703 -- the path is c.TempDir() plus a constant name
+				runPtahNative(c, "introspect", "--db-url", target, "--out", models)
+				goSource, err := os.ReadFile(filepath.Join(models, "schema_objects.go")) // #nosec G304 -- the path is c.TempDir() plus a constant name
+				c.Assert(err, qt.IsNil)
+				hclPlan := runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", hclPath, "--dry-run")
+				sqlPlan := runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", sqlPath, "--dry-run")
+				goPlan := runPtahNative(c, "schema", "apply", "--db-url", target, "--root-dir", models, "--dry-run")
 
-			c.Assert(err, qt.ErrorMatches, `(?s).*view v: WITH LOCAL CHECK OPTION: a declared view holds its check option without a level.*`)
-			c.Assert(out, qt.Not(qt.Contains), "CREATE TABLE")
-			c.Assert(stored, qt.Equals, "")
-			c.Assert(tables, qt.Equals, 0)
-		})
+				c.Assert(hcl, qt.Contains, level.wantHCL)
+				c.Assert(described, qt.Contains, level.wantSQL)
+				c.Assert(string(goSource), qt.Contains, level.wantGo)
+				c.Assert(hclPlan, qt.Contains, "Schema is synced")
+				c.Assert(sqlPlan, qt.Contains, "Schema is synced")
+				c.Assert(goPlan, qt.Contains, "Schema is synced")
+			})
+		}
 	}
 }

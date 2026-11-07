@@ -504,6 +504,7 @@ var registry = []Entry{
 	{Field: "schemamodel.View.Comment", Disposition: DDL},
 	{Field: "schemamodel.View.DependsOn", Disposition: Planning, Reason: "an ordering edge the author declares because the view's body does not reveal it; the CREATE VIEW it orders does not mention it"},
 	{Field: "schemamodel.View.Dialects", Disposition: DDL},
+	{Field: "schemamodel.View.LocalCheck", Disposition: DDL},
 	{Field: "schemamodel.View.Name", Disposition: DDL},
 	{Field: "schemamodel.View.Options", Disposition: DDL},
 	{Field: "schemamodel.View.StructName", Disposition: SourceOrigin, Reason: "the Go struct the declaration was read from; the object's own name is its identity"},

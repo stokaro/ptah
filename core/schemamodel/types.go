@@ -961,6 +961,15 @@ type View struct {
 	WithCheck  bool             // Whether to add WITH CHECK OPTION where supported
 	Comment    string           // Optional comment for documentation
 
+	// LocalCheck narrows WithCheck to the LOCAL level: a row written through
+	// the view is checked against this view's own condition, and not against
+	// the conditions of the views it reads. Without it a check option is
+	// CASCADED, which is what WITH CHECK OPTION means when it names no level.
+	// LocalCheck without WithCheck declares no check option. Only targets
+	// whose check option has levels (PostgreSQL, MySQL, MariaDB) render a
+	// LOCAL view; the others refuse it.
+	LocalCheck bool `json:",omitempty"`
+
 	// Attributes carries a view's own WITH clause on the targets that have one
 	// -- SQL Server's SCHEMABINDING and VIEW_METADATA. See
 	// [ptah.run/catalog.View] for why they are the view's rather

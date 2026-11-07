@@ -301,17 +301,42 @@ func (p *parser) parseView(block *hclsyntax.Block) error {
 	if err != nil {
 		return err
 	}
+	withCheck, localCheck, err := p.viewCheckOption(block, name)
+	if err != nil {
+		return err
+	}
 	dependsOn := p.objectRefListAttr(block, "depends_on")
 	p.db.Views = append(p.db.Views, schemamodel.View{
 		Name:       tableref.Canonical(schema, name),
 		Body:       body,
-		WithCheck:  block.Body.Attributes["check_option"] != nil,
+		WithCheck:  withCheck,
+		LocalCheck: localCheck,
 		Comment:    p.optionalString(block.Body.Attributes["comment"]),
 		Attributes: attributes,
 		Options:    options,
 		DependsOn:  dependsOn,
 	})
 	return nil
+}
+
+// viewCheckOption reads a view's check_option attribute, the spelling Atlas
+// documents: LOCAL or CASCADED, as a bare word or a string. A view without the
+// attribute has no check option. Any other value is refused by name, since
+// reading it as either level would create a view that checks rows the
+// document did not ask it to check, or fails to check rows it did.
+func (p *parser) viewCheckOption(block *hclsyntax.Block, name string) (withCheck, local bool, err error) {
+	attr := block.Body.Attributes["check_option"]
+	if attr == nil {
+		return false, false, nil
+	}
+	switch value := p.exprString(attr); value {
+	case "CASCADED":
+		return true, false, nil
+	case "LOCAL":
+		return true, true, nil
+	default:
+		return false, false, p.attributeError(attr, "view %q check_option must be LOCAL or CASCADED, got %q", name, value)
+	}
 }
 
 // viewSecurityBlock is the block a view states PostgreSQL's security_invoker

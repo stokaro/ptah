@@ -2410,11 +2410,7 @@
               "type": "string"
             },
             "with_check": {
-              "description": "Controls WITH CHECK OPTION where supported.",
-              "enum": [
-                "true",
-                "false"
-              ],
+              "description": "The view's check option: `true` or `cascaded` for WITH CHECK OPTION, `local` for WITH LOCAL CHECK OPTION, `false` for none.",
               "type": "string"
             }
           },

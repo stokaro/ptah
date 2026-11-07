@@ -445,7 +445,9 @@ rendered for MySQL/MariaDB with dialect-specific trigger bodies.
 - `extensions`: `name`, `schema`, `if_not_exists`, `version`, `comment`
 - `functions`: `name`, `params` or `parameters`, `returns`, `language`,
   `security`, `volatility`, `body`, `comment`
-- `views`: `name`, `body`, `with_check`, `options`, `comment`. `options` is a
+- `views`: `name`, `body`, `with_check`, `options`, `comment`. `with_check` is
+  the view's check option: `true` or `cascaded` for `WITH CHECK OPTION`,
+  `local` for `WITH LOCAL CHECK OPTION`, `false` for none. `options` is a
   list of PostgreSQL view options, each `name=value`, such as
   `security_invoker=true`.
 - `matviews`: `name`, `body`, `options`, `comment`. `options` is a list of

@@ -6,7 +6,6 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/descriptor"
-	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/triggerdef"
@@ -91,27 +90,21 @@ func appendView(database *schemamodel.Database, document *Document, statement as
 // toView is the view node declares. Its WITH options are held as
 // [viewoptions.Normalize] spells them, and refused where it refuses them.
 //
-// WITH LOCAL CHECK OPTION is refused. The model holds the check option as
-// WithCheck alone, and every renderer writes that as WITH CHECK OPTION, which
-// the engines with levels store as CASCADED. Accepted, a LOCAL declaration
-// would create a view that refuses rows the declared one takes
-// (stokaro/ptah#5647).
+// The level of its check option is kept: WITH LOCAL CHECK OPTION declares a
+// LOCAL view. A target whose check option has no level refuses the view when
+// it renders it, so the reading does not decide for every target.
 func toView(node *ast.CreateViewNode, sourcePlatform string) (schemamodel.View, error) {
-	if node.WithCheck && node.LocalCheck {
-		return schemamodel.View{}, fmt.Errorf("%w: view %s: WITH LOCAL CHECK OPTION: a declared view holds its check option "+
-			"without a level and is created WITH CHECK OPTION, which checks the views it reads too (CASCADED); "+
-			"declare WITH CHECK OPTION, or create the view in a migration", ptaherr.ErrUnsupportedFeature, node.Name)
-	}
 	options, err := viewoptions.Normalize(node.Options)
 	if err != nil {
 		return schemamodel.View{}, fmt.Errorf("view %s: %w", node.Name, err)
 	}
 	return schemamodel.View{
-		Name:      normalizeSQLTableReference(sourcePlatform, node.Name),
-		Body:      strings.TrimSpace(node.Body),
-		WithCheck: node.WithCheck,
-		Comment:   node.Comment,
-		Options:   options,
+		Name:       normalizeSQLTableReference(sourcePlatform, node.Name),
+		Body:       strings.TrimSpace(node.Body),
+		WithCheck:  node.WithCheck,
+		LocalCheck: node.WithCheck && node.LocalCheck,
+		Comment:    node.Comment,
+		Options:    options,
 	}, nil
 }
 

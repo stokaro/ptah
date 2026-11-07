@@ -17,20 +17,24 @@ func TestRenderSQL_ViewCheckOption_HappyPath(t *testing.T) {
 	tests := []struct {
 		name    string
 		dialect string
+		body    string
 		local   bool
 		want    string
 	}{
-		{name: "PostgreSQL", dialect: "postgres", want: "CREATE VIEW \"v\" AS\nSELECT id FROM t\nWITH CHECK OPTION\n;\n"},
-		{name: "PostgreSQL, local", dialect: "postgres", local: true, want: "CREATE VIEW \"v\" AS\nSELECT id FROM t\nWITH LOCAL CHECK OPTION\n;\n"},
-		{name: "MySQL, local", dialect: "mysql", local: true, want: "CREATE VIEW `v` AS\nSELECT id FROM t\nWITH LOCAL CHECK OPTION\n;\n"},
-		{name: "MariaDB, local", dialect: "mariadb", local: true, want: "CREATE VIEW `v` AS\nSELECT id FROM t\nWITH LOCAL CHECK OPTION\n;\n"},
-		{name: "SQL Server", dialect: "sqlserver", want: "CREATE VIEW [v] AS\nSELECT id FROM t\nWITH CHECK OPTION\n;\n"},
+		{name: "PostgreSQL", dialect: "postgres", body: "SELECT id FROM t", want: "CREATE VIEW \"v\" AS\nSELECT id FROM t\nWITH CHECK OPTION\n;\n"},
+		{name: "PostgreSQL, local", dialect: "postgres", body: "SELECT id FROM t", local: true, want: "CREATE VIEW \"v\" AS\nSELECT id FROM t\nWITH LOCAL CHECK OPTION\n;\n"},
+		{name: "PostgreSQL, a body read with its semicolon", dialect: "postgres", body: " SELECT id\n   FROM t;", local: true,
+			want: "CREATE VIEW \"v\" AS\nSELECT id\n   FROM t\nWITH LOCAL CHECK OPTION\n;\n"},
+		{name: "MySQL, local", dialect: "mysql", body: "SELECT id FROM t", local: true, want: "CREATE VIEW `v` AS\nSELECT id FROM t\nWITH LOCAL CHECK OPTION\n;\n"},
+		{name: "MySQL, a body with a semicolon", dialect: "mysql", body: "SELECT id FROM t ;", want: "CREATE VIEW `v` AS\nSELECT id FROM t\nWITH CHECK OPTION\n;\n"},
+		{name: "MariaDB, local", dialect: "mariadb", body: "SELECT id FROM t", local: true, want: "CREATE VIEW `v` AS\nSELECT id FROM t\nWITH LOCAL CHECK OPTION\n;\n"},
+		{name: "SQL Server", dialect: "sqlserver", body: "SELECT id FROM t", want: "CREATE VIEW [v] AS\nSELECT id FROM t\nWITH CHECK OPTION\n;\n"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			sql, err := builtin.RenderSQL(test.dialect, &ast.CreateViewNode{Name: "v", Body: "SELECT id FROM t", WithCheck: true, LocalCheck: test.local})
+			sql, err := builtin.RenderSQL(test.dialect, &ast.CreateViewNode{Name: "v", Body: test.body, WithCheck: true, LocalCheck: test.local})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Contains, test.want)

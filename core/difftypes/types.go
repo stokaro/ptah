@@ -35,9 +35,10 @@ import (
 // already the qualified spelling.
 //
 // Its rule is the check option. The catalog reports a word -- NONE, LOCAL,
-// CASCADED, or an equivalent a dialect chose -- where the model has a bool, and
-// the read is routed by [sqlutil.CheckOptionRequestsCheck] so the comparison
-// and the conversion cannot answer it differently.
+// CASCADED, or an equivalent a dialect chose -- where the model has two bools,
+// and the read is routed by [sqlutil.CheckOptionRequestsCheck] and
+// [sqlutil.CheckOptionIsLocal] so the comparison and the conversion cannot
+// answer it differently.
 //
 // See [ColumnChanges] for why both sides carry the operand and why the wire
 // shape does not change.

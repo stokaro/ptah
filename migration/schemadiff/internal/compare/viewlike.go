@@ -412,9 +412,10 @@ func findViewLikeRow[C any](
 // the reader gave no schema keeps its bare name, because that is what the name
 // list held for one.
 //
-// The check option is the other. The catalog reports a word and the model has a
-// bool, and the rule is sqlutil.CheckOptionRequestsCheck, shared with the
-// conversion path rather than spelled a second time here.
+// The check option is the other. The catalog reports a word and the model has
+// two bools, and the rules are sqlutil.CheckOptionRequestsCheck and
+// sqlutil.CheckOptionIsLocal, shared with the conversion path rather than
+// spelled a second time here.
 func viewFromCatalog(reported catalog.View) schemamodel.View {
 	name := reported.QualifiedName()
 	if reported.Schema == "" {
@@ -424,6 +425,7 @@ func viewFromCatalog(reported catalog.View) schemamodel.View {
 		Name:       name,
 		Body:       reported.Body,
 		WithCheck:  sqlutil.CheckOptionRequestsCheck(reported.CheckOption),
+		LocalCheck: sqlutil.CheckOptionIsLocal(reported.CheckOption),
 		Comment:    reported.Comment,
 		Attributes: reported.Attributes,
 		Options:    slices.Clone(reported.Options),

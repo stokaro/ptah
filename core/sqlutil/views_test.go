@@ -76,3 +76,28 @@ func TestCheckOptionRequestsCheck(t *testing.T) {
 		})
 	}
 }
+
+// TestCheckOptionIsLocal names the words a catalog reports for each level.
+// Only LOCAL is the LOCAL level: an unknown word that asks for a check option
+// is the CASCADED level, the stricter check a view without a level has.
+func TestCheckOptionIsLocal(t *testing.T) {
+	tests := []struct {
+		name        string
+		checkOption string
+		want        bool
+	}{
+		{name: "LOCAL", checkOption: "LOCAL", want: true},
+		{name: "local in lower case with space", checkOption: " local ", want: true},
+		{name: "CASCADED", checkOption: "CASCADED"},
+		{name: "NONE", checkOption: "NONE"},
+		{name: "absent", checkOption: ""},
+		{name: "an unknown word", checkOption: "LOCALLY"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(sqlutil.CheckOptionIsLocal(test.checkOption), qt.Equals, test.want)
+		})
+	}
+}

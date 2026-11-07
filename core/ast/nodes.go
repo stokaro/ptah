@@ -1696,8 +1696,8 @@ type CreateViewNode struct {
 	// WithCheck. A target with no LOCAL level refuses the node rather than
 	// rendering the stricter CASCADED check.
 	//
-	// The model has no place for the level, so no node built from a model sets
-	// it: the SQL schema reader refuses a view that asks for LOCAL.
+	// A node built from a model takes it from
+	// [ptah.run/core/schemamodel.View.LocalCheck].
 	LocalCheck bool
 	// Comment is an optional comment emitted as a SQL comment above the
 	// statement.
