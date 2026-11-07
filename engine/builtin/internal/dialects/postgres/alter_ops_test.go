@@ -138,22 +138,19 @@ func TestPostgres_AlterTable_SetGeneratedExpressionUnsupported(t *testing.T) {
 	c.Assert(renderer.Output(), qt.Not(qt.Contains), `SET EXPRESSION AS`)
 }
 
-// TestVisitCreateSchema_SpannerKeepsTheSchemaAndSaysWhatItLeftOut covers
+// TestVisitCreateSchema_KeepsTheSchemaAndSaysWhatItLeftOut covers
 // stokaro/ptah#2651.
 //
-// The renderer emitted `COMMENT ON SCHEMA` for the whole PostgreSQL family with
-// no capability gate. Measured on the Cloud Spanner emulator behind PGAdapter
-// 0.55.2: the `CREATE SCHEMA` before it is accepted and the comment answers
-// `Unknown statement`. `ptah schema render` had always produced it, so an
-// operator applying that output by hand met the refusal; #2626 put it on the
-// plan, which is what made it a failing `ptah migrations up`.
+// `COMMENT ON SCHEMA` is gated on [capability.SchemaComments]: a target without
+// the key accepts the `CREATE SCHEMA` and refuses the comment after it, so
+// emitting both makes a migration that creates the schema fail on the comment.
 //
 // The schema is still created, because that is what the author asked for, and
 // the line naming what was left out is what keeps this from being a comment
 // quietly deleted from somebody's DDL.
-func TestVisitCreateSchema_SpannerKeepsTheSchemaAndSaysWhatItLeftOut(t *testing.T) {
+func TestVisitCreateSchema_KeepsTheSchemaAndSaysWhatItLeftOut(t *testing.T) {
 	c := qt.New(t)
-	r := postgres.NewWithCapabilities(capability.SpannerPostgres(), platform.Spanner)
+	r := postgres.NewWithCapabilities(capability.Postgres17().With(capability.SchemaComments, false), platform.Postgres)
 	r.Reset()
 
 	node := &ast.CreateSchemaNode{Name: "app", Comment: "the schema"}

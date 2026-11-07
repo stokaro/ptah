@@ -15,7 +15,7 @@ import (
 // documented aliases are accepted too -- see [Canonical] -- but listing every
 // spelling here would bury the canonical names a reader is actually choosing
 // between.
-const Expected = "postgres, mysql, mariadb, sqlite, sqlserver, clickhouse, cockroachdb, yugabytedb, or spanner"
+const Expected = "postgres, mysql, mariadb, sqlite, sqlserver, clickhouse, cockroachdb, or yugabytedb"
 
 // Canonical resolves an accepted lint dialect spelling to the canonical name
 // the lint engine compares against, and reports whether it is supported.
@@ -98,7 +98,7 @@ func Valid(dialect string) bool {
 //     TestBuiltInRules_NoRuleSplitsTheMySQLFamily reddens if that stops holding.
 //   - The PostgreSQL family is grouped as a decision, not as a measurement. Its
 //     members do NOT select the same rule set: PG and TX rules name the literal
-//     "postgres", and a rule names cockroachdb, yugabytedb or spanner only
+//     "postgres", and a rule names cockroachdb or yugabytedb only
 //     where it was measured on that engine -- PG303 is the one that has been
 //     (stokaro/ptah#2958) -- so those databases run the dialect-independent
 //     families plus that measured set. They are accepted because they share

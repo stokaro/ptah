@@ -179,7 +179,6 @@ func TestValidateLive_LeavesOtherDialectsAlone(t *testing.T) {
 		platform.SQLServer,
 		platform.CockroachDB,
 		platform.YugabyteDB,
-		platform.Spanner,
 	}
 
 	for _, dialect := range dialects {

@@ -20,9 +20,7 @@ import (
 // The PostgreSQL family keeps an index's, a schema's and a role's comment as
 // an object comment. A changed one is planned as one COMMENT ON and the
 // second diff is in sync. Each engine is asked only for the comments it
-// stores: CockroachDB has no COMMENT ON ROLE, and the Spanner PostgreSQL
-// interface stores no index comment, so its render names the comment as
-// skipped and the apply succeeds.
+// stores: CockroachDB has no COMMENT ON ROLE.
 
 // commentedObjectsDocument declares the schema s with the table u and its
 // index u_n_ix, each commented with comment, and the role named role with it
@@ -148,29 +146,4 @@ func TestSchemaApplyChangesObjectCommentsInPlaceE2E(t *testing.T) {
 				append([]string{"second"}, slices.Repeat([]string{""}, engine.commented-1)...))
 		})
 	}
-}
-
-// TestSchemaApplySkipsAnIndexCommentOnSpannerE2E applies an index with a
-// comment on Spanner, which stores none: the render names the comment as
-// skipped, the index is created, and a second diff is in sync.
-func TestSchemaApplySkipsAnIndexCommentOnSpannerE2E(t *testing.T) {
-	c := qt.New(t)
-	dev := spannerDevDatabase(c)
-	c.Cleanup(func() {
-		_, err := dev.conn.ExecContext(context.Background(), "DROP INDEX IF EXISTS u_n_ix")
-		c.Check(err, qt.IsNil)
-		_, err = dev.conn.ExecContext(context.Background(), "DROP TABLE IF EXISTS u")
-		c.Check(err, qt.IsNil)
-	})
-	path := filepath.Join(c.TempDir(), "schema.sql")
-	c.Assert(os.WriteFile(path, []byte("CREATE TABLE u (id bigint PRIMARY KEY, n bigint);\n"+
-		"CREATE INDEX u_n_ix ON u (n);\nCOMMENT ON INDEX u_n_ix IS 'first';\n"), 0o600), qt.IsNil)
-
-	out, err := runPtahNativeWithError("schema", "apply", "--db-url", dev.url, "--schema-file", path, "--auto-approve")
-	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	c.Assert(out, qt.Contains, "-- SPANNER: index comment u_n_ix is not supported by this target; skipped.")
-
-	out, err = runPtahNativeWithError("schema", "diff", "--from", dev.url, "--to", path)
-	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	c.Assert(out, qt.Contains, "Schemas are synced")
 }

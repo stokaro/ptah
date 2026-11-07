@@ -45,7 +45,7 @@ func acmeCloud() descriptor.Dialect {
 		Family:      "acme",
 		Placeholder: descriptor.PlaceholderQuestion,
 		Capabilities: descriptor.Capabilities{
-			DefaultPreset: "SpannerPostgres",
+			DefaultPreset: "SQLServer2022",
 			BannerTokens:  []string{"acme cloud"},
 		},
 	}
@@ -95,8 +95,8 @@ func TestResolver_ResolveServerVersion_ReadsTheDescriptor(t *testing.T) {
 		{"below every step", "acme", "1.9", capability.MySQLLegacy(), false, false, "3.1", true, "acme"},
 		{"past the newest measured line", "acme", "4.0", capability.MySQL84(), false, true, "3.1", true, "acme"},
 		{"no number at all", "acme", "acme", capability.MySQL84(), false, false, "", false, "acme"},
-		{"an alias of a member with no ladder", "acme-cloud", "Acme Cloud on acme server 3.1", capability.SpannerPostgres(), true, false, "", true, "acmecloud"},
-		{"the head's banner on a member keeps the member", "acmecloud", "acme server 3.1", capability.SpannerPostgres(), false, false, "", true, "acmecloud"},
+		{"an alias of a member with no ladder", "acme-cloud", "Acme Cloud on acme server 3.1", capability.SQLServer2022(), true, false, "", true, "acmecloud"},
+		{"the head's banner on a member keeps the member", "acmecloud", "acme server 3.1", capability.SQLServer2022(), false, false, "", true, "acmecloud"},
 		{"a banner outranks an unknown dialect", "unknown", "acme server 2.0.3", capability.MySQL8016(), true, false, "3.1", true, "acme"},
 		{"an unknown dialect with a bare version", "unknown", "2.0", capability.Capabilities{}, false, false, "", true, ""},
 	}
@@ -125,7 +125,7 @@ func TestResolver_AnswersTheDescriptorsStaticQuestions(t *testing.T) {
 	resolver := acmeResolver(c)
 
 	c.Assert(resolver.ForDialect(" ACME "), qt.DeepEquals, capability.MySQL84())
-	c.Assert(resolver.ForDialect("acme-cloud"), qt.DeepEquals, capability.SpannerPostgres())
+	c.Assert(resolver.ForDialect("acme-cloud"), qt.DeepEquals, capability.SQLServer2022())
 	c.Assert(resolver.ForDialect("postgres"), qt.DeepEquals, capability.Capabilities{})
 	c.Assert(resolver.Identifiers("acme"), qt.Equals, capability.IdentifierLimit{Max: 30, Unit: capability.IdentifierBytes})
 	c.Assert(resolver.Identifiers("acmecloud").Unlimited(), qt.IsTrue)

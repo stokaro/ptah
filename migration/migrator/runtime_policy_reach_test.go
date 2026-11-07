@@ -59,7 +59,6 @@ func TestRuntimePolicies_ReachEveryTargetTheirCapabilityClaims(t *testing.T) {
 		// (stokaro/ptah#3192).
 		{dialect: platform.SQLServer, wantLockTimeout: false, wantStatementTimeout: false, wantTxAll: true},
 		{dialect: platform.ClickHouse, wantLockTimeout: false, wantStatementTimeout: false, wantTxAll: false},
-		{dialect: platform.Spanner, wantLockTimeout: false, wantStatementTimeout: false, wantTxAll: false},
 	}
 
 	for _, test := range tests {

@@ -37,7 +37,6 @@ func TestIndexIncludeSupportedDialects(t *testing.T) {
 		// the default rather than a second access method, and CockroachDB's
 		// pg_am has no btree row to render back to.
 		{name: "cockroachdb btree", dialect: platform.CockroachDB, method: "BTREE"},
-		{name: "spanner default", dialect: platform.Spanner},
 	}
 
 	for _, test := range tests {
@@ -103,7 +102,7 @@ func TestIndexIncludeUnsupportedDialectsFailClosed(t *testing.T) {
 				qt.ErrorMatches,
 				fmt.Sprintf(
 					`%s does not support INCLUDE columns on index "idx_accounts_email"; `+
-						`target cockroachdb, postgres, spanner, sqlserver, or yugabytedb`,
+						`target cockroachdb, postgres, sqlserver, or yugabytedb`,
 					dialect,
 				),
 			)
@@ -201,9 +200,6 @@ func TestIndexIncludeUnsupportedAccessMethodsFailClosed(t *testing.T) {
 		{name: "cockroachdb gin", dialect: platform.CockroachDB, method: "GIN", supported: "the default or BTREE access method"},
 		{name: "cockroachdb gist", dialect: platform.CockroachDB, method: "GIST", supported: "the default or BTREE access method"},
 		{name: "cockroachdb spgist", dialect: platform.CockroachDB, method: "SPGIST", supported: "the default or BTREE access method"},
-		{name: "spanner btree", dialect: platform.Spanner, method: "BTREE", supported: "the default access method"},
-		{name: "spanner lsm", dialect: platform.Spanner, method: "LSM", supported: "the default access method"},
-		{name: "spanner gist", dialect: platform.Spanner, method: "GIST", supported: "the default access method"},
 		// SQL Server has no clause for an access method; one that names
 		// anything but the nonclustered rowstore index Ptah builds is reported
 		// as lost, and the payload is not carried on it.

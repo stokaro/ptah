@@ -400,7 +400,6 @@ func TestGetOrderedCreateStatementsReportingOmissions_AnInlineEnumIsNotALoss(t *
 		{name: "sql server", dialect: platform.SQLServer},
 		{name: "oracle", dialect: platform.Oracle},
 		{name: "clickhouse", dialect: platform.ClickHouse},
-		{name: "spanner", dialect: platform.Spanner},
 	}
 
 	for _, test := range tests {

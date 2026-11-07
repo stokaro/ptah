@@ -167,7 +167,7 @@ func generateCommand(cmd *cobra.Command, opts *options) error {
 	// Determine which dialects to generate
 	dialects := []string{
 		"postgres", "mysql", "mariadb", "sqlite", "clickhouse",
-		"cockroachdb", "yugabytedb", "sqlserver", "spanner",
+		"cockroachdb", "yugabytedb", "sqlserver",
 	}
 	if opts.dialect != "" {
 		dialects = []string{opts.dialect}

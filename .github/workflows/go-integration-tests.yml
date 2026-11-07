@@ -281,14 +281,6 @@ jobs:
         ports:
           - 1433:1433
 
-      # The Cloud Spanner emulator behind PGAdapter, which is the only Spanner
-      # endpoint a container can provide. It holds its data in memory and
-      # starts empty, so it needs no volume (stokaro/ptah#1719).
-      spanner:
-        image: gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:v0.56.2
-        ports:
-          - 5434:5432
-
       # Oracle, which the tagged contour needs because internal/testcontour
       # refuses a skipped integration test: a test in ./integration/... either
       # runs here or does not belong there. gvenzl/oracle-free:slim is the
@@ -608,7 +600,6 @@ jobs:
           YUGABYTEDB_URL: "yugabytedb://yugabyte@localhost:5433/yugabyte?sslmode=disable"
           SQLSERVER_TEST_DSN: "sqlserver://sa:P%40ssw0rd-ptah-2026@localhost:1433?database=master&encrypt=disable"
           SQLSERVER_URL: "sqlserver://sa:P%40ssw0rd-ptah-2026@localhost:1433?database=master&encrypt=disable"
-          SPANNER_URL: "spanner://localhost:5434/ptah_test?sslmode=disable"
           ORACLE_TEST_URL: "oracle://ptah:ptah_password@localhost:1521/FREEPDB1"
           # A DEV account on the same server, and never the target's.
           #
@@ -687,18 +678,8 @@ jobs:
       - name: Run SQL Server live smoke tests
         env:
           SQLSERVER_URL: "sqlserver://sa:P%40ssw0rd-ptah-2026@localhost:1433?database=master&encrypt=disable"
-          SPANNER_URL: "spanner://localhost:5434/ptah_test?sslmode=disable"
         run: |
           ./integration-test --databases=sqlserver --scenarios=apply_incremental_migrations,rollback_migrations,upgrade_to_specific_version,check_current_version,read_actual_db_schema,dry_run_support,operation_planning,failure_diagnostics,idempotency_reapply,idempotency_up_to_date,parallel_migrate_smoke,cleanup_support,dynamic_circular_dependencies,dynamic_sqlserver_identity_schema_bracket_reserved_words --report=stdout,txt,json,html --verbose --output=./reports
-
-          # Spanner's URL has been exported here since the service was added and
-          # no scenario was ever pointed at it, so nothing exercised the
-          # engine's suite path -- the cleanup could not finish on a database
-          # that held a table, which is what stokaro/ptah#1811 was about. The
-          # scenarios are named rather than left to --databases alone, so a
-          # scenario added later joins this list deliberately instead of
-          # arriving red.
-          ./integration-test --databases=spanner --scenarios=dynamic_circular_dependencies,dynamic_cockroachdb_common_subset,dynamic_yugabytedb_common_subset --report=stdout,txt,json,html --verbose --output=./reports
 
       - name: Upload integration test reports
         uses: actions/upload-artifact@v7

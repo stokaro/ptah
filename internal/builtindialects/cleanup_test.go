@@ -37,7 +37,6 @@ func TestCleanup_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 		"sqlserver":   {kinds: [8]bool{true}, revisions: true, probe: true},
 		"clickhouse":  {kinds: [8]bool{false, true, true}, sync: true},
 		"oracle":      {listing: true},
-		"spanner":     {},
 	}
 	for _, dialect := range builtindialects.Descriptors() {
 		t.Run(dialect.Name, func(t *testing.T) {

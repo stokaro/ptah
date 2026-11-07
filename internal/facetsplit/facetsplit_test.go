@@ -9,21 +9,20 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/cockroachdb/crdbschema"
-	"ptah.run/dialect/spanner/spannerschema"
+	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/internal/facetsplit"
 )
 
 func ownsRowTTL(kind schemaext.Kind) bool { return kind == crdbschema.RowTTLKind }
 
-// splitSchema has a table with a Spanner row deletion policy and a
-// CockroachDB row-level TTL, each bound to its target, and a table with
-// neither.
+// splitSchema has a table with MySQL table options and a CockroachDB
+// row-level TTL, each bound to its target, and a table with neither.
 func splitSchema() *schemamodel.Database {
 	facets := must.Must(schemaext.NewFacets(
-		&spannerschema.DesiredRowDeletion{Policy: spannerschema.Policy{Column: "ts", Interval: "30 days"}},
+		&mysqlschema.DesiredTable{Engine: "InnoDB"},
 		&crdbschema.DesiredRowTTL{Policy: crdbschema.Policy{ExpireAfter: "1 day"}},
 	))
-	facets = must.Must(must.Must(facets.WithTargetScope(spannerschema.RowDeletionKind, "spanner")).WithTargetScope(crdbschema.RowTTLKind, "cockroachdb"))
+	facets = must.Must(must.Must(facets.WithTargetScope(mysqlschema.TableKind, "mysql")).WithTargetScope(crdbschema.RowTTLKind, "cockroachdb"))
 	return &schemamodel.Database{Tables: []schemamodel.Table{{Name: "events", Facets: facets}, {Name: "plain"}}}
 }
 
@@ -38,12 +37,12 @@ func TestSetAside_TakesOnlyTheOwnedFacetsAndRestorePutsThemBack(t *testing.T) {
 	kept, aside := facetsplit.SetAside(db, ownsRowTTL)
 	restored, err := facetsplit.Restore(kept, aside)
 
-	c.Assert(kept.Tables[0].Facets.Kinds(), qt.DeepEquals, []schemaext.Kind{spannerschema.RowDeletionKind})
-	c.Assert(kept.Tables[0].Facets.TargetScope(spannerschema.RowDeletionKind), qt.DeepEquals, []string{"spanner"})
+	c.Assert(kept.Tables[0].Facets.Kinds(), qt.DeepEquals, []schemaext.Kind{mysqlschema.TableKind})
+	c.Assert(kept.Tables[0].Facets.TargetScope(mysqlschema.TableKind), qt.DeepEquals, []string{"mysql"})
 	c.Assert(aside, qt.HasLen, 2)
 	c.Assert(aside[0].Kinds(), qt.DeepEquals, []schemaext.Kind{crdbschema.RowTTLKind})
 	c.Assert(aside[1].IsZero(), qt.IsTrue)
-	c.Assert(db.Tables[0].Facets.Kinds(), qt.DeepEquals, []schemaext.Kind{crdbschema.RowTTLKind, spannerschema.RowDeletionKind})
+	c.Assert(db.Tables[0].Facets.Kinds(), qt.DeepEquals, []schemaext.Kind{crdbschema.RowTTLKind, mysqlschema.TableKind})
 	c.Assert(err, qt.IsNil)
 	c.Assert(restored.Tables[0].Facets.Equal(db.Tables[0].Facets), qt.IsTrue)
 	c.Assert(restored.Tables[0].Facets.TargetScope(crdbschema.RowTTLKind), qt.DeepEquals, []string{"cockroachdb"})

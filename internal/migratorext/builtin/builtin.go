@@ -10,7 +10,6 @@ import (
 	"ptah.run/internal/migratorext/mysql"
 	"ptah.run/internal/migratorext/oracle"
 	"ptah.run/internal/migratorext/postgres"
-	"ptah.run/internal/migratorext/spanner"
 	"ptah.run/internal/migratorext/sqlite"
 	"ptah.run/internal/migratorext/sqlserver"
 )
@@ -26,7 +25,6 @@ var services = index(
 	clickhouse.Services(),
 	sqlite.Services(),
 	sqlserver.Services(),
-	spanner.Services(),
 	oracle.Services(),
 )
 

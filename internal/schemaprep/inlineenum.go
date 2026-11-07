@@ -12,8 +12,9 @@ import (
 // InlineEnumDialect reports whether dialect builds an enum column inline,
 // with no standalone enum type, as its descriptor states
 // (descriptor.Preparation.Enums): MySQL and MariaDB as an ENUM column type,
-// ClickHouse as an Enum8 or Enum16 column type, and SQLite, SQL Server,
-// Oracle and Spanner as a text column with a CHECK.
+// ClickHouse as an Enum8 or Enum16 column type, and SQLite, SQL Server and
+// Oracle as a text column with a CHECK. An engine only a provider serves has
+// no descriptor here and builds a standalone enum.
 //
 // YDB has no enum, inline or standalone, and the renderer and the planner
 // refuse one; its descriptor classes it with the standalone dialects to agree

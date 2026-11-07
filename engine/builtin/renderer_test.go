@@ -18,7 +18,7 @@ func TestSupportedDialects(t *testing.T) {
 	c := qt.New(t)
 
 	dialects := builtin.SupportedDialects()
-	expected := []string{"postgresql", "postgres", "mysql", "mariadb", "clickhouse", "sqlite", "sqlite3", "sqlserver", "mssql", "cockroachdb", "yugabytedb", "spanner", "oracle"}
+	expected := []string{"postgresql", "postgres", "mysql", "mariadb", "clickhouse", "sqlite", "sqlite3", "sqlserver", "mssql", "cockroachdb", "yugabytedb", "oracle"}
 
 	c.Assert(dialects, qt.DeepEquals, expected)
 }
@@ -93,11 +93,6 @@ func TestNewRenderer_SupportedDialects(t *testing.T) {
 			name:     "YugabyteDB",
 			dialect:  "yugabytedb",
 			expected: "yugabytedb",
-		},
-		{
-			name:     "Spanner",
-			dialect:  "spanner",
-			expected: "spanner",
 		},
 		{
 			name:     "Case insensitive PostgreSQL",

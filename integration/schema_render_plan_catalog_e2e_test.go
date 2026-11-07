@@ -26,12 +26,6 @@ import (
 // reach: the dialect `schema render` is asked for, and the engine whose live
 // server the run needs. The engine is a dbtarget.Engine rather than a variable
 // name so this table cannot spell an address variable a CI step does not set.
-//
-// Spanner is absent because it has no live server here. Issue stokaro/ptah#942
-// records that it has no live coverage at all, and the pinned community binary
-// has no Spanner driver either. It is measured offline instead, by
-// TestRenderAndPlanAgreeOnEveryPostgresFamilyTarget in
-// ./internal/modelast.
 type renderPlanCatalogCase struct {
 	name    string
 	dialect string

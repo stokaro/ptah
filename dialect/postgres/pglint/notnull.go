@@ -6,10 +6,10 @@ import (
 )
 
 // pgWireFamily is the set of engines the SET NOT NULL spelling was measured
-// on: PostgreSQL and the three that speak its wire protocol. PG303 names
-// each of them deliberately, one measurement per engine, where every other
-// PG rule names postgres alone.
-var pgWireFamily = []string{"postgres", "cockroachdb", "yugabytedb", "spanner"}
+// on: PostgreSQL and the two built-in engines that speak its wire protocol.
+// PG303 names each of them deliberately, one measurement per engine, where
+// every other PG rule names postgres alone.
+var pgWireFamily = []string{"postgres", "cockroachdb", "yugabytedb"}
 
 // setNotNullConsequence says what each engine does with SET NOT NULL, as
 // measured; the PostgreSQL sentence also answers a run with no dialect. The
@@ -23,9 +23,6 @@ func setNotNullConsequence(dialect string) string {
 	case "yugabytedb":
 		return "SET NOT NULL checks every existing row, and a row holding NULL aborts it (column contains null values); " +
 			"backfill first so the check meets no NULL"
-	case "spanner":
-		return "SET NOT NULL runs as a schema change that validates every existing row, and a row holding NULL fails it " +
-			"(FAILED_PRECONDITION: Cannot specify a null value for column) and leaves the column nullable; backfill first"
 	default:
 		return "SET NOT NULL scans the whole table under an ACCESS EXCLUSIVE lock to check existing rows, and a row holding NULL aborts it " +
 			"(column contains null values); backfill first, then add CHECK (col IS NOT NULL) NOT VALID, validate it under a weaker lock, " +

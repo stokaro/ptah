@@ -29,10 +29,10 @@ import (
 
 // Targets are the targets the services are registered for: every target of
 // the PostgreSQL family. CockroachDB holds composite types, and domains from
-// 26.3 on; Spanner holds none of the three. What a target cannot create is
+// 26.3 on. What a target cannot create is
 // refused when a plan creates it, not when it is compared.
 func Targets() []string {
-	return []string{platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner}
+	return []string{platform.Postgres, platform.CockroachDB, platform.YugabyteDB}
 }
 
 // Provider returns a fresh descriptor of the owner. The runtime that selects

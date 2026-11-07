@@ -32,9 +32,9 @@ link here instead of redefining them.
 | ClickHouse | `clickhouse://user:pass@localhost:9000/app` |
 | CockroachDB | `cockroachdb://user:pass@localhost:26257/app` |
 | YugabyteDB | `yugabytedb://user:pass@localhost:5433/app` |
-| Spanner (PostgreSQL interface) | `spanner://user:pass@localhost:5432/app` |
 | Oracle | `oracle://user:pass@localhost:1521/service` (renders, plans, reads a live catalog, and runs versioned migrations) |
 | YDB, through its provider | `ydb://localhost:2136/local`, or `ydbs://` over TLS (see [YDB](../../extend/providers/ydb/usage/#connecting)) |
+| Spanner's PostgreSQL interface, through its provider | `spanner://localhost:5432/app`, with `cloudspanner://` and `google-spanner://` as the same address (see [Spanner](../../extend/providers/spanner/usage/#connecting)) |
 
 Scheme aliases normalize to the canonical dialect (`postgresql://`,
 `sqlite3://`, `mssql://`, `crdb://`, `ysql://`, `ch://`, and more) — the full

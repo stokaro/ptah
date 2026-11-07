@@ -18,19 +18,13 @@ import (
 //
 //   - internal/ptahdirective read the directives of a file without a dialect
 //     under the lexers of PostgreSQL, MySQL, MariaDB, SQLite, ClickHouse,
-//     CockroachDB, YugabyteDB, SQL Server and Spanner. YDB was left out on
-//     purpose. Oracle was left out because the list predates it, and the
+//     CockroachDB, YugabyteDB and SQL Server. YDB was left out on purpose. Oracle was left out because the list predates it, and the
 //     shared lexer reads its text under SQLite's options and not its q'...'
 //     strings, so it could add nothing.
 //   - internal/migrationreplay captured and restored SQLite's
 //     PRAGMA foreign_keys around a replay, and no setting of any other engine.
 //   - internal/txrequire sent a generated ALTER TYPE ... ADD VALUE out of the
 //     transactional file on the PostgreSQL family.
-//
-// One difference is deliberate: Spanner's PostgreSQL interface has no enum
-// type, so its descriptor states no enum value rule, which the descriptor
-// validation refuses for an engine without enum types. No plan for Spanner
-// holds an ALTER TYPE, since an enum column is TEXT with a CHECK there.
 //
 // The statements an engine refuses inside a transaction replace no switch, so
 // they are left out here; internal/txrequire tests what they decide.
@@ -47,7 +41,6 @@ func TestDescriptors_MigrationAgreesWithTheRetiredSwitches(t *testing.T) {
 		platform.Postgres:    postgresFamily,
 		platform.CockroachDB: postgresFamily,
 		platform.YugabyteDB:  postgresFamily,
-		platform.Spanner:     reader,
 		platform.MySQL:       reader,
 		platform.MariaDB:     reader,
 		platform.ClickHouse:  reader,
@@ -86,6 +79,6 @@ func TestDescriptors_DirectivesWithoutDialectInRegistryOrder(t *testing.T) {
 	}
 	c.Assert(readers, qt.DeepEquals, []string{
 		platform.Postgres, platform.MySQL, platform.MariaDB, platform.ClickHouse, platform.SQLite,
-		platform.SQLServer, platform.CockroachDB, platform.YugabyteDB, platform.Spanner,
+		platform.SQLServer, platform.CockroachDB, platform.YugabyteDB,
 	})
 }

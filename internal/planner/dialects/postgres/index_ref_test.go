@@ -131,68 +131,6 @@ func TestPlanner_IndexRefs_CockroachDBPreservesReplacementTable(t *testing.T) {
 	c.Assert(create.Table, qt.Equals, "public.users")
 }
 
-func TestPlanner_IndexRefs_SpannerDropsSameSchemaNameBeforeMovingIndex(t *testing.T) {
-	c := qt.New(t)
-	diff := &difftypes.SchemaDiff{}
-	diff.SetIndexAdditions(difftypes.IndexChanges{
-		{Index: schemamodel.Index{Name: "idx_shared", StructName: "LogRecord", Fields: []string{"recorded_at"}}, TableName: "app.orders"},
-	})
-	diff.SetIndexRemovals([]difftypes.IndexRef{
-		{Name: "idx_shared", TableName: "app.users"},
-	})
-	desired := &schemamodel.Database{
-		Indexes: []schemamodel.Index{
-			{Name: "idx_shared", TableName: "app.orders", Fields: []string{"reference"}},
-		},
-	}
-
-	nodes, err := postgres.NewForDialect(platform.Spanner, capability.SpannerPostgres()).
-		GenerateMigrationAST(
-			context.Background(), must.Must(builtin.New()),
-			withDeclaredObjects(diff, desired),
-		)
-	c.Assert(err, qt.IsNil)
-
-	c.Assert(nodes, qt.HasLen, 2)
-	drop, ok := nodes[0].(*ast.DropIndexNode)
-	c.Assert(ok, qt.IsTrue)
-	c.Assert(drop.Name, qt.Equals, "idx_shared")
-	create, ok := nodes[1].(*ast.IndexNode)
-	c.Assert(ok, qt.IsTrue)
-	c.Assert(create.Table, qt.Equals, "app.orders")
-}
-
-func TestPlanner_IndexRefs_SpannerKeepsDifferentSchemaIndexesIndependent(t *testing.T) {
-	c := qt.New(t)
-	diff := &difftypes.SchemaDiff{}
-	diff.SetIndexAdditions(difftypes.IndexChanges{
-		{Index: schemamodel.Index{Name: "idx_shared", StructName: "LogRecord", Fields: []string{"recorded_at"}}, TableName: "app.orders"},
-	})
-	diff.SetIndexRemovals([]difftypes.IndexRef{
-		{Name: "idx_shared", TableName: "logs.users"},
-	})
-	desired := &schemamodel.Database{
-		Indexes: []schemamodel.Index{
-			{Name: "idx_shared", TableName: "app.orders", Fields: []string{"reference"}},
-		},
-	}
-
-	nodes, err := postgres.NewForDialect(platform.Spanner, capability.SpannerPostgres()).
-		GenerateMigrationAST(
-			context.Background(), must.Must(builtin.New()),
-			withDeclaredObjects(diff, desired),
-		)
-	c.Assert(err, qt.IsNil)
-
-	c.Assert(nodes, qt.HasLen, 2)
-	create, ok := nodes[0].(*ast.IndexNode)
-	c.Assert(ok, qt.IsTrue)
-	c.Assert(create.Table, qt.Equals, "app.orders")
-	drop, ok := nodes[1].(*ast.DropIndexNode)
-	c.Assert(ok, qt.IsTrue)
-	c.Assert(drop.Name, qt.Equals, "idx_shared")
-}
-
 func TestPlanner_IndexRefs_UsesCanonicalOwnerAcrossPostgresFamily(t *testing.T) {
 	c := qt.New(t)
 	tests := []struct {
@@ -203,7 +141,6 @@ func TestPlanner_IndexRefs_UsesCanonicalOwnerAcrossPostgresFamily(t *testing.T) 
 		{name: "postgres", dialect: platform.Postgres, caps: capability.Postgres16()},
 		{name: "cockroachdb", dialect: platform.CockroachDB, caps: capability.CockroachDB23()},
 		{name: "yugabytedb", dialect: platform.YugabyteDB, caps: capability.YugabyteDB25()},
-		{name: "spanner", dialect: platform.Spanner, caps: capability.SpannerPostgres()},
 	}
 	desired := &schemamodel.Database{
 		Tables: []schemamodel.Table{

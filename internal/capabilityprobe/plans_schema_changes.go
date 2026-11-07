@@ -51,8 +51,6 @@ func schemaChangesFor(dialect string) (schemaChanges, map[capability.Capability]
 		return sqlServerSchemaChanges(), nil
 	case platform.Oracle:
 		return oracleSchemaChanges(), nil
-	case platform.Spanner:
-		return spannerSchemaChanges(), nil
 	default:
 		return postgresSchemaChanges(), nil
 	}
@@ -230,8 +228,7 @@ func proven(key capability.Capability, sc schemaChange) experiment {
 	}
 }
 
-// postgresSchemaChanges is the PostgreSQL wire family's spelling. Spanner
-// takes it unchanged, because every table here declares a key.
+// postgresSchemaChanges is the PostgreSQL wire family's spelling.
 func postgresSchemaChanges() schemaChanges {
 	return schemaChanges{
 		keyed:   "CREATE TABLE sc_pk (n int NOT NULL, PRIMARY KEY (n))",
@@ -284,20 +281,6 @@ func postgresSchemaChanges() schemaChanges {
 		cover:       "CREATE INDEX sc_cov_ix ON sc_cov (a) INCLUDE (b)",
 		uniqueIndex: uniqueIndexChange("CREATE TABLE sc_uix (id int NOT NULL, n int, PRIMARY KEY (id))"),
 	}
-}
-
-// spannerSchemaChanges is the PostgreSQL spelling with an unnamed key, which
-// is the only key Spanner takes: measured on the PGAdapter emulator v0.56.1, a
-// named one answers `Setting a name of a <PRIMARY KEY> constraint is not
-// supported`.
-func spannerSchemaChanges() schemaChanges {
-	sc := postgresSchemaChanges()
-	sc.keyChange.setup = []string{
-		"CREATE TABLE sc_pka (a int NOT NULL, b int NOT NULL, PRIMARY KEY (a))",
-		"INSERT INTO sc_pka (a, b) VALUES (1, 1)",
-	}
-	sc.keyChange.change = []string{"ALTER TABLE sc_pka DROP CONSTRAINT sc_pka_pkey, ADD PRIMARY KEY (a, b)"}
-	return sc
 }
 
 // mysqlSchemaChanges is the MySQL family's spelling. A length check needs a

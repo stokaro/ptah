@@ -312,7 +312,7 @@ indexes:
 ## Row Deletion Policies
 
 A Spanner row deletion policy sits in the table's `spanner` platform group and a
-YDB TTL in its `ydb` group. `row_deletion_column` is the column a row's age is
+YDB TTL in its `ydb` group, and each engine's provider reads its own group. `row_deletion_column` is the column a row's age is
 measured from, `row_deletion_interval` the interval after which a row is
 deleted, and `row_deletion_unit`, on YDB only, the unit an integer column
 counts. Each engine reads the interval in its own spelling, and another target

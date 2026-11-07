@@ -11,8 +11,8 @@
 //
 // Neither reading knows a dialect. The engine whose transactions they describe
 // offers them: PostgreSQL's replay guard calls both, and PostgreSQL's migrator
-// services carry [ReadUnwrapped] (internal/migratorext/postgres). CockroachDB,
-// YugabyteDB and Spanner take the same words with other transaction semantics
+// services carry [ReadUnwrapped] (internal/migratorext/postgres). CockroachDB
+// and YugabyteDB take the same words with other transaction semantics
 // and offer nothing, so on them no file is read as one with transactions of
 // its own.
 package filetx

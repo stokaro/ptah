@@ -16,8 +16,8 @@ import (
 )
 
 // An index that only gains payload columns -- INCLUDE on the PostgreSQL family,
-// STORING on CockroachDB -- was planned on PostgreSQL alone. CockroachDB,
-// YugabyteDB and Spanner compared indexes by name past the predicate, so the
+// STORING on CockroachDB -- was planned on PostgreSQL alone. CockroachDB and
+// YugabyteDB compared indexes by name past the predicate, so the
 // desired covering index and the live plain one read as equal and the database
 // never got the payload (stokaro/ptah#4112). SQL Server takes INCLUDE too;
 // without the reader's payload columns its live index reads back plain, and
@@ -54,7 +54,6 @@ var coveringIndexEngines = []struct {
 	{name: "PostgreSQL", server: postgresCoveringDatabase, dropIndex: "DROP INDEX IF EXISTS users_name_ix"},
 	{name: "CockroachDB", server: cockroachDevDatabase, dropIndex: "DROP INDEX IF EXISTS users_name_ix"},
 	{name: "YugabyteDB", server: yugabyteDevDatabase, dropIndex: "DROP INDEX IF EXISTS users_name_ix"},
-	{name: "Spanner", server: spannerDevDatabase, dropIndex: "DROP INDEX IF EXISTS users_name_ix"},
 	{name: "SQL Server", server: sqlServerDevDatabase, dropIndex: "DROP INDEX IF EXISTS users_name_ix ON users"},
 }
 
@@ -92,8 +91,7 @@ func TestSchemaApplyAddsAnIndexPayloadE2E(t *testing.T) {
 			c := qt.New(t)
 			dev := engine.server(c)
 			dev.exec(c, coveringIndexCurrent)
-			// The scratch databases go with the test, except Spanner's, which
-			// the emulator keeps.
+			// The index and table go before the scratch database does.
 			c.Cleanup(func() {
 				for _, statement := range []string{engine.dropIndex, "DROP TABLE IF EXISTS users"} {
 					_, err := dev.conn.ExecContext(context.Background(), statement)

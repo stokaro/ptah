@@ -45,7 +45,7 @@ const (
 // claim coverage nobody established, and refusing it is a behavior change this
 // help-text change does not get to make. An engine of a selected provider,
 // such as YDB, is accepted beside them; see providedDialect.
-const sqlLintDialects = "postgres, mysql, mariadb, sqlite, sqlserver, clickhouse, cockroachdb, yugabytedb, or spanner"
+const sqlLintDialects = "postgres, mysql, mariadb, sqlite, sqlserver, clickhouse, cockroachdb, or yugabytedb"
 
 var errSQLLintFindings = errors.New("sql lint findings found")
 

@@ -131,12 +131,6 @@ func TestCatalog_PresenceQueryBindsItsNames(t *testing.T) {
 			wantArgs: []any{"schema_migrations"},
 		},
 		{
-			dialect: platform.Spanner,
-			wantQuery: "SELECT COUNT(*)\nFROM information_schema.tables\n" +
-				"WHERE table_schema = ? AND table_name = ? AND table_type = 'BASE TABLE'",
-			wantArgs: []any{"conn", "schema_migrations"},
-		},
-		{
 			dialect:   platform.ClickHouse,
 			wantQuery: "SELECT count()\nFROM system.tables\nWHERE database = ? AND name = ? AND is_temporary = 0",
 			wantArgs:  []any{"conn", "schema_migrations"},

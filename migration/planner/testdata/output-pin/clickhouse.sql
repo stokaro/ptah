@@ -34,6 +34,6 @@ ALTER TABLE `users` ADD INDEX `users_created_ix` created_at TYPE minmax GRANULAR
 ALTER TABLE `users` ADD INDEX `users_email_uq` email TYPE minmax GRANULARITY 1;
 ALTER TABLE `users` DROP INDEX `users_name_ix`;
 -- render: a covering index
--- refused: clickhouse does not support INCLUDE columns on index "users_name_ix"; target cockroachdb, postgres, spanner, sqlserver, or yugabytedb
+-- refused: clickhouse does not support INCLUDE columns on index "users_name_ix"; target cockroachdb, postgres, sqlserver, or yugabytedb
 -- plan: the current schema to a covering index
--- refused: clickhouse does not support INCLUDE columns on index "users_name_ix"; target cockroachdb, postgres, spanner, sqlserver, or yugabytedb
+-- refused: clickhouse does not support INCLUDE columns on index "users_name_ix"; target cockroachdb, postgres, sqlserver, or yugabytedb

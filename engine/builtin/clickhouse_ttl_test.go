@@ -73,7 +73,7 @@ func TestClickHouseTTLRefusesMalformedPayloadWithoutPartialSQL(t *testing.T) {
 
 func TestClickHouseTTLNonownersRefuseWithoutPartialSQL(t *testing.T) {
 	payload := clickhouseTTLFixture().payload
-	for _, dialect := range []string{"postgres", "cockroachdb", "mysql", "mariadb", "sqlite", "sqlserver", "oracle", "spanner"} {
+	for _, dialect := range []string{"postgres", "cockroachdb", "mysql", "mariadb", "sqlite", "sqlserver", "oracle"} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 			parent := &ast.AlterTableNode{Name: "events", Operations: []ast.AlterOperation{

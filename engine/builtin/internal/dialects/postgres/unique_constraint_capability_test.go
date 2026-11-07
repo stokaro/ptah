@@ -20,8 +20,9 @@ func uniqueConstraintTable() *ast.CreateTableNode {
 		AddConstraint(ast.NewUniqueConstraint("uq_users_email", "email"))
 }
 
-// uniqueColumnTable is the column-level spelling: col ... UNIQUE. Spanner
-// refuses it with the same sentence, measured, so both reach the same refusal.
+// uniqueColumnTable is the column-level spelling: col ... UNIQUE. A target
+// without the key refuses it as it refuses the table-level spelling, so both
+// reach the same refusal.
 func uniqueColumnTable() *ast.CreateTableNode {
 	return ast.NewCreateTable("users").
 		AddColumn(ast.NewColumn("id", "BIGINT").SetPrimary()).
@@ -30,9 +31,9 @@ func uniqueColumnTable() *ast.CreateTableNode {
 
 // TestUniqueConstraint_HappyPath is the control for the refusal below.
 //
-// This renderer serves four engines and only one of them lacks the capability,
-// so a refusal that fired everywhere would be a much larger break wearing the
-// same green. Every dialect here must still emit the constraint.
+// Every engine this renderer serves has the capability, so a refusal that
+// fired everywhere would be a much larger break wearing the same green. Every
+// dialect here must still emit the constraint.
 func TestUniqueConstraint_HappyPath(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -60,13 +61,10 @@ func TestUniqueConstraint_HappyPath(t *testing.T) {
 
 // TestUniqueConstraint_FailurePath is stokaro/ptah#2585.
 //
-// Measured on the Cloud Spanner emulator behind PGAdapter 0.55.2, both
-// spellings: `<UNIQUE> constraint is not supported, create a unique index
-// instead.` The same statement without the UNIQUE creates, and CREATE UNIQUE
-// INDEX on the same column creates, so the refusal is the constraint spelling.
-//
-// Ptah rendered both and exited 0, which left the author to learn it from the
-// server one step later than Ptah already knew.
+// A target without [capability.UniqueConstraints] refuses both spellings and
+// takes the same guarantee as a unique index. Rendering them and exiting 0
+// would leave the author to learn it from the server one step later than Ptah
+// already knew.
 func TestUniqueConstraint_FailurePath(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -74,16 +72,16 @@ func TestUniqueConstraint_FailurePath(t *testing.T) {
 		wantErr string
 	}{
 		{
-			name:  "spanner refuses the table-level constraint",
+			name:  "the table-level constraint is refused",
 			table: uniqueConstraintTable(),
-			wantErr: `error rendering constraint: unsupported feature: spanner: UNIQUE constraint "uq_users_email" ` +
+			wantErr: `error rendering constraint: unsupported feature: postgres: UNIQUE constraint "uq_users_email" ` +
 				`cannot be rendered: this target has no UNIQUE constraint and takes the same guarantee as a ` +
 				`unique index — declare a unique index on those columns instead`,
 		},
 		{
-			name:  "spanner refuses the column-level constraint",
+			name:  "the column-level constraint is refused",
 			table: uniqueColumnTable(),
-			wantErr: `error rendering column email: unsupported feature: spanner: the UNIQUE constraint on \(email\) ` +
+			wantErr: `error rendering column email: unsupported feature: postgres: the UNIQUE constraint on \(email\) ` +
 				`cannot be rendered: this target has no UNIQUE constraint and takes the same guarantee as a ` +
 				`unique index — declare a unique index on those columns instead`,
 		},
@@ -92,7 +90,8 @@ func TestUniqueConstraint_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			renderer := postgres.NewWithCapabilities(capability.SpannerPostgres(), platform.Spanner)
+			caps := capability.Postgres16().With(capability.UniqueConstraints, false)
+			renderer := postgres.NewWithCapabilities(caps, platform.Postgres)
 
 			sql, err := renderer.Render(test.table)
 
@@ -106,21 +105,11 @@ func TestUniqueConstraint_FailurePath(t *testing.T) {
 // TestUniqueConstraint_CapabilityIsWhatDecides pins the refusal to the key
 // rather than to the dialect name.
 //
-// A renderer told the target has the capability must emit, whatever it is
-// called; otherwise the next engine measured to accept UNIQUE would need a
-// second place changed, and the one measured to refuse it would keep rendering.
+// A renderer told the target lacks the capability must refuse, whatever it is
+// called; otherwise the next engine measured to refuse UNIQUE would keep
+// rendering. TestUniqueConstraint_HappyPath is the other half: the same
+// dialect with the key emits.
 func TestUniqueConstraint_CapabilityIsWhatDecides(t *testing.T) {
-	t.Run("spanner with the capability forced on emits", func(t *testing.T) {
-		c := qt.New(t)
-		caps := capability.SpannerPostgres().With(capability.UniqueConstraints, true)
-		renderer := postgres.NewWithCapabilities(caps, platform.Spanner)
-
-		sql, err := renderer.Render(uniqueConstraintTable())
-
-		c.Assert(err, qt.IsNil)
-		c.Assert(legacyPostgresSQL(sql), qt.Contains, "UNIQUE")
-	})
-
 	t.Run("postgres with the capability forced off refuses", func(t *testing.T) {
 		c := qt.New(t)
 		caps := capability.Postgres16().With(capability.UniqueConstraints, false)

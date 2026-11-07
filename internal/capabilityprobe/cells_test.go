@@ -322,14 +322,9 @@ var databaseImages = map[string]string{
 	"cockroachdb/cockroach":          platform.CockroachDB,
 	"yugabytedb/yugabyte":            platform.YugabyteDB,
 	"mcr.microsoft.com/mssql/server": platform.SQLServer,
-	// The vendor's emulator behind PGAdapter, which speaks the Spanner
-	// PostgreSQL interface. It is classified here as the server for the
-	// dialect because that is what the matrix starts; the cell's Emulated flag
-	// is what keeps it from being read as the managed service.
-	"gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator": platform.Spanner,
 	// The vendor's own free edition, which is the product rather than an
 	// emulator of it: gvenzl/oracle-free ships Oracle Database Free and
-	// gvenzl/oracle-xe ships Express Edition, so neither cell is Emulated.
+	// gvenzl/oracle-xe ships Express Edition.
 	"gvenzl/oracle-free": platform.Oracle,
 	"gvenzl/oracle-xe":   platform.Oracle,
 }
@@ -635,15 +630,11 @@ func TestCells_CertificationMatchesWhatContinuousIntegrationRuns(t *testing.T) {
 		t.Run(capabilityprobe.CellID(cell), func(t *testing.T) {
 			c := qt.New(t)
 			claimsTesting := cell.Support == capability.Certified || cell.Support == capability.LegacyTested
-			// An emulated line is the one place the two come apart. Running an
-			// emulator on every pull request catches a preset drifting from the
-			// interface, and says nothing about the managed service, so the
-			// line is exercised and stays best-effort. Anything else exercised
-			// must claim the level, and anything unexercised must not.
-			shouldClaim := exercised[capabilityprobe.CellID(cell)] && !cell.Emulated
-			c.Assert(claimsTesting, qt.Equals, shouldClaim,
-				qt.Commentf("cell %s declares %q; continuous integration exercises it: %v; emulated: %v",
-					cell, cell.Support, exercised[capabilityprobe.CellID(cell)], cell.Emulated))
+			// A line continuous integration exercises must claim the level, and
+			// a line it does not must not.
+			c.Assert(claimsTesting, qt.Equals, exercised[capabilityprobe.CellID(cell)],
+				qt.Commentf("cell %s declares %q; continuous integration exercises it: %v",
+					cell, cell.Support, exercised[capabilityprobe.CellID(cell)]))
 		})
 	}
 }
@@ -672,7 +663,6 @@ func TestCells_BestEffortLinesAreExactlyTheUnmeasuredOnes(t *testing.T) {
 	// so each line starts its own server on every run of the tiered workflows
 	// (stokaro/ptah#3190).
 	c.Assert(bestEffort, qt.ContentEquals, []string{
-		"spanner-0",
 		// ClickHouse 25.8 came back, and by the other route: not a line that
 		// lost a recipe, but one whose vendor stopped patching it. Upstream
 		// support ended on 2026-08-29, and end of life lowers what Ptah
@@ -836,14 +826,13 @@ type renovatePackageRule struct {
 // TestRenovate_DisablesEveryLinePinnedImage is the second lock on the release
 // lines, on a different axis from the manager pattern.
 //
-// The manager can only reach the emulator, and this rule denies the file by name
-// with the emulator as its single exception. Two locks because the first one was
-// enough right up until it was not: stokaro/ptah#3031 moved four lines, and
-// stokaro/ptah#3034 would have taken mysql 8.4 to 26.7 and postgres 13 to 18.
+// No manager reads the cell declaration, and this rule denies the file by name.
+// Two locks because the first one was enough right up until it was not:
+// stokaro/ptah#3031 moved four lines, and stokaro/ptah#3034 would have taken
+// mysql 8.4 to 26.7 and postgres 13 to 18.
 //
 // A rule nobody checks is a rule somebody deletes, so this asserts the rule
-// exists, that it is off, and that it covers every line-pinned image while
-// leaving the one Versionless image alone.
+// exists, that it is off, and that it covers every line-pinned image.
 func TestRenovate_DisablesEveryLinePinnedImage(t *testing.T) {
 	c := qt.New(t)
 
@@ -853,9 +842,8 @@ func TestRenovate_DisablesEveryLinePinnedImage(t *testing.T) {
 		repository, _ := splitImageRef(cell.Image)
 		t.Run(cell.Image, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(renovateRuleCovers(c, rule, repository), qt.Not(qt.Equals), cell.Versionless,
-				qt.Commentf("cell %s pins %q; a line-pinned image must be denied and the one "+
-					"Versionless image must not be", capabilityprobe.CellID(cell), cell.Image))
+			c.Assert(renovateRuleCovers(c, rule, repository), qt.IsTrue,
+				qt.Commentf("cell %s pins %q; a line-pinned image must be denied", capabilityprobe.CellID(cell), cell.Image))
 		})
 	}
 }
@@ -937,67 +925,22 @@ const cellsFile = "internal/capabilityprobe/cells.go"
 // renovateCustomManager is one custom manager from the dependency policy.
 type renovateCustomManager struct {
 	ManagerFilePatterns []string `json:"managerFilePatterns"`
-	MatchStrings        []string `json:"matchStrings"`
 }
 
-// TestRenovate_MovesNoImageWhoseTagNamesItsLine keeps a bot away from an
+// TestRenovate_NoManagerReadsTheCellDeclaration keeps a bot away from an
 // identity.
 //
 // A cell's tag is the release LINE it reproduces -- tagPinsLine requires
 // tag == Line -- so moving it does not update anything, it renames the line and
-// stops covering the old one. The Spanner cell is the exception this file
-// declares: it is Versionless, its tag names no line, and it is the one image a
-// manager may follow.
-//
-// This exists because a manager that matched every Image in this file shipped
-// and did exactly that within a day (stokaro/ptah#3031): two ClickHouse lines
-// were collapsed onto one image, two LTS lines stopped being covered, and a
-// MariaDB cell claimed another cell's image. Narrowing the pattern by hand is a
-// claim; this is the check.
-func TestRenovate_MovesNoImageWhoseTagNamesItsLine(t *testing.T) {
+// stops covering the old one. A manager that matched every Image in this file
+// shipped and did exactly that within a day (stokaro/ptah#3031): two ClickHouse
+// lines were collapsed onto one image, two LTS lines stopped being covered, and
+// a MariaDB cell claimed another cell's image. No cell names an image whose tag
+// is not its line, so no custom manager may read the file at all.
+func TestRenovate_NoManagerReadsTheCellDeclaration(t *testing.T) {
 	c := qt.New(t)
 
-	body, err := os.ReadFile(cellsSource)
-	c.Assert(err, qt.IsNil)
-
-	movable := make(map[string]struct{})
-	for _, manager := range renovateManagersReading(c, cellsSource) {
-		for _, pattern := range manager.MatchStrings {
-			expression, err := regexp.Compile(strings.ReplaceAll(pattern, "(?<", "(?P<"))
-			c.Assert(err, qt.IsNil,
-				qt.Commentf("pattern %q does not compile; check-renovate-regex.sh owns RE2 validity, "+
-					"and this test cannot report what a broken pattern would match", pattern))
-			for _, match := range expression.FindAllStringSubmatch(string(body), -1) {
-				movable[match[1]+":"+match[2]] = struct{}{}
-			}
-		}
-	}
-	c.Assert(len(movable) > 0, qt.IsTrue,
-		qt.Commentf("no manager matches an image in %s, so every assertion below is vacuous; if the "+
-			"manager was removed on purpose, remove this test with it", cellsSource))
-
-	for _, cell := range cellsAManagerCanMove(movable) {
-		t.Run(cell.Image, func(t *testing.T) {
-			c := qt.New(t)
-			c.Assert(cell.Versionless, qt.IsTrue,
-				qt.Commentf("a Renovate manager can move %q, and cell %s reproduces release line %q "+
-					"with it: a bump would rename the line rather than update anything, and the line "+
-					"would stop being covered", cell.Image, capabilityprobe.CellID(cell), cell.Line))
-		})
-	}
-}
-
-// cellsAManagerCanMove returns the cells whose image one of those patterns
-// matched, keyed by the full reference so a repository shared by two cells is
-// not confused with either.
-func cellsAManagerCanMove(movable map[string]struct{}) []capabilityprobe.Cell {
-	subjects := make([]capabilityprobe.Cell, 0, len(movable))
-	for _, cell := range capabilityprobe.Cells {
-		if _, follows := movable[cell.Image]; follows {
-			subjects = append(subjects, cell)
-		}
-	}
-	return subjects
+	c.Assert(renovateManagersReading(c, cellsSource), qt.HasLen, 0)
 }
 
 // renovateManagersReading returns the custom managers whose file patterns cover
@@ -1065,41 +1008,8 @@ func declaredImageRepositories() []string {
 	return slices.Compact(slices.Sorted(slices.Values(out)))
 }
 
-// A versionless line accepts any version, and it has to: over the PostgreSQL
-// wire a live Spanner endpoint announces `PostgreSQL 14.1`, which is
-// PGAdapter's compatibility level rather than anything about Spanner. Matching
-// a line against it would pin the cell to a number about a different product
-// and move the day that number changed.
-//
-// Measured against a live endpoint: before this, the probe reported
-// `no matrix cell covers spanner 14.1 (add a cell in cells.go)` while the cell
-// was sitting in cells.go (stokaro/ptah#942).
-func TestCellMatch_VersionlessLineAcceptsAnyVersion(t *testing.T) {
-	tests := []struct {
-		name    string
-		version string
-	}{
-		{name: "the compatibility level a live endpoint announces", version: "PostgreSQL 14.1"},
-		{name: "a different one, should PGAdapter raise it", version: "PostgreSQL 17.4"},
-		{name: "a bare major", version: "PostgreSQL 15"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := qt.New(t)
-
-			version, err := capabilityprobe.ParseVersion(platform.Spanner, tt.version, "")
-			c.Assert(err, qt.IsNil)
-
-			cell := capabilityprobe.Cell{Dialect: platform.Spanner, Line: "0", Versionless: true}
-
-			c.Assert(cell.Match(version), qt.IsTrue)
-		})
-	}
-}
-
-// The control: the flag is what makes the match unconditional, not the shape of
-// the line. The same cell without it compares components and refuses.
+// A line matches by comparing components: a major accepts its patches and
+// refuses another major.
 func TestCellMatch_AVersionedLineStillComparesComponents(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -1109,57 +1019,20 @@ func TestCellMatch_AVersionedLineStillComparesComponents(t *testing.T) {
 	}{
 		{name: "a major accepts its patches", line: "17", version: "PostgreSQL 17.4", want: true},
 		{name: "a major refuses another major", line: "17", version: "PostgreSQL 16.9", want: false},
-		{name: "the spanner line without the flag refuses", line: "0", version: "PostgreSQL 14.1", want: false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			version, err := capabilityprobe.ParseVersion(platform.Spanner, tt.version, "")
+			version, err := capabilityprobe.ParseVersion(platform.Postgres, tt.version, "")
 			c.Assert(err, qt.IsNil)
 
-			cell := capabilityprobe.Cell{Dialect: platform.Spanner, Line: tt.line}
+			cell := capabilityprobe.Cell{Dialect: platform.Postgres, Line: tt.line}
 
 			c.Assert(cell.Match(version), qt.Equals, tt.want)
 		})
 	}
-}
-
-// A versionless cell answers for every server of its dialect, so a second cell
-// on that dialect would be unreachable -- CellFor returns the first match and
-// the versionless one matches everything. It is also the invariant the probe's
-// line attribution rests on: an observation is credited to a versionless line
-// because there is no sibling release to confuse it with.
-func TestCells_AVersionlessDialectDeclaresExactlyOneLine(t *testing.T) {
-	c := qt.New(t)
-
-	// Counted through a map literal rather than a condition: the invariant is
-	// arithmetic, and the assertion below reads it as arithmetic too.
-	countOf := map[bool]int{true: 1, false: 0}
-	lines := make(map[string]int)
-	versionless := make(map[string]int)
-	for _, cell := range capabilityprobe.Cells {
-		lines[cell.Dialect]++
-		versionless[cell.Dialect] += countOf[cell.Versionless]
-	}
-
-	for dialect, declared := range lines {
-		// Either the dialect declares no versionless line, or it declares
-		// exactly one line in total. Both are the same equation.
-		c.Assert(versionless[dialect]*(declared-1), qt.Equals, 0,
-			qt.Commentf("%s declares %d versionless line(s) among %d lines; a versionless line matches "+
-				"every version, so a sibling line would be unreachable",
-				dialect, versionless[dialect], declared))
-	}
-
-	total := 0
-	for _, n := range versionless {
-		total += n
-	}
-	c.Assert(total, qt.Equals, 1,
-		qt.Commentf("a new versionless dialect needs the attribution reasoning re-read, not just the flag"))
-	c.Assert(versionless[platform.Spanner], qt.Equals, 1)
 }
 
 // A declared understatement is a claim about a decision, so it has to carry the
@@ -1184,10 +1057,7 @@ func TestCells_EveryDeclaredUnderstatementIsStillOne(t *testing.T) {
 		}
 	}
 
-	// No cell declares an understatement. Spanner declared one once and
-	// earned it away: the endpoint's sequences turned out to be readable
-	// through the quoted spelling of the catalog view, so the preset claims
-	// the key now (stokaro/ptah#1856).
+	// No cell declares an understatement.
 	//
 	// The rule is exercised on a declaration built here, so it is seen to
 	// catch a stale one whatever the cells declare.

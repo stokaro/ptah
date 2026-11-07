@@ -59,7 +59,7 @@ helpers without promoting the implementation packages behind those features.
 
 Index identity remains table-qualified in schema diffs even when the target
 database uses a broader namespace. Planners apply the target rules when ordering
-replacements: PostgreSQL, YugabyteDB, Spanner, and SQLite use schema-scoped
+replacements: PostgreSQL, YugabyteDB, and SQLite use schema-scoped
 index names; CockroachDB, MySQL, MariaDB, SQL Server, and ClickHouse use
 table-scoped index names.
 On schema-scoped engines, an unqualified owner denotes the dialect's default
@@ -512,7 +512,7 @@ Ptah does not emulate SQL Server collation rules locally.
 
 When applying a reusable destructive-change policy to a known database target,
 use `diffpolicy.ApplyForDialect`. It preserves the drop/create pair required by
-schema-scoped engines PostgreSQL, YugabyteDB, Spanner, and SQLite while keeping
+schema-scoped engines PostgreSQL, YugabyteDB, and SQLite while keeping
 same-named indexes on different CockroachDB, MySQL, MariaDB, SQL Server, and
 ClickHouse tables independent. CockroachDB plans retain the owning table so the
 renderer emits an unambiguous `table@index` drop target.

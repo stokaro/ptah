@@ -222,12 +222,6 @@ func TestGenerateCommand_ServerVersionRefusesABannerFromAnotherServer(t *testing
 			names:   "postgres",
 		},
 		{
-			name:    "a PostgreSQL banner on spanner",
-			dialect: "spanner",
-			version: "PostgreSQL 14.1",
-			names:   "postgres",
-		},
-		{
 			// The second half of the same finding. @@VERSION opens with the
 			// marketing year, so before SQL Server was a product token this
 			// banner named nothing, parsed as the numeric version 2022 and
@@ -403,15 +397,6 @@ func TestGenerateCommand_ServerVersionAnnouncesWhatItPlannedInstead(t *testing.T
 			dialect: "postgres",
 			version: "99.0",
 			want:    "newer than the newest measured release line",
-		},
-		{
-			// Spanner is the dialect with no ladder: it ships by date, and the
-			// number it announces over the PostgreSQL wire is PGAdapter's
-			// compatibility level rather than a release of its own.
-			name:    "a dialect with no ladder at all",
-			dialect: "spanner",
-			version: "14.1",
-			want:    "no measured version ladder",
 		},
 	}
 

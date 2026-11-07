@@ -152,8 +152,6 @@ func TestSQL_UnselectedAndUnsupportedTargets(t *testing.T) {
 		{name: "unselected create", dialect: "postgres", source: `CREATE POLICY p ON orders USING (true);`, owners: sqlext.None()},
 		{name: "unselected enable", dialect: "postgres", source: `ALTER TABLE orders ENABLE ROW LEVEL SECURITY;`, owners: sqlext.None()},
 		{name: "unselected force", dialect: "postgres", source: `ALTER TABLE orders FORCE ROW LEVEL SECURITY;`, owners: sqlext.None()},
-		{name: "Spanner policy", dialect: "spanner", source: `CREATE POLICY p ON orders USING (true);`, owners: builtintest.Runtime().SQL()},
-		{name: "Spanner enable", dialect: "spanner", source: `ALTER TABLE orders ENABLE ROW LEVEL SECURITY;`, owners: builtintest.Runtime().SQL()},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

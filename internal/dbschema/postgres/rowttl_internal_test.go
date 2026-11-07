@@ -258,9 +258,8 @@ func TestRowTTLCoverage_KnowsOnlyTheTablesTheReadReturned(t *testing.T) {
 //
 // The column exists on PostgreSQL too, so an ungated projection would be valid
 // there -- but a read that asks a target about a feature it does not have is a
-// read that has to be right about a catalog nobody exercises, and the Spanner
-// PostgreSQL interface has already shown that a pg_catalog column existing is
-// not the same as it being readable (stokaro/ptah#942).
+// read that has to be right about a catalog nobody exercises, and a pg_catalog
+// column existing is not the same as it being readable (stokaro/ptah#942).
 func TestRowTTLOptionsExpr_IsAskedOnlyWhereItCanBeAnswered(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -270,7 +269,6 @@ func TestRowTTLOptionsExpr_IsAskedOnlyWhereItCanBeAnswered(t *testing.T) {
 		{name: "cockroachdb asks the catalog", caps: capability.CockroachDB26(), wantAsked: true},
 		{name: "postgres does not", caps: capability.Postgres17(), wantAsked: false},
 		{name: "yugabytedb does not", caps: capability.YugabyteDB25(), wantAsked: false},
-		{name: "spanner does not", caps: capability.SpannerPostgres(), wantAsked: false},
 	}
 
 	for _, test := range tests {
@@ -348,10 +346,9 @@ func ttlTableServer(reloptions string) func(string, []driver.NamedValue) (dbtest
 					"estimated_rows", "row_stats_unknown", "partitioned", "rls_enabled", "rls_forced",
 					"unlogged",
 					"row_ttl_options",
-					"row_deletion_policy",
 				},
 				Rows: [][]driver.Value{
-					{"public", "sessions", "BASE TABLE", "", int64(0), false, false, false, false, false, reloptions, ""},
+					{"public", "sessions", "BASE TABLE", "", int64(0), false, false, false, false, false, reloptions},
 				},
 			}, nil
 		case strings.Contains(query, "AS udt_schema"):
@@ -380,7 +377,6 @@ func TestHiddenColumnFilter_IsAskedOnlyWhereHiddenColumnsExist(t *testing.T) {
 		{name: "cockroachdb filters them", caps: capability.CockroachDB26(), wantFilter: true},
 		{name: "postgres has no such column", caps: capability.Postgres17(), wantFilter: false},
 		{name: "yugabytedb has no such column", caps: capability.YugabyteDB25(), wantFilter: false},
-		{name: "spanner has no such column", caps: capability.SpannerPostgres(), wantFilter: false},
 	}
 
 	for _, test := range tests {

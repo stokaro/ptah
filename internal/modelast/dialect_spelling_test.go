@@ -63,13 +63,13 @@ func TestAcceptedSpellings_DeclarationControls(t *testing.T) {
 	spellings := acceptedSpellings(c)
 
 	// Positive control: representative aliases from each engine family.
-	for _, alias := range []string{"pgx", "ch", "sqlite3", "tsql", "sql-server", "crdb", "ysql", "google_spanner"} {
+	for _, alias := range []string{"pgx", "ch", "sqlite3", "tsql", "sql-server", "crdb", "ysql"} {
 		c.Assert(spellings, qt.Contains, alias)
 	}
 	// Positive control: canonical names are accepted spellings too.
 	for _, canonical := range []string{
 		platform.Postgres, platform.MySQL, platform.MariaDB, platform.ClickHouse,
-		platform.SQLite, platform.SQLServer, platform.CockroachDB, platform.YugabyteDB, platform.Spanner,
+		platform.SQLite, platform.SQLServer, platform.CockroachDB, platform.YugabyteDB,
 	} {
 		c.Assert(spellings, qt.Contains, canonical)
 	}
@@ -145,21 +145,17 @@ func TestCollectDatabase_PostgresFamilyEmitsUnscopedObjectKinds(t *testing.T) {
 	// what the predicate did.
 	c.Assert(len(want) > 1, qt.IsTrue, qt.Commentf("fixture emits %d nodes for postgres", len(want)))
 
-	// The owner's type declarations target PostgreSQL. Spanner also
-	// represents the enum on its column, as text with a CHECK.
+	// The owner's type declarations target PostgreSQL.
 	ownerTypes := []string{"*ast.ExtensionStatement/*pgtype.CreateDomain", "*ast.ExtensionStatement/*pgtype.CreateComposite",
 		"*ast.ExtensionStatement/*pgtype.CreateRange"}
 	withoutOwnerTypes := slices.DeleteFunc(slices.Clone(want), func(kind string) bool { return slices.Contains(ownerTypes, kind) })
 	c.Assert(withoutOwnerTypes, qt.HasLen, len(want)-len(ownerTypes), qt.Commentf("the fixture declares one type of each owner kind"))
-	withoutEnumTypes := slices.DeleteFunc(slices.Clone(withoutOwnerTypes), func(kind string) bool { return kind == "*ast.EnumNode" })
-	c.Assert(withoutEnumTypes, qt.HasLen, len(withoutOwnerTypes)-1, qt.Commentf("the fixture declares one enum type"))
 	tests := []struct {
 		dialect string
 		want    []string
 	}{
 		{dialect: platform.CockroachDB, want: withoutOwnerTypes},
 		{dialect: platform.YugabyteDB, want: withoutOwnerTypes},
-		{dialect: platform.Spanner, want: withoutEnumTypes},
 	}
 	for _, test := range tests {
 		t.Run(test.dialect, func(t *testing.T) {
@@ -181,11 +177,11 @@ func TestCollectDatabase_PostgresFamilyEmitsUnscopedObjectKinds(t *testing.T) {
 // Emptying the fixture reddens this test. Measured: it then reports one
 // survivor per fingerprint rather than the colliding pair, because the map is
 // keyed by fingerprint and the last engine written wins — `map[string]string
-// {"": "spanner"}` for an empty fixture.
+// {"": "yugabytedb"}` for an empty fixture.
 //
 // Deleting the per-engine `platform.<name>.<attr>` overrides does NOT redden
 // it, and an earlier version of this comment claimed it did. The remaining
-// column types and constraints still fingerprint the nine engines apart, so
+// column types and constraints still fingerprint the eight engines apart, so
 // the control holds for the reason above rather than because of the overrides.
 // What the overrides are load-bearing for is the parity test itself: under a
 // raw-index mutant, dropping `platform.sqlite.default` removes sqlite3 from
@@ -196,7 +192,7 @@ func TestCollectDatabase_FixtureDiscriminatesEngines(t *testing.T) {
 	database := spellingFixture(c)
 	canonicals := []string{
 		platform.Postgres, platform.MySQL, platform.MariaDB, platform.ClickHouse,
-		platform.SQLite, platform.SQLServer, platform.CockroachDB, platform.YugabyteDB, platform.Spanner,
+		platform.SQLite, platform.SQLServer, platform.CockroachDB, platform.YugabyteDB,
 	}
 
 	fingerprints := make(map[string]string, len(canonicals))

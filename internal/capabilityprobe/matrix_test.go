@@ -245,7 +245,7 @@ func TestMatrix_ValidateRefusesABrokenMatrix(t *testing.T) {
 		wantErr: "(?s).*declares no release lines.*",
 	}, {
 		name:    "a matrix whose every line is skipped produces no jobs",
-		matrix:  capabilityprobe.Matrix{Declared: 1, Skipped: []capabilityprobe.CICell{{ID: "spanner-0", Skip: "no server"}}},
+		matrix:  capabilityprobe.Matrix{Declared: 1, Skipped: []capabilityprobe.CICell{{ID: "clickhouse-25-8", Skip: "no server"}}},
 		wantErr: "(?s).*zero jobs.*",
 	}, {
 		name:    "a census that does not add up is refused",
@@ -263,7 +263,7 @@ func TestMatrix_ValidateRefusesABrokenMatrix(t *testing.T) {
 		matrix: capabilityprobe.Matrix{
 			Declared: 2,
 			Cells:    []capabilityprobe.CICell{runnable},
-			Skipped:  []capabilityprobe.CICell{{ID: "spanner-0"}},
+			Skipped:  []capabilityprobe.CICell{{ID: "clickhouse-25-8"}},
 		},
 		wantErr: "(?s).*says no reason why.*",
 	}, {
@@ -437,8 +437,8 @@ func TestWriteMatrix_BothRenderingsNameTheSupportLevelOfEveryLine(t *testing.T) 
 // rewritten at once — satisfies it. These three rows are the words a reader
 // takes away from the page, one per level in use, and they are wrong for a
 // different reason each: postgres 13 is the end-of-life line kept on purpose,
-// spanner is a line only an emulator exercises, and postgres 17 is the
-// commitment the rest of the matrix is measured against.
+// clickhouse 25.8 is an end-of-life line no job runs any more, and postgres 17
+// is the commitment the rest of the matrix is measured against.
 func TestWriteMatrix_PinsALineAtEachLevel(t *testing.T) {
 	tests := []struct {
 		name string
@@ -450,8 +450,8 @@ func TestWriteMatrix_PinsALineAtEachLevel(t *testing.T) {
 		name: "an end-of-life line retained as a sentinel",
 		want: "| `postgres` | 13 | legacy-tested |",
 	}, {
-		name: "a line only an emulator exercises",
-		want: "| `spanner` | 0 | best-effort |",
+		name: "an end-of-life line no job runs",
+		want: "| `clickhouse` | 25.8 | best-effort |",
 	}}
 
 	var wide, compact strings.Builder
@@ -548,14 +548,10 @@ func markdownCells(row string) []string {
 }
 
 // A dialect can be capability-measured before the integration runner has a
-// target for it, and the two were one decision until Spanner needed them apart.
-// The declaration is what separates "probe-only on purpose" from "somebody left
-// the runner target blank" (stokaro/ptah#942).
-//
-// Spanner forced the split and is not an example of it: it has a compose
-// service and a suite target (stokaro/ptah#1719). The
-// table keeps both shapes so the separation stays measured -- ClickHouse's
-// 24.10 line is probed without the runner moving onto it.
+// target for it. The declaration is what separates "probe-only on purpose" from
+// "somebody left the runner target blank" (stokaro/ptah#942). The table keeps
+// both shapes so the separation stays measured -- ClickHouse's 24.10 line is
+// probed without the runner moving onto it.
 func TestCIMatrix_ProbeOnlyCellsAreDeclaredAsSuch(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -563,7 +559,6 @@ func TestCIMatrix_ProbeOnlyCellsAreDeclaredAsSuch(t *testing.T) {
 		wantSuite bool
 	}{
 		{name: "clickhouse 24.10 is probe-only", id: "clickhouse-24-10", wantSuite: false},
-		{name: "spanner runs the suite now that its cleanup path lands", id: "spanner-0", wantSuite: true},
 		{name: "postgres runs the suite too", id: "postgres-18", wantSuite: true},
 	}
 

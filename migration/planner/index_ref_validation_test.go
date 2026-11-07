@@ -27,7 +27,6 @@ func TestGenerateSchemaDiffAST_NilDiffRejected(t *testing.T) {
 		{name: "sqlite", dialect: platform.SQLite},
 		{name: "cockroachdb", dialect: platform.CockroachDB},
 		{name: "yugabytedb", dialect: platform.YugabyteDB},
-		{name: "spanner", dialect: platform.Spanner},
 		{name: "sql server", dialect: platform.SQLServer},
 		{name: "clickhouse", dialect: platform.ClickHouse},
 	}
@@ -57,7 +56,6 @@ func TestGenerateSchemaDiffAST_RemovalDoesNotRequireTargetSchema(t *testing.T) {
 		{name: "sqlite", dialect: platform.SQLite},
 		{name: "cockroachdb", dialect: platform.CockroachDB},
 		{name: "yugabytedb", dialect: platform.YugabyteDB},
-		{name: "spanner", dialect: platform.Spanner},
 		{name: "sql server", dialect: platform.SQLServer},
 		{name: "clickhouse", dialect: platform.ClickHouse},
 	}
@@ -101,7 +99,6 @@ func TestGenerateSchemaDiffAST_SchemaScopedDuplicateAdditionsRejected(t *testing
 		dialect string
 	}{
 		{name: "postgresql", dialect: platform.Postgres},
-		{name: "spanner", dialect: platform.Spanner},
 		{name: "sqlite", dialect: platform.SQLite},
 	}
 

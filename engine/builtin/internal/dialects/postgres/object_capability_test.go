@@ -107,8 +107,8 @@ func objectKindDeniedCaps(key capability.Capability) capability.Capabilities {
 // TestPostgreSQLRenderer_ObjectKindCapabilities is the renderer half of
 // stokaro/ptah#929 item 5.
 //
-// One renderer serves PostgreSQL, CockroachDB, YugabyteDB and Spanner. Before
-// these keys, nothing in it could express that a family member does not host a
+// One renderer serves PostgreSQL, CockroachDB and YugabyteDB. Before these
+// keys, nothing in it could express that a family member does not host a
 // plpgsql function or a trigger — the only suppression lived in the offline
 // converter, as a comparison against the literal dialect name, and the live
 // planner never consulted it. The gate belongs here because both callers pass
@@ -204,34 +204,4 @@ func TestPostgreSQLRenderer_TriggerCarriesItsFunction(t *testing.T) {
 		c.Assert(sql, qt.Not(qt.Matches), `(?s).*CREATE (OR REPLACE )?FUNCTION.*`)
 		c.Assert(sql, qt.Contains, "-- POSTGRES: trigger users_touch is not supported by this target; skipped.")
 	})
-}
-
-// TestPostgreSQLRenderer_ObjectKindsFollowThePreset checks that the presets
-// reach the renderer, rather than the renderer being exercised only against
-// hand-built sets.
-//
-// Spanner is the row that motivated the keys: it shares this renderer with
-// PostgreSQL and hosts none of the three refused kinds. The PostgreSQL control
-// beside it is what separates "the preset decided" from "the renderer refuses
-// everything".
-func TestPostgreSQLRenderer_ObjectKindsFollowThePreset(t *testing.T) {
-	for _, tc := range objectKindCases() {
-		t.Run(tc.name, func(t *testing.T) {
-			c := qt.New(t)
-
-			spannerRenderer := postgres.NewWithCapabilities(capability.SpannerPostgres(), platform.Spanner)
-			postgresRenderer := postgres.NewWithCapabilities(capability.Postgres17(), platform.Postgres)
-
-			spannerSQL, err := spannerRenderer.Render(tc.create())
-			c.Assert(err, qt.IsNil)
-			postgresSQL, err := postgresRenderer.Render(tc.create())
-			c.Assert(err, qt.IsNil)
-
-			skipped := fmt.Sprintf("-- SPANNER: %s %s is not supported by this target; skipped.\n", tc.kind, tc.object)
-			c.Assert(spannerSQL == skipped, qt.Equals, !capability.SpannerPostgres().Has(tc.key),
-				qt.Commentf("spanner rendered:\n%s", spannerSQL))
-			c.Assert(postgresSQL, qt.Contains, tc.ddl,
-				qt.Commentf("the PostgreSQL control must still emit the %s", tc.kind))
-		})
-	}
 }

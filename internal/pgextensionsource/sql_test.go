@@ -13,8 +13,8 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlext"
-	"ptah.run/dialect/spanner/spannerschema"
 	"ptah.run/feature/pgextension"
+	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/parser"
 	"ptah.run/internal/schemafile"
@@ -255,13 +255,13 @@ func TestSQL_ADirectoryRefusesASecondDeclaration(t *testing.T) {
 	}
 }
 
-// TestSQL_ASpannerDocumentMakesBothClaims pins that the owner's claim joins
-// the one a Spanner document makes for its row deletion policies, rather than
-// replacing it: a document of a family target can carry both.
-func TestSQL_ASpannerDocumentMakesBothClaims(t *testing.T) {
+// TestSQL_AFamilyDocumentMakesEveryOwnersClaim pins that the owner's claim
+// joins the one the row-security owner makes for the same document, rather
+// than replacing it: a document of a family target carries both.
+func TestSQL_AFamilyDocumentMakesEveryOwnersClaim(t *testing.T) {
 	c := qt.New(t)
 
-	db, _, err := readSQL(c, platform.Spanner, "CREATE EXTENSION pg_trgm;")
+	db, _, err := readSQL(c, platform.Postgres, "CREATE EXTENSION pg_trgm;")
 
 	c.Assert(err, qt.IsNil)
 	kinds := make([]schemaext.Kind, 0, 2)
@@ -269,7 +269,7 @@ func TestSQL_ASpannerDocumentMakesBothClaims(t *testing.T) {
 		kinds = append(kinds, record.Model.Kind)
 	}
 	c.Assert(kinds, qt.Contains, pgextension.ExtensionKind)
-	c.Assert(kinds, qt.Contains, spannerschema.RowDeletionKind)
+	c.Assert(kinds, qt.Contains, pgpolicy.PolicyKind)
 }
 
 // parseSyntax reads one SQL document of dialect into statements through the

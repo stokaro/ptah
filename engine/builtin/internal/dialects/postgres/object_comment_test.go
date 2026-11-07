@@ -108,8 +108,8 @@ func TestPostgreSQLRenderer_ObjectComment_HappyPath(t *testing.T) {
 			want: "COMMENT ON INDEX \"app\".\"k\" IS 'x';\n",
 		},
 		{
-			name: "an index on Spanner, which refuses the statement",
-			caps: capability.SpannerPostgres(),
+			name: "an index on a target without index comments",
+			caps: capability.Postgres18().With(capability.IndexComments, false),
 			node: ast.NewObjectComment(ast.CommentedIndex, "k", "x").SetTable("app.t"),
 			want: "-- POSTGRES: index comment k is not supported by this target; skipped.\n",
 		},
@@ -221,8 +221,8 @@ func TestPostgreSQLRenderer_CreatedObjectComment(t *testing.T) {
 			want: "CREATE INDEX \"k\" ON \"app\".\"t\" (\"a\");\nCOMMENT ON INDEX \"app\".\"k\" IS 'note';\n",
 		},
 		{
-			name: "an index on Spanner, which stores no index comment",
-			caps: capability.SpannerPostgres(),
+			name: "an index on a target that stores no index comment",
+			caps: capability.Postgres18().With(capability.IndexComments, false),
 			node: &ast.IndexNode{Name: "k", Table: "app.t", Columns: []string{"a"}, Comment: "note"},
 			want: "CREATE INDEX \"k\" ON \"app\".\"t\" (\"a\");\n" +
 				"-- POSTGRES: index comment k is not supported by this target; skipped.\n",

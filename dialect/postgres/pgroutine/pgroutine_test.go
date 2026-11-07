@@ -210,7 +210,7 @@ func TestReader_ReadsAnotherLanguageWhole(t *testing.T) {
 // Every target of the PostgreSQL family is served, and every body of a
 // request is read, in order.
 func TestReader_ReadBodies_HappyPath(t *testing.T) {
-	for _, target := range []string{"postgres", "cockroachdb", "yugabytedb", "spanner"} {
+	for _, target := range []string{"postgres", "cockroachdb", "yugabytedb"} {
 		t.Run(target, func(t *testing.T) {
 			c := qt.New(t)
 			request := routineext.ReadRequest{Target: target, Bodies: []routineext.Body{

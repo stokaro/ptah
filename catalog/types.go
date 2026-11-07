@@ -1001,7 +1001,7 @@ type ServerInfo struct {
 	// Built-in names are declared by core/platform. Where products share one
 	// wire protocol it names the product the connection actually reached
 	// rather than the URL's scheme, so a caller must not assume the two agree:
-	// a postgres:// connection can report cockroachdb, yugabytedb or spanner,
+	// a postgres:// connection can report cockroachdb or yugabytedb,
 	// and a mysql:// connection to MariaDB reports mariadb.
 	Dialect string `json:"dialect"`
 	Version string `json:"version"`

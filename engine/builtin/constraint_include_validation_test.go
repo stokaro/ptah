@@ -64,7 +64,6 @@ func TestPrimaryKeyIncludeSupportedDialects(t *testing.T) {
 
 func TestUniqueConstraintIncludeUnsupportedDialectsFailClosed(t *testing.T) {
 	dialects := []string{
-		platform.Spanner,
 		platform.MySQL,
 		platform.MariaDB,
 		platform.SQLServer,
@@ -107,7 +106,6 @@ func TestUniqueConstraintIncludeUnsupportedDialectsFailClosed(t *testing.T) {
 func TestPrimaryKeyIncludeUnsupportedDialectsFailClosed(t *testing.T) {
 	dialects := []string{
 		platform.CockroachDB,
-		platform.Spanner,
 		platform.MySQL,
 		platform.MariaDB,
 		platform.SQLServer,

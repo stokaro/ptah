@@ -30,11 +30,6 @@ func TestConvertPostgresWireURL(t *testing.T) {
 			expected: "postgres://yugabyte@localhost:5433/yugabyte",
 		},
 		{
-			name:     "spanner scheme rewrites to postgres for pgx",
-			input:    "spanner://user@localhost:5432/db",
-			expected: "postgres://user@localhost:5432/db",
-		},
-		{
 			name:     "malformed URL falls back to cleaned input",
 			input:    "::not-a-url::",
 			expected: "::not-a-url::",
@@ -75,22 +70,10 @@ func TestDetectPostgresWireDialect(t *testing.T) {
 			expected: "yugabytedb",
 		},
 		{
-			name:     "spanner detected from postgres URL",
-			declared: "postgres",
-			version:  "Cloud Spanner PostgreSQL interface",
-			expected: "spanner",
-		},
-		{
 			name:     "explicit cockroach survives generic banner",
 			declared: "cockroachdb",
 			version:  "PostgreSQL-compatible server",
 			expected: "cockroachdb",
-		},
-		{
-			name:     "explicit spanner survives a plain PostgreSQL banner",
-			declared: "spanner",
-			version:  "PostgreSQL 14.1",
-			expected: "spanner",
 		},
 		{
 			name:     "explicit yugabyte survives a PostgreSQL engine banner",

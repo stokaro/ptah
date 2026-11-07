@@ -757,11 +757,6 @@ func TestPlanBidirectionalSchemaDiff_ExplicitConcurrentModeRequiresCapability(t 
 			wantErr:    `CREATE INDEX CONCURRENTLY requested by diff\.concurrent_index\.create cannot be generated for dialect "cockroachdb": target capability create_index_concurrently is unavailable`,
 		},
 		{
-			name: "spanner create", dialect: platform.Spanner, caps: capability.SpannerPostgres(),
-			createMode: generator.ConcurrentIndexAll,
-			wantErr:    `CREATE INDEX CONCURRENTLY requested by diff\.concurrent_index\.create cannot be generated for dialect "spanner": target capability create_index_concurrently is unavailable`,
-		},
-		{
 			name: "yugabyte drop", dialect: platform.YugabyteDB, caps: capability.YugabyteDB25(),
 			dropMode: generator.ConcurrentIndexAll,
 			wantErr:  `DROP INDEX CONCURRENTLY requested by diff\.concurrent_index\.drop cannot be generated for dialect "yugabytedb": target capability drop_index_concurrently is unavailable`,
@@ -838,10 +833,6 @@ func TestPlanBidirectionalSchemaDiff_AutomaticModeIsBidirectionallyCapabilitySaf
 		{
 			name: "cockroach stays blocking", dialect: platform.CockroachDB,
 			caps: capability.CockroachDB23(),
-		},
-		{
-			name: "spanner stays blocking", dialect: platform.Spanner,
-			caps: capability.SpannerPostgres(),
 		},
 	}
 

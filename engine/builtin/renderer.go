@@ -5,11 +5,10 @@
 // dialect renderers and provides a unified interface for SQL generation.
 //
 // The package renders for every dialect SupportedDialects names: PostgreSQL,
-// MySQL, MariaDB, ClickHouse, SQLite, SQL Server, CockroachDB, YugabyteDB,
-// Spanner, Oracle and YDB, plus the alias spellings each of those accepts.
-// CockroachDB, YugabyteDB, and Spanner are rendered by the PostgreSQL renderer
-// constructed for that dialect, so their capability presets decide what each
-// one emits. Unsupported dialects are reported as errors instead of falling
+// MySQL, MariaDB, ClickHouse, SQLite, SQL Server, CockroachDB, YugabyteDB and
+// Oracle, plus the alias spellings each of those accepts. CockroachDB and
+// YugabyteDB are rendered by the PostgreSQL renderer constructed for that
+// dialect, so their capability presets decide what each one emits. Unsupported dialects are reported as errors instead of falling
 // back to a generic renderer. Each dialect renderer dispatches on the node's
 // concrete type and refuses one it does not recognize, and
 // ptah.run/internal/astrouteguard holds every renderer to a decision about
@@ -100,7 +99,7 @@ func SupportedDialects() []string {
 	// docs/feature-inventory.json derives its dialect rows from this list
 	// folded through platform.NormalizeDialect, so editing it is a
 	// documented-surface change.
-	return []string{"postgresql", "postgres", "mysql", "mariadb", "clickhouse", "sqlite", "sqlite3", "sqlserver", "mssql", "cockroachdb", "yugabytedb", "spanner", "oracle"}
+	return []string{"postgresql", "postgres", "mysql", "mariadb", "clickhouse", "sqlite", "sqlite3", "sqlserver", "mssql", "cockroachdb", "yugabytedb", "oracle"}
 }
 
 // NewRenderer creates a new renderer for the specified database dialect.
@@ -137,7 +136,7 @@ func NewRendererWithCapabilities(dialect string, caps capability.Capabilities) (
 	var raw renderer.RenderVisitor
 
 	switch normalizedDialect {
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
+	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB:
 		owners, err := postgresOwners(normalizedDialect)
 		if err != nil {
 			return nil, err
@@ -1359,14 +1358,9 @@ func invalidASTForeignKeyError(dialect, message string) error {
 
 // rendersAddColumnIfNotExists names the dialects whose ALTER TABLE takes
 // ADD COLUMN IF NOT EXISTS and whose renderer writes it.
-//
-// Spanner is one of them. Measured on the Cloud Spanner emulator behind
-// PGAdapter v0.55.3: the guarded ADD adds the column once, and repeating it,
-// or naming a column the table already has, is accepted and changes nothing
-// (stokaro/ptah#3637).
 func rendersAddColumnIfNotExists(dialect string) bool {
 	switch platform.NormalizeDialect(dialect) {
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
+	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB:
 		return true
 	default:
 		return false
@@ -1375,10 +1369,6 @@ func rendersAddColumnIfNotExists(dialect string) bool {
 
 // rendersDropColumnIfExists names the dialects whose ALTER TABLE takes
 // DROP COLUMN IF EXISTS and whose renderer writes it.
-//
-// Spanner takes the guard on ADD and not here. Measured on the same emulator,
-// DROP COLUMN IF EXISTS answers `<IF [NOT] EXISTS> is not supported in <ALTER>
-// statement operations`, for a column the table has and for one it does not.
 func rendersDropColumnIfExists(dialect string) bool {
 	switch platform.NormalizeDialect(dialect) {
 	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB:
@@ -2432,9 +2422,6 @@ func validateDeclaredIndexIncludes(
 // `INDEX i1 (email ASC) STORING (name)` -- and it reads back through
 // pg_index.indnkeyatts and pg_get_indexdef exactly as PostgreSQL's does, so no
 // reader arm is needed for it.
-//
-// Spanner is the reverse pair: allowed here and refused for a constraint, in
-// the server's own words. See constraintIncludeTargets for that half.
 func indexIncludeTargets() []string {
 	var targets []string
 	for _, dialect := range capability.DefaultDialects() {
@@ -2537,9 +2524,6 @@ func indexIncludeAccessMethod(
 		// refusing it here gives the same answer the server would.
 		allowed = method == "" || method == "BTREE"
 		supportedMethods = "the default or BTREE access method"
-	case platform.Spanner:
-		allowed = method == ""
-		supportedMethods = "the default access method"
 	case platform.SQLServer:
 		// Ptah writes every SQL Server index as a nonclustered rowstore index,
 		// which takes INCLUDE, and reports any other declared access method as
@@ -2563,7 +2547,7 @@ func indexIncludeAccessMethod(
 // the constraint kind carrying it, and returns nil for a kind that carries none.
 //
 // This is deliberately NOT validateIndexInclude's set. The two questions have
-// different answers on three dialects, and each cell below is one CREATE TABLE
+// different answers on two dialects, and each cell below is one CREATE TABLE
 // against a live server, measured 2026-08-30, paired with a control that drops
 // only the INCLUDE clause so a refusal cannot be the rest of the statement:
 //
@@ -2572,8 +2556,6 @@ func indexIncludeAccessMethod(
 //	yugabytedb 2026.1.0.0    kept                          kept
 //	cockroachdb v26.3.1      kept, as UNIQUE INDEX          ERROR: at or near
 //	                         ... STORING (name)             "include": syntax error
-//	spanner (pgadapter        ERROR: <UNIQUE> constraint    ERROR: <INCLUDE> clause is
-//	  emulator v0.55.2)      is not supported               not supported in constraints.
 //	mysql 26.7               ERROR 1064 syntax             ERROR 1064 syntax
 //	mariadb 12.3             ERROR 1064 syntax             ERROR 1064 syntax
 //	sqlserver 2025           Msg 102 syntax                Msg 102 syntax
@@ -2583,19 +2565,12 @@ func indexIncludeAccessMethod(
 //	sqlite 3.51              near "INCLUDE": syntax error  near "INCLUDE": syntax error
 //	clickhouse 26.7          no UNIQUE constraint at all (Expected one of: CHECK, ASSUME)
 //
-// Two rows are worth reading twice, because copying the index set would get
-// both wrong:
-//
-//   - Spanner is allowed for an INDEX and refused here. A Spanner unique index
-//     takes INCLUDE -- `CREATE UNIQUE INDEX ... INCLUDE (name)` is accepted --
-//     while a Spanner constraint does not, and the server draws that exact line
-//     in its own words. Spanner refuses the UNIQUE constraint spelling outright
-//     as well, which is stokaro/ptah#2585.
-//   - CockroachDB is the mirror image: allowed on a UNIQUE constraint, where it
-//     is a synonym for STORING, and refused on a primary key. It is also refused
-//     for an INDEX by validateIndexInclude, which the same measurement shows to
-//     be an over-refusal; widening that needs the reader and comparator to
-//     follow, so it is recorded in stokaro/ptah#2584 rather than done here.
+// One row is worth reading twice, because copying the index set would get it
+// wrong: CockroachDB is allowed on a UNIQUE constraint, where it is a synonym
+// for STORING, and refused on a primary key. It is also refused for an INDEX
+// by validateIndexInclude, which the same measurement shows to be an
+// over-refusal; widening that needs the reader and comparator to follow, so it
+// is recorded in stokaro/ptah#2584 rather than done here.
 //
 // ClickHouse reaches the default arm and is refused, which is narrower than the
 // truth: it drops the whole UNIQUE constraint with no diagnostic, INCLUDE or not
@@ -2905,10 +2880,6 @@ func normalizeReferentialAction(dialect, clause, action string) (string, error) 
 		if action == "RESTRICT" {
 			return "NO ACTION", nil
 		}
-	case platform.Spanner:
-		if clause == "ON UPDATE" || !slices.Contains([]string{"NO ACTION", "CASCADE"}, action) {
-			return "", invalidReferentialActionError(dialect, clause, action)
-		}
 	}
 	return action, nil
 }
@@ -3145,7 +3116,7 @@ func foreignKeyNameScope(dialect string, table schemamodel.Table, name string) (
 	switch normalizedDialect {
 	case platform.MySQL, platform.MariaDB:
 		return "database constraint namespace", strings.ToLower(name)
-	case platform.SQLServer, platform.Spanner:
+	case platform.SQLServer:
 		schema := strings.TrimSpace(table.Schema)
 		if schema == "" {
 			schema = identifier.ForDialect(dialect).DefaultSchema
@@ -3300,19 +3271,6 @@ func validateForeignKeyColumnCompatibility(
 		if mysqlForeignKeyTypeBase(localType) == "ENUM" && !slices.Equal(local.Enum, referenced.Enum) {
 			return incompatibleForeignKeyColumnTypesError(dialect, owner, local, target, referenced)
 		}
-	}
-	if normalizedDialect == platform.Spanner && isSpannerNonKeyType(localType) {
-		return invalidSchemaForeignKeyError(
-			dialect,
-			fmt.Sprintf(
-				"Spanner type %s cannot participate in foreign keys: %q.%q references %q.%q",
-				local.Type,
-				owner.QualifiedName(),
-				local.Name,
-				target.QualifiedName(),
-				referenced.Name,
-			),
-		)
 	}
 	return nil
 }
@@ -3616,11 +3574,6 @@ func stripMySQLIntegerDisplayWidth(fieldType string) string {
 		}
 	}
 	return fieldType
-}
-
-func isSpannerNonKeyType(fieldType string) bool {
-	return slices.Contains([]string{"FLOAT32", "FLOAT4", "REAL", "NUMERIC", "JSON", "JSONB", "STRUCT"}, fieldType) ||
-		strings.HasPrefix(fieldType, "ARRAY<") || strings.HasSuffix(fieldType, "[]")
 }
 
 func tableColumn(fields []schemamodel.Field, table schemamodel.Table, column string) schemamodel.Field {

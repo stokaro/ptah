@@ -208,7 +208,7 @@ func TestPersistenceConversion_DefinedTargets(t *testing.T) {
 }
 
 func TestPersistenceReversal_RefusesForeignTargets(t *testing.T) {
-	for _, target := range []string{"mysql", "mariadb", "sqlite", "sqlserver", "clickhouse", "oracle", "cockroachdb", "yugabytedb", "spanner"} {
+	for _, target := range []string{"mysql", "mariadb", "sqlite", "sqlserver", "clickhouse", "oracle", "cockroachdb", "yugabytedb"} {
 		t.Run(target, func(t *testing.T) {
 			c := qt.New(t)
 			reverse, err := (pgtable.PersistenceService{}).ReverseChanges(t.Context(), schemaext.ReversalRequest{Target: target,

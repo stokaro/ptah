@@ -41,7 +41,6 @@ func TestDescriptors_DataAgreesWithTheRetiredSwitches(t *testing.T) {
 		platform.Postgres:    postgresFamily,
 		platform.CockroachDB: postgresFamily,
 		platform.YugabyteDB:  postgresFamily,
-		platform.Spanner:     postgresFamily,
 		platform.MySQL:       mysqlFamily,
 		platform.MariaDB:     mysqlFamily,
 		platform.SQLite: {
@@ -98,7 +97,6 @@ func TestDescriptors_TrackerStatements(t *testing.T) {
 	want := map[string]string{
 		platform.ClickHouse: "ENGINE = MergeTree ORDER BY seed_path",
 		platform.SQLServer:  "IF OBJECT_ID(N'schema_seeds', N'U') IS NULL",
-		platform.Spanner:    "applied_at TIMESTAMPTZ NOT NULL",
 		platform.Oracle:     "IF SQLCODE != -955 THEN",
 	}
 	for _, dialect := range builtindialects.Descriptors() {

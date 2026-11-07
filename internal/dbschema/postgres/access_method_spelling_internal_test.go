@@ -74,7 +74,6 @@ func TestAccessMethodSpellingLeavesOtherDialectsAlone(t *testing.T) {
 	}{
 		{name: "postgres", dialect: platform.Postgres},
 		{name: "yugabytedb", dialect: platform.YugabyteDB},
-		{name: "spanner", dialect: platform.Spanner},
 	}
 
 	for _, test := range tests {

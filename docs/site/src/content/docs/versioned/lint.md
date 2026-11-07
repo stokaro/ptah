@@ -85,7 +85,7 @@ product than the target.
 The dialect and a declared version both come from the product the connection
 reports, not from the URL's scheme, when nothing else named the dialect. A
 scheme is not a product: MariaDB speaks the MySQL protocol, so its address is a
-`mysql://` URL, and `postgres://` reaches CockroachDB, YugabyteDB and Spanner.
+`mysql://` URL, and `postgres://` reaches CockroachDB and YugabyteDB.
 The dialect picks the rules, so that server is linted as MariaDB; a dialect the
 run named itself still wins.
 
@@ -142,10 +142,9 @@ Useful controls:
   and `gitlab` is a GitLab Code Quality report that GitLab CI reads as a
   `codequality` artifact — [CI](../../testing/ci/) shows both upload steps.
 - `--dialect` gates dialect-specific rules; accepted values are `postgres`,
-  `mysql`, `mariadb`, `sqlite`, `sqlserver`, `clickhouse`, `cockroachdb`,
-  `yugabytedb` and `spanner`, or an engine an executable provider serves, such
-  as `ydb`, whose [provider](../../extend/providers/ydb/) reads YQL and adds its `YD`
-  rules. Aliases resolve to the canonical name —
+  `mysql`, `mariadb`, `sqlite`, `sqlserver`, `clickhouse`, `cockroachdb` and
+  `yugabytedb`, or an engine a provider serves: [`ydb`](../../extend/providers/ydb/)
+  adds `YD` rules and [`spanner`](../../extend/providers/spanner/) `SP` rules. Aliases resolve to the canonical name —
   see [Dialects and capabilities](../../concepts/dialects-and-capabilities/). `--dev-url` infers the dialect and replays the
   directory on the dev database. Before each analyzed version
   the run reads the schema state that version starts from and hands it to
@@ -512,19 +511,19 @@ or execution. The families are the ones on
 | Policy `dialect` | Connected database | Verdict |
 | --- | --- | --- |
 | `postgres`, or any alias such as `pgx` | PostgreSQL | matches |
-| `postgres` | CockroachDB, YugabyteDB, Spanner | matches — they ride the PostgreSQL family |
+| `postgres` | CockroachDB, YugabyteDB | matches — they ride the PostgreSQL family |
 | `mysql` | MariaDB | matches — one family |
 | `mariadb` | MySQL | matches — one family |
 | `mysql` or `mariadb` | PostgreSQL | **does not match** |
 | `postgres` | MySQL or MariaDB | **does not match** |
-| `sqlite`, `sqlserver`, `clickhouse`, `ydb` | anything else | **does not match** — each stands alone |
+| `sqlite`, `sqlserver`, `clickhouse`, `spanner`, `ydb` | anything else | **does not match** — each stands alone |
 
 Naming a family member rather than the exact engine is accepted because it
 does not change the analysis: every built-in MySQL-family rule applies to both
 `mysql` and `mariadb`, and the scanner treats them identically. Note the one
 asymmetry inside the PostgreSQL family: the `PG` and `TX` rules apply to
 PostgreSQL only, except where a rule was measured on the other engines, which
-today is `PG303` on CockroachDB, YugabyteDB and Spanner. So those databases
+today is `PG303` on CockroachDB and YugabyteDB. So those databases
 run the dialect-independent families plus that measured set — whether or not
 a policy file exists, and regardless of what it declares.
 

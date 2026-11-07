@@ -38,8 +38,8 @@ import (
 // provider serves. An unrecognized scheme, and a keyword/value DSN with no
 // scheme at all, still reach the PostgreSQL driver: `host=localhost user=ptah`
 // is a form pgx accepts, and this must not start rejecting it for having no
-// scheme to read. The PostgreSQL family is refused by name: CockroachDB,
-// YugabyteDB and Spanner speak the wire protocol and have no pgvector.
+// scheme to read. The PostgreSQL family is refused by name: CockroachDB and
+// YugabyteDB speak the wire protocol and have no pgvector.
 func RefuseAnotherEngine(ctx context.Context, dbURL string) error {
 	if providerServes(ctx, dbURL) {
 		return nil

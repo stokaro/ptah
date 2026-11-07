@@ -1,8 +1,8 @@
 package migrator
 
 // White-box testing required: revisionProvesNothingRan joins a row reading with
-// a dialect class, and the classes that make the two disagree are ClickHouse,
-// Oracle and Spanner, which no in-process test can connect to. Driving the
+// a dialect class, and the classes that make the two disagree are ClickHouse
+// and Oracle, which no in-process test can connect to. Driving the
 // predicate directly is what covers them without a server.
 
 import (
@@ -35,7 +35,6 @@ func TestRevisionProvesNothingRan(t *testing.T) {
 		{name: "sqlite rolls the body back", dialect: "sqlite", revision: zeroProgress, want: true},
 		{name: "clickhouse commits each statement", dialect: "clickhouse", revision: zeroProgress, want: false},
 		{name: "oracle commits each statement", dialect: "oracle", revision: zeroProgress, want: false},
-		{name: "spanner commits each statement", dialect: "spanner", revision: zeroProgress, want: false},
 		// MySQL keeps its DDL and loses its DML on a rollback, so the class
 		// carries a per-statement witness and zero there is that witness
 		// speaking, not the absence of one.

@@ -122,9 +122,11 @@ get, so each has its own:
 - On Oracle the table is created from a PL/SQL block that ignores `ORA-00955`
   (name already used). The same block runs on Oracle 21, which has no
   `IF NOT EXISTS`, and on Oracle 23.
-- On Spanner the statement is the portable one with two types changed:
-  `checksum` is `TEXT` and `applied_at` is `TIMESTAMPTZ`. Its PostgreSQL
-  interface has neither `CHAR(64)`, which arrives as `bpchar`, nor `TIMESTAMP`.
+- On Spanner the [provider](../../extend/providers/spanner/) creates the
+  table, with `checksum` as `TEXT` and `applied_at` as `TIMESTAMPTZ`: Spanner's
+  PostgreSQL interface has neither `CHAR(64)`, which arrives as `bpchar`, nor
+  `TIMESTAMP`. It runs a seed file and its record in one read-write
+  transaction.
 - On YDB the provider creates the table: the key is declared in a
   `PRIMARY KEY` clause of its own, every text column is `Utf8`, because YDB has
   no length-limited string, and `applied_at` is a `Timestamp`. The table sits

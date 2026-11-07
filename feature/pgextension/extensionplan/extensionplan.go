@@ -34,9 +34,9 @@ import (
 // Two changes are refused, because the server refuses them: a version lower
 // than the installed one, since an extension carries update scripts in one
 // direction only, and a move of an extension that is not relocatable.
-// CockroachDB and Spanner create an extension and do nothing else with one,
-// so an installation into a named schema and every change of an installed
-// extension are refused there.
+// CockroachDB creates an extension and does nothing else with one, so an
+// installation into a named schema and every change of an installed extension
+// are refused there.
 type Service struct{}
 
 // PlanFeatures returns one receipt per change in input order, or a completed

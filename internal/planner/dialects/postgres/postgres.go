@@ -516,10 +516,8 @@ func (p *Planner) addSchemaPreconditions(
 	seen := make(map[string]struct{}, len(names))
 	schemas := make([]string, 0, len(names)+len(diff.SchemasAdded))
 	add := func(schema string) {
-		// A schema the target owns is reached without a precondition. On
-		// PostgreSQL that spares a statement nobody needs; on Spanner it is
-		// what makes the migration run at all, because `public` there is
-		// implicit and CREATE SCHEMA for it is refused by name.
+		// A schema the target owns is reached without a precondition: that
+		// spares a statement nobody needs.
 		if schema == "" || pgsystemschema.IsUncreatableSchema(p.dialect, schema) || schema == connected {
 			return
 		}
@@ -1292,22 +1290,6 @@ func previousColumnType(change string) string {
 func previousColumnNullable(change string) bool {
 	before, _, ok := strings.Cut(change, " -> ")
 	return ok && strings.TrimSpace(before) == "true"
-}
-
-// dropsWithCascade reports whether a planned removal may carry CASCADE, which
-// on PostgreSQL takes the objects that depend on the removed one with it, such
-// as the RLS policies that name a column.
-//
-// Spanner has one drop mode. Its PostgreSQL interface refuses the clause on
-// ALTER TABLE ... DROP COLUMN ("Only <RESTRICT> drop mode is supported in
-// <ALTER> statement operations") and on DROP TABLE and DROP VIEW ("Only
-// <RESTRICT> behavior is supported by <DROP> statement"), so every planned
-// removal carrying it failed there (stokaro/ptah#4280, stokaro/ptah#4362). A
-// plan on Spanner removes what depends on an object before the object: the
-// indexes of a removed table are dropped ahead of it, and the views ahead of
-// the tables they read.
-func (p *Planner) dropsWithCascade() bool {
-	return p.targetDialect() != platform.Spanner
 }
 
 // removeTableColumnsFromDiff drops the columns of tableDiff the declaration no
@@ -2129,9 +2111,9 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// 11. Remove indexes (safe operations)
 	result = p.removeIndexes(result, diff, released.IndexSet())
 
-	// 11.8. Owned table settings, CockroachDB row-level TTL and the Spanner
-	// row deletion policy among them, after the columns a policy may refer to
-	// exist and before anything is dropped -- INCLUDING a column. Both halves
+	// 11.8. Owned table settings, CockroachDB row-level TTL among them, after
+	// the columns a policy may refer to exist and before anything is dropped
+	// -- INCLUDING a column. Both halves
 	// are load-bearing: a policy retargeted to a column the same plan adds
 	// cannot run before that column is there, and the column it currently
 	// names cannot be dropped while the policy still points at it. A plan that
@@ -2991,10 +2973,10 @@ func (p *Planner) removeViewLikes(result []ast.Node, diff *difftypes.SchemaDiff,
 }
 
 // dropViewNode is the statement that drops the view name, with CASCADE where
-// cascade asks for it and [Planner.dropsWithCascade] allows it.
+// cascade asks for it.
 func (p *Planner) dropViewNode(name string, cascade bool) *ast.DropViewNode {
 	drop := ast.NewDropView(name).SetIfExists()
-	drop.Cascade = cascade && p.dropsWithCascade()
+	drop.Cascade = cascade
 	return drop
 }
 

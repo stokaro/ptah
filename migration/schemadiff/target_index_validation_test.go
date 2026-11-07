@@ -41,11 +41,9 @@ func TestCompareWithDatabaseInfo_TargetIndexConflictRejected(t *testing.T) {
 		existingTable string
 	}{
 		{name: "postgresql", dialect: platform.Postgres, addedTable: "app.orders", existingTable: "app.users"},
-		{name: "spanner", dialect: platform.Spanner, addedTable: "app.orders", existingTable: "app.users"},
 		{name: "sqlite", dialect: platform.SQLite, addedTable: "main.orders", existingTable: "main.users"},
 		{name: "postgresql mixed qualification", dialect: platform.Postgres, addedTable: "orders", existingTable: "public.users"},
 		{name: "yugabytedb mixed qualification", dialect: platform.YugabyteDB, addedTable: "orders", existingTable: "public.users"},
-		{name: "spanner mixed qualification", dialect: platform.Spanner, addedTable: "orders", existingTable: "public.users"},
 	}
 
 	for _, test := range tests {

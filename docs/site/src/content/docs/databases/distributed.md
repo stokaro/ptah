@@ -1,11 +1,11 @@
 ---
-title: CockroachDB, YugabyteDB, and Spanner
+title: CockroachDB and YugabyteDB
 description: The PostgreSQL-compatible distributed engines in Ptah - what each capability preset excludes, the coverage behind each one, and CockroachDB row-level TTL.
 type: reference
 audience:
   - "database-engineer"
-readerQuestion: "How do capability and DDL support differ across CockroachDB, YugabyteDB, and Spanner?"
-goal: "Compare capability and DDL support across CockroachDB, YugabyteDB, and Spanner."
+readerQuestion: "How do capability and DDL support differ between CockroachDB and YugabyteDB?"
+goal: "Compare capability and DDL support between CockroachDB and YugabyteDB."
 sourceOfTruth:
   - "internal/capabilityprobe/cells.go"
   - "internal/dbschema"
@@ -14,12 +14,17 @@ overlaps: []
 disposition: keep
 ---
 
-CockroachDB, YugabyteDB, and the Spanner PostgreSQL interface accept
-PostgreSQL-like syntax while missing PostgreSQL capabilities, so Ptah routes
-each one as a distinct dialect through the PostgreSQL implementation family
-with its own capability preset instead of treating the server as a drop-in
-PostgreSQL server. A live connection reads the server banner and selects the
-matching preset automatically.
+CockroachDB and YugabyteDB accept PostgreSQL-like syntax while missing
+PostgreSQL capabilities, so Ptah routes each one as a distinct dialect through
+the PostgreSQL implementation family with its own capability preset instead of
+treating the server as a drop-in PostgreSQL server. A live connection reads the
+server banner and selects the matching preset automatically.
+
+Spanner's PostgreSQL interface is not one of these dialects. Ptah serves it
+only through the optional [Spanner provider](../../extend/providers/spanner/),
+which states its own capabilities. A `postgres://` connection whose server
+banner names Spanner is refused with `provider_engine_identified` before
+anything is read, and is never inspected or planned as PostgreSQL.
 
 - **CockroachDB**: the preset excludes concurrent index creation and drops,
   `XML` columns, and advisory locks. Live CockroachDB v26.2.5 accepts role
@@ -64,45 +69,12 @@ matching preset automatically.
   An ascending key with a NULLS ordering is written with `ASC`: without a
   direction, YugabyteDB builds a leading key as a hash key and ignores the
   ordering.
-- **Spanner**: foreign keys are included, including composite and circular
-  relationships rendered in two phases. Spanner manages the referenced-key
-  backing index, so Ptah does not require an input unique/index declaration.
-  Participating columns must have compatible key-capable types; JSON and array
-  columns fail before rendering.
-  Spanner has no enum type, so an enum column is written as `TEXT` with a
-  `CHECK (column IN (...))` constraint named `<table>_<column>_check`; a column
-  added later takes that check as a separate `ADD CONSTRAINT`, because Spanner
-  refuses a `CHECK` inside `ADD COLUMN`.
-  Spanner also refuses `ADD COLUMN` for a `NOT NULL` column without a default,
-  even on an empty table. Such a column is added nullable, and a separate
-  `ALTER COLUMN ... SET NOT NULL` follows. On a table that holds rows, that
-  second statement fails, because no row has a value for the new column; give
-  the column a default, which Spanner writes into every row, or fill it first.
-  The preset excludes standalone sequences, row-level security, `XML`
-  columns, advisory locks, and concurrent indexes. Foreign key actions are
-  limited to `ON DELETE NO ACTION` or `CASCADE`; `ON UPDATE` fails before
-  rendering.
-  An index is compared by its uniqueness, its keys (column, direction and
-  NULLS ordering) and its `STORING` columns, and a change rebuilds it. Spanner
-  refuses an access method, an operator class and storage parameters in
-  `CREATE INDEX`, so none of them is compared.
 
-Spanner refuses a schema statement inside an explicit transaction, so the
-migrator applies a migration body unwrapped and every statement commits as it
-runs. A body that fails partway keeps the statements that already ran, and the
-revision row records that prefix for the retry to resume from; `--tx-mode all`
-is refused. CockroachDB and YugabyteDB open a transaction around a body, and a
+CockroachDB and YugabyteDB open a transaction around a migration body, and a
 schema statement does not wait for it to end. See
-[What a failed migration leaves](#what-a-failed-migration-leaves) for those two,
-and [Apply migrations](../../versioned/apply/) for what each target records.
-
-Spanner also has one drop mode, and it refuses `CASCADE` on `DROP TABLE`,
-`DROP VIEW` and `ALTER TABLE ... DROP COLUMN`. A plan for Spanner writes those
-statements without it and drops what depends on an object first: a removed
-table's indexes go before the table, and a removed view goes before the tables
-it reads. Spanner refuses the drop when something the plan keeps still depends
-on the object, such as a kept view that reads a removed table. PostgreSQL would
-drop that view with the table instead.
+[What a failed migration leaves](#what-a-failed-migration-leaves) for what
+each keeps, and [Apply migrations](../../versioned/apply/) for what each target
+records.
 
 ## Coverage in continuous integration
 
@@ -110,26 +82,6 @@ CockroachDB and YugabyteDB run in integration coverage against live
 open-source containers. Their reader coverage seeds a table, index, view,
 materialized view, sequence, and row-level security policy, then verifies both
 `ptah db read` and `ptah-compat schema inspect`.
-
-Spanner runs both now: its capability rows are measured on every pull request,
-and an integration target exercises render, apply, read and compare against the
-Cloud Spanner emulator behind PGAdapter, which the `spanner` compose profile
-starts.
-
-It stays best-effort for a reason that no amount of coverage changes: an
-emulator is evidence about the PostgreSQL interface, not about the managed
-service. Review generated SQL before relying on it.
-
-One difference between the emulator and the documented service is known. For
-a foreign key, Spanner documents `key_column_usage.position_in_unique_constraint`
-as the column's position in the referenced key, and Ptah reads it that way. The
-emulator behind PGAdapter 0.56.1 reports the position in the order the foreign
-key lists its referenced columns. On the emulator, a composite foreign key that
-lists them in another order than the referenced key, such as
-`FOREIGN KEY (y, x) REFERENCES parent (b, a)` against `PRIMARY KEY (a, b)`,
-therefore reads back with `y` paired to `a`, and every plan drops and adds it.
-The server still enforces the key as declared. A foreign key that lists its
-referenced columns in the referenced key's order reads back as declared.
 
 PostgreSQL and YugabyteDB keep the database-scoped publications,
 subscriptions, logical replication slots, event triggers, and non-extension
@@ -341,56 +293,6 @@ A CockroachDB dev database is required for dev-database workflows on a
 CockroachDB target; a mismatched `--dev-url` is refused with
 `--dev-url dialect "postgres" does not match --url dialect "cockroachdb"`.
 
-## Spanner row deletion policy
-
-Spanner deletes a row once an interval has passed since the time a timestamp
-column holds. Ptah manages that policy through the render, plan, apply,
-introspect, and diff cycle. Declare it as `platform.spanner` properties on the
-table:
-
-```go
-//ptah:schema:table name="sessions" platform.spanner.row_deletion_column="created_at" platform.spanner.row_deletion_interval="30 days"
-type Sessions struct {
-	//ptah:schema:field name="id" type="BIGINT" primary="true"
-	ID int64
-	//ptah:schema:field name="created_at" type="TIMESTAMPTZ"
-	CreatedAt time.Time
-}
-```
-
-A YAML schema puts `row_deletion_column` and `row_deletion_interval` in the
-table's `spanner` platform group. `ptah schema render --dialect spanner` emits:
-
-```sql
-CREATE TABLE "sessions" (
-  "id" BIGINT PRIMARY KEY NOT NULL,
-  "created_at" TIMESTAMPTZ
-) TTL INTERVAL '30 days' ON "created_at";
-```
-
-A policy needs both properties. The interval is a whole number of days, which
-is all Spanner accepts: `36 hours` is refused before anything runs. Spanner
-stores the interval in its own spelling, `30 days` as `4 WEEKS 2 DAYS`, so Ptah
-compares the days the two spellings denote, not their text. A stored interval
-Ptah cannot read is compared as written.
-
-On a table that exists, a plan emits `ALTER TABLE ... ADD TTL` for a new policy,
-`ALTER TABLE ... ALTER TTL` for a changed one, and `ALTER TABLE ... DROP TTL`
-when the declaration names none. Spanner refuses `ADD` and `ALTER` in each
-other's place, so the plan chooses by what the table holds. A policy that moves
-to a new column is changed after the column is added and before the column it
-named is dropped. A table in a Go or YAML schema that names no policy declares
-none, so a policy on the live table is removed. `ptah introspect` writes a read policy back as the same properties,
-with the interval in the spelling Spanner stores.
-
-The `platform.spanner` properties apply to Spanner only, so the same schema
-renders for PostgreSQL without the policy. A YDB TTL is a different policy with
-its own properties, which the YDB provider reads, and nothing turns one into the
-other; see [YDB](../../extend/providers/ydb/). `schema inspect` writes the policy into HCL as a
-`platform "spanner"` block of the same properties, and a document read back
-declares it. HCL that names no policy keeps the table's policy rather than
-removing it.
-
 ## Invisible indexes
 
 CockroachDB hides an index from the optimizer while it keeps the index up to
@@ -410,9 +312,9 @@ A partially visible index, `VISIBILITY 0.5`, is refused by name, in a schema
 file and in a database read. The model holds a visible or a hidden index, and
 either reading would move the index on the next apply. `VISIBILITY 0.0` and
 `VISIBILITY 1.0` are read as hidden and visible. Measured on CockroachDB
-26.3.2; the capability probe measures the 25.4 and 26.2 lines. PostgreSQL,
-YugabyteDB and Spanner have no such index, and Ptah refuses an invisible index
-there rather than build it visible.
+26.3.2; the capability probe measures the 25.4 and 26.2 lines. PostgreSQL and
+YugabyteDB have no such index, and Ptah refuses an invisible index there rather
+than build it visible.
 
 ## Trigger conditions
 
@@ -446,8 +348,7 @@ does not install it.
 
 `decimal` and `numeric` hold any number where a column declares no precision, on all
 three engines, so `numeric` declared `numeric(10,2)` is a change rated destructive and
-`numeric(10,2)` declared `numeric` is a change rated safe. Spanner has no `numeric(p,s)`:
-its server refuses that statement. See
+`numeric(10,2)` declared `numeric` is a change rated safe. See
 [how a column change is rated](../../direct/plan-and-approve/#how-a-column-change-is-rated).
 
 A lower capacity is rated destructive here as elsewhere: `string(100)` declared
@@ -460,3 +361,4 @@ under an integer. CockroachDB keeps the eight bytes of a row it has already writ
 - Which release lines are declared and at what support level: [Database support matrix](../support-matrix/).
 - What PostgreSQL itself manages: [PostgreSQL](../postgresql/).
 - Capability keys per dialect: [Capabilities](../../reference/capabilities/).
+- Spanner's PostgreSQL interface, through its provider: [Configure the Spanner provider](../../extend/providers/spanner/).

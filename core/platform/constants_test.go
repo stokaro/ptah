@@ -12,17 +12,13 @@ func TestNormalizeDialect_DistributedSQLAliases(t *testing.T) {
 	c := qt.New(t)
 
 	tests := map[string]string{
-		"cockroach":      platform.CockroachDB,
-		"cockroachdb":    platform.CockroachDB,
-		"crdb":           platform.CockroachDB,
-		"yugabyte":       platform.YugabyteDB,
-		"yugabytedb":     platform.YugabyteDB,
-		"ysql":           platform.YugabyteDB,
-		"spanner":        platform.Spanner,
-		"cloudspanner":   platform.Spanner,
-		"google-spanner": platform.Spanner,
-		"google_spanner": platform.Spanner,
-		" CockroachDB ":  platform.CockroachDB,
+		"cockroach":     platform.CockroachDB,
+		"cockroachdb":   platform.CockroachDB,
+		"crdb":          platform.CockroachDB,
+		"yugabyte":      platform.YugabyteDB,
+		"yugabytedb":    platform.YugabyteDB,
+		"ysql":          platform.YugabyteDB,
+		" CockroachDB ": platform.CockroachDB,
 	}
 
 	for input, expected := range tests {
@@ -90,10 +86,20 @@ func TestNormalizeDialect_YDBSpellings_FailurePath(t *testing.T) {
 	}
 }
 
+// Spanner is served only through its executable provider: no built-in
+// descriptor claims any of its spellings.
+func TestNormalizeDialect_SpannerSpellings_FailurePath(t *testing.T) {
+	c := qt.New(t)
+
+	for _, dialect := range []string{"spanner", " Spanner ", "cloudspanner", "google-spanner", "google_spanner"} {
+		c.Assert(platform.NormalizeDialect(dialect), qt.Equals, "", qt.Commentf("dialect %q", dialect))
+	}
+}
+
 func TestIsPostgresFamily(t *testing.T) {
 	c := qt.New(t)
 
-	for _, dialect := range []string{"postgres", "pgx", "cockroachdb", "yugabytedb", "spanner"} {
+	for _, dialect := range []string{"postgres", "pgx", "cockroachdb", "yugabytedb"} {
 		c.Assert(platform.IsPostgresFamily(dialect), qt.IsTrue, qt.Commentf("dialect %q", dialect))
 	}
 	for _, dialect := range []string{"mysql", "mariadb", "clickhouse", "sqlite", "sqlserver", "oracle"} {
@@ -110,7 +116,7 @@ func TestGrantOptionIsPerObject(t *testing.T) {
 		c.Assert(platform.GrantOptionIsPerObject(dialect), qt.IsTrue, qt.Commentf("dialect %q", dialect))
 	}
 	for _, dialect := range []string{
-		"postgres", "cockroachdb", "yugabytedb", "spanner", "clickhouse", "sqlite", "sqlserver", "oracle", "bogus",
+		"postgres", "cockroachdb", "yugabytedb", "clickhouse", "sqlite", "sqlserver", "oracle", "bogus",
 	} {
 		c.Assert(platform.GrantOptionIsPerObject(dialect), qt.IsFalse, qt.Commentf("dialect %q", dialect))
 	}

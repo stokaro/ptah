@@ -105,12 +105,6 @@ const (
 	exemptYugabyteIndexStorage = "YugabyteDB 2026.1.2 refuses every index storage parameter Ptah writes: fillfactor " +
 		"and deduplicate_items are unrecognized, ybgin does not support fastupdate, and BRIN, which pages_per_range " +
 		"belongs to, is not supported"
-	exemptSpannerIndexMethod = "Spanner refuses an access method in CREATE INDEX (\"Setting access method is not " +
-		"supported\", measured on the emulator behind PGAdapter v0.56.1), so no index it holds has one to compare"
-	exemptSpannerOperatorClass = "Spanner refuses an operator class in CREATE INDEX (\"Setting operator class is not " +
-		"supported\", measured on the emulator behind PGAdapter v0.56.1), so no index it holds has one to compare"
-	exemptSpannerIndexStorage = "Spanner refuses storage parameters in CREATE INDEX (\"Index options are not " +
-		"supported\", measured on the emulator behind PGAdapter v0.56.1), so no index it holds has one to compare"
 	exemptForeignDefiner = "a routine that states no security mode is a definer routine here, a definer routine is " +
 		"replaced only beside a recorded definer and connected account, and a description converted from a catalog " +
 		"records neither, so the comparison refuses the replacement and names the routine"
@@ -174,9 +168,8 @@ func alternates() map[string][]any {
 		"schemamodel.Index.Overrides": {map[string]map[string]string{"clickhouse": {"type": "minmax", "granularity": "4"}}},
 		// Another host string names no table, so the index moves to the other
 		// table of the two-table fixtures instead.
-		"schemamodel.Index.StructName":  {"A"},
-		"schemamodel.Index.TableName":   {"a"},
-		"spannerschema.Policy.Interval": {"7 days"},
+		"schemamodel.Index.StructName": {"A"},
+		"schemamodel.Index.TableName":  {"a"},
 	}
 }
 
@@ -210,13 +203,13 @@ var roundTripLosses = []RecordedLoss{
 	{Fixtures: []string{"grant-routine"}, Dialects: []string{"postgres"}, Directions: []Direction{FromCatalog}, Reason: lossRoutinePublicExecute},
 	{
 		Fixtures:   []string{"function-procedure"},
-		Dialects:   []string{"clickhouse", "spanner", "sqlite"},
+		Dialects:   []string{"clickhouse", "sqlite"},
 		Directions: []Direction{ToCatalog},
 		Reason:     lossRoutinesWithoutTarget,
 	},
 	{
 		Fixtures:   []string{"grant-routine"},
-		Dialects:   []string{"spanner", "sqlite"},
+		Dialects:   []string{"sqlite"},
 		Directions: []Direction{ToCatalog},
 		Reason:     lossRoutinesWithoutTarget,
 	},
@@ -259,13 +252,13 @@ var roundTripGaps = []Unreached{
 	{Field: "schemamodel.Field.Collate", Dialects: []string{"mariadb", "mysql"}, Directions: nil, Reason: gapComparison},
 	{
 		Field:      "schemamodel.Field.DefaultSet",
-		Dialects:   []string{"clickhouse", "cockroachdb", "mariadb", "mysql", "oracle", "postgres", "spanner", "sqlite", "sqlserver", "yugabytedb"},
+		Dialects:   []string{"clickhouse", "cockroachdb", "mariadb", "mysql", "oracle", "postgres", "sqlite", "sqlserver", "yugabytedb"},
 		Directions: []Direction{FromCatalog},
 		Reason:     gapFromCatalog,
 	},
 	{
 		Field:      "schemamodel.Field.DefaultSet",
-		Dialects:   []string{"clickhouse", "cockroachdb", "mariadb", "mysql", "oracle", "postgres", "spanner", "sqlite", "sqlserver", "yugabytedb"},
+		Dialects:   []string{"clickhouse", "cockroachdb", "mariadb", "mysql", "oracle", "postgres", "sqlite", "sqlserver", "yugabytedb"},
 		Directions: []Direction{ToCatalog},
 		Reason:     gapComparison,
 	},
@@ -273,14 +266,14 @@ var roundTripGaps = []Unreached{
 	{Field: "schemamodel.Field.GeneratedExpression", Dialects: []string{"oracle"}, Directions: nil, Reason: gapComparison},
 	{
 		Field:      "schemamodel.Field.IdentityGeneration",
-		Dialects:   []string{"oracle", "spanner", "yugabytedb"},
+		Dialects:   []string{"oracle", "yugabytedb"},
 		Directions: nil,
 		Reason:     gapComparison,
 	},
 	{Field: "schemamodel.Field.IdentityIncrement", Dialects: []string{"sqlserver"}, Directions: nil, Reason: gapComparison},
 	{
 		Field:      "schemamodel.Field.IdentityOptions",
-		Dialects:   []string{"cockroachdb", "postgres", "spanner", "yugabytedb"},
+		Dialects:   []string{"cockroachdb", "postgres", "yugabytedb"},
 		Directions: nil,
 		Reason:     gapToCatalog,
 	},
@@ -288,7 +281,7 @@ var roundTripGaps = []Unreached{
 	{Field: "schemamodel.Field.Overrides", Dialects: []string{"mysql"}, Directions: nil, Reason: gapToCatalog},
 	{Field: "schemamodel.Field.TypeIsDeclaredText", Dialects: []string{"clickhouse", "sqlite", "sqlserver"}, Directions: nil, Reason: gapToCatalog},
 	{Field: "schemamodel.Field.TypeRawSQL", Dialects: []string{"clickhouse", "sqlserver"}, Directions: nil, Reason: gapToCatalog},
-	{Field: "schemamodel.Function.Dialects", Dialects: []string{"clickhouse", "oracle", "spanner", "sqlite"}, Directions: nil, Reason: gapToCatalog},
+	{Field: "schemamodel.Function.Dialects", Dialects: []string{"clickhouse", "oracle", "sqlite"}, Directions: nil, Reason: gapToCatalog},
 	{
 		Field:      "schemamodel.Function.Dialects",
 		Dialects:   []string{"cockroachdb", "mariadb", "mysql", "sqlserver", "yugabytedb"},
@@ -350,12 +343,11 @@ var roundTripGaps = []Unreached{
 		Directions: []Direction{ToCatalog},
 		Reason:     gapComparison,
 	},
-	{Field: "schemamodel.MaterializedView.Dialects", Dialects: []string{"spanner"}, Directions: nil, Reason: gapToCatalog},
 	{Field: "schemamodel.PrimaryKeyPart.Desc", Dialects: []string{"mariadb", "mysql", "sqlserver"}, Directions: nil, Reason: gapToCatalog},
 	{Field: "schemamodel.PrimaryKeyPart.Name", Dialects: []string{"clickhouse"}, Directions: []Direction{ToCatalog}, Reason: gapComparison},
 	{
 		Field:      "schemamodel.PrimaryKeyPart.Name",
-		Dialects:   []string{"cockroachdb", "mariadb", "mysql", "oracle", "postgres", "spanner", "sqlite", "sqlserver", "yugabytedb"},
+		Dialects:   []string{"cockroachdb", "mariadb", "mysql", "oracle", "postgres", "sqlite", "sqlserver", "yugabytedb"},
 		Directions: nil,
 		Reason:     gapToCatalog,
 	},
@@ -369,7 +361,7 @@ var roundTripGaps = []Unreached{
 	},
 	{
 		Field:      "schemamodel.Sequence.Dialects",
-		Dialects:   []string{"cockroachdb", "mariadb", "oracle", "spanner", "sqlserver", "yugabytedb"},
+		Dialects:   []string{"cockroachdb", "mariadb", "oracle", "sqlserver", "yugabytedb"},
 		Directions: []Direction{ToCatalog},
 		Reason:     gapComparison,
 	},
@@ -381,7 +373,7 @@ var roundTripGaps = []Unreached{
 	{Field: "schemamodel.Table.PrimaryKeyMethod", Dialects: []string{"mysql"}, Directions: nil, Reason: gapComparison},
 	{
 		Field:      "schemamodel.Table.PrimaryKeyName",
-		Dialects:   []string{"oracle", "spanner", "sqlserver", "yugabytedb"},
+		Dialects:   []string{"oracle", "sqlserver", "yugabytedb"},
 		Directions: nil,
 		Reason:     gapToCatalog,
 	},
@@ -392,7 +384,7 @@ var roundTripGaps = []Unreached{
 		Reason:     gapFromCatalog,
 	},
 	{Field: "schemamodel.Table.PrimaryKeyParts", Dialects: []string{"mariadb", "mysql", "sqlserver"}, Directions: nil, Reason: gapToCatalog},
-	{Field: "schemamodel.Trigger.Dialects", Dialects: []string{"clickhouse", "spanner"}, Directions: nil, Reason: gapToCatalog},
+	{Field: "schemamodel.Trigger.Dialects", Dialects: []string{"clickhouse"}, Directions: nil, Reason: gapToCatalog},
 	{
 		Field:      "schemamodel.Trigger.Dialects",
 		Dialects:   []string{"cockroachdb", "mariadb", "mysql", "oracle", "sqlite", "sqlserver", "yugabytedb"},
@@ -402,7 +394,7 @@ var roundTripGaps = []Unreached{
 	{Field: "schemamodel.Trigger.ExecuteFunction", Dialects: []string{"cockroachdb", "postgres", "yugabytedb"}, Directions: nil, Reason: gapToCatalog},
 	{
 		Field:      "schemamodel.View.Dialects",
-		Dialects:   []string{"clickhouse", "mariadb", "mysql", "oracle", "spanner", "sqlite"},
+		Dialects:   []string{"clickhouse", "mariadb", "mysql", "oracle", "sqlite"},
 		Directions: []Direction{ToCatalog},
 		Reason:     gapComparison,
 	},
@@ -410,7 +402,7 @@ var roundTripGaps = []Unreached{
 	{Field: "synonym.Synonym.Schema", Dialects: []string{"oracle", "sqlserver"}, Directions: nil, Reason: gapComparison},
 	{
 		Field:      "tsschema.DesiredContinuousAggregate.Body",
-		Dialects:   []string{"cockroachdb", "postgres", "spanner", "yugabytedb"},
+		Dialects:   []string{"cockroachdb", "postgres", "yugabytedb"},
 		Directions: nil,
 		Reason:     gapToCatalog,
 	},
@@ -463,15 +455,11 @@ var roundTripExemptions = []Unreached{
 	{Field: "schemamodel.IndexPart.NullsOrder", Dialects: []string{"cockroachdb"}, Directions: nil, Reason: exemptCockroachNullsOrder},
 	{Field: "schemamodel.IndexPart.Operator", Dialects: []string{"cockroachdb"}, Directions: nil, Reason: exemptCockroachOperatorClass},
 	{Field: "schemamodel.Index.StorageParams", Dialects: []string{"yugabytedb"}, Directions: nil, Reason: exemptYugabyteIndexStorage},
-	{Field: "schemamodel.Index.Operator", Dialects: []string{"spanner"}, Directions: nil, Reason: exemptSpannerOperatorClass},
-	{Field: "schemamodel.Index.StorageParams", Dialects: []string{"spanner"}, Directions: nil, Reason: exemptSpannerIndexStorage},
-	{Field: "schemamodel.Index.Type", Dialects: []string{"spanner"}, Directions: nil, Reason: exemptSpannerIndexMethod},
-	{Field: "schemamodel.IndexPart.Operator", Dialects: []string{"spanner"}, Directions: nil, Reason: exemptSpannerOperatorClass},
 	{Field: "schemamodel.RLSEnabledTable.Forced", Dialects: nil, Directions: nil, Reason: exemptSharedRowSecurity},
 	{Field: "schemamodel.RLSPolicy.Comment", Dialects: nil, Directions: nil, Reason: exemptSharedRowSecurity},
 	{
 		Field:      "schemamodel.Role.Dialects",
-		Dialects:   []string{"clickhouse", "cockroachdb", "mariadb", "mysql", "oracle", "postgres", "spanner", "sqlite", "sqlserver", "yugabytedb"},
+		Dialects:   []string{"clickhouse", "cockroachdb", "mariadb", "mysql", "oracle", "postgres", "sqlite", "sqlserver", "yugabytedb"},
 		Directions: nil,
 		Reason:     exemptRoleSelection,
 	},
@@ -491,7 +479,7 @@ var roundTripExemptions = []Unreached{
 	},
 	{
 		Field:      "schemamodel.Table.CustomSQL",
-		Dialects:   []string{"clickhouse", "cockroachdb", "mariadb", "mysql", "oracle", "postgres", "spanner", "sqlite", "sqlserver", "yugabytedb"},
+		Dialects:   []string{"clickhouse", "cockroachdb", "mariadb", "mysql", "oracle", "postgres", "sqlite", "sqlserver", "yugabytedb"},
 		Directions: nil,
 		Reason:     exemptCustomSQL,
 	},
@@ -500,7 +488,7 @@ var roundTripExemptions = []Unreached{
 	{Field: "sqlitetable.Virtual.Module", Dialects: []string{"sqlite"}, Directions: nil, Reason: exemptVirtualTable},
 	{
 		Field:      "tsschema.DesiredHypertable.IfNotExists",
-		Dialects:   []string{"cockroachdb", "postgres", "spanner", "yugabytedb"},
+		Dialects:   []string{"cockroachdb", "postgres", "yugabytedb"},
 		Directions: nil,
 		Reason:     exemptIfNotExists,
 	},

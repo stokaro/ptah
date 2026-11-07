@@ -25,17 +25,6 @@
       "matchStrings": [
         "# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>\\S+)[\\s\\S]*?\\n\\s*[a-z][\\w./-]*:(?<currentValue>[^\\s\\\\]+)"
       ]
-    },
-    {
-      "customType": "regex",
-      "description": "The Spanner emulator is pinned twice: the workflow that starts the container, and the matrix cell in internal/capabilityprobe/cells.go. The cell is a Go string literal no built-in manager sees, so a bump moved the workflow alone and left the cell behind, which is what stokaro/ptah#3027 repaired. ONLY THAT ONE IMAGE IS MANAGED, and the repository is named here rather than matched by shape. Every other Image in that file carries a release LINE as its tag -- tagPinsLine in matrix.go requires tag == Line -- so the tag is an identity, not a version to keep current. A manager that matched them all bumped four of them in stokaro/ptah#3031: two ClickHouse lines were collapsed onto one image, the 26.3 and 25.8 LTS lines stopped being covered at all, and the MariaDB 11.4 cell started claiming the 11.8 cell's image. The Spanner cell is the only one declared Versionless, meaning its tag names no line, which is what makes it the only one safe to move. The pattern is RE2, which has no backreferences (stokaro/ptah#2339). Grouped with the workflow bump by the database-server-images rule below, which matches the same depName, so both pins move in one pull request.",
-      "managerFilePatterns": [
-        "/^internal/capabilityprobe/cells\\.go$/"
-      ],
-      "matchStrings": [
-        "Image:\\s+\"(?<depName>gcr\\.io/cloud-spanner-pg-adapter/pgadapter-emulator):(?<currentValue>[^\"\\s]+)\""
-      ],
-      "datasourceTemplate": "docker"
     }
   ],
   "packageRules": [
@@ -65,8 +54,7 @@
         "yugabytedb/yugabyte",
         "gvenzl/oracle-free",
         "gvenzl/oracle-xe",
-        "mcr.microsoft.com/mssql/server",
-        "gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator"
+        "mcr.microsoft.com/mssql/server"
       ],
       "groupName": "database server images",
       "automerge": false,
@@ -109,12 +97,9 @@
       "enabled": false
     },
     {
-      "description": "Every Image in internal/capabilityprobe/cells.go names the release LINE the cell reproduces -- tagPinsLine in matrix.go requires tag == Line -- so moving one is not an update. It renames the line and stops covering the old one. stokaro/ptah#3031 moved four before anyone noticed: two ClickHouse cells were collapsed onto one image, the 26.3 and 25.8 LTS lines stopped being covered, and the MariaDB 11.4 cell claimed the 11.8 cell's image; stokaro/ptah#3034 would have taken mysql 8.4 to 26.7 and postgres 13 to 18. The custom manager above is already narrowed to the one image that may move, and this rule is the second lock, on a different axis: the file is denied by name and the emulator is the single exception. The emulator is the only cell declared Versionless, meaning its tag names no line, which is what makes it safe to follow. TestRenovate_DisablesEveryLinePinnedImage requires this rule to exist, because a lock nobody checks is a lock somebody deletes.",
+      "description": "Every Image in internal/capabilityprobe/cells.go names the release LINE the cell reproduces -- tagPinsLine in matrix.go requires tag == Line -- so moving one is not an update. It renames the line and stops covering the old one. stokaro/ptah#3031 moved four before anyone noticed: two ClickHouse cells were collapsed onto one image, the 26.3 and 25.8 LTS lines stopped being covered, and the MariaDB 11.4 cell claimed the 11.8 cell's image; stokaro/ptah#3034 would have taken mysql 8.4 to 26.7 and postgres 13 to 18. No custom manager reads the file, and this rule is the second lock, on a different axis: the file is denied by name. TestRenovate_DisablesEveryLinePinnedImage requires this rule to exist, because a lock nobody checks is a lock somebody deletes.",
       "matchFileNames": [
         "internal/capabilityprobe/cells.go"
-      ],
-      "matchPackageNames": [
-        "!gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator"
       ],
       "enabled": false
     },

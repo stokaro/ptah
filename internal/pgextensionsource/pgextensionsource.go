@@ -31,7 +31,7 @@ const Key = "extensions"
 // Family are the targets an extension declaration scoped to them declares:
 // the PostgreSQL family, as [platform.IsPostgresFamily] names it.
 func Family() []string {
-	return []string{platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner}
+	return []string{platform.Postgres, platform.CockroachDB, platform.YugabyteDB}
 }
 
 // Annotations is the extension owner's contribution to the Go annotation

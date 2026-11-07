@@ -49,8 +49,6 @@ func TestOpen_AnotherEngineIsRefusedByName(t *testing.T) {
 			scheme: "cockroachdb", dialect: "cockroachdb"},
 		{name: "yugabytedb", dbURL: "yugabytedb://localhost:5433/db",
 			scheme: "yugabytedb", dialect: "yugabytedb"},
-		{name: "spanner", dbURL: "spanner://localhost:5432/db",
-			scheme: "spanner", dialect: "spanner"},
 		// The spellings where the two differ. An operator who wrote `mssql://`
 		// is told `sqlserver`, which is the name every other Ptah message uses.
 		{name: "mssql spelled as itself", dbURL: "mssql://sa@localhost:1433?database=db",
@@ -118,14 +116,22 @@ func TestOpen_AnUnrecognizedSchemeStillReachesTheDriver(t *testing.T) {
 	c.Assert(err.Error(), qt.Not(qt.Contains), "ptah inference works against PostgreSQL")
 }
 
-// The control for the rows above: YDB is an engine this namespace runs
-// against through its provider, so a YDB URL is not refused as another engine,
-// under either scheme. It goes to the YDB provider, and with none installed
-// the run stops naming the provider, rather than handing the URL to the
-// PostgreSQL driver.
-func TestOpen_YDBReachesTheYDBProvider(t *testing.T) {
-	for _, dbURL := range []string{"ydb://127.0.0.1:1/local", "ydbs://127.0.0.1:1/local"} {
-		t.Run(dbURL, func(t *testing.T) {
+// The control for the rows above: YDB and Spanner are engines Ptah serves only
+// through their providers, so their URLs are not refused as another engine,
+// under any scheme. Each goes to its provider, and with none installed the run
+// stops naming the provider, rather than handing the URL to the PostgreSQL
+// driver.
+func TestOpen_AProviderEngineReachesItsProvider(t *testing.T) {
+	tests := []struct {
+		dbURL string
+		want  string
+	}{
+		{dbURL: "ydb://127.0.0.1:1/local", want: `(?s).*official Ptah YDB plugin.*github\.com/stokaro/ptah-ydb-plugin.*`},
+		{dbURL: "ydbs://127.0.0.1:1/local", want: `(?s).*official Ptah YDB plugin.*github\.com/stokaro/ptah-ydb-plugin.*`},
+		{dbURL: "spanner://127.0.0.1:1/db", want: `(?s).*official Ptah Spanner plugin.*github\.com/stokaro/ptah-spanner-plugin.*`},
+	}
+	for _, test := range tests {
+		t.Run(test.dbURL, func(t *testing.T) {
 			c := qt.New(t)
 			dir := c.TempDir()
 			c.Setenv("HOME", dir)
@@ -133,9 +139,9 @@ func TestOpen_YDBReachesTheYDBProvider(t *testing.T) {
 			c.Setenv("LocalAppData", dir)
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
-			output, err := runInferenceContext(ctx, c, "plan", "--spec", writeSpec(c), "--db-url", dbURL)
+			output, err := runInferenceContext(ctx, c, "plan", "--spec", writeSpec(c), "--db-url", test.dbURL)
 
-			c.Assert(err, qt.ErrorMatches, `(?s).*official Ptah YDB plugin.*github\.com/stokaro/ptah-ydb-plugin.*`)
+			c.Assert(err, qt.ErrorMatches, test.want)
 			c.Assert(err.Error(), qt.Not(qt.Contains), "ptah inference works against")
 			c.Assert(output, qt.Not(qt.Contains), "invalid keyword/value")
 		})

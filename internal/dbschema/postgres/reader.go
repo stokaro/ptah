@@ -203,9 +203,6 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	if err := r.rowTTLCoverage(schema); err != nil {
 		return nil, err
 	}
-	if err := r.rowDeletionPolicyCoverage(schema); err != nil {
-		return nil, err
-	}
 
 	// Read enums
 	enums, err := r.readEnums(ctx)
@@ -490,8 +487,7 @@ func (r *Reader) readTablesForSchema(ctx context.Context, schemaName string) ([]
 		       COALESCE(c.relrowsecurity, false) AS rls_enabled,
 		       COALESCE(c.relforcerowsecurity, false) AS rls_forced,
 		       ` + r.unloggedExpr() + `,
-		       ` + r.rowTTLOptionsExpr() + `,
-		       ` + r.rowDeletionPolicyExpr() + `
+		       ` + r.rowTTLOptionsExpr() + `
 			FROM ` + r.tablesSource() + ` t
 			LEFT JOIN pg_namespace n ON n.nspname = t.table_schema
 			LEFT JOIN pg_class c ON ` + relationByName("c", "n.oid", "t.table_name") + `
@@ -512,7 +508,6 @@ func (r *Reader) readTablesForSchema(ctx context.Context, schemaName string) ([]
 		var table catalog.Table
 		var unlogged bool
 		var rowTTLOptions string
-		var rowDeletionPolicy string
 		err := rows.Scan(
 			&table.Schema,
 			&table.Name,
@@ -525,7 +520,6 @@ func (r *Reader) readTablesForSchema(ctx context.Context, schemaName string) ([]
 			&table.RLSForced,
 			&unlogged,
 			&rowTTLOptions,
-			&rowDeletionPolicy,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan table: %w", err)
@@ -534,9 +528,6 @@ func (r *Reader) readTablesForSchema(ctx context.Context, schemaName string) ([]
 		table.Columns = columnsByTable[table.Name]
 		if table.Facets, err = r.rowTTLFacets(rowTTLOptions); err != nil {
 			return nil, fmt.Errorf("failed to read row-level TTL for table %s: %w", table.Name, err)
-		}
-		if table.Facets, err = r.rowDeletionPolicyFacets(table.Facets, rowDeletionPolicy); err != nil {
-			return nil, fmt.Errorf("failed to read row deletion policy for table %s: %w", table.Name, err)
 		}
 
 		if pgtable.SupportsPersistence(r.dialect) {

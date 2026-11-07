@@ -36,10 +36,10 @@ func tableReadCapture(query *string) func(string, []driver.NamedValue) (dbtest.Q
 					"table_schema", "table_name", "table_type", "table_comment",
 					"estimated_rows", "row_stats_unknown", "partitioned",
 					"rls_enabled", "rls_forced", "unlogged",
-					"row_ttl_options", "row_deletion_policy",
+					"row_ttl_options",
 				},
 				Rows: [][]driver.Value{
-					{"public", "cache", "BASE TABLE", "", int64(0), false, false, false, false, true, "[]", ""},
+					{"public", "cache", "BASE TABLE", "", int64(0), false, false, false, false, true, "[]"},
 				},
 			}, nil
 		case strings.Contains(sql, "AS udt_schema"):
@@ -83,13 +83,13 @@ func TestReadTablesForSchema_AsksPostgresForRelationPersistence(t *testing.T) {
 // TestReadTablesForSchema_DoesNotAskForRelationPersistenceWhereNoTableCanBeUnlogged is
 // the control, and the reason the projection is conditional at all.
 //
-// CockroachDB, YugabyteDB and Spanner reach this same reader over the
-// PostgreSQL wire protocol, and none of them creates an unlogged table. A
+// CockroachDB and YugabyteDB reach this same reader over the PostgreSQL wire
+// protocol, and neither of them creates an unlogged table. A
 // column one of those catalogs does not carry fails the whole table read
 // rather than the single projection, so the reader asks only where the answer
 // could be true; YugabyteDB answers 'p' for every table.
 func TestReadTablesForSchema_DoesNotAskForRelationPersistenceWhereNoTableCanBeUnlogged(t *testing.T) {
-	for _, dialect := range []string{"cockroachdb", "yugabytedb", "spanner"} {
+	for _, dialect := range []string{"cockroachdb", "yugabytedb"} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 			var query string

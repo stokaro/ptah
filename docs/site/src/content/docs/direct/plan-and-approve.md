@@ -305,7 +305,7 @@ PostgreSQL:
 | SQL Server | `datetime2`, `datetimeoffset`, `time` | 7 |
 | ClickHouse | `DateTime` holds none, and a bare `DateTime64` is `DateTime64(3)` | 0 or 3 |
 
-Spanner has one timestamp type and SQLite stores the declaration without reading it, so a
+SQLite stores the declaration without reading it, so a
 precision alone plans nothing there. A change of type on these engines is rated as above.
 
 A type that declares no size holds what its engine says as well. The plan compares
@@ -314,7 +314,7 @@ what the two sides hold, so `numeric` declared `numeric(10,2)` is a change and
 
 | Engine | `decimal`, `numeric`, `NUMBER` | `varchar`, `nvarchar` | `float` | `real` |
 | --- | --- | --- | --- | --- |
-| PostgreSQL, CockroachDB, YugabyteDB, Spanner | Any number | No limit | 8 bytes | 4 bytes |
+| PostgreSQL, CockroachDB, YugabyteDB | Any number | No limit | 8 bytes | 4 bytes |
 | MySQL, MariaDB | `decimal(10,0)` | The server refuses it | 4 bytes | 8 bytes |
 | SQL Server | `decimal(18,0)` | One character, and `(max)` has no limit | 8 bytes | 4 bytes |
 | Oracle | Any number, and `NUMBER(*,0)` no fraction | `VARCHAR2(4000)` for `VARCHAR` | `FLOAT(126)` | `BINARY_FLOAT` |

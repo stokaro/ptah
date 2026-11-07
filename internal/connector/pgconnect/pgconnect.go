@@ -1,7 +1,8 @@
 // Package pgconnect connects to the engines that speak the PostgreSQL wire
-// protocol: PostgreSQL, CockroachDB, YugabyteDB and the Spanner PostgreSQL
-// interface. One service serves all four through pgx and reads
-// catalog.ServerInfo.Dialect where the four differ.
+// protocol: PostgreSQL, CockroachDB and YugabyteDB. One service serves all
+// three through pgx and reads catalog.ServerInfo.Dialect where they differ.
+// A server whose banner names an engine Ptah serves only through its provider,
+// such as Spanner's PostgreSQL interface, is refused once it is identified.
 package pgconnect
 
 import (
@@ -16,13 +17,12 @@ import (
 	"github.com/jackc/pgx/v5/stdlib"
 
 	"ptah.run/catalog"
-	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
-	"ptah.run/dialect/spanner/spannerschema"
 	"ptah.run/internal/connector"
 	"ptah.run/internal/dbschema/postgres"
+	"ptah.run/internal/providercatalog"
 	"ptah.run/internal/schemaselection"
 	"ptah.run/internal/sqlrunner"
 )
@@ -34,7 +34,6 @@ func Registrations() []connector.Registration {
 		{Dialect: platform.Postgres, Service: Service{}},
 		{Dialect: platform.CockroachDB, Service: Service{}},
 		{Dialect: platform.YugabyteDB, Service: Service{}},
-		{Dialect: platform.Spanner, Service: Service{}},
 	}
 }
 
@@ -92,6 +91,12 @@ func convertPostgresWireURL(dbURL string) string {
 
 // Describe reads the version banner, the product it names, the schema the
 // session resolved to and, on CockroachDB, the width of a bare INT.
+//
+// A banner naming an engine that Ptah serves only through its provider is
+// refused with the catalog's diagnostic before anything else is read, and the
+// caller closes the pool: Spanner's PostgreSQL interface answers this wire, and
+// read through the PostgreSQL engine it would be inspected, planned and
+// written with PostgreSQL semantics.
 func (Service) Describe(
 	ctx context.Context,
 	opened *connector.Pool,
@@ -105,6 +110,9 @@ func (Service) Describe(
 		return info, fmt.Errorf("failed to get PostgreSQL version: %w", err)
 	}
 	info.Version = version
+	if entry, identified := providercatalog.IdentifyBanner(version); identified {
+		return info, providercatalog.Identified(entry, request.Parsed.Scheme)
+	}
 	info.Dialect = detectPostgresWireDialect(info.Dialect, version)
 	info.IdentifierSemantics = identifier.ForDialect(info.Dialect)
 
@@ -190,13 +198,13 @@ func resolveSearchPath(ctx context.Context, opened *connector.Pool, parsedURL *u
 // banner describes: this one picks the dialect, that one picks the preset the
 // dialect is planned with, and they are handed the same string.
 //
-// A banner naming only PostgreSQL is not a product answer here. CockroachDB,
-// YugabyteDB and Spanner all speak this protocol and a deployment of any of
-// them may report a banner carrying no token of its own, so the dialect the
-// operator connected with survives -- it is the only evidence left.
+// A banner naming only PostgreSQL is not a product answer here. CockroachDB
+// and YugabyteDB both speak this protocol and a deployment of either may
+// report a banner carrying no token of its own, so the dialect the operator
+// connected with survives -- it is the only evidence left.
 func detectPostgresWireDialect(declaredDialect, version string) string {
 	switch banner := capability.BannerPlatform(version); banner {
-	case platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
+	case platform.CockroachDB, platform.YugabyteDB:
 		return banner
 	default:
 		return platform.NormalizeDialect(declaredDialect)
@@ -241,10 +249,9 @@ func cockroachDefaultIntSize(ctx context.Context, db *sql.DB, dialect string) in
 // and [capability.ContinuousAggregates] is `pg_extension`, on the connection
 // (stokaro/ptah#1026).
 //
-// It is asked only of PostgreSQL itself. CockroachDB, YugabyteDB and the
-// Spanner PostgreSQL interface share the wire and not the extension mechanism,
-// and asking a target that has no `pg_extension` would spend a round trip to
-// learn nothing.
+// It is asked only of PostgreSQL itself. CockroachDB and YugabyteDB share the
+// wire and not the extension mechanism, and asking a target that has no
+// `pg_extension` would spend a round trip to learn nothing.
 //
 // A failed query leaves the key alone rather than failing the connection. This
 // runs before any transaction the caller opens, so a refusal here cannot poison
@@ -293,9 +300,9 @@ func (Service) NewReader(_ *connector.Pool, info catalog.ServerInfo, runner sqlr
 }
 
 // NewWriter returns the PostgreSQL-wire writer. The set decides whether
-// cleanup may take a transaction: Spanner refuses DDL inside one, and the
-// writer cannot ask the server without opening the transaction it is trying
-// to avoid. The dialect decides which schemas a cleanup leaves to the server.
+// cleanup may take a transaction: an engine without transactional DDL refuses
+// DDL inside one, and the writer cannot ask the server without opening the
+// transaction it is trying to avoid. The dialect decides which schemas a cleanup leaves to the server.
 func (Service) NewWriter(_ *connector.Pool, info catalog.ServerInfo, runner sqlrunner.Runner, _ *sql.Conn) catalog.SchemaWriter {
 	return postgres.NewPostgreSQLWriterForRunnerWithCapabilities(runner, info.Schema, info.Dialect, info.Capabilities)
 }
@@ -361,40 +368,4 @@ func (Service) KeepDDLInTransaction(ctx context.Context, tx *sql.Tx, info catalo
 		return fmt.Errorf("keep DDL inside the transaction: %w", err)
 	}
 	return nil
-}
-
-// MarkRead marks the object kinds a Spanner target has and Ptah does not
-// model, so a description's silence about them is not read as their absence.
-//
-// Spanner change streams are the case that made it necessary. A change stream
-// is a database object with its own lifecycle -- measured against the emulator
-// behind PGAdapter 0.55.2, `CREATE CHANGE STREAM ttl_a_stream FOR ttl_a` is
-// accepted and listed in information_schema.change_streams -- and nothing in
-// Ptah models one. Before this the reader met them and said nothing, which is
-// the failure stokaro/ptah#2236 is about: an unmodeled object dropped without a
-// diagnostic is one nobody learns about until it stops existing.
-//
-// It is recorded for the TARGET rather than for what the read found. Recording
-// only the streams a particular database happens to have would assert that the
-// absence of every other one is authoritative, which is the under-claim that
-// turns a presentation decision into a removal.
-//
-// It sits here rather than in the reader because this is where the dialect is
-// known: the PostgreSQL-family reader is shared by every engine of the wire and
-// is configured with capabilities rather than with a dialect name.
-func (Service) MarkRead(schema *catalog.Database, info catalog.ServerInfo) *catalog.Database {
-	return recordUnmodeledObjectKinds(schema, info.Dialect)
-}
-
-// recordUnmodeledObjectKinds is [Service.MarkRead] for dialect.
-func recordUnmodeledObjectKinds(schema *catalog.Database, dialect string) *catalog.Database {
-	if schema == nil || platform.NormalizeDialect(dialect) != platform.Spanner {
-		return schema
-	}
-	schema.NotDescribed = schema.NotDescribed.With(coverage.Object{
-		Kind:       spannerschema.CoverageChangeStream,
-		Reason:     coverage.Unsupported,
-		Provenance: coverage.DerivedFromTarget,
-	})
-	return schema
 }

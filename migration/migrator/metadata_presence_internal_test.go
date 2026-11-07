@@ -1,8 +1,8 @@
 package migrator
 
 // White-box testing required: migrationTablePresenceQuery is deliberately
-// internal, and deterministic query inspection covers the Spanner branch that
-// cannot be exercised through the public API without a live Spanner service.
+// internal, and deterministic query inspection covers each engine's catalog
+// branch, which the public API reaches only through a live server.
 
 import (
 	"testing"
@@ -37,14 +37,6 @@ func Test_migrationTablePresenceQuery_HappyPath(t *testing.T) {
 			table:            "schema_migrations",
 			wantQuery:        "SELECT COUNT(*)\nFROM information_schema.tables\nWHERE table_schema = ? AND table_name = ? AND table_type = 'BASE TABLE'",
 			wantArgs:         []any{"revisions", "schema_migrations"},
-		},
-		{
-			name:             "spanner connection schema",
-			dialect:          platform.Spanner,
-			connectionSchema: "public",
-			table:            "schema_migrations",
-			wantQuery:        "SELECT COUNT(*)\nFROM information_schema.tables\nWHERE table_schema = ? AND table_name = ? AND table_type = 'BASE TABLE'",
-			wantArgs:         []any{"public", "schema_migrations"},
 		},
 		{
 			name:             "oracle connection schema",

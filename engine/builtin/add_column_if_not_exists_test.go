@@ -34,7 +34,6 @@ func TestAddColumnIfNotExists_HappyPath(t *testing.T) {
 		{name: "postgres writes the guard", dialect: "postgres", ifNotExists: true, wantSQL: `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "note" text;`},
 		{name: "cockroachdb writes the guard", dialect: "cockroachdb", ifNotExists: true, wantSQL: `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "note" text;`},
 		{name: "yugabytedb writes the guard", dialect: "yugabytedb", ifNotExists: true, wantSQL: `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "note" text;`},
-		{name: "spanner writes the guard", dialect: "spanner", ifNotExists: true, wantSQL: `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "note" text;`},
 		{name: "postgres without the guard", dialect: "postgres", wantSQL: `ALTER TABLE "users" ADD COLUMN "note" text;`},
 	}
 	for _, test := range tests {

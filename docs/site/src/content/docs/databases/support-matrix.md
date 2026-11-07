@@ -44,12 +44,14 @@ measured.
 | [CockroachDB](../distributed/) | `cockroachdb` (`cockroach`, `crdb`) | `cockroachdb://`, `crdb://` | PostgreSQL-compatible path with capability differences. |
 | [YugabyteDB](../distributed/) | `yugabytedb` (`yugabyte`, `ysql`) | `yugabytedb://`, `ysql://` | PostgreSQL-compatible path with capability differences. |
 | [ClickHouse](../clickhouse/) | `clickhouse` (`ch`) | `clickhouse://`, `ch://` | Capability-limited support. |
-| [Spanner (PostgreSQL interface)](../distributed/) | `spanner` (`cloudspanner`, `google-spanner`, `google_spanner`) | `spanner://` | Most conservative capability-limited support. |
 | [Oracle](../oracle/) | `oracle` | `oracle://` | Renders, plans, and reads a live catalog. |
 
 [YDB](../../extend/providers/ydb/), `ydb://` and `ydbs://`, is served by the official executable
-provider, installed with `ptah providers install ydb`. The provider declares
-its own release lines, so the tables on this page list none.
+provider, installed with `ptah providers install ydb`.
+[Spanner's PostgreSQL interface](../../extend/providers/spanner/), `spanner://`,
+`cloudspanner://` and `google-spanner://`, is served only by the optional
+official provider, installed with `ptah providers install spanner`. Each
+provider declares its own release lines, so the tables on this page list none.
 
 Accepted URL formats, and the difference between target, dev, shadow, and
 throwaway databases, are on
@@ -107,14 +109,13 @@ the declared set cannot say one thing here and another in a workflow file.
 | `yugabytedb` | 2025.2 | certified | `YugabyteDB25` | yes |
 | `yugabytedb` | 2024.2 | certified | `YugabyteDB24` | yes |
 | `sqlite` | 3 | certified | `SQLite3` | yes |
-| `spanner` | 0 | best-effort | `SpannerPostgres` | yes |
 | `mysql` | 26.7 | best-effort | `MySQL84` | no |
 | `clickhouse` | 26.7 | best-effort | `ClickHouse2411` | no |
 | `clickhouse` | 25.8 | best-effort | `ClickHouse2411` | no |
 
-Declared release lines: 34. Probed on every pull request: 31.
+Declared release lines: 33. Probed on every pull request: 30.
 
-Support levels across the 34 declared lines: 28 certified, 2 legacy-tested, 4 best-effort.
+Support levels across the 33 declared lines: 28 certified, 2 legacy-tested, 3 best-effort.
 
 Lines that are declared and not probed, and why:
 
@@ -129,7 +130,6 @@ Lines whose container tag does not name the line, so which patch it resolves to 
 - `sqlserver` 15.0, pinned as `mcr.microsoft.com/mssql/server:2019-latest`.
 - `oracle` 23, pinned as `gvenzl/oracle-free:slim`.
 - `oracle` 21, pinned as `gvenzl/oracle-xe:21-slim`.
-- `spanner` 0, pinned as `gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:v0.56.2`.
 <!-- END GENERATED VERSION MATRIX -->
 
 ## Interpret the result

@@ -18,7 +18,6 @@ import (
 	"ptah.run/dialect/postgres/pgroutine"
 	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/dialect/postgres/pgtablerender"
-	"ptah.run/dialect/spanner/spannerrender"
 	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/dialect/timescaledb/tsrender"
 	"ptah.run/dialect/timescaledb/tsschema"
@@ -322,10 +321,8 @@ func prepareColumnFacets(dialect string, facets schemaext.Facets) (schemaext.Fac
 // preparePostgresTableFacets accepts the TimescaleDB settings every
 // PostgreSQL-family renderer writes after CREATE TABLE, the row-security
 // switches it writes there on a target the row-security owner is registered
-// for, the row-level TTL a CockroachDB CREATE TABLE carries, and the row
-// deletion policy a Spanner one carries. Every other kind is refused: no owner
-// composed for this family renders it, and Spanner has no row security to
-// compare or plan.
+// for, and the row-level TTL a CockroachDB CREATE TABLE carries. Every other
+// kind is refused: no owner composed for this family renders it.
 func preparePostgresTableFacets(dialect string, projected schemaext.Facets) (schemaext.Facets, error) {
 	if err := tsrender.ValidateTableFacets(projected); err != nil {
 		return schemaext.Facets{}, err
@@ -344,15 +341,8 @@ func preparePostgresTableFacets(dialect string, projected schemaext.Facets) (sch
 		}
 		rest = rest.Without(pgpolicy.TableStateKind)
 	}
-	var validate func(schemaext.Facets) error
-	switch platform.NormalizeDialect(dialect) {
-	case platform.CockroachDB:
-		validate = crdbrender.ValidateTableFacets
-	case platform.Spanner:
-		validate = spannerrender.ValidateTableFacets
-	}
-	if validate != nil {
-		if err := validate(rest); err != nil {
+	if platform.NormalizeDialect(dialect) == platform.CockroachDB {
+		if err := crdbrender.ValidateTableFacets(rest); err != nil {
 			return schemaext.Facets{}, err
 		}
 		return projected, nil
@@ -388,7 +378,7 @@ func prepareRoutineFacets(dialect string, facets schemaext.Facets) (schemaext.Fa
 	if err != nil {
 		return schemaext.Facets{}, err
 	}
-	if platform.IsPostgresFamily(dialect) && platform.NormalizeDialect(dialect) != platform.Spanner {
+	if platform.IsPostgresFamily(dialect) {
 		if _, _, err := pgroutine.PropertiesOf(projected); err != nil {
 			return schemaext.Facets{}, err
 		}

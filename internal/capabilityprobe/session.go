@@ -370,7 +370,7 @@ func (s *session) createSentinel(ctx context.Context) []Attempt {
 // The sentinel is dropped before this runs, so a server the probe has to itself
 // counts zero.
 const occupancySQL = "SELECT COUNT(*) FROM information_schema.tables " +
-	"WHERE table_schema NOT IN ('information_schema', 'pg_catalog', 'spanner_sys', " +
+	"WHERE table_schema NOT IN ('information_schema', 'pg_catalog', " +
 	"'mysql', 'performance_schema', 'sys')"
 
 // oracleOccupancySQL is occupancySQL for a catalog that has no

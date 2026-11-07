@@ -117,17 +117,6 @@ func TestRevisionTableDescriptors_AgreeWithTheSwitches(t *testing.T) {
 			rolledBack:     true,
 		},
 		{
-			dialect:        "spanner",
-			firstRow:       "LIMIT 1",
-			emptyIsNull:    false,
-			versionNumber:  "CAST(CASE WHEN version LIKE '.%' OR version = 'R' OR version LIKE '%R' THEN NULL ELSE version END AS BIGINT)",
-			engineClause:   "",
-			noEngineClause: false,
-			update:         "UPDATE T\nSET a = ?\nWHERE version = ?",
-			literal:        "$ptah$a\\b$ptah$",
-			rolledBack:     false,
-		},
-		{
 			dialect:        "oracle",
 			firstRow:       "FETCH FIRST 1 ROWS ONLY",
 			emptyIsNull:    true,

@@ -20,9 +20,9 @@ import (
 // with the render's message; none plans nothing (stokaro/ptah#4112).
 
 // TestPlanIndexPayloadChange_HappyPath covers the targets that render and read
-// a payload. Each rebuilds the index with it. CockroachDB, YugabyteDB and
-// Spanner compared the index by name and planned nothing, and SQL Server
-// rendered no payload at all (stokaro/ptah#4114).
+// a payload. Each rebuilds the index with it. CockroachDB and YugabyteDB
+// compared the index by name and planned nothing, and SQL Server rendered no
+// payload at all (stokaro/ptah#4114).
 func TestPlanIndexPayloadChange_HappyPath(t *testing.T) {
 	const quotedCreate = `CREATE INDEX IF NOT EXISTS "users_name_ix" ON "users" ("name") INCLUDE ("email");`
 	tests := []struct {
@@ -33,7 +33,6 @@ func TestPlanIndexPayloadChange_HappyPath(t *testing.T) {
 		{dialect: platform.Postgres, drop: `DROP INDEX IF EXISTS "users_name_ix";`, create: quotedCreate},
 		{dialect: platform.CockroachDB, drop: `DROP INDEX IF EXISTS "users"@"users_name_ix";`, create: quotedCreate},
 		{dialect: platform.YugabyteDB, drop: `DROP INDEX IF EXISTS "users_name_ix";`, create: quotedCreate},
-		{dialect: platform.Spanner, drop: `DROP INDEX IF EXISTS "users_name_ix";`, create: quotedCreate},
 		{
 			dialect: platform.SQLServer,
 			drop:    `DROP INDEX IF EXISTS [users_name_ix] ON [users];`,

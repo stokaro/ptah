@@ -84,7 +84,7 @@ func TestAccount_HappyPath(t *testing.T) {
 	departures := []astrouteguard.Departure{
 		{Node: "SetWidgetOperation", Successors: []astrouteguard.ExtensionKind{widget, gadget}},
 		{Node: "CreateGadgetNode", Successors: []astrouteguard.ExtensionKind{gadget}},
-		{Node: "DropGizmoNode", Provider: "example.org/gizmo-provider"},
+		{Node: "DropGizmoNode", Providers: []string{"example.org/gizmo-provider"}},
 	}
 	nodes := []astrouteguard.NodeKind{{Name: "CreateGadgetNode"}, {Name: "CreateTableNode"}, {Name: "ExtensionStatement"}}
 
@@ -92,7 +92,7 @@ func TestAccount_HappyPath(t *testing.T) {
 
 	c.Assert(accounting, qt.DeepEquals, astrouteguard.Accounting{
 		Departed: []astrouteguard.Departure{
-			{Node: "DropGizmoNode", Marker: astrouteguard.Unmarked, Provider: "example.org/gizmo-provider"},
+			{Node: "DropGizmoNode", Marker: astrouteguard.Unmarked, Providers: []string{"example.org/gizmo-provider"}},
 			{Node: "SetWidgetOperation", Marker: astrouteguard.AlterOperationMarker,
 				Successors: []astrouteguard.ExtensionKind{widget, gadget}},
 		},

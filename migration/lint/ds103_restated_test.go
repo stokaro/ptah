@@ -40,7 +40,6 @@ func TestColumnTypeChangedRule_ReadsEveryEnginesTypeChange(t *testing.T) {
 		{"PostgreSQL SET DATA TYPE", "postgres", `ALTER TABLE "orders" ALTER COLUMN "total" SET DATA TYPE bit(4);`},
 		{"CockroachDB a STRING", "cockroachdb", `ALTER TABLE "orders" ALTER COLUMN "note" TYPE string(5);`},
 		{"YugabyteDB a float", "yugabytedb", `ALTER TABLE "orders" ALTER COLUMN "total" TYPE real;`},
-		{"Spanner a length", "spanner", `ALTER TABLE "orders" ALTER COLUMN "note" TYPE varchar(5);`},
 		{"MySQL a text tier", "mysql", "ALTER TABLE `orders` MODIFY COLUMN `body` text;"},
 		{"MySQL a blob tier", "mysql", "ALTER TABLE `orders` MODIFY COLUMN `body` tinyblob;"},
 		{"MySQL a float", "mysql", "ALTER TABLE `orders` MODIFY COLUMN `total` float;"},

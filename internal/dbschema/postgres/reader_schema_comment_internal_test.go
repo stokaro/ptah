@@ -69,9 +69,9 @@ func TestReadSchemaInfoAsksForACommentOnlyWhenTheCatalogAnswers(t *testing.T) {
 			want: true,
 		},
 		{
-			// Spanner's PostgreSQL interface. Asking anyway loses the schema.
+			// Asking anyway loses the schema.
 			name: "a catalog that refuses it is not",
-			caps: capability.SpannerPostgres(),
+			caps: capability.Postgres16().With(capability.PostgresCatalogFunctions, false),
 			want: false,
 		},
 	}
@@ -102,18 +102,18 @@ func TestTablesQueryDropsWhatTheCatalogCannotAnswer(t *testing.T) {
 	}{
 		{name: "a comment is asked for where obj_description resolves", caps: capability.Postgres16(),
 			fragment: "obj_description", want: true},
-		{name: "and not where it does not", caps: capability.SpannerPostgres(),
+		{name: "and not where it does not", caps: capability.Postgres16().With(capability.PostgresCatalogFunctions, false),
 			fragment: "obj_description", want: false},
 		{name: "the statistics view is joined where it exists", caps: capability.Postgres16(),
 			fragment: "pg_stat_all_tables", want: true},
-		{name: "and not where it does not", caps: capability.SpannerPostgres(),
+		{name: "and not where it does not", caps: capability.Postgres16().With(capability.CatalogRowStatistics, false),
 			fragment: "pg_stat_all_tables", want: false},
 		{name: "the statistics column is read where the view is joined", caps: capability.Postgres16(),
 			fragment: "st.n_live_tup", want: true},
 		{
 			// Leaving this behind is a missing-FROM-clause error rather than a
 			// null, which is how the join and the projection came apart.
-			name: "and not where the join is gone", caps: capability.SpannerPostgres(),
+			name: "and not where the join is gone", caps: capability.Postgres16().With(capability.CatalogRowStatistics, false),
 			fragment: "st.n_live_tup", want: false,
 		},
 	}
@@ -144,7 +144,7 @@ func TestCatalogDependenciesAreNotReadWhereThereAreNone(t *testing.T) {
 		wantQuery bool
 	}{
 		{name: "read where the type system exists", caps: capability.Postgres16(), wantQuery: true},
-		{name: "skipped where it does not", caps: capability.SpannerPostgres(), wantQuery: false},
+		{name: "skipped where it does not", caps: capability.Postgres16().With(capability.CatalogDependencies, false), wantQuery: false},
 	}
 
 	for _, tt := range tests {

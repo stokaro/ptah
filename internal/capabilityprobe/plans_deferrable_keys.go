@@ -18,8 +18,8 @@ func withDeferrableKeys(p plan, dialect string) plan {
 	const add = "ALTER TABLE dkt ADD CONSTRAINT dkt_uq UNIQUE (id) DEFERRABLE INITIALLY DEFERRED"
 	var table string
 	switch dialect {
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
-		table = postgresFamilySpelling(dialect).table("dkt", "n int, id int", "n")
+	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB:
+		table = tableSpelling{}.table("dkt", "n int, id int", "n")
 	case platform.ClickHouse:
 		table = clickHouseSpelling.table("dkt", "n Int64, id Int64", "n")
 	case platform.Oracle:

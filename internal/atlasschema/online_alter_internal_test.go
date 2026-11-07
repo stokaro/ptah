@@ -37,7 +37,7 @@ func TestRefuseOnlineAlterInOneTransaction_HappyPath(t *testing.T) {
 }
 
 func TestRefuseOnlineAlterInOneTransaction_FailurePath(t *testing.T) {
-	for _, dialect := range []string{"postgres", "pgx", "cockroachdb", "yugabytedb", "spanner"} {
+	for _, dialect := range []string{"postgres", "pgx", "cockroachdb", "yugabytedb"} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 			err := refuseOnlineAlterInOneTransaction(DiffPolicy{OnlineAlter: true}, migrator.MigrationTxModeFile, dialect)

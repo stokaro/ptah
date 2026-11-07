@@ -451,7 +451,4 @@ func TestWithGeneratedTimeoutDirectives_UnsupportedDialect(t *testing.T) {
 	got := withGeneratedTimeoutDirectives(sql, "clickhouse")
 
 	c.Assert(got, qt.Equals, sql)
-
-	got = withGeneratedTimeoutDirectives(sql, "spanner")
-	c.Assert(got, qt.Equals, sql)
 }

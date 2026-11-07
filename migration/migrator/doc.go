@@ -187,19 +187,13 @@
 //
 // # Cross-Database Support
 //
-// The migrator carries dialect-specific handling for nine dialects. Every
+// The migrator carries dialect-specific handling for eight dialects. Every
 // branch is reachable from a zero-value Migrator, which is how the guard tests
 // assert the statement each target is sent without a live server of that
 // engine:
 //
 //   - PostgreSQL, CockroachDB, YugabyteDB: the default revision table DDL with
 //     a TIMESTAMP column, and read-only pre-migration check transactions
-//   - Spanner: the same PostgreSQL-family paths, except that the revision
-//     table's timestamp column is TIMESTAMPTZ, which is the type Spanner's
-//     PostgreSQL interface has (see its descriptor's revision table), that it asks
-//     for a schema by name rather than through current_schema(), and that a
-//     body is applied outside any transaction, because the preset refuses DDL
-//     inside one -- so each statement commits as it runs
 //   - MySQL, MariaDB: backtick identifier quoting, the InnoDB revision-row
 //     witness on file transactions, and the version-column type migration
 //     described above

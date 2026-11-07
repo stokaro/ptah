@@ -63,7 +63,7 @@ func TestReplayGuardSessionScope_OriginalGuardStillRefusesTemporaryTables(t *tes
 }
 
 func TestReplayGuardSessionScope_OtherEnginesStillRefuseTemporaryTables(t *testing.T) {
-	for _, dialect := range []string{platform.CockroachDB, platform.YugabyteDB, platform.Spanner, platform.MySQL, platform.SQLite} {
+	for _, dialect := range []string{platform.CockroachDB, platform.YugabyteDB, platform.MySQL, platform.SQLite} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 			guard := devclean.NewReplayGuard(catalog.ServerInfo{Dialect: dialect}, devclean.ReplayRealmDatabase).WithSessionScope()

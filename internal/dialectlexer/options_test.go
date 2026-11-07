@@ -29,7 +29,6 @@ var switchAnswers = map[string]lexer.Options{
 	},
 	platform.CockroachDB: {StandardStrings: true, PostgreSQLEscapeStrings: true},
 	platform.YugabyteDB:  {StandardStrings: true, PostgreSQLEscapeStrings: true},
-	platform.Spanner:     {StandardStrings: true, PostgreSQLEscapeStrings: true},
 	platform.MySQL: {
 		StandardStrings: true, BackslashEscapes: true,
 		RequireWhitespaceAfterDashDash: true, ExecutableComments: lexer.ExecutableCommentsMySQL,

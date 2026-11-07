@@ -47,7 +47,6 @@ func TestReads(t *testing.T) {
 		{dialect: "", want: true},
 		{dialect: "postgres", want: true},
 		{dialect: "sqlite", want: true},
-		{dialect: "spanner", want: true},
 		{dialect: "no-such-engine", want: false},
 	} {
 		t.Run(test.dialect, func(t *testing.T) {

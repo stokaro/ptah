@@ -108,10 +108,10 @@ func TestRender_FailurePath(t *testing.T) {
 			want:    `.*cockroachdb does not support PostgreSQL extension installation schema "ext" for extension "pg_trgm"`,
 		},
 		{
-			name: "an update on Spanner", target: "spanner",
+			name: "an update on CockroachDB", target: "cockroachdb",
 			payload: &pgextension.Operation{Name: "pg_trgm", Action: pgextension.UpdateVersion, Version: "1.6"},
 			is:      ptaherr.ErrUnsupportedFeature,
-			want:    `.*spanner cannot alter PostgreSQL extension "pg_trgm"; this target has no ALTER EXTENSION`,
+			want:    `.*cockroachdb cannot alter PostgreSQL extension "pg_trgm"; this target has no ALTER EXTENSION`,
 		},
 		{
 			name: "a move on CockroachDB", target: "cockroachdb",
@@ -166,7 +166,6 @@ func TestHostsAlterations(t *testing.T) {
 		{target: "postgresql", want: true},
 		{target: "yugabytedb", want: true},
 		{target: "cockroachdb", want: false},
-		{target: "spanner", want: false},
 		{target: "mysql", want: false},
 	}
 	for _, test := range tests {

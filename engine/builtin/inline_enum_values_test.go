@@ -42,8 +42,6 @@ func declaredEnumSchema() *schemamodel.Database {
 // column carries. The comparison lowers the column to the same model
 // (schemaprep.LowerInlineEnums), so the bare type ENUM, which each of these
 // servers refuses, or SQLite's TEXT without the CHECK, would not converge.
-// Spanner names the CHECK the way the comparison expects, because the server
-// names an unnamed one CK_<table>_<hash>_<n>.
 func TestGetOrderedCreateStatements_AValuedEnumColumnIsBuiltInline(t *testing.T) {
 	tests := []struct {
 		dialect string
@@ -73,11 +71,6 @@ func TestGetOrderedCreateStatements_AValuedEnumColumnIsBuiltInline(t *testing.T)
 			dialect: platform.ClickHouse,
 			want:    "CREATE TABLE t (\n  id Int64,\n  s Nullable(Enum8('draft' = 1, 'live' = 2))\n) ENGINE = MergeTree ORDER BY (id);\n\n",
 		},
-		{
-			dialect: platform.Spanner,
-			want: "CREATE TABLE \"t\" (\n  \"id\" BIGINT PRIMARY KEY NOT NULL,\n" +
-				"  \"s\" TEXT CONSTRAINT \"t_s_check\" CHECK (s IN ('draft', 'live'))\n);\n\n",
-		},
 	}
 	for _, test := range tests {
 		t.Run(test.dialect, func(t *testing.T) {
@@ -97,7 +90,7 @@ func TestGetOrderedCreateStatements_AValuedEnumColumnIsBuiltInline(t *testing.T)
 func TestGetOrderedCreateStatements_AValuedEnumColumnMatchesADeclaredEnum(t *testing.T) {
 	for _, dialect := range []string{
 		platform.MySQL, platform.MariaDB, platform.SQLite, platform.SQLServer, platform.Oracle,
-		platform.ClickHouse, platform.Spanner,
+		platform.ClickHouse,
 	} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)

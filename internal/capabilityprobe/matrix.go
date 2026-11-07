@@ -98,12 +98,10 @@ type CICell struct {
 	// SuiteSkip says why the integration runner has no target for this cell,
 	// and is empty exactly when the Suite fields are populated.
 	//
-	// A dialect can be capability-measured before it can be suite-tested, and
-	// the two were one decision until Spanner needed them apart: its rows are
-	// measurable against a live endpoint today, while the integration suite
-	// has no Spanner target at all. Requiring both would leave the dialect
-	// unmeasured for as long as the second half takes -- and the first half is
-	// what keeps a preset honest in the meantime (stokaro/ptah#942).
+	// A dialect can be capability-measured before it can be suite-tested.
+	// Requiring both would leave the dialect unmeasured for as long as the
+	// second half takes -- and the first half is what keeps a preset honest in
+	// the meantime (stokaro/ptah#942).
 	//
 	// It is a stated reason rather than an empty field for the same reason
 	// Skip is: a cell that quietly runs half of what its neighbors run reads
@@ -380,12 +378,6 @@ var launchers = map[string]launcher{
 		url:           "cockroachdb://root@127.0.0.1:26257/defaultdb?sslmode=disable",
 		suiteDatabase: "cockroachdb",
 		suiteURLEnv:   "COCKROACHDB_URL",
-	},
-	platform.Spanner: {
-		flags:         []string{"--publish", "5432:5432"},
-		url:           "spanner://127.0.0.1:5432/ptah_test?sslmode=disable",
-		suiteDatabase: "spanner",
-		suiteURLEnv:   "SPANNER_URL",
 	},
 	platform.YugabyteDB: {
 		flags: []string{"--publish", "5433:5433"},

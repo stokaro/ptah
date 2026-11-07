@@ -195,12 +195,6 @@ func TestEnsureApplyLockSupported_FailurePath(t *testing.T) {
 				`Remove --lock-timeout to apply without a lock`,
 		},
 		{
-			name: "spanner", request: "--lock-timeout", dialect: "spanner",
-			wantErr: `--lock-timeout requested a schema apply lock, and dialect "spanner" has none: ` +
-				`only postgres, mysql, mariadb, sqlserver, yugabytedb take a session advisory lock. ` +
-				`Remove --lock-timeout to apply without a lock`,
-		},
-		{
 			name: "oracle", request: "--lock-timeout", dialect: "oracle",
 			wantErr: `--lock-timeout requested a schema apply lock, and dialect "oracle" has none: ` +
 				`only postgres, mysql, mariadb, sqlserver, yugabytedb take a session advisory lock. ` +
@@ -262,7 +256,6 @@ func TestApplyLockSupported_FailurePath(t *testing.T) {
 		{name: "sqlite", dialect: "sqlite"},
 		{name: "clickhouse", dialect: "clickhouse"},
 		{name: "cockroachdb", dialect: "cockroachdb"},
-		{name: "spanner", dialect: "spanner"},
 		{name: "oracle", dialect: "oracle"},
 		{name: "unknown", dialect: "frobnicate"},
 		{name: "empty", dialect: ""},

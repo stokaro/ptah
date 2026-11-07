@@ -59,17 +59,6 @@ func TestForDialect(t *testing.T) {
 			},
 		},
 		{
-			name:    "spanner",
-			dialect: "spanner",
-			want: identifier.Semantics{
-				DefaultSchema:  "public",
-				IndexNamespace: identifier.IndexNamespaceSchema,
-				IndexNames:     identifier.ComparisonExact,
-				TableNames:     identifier.ComparisonExact,
-				ColumnNames:    identifier.ComparisonExact,
-			},
-		},
-		{
 			name:    "mysql folds ASCII and leaves the rest unknown",
 			dialect: "mysql",
 			want: identifier.Semantics{

@@ -297,18 +297,6 @@ func TestConflictSet_DialectMatching(t *testing.T) {
 			want:    false,
 		},
 		{
-			name:    "spanner same schema conflicts across tables",
-			dialect: "spanner",
-			ref:     difftypes.IndexRef{Name: "IDX_Shared", TableName: "Tenant.Orders"},
-			want:    true,
-		},
-		{
-			name:    "spanner different schemas are independent",
-			dialect: "spanner",
-			ref:     difftypes.IndexRef{Name: "IDX_Shared", TableName: "Audit.Orders"},
-			want:    false,
-		},
-		{
 			name:    "raw dotted index name remains one identifier",
 			dialect: "postgres",
 			ref:     difftypes.IndexRef{Name: "Tenant.IDX_Shared", TableName: "Orders"},

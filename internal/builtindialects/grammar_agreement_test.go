@@ -19,8 +19,8 @@ import (
 //   - takesOneEnforcement, takesEnforced and takesNotValid: PostgreSQL took one
 //     [NOT] ENFORCED after a CHECK or a foreign key, MySQL any number after a
 //     CHECK, and PostgreSQL, CockroachDB and YugabyteDB took NOT VALID.
-//   - takesMatch and refuseMatchType: the PostgreSQL family without Spanner,
-//     MySQL, MariaDB and SQLite took MATCH; MySQL built PARTIAL, MariaDB and
+//   - takesMatch and refuseMatchType: the PostgreSQL family, MySQL, MariaDB
+//     and SQLite took MATCH; MySQL built PARTIAL, MariaDB and
 //     SQLite refused FULL and PARTIAL with their own sentences, and the rest
 //     refused PARTIAL.
 //   - parseDeferral, parseInitially, applyToKey and refuseOnCheck: MySQL and
@@ -38,8 +38,8 @@ import (
 //     exempt from the typo refusal.
 //   - tableBodyReadsKeywordAsIndex: the MySQL family read all four index words
 //     as an index; SQLite and Oracle INDEX; SQL Server INDEX and KEY;
-//     CockroachDB INDEX before a column list; PostgreSQL, YugabyteDB, Spanner
-//     and ClickHouse none.
+//     CockroachDB INDEX before a column list; PostgreSQL, YugabyteDB and
+//     ClickHouse none.
 //   - readsKeyOptions, readKeyVisibility, the bare UNIQUE name, the FOREIGN KEY
 //     index name and parseNullsDistinctClause read the MySQL family; MySQL
 //     refused IGNORED and NOT IGNORED, MariaDB INVISIBLE; parseFunctionalKeyPart
@@ -202,13 +202,6 @@ var oldParserSwitches = map[string]descriptor.Grammar{
 			NotValid: true,
 			Match:    descriptor.Match{Clause: true},
 		},
-		Statements: descriptor.StatementGrammar{Extensions: true, UserTypes: true, GrantTargetLists: true},
-		Routines: descriptor.RoutineGrammar{
-			Body: descriptor.RoutineQuotedBody, TriggerConditions: true, DefaultDoBlockLanguage: "plpgsql",
-		},
-	},
-	platform.Spanner: {
-		Columns:    descriptor.ColumnGrammar{CurrentTimeKeywords: true, StoredStringDefaults: true},
 		Statements: descriptor.StatementGrammar{Extensions: true, UserTypes: true, GrantTargetLists: true},
 		Routines: descriptor.RoutineGrammar{
 			Body: descriptor.RoutineQuotedBody, TriggerConditions: true, DefaultDoBlockLanguage: "plpgsql",

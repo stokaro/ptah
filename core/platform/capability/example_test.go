@@ -90,15 +90,15 @@ func ExampleCapabilities_Validate() {
 // receives holds no answer at all, and reading that silence through Has alone
 // would turn "nobody established this" into "the target does not have it".
 func ExampleCapabilities_Established() {
-	spanner := capability.ForDialect("spanner")
+	cockroach := capability.ForDialect("cockroachdb")
 	unknown := capability.ForDialect("db2")
 
 	key := capability.CreateIndexConcurrently
-	fmt.Printf("spanner: has=%t established=%t\n", spanner.Has(key), spanner.Established(key))
+	fmt.Printf("cockroachdb: has=%t established=%t\n", cockroach.Has(key), cockroach.Established(key))
 	fmt.Printf("unknown: has=%t established=%t\n", unknown.Has(key), unknown.Established(key))
 
 	// Output:
-	// spanner: has=false established=true
+	// cockroachdb: has=false established=true
 	// unknown: has=false established=false
 }
 

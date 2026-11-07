@@ -219,9 +219,9 @@ func validateConfig(cfg *Config, rules []Rule, served schemaext.TargetResolver) 
 // found nothing would be reporting that every change is online on an engine
 // that rebuilds the table for most of them, and a guarantee that is wrong in
 // silence is worse than no guarantee. The same applies to the engines whose
-// online story is real but unmeasured here: CockroachDB, YugabyteDB and
-// Spanner apply schema changes online by design, and saying so needs its own
-// measurement rather than PostgreSQL's; SQL Server and Oracle answer
+// online story is real but unmeasured here: CockroachDB and YugabyteDB apply
+// schema changes online by design, and saying so needs its own measurement
+// rather than PostgreSQL's; SQL Server and Oracle answer
 // differently by edition.
 func validateOnlineConfig(cfg *Config) error {
 	switch cfg.Online {

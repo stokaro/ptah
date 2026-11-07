@@ -28,8 +28,8 @@ import (
 // so the answer says nothing about who created it and a refusal built on it
 // would reject the table Ptah itself had just created.
 //
-// SQLite has no roles, and ClickHouse and Spanner no per-table owner to
-// compare against (stokaro/ptah#3474).
+// SQLite has no roles, and ClickHouse no per-table owner to compare against
+// (stokaro/ptah#3474).
 func Test_metadataTableOwnerQuery_Coverage(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -45,7 +45,6 @@ func Test_metadataTableOwnerQuery_Coverage(t *testing.T) {
 		{name: "mariadb has no table owner", dialect: platform.MariaDB, wantOK: false},
 		{name: "sqlite has no roles", dialect: platform.SQLite, wantOK: false},
 		{name: "clickhouse has no table owner", dialect: platform.ClickHouse, wantOK: false},
-		{name: "spanner has no table owner", dialect: platform.Spanner, wantOK: false},
 		{name: "an unknown dialect answers nothing", dialect: "nonesuch", wantOK: false},
 	}
 

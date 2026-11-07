@@ -34,9 +34,8 @@ func informationSchema(c *qt.C) catalogQueryer {
 	return catalogQueryer{DB: db}
 }
 
-// The MySQL family and Spanner ask information_schema in the configured
-// schema, or in the schema the connection carries, trimmed, when none is
-// configured.
+// The MySQL family asks information_schema in the configured schema, or in
+// the schema the connection carries, trimmed, when none is configured.
 func TestCatalog_ColumnExistsAsksTheResolvedSchema(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -47,9 +46,8 @@ func TestCatalog_ColumnExistsAsksTheResolvedSchema(t *testing.T) {
 	}{
 		{name: "mysql reads the connected database", dialect: platform.MySQL, connection: " ptah_test ", want: true},
 		{name: "mariadb reads the connected database", dialect: platform.MariaDB, connection: "ptah_test", want: true},
-		{name: "spanner reads the connection's schema", dialect: platform.Spanner, connection: "ptah_test", want: true},
 		{name: "a configured schema wins", dialect: platform.MySQL, configured: "other", connection: "ptah_test", want: false},
-		{name: "spanner honors a configured schema", dialect: platform.Spanner, configured: "ptah_test", connection: "other", want: true},
+		{name: "a configured schema is the one asked", dialect: platform.MariaDB, configured: "ptah_test", connection: "other", want: true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

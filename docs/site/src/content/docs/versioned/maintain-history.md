@@ -194,7 +194,7 @@ never ran, and `--force` is how an operator who applied it themselves overrides
 the refusal.
 
 That reading of `applied=0/N` holds wherever the count is a witness. On
-ClickHouse, Oracle and Spanner every statement is durable the moment it runs,
+ClickHouse and Oracle every statement is durable the moment it runs,
 so Ptah writes no per-statement witness and zero says only that nothing was
 recorded: the body may have run in full, in part, or not at all. The hint says
 so there, repair does not refuse, and what ends the row is to finish the body
@@ -446,7 +446,7 @@ not write and a row-level policy each run somebody else's SQL under the
 migration role, and provenance covers the next one too.
 
 Engines whose catalog cannot answer are outside it: the MySQL family, SQL
-Server, SQLite, ClickHouse and Spanner. On MySQL and MariaDB a trigger runs as
+Server, SQLite and ClickHouse. On MySQL and MariaDB a trigger runs as
 its definer rather than as the connected account, so the same table gains its
 author a hook on every migration and not the migration role's privileges. SQL
 Server records no creator for an ordinary object -- the catalog reports the

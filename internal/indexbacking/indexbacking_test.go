@@ -46,7 +46,6 @@ func TestServerBacks_HappyPath(t *testing.T) {
 		{name: "sqlserver keeps them separate", dialect: "sqlserver", kind: indexbacking.Unique, want: false},
 		{name: "mysql foreign key", dialect: "mysql", kind: indexbacking.ForeignKey, want: true},
 		{name: "mariadb foreign key", dialect: "mariadb", kind: indexbacking.ForeignKey, want: true},
-		{name: "spanner foreign key", dialect: "spanner", kind: indexbacking.ForeignKey, want: true},
 		{name: "postgres creates no foreign key index", dialect: "postgres", kind: indexbacking.ForeignKey, want: false},
 		{name: "a check has no index", dialect: "postgres", kind: indexbacking.None, want: false},
 		{name: "an unknown dialect answers what every server does", dialect: "", kind: indexbacking.Unique, want: true},
@@ -64,7 +63,7 @@ func TestServerBacks_HappyPath(t *testing.T) {
 // TestNamedAfterConstraint_IsNarrowerThanServerBacks pins the gap between the
 // two, which is the whole reason both exist.
 //
-// A foreign key's backing index carries the constraint's name on the three
+// A foreign key's backing index carries the constraint's name on the two
 // servers that create one, so ServerBacks answers true -- and an ordinary index
 // may carry that name too, so a caller matching on the name alone would suppress
 // a user's own index. The comparator matches on the constraint's columns as
@@ -79,7 +78,6 @@ func TestNamedAfterConstraint_IsNarrowerThanServerBacks(t *testing.T) {
 	}{
 		{name: "mysql foreign key", dialect: "mysql", kind: indexbacking.ForeignKey, serverBacks: true, namedAfter: false},
 		{name: "mariadb foreign key", dialect: "mariadb", kind: indexbacking.ForeignKey, serverBacks: true, namedAfter: false},
-		{name: "spanner foreign key", dialect: "spanner", kind: indexbacking.ForeignKey, serverBacks: true, namedAfter: false},
 		{name: "primary key is read from its mark", dialect: "postgres", kind: indexbacking.PrimaryKey, serverBacks: true, namedAfter: false},
 		{name: "postgres unique agrees", dialect: "postgres", kind: indexbacking.Unique, serverBacks: true, namedAfter: true},
 		{name: "sqlserver unique agrees on false", dialect: "sqlserver", kind: indexbacking.Unique, serverBacks: false, namedAfter: false},

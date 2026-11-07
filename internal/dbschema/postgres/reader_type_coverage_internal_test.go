@@ -31,7 +31,9 @@ func TestReadUserTypes_AnUnreachableCatalogRecordsWhatItLeftOut(t *testing.T) {
 	}{
 		{name: "a server with the types", caps: capability.Postgres16().With(capability.CatalogDependencies, false),
 			limits: []coverage.Kind{coverage.Composite, coverage.Domain}, ranges: schemaext.Uninspected},
-		{name: "a server without them", caps: capability.SpannerPostgres(), ranges: schemaext.Complete},
+		{name: "a server without them", caps: capability.Postgres16().With(capability.CatalogDependencies, false).
+			With(capability.DomainTypes, false).With(capability.CompositeTypes, false).With(capability.RangeTypes, false),
+			ranges: schemaext.Complete},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

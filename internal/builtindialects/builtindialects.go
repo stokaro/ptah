@@ -26,7 +26,6 @@ func Descriptors() []descriptor.Dialect {
 		sqlServer(),
 		cockroachDB(),
 		yugabyteDB(),
-		spanner(),
 		oracle(),
 	}
 }

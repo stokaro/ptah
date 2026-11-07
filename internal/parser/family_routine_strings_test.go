@@ -14,7 +14,7 @@ import (
 // grammar and the PostgreSQL family. Their own lexers do not read a continued
 // or a U& string as one constant, and a routine of theirs is read with
 // PostgreSQL's string rules all the same.
-var familyMembers = []string{platform.CockroachDB, platform.YugabyteDB, platform.Spanner}
+var familyMembers = []string{platform.CockroachDB, platform.YugabyteDB}
 
 // TestParse_FamilyMemberRoutineBodies_HappyPath pins that a routine body on
 // every member of the PostgreSQL family is read with the string rules of the

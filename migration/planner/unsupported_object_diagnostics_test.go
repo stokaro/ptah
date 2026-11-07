@@ -9,7 +9,9 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/difftypes"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -621,45 +623,47 @@ func rolesCarrying(names ...string) difftypes.RoleChanges {
 // creation and the renderer answers with a named skip -- measured -- leaving the
 // declaration's own columns pointing at a type the server has no definition of
 // (stokaro/ptah#2561, stokaro/ptah#1717).
+//
+// No built-in engine of the family refuses a composite type, so its row plans
+// for PostgreSQL with a capability set that lacks one, as a provider of the
+// family may state.
 func TestPlan_UserTypeCreationsOnTargetsThatCannotHostThem_FailurePath(t *testing.T) {
 	tests := []struct {
 		name    string
 		dialect string
+		caps    capability.Capabilities
 		diff    *difftypes.SchemaDiff
 		wantErr string
 	}{
 		{
 			name:    "cockroachdb domain",
 			dialect: platform.CockroachDB,
+			caps:    capability.ForDialect(platform.CockroachDB),
 			diff:    &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{{Subject: pgtype.Ref(pgtype.DomainKind, "", "email"), Value: &pgtype.DomainChange{After: &pgtype.DesiredDomain{BaseType: "TEXT"}}}}},
 			wantErr: `cockroachdb: CREATE DOMAIN email: this target does not create it.*`,
 		},
 		{
-			name:    "spanner domain",
-			dialect: platform.Spanner,
-			diff:    &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{{Subject: pgtype.Ref(pgtype.DomainKind, "", "email"), Value: &pgtype.DomainChange{After: &pgtype.DesiredDomain{BaseType: "TEXT"}}}}},
-			wantErr: `spanner: CREATE DOMAIN email: this target does not create it.*`,
-		},
-		{
 			name:    "cockroachdb range",
 			dialect: platform.CockroachDB,
+			caps:    capability.ForDialect(platform.CockroachDB),
 			diff:    &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{{Subject: pgtype.Ref(pgtype.RangeKind, "", "span"), Value: &pgtype.RangeChange{After: &pgtype.DesiredRange{Subtype: "int4"}}}}},
 			wantErr: `cockroachdb: CREATE TYPE \.\.\. AS RANGE span: this target does not create it.*`,
 		},
 		{
-			name:    "spanner composite",
-			dialect: platform.Spanner,
+			name:    "postgres without composite types",
+			dialect: platform.Postgres,
+			caps:    capability.Postgres18().With(capability.CompositeTypes, false),
 			diff:    &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{{Subject: pgtype.Ref(pgtype.CompositeKind, "", "addr"), Value: &pgtype.CompositeChange{After: &pgtype.DesiredComposite{Attributes: []pgtype.Attribute{{Name: "street", Type: "TEXT"}}}}}}},
-			wantErr: `spanner: CREATE TYPE \.\.\. AS \(\.\.\.\) addr: this target does not create it.*`,
+			wantErr: `postgres: CREATE TYPE \.\.\. AS \(\.\.\.\) addr: this target does not create it.*`,
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := planner.GenerateSchemaDiffAST(
+			nodes, err := planner.GenerateSchemaDiffASTWithOptions(
 				context.Background(), must.Must(builtin.New()),
-				test.diff, test.dialect,
+				test.diff, test.dialect, planext.Options{Capabilities: test.caps},
 			)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(err, qt.ErrorMatches, `.*`+test.wantErr)

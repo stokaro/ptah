@@ -23,7 +23,6 @@ func TestIdentifiers_HappyPath(t *testing.T) {
 		{name: "mysql", dialect: platform.MySQL, wantMax: 64, wantUnit: capability.IdentifierCharacters},
 		{name: "mariadb", dialect: platform.MariaDB, wantMax: 64, wantUnit: capability.IdentifierCharacters},
 		{name: "sqlserver", dialect: platform.SQLServer, wantMax: 128, wantUnit: capability.IdentifierCharacters},
-		{name: "spanner", dialect: platform.Spanner, wantMax: 128, wantUnit: capability.IdentifierCharacters},
 		{name: "unnormalized spelling", dialect: "PostgreSQL", wantMax: 63, wantUnit: capability.IdentifierBytes},
 	}
 
@@ -168,6 +167,18 @@ func TestEnumModeling_ReadsThePresets(t *testing.T) {
 	}
 }
 
+// TestForeignKeyReference_NamesTheBackingIndexPolicy reads the policy of a
+// set in which the database creates the referenced-key backing index. No
+// built-in preset states it; an executable provider's engine may.
+func TestForeignKeyReference_NamesTheBackingIndexPolicy(t *testing.T) {
+	c := qt.New(t)
+	caps := capability.Postgres17().
+		With(capability.ForeignKeysRequireUniqueReference, false).
+		With(capability.ForeignKeysCreateBackingIndex, true)
+
+	c.Assert(caps.ForeignKeyReference(), qt.Equals, capability.ReferenceBackingIndex)
+}
+
 func TestForeignKeyReference_ReadsThePresets(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -177,7 +188,6 @@ func TestForeignKeyReference_ReadsThePresets(t *testing.T) {
 		{name: "postgres requires a unique reference", dialect: platform.Postgres, want: capability.ReferenceUnique},
 		{name: "mysql requires a unique reference", dialect: platform.MySQL, want: capability.ReferenceUnique},
 		{name: "mariadb requires an indexed reference", dialect: platform.MariaDB, want: capability.ReferenceIndexed},
-		{name: "spanner creates the backing index", dialect: platform.Spanner, want: capability.ReferenceBackingIndex},
 		{name: "clickhouse has no foreign keys", dialect: platform.ClickHouse, want: capability.ReferenceUnsupported},
 	}
 

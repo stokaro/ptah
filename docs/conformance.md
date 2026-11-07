@@ -756,7 +756,7 @@ refuses anything else its reset would drop as well, on every engine. Each
 writer lists what its reset drops through the query the reset runs, and the
 check reads that list:
 
-- PostgreSQL, CockroachDB, YugabyteDB and Spanner: a view, a materialized view,
+- PostgreSQL, CockroachDB and YugabyteDB: a view, a materialized view,
   a function, a procedure, an aggregate, a sequence, a type, a collation, on
   PostgreSQL a large object, and a default privilege the reset would take
   away: one set in a schema when the URL pins no `search_path`, and on
@@ -1460,9 +1460,7 @@ and the plan keeps, on a target that stores the comment apart from the index
 creates writes its comment after the `CREATE INDEX`, and one it drops takes the
 comment with it, so neither needs the statement. Measured on PostgreSQL 18.6,
 CockroachDB v26.3.2 and YugabyteDB 2026.1.2: `'first'` -> `'second'` -> none
-plans one `COMMENT ON INDEX` each, and the diff after each apply is in sync. The
-Spanner PostgreSQL interface answers `Unknown statement` to `COMMENT ON INDEX`,
-so its render names the comment as skipped.
+plans one `COMMENT ON INDEX` each, and the diff after each apply is in sync.
 
 The MySQL family is the other case. There the comment is part of the index
 definition, kept in `STATISTICS.INDEX_COMMENT`, and no statement changes it in
@@ -1523,14 +1521,13 @@ would drop them when applied. The options of a YDB full-text or local index are
 the exception: the YDB provider adds attributes for them to the directive.
 
 `include` is outside this loss class: a model can
-declare `include="b"`, and PostgreSQL, YugabyteDB, CockroachDB, the Spanner
-PostgreSQL dialect, and SQL Server preserve it as an `INCLUDE` clause, while YDB
-writes it as `COVER`. Validation refuses the other dialects rather than dropping
+declare `include="b"`, and PostgreSQL, YugabyteDB, CockroachDB and SQL Server
+preserve it as an `INCLUDE` clause, the Spanner provider writes it as an
+`INCLUDE` clause too, and YDB writes it as `COVER`. Validation refuses the other dialects rather than dropping
 the payload. It also limits methods to default/`BTREE`/`GIST` on PostgreSQL
 12–13, adds `SPGIST` on PostgreSQL 14 and newer, and accepts default/`LSM` on
 YugabyteDB. YugabyteDB's documented `BTREE` alias renders identically to its
-default LSM. Spanner accepts only the default, and CockroachDB and SQL Server
-accept the default and `BTREE`. Closing the remaining class means adding a storage-parameter
+default LSM. CockroachDB and SQL Server accept the default and `BTREE`. Closing the remaining class means adding a storage-parameter
 attribute to the annotation surface, which is not attempted here.
 
 ### The access-method loss was not silent in general
@@ -1764,7 +1761,7 @@ MySQL and MariaDB now compare uniqueness and the key columns, and nothing else.
 That branch was added with the ownership rule below, which is what made a
 database unique index reachable by the comparison at all; see
 [#1245](https://github.com/stokaro/ptah/issues/1245) for what it deliberately
-leaves out and why. SQLite, ClickHouse, CockroachDB, YugabyteDB and Spanner keep
+leaves out and why. SQLite, ClickHouse, CockroachDB and YugabyteDB keep
 the comparison they had, because what makes two indexes the same index is a
 per-dialect question and those dialects were not measured.
 
@@ -2021,7 +2018,7 @@ What that cost each engine, measured rather than reasoned about:
 | MySQL 9.7.1 | live: the same Go-model fixture through `ptah schema compare` | rendered SQL byte-identical to before the change |
 | SQL Server | inspection only — no live server was available here | guarded in `renderColumnForAlter`; pinned by a renderer test, not by an engine |
 | ClickHouse | inspection only | unaffected: its type renderer already excluded a key column from `Nullable()` wrapping on both paths |
-| CockroachDB, YugabyteDB, Spanner | inspection only; they share the PostgreSQL renderer | inherit the PostgreSQL guard |
+| CockroachDB, YugabyteDB | inspection only; they share the PostgreSQL renderer | inherit the PostgreSQL guard |
 
 Two adjacent defects were found while measuring this and are **not** fixed here,
 because both predate the change and reproduce identically without it:

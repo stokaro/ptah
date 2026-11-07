@@ -111,7 +111,6 @@ func corpus() []Fixture {
 		{Name: "table-api", Schema: tableAPIFixture()},
 		{Name: "table-override", Schema: tableOverrideFixture()},
 		{Name: "table-rowttl", Schema: tableRowTTLFixture()},
-		{Name: "table-row-deletion", Schema: tableRowDeletionFixture()},
 		{Name: "fk-field", Schema: foreignKeyFieldFixture()},
 		{Name: "fk-field-deferrable", Schema: foreignKeyDeferrableFixture()},
 		{Name: "fk-table", Schema: foreignKeyTableFixture()},

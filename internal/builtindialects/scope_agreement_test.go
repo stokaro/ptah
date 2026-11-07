@@ -59,10 +59,6 @@ var scopeAgreement = map[string]scopeAnswers{
 		selection: descriptor.SchemaSelectionSearchPath, dialectDefault: "public",
 		roles: descriptor.RoleScopeReferenced, widenable: true,
 	},
-	"spanner": {
-		selection: descriptor.SchemaSelectionSearchPath,
-		roles:     descriptor.RoleScopeReferenced, widenable: true,
-	},
 	"oracle": {},
 }
 

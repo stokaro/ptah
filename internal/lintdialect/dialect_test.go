@@ -77,13 +77,13 @@ func TestAcceptedSpellings_DeclarationControls(t *testing.T) {
 	spellings := acceptedSpellings(c)
 
 	// Positive control: representative aliases from each engine family.
-	for _, alias := range []string{"pgx", "postgresql", "ch", "sqlite3", "mssql", "tsql", "sql-server", "crdb", "cockroach", "ysql", "yugabyte", "cloudspanner", "google_spanner", "google-spanner", "sql_server"} {
+	for _, alias := range []string{"pgx", "postgresql", "ch", "sqlite3", "mssql", "tsql", "sql-server", "crdb", "cockroach", "ysql", "yugabyte", "sql_server"} {
 		c.Assert(spellings, qt.Contains, alias)
 	}
 	// Positive control: canonical names are accepted spellings too.
 	for _, canonical := range []string{
 		platform.Postgres, platform.MySQL, platform.MariaDB, platform.ClickHouse,
-		platform.SQLite, platform.SQLServer, platform.CockroachDB, platform.YugabyteDB, platform.Spanner,
+		platform.SQLite, platform.SQLServer, platform.CockroachDB, platform.YugabyteDB,
 	} {
 		c.Assert(spellings, qt.Contains, canonical)
 	}
@@ -92,8 +92,8 @@ func TestAcceptedSpellings_DeclarationControls(t *testing.T) {
 		c.Assert(platform.NormalizeDialect(spelling), qt.Not(qt.Equals), "", qt.Commentf("collected %q, which is not an accepted spelling", spelling))
 	}
 	// The engine count is what the exhaustive sweeps below depend on.
-	c.Assert(canonicalDialects(c), qt.HasLen, 9)
-	c.Assert(platformCanonicalDialects(c), qt.HasLen, 10)
+	c.Assert(canonicalDialects(c), qt.HasLen, 8)
+	c.Assert(platformCanonicalDialects(c), qt.HasLen, 9)
 }
 
 // TestCanonical_RefusesEveryEngineLintCannotAnalyzeYet is the other side of the
@@ -259,12 +259,6 @@ func TestCompatible(t *testing.T) {
 			want:     true,
 		},
 		{
-			name:     "Spanner rides the PostgreSQL family",
-			policy:   platform.Spanner,
-			database: platform.Postgres,
-			want:     true,
-		},
-		{
 			name:     "an empty policy asserts nothing",
 			policy:   "",
 			database: platform.MariaDB,
@@ -419,7 +413,7 @@ func TestBuiltInRules_MySQLFamilyMembersAreSplitOnlyWhereMeasured(t *testing.T) 
 //
 // Unlike the MySQL family, the PostgreSQL family's members do NOT select the
 // same rule set: every PG and TX rule names the literal "postgres", and a rule
-// names cockroachdb, yugabytedb or spanner only where its behavior was
+// names cockroachdb or yugabytedb only where its behavior was
 // measured on that engine. The measured set is written down here, one rule at
 // a time, so a rule that widens to a wire-compatible engine without a
 // measurement reddens this test rather than inheriting PostgreSQL's claims.
@@ -436,10 +430,9 @@ func TestBuiltInRules_PostgresFamilyMembersAreNamedOnlyWhereMeasured(t *testing.
 
 	// The rules measured on the wire-compatible engines, and the engines each
 	// was measured on (stokaro/ptah#2958: SET NOT NULL fails on a NULL row on
-	// CockroachDB v25.2, YugabyteDB 2025.1 and the Spanner emulator's
-	// PostgreSQL interface alike).
+	// CockroachDB v25.2 and YugabyteDB 2025.1 alike).
 	measured := []string{
-		"PG303=" + strings.Join([]string{platform.CockroachDB, platform.Spanner, platform.YugabyteDB}, ","),
+		"PG303=" + strings.Join([]string{platform.CockroachDB, platform.YugabyteDB}, ","),
 	}
 
 	postgresFamily := slices.DeleteFunc(ruleFamilyCoverage(c), func(cov ruleDialectCoverage) bool {

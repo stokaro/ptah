@@ -35,17 +35,10 @@ func TestDescriptors_PreparationAgreesWithTheRetiredSwitches(t *testing.T) {
 		},
 		platform.CockroachDB: {PostgresBuiltInTypes: true, NonUniqueIndexMethods: []string{"gin", "gist"}},
 		platform.YugabyteDB:  {PostgresBuiltInTypes: true, NonUniqueIndexMethods: []string{"gin", "ybgin"}},
-		platform.Spanner: {
-			Enums:                   descriptor.EnumCheck,
-			EnumCheckType:           "TEXT",
-			ForeignKeyNamespace:     descriptor.NamespaceSchema,
-			ForeignKeyNamesFoldCase: true,
-			PostgresBuiltInTypes:    true,
-		},
-		platform.MySQL:      mysqlFamily,
-		platform.MariaDB:    mysqlFamily,
-		platform.ClickHouse: {Enums: descriptor.EnumNumbered},
-		platform.SQLite:     {Enums: descriptor.EnumCheck, EnumCheckType: "TEXT"},
+		platform.MySQL:       mysqlFamily,
+		platform.MariaDB:     mysqlFamily,
+		platform.ClickHouse:  {Enums: descriptor.EnumNumbered},
+		platform.SQLite:      {Enums: descriptor.EnumCheck, EnumCheckType: "TEXT"},
 		platform.SQLServer: {
 			Enums:                   descriptor.EnumCheck,
 			EnumCheckType:           "NVARCHAR(255)",
@@ -74,9 +67,9 @@ func TestDescriptors_PreparationAgreesWithTheRetiredSwitches(t *testing.T) {
 
 // TestDescriptors_IdentifierLimitAgreesWithTheForeignKeyNames pins the
 // identifier limits internal/schemaprep now reads to name a foreign key
-// against the limits it wrote out before: 63 bytes on the PostgreSQL family
-// but Spanner, 128 characters on SQL Server and Spanner, 64 characters on
-// MySQL and MariaDB, and none elsewhere. PostgreSQL and YugabyteDB cut a
+// against the limits it wrote out before: 63 bytes on the PostgreSQL family,
+// 128 characters on SQL Server, 64 characters on MySQL and MariaDB, and none
+// elsewhere. PostgreSQL and YugabyteDB cut a
 // longer name to the limit; CockroachDB keeps it whole.
 func TestDescriptors_IdentifierLimitAgreesWithTheForeignKeyNames(t *testing.T) {
 	bytes63 := descriptor.IdentifierLimit{Max: 63, Unit: "bytes"}
@@ -86,8 +79,8 @@ func TestDescriptors_IdentifierLimitAgreesWithTheForeignKeyNames(t *testing.T) {
 	}
 	want := map[string]descriptor.IdentifierLimit{
 		platform.Postgres: cut63, platform.CockroachDB: bytes63, platform.YugabyteDB: cut63,
-		platform.Spanner: characters(128), platform.SQLServer: characters(128),
-		platform.MySQL: characters(64), platform.MariaDB: characters(64),
+		platform.SQLServer: characters(128),
+		platform.MySQL:     characters(64), platform.MariaDB: characters(64),
 		platform.ClickHouse: {}, platform.SQLite: {}, platform.Oracle: {},
 	}
 	for _, dialect := range builtindialects.Descriptors() {

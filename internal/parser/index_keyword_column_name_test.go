@@ -109,10 +109,6 @@ func TestIndexKeywordIsAColumnName_HappyPath(t *testing.T) {
 		{name: "cockroachdb index", dialect: platform.CockroachDB, column: "index"},
 		{name: "cockroachdb spatial", dialect: platform.CockroachDB, column: "spatial"},
 		{name: "cockroachdb fulltext", dialect: platform.CockroachDB, column: "fulltext"},
-		{name: "spanner key", dialect: platform.Spanner, column: "key"},
-		{name: "spanner index", dialect: platform.Spanner, column: "index"},
-		{name: "spanner spatial", dialect: platform.Spanner, column: "spatial"},
-		{name: "spanner fulltext", dialect: platform.Spanner, column: "fulltext"},
 		{name: "clickhouse key", dialect: platform.ClickHouse, column: "key"},
 		{name: "clickhouse spatial", dialect: platform.ClickHouse, column: "spatial"},
 		{name: "clickhouse fulltext", dialect: platform.ClickHouse, column: "fulltext"},
@@ -153,7 +149,7 @@ func TestIndexKeywordColumnWithParenthesizedTypeKeepsTheColumn_HappyPath(t *test
 		{name: "oracle spatial", dialect: platform.Oracle, column: "spatial", columnType: "VARCHAR2(32)"},
 		{name: "oracle fulltext", dialect: platform.Oracle, column: "fulltext", columnType: "VARCHAR2(32)"},
 		{name: "cockroachdb key", dialect: platform.CockroachDB, column: "key", columnType: "VARCHAR(32)"},
-		{name: "spanner index", dialect: platform.Spanner, column: "index", columnType: "VARCHAR(32)"},
+		{name: "yugabytedb index", dialect: platform.YugabyteDB, column: "index", columnType: "VARCHAR(32)"},
 		{name: "clickhouse spatial", dialect: platform.ClickHouse, column: "spatial", columnType: "FixedString(32)"},
 	}
 	for _, test := range tests {

@@ -637,7 +637,7 @@ gives the rules, which both surfaces share.
 
 `schema compare` and `schema drift` read the same server and report the changes
 the plan makes, a database to create under `schemas_added`, as they do for a
-declared schema on PostgreSQL, CockroachDB, YugabyteDB, Spanner and SQL Server. The versioned verbs
+declared schema on PostgreSQL, CockroachDB, YugabyteDB and SQL Server. The versioned verbs
 (`migrations plan`, `generate`, `up` and `status`) read one database and
 refuse a URL that names none.
 

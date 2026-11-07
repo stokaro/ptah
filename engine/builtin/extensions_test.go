@@ -26,9 +26,6 @@ import (
 	"ptah.run/dialect/mssql/mssqlschema"
 	"ptah.run/dialect/mysql/mysqlast"
 	"ptah.run/dialect/postgres/pgtable"
-	"ptah.run/dialect/spanner/spannerast"
-	"ptah.run/dialect/spanner/spannerdiff"
-	"ptah.run/dialect/spanner/spannerschema"
 	"ptah.run/dialect/timescaledb/tsast"
 	"ptah.run/dialect/timescaledb/tsdiff"
 	"ptah.run/dialect/timescaledb/tsschema"
@@ -67,15 +64,6 @@ func cockroachDBRowTTLFixture() extensionFixture {
 	return extensionFixture{payload: &crdbast.AlterRowTTL{Change: change},
 		wantSQL: "ALTER TABLE \"items\" SET (ttl_expiration_expression = 'expires_at + INTERVAL ''1 day''');\n" +
 			"ALTER TABLE \"items\" RESET (ttl_job_cron);\n\n"}
-}
-
-func spannerRowDeletionFixture() extensionFixture {
-	change := spannerdiff.RowDeletion{
-		Before: &spannerschema.ObservedRowDeletion{Policy: spannerschema.Policy{Column: "created_at", Interval: "4 WEEKS 2 DAYS"}},
-		After:  &spannerschema.DesiredRowDeletion{Policy: spannerschema.Policy{Column: "created_at", Interval: "60 days"}},
-	}
-	return extensionFixture{payload: &spannerast.AlterRowDeletion{Change: change},
-		wantSQL: "ALTER TABLE \"items\" ALTER TTL INTERVAL '60 days' ON \"created_at\";\n\n"}
 }
 
 func clickhouseIndexFixture() extensionFixture {
@@ -123,7 +111,7 @@ func mysqlReplaceIndexFixture() extensionFixture {
 }
 
 func allExtensionFixtures() []extensionFixture {
-	return []extensionFixture{exclusionFixture(), {payload: &pgtable.ReplaceDeleteColumns{Name: "fk_parent", Columns: []string{"parent_id"}, ForeignTable: "parents", ForeignColumns: []string{"id"}, OnDelete: "SET NULL", DeleteColumns: []string{"parent_id"}}}, {payload: &pgtable.AlterPersistence{Change: pgtable.PersistenceChange{After: &pgtable.DesiredPersistence{Unlogged: true}}}}, mysqlReplaceIndexFixture(), clickhouseTTLFixture(), clickhouseIndexFixture(), clickhouseDropIndexFixture(), clickhouseRefreshFixture(), clickhouseRowPolicyFixture(), clickhouseRowPolicyCommandFixture(), cockroachDBRowTTLFixture(), spannerRowDeletionFixture(),
+	return []extensionFixture{exclusionFixture(), {payload: &pgtable.ReplaceDeleteColumns{Name: "fk_parent", Columns: []string{"parent_id"}, ForeignTable: "parents", ForeignColumns: []string{"id"}, OnDelete: "SET NULL", DeleteColumns: []string{"parent_id"}}}, {payload: &pgtable.AlterPersistence{Change: pgtable.PersistenceChange{After: &pgtable.DesiredPersistence{Unlogged: true}}}}, mysqlReplaceIndexFixture(), clickhouseTTLFixture(), clickhouseIndexFixture(), clickhouseDropIndexFixture(), clickhouseRefreshFixture(), clickhouseRowPolicyFixture(), clickhouseRowPolicyCommandFixture(), cockroachDBRowTTLFixture(),
 		hypertableFixture(), continuousAggregateFixture(), policyFixture(), policyCommentFixture(), tableStateFixture(), securityPolicyFixture(), extendedPropertyFixture(), synonymFixture(),
 		defaultPrivilegeFixture(), pgExtensionFixture(), pgExtensionCommentFixture(), pgTypeCreateDomainFixture(), pgTypeAlterDomainFixture(), pgTypeCreateCompositeFixture(),
 		pgTypeAlterCompositeFixture(), pgTypeCreateRangeFixture(), pgTypeDropFixture(), pgTypeCommentFixture(),
@@ -346,7 +334,7 @@ func TestMySQLExtensionOwnerRendersAndNonownersRefuse(t *testing.T) {
 			c.Assert(sql, qt.Equals, "")
 		})
 	}
-	for _, dialect := range []string{"postgres", "cockroachdb", "yugabytedb", "spanner", "sqlite", "sqlserver", "oracle", "clickhouse"} {
+	for _, dialect := range []string{"postgres", "cockroachdb", "yugabytedb", "sqlite", "sqlserver", "oracle", "clickhouse"} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 			sql, err := builtin.RenderSQL(dialect, parent())
@@ -371,7 +359,7 @@ func TestCockroachDBExtensionOwnerRendersAndNonownersRefuse(t *testing.T) {
 		c.Assert(err, qt.IsNil)
 		c.Assert(sql, qt.Equals, fixture.wantSQL)
 	})
-	for _, dialect := range []string{"postgres", "yugabytedb", "spanner", "mysql", "sqlite", "sqlserver", "oracle", "clickhouse"} {
+	for _, dialect := range []string{"postgres", "yugabytedb", "mysql", "sqlite", "sqlserver", "oracle", "clickhouse"} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 			sql, err := builtin.RenderSQL(dialect, parent())
@@ -401,7 +389,7 @@ func TestSQLServerExtensionOwnerRendersAndNonownersRefuse(t *testing.T) {
 		c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 		c.Assert(sql, qt.Equals, "")
 	})
-	for _, dialect := range []string{"postgres", "cockroachdb", "yugabytedb", "spanner", "mysql", "mariadb", "sqlite", "oracle", "clickhouse"} {
+	for _, dialect := range []string{"postgres", "cockroachdb", "yugabytedb", "mysql", "mariadb", "sqlite", "oracle", "clickhouse"} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 			sql, err := builtin.RenderSQL(dialect, &ast.ExtensionStatement{Payload: fixture.payload})
@@ -422,7 +410,7 @@ func TestTimescaleExtensionOwnerRendersAndNonownersRefuse(t *testing.T) {
 			c := qt.New(t)
 			node := &ast.ExtensionStatement{Payload: fixture.payload}
 			caps := capability.Postgres17().With(capability.Hypertables, true).With(capability.ContinuousAggregates, true)
-			for _, dialect := range []string{"postgres", "cockroachdb", "yugabytedb", "spanner"} {
+			for _, dialect := range []string{"postgres", "cockroachdb", "yugabytedb"} {
 				sql, err := builtin.RenderSQLWithCapabilities(dialect, caps, node)
 				c.Assert(err, qt.IsNil)
 				c.Assert(sql, qt.Equals, fixture.wantSQL)
@@ -450,14 +438,15 @@ func TestRowSecurityExtensionOwnerRendersAndNonownersRefuse(t *testing.T) {
 		t.Run(string(fixture.payload.Kind()), func(t *testing.T) {
 			c := qt.New(t)
 			node := &ast.ExtensionStatement{Payload: fixture.payload}
-			for _, dialect := range []string{"postgres", "cockroachdb", "yugabytedb", "spanner"} {
+			for _, dialect := range []string{"postgres", "cockroachdb", "yugabytedb"} {
 				sql, err := builtin.RenderSQLWithCapabilities(dialect, capability.Postgres17(), node)
 				c.Assert(err, qt.IsNil)
 				c.Assert(sql, qt.Equals, fixture.wantSQL)
 			}
-			sql, err := builtin.RenderSQL("spanner", node)
+			withoutRowSecurity := capability.Postgres17().With(capability.RowLevelSecurity, false).With(capability.PolicyComments, false)
+			sql, err := builtin.RenderSQLWithCapabilities("postgres", withoutRowSecurity, node)
 			c.Assert(err, qt.IsNil)
-			c.Assert(sql, qt.Matches, `-- SPANNER: (policy tenant on app.orders|policy comment tenant on app.orders|row-level security on app.orders) is not supported by this target; skipped.\n`)
+			c.Assert(sql, qt.Matches, `-- POSTGRES: (policy tenant on app.orders|policy comment tenant on app.orders|row-level security on app.orders) is not supported by this target; skipped.\n`)
 			for _, dialect := range []string{"mysql", "mariadb", "sqlite", "sqlserver", "oracle", "clickhouse"} {
 				sql, err := builtin.RenderSQL(dialect, node)
 				c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
@@ -541,29 +530,32 @@ func TestPostgreSQLTypeOwnerRendersAndNonownersRefuse(t *testing.T) {
 // the common user types are skipped with, and the drop that needs no
 // capability.
 func TestPostgreSQLTypeOwnerSkipsWhatATargetDoesNotHold(t *testing.T) {
+	cockroachDB := capability.ForDialect("cockroachdb")
 	tests := []struct {
 		name    string
 		dialect string
+		caps    capability.Capabilities
 		fixture extensionFixture
 		want    string
 	}{
-		{name: "a domain on CockroachDB", dialect: "cockroachdb", fixture: pgTypeCreateDomainFixture(),
+		{name: "a domain on CockroachDB", dialect: "cockroachdb", caps: cockroachDB, fixture: pgTypeCreateDomainFixture(),
 			want: "-- COCKROACHDB: domain app.qty is not supported by this target; skipped.\n"},
-		{name: "a range type on CockroachDB", dialect: "cockroachdb", fixture: pgTypeCreateRangeFixture(),
+		{name: "a range type on CockroachDB", dialect: "cockroachdb", caps: cockroachDB, fixture: pgTypeCreateRangeFixture(),
 			want: "-- COCKROACHDB: range type fr is not supported by this target; skipped.\n"},
-		{name: "a type comment on CockroachDB", dialect: "cockroachdb", fixture: pgTypeCommentFixture(),
+		{name: "a type comment on CockroachDB", dialect: "cockroachdb", caps: cockroachDB, fixture: pgTypeCommentFixture(),
 			want: "-- COCKROACHDB: type comment fr is not supported by this target; skipped.\n"},
-		{name: "a composite type on Spanner", dialect: "spanner", fixture: pgTypeCreateCompositeFixture(),
-			want: "-- SPANNER: composite type addr is not supported by this target; skipped.\n"},
-		{name: "control: a composite type on CockroachDB", dialect: "cockroachdb", fixture: pgTypeCreateCompositeFixture(),
+		{name: "a composite type on a target without composite types", dialect: "postgres",
+			caps: capability.Postgres17().With(capability.CompositeTypes, false), fixture: pgTypeCreateCompositeFixture(),
+			want: "-- POSTGRES: composite type addr is not supported by this target; skipped.\n"},
+		{name: "control: a composite type on CockroachDB", dialect: "cockroachdb", caps: cockroachDB, fixture: pgTypeCreateCompositeFixture(),
 			want: pgTypeCreateCompositeFixture().wantSQL},
-		{name: "control: a drop on CockroachDB", dialect: "cockroachdb", fixture: pgTypeDropFixture(), want: pgTypeDropFixture().wantSQL},
+		{name: "control: a drop on CockroachDB", dialect: "cockroachdb", caps: cockroachDB, fixture: pgTypeDropFixture(), want: pgTypeDropFixture().wantSQL},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			sql, err := builtin.RenderSQL(test.dialect, &ast.ExtensionStatement{Payload: test.fixture.payload})
+			sql, err := builtin.RenderSQLWithCapabilities(test.dialect, test.caps, &ast.ExtensionStatement{Payload: test.fixture.payload})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, test.want)
@@ -601,31 +593,6 @@ func TestRowSecurityTableFacetsFollowTheirTable(t *testing.T) {
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, test.want)
-		})
-	}
-}
-
-// TestSpannerExtensionOwnerRendersAndNonownersRefuse renders the row deletion
-// policy operation on its owner and refuses it, without partial SQL, on every
-// other target, the PostgreSQL-wire ones that share its renderer included.
-func TestSpannerExtensionOwnerRendersAndNonownersRefuse(t *testing.T) {
-	fixture := spannerRowDeletionFixture()
-	parent := func() *ast.AlterTableNode {
-		return &ast.AlterTableNode{Name: "items", Operations: []ast.AlterOperation{&ast.ExtensionAlterOperation{Payload: fixture.payload}}}
-	}
-	t.Run("owner", func(t *testing.T) {
-		c := qt.New(t)
-		sql, err := builtin.RenderSQL("spanner", parent())
-		c.Assert(err, qt.IsNil)
-		c.Assert(sql, qt.Equals, fixture.wantSQL)
-	})
-	for _, dialect := range []string{"postgres", "yugabytedb", "cockroachdb", "mysql", "sqlite", "sqlserver", "oracle", "clickhouse"} {
-		t.Run(dialect, func(t *testing.T) {
-			c := qt.New(t)
-			sql, err := builtin.RenderSQL(dialect, parent())
-			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-			c.Assert(fmt.Sprint(err), qt.Contains, string(spannerast.AlterRowDeletionKind))
-			c.Assert(sql, qt.Equals, "")
 		})
 	}
 }

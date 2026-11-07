@@ -182,7 +182,6 @@ func TestPresets_AllValid_AndCoverEveryRegisteredCapability(t *testing.T) {
 		"CockroachDB263": capability.CockroachDB263(),
 		"YugabyteDB25":   capability.YugabyteDB25(),
 		"SQLServer2022":  capability.SQLServer2022(),
-		"Spanner":        capability.SpannerPostgres(),
 	}
 	for name, preset := range presets {
 		c.Assert(preset.Validate(), qt.IsNil, qt.Commentf("preset %s must validate", name))
@@ -288,28 +287,8 @@ func TestPresets_KeyDifferences(t *testing.T) {
 	c.Assert(yugabyte.Has(capability.Sequences), qt.IsTrue)
 	c.Assert(yugabyte.Has(capability.AdvisoryLocks), qt.IsTrue)
 
-	spanner := capability.SpannerPostgres()
-	c.Assert(spanner.Has(capability.IndexIncludeSPGiST), qt.IsFalse)
-	c.Assert(spanner.Has(capability.EnumCustomType), qt.IsFalse)
-	c.Assert(spanner.Has(capability.ForeignKeys), qt.IsTrue)
-	c.Assert(spanner.Has(capability.ForeignKeysCreateBackingIndex), qt.IsTrue)
-	// Sequences turned true when the reader half was found: the endpoint writes
-	// and drops them, and the quoted spelling of information_schema.sequences
-	// reports them, where the unquoted one is a PGAdapter stub answering zero
-	// rows. The restriction beside it is the grammar -- a name and a start
-	// counter, and none of the option clauses (stokaro/ptah#1856).
-	c.Assert(spanner.Has(capability.Sequences), qt.IsTrue)
-	c.Assert(spanner.Has(capability.SequenceStartCounterOnly), qt.IsTrue)
-	c.Assert(spanner.Has(capability.XMLType), qt.IsFalse)
-	c.Assert(spanner.Has(capability.RoleManagement), qt.IsFalse)
-
 	// Object kinds (stokaro/ptah#929 item 5). Every row below was measured
-	// against a live server of that engine except Spanner, which has no
-	// container and no live test (#942) and follows Google's documentation.
-	//
-	// Spanner is the row the keys exist for: it shares the PostgreSQL planner
-	// and renderer with the three presets above, and is the only family member
-	// that refuses a materialized view, a function or a trigger.
+	// against a live server of that engine.
 	c.Assert(capability.Postgres16().Has(capability.Views), qt.IsTrue)
 	c.Assert(capability.Postgres16().Has(capability.MaterializedViews), qt.IsTrue)
 	c.Assert(capability.Postgres16().Has(capability.Functions), qt.IsTrue)
@@ -318,10 +297,6 @@ func TestPresets_KeyDifferences(t *testing.T) {
 	c.Assert(cockroach.Has(capability.Triggers), qt.IsTrue)
 	c.Assert(yugabyte.Has(capability.MaterializedViews), qt.IsTrue)
 	c.Assert(yugabyte.Has(capability.Triggers), qt.IsTrue)
-	c.Assert(spanner.Has(capability.Views), qt.IsTrue)
-	c.Assert(spanner.Has(capability.MaterializedViews), qt.IsFalse)
-	c.Assert(spanner.Has(capability.Functions), qt.IsFalse)
-	c.Assert(spanner.Has(capability.Triggers), qt.IsFalse)
 
 	// Outside the PostgreSQL family most of these keys record the engine rather
 	// than gating an emission yet. MySQL accepts CREATE MATERIALIZED VIEW and
@@ -453,7 +428,6 @@ func TestForDialect(t *testing.T) {
 	c.Assert(capability.ForDialect("yugabyte").Has(capability.CreateIndexConcurrently), qt.IsTrue)
 	c.Assert(capability.ForDialect("mssql").Has(capability.CreateOrReplaceTrigger), qt.IsTrue)
 	c.Assert(capability.ForDialect("sql-server").Has(capability.ForeignKeys), qt.IsTrue)
-	c.Assert(capability.ForDialect("spanner").Has(capability.ForeignKeys), qt.IsTrue)
 	c.Assert(capability.ForDialect("oracle").Has(capability.ObjectExistenceGuards), qt.IsTrue)
 	c.Assert(capability.ForDialect("oracle").Has(capability.TransactionalDDL), qt.IsFalse)
 	// Unknown dialects get the conservative zero set. The name has to be one
@@ -518,7 +492,6 @@ func TestForServerVersion(t *testing.T) {
 		{"cockroach 26.3 has trigger definitions", "postgres", "CockroachDB CCL v26.3.1 (x86_64-pc-linux-gnu, built 2026/08/24 17:36:57, go1.26.6)", capability.CatalogTriggerDefinitions, true},
 		{"yugabytedb 2024.2 has trigger definitions", "yugabytedb", "PostgreSQL 11.2-YB-2024.2.10.0-b0 on x86_64-pc-linux-gnu, compiled by clang version 17.0.6", capability.CatalogTriggerDefinitions, true},
 		{"postgres 18 has trigger definitions", "postgres", "PostgreSQL 18.6 (Debian 18.6-1.pgdg13+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit", capability.CatalogTriggerDefinitions, true},
-		{"spanner banner supports foreign keys", "postgres", "Cloud Spanner PostgreSQL interface", capability.ForeignKeys, true},
 		{"unparseable falls back to dialect default", "mysql", "who knows", capability.DropConstraintGeneric, true},
 	}
 	for _, tt := range tests {
@@ -670,10 +643,6 @@ func TestResolveServerVersionReportsSaturation(t *testing.T) {
 			"yugabytedb past the newest measured line",
 			"postgres", "PostgreSQL 15.12-YB-2027.1.0.0-b0 on x86_64-pc-linux-gnu",
 			capability.YugabyteDB25(), false, true, "2026.1",
-		},
-		{
-			"spanner is intentionally version-free",
-			"postgres", "Cloud Spanner PostgreSQL interface", capability.SpannerPostgres(), true, false, "",
 		},
 		// ClickHouse HAS a ladder now, of one step at 24.11. 25.3 is above the
 		// step and below the newest measured line, so it climbs to the upper
@@ -863,14 +832,13 @@ func TestResolveServerVersionRecognizesUsableStrings(t *testing.T) {
 		{"mysql between measured lines", "mysql", "8.0.42-log", true},
 		{"cockroachdb between measured lines", "postgres", "CockroachDB CCL v25.5.1", true},
 
-		// Version-specific outcomes, including the two dialects answered from
-		// the banner without a version ever being parsed.
+		// Version-specific outcomes, including a dialect answered from the
+		// banner without a version ever being parsed.
 		{"postgres measured line", "postgres", "PostgreSQL 16.3 (Debian)", true},
 		{"mysql measured line", "mysql", "8.4.11", true},
 		{"mariadb measured line", "mariadb", "10.11.6-MariaDB", true},
 		{"cockroachdb measured line", "postgres", "CockroachDB CCL v25.4.5", true},
 		{"yugabytedb answers from the banner alone", "postgres", "PostgreSQL 15.2-YB-2026.1.0.0-b0", true},
-		{"spanner answers from the banner alone", "postgres", "Cloud Spanner PostgreSQL interface", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -937,7 +905,6 @@ func TestResolveServerVersionReportsTheDialectItAnsweredFrom(t *testing.T) {
 		{name: "the replication prefix outranks mysql", dialect: "mysql", version: "5.5.5-10.11.6-MariaDB", resolved: "mariadb"},
 		{name: "a CockroachDB banner outranks sqlite", dialect: "sqlite", version: "CockroachDB CCL v25.4.5", resolved: "cockroachdb"},
 		{name: "a YugabyteDB banner outranks postgres", dialect: "postgres", version: "PostgreSQL 15.2-YB-2026.1.0.0-b0", resolved: "yugabytedb"},
-		{name: "a Spanner banner outranks postgres", dialect: "postgres", version: "Cloud Spanner PostgreSQL", resolved: "spanner"},
 		{name: "a PostgreSQL banner agrees with postgres", dialect: "postgres", version: "PostgreSQL 16.3 (Debian)", resolved: "postgres"},
 		{name: "a dotted version keeps the declared mysql", dialect: "mysql", version: "8.0.42-log", resolved: "mysql"},
 		{name: "a dotted version keeps the declared mariadb", dialect: "mariadb", version: "10.11.6", resolved: "mariadb"},
@@ -960,11 +927,10 @@ func TestResolveServerVersionReportsTheDialectItAnsweredFrom(t *testing.T) {
 // TestResolveServerVersionDistributedSQLBannersOutrankThePostgresOne is the
 // ordering control for the PostgreSQL branch.
 //
-// Three of the four product banners contain the word "postgres": CockroachDB
-// speaks the PostgreSQL wire protocol, YugabyteDB reports its engine version as
-// "PostgreSQL 11.2-YB-…" and Spanner as "Cloud Spanner PostgreSQL". If the
-// PostgreSQL branch were checked first, all three would resolve to a PostgreSQL
-// preset and every live connection to those engines would be planned as
+// Two of the three product banners contain the word "postgres": CockroachDB
+// speaks the PostgreSQL wire protocol, and YugabyteDB reports its engine
+// version as "PostgreSQL 11.2-YB-…". If the PostgreSQL branch were checked
+// first, both would resolve to a PostgreSQL preset and every live connection to those engines would be planned as
 // PostgreSQL.
 func TestResolveServerVersionDistributedSQLBannersOutrankThePostgresOne(t *testing.T) {
 	tests := []struct {
@@ -984,12 +950,6 @@ func TestResolveServerVersionDistributedSQLBannersOutrankThePostgresOne(t *testi
 			version:  "PostgreSQL 15.2-YB-2026.1.0.0-b0",
 			resolved: "yugabytedb",
 			want:     capability.YugabyteDB25(),
-		},
-		{
-			name:     "Spanner names PostgreSQL in its own banner",
-			version:  "Cloud Spanner PostgreSQL",
-			resolved: "spanner",
-			want:     capability.SpannerPostgres(),
 		},
 	}
 
@@ -1086,7 +1046,6 @@ func TestBannerPlatform(t *testing.T) {
 	}{
 		{name: "a CockroachDB banner", version: "CockroachDB CCL v25.4.5 (x86_64-pc-linux-gnu)", want: "cockroachdb"},
 		{name: "a YugabyteDB banner names PostgreSQL first", version: "PostgreSQL 15.2-YB-2026.1.0.0-b0", want: "yugabytedb"},
-		{name: "a Spanner banner names PostgreSQL first", version: "Cloud Spanner PostgreSQL interface", want: "spanner"},
 		{name: "a plain PostgreSQL banner", version: "PostgreSQL 16.3 (Debian 16.3-1.pgdg120+1)", want: "postgres"},
 		{name: "a MariaDB banner", version: "10.11.6-MariaDB-1:10.11.6+maria~ubu2204", want: "mariadb"},
 		{name: "the MariaDB replication prefix", version: "5.5.5-10.11.6-MariaDB", want: "mariadb"},
@@ -1329,17 +1288,14 @@ func TestResolveServerVersionUnreadablePostgresBannerNamesPostgres(t *testing.T)
 // TestResolveServerVersionKeepsAPostgresFamilyDialectOnAGenericBanner is the
 // live-connection half of the PostgreSQL banner rule.
 //
-// CockroachDB, YugabyteDB and Spanner are all reached over the PostgreSQL wire
-// protocol, and a deployment of any of them may report a banner carrying no
-// token of its own. The PostgreSQL-wire connector (internal/connector/pgconnect)
+// CockroachDB and YugabyteDB are both reached over the PostgreSQL wire
+// protocol, and a deployment of either may report a banner carrying no token
+// of its own. The PostgreSQL-wire connector (internal/connector/pgconnect)
 // answers that case by keeping the dialect the operator connected with — the decision
 // TestDetectPostgresWireDialect's "explicit cockroach survives generic banner"
 // row pins — and then hands this resolver that dialect together with the same
 // banner. Claiming the banner as PostgreSQL here overrules that decision at the
-// layer that picks what DDL may be emitted: measured, "spanner" plus
-// "PostgreSQL 14.1" turned SpannerPostgres into Postgres14 across 19 keys,
-// among them materialized_views, functions and triggers, which exist to stop
-// Ptah emitting DDL Spanner refuses.
+// layer that picks what DDL may be emitted.
 func TestResolveServerVersionKeepsAPostgresFamilyDialectOnAGenericBanner(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -1367,12 +1323,6 @@ func TestResolveServerVersionKeepsAPostgresFamilyDialectOnAGenericBanner(t *test
 			dialect: "yugabytedb",
 			version: "PostgreSQL 11.2 on x86_64-pc-linux-gnu",
 			want:    capability.YugabyteDB24(),
-		},
-		{
-			name:    "a PostgreSQL banner on spanner",
-			dialect: "spanner",
-			version: "PostgreSQL 14.1",
-			want:    capability.SpannerPostgres(),
 		},
 		{
 			name:    "a PostgreSQL banner on postgres itself",
@@ -1432,9 +1382,6 @@ func TestResolveServerVersionClaimsAGenericBannerOutsideThePostgresFamily(t *tes
 func TestResolveServerVersionPostgresFamilyPresetsAreNotOnePreset(t *testing.T) {
 	c := qt.New(t)
 
-	c.Assert(capability.SpannerPostgres(), qt.Not(qt.DeepEquals), capability.Postgres16())
 	c.Assert(capability.YugabyteDB25(), qt.Not(qt.DeepEquals), capability.Postgres16())
 	c.Assert(capability.CockroachDB25(), qt.Not(qt.DeepEquals), capability.Postgres16())
-	c.Assert(capability.SpannerPostgres().Has(capability.Triggers), qt.IsFalse)
-	c.Assert(capability.Postgres16().Has(capability.Triggers), qt.IsTrue)
 }

@@ -42,7 +42,10 @@ type atlasAlias struct {
 
 var atlasCodeAliases = map[string]atlasAlias{
 	"BC102": {rules: []string{"BC101"}},
-	"MF104": {rules: []string{"PG303", "LT101", "DD103"}},
+	// SP101 is the rule the official Spanner provider registers for the
+	// statement PG303 reads on the built-in PostgreSQL family; it is reached
+	// only on a run that selects that provider.
+	"MF104": {rules: []string{"PG303", "LT101", "DD103", "SP101"}},
 	// MY148 is the first engine-specific alias, and the reason the dialects
 	// field existed before there was one. Ptah reports a column character set
 	// or collation change through MY130, whose subject is the whole column

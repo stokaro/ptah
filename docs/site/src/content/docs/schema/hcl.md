@@ -99,7 +99,7 @@ Path confinement is shared by every `--schema-file` source; see
 [Schema file paths](../../reference/native-commands/#schema-file-paths).
 
 A `schema` block with nothing in it is still a declaration. On PostgreSQL,
-CockroachDB, YugabyteDB, Spanner and SQL Server, `ptah schema apply` and `ptah migrations
+CockroachDB, YugabyteDB and SQL Server, `ptah schema apply` and `ptah migrations
 generate` create it when the database lacks it, and report it as synced when the
 database holds it. A plan never drops a schema the file does not mention. [Atlas
 schema commands](../../atlas/schema-commands/#a-schema-with-nothing-in-it) has the

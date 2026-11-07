@@ -121,12 +121,6 @@ func TestReadWith_RefusalPositionOfEachOwner(t *testing.T) {
 			wantAt:    "BOGUS",
 		},
 		{
-			name: "a Spanner row deletion policy", dialect: platform.Spanner,
-			statement: "CREATE TABLE t (id bigint PRIMARY KEY, ts timestamptz) TTL '30 days' ON ts;",
-			wantErr:   `line 7, column 60: expected INTERVAL after TTL`,
-			wantAt:    "'30 days'",
-		},
-		{
 			name: "a SQLite virtual table", dialect: platform.SQLite,
 			statement: "CREATE VIRTUAL TABLE docs fts5(x);",
 			wantErr:   `line 7, column 27: expected 'USING', got 'fts5'`,

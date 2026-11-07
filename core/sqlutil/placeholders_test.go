@@ -46,12 +46,6 @@ func TestRebind(t *testing.T) {
 			want:    "SELECT $1",
 		},
 		{
-			name:    "spanner postgres-family placeholders",
-			dialect: "spanner",
-			query:   "DELETE FROM t WHERE id = ?",
-			want:    "DELETE FROM t WHERE id = $1",
-		},
-		{
 			name:    "case-insensitive dialect",
 			dialect: "PostgreSQL",
 			query:   "SELECT ?",

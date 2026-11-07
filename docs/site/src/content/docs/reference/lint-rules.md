@@ -242,13 +242,14 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 | `OW` | Atlas | ownership policy; Atlas documents these, Ptah emits none |
 | `PG` | Atlas | PostgreSQL-specific locking, rewrite, and transaction hazards |
 | `SA` | Atlas | static analysis of routine bodies a migration defines |
+| `SP` | Ptah | Spanner statements whose outcome depends on the rows a table holds or that drop what the statement does not name |
 | `SQL` | Ptah | the SQL linter could not read or model the statement |
 | `TX` | Atlas | transaction shape of a migration |
 | `YD` | Ptah | YDB statements the server refuses, or runs with an effect the statement does not state |
 
 ## Migration lint rules
 
-122 rules, registered in `migration/lint`. `ptah migrations lint` reports the whole registry, and `ptah-compat migrate lint` reports all of it but `BC101`, `PG401P` and `PG402P`, which only native `ptah` emits. Neither apply gate reports even that much, so a rule listed below is not by itself a check that stands between an apply and a database: `ptah migrations up` disables the `MF`, `BC`, `PG` and `MY` families and refuses only on blocking `DS` findings unless the policy's `gate` section names more families, and `ptah-compat schema apply` runs only the rules an `atlas.hcl` `lint` block names, which means a project without such a block gets no lint pass there at all. The tables are grouped by the dialects each rule applies to, which is why they carry no dialect column.
+124 rules, registered in `migration/lint`. `ptah migrations lint` reports the whole registry, and `ptah-compat migrate lint` reports all of it but `BC101`, `PG401P` and `PG402P`, which only native `ptah` emits. Neither apply gate reports even that much, so a rule listed below is not by itself a check that stands between an apply and a database: `ptah migrations up` disables the `MF`, `BC`, `PG` and `MY` families and refuses only on blocking `DS` findings unless the policy's `gate` section names more families, and `ptah-compat schema apply` runs only the rules an `atlas.hcl` `lint` block names, which means a project without such a block gets no lint pass there at all. The tables are grouped by the dialects each rule applies to, which is why they carry no dialect column.
 
 ### Every dialect
 
@@ -374,11 +375,18 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 | `TX101` | the migration mixes statements that cannot share one transaction | both | Atlas |
 | `TX201` | an explicit BEGIN/COMMIT block fights the transaction the migrator opens around each file; in a golang-migrate directory, which opens none, only a block opened inside another | both | Atlas |
 
-### postgres, cockroachdb, yugabytedb, spanner
+### postgres, cockroachdb, yugabytedb
 
 | Rule | Meaning | Surface | Origin |
 | --- | --- | --- | --- |
 | `PG303` | SET NOT NULL scans the table to validate existing rows | both | Atlas |
+
+### spanner
+
+| Rule | Meaning | Surface | Origin |
+| --- | --- | --- | --- |
+| `SP101` | SET NOT NULL on Spanner validates every existing row in a schema change, and a row holding NULL fails it and leaves the column nullable | both | Ptah |
+| `SP102` | `ALTER TABLE ... DROP TTL` drops a table's row deletion policy, so rows the policy would delete stay | both | Ptah |
 
 ### sqlite
 
@@ -475,7 +483,7 @@ A YDB run reads migrations as YQL. The `YD` family above is YDB's own, and every
 
 ## Default severities
 
-39 rules report at error severity by default: `CAP001`, `CD101`, `CD102`, `CD103`, `DDL002`, `DDL004`, `DS101`, `DS102`, `DS104`, `DS105`, `DS106`, `DS107`, `DS108`, `DS109`, `DS110P`, `DS111P`, `MY146`, `ON101`, `ON102`, `ON103`, `PG402P`, `SQL001`, `SQL002`, `YD101`, `YD102`, `YD103`, `YD104`, `YD106`, `YD107`, `YD108`, `YD109`, `YD110`, `YD113`, `YD114`, `YD116`, `YD120`, `YD121`, `YD130`, `YD140`. The other 92 default to warning or info. A committed `.ptah-lint.yaml` replaces either, per rule or per family. `ptah sql lint` reads the same file and now reads the `rules:` severities it sets for `CAP001`, `DDL001`, `DDL002`, `DDL003`, `DDL004`, `SQL001`, `SQL002`, `SQL003` and `SQL004`, so the severities above are the defaults. `--disable` refuses a selector covering `SQL001` or `SQL002`: those report that the file could not be analyzed, and a run that analyzed nothing must not report clean.
+39 rules report at error severity by default: `CAP001`, `CD101`, `CD102`, `CD103`, `DDL002`, `DDL004`, `DS101`, `DS102`, `DS104`, `DS105`, `DS106`, `DS107`, `DS108`, `DS109`, `DS110P`, `DS111P`, `MY146`, `ON101`, `ON102`, `ON103`, `PG402P`, `SQL001`, `SQL002`, `YD101`, `YD102`, `YD103`, `YD104`, `YD106`, `YD107`, `YD108`, `YD109`, `YD110`, `YD113`, `YD114`, `YD116`, `YD120`, `YD121`, `YD130`, `YD140`. The other 94 default to warning or info. A committed `.ptah-lint.yaml` replaces either, per rule or per family. `ptah sql lint` reads the same file and now reads the `rules:` severities it sets for `CAP001`, `DDL001`, `DDL002`, `DDL003`, `DDL004`, `SQL001`, `SQL002`, `SQL003` and `SQL004`, so the severities above are the defaults. `--disable` refuses a selector covering `SQL001` or `SQL002`: those report that the file could not be analyzed, and a run that analyzed nothing must not report clean.
 
 ## What ptah-compat prints
 
@@ -501,7 +509,7 @@ Every check code in the reviewed snapshot of the [Atlas analyzer documentation](
 | `MF101` | adding a unique index to an existing column | no | `MF101` | covered — structural: the build fails on the first duplicate; the message names the query that settles it and what a failed CONCURRENTLY build leaves behind, and a unique index the dev database already holds over the columns silences it |
 | `MF102` | modifying a non-unique index to unique | no | `MF102` | covered — an index dropped earlier in the file and rebuilt as unique under the same name, or under a new name over the columns the dev database records for it; the message adds that the failure leaves the table without the index it had |
 | `MF103` | adding a non-nullable column to an existing table | no | `DD101` | covered |
-| `MF104` | modifying a nullable column to non-nullable might fail | no | `PG303`, `LT101`, `DD103` | covered — PG303 on PostgreSQL, CockroachDB, YugabyteDB and Spanner, LT101 on SQLite, DD103 on MySQL, MariaDB, SQL Server and ClickHouse; every engine measured, each with its own failure named |
+| `MF104` | modifying a nullable column to non-nullable might fail | no | `PG303`, `LT101`, `DD103`, `SP101` | covered — PG303 on PostgreSQL, CockroachDB and YugabyteDB, LT101 on SQLite, DD103 on MySQL, MariaDB, SQL Server and ClickHouse, SP101 on Spanner; every engine measured, each with its own failure named |
 | `BC101` | renaming a table | no | `BC101` | covered |
 | `BC102` | renaming a column | no | `BC101` | covered — one rule reports both object kinds |
 | `BC103` | dropping a table | no | `BC103` | covered — the rollout break, not the row loss DS101 reports on the same statement, and separately suppressible: accepting the data loss is not accepting deployed clients failing. Native `ptah migrations lint` only; no apply gate |

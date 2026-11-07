@@ -119,12 +119,6 @@ var modifyColumnNullabilityCases = []modifyColumnNullabilityCase{
 		ordinary: renderExpectation{contains: `ALTER TABLE "users" ALTER COLUMN "nickname" DROP NOT NULL;`, absent: "SET NOT NULL"},
 	},
 	{
-		name:     "spanner",
-		dialect:  "spanner",
-		key:      renderExpectation{contains: `ALTER TABLE "users" ALTER COLUMN "id" SET NOT NULL;`, absent: "DROP NOT NULL"},
-		ordinary: renderExpectation{contains: `ALTER TABLE "users" ALTER COLUMN "nickname" DROP NOT NULL;`, absent: "SET NOT NULL"},
-	},
-	{
 		// Oracle changes a column through MODIFY, and NOT NULL is a clause on
 		// the column rather than a SET/DROP verb. Measured on 23.26 and 21.3:
 		// `ALTER TABLE t MODIFY (n NOT NULL)` and `MODIFY (n NULL)` are both

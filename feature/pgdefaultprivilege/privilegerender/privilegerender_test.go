@@ -12,14 +12,21 @@ import (
 	"ptah.run/feature/pgdefaultprivilege"
 )
 
+// withoutRoles is a PostgreSQL capability set without role management, as a
+// provider of the family may state one; no built-in engine of the family lacks
+// it.
+func withoutRoles() capability.Capabilities {
+	return capability.Postgres18().With(capability.RoleManagement, false).With(capability.RoleComments, false)
+}
+
 func TestCapabilityRefusalNamesEveryOperation(t *testing.T) {
 	for _, action := range []pgdefaultprivilege.Action{pgdefaultprivilege.GrantRights, pgdefaultprivilege.RevokeRights, pgdefaultprivilege.RevokeGrantOptions} {
 		t.Run(string(action), func(t *testing.T) {
 			c := qt.New(t)
 			operation := &pgdefaultprivilege.Operation{Identity: pgdefaultprivilege.Identity{Grantor: "app_owner", Schema: "app", ObjectType: "TABLES", Grantee: "app_reader"}, Action: action, Privileges: []string{"SELECT"}}
-			sql, err := builtin.RenderSQLWithCapabilities("spanner", capability.SpannerPostgres(), &ast.ExtensionStatement{Payload: operation})
+			sql, err := builtin.RenderSQLWithCapabilities("postgres", withoutRoles(), &ast.ExtensionStatement{Payload: operation})
 			c.Assert(err, qt.IsNil)
-			c.Assert(strings.TrimSpace(sql), qt.Equals, "-- SPANNER: default privilege app_owner on TABLES in schema app to app_reader is not supported by this target; skipped.")
+			c.Assert(strings.TrimSpace(sql), qt.Equals, "-- POSTGRES: default privilege app_owner on TABLES in schema app to app_reader is not supported by this target; skipped.")
 		})
 	}
 }
@@ -41,7 +48,7 @@ func TestInvalidOperationPrecedesCapabilityRefusal(t *testing.T) {
 			t.Run(string(action)+"/"+test.name, func(t *testing.T) {
 				c := qt.New(t)
 				operation := &pgdefaultprivilege.Operation{Identity: test.identity, Action: action, Privileges: test.privileges}
-				sql, err := builtin.RenderSQLWithCapabilities("spanner", capability.SpannerPostgres(), &ast.ExtensionStatement{Payload: operation})
+				sql, err := builtin.RenderSQLWithCapabilities("postgres", withoutRoles(), &ast.ExtensionStatement{Payload: operation})
 				c.Assert(err, qt.ErrorMatches, "(?s).*"+test.reason+".*")
 				c.Assert(sql, qt.Equals, "")
 			})
@@ -52,7 +59,7 @@ func TestInvalidOperationPrecedesCapabilityRefusal(t *testing.T) {
 func TestCapabilitySkipKeepsNamesInsideItsComment(t *testing.T) {
 	c := qt.New(t)
 	operation := &pgdefaultprivilege.Operation{Identity: pgdefaultprivilege.Identity{Grantor: "owner\nDROP TABLE users", ObjectType: "TABLES", Grantee: "reader"}, Action: pgdefaultprivilege.GrantRights, Privileges: []string{"SELECT"}}
-	sql, err := builtin.RenderSQLWithCapabilities("spanner", capability.SpannerPostgres(), &ast.ExtensionStatement{Payload: operation})
+	sql, err := builtin.RenderSQLWithCapabilities("postgres", withoutRoles(), &ast.ExtensionStatement{Payload: operation})
 	c.Assert(err, qt.IsNil)
-	c.Assert(strings.TrimSpace(sql), qt.Equals, "-- SPANNER: default privilege owner DROP TABLE users on TABLES globally to reader is not supported by this target; skipped.")
+	c.Assert(strings.TrimSpace(sql), qt.Equals, "-- POSTGRES: default privilege owner DROP TABLE users on TABLES globally to reader is not supported by this target; skipped.")
 }

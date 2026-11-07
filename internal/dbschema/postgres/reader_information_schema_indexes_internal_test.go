@@ -45,6 +45,13 @@ func informationSchemaIndexRows() dbtest.QueryResult {
 	}
 }
 
+// withoutCatalogFunctions is a PostgreSQL-wire server whose catalog answers
+// information_schema and not pg_catalog's helpers. No built-in preset is one;
+// the reader still branches on the key.
+func withoutCatalogFunctions() capability.Capabilities {
+	return capability.Postgres17().With(capability.PostgresCatalogFunctions, false)
+}
+
 func informationSchemaIndexReader(c *qt.C, caps capability.Capabilities) (*Reader, *int) {
 	c.Helper()
 
@@ -103,7 +110,7 @@ func TestReadInformationSchemaIndexes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			reader, _ := informationSchemaIndexReader(c, capability.SpannerPostgres())
+			reader, _ := informationSchemaIndexReader(c, withoutCatalogFunctions())
 			indexes, err := reader.readIndexesForSchema(t.Context(), "public")
 			c.Assert(err, qt.IsNil)
 
@@ -133,7 +140,7 @@ func TestReadIndexesForSchemaPicksTheCatalogTheServerHas(t *testing.T) {
 		caps     capability.Capabilities
 		standard bool
 	}{
-		{name: "spanner has no pg_catalog helpers", caps: capability.SpannerPostgres(), standard: true},
+		{name: "a server without pg_catalog helpers", caps: withoutCatalogFunctions(), standard: true},
 		{name: "postgres has them", caps: capability.Postgres17(), standard: false},
 	}
 

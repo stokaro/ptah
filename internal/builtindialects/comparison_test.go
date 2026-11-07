@@ -82,14 +82,6 @@ func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 			RoutineTypeAliases: "pg-aliases",
 			QualifiedTypeNames: true,
 		},
-		"spanner": {
-			DeclaredSchemas:        true,
-			ForeignKeyBackingIndex: true,
-			RolePasswords:          true,
-			RoutineTypeAliases:     "pg-aliases",
-			SingleStringType:       true,
-			BareTypes:              postgresFloats,
-		},
 		"mysql":   mysqlFamily,
 		"mariadb": mysqlFamily,
 		"sqlite": {

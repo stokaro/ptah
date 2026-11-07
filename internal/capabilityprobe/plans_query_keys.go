@@ -64,7 +64,7 @@ func queryKeySpellingFor(dialect string) (queryKeySpelling, bool) {
 	case platform.SQLite:
 		table := keyed("INTEGER")
 		return queryKeySpelling{table: table, uniqueTable: withUniqueIndex(table)}, true
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner,
+	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB,
 		platform.MySQL, platform.MariaDB, platform.SQLServer:
 		table := keyed("int")
 		return queryKeySpelling{table: table, uniqueTable: withUniqueIndex(table)}, true

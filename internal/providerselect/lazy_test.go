@@ -25,7 +25,8 @@ func TestLazyServes(t *testing.T) {
 		{"an official engine with no built-in implementation", "duckdb", true},
 		{"a built-in engine", "sqlite", false},
 		{"an official engine only its provider serves", "ydb", true},
-		{"an official engine that is still built in", "spanner", false},
+		{"an optional official engine only its provider serves", "spanner", true},
+		{"a URL scheme of that engine", "cloudspanner", true},
 		{"a scheme nothing claims", "nothing", false},
 		{"an empty scheme", "", false},
 	}
@@ -47,8 +48,9 @@ func TestLazyListsWhatItServesWithoutStartingAnything(t *testing.T) {
 	lazy := newLazy(c)
 
 	c.Assert(lazy.NativeSchemes(), qt.DeepEquals, map[string]string{"fixture": "fixture", "fix": "fixture", "duckdb": "duckdb",
-		"ydb": "ydb", "ydbs": "ydb"})
-	c.Assert(lazy.DevEngines(), qt.DeepEquals, []string{"duckdb", "fix", "fixture", "ydb", "ydbs"})
+		"spanner": "spanner", "cloudspanner": "spanner", "google-spanner": "spanner", "ydb": "ydb", "ydbs": "ydb"})
+	c.Assert(lazy.DevEngines(), qt.DeepEquals, []string{"cloudspanner", "duckdb", "fix", "fixture", "google-spanner", "google_spanner", "spanner",
+		"ydb", "ydbs"})
 }
 
 func TestLazyNativeRegistration_HappyPath(t *testing.T) {
@@ -165,7 +167,7 @@ func TestLazyProvisionDev_FailurePath(t *testing.T) {
 // selection order resolves from the store.
 func TestLazyListsRealmSchemesWithoutStartingAnything(t *testing.T) {
 	c := qt.New(t)
-	c.Assert(newLazy(c).RealmSchemes(), qt.DeepEquals, []string{"duckdb", "fix", "fixture", "ydb", "ydbs"})
+	c.Assert(newLazy(c).RealmSchemes(), qt.DeepEquals, []string{"cloudspanner", "duckdb", "fix", "fixture", "google-spanner", "spanner", "ydb", "ydbs"})
 }
 
 func TestLazyEnterRealm_FailurePath(t *testing.T) {

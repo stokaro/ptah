@@ -81,7 +81,6 @@ func TestParseChecks_PostgresFamilyEscapeStringBeforeDirective(t *testing.T) {
 	}{
 		{name: "CockroachDB", dialect: platform.CockroachDB},
 		{name: "YugabyteDB", dialect: platform.YugabyteDB},
-		{name: "Spanner", dialect: platform.Spanner},
 	}
 
 	for _, test := range tests {

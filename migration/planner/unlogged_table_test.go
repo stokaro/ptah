@@ -64,7 +64,7 @@ func TestUnloggedChange_HappyPath(t *testing.T) {
 // creates no unlogged table. The comparison records none there, so only a diff
 // built by hand reaches it, and writing nothing would report the change made.
 func TestUnloggedChange_FailurePath(t *testing.T) {
-	for _, dialect := range []string{platform.YugabyteDB, platform.CockroachDB, platform.Spanner} {
+	for _, dialect := range []string{platform.YugabyteDB, platform.CockroachDB} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 

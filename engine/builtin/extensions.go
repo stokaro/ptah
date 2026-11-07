@@ -13,7 +13,6 @@ import (
 	"ptah.run/dialect/cockroachdb/crdbrender"
 	"ptah.run/dialect/mysql/mysqlrender"
 	"ptah.run/dialect/postgres/pgtablerender"
-	"ptah.run/dialect/spanner/spannerrender"
 	"ptah.run/dialect/timescaledb/tsrender"
 	"ptah.run/engine/builtin/internal/dialects/postgres"
 	"ptah.run/feature/pgdefaultprivilege/privilegerender"
@@ -34,9 +33,6 @@ var (
 	})
 	cockroachDBRegistry = sync.OnceValues(func() (renderer.Extensions, error) {
 		return renderer.NewExtensions(postgresFamilyHandlers(crdbrender.Handlers()...)...)
-	})
-	spannerRegistry = sync.OnceValues(func() (renderer.Extensions, error) {
-		return renderer.NewExtensions(postgresFamilyHandlers(spannerrender.Handlers()...)...)
 	})
 )
 
@@ -89,8 +85,8 @@ type renderOwners struct {
 // non-owning backends know no payload types. TimescaleDB and row security are
 // owners on every PostgreSQL-family target, and their renderers refuse or skip
 // what a target without the capability cannot hold; row-level TTL is
-// CockroachDB's alone, the row deletion policy Spanner's, and the security
-// policy and the extended property SQL Server's. The synonym owner serves SQL
+// CockroachDB's alone, and the security policy and the extended property SQL
+// Server's. The synonym owner serves SQL
 // Server and Oracle, and the MySQL owner's index replacement MySQL and
 // MariaDB.
 func ownersFor(dialect string) renderOwners {
@@ -103,9 +99,6 @@ func ownersFor(dialect string) renderOwners {
 		return renderOwners{extensions: oracleRegistry}
 	case platform.CockroachDB:
 		return renderOwners{extensions: cockroachDBRegistry, tableStorage: crdbrender.CreateTableClause,
-			lowerTableFacets: lowerPostgresFamilyFacets}
-	case platform.Spanner:
-		return renderOwners{extensions: spannerRegistry, tableStorage: spannerrender.CreateTableClause,
 			lowerTableFacets: lowerPostgresFamilyFacets}
 	case platform.Postgres:
 		return renderOwners{extensions: postgresRegistry, tableConstraints: pgtablerender.SourceExclusions, tableObjects: pgtablerender.CreateTableExclusionStatements, tableStorage: pgtablerender.CreateTablePartition,

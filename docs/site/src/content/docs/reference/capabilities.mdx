@@ -66,12 +66,12 @@ target without `foreign_keys` fails the complete render instead of producing
 partial DDL or a comment that silently omits referential integrity.
 
 The object-kind keys answer a question a dialect name cannot. PostgreSQL,
-CockroachDB, YugabyteDB, and Spanner share one planner and one renderer, so
-without them nothing could express that Spanner hosts views but not
+CockroachDB, and YugabyteDB share one planner and one renderer, so without
+them nothing could express that a member of the family hosts views but not
 materialized views, user-defined functions, or triggers. A refused object kind
-is named rather than dropped:
-`-- SPANNER: trigger users_touch is not supported by this target; skipped.`
-appears in place of the DDL, identically in `ptah schema render` and in the plan
+is named rather than dropped: a line such as
+`-- <DIALECT>: trigger users_touch is not supported by this target; skipped.`,
+with the dialect's name in capitals, appears in place of the DDL, identically in `ptah schema render` and in the plan
 `ptah schema apply` builds, because both pass through the same renderer. A
 materialized view and `create_or_replace_view` presuppose a view, and
 `create_or_replace_trigger` presupposes `triggers`, so those requirement edges
@@ -83,12 +83,12 @@ render instead, and an error is not something a plan can carry, so the
 migration planner dropped roles, grants, and row-level security from the plan
 before they reached a visitor, without saying so.
 
-For the PostgreSQL family, that refusal path currently applies to Spanner. A
-role, grant, sequence, row-level security enablement, or policy is written as a
-named `-- SPANNER: ... skipped.` diagnostic instead of being dropped from a plan
-in silence. CockroachDB 25.4, 26.2 and 26.3 plus YugabyteDB 2026.1 were measured
-with live servers and accept those three categories, so their presets enable
-them. CockroachDB's three measured resolver arms differ in two places: the 25.4
+No built-in PostgreSQL-family preset disables those three categories:
+CockroachDB 25.4, 26.2 and 26.3 plus YugabyteDB 2026.1 were measured with live
+servers and accept them, so their presets enable them. A capability set that
+disables one still writes a role, grant, sequence, row-level security
+enablement, or policy as a named `-- <DIALECT>: ... skipped.` diagnostic
+instead of dropping it from a plan in silence. CockroachDB's three measured resolver arms differ in two places: the 25.4
 server refuses generic and guarded `DROP CONSTRAINT` and
 `CREATE OR REPLACE TRIGGER`, and 26.3 is the first line to accept
 `CREATE DOMAIN`.
@@ -117,8 +117,7 @@ execution.
 Exactly one referenced-key policy is enabled for every foreign-key-capable
 preset. PostgreSQL, CockroachDB, YugabyteDB, SQLite, SQL Server, and MySQL 8.4+
 require a declared candidate key. MySQL before 8.4 and MariaDB accept the
-referenced columns as a full leftmost index prefix. Spanner creates and manages
-the backing index. A root MySQL 8.4+ connection keeps the conservative
+referenced columns as a full leftmost index prefix. A root MySQL 8.4+ connection keeps the conservative
 unique-key policy because a pooled session probe cannot describe a later
 execution session. `DatabaseConnection.WithSession` refines the policy from
 `restrict_fk_on_non_standard_key` on the pinned physical connection, so the
@@ -138,7 +137,7 @@ Ptah emits `ENGINE=InnoDB` for participating tables when the schema leaves the
 engine blank, so a session default cannot silently disable foreign keys.
 `SET NULL` requires nullable local columns. Explicit foreign-key names must fit
 the target identifier limit: 63 bytes for the PostgreSQL family, 64 characters
-for the MySQL family, and 128 characters for SQL Server and Spanner. Generated
+for the MySQL family, and 128 characters for SQL Server. Generated
 names are shortened deterministically before collision checks.
 
 The Go API exposes `capability.DefaultDialects()` for guards and UIs that must

@@ -22,10 +22,10 @@ import (
 // on capability.UniqueNullsDistinctClause, because the dialects outside that
 // family were not silent about the clause in one way. Measured 2026-09-03:
 // MySQL 8.4.11 and MariaDB 11.8.9 answer error 1064; SQLite, SQL Server and
-// Oracle have no such clause; ClickHouse and Spanner refuse the unique
-// constraint before reaching it; and CockroachDB v26.3.1 answered `ERROR: at
-// or near "nulls": syntax error` to Ptah's own output, which made it an
-// unappliable migration rather than a silent drop. SQL Server is the reason
+// Oracle have no such clause; ClickHouse refuses the unique constraint before
+// reaching it; and CockroachDB v26.3.1 answered `ERROR: at or near "nulls":
+// syntax error` to Ptah's own output, which made it an unappliable migration
+// rather than a silent drop. SQL Server is the reason
 // both spellings are refused rather than only the one that inverts the
 // default: its plain UNIQUE already treats nulls as equal, so there the pair
 // runs the other way round. See stokaro/ptah#2820.
@@ -42,7 +42,6 @@ func refusingDialects() []string {
 		platform.SQLServer,
 		platform.Oracle,
 		platform.ClickHouse,
-		platform.Spanner,
 		platform.CockroachDB,
 	}
 }

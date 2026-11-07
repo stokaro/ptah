@@ -33,7 +33,6 @@ func TestMigrateDownRefusesMigrationLockTimeoutBeforeConnecting(t *testing.T) {
 		{name: "sqlite", dbURL: "sqlite://target.db", dialect: "sqlite"},
 		{name: "clickhouse", dbURL: "clickhouse://127.0.0.1:1/db", dialect: "clickhouse"},
 		{name: "cockroachdb", dbURL: "cockroachdb://root@127.0.0.1:1/db", dialect: "cockroachdb"},
-		{name: "spanner", dbURL: "spanner://127.0.0.1:1/db", dialect: "spanner"},
 		{name: "oracle", dbURL: "oracle://ptah@127.0.0.1:1/db", dialect: "oracle"},
 	}
 

@@ -34,6 +34,6 @@ CREATE INDEX `users_created_ix` ON `users` (`created_at`);
 CREATE UNIQUE INDEX `users_email_uq` ON `users` (`email`);
 DROP INDEX IF EXISTS `users_name_ix` ON `users`;
 -- render: a covering index
--- refused: mariadb does not support INCLUDE columns on index "users_name_ix"; target cockroachdb, postgres, spanner, sqlserver, or yugabytedb
+-- refused: mariadb does not support INCLUDE columns on index "users_name_ix"; target cockroachdb, postgres, sqlserver, or yugabytedb
 -- plan: the current schema to a covering index
--- refused: mariadb does not support INCLUDE columns on index "users_name_ix"; target cockroachdb, postgres, spanner, sqlserver, or yugabytedb
+-- refused: mariadb does not support INCLUDE columns on index "users_name_ix"; target cockroachdb, postgres, sqlserver, or yugabytedb

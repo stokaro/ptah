@@ -273,7 +273,6 @@ func TestAtlasRevisionStringLiteralPreservesQuotesAndBackslashesByDialect(t *tes
 		},
 		{name: "cockroachdb backslash", dialect: platform.CockroachDB, value: `x\y`, want: `$ptah$x\y$ptah$`},
 		{name: "yugabytedb backslash", dialect: platform.YugabyteDB, value: `x\y`, want: `$ptah$x\y$ptah$`},
-		{name: "spanner backslash", dialect: platform.Spanner, value: `x\y`, want: `$ptah$x\y$ptah$`},
 		{name: "mysql quote and backslash", dialect: platform.MySQL, value: `x'\y`, want: `X'78275c79'`},
 		{name: "mysql empty", dialect: platform.MySQL, value: "", want: `X''`},
 		{name: "mariadb quote and backslash", dialect: platform.MariaDB, value: `x'\y`, want: `X'78275c79'`},
@@ -300,7 +299,6 @@ func TestAtlasExactIdentityPredicateUsesSafePostgresMetadataLiteral(t *testing.T
 		{name: "postgres", dialect: platform.Postgres},
 		{name: "cockroachdb", dialect: platform.CockroachDB},
 		{name: "yugabytedb", dialect: platform.YugabyteDB},
-		{name: "spanner", dialect: platform.Spanner},
 	}
 
 	for _, tt := range tests {
@@ -574,26 +572,6 @@ func TestAtlasRevisionsTableDDL_GuardsEveryDialectBranch(t *testing.T) {
 			dialect:           platform.SQLite,
 			wantPartialHashes: "partial_hashes JSON NULL",
 			wantContains:      []string{"CREATE TABLE IF NOT EXISTS " + atlasRevisionsGuardTable},
-		},
-		{
-			// Spanner takes the PostgreSQL branch rather than the trailing
-			// default, which names both of the two types its PostgreSQL
-			// interface does not have. Measured against the Cloud Spanner
-			// emulator behind PGAdapter 0.55.2:
-			//
-			//	partial_hashes JSON NULL   ERROR: Type <json> is not supported; use jsonb instead
-			//	executed_at TIMESTAMP      ERROR: Type <timestamp> is not supported
-			//
-			// so the statement this row pinned could never create a table
-			// (stokaro/ptah#2233).
-			name:              "spanner takes the PostgreSQL branch, whose types it has",
-			dialect:           platform.Spanner,
-			wantPartialHashes: "partial_hashes JSONB NULL",
-			wantContains: []string{
-				"CREATE TABLE IF NOT EXISTS " + atlasRevisionsGuardTable,
-				"executed_at TIMESTAMPTZ NOT NULL",
-			},
-			wantAbsent: []string{" JSON NULL", "executed_at TIMESTAMP NOT NULL"},
 		},
 		{
 			name:              "sqlserver stores the JSON document as text",

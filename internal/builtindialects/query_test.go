@@ -37,7 +37,6 @@ func TestDescriptors_QueryAgreesWithTheRetiredSwitches(t *testing.T) {
 		platform.Postgres:    {onConflict, delimiters},
 		platform.CockroachDB: {onConflict, delimiters},
 		platform.YugabyteDB:  {onConflict, delimiters},
-		platform.Spanner:     {onConflict, delimiters},
 		platform.MySQL:       {onDuplicateKey, delimiters},
 		platform.MariaDB:     {onDuplicateKey, delimiters},
 		platform.SQLite: {descriptor.Query{

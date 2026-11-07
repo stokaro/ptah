@@ -31,10 +31,9 @@ func TestApplyViewOrderingShapeMatchesTheServer(t *testing.T) {
 		wantRecursive: true,
 		wantViewWalk:  true,
 	}, {
-		// PGAdapter prepends its own `WITH pg_class AS (...)` to a catalog
-		// query, which only merges when the query's WITH is not RECURSIVE.
-		// The walk goes with it: it reads pg_rewrite, which Spanner does not
-		// have either.
+		// A catalog that is an emulation may prepend its own WITH to a
+		// catalog query, which merges only when the query's WITH is not
+		// RECURSIVE. The walk goes with it: it reads pg_rewrite.
 		name:          "a server that does not",
 		shape:         flatViewOrdering,
 		wantRecursive: false,
@@ -70,9 +69,9 @@ func collectedQueryFor(t *testing.T, caps capability.Capabilities) string {
 func TestCollectAllObjectsAsksForTheShapeTheServerAccepts(t *testing.T) {
 	c := qt.New(t)
 
-	spanner := collectedQueryFor(t, capability.SpannerPostgres())
-	c.Assert(spanner, qt.Not(qt.Contains), "RECURSIVE")
-	c.Assert(spanner, qt.Not(qt.Contains), "pg_rewrite")
+	flat := collectedQueryFor(t, capability.Postgres16().With(capability.CatalogRecursiveCTE, false))
+	c.Assert(flat, qt.Not(qt.Contains), "RECURSIVE")
+	c.Assert(flat, qt.Not(qt.Contains), "pg_rewrite")
 
 	postgres := collectedQueryFor(t, capability.Postgres16())
 	c.Assert(postgres, qt.Contains, "RECURSIVE")
@@ -94,7 +93,6 @@ func TestCollectAllObjectsDropsPoliciesWhereTheServerHasThem(t *testing.T) {
 		{name: "cockroachdb", caps: capability.CockroachDB26(), want: true},
 		{name: "yugabytedb", caps: capability.YugabyteDB25(), want: true},
 		{name: "a server without row-level security", caps: capability.Postgres16().With(capability.RowLevelSecurity, false), want: false},
-		{name: "spanner", caps: capability.SpannerPostgres(), want: false},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
@@ -139,9 +137,9 @@ func TestDropAllTablesTakesATransactionOnlyWhereTheServerAcceptsDDLInOne(t *test
 		wantTx bool
 	}{
 		{name: "postgres takes one", caps: capability.Postgres16(), wantTx: true},
-		// Spanner answers `DDL statements are only allowed outside explicit
-		// transactions` (SQLSTATE 25000), so asking for one cannot work.
-		{name: "spanner does not", caps: capability.SpannerPostgres(), wantTx: false},
+		// A server that refuses DDL inside an explicit transaction is not
+		// asked for one, because asking cannot work.
+		{name: "a server without DDL in a transaction does not", caps: capability.Postgres16().With(capability.DDLInsideTransaction, false), wantTx: false},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
@@ -172,11 +170,11 @@ func TestCollectAllObjectsKeepsTheRecursiveShapeForPostgres(t *testing.T) {
 func TestWriterWithCapabilitiesCarriesTheServersAnswer(t *testing.T) {
 	c := qt.New(t)
 
-	writer := NewPostgreSQLWriterForRunnerWithCapabilities(
-		nil, "public", "", capability.SpannerPostgres())
+	writer := NewPostgreSQLWriterForRunnerWithCapabilities(nil, "public", "",
+		capability.Postgres16().With(capability.DDLInsideTransaction, false).With(capability.CatalogRecursiveCTE, false))
 
-	// Both are what drive the two cleanup shapes, and both are measured facts
-	// about the Spanner PostgreSQL interface rather than defaults.
+	// Both are what drive the two cleanup shapes, and the writer keeps the
+	// answers it was handed rather than the PostgreSQL defaults.
 	c.Assert(writer.caps.Has(capability.DDLInsideTransaction), qt.IsFalse)
 	c.Assert(writer.caps.Has(capability.CatalogRecursiveCTE), qt.IsFalse)
 }

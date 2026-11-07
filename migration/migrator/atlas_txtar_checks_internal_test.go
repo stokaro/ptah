@@ -150,7 +150,6 @@ func TestCheckTransactionOptions_ReadOnlyDialects(t *testing.T) {
 		platform.Postgres,
 		platform.CockroachDB,
 		platform.YugabyteDB,
-		platform.Spanner,
 		platform.MySQL,
 		platform.MariaDB,
 		platform.Oracle,

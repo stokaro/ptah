@@ -111,15 +111,6 @@ func TestTimeoutStatements(t *testing.T) {
 			},
 			wantErr: `migration timeouts are not supported for dialect "clickhouse": .*`,
 		},
-		{
-			name:    "spanner unsupported",
-			dialect: "spanner",
-			timeouts: migrationfile.Timeouts{
-				LockTimeout:    time.Second,
-				HasLockTimeout: true,
-			},
-			wantErr: `migration timeouts are not supported for dialect "spanner": .*`,
-		},
 	}
 
 	for _, tt := range tests {

@@ -76,7 +76,6 @@ func TestClassOf_AssignsTheMeasuredClass(t *testing.T) {
 		{name: "mariadb", dialect: platform.MariaDB, want: ddltx.ImplicitCommit},
 		{name: "clickhouse", dialect: platform.ClickHouse, want: ddltx.NoTransaction},
 		{name: "clickhouse alias ch", dialect: "ch", want: ddltx.NoTransaction},
-		{name: "spanner", dialect: platform.Spanner, want: ddltx.NoTransaction},
 		{name: "oracle", dialect: platform.Oracle, want: ddltx.NoTransaction},
 	}
 
@@ -95,19 +94,17 @@ func TestClassOf_AssignsTheMeasuredClass(t *testing.T) {
 // handed a transaction whose Commit and Rollback do nothing, by
 // internal/sqliterebuild, on every migrator apply and rollback. Nothing it runs
 // can be undone afterwards, so [ddltx.NoTransaction] is the only contract
-// available to it. Nothing compared the two descriptions, which is how Spanner
-// came to be [ddltx.Transactional] while its own preset answers false
+// available to it, and the two descriptions must not disagree
 // (stokaro/ptah#3320).
 //
-// The two dialects are named before the loop as a control on the corpus: a
-// preset that stopped answering false would leave this test iterating over
-// nothing, and a test that asserts nothing reports success.
+// The dialect is named before the loop as a control on the corpus: a preset
+// that stopped answering false would leave this test iterating over nothing,
+// and a test that asserts nothing reports success.
 func TestClassOf_GivesTheUnwrappedTargetsTheNoTransactionClass(t *testing.T) {
 	c := qt.New(t)
 	unwrapped := dialectsRefusingDDLInsideATransaction()
 
 	c.Assert(unwrapped, qt.Contains, platform.ClickHouse)
-	c.Assert(unwrapped, qt.Contains, platform.Spanner)
 
 	for _, dialect := range unwrapped {
 		t.Run(dialect, func(t *testing.T) {

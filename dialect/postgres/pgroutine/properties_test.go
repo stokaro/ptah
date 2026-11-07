@@ -121,7 +121,6 @@ func TestPropertiesService_FailurePath(t *testing.T) {
 		{"nil context", nil, "postgres", schemaext.ErrInvalidValue},
 		{"canceled", canceled, "postgres", context.Canceled},
 		{"other engine", t.Context(), "mysql", ptaherr.ErrUnsupportedDialect},
-		{"spanner", t.Context(), "spanner", ptaherr.ErrUnsupportedDialect},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)

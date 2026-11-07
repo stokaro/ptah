@@ -73,15 +73,14 @@ func TestTxModeAllDocumentation_NamesTheCapabilityItDecidesOn(t *testing.T) {
 	c.Assert(capability.MySQL84().Has(capability.TransactionalDDL), qt.IsFalse)
 	c.Assert(capability.MariaDB1011().Has(capability.TransactionalDDL), qt.IsFalse)
 	c.Assert(capability.ClickHouse24().Has(capability.TransactionalDDL), qt.IsFalse)
-	c.Assert(capability.SpannerPostgres().Has(capability.TransactionalDDL), qt.IsFalse)
 }
 
 // TestTxModeAllDocumentation_ListsEveryTargetThatCommitsAsItRuns is the
 // converse, and it derives the list rather than quoting it.
 //
 // A sentence pinned as a literal agrees with itself however the presets move:
-// the page named MySQL, MariaDB, ClickHouse and Spanner while CockroachDB and
-// Oracle refused the mode too, and an assertion on those words could not see
+// the page named MySQL, MariaDB and ClickHouse while CockroachDB and Oracle
+// refused the mode too, and an assertion on those words could not see
 // it. Here the refused set comes from the presets, so a preset crossing the
 // line in either direction fails until the page says so.
 func TestTxModeAllDocumentation_ListsEveryTargetThatCommitsAsItRuns(t *testing.T) {
@@ -116,7 +115,6 @@ var txModeAllTargets = []struct {
 	{dialect: platform.MariaDB, pageName: "MariaDB"},
 	{dialect: platform.ClickHouse, pageName: "ClickHouse"},
 	{dialect: platform.Oracle, pageName: "Oracle"},
-	{dialect: platform.Spanner, pageName: "Spanner"},
 	{dialect: platform.CockroachDB, pageName: "CockroachDB"},
 }
 

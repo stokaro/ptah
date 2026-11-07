@@ -20,15 +20,13 @@ import (
 	"ptah.run/migration/schemadiff"
 )
 
-// ClickHouse and Spanner have no enum type to create. ClickHouse builds an
-// enum column as Enum8 or Enum16, and Spanner as text with a CHECK, which is
-// the model the comparison lowers the declaration to. These tests ask the
-// servers whether the column the render builds is the column the comparison
-// expects: apply it, read it back, and plan nothing.
+// ClickHouse has no enum type to create: it builds an enum column as Enum8 or
+// Enum16, which is the model the comparison lowers the declaration to. These
+// tests ask the server whether the column the render builds is the column the
+// comparison expects: apply it, read it back, and plan nothing.
 
 // valuedEnumTable declares table with a nullable enum column s and an enum
-// column n, each carrying its values. required makes n NOT NULL, which Spanner
-// cannot add to an existing table.
+// column n, each carrying its values. required makes n NOT NULL.
 func valuedEnumTable(table string, required bool) *schemamodel.Database {
 	return &schemamodel.Database{
 		Tables: []schemamodel.Table{{StructName: "T", Name: table}},
@@ -61,8 +59,7 @@ func inlineEnumConnection(c *qt.C, engine dbtarget.Engine, table string) *dbsche
 	return conn
 }
 
-// inlineEnumExec runs each statement on its own: Spanner refuses DDL inside a
-// transaction.
+// inlineEnumExec runs each statement on its own.
 func inlineEnumExec(c *qt.C, conn *dbschema.DatabaseConnection, statements []string) {
 	c.Helper()
 	for _, statement := range statements {
@@ -102,8 +99,6 @@ func TestInlineEnumCreateConvergesLive(t *testing.T) {
 	}{
 		{name: "clickhouse declared enum", engine: dbtarget.ClickHouse, schema: declaredEnumTable},
 		{name: "clickhouse values on the column", engine: dbtarget.ClickHouse, schema: valuedEnumTable},
-		{name: "spanner declared enum", engine: dbtarget.Spanner, schema: declaredEnumTable},
-		{name: "spanner values on the column", engine: dbtarget.Spanner, schema: valuedEnumTable},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -122,15 +117,13 @@ func TestInlineEnumCreateConvergesLive(t *testing.T) {
 }
 
 // TestInlineEnumAddColumnConvergesLive adds the enum columns to a table that
-// exists and requires a second plan to be empty. Spanner refuses a CHECK
-// inside ADD COLUMN, so its plan adds the check as a constraint of its own.
+// exists and requires a second plan to be empty.
 func TestInlineEnumAddColumnConvergesLive(t *testing.T) {
 	tests := []struct {
 		name   string
 		engine dbtarget.Engine
 	}{
 		{name: "clickhouse", engine: dbtarget.ClickHouse},
-		{name: "spanner", engine: dbtarget.Spanner},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

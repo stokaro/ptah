@@ -1,6 +1,5 @@
 // Package postgres reads what a URL of a PostgreSQL-protocol engine selects:
-// PostgreSQL, CockroachDB, YugabyteDB and Spanner, whose URLs pgx's pgconn
-// reads.
+// PostgreSQL, CockroachDB and YugabyteDB, whose URLs pgx's pgconn reads.
 package postgres
 
 import (
@@ -19,7 +18,7 @@ import (
 // Services returns the services of every dialect whose URL pgconn reads.
 func Services() dburlext.Services {
 	return dburlext.Services{
-		Dialects:  []string{platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner},
+		Dialects:  []string{platform.Postgres, platform.CockroachDB, platform.YugabyteDB},
 		Endpoints: endpoints{},
 	}
 }

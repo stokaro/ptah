@@ -31,8 +31,6 @@ var oldSwitches = map[string]loweringFacts{
 	platform.Postgres:    {GeneratedTimeouts: descriptor.GeneratedTimeouts{Lock: "3s", Statement: "30s"}, GeneratedColumnDefault: "STORED"},
 	platform.CockroachDB: {GeneratedColumnDefault: "STORED"},
 	platform.YugabyteDB:  {GeneratedColumnDefault: "STORED"},
-	platform.Spanner: {GeneratedColumnDefault: "STORED",
-		InlineEnum: descriptor.InlineEnum{Type: "TEXT", Check: descriptor.InlineEnumCheckBare}},
 	platform.MySQL: {GeneratedTimeouts: descriptor.GeneratedTimeouts{Lock: "3s", Statement: "30s"}, GeneratedColumnDefault: "VIRTUAL",
 		InlineEnum: descriptor.InlineEnum{Type: descriptor.InlineEnumValues}, IndexesBeforeForeignKeys: true},
 	platform.MariaDB: {GeneratedTimeouts: descriptor.GeneratedTimeouts{Lock: "3s", Statement: "30s"}, GeneratedColumnDefault: "VIRTUAL",

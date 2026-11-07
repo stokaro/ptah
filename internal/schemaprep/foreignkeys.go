@@ -180,7 +180,7 @@ type foreignKeyNameAllocation struct {
 // foreignKeyNameAllocationScope is the namespace a foreign key name of table
 // has to be unique in on targetPlatform, as its descriptor states
 // (descriptor.Preparation.ForeignKeyNamespace): the database on MySQL and
-// MariaDB, the schema on SQL Server and Spanner, the table elsewhere.
+// MariaDB, the schema on SQL Server, the table elsewhere.
 func foreignKeyNameAllocationScope(table schemamodel.Table, targetPlatform string) string {
 	switch describe(targetPlatform).preparation.ForeignKeyNamespace {
 	case descriptor.NamespaceDatabase:

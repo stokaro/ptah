@@ -35,9 +35,6 @@ func TestDescriptors_DevDatabases(t *testing.T) {
 		{dialect: platform.YugabyteDB, want: descriptor.DevRealm{
 			Identity: "query", Query: currentDatabase, ScratchDatabase: true,
 		}},
-		{dialect: platform.Spanner, want: descriptor.DevRealm{
-			Identity: "query", Query: currentDatabase, ScratchDatabase: true,
-		}},
 		{dialect: platform.SQLServer, want: descriptor.DevRealm{Identity: "query", Query: "SELECT DB_NAME()"}},
 		{dialect: platform.MySQL, want: descriptor.DevRealm{
 			Identity: "query", Query: "SELECT DATABASE()", ServerQuery: "SELECT @@server_uuid", ScratchDatabase: true,

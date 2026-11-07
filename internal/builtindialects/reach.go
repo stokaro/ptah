@@ -6,8 +6,8 @@ import "ptah.run/core/platform/descriptor"
 // internal/sqlreach refuses in a statement it scans. descriptor.Reach says
 // what each family is.
 
-// postgresReach is what the PostgreSQL family reaches with: CockroachDB,
-// YugabyteDB and Spanner refuse the same names as PostgreSQL.
+// postgresReach is what the PostgreSQL family reaches with: CockroachDB and
+// YugabyteDB refuse the same names as PostgreSQL.
 //
 // The control functions act on the server rather than read from it:
 // terminating a backend, reloading the configuration, promoting a standby,

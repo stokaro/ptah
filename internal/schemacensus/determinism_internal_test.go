@@ -26,8 +26,7 @@ import (
 // (stokaro/ptah#2968): the PostgreSQL-family renderer walked the table
 // options in map order, and `table-mysql` rendered its AUTO_INCREMENT,
 // CHARSET and COLLATE options in a different order on every other run, on
-// every PostgreSQL, CockroachDB, YugabyteDB and Spanner cell, through both
-// surfaces.
+// every PostgreSQL, CockroachDB and YugabyteDB cell, through both surfaces.
 func TestSurfaces_RenderTheSameBytesTwice(t *testing.T) {
 	// A selected runtime serves a whole schema session. Rebuilding its codec
 	// registry for every cell measures registration thousands of times and

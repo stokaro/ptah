@@ -29,7 +29,7 @@ import (
 // decides whether a target takes a hypertable. A target without the extension
 // renders the skip line and records the omission, as it did when these objects
 // were common nodes; registering the owner for PostgreSQL alone would refuse
-// the same declaration on CockroachDB, YugabyteDB and Spanner instead.
+// the same declaration on CockroachDB and YugabyteDB instead.
 func timescaleProvider() engine.Provider {
 	models := []schemaext.Kind{tsschema.HypertableKind, tsschema.ContinuousAggregateKind}
 	changes := []schemaext.Kind{tsdiff.HypertableKind, tsdiff.ContinuousAggregateKind}
@@ -40,7 +40,7 @@ func timescaleProvider() engine.Provider {
 		HCL:         []hclext.Extension{tssource.HCL()},
 		Selections:  []selectext.Extension{tssource.Selections()},
 	}
-	for _, target := range []string{platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner} {
+	for _, target := range []string{platform.Postgres, platform.CockroachDB, platform.YugabyteDB} {
 		provider.Conversions = append(provider.Conversions, engine.Conversion{Target: target, Kinds: models, Service: tsconvert.Service{}})
 		provider.FacetComparisons = append(provider.FacetComparisons, engine.FacetComparison{Target: target,
 			OwnerKinds: []objectidentity.Kind{objectidentity.KindTable}, Kinds: []schemaext.Kind{tsschema.HypertableKind},

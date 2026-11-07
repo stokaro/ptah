@@ -23,7 +23,7 @@ import (
 // is this list crossed with routedObjectRows, and every cell has to carry an
 // answer.
 var routingDialects = []string{
-	platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner,
+	platform.Postgres, platform.CockroachDB, platform.YugabyteDB,
 	platform.ClickHouse, platform.MySQL, platform.MariaDB, platform.SQLServer, platform.SQLite,
 }
 
@@ -303,7 +303,6 @@ func TestRender_TheRoutingGridDistinguishesItsAnswers(t *testing.T) {
 				"postgres     table     table_probe",
 				"cockroachdb  table     table_probe",
 				"yugabytedb   table     table_probe",
-				"spanner      table     table_probe",
 				"clickhouse   table     table_probe",
 				"mysql        table     table_probe",
 				"mariadb      table     table_probe",
@@ -319,7 +318,6 @@ func TestRender_TheRoutingGridDistinguishesItsAnswers(t *testing.T) {
 				"postgres     view      view_probe",
 				"cockroachdb  view      view_probe",
 				"yugabytedb   view      view_probe",
-				"spanner      view      view_probe",
 				"clickhouse   view      view_probe",
 				"mysql        view      view_probe",
 				"mariadb      view      view_probe",

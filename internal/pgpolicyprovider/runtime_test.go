@@ -15,10 +15,10 @@ import (
 )
 
 // newRuntime selects the owner beside a provider of each of its targets and
-// of spanner, which speaks the PostgreSQL dialect without row security.
+// of rowless, a target the owner does not serve: one without row security.
 func newRuntime(c *qt.C) *engine.Runtime {
 	c.Helper()
-	targets := []engine.Target{{Name: "spanner"}}
+	targets := []engine.Target{{Name: "rowless"}}
 	for _, name := range pgpolicyprovider.Targets() {
 		targets = append(targets, engine.Target{Name: name})
 	}

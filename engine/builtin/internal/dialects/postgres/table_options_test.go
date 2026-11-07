@@ -27,7 +27,7 @@ func TestRenderCreateTable_NamesEveryTableOptionItDoesNotRender(t *testing.T) {
 	}{
 		{name: "postgres", dialect: platform.Postgres, caps: capability.Postgres17()},
 		{name: "cockroachdb", dialect: platform.CockroachDB, caps: capability.CockroachDB25()},
-		{name: "spanner", dialect: platform.Spanner, caps: capability.SpannerPostgres()},
+		{name: "yugabytedb", dialect: platform.YugabyteDB, caps: capability.YugabyteDB25()},
 	}
 
 	for _, test := range tests {

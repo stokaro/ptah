@@ -570,9 +570,8 @@ func (d document) addEnums(db *schemamodel.Database) {
 
 func (d document) addTables(db *schemamodel.Database, owners yamlext.Set, data []byte) error {
 	// The selected owners claim what a YAML document can declare of their
-	// models, such as CockroachDB row-level TTL and the Spanner row deletion
-	// policy in a table's cockroachdb and spanner platform groups, so a table
-	// without one requests none.
+	// models, such as CockroachDB row-level TTL in a table's cockroachdb
+	// platform group, so a table without one requests none.
 	claims, err := owners.Coverage()
 	if err != nil {
 		return err

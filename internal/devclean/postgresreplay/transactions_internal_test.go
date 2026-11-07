@@ -49,7 +49,7 @@ func TestTransactionBoundaries_FailurePath(t *testing.T) {
 // A dialect of the family other than PostgreSQL reads none: the words carry
 // other semantics there, and each statement stays refused by Validate.
 func TestTransactionBoundaries_OtherDialectsReadNone(t *testing.T) {
-	for _, dialect := range []string{platform.CockroachDB, platform.YugabyteDB, platform.Spanner} {
+	for _, dialect := range []string{platform.CockroachDB, platform.YugabyteDB} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 			got, err := guard{dialect: dialect}.TransactionBoundaries([]string{"BEGIN", "SELECT 1", "COMMIT"})

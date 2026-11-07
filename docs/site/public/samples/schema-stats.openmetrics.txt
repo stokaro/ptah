@@ -118,9 +118,6 @@ ptah_schema_postgres_table_partitions{dialect="sqlite"} 0
 # HELP ptah_schema_postgres_unlogged_tables Tables with captured PostgreSQL UNLOGGED persistence.
 # TYPE ptah_schema_postgres_unlogged_tables gauge
 ptah_schema_postgres_unlogged_tables{dialect="sqlite"} 0
-# HELP ptah_schema_spanner_row_deletion_policy_tables Tables with a captured Spanner row deletion policy.
-# TYPE ptah_schema_spanner_row_deletion_policy_tables gauge
-ptah_schema_spanner_row_deletion_policy_tables{dialect="sqlite"} 0
 # HELP ptah_schema_sqlite_strict_tables SQLite tables created STRICT.
 # TYPE ptah_schema_sqlite_strict_tables gauge
 ptah_schema_sqlite_strict_tables{dialect="sqlite"} 0

@@ -112,10 +112,10 @@ func TestPostgresFamilyRendersRowSecurity(t *testing.T) {
 	}
 }
 
-// TestSpannerRefusesRowSecurity pins Spanner, which speaks the PostgreSQL
-// dialect without row security: a declared policy and declared switches are
-// refused by name rather than rendered or compared.
-func TestSpannerRefusesRowSecurity(t *testing.T) {
+// TestATargetOutsideTheFamilyRefusesRowSecurity pins a target the row-security
+// owner does not serve: a declared policy and declared switches are refused by
+// name rather than rendered or compared.
+func TestATargetOutsideTheFamilyRefusesRowSecurity(t *testing.T) {
 	policyOnly := ordersWithPolicies()
 	policyOnly.Tables[0].Facets = schemaext.Facets{}
 	switchesOnly := ordersWithPolicies()
@@ -125,20 +125,20 @@ func TestSpannerRefusesRowSecurity(t *testing.T) {
 		database *schemamodel.Database
 		want     string
 	}{
-		{name: "a policy", database: policyOnly, want: `PostgreSQL policy public.orders.newest cannot be planned on spanner; ` +
+		{name: "a policy", database: policyOnly, want: `PostgreSQL policy public.orders.newest cannot be planned on mysql; ` +
 			`scope its declaration to the targets that host it, as dialects="cockroachdb,postgres,yugabytedb" does in a Go annotation`},
-		{name: "the switches", database: switchesOnly, want: `unsupported feature: PostgreSQL row-level security on table "orders" cannot be planned on spanner; .*`},
+		{name: "the switches", database: switchesOnly, want: `unsupported feature: PostgreSQL row-level security on table "orders" cannot be planned on mysql; .*`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			runtime := must.Must(builtin.New())
 
-			statements, err := builtin.GetOrderedCreateStatements(test.database, platform.Spanner)
+			statements, err := builtin.GetOrderedCreateStatements(test.database, platform.MySQL)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(err, qt.ErrorMatches, test.want)
 			c.Assert(statements, qt.IsNil)
-			diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), test.database, &catalog.Database{}, catalog.ServerInfo{Dialect: platform.Spanner}, nil, runtime)
+			diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), test.database, &catalog.Database{}, catalog.ServerInfo{Dialect: platform.MySQL}, nil, runtime)
 			c.Assert(err, qt.ErrorMatches, test.want)
 			c.Assert(diff, qt.IsNil)
 		})

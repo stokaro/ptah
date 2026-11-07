@@ -34,7 +34,7 @@ The system operates through four main layers:
 
 ### Key Design Principles
 
-- **Database Agnostic**: Core logic works across supported PostgreSQL-family, MySQL, MariaDB, ClickHouse, and Spanner workflows
+- **Database Agnostic**: Core logic works across supported PostgreSQL-family, MySQL, MariaDB, and ClickHouse workflows, and the engines executable providers serve
 - **AST-Based**: Uses Abstract Syntax Trees for type-safe SQL generation
 - **Visitor Pattern**: Enables dialect-specific rendering without modifying core AST
 - **Dependency Aware**: Automatically handles table creation order based on foreign keys
@@ -100,7 +100,7 @@ The system operates through four main layers:
 
 #### renderer Package
 - **Purpose**: Converts AST nodes to dialect-specific SQL statements
-- **Supported Dialects**: PostgreSQL-family targets, MySQL, MariaDB, ClickHouse, and Spanner
+- **Supported Dialects**: PostgreSQL-family targets, MySQL, MariaDB, and ClickHouse
 - **Functionality**: Implements visitor pattern to traverse AST and generate SQL
 
 ### 3. Database Integration
@@ -129,7 +129,7 @@ For a detailed view of the migration workflow, see the [Migration Architecture D
 
 Indexes are identified by `(qualified table, index name)`, not by name alone.
 MySQL, MariaDB, CockroachDB, SQL Server, and ClickHouse use table-scoped index
-names. PostgreSQL, YugabyteDB, Spanner, and SQLite use schema-scoped index
+names. PostgreSQL, YugabyteDB, and SQLite use schema-scoped index
 names. CockroachDB drops use its `table@index` target form so duplicate index
 names on other tables remain unambiguous.
 
@@ -143,7 +143,7 @@ schema (`public` for the PostgreSQL family and `main` for SQLite); it does not
 conflict with the same index name in other named schemas.
 
 Diff-policy filtering uses the target dialect's index namespace: replacements
-are matched by schema for PostgreSQL, YugabyteDB, Spanner, and SQLite, and by
+are matched by schema for PostgreSQL, YugabyteDB, and SQLite, and by
 owning table for the table-scoped engines.
 
 #### planner Package
@@ -290,10 +290,11 @@ type IndexRef struct {
   on both distributed targets
 
 ### Spanner
-- Conservative PostgreSQL-interface routing for planning and rendering
-- Secondary index identity is schema-scoped: Ptah preserves the owning table for
-  comparison but orders same-name replacements within one schema before creation
-- No live CI coverage and not production-supported yet
+- Served only by the optional executable provider `stokaro/ptah-spanner-plugin`,
+  through Spanner's PostgreSQL interface and PGAdapter; Ptah carries no Spanner
+  renderer, planner, reader or writer
+- A `postgres://` connection whose server banner names Spanner is refused with
+  `provider_engine_identified`, never served as PostgreSQL
 
 ## Go Struct Annotations
 

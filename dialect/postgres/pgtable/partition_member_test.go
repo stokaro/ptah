@@ -328,7 +328,7 @@ func TestPartitionMemberComparison_LeavesAParentOutsideTheRead(t *testing.T) {
 }
 
 func TestPartitionMemberComparison_RefusesAForeignTarget(t *testing.T) {
-	for _, target := range []string{"mysql", "cockroachdb", "spanner", "sqlite"} {
+	for _, target := range []string{"mysql", "cockroachdb", "sqlite"} {
 		t.Run(target, func(t *testing.T) {
 			c := qt.New(t)
 			request := memberRequest(&pgtable.DesiredPartitionMember{PartitionMember: member("events", january)}, nil, declaredMembers(), observedMembers())

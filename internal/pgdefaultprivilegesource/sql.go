@@ -19,7 +19,7 @@ const sqlAlterDefault = "alter-default-privileges"
 // including ACLs in earlier files, and refuses operations it cannot represent.
 func SQL() sqlext.Extension {
 	return sqlext.Extension{Owner: pgdefaultprivilege.Owner,
-		Targets:  []string{platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner},
+		Targets:  []string{platform.Postgres, platform.CockroachDB, platform.YugabyteDB},
 		Kinds:    []schemaext.Kind{pgdefaultprivilege.DefaultPrivilegeKind},
 		Patterns: []sqlext.Pattern{{Name: sqlAlterDefault, Site: sqlext.Statement, Words: []string{"ALTER", "DEFAULT", "PRIVILEGES"}}},
 		Parser:   privilegeSQL{}, Header: []coverage.Kind{LimitKind}, Coverage: func(request sqlext.CoverageRequest) (schemaext.Coverage, error) {

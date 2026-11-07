@@ -15,7 +15,6 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/cockroachdb/crdbschema"
-	"ptah.run/dialect/spanner/spannerschema"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/engine/builtin"
 )
@@ -49,12 +48,6 @@ func TestBundledOwnersAccountForACreatedTable(t *testing.T) {
 			"ptah.run/pgpolicy/table-state: set the table's declared row-security switches in the statements after its CREATE TABLE",
 			"ptah.run/postgres/table-partition: CREATE TABLE carries or reports the declared partition key",
 			"ptah.run/postgres/table-persistence: the target has no table persistence setting; CREATE TABLE reports omitted declarations",
-			"ptah.run/timescaledb/hypertable: partition the table with the create_hypertable call that follows its CREATE TABLE",
-		}},
-		{name: "a row deletion policy", target: "spanner", facet: &spannerschema.DesiredRowDeletion{Policy: spannerschema.Policy{Column: "at", Interval: "30 days"}}, want: []string{
-			"ptah.run/postgres/table-partition: CREATE TABLE carries or reports the declared partition key",
-			"ptah.run/postgres/table-persistence: the target has no table persistence setting; CREATE TABLE reports omitted declarations",
-			"ptah.run/spanner/row-deletion-policy: create the row deletion policy with the table; its CREATE TABLE carries the policy",
 			"ptah.run/timescaledb/hypertable: partition the table with the create_hypertable call that follows its CREATE TABLE",
 		}},
 	}

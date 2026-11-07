@@ -24,13 +24,13 @@ func ExampleNormalizeDialect() {
 }
 
 // ExampleIsPostgresFamily shows which dialects share the PostgreSQL wire
-// protocol and catalog -- the question this predicate answers. CockroachDB,
-// YugabyteDB, and Spanner are in the family even though each refuses
-// constructs PostgreSQL accepts, so a caller deciding whether a feature
+// protocol and catalog -- the question this predicate answers. CockroachDB
+// and YugabyteDB are in the family even though each refuses constructs
+// PostgreSQL accepts, so a caller deciding whether a feature
 // exists reads a capability, not this. Aliases work because the predicate
 // normalizes its argument first.
 func ExampleIsPostgresFamily() {
-	for _, dialect := range []string{"postgres", "crdb", "yugabyte", "spanner", "mysql"} {
+	for _, dialect := range []string{"postgres", "crdb", "yugabyte", "mysql"} {
 		fmt.Printf("%s: %t\n", dialect, platform.IsPostgresFamily(dialect))
 	}
 
@@ -38,7 +38,6 @@ func ExampleIsPostgresFamily() {
 	// postgres: true
 	// crdb: true
 	// yugabyte: true
-	// spanner: true
 	// mysql: false
 }
 

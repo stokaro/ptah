@@ -17,7 +17,7 @@ import (
 
 // TestReadSchemaContext_ExclusionCoverageWithoutCatalogFunctions pins what a
 // read records for EXCLUDE constraints when the server cannot query
-// pg_constraint. Spanner holds none, so its namespace is described, and an
+// pg_constraint. CockroachDB holds none, so its namespace is described, and an
 // HCL export of it has no gap to refuse. PostgreSQL may hold some, so with the
 // same capabilities its namespace stays uninspected and cannot authorize a
 // drop.
@@ -27,13 +27,14 @@ func TestReadSchemaContext_ExclusionCoverageWithoutCatalogFunctions(t *testing.T
 		dialect string
 		want    schemaext.KnowledgeState
 	}{
-		{name: "Spanner holds no EXCLUDE constraint", dialect: platform.Spanner, want: schemaext.Complete},
+		{name: "CockroachDB holds no EXCLUDE constraint", dialect: platform.CockroachDB, want: schemaext.Complete},
 		{name: "PostgreSQL may hold one", dialect: platform.Postgres, want: schemaext.Uninspected},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			db := dbtest.Open(c, emptyCatalog)
-			reader := postgres.NewPostgreSQLWireReaderWithCapabilities(db.SQL, "public", test.dialect, capability.SpannerPostgres())
+			reader := postgres.NewPostgreSQLWireReaderWithCapabilities(db.SQL, "public", test.dialect,
+				capability.Postgres16().With(capability.PostgresCatalogFunctions, false).With(capability.RoleManagement, false))
 
 			database, err := reader.ReadSchemaContext(c.Context())
 

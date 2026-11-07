@@ -20,7 +20,7 @@ import (
 func SQL() []sqlext.Extension {
 	foreign := slices.DeleteFunc(pgtable.PersistenceTargets(), func(target string) bool { return target == platform.Postgres })
 	return []sqlext.Extension{exclusionSQL(), deleteColumnsSQL(), partitionMemberSQLExtension(),
-		{Owner: pgtable.Owner, Targets: []string{platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner},
+		{Owner: pgtable.Owner, Targets: []string{platform.Postgres, platform.CockroachDB, platform.YugabyteDB},
 			Facets: []schemaext.Kind{pgtable.PartitionKind}, Patterns: []sqlext.Pattern{{Name: "partition", Site: sqlext.TableOption,
 				Words: []string{"PARTITION", "BY"}, Next: []string{"RANGE", "LIST", "HASH"},
 				Stops: []string{"PARTITION", "WITH", "TABLESPACE", "AS", "ENGINE", "ORDER", "PRIMARY", "SAMPLE", "TTL", "SETTINGS"}}}, Parser: partitionSQL{}, Coverage: func(sqlext.CoverageRequest) (schemaext.Coverage, error) {

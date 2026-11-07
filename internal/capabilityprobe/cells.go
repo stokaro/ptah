@@ -153,37 +153,6 @@ type Cell struct {
 	// here. Understating costs a capability; overstating costs correctness.
 	Understates map[capability.Capability]string
 
-	// Emulated says the only container this dialect has is the vendor's
-	// emulator rather than the product itself.
-	//
-	// It exists to keep two claims apart that CI would otherwise conflate: a
-	// line can be worth running on every pull request -- an emulator catches a
-	// preset that drifts from the interface -- and still not be evidence about
-	// the managed service. The two already differ measurably: the reference
-	// says a serial column needs the database option default_sequence_kind set
-	// first, and the emulator accepts one without it.
-	//
-	// So an emulated line is exercised and stays best-effort, which is the
-	// combination the certification rule otherwise forbids
-	// (stokaro/ptah#942).
-	Emulated bool
-
-	// Versionless declares a dialect with no release line to match against, so
-	// the single cell answers for every server of that dialect.
-	//
-	// It exists because "no version" and "any version" are not the same claim
-	// and only one of them is true here. Spanner is a managed service that
-	// ships by date, and over the PostgreSQL wire the number it announces is
-	// PGAdapter's PostgreSQL compatibility level -- a live endpoint answers
-	// `PostgreSQL 14.1`. Matching a line against that would pin a Spanner cell
-	// to a number about PostgreSQL, and would move the day PGAdapter raised it.
-	//
-	// Measured: without this, a probe run against a live Spanner endpoint
-	// reports `no matrix cell covers spanner 14.1 (add a cell in cells.go)`
-	// while the cell is sitting in this file, and every row it measured is
-	// discarded for belonging to no declared line (stokaro/ptah#942).
-	Versionless bool
-
 	// CompiledIn declares a line whose engine ships inside Ptah, so no
 	// container starts it and none is missing.
 	//
@@ -202,14 +171,7 @@ type Cell struct {
 // Match reports whether a parsed server version falls on this cell's line.
 // The comparison is component-wise on the dotted line, so "17" accepts every
 // 17.x and "10.11" accepts only 10.11.x.
-//
-// A versionless line accepts any version, including one it has no relationship
-// to. That is not laxity: see Versionless for why a number reaching this
-// function on such a dialect is a number about a different product.
 func (c Cell) Match(v Version) bool {
-	if c.Versionless {
-		return true
-	}
 	want := strings.Split(c.Line, ".")
 	got := v.Components()
 	if len(want) > len(got) {
@@ -734,22 +696,6 @@ var Cells = []Cell{
 			"Measured on 3.53.4: ALTER TABLE ... DROP CONSTRAINT removes a CHECK and is refused for a " +
 			"UNIQUE, and a column declared XML accepts any text at all, so neither key can be decided " +
 			"by whether a statement was accepted (stokaro/ptah#3191)",
-	},
-
-	// Spanner is a managed service with no version axis and no open-source
-	// server. The emulator behind PGAdapter is the only endpoint a container
-	// can provide, and stokaro/ptah#942 closed once this cell started running
-	// it on every pull request. What it does not cover is the hosted product
-	// or an end-to-end suite; see stokaro/ptah#1719.
-	{
-		Dialect: platform.Spanner, Line: "0",
-		Image:       "gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:v0.56.2",
-		Emulated:    true,
-		Versionless: true,
-		Preset:      capability.SpannerPostgres, PresetName: "SpannerPostgres",
-		Refinement: RefinedByBanner,
-		Support:    capability.BestEffort,
-		Note:       "measured against the Cloud Spanner emulator behind PGAdapter, which is the only Spanner endpoint a container can provide; the managed service is not what runs here",
 	},
 }
 

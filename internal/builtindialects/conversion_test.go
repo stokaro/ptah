@@ -45,7 +45,6 @@ func TestDescriptors_ConversionAgreesWithTheRetiredSwitches(t *testing.T) {
 		platform.Postgres:    postgres,
 		platform.CockroachDB: postgresFamily,
 		platform.YugabyteDB:  postgresFamily,
-		platform.Spanner:     postgresFamily,
 		platform.MySQL:       mysqlFamily,
 		platform.MariaDB:     mysqlFamily,
 		platform.ClickHouse:  {RowPolicyOwned: true},

@@ -1063,7 +1063,7 @@ func TestRunLint_InvalidFlagValuesExitCode2(t *testing.T) {
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
 	c.Assert(stderr, qt.Contains, "invalid --dialect")
 	c.Assert(stderr, qt.Contains, "clickhouse")
-	c.Assert(stderr, qt.Contains, "spanner")
+	c.Assert(stderr, qt.Contains, "yugabytedb")
 
 	stdout, _, err := execute("--dir", "testdata/clean", "--dialect", "clickhouse")
 	c.Assert(err, qt.IsNil)
@@ -1127,14 +1127,11 @@ func TestRunLint_LocalSourceValidationPrecedence(t *testing.T) {
 			args: []string{
 				"--dir", validDir,
 				"--dir-format", "custom",
-				"--dev-url", "spanner://localhost/dev",
+				"--dev-url", "postgres://localhost/dev",
 			},
 			want: `unknown migration directory format "custom"`,
 		},
 		{
-			// "db2" rather than "spanner": Spanner is a dev-URL dialect, and
-			// lands here only when a hand-written scheme list has drifted from
-			// NormalizeDialect (stokaro/ptah#1875).
 			name: "dev url before directory capture",
 			args: []string{
 				"--dir", invalidMetadataDir,

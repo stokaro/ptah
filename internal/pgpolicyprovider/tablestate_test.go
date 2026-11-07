@@ -216,7 +216,7 @@ func TestCompareTableStates_UndecidedWhereNothingWasRead(t *testing.T) {
 func TestCompareTableStates_OnlyOnRowSecurityTargets(t *testing.T) {
 	c := qt.New(t)
 	request := facetComparison(c, records(c, &pgpolicy.DesiredTableState{Enabled: true}), nil, surviving("orders"))
-	request.Target = "spanner"
+	request.Target = "rowless"
 	request.Desired.Coverage, request.Current.Coverage = schemaext.Coverage{}, schemaext.Coverage{}
 
 	result, err := newRuntime(c).CompareFacets(t.Context(), request)

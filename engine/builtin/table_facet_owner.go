@@ -8,9 +8,9 @@ import (
 )
 
 // tableFacetOwner describes an owner whose value is one facet of a table and
-// whose every stage is a single service: CockroachDB row-level TTL and the
-// Spanner row deletion policy. Each is registered from one descriptor, so no
-// stage can select another owner.
+// whose every stage is a single service, such as CockroachDB row-level TTL.
+// Each is registered from one descriptor, so no stage can select another
+// owner.
 type tableFacetOwner struct {
 	codecs          []schemaext.Codec
 	properties      []schemaext.PropertyDefinition

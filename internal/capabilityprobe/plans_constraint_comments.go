@@ -12,8 +12,8 @@ import (
 // (stokaro/ptah#3678).
 func withConstraintComments(p plan, dialect string) plan {
 	switch dialect {
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
-		p.experiments = append(p.experiments, constraintCommentExperiment(postgresFamilySpelling(dialect)))
+	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB:
+		p.experiments = append(p.experiments, constraintCommentExperiment(tableSpelling{}))
 	case platform.SQLServer:
 		p.experiments = append(p.experiments, constraintCommentRefusal("T-SQL has no COMMENT ON statement at all; "+
 			"SQL Server carries a comment as an extended property, which this key does not name"))
@@ -34,8 +34,8 @@ func withConstraintComments(p plan, dialect string) plan {
 
 // constraintCommentExperiment asks the PostgreSQL family whether it stores a
 // constraint's comment where the reader looks. The constraint is a CHECK
-// because it is the one kind every member of the family creates, Spanner
-// included, so a refusal is the comment's and not the constraint's.
+// because it is the one kind every member of the family creates, so a refusal
+// is the comment's and not the constraint's.
 func constraintCommentExperiment(t tableSpelling) experiment {
 	return objectComment(capability.ConstraintComments, nil,
 		[]string{t.table("ccm_t", "n int, CONSTRAINT ccm_pos CHECK (n > 0)", "n")},

@@ -30,16 +30,11 @@ var plannedNodes = map[string]ast.Node{
 // routedOut are the nodes each built-in dialect sends out of the transactional
 // file. They are the answers of the switch the descriptor replaced, which sent
 // all four of "concurrent index", "concurrent drop", "enum value" and
-// "validation" out on the PostgreSQL family and nothing anywhere else, with one
-// deliberate difference: Spanner's PostgreSQL interface has no enum type, its
-// descriptor states no enum value rule, and so no ALTER TYPE leaves its file.
-// The planner writes a Spanner enum column as TEXT with a CHECK, so no plan for
-// Spanner holds one.
+// "validation" out on the PostgreSQL family and nothing anywhere else.
 var routedOut = map[string][]string{
 	platform.Postgres:    {"concurrent index", "concurrent drop", "enum value", "validation"},
 	platform.CockroachDB: {"concurrent index", "concurrent drop", "enum value", "validation"},
 	platform.YugabyteDB:  {"concurrent index", "concurrent drop", "enum value", "validation"},
-	platform.Spanner:     {"concurrent index", "concurrent drop", "validation"},
 	platform.MySQL:       nil,
 	platform.MariaDB:     nil,
 	platform.ClickHouse:  nil,
@@ -86,7 +81,6 @@ func TestOwnerForbiddenTransactionLeavesOnlyATransactionalFile(t *testing.T) {
 	node := &ast.ExtensionStatement{Transaction: plangraph.TransactionForbidden}
 	for dialect, want := range map[string]bool{
 		platform.ClickHouse: false,
-		platform.Spanner:    false,
 		platform.Postgres:   true,
 		platform.MySQL:      true,
 		platform.SQLite:     true,

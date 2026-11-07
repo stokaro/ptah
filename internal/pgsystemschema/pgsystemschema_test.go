@@ -16,29 +16,28 @@ import (
 // arm and the gate on it.
 //
 // The extension arm reads pg_depend, so it may only be asked of a catalog that
-// has one. Measured: the Cloud Spanner emulator through PGAdapter 0.55.2
-// answers `relation "pg_depend" does not exist` to the whole statement, which
-// would turn every realm read there into a failure rather than a narrower
-// description. Omitting it costs that target nothing -- it has no CREATE
-// EXTENSION to own a schema with.
+// has one: a server without it answers `relation "pg_depend" does not exist`
+// to the whole statement, which would turn every realm read there into a
+// failure rather than a narrower description.
 func TestPostgresDescribedSchemasPredicate_DropsTheSchemasAnExtensionOwns(t *testing.T) {
 	tests := []struct {
 		name       string
 		dialect    string
+		caps       capability.Capabilities
 		wantDepend bool
 		wantCrdb   bool
 	}{
-		{name: "postgres reads pg_depend", dialect: "postgres", wantDepend: true},
-		{name: "cockroachdb reads pg_depend", dialect: "cockroachdb", wantDepend: true, wantCrdb: true},
-		{name: "yugabytedb reads pg_depend", dialect: "yugabytedb", wantDepend: true},
-		{name: "spanner has no pg_depend", dialect: "spanner", wantDepend: false},
+		{name: "postgres reads pg_depend", dialect: "postgres", caps: capability.ForDialect("postgres"), wantDepend: true},
+		{name: "cockroachdb reads pg_depend", dialect: "cockroachdb", caps: capability.ForDialect("cockroachdb"), wantDepend: true, wantCrdb: true},
+		{name: "yugabytedb reads pg_depend", dialect: "yugabytedb", caps: capability.ForDialect("yugabytedb"), wantDepend: true},
+		{name: "a catalog without pg_depend", dialect: "postgres",
+			caps: capability.ForDialect("postgres").With(capability.CatalogDependencies, false), wantDepend: false},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			predicate := pgsystemschema.PostgresDescribedSchemasPredicate(
-				test.dialect, capability.ForDialect(test.dialect))
+			predicate := pgsystemschema.PostgresDescribedSchemasPredicate(test.dialect, test.caps)
 
 			c.Assert(predicate, qt.Contains, "n.nspname <> 'information_schema'")
 			c.Assert(strings.Contains(predicate, "d.deptype = 'e'"), qt.Equals, test.wantDepend)
@@ -78,27 +77,12 @@ func TestPostgresNonSystemSchemasPredicate_DerivesSystemSchemasFromDialect(t *te
 		c.Assert(predicate, qt.Contains, "n.nspname NOT LIKE 'pg\\_%' ESCAPE '\\'")
 	})
 
-	t.Run("spanner", func(t *testing.T) {
-		c := qt.New(t)
-		predicate := pgsystemschema.PostgresNonSystemSchemasPredicate("spanner")
-
-		c.Assert(predicate, qt.Contains, "n.nspname <> 'spanner_sys'")
-		c.Assert(predicate, qt.Not(qt.Contains), "crdb_internal")
-	})
-
-	t.Run("cockroachdb has no spanner_sys", func(t *testing.T) {
-		c := qt.New(t)
-		predicate := pgsystemschema.PostgresNonSystemSchemasPredicate("cockroachdb")
-
-		c.Assert(predicate, qt.Not(qt.Contains), "spanner_sys")
-	})
-
 	t.Run("any member leaves out every member's catalog", func(t *testing.T) {
 		c := qt.New(t)
 		predicate := pgsystemschema.PostgresNonSystemSchemasPredicate(pgsystemschema.AnyMember)
 
 		c.Assert(predicate, qt.Equals, "n.nspname <> 'information_schema'\n\t\t\t  AND n.nspname <> 'crdb_internal'"+
-			"\n\t\t\t  AND n.nspname <> 'spanner_sys'\n\t\t\t  AND n.nspname NOT LIKE 'pg\\_%' ESCAPE '\\'")
+			"\n\t\t\t  AND n.nspname NOT LIKE 'pg\\_%' ESCAPE '\\'")
 	})
 }
 
@@ -114,9 +98,8 @@ func TestIsPostgresSystemSchemaPreservesQuotedIdentifierIdentity(t *testing.T) {
 }
 
 // TestIsPostgresFamilySystemSchemaAddsTheReservedSchemas covers the schemas a
-// dialect's descriptor reserves: crdb_internal on CockroachDB and spanner_sys
-// on Spanner, each owned by its engine alone, and both for a caller that
-// cannot tell which member it talks to.
+// dialect's descriptor reserves: crdb_internal on CockroachDB, owned by that
+// engine alone, and by a caller that cannot tell which member it talks to.
 func TestIsPostgresFamilySystemSchemaAddsTheReservedSchemas(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -128,28 +111,10 @@ func TestIsPostgresFamilySystemSchemaAddsTheReservedSchemas(t *testing.T) {
 		{name: "Postgres does not own it", dialect: "postgres", schema: "crdb_internal", want: false},
 		{name: "quoted lookalike", dialect: "cockroachdb", schema: "CRDB_INTERNAL", want: false},
 		{name: "common catalog", dialect: "cockroachdb", schema: "pg_catalog", want: true},
-		{name: "Spanner's catalog", dialect: "spanner", schema: "spanner_sys", want: true},
-		{name: "CockroachDB does not own Spanner's catalog", dialect: "cockroachdb", schema: "spanner_sys", want: false},
-		{name: "Spanner's public is the user's", dialect: "spanner", schema: "public", want: false},
 		{name: "any member owns Cockroach internal", dialect: pgsystemschema.AnyMember, schema: "crdb_internal", want: true},
-		{name: "any member owns Spanner's catalog", dialect: pgsystemschema.AnyMember, schema: "spanner_sys", want: true},
 		{name: "any member leaves public to the user", dialect: pgsystemschema.AnyMember, schema: "public", want: false},
 		{name: "any member owns the common catalog", dialect: pgsystemschema.AnyMember, schema: "information_schema", want: true},
-		{name: "Spanner owns spanner", dialect: "spanner", schema: "spanner", want: true},
-		{name: "Spanner owns default", dialect: "spanner", schema: "default", want: true},
-		{name: "Spanner's reserved prefix", dialect: "spanner", schema: "spanner_app", want: true},
-		{name: "Spanner's prefix keeps its case", dialect: "spanner", schema: "SPANNER_APP", want: false},
-		{name: "Spanner's prefix is a prefix", dialect: "spanner", schema: "spannerx", want: false},
-		{name: "a variant of Spanner's catalog", dialect: "spanner", schema: "SPANNER_SYS", want: true},
-		{name: "a variant of Spanner's public", dialect: "spanner", schema: "Public", want: true},
-		{name: "a variant of the information schema on Spanner", dialect: "spanner", schema: "INFORMATION_SCHEMA", want: true},
-		{name: "a variant of pg_catalog on Spanner", dialect: "spanner", schema: "Pg_Catalog", want: true},
-		{name: "a variant of another pg_ schema on Spanner", dialect: "spanner", schema: "PG_TOAST", want: false},
-		{name: "a variant of default on Spanner", dialect: "spanner", schema: "DEFAULT", want: true},
-		{name: "PostgreSQL leaves Spanner's prefix to the user", dialect: "postgres", schema: "spanner_app", want: false},
 		{name: "PostgreSQL leaves a variant of the information schema to the user", dialect: "postgres", schema: "INFORMATION_SCHEMA", want: false},
-		{name: "any member owns Spanner's prefix", dialect: pgsystemschema.AnyMember, schema: "spanner_app", want: true},
-		{name: "any member refuses a variant of public", dialect: pgsystemschema.AnyMember, schema: "PUBLIC", want: true},
 	}
 
 	for _, test := range tests {
@@ -172,13 +137,7 @@ func TestValidateDeclaredPostgresSystemSchemasRefusesServerNamespaces(t *testing
 	}{
 		{name: "PostgreSQL catalog", dialect: "postgres", schema: "pg_catalog"},
 		{name: "PostgreSQL reserved prefix", dialect: "yugabytedb", schema: "pg_app"},
-		{name: "information schema", dialect: "spanner", schema: "information_schema"},
 		{name: "CockroachDB internal", dialect: "cockroachdb", schema: "crdb_internal"},
-		{name: "Spanner's catalog", dialect: "spanner", schema: "spanner_sys"},
-		{name: "Spanner's reserved prefix", dialect: "spanner", schema: "spanner_app"},
-		{name: "Spanner's own name", dialect: "spanner", schema: "spanner"},
-		{name: "a variant of Spanner's catalog", dialect: "spanner", schema: "SPANNER_SYS"},
-		{name: "a variant of Spanner's public", dialect: "spanner", schema: "Public"},
 	}
 
 	for _, test := range tests {
@@ -204,10 +163,6 @@ func TestValidateDeclaredPostgresSystemSchemasKeepsUserNamespaces(t *testing.T) 
 		{name: "quoted catalog lookalike", dialect: "postgres", schema: "PG_CATALOG"},
 		{name: "CockroachDB lookalike", dialect: "cockroachdb", schema: "CRDB_INTERNAL"},
 		{name: "CockroachDB namespace on PostgreSQL", dialect: "postgres", schema: "crdb_internal"},
-		{name: "Spanner's catalog on PostgreSQL", dialect: "postgres", schema: "spanner_sys"},
-		{name: "Spanner's public", dialect: "spanner", schema: "public"},
-		{name: "Spanner's prefix in another case", dialect: "spanner", schema: "SPANNER_APP"},
-		{name: "Spanner's prefix on PostgreSQL", dialect: "postgres", schema: "spanner_app"},
 		{name: "non PostgreSQL target", dialect: "mysql", schema: "pg_catalog"},
 	}
 
@@ -223,13 +178,8 @@ func TestValidateDeclaredPostgresSystemSchemasKeepsUserNamespaces(t *testing.T) 
 	}
 }
 
-// Spanner's `public` is not a catalog namespace -- it holds the user's own
-// tables -- and it still cannot be created. Measured on the PGAdapter emulator
-// v0.55.2, `CREATE SCHEMA IF NOT EXISTS "public"` is refused with
-// `Schema name not valid: public`, and the IF NOT EXISTS does not help because
-// the refusal is about the name (stokaro/ptah#2072). Measured on v0.56.1,
-// `CREATE SCHEMA "PUBLIC"` is refused the same way, and `PUBLIC` names no
-// schema a table can be placed in.
+// A schema the target owns cannot be created, and one it leaves to the user
+// can, including the public schema every family member creates.
 func TestIsUncreatableSchemaCoversTheNamesATargetOwns(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -237,14 +187,10 @@ func TestIsUncreatableSchemaCoversTheNamesATargetOwns(t *testing.T) {
 		schema  string
 		want    bool
 	}{
-		{name: "Spanner owns public", dialect: "spanner", schema: "public", want: true},
-		{name: "Spanner owns its catalog", dialect: "spanner", schema: "spanner_sys", want: true},
-		{name: "Spanner does not own a user schema", dialect: "spanner", schema: "app", want: false},
 		{name: "PostgreSQL creates public", dialect: "postgres", schema: "public", want: false},
 		{name: "CockroachDB creates public", dialect: "cockroachdb", schema: "public", want: false},
-		{name: "the common catalog is owned everywhere", dialect: "spanner", schema: "pg_catalog", want: true},
+		{name: "the common catalog is owned everywhere", dialect: "yugabytedb", schema: "pg_catalog", want: true},
 		{name: "Cockroach internal is still owned", dialect: "cockroachdb", schema: "crdb_internal", want: true},
-		{name: "Spanner refuses a variant of public", dialect: "spanner", schema: "PUBLIC", want: true},
 		{name: "a quoted lookalike is a user schema", dialect: "postgres", schema: "PUBLIC", want: false},
 	}
 

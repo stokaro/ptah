@@ -5053,8 +5053,8 @@ var clickHouseTableClauses = map[string]string{
 
 // handleTableClause reads an owner's option at the cursor, or else one of the
 // ClickHouse clauses, and reports whether it read one. An owner's option comes
-// first, so the Spanner owner's TTL is read as its row deletion policy in a
-// Spanner document.
+// first, so an owner that claims a clause spelled like a ClickHouse one reads
+// it in its own document.
 func (p *Parser) handleTableClause(table *ast.CreateTableNode, option string) (bool, error) {
 	if p.claimOwnerTableOption(table) {
 		return true, nil
@@ -5078,12 +5078,10 @@ func (p *Parser) handleClickHouseTableClause(table *ast.CreateTableNode, option 
 	case "SETTINGS":
 		return true, p.handleClickHouseRawClause(table, "SETTINGS")
 	case "TTL":
-		// Two clauses spell this keyword and neither is readable as the other.
-		// ClickHouse's takes a date expression -- `TTL created_at + INTERVAL 1
-		// MONTH` -- while a Spanner row deletion policy is `TTL INTERVAL '30
-		// days' ON created_at` and names its column separately. The Spanner
-		// owner claims its clause in a Spanner document before this is
-		// reached (stokaro/ptah#2236), so here TTL is ClickHouse's.
+		// ClickHouse's TTL takes a date expression -- `TTL created_at +
+		// INTERVAL 1 MONTH`. An owner that spells another clause with this
+		// keyword claims it in its own document before this is reached
+		// (stokaro/ptah#2236), so here TTL is ClickHouse's.
 		return true, p.handleClickHouseRawClause(table, "TTL")
 	default:
 		return false, nil

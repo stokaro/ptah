@@ -33,7 +33,6 @@ func TestCleanupCatalog_OffersTheInventoryWhereItWasMeasured(t *testing.T) {
 		{dialect: "postgresql", offered: true},
 		{dialect: platform.CockroachDB, offered: false},
 		{dialect: platform.YugabyteDB, offered: false},
-		{dialect: platform.Spanner, offered: false},
 		{dialect: "", offered: false},
 	}
 	for _, test := range tests {

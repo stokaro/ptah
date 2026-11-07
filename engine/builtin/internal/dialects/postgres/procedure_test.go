@@ -95,12 +95,13 @@ func TestPostgreSQLRenderer_Procedure_DropsWithoutAnEmptySignature(t *testing.T)
 // TestPostgreSQLRenderer_Procedure_NamesTheSkipOnATargetWithout keeps the
 // procedure behind its own key rather than the function's.
 //
-// Spanner's PostgreSQL interface takes neither, and the two keys are separate
-// because the answers differ elsewhere: SQL Server hosts functions and no Ptah
+// The set below takes no procedure and keeps its functions, so a renderer that
+// read the function's key would write the CREATE PROCEDURE. The two keys are
+// separate because the answers differ: SQL Server hosts functions and no Ptah
 // path reads a procedure back there.
 func TestPostgreSQLRenderer_Procedure_NamesTheSkipOnATargetWithout(t *testing.T) {
 	c := qt.New(t)
-	renderer := postgres.NewWithCapabilities(capability.SpannerPostgres(), platform.Spanner)
+	renderer := postgres.NewWithCapabilities(capability.Postgres17().With(capability.Procedures, false), platform.Postgres)
 
 	sql, err := renderer.Render(ast.NewCreateFunction("bump").
 		SetKind("procedure").

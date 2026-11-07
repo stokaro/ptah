@@ -70,16 +70,6 @@ var keywordColumnTargets = []keywordColumnTarget{
 		},
 	},
 	{
-		name: "spanner", engine: dbtarget.Spanner, dialect: platform.Spanner,
-		idColumn: "id bigint PRIMARY KEY", drop: "DROP TABLE %s",
-		columns: []keywordColumn{
-			{name: "key", columnType: "text"},
-			{name: "spatial", columnType: "varchar(32)"},
-			{name: "fulltext", columnType: "text"},
-			{name: "index", columnType: "varchar(32)"},
-		},
-	},
-	{
 		// `index String` is not a row: ClickHouse reads INDEX as its
 		// data-skipping index and refuses the statement.
 		name: "clickhouse", engine: dbtarget.ClickHouse, dialect: platform.ClickHouse,
