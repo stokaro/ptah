@@ -117,12 +117,21 @@ func validatePlanningCommonObjects(description *protocol.Description, engine *pr
 }
 
 // validateServiceTables checks the tables of request as the service reads
-// them: whole, or as outlines under TableOutlinesFeature.
+// them: whole, with the grants of each held table under TableGrantsFeature,
+// or as outlines under TableOutlinesFeature.
 func validateServiceTables(description *protocol.Description, request *protocol.PlanFeaturesRequest, engine *protocol.Engine, service *protocol.ModelPlanning) error {
 	if service.GetTables() == protocol.PlanningTables_PLANNING_TABLES_OUTLINED {
 		return validateOutlinedTables(request)
 	}
-	return validatePlanningTables(description, request, engine)
+	if err := validatePlanningTables(description, request, engine); err != nil {
+		return err
+	}
+	for _, table := range request.GetTables() {
+		if err := validateTableGrants(description, engine, request.GetTargetFeatures(), table); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func hasPlanningActions(request *protocol.PlanFeaturesRequest) bool {

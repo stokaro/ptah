@@ -1508,6 +1508,29 @@ A host that does not list the feature sees no service own tables this way, so
 a provider whose only claim on its tables is this one needs a host that lists
 it.
 
+### Table grants
+
+[ADR 0111](../docs/adr/0111-a-planning-service-receives-the-grants-of-each-held-table.md)
+decides this feature. `planning.table-grants` adds
+`PlanningTable.current_grants`: the grants the read found on each held table,
+so a plan that replaces the table can give the new one its grants. The
+provider and the engine list this two-way feature, and the engine must carry
+`GRANT` common objects. Under it:
+
+- every table of a planning request whose current state is present carries
+  them, for a service that reads whole tables; an outlined table carries none;
+- `complete` with every grant whose target is the table, a grant on some of
+  its columns included, each target naming the table as the read named it
+  (kind `table`, the held table's schema and name);
+- not `complete` and empty when the read did not describe grants, so the
+  owner knows nothing about them rather than that there are none;
+- a grant the same plan revokes is in the list, and the revoke's common step
+  is in the request, so the owner can leave it out of what it gives back.
+
+A host that does not list the feature sends no grants, as a host of contract
+25.32 does, and the negotiation drops the engine's feature when the host's
+features leave the engine no `GRANT` common objects.
+
 ### Migration logs and tags
 
 The optional `sessions.migration-metadata` service stores typed event and tag

@@ -158,7 +158,8 @@ func ValidateHostFeatures(features []string) error {
 // own model unless it lists OwnPredecessorsFeature, the enum columns
 // unless it lists EnumColumnsFeature, the table ownership of its planning
 // services unless it lists TableOwnershipFeature, and the declared kinds of
-// its comparisons unless it lists DeclaredObjectsFeature. A model keeps its
+// its comparisons unless it lists DeclaredObjectsFeature. An engine that
+// keeps no GRANT common objects loses TableGrantsFeature. A model keeps its
 // source formats without HCLPlatformFeature: a platform claim's models need
 // not list HCL. Without
 // EntryKeysFeature, the YAML claims of a COLUMN or INDEX scope and the
@@ -220,7 +221,8 @@ func NegotiatedDescription(description *protocol.Description, hostFeatures []str
 // outlines of its planning services, the table clauses of its SQL grammar,
 // the linked engines of its release lines, its enum columns, the table
 // ownership of its planning services and the declared kinds of its
-// comparisons.
+// comparisons. It also removes TableGrantsFeature from an engine the
+// negotiation left without GRANT common objects.
 func negotiateLaterAdditions(engine *protocol.Engine, hostFeatures []string) {
 	negotiateTableOutlines(engine, hostFeatures)
 	negotiateTableOwnership(engine, hostFeatures)
@@ -228,6 +230,7 @@ func negotiateLaterAdditions(engine *protocol.Engine, hostFeatures []string) {
 	negotiateSQLTableClauses(engine, hostFeatures)
 	negotiateLinkedReleaseLines(engine, hostFeatures)
 	negotiateEnumColumns(engine, hostFeatures)
+	negotiateTableGrants(engine)
 	if !slices.Contains(hostFeatures, ReverseChangesFeature) {
 		engine.Reversals = nil
 	}
