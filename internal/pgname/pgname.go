@@ -150,6 +150,14 @@ func ColumnKey(table, column string) string {
 	return Constraint(table, []string{column}, "key", nil)
 }
 
+// NotNull answers the name PostgreSQL 18 gives a NOT NULL nobody named on column
+// of table when the name is free: `<table>_<column>_not_null`, fitted into 63
+// bytes as [Object] fits it. The table is the bare relation name, without its
+// schema.
+func NotNull(table, column string) string {
+	return Object(table, column, "not_null")
+}
+
 // Sequence answers the name PostgreSQL gives the sequence it creates for a
 // serial or an identity column of table: `<table>_<column>_seq`, fitted into 63
 // bytes as [Object] fits it. The table is the bare relation name, without its

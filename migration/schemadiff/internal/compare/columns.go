@@ -295,10 +295,6 @@ func notNullConstraintNameChange(desired, current, generated string) *difftypes.
 	return &difftypes.NotNullConstraintNameChange{Current: current, Desired: desired}
 }
 
-// notNullLabel is the label PostgreSQL ends the name of an unnamed NOT NULL
-// with.
-const notNullLabel = "not_null"
-
 // generatedNotNullName answers the name the server of dialect gives a NOT NULL
 // on column of table that nothing names, and "" for a dialect whose descriptor
 // states no such naming. PostgreSQL 18 names it as it names an unnamed CHECK
@@ -308,7 +304,7 @@ func generatedNotNullName(dialect, table, column string) string {
 	if constraintNamingOf(dialect) != descriptor.ConstraintNamingTableColumnsSuffix {
 		return ""
 	}
-	return pgname.Object(table, column, notNullLabel)
+	return pgname.NotNull(table, column)
 }
 
 func commentChange(desired, current string) *difftypes.CommentChange {

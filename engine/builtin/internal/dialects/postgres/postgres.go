@@ -21,6 +21,7 @@ import (
 	"ptah.run/engine/builtin/internal/dialects/internal/viewrefusal"
 	"ptah.run/internal/defaultlit"
 	"ptah.run/internal/notnullfill"
+	"ptah.run/internal/pgname"
 	"ptah.run/internal/pgtypealias"
 	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/rlspolicy"
@@ -854,7 +855,7 @@ func (r *Renderer) renderCreateTableLines(node *ast.CreateTableNode, owned []str
 	positions := make(map[any]int)
 	lines = make([]string, 0, len(node.Columns)+len(node.Constraints)+len(owned))
 	for _, column := range node.Columns {
-		line, err := r.renderColumn(r.namedColumnCheck(node.Name, column))
+		line, err := r.renderColumn(r.withoutDefaultNotNullName(node.Name, r.namedColumnCheck(node.Name, column)))
 		if err != nil {
 			return nil, nil, fmt.Errorf("error rendering column %s: %w", column.Name, err)
 		}
@@ -1596,6 +1597,30 @@ func (r *Renderer) notNullClause(column *ast.ColumnNode) (string, error) {
 	return fmt.Sprintf("CONSTRAINT %s NOT NULL", r.escapeIdentifier(column.NotNullConstraintName)), nil
 }
 
+// withoutDefaultNotNullName leaves out the NOT NULL name of column where the
+// target keeps no such name and the name is the one PostgreSQL 18 gives a NOT
+// NULL nobody named.
+//
+// A read of PostgreSQL 18 names every NOT NULL, so a plan from PostgreSQL 17
+// toward such a database carries that name on every column it adds. Nothing is
+// lost by leaving it out: a server that keeps names gives the column the same
+// one. [Renderer.notNullClause] still refuses any other name, which this target
+// would lose. No catalog says who wrote a name, so the spelling decides, as it
+// does in the comparison, and a name the server numbered counts as written.
+//
+// A nullable or primary-key column keeps its name here, and the refusals that
+// answer it.
+func (r *Renderer) withoutDefaultNotNullName(table string, column *ast.ColumnNode) *ast.ColumnNode {
+	if column == nil || column.NotNullConstraintName == "" || column.Nullable || column.Primary ||
+		r.capabilities().Has(capability.NamedNotNullConstraints) ||
+		column.NotNullConstraintName != pgname.NotNull(unqualifiedTable(table), column.Name) {
+		return column
+	}
+	bare := *column
+	bare.NotNullConstraintName = ""
+	return &bare
+}
+
 func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 	var parts []string
 
@@ -1687,7 +1712,7 @@ func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 // added nullable and made NOT NULL next, so there the NOT NULL follows as its
 // own statement; see spannerDeferredNotNull.
 func (r *Renderer) writeAddColumn(table string, op *ast.AddColumnOperation) error {
-	column := r.namedColumnCheck(table, op.Column)
+	column := r.withoutDefaultNotNullName(table, r.namedColumnCheck(table, op.Column))
 	var check *ast.ColumnNode
 	if r.dialect == platform.Spanner && column != nil && column.Check != "" {
 		check = column
@@ -1785,13 +1810,17 @@ func (r *Renderer) namedColumnCheck(table string, column *ast.ColumnNode) *ast.C
 	if r.dialect != platform.Spanner || column == nil || column.Check == "" || column.CheckName != "" {
 		return column
 	}
-	leaf := table
-	if dot := strings.LastIndexByte(leaf, '.'); dot >= 0 {
-		leaf = leaf[dot+1:]
-	}
 	named := *column
-	named.CheckName = leaf + "_" + column.Name + "_check"
+	named.CheckName = unqualifiedTable(table) + "_" + column.Name + "_check"
 	return &named
+}
+
+// unqualifiedTable is table without its schema.
+func unqualifiedTable(table string) string {
+	if dot := strings.LastIndexByte(table, '.'); dot >= 0 {
+		return table[dot+1:]
+	}
+	return table
 }
 
 func (r *Renderer) renderIdentity(column *ast.ColumnNode) (string, error) {
