@@ -99,7 +99,7 @@ These categories count a setting or a part of an object rather than the object:
 | Category | Severity | What it counts |
 | --- | --- | --- |
 | `column_identities_removed` | destructive | Columns that lose an identity and take none. The server drops the identity's sequence, and an insert that leaves the column out fails. Each is one of the `columns_modified` as well. |
-| `column_types_narrowed` | destructive | Column modifications whose new type cannot hold every value of the old one: a shorter string, a smaller integer or decimal, or a temporal type with a lower precision, a smaller range or fewer fields. Each is one of the `columns_modified` as well. |
+| `column_types_narrowed` | destructive | Column modifications whose new type cannot hold every value of the old one: a shorter string, a smaller text or blob type, fewer bytes or bits, a smaller integer, decimal or float, fewer enum members, or a temporal type with a lower precision, a smaller range or fewer fields. Each is one of the `columns_modified` as well. |
 | `comments_changed` | safe | Comments the plan writes in place on tables, indexes, constraints and the other objects that take a comment through a statement of their own. A column's comment is counted under `columns_modified`. |
 | `constraints_validated` | warning | Constraints the database holds `NOT VALID` and the plan validates. Validation reads every row and fails on one the constraint refuses. |
 | `grant_options_added` | safe | Privileges the database holds without the `WITH GRANT OPTION` the desired schema gives them. |

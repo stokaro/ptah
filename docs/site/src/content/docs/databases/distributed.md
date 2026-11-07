@@ -450,6 +450,11 @@ three engines, so `numeric` declared `numeric(10,2)` is a change rated destructi
 its server refuses that statement. See
 [how a column change is rated](../../direct/plan-and-approve/#how-a-column-change-is-rated).
 
+A lower capacity is rated destructive here as elsewhere: `string(100)` declared
+`string(5)` on CockroachDB, `double precision` declared `real` on all three, and a fraction
+under an integer. CockroachDB keeps the eight bytes of a row it has already written under
+`FLOAT4`, so its value reads back whole, and the rating follows the type.
+
 ## Next steps
 
 - Which release lines are declared and at what support level: [Database support matrix](../support-matrix/).

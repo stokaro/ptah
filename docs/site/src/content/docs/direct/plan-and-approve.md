@@ -281,12 +281,18 @@ same whether it gives up a `NOT NULL`, a default or nothing.
 
 | Rating | Change | What happens to a row or a writer |
 | --- | --- | --- |
-| destructive | The new type cannot hold every value of the old one: a shorter string, a smaller integer or decimal, a lower temporal precision or range, or fewer interval fields | The reason reads `column type narrows from X to Y`. `timestamp(6)` under `timestamp(0)` loses `.123456`, and a `timestamp` under `date` loses its time of day |
+| destructive | The new type cannot hold every value of the old one: a shorter string, a smaller text or blob type, fewer bytes or bits, a smaller integer, decimal or float, a lower temporal precision or range, fewer interval fields, or fewer enum members | The reason reads `column type narrows from X to Y`. `timestamp(6)` under `timestamp(0)` loses `.123456`, and a `double precision` under `real` reads `1.2345679` where `1.23456789012` was |
 | destructive | `DROP NOT NULL`, also where a restated column gives it up | A writer can store `NULL` |
 | destructive | `DROP IDENTITY` | The server drops the sequence with it, as `DROP SEQUENCE` does, and an insert that leaves the column out fails |
 | warning | `DROP DEFAULT`, also where a restated column gives it up | No row changes. An insert that leaves the column out fails on `NOT NULL` or writes `NULL` |
 | warning | `SET GENERATED`, and `ADD GENERATED ALWAYS` | No row changes. `ALWAYS` refuses an insert that names the column, and `BY DEFAULT` accepts one whose value can collide with a later one |
-| safe | A wider type, or a higher precision | Every value survives. `ptah migrations plan` reports it as a warning, because the column's type still changes. One type in two spellings plans nothing, so nothing is rated |
+| safe | A wider type, a higher precision, or a type that holds every value of the old one | Every value survives. `ptah migrations plan` reports it as a warning, because the column's type still changes. One type in two spellings plans nothing, so nothing is rated |
+
+A change between families asks the same question. A fraction under an integer is lost, a
+number with more digits than a float keeps loses the low ones (`bigint` under `double
+precision`), and text under a number, a date or an enum may hold what the new type cannot.
+Some servers convert without a word and others refuse the value. The rating is the same,
+since a plan does not read the rows. A temporal type under text is not rated.
 
 A temporal type that declares no precision holds what its engine says, so
 `timestamp(3)` under `timestamp` loses digits on MySQL and gains them on
@@ -299,9 +305,8 @@ PostgreSQL:
 | SQL Server | `datetime2`, `datetimeoffset`, `time` | 7 |
 | ClickHouse | `DateTime` holds none, and a bare `DateTime64` is `DateTime64(3)` | 0 or 3 |
 
-Spanner and SQLite compare no temporal precision, so a change of one alone plans
-nothing there. Spanner has one timestamp type, and SQLite stores the declaration
-without reading it. A change of type on these engines is rated as above.
+Spanner has one timestamp type and SQLite stores the declaration without reading it, so a
+precision alone plans nothing there. A change of type on these engines is rated as above.
 
 A type that declares no size holds what its engine says as well. The plan compares
 what the two sides hold, so `numeric` declared `numeric(10,2)` is a change and
@@ -316,8 +321,10 @@ what the two sides hold, so `numeric` declared `numeric(10,2)` is a change and
 
 A bare `char`, `nchar`, `binary` or `bit` holds one on every engine. `float(p)` is the
 4-byte type up to a `p` of 24 and the 8-byte type above it, except on Oracle, where
-it keeps `p`. SQLite stores the declaration without reading it, and ClickHouse
-compares its own type names.
+it keeps `p`. MySQL and MariaDB size `text` and `blob` in
+[four tiers](../../databases/mysql/#a-columns-size). Elsewhere `text`, `bytea`, `CLOB`,
+`BLOB`, `ntext`, `image` and `String` have no limit. SQLite stores the declaration without
+reading it.
 
 Oracle lowers a size only on a column with no row. `TIMESTAMP(6)` declared
 `TIMESTAMP(0)` and `NUMBER` declared `NUMBER(10,2)` plan a `MODIFY` rated
@@ -325,9 +332,7 @@ destructive, and while a row exists `ptah schema apply` stops with the server's
 `ORA-30082` or `ORA-01440`. No value is lost and the plan does not run: empty the
 column, or rebuild it by hand, and plan again. Raising a size runs with the rows in
 place. Oracle's `TIMESTAMP(0)` under `DATE` keeps every second and is rated destructive
-all the same, since the rating reads the two as a time of day going away. Spanner has no
-`numeric(p,s)`: the plan rates the change destructive and the server refuses the
-statement.
+all the same, since the rating reads the two as a time of day going away.
 
 `ptah schema apply` prints the planned SQL and no rating, so read the plan to see
 one. Plan with `ptah schema plan`, review the file, and run it with `ptah schema

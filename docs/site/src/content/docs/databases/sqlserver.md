@@ -411,6 +411,11 @@ answers `2628` and keeps the column if a value is too long. `varchar`, `nvarchar
 plans nothing against the size it stands for, and `decimal(10,2)` declared `decimal`
 rounds `1.50` to `2`.
 
+Lower capacities are rated destructive on the same terms: `varbinary(max)` declared
+`varbinary(50)`, `image` or `ntext` under a length, `money` declared `smallmoney`, and
+`float` declared `real`, where the server keeps seven digits of `1.23456789012` without a
+word.
+
 ## Routines
 
 A function or a procedure is written `CREATE OR ALTER`. Its header's `WITH`

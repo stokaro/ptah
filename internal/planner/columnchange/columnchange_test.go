@@ -68,3 +68,27 @@ func TestPreviousDefault(t *testing.T) {
 		})
 	}
 }
+
+// PreviousType reads what the comparison recorded, since the `type` entry may hold a folded
+// spelling with the size gone. A diff assembled by hand carries only the entry.
+func TestPreviousType(t *testing.T) {
+	tests := []struct {
+		name string
+		diff difftypes.ColumnDiff
+		want string
+	}{
+		{
+			name: "the comparison's read",
+			diff: difftypes.ColumnDiff{PreviousType: "NVARCHAR(50)", Changes: map[string]string{"type": "varchar -> nchar(50)"}},
+			want: "NVARCHAR(50)",
+		},
+		{name: "a diff assembled by hand", diff: difftypes.ColumnDiff{Changes: map[string]string{"type": "int -> bigint"}}, want: "int"},
+		{name: "no change of type", diff: difftypes.ColumnDiff{Changes: map[string]string{"nullable": "true -> false"}}, want: ""},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(columnchange.PreviousType(test.diff), qt.Equals, test.want)
+		})
+	}
+}
