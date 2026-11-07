@@ -135,6 +135,11 @@ index and builds it again. The plan creates the index with the predicate the
 source wrote. Without the feature the host compares predicates by its rules for
 CHECK expressions.
 
+A `schema diff` of two documents prepares both sides the same way. The `--from`
+document stands for the database its CREATE would make, and Ptah describes each
+of its indexes with the kind, the NULLS orders and the predicate table
+preparation states for it, so a document compared with itself plans nothing.
+
 A provider owns the table lifecycle through a planning service that has a
 parent kind, a model of a table setting, or, under `planning.table-ownership`,
 one that sets `owns_tables` and needs no such model. Ptah hands that service
