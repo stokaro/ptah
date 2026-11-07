@@ -125,6 +125,7 @@ import (
 	"strings"
 
 	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/devdocker/dockerengine"
 	"ptah.run/internal/devdocker/mysqldocker"
 	"ptah.run/internal/devdocker/pgdocker"
@@ -450,7 +451,7 @@ func unsupportedImageError(host string) error {
 // for every `--dev-url` value it takes. What it must not do, and what this
 // function must not do for it, is normalize a value into a container.
 func Parse(rawURL string) (Spec, error) {
-	parsed, err := url.Parse(rawURL)
+	parsed, err := dburldisplay.ParseURL(rawURL)
 	if err != nil {
 		return Spec{}, fmt.Errorf("parse docker --dev-url: %w", err)
 	}
@@ -458,7 +459,7 @@ func Parse(rawURL string) (Spec, error) {
 		return parseImageURL(parsed, driver)
 	}
 	if parsed.Scheme != Scheme {
-		return Spec{}, fmt.Errorf("not a docker --dev-url: %q", rawURL)
+		return Spec{}, fmt.Errorf("not a docker --dev-url: %q", dburldisplay.Format(rawURL))
 	}
 	// Matched as written: measured, the pinned binary refuses
 	// `docker://POSTGRES/16/dev` and `docker://Postgres/16/dev` with

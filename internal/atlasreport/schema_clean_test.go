@@ -40,6 +40,37 @@ func TestSchemaCleanFormatRendersJSONWithRedactedURL(t *testing.T) {
 	c.Assert(got["Changes"].([]any)[0].(map[string]any)["Cmd"], qt.Equals, `DROP TABLE IF EXISTS "users"`)
 }
 
+// The Atlas-shaped document names the URL with no credentials, for a URL net/url
+// reads differently from how it was meant too, and for a parameter an engine
+// names its secret in.
+func TestSchemaCleanFormatHidesEverySecretOfTheURL(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+	}{
+		{name: "a / in a password", url: "postgres://app:12345/Xk9Lm@db.internal/shop"},
+		{name: "a # in a password", url: "postgres://app:Zq7Kp@Xk9Lm#Vp8Qr@db.internal/shop"},
+		{name: "a key", url: "sqlite://x.db?_key=Xk9Lm"},
+		{name: "a password parameter", url: "sqlite://x.db?_auth_pass=Xk9Lm"},
+		{name: "an auth token", url: "libsql://db.internal?authToken=Xk9Lm"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			report := atlasreport.NewSchemaClean(atlasreport.SchemaCleanOptions{Driver: "postgres", URL: test.url})
+
+			var out bytes.Buffer
+			err := atlasreport.WriteSchemaClean(&out, "{{ json . }}", report)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(out.String(), qt.Not(qt.Contains), "Xk9Lm")
+			c.Assert(out.String(), qt.Not(qt.Contains), "Zq7Kp")
+			c.Assert(out.String(), qt.Not(qt.Contains), "Vp8Qr")
+		})
+	}
+}
+
 func TestSchemaCleanFormatRendersCustomTemplate(t *testing.T) {
 	c := qt.New(t)
 	report := atlasreport.NewSchemaClean(atlasreport.SchemaCleanOptions{

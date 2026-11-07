@@ -114,16 +114,30 @@ func TestHandler_CarriesNoScript(t *testing.T) {
 // looking at is named without the password that reaches it, because a
 // dashboard that printed one would put it in every screenshot of itself.
 func TestHandler_KeepsCredentialsOffThePage(t *testing.T) {
-	c := qt.New(t)
-	built, err := schemaserve.Handler(c.Context(), schemaserve.Options{Runtime: selectedRuntime(c),
-		DatabaseURL: "postgres://someone:hunter2@db.invalid:5432/app?sslmode=disable",
-	})
-	c.Assert(err, qt.IsNil)
-	recorder := httptest.NewRecorder()
+	tests := []struct {
+		name string
+		url  string
+	}{
+		{name: "a URL", url: "postgres://someone:hunter2@db.invalid:5432/app?sslmode=disable"},
+		{name: "an @ in a password", url: "postgres://someone:hun@ter2@db.invalid:5432/app"},
+		{name: "a DSN with no scheme", url: "someone:hunter2@tcp(db.invalid:3306)/app"},
+		{name: "an @ in a DSN's password", url: "mysql://someone:hun@ter2@tcp(db.invalid:3306)/app"},
+		{name: "a secret parameter", url: "postgres://db.invalid:5432/app?sslpassword=hunter2"},
+	}
 
-	built.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/", nil))
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			built, err := schemaserve.Handler(c.Context(), schemaserve.Options{Runtime: selectedRuntime(c), DatabaseURL: test.url})
+			c.Assert(err, qt.IsNil)
+			recorder := httptest.NewRecorder()
 
-	c.Assert(recorder.Body.String(), qt.Not(qt.Contains), "hunter2")
+			built.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/", nil))
+
+			c.Assert(recorder.Body.String(), qt.Not(qt.Contains), "hunter2")
+			c.Assert(recorder.Body.String(), qt.Not(qt.Contains), "ter2")
+		})
+	}
 }
 
 // TestHandler_ResolvesEveryCustomPropertyItUses is what keeps this view's

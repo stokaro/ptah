@@ -39,6 +39,33 @@ func TestSanitize_RedactsEnvironmentAndArgumentSecrets(t *testing.T) {
 	c.Assert(got, qt.Contains, "password=redacted")
 }
 
+// A password with a reserved character is found whole, where the parts of a URL
+// net/url reads would stop short of it.
+func TestSanitize_RedactsAPasswordWithReservedCharacters(t *testing.T) {
+	tests := []struct {
+		name   string
+		url    string
+		secret string
+	}{
+		{name: "a / in a DSN's password", url: "mysql://app:s3cret/pw@tcp(db:3306)/shop", secret: "s3cret/pw"},
+		// #nosec G101 -- fixture URL with a made-up password, not a credential
+		{name: "an @ and a / in a DSN's password", url: "mysql://app:s3c@ret/pw@tcp(db:3306)/shop", secret: "s3c@ret/pw"},
+		{name: "a # in a URL's password", url: "postgres://app:s3cret#pw@db/shop", secret: "s3cret#pw"},
+		{name: "a ? in a URL's password", url: "postgres://app:s3cret?pw@db/shop", secret: "s3cret?pw"},
+		{name: "a token an engine names", url: "libsql://db?authToken=s3cret%2Fpw", secret: "s3cret/pw"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got := secretdisplay.Sanitize("the loader said "+test.secret, []string{"DATABASE_URL=" + test.url}, nil)
+
+			c.Assert(got, qt.Equals, "the loader said redacted")
+		})
+	}
+}
+
 func TestSanitize_EscapesTerminalControls(t *testing.T) {
 	c := qt.New(t)
 

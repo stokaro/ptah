@@ -127,6 +127,37 @@ func TestParseAcceptsTheURLFormsTheCommunityBinaryProvisions(t *testing.T) {
 	}
 }
 
+// A value that is no docker URL may be the address of a server, so a refusal
+// quotes it as the display shows it.
+func TestParseRepeatsNoPartOfAPassword(t *testing.T) {
+	tests := []struct {
+		name    string
+		rawURL  string
+		wantErr string
+	}{
+		// #nosec G101 -- fixture URL with a made-up password, not a credential
+		{
+			name:    "the address of a server",
+			rawURL:  "postgres://app:Pa55wordX9@db.internal/dev",
+			wantErr: `not a docker --dev-url: "postgres://app:\*\*\*@db\.internal/dev"`,
+		},
+		{
+			name:    "an address net/url refuses",
+			rawURL:  "postgres://app:Pa5#5wordX9@db.internal/dev",
+			wantErr: `parse docker --dev-url: parse "postgres://app:\*\*\*@db\.internal/dev": the user name or password cannot be read as written; .*`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			_, err := devdocker.Parse(test.rawURL)
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(err, qt.Not(qt.ErrorMatches), `.*(Pa5|5wordX9).*`)
+		})
+	}
+}
+
 func TestParseRefusesTheURLFormsTheCommunityBinaryRefuses(t *testing.T) {
 	tests := []struct {
 		name   string

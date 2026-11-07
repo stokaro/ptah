@@ -203,6 +203,38 @@ func TestClassifySet_EnvMustBeOnlyValue(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `--to "env://src": an env:// desired-state reference must be the only --to value`)
 }
 
+// A value that names no source is quoted as the display shows it, because it may
+// be a database URL with a password in it.
+func TestClassifySet_QuotesAValueWithoutItsPassword(t *testing.T) {
+	tests := []struct {
+		name    string
+		rawURL  string
+		wantErr string
+	}{
+		{
+			name:    "a scheme that names no source",
+			rawURL:  "db2://app:Pa55wordX9@db.internal/shop",
+			wantErr: `--to "db2://app:\*\*\*@db\.internal/shop": unsupported desired-state URL scheme "db2": .*`,
+		},
+		{
+			name:    "a driver DSN with no scheme",
+			rawURL:  "app:Pa55wordX9?@tcp(db.internal:3306)/shop",
+			wantErr: `--to "app:\*\*\*@tcp\(db\.internal:3306\)/shop": schema file URL query parameters are not supported yet`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			_, err := atlassource.ClassifySet("--to", []string{test.rawURL}, atlassource.ProjectEnv{}, nil)
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(err, qt.Not(qt.ErrorMatches), `.*Pa55wordX9.*`)
+		})
+	}
+}
+
 // TestClassifySet_AtlasSchemeNeedsANamespace pins both answers the vendor
 // spelling can get, because the environment decides which one and the two are
 // the whole compatibility argument.

@@ -52,6 +52,17 @@ A MySQL or MariaDB URL naming no database is the whole server, as in the
 Atlas CLI; as a dev database it is a
 [dev server](../../atlas/migrate-commands/#a-whole-dev-server).
 
+A password holding a character a URL reserves, such as `@ : / ? # %`, is
+percent-encoded in a URL. The Go-driver form takes it as written, because that
+driver reads a password up to the last `@` before the last `/`. A URL written with
+such a character raw is refused, and the error says so.
+
+Ptah never repeats a password. Output, errors and reports show an address with
+its password as `***` and the value of a secret parameter, such as `sslpassword`,
+`authToken` or `TOKEN`, as `redacted`, in every form an engine takes: a URL, a
+Go-driver DSN with or without a scheme, and a keyword, ADO or ODBC string. The
+rest of the address stays, so the line still says which database it means.
+
 ## The four database roles
 
 **The target database** is the one a command reads or changes: `--db-url` on

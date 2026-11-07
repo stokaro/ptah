@@ -131,6 +131,24 @@ table "users" {
 	c.Assert(got.Indexes[0].IsUnique, qt.IsTrue)
 }
 
+// A value taken for a local file may be a database URL, so the refusal of its query
+// quotes nothing of it: net/url's reason would quote the escape it refused.
+func TestLocalFilePath_RefusesAQueryThatDoesNotParseWithoutQuotingIt(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := schemafile.LocalFilePath("app:Pa55?word%zzX9@tcp(db:3306)/shop")
+
+	c.Assert(err, qt.ErrorMatches, "parse schema file URL query: it holds a % that starts no escape, or a character a query cannot hold")
+}
+
+func TestLocalFilePath_RefusesAPathThatDoesNotDecodeWithoutQuotingIt(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := schemafile.LocalFilePath("app:Pa55%zzX9@tcp(db:3306)/shop")
+
+	c.Assert(err, qt.ErrorMatches, "decode schema file URL path: it holds a % that starts no escape")
+}
+
 func TestLocalFilePath_RejectsRemoteURL(t *testing.T) {
 	c := qt.New(t)
 

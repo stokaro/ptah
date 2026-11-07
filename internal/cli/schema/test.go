@@ -24,6 +24,7 @@ import (
 	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/internal/cli/internal/testexternal"
+	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/providerurl"
 	"ptah.run/internal/schemaload"
@@ -349,7 +350,7 @@ func resolveTestDesiredSchema(ctx context.Context, diag io.Writer, opts testOpti
 			return nil, err
 		}
 		if set.Kind != atlassource.KindDatabase {
-			return nil, fmt.Errorf("--%s %s is not a database URL", testSourceDBURLFlag, source)
+			return nil, fmt.Errorf("--%s %s is not a database URL", testSourceDBURLFlag, dburldisplay.Format(source))
 		}
 		return resolveTestDesiredDatabase(ctx, diag, opts, set, selection)
 	}
@@ -368,7 +369,7 @@ func resolveTestDesiredSchema(ctx context.Context, diag io.Writer, opts testOpti
 		}
 		parsed, parseErr := goschema.ParseDir(opts.runtime.Annotations(), opts.rootDir)
 		if parseErr != nil {
-			return nil, fmt.Errorf("parse desired schema from %s: %w", opts.rootDir, parseErr)
+			return nil, fmt.Errorf("parse desired schema from %s: %w", dburldisplay.Format(opts.rootDir), parseErr)
 		}
 		return scopeTestDesiredSchema(ctx, opts.runtime.Selections(), parsed, selection, "")
 	}
@@ -393,7 +394,7 @@ func resolveTestDesiredSchema(ctx context.Context, diag io.Writer, opts testOpti
 func noteRootDirShape(diag io.Writer, flag, source string) error {
 	if _, err := fmt.Fprintf(diag,
 		"note: --%s named %s, which is not a directory of Go annotations; --%s selects it exactly\n",
-		testRootDirFlag, source, flag,
+		testRootDirFlag, dburldisplay.Format(source), flag,
 	); err != nil {
 		return fmt.Errorf("write desired-state note: %w", err)
 	}

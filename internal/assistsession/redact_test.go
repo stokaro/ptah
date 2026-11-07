@@ -72,6 +72,40 @@ func TestAppend_RedactionReachesEverySink(t *testing.T) {
 	c.Assert(string(saved), qt.Not(qt.Contains), sessionProbePassword)
 }
 
+// An address net/url cannot read keeps its password out of the record too: a
+// go-sql-driver DSN and a password with a reserved character in it are the two
+// shapes it refuses.
+func TestAppend_RedactsAnAddressNetURLRefuses(t *testing.T) {
+	tests := []struct {
+		name string
+		arg  string
+		want string
+	}{
+		{name: "a DSN with a scheme", arg: "mysql://root:" + sessionProbePassword + "@tcp(127.0.0.1:3306)/app", want: "mysql://root:***@tcp(127.0.0.1:3306)/app"},
+		{name: "a DSN with no scheme", arg: "my_root:" + sessionProbePassword + "@tcp(127.0.0.1:3306)/app", want: "my_root:***@tcp(127.0.0.1:3306)/app"},
+		{name: "a # in a URL's password", arg: "postgres://root:a#" + sessionProbePassword + "@127.0.0.1/app", want: "postgres://root@127.0.0.1/app"},
+		// net/url reads these and finds no password: host root, port 12345 and a
+		// path, or user root, host a and a path.
+		{name: "a / after a number in a URL's password", arg: "postgres://root:12345/" + sessionProbePassword + "@127.0.0.1/app", want: "postgres://root@127.0.0.1/app"},
+		{name: "an @ and a / in a URL's password", arg: "postgres://root:a@b/" + sessionProbePassword + "@127.0.0.1/app", want: "postgres://root@127.0.0.1/app"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			out := &bytes.Buffer{}
+			stream := assistsession.NewStream(out, clock(time.Date(2026, time.August, 24, 12, 0, 0, 0, time.UTC)))
+			arguments, err := json.Marshal(map[string]string{"database_url": test.arg})
+			c.Assert(err, qt.IsNil)
+
+			c.Assert(stream.Append(assistsession.Record{Kind: assistsession.KindTool, Tool: "read_database", Arguments: arguments}), qt.IsNil)
+
+			c.Assert(out.String(), qt.Not(qt.Contains), sessionProbePassword)
+			c.Assert(out.String(), qt.Contains, test.want)
+		})
+	}
+}
+
 func TestAppend_LeavesArgumentsThatAreNotURLsAlone(t *testing.T) {
 	// A record that quietly rewrote the model's arguments would misreport what
 	// Ptah was asked to do, so only a URL carrying a password is touched.
@@ -83,6 +117,8 @@ func TestAppend_LeavesArgumentsThatAreNotURLsAlone(t *testing.T) {
 		{name: "a URL with no credential", args: `{"database_url":"postgres://db.internal:5432/app"}`},
 		{name: "a username and no password", args: `{"database_url":"postgres://ptah_user@db:5432/app"}`},
 		{name: "an email address", args: `{"path":"docs/a@b.sql"}`},
+		{name: "prose with a colon and an at sign", args: `{"question":"who owns a:b@example.com?"}`},
+		{name: "a mail address with its scheme", args: `{"to":"mailto:me@example.com"}`},
 		{name: "not an object", args: `"a bare string"`},
 	}
 

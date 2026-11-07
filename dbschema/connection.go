@@ -110,8 +110,16 @@ func admitted(
 	return connector.Request{Dialect: described, URL: dbURL, Parsed: parsedURL}, service, nil
 }
 
-// connect opens dbURL once scope accepts it.
+// connect opens dbURL once scope accepts it. Its error can quote the address or
+// what a driver read out of it, so it reaches the caller without the secrets the
+// address holds.
 func connect(ctx context.Context, dbURL string, scope ConnectionScope) (*DatabaseConnection, error) {
+	connection, err := open(ctx, dbURL, scope)
+	return connection, dburldisplay.RedactError(dbURL, err)
+}
+
+// open is [connect] with the driver's error as it is.
+func open(ctx context.Context, dbURL string, scope ConnectionScope) (*DatabaseConnection, error) {
 	parsedURL, err := parseDatabaseURL(dbURL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid database URL: %w", err)

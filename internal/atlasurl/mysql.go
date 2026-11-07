@@ -11,6 +11,7 @@ import (
 	mysqldriver "github.com/go-sql-driver/mysql"
 
 	"ptah.run/core/platform"
+	"ptah.run/internal/dburldisplay"
 )
 
 // This file is the one reader of a MySQL-family database URL. Every part of
@@ -97,10 +98,30 @@ func ParseMySQLURL(rawURL string) (MySQLURL, error) {
 	}
 	config, err := mysqldriver.ParseDSN(parsed.dsn)
 	if err != nil {
-		return MySQLURL{}, fmt.Errorf("invalid %s URL: %w", scheme, err)
+		return MySQLURL{}, fmt.Errorf("invalid %s URL: %w", scheme, dsnRefusal(parsed.dsn))
 	}
 	parsed.config = config
 	return parsed, nil
+}
+
+// errUnreadableDSN is the reason for a DSN the driver refuses only because of
+// what the display hides.
+var errUnreadableDSN = errors.New("the user name, password or a query parameter cannot be read as written")
+
+// dsnRefusal says why the driver refuses dsn in words that repeat no part of its
+// password.
+//
+// The driver's own error can quote what it read: with no database, it reads a
+// password's "/" as the separator, and answers `default addr for network
+// 'app:hunter' unknown` or `invalid dbname "2@tcp(h)"`. So the reason is the one
+// it gives for the DSN as the display shows it, and quotes only text the display
+// has. When the displayed DSN parses, what the driver refused is in what the
+// display hid.
+func dsnRefusal(dsn string) error {
+	if _, err := mysqldriver.ParseDSN(dburldisplay.Format(dsn)); err != nil {
+		return err
+	}
+	return errUnreadableDSN
 }
 
 // TextTimeLocation is the zone the text of a time column reads in on a connection
@@ -141,7 +162,7 @@ func hasMySQLNetwork(rest string) bool {
 // escaped again for the driver, which unescapes its database segment. Without
 // that, a name carrying "/" or "%" reaches the driver as a different split.
 func (u *MySQLURL) readURLForm(rawURL string) error {
-	parsed, err := url.Parse(rawURL)
+	parsed, err := dburldisplay.ParseURL(rawURL)
 	if err != nil {
 		return fmt.Errorf("invalid %s URL: %w", u.scheme, errors.Unwrap(err))
 	}
@@ -164,7 +185,7 @@ func (u *MySQLURL) readURLForm(rawURL string) error {
 // server answers with a syntax error; reading it as no database would open the
 // whole server for a URL that asked for one.
 func (u *MySQLURL) readSocketForm(rawURL string) error {
-	parsed, err := url.Parse(rawURL)
+	parsed, err := dburldisplay.ParseURL(rawURL)
 	if err != nil {
 		return fmt.Errorf("invalid %s URL: %w", u.scheme, errors.Unwrap(err))
 	}

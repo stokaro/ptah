@@ -19,6 +19,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/execpolicy"
 )
 
@@ -251,6 +252,10 @@ func (r Runner) runWebhook(ctx context.Context, opts Options) (Result, error) {
 		return Result{}, fmt.Errorf("%s pre-flight webhook payload: %w", opts.Direction, err)
 	}
 
+	// Parsed here first: the error of the request below quotes the URL whole.
+	if _, err := dburldisplay.ParseURL(opts.WebhookURL); err != nil {
+		return Result{}, fmt.Errorf("%s pre-flight webhook request: %w", opts.Direction, err)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, opts.WebhookURL, bytes.NewReader(body))
 	if err != nil {
 		return Result{}, fmt.Errorf("%s pre-flight webhook request: %w", opts.Direction, err)
@@ -335,13 +340,12 @@ func hookOutputReplacements(opts Options) []hookOutputReplacement {
 	replacements := []hookOutputReplacement{
 		{old: opts.DatabaseURL, new: displayURL},
 	}
-	password := databaseURLPassword(opts.DatabaseURL)
-	if password != "" {
+	for _, secret := range dburldisplay.Secrets(opts.DatabaseURL) {
 		replacements = append(
 			replacements,
-			hookOutputReplacement{old: "PGPASSWORD=" + password, new: "PGPASSWORD=redacted"},
-			hookOutputReplacement{old: "MYSQL_PWD=" + password, new: "MYSQL_PWD=redacted"},
-			hookOutputReplacement{old: password, new: "redacted"},
+			hookOutputReplacement{old: "PGPASSWORD=" + secret, new: "PGPASSWORD=redacted"},
+			hookOutputReplacement{old: "MYSQL_PWD=" + secret, new: "MYSQL_PWD=redacted"},
+			hookOutputReplacement{old: secret, new: "redacted"},
 		)
 	}
 	return replacements
@@ -350,7 +354,7 @@ func hookOutputReplacements(opts Options) []hookOutputReplacement {
 func redactSecretURL(rawURL string) string {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
-		return rawURL
+		return dburldisplay.Format(rawURL)
 	}
 	if parsed.User != nil {
 		if _, ok := parsed.User.Password(); ok {
@@ -379,7 +383,7 @@ func redactSecretQuery(query url.Values) url.Values {
 	redacted := make(url.Values, len(query))
 	for key, values := range query {
 		copied := append([]string(nil), values...)
-		if isSecretQueryKey(key) {
+		if dburldisplay.IsSecretParameter(key) {
 			for idx := range copied {
 				copied[idx] = "redacted"
 			}
@@ -392,7 +396,7 @@ func redactSecretQuery(query url.Values) url.Values {
 func stripSecretQuery(query url.Values) url.Values {
 	stripped := make(url.Values, len(query))
 	for key, values := range query {
-		if isSecretQueryKey(key) {
+		if dburldisplay.IsSecretParameter(key) {
 			continue
 		}
 		stripped[key] = append([]string(nil), values...)
@@ -400,35 +404,13 @@ func stripSecretQuery(query url.Values) url.Values {
 	return stripped
 }
 
-func isSecretQueryKey(key string) bool {
-	switch strings.ToLower(key) {
-	case "access_token",
-		"api_key",
-		"apikey",
-		"aws_secret_access_key",
-		"aws_session_token",
-		"client_secret",
-		"id_token",
-		"password",
-		"passwd",
-		"private_key",
-		"pwd",
-		"refresh_token",
-		"secret",
-		"sslcert",
-		"sslkey",
-		"sslpassword",
-		"token":
-		return true
-	default:
-		return false
-	}
-}
-
+// redactedDatabaseURL reads the address from what the display shows, so that what
+// a parser misreads in a password never reaches the result.
 func redactedDatabaseURL(dbURL string) string {
-	parsed, err := parseDatabaseURL(dbURL)
+	display := dburldisplay.Format(dbURL)
+	parsed, err := parseDatabaseURL(display)
 	if err != nil {
-		return dbURL
+		return display
 	}
 	if parsed.User != nil {
 		if _, ok := parsed.User.Password(); ok {
@@ -437,18 +419,6 @@ func redactedDatabaseURL(dbURL string) string {
 	}
 	parsed.RawQuery = redactSecretQuery(parsed.Query()).Encode()
 	return parsed.String()
-}
-
-func databaseURLPassword(dbURL string) string {
-	parsed, err := parseDatabaseURL(dbURL)
-	if err != nil || parsed.User == nil {
-		return ""
-	}
-	password, ok := parsed.User.Password()
-	if !ok {
-		return ""
-	}
-	return password
 }
 
 // parseDatabaseURL reads a database URL for display and for its password. A

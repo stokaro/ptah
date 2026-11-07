@@ -356,6 +356,41 @@ func TestWebhookNetworkErrorRedactsSecretURLParams(t *testing.T) {
 	c.Assert(err.Error(), qt.Not(qt.Contains), "secret-token")
 }
 
+// A webhook URL the request cannot be built from is refused in words that repeat
+// nothing of its credentials, and the reason says what is wrong with it.
+func TestWebhookRefusalRepeatsNoPartOfThePassword(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := Runner{}.Execute(context.Background(), Options{
+		Direction:  DirectionUp,
+		WebhookURL: "https://hook:Pa5#5wordX9@ops.example/hooks/ptah",
+	})
+
+	c.Assert(err, qt.ErrorMatches, `up pre-flight webhook request: parse "https://hook:\*\*\*@ops\.example/hooks/ptah": the user name or password cannot be read as written; .*`)
+	c.Assert(err.Error(), qt.Not(qt.Contains), "Pa5")
+	c.Assert(err.Error(), qt.Not(qt.Contains), "5wordX9")
+}
+
+func TestRedactedDatabaseURL_HidesAnAddressItCannotRead(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+		want string
+	}{
+		{name: "a # in a password", url: "postgres://app:Pa5#5wordX9@db:5432/shop", want: "postgres://app@db:5432/shop"},
+		{name: "a driver DSN with no scheme", url: "app:Pa55wordX9@tcp(db:3306)/shop", want: "app:***@tcp(db:3306)/shop"},
+		{name: "a / in a DSN's password and no database", url: "mysql://app:Pa5/5wordX9@tcp(db:3306)", want: "mysql://app:***@tcp(db:3306)"},
+		{name: "a / in a URL's password that reads as a path", url: "postgres://app:12345/5wordX9@db/shop", want: "postgres://app@db/shop"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(redactedDatabaseURL(test.url), qt.Equals, test.want)
+		})
+	}
+}
+
 func TestDefaultHTTPClientDoesNotFollowRedirects(t *testing.T) {
 	c := qt.New(t)
 	requests := 0

@@ -29,6 +29,7 @@ import (
 	"ptah.run/internal/agentdiag"
 	"ptah.run/internal/agentpolicy"
 	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/dburldisplay"
 )
 
 // ErrUnknown reports a target identity nothing configured matches.
@@ -209,9 +210,10 @@ const unnamedTarget = "database"
 // so reading the path would name the target after a socket file.
 func DefaultName(connectionURL string) string {
 	name := ""
-	if mysqlURL, err := atlasurl.ParseMySQLURL(connectionURL); err == nil {
+	displayed := dburldisplay.Format(connectionURL)
+	if mysqlURL, err := atlasurl.ParseMySQLURL(displayed); err == nil {
 		name = mysqlURL.Database()
-	} else if parsed, err := url.Parse(connectionURL); err == nil {
+	} else if parsed, err := url.Parse(displayed); err == nil {
 		name = strings.Trim(parsed.Path, "/")
 	}
 	if name == "" {
@@ -226,10 +228,11 @@ func DefaultName(connectionURL string) string {
 // approval prompt and for an audit record, and a host name is a label somebody
 // chose, not a fact about trust.
 func display(connectionURL string) string {
-	if mysqlURL, err := atlasurl.ParseMySQLURL(connectionURL); err == nil {
+	displayed := dburldisplay.Format(connectionURL)
+	if mysqlURL, err := atlasurl.ParseMySQLURL(displayed); err == nil {
 		return displayMySQL(mysqlURL)
 	}
-	parsed, err := url.Parse(connectionURL)
+	parsed, err := url.Parse(displayed)
 	if err != nil || parsed.Scheme == "" {
 		// Unparseable, so nothing can be safely shown from it. The name and the
 		// class are what the prompt has, which is enough to decide with.

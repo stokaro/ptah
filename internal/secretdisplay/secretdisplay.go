@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/dburldisplay"
 )
 
 // Sanitize redacts secrets discoverable from the effective environment and
@@ -132,6 +133,9 @@ func isSensitiveKey(key string) bool {
 func addURLSecrets(values map[string]struct{}, raw string) {
 	if !strings.Contains(raw, "://") {
 		return
+	}
+	for _, secret := range dburldisplay.Secrets(raw) {
+		addSecret(values, secret)
 	}
 	parsed, err := atlasurl.Parse(raw)
 	if err == nil && parsed.Scheme != "" && parsed.User != nil {

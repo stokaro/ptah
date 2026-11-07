@@ -86,6 +86,39 @@ func TestDialectFromURL_FailurePath(t *testing.T) {
 		// The pinned binary v1.3.0 answers `unknown driver "maria+tcp"`: the
 		// MariaDB spelling is a scheme of its own, not a prefix.
 		{name: "maria with a transport the community binary refuses", rawURL: "maria+tcp://localhost/dev", wantErr: `unsupported --dev-url dialect "maria\+tcp://localhost/dev"`},
+		// The value is quoted as dburldisplay shows it. Without a scheme,
+		// net/url reads go-sql-driver's DSN as a scheme named after the user.
+		{
+			name:    "a driver DSN with no scheme",
+			rawURL:  "app:Pa55wordX9@tcp(127.0.0.1:3306)/shop",
+			wantErr: `unsupported --dev-url dialect "app:\*\*\*@tcp\(127\.0\.0\.1:3306\)/shop"`,
+		},
+		{
+			// net/url reads the rest of the password after "#" as a fragment
+			// and refuses the start of it as a port, which it quotes.
+			name:    "a password with a # in it",
+			rawURL:  "postgres://app:Pa5#5wordX9@localhost:5432/dev",
+			wantErr: `parse --dev-url: parse "postgres://app:\*\*\*@localhost:5432/dev": the user name or password cannot be read as written; percent-encode the characters a URL reserves, such as @ : / \? # and %`,
+		},
+		// #nosec G101 -- fixture URL with a made-up password, not a credential
+		{
+			name:    "a password with a % that starts no escape",
+			rawURL:  "postgres://app:Pa%zz5wordX9@localhost:5432/dev",
+			wantErr: `parse --dev-url: parse "postgres://app:\*\*\*@localhost:5432/dev": the user name or password cannot be read as written; .*`,
+		},
+		// #nosec G101 -- fixture URL with a made-up password, not a credential
+		{
+			// A docker URL is read as written, leading space included.
+			name:    "a docker URL with a leading space and a password",
+			rawURL:  " docker://app:Pa55wordX9@postgres/16/dev",
+			wantErr: `parse --dev-url: parse " docker://app:\*\*\*@postgres/16/dev": first path segment in URL cannot contain colon`,
+		},
+		{
+			// What net/url refuses outside the credentials keeps its reason.
+			name:    "a port that is not a number, behind a password",
+			rawURL:  "postgres://app:Pa55wordX9@localhost:54x2/dev",
+			wantErr: `parse --dev-url: parse "postgres://app:\*\*\*@localhost:54x2/dev": invalid port ":54x2" after host`,
+		},
 	}
 
 	for _, test := range tests {
@@ -93,7 +126,60 @@ func TestDialectFromURL_FailurePath(t *testing.T) {
 			c := qt.New(t)
 			got, err := atlasurl.DialectFromURL(test.rawURL)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(err, qt.Not(qt.ErrorMatches), `.*(Pa5|5wordX9|wordX9|zz5).*`)
 			c.Assert(got, qt.Equals, "")
+		})
+	}
+}
+
+// Parse's error names the URL as dburldisplay shows it, and gives net/url's
+// reason only when the reason cannot be about the password: net/url quotes the
+// URL it refused, and part of it, which for a password holding a "#" or a stray
+// "%" is part of the password.
+func TestParse_FailurePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		rawURL  string
+		wantErr string
+	}{
+		{
+			name:    "a password with a # in it",
+			rawURL:  "postgres://app:Pa5#5wordX9@localhost:5432/shop",
+			wantErr: `parse "postgres://app:\*\*\*@localhost:5432/shop": the user name or password cannot be read as written; .*`,
+		},
+		{
+			name:    "a ydb password with a # in it",
+			rawURL:  "ydb://app:Pa5#5wordX9@localhost:2136/local",
+			wantErr: `parse "ydb://app:\*\*\*@localhost:2136/local": the user name or password cannot be read as written; .*`,
+		},
+		{
+			name:    "a driver DSN with no scheme and a user net/url refuses as a scheme",
+			rawURL:  "my_app:Pa55wordX9@tcp(127.0.0.1:3306)/shop",
+			wantErr: `parse "my_app:\*\*\*@tcp\(127\.0\.0\.1:3306\)/shop": first path segment in URL cannot contain colon`,
+		},
+		{
+			// A Windows path is read past net/url, and its query still has to
+			// parse. net/url's reason quotes the escape it refused, which may
+			// be in a value that is a secret, so it does not come through.
+			name:    "a Windows path whose query does not parse beside a password",
+			rawURL:  `sqlite://C:\dir\app.db?password=Pa55wordX9&mode=%zz`,
+			wantErr: `parse the query of sqlite://C:\\dir\\app\.db: it holds a % that starts no escape, or a character a query cannot hold`,
+		},
+		{
+			// Nothing to hide: net/url's own error, as it was.
+			name:    "a path net/url refuses, with no password",
+			rawURL:  "postgres://localhost/sh%zzop",
+			wantErr: `parse "postgres://localhost/sh%zzop": invalid URL escape "%zz"`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			got, err := atlasurl.Parse(test.rawURL)
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(err, qt.Not(qt.ErrorMatches), `.*(Pa5|wordX9).*`)
+			c.Assert(got, qt.IsNil)
 		})
 	}
 }
@@ -560,36 +646,39 @@ func TestDockerImageDriver_FailurePath(t *testing.T) {
 	}
 }
 
-func TestCutMySQLScheme_HappyPath(t *testing.T) {
+// ParseMySQLURL recognizes every spelling of a scheme that selects the MySQL
+// driver, in any letter case, since net/url lowercases a scheme too. The scheme is
+// read as text, because net/url refuses the go-sql-driver form behind it.
+func TestParseMySQLURL_ReadsTheScheme_HappyPath(t *testing.T) {
 	tests := []struct {
-		name   string
-		rawURL string
-		want   string
+		name       string
+		rawURL     string
+		wantScheme string
 	}{
-		{name: "mysql", rawURL: "mysql://root@localhost:3306/app", want: "root@localhost:3306/app"},
-		{name: "mariadb", rawURL: "mariadb://root@tcp(localhost:3306)/app", want: "root@tcp(localhost:3306)/app"},
-		{name: "maria", rawURL: "maria://root@localhost/app", want: "root@localhost/app"},
-		{name: "maria TCP spelling", rawURL: "maria://root:pa)ss@tcp(localhost:3306)/app", want: "root:pa)ss@tcp(localhost:3306)/app"},
-		{name: "maria socket spelling", rawURL: "maria://unix(/tmp/mysql.sock)/app", want: "unix(/tmp/mysql.sock)/app"},
+		{name: "mysql", rawURL: "mysql://root@localhost:3306/app", wantScheme: "mysql"},
+		{name: "mariadb", rawURL: "mariadb://root@tcp(localhost:3306)/app", wantScheme: "mariadb"},
+		{name: "maria", rawURL: "maria://root@localhost/app", wantScheme: "maria"},
+		{name: "maria TCP spelling", rawURL: "maria://root:pa)ss@tcp(localhost:3306)/app", wantScheme: "maria"},
+		{name: "maria socket spelling", rawURL: "maria://unix(/tmp/mysql.sock)/app", wantScheme: "maria"},
 		// net/url lowercases a scheme, so the connector reads this one as
 		// MariaDB; a scheme test that did not would pass it to the driver
 		// with the scheme attached.
-		{name: "upper case", rawURL: "MARIADB://root:pass@tcp(localhost:3306)/app", want: "root:pass@tcp(localhost:3306)/app"},
-		{name: "mixed case", rawURL: "Maria://root@localhost/app", want: "root@localhost/app"},
-		{name: "only the first separator is the scheme's", rawURL: "maria://root:a://b@localhost/app", want: "root:a://b@localhost/app"},
+		{name: "upper case", rawURL: "MARIADB://root:pass@tcp(localhost:3306)/app", wantScheme: "MARIADB"},
+		{name: "mixed case", rawURL: "Maria://root@localhost/app", wantScheme: "Maria"},
+		{name: "only the first separator is the scheme's", rawURL: "maria://root:a://b@tcp(localhost:3306)/app", wantScheme: "maria"},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			rest, ok := atlasurl.CutMySQLScheme(test.rawURL)
-			c.Assert(ok, qt.IsTrue)
-			c.Assert(rest, qt.Equals, test.want)
+			parsed, err := atlasurl.ParseMySQLURL(test.rawURL)
+			c.Assert(err, qt.IsNil)
+			c.Assert(parsed.Scheme(), qt.Equals, test.wantScheme)
 		})
 	}
 }
 
-func TestCutMySQLScheme_FailurePath(t *testing.T) {
+func TestParseMySQLURL_ReadsTheScheme_FailurePath(t *testing.T) {
 	tests := []struct {
 		name   string
 		rawURL string
@@ -611,9 +700,8 @@ func TestCutMySQLScheme_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			rest, ok := atlasurl.CutMySQLScheme(test.rawURL)
-			c.Assert(ok, qt.IsFalse)
-			c.Assert(rest, qt.Equals, test.rawURL)
+			_, err := atlasurl.ParseMySQLURL(test.rawURL)
+			c.Assert(err, qt.ErrorIs, atlasurl.ErrNotMySQLURL)
 		})
 	}
 }

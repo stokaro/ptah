@@ -107,10 +107,11 @@ The password is absent from the message, and the user and database names are
 present. That is the property to keep: an error a model reads must not carry a
 secret the operator supplied, and this one does not.
 
-It holds because the driver builds the message, not because Ptah redacts it.
-That makes it a property to **test**, not one to rely on — a driver change is
-the kind of thing that would take it away quietly, which is exactly the shape
-of [#1875](https://github.com/stokaro/ptah/issues/1875)'s driver defect.
+The driver builds the message, and `dburldisplay.RedactError` takes out what the
+address holds if a driver quotes it, the parts of a password it misread included.
+It is still a property to **test**, not one to rely on — a driver change is the
+kind of thing that would take it away quietly, which is exactly the shape of
+[#1875](https://github.com/stokaro/ptah/issues/1875)'s driver defect.
 
 ### 3.3 Nothing leaves the machine that the caller did not name
 

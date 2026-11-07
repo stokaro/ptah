@@ -253,3 +253,78 @@ func TestMySQLURL_URL(t *testing.T) {
 		})
 	}
 }
+
+// A refusal says what is wrong with the URL and repeats nothing of its password,
+// which a parser may have read as something else: net/url as a port or an escape,
+// and the driver as a network or a database.
+func TestParseMySQLURL_FailurePath_RepeatsNoPartOfThePassword(t *testing.T) {
+	tests := []struct {
+		name    string
+		rawURL  string
+		wantErr string
+	}{
+		{
+			name:    "a # in a URL's password",
+			rawURL:  "mysql://app:Pa5#5wordX9@db.internal:3306/shop",
+			wantErr: `invalid mysql URL: the user name or password cannot be read as written; percent-encode the characters a URL reserves, such as @ : / \? # and %`,
+		},
+		// #nosec G101 -- fixture URL with a made-up password, not a credential
+		{
+			name:    "a % that starts no escape in a URL's password",
+			rawURL:  "mariadb://app:Pa%zz5wordX9@db.internal:3306/shop",
+			wantErr: `invalid mariadb URL: the user name or password cannot be read as written; .*`,
+		},
+		{
+			name:    "a / in a URL's password",
+			rawURL:  "maria://app:Pa5/5wordX9@db.internal:3306/shop",
+			wantErr: `invalid maria URL: the user name or password cannot be read as written; .*`,
+		},
+		{
+			name:    "a # in a socket URL's password",
+			rawURL:  "mysql+unix://app:Pa5#5wordX9@/run/x.sock?database=shop",
+			wantErr: `invalid mysql\+unix URL: the user name or password cannot be read as written; .*`,
+		},
+		{
+			// The driver would read the / as the database's and answer
+			// `default addr for network 'app:Pa5' unknown`.
+			name:    "a / in a DSN's password and no database",
+			rawURL:  "mysql://app:Pa5/5wordX9@tcp(db.internal:3306)",
+			wantErr: `invalid mysql URL: invalid DSN: missing the slash separating the database name`,
+		},
+		{
+			// The driver would answer `invalid dbname "%zz5wordX9@tcp(...)"`.
+			name:    "a / and a stray % in a DSN's password and no database",
+			rawURL:  "mysql://app:Pa5/%zz5wordX9@tcp(db.internal:3306)",
+			wantErr: `invalid mysql URL: invalid DSN: missing the slash separating the database name`,
+		},
+		{
+			name:    "a parameter the driver refuses, behind a password",
+			rawURL:  "mysql://app:Pa5/5wordX9@tcp(db.internal:3306)/shop?parseTime=maybe",
+			wantErr: `invalid mysql URL: invalid bool value: maybe`,
+		},
+		{
+			name:    "a database the driver refuses, behind a password",
+			rawURL:  "mysql://app:Pa5/5wordX9@tcp(db.internal:3306)/sh%zzop",
+			wantErr: `invalid mysql URL: invalid dbname "sh%zzop": invalid URL escape "%zz"`,
+		},
+		{
+			// A query that does not parse is left out of the display, since
+			// nothing says what it holds.
+			name:    "a query that does not parse, behind a password",
+			rawURL:  "mysql://app:Pa5/5wordX9@tcp(db.internal:3306)/shop?time_zone=%zz",
+			wantErr: `invalid mysql URL: the user name, password or a query parameter cannot be read as written`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got, err := atlasurl.ParseMySQLURL(test.rawURL)
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(err, qt.Not(qt.ErrorMatches), `.*(Pa5|5wordX9).*`)
+			c.Assert(got, qt.Equals, atlasurl.MySQLURL{})
+		})
+	}
+}

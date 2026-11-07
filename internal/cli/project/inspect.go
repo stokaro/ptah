@@ -11,6 +11,7 @@ import (
 
 	"ptah.run/config/projectconfig"
 	"ptah.run/internal/cli/internal/cmdutil"
+	"ptah.run/internal/dburldisplay"
 )
 
 const (
@@ -117,9 +118,9 @@ func reportFor(config projectconfig.Config) Report {
 		Env:     config.EnvName,
 		Ignored: slices.Clone(config.IgnoredConstructs),
 		Carried: []Setting{
-			{Name: "database url", Value: config.DatabaseURL},
-			{Name: "dev url", Value: config.DevURL},
-			{Name: "schema sources", Value: strings.Join(config.SchemaSources, ", ")},
+			{Name: "database url", Value: dburldisplay.Format(config.DatabaseURL)},
+			{Name: "dev url", Value: dburldisplay.Format(config.DevURL)},
+			{Name: "schema sources", Value: strings.Join(displayedSources(config.SchemaSources), ", ")},
 			{Name: "schemas", Value: strings.Join(config.Schemas, ", ")},
 			{Name: "exclude", Value: strings.Join(config.Exclude, ", ")},
 			{Name: "exporter", Value: config.ExporterName},
@@ -141,6 +142,16 @@ func reportFor(config projectconfig.Config) Report {
 		return strings.Compare(a.Name, b.Name)
 	})
 	return report
+}
+
+// displayedSources are schema sources as a report shows them: a source may be a
+// database URL.
+func displayedSources(sources []string) []string {
+	displayed := make([]string, 0, len(sources))
+	for _, source := range sources {
+		displayed = append(displayed, dburldisplay.Format(source))
+	}
+	return displayed
 }
 
 func writeText(out io.Writer, report Report) {
