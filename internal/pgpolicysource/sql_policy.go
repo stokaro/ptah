@@ -7,6 +7,7 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlext"
 	"ptah.run/feature/pgpolicy"
@@ -52,7 +53,7 @@ func (t *policyTokens) clauses() (pgpolicy.DesiredPolicy, error) {
 	for t.current().Type != lexer.TokenEOF {
 		word := strings.ToUpper(t.current().Value)
 		if t.current().Type != lexer.TokenIdentifier {
-			return policy, fmt.Errorf("unsupported CREATE POLICY clause at position %d", t.offset+t.current().Start)
+			return policy, ptaherr.At(t.offset+t.current().Start, fmt.Errorf("unsupported CREATE POLICY clause"))
 		}
 		if seen[word] {
 			return policy, fmt.Errorf("duplicate %s clause in CREATE POLICY", word)
@@ -75,12 +76,12 @@ func (t *policyTokens) clause(policy *pgpolicy.DesiredPolicy, word string) error
 		case t.keyword("RESTRICTIVE"):
 			policy.Composition = pgpolicy.Restrictive
 		default:
-			return fmt.Errorf("expected PERMISSIVE or RESTRICTIVE after AS at position %d", t.offset+t.current().Start)
+			return ptaherr.At(t.offset+t.current().Start, fmt.Errorf("expected PERMISSIVE or RESTRICTIVE after AS"))
 		}
 		t.pos++
 	case "FOR":
 		if t.current().Type != lexer.TokenIdentifier {
-			return fmt.Errorf("expected command after FOR at position %d", t.offset+t.current().Start)
+			return ptaherr.At(t.offset+t.current().Start, fmt.Errorf("expected command after FOR"))
 		}
 		policy.Command = pgpolicy.Command(strings.ToUpper(t.current().Value))
 		t.pos++
@@ -106,7 +107,8 @@ func (t *policyTokens) clause(policy *pgpolicy.DesiredPolicy, word string) error
 		}
 		policy.WithCheck = new(expr)
 	default:
-		return fmt.Errorf("unsupported CREATE POLICY clause: %s at position %d", word, t.offset+t.current().Start)
+		// The word is the token before the cursor, and the refusal is about it.
+		return ptaherr.At(t.offset+t.tokens[t.pos-1].Start, fmt.Errorf("unsupported CREATE POLICY clause: %s", word))
 	}
 	return nil
 }

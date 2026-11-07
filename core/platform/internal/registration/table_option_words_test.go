@@ -38,10 +38,10 @@ func TestRegister_ReadsTheTableOptionWordsOfAnEngineNobodyShips(t *testing.T) {
 	const tablespace = "CREATE TABLE events (id int) TABLESPACE fast;"
 	c := qt.New(t)
 	statements, err := parser.NewParser(appendOnly, parser.WithDialect("appenddb")).Parse()
-	c.Assert(err, qt.ErrorMatches, `unsupported table option: APPEND at position 29`)
+	c.Assert(err, qt.ErrorMatches, `line 1, column 30: unsupported table option: APPEND`)
 	c.Assert(statements, qt.IsNil)
 	database, _, err := sqlschema.Read([]byte(appendOnly), "appenddb")
-	c.Assert(err, qt.ErrorMatches, `unsupported table option: APPEND at position 29`)
+	c.Assert(err, qt.ErrorMatches, `line 1, column 30: unsupported table option: APPEND`)
 	c.Assert(database, qt.DeepEquals, schemamodel.Database{})
 
 	engine := described("appending", "", "appenddb")
@@ -88,10 +88,10 @@ func TestRegister_RefusesAnIncompleteTableOptionOfAnEngineNobodyShips(t *testing
 
 	for _, dialect := range []string{"journaldb", ""} {
 		statements, err := parser.NewParser(journalMode, parser.WithDialect(dialect)).Parse()
-		c.Assert(err, qt.ErrorMatches, `expected ONLY after JOURNAL: expected 'ONLY', got 'MODE' at position 37`)
+		c.Assert(err, qt.ErrorMatches, `line 1, column 38: expected ONLY after JOURNAL: expected 'ONLY', got 'MODE'`)
 		c.Assert(statements, qt.IsNil)
 	}
 	database, _, err := sqlschema.Read([]byte(journalMode), "journaldb")
-	c.Assert(err, qt.ErrorMatches, `expected ONLY after JOURNAL: expected 'ONLY', got 'MODE' at position 37`)
+	c.Assert(err, qt.ErrorMatches, `line 1, column 38: expected ONLY after JOURNAL: expected 'ONLY', got 'MODE'`)
 	c.Assert(database, qt.DeepEquals, schemamodel.Database{})
 }

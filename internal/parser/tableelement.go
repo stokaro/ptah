@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/ptaherr"
 )
 
 // refuseTableElementTypo reports a table element that reads as a column and
@@ -82,14 +83,14 @@ func refuseTableElementTypo(table *ast.CreateTableNode, target targetGrammar, po
 		if len(arguments) == 0 || !allDeclared(arguments, declared) {
 			continue
 		}
-		return fmt.Errorf(
-			"table %q declares %q with type %q at position %d, and %s a column of %q: "+
+		return ptaherr.At(position, fmt.Errorf(
+			"table %q declares %q with type %q, and %s a column of %q: "+
 				"a type cannot name a column, so this reads as a table-level index or "+
 				"constraint whose keyword is misspelled -- write INDEX, KEY, UNIQUE, "+
 				"FULLTEXT, SPATIAL, PRIMARY KEY, FOREIGN KEY, CHECK, EXCLUDE or "+
 				"CONSTRAINT before it, or rename the column it collides with",
-			table.Name, column.Name, column.Type, position,
-			argumentClause(arguments), table.Name)
+			table.Name, column.Name, column.Type,
+			argumentClause(arguments), table.Name))
 	}
 	return nil
 }

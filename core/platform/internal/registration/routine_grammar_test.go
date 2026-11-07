@@ -144,7 +144,7 @@ func TestRegister_ReadsTriggersInTheTriggerGrammarItStates(t *testing.T) {
 	const trigger = "CREATE TRIGGER app.stamp ON notes WITH EXECUTE AS CALLER FOR INSERT, DELETE AS SET NOCOUNT ON;"
 	c := qt.New(t)
 	statements, err := parser.NewParser(trigger, parser.WithDialect("tsqltriggerdb")).Parse()
-	c.Assert(err, qt.ErrorMatches, `expected trigger timing, got Identifier at position 25`)
+	c.Assert(err, qt.ErrorMatches, `line 1, column 26: expected trigger timing, got Identifier`)
 	c.Assert(statements, qt.IsNil)
 
 	engine := described("tsqltrigger", "", "tsqltriggerdb")

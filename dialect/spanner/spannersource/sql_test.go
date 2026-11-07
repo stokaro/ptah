@@ -47,14 +47,14 @@ func TestSQL_RefusesAMalformedClause(t *testing.T) {
 		clause  string
 		wantErr string
 	}{
-		{name: "no interval keyword", clause: "TTL '30 days' ON ts;", wantErr: `expected INTERVAL after TTL at position 59`},
-		{name: "no interval", clause: "TTL INTERVAL ON ts;", wantErr: `expected a quoted interval after TTL INTERVAL at position 68`},
-		{name: "no ON", clause: "TTL INTERVAL '30 days' ts;", wantErr: `expected ON after the TTL interval at position 78`},
-		{name: "no column", clause: "TTL INTERVAL '30 days' ON;", wantErr: `expected a column name after TTL ... ON at position 80`},
+		{name: "no interval keyword", clause: "TTL '30 days' ON ts;", wantErr: `line 1, column 60: expected INTERVAL after TTL`},
+		{name: "no interval", clause: "TTL INTERVAL ON ts;", wantErr: `line 1, column 69: expected a quoted interval after TTL INTERVAL`},
+		{name: "no ON", clause: "TTL INTERVAL '30 days' ts;", wantErr: `line 1, column 79: expected ON after the TTL interval`},
+		{name: "no column", clause: "TTL INTERVAL '30 days' ON;", wantErr: `line 1, column 81: expected a column name after TTL ... ON`},
 		{name: "an interval Spanner refuses", clause: "TTL INTERVAL '36 hours' ON ts;",
-			wantErr: `TTL at position 82: .*interval "36 hours" is not a whole number of days, which Spanner refuses.*`},
+			wantErr: `line 1, column 83: TTL: .*interval "36 hours" is not a whole number of days, which Spanner refuses.*`},
 		{name: "words after the column", clause: "TTL INTERVAL '30 days' ON ts CASCADE;",
-			wantErr: `unexpected "CASCADE" after the row deletion policy at position 84`},
+			wantErr: `line 1, column 85: unexpected "CASCADE" after the row deletion policy`},
 		{name: "a second policy", clause: "TTL INTERVAL '30 days' ON ts, TTL INTERVAL '1 days' ON ts;",
 			wantErr: `table t: .*duplicate.*`},
 	}

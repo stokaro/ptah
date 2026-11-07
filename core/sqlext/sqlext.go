@@ -164,8 +164,9 @@ type Claim struct {
 	// Reference describes the action a ReferenceOption extends. It is nil
 	// at other sites. Each parser receives an independent column snapshot.
 	Reference *ReferenceContext
-	// Offset is the byte offset of the span in the document, which an error
-	// the owner returns about the span is positioned against.
+	// Offset is the byte offset of the span in the document. An owner's error
+	// about the span states its place with [ptah.run/core/ptaherr.At], from this
+	// offset, and the reader of the document reports the line and column.
 	Offset int
 }
 

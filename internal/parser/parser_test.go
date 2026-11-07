@@ -454,7 +454,7 @@ func TestParser_ParseDoesNotTreatGotoAsGoBatchSeparator(t *testing.T) {
 
 	p := parser.NewParser("GOTO label;")
 	_, err := p.Parse()
-	c.Assert(err, qt.ErrorMatches, `unsupported SQL statement: GOTO at position 0`)
+	c.Assert(err, qt.ErrorMatches, `line 1, column 1: unsupported SQL statement: GOTO`)
 }
 
 func TestParser_ParsePostgresDoBlockAsRawSQL(t *testing.T) {
@@ -769,19 +769,19 @@ func TestParser_NamedDialectRefusesAnotherDialectsEscaping_FailurePath(t *testin
 			name:    "mysql refuses a literal trailing backslash",
 			dialect: platform.MySQL,
 			sql:     `CREATE TABLE pg_plain_defaults (c text default '\');`,
-			wantErr: `expected ',' or ')' after table element at position 52`,
+			wantErr: `line 1, column 53: expected ',' or ')' after table element`,
 		},
 		{
 			name:    "postgres refuses a backslash-escaped quote",
 			dialect: platform.Postgres,
 			sql:     `CREATE TABLE mysql_defaults (c text default "\"" + '\'');`,
-			wantErr: `expected ',' or ')' after table element at position 57`,
+			wantErr: `line 1, column 58: expected ',' or ')' after table element`,
 		},
 		{
 			name:    "postgres reads a backslash as itself",
 			dialect: platform.Postgres,
 			sql:     `CREATE TABLE t (c TEXT DEFAULT 'a\'b, (c)');`,
-			wantErr: `unsupported column attribute: B at position 35`,
+			wantErr: `line 1, column 36: unsupported column attribute: B`,
 		},
 	}
 
@@ -810,7 +810,7 @@ func TestParser_NoDialectCannotReadADoubledQuoteLiteral(t *testing.T) {
 
 	_, err := parser.NewParser(`CREATE TABLE t (c TEXT DEFAULT 'O''Brien, (x), y');`).Parse()
 	c.Assert(err, qt.IsNotNil)
-	c.Assert(err.Error(), qt.Equals, `expected ',' or ')' after table element at position 34`)
+	c.Assert(err.Error(), qt.Equals, `line 1, column 35: expected ',' or ')' after table element`)
 }
 
 func TestParser_ParseCreateView(t *testing.T) {
@@ -892,7 +892,7 @@ func TestParser_ParseCreateViewColumnList_FailurePath(t *testing.T) {
 		{
 			name:    "unterminated name list",
 			sql:     `CREATE VIEW v (x, y AS SELECT a, b FROM t;`,
-			wantErr: `expected ',' or '\)' in view column list at position \d+`,
+			wantErr: `line \d+, column \d+: expected ',' or '\)' in view column list`,
 		},
 	}
 
@@ -1892,7 +1892,7 @@ func TestParser_ParseCreateOrAlterRequiresSQLServerDialect(t *testing.T) {
 	c := qt.New(t)
 
 	_, err := parser.NewParser(`CREATE OR ALTER FUNCTION dbo.score() RETURNS int AS BEGIN RETURN 1; END`).Parse()
-	c.Assert(err, qt.ErrorMatches, `unsupported CREATE OR ALTER outside SQL Server dialect at position \d+`)
+	c.Assert(err, qt.ErrorMatches, `line \d+, column \d+: unsupported CREATE OR ALTER outside SQL Server dialect`)
 }
 
 func TestParser_ParseSQLServerDialectUnbracketedFunctionAsRoutine(t *testing.T) {
@@ -2480,7 +2480,7 @@ func TestParser_ParseRejectsUnknownStatement(t *testing.T) {
 	c := qt.New(t)
 
 	_, err := parser.NewParser("BROKEN STATEMENT;").Parse()
-	c.Assert(err, qt.ErrorMatches, `unsupported SQL statement: BROKEN at position 0`)
+	c.Assert(err, qt.ErrorMatches, `line 1, column 1: unsupported SQL statement: BROKEN`)
 }
 
 // TestParser_AVersionGuardedStatementIsSteppedOverNotRefused pins the decision
@@ -2517,7 +2517,7 @@ func TestParser_AVersionGuardedStatementIsSteppedOverNotRefused(t *testing.T) {
 			parser.WithDialect(platform.MySQL)).Parse()
 
 		c.Assert(err, qt.IsNotNil)
-		c.Assert(err.Error(), qt.Equals, "unsupported SQL statement: LOCK at position 40")
+		c.Assert(err.Error(), qt.Equals, "line 2, column 1: unsupported SQL statement: LOCK")
 	})
 }
 
@@ -2787,7 +2787,7 @@ func TestParser_ParseDropTableRejectsUnsupportedTargets(t *testing.T) {
 	c := qt.New(t)
 
 	_, err := parser.NewParser("DROP VIEW users;").Parse()
-	c.Assert(err, qt.ErrorMatches, "unsupported DROP target: VIEW at position 5")
+	c.Assert(err, qt.ErrorMatches, "line 1, column 6: unsupported DROP target: VIEW")
 }
 
 func TestParser_ParseCreateIndex(t *testing.T) {
@@ -2960,7 +2960,7 @@ func TestParser_ParseCreateIndexRejectsEmptyColumnExpressions(t *testing.T) {
 			c := qt.New(t)
 
 			_, err := parser.NewParser(tt.sql).Parse()
-			c.Assert(err, qt.ErrorMatches, "expected column or expression.*")
+			c.Assert(err, qt.ErrorMatches, "line \\d+, column \\d+: expected column or expression.*")
 		})
 	}
 }

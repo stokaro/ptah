@@ -22,27 +22,27 @@ func TestRead_MySQLColumnCheckNamingAnotherColumn_FailurePath(t *testing.T) {
 		{
 			name:    "a column declared before it",
 			sql:     "CREATE TABLE c (a int, b int CHECK (b > a));",
-			wantErr: `(?s)column CHECK at position \d+: .*the CHECK on column b names column a, and MySQL answers ERROR 3813.*`,
+			wantErr: `(?s)line \d+, column \d+: column CHECK: .*the CHECK on column b names column a, and MySQL answers ERROR 3813.*`,
 		},
 		{
 			name:    "a column declared after it",
 			sql:     "CREATE TABLE c (a int CHECK (a < b), b int);",
-			wantErr: `(?s)column CHECK at position \d+: .*the CHECK on column a names column b, and MySQL answers ERROR 3813.*`,
+			wantErr: `(?s)line \d+, column \d+: column CHECK: .*the CHECK on column a names column b, and MySQL answers ERROR 3813.*`,
 		},
 		{
 			name:    "a second CHECK on the column",
 			sql:     "CREATE TABLE p1 (a int CHECK (a > 0) CHECK (b > 0), b int);",
-			wantErr: `(?s)column CHECK at position \d+: .*the CHECK on column a names column b.*`,
+			wantErr: `(?s)line \d+, column \d+: column CHECK: .*the CHECK on column a names column b.*`,
 		},
 		{
 			name:    "a named CHECK",
 			sql:     "CREATE TABLE p9 (a int, b int CONSTRAINT p9_named CHECK (b > a));",
-			wantErr: `(?s)column CHECK at position \d+: .*the CHECK on column b names column a.*`,
+			wantErr: `(?s)line \d+, column \d+: column CHECK: .*the CHECK on column b names column a.*`,
 		},
 		{
 			name:    "another column qualified by its table",
 			sql:     "CREATE TABLE p3 (a int, b int CHECK (p3.a > 0));",
-			wantErr: `(?s)column CHECK at position \d+: .*the CHECK on column b names column a.*`,
+			wantErr: `(?s)line \d+, column \d+: column CHECK: .*the CHECK on column b names column a.*`,
 		},
 		{
 			name:    "ALTER TABLE adds the column",

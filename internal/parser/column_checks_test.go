@@ -85,21 +85,21 @@ func TestParse_EveryCheckOnAColumnIsKept_FailurePath(t *testing.T) {
 			name:    "ADD COLUMN",
 			dialect: "postgres",
 			sql:     "ALTER TABLE t ADD COLUMN a int CHECK (a > 0) CHECK (a < 10);",
-			wantErr: `(?s).*column a carries a second CHECK at position \d+: a column added or modified by ` +
+			wantErr: `(?s).*column a carries a second CHECK: a column added or modified by ` +
 				`ALTER TABLE keeps one CHECK; add the next with ALTER TABLE \.\.\. ADD CHECK.*`,
 		},
 		{
 			name:    "a second CHECK on a MariaDB column",
 			dialect: "mariadb",
 			sql:     "CREATE TABLE c4 (a int CHECK (a > 0) CHECK (a < 10));",
-			wantErr: `(?s).*column a carries a second CHECK at position \d+: MariaDB accepts one CHECK on a column ` +
+			wantErr: `(?s).*column a carries a second CHECK: MariaDB accepts one CHECK on a column ` +
 				`and answers ERROR 1064 \(42000\) to the second; write it at table level.*`,
 		},
 		{
 			name:    "MODIFY COLUMN",
 			dialect: "mysql",
 			sql:     "ALTER TABLE t MODIFY COLUMN a int CHECK (a > 0) CHECK (a < 10);",
-			wantErr: `(?s).*column a carries a second CHECK at position \d+: a column added or modified by ` +
+			wantErr: `(?s).*column a carries a second CHECK: a column added or modified by ` +
 				`ALTER TABLE keeps one CHECK; add the next with ALTER TABLE \.\.\. ADD CHECK.*`,
 		},
 	}

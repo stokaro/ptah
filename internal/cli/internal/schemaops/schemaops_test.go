@@ -27,7 +27,7 @@ func TestCompare_UsesDatabaseURLDialectForExternalSQL(t *testing.T) {
 	}
 
 	_, err := schemasource.Run(context.Background(), sourceformats.New(builtintest.Runtime().YAML(), builtintest.Runtime().SQL(), builtintest.Runtime().HCL(), coverage.Vocabulary{}, builtintest.Runtime()), command)
-	c.Assert(err, qt.ErrorMatches, `parse schema command "go" output: unsupported CREATE OR ALTER outside SQL Server dialect at position \d+`)
+	c.Assert(err, qt.ErrorMatches, `parse schema command "go" output: line \d+, column \d+: unsupported CREATE OR ALTER outside SQL Server dialect`)
 
 	_, err = schemaops.Compare(t.Context(), schemaops.CompareOptions{Runtime: selectedRuntime(c),
 		Commands:       []schemasource.Command{command},

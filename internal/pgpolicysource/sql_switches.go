@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlext"
 	"ptah.run/feature/pgpolicy"
@@ -45,7 +46,7 @@ func (s *policySQLState) switches(t *policyTokens, index int) (sqlext.Value, err
 	case strings.EqualFold(word, "FORCE"):
 		after.Forced = true
 	default:
-		return sqlext.Value{}, fmt.Errorf("unsupported ALTER operation: %s ROW LEVEL SECURITY at position %d", word, t.offset)
+		return sqlext.Value{}, ptaherr.At(t.offset, fmt.Errorf("unsupported ALTER operation: %s ROW LEVEL SECURITY", word))
 	}
 	access := pgpolicy.TableStateAccess(before, after)
 	if after.Forced {

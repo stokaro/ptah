@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/ptaherr"
 	"ptah.run/internal/lexer"
 )
 
@@ -20,7 +21,7 @@ import (
 // [Parser.parseGuardedSchemaComment]. Any other IF is not schema DDL, and stays
 // refused.
 func (p *Parser) parseGuardedCreateSchema() (ast.Node, error) {
-	unsupported := fmt.Errorf("unsupported SQL statement: IF at position %d", p.current.Start)
+	unsupported := ptaherr.At(p.current.Start, fmt.Errorf("unsupported SQL statement: IF"))
 	if err := p.expectWords("IF"); err != nil {
 		return nil, unsupported
 	}
@@ -105,7 +106,7 @@ func (p *Parser) parseGuardedSchemaComment(unsupported error) (ast.Node, error) 
 // schema, a table or a column. Any other EXEC runs something the model does not
 // hold, and stays refused.
 func (p *Parser) parseCommentCall() (ast.Node, error) {
-	unsupported := fmt.Errorf("unsupported SQL statement: EXEC at position %d", p.current.Start)
+	unsupported := ptaherr.At(p.current.Start, fmt.Errorf("unsupported SQL statement: EXEC"))
 	arguments, ok := p.extendedPropertyCall()
 	if !ok {
 		return nil, unsupported

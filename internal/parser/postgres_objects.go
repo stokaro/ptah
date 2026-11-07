@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/ptaherr"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/rolepassword"
 )
@@ -53,7 +54,7 @@ func (p *Parser) parseSequenceOptions(sequence *ast.CreateSequenceNode) error {
 			return nil
 		}
 		if p.current.Type != lexer.TokenIdentifier {
-			return fmt.Errorf("unsupported CREATE SEQUENCE option at position %d", p.current.Start)
+			return ptaherr.At(p.current.Start, fmt.Errorf("unsupported CREATE SEQUENCE option"))
 		}
 		keyword := strings.ToUpper(p.current.Value)
 		p.advance()
@@ -78,7 +79,7 @@ func (p *Parser) applySequenceOption(sequence *ast.CreateSequenceNode, keyword s
 	case "OWNED":
 		return p.applySequenceOwnedBy(sequence)
 	default:
-		return fmt.Errorf("unsupported CREATE SEQUENCE option: %s at position %d", keyword, p.current.Start)
+		return ptaherr.At(p.current.Start, fmt.Errorf("unsupported CREATE SEQUENCE option: %s", keyword))
 	}
 }
 
@@ -134,7 +135,7 @@ func (p *Parser) applySequenceNoOption(sequence *ast.CreateSequenceNode) error {
 		sequence.SetCycle(false)
 		return nil
 	default:
-		return fmt.Errorf("unsupported CREATE SEQUENCE option: NO %s at position %d", keyword, p.current.Start)
+		return ptaherr.At(p.current.Start, fmt.Errorf("unsupported CREATE SEQUENCE option: NO %s", keyword))
 	}
 }
 
@@ -166,11 +167,11 @@ func (p *Parser) parseSignedInteger() (int64, error) {
 		p.advance()
 	}
 	if p.current.Type != lexer.TokenIdentifier {
-		return 0, fmt.Errorf("expected integer, got %s at position %d", p.current.Type, p.current.Start)
+		return 0, ptaherr.At(p.current.Start, fmt.Errorf("expected integer, got %s", p.current.Type))
 	}
 	value, err := strconv.ParseInt(p.current.Value, 10, 64)
 	if err != nil {
-		return 0, fmt.Errorf("invalid integer %q at position %d", p.current.Value, p.current.Start)
+		return 0, ptaherr.At(p.current.Start, fmt.Errorf("invalid integer %q", p.current.Value))
 	}
 	p.advance()
 	return sign * value, nil
@@ -213,8 +214,7 @@ func (p *Parser) parseCreateRoleIfNotExists() error {
 		return nil
 	}
 	if p.dialect != "" && !p.target.grammar.Statements.RoleIfNotExists {
-		return fmt.Errorf("CREATE ROLE IF NOT EXISTS at position %d: %s takes no IF NOT EXISTS on CREATE ROLE",
-			p.current.Start, p.dialect)
+		return ptaherr.At(p.current.Start, fmt.Errorf("CREATE ROLE IF NOT EXISTS: %s takes no IF NOT EXISTS on CREATE ROLE", p.dialect))
 	}
 	if _, err := p.parseOptionalIfNotExists(); err != nil {
 		return err
@@ -230,7 +230,7 @@ func (p *Parser) parseRoleOptions(role *ast.CreateRoleNode) error {
 			return nil
 		}
 		if p.current.Type != lexer.TokenIdentifier {
-			return fmt.Errorf("unsupported CREATE ROLE option at position %d", p.current.Start)
+			return ptaherr.At(p.current.Start, fmt.Errorf("unsupported CREATE ROLE option"))
 		}
 		keyword := strings.ToUpper(p.current.Value)
 		p.advance()
@@ -256,7 +256,7 @@ func (p *Parser) applyRoleOption(role *ast.CreateRoleNode, keyword string) error
 	case "PASSWORD":
 		return p.applyRolePassword(role)
 	default:
-		return fmt.Errorf("unsupported CREATE ROLE option: %s at position %d", keyword, p.current.Start)
+		return ptaherr.At(p.current.Start, fmt.Errorf("unsupported CREATE ROLE option: %s", keyword))
 	}
 }
 
@@ -365,7 +365,7 @@ func (p *Parser) parseGrantTargets() ([]grantTarget, error) {
 	p.skipWhitespace()
 	for p.current.MatchOperatorValue(",") {
 		if p.dialect != "" && !p.target.grammar.Statements.GrantTargetLists {
-			return nil, fmt.Errorf("GRANT target lists are not supported for %s at position %d", p.dialect, p.current.Start)
+			return nil, ptaherr.At(p.current.Start, fmt.Errorf("GRANT target lists are not supported for %s", p.dialect))
 		}
 		p.advance()
 		p.skipWhitespace()
@@ -452,16 +452,15 @@ func (p *Parser) parseRevokeSuffix() error {
 	p.skipWhitespace()
 	switch {
 	case p.current.MatchOperatorValue(","):
-		return fmt.Errorf(
-			"REVOKE names one grantee here, not a list, at position %d: write one statement per role", p.current.Start)
+		return ptaherr.At(p.current.Start, fmt.Errorf(
+			"REVOKE names one grantee here, not a list: write one statement per role"))
 	case p.current.MatchIdentifierValue("GRANTED"):
-		return fmt.Errorf(
-			"REVOKE ... GRANTED BY is not supported at position %d: grants are not keyed by grantor here",
-			p.current.Start)
+		return ptaherr.At(p.current.Start, fmt.Errorf(
+			"REVOKE ... GRANTED BY is not supported: grants are not keyed by grantor here"))
 	case p.current.MatchIdentifierValue("CASCADE"):
-		return fmt.Errorf(
-			"REVOKE ... CASCADE is not supported at position %d: it also revokes what the role granted onward, "+
-				"which a desired-state file cannot see", p.current.Start)
+		return ptaherr.At(p.current.Start, fmt.Errorf(
+			"REVOKE ... CASCADE is not supported: it also revokes what the role granted onward, "+
+				"which a desired-state file cannot see"))
 	case p.current.MatchIdentifierValue("RESTRICT"):
 		p.advance()
 	}
@@ -493,9 +492,9 @@ func (p *Parser) parseObjectPrivileges(statement string) (privileges, columns []
 			return nil, nil, err
 		}
 		if len(privileges) > 0 && !slices.Equal(named, columns) {
-			return nil, nil, fmt.Errorf(
-				"%s names a different column list for %s at position %d: one statement here limits all of its "+
-					"privileges to the same columns, so write one statement per column list", statement, privilege, start)
+			return nil, nil, ptaherr.At(start, fmt.Errorf(
+				"%s names a different column list for %s: one statement here limits all of its "+
+					"privileges to the same columns, so write one statement per column list", statement, privilege))
 		}
 		columns = named
 		privileges = append(privileges, privilege)
@@ -507,7 +506,7 @@ func (p *Parser) parseObjectPrivileges(statement string) (privileges, columns []
 			p.advance()
 			return privileges, columns, nil
 		}
-		return nil, nil, fmt.Errorf("expected ',' or ON in %s privileges at position %d", statement, p.current.Start)
+		return nil, nil, ptaherr.At(p.current.Start, fmt.Errorf("expected ',' or ON in %s privileges", statement))
 	}
 }
 
@@ -536,7 +535,7 @@ func (p *Parser) parsePrivilegeColumns(statement string) ([]string, error) {
 			p.skipWhitespace()
 			return columns, nil
 		}
-		return nil, fmt.Errorf("expected ',' or ')' in %s privilege columns at position %d", statement, p.current.Start)
+		return nil, ptaherr.At(p.current.Start, fmt.Errorf("expected ',' or ')' in %s privilege columns", statement))
 	}
 }
 
@@ -581,9 +580,9 @@ func (p *Parser) parseGrantTarget(statement string) (grantTarget, error) {
 	p.skipWhitespace()
 	target := grantTarget{objectType: "TABLE"}
 	if p.current.MatchIdentifierValue("ALL") {
-		return grantTarget{}, fmt.Errorf(
-			"%s ... ON ALL ... IN SCHEMA is not supported at position %d: it applies to the objects that exist "+
-				"when it runs, so name each object instead", statement, p.current.Start)
+		return grantTarget{}, ptaherr.At(p.current.Start, fmt.Errorf(
+			"%s ... ON ALL ... IN SCHEMA is not supported: it applies to the objects that exist "+
+				"when it runs, so name each object instead", statement))
 	}
 	if p.current.Type == lexer.TokenIdentifier {
 		keyword := strings.ToUpper(p.current.Value)
@@ -608,9 +607,9 @@ func (p *Parser) parseGrantObject(statement, objectType string) (grantTarget, er
 	}
 	p.skipWhitespace()
 	if !p.current.MatchOperatorValue("(") {
-		return grantTarget{}, fmt.Errorf(
-			"%s ... ON %s %s needs the argument types at position %d, as in %s(uuid): a routine's identity "+
-				"includes them", statement, target.objectType, objectName, p.current.Start, objectName)
+		return grantTarget{}, ptaherr.At(p.current.Start, fmt.Errorf(
+			"%s ... ON %s %s needs the argument types, as in %s(uuid): a routine's identity "+
+				"includes them", statement, target.objectType, objectName, objectName))
 	}
 	arguments, err := p.collectParenthesizedBody(strings.ToLower(target.objectType) + " arguments")
 	if err != nil {
@@ -695,7 +694,7 @@ func (p *Parser) parseCreateMaterializedView() (*ast.CreateMaterializedViewNode,
 
 	body := p.collectStatementBody()
 	if strings.TrimSpace(body) == "" {
-		return nil, fmt.Errorf("expected materialized view body after AS at position %d", p.current.Start)
+		return nil, ptaherr.At(p.current.Start, fmt.Errorf("expected materialized view body after AS"))
 	}
 	return node.SetBody(body), nil
 }

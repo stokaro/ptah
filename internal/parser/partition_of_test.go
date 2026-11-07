@@ -16,9 +16,9 @@ func TestParse_PartitionOfWithoutItsOwner_FailurePath(t *testing.T) {
 	for _, test := range []struct {
 		name, dialect, want string
 	}{
-		{name: "a target that reads no partition", dialect: "mysql", want: `CREATE TABLE e1 PARTITION OF at position 16 declares a PostgreSQL partition, which Ptah does not read on mysql`},
-		{name: "cockroachdb", dialect: "cockroachdb", want: `CREATE TABLE e1 PARTITION OF at position 16 declares a PostgreSQL partition, which Ptah does not read on cockroachdb`},
-		{name: "a read with no target", want: `CREATE TABLE e1 PARTITION OF at position 16 declares a PostgreSQL partition, which Ptah does not read without a target`},
+		{name: "a target that reads no partition", dialect: "mysql", want: `line 1, column 17: CREATE TABLE e1 PARTITION OF declares a PostgreSQL partition, which Ptah does not read on mysql`},
+		{name: "cockroachdb", dialect: "cockroachdb", want: `line 1, column 17: CREATE TABLE e1 PARTITION OF declares a PostgreSQL partition, which Ptah does not read on cockroachdb`},
+		{name: "a read with no target", want: `line 1, column 17: CREATE TABLE e1 PARTITION OF declares a PostgreSQL partition, which Ptah does not read without a target`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -38,6 +38,6 @@ func TestParse_PartitionByIsNotPartitionOf(t *testing.T) {
 
 	statements, err := parser.NewParser("CREATE TABLE e1 PARTITION BY RANGE (a);", parser.WithDialect("postgres"), parser.WithSQL(sqlext.None())).Parse()
 
-	c.Assert(err, qt.ErrorMatches, `expected '\(' after table name: .*`)
+	c.Assert(err, qt.ErrorMatches, `line \d+, column \d+: expected '\(' after table name: .*`)
 	c.Assert(statements, qt.IsNil)
 }

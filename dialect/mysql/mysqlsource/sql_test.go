@@ -93,17 +93,17 @@ func TestSQL_RefusesAMalformedOption(t *testing.T) {
 		wantErr string
 	}{
 		{name: "no character set name", dialect: platform.MySQL, sql: "CREATE TABLE t (v text CHARACTER SET 'utf8');",
-			wantErr: `expected a character set name after CHARACTER SET at position 37`},
+			wantErr: `line 1, column 38: expected a character set name after CHARACTER SET`},
 		{name: "no charset name", dialect: platform.MySQL, sql: "CREATE TABLE t (v text CHARSET 'utf8');",
-			wantErr: `expected charset name: expected identifier, got String at position 31`},
+			wantErr: `line 1, column 32: expected charset name: expected identifier, got String`},
 		{name: "words after the name", dialect: platform.MySQL, sql: "CREATE TABLE t (v text CHARSET utf8 BINARY);",
-			wantErr: `unexpected "BINARY" after the character set at position 36`},
+			wantErr: `line 1, column 37: unexpected "BINARY" after the character set`},
 		{name: "no expression", dialect: platform.MySQL, sql: "CREATE TABLE t (ts timestamp ON UPDATE NOT NULL);",
-			wantErr: `expected an expression after ON UPDATE at position 39`},
+			wantErr: `line 1, column 40: expected an expression after ON UPDATE`},
 		{name: "CHARACTER without SET", dialect: platform.MySQL, sql: "CREATE TABLE t (v text CHARACTER utf8);",
-			wantErr: `unsupported column attribute: CHARACTER at position 23`},
+			wantErr: `line 1, column 24: unsupported column attribute: CHARACTER`},
 		{name: "another dialect", dialect: platform.Postgres, sql: "CREATE TABLE t (v text CHARSET utf8);",
-			wantErr: `unsupported column attribute: CHARSET at position 23`},
+			wantErr: `line 1, column 24: unsupported column attribute: CHARSET`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -144,9 +144,9 @@ func TestSQL_AnOptionEndsAtAClauseOfAConstraint(t *testing.T) {
 		clause  string
 		wantErr string
 	}{
-		{clause: "ENFORCED", wantErr: `misplaced ENFORCED clause at position 46: .*`},
-		{clause: "DEFERRABLE", wantErr: `misplaced deferral clause at position 46: .*`},
-		{clause: "INITIALLY DEFERRED", wantErr: `misplaced deferral clause at position 46: .*`},
+		{clause: "ENFORCED", wantErr: `line 1, column 47: misplaced ENFORCED clause: .*`},
+		{clause: "DEFERRABLE", wantErr: `line 1, column 47: misplaced deferral clause: .*`},
+		{clause: "INITIALLY DEFERRED", wantErr: `line 1, column 47: misplaced deferral clause: .*`},
 	} {
 		t.Run(test.clause, func(t *testing.T) {
 			c := qt.New(t)

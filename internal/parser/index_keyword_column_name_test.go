@@ -268,27 +268,27 @@ func TestIndexKeywordColumnNameIsRefusedWithItsReason_FailurePath(t *testing.T) 
 			name:    "mysql key",
 			dialect: platform.MySQL,
 			column:  "key",
-			wantErr: `(?s)a table element opening with KEY at position \d+ declares a table-level ` +
+			wantErr: `(?s)line \d+, column \d+: a table element opening with KEY declares a table-level ` +
 				`index on mysql rather than a column named after the word.*`,
 		},
 		{
 			name:    "sqlite index",
 			dialect: platform.SQLite,
 			column:  "index",
-			wantErr: `(?s)a table element opening with INDEX at position \d+ declares a table-level ` +
+			wantErr: `(?s)line \d+, column \d+: a table element opening with INDEX declares a table-level ` +
 				`index on sqlite rather than a column named after the word.*`,
 		},
 		{
 			name:    "sqlserver key",
 			dialect: platform.SQLServer,
 			column:  "key",
-			wantErr: `(?s)a table element opening with KEY at position \d+ .*`,
+			wantErr: `(?s)line \d+, column \d+: a table element opening with KEY .*`,
 		},
 		{
 			name:    "oracle index",
 			dialect: platform.Oracle,
 			column:  "index",
-			wantErr: `(?s)a table element opening with INDEX at position \d+ .*`,
+			wantErr: `(?s)line \d+, column \d+: a table element opening with INDEX .*`,
 		},
 	}
 	for _, test := range tests {

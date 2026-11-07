@@ -103,11 +103,11 @@ func TestRead_ViewOptions_UnreadableList(t *testing.T) {
 		wantErr string
 	}{
 		{name: "an empty entry", sql: "CREATE VIEW v WITH (security_barrier, ) AS SELECT 1 AS x;",
-			wantErr: `(?s).*expected an option name in the view options at position \d+.*`},
+			wantErr: `(?s).*expected an option name in the view options.*`},
 		{name: "a missing value", sql: "CREATE MATERIALIZED VIEW m WITH (fillfactor = ) AS SELECT 1 AS x;",
-			wantErr: `(?s).*expected a value after fillfactor= in the materialized view options at position \d+.*`},
+			wantErr: `(?s).*expected a value after fillfactor= in the materialized view options.*`},
 		{name: "an unclosed list", sql: "CREATE VIEW v WITH (security_barrier AS SELECT 1 AS x;",
-			wantErr: `(?s).*expected ',' or '\)' in the view options at position \d+.*`},
+			wantErr: `(?s).*expected ',' or '\)' in the view options.*`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

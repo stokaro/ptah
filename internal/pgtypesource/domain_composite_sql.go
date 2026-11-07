@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlext"
 	"ptah.run/feature/pgtype"
@@ -71,7 +72,7 @@ func (t *rangeTokens) domainClause(value *pgtype.DesiredDomain) error {
 		value.Check = text
 		return err
 	default:
-		return fmt.Errorf("unsupported domain clause %q at position %d", t.current().Value, t.offset+t.current().Start)
+		return ptaherr.At(t.offset+t.current().Start, fmt.Errorf("unsupported domain clause %q", t.current().Value))
 	}
 }
 
@@ -104,7 +105,7 @@ func (t *rangeTokens) domainText(boundary func(first int) bool) (string, error) 
 		t.pos++
 	}
 	if depth != 0 || cases != 0 || end == start {
-		return "", fmt.Errorf("expected a complete domain type or default at position %d", t.offset+start)
+		return "", ptaherr.At(t.offset+start, fmt.Errorf("expected a complete domain type or default"))
 	}
 	return strings.TrimSpace(t.text[start:end]), nil
 }

@@ -25,7 +25,7 @@ func TestRegister_DescribesTheDDLGrammarOfAnEngineNobodyShips(t *testing.T) {
 	_, err = parser.NewParser(deferred, parser.WithDialect("grammardb")).Parse()
 	c.Assert(err, qt.IsNil)
 	_, err = parser.NewParser(modify, parser.WithDialect("grammardb")).Parse()
-	c.Assert(err, qt.ErrorMatches, `MODIFY at position 14 in ALTER TABLE: grammardb has no MODIFY clause; .*`)
+	c.Assert(err, qt.ErrorMatches, `line 1, column 15: MODIFY in ALTER TABLE: grammardb has no MODIFY clause; .*`)
 
 	engine := described("grammar", "", "grammardb")
 	engine.Grammar = descriptor.Grammar{
@@ -39,10 +39,10 @@ func TestRegister_DescribesTheDDLGrammarOfAnEngineNobodyShips(t *testing.T) {
 
 	statements, err := parser.NewParser(twoChecks, parser.WithDialect("grammardb")).Parse()
 	c.Assert(err, qt.ErrorMatches,
-		`column a carries a second CHECK at position 36: grammar takes one CHECK on a column`)
+		`line 1, column 37: column a carries a second CHECK: grammar takes one CHECK on a column`)
 	c.Assert(statements, qt.IsNil)
 	statements, err = parser.NewParser(deferred, parser.WithDialect("grammardb")).Parse()
-	c.Assert(err, qt.ErrorMatches, `deferral clause at position 60: grammar has no deferrable constraints`)
+	c.Assert(err, qt.ErrorMatches, `line 1, column 61: deferral clause: grammar has no deferrable constraints`)
 	c.Assert(statements, qt.IsNil)
 	statements, err = parser.NewParser(modify, parser.WithDialect("grammardb")).Parse()
 	c.Assert(err, qt.IsNil)

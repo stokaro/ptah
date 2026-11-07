@@ -41,7 +41,7 @@ retention_period=Interval('PT12H'))`.
 
 | Step | The provider path | The built-in YDB engine |
 | --- | --- | --- |
-| the table, the changefeed, and consumer `worker` on its topic | refused while reading: ``changefeed `updates` of table `dir/events` has no home in a SQL schema reading: the host refuses the owned objects of a table in a SQL schema reading at position 65 (line 1, column 66)`` | `CREATE TABLE`, `ADD CHANGEFEED`, `ADD CONSUMER worker`; then synced |
+| the table, the changefeed, and consumer `worker` on its topic | refused while reading: ``schema.sql:1:66: changefeed `updates` of table `dir/events` has no home in a SQL schema reading: the host refuses the owned objects of a table in a SQL schema reading`` | `CREATE TABLE`, `ADD CHANGEFEED`, `ADD CONSUMER worker`; then synced |
 | consumer `audit` (important) instead of `worker` | refused the same way | `DROP CONSUMER worker`, `ADD CONSUMER audit WITH (important = TRUE)`; then synced |
 | the changefeed without consumers | refused the same way | `DROP CONSUMER audit`; then synced |
 | the table alone | not reached | `DROP CHANGEFEED updates`, with a comment that unread records are lost; then synced |

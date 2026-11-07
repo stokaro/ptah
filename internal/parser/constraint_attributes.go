@@ -6,6 +6,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/descriptor"
+	"ptah.run/core/ptaherr"
 	"ptah.run/internal/lexer"
 )
 
@@ -88,7 +89,7 @@ func (p *Parser) parseDeferral() (deferral, error) {
 			result.written, result.start = true, start
 		}
 		if refusal := result.grammar.Refusal; refusal != "" {
-			return deferral{}, fmt.Errorf("deferral clause at position %d: %s", result.start, refusal)
+			return deferral{}, ptaherr.At(result.start, fmt.Errorf("deferral clause: %s", refusal))
 		}
 	}
 }
@@ -103,7 +104,7 @@ func (p *Parser) nextIsDeferrable() bool {
 func (p *Parser) parseInitially(sofar deferral) (string, error) {
 	start := p.current.Start
 	if refusal := sofar.grammar.LoneInitiallyRefusal; refusal != "" && !sofar.written {
-		return "", fmt.Errorf("INITIALLY at position %d: %s", start, refusal)
+		return "", ptaherr.At(start, fmt.Errorf("INITIALLY: %s", refusal))
 	}
 	p.advance()
 	p.skipWhitespace()
@@ -114,11 +115,11 @@ func (p *Parser) parseInitially(sofar deferral) (string, error) {
 	case p.current.MatchIdentifierValue("IMMEDIATE"):
 		timing = initiallyImmediate
 	default:
-		return "", fmt.Errorf("expected DEFERRED or IMMEDIATE after INITIALLY at position %d", p.current.Start)
+		return "", ptaherr.At(p.current.Start, fmt.Errorf("expected DEFERRED or IMMEDIATE after INITIALLY"))
 	}
 	p.advance()
 	if sofar.initially != "" && sofar.initially != timing {
-		return "", fmt.Errorf("INITIALLY at position %d: conflicting constraint properties", start)
+		return "", ptaherr.At(start, fmt.Errorf("INITIALLY: conflicting constraint properties"))
 	}
 	return timing, nil
 }
@@ -130,13 +131,13 @@ func (p *Parser) parseInitially(sofar deferral) (string, error) {
 // timing renders as `DEFERRABLE INITIALLY IMMEDIATE`.
 func (d *deferral) validate() error {
 	if d.deferrable && d.notDeferrable {
-		return fmt.Errorf("deferral clause at position %d: conflicting constraint properties", d.start)
+		return ptaherr.At(d.start, fmt.Errorf("deferral clause: conflicting constraint properties"))
 	}
 	if d.initially == initiallyDeferred {
 		if d.notDeferrable {
-			return fmt.Errorf(
-				"deferral clause at position %d: constraint declared INITIALLY DEFERRED must be DEFERRABLE", d.start,
-			)
+			return ptaherr.At(d.start, fmt.Errorf(
+				"deferral clause: constraint declared INITIALLY DEFERRED must be DEFERRABLE",
+			))
 		}
 		d.deferrable = true
 	}
@@ -163,7 +164,7 @@ func (d deferral) applyToKey(constraint *ast.ConstraintNode, kind string) error 
 	case !d.written:
 		return nil
 	case d.grammar.KeyRefusal != "":
-		return fmt.Errorf("deferral clause at position %d: %s, not after %s", d.start, d.grammar.KeyRefusal, kind)
+		return ptaherr.At(d.start, fmt.Errorf("deferral clause: %s, not after %s", d.grammar.KeyRefusal, kind))
 	default:
 		constraint.Deferrable = d.deferrable
 		constraint.Initially = d.initially
@@ -180,9 +181,9 @@ func (d deferral) refuseOnCheck() error {
 	case !d.written:
 		return nil
 	case d.grammar.KeyRefusal != "":
-		return fmt.Errorf("deferral clause at position %d: %s, not after %s", d.start, d.grammar.KeyRefusal, checkElement)
+		return ptaherr.At(d.start, fmt.Errorf("deferral clause: %s, not after %s", d.grammar.KeyRefusal, checkElement))
 	case d.defersChecks():
-		return fmt.Errorf("deferral clause at position %d: CHECK constraints cannot be marked DEFERRABLE", d.start)
+		return ptaherr.At(d.start, fmt.Errorf("deferral clause: CHECK constraints cannot be marked DEFERRABLE"))
 	default:
 		return nil
 	}
@@ -278,7 +279,7 @@ func (d deferral) applyToTableElement(constraint *ast.ConstraintNode, kind strin
 	case primaryKeyElement, uniqueElement:
 		return d.applyToKey(constraint, kind)
 	default:
-		return fmt.Errorf("deferral clause at position %d: an index takes none", d.start)
+		return ptaherr.At(d.start, fmt.Errorf("deferral clause: an index takes none"))
 	}
 }
 
@@ -359,10 +360,9 @@ func (p *Parser) parseColumnDeferral(table *ast.CreateTableNode, column *ast.Col
 	case !last.onTable && last.key != "":
 		return clauses.liftColumnKey(table, column, last.key)
 	default:
-		return fmt.Errorf(
-			"misplaced deferral clause at position %d: it has to follow the column's PRIMARY KEY, UNIQUE or REFERENCES",
-			clauses.start,
-		)
+		return ptaherr.At(clauses.start, fmt.Errorf(
+			"misplaced deferral clause: it has to follow the column's PRIMARY KEY, UNIQUE or REFERENCES",
+		))
 	}
 }
 
@@ -379,15 +379,15 @@ func (p *Parser) refuseKeyIndexClause(kind string) error {
 	next := p.peekSignificantToken()
 	switch {
 	case p.current.MatchIdentifierValue("WITH") && next.MatchOperatorValue("("):
-		return fmt.Errorf(
-			"%s WITH (...) at position %d: storage parameters of the index behind a key are not read; "+
-				"set them with ALTER INDEX ... SET in a migration", kind, p.current.Start,
-		)
+		return ptaherr.At(p.current.Start, fmt.Errorf(
+			"%s WITH (...): storage parameters of the index behind a key are not read; "+
+				"set them with ALTER INDEX ... SET in a migration", kind,
+		))
 	case p.current.MatchIdentifierValue("USING") && next.MatchIdentifierValue("INDEX"):
-		return fmt.Errorf(
-			"%s USING INDEX TABLESPACE at position %d: the tablespace of the index behind a key is not read; "+
-				"move it with ALTER INDEX ... SET TABLESPACE in a migration", kind, p.current.Start,
-		)
+		return ptaherr.At(p.current.Start, fmt.Errorf(
+			"%s USING INDEX TABLESPACE: the tablespace of the index behind a key is not read; "+
+				"move it with ALTER INDEX ... SET TABLESPACE in a migration", kind,
+		))
 	default:
 		return nil
 	}
@@ -411,11 +411,10 @@ func (p *Parser) handleColumnUnique(table *ast.CreateTableNode, column *ast.Colu
 		return nil
 	}
 	if table == nil {
-		return fmt.Errorf(
-			"UNIQUE NULLS at position %d: a column's UNIQUE with a NULLS clause is read as the table's UNIQUE over "+
+		return ptaherr.At(start, fmt.Errorf(
+			"UNIQUE NULLS: a column's UNIQUE with a NULLS clause is read as the table's UNIQUE over "+
 				"the column, and this column has no table to attach it to; add it with ALTER TABLE ... ADD UNIQUE",
-			start,
-		)
+		))
 	}
 	table.AddConstraint(&ast.ConstraintNode{
 		Type:          ast.UniqueConstraint,
@@ -439,11 +438,11 @@ func (d deferral) liftColumnKey(table *ast.CreateTableNode, column *ast.ColumnNo
 		return err
 	}
 	if table == nil {
-		return fmt.Errorf(
-			"DEFERRABLE %s at position %d: a column's deferrable key is read as the table's key over the column, "+
+		return ptaherr.At(d.start, fmt.Errorf(
+			"DEFERRABLE %s: a column's deferrable key is read as the table's key over the column, "+
 				"and this column has no table to attach it to; add it with ALTER TABLE ... ADD %s",
-			kind, d.start, kind,
-		)
+			kind, kind,
+		))
 	}
 	switch kind {
 	case primaryKeyElement:

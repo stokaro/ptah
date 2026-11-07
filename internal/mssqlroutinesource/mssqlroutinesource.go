@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlext"
 	"ptah.run/dialect/mssql/mssqlschema"
@@ -218,5 +219,5 @@ func readExecuteAs(claim sqlext.Claim, words []lexer.Token) (string, error) {
 
 // refusal positions an error at the claim.
 func refusal(claim sqlext.Claim, reason string) error {
-	return fmt.Errorf("%w: %s of %s at position %d: %s", schemaext.ErrInvalidValue, strings.TrimSpace(claim.Text), claim.Subject, claim.Offset, reason)
+	return ptaherr.At(claim.Offset, fmt.Errorf("%w: %s of %s: %s", schemaext.ErrInvalidValue, strings.TrimSpace(claim.Text), claim.Subject, reason))
 }

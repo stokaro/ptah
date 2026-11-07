@@ -74,7 +74,7 @@ func TestSchemaApplyRefusesAMySQLAlterGuardE2E(t *testing.T) {
 			run := runAlterGuard(c, dbtarget.MySQLAdmin, clause)
 
 			c.Assert(run.serverErr, qt.ErrorMatches, `Error 1064 \(42000\): You have an error in your SQL syntax.*`)
-			c.Assert(run.ptahErr, qt.ErrorMatches, `(?s).*IF (NOT )?EXISTS at position \d+ in ALTER TABLE .*mysql takes no .*`)
+			c.Assert(run.ptahErr, qt.ErrorMatches, `(?s).*IF (NOT )?EXISTS in ALTER TABLE .*mysql takes no .*`)
 		})
 	}
 }
@@ -107,7 +107,7 @@ func TestSchemaApplyRefusesAMariaDBDropCheckE2E(t *testing.T) {
 			run := runAlterGuard(c, dbtarget.MariaDBAdmin, clause)
 
 			c.Assert(run.serverErr, qt.ErrorMatches, `Error 1064 \(42000\): You have an error in your SQL syntax.*`)
-			c.Assert(run.ptahErr, qt.ErrorMatches, `(?s).*DROP CHECK at position \d+ in ALTER TABLE: mariadb has no DROP CHECK.*`)
+			c.Assert(run.ptahErr, qt.ErrorMatches, `(?s).*DROP CHECK in ALTER TABLE: mariadb has no DROP CHECK.*`)
 		})
 	}
 }

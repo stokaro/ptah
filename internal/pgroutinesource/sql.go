@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlext"
 	"ptah.run/dialect/postgres/pgroutine"
@@ -99,5 +100,5 @@ func readProperty(claim sqlext.Claim, value pgroutine.Properties) (pgroutine.Pro
 	return pgroutine.Properties{}, "", propertyError(claim, "invalid function property "+strings.TrimSpace(claim.Text))
 }
 func propertyError(claim sqlext.Claim, reason string) error {
-	return fmt.Errorf("%w: function %s at position %d: %s", schemaext.ErrInvalidValue, claim.Subject, claim.Offset, reason)
+	return ptaherr.At(claim.Offset, fmt.Errorf("%w: function %s: %s", schemaext.ErrInvalidValue, claim.Subject, reason))
 }

@@ -55,17 +55,17 @@ func TestParse_ForceRowLevelSecurity_FailurePath(t *testing.T) {
 		{
 			name:    "no force",
 			sql:     `ALTER TABLE sites NO FORCE ROW LEVEL SECURITY;`,
-			wantErr: `unsupported ALTER operation: NO at position \d+`,
+			wantErr: `line \d+, column \d+: unsupported ALTER operation: NO`,
 		},
 		{
 			name:    "no followed by something else",
 			sql:     `ALTER TABLE sites NO INHERIT parent;`,
-			wantErr: `unsupported ALTER operation: NO at position \d+`,
+			wantErr: `line \d+, column \d+: unsupported ALTER operation: NO`,
 		},
 		{
 			name:    "force followed by something else",
 			sql:     `ALTER TABLE sites FORCE;`,
-			wantErr: `unsupported ALTER operation: FORCE at position \d+`,
+			wantErr: `line \d+, column \d+: unsupported ALTER operation: FORCE`,
 		},
 	}
 	for _, test := range tests {
@@ -116,6 +116,6 @@ func TestParse_PolicyAs_FailurePath(t *testing.T) {
 	statements, err := parser.NewParser(`CREATE POLICY p ON t AS SOMETIMES USING (true);`,
 		parser.WithSQL(builtintest.Runtime().SQL()), parser.WithDialect(platform.Postgres)).Parse()
 
-	c.Assert(err, qt.ErrorMatches, `.*expected PERMISSIVE or RESTRICTIVE after AS at position \d+`)
+	c.Assert(err, qt.ErrorMatches, `.*expected PERMISSIVE or RESTRICTIVE after AS`)
 	c.Assert(statements, qt.IsNil)
 }

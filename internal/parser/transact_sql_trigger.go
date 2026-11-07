@@ -41,8 +41,8 @@ func (p *Parser) readsTransactSQLTriggers() bool {
 // other than CALLER, NOT FOR REPLICATION, and a DDL or logon trigger.
 func (p *Parser) parseTransactSQLTrigger() (ast.Node, error) {
 	if p.current.MatchIdentifierValue("IF") {
-		return nil, fmt.Errorf("IF after CREATE TRIGGER at position %d: SQL Server takes no IF NOT EXISTS on a trigger; "+
-			"write CREATE OR ALTER TRIGGER to replace one that exists", p.current.Start)
+		return nil, ptaherr.At(p.current.Start, fmt.Errorf("IF after CREATE TRIGGER: SQL Server takes no IF NOT EXISTS on a trigger; "+
+			"write CREATE OR ALTER TRIGGER to replace one that exists"))
 	}
 	nameParts, err := p.parseIdentifierParts("trigger name")
 	if err != nil {
@@ -117,14 +117,14 @@ func (p *Parser) refuseTransactSQLServerScope(name string) error {
 	default:
 		return nil
 	}
-	return &ptaherr.CapabilityError{
+	return ptaherr.At(p.current.Start, &ptaherr.CapabilityError{
 		Dialect: platform.NormalizeDialect(p.dialect),
 		Feature: "SQL Server DDL and logon triggers",
 		Err:     ptaherr.ErrUnsupportedFeature,
-		Message: fmt.Sprintf("CREATE TRIGGER %s ON %s at position %d is a DDL or logon trigger, which Ptah does not model; "+
+		Message: fmt.Sprintf("CREATE TRIGGER %s ON %s is a DDL or logon trigger, which Ptah does not model; "+
 			"a schema declares DML triggers on tables alone, so keep this trigger out of the schema",
-			name, scope, p.current.Start),
-	}
+			name, scope),
+	})
 }
 
 // transactSQLTriggerName returns the trigger's name without a schema. A DML
@@ -180,7 +180,7 @@ func (p *Parser) readTransactSQLTriggerOptions(name string) error {
 		start := p.current.Start
 		option := p.readTransactSQLTriggerOption()
 		if option == "" {
-			return fmt.Errorf("expected a trigger option at position %d", start)
+			return ptaherr.At(start, fmt.Errorf("expected a trigger option"))
 		}
 		if err := p.refuseTransactSQLTriggerOption(name, option, start); err != nil {
 			return err
@@ -239,13 +239,13 @@ func (p *Parser) refuseTransactSQLTriggerOption(name, option string, position in
 	default:
 		reason = "Ptah can neither write the option nor compare it back"
 	}
-	return &ptaherr.CapabilityError{
+	return ptaherr.At(position, &ptaherr.CapabilityError{
 		Dialect: platform.NormalizeDialect(p.dialect),
 		Feature: "SQL Server trigger options",
 		Err:     ptaherr.ErrUnsupportedFeature,
-		Message: fmt.Sprintf("trigger %s states WITH %s at position %d: %s; remove it, or keep the trigger out of the schema",
-			name, option, position, reason),
-	}
+		Message: fmt.Sprintf("trigger %s states WITH %s: %s; remove it, or keep the trigger out of the schema",
+			name, option, reason),
+	})
 }
 
 // parseTransactSQLTriggerTiming reads FOR, AFTER or INSTEAD OF. FOR and AFTER
@@ -263,8 +263,8 @@ func (p *Parser) parseTransactSQLTriggerTiming(name string) (string, error) {
 		}
 		return "INSTEAD OF", nil
 	default:
-		return "", fmt.Errorf("expected FOR, AFTER or INSTEAD OF in trigger %s, got %s %q at position %d",
-			name, p.current.Type, p.current.Value, p.current.Start)
+		return "", ptaherr.At(p.current.Start, fmt.Errorf("expected FOR, AFTER or INSTEAD OF in trigger %s, got %s %q",
+			name, p.current.Type, p.current.Value))
 	}
 }
 
@@ -276,13 +276,13 @@ func (p *Parser) parseTransactSQLTriggerEvents(name string) (string, error) {
 	for {
 		if !p.current.MatchIdentifierValue("INSERT") && !p.current.MatchIdentifierValue("UPDATE") &&
 			!p.current.MatchIdentifierValue("DELETE") {
-			return "", fmt.Errorf("expected INSERT, UPDATE or DELETE as an event of trigger %s, got %s %q at position %d",
-				name, p.current.Type, p.current.Value, p.current.Start)
+			return "", ptaherr.At(p.current.Start, fmt.Errorf("expected INSERT, UPDATE or DELETE as an event of trigger %s, got %s %q",
+				name, p.current.Type, p.current.Value))
 		}
 		event := strings.ToUpper(p.current.Value)
 		if slices.Contains(events, event) {
-			return "", fmt.Errorf("trigger %s names the event %s twice at position %d, which SQL Server refuses with Msg 1034",
-				name, event, p.current.Start)
+			return "", ptaherr.At(p.current.Start, fmt.Errorf("trigger %s names the event %s twice, which SQL Server refuses with Msg 1034",
+				name, event))
 		}
 		events = append(events, event)
 		p.advance()
@@ -311,10 +311,10 @@ func (p *Parser) refuseTransactSQLTriggerTail(name string) error {
 		p.advance()
 		p.skipWhitespace()
 		if p.current.MatchIdentifierValue("APPEND") {
-			return fmt.Errorf("trigger %s states WITH APPEND at position %d, which SQL Server 2025 refuses with Msg 195, "+
-				"'APPEND' is not a recognized option; remove it", name, start)
+			return ptaherr.At(start, fmt.Errorf("trigger %s states WITH APPEND, which SQL Server 2025 refuses with Msg 195, "+
+				"'APPEND' is not a recognized option; remove it", name))
 		}
-		return fmt.Errorf("expected APPEND after WITH in trigger %s at position %d", name, p.current.Start)
+		return ptaherr.At(p.current.Start, fmt.Errorf("expected APPEND after WITH in trigger %s", name))
 	case p.current.MatchIdentifierValue("NOT"):
 		p.advance()
 		p.skipWhitespace()
@@ -325,14 +325,14 @@ func (p *Parser) refuseTransactSQLTriggerTail(name string) error {
 		if err := p.expect(lexer.TokenIdentifier, "REPLICATION"); err != nil {
 			return fmt.Errorf("expected REPLICATION after NOT FOR in trigger %s: %w", name, err)
 		}
-		return &ptaherr.CapabilityError{
+		return ptaherr.At(start, &ptaherr.CapabilityError{
 			Dialect: platform.NormalizeDialect(p.dialect),
 			Feature: "SQL Server trigger options",
 			Err:     ptaherr.ErrUnsupportedFeature,
-			Message: fmt.Sprintf("trigger %s states NOT FOR REPLICATION at position %d: Ptah does not model whether "+
+			Message: fmt.Sprintf("trigger %s states NOT FOR REPLICATION: Ptah does not model whether "+
 				"replication fires a trigger, so it could neither write the setting nor compare it back; "+
-				"remove it, or keep the trigger out of the schema", name, start),
-		}
+				"remove it, or keep the trigger out of the schema", name),
+		})
 	default:
 		return nil
 	}
@@ -348,7 +348,7 @@ func (p *Parser) refuseTransactSQLTriggerTail(name string) error {
 func (p *Parser) collectTransactSQLTriggerBody(name string) (string, error) {
 	p.skipWhitespace()
 	if p.isAtEnd() || p.current.Type == lexer.TokenSemicolon || p.isCurrentSQLServerGoBatchSeparator() {
-		return "", fmt.Errorf("expected the body of trigger %s after AS at position %d", name, p.current.Start)
+		return "", ptaherr.At(p.current.Start, fmt.Errorf("expected the body of trigger %s after AS", name))
 	}
 	return routinebuiltin.TransactSQLModuleBody(routineCursor{p}, p.current.Start)
 }

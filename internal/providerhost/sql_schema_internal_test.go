@@ -273,7 +273,10 @@ func TestSQLSchemaRefusesAnEnumDeclaredTwiceDifferently(t *testing.T) {
 }
 
 func sqlRefusalRequest() *protocol.ReadSQLSchemaRequest {
-	return &protocol.ReadSQLSchemaRequest{Documents: []*protocol.SQLDocument{{Id: "1", Path: "one.sql"}, {Id: "2", Path: "two.sql"}}}
+	return &protocol.ReadSQLSchemaRequest{Documents: []*protocol.SQLDocument{
+		{Id: "1", Path: "one.sql", Text: "a\nbc d\n"},
+		{Id: "2", Path: "two.sql", Text: "ab\ncd\nefgh ijkl\n"},
+	}}
 }
 
 func sqlDiagnostic(code protocol.SQLDiagnostic_Code, severity protocol.SQLDiagnostic_Severity, document string, offset uint64, message string) *protocol.SQLDiagnostic {
@@ -295,7 +298,7 @@ func TestSQLSchemaRefusalNamesTheFirstError(t *testing.T) {
 
 	err := sqlSchemaRefusal(sqlRefusalRequest(), reply)
 
-	c.Assert(err, qt.ErrorMatches, `two.sql: unsupported statement GRANT at position 9 \(line 2, column 3\)`)
+	c.Assert(err, qt.ErrorMatches, `two.sql: line 3, column 4: unsupported statement GRANT`)
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	refusal, ok := errors.AsType[*providerdiagnostic.SchemaRefusal](err)
 	c.Assert(ok, qt.IsTrue)
@@ -304,13 +307,41 @@ func TestSQLSchemaRefusalNamesTheFirstError(t *testing.T) {
 		Start: providerdiagnostic.SchemaPosition{Offset: 5, Line: 2, Column: 3}, End: providerdiagnostic.SchemaPosition{Offset: 9, Line: 2, Column: 7}})
 }
 
+// The wire's column counts bytes. The sentence counts characters from the
+// diagnostic's offset, as the shared parser does for the same file, and the
+// report keeps what the provider said.
+func TestSQLSchemaRefusalCountsItsColumnInCharacters(t *testing.T) {
+	c := qt.New(t)
+	const text = "-- заметка\nCREATE TABLE заказы BOGUS;\n"
+	const offset = 44
+	c.Assert(text[offset:], qt.Equals, "BOGUS;\n")
+	request := &protocol.ReadSQLSchemaRequest{Documents: []*protocol.SQLDocument{{Id: "1", Path: "one.sql", Text: text}}}
+	reply := &protocol.SQLSchema{Diagnostics: []*protocol.SQLDiagnostic{{
+		Code: protocol.SQLDiagnostic_SYNTAX, Severity: protocol.SQLDiagnostic_ERROR, DocumentId: "1", Message: "unexpected BOGUS",
+		Span: &protocol.SourceSpan{
+			Start: &protocol.SourcePosition{ByteOffset: offset, Line: 2, Column: 27},
+			End:   &protocol.SourcePosition{ByteOffset: offset + 5, Line: 2, Column: 32},
+		},
+	}}}
+
+	err := sqlSchemaRefusal(request, reply)
+
+	c.Assert(err, qt.ErrorMatches, `one.sql: line 2, column 21: unexpected BOGUS`)
+	at, ok := errors.AsType[*ptaherr.ParseError](err)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(at.Offset, qt.Equals, offset)
+	refusal, ok := errors.AsType[*providerdiagnostic.SchemaRefusal](err)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(refusal.Diagnostics[0].Start, qt.Equals, providerdiagnostic.SchemaPosition{Offset: offset, Line: 2, Column: 27})
+}
+
 func TestSQLSchemaRefusalOfASyntaxErrorIsNotAnUnsupportedFeature(t *testing.T) {
 	c := qt.New(t)
 	reply := &protocol.SQLSchema{Diagnostics: []*protocol.SQLDiagnostic{sqlDiagnostic(protocol.SQLDiagnostic_SYNTAX, protocol.SQLDiagnostic_ERROR, "1", 1, "expected a name")}}
 
 	err := sqlSchemaRefusal(sqlRefusalRequest(), reply)
 
-	c.Assert(err, qt.ErrorMatches, `one.sql: expected a name at position 1 \(line 2, column 3\)`)
+	c.Assert(err, qt.ErrorMatches, `one.sql: line 1, column 2: expected a name`)
 	c.Assert(err, qt.Not(qt.ErrorIs), ptaherr.ErrUnsupportedFeature)
 }
 
@@ -320,7 +351,7 @@ func TestSQLSchemaRefusesAReadingWithWarnings(t *testing.T) {
 
 	err := sqlSchemaRefusal(sqlRefusalRequest(), reply)
 
-	c.Assert(err, qt.ErrorMatches, `two.sql: the provider reported a warning, which Ptah does not report for a SQL schema reading yet; the first: deprecated at position 4 \(line 2, column 3\)`)
+	c.Assert(err, qt.ErrorMatches, `two.sql: line 2, column 2: the provider reported a warning, which Ptah does not report for a SQL schema reading yet; the first: deprecated`)
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 }
 

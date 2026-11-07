@@ -47,7 +47,7 @@ func TestParseColumnReferences_MySQLFailurePath(t *testing.T) {
 		{
 			name: "CREATE TABLE",
 			sql:  "CREATE TABLE child (a INT REFERENCES parents(id));",
-			wantErr: "a column-level REFERENCES clause at position 69: MySQL 8.4 builds nothing from the " +
+			wantErr: "line 2, column 27: a column-level REFERENCES clause: MySQL 8.4 builds nothing from the " +
 				"clause, while MySQL 9.7 and 26.7 build a foreign key and its index, and the SQL file " +
 				"is read without the server version, so Ptah refuses the clause rather than guess which " +
 				"schema it declares; write a table-level FOREIGN KEY clause, which every MySQL line builds",
@@ -55,7 +55,7 @@ func TestParseColumnReferences_MySQLFailurePath(t *testing.T) {
 		{
 			name: "ADD COLUMN",
 			sql:  "CREATE TABLE child (id INT);\nALTER TABLE child ADD COLUMN a INT REFERENCES parents(id);",
-			wantErr: "a column-level REFERENCES clause at position 107: MySQL 8.4 builds nothing from the " +
+			wantErr: "line 3, column 36: a column-level REFERENCES clause: MySQL 8.4 builds nothing from the " +
 				"clause, while MySQL 9.7 and 26.7 build a foreign key and its index, and the SQL file " +
 				"is read without the server version, so Ptah refuses the clause rather than guess which " +
 				"schema it declares; write a table-level FOREIGN KEY clause, which every MySQL line builds",

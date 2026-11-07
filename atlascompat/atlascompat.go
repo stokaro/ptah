@@ -116,7 +116,9 @@ type ParseSQLOptions struct {
 // and an expired Timeout each return a nil list and an error saying what
 // stopped the parse. The package exports no sentinel for these errors: the
 // refusal is the contract, and the message is diagnostic text rather than
-// something to branch on.
+// something to branch on. A refusal that states where it stopped is a
+// [ptah.run/core/ptaherr.ParseError] with Line, Column and Offset set, counted
+// in sql.
 func ParseSQL(sql string, opts ParseSQLOptions) (*ast.StatementList, error) {
 	parserOpts := make([]parser.Option, 0, 3)
 	if opts.Capabilities.Len() > 0 {

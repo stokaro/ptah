@@ -1,6 +1,7 @@
 package parser_test
 
 import (
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -8,6 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/ptaherr"
 	"ptah.run/internal/parser"
 )
 
@@ -29,7 +31,7 @@ func TestNamedColumnConstraintRefusal_IsQuotedAsThePageSaysItIs(t *testing.T) {
 	_, err := parser.NewParser(`CREATE TABLE t (b INTEGER CONSTRAINT c_x DEFAULT 1);`).Parse()
 
 	c.Assert(err, qt.IsNotNil)
-	c.Assert(collapseWhitespace(readSQLSchemaPage(c)), qt.Contains, collapseWhitespace(err.Error()),
+	c.Assert(collapseWhitespace(readSQLSchemaPage(c)), qt.Contains, collapseWhitespace(asReadFromFile(c, err)),
 		qt.Commentf("the refusal changed; update %s", sqlSchemaPage))
 }
 
@@ -90,10 +92,21 @@ func TestMySQLFamilyRefusal_IsQuotedAsThePageSaysItIs(t *testing.T) {
 			_, err := parser.NewParser(test.fixture, parser.WithDialect(test.dialect)).Parse()
 
 			c.Assert(err, qt.IsNotNil)
-			c.Assert(collapseWhitespace(page), qt.Contains, collapseWhitespace(err.Error()),
+			c.Assert(collapseWhitespace(page), qt.Contains, collapseWhitespace(asReadFromFile(c, err)),
 				qt.Commentf("the refusal changed; update %s", sqlSchemaPage))
 		})
 	}
+}
+
+// asReadFromFile is the refusal as the page quotes it, where the reader names
+// the file the examples call schema.sql.
+func asReadFromFile(c *qt.C, err error) string {
+	c.Helper()
+	at, ok := errors.AsType[*ptaherr.ParseError](err)
+	c.Assert(ok, qt.IsTrue, qt.Commentf("%v", err))
+	named := *at
+	named.File = "schema.sql"
+	return named.Error()
 }
 
 // readSQLSchemaPage reads the documentation page the tests in this file

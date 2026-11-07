@@ -15,7 +15,7 @@ import (
 func TestParser_DefaultPrivilegesRequireSelectedOwner(t *testing.T) {
 	c := qt.New(t)
 	statements, err := parser.NewParser("ALTER DEFAULT PRIVILEGES FOR ROLE owner GRANT SELECT ON TABLES TO reader;", parser.WithDialect(platform.Postgres)).Parse()
-	c.Assert(err, qt.ErrorMatches, `unsupported ALTER target: DEFAULT at position \d+`)
+	c.Assert(err, qt.ErrorMatches, `line \d+, column \d+: unsupported ALTER target: DEFAULT`)
 	c.Assert(statements, qt.IsNil)
 }
 
@@ -31,5 +31,5 @@ func TestParser_ParseAlterTargetDispatch(t *testing.T) {
 	c.Assert(alter.Name, qt.Equals, "users")
 
 	_, err = parser.NewParser("ALTER SEQUENCE app.counter RESTART;").Parse()
-	c.Assert(err, qt.ErrorMatches, `unsupported ALTER target: SEQUENCE at position \d+`)
+	c.Assert(err, qt.ErrorMatches, `line \d+, column \d+: unsupported ALTER target: SEQUENCE`)
 }

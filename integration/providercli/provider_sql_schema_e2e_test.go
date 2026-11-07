@@ -91,7 +91,7 @@ func TestNativeCLIRefusesASQLSchemaTheProviderRefuses(t *testing.T) {
 	out, diagnostics, code := f.run(c, c.Context(), "plan", "--schema-file", schema, "--output", f.planPath, "--json")
 
 	c.Assert(code, qt.Equals, 2)
-	c.Assert(diagnostics, qt.Contains, "read SQL schema file "+resolved+": unsupported statement GRANT at position 42 (line 2, column 1)")
+	c.Assert(diagnostics, qt.Contains, "read SQL schema file "+resolved+":2:1: unsupported statement GRANT")
 	var report struct {
 		Outcome           string                                `json:"outcome"`
 		SchemaDiagnostics []providerdiagnostic.SchemaDiagnostic `json:"schema_diagnostics"`
@@ -119,7 +119,7 @@ func TestNativeCLIRefusesAReadingItCannotReportWhole(t *testing.T) {
 		name, text, want string
 	}{
 		{"reply without a trace", "CREATE TABLE malformed (id INTEGER NOT NULL);\n", "provider read SQL schema failed"},
-		{"reading with a warning", "CREATE TABLE warned (id INTEGER NOT NULL);\n", "the provider reported a warning, which Ptah does not report for a SQL schema reading yet; the first: fixture warns about table warned at position 0 (line 1, column 1)"},
+		{"reading with a warning", "CREATE TABLE warned (id INTEGER NOT NULL);\n", "the provider reported a warning, which Ptah does not report for a SQL schema reading yet; the first: fixture warns about table warned"},
 		{"view with settings", "CREATE TABLE items (id INTEGER NOT NULL);\nCREATE VIEW tuned AS SELECT id FROM items;\n", "provider read SQL schema failed (Internal)"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -230,7 +230,7 @@ func TestProviderSQLLoadRefusalNamesTheDocument(t *testing.T) {
 
 	load, err := sqlschema.ReadLoad(c.Context(), sqlext.GrammarRequest{Target: "fixture", Files: files}, sqlschema.Options{Owners: runtime.SQL()})
 
-	c.Assert(err, qt.ErrorMatches, `two.sql: unsupported statement CREATE at position 0 \(line 1, column 1\)`)
+	c.Assert(err, qt.ErrorMatches, `two.sql: line 1, column 1: unsupported statement CREATE`)
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	refusal, ok := errors.AsType[*providerdiagnostic.SchemaRefusal](err)
 	c.Assert(ok, qt.IsTrue)

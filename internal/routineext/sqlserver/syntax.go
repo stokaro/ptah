@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/ptaherr"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/routineext"
 	"ptah.run/internal/sqlcompound"
@@ -464,7 +465,7 @@ func collect(p routineext.Cursor, statementStart int, semicolonMode sqlServerRou
 	}
 
 	if blockDepth > 0 {
-		return "", fmt.Errorf("unterminated CREATE routine body at position %d", p.Current().Start)
+		return "", ptaherr.At(p.Current().Start, fmt.Errorf("unterminated CREATE routine body"))
 	}
 	return p.Fragment(statementStart, p.Previous().End), nil
 }

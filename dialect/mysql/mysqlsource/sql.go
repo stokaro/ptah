@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlext"
 	"ptah.run/dialect/mysql/mysqlschema"
@@ -157,7 +158,7 @@ func readColumnOption(target string, claim sqlext.Claim, settings mysqlschema.Co
 		tokens.next() // SET
 		current := tokens.current()
 		if current.Type != lexer.TokenIdentifier {
-			return mysqlschema.ColumnSettings{}, fmt.Errorf("expected a character set name after CHARACTER SET at position %d", tokens.position())
+			return mysqlschema.ColumnSettings{}, ptaherr.At(tokens.position(), fmt.Errorf("expected a character set name after CHARACTER SET"))
 		}
 		settings.Charset = current.Value
 		tokens.next()
@@ -166,13 +167,13 @@ func readColumnOption(target string, claim sqlext.Claim, settings mysqlschema.Co
 		tokens.next() // UPDATE
 		expression := strings.TrimSpace(tokens.rest())
 		if expression == "" {
-			return mysqlschema.ColumnSettings{}, fmt.Errorf("expected an expression after ON UPDATE at position %d", tokens.position())
+			return mysqlschema.ColumnSettings{}, ptaherr.At(tokens.position(), fmt.Errorf("expected an expression after ON UPDATE"))
 		}
 		settings.OnUpdate = expression
 		return settings, nil
 	}
 	if rest := tokens.current(); rest.Type != lexer.TokenEOF {
-		return mysqlschema.ColumnSettings{}, fmt.Errorf("unexpected %q after the character set at position %d", rest.Value, tokens.position())
+		return mysqlschema.ColumnSettings{}, ptaherr.At(tokens.position(), fmt.Errorf("unexpected %q after the character set", rest.Value))
 	}
 	return settings, nil
 }
@@ -188,14 +189,14 @@ func readBlockSize(target string, claim sqlext.Claim) (uint64, error) {
 	}
 	size, err := strconv.ParseUint(tokens.current().Value, 10, 64)
 	if err != nil {
-		return 0, fmt.Errorf("KEY_BLOCK_SIZE at position %d: expected a non-negative integer", start)
+		return 0, ptaherr.At(start, fmt.Errorf("KEY_BLOCK_SIZE: expected a non-negative integer"))
 	}
 	if err := mysqlindex.ValidateBlockSize(target, size); err != nil {
 		return 0, err
 	}
 	tokens.next()
 	if rest := tokens.current(); rest.Type != lexer.TokenEOF {
-		return 0, fmt.Errorf("unexpected %q after the block size at position %d", rest.Value, tokens.position())
+		return 0, ptaherr.At(tokens.position(), fmt.Errorf("unexpected %q after the block size", rest.Value))
 	}
 	return size, nil
 }
@@ -220,7 +221,7 @@ func readParser(target string, claim sqlext.Claim) (string, error) {
 		return "", fmt.Errorf("WITH PARSER belongs to a FULLTEXT index, and this one is %s", describeIndexType(claim.IndexType))
 	}
 	if rest := tokens.current(); rest.Type != lexer.TokenEOF {
-		return "", fmt.Errorf("unexpected %q after the parser name at position %d", rest.Value, tokens.position())
+		return "", ptaherr.At(tokens.position(), fmt.Errorf("unexpected %q after the parser name", rest.Value))
 	}
 	return unquoteBackticks(name), nil
 }
@@ -311,7 +312,7 @@ func (t *optionTokens) name() (string, error) {
 		return t.bracketed()
 	}
 	if current.Type != lexer.TokenIdentifier && (current.Type != lexer.TokenString || !strings.HasPrefix(current.Value, `"`)) {
-		return "", fmt.Errorf("expected identifier, got %s at position %d", current.Type, t.position())
+		return "", ptaherr.At(t.position(), fmt.Errorf("expected identifier, got %s", current.Type))
 	}
 	t.next()
 	return current.Value, nil
@@ -327,7 +328,7 @@ func (t *optionTokens) bracketed() (string, error) {
 	for {
 		current := t.current()
 		if current.Type == lexer.TokenEOF {
-			return "", fmt.Errorf("unterminated bracketed identifier at position %d", start)
+			return "", ptaherr.At(start, fmt.Errorf("unterminated bracketed identifier"))
 		}
 		value.WriteString(current.Value)
 		t.pos++

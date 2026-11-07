@@ -18,6 +18,7 @@ import (
 	"ptah.run/core/hclext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/descriptor"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlext"
@@ -975,9 +976,23 @@ func readSQLFile(
 		Source:      "schema file " + path,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("read SQL schema file %s: %w", path, err)
+		return nil, nil, sqlFileRefusal(path, err)
 	}
 	return &db, statements, nil
+}
+
+// sqlFileRefusal is err as the refusal of the SQL schema file at path. A refusal
+// that came back with a line and column names the file in front of them, as
+// `path:line:column:`, the form `ptah sql lint` writes for the same file and a
+// terminal or an editor opens. It asks about err itself rather than its chain:
+// a position behind other words stays behind them.
+func sqlFileRefusal(path string, err error) error {
+	if at, ok := err.(*ptaherr.ParseError); ok && at.Column > 0 {
+		named := *at
+		named.File = path
+		return fmt.Errorf("read SQL schema file %w", &named)
+	}
+	return fmt.Errorf("read SQL schema file %s: %w", path, err)
 }
 
 // sourceDatabasePath returns the database root a document's absolute paths

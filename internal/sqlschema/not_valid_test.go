@@ -136,13 +136,13 @@ func TestRead_NotValid_FailurePath(t *testing.T) {
 			name:    "MySQL",
 			dialect: "mysql",
 			sql:     "CREATE TABLE c (a int);\nALTER TABLE c VALIDATE CONSTRAINT c_a;",
-			wantErr: `(?s).*VALIDATE CONSTRAINT at position \d+: the mysql dialect takes no VALIDATE CONSTRAINT.*`,
+			wantErr: `(?s).*VALIDATE CONSTRAINT: the mysql dialect takes no VALIDATE CONSTRAINT.*`,
 		},
 		{
 			name:    "NOT VALID after ALTER TABLE ADD on MySQL",
 			dialect: "mysql",
 			sql:     "CREATE TABLE c (a int);\nALTER TABLE c ADD CONSTRAINT c_a CHECK (a > 0) NOT VALID;",
-			wantErr: `(?s).*NOT VALID at position \d+: the mysql dialect takes no NOT VALID clause.*`,
+			wantErr: `(?s).*NOT VALID: the mysql dialect takes no NOT VALID clause.*`,
 		},
 	}
 	for _, test := range tests {

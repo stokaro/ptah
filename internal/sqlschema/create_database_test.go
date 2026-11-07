@@ -102,7 +102,7 @@ func TestRead_GuardedCreateSchema_FailurePath(t *testing.T) {
 
 			got, _, err := sqlschema.Read([]byte(row.sql), platform.SQLServer)
 
-			c.Assert(err, qt.ErrorMatches, `.*unsupported SQL statement: IF at position 0.*`)
+			c.Assert(err, qt.ErrorMatches, `line 1, column 1: .*unsupported SQL statement: IF.*`)
 			c.Assert(got.Schemas, qt.HasLen, 0)
 		})
 	}
@@ -179,7 +179,7 @@ func TestRead_SchemaCommentCall_FailurePath(t *testing.T) {
 
 			got, _, err := sqlschema.Read([]byte(row.sql), platform.SQLServer)
 
-			c.Assert(err, qt.ErrorMatches, `.*unsupported SQL statement: `+row.want+` at position 0.*`)
+			c.Assert(err, qt.ErrorMatches, `line \d+, column \d+: unsupported SQL statement: `+row.want)
 			c.Assert(got.Schemas, qt.HasLen, 0)
 		})
 	}

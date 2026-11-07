@@ -119,5 +119,5 @@ func TestParse_ARowDeletionPolicyTheServerRefusesIsRefused(t *testing.T) {
 	_, err := parser.NewParser(`CREATE TABLE ttl_d (id bigint PRIMARY KEY, ts timestamptz) TTL INTERVAL '36 hours' ON ts;`,
 		parser.WithDialect(platform.Spanner), withSpannerOwner()).Parse()
 
-	c.Assert(err, qt.ErrorMatches, `(?s).*TTL at position \d+: .*interval "36 hours" is not a whole number of days, which Spanner refuses.*`)
+	c.Assert(err, qt.ErrorMatches, `(?s).*TTL: .*interval "36 hours" is not a whole number of days, which Spanner refuses.*`)
 }

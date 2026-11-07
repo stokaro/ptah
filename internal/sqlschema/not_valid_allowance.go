@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/ptahdirective"
+	"ptah.run/internal/sourcepos"
 )
 
 // ErrNotValidAllowance is the refusal of a `ptah:allow-not-valid` directive
@@ -93,7 +94,8 @@ func cutConstraintOnTable(text string) (name, table string, ok bool) {
 // directiveLocation names the line offset falls on, after source when there
 // is one.
 func directiveLocation(source, text string, offset int) string {
-	line := fmt.Sprintf("line %d", strings.Count(text[:offset], "\n")+1)
+	number, _ := sourcepos.Locate(text, offset)
+	line := fmt.Sprintf("line %d", number)
 	if source == "" {
 		return line
 	}

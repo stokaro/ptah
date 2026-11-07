@@ -113,8 +113,8 @@ ptah db read --db-url "sqlite://app.db" > schema.sql
 
 The redirection is the one step of this page that is not shell-neutral. A
 PowerShell redirect writes UTF-16 or a byte-order mark depending on the
-version, and Ptah's SQL reader refuses either with `expected SQL keyword, got
-Operator at position 0`. On Windows, write the file with
+version, and Ptah's SQL reader refuses either with `read SQL schema file
+schema.sql:1:1: expected SQL keyword, got Operator`. On Windows, write the file with
 `Set-Content -Encoding ascii` or save the output from an editor. For the rest
 of this page, `schema.sql` holds exactly what the command printed:
 

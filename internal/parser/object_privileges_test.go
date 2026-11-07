@@ -165,22 +165,22 @@ func TestParser_ParseObjectPrivileges_FailurePath(t *testing.T) {
 		{
 			name:    "a routine named without its argument types",
 			sql:     "GRANT EXECUTE ON FUNCTION purge_workspace TO r;",
-			wantErr: `GRANT \.\.\. ON FUNCTION purge_workspace needs the argument types at position \d+, as in purge_workspace\(uuid\): a routine's identity includes them`,
+			wantErr: `line \d+, column \d+: GRANT \.\.\. ON FUNCTION purge_workspace needs the argument types, as in purge_workspace\(uuid\): a routine's identity includes them`,
 		},
 		{
 			name:    "a REVOKE on a routine named without its argument types",
 			sql:     "REVOKE ALL ON PROCEDURE archive FROM PUBLIC;",
-			wantErr: `REVOKE \.\.\. ON PROCEDURE archive needs the argument types .*`,
+			wantErr: `line \d+, column \d+: REVOKE \.\.\. ON PROCEDURE archive needs the argument types, .*`,
 		},
 		{
 			name:    "privileges naming different column lists",
 			sql:     "GRANT SELECT (a), UPDATE (a, b) ON t TO r;",
-			wantErr: `GRANT names a different column list for UPDATE at position \d+: one statement here limits all of its privileges to the same columns, so write one statement per column list`,
+			wantErr: `line \d+, column \d+: GRANT names a different column list for UPDATE: one statement here limits all of its privileges to the same columns, so write one statement per column list`,
 		},
 		{
 			name:    "one privilege naming columns and another not",
 			sql:     "REVOKE SELECT, UPDATE (a) ON t FROM r;",
-			wantErr: `REVOKE names a different column list for UPDATE at position \d+: .*`,
+			wantErr: `line \d+, column \d+: REVOKE names a different column list for UPDATE: .*`,
 		},
 		{
 			name:    "columns on a target that has none",
@@ -190,22 +190,22 @@ func TestParser_ParseObjectPrivileges_FailurePath(t *testing.T) {
 		{
 			name:    "ALL ... IN SCHEMA",
 			sql:     "GRANT SELECT ON ALL TABLES IN SCHEMA app TO r;",
-			wantErr: `GRANT \.\.\. ON ALL \.\.\. IN SCHEMA is not supported at position \d+: it applies to the objects that exist when it runs, so name each object instead`,
+			wantErr: `line \d+, column \d+: GRANT \.\.\. ON ALL \.\.\. IN SCHEMA is not supported: it applies to the objects that exist when it runs, so name each object instead`,
 		},
 		{
 			name:    "a list of grantees in a REVOKE",
 			sql:     "REVOKE SELECT ON t FROM a, b;",
-			wantErr: `REVOKE names one grantee here, not a list, at position \d+: write one statement per role`,
+			wantErr: `line \d+, column \d+: REVOKE names one grantee here, not a list: write one statement per role`,
 		},
 		{
 			name:    "GRANTED BY",
 			sql:     "REVOKE SELECT ON t FROM a GRANTED BY owner;",
-			wantErr: `REVOKE \.\.\. GRANTED BY is not supported at position \d+: grants are not keyed by grantor here`,
+			wantErr: `line \d+, column \d+: REVOKE \.\.\. GRANTED BY is not supported: grants are not keyed by grantor here`,
 		},
 		{
 			name:    "CASCADE",
 			sql:     "REVOKE SELECT ON t FROM a CASCADE;",
-			wantErr: `REVOKE \.\.\. CASCADE is not supported at position \d+: it also revokes what the role granted onward, which a desired-state file cannot see`,
+			wantErr: `line \d+, column \d+: REVOKE \.\.\. CASCADE is not supported: it also revokes what the role granted onward, which a desired-state file cannot see`,
 		},
 	}
 

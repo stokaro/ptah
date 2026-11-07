@@ -33,25 +33,25 @@ func TestTableElementTypo_FailurePath(t *testing.T) {
 				bio TEXT NOT NULL,
 				FULLTEXTT ft_b (bio)
 			);`,
-			wantErr: `table "t" declares "FULLTEXTT" with type "ft_b\(bio\)".*"bio" is a column of "t".*misspelled.*`,
+			wantErr: `line \d+, column \d+: table "t" declares "FULLTEXTT" with type "ft_b\(bio\)".*"bio" is a column of "t".*misspelled.*`,
 		},
 		{
 			name:    "KEY misspelled, naming a column the body declares later",
 			dialect: platform.MySQL,
 			sql:     `CREATE TABLE t (KEYY k (b), b INT);`,
-			wantErr: `table "t" declares "KEYY" with type "k\(b\)".*"b" is a column of "t".*`,
+			wantErr: `line \d+, column \d+: table "t" declares "KEYY" with type "k\(b\)".*"b" is a column of "t".*`,
 		},
 		{
 			name:    "INDEX misspelled over two columns",
 			dialect: platform.MariaDB,
 			sql:     `CREATE TABLE t (a INT, b INT, INDEXX i (a, b));`,
-			wantErr: `table "t" declares "INDEXX" with type "i\(a, b\)".*"a", "b" are each a column of "t".*`,
+			wantErr: `line \d+, column \d+: table "t" declares "INDEXX" with type "i\(a, b\)".*"a", "b" are each a column of "t".*`,
 		},
 		{
 			name:    "UNIQUE misspelled, on a dialect with no MySQL index grammar at all",
 			dialect: platform.Postgres,
 			sql:     `CREATE TABLE t (a INT, UNIQE u (a));`,
-			wantErr: `table "t" declares "UNIQE" with type "u\(a\)".*"a" is a column of "t".*`,
+			wantErr: `line \d+, column \d+: table "t" declares "UNIQE" with type "u\(a\)".*"a" is a column of "t".*`,
 		},
 		{
 			// A column nobody can spell without quotes. The rule reads the
@@ -60,7 +60,7 @@ func TestTableElementTypo_FailurePath(t *testing.T) {
 			name:    "misspelled over a quoted column name",
 			dialect: platform.MySQL,
 			sql:     `CREATE TABLE t ("my col" INT, KEYY k ("my col"));`,
-			wantErr: `table "t" declares "KEYY" with type .*my col.*is a column of "t".*`,
+			wantErr: `line \d+, column \d+: table "t" declares "KEYY" with type .*my col.*is a column of "t".*`,
 		},
 	}
 
@@ -194,7 +194,7 @@ func TestTableElementTypo_ClickHouseWritesThisShapeOrdinarily(t *testing.T) {
 		c := qt.New(t)
 		statements, err := parser.NewParser(document,
 			parser.WithDialect(platform.MySQL)).Parse()
-		c.Assert(err, qt.ErrorMatches, `table "t" declares "label" with type "Nullable\(String\)".*`)
+		c.Assert(err, qt.ErrorMatches, `line \d+, column \d+: table "t" declares "label" with type "Nullable\(String\)".*`)
 		c.Assert(statements, qt.IsNil)
 	})
 }

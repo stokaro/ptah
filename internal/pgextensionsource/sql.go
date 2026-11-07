@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlext"
 	"ptah.run/feature/pgextension"
@@ -191,7 +192,7 @@ func (t *statementTokens) name(what string) (string, error) {
 		t.pos++
 		return strings.ReplaceAll(strings.TrimSuffix(strings.TrimPrefix(token.Value, `"`), `"`), `""`, `"`), nil
 	default:
-		return "", fmt.Errorf("expected %s: expected identifier, got %s at position %d", what, token.Type, t.position(token))
+		return "", ptaherr.At(t.position(token), fmt.Errorf("expected %s: expected identifier, got %s", what, token.Type))
 	}
 }
 
@@ -212,11 +213,11 @@ func (t *statementTokens) fold(value string) string {
 func (t *statementTokens) stringConstant(what string) (string, error) {
 	token := t.current()
 	if token.Type != lexer.TokenString || strings.HasPrefix(token.Value, `"`) {
-		return "", fmt.Errorf("expected a string constant for %s at position %d", what, t.position(token))
+		return "", ptaherr.At(t.position(token), fmt.Errorf("expected a string constant for %s", what))
 	}
 	text, ok := lexer.StringValue(token.Value, t.options)
 	if !ok {
-		return "", fmt.Errorf("the string constant for %s at position %d is not one the server reads", what, t.position(token))
+		return "", ptaherr.At(t.position(token), fmt.Errorf("the string constant for %s is not one the server reads", what))
 	}
 	t.pos++
 	return text, nil
@@ -230,11 +231,11 @@ func (t *statementTokens) create() (sqlext.Value, error) {
 	if t.keyword("IF") {
 		t.pos++
 		if !t.keyword("NOT") {
-			return sqlext.Value{}, fmt.Errorf("expected NOT EXISTS after IF at position %d", t.position(t.current()))
+			return sqlext.Value{}, ptaherr.At(t.position(t.current()), fmt.Errorf("expected NOT EXISTS after IF"))
 		}
 		t.pos++
 		if !t.keyword("EXISTS") {
-			return sqlext.Value{}, fmt.Errorf("expected EXISTS after IF NOT at position %d", t.position(t.current()))
+			return sqlext.Value{}, ptaherr.At(t.position(t.current()), fmt.Errorf("expected EXISTS after IF NOT"))
 		}
 		t.pos++
 		declared.IfNotExists = true
@@ -292,7 +293,7 @@ func (t *statementTokens) createOptions(declared *pgextension.DesiredExtension) 
 			}
 			declared.Version = value
 		default:
-			return fmt.Errorf("unsupported CREATE EXTENSION option %q at position %d", token.Value, t.position(token))
+			return ptaherr.At(t.position(token), fmt.Errorf("unsupported CREATE EXTENSION option %q", token.Value))
 		}
 	}
 }
@@ -308,7 +309,7 @@ func (t *statementTokens) version() (string, error) {
 		t.pos++
 		return strings.Trim(token.Value, `"`), nil
 	default:
-		return "", fmt.Errorf("expected extension version, got %s at position %d", token.Type, t.position(token))
+		return "", ptaherr.At(t.position(token), fmt.Errorf("expected extension version, got %s", token.Type))
 	}
 }
 
@@ -322,7 +323,7 @@ func (t *statementTokens) comment(known map[string]schemaext.Object) (sqlext.Val
 		return sqlext.Value{}, err
 	}
 	if !t.keyword("IS") {
-		return sqlext.Value{}, fmt.Errorf("expected IS after COMMENT ON EXTENSION %s at position %d", name, t.position(t.current()))
+		return sqlext.Value{}, ptaherr.At(t.position(t.current()), fmt.Errorf("expected IS after COMMENT ON EXTENSION %s", name))
 	}
 	t.pos++
 	text, err := t.stringConstant("the extension comment")
@@ -330,7 +331,7 @@ func (t *statementTokens) comment(known map[string]schemaext.Object) (sqlext.Val
 		return sqlext.Value{}, err
 	}
 	if token := t.current(); token.Type != lexer.TokenEOF {
-		return sqlext.Value{}, fmt.Errorf("unexpected %q after COMMENT ON EXTENSION %s at position %d", token.Value, name, t.position(token))
+		return sqlext.Value{}, ptaherr.At(t.position(token), fmt.Errorf("unexpected %q after COMMENT ON EXTENSION %s", token.Value, name))
 	}
 	amended := pgextension.DesiredExtension{Comment: text}
 	var targets []string
@@ -359,7 +360,7 @@ func (t *statementTokens) drop() (sqlext.Value, error) {
 	if t.keyword("IF") {
 		t.pos++
 		if !t.keyword("EXISTS") {
-			return sqlext.Value{}, fmt.Errorf("expected EXISTS after IF at position %d", t.position(t.current()))
+			return sqlext.Value{}, ptaherr.At(t.position(t.current()), fmt.Errorf("expected EXISTS after IF"))
 		}
 		t.pos++
 		operation.IfExists = true
@@ -370,8 +371,8 @@ func (t *statementTokens) drop() (sqlext.Value, error) {
 	}
 	operation.Name = name
 	if token := t.current(); token.Type == lexer.TokenOperator && token.Value == "," {
-		return sqlext.Value{}, fmt.Errorf("DROP EXTENSION %s, ... at position %d: the extension owner reads one extension per DROP EXTENSION; "+
-			"write a statement for each", name, t.position(token))
+		return sqlext.Value{}, ptaherr.At(t.position(token), fmt.Errorf("DROP EXTENSION %s, ...: the extension owner reads one extension per DROP EXTENSION; "+
+			"write a statement for each", name))
 	}
 	switch {
 	case t.keyword("CASCADE"):
@@ -401,8 +402,8 @@ func (t *statementTokens) alter() (sqlext.Value, error) {
 	case t.keyword("UPDATE"):
 		t.pos++
 		if !t.keyword("TO") {
-			return sqlext.Value{}, fmt.Errorf("ALTER EXTENSION %s UPDATE at position %d: the extension owner reads an update to a named version; "+
-				"write UPDATE TO the version", name, t.position(token))
+			return sqlext.Value{}, ptaherr.At(t.position(token), fmt.Errorf("ALTER EXTENSION %s UPDATE: the extension owner reads an update to a named version; "+
+				"write UPDATE TO the version", name))
 		}
 		t.pos++
 		operation.Action = pgextension.UpdateVersion
@@ -412,7 +413,7 @@ func (t *statementTokens) alter() (sqlext.Value, error) {
 	case t.keyword("SET"):
 		t.pos++
 		if !t.keyword("SCHEMA") {
-			return sqlext.Value{}, fmt.Errorf("expected SCHEMA after SET in ALTER EXTENSION %s at position %d", name, t.position(t.current()))
+			return sqlext.Value{}, ptaherr.At(t.position(t.current()), fmt.Errorf("expected SCHEMA after SET in ALTER EXTENSION %s", name))
 		}
 		t.pos++
 		operation.Action = pgextension.SetSchema
@@ -420,8 +421,8 @@ func (t *statementTokens) alter() (sqlext.Value, error) {
 			return sqlext.Value{}, err
 		}
 	default:
-		return sqlext.Value{}, fmt.Errorf("unsupported ALTER EXTENSION %s action %q at position %d: the extension owner reads UPDATE TO and SET SCHEMA",
-			name, token.Value, t.position(token))
+		return sqlext.Value{}, ptaherr.At(t.position(token), fmt.Errorf("unsupported ALTER EXTENSION %s action %q: the extension owner reads UPDATE TO and SET SCHEMA",
+			name, token.Value))
 	}
 	if err := t.finished("ALTER EXTENSION " + name); err != nil {
 		return sqlext.Value{}, err
@@ -432,7 +433,7 @@ func (t *statementTokens) alter() (sqlext.Value, error) {
 // finished refuses anything after a statement's last clause.
 func (t *statementTokens) finished(statement string) error {
 	if token := t.current(); token.Type != lexer.TokenEOF {
-		return fmt.Errorf("unexpected %q after %s at position %d", token.Value, statement, t.position(token))
+		return ptaherr.At(t.position(token), fmt.Errorf("unexpected %q after %s", token.Value, statement))
 	}
 	return nil
 }

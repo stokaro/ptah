@@ -1,11 +1,13 @@
 package mssqlroutinesource_test
 
 import (
+	"errors"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlext"
 	"ptah.run/dialect/mssql/mssqlschema"
@@ -92,24 +94,25 @@ func TestSQL_CombinesTheOptionsOfOneRoutine(t *testing.T) {
 // than read as the owner or as one option.
 func TestSQL_ReadsTheOptions_FailurePath(t *testing.T) {
 	for _, test := range []struct {
-		name    string
-		options []option
-		wantErr string
+		name       string
+		options    []option
+		wantErr    string
+		wantOffset int
 	}{
-		{name: "a bare word", options: []option{{pattern: "execute-as", definition: 1, text: "EXECUTE AS auditor"}},
-			wantErr: `.*EXECUTE AS auditor of dbo.p at position 30: EXECUTE AS names CALLER, SELF, OWNER or a user name in quotes, not auditor`},
-		{name: "two principals in one clause", options: []option{{pattern: "execute-as", definition: 1, text: "EXECUTE AS 'a' 'b'"}},
+		{name: "a bare word", options: []option{{pattern: "execute-as", definition: 1, text: "EXECUTE AS auditor"}}, wantOffset: 30,
+			wantErr: `.*EXECUTE AS auditor of dbo.p: EXECUTE AS names CALLER, SELF, OWNER or a user name in quotes, not auditor`},
+		{name: "two principals in one clause", options: []option{{pattern: "execute-as", definition: 1, text: "EXECUTE AS 'a' 'b'"}}, wantOffset: 30,
 			wantErr: `.*EXECUTE AS takes one principal`},
-		{name: "an empty name", options: []option{{pattern: "execute-as", definition: 1, text: "EXECUTE AS ''"}},
+		{name: "an empty name", options: []option{{pattern: "execute-as", definition: 1, text: "EXECUTE AS ''"}}, wantOffset: 30,
 			wantErr: `.*must name a database user.*`},
-		{name: "two EXECUTE AS clauses", wantErr: `.*EXECUTE AS 'b' of dbo.p at position 40: the routine states EXECUTE AS twice`,
+		{name: "two EXECUTE AS clauses", wantErr: `.*EXECUTE AS 'b' of dbo.p: the routine states EXECUTE AS twice`, wantOffset: 40,
 			options: []option{{pattern: "execute-as", definition: 1, text: "EXECUTE AS 'a'"}, {pattern: "execute-as", definition: 1, text: "EXECUTE AS 'b'"}}},
-		{name: "an option twice", wantErr: `.*RECOMPILE of dbo.p at position 40: the routine states the option twice`,
+		{name: "an option twice", wantErr: `.*RECOMPILE of dbo.p: the routine states the option twice`, wantOffset: 40,
 			options: []option{{pattern: "recompile", definition: 1, text: "RECOMPILE"}, {pattern: "recompile", definition: 1, text: "RECOMPILE"}}},
-		{name: "an option with a value", options: []option{{pattern: "schemabinding", definition: 1, text: "SCHEMABINDING = ON"}},
-			wantErr: `.*SCHEMABINDING = ON of dbo.p at position 30: the option takes no value`},
-		{name: "a partial null input rule", options: []option{{pattern: "returns-null-on-null-input", definition: 1, text: "RETURNS NULL ON INPUT"}},
-			wantErr: `.*RETURNS NULL ON INPUT of dbo.p at position 30: the option is RETURNS NULL ON NULL INPUT`},
+		{name: "an option with a value", options: []option{{pattern: "schemabinding", definition: 1, text: "SCHEMABINDING = ON"}}, wantOffset: 30,
+			wantErr: `.*SCHEMABINDING = ON of dbo.p: the option takes no value`},
+		{name: "a partial null input rule", options: []option{{pattern: "returns-null-on-null-input", definition: 1, text: "RETURNS NULL ON INPUT"}}, wantOffset: 30,
+			wantErr: `.*RETURNS NULL ON INPUT of dbo.p: the option is RETURNS NULL ON NULL INPUT`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -118,6 +121,9 @@ func TestSQL_ReadsTheOptions_FailurePath(t *testing.T) {
 
 			c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			at, ok := errors.AsType[*ptaherr.ParseError](err)
+			c.Assert(ok, qt.IsTrue)
+			c.Assert(at.Offset, qt.Equals, test.wantOffset)
 			c.Assert(result.Values, qt.IsNil)
 		})
 	}

@@ -187,60 +187,60 @@ func TestParse_AlterTableOperations_FailurePath(t *testing.T) {
 		{
 			name: "an ALTER COLUMN action Ptah does not model", dialect: "postgres",
 			sql:     "ALTER TABLE t ALTER COLUMN a SET STATISTICS 100;",
-			wantErr: `unsupported ALTER COLUMN a SET STATISTICS at position \d+: a schema file may set a column's default, NOT NULL or type this way; declare anything else on the column itself`,
+			wantErr: `line \d+, column \d+: unsupported ALTER COLUMN a SET STATISTICS: a schema file may set a column's default, NOT NULL or type this way; declare anything else on the column itself`,
 		},
 		{
 			name: "identity added later", dialect: "postgres",
 			sql:     "ALTER TABLE t ALTER COLUMN a ADD GENERATED ALWAYS AS IDENTITY;",
-			wantErr: `unsupported ALTER COLUMN a ADD GENERATED at position \d+: .*`,
+			wantErr: `line \d+, column \d+: unsupported ALTER COLUMN a ADD GENERATED: .*`,
 		},
 		{
 			name: "a collation in a type change", dialect: "postgres",
 			sql:     `ALTER TABLE t ALTER COLUMN a TYPE text COLLATE "C";`,
-			wantErr: `unsupported COLLATE in ALTER COLUMN a TYPE at position \d+: declare the collation on the column itself`,
+			wantErr: `line \d+, column \d+: unsupported COLLATE in ALTER COLUMN a TYPE: declare the collation on the column itself`,
 		},
 		{
 			name: "USING with nothing after it", dialect: "postgres",
 			sql:     "ALTER TABLE t ALTER COLUMN a TYPE bigint USING;",
-			wantErr: `expected an expression after USING at position \d+`,
+			wantErr: `line \d+, column \d+: expected an expression after USING`,
 		},
 		{
 			// PostgreSQL has no ALTER COLUMN a <type>.
 			name: "a whole definition under PostgreSQL", dialect: "postgres",
 			sql:     "ALTER TABLE t ALTER COLUMN a bigint;",
-			wantErr: `expected an ALTER COLUMN a action \(SET, DROP or TYPE\) at position \d+`,
+			wantErr: `line \d+, column \d+: expected an ALTER COLUMN a action \(SET, DROP or TYPE\)`,
 		},
 		{
 			name: "SQL Server without COLUMN", dialect: "sqlserver",
 			sql:     "ALTER TABLE t ALTER a bigint;",
-			wantErr: `expected COLUMN after ALTER at position \d+`,
+			wantErr: `line \d+, column \d+: expected COLUMN after ALTER`,
 		},
 		{
 			name: "DROP CONSTRAINT CASCADE", dialect: "postgres",
 			sql:     "ALTER TABLE t DROP CONSTRAINT t_ck CASCADE;",
-			wantErr: `DROP CONSTRAINT t_ck CASCADE at position \d+: CASCADE also drops the objects that depend on the constraint, which a schema file does not list; drop them by name`,
+			wantErr: `line \d+, column \d+: DROP CONSTRAINT t_ck CASCADE: CASCADE also drops the objects that depend on the constraint, which a schema file does not list; drop them by name`,
 		},
 		{
 			name: "DROP FOREIGN without KEY", dialect: "mysql",
 			sql:     "ALTER TABLE t DROP FOREIGN t_fk;",
-			wantErr: `expected KEY after DROP FOREIGN: .*`,
+			wantErr: `line \d+, column \d+: expected KEY after DROP FOREIGN: .*`,
 		},
 		{
 			// PostgreSQL renames an index with ALTER INDEX; ALTER TABLE has no
 			// RENAME INDEX, and the words read as a column rename.
 			name: "RENAME INDEX under PostgreSQL", dialect: "postgres",
 			sql:     "ALTER TABLE t RENAME INDEX b TO other;",
-			wantErr: `expected TO after old column name: .*`,
+			wantErr: `line \d+, column \d+: expected TO after old column name: .*`,
 		},
 		{
 			name: "RENAME INDEX without TO", dialect: "mysql",
 			sql:     "ALTER TABLE t RENAME INDEX b other;",
-			wantErr: `expected TO after the index name: .*`,
+			wantErr: `line \d+, column \d+: expected TO after the index name: .*`,
 		},
 		{
 			name: "IF without EXISTS", dialect: "postgres",
 			sql:     "ALTER TABLE t DROP COLUMN IF a;",
-			wantErr: `expected EXISTS after IF: .*`,
+			wantErr: `line \d+, column \d+: expected EXISTS after IF: .*`,
 		},
 	}
 	for _, row := range rows {

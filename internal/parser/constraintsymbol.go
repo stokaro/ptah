@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/descriptor"
+	"ptah.run/core/ptaherr"
 	"ptah.run/internal/lexer"
 )
 
@@ -171,10 +172,9 @@ func (p *Parser) admitSymbolLessTableConstraint(start int) error {
 		return p.constraintSymbolRequired(start, kind)
 	}
 	if !slices.Contains(mysqlSymbolLessTableKinds, kind) {
-		return fmt.Errorf(
-			"CONSTRAINT at position %d is followed by %s, not by a name: %s accepts CONSTRAINT "+
-				"without a name only before PRIMARY KEY, UNIQUE, FOREIGN KEY and CHECK",
-			start, kind, p.dialect)
+		return ptaherr.At(start, fmt.Errorf(
+			"CONSTRAINT is followed by %s, not by a name: %s accepts CONSTRAINT "+
+				"without a name only before PRIMARY KEY, UNIQUE, FOREIGN KEY and CHECK", kind, p.dialect))
 	}
 	return nil
 }
@@ -189,11 +189,10 @@ func (p *Parser) refuseConstraintBeforeIndex(start int) error {
 	if p.current.Type != lexer.TokenIdentifier || !containsFold(indexKindWords, p.current.Value) {
 		return nil
 	}
-	return fmt.Errorf(
-		"CONSTRAINT at position %d stands before %s, which declares an index: an index takes "+
+	return ptaherr.At(start, fmt.Errorf(
+		"CONSTRAINT stands before %s, which declares an index: an index takes "+
 			"no CONSTRAINT keyword, and MySQL and MariaDB answer ERROR 1064 (42000) to one; "+
-			"drop the CONSTRAINT keyword",
-		start, strings.ToUpper(p.current.Value))
+			"drop the CONSTRAINT keyword", strings.ToUpper(p.current.Value)))
 }
 
 // handleSymbolLessColumnConstraint reads a column constraint written after a
@@ -237,15 +236,14 @@ func (p *Parser) refuseMySQLColumnConstraint(start int, symbol string) error {
 		return nil
 	}
 	if symbol == "" {
-		return fmt.Errorf(
-			"CONSTRAINT at position %d is followed by %s, not by a name: %s, %s %s, and answers "+
-				"ERROR 1064 (42000) to this; drop the CONSTRAINT keyword",
-			start, kind, where, p.dialect, acceptedConstraint(accepted, "without a name"))
+		return ptaherr.At(start, fmt.Errorf(
+			"CONSTRAINT is followed by %s, not by a name: %s, %s %s, and answers "+
+				"ERROR 1064 (42000) to this; drop the CONSTRAINT keyword", kind, where, p.dialect, acceptedConstraint(accepted, "without a name")))
 	}
-	return fmt.Errorf(
-		"CONSTRAINT %s at position %d is followed by %s: %s, %s %s, and answers ERROR 1064 (42000) "+
+	return ptaherr.At(start, fmt.Errorf(
+		"CONSTRAINT %s is followed by %s: %s, %s %s, and answers ERROR 1064 (42000) "+
 			"to this; drop CONSTRAINT %s",
-		symbol, start, kind, where, p.dialect, acceptedConstraint(accepted, "with a name"), symbol)
+		symbol, kind, where, p.dialect, acceptedConstraint(accepted, "with a name"), symbol))
 }
 
 // acceptedConstraint says, in the words of a refusal, which kind an engine
@@ -262,9 +260,8 @@ func acceptedConstraint(kind, spelling string) string {
 // whose grammar requires one. A document with no dialect is refused too: it is
 // read to render anywhere, and the spelling renders on the MySQL family alone.
 func (p *Parser) constraintSymbolRequired(start int, kind string) error {
-	return fmt.Errorf(
-		"CONSTRAINT at position %d is followed by %s, not by a name: %s requires a name after "+
+	return ptaherr.At(start, fmt.Errorf(
+		"CONSTRAINT is followed by %s, not by a name: %s requires a name after "+
 			"CONSTRAINT, and only MySQL and MariaDB accept the keyword without one; name the "+
-			"constraint, or drop the CONSTRAINT keyword",
-		start, kind, describeFunctionalKeyDialect(p.dialect))
+			"constraint, or drop the CONSTRAINT keyword", kind, describeFunctionalKeyDialect(p.dialect)))
 }

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlext"
 	"ptah.run/dialect/clickhouse/chast"
@@ -155,7 +156,8 @@ func (t *rowPolicyTokens) clause(command *chast.RowPolicyCommand, clause string,
 	case "TO":
 		return t.roles(command)
 	default:
-		return t.fail("unsupported row policy clause " + clause)
+		// The clause is the token before the cursor, and the refusal is about it.
+		return ptaherr.At(t.position(t.tokens[t.pos-1]), fmt.Errorf("ClickHouse ROW POLICY: unsupported row policy clause %s (got %q)", clause, t.current().Value))
 	}
 	return nil
 }

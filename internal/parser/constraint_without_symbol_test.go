@@ -219,7 +219,7 @@ func TestParseConstraintWithoutSymbol_FailurePath(t *testing.T) {
 			name:    "a foreign key on PostgreSQL",
 			dialect: platform.Postgres,
 			sql:     "CREATE TABLE c (id INT, p_id INT, CONSTRAINT FOREIGN KEY (p_id) REFERENCES p(id));",
-			wantErr: `CONSTRAINT at position 71 is followed by FOREIGN, not by a name: postgres requires a name ` +
+			wantErr: `line 2, column 35: CONSTRAINT is followed by FOREIGN, not by a name: postgres requires a name ` +
 				`after CONSTRAINT, and only MySQL and MariaDB accept the keyword without one; name the ` +
 				`constraint, or drop the CONSTRAINT keyword`,
 		},
@@ -227,63 +227,63 @@ func TestParseConstraintWithoutSymbol_FailurePath(t *testing.T) {
 			name:    "a unique key on PostgreSQL",
 			dialect: platform.Postgres,
 			sql:     "CREATE TABLE c (id INT, a INT, CONSTRAINT UNIQUE (a));",
-			wantErr: `CONSTRAINT at position 68 is followed by UNIQUE, not by a name: postgres requires a name .*`,
+			wantErr: `line 2, column 32: CONSTRAINT is followed by UNIQUE, not by a name: postgres requires a name .*`,
 		},
 		{
 			name:    "a primary key on PostgreSQL",
 			dialect: platform.Postgres,
 			sql:     "CREATE TABLE c (id INT, CONSTRAINT PRIMARY KEY (id));",
-			wantErr: `CONSTRAINT at position 61 is followed by PRIMARY, not by a name: postgres requires a name .*`,
+			wantErr: `line 2, column 25: CONSTRAINT is followed by PRIMARY, not by a name: postgres requires a name .*`,
 		},
 		{
 			name:    "a check on PostgreSQL",
 			dialect: platform.Postgres,
 			sql:     "CREATE TABLE c (id INT, a INT, CONSTRAINT CHECK (a > 0));",
-			wantErr: `CONSTRAINT at position 68 is followed by CHECK, not by a name: postgres requires a name .*`,
+			wantErr: `line 2, column 32: CONSTRAINT is followed by CHECK, not by a name: postgres requires a name .*`,
 		},
 		{
 			name:    "an exclusion constraint on PostgreSQL",
 			dialect: platform.Postgres,
 			sql:     "CREATE TABLE c (id INT, a INT, CONSTRAINT EXCLUDE USING btree (a WITH =));",
-			wantErr: `CONSTRAINT at position 68 is followed by EXCLUDE, not by a name: postgres requires a name .*`,
+			wantErr: `line 2, column 32: CONSTRAINT is followed by EXCLUDE, not by a name: postgres requires a name .*`,
 		},
 		{
 			name:    "a foreign key ALTER TABLE adds on PostgreSQL",
 			dialect: platform.Postgres,
 			sql:     "CREATE TABLE c (id INT, a INT);\nALTER TABLE c ADD CONSTRAINT FOREIGN KEY (a) REFERENCES p(id);",
-			wantErr: `CONSTRAINT at position 87 is followed by FOREIGN, not by a name: postgres requires a name .*`,
+			wantErr: `line 3, column 19: CONSTRAINT is followed by FOREIGN, not by a name: postgres requires a name .*`,
 		},
 		{
 			name:    "a check on a column on PostgreSQL",
 			dialect: platform.Postgres,
 			sql:     "CREATE TABLE c (id INT, a INT CONSTRAINT CHECK (a > 0));",
-			wantErr: `CONSTRAINT at position 67 is followed by CHECK, not by a name: postgres requires a name .*`,
+			wantErr: `line 2, column 31: CONSTRAINT is followed by CHECK, not by a name: postgres requires a name .*`,
 		},
 		{
 			name:    "a NOT NULL on a column on PostgreSQL",
 			dialect: platform.Postgres,
 			sql:     "CREATE TABLE c (id INT, a INT CONSTRAINT NOT NULL);",
-			wantErr: `CONSTRAINT at position 67 is followed by NOT, not by a name: postgres requires a name .*`,
+			wantErr: `line 2, column 31: CONSTRAINT is followed by NOT, not by a name: postgres requires a name .*`,
 		},
 		{
 			name:    "a foreign key in a document with no dialect",
 			dialect: "",
 			sql:     "CREATE TABLE c (id INT, p_id INT, CONSTRAINT FOREIGN KEY (p_id) REFERENCES p(id));",
-			wantErr: `CONSTRAINT at position 71 is followed by FOREIGN, not by a name: a dialect-neutral document ` +
+			wantErr: `line 2, column 35: CONSTRAINT is followed by FOREIGN, not by a name: a dialect-neutral document ` +
 				`requires a name after CONSTRAINT, .*`,
 		},
 		{
 			name:    "an exclusion constraint on MySQL",
 			dialect: platform.MySQL,
 			sql:     "CREATE TABLE c (id INT, a INT, CONSTRAINT EXCLUDE USING btree (a WITH =));",
-			wantErr: `CONSTRAINT at position 68 is followed by EXCLUDE, not by a name: mysql accepts CONSTRAINT ` +
+			wantErr: `line 2, column 32: CONSTRAINT is followed by EXCLUDE, not by a name: mysql accepts CONSTRAINT ` +
 				`without a name only before PRIMARY KEY, UNIQUE, FOREIGN KEY and CHECK`,
 		},
 		{
 			name:    "a reference on a column on MySQL",
 			dialect: platform.MySQL,
 			sql:     "CREATE TABLE c (id INT, a INT CONSTRAINT REFERENCES p(id));",
-			wantErr: `CONSTRAINT at position 67 is followed by REFERENCES, not by a name: on a column, mysql ` +
+			wantErr: `line 2, column 31: CONSTRAINT is followed by REFERENCES, not by a name: on a column, mysql ` +
 				`accepts CONSTRAINT without a name only before CHECK, and answers ERROR 1064 \(42000\) to ` +
 				`this; drop the CONSTRAINT keyword`,
 		},
@@ -291,31 +291,31 @@ func TestParseConstraintWithoutSymbol_FailurePath(t *testing.T) {
 			name:    "a unique key on a column on MySQL",
 			dialect: platform.MySQL,
 			sql:     "CREATE TABLE c (id INT, a INT CONSTRAINT UNIQUE);",
-			wantErr: `CONSTRAINT at position 67 is followed by UNIQUE, not by a name: on a column, mysql .*`,
+			wantErr: `line 2, column 31: CONSTRAINT is followed by UNIQUE, not by a name: on a column, mysql .*`,
 		},
 		{
 			name:    "a primary key on a column on MySQL",
 			dialect: platform.MySQL,
 			sql:     "CREATE TABLE c (id INT CONSTRAINT PRIMARY KEY);",
-			wantErr: `CONSTRAINT at position 60 is followed by PRIMARY, not by a name: on a column, mysql .*`,
+			wantErr: `line 2, column 24: CONSTRAINT is followed by PRIMARY, not by a name: on a column, mysql .*`,
 		},
 		{
 			name:    "a NOT NULL on a column on MySQL",
 			dialect: platform.MySQL,
 			sql:     "CREATE TABLE c (id INT, a INT CONSTRAINT NOT NULL);",
-			wantErr: `CONSTRAINT at position 67 is followed by NOT, not by a name: on a column, mysql .*`,
+			wantErr: `line 2, column 31: CONSTRAINT is followed by NOT, not by a name: on a column, mysql .*`,
 		},
 		{
 			name:    "a default on a column on MySQL",
 			dialect: platform.MySQL,
 			sql:     "CREATE TABLE c (id INT, a INT CONSTRAINT DEFAULT 1);",
-			wantErr: `CONSTRAINT at position 67 is followed by DEFAULT, not by a name: on a column, mysql .*`,
+			wantErr: `line 2, column 31: CONSTRAINT is followed by DEFAULT, not by a name: on a column, mysql .*`,
 		},
 		{
 			name:    "a check on a column on MariaDB",
 			dialect: platform.MariaDB,
 			sql:     "CREATE TABLE c (id INT, a INT CONSTRAINT CHECK (a > 0));",
-			wantErr: `CONSTRAINT at position 67 is followed by CHECK, not by a name: on a column, mariadb ` +
+			wantErr: `line 2, column 31: CONSTRAINT is followed by CHECK, not by a name: on a column, mariadb ` +
 				`accepts CONSTRAINT without a name only before REFERENCES, and answers ERROR 1064 \(42000\) ` +
 				`to this; drop the CONSTRAINT keyword`,
 		},
@@ -323,13 +323,13 @@ func TestParseConstraintWithoutSymbol_FailurePath(t *testing.T) {
 			name:    "a check on a column ALTER TABLE adds, on MariaDB",
 			dialect: platform.MariaDB,
 			sql:     "CREATE TABLE c (id INT);\nALTER TABLE c ADD COLUMN a INT CONSTRAINT CHECK (a > 0);",
-			wantErr: `CONSTRAINT at position 93 is followed by CHECK, not by a name: on a column, mariadb .*`,
+			wantErr: `line 3, column 32: CONSTRAINT is followed by CHECK, not by a name: on a column, mariadb .*`,
 		},
 		{
 			name:    "KEY without a symbol on MySQL",
 			dialect: platform.MySQL,
 			sql:     "CREATE TABLE c (id INT, a INT, CONSTRAINT KEY (a));",
-			wantErr: `CONSTRAINT at position 68 stands before KEY, which declares an index: an index takes no ` +
+			wantErr: `line 2, column 32: CONSTRAINT stands before KEY, which declares an index: an index takes no ` +
 				`CONSTRAINT keyword, and MySQL and MariaDB answer ERROR 1064 \(42000\) to one; drop the ` +
 				`CONSTRAINT keyword`,
 		},
@@ -337,37 +337,37 @@ func TestParseConstraintWithoutSymbol_FailurePath(t *testing.T) {
 			name:    "KEY with a symbol on MySQL",
 			dialect: platform.MySQL,
 			sql:     "CREATE TABLE c (id INT, a INT, CONSTRAINT k KEY (a));",
-			wantErr: `CONSTRAINT at position 68 stands before KEY, which declares an index: .*`,
+			wantErr: `line 2, column 32: CONSTRAINT stands before KEY, which declares an index: .*`,
 		},
 		{
 			name:    "INDEX without a symbol on MariaDB",
 			dialect: platform.MariaDB,
 			sql:     "CREATE TABLE c (id INT, a INT, CONSTRAINT INDEX (a));",
-			wantErr: `CONSTRAINT at position 68 stands before INDEX, which declares an index: .*`,
+			wantErr: `line 2, column 32: CONSTRAINT stands before INDEX, which declares an index: .*`,
 		},
 		{
 			name:    "FULLTEXT without a symbol on MySQL",
 			dialect: platform.MySQL,
 			sql:     "CREATE TABLE c (id INT, a TEXT, CONSTRAINT FULLTEXT (a));",
-			wantErr: `CONSTRAINT at position 69 stands before FULLTEXT, which declares an index: .*`,
+			wantErr: `line 2, column 33: CONSTRAINT stands before FULLTEXT, which declares an index: .*`,
 		},
 		{
 			name:    "SPATIAL with a symbol on MySQL",
 			dialect: platform.MySQL,
 			sql:     "CREATE TABLE c (id INT, g GEOMETRY NOT NULL, CONSTRAINT s SPATIAL (g));",
-			wantErr: `CONSTRAINT at position 82 stands before SPATIAL, which declares an index: .*`,
+			wantErr: `line 2, column 46: CONSTRAINT stands before SPATIAL, which declares an index: .*`,
 		},
 		{
 			name:    "KEY without a symbol ALTER TABLE adds on MySQL",
 			dialect: platform.MySQL,
 			sql:     "CREATE TABLE c (id INT, a INT);\nALTER TABLE c ADD CONSTRAINT KEY (a);",
-			wantErr: `CONSTRAINT at position 87 stands before KEY, which declares an index: .*`,
+			wantErr: `line 3, column 19: CONSTRAINT stands before KEY, which declares an index: .*`,
 		},
 		{
 			name:    "KEY with a symbol on PostgreSQL",
 			dialect: platform.Postgres,
 			sql:     "CREATE TABLE c (id INT, a INT, CONSTRAINT k KEY (a));",
-			wantErr: `CONSTRAINT at position 68 stands before KEY, which declares an index: .*`,
+			wantErr: `line 2, column 32: CONSTRAINT stands before KEY, which declares an index: .*`,
 		},
 	}
 	for _, test := range tests {

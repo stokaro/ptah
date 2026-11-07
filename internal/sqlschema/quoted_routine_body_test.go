@@ -77,7 +77,7 @@ func TestRead_AnUnterminatedRoutineBodyIsRefused(t *testing.T) {
 		{
 			name:      "a function",
 			statement: `CREATE FUNCTION f() RETURNS text LANGUAGE sql AS 'SELECT 1`,
-			wantErr:   `unsupported CREATE FUNCTION body: 'SELECT 1 is not a complete string literal at position \d+`,
+			wantErr:   `line \d+, column \d+: unsupported CREATE FUNCTION body: 'SELECT 1 is not a complete string literal`,
 		},
 		{
 			name:      "a procedure",

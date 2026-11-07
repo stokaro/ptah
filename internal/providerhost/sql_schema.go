@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/sqlext"
 	"ptah.run/internal/providerdiagnostic"
+	"ptah.run/internal/sourcepos"
 )
 
 // sqlExtensions returns one SQL extension for every engine that reads its
@@ -141,8 +142,10 @@ func (t *target) sqlHeaderLimits(text string) ([]*protocol.SchemaCoverageLimit, 
 // so it is refused rather than read with its warnings dropped.
 func sqlSchemaRefusal(request *protocol.ReadSQLSchemaRequest, reply *protocol.SQLSchema) error {
 	paths := make(map[string]string, len(request.GetDocuments()))
+	texts := make(map[string]string, len(request.GetDocuments()))
 	for _, document := range request.GetDocuments() {
 		paths[document.GetId()] = document.GetPath()
+		texts[document.GetId()] = document.GetText()
 	}
 	refusal := &providerdiagnostic.SchemaRefusal{}
 	for _, diagnostic := range reply.GetDiagnostics() {
@@ -164,20 +167,26 @@ func sqlSchemaRefusal(request *protocol.ReadSQLSchemaRequest, reply *protocol.SQ
 			count = strconv.Itoa(len(refusal.Diagnostics)) + " warnings"
 		}
 		refusal.Message = fmt.Sprintf("the provider reported %s, which Ptah does not report for a SQL schema reading yet; the first: %s",
-			count, positioned(refusal.Diagnostics[first]))
-		return &sqlext.FileError{Path: refusal.Diagnostics[first].Path, Err: refusal}
+			count, refusal.Diagnostics[first].Message)
+	} else {
+		if reply.GetDiagnostics()[first].GetCode() == protocol.SQLDiagnostic_UNSUPPORTED {
+			refusal.Cause = ptaherr.ErrUnsupportedFeature
+		}
+		refusal.Message = refusal.Diagnostics[first].Message
 	}
-	if reply.GetDiagnostics()[first].GetCode() == protocol.SQLDiagnostic_UNSUPPORTED {
-		refusal.Cause = ptaherr.ErrUnsupportedFeature
-	}
-	refusal.Message = positioned(refusal.Diagnostics[first])
-	return &sqlext.FileError{Path: refusal.Diagnostics[first].Path, Err: refusal}
+	text := texts[reply.GetDiagnostics()[first].GetDocumentId()]
+	return &sqlext.FileError{Path: refusal.Diagnostics[first].Path, Err: located(refusal, text, refusal.Diagnostics[first].Start.Offset)}
 }
 
-// positioned writes a diagnostic as the shared SQL parser writes a refusal:
-// the reason, then where it starts.
-func positioned(diagnostic providerdiagnostic.SchemaDiagnostic) string {
-	return fmt.Sprintf("%s at position %d (line %d, column %d)", diagnostic.Message, diagnostic.Start.Offset, diagnostic.Start.Line, diagnostic.Start.Column)
+// located states where in text a refusal starts, as the shared SQL parser states
+// its own. The provider's offset is the one the wire keeps exact. Its column
+// counts bytes, and the host counts the column it prints in characters, so one
+// sentence means one thing whichever grammar read the file. The JSON report keeps
+// the provider's own span.
+func located(refusal error, text string, offset uint64) error {
+	start := int(min(offset, uint64(len(text)))) // #nosec G115 -- min bounds it by the length of text, which is an int
+	line, column := sourcepos.Locate(text, start)
+	return &ptaherr.ParseError{Line: line, Column: column, Offset: start, Err: refusal}
 }
 
 func schemaPosition(position *protocol.SourcePosition) providerdiagnostic.SchemaPosition {

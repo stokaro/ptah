@@ -103,38 +103,38 @@ func TestParseKeyUsingIndex_FailurePath(t *testing.T) {
 			name:    "in CREATE TABLE",
 			sql:     "CREATE TABLE t (a int, CONSTRAINT k UNIQUE USING INDEX t_a);",
 			dialect: platform.Postgres,
-			wantErr: `UNIQUE USING INDEX at position 43: an existing index becomes a key only in ALTER TABLE \.\.\. ADD, .*`,
+			wantErr: `line 1, column 44: UNIQUE USING INDEX: an existing index becomes a key only in ALTER TABLE \.\.\. ADD, .*`,
 		},
 		{
 			name:    "a qualified index name",
 			sql:     "ALTER TABLE t ADD CONSTRAINT k UNIQUE USING INDEX public.t_a;",
 			dialect: platform.Postgres,
-			wantErr: `UNIQUE USING INDEX at position 56: the index is named without its schema, .*`,
+			wantErr: `line 1, column 57: UNIQUE USING INDEX: the index is named without its schema, .*`,
 		},
 		{
 			name:    "NOT VALID",
 			sql:     "ALTER TABLE t ADD CONSTRAINT k UNIQUE USING INDEX t_a NOT VALID;",
 			dialect: platform.Postgres,
-			wantErr: `NOT VALID at position 54: UNIQUE constraints cannot be marked NOT VALID`,
+			wantErr: `line 1, column 55: NOT VALID: UNIQUE constraints cannot be marked NOT VALID`,
 		},
 		{
 			name:    "a unique key on MySQL",
 			sql:     "ALTER TABLE t ADD CONSTRAINT k UNIQUE USING INDEX t_a;",
 			dialect: platform.MySQL,
-			wantErr: `UNIQUE USING INDEX at position 38: a key made of an existing index is PostgreSQL's clause, ` +
+			wantErr: `line 1, column 39: UNIQUE USING INDEX: a key made of an existing index is PostgreSQL's clause, ` +
 				`which the mysql dialect does not take; list the key's columns`,
 		},
 		{
 			name:    "a primary key on MySQL",
 			sql:     "ALTER TABLE t ADD PRIMARY KEY USING INDEX t_a;",
 			dialect: platform.MySQL,
-			wantErr: `PRIMARY KEY USING INDEX at position 30: a key made of an existing index is PostgreSQL's clause, .*`,
+			wantErr: `line 1, column 31: PRIMARY KEY USING INDEX: a key made of an existing index is PostgreSQL's clause, .*`,
 		},
 		{
 			name:    "a unique key on CockroachDB",
 			sql:     "ALTER TABLE t ADD UNIQUE USING INDEX t_a;",
 			dialect: platform.CockroachDB,
-			wantErr: `UNIQUE USING INDEX at position 25: a key made of an existing index is PostgreSQL's clause, ` +
+			wantErr: `line 1, column 26: UNIQUE USING INDEX: a key made of an existing index is PostgreSQL's clause, ` +
 				`which the cockroachdb dialect does not take; .*`,
 		},
 	}

@@ -111,9 +111,9 @@ func TestParse_AGuardedKeyOption_FailurePath(t *testing.T) {
 		wantErr string
 	}{
 		{name: "more than options", sql: "CREATE TABLE t (a int, KEY k (a) /*!80000 INVISIBLE extra */);",
-			wantErr: `extra at position 52: a version guard among a key's options holds only key options`},
+			wantErr: `line 1, column 53: extra: a version guard among a key's options holds only key options`},
 		{name: "an invisible primary key", sql: "CREATE TABLE t (a int, PRIMARY KEY (a) /*!80000 INVISIBLE */);",
-			wantErr: `INVISIBLE at position 48: MySQL 8.4.11 answers ERROR 3522, a primary key index cannot be invisible`},
+			wantErr: `line 1, column 49: INVISIBLE: MySQL 8.4.11 answers ERROR 3522, a primary key index cannot be invisible`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

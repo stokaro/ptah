@@ -1067,7 +1067,10 @@ Public failures should use `core/ptaherr` when callers can reasonably branch on
 the error:
 
 - annotation and parser failures should support `errors.As` with
-  `*ptaherr.ParseError`;
+  `*ptaherr.ParseError`, and a refusal of a SQL document that states where it
+  stopped carries `Line`, `Column` and `Offset`: lines and columns count from 1,
+  columns count characters with a tab as one, and `Offset` is the byte offset in
+  the text as written;
 - unsupported dialect failures should support `errors.Is` with
   `ptaherr.ErrUnsupportedDialect`;
 - native operations with an uncertain durable outcome support `errors.Is` with

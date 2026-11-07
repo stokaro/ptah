@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"ptah.run/core/ptaherr"
 	"ptah.run/internal/lexer"
 )
 
@@ -25,12 +26,12 @@ import (
 func (p *Parser) stringConstant(what string) (string, error) {
 	p.skipWhitespace()
 	if p.current.Type != lexer.TokenString || isDoubleQuotedIdentifierToken(p.current) {
-		return "", fmt.Errorf("expected a string constant for %s at position %d", what, p.current.Start)
+		return "", ptaherr.At(p.current.Start, fmt.Errorf("expected a string constant for %s", what))
 	}
 	text, ok := lexer.StringValue(p.current.Value, p.stringLiteralOptions())
 	if !ok {
-		return "", fmt.Errorf("%s is not a string constant the server reads, for %s at position %d",
-			abbreviatedToken(p.current.Value), what, p.current.Start)
+		return "", ptaherr.At(p.current.Start, fmt.Errorf("%s is not a string constant the server reads, for %s",
+			abbreviatedToken(p.current.Value), what))
 	}
 	p.advance()
 	return text, nil

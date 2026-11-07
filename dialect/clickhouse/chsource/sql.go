@@ -229,7 +229,7 @@ func (t *sqlTokens) identifier() (string, error) {
 		return t.bracketedIdentifier()
 	}
 	if token.Type != lexer.TokenIdentifier && (token.Type != lexer.TokenString || !strings.HasPrefix(token.Value, `"`)) {
-		return "", fmt.Errorf("expected identifier, got %s at position %d", token.Type, t.position(token))
+		return "", ptaherr.At(t.position(token), fmt.Errorf("expected identifier, got %s", token.Type))
 	}
 	t.pos++
 	return token.Value, nil
@@ -241,7 +241,7 @@ func (t *sqlTokens) bracketedIdentifier() (string, error) {
 	for {
 		token := t.current()
 		if token.Type == lexer.TokenEOF {
-			return "", fmt.Errorf("unterminated bracketed identifier at position %d", start)
+			return "", ptaherr.At(start, fmt.Errorf("unterminated bracketed identifier"))
 		}
 		value.WriteString(token.Value)
 		t.pos++
@@ -298,18 +298,18 @@ func (t *sqlTokens) skippingIndex() (*chast.AddSkippingIndex, error) {
 	}
 	expression, start := t.expression(func() bool { return t.keyword("TYPE") })
 	if expression == "" {
-		return nil, fmt.Errorf("expected an indexed expression after ADD INDEX %s at position %d", name, start)
+		return nil, ptaherr.At(start, fmt.Errorf("expected an indexed expression after ADD INDEX %s", name))
 	}
 	t.skipWhitespace()
 	if !t.keyword("TYPE") {
 		token := t.current()
 		return nil, fmt.Errorf("expected TYPE after the expression of index %s: %w", name,
-			fmt.Errorf("expected %s, got %s at position %d", lexer.TokenIdentifier, token.Type, t.position(token)))
+			ptaherr.At(t.position(token), fmt.Errorf("expected %s, got %s", lexer.TokenIdentifier, token.Type)))
 	}
 	t.pos++
 	indexType, typeStart := t.expression(func() bool { return t.keyword("GRANULARITY") })
 	if indexType == "" {
-		return nil, fmt.Errorf("expected an index type after TYPE at position %d", typeStart)
+		return nil, ptaherr.At(typeStart, fmt.Errorf("expected an index type after TYPE"))
 	}
 	operation := &chast.AddSkippingIndex{Name: name, Expression: expression, IndexType: indexType}
 	t.skipWhitespace()
@@ -328,7 +328,7 @@ func (t *sqlTokens) skippingIndex() (*chast.AddSkippingIndex, error) {
 	operation.Granularity = parsed
 	t.skipWhitespace()
 	if token := t.current(); token.Type != lexer.TokenEOF {
-		return nil, fmt.Errorf("unexpected %q after index %s at position %d", token.Value, name, t.position(token))
+		return nil, ptaherr.At(t.position(token), fmt.Errorf("unexpected %q after index %s", token.Value, name))
 	}
 	return operation, nil
 }

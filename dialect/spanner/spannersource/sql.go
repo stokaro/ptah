@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlext"
 	"ptah.run/dialect/spanner/spannerschema"
@@ -121,16 +122,16 @@ func (t *clauseTokens) word(word string) bool {
 func (t *clauseTokens) rowDeletion() (*spannerschema.DesiredRowDeletion, error) {
 	t.next()
 	if !t.word("INTERVAL") {
-		return nil, fmt.Errorf("expected INTERVAL after TTL at position %d", t.position())
+		return nil, ptaherr.At(t.position(), fmt.Errorf("expected INTERVAL after TTL"))
 	}
 	t.next()
 	if t.current().Type != lexer.TokenString {
-		return nil, fmt.Errorf("expected a quoted interval after TTL INTERVAL at position %d", t.position())
+		return nil, ptaherr.At(t.position(), fmt.Errorf("expected a quoted interval after TTL INTERVAL"))
 	}
 	interval := unquote(t.current().Value, '\'')
 	t.next()
 	if !t.word("ON") {
-		return nil, fmt.Errorf("expected ON after the TTL interval at position %d", t.position())
+		return nil, ptaherr.At(t.position(), fmt.Errorf("expected ON after the TTL interval"))
 	}
 	t.next()
 	// A quoted column arrives as a String token: the lexer does not separate
@@ -138,15 +139,15 @@ func (t *clauseTokens) rowDeletion() (*spannerschema.DesiredRowDeletion, error) 
 	// every identifier it writes.
 	column := t.current()
 	if column.Type != lexer.TokenIdentifier && column.Type != lexer.TokenString {
-		return nil, fmt.Errorf("expected a column name after TTL ... ON at position %d", t.position())
+		return nil, ptaherr.At(t.position(), fmt.Errorf("expected a column name after TTL ... ON"))
 	}
 	policy := &spannerschema.DesiredRowDeletion{Policy: spannerschema.Policy{Column: unquote(column.Value, '"'), Interval: interval}}
 	if err := spannerschema.ValidateDesired(policy); err != nil {
-		return nil, fmt.Errorf("TTL at position %d: %w", t.position(), err)
+		return nil, ptaherr.At(t.position(), fmt.Errorf("TTL: %w", err))
 	}
 	t.next()
 	if rest := t.current(); rest.Type != lexer.TokenEOF {
-		return nil, fmt.Errorf("unexpected %q after the row deletion policy at position %d", rest.Value, t.position())
+		return nil, ptaherr.At(t.position(), fmt.Errorf("unexpected %q after the row deletion policy", rest.Value))
 	}
 	return policy, nil
 }

@@ -27,41 +27,41 @@ func TestParse_AlterGuard_FailurePath(t *testing.T) {
 	}{
 		{
 			name: "DROP INDEX", dialect: platform.MySQL, clause: "DROP INDEX IF EXISTS ix",
-			wantErr: `IF EXISTS at position 25 in ALTER TABLE \.\.\. DROP INDEX: mysql takes no IF EXISTS on DROP INDEX, ` +
+			wantErr: `line 1, column 26: IF EXISTS in ALTER TABLE \.\.\. DROP INDEX: mysql takes no IF EXISTS on DROP INDEX, ` +
 				`and answers ERROR 1064 \(42000\) to one; write the clause without it`,
 		},
 		{
 			name: "DROP KEY", dialect: platform.MySQL, clause: "DROP KEY IF EXISTS ix",
-			wantErr: `IF EXISTS at position 23 in ALTER TABLE \.\.\. DROP KEY: mysql takes no IF EXISTS on DROP KEY, .*`,
+			wantErr: `line 1, column 24: IF EXISTS in ALTER TABLE \.\.\. DROP KEY: mysql takes no IF EXISTS on DROP KEY, .*`,
 		},
 		{
 			name: "DROP FOREIGN KEY", dialect: platform.MySQL, clause: "DROP FOREIGN KEY IF EXISTS fk",
-			wantErr: `IF EXISTS at position 31 in ALTER TABLE \.\.\. DROP FOREIGN KEY: mysql takes no IF EXISTS on DROP FOREIGN KEY, .*`,
+			wantErr: `line 1, column 32: IF EXISTS in ALTER TABLE \.\.\. DROP FOREIGN KEY: mysql takes no IF EXISTS on DROP FOREIGN KEY, .*`,
 		},
 		{
 			name: "DROP CHECK", dialect: platform.MySQL, clause: "DROP CHECK IF EXISTS ck",
-			wantErr: `IF EXISTS at position 25 in ALTER TABLE \.\.\. DROP CHECK: mysql takes no IF EXISTS on DROP CHECK, .*`,
+			wantErr: `line 1, column 26: IF EXISTS in ALTER TABLE \.\.\. DROP CHECK: mysql takes no IF EXISTS on DROP CHECK, .*`,
 		},
 		{
 			name: "DROP CONSTRAINT", dialect: platform.MySQL, clause: "DROP CONSTRAINT IF EXISTS ck",
-			wantErr: `IF EXISTS at position 30 in ALTER TABLE \.\.\. DROP CONSTRAINT: mysql takes no IF EXISTS on DROP CONSTRAINT, .*`,
+			wantErr: `line 1, column 31: IF EXISTS in ALTER TABLE \.\.\. DROP CONSTRAINT: mysql takes no IF EXISTS on DROP CONSTRAINT, .*`,
 		},
 		{
 			name: "DROP COLUMN", dialect: platform.MySQL, clause: "DROP COLUMN IF EXISTS w",
-			wantErr: `IF EXISTS at position 26 in ALTER TABLE \.\.\. DROP COLUMN: mysql takes no IF EXISTS on DROP COLUMN, .*`,
+			wantErr: `line 1, column 27: IF EXISTS in ALTER TABLE \.\.\. DROP COLUMN: mysql takes no IF EXISTS on DROP COLUMN, .*`,
 		},
 		{
 			name: "DROP without COLUMN", dialect: platform.MySQL, clause: "DROP IF EXISTS w",
-			wantErr: `IF EXISTS at position 19 in ALTER TABLE \.\.\. DROP: mysql takes no IF EXISTS on DROP, .*`,
+			wantErr: `line 1, column 20: IF EXISTS in ALTER TABLE \.\.\. DROP: mysql takes no IF EXISTS on DROP, .*`,
 		},
 		{
 			name: "ADD COLUMN", dialect: platform.MySQL, clause: "ADD COLUMN IF NOT EXISTS y int",
-			wantErr: `IF NOT EXISTS at position 25 in ALTER TABLE \.\.\. ADD COLUMN: mysql takes no IF NOT EXISTS on ADD COLUMN, .*`,
+			wantErr: `line 1, column 26: IF NOT EXISTS in ALTER TABLE \.\.\. ADD COLUMN: mysql takes no IF NOT EXISTS on ADD COLUMN, .*`,
 		},
 		{
 			name: "a MariaDB line without the index guard", dialect: platform.MariaDB,
 			caps: capability.MariaDBLegacy(), clause: "DROP INDEX IF EXISTS ix",
-			wantErr: `IF EXISTS at position 25 in ALTER TABLE \.\.\. DROP INDEX: mariadb takes no IF EXISTS on DROP INDEX, .*`,
+			wantErr: `line 1, column 26: IF EXISTS in ALTER TABLE \.\.\. DROP INDEX: mariadb takes no IF EXISTS on DROP INDEX, .*`,
 		},
 	}
 	for _, row := range rows {
@@ -176,17 +176,17 @@ func TestParse_DropCheck_FailurePath(t *testing.T) {
 	}{
 		{
 			name: "MariaDB", dialect: platform.MariaDB, clause: "DROP CHECK ck",
-			wantErr: `DROP CHECK at position 19 in ALTER TABLE: mariadb has no DROP CHECK, and answers ` +
+			wantErr: `line 1, column 20: DROP CHECK in ALTER TABLE: mariadb has no DROP CHECK, and answers ` +
 				`ERROR 1064 \(42000\) to one; drop the check with DROP CONSTRAINT`,
 		},
 		{
 			name: "MariaDB with a guard", dialect: platform.MariaDB, clause: "DROP CHECK IF EXISTS ck",
-			wantErr: `DROP CHECK at position 19 in ALTER TABLE: mariadb has no DROP CHECK, .*`,
+			wantErr: `line 1, column 20: DROP CHECK in ALTER TABLE: mariadb has no DROP CHECK, .*`,
 		},
 		{
 			name: "a MySQL line older than the spelling", dialect: platform.MySQL,
 			caps: capability.MySQL8013(), clause: "DROP CHECK ck",
-			wantErr: `DROP CHECK at position 19 in ALTER TABLE: mysql has no DROP CHECK, .*`,
+			wantErr: `line 1, column 20: DROP CHECK in ALTER TABLE: mysql has no DROP CHECK, .*`,
 		},
 	}
 	for _, row := range rows {

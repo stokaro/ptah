@@ -140,17 +140,17 @@ func TestSQL_FailurePath(t *testing.T) {
 		wantErr string
 	}{
 		{name: "no name", sql: "CREATE EXTENSION;",
-			wantErr: `expected extension name: expected identifier, got EOF at position 16`},
+			wantErr: `line 1, column 17: expected extension name: expected identifier, got EOF`},
 		{name: "an option the statement does not take", sql: "CREATE TABLE t (id int);\nCREATE EXTENSION pg_trgm CASCADE;",
-			wantErr: `unsupported CREATE EXTENSION option "CASCADE" at position 50`},
+			wantErr: `line 2, column 26: unsupported CREATE EXTENSION option "CASCADE"`},
 		{name: "WITH before another word", sql: "CREATE EXTENSION pg_trgm WITH CASCADE;",
 			wantErr: `expected SCHEMA or VERSION after WITH in CREATE EXTENSION`},
 		{name: "a schema written twice", sql: "CREATE EXTENSION pg_trgm SCHEMA a SCHEMA b;",
 			wantErr: `duplicate SCHEMA option in CREATE EXTENSION`},
 		{name: "a comment without IS", sql: "CREATE EXTENSION pg_trgm;\nCOMMENT ON EXTENSION pg_trgm 'x';",
-			wantErr: `expected IS after COMMENT ON EXTENSION pg_trgm at position 55`},
+			wantErr: `line 2, column 30: expected IS after COMMENT ON EXTENSION pg_trgm`},
 		{name: "a comment that is not a string", sql: "CREATE EXTENSION pg_trgm;\nCOMMENT ON EXTENSION pg_trgm IS NULL;",
-			wantErr: `expected a string constant for the extension comment at position 58`},
+			wantErr: `line 2, column 33: expected a string constant for the extension comment`},
 		{name: "two declarations that differ", sql: "CREATE EXTENSION pg_trgm VERSION '1.5';\nCREATE EXTENSION pg_trgm VERSION '1.6';",
 			wantErr: `duplicate feature identity: conflicting definitions of ptah.run/pgextension/extension pg_trgm`},
 	}
@@ -328,16 +328,16 @@ func TestSQL_ChangesFailurePath(t *testing.T) {
 		wantErr string
 	}{
 		{name: "two extensions in one drop", sql: "DROP EXTENSION hstore, pg_trgm;",
-			wantErr: `.*DROP EXTENSION hstore, \.\.\. at position 21: the extension owner reads one extension per DROP EXTENSION; write a statement for each`},
-		{name: "IF without EXISTS", sql: "DROP EXTENSION IF pg_trgm;", wantErr: `.*expected EXISTS after IF at position 18`},
-		{name: "CASCADE and RESTRICT", sql: "DROP EXTENSION pg_trgm CASCADE RESTRICT;", wantErr: `.*unexpected "RESTRICT" after DROP EXTENSION pg_trgm at position 31`},
+			wantErr: `line 1, column 22: .*DROP EXTENSION hstore, \.\.\.: the extension owner reads one extension per DROP EXTENSION; write a statement for each`},
+		{name: "IF without EXISTS", sql: "DROP EXTENSION IF pg_trgm;", wantErr: `line 1, column 19: .*expected EXISTS after IF`},
+		{name: "CASCADE and RESTRICT", sql: "DROP EXTENSION pg_trgm CASCADE RESTRICT;", wantErr: `line 1, column 32: .*unexpected "RESTRICT" after DROP EXTENSION pg_trgm`},
 		{name: "an update without a version", sql: "ALTER EXTENSION pg_trgm UPDATE;",
-			wantErr: `.*ALTER EXTENSION pg_trgm UPDATE at position 24: the extension owner reads an update to a named version; write UPDATE TO the version`},
-		{name: "SET without SCHEMA", sql: "ALTER EXTENSION pg_trgm SET ext;", wantErr: `.*expected SCHEMA after SET in ALTER EXTENSION pg_trgm at position 28`},
+			wantErr: `line 1, column 25: .*ALTER EXTENSION pg_trgm UPDATE: the extension owner reads an update to a named version; write UPDATE TO the version`},
+		{name: "SET without SCHEMA", sql: "ALTER EXTENSION pg_trgm SET ext;", wantErr: `line 1, column 29: .*expected SCHEMA after SET in ALTER EXTENSION pg_trgm`},
 		{name: "a member added", sql: "ALTER EXTENSION pg_trgm ADD FUNCTION f();",
-			wantErr: `.*unsupported ALTER EXTENSION pg_trgm action "ADD" at position 24: the extension owner reads UPDATE TO and SET SCHEMA`},
+			wantErr: `line 1, column 25: .*unsupported ALTER EXTENSION pg_trgm action "ADD": the extension owner reads UPDATE TO and SET SCHEMA`},
 		{name: "a word after a move", sql: "ALTER EXTENSION pg_trgm SET SCHEMA ext CASCADE;",
-			wantErr: `.*unexpected "CASCADE" after ALTER EXTENSION pg_trgm at position 39`},
+			wantErr: `line 1, column 40: .*unexpected "CASCADE" after ALTER EXTENSION pg_trgm`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

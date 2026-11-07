@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlext"
 	"ptah.run/dialect/postgres/pgtable"
@@ -38,7 +39,7 @@ func (exclusionSQLParser) ParseSQL(ctx context.Context, request sqlext.Request) 
 		}
 		value, err := exclusionSQLDeclaration(claim)
 		if err != nil {
-			return sqlext.Result{}, fmt.Errorf("EXCLUDE at position %d: %w", claim.Offset, err)
+			return sqlext.Result{}, ptaherr.At(claim.Offset, fmt.Errorf("EXCLUDE: %w", err))
 		}
 		declaration := sqlext.Value{Constraint: value}
 		if claim.Site == sqlext.AlterOperation {

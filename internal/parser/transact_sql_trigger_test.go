@@ -184,68 +184,68 @@ func TestParseCreateTrigger_TransactSQL_FailurePath(t *testing.T) {
 		{
 			name:    "IF NOT EXISTS",
 			sql:     `CREATE TRIGGER IF NOT EXISTS trg ON t AFTER INSERT AS SET NOCOUNT ON;`,
-			wantErr: `IF after CREATE TRIGGER at position 15: SQL Server takes no IF NOT EXISTS on a trigger; write CREATE OR ALTER TRIGGER to replace one that exists`,
+			wantErr: `line 1, column 16: IF after CREATE TRIGGER: SQL Server takes no IF NOT EXISTS on a trigger; write CREATE OR ALTER TRIGGER to replace one that exists`,
 		},
 		{
 			name:    "the timing before the table",
 			sql:     `CREATE TRIGGER trg AFTER INSERT ON t AS SET NOCOUNT ON;`,
-			wantErr: `expected ON after trigger name trg: expected 'ON', got 'AFTER' at position 19`,
+			wantErr: `line 1, column 20: expected ON after trigger name trg: expected 'ON', got 'AFTER'`,
 		},
 		{
 			name:    "BEFORE",
 			sql:     `CREATE TRIGGER trg ON t BEFORE INSERT AS SET NOCOUNT ON;`,
-			wantErr: `expected FOR, AFTER or INSTEAD OF in trigger trg, got Identifier "BEFORE" at position 24`,
+			wantErr: `line 1, column 25: expected FOR, AFTER or INSTEAD OF in trigger trg, got Identifier "BEFORE"`,
 		},
 		{
 			name:    "INSTEAD without OF",
 			sql:     `CREATE TRIGGER trg ON t INSTEAD DELETE AS SET NOCOUNT ON;`,
-			wantErr: `expected OF after INSTEAD in trigger trg: expected 'OF', got 'DELETE' at position 32`,
+			wantErr: `line 1, column 33: expected OF after INSTEAD in trigger trg: expected 'OF', got 'DELETE'`,
 		},
 		{
 			name:    "TRUNCATE",
 			sql:     `CREATE TRIGGER trg ON t AFTER TRUNCATE AS SET NOCOUNT ON;`,
-			wantErr: `expected INSERT, UPDATE or DELETE as an event of trigger trg, got Identifier "TRUNCATE" at position 30`,
+			wantErr: `line 1, column 31: expected INSERT, UPDATE or DELETE as an event of trigger trg, got Identifier "TRUNCATE"`,
 		},
 		{
 			name:    "events joined by OR",
 			sql:     `CREATE TRIGGER trg ON t AFTER INSERT OR DELETE AS SET NOCOUNT ON;`,
-			wantErr: `expected AS before the body of trigger trg: expected 'AS', got 'OR' at position 37`,
+			wantErr: `line 1, column 38: expected AS before the body of trigger trg: expected 'AS', got 'OR'`,
 		},
 		{
 			name:    "UPDATE OF a column",
 			sql:     `CREATE TRIGGER trg ON t AFTER UPDATE OF a AS SET NOCOUNT ON;`,
-			wantErr: `expected AS before the body of trigger trg: expected 'AS', got 'OF' at position 37`,
+			wantErr: `line 1, column 38: expected AS before the body of trigger trg: expected 'AS', got 'OF'`,
 		},
 		{
 			name:    "a list ending in a comma",
 			sql:     `CREATE TRIGGER trg ON t AFTER INSERT, AS SET NOCOUNT ON;`,
-			wantErr: `expected INSERT, UPDATE or DELETE as an event of trigger trg, got Identifier "AS" at position 38`,
+			wantErr: `line 1, column 39: expected INSERT, UPDATE or DELETE as an event of trigger trg, got Identifier "AS"`,
 		},
 		{
 			name:    "an event written twice",
 			sql:     `CREATE TRIGGER trg ON t AFTER INSERT, INSERT AS SET NOCOUNT ON;`,
-			wantErr: `trigger trg names the event INSERT twice at position 38, which SQL Server refuses with Msg 1034`,
+			wantErr: `line 1, column 39: trigger trg names the event INSERT twice, which SQL Server refuses with Msg 1034`,
 		},
 		{
 			name: "WITH APPEND",
 			sql:  `CREATE TRIGGER trg ON t FOR INSERT WITH APPEND AS SET NOCOUNT ON;`,
-			wantErr: `trigger trg states WITH APPEND at position 35, which SQL Server 2025 refuses with Msg 195, ` +
+			wantErr: `line 1, column 36: trigger trg states WITH APPEND, which SQL Server 2025 refuses with Msg 195, ` +
 				`'APPEND' is not a recognized option; remove it`,
 		},
 		{
 			name:    "no AS",
 			sql:     `CREATE TRIGGER trg ON t AFTER INSERT SET NOCOUNT ON;`,
-			wantErr: `expected AS before the body of trigger trg: expected 'AS', got 'SET' at position 37`,
+			wantErr: `line 1, column 38: expected AS before the body of trigger trg: expected 'AS', got 'SET'`,
 		},
 		{
 			name:    "no body",
 			sql:     "CREATE TRIGGER trg ON t AFTER INSERT AS\nGO\n",
-			wantErr: `expected the body of trigger trg after AS at position 40`,
+			wantErr: `line 2, column 1: expected the body of trigger trg after AS`,
 		},
 		{
 			name:    "an empty WITH list",
 			sql:     `CREATE TRIGGER trg ON t WITH AFTER INSERT AS SET NOCOUNT ON;`,
-			wantErr: `expected a trigger option at position 29`,
+			wantErr: `line 1, column 30: expected a trigger option`,
 		},
 		{
 			name: "a schema in the name other than the table's",
@@ -267,12 +267,12 @@ func TestParseCreateTrigger_TransactSQL_FailurePath(t *testing.T) {
 		{
 			name:    "OR REPLACE",
 			sql:     `CREATE OR REPLACE TRIGGER trg ON t AFTER INSERT AS SET NOCOUNT ON;`,
-			wantErr: `unsupported CREATE OR REPLACE target: TRIGGER at position 18`,
+			wantErr: `line 1, column 19: unsupported CREATE OR REPLACE target: TRIGGER`,
 		},
 		{
 			name:    "TEMP",
 			sql:     `CREATE TEMP TRIGGER trg ON t AFTER INSERT AS SET NOCOUNT ON;`,
-			wantErr: `unsupported CREATE TEMP target: TRIGGER at position 12`,
+			wantErr: `line 1, column 13: unsupported CREATE TEMP target: TRIGGER`,
 		},
 	}
 	for _, test := range tests {
@@ -298,55 +298,55 @@ func TestParseCreateTrigger_TransactSQL_RefusesWhatPtahDoesNotModel(t *testing.T
 		{
 			name: "WITH ENCRYPTION",
 			sql:  `CREATE TRIGGER trg ON t WITH ENCRYPTION AFTER INSERT AS SET NOCOUNT ON;`,
-			wantErr: `trigger trg states WITH ENCRYPTION at position 29: SQL Server keeps no readable definition of an encrypted trigger, ` +
+			wantErr: `line 1, column 30: trigger trg states WITH ENCRYPTION: SQL Server keeps no readable definition of an encrypted trigger, ` +
 				`so Ptah could neither compare its body nor write it back; remove it, or keep the trigger out of the schema`,
 		},
 		{
 			name: "ENCRYPTION after EXECUTE AS CALLER",
 			sql:  `CREATE TRIGGER trg ON t WITH EXECUTE AS CALLER, ENCRYPTION AFTER INSERT AS SET NOCOUNT ON;`,
-			wantErr: `trigger trg states WITH ENCRYPTION at position 48: SQL Server keeps no readable definition of an encrypted trigger, ` +
+			wantErr: `line 1, column 49: trigger trg states WITH ENCRYPTION: SQL Server keeps no readable definition of an encrypted trigger, ` +
 				`so Ptah could neither compare its body nor write it back; remove it, or keep the trigger out of the schema`,
 		},
 		{
 			name: "EXECUTE AS OWNER",
 			sql:  `CREATE TRIGGER trg ON t WITH EXECUTE AS OWNER AFTER INSERT AS SET NOCOUNT ON;`,
-			wantErr: `trigger trg states WITH EXECUTE AS OWNER at position 29: Ptah does not model the principal a trigger runs as, ` +
+			wantErr: `line 1, column 30: trigger trg states WITH EXECUTE AS OWNER: Ptah does not model the principal a trigger runs as, ` +
 				`so it could neither write it nor compare it back; remove it, or keep the trigger out of the schema`,
 		},
 		{
 			name: "EXECUTE AS SELF",
 			sql:  `CREATE TRIGGER trg ON t WITH EXECUTE AS SELF FOR INSERT AS SET NOCOUNT ON;`,
-			wantErr: `trigger trg states WITH EXECUTE AS SELF at position 29: Ptah does not model the principal a trigger runs as, ` +
+			wantErr: `line 1, column 30: trigger trg states WITH EXECUTE AS SELF: Ptah does not model the principal a trigger runs as, ` +
 				`so it could neither write it nor compare it back; remove it, or keep the trigger out of the schema`,
 		},
 		{
 			name: "EXECUTE AS a user",
 			sql:  `CREATE TRIGGER trg ON t WITH EXECUTE AS 'auditor' INSTEAD OF INSERT AS SET NOCOUNT ON;`,
-			wantErr: `trigger trg states WITH EXECUTE AS 'auditor' at position 29: Ptah does not model the principal a trigger runs as, ` +
+			wantErr: `line 1, column 30: trigger trg states WITH EXECUTE AS 'auditor': Ptah does not model the principal a trigger runs as, ` +
 				`so it could neither write it nor compare it back; remove it, or keep the trigger out of the schema`,
 		},
 		{
 			name: "NATIVE_COMPILATION",
 			sql:  `CREATE TRIGGER trg ON t WITH NATIVE_COMPILATION, SCHEMABINDING AFTER INSERT AS BEGIN ATOMIC WITH (LANGUAGE = N'us_english') END;`,
-			wantErr: `trigger trg states WITH NATIVE_COMPILATION at position 29: Ptah can neither write the option nor compare it back; ` +
+			wantErr: `line 1, column 30: trigger trg states WITH NATIVE_COMPILATION: Ptah can neither write the option nor compare it back; ` +
 				`remove it, or keep the trigger out of the schema`,
 		},
 		{
 			name: "NOT FOR REPLICATION",
 			sql:  `CREATE TRIGGER trg ON t AFTER UPDATE NOT FOR REPLICATION AS SET NOCOUNT ON;`,
-			wantErr: `trigger trg states NOT FOR REPLICATION at position 37: Ptah does not model whether replication fires a trigger, ` +
+			wantErr: `line 1, column 38: trigger trg states NOT FOR REPLICATION: Ptah does not model whether replication fires a trigger, ` +
 				`so it could neither write the setting nor compare it back; remove it, or keep the trigger out of the schema`,
 		},
 		{
 			name: "a DDL trigger",
 			sql:  `CREATE TRIGGER trg ON DATABASE FOR CREATE_TABLE AS SET NOCOUNT ON;`,
-			wantErr: `CREATE TRIGGER trg ON DATABASE at position 22 is a DDL or logon trigger, which Ptah does not model; ` +
+			wantErr: `line 1, column 23: CREATE TRIGGER trg ON DATABASE is a DDL or logon trigger, which Ptah does not model; ` +
 				`a schema declares DML triggers on tables alone, so keep this trigger out of the schema`,
 		},
 		{
 			name: "a logon trigger",
 			sql:  `CREATE TRIGGER trg ON ALL SERVER FOR LOGON AS SET NOCOUNT ON;`,
-			wantErr: `CREATE TRIGGER trg ON ALL SERVER at position 22 is a DDL or logon trigger, which Ptah does not model; ` +
+			wantErr: `line 1, column 23: CREATE TRIGGER trg ON ALL SERVER is a DDL or logon trigger, which Ptah does not model; ` +
 				`a schema declares DML triggers on tables alone, so keep this trigger out of the schema`,
 		},
 	}

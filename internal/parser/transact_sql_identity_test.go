@@ -119,19 +119,19 @@ func TestParseIdentityProperty_FailurePath(t *testing.T) {
 			name:    "a seed alone, Msg 102",
 			dialect: platform.SQLServer,
 			sql:     "CREATE TABLE t (id INT IDENTITY(1) PRIMARY KEY);",
-			wantErr: `(?s).*IDENTITY takes a seed and an increment: expected ',', got '\)' at position 33.*`,
+			wantErr: `(?s)line 1, column 34: .*IDENTITY takes a seed and an increment: expected ',', got '\)'.*`,
 		},
 		{
 			name:    "a decimal seed, Msg 2752",
 			dialect: platform.SQLServer,
 			sql:     "CREATE TABLE t (id DECIMAL(10,0) IDENTITY(1.5, 1) PRIMARY KEY);",
-			wantErr: `(?s).*expected the IDENTITY seed as an integer: got "1\.5" at position 42.*`,
+			wantErr: `(?s)line 1, column 43: .*expected the IDENTITY seed as an integer: got "1\.5".*`,
 		},
 		{
 			name:    "a hexadecimal seed, Msg 102",
 			dialect: platform.SQLServer,
 			sql:     "CREATE TABLE t (id INT IDENTITY(0x10, 1) PRIMARY KEY);",
-			wantErr: `(?s).*IDENTITY takes a seed and an increment: expected Operator, got Identifier at position 33.*`,
+			wantErr: `(?s)line 1, column 34: .*IDENTITY takes a seed and an increment: expected Operator, got Identifier.*`,
 		},
 		{
 			name:    "an unclosed pair",
@@ -143,25 +143,25 @@ func TestParseIdentityProperty_FailurePath(t *testing.T) {
 			name:    "NULL after the property, Msg 8147",
 			dialect: platform.SQLServer,
 			sql:     "CREATE TABLE t (id INT IDENTITY NULL, a INT);",
-			wantErr: `(?s).*an IDENTITY column is NOT NULL, and SQL Server 2025 answers Msg 8147 to NULL on one, at position 32.*`,
+			wantErr: `(?s)line 1, column 33: .*an IDENTITY column is NOT NULL, and SQL Server 2025 answers Msg 8147 to NULL on one.*`,
 		},
 		{
 			name:    "NULL before the property, Msg 8147",
 			dialect: platform.SQLServer,
 			sql:     "CREATE TABLE t (id INT NULL IDENTITY(1,1), a INT);",
-			wantErr: `(?s).*an IDENTITY column is NOT NULL, and SQL Server 2025 answers Msg 8147 to NULL on one, at position 28.*`,
+			wantErr: `(?s)line 1, column 29: .*an IDENTITY column is NOT NULL, and SQL Server 2025 answers Msg 8147 to NULL on one.*`,
 		},
 		{
 			name:    "PostgreSQL",
 			dialect: platform.Postgres,
 			sql:     "CREATE TABLE t (id INT IDENTITY(1,1) PRIMARY KEY);",
-			wantErr: `(?s).*unsupported column attribute: IDENTITY at position 23.*`,
+			wantErr: `(?s)line 1, column 24: .*unsupported column attribute: IDENTITY.*`,
 		},
 		{
 			name:    "MySQL",
 			dialect: platform.MySQL,
 			sql:     "CREATE TABLE t (id INT IDENTITY PRIMARY KEY);",
-			wantErr: `(?s).*unsupported column attribute: IDENTITY at position 23.*`,
+			wantErr: `(?s)line 1, column 24: .*unsupported column attribute: IDENTITY.*`,
 		},
 	}
 	for _, test := range tests {

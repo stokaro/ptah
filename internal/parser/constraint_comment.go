@@ -4,11 +4,13 @@ import (
 	"fmt"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/ptaherr"
 	"ptah.run/internal/lexer"
 )
 
 // constraintCommentNode gives a table constraint's comment an executable AST
-// operation. Other targets retain their source form for the schema reader.
+// operation. Other targets retain their source form for the schema reader. An
+// offset in a refusal counts from the start of target.
 func constraintCommentNode(target, text, literal string) (ast.Node, error) {
 	source := ast.NewComment("COMMENT ON " + target + " IS " + literal)
 	p := NewParser(target)
@@ -35,7 +37,7 @@ func constraintCommentNode(target, text, literal string) (ast.Node, error) {
 	}
 	p.skipWhitespace()
 	if !p.isAtEnd() {
-		return nil, fmt.Errorf("COMMENT ON CONSTRAINT has an unexpected token %q", p.current.Value)
+		return nil, ptaherr.At(p.current.Start, fmt.Errorf("COMMENT ON CONSTRAINT has an unexpected token %q", p.current.Value))
 	}
 	return &ast.AlterTableNode{Name: table, Operations: []ast.AlterOperation{&ast.SetConstraintCommentOperation{Constraint: name, Comment: text}}}, nil
 }

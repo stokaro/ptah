@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlext"
 	"ptah.run/dialect/postgres/pgtable"
@@ -72,7 +73,7 @@ func readUnlogged(claim sqlext.Claim, target string) error {
 		tokens = append(tokens, token)
 	}
 	if claim.Pattern != "unlogged" || claim.Site != sqlext.TablePrefix || len(tokens) != 1 || !tokens[0].MatchIdentifierValue("UNLOGGED") {
-		return fmt.Errorf("%w: expected UNLOGGED table prefix at position %d", schemaext.ErrInvalidValue, claim.Offset)
+		return ptaherr.At(claim.Offset, fmt.Errorf("%w: expected UNLOGGED table prefix", schemaext.ErrInvalidValue))
 	}
 	return nil
 }

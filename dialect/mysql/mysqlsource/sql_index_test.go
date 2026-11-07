@@ -130,17 +130,17 @@ func TestSQL_RefusesAMalformedIndexOption(t *testing.T) {
 		wantErr string
 	}{
 		{name: "no integer", dialect: platform.MySQL, sql: "CREATE TABLE t (a int, KEY k (a) KEY_BLOCK_SIZE='8');",
-			wantErr: `KEY_BLOCK_SIZE at position 33: expected a non-negative integer`},
+			wantErr: `line 1, column 34: KEY_BLOCK_SIZE: expected a non-negative integer`},
 		{name: "past MariaDB's limit", dialect: platform.MariaDB, sql: "CREATE TABLE t (a int, KEY k (a) KEY_BLOCK_SIZE=65536);",
 			wantErr: `KEY_BLOCK_SIZE 65536 exceeds the mariadb limit 65535; the server would truncate it`},
 		{name: "words after the size", dialect: platform.MySQL, sql: "CREATE TABLE t (a int, KEY k (a) KEY_BLOCK_SIZE=8 PAGES);",
-			wantErr: `unexpected "PAGES" after the block size at position 50`},
+			wantErr: `line 1, column 51: unexpected "PAGES" after the block size`},
 		{name: "no parser name", dialect: platform.MySQL, sql: "CREATE TABLE t (bio text, FULLTEXT KEY ft (bio) WITH PARSER 'x');",
-			wantErr: `expected a parser name after WITH PARSER: expected identifier, got String at position 60`},
+			wantErr: `line 1, column 61: expected a parser name after WITH PARSER: expected identifier, got String`},
 		{name: "no parser name in a guard", dialect: platform.MySQL, sql: "CREATE TABLE t (bio text, FULLTEXT KEY ft (bio) /*!50100 WITH PARSER */);",
-			wantErr: `expected a parser name after WITH PARSER: expected identifier, got EOF at position 69`},
+			wantErr: `line 1, column 70: expected a parser name after WITH PARSER: expected identifier, got EOF`},
 		{name: "words after the parser name", dialect: platform.MySQL, sql: "CREATE TABLE t (bio text, FULLTEXT KEY ft (bio) WITH PARSER ngram extra);",
-			wantErr: `unexpected "extra" after the parser name at position 66`},
+			wantErr: `line 1, column 67: unexpected "extra" after the parser name`},
 		{name: "a parser on a spatial index", dialect: platform.MySQL, sql: "CREATE TABLE t (g geometry NOT NULL, SPATIAL KEY s (g) WITH PARSER ngram);",
 			wantErr: `WITH PARSER belongs to a FULLTEXT index, and this one is SPATIAL`},
 		{name: "a parser on a CREATE INDEX", dialect: platform.MySQL, sql: "CREATE INDEX k ON t (a) WITH PARSER ngram;",
@@ -193,6 +193,6 @@ func TestSQL_AnIndexOptionEndsAtARefusedOption(t *testing.T) {
 
 	statements, err := parseMySQL(platform.MySQL, "CREATE TABLE t (a int, KEY k (a) KEY_BLOCK_SIZE=8 ENGINE_ATTRIBUTE '{}');")
 
-	c.Assert(err, qt.ErrorMatches, `ENGINE_ATTRIBUTE at position 50: an engine attribute of an index is not modeled; declare the key without it`)
+	c.Assert(err, qt.ErrorMatches, `line 1, column 51: ENGINE_ATTRIBUTE: an engine attribute of an index is not modeled; declare the key without it`)
 	c.Assert(statements, qt.IsNil)
 }
