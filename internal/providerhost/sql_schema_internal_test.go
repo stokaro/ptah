@@ -92,7 +92,7 @@ func fullSQLSchemaReply() *protocol.SQLSchema {
 // them, or a field it says they leave alone is filled.
 func TestSQLSchemaFieldAudit(t *testing.T) {
 	c := qt.New(t)
-	database, err := sqlSchemaCommon(fullSQLSchemaReply())
+	database, err := sqlSchemaCommon(fullSQLSchemaReply(), nil)
 	c.Assert(err, qt.IsNil)
 	reflected := reflect.ValueOf(database)
 	var fields []string
@@ -110,7 +110,7 @@ func TestSQLSchemaFieldAudit(t *testing.T) {
 
 func TestSQLSchemaCommonMapsDeclaredObjects(t *testing.T) {
 	c := qt.New(t)
-	database, err := sqlSchemaCommon(fullSQLSchemaReply())
+	database, err := sqlSchemaCommon(fullSQLSchemaReply(), nil)
 	c.Assert(err, qt.IsNil)
 	c.Assert(database.Tables, qt.DeepEquals, []schemamodel.Table{{StructName: "app.items", Name: "items", Schema: "app", PrimaryKey: []string{"id"},
 		PrimaryKeyParts: []schemamodel.PrimaryKeyPart{{Name: "id", Desc: true}}}})
@@ -143,12 +143,36 @@ func TestSQLSchemaGrantTargets(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			grant, err := sqlGrant(&protocol.SQLGrant{Role: "reader", Privileges: []string{"USE"}, Target: test.target})
+			grant, err := sqlGrant(&protocol.SQLGrant{Role: "reader", Privileges: []string{"USE"}, Target: test.target}, nil)
 			c.Assert(err, qt.IsNil)
 			test.want.Role, test.want.Privileges = "reader", []string{"USE"}
 			c.Assert(grant, qt.DeepEquals, test.want)
 		})
 	}
+}
+
+// A provider-owned database-wide object treats dots as literal name
+// characters. The SQL schema adapter must keep that spelling through its
+// host model and back into a provider grant target.
+func TestSQLSchemaDatabaseWideGrantKeepsLiteralName(t *testing.T) {
+	c := qt.New(t)
+	description := scopeDescription()
+	description.Engines[0].ScopeSelections[1].GrantObjectType = "RESOURCE POOL"
+	selections, err := newScopeSelections(description)
+	c.Assert(err, qt.IsNil)
+	reply := &protocol.SQLSchema{Grants: []*protocol.SQLGrant{{Role: "etl", Privileges: []string{"YDB.GRANULAR.SELECT_ROW"},
+		Target: &protocol.Reference{Kind: "resource pool", Name: "batch.v2"}}}}
+
+	database, err := sqlSchemaCommon(reply, selections)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(database.Grants, qt.DeepEquals, []schemamodel.Grant{{Role: "etl", Privileges: []string{"YDB.GRANULAR.SELECT_ROW"},
+		OnObject: "batch.v2", ObjectKind: schemamodel.GrantObjectResourcePool}})
+	target := &target{host: &Host{selections: selections}, engine: description.Engines[0]}
+	wire, err := target.declaredGrant(database.Grants[0])
+	c.Assert(err, qt.IsNil)
+	c.Assert(wire.GetTarget().GetSchema(), qt.Equals, "")
+	c.Assert(wire.GetTarget().GetName(), qt.Equals, "batch.v2")
 }
 
 func TestSQLSchemaRefusesWhatTheModelCannotHold(t *testing.T) {
@@ -169,7 +193,7 @@ func TestSQLSchemaRefusesWhatTheModelCannotHold(t *testing.T) {
 			c := qt.New(t)
 			reply := fullSQLSchemaReply()
 			test.change(reply)
-			database, err := sqlSchemaCommon(reply)
+			database, err := sqlSchemaCommon(reply, nil)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(database, qt.DeepEquals, schemamodel.Database{})
 		})
@@ -194,7 +218,7 @@ func TestSQLSchemaRefusesTheSettingsOfAView(t *testing.T) {
 			c := qt.New(t)
 			reply := fullSQLSchemaReply()
 			reply.Views[test.view].Features = &protocol.CapturedFeatures{Facets: &protocol.ComparisonState{Representation: protocol.ValueInput_DESIRED}}
-			database, err := sqlSchemaCommon(reply)
+			database, err := sqlSchemaCommon(reply, nil)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(err, qt.ErrorMatches, test.want)
 			c.Assert(database, qt.DeepEquals, schemamodel.Database{})
@@ -225,7 +249,7 @@ func TestSQLSchemaFacetSlot_HappyPath(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			database, err := sqlSchemaCommon(fullSQLSchemaReply())
+			database, err := sqlSchemaCommon(fullSQLSchemaReply(), nil)
 			c.Assert(err, qt.IsNil)
 			slots := map[string]*schemaext.Facets{"table items": &database.Tables[0].Facets, "column state": &database.Fields[1].Facets,
 				"index by_state": &database.Indexes[0].Facets}
@@ -253,7 +277,7 @@ func TestSQLSchemaFacetSlot_FailurePath(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			database, err := sqlSchemaCommon(fullSQLSchemaReply())
+			database, err := sqlSchemaCommon(fullSQLSchemaReply(), nil)
 			c.Assert(err, qt.IsNil)
 			slot, err := sqlFacetSlot(&database, sqlFacetSemantics(), test.owner)
 			c.Assert(err, qt.ErrorIs, provider.ErrProtocol)
@@ -267,7 +291,7 @@ func TestSQLSchemaRefusesAnEnumDeclaredTwiceDifferently(t *testing.T) {
 	c := qt.New(t)
 	reply := fullSQLSchemaReply()
 	reply.Enums[0].Values = []string{"on"}
-	database, err := sqlSchemaCommon(reply)
+	database, err := sqlSchemaCommon(reply, nil)
 	c.Assert(err, qt.ErrorMatches, `.*declares enum "app.state" twice, differently`)
 	c.Assert(database, qt.DeepEquals, schemamodel.Database{})
 }
@@ -455,7 +479,7 @@ func TestSQLSchemaCommonHoldsTheRolePasswordAReadingReturns(t *testing.T) {
 		{Name: "reader", Login: true},
 	}}
 
-	database, err := sqlSchemaCommon(reply)
+	database, err := sqlSchemaCommon(reply, nil)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(database.Roles, qt.DeepEquals, []schemamodel.Role{{Name: "app", Login: true, Password: "s3cret-pw"}, {Name: "reader", Login: true}})
