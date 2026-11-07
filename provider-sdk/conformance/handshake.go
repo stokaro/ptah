@@ -2,6 +2,7 @@ package conformance
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"sync"
@@ -36,11 +37,15 @@ func (r *run) handshake(ctx context.Context) {
 	}
 }
 
+// errNotStarted reports a provider that did not start for a check, which is
+// no refusal of what the check sends.
+var errNotStarted = errors.New("the provider did not start")
+
 // describeOnce starts the provider, sends request, and stops the provider.
 func (r *run) describeOnce(ctx context.Context, request *protocol.DescribeRequest) (*protocol.Description, error) {
 	opened, err := r.config.Target.connect(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("the provider did not start: %w", err)
+		return nil, fmt.Errorf("%w: %w", errNotStarted, err)
 	}
 	defer opened.close()
 	return r.describe(ctx, opened, request)
@@ -48,11 +53,14 @@ func (r *run) describeOnce(ctx context.Context, request *protocol.DescribeReques
 
 func (r *run) refusedDescribe(ctx context.Context, id string, request *protocol.DescribeRequest) {
 	reply, err := r.describeOnce(ctx, request)
-	if err == nil {
+	switch {
+	case errors.Is(err, errNotStarted):
+		r.add(id, Failed, err.Error())
+	case err == nil:
 		r.add(id, Failed, fmt.Sprintf("Describe answered with the description of %s", reply.GetProviderId()))
-		return
+	default:
+		r.pass(id)
 	}
-	r.pass(id)
 }
 
 // hostFeatures sends a repeated feature, a malformed one and an empty one,
@@ -67,7 +75,10 @@ func (r *run) hostFeatures(ctx context.Context) {
 	} {
 		request := listedAll().request(r.config.RequiredFeatures)
 		request.HostFeatures = listed
-		if _, err := r.describeOnce(ctx, request); err == nil {
+		switch _, err := r.describeOnce(ctx, request); {
+		case errors.Is(err, errNotStarted):
+			failures = append(failures, err.Error())
+		case err == nil:
 			failures = append(failures, fmt.Sprintf("Describe accepted the host features %q", listed))
 		}
 	}
@@ -90,6 +101,8 @@ func (r *run) firstMinorHost(ctx context.Context) {
 	reply, err := r.describeOnce(ctx, request)
 	refuses := provider.CheckContract(provider.HostContract(request), provider.MinimumContract(r.full)) != nil
 	switch {
+	case errors.Is(err, errNotStarted):
+		r.add(checkFirstMinorHost, Failed, err.Error())
 	case refuses && err == nil:
 		r.add(checkFirstMinorHost, Failed, "Describe answered a contract 25.0 host although the provider's minimum is "+provider.ContractString(provider.MinimumContract(r.full)))
 	case refuses:
