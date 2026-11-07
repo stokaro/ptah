@@ -245,7 +245,7 @@ type IndexGrammar struct {
 
 const (
 	// AlterIndexRename is PostgreSQL's ALTER INDEX [IF EXISTS] name RENAME
-	// TO new_name.
+	// TO new_name, and ALTER INDEX name ATTACH PARTITION partition_index.
 	AlterIndexRename = "rename"
 	// AlterIndexVisibility is CockroachDB's ALTER INDEX table@index VISIBLE |
 	// NOT VISIBLE | INVISIBLE.

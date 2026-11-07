@@ -59,6 +59,35 @@ func TestProviderColumnsComparisonReadbackAndPrediction(t *testing.T) {
 	c.Assert(desired.Fields[0].Nullable, qt.IsTrue)
 }
 
+// A provider that answers the collation apart from the type reports a column
+// whose collation alone changes as a collation change, with no type change.
+// The same provider without schema.column-collations folds the collation into
+// the type, so the comparison sees a type change instead.
+func TestProviderColumnsCollation(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		environment []string
+		want        map[string]string
+	}{
+		{"a provider that answers the collation", nil, map[string]string{"collation": " -> NOCASE"}},
+		{"a provider without the feature", []string{"FIXTURE_COLUMN_COLLATIONS=off"}, map[string]string{"type": "TEXT -> TEXT COLLATE NOCASE"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			_, runtime := yamlProviderEnvironment(c, "column-semantics", test.environment)
+			desired, current := columnDeclarations(), columnObservation()
+			desired.Fields[1].Collate = "NOCASE"
+
+			diff, err := schemadiff.CompareWithDialect(c.Context(), desired, current, "fixture", runtime)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(diff.TablesModified, qt.HasLen, 1)
+			c.Assert(diff.TablesModified[0].ColumnsModified, qt.HasLen, 1)
+			c.Assert(diff.TablesModified[0].ColumnsModified[0].Changes, qt.DeepEquals, test.want)
+		})
+	}
+}
+
 func TestProviderColumnsTrueNullabilityAndChangedDefault(t *testing.T) {
 	c := qt.New(t)
 	_, runtime := yamlProviderCommand(c, "column-semantics")

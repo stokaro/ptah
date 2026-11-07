@@ -65,6 +65,13 @@ type Request struct {
 	// ParentKinds is the model vocabulary assigned to this service. The
 	// selected runtime derives it from registration; callers cannot narrow it.
 	ParentKinds []schemaext.Kind
+	// OwnsTables tells the service that it owns the lifecycle of every table
+	// of the target without a parent kind: it receives each table the plan
+	// creates, alters, rebuilds or drops, answers one ParentPlan of kind
+	// TableKind for each such table after the receipts of ParentKinds, and
+	// may refuse a table with a parent diagnostic of that kind. The selected
+	// runtime derives it from registration; callers cannot set it.
+	OwnsTables bool
 	// Objects retains native objects across the whole selected provider, even
 	// when this service has no comparison change for them.
 	Objects ObjectContext
@@ -159,6 +166,12 @@ const (
 	// A receipt with no steps says the owner has nothing to create there.
 	CreateTable ParentAction = "create-table"
 )
+
+// TableKind is the kind of the parent receipt and the parent diagnostic a
+// service that owns table lifecycles ([Request.OwnsTables]) gives for a
+// table. It names the table itself, not a model: no codec owns it, and no
+// table holds state of it.
+const TableKind schemaext.Kind = "table"
 
 // ParentPlan accounts for one model's state through a parent operation, even
 // for an empty namespace. Strategy explains preservation or accepted loss;

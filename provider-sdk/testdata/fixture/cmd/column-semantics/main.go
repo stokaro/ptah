@@ -32,6 +32,12 @@ func main() {
 	if os.Getenv("FIXTURE_INDEX_FACETS") != "off" {
 		features = append(features, provider.ObservedIndexFacetsFeature)
 	}
+	// FIXTURE_COLUMN_COLLATIONS=off leaves out schema.column-collations, so
+	// the comparison folds a column's collation into its type, as a provider
+	// without the feature does.
+	if os.Getenv("FIXTURE_COLUMN_COLLATIONS") != "off" {
+		features = append(features, provider.ColumnCollationsFeature)
+	}
 	description.Features = append(description.Features, features...)
 	engine := description.Engines[0]
 	engine.Aliases = append(engine.Aliases, "fixture-columns")

@@ -4,12 +4,14 @@ package providerhost
 // intentionally do not expose, including omitted versus explicit scope parts.
 
 import (
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"github.com/stokaro/ptah/provider-sdk/provider"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/testing/protocmp"
 
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
@@ -216,4 +218,43 @@ func TestNamespaceScopesOfASubtreeRegion(t *testing.T) {
 	refused, err := namespaceScopes(nil, semantics, "fixture", "example.org/fixture/secret", region)
 	c.Assert(err, qt.ErrorMatches, `.*schema subtree coverage without a schema separator.*`)
 	c.Assert(refused, qt.IsNil)
+}
+
+// TestDeclaredRelationsFollowTheNegotiation sends every declared relation to
+// a provider and an engine that negotiated models.declared-relations, for a
+// request whose target lists it, and the views and materialized views alone
+// otherwise, which is what the list holds then.
+func TestDeclaredRelationsFollowTheNegotiation(t *testing.T) {
+	builder := objectidentity.NewBuilder(identifier.Semantics{TableNames: identifier.ComparisonExact})
+	table, view, materialized := builder.TableParts("main", "orders"), builder.TableParts("main", "recent"), builder.TableParts("main", "daily")
+	view.Kind, materialized.Kind = objectidentity.KindView, objectidentity.KindMatView
+	relations := []objectidentity.ID{table, view, materialized}
+	tests := []struct {
+		name             string
+		providerFeatures []string
+		engineFeatures   []string
+		targetFeatures   []string
+		want             []*protocol.ComparisonIdentity
+	}{
+		{"negotiated and listed by the target", []string{provider.DeclaredRelationsFeature}, []string{provider.DeclaredRelationsFeature},
+			[]string{provider.DeclaredRelationsFeature}, []*protocol.ComparisonIdentity{comparisonIdentity(table), comparisonIdentity(view), comparisonIdentity(materialized)}},
+		{"negotiated for a target captured without it", []string{provider.DeclaredRelationsFeature}, []string{provider.DeclaredRelationsFeature},
+			nil, []*protocol.ComparisonIdentity{comparisonIdentity(view), comparisonIdentity(materialized)}},
+		{"listed by the provider alone", []string{provider.DeclaredRelationsFeature}, nil,
+			[]string{provider.DeclaredRelationsFeature}, []*protocol.ComparisonIdentity{comparisonIdentity(view), comparisonIdentity(materialized)}},
+		{"listed by neither", nil, nil, nil, []*protocol.ComparisonIdentity{comparisonIdentity(view), comparisonIdentity(materialized)}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			target := yamlIdentityTarget()
+			target.host.description.Features, target.engine.Features = test.providerFeatures, test.engineFeatures
+			service := modelComparer{target: target, declaration: &protocol.ModelComparison{Id: "compare"}}
+
+			got := service.declaredRelations(test.targetFeatures, slices.Clone(relations))
+
+			c.Assert(got, qt.CmpEquals(protocmp.Transform()), test.want)
+			c.Assert(relations[0].Kind, qt.Equals, objectidentity.KindTable)
+		})
+	}
 }
