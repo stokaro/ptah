@@ -142,6 +142,11 @@ constraint, and no common step stands for the change. The provider plans it,
 for example as a rebuild, or refuses it in its own words. Without the feature
 the host refuses a key change before it plans, naming the table.
 
+A provider that owns its tables receives the foreign keys and CHECK
+constraints a created table declares in that table's declaration, and creates
+them with the table; a dropped table takes its constraints with it. A
+constraint added to or dropped from a table the plan keeps stays refused.
+
 With `planning.index-renames` as well, a provider renames an index in place.
 When its session reports `index_rename`, the comparison pairs an index the
 table holds with one the declaration states under another name and with one
@@ -237,7 +242,9 @@ declaration does not establish that its migration can be planned or applied.
 `schema.declarations` gives `ptah schema render` an offline creation path for
 provider-owned objects. The host validates the whole schema, sends complete
 captured tables to their creation planners, and asks declaration planners for
-standalone objects and assigned table children. This path requires
+standalone objects and assigned table children. A provider that owns its
+tables takes the same path without declaration services, and so does the SQL
+that `ptah db read` writes for such an engine. This path requires
 `schema.validate` and uses the caller's capability facts. It opens no database
 session and makes no claim about objects that already exist.
 

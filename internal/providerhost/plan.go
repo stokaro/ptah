@@ -165,8 +165,11 @@ func indexRemovalPlacement(semantics identifier.Semantics, steps []ast.Node) (ah
 // context even when none of those objects is writable; refusing it would
 // block table changes merely because access was not inspected.
 func (p commonPlanner) commonObjectSteps(diff *difftypes.SchemaDiff) (commonObjectPlan, error) {
+	// The declared tables, schemas, foreign keys and constraint hosts are
+	// context a planner reads, not changes: DeclaredForeignKeys holds every
+	// foreign key the declaration states, changed or not.
 	fields := []string{"TablePreparation", "IdentifierSemantics", "TablesAdded", "TablesRemoved", "TablesModified",
-		"DeclaredTables", "DeclaredSchemas", "DeclaredConstraintHosts", "ObservedConstraintHosts",
+		"DeclaredTables", "DeclaredSchemas", "DeclaredForeignKeys", "DeclaredConstraintHosts", "ObservedConstraintHosts",
 		"DeclaredTableDependencies", "Features", "FeatureChanges", "CurrentDatabasePath", "CurrentNotDescribed", "Matched", "FeatureCounts"}
 	if p.commonObjects {
 		fields = append(fields, commonObjectFields...)
