@@ -22,6 +22,9 @@ type wireDefects struct {
 	// renderUnimplemented answers Render with Unimplemented although the
 	// description offers it.
 	renderUnimplemented bool
+	// imageAndLinked describes the certified release line with an image
+	// beside the linked engine it names.
+	imageAndLinked bool
 }
 
 // wireProvider forwards each call to the memory provider behind the SDK's
@@ -65,6 +68,11 @@ func (w *wireProvider) Describe(ctx context.Context, request *protocol.DescribeR
 		request.HostFeatures = provider.TwoWayFeatures()
 	}
 	reply, err := w.inner.Describe(ctx, request)
+	if err == nil && w.defects.imageAndLinked {
+		for _, line := range reply.GetEngines()[0].GetReleaseLines() {
+			line.Image = "example.com/memory:1"
+		}
+	}
 	return reply, w.refusal(err)
 }
 

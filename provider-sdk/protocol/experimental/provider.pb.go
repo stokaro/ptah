@@ -6105,7 +6105,15 @@ type ReleaseLine struct {
 	// established answer; an absent key is unknown. Non-empty exactly when the
 	// engine lists engine.default-capabilities, and sent only to a host that
 	// lists it. Contract 25.22.
-	Capabilities  map[string]bool `protobuf:"bytes,7,rep,name=capabilities,proto3" json:"capabilities,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
+	Capabilities map[string]bool `protobuf:"bytes,7,rep,name=capabilities,proto3" json:"capabilities,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
+	// The version of the engine's library the provider executable links, for
+	// an engine that runs inside the provider process rather than as a server:
+	// the evidence of a CERTIFIED or LEGACY_TESTED line in place of an image,
+	// since the provider's own tests run the engine it links. It equals line or
+	// starts with line and a dot. One line of an engine at most names it, a line
+	// never names both it and an image, and it is sent only to a host that lists
+	// engine.linked-release-lines. Contract 25.30.
+	Linked        string `protobuf:"bytes,8,opt,name=linked,proto3" json:"linked,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -6187,6 +6195,13 @@ func (x *ReleaseLine) GetCapabilities() map[string]bool {
 		return x.Capabilities
 	}
 	return nil
+}
+
+func (x *ReleaseLine) GetLinked() string {
+	if x != nil {
+		return x.Linked
+	}
+	return ""
 }
 
 // YAMLSourceKey is an explicit owner claim on shared YAML frontend syntax.
@@ -6779,7 +6794,9 @@ type OpenRequest struct {
 	state  protoimpl.MessageState `protogen:"open.v1"`
 	Engine string                 `protobuf:"bytes,1,opt,name=engine,proto3" json:"engine,omitempty"`
 	// The connection address can contain credentials. Neither logs nor durable
-	// identity records may contain it.
+	// identity records may contain it. A relative file path in it resolves
+	// against the provider's working directory, which the bootstrap sets to the
+	// host's own, so it names the file the host's user means.
 	Address       string `protobuf:"bytes,2,opt,name=address,proto3" json:"address,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -35531,7 +35548,7 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\x0eSQLTableClause\x12\x14\n" +
 	"\x05words\x18\x01 \x03(\tR\x05words\x12\x1a\n" +
 	"\bselector\x18\x02 \x01(\tR\bselector\x12\x16\n" +
-	"\x06models\x18\x03 \x03(\tR\x06models\"\xd7\x03\n" +
+	"\x06models\x18\x03 \x03(\tR\x06models\"\xef\x03\n" +
 	"\vReleaseLine\x12\x12\n" +
 	"\x04line\x18\x01 \x01(\tR\x04line\x12\x14\n" +
 	"\x05label\x18\x02 \x01(\tR\x05label\x12I\n" +
@@ -35539,7 +35556,8 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\x05image\x18\x04 \x01(\tR\x05image\x12\x1a\n" +
 	"\bunprobed\x18\x05 \x01(\tR\bunprobed\x12\x12\n" +
 	"\x04note\x18\x06 \x01(\tR\x04note\x12]\n" +
-	"\fcapabilities\x18\a \x03(\v29.ptah.provider.experimental.ReleaseLine.CapabilitiesEntryR\fcapabilities\x1a?\n" +
+	"\fcapabilities\x18\a \x03(\v29.ptah.provider.experimental.ReleaseLine.CapabilitiesEntryR\fcapabilities\x12\x16\n" +
+	"\x06linked\x18\b \x01(\tR\x06linked\x1a?\n" +
 	"\x11CapabilitiesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\bR\x05value:\x028\x01\"m\n" +

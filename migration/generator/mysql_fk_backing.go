@@ -89,9 +89,14 @@ func (s *mysqlForeignKeyIndexSimulation) applyNode(node ast.Node) error {
 	case *ast.IndexNode:
 		s.addIndex(mysqlIndexCandidateFromNode(typed))
 	case *ast.DropIndexNode:
-		return s.removeIndex(difftypes.IndexRef{Name: typed.Name, TableName: typed.Table})
+		s.removeIndex(difftypes.IndexRef{Name: typed.Name, TableName: typed.Table})
+		return s.validateForeignKeyCoverage()
 	case *ast.AlterTableNode:
-		return s.applyAlterTable(typed)
+		removes, err := s.applyAlterTable(typed)
+		if err != nil || !removes {
+			return err
+		}
+		return s.validateForeignKeyCoverage()
 	case *ast.DropTableNode:
 		s.dropTables(typed)
 	}
@@ -136,7 +141,7 @@ func (s *mysqlForeignKeyIndexSimulation) addColumnKeys(table string, column *ast
 	}
 }
 
-func (s *mysqlForeignKeyIndexSimulation) dropColumn(table, column string) error {
+func (s *mysqlForeignKeyIndexSimulation) dropColumn(table, column string) {
 	for position := range s.indexes {
 		candidate := &s.indexes[position]
 		if s.tableIdentity(candidate.ref.TableName) != s.tableIdentity(table) {
@@ -152,7 +157,6 @@ func (s *mysqlForeignKeyIndexSimulation) dropColumn(table, column string) error 
 	if columns := s.addedColumns[s.tableIdentity(table)]; columns != nil {
 		delete(columns, s.semantics.ColumnIdentityKey(column))
 	}
-	return s.validateForeignKeyCoverage()
 }
 
 func (s *mysqlForeignKeyIndexSimulation) renameColumn(table, oldName, newName string) {
@@ -231,7 +235,11 @@ func (s *mysqlForeignKeyIndexSimulation) dropTableState(table string) {
 	})
 }
 
-func (s *mysqlForeignKeyIndexSimulation) applyAlterTable(node *ast.AlterTableNode) error {
+// applyAlterTable applies one ALTER TABLE and reports whether it removes an index or a
+// column. The server checks the foreign keys against the table the statement leaves, so
+// the caller asks for the coverage once the whole statement is in: `DROP INDEX k, MODIFY
+// COLUMN a bigint UNIQUE` leaves a key over `a` an index, which the drop alone would not.
+func (s *mysqlForeignKeyIndexSimulation) applyAlterTable(node *ast.AlterTableNode) (removes bool, _ error) {
 	table := node.Name
 	for _, operation := range node.Operations {
 		switch typed := operation.(type) {
@@ -241,9 +249,8 @@ func (s *mysqlForeignKeyIndexSimulation) applyAlterTable(node *ast.AlterTableNod
 		case *ast.ModifyColumnOperation:
 			s.addColumnKeys(table, typed.Column)
 		case *ast.DropColumnOperation:
-			if err := s.dropColumn(table, typed.ColumnName); err != nil {
-				return err
-			}
+			s.dropColumn(table, typed.ColumnName)
+			removes = true
 		case *ast.RenameColumnOperation:
 			s.renameColumn(table, typed.OldName, typed.NewName)
 		case *ast.RenameTableOperation:
@@ -251,31 +258,29 @@ func (s *mysqlForeignKeyIndexSimulation) applyAlterTable(node *ast.AlterTableNod
 			table = typed.NewName
 		case *ast.AddConstraintOperation:
 			if err := s.addConstraint(table, typed.Constraint); err != nil {
-				return err
+				return false, err
 			}
 		case *ast.DropConstraintOperation:
-			if err := s.dropConstraint(table, typed); err != nil {
-				return err
-			}
+			s.dropConstraint(table, typed)
+			removes = removes || typed.PrimaryKey || typed.Unique
 		case *ast.ReplaceIndexOperation:
-			if err := s.replaceIndex(table, typed); err != nil {
-				return err
-			}
+			s.replaceIndex(table, typed)
+			removes = true
 		case *ast.AddIndexOperation:
 			s.addIndex(mysqlIndexCandidateFromNode(typed.Index))
 		}
 	}
-	return nil
+	return removes, nil
 }
 
 // replaceIndex applies `DROP INDEX k, ADD INDEX k (...)`, one statement: the
 // server checks the foreign keys against the table the statement leaves, so
 // the dropped index needs no cover while the added one takes its place. The
 // statement may drop indexes under other names too, and those leave with it.
-func (s *mysqlForeignKeyIndexSimulation) replaceIndex(table string, op *ast.ReplaceIndexOperation) error {
+func (s *mysqlForeignKeyIndexSimulation) replaceIndex(table string, op *ast.ReplaceIndexOperation) {
 	index := op.Index
 	if index == nil {
-		return nil
+		return
 	}
 	added := *index
 	added.Table = table
@@ -286,7 +291,6 @@ func (s *mysqlForeignKeyIndexSimulation) replaceIndex(table string, op *ast.Repl
 		})
 	})
 	s.addIndex(mysqlIndexCandidateFromNode(&added))
-	return s.validateForeignKeyCoverage()
 }
 
 func (s *mysqlForeignKeyIndexSimulation) addConstraint(
@@ -332,9 +336,38 @@ func (s *mysqlForeignKeyIndexSimulation) addForeignKey(
 			)
 		}
 		s.addGeneratedBackingIndex(foreignKey)
+	case mysqlIndexCovers:
+		if replaced := s.builtIndexesOfItsColumnsAlone(foreignKey); len(replaced) > 0 {
+			s.indexes = slices.DeleteFunc(s.indexes, func(candidate mysqlIndexCandidate) bool {
+				return slices.ContainsFunc(replaced, func(ref difftypes.IndexRef) bool { return s.sameIndexIdentity(candidate.ref, ref) })
+			})
+			for _, ref := range replaced {
+				s.removeAutoReverseRemoval(ref)
+			}
+			s.addGeneratedBackingIndex(foreignKey)
+		}
 	}
 	s.foreignKeys = append(s.foreignKeys, foreignKey)
 	return nil
+}
+
+// builtIndexesOfItsColumnsAlone answers the indexes over exactly foreignKey's columns
+// that the server built for another key in this plan, where nothing else serves
+// foreignKey. The server then builds the new key an index of its own in their place,
+// under the new key's name. Measured on MySQL 8.4 and 26.10 and MariaDB 12.3: with c_fk
+// over qid, ADD CONSTRAINT d_fk FOREIGN KEY (qid) leaves one index, d_fk, also after
+// c_fk is dropped, while an index the author named c_fk stays and d_fk stands on it.
+func (s *mysqlForeignKeyIndexSimulation) builtIndexesOfItsColumnsAlone(foreignKey mysqlForeignKeyState) []difftypes.IndexRef {
+	var built []difftypes.IndexRef
+	for _, candidate := range s.indexes {
+		if mysqlCandidateForeignKeyCoverage(candidate, foreignKey, s.semantics) != mysqlIndexDoesNotCover {
+			if !candidate.desired || len(candidate.keyColumns) != len(foreignKey.columns) {
+				return nil
+			}
+			built = append(built, candidate.ref)
+		}
+	}
+	return built
 }
 
 func (s *mysqlForeignKeyIndexSimulation) hasSameNamedIndex(ref difftypes.IndexRef) bool {
@@ -367,7 +400,7 @@ func (s *mysqlForeignKeyIndexSimulation) addGeneratedBackingIndex(
 func (s *mysqlForeignKeyIndexSimulation) dropConstraint(
 	table string,
 	operation *ast.DropConstraintOperation,
-) error {
+) {
 	switch {
 	case operation.ForeignKey:
 		s.foreignKeys = slices.DeleteFunc(s.foreignKeys, func(foreignKey mysqlForeignKeyState) bool {
@@ -376,13 +409,10 @@ func (s *mysqlForeignKeyIndexSimulation) dropConstraint(
 				difftypes.IndexRef{Name: operation.ConstraintName, TableName: table},
 			)
 		})
-		return nil
 	case operation.PrimaryKey:
-		return s.removeIndex(difftypes.IndexRef{Name: "PRIMARY", TableName: table})
+		s.removeIndex(difftypes.IndexRef{Name: "PRIMARY", TableName: table})
 	case operation.Unique:
-		return s.removeIndex(difftypes.IndexRef{Name: operation.ConstraintName, TableName: table})
-	default:
-		return nil
+		s.removeIndex(difftypes.IndexRef{Name: operation.ConstraintName, TableName: table})
 	}
 }
 
@@ -423,11 +453,10 @@ func (s *mysqlForeignKeyIndexSimulation) removeAutoReverseRemoval(ref difftypes.
 	})
 }
 
-func (s *mysqlForeignKeyIndexSimulation) removeIndex(ref difftypes.IndexRef) error {
+func (s *mysqlForeignKeyIndexSimulation) removeIndex(ref difftypes.IndexRef) {
 	s.indexes = slices.DeleteFunc(s.indexes, func(candidate mysqlIndexCandidate) bool {
 		return s.sameIndexIdentity(candidate.ref, ref)
 	})
-	return s.validateForeignKeyCoverage()
 }
 
 func (s *mysqlForeignKeyIndexSimulation) validateForeignKeyCoverage() error {
