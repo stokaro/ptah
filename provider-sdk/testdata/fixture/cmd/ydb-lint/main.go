@@ -67,7 +67,7 @@ func main() {
 	fixture := backend.Description()
 	description := &protocol.Description{Revision: fixture.Revision, ProviderId: "github.com/stokaro/ptah-ydb-plugin", Version: fixture.Version,
 		SemanticIdentity: fixture.SemanticIdentity + "-ydb-lint",
-		Engines: []*protocol.Engine{{Id: "ydb", Aliases: []string{"ydbs"}, DefaultSchema: fixture.Engines[0].DefaultSchema, Features: []string{"tables", "columns", provider.LintFeature},
+		Engines: []*protocol.Engine{{Id: "ydb", Aliases: []string{"ydbs"}, DefaultSchema: fixture.Engines[0].DefaultSchema, Features: []string{provider.LintFeature},
 			Identifiers: fixture.Engines[0].Identifiers, LintRules: published}},
 		Features: []string{provider.InspectFeature, provider.RenderFeature, provider.ExecuteFeature, provider.AnalyzeSQLFeature, provider.LintFeature}}
 	owner := &backend.Provider{}

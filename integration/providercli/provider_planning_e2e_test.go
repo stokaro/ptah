@@ -43,7 +43,7 @@ func planningChange(c *qt.C, runtime *engine.Runtime, name, payload string, feat
 	var wire map[string]any
 	c.Assert(json.Unmarshal(envelope.Payload, &wire), qt.IsNil)
 	wire["subject"] = map[string]any{"engine": "fixture", "kind": "table", "schema": "main", "name": name}
-	wire["features"] = append([]string{"tables", "columns", "schema.common-table-identity.v1"}, features...)
+	wire["features"] = append([]string{"schema.common-table-identity.v1"}, features...)
 	var err error
 	envelope.Payload, err = json.Marshal(wire)
 	c.Assert(err, qt.IsNil)

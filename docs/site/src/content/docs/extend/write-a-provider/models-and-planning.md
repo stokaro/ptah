@@ -55,9 +55,11 @@ about the engine before it opens a session comes from it:
 
 The README's
 [Captured extension sources (latest development source)](https://github.com/stokaro/ptah/blob/master/provider-sdk/README.md#captured-extension-sources)
-section states the source claims, and
-[Offline capabilities (latest development source)](https://github.com/stokaro/ptah/blob/master/provider-sdk/README.md#offline-capabilities)
-states the release lines.
+section states the source claims,
+[Release lines (latest development source)](https://github.com/stokaro/ptah/blob/master/provider-sdk/README.md#release-lines)
+states the release lines, and
+[Migration lint (latest development source)](https://github.com/stokaro/ptah/blob/master/provider-sdk/README.md#migration-lint)
+states the rule catalog.
 
 ## Models
 
@@ -185,6 +187,7 @@ form under `render.text-units`, and a change the engine makes only through a
 native call is refused there by name.
 
 The README's
+[Table policies (latest development source)](https://github.com/stokaro/ptah/blob/master/provider-sdk/README.md#table-policies),
 [Contextual feature planning (latest development source)](https://github.com/stokaro/ptah/blob/master/provider-sdk/README.md#contextual-feature-planning)
 and [Common objects (latest development source)](https://github.com/stokaro/ptah/blob/master/provider-sdk/README.md#common-objects)
 sections give the contracts.
