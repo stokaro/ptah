@@ -37,6 +37,11 @@ func TestFormatColumnType_ComposesTheDeclaredSpelling(t *testing.T) {
 		// measured on 23.26 -- not a zero, which is what a plain int64 scan
 		// would have recorded.
 		{name: "unconstrained number", dataType: "NUMBER", want: "NUMBER"},
+		// A column declared INTEGER or NUMBER(*,0) reports a NULL precision and a scale
+		// of 0, measured on 23.26. It holds no fraction, so it is no bare NUMBER, and a
+		// declared NUMBER over it is a change.
+		{name: "no precision and a scale", dataType: "NUMBER", scale: number(0), want: "NUMBER(*,0)"},
+		{name: "no precision and a real scale", dataType: "NUMBER", scale: number(2), want: "NUMBER(*,2)"},
 		{name: "varchar2", dataType: "VARCHAR2", charLength: number(200), want: "VARCHAR2(200)"},
 		{name: "char", dataType: "CHAR", charLength: number(3), want: "CHAR(3)"},
 		{name: "raw", dataType: "RAW", charLength: number(16), want: "RAW(16)"},

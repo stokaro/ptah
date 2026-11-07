@@ -71,6 +71,12 @@ func TestCompareTemporalColumn_NarrowsAsTheEngineReadsIt(t *testing.T) {
 		{"ClickHouse to a date", "clickhouse", "DateTime", "Date", true},
 		{"Oracle a timestamp to a date", "oracle", "TIMESTAMP(6)", "DATE", true},
 		{"Oracle a date to a timestamp", "oracle", "DATE", "TIMESTAMP", false},
+		{"Oracle down", "oracle", "TIMESTAMP(6)", "TIMESTAMP(0)", true},
+		{"Oracle bare to fewer", "oracle", "TIMESTAMP(6)", "TIMESTAMP(3)", true},
+		{"Oracle up", "oracle", "TIMESTAMP(3)", "TIMESTAMP(6)", false},
+		{"Oracle fewer to bare widens", "oracle", "TIMESTAMP(3)", "TIMESTAMP", false},
+		{"Oracle with a zone", "oracle", "TIMESTAMP(6) WITH TIME ZONE", "TIMESTAMP(0) WITH TIME ZONE", true},
+		{"Oracle a portable zone", "oracle", "TIMESTAMP(6) WITH TIME ZONE", "timestamptz(0)", true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -119,6 +125,12 @@ func TestCompareTemporalColumn_OneTypeInTwoSpellingsIsNoChange(t *testing.T) {
 		{"SQL Server time three and three", "sqlserver", "TIME(3)", "time(3)"},
 		{"SQL Server offset three and three", "sqlserver", "DATETIMEOFFSET(3)", "datetimeoffset(3)"},
 		{"ClickHouse a bare DateTime64", "clickhouse", "DateTime64(3)", "DateTime64"},
+		{"Oracle six and bare", "oracle", "TIMESTAMP(6)", "TIMESTAMP"},
+		{"Oracle a portable zone", "oracle", "TIMESTAMP(6) WITH TIME ZONE", "timestamptz"},
+		{"Oracle a portable zone and digits", "oracle", "TIMESTAMP(3) WITH TIME ZONE", "timestamptz(3)"},
+		{"Oracle a portable datetime and digits", "oracle", "TIMESTAMP(3)", "datetime(3)"},
+		{"Oracle an interval and its default digits", "oracle", "INTERVAL DAY(2) TO SECOND(6)", "INTERVAL DAY TO SECOND"},
+		{"Oracle a year interval and its default digits", "oracle", "INTERVAL YEAR(2) TO MONTH", "INTERVAL YEAR TO MONTH"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -185,9 +197,7 @@ func narrowedColumns(columns []difftypes.ColumnDiff) bool {
 }
 
 // TestCompareTemporalColumn_AnEngineThatDoesNotCompareAPrecision pins where no plan is
-// made, so no rating is owed. SQLite stores a declaration without reading it, and
-// Oracle's comparison reads the type family: its server refuses to lower a precision on
-// a column holding a row (ORA-30082).
+// made, so no rating is owed. SQLite stores a declaration without reading it.
 func TestCompareTemporalColumn_AnEngineThatDoesNotCompareAPrecision(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -197,9 +207,6 @@ func TestCompareTemporalColumn_AnEngineThatDoesNotCompareAPrecision(t *testing.T
 	}{
 		{"SQLite", "sqlite", "TIMESTAMP(6)", "TIMESTAMP(0)"},
 		{"SQLite a date", "sqlite", "TIMESTAMP", "DATE"},
-		{"Oracle down", "oracle", "TIMESTAMP(6)", "TIMESTAMP(0)"},
-		{"Oracle up", "oracle", "TIMESTAMP(3)", "TIMESTAMP(6)"},
-		{"Oracle with a zone", "oracle", "TIMESTAMP(6) WITH TIME ZONE", "TIMESTAMP(0) WITH TIME ZONE"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

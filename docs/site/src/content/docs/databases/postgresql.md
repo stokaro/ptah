@@ -788,6 +788,12 @@ column as well, since the statement reads the same. `DROP DEFAULT`, `SET GENERAT
 `ADD GENERATED ALWAYS` are warnings. See
 [how a column change is rated](../../direct/plan-and-approve/#how-a-column-change-is-rated).
 
+A `numeric` column that declares no precision holds any number. So `numeric` declared
+`numeric(10,2)` is a change rated as a narrowing, and `numeric(10,2)` declared `numeric`
+is a change rated safe. `char` and `char(1)` are one type, `double precision` and
+`float` are one type, and `real` and `float(24)` are one type, while a bare `bpchar` has
+no limit.
+
 An `interval` column is read with the fields it keeps. `interval year to month` clears
 days and time of day from every value, so declaring it over an `interval` column is
 rated as a narrowing, and a schema file may spell it as `pg_dump` does.

@@ -823,6 +823,15 @@ nothing, and `datetime(6)` declared `datetime` plans a `MODIFY COLUMN` that roun
 digits away. The plan rates that destructive. See
 [how a column change is rated](../../direct/plan-and-approve/#how-a-column-change-is-rated).
 
+## A column's size
+
+`decimal` and `numeric` are `decimal(10,0)` where a column declares no precision, on
+both servers. So `decimal` and `decimal(10,0)` are one type and plan nothing, and
+`decimal(10,2)` declared `decimal` plans a `MODIFY COLUMN` that rounds `1.50` to `2`,
+rated destructive. `char`, `binary` and `bit` are the same types with a length of one.
+`float(p)` is `float` up to a `p` of 24 and `double` above it, and `real` is `double`
+unless `REAL_AS_FLOAT` is set.
+
 ## Making a column NOT NULL
 
 A plan that makes an existing column `NOT NULL` writes `MODIFY COLUMN` with

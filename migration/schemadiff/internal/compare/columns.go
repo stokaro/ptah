@@ -961,6 +961,13 @@ func columnTypeChange(
 	if comparisonOf(dialect).NullableTypes {
 		return clickHouseColumnTypeChange(genCol, dbCol, dbRawType)
 	}
+	// A type spelled with its size and one spelled without it name what the engine builds
+	// for both, as `char` and `char(1)` do everywhere and `float` and `float(53)` do on
+	// PostgreSQL. Compared as words, each plans a statement that changes nothing on every
+	// run, and a person who adopted the database has no way to quiet it.
+	if typeEngineOf(dialect).Same(dbRawType, genCol.Type) {
+		return ""
+	}
 	precision := comparisonOf(dialect).TimePrecision
 	bareDeclared := genCol
 	bareDeclared.Type = withoutTimePrecision(genCol.Type, precision)
@@ -982,15 +989,20 @@ func columnTypeChange(
 // the exception, since it holds the canonical types and the raw ones may not be.
 func typeChangeNarrows(change, dbRawType, declaredType, dialect string) bool {
 	comparison := comparisonOf(dialect)
-	bareDigits := comparison.TimePrecision.Default
 	if comparison.NullableTypes {
 		before, after, _ := strings.Cut(change, " -> ")
-		return typechange.IsNarrowingOn(before, after, bareDigits)
+		return typeEngineOf(dialect).Narrows(before, after)
 	}
 	if comparison.MapsDeclaredTypes {
 		declaredType = oracletype.Map(declaredType)
 	}
-	return typechange.IsNarrowingOn(dbRawType, declaredType, bareDigits)
+	return typeEngineOf(dialect).Narrows(dbRawType, declaredType)
+}
+
+// typeEngineOf is what dialect's descriptor says a type that declares no size holds.
+func typeEngineOf(dialect string) typechange.Engine {
+	comparison := comparisonOf(dialect)
+	return typechange.Engine{TimeDigits: comparison.TimePrecision.Default, Bare: comparison.BareTypes}
 }
 
 // timeTypeRe matches a temporal type with its precision: the name, the precision, and
@@ -1507,8 +1519,7 @@ func renderedSQLiteType(genCol schemamodel.Field) string {
 func shouldReportSizedTypeChange(dbType, genType, dialect string) bool {
 	// A temporal type's precision is not a width. An engine that compares it declares
 	// so ([descriptor.TimePrecision]) and has compared it by now, and an engine that
-	// does not leaves it alone: Oracle refuses to lower one on a column holding a row
-	// (ORA-30082), and SQLite stores the declaration without reading it.
+	// does not leaves it alone: SQLite stores the declaration without reading it.
 	if typechange.IsTemporal(dbType) && typechange.IsTemporal(genType) {
 		return false
 	}
@@ -1516,6 +1527,7 @@ func shouldReportSizedTypeChange(dbType, genType, dialect string) bool {
 		normalize.Type(dbType) == normalize.Type(normalize.SQLiteColumnType(genType)) {
 		return false
 	}
+	engine := typeEngineOf(dialect)
 	// The suppression Oracle needs, and it compares the FULL rendered type
 	// rather than the normalized one.
 	//
@@ -1537,9 +1549,9 @@ func shouldReportSizedTypeChange(dbType, genType, dialect string) bool {
 		if strings.EqualFold(strings.TrimSpace(dbType), rendered) {
 			return false
 		}
-		return typechange.IsNarrowing(dbType, rendered) || typechange.IsWidening(dbType, rendered)
+		return engine.Narrows(dbType, rendered) || engine.Widens(dbType, rendered)
 	}
-	return typechange.IsNarrowing(dbType, genType) || typechange.IsWidening(dbType, genType)
+	return engine.Narrows(dbType, genType) || engine.Widens(dbType, genType)
 }
 
 func normalizeTablePrimaryKeyColumn(genCol schemamodel.Field, dbCol catalog.Column, dialect string) schemamodel.Field {

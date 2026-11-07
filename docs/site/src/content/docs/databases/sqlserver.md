@@ -403,6 +403,14 @@ precision, or moves a column to `datetime`, `smalldatetime` or `date`, is rated
 destructive, since the server rounds the digits away without a word. See
 [how a column change is rated](../../direct/plan-and-approve/#how-a-column-change-is-rated).
 
+A column's size is compared by what it holds. `(max)` has no limit, so `nvarchar(max)`
+declared `nvarchar(50)` plans an `ALTER COLUMN` rated destructive, and the server
+answers `2628` and keeps the column if a value is too long. `varchar`, `nvarchar`,
+`char`, `nchar`, `binary` and `varbinary` hold one where a column declares no length,
+`decimal` and `numeric` are `decimal(18,0)`, and `float` is `float(53)`. So each of those
+plans nothing against the size it stands for, and `decimal(10,2)` declared `decimal`
+rounds `1.50` to `2`.
+
 ## Routines
 
 A function or a procedure is written `CREATE OR ALTER`. Its header's `WITH`

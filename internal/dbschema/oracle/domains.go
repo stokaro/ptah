@@ -289,8 +289,8 @@ func (r *Reader) readDomainColumns(ctx context.Context) (map[string][]domainColu
 const undefinedDomainType = "UNDEFINED"
 
 // formatDomainType keeps facts whose meaning differs from the column catalog.
-// A scale without precision constrains NUMBER's scale. National character
-// lengths count characters, while DATA_LENGTH counts their encoded bytes.
+// National character lengths count characters, while DATA_LENGTH counts their
+// encoded bytes.
 //
 // Two more were measured on 23.26.3.0.0. ALL_DOMAIN_COLS has no CHAR_USED, and
 // a domain declared VARCHAR2(10 CHAR) reports DATA_LENGTH 40 and CHAR_LENGTH
@@ -302,10 +302,6 @@ const undefinedDomainType = "UNDEFINED"
 // DATA_LENGTH 1.
 func formatDomainType(dataType string, length, charLength, precision, scale sql.NullInt64) string {
 	switch dataType {
-	case "NUMBER":
-		if !precision.Valid && scale.Valid {
-			return fmt.Sprintf("NUMBER(*,%d)", scale.Int64)
-		}
 	case "NCHAR", "NVARCHAR2":
 		length = charLength
 	case "VARCHAR2", "CHAR":
