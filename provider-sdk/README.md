@@ -60,7 +60,7 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.27. Each released SDK speaks one contract:
+speaks contract 25.28. Each released SDK speaks one contract:
 
 | SDK release | Contract |
 | --- | --- |
@@ -145,6 +145,10 @@ returns to 0.
   Contract 25.27 adds [table outlines](#table-outlines),
   [shared coverage](#shared-coverage) and
   [own model predecessors](#own-model-predecessors).
+  Contract 25.28 adds [observed constraints](#observed-constraints),
+  [constraint changes](#constraint-changes),
+  [CHECK equivalence](#check-equivalence) and
+  [index NULLS order](#index-nulls-order).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -182,7 +186,9 @@ does not oblige a peer to use it.
   `source.index-kinds`, `models.predecessors`, `schema.role-scope-reasons`,
   `source.go-placements`, `planning.primary-key-changes`, `models.references`,
   `transport.large-messages`, `planning.table-outlines`,
-  `transport.shared-coverage` and `models.own-predecessors`. The embedding
+  `transport.shared-coverage`, `models.own-predecessors`,
+  `schema.observed-constraints`, `planning.constraint-changes` and
+  `schema.index-nulls-order`. The embedding
   store's calls,
   `PrepareCommonObjects`, `ReverseChanges` and `ReportValues` are new, and each
   comes with an addition to `Engine`, so a host lists the feature to receive
@@ -245,7 +251,7 @@ this SDK, and a host of this SDK against a provider of contract 25.0.
 | `PlanFeatures` | Complete offline graph contributions and ordered change and parent receipts, or diagnostics with no successful output. |
 | `PlanDeclarations` | Complete offline creation contributions and ordered authored-object receipts, without observed state. |
 | `DescribeExecutionInputs` | Complete offline discovery of the exact unit batch's sensitive input references, without reading values. |
-| `PrepareTables` | Complete prepared key membership, declared facet adjustments and, under `schema.index-methods`, declared index kinds from captured table state. |
+| `PrepareTables` | Complete prepared key membership, declared facet adjustments and, under `schema.index-methods` and `schema.index-nulls-order`, declared index kinds and key NULLS orders from captured table state. |
 | `PrepareCommonObjects` | Offline: the declared views, sequences, roles and grants in the engine's spelling, each entry keeping its identity. |
 | `ProjectTableCreations` | Complete predicted CREATE effects within the host's eligible facet owner inventory. |
 | `ValidateSchema` | A completed offline schema check with typed invalid, unsupported, or omitted-declaration diagnostics. |
@@ -298,6 +304,7 @@ this SDK, and a host of this SDK against a provider of contract 25.0.
 | `SplitMigration` | Offline: the units one migration body runs as, in run order, each with the text to execute, its own source and a placement, or a refusal of the whole body; and a read-only verdict for each check assertion. |
 | `ReportValues` | Offline: one count for each metric of a value's model report, for every value of the request, in order. |
 | `ScanSQL` | Offline: the tokens of one text of the engine's SQL, in order, covering the text with no gap and no overlap. |
+| `CompareChecks` | Offline: for each declared CHECK expression paired with a held CHECK, whether the two are one constraint on the engine, in request order. |
 
 Session capabilities preserve presence: an explicit `false` is an established
 answer, while an absent key remains unknown. The SDK validates names and the host
@@ -2352,6 +2359,80 @@ the change. The engine plans it, for example as a table rebuild, or refuses
 the request in its own words. A host that has not negotiated the feature
 refuses a plan with such a change before it plans, naming the table.
 
+## Observed constraints
+
+[ADR 0088](../docs/adr/0088-a-read-reports-the-foreign-keys-and-checks-a-table-holds.md)
+decides this feature. `schema.observed-constraints` carries the FOREIGN KEY
+and CHECK constraints an inspected table holds in `Table.constraints`, using
+`ObservedConstraint`. The provider and the engine both declare this two-way
+feature, which requires `schema.observed-columns`. A peer refuses the list
+without negotiation, and a creation operand never carries it.
+
+The list is the whole set: with the feature negotiated, a FOREIGN KEY or
+CHECK the list does not name is absent, so a host compares the declared
+constraints with the held ones. The primary key stays in
+`Table.primary_key`, and an index the engine builds to enforce a constraint is
+in neither list. The SDK checks each constraint:
+
+- it has a name unique within its table and binds the table's exact name and
+  schema;
+- it lists its columns, each a known column named once, in `column_names`, and
+  the singular `column_name` stays empty;
+- a foreign key states the table it references, as many referenced columns as
+  it has columns, its rules in the spelling of `information_schema`
+  (`NO ACTION`, `RESTRICT`, `CASCADE`, `SET NULL`, `SET DEFAULT`), its MATCH
+  type as `FULL`, `PARTIAL` or empty for SIMPLE, and its deferral as a primary
+  key does;
+- a CHECK states its expression in `check_clause`, as the server keeps it, and
+  no foreign key attribute;
+- neither carries index attributes.
+
+## Constraint changes
+
+[ADR 0089](../docs/adr/0089-a-provider-plans-the-constraint-changes-of-a-table-it-owns.md)
+decides this feature. `planning.constraint-changes` states that an engine
+plans the addition and the removal of a FOREIGN KEY or CHECK constraint on a
+table whose lifecycle it owns and the plan keeps. The provider and the engine
+list it. The engine needs `schema.observed-constraints` and a planning service
+with parent kinds, and it does not list `schema.common-table-identity.v1`.
+`ValidateDescription` refuses any other declaration.
+
+With the feature negotiated, a host that finds a declared FOREIGN KEY or
+CHECK different from the held one, or one side without the other, hands the
+table to the engine as an `ALTER` in `PlanFeatures`, as it does a table whose
+primary key changes. The table's `desired` declaration carries the declared
+constraints in `constraints`, `checks` and the columns' own `check` and
+`foreign_reference`, its `current` observation carries the held ones in
+`constraints`, and no common step stands for the change. The engine plans it
+or refuses it in its own words. A constraint of a table the plan creates
+travels in the creation's declaration, and one of a table it removes leaves
+with the table. A host that has not negotiated the feature refuses a plan
+with such a change of a provider table before it plans, naming the table.
+
+## CHECK equivalence
+
+[ADR 0090](../docs/adr/0090-a-provider-decides-whether-two-checks-are-one.md)
+decides this feature. `schema.check-equivalence` enables `CompareChecks`, by
+which the owner of an engine decides whether a declared CHECK expression and
+the CHECK a held table keeps under the same name are one constraint. A
+server often keeps a CHECK in a form of its own, with literals cast or a list
+rewritten, so only the engine's owner can say that two texts mean one
+constraint. The provider and each engine that compares checks list it; a host
+that does not know the call never makes it, so it is not a two-way feature.
+
+A request names the engine, its identifier facts and capabilities, and for
+each held table its subject, the table as held, with the columns its
+expressions read and the constraints among which each named CHECK is, and the
+pairs to compare: the name of a held CHECK and the declared expression,
+without the `CHECK` keyword and its enclosing parentheses. The owner reads the
+request alone and runs nothing. The reply answers each table and each pair
+in the request's order with `equivalent`; the host keeps a held CHECK the
+owner calls equivalent and replaces one it does not. `ValidateCompareChecksRequest`
+refuses a pair that names no CHECK the table holds with an expression, a
+blank declared expression, a constraint named twice, a table without pairs and
+two tables of one subject; `ValidateComparedChecks` refuses a reply that
+leaves a table or a pair out, reorders them or names another.
+
 ## Common index observations
 
 `schema.observed-indexes` carries each inspected table's complete common
@@ -2375,7 +2456,8 @@ provider that owns the table.
 
 The host compares an index's uniqueness, key columns and covered columns with
 the held index. Without [prepared index kinds](#prepared-index-kinds) it
-compares no kind, so a change of kind alone plans nothing.
+compares no kind, so a change of kind alone plans nothing, and without the
+[index NULLS order](#index-nulls-order) it compares no key's NULLS order.
 
 ## Index facets on inspected indexes
 
@@ -2421,6 +2503,31 @@ twice or leaves the declared order. The host keeps the source's type in the
 declaration: the prepared kind serves the comparison alone.
 [ADR 0057](../docs/adr/0057-a-provider-spells-a-declared-index-kind-as-it-reports-a-held-one.md)
 records why the provider spells the declared kind.
+
+## Index NULLS order
+
+[ADR 0091](../docs/adr/0091-an-engine-states-the-nulls-order-of-every-index-key.md)
+decides this feature. `schema.index-nulls-order` has an engine state the
+NULLS order of every key part of an index on both sides, so the host
+compares them exactly. A read states it on each part of each index a table
+holds, in `CapturedIndexPart.nulls`, and lists every key part of such an
+index in `parts`. Table preparation states it for each key part of each
+declared index, in `PreparedIndex.nulls`: one entry for each
+`DeclaredIndex.parts` entry, or for each `DeclaredIndex.fields` entry of an
+index with no parts, in key order. A part that states no order takes the
+engine's default for its direction, which only the engine knows. Both sides
+spell it `FIRST` or `LAST`.
+
+The provider and the engine both declare this two-way feature, which requires
+`schema.observed-indexes` and `schema.prepare-tables` on the engine. A
+prepared table then states one `PreparedIndex` for each declared index, in
+the declared order, as under [prepared index kinds](#prepared-index-kinds);
+without `schema.index-methods` its `method` stays empty. Both transport
+boundaries refuse NULLS orders without negotiation and, with it, a prepared
+index whose orders do not match its key parts in number, a read that leaves a
+held index's parts out, and a spelling other than `FIRST` or `LAST`. A read
+without the feature is checked as before it. The prepared orders serve the
+comparison alone: the declaration keeps the order it was written with.
 
 ## Index renames
 

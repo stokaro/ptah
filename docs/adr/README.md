@@ -97,6 +97,10 @@ a new record that names it, and its own status line is updated to point there.
 | [0085](0085-a-schema-read-does-not-depend-on-the-connecting-role.md) | A schema read does not depend on the connecting role | Accepted |
 | [0086](0086-a-rehearsal-moves-the-targets-values-into-its-dev-realm.md) | A rehearsal moves the target's values into its dev realm | Proposed |
 | [0087](0087-a-mysql-family-read-refuses-what-the-account-cannot-see.md) | A MySQL-family read refuses what the account cannot see | Accepted |
+| [0088](0088-a-read-reports-the-foreign-keys-and-checks-a-table-holds.md) | A read reports the foreign keys and checks a table holds | Proposed |
+| [0089](0089-a-provider-plans-the-constraint-changes-of-a-table-it-owns.md) | A provider plans the constraint changes of a table it owns | Proposed |
+| [0090](0090-a-provider-decides-whether-two-checks-are-one.md) | A provider decides whether two checks are one | Proposed |
+| [0091](0091-an-engine-states-the-nulls-order-of-every-index-key.md) | An engine states the NULLS order of every index key | Proposed |
 
 ## Writing one
 
