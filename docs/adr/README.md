@@ -108,6 +108,9 @@ a new record that names it, and its own status line is updated to point there.
 | [0096](0096-an-engine-states-a-partial-indexs-predicate-as-its-server-holds-it.md) | An engine states a partial index's predicate as its server holds it | Proposed |
 | [0097](0097-a-provider-starts-in-the-hosts-working-directory.md) | A provider starts in the host's working directory | Proposed |
 | [0098](0098-a-linked-engine-is-a-release-lines-evidence.md) | A linked engine is a release line's evidence | Proposed |
+| [0099](0099-an-engine-states-how-it-builds-an-enum-column.md) | An engine states how it builds an enum column | Proposed |
+| [0100](0100-a-read-reports-the-unique-constraints-an-engine-keeps-apart-from-its-indexes.md) | A read reports the UNIQUE constraints an engine keeps apart from its indexes | Proposed |
+| [0101](0101-the-sdk-servers-refusal-of-a-request-is-not-the-providers.md) | The SDK server's refusal of a request is not the provider's | Proposed |
 
 ## Writing one
 

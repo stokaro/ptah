@@ -2,6 +2,8 @@ package conformance_test
 
 import (
 	"context"
+	"slices"
+	"sync"
 
 	qt "github.com/frankban/quicktest"
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
@@ -25,6 +27,13 @@ type wireDefects struct {
 	// imageAndLinked describes the certified release line with an image
 	// beside the linked engine it names.
 	imageAndLinked bool
+	// enumColumnsRegardless describes the memory engine's enum columns to a
+	// host that did not list schema.enum-columns.
+	enumColumnsRegardless bool
+	// ownProtocolRefusal refuses PrepareCommonObjects for a host that did not
+	// list schema.common-objects itself, as InvalidArgument with a protocol
+	// error of its own words, before the SDK's server sees the request.
+	ownProtocolRefusal bool
 }
 
 // wireProvider forwards each call to the memory provider behind the SDK's
@@ -33,6 +42,11 @@ type wireProvider struct {
 	protocol.UnimplementedProviderServer
 	inner   protocol.ProviderClient
 	defects wireDefects
+
+	mu sync.Mutex
+	// hostFeatures are what the host listed in the last Describe of this
+	// connection.
+	hostFeatures []string
 }
 
 // wireTarget is the memory provider behind a wire provider with defects. Each
@@ -64,10 +78,19 @@ func (w *wireProvider) refusal(err error) error {
 }
 
 func (w *wireProvider) Describe(ctx context.Context, request *protocol.DescribeRequest) (*protocol.Description, error) {
+	w.mu.Lock()
+	w.hostFeatures = slices.Clone(request.GetHostFeatures())
+	w.mu.Unlock()
 	if w.defects.describeAll {
 		request.HostFeatures = provider.TwoWayFeatures()
 	}
 	reply, err := w.inner.Describe(ctx, request)
+	if err == nil && w.defects.enumColumnsRegardless && !slices.Contains(reply.GetFeatures(), provider.EnumColumnsFeature) {
+		engine := reply.GetEngines()[0]
+		reply.Features = append(reply.Features, provider.EnumColumnsFeature)
+		engine.Features = append(engine.Features, provider.EnumColumnsFeature)
+		engine.EnumColumns = &protocol.EnumColumns{Form: protocol.EnumColumns_CHECK, CheckType: "TEXT"}
+	}
 	if err == nil && w.defects.imageAndLinked {
 		for _, line := range reply.GetEngines()[0].GetReleaseLines() {
 			line.Image = "example.com/memory:1"
@@ -130,6 +153,12 @@ func (w *wireProvider) FinishTransaction(ctx context.Context, request *protocol.
 }
 
 func (w *wireProvider) PrepareCommonObjects(ctx context.Context, request *protocol.PrepareCommonObjectsRequest) (*protocol.PreparedCommonObjects, error) {
+	w.mu.Lock()
+	listed := slices.Contains(w.hostFeatures, provider.CommonObjectsFeature)
+	w.mu.Unlock()
+	if w.defects.ownProtocolRefusal && !listed {
+		return nil, status.Error(codes.InvalidArgument, provider.ErrProtocol.Error()+": the wire provider does not prepare common objects for this host")
+	}
 	reply, err := w.inner.PrepareCommonObjects(ctx, request)
 	return reply, w.refusal(err)
 }
@@ -151,5 +180,10 @@ func (w *wireProvider) RecordSeed(ctx context.Context, request *protocol.RecordS
 
 func (w *wireProvider) ReadSeedLedger(ctx context.Context, request *protocol.ReadSeedLedgerRequest) (*protocol.SeedLedger, error) {
 	reply, err := w.inner.ReadSeedLedger(ctx, request)
+	return reply, w.refusal(err)
+}
+
+func (w *wireProvider) NormalizeValues(ctx context.Context, request *protocol.NormalizeValuesRequest) (*protocol.NormalizedValues, error) {
+	reply, err := w.inner.NormalizeValues(ctx, request)
 	return reply, w.refusal(err)
 }
