@@ -128,7 +128,7 @@ func truncatedFinding(source Source, statement sourceStatement, opts Options, na
 func namePosition(source Source, statement sourceStatement, opts Options, written string) (line, column int) {
 	offset, found := sqlschema.LocateName(opts.Dialect, statement.sql, written)
 	if !found {
-		_, offset = firstKeyword(statement.sql)
+		_, offset = firstKeyword(statement.sql, opts.Dialect)
 	}
 	return sourcepos.Locate(source.SQL, statement.offset+offset)
 }
