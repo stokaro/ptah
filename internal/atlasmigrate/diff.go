@@ -209,8 +209,6 @@ type BidirectionalPlanInput struct {
 	Statements planext.StatementStyle
 	// Shape is the statement shape both directions are planned in.
 	Shape planext.StatementShape
-	// EnumRebuildKeepsGuards is the diff policy's, carried to the injected planner.
-	EnumRebuildKeepsGuards bool
 }
 
 // BidirectionalPlan is the primitive output internal migrate-diff rendering
@@ -660,8 +658,6 @@ func planDiffFileContents(
 				TableRebuildRequest:  opts.Policy.TableRebuildRequest,
 				Statements:           planstyle.Statements,
 				Shape:                planext.StatementShapeCatalog,
-
-				EnumRebuildKeepsGuards: opts.Policy.EnumRebuildKeepsGuards,
 			},
 		)
 
@@ -684,8 +680,6 @@ func planDiffFileContents(
 			TableRebuildRequest:   opts.Policy.TableRebuildRequest,
 			Statements:            planstyle.Statements,
 			Shape:                 planext.StatementShapeCatalog,
-
-			EnumRebuildKeepsGuards: opts.Policy.EnumRebuildKeepsGuards,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("generate migration plan: %w", err)

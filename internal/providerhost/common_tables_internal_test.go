@@ -137,19 +137,6 @@ func TestCommonTablePlannerRetainsUnknownAccess(t *testing.T) {
 	c.Assert(diff.CurrentNotDescribed, qt.DeepEquals, limits)
 }
 
-// TestCommonTablePlannerTakesTheEnumRebuildGuardChoice plans for a surface that
-// keeps its guards after an enum rebuild, which every plan of ptah-compat asks for.
-// This planner writes no rebuild, so the choice changes nothing and is not refused.
-func TestCommonTablePlannerTakesTheEnumRebuildGuardChoice(t *testing.T) {
-	c := qt.New(t)
-	selected, runtime, diff := commonTableCoverageFixture(c)
-
-	nodes, err := selected.registration().Planner(planext.Options{EnumRebuildKeepsGuards: true}).GenerateMigrationAST(c.Context(), runtime, diff)
-
-	c.Assert(err, qt.IsNil)
-	c.Assert(nodes, qt.HasLen, 1)
-}
-
 func TestUnknownAccessDoesNotEnableCommonMutations(t *testing.T) {
 	for _, test := range []struct {
 		name   string
