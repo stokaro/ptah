@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -35,6 +36,7 @@ import (
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/internal/undecidednote"
 	"ptah.run/migration/migrator"
+	"ptah.run/migration/safety"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -639,7 +641,9 @@ func runSchemaApplyOnLockedSession(
 		return "", err
 	}
 
-	ok, err := confirmSchemaApply(cmd, opts, run.human)
+	ok, err := confirmSchemaApply(cmd, opts, run.human, func() (atlasschema.PlanRating, error) {
+		return plan.RatingOfSQL(ctx, sqlText)
+	})
 	if err != nil {
 		return "", err
 	}
@@ -780,7 +784,7 @@ func runSchemaApplyPlanFileOnLockedSession(
 	); err != nil {
 		return "", err
 	}
-	ok, err := confirmSchemaApply(cmd, opts, run.human)
+	ok, err := confirmSchemaApply(cmd, opts, run.human, savedPlanRating(ctx, opts, conn, plan))
 	if err != nil {
 		return "", err
 	}
@@ -891,11 +895,15 @@ func printSchemaApplyPlan(out io.Writer, sqlText string) {
 	fmt.Fprintln(out, strings.TrimSpace(sqlText))
 }
 
-func confirmSchemaApply(cmd *cobra.Command, opts schemaApplyOptions, prompt io.Writer) (bool, error) {
+// confirmSchemaApply asks for the approval, beside the plan's rating, on the
+// stream a person reads the plan on. rate runs only when there is a prompt, so an
+// auto-approved run does what it does without one.
+func confirmSchemaApply(cmd *cobra.Command, opts schemaApplyOptions, prompt io.Writer, rate func() (atlasschema.PlanRating, error)) (bool, error) {
 	if opts.autoApprove {
 		fmt.Fprintln(prompt, "Auto-approval enabled; applying schema changes.")
 		return true, nil
 	}
+	atlasschema.WritePlanRating(prompt, rate)
 	fmt.Fprint(prompt, "Apply these schema changes? Type 'YES' to confirm: ")
 	var confirmation string
 	if _, err := fmt.Fscan(cmd.InOrStdin(), &confirmation); err != nil {
@@ -907,6 +915,22 @@ func confirmSchemaApply(cmd *cobra.Command, opts schemaApplyOptions, prompt io.W
 	}
 	fmt.Fprintln(prompt)
 	return true, nil
+}
+
+// savedPlanRating rates a plan file for the prompt that approves it.
+func savedPlanRating(
+	ctx context.Context,
+	opts schemaApplyOptions,
+	conn *dbschema.DatabaseConnection,
+	plan atlasschema.PlanFile,
+) func() (atlasschema.PlanRating, error) {
+	return func() (atlasschema.PlanRating, error) {
+		assessments, ok := opts.runtime.(safety.Runtime)
+		if !ok {
+			return atlasschema.PlanRating{}, errors.New("the engine runtime cannot judge a plan's statements")
+		}
+		return plan.Rating(ctx, assessments, conn.Info().Dialect)
+	}
 }
 
 // warnSchemaApplyLockRelease reports cleanup separately from the operation.

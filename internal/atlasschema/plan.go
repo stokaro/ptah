@@ -367,21 +367,10 @@ func PreparePlanFileReportingUndecided(
 		statements[i].Inputs = slices.Clone(computation.units[i].Inputs)
 		statements[i].Change = computation.changes[i]
 	}
-	// The data statements carry their own severity rather than the analyzer's.
-	// A DELETE of a reference row removes no table and tightens no constraint,
-	// so the analyzer calls it safe; the row it removes is gone all the same.
-	data := make([]PlanStatement, 0, len(computation.dataStatements))
-	for _, declared := range computation.dataStatements {
-		destructive = destructive || declared.severity == safety.Destructive
-		data = append(data, PlanStatement{
-			SQL:      declared.sql,
-			Severity: declared.severity,
-			Reason:   declared.reason,
-		})
-	}
-	// A saved plan is applied as these statements, so the rows sit where an
-	// apply puts them: inside a SQLite rebuild's foreign-key bracket.
-	statements = slices.Insert(statements, computation.dataIndex(), data...)
+	statements = insertDataStatements(statements, computation)
+	destructive = destructive || slices.ContainsFunc(computation.dataStatements, func(declared dataStatement) bool {
+		return declared.severity == safety.Destructive
+	})
 
 	fromFingerprint, err := planSourceFingerprint(ctx, from, conn.Info(), statements, opts.Runtime)
 	if err != nil {
@@ -409,6 +398,26 @@ func PreparePlanFileReportingUndecided(
 		Statements:       statements,
 		Annotations:      computation.executionAnnotations(),
 	}, computation.undecided, nil
+}
+
+// insertDataStatements places the declared rows among statements, the plan's
+// statement list for its schema units. A saved plan is applied as these statements,
+// so the rows sit where an apply puts them: inside a SQLite rebuild's foreign-key
+// bracket.
+//
+// The data statements carry their own severity rather than the analyzer's. A DELETE
+// of a reference row removes no table and tightens no constraint, so the analyzer
+// calls it safe; the row it removes is gone all the same.
+func insertDataStatements(statements []PlanStatement, computation applyComputation) []PlanStatement {
+	data := make([]PlanStatement, 0, len(computation.dataStatements))
+	for _, declared := range computation.dataStatements {
+		data = append(data, PlanStatement{
+			SQL:      declared.sql,
+			Severity: declared.severity,
+			Reason:   declared.reason,
+		})
+	}
+	return slices.Insert(statements, computation.dataIndex(), data...)
 }
 
 // classifyComputedUnits is the statement list of the computed batch. A batch

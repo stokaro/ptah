@@ -721,7 +721,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 			return "", nil
 		}
 
-		ok, err := confirmAtlasSchemaApply(cmd, opts, formattedPlan)
+		ok, err := confirmAtlasSchemaApply(cmd, opts, formattedPlan, ratingOfAtlasSQL(cmd.Context(), plan, sqlText))
 		if err != nil {
 			return "", err
 		}
@@ -1012,7 +1012,9 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 			return "", nil
 		}
 
-		ok, err := confirmAtlasSchemaApply(cmd, opts, formattedPlan)
+		ok, err := confirmAtlasSchemaApply(cmd, opts, formattedPlan, func() (atlasschema.PlanRating, error) {
+			return plan.Rating(cmd.Context(), opts.runtime, conn.Info().Dialect)
+		})
 		if err != nil {
 			return "", err
 		}
@@ -1260,7 +1262,15 @@ func atlasSchemaApplyPlanFilePath(raw string) (string, error) {
 	return path, nil
 }
 
-func confirmAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions, formattedPlan string) (bool, error) {
+// ratingOfAtlasSQL rates the text a person is about to approve, when the prompt asks.
+func ratingOfAtlasSQL(ctx context.Context, plan atlasschema.ApplyRuntimePlan, sqlText string) func() (atlasschema.PlanRating, error) {
+	return func() (atlasschema.PlanRating, error) { return plan.RatingOfSQL(ctx, sqlText) }
+}
+
+// confirmAtlasSchemaApply asks for the approval. The plan's rating goes to standard
+// error, so standard output holds the bytes it holds without one. The pinned community
+// binary rates nothing at its prompt, so strict mode leaves the rating out.
+func confirmAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions, formattedPlan string, rate func() (atlasschema.PlanRating, error)) (bool, error) {
 	if opts.autoApprove {
 		if !opts.formatOutput {
 			fmt.Fprintln(cmd.OutOrStdout(), "Auto-approval enabled; applying schema changes.")
@@ -1269,6 +1279,9 @@ func confirmAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions, f
 	}
 	if opts.formatOutput && !strings.HasSuffix(formattedPlan, "\n") {
 		fmt.Fprintln(cmd.OutOrStdout())
+	}
+	if !opts.policy.IsStrictCE() {
+		atlasschema.WritePlanRating(cmd.ErrOrStderr(), rate)
 	}
 	return promptAtlasSchemaApplyConfirmation(cmd.OutOrStdout(), cmd.InOrStdin())
 }

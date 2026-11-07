@@ -236,7 +236,18 @@ ALTER TABLE "users" ADD COLUMN "created_at" TIMESTAMP;
 Apply these schema changes? Type 'YES' to confirm: Schema apply canceled.
 ```
 
-`--auto-approve` skips the prompt for scripted runs:
+A plan with a statement rated above safe shows the rating beside the prompt,
+by the rule [`schema plan`](../plan-and-approve/#how-a-column-change-is-rated)
+records. A safe plan shows the prompt above:
+
+```text illustration
+Plan rating: destructive
+Statement 1 of 1, destructive: DROP COLUMN removes existing column data
+  ALTER TABLE "users" DROP COLUMN "created_at"
+Apply these schema changes? Type 'YES' to confirm:
+```
+
+`--auto-approve` skips the prompt for scripted runs, and prints no rating:
 
 ```text illustration
 Planned schema changes:
@@ -376,11 +387,6 @@ Expected output on standard output:
 ```text
 Schema is synced, no changes to be made.
 ```
-
-When the desired schema also exists as SQL, YAML, HCL, or DBML files, Go
-annotations, or an OCI artifact, `ptah schema drift` gives the same
-confirmation with
-`No schema drift detected.` and exits `0`.
 
 ## Read the result in a script
 
@@ -619,9 +625,6 @@ names no plan, because the gate runs before the file is decoded.
   Under `--json` the document reports it as the refusal code `stale-plan`,
   with both fingerprints; see
   [Read the result in a script](#read-the-result-in-a-script).
-
-- Declining the confirmation prompt cancels with `Schema apply canceled.` and
-  no changes.
 
 ## A whole MySQL or MariaDB server
 

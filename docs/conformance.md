@@ -341,6 +341,18 @@ matched rather than refused, because there Atlas CE is right: it executes the
 file's bytes verbatim, drops nothing, and records the revision honestly. See
 [`stokaro/ptah#981`](https://github.com/stokaro/ptah/issues/981).
 
+### A rating beside the approval prompt
+
+Measured against the pinned Atlas CE v1.3.0 binary on SQLite, `schema apply` over a
+plan that drops a table prints the plan and its `Are you sure?` prompt, and rates
+nothing. `ptah-compat schema apply` writes the plan's rating to standard error ahead of
+its prompt, for a plan with a statement rated above safe: `Plan rating: destructive`,
+then each such statement with its rating and reason. Standard output holds the same
+bytes with the rating and without it, `--auto-approve` prints none, and
+`PTAH_ATLAS_STRICT_COMPAT=1` leaves it out. A person about to approve a destructive plan
+gains what `ptah schema plan` already says, and a program reading standard output loses
+nothing, so the default surface keeps it.
+
 ### An event neither binary compares
 
 Measured against the pinned Atlas CE v1.3.0 binary on MySQL 8.4 and MariaDB 12.3,

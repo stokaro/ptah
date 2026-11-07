@@ -78,10 +78,8 @@ func (p PlanFile) UnitReports() []ApplyUnitReport {
 }
 
 // classifyPlanUnits is the plan statement list of a captured batch that holds
-// native operations. SQL units are judged as [classifyPlanStatements] judges
-// them, and each native operation is judged by the effects its owner captured.
-// The operations are encoded with the runtime's codecs, so the plan carries
-// what apply decodes and nothing else.
+// native operations: [judgePlanUnits], with the operations encoded with the
+// runtime's codecs, so the plan carries what apply decodes and nothing else.
 func classifyPlanUnits(
 	ctx context.Context,
 	runtime PlanRuntime,
@@ -89,11 +87,46 @@ func classifyPlanUnits(
 	dialect string,
 	owned, columns []safety.StatementAssessment,
 ) (statements []PlanStatement, destructive bool, err error) {
+	statements, err = judgePlanUnits(ctx, runtime, units, dialect, owned, columns)
+	if err != nil {
+		return nil, false, err
+	}
+	var payloads []schemaext.Payload
+	for _, unit := range units {
+		if unit.Native != nil {
+			payloads = append(payloads, unit.Native)
+		}
+	}
+	envelopes, err := runtime.Codecs().Encode(ctx, schemaext.Operation, payloads)
+	if err != nil {
+		return nil, false, fmt.Errorf("encode native operations: %w", err)
+	}
+	next := 0
+	for i := range statements {
+		if statements[i].Native != nil {
+			statements[i].Native.Operation = envelopes[next]
+			next++
+		}
+		destructive = destructive || statements[i].Severity == safety.Destructive
+	}
+	return statements, destructive, nil
+}
+
+// judgePlanUnits is the verdict of each unit of a batch, the one judgment behind a
+// saved plan's statements and behind the rating a prompt shows. SQL units are
+// judged as [classifyPlanStatements] judges them, and each native operation by the
+// effects its owner captured.
+func judgePlanUnits(
+	ctx context.Context,
+	runtime safety.Runtime,
+	units []renderer.Fragment,
+	dialect string,
+	owned, columns []safety.StatementAssessment,
+) ([]PlanStatement, error) {
 	var sqlText []string
 	var sqlOwned, sqlColumns []safety.StatementAssessment
 	var natives []renderer.Fragment
 	var nativeOwned []safety.StatementAssessment
-	var payloads []schemaext.Payload
 	for i, unit := range units {
 		var verdict safety.StatementAssessment
 		if i < len(owned) {
@@ -111,21 +144,16 @@ func classifyPlanUnits(
 		}
 		natives = append(natives, unit)
 		nativeOwned = append(nativeOwned, verdict)
-		payloads = append(payloads, unit.Native)
 	}
 	sqlStatements, _, err := classifyPlanStatements(ctx, runtime, sqlText, dialect, sqlOwned, sqlColumns)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	assessments, err := safety.AssessUnits(ctx, runtime, dialect, natives, nativeOwned)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
-	envelopes, err := runtime.Codecs().Encode(ctx, schemaext.Operation, payloads)
-	if err != nil {
-		return nil, false, fmt.Errorf("encode native operations: %w", err)
-	}
-	statements = make([]PlanStatement, 0, len(units))
+	statements := make([]PlanStatement, 0, len(units))
 	sqlIndex, nativeIndex := 0, 0
 	for _, unit := range units {
 		if unit.Native == nil {
@@ -135,18 +163,13 @@ func classifyPlanUnits(
 		}
 		assessment := assessments[nativeIndex]
 		statements = append(statements, PlanStatement{
-			Native: &PlanNative{
-				Kind: unit.Native.Kind(), Subject: assessment.Subject, Operation: envelopes[nativeIndex],
-			},
+			Native:   &PlanNative{Kind: unit.Native.Kind(), Subject: assessment.Subject},
 			Severity: assessment.Severity, Reason: assessment.Reason,
 			Owned: true, Access: assessment.Access, AccessReason: assessment.AccessReason,
 		})
 		nativeIndex++
 	}
-	for _, statement := range statements {
-		destructive = destructive || statement.Severity == safety.Destructive
-	}
-	return statements, destructive, nil
+	return statements, nil
 }
 
 // validatePlanNative refuses a native statement that `schema plan` could not
