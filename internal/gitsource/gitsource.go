@@ -31,6 +31,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/storage/memory"
 
+	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/sourcecontent"
 )
 
@@ -106,34 +107,50 @@ func IsReference(s string) bool {
 // repository and nothing else: no credential, query or fragment, since a
 // password in a URL lands in shell history and process lists.
 func ParseReference(raw string) (Reference, error) {
-	parsed, err := url.Parse(raw)
+	parsed, err := dburldisplay.ParseURL(raw)
 	if err != nil {
-		return Reference{}, fmt.Errorf("%w %q: %w", ErrReference, raw, err)
+		return Reference{}, fmt.Errorf("%w %q: %w", ErrReference, dburldisplay.Format(raw), err)
 	}
+	shown := withoutCredential(parsed)
 	dial := *parsed
 	switch parsed.Scheme {
 	case schemeHTTPS:
 		dial.Scheme = "https"
 		if parsed.User != nil {
-			return Reference{}, fmt.Errorf("%w %q: put the credential in PTAH_GIT_USERNAME and PTAH_GIT_PASSWORD, not in the URL", ErrReference, raw)
+			return Reference{}, fmt.Errorf("%w %q: put the credential in PTAH_GIT_USERNAME and PTAH_GIT_PASSWORD, not in the URL", ErrReference, shown)
 		}
 	case schemeSSH:
 		dial.Scheme = "ssh"
 		if _, hasPassword := parsed.User.Password(); hasPassword {
-			return Reference{}, fmt.Errorf("%w %q: SSH authenticates with a key in PTAH_GIT_SSH_KEY_FILE, not a password in the URL", ErrReference, raw)
+			return Reference{}, fmt.Errorf("%w %q: SSH authenticates with a key in PTAH_GIT_SSH_KEY_FILE, not a password in the URL", ErrReference, shown)
 		}
 	default:
-		return Reference{}, fmt.Errorf("%w %q: it is neither git+https:// nor git+ssh://", ErrReference, raw)
+		return Reference{}, fmt.Errorf("%w %q: it is neither git+https:// nor git+ssh://", ErrReference, shown)
 	}
 	switch {
 	case parsed.Host == "":
-		return Reference{}, fmt.Errorf("%w %q: no host", ErrReference, raw)
+		return Reference{}, fmt.Errorf("%w %q: no host", ErrReference, shown)
 	case parsed.Path == "" || parsed.Path == "/":
-		return Reference{}, fmt.Errorf("%w %q: no repository path", ErrReference, raw)
+		return Reference{}, fmt.Errorf("%w %q: no repository path", ErrReference, shown)
 	case parsed.RawQuery != "" || parsed.Fragment != "" || parsed.ForceQuery:
-		return Reference{}, fmt.Errorf("%w %q: no query or fragment; name the ref and the path with their flags", ErrReference, raw)
+		return Reference{}, fmt.Errorf("%w %q: no query or fragment; name the ref and the path with their flags", ErrReference, shown)
 	}
 	return Reference{Raw: raw, URL: &dial}, nil
+}
+
+// withoutCredential is a reference as a refusal may print it. An HTTPS user name
+// is often a token, so it goes too; an SSH user name is the account the key logs
+// in as, and stays.
+func withoutCredential(parsed *url.URL) string {
+	shown := *parsed
+	switch {
+	case parsed.User == nil:
+	case parsed.Scheme == schemeSSH:
+		shown.User = url.User(parsed.User.Username())
+	default:
+		shown.User = nil
+	}
+	return shown.String()
 }
 
 // Origin is the scheme, host and port the reference dials.
