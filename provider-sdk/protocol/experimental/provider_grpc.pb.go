@@ -96,6 +96,7 @@ const (
 	Provider_ReverseChanges_FullMethodName            = "/ptah.provider.experimental.Provider/ReverseChanges"
 	Provider_ReportValues_FullMethodName              = "/ptah.provider.experimental.Provider/ReportValues"
 	Provider_ScanSQL_FullMethodName                   = "/ptah.provider.experimental.Provider/ScanSQL"
+	Provider_CompareChecks_FullMethodName             = "/ptah.provider.experimental.Provider/CompareChecks"
 )
 
 // ProviderClient is the client API for Provider service.
@@ -199,6 +200,9 @@ type ProviderClient interface {
 	ReportValues(ctx context.Context, in *ReportValuesRequest, opts ...grpc.CallOption) (*ValueReports, error)
 	// Contract 25.22. A host calls it only for an engine that lists sql.scan.
 	ScanSQL(ctx context.Context, in *ScanSQLRequest, opts ...grpc.CallOption) (*SQLScan, error)
+	// Contract 25.28. A host calls it only for an engine that lists
+	// schema.check-equivalence.
+	CompareChecks(ctx context.Context, in *CompareChecksRequest, opts ...grpc.CallOption) (*ComparedChecks, error)
 }
 
 type providerClient struct {
@@ -979,6 +983,16 @@ func (c *providerClient) ScanSQL(ctx context.Context, in *ScanSQLRequest, opts .
 	return out, nil
 }
 
+func (c *providerClient) CompareChecks(ctx context.Context, in *CompareChecksRequest, opts ...grpc.CallOption) (*ComparedChecks, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ComparedChecks)
+	err := c.cc.Invoke(ctx, Provider_CompareChecks_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ProviderServer is the server API for Provider service.
 // All implementations must embed UnimplementedProviderServer
 // for forward compatibility.
@@ -1080,6 +1094,9 @@ type ProviderServer interface {
 	ReportValues(context.Context, *ReportValuesRequest) (*ValueReports, error)
 	// Contract 25.22. A host calls it only for an engine that lists sql.scan.
 	ScanSQL(context.Context, *ScanSQLRequest) (*SQLScan, error)
+	// Contract 25.28. A host calls it only for an engine that lists
+	// schema.check-equivalence.
+	CompareChecks(context.Context, *CompareChecksRequest) (*ComparedChecks, error)
 	mustEmbedUnimplementedProviderServer()
 }
 
@@ -1320,6 +1337,9 @@ func (UnimplementedProviderServer) ReportValues(context.Context, *ReportValuesRe
 }
 func (UnimplementedProviderServer) ScanSQL(context.Context, *ScanSQLRequest) (*SQLScan, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ScanSQL not implemented")
+}
+func (UnimplementedProviderServer) CompareChecks(context.Context, *CompareChecksRequest) (*ComparedChecks, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CompareChecks not implemented")
 }
 func (UnimplementedProviderServer) mustEmbedUnimplementedProviderServer() {}
 func (UnimplementedProviderServer) testEmbeddedByValue()                  {}
@@ -2728,6 +2748,24 @@ func _Provider_ScanSQL_Handler(srv interface{}, ctx context.Context, dec func(in
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Provider_CompareChecks_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CompareChecksRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).CompareChecks(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_CompareChecks_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).CompareChecks(ctx, req.(*CompareChecksRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Provider_ServiceDesc is the grpc.ServiceDesc for Provider service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -3042,6 +3080,10 @@ var Provider_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ScanSQL",
 			Handler:    _Provider_ScanSQL_Handler,
+		},
+		{
+			MethodName: "CompareChecks",
+			Handler:    _Provider_CompareChecks_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
