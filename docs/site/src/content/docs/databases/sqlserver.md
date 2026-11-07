@@ -416,6 +416,12 @@ Lower capacities are rated destructive on the same terms: `varbinary(max)` decla
 `float` declared `real`, where the server keeps seven digits of `1.23456789012` without a
 word.
 
+`ptah migrations lint` reports `ALTER COLUMN c datetime2(0) NULL` as `DS103`, with or
+without brackets around the names, since SQL Server names the new type with no word
+before it. That clause has to name a type to change a nullability too, so under
+`--dev-url` a clause that names the type the column holds is not reported, and `DD103`
+speaks for the `NOT NULL`. Without a dev database every such clause is reported.
+
 ## Routines
 
 A function or a procedure is written `CREATE OR ALTER`. Its header's `WITH`
