@@ -100,7 +100,7 @@ func reverseTableDiffs(tableDiffs []difftypes.TableDiff, prior *schemamodel.Data
 	for i, tableDiff := range tableDiffs {
 		reversed[i] = difftypes.TableDiff{
 			TableName:       tableDiff.TableName,
-			ColumnsAdded:    clonedColumnChanges(tableDiff.ColumnsRemoved),
+			ColumnsAdded:    restoredColumns(tableDiff.ColumnsRemoved, tableDiff.TableName, prior, semantics),
 			ColumnsRemoved:  clonedColumnChanges(tableDiff.ColumnsAdded),
 			ColumnsModified: reverseColumnDiffs(tableDiff.ColumnsModified, tableDiff.TableName, prior, semantics),
 			// The table as the PRE-CHANGE database declared it. A rollback that
@@ -116,6 +116,29 @@ func reverseTableDiffs(tableDiffs []difftypes.TableDiff, prior *schemamodel.Data
 		}
 	}
 	return reversed
+}
+
+// restoredColumns is the rollback's column additions: the columns the forward
+// direction removes, each with the feature settings prior, the pre-change
+// declaration, gives it. A removal is the column as the database reported it,
+// so its settings are observations, and the planner of an added column reads
+// them as a declaration: an owner that keeps the two representations apart
+// refuses an observed value in an addition. prior holds the same settings
+// converted to their declared form. A column prior does not describe keeps the
+// settings the read reported, which such an owner refuses rather than reads.
+func restoredColumns(
+	removed difftypes.ColumnChanges,
+	tableName string,
+	prior *schemamodel.Database,
+	semantics identifier.Semantics,
+) difftypes.ColumnChanges {
+	restored := clonedColumnChanges(removed)
+	for i := range restored {
+		if declared := priorColumn(prior, tableName, restored[i].Name, semantics); declared.Name != "" {
+			restored[i].Facets = declared.Facets
+		}
+	}
+	return restored
 }
 
 func clonedColumnChanges(changes difftypes.ColumnChanges) difftypes.ColumnChanges {
