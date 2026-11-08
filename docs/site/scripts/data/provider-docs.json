@@ -10,13 +10,13 @@
       "engine": "spanner",
       "name": "Spanner",
       "repository": "stokaro/ptah-spanner-plugin",
-      "release": "v0.2.0"
+      "release": "v0.3.0"
     },
     {
       "engine": "ydb",
       "name": "YDB",
       "repository": "stokaro/ptah-ydb-plugin",
-      "release": "v0.5.0"
+      "release": "v0.6.0"
     }
   ]
 }
