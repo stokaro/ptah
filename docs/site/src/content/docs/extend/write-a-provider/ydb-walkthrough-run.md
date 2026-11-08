@@ -2,6 +2,7 @@
 title: Run the YDB walkthrough
 description: Declare a YDB table, its changefeed, a transfer and the transfer's target table, then compare, apply and compare again through the real YDB provider, with each step's owner named.
 type: how-to
+sourceMode: static-file-only
 audience:
   - "go-developer"
   - "integration-developer"
