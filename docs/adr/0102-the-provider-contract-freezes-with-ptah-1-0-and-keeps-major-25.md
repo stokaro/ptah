@@ -230,7 +230,7 @@ need a two-way feature, and how a provider engine builds an enum column
 | View queries a server rewrites (S91) | Under `schema.view-query-equivalence` the owner answers every pair from the two texts; the request carries no declared columns and no answer returns a pair to the host's fold | Yes: a request field and a reply field under a two-way feature | Contract 25.37: `CompareViewQueriesRequest.declared_columns` and `ComparedViewQuery.undecided` under `schema.view-query-context` (ADR 0118). Not blocking |
 | A transfer of an undeclared changefeed (G228) | `declared_kinds` names object models only, so a comparison cannot see another comparison's facets, such as a table's changefeeds | Yes: a comparison field and a request field under a two-way feature | Contract 25.37: `ModelComparison.declared_facet_kinds` and `CompareModelsRequest.declared_facets` under `models.declared-facets` (ADR 0119). Not blocking |
 | A SQL file that changes what another format declares (G237) | A provider's SQL reading refuses the statement as `UNSUPPORTED` or `INVALID`, so the host cannot add that the SQL files change only what the SQL files declare | Yes: a diagnostic code under a two-way feature | Contract 25.38: `SQLDiagnostic.Code` `UNDECLARED` under `schema.read-sql-undeclared` (ADR 0120). Not blocking |
-| Change streams (S16) | No model the export sees | Yes: a native context kind through `planning.object-context` | Provider work. Not blocking |
+| Change streams (S16) | An executable provider cannot say that its reads leave a kind out: model coverage needs a declared model, and only engines registered in the host process add kinds to the vocabulary documents may name | Yes: an engine field and an inspection field under a two-way feature | Contract 25.41: `Engine.not_described_kinds` and `Schema.not_described` under `schema.not-described` (ADR 0123). Not blocking |
 | A drop that an unmodeled object blocks (S47) | A planning request describes a held table only by its model, so a planning service cannot refuse a drop of a table or a column that a change stream names | Yes: an inspection field and a planning field under a two-way feature | Contract 25.39: `Table.removal_blockers` and `ObservedTable.removal_blockers` under `schema.removal-blockers` (ADR 0121). Not blocking |
 | A transfer of a topic the read recorded without describing it (G239) | A comparison receives the current state of its own models only, so a comparison of transfers cannot see that the read holds the topic or the changefeed a transfer reads | Yes: a request field under a two-way feature | Contract 25.40: `CompareModelsRequest.current_context` under `models.current-context` (ADR 0122). Not blocking |
 
@@ -259,7 +259,8 @@ Later minors add negotiated additions:
 - contract 25.39, the objects outside the model that block a table's removal
   (ADR 0121);
 - contract 25.40, the current state of another comparison's models
-  (ADR 0122).
+  (ADR 0122);
+- contract 25.41, the kinds of object a read does not describe (ADR 0123).
 
 ## Alternatives considered
 

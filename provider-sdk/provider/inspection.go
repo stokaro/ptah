@@ -35,6 +35,9 @@ func InspectionValues(description *protocol.Description, request *protocol.Inspe
 	if err := validateInspectedTables(description, engine, snapshot); err != nil {
 		return nil, err
 	}
+	if err := validateInspectedNotDescribed(description, engine, snapshot); err != nil {
+		return nil, err
+	}
 	if err := validateInspectedPlanningContext(description, engine, request, snapshot); err != nil {
 		return nil, err
 	}
