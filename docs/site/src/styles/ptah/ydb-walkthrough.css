@@ -1,0 +1,276 @@
+/* The interactive YDB walkthrough (src/components/YdbWalkthrough.astro). The
+ * figure's frame, bar and caption come from figures.css; this file holds what
+ * only this figure has.
+ *
+ * State never rests on color alone. A selected element's border thickens and
+ * its name turns bold; an element the current step uses carries the written
+ * badge "Active in this step"; a connection's kind is written above it; and the
+ * details panel says all of it in words.
+ *
+ * The details panel comes first in the body, above the diagram, at every
+ * width: the content column is too narrow for the two side by side. */
+
+ptah-ydb-walkthrough {
+	display: block;
+}
+
+.ydbw {
+	--ydbw-canvas: var(--sl-color-bg-inline-code);
+	container: ptah-ydb-walkthrough / inline-size;
+}
+
+.ydbw code {
+	font-family: var(--sl-font-mono);
+	font-size: 0.92em;
+	overflow-wrap: anywhere;
+}
+
+/* ---------- Toolbar ---------- */
+
+.ydbw-toolbar {
+	display: grid;
+	gap: 0.5rem;
+	padding: 0.625rem 0.875rem;
+	border-bottom: 1px solid var(--sl-color-hairline);
+	color: var(--sl-color-gray-2);
+	font-size: 0.8125rem;
+}
+.ydbw-toolbar[hidden] {
+	display: none;
+}
+.ydbw-toolbar__row {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.375rem 0.75rem;
+}
+.ydbw-toolbar__group {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.375rem;
+}
+.ydbw-chip,
+.ydbw-step-button {
+	min-height: 2.25rem;
+	padding: 0.25rem 0.625rem;
+	border: 1px solid var(--sl-color-gray-4);
+	border-radius: 2px;
+	background: transparent;
+	color: var(--sl-color-white);
+	font: inherit;
+	cursor: pointer;
+}
+.ydbw-chip:hover,
+.ydbw-step-button:hover:enabled {
+	border-color: var(--sl-color-accent);
+}
+.ydbw-chip:focus-visible,
+.ydbw-step-button:focus-visible {
+	outline: 2px solid var(--sl-color-accent);
+	outline-offset: 2px;
+}
+.ydbw-chip[aria-pressed='true'] {
+	border-color: var(--sl-color-accent);
+	background: var(--sl-color-accent-low);
+	font-weight: 600;
+}
+.ydbw-step-button:disabled {
+	border-color: var(--sl-color-hairline);
+	color: var(--sl-color-gray-3);
+	cursor: default;
+}
+.ydbw-step-label {
+	margin: 0;
+	color: var(--sl-color-white);
+	font-weight: 600;
+}
+
+/* ---------- Diagram ---------- */
+
+.ydbw-body {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+}
+.ydbw-diagram {
+	display: grid;
+	gap: 1rem;
+	padding: 0.875rem;
+	background: var(--ydbw-canvas);
+}
+.ydbw-group {
+	display: grid;
+	gap: 0.5rem;
+}
+.ydbw-group__label,
+.ydbw-kind__label {
+	margin: 0;
+	color: var(--sl-color-gray-3);
+	font-family: var(--sl-font-mono);
+	font-size: 0.6875rem;
+	font-weight: 500;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+}
+.ydbw-kind {
+	display: grid;
+	gap: 0.375rem;
+}
+.ydbw-kind + .ydbw-kind {
+	margin-top: 0.375rem;
+}
+.ydbw-nodes,
+.ydbw-edges {
+	display: grid;
+	gap: 0.5rem;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+.ydbw-nodes {
+	grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+}
+.ydbw-edges {
+	grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+}
+.ydbw-nodes > li,
+.ydbw-edges > li {
+	margin: 0;
+}
+.ydbw-node,
+.ydbw-edge {
+	display: grid;
+	gap: 0.125rem;
+	height: 100%;
+	padding: 0.5rem 0.625rem;
+	border: 1px solid var(--sl-color-gray-4);
+	border-radius: 2px;
+	background: var(--sl-color-bg);
+	color: var(--sl-color-gray-1);
+	font-size: 0.8125rem;
+	line-height: 1.4;
+}
+.ydbw-node--object {
+	border-style: dashed;
+}
+.ydbw-node__name {
+	color: var(--sl-color-white);
+	font-weight: 600;
+}
+.ydbw-node__role {
+	color: var(--sl-color-gray-2);
+}
+.ydbw-edge {
+	border-inline-start-width: 4px;
+}
+.ydbw-edge[data-kind='data'] {
+	border-inline-start-style: double;
+}
+.ydbw-edge[data-kind='dependency'] {
+	border-inline-start-style: dashed;
+}
+.ydbw-edge[data-kind='order'] {
+	border-inline-start-style: dotted;
+}
+.ydbw-badge {
+	justify-self: start;
+	margin-top: 0.25rem;
+	padding: 0 0.375rem;
+	border: 1px solid var(--sl-color-accent);
+	border-radius: 2px;
+	color: var(--sl-color-white);
+	font-size: 0.75rem;
+	font-weight: 600;
+}
+.ydbw-badge[hidden] {
+	display: none;
+}
+
+ptah-ydb-walkthrough[data-enhanced] :is(.ydbw-node, .ydbw-edge) {
+	cursor: pointer;
+}
+:is(.ydbw-node, .ydbw-edge):hover {
+	border-color: var(--sl-color-accent);
+}
+:is(.ydbw-node, .ydbw-edge):focus-visible {
+	outline: 2px solid var(--sl-color-accent);
+	outline-offset: 2px;
+}
+:is(.ydbw-node, .ydbw-edge).is-active {
+	border-color: var(--sl-color-accent);
+}
+:is(.ydbw-node, .ydbw-edge)[aria-pressed='true'] {
+	border-width: 3px;
+	border-color: var(--sl-color-accent);
+	background: var(--sl-color-accent-low);
+	padding: calc(0.5rem - 2px) calc(0.625rem - 2px);
+}
+.ydbw-edge[aria-pressed='true'] {
+	border-inline-start-width: 4px;
+	padding-inline-start: 0.625rem;
+}
+:is(.ydbw-node, .ydbw-edge)[aria-pressed='true'] :is(.ydbw-node__name, .ydbw-edge__text) {
+	font-weight: 700;
+}
+
+/* ---------- Details ---------- */
+
+.ydbw-details {
+	order: -1;
+	padding: 0.875rem;
+	border-bottom: 1px solid var(--sl-color-hairline);
+	color: var(--sl-color-gray-1);
+	font-size: 0.875rem;
+	line-height: 1.5;
+}
+.ydbw-details[hidden],
+.ydbw-detail[hidden] {
+	display: none;
+}
+.ydbw-detail {
+	display: grid;
+	gap: 0.5rem;
+	scroll-margin-top: calc(var(--sl-nav-height, 3.5rem) + 1rem);
+}
+.ydbw-detail > * {
+	margin: 0;
+}
+.ydbw-detail__kicker {
+	color: var(--sl-color-gray-3);
+	font-family: var(--sl-font-mono);
+	font-size: 0.6875rem;
+	font-weight: 500;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+}
+.ydbw-detail__title {
+	color: var(--sl-color-white);
+	font-size: 1.0625rem;
+	font-weight: 600;
+	line-height: 1.3;
+}
+.ydbw-detail__title:focus {
+	outline: none;
+}
+.ydbw-detail strong {
+	color: var(--sl-color-white);
+	font-weight: 600;
+}
+.ydbw-detail__branch {
+	padding-inline-start: 0.5rem;
+	border-inline-start: 3px solid var(--sl-color-accent);
+	color: var(--sl-color-white);
+	font-weight: 600;
+}
+.ydbw-detail__meta {
+	color: var(--sl-color-gray-2);
+}
+.ydbw-detail__list {
+	display: grid;
+	gap: 0.25rem;
+	padding-inline-start: 1.25rem;
+}
+.ydbw-details a {
+	color: var(--sl-color-text-accent);
+	text-decoration: underline;
+	text-underline-offset: 3px;
+}

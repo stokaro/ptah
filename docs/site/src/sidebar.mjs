@@ -285,6 +285,7 @@ export const sidebar = [
           { slug: 'extend/write-a-provider/architecture' },
           { slug: 'extend/write-a-provider/models-and-planning' },
           { slug: 'extend/write-a-provider/ydb-walkthrough' },
+          { slug: 'extend/write-a-provider/ydb-walkthrough-explore' },
           { slug: 'extend/write-a-provider/ydb-walkthrough-run' },
           { slug: 'extend/write-a-provider/ydb-incomplete-knowledge' },
           { slug: 'extend/write-a-provider/testing' },

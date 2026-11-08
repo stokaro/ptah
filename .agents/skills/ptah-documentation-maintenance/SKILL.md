@@ -362,6 +362,8 @@ practical, live commands:
   node scripts/check-matrix-flag-names.mjs --selftest
   node scripts/check-matrix-flag-names.mjs
   node scripts/build-feature-matrix.mjs --check
+  node scripts/build-ydb-walkthrough.mjs --selftest
+  node scripts/build-ydb-walkthrough.mjs --check
   node scripts/publish-root-assets.mjs --selftest
   node scripts/check-pages-root.mjs --selftest
   node scripts/check-pages-root.mjs

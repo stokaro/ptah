@@ -1,0 +1,312 @@
+---
+/**
+ * The interactive YDB walkthrough on
+ * extend/write-a-provider/ydb-walkthrough-explore.mdx.
+ *
+ * Everything here is rendered from src/ydb-walkthrough.mjs at build time: the
+ * components, the objects and the connections, and one details section per
+ * component, object and connection and per step of every scenario. The client
+ * script adds behavior only. It turns each component, object and connection
+ * into a toggle button, steps through the workflow, switches the scenario,
+ * shows the details section that belongs to the selection, and marks what the
+ * current step uses with a written badge. The only text it writes is the step
+ * label and the status message.
+ *
+ * The details panel comes before the diagram, next to the step controls, so
+ * a step's result appears beside the button that changed it.
+ *
+ * Without JavaScript the figure is a static diagram: the components, the
+ * objects and every connection written out with its kind. The toolbar and the
+ * details panel stay hidden, and the text after the figure carries every fact.
+ *
+ * The figure reuses ProductPreview's bar and caption classes
+ * (src/styles/ptah/figures.css). The rest of the styles are in
+ * src/styles/ptah/ydb-walkthrough.css.
+ */
+import { connectionText, evidenceHref, stepResult, walkthroughModel } from '../ydb-walkthrough.mjs';
+
+const model = walkthroughModel();
+const nodes = [...model.components, ...model.objects];
+const nameOf = (id) => nodes.find((node) => node.id === id).name;
+const kindOf = (id) => model.connectionKinds.find((kind) => kind.id === id);
+const stepNumbers = (predicate) =>
+  model.steps.flatMap((step, index) => (predicate(step) ? [`${index + 1}. ${step.label}`] : []));
+const touching = (id) => model.connections.filter(({ from, to }) => from === id || to === id);
+
+const clientModel = {
+  steps: model.steps.map(({ id, label, active, connections }) => ({ id, label, active, connections })),
+  scenarios: model.scenarios.map(({ id, label }) => ({ id, label })),
+  names: {
+    ...Object.fromEntries(nodes.map(({ id, name }) => [`node:${id}`, name])),
+    ...Object.fromEntries(model.connections.map((connection) => [`edge:${connection.id}`, connectionText(connection)])),
+  },
+};
+const first = model.steps[0];
+---
+
+<ptah-ydb-walkthrough class="ptah-wide-content not-content" id="ptah-ydb-walkthrough" data-model={JSON.stringify(clientModel)}>
+  <figure class="ptah-product-preview ydbw" data-pagefind-ignore>
+    <div class="ptah-product-preview__bar">
+      <span class="ptah-product-preview__label">YDB walkthrough</span>
+    </div>
+
+    <div class="ydbw-toolbar" data-ydbw-toolbar hidden>
+      <div class="ydbw-toolbar__row">
+        <span class="ydbw-toolbar__label" id="ydbw-scenarios">Scenario</span>
+        <div class="ydbw-toolbar__group" role="group" aria-labelledby="ydbw-scenarios">
+          {model.scenarios.map((scenario, index) => (
+            <button type="button" class="ydbw-chip" data-ydbw-scenario={scenario.id} aria-pressed={index === 0 ? 'true' : 'false'}>
+              {scenario.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div class="ydbw-toolbar__row ydbw-stepper">
+        <button type="button" class="ydbw-step-button" data-ydbw-prev disabled>Previous step</button>
+        <p class="ydbw-step-label" data-ydbw-step-label>Step 1 of {model.steps.length}: {first.label}</p>
+        <button type="button" class="ydbw-step-button" data-ydbw-next>Next step</button>
+      </div>
+    </div>
+
+    <div class="ydbw-body">
+      <div class="ydbw-diagram">
+        <section class="ydbw-group" aria-labelledby="ydbw-components-label">
+          <p class="ydbw-group__label" id="ydbw-components-label">Components</p>
+          <ul class="ydbw-nodes">
+            {model.components.map((component) => (
+              <li>
+                <div class="ydbw-node" data-ydbw-node={component.id} data-ydbw-select={`node:${component.id}`}>
+                  <span class="ydbw-node__name">{component.name}</span>
+                  <span class="ydbw-node__role">{component.layer}</span>
+                  <span class="ydbw-badge" data-ydbw-badge hidden>Active in this step</span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        <section class="ydbw-group" aria-labelledby="ydbw-objects-label">
+          <p class="ydbw-group__label" id="ydbw-objects-label">Objects of the example</p>
+          <ul class="ydbw-nodes">
+            {model.objects.map((object) => (
+              <li>
+                <div class="ydbw-node ydbw-node--object" data-ydbw-node={object.id} data-ydbw-select={`node:${object.id}`}>
+                  <span class="ydbw-node__name"><code>{object.name}</code></span>
+                  <span class="ydbw-node__role">{object.ydb}</span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        <section class="ydbw-group" aria-labelledby="ydbw-connections-label">
+          <p class="ydbw-group__label" id="ydbw-connections-label">Connections</p>
+          {model.connectionKinds.map((kind) => (
+            <div class="ydbw-kind" data-kind={kind.id}>
+              <p class="ydbw-kind__label">{kind.label}</p>
+              <ul class="ydbw-edges">
+                {model.connections.filter((connection) => connection.kind === kind.id).map((connection) => (
+                  <li>
+                    <div class="ydbw-edge" data-kind={kind.id} data-ydbw-edge={connection.id} data-ydbw-select={`edge:${connection.id}`}>
+                      <span class="ydbw-edge__text">{connectionText(connection)}</span>
+                      <span class="ydbw-badge" data-ydbw-badge hidden>Active in this step</span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </section>
+      </div>
+
+      <div class="ydbw-details" data-ydbw-details hidden>
+        {model.scenarios.map((scenario) =>
+          model.steps.map((step, index) => (
+            <section class="ydbw-detail" data-ydbw-detail={`step:${scenario.id}:${step.id}`} aria-labelledby={`ydbw-step-${scenario.id}-${step.id}`} hidden>
+              <p class="ydbw-detail__kicker">Step {index + 1} of {model.steps.length} · {scenario.label}</p>
+              <h3 class="ydbw-detail__title" id={`ydbw-step-${scenario.id}-${step.id}`} tabindex="-1">{step.label}</h3>
+              <p>{step.explanation}</p>
+              <p><strong>Result:</strong> {stepResult(scenario, step)}</p>
+              {scenario.results[step.id] && <p class="ydbw-detail__branch">This step differs from a normal creation because of the changed fact.</p>}
+              <p class="ydbw-detail__meta">
+                Who acts: {step.active.map(nameOf).join(', ')}. Calls: {step.connections.map((id) => model.connections.find((c) => c.id === id).label).join('; ')}.
+              </p>
+              <p class="ydbw-detail__meta"><strong>Changed fact:</strong> {scenario.fact}</p>
+              <p class="ydbw-detail__meta">
+                <strong>Outcome:</strong> {scenario.outcome} <strong>Decided by:</strong> {scenario.decidedBy}{' '}
+                <strong>Evidence:</strong> <a href={evidenceHref(scenario.evidence)}><code>{scenario.evidence.test}</code></a>
+              </p>
+            </section>
+          )),
+        )}
+
+        {model.components.map((component) => (
+          <section class="ydbw-detail" data-ydbw-detail={`node:${component.id}`} aria-labelledby={`ydbw-node-${component.id}`} hidden>
+            <p class="ydbw-detail__kicker">Component · {component.layer}</p>
+            <h3 class="ydbw-detail__title" id={`ydbw-node-${component.id}`} tabindex="-1">{component.name}</h3>
+            <p><strong>Responsible for:</strong> {component.responsibility}</p>
+            <p><strong>Understands:</strong> {component.understands}</p>
+            <p><strong>Does not own:</strong> {component.doesNotOwn}</p>
+            <p class="ydbw-detail__meta">Acts in steps {stepNumbers((step) => step.active.includes(component.id)).join(', ')}.</p>
+          </section>
+        ))}
+
+        {model.objects.map((object) => (
+          <section class="ydbw-detail" data-ydbw-detail={`node:${object.id}`} aria-labelledby={`ydbw-node-${object.id}`} hidden>
+            <p class="ydbw-detail__kicker">Object of the example</p>
+            <h3 class="ydbw-detail__title" id={`ydbw-node-${object.id}`} tabindex="-1"><code>{object.name}</code></h3>
+            <p><strong>In YDB:</strong> {object.ydb}</p>
+            <p><strong>In Ptah:</strong> {object.ptah}</p>
+            <p><strong>Compared by:</strong> {object.comparedBy}</p>
+            <p><strong>In the ydb-transfers request:</strong> {object.request}</p>
+            <p><strong>Plan step:</strong> <code>{object.plan}</code></p>
+            <ul class="ydbw-detail__list">
+              {touching(object.id).map((connection) => (
+                <li>{kindOf(connection.kind).label}: {connectionText(connection)}</li>
+              ))}
+            </ul>
+          </section>
+        ))}
+
+        {model.connections.map((connection) => (
+          <section class="ydbw-detail" data-ydbw-detail={`edge:${connection.id}`} aria-labelledby={`ydbw-edge-${connection.id}`} hidden>
+            <p class="ydbw-detail__kicker">{kindOf(connection.kind).label}</p>
+            <h3 class="ydbw-detail__title" id={`ydbw-edge-${connection.id}`} tabindex="-1">{connectionText(connection)}</h3>
+            <p>{kindOf(connection.kind).description}</p>
+            {connection.kind === 'call' && (
+              <p class="ydbw-detail__meta">Used in steps {stepNumbers((step) => step.connections.includes(connection.id)).join(', ')}.</p>
+            )}
+          </section>
+        ))}
+      </div>
+    </div>
+
+    <figcaption>
+      <p class="ptah-product-preview__caption">
+        Ptah Core, the contract, the YDB provider and the YDB server, with the four objects of the example and the connections between them.
+      </p>
+      <p class="ptah-product-preview__notice">
+        <strong>What to notice:</strong> the data flow runs inside YDB after Ptah exits, and every call between Core and the provider
+        crosses the contract. Step through a scenario to see where its changed fact changes the result.
+      </p>
+    </figcaption>
+    <p class="sr-only" role="status" data-ydbw-status></p>
+  </figure>
+</ptah-ydb-walkthrough>
+
+<script>
+  type Step = { id: string; label: string; active: string[]; connections: string[] };
+  type Model = { steps: Step[]; scenarios: { id: string; label: string }[]; names: Record<string, string> };
+
+  class PtahYdbWalkthrough extends HTMLElement {
+    model!: Model;
+    scenario = '';
+    step = 0;
+    selection = '';
+
+    get selectable() {
+      return [...this.querySelectorAll<HTMLElement>('[data-ydbw-select]')];
+    }
+
+    connectedCallback() {
+      if (this.model) return;
+      this.model = JSON.parse(this.dataset.model || '{}');
+      this.scenario = this.model.scenarios[0].id;
+      for (const element of this.selectable) {
+        element.setAttribute('role', 'button');
+        element.setAttribute('tabindex', '0');
+        element.setAttribute('aria-pressed', 'false');
+        const key = element.dataset.ydbwSelect!;
+        element.addEventListener('click', () => this.toggle(key, true));
+        element.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            this.toggle(key, false);
+          }
+        });
+      }
+      for (const button of this.querySelectorAll<HTMLElement>('[data-ydbw-scenario]')) {
+        button.addEventListener('click', () => {
+          this.scenario = button.dataset.ydbwScenario!;
+          this.selection = '';
+          this.render(true);
+        });
+      }
+      this.querySelector('[data-ydbw-prev]')?.addEventListener('click', () => this.move(-1));
+      this.querySelector('[data-ydbw-next]')?.addEventListener('click', () => this.move(1));
+      // Escape clears the selection from anywhere in the figure, and focus
+      // returns to the element the details were about.
+      this.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && this.selection) {
+          event.preventDefault();
+          const key = this.selection;
+          this.selection = '';
+          this.render(true);
+          this.querySelector<HTMLElement>(`[data-ydbw-select="${key}"]`)?.focus();
+        }
+      });
+      this.querySelector<HTMLElement>('[data-ydbw-toolbar]')!.hidden = false;
+      this.querySelector<HTMLElement>('[data-ydbw-details]')!.hidden = false;
+      this.dataset.enhanced = '';
+      this.render(false);
+    }
+
+    // The details panel sits above the diagram, so a selection near the bottom
+    // of the diagram would change text the reader cannot see. A pointer
+    // selection brings the panel into view; a keyboard selection moves focus
+    // to the panel's title, which does the same and keeps the focused element
+    // on screen. Escape brings focus back.
+    toggle(key: string, fromPointer: boolean) {
+      const selecting = this.selection !== key;
+      this.selection = selecting ? key : '';
+      this.render(true);
+      if (!selecting) return;
+      const section = this.querySelector<HTMLElement>(`[data-ydbw-detail="${key}"]`)!;
+      if (!fromPointer) {
+        section.querySelector<HTMLElement>('.ydbw-detail__title')?.focus();
+        return;
+      }
+      const { top, bottom } = section.getBoundingClientRect();
+      if (top < 0 || bottom > window.innerHeight) section.scrollIntoView({ block: 'nearest' });
+    }
+
+    move(delta: number) {
+      this.step = Math.min(this.model.steps.length - 1, Math.max(0, this.step + delta));
+      this.selection = '';
+      this.render(true);
+    }
+
+    render(announce: boolean) {
+      const { steps, scenarios, names } = this.model;
+      const step = steps[this.step];
+      const scenario = scenarios.find(({ id }) => id === this.scenario)!;
+      const shown = this.selection || `step:${this.scenario}:${step.id}`;
+      for (const section of this.querySelectorAll<HTMLElement>('[data-ydbw-detail]')) {
+        section.hidden = section.dataset.ydbwDetail !== shown;
+      }
+      for (const element of this.selectable) {
+        element.setAttribute('aria-pressed', String(element.dataset.ydbwSelect === this.selection));
+        const active = element.dataset.ydbwNode
+          ? step.active.includes(element.dataset.ydbwNode)
+          : step.connections.includes(element.dataset.ydbwEdge ?? '');
+        element.classList.toggle('is-active', active);
+        const badge = element.querySelector<HTMLElement>('[data-ydbw-badge]');
+        if (badge) badge.hidden = !active;
+      }
+      for (const button of this.querySelectorAll<HTMLElement>('[data-ydbw-scenario]')) {
+        button.setAttribute('aria-pressed', String(button.dataset.ydbwScenario === this.scenario));
+      }
+      const label = `Step ${this.step + 1} of ${steps.length}: ${step.label}`;
+      this.querySelector<HTMLElement>('[data-ydbw-step-label]')!.textContent = label;
+      this.querySelector<HTMLButtonElement>('[data-ydbw-prev]')!.disabled = this.step === 0;
+      this.querySelector<HTMLButtonElement>('[data-ydbw-next]')!.disabled = this.step === steps.length - 1;
+      if (announce) {
+        this.querySelector<HTMLElement>('[data-ydbw-status]')!.textContent = this.selection
+          ? `Showing ${names[this.selection]}.`
+          : `${label}. Scenario: ${scenario.label}.`;
+      }
+    }
+  }
+
+  customElements.define('ptah-ydb-walkthrough', PtahYdbWalkthrough);
+</script>

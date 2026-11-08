@@ -349,6 +349,8 @@ jobs:
           node docs/site/scripts/check-matrix-flag-names.mjs --selftest
           node docs/site/scripts/check-matrix-flag-names.mjs
           node docs/site/scripts/build-feature-matrix.mjs --check
+          node docs/site/scripts/build-ydb-walkthrough.mjs --selftest
+          node docs/site/scripts/build-ydb-walkthrough.mjs --check
           # The Pages root is assembled by the build job below, which only runs
           # for docs/site changes. This gate reads the workflow and the
           # documentation as well as the scripts, so it belongs in the job that
