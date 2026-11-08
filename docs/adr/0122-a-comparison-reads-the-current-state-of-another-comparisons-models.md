@@ -83,11 +83,14 @@ planner would also take every table whole on every plan in place of its
 outline, which contract 25.27 exists to avoid, and answer a receipt for every
 topic.
 
-**Send only the identities of the subjects a read recorded.** The YDB read
-holds a changefeed it cannot describe as a value of the table's changefeed
-facet, which the provider fails to convert, and not as a coverage record. A
-facet's coverage record names its owner, not one changefeed, so an identity
-alone cannot say which stream of the table the read holds.
+**Send only the coverage of those models.** The YDB read records a table that
+holds a changefeed it cannot describe by a coverage record of the table's
+changefeed set, unrepresentable, and leaves the set's value out, so coverage
+would do for it. But a facet's coverage record names its owner, not one
+changefeed, so it cannot say which stream of the table the read holds, and a
+read that keeps the value of a set and marks the part it cannot describe in the
+value would give a comparison nothing to read. The records cost the host one
+copy of values it already holds, for a comparison that names their kinds.
 
 **Mark the read transfer when the read could not describe its source.** That
 covers a transfer the database already holds. A new transfer of such a
