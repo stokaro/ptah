@@ -41,7 +41,9 @@ const retentionKind = "example.org/fixture/retention"
 // the constraint changes, so a host refuses a change of a constraint the read
 // reports, unpredicated leaves out the index predicates, so a host compares
 // them by its own rules, and the mode text adds text units, so a migration
-// file holds the statements of a rebuild. The mode schemas changes no feature:
+// file holds the statements of a rebuild. The mode migrations adds revision
+// history and transactions to the text mode, so `migrations up` and `down`
+// run such a file, each in a transaction. The mode schemas changes no feature:
 // a read of a schema other than main finds nothing in it, as the read of a
 // provider whose engine has schemas and that carries no namespace finds no
 // object in a schema that does not exist.
@@ -57,6 +59,8 @@ func engineFeatures(mode string) []string {
 		features = slices.DeleteFunc(features, func(feature string) bool { return feature == provider.IndexPredicatesFeature })
 	case "text":
 		features = append(features, provider.TextUnitsFeature)
+	case "migrations":
+		features = append(features, provider.TextUnitsFeature, provider.TransactionsFeature, provider.HistoryFeature)
 	}
 	return features
 }
@@ -78,7 +82,7 @@ func main() {
 		}
 	}
 	mode := os.Getenv("FIXTURE_CONSTRAINT_MODE")
-	if mode != "" && mode != "unplanned" && mode != "unpredicated" && mode != "text" && mode != "schemas" {
+	if mode != "" && mode != "unplanned" && mode != "unpredicated" && mode != "text" && mode != "migrations" && mode != "schemas" {
 		fmt.Fprintln(os.Stderr, "unknown fixture constraint mode")
 		os.Exit(1)
 	}
@@ -148,7 +152,7 @@ func main() {
 		engine.Features = append(engine.Features, added...)
 		engine.CommonObjects = &protocol.CommonObjectSupport{Kinds: []protocol.CommonObjectSupport_Kind{protocol.CommonObjectSupport_GRANT}}
 	}
-	owner := &owner{Provider: &backend.Provider{}, description: description, text: mode == "text", ownsTables: ownership == "service",
+	owner := &owner{Provider: &backend.Provider{}, description: description, text: mode == "text" || mode == "migrations", transactional: mode == "migrations", ownsTables: ownership == "service",
 		otherSchemas: mode == "schemas", grants: grants != "",
 		operation: &protocol.Envelope{ProviderId: description.GetProviderId(), Kind: statementsKind, SchemaVersion: 1, Encoding: "json", DefinitionSha256: hex.EncodeToString(digest[:])}}
 	server := runtime.Server{Description: description, Sessions: owner, Inspector: owner, Renderer: owner, Executor: owner, SQLAnalyzer: owner,
@@ -157,6 +161,9 @@ func main() {
 	if grants != "" {
 		// An engine that carries common objects serves their preparation.
 		server.CommonObjects = owner
+	}
+	if mode == "migrations" {
+		server.Transactions, server.History = owner, owner
 	}
 	if err := runtime.Serve(server); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -175,6 +182,9 @@ type owner struct {
 	// text renders a statements operation as text where the host asks for
 	// it, and reads the statements of a rebuild back.
 	text bool
+	// transactional states the schema changes of a session as ones a
+	// transaction holds, which SQLite's are.
+	transactional bool
 	// ownsTables answers a receipt of kind provider.TableReceiptKind for each
 	// table, as a planning service that owns the tables does.
 	ownsTables bool

@@ -193,12 +193,13 @@ func reverseFeatureTableState(
 		return schemacapture.TableObservation{}, err
 	}
 	current.Indexes = indexes
-	constraints, err := projectConstraints(forward, table.Current, semantics)
+	columnConstraints := addedColumnConstraints(table, dialect)
+	constraints, err := projectConstraints(forward, table.Current, columnConstraints, semantics)
 	if err != nil {
 		return schemacapture.TableObservation{}, err
 	}
 	current.Constraints = constraints
-	current, unavailable, err := projectConstraintEffects(ctx, forward, table.Current, current, dialect, caps, runtime)
+	current, unavailable, err := projectConstraintEffects(ctx, forward, table.Current, current, columnConstraints, dialect, caps, runtime)
 	if err != nil {
 		return schemacapture.TableObservation{}, err
 	}

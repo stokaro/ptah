@@ -3096,6 +3096,10 @@ schema and rules stated, and keeps the index the engine builds for one out of
 the table's indexes. A primary key, a UNIQUE constraint and a constraint that
 carries facets are not predicted, so a down file that needs one is refused.
 
+The predicted table holds the CHECK and the foreign key that a column the
+forward plan adds states on itself, under the names the host compares them by,
+so a provider that drops the column in a down file finds them on the table.
+
 ## Constraint changes
 
 [ADR 0089](../docs/adr/0089-a-provider-plans-the-constraint-changes-of-a-table-it-owns.md)

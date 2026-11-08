@@ -52,7 +52,8 @@ func reverseTablePreparation(ctx context.Context, forward, reverse *difftypes.Sc
 		if err != nil {
 			return err
 		}
-		constraints, err := projectConstraints(forward, table.Current, semantics)
+		// A table the reverse plan does not alter gained no column.
+		constraints, err := projectConstraints(forward, table.Current, nil, semantics)
 		if err != nil {
 			return err
 		}

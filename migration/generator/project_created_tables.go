@@ -135,7 +135,7 @@ func projectCreatedTableState(
 		}
 		accepted.ConstraintsAdded = append(accepted.ConstraintsAdded, added)
 	}
-	after, unavailable, err := projectConstraintEffects(ctx, accepted, before, after, dialect, caps, runtime)
+	after, unavailable, err := projectConstraintEffects(ctx, accepted, before, after, nil, dialect, caps, runtime)
 	if err != nil {
 		return schemacapture.TableObservation{}, err
 	}
