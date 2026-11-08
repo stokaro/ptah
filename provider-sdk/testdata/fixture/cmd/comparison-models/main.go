@@ -32,6 +32,14 @@ func declaredObjects() bool {
 	return os.Getenv("FIXTURE_DECLARED_OBJECTS") == "on"
 }
 
+// declaredFacets reports the mode in which the objects comparison reads the
+// declared retention facets (provider.DeclaredFacetsFeature): each retention
+// object follows the retention facet of the table of its name, so it refuses
+// one whose table declares no retention facet.
+func declaredFacets() bool {
+	return os.Getenv("FIXTURE_DECLARED_FACETS") == "on"
+}
+
 func main() {
 	description := comparisonDescription()
 	owner := &comparer{Provider: &backend.Provider{}, description: description}
@@ -92,6 +100,11 @@ func comparisonDescription() *protocol.Description {
 	}
 	if declaredObjects() {
 		withAnchors(description)
+	}
+	if declaredFacets() {
+		description.Features = append(description.Features, provider.DeclaredFacetsFeature)
+		engine.Features = append(engine.Features, provider.DeclaredFacetsFeature)
+		engine.Comparisons[0].DeclaredFacetKinds = []string{facetKind}
 	}
 	return description
 }

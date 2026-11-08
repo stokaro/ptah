@@ -2312,8 +2312,11 @@ both sides share on the target, and a reported change quotes that spelling.
 `Rules.Views` compares view and materialized view queries in place of the
 shared reading. `Rules.ViewQueries` decides them instead, in one batch of
 `ViewQueryPair` values: each declared view the comparison matches with a held
-one, a materialized view's query without its data clause. The comparison then
-reads its answers alone, and a target registers one of the two.
+one, a materialized view's query without its data clause, beside the columns
+of every declared table. Each answer is a `ViewQueryAnswer`: the comparison
+keeps a view the target calls equivalent, replaces one it calls different, and
+reads a pair it leaves undecided by the shared reading. A target registers one
+of the two.
 
 `Rules.Routines` states the language and the security mode the target applies
 to a routine that declares none, and the shared comparison reads an omitted
@@ -2513,6 +2516,15 @@ once, and replaces what a caller set; an owner that lists no declared kind
 receives none. Registration refuses a declared kind the owner does not register
 a desired model for, one named twice and one of the owner's own kinds with
 `engine.ErrInvalidRegistration`.
+
+`schemaext.ObjectComparisonRequest.DeclaredFacets` carries desired facets, each
+with its owner. A caller names the desired facets of the whole comparison; the
+runtime gives each owner the records of the facet kinds its
+`engine.ObjectComparison.DeclaredFacetKinds` lists, each record holding only
+those kinds with a value, in owner order, such as the changefeeds of each
+declared table for an owner of transfers that read them. An owner that lists no
+declared facet kind receives none. Registration refuses a declared facet kind
+as it refuses a declared kind.
 
 `schemaext.ComparisonRequest.Exclusions` and `DeclaredColumns`, and the same
 fields of `schemaext.ObjectComparisonRequest`, give an owner the run's context.

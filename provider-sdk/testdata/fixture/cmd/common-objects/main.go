@@ -1,7 +1,7 @@
 // Package main serves the fixture with the common-object wire of contract
 // 25.3: views, roles and groups, grants and comments, with
 // FIXTURE_MATERIALIZED_VIEWS=true materialized views, and with
-// FIXTURE_VIEW_QUERIES=exact its own comparison of view queries.
+// FIXTURE_VIEW_QUERIES=exact or context its own comparison of view queries.
 //
 // SQLite has views and nothing else of these, so the program keeps roles,
 // grants, comments and materialized views in a file of its own beside the
@@ -65,6 +65,10 @@ func main() {
 		description.Features = append(description.Features, provider.ViewQueryEquivalenceFeature)
 		engine.Features = append(engine.Features, provider.ViewQueryEquivalenceFeature)
 		server.ViewComparer = owner
+	}
+	if viewQueryContext() {
+		description.Features = append(description.Features, provider.ViewQueryContextFeature)
+		engine.Features = append(engine.Features, provider.ViewQueryContextFeature)
 	}
 	if err := runtime.Serve(server); err != nil {
 		fmt.Fprintln(os.Stderr, err)

@@ -238,6 +238,16 @@ var hostFeatures = []string{
 	// object of those models; see engine.ObjectComparison.DeclaredKinds and
 	// modelComparer.declaredObjects.
 	provider.DeclaredObjectsFeature,
+	// A comparison that names facet models of another comparison it reads,
+	// such as the changefeeds of a table a transfer reads, receives every
+	// declared facet of those models with its value; see
+	// engine.ObjectComparison.DeclaredFacetKinds and
+	// modelComparer.declaredFacets.
+	provider.DeclaredFacetsFeature,
+	// A view query comparison receives the columns of every declared table,
+	// and may leave a pair to the host's reading of the two texts; see
+	// viewQueryService.EquivalentViewQueries.
+	provider.ViewQueryContextFeature,
 	// A planning service receives the grants the read found on each held
 	// table, so a plan that replaces the table can give them back, even in
 	// the text of a migration file; see planningTableGrants.

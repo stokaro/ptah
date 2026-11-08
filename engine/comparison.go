@@ -25,13 +25,20 @@ import (
 // service reads: the runtime gives it the identity of every desired object of
 // those kinds in [schemaext.ObjectComparisonRequest.DeclaredObjects]. Each is a
 // model the same owner registers, named once, and none is one of Kinds.
+//
+// DeclaredFacetKinds lists the facet models whose declared facets the service
+// reads: the runtime gives it every desired facet of those kinds, with its
+// owner and value, in [schemaext.ObjectComparisonRequest.DeclaredFacets]. Each
+// is a model the same owner registers, named once, and none is one of Kinds or
+// DeclaredKinds.
 type ObjectComparison struct {
-	Target        string
-	Kinds         []schemaext.Kind
-	ChangeKinds   []schemaext.Kind
-	Actions       []string
-	DeclaredKinds []schemaext.Kind
-	Service       schemaext.ObjectComparisonService
+	Target             string
+	Kinds              []schemaext.Kind
+	ChangeKinds        []schemaext.Kind
+	Actions            []string
+	DeclaredKinds      []schemaext.Kind
+	DeclaredFacetKinds []schemaext.Kind
+	Service            schemaext.ObjectComparisonService
 }
 
 func (r *Runtime) registerComparison(owner string, declaration ObjectComparison) error {
@@ -72,6 +79,7 @@ func (r *Runtime) registerComparison(owner string, declaration ObjectComparison)
 		return err
 	}
 	declaration.DeclaredKinds = slices.Clone(declaration.DeclaredKinds)
+	declaration.DeclaredFacetKinds = slices.Clone(declaration.DeclaredFacetKinds)
 	declaration.Kinds = slices.Clone(declaration.Kinds)
 	declaration.ChangeKinds = slices.Clone(declaration.ChangeKinds)
 	declaration.Actions = slices.Clone(declaration.Actions)
@@ -79,12 +87,13 @@ func (r *Runtime) registerComparison(owner string, declaration ObjectComparison)
 	return nil
 }
 
-// validateDeclaredKinds refuses a declared kind of declaration that its owner
-// does not register a desired model for, one named twice, and one of the
-// service's own kinds, whose objects its batch of the desired state holds.
+// validateDeclaredKinds refuses a declared kind or declared facet kind of
+// declaration that its owner does not register a desired model for, one named
+// twice, and one of the service's own kinds, whose objects its batch of the
+// desired state holds.
 func (r *Runtime) validateDeclaredKinds(owner string, declaration ObjectComparison) error {
-	declared := make(map[schemaext.Kind]bool, len(declaration.DeclaredKinds))
-	for _, kind := range declaration.DeclaredKinds {
+	declared := make(map[schemaext.Kind]bool, len(declaration.DeclaredKinds)+len(declaration.DeclaredFacetKinds))
+	for _, kind := range slices.Concat(declaration.DeclaredKinds, declaration.DeclaredFacetKinds) {
 		if declared[kind] || slices.Contains(declaration.Kinds, kind) || !r.ownsCodec(owner, kind, schemaext.Desired) {
 			return fmt.Errorf("%w: invalid declared kind %q for %q", ErrInvalidRegistration, kind, owner)
 		}
@@ -149,6 +158,10 @@ func (r *Runtime) compareObjects(ctx context.Context, request schemaext.ObjectCo
 		batch.Current = selectObjectState(request.Current, kinds)
 		batch.Requests = selectRequests(request.Requests, kinds, r.comparisonServices[service].Actions)
 		batch.DeclaredObjects = declaredObjects(request.Desired, r.comparisonServices[service].DeclaredKinds)
+		batch.DeclaredFacets, err = declaredFacets(request.DeclaredFacets, r.comparisonServices[service].DeclaredFacetKinds)
+		if err != nil {
+			return schemaext.ObjectComparisonResult{}, objectCounts{}, err
+		}
 		// The host's validation copy never aliases service-owned slices or maps.
 		sent, err := r.snapshotComparison(ctx, batch)
 		if err != nil {
@@ -236,6 +249,10 @@ func (r *Runtime) snapshotComparison(ctx context.Context, request schemaext.Obje
 		return schemaext.ObjectComparisonRequest{}, err
 	}
 	request.DeclaredObjects = slices.Clone(request.DeclaredObjects)
+	request.DeclaredFacets, err = r.snapshotDeclaredFacets(ctx, request.DeclaredFacets)
+	if err != nil {
+		return schemaext.ObjectComparisonRequest{}, err
+	}
 	if err := comparisonInputSubjects(request); err != nil {
 		return schemaext.ObjectComparisonRequest{}, err
 	}
@@ -258,6 +275,67 @@ func declaredObjects(desired schemaext.ObjectState, kinds []schemaext.Kind) []ob
 	}
 	slices.SortFunc(result, schemaext.CompareRefs)
 	return result
+}
+
+// readsDeclaredFacets reports whether an object comparison of target lists a
+// declared facet kind, so a comparison hands its desired facets to object
+// services, and copies them, only when one reads them.
+func (r *Runtime) readsDeclaredFacets(target string) bool {
+	selected, found := r.lookup(target)
+	return found && slices.ContainsFunc(r.comparisonServices, func(service ObjectComparison) bool {
+		return service.Target == selected.name && len(service.DeclaredFacetKinds) != 0
+	})
+}
+
+// declaredFacets returns the facets of records whose kind is one of kinds,
+// each record holding only those kinds with a value, in owner order: the
+// declared facets a service that lists kinds as its declared facet kinds
+// receives. A facet the declaration excludes on purpose has no value and is
+// left out.
+func declaredFacets(records []schemaext.FacetRecord, kinds []schemaext.Kind) ([]schemaext.FacetRecord, error) {
+	if len(kinds) == 0 {
+		return nil, nil
+	}
+	var result []schemaext.FacetRecord
+	for _, record := range records {
+		var values []schemaext.Value
+		for _, kind := range kinds {
+			value, found, err := record.Values.Get(kind)
+			if err != nil {
+				return nil, err
+			}
+			if found {
+				values = append(values, value)
+			}
+		}
+		if len(values) == 0 {
+			continue
+		}
+		facets, err := schemaext.NewFacets(values...)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, schemaext.FacetRecord{Subject: record.Subject, Values: facets})
+	}
+	slices.SortFunc(result, func(a, b schemaext.FacetRecord) int { return schemaext.CompareRefs(a.Subject, b.Subject) })
+	return result, nil
+}
+
+// snapshotDeclaredFacets copies declared facets through the owners' codecs,
+// so a service never aliases the caller's values.
+func (r *Runtime) snapshotDeclaredFacets(ctx context.Context, records []schemaext.FacetRecord) ([]schemaext.FacetRecord, error) {
+	if len(records) == 0 {
+		return nil, nil
+	}
+	result := make([]schemaext.FacetRecord, 0, len(records))
+	for _, record := range records {
+		values, err := r.codecs.SnapshotFacets(ctx, schemaext.Desired, record.Values)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, schemaext.FacetRecord{Subject: record.Subject, Values: values})
+	}
+	return result, nil
 }
 
 // snapshotRequired copies the objects the desired values require, ordered by

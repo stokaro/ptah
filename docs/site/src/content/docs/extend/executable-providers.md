@@ -251,6 +251,12 @@ view's without its data clause, and keeps the view or replaces it as the
 provider answers. Without the feature the host compares the two queries by its
 own rules.
 
+A server that rewrites a stored query, such as one that names every column of
+a `SELECT *`, keeps a text its provider cannot match from the two queries
+alone. With `schema.view-query-context` as well, the host sends the columns of
+every declared table with the pairs, and the provider may leave a pair
+undecided; the host then compares that pair by its own rules.
+
 With `planning.index-renames` as well, a provider renames an index in place.
 When its session reports `index_rename`, the comparison pairs an index the
 table holds with one the declaration states under another name and with one
@@ -575,6 +581,13 @@ them, so it can refuse a transfer of a topic the schema does not declare. The
 list holds what the desired schema holds after the run's scope: a topic that
 `--include` or `--schemas` leaves out is not declared. Ptah sends the list only
 in a request whose `target_features` list the feature.
+
+`models.declared-facets` does the same for facets. The changefeeds of a table
+are a facet another comparison owns, so a comparison of transfers cannot see
+them. An object comparison that names facet models among its declared facet
+kinds receives each declared facet of them with its owner and its value, so it
+can refuse a transfer of a changefeed the schema does not declare. Ptah sends
+the facets only in a request whose `target_features` list the feature.
 
 `planning.policy` hands the provider's planner the operator's planning policy:
 whether to rebuild a table, with the words a refusal names to say how to ask

@@ -3,8 +3,10 @@ package providerhost
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	"github.com/stokaro/ptah/provider-sdk/provider"
 
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemacomparison"
@@ -14,13 +16,16 @@ import (
 // query of the view the database holds under its name are one query
 // (provider.ViewQueryEquivalenceFeature), in place of the host's comparison
 // of their texts. Each held view travels as the read reported it, without
-// facets, which the question does not read.
+// facets, which the question does not read. Under
+// provider.ViewQueryContextFeature the request carries the columns of every
+// declared table, and the provider may leave a pair undecided, which the
+// comparison then reads by its own folds.
 type viewQueryService struct{ target *target }
 
 // viewReferenceKinds are the reference kinds a held view travels under.
 var viewReferenceKinds = map[objectidentity.Kind]string{objectidentity.KindView: "view", objectidentity.KindMatView: "materialized_view"}
 
-func (s viewQueryService) EquivalentViewQueries(ctx context.Context, request schemacomparison.ViewQueriesRequest) ([]bool, error) {
+func (s viewQueryService) EquivalentViewQueries(ctx context.Context, request schemacomparison.ViewQueriesRequest) ([]schemacomparison.ViewQueryAnswer, error) {
 	service := modelComparer{target: s.target}
 	profile, err := service.request(request.Target, request.Identifiers, request.Capabilities, nil)
 	if err != nil {
@@ -38,13 +43,25 @@ func (s viewQueryService) EquivalentViewQueries(ctx context.Context, request sch
 			Declared: pair.Declared,
 		})
 	}
+	if s.target.negotiated(provider.ViewQueryContextFeature) && slices.Contains(remote.GetTargetFeatures(), provider.ViewQueryContextFeature) {
+		for _, column := range request.Columns {
+			remote.DeclaredColumns = append(remote.DeclaredColumns, &protocol.ComparisonColumn{Table: comparisonIdentity(column.Table), Name: column.Name, Type: column.Type})
+		}
+	}
 	output, err := s.target.host.client.CompareViewQueries(ctx, remote)
 	if err != nil {
 		return nil, err
 	}
-	answers := make([]bool, len(request.Pairs))
+	answers := make([]schemacomparison.ViewQueryAnswer, len(request.Pairs))
 	for i, answer := range output.GetQueries() {
-		answers[i] = answer.GetEquivalent()
+		switch {
+		case answer.GetUndecided():
+			answers[i] = schemacomparison.ViewQueryUndecided
+		case answer.GetEquivalent():
+			answers[i] = schemacomparison.ViewQueryEquivalent
+		default:
+			answers[i] = schemacomparison.ViewQueryDifferent
+		}
 	}
 	return answers, nil
 }

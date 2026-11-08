@@ -24,19 +24,40 @@ type exactViewQueries struct {
 	short    bool
 }
 
-func (r *exactViewQueries) EquivalentViewQueries(_ context.Context, request schemacomparison.ViewQueriesRequest) ([]bool, error) {
+func (r *exactViewQueries) EquivalentViewQueries(_ context.Context, request schemacomparison.ViewQueriesRequest) ([]schemacomparison.ViewQueryAnswer, error) {
 	r.requests = append(r.requests, request)
 	if r.err != nil {
 		return nil, r.err
 	}
-	answers := make([]bool, len(request.Pairs))
+	answers := make([]schemacomparison.ViewQueryAnswer, len(request.Pairs))
 	for i, pair := range request.Pairs {
-		answers[i] = strings.Join(strings.Fields(pair.Declared), " ") == strings.Join(strings.Fields(pair.Held), " ")
+		answers[i] = map[bool]schemacomparison.ViewQueryAnswer{true: schemacomparison.ViewQueryEquivalent, false: schemacomparison.ViewQueryDifferent}[strings.Join(strings.Fields(pair.Declared), " ") == strings.Join(strings.Fields(pair.Held), " ")]
 	}
 	if r.short {
 		answers = answers[1:]
 	}
 	return answers, nil
+}
+
+// undecidedViewQueries leaves every pair to the comparison's own reading of
+// the two texts.
+type undecidedViewQueries struct{}
+
+func (undecidedViewQueries) EquivalentViewQueries(_ context.Context, request schemacomparison.ViewQueriesRequest) ([]schemacomparison.ViewQueryAnswer, error) {
+	answers := make([]schemacomparison.ViewQueryAnswer, len(request.Pairs))
+	for i := range answers {
+		answers[i] = schemacomparison.ViewQueryUndecided
+	}
+	return answers, nil
+}
+
+// columnNames names each column of a view query request as table.column:type.
+func columnNames(request schemacomparison.ViewQueriesRequest) []string {
+	names := make([]string, 0, len(request.Columns))
+	for _, column := range request.Columns {
+		names = append(names, column.Table.Name.Source+"."+column.Name+":"+column.Type)
+	}
+	return names
 }
 
 // viewQuerySchemas declare view cased, whose query differs from the held one
@@ -64,7 +85,8 @@ func viewQuerySchemas() (*schemamodel.Database, *catalog.Database) {
 // A target that decides view queries is asked, in one batch, about each
 // declared view and materialized view the database holds under its name: the
 // held query as read, and the declared query, a materialized view's without
-// its data clause. A view only one side has is not asked about.
+// its data clause. A view only one side has is not asked about. The request
+// carries the columns of every declared table.
 func TestCompareAsksTheTargetAboutViewQueries_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	queries := &exactViewQueries{}
@@ -80,12 +102,14 @@ func TestCompareAsksTheTargetAboutViewQueries_HappyPath(t *testing.T) {
 		{Kind: objectidentity.KindView, Name: "cased", Held: "SELECT price FROM items", Declared: "SELECT Price FROM items"},
 		{Kind: objectidentity.KindView, Name: "same", Held: "SELECT price FROM items", Declared: "SELECT price FROM items"},
 	})
+	c.Assert(columnNames(queries.requests[0]), qt.DeepEquals, []string{"items.price:BIGINT"})
 }
 
 // The comparison reads the target's answers alone: a view whose query the
 // target calls another query is changed, even where the shared reading, which
 // folds case, calls the two one query. A target that registers no owner is
-// read by the shared reading, which calls them one query.
+// read by the shared reading, which calls them one query, and so is a pair
+// the target leaves undecided.
 func TestCompareReadsTheTargetsViewQueryAnswers(t *testing.T) {
 	for _, test := range []struct {
 		name            string
@@ -95,6 +119,7 @@ func TestCompareReadsTheTargetsViewQueryAnswers(t *testing.T) {
 	}{
 		{name: "an owner that keeps case", rules: schemacomparison.Rules{ViewQueries: &exactViewQueries{}}, wantModified: []string{"cased"}},
 		{name: "no owner", rules: schemacomparison.Rules{}},
+		{name: "an owner that leaves every pair undecided", rules: schemacomparison.Rules{ViewQueries: undecidedViewQueries{}}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)

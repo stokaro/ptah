@@ -56,12 +56,14 @@ func ViewQueryPairs(desired *schemamodel.Database, database *catalog.Database, d
 
 // AnsweredViewQueries is the view rule a comparison reads once a target
 // answered pairs, one answer for each pair, in order: two queries are one
-// query when the target called them equivalent. A query pair the target was
-// not asked about is one query only when its texts are the same, and a query
-// pair it answered twice in two ways is no longer one. The queries are read
-// as the comparison reads them: a materialized view's without its data
+// query when the target called them equivalent, and a pair the target left
+// undecided is read as the shared comparison reads two texts. A query pair
+// the target was not asked about is one query only when its texts are the
+// same. A query pair answered twice in two ways is no longer one, and one
+// answered once undecided and once equivalent is undecided. The queries are
+// read as the comparison reads them: a materialized view's without its data
 // clause on both sides.
-func AnsweredViewQueries(pairs []schemacomparison.ViewQueryPair, answers []bool) schemacomparison.Views {
+func AnsweredViewQueries(pairs []schemacomparison.ViewQueryPair, answers []schemacomparison.ViewQueryAnswer) schemacomparison.Views {
 	answered := make(answeredViews, len(pairs))
 	for i, pair := range pairs {
 		held := pair.Held
@@ -69,19 +71,46 @@ func AnsweredViewQueries(pairs []schemacomparison.ViewQueryPair, answers []bool)
 			held = MaterializedViewQuery(held)
 		}
 		key := [2]string{pair.Declared, held}
-		equivalent, seen := answered[key]
-		answered[key] = answers[i] && (!seen || equivalent)
+		previous, seen := answered[key]
+		answered[key] = combinedAnswer(previous, answers[i], seen)
 	}
 	return answered
 }
 
+// combinedAnswer is the answer of a query pair a target answered again with
+// answer: different when either answer is, undecided when either is and
+// neither is different, and equivalent when both are.
+func combinedAnswer(previous, answer schemacomparison.ViewQueryAnswer, seen bool) schemacomparison.ViewQueryAnswer {
+	switch {
+	case !seen:
+		return answer
+	case previous == schemacomparison.ViewQueryDifferent || answer == schemacomparison.ViewQueryDifferent:
+		return schemacomparison.ViewQueryDifferent
+	case previous == schemacomparison.ViewQueryUndecided || answer == schemacomparison.ViewQueryUndecided:
+		return schemacomparison.ViewQueryUndecided
+	default:
+		return schemacomparison.ViewQueryEquivalent
+	}
+}
+
 // answeredViews holds a target's answers, keyed by the declared and the held
 // query.
-type answeredViews map[[2]string]bool
+type answeredViews map[[2]string]schemacomparison.ViewQueryAnswer
 
+// QueryEqual reports an undecided pair as different. The comparison reads
+// such a pair with [answeredViews.decide] instead, and reaches the shared
+// reading of its texts.
 func (a answeredViews) QueryEqual(desired, current string) bool {
-	if equivalent, asked := a[[2]string{desired, current}]; asked {
-		return equivalent
+	equal, _ := a.decide(desired, current)
+	return equal
+}
+
+// decide answers whether desired and current are one query, and false for
+// decided when the target left the pair undecided.
+func (a answeredViews) decide(desired, current string) (equal, decided bool) {
+	answer, asked := a[[2]string{desired, current}]
+	if !asked {
+		return desired == current, true
 	}
-	return desired == current
+	return answer == schemacomparison.ViewQueryEquivalent, answer != schemacomparison.ViewQueryUndecided
 }

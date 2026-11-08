@@ -55,10 +55,10 @@ func (equalViews) QueryEqual(_, _ string) bool { return true }
 // equalViewQueries calls every pair of queries one query.
 type equalViewQueries struct{}
 
-func (equalViewQueries) EquivalentViewQueries(_ context.Context, request schemacomparison.ViewQueriesRequest) ([]bool, error) {
-	answers := make([]bool, len(request.Pairs))
+func (equalViewQueries) EquivalentViewQueries(_ context.Context, request schemacomparison.ViewQueriesRequest) ([]schemacomparison.ViewQueryAnswer, error) {
+	answers := make([]schemacomparison.ViewQueryAnswer, len(request.Pairs))
 	for i := range answers {
-		answers[i] = true
+		answers[i] = schemacomparison.ViewQueryEquivalent
 	}
 	return answers, nil
 }

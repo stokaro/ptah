@@ -1052,10 +1052,15 @@ type declaredBodies struct {
 // whole result as a column alias list (stokaro/ptah#4057).
 //
 // A target that registers view rules is answered by them alone
-// ([schemacomparison.Views.QueryEqual]), as YDB is: the folds here are the
-// shared reading the rules replace.
+// ([schemacomparison.Views.QueryEqual]): the folds here are the shared reading
+// the rules replace. A target whose answers leave a pair undecided
+// ([AnsweredViewQueries]) has that pair read by the folds.
 func declaredBodyEqual(generatedBody, databaseBody, dialect, databaseSchema string, bodies declaredBodies) bool {
-	if bodies.rules != nil {
+	if answered, ok := bodies.rules.(answeredViews); ok {
+		if equal, decided := answered.decide(generatedBody, databaseBody); decided {
+			return equal
+		}
+	} else if bodies.rules != nil {
 		return bodies.rules.QueryEqual(generatedBody, databaseBody)
 	}
 	if schemaObjectBodiesEqual(generatedBody, databaseBody, dialect, databaseSchema) {
