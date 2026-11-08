@@ -233,7 +233,8 @@ can record a changefeed it cannot fully describe, and the declaration then
 does not name it. ADR 0122, a comparison reads the current state of another
 comparison's models, records the decision. The evidence lives in the observed facet value as well
 as in its coverage, because coverage names the facet's owner but does not list
-the individual streams.
+the individual streams. [What a comparison may conclude](../ydb-incomplete-knowledge/)
+works through that case and the other scenarios in which a fact is missing.
 
 ## Versions
 
@@ -258,6 +259,8 @@ version and features, and `ptah version` the host's.
 
 - [Run the YDB walkthrough](../ydb-walkthrough-run/) to run this example
   against a local YDB server, step by step.
+- [What a comparison may conclude](../ydb-incomplete-knowledge/) for the
+  scenarios in which the read or the declaration lacks a fact.
 - [How a provider works](../architecture/) and [Engines, models and
   planning](../models-and-planning/) for the rules this page illustrates.
 - [Using the YDB provider](../../providers/ydb/usage/) and [Declaring YDB

@@ -240,3 +240,6 @@ These features keep a large schema within one request. The SDK applies them on b
   services fit together.
 - [Test a provider](../testing/#check-each-service-with-the-sdks-validators)
   lists the validator of each core service.
+- [Understanding the provider boundary](../ydb-walkthrough/) and
+  [What a comparison may conclude](../ydb-incomplete-knowledge/) follow one
+  YDB transfer through these features.
