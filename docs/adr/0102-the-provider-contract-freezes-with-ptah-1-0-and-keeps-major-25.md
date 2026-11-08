@@ -230,7 +230,8 @@ need a two-way feature, and how a provider engine builds an enum column
 | View queries a server rewrites (S91) | Under `schema.view-query-equivalence` the owner answers every pair from the two texts; the request carries no declared columns and no answer returns a pair to the host's fold | Yes: a request field and a reply field under a two-way feature | Contract 25.37: `CompareViewQueriesRequest.declared_columns` and `ComparedViewQuery.undecided` under `schema.view-query-context` (ADR 0118). Not blocking |
 | A transfer of an undeclared changefeed (G228) | `declared_kinds` names object models only, so a comparison cannot see another comparison's facets, such as a table's changefeeds | Yes: a comparison field and a request field under a two-way feature | Contract 25.37: `ModelComparison.declared_facet_kinds` and `CompareModelsRequest.declared_facets` under `models.declared-facets` (ADR 0119). Not blocking |
 | A SQL file that changes what another format declares (G237) | A provider's SQL reading refuses the statement as `UNSUPPORTED` or `INVALID`, so the host cannot add that the SQL files change only what the SQL files declare | Yes: a diagnostic code under a two-way feature | Contract 25.38: `SQLDiagnostic.Code` `UNDECLARED` under `schema.read-sql-undeclared` (ADR 0120). Not blocking |
-| Change streams (S16, S47) | No model the planner or the export sees | Yes: a native context kind through `planning.object-context`, or a field on the observed table | Provider work. Not blocking |
+| Change streams (S16) | No model the export sees | Yes: a native context kind through `planning.object-context` | Provider work. Not blocking |
+| A drop that an unmodeled object blocks (S47) | A planning request describes a held table only by its model, so a planning service cannot refuse a drop of a table or a column that a change stream names | Yes: an inspection field and a planning field under a two-way feature | Contract 25.39: `Table.removal_blockers` and `ObservedTable.removal_blockers` under `schema.removal-blockers` (ADR 0121). Not blocking |
 
 None of these gaps needs what only a new major could do, so the freeze waits
 for none of them. Four are cheaper before it than after it, and contract
@@ -253,7 +254,9 @@ Later minors add negotiated additions:
 - contract 25.37, the declared columns of a view query comparison (ADR 0118)
   and the declared facets of another comparison's models (ADR 0119);
 - contract 25.38, a SQL schema reading's error for a statement its load does
-  not declare (ADR 0120).
+  not declare (ADR 0120);
+- contract 25.39, the objects outside the model that block a table's removal
+  (ADR 0121).
 
 ## Alternatives considered
 
