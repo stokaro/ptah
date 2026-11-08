@@ -35,16 +35,19 @@ that every construct renders on every target.
   <LinkCard title="Connect to PostgreSQL" href="../postgresql/" description="Use PostgreSQL URLs, schemas, extensions, capabilities, and inspection behavior." />
   <LinkCard title="Connect to MySQL or MariaDB" href="../mysql/" description="Check URL forms, release lines, network transports, and family differences." />
   <LinkCard title="Use SQLite or Turso" href="../sqlite/" description="Distinguish local SQLite files from remote libSQL targets and their URL forms." />
+  <LinkCard title="Use DuckDB" href="../../extend/providers/duckdb/" description="Install the official provider for an embedded DuckDB file or in-memory database." />
   <LinkCard title="Check the live server" href="../../reference/capabilities/" description="Run capability discovery and interpret how Ptah resolved the server profile." />
 </CardGrid>
 
 ## Choose by engine
 
-The sidebar includes focused guidance for SQL Server, Oracle, ClickHouse,
-distributed SQL engines, and [YDB](../../extend/providers/ydb/), which an executable provider
-serves, in addition to the common targets above. If an engine
-page and the generated matrix appear to disagree, the generated declaration and
-live capability output take precedence.
+The sidebar includes focused guidance for SQL Server, Oracle, ClickHouse, and
+distributed SQL engines. The official [YDB](../../extend/providers/ydb/),
+[Spanner](../../extend/providers/spanner/), and
+[DuckDB](../../extend/providers/duckdb/) integrations run as separate providers
+and document their own support scope. For built-in engines, the generated
+support matrix and live capability output take precedence when they disagree
+with an engine page.
 
 ## Reference
 

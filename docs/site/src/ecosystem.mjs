@@ -14,9 +14,9 @@
 //
 // What a status may claim. Each status describes what the owning repository
 // says about itself, checked against its README, its releases and its
-// description. A repository's existence is not a support claim: a scaffold is
-// labeled a scaffold even where the host recognizes its engine name. Version
-// numbers stay out of this file; each component links to the place that
+// description. A repository's existence alone is not a support claim; the
+// status follows its published capabilities and releases. Version numbers stay
+// out of this file; each component links to the place that
 // publishes its releases and compatibility, so nothing here goes stale when a
 // release is cut.
 //
@@ -180,13 +180,13 @@ export const components = [
     kind: 'repository',
     group: 'providers',
     role: 'DuckDB provider',
-    badge: 'Scaffold',
-    status: 'scaffold',
+    badge: 'Optional',
+    status: 'experimental',
     purpose:
-      'A provider scaffold. It starts, negotiates with Ptah and declares the `duckdb` engine, but implements no service: it opens no connection and cannot inspect, plan or apply.',
-    whenNeeded: 'Not for DuckDB work yet. Ptah has no built-in DuckDB support either.',
+      'The executable provider for embedded DuckDB. It lets Ptah inspect and change a local database file or an in-memory database and run versioned migrations. Ptah has no DuckDB implementation of its own.',
+    whenNeeded: 'You work with embedded DuckDB. Install it with `ptah providers install duckdb`; no Ptah installation channel includes it.',
     statusNote:
-      'No release that Ptah can install: `ptah providers install duckdb` refuses with `provider_no_release`.',
+      'Publishes releases and is under development. It serves local files and in-memory databases; MotherDuck and other network targets are outside its scope.',
     links: [
       { label: 'Repository', href: 'https://github.com/stokaro/ptah-duckdb-plugin' },
       { label: 'Configure the DuckDB provider', doc: 'extend/providers/duckdb/' },
@@ -334,7 +334,7 @@ export const relationships = [
   { id: 'api-reconciled-by-operator', from: 'kubernetes-api', to: 'ptah-operator', kind: 'runs', label: 'Reconciled by' },
   { id: 'operator-runs-ptah', from: 'ptah-operator', to: 'ptah', kind: 'runs', label: 'Runs executor Jobs' },
   { id: 'ptah-starts-ydb', from: 'ptah', to: 'ptah-ydb-plugin', kind: 'runs', state: 'experimental', label: 'Starts the provider' },
-  { id: 'ptah-recognizes-duckdb', from: 'ptah', to: 'ptah-duckdb-plugin', kind: 'runs', state: 'not-implemented', label: 'No services yet' },
+  { id: 'ptah-starts-duckdb', from: 'ptah', to: 'ptah-duckdb-plugin', kind: 'runs', state: 'experimental', label: 'Starts the provider when installed' },
   { id: 'ptah-starts-spanner', from: 'ptah', to: 'ptah-spanner-plugin', kind: 'runs', state: 'experimental', label: 'Starts the provider when installed' },
   { id: 'homebrew-installs-ptah', from: 'homebrew-ptah', to: 'ptah', kind: 'installs', label: 'Installs release and edge builds' },
   { id: 'site-installs-ptah', from: 'ptah-run', to: 'ptah', kind: 'installs', label: 'Serves the installers' },
