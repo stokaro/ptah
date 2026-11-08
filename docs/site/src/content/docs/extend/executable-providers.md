@@ -232,6 +232,14 @@ UNIQUE constraint the forward plan adds or removes has no such prediction,
 since an engine may report the index behind it, and neither has a constraint
 that carries facets of its engine.
 
+The predicted table also holds the CHECK and the foreign key that a column the
+forward plan adds states on itself, although the comparison lists them with
+the column rather than among the constraint changes. Each carries the name the
+host compares it under: the declared one, `<table>_<column>_check` for an
+unnamed CHECK, and `fk_<table>_<column>` for an unnamed foreign key. A down
+file that drops the column can then drop them first, which an engine that
+refuses to drop a column a constraint still names requires.
+
 Listing `schema.observed-constraints` therefore promises more than a read: a
 provider that lists it keeps reporting a foreign key in that spelling and
 keeps the index behind it out of the table's indexes, or the down files the
@@ -241,7 +249,9 @@ A server often keeps a CHECK in a form of its own, with literals cast or a
 list rewritten. With `schema.check-equivalence`, the host asks the provider
 whether each declared CHECK and the CHECK the table holds under the same name
 are one constraint, and keeps the held one or replaces it as the provider
-answers. Without the feature the host compares the two texts by its own rules.
+answers. The CHECK the host builds for an enum column is one of them, so a
+changed list of values replaces it. Without the feature the host compares the
+two texts by its own rules.
 
 The host's own rules for a view's query fold case, which is wrong for an
 engine whose names keep their case. With `schema.view-query-equivalence`, the
@@ -653,6 +663,16 @@ such as a rebuild a migration file runs later as SQL text, gives the new table
 those grants, except one the same plan revokes. The engine must carry `GRANT`
 common objects. Without the feature the request carries no grants, and a
 rebuild written as text cannot give them back.
+
+With `schema.removal-blockers`, a read reports, for each table, the objects
+outside the engine's model that name the table or some of its columns and
+block their removal, such as a Spanner change stream that names the table in
+its `FOR` clause. Ptah hands them unchanged to the planning service with the
+held table. It never compares them, and no document made from the read names
+them. The planning service refuses a plan that drops a blocked table or
+column, so `schema apply --dry-run` and `migrations generate` refuse it before
+a statement exists. Without the feature the plan writes the drop, and the
+engine refuses it when it runs.
 
 With `schema.common-namespaces`, an engine also carries its namespaces, such as
 the schemas of a DuckDB catalog or of Spanner's PostgreSQL interface, as the
@@ -1527,7 +1547,9 @@ which Ptah reports as a loss at the table.
 
 The `ptah:feature-coverage` header of an HCL export leaves such a model out.
 The blocks the document writes are its whole account of the model, so a table
-whose block an edit removes keeps its settings too.
+whose block an edit removes keeps its settings too. A read's record of a table
+whose setting of such a model it could not describe has no place in the
+document, so the export reports it as a warning.
 
 `source.index-kinds` lets an engine claim index types it models outside the
 common index, such as YDB's `vector_kmeans_tree`. For a Go `ptah:schema:index`
@@ -1563,6 +1585,12 @@ document knows of the provider's models itself, as a captured
 export had. It sends the provider no coverage for HCL and refuses a reply that
 carries `ptah:not-described` entries. Splitting the output repeats the header
 in every file.
+
+The header carries what the document knows of the models the engine's blocks
+write, and nothing of a model no block writes. A read's record of an object of
+such a model that the read lists and does not describe, such as a YDB queue
+group, is therefore reported as a warning that names the object, its model and
+the read's reason: the export never leaves a record out without saying so.
 
 A schema read through the provider is written as complete for what the read
 listed, such as the directories a `--schemas` read named, as the built-in

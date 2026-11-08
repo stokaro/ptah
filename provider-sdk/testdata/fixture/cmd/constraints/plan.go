@@ -13,10 +13,12 @@ import (
 
 // PlanFeatures plans the tables the plan keeps and changes: each is rebuilt
 // with its declared foreign keys and CHECKs, or has the indexes the host adds
-// and drops built and dropped in place of the host's steps. In the text mode
-// it also creates and drops tables, in place of the host's steps. It refuses
-// every other change, among them an index whose key states a NULLS order
-// SQLite cannot build, in a diagnostic.
+// and drops built and dropped in place of the host's steps, or, where its
+// constraints stay, the columns the host adds and drops added and dropped in
+// place of the host's steps. In the text mode it also creates and drops
+// tables, in place of the host's steps. It refuses every other change, among
+// them an index whose key states a NULLS order SQLite cannot build, in a
+// diagnostic.
 func (o *owner) PlanFeatures(ctx context.Context, request *protocol.PlanFeaturesRequest) (*protocol.PlannedFeatures, error) {
 	result := &protocol.PlannedFeatures{Complete: true}
 	contribution := &protocol.PlanningContribution{Owner: o.description.GetProviderId()}
@@ -27,7 +29,12 @@ func (o *owner) PlanFeatures(ctx context.Context, request *protocol.PlanFeatures
 		if table.GetAction() == protocol.PlanningTable_CONTEXT {
 			continue
 		}
-		steps, rewrites, refusal := o.planLifecycle(request, table)
+		refusal := blockedRemoval(table)
+		var steps []*protocol.PlanningStep
+		var rewrites []*protocol.PlanningRewrite
+		if refusal == "" {
+			steps, rewrites, refusal = o.planLifecycle(request, table)
+		}
 		if refusal != "" {
 			return &protocol.PlannedFeatures{Complete: true, Diagnostics: []*protocol.PlanningDiagnostic{{
 				Code: protocol.PlanningDiagnostic_UNSUPPORTED_FEATURE, Kind: "table", Message: refusal}}}, nil
@@ -87,7 +94,7 @@ func (o *owner) planLifecycle(request *protocol.PlanFeaturesRequest, table *prot
 	}
 	// The step stands for the host's, so it carries that step's effects.
 	metadata := proto.CloneOf(request.GetCommonSteps()[common].GetMetadata())
-	metadata.Transaction = protocol.PlanningMetadata_FORBIDDEN
+	metadata.Transaction = o.transaction()
 	metadata.Impact, metadata.Reason = value.GetOperationSemantics().GetImpact(), value.GetOperationSemantics().GetReason()
 	step := &protocol.PlanningStep{Id: id, Metadata: metadata, Operation: &protocol.PlanningOperation{Value: value, Role: protocol.NativeOperation_STATEMENT}}
 	rewrite := &protocol.PlanningRewrite{Sources: []*protocol.StepIdentity{proto.CloneOf(request.GetCommonSteps()[common].GetId())}, Replacement: proto.CloneOf(id)}
@@ -115,21 +122,32 @@ func (o *owner) planTable(request *protocol.PlanFeaturesRequest, table *protocol
 	if err != nil {
 		return nil, nil, err.Error()
 	}
-	var common []*protocol.CommonPlanningStep
+	var common, columns []*protocol.CommonPlanningStep
 	for _, step := range request.GetCommonSteps() {
 		if !proto.Equal(step.GetParent(), table.GetSubject()) {
 			continue
 		}
-		if indexName(step) == "" {
-			return nil, nil, fmt.Sprintf("the constraints fixture plans no change of table %s but its constraints and indexes", declared.GetName())
+		switch {
+		case columnName(step) != "":
+			columns = append(columns, step)
+		case indexName(step) != "":
+			common = append(common, step)
+		default:
+			return nil, nil, fmt.Sprintf("the constraints fixture plans no change of table %s but its columns, constraints and indexes", declared.GetName())
 		}
-		common = append(common, step)
 	}
 	if len(common) != 0 {
-		if !sameConstraints(wanted, held) {
-			return nil, nil, fmt.Sprintf("the constraints fixture plans the indexes or the constraints of table %s in one plan, not both", declared.GetName())
+		if len(columns) != 0 || !sameConstraints(wanted, held) {
+			return nil, nil, fmt.Sprintf("the constraints fixture plans the indexes of table %s alone, not with its columns or constraints", declared.GetName())
 		}
 		return o.planIndexes(request.GetEngine(), declared, common)
+	}
+	// The fixture decides from the table the host says it holds: where its
+	// constraints are the declared ones, a column is added or dropped in
+	// place, and SQLite refuses to drop one a constraint the table holds
+	// still names. Otherwise the table is rebuilt with its columns.
+	if len(columns) != 0 && sameConstraints(wanted, held) {
+		return o.planColumns(request.GetEngine(), declared, columns)
 	}
 	statements := append(rebuildStatements(declared, held, wanted), regrants(declared.GetName(), table.GetCurrentGrants())...)
 	value, err := o.statements(request.GetEngine(), "rebuild/"+declared.GetName(), declared.GetName(), statements)
@@ -137,10 +155,75 @@ func (o *owner) planTable(request *protocol.PlanFeaturesRequest, table *protocol
 		return nil, nil, err.Error()
 	}
 	step := &protocol.PlanningStep{Id: &protocol.StepIdentity{Owner: o.description.GetProviderId(), Name: "rebuild/" + declared.GetName()},
-		Metadata: &protocol.PlanningMetadata{Transaction: protocol.PlanningMetadata_FORBIDDEN, Impact: value.GetOperationSemantics().GetImpact(),
+		Metadata: &protocol.PlanningMetadata{Transaction: o.transaction(), Impact: value.GetOperationSemantics().GetImpact(),
 			Reason: value.GetOperationSemantics().GetReason(), Effects: []*protocol.PlanningEffect{{Subject: proto.CloneOf(table.GetSubject()), Action: protocol.PlanningEffect_ALTER}}},
 		Operation: &protocol.PlanningOperation{Value: value, Role: protocol.NativeOperation_STATEMENT}}
-	return []*protocol.PlanningStep{step}, nil, ""
+	if len(columns) == 0 {
+		return []*protocol.PlanningStep{step}, nil, ""
+	}
+	// The rebuild stands for the host's column steps, so it carries their
+	// effects on the columns beside its own on the table.
+	rewrite := &protocol.PlanningRewrite{Replacement: proto.CloneOf(step.GetId())}
+	for _, source := range columns {
+		rewrite.Sources = append(rewrite.Sources, proto.CloneOf(source.GetId()))
+		for _, effect := range source.GetMetadata().GetEffects() {
+			if !proto.Equal(effect.GetSubject(), table.GetSubject()) {
+				step.Metadata.Effects = append(step.Metadata.Effects, proto.CloneOf(effect))
+			}
+		}
+	}
+	return []*protocol.PlanningStep{step}, []*protocol.PlanningRewrite{rewrite}, ""
+}
+
+// planColumns plans one statement for each host step that adds or drops a
+// column of declared, with the step's footprint, in place of the step: an
+// ALTER TABLE ... ADD COLUMN of the declared column, or an ALTER TABLE ...
+// DROP COLUMN.
+func (o *owner) planColumns(engine string, declared *protocol.DeclaredTable, columns []*protocol.CommonPlanningStep) ([]*protocol.PlanningStep, []*protocol.PlanningRewrite, string) {
+	var steps []*protocol.PlanningStep
+	var rewrites []*protocol.PlanningRewrite
+	for _, source := range columns {
+		name := columnName(source)
+		statement := fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s;", quote(declared.GetName()), quote(name))
+		id := "column/" + declared.GetName() + "/drop/" + name
+		if added := source.GetAddedColumn(); added != nil {
+			definition := quote(name) + " " + columnType(added.GetType())
+			if !added.GetNullable() {
+				definition += " NOT NULL"
+			}
+			statement, id = fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s;", quote(declared.GetName()), definition), "column/"+declared.GetName()+"/add/"+name
+		}
+		value, err := o.statements(engine, id, declared.GetName(), []string{statement})
+		if err != nil {
+			return nil, nil, err.Error()
+		}
+		var effects []*protocol.PlanningEffect
+		for _, effect := range source.GetMetadata().GetEffects() {
+			effects = append(effects, proto.CloneOf(effect))
+		}
+		step := &protocol.PlanningStep{Id: &protocol.StepIdentity{Owner: o.description.GetProviderId(), Name: id},
+			Metadata: &protocol.PlanningMetadata{Transaction: o.transaction(), Impact: value.GetOperationSemantics().GetImpact(),
+				Reason: value.GetOperationSemantics().GetReason(), Effects: effects},
+			Operation: &protocol.PlanningOperation{Value: value, Role: protocol.NativeOperation_STATEMENT}}
+		steps = append(steps, step)
+		rewrites = append(rewrites, &protocol.PlanningRewrite{Sources: []*protocol.StepIdentity{proto.CloneOf(source.GetId())}, Replacement: proto.CloneOf(step.GetId())})
+	}
+	return steps, rewrites, ""
+}
+
+// columnName is the column a host step adds or drops, or empty for a step
+// that changes no column. A column step reads its table and creates or drops
+// one column of it.
+func columnName(common *protocol.CommonPlanningStep) string {
+	if added := common.GetAddedColumn(); added != nil {
+		return added.GetName()
+	}
+	for _, effect := range common.GetMetadata().GetEffects() {
+		if effect.GetAction() == protocol.PlanningEffect_DROP && effect.GetSubject().GetKind() == "column" {
+			return effect.GetSubject().GetName().GetSource()
+		}
+	}
+	return ""
 }
 
 // planIndexes plans one statement for each host step that adds or drops an
@@ -172,7 +255,7 @@ func (o *owner) planIndexes(engine string, declared *protocol.DeclaredTable, com
 			effects = append(effects, proto.CloneOf(effect))
 		}
 		step := &protocol.PlanningStep{Id: &protocol.StepIdentity{Owner: o.description.GetProviderId(), Name: id},
-			Metadata: &protocol.PlanningMetadata{Transaction: protocol.PlanningMetadata_FORBIDDEN, Impact: value.GetOperationSemantics().GetImpact(),
+			Metadata: &protocol.PlanningMetadata{Transaction: o.transaction(), Impact: value.GetOperationSemantics().GetImpact(),
 				Reason: value.GetOperationSemantics().GetReason(), Effects: effects},
 			Operation: &protocol.PlanningOperation{Value: value, Role: protocol.NativeOperation_STATEMENT, Phase: protocol.PlanningOperation_LIFECYCLE}}
 		steps = append(steps, step)
@@ -373,6 +456,16 @@ func rebuildStatements(declared *protocol.DeclaredTable, held *protocol.Observed
 		statements = append(statements, fmt.Sprintf("CREATE %sINDEX %s ON %s (%s);", unique, quote(index.GetName()), quote(name), strings.Join(keys, ", ")))
 	}
 	return statements
+}
+
+// transaction is how a step of the fixture takes a transaction: never, as
+// its statements run, unless the mode states a session's schema changes as
+// ones a transaction holds.
+func (o *owner) transaction() protocol.PlanningMetadata_Transaction {
+	if o.transactional {
+		return protocol.PlanningMetadata_ALLOWED
+	}
+	return protocol.PlanningMetadata_FORBIDDEN
 }
 
 func quote(value string) string { return `"` + strings.ReplaceAll(value, `"`, `""`) + `"` }

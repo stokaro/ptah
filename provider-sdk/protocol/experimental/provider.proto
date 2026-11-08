@@ -881,6 +881,28 @@ message Table {
   // UNIQUE constraint the table holds too, over one column or several, and a
   // column a UNIQUE over it alone covers states ObservedColumn.unique.
   repeated ObservedConstraint constraints = 7;
+  // The objects outside the engine's model that name this table, or some of
+  // its columns, and block their removal, each once. The read does not
+  // describe them otherwise; the host carries them to planning unchanged and
+  // never compares or exports them. Contract 25.39, negotiated under
+  // schema.removal-blockers.
+  repeated RemovalBlocker removal_blockers = 8;
+}
+// RemovalBlocker is an object outside the engine's model, such as a Spanner
+// change stream, that names a table and blocks its removal: the engine
+// refuses to drop the table while the object names it. An object that names
+// some of the table's columns blocks the removal of each of them too, and one
+// that names none blocks the removal of no column. Contract 25.39, under
+// schema.removal-blockers.
+message RemovalBlocker {
+  // What the object is, as a lowercase token of letters, digits and
+  // underscores that starts with a letter, such as "change_stream".
+  string kind = 1;
+  // The object's name, as the engine spells it.
+  string name = 2;
+  // The table's columns the object names, each once and each a column of the
+  // table; empty when it names the table as a whole.
+  repeated string columns = 3;
 }
 message Column {
   string name = 1;
@@ -2586,6 +2608,12 @@ message ObservedTable {
   repeated ObservedConstraint constraints = 15;
   repeated CapturedTrigger triggers = 16;
   CapturedFeatures features = 17;
+  // The removal blockers the read reported for the table in
+  // Table.removal_blockers, unchanged: a planning service refuses a plan that
+  // drops the table, or a column a blocker names, before a statement runs.
+  // Only a planning request carries them. Contract 25.39, negotiated under
+  // schema.removal-blockers.
+  repeated RemovalBlocker removal_blockers = 18;
 }
 message ObservedColumn {
   string name = 1;

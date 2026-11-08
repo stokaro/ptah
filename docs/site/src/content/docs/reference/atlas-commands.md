@@ -1376,9 +1376,10 @@ and execution, and released on every exit path. It is a duration that defaults
 to `10s`; zero or a negative value tries the lock once without waiting, as on
 Atlas, and a value that is not a duration is refused by the flag parser. An
 elapsed timeout fails before the target is inspected. PostgreSQL, YugabyteDB,
-MySQL, MariaDB, and SQL Server take a real lock; every other dialect proceeds
+MySQL, MariaDB, and SQL Server take a real lock, and so does an engine whose
+executable provider offers a lock service; every other target proceeds
 unlocked with a stderr note. The native `ptah schema apply` refuses a typed
-`--lock-timeout` on those dialects rather than noting it — see
+`--lock-timeout` on those targets rather than noting it — see
 [Apply a desired schema](../../direct/apply/).
 
 **`--lock-name`** replaces the lock name for the run (`ptah_schema_apply` by

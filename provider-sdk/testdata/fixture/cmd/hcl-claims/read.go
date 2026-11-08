@@ -50,11 +50,18 @@ const narrowedReason = "retention is read for the selected schemas only"
 // An unfiltered read knows retention completely. A read of selected schemas
 // knows it completely only in the namespaces of their scope bindings, the
 // shape a provider reports when it lists a namespace at a time, and with
-// readHidden not in a nested namespace of them.
+// readHidden not in a nested namespace of them. With readUnread it also
+// records the legacy object it does not describe (see recordUnread).
 func (p *hclClaims) Inspect(ctx context.Context, request *protocol.InspectRequest) (*protocol.Schema, error) {
 	snapshot, err := p.Provider.Inspect(ctx, request)
-	if err != nil || !readRetention() || snapshot.GetCoverage() == nil {
+	if err != nil || snapshot.GetCoverage() == nil {
 		return snapshot, err
+	}
+	if readUnread() {
+		recordUnread(snapshot)
+	}
+	if !readRetention() {
+		return snapshot, nil
 	}
 	model := backend.Description().GetEngines()[0].GetValueModels()[1]
 	for _, table := range snapshot.GetTables() {

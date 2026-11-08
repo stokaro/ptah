@@ -1,6 +1,7 @@
 package difftypes
 
 import (
+	"slices"
 	"strings"
 
 	"ptah.run/catalog"
@@ -11,8 +12,8 @@ import (
 	"ptah.run/internal/tableidentity"
 )
 
-// TableObservationFor captures the feature namespace, the common children and
-// the grants of one observed table. The target dialect and identifier
+// TableObservationFor captures the feature namespace, the common children, the
+// grants and the removal blockers of one observed table. The target dialect and identifier
 // semantics must match the comparison that selected it; SQLite preserves
 // whitespace in catalog names.
 func TableObservationFor(current *catalog.Database, table catalog.Table, dialect string, semantics identifier.Semantics) schemacapture.TableObservation {
@@ -37,6 +38,12 @@ func TableObservationFor(current *catalog.Database, table catalog.Table, dialect
 	for _, trigger := range current.Triggers {
 		if tableidentity.Subject(trigger.Schema, trigger.Table, dialect, semantics).Key() == parent.Key() {
 			result.Triggers = append(result.Triggers, trigger)
+		}
+	}
+	for _, blocker := range current.RemovalBlockers {
+		if tableidentity.Subject(blocker.Schema, blocker.Table, dialect, semantics).Key() == parent.Key() {
+			blocker.Columns = slices.Clone(blocker.Columns)
+			result.RemovalBlockers = append(result.RemovalBlockers, blocker)
 		}
 	}
 	return result

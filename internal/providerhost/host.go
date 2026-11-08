@@ -328,6 +328,12 @@ var hostFeatures = []string{
 	// comparison refuses a declaration at one in the provider's words; see
 	// reader.unreadTables.
 	provider.UnreadTablesFeature,
+	// A read names the objects outside the model that block a table's
+	// removal, such as a Spanner change stream, and the planning service of
+	// the table's engine receives them with the held table, so it refuses a
+	// drop they block before a statement runs; see removalBlockers and
+	// planningCapture.removalBlockers.
+	provider.RemovalBlockersFeature,
 	// An offline command plans an engine with the capabilities its provider
 	// states for it; see registerDefaultCapabilities.
 	provider.DefaultCapabilitiesFeature,

@@ -1,6 +1,7 @@
 package schemadiff
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"slices"
@@ -249,6 +250,12 @@ func compareReportingUndecidedAdditions(
 	})
 
 	// Compare common table constraints (CHECK, UNIQUE, PRIMARY KEY, FOREIGN KEY).
+	// A target that decides CHECK equivalence answers for the CHECKs of the
+	// desired state compared here, which is the one its lowering produced.
+	opts, err = withTargetCheckDecisions(ctx, opts, rules.Checks, desired, database, caps, identifierSemantics)
+	if err != nil {
+		return nil, Diagnostics{}, err
+	}
 	compare.ConstraintsWithSemantics(desired, database, diff, opts, identifierSemantics)
 	compare.ForeignKeyBackingIndexesLeaving(desired, database, diff, rules.ForeignKeyIndexes, opts.Dialect, identifierSemantics)
 	compare.ForeignKeyBackingIndexesTakenOver(desired, database, diff, rules.ForeignKeyIndexes, opts.Dialect, identifierSemantics)
@@ -281,10 +288,7 @@ func compareReportingUndecidedAdditions(
 	// is one nobody can diff, so they are ordered here.
 	undecided := cov.UndecidedAdditions()
 	slices.SortFunc(undecided, func(a, b coverage.Object) int {
-		if a.Kind != b.Kind {
-			return strings.Compare(string(a.Kind), string(b.Kind))
-		}
-		return strings.Compare(a.Name, b.Name)
+		return cmp.Or(strings.Compare(string(a.Kind), string(b.Kind)), strings.Compare(a.Name, b.Name))
 	})
 
 	restoreAuthored(diff, authored)
