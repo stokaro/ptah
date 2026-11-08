@@ -228,6 +228,16 @@ message Engine {
   // it. Absent, a host prints its own sentence for a provider's connection.
   // Contract 25.35.
   string connection_capability_source = 28;
+  // The not-described coverage kinds the engine's reads record, each a
+  // lowercase token, such as "change_stream" for a Spanner change stream: a
+  // kind of object the engine holds and its provider does not model. The host
+  // adds them to the vocabulary its documents may name, so the header of a
+  // document a read wrote can say that it does not describe them and the host
+  // reads that line back. A kind is the engine's own: it is never one of the
+  // host's common kinds. Non-empty exactly when the engine lists
+  // schema.not-described, and sent only to a host that lists it. Contract
+  // 25.41.
+  repeated string not_described_kinds = 29;
 }
 // EnumColumns is how an engine builds a column a source declares as an enum:
 // one typed ENUM with its values, such as a Go field with enum="a,b,c", or one
@@ -736,6 +746,15 @@ message Schema {
   // tables says nothing about the database when it is named here. Contract
   // 25.20, under schema.unread-tables.
   repeated UnreadTable unread_tables = 12;
+  // What the read does not describe, each record of a kind the engine lists
+  // in Engine.not_described_kinds: a whole kind when the name is empty, such
+  // as every change stream of a Spanner database, or one object of it. Each
+  // record states why the read does not describe it and how the read learned
+  // that. The host keeps them as the read's not-described records, so a
+  // document made from the read says it does not describe them and a plan does
+  // not read their absence as a removal. Contract 25.41, under
+  // schema.not-described.
+  repeated SchemaCoverageLimit not_described = 13;
 }
 // UnreadTable is a table the read found and does not describe, with the
 // provider's reason, which the host shows whenever it names the table.
@@ -3142,7 +3161,12 @@ message SchemaDiagnostic {
   string message = 5;
 }
 
-// Common coverage limits remain evidence limits, never successful validation.
+// SchemaCoverageLimit is one thing a description does not describe: a kind of
+// object, the whole kind when name is empty, why the description does not
+// describe it (reason) and how that was learned (provenance). A host sends the
+// limits of a desired schema in ValidateSchemaRequest.not_described, and a read
+// reports its own in Schema.not_described. A coverage limit remains an evidence
+// limit, never successful validation.
 message SchemaCoverageLimit {
  string kind = 1;
  string name = 2;
