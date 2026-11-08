@@ -65,8 +65,9 @@ func TestProviderInspectHCL_ReportsARecordItCannotCarry_HappyPath(t *testing.T) 
 }
 
 // A provider's model is one HCL records no limit of where no block of the
-// provider writes it, or where its block is a table's platform group, which
-// the captured header leaves out; a model a block of its own writes is not.
+// provider writes it. A model a block of its own writes is not, and neither is
+// one its block writes at a table's platform group: the captured header keeps
+// each subject of it the read left incomplete.
 func TestProviderHCLUnrecordedModels_HappyPath(t *testing.T) {
 	for _, test := range []struct {
 		name, command string
@@ -75,7 +76,7 @@ func TestProviderHCLUnrecordedModels_HappyPath(t *testing.T) {
 		unrecorded    bool
 	}{
 		{name: "a model no block writes", command: "hcl-claims", environment: []string{"FIXTURE_READ_UNREAD=1"}, kind: "example.org/fixture/legacy", unrecorded: true},
-		{name: "a model of a platform group", command: "hcl-platform", kind: "example.org/fixture/retention", unrecorded: true},
+		{name: "a model of a platform group", command: "hcl-platform", kind: "example.org/fixture/retention", unrecorded: false},
 		{name: "a model a block writes", command: "hcl-claims", kind: "example.org/fixture/retention", unrecorded: false},
 	} {
 		t.Run(test.name, func(t *testing.T) {

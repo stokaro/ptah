@@ -11,7 +11,6 @@ import (
 
 	"ptah.run/core/coverage"
 	"ptah.run/core/hclext"
-	"ptah.run/core/objectidentity"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/internal/providersource"
@@ -83,10 +82,10 @@ func (o *hclOwner) EncodeHCL(ctx context.Context, request hclext.EncodeRequest) 
 	if err := encoding.capture(request); err != nil {
 		return hclext.EncodeResult{}, err
 	}
+	if encoding.result.Header, err = o.coverageHeader(ctx, encoding.batch, request.Coverage); err != nil {
+		return hclext.EncodeResult{}, err
+	}
 	if len(encoding.batch.request.GetValues()) == 0 {
-		if encoding.result.Header, err = o.coverageHeader(ctx, encoding.batch, request.Coverage); err != nil {
-			return hclext.EncodeResult{}, err
-		}
 		return encoding.finish(), nil
 	}
 	encoded, err := o.host.client.EncodeSource(ctx, encoding.batch.request)
@@ -105,60 +104,7 @@ func (o *hclOwner) EncodeHCL(ctx context.Context, request hclext.EncodeRequest) 
 	for _, loss := range encoded.GetLosses() {
 		encoding.loss(loss.GetValueId(), loss.GetMessage())
 	}
-	known, err := o.coverageAfterHCLLosses(request.Coverage, selected.engine.GetId(), encoding.batch.request.GetValues(), encoded.GetLosses())
-	if err != nil {
-		return hclext.EncodeResult{}, err
-	}
-	if encoding.result.Header, err = o.coverageHeader(ctx, encoding.batch, known); err != nil {
-		return hclext.EncodeResult{}, err
-	}
 	return encoding.finish(), ctx.Err()
-}
-
-// coverageAfterHCLLosses records a table facet the provider could not write
-// as unrepresentable in the exported document. The inspected value is still
-// known, but a later read of the HCL source must not infer its absence from
-// the document's silence. Platform-only models need an explicit subject in
-// the captured header because the table has no platform block for that value.
-func (o *hclOwner) coverageAfterHCLLosses(known schemaext.Coverage, engine string, values []*protocol.EncodeSourceValue, losses []*protocol.EncodeLoss) (schemaext.Coverage, error) {
-	if known.IsZero() || len(losses) == 0 {
-		return known, nil
-	}
-	kinds, subjects := known.KindRecords(), known.SubjectRecords()
-	byID := make(map[string]*protocol.NormalizedValue, len(values))
-	for _, value := range values {
-		byID[value.GetValue().GetId()] = value.GetValue()
-	}
-	for _, loss := range losses {
-		value := byID[loss.GetValueId()]
-		if value == nil {
-			continue // The provider SDK validates loss IDs before this reply reaches us.
-		}
-		kind := schemaext.Kind(value.GetValue().GetKind())
-		if !o.platformOnly(kind) || value.GetValue().GetOwner().GetKind() != "table" {
-			continue
-		}
-		subject, err := sourceIdentity(value.GetValue().GetOwner(), value.GetNormalizedOwner())
-		if err != nil {
-			return schemaext.Coverage{}, err
-		}
-		// A captured table subject is relative to the selected database.
-		subject.Database = objectidentity.Part{}
-		found := false
-		for i := range subjects {
-			if subjects[i].Kind != kind || subjects[i].Subject.Key() != subject.Key() {
-				continue
-			}
-			subjects[i].Knowledge = schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: loss.GetMessage()}
-			found = true
-			break
-		}
-		if !found {
-			subjects = append(subjects, schemaext.SubjectCoverage{Kind: kind, Subject: subject,
-				Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: loss.GetMessage()}, Targets: []string{engine}})
-		}
-	}
-	return schemaext.NewCoverage(known.Representation(), kinds, subjects)
 }
 
 // coverageHeader is the captured feature coverage header line that states
@@ -175,6 +121,17 @@ func (o *hclOwner) coverageAfterHCLLosses(known schemaext.Coverage, engine strin
 // read knew it completely: the groups the document writes are its whole
 // account of it. An unreadable subject must keep its explicit limit in the
 // header, since no group can describe what the read could not establish.
+//
+// A value the provider writes in part, or not at all, adds no subject. The
+// encoder reports the part it leaves out as a loss at the table, and the
+// header never claims the model complete, so a later read cannot take the
+// document's silence for absence. A subject limit would cost the round trip.
+// Unrepresentable, it tells the provider that the source met state it could
+// not describe, and the YDB provider leaves the table's TTL, families and
+// partitioning undecided. Uninspected, it is an explicit limitation, and the
+// engine refuses a facet change under it. Either way an export of a table with
+// a setting HCL cannot spell would not read as synced when applied back to its
+// own database, and an edit to the TTL its group writes would never plan.
 func (o *hclOwner) coverageHeader(ctx context.Context, batch *encodeBatch, known schemaext.Coverage) ([]string, error) {
 	if known.IsZero() {
 		return nil, nil

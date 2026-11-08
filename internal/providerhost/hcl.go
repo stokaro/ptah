@@ -99,16 +99,20 @@ func (h *Host) hclExtensions() []hclext.Extension {
 
 // unrecorded are the provider's models whose not-described records an HCL
 // export cannot carry: a model no block of an HCL engine writes, which the
-// writer leaves out of the coverage it hands the encoder, and a model HCL
-// states only at a table's platform group, which coverageHeader leaves out.
-// The writer reports such a record, of an object the document does not hold,
-// as a loss. Without them a read's record of an object it lists and does not
-// describe, such as a YDB queue group, leaves the export without a word.
+// writer leaves out of the coverage it hands the encoder. The writer reports
+// such a record, of an object the document does not hold, as a loss. Without
+// them a read's record of an object it lists and does not describe, such as a
+// YDB queue group, leaves the export without a word.
+//
+// A model HCL states only at a table's platform group is not one of them:
+// coverageHeader writes each subject of it the read left incomplete. Listed
+// here, each such subject would be reported as a record HCL cannot carry,
+// although the header carries it.
 func (o *hclOwner) unrecorded(written []schemaext.Kind) []schemaext.Kind {
 	var kinds []schemaext.Kind
 	for _, codec := range o.host.modelCodecs {
 		kind := codec.Prototype.Kind()
-		if codec.Representation != schemaext.Desired || slices.Contains(written, kind) && !o.platformOnly(kind) {
+		if codec.Representation != schemaext.Desired || slices.Contains(written, kind) {
 			continue
 		}
 		kinds = append(kinds, kind)
