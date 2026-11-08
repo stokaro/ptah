@@ -2,6 +2,7 @@
 title: Configure the DuckDB provider
 description: Install, select and verify the DuckDB executable provider, diagnose an absent or unusable installation, and find where the provider documents what DuckDB does in Ptah.
 type: how-to
+sourceMode: source-neutral
 audience:
   - database-engineer
 readerQuestion: "How do I install, configure and verify the DuckDB executable provider?"
