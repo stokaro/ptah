@@ -256,6 +256,8 @@ version and features, and `ptah version` the host's.
 
 ## Further reading
 
+- [Run the YDB walkthrough](../ydb-walkthrough-run/) to run this example
+  against a local YDB server, step by step.
 - [How a provider works](../architecture/) and [Engines, models and
   planning](../models-and-planning/) for the rules this page illustrates.
 - [Using the YDB provider](../../providers/ydb/usage/) and [Declaring YDB
