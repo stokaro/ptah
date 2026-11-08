@@ -129,6 +129,8 @@ README's
 [Observed model coverage (latest development source)](https://github.com/stokaro/ptah/blob/master/provider-sdk/README.md#observed-model-coverage)
 section states the rules, including reserved storage, which a provider uses to
 keep its own history and lock tables out of what a read reports.
+[What a comparison may conclude](../ydb-incomplete-knowledge/) shows the
+consequences for one YDB transfer, scenario by scenario.
 
 ## Database contexts and dev databases
 
@@ -225,6 +227,8 @@ provider honors cancellation rather than relying on a fixed limit.
   execution and locks.
 - [Understanding the provider boundary](../ydb-walkthrough/) maps four YDB
   objects to common tables, facets and provider models, with their owners.
+- [What a comparison may conclude](../ydb-incomplete-knowledge/) changes one
+  fact of that example at a time and shows who refuses the plan.
 - [Provider SDK reference](../sdk-reference/) maps each feature to its service,
   its README section and its decision record.
 - [Test a provider](../testing/) checks models and plans with the SDK's
