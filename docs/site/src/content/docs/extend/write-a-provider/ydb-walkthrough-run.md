@@ -13,6 +13,7 @@ sourceOfTruth:
   - "internal/cli/schema"
   - "stokaro/ptah#5807"
 generated: false
+sourceMode: static-file-only
 searchAliases:
   - "YDB transfer example"
   - "YDB changefeed example"
