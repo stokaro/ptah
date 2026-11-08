@@ -1537,7 +1537,9 @@ which Ptah reports as a loss at the table.
 
 The `ptah:feature-coverage` header of an HCL export leaves such a model out.
 The blocks the document writes are its whole account of the model, so a table
-whose block an edit removes keeps its settings too.
+whose block an edit removes keeps its settings too. A read's record of a table
+whose setting of such a model it could not describe has no place in the
+document, so the export reports it as a warning.
 
 `source.index-kinds` lets an engine claim index types it models outside the
 common index, such as YDB's `vector_kmeans_tree`. For a Go `ptah:schema:index`
@@ -1573,6 +1575,12 @@ document knows of the provider's models itself, as a captured
 export had. It sends the provider no coverage for HCL and refuses a reply that
 carries `ptah:not-described` entries. Splitting the output repeats the header
 in every file.
+
+The header carries what the document knows of the models the engine's blocks
+write, and nothing of a model no block writes. A read's record of an object of
+such a model that the read lists and does not describe, such as a YDB queue
+group, is therefore reported as a warning that names the object, its model and
+the read's reason: the export never leaves a record out without saying so.
 
 A schema read through the provider is written as complete for what the read
 listed, such as the directories a `--schemas` read named, as the built-in
