@@ -241,7 +241,9 @@ A server often keeps a CHECK in a form of its own, with literals cast or a
 list rewritten. With `schema.check-equivalence`, the host asks the provider
 whether each declared CHECK and the CHECK the table holds under the same name
 are one constraint, and keeps the held one or replaces it as the provider
-answers. Without the feature the host compares the two texts by its own rules.
+answers. The CHECK the host builds for an enum column is one of them, so a
+changed list of values replaces it. Without the feature the host compares the
+two texts by its own rules.
 
 The host's own rules for a view's query fold case, which is wrong for an
 engine whose names keep their case. With `schema.view-query-equivalence`, the
