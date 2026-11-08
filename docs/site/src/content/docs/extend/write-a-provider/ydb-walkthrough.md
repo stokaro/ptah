@@ -90,6 +90,9 @@ orders_archive (row table)
 This is a runtime data flow inside YDB. Ptah takes no part in it: once a plan
 has created the transfer, YDB runs it after Ptah exits. Ptah's part is to
 declare, compare, plan and apply the four objects.
+[YDB objects for relational readers](../../providers/ydb/objects/), from the
+YDB provider's documentation, describes these objects and what each one
+needs in more detail.
 
 ## One example, four names
 

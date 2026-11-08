@@ -59,6 +59,7 @@
   "/extend/providers/ydb/declarations/",
   "/extend/providers/ydb/inference/",
   "/extend/providers/ydb/migrations/",
+  "/extend/providers/ydb/objects/",
   "/extend/providers/ydb/usage/",
   "/extend/public-api/",
   "/extend/query-builder/",

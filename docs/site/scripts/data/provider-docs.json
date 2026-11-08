@@ -16,7 +16,7 @@
       "engine": "ydb",
       "name": "YDB",
       "repository": "stokaro/ptah-ydb-plugin",
-      "release": "v0.8.0"
+      "release": "v0.8.1"
     }
   ]
 }
