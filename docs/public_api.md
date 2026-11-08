@@ -3909,7 +3909,9 @@ Whether the two declarations then combine is `Redeclarable`'s question.
 
 The constants of `core/coverage` are the common kinds. An owner that records
 state it does not model declares its own kinds, and registers the ones a
-document may name in `engine.Provider.CoverageKinds`.
+document may name in `engine.Provider.CoverageKinds`. An executable provider
+declares them in its engine description under `schema.not-described`, and
+the host registers them there for it.
 `Runtime.CoverageVocabulary` returns a
 `coverage.Vocabulary` of the common kinds and every selected provider's; two
 providers claiming one kind, or a provider claiming a common kind, is an

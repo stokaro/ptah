@@ -340,6 +340,11 @@ var hostFeatures = []string{
 	// drop they block before a statement runs; see removalBlockers and
 	// planningCapture.removalBlockers.
 	provider.RemovalBlockersFeature,
+	// An engine declares the kinds of object its reads leave out, such as a
+	// Spanner change stream, and a read records them; the kinds join the
+	// vocabulary documents may name, and the records join the read's
+	// not-described records; see Host.Provider and reader.notDescribed.
+	provider.NotDescribedFeature,
 	// An offline command plans an engine with the capabilities its provider
 	// states for it; see registerDefaultCapabilities.
 	provider.DefaultCapabilitiesFeature,

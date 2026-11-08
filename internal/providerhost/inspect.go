@@ -9,6 +9,7 @@ import (
 	"github.com/stokaro/ptah/provider-sdk/provider"
 
 	"ptah.run/catalog"
+	"ptah.run/core/coverage"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 )
@@ -61,10 +62,26 @@ func (r reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, error
 	if err := r.commonObjects(result, snapshot.GetCommonObjects()); err != nil {
 		return nil, err
 	}
+	notDescribed(result, snapshot)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	return result, nil
+}
+
+// notDescribed keeps the read's records of what it does not describe as the
+// read's not-described records, so a document made from the read says it does
+// not describe them and a comparison does not read their absence as a
+// removal. The SDK has checked each record (provider.InspectionValues): a kind
+// the session's engine declares, which Host.Provider registered in the
+// runtime's vocabulary, a name a host can show or none for the whole kind, and
+// a reason and a provenance in the host's spelling. A session negotiated
+// without schema.not-described has none.
+func notDescribed(result *catalog.Database, snapshot *protocol.Schema) {
+	for _, record := range snapshot.GetNotDescribed() {
+		result.NotDescribed = result.NotDescribed.With(coverage.Object{Kind: coverage.Kind(record.GetKind()), Name: record.GetName(),
+			Reason: coverage.Reason(record.GetReason()), Provenance: coverage.Provenance(record.GetProvenance())})
+	}
 }
 
 // tables reads the snapshot's tables into result, each with its facets, its

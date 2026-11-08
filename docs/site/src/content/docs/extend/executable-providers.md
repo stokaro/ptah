@@ -683,6 +683,22 @@ column, so `schema apply --dry-run` and `migrations generate` refuse it before
 a statement exists. Without the feature the plan writes the drop, and the
 engine refuses it when it runs.
 
+With `schema.not-described`, an engine declares the kinds of object its reads
+leave out, such as a Spanner change stream, in `Engine.not_described_kinds`,
+and a read records them in `Schema.not_described`. Ptah adds the kinds to the
+vocabulary its documents may name and keeps the records as the read's
+not-described records. So the header of an HCL export, and the JSON of
+`schema inspect`, say that the read does not describe them, the header reads
+back, and a plan does not take their absence for a removal:
+
+```text
+// ptah:not-described change_stream reason=unsupported provenance=derived-from-target
+```
+
+A kind belongs to its engine: Ptah refuses a provider that declares one of its
+common kinds, such as `view`, before it reads anything. Without the feature a
+read leaves such objects out without saying so.
+
 With `schema.common-namespaces`, an engine also carries its namespaces, such as
 the schemas of a DuckDB catalog or of Spanner's PostgreSQL interface, as the
 common kind `SCHEMA`. A read lists every schema of its scope, the default one

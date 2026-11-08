@@ -66,6 +66,11 @@ func (o *owner) Inspect(ctx context.Context, request *protocol.InspectRequest) (
 	if err != nil {
 		return nil, err
 	}
+	if slices.Contains(reads, provider.NotDescribedFeature) {
+		// The kind is recorded for the engine, not for what this database
+		// holds: the fixture keeps no such object in SQLite.
+		result.NotDescribed = []*protocol.SchemaCoverageLimit{{Kind: o.notDescribed, Reason: "unsupported", Provenance: "derived-from-target"}}
+	}
 	return result, nil
 }
 
