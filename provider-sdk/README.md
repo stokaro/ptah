@@ -68,7 +68,7 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.40. Each released SDK speaks one contract:
+speaks contract 25.41. Each released SDK speaks one contract:
 
 | SDK release | Contract |
 | --- | --- |
@@ -191,6 +191,7 @@ returns to 0.
   [declared facets](#declared-facets).
   Contract 25.39 adds [removal blockers](#removal-blockers).
   Contract 25.40 adds [current context](#current-context).
+  Contract 25.41 adds [not-described kinds](#not-described-kinds).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -240,8 +241,9 @@ does not oblige a peer to use it.
   `source.sql-role-passwords`, `source.sql-statement-facts`, `query.lexical`,
   `engine.connection-capability-source`, `models.omission-counts`,
   `schema.view-query-context`, `models.declared-facets`,
-  `schema.read-sql-undeclared`, `schema.removal-blockers` and
-  `models.current-context`. The embedding store's calls,
+  `schema.read-sql-undeclared`, `schema.removal-blockers`,
+  `models.current-context` and `schema.not-described`. The embedding store's
+  calls,
   `PrepareCommonObjects`, `ReverseChanges` and `ReportValues` are new, and each
   comes with an addition to `Engine`, so a host lists the feature to receive
   any of them. `SplitMigration` is new too, and comes with the abort flags of
@@ -3222,6 +3224,35 @@ runs. The SDK refuses a list without negotiation, a kind that is not a token,
 a blank name or one with a control character, an object listed twice for one
 table, a column the table does not have or one named twice, and a list in a
 CHECK comparison's held table.
+
+## Not-described kinds
+
+[ADR 0123](../docs/adr/0123-a-read-reports-the-kinds-of-object-it-does-not-describe.md)
+decides this feature. `schema.not-described` lets an engine's reads say what
+they do not describe, such as a Spanner change stream, which the provider does
+not model. The engine declares the kinds in `Engine.not_described_kinds`, each a
+lowercase token such as `change_stream`, and the host adds them to the
+vocabulary its documents may name. A read reports its records in
+`Schema.not_described`, as `SchemaCoverageLimit` values: a kind the engine
+declares, an object's name or none for the whole kind, a reason and a
+provenance. The host keeps them as the read's not-described records, so the
+header of a document made from the read carries a line such as this one, and
+the host reads it back:
+
+```text
+// ptah:not-described change_stream reason=unsupported provenance=derived-from-target
+```
+
+The provider and each engine that declares kinds list this two-way feature.
+
+The reasons a read gives are `not-inspected`, `outside-scope`, `unsupported`
+and `unresolved`; the provenances are `observed`, `derived-from-target`,
+`derived-from-fact`, `inferred` and `unavailable`. The SDK refuses kinds
+without the feature, the feature without the provider's or without a kind, a
+kind that is not a lowercase token or is declared twice, records a session did
+not negotiate, a record of an undeclared kind, a blank name or one with a
+control character, a reason or a provenance outside these lists, and the same
+kind and name recorded twice.
 
 ## CHECK equivalence
 
