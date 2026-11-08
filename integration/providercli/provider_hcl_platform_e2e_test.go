@@ -189,6 +189,44 @@ func TestProviderHCLPlatformExport_HappyPath(t *testing.T) {
 	c.Assert(without.FeatureCoverage.IsZero(), qt.IsTrue)
 }
 
+// TestProviderHCLPlatformExportOfAnUnwrittenValue_HappyPath exports a Go
+// source whose table value the provider's platform group cannot spell, as the
+// YDB provider leaves a column family out. The export passes the writer's
+// round trip, which reads the document back and writes it again, and warns of
+// the value at the table. The coverage header leaves the model out, so the
+// document claims nothing of the table's retention: applied back, the table
+// keeps it. A group an edit adds then reads as the table's retention with no
+// subject limit beside it, so a plan can act on it. A limit there would
+// either tell a provider that the source met state it could not describe, at
+// which the YDB provider stops, or be an explicit limitation the engine
+// refuses a change under.
+func TestProviderHCLPlatformExportOfAnUnwrittenValue_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	spec := fixtureReleaseSpec(c, "hcl-platform", testutils.FixtureRelease{})
+	spec.Environment = []string{"FIXTURE_PLATFORM_UNWRITTEN=1"}
+	f := newProviderCLI(c, spec)
+	models := c.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(models, "records.go"), []byte(hclPlatformExportSource), 0o600), qt.IsNil)
+	out := filepath.Join(c.TempDir(), "schema.hcl")
+
+	_, stderr, code := executeProviderCLI(c.Context(), []string{"schema", "export", "--provider-config", f.manifestPath, "--provider-engine", "fixture",
+		"--to", "hcl", "--root-dir", models, "--out", out})
+
+	c.Assert(code, qt.Equals, 0, qt.Commentf("%s", stderr))
+	c.Assert(stderr, qt.Contains, `the retention of table "records" has no HCL spelling`)
+	written, err := os.ReadFile(out)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(written), qt.Not(qt.Contains), `platform "fixture"`)
+	c.Assert(string(written), qt.Not(qt.Contains), schemaext.CoverageHeaderMarker)
+	runtime := hclPlatformProvider(c)
+	edited := strings.Replace(string(written), "table \"records\" {\n",
+		"table \"records\" {\n  platform \"fixture\" {\n    override \"seconds\" {\n      value = \"9\"\n    }\n  }\n", 1)
+	db, err := atlashcl.ParseWithOptions(c.Context(), []byte(edited), "schema.hcl", atlashcl.Options{HCL: runtime.HCL()})
+	c.Assert(err, qt.IsNil)
+	c.Assert(scopedRetentions(c, runtime, *db), qt.DeepEquals, []string{`table records {"seconds":9}`})
+	c.Assert(db.FeatureCoverage.SubjectRecords(), qt.HasLen, 0)
+}
+
 // TestProviderHCLPlatformPartialLoss writes a value its provider writes in
 // part: the group is written among the table's own platform blocks, in the
 // order the writer writes its own, and the part the group does not hold is a

@@ -7,7 +7,10 @@
 //
 // It writes a table's retention back in HCL as the same block. With
 // FIXTURE_PLATFORM_PARTIAL=1 it also reports a loss of each retention it
-// writes, as a provider whose group spells part of a facet does.
+// writes, as a provider whose group spells part of a facet does. With
+// FIXTURE_PLATFORM_UNWRITTEN=1 it writes no group and reports each table's
+// retention as a loss, as a provider whose group cannot spell a table's
+// setting does.
 package main
 
 import (
@@ -132,6 +135,11 @@ func (p *platformClaims) EncodeSource(_ context.Context, request *protocol.Encod
 		if owner.GetKind() != "table" {
 			result.Losses = append(result.Losses, &protocol.EncodeLoss{ValueId: value.GetValue().GetId(), Message: "the retention of " + owner.GetKind() + " " +
 				strconv.Quote(owner.GetName()) + " has no HCL spelling"})
+			continue
+		}
+		if os.Getenv("FIXTURE_PLATFORM_UNWRITTEN") == "1" {
+			result.Losses = append(result.Losses, &protocol.EncodeLoss{ValueId: value.GetValue().GetId(),
+				Message: "the retention of table " + strconv.Quote(owner.GetName()) + " has no HCL spelling"})
 			continue
 		}
 		var seconds struct {

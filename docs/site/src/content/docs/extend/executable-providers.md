@@ -1545,11 +1545,14 @@ the database holds them. When Ptah writes HCL, the provider writes the part of
 a value the block holds, and may report the rest as a loss of the same value,
 which Ptah reports as a loss at the table.
 
-The `ptah:feature-coverage` header of an HCL export leaves such a model out.
-The blocks the document writes are its whole account of the model, so a table
-whose block an edit removes keeps its settings too. A read's record of a table
-whose setting of such a model it could not describe has no place in the
-document, so the export reports it as a warning.
+The `ptah:feature-coverage` header of an HCL export leaves such a model out
+for every table the read described. The blocks the document writes are its
+whole account of the model, so a table whose block an edit removes keeps its
+settings too. The part of a value a block cannot hold, or a value no block can
+hold, is reported as a loss at the table and adds nothing to the header: read
+back, the table keeps what it holds of that part, and an edit to the block
+plans. A table whose setting of such a model the read could not describe keeps
+the read's limit in the header.
 
 `source.index-kinds` lets an engine claim index types it models outside the
 common index, such as YDB's `vector_kmeans_tree`. For a Go `ptah:schema:index`
