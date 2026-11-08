@@ -8,6 +8,7 @@ package providerhost
 // provider are only observable here.
 
 import (
+	"encoding/json"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -16,8 +17,92 @@ import (
 
 	"ptah.run/core/coverage"
 	"ptah.run/core/hclext"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 )
+
+const platformHeaderKind schemaext.Kind = "example.org/fixture/table-changefeeds"
+
+type platformHeaderValue struct{}
+
+func (*platformHeaderValue) Kind() schemaext.Kind { return platformHeaderKind }
+
+// TestHCLCoverageHeaderKeepsAnUnreadablePlatformSubject ports the YDB half of
+// TestSchemaInspectHCLKeepsAnOwnersLimitInTheHeader. A platform block speaks
+// for a table only when the read knows its settings. An unreadable table keeps
+// an explicit subject limit in the export header, while a complete table and
+// the model's kind-wide claim stay out of it.
+func TestHCLCoverageHeaderKeepsAnUnreadablePlatformSubject(t *testing.T) {
+	c := qt.New(t)
+	const providerID = "example.org/fixture"
+	codec := schemaext.Codec{Prototype: &platformHeaderValue{}, Representation: schemaext.Desired, Version: 1,
+		Definition: json.RawMessage(`{"type":"object"}`),
+		Clone:      func(schemaext.Payload) (schemaext.Payload, error) { return &platformHeaderValue{}, nil },
+		Encode:     func(schemaext.Payload) (json.RawMessage, error) { return json.RawMessage(`{}`), nil },
+		Decode:     func(json.RawMessage) (schemaext.Payload, error) { return &platformHeaderValue{}, nil },
+		Canonical:  func(schemaext.Payload) (json.RawMessage, error) { return json.RawMessage(`{}`), nil }}
+	registry, err := schemaext.NewRegistry(schemaext.OwnedCodec{Owner: providerID, Codec: codec})
+	c.Assert(err, qt.IsNil)
+	identity, found := registry.Identity(platformHeaderKind, schemaext.Desired)
+	c.Assert(found, qt.IsTrue)
+	engine := &protocol.Engine{Id: "ydb", Features: []string{provider.EncodeSourceFeature}, HclSource: &protocol.HCLSourceDeclaration{Blocks: []*protocol.HCLSourceBlock{{
+		Site: protocol.HCLSourceBlock_TABLE_PLATFORM, Models: []string{string(platformHeaderKind)},
+	}}}}
+	key := modelKey{kind: platformHeaderKind, representation: schemaext.Desired}
+	host := &Host{description: &protocol.Description{ProviderId: providerID, Features: []string{provider.EncodeSourceFeature}}, models: map[modelKey]*modelContract{
+		key: {key: key, engines: map[string]*protocol.ValueModel{"ydb": {Kind: string(platformHeaderKind), Representation: protocol.ValueInput_DESIRED}}},
+	}, targets: make(map[string]*target)}
+	host.targets[engine.GetId()] = &target{host: host, engine: engine}
+	owner := &hclOwner{host: host, engines: []*protocol.Engine{engine}}
+	// This test needs the header codec but no provider process or model batch.
+	owner.once.Do(func() {})
+	owner.headers = func() (headerCodecs, error) {
+		return headerCodecs{registry: registry, held: map[schemaext.Kind]schemaext.CodecIdentity{platformHeaderKind: identity}}, nil
+	}
+	ref := func(name string) objectidentity.ID {
+		return objectidentity.ID{Kind: objectidentity.KindTable,
+			Schema: objectidentity.Part{Source: "app", Normalized: "app"}, Name: objectidentity.Part{Source: name, Normalized: name}}
+	}
+	for _, row := range []struct {
+		name  string
+		state schemaext.KnowledgeState
+	}{{"uninspected", schemaext.Uninspected}, {"unrepresentable", schemaext.Unrepresentable}} {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+			known, err := schemaext.NewCoverage(schemaext.Desired, []schemaext.KindCoverage{{Model: identity,
+				Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Complete})}}, []schemaext.SubjectCoverage{
+				{Kind: platformHeaderKind, Subject: ref("readable"), Knowledge: schemaext.Knowledge{State: schemaext.Complete}},
+				{Kind: platformHeaderKind, Subject: ref("unreadable"), Knowledge: schemaext.Knowledge{State: row.state, Reason: "unknown changefeed settings"}},
+			})
+			c.Assert(err, qt.IsNil)
+
+			encoded, err := owner.EncodeHCL(t.Context(), hclext.EncodeRequest{Target: "ydb", Coverage: known,
+				Tables: []hclext.TableFacets{{Table: hclext.Table{Schema: "app", Name: "unreadable"}}}})
+
+			c.Assert(err, qt.IsNil)
+			lines := encoded.Header
+			c.Assert(lines, qt.HasLen, 1)
+			c.Assert(lines[0], qt.Contains, string(platformHeaderKind))
+			c.Assert(lines[0], qt.Contains, "unknown changefeed settings")
+			decoded, found, err := registry.DecodeCoverageHeader(t.Context(), schemaext.Desired, "// "+lines[0]+"\n")
+			c.Assert(err, qt.IsNil)
+			c.Assert(found, qt.IsTrue)
+			c.Assert(decoded.SubjectRecords(), qt.HasLen, 1)
+			c.Assert(decoded.Lookup(platformHeaderKind, ref("unreadable")).State, qt.Equals, row.state)
+			c.Assert(decoded.KindRecords()[0].Knowledge.Unscoped().State, qt.Equals, schemaext.Uninspected)
+		})
+	}
+	complete, err := schemaext.NewCoverage(schemaext.Desired, []schemaext.KindCoverage{{Model: identity,
+		Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Complete})}}, []schemaext.SubjectCoverage{{
+		Kind: platformHeaderKind, Subject: ref("readable"), Knowledge: schemaext.Knowledge{State: schemaext.Complete},
+	}})
+	c.Assert(err, qt.IsNil)
+	encoded, err := owner.EncodeHCL(t.Context(), hclext.EncodeRequest{Target: "ydb", Coverage: complete,
+		Tables: []hclext.TableFacets{{Table: hclext.Table{Schema: "app", Name: "readable"}}}})
+	c.Assert(err, qt.IsNil)
+	c.Assert(encoded.Header, qt.HasLen, 0)
+}
 
 // hclHost is a host whose engines declare HCL claims on a negotiated
 // source.hcl, each a top-level block of the engine's name.

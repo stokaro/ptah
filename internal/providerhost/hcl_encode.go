@@ -117,21 +117,38 @@ func (o *hclOwner) EncodeHCL(ctx context.Context, request hclext.EncodeRequest) 
 // it to the selection that plan names. Any other knowledge is written as the
 // document holds it.
 //
-// A model HCL states only at a table's platform group is left out, kind-wide
-// and for each subject: the groups the document writes are its whole account
-// of it. Written as a claim, it would make a table whose group an edit removes
-// lose what it holds, where a table that never wrote one keeps it.
+// A model HCL states only at a table's platform group is left out when the
+// read knew it completely: the groups the document writes are its whole
+// account of it. An unreadable subject must keep its explicit limit in the
+// header, since no group can describe what the read could not establish.
 func (o *hclOwner) coverageHeader(ctx context.Context, batch *encodeBatch, known schemaext.Coverage) ([]string, error) {
 	if known.IsZero() {
 		return nil, nil
 	}
-	kinds := slices.DeleteFunc(known.KindRecords(), func(record schemaext.KindCoverage) bool { return o.platformOnly(record.Model.Kind) })
+	platformLimits := make(map[schemaext.Kind]bool)
+	subjects := slices.DeleteFunc(known.SubjectRecords(), func(record schemaext.SubjectCoverage) bool {
+		if !o.platformOnly(record.Kind) {
+			return false
+		}
+		if record.Knowledge.State == schemaext.Uninspected || record.Knowledge.State == schemaext.Unrepresentable {
+			platformLimits[record.Kind] = true
+			return false
+		}
+		return true
+	})
+	kinds := slices.DeleteFunc(known.KindRecords(), func(record schemaext.KindCoverage) bool {
+		return o.platformOnly(record.Model.Kind) && !platformLimits[record.Model.Kind]
+	})
 	for i, record := range kinds {
+		if o.platformOnly(record.Model.Kind) {
+			kinds[i].Knowledge = schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Uninspected,
+				Reason: "HCL describes this model only for tables with its platform block"})
+			continue
+		}
 		if sources := record.Knowledge.Sources(); len(sources) == 1 && batch.completeRead(sources[0]) {
 			kinds[i].Knowledge = schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Complete})
 		}
 	}
-	subjects := slices.DeleteFunc(known.SubjectRecords(), func(record schemaext.SubjectCoverage) bool { return o.platformOnly(record.Kind) })
 	written, err := schemaext.NewCoverage(known.Representation(), kinds, subjects)
 	if err != nil || written.IsZero() {
 		return nil, err
