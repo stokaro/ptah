@@ -102,6 +102,21 @@ func TestHCLCoverageHeaderKeepsAnUnreadablePlatformSubject(t *testing.T) {
 		Tables: []hclext.TableFacets{{Table: hclext.Table{Schema: "app", Name: "readable"}}}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(encoded.Header, qt.HasLen, 0)
+	feed := &protocol.Reference{Engine: "ydb", Kind: "table", Schema: "app", Name: "readable", Database: "/local"}
+	values := []*protocol.EncodeSourceValue{{Value: &protocol.NormalizedValue{Id: "feed", Value: &protocol.Envelope{
+		Kind: string(platformHeaderKind), Owner: feed}, NormalizedOwner: feed}}}
+	withLoss, err := owner.coverageAfterHCLLosses(complete, "ydb", values, []*protocol.EncodeLoss{{ValueId: "feed", Message: "changefeed tagged is not represented in HCL"}})
+	c.Assert(err, qt.IsNil)
+	c.Assert(complete.Lookup(platformHeaderKind, ref("readable")).State, qt.Equals, schemaext.Complete)
+	c.Assert(withLoss.Lookup(platformHeaderKind, ref("readable")).State, qt.Equals, schemaext.Unrepresentable)
+	lines, err := owner.coverageHeader(t.Context(), host.targets["ydb"].encodeBatch(protocol.SourceDocument_HCL), withLoss)
+	c.Assert(err, qt.IsNil)
+	c.Assert(lines, qt.HasLen, 1)
+	c.Assert(lines[0], qt.Contains, "changefeed tagged is not represented in HCL")
+	decoded, found, err := registry.DecodeCoverageHeader(t.Context(), schemaext.Desired, "// "+lines[0]+"\n")
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(decoded.Lookup(platformHeaderKind, ref("readable")).State, qt.Equals, schemaext.Unrepresentable)
 }
 
 // hclHost is a host whose engines declare HCL claims on a negotiated
