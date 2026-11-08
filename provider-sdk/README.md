@@ -68,10 +68,11 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.39. Each released SDK speaks one contract:
+speaks contract 25.40. Each released SDK speaks one contract:
 
 | SDK release | Contract |
 | --- | --- |
+| `provider-sdk/v0.37.0` | 25.39 |
 | `provider-sdk/v0.36.0` | 25.38 |
 | `provider-sdk/v0.35.0` | 25.37 |
 | `provider-sdk/v0.34.0` | 25.36 |
@@ -189,6 +190,7 @@ returns to 0.
   Contract 25.37 adds [view query context](#view-query-context) and
   [declared facets](#declared-facets).
   Contract 25.39 adds [removal blockers](#removal-blockers).
+  Contract 25.40 adds [current context](#current-context).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -238,8 +240,8 @@ does not oblige a peer to use it.
   `source.sql-role-passwords`, `source.sql-statement-facts`, `query.lexical`,
   `engine.connection-capability-source`, `models.omission-counts`,
   `schema.view-query-context`, `models.declared-facets`,
-  `schema.read-sql-undeclared` and `schema.removal-blockers`. The embedding
-  store's calls,
+  `schema.read-sql-undeclared`, `schema.removal-blockers` and
+  `models.current-context`. The embedding store's calls,
   `PrepareCommonObjects`, `ReverseChanges` and `ReportValues` are new, and each
   comes with an addition to `Engine`, so a host lists the feature to receive
   any of them. `SplitMigration` is new too, and comes with the abort flags of
@@ -1276,6 +1278,35 @@ no declared facet. The SDK refuses:
   owner of a kind the facet's comparison does not own, a facet without a value
   of its kind, a facet listed twice, and declared facets sent to a facet
   comparison.
+
+### Current context
+
+[ADR 0122](../docs/adr/0122-a-comparison-reads-the-current-state-of-another-comparisons-models.md)
+decides this feature. Declared objects and declared facets say what the
+declaration names. They do not say what the database holds, and a comparison
+of transfers needs that too: a read records a topic or a changefeed it cannot
+describe without describing it, a plan keeps such an object, and a transfer
+that reads it stays valid. Under `models.current-context`, a comparison that
+names declared kinds or declared facet kinds receives
+`CompareModelsRequest.current_context`: a `ComparisonState` in the observed
+representation that holds every current object of its declared kinds and
+every current facet of its declared facet kinds, each with its value, and the
+current coverage of those kinds, as the comparisons that own them receive it.
+
+The provider and each engine whose comparisons read it declare this two-way
+feature. A host that does not list it sends no current context. The SDK
+refuses:
+
+- in `ValidateDescription`, the feature on an engine without the provider's or
+  without a model comparison;
+- in `ValidateComparisonRequest`, a current context the engine or the
+  request's target did not negotiate, one sent to a comparison that names no
+  declared kind or declared facet kind or to a facet comparison, a record of
+  a kind the comparison does not name, a facet whose owner is of a kind the
+  facet's comparison does not own, and a state that fails the checks of a
+  comparison's own current state: another representation, a record without
+  a value, a record listed twice, and a coverage that is missing or enrolls
+  another kind.
 
 Bound identity components retain source and normalized spelling, quoting, and
 connection defaults. Parent, namespace path, and signature remain separate.

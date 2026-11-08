@@ -1881,7 +1881,8 @@ message ModelComparison {
   // comparison, whose declared objects this comparison reads: a host sends the
   // identity of every desired object of these kinds in
   // CompareModelsRequest.declared_objects. Contract 25.33, under
-  // models.declared-objects.
+  // models.declared-objects. Under models.current-context the host also sends
+  // the current objects of these kinds in CompareModelsRequest.current_context.
   repeated string declared_kinds = 7;
   // Facet model kinds of the same engine, each assigned to a facet
   // comparison, whose declared facets this object comparison reads: a host
@@ -1889,6 +1890,8 @@ message ModelComparison {
   // CompareModelsRequest.declared_facets. A transfer that reads a table's
   // changefeed, a facet of the table, then knows whether the declaration
   // declares the changefeed. Contract 25.37, under models.declared-facets.
+  // Under models.current-context the host also sends the current facets of
+  // these kinds in CompareModelsRequest.current_context.
   repeated string declared_facet_kinds = 8;
 }
 
@@ -2052,6 +2055,16 @@ message CompareModelsRequest {
   // excludes on purpose has no value and is not listed. Contract 25.37,
   // under models.declared-facets.
   repeated ComparisonRecord declared_facets = 20;
+  // The current state of the models the comparison reads beside its own, in
+  // the observed representation: every current object whose kind the
+  // comparison names in ModelComparison.declared_kinds, every current facet
+  // whose kind it names in ModelComparison.declared_facet_kinds, each with its
+  // value, and the current coverage of those kinds, as the comparisons that
+  // own them receive it. A transfer that reads a topic or a changefeed the read
+  // recorded without describing it then knows the plan keeps it. Absent when
+  // the comparison names no such kind. Contract 25.40, under
+  // models.current-context.
+  ComparisonState current_context = 21;
 }
 message ChangeSemantics {
   optional bool replaces_owner = 1;

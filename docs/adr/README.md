@@ -131,6 +131,7 @@ a new record that names it, and its own status line is updated to point there.
 | [0119](0119-a-comparison-reads-the-declared-facets-of-another-comparisons-models.md) | A comparison reads the declared facets of another comparison's models | Proposed |
 | [0120](0120-a-sql-schema-reading-names-a-statement-its-load-does-not-declare.md) | A SQL schema reading names a statement its load does not declare | Proposed |
 | [0121](0121-a-read-reports-the-objects-outside-the-model-that-block-a-tables-removal.md) | A read reports the objects outside the model that block a table's removal | Proposed |
+| [0122](0122-a-comparison-reads-the-current-state-of-another-comparisons-models.md) | A comparison reads the current state of another comparison's models | Proposed |
 
 ## Writing one
 

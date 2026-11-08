@@ -83,9 +83,8 @@ comparison.
 - A comparison that names a facet kind receives each such facet's whole value.
   For changefeeds that is small; a comparison names only the kinds it reads.
 - The built-in engine also accepted a transfer of a topic the read recorded
-  and could not describe. The transfer comparison receives no current coverage
-  of topics, and this feature does not add it; register G228 keeps that half
-  open.
+  and could not describe. This feature sends no current state of topics or
+  changefeeds; contract 25.40 adds it (ADR 0122).
 
 ## Acceptance evidence
 
