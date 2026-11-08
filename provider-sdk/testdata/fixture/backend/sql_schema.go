@@ -30,9 +30,9 @@ const RetentionHeaderKind = "retention"
 func SQLDocumentDescription() *protocol.Description {
 	description := Description()
 	description.SemanticIdentity += "-sql-document"
-	description.Features = append(description.Features, provider.ReadSQLSchemaFeature, provider.SQLUndeclaredFeature)
+	description.Features = append(description.Features, provider.ReadSQLSchemaFeature)
 	engine := description.Engines[0]
-	engine.Features = append(engine.Features, provider.ReadSQLSchemaFeature, provider.SQLUndeclaredFeature)
+	engine.Features = append(engine.Features, provider.ReadSQLSchemaFeature)
 	engine.SqlSchema = &protocol.SQLSchemaDeclaration{Mode: protocol.SQLSchemaDeclaration_DOCUMENT, HeaderKinds: []string{RetentionHeaderKind}}
 	engine.ValueModels = append(engine.ValueModels, retentionObjectModels()...)
 	return description
@@ -65,17 +65,33 @@ func retentionObjectModels() []*protocol.ValueModel {
 // A line comment, such as a `ptah:not-described` header, is skipped. Every
 // other statement is refused as UNSUPPORTED and named by its first word. An
 // ALTER TABLE or a DROP TABLE of a table the load does not declare is refused
-// as UNDECLARED where the host negotiated provider.SQLUndeclaredFeature, and as
-// INVALID otherwise. Names
-// compare without regard to ASCII case, as the engine's identifier rules say.
+// as INVALID; see [SQLReading] for another code. Names compare without regard
+// to ASCII case, as the engine's identifier rules say.
 // Documents run in order, so a later one alters what an earlier one declared.
 //
 // Three table names select a reply shape for the host's tests: `warned` adds
 // a warning to a complete reading, `malformed` leaves its table without the
 // trace the protocol requires, and `stalled` waits for cancellation. This
 // fixture demonstrates the protocol, not an engine's grammar.
-func (*Provider) ReadSQLSchema(ctx context.Context, request *protocol.ReadSQLSchemaRequest) (*protocol.SQLSchema, error) {
-	load := &sqlLoad{undeclared: slices.Contains(request.GetTargetFeatures(), provider.SQLUndeclaredFeature)}
+func (p *Provider) ReadSQLSchema(ctx context.Context, request *protocol.ReadSQLSchemaRequest) (*protocol.SQLSchema, error) {
+	return p.ReadSQLSchemaAs(ctx, request, SQLReading{})
+}
+
+// SQLReading is how [Provider.ReadSQLSchemaAs] reads a load. The zero value
+// reads it as [Provider.ReadSQLSchema] does.
+type SQLReading struct {
+	// Undeclared, where it is not CODE_UNSPECIFIED, is the code that refuses
+	// an ALTER TABLE or a DROP TABLE of a table the load does not declare,
+	// with a message that names the table. This package builds against the
+	// contract 25.0 SDK, which has no code for such a statement, so a command
+	// of a later minor passes it.
+	Undeclared protocol.SQLDiagnostic_Code
+}
+
+// ReadSQLSchemaAs is [Provider.ReadSQLSchema] with the refusal codes reading
+// selects.
+func (*Provider) ReadSQLSchemaAs(ctx context.Context, request *protocol.ReadSQLSchemaRequest, reading SQLReading) (*protocol.SQLSchema, error) {
+	load := &sqlLoad{undeclared: reading.Undeclared}
 	declarations := make([]*protocol.SQLDocumentDeclarations, 0, len(request.GetDocuments()))
 	for _, document := range request.GetDocuments() {
 		if err := ctx.Err(); err != nil {
@@ -140,8 +156,8 @@ type sqlLoad struct {
 	diagnostics []*protocol.SQLDiagnostic
 	warned      *sqlPlace
 	stalled     bool
-	// undeclared reports a negotiated provider.SQLUndeclaredFeature.
-	undeclared bool
+	// undeclared is SQLReading.Undeclared.
+	undeclared protocol.SQLDiagnostic_Code
 }
 
 func sqlTrace(collection protocol.SQLObjectTrace_Collection, index int, place sqlPlace) *protocol.SQLObjectTrace {
@@ -163,10 +179,11 @@ func (l *sqlLoad) refuse(document *protocol.SQLDocument, code protocol.SQLDiagno
 }
 
 // refuseUnknown refuses a statement that changes a table the load does not
-// declare: UNDECLARED under the negotiated feature, and INVALID otherwise.
+// declare: with the code of SQLReading.Undeclared where one is set, and as
+// INVALID otherwise.
 func (l *sqlLoad) refuseUnknown(document *protocol.SQLDocument, place sqlPlace, name string) {
-	if l.undeclared {
-		l.refuse(document, protocol.SQLDiagnostic_UNDECLARED, place.span, "table "+name+" is not declared by this load")
+	if l.undeclared != protocol.SQLDiagnostic_CODE_UNSPECIFIED {
+		l.refuse(document, l.undeclared, place.span, "table "+name+" is not declared by this load")
 		return
 	}
 	l.refuse(document, protocol.SQLDiagnostic_INVALID, place.span, "unknown table")
