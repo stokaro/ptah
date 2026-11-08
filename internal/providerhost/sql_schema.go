@@ -191,8 +191,14 @@ func sqlSchemaRefusal(request *protocol.ReadSQLSchemaRequest, reply *protocol.SQ
 		refusal.Message = fmt.Sprintf("the provider reported %s, which Ptah does not report for a SQL schema reading yet; the first: %s",
 			count, refusal.Diagnostics[first].Message)
 	} else {
-		if reply.GetDiagnostics()[first].GetCode() == protocol.SQLDiagnostic_UNSUPPORTED {
+		switch reply.GetDiagnostics()[first].GetCode() {
+		case protocol.SQLDiagnostic_UNSUPPORTED:
 			refusal.Cause = ptaherr.ErrUnsupportedFeature
+		case protocol.SQLDiagnostic_UNDECLARED:
+			// A statement that changes what the load does not declare is the
+			// refusal the host's own reader gives such a statement, which a
+			// load beside a source in another format explains.
+			refusal.Cause = sqlext.ErrUndeclared
 		}
 		refusal.Message = refusal.Diagnostics[first].Message
 	}

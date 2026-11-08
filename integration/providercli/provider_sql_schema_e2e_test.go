@@ -23,6 +23,7 @@ import (
 	"ptah.run/internal/providercatalog"
 	"ptah.run/internal/providerdiagnostic"
 	"ptah.run/internal/providerhost"
+	"ptah.run/internal/schemafile"
 	"ptah.run/internal/sqlschema"
 	"ptah.run/internal/testutils"
 )
@@ -237,6 +238,33 @@ func TestProviderSQLLoadRefusalNamesTheDocument(t *testing.T) {
 	c.Assert(refusal.Diagnostics, qt.HasLen, 1)
 	c.Assert(refusal.Diagnostics[0].Path, qt.Equals, "two.sql")
 	c.Assert(load, qt.DeepEquals, sqlschema.Load{})
+}
+
+// TestProviderSQLLoadRefusesAStatementOfAnUndeclaredTable reads a load whose
+// second file alters a table no file of the load declares. The provider
+// reports it as UNDECLARED, which the host reads as its own reader's refusal
+// of such a statement (sqlext.ErrUndeclared), so a load beside a YAML source
+// says that the SQL files change only what the SQL files declare and names the
+// YAML file, as it says for an engine the host reads itself.
+func TestProviderSQLLoadRefusesAStatementOfAnUndeclaredTable(t *testing.T) {
+	c := qt.New(t)
+	_, runtime := yamlProviderCommand(c, "sql-document")
+	files := []sqlext.SourceFile{{Path: "one.sql", Text: "CREATE TABLE items (id INTEGER);\n"}, {Path: "two.sql", Text: "ALTER TABLE users ADD label TEXT;\n"}}
+	root := c.TempDir()
+	writeSQLSchema(c, root, map[string]string{"users.yaml": "tables:\n  users:\n    columns:\n      id: {type: INTEGER, primary: true}\n",
+		"feed.sql": "ALTER TABLE users ADD label TEXT;\n"})
+
+	load, readErr := sqlschema.ReadLoad(c.Context(), sqlext.GrammarRequest{Target: "fixture", Files: files}, sqlschema.Options{Owners: runtime.SQL()})
+	database, loadErr := schemafile.LoadAll(c.Context(), []string{filepath.Join(root, "users.yaml"), filepath.Join(root, "feed.sql")},
+		schemafile.Options{YAML: runtime.YAML(), SQL: runtime.SQL(), HCL: runtime.HCL(), Dialect: "fixture"})
+
+	c.Assert(readErr, qt.ErrorMatches, `two.sql: line 1, column 1: table users is not declared by this load`)
+	c.Assert(readErr, qt.ErrorIs, sqlext.ErrUndeclared)
+	c.Assert(load, qt.DeepEquals, sqlschema.Load{})
+	c.Assert(loadErr, qt.ErrorMatches, `(?s).*feed\.sql.*table users is not declared by this load; `+
+		`a fixture SQL file changes only what the SQL files of the same load declare, not what users\.yaml declares`)
+	c.Assert(loadErr, qt.ErrorIs, sqlext.ErrUndeclared)
+	c.Assert(database, qt.IsNil)
 }
 
 // TestProviderReadsASQLViewIntoTheHostModel reads a view the provider declares
