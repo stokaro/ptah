@@ -1421,12 +1421,13 @@ a duration, an empty one included, is refused by the flag parser with Atlas's
 fails the apply before the locked target reinspection; a strict target-policy
 refusal happens before the timeout is consulted. PostgreSQL and YugabyteDB (`pg_advisory_lock`),
 MySQL and MariaDB (`GET_LOCK`), and SQL Server (`sp_getapplock`) use real
-database locks, and the YDB provider takes a semaphore on its coordination node
-`ptah_locks`.
+database locks. An engine an executable provider serves takes the provider's
+lock where the provider offers one, as the YDB provider takes a semaphore on its
+coordination node `ptah_locks`.
 
-Every other dialect has no advisory-lock semantics: the apply proceeds without
+Every other target has no advisory-lock semantics: the apply proceeds without
 a lock, and an explicitly passed `--lock-timeout` prints a note on stderr. The
-native `ptah schema apply` refuses a typed `--lock-timeout` on those dialects
+native `ptah schema apply` refuses a typed `--lock-timeout` on those targets
 instead — see [Apply a desired schema](../../direct/apply/).
 
 `--lock-name` replaces the lock name for the run. Two runs serialize only when
