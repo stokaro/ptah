@@ -31,6 +31,13 @@ import (
 // owner and value, in [schemaext.ObjectComparisonRequest.DeclaredFacets]. Each
 // is a model the same owner registers, named once, and none is one of Kinds or
 // DeclaredKinds.
+//
+// CurrentContext reports that the service reads the current state of its
+// declared kinds and declared facet kinds too: the runtime gives it the current
+// objects and facets of those kinds, and their coverage, in
+// [schemaext.ObjectComparisonRequest.CurrentContext]. Such a service names at
+// least one declared kind or declared facet kind, each with an observed model
+// its owner registers.
 type ObjectComparison struct {
 	Target             string
 	Kinds              []schemaext.Kind
@@ -38,6 +45,7 @@ type ObjectComparison struct {
 	Actions            []string
 	DeclaredKinds      []schemaext.Kind
 	DeclaredFacetKinds []schemaext.Kind
+	CurrentContext     bool
 	Service            schemaext.ObjectComparisonService
 }
 
@@ -90,14 +98,21 @@ func (r *Runtime) registerComparison(owner string, declaration ObjectComparison)
 // validateDeclaredKinds refuses a declared kind or declared facet kind of
 // declaration that its owner does not register a desired model for, one named
 // twice, and one of the service's own kinds, whose objects its batch of the
-// desired state holds.
+// desired state holds. A service that reads a current context needs a
+// declared kind or declared facet kind, each with an observed model its owner
+// registers, since the context holds the current values of those kinds.
 func (r *Runtime) validateDeclaredKinds(owner string, declaration ObjectComparison) error {
-	declared := make(map[schemaext.Kind]bool, len(declaration.DeclaredKinds)+len(declaration.DeclaredFacetKinds))
-	for _, kind := range slices.Concat(declaration.DeclaredKinds, declaration.DeclaredFacetKinds) {
-		if declared[kind] || slices.Contains(declaration.Kinds, kind) || !r.ownsCodec(owner, kind, schemaext.Desired) {
+	kinds := slices.Concat(declaration.DeclaredKinds, declaration.DeclaredFacetKinds)
+	declared := make(map[schemaext.Kind]bool, len(kinds))
+	for _, kind := range kinds {
+		if declared[kind] || slices.Contains(declaration.Kinds, kind) || !r.ownsCodec(owner, kind, schemaext.Desired) ||
+			declaration.CurrentContext && !r.ownsCodec(owner, kind, schemaext.Observed) {
 			return fmt.Errorf("%w: invalid declared kind %q for %q", ErrInvalidRegistration, kind, owner)
 		}
 		declared[kind] = true
+	}
+	if declaration.CurrentContext && len(kinds) == 0 {
+		return fmt.Errorf("%w: object comparison of %q reads a current context and names no declared kind", ErrInvalidRegistration, owner)
 	}
 	return nil
 }
@@ -159,6 +174,11 @@ func (r *Runtime) compareObjects(ctx context.Context, request schemaext.ObjectCo
 		batch.Requests = selectRequests(request.Requests, kinds, r.comparisonServices[service].Actions)
 		batch.DeclaredObjects = declaredObjects(request.Desired, r.comparisonServices[service].DeclaredKinds)
 		batch.DeclaredFacets, err = declaredFacets(request.DeclaredFacets, r.comparisonServices[service].DeclaredFacetKinds)
+		if err != nil {
+			return schemaext.ObjectComparisonResult{}, objectCounts{}, err
+		}
+		batch.CurrentFacets = schemaext.FacetState{}
+		batch.CurrentContext, err = currentContext(request, r.comparisonServices[service])
 		if err != nil {
 			return schemaext.ObjectComparisonResult{}, objectCounts{}, err
 		}
@@ -249,7 +269,15 @@ func (r *Runtime) snapshotComparison(ctx context.Context, request schemaext.Obje
 		return schemaext.ObjectComparisonRequest{}, err
 	}
 	request.DeclaredObjects = slices.Clone(request.DeclaredObjects)
-	request.DeclaredFacets, err = r.snapshotDeclaredFacets(ctx, request.DeclaredFacets)
+	request.DeclaredFacets, err = r.snapshotFacetRecords(ctx, schemaext.Desired, request.DeclaredFacets)
+	if err != nil {
+		return schemaext.ObjectComparisonRequest{}, err
+	}
+	request.CurrentFacets, err = r.snapshotCurrentFacets(ctx, request.CurrentFacets)
+	if err != nil {
+		return schemaext.ObjectComparisonRequest{}, err
+	}
+	request.CurrentContext, err = r.snapshotCurrentContext(ctx, request.CurrentContext)
 	if err != nil {
 		return schemaext.ObjectComparisonRequest{}, err
 	}
@@ -321,21 +349,82 @@ func declaredFacets(records []schemaext.FacetRecord, kinds []schemaext.Kind) ([]
 	return result, nil
 }
 
-// snapshotDeclaredFacets copies declared facets through the owners' codecs,
-// so a service never aliases the caller's values.
-func (r *Runtime) snapshotDeclaredFacets(ctx context.Context, records []schemaext.FacetRecord) ([]schemaext.FacetRecord, error) {
+// snapshotFacetRecords copies facet records of representation through the
+// owners' codecs, so a service never aliases the caller's values.
+func (r *Runtime) snapshotFacetRecords(ctx context.Context, representation schemaext.Representation, records []schemaext.FacetRecord) ([]schemaext.FacetRecord, error) {
 	if len(records) == 0 {
 		return nil, nil
 	}
 	result := make([]schemaext.FacetRecord, 0, len(records))
 	for _, record := range records {
-		values, err := r.codecs.SnapshotFacets(ctx, schemaext.Desired, record.Values)
+		values, err := r.codecs.SnapshotFacets(ctx, representation, record.Values)
 		if err != nil {
 			return nil, err
 		}
 		result = append(result, schemaext.FacetRecord{Subject: record.Subject, Values: values})
 	}
 	return result, nil
+}
+
+// snapshotCurrentFacets copies the current facet state a caller names for the
+// services that read a current context. A request without one keeps the zero
+// value.
+func (r *Runtime) snapshotCurrentFacets(ctx context.Context, state schemaext.FacetState) (schemaext.FacetState, error) {
+	if len(state.Records) == 0 && state.Coverage.IsZero() {
+		return schemaext.FacetState{}, nil
+	}
+	return r.codecs.SnapshotFacetState(ctx, schemaext.Observed, state)
+}
+
+// snapshotCurrentContext copies a service's current context: its objects with
+// the coverage of every kind it holds, and its facets. The zero value stays
+// the zero value.
+func (r *Runtime) snapshotCurrentContext(ctx context.Context, state schemaext.FeatureState) (schemaext.FeatureState, error) {
+	if state.Objects.IsZero() && len(state.Facets) == 0 && state.Coverage.IsZero() {
+		return schemaext.FeatureState{}, nil
+	}
+	objects, err := r.codecs.SnapshotObjectState(ctx, schemaext.Observed, schemaext.ObjectState{Objects: state.Objects, Coverage: state.Coverage})
+	if err != nil {
+		return schemaext.FeatureState{}, err
+	}
+	facets, err := r.snapshotFacetRecords(ctx, schemaext.Observed, state.Facets)
+	if err != nil {
+		return schemaext.FeatureState{}, err
+	}
+	return schemaext.FeatureState{Objects: objects.Objects, Facets: facets, Coverage: objects.Coverage}, nil
+}
+
+// readsCurrentContext reports whether an object comparison of target reads a
+// current context, so a comparison hands its current facets to object
+// services, and copies them, only when one reads them.
+func (r *Runtime) readsCurrentContext(target string) bool {
+	selected, found := r.lookup(target)
+	return found && slices.ContainsFunc(r.comparisonServices, func(service ObjectComparison) bool {
+		return service.Target == selected.name && service.CurrentContext
+	})
+}
+
+// currentContext is the current context of service in request: for a service
+// that reads one, the current objects of its declared kinds, the current
+// facets of its declared facet kinds, each record holding only those kinds
+// with a value, in owner order, and the current coverage of all those kinds;
+// the zero value for any other service. The objects and their coverage come
+// from the request's whole current state, before the runtime selects the
+// service's own kinds, and the facets from the current facets a caller named.
+func currentContext(request schemaext.ObjectComparisonRequest, service ObjectComparison) (schemaext.FeatureState, error) {
+	if !service.CurrentContext {
+		return schemaext.FeatureState{}, nil
+	}
+	objects := selectObjectState(request.Current, service.DeclaredKinds)
+	facets, err := declaredFacets(request.CurrentFacets.Records, service.DeclaredFacetKinds)
+	if err != nil {
+		return schemaext.FeatureState{}, err
+	}
+	coverage, err := objects.Coverage.Combine(request.CurrentFacets.Coverage.SelectKinds(service.DeclaredFacetKinds))
+	if err != nil {
+		return schemaext.FeatureState{}, err
+	}
+	return schemaext.FeatureState{Objects: objects.Objects, Facets: facets, Coverage: coverage}, nil
 }
 
 // snapshotRequired copies the objects the desired values require, ordered by

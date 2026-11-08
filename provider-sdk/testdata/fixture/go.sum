@@ -56,6 +56,8 @@ github.com/rogpeppe/go-internal v1.16.0 h1:O9DK+vNMDVGLr2BeZqmpLeMjiMNkuXfcqntWb
 github.com/rogpeppe/go-internal v1.16.0/go.mod h1:DrUVZyrJU+txYW5/1kwtXQSMFio52ZOxX7yM1VHvnxs=
 github.com/stokaro/ptah/provider-sdk v0.37.0 h1:0GFGIcyNTPRabRTEDEnfmI+Z902wEWIjv9FPAevdqq4=
 github.com/stokaro/ptah/provider-sdk v0.37.0/go.mod h1:v2kbjNjUNtmEE0ETRNOVN4KzFCcAkmTNjb24nrjCtk0=
+github.com/stokaro/ptah/provider-sdk v0.37.1-0.20261108102047-0734fa5a7fb0 h1:YfpkDursh3omqYTHRa9G2L9mR1exRjgcO0E4aQ3CMBc=
+github.com/stokaro/ptah/provider-sdk v0.37.1-0.20261108102047-0734fa5a7fb0/go.mod h1:v2kbjNjUNtmEE0ETRNOVN4KzFCcAkmTNjb24nrjCtk0=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/testify v1.7.2 h1:4jaiDzPyXQvSd7D0EjG45355tLlV3VOECpq10pLC+8s=
 github.com/stretchr/testify v1.7.2/go.mod h1:R6va5+xMeoiuVRoj+gSkQ7d3FALtqAAGI1FQKckRals=

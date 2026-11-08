@@ -212,6 +212,9 @@ func (r *Runtime) prepareFeatureComparisons(ctx context.Context, request schemae
 	if r.readsDeclaredFacets(request.Target) {
 		objects.DeclaredFacets = request.Desired.Facets
 	}
+	if r.readsCurrentContext(request.Target) {
+		objects.CurrentFacets = schemaext.FacetState{Records: request.Current.Facets, Coverage: request.Current.Coverage.SelectKinds(facetKinds)}
+	}
 	for _, owner := range request.Owners {
 		if owner.Subject.Kind == objectidentity.KindTable {
 			objects.Parents = append(objects.Parents, owner)

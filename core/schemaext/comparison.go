@@ -87,6 +87,21 @@ type ObjectComparisonRequest struct {
 	// declared table for a service that compares transfers that read them. A
 	// service that lists no declared facet kind receives none.
 	DeclaredFacets []FacetRecord
+	// CurrentFacets is the current facet state of the whole comparison: each
+	// record its owner and values, and the coverage of the facet models. A
+	// caller names it here for a target with a service that reads a current
+	// context; the runtime gives such a service the facets of its declared
+	// facet kinds in CurrentContext.
+	CurrentFacets FacetState
+	// CurrentContext is the current state of the models a service reads
+	// beside its own, which the runtime fills for each service whose
+	// declaration reads it: the current objects of its declared kinds, the
+	// current facets of its declared facet kinds, each record holding only
+	// those kinds with a value, in owner order, and the current coverage of
+	// all those kinds. A transfer comparison then knows that the read holds a
+	// topic or a changefeed it could not describe. A value a caller sets is
+	// replaced, and another service receives the zero value.
+	CurrentContext FeatureState
 }
 
 // Exclusion is one subject the run's configuration leaves out of a

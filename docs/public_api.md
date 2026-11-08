@@ -2526,6 +2526,19 @@ declared table for an owner of transfers that read them. An owner that lists no
 declared facet kind receives none. Registration refuses a declared facet kind
 as it refuses a declared kind.
 
+`schemaext.ObjectComparisonRequest.CurrentContext` is the current state of the
+models an owner reads beside its own, for an owner whose
+`engine.ObjectComparison.CurrentContext` is set: the current objects of its
+declared kinds, the current facets of its declared facet kinds, each record
+holding only those kinds with a value, in owner order, and the current coverage
+of all those kinds, such as the topics and changefeeds the read holds for an
+owner of transfers that read them. The runtime fills it from the request's
+whole current state and from `CurrentFacets`, the current facets a caller
+names for the whole comparison, and replaces what a caller set; another owner
+receives the zero value. Registration refuses an owner that reads a current
+context and names no declared kind or declared facet kind, or names one its
+owner registers no observed model for, with `engine.ErrInvalidRegistration`.
+
 `schemaext.ComparisonRequest.Exclusions` and `DeclaredColumns`, and the same
 fields of `schemaext.ObjectComparisonRequest`, give an owner the run's context.
 An `Exclusion` is a subject the configuration leaves out, by a kind of the
