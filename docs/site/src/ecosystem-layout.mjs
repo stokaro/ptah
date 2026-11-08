@@ -61,7 +61,7 @@ export const wideLayout = {
     'api-reconciled-by-operator': { route: ['kubernetes-api:right', 'ptah-operator:left'], label: [244, 396] },
     'operator-runs-ptah': { route: ['ptah-operator:top', 'ptah:bottom:-13'], label: [367, 343] },
     'ptah-starts-ydb': { route: ['ptah:bottom:80', { y: 556 }, { x: 68 }, 'ptah-ydb-plugin:top:-40'], label: [270, 556], wrap: 40 },
-    'ptah-recognizes-duckdb': { route: ['ptah:bottom:90', { y: 582 }, { x: 380 }, 'ptah-duckdb-plugin:top'], label: [478, 504], wrap: 18, align: 'start' },
+    'ptah-starts-duckdb': { route: ['ptah:bottom:90', { y: 582 }, { x: 380 }, 'ptah-duckdb-plugin:top'], label: [478, 504], wrap: 18, align: 'start' },
     'ptah-starts-spanner': { route: ['ptah:bottom:99', { y: 446 }, { x: 653 }, 'ptah-spanner-plugin:top'], label: [566, 446], wrap: 40 },
   },
 };

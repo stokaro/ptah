@@ -124,6 +124,24 @@ versionierte Migrationen aus, prüft YQL und schreibt Daten, auf YDB 25.1 und
 26.2. [YDB-Provider konfigurieren](https://docs.ptah.run/edge/extend/providers/ydb/)
 beschreibt die Auswahl über ein Manifest, die Prüfung und die Ablehnungscodes.
 
+## DuckDB
+
+Ptah unterstützt eingebettetes DuckDB über das offizielle
+[DuckDB-Plugin](https://github.com/stokaro/ptah-duckdb-plugin). Installieren Sie
+es getrennt von Ptah:
+
+```bash
+ptah providers install duckdb
+```
+
+Mit einer `duckdb://`-URL können Sie eine lokale Datei oder eine Datenbank im
+Arbeitsspeicher untersuchen, Schemaänderungen planen und anwenden sowie
+versionierte Migrationen ausführen. Das Plugin enthält die native
+DuckDB-Bibliothek; das Ptah-Binary hat keine DuckDB-Abhängigkeit. MotherDuck
+und andere Netzwerkziele gehören nicht zum Umfang dieses Providers. Der
+[DuckDB-Provider-Leitfaden](https://docs.ptah.run/edge/extend/providers/duckdb/)
+beschreibt Einrichtung, unterstützte Vorgänge und Einschränkungen.
+
 ## Ptah mit SQLite ausprobieren
 
 Speichern Sie dieses gewünschte Schema als `schema.sql`:

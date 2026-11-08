@@ -119,6 +119,23 @@ ptah providers install ydb
 検証、拒否コードについては
 [YDB プロバイダーの設定](https://docs.ptah.run/edge/extend/providers/ydb/)を参照してください。
 
+## DuckDB
+
+Ptah は公式の
+[DuckDB プラグイン](https://github.com/stokaro/ptah-duckdb-plugin)を通じて、組み込みの
+DuckDB をサポートします。Ptah とは別にインストールします。
+
+```bash
+ptah providers install duckdb
+```
+
+`duckdb://` URL を使うと、ローカルファイルやメモリ内のデータベースを調査し、
+スキーマ変更を計画・適用し、バージョン管理されたマイグレーションを実行できます。
+ネイティブ DuckDB ライブラリはプラグインに含まれ、Ptah バイナリは DuckDB に
+依存しません。MotherDuck などのネットワーク接続先は、このプロバイダーの対象外です。
+設定方法、対応操作、制限は
+[DuckDB プロバイダーガイド](https://docs.ptah.run/edge/extend/providers/duckdb/)を参照してください。
+
 ## SQLite で Ptah を試す
 
 次の目標スキーマを `schema.sql` として保存します。

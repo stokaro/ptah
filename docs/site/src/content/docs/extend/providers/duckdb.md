@@ -30,17 +30,16 @@ installation. What DuckDB does in Ptah is the provider's to document; see
 
 The official provider ID is `github.com/stokaro/ptah-duckdb-plugin`. Its designated repository
 is [stokaro/ptah-duckdb-plugin](https://github.com/stokaro/ptah-duckdb-plugin).
-The catalog recognizes `duckdb` as engine names.
+The catalog recognizes `duckdb` as the engine name.
 
 The provider is optional and installed separately from Ptah. Install the newest
 release this Ptah can run with `ptah providers install duckdb`, or a chosen one
 with `--version`. The
 [install procedure](../../executable-providers/#install-an-official-provider)
-covers how a release is chosen, the checks, and where the file is stored. The
-first release needs provider contract 25.30, which states that the host starts
-a provider in its own working directory, so a relative `duckdb://` path resolves
-against the directory you run Ptah in. Remaining work is tracked in
-[issue #5667](https://github.com/stokaro/ptah/issues/5667).
+covers how a release is chosen, the checks, and where the file is stored.
+Relative `duckdb://` paths resolve against the directory you run Ptah in.
+The [published provider releases](https://github.com/stokaro/ptah-duckdb-plugin/releases)
+declare their minimum Ptah contract.
 
 List the catalog without executing providers:
 
@@ -107,6 +106,17 @@ The [native provider workflow](../../executable-providers/) describes inspection
 saved plans, application, and its protocol limitations. `ptah-compat` reads the
 manifest from `PTAH_PROVIDER_CONFIG`, and the language server selects no
 provider.
+
+For a first result, create a SQL schema file and use a local database URL:
+
+```console
+ptah schema apply --db-url duckdb://./demo.duckdb --schema-file schema.sql --dry-run
+ptah schema apply --db-url duckdb://./demo.duckdb --schema-file schema.sql --auto-approve
+ptah schema inspect --db-url duckdb://./demo.duckdb --format sql
+```
+
+Review the dry-run plan before applying it. The
+[DuckDB migration guide](migrations/) covers the versioned-file workflow.
 
 ## Where the provider documents DuckDB
 
