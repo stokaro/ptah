@@ -30,6 +30,7 @@ import (
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/dispatchwitness"
 	"ptah.run/internal/errorkind"
+	"ptah.run/internal/providerurl"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/schemaload"
 	"ptah.run/internal/schemaroot"
@@ -421,6 +422,8 @@ func applySchema(
 		if err := sqlitevirtual.ValidateToggle(dialect); err != nil {
 			return "", err
 		}
+	}
+	if dialect, decided := schemaApplyLockURLDialect(cmd.Context(), opts.dbURL); decided {
 		if err := decideSchemaApplyLockRequest(cmd, opts.dbURL, dialect); err != nil {
 			return "", err
 		}
@@ -957,7 +960,9 @@ func warnSchemaApplyLockRelease(cmd *cobra.Command, err error) {
 // decideSchemaApplyLockRequest answers a lock timeout aimed at a target whose
 // dialect has no session advisory lock. A typed --lock-timeout is refused; a
 // value that reached the flag from PTAH_LOCK_TIMEOUT gets a note on stderr and
-// the apply goes on unlocked. A dialect that locks takes either spelling.
+// the apply goes on unlocked. A dialect that locks takes either spelling, and
+// so does a target an executable provider serves with a lock service; see
+// [decideSchemaApplyLockForConnection].
 //
 // A bound on a wait the target never makes is an instruction with nowhere to
 // go, and taking it silently is what stokaro/ptah#3411 reports.
@@ -1002,8 +1007,15 @@ func decideSchemaApplyLockRequest(cmd *cobra.Command, dbURL, dialect string) err
 	return atlasschema.EnsureApplyLockSupported("--"+applyLockTimeoutFlag, dialect)
 }
 
-// decideSchemaApplyLockForConnection repeats the decision against the dialect
-// the server reported, which is the authoritative one.
+// decideSchemaApplyLockForConnection repeats the decision against the target
+// the connection reached, which is the authoritative one.
+//
+// A session an executable provider opened answers with its own lock service,
+// never with a dialect name: the provider takes the lock, as YDB's does on a
+// coordination node, so --lock-timeout bounds a real wait there, and
+// PTAH_LOCK_TIMEOUT earns no note. A provider session without a lock service
+// is refused by the acquisition itself, on every run, so it is not decided
+// here either.
 //
 // A PostgreSQL-wire URL does not name its product. [dbschema.ConnectToDatabase]
 // reads the server's own banner and answers cockroachdb or yugabytedb for a
@@ -1011,19 +1023,41 @@ func decideSchemaApplyLockRequest(cmd *cobra.Command, dbURL, dialect string) err
 // session advisory lock. Deciding from the URL alone applies unlocked under an
 // explicit --lock-timeout, against CockroachDB.
 //
-// It runs only where the server disagrees with the URL, so the note an
-// environment-set timeout earns is written once rather than per decision. A URL
-// whose dialect did not resolve was never decided, so it is decided here.
+// A SQL connection is decided only where the server disagrees with what the
+// URL decided, so the note an environment-set timeout earns is written once
+// rather than per decision. A URL that was not decided before the connection
+// opened -- one whose dialect did not resolve, or one a provider serves that
+// reached a SQL connection anyway -- is decided here.
 func decideSchemaApplyLockForConnection(
 	cmd *cobra.Command,
 	dbURL string,
 	conn *dbschema.DatabaseConnection,
 ) error {
+	if service, err := conn.SessionLocker(); err != nil || service != nil {
+		return nil
+	}
 	connected := conn.Info().Dialect
-	if urlDialect, err := atlasurl.DialectFromURL(dbURL); err == nil && urlDialect == connected {
+	if urlDialect, decided := schemaApplyLockURLDialect(cmd.Context(), dbURL); decided && urlDialect == connected {
 		return nil
 	}
 	return decideSchemaApplyLockRequest(cmd, dbURL, connected)
+}
+
+// schemaApplyLockURLDialect returns the dialect the lock decision before the
+// connection reads from dbURL, and whether that decision is made there at all.
+//
+// It is not made for a URL an executable provider serves under ctx. Whether
+// such a target locks is its session's answer, which only exists once the
+// connection is open, and a provider may serve a scheme that also names a
+// built-in dialect. The URL's dialect is no evidence about the provider's
+// lock in either direction, so reading it would refuse a timeout the provider
+// honors.
+func schemaApplyLockURLDialect(ctx context.Context, dbURL string) (string, bool) {
+	if _, provided := providerurl.Provided(ctx, dbURL); provided {
+		return "", false
+	}
+	dialect, err := atlasurl.DialectFromURL(dbURL)
+	return dialect, err == nil
 }
 
 // noteSchemaApplyLockIgnored reports an environment-set lock timeout that this

@@ -130,7 +130,7 @@ incomplete.
 A session advisory lock stops two applies from planning against one database at
 the same time, and `--lock-timeout` bounds how long the apply waits for it. Not
 every engine gives Ptah such a lock, and an apply against one that does not runs
-unlocked.
+unlocked. A provider target locks when its provider offers a lock service.
 
 Asking a target that cannot lock for a lock timeout is refused. The refusal
 names the engines that do lock, so this page carries no second copy of the list:
@@ -149,17 +149,17 @@ Nothing is planned and nothing is applied. A URL that names its dialect is
 refused before the connection opens, which is why the `sqlite://app.db` above
 leaves no file behind. A PostgreSQL-wire URL names no product: `postgres://` can
 reach a server that is not PostgreSQL, and that target is decided once the
-server has named itself — after the connection, still before the plan. Remove
-the flag to apply unlocked, which is what such a target does anyway.
-`--dry-run` is refused on the same targets: a dry run against an engine that
-does lock acquires the lock and waits out the timeout, so the flag means the
-same thing there.
+server has named itself — after the connection, still before the plan, as is a
+URL a provider serves. `--dry-run` is refused on the same targets: a dry run
+against an engine that does lock acquires the lock and waits out the timeout,
+so the flag means the same thing there. A dry run on a provider target takes
+no lock and accepts the flag.
 
 On YDB the provider takes the lock as a semaphore on the coordination node
-`ptah_locks`, which the first apply that locks creates. A dry run creates no
-lock node. A coordination session of its own holds the semaphore, so the server
-can take it away while the apply goes on; the apply then cancels the statement
-it is running, starts no other, and fails with the loss. [Locking](../../versioned/apply/#locking-and---migration-lock-timeout)
+`ptah_locks`, which the first apply that locks creates. A coordination session
+of its own holds the semaphore, so the server can take it away while the apply
+goes on; the apply then cancels the statement it is running, starts no other,
+and fails with the loss. [Locking](../../versioned/apply/#locking-and---migration-lock-timeout)
 says when the server takes it.
 
 `ptah-compat schema apply` keeps its lock on a database session of its own on
@@ -168,12 +168,12 @@ ends that session, as `pg_terminate_backend` or `KILL` does, the apply stops the
 same way and fails with the loss, also when the session ended while the apply
 waited for its confirmation.
 
-`PTAH_LOCK_TIMEOUT` fills the same flag, and a value that arrives that way
-writes a note to standard error and applies unlocked instead of refusing. The
-variable is shared: `ptah migrations up` and `ptah migrations down` read it as
-their own `--lock-timeout`, which is the per-migration statement lock timeout,
-so exporting it for a versioned workflow configures nothing about this apply.
-Type the flag to get the refusal.
+`PTAH_LOCK_TIMEOUT` fills the same flag. On a target that cannot lock, a value
+that arrives that way writes a note to standard error and applies unlocked
+instead of refusing. The variable is shared: `ptah migrations up` and
+`ptah migrations down` read it as their own `--lock-timeout`, which is the
+per-migration statement lock timeout, so exporting it for a versioned workflow
+configures nothing about this apply. Type the flag to get the refusal.
 
 The compatibility surface takes the other side: `ptah-compat schema apply`
 accepts the flag, writes a note to standard error, and applies unlocked. That
