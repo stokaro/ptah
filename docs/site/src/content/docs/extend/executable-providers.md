@@ -664,6 +664,16 @@ those grants, except one the same plan revokes. The engine must carry `GRANT`
 common objects. Without the feature the request carries no grants, and a
 rebuild written as text cannot give them back.
 
+With `schema.removal-blockers`, a read reports, for each table, the objects
+outside the engine's model that name the table or some of its columns and
+block their removal, such as a Spanner change stream that names the table in
+its `FOR` clause. Ptah hands them unchanged to the planning service with the
+held table. It never compares them, and no document made from the read names
+them. The planning service refuses a plan that drops a blocked table or
+column, so `schema apply --dry-run` and `migrations generate` refuse it before
+a statement exists. Without the feature the plan writes the drop, and the
+engine refuses it when it runs.
+
 With `schema.common-namespaces`, an engine also carries its namespaces, such as
 the schemas of a DuckDB catalog or of Spanner's PostgreSQL interface, as the
 common kind `SCHEMA`. A read lists every schema of its scope, the default one

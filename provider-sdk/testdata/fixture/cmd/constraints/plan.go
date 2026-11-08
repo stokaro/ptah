@@ -29,7 +29,12 @@ func (o *owner) PlanFeatures(ctx context.Context, request *protocol.PlanFeatures
 		if table.GetAction() == protocol.PlanningTable_CONTEXT {
 			continue
 		}
-		steps, rewrites, refusal := o.planLifecycle(request, table)
+		refusal := blockedRemoval(table)
+		var steps []*protocol.PlanningStep
+		var rewrites []*protocol.PlanningRewrite
+		if refusal == "" {
+			steps, rewrites, refusal = o.planLifecycle(request, table)
+		}
 		if refusal != "" {
 			return &protocol.PlannedFeatures{Complete: true, Diagnostics: []*protocol.PlanningDiagnostic{{
 				Code: protocol.PlanningDiagnostic_UNSUPPORTED_FEATURE, Kind: "table", Message: refusal}}}, nil

@@ -99,6 +99,7 @@ func (r reader) tables(result *catalog.Database, snapshot *protocol.Schema, rema
 			result.Constraints = append(result.Constraints, *key)
 		}
 		result.Constraints = append(result.Constraints, r.constraints(table)...)
+		result.RemovalBlockers = append(result.RemovalBlockers, removalBlockers(table, captured)...)
 		indexes, err := r.indexes(table)
 		if err != nil {
 			return err
@@ -159,6 +160,19 @@ func (r reader) primaryKey(value *protocol.Table) *catalog.Constraint {
 // where the session negotiated those too. The SDK has checked each against
 // the table's columns. Without the feature a table reports none, and the
 // planner refuses a change of one rather than compare against nothing.
+// removalBlockers reads the objects outside the model that the read found
+// naming table, under the name the table was read with. The SDK accepts them
+// only when the session negotiated schema.removal-blockers, so a read without
+// the feature has none.
+func removalBlockers(value *protocol.Table, table catalog.Table) []catalog.RemovalBlocker {
+	result := make([]catalog.RemovalBlocker, 0, len(value.GetRemovalBlockers()))
+	for _, blocker := range value.GetRemovalBlockers() {
+		result = append(result, catalog.RemovalBlocker{Schema: table.Schema, Table: table.Name, Kind: blocker.GetKind(), Name: blocker.GetName(),
+			Columns: slices.Clone(blocker.GetColumns())})
+	}
+	return result
+}
+
 func (r reader) constraints(value *protocol.Table) []catalog.Constraint {
 	if !slices.Contains(r.session.remote.GetFeatures(), provider.ObservedConstraintsFeature) {
 		return nil

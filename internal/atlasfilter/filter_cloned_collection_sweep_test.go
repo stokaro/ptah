@@ -217,6 +217,16 @@ func clonedCollectionRows() []clonedCollectionRow {
 					catalog.UnmodeledObject{Kind: "event", Name: "nightly_cleanup", Reason: "nothing compares it"})
 			},
 		},
+		{
+			// Not filtered either: the database holds the object whatever a
+			// selection keeps, and a plan that drops its table must still see
+			// it. It is still ASKED, for the reason UnreadTables is.
+			field: "RemovalBlockers", present: "stream_one", absent: "nosuch_stream",
+			seed: func(s *catalog.Database) {
+				s.RemovalBlockers = append(s.RemovalBlockers,
+					catalog.RemovalBlocker{Schema: "public", Table: "users", Kind: "change_stream", Name: "stream_one", Columns: []string{"id"}})
+			},
+		},
 	}
 }
 

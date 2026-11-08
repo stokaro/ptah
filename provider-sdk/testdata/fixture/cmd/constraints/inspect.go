@@ -44,6 +44,9 @@ func (o *owner) Inspect(ctx context.Context, request *protocol.InspectRequest) (
 			if err != nil {
 				return err
 			}
+			if slices.Contains(reads, provider.RemovalBlockersFeature) {
+				table.RemovalBlockers = o.blockers[stored.name]
+			}
 			result.Tables = append(result.Tables, table)
 		}
 		if o.grants {

@@ -87,6 +87,10 @@ type TableObservation struct {
 	// false the read did not look at them, and an empty Grants says nothing
 	// about the table.
 	GrantsDescribed bool
+	// RemovalBlockers are the objects outside the model the read found naming
+	// the table, as catalog.Database.RemovalBlockers holds them. The planning
+	// service of the table's engine reads them to refuse a drop they block.
+	RemovalBlockers []catalog.RemovalBlocker
 }
 
 // HasTable reports whether an observation was captured at comparison time.
@@ -106,5 +110,9 @@ func (o TableObservation) Clone() TableObservation {
 	}
 	o.Triggers = slices.Clone(o.Triggers)
 	o.Grants = slices.Clone(o.Grants)
+	o.RemovalBlockers = slices.Clone(o.RemovalBlockers)
+	for i := range o.RemovalBlockers {
+		o.RemovalBlockers[i].Columns = slices.Clone(o.RemovalBlockers[i].Columns)
+	}
 	return o
 }
