@@ -58,7 +58,7 @@ func generateCheckpointWithDatabaseInfo(
 		return "", "", fmt.Errorf("checkpoint schema is required")
 	}
 
-	empty, err := checkpointEmptyDatabase(ctx, runtime)
+	empty, err := checkpointEmptyDatabase(ctx, runtime, info.DatabaseContext.Database)
 	if err != nil {
 		return "", "", fmt.Errorf("generate checkpoint: %w", err)
 	}
@@ -82,7 +82,7 @@ func generateCheckpointWithDatabaseQualified(
 	if schema == nil {
 		return "", "", fmt.Errorf("checkpoint schema is required")
 	}
-	empty, err := checkpointEmptyDatabase(ctx, runtime)
+	empty, err := checkpointEmptyDatabase(ctx, runtime, conn.Info().DatabaseContext.Database)
 	if err != nil {
 		return "", "", fmt.Errorf("generate checkpoint: %w", err)
 	}
@@ -98,7 +98,9 @@ func generateCheckpointWithDatabaseQualified(
 // absence here. This grants no knowledge about the replayed source schema and
 // does not select providers or capabilities. Both checkpoint entry points must
 // use this baseline so new owned feature families do not become unknown state.
-func checkpointEmptyDatabase(ctx context.Context, runtime Runtime) (*catalog.Database, error) {
+// Its path is the connected target's path: native model owners remain bound to
+// that database even when the baseline holds no objects.
+func checkpointEmptyDatabase(ctx context.Context, runtime Runtime, databasePath string) (*catalog.Database, error) {
 	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
 		return nil, err
 	}
@@ -112,7 +114,7 @@ func checkpointEmptyDatabase(ctx context.Context, runtime Runtime) (*catalog.Dat
 	if err != nil {
 		return nil, err
 	}
-	return &catalog.Database{FeatureCoverage: coverage}, nil
+	return &catalog.Database{FeatureCoverage: coverage, DatabasePath: databasePath}, nil
 }
 
 func generateCheckpointFromDiff(
