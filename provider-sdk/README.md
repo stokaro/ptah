@@ -68,7 +68,7 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.37. Each released SDK speaks one contract:
+speaks contract 25.38. Each released SDK speaks one contract:
 
 | SDK release | Contract |
 | --- | --- |
@@ -233,8 +233,8 @@ does not oblige a peer to use it.
   `models.declared-objects`, `render.omissions`, `planning.table-grants`,
   `source.sql-role-passwords`, `source.sql-statement-facts`, `query.lexical`,
   `engine.connection-capability-source`, `models.omission-counts`,
-  `schema.view-query-context` and `models.declared-facets`. The
-  embedding store's calls,
+  `schema.view-query-context`, `models.declared-facets` and
+  `schema.read-sql-undeclared`. The embedding store's calls,
   `PrepareCommonObjects`, `ReverseChanges` and `ReportValues` are new, and each
   comes with an addition to `Engine`, so a host lists the feature to receive
   any of them. `SplitMigration` is new too, and comes with the abort flags of
@@ -1034,6 +1034,17 @@ message of one line and at most 512 bytes. A construct the provider recognizes
 and cannot represent is `UNSUPPORTED` and named, never skipped. A message names
 a span and a short token and never quotes a statement, since a schema file can
 carry a secret value. A canceled call returns no result.
+
+Under the two-way feature `schema.read-sql-undeclared` (contract 25.38, ADR
+0120 in Ptah) a reading reports a statement that changes an object no document
+of the load declares, such as an `ALTER TABLE` of a table no `CREATE TABLE` of
+the load creates, as an `UNDECLARED` error. The host reads it as a statement
+its load has no place for, as it reads its own refusal, so a load beside a
+source in another format says that its SQL files change only what its SQL
+files declare. The provider lists the feature, and so does each engine whose
+reading reports the code, beside `schema.read-sql`. The SDK refuses the code
+in a reply whose engine or target did not negotiate the feature, and as a
+warning.
 
 Both transport boundaries run the same checks and return no schema when one
 fails: a request that does not name a `DOCUMENT` engine, a reply with the wrong

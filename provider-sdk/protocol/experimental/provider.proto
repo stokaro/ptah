@@ -1804,7 +1804,20 @@ message SQLTableStatement {
 // a bounded token, never the statement, because a schema file can carry a
 // secret value.
 message SQLDiagnostic {
-  enum Code { CODE_UNSPECIFIED = 0; SYNTAX = 1; UNSUPPORTED = 2; INVALID = 3; INCOMPLETE = 4; }
+  enum Code {
+    CODE_UNSPECIFIED = 0;
+    SYNTAX = 1;
+    UNSUPPORTED = 2;
+    INVALID = 3;
+    INCOMPLETE = 4;
+    // A statement that changes an object no document of the load declares,
+    // such as an ALTER TABLE of a table no CREATE TABLE of the load creates.
+    // An ERROR. The host reads it as a statement its load has no place for,
+    // and where the load sits beside a source in another format, it says the
+    // documents change only what the documents declare. Contract 25.38, under
+    // schema.read-sql-undeclared.
+    UNDECLARED = 5;
+  }
   enum Severity { SEVERITY_UNSPECIFIED = 0; ERROR = 1; WARNING = 2; }
   Code code = 1;
   Severity severity = 2;

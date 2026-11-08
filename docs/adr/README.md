@@ -129,6 +129,7 @@ a new record that names it, and its own status line is updated to point there.
 | [0117](0117-a-comparison-keeps-what-its-desired-side-requires-on-both-sides.md) | A comparison keeps what its desired side requires on both sides | Proposed |
 | [0118](0118-a-view-query-comparison-receives-the-declared-columns-and-may-leave-a-pair-undecided.md) | A view query comparison receives the declared columns and may leave a pair undecided | Proposed |
 | [0119](0119-a-comparison-reads-the-declared-facets-of-another-comparisons-models.md) | A comparison reads the declared facets of another comparison's models | Proposed |
+| [0120](0120-a-sql-schema-reading-names-a-statement-its-load-does-not-declare.md) | A SQL schema reading names a statement its load does not declare | Proposed |
 
 ## Writing one
 
