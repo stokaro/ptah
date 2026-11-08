@@ -3184,6 +3184,11 @@ blank declared expression, a constraint named twice, a table without pairs and
 two tables of one subject; `ValidateComparedChecks` refuses a reply that
 leaves a table or a pair out, reorders them or names another.
 
+The CHECK the host builds for an enum column in the `CHECK` form
+([enum columns](#enum-columns)) is a declared CHECK too: the host asks about
+it as about any other, so the owner decides whether a changed list of values
+is another constraint.
+
 ## View query equivalence
 
 [ADR 0108](../docs/adr/0108-a-provider-decides-whether-two-view-queries-are-one.md)
