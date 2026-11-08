@@ -242,8 +242,11 @@ The excerpt below is the request `ydb-transfers` received when `ptah schema
 compare` ran the walkthrough's schema against an empty `shop` directory, with
 Ptah v0.25.0 as the host. No command prints this request
 (stokaro/ptah#5818); a build of the YDB provider at commit 24d982d5 that
-wrote it to a file captured it.
-It is reduced, and these simplifications are deliberate:
+wrote it to a file captured it. The complete request is
+[a test fixture of the provider](https://github.com/stokaro/ptah-ydb-plugin/blob/688bea18eca6bf921ee036e63f4de8d2f4a13f79/internal/backend/testdata/walkthrough/compare-transfers.json),
+and a test passes it through the SDK's request validation and the
+comparison. The excerpt is reduced, and these simplifications are
+deliberate:
 
 - An identity part such as `"schema": "shop"` is written as a plain string.
   The contract writes each part as `{"source": "shop", "normalized": "shop"}`.
