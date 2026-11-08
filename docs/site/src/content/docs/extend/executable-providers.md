@@ -53,9 +53,9 @@ accepted by that provider.
 
 Every native command that names a database or a dialect selects a provider:
 it takes `--db-url`, `--dev-url`, `--dialect` or `--env`, and it declares
-`--provider-config` and `--provider-engine`. That covers the `schema`, `db`,
-`migrations`, `seed`, `sql lint`, `viz`, `introspect` and `inference` verbs and
-`project adopt`. `schema export` and `schema pull`, which load schema files with
+`--provider-config`, `--provider-engine` and `--provider-exchanges`. That
+covers the `schema`, `db`, `migrations`, `seed`, `sql lint`, `viz`,
+`introspect` and `inference` verbs and `project adopt`. `schema export` and `schema pull`, which load schema files with
 the selected provider's source syntax, declare them too. `ptah mcp` serves the
 database `--database-url` names through the selection. `ptah assist` selects no
 provider, because it runs the agent tools in process, and `project inspect`
@@ -1452,6 +1452,25 @@ address, a credential or a statement with its values, so only text the
 provider wrote as a reason reaches the output. The JSON documents carry the
 same sentence in their error message, and the revision of a migration whose
 statement failed records it.
+
+To see what a comparison was given, name a new or empty directory with
+`--provider-exchanges`. The command writes each `CompareModels` request it
+sends, and the reply or the error it got, as the contract's JSON:
+
+```bash
+ptah schema compare --provider-config providers.json \
+  --db-url "$DATABASE_URL" --schema-file schema.yaml \
+  --provider-exchanges exchanges
+```
+
+Each comparison takes the next number and is named after its comparison
+service: `0001-comparemodels-<service>.request.json`, with
+`0001-comparemodels-<service>.reply.json` or `.error.txt` beside it. A
+directory that holds anything is refused before the provider starts, and the
+flag reads no environment variable. Only comparisons are written. They carry
+identities, model values and coverage, the facts a saved plan holds. The calls
+that can carry a credential, such as `Open` with the connection address and
+`Execute` with its execution inputs, are never written.
 
 Missing official providers include an engine ID, provider ID, repository URL,
 and setup URL in the error. JSON schema reports and migration setup failures

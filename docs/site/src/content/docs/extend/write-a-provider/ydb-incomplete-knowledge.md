@@ -176,7 +176,7 @@ the case.
 | Why was the plan refused? | The command's error output, which carries the provider's reason |
 | Which provider version runs, and which features does it list? | `ptah providers check --provider-engine ydb --json` |
 | Which host version runs? | `ptah version` |
-| What did Ptah send to the provider? | No command shows it (stokaro/ptah#5818). The tests linked above build such requests in code. |
+| What did Ptah send to the provider? | The same command with `--provider-exchanges <new directory>`, which writes each comparison request and its reply or error as JSON |
 | Which checks does the contract apply to a request? | The [SDK reference](../sdk-reference/) |
 
 ## Further reading

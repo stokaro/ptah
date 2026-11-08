@@ -262,6 +262,7 @@ Read the columns as follows.
 | `--format` | `string` | `text` | `PTAH_FORMAT` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 
 </div>
 
@@ -277,6 +278,7 @@ Read the columns as follows.
 | `--dry-run` | `bool` | `false` | `PTAH_DRY_RUN` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 
 </div>
 
@@ -290,6 +292,7 @@ Read the columns as follows.
 | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
 
 </div>
@@ -307,6 +310,7 @@ Read the columns as follows.
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 
 </div>
 
@@ -319,6 +323,7 @@ Read the columns as follows.
 | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--reason` | `string` | — | `PTAH_REASON` | — |
 | `--run-id` | `string` | — | `PTAH_RUN_ID` | — |
 
@@ -336,6 +341,7 @@ Read the columns as follows.
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--provider-timeout` | `duration` | `1m0s` | `PTAH_PROVIDER_TIMEOUT` | — |
 | `--release` | `string` | — | `PTAH_RELEASE` | — |
 | `--run-id` | `string` | — | `PTAH_RUN_ID` | — |
@@ -356,6 +362,7 @@ Read the columns as follows.
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--provider-timeout` | `duration` | `1m0s` | `PTAH_PROVIDER_TIMEOUT` | — |
 | `--release` | `string` | — | `PTAH_RELEASE` | — |
 | `--run-id` | `string` | — | `PTAH_RUN_ID` | — |
@@ -381,6 +388,7 @@ Read the columns as follows.
 | `--plan-file` | `string` | — | `PTAH_PLAN_FILE` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--publish-evidence` | `string` | — | `PTAH_PUBLISH_EVIDENCE` | — |
 | `--release` | `string` | — | `PTAH_RELEASE` | — |
 | `--run-id` | `string` | — | `PTAH_RUN_ID` | — |
@@ -400,6 +408,7 @@ Read the columns as follows.
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--release` | `string` | — | `PTAH_RELEASE` | — |
 | `--spec` | `string` | — | `PTAH_SPEC` | — |
 
@@ -423,6 +432,7 @@ Read the columns as follows.
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--provider-timeout` | `duration` | `1m0s` | `PTAH_PROVIDER_TIMEOUT` | — |
 | `--release` | `string` | — | `PTAH_RELEASE` | — |
 | `--require-every-case` | `bool` | `true` | `PTAH_REQUIRE_EVERY_CASE` | — |
@@ -440,6 +450,7 @@ Read the columns as follows.
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--release` | `string` | — | `PTAH_RELEASE` | — |
 | `--run-id` | `string` | — | `PTAH_RUN_ID` | — |
 | `--spec` | `string` | — | `PTAH_SPEC` | — |
@@ -456,6 +467,7 @@ Read the columns as follows.
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--reason` | `string` | — | `PTAH_REASON` | — |
 | `--release` | `string` | — | `PTAH_RELEASE` | — |
 | `--run-id` | `string` | — | `PTAH_RUN_ID` | — |
@@ -476,6 +488,7 @@ Read the columns as follows.
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--publish-evidence` | `string` | — | `PTAH_PUBLISH_EVIDENCE` | — |
 | `--release` | `string` | — | `PTAH_RELEASE` | — |
 | `--spec` | `string` | — | `PTAH_SPEC` | — |
@@ -492,6 +505,7 @@ Read the columns as follows.
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--release` | `string` | — | `PTAH_RELEASE` | — |
 | `--run-id` | `string` | — | `PTAH_RUN_ID` | — |
 | `--spec` | `string` | — | `PTAH_SPEC` | — |
@@ -523,6 +537,7 @@ Read the columns as follows.
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--release` | `string` | — | `PTAH_RELEASE` | — |
 | `--run-id` | `string` | — | `PTAH_RUN_ID` | — |
 | `--spec` | `string` | — | `PTAH_SPEC` | — |
@@ -549,6 +564,7 @@ Read the columns as follows.
 | `--plan-file` | `string` | — | `PTAH_PLAN_FILE` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--publish-evidence` | `string` | — | `PTAH_PUBLISH_EVIDENCE` | — |
 | `--release` | `string` | — | `PTAH_RELEASE` | — |
 | `--signer` | `string` | — | `PTAH_SIGNER` | — |
@@ -568,6 +584,7 @@ Read the columns as follows.
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--publish-evidence` | `string` | — | `PTAH_PUBLISH_EVIDENCE` | — |
 | `--release` | `string` | — | `PTAH_RELEASE` | — |
 | `--spec` | `string` | — | `PTAH_SPEC` | — |
@@ -587,6 +604,7 @@ Read the columns as follows.
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--release` | `string` | — | `PTAH_RELEASE` | — |
 | `--require-ready` | `bool` | `false` | `PTAH_REQUIRE_READY` | — |
 | `--run-id` | `string` | — | `PTAH_RUN_ID` | — |
@@ -606,6 +624,7 @@ Read the columns as follows.
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--publish-evidence` | `string` | — | `PTAH_PUBLISH_EVIDENCE` | — |
 | `--release` | `string` | — | `PTAH_RELEASE` | — |
 | `--run-id` | `string` | — | `PTAH_RUN_ID` | — |
@@ -629,6 +648,7 @@ Read the columns as follows.
 | `--per-table` | `bool` | `false` | `PTAH_PER_TABLE` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
 | `--single-file` | `bool` | `false` | `PTAH_SINGLE_FILE` | — |
 
@@ -651,6 +671,7 @@ Read the columns as follows.
 | `--migrations-dir` | `string` | — | `PTAH_MIGRATIONS_DIR` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--schema-dir` | `string` | — | `PTAH_SCHEMA_DIR` | — |
 | `--schema-source-root` | `stringSlice` | `[]` | `PTAH_SCHEMA_SOURCE_ROOT` | — |
 | `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
@@ -678,6 +699,7 @@ Read the columns as follows.
 | `--migrations-table` | `string` | — | `PTAH_MIGRATIONS_TABLE` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
 | `--root-dir` | `string` | `./` | `PTAH_ROOT_DIR` | — |
 | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
@@ -704,6 +726,7 @@ Read the columns as follows.
 | `--migrations-dir` | `string` | `./migrations` | `PTAH_MIGRATIONS_DIR` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--qualifier` | `string` | — | `PTAH_QUALIFIER` | — |
 | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
 | `--shadow-db` | `string` | — | `PTAH_SHADOW_DB` | — |
@@ -741,6 +764,7 @@ Read the columns as follows.
 | `--protected-table` | `stringArray` | `[]` | `PTAH_PROTECTED_TABLE` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--root-dir` | `string` | — | `PTAH_ROOT_DIR` | — |
 | `--version` | `string` | — | `PTAH_VERSION` | — |
 
@@ -781,6 +805,7 @@ Read the columns as follows.
 | `--pre-down-hook` | `string` | — | `PTAH_PRE_DOWN_HOOK` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
 | `--shadow-db` | `string` | — | `PTAH_SHADOW_DB` | — |
 | `--skip-checks` | `bool` | `false` | `PTAH_SKIP_CHECKS` | — |
@@ -813,6 +838,7 @@ Read the columns as follows.
 | `--migrations-table` | `string` | — | `PTAH_MIGRATIONS_TABLE` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
 | `--up-file` | `string` | — | `PTAH_UP_FILE` | — |
 | `--version` | `string` | — | `PTAH_VERSION` | — |
@@ -842,6 +868,7 @@ Read the columns as follows.
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--qualifier` | `string` | — | `PTAH_QUALIFIER` | — |
 | `--replay` | `bool` | `false` | `PTAH_REPLAY` | — |
 | `--report` | `string` | — | `PTAH_REPORT` | — |
@@ -882,6 +909,7 @@ Read the columns as follows.
 | `--migrations-dir` | `string` | `./migrations` | `PTAH_MIGRATIONS_DIR` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
 | `--source-dir` | `string` | — | `PTAH_SOURCE_DIR` | — |
 
@@ -912,6 +940,7 @@ Read the columns as follows.
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--runner` | `string` | `ptah` | `PTAH_RUNNER` | — |
 | `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
@@ -935,6 +964,7 @@ Read the columns as follows.
 | `--migrations-table` | `string` | — | `PTAH_MIGRATIONS_TABLE` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
 
@@ -975,6 +1005,7 @@ Read the columns as follows.
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--report` | `string` | `text` | `PTAH_REPORT` | — |
 | `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
 | `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
@@ -1041,6 +1072,7 @@ Read the columns as follows.
 | `--migrations-table` | `string` | — | `PTAH_MIGRATIONS_TABLE` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
 | `--version` | `string` | — | `PTAH_VERSION` | — |
 
@@ -1063,6 +1095,7 @@ Read the columns as follows.
 | `--migrations-table` | `string` | — | `PTAH_MIGRATIONS_TABLE` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--resume-from` | `string` | — | `PTAH_RESUME_FROM` | — |
 | `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
 | `--version` | `string` | — | `PTAH_VERSION` | — |
@@ -1086,6 +1119,7 @@ Read the columns as follows.
 | `--migrations-table` | `string` | — | `PTAH_MIGRATIONS_TABLE` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
 | `--version` | `string` | — | `PTAH_VERSION` | — |
 
@@ -1109,6 +1143,7 @@ Read the columns as follows.
 | `--migrations-table` | `string` | — | `PTAH_MIGRATIONS_TABLE` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
 | `--version` | `string` | — | `PTAH_VERSION` | — |
@@ -1156,6 +1191,7 @@ Read the columns as follows.
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
 | `--verbose` | `bool` | `false` | `PTAH_VERBOSE` | — |
@@ -1179,6 +1215,7 @@ Read the columns as follows.
 | `--migrations-table` | `string` | — | `PTAH_MIGRATIONS_TABLE` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
 | `--version` | `string` | — | `PTAH_VERSION` | — |
@@ -1198,6 +1235,7 @@ Read the columns as follows.
 | `--migrations-schema` | `string` | — | `PTAH_MIGRATIONS_SCHEMA` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--report` | `string` | `text` | `PTAH_REPORT` | — |
 | `--root-dir` | `string` | `./models` | `PTAH_ROOT_DIR` | — |
 | `--run` | `string` | — | `PTAH_RUN` | — |
@@ -1240,6 +1278,7 @@ Read the columns as follows.
 | `--pre-up-hook` | `string` | — | `PTAH_PRE_UP_HOOK` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
 | `--runner` | `string` | `ptah` | `PTAH_RUNNER` | — |
 | `--skip-checks` | `bool` | `false` | `PTAH_SKIP_CHECKS` | — |
@@ -1266,6 +1305,7 @@ Read the columns as follows.
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 
 </div>
 
@@ -1411,6 +1451,7 @@ Read the columns as follows.
 | `--preflight` | `bool` | `false` | `PTAH_PREFLIGHT` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 
 </div>
 
@@ -1498,6 +1539,7 @@ Read the columns as follows.
 | `--protected-table` | `stringArray` | `[]` | `PTAH_PROTECTED_TABLE` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--require-approval` | `bool` | `false` | `PTAH_REQUIRE_APPROVAL` | — |
 | `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
 | `--rotate-secret` | `stringArray` | `[]` | — | — |
@@ -1541,6 +1583,7 @@ Read the columns as follows.
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
 | `--rotate-secret` | `stringArray` | `[]` | — | — |
 | `--schema-cmd` | `string` | — | `PTAH_SCHEMA_CMD` | — |
@@ -1568,6 +1611,7 @@ Read the columns as follows.
 | `--include` | `stringArray` | `[]` | `PTAH_INCLUDE` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--rotate-secret` | `stringArray` | `[]` | — | — |
 | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
 | `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
@@ -1596,6 +1640,7 @@ Read the columns as follows.
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
 | `--schema-cmd` | `string` | — | `PTAH_SCHEMA_CMD` | — |
 | `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
@@ -1635,6 +1680,7 @@ Read the columns as follows.
 | `--proto-type-removal` | `string` | `error` | `PTAH_PROTO_TYPE_REMOVAL` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--root-dir` | `string` | `.` | `PTAH_ROOT_DIR` | — |
 | `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
 | `--title` | `string` | — | `PTAH_TITLE` | — |
@@ -1671,6 +1717,7 @@ Read the columns as follows.
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
 | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
 | `--split` | `string` | — | `PTAH_SPLIT` | — |
@@ -1692,6 +1739,7 @@ Read the columns as follows.
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
 | `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
 | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
@@ -1721,6 +1769,7 @@ Read the columns as follows.
 | `--protected-table` | `stringArray` | `[]` | `PTAH_PROTECTED_TABLE` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
 | `--rotate-secret` | `stringArray` | `[]` | — | — |
 | `--save` | `bool` | `false` | `PTAH_SAVE` | — |
@@ -1747,6 +1796,7 @@ Read the columns as follows.
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--skip-parse` | `bool` | `false` | `PTAH_SKIP_PARSE` | — |
 | `--tag` | `string` | — | `PTAH_TAG` | — |
 
@@ -1766,6 +1816,7 @@ Read the columns as follows.
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
 | `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
 | `--tag` | `stringArray` | `[]` | `PTAH_TAG` | — |
@@ -1786,6 +1837,7 @@ Read the columns as follows.
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
 | `--schema-cmd` | `string` | — | `PTAH_SCHEMA_CMD` | — |
 | `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
@@ -1806,6 +1858,7 @@ Read the columns as follows.
 | `--format` | `string` | `table` | `PTAH_FORMAT` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--role-usage` | `string` | — | `PTAH_ROLE_USAGE` | — |
 | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
 
@@ -1821,6 +1874,7 @@ Read the columns as follows.
 | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--refresh` | `duration` | `30s` | `PTAH_REFRESH` | — |
 | `--root-dir` | `stringSlice` | `[]` | `PTAH_ROOT_DIR` | — |
 | `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
@@ -1838,6 +1892,7 @@ Read the columns as follows.
 | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
 
 </div>
@@ -1853,6 +1908,7 @@ Read the columns as follows.
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--report` | `string` | `text` | `PTAH_REPORT` | — |
 | `--root-dir` | `string` | `./models` | `PTAH_ROOT_DIR` | — |
 | `--run` | `string` | — | `PTAH_RUN` | — |
@@ -1877,6 +1933,7 @@ Read the columns as follows.
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
 | `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
 | `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
@@ -1912,6 +1969,7 @@ Read the columns as follows.
 | `--protected-table` | `stringArray` | `[]` | `PTAH_PROTECTED_TABLE` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--seeds-dir` | `string` | `seeds` | `PTAH_SEEDS_DIR` | — |
 | `--verbose` | `bool` | `false` | `PTAH_VERBOSE` | — |
 
@@ -1928,6 +1986,7 @@ Read the columns as follows.
 | `--format` | `string` | `text` | `PTAH_FORMAT` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
 | `--stdin` | `bool` | `false` | `PTAH_STDIN` | — |
 
@@ -1948,6 +2007,7 @@ Read the columns as follows.
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
 | `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
 | `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
 | `--security` | `bool` | `false` | `PTAH_SECURITY` | — |
