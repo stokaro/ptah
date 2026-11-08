@@ -3,7 +3,7 @@ package modeljson_test
 import (
 	"fmt"
 
-	"github.com/stokaro/ptah/provider-sdk/modeljson"
+	"ptah.run/provider-sdk/modeljson"
 )
 
 // ExampleCanonical normalizes object order without rounding exact numbers or

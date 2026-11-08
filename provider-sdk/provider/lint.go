@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // LintFeature advertises offline migration lint for the engines that declare it.

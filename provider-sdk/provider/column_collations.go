@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // ColumnCollationsFeature has a column comparison state a column's collation

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unicode"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // maxQuerySpelling bounds a refusal sentence or a spelling the query builder

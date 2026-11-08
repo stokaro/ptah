@@ -6,9 +6,10 @@ import (
 	"strconv"
 	"strings"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
+
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // SharedCoverageFeature lets the host and the provider send a list of

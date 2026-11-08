@@ -6,8 +6,9 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
+
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
 )
 
 const splitBody = "DEFINE v = 1;\nINSERT INTO t VALUES (v);\nCREATE TABLE u (id INT);\n"

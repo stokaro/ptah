@@ -3,9 +3,10 @@ package provider
 import (
 	"bytes"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
+
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // CloneSharingModels returns a deep copy of message in which every place

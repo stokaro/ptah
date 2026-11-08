@@ -1,6 +1,8 @@
 # sqlsyntax
 
-`github.com/stokaro/ptah/sqlsyntax` holds the lexical syntax of SQL families that Ptah and its providers read alike. It is released apart from Ptah, as `provider-sdk` is, with tags named `sqlsyntax/vX.Y.Z`, so a provider depends on the syntax without depending on the host module.
+`ptah.run/sqlsyntax` holds the lexical syntax of SQL families that Ptah and its providers read alike. It is released apart from Ptah, as `provider-sdk` is, with tags named `sqlsyntax/vX.Y.Z`, so a provider depends on the syntax without depending on the host module.
+
+`sqlsyntax/v0.1.0` declares another module path. A module that stays on it requires and imports it as in `go get github.com/stokaro/ptah/sqlsyntax@v0.1.0`; a later release is imported as `ptah.run/sqlsyntax`.
 
 It knows no engine's catalog, types or DDL. Reading, rendering and planning stay with the engine that owns them.
 

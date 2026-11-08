@@ -17,9 +17,10 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
-	transport "github.com/stokaro/ptah/provider-sdk/runtime"
+
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
+	transport "ptah.run/provider-sdk/runtime"
 )
 
 // contract25SDK is the newest SDK release of contract 25.0. The

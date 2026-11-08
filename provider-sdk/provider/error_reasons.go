@@ -3,7 +3,7 @@ package provider
 import (
 	"fmt"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // ErrorReasonsFeature lets a provider say why a call failed. A failed call's

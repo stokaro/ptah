@@ -5,9 +5,10 @@ import (
 	"slices"
 	"sync"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
+
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 func validateValueContext(description *protocol.Description, engine string, features map[string]bool, value *protocol.Envelope) error {

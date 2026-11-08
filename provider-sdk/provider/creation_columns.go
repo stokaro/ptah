@@ -3,7 +3,7 @@ package provider
 import (
 	"slices"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 func validateCreationColumns(engine *protocol.Engine, input *protocol.DeclaredTable, output *protocol.ProjectedTableCreation) error {

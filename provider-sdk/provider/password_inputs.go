@@ -3,7 +3,7 @@ package provider
 import (
 	"slices"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // PasswordInputsFeature lets a declared role password travel as an execution

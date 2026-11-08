@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // ReplayGuardFeature advertises the offline replay guard: the owner reads the

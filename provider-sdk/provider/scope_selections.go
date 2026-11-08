@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"slices"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // ScopeSelectionsFeature enables Engine.scope_selections: how the --include,

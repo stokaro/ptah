@@ -4,7 +4,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	"github.com/stokaro/ptah/provider-sdk/conformance"
+
+	"ptah.run/provider-sdk/conformance"
 )
 
 // inProcessLocks is memoryConfig with the lock check taking the lock from two

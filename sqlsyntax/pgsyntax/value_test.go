@@ -4,7 +4,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	"github.com/stokaro/ptah/sqlsyntax/pgsyntax"
+
+	"ptah.run/sqlsyntax/pgsyntax"
 )
 
 // valueAt reads the constant that starts the text, and returns its value, the

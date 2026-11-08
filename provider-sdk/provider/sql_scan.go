@@ -6,7 +6,7 @@ import (
 	"slices"
 	"unicode/utf8"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // ScanSQLFeature enables ScanSQL, by which the owner returns the tokens of one

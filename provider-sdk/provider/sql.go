@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // SQLAnalyzer owns SQL lexing and native safety facts. It must refuse syntax it

@@ -7,7 +7,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // SchemaSubtreeCoverageFeature enables coverage regions that cover a schema

@@ -7,11 +7,12 @@ import (
 	"slices"
 	"time"
 
-	"github.com/stokaro/ptah/provider-sdk/provider"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+
+	"ptah.run/provider-sdk/provider"
 )
 
 // sessionCall is one call of a session-bound service. The caller's request is

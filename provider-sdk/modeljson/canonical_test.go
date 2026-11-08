@@ -5,7 +5,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	"github.com/stokaro/ptah/provider-sdk/modeljson"
+
+	"ptah.run/provider-sdk/modeljson"
 )
 
 func TestCanonicalJSON_PreservePrecisionAndOrderedValues(t *testing.T) {

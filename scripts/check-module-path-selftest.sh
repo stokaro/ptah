@@ -21,6 +21,9 @@ trap 'rm -rf "$work_dir"' EXIT
 retired_token="5$(printf '\170')5"
 retired_host="go$(printf '\056')${retired_token}$(printf '\056')cz"
 current_module="ptah$(printf '\056')run"
+# The repository's GitHub path, assembled like the needles above, so that no
+# line here spells a module path under it in full.
+github_root="github$(printf '\056')com/stokaro/ptah"
 
 write_repo() {
 	rm -rf "$work_dir/repo"
@@ -97,37 +100,23 @@ printf 'module example.invalid/other\n\ngo 1.26.5\n' >"$work_dir/repo/nested/go.
 git -C "$work_dir/repo" add -A >/dev/null 2>&1
 assert_rejected "a module declaring another path" "every module here belongs to"
 
-# The independent SDK has one exact module identity and one exact directory.
+# 5b. A nested module of ours that declares another directory's path. The go
+#     command finds a nested module by the directory its path names, so this
+#     module cannot be fetched, and the module that directory holds would
+#     have two claimants.
+write_repo
+printf 'module %s/provider-sdk\n\ngo 1.26.5\n' "$current_module" >"$work_dir/repo/nested/go.mod"
+git -C "$work_dir/repo" add -A >/dev/null 2>&1
+assert_rejected "a module declaring another directory" "a module in nested must declare"
+
+# 5c. A nested module under the repository's GitHub path. The go command
+#     resolves such a path to this repository too, so the module builds and can
+#     be fetched; it is still not ours.
 write_repo
 mkdir -p "$work_dir/repo/provider-sdk"
-printf 'module github.com/stokaro/ptah/provider-sdk\n\ngo 1.26.5\n' >"$work_dir/repo/provider-sdk/go.mod"
-if ! (cd "$work_dir/repo" && bash scripts/check-module-path.sh) >"$work_dir/out" 2>"$work_dir/err"; then
- echo 'module path self-test: the independent SDK was rejected:' >&2
- cat "$work_dir/err" >&2
- exit 1
-fi
-printf '  %-46s accepted\n' "the independent SDK"
-printf 'module example.invalid/other\n\ngo 1.26.5\n' >"$work_dir/repo/provider-sdk/go.mod"
-assert_rejected "a different SDK identity" "provider-sdk must declare"
-write_repo
-printf 'module github.com/stokaro/ptah/provider-sdk\n\ngo 1.26.5\n' >"$work_dir/repo/nested/go.mod"
-assert_rejected "SDK identity in another module" "every module here belongs to"
-
-# The SQL syntax module is independent the same way, at its own directory.
-write_repo
-mkdir -p "$work_dir/repo/sqlsyntax"
-printf 'module github.com/stokaro/ptah/sqlsyntax\n\ngo 1.26.5\n' >"$work_dir/repo/sqlsyntax/go.mod"
-if ! (cd "$work_dir/repo" && bash scripts/check-module-path.sh) >"$work_dir/out" 2>"$work_dir/err"; then
-	echo 'module path self-test: the independent syntax module was rejected:' >&2
-	cat "$work_dir/err" >&2
-	exit 1
-fi
-printf '  %-46s accepted\n' "the independent syntax module"
-printf 'module example.invalid/other\n\ngo 1.26.5\n' >"$work_dir/repo/sqlsyntax/go.mod"
-assert_rejected "a different syntax module identity" "sqlsyntax must declare"
-write_repo
-printf 'module github.com/stokaro/ptah/sqlsyntax\n\ngo 1.26.5\n' >"$work_dir/repo/nested/go.mod"
-assert_rejected "syntax module identity in another module" "every module here belongs to"
+printf 'module %s/provider-sdk\n\ngo 1.26.5\n' "$github_root" >"$work_dir/repo/provider-sdk/go.mod"
+git -C "$work_dir/repo" add -A >/dev/null 2>&1
+assert_rejected "a module under the GitHub path" "every module here belongs to"
 
 # 6. Not staged. Nothing here stages the fixture, which is the whole point.
 write_repo
@@ -154,4 +143,4 @@ grep -qF "is not reporting on it" "$work_dir/err" || {
 }
 printf '  %-46s rejected\n' "a corpus too small to be this repository"
 
-echo "check-module-path-selftest: OK (11 broken rules each noticed, controls accepted)"
+echo "check-module-path-selftest: OK (9 broken rules each noticed, the control accepted)"

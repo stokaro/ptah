@@ -9,8 +9,9 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"google.golang.org/protobuf/proto"
+
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // ReportCountsFeature enables Engine.reports and ReportValues: an engine

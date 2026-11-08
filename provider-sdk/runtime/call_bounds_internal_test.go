@@ -9,8 +9,9 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"google.golang.org/grpc"
+
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // boundsPeer records the deadline of the calls it answers.

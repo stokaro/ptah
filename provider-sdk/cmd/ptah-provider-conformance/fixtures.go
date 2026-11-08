@@ -6,12 +6,13 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/stokaro/ptah/provider-sdk/conformance"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/reflect/protoregistry"
+
+	"ptah.run/provider-sdk/conformance"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // fixtureFile is the JSON form of what the suite works with. A request, a

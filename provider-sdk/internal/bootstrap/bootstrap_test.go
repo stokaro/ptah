@@ -4,7 +4,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	"github.com/stokaro/ptah/provider-sdk/internal/bootstrap"
+
+	"ptah.run/provider-sdk/internal/bootstrap"
 )
 
 func TestValidateEnvironment_HappyPath(t *testing.T) {

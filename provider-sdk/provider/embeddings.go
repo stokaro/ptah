@@ -9,7 +9,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // EmbeddingStoreFeature advertises the embedding store of contract 25.2. The

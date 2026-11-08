@@ -3,8 +3,9 @@ package conformance
 import (
 	"time"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"google.golang.org/protobuf/proto"
+
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // Canary is the text an author puts where a credential goes in

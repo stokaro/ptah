@@ -1,4 +1,4 @@
-module github.com/stokaro/ptah/provider-sdk
+module ptah.run/provider-sdk
 
 go 1.26.5
 

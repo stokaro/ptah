@@ -3,7 +3,7 @@ package provider
 import (
 	"slices"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // SQLFacetsFeature enables SQLSchema.facets: a SQL schema reading carries the

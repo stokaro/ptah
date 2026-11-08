@@ -5,7 +5,7 @@ import (
 	"math"
 	"slices"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // TypedArgumentsFeature lets a statement carry each argument with the type its

@@ -4,7 +4,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	"github.com/stokaro/ptah/sqlsyntax/pgsyntax"
+
+	"ptah.run/sqlsyntax/pgsyntax"
 )
 
 // shape renders tokens as kind and text, white space left out, so a row reads

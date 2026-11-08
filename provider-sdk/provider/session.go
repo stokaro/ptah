@@ -3,7 +3,7 @@ package provider
 import (
 	"fmt"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // ValidateSession checks a newly opened session's identity, identifier rules,

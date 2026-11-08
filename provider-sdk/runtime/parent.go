@@ -6,7 +6,7 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/stokaro/ptah/provider-sdk/internal/bootstrap"
+	"ptah.run/provider-sdk/internal/bootstrap"
 )
 
 func parentPID() (int, error) {

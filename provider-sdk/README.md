@@ -2,7 +2,7 @@
 
 This module is for developers implementing Ptah subprocess providers. It defines
 explicit protocol messages, service interfaces, and authenticated local transport.
-Its Go module path is `github.com/stokaro/ptah/provider-sdk`.
+Its Go module path is `ptah.run/provider-sdk`.
 
 This README is the specification. To build a first provider, follow
 [Write a provider](https://docs.ptah.run/edge/extend/write-a-provider/tutorial/),
@@ -52,8 +52,13 @@ compare schemas, order migration dependencies, or maintain migration history.
 
 The SDK is its own Go module, so it has its own tags: `provider-sdk/vX.Y.Z`.
 The host, the fixture and every provider repository require a tag in `go.mod`,
-not a pseudo-version. The tag name has the module path as its prefix, which is
-why release automation that matches `v*` does not see it.
+not a pseudo-version. The tag name has the module's directory as its prefix,
+which is why release automation that matches `v*` does not see it.
+
+The releases up to `provider-sdk/v0.39.0` declare another module path. A module
+that stays on one of them requires and imports it under that path, as in
+`go get github.com/stokaro/ptah/provider-sdk@v0.39.0`; moving to a later release
+means rewriting those imports to `ptah.run/provider-sdk`.
 
 A maintainer tags the SDK when a change to the SDK has to reach a module that
 consumes it, and the requirement moves in the pull request that uses the change.
@@ -907,7 +912,7 @@ The command takes the same configuration from flags, a fixture file and the
 environment:
 
 ```bash
-go run github.com/stokaro/ptah/provider-sdk/cmd/ptah-provider-conformance \
+go run ptah.run/provider-sdk/cmd/ptah-provider-conformance \
   -executable ./bin/provider -provider-id example.com/provider -json
 ```
 

@@ -5,7 +5,7 @@ import (
 	"slices"
 	"strings"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 func validateComparisonState(description *protocol.Description, request *protocol.CompareModelsRequest, service *protocol.ModelComparison, representation protocol.ValueInput_Representation, state *protocol.ComparisonState) error {
