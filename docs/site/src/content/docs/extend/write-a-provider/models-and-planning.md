@@ -223,6 +223,8 @@ provider honors cancellation rather than relying on a fixed limit.
 
 - [How a provider works](../architecture/) covers the process, the contract,
   execution and locks.
+- [Understanding the provider boundary](../ydb-walkthrough/) maps four YDB
+  objects to common tables, facets and provider models, with their owners.
 - [Provider SDK reference](../sdk-reference/) maps each feature to its service,
   its README section and its decision record.
 - [Test a provider](../testing/) checks models and plans with the SDK's

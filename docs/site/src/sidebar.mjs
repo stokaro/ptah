@@ -284,6 +284,7 @@ export const sidebar = [
           { slug: 'extend/write-a-provider/tutorial' },
           { slug: 'extend/write-a-provider/architecture' },
           { slug: 'extend/write-a-provider/models-and-planning' },
+          { slug: 'extend/write-a-provider/ydb-walkthrough' },
           { slug: 'extend/write-a-provider/testing' },
           { slug: 'extend/write-a-provider/release' },
           { slug: 'extend/write-a-provider/sdk-reference' },
