@@ -1772,9 +1772,17 @@ position, as the shared parser does:
 that line and column from the diagnostic's byte offset and the document, so the
 column counts characters as it does for the shared parser, where the wire's
 column counts bytes.
+
+Under `schema.read-sql-undeclared` a provider reports a statement that changes
+an object no file of the load declares as an `UNDECLARED` error, and Ptah
+treats it as it treats its own refusal of such a statement. Where the load sits
+beside a schema file in another format, it adds `a <dialect> SQL file changes
+only what the SQL files of the same load declare, not what <file> declares`,
+since files in other formats are read apart from the load.
+
 The JSON documents of `schema plan` and `schema apply` list every diagnostic in
-`schema_diagnostics`, with its code (`syntax`, `unsupported`, `invalid` or
-`incomplete`), severity, path and span.
+`schema_diagnostics`, with its code (`syntax`, `unsupported`, `invalid`,
+`incomplete` or `undeclared`), severity, path and span.
 
 Ptah also refuses a reply it could use only by dropping part of it:
 

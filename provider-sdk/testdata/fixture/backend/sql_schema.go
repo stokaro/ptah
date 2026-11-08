@@ -63,16 +63,35 @@ func retentionObjectModels() []*protocol.ValueModel {
 //	CREATE VIEW name AS query;
 //
 // A line comment, such as a `ptah:not-described` header, is skipped. Every
-// other statement is refused as UNSUPPORTED and named by its first word. Names
-// compare without regard to ASCII case, as the engine's identifier rules say.
+// other statement is refused as UNSUPPORTED and named by its first word. An
+// ALTER TABLE or a DROP TABLE of a table the load does not declare is refused
+// as INVALID; see [SQLReading] for another code. Names compare without regard
+// to ASCII case, as the engine's identifier rules say.
 // Documents run in order, so a later one alters what an earlier one declared.
 //
 // Three table names select a reply shape for the host's tests: `warned` adds
 // a warning to a complete reading, `malformed` leaves its table without the
 // trace the protocol requires, and `stalled` waits for cancellation. This
 // fixture demonstrates the protocol, not an engine's grammar.
-func (*Provider) ReadSQLSchema(ctx context.Context, request *protocol.ReadSQLSchemaRequest) (*protocol.SQLSchema, error) {
-	load := &sqlLoad{}
+func (p *Provider) ReadSQLSchema(ctx context.Context, request *protocol.ReadSQLSchemaRequest) (*protocol.SQLSchema, error) {
+	return p.ReadSQLSchemaAs(ctx, request, SQLReading{})
+}
+
+// SQLReading is how [Provider.ReadSQLSchemaAs] reads a load. The zero value
+// reads it as [Provider.ReadSQLSchema] does.
+type SQLReading struct {
+	// Undeclared, where it is not CODE_UNSPECIFIED, is the code that refuses
+	// an ALTER TABLE or a DROP TABLE of a table the load does not declare,
+	// with a message that names the table. This package builds against the
+	// contract 25.0 SDK, which has no code for such a statement, so a command
+	// of a later minor passes it.
+	Undeclared protocol.SQLDiagnostic_Code
+}
+
+// ReadSQLSchemaAs is [Provider.ReadSQLSchema] with the refusal codes reading
+// selects.
+func (*Provider) ReadSQLSchemaAs(ctx context.Context, request *protocol.ReadSQLSchemaRequest, reading SQLReading) (*protocol.SQLSchema, error) {
+	load := &sqlLoad{undeclared: reading.Undeclared}
 	declarations := make([]*protocol.SQLDocumentDeclarations, 0, len(request.GetDocuments()))
 	for _, document := range request.GetDocuments() {
 		if err := ctx.Err(); err != nil {
@@ -137,6 +156,8 @@ type sqlLoad struct {
 	diagnostics []*protocol.SQLDiagnostic
 	warned      *sqlPlace
 	stalled     bool
+	// undeclared is SQLReading.Undeclared.
+	undeclared protocol.SQLDiagnostic_Code
 }
 
 func sqlTrace(collection protocol.SQLObjectTrace_Collection, index int, place sqlPlace) *protocol.SQLObjectTrace {
@@ -155,6 +176,17 @@ func (l *sqlLoad) find(name string) int {
 
 func (l *sqlLoad) refuse(document *protocol.SQLDocument, code protocol.SQLDiagnostic_Code, span *protocol.SourceSpan, message string) {
 	l.diagnostics = append(l.diagnostics, &protocol.SQLDiagnostic{Code: code, Severity: protocol.SQLDiagnostic_ERROR, DocumentId: document.GetId(), Span: span, Message: message})
+}
+
+// refuseUnknown refuses a statement that changes a table the load does not
+// declare: with the code of SQLReading.Undeclared where one is set, and as
+// INVALID otherwise.
+func (l *sqlLoad) refuseUnknown(document *protocol.SQLDocument, place sqlPlace, name string) {
+	if l.undeclared != protocol.SQLDiagnostic_CODE_UNSPECIFIED {
+		l.refuse(document, l.undeclared, place.span, "table "+name+" is not declared by this load")
+		return
+	}
+	l.refuse(document, protocol.SQLDiagnostic_INVALID, place.span, "unknown table")
 }
 
 // run reads one document's statements in order and returns what it declares.
@@ -288,7 +320,7 @@ func (l *sqlLoad) drop(document *protocol.SQLDocument, declared *protocol.SQLDoc
 	declared.Tables = append(declared.Tables, &protocol.SQLTableStatement{Name: name, Drop: true})
 	index := l.find(name)
 	if index < 0 {
-		l.refuse(document, protocol.SQLDiagnostic_INVALID, place.span, "unknown table")
+		l.refuseUnknown(document, place, name)
 		return
 	}
 	l.tables = append(l.tables[:index], l.tables[index+1:]...)
@@ -304,7 +336,7 @@ func (l *sqlLoad) drop(document *protocol.SQLDocument, declared *protocol.SQLDoc
 func (l *sqlLoad) alter(document *protocol.SQLDocument, place sqlPlace, name string, definition []string) {
 	index := l.find(name)
 	if index < 0 {
-		l.refuse(document, protocol.SQLDiagnostic_INVALID, place.span, "unknown table")
+		l.refuseUnknown(document, place, name)
 		return
 	}
 	columns, ok := sqlColumns(definition)

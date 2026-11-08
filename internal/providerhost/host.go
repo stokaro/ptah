@@ -248,6 +248,11 @@ var hostFeatures = []string{
 	// and may leave a pair to the host's reading of the two texts; see
 	// viewQueryService.EquivalentViewQueries.
 	provider.ViewQueryContextFeature,
+	// A SQL schema reading names a statement that changes an object no
+	// document of its load declares, which the host reads as its own reader's
+	// refusal of such a statement (sqlext.ErrUndeclared), so a load beside a
+	// source in another format says why; see sqlSchemaRefusal.
+	provider.SQLUndeclaredFeature,
 	// A planning service receives the grants the read found on each held
 	// table, so a plan that replaces the table can give them back, even in
 	// the text of a migration file; see planningTableGrants.

@@ -31,13 +31,13 @@ type declaredFacet struct {
 }
 
 // facetDescription is the DOCUMENT description of this command: the
-// shared one, with schema.sql-facets listed and SQL among the retention
-// value's source formats.
+// shared one, with schema.sql-facets and schema.read-sql-undeclared listed
+// and SQL among the retention value's source formats.
 func facetDescription() *protocol.Description {
 	description := backend.SQLDocumentDescription()
-	description.Features = append(description.Features, provider.SQLFacetsFeature)
+	description.Features = append(description.Features, provider.SQLFacetsFeature, provider.SQLUndeclaredFeature)
 	engine := description.Engines[0]
-	engine.Features = append(engine.Features, provider.SQLFacetsFeature)
+	engine.Features = append(engine.Features, provider.SQLFacetsFeature, provider.SQLUndeclaredFeature)
 	for _, model := range engine.ValueModels {
 		if model.GetKind() == retentionKind && model.GetRepresentation() == protocol.ValueInput_DESIRED {
 			model.SourceFormats = append(model.SourceFormats, protocol.SourceDocument_SQL)
@@ -63,7 +63,10 @@ func retentionModel() *protocol.ValueModel {
 // retention model, so a table declared without one holds none. For a request
 // that does not list schema.sql-facets a retention statement is refused by
 // name, since the reply could not carry it. A view named `tuned` carries
-// settings; see tuneViews.
+// settings; see tuneViews. Where the host negotiated
+// schema.read-sql-undeclared, an ALTER TABLE or a DROP TABLE of a table the
+// load does not declare is refused as UNDECLARED, a code the shared dialect,
+// built against the oldest SDK, cannot name.
 func (p *documentProvider) ReadSQLSchema(ctx context.Context, request *protocol.ReadSQLSchemaRequest) (*protocol.SQLSchema, error) {
 	stripped := proto.CloneOf(request)
 	var declared []declaredFacet
@@ -83,7 +86,7 @@ func (p *documentProvider) ReadSQLSchema(ctx context.Context, request *protocol.
 	if len(declared) != 0 && !slices.Contains(request.GetTargetFeatures(), provider.SQLFacetsFeature) {
 		return facetRefusal(declared[0], protocol.SQLDiagnostic_UNSUPPORTED, "a retention of a table needs "+provider.SQLFacetsFeature), nil
 	}
-	result, err := p.Provider.ReadSQLSchema(ctx, stripped)
+	result, err := p.Provider.ReadSQLSchemaAs(ctx, stripped, undeclaredReading(request))
 	if err != nil {
 		return nil, err
 	}
@@ -104,6 +107,16 @@ func (p *documentProvider) ReadSQLSchema(ctx context.Context, request *protocol.
 	}
 	result.Coverage.Kinds = append(result.Coverage.Kinds, &protocol.ModelKindCoverage{Model: model, Knowledge: &protocol.ModelKnowledge{State: protocol.ModelKnowledge_COMPLETE}})
 	return result, nil
+}
+
+// undeclaredReading reads a load with the UNDECLARED code where the host
+// negotiated schema.read-sql-undeclared, and as the shared dialect does
+// otherwise.
+func undeclaredReading(request *protocol.ReadSQLSchemaRequest) backend.SQLReading {
+	if slices.Contains(request.GetTargetFeatures(), provider.SQLUndeclaredFeature) {
+		return backend.SQLReading{Undeclared: protocol.SQLDiagnostic_UNDECLARED}
+	}
+	return backend.SQLReading{}
 }
 
 func submatch(text string, start, end int) string {
