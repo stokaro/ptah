@@ -6,7 +6,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/difftypes"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/cli/internal/diffreport"
 )
@@ -81,6 +83,24 @@ func TestCategoriesNamesEveryChangedObject(t *testing.T) {
 // TestCategoriesIgnoresNonChangeFields pins the other half of the reflection
 // rule: a diff carries fields that describe how it was produced, and reporting
 // those as differences would make a synced schema look modified.
+// TestCategoriesNamesAFeatureChangeByItsSubject names a provider's change by
+// the identity of the object it changes. A change record carries no string
+// field of its own, and the default formatting printed the struct with the
+// address of its payload.
+func TestCategoriesNamesAFeatureChangeByItsSubject(t *testing.T) {
+	c := qt.New(t)
+	diff := &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{{Subject: objectidentity.ID{
+		Kind: "example.org/fixture/transfer", Schema: objectidentity.Part{Source: "shop", Normalized: "shop"},
+		Name: objectidentity.Part{Source: "ingest_orders", Normalized: "ingest_orders"},
+	}}}}
+
+	categories := diffreport.Categories(diff)
+
+	c.Assert(categories, qt.DeepEquals, []diffreport.Category{
+		{Name: "feature_changes", Objects: []string{"example.org/fixture/transfer shop.ingest_orders"}},
+	})
+}
+
 func TestCategoriesIgnoresNonChangeFields(t *testing.T) {
 	tests := []struct {
 		name string
