@@ -88,6 +88,9 @@ func validateCheckComparisonTable(table *protocol.CheckComparisonTable, identifi
 	if current.GetFeatures() != nil {
 		return checkEquivalenceError("a held table carries no captured features")
 	}
+	if len(current.GetRemovalBlockers()) != 0 {
+		return checkEquivalenceError("a held table carries no removal blockers, which only a planning request carries")
+	}
 	if err := validateObservedTable(current); err != nil {
 		return err
 	}

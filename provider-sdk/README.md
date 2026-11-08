@@ -68,10 +68,13 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.37. Each released SDK speaks one contract:
+speaks contract 25.39. Each released SDK speaks one contract:
 
 | SDK release | Contract |
 | --- | --- |
+| `provider-sdk/v0.36.0` | 25.38 |
+| `provider-sdk/v0.35.0` | 25.37 |
+| `provider-sdk/v0.34.0` | 25.36 |
 | `provider-sdk/v0.33.0` | 25.35 |
 | `provider-sdk/v0.32.0` | 25.34 |
 | `provider-sdk/v0.31.0` | 25.33 |
@@ -185,6 +188,7 @@ returns to 0.
   [SQL statement facts](#sql-statement-facts).
   Contract 25.37 adds [view query context](#view-query-context) and
   [declared facets](#declared-facets).
+  Contract 25.39 adds [removal blockers](#removal-blockers).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -233,8 +237,9 @@ does not oblige a peer to use it.
   `models.declared-objects`, `render.omissions`, `planning.table-grants`,
   `source.sql-role-passwords`, `source.sql-statement-facts`, `query.lexical`,
   `engine.connection-capability-source`, `models.omission-counts`,
-  `schema.view-query-context` and `models.declared-facets`. The
-  embedding store's calls,
+  `schema.view-query-context`, `models.declared-facets`,
+  `schema.read-sql-undeclared` and `schema.removal-blockers`. The embedding
+  store's calls,
   `PrepareCommonObjects`, `ReverseChanges` and `ReportValues` are new, and each
   comes with an addition to `Engine`, so a host lists the feature to receive
   any of them. `SplitMigration` is new too, and comes with the abort flags of
@@ -1034,6 +1039,17 @@ message of one line and at most 512 bytes. A construct the provider recognizes
 and cannot represent is `UNSUPPORTED` and named, never skipped. A message names
 a span and a short token and never quotes a statement, since a schema file can
 carry a secret value. A canceled call returns no result.
+
+Under the two-way feature `schema.read-sql-undeclared` (contract 25.38, ADR
+0120 in Ptah) a reading reports a statement that changes an object no document
+of the load declares, such as an `ALTER TABLE` of a table no `CREATE TABLE` of
+the load creates, as an `UNDECLARED` error. The host reads it as a statement
+its load has no place for, as it reads its own refusal, so a load beside a
+source in another format says that its SQL files change only what its SQL
+files declare. The provider lists the feature, and so does each engine whose
+reading reports the code, beside `schema.read-sql`. The SDK refuses the code
+in a reply whose engine or target did not negotiate the feature, and as a
+warning.
 
 Both transport boundaries run the same checks and return no schema when one
 fails: a request that does not name a `DOCUMENT` engine, a reply with the wrong
@@ -3096,6 +3112,10 @@ schema and rules stated, and keeps the index the engine builds for one out of
 the table's indexes. A primary key, a UNIQUE constraint and a constraint that
 carries facets are not predicted, so a down file that needs one is refused.
 
+The predicted table holds the CHECK and the foreign key that a column the
+forward plan adds states on itself, under the names the host compares them by,
+so a provider that drops the column in a down file finds them on the table.
+
 ## Constraint changes
 
 [ADR 0089](../docs/adr/0089-a-provider-plans-the-constraint-changes-of-a-table-it-owns.md)
@@ -3149,6 +3169,29 @@ plan keeps as it plans those of a foreign key or a CHECK: the declared ones
 travel in the desired declaration and the held ones in the current
 observation.
 
+## Removal blockers
+
+[ADR 0121](../docs/adr/0121-a-read-reports-the-objects-outside-the-model-that-block-a-tables-removal.md)
+decides this feature. `schema.removal-blockers` carries the objects outside
+the engine's model that name a table, or some of its columns, and block their
+removal, such as a Spanner change stream that names the table in its `FOR`
+clause. A read reports them in `Table.removal_blockers`, as `RemovalBlocker`
+values. The host carries each list unchanged into the `ObservedTable` of the
+planning request that holds the table, in `ObservedTable.removal_blockers`,
+and never compares or exports it. The provider and the engine list this
+two-way feature, which requires `schema.observed-columns`.
+
+A blocker has a kind, a lowercase token such as `change_stream`, a name, and
+the table's columns it names. Every blocker blocks the removal of its table;
+one that names columns also blocks the removal of each of them. With the
+feature negotiated, a table whose list is empty has no blocker. The planning
+service that owns the table refuses a plan that drops a blocked table or
+column, so `--dry-run` and a generated migration refuse it before a statement
+runs. The SDK refuses a list without negotiation, a kind that is not a token,
+a blank name or one with a control character, an object listed twice for one
+table, a column the table does not have or one named twice, and a list in a
+CHECK comparison's held table.
+
 ## CHECK equivalence
 
 [ADR 0090](../docs/adr/0090-a-provider-decides-whether-two-checks-are-one.md)
@@ -3172,6 +3215,11 @@ refuses a pair that names no CHECK the table holds with an expression, a
 blank declared expression, a constraint named twice, a table without pairs and
 two tables of one subject; `ValidateComparedChecks` refuses a reply that
 leaves a table or a pair out, reorders them or names another.
+
+The CHECK the host builds for an enum column in the `CHECK` form
+([enum columns](#enum-columns)) is a declared CHECK too: the host asks about
+it as about any other, so the owner decides whether a changed list of values
+is another constraint.
 
 ## View query equivalence
 

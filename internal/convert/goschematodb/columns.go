@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemaprojection"
 	"ptah.run/internal/convert/features"
+	"ptah.run/internal/schemaprep"
 )
 
 // Columns converts accepted column definitions without predicting a new table.
@@ -70,4 +71,26 @@ func PredictedColumns(ctx context.Context, declaration schemacapture.TableDeclar
 		columns[i] = column.Clone()
 	}
 	return columns, true, nil
+}
+
+// ColumnConstraints converts the CHECK and the foreign key that each named
+// column of declaration states on itself, in declaration order. They belong
+// to the column rather than to its table: the comparison leaves them to the
+// column's lifecycle, so a change that adds the column adds them with it and
+// lists none of them among its constraint additions. A CHECK takes the name
+// [schemaprep.ColumnCheckNames] answers on target, the name the comparison
+// pairs it by, and a foreign key its declared name or
+// [schemaprep.GenerateForeignKeyName]. A name declaration does not hold
+// converts nothing.
+func ColumnConstraints(declaration schemacapture.TableDeclaration, columns []string, target string) []catalog.Constraint {
+	table := declaration.Table
+	checkNames := schemaprep.ColumnCheckNames(table, declaration.Fields, declaration.Constraints, target)
+	var constraints []catalog.Constraint
+	for _, field := range declaration.Fields {
+		if field.StructName != table.StructName || !slices.Contains(columns, field.Name) {
+			continue
+		}
+		constraints = append(constraints, toDBFieldConstraints(table, schemaprep.WithJSONCheck(field, target), checkNames[field.Name])...)
+	}
+	return constraints
 }

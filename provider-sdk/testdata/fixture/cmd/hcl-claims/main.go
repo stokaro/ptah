@@ -23,6 +23,10 @@
 // read's regions, for one that also reports a namespace it did not read
 // (FIXTURE_READ_HIDDEN=1).
 //
+// With FIXTURE_READ_UNREAD=1 the engine also describes a legacy model no HCL
+// block writes, and a read records the legacy object audit as one it lists
+// and does not describe.
+//
 // With FIXTURE_REPORT_COUNTS=1 the engine reports the retention models with
 // the count metrics of retentionMetrics and the program counts their values.
 //
@@ -91,6 +95,9 @@ func description() *protocol.Description {
 		description.Features = append(description.Features, provider.SourceLimitsFeature)
 		engine.Features = append(engine.Features, provider.SourceLimitsFeature)
 		engine.GoHeaderKinds = []string{"retention"}
+	}
+	if readUnread() {
+		engine.ValueModels = append(engine.ValueModels, legacyModels()...)
 	}
 	if os.Getenv("FIXTURE_SOURCE_GROUPS") == "1" {
 		description.Features = append(description.Features, provider.EncodeGroupsFeature)

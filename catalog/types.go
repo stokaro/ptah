@@ -191,6 +191,18 @@ type Database struct {
 	// the description cannot make the database lose the object.
 	UnmodeledObjects []UnmodeledObject `json:"-"`
 
+	// RemovalBlockers lists the objects this read found outside the model that
+	// name a table, or some of its columns, and block their removal, such as a
+	// Spanner change stream. A plan reads them to refuse a drop the database
+	// would refuse; nothing compares them, so a difference never comes from
+	// one.
+	//
+	// It is a fact about the read, not part of the description, so it is never
+	// serialized: no document can declare such an object, and a document made
+	// from this read names nothing about it. A filter keeps the list, since
+	// narrowing the description cannot make the database lose the object.
+	RemovalBlockers []RemovalBlocker `json:"-"`
+
 	// DatabasePath is the absolute path of the database this read describes,
 	// such as /local, on a target whose statements name some objects by an
 	// absolute path rather than relative to the connection: YDB, whose ALTER

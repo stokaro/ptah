@@ -278,6 +278,53 @@ func TestProviderForeignKeyMigration_HappyPath(t *testing.T) {
 	c.Assert(down, qt.Contains, `DROP TABLE "owners";`)
 }
 
+// A column added with a constraint of its own, a CHECK or a foreign key, is
+// dropped again by the down file of the migration that adds it, and the table
+// is back to what it held. The provider plans that down file from the table
+// the host projects the up file to leave, and decides by its constraints: it
+// rebuilds a table whose constraints change and drops a column in place
+// otherwise. Without the column's constraint in the projection the table's
+// constraints look unchanged, the down file drops the column in place, and
+// SQLite refuses to drop a column a constraint of the table still names.
+func TestProviderAddedColumnConstraintMigration_HappyPath(t *testing.T) {
+	const (
+		bareItems = `CREATE TABLE "items" ("id" INTEGER NOT NULL PRIMARY KEY)`
+		barePosts = `CREATE TABLE "posts" ("id" INTEGER NOT NULL PRIMARY KEY)`
+		items     = "tables:\n  items:\n    columns:\n      id: {type: INTEGER, primary: true, not_null: true}\n      score: "
+	)
+	tests := []struct {
+		name   string
+		held   []string
+		schema string
+		table  string
+		wantUp string
+	}{
+		{name: "named CHECK", held: []string{bareItems}, schema: items + `{type: INTEGER, check: "score >= 0", check_name: items_score_check}` + "\n", table: "items",
+			wantUp: `CREATE TABLE "items" ("id" INTEGER NOT NULL PRIMARY KEY, "score" INTEGER, CONSTRAINT "items_score_check" CHECK (score >= 0))`},
+		{name: "CHECK named by the host", held: []string{bareItems}, schema: items + `{type: INTEGER, check: "score >= 0"}` + "\n", table: "items",
+			wantUp: `CREATE TABLE "items" ("id" INTEGER NOT NULL PRIMARY KEY, "score" INTEGER, CONSTRAINT "items_score_check" CHECK (score >= 0))`},
+		{name: "foreign key", held: []string{heldOwners, barePosts}, schema: declaredPosts(`{type: INTEGER, foreign: "owners(id)", foreign_key_name: posts_owner_fk}`), table: "posts",
+			wantUp: `CREATE TABLE "posts" ("id" INTEGER NOT NULL PRIMARY KEY, "owner_id" INTEGER, CONSTRAINT "posts_owner_fk" FOREIGN KEY ("owner_id") REFERENCES "owners" ("id"))`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			f := constraintsFixture(c, "migrations", test.held...)
+			f.declare(c, test.schema)
+			_, diagnostics, code, dir := f.generateMigration(c)
+			c.Assert(code, qt.Equals, 0, qt.Commentf("%s", diagnostics))
+
+			// The fixture rebuilds a table to change its constraints, and a
+			// rebuild drops the table it replaces.
+			runProviderMigration(c, f, "up", "--migrations-dir", dir, "--allow-destructive")
+			c.Assert(f.storedTable(c, test.table), qt.Equals, test.wantUp)
+			runProviderMigration(c, f, "down", "--migrations-dir", dir, "--target", "0", "--confirm")
+
+			c.Assert(f.storedTable(c, test.table), qt.Equals, test.held[len(test.held)-1])
+		})
+	}
+}
+
 // downMigration returns the text of the one down migration in dir.
 func downMigration(c *qt.C, dir string) string {
 	c.Helper()

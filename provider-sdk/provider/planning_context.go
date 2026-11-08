@@ -116,6 +116,9 @@ func validatePlanningTables(description *protocol.Description, request *protocol
 			if err := validateObservedTable(current); err != nil {
 				return err
 			}
+			if err := validatePlanningRemovalBlockers(description, engine, request.GetTargetFeatures(), current); err != nil {
+				return err
+			}
 			if err := checkCapturedFeatures(checks, description, request, engine, protocol.ValueInput_OBSERVED, current.GetFeatures()); err != nil {
 				return err
 			}

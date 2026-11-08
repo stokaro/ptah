@@ -147,7 +147,7 @@ func ValidateSQLSchemaReply(description *protocol.Description, request *protocol
 	if result == nil {
 		return sqlSchemaError("reply is missing")
 	}
-	failures, err := validateSQLDiagnostics(request, result.GetDiagnostics())
+	failures, err := validateSQLDiagnostics(description, request, result.GetDiagnostics())
 	if err != nil {
 		return err
 	}
@@ -197,14 +197,22 @@ func validateSQLSchemaEmpty(result *protocol.SQLSchema) error {
 }
 
 // validateSQLDiagnostics checks every diagnostic and returns the number of
-// failures among them.
-func validateSQLDiagnostics(request *protocol.ReadSQLSchemaRequest, diagnostics []*protocol.SQLDiagnostic) (int, error) {
+// failures among them. An UNDECLARED diagnostic is an error under the
+// negotiated SQLUndeclaredFeature.
+func validateSQLDiagnostics(description *protocol.Description, request *protocol.ReadSQLSchemaRequest, diagnostics []*protocol.SQLDiagnostic) (int, error) {
 	lengths := sqlDocumentLengths(request)
 	failures := 0
 	for _, diagnostic := range diagnostics {
 		length, ok := lengths[diagnostic.GetDocumentId()]
 		switch diagnostic.GetCode() {
 		case protocol.SQLDiagnostic_SYNTAX, protocol.SQLDiagnostic_UNSUPPORTED, protocol.SQLDiagnostic_INVALID, protocol.SQLDiagnostic_INCOMPLETE:
+		case protocol.SQLDiagnostic_UNDECLARED:
+			if !sqlUndeclaredNegotiated(description, request) {
+				return 0, sqlSchemaError("an UNDECLARED diagnostic, and " + SQLUndeclaredFeature + " was not negotiated")
+			}
+			if diagnostic.GetSeverity() != protocol.SQLDiagnostic_ERROR {
+				return 0, sqlSchemaError("an UNDECLARED diagnostic is an error")
+			}
 		default:
 			return 0, sqlSchemaError("unknown diagnostic code")
 		}
