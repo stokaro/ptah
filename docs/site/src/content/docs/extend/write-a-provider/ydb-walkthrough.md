@@ -236,6 +236,116 @@ as in its coverage, because coverage names the facet's owner but does not list
 the individual streams. [What a comparison may conclude](../ydb-incomplete-knowledge/)
 works through that case and the other scenarios in which a fact is missing.
 
+### The request in the walkthrough
+
+The excerpt below is the request `ydb-transfers` received when `ptah schema
+compare` ran the walkthrough's schema against an empty `shop` directory, with
+Ptah v0.25.0 as the host. No command prints this request
+(stokaro/ptah#5818); a build of the YDB provider at commit 24d982d5 that
+wrote it to a file captured it. The complete request is
+[a test fixture of the provider](https://github.com/stokaro/ptah-ydb-plugin/blob/688bea18eca6bf921ee036e63f4de8d2f4a13f79/internal/backend/testdata/walkthrough/compare-transfers.json),
+and a test passes it through the SDK's request validation and the
+comparison. The excerpt is reduced, and these simplifications are
+deliberate:
+
+- An identity part such as `"schema": "shop"` is written as a plain string.
+  The contract writes each part as `{"source": "shop", "normalized": "shop"}`.
+- A `payload` is shown as the JSON it decodes to. The contract carries it as
+  bytes, base64 in this JSON form.
+- The value envelopes leave out the provider identifier, the model version,
+  the encoding, the owner, the digests and the database context.
+- The current context shows the coverage of topics only; the coverage of the
+  tables' changefeeds has the same shape. A region shows only its directory,
+  and the regions the read adds for tables and columns are left out.
+- `targetFeatures`, `identifiers`, `parents`, `declaredColumns`, `exclusions`
+  and `required` are left out.
+
+```json title="CompareModelsRequest to ydb-transfers (excerpt)"
+{
+  "engine": "ydb",
+  "comparisonId": "ydb-transfers",
+  "databasePath": "/local",
+  "capabilities": { "transfers": true },
+  "kinds": ["github.com/stokaro/ptah-ydb-plugin/transfer"],
+  "desired": {
+    "records": [{
+      "kind": "github.com/stokaro/ptah-ydb-plugin/transfer",
+      "subject": { "schema": "shop", "name": "ingest_orders" },
+      "value": {
+        "value": {
+          "payload": {
+            "source": "shop/orders/feed",
+            "target": "shop/orders_archive",
+            "consumer": "archiver",
+            "flushInterval": "PT1S",
+            "lambda": "($msg) -> { return [<| offset: $msg._offset, message: CAST($msg._data AS Utf8) |>]; }"
+          }
+        },
+        "requiredObjects": [
+          { "kind": "github.com/stokaro/ptah-ydb-plugin/topic", "schema": "shop/orders", "name": "feed" }
+        ]
+      }
+    }]
+  },
+  "current": { "records": [] },
+  "declaredRelations": [
+    { "kind": "table", "schema": "shop", "name": "orders" },
+    { "kind": "table", "schema": "shop", "name": "orders_archive" }
+  ],
+  "declaredFacets": [{
+    "kind": "github.com/stokaro/ptah-ydb-plugin/table-changefeeds",
+    "subject": { "kind": "table", "schema": "shop", "name": "orders" },
+    "value": {
+      "value": {
+        "payload": {
+          "changefeeds": [{
+            "name": "feed",
+            "mode": "MODE_NEW_IMAGE",
+            "format": "FORMAT_JSON",
+            "topic": { "consumers": [{ "name": "archiver" }], "partitioningSettings": {} }
+          }]
+        }
+      }
+    }
+  }],
+  "currentContext": {
+    "representation": "OBSERVED",
+    "records": [],
+    "coverage": {
+      "kinds": [{
+        "model": { "kind": "github.com/stokaro/ptah-ydb-plugin/topic", "representation": "OBSERVED" },
+        "sources": [{
+          "outside": {
+            "state": "UNINSPECTED",
+            "reason": "Knowledge is limited to returned subjects and fully listed directories"
+          },
+          "regions": [{ "scope": { "schema": "shop" }, "knowledge": { "state": "COMPLETE" } }]
+        }]
+      }]
+    }
+  }
+}
+```
+
+Read in plain words, the request says this:
+
+- `desired` holds the declared transfer as the provider normalized it.
+  `requiredObjects` names what it reads: the topic `feed` under the table
+  `shop/orders`, which is the changefeed's topic.
+- `current` is empty: the read found no transfer in `shop`.
+- `declaredRelations` lists both tables, so the target `orders_archive` is
+  declared.
+- `declaredFacets` carries the changefeed set that `orders` declares. It holds
+  `feed`, so the source is declared too.
+- `declaredObjects` is absent, because the schema declares no standalone
+  topic.
+- `currentContext` holds no records, because `shop` holds no topic or
+  changefeed yet. Its coverage says the read covered `shop` completely and
+  established nothing outside it.
+
+From these facts `ydb-transfers` reports one new transfer, and the plan
+creates it after the tables and the changefeed.
+
 ## Versions
 
 Several version numbers describe one installation, and none implies another.
