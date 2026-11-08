@@ -35,7 +35,8 @@ who only carries it.
 
 [How a provider works](../architecture/) describes the process boundary and
 [Engines, models and planning](../models-and-planning/) the model paths. This
-page puts one running example through both. Code and decision records are
+page puts one running example through both. [Explore the YDB walkthrough](../ydb-walkthrough-explore/)
+shows the same example as an interactive figure. Code and decision records are
 linked as further reading; nothing here requires them.
 
 ## The layers
@@ -367,6 +368,8 @@ version and features, and `ptah version` the host's.
 
 ## Further reading
 
+- [Explore the YDB walkthrough](../ydb-walkthrough-explore/) to step through
+  this example and its scenarios in an interactive figure.
 - [Run the YDB walkthrough](../ydb-walkthrough-run/) to run this example
   against a local YDB server, step by step.
 - [What a comparison may conclude](../ydb-incomplete-knowledge/) for the

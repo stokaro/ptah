@@ -8,6 +8,7 @@ import AxeBuilder from '@axe-core/playwright';
 import { loadChromium, startBuiltSite } from './lib/built-site.mjs';
 import { WCAG_TAGS } from './lib/wcag.mjs';
 import { components, relationships } from '../src/ecosystem.mjs';
+import { scenarios, stepResult, steps } from '../src/ydb-walkthrough.mjs';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const siteRoot = join(scriptDir, '..');
@@ -15,6 +16,7 @@ const routes = [
   '/',
   '/start/quick-start/',
   '/start/ecosystem/',
+  '/extend/write-a-provider/ydb-walkthrough-explore/',
   '/databases/support-matrix/',
   '/reference/native-commands/',
   '/schema/document/',
@@ -308,6 +310,137 @@ async function ecosystemSelectedAxe(browser, origin, base) {
   return problems;
 }
 
+// The YDB walkthrough's behavior, against the declaration it is rendered from
+// (src/ydb-walkthrough.mjs): what a step shows under a scenario is compared
+// with the result the declaration states, so a figure that shows the wrong
+// result fails here, not only one that shows nothing.
+const walkthroughRoute = '/extend/write-a-provider/ydb-walkthrough-explore/';
+
+async function walkthroughKeyboardChecks(page, url) {
+  const problems = [];
+  const prefix = `${walkthroughRoute} [keyboard]`;
+  await page.goto(url, { waitUntil: 'load' });
+  const shown = () => page.locator('[data-ydbw-details] .ydbw-detail:visible');
+  if (await shown().count() !== 1) problems.push(`${prefix} ${await shown().count()} details sections are shown at rest`);
+  const firstStep = `step:${scenarios[0].id}:${steps[0].id}`;
+  if (await shown().getAttribute('data-ydbw-detail') !== firstStep) problems.push(`${prefix} the panel does not start at ${firstStep}`);
+
+  const focused = () => page.evaluate(() => document.activeElement?.id || document.activeElement?.dataset?.ydbwSelect || '');
+  const core = page.locator('[data-ydbw-node="core"]');
+  await core.focus();
+  await page.keyboard.press('Enter');
+  if (await core.getAttribute('aria-pressed') !== 'true') problems.push(`${prefix} Enter did not select Ptah Core`);
+  if (await shown().getAttribute('data-ydbw-detail') !== 'node:core') problems.push(`${prefix} the panel does not show Ptah Core`);
+  if (await focused() !== 'ydbw-node-core') problems.push(`${prefix} focus went to ${await focused()}, not the Ptah Core details`);
+  if (!(await page.locator('[data-ydbw-status]').innerText()).includes('Ptah Core')) problems.push(`${prefix} the status does not name Ptah Core`);
+  await page.keyboard.press('Escape');
+  if (await core.getAttribute('aria-pressed') !== 'false') problems.push(`${prefix} Escape left Ptah Core selected`);
+  if (await shown().getAttribute('data-ydbw-detail') !== firstStep) problems.push(`${prefix} Escape did not return to the step`);
+  if (await focused() !== 'node:core') problems.push(`${prefix} Escape left focus on ${await focused()}, not Ptah Core`);
+
+  const edge = page.locator('[data-ydbw-edge="needs-source"]');
+  await edge.focus();
+  await page.keyboard.press(' ');
+  if (await shown().getAttribute('data-ydbw-detail') !== 'edge:needs-source') problems.push(`${prefix} Space did not show a connection`);
+  await page.keyboard.press('Escape');
+  if (await edge.getAttribute('aria-pressed') !== 'false') problems.push(`${prefix} Escape left the connection selected`);
+
+  const reading = steps.findIndex(({ id }) => id === 'reading');
+  for (let index = 0; index < reading; index += 1) await page.locator('[data-ydbw-next]').click();
+  const label = await page.locator('[data-ydbw-step-label]').innerText();
+  if (label !== `Step ${reading + 1} of ${steps.length}: ${steps[reading].label}`) problems.push(`${prefix} the step label reads ${label}`);
+  for (const component of ['core', 'contract', 'provider', 'ydb']) {
+    const badge = page.locator(`[data-ydbw-node="${component}"] [data-ydbw-badge]`);
+    if (await badge.isVisible() !== steps[reading].active.includes(component)) {
+      problems.push(`${prefix} the active badge of ${component} does not match step ${steps[reading].id}`);
+    }
+  }
+  if (!await page.locator('[data-ydbw-edge="call-inspect"] [data-ydbw-badge]').isVisible()) problems.push(`${prefix} Inspect is not marked active while reading`);
+
+  for (const scenario of scenarios) {
+    await page.locator(`[data-ydbw-scenario="${scenario.id}"]`).click();
+    if (await page.locator(`[data-ydbw-scenario="${scenario.id}"]`).getAttribute('aria-pressed') !== 'true') {
+      problems.push(`${prefix} the ${scenario.id} scenario button is not pressed`);
+    }
+    // A scenario keeps the current step, so rewind to the first one and walk
+    // forward through every step once.
+    while (await page.locator('[data-ydbw-prev]').isEnabled()) await page.locator('[data-ydbw-prev]').click();
+    for (const [index, step] of steps.entries()) {
+      const text = await shown().innerText();
+      if (!text.includes(stepResult(scenario, step))) problems.push(`${prefix} ${scenario.id}/${step.id} does not show its result`);
+      if (index < steps.length - 1) await page.locator('[data-ydbw-next]').click();
+    }
+  }
+  if (!await page.locator('[data-ydbw-prev]').isEnabled() || await page.locator('[data-ydbw-next]').isEnabled()) {
+    problems.push(`${prefix} at the last step Previous should be enabled and Next disabled`);
+  }
+  return problems;
+}
+
+async function walkthroughTouchChecks(browser, url) {
+  const problems = [];
+  const prefix = `${walkthroughRoute} [touch, 390px]`;
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  const page = await context.newPage();
+  await page.goto(url, { waitUntil: 'load' });
+  const feed = page.locator('[data-ydbw-node="feed"]');
+  await feed.tap();
+  if (await feed.getAttribute('aria-pressed') !== 'true') problems.push(`${prefix} a tap did not select orders/feed`);
+  if (!await page.locator('[data-ydbw-detail="node:feed"]').isVisible()) problems.push(`${prefix} the panel does not show orders/feed`);
+  // The panel sits above the diagram, so a tap on an object brings it into
+  // view. The site scrolls smoothly, so wait for the scroll to arrive.
+  const inView = await page.waitForFunction(() => {
+    const { top } = document.querySelector('[data-ydbw-detail="node:feed"]').getBoundingClientRect();
+    return top >= 0 && top <= window.innerHeight;
+  }, null, { timeout: 3000 }).then(() => true, () => false);
+  if (!inView) problems.push(`${prefix} the details are not in view after a tap`);
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  if (overflow > 1) problems.push(`${prefix} the page overflows by ${overflow}px after a selection`);
+  await context.close();
+  return problems;
+}
+
+async function walkthroughNoScriptChecks(browser, url) {
+  const problems = [];
+  for (const viewport of viewports) {
+    const prefix = `${walkthroughRoute} [no JavaScript, ${viewport.name}]`;
+    const context = await browser.newContext({ viewport, javaScriptEnabled: false });
+    const page = await context.newPage();
+    await page.goto(url, { waitUntil: 'load' });
+    if (!await page.locator('.ydbw-diagram').isVisible()) problems.push(`${prefix} no readable diagram is shown`);
+    for (const selector of ['[data-ydbw-toolbar]', '[data-ydbw-details]']) {
+      if (await page.locator(selector).isVisible()) problems.push(`${prefix} ${selector} is shown with nothing to drive it`);
+    }
+    if (await page.locator('[data-ydbw-select][role="button"]').count() !== 0) problems.push(`${prefix} an element claims to be a button`);
+    const article = page.locator('.sl-markdown-content');
+    for (const scenario of scenarios) {
+      const rows = await article.locator(`table tr:has(td:text-is("${scenario.label}"))`).count();
+      if (rows === 0) problems.push(`${prefix} the text has no row for the ${scenario.id} scenario`);
+    }
+    await context.close();
+  }
+  return problems;
+}
+
+async function walkthroughSelectedAxe(browser, origin, base) {
+  const problems = [];
+  for (const scheme of colorSchemes) {
+    for (const viewport of viewports) {
+      const context = await browser.newContext({ viewport, colorScheme: scheme });
+      const page = await context.newPage();
+      await page.goto(`${origin}${base}${walkthroughRoute}`, { waitUntil: 'load' });
+      await page.locator('[data-ydbw-node="transfer"]').click();
+      await page.locator('[data-ydbw-scenario="missing"]').click();
+      await page.locator('[data-ydbw-next]').click();
+      const violations = await axeViolations(page);
+      problems.push(...violations.map((violation) =>
+        formatViolation(`${walkthroughRoute} with a selection`, viewport.name, scheme, 'any', violation)));
+      await context.close();
+    }
+  }
+  return problems;
+}
+
 async function main() {
   const chromium = await loadChromium('check-accessibility.mjs');
   if (!chromium) return;
@@ -357,6 +490,13 @@ async function main() {
     problems.push(...await ecosystemTouchChecks(browser, ecosystemUrl));
     problems.push(...await ecosystemNoScriptChecks(browser, ecosystemUrl));
     problems.push(...await ecosystemSelectedAxe(browser, origin, built.base));
+    const walkthroughUrl = `${origin}${built.base}${walkthroughRoute}`;
+    const walkthroughPage = await browser.newPage({ viewport: viewports[1] });
+    problems.push(...await walkthroughKeyboardChecks(walkthroughPage, walkthroughUrl));
+    await walkthroughPage.close();
+    problems.push(...await walkthroughTouchChecks(browser, walkthroughUrl));
+    problems.push(...await walkthroughNoScriptChecks(browser, walkthroughUrl));
+    problems.push(...await walkthroughSelectedAxe(browser, origin, built.base));
   } finally {
     await browser.close();
     await new Promise((resolve) => built.server.close(resolve));
@@ -371,7 +511,7 @@ async function main() {
   console.log(
     `check-accessibility.mjs: OK (${routes.length} routes x ${viewports.length} viewports x ` +
     `${colorSchemes.join(' and ')} x ${platforms.map((platform) => platform.name).join(' and ')} shortcut hints ` +
-    'plus keyboard controls and the ecosystem map by keyboard, touch and without JavaScript)',
+    'plus keyboard controls, and the ecosystem map and the YDB walkthrough by keyboard, touch and without JavaScript)',
   );
 }
 
