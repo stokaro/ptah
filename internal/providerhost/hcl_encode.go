@@ -11,6 +11,7 @@ import (
 
 	"ptah.run/core/coverage"
 	"ptah.run/core/hclext"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/internal/providersource"
@@ -82,10 +83,10 @@ func (o *hclOwner) EncodeHCL(ctx context.Context, request hclext.EncodeRequest) 
 	if err := encoding.capture(request); err != nil {
 		return hclext.EncodeResult{}, err
 	}
-	if encoding.result.Header, err = o.coverageHeader(ctx, encoding.batch, request.Coverage); err != nil {
-		return hclext.EncodeResult{}, err
-	}
 	if len(encoding.batch.request.GetValues()) == 0 {
+		if encoding.result.Header, err = o.coverageHeader(ctx, encoding.batch, request.Coverage); err != nil {
+			return hclext.EncodeResult{}, err
+		}
 		return encoding.finish(), nil
 	}
 	encoded, err := o.host.client.EncodeSource(ctx, encoding.batch.request)
@@ -104,7 +105,60 @@ func (o *hclOwner) EncodeHCL(ctx context.Context, request hclext.EncodeRequest) 
 	for _, loss := range encoded.GetLosses() {
 		encoding.loss(loss.GetValueId(), loss.GetMessage())
 	}
+	known, err := o.coverageAfterHCLLosses(request.Coverage, selected.engine.GetId(), encoding.batch.request.GetValues(), encoded.GetLosses())
+	if err != nil {
+		return hclext.EncodeResult{}, err
+	}
+	if encoding.result.Header, err = o.coverageHeader(ctx, encoding.batch, known); err != nil {
+		return hclext.EncodeResult{}, err
+	}
 	return encoding.finish(), ctx.Err()
+}
+
+// coverageAfterHCLLosses records a table facet the provider could not write
+// as unrepresentable in the exported document. The inspected value is still
+// known, but a later read of the HCL source must not infer its absence from
+// the document's silence. Platform-only models need an explicit subject in
+// the captured header because the table has no platform block for that value.
+func (o *hclOwner) coverageAfterHCLLosses(known schemaext.Coverage, engine string, values []*protocol.EncodeSourceValue, losses []*protocol.EncodeLoss) (schemaext.Coverage, error) {
+	if known.IsZero() || len(losses) == 0 {
+		return known, nil
+	}
+	kinds, subjects := known.KindRecords(), known.SubjectRecords()
+	byID := make(map[string]*protocol.NormalizedValue, len(values))
+	for _, value := range values {
+		byID[value.GetValue().GetId()] = value.GetValue()
+	}
+	for _, loss := range losses {
+		value := byID[loss.GetValueId()]
+		if value == nil {
+			continue // The provider SDK validates loss IDs before this reply reaches us.
+		}
+		kind := schemaext.Kind(value.GetValue().GetKind())
+		if !o.platformOnly(kind) || value.GetValue().GetOwner().GetKind() != "table" {
+			continue
+		}
+		subject, err := sourceIdentity(value.GetValue().GetOwner(), value.GetNormalizedOwner())
+		if err != nil {
+			return schemaext.Coverage{}, err
+		}
+		// A captured table subject is relative to the selected database.
+		subject.Database = objectidentity.Part{}
+		found := false
+		for i := range subjects {
+			if subjects[i].Kind != kind || subjects[i].Subject.Key() != subject.Key() {
+				continue
+			}
+			subjects[i].Knowledge = schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: loss.GetMessage()}
+			found = true
+			break
+		}
+		if !found {
+			subjects = append(subjects, schemaext.SubjectCoverage{Kind: kind, Subject: subject,
+				Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: loss.GetMessage()}, Targets: []string{engine}})
+		}
+	}
+	return schemaext.NewCoverage(known.Representation(), kinds, subjects)
 }
 
 // coverageHeader is the captured feature coverage header line that states
@@ -117,21 +171,38 @@ func (o *hclOwner) EncodeHCL(ctx context.Context, request hclext.EncodeRequest) 
 // it to the selection that plan names. Any other knowledge is written as the
 // document holds it.
 //
-// A model HCL states only at a table's platform group is left out, kind-wide
-// and for each subject: the groups the document writes are its whole account
-// of it. Written as a claim, it would make a table whose group an edit removes
-// lose what it holds, where a table that never wrote one keeps it.
+// A model HCL states only at a table's platform group is left out when the
+// read knew it completely: the groups the document writes are its whole
+// account of it. An unreadable subject must keep its explicit limit in the
+// header, since no group can describe what the read could not establish.
 func (o *hclOwner) coverageHeader(ctx context.Context, batch *encodeBatch, known schemaext.Coverage) ([]string, error) {
 	if known.IsZero() {
 		return nil, nil
 	}
-	kinds := slices.DeleteFunc(known.KindRecords(), func(record schemaext.KindCoverage) bool { return o.platformOnly(record.Model.Kind) })
+	platformLimits := make(map[schemaext.Kind]bool)
+	subjects := slices.DeleteFunc(known.SubjectRecords(), func(record schemaext.SubjectCoverage) bool {
+		if !o.platformOnly(record.Kind) {
+			return false
+		}
+		if record.Knowledge.State == schemaext.Uninspected || record.Knowledge.State == schemaext.Unrepresentable {
+			platformLimits[record.Kind] = true
+			return false
+		}
+		return true
+	})
+	kinds := slices.DeleteFunc(known.KindRecords(), func(record schemaext.KindCoverage) bool {
+		return o.platformOnly(record.Model.Kind) && !platformLimits[record.Model.Kind]
+	})
 	for i, record := range kinds {
+		if o.platformOnly(record.Model.Kind) {
+			kinds[i].Knowledge = schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Uninspected,
+				Reason: "HCL describes this model only for tables with its platform block"})
+			continue
+		}
 		if sources := record.Knowledge.Sources(); len(sources) == 1 && batch.completeRead(sources[0]) {
 			kinds[i].Knowledge = schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Complete})
 		}
 	}
-	subjects := slices.DeleteFunc(known.SubjectRecords(), func(record schemaext.SubjectCoverage) bool { return o.platformOnly(record.Kind) })
 	written, err := schemaext.NewCoverage(known.Representation(), kinds, subjects)
 	if err != nil || written.IsZero() {
 		return nil, err
