@@ -13,14 +13,14 @@ var readFeatures = []string{provider.ObservedColumnsFeature, provider.ObservedCo
 	provider.ObservedIndexesFeature, provider.IndexNullsOrderFeature, provider.IndexPredicatesFeature}
 
 // Open opens a backend session that states the schema changes as
-// nontransactional, as the rebuild runs them, and the read features the host
-// negotiated.
+// nontransactional, as the rebuild runs them, unless the mode serves
+// transactions, and the read features the host negotiated.
 func (o *owner) Open(ctx context.Context, request *protocol.OpenRequest) (*protocol.Session, error) {
 	session, err := o.Provider.Open(ctx, request)
 	if err != nil {
 		return nil, err
 	}
-	session.Capabilities = map[string]bool{"transactional_ddl": false}
+	session.Capabilities = map[string]bool{"transactional_ddl": o.transactional}
 	session.Features = o.negotiatedReads(ctx)
 	return session, nil
 }

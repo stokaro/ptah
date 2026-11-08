@@ -11,9 +11,17 @@ import (
 	"ptah.run/core/schemaprojection"
 )
 
-func projectConstraintEffects(ctx context.Context, diff *difftypes.SchemaDiff, before, after schemacapture.TableObservation, dialect string, caps capability.Capabilities, runtime Runtime) (schemacapture.TableObservation, string, error) {
+// projectConstraintEffects asks the target's constraint service what the
+// constraints the diff adds to and removes from the table do to the rest of
+// it, and what columns, the constraints the columns the table change adds
+// carry, do. A CHECK does nothing to the rest of the table and is not asked
+// about.
+func projectConstraintEffects(
+	ctx context.Context, diff *difftypes.SchemaDiff, before, after schemacapture.TableObservation, columns []catalog.Constraint,
+	dialect string, caps capability.Capabilities, runtime Runtime,
+) (schemacapture.TableObservation, string, error) {
 	semantics := diff.EffectiveIdentifierSemantics(dialect)
-	changes := constraintTransitions(diff, before, after, semantics)
+	changes := constraintTransitions(diff, before, after, columns, semantics)
 	if len(changes) == 0 {
 		return after, "", nil
 	}
@@ -35,7 +43,7 @@ func projectConstraintEffects(ctx context.Context, diff *difftypes.SchemaDiff, b
 	return after, "", nil
 }
 
-func constraintTransitions(diff *difftypes.SchemaDiff, before, after schemacapture.TableObservation, semantics identifier.Semantics) []schemaprojection.ConstraintChange {
+func constraintTransitions(diff *difftypes.SchemaDiff, before, after schemacapture.TableObservation, columns []catalog.Constraint, semantics identifier.Semantics) []schemaprojection.ConstraintChange {
 	parent := semantics.QualifiedTableIdentityKey(before.Table.QualifiedName())
 	var names []string
 	seen := make(map[string]bool)
@@ -51,6 +59,9 @@ func constraintTransitions(diff *difftypes.SchemaDiff, before, after schemacaptu
 	}
 	for _, added := range diff.ConstraintsAdded {
 		selectName(added.TableName, added.Name, added.Type)
+	}
+	for _, added := range columns {
+		selectName(added.QualifiedTableName(), added.Name, added.Type)
 	}
 	var changes []schemaprojection.ConstraintChange
 	for _, name := range names {

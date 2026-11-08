@@ -232,6 +232,14 @@ UNIQUE constraint the forward plan adds or removes has no such prediction,
 since an engine may report the index behind it, and neither has a constraint
 that carries facets of its engine.
 
+The predicted table also holds the CHECK and the foreign key that a column the
+forward plan adds states on itself, although the comparison lists them with
+the column rather than among the constraint changes. Each carries the name the
+host compares it under: the declared one, `<table>_<column>_check` for an
+unnamed CHECK, and `fk_<table>_<column>` for an unnamed foreign key. A down
+file that drops the column can then drop them first, which an engine that
+refuses to drop a column a constraint still names requires.
+
 Listing `schema.observed-constraints` therefore promises more than a read: a
 provider that lists it keeps reporting a foreign key in that spelling and
 keeps the index behind it out of the table's indexes, or the down files the

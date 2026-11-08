@@ -9,13 +9,16 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacapture"
 	"ptah.run/internal/constraintscope"
+	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/internal/tableref"
 )
 
-// projectConstraints applies intrinsic constraint transitions. Key creation and
-// removal need the target's backing-index and column-state effects as well;
-// the selected constraint service completes those effects before publication.
-func projectConstraints(diff *difftypes.SchemaDiff, table schemacapture.TableObservation, semantics identifier.Semantics) ([]catalog.Constraint, error) {
+// projectConstraints applies intrinsic constraint transitions: the diff's own,
+// and the constraints the columns the table change adds carry, which
+// addedColumnConstraints describes. Key creation and removal need the
+// target's backing-index and column-state effects as well; the selected
+// constraint service completes those effects before publication.
+func projectConstraints(diff *difftypes.SchemaDiff, table schemacapture.TableObservation, columns []catalog.Constraint, semantics identifier.Semantics) ([]catalog.Constraint, error) {
 	p := constraintProjection{table: table.Table, semantics: semantics}
 	for _, constraint := range table.Constraints {
 		if !p.owns(constraint.QualifiedTableName()) {
@@ -32,6 +35,9 @@ func projectConstraints(diff *difftypes.SchemaDiff, table schemacapture.TableObs
 	if err := p.add(diff.ConstraintsAdded); err != nil {
 		return nil, err
 	}
+	if err := p.addColumnConstraints(columns); err != nil {
+		return nil, err
+	}
 	if err := p.validate(diff.ConstraintsValidated); err != nil {
 		return nil, err
 	}
@@ -39,6 +45,24 @@ func projectConstraints(diff *difftypes.SchemaDiff, table schemacapture.TableObs
 		return nil, err
 	}
 	return p.constraints, nil
+}
+
+// addedColumnConstraints is the CHECK and the foreign key that each column the
+// table change adds states on itself, placed on the captured table. The
+// comparison lists none of them among the diff's constraint additions, since
+// adding the column adds them, yet the table the forward plan leaves holds
+// them. A reverse plan that drops the column starts from that table: an engine
+// that refuses to drop a column a constraint still names needs the constraint
+// dropped first, and a provider decides that from the captured table alone.
+func addedColumnConstraints(table difftypes.TableDiff, dialect string) []catalog.Constraint {
+	if len(table.ColumnsAdded) == 0 {
+		return nil
+	}
+	constraints := goschematodb.ColumnConstraints(table.Desired, table.ColumnsAdded.Names(), dialect)
+	for i := range constraints {
+		constraints[i].TableName, constraints[i].Schema = table.Current.Table.Name, table.Current.Table.Schema
+	}
+	return constraints
 }
 
 type constraintProjection struct {
@@ -109,6 +133,19 @@ func (p *constraintProjection) add(changes difftypes.ConstraintAdditions) error 
 			return err
 		}
 		p.constraints = append(p.constraints, constraint)
+	}
+	return nil
+}
+
+// addColumnConstraints adds the constraints of added columns, each already in
+// the form a conversion of the declaration gives it and placed on the
+// captured table.
+func (p *constraintProjection) addColumnConstraints(constraints []catalog.Constraint) error {
+	for _, constraint := range constraints {
+		if p.conflicts(constraint.Name) {
+			return fmt.Errorf("cannot project conflicting addition of constraint %q", constraint.Name)
+		}
+		p.constraints = append(p.constraints, constraint.Clone())
 	}
 	return nil
 }
