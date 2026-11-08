@@ -10,7 +10,7 @@ import (
 // readFeatures are the features a read of a session uses, where the host
 // negotiated them.
 var readFeatures = []string{provider.ObservedColumnsFeature, provider.ObservedConstraintsFeature, provider.ObservedUniqueConstraintsFeature,
-	provider.ObservedIndexesFeature, provider.IndexNullsOrderFeature, provider.IndexPredicatesFeature}
+	provider.ObservedIndexesFeature, provider.IndexNullsOrderFeature, provider.IndexPredicatesFeature, provider.RemovalBlockersFeature}
 
 // Open opens a backend session that states the schema changes as
 // nontransactional, as the rebuild runs them, unless the mode serves

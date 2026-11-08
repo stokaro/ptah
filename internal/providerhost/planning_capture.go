@@ -8,6 +8,7 @@ import (
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"github.com/stokaro/ptah/provider-sdk/provider"
 
+	"ptah.run/catalog"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
@@ -215,7 +216,7 @@ func (c *planningCapture) declaration(parent objectidentity.ID, source schemacap
 func (c *planningCapture) observation(parent objectidentity.ID, source schemacapture.TableObservation) (*protocol.ObservedTable, error) {
 	// The grants travel beside the table, in PlanningTable.current_grants; see
 	// planningTableGrants.
-	if err := onlyFields(source, "Table", "Constraints", "Indexes", "Triggers", "OwnedObjects", "FeatureCoverage", "Grants", "GrantsDescribed"); err != nil {
+	if err := onlyFields(source, "Table", "Constraints", "Indexes", "Triggers", "OwnedObjects", "FeatureCoverage", "Grants", "GrantsDescribed", "RemovalBlockers"); err != nil {
 		return nil, err
 	}
 	table := source.Table
@@ -253,10 +254,32 @@ func (c *planningCapture) observation(parent objectidentity.ID, source schemacap
 	if err != nil {
 		return nil, err
 	}
+	result.RemovalBlockers, err = c.removalBlockers(source.RemovalBlockers)
+	if err != nil {
+		return nil, err
+	}
 	facets, err := c.observedFacets(parent, source)
 	if err != nil {
 		return nil, err
 	}
 	result.Features, err = c.features(schemaext.Observed, source.OwnedObjects, source.FeatureCoverage, facets)
 	return result, err
+}
+
+// removalBlockers are the blockers the read found naming a held table, as the
+// planning service receives them: unchanged, in the order the read listed
+// them. Only a session that negotiated schema.removal-blockers reads any, so
+// a blocker for another engine's target is refused rather than dropped.
+func (c *planningCapture) removalBlockers(blockers []catalog.RemovalBlocker) ([]*protocol.RemovalBlocker, error) {
+	if len(blockers) == 0 {
+		return nil, nil
+	}
+	if !c.target.negotiated(provider.RemovalBlockersFeature) {
+		return nil, unsupported("removal blockers")
+	}
+	result := make([]*protocol.RemovalBlocker, 0, len(blockers))
+	for _, blocker := range blockers {
+		result = append(result, &protocol.RemovalBlocker{Kind: blocker.Kind, Name: blocker.Name, Columns: slices.Clone(blocker.Columns)})
+	}
+	return result, nil
 }

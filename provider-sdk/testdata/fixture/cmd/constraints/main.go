@@ -8,6 +8,9 @@
 // retention facet. Where FIXTURE_TABLE_GRANTS names a mode its read reports one
 // grant on every table, and with the mode listed it lists planning.table-grants
 // and gives a rebuilt table the grants the request carries (contract 25.33).
+// Where FIXTURE_REMOVAL_BLOCKERS names some, its read reports removal blockers
+// of the tables they name, and its planning service refuses a plan that drops
+// a blocked table or column (contract 25.39).
 // It reads the constraints back from the SQLite tables it writes, in
 // the table text it writes itself, and changes a constraint or an index by
 // rebuilding its table, since SQLite adds no constraint to a table in place.
@@ -152,8 +155,20 @@ func main() {
 		engine.Features = append(engine.Features, added...)
 		engine.CommonObjects = &protocol.CommonObjectSupport{Kinds: []protocol.CommonObjectSupport_Kind{protocol.CommonObjectSupport_GRANT}}
 	}
+	var blockers map[string][]*protocol.RemovalBlocker
+	if listed := os.Getenv("FIXTURE_REMOVAL_BLOCKERS"); listed != "" {
+		// The read reports the blockers the variable names, and the planning
+		// service refuses to drop what they block (contract 25.39).
+		if blockers, err = parseBlockers(listed); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		description.SemanticIdentity += "-blockers"
+		description.Features = append(description.Features, provider.RemovalBlockersFeature)
+		engine.Features = append(engine.Features, provider.RemovalBlockersFeature)
+	}
 	owner := &owner{Provider: &backend.Provider{}, description: description, text: mode == "text" || mode == "migrations", transactional: mode == "migrations", ownsTables: ownership == "service",
-		otherSchemas: mode == "schemas", grants: grants != "",
+		otherSchemas: mode == "schemas", grants: grants != "", blockers: blockers,
 		operation: &protocol.Envelope{ProviderId: description.GetProviderId(), Kind: statementsKind, SchemaVersion: 1, Encoding: "json", DefinitionSha256: hex.EncodeToString(digest[:])}}
 	server := runtime.Server{Description: description, Sessions: owner, Inspector: owner, Renderer: owner, Executor: owner, SQLAnalyzer: owner,
 		ValueNormalizer: owner, SourceDecoder: owner, ValueConverter: owner, FeaturePlanner: owner, TablePreparer: owner, TableCreations: owner, SchemaValidator: owner,
@@ -193,4 +208,7 @@ type owner struct {
 	otherSchemas bool
 	// grants reports heldGrant on every table the read finds.
 	grants bool
+	// blockers are the removal blockers the read reports for each table, by
+	// the table's name, where FIXTURE_REMOVAL_BLOCKERS names some.
+	blockers map[string][]*protocol.RemovalBlocker
 }

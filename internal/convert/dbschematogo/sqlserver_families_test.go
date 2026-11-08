@@ -117,4 +117,5 @@ var unconvertedFamilies = map[string]string{
 	"UnregisteredVirtualTables": "a report about SQLite virtual tables no module registered",
 	"UnreadTables":              "tables the read found and does not describe, which no declaration names",
 	"UnmodeledObjects":          "objects of a kind Ptah does not model, which no declaration can name",
+	"RemovalBlockers":           "objects outside the model that block a drop, which only a plan reads",
 }
