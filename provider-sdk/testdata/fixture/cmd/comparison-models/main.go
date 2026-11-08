@@ -40,6 +40,14 @@ func declaredFacets() bool {
 	return os.Getenv("FIXTURE_DECLARED_FACETS") == "on"
 }
 
+// currentContext reports the mode in which the objects comparison of the
+// declared facets mode also reads the current retention facets
+// (provider.CurrentContextFeature): a retention object may follow the facet a
+// table holds, which the plan keeps, as well as one it declares.
+func currentContext() bool {
+	return os.Getenv("FIXTURE_CURRENT_CONTEXT") == "on"
+}
+
 func main() {
 	description := comparisonDescription()
 	owner := &comparer{Provider: &backend.Provider{}, description: description}
@@ -105,6 +113,10 @@ func comparisonDescription() *protocol.Description {
 		description.Features = append(description.Features, provider.DeclaredFacetsFeature)
 		engine.Features = append(engine.Features, provider.DeclaredFacetsFeature)
 		engine.Comparisons[0].DeclaredFacetKinds = []string{facetKind}
+		if currentContext() {
+			description.Features = append(description.Features, provider.CurrentContextFeature)
+			engine.Features = append(engine.Features, provider.CurrentContextFeature)
+		}
 	}
 	return description
 }

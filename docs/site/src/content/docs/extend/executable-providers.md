@@ -599,6 +599,15 @@ kinds receives each declared facet of them with its owner and its value, so it
 can refuse a transfer of a changefeed the schema does not declare. Ptah sends
 the facets only in a request whose `target_features` list the feature.
 
+`models.current-context` adds what the database holds. A comparison that names
+declared kinds or declared facet kinds also receives the current objects and
+facets of those models, each with its value, and their coverage. A read may
+record a topic or a changefeed without describing it, and a plan keeps such an
+object, so a comparison of transfers can accept a transfer that reads it and
+still refuse one of a topic neither the schema nor the database holds. Ptah
+sends the current context only in a request whose `target_features` list the
+feature.
+
 `planning.policy` hands the provider's planner the operator's planning policy:
 whether to rebuild a table, with the words a refusal names to say how to ask
 (`--allow-table-rebuild`, or `PTAH_ALLOW_TABLE_REBUILD=1` on `ptah-compat`),

@@ -244,6 +244,12 @@ var hostFeatures = []string{
 	// engine.ObjectComparison.DeclaredFacetKinds and
 	// modelComparer.declaredFacets.
 	provider.DeclaredFacetsFeature,
+	// Such a comparison also receives the current objects and facets of those
+	// models and their coverage, so a transfer of a topic or a changefeed the
+	// read holds without describing it is told apart from one of a topic the
+	// plan leaves absent; see engine.ObjectComparison.CurrentContext and
+	// modelComparer.currentContext.
+	provider.CurrentContextFeature,
 	// A view query comparison receives the columns of every declared table,
 	// and may leave a pair to the host's reading of the two texts; see
 	// viewQueryService.EquivalentViewQueries.

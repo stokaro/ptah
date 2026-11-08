@@ -218,7 +218,9 @@ func refuseUndeclaredAnchors(request *protocol.CompareModelsRequest) error {
 // refuseUndeclaredFacets refuses, for a request that carries declared facets,
 // a retention object whose table of the same name declares no retention
 // facet: the object follows that facet, and the facet belongs to the facets
-// comparison, so only the declared facets say whether it is there.
+// comparison, so only the declared facets say whether it is there. A facet the
+// table holds is one the plan keeps too, so the current context the host sends
+// under provider.CurrentContextFeature lets the object follow it.
 func refuseUndeclaredFacets(request *protocol.CompareModelsRequest) error {
 	if !slices.Contains(request.GetTargetFeatures(), provider.DeclaredFacetsFeature) {
 		return nil
@@ -227,10 +229,11 @@ func refuseUndeclaredFacets(request *protocol.CompareModelsRequest) error {
 		if record.GetValue() == nil || record.GetKind() != nativeKind {
 			continue
 		}
-		if slices.ContainsFunc(request.GetDeclaredFacets(), func(facet *protocol.ComparisonRecord) bool {
+		follows := func(facet *protocol.ComparisonRecord) bool {
 			return facet.GetKind() == facetKind && facet.GetSubject().GetKind() == "table" &&
 				facet.GetSubject().GetName().GetNormalized() == record.GetSubject().GetName().GetNormalized()
-		}) {
+		}
+		if slices.ContainsFunc(request.GetDeclaredFacets(), follows) || slices.ContainsFunc(request.GetCurrentContext().GetRecords(), follows) {
 			continue
 		}
 		return runtime.ErrorWithReason(codes.FailedPrecondition,

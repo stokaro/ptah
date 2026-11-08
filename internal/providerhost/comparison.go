@@ -34,6 +34,10 @@ func (s modelComparer) CompareObjects(ctx context.Context, request schemaext.Obj
 	if err != nil {
 		return schemaext.ObjectComparisonResult{}, err
 	}
+	remote.CurrentContext, err = s.currentContext(&capture, request.CurrentContext)
+	if err != nil {
+		return schemaext.ObjectComparisonResult{}, err
+	}
 	remote.DatabasePath = request.DatabasePath
 	sent := s.writtenRequests(request.Requests)
 	for _, index := range sent {
@@ -129,6 +133,62 @@ func (s modelComparer) declaredFacets(capture comparisonCapture, records []schem
 	return result, nil
 }
 
+// currentContext returns the current context a provider receives: the current
+// objects and facets of the kinds the comparison names among its declared kinds
+// and declared facet kinds, each with its value, and the coverage of those
+// kinds, when the provider and the engine negotiated
+// provider.CurrentContextFeature and the request's target features list it
+// too; none otherwise. The runtime fills the state for a comparison that names
+// such kinds under the negotiated feature (see readsCurrentContext), so a state
+// it leaves empty still goes out, with its coverage, to such a comparison.
+func (s modelComparer) currentContext(capture *comparisonCapture, state schemaext.FeatureState) (*protocol.ComparisonState, error) {
+	if !s.readsCurrentContext() || !slices.Contains(capture.request.GetTargetFeatures(), provider.CurrentContextFeature) {
+		return nil, nil
+	}
+	coverage, err := s.target.comparisonCoverage(schemaext.Observed, state.Coverage)
+	if err != nil {
+		return nil, err
+	}
+	result := &protocol.ComparisonState{Representation: protocol.ValueInput_OBSERVED, Coverage: coverage}
+	objects, err := state.Objects.All()
+	if err != nil {
+		return nil, err
+	}
+	for _, object := range objects {
+		value, err := capture.value(schemaext.Observed, object.Value, "current-context-"+strconv.Itoa(len(result.Records)))
+		if err != nil {
+			return nil, err
+		}
+		result.Records = append(result.Records, &protocol.ComparisonRecord{Kind: string(object.Value.Kind()), Subject: comparisonIdentity(object.Ref),
+			Targets: slices.Clone(object.Targets), Value: value})
+	}
+	for _, record := range state.Facets {
+		for _, kind := range record.Values.Kinds() {
+			value, _, err := record.Values.Get(kind)
+			if err != nil {
+				return nil, err
+			}
+			captured, err := capture.value(schemaext.Observed, value, "current-context-"+strconv.Itoa(len(result.Records)))
+			if err != nil {
+				return nil, err
+			}
+			result.Records = append(result.Records, &protocol.ComparisonRecord{Kind: string(kind), Subject: comparisonIdentity(record.Subject),
+				Targets: record.Values.TargetScope(kind), Value: captured})
+		}
+	}
+	return result, nil
+}
+
+// readsCurrentContext reports whether the comparison reads the current state
+// of its declared kinds and declared facet kinds: the provider and the engine
+// negotiated provider.CurrentContextFeature, and the comparison names at least
+// one such kind. The SDK keeps no declared kind for a host that did not list
+// the features they need.
+func (s modelComparer) readsCurrentContext() bool {
+	return s.target.negotiated(provider.CurrentContextFeature) &&
+		len(s.declaration.GetDeclaredKinds())+len(s.declaration.GetDeclaredFacetKinds()) != 0
+}
+
 // boundCounts converts the counts a provider's comparison stated. The SDK
 // checked them against the reply, and the engine runtime checks them against
 // its own capture of it. A provider that does not count sends none, so its
@@ -209,6 +269,7 @@ func (t *target) registerComparisons(result *engine.Provider) {
 					Actions:            slices.Clone(declaration.GetActions()),
 					DeclaredKinds:      boundKinds(declaration.GetDeclaredKinds()),
 					DeclaredFacetKinds: boundKinds(declaration.GetDeclaredFacetKinds()),
+					CurrentContext:     service.readsCurrentContext(),
 					Service:            service})
 		case protocol.ModelComparison_FACETS:
 			owners := make([]objectidentity.Kind, len(declaration.GetOwnerKinds()))
