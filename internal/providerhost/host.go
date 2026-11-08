@@ -346,6 +346,9 @@ var hostFeatures = []string{
 	// A provider model's count metrics join the reporting runtime, and the
 	// provider counts the model's values; see modelReporter.
 	provider.ReportCountsFeature,
+	// Export diagnostics use a provider's omission label and count metric to
+	// name and count the native objects a captured value holds.
+	provider.OmissionCountsFeature,
 	// A comparison counts the objects it compares, and the drift inventory
 	// reports them under their change kinds; see boundCounts.
 	provider.ComparisonCountsFeature,

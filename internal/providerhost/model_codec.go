@@ -23,7 +23,9 @@ type modelKey struct {
 }
 
 type modelContract struct {
-	displayName string
+	displayName         string
+	omissionLabel       string
+	omissionCountMetric string
 	// metrics are the count metrics the engines report for the model; every
 	// engine that declares the model reports the same ones.
 	metrics    []*protocol.ModelMetric
@@ -67,15 +69,20 @@ func (h *Host) initializeModels() error {
 				return fmt.Errorf("%w: provider model kind is not namespaced", schemaext.ErrInvalidCodec)
 			}
 			contract := h.models[key]
+			report := reportedModel(engine, model)
 			if contract == nil {
-				contract = &modelContract{key: key, displayName: model.GetDisplayName(), metrics: reportedMetrics(engine, model), engines: make(map[string]*protocol.ValueModel)}
+				contract = &modelContract{key: key, displayName: model.GetDisplayName(), metrics: report.GetMetrics(),
+					omissionLabel: report.GetOmissionLabel(), omissionCountMetric: report.GetOmissionCountMetric(), engines: make(map[string]*protocol.ValueModel)}
 				h.models[key] = contract
 			}
 			if contract.displayName != model.GetDisplayName() {
 				return fmt.Errorf("%w: model display name differs across engines", provider.ErrProtocol)
 			}
-			if !slices.EqualFunc(contract.metrics, reportedMetrics(engine, model), func(a, b *protocol.ModelMetric) bool { return proto.Equal(a, b) }) {
+			if !slices.EqualFunc(contract.metrics, report.GetMetrics(), func(a, b *protocol.ModelMetric) bool { return proto.Equal(a, b) }) {
 				return fmt.Errorf("%w: model metrics differ across engines", provider.ErrProtocol)
+			}
+			if contract.omissionLabel != report.GetOmissionLabel() || contract.omissionCountMetric != report.GetOmissionCountMetric() {
+				return fmt.Errorf("%w: model omission metadata differs across engines", provider.ErrProtocol)
 			}
 			contract.engines[engine.GetId()] = model
 		}

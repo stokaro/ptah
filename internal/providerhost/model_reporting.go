@@ -90,13 +90,12 @@ func (r modelReporter) count(ctx context.Context, captured []*resolvedModel, rep
 	return nil
 }
 
-// reportedMetrics returns the count metrics engine reports for model, which
-// the negotiated description carries only when the host lists
-// provider.ReportCountsFeature.
-func reportedMetrics(engine *protocol.Engine, model *protocol.ValueModel) []*protocol.ModelMetric {
+// reportedModel returns the report engine gives model. The negotiated
+// description carries it only when the host lists provider.ReportCountsFeature.
+func reportedModel(engine *protocol.Engine, model *protocol.ValueModel) *protocol.ModelReport {
 	for _, report := range engine.GetReports() {
 		if report.GetKind() == model.GetKind() && report.GetRepresentation() == model.GetRepresentation() {
-			return report.GetMetrics()
+			return report
 		}
 	}
 	return nil

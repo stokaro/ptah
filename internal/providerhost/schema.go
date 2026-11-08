@@ -29,8 +29,9 @@ func (h *Host) Provider() engine.Provider {
 		contract := h.models[modelKey{kind: codec.Prototype.Kind(), representation: codec.Representation}]
 		if contract.displayName != "" {
 			result.Reporting = append(result.Reporting, engine.Reporting{Representation: contract.key.representation,
-				Definitions: []schemaext.ReportDefinition{{Kind: contract.key.kind, DisplayName: contract.displayName, Metrics: contract.metricDefinitions()}},
-				Service:     modelReporter{host: h, contract: contract}})
+				Definitions: []schemaext.ReportDefinition{{Kind: contract.key.kind, DisplayName: contract.displayName, Metrics: contract.metricDefinitions(),
+					OmissionLabel: contract.omissionLabel, OmissionCountMetric: contract.omissionCountMetric}},
+				Service: modelReporter{host: h, contract: contract}})
 		}
 	}
 	for i := range result.Codecs {
