@@ -232,6 +232,7 @@ need a two-way feature, and how a provider engine builds an enum column
 | A SQL file that changes what another format declares (G237) | A provider's SQL reading refuses the statement as `UNSUPPORTED` or `INVALID`, so the host cannot add that the SQL files change only what the SQL files declare | Yes: a diagnostic code under a two-way feature | Contract 25.38: `SQLDiagnostic.Code` `UNDECLARED` under `schema.read-sql-undeclared` (ADR 0120). Not blocking |
 | Change streams (S16) | No model the export sees | Yes: a native context kind through `planning.object-context` | Provider work. Not blocking |
 | A drop that an unmodeled object blocks (S47) | A planning request describes a held table only by its model, so a planning service cannot refuse a drop of a table or a column that a change stream names | Yes: an inspection field and a planning field under a two-way feature | Contract 25.39: `Table.removal_blockers` and `ObservedTable.removal_blockers` under `schema.removal-blockers` (ADR 0121). Not blocking |
+| A transfer of a topic the read recorded without describing it (G239) | A comparison receives the current state of its own models only, so a comparison of transfers cannot see that the read holds the topic or the changefeed a transfer reads | Yes: a request field under a two-way feature | Contract 25.40: `CompareModelsRequest.current_context` under `models.current-context` (ADR 0122). Not blocking |
 
 None of these gaps needs what only a new major could do, so the freeze waits
 for none of them. Four are cheaper before it than after it, and contract
@@ -256,7 +257,9 @@ Later minors add negotiated additions:
 - contract 25.38, a SQL schema reading's error for a statement its load does
   not declare (ADR 0120);
 - contract 25.39, the objects outside the model that block a table's removal
-  (ADR 0121).
+  (ADR 0121);
+- contract 25.40, the current state of another comparison's models
+  (ADR 0122).
 
 ## Alternatives considered
 
