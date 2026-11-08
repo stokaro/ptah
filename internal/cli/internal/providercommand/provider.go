@@ -19,14 +19,16 @@ import (
 	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/providerconfig"
+	"ptah.run/internal/providerexchange"
 	"ptah.run/internal/providerselect"
 )
 
 // The flags every command that selects a provider declares, named here for the
 // commands that quote them in a refusal of their own.
 const (
-	ConfigFlag = "provider-config"
-	EngineFlag = "provider-engine"
+	ConfigFlag    = "provider-config"
+	EngineFlag    = "provider-engine"
+	ExchangesFlag = "provider-exchanges"
 )
 
 // Configure selects one explicitly trusted provider before the command runs.
@@ -56,17 +58,20 @@ func Configure(command *cobra.Command, fail func(*cobra.Command, error) error) *
 
 // Selection is what one command's provider flags hold.
 type Selection struct {
-	path, engine string
+	path, engine, exchanges string
 }
 
-// Register declares --provider-config and --provider-engine on command and
-// returns what they hold. Neither flag reads an environment variable: a
-// variable exported once is not the operator naming a binary for this run.
+// Register declares --provider-config, --provider-engine and
+// --provider-exchanges on command and returns what they hold. None of them
+// reads an environment variable: a variable exported once is not the operator
+// naming a binary, or asking for a recording, for this run.
 func Register(command *cobra.Command) *Selection {
 	selection := &Selection{}
 	command.Flags().StringVar(&selection.path, ConfigFlag, "", "Explicit trusted provider manifest (experimental JSON format)")
 	command.Flags().StringVar(&selection.engine, EngineFlag, "", "Engine required from an executable provider; never use a built-in implementation")
-	for _, name := range []string{ConfigFlag, EngineFlag} {
+	command.Flags().StringVar(&selection.exchanges, ExchangesFlag, "",
+		"New or empty directory to write each provider comparison request and its reply to, as contract JSON")
+	for _, name := range []string{ConfigFlag, EngineFlag, ExchangesFlag} {
 		if err := cmdflags.DisableEnvBinding(command.Flags(), name); err != nil {
 			panic(err)
 		}
@@ -93,6 +98,11 @@ func Register(command *cobra.Command) *Selection {
 // targets are the connection values the command names, in the order selection
 // reads them. Each target's Flag is the flag that carried it, which a
 // provider_target_mismatch refusal names.
+//
+// With --provider-exchanges, every context Start returns carries a recorder
+// (providerexchange) that writes each comparison the command sends to an
+// executable provider; the directory is created, and refused when it holds
+// anything, before any provider starts.
 func (s *Selection) Start(cmd *cobra.Command, targets []providerselect.Target) (context.Context, func(), error) {
 	noop := func() {}
 	configured, explicit := cmd.Flags().Changed(ConfigFlag), cmd.Flags().Changed(EngineFlag)
@@ -101,6 +111,17 @@ func (s *Selection) Start(cmd *cobra.Command, targets []providerselect.Target) (
 	}
 	if explicit && strings.TrimSpace(s.engine) == "" {
 		return nil, noop, fmt.Errorf("--%s requires an engine ID", EngineFlag)
+	}
+	base := cmd.Context()
+	if cmd.Flags().Changed(ExchangesFlag) {
+		if strings.TrimSpace(s.exchanges) == "" {
+			return nil, noop, fmt.Errorf("--%s requires a directory", ExchangesFlag)
+		}
+		recorder, err := providerexchange.New(s.exchanges)
+		if err != nil {
+			return nil, noop, fmt.Errorf("--%s: %w", ExchangesFlag, err)
+		}
+		base = providerexchange.With(base, recorder)
 	}
 	request := providerselect.Request{Configured: configured, Engine: s.engine, Explicit: explicit, Targets: targets}
 	if configured {
@@ -114,8 +135,8 @@ func (s *Selection) Start(cmd *cobra.Command, targets []providerselect.Target) (
 	if err != nil {
 		return nil, noop, err
 	}
-	if choice == nil && !configured && providerselect.FromContext(cmd.Context()) != nil {
-		return cmd.Context(), noop, nil
+	if choice == nil && !configured && providerselect.FromContext(base) != nil {
+		return base, noop, nil
 	}
 	if choice == nil {
 		// No flag names an engine a provider serves, so the built-in engines
@@ -125,15 +146,15 @@ func (s *Selection) Start(cmd *cobra.Command, targets []providerselect.Target) (
 		// dev database or runtime that needs it, beside the built-in drivers,
 		// and stop ends it with the command.
 		session := providerselect.NewLazy(request.Config, configured, nil)
-		return session.With(cmd.Context()), session.Close, nil
+		return session.With(base), session.Close, nil
 	}
 	// A selected executable owns this runtime completely. In particular an
 	// official provider never inherits a built-in implementation on failure.
-	started, err := choice.Start(cmd.Context(), providerselect.Exclusive)
+	started, err := choice.Start(base, providerselect.Exclusive)
 	if err != nil {
 		return nil, noop, err
 	}
-	ctx, err := apply(cmd.Context(), started)
+	ctx, err := apply(base, started)
 	if err != nil {
 		started.Close()
 		return nil, noop, err

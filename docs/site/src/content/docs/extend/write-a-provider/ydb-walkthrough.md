@@ -241,9 +241,10 @@ works through that case and the other scenarios in which a fact is missing.
 
 The excerpt below is the request `ydb-transfers` received when `ptah schema
 compare` ran the walkthrough's schema against an empty `shop` directory, with
-Ptah v0.25.0 as the host. No command prints this request
-(stokaro/ptah#5818); a build of the YDB provider at commit 24d982d5 that
-wrote it to a file captured it. The complete request is
+Ptah v0.25.0 as the host. A build of the YDB provider at commit 24d982d5
+that wrote it to a file captured it; `--provider-exchanges` writes the same
+request from a run (see
+[Resolve failures](../../executable-providers/#resolve-failures)). The complete request is
 [a test fixture of the provider](https://github.com/stokaro/ptah-ydb-plugin/blob/688bea18eca6bf921ee036e63f4de8d2f4a13f79/internal/backend/testdata/walkthrough/compare-transfers.json),
 and a test passes it through the SDK's request validation and the
 comparison. The excerpt is reduced, and these simplifications are

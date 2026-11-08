@@ -2,16 +2,36 @@ package providerhost
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strconv"
 
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"github.com/stokaro/ptah/provider-sdk/provider"
+	"google.golang.org/protobuf/proto"
 
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 	"ptah.run/engine"
+	"ptah.run/internal/providerexchange"
 )
+
+// compareModels sends request to the provider. When ctx carries a recorder
+// ([providerexchange.FromContext]), the request as sent and the reply or the
+// error are written before the reply is used, and a recording that cannot be
+// written fails the comparison: the operator asked for it.
+func (h *Host) compareModels(ctx context.Context, request *protocol.CompareModelsRequest) (*protocol.ComparedModels, error) {
+	recorder := providerexchange.FromContext(ctx)
+	if recorder == nil {
+		return h.client.CompareModels(ctx, request)
+	}
+	sent := proto.CloneOf(request)
+	reply, err := h.client.CompareModels(ctx, request)
+	if recordErr := recorder.Record("CompareModels", sent.GetComparisonId(), sent, reply, err); recordErr != nil {
+		return nil, errors.Join(err, recordErr)
+	}
+	return reply, err
+}
 
 func (s modelComparer) CompareObjects(ctx context.Context, request schemaext.ObjectComparisonRequest) (schemaext.ObjectComparisonResult, error) {
 	remote, err := s.request(request.Target, request.Identifiers, request.Capabilities, request.Kinds)
@@ -54,7 +74,7 @@ func (s modelComparer) CompareObjects(ctx context.Context, request schemaext.Obj
 	for _, column := range request.DeclaredColumns {
 		remote.DeclaredColumns = append(remote.DeclaredColumns, &protocol.ComparisonColumn{Table: comparisonIdentity(column.Table), Name: column.Name, Type: column.Type})
 	}
-	result, err := s.target.host.client.CompareModels(ctx, remote)
+	result, err := s.target.host.compareModels(ctx, remote)
 	if err != nil {
 		return schemaext.ObjectComparisonResult{}, err
 	}
@@ -235,7 +255,7 @@ func (s modelComparer) CompareFacets(ctx context.Context, request schemaext.Face
 	}
 	remote.Parents = comparisonParents(request.Owners)
 	remote.DesiredConstraints, remote.CurrentConstraints = comparisonConstraints(request.DesiredConstraints), comparisonConstraints(request.CurrentConstraints)
-	result, err := s.target.host.client.CompareModels(ctx, remote)
+	result, err := s.target.host.compareModels(ctx, remote)
 	if err != nil {
 		return schemaext.FacetComparisonResult{}, err
 	}

@@ -46,8 +46,9 @@ serves, such as `ydb://` or `ydbs://`, for its engine. Each verb runs the
 same lifecycle on every engine; where one differs, its section says so.
 
 A URL of an engine an installed official provider serves selects that provider.
-Every verb except `probe` also takes `--provider-config` and `--provider-engine`,
-which select an executable provider as they do for `ptah schema`; see
+Every verb except `probe` also takes `--provider-config`, `--provider-engine` and
+`--provider-exchanges`, which select and record an executable provider as they
+do for `ptah schema`; see
 [Test an executable provider](../../../extend/executable-providers/). The
 provider's engine must keep an embedding store.
 
