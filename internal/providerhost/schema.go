@@ -8,6 +8,7 @@ import (
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"github.com/stokaro/ptah/provider-sdk/provider"
 
+	"ptah.run/core/coverage"
 	"ptah.run/core/planext"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/renderer"
@@ -46,6 +47,7 @@ func (h *Host) Provider() engine.Provider {
 	for _, declared := range h.description.GetEngines() {
 		selected := h.targets[declared.GetId()]
 		result.Targets = append(result.Targets, selected.registration())
+		result.CoverageKinds = appendCoverageKinds(result.CoverageKinds, declared)
 		selected.registerComparisons(&result)
 		selected.registerPlanning(&result)
 		selected.registerReversals(&result)
@@ -61,6 +63,20 @@ func (h *Host) Provider() engine.Provider {
 		}
 	}
 	return result
+}
+
+// appendCoverageKinds adds the not-described kinds an engine declares to
+// kinds, each once across the provider's engines, so the runtime's vocabulary
+// takes them and a document's header may name them. The runtime refuses a
+// kind that is one of its common kinds or another provider's. A description
+// negotiated without schema.not-described declares none.
+func appendCoverageKinds(kinds []coverage.Kind, declared *protocol.Engine) []coverage.Kind {
+	for _, kind := range declared.GetNotDescribedKinds() {
+		if !slices.Contains(kinds, coverage.Kind(kind)) {
+			kinds = append(kinds, coverage.Kind(kind))
+		}
+	}
+	return kinds
 }
 
 func (t *target) registration() engine.Target {

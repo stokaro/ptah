@@ -10,7 +10,9 @@
 // and gives a rebuilt table the grants the request carries (contract 25.33).
 // Where FIXTURE_REMOVAL_BLOCKERS names some, its read reports removal blockers
 // of the tables they name, and its planning service refuses a plan that drops
-// a blocked table or column (contract 25.39).
+// a blocked table or column (contract 25.39). Where FIXTURE_NOT_DESCRIBED names
+// a kind, the engine declares it and every read records it as not described
+// (contract 25.41).
 // It reads the constraints back from the SQLite tables it writes, in
 // the table text it writes itself, and changes a constraint or an index by
 // rebuilding its table, since SQLite adds no constraint to a table in place.
@@ -167,8 +169,18 @@ func main() {
 		description.Features = append(description.Features, provider.RemovalBlockersFeature)
 		engine.Features = append(engine.Features, provider.RemovalBlockersFeature)
 	}
+	notDescribed := os.Getenv("FIXTURE_NOT_DESCRIBED")
+	if notDescribed != "" {
+		// The engine declares the kind and every read records it, whatever
+		// the database holds, as a provider records a kind its engine has
+		// and it does not model (contract 25.41).
+		description.SemanticIdentity += "-not-described-" + notDescribed
+		description.Features = append(description.Features, provider.NotDescribedFeature)
+		engine.Features = append(engine.Features, provider.NotDescribedFeature)
+		engine.NotDescribedKinds = []string{notDescribed}
+	}
 	owner := &owner{Provider: &backend.Provider{}, description: description, text: mode == "text" || mode == "migrations", transactional: mode == "migrations", ownsTables: ownership == "service",
-		otherSchemas: mode == "schemas", grants: grants != "", blockers: blockers,
+		otherSchemas: mode == "schemas", grants: grants != "", blockers: blockers, notDescribed: notDescribed,
 		operation: &protocol.Envelope{ProviderId: description.GetProviderId(), Kind: statementsKind, SchemaVersion: 1, Encoding: "json", DefinitionSha256: hex.EncodeToString(digest[:])}}
 	server := runtime.Server{Description: description, Sessions: owner, Inspector: owner, Renderer: owner, Executor: owner, SQLAnalyzer: owner,
 		ValueNormalizer: owner, SourceDecoder: owner, ValueConverter: owner, FeaturePlanner: owner, TablePreparer: owner, TableCreations: owner, SchemaValidator: owner,
@@ -211,4 +223,7 @@ type owner struct {
 	// blockers are the removal blockers the read reports for each table, by
 	// the table's name, where FIXTURE_REMOVAL_BLOCKERS names some.
 	blockers map[string][]*protocol.RemovalBlocker
+	// notDescribed is the kind every read records as not described, where
+	// FIXTURE_NOT_DESCRIBED names one.
+	notDescribed string
 }
