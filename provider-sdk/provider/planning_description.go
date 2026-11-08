@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"slices"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 func validateModelPlanning(description *protocol.Description, engine *protocol.Engine) error {

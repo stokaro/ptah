@@ -3,9 +3,9 @@ package runtime_test
 import (
 	"fmt"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
-	"github.com/stokaro/ptah/provider-sdk/runtime"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
+	"ptah.run/provider-sdk/runtime"
 )
 
 // notesProvider stands for the type that implements a provider's services. A

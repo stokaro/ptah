@@ -1,4 +1,4 @@
-module github.com/stokaro/ptah/sqlsyntax
+module ptah.run/sqlsyntax
 
 go 1.26.5
 

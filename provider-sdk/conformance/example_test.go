@@ -6,8 +6,8 @@ import (
 	"log"
 	"os"
 
-	"github.com/stokaro/ptah/provider-sdk/conformance"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/conformance"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // ExampleChecks lists the checks a report names its results by.

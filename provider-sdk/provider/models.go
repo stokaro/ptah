@@ -10,8 +10,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/stokaro/ptah/provider-sdk/modeljson"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/modeljson"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 func validateValueModels(models []*protocol.ValueModel) error {

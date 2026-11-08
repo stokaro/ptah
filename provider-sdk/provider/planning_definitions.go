@@ -3,7 +3,7 @@ package provider
 import (
 	"fmt"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 func validateDeclaredColumn(column *protocol.DeclaredColumn) error {

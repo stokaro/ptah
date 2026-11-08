@@ -19,10 +19,11 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
-	"github.com/stokaro/ptah/provider-sdk/internal/testprocess"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
-	transport "github.com/stokaro/ptah/provider-sdk/runtime"
+
+	"ptah.run/provider-sdk/internal/testprocess"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
+	transport "ptah.run/provider-sdk/runtime"
 )
 
 func TestIndependentProviderProcess(t *testing.T) {

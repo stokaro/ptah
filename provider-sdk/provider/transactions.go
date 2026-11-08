@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // TransactionsFeature advertises session-bound transactions. A supporting

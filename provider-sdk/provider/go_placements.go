@@ -3,7 +3,7 @@ package provider
 import (
 	"slices"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // GoPlacementsFeature enables the GO_ values of EncodedFragment.Placement: an

@@ -8,9 +8,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
-	transport "github.com/stokaro/ptah/provider-sdk/runtime"
+
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
+	transport "ptah.run/provider-sdk/runtime"
 )
 
 // The ADR 0028 conformance list, against the fixture's SQLite: paging and

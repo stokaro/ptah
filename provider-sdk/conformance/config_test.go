@@ -9,11 +9,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	"github.com/stokaro/ptah/provider-sdk/conformance"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
-	"github.com/stokaro/ptah/provider-sdk/runtime"
 	"google.golang.org/protobuf/proto"
+
+	"ptah.run/provider-sdk/conformance"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
+	"ptah.run/provider-sdk/runtime"
 )
 
 func TestCheck_ConfigFailurePath(t *testing.T) {

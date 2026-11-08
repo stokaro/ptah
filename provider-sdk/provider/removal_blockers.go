@@ -8,7 +8,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // RemovalBlockersFeature enables Table.removal_blockers in inspection and

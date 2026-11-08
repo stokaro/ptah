@@ -9,12 +9,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/stokaro/ptah/provider-sdk/internal/bootstrap"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/runtime"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
+
+	"ptah.run/provider-sdk/internal/bootstrap"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/runtime"
 )
 
 // startupTimeout bounds the bootstrap of an executable. A provider built

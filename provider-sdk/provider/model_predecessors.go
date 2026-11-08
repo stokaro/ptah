@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // ModelPredecessorsFeature enables Engine.model_predecessors: the identities

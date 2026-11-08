@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package ptah.provider.experimental;
 
-option go_package = "github.com/stokaro/ptah/provider-sdk/protocol/experimental;protocol";
+option go_package = "ptah.run/provider-sdk/protocol/experimental;protocol";
 
 // Provider is the experimental, local subprocess boundary. Each request is a
 // whole semantic batch. The contract has a major and a minor version. A

@@ -6,7 +6,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 func validateNormalizationFacts(representation protocol.ValueInput_Representation, value *protocol.NormalizedValue) error {

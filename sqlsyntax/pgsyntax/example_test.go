@@ -3,7 +3,7 @@ package pgsyntax_test
 import (
 	"fmt"
 
-	"github.com/stokaro/ptah/sqlsyntax/pgsyntax"
+	"ptah.run/sqlsyntax/pgsyntax"
 )
 
 // ExampleStatements splits a migration body into its statements: the

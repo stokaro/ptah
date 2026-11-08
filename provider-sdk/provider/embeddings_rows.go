@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"unicode/utf8"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // validateEmbeddingSourceRow checks a row against its source: one key

@@ -39856,7 +39856,7 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\fReportValues\x12/.ptah.provider.experimental.ReportValuesRequest\x1a(.ptah.provider.experimental.ValueReports\x12Z\n" +
 	"\aScanSQL\x12*.ptah.provider.experimental.ScanSQLRequest\x1a#.ptah.provider.experimental.SQLScan\x12m\n" +
 	"\rCompareChecks\x120.ptah.provider.experimental.CompareChecksRequest\x1a*.ptah.provider.experimental.ComparedChecks\x12|\n" +
-	"\x12CompareViewQueries\x125.ptah.provider.experimental.CompareViewQueriesRequest\x1a/.ptah.provider.experimental.ComparedViewQueriesBEZCgithub.com/stokaro/ptah/provider-sdk/protocol/experimental;protocolb\x06proto3"
+	"\x12CompareViewQueries\x125.ptah.provider.experimental.CompareViewQueriesRequest\x1a/.ptah.provider.experimental.ComparedViewQueriesB6Z4ptah.run/provider-sdk/protocol/experimental;protocolb\x06proto3"
 
 var (
 	file_protocol_experimental_provider_proto_rawDescOnce sync.Once

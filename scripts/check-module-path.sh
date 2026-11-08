@@ -56,7 +56,6 @@ corpus() {
 status=0
 ours=0
 foreign=0
-independent=0
 
 hits="$(corpus -z | xargs -0 grep -nF -- "$retired_token" 2>/dev/null || true)"
 if [ -n "$hits" ]; then
@@ -67,38 +66,34 @@ if [ -n "$hits" ]; then
 	status=1
 fi
 
-# Application modules declare the current path. The modules a provider
-# depends on without the host -- the neutral provider SDK (#4204) and the SQL
-# syntax module (#5586) -- have their own publicly resolvable identities, each
-# pinned to one exact directory below. Neither another module nor another
-# spelling of these identities is exempt. Module discovery still covers every
-# tracked or untracked declaration.
-independent_identity() {
-	case "$1" in
-	provider-sdk/go.mod) echo "github.com/stokaro/ptah/provider-sdk" ;;
-	sqlsyntax/go.mod) echo "github.com/stokaro/ptah/sqlsyntax" ;;
-	*) echo "" ;;
-	esac
-}
+# Every module of ours declares the path its directory has under the vanity
+# host: the root declares the bare host and a nested module appends its
+# directory. That is how the go command finds a nested module of this
+# repository. It asks the host, which names the repository, takes the rest of
+# the import path as the directory, and reads that directory's go.mod at a tag
+# named after it. A module that declares any other path cannot be fetched, and
+# two modules cannot claim one identity. The provider SDK and the SQL syntax
+# module are nested modules like any other: no module here has an identity of
+# its own.
 while IFS= read -r modfile; do
 	declared="$(sed -n 's/^module //p' "$modfile" | head -1)"
-	want="$(independent_identity "$modfile")"
-	if [ -n "$want" ]; then
-		if [[ "$declared" != "$want" ]]; then
-			echo "check-module-path: ${modfile%/go.mod} must declare ${want}" >&2
-			status=1
-		else
-			independent=$((independent + 1))
-		fi
-		continue
+	directory="$(dirname "$modfile")"
+	want="${current_module}"
+	if [ "$directory" != . ]; then
+		want="${current_module}/${directory}"
 	fi
- case "$declared" in
-	"${current_module}" | "${current_module}"/*)
-		ours=$((ours + 1))
-		;;
+	case "$declared" in
 	example.com/*)
 		# A fixture module that deliberately stands for someone else's code.
 		foreign=$((foreign + 1))
+		;;
+	"$want")
+		ours=$((ours + 1))
+		;;
+	"${current_module}" | "${current_module}"/*)
+		echo "check-module-path: ${modfile} declares ${declared}" >&2
+		echo "  a module in ${directory} must declare ${want}" >&2
+		status=1
 		;;
 	*)
 		echo "check-module-path: ${modfile} declares ${declared}" >&2
@@ -122,4 +117,4 @@ fi
 # The counts are separate because they are different claims. A run that folded
 # the fixture module into the total would report more agreement than it measured.
 echo "check-module-path: OK (${files} files name no retired organisation;" \
-	"${ours} of ${modules} modules declare ${current_module}, ${foreign} stand for other code, ${independent} independent modules)"
+	"${ours} of ${modules} modules declare their path under ${current_module}, ${foreign} stand for other code)"

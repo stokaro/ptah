@@ -28,9 +28,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/stokaro/ptah/provider-sdk/conformance"
-	"github.com/stokaro/ptah/provider-sdk/provider"
-	"github.com/stokaro/ptah/provider-sdk/runtime"
+	"ptah.run/provider-sdk/conformance"
+	"ptah.run/provider-sdk/provider"
+	"ptah.run/provider-sdk/runtime"
 )
 
 const (

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // EnumColumnsFeature enables Engine.enum_columns: how the engine builds a
