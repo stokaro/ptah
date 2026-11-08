@@ -2189,6 +2189,13 @@ const (
 	SQLDiagnostic_UNSUPPORTED      SQLDiagnostic_Code = 2
 	SQLDiagnostic_INVALID          SQLDiagnostic_Code = 3
 	SQLDiagnostic_INCOMPLETE       SQLDiagnostic_Code = 4
+	// A statement that changes an object no document of the load declares,
+	// such as an ALTER TABLE of a table no CREATE TABLE of the load creates.
+	// An ERROR. The host reads it as a statement its load has no place for,
+	// and where the load sits beside a source in another format, it says the
+	// documents change only what the documents declare. Contract 25.38, under
+	// schema.read-sql-undeclared.
+	SQLDiagnostic_UNDECLARED SQLDiagnostic_Code = 5
 )
 
 // Enum value maps for SQLDiagnostic_Code.
@@ -2199,6 +2206,7 @@ var (
 		2: "UNSUPPORTED",
 		3: "INVALID",
 		4: "INCOMPLETE",
+		5: "UNDECLARED",
 	}
 	SQLDiagnostic_Code_value = map[string]int32{
 		"CODE_UNSPECIFIED": 0,
@@ -2206,6 +2214,7 @@ var (
 		"UNSUPPORTED":      2,
 		"INVALID":          3,
 		"INCOMPLETE":       4,
+		"UNDECLARED":       5,
 	}
 )
 
@@ -37333,14 +37342,14 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\x11SQLTableStatement\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04drop\x18\x02 \x01(\bR\x04drop\x12\x18\n" +
-	"\aguarded\x18\x03 \x01(\bR\aguarded\"\xb0\x03\n" +
+	"\aguarded\x18\x03 \x01(\bR\aguarded\"\xc0\x03\n" +
 	"\rSQLDiagnostic\x12B\n" +
 	"\x04code\x18\x01 \x01(\x0e2..ptah.provider.experimental.SQLDiagnostic.CodeR\x04code\x12N\n" +
 	"\bseverity\x18\x02 \x01(\x0e22.ptah.provider.experimental.SQLDiagnostic.SeverityR\bseverity\x12\x1f\n" +
 	"\vdocument_id\x18\x03 \x01(\tR\n" +
 	"documentId\x12:\n" +
 	"\x04span\x18\x04 \x01(\v2&.ptah.provider.experimental.SourceSpanR\x04span\x12\x18\n" +
-	"\amessage\x18\x05 \x01(\tR\amessage\"V\n" +
+	"\amessage\x18\x05 \x01(\tR\amessage\"f\n" +
 	"\x04Code\x12\x14\n" +
 	"\x10CODE_UNSPECIFIED\x10\x00\x12\n" +
 	"\n" +
@@ -37348,7 +37357,9 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\vUNSUPPORTED\x10\x02\x12\v\n" +
 	"\aINVALID\x10\x03\x12\x0e\n" +
 	"\n" +
-	"INCOMPLETE\x10\x04\"<\n" +
+	"INCOMPLETE\x10\x04\x12\x0e\n" +
+	"\n" +
+	"UNDECLARED\x10\x05\"<\n" +
 	"\bSeverity\x12\x18\n" +
 	"\x14SEVERITY_UNSPECIFIED\x10\x00\x12\t\n" +
 	"\x05ERROR\x10\x01\x12\v\n" +
