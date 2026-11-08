@@ -228,12 +228,35 @@ func describe(element reflect.Value) string {
 	if named, ok := reflect.TypeAssert[fmt.Stringer](element); ok {
 		return named.String()
 	}
+	// A change record names its object by its subject, an identity that names
+	// itself, and adds what changed where its payload describes itself, as a
+	// default privilege's rights do. A payload that does not, such as a
+	// provider's value, would otherwise print as a pointer.
+	if subject := element.FieldByName("Subject"); subject.IsValid() {
+		if named, ok := reflect.TypeAssert[fmt.Stringer](subject); ok {
+			return withPayload(named.String(), element.FieldByName("Value"))
+		}
+	}
 
 	parts := stringFields(element)
 	if len(parts) == 0 {
 		return fmt.Sprint(element.Interface())
 	}
 	return strings.Join(parts, " ")
+}
+
+// withPayload is name followed by the description of payload, when payload is
+// set and describes itself, and name alone otherwise.
+func withPayload(name string, payload reflect.Value) string {
+	if !payload.IsValid() || (payload.Kind() == reflect.Interface && payload.IsNil()) {
+		return name
+	}
+	if described, ok := reflect.TypeAssert[fmt.Stringer](payload); ok {
+		if text := described.String(); text != "" {
+			return name + ": " + text
+		}
+	}
+	return name
 }
 
 func stringFields(element reflect.Value) []string {
