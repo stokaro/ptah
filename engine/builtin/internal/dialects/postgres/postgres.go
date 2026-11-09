@@ -1747,9 +1747,15 @@ func (r *Renderer) renderAddColumnClause(table string, op *ast.AddColumnOperatio
 	}
 	// Remove the leading spaces from column rendering for ALTER
 	line = strings.TrimPrefix(line, "  ")
-	if addFailsOnARow(column) {
-		r.w.WriteLinef("-- %s: ADD COLUMN %s fails if %s holds any row; the column is NOT NULL and declares no default to fill it with.",
-			r.dialectUpper, commentFragment(r.escapeIdentifier(column.Name)), commentFragment(r.escapeQualifiedIdentifier(table)))
+	if addColumnNeedsRowValue(column) {
+		name, relation := commentFragment(r.escapeIdentifier(column.Name)), commentFragment(r.escapeQualifiedIdentifier(table))
+		if column.EnumType || pgtypealias.Builtin(column.Type) {
+			r.w.WriteLinef("-- %s: ADD COLUMN %s fails if %s holds any row; the column is NOT NULL and declares no default to fill it with.",
+				r.dialectUpper, name, relation)
+		} else {
+			r.w.WriteLinef("-- %s: ADD COLUMN %s fails if %s holds any row and its type supplies no non-NULL default; the column is NOT NULL and declares no default of its own.",
+				r.dialectUpper, name, relation)
+		}
 	}
 	return addColumnClause(op) + " " + line, nil
 }
@@ -1771,26 +1777,21 @@ func (r *Renderer) writeAddColumnWithPrimaryKey(table string, op *ast.AddColumnO
 	return nil
 }
 
-// addFailsOnARow reports whether adding column stops on a table that holds a row:
-// it is NOT NULL, and nothing gives an existing row a value. The statement is valid
-// on an empty table, so the plan says so in a comment beside it and writes it as it
-// is, as it does for SET NOT NULL.
+// addColumnNeedsRowValue reports whether a NOT NULL column has no value from
+// its own declaration for an existing row. A domain may still supply a default,
+// which the renderer cannot read, so the comment names that condition.
 //
 // Measured on PostgreSQL 17.11 and 18.6 and CockroachDB 26.1.8 over a table with one
 // row, a declared default, an identity and a generated column fill it, and on
 // PostgreSQL a serial too. A primary key column is NOT NULL whatever its flag says.
-//
-// A type somebody created stays silent. A domain may declare a default of its own,
-// which fills the row (measured on PostgreSQL 18.6), and the renderer cannot read
-// it. An enum cannot declare one.
-func addFailsOnARow(column *ast.ColumnNode) bool {
+func addColumnNeedsRowValue(column *ast.ColumnNode) bool {
 	if column == nil || (column.Nullable && !column.Primary) {
 		return false
 	}
 	if notnullfill.DeclaresDefault(column) || column.GeneratedExpression != "" || generatesItsOwnValues(column) {
 		return false
 	}
-	return column.EnumType || pgtypealias.Builtin(column.Type)
+	return true
 }
 
 // unqualifiedTable is table without its schema.

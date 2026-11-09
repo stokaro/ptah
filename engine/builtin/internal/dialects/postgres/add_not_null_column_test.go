@@ -105,9 +105,7 @@ func TestRenderer_AddEnumColumnThatFailsOnARow_HappyPath(t *testing.T) {
 }
 
 // Each row is a column the server gives a value, or one that leaves a row free to hold
-// NULL, measured on a table with one row on PostgreSQL 17.11 and 18.6. A comment there
-// would say a statement fails that runs. A domain is the reason a type somebody created
-// stays silent: one with a default fills the row.
+// NULL, measured on a table with one row on PostgreSQL 17.11 and 18.6.
 func TestRenderer_AddColumnThatRunsOnARow_FailurePath(t *testing.T) {
 	identity := ast.NewColumn("c", "integer").SetNotNull()
 	identity.IdentityGeneration = "ALWAYS"
@@ -125,13 +123,34 @@ func TestRenderer_AddColumnThatRunsOnARow_FailurePath(t *testing.T) {
 		{name: "a generated column", column: generated, want: `ALTER TABLE "t" ADD COLUMN "c" integer NOT NULL GENERATED ALWAYS AS (id + 1) STORED;` + "\n\n"},
 		{name: "a serial", column: ast.NewColumn("c", "serial").SetNotNull(), want: `ALTER TABLE "t" ADD COLUMN "c" serial NOT NULL;` + "\n\n"},
 		{name: "a bigserial in upper case", column: ast.NewColumn("c", "BIGSERIAL").SetNotNull(), want: `ALTER TABLE "t" ADD COLUMN "c" BIGSERIAL NOT NULL;` + "\n\n"},
-		{name: "a type somebody created", column: ast.NewColumn("c", "app.email").SetNotNull(), want: `ALTER TABLE "t" ADD COLUMN "c" app.email NOT NULL;` + "\n\n"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
 			c.Assert(renderAddColumn(c, platform.Postgres, capability.Postgres18(), "t", test.column), qt.Equals, test.want)
+		})
+	}
+}
+
+// The renderer cannot tell whether a user-defined type is a domain with a
+// default. The conditional comment covers a domain without one, a composite
+// and an extension type without claiming that every domain fails on a row.
+func TestRenderer_AddUnknownTypeColumnWarnsConditionally(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		typeName string
+	}{
+		{name: "domain", typeName: "app.email"},
+		{name: "composite", typeName: "app.address"},
+		{name: "extension", typeName: "vector(3)"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			got := renderAddColumn(c, platform.Postgres, capability.Postgres18(), "t", ast.NewColumn("c", test.typeName).SetNotNull())
+			c.Assert(got, qt.Equals,
+				`-- POSTGRES: ADD COLUMN "c" fails if "t" holds any row and its type supplies no non-NULL default; the column is NOT NULL and declares no default of its own.`+"\n"+
+					`ALTER TABLE "t" ADD COLUMN "c" `+test.typeName+" NOT NULL;\n\n")
 		})
 	}
 }
