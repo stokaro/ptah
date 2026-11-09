@@ -9,7 +9,7 @@ import (
 )
 
 // TestGrant_OwnerPrivilegeRows names the rows a read reports for what an object's
-// owner holds by default, apart from a grant and from a routine's implicit rows.
+// owner holds by default, apart from a grant and PUBLIC's implicit EXECUTE.
 func TestGrant_OwnerPrivilegeRows(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -50,7 +50,17 @@ func TestGrant_OwnerPrivilegeRows(t *testing.T) {
 			grant: catalog.Grant{Role: "PUBLIC", Privilege: "EXECUTE", ObjectType: "FUNCTION", ObjectName: "f", Implicit: true},
 		},
 		{
-			name:  "a procedure owner's observation row",
+			name:         "a routine owner's EXECUTE",
+			grant:        catalog.Grant{Role: "app", Privilege: "EXECUTE", ObjectType: "FUNCTION", ObjectName: "f", Implicit: true},
+			ownerDefault: true,
+		},
+		{
+			name:         "a procedure owner revoked EXECUTE",
+			grant:        catalog.Grant{Role: "app", Privilege: "EXECUTE", ObjectType: "PROCEDURE", ObjectName: "p", Implicit: true, IsPartialRevoke: true},
+			ownerRevoked: true,
+		},
+		{
+			name:  "a routine row with no privilege is not a revoke",
 			grant: catalog.Grant{Role: "app", ObjectType: "PROCEDURE", ObjectName: "p", Implicit: true},
 		},
 	}

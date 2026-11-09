@@ -4547,6 +4547,10 @@ func (r *Reader) readRoutineGrantsForSchema(ctx context.Context, schemaName stri
 		}
 		if owner {
 			grant.Implicit = true
+			if grant.Privilege == "" {
+				grant.Privilege = "EXECUTE"
+				grant.IsPartialRevoke = true
+			}
 		}
 		grants = append(grants, grant)
 	}

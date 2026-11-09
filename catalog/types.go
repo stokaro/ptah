@@ -1498,10 +1498,9 @@ type Grant struct {
 	// Implicit marks a privilege the object holds by default rather than by a
 	// GRANT: PostgreSQL lets PUBLIC execute a routine whose pg_proc.proacl is
 	// NULL, meaning nobody has granted or revoked anything on it. A routine's
-	// owner also has an implicit observation row; an empty Privilege there
-	// records that the owner revoked its own EXECUTE. The row is reported so a
-	// rollback can distinguish a revoked privilege from an unread ACL. A
-	// description of the database leaves implicit rows out.
+	// owner also has an implicit row. If it revoked its own EXECUTE, the row
+	// carries IsPartialRevoke so a comparison can distinguish that state from
+	// an unread ACL. A description leaves implicit grants out.
 	//
 	// On a relation, a sequence or a schema, an implicit row is a privilege
 	// PostgreSQL gives the object's owner, whether the ACL is NULL or spells it
@@ -1532,19 +1531,18 @@ type Grant struct {
 	Column string `json:"column,omitempty"`
 }
 
-// OwnerDefault reports whether the row is a privilege the owner of a relation, a
-// sequence or a schema holds by default. No statement wrote it and a new object
-// has it, so a description, a plan that creates the object again and a comparison
-// with a source that says nothing about it all leave it out. A routine's implicit
-// rows are not these: they are PUBLIC's EXECUTE and an observation of the owner.
+// OwnerDefault reports whether the row is a privilege an object's owner holds
+// by default. No statement wrote it and a new object has it, so a description
+// and a plan that creates the object again leave it out. A routine's implicit
+// PUBLIC EXECUTE is not an owner privilege.
 func (g Grant) OwnerDefault() bool {
-	return g.Implicit && !g.IsPartialRevoke && !g.onRoutine()
+	return g.Implicit && !g.IsPartialRevoke && (!g.onRoutine() || (g.Role != "PUBLIC" && g.Privilege == "EXECUTE"))
 }
 
-// OwnerRevoked reports whether the row is a privilege the owner of a relation, a
-// sequence or a schema holds by default and revoked from itself.
+// OwnerRevoked reports whether the row is a default owner privilege the owner
+// revoked from itself.
 func (g Grant) OwnerRevoked() bool {
-	return g.Implicit && g.IsPartialRevoke && !g.onRoutine()
+	return g.Implicit && g.IsPartialRevoke && (!g.onRoutine() || (g.Role != "PUBLIC" && g.Privilege == "EXECUTE"))
 }
 
 func (g Grant) onRoutine() bool {

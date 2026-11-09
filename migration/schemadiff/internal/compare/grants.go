@@ -294,7 +294,7 @@ func ownerPrivilegesToGrantBack(
 }
 
 // unmanagedOwnerPrivileges reports, against a desired state that is not a
-// server read, each declared table, view or sequence whose owner revoked from
+// server read, each declared table, view, sequence or routine whose owner revoked from
 // itself a privilege the object type gives its owner by default, where the
 // desired state neither grants that privilege to the owner nor revokes it.
 // The desired state does not manage such a privilege, so nothing is planned
@@ -343,8 +343,8 @@ func unmanagedOwnerPrivileges(
 	return deviations
 }
 
-// declaresGrantObject reports whether desired declares the table, view or
-// sequence ref is on. PostgreSQL names a view's privileges as a table's.
+// declaresGrantObject reports whether desired declares the table, view,
+// sequence or routine ref is on. PostgreSQL names a view's privileges as a table's.
 func declaresGrantObject(desired *schemamodel.Database, ref difftypes.GrantRef, semantics identifier.Semantics) bool {
 	target := newQualifiedTableIdentity(ref.ObjectName, semantics)
 	named := func(name string) bool { return newQualifiedTableIdentity(name, semantics) == target }
@@ -354,6 +354,12 @@ func declaresGrantObject(desired *schemamodel.Database, ref difftypes.GrantRef, 
 			slices.ContainsFunc(desired.Views, func(view schemamodel.View) bool { return named(view.Name) })
 	case "SEQUENCE":
 		return slices.ContainsFunc(desired.Sequences, func(sequence schemamodel.Sequence) bool { return named(sequence.QualifiedName()) })
+	case "FUNCTION", "PROCEDURE", "ROUTINE":
+		arguments := routineargs.InputTypes(ref.Arguments)
+		return slices.ContainsFunc(desired.Functions, func(function schemamodel.Function) bool {
+			return named(function.Name) && routineargs.InputTypes(function.Parameters) == arguments &&
+				(strings.EqualFold(ref.ObjectType, "ROUTINE") || function.IsProcedure() == strings.EqualFold(ref.ObjectType, "PROCEDURE"))
+		})
 	default:
 		return false
 	}

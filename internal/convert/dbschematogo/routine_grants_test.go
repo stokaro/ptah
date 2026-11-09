@@ -59,6 +59,18 @@ func TestConvertDBSchemaToGoSchema_RoutineGrants(t *testing.T) {
 			},
 			wantRevoked: make([]schemamodel.Grant, 0),
 		},
+		{
+			name: "the routine owner revoked its own EXECUTE",
+			rows: []catalog.Grant{{
+				Role: "owner", Privilege: "EXECUTE", ObjectType: "FUNCTION", Schema: "public",
+				ObjectName: "purge", Arguments: "p_id uuid", Implicit: true, IsPartialRevoke: true,
+			}},
+			wantGrants: make([]schemamodel.Grant, 0),
+			wantRevoked: []schemamodel.Grant{
+				{Role: "PUBLIC", Privileges: []string{"EXECUTE"}, OnRoutine: "public.purge", RoutineArguments: "p_id uuid", RoutineKind: "FUNCTION"},
+				{Role: "owner", Privileges: []string{"EXECUTE"}, OnRoutine: "public.purge", RoutineArguments: "p_id uuid", RoutineKind: "FUNCTION"},
+			},
+		},
 	}
 
 	for _, test := range tests {
