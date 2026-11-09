@@ -127,9 +127,9 @@ func yugabyteDB() descriptor.Dialect {
 
 		// How the common model is lowered for the engine.
 		GeneratedColumnDefault: "STORED",
-		// Measured on 2026.1.2, a column of a serial type reads back NOT NULL whatever the
-		// definition says, as on PostgreSQL.
-		Columns: descriptor.Columns{NationalCharAsChar: true, SerialNotNull: true},
+		// On YugabyteDB 2026.1.2, identity and serial columns read back NOT NULL
+		// whatever their definitions say, as on PostgreSQL.
+		Columns: descriptor.Columns{NationalCharAsChar: true, IdentityNotNull: true, SerialNotNull: true},
 		// Comparison: what comparing a declaration with a catalog reads.
 		Comparison: descriptor.Comparison{
 			DeclaredSchemas:    true,

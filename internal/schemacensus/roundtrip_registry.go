@@ -266,7 +266,7 @@ var roundTripGaps = []Unreached{
 	{Field: "schemamodel.Field.GeneratedExpression", Dialects: []string{"oracle"}, Directions: nil, Reason: gapComparison},
 	{
 		Field:      "schemamodel.Field.IdentityGeneration",
-		Dialects:   []string{"oracle", "yugabytedb"},
+		Dialects:   []string{"oracle"},
 		Directions: nil,
 		Reason:     gapComparison,
 	},
