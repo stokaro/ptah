@@ -3,13 +3,14 @@
 package integration_test
 
 import (
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	qt "github.com/frankban/quicktest"
+	mysqldriver "github.com/go-sql-driver/mysql"
 
 	"ptah.run/dbschema"
 	"ptah.run/internal/clirun"
@@ -47,20 +48,28 @@ type Event struct {
 			c.Assert(os.WriteFile(rowFile, []byte("- id: 1\n  at: \"2026-01-02T03:04:05Z\"\n"), 0o600), qt.IsNil)
 
 			for _, setting := range []struct {
-				name  string
-				query string
+				name      string
+				parseTime bool
+				location  string
 			}{
 				{name: "driver text"},
-				{name: "parsed UTC", query: "parseTime=true"},
-				{name: "parsed Tokyo", query: "parseTime=true&loc=Asia%2FTokyo"},
+				{name: "parsed UTC", parseTime: true, location: "UTC"},
+				{name: "parsed Tokyo", parseTime: true, location: "Asia/Tokyo"},
 			} {
 				t.Run(setting.name, func(t *testing.T) {
 					c := qt.New(t)
-					address, err := url.Parse(databaseURL)
+					scheme, dsn, found := strings.Cut(databaseURL, "://")
+					c.Assert(found, qt.IsTrue)
+					config, err := mysqldriver.ParseDSN(dsn)
 					c.Assert(err, qt.IsNil)
-					address.RawQuery = setting.query
+					config.ParseTime = setting.parseTime
+					if setting.location != "" {
+						config.Loc, err = time.LoadLocation(setting.location)
+						c.Assert(err, qt.IsNil)
+					}
+					address := scheme + "://" + config.FormatDSN()
 					result := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: root},
-						"migrations", "data", "--db-url", address.String(), "--root-dir", root,
+						"migrations", "data", "--db-url", address, "--root-dir", root,
 						"--migrations-dir", migrationsDir, "--dry-run")
 					c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", result.Stdout, result.Stderr))
 					c.Assert(result.Stdout, qt.Contains, "no data changes")
