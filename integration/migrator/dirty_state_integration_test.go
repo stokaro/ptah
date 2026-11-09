@@ -145,7 +145,7 @@ func issue265MySQLFamilyMigrations(names issue265TestNames) []*migrator.Migratio
 		migrator.CreateMigrationFromSQL(
 			2,
 			"half applied",
-			fmt.Sprintf("ALTER TABLE %s ADD COLUMN nickname VARCHAR(64); UPDATE missing_table SET value = 1", names.baseTable),
+			fmt.Sprintf("ALTER TABLE %s ADD COLUMN nickname VARCHAR(64); UPDATE %s SET value = 1", names.baseTable, names.partialTable),
 			fmt.Sprintf("ALTER TABLE %s DROP COLUMN nickname", names.baseTable),
 		),
 		migrator.CreateMigrationFromSQL(
@@ -174,7 +174,8 @@ func runIssue265MySQLFamilyRepair(t *testing.T, dbURL, dialect string) {
 	migrations := issue265MySQLFamilyMigrations(names)
 	mig := issue265Migrator(conn, names, migrations...)
 	err = mig.MigrateUp(ctx)
-	c.Assert(err, qt.ErrorMatches, "(?s).*failed to apply migration 2.*missing_table.*")
+	c.Assert(err, qt.ErrorMatches, "(?s).*failed to apply migration 2.*")
+	c.Assert(err.Error(), qt.Contains, names.partialTable)
 
 	status, err := mig.GetMigrationStatus(ctx)
 	c.Assert(err, qt.IsNil)
@@ -189,7 +190,16 @@ func runIssue265MySQLFamilyRepair(t *testing.T, dbURL, dialect string) {
 	c.Assert(migrator.IsDirtyMigration(err), qt.IsTrue)
 
 	err = mig.RepairMigration(ctx, migrator.RepairMigrationOptions{Version: 2})
+	c.Assert(err, qt.ErrorMatches, `migration 2 recorded 1 of 2 applied statements; repair without --resume-from would mark the rest applied without running them.*`)
+	_, err = conn.ExecContext(ctx, fmt.Sprintf("CREATE TABLE %s (value INT)", names.partialTable))
 	c.Assert(err, qt.IsNil)
+	_, err = conn.ExecContext(ctx, fmt.Sprintf("INSERT INTO %s (value) VALUES (0)", names.partialTable))
+	c.Assert(err, qt.IsNil)
+	err = mig.RepairMigration(ctx, migrator.RepairMigrationOptions{Version: 2, ResumeFrom: 2})
+	c.Assert(err, qt.IsNil)
+	var value int
+	c.Assert(conn.QueryRowContext(ctx, fmt.Sprintf("SELECT value FROM %s", names.partialTable)).Scan(&value), qt.IsNil)
+	c.Assert(value, qt.Equals, 1)
 
 	err = mig.MigrateUp(ctx)
 	c.Assert(err, qt.IsNil)

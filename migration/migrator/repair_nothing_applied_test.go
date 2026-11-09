@@ -17,6 +17,28 @@ import (
 // (stokaro/ptah#3452).
 
 func TestRepairMigration_FailurePath(t *testing.T) {
+	t.Run("plain repair cannot sign off a partial up migration", func(t *testing.T) {
+		c := qt.New(t)
+		dbPath := filepath.Join(t.TempDir(), "partial-up.db")
+		conn, mig := newDirtyRetryMigrator(
+			c, dbPath, dirtyRetryFailingUp,
+			migrator.MigrationTxModeNone, migrator.RevisionTableFormatPtah,
+		)
+		c.Assert(mig.MigrateUp(c.Context()), qt.IsNotNil)
+		c.Assert(dirtyRetryUserCount(c, conn), qt.Equals, 1)
+
+		err := mig.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 2})
+
+		c.Assert(err, qt.ErrorMatches,
+			`migration 2 recorded 1 of 2 applied statements; repair without --resume-from would mark the rest applied without running them: rerun with --resume-from 2.*`)
+		revisions, revisionsErr := mig.GetRevisions(c.Context())
+		c.Assert(revisionsErr, qt.IsNil)
+		c.Assert(revisions[1].Dirty, qt.IsTrue)
+		c.Assert(revisions[1].Applied, qt.Equals, 1)
+		c.Assert(revisions[1].Total, qt.Equals, 2)
+		c.Assert(dirtyRetryTableExists(c, conn, "pets"), qt.IsFalse)
+	})
+
 	t.Run("the dirty revision recorded no applied statement", func(t *testing.T) {
 		c := qt.New(t)
 		dbPath := filepath.Join(t.TempDir(), "nothing-applied.db")
@@ -57,7 +79,7 @@ func TestRepairMigration_HappyPath(t *testing.T) {
 	// The row an interrupted statement leaves reads applied=0 as well, and the
 	// refusal must not claim it: the statement may have committed, so a rerun
 	// would repeat it. Repairing it by hand is what the operator is left with,
-	// and that is the path this keeps open (stokaro/ptah#3452).
+	// and --force makes that reconciliation explicit (stokaro/ptah#3452).
 	t.Run("a repair still ends a revision whose statement outcome is unknown", func(t *testing.T) {
 		c := qt.New(t)
 		dbPath := filepath.Join(t.TempDir(), "unknown-outcome.db")
@@ -69,7 +91,8 @@ func TestRepairMigration_HappyPath(t *testing.T) {
 		markStatementOutcomeUnknown(c, conn, 2)
 
 		err := mig.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 2})
-
+		c.Assert(err, qt.ErrorMatches, `migration 2 has an unknown statement outcome; repair without --resume-from would record unverified SQL as applied without running it.*`)
+		err = mig.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 2, Force: true})
 		c.Assert(err, qt.IsNil)
 		revisions, revisionsErr := mig.GetRevisions(c.Context())
 		c.Assert(revisionsErr, qt.IsNil)

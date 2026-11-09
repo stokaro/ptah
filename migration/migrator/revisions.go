@@ -221,17 +221,16 @@ func (e *ChecksumMismatchError) Error() string {
 // RepairNothingAppliedError reports that a repair was asked to record a
 // migration whose dirty revision shows no statement of it reached the database.
 //
-// It is the one dirty shape a repair must not sign off on its own. A rolled
-// back transaction and a run that never got its lock both leave this row, and
-// recording it applied would make the database report a version it does not
+// A rolled back transaction and a run that never got its lock both leave this
+// row. Recording it applied would make the database report a version it does not
 // have, with nothing left that would ever apply it. Rerunning is what the state
 // wants, and [RepairMigrationOptions.Force] is how an operator who applied the
 // migration by hand says so instead.
 //
 // A row whose statement was interrupted reads applied=0 too and is not this
-// error: [MigrationRevision.StatementOutcomeUnknown] reports it, rerunning
-// could repeat committed SQL, and a plain repair after the operator inspects
-// the database is how that one ends.
+// error: [MigrationRevision.StatementOutcomeUnknown] reports it, and rerunning
+// could repeat committed SQL. The operator must inspect the database and use
+// --force after reconciling it.
 type RepairNothingAppliedError struct {
 	// Version is the migration the repair named.
 	Version int64
@@ -303,9 +302,10 @@ type RepairMigrationOptions struct {
 	// Version is the revision to repair. It is required:
 	// [Migrator.RepairMigration] refuses zero and negative values.
 	Version int64
-	// Force permits repair when no revision row exists for the version, or
-	// when the row is not dirty, recording it applied either way. It does not
-	// relax the PostgreSQL unusable-index refusal;
+	// Force permits metadata-only repair of an incomplete up migration after
+	// the operator has run or reconciled its missing SQL. It also permits repair
+	// when no revision row exists or the row is not dirty. It does not relax
+	// the PostgreSQL unusable-index refusal;
 	// [Migrator.RepairMigration] says why.
 	Force bool
 	// ResumeFrom, when positive, is the 1-based statement index the repair
@@ -3360,11 +3360,26 @@ func (m *Migrator) repairUpMigration(
 	if revision != nil && revision.Dirty && revision.Applied == revision.Total && revision.Total > 0 {
 		return m.repairCompletedUpMigration(ctx, migration, revision)
 	}
-	// What is left here would be recorded applied without running. That is the
-	// point of the verb where the operator has already applied the migration by
-	// hand, and a mistake where nothing ran at all (stokaro/ptah#3452).
+	// What is left here would be recorded applied without running. Require an
+	// explicit force for an incomplete body, after the operator has reconciled
+	// its SQL by hand.
 	if revisionProvesNothingRan(revision, m.grammar()) && !opts.Force {
 		return &RepairNothingAppliedError{Version: migration.Version}
+	}
+	if revision != nil && revision.Dirty && revision.Applied < revision.Total && !opts.Force {
+		if revision.StatementOutcomeUnknown() {
+			return fmt.Errorf(
+				"migration %d has an unknown statement outcome; repair without --resume-from would record unverified SQL as applied without running it: inspect the database and rerun with --force only after reconciling the migration yourself",
+				migration.Version,
+			)
+		}
+		return fmt.Errorf(
+			"migration %d recorded %d of %d applied statements; repair without --resume-from would mark the rest applied without running them: rerun with --resume-from %d to run the rest, or with --force only after running them yourself",
+			migration.Version,
+			revision.Applied,
+			revision.Total,
+			revision.Applied+1,
+		)
 	}
 	if err := m.refuseRepairOverUnsafeIndex(ctx, migration); err != nil {
 		return err

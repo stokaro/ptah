@@ -89,7 +89,7 @@ func TestProviderHistoryRepairRefusesUnknownResumeAndAllowsManualRecovery(t *tes
 	c.Assert(runner.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 1, ResumeFrom: 1, Force: true}), qt.ErrorMatches, ".*unknown statement outcome.*")
 	c.Assert(readProviderHistory(c, store).Records, qt.DeepEquals, []dbschema.HistoryRecord{row})
 	c.Assert(conn.Writer().ExecuteSQL(c.Context(), migration.UpSQL), qt.IsNil)
-	c.Assert(runner.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 1}), qt.IsNil)
+	c.Assert(runner.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 1, Force: true}), qt.IsNil)
 	c.Assert(runner.MigrateUp(c.Context()), qt.IsNil)
 }
 

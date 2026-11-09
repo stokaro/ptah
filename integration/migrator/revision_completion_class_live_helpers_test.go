@@ -155,11 +155,13 @@ func revisionCompletionRowCount(c *qt.C, conn *dbschema.DatabaseConnection, tabl
 // the revision -- it would sign off a schema change that is not in the
 // database. The matrix drives it for the surviving-body classes only, which is
 // the repair guidance issue #999 asks to keep aligned with dialect semantics.
+// The scenario reads the body back before this call; Force acknowledges that
+// the revision row's zero progress cannot establish that the body ran.
 func markAppliedAfterTheBodyCommitted() revisionCompletionRecovery {
 	return revisionCompletionRecovery{
 		name: "repair",
 		run: func(mig *migrator.Migrator) error {
-			return mig.RepairMigration(context.Background(), migrator.RepairMigrationOptions{Version: 1})
+			return mig.RepairMigration(context.Background(), migrator.RepairMigrationOptions{Version: 1, Force: true})
 		},
 	}
 }
