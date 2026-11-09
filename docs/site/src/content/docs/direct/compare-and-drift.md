@@ -578,11 +578,11 @@ sources merge into one composite desired schema. See
 
 ## Which schemas are read
 
-These commands read the schemas `ptah schema apply` reads: the ones `--schemas`
-or `schemas` in `ptah.yaml` name, or else what the URL covers plus every schema
-the desired schema names. A PostgreSQL URL covers its pinned `search_path`, or
-every schema when it pins none, and the tables of a schema the desired
-schema does not describe are reported as removals, as apply would drop them.
+These commands read and select the schemas `ptah schema apply` selects:
+those named by `--schemas` or `schemas` in `ptah.yaml`, or the URL's scope
+plus the desired schema's names. A PostgreSQL URL covers its pinned
+`search_path`, or every schema if none is pinned. Tables the desired schema
+does not describe within that selection are planned for removal.
 
 Privileges: [PostgreSQL](../../databases/postgresql/#what-the-connecting-role-needs),
 [MySQL and MariaDB](../../databases/mysql/#what-the-connecting-account-needs).
