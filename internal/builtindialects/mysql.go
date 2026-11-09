@@ -315,7 +315,7 @@ func mysql() descriptor.Dialect {
 // two tokens that differ only in case stay two revisions.
 func mysqlFamilyRevisionTable() descriptor.RevisionTable {
 	return descriptor.RevisionTable{
-		Create: createRevisions,
+		Create: createRevisions + " DEFAULT CHARSET=utf8mb4",
 		CreateAtlas: `CREATE TABLE IF NOT EXISTS {table} (
     version VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin PRIMARY KEY,
     description TEXT NOT NULL,
@@ -329,7 +329,7 @@ func mysqlFamilyRevisionTable() descriptor.RevisionTable {
     hash VARCHAR(255) NOT NULL,
     partial_hashes JSON NULL,
     operator_version VARCHAR(255) NOT NULL
-){engine}`,
+){engine} DEFAULT CHARSET=utf8mb4`,
 		CreateTags:     createTags + " ENGINE=InnoDB",
 		CreateLog:      createLog,
 		CreateSchema:   createSchema,
