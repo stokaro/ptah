@@ -398,7 +398,7 @@ difference is still reported.
 | --- | --- | --- |
 | `--exclude` | Subtracts from both sides | A warning on standard error, and nothing else changes |
 | `--include` | Keeps only what it selects on both sides | Refused with exit `2` |
-| `--schemas` | Alone, says where the database is read. Beside a selector it selects too: an object outside the named schemas leaves both sides | No refusal |
+| `--schemas` | Limits the database read and selects both sides: an object outside the named schemas leaves both sides | No refusal |
 
 Under `--include` or `--schemas`, a selected object that depends on an object the
 selection leaves out is refused with exit `2`, and the diagnostic names both. An

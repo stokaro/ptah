@@ -26,11 +26,9 @@ import (
 // a live database and changes neither: the selectors `schema diff` takes, with
 // the same meaning and the same diagnostics. Its zero value selects nothing.
 type LiveSelection struct {
-	// Schemas names the schemas the run reads. It joins the selection beside a
-	// selector, as --schemas does on `schema diff`, so an object outside them
-	// leaves both sides and a selected object that depends on one is refused.
-	// Alone it is no selection: it says where the database is read, and the
-	// desired state stays whole.
+	// Schemas names the schemas the run reads and keeps on both sides, as
+	// --schemas does on `schema diff`. An object outside them leaves both sides,
+	// and a selected object that depends on one is refused.
 	Schemas []string
 	// Include positively selects what both sides keep.
 	Include []string
@@ -73,17 +71,20 @@ func (s LiveSelection) Apply(
 	current *catalog.Database,
 	desired *schemamodel.Database,
 ) (*catalog.Database, *schemamodel.Database, error) {
-	if !slices.ContainsFunc(s.Include, isSelector) && !slices.ContainsFunc(s.Exclude, isSelector) {
-		return current, desired, nil
-	}
-	scoped, err := projectLiveStates(ctx, runtime, info.Dialect, current, desired, atlasfilter.Scope{
+	scope := atlasfilter.Scope{
 		Schemas:               s.Schemas,
 		Include:               s.Include,
 		Exclude:               s.Exclude,
 		DefaultSchema:         info.Schema,
 		RealmRelativePatterns: ConnectionIsRealmScoped(info),
 		Selections:            runtime.Selections(),
-	})
+	}
+	if !slices.ContainsFunc(s.Schemas, isSelector) &&
+		!slices.ContainsFunc(s.Include, isSelector) &&
+		!slices.ContainsFunc(s.Exclude, isSelector) {
+		return current, desired, nil
+	}
+	scoped, err := projectLiveStates(ctx, runtime, info.Dialect, current, desired, scope)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -212,11 +212,9 @@ func TestAnIncludeCarriesAnExtensionAsSupportE2E(t *testing.T) {
 	c.Assert(ignored.Stdout, qt.Equals, historyNoDrift)
 }
 
-// TestSchemasAloneSelectsNothingE2E covers how --schemas joins a selection. Alone it
-// says where the database is read, so a table the desired schema declares elsewhere
-// is still planned. Beside a selector it selects, as on `schema diff`, so that table
-// leaves both sides.
-func TestSchemasAloneSelectsNothingE2E(t *testing.T) {
+// TestSchemasAloneSelectsBothSidesE2E checks that a comparison previews the
+// same statements as apply when only --schemas limits the desired schema.
+func TestSchemasAloneSelectsBothSidesE2E(t *testing.T) {
 	desired := historyApplication + "CREATE SCHEMA reporting;\nCREATE TABLE reporting.daily (id bigint PRIMARY KEY);\n"
 	selectors := []string{"--schemas", "public", "--exclude", historyChangeLog, "--exclude", historyLock}
 	c := qt.New(t)
@@ -224,7 +222,17 @@ func TestSchemasAloneSelectsNothingE2E(t *testing.T) {
 
 	alone := historyDrift(c, database, schema, "--schemas", "public")
 	c.Assert(alone.ExitCode, qt.Equals, 1, historyComment(alone))
-	c.Assert(alone.Stdout, qt.Contains, "- tables_added: 1 (safe)\n")
+	c.Assert(alone.Stdout, qt.Not(qt.Contains), "tables_added")
+
+	compared := historyCompare(c, database, schema, "--schemas", "public")
+	c.Assert(compared.ExitCode, qt.Equals, 1, historyComment(compared))
+	c.Assert(compared.Stdout, qt.Not(qt.Contains), "reporting")
+	applied := runPtahIn(c, "schema", "apply", "--db-url", database, "--schema-file", schema, "--schemas", "public", "--dry-run")
+	c.Assert(applied.ExitCode, qt.Equals, 0, historyComment(applied))
+	c.Assert(applied.Stdout, qt.Not(qt.Contains), "reporting")
+	_, applySQL, found := strings.Cut(applied.Stdout, "Planned schema changes:\n")
+	c.Assert(found, qt.IsTrue, historyComment(applied))
+	c.Assert(reconcilingSQL(compared.Stdout), qt.DeepEquals, sqlLines(applySQL))
 
 	selected := historyDrift(c, database, schema, selectors...)
 	c.Assert(selected.ExitCode, qt.Equals, 0, historyComment(selected))

@@ -93,6 +93,13 @@ func TestLiveSelection_ApplyProjectsBothSides(t *testing.T) {
 			wantDesired: []string{"orders", "reports", "users"},
 		},
 		{
+			name:        "--schemas alone selects both sides",
+			info:        realmInfo,
+			selection:   atlasschema.LiveSelection{Schemas: []string{"public"}},
+			wantCurrent: []string{"users", "orders", "databasechangelog"},
+			wantDesired: []string{"orders", "users"},
+		},
+		{
 			name:        "--schemas joins the selection beside a selector",
 			info:        realmInfo,
 			selection:   atlasschema.LiveSelection{Schemas: []string{"public"}, Exclude: []string{"public.databasechangelog"}},
@@ -152,17 +159,15 @@ func TestLiveSelection_ApplyCountsAPatternAgainstTheConnection(t *testing.T) {
 }
 
 // TestLiveSelection_ApplyWithoutASelectorChangesNothing is the control for the
-// rows above. --schemas alone says where a database is read and selects nothing,
-// so both sides come back as they went in, whatever they declare.
+// rows above. Without a schema or object selector, both sides stay whole.
 func TestLiveSelection_ApplyWithoutASelectorChangesNothing(t *testing.T) {
 	tests := []struct {
 		name      string
 		selection atlasschema.LiveSelection
 	}{
 		{name: "the zero value"},
-		{name: "--schemas alone", selection: atlasschema.LiveSelection{Schemas: []string{"public"}}},
-		{name: "an empty --exclude", selection: atlasschema.LiveSelection{Schemas: []string{"public"}, Exclude: []string{""}}},
-		{name: "an empty --include", selection: atlasschema.LiveSelection{Schemas: []string{"public"}, Include: []string{" , "}}},
+		{name: "an empty --exclude", selection: atlasschema.LiveSelection{Exclude: []string{""}}},
+		{name: "an empty --include", selection: atlasschema.LiveSelection{Include: []string{" , "}}},
 	}
 
 	for _, test := range tests {
