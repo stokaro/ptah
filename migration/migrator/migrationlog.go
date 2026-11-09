@@ -12,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"ptah.run/core/platform"
 	"ptah.run/core/sqlutil"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/servercode"
@@ -515,12 +514,9 @@ func (m *Migrator) writeMigrationLogEntry(ctx context.Context, entry MigrationLo
 	// actor or replacing a character its column cannot store. The log write
 	// alone needs strict mode; migration SQL retains the caller's session mode.
 	dialect := m.connectionDialect()
-	insert := "INSERT"
-	switch dialect {
-	case platform.MySQL:
-		insert = "INSERT /*+ SET_VAR(sql_mode='STRICT_ALL_TABLES') */"
-	case platform.MariaDB:
-		insert = "SET STATEMENT sql_mode='STRICT_ALL_TABLES' FOR INSERT"
+	insert := m.revisionTable().LogInsertPrefix
+	if insert == "" {
+		insert = "INSERT"
 	}
 	query := sqlutil.Rebind(dialect, fmt.Sprintf(
 		`%s INTO %s (run_id, seq, operation, version, state, actor, actor_source, checksum, logged_at, error)
