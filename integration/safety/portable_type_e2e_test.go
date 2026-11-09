@@ -52,7 +52,9 @@ func TestSchemaPlanE2E_AnAdoptedTableInPortableNamesPlansNothing(t *testing.T) {
 func TestSchemaPlanE2E_APortableNameBuiltByHandPlansNothing(t *testing.T) {
 	pairs := [][2]string{
 		{"datetime2", "timestamp"}, {"datetime2(7)", "TIMESTAMP"}, {"datetime2", "timestamp without time zone"},
+		{"datetime2(3)", "timestamp(3)"}, {"datetime2(3)", "timestamp(3) without time zone"},
 		{"datetimeoffset", "timestamptz"}, {"datetimeoffset(7)", "TIMESTAMPTZ"}, {"datetimeoffset", "timestamp with time zone"},
+		{"datetimeoffset(3)", "timestamptz(3)"}, {"datetimeoffset(3)", "timestamp(3) with time zone"},
 		{"bit", "boolean"}, {"bit", "bool"}, {"nvarchar(max)", "text"}, {"nvarchar(max)", "TEXT"}, {"nvarchar(max)", "citext"},
 		{"varbinary(max)", "bytea"}, {"varbinary(max)", "blob"}, {"float", "double precision"}, {"int", "integer"}, {"int", "int4"},
 		{"nchar(1)", "char"}, {"nchar(5)", "char(5)"}, {"nchar(5)", "character(5)"},
@@ -74,6 +76,36 @@ func TestSchemaPlanE2E_APortableNameBuiltByHandPlansNothing(t *testing.T) {
 			plan := planOf(c, address, schemaFile(c, fmt.Sprintf(temporalTable, pair[1])))
 
 			c.Assert(plan.Outcome, qt.Equals, "no-changes", qt.Commentf("%+v", plan.Plan.Statements))
+		})
+	}
+}
+
+// TestSchemaPlanE2E_PortableTimestampPrecisionIsWritten checks the SQL Server column,
+// including its fractional-second precision, after a portable declaration is applied.
+func TestSchemaPlanE2E_PortableTimestampPrecisionIsWritten(t *testing.T) {
+	rows := []struct{ declared, wantType string }{
+		{"timestamp(3)", "datetime2"},
+		{"timestamp(3) without time zone", "datetime2"},
+		{"timestamptz(3)", "datetimeoffset"},
+		{"timestamp(3) with time zone", "datetimeoffset"},
+	}
+	conn, address := temporalScratch(qt.New(t), sqlServerTemporal)
+	for _, row := range rows {
+		t.Run(row.declared, func(t *testing.T) {
+			c := qt.New(t)
+			_, err := conn.ExecContext(c.Context(), "DROP TABLE IF EXISTS t")
+			c.Assert(err, qt.IsNil)
+			schema := schemaFile(c, fmt.Sprintf(temporalTable, row.declared))
+			applySchema(c, address, schema)
+
+			var heldType string
+			var precision int
+			err = conn.QueryRowContext(c.Context(), `SELECT DATA_TYPE, DATETIME_PRECISION
+				FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 't' AND COLUMN_NAME = 'c'`).Scan(&heldType, &precision)
+			c.Assert(err, qt.IsNil)
+			c.Assert(heldType, qt.Equals, row.wantType)
+			c.Assert(precision, qt.Equals, 3)
+			c.Assert(planOf(c, address, schema).Outcome, qt.Equals, "no-changes")
 		})
 	}
 }

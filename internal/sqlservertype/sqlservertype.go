@@ -9,7 +9,12 @@
 // (internal/oracletype is the same shape).
 package sqlservertype
 
-import "strings"
+import (
+	"regexp"
+	"strings"
+)
+
+var portableTimestamp = regexp.MustCompile(`(?i)^\s*(timestamp|timestamptz)\s*(?:\(\s*([0-9]+)\s*\))?\s*(with(?:out)?\s+time\s+zone)?\s*$`)
 
 // Map translates a portable type name to the type the renderer writes on SQL Server.
 // A name it does not know stands as written.
@@ -19,6 +24,9 @@ import "strings"
 // is DATETIME2 because the server's own `timestamp` is a rowversion, a counter it fills
 // in itself.
 func Map(declaredType string) string {
+	if mapped, ok := mapPortableTimestamp(declaredType); ok {
+		return mapped
+	}
 	switch Base(declaredType) {
 	case "INTEGER", "INT4", "SERIAL":
 		return "INT"
@@ -36,13 +44,25 @@ func Map(declaredType string) string {
 		return "VARBINARY(MAX)"
 	case "DOUBLE PRECISION":
 		return "FLOAT"
-	case "TIMESTAMPTZ", "TIMESTAMP WITH TIME ZONE":
-		return "DATETIMEOFFSET"
-	case "TIMESTAMP", "TIMESTAMP WITHOUT TIME ZONE":
-		return "DATETIME2"
 	default:
 		return declaredType
 	}
+}
+
+func mapPortableTimestamp(declaredType string) (string, bool) {
+	parts := portableTimestamp.FindStringSubmatch(declaredType)
+	if parts == nil || (strings.EqualFold(parts[1], "timestamptz") && parts[3] != "") {
+		return "", false
+	}
+	typeName := "DATETIME2"
+	zone := strings.Join(strings.Fields(parts[3]), " ")
+	if strings.EqualFold(parts[1], "timestamptz") || strings.EqualFold(zone, "with time zone") {
+		typeName = "DATETIMEOFFSET"
+	}
+	if parts[2] != "" {
+		return typeName + "(" + parts[2] + ")", true
+	}
+	return typeName, true
 }
 
 // Declaration is a column's declared type, as the renderer reads it.
