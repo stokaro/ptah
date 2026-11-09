@@ -228,25 +228,18 @@ through a chain of groups:
 - a role a statement in the plan names, such as the role it grants to or
   creates. A table with the same name as a role counts too.
 
-The chain is followed in the two directions privileges travel: what such a role
-holds, and who holds it. So a new member of a role the plan grants to makes the
-plan stale, and so does a group joining the groups of the role that runs it. A
-new member of a group the running role merely belongs to does not, because the
-running role holds nothing more.
+The fingerprint follows what a relevant role holds and who holds it. A new
+member of a role the plan grants to, or a new group of the applying role, makes
+the plan stale. Another member of a group the applying role already belongs to
+does not. A credential rotation outside those paths leaves the plan valid. YDB
+compares every membership, so its plans cover the whole graph.
 
-A credential rotation that creates a user and grants it a group with no tie to
-the plan leaves the plan valid. One that grants a group holding a privilege in
-the read makes every plan reading that privilege stale, on this database, because
-the new user now holds it. On a target that compares memberships, which is YDB,
-the plan covers all of them.
-
-On MySQL and MariaDB, the read lists every role on the server. The plan covers
-the attributes of roles it names or reaches through privileges, ownership, or
-memberships. Creating an unrelated role leaves the plan valid. On PostgreSQL 16
-and later, the read also records each membership's `INHERIT` and `SET` options.
-A change to an option on a membership the plan depends on makes it stale. An
-`ADMIN`-only membership with both options false does not tie an unrelated role
-to the plan.
+MySQL and MariaDB list every role on the server, but a plan covers only roles
+it names or reaches through privileges, ownership, or memberships. Creating an
+unrelated role leaves it valid. PostgreSQL 16 and later capture each
+membership's `INHERIT` and `SET` options; changing a relevant option makes the
+plan stale. An `ADMIN`-only edge with both options false leaves an unrelated
+plan valid.
 
 When an embedding application selects an executable provider, the native JSON
 plan also records `provider`: the provider ID, its release version and the
