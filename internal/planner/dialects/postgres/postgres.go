@@ -2093,8 +2093,9 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	result = p.addNewViewLikeObjects(result, diff, relationPlaced, rebuild)
 	result = p.modifyExistingViews(result, diff, rebuild)
 	lateViewRebuild := rebuildReadsRemovedColumn(diff, rebuild)
+	schedule := viewRebuildSchedule{late: lateViewRebuild}
 	lateIndex := p.lateViewIndexFilter(diff, rebuild, lateViewRebuild)
-	result = p.createEarlyRebuiltViewLikes(result, diff, rebuild, relationPlaced, lateViewRebuild)
+	result = schedule.createEarlyRebuiltViewLikes(p, result, diff, rebuild, relationPlaced)
 
 	// 7. Modify existing roles (must be done before RLS policies that reference them)
 	result = p.modifyExistingRoles(result, diff)
@@ -2112,10 +2113,10 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// 9.1. Comments on objects that already existed, after every step that
 	// creates, replaces or recreates one of them. The policies are the last
 	// of those.
-	result = p.changeEarlyObjectComments(result, diff, lateViewRebuild)
+	result = schedule.changeEarlyObjectComments(p, result, diff)
 
 	// 9.5. Add role privilege grants after roles and target objects exist.
-	result = p.addEarlyGrants(result, diff, rebuild, lateViewRebuild)
+	result = schedule.addEarlyGrants(p, result, diff, rebuild)
 
 	// 10. Add new indexes
 	result = p.addNewIndexes(result, diff, func(ref difftypes.IndexRef) bool { return !lateIndex(ref) })
@@ -2123,7 +2124,7 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// 10.1. Comments on the indexes the plan keeps. An index the plan
 	// creates writes its own comment above, and one it drops takes its
 	// comment with it.
-	result = changeEarlyIndexComments(result, diff, lateViewRebuild)
+	result = schedule.changeEarlyIndexComments(result, diff)
 
 	// 10.5. Add new constraints (must be done after tables and columns exist)
 	result, err = p.addNewConstraints(result, earlyConstraints, droppedAhead)
@@ -2187,7 +2188,7 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 
 	// 12. Remove table columns (must be done after removing RLS policies that depend on columns)
 	result = p.removeTableColumns(result, diff, earlyColumns, ahead, droppedPolicies)
-	result = p.createLateRebuiltViewLikes(result, diff, rebuild, relationPlaced, lateViewRebuild, lateIndex)
+	result = schedule.createLateRebuiltViewLikes(p, result, diff, rebuild, relationPlaced, lateIndex)
 
 	// 12.5. Remove constraints (must be done before removing tables)
 	result = p.removeConstraints(result, diff, releasedConstraints, constraintsAfterColumns)
@@ -3040,10 +3041,16 @@ func (p *Planner) lateViewIndexFilter(diff *difftypes.SchemaDiff, rebuild viewRe
 	}
 }
 
-func (p *Planner) createEarlyRebuiltViewLikes(
-	result []ast.Node, diff *difftypes.SchemaDiff, rebuild viewRebuild, routines relationRoutines, late bool,
+// viewRebuildSchedule keeps the placement decision for operations that must
+// follow a rebuilt view. Their steps are interleaved with unrelated work.
+type viewRebuildSchedule struct {
+	late bool
+}
+
+func (s viewRebuildSchedule) createEarlyRebuiltViewLikes(
+	p *Planner, result []ast.Node, diff *difftypes.SchemaDiff, rebuild viewRebuild, routines relationRoutines,
 ) []ast.Node {
-	if late {
+	if s.late {
 		return result
 	}
 	result = p.createRebuiltViewLikes(result, diff, rebuild, routines)
@@ -3051,22 +3058,22 @@ func (p *Planner) createEarlyRebuiltViewLikes(
 	return p.modifyExistingTriggers(result, diff)
 }
 
-func (p *Planner) changeEarlyObjectComments(result []ast.Node, diff *difftypes.SchemaDiff, late bool) []ast.Node {
-	if late {
+func (s viewRebuildSchedule) changeEarlyObjectComments(p *Planner, result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	if s.late {
 		return result
 	}
 	return p.changeObjectComments(result, diff)
 }
 
-func (p *Planner) addEarlyGrants(result []ast.Node, diff *difftypes.SchemaDiff, rebuild viewRebuild, late bool) []ast.Node {
-	if late {
+func (s viewRebuildSchedule) addEarlyGrants(p *Planner, result []ast.Node, diff *difftypes.SchemaDiff, rebuild viewRebuild) []ast.Node {
+	if s.late {
 		return result
 	}
 	return p.addNewGrants(result, diff, rebuild)
 }
 
-func changeEarlyIndexComments(result []ast.Node, diff *difftypes.SchemaDiff, late bool) []ast.Node {
-	if late {
+func (s viewRebuildSchedule) changeEarlyIndexComments(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	if s.late {
 		return result
 	}
 	return changeIndexComments(result, diff)
@@ -3075,11 +3082,11 @@ func changeEarlyIndexComments(result []ast.Node, diff *difftypes.SchemaDiff, lat
 // createLateRebuiltViewLikes restores objects held back until a removed
 // column leaves. Their indexes, triggers, comments and grants need the same
 // late placement because the target relation did not exist earlier.
-func (p *Planner) createLateRebuiltViewLikes(
-	result []ast.Node, diff *difftypes.SchemaDiff, rebuild viewRebuild, routines relationRoutines,
-	late bool, lateIndex func(difftypes.IndexRef) bool,
+func (s viewRebuildSchedule) createLateRebuiltViewLikes(
+	p *Planner, result []ast.Node, diff *difftypes.SchemaDiff, rebuild viewRebuild, routines relationRoutines,
+	lateIndex func(difftypes.IndexRef) bool,
 ) []ast.Node {
-	if !late {
+	if !s.late {
 		return result
 	}
 	result = p.createRebuiltViewLikes(result, diff, rebuild, routines)
