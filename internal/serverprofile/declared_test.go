@@ -48,7 +48,7 @@ func TestWithDeclaredLines_HappyPath(t *testing.T) {
 			want:   serverprofile.Certification{Level: capability.Certified, Line: "26.2", Reason: "The current release."}},
 		{name: "a line without a note", banner: "25.1.4.7",
 			preset: serverprofile.Preset{Name: "Profiled 25.1", Dialect: "profiled-engine", Source: serverprofile.SourceVersionLadder},
-			want:   serverprofile.Certification{Level: capability.BestEffort, Line: "25.1", Reason: capability.BestEffort.Doc()}},
+			want:   serverprofile.Certification{Level: capability.BestEffort, Line: "25.1", Reason: "The provider declares support level best-effort for this release line."}},
 		{name: "a newer release", banner: "26.3.1.18", returning: true,
 			preset: serverprofile.Preset{Dialect: "profiled-engine", Source: serverprofile.SourceSaturated,
 				Note: "profiled-engine 26.3.1.18 is newer than the newest measured release line 26.2; capabilities were planned as 26.2"},
@@ -66,6 +66,22 @@ func TestWithDeclaredLines_HappyPath(t *testing.T) {
 			c.Assert(supported(profile, capability.ReturningClause), qt.Equals, test.returning)
 		})
 	}
+}
+
+func TestWithDeclaredLinesWithoutNoteAttributesClaimToProvider(t *testing.T) {
+	c := qt.New(t)
+	c.Assert(capability.RegisterReleaseLines(map[string]capability.Capabilities{
+		"26.2": capability.Of(map[capability.Capability]bool{capability.TransactionalDDL: true}),
+	}, "provider-neutral-reason"), qt.IsNil)
+
+	profile := serverprofile.For("provider-neutral-reason", "26.2.1", "").WithDeclaredLines([]serverprofile.DeclaredLine{
+		{Line: "26.2", Support: capability.Certified},
+	})
+
+	c.Assert(profile.Certification, qt.DeepEquals, serverprofile.Certification{
+		Level: capability.Certified, Line: "26.2",
+		Reason: "The provider declares support level certified for this release line.",
+	})
 }
 
 // A built-in dialect, and an engine whose provider registered no lines, keep

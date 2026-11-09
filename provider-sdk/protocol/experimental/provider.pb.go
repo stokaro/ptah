@@ -6483,8 +6483,8 @@ func (x *SQLTableClause) GetModels() []string {
 
 // ReleaseLine is one release line of an engine and how much testing stands
 // behind it. A level of CERTIFIED or LEGACY_TESTED claims that something runs
-// against the line, so it names an image; a line the provider keeps and no
-// longer exercises is BEST_EFFORT and says why in unprobed.
+// against the line, so it names an image or a linked engine. A line the
+// provider keeps without running is BEST_EFFORT and may say why in unprobed.
 type ReleaseLine struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	Line     string                 `protobuf:"bytes,1,opt,name=line,proto3" json:"line,omitempty"`

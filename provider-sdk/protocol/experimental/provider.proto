@@ -560,8 +560,8 @@ message SQLTableClause {
 }
 // ReleaseLine is one release line of an engine and how much testing stands
 // behind it. A level of CERTIFIED or LEGACY_TESTED claims that something runs
-// against the line, so it names an image; a line the provider keeps and no
-// longer exercises is BEST_EFFORT and says why in unprobed.
+// against the line, so it names an image or a linked engine. A line the
+// provider keeps without running is BEST_EFFORT and may say why in unprobed.
 message ReleaseLine {
   enum Support {
     SUPPORT_UNSPECIFIED = 0;
