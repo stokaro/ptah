@@ -192,6 +192,7 @@ func reverseColumnDiffs(
 			ColumnName:     columnDiff.ColumnName,
 			Changes:        reversedChanges,
 			Desired:        desired,
+			CommentChange:  reverseCommentChange(columnDiff.CommentChange),
 			SerialSequence: restoredSerialSequence(columnDiff.Changes["default_expr"]),
 			// The rollback alters the same sequence of the same database,
 			// whose restart is replayed by its ALTER as by the forward one.
