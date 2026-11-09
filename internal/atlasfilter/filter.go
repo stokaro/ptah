@@ -55,8 +55,8 @@ func ExcludeDatabaseWithDefaultSchema(
 // and silently keeping it defeats that reason with no diagnostic.
 type ExcludeReport struct {
 	// Unmatched lists the exclude selectors, as written, that named no object
-	// in the state they were applied to. It is an outcome, not a shape: the
-	// selectors here are well formed, they simply matched nothing.
+	// and excluded no whole readable kind in the state they were applied to.
+	// The selectors here are well formed, but had no effect.
 	Unmatched []string
 }
 
@@ -794,11 +794,17 @@ var exactIdentities = objectidentity.NewBuilder(identifier.Semantics{
 })
 
 func newExclusionState(patterns []resourcePattern, defaultSchema string, words vocabulary) *exclusionState {
+	matched := make([]bool, len(patterns))
+	for i, pattern := range patterns {
+		// A whole-kind exclusion can prevent the catalog read that would have
+		// found matching objects. It still protects every object of that kind.
+		matched[i] = len(pattern.wholeKinds()) != 0
+	}
 	return &exclusionState{
 		vocabulary:             words,
 		patterns:               patterns,
 		defaultSchema:          strings.TrimSpace(defaultSchema),
-		matched:                make([]bool, len(patterns)),
+		matched:                matched,
 		excludedTables:         make(map[tableIdentity]struct{}),
 		excludedColumns:        make(map[columnIdentity]struct{}),
 		excludedSchemas:        make(map[string]struct{}),

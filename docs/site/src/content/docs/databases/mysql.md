@@ -770,9 +770,10 @@ To have a report name the events, add `GRANT EVENT ON app.* TO reader`. `EVENT` 
 lets the account create and drop events, and neither engine has a privilege that
 only shows them. A run that does not depend on them can say so with
 `--exclude '*[type=event]'`, as for any other kind, and nothing reads or reports
-events then. A selector naming one event, such as `--exclude 'e_tick[type=event]'`,
-counts as a match and leaves the report as it is: the database still holds the
-event, and no selection changes that.
+events then. This whole-kind selector does not warn that it matched no objects,
+even when the account cannot list events. A selector naming one event, such as
+`--exclude 'e_tick[type=event]'`, counts as a match and leaves the report as it
+is: the database still holds the event, and no selection changes that.
 
 ## Dev-database cleanup privileges
 
