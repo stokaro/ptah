@@ -39,10 +39,9 @@ func TestDropTableReadByRetainedMySQLViewWarns(t *testing.T) {
 			plan := must.Must(planner.GenerateSchemaDiffSQL(t.Context(), runtime, diff, platform.MySQL))
 			c.Assert(strings.Contains(plan, "leaves view v invalid"), qt.Equals, test.wantWarned, qt.Commentf("plan:\n%s", plan))
 			c.Assert(plan, qt.Contains, "DROP TABLE")
-			if test.wantWarned {
-				c.Assert(strings.Index(plan, "leaves view v invalid") < strings.Index(plan, "DROP TABLE"), qt.IsTrue,
-					qt.Commentf("plan:\n%s", plan))
-			}
+			warningAt := strings.Index(plan, "leaves view v invalid")
+			c.Assert(warningAt >= 0 && warningAt < strings.Index(plan, "DROP TABLE"), qt.Equals, test.wantWarned,
+				qt.Commentf("plan:\n%s", plan))
 		})
 	}
 }
