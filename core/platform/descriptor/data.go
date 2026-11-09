@@ -37,6 +37,10 @@ type ManagedData struct {
 	// AlterTableUpdate writes a row change as `ALTER TABLE ... UPDATE`, the
 	// engine's mutation, rather than as an UPDATE statement.
 	AlterTableUpdate bool `json:"alter_table_update,omitempty"`
+	// DateTimeWallClock compares DATETIME values by their clock fields and
+	// renders declared text without an offset. The column stores no time zone,
+	// while a driver may scan it as text or assign a connection location.
+	DateTimeWallClock bool `json:"datetime_wall_clock,omitempty"`
 	// IdentityRefusesInsert is which identity columns refuse an explicit value
 	// in an INSERT, so that re-inserting a deleted row's value on rollback
 	// would fail. Empty means none does.

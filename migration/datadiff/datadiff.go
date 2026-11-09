@@ -131,7 +131,7 @@ func ComputeWithOptions(schema, table string, keys []string, desired, live []Row
 		return nil, errors.New("datadiff: keys must be non-empty")
 	}
 	described, _ := platform.Lookup(options.Dialect)
-	comparison := columnComparison{types: options.ColumnTypes, mysqlFamily: described.Family == "mysql"}
+	comparison := columnComparison{types: options.ColumnTypes, dateTimeWallClock: described.ManagedData.DateTimeWallClock}
 
 	desiredByKey, err := indexByKey(keys, desired, "desired", comparison)
 	if err != nil {
@@ -175,15 +175,15 @@ func ComputeWithOptions(schema, table string, keys []string, desired, live []Row
 }
 
 type columnComparison struct {
-	types       map[string]string
-	mysqlFamily bool
+	types             map[string]string
+	dateTimeWallClock bool
 }
 
-func (c columnComparison) mysqlDateTime(column string) bool {
-	return c.mysqlFamily && mysqlDateTimeType(c.types[column])
+func (c columnComparison) wallClockDateTime(column string) bool {
+	return c.dateTimeWallClock && wallClockDateTimeType(c.types[column])
 }
 
-func mysqlDateTimeType(declaredType string) bool {
+func wallClockDateTimeType(declaredType string) bool {
 	declared := strings.ToUpper(strings.TrimSpace(declaredType))
 	return declared == "DATETIME" || strings.HasPrefix(declared, "DATETIME(")
 }
@@ -244,7 +244,7 @@ func managedColumnsDiffer(desired, live Row, comparison columnComparison) bool {
 }
 
 func (c columnComparison) equal(column string, desired, live any) bool {
-	if !c.mysqlDateTime(column) {
+	if !c.wallClockDateTime(column) {
 		return valuesEqual(desired, live)
 	}
 	// A DATETIME stores a wall clock. An offset on the declared text and the
@@ -253,7 +253,7 @@ func (c columnComparison) equal(column string, desired, live any) bool {
 }
 
 func (c columnComparison) normalize(column string, value any) string {
-	if c.mysqlDateTime(column) {
+	if c.wallClockDateTime(column) {
 		if wall, ok := dateTimeWallClock(value); ok {
 			return "D" + wall
 		}

@@ -80,6 +80,7 @@ func mariaDB() descriptor.Dialect {
 			BinaryPrefix:     "X'",
 			BinarySuffix:     "'",
 		},
+		ManagedData: descriptor.ManagedData{DateTimeWallClock: true},
 		Seeds: descriptor.Seeds{
 			Transactional: true,
 			TablesQuery:   "SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE'",
