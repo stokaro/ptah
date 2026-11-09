@@ -7,9 +7,11 @@ import (
 	"slices"
 
 	"ptah.run/catalog"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
 	"ptah.run/dbschema"
+	"ptah.run/internal/migratorext/builtin"
 	"ptah.run/internal/sqliterebuild"
 	"ptah.run/migration/migrator"
 )
@@ -43,7 +45,17 @@ func applyUnits(ctx context.Context, conn *dbschema.DatabaseConnection, mode mig
 			return fmt.Errorf("begin schema apply transaction: %w", err)
 		}
 		if err := executeApplyUnits(ctx, tx, prepared, statements); err != nil {
-			return errors.Join(err, tx.Rollback())
+			if rollbackErr := tx.Rollback(); rollbackErr != nil {
+				return errors.Join(err, rollbackErr)
+			}
+			// Engines with rollback-survivor logic can leave schema changes
+			// behind even when Rollback itself succeeds.
+			if conn.Info().Capabilities.Has(capability.TransactionalDDL) &&
+				builtin.Lookup(conn.Info().Dialect).RollbackSurvivors == nil &&
+				!errors.Is(err, ptaherr.ErrOutcomeUnknown) {
+				return &rolledBackApplyError{err: err}
+			}
+			return err
 		}
 		if err := tx.Commit(); err != nil {
 			failed := &failedCommitError{statements: len(prepared), err: err}
@@ -54,6 +66,14 @@ func applyUnits(ctx context.Context, conn *dbschema.DatabaseConnection, mode mig
 		return fmt.Errorf("invalid tx-mode %q", mode)
 	}
 }
+
+// rolledBackApplyError records that a target with transactional DDL undid every
+// dispatched unit after an execution error. It keeps the original error for diagnostics.
+type rolledBackApplyError struct{ err error }
+
+func (e *rolledBackApplyError) Error() string { return e.err.Error() }
+
+func (e *rolledBackApplyError) Unwrap() error { return e.err }
 
 // failedCommitError is the failure of the commit that ends an apply, which the
 // report tells from a failed statement. It adds nothing to the message.

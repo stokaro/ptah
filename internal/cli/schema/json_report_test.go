@@ -440,10 +440,9 @@ func TestSchemaApplyJSONReportsADeclinedConfirmation(t *testing.T) {
 	c.Assert(listSQLiteTables(c, f.dbPath), qt.DeepEquals, []string{"users"})
 }
 
-// TestSchemaApplyJSONReportsAnExecutionFailureAsUnknown is the outcome a
-// caller must not retry from. The second statement fails once the first has
-// been sent, and the report does not guess what the database kept.
-func TestSchemaApplyJSONReportsAnExecutionFailureAsUnknown(t *testing.T) {
+// TestSchemaApplyJSONReportsAConfirmedRollbackAsFailed keeps the failed
+// statement in the report after the transaction undoes the first one.
+func TestSchemaApplyJSONReportsAConfirmedRollbackAsFailed(t *testing.T) {
 	c := qt.New(t)
 	f := newPlanFixture(c)
 	planPath := f.savePlan(c)
@@ -461,7 +460,7 @@ func TestSchemaApplyJSONReportsAnExecutionFailureAsUnknown(t *testing.T) {
 	c.Assert(decodeOneDocument[atlasschema.ApplyReport](c, stdout), qt.DeepEquals, atlasschema.ApplyReport{
 		ContractVersion: atlasschema.ApplyReportContractVersion,
 		Command:         atlasschema.ApplyReportCommand,
-		Outcome:         atlasschema.ApplyOutcomeUnknown,
+		Outcome:         atlasschema.ApplyOutcomeFailed,
 		PlanName:        plan.Name,
 		PlanDigest:      digest.FromBytes(document).String(),
 		Units:           atlasschema.SQLApplyUnitReports(plan.StatementSQL()),
@@ -469,6 +468,7 @@ func TestSchemaApplyJSONReportsAnExecutionFailureAsUnknown(t *testing.T) {
 		Failure:         &atlasschema.ApplyFailure{Statement: 2, Statements: 2},
 	})
 	c.Assert(stderr, qt.Not(qt.Contains), "Schema apply completed successfully.")
+	c.Assert(listSQLiteTables(c, f.dbPath), qt.DeepEquals, []string{"users"})
 }
 
 func TestSchemaApplyJSONReportsAFailureBeforeDispatch(t *testing.T) {
@@ -506,12 +506,10 @@ func TestSchemaApplyWithoutJSONKeepsItsTranscript(t *testing.T) {
 	c.Assert(stderr, qt.Equals, "")
 }
 
-// TestSchemaApplyJSONReportsAComputedPlanFailureAsUnknown is the dispatch rule
-// on the path that computes its plan. SQLite adds a CHECK by rebuilding the
-// table, and the rebuild copies the one row the new CHECK rejects, so the
-// INSERT fails after the statements ahead of it ran. Every statement was sent,
-// and the report must not claim that nothing reached the database.
-func TestSchemaApplyJSONReportsAComputedPlanFailureAsUnknown(t *testing.T) {
+// TestSchemaApplyJSONReportsAComputedPlanRollbackAsFailed covers a computed
+// plan. SQLite rebuilds the table to add a CHECK, then rejects the existing
+// row while copying it. The transaction undoes the rebuild.
+func TestSchemaApplyJSONReportsAComputedPlanRollbackAsFailed(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
 	dbPath := filepath.Join(dir, "target.db")
@@ -524,11 +522,12 @@ func TestSchemaApplyJSONReportsAComputedPlanFailureAsUnknown(t *testing.T) {
 
 	c.Assert(err, qt.ErrorMatches, `(?s)apply schema changes: .*CHECK constraint failed.*`, qt.Commentf("stderr:\n%s", stderr))
 	report := decodeOneDocument[atlasschema.ApplyReport](c, stdout)
-	c.Assert(report.Outcome, qt.Equals, atlasschema.ApplyOutcomeUnknown)
+	c.Assert(report.Outcome, qt.Equals, atlasschema.ApplyOutcomeFailed)
 	c.Assert(report.Refusal, qt.IsNil)
 	c.Assert(report.Error, qt.DeepEquals, &errorkind.Report{Message: err.Error()})
 	c.Assert(report.Units, qt.Any(qt.DeepEquals), atlasschema.ApplyUnitReport{SQL: `INSERT INTO "new_users" ("id", "age") SELECT "id", "age" FROM "users"`})
 	c.Assert(stderr, qt.Not(qt.Contains), "Schema apply completed successfully.")
+	c.Assert(listSQLiteTables(c, dbPath), qt.DeepEquals, []string{"users"})
 }
 
 // TestSchemaApplyJSONRefusesEdit keeps the editor off a run whose standard

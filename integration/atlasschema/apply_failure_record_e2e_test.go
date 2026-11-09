@@ -4,6 +4,7 @@ package atlasschema_test
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -243,19 +244,21 @@ const (
 // statements outlive the rollback do not.
 func TestSchemaApplyFailureRecordOfASavedPlanE2E(t *testing.T) {
 	tests := []struct {
-		name       string
-		engine     dbtarget.Engine
-		plainDDL   string
-		seedDDL    string
-		seedRow    string
-		mode       string
-		wantRecord string
-		wantFirst  bool
+		name        string
+		engine      dbtarget.Engine
+		plainDDL    string
+		seedDDL     string
+		seedRow     string
+		mode        string
+		wantOutcome atlasschema.ApplyOutcome
+		wantRecord  string
+		wantFirst   bool
 	}{
 		{
 			name: "postgresql in a transaction", engine: dbtarget.PostgreSQL, mode: "file",
 			plainDDL: plainTableDDL, seedDDL: uniqueTableDDL, seedRow: "INSERT INTO {t} (id, email) VALUES (1, '" + failureRowValue + "')",
-			wantRecord: `{"statement":2,"statements":3,"sqlstate":"23505"}`,
+			wantOutcome: atlasschema.ApplyOutcomeFailed,
+			wantRecord:  `{"statement":2,"statements":3,"sqlstate":"23505"}`,
 		},
 		{
 			name: "postgresql without a transaction", engine: dbtarget.PostgreSQL, mode: "none",
@@ -285,7 +288,8 @@ func TestSchemaApplyFailureRecordOfASavedPlanE2E(t *testing.T) {
 		{
 			name: "sql server, which has no SQLSTATE, in a transaction", engine: dbtarget.SQLServer, mode: "file",
 			plainDDL: plainTableDDL, seedDDL: uniqueTableDDL, seedRow: "INSERT INTO {t} (id, email) VALUES (1, '" + failureRowValue + "')",
-			wantRecord: `{"statement":2,"statements":3,"error_number":2627}`,
+			wantOutcome: atlasschema.ApplyOutcomeFailed,
+			wantRecord:  `{"statement":2,"statements":3,"error_number":2627}`,
 		},
 		{
 			name: "sql server without a transaction", engine: dbtarget.SQLServer, mode: "none",
@@ -333,7 +337,7 @@ func TestSchemaApplyFailureRecordOfASavedPlanE2E(t *testing.T) {
 			c.Logf("failure: %s", compactRecord(c, document.Failure))
 			c.Logf("message: %s", document.Error.Message)
 			c.Assert(result.ExitCode, qt.Equals, 2, qt.Commentf("%s", result.Stderr))
-			c.Assert(document.Outcome, qt.Equals, atlasschema.ApplyOutcomeUnknown)
+			c.Assert(document.Outcome, qt.Equals, cmp.Or(test.wantOutcome, atlasschema.ApplyOutcomeUnknown))
 			c.Assert(compactRecord(c, document.Failure), qt.Equals, test.wantRecord)
 			// The control: the statement and the message hold the value the record
 			// does not, so the record is free of it by construction.
@@ -359,15 +363,17 @@ func seedStatements(row string) []string {
 // two tables first.
 func TestSchemaApplyFailureRecordOfAComputedPlanE2E(t *testing.T) {
 	tests := []struct {
-		name       string
-		engine     dbtarget.Engine
-		mode       string
-		wantRecord string
-		wantTables bool
+		name        string
+		engine      dbtarget.Engine
+		mode        string
+		wantOutcome atlasschema.ApplyOutcome
+		wantRecord  string
+		wantTables  bool
 	}{
 		{
 			name: "postgresql in a transaction", engine: dbtarget.PostgreSQL, mode: "file",
-			wantRecord: `{"statement":4,"statements":4,"sqlstate":"23505"}`,
+			wantOutcome: atlasschema.ApplyOutcomeFailed,
+			wantRecord:  `{"statement":4,"statements":4,"sqlstate":"23505"}`,
 		},
 		{
 			name: "postgresql without a transaction", engine: dbtarget.PostgreSQL, mode: "none",
@@ -391,7 +397,8 @@ func TestSchemaApplyFailureRecordOfAComputedPlanE2E(t *testing.T) {
 		},
 		{
 			name: "sql server in a transaction", engine: dbtarget.SQLServer, mode: "file",
-			wantRecord: `{"statement":4,"statements":4,"error_number":2627}`,
+			wantOutcome: atlasschema.ApplyOutcomeFailed,
+			wantRecord:  `{"statement":4,"statements":4,"error_number":2627}`,
 		},
 		{
 			name: "sql server without a transaction", engine: dbtarget.SQLServer, mode: "none",
@@ -412,7 +419,7 @@ func TestSchemaApplyFailureRecordOfAComputedPlanE2E(t *testing.T) {
 
 			c.Logf("failure: %s", compactRecord(c, document.Failure))
 			c.Assert(result.ExitCode, qt.Equals, 2, qt.Commentf("%s", result.Stderr))
-			c.Assert(document.Outcome, qt.Equals, atlasschema.ApplyOutcomeUnknown)
+			c.Assert(document.Outcome, qt.Equals, cmp.Or(test.wantOutcome, atlasschema.ApplyOutcomeUnknown))
 			c.Assert(compactRecord(c, document.Failure), qt.Equals, test.wantRecord)
 			c.Assert(document.Units, qt.HasLen, 4)
 			c.Assert(document.Units[3].SQL, qt.Contains, failureRowValue)

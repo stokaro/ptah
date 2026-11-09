@@ -128,21 +128,49 @@ func TestApplyStatements_ReportsNothingDispatchedBeforeTheFirstStatement(t *test
 	}
 }
 
-// A statement the server refused was still sent, so nothing in the report says
-// that nothing reached the database, whether a transaction undid it or not.
+// A statement the server refused was still sent. A confirmed transaction
+// rollback leaves no applied change; a run without one cannot say that.
 func TestApplyStatements_ReportsAFailedStatementAsDispatched(t *testing.T) {
-	for _, mode := range []migrator.MigrationTxMode{migrator.MigrationTxModeFile, migrator.MigrationTxModeAll, migrator.MigrationTxModeNone} {
-		t.Run(string(mode), func(t *testing.T) {
+	for _, test := range []struct {
+		mode migrator.MigrationTxMode
+		want atlasschema.ApplyOutcome
+	}{
+		{mode: migrator.MigrationTxModeFile, want: atlasschema.ApplyOutcomeFailed},
+		{mode: migrator.MigrationTxModeAll, want: atlasschema.ApplyOutcomeFailed},
+		{mode: migrator.MigrationTxModeNone, want: atlasschema.ApplyOutcomeUnknown},
+	} {
+		t.Run(string(test.mode), func(t *testing.T) {
 			c := qt.New(t)
 			conn := connectSQLite(c, filepath.Join(c.TempDir(), "target.db"))
 			c.Cleanup(func() { c.Check(conn.Close(), qt.IsNil) })
 			var evidence atlasschema.ApplyEvidence
 
-			witnessedApply(c.Context(), conn, mode, []string{"CREATE TABLE broken ("}, &evidence)
+			witnessedApply(c.Context(), conn, test.mode, []string{"CREATE TABLE broken ("}, &evidence)
 
 			c.Assert(evidence.Err, qt.IsNotNil)
 			c.Assert(evidence.Dispatched, qt.IsTrue)
-			c.Assert(atlasschema.NewApplyReport(evidence).Outcome, qt.Equals, atlasschema.ApplyOutcomeUnknown)
+			c.Assert(atlasschema.NewApplyReport(evidence).Outcome, qt.Equals, test.want)
+		})
+	}
+}
+
+func TestApplyStatements_ConfirmedRollbackAfterLaterFailureReportsFailed(t *testing.T) {
+	for _, mode := range []migrator.MigrationTxMode{migrator.MigrationTxModeFile, migrator.MigrationTxModeAll} {
+		t.Run(string(mode), func(t *testing.T) {
+			c := qt.New(t)
+			path := filepath.Join(c.TempDir(), "target.db")
+			conn := connectSQLite(c, path)
+			c.Cleanup(func() { c.Check(conn.Close(), qt.IsNil) })
+			var evidence atlasschema.ApplyEvidence
+
+			witnessedApply(c.Context(), conn, mode, []string{"CREATE TABLE first_table (id INTEGER);", "CREATE TABLE broken ("}, &evidence)
+
+			c.Assert(evidence.Err, qt.IsNotNil)
+			c.Assert(evidence.Dispatched, qt.IsTrue)
+			report := atlasschema.NewApplyReport(evidence)
+			c.Assert(report.Outcome, qt.Equals, atlasschema.ApplyOutcomeFailed)
+			c.Assert(report.Failure, qt.DeepEquals, &atlasschema.ApplyFailure{Statement: 2, Statements: 2})
+			c.Assert(sqliteTableExists(c, path, "first_table"), qt.IsFalse)
 		})
 	}
 }

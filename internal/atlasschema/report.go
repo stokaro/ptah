@@ -92,15 +92,14 @@ const (
 	// the target database, for a reason the report's [Refusal] names.
 	ApplyOutcomeRefused ApplyOutcome = "refused"
 	// ApplyOutcomeFailed means the run stopped before any statement reached
-	// the target database, for a reason that has no refusal code. The report's
-	// error says why.
+	// the target database, or a transaction rolled back every dispatched unit.
+	// The report's error says why.
 	ApplyOutcomeFailed ApplyOutcome = "failed"
-	// ApplyOutcomeUnknown means the statements were sent to the database and
-	// the run returned an error. The report's [ApplyFailure] says where the run
-	// stopped, and nothing in the report says what the database holds: with a
-	// transaction it may have rolled them all back, without one it may hold some
-	// of them, and a lost connection hides even that. Read the database before
-	// deciding anything.
+	// ApplyOutcomeUnknown means statements were sent to the database and the
+	// run returned an error without a confirmed rollback. The report's
+	// [ApplyFailure] says where the run stopped, but a lost connection or an
+	// unconfirmed rollback leaves what the database holds uncertain. Read the
+	// database before deciding anything.
 	ApplyOutcomeUnknown ApplyOutcome = "unknown"
 )
 
@@ -307,10 +306,11 @@ type ApplyReport struct {
 	// sentence the command prints on standard error.
 	Error *errorkind.Report `json:"error,omitempty"`
 	// Failure names the unit or the commit the run stopped at and the code the
-	// database answered with. It is present only when Outcome is unknown and a
-	// statement or the commit failed. A run that stopped before any statement
-	// left has none, and neither does one that stopped at something else, such as
-	// a lock lost after every statement succeeded.
+	// database answered with. It is present after a dispatched statement or
+	// commit fails, whether the outcome is unknown or a transaction confirmed
+	// its rollback. A run that stopped before any statement left has none, and
+	// neither does one that stopped at something else, such as a lock lost after
+	// every statement succeeded.
 	Failure *ApplyFailure `json:"failure,omitempty"`
 	// ProviderDiagnostic preserves structured provider setup and trust failures.
 	ProviderDiagnostic *providerdiagnostic.Diagnostic `json:"provider_diagnostic,omitempty"`
@@ -324,7 +324,7 @@ type ApplyReport struct {
 // It carries no text. The message of [ApplyReport.Error] quotes what the database
 // said, and that can include a row of data or the statement itself; a caller that
 // must not publish data reads this instead. It says where the run stopped, which
-// is not what the database holds: see [ApplyOutcomeUnknown].
+// is not what the database holds unless a transaction confirmed its rollback.
 type ApplyFailure struct {
 	// Statement is the 1-based position in [ApplyReport.Units] of the unit the run
 	// stopped at, and Statements is how many entries Units holds. Each entry is
@@ -382,11 +382,10 @@ type ApplyEvidence struct {
 
 // NewApplyReport classifies one apply run from its evidence.
 //
-// An error after dispatch is unknown whatever its type: the statements were
-// sent, and no error the run returns afterwards says which of them committed.
-// A lock session lost on release is the case in point. Its error arrives after
-// every statement succeeded, and the command reports a failure rather than let
-// a lost session read as success.
+// An error after dispatch is unknown unless the executor confirmed that its
+// transaction rolled back. A lock session lost on release is still unknown:
+// its error arrives after every statement succeeded, and nothing confirms
+// whether the database kept them.
 //
 // An error before dispatch is refused or failed, and that includes a transaction
 // that could not begin, however it failed. A connection lost during BEGIN leaves
@@ -410,8 +409,12 @@ func NewApplyReport(evidence ApplyEvidence) ApplyReport {
 	report.ProviderDiagnostic, _ = errors.AsType[*providerdiagnostic.Diagnostic](evidence.Err)
 	report.SchemaDiagnostics = schemaDiagnostics(evidence.Err)
 	if evidence.Dispatched {
-		report.Outcome = ApplyOutcomeUnknown
 		report.Failure = applyFailure(evidence.Err)
+		if _, rolledBack := errors.AsType[*rolledBackApplyError](evidence.Err); rolledBack {
+			report.Outcome = ApplyOutcomeFailed
+		} else {
+			report.Outcome = ApplyOutcomeUnknown
+		}
 		return report
 	}
 	report.Refusal = refusalFor(evidence.Err)
