@@ -481,7 +481,7 @@ func replacedViews(diff *difftypes.SchemaDiff) []replacedView {
 	var views []replacedView
 	for _, viewDiff := range diff.ViewsModified {
 		view := viewDiff.Desired
-		if view.Name == "" || viewDiff.OptionsOnly() || !viewReplaceKeepsDependents(viewDiff, view.Body) {
+		if view.Name == "" || viewDiff.OptionsOnly() || !viewReplaceKeepsDependents(diff, viewDiff, view.Body) {
 			continue
 		}
 		previous := viewDiff.PreviousBody
@@ -766,6 +766,23 @@ func (r viewRebuild) dropsForGood(grant difftypes.GrantRef, semantics identifier
 	}
 	return grant.ObjectType == "TABLE" && slices.ContainsFunc(r.removeOnly, func(object deporder.ViewLike) bool {
 		return !object.Routine && sameObject(grant.ObjectName, object.Name, semantics)
+	})
+}
+
+// recreatesRelationGrant reports a privilege whose view leaves and returns
+// during this rebuild. The drop removes the old privilege before the normal
+// grant phase can revoke it.
+func (r viewRebuild) recreatesRelationGrant(grant difftypes.GrantRef, semantics identifier.Semantics) bool {
+	return grant.ObjectType == "TABLE" && slices.ContainsFunc(r.recreate, func(object deporder.ViewLike) bool {
+		return !object.Routine && sameObject(grant.ObjectName, object.Name, semantics)
+	})
+}
+
+// lateMaterializedRelation reports an index owner that does not exist until
+// the rebuild completes. A new index on it must follow the CREATE.
+func (r viewRebuild) lateMaterializedRelation(name string, semantics identifier.Semantics) bool {
+	return slices.ContainsFunc(r.late(), func(object deporder.ViewLike) bool {
+		return object.Materialized && sameObject(name, object.Name, semantics)
 	})
 }
 

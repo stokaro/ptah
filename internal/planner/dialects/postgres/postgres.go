@@ -1496,6 +1496,7 @@ func (p *Planner) removeEarlyGeneratedColumns(result []ast.Node, diff *difftypes
 func (p *Planner) addNewIndexes(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
+	include func(difftypes.IndexRef) bool,
 ) ([]ast.Node, error) {
 	indexRemovals := indexscope.NewConflictSetWithSemantics(
 		diff.EffectiveIdentifierSemantics(p.targetDialect()),
@@ -1507,6 +1508,9 @@ func (p *Planner) addNewIndexes(
 	// The declaration travels WITH the addition (stokaro/ptah#2315).
 	for _, change := range diff.IndexesAdded {
 		ref := difftypes.IndexRef{Name: change.Index.Name, TableName: change.TableName}
+		if !include(ref) {
+			continue
+		}
 		index := change.Index
 		for removal := range indexRemovals.Matches(ref) {
 			if _, ownedByConstraint := constraintBacked[removal]; ownedByConstraint {
@@ -2088,9 +2092,15 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// creates are ordered with the views, since either may read the other.
 	result = p.addNewViewLikeObjects(result, diff, relationPlaced, rebuild)
 	result = p.modifyExistingViews(result, diff, rebuild)
-	result = p.createRebuiltViewLikes(result, diff, rebuild, relationPlaced)
-	result = p.addNewTriggers(result, diff)
-	result = p.modifyExistingTriggers(result, diff)
+	lateViewRebuild := rebuildReadsRemovedColumn(diff, rebuild)
+	lateIndex := func(ref difftypes.IndexRef) bool {
+		return lateViewRebuild && rebuild.lateMaterializedRelation(ref.TableName, diff.EffectiveIdentifierSemantics(p.targetDialect()))
+	}
+	if !lateViewRebuild {
+		result = p.createRebuiltViewLikes(result, diff, rebuild, relationPlaced)
+		result = p.addNewTriggers(result, diff)
+		result = p.modifyExistingTriggers(result, diff)
+	}
 
 	// 7. Modify existing roles (must be done before RLS policies that reference them)
 	result = p.modifyExistingRoles(result, diff)
@@ -2108,13 +2118,17 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// 9.1. Comments on objects that already existed, after every step that
 	// creates, replaces or recreates one of them. The policies are the last
 	// of those.
-	result = p.changeObjectComments(result, diff)
+	if !lateViewRebuild {
+		result = p.changeObjectComments(result, diff)
+	}
 
 	// 9.5. Add role privilege grants after roles and target objects exist.
-	result = p.addNewGrants(result, diff, rebuild)
+	if !lateViewRebuild {
+		result = p.addNewGrants(result, diff, rebuild)
+	}
 
 	// 10. Add new indexes
-	result, err = p.addNewIndexes(result, diff)
+	result, err = p.addNewIndexes(result, diff, func(ref difftypes.IndexRef) bool { return !lateIndex(ref) })
 	if err != nil {
 		return nil, err
 	}
@@ -2122,7 +2136,9 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// 10.1. Comments on the indexes the plan keeps. An index the plan
 	// creates writes its own comment above, and one it drops takes its
 	// comment with it.
-	result = changeIndexComments(result, diff)
+	if !lateViewRebuild {
+		result = changeIndexComments(result, diff)
+	}
 
 	// 10.5. Add new constraints (must be done after tables and columns exist)
 	result, err = p.addNewConstraints(result, earlyConstraints, droppedAhead)
@@ -2186,6 +2202,19 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 
 	// 12. Remove table columns (must be done after removing RLS policies that depend on columns)
 	result = p.removeTableColumns(result, diff, earlyColumns, ahead, droppedPolicies)
+	if lateViewRebuild {
+		result = p.createRebuiltViewLikes(result, diff, rebuild, relationPlaced)
+		result, err = p.addNewIndexes(result, diff, lateIndex)
+		if err != nil {
+			return nil, err
+		}
+		result = changeIndexComments(result, diff)
+		result = p.addNewTriggers(result, diff)
+		result = p.modifyExistingTriggers(result, diff)
+		result = p.changeObjectComments(result, diff)
+		result = p.addNewGrants(result, diff, rebuild)
+		result = p.revokeLateViewGrantOptions(result, diff, rebuild)
+	}
 
 	// 12.5. Remove constraints (must be done before removing tables)
 	result = p.removeConstraints(result, diff, releasedConstraints, constraintsAfterColumns)
@@ -2422,7 +2451,8 @@ func (p *Planner) addNewGrants(result []ast.Node, diff *difftypes.SchemaDiff, re
 func (p *Planner) removeGrants(result []ast.Node, diff *difftypes.SchemaDiff, rebuild viewRebuild) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, grant := range diff.GrantsRemoved {
-		if rebuild.dropsForGood(grant, semantics) {
+		if rebuild.dropsForGood(grant, semantics) ||
+			rebuildReadsRemovedColumn(diff, rebuild) && rebuild.recreatesRelationGrant(grant, semantics) {
 			continue
 		}
 		node := ast.NewRevokePrivilege(grant.Role, grant.ObjectType, grant.ObjectName, []string{grant.Privilege}).
@@ -2436,7 +2466,8 @@ func (p *Planner) removeGrants(result []ast.Node, diff *difftypes.SchemaDiff, re
 func (p *Planner) revokeGrantOptions(result []ast.Node, diff *difftypes.SchemaDiff, rebuild viewRebuild) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, grant := range diff.GrantOptionsRevoked {
-		if rebuild.dropsForGood(grant, semantics) {
+		if rebuild.dropsForGood(grant, semantics) ||
+			rebuildReadsRemovedColumn(diff, rebuild) && rebuild.recreatesRelationGrant(grant, semantics) {
 			continue
 		}
 		node := ast.NewRevokePrivilege(grant.Role, grant.ObjectType, grant.ObjectName, []string{grant.Privilege}).
@@ -2444,6 +2475,20 @@ func (p *Planner) revokeGrantOptions(result []ast.Node, diff *difftypes.SchemaDi
 			SetColumns(grantColumns(grant)).
 			SetGrantOptionFor(true)
 		result = append(result, node)
+	}
+	return result
+}
+
+func (p *Planner) revokeLateViewGrantOptions(result []ast.Node, diff *difftypes.SchemaDiff, rebuild viewRebuild) []ast.Node {
+	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
+	for _, grant := range diff.GrantOptionsRevoked {
+		if !rebuild.recreatesRelationGrant(grant, semantics) {
+			continue
+		}
+		result = append(result, ast.NewRevokePrivilege(grant.Role, grant.ObjectType, grant.ObjectName, []string{grant.Privilege}).
+			SetArguments(grant.Arguments).
+			SetColumns(grantColumns(grant)).
+			SetGrantOptionFor(true))
 	}
 	return result
 }
@@ -2965,7 +3010,7 @@ func modifiedViewPaths(diff *difftypes.SchemaDiff) viewPaths {
 			continue
 		}
 		object := deporder.ViewLike{Name: view.Name, Body: view.Body}
-		if viewReplaceKeepsDependents(viewDiff, view.Body) {
+		if viewReplaceKeepsDependents(diff, viewDiff, view.Body) {
 			paths.replaced = append(paths.replaced, object)
 			continue
 		}
@@ -2977,7 +3022,10 @@ func modifiedViewPaths(diff *difftypes.SchemaDiff) viewPaths {
 // viewReplaceKeepsDependents decides whether one modified view keeps the
 // in-place replace, which is the statement that leaves dependents and grants
 // alone. The table in modifyExistingViews explains the three answers.
-func viewReplaceKeepsDependents(viewDiff difftypes.ViewDiff, targetBody string) bool {
+func viewReplaceKeepsDependents(diff *difftypes.SchemaDiff, viewDiff difftypes.ViewDiff, targetBody string) bool {
+	if viewStarReadsRemovedColumn(diff, targetBody) {
+		return false
+	}
 	switch viewReplaceLegality(viewDiff.PreviousBody, targetBody) {
 	case viewReplaceAppendsColumns:
 		return true
@@ -2986,6 +3034,30 @@ func viewReplaceKeepsDependents(viewDiff difftypes.ViewDiff, targetBody string) 
 	default:
 		return !viewDiff.Rollback
 	}
+}
+
+// PostgreSQL expands a bare SELECT * when it creates a view. A later DROP
+// COLUMN still sees the captured column, even when the declaration's same
+// SELECT * would now produce fewer columns. Rebuild the view around the drop.
+func viewStarReadsRemovedColumn(diff *difftypes.SchemaDiff, body string) bool {
+	projection, _, ok := viewProjectionText(body)
+	if !ok || strings.TrimSpace(projection) != "*" {
+		return false
+	}
+	for _, table := range diff.TablesModified {
+		if len(table.ColumnsRemoved) > 0 && deporder.ReferencesRelation(body, table.TableName, rebuildSemantics(diff)) {
+			return true
+		}
+	}
+	return false
+}
+
+// A rebuilt view with a star projection must be created after the removed
+// columns leave. PostgreSQL expands the projection at CREATE VIEW time.
+func rebuildReadsRemovedColumn(diff *difftypes.SchemaDiff, rebuild viewRebuild) bool {
+	return slices.ContainsFunc(rebuild.recreate, func(object deporder.ViewLike) bool {
+		return !object.Materialized && viewStarReadsRemovedColumn(diff, object.Body)
+	})
 }
 
 // removedViewOrder is the views and materialized views the declaration no

@@ -5,6 +5,7 @@ package integration_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -79,6 +80,30 @@ CREATE VIEW big AS SELECT * FROM orders WHERE total > 100;`)
 	runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", grown, "--auto-approve")
 
 	out := runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", grown, "--dry-run")
+	c.Assert(out, qt.Contains, "Schema is synced")
+}
+
+// TestSchemaApplyDropsAColumnUnderSelectStarViewLive checks that the plan
+// releases the view before removing a captured column, then creates the view
+// from the remaining columns.
+func TestSchemaApplyDropsAColumnUnderSelectStarViewLive(t *testing.T) {
+	c := qt.New(t)
+	target, _ := scratchReplayDatabase(c)
+	initial := writeSelectStarSchema(c, `CREATE TABLE orders (id bigint PRIMARY KEY, note text);
+CREATE VIEW all_orders AS SELECT * FROM orders;
+CREATE VIEW order_ids AS SELECT id FROM all_orders;`)
+	selected := writeSelectStarSchema(c, `CREATE TABLE orders (id bigint PRIMARY KEY);
+CREATE VIEW all_orders AS SELECT * FROM orders;
+CREATE VIEW order_ids AS SELECT id FROM all_orders;`)
+	runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", initial, "--auto-approve")
+
+	plan := runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", selected, "--dry-run")
+	dropView := strings.Index(plan, `DROP VIEW "all_orders"`)
+	dropColumn := strings.Index(plan, `DROP COLUMN "note"`)
+	createView := strings.Index(plan, `CREATE VIEW "all_orders"`)
+	c.Assert(dropView >= 0 && dropView < dropColumn && dropColumn < createView, qt.IsTrue, qt.Commentf("plan:\n%s", plan))
+	runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", selected, "--auto-approve")
+	out := runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", selected, "--dry-run")
 	c.Assert(out, qt.Contains, "Schema is synced")
 }
 
