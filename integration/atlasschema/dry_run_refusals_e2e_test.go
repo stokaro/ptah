@@ -131,6 +131,36 @@ func TestSchemaApplyDryRunAnswersAsARealRunE2E(t *testing.T) {
 	})
 }
 
+// A saved SQL plan has the same statement preflight on the compatibility
+// surface's dry run as it has when the approved plan executes.
+func TestCompatSchemaApplyDryRunChecksSavedRolePasswordE2E(t *testing.T) {
+	c := qt.New(t)
+	f := newFailureTarget(c, dbtarget.PostgreSQL)
+	role := f.table("role")
+	variable := rolepassword.Variable(role)
+	plan := f.savedPlan(c, "CREATE TABLE "+f.table("planned")+" (id INT PRIMARY KEY)",
+		`CREATE ROLE "`+role+`" WITH LOGIN PASSWORD `+rolepassword.Reference(role))
+	c.Cleanup(func() { _, _ = f.conn.ExecContext(context.Background(), `DROP ROLE IF EXISTS "`+role+`"`) })
+	args := []string{"schema", "apply", "--url", f.url, "--plan", "file://" + plan}
+	run := func(extra ...string) clirun.Result {
+		return clirun.Run(c, clirun.Compat, clirun.Options{Dir: c.TempDir()}, append(args, extra...)...)
+	}
+
+	dry := run("--dry-run")
+	ran := run("--auto-approve")
+	c.Assert(dry.ExitCode, qt.Equals, ran.ExitCode, qt.Commentf("dry: %s\nreal: %s", dry.Stderr, ran.Stderr))
+	c.Assert(dry.ExitCode, qt.Not(qt.Equals), 0)
+	c.Assert(dry.Stderr, qt.Contains, variable+", which is not set")
+	c.Assert(ran.Stderr, qt.Contains, variable+", which is not set")
+	c.Assert(f.roleExists(c, role), qt.IsFalse)
+
+	passing := clirun.Run(c, clirun.Compat,
+		clirun.Options{Dir: c.TempDir(), Env: append(os.Environ(), variable+"=a-password")},
+		append(args, "--dry-run")...)
+	c.Assert(passing.ExitCode, qt.Equals, 0, qt.Commentf("%s\n%s", passing.Stdout, passing.Stderr))
+	c.Assert(f.roleExists(c, role), qt.IsFalse)
+}
+
 // TestSchemaApplyDryRunOfADeclaredPasswordReferenceE2E is the computed plan's way to a
 // password variable: a schema that names one holds no value, and every run reads it.
 // The control sets the variable, and the dry run passes it with the role still absent.
