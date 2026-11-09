@@ -609,9 +609,9 @@ func applyDropConstraint(target alterTarget, operation *ast.DropConstraintOperat
 		target.written, operation.ConstraintName)
 }
 
-// applyRenameConstraint renames a constraint the schema declares by name, or a
-// column's own UNIQUE by the name the server gives it; see
-// [alterTarget.nameColumnKey].
+// applyRenameConstraint renames a constraint the schema declares by name,
+// including a column's NOT NULL, or a column's own UNIQUE by the name the
+// server gives it; see [alterTarget.nameColumnKey].
 func applyRenameConstraint(database *schemamodel.Database, target alterTarget, operation *ast.RenameConstraintOperation) error {
 	from, to := normalizeSQLIdentifier(target.sourcePlatform, operation.From),
 		normalizeSQLIdentifier(target.sourcePlatform, operation.To)
@@ -1006,6 +1006,10 @@ func (t alterTarget) renameNamedConstraint(from, to string) bool {
 			}
 			if field.Check != "" && field.CheckName == from {
 				field.CheckName = to
+				return true
+			}
+			if !field.Nullable && field.NotNullConstraintName == from {
+				field.NotNullConstraintName = to
 				return true
 			}
 		}

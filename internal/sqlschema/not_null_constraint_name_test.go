@@ -47,6 +47,15 @@ func TestToDatabase_CarriesTheNotNullConstraintName(t *testing.T) {
 	c.Assert(field.Nullable, qt.IsFalse)
 }
 
+func TestToDatabase_RenamesTheNotNullConstraint(t *testing.T) {
+	c := qt.New(t)
+	field := fieldNamed(c, `CREATE TABLE widget (a text CONSTRAINT nn NOT NULL);
+ALTER TABLE widget RENAME CONSTRAINT nn TO nn2;`, "a")
+
+	c.Assert(field.NotNullConstraintName, qt.Equals, "nn2")
+	c.Assert(field.Nullable, qt.IsFalse)
+}
+
 // TestToDatabase_AnUnnamedNotNullCarriesNoName is the control: without it, a
 // conversion that stamped every column would pass the test above.
 func TestToDatabase_AnUnnamedNotNullCarriesNoName(t *testing.T) {

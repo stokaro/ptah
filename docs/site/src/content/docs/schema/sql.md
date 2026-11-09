@@ -331,7 +331,8 @@ These operations are read:
 - `DROP [COLUMN] [IF EXISTS]` and `RENAME [COLUMN] ... TO`;
 - `DROP CONSTRAINT [IF EXISTS]` and `RENAME CONSTRAINT`, by the name the
   declaration gave the constraint or, for a column's own `UNIQUE`, the name
-  the server gives it;
+  the server gives it. `RENAME CONSTRAINT` also reads a column's named
+  `NOT NULL`; use `ALTER COLUMN ... DROP NOT NULL` to remove it;
 - the MySQL family's `MODIFY [COLUMN]`, `DROP PRIMARY KEY`, `DROP FOREIGN KEY`,
   `DROP CHECK`, `DROP INDEX` and `RENAME INDEX`, and SQL Server's
   `ALTER COLUMN` with a new definition.
