@@ -52,6 +52,10 @@ Both write the same canonical form: LF endings, one trailing newline, and an
 order that comes from the schema rather than from a map. Two exports of one
 schema are the same bytes, so a checked-in `.dbml` file diffs cleanly.
 
+A SQL type with spaces is quoted as one DBML type name. For example,
+`timestamp with time zone` appears as `"timestamp with time zone"` and reads
+back as the same SQL type.
+
 Columns keep the order they were declared in. Enums, tables, indexes and
 references are sorted by identity — the order a schema states for its columns is
 part of what it says, and the others carry no order to preserve.
