@@ -1009,6 +1009,9 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 			return "", err
 		}
 		if opts.dryRun {
+			if err := atlasschema.CheckApplyStatements(cmd.Context(), conn, statements); err != nil {
+				return "", fmt.Errorf("apply schema changes: %w", err)
+			}
 			return "", nil
 		}
 
