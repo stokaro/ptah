@@ -120,7 +120,7 @@ func postgres() descriptor.Dialect {
 		Names:            descriptor.Names{Unquoted: "ascii_case_insensitive", PublicKeyword: true},
 		IndexNaming:      descriptor.IndexNaming{PrimaryKeySuffix: "pkey"},
 		ConstraintNaming: descriptor.ConstraintNamingTableColumnsSuffix,
-		Columns:          descriptor.Columns{IdentityNotNull: true, SerialNotNull: true},
+		Columns:          descriptor.Columns{NationalCharAsChar: true, IdentityNotNull: true, SerialNotNull: true},
 		// A second CREATE EXTENSION of one extension is refused, measured on
 		// 18.6: `extension "pgcrypto" already exists`.
 		//
