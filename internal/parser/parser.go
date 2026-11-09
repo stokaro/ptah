@@ -3317,7 +3317,7 @@ func (p *Parser) handleMultiWordType(typeName string) string {
 			typeName += " " + p.current.Value
 			p.advance()
 		}
-	case "CHARACTER":
+	case "CHARACTER", "BIT":
 		if secondWord == "VARYING" {
 			typeName += " " + p.current.Value
 			p.advance()
