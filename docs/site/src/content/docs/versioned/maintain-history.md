@@ -234,6 +234,12 @@ UTF-8, and MySQL and MariaDB refuse a value that is not, so the escape keeps the
 server the only thing that decides whether a statement runs. The rest of the
 statement is unchanged.
 
+On MySQL and MariaDB, Ptah creates its revision table with `utf8mb4`, even
+when the database defaults to `latin1` or `utf8mb3`. A migration statement can
+therefore contain Unicode that the database's default character set cannot
+store. Existing revision tables keep their own character sets; Ptah does not
+change their columns during a run.
+
 An interruption during a `no_transaction` statement is more ambiguous. Before
 each SQL-backed statement, Ptah durably records the last known completed
 statement and marks the next statement's outcome as unknown. After success, it

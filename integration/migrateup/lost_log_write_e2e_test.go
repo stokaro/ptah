@@ -339,6 +339,35 @@ func TestCharacterTheCharsetCanHoldIsStoredE2E(t *testing.T) {
 	}
 }
 
+// The migration body may create a utf8mb4 table even when the database's
+// default charset is latin1. Its checkpoint must accept the same statement.
+func TestCheckpointAcceptsUnicodeStatementOnLatin1DatabaseE2E(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		engine dbtarget.Engine
+	}{
+		{name: "mysql", engine: dbtarget.MySQLAdmin},
+		{name: "mariadb", engine: dbtarget.MariaDBAdmin},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			name := fmt.Sprintf("unicode_checkpoint_%d", time.Now().UnixNano())
+			run := newLostLogRun(c, charsetDatabaseURL(c, test.engine, "latin1"),
+				fmt.Sprintf("CREATE TABLE %s (v VARCHAR(20)) CHARACTER SET utf8mb4;\n"+
+					"INSERT INTO %s VALUES ('🚀');\n", name, name))
+
+			result, document := run.up(c)
+			c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", result.Stderr))
+			c.Assert(document.Outcome, qt.Equals, migrator.RunOutcomeApplied)
+			c.Assert(run.revisionCount(c), qt.Equals, 1)
+
+			var value string
+			c.Assert(run.conn.QueryRowContext(c.Context(), "SELECT v FROM "+name).Scan(&value), qt.IsNil)
+			c.Assert(value, qt.Equals, "🚀")
+		})
+	}
+}
+
 // `down` prints no document, so its report is the closing notice. The rollback
 // ran, the command exits clean, and the table holds no record of it, which is the
 // one thing the revision table can no longer say either.
