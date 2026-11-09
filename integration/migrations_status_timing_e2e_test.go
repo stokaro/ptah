@@ -18,14 +18,11 @@ import (
 // outside the run on a runner whose own zone is UTC.
 const statusTimingZone = "Asia/Kathmandu"
 
-// TestMigrationsStatusReportsWhenEachMigrationRanE2E applies one migration of
-// two from a process in another zone than UTC and reads `ptah migrations
-// status --json` on every server engine. The applied migration carries when
-// its revision row was written, in UTC and within the run, and how long it
-// ran; the pending one carries neither (stokaro/ptah#4886). PostgreSQL stores
-// the native row's time without a zone, and Ptah wrote the local wall clock
-// into it until it wrote UTC.
-func TestMigrationsStatusReportsWhenEachMigrationRanE2E(t *testing.T) {
+// TestMigrationsStatusAndLogReportWhenEachMigrationRanE2E applies one migration
+// of two from a process outside UTC. Status and log timestamps must describe
+// the run in UTC. PostgreSQL stores these times without a zone, so the writer
+// must supply UTC wall time.
+func TestMigrationsStatusAndLogReportWhenEachMigrationRanE2E(t *testing.T) {
 	c := qt.New(t)
 	zone, err := time.LoadLocation(statusTimingZone)
 	c.Assert(err, qt.IsNil, qt.Commentf("the zone database must hold %s, or the run below proves nothing", statusTimingZone))
@@ -87,4 +84,20 @@ func assertStatusTimesTheRun(c *qt.C, binary, url string) {
 	c.Assert(pending.State, qt.Equals, "pending")
 	c.Assert(pending.AppliedAt, qt.IsNil)
 	c.Assert(pending.ExecutionMs, qt.IsNil)
+
+	logOutput, err := runPtahNativeWithError("migrations", "log", "--db-url", url, "--json")
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", logOutput))
+	var attempts []struct {
+		StartedAt  time.Time `json:"started_at"`
+		FinishedAt time.Time `json:"finished_at"`
+		Outcome    string    `json:"outcome"`
+	}
+	c.Assert(json.Unmarshal([]byte(logOutput), &attempts), qt.IsNil, qt.Commentf("%s", logOutput))
+	c.Assert(attempts, qt.HasLen, 1)
+	c.Assert(attempts[0].Outcome, qt.Equals, "applied")
+	for _, loggedAt := range []time.Time{attempts[0].StartedAt, attempts[0].FinishedAt} {
+		c.Assert(loggedAt.Location(), qt.Equals, time.UTC)
+		c.Assert(loggedAt.After(before) && loggedAt.Before(after), qt.IsTrue,
+			qt.Commentf("migration log time %s outside the run %s to %s", loggedAt, before, after))
+	}
 }
