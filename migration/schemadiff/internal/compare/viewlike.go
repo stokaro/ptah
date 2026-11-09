@@ -112,13 +112,25 @@ var materializedViewFamily = viewLikeFamily[
 // declared columns, so a declared `*` matches the columns a server stores in
 // its place, and against spelled, the server's spelling of each declared body.
 // A target's view rules, where it registers them, replace both.
-func plainViewFamilyFor(desired *schemamodel.Database, spelled map[string]config.ViewBody, rules schemacomparison.Views) viewLikeFamily[
+func plainViewFamilyFor(
+	desired *schemamodel.Database,
+	spelled map[string]config.ViewBody,
+	rules schemacomparison.Views,
+	defaultSchema string,
+) viewLikeFamily[
 	difftypes.ViewChanges, []difftypes.ViewDiff,
 	schemamodel.View, catalog.View, difftypes.ViewDiff,
 ] {
 	family := plainViewFamily
 	bodies := declaredBodies{columns: declaredRelationColumns(desired), spelled: spelled, rules: rules}
 	family.Compare = func(genView schemamodel.View, dbView catalog.View, dialect string) difftypes.ViewDiff {
+		// A dev-replayed MySQL view is unqualified when compared with a
+		// target database, so its plan can move to that database. Its stored
+		// body still qualifies relations. Use the session's default only
+		// while comparing the body, not in the view's identity.
+		if dbView.Schema == "" {
+			dbView.Schema = defaultSchema
+		}
 		return viewDefinitions(genView, dbView, dialect, bodies)
 	}
 	return family
@@ -150,7 +162,7 @@ func Views(desired *schemamodel.Database, current *catalog.Database, diff *difft
 // for catalog readback forms that are semantically equivalent to Ptah-rendered
 // view SQL.
 func ViewsWithDialect(desired *schemamodel.Database, current *catalog.Database, diff *difftypes.SchemaDiff, dialect string) {
-	compareViewLikesByName(plainViewFamilyFor(desired, nil, nil), desired, current, diff, dialect)
+	compareViewLikesByName(plainViewFamilyFor(desired, nil, nil, ""), desired, current, diff, dialect)
 }
 
 // ViewsWithSemantics compares view identity with the live database's resolved
@@ -169,7 +181,8 @@ func ViewsWithSemantics(
 	spelled map[string]config.ViewBody,
 	rules schemacomparison.Views,
 ) {
-	compareViewLikesByIdentity(plainViewFamilyFor(desired, spelled, rules), desired, database, diff, dialect, semantics)
+	bodySchema := semantics.Normalize(dialect).DefaultSchema
+	compareViewLikesByIdentity(plainViewFamilyFor(desired, spelled, rules, bodySchema), desired, database, diff, dialect, semantics)
 }
 
 // MaterializedViews compares materialized view definitions between generated

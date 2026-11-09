@@ -782,6 +782,7 @@ func (r *Reader) readViews(ctx context.Context, dbName string) ([]catalog.View, 
 		if err != nil {
 			return nil, err
 		}
+		view.Schema = dbName
 		views = append(views, view)
 	}
 	if err := rows.Err(); err != nil {

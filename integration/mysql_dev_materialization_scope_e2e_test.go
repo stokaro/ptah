@@ -160,15 +160,16 @@ func TestSchemaDiffFromDirectoryWithChangedViewPlansReplacementE2E(t *testing.T)
 			c := qt.New(t)
 			scratch := newMySQLFamilyScratch(c, engine.admin)
 			_, targetURL := scratch.builtFrom(c, target)
-			_, devURL := scratch.database(c, "dev")
+			devName, devURL := scratch.database(c, "dev")
 			dir, _ := writeRewrittenMigrationProject(c, source, source)
 
 			diff := runPtahIn(c, "schema", "diff", "--from", "file://"+dir,
 				"--to", targetURL, "--dev-url", devURL)
 
 			c.Assert(diff.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", diff.Stdout, diff.Stderr))
-			c.Assert(diff.Stdout, qt.Contains, "CREATE OR REPLACE VIEW `v`")
+			c.Assert(diff.Stdout, qt.Contains, "CREATE OR REPLACE VIEW")
 			c.Assert(diff.Stdout, qt.Contains, "+ 1")
+			c.Assert(diff.Stdout, qt.Not(qt.Contains), devName)
 		})
 	}
 }
