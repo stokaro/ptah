@@ -12,7 +12,9 @@ import (
 	"hash/fnv"
 	"time"
 
+	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 	"ptah.run/internal/dblockext"
 )
 
@@ -25,9 +27,22 @@ const pollInterval = 25 * time.Millisecond
 func Services() dblockext.Services {
 	return dblockext.Services{
 		Dialects:  []string{platform.Postgres, platform.YugabyteDB},
+		Preflight: advisoryPreflight,
 		Session:   advisory{},
 		Exclusion: advisory{},
 	}
+}
+
+// advisoryPreflight keeps the YugabyteDB 2024.x line from starting a schema
+// change without a lock. That server refuses pg_try_advisory_lock; the
+// measured capability preset records advisory-lock support from 2025.1.
+func advisoryPreflight(info catalog.ServerInfo) error {
+	if platform.NormalizeDialect(info.Dialect) != platform.YugabyteDB ||
+		capability.ForServerVersion(info.Dialect, info.Version).Has(capability.AdvisoryLocks) {
+		return nil
+	}
+	return errors.New("YugabyteDB target has no session advisory locks; Ptah refuses schema changes " +
+		"without a lock (requires YugabyteDB 2025.1 or later)")
 }
 
 // Key returns the 64-bit pg_advisory_lock key derived from name.

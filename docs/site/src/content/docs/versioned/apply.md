@@ -212,6 +212,10 @@ target does anyway.
 `ptah migrations down` and `ptah migrations baseline` answer the same way: all
 three take the same lock on the same history.
 
+YugabyteDB 2024.x cannot take the session advisory lock. Ptah refuses a
+migration run on that server before changing the schema. YugabyteDB 2025.1
+and later support the lock.
+
 On YDB the provider takes the lock on a coordination node, and the server can
 take it away while the run goes on; see
 [The migration lock](../../extend/providers/ydb/migrations/#the-migration-lock).

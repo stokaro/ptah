@@ -204,9 +204,12 @@ func openSQLite(c *qt.C) *dbschema.DatabaseConnection {
 type connection struct {
 	*sql.DB
 	dialect string
+	version string
 }
 
-func (c connection) Info() catalog.ServerInfo { return catalog.ServerInfo{Dialect: c.dialect} }
+func (c connection) Info() catalog.ServerInfo {
+	return catalog.ServerInfo{Dialect: c.dialect, Version: c.version}
+}
 
 // advisoryServer answers pg_try_advisory_lock with the answers in turn, the
 // last one from then on, and pg_advisory_unlock with true. It counts both.
@@ -230,6 +233,33 @@ func (s *advisoryServer) answer(query string, _ []driver.NamedValue) (dbtest.Que
 func openAdvisory(c *qt.C, dialect string, server *advisoryServer) connection {
 	c.Helper()
 	return connection{DB: dbtest.Open(c, server.answer).SQL, dialect: dialect}
+}
+
+func TestAcquire_Yugabyte2024RefusesUnsupportedLockBeforeQuery(t *testing.T) {
+	c := qt.New(t)
+	server := &advisoryServer{answers: []bool{true, false}}
+	conn := openAdvisory(c, "yugabytedb", server)
+	conn.version = "PostgreSQL 11.2-YB-2024.2.11.0-b0"
+
+	lock, err := dblock.Acquire(c.Context(), conn, "ptah_migrate", time.Second)
+
+	c.Assert(err, qt.ErrorMatches, `YugabyteDB target has no session advisory locks; Ptah refuses schema changes without a lock \(requires YugabyteDB 2025\.1 or later\)`)
+	c.Assert(lock, qt.IsNil)
+	c.Assert(server.attempts.Load(), qt.Equals, int64(0))
+}
+
+func TestAcquire_Yugabyte2025KeepsSessionLock(t *testing.T) {
+	c := qt.New(t)
+	server := &advisoryServer{answers: []bool{true, false}}
+	conn := openAdvisory(c, "yugabytedb", server)
+	conn.version = "PostgreSQL 15.12-YB-2025.1.0.0-b0"
+
+	lock, err := dblock.Acquire(c.Context(), conn, "ptah_migrate", time.Second)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(lock.Supported(), qt.IsTrue)
+	c.Assert(server.attempts.Load(), qt.Equals, int64(2))
+	c.Assert(lock.Release(c.Context()), qt.IsNil)
 }
 
 // A lock through a pool that is not a *dbschema.DatabaseConnection is taken

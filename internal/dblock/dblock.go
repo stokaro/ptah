@@ -152,6 +152,15 @@ func Supported(dialect string) bool {
 	return servicesOf(dialect).Locks()
 }
 
+// validateLockTarget lets the selected lock service reject a server that
+// cannot take its lock before dblock borrows a physical session.
+func validateLockTarget(info catalog.ServerInfo) error {
+	if preflight := servicesOf(info.Dialect).Preflight; preflight != nil {
+		return preflight(info)
+	}
+	return nil
+}
+
 // SupportedDialects returns the canonical dialect names whose targets take a
 // session advisory lock, in the order the dialect registry lists them. The
 // returned slice is new on every call, so a caller may sort or filter it.
@@ -418,6 +427,9 @@ func withLockSession(
 	if use == nil {
 		return errors.New("advisory lock session callback is nil"), nil
 	}
+	if err := validateLockTarget(conn.Info()); err != nil {
+		return err, nil
+	}
 	dialect := platform.NormalizeDialect(conn.Info().Dialect)
 
 	runErr = conn.WithSession(ctx, func(session *dbschema.DatabaseConnection) (callbackErr error) {
@@ -492,6 +504,9 @@ func Acquire(
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return nil, errors.New("advisory lock name must not be empty")
+	}
+	if err := validateLockTarget(conn.Info()); err != nil {
+		return nil, err
 	}
 	if lock, handled, err := nativeLock(ctx, conn, name, timeout); handled {
 		return lock, err
