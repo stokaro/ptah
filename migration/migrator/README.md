@@ -712,12 +712,15 @@ keeping a failed or not-yet-deleted rollback dirty and recoverable.
 
 ### Migration Advisory Locks
 
-PostgreSQL, YugabyteDB, MySQL, MariaDB, SQL Server and YDB migrators acquire a
-session-level lock around the planning and apply window for `MigrateUp`,
+PostgreSQL, YugabyteDB 2025.1 and later, MySQL, MariaDB, SQL Server and YDB
+migrators acquire a session-level lock around the planning and apply window for `MigrateUp`,
 `MigrateDown`, `MigrateDownTo`, `MigrateTo`, and `RepairMigration`. Repair holds
 the lock across revision inspection, resumed SQL, safety checks, and its final
 metadata write. This prevents concurrent runners from acting on the same
-migration state. YDB has no SQL advisory lock, so there the lock is an
+migration state.
+
+YugabyteDB 2024.x is refused before migration work because its server cannot
+take this lock. YDB has no SQL advisory lock, so there the lock is an
 exclusive, ephemeral semaphore on the coordination node `ptah_locks` at the
 database root, which Ptah creates on first use. A coordination session of its
 own holds it, so the server can take it away while the run goes on; the

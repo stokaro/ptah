@@ -18,6 +18,7 @@ import (
 	"database/sql"
 	"time"
 
+	"ptah.run/catalog"
 	"ptah.run/core/dataext"
 )
 
@@ -124,6 +125,9 @@ func (e *AmbiguousError) Unwrap() error {
 type Services struct {
 	// Dialects are the canonical names of the dialects these services serve.
 	Dialects []string
+	// Preflight refuses a target whose server version cannot take this lock.
+	// It runs before dblock borrows a physical session.
+	Preflight func(catalog.ServerInfo) error
 	// Session takes a lock that a database session holds.
 	Session SessionLock
 	// Exclusion proves that a Session lock excludes other sessions. Nil

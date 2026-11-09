@@ -897,7 +897,7 @@ lock and the exclusive dev-database lock. It is a duration that defaults to
 `10s`, and zero or a negative value tries each lock once without waiting, as on
 Atlas:
 
-- PostgreSQL, YugabyteDB, MySQL, MariaDB, and SQL Server use session advisory
+- PostgreSQL, YugabyteDB 2025.1 and later, MySQL, MariaDB, and SQL Server use session advisory
   locks;
 - SQLite, ClickHouse, and CockroachDB use an operating-system lock keyed by
   normalized database identity;
