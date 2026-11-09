@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"ptah.run/internal/atlascompatpolicy"
 )
 
 // PostgreSQL 18 keeps a NOT NULL as a named constraint, RENAME COLUMN leaves the name
@@ -111,9 +113,10 @@ func TestCompatSchemaDiffFreesAHeldNotNullNameE2E(t *testing.T) {
 // policy, which leaves a statement that runs as it is.
 func TestCompatStrictSchemaDiffFreesAHeldNotNullNameE2E(t *testing.T) {
 	c := qt.New(t)
-	t.Setenv("PTAH_ATLAS_STRICT_COMPAT", "1")
-
-	assertScriptRunsToSynced(c, runCompatVerb, heldNotNullNames[1].left, heldNotNullNames[1].right)
+	runStrict := func(args ...string) (string, error) {
+		return runCompatVerbWithPolicy(atlascompatpolicy.StrictCE(), args...)
+	}
+	assertScriptRunsToSynced(c, runStrict, heldNotNullNames[1].left, heldNotNullNames[1].right)
 }
 
 // heldNotNullNameFiles is a schema and the same schema with a column renamed, its NOT

@@ -21,6 +21,7 @@ import (
 	"ptah.run/config/projectconfig"
 	"ptah.run/core/selectext"
 	"ptah.run/dbschema"
+	"ptah.run/internal/atlascompatpolicy"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/builtintest"
@@ -2241,7 +2242,6 @@ table "users" {
 // changes nothing the server runs.
 func TestCompatCommand_StrictSchemaDiffKeepsTheAddColumnComment(t *testing.T) {
 	c := qt.New(t)
-	t.Setenv("PTAH_ATLAS_STRICT_COMPAT", "1")
 	dir := t.TempDir()
 	from := filepath.Join(dir, "from.hcl")
 	to := filepath.Join(dir, "to.hcl")
@@ -2263,7 +2263,7 @@ table "users" {
 }
 `), 0o600), qt.IsNil)
 
-	cmd := NewCompatCommand("atlas")
+	cmd := NewCompatCommandWithPolicy("atlas", atlascompatpolicy.StrictCE())
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)

@@ -10,6 +10,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/atlascompatpolicy"
 	"ptah.run/internal/cli/atlas"
 )
 
@@ -44,7 +45,11 @@ const devDockerVerbURL = "docker://postgres/16-alpine/ptahverbs"
 // since Go evaluates the results left to right, and every invocation answered
 // an empty string.
 func runCompatVerb(args ...string) (string, error) {
-	cmd := atlas.NewCompatCommand("atlas")
+	return runCompatVerbWithPolicy(atlascompatpolicy.Full(), args...)
+}
+
+func runCompatVerbWithPolicy(policy atlascompatpolicy.Policy, args ...string) (string, error) {
+	cmd := atlas.NewCompatCommandWithPolicy("atlas", policy)
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
