@@ -370,13 +370,12 @@ func (r *Reader) readDatabase(
 	}
 
 	// Reconcile per-column flags after all catalog metadata is loaded.
-	// information_schema.KEY_COLUMN_USAGE carries primary-key membership, and
-	// information_schema.STATISTICS (NON_UNIQUE) is authoritative for unique
-	// indexes. Keeping these derived flags in one post-pass avoids depending on
-	// per-column metadata that is either absent or lossy across MySQL/MariaDB
-	// versions. The pass keys by table name alone, which is why it runs over
-	// one database at a time.
-	enhanceTablesWithPrimaryKeys(schema.Tables, schema.Constraints)
+	// information_schema.STATISTICS carries primary-key membership even when
+	// MariaDB hides TABLE_CONSTRAINTS from a SELECT-only account. Its NON_UNIQUE
+	// value is also authoritative for unique indexes. Deriving these flags after
+	// the catalog read avoids lossy per-column metadata. This pass keys by table
+	// name alone, so it runs over one database at a time.
+	enhanceTablesWithPrimaryKeys(schema.Tables, schema.Constraints, schema.Indexes)
 	reconcileColumnUniqueness(schema)
 	carryPrimaryKeyMethod(schema)
 	if err := carryPrimaryKeyOptions(schema, primaryBlockSizes); err != nil {
@@ -734,8 +733,19 @@ func reconcileColumnUniqueness(schema *catalog.Database) {
 	}
 }
 
-func enhanceTablesWithPrimaryKeys(tables []catalog.Table, constraints []catalog.Constraint) {
+func enhanceTablesWithPrimaryKeys(tables []catalog.Table, constraints []catalog.Constraint, indexes []catalog.Index) {
 	primaryKeys := make(map[string]map[string]struct{})
+	for _, index := range indexes {
+		if !index.IsPrimary {
+			continue
+		}
+		if primaryKeys[index.TableName] == nil {
+			primaryKeys[index.TableName] = make(map[string]struct{})
+		}
+		for _, column := range index.Columns {
+			primaryKeys[index.TableName][column] = struct{}{}
+		}
+	}
 	for _, constraint := range constraints {
 		if constraint.Type != "PRIMARY KEY" {
 			continue
