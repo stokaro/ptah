@@ -454,7 +454,8 @@ exactly one of them:
   `old -> new` description is flipped so the diff reads truthfully in the DOWN
   direction, and a view's recorded prior body is exchanged for the UP
   migration's target body, because that is the state the database is in when the
-  rollback runs.
+  rollback runs. A table or column comment transition swaps its current and
+  desired text so the down statement restores the prior comment.
 - **Derived entries are rebuilt** from the pre-change database rather than
   swapped, because a rollback must restore the prior body rather than the new
   one. This covers the table-qualified constraint collections. The recorded
