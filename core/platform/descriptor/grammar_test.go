@@ -16,9 +16,10 @@ func TestNewRegistry_Grammar_HappyPath(t *testing.T) {
 	described := head("alpha")
 	described.Grammar = descriptor.Grammar{
 		Columns: descriptor.ColumnGrammar{
-			CurrentTimeKeywords: true,
-			SecondCheckRefusal:  "alpha takes one CHECK on a column",
-			ReferencesRefusal:   "what alpha builds depends on its release",
+			TimestampLocalTimeZone: true,
+			CurrentTimeKeywords:    true,
+			SecondCheckRefusal:     "alpha takes one CHECK on a column",
+			ReferencesRefusal:      "what alpha builds depends on its release",
 			Constraint: descriptor.ColumnConstraint{
 				Define: descriptor.ConstraintKindReferences,
 				Modify: descriptor.ConstraintKindCheck,
