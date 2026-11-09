@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
+	"ptah.run/migration/safety"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -48,6 +49,11 @@ func TestMariaDBColumnCheckChangesWithItsColumn(t *testing.T) {
 			c.Assert(strings.Contains(sql, "DROP CONSTRAINT"), qt.Equals, test.wantDrop)
 			c.Assert(strings.Contains(sql, "MODIFY COLUMN"), qt.Equals, !test.wantDrop)
 			c.Assert(sql, qt.Not(qt.Contains), "ADD CONSTRAINT")
+			nodes, err := planner.GenerateSchemaDiffAST(t.Context(), runtime, diff, platform.MariaDB)
+			c.Assert(err, qt.IsNil)
+			assessments, err := safety.AssessRendered(t.Context(), runtime, nodes, platform.MariaDB)
+			c.Assert(err, qt.IsNil)
+			c.Assert(safety.HasDestructiveAssessment(assessments), qt.IsTrue, qt.Commentf("%+v", assessments))
 		})
 	}
 }

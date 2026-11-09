@@ -81,6 +81,10 @@ type ModifyColumnOperation struct {
 	// for this engine, including false. When absent, safety may inspect the
 	// type spellings of an operation assembled without a comparison.
 	TypeNarrowingKnown bool
+	// RemovesCheckProtection reports that a restated column replaces or removes
+	// a CHECK that the live column held. The rendered MODIFY COLUMN cannot say
+	// which protection existed before it, so safety analysis reads this mark.
+	RemovesCheckProtection bool
 	// PreviousNullable is the best-known existing database nullability before
 	// the modification. Safety analysis uses it to distinguish DROP NOT NULL
 	// from SET NOT NULL. Most renderers ignore it. Oracle's MODIFY repeats a

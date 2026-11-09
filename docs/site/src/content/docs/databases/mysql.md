@@ -896,6 +896,8 @@ own name, and a column declared `json` plans nothing against that shape. A `long
 no such `CHECK` plans the `ADD CONSTRAINT`, and any other type plans a `MODIFY COLUMN` that
 writes the `CHECK` with the type. Declaring a checked `int` as plain `int`, or a `json`
 as plain `longtext`, removes the column's check with `MODIFY COLUMN`.
+The plan rates removal or replacement of a column check as destructive because
+the new definition may stop enforcing the old condition.
 
 ## Making a column NOT NULL
 
