@@ -6,7 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	neturl "net/url"
+	"maps"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -15,6 +15,7 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	mysqldriver "github.com/go-sql-driver/mysql"
 
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasurl"
@@ -418,12 +419,15 @@ func TestNonStrictSessionDoesNotFalsifyMigrationLogE2E(t *testing.T) {
 
 func nonStrictSQLModeURL(c *qt.C, raw string) string {
 	c.Helper()
-	parsed, err := neturl.Parse(raw)
+	scheme, dsn, found := strings.Cut(raw, "://")
+	c.Assert(found, qt.IsTrue)
+	config, err := mysqldriver.ParseDSN(dsn)
 	c.Assert(err, qt.IsNil)
-	query := parsed.Query()
-	query.Set("sql_mode", "''")
-	parsed.RawQuery = query.Encode()
-	return parsed.String()
+	params := make(map[string]string, len(config.Params)+1)
+	maps.Copy(params, config.Params)
+	config.Params = params
+	config.Params["sql_mode"] = "''"
+	return scheme + "://" + config.FormatDSN()
 }
 
 // `down` prints no document, so its report is the closing notice. The rollback
