@@ -112,7 +112,7 @@ func TestDescriptors_SchemaFileFactsAgreeWithTheSwitchesTheyReplace(t *testing.T
 			dialect:     platform.YugabyteDB,
 			names:       descriptor.Names{Unquoted: "ascii_case_insensitive", PublicKeyword: true},
 			indexNaming: pgFamily,
-			columns:     descriptor.Columns{NationalCharAsChar: true},
+			columns:     descriptor.Columns{NationalCharAsChar: true, IdentityNotNull: true},
 			statements:  descriptor.Statements{ViewsBlockDropTable: true, OwnerCreateOnce: true, RelationsShareNames: true},
 		},
 		{dialect: platform.Oracle, names: descriptor.Names{Lookup: "ascii_case_insensitive"}},

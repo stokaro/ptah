@@ -70,8 +70,8 @@ anything is read, and is never inspected or planned as PostgreSQL.
   An ascending key with a NULLS ordering is written with `ASC`: without a
   direction, YugabyteDB builds a leading key as a hash key and ignores the
   ordering.
-  A column of a serial type is `NOT NULL` whether or not the file says so, as
-  the server builds it.
+  A column of a serial type or one declared `GENERATED ... AS IDENTITY` is
+  `NOT NULL` whether or not the file says so, as the server builds it.
 
 CockroachDB and YugabyteDB open a transaction around a migration body, and a
 schema statement does not wait for it to end. See
