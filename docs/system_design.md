@@ -174,6 +174,10 @@ dependency data is available; generated down migrations also pre-order the
 reversed diff so callers that only have the diff still receive child-before-parent
 DROP TABLE statements.
 
+When PostgreSQL replaces a primary-key column, the old key remains until its
+column is dropped. The planner adds the replacement key and foreign keys that
+may reference it after the column drop, including in generated down migrations.
+
 #### generator Package
 - **Purpose**: Generates migration files from planned operations
 - **Features**:

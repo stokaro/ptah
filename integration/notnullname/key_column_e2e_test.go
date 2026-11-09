@@ -167,9 +167,9 @@ func tableStatement(c *qt.C, output string) string {
 	return `CREATE TABLE "t"` + body + ";"
 }
 
-// TestRenamedKeyColumnFilesRunBothWays runs what ptah-compat writes forward, back and
-// forward. The rollback gives the old column back the name it held, which the server
-// gives it because one statement drops the column that holds it first.
+// TestRenamedKeyColumnFilesRunBothWays runs both command surfaces forward,
+// back and forward. The rollback restores the old column and its constraint
+// name after dropping the column that holds the new primary key.
 func TestRenamedKeyColumnFilesRunBothWays(t *testing.T) {
 	const before = `CREATE TABLE t (id int PRIMARY KEY, v text)`
 	const after = `CREATE TABLE t (pk int CONSTRAINT t_id_not_null NOT NULL PRIMARY KEY, v text)`
@@ -179,6 +179,16 @@ func TestRenamedKeyColumnFilesRunBothWays(t *testing.T) {
 		restored: "id=t_id_not_null",
 		again:    "pk=t_id_not_null",
 	}
+	t.Run("ptah", func(t *testing.T) {
+		c := qt.New(t)
+		c.Assert(nativeFilesBothWays(c, before, after), qt.Equals, want)
+	})
+	t.Run("ptah with a dependent foreign key", func(t *testing.T) {
+		c := qt.New(t)
+		const childBefore = `; CREATE TABLE child (parent_id int CONSTRAINT child_parent_fk REFERENCES t(id))`
+		const childAfter = `; CREATE TABLE child (parent_id int CONSTRAINT child_parent_fk REFERENCES t(pk))`
+		c.Assert(nativeFilesBothWays(c, before+childBefore, after+childAfter), qt.Equals, want)
+	})
 	t.Run("ptah-compat", func(t *testing.T) {
 		c := qt.New(t)
 		c.Assert(compatFilesBothWays(c, runCompat, before, after), qt.Equals, want)

@@ -1962,6 +1962,14 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// Hand-built diffs may lack identities. Resolve them before either the
 	// early dependency releases or the later replacement pairing uses them.
 	constraintscope.Normalize(diff, semantics)
+	earlyConstraints, lateConstraints := p.constraintsAroundColumnRemoval(diff, semantics)
+	earlyForeignKeys := diff
+	if lateConstraints != nil {
+		withoutTableChanges := *diff
+		withoutTableChanges.TablesModified = nil
+		withoutTableChanges.TablesAdded = nil
+		earlyForeignKeys = &withoutTableChanges
+	}
 
 	// 0. Create the schemas this migration adds objects to, before anything is
 	// created in them. Every phase below can name a schema, so this cannot sit
@@ -2060,7 +2068,7 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	result = p.restoreKeptSequenceOwners(result, diff)
 
 	// 6.5. Add foreign key constraints for newly added columns (must be done after all columns exist)
-	result = p.addForeignKeyConstraintsForModifiedTables(result, diff)
+	result = p.addForeignKeyConstraintsForModifiedTables(result, earlyForeignKeys)
 
 	// 6.7. Associate added sequences with their owning table.column and apply
 	// option changes to existing sequences, now that tables exist.
@@ -2116,14 +2124,14 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	result = changeIndexComments(result, diff)
 
 	// 10.5. Add new constraints (must be done after tables and columns exist)
-	result, err = p.addNewConstraints(result, diff, droppedAhead)
+	result, err = p.addNewConstraints(result, earlyConstraints, droppedAhead)
 	if err != nil {
 		return nil, err
 	}
 
 	// 10.6. Add field-level foreign keys for new tables after referenced
 	// unique indexes and constraints have been created.
-	result = p.addForeignKeyConstraintsForNewTables(result, diff)
+	result = p.addForeignKeyConstraintsForNewTables(result, earlyForeignKeys)
 
 	// 10.7. Comments on the constraints both sides already hold. A constraint
 	// added above takes its comment from the statement that adds it.
@@ -2180,6 +2188,10 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 
 	// 12.5. Remove constraints (must be done before removing tables)
 	result = p.removeConstraints(result, diff, releasedConstraints, constraintsAfterColumns)
+	result, err = p.addConstraintsAfterColumnRemoval(result, diff, lateConstraints, droppedAhead)
+	if err != nil {
+		return nil, err
+	}
 
 	result = p.removeTablesHoldingTypes(result, diff, ahead, droppedPolicies)
 
@@ -3069,6 +3081,69 @@ func findMaterializedView(
 	semantics identifier.Semantics,
 ) *schemamodel.MaterializedView {
 	return objectlookup.MaterializedView(views, name, semantics)
+}
+
+// constraintsAroundColumnRemoval leaves a replacement primary key until its old
+// column has been dropped. PostgreSQL removes the old key with that column, and
+// refuses a second primary key while the column is still present. Foreign keys
+// wait with the replacement because they may reference it.
+func (p *Planner) constraintsAroundColumnRemoval(diff *difftypes.SchemaDiff, semantics identifier.Semantics) (early, late *difftypes.SchemaDiff) {
+	if p.targetDialect() != platform.Postgres {
+		return diff, nil
+	}
+	removedKeyColumns := make(map[string]struct{})
+	for _, table := range diff.TablesModified {
+		if slices.ContainsFunc(table.ColumnsRemoved, func(column schemamodel.Field) bool { return column.Primary }) {
+			removedKeyColumns[semantics.QualifiedTableIdentityKey(table.TableName)] = struct{}{}
+		}
+	}
+	for _, removal := range diff.ConstraintsRemoved {
+		if strings.EqualFold(removal.Type, "PRIMARY KEY") {
+			delete(removedKeyColumns, semantics.QualifiedTableIdentityKey(removal.TableName))
+		}
+	}
+	deferred := make(map[string]struct{})
+	for _, addition := range diff.ConstraintsAdded {
+		if !strings.EqualFold(addition.Type, "PRIMARY KEY") {
+			continue
+		}
+		table := semantics.QualifiedTableIdentityKey(addition.TableName)
+		if _, found := removedKeyColumns[table]; found {
+			deferred[table] = struct{}{}
+		}
+	}
+	if len(deferred) == 0 {
+		return diff, nil
+	}
+	earlyDiff, lateDiff := *diff, *diff
+	earlyDiff.ConstraintsAdded = nil
+	lateDiff.ConstraintsAdded = nil
+	for _, addition := range diff.ConstraintsAdded {
+		table := semantics.QualifiedTableIdentityKey(addition.TableName)
+		_, movesKey := deferred[table]
+		if strings.EqualFold(addition.Type, "FOREIGN KEY") ||
+			(strings.EqualFold(addition.Type, "PRIMARY KEY") && movesKey) {
+			lateDiff.ConstraintsAdded = append(lateDiff.ConstraintsAdded, addition)
+		} else {
+			earlyDiff.ConstraintsAdded = append(earlyDiff.ConstraintsAdded, addition)
+		}
+	}
+	return &earlyDiff, &lateDiff
+}
+
+func (p *Planner) addConstraintsAfterColumnRemoval(result []ast.Node, diff, late *difftypes.SchemaDiff, droppedAhead map[constraintHostKey]struct{}) ([]ast.Node, error) {
+	if late == nil {
+		return result, nil
+	}
+	// Dropping an old primary-key column releases its key. Restore the new key
+	// only after that drop, then add foreign keys that may reference it.
+	result, err := p.addNewConstraints(result, late, droppedAhead)
+	if err != nil {
+		return nil, err
+	}
+	result = p.addForeignKeyConstraintsForModifiedTables(result, diff)
+	result = p.addForeignKeyConstraintsForNewTables(result, diff)
+	return result, nil
 }
 
 // addNewConstraints adds new table-level constraints via ALTER TABLE statements.
