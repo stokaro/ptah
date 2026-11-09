@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -184,8 +185,9 @@ func TestSchemaApplyAddNotNullWithoutDefault_HappyPath(t *testing.T) {
 	c.Assert(again, qt.Contains, "Schema is synced")
 }
 
-// Each of these columns is NOT NULL and the server gives the row a value, so no plan may
-// say the statement fails. They all go in one plan, on one table with a row.
+// Each column is NOT NULL and the server fills the row. The domain supplies a
+// default that the renderer cannot inspect, so only its column gets a
+// conditional warning. They all go in one plan, on one table with a row.
 func TestSchemaApplyAddNotNullTheServerFills_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	target := newNotNullTarget(c, "b integer", "(1, 4)", "b integer")
@@ -202,7 +204,9 @@ CREATE TABLE t3648 (id bigint PRIMARY KEY, b integer,
 
 	applied := runPtahNative(c, "schema", "apply", "--db-url", target.url, "--schema-file", schema, "--auto-approve")
 
-	c.Assert(applied, qt.Not(qt.Contains), "holds any row")
+	c.Assert(applied, qt.Contains, `ADD COLUMN "h" fails if`)
+	c.Assert(strings.Count(applied, "-- POSTGRES: ADD COLUMN"), qt.Equals, 1)
+	c.Assert(applied, qt.Contains, "Schema apply completed successfully.")
 	rows, nullable := readAddedColumnState(c, target.url)
 	c.Assert(rows, qt.Equals, 1)
 	c.Assert(nullable, qt.Equals, "NO")

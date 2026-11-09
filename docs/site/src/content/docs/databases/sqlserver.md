@@ -428,8 +428,9 @@ and `citext` are `nvarchar(max)`, `bytea` and `blob` are `varbinary(max)`, `char
 declaration writes `nvarchar(n)`. A declared timestamp precision is preserved:
 `timestamp(3)` writes `datetime2(3)`, while `timestamptz(3)` and
 `timestamp(3) with time zone` write `datetimeoffset(3)`. Each plans nothing
-against the type it writes. A word the
-server also takes as a type of its own matches the column it builds from that word too:
+against the type it writes.
+
+A word the server also takes as a type of its own matches the column it builds from that word too:
 `text` over `text`, `char(5)` over `char(5)`, and `varchar(50)` over `varchar(50)`. Any
 other column plans a change: `varchar(max)` declared `text`, `tinyint` declared `boolean`,
 and `datetime2(3)` declared `timestamp`, which writes `datetime2`.
