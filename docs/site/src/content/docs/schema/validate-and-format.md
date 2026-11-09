@@ -113,6 +113,11 @@ and exits `0`, so a hook can read the status alone. Cancellation or failure to
 perform validation returns an error instead of schema findings. Those errors
 exit `2`; they do not establish whether the schema is valid.
 
+`schema plan` and `schema drift` check index owners before comparing a desired
+schema with a database. An index whose table no declaration defines gets the
+same diagnostic as `schema validate`, and those commands exit `2` without a plan
+or drift report.
+
 ## Validate against every dialect you ship to
 
 `--dialect` is repeatable, and each value is checked separately with its own

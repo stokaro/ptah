@@ -42,6 +42,7 @@ import (
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/schemascope"
 	"ptah.run/internal/schemaselection"
+	"ptah.run/internal/schemavalidate"
 	"ptah.run/internal/sqliteforeignkeys"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/internal/sqlscript"
@@ -1040,6 +1041,17 @@ func loadAndValidateDesiredApplySchema(
 		desired.Schemas,
 	); err != nil {
 		return nil, fmt.Errorf("validate --to schema: %w", err)
+	}
+	selected, err := opts.Runtime.ResolveTarget(conn.Info().Dialect)
+	if err != nil {
+		return nil, err
+	}
+	scoped, err := schemamodel.ScopeToTarget(desired, selected)
+	if err != nil {
+		return nil, err
+	}
+	if problems := schemavalidate.CollectIndexProblems(scoped, selected.Name()); len(problems) != 0 {
+		return nil, &planrefusal.DeclarationError{Err: errors.New(problems[0].String())}
 	}
 	return desired, nil
 }

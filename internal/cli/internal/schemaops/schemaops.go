@@ -3,6 +3,7 @@ package schemaops
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -28,6 +29,7 @@ import (
 	"ptah.run/internal/schemaload"
 	"ptah.run/internal/schemaroot"
 	"ptah.run/internal/schemascope"
+	"ptah.run/internal/schemavalidate"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/migration/schemadiff"
 )
@@ -231,6 +233,17 @@ func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
 
 	if err := schemascope.RefuseOutsideTargetDatabase(info, desired); err != nil {
 		return nil, err
+	}
+	selected, err := opts.Runtime.ResolveTarget(info.Dialect)
+	if err != nil {
+		return nil, err
+	}
+	scoped, err := schemamodel.ScopeToTarget(desired, selected)
+	if err != nil {
+		return nil, err
+	}
+	if problems := schemavalidate.CollectIndexProblems(scoped, selected.Name()); len(problems) != 0 {
+		return nil, errors.New(problems[0].String())
 	}
 	compareOpts := config.DefaultCompareOptions()
 	compareOpts.IgnoredExtensions = append(compareOpts.IgnoredExtensions, opts.IgnoredExtensions...)
