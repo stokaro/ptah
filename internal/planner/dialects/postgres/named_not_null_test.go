@@ -236,8 +236,8 @@ func TestPlanner_AnAddedKeyColumnKeepsAWrittenName(t *testing.T) {
 		name string
 		want string
 	}{
-		{name: "c_old", want: `ALTER TABLE "widget" ADD COLUMN "a" INTEGER PRIMARY KEY CONSTRAINT "c_old" NOT NULL;`},
-		{name: "widget_a_not_null", want: `ALTER TABLE "widget" ADD COLUMN "a" INTEGER PRIMARY KEY NOT NULL;`},
+		{name: "c_old", want: `ALTER TABLE "widget" ADD COLUMN "a" INTEGER CONSTRAINT "c_old" NOT NULL, ADD PRIMARY KEY ("a");`},
+		{name: "widget_a_not_null", want: `ALTER TABLE "widget" ADD COLUMN "a" INTEGER NOT NULL, ADD PRIMARY KEY ("a");`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

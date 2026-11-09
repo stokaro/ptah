@@ -337,6 +337,11 @@ These operations are read:
   `DROP CHECK`, `DROP INDEX` and `RENAME INDEX`, and SQL Server's
   `ALTER COLUMN` with a new definition.
 
+On PostgreSQL, a plan that adds a column with its own primary key writes the
+column's `NOT NULL` and the `ADD PRIMARY KEY` as separate clauses of one
+`ALTER TABLE` statement. An explicit name on the column's `NOT NULL` stays
+with that column.
+
 `MODIFY` keeps the column's keys, as the server does. `UNIQUE` in it adds a
 key, so on a column with its own key it adds a second one, such as `x_2`
 beside `x`.
