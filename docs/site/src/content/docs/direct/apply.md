@@ -544,10 +544,6 @@ and a lost connection hides even that. Read the database before deciding. A lock
 session that fails after every operation committed is reported this way too,
 rather than as `applied`.
 
-When a statement fails inside a transaction and rollback succeeds, the outcome
-is `failed`. The `failure` object still identifies the statement and any server
-code. No operation from that transaction remains applied.
-
 Stopping before the first statement, even during `BEGIN`, is `refused` or
 `failed`.
 
