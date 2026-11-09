@@ -155,9 +155,8 @@ func TestAComparisonVerbThatLeavesAKindOutDoesNotNeedItsPrivilegeE2E(t *testing.
 }
 
 // TestAComparisonVerbTakesAnAccountHoldingOnlySelectE2E covers the account that needs
-// every selector at once. It is held to not being refused rather than to the
-// administrator's answer: on MariaDB an account that cannot see constraints cannot
-// see a primary key either, and a desired schema still declares one on its column.
+// every selector at once. MariaDB hides constraint rows from this account, but
+// its visible primary index still gives the same answer as the administrator.
 func TestAComparisonVerbTakesAnAccountHoldingOnlySelectE2E(t *testing.T) {
 	const everyKind = "*[type=trigger|view|function|constraint|event]"
 	for _, s := range servers() {
@@ -166,15 +165,18 @@ func TestAComparisonVerbTakesAnAccountHoldingOnlySelectE2E(t *testing.T) {
 			f := newFixture(c, s, leftProcedure...)
 			file := sharedObjectsFile(c)
 			address := f.url(f.newAccount(c, "sel", "GRANT SELECT ON {db}.* TO {account}"), f.left)
+			administrator := f.url("", f.left)
 
 			for _, verb := range comparisonVerbs() {
 				t.Run(verb.name, func(t *testing.T) {
 					c := qt.New(t)
 
 					got := verb.run(c, address, file, "--exclude", everyKind)
+					want := verb.run(c, administrator, file, "--exclude", everyKind)
 
 					c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
-					c.Assert(got.Stderr, qt.Not(qt.Contains), "cannot see everything")
+					c.Assert(want.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", want.Stdout, want.Stderr))
+					c.Assert(verb.answer(c, got), qt.Equals, verb.answer(c, want))
 				})
 			}
 		})

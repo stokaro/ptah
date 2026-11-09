@@ -257,7 +257,29 @@ func TestEnhanceTablesWithPrimaryKeys(t *testing.T) {
 		},
 	}
 
-	enhanceTablesWithPrimaryKeys(tables, constraints)
+	enhanceTablesWithPrimaryKeys(tables, constraints, nil)
+
+	c.Assert(tables[0].Columns[0].IsPrimaryKey, qt.IsTrue)
+	c.Assert(tables[0].Columns[1].IsPrimaryKey, qt.IsTrue)
+	c.Assert(tables[0].Columns[2].IsPrimaryKey, qt.IsFalse)
+}
+
+func TestEnhanceTablesWithPrimaryKeysFromVisibleIndex(t *testing.T) {
+	c := qt.New(t)
+	tables := []catalog.Table{{
+		Name: "memberships",
+		Columns: []catalog.Column{
+			{Name: "org_id"},
+			{Name: "user_id"},
+			{Name: "role"},
+		},
+	}}
+	indexes := []catalog.Index{
+		{TableName: "memberships", Name: "PRIMARY", IsPrimary: true, Columns: []string{"org_id", "user_id"}},
+		{TableName: "memberships", Name: "role_key", IsUnique: true, Columns: []string{"role"}},
+	}
+
+	enhanceTablesWithPrimaryKeys(tables, nil, indexes)
 
 	c.Assert(tables[0].Columns[0].IsPrimaryKey, qt.IsTrue)
 	c.Assert(tables[0].Columns[1].IsPrimaryKey, qt.IsTrue)

@@ -686,6 +686,10 @@ the account needs no privilege for it:
 | `--exclude '*[type=table]'` | `TRIGGER` and the MariaDB constraint privilege |
 | `--include '*[type=table]'` | `SHOW VIEW` and the routine privilege |
 
+MariaDB can hide constraint rows from an account with only `SELECT`. The read
+still gets primary-key columns from the visible primary index, so excluding
+constraints does not turn an existing key into a planned addition.
+
 A selector that names objects does not count, because a read that cannot see a
 trigger cannot say what it is called: `--exclude 'audit_*[type=trigger]'` still needs
 `TRIGGER`. Neither does `--exclude '*[type=foreign_key]'`, since the catalog view that
