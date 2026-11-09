@@ -6,9 +6,12 @@ package migrator
 
 import (
 	"context"
+	"errors"
+	"io"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-sql-driver/mysql"
 
 	"ptah.run/dbschema"
 )
@@ -825,6 +828,30 @@ func TestPreservesProgressWitnessUnknownOutcome(t *testing.T) {
 		),
 		qt.IsFalse,
 	)
+}
+
+func TestMySQLIndexFailureUsesTheServerAnswer(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		dialect   string
+		statement string
+		failure   error
+		want      bool
+	}{
+		{name: "MySQL duplicate unique index", dialect: "mysql", statement: "CREATE UNIQUE INDEX by_value ON jobs (value)", failure: &mysql.MySQLError{Number: 1062, Message: "duplicate entry"}},
+		{name: "MySQL rejected ordinary index", dialect: "mysql", statement: "CREATE INDEX by_value ON jobs (value)", failure: &mysql.MySQLError{Number: 1061, Message: "duplicate key name"}},
+		{name: "MySQL unclassified error", dialect: "mysql", statement: "CREATE UNIQUE INDEX by_value ON jobs (value)", failure: errors.New("index outcome not classified"), want: true},
+		{name: "MySQL lost its reply", dialect: "mysql", statement: "CREATE UNIQUE INDEX by_value ON jobs (value)", failure: io.ErrUnexpectedEOF, want: true},
+		{name: "MariaDB keeps its uncertain DDL outcome", dialect: "mariadb", statement: "CREATE UNIQUE INDEX by_value ON jobs (value)", failure: errors.New("duplicate entry"), want: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			failure := &MigrationExecutionError{Statement: test.statement, Err: test.failure}
+			revision := &MigrationRevision{Error: unknownStatementOutcomeError}
+
+			c.Assert(preservesProgressWitnessUnknownOutcome(failure, revision, test.dialect), qt.Equals, test.want)
+		})
+	}
 }
 
 // TestMigrationExecutionProgress_RolledBackMySQLBody walks the same correction

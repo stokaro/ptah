@@ -1047,7 +1047,12 @@ skips is only ever the prefix that really survived:
   schema-qualified name.
   If a witness committed before a failing statement whose lack of side effects
   cannot be proven, the row remains marked unknown and automatic retry stops for
-  manual inspection. MySQL and MariaDB do not support `all`.
+  manual inspection. On MySQL with InnoDB target tables, a server refusal of
+  `CREATE INDEX` or `CREATE UNIQUE INDEX` proves that the index was not created;
+  the dirty row records a failed statement without an unknown-outcome marker.
+  A lost server reply still leaves the outcome unknown. MariaDB keeps the
+  conservative unknown outcome for a refused index build. MySQL and MariaDB
+  do not support `all`.
 
 Recorded progress therefore excludes transactional work that a rollback undid,
 while non-transactional mode retains work that no rollback could undo.
