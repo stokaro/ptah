@@ -706,6 +706,10 @@ lists the columns and nothing else from the table above, on top of what
 [emptying a dev database](#dev-database-cleanup-privileges) takes. A view or routine
 that came back without a body is still refused, because it has another definer.
 
+`schema diff` compares a migration directory's views with views in the target
+database even when the dev and target databases have different names. A view
+whose body is the same reports no change; a changed body still produces a plan.
+
 ### Roles and grants
 
 Reading roles and the grants on them needs `SELECT` on the `mysql` database, which

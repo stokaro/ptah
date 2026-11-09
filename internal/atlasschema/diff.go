@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -437,6 +438,8 @@ func diffResolvedStates(
 	sides devServerSides,
 	opts DiffOptions,
 ) (atlasreport.SchemaDiff, *difftypes.SchemaDiff, error) {
+	fromState = rebaseDevViewBodies(fromState, toState, dialect)
+	toState = rebaseDevViewBodies(toState, fromState, dialect)
 	// The dev-server scope comes first: it refuses what CE refuses on a dev
 	// server, in CE's words, and narrows a one-schema document to the one
 	// database. The one-database rule then reads the narrowed sides.
@@ -585,6 +588,37 @@ func diffResolvedStates(
 	return atlasreport.NewSchemaDiff(atlasreport.SchemaDiffOptions{
 		Dialect: dialect, From: from, To: to, Changes: changes,
 	}), diff, nil
+}
+
+// A one-database catalog read gives a view an unqualified name, but MySQL and
+// MariaDB qualify the relations in its stored body with the database that ran
+// the SQL. A migration directory replayed on a dev database therefore reads
+// the same view body under a different database name from the target. Rebind
+// the stored body and the default schema for comparison; the replay and its
+// cleanup stay inside the dev database.
+func rebaseDevViewBodies(state, database atlassource.State, dialect string) atlassource.State {
+	if described(dialect).Driver != "mysql" || !schemaScopeNamesDatabase(dialect) ||
+		state.Kind == atlassource.KindDatabase ||
+		state.DB == nil || state.Schema == nil || state.WholeServer ||
+		database.Kind != atlassource.KindDatabase || database.WholeServer ||
+		state.DefaultSchema == "" || database.DefaultSchema == "" ||
+		state.DefaultSchema == database.DefaultSchema || len(state.DB.Views) == 0 {
+		return state
+	}
+	previous, target := state.DefaultSchema, database.DefaultSchema
+	observed := *state.DB
+	observed.Views = slices.Clone(state.DB.Views)
+	for i := range observed.Views {
+		observed.Views[i].Body = rewriteSchemaNames(observed.Views[i].Body, dialect, previous, target)
+	}
+	declared := *state.Schema
+	declared.Views = slices.Clone(state.Schema.Views)
+	for i := range declared.Views {
+		declared.Views[i].Body = rewriteSchemaNames(declared.Views[i].Body, dialect, previous, target)
+	}
+	state.DB, state.Schema = &observed, &declared
+	state.DefaultSchema = target
+	return state
 }
 
 // plannedDiffChanges is the statements of diff's plan, each carrying the comment
