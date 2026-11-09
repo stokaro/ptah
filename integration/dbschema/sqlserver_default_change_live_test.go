@@ -171,3 +171,30 @@ func TestSQLServerLiveColumnDefaultChangesApply(t *testing.T) {
 	c.Assert(safety.HighestAssessment(assessments), qt.Equals, safety.Warning)
 	c.Assert(planDocumentAgainstLive(c, conn, after, schemaName), qt.HasLen, 0)
 }
+
+// SQL Server may spell a built-in default function differently in its catalog.
+// A second plan for the declaration that created the table must be empty.
+func TestSQLServerLiveTemporalDefaultsConverge(t *testing.T) {
+	dbURL := dbtarget.URL(t, dbtarget.SQLServer)
+	c := qt.New(t)
+	conn, err := dbschema.ConnectToDatabase(c.Context(), dbURL)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
+	schemaName := fmt.Sprintf("ptah_5680_%d", time.Now().UnixNano())
+	quoted := quoteSQLServerIdentifier(schemaName)
+	_, err = conn.ExecContext(c.Context(), "EXEC('CREATE SCHEMA "+quoted+"')")
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() {
+		_, dropErr := conn.ExecContext(context.Background(), "DROP TABLE IF EXISTS "+quoted+".[t]")
+		c.Check(dropErr, qt.IsNil)
+		_, dropErr = conn.ExecContext(context.Background(), "DROP SCHEMA IF EXISTS "+quoted)
+		c.Check(dropErr, qt.IsNil)
+	})
+	declared := defaultChangeTable(schemaName,
+		schemamodel.Field{Name: "created", Type: "DATETIME2", Nullable: true, DefaultExpr: "GETDATE()"},
+		schemamodel.Field{Name: "updated", Type: "DATETIME2", Nullable: true, DefaultExpr: "CURRENT_TIMESTAMP"},
+		schemamodel.Field{Name: "precise", Type: "DATETIME2", Nullable: true, DefaultExpr: "SYSDATETIME()"},
+	)
+	applyDeclared(c, conn, declared, schemaName)
+	c.Assert(planDocumentAgainstLive(c, conn, declared, schemaName), qt.HasLen, 0)
+}

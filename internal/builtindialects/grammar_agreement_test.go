@@ -177,7 +177,7 @@ var oldParserSwitches = map[string]descriptor.Grammar{
 		Columns: descriptor.ColumnGrammar{CurrentTimeKeywords: true},
 	},
 	platform.SQLServer: {
-		Columns:    descriptor.ColumnGrammar{IdentityProperty: true},
+		Columns:    descriptor.ColumnGrammar{IdentityProperty: true, CurrentTimestampNiladic: true},
 		Keys:       descriptor.KeyGrammar{IndexKeywords: []string{"KEY", "INDEX"}},
 		Indexes:    descriptor.IndexGrammar{DropNamesTable: true},
 		AlterTable: descriptor.AlterTableGrammar{AlterColumnDefinition: true},
