@@ -5,6 +5,7 @@ package postgres_test
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -13,17 +14,64 @@ import (
 	"github.com/go-extras/go-kit/must"
 	"github.com/jackc/pgx/v5"
 
+	"ptah.run/catalog"
 	"ptah.run/config"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/sqlschema"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
+
+// A routine's owner can revoke its own EXECUTE. Both database directions
+// must see the difference, while PUBLIC's default EXECUTE remains untouched.
+func TestPostgresRoutineGrant_OwnerExecuteDiffersBetweenReads(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(c.Context(), 3*time.Minute)
+	defer cancel()
+	fixture := prepareRoutineGrantFixture(c, ctx)
+	fixture.exec(c, ctx, "CREATE FUNCTION "+fixture.schema+".f() RETURNS integer LANGUAGE sql AS $$ SELECT 1 $$")
+	var owner string
+	c.Assert(fixture.conn.QueryRowContext(ctx, "SELECT current_user").Scan(&owner), qt.IsNil)
+
+	read := func() *catalog.Database {
+		state, err := dbschema.ReadSchemaWithSchemasContext(ctx, fixture.conn, []string{fixture.schema})
+		c.Assert(err, qt.IsNil)
+		return state
+	}
+	before := read()
+	fixture.exec(c, ctx, "REVOKE EXECUTE ON FUNCTION "+fixture.schema+".f() FROM "+(pgx.Identifier{owner}).Sanitize())
+	after := read()
+	c.Assert(slices.ContainsFunc(after.Grants, func(grant catalog.Grant) bool {
+		return grant.Role == owner && grant.ObjectName == "f" && grant.OwnerRevoked()
+	}), qt.IsTrue)
+
+	compare := func(desiredRead, database *catalog.Database) *difftypes.SchemaDiff {
+		desired, err := dbschematogo.ConvertDBSchemaToGoSchema(ctx, desiredRead, platform.Postgres, must.Must(builtin.New()))
+		c.Assert(err, qt.IsNil)
+		opts := config.DefaultCompareOptions()
+		opts.Dialect = platform.Postgres
+		opts.DesiredGrantsComplete = true
+		opts.DesiredReadGrants = desiredRead.Grants
+		return must.Must(schemadiff.CompareWithOptions(ctx, desired, database, opts, must.Must(builtin.New())))
+	}
+	grantBack := compare(before, after)
+	c.Assert(grantBack.GrantsAdded, qt.HasLen, 1)
+	c.Assert(grantBack.GrantsAdded[0].Role, qt.Equals, owner)
+	c.Assert(grantBack.GrantsAdded[0].Privilege, qt.Equals, "EXECUTE")
+	c.Assert(grantBack.GrantsRemoved, qt.HasLen, 0)
+
+	revoke := compare(after, before)
+	c.Assert(revoke.GrantsRemoved, qt.HasLen, 1)
+	c.Assert(revoke.GrantsRemoved[0].Role, qt.Equals, owner)
+	c.Assert(revoke.GrantsRemoved[0].Privilege, qt.Equals, "EXECUTE")
+	c.Assert(revoke.GrantsAdded, qt.HasLen, 0)
+}
 
 // TestPostgresRoutineGrant_SchemaFileRevokesWhatNobodyGranted drives the shape
 // mosamlife/wpmgr's schema file carries through a server: a SECURITY DEFINER

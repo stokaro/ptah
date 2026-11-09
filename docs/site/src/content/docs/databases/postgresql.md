@@ -1483,6 +1483,8 @@ schema's owner holds, so `relacl` being NULL says nothing about the owner. A rea
 reports what the owner holds apart from the grants, and a comparison plans nothing
 for it in either direction. A schema file that revokes one of those privileges
 plans the `REVOKE`, and one that grants it asks for what the owner already holds.
+The same rule applies to a routine owner's `EXECUTE`. It is separate from
+`PUBLIC`'s default `EXECUTE`, which can remain after the owner revokes its own.
 
 An owner that revoked a privilege from itself holds less, and that is a
 difference. Between two databases where the same role owns the object, one
@@ -1521,6 +1523,8 @@ UNMANAGED: table orders: owner app_owner lacks INSERT, UPDATE, which PostgreSQL 
 The line is a diagnostic, not drift: it changes neither the plan nor the exit
 code. It reports the owner's own ACL entry, so a privilege the owner reaches
 through `PUBLIC` or through a role it belongs to is still listed as missing.
+An owner that revoked its own `EXECUTE` on a declared routine gets the same
+diagnostic when the file names no grant or revoke for that owner.
 `schema security` reports the same object as `OWN02` from the database alone,
 without a schema file, so it cannot tell a revoke a file declares from an
 accident.

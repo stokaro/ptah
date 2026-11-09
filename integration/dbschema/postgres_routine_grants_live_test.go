@@ -60,9 +60,9 @@ func TestPostgresLiveRoutineGrantReadKeepsOwnerAfterPublicRevoke(t *testing.T) {
 		return grant.ObjectType != "FUNCTION" || grant.ObjectName != "f"
 	})
 	c.Assert(slices.ContainsFunc(grants, func(grant catalog.Grant) bool {
-		return grant.Implicit && grant.Role != "PUBLIC" && grant.Privilege == ""
+		return grant.OwnerRevoked() && grant.Role != "PUBLIC" && grant.Privilege == "EXECUTE"
 	}), qt.IsTrue)
 	c.Assert(slices.ContainsFunc(grants, func(grant catalog.Grant) bool {
-		return grant.Privilege == "EXECUTE"
+		return grant.Privilege == "EXECUTE" && !grant.OwnerRevoked()
 	}), qt.IsFalse)
 }

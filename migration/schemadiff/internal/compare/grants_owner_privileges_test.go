@@ -315,6 +315,20 @@ func TestGrantsWithOptions_AnUnmanagedOwnerPrivilegeIsReportedNotPlanned(t *test
 			want:    []difftypes.OwnerPrivilegeDeviation{{ObjectType: "SEQUENCE", Object: "s", Owner: "owner", Missing: []string{"USAGE"}}},
 		},
 		{
+			name:    "a declared routine",
+			desired: &schemamodel.Database{Functions: []schemamodel.Function{{Name: "f", Parameters: "value integer"}}},
+			held: []catalog.Grant{{Role: "owner", Privilege: "EXECUTE", ObjectType: "FUNCTION", ObjectName: "f",
+				Arguments: "integer", Implicit: true, IsPartialRevoke: true}},
+			want: []difftypes.OwnerPrivilegeDeviation{{ObjectType: "FUNCTION", Object: "f", Owner: "owner", Missing: []string{"EXECUTE"}}},
+		},
+		{
+			name:    "another routine overload is not declared",
+			desired: &schemamodel.Database{Functions: []schemamodel.Function{{Name: "f", Parameters: "value text"}}},
+			held: []catalog.Grant{{Role: "owner", Privilege: "EXECUTE", ObjectType: "FUNCTION", ObjectName: "f",
+				Arguments: "integer", Implicit: true, IsPartialRevoke: true}},
+			want: make([]difftypes.OwnerPrivilegeDeviation, 0),
+		},
+		{
 			name:    "an owner that holds every privilege",
 			desired: declaresTable(),
 			held:    []catalog.Grant{ownerSelect, ownerUpdate},
@@ -395,4 +409,36 @@ func TestGrantsWithOptions_AServerReadReportsNoUnmanagedOwnerPrivilege(t *testin
 
 	c.Assert(diff.UnmanagedOwnerPrivileges, qt.HasLen, 0)
 	c.Assert(diff.GrantsAdded, qt.DeepEquals, []difftypes.GrantRef{{Role: "owner", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t"}})
+}
+
+// A server read can compare the owner's EXECUTE on a routine in either
+// direction. The empty ACL observation is represented as a revoked privilege.
+func TestGrantsWithOptions_RoutineOwnerExecuteDiffersBetweenServerReads(t *testing.T) {
+	ownerExecute := catalog.Grant{Role: "owner", Privilege: "EXECUTE", ObjectType: "FUNCTION", ObjectName: "f",
+		Arguments: "integer", Implicit: true}
+	revoked := ownerExecute
+	revoked.IsPartialRevoke = true
+	desired := &schemamodel.Database{Functions: []schemamodel.Function{{Name: "f", Parameters: "value integer"}}}
+
+	t.Run("grant back", func(t *testing.T) {
+		c := qt.New(t)
+		diff := compareOwnerGrants(desired, []catalog.Grant{revoked}, compare.GrantOptions{
+			DesiredComplete: true, DesiredRead: []catalog.Grant{ownerExecute},
+		})
+		c.Assert(diff.GrantsAdded, qt.DeepEquals, []difftypes.GrantRef{{
+			Role: "owner", Privilege: "EXECUTE", ObjectType: "FUNCTION", ObjectName: "f", Arguments: "integer",
+		}})
+		c.Assert(diff.UnmanagedOwnerPrivileges, qt.HasLen, 0)
+	})
+	t.Run("revoke", func(t *testing.T) {
+		c := qt.New(t)
+		copyDesired := *desired
+		copyDesired.RevokedGrants = []schemamodel.Grant{{Role: "owner", Privileges: []string{"EXECUTE"}, OnRoutine: "f", RoutineArguments: "integer"}}
+		diff := compareOwnerGrants(&copyDesired, []catalog.Grant{ownerExecute}, compare.GrantOptions{
+			DesiredComplete: true, DesiredRead: []catalog.Grant{revoked},
+		})
+		c.Assert(diff.GrantsRemoved, qt.DeepEquals, []difftypes.GrantRef{{
+			Role: "owner", Privilege: "EXECUTE", ObjectType: "FUNCTION", ObjectName: "f", Arguments: "integer",
+		}})
+	})
 }
