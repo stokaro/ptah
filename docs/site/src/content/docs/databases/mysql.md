@@ -798,6 +798,15 @@ it replayed, so it drops only the databases the session sees, which are the
 ones it created; see
 [A whole dev server](../../atlas/migrate-commands/#a-whole-dev-server).
 
+## Dropping a table read by a view
+
+MySQL accepts `DROP TABLE` when a view still reads the table. The view stays in
+the catalog, but querying it fails. When a plan drops a table that a declared
+view still reads, the generated SQL warns and names the view. The warning does
+not block apply. Remove or replace the view, or keep the table, before applying
+the plan. A view the plan removes is dropped before the table. The warning
+cannot identify a view absent from the declaration and hidden from the read.
+
 ## Replacing a trigger
 
 A plan runs every trigger change in one block, after the columns a new trigger

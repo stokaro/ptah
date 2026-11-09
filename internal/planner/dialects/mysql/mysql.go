@@ -1706,7 +1706,18 @@ func writtenAtRelease(change difftypes.IndexChange, released map[difftypes.Index
 }
 
 func (p *Planner) removeTables(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, tableName := range deporder.TableDropOrderWithDependencies(diff.TablesRemoved.Names(), diff.DeclaredTables, diff.DeclaredTableDependencies) {
+		// MySQL accepts a table drop even when a retained view still reads it.
+		// The view remains in the catalog but fails when queried.
+		if p.targetDialect() == platform.MySQL {
+			for _, view := range diff.DeclaredViewLikes.Views {
+				if deporder.ReferencesRelation(view.Body, tableName, semantics) {
+					result = append(result, ast.NewComment(fmt.Sprintf(
+						"WARNING: Dropping table %s leaves view %s invalid because it still reads that table.", tableName, view.Name)))
+				}
+			}
+		}
 		dropTableNode := ast.NewDropTable(tableName).SetIfExists()
 		if p.describes() {
 			dropTableNode.SetCascade().SetComment("WARNING: This will delete all data!")
