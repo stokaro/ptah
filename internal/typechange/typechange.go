@@ -22,6 +22,12 @@ func IsNarrowing(oldType, newType string) bool {
 	return narrows(oldType, newType, nil)
 }
 
+// IsInteger reports whether a type has one of the SQL integer names this
+// package compares by width. It does not fold a BOOLEAN or BIT into integer.
+func IsInteger(raw string) bool {
+	return integerRank(normalizeName(raw)) > 0
+}
+
 func narrows(oldType, newType string, engine *Engine) bool {
 	if oldInt, newInt, ok := fixedWidthIntegers(oldType, newType); ok {
 		return fixedWidthNarrows(oldInt, newInt)

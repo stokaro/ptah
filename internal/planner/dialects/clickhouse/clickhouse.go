@@ -232,6 +232,7 @@ func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.Schema
 					Column:              col,
 					PreviousType:        columnchange.PreviousType(colDiff),
 					TypeNarrows:         colDiff.TypeNarrows,
+					TypeNarrowingKnown:  colDiff.PreviousType != "",
 					PreviousNullable:    previousColumnNullable(colDiff.Changes["nullable"]),
 					HasPreviousNullable: colDiff.Changes["nullable"] != "",
 					PreviousDefault:     previousDefault,

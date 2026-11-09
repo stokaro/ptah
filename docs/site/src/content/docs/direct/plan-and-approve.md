@@ -274,8 +274,9 @@ and applied.
 
 ### How a column change is rated
 
-A column change is rated by what the comparison knows about the column, because
-its SQL cannot say. `ALTER COLUMN c TYPE timestamp(0)` reads the same over a
+A column change is rated by the rendered type and what the comparison knows
+about the column, because its SQL cannot say. `ALTER COLUMN c TYPE timestamp(0)`
+reads the same over a
 `timestamp(6)` as over a `date`, and MySQL's `MODIFY COLUMN c bigint` reads the
 same whether it gives up a `NOT NULL`, a default or nothing.
 

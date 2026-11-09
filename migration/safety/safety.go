@@ -876,7 +876,7 @@ func lostByModification(op *ast.ModifyColumnOperation) string {
 			"vector dimension changes from %d to %d: the server refuses the cast while any row holds a vector, "+
 				"and every value has to be recomputed rather than converted", from, to)
 	}
-	if op.TypeNarrows || IsTypeNarrowing(op.PreviousType, op.Column.Type) {
+	if op.TypeNarrows || (!op.TypeNarrowingKnown && IsTypeNarrowing(op.PreviousType, op.Column.Type)) {
 		return fmt.Sprintf("column type narrows from %s to %s", op.PreviousType, op.Column.Type)
 	}
 	if op.HasChanged && op.Changed.Identity && op.Column.IdentityGeneration == "" {
@@ -1194,10 +1194,7 @@ func narrowedTypes(columns []difftypes.ColumnDiff) int {
 	narrowed := 0
 	for _, column := range columns {
 		before, after, ok := strings.Cut(column.Changes["type"], " -> ")
-		if column.PreviousType != "" {
-			before = column.PreviousType
-		}
-		if column.TypeNarrows || (ok && IsTypeNarrowing(before, after)) {
+		if column.TypeNarrows || (column.PreviousType == "" && ok && IsTypeNarrowing(before, after)) {
 			narrowed++
 		}
 	}

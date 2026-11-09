@@ -151,16 +151,16 @@ func TestSchemaPlanE2E_APortableNameMatchesTheColumnPtahBuilds(t *testing.T) {
 func TestSchemaPlanE2E_AnotherTypeUnderAPortableNameStillPlans(t *testing.T) {
 	const fraction = "'2024-01-02 03:04:05.123'"
 	rows := []sizeRow{
-		{"datetime2(3)", "timestamp", fraction, "2024-01-02 03:04:05.123", "2024-01-02 03:04:05.1230000", true},
-		{"datetime", "timestamp", fraction, "Jan  2 2024  3:04AM", "2024-01-02 03:04:05.1233333", true},
+		{"datetime2(3)", "timestamp", fraction, "2024-01-02 03:04:05.123", "2024-01-02 03:04:05.1230000", false},
+		{"datetime", "timestamp", fraction, "Jan  2 2024  3:04AM", "2024-01-02 03:04:05.1233333", false},
 		{"datetimeoffset", "timestamp", "'2024-01-02 03:04:05.123 +02:00'", "2024-01-02 03:04:05.1230000 +02:00", "2024-01-02 03:04:05.1230000", true},
 		{"nvarchar(50)", "text", "'abc'", "abc", "abc", false},
 		{"varchar(max)", "text", "'abc'", "abc", "abc", false},
 		{"varchar(max)", "citext", "'abc'", "abc", "abc", false},
 		{"ntext", "text", "'abc'", "abc", "abc", false},
 		{"int", "text", "7", "7", "7", false},
-		{"int", "boolean", "1", "1", "1", false},
-		{"tinyint", "boolean", "1", "1", "1", false},
+		{"int", "boolean", "1", "1", "1", true},
+		{"tinyint", "boolean", "1", "1", "1", true},
 		{"bigint", "integer", "7", "7", "7", true},
 		{"smallint", "integer", "7", "7", "7", false},
 		{"real", "double precision", "1.5", "1.5", "1.5", false},

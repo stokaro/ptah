@@ -433,6 +433,9 @@ server also takes as a type of its own matches the column it builds from that wo
 `text` over `text`, `char(5)` over `char(5)`, and `varchar(50)` over `varchar(50)`. Any
 other column plans a change: `varchar(max)` declared `text`, `tinyint` declared `boolean`,
 and `datetime2(3)` declared `timestamp`, which writes `datetime2`.
+An integer-to-`bit` change is rated destructive because values outside
+`0` and `1` collapse. The `datetime2(3)` change gains precision and is rated
+as a warning.
 
 `ptah migrations lint` reports `ALTER COLUMN c datetime2(0) NULL` as `DS103`, with or
 without brackets around the names, since SQL Server names the new type with no word
