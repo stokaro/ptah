@@ -486,25 +486,19 @@ func TestExcludeGenerated_SchemaSelectorTakesTheSchemaContentsWithIt(t *testing.
 }
 
 // TestExcludeDatabaseReport_AnAllRolesDefaultNamesNoRole keeps a FOR ALL ROLES
-// default from answering a selector. The read records it with an empty grantor,
-// and a wildcard matches the empty name, so asking the patterns about it would
-// report `*` as having named something in a description that holds no role at
-// all.
+// default from answering a role selector. The read records it with an empty
+// grantor, but the database holds no named role.
 func TestExcludeDatabaseReport_AnAllRolesDefaultNamesNoRole(t *testing.T) {
-	for _, selector := range []string{"*", "*[type=role]"} {
-		t.Run(selector, func(t *testing.T) {
-			c := qt.New(t)
+	c := qt.New(t)
 
-			_, report, err := atlasfilter.ExcludeDatabaseReport(ownerSelections(), &catalog.Database{
-				FeatureCoverage: must.Must(pgdefaultprivilege.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, []schemaext.SubjectCoverage{{
-					Kind:      pgdefaultprivilege.DefaultPrivilegeKind,
-					Subject:   must.Must(pgdefaultprivilege.ClassRef(pgdefaultprivilege.Class{Schema: "public", ObjectType: "TABLES"}, identifier.ForDialect("postgres"))),
-					Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "all-role defaults are not described"},
-				}})),
-			}, []string{selector}, "public")
+	_, report, err := atlasfilter.ExcludeDatabaseReport(ownerSelections(), &catalog.Database{
+		FeatureCoverage: must.Must(pgdefaultprivilege.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, []schemaext.SubjectCoverage{{
+			Kind:      pgdefaultprivilege.DefaultPrivilegeKind,
+			Subject:   must.Must(pgdefaultprivilege.ClassRef(pgdefaultprivilege.Class{Schema: "public", ObjectType: "TABLES"}, identifier.ForDialect("postgres"))),
+			Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "all-role defaults are not described"},
+		}})),
+	}, []string{"*[type=role]"}, "public")
 
-			c.Assert(err, qt.IsNil)
-			c.Assert(report.Unmatched, qt.DeepEquals, []string{selector})
-		})
-	}
+	c.Assert(err, qt.IsNil)
+	c.Assert(report.Unmatched, qt.DeepEquals, []string{"*[type=role]"})
 }

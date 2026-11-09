@@ -403,6 +403,11 @@ command filtered. Naming an object that exists on only one side of a comparison
 is ordinary — that is what a CREATE or a DROP looks like — so only a selector
 empty on every side is reported.
 
+A selector that excludes a whole reader kind, such as `*[type=event]`, also
+counts as applied when that kind was not read. The reader may have no objects
+to offer to the filter. A selector naming one object still needs that object
+to count as matched.
+
 A selector is only ever called empty by a filter that asked it. That is why
 this diagnostic is tied to the coverage above: an object kind that is read but
 never offered to the patterns would make every selector naming one of its

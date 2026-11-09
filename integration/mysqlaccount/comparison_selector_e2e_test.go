@@ -225,13 +225,16 @@ func TestAComparisonVerbSelectorOnEventsE2E(t *testing.T) {
 				for _, reader := range []string{address, account} {
 					document := drift(c, reader, file, "--format", "json", "--exclude", "*[type=event]")
 					c.Assert(document.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", document.Stdout, document.Stderr))
+					c.Assert(document.Stderr, qt.Not(qt.Contains), "matched no objects")
 					c.Assert(document.Stdout, qt.Not(qt.Contains), "not_compared")
 
 					text := drift(c, reader, file, "--exclude", "*[type=event]")
 					c.Assert(text.Stdout, qt.Equals, "No schema drift detected.\n")
+					c.Assert(text.Stderr, qt.Not(qt.Contains), "matched no objects")
 
 					compared := comparisonVerbs()[1].run(c, reader, file, "--exclude", "*[type=event]")
 					c.Assert(compared.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", compared.Stdout, compared.Stderr))
+					c.Assert(compared.Stderr, qt.Not(qt.Contains), "matched no objects")
 					c.Assert(compared.Stdout, qt.Contains, "No schema differences detected.\n")
 					c.Assert(compared.Stdout, qt.Not(qt.Contains), "Not compared")
 					c.Assert(compared.Stdout, qt.Not(qt.Contains), "not compared")

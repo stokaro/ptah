@@ -265,6 +265,18 @@ func TestExcludeDatabaseReport_TypeSelectorReportsItsWrittenSpelling(t *testing.
 	c.Assert(report.Unmatched, qt.DeepEquals, []string{"nosuch*[type=table]"})
 }
 
+// A whole-kind exclusion can stop the reader before it creates any matching
+// objects. Named exclusions still need an object to match.
+func TestExcludeDatabaseReport_WholeKindDoesNotWarnWithoutCatalogObjects(t *testing.T) {
+	c := qt.New(t)
+
+	_, report, err := atlasfilter.ExcludeDatabaseReport(ownerSelections(),
+		&catalog.Database{}, []string{"*[type=event]", "nightly[type=event]"}, "public")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(report.Unmatched, qt.DeepEquals, []string{"nightly[type=event]"})
+}
+
 // TestExcludeReport_ChildOfARemovedTableIsAskedOnBothSides pins the rule that a
 // selector is called empty only by a filter that asked it.
 //
