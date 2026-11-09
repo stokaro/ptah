@@ -53,7 +53,9 @@ back still leaves the record that it was attempted. A log written inside the
 transaction would describe only the runs that succeeded.
 
 `--json` prints the same attempts with the start and finish timestamps, the run
-identifier, the checksum of the migration that ran, and the error.
+identifier, the checksum of the migration that ran, and the error. Start and
+finish timestamps are recorded in UTC, including when the applying process
+uses another time zone.
 
 A MySQL or MariaDB URL does not need `parseTime=true`. Without it the driver hands
 back a time as the server's text, which carries no zone, and Ptah reads that text

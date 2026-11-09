@@ -401,7 +401,7 @@ func (m *Migrator) logMigrationEvent(
 		Actor:       m.actor,
 		ActorSource: m.actorSource,
 		Checksum:    migrationRevisionHash(migration),
-		At:          time.Now(),
+		At:          time.Now().UTC(),
 	}
 	if failure != nil {
 		entry.Error = failure.Error()
