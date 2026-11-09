@@ -217,9 +217,9 @@ type grantRead struct {
 	objects        OwnedObjects
 }
 
-func (read grantRead) maps() (map[grantIdentity]difftypes.GrantRef, map[grantIdentity]difftypes.GrantRef) {
-	additions := make(map[grantIdentity]difftypes.GrantRef)
-	removals := make(map[grantIdentity]difftypes.GrantRef)
+func (read grantRead) maps() (additions, removals map[grantIdentity]difftypes.GrantRef) {
+	additions = make(map[grantIdentity]difftypes.GrantRef)
+	removals = make(map[grantIdentity]difftypes.GrantRef)
 	for _, grant := range read.database.Grants {
 		if grant.Privilege == "" {
 			// An implicit routine-owner row with no privilege records that
