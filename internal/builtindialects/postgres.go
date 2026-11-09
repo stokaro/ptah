@@ -238,9 +238,10 @@ func postgres() descriptor.Dialect {
 		Grammar: descriptor.Grammar{
 			Columns: descriptor.ColumnGrammar{CurrentTimeKeywords: true, StoredStringDefaults: true},
 			Constraints: descriptor.ConstraintGrammar{
-				Enforcement: descriptor.Enforcement{Checks: true, ForeignKeys: true, Once: true},
-				NotValid:    true,
-				Match:       descriptor.Match{Clause: true},
+				TableNotNull: true,
+				Enforcement:  descriptor.Enforcement{Checks: true, ForeignKeys: true, Once: true},
+				NotValid:     true,
+				Match:        descriptor.Match{Clause: true},
 			},
 			Indexes:    descriptor.IndexGrammar{Alter: descriptor.AlterIndexRename},
 			AlterTable: descriptor.AlterTableGrammar{KeyUsingIndex: true, AddNotNull: true},

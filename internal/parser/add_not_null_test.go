@@ -109,12 +109,6 @@ func TestParseAddNotNull_FailurePath(t *testing.T) {
 			wantErr: `.*expected column name after NOT NULL.*`,
 		},
 		{
-			name:    "a table element of a CREATE TABLE, which is not an ALTER",
-			sql:     "CREATE TABLE t (a int, CONSTRAINT nn NOT NULL a);",
-			dialect: platform.Postgres,
-			wantErr: `.*unsupported constraint type: NOT`,
-		},
-		{
 			name:    "a named clause on MySQL",
 			sql:     "ALTER TABLE t ADD CONSTRAINT nn NOT NULL a;",
 			dialect: platform.MySQL,
