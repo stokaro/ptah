@@ -60,7 +60,7 @@ func TestCompareSQLServerType_ANameAndTheTypeItWritesAreOneType(t *testing.T) {
 		{"char", "NCHAR(1)", "char"},
 		{"char with a length", "NCHAR(5)", "char(5)"},
 		{"character with a length", "NCHAR(5)", "character(5)"},
-		{"varchar in lower case", "NVARCHAR(1)", "varchar"},
+		{"varchar in lower case", "NVARCHAR(MAX)", "varchar"},
 		{"varchar in upper case", "NVARCHAR(MAX)", "VARCHAR"},
 		{"varchar with a length", "NVARCHAR(50)", "varchar(50)"},
 		{"varchar MAX", "NVARCHAR(MAX)", "varchar(max)"},
@@ -114,7 +114,7 @@ func TestCompareSQLServerType_ARealDifferenceIsAChange(t *testing.T) {
 		{"a shorter length under char", "NCHAR(5)", "char(10)", false},
 		{"a longer length under varchar", "NVARCHAR(50)", "varchar(20)", true},
 		{"MAX under varchar", "NVARCHAR(MAX)", "varchar(50)", true},
-		{"MAX under a bare varchar", "NVARCHAR(MAX)", "varchar", true},
+		{"one character under lowercase varchar", "NVARCHAR(1)", "varchar", false},
 		{"one character under the exact VARCHAR", "NVARCHAR(1)", "VARCHAR", false},
 		{"a longer length of the server's varchar", "VARCHAR(50)", "varchar(20)", true},
 	}

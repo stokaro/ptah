@@ -1031,7 +1031,7 @@ func renderedDeclaredType(field schemamodel.Field, dialect string) string {
 		return oracletype.Map(field.Type)
 	case comparison.MapsPortableTypes:
 		// The preparation writes a type of its own for some names first: SQL Server's
-		// exact `VARCHAR` is NVARCHAR(MAX), where `varchar` is NVARCHAR, one character.
+		// bare VARCHAR is NVARCHAR(MAX) regardless of the declaration's case.
 		effective := schemaprep.EffectiveFieldForPlatform(field, dialect)
 		return sqlservertype.Declaration{Type: effective.Type, Verbatim: effective.TypeRawSQL || effective.TypeIsDeclaredText}.Rendered()
 	default:

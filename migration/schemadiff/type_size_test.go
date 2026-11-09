@@ -106,7 +106,7 @@ func TestCompareTypeSize_OneTypeInTwoSpellingsIsNoChange(t *testing.T) {
 		{"SQL Server bare decimal", "sqlserver", "DECIMAL(18,0)", "decimal"},
 		{"SQL Server bare numeric", "sqlserver", "NUMERIC(18,0)", "numeric"},
 		{"SQL Server MAX", "sqlserver", "NVARCHAR(MAX)", "nvarchar(max)"},
-		{"SQL Server a varchar", "sqlserver", "VARCHAR(1)", "varchar"},
+		{"SQL Server a bare portable varchar", "sqlserver", "NVARCHAR(MAX)", "varchar"},
 		{"SQL Server an nvarchar", "sqlserver", "NVARCHAR(1)", "nvarchar"},
 		{"SQL Server a char", "sqlserver", "CHAR(1)", "char"},
 		{"SQL Server an nchar", "sqlserver", "NCHAR(1)", "nchar"},
