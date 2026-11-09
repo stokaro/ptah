@@ -35,7 +35,7 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.1.0
 	github.com/stokaro/ptah/provider-sdk v0.39.0
-	github.com/stokaro/ptah/sqlsyntax v0.1.0
+	github.com/stokaro/ptah/sqlsyntax v0.2.0
 	github.com/tursodatabase/libsql-client-go v0.0.0-20260528064733-9d5d30a29a60
 	github.com/zclconf/go-cty v1.20.0
 	github.com/zclconf/go-cty-yaml v1.2.0
