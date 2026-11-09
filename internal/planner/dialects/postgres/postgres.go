@@ -1961,6 +1961,9 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// so a change the policy left out is not here: only the drops the plan
 	// makes can take a policy with them.
 	rebuild := planViewRebuild(diff)
+	if err := p.refuseForeignGrantRevokes(diff, rebuild); err != nil {
+		return nil, err
+	}
 	if err := p.refuseViewChanges(diff, rebuild, semantics); err != nil {
 		return nil, err
 	}
@@ -2465,6 +2468,27 @@ func (p *Planner) revokeLateViewGrantOptions(result []ast.Node, diff *difftypes.
 			SetGrantOptionFor(true))
 	}
 	return result
+}
+
+// A PostgreSQL REVOKE can report success after removing none of another
+// grantor's privileges. A plan cannot assume a role or prove which membership
+// path the server will use, so it refuses that grant before any SQL is emitted.
+func (p *Planner) refuseForeignGrantRevokes(diff *difftypes.SchemaDiff, rebuild viewRebuild) error {
+	if p.targetDialect() != DialectName {
+		return nil
+	}
+	for _, grant := range slices.Concat(diff.GrantsRemoved, diff.GrantOptionsRevoked) {
+		if rebuild.dropsForGood(grant, diff.EffectiveIdentifierSemantics(p.targetDialect())) {
+			continue
+		}
+		if grant.GrantedBy == "" || grant.GrantedBy == diff.ConnectedRole {
+			continue
+		}
+		return fmt.Errorf("%w: cannot revoke %s on %s %s from %s: grantor %q differs from connected role %q; connect as the grantor before planning",
+			ptaherr.ErrUnsupportedFeature, grant.Privilege, grant.ObjectType, grant.ObjectName, grant.Role,
+			grant.GrantedBy, diff.ConnectedRole)
+	}
+	return nil
 }
 
 // modifiedFunctionNodes is the statements that replace one routine: CREATE OR

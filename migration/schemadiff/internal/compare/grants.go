@@ -150,6 +150,7 @@ func GrantsWithOptions(
 	options GrantOptions,
 ) {
 	objects := options.Objects
+	diff.ConnectedRole = database.ConnectedRole
 	sequences := newColumnSequences(desired, database, semantics)
 	generatedGrantMap := make(map[grantIdentity]difftypes.GrantRef)
 	generatedGrantRoles := make(map[string]bool)
@@ -204,7 +205,11 @@ func GrantsWithOptions(
 		ref := grantRefFromDatabase(grant)
 		key := sequences.databaseKey(newGrantIdentity(ref, semantics))
 		if managedRoles[ref.Role] || generatedGrantRoles[ref.Role] {
-			databaseGrantMapForAdditions[key] = ref
+			previous, exists := databaseGrantMapForAdditions[key]
+			if !exists || (ref.WithOption && !previous.WithOption) ||
+				(ref.WithOption == previous.WithOption && preferForeignGrantor(previous, ref, database.ConnectedRole)) {
+				databaseGrantMapForAdditions[key] = ref
+			}
 		}
 		// A revoke of a table privilege takes it off every column too, as
 		// PostgreSQL does, so it reaches the column rows. A column the schema
@@ -223,7 +228,10 @@ func GrantsWithOptions(
 		// still planned.
 		if (removable(ref) && !grant.Implicit && grantRemovalPlanned(cov, grant) && objects.describes(grant)) ||
 			revokedGrants[key] || revokedGrants[key.onWholeObject()] {
-			databaseGrantMapForRemovals[key] = ref
+			previous, exists := databaseGrantMapForRemovals[key]
+			if !exists || preferForeignGrantor(previous, ref, database.ConnectedRole) {
+				databaseGrantMapForRemovals[key] = ref
+			}
 		}
 	}
 
@@ -629,7 +637,18 @@ func grantRefFromDatabase(grant catalog.Grant) difftypes.GrantRef {
 		Arguments:  grant.Arguments,
 		Column:     strings.TrimSpace(grant.Column),
 		WithOption: grant.WithOption,
+		GrantedBy:  strings.TrimSpace(grant.GrantedBy),
 	}
+}
+
+// preferForeignGrantor keeps a row the connected role cannot reliably revoke
+// when several grantors gave the same privilege to one grantee. The planner
+// must see that row and refuse before writing a REVOKE that leaves it in place.
+func preferForeignGrantor(previous, next difftypes.GrantRef, connectedRole string) bool {
+	foreign := func(ref difftypes.GrantRef) bool {
+		return ref.GrantedBy != "" && ref.GrantedBy != connectedRole
+	}
+	return foreign(next) && !foreign(previous)
 }
 
 // grantRemovalPlanned reports whether a grant the desired state leaves out is

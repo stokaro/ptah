@@ -1469,6 +1469,13 @@ with `--schemas` as without it: declare the object, or leave the grant out.
 one Ptah does not read, such as a foreign table or the revision table. So a run
 with the flag grants and revokes there as a run without it does.
 
+A live PostgreSQL plan also refuses a `REVOKE` when the catalog names a grantor
+other than the connected role. PostgreSQL can accept the statement while leaving
+that grantor's privilege in place. The refusal names the grantor and the connected
+role. Connect as the grantor and generate a new plan to remove the privilege or
+its grant option. This check applies to a superuser connection too: PostgreSQL
+runs its `REVOKE` as the object's owner, which may be a different grantor.
+
 ### Grants between two databases
 
 `schema diff` with a database as `--to` reads every grant that database holds, so
