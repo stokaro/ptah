@@ -26,8 +26,9 @@ import (
 	"time"
 
 	"example.com/ptah-fixture-provider/backend"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
+
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
 )
 
 // Sessions reaches an open fixture session, as *backend.Provider does.

@@ -4,13 +4,12 @@ import (
 	"fmt"
 	"slices"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-
 	"ptah.run/core/ast"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/plangraph"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemavalidation"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // planningReply binds only an SDK-validated complete result. The selected engine

@@ -11,12 +11,12 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"google.golang.org/protobuf/testing/protocmp"
 
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/ptaherr"
 	"ptah.run/internal/providerhost/statementargs"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 type (

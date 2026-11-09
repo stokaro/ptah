@@ -4,9 +4,8 @@ import (
 	"maps"
 	"slices"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-
 	"ptah.run/core/schemamodel"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 func declaredPlanningColumn(source schemamodel.Field) (*protocol.DeclaredColumn, error) {

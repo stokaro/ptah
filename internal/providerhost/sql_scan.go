@@ -4,11 +4,10 @@ import (
 	"context"
 	"slices"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
-
 	"ptah.run/internal/lexerext"
 	"ptah.run/internal/providerscan"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
 )
 
 // provideScanners registers the provider's scanner as the lexer of each

@@ -5,13 +5,12 @@ import (
 	"slices"
 	"strings"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
-
 	"ptah.run/core/ast"
 	"ptah.run/core/ptaherr"
 	"ptah.run/internal/rolepassword"
 	"ptah.run/internal/tableref"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
 )
 
 // commonObjectChange maps a planned node of a common object beyond tables

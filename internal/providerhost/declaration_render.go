@@ -5,9 +5,6 @@ import (
 	"fmt"
 	"slices"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
-
 	"ptah.run/core/ast"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/featureplan"
@@ -22,6 +19,8 @@ import (
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/planner/featurehost"
 	"ptah.run/internal/tableref"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
 )
 
 // authoredPlanner joins already validated declaration contributions with the

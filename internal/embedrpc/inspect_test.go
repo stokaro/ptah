@@ -5,10 +5,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 
 	"ptah.run/internal/embedbackend"
 	"ptah.run/internal/embedstore"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // retiringStore is a run-state store whose generation holds rows, and that

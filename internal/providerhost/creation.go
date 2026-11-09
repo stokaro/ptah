@@ -4,11 +4,10 @@ import (
 	"context"
 	"slices"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
-
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemaprojection"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
 )
 
 func (t *target) projectOwnedTableCreations(ctx context.Context, request schemaprojection.TableCreationRequest) (schemaprojection.TableCreationResult, error) {

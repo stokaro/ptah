@@ -10,9 +10,8 @@ import (
 	"maps"
 	"sync"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-
 	"ptah.run/internal/lexer"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // Scan asks the provider for the tokens of one text of the engine's SQL.

@@ -7,14 +7,13 @@ import (
 	"slices"
 	"sync"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
-
 	"ptah.run/core/annotation"
 	"ptah.run/core/coverage"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/internal/providersource"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
 )
 
 // goSource is the provider's claim on Go annotation syntax: the directives it

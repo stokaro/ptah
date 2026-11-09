@@ -5,7 +5,8 @@ import (
 
 	"example.com/ptah-tutorial-provider/backend"
 	qt "github.com/frankban/quicktest"
-	"github.com/stokaro/ptah/provider-sdk/provider"
+
+	"ptah.run/provider-sdk/provider"
 )
 
 // The features Ptah requires of every provider it starts.

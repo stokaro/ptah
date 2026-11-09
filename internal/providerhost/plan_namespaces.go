@@ -5,9 +5,6 @@ import (
 	"slices"
 	"strings"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
-
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/difftypes"
@@ -17,6 +14,8 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/planner/schemaprecondition"
 	"ptah.run/internal/tableref"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
 )
 
 // carriesNamespaces reports whether the target's engine carries its

@@ -6,12 +6,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
 
 	"ptah.run/internal/embedgen"
 	"ptah.run/internal/embedrun"
 	"ptah.run/internal/embedstore"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
 )
 
 // fakeBatches is a provider's batch commit held in memory: the run and what

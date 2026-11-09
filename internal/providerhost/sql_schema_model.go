@@ -8,8 +8,6 @@ import (
 	"strconv"
 	"strings"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
 	"google.golang.org/protobuf/proto"
 
 	"ptah.run/core/objectidentity"
@@ -17,6 +15,8 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlext"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
 )
 
 // sqlSchemaResult maps a complete reading into the host's model. The common

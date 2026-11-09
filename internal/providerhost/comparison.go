@@ -6,14 +6,14 @@ import (
 	"slices"
 	"strconv"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
 	"google.golang.org/protobuf/proto"
 
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 	"ptah.run/engine"
 	"ptah.run/internal/providerexchange"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
 )
 
 // compareModels sends request to the provider. When ctx carries a recorder

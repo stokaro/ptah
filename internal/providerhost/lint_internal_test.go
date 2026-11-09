@@ -10,12 +10,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
 
 	"ptah.run/core/lintext"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
 )
 
 // lintTarget is an adapter whose host has no client: a call that reaches the

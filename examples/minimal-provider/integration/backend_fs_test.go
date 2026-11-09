@@ -11,12 +11,13 @@ import (
 
 	"example.com/ptah-tutorial-provider/backend"
 	qt "github.com/frankban/quicktest"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	// The test writes a table the provider refuses to describe.
 	_ "modernc.org/sqlite"
+
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
 )
 
 // address returns a file in a fresh directory and its tutorial address.

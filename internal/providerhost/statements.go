@@ -14,12 +14,11 @@ import (
 	"sync"
 	"time"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
-
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/dbschema"
 	"ptah.run/internal/providerhost/statementargs"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
 )
 
 // A provider runs the statements the operator wrote, such as a check, a test

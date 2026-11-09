@@ -7,13 +7,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
 
 	"ptah.run/internal/embedeval"
 	"ptah.run/internal/embedgen"
 	"ptah.run/internal/embedrpc"
 	"ptah.run/internal/embedverify"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
 )
 
 // fakeRows answers the calls about rows, vectors and target objects with what

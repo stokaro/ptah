@@ -5,9 +5,9 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	"github.com/stokaro/ptah/provider-sdk/modeljson"
 
 	"ptah.run/core/schemaext"
+	"ptah.run/provider-sdk/modeljson"
 )
 
 // The SDK cannot import the host, and public host contracts cannot import the

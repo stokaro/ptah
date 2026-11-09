@@ -77,8 +77,9 @@ func walkType(t reflect.Type, found map[string]reflect.Type, visiting map[reflec
 	}
 }
 
-// ptahModule scopes the descent to this module's own types. A time.Time reached
-// from the model is one field, not a census of the standard library.
+// ptahModule scopes the descent to Ptah's own types: this module's and those of
+// the modules nested under its path. A time.Time reached from the model is one
+// field, not a census of the standard library.
 const ptahModule = "ptah.run"
 
 // identityType is one value to the census rather than a type to descend into.

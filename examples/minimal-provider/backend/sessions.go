@@ -9,11 +9,12 @@ import (
 	"path/filepath"
 	"sync"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/runtime"
 	"google.golang.org/grpc/codes"
 	// The provider owns its database driver; Ptah and the SDK load none.
 	_ "modernc.org/sqlite"
+
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/runtime"
 )
 
 // Provider serves the tutorial engine. The zero value is ready to use, and

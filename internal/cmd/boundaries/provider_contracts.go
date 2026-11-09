@@ -20,7 +20,7 @@ var providerContractRoots = []string{
 // library.
 var neutralModules = []string{
 	// The lexical syntax of SQL families (stokaro/ptah#5586).
-	"github.com/stokaro/ptah/sqlsyntax",
+	"ptah.run/sqlsyntax",
 }
 
 func providerContractImports(pkg *packages.Package) []finding {

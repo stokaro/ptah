@@ -5,9 +5,10 @@ import (
 
 	"example.com/ptah-tutorial-provider/backend"
 	qt "github.com/frankban/quicktest"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // Each address is refused before the provider touches a file, and the reason

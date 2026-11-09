@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"google.golang.org/protobuf/testing/protocmp"
 
 	"ptah.run/core/annotation"
@@ -14,6 +13,7 @@ import (
 	"ptah.run/core/yamlext"
 	"ptah.run/core/yamlschema"
 	"ptah.run/internal/providersource"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // treeClaim is the claim of the test engine's "tree" index type.

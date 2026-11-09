@@ -9,13 +9,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	"github.com/stokaro/ptah/provider-sdk/provider"
 
 	"ptah.run/internal/providerarchive/archivetest"
 	"ptah.run/internal/providerinstall"
 	"ptah.run/internal/providerinstall/releasetest"
 	"ptah.run/internal/providerrelease"
 	"ptah.run/internal/testutils"
+	"ptah.run/provider-sdk/provider"
 )
 
 // installReport is the part of a `providers install --json` or `providers

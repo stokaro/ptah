@@ -8,13 +8,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"google.golang.org/protobuf/encoding/protojson"
 
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 	"ptah.run/engine"
 	"ptah.run/internal/providerexchange"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // exchangeRequest is the comparison of one retention object whose declared

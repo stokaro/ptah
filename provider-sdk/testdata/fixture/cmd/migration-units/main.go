@@ -10,7 +10,8 @@ import (
 
 	"example.com/ptah-fixture-provider/migrationunits"
 	"example.com/ptah-fixture-provider/statements"
-	"github.com/stokaro/ptah/provider-sdk/runtime"
+
+	"ptah.run/provider-sdk/runtime"
 )
 
 func main() {

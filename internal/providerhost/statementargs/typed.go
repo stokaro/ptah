@@ -8,9 +8,8 @@ import (
 	"strings"
 	"time"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-
 	"ptah.run/core/ptaherr"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 var (

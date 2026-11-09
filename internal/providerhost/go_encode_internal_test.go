@@ -9,10 +9,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 
 	"ptah.run/core/annotation"
 	"ptah.run/core/ptaherr"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // documentFragment is a provider's own Go directive of the document with one

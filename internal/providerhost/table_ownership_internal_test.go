@@ -10,12 +10,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 
 	"ptah.run/core/featureplan"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/engine"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 func TestTableOwnershipRegistration_HappyPath(t *testing.T) {

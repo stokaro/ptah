@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // encodeGroups places all declarations in one ordered group, so host tests

@@ -7,14 +7,14 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
 	"google.golang.org/protobuf/proto"
 
 	"ptah.run/internal/embedcatchup"
 	"ptah.run/internal/embedrpc"
 	"ptah.run/internal/embedrun"
 	"ptah.run/internal/embedstore"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
 )
 
 // fakeStore is a provider's run-state store held in memory. It answers the

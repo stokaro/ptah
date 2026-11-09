@@ -5,11 +5,10 @@ import (
 	"strings"
 	"sync"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
-
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
 )
 
 // registerDefaultCapabilities registers the capabilities each engine's

@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 
 	"ptah.run/core/featureplan"
 	"ptah.run/core/planext"
@@ -15,6 +14,7 @@ import (
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemamodel"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 func TestDeclarationCaptureRetainsCompleteAuthoredTables(t *testing.T) {

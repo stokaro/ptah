@@ -5,9 +5,11 @@ package integration_test
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"io/fs"
 	"net/url"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -23,10 +25,14 @@ import (
 	transport "ptah.run/provider-sdk/runtime"
 )
 
-// contract25SDK is the newest SDK release of contract 25.0. The
-// mixed-version tests build fixture programs against it, so that one side of
-// the exchange is a peer of an older contract minor.
-const contract25SDK = "v0.2.0"
+// contract25SDK is the newest SDK release of contract 25.0, as a module query.
+// The mixed-version tests build fixture programs against it, so that one side
+// of the exchange is a peer of an older contract minor.
+const contract25SDK = "github.com/stokaro/ptah/provider-sdk@v0.2.0"
+
+// sdkModule is the module path of the in-tree SDK, the one the fixture module
+// imports.
+const sdkModule = "ptah.run/provider-sdk"
 
 // buildContract25Fixture builds a fixture program against [contract25SDK].
 // Such a program speaks contract 25.0 and knows none of the features a later
@@ -37,28 +43,69 @@ func buildContract25Fixture(c *qt.C, program string) string {
 }
 
 // buildReleasedFixture builds a fixture program against an SDK release, from
-// a copy of the fixture module, with no workspace. Only a program whose
-// packages use nothing of a later minor builds this way: provider, lint and
-// contract-host.
-func buildReleasedFixture(c *qt.C, version, program string) string {
+// a copy of the fixture module, with no workspace. release is a module query,
+// such as [contract25SDK]. Only a program whose packages use nothing of a later
+// minor builds this way: provider, lint and contract-host.
+//
+// The releases these tests reach declare another module path than the in-tree
+// SDK, so the copy's imports are rewritten to the release's path before the
+// build. A replace directive cannot stand in for the rewrite: the release
+// imports its own packages by the path it declares, so the build would link
+// two copies of the SDK whose types do not meet.
+func buildReleasedFixture(c *qt.C, release, program string) string {
 	c.Helper()
+	module, version, ok := strings.Cut(release, "@")
+	c.Assert(ok, qt.IsTrue)
 	_, source, _, ok := runtime.Caller(0)
 	c.Assert(ok, qt.IsTrue)
 	dir := c.TempDir()
 	c.Assert(os.CopyFS(dir, os.DirFS(filepath.Join(filepath.Dir(source), "..", "testdata", "fixture"))), qt.IsNil)
-	runGo(c, dir, "get", "github.com/stokaro/ptah/provider-sdk@"+version)
+	changed, err := rewriteSDKImports(dir, module)
+	c.Assert(err, qt.IsNil)
+	c.Assert(changed > 0, qt.IsTrue)
+	runGo(c, dir, "mod", "edit", "-droprequire="+sdkModule)
+	runGo(c, dir, "get", release)
 	binary := filepath.Join(c.TempDir(), program+"-"+version+".exe")
 	runGo(c, dir, "build", "-o", binary, "./cmd/"+program)
-	assertLinkedSDK(c, dir, binary, version)
+	assertLinkedSDK(c, dir, binary, release)
 	return binary
 }
 
-// assertLinkedSDK asserts the SDK version a binary linked. The build records
+// rewriteSDKImports rewrites the in-tree SDK's import paths in the Go files
+// below dir to module, and reports how many files it changed.
+func rewriteSDKImports(dir, module string) (int, error) {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return 0, err
+	}
+	defer root.Close()
+	changed := 0
+	err = fs.WalkDir(root.FS(), ".", func(name string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() || path.Ext(name) != ".go" {
+			return err
+		}
+		data, err := root.ReadFile(name)
+		if err != nil {
+			return err
+		}
+		rewritten := strings.ReplaceAll(string(data), `"`+sdkModule+`/`, `"`+module+`/`)
+		if rewritten == string(data) {
+			return nil
+		}
+		changed++
+		return root.WriteFile(name, []byte(rewritten), 0o600)
+	})
+	return changed, err
+}
+
+// assertLinkedSDK asserts the SDK release a binary linked. The build records
 // the module versions it linked, which is what shows that this side of the
 // exchange is the peer of that release.
-func assertLinkedSDK(c *qt.C, dir, binary, version string) {
+func assertLinkedSDK(c *qt.C, dir, binary, release string) {
 	c.Helper()
-	c.Assert(runGo(c, dir, "version", "-m", binary), qt.Matches, `(?s).*\sgithub\.com/stokaro/ptah/provider-sdk\s+`+regexp.QuoteMeta(version)+`\s.*`)
+	module, version, ok := strings.Cut(release, "@")
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(runGo(c, dir, "version", "-m", binary), qt.Matches, `(?s).*\s`+regexp.QuoteMeta(module)+`\s+`+regexp.QuoteMeta(version)+`\s.*`)
 }
 
 func runGo(c *qt.C, dir string, args ...string) string {

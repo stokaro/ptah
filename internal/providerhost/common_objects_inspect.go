@@ -5,10 +5,9 @@ import (
 	"slices"
 	"strings"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // commonCoverageKinds is the coverage kind a read records for a common kind it

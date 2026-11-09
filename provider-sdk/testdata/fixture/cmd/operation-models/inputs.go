@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strings"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 const fixtureInputName = "FIXTURE_EXECUTION_INPUT"

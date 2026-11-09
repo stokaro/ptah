@@ -6,10 +6,9 @@ import (
 	"math"
 	"slices"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
-
 	"ptah.run/catalog"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
 )
 
 func catalogColumn(source *protocol.ObservedColumn) (catalog.Column, error) {

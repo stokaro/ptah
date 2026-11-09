@@ -9,7 +9,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/stokaro/ptah/provider-sdk/runtime"
+	"ptah.run/provider-sdk/runtime"
 )
 
 func run() error {

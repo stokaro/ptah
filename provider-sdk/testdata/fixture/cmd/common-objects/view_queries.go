@@ -5,8 +5,9 @@ import (
 	"os"
 	"strings"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"google.golang.org/protobuf/proto"
+
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // viewQueries reports FIXTURE_VIEW_QUERIES=exact or context, which makes the

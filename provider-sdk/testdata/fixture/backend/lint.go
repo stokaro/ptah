@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // LintRules are the rules the fixture's migration lint publishes. FX101 judges

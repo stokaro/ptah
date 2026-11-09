@@ -10,12 +10,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/runtime"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/proto"
 	"modernc.org/sqlite"
 	sqlite3 "modernc.org/sqlite/lib"
+
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/runtime"
 )
 
 // lock is one lock ID of a session. Ptah takes a lock before it applies a

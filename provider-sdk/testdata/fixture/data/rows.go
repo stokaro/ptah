@@ -11,7 +11,8 @@ import (
 	"strings"
 
 	"example.com/ptah-fixture-provider/backend"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // columnKind is the value case a fixture column type takes. The fixture's

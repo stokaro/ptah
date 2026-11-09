@@ -6,10 +6,9 @@ import (
 	"errors"
 	"fmt"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
-
 	"ptah.run/core/dataext"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
 )
 
 // Seeds returns the session's seed service: the provider runs a seed file and

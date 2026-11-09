@@ -5,13 +5,12 @@ import (
 	"fmt"
 	"slices"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
-
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
 )
 
 type reader struct {

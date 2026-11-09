@@ -7,14 +7,13 @@ import (
 	"strconv"
 	"strings"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
-
 	"ptah.run/core/coverage"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/sqlext"
 	"ptah.run/internal/providerdiagnostic"
 	"ptah.run/internal/sourcepos"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
 )
 
 // sqlExtensions returns one SQL extension for every engine that reads its

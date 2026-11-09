@@ -25,11 +25,16 @@ own driver and a pinned published SDK version. It has no local `replace`. The
 host's process acceptance builds it with `GOWORK=off`, from the pinned version.
 The SDK's own process tests build it against the in-tree SDK through a workspace
 file in a temporary directory, because the client under test is the in-tree one
-and the tests exercise what the in-tree SDK adds. The mixed-version tests build
-its contract-25.0 programs (`provider`, `lint` and `contract-host`) against
-`provider-sdk/v0.2.0` instead, so that a host and a provider of different
-contract minors meet. Those programs and the `backend` package use nothing a
-later minor added.
+and the tests exercise what the in-tree SDK adds.
+
+The mixed-version tests build the fixture's contract-25.0 programs
+(`provider`, `lint` and `contract-host`) against `provider-sdk/v0.2.0` instead,
+so that a host and a provider of different contract minors meet. Those programs
+and the `backend` package use nothing a later minor added. That release declares
+the module's old path (see [Versions](#versions)), so the tests rewrite the
+imports of a copy of the fixture to it before the build. A `replace` directive
+cannot stand in, because the release imports its own packages by the path it
+declares.
 
 The conformance tests across releases install the suite's command from
 `provider-sdk/v0.26.0`, the oldest release that ships it, and run it against
@@ -77,6 +82,8 @@ speaks contract 25.41. Each released SDK speaks one contract:
 
 | SDK release | Contract |
 | --- | --- |
+| `provider-sdk/v0.40.0` | 25.41 |
+| `provider-sdk/v0.39.0` | 25.41 |
 | `provider-sdk/v0.38.0` | 25.40 |
 | `provider-sdk/v0.37.0` | 25.39 |
 | `provider-sdk/v0.36.0` | 25.38 |

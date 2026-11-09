@@ -5,10 +5,9 @@ import (
 	"fmt"
 	"slices"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-
 	"ptah.run/core/lintext"
 	"ptah.run/core/schemaext"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // SplitStatements uses only the selected owner's framing and safety facts.

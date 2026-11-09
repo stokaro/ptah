@@ -8,14 +8,14 @@ import (
 	"strconv"
 	"strings"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
 	"google.golang.org/protobuf/proto"
 
 	"ptah.run/core/annotation"
 	"ptah.run/core/hclext"
 	"ptah.run/core/yamlext"
 	"ptah.run/internal/tableref"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
 )
 
 // IndexDeclaration is the frontend's own part of an index declaration whose

@@ -5,10 +5,11 @@ import (
 	"database/sql"
 	"strings"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/runtime"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/proto"
+
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/runtime"
 )
 
 // Inspect reads every table of the database with its columns. The snapshot is

@@ -5,9 +5,10 @@ import (
 	"slices"
 	"strings"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/runtime"
 	"google.golang.org/grpc/codes"
+
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/runtime"
 )
 
 // columnTypes are the column types the tutorial engine stores.

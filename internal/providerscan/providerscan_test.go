@@ -7,11 +7,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/providerscan"
 	"ptah.run/internal/providerscan/scantest"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // counted is scantest.Scan that counts its calls and records the last head it

@@ -11,9 +11,9 @@ import (
 	"sync"
 
 	"example.com/ptah-fixture-provider/backend"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
-	"github.com/stokaro/ptah/provider-sdk/runtime"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
+	"ptah.run/provider-sdk/runtime"
 	"google.golang.org/protobuf/proto"
 )
 

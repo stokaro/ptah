@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	"github.com/stokaro/ptah/provider-sdk/provider"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/plangraph"
@@ -20,6 +19,7 @@ import (
 	"ptah.run/internal/atlasschema"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/planner"
+	"ptah.run/provider-sdk/provider"
 )
 
 func nativeExecutionPlan(c *qt.C, runtime *engine.Runtime, conn *dbschema.DatabaseConnection, transaction plangraph.Transaction, names ...string) planner.RenderedPlan {

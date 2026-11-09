@@ -9,13 +9,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	"github.com/stokaro/ptah/provider-sdk/provider"
 
 	"ptah.run/core/ptaherr"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
+	"ptah.run/provider-sdk/provider"
 )
 
 func atlasRepairRunner(conn *dbschema.DatabaseConnection) *migrator.Migrator {

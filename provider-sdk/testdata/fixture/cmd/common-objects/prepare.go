@@ -4,8 +4,9 @@ import (
 	"context"
 	"strings"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"google.golang.org/protobuf/proto"
+
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // PrepareCommonObjects spells a declaration as the program reads it back: a

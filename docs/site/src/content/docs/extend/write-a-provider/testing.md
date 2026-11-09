@@ -323,7 +323,7 @@ none, is logged rather than skipped. Outside Go, or in a pipeline, the
 command runs the suite against an executable and prints the report as JSON:
 
 ```bash
-go run github.com/stokaro/ptah/provider-sdk/cmd/ptah-provider-conformance \
+go run ptah.run/provider-sdk/cmd/ptah-provider-conformance \
   -executable ./ptah-tutorial-provider -provider-id example.com/ptah-tutorial-provider -json
 ```
 

@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"runtime"
 
-	"github.com/stokaro/ptah/provider-sdk/provider"
+	"ptah.run/provider-sdk/provider"
 )
 
 // Contract is a provider contract version, MAJOR.MINOR. The major version

@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"google.golang.org/protobuf/proto"
+
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // PrepareCommonObjects keeps a declaration as it is: the fixture spells

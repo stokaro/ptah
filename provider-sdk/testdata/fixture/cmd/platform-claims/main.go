@@ -8,7 +8,8 @@ import (
 	"os"
 
 	"example.com/ptah-fixture-provider/backend"
-	"github.com/stokaro/ptah/provider-sdk/runtime"
+
+	"ptah.run/provider-sdk/runtime"
 )
 
 func main() {

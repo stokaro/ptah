@@ -7,11 +7,11 @@ import (
 	"unicode/utf16"
 
 	qt "github.com/frankban/quicktest"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 
 	"ptah.run/core/yamlext"
 	"ptah.run/core/yamlschema"
 	"ptah.run/internal/providersource"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 func capture(c *qt.C, source []byte) yamlext.Document {

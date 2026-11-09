@@ -7,8 +7,9 @@ import (
 	"strconv"
 	"strings"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"google.golang.org/protobuf/proto"
+
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // ownSettings reports whether every setting of an added column is a retention

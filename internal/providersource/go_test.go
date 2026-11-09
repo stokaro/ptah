@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"google.golang.org/protobuf/proto"
 
 	"ptah.run/core/annotation"
@@ -13,6 +12,7 @@ import (
 	"ptah.run/core/goschema"
 	"ptah.run/core/schemaext"
 	"ptah.run/internal/providersource"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 const retentionModel = "example.org/test/retention"

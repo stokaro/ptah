@@ -11,11 +11,12 @@ import (
 	"strings"
 	"time"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
 	"google.golang.org/protobuf/proto"
 	"modernc.org/sqlite"
 	sqlite3 "modernc.org/sqlite/lib"
+
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
 )
 
 // slowLockDelay is how long an acquisition takes under the fault "slow-lock".

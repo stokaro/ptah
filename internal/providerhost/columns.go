@@ -4,10 +4,9 @@ import (
 	"context"
 	"slices"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemacomparison"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 type columnService struct{ target *target }

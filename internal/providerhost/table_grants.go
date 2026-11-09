@@ -3,9 +3,8 @@ package providerhost
 import (
 	"slices"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-
 	"ptah.run/core/schemacapture"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // planningTableGrants are the grants a planning service receives for a held

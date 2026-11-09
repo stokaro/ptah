@@ -8,7 +8,8 @@ import (
 	"example.com/ptah-fixture-provider/backend"
 	"example.com/ptah-fixture-provider/statements"
 	qt "github.com/frankban/quicktest"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // noSessions fails a test that reaches a session: a refused statement runs

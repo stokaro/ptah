@@ -5,10 +5,11 @@ import (
 
 	"example.com/ptah-tutorial-provider/backend"
 	qt "github.com/frankban/quicktest"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
 )
 
 func table(name string) *protocol.Reference {

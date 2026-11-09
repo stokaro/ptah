@@ -12,9 +12,10 @@ import (
 
 	"example.com/ptah-tutorial-provider/backend"
 	qt "github.com/frankban/quicktest"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
-	"github.com/stokaro/ptah/provider-sdk/runtime"
+
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
+	"ptah.run/provider-sdk/runtime"
 )
 
 // build compiles the provider executable from the module root. The name ends

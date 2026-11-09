@@ -1,9 +1,8 @@
 package providerhost
 
 import (
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-
 	"ptah.run/core/objectidentity"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 func comparisonPart(part objectidentity.Part) *protocol.ComparisonPart {

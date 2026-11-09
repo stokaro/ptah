@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/stokaro/ptah/provider-sdk/provider"
-
 	"ptah.run/core/ast"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/featureplan"
@@ -16,6 +14,7 @@ import (
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/tableref"
+	"ptah.run/provider-sdk/provider"
 )
 
 type commonPlanner struct {

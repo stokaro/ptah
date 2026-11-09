@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"strconv"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"google.golang.org/protobuf/proto"
+
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 func normalizeChange(input *protocol.ValueInput) (*protocol.NormalizedValue, error) {

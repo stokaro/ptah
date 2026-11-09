@@ -12,14 +12,14 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
 
 	"ptah.run/core/coverage"
 	"ptah.run/core/hclext"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
 )
 
 const platformHeaderKind schemaext.Kind = "example.org/fixture/table-changefeeds"

@@ -7,8 +7,9 @@ import (
 	"strconv"
 
 	"example.com/ptah-fixture-provider/backend"
-	"github.com/stokaro/ptah/provider-sdk/provider"
-	"github.com/stokaro/ptah/provider-sdk/runtime"
+
+	"ptah.run/provider-sdk/provider"
+	"ptah.run/provider-sdk/runtime"
 )
 
 func main() {

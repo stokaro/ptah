@@ -7,14 +7,13 @@ import (
 	"slices"
 	"strconv"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
-
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlext"
 	"ptah.run/internal/providersource"
 	"ptah.run/internal/tableref"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
 )
 
 // tableClauseExtension is the SQL extension of an engine that reads the

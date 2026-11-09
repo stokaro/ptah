@@ -3,11 +3,10 @@ package providerhost
 import (
 	"fmt"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 func (r reader) observedCoverage(source *protocol.ModelCoverage) (schemaext.Coverage, error) {

@@ -6,10 +6,9 @@ import (
 	"slices"
 	"strconv"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-
 	"ptah.run/core/schemaext"
 	"ptah.run/engine"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // modelReverser is one reversal service an engine declares, which undoes the

@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	"github.com/stokaro/ptah/provider-sdk/provider"
 
 	"ptah.run/catalog"
 	"ptah.run/core/objectidentity"
@@ -22,6 +21,7 @@ import (
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/providerhost"
 	"ptah.run/internal/testutils"
+	"ptah.run/provider-sdk/provider"
 )
 
 // The scope-selections fixture declares a queue, named in a schema, which a

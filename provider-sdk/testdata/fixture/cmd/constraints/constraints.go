@@ -5,7 +5,7 @@ import (
 	"slices"
 	"strings"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // referentialRules are the foreign key rules the fixture writes, in the

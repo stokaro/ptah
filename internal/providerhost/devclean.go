@@ -8,14 +8,13 @@ import (
 	"slices"
 	"strings"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
-	providerruntime "github.com/stokaro/ptah/provider-sdk/runtime"
-
 	"ptah.run/core/ast"
 	"ptah.run/core/renderer"
 	"ptah.run/internal/dbreset"
 	"ptah.run/internal/devclean/replay"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
+	providerruntime "ptah.run/provider-sdk/runtime"
 )
 
 // A dev database a provider serves is cleaned by the provider: the host

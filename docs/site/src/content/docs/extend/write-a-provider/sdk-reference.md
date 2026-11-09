@@ -27,7 +27,7 @@ it. The rules themselves live in the README. The tables describe the SDK
 release that the [minimal provider example](../tutorial/) requires:
 
 ```text title="go.mod"
-	github.com/stokaro/ptah/provider-sdk v0.26.0
+	ptah.run/provider-sdk v0.40.0
 ```
 
 The README links below open that release. The
@@ -37,7 +37,7 @@ can describe later additions. An ADR number names a decision record in the
 
 ## Packages
 
-The SDK is one Go module, `github.com/stokaro/ptah/provider-sdk`, with five
+The SDK is one Go module, `ptah.run/provider-sdk`, with five
 packages:
 
 | Package | What it holds |

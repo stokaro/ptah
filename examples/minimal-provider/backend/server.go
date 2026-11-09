@@ -1,6 +1,6 @@
 package backend
 
-import "github.com/stokaro/ptah/provider-sdk/runtime"
+import "ptah.run/provider-sdk/runtime"
 
 // Server joins the description with the services that implement it. Each
 // service the description offers needs an implementation, and each

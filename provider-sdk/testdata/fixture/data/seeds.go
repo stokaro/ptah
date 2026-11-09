@@ -10,7 +10,8 @@ import (
 	"unicode/utf8"
 
 	"example.com/ptah-fixture-provider/backend"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // ledgerDDL is the only ledger layout the fixture owns. A table of that name

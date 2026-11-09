@@ -4,9 +4,8 @@ import (
 	"maps"
 	"slices"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-
 	"ptah.run/catalog"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 func observedPlanningColumn(source catalog.Column) (*protocol.ObservedColumn, error) {

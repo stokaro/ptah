@@ -4,12 +4,11 @@ import (
 	"context"
 	"slices"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
-
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemapreparation"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
 )
 
 // prepareOwnedTables transports captured state before common comparison. The

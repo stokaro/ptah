@@ -12,12 +12,11 @@ import (
 	"strings"
 	"time"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
-
 	"ptah.run/core/dataext"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
 )
 
 // The data services of ADR 0028: the provider types declared and live rows,

@@ -5,8 +5,9 @@ import (
 
 	"example.com/ptah-fixture-provider/migrationunits"
 	qt "github.com/frankban/quicktest"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"google.golang.org/protobuf/testing/protocmp"
+
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // A definition is carried into every later unit's text and is no unit of its

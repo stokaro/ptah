@@ -6,11 +6,10 @@ import (
 	"strings"
 	"time"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-
 	"ptah.run/internal/embedgen"
 	"ptah.run/internal/embedrun"
 	"ptah.run/internal/embedstore"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // The conversions between the host's run state and the records the service

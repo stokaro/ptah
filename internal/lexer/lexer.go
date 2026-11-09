@@ -5,7 +5,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/stokaro/ptah/sqlsyntax/pgsyntax"
+	"ptah.run/sqlsyntax/pgsyntax"
 )
 
 // TokenType represents the type of SQL token

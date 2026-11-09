@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"slices"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"google.golang.org/protobuf/proto"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/plangraph"
 	"ptah.run/core/schemaext"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // resolvedOperation contains captured safety facts and typed owner input. Its
