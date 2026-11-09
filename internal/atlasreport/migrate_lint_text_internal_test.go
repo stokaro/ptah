@@ -153,6 +153,7 @@ func analyzeMigrationsWithBaseline(
 	files map[string]string,
 	latest int,
 	baseline []lintext.BaselineColumn,
+	dialects ...string,
 ) migrationlint.Analysis {
 	c := qt.New(t)
 	t.Helper()
@@ -178,10 +179,14 @@ func analyzeMigrationsWithBaseline(
 	}
 	slices.Sort(versions)
 
+	dialect := "sqlite"
+	if len(dialects) > 0 && dialects[0] != "" {
+		dialect = dialects[0]
+	}
 	analysis, err := migrationlint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, migrationlint.Options{
 		Compatibility: migrationlint.CompatibilityProfileAtlas,
 		DirFormat:     migrationfile.DirFormatAtlas,
-		Dialect:       "sqlite",
+		Dialect:       dialect,
 		Selection:     migrationlint.VersionSelection{Versions: versions, Restricted: true},
 		Baseline:      baseline,
 	})
@@ -211,6 +216,7 @@ func TestWriteMigrateLintText_RendersAtlasDiagnostics(t *testing.T) {
 		files    map[string]string
 		latest   int
 		baseline []lintext.BaselineColumn
+		dialect  string
 		want     string
 	}{
 		{
@@ -241,7 +247,8 @@ func TestWriteMigrateLintText_RendersAtlasDiagnostics(t *testing.T) {
 			// smallest fixture that shows the order is the table name. The fix
 			// header pluralizes with the count, which a one-diagnostic fixture
 			// cannot show.
-			name: "multi-target drop is one diagnostic per table",
+			name:    "multi-target drop is one diagnostic per table",
+			dialect: "postgres",
 			files: map[string]string{
 				"1.sql": "CREATE TABLE mid (id int);\nCREATE TABLE zeta (id int);\nCREATE TABLE alpha (id int);\n",
 				"2.sql": "DROP TABLE zeta, alpha, mid;\n",
@@ -691,7 +698,7 @@ func TestWriteMigrateLintText_RendersAtlasDiagnostics(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
-			analysis := analyzeMigrationsWithBaseline(t, tc.files, tc.latest, tc.baseline)
+			analysis := analyzeMigrationsWithBaseline(t, tc.files, tc.latest, tc.baseline, tc.dialect)
 			var out bytes.Buffer
 
 			err := writeMigrateLintText(&out, MigrateLintOptions{Analysis: &analysis}, fixedZeroClock())
