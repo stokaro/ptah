@@ -68,6 +68,9 @@ type Parser struct {
 	// action on a column rather than a table element; see
 	// [Parser.readAddedNotNull].
 	addedNotNull *ast.AlterColumnOperation
+	// tableNotNull holds table-level NOT NULL clauses until every column of
+	// CREATE TABLE is known. A clause may precede its column.
+	tableNotNull []tableNotNullClause
 	// columnChecks are the CHECKs the table body being read wrote on its
 	// columns, the ones read at table level included. MySQL's rule for them
 	// needs every column of the table, so they are checked once the body is
@@ -2216,6 +2219,7 @@ func (p *Parser) parsePartitionOf(table *ast.CreateTableNode) error {
 
 func (p *Parser) parseCreateTableElements(table *ast.CreateTableNode) error {
 	p.columnChecks = nil
+	p.tableNotNull = nil
 	// Parse column definitions and constraints
 	for {
 		// Check for timeout to prevent infinite loops
@@ -2263,6 +2267,9 @@ func (p *Parser) parseCreateTableElements(table *ast.CreateTableNode) error {
 	// naming a column the body declares later (`KEYY k (b), b INT`) is caught by
 	// that one. Measured: moving the call inside the loop changes no test.
 	// It is one pass over the columns rather than one per element.
+	if err := p.applyTableNotNull(table); err != nil {
+		return err
+	}
 	if err := refuseTableElementTypo(table, p.target, p.current.Start); err != nil {
 		return err
 	}
@@ -2367,7 +2374,7 @@ func (p *Parser) parseTableElement(table *ast.CreateTableNode) error {
 			}
 			addTableConstraintOrIndex(table, constraint, index)
 			return nil
-		case "CONSTRAINT", "PRIMARY", "UNIQUE", "FOREIGN", "CHECK", "EXCLUDE",
+		case "CONSTRAINT", "PRIMARY", "UNIQUE", "FOREIGN", "CHECK", "EXCLUDE", "NOT",
 			"SPATIAL", "FULLTEXT", "KEY":
 			if !p.tableBodyReadsKeywordAsIndex(keyword) {
 				break
@@ -4810,6 +4817,9 @@ func (p *Parser) parseTableConstraint() (*ast.ConstraintNode, *ast.IndexNode, er
 
 	if p.addingConstraint && p.current.MatchIdentifierValue("NOT") && p.takesAddNotNull() {
 		return nil, nil, p.readAddedNotNull(constraint.Name)
+	}
+	if !p.addingConstraint && p.current.MatchIdentifierValue("NOT") && p.takesTableNotNull() {
+		return nil, nil, p.readTableNotNull(constraint.Name)
 	}
 	return p.parseConstraintAfterName(constraint)
 }

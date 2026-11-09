@@ -76,6 +76,7 @@ import (
 var noOldSwitch = cmp.Options{
 	cmpopts.IgnoreFields(descriptor.Grammar{}, "Forms"),
 	cmpopts.IgnoreFields(descriptor.IndexGrammar{}, "Storing", "Nonclustered"),
+	cmpopts.IgnoreFields(descriptor.ConstraintGrammar{}, "TableNotNull"),
 }
 
 var oldParserSwitches = map[string]descriptor.Grammar{

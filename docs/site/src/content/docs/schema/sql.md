@@ -69,6 +69,20 @@ in another schema plans the change.
 A PostgreSQL column can declare `bit varying(8)` in a SQL schema file.
 `varying` is read as part of the column type.
 
+PostgreSQL also accepts a table-level `NOT NULL` constraint that names its
+column. Ptah attaches it to that column even when the constraint comes first:
+
+```sql
+CREATE TABLE accounts (
+  CONSTRAINT account_id_required NOT NULL id,
+  id bigint
+);
+```
+
+The constraint name is kept when the target is PostgreSQL 18 or newer. Ptah
+refuses `NO INHERIT` and `NOT VALID` on this form because the schema model does
+not represent them.
+
 See [PostgreSQL defaults](../../databases/postgresql/#how-a-declaration-is-compared-with-what-the-server-stored).
 
 ## Render it

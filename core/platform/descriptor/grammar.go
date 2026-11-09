@@ -117,6 +117,9 @@ const (
 // ConstraintGrammar states how the engine reads a table constraint and the
 // clauses after one.
 type ConstraintGrammar struct {
+	// TableNotNull reports that a NOT NULL constraint may name its column
+	// among the table elements of CREATE TABLE.
+	TableNotNull bool `json:"table_not_null,omitempty"`
 	// Enforcement is where ENFORCED and NOT ENFORCED may follow a
 	// constraint.
 	Enforcement Enforcement `json:"enforcement,omitzero"`
