@@ -34,6 +34,8 @@ func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 		DefaultGeneratedKind:           "VIRTUAL",
 		ServerDatabases:                true,
 	}
+	mariaDB := mysqlFamily
+	mariaDB.ColumnCheckDropByModify = true
 	postgresFloats := descriptor.BareTypes{Stated: true, FloatBits: 53, RealBits: 24}
 	want := map[string]descriptor.Comparison{
 		"postgres": {
@@ -83,7 +85,7 @@ func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 			QualifiedTypeNames: true,
 		},
 		"mysql":   mysqlFamily,
-		"mariadb": mysqlFamily,
+		"mariadb": mariaDB,
 		"sqlite": {
 			VerbatimTableNames:   true,
 			InternalIndexPrefix:  "sqlite_autoindex_",

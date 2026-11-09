@@ -544,14 +544,15 @@ func (p *Planner) modifyExistingColumns(
 		// Generate ALTER COLUMN statements using AST
 		previousDefault, defaultChanged := columnchange.PreviousDefault(colDiff)
 		modify := &ast.ModifyColumnOperation{
-			Column:              columnNode,
-			PreviousType:        columnchange.PreviousType(colDiff),
-			TypeNarrows:         colDiff.TypeNarrows,
-			TypeNarrowingKnown:  colDiff.PreviousType != "",
-			PreviousNullable:    previousColumnNullable(colDiff.Changes["nullable"]),
-			HasPreviousNullable: colDiff.Changes["nullable"] != "",
-			PreviousDefault:     previousDefault,
-			HasPreviousDefault:  defaultChanged,
+			Column:                 columnNode,
+			PreviousType:           columnchange.PreviousType(colDiff),
+			TypeNarrows:            colDiff.TypeNarrows,
+			TypeNarrowingKnown:     colDiff.PreviousType != "",
+			RemovesCheckProtection: removesMariaDBColumnCheck(p.targetDialect(), colDiff),
+			PreviousNullable:       previousColumnNullable(colDiff.Changes["nullable"]),
+			HasPreviousNullable:    colDiff.Changes["nullable"] != "",
+			PreviousDefault:        previousDefault,
+			HasPreviousDefault:     defaultChanged,
 			// Stated although MODIFY restates the whole column, because the
 			// statement cannot say what changed: it repeats NOT NULL on a
 			// type change as on a nullability change, and migration/safety
@@ -710,6 +711,10 @@ func (p *Planner) validateColumnModification(tableName string, colDiff difftypes
 			strings.Join(unsupported, ", "),
 		),
 	}
+}
+
+func removesMariaDBColumnCheck(dialect string, colDiff difftypes.ColumnDiff) bool {
+	return dialect == platform.MariaDB && colDiff.Changes["check"] != ""
 }
 
 // withoutChangesConstraintsMake leaves out of colDiff what the plan's constraint statements

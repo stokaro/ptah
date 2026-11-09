@@ -871,6 +871,9 @@ func classifyModifyColumn(op *ast.ModifyColumnOperation) (Severity, string) {
 // lostByModification is why a column modification is destructive, and empty for one
 // that is not.
 func lostByModification(op *ast.ModifyColumnOperation) string {
+	if op.RemovesCheckProtection {
+		return "MODIFY COLUMN removes an existing CHECK protection"
+	}
 	if from, to, ok := typechange.VectorDimensionChange(op.PreviousType, op.Column.Type); ok {
 		return fmt.Sprintf(
 			"vector dimension changes from %d to %d: the server refuses the cast while any row holds a vector, "+

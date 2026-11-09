@@ -1053,6 +1053,8 @@ file, exactly as any other command reaching the same URL would.
   `ALTER TABLE … DROP CHECK <name>` for CHECK removals; the renderer resolves
   the spelling against **its** target too, so the request degrades to the
   generic clause on MariaDB, which has no `DROP CHECK` at all (verified live).
+  MariaDB column-level CHECKs are removed or changed by `MODIFY COLUMN`;
+  `DROP CONSTRAINT` applies to table-level CHECKs and fails on column-level ones.
   A CHECK removal with no valid spelling at all (`MySQLLegacy`) degrades to a
   loud WARNING comment.
 - **UNIQUE removals use `DROP INDEX`** (#195). Every MySQL-family preset

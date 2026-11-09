@@ -889,6 +889,9 @@ type Constraint struct {
 	// convalidated false, because VALIDATE CONSTRAINT refuses it.
 	NotValid    bool    `json:"not_valid,omitempty"`
 	CheckClause *string `json:"check_clause"` // For CHECK constraints
+	// ColumnLevelCheck identifies a MariaDB CHECK whose catalog LEVEL is
+	// Column. Its column is ColumnName; DROP CONSTRAINT cannot remove it.
+	ColumnLevelCheck bool `json:"column_level_check,omitempty"`
 	// NullsDistinct carries PostgreSQL UNIQUE NULLS [NOT] DISTINCT state.
 	// Nil means the clause was not present in the definition.
 	NullsDistinct *bool `json:"nulls_distinct,omitempty"`
