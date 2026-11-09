@@ -1,6 +1,7 @@
 package lint_test
 
 import (
+	"cmp"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -128,11 +129,7 @@ func TestAnalyzeFS_SchemaChangeCardinality(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
-			dialect := tc.dialect
-			if dialect == "" {
-				dialect = "sqlite"
-			}
-			analysis := analyzeChangeDialect(c, map[string]string{"1_change.sql": tc.sql}, dialect)
+			analysis := analyzeChangeDialect(c, map[string]string{"1_change.sql": tc.sql}, cmp.Or(tc.dialect, "sqlite"))
 			file := fileByName(c, analysis, "1_change.sql")
 			c.Assert(projectChanges(file.Changes), qt.DeepEquals, tc.want)
 		})
