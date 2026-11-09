@@ -73,7 +73,7 @@ func main() {
 		Features: []string{provider.InspectFeature, provider.RenderFeature, provider.ExecuteFeature, provider.AnalyzeSQLFeature, provider.LintFeature}}
 	owner := &backend.Provider{}
 	err = runtime.Serve(runtime.Server{Description: description, Sessions: owner, Inspector: owner, Renderer: owner, Executor: owner, SQLAnalyzer: owner,
-		Linter: backend.Linter{}})
+		Linter: backend.Linter{Rules: published}})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
