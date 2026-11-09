@@ -1,6 +1,7 @@
 package planner_test
 
 import (
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -22,6 +23,10 @@ import (
 // columnKeyPlan plans on dialect the change from the SQL schema held, with the
 // primary key a reader reports over liveKey, to the SQL schema desired.
 func columnKeyPlan(c *qt.C, dialect, held, desired string, liveKey ...string) []string {
+	return columnKeyPlanWithShape(c, dialect, held, desired, planext.StatementShapePlanned, liveKey...)
+}
+
+func columnKeyPlanWithShape(c *qt.C, dialect, held, desired string, shape planext.StatementShape, liveKey ...string) []string {
 	c.Helper()
 	runtime := builtintest.Runtime()
 	read := func(sql string) schemamodel.Database {
@@ -39,9 +44,22 @@ func columnKeyPlan(c *qt.C, dialect, held, desired string, liveKey ...string) []
 	diff, err := schemadiff.CompareWithDialect(c.Context(), &desiredSchema, current, dialect, runtime)
 	c.Assert(err, qt.IsNil)
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(c.Context(), must.Must(builtin.New()), diff, dialect,
-		planext.Options{Capabilities: capability.ForDialect(dialect), Statements: planext.StatementStyleExact})
+		planext.Options{Capabilities: capability.ForDialect(dialect), Statements: planext.StatementStyleExact, Shape: shape})
 	c.Assert(err, qt.IsNil)
 	return statements
+}
+
+// TestColumnPrimaryKey_CompatibilityShapeAddsKeySeparately pins the Atlas CLI
+// spelling when a new column takes over an old column's key.
+func TestColumnPrimaryKey_CompatibilityShapeAddsKeySeparately(t *testing.T) {
+	c := qt.New(t)
+	statements := columnKeyPlanWithShape(c, platform.Postgres,
+		`CREATE TABLE t (id int PRIMARY KEY, v text);`,
+		`CREATE TABLE t (pk int PRIMARY KEY, v text);`,
+		planext.StatementShapeCatalog, "id")
+	sql := strings.Join(statements, "\n")
+	c.Assert(sql, qt.Contains, `ALTER TABLE "t" ADD COLUMN "pk" integer NOT NULL, ADD PRIMARY KEY ("pk")`)
+	c.Assert(sql, qt.Not(qt.Contains), `ADD COLUMN "pk" integer PRIMARY KEY`)
 }
 
 // TestColumnPrimaryKey_ComparedAsTheTablesKey pins what a primary key a column
@@ -84,10 +102,9 @@ func TestColumnPrimaryKey_ComparedAsTheTablesKey(t *testing.T) {
 	}
 }
 
-// TestColumnPrimaryKey_StaysAFlag pins where the column's flag is enough: a key the
-// table already holds, and a column the plan adds, which takes its key in its own
-// ADD COLUMN.
-func TestColumnPrimaryKey_StaysAFlag(t *testing.T) {
+// TestColumnPrimaryKey_ExistingOrAdded checks that an existing key needs no
+// statement and an added column gets a separate key clause.
+func TestColumnPrimaryKey_ExistingOrAdded(t *testing.T) {
 	tests := []struct {
 		name          string
 		held, desired string
@@ -105,7 +122,7 @@ func TestColumnPrimaryKey_StaysAFlag(t *testing.T) {
 			name:    "a column the plan adds",
 			held:    `CREATE TABLE parent (id bigint NOT NULL);`,
 			desired: `CREATE TABLE parent (id bigint NOT NULL, code bigint PRIMARY KEY);`,
-			want:    []string{addCodeComment("POSTGRES") + `ALTER TABLE "parent" ADD COLUMN "code" bigint PRIMARY KEY NOT NULL`},
+			want:    []string{addCodeComment("POSTGRES") + `ALTER TABLE "parent" ADD COLUMN "code" bigint NOT NULL, ADD PRIMARY KEY ("code")`},
 		},
 	}
 	for _, test := range tests {

@@ -796,12 +796,23 @@ func (p *Planner) addNewTableColumns(
 		if column.Primary {
 			columnNode.SetNotNullConstraintName(modelast.KeyColumnNotNullName(table.Name, column))
 		}
+		operations := []ast.AlterOperation{&ast.AddColumnOperation{Column: columnNode}}
+		if column.Primary && p.targetDialect() == platform.Postgres {
+			// PostgreSQL takes the column and its new key in one ALTER TABLE,
+			// but writes the key as its own clause. Keep the NOT NULL name on
+			// the column so a moved name is not replaced by a generated one.
+			columnNode.Primary = false
+			columnNode.SetNotNull()
+			operations = append(operations, &ast.AddConstraintOperation{
+				Constraint: ast.NewPrimaryKeyConstraint(column.Name),
+			})
+		}
 
-		// Only add the column - foreign key constraints will be added separately
-		// to ensure proper dependency ordering (columns must exist before FK constraints)
+		// Foreign keys are added after the columns and their own primary keys,
+		// so the referenced columns and keys exist before those keys bind.
 		result = append(result, &ast.AlterTableNode{
 			Name:       tableDiff.TableName,
-			Operations: []ast.AlterOperation{&ast.AddColumnOperation{Column: columnNode}},
+			Operations: operations,
 		})
 	}
 	return result

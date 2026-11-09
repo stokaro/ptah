@@ -1013,10 +1013,33 @@ func primaryKeyReplacement(node *ast.AlterTableNode) (*ast.DropConstraintOperati
 	return drop, add, drops && adds && add.Constraint != nil && add.Constraint.Type == ast.PrimaryKeyConstraint
 }
 
+// addedColumnPrimaryKey is the PostgreSQL planner's column followed by its
+// single-column key. Both clauses belong to one ALTER TABLE statement.
+func addedColumnPrimaryKey(node *ast.AlterTableNode) (*ast.AddColumnOperation, *ast.ConstraintNode, bool) {
+	if len(node.Operations) != 2 {
+		return nil, nil, false
+	}
+	column, addsColumn := node.Operations[0].(*ast.AddColumnOperation)
+	add, addsKey := node.Operations[1].(*ast.AddConstraintOperation)
+	if !addsColumn || !addsKey || column.Column == nil || column.IfNotExists || column.Column.Primary || add.Constraint == nil ||
+		add.Constraint.Type != ast.PrimaryKeyConstraint || len(add.Constraint.Columns) != 1 ||
+		add.Constraint.Columns[0] != column.Column.Name {
+		return nil, nil, false
+	}
+	return column, add.Constraint, true
+}
+
 // renderAlterTable renders PostgreSQL-specific ALTER TABLE statements
 func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 	if drop, add, replaces := primaryKeyReplacement(node); replaces {
 		if err := r.writeAddConstraintAfter(node.Name, fmt.Sprintf("DROP CONSTRAINT %s, ", r.escapeIdentifier(drop.ConstraintName)), add.Constraint); err != nil {
+			return err
+		}
+		r.w.WriteLine("")
+		return nil
+	}
+	if column, key, addsKey := addedColumnPrimaryKey(node); addsKey && r.dialect == platform.Postgres {
+		if err := r.writeAddColumnWithPrimaryKey(node.Name, column, key); err != nil {
 			return err
 		}
 		r.w.WriteLine("")
@@ -1708,10 +1731,19 @@ func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 
 // writeAddColumn writes ALTER TABLE ... ADD COLUMN for op.
 func (r *Renderer) writeAddColumn(table string, op *ast.AddColumnOperation) error {
+	clause, err := r.renderAddColumnClause(table, op)
+	if err != nil {
+		return err
+	}
+	r.w.WriteLinef("ALTER TABLE %s %s;", r.escapeQualifiedIdentifier(table), clause)
+	return nil
+}
+
+func (r *Renderer) renderAddColumnClause(table string, op *ast.AddColumnOperation) (string, error) {
 	column := r.withoutDefaultNotNullName(table, op.Column)
 	line, err := r.renderColumn(column)
 	if err != nil {
-		return fmt.Errorf("error rendering add column: %w", err)
+		return "", fmt.Errorf("error rendering add column: %w", err)
 	}
 	// Remove the leading spaces from column rendering for ALTER
 	line = strings.TrimPrefix(line, "  ")
@@ -1719,7 +1751,23 @@ func (r *Renderer) writeAddColumn(table string, op *ast.AddColumnOperation) erro
 		r.w.WriteLinef("-- %s: ADD COLUMN %s fails if %s holds any row; the column is NOT NULL and declares no default to fill it with.",
 			r.dialectUpper, commentFragment(r.escapeIdentifier(column.Name)), commentFragment(r.escapeQualifiedIdentifier(table)))
 	}
-	r.w.WriteLinef("ALTER TABLE %s %s %s;", r.escapeQualifiedIdentifier(table), addColumnClause(op), line)
+	return addColumnClause(op) + " " + line, nil
+}
+
+func (r *Renderer) writeAddColumnWithPrimaryKey(table string, op *ast.AddColumnOperation, key *ast.ConstraintNode) error {
+	columnClause, err := r.renderAddColumnClause(table, op)
+	if err != nil {
+		return err
+	}
+	keyClause, err := r.renderConstraint(key)
+	if err != nil {
+		return fmt.Errorf("error rendering add constraint: %w", err)
+	}
+	if keyClause == "" {
+		return fmt.Errorf("primary key on added column %s rendered no clause", op.Column.Name)
+	}
+	r.w.WriteLinef("ALTER TABLE %s %s, ADD %s;", r.escapeQualifiedIdentifier(table), columnClause, strings.TrimPrefix(keyClause, "  "))
+	r.writeConstraintComment(table, key)
 	return nil
 }
 

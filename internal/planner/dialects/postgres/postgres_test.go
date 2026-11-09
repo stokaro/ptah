@@ -507,7 +507,7 @@ func TestPlanner_ForeignKeyDependencyOrdering(t *testing.T) {
 			expected: func(nodes []ast.Node) bool {
 				// Should have 6 nodes:
 				// 1. Comment for users column addition
-				// 2. ALTER TABLE users ADD COLUMN id
+				// 2. ALTER TABLE users ADD COLUMN id, ADD PRIMARY KEY (id)
 				// 3. Comment for restore_steps column addition
 				// 4. ALTER TABLE restore_steps ADD COLUMN user_id
 				// 5. Comment for foreign key constraints
@@ -526,11 +526,15 @@ func TestPlanner_ForeignKeyDependencyOrdering(t *testing.T) {
 
 				// Node 2: ADD COLUMN for users.id
 				alterNode1, ok := nodes[1].(*ast.AlterTableNode)
-				if !ok || alterNode1.Name != "users" || len(alterNode1.Operations) != 1 {
+				if !ok || alterNode1.Name != "users" || len(alterNode1.Operations) != 2 {
 					return false
 				}
-				addColOp1, ok := alterNode1.Operations[0].(*ast.AddColumnOperation)
-				if !ok || addColOp1.Column.Name != "id" {
+				addColOp1, addsColumn := alterNode1.Operations[0].(*ast.AddColumnOperation)
+				addKeyOp, addsKey := alterNode1.Operations[1].(*ast.AddConstraintOperation)
+				if !addsColumn || addColOp1.Column == nil || addColOp1.Column.Name != "id" ||
+					addColOp1.Column.Primary || addColOp1.Column.Nullable || !addsKey || addKeyOp.Constraint == nil ||
+					addKeyOp.Constraint.Type != ast.PrimaryKeyConstraint ||
+					len(addKeyOp.Constraint.Columns) != 1 || addKeyOp.Constraint.Columns[0] != "id" {
 					return false
 				}
 
@@ -684,7 +688,7 @@ func TestPlanner_ForeignKeyDependencyOrdering_SQLOutput(t *testing.T) {
 	c.Assert(lastAddColumn < firstAddConstraint, qt.IsTrue)
 
 	// Verify specific SQL content
-	c.Assert(sql, qt.Contains, "ALTER TABLE users ADD COLUMN id TEXT PRIMARY KEY")
+	c.Assert(sql, qt.Contains, "ALTER TABLE users ADD COLUMN id TEXT NOT NULL, ADD PRIMARY KEY (id)")
 	c.Assert(sql, qt.Contains, "ALTER TABLE restore_steps ADD COLUMN user_id TEXT NOT NULL")
 	c.Assert(sql, qt.Contains, "ALTER TABLE restore_steps ADD CONSTRAINT fk_entity_user FOREIGN KEY (user_id) REFERENCES users(id)")
 }
