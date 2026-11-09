@@ -125,6 +125,11 @@ type Dialect struct {
 	// classes: "transactional", "implicit_commit" or "no_transaction". Empty
 	// means nobody decided, which internal/ddltx reports as unclassified.
 	DDLTransactions string `json:"ddl_transactions,omitempty"`
+	// AtomicIndexCreation reports that a CREATE INDEX server refusal on the
+	// required table engine leaves no new index. A lost server reply does not
+	// establish that outcome. The migrator uses this only for a file-mode
+	// progress witness after an implicit DDL commit.
+	AtomicIndexCreation bool `json:"atomic_index_creation,omitempty"`
 	// RevisionTable states how the migrator keeps its own tables.
 	RevisionTable RevisionTable `json:"revision_table,omitzero"`
 

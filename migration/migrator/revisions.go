@@ -16,11 +16,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-sql-driver/mysql"
+
+	"ptah.run/core/platform"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasretry"
 	"ptah.run/internal/dblock"
 	"ptah.run/internal/ddltx"
+	"ptah.run/internal/execoutcome"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/revisiontext"
 )
@@ -2333,15 +2337,33 @@ func preservesProgressWitnessUnknownOutcome(
 	if errors.Is(execErr.Err, context.Canceled) || errors.Is(execErr.Err, context.DeadlineExceeded) {
 		return true
 	}
-	return !mysqlAtomicFailureStatement(execErr.Statement, dialect)
+	if execoutcome.Unknown(execErr.Err) {
+		return true
+	}
+	return !knownAtomicFailureStatement(execErr.Statement, dialect, execErr.Err)
 }
 
-func mysqlAtomicFailureStatement(statement, dialect string) bool {
+func knownAtomicFailureStatement(statement, dialect string, failure error) bool {
 	tokens := significantSQLTokens(statement, dialect)
 	if len(tokens) == 0 {
 		return false
 	}
-	return matchesAnyKeyword(tokens[0], "INSERT", "UPDATE", "DELETE", "REPLACE")
+	if matchesAnyKeyword(tokens[0], "INSERT", "UPDATE", "DELETE", "REPLACE") {
+		return true
+	}
+	// File mode checks the target table engine. When its descriptor promises
+	// atomic index creation, a server refusal leaves no new index to resume past.
+	described, found := platform.Lookup(dialect)
+	if !found || !described.AtomicIndexCreation || !matchesAnyKeyword(tokens[0], "CREATE") || len(tokens) < 3 {
+		return false
+	}
+	// Only the server's error proves refusal. An unclassified adapter error
+	// cannot establish whether the index was created.
+	if _, ok := errors.AsType[*mysql.MySQLError](failure); !ok {
+		return false
+	}
+	return matchesAnyKeyword(tokens[1], "INDEX") ||
+		len(tokens) > 3 && matchesAnyKeyword(tokens[1], "UNIQUE") && matchesAnyKeyword(tokens[2], "INDEX")
 }
 
 func preservesUnknownStatementOutcome(ctx context.Context, failure error, txMode MigrationTxMode) bool {
