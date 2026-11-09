@@ -124,6 +124,12 @@ type ForeignKeyNameRules struct {
 
 // Columns states how a server reads a column definition.
 type Columns struct {
+	// NationalCharAsChar reports that NCHAR reads back as CHAR. SQL Server
+	// and Oracle keep a distinct national character type.
+	NationalCharAsChar bool `json:"national_char_as_char,omitempty"`
+	// NationalCharCharset is the character set NCHAR implies where a CHAR
+	// column may have another character set. Empty means no separate set.
+	NationalCharCharset string `json:"national_char_charset,omitempty"`
 	// IdentityNotNull reports that an identity column is NOT NULL whether or
 	// not the definition says so.
 	IdentityNotNull bool `json:"identity_not_null,omitempty"`

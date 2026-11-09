@@ -63,7 +63,7 @@ func TestDescriptors_SchemaFileFactsAgreeWithTheSwitchesTheyReplace(t *testing.T
 			names:            descriptor.Names{Unquoted: "ascii_case_insensitive", PublicKeyword: true},
 			indexNaming:      pgFamily,
 			constraintNaming: descriptor.ConstraintNamingTableColumnsSuffix,
-			columns:          descriptor.Columns{IdentityNotNull: true},
+			columns:          descriptor.Columns{NationalCharAsChar: true, IdentityNotNull: true},
 			statements:       descriptor.Statements{ViewsBlockDropTable: true, CreateRoleOnce: true, OwnerCreateOnce: true, DoBlocks: "plpgsql", RelationsShareNames: true},
 		},
 		{
@@ -73,7 +73,7 @@ func TestDescriptors_SchemaFileFactsAgreeWithTheSwitchesTheyReplace(t *testing.T
 				MaxBytes: 64, FunctionalBase: "functional_index", UniqueIsIndex: true, BaseBytes: 61,
 			},
 			checkNaming: descriptor.CheckNamingTableNumbered,
-			columns:     descriptor.Columns{CheckOwnColumnOnly: true},
+			columns:     descriptor.Columns{NationalCharAsChar: true, NationalCharCharset: "utf8mb3", CheckOwnColumnOnly: true},
 			statements:  descriptor.Statements{DropViewIfExistsSkipsOtherKinds: true},
 		},
 		{
@@ -81,6 +81,7 @@ func TestDescriptors_SchemaFileFactsAgreeWithTheSwitchesTheyReplace(t *testing.T
 			names:       descriptor.Names{Lookup: "unicode_case_insensitive"},
 			indexNaming: descriptor.IndexNaming{MaxBytes: 64, DescendingCovers: true, UniqueIsIndex: true},
 			checkNaming: descriptor.CheckNamingColumnOrConstraint,
+			columns:     descriptor.Columns{NationalCharAsChar: true, NationalCharCharset: "utf8mb3"},
 			statements:  descriptor.Statements{DropViewIfExistsSkipsOtherKinds: true},
 		},
 		{dialect: platform.ClickHouse},
@@ -111,6 +112,7 @@ func TestDescriptors_SchemaFileFactsAgreeWithTheSwitchesTheyReplace(t *testing.T
 			dialect:     platform.YugabyteDB,
 			names:       descriptor.Names{Unquoted: "ascii_case_insensitive", PublicKeyword: true},
 			indexNaming: pgFamily,
+			columns:     descriptor.Columns{NationalCharAsChar: true},
 			statements:  descriptor.Statements{ViewsBlockDropTable: true, OwnerCreateOnce: true, RelationsShareNames: true},
 		},
 		{dialect: platform.Oracle, names: descriptor.Names{Lookup: "ascii_case_insensitive"}},

@@ -326,6 +326,11 @@ it keeps `p`. MySQL and MariaDB size `text` and `blob` in
 `BLOB`, `ntext`, `image` and `String` have no limit. SQLite stores the declaration without
 reading it.
 
+PostgreSQL and YugabyteDB read `nchar(n)` as `character(n)`. MySQL and MariaDB
+read it as `char(n)` with the national character set. The plan treats the
+spellings as equal when the width and character set agree; another character
+set remains a type change. SQL Server and Oracle keep `nchar` distinct.
+
 Oracle lowers a size only on a column with no row. `TIMESTAMP(6)` declared
 `TIMESTAMP(0)` and `NUMBER` declared `NUMBER(10,2)` plan a `MODIFY` rated
 destructive, and while a row exists `ptah schema apply` stops with the server's

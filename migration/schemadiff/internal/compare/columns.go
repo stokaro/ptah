@@ -968,6 +968,9 @@ func columnTypeChange(
 	if schemaprep.JSONHeldAsText(genCol.Type, dialect) && schemaprep.HoldsJSONText(dbRawType, dialect) {
 		return ""
 	}
+	if nationalCharMatchesCatalog(genCol.Type, dbCol, dialect) {
+		return ""
+	}
 	// SQLite keeps the declaration as the column's type, so a column built under the word
 	// it is declared by is that column, whatever affinity the renderer would give the word.
 	// Compared by affinity, a table built by hand with `boolean` is copied to a new table to
@@ -982,6 +985,38 @@ func columnTypeChange(
 		return portableColumnTypeChange(genCol, dbCol, dbRawType, dialect)
 	}
 	return declaredColumnTypeChange(genCol, dbRawType, dialect)
+}
+
+// nationalCharMatchesCatalog recognizes the fixed-width CHAR column a server
+// builds from NCHAR. MySQL and MariaDB also require the national character set:
+// treating a latin1 CHAR as NCHAR would hide a real conversion.
+func nationalCharMatchesCatalog(declared string, current catalog.Column, dialect string) bool {
+	facts := columnFactsOf(dialect)
+	if !facts.NationalCharAsChar {
+		return false
+	}
+	typeName := strings.ToLower(strings.TrimSpace(declared))
+	if !strings.HasPrefix(typeName, "nchar") {
+		return false
+	}
+	rest := strings.TrimSpace(strings.TrimPrefix(typeName, "nchar"))
+	if rest != "" && rest[0] != '(' && rest[0] != '[' {
+		return false
+	}
+	if facts.NationalCharCharset != "" && !nationalCharCollationMatches(current.Collate, facts.NationalCharCharset) {
+		return false
+	}
+	return typeEngineOf(dialect).Same(current.RawType(), "char"+rest)
+}
+
+// MySQL and MariaDB report the historical utf8 alias as utf8 or utf8mb3.
+// The collation name starts with the character set, followed by an underscore.
+func nationalCharCollationMatches(collation, charset string) bool {
+	if charset != "utf8mb3" {
+		return strings.HasPrefix(strings.ToLower(collation), strings.ToLower(charset)+"_")
+	}
+	lower := strings.ToLower(collation)
+	return strings.HasPrefix(lower, "utf8mb3_") || strings.HasPrefix(lower, "utf8_")
 }
 
 // declaredColumnTypeChange compares a catalog type with a declared one, as written.

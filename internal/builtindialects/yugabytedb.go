@@ -129,7 +129,7 @@ func yugabyteDB() descriptor.Dialect {
 		GeneratedColumnDefault: "STORED",
 		// Measured on 2026.1.2, a column of a serial type reads back NOT NULL whatever the
 		// definition says, as on PostgreSQL.
-		Columns: descriptor.Columns{SerialNotNull: true},
+		Columns: descriptor.Columns{NationalCharAsChar: true, SerialNotNull: true},
 		// Comparison: what comparing a declaration with a catalog reads.
 		Comparison: descriptor.Comparison{
 			DeclaredSchemas:    true,
