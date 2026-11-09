@@ -45,6 +45,11 @@ func TestCodecs_HappyPath(t *testing.T) {
 			value: &pgextension.ObservedExtension{Schema: "ext", Version: "1.6", Relocatable: true, Provides: []string{"similarity", "gin_trgm_ops"}},
 			wire:  `{"schema":"ext","version":"1.6","relocatable":true,"provides":["gin_trgm_ops","similarity"]}`,
 		},
+		{
+			name: "an observation with a foreign table dependency", codec: observed,
+			value: &pgextension.ObservedExtension{Schema: "public", Version: "1.1", DependentForeignTables: []string{"public.remote_b", "public.remote_a"}},
+			wire:  `{"schema":"public","version":"1.1","relocatable":false,"dependent_foreign_tables":["public.remote_a","public.remote_b"]}`,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -75,6 +80,7 @@ func TestCodecs_FailurePath(t *testing.T) {
 		{name: "an observation without its version", codec: observed, wire: `{"schema":"public","relocatable":false}`},
 		{name: "an empty member list spelled out", codec: observed, wire: `{"schema":"public","version":"1.0","relocatable":false,"provides":[]}`},
 		{name: "an empty member", codec: observed, wire: `{"schema":"public","version":"1.0","relocatable":false,"provides":[""]}`},
+		{name: "an empty foreign table list", codec: observed, wire: `{"schema":"public","version":"1.0","relocatable":false,"dependent_foreign_tables":[]}`},
 		{name: "a null comment", codec: observed, wire: `{"schema":"public","version":"1.0","relocatable":false,"comment":null}`},
 	}
 	for _, test := range tests {
