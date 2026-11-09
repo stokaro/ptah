@@ -34,6 +34,11 @@ func TestFromField_SQLServerTypeConversions(t *testing.T) {
 			field:    schemamodel.Field{Name: "body", Type: "TEXT"},
 			expected: "NVARCHAR(MAX)",
 		},
+		{
+			name:     "lowercase bare varchar",
+			field:    schemamodel.Field{Name: "body", Type: "varchar"},
+			expected: "NVARCHAR(MAX)",
+		},
 	}
 
 	for _, tt := range tests {

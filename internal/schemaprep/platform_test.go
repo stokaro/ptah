@@ -54,6 +54,10 @@ func TestEffectiveFieldForPlatformMapsPortableTypes(t *testing.T) {
 		{platform.MariaDB, "BIGSERIAL", "BIGINT"},
 		{platform.SQLServer, "SERIAL", "INT"},
 		{platform.SQLServer, "TEXT", "NVARCHAR(MAX)"},
+		{platform.SQLServer, "text", "NVARCHAR(MAX)"},
+		{platform.SQLServer, "VARCHAR", "NVARCHAR(MAX)"},
+		{platform.SQLServer, "varchar", "NVARCHAR(MAX)"},
+		{platform.SQLServer, "VaRcHaR", "NVARCHAR(MAX)"},
 	}
 	for _, test := range tests {
 		t.Run(test.dialect+"/"+test.field, func(t *testing.T) {

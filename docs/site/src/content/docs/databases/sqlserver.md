@@ -406,7 +406,7 @@ destructive, since the server rounds the digits away without a word. See
 A column's size is compared by what it holds. `(max)` has no limit, so `nvarchar(max)`
 declared `nvarchar(50)` plans an `ALTER COLUMN` rated destructive, and the server
 answers `2628` and keeps the column if a value is too long. `varchar`, `nvarchar`,
-`char`, `nchar`, `binary` and `varbinary` hold one where a column declares no length,
+`char`, `nchar`, `binary` and `varbinary` hold one where a native column declares no length,
 `decimal` and `numeric` are `decimal(18,0)`, and `float` is `float(53)`. So each of those
 plans nothing against the size it stands for, and `decimal(10,2)` declared `decimal`
 rounds `1.50` to `2`.
@@ -419,7 +419,8 @@ word.
 A column declared with a portable name is compared with the type that name writes.
 `timestamp` is `datetime2`, `timestamptz` is `datetimeoffset`, `boolean` is `bit`, `text`
 and `citext` are `nvarchar(max)`, `bytea` and `blob` are `varbinary(max)`, `char` is
-`nchar`, and `varchar` is `nvarchar`, so each plans nothing against that type. A word the
+`nchar`, and a bare `varchar` is `nvarchar(max)` regardless of case. A `varchar(n)`
+declaration writes `nvarchar(n)`. Each plans nothing against the type it writes. A word the
 server also takes as a type of its own matches the column it builds from that word too:
 `text` over `text`, `char(5)` over `char(5)`, and `varchar(50)` over `varchar(50)`. Any
 other column plans a change: `varchar(max)` declared `text`, `tinyint` declared `boolean`,

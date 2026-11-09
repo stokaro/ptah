@@ -126,7 +126,7 @@ func platformType(field schemamodel.Field, targetPlatform string) (fieldType str
 			return integer, true
 		}
 	}
-	if substitute, ok := preparation.TypeSubstitutions[field.Type]; ok {
+	if substitute, ok := preparation.TypeSubstitutions[strings.ToUpper(strings.TrimSpace(field.Type))]; ok {
 		return substitute, false
 	}
 	return field.Type, false

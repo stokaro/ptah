@@ -21,8 +21,8 @@ type Preparation struct {
 	// BIGINT and SMALLINT with the engine's own auto-increment clause, for an
 	// engine that has no serial type.
 	SerialAutoIncrement bool `json:"serial_auto_increment,omitempty"`
-	// TypeSubstitutions maps a declared type, matched exactly, to the type the
-	// engine writes in its place.
+	// TypeSubstitutions maps a bare declared type, matched without regard to
+	// letter case, to the type the engine writes in its place. Keys are uppercase.
 	TypeSubstitutions map[string]string `json:"type_substitutions,omitempty"`
 	// ForeignKeyNamespace is where a foreign key name has to be unique: the
 	// whole database, the table's schema, or, empty, the table alone.
