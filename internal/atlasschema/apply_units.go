@@ -43,7 +43,10 @@ func applyUnits(ctx context.Context, conn *dbschema.DatabaseConnection, mode mig
 			return fmt.Errorf("begin schema apply transaction: %w", err)
 		}
 		if err := executeApplyUnits(ctx, tx, prepared, statements); err != nil {
-			return errors.Join(err, tx.Rollback())
+			if rollbackErr := tx.Rollback(); rollbackErr != nil {
+				return errors.Join(err, rollbackErr)
+			}
+			return &rolledBackApplyError{err: err}
 		}
 		if err := tx.Commit(); err != nil {
 			failed := &failedCommitError{statements: len(prepared), err: err}
@@ -54,6 +57,14 @@ func applyUnits(ctx context.Context, conn *dbschema.DatabaseConnection, mode mig
 		return fmt.Errorf("invalid tx-mode %q", mode)
 	}
 }
+
+// rolledBackApplyError records that the transaction undid every dispatched
+// unit after an execution error. It keeps the original error for diagnostics.
+type rolledBackApplyError struct{ err error }
+
+func (e *rolledBackApplyError) Error() string { return e.err.Error() }
+
+func (e *rolledBackApplyError) Unwrap() error { return e.err }
 
 // failedCommitError is the failure of the commit that ends an apply, which the
 // report tells from a failed statement. It adds nothing to the message.

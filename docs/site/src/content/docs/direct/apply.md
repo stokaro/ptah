@@ -524,7 +524,7 @@ format.
 | `command` | `schema apply` |
 | `refusal` | Why the apply refused; see below |
 | `error` | The failure, for `refused`, `failed` and `unknown`: `message`, printed on standard error, and `kind` when the target database could not be opened or the account cannot see what the command reads there |
-| `failure` | [Where a run stopped](../../reference/exit-codes/#where-a-run-stopped), for `unknown`: a position in `units` and the server's codes, and no text |
+| `failure` | [Where a run stopped](../../reference/exit-codes/#where-a-run-stopped), after a dispatched statement or commit fails: a position in `units` and the server's codes, and no text |
 | `schema_diagnostics` | As in the plan document |
 
 | Outcome | Meaning |
@@ -534,15 +534,19 @@ format.
 | `dry-run` | Nothing ran, and the checks ahead of the prompt passed |
 | `canceled` | The confirmation prompt was declined |
 | `refused` | Nothing reached the database, for the reason `refusal` names |
-| `failed` | Nothing reached the database, for a reason with no refusal code |
-| `unknown` | The operations were dispatched and the run returned an error |
+| `failed` | Nothing reached the database, or a transaction confirmed that it rolled back every dispatched operation |
+| `unknown` | Operations were dispatched and the run returned an error without a confirmed rollback |
 
 `unknown` is the outcome a caller must not retry from. The operations were
 sent, and `failure` says where the run stopped, not what the database holds: a
-transaction may have rolled them all back, a run without one may have left some,
+transaction's rollback may be unconfirmed, a run without one may have left some,
 and a lost connection hides even that. Read the database before deciding. A lock
 session that fails after every operation committed is reported this way too,
 rather than as `applied`.
+
+When a statement fails inside a transaction and rollback succeeds, the outcome
+is `failed`. The `failure` object still identifies the statement and any server
+code. No operation from that transaction remains applied.
 
 Stopping before the first statement, even during `BEGIN`, is `refused` or
 `failed`.
