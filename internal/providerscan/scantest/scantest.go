@@ -12,7 +12,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // Scan is a providerscan.Scan by the package's rules. head changes nothing:

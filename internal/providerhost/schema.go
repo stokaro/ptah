@@ -5,9 +5,6 @@ import (
 	"fmt"
 	"slices"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
-
 	"ptah.run/core/coverage"
 	"ptah.run/core/planext"
 	"ptah.run/core/platform/capability"
@@ -19,6 +16,8 @@ import (
 	"ptah.run/core/schemavalidation"
 	"ptah.run/core/selectext"
 	"ptah.run/engine"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
 )
 
 // Provider returns services for the explicitly selected target declarations.

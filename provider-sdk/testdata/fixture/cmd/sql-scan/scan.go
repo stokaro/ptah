@@ -6,9 +6,10 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // ScanSQL reads the text by the fixture's rules. head changes nothing: the

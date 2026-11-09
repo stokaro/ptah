@@ -9,8 +9,9 @@ import (
 	"math"
 	"strconv"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"google.golang.org/protobuf/proto"
+
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // NormalizeValues demonstrates an independent owner's offline interpretation.

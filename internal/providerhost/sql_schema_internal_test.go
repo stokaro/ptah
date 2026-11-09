@@ -11,8 +11,6 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
 	"google.golang.org/protobuf/proto"
 
 	"ptah.run/core/objectidentity"
@@ -22,6 +20,8 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlext"
 	"ptah.run/internal/providerdiagnostic"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
 )
 
 // sqlSchemaFieldHomes is the field audit ADR 0027 asks for: every field of

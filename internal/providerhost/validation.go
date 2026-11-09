@@ -5,13 +5,12 @@ import (
 	"fmt"
 	"slices"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemavalidation"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 func (t *target) validateOwnedSchema(ctx context.Context, request schemavalidation.Request) (schemavalidation.Result, error) {

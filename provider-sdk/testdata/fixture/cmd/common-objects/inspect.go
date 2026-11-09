@@ -7,8 +7,9 @@ import (
 	"strings"
 
 	"example.com/ptah-fixture-provider/backend"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
+
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
 )
 
 // Inspect reports the tables as the base fixture does, and, to a host that

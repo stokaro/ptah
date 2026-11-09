@@ -4,10 +4,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	"github.com/stokaro/ptah/provider-sdk/provider"
 
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
+	"ptah.run/provider-sdk/provider"
 )
 
 // The host's coverage lookup states the subtree rule in core/schemaext, which

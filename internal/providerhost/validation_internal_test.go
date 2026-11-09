@@ -7,12 +7,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 func validationCapture() planningCapture {

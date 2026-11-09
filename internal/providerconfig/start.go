@@ -5,9 +5,8 @@ import (
 	"errors"
 	"maps"
 
-	"github.com/stokaro/ptah/provider-sdk/provider"
-
 	"ptah.run/internal/providerhost"
+	"ptah.run/provider-sdk/provider"
 )
 
 // Start verifies one selected installation, starts it, and checks its engine

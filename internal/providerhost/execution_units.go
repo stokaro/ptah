@@ -8,14 +8,14 @@ import (
 	"slices"
 	"strconv"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
 	"google.golang.org/protobuf/proto"
 
 	"ptah.run/core/renderer"
 	"ptah.run/dbschema"
 	"ptah.run/internal/dispatchwitness"
 	"ptah.run/internal/statementtimeout"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
 )
 
 var (

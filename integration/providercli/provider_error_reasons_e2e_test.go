@@ -10,10 +10,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	"github.com/stokaro/ptah/provider-sdk/provider"
 
 	"ptah.run/internal/providerhost"
 	"ptah.run/internal/testutils"
+	"ptah.run/provider-sdk/provider"
 )
 
 // The error-reasons fixture refuses to inspect a database opened with the

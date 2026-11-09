@@ -9,13 +9,13 @@ import (
 	"slices"
 	"time"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
 	"google.golang.org/protobuf/proto"
 
 	"ptah.run/internal/embedbackend"
 	"ptah.run/internal/embedrun"
 	"ptah.run/internal/embedstore"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
 )
 
 // maxDecisions bounds how often a lifecycle operation reads and decides again

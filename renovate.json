@@ -119,7 +119,7 @@
         "gomod"
       ],
       "matchPackageNames": [
-        "github.com/stokaro/ptah/provider-sdk"
+        "ptah.run/provider-sdk"
       ],
       "enabled": false
     }

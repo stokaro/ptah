@@ -11,11 +11,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
 	"ptah.run/internal/providerexchange"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 func names(c *qt.C, dir string) []string {

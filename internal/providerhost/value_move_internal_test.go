@@ -9,9 +9,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
+
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 func TestMovedOwner(t *testing.T) {

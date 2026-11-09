@@ -5,7 +5,7 @@ import (
 	"math"
 	"strings"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // AnalyzeSQL splits each source into statements and says what each one is.

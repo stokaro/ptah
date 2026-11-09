@@ -32,10 +32,10 @@ The facts below were measured at host `31a08baed` (SDK at contract 25.30),
 `5e810c5`.
 
 **The wire.** `provider-sdk/protocol/experimental/provider.proto` declares
-package `ptah.provider.experimental` and Go package
-`github.com/stokaro/ptah/provider-sdk/protocol/experimental`. It has 78 RPCs,
-388 messages and 4,575 lines. 113 comments name the 25.x minor that added a
-call or a field, and two `reserved` statements exist. `provider.Revision` (25)
+package `ptah.provider.experimental` and, in the SDK release of that contract,
+Go package `github.com/stokaro/ptah/provider-sdk@v0.28.0/protocol/experimental`.
+It has 78 RPCs, 388 messages and 4,575 lines. 113 comments name the 25.x minor
+that added a call or a field, and two `reserved` statements exist. `provider.Revision` (25)
 is the major and `provider.ContractMinor` (30) the minor. `DescribeRequest`
 carries the major twice, as `revision` and as `host_contract.major`, and
 `Description` carries `revision` and `min_contract`. The README maps 27 SDK
@@ -123,7 +123,7 @@ The maintainers decided three questions this record put to them.
 2. **The frozen major is 25.** The freeze adds no `ptah.provider.v1`
    package, no `protocol/v1` import path and no contract 1.0. The proto
    package `ptah.provider.experimental`, the Go import path
-   `github.com/stokaro/ptah/provider-sdk/protocol/experimental` and the
+   `ptah.run/provider-sdk/protocol/experimental` and the
    bootstrap, application protocol version 1 with the cookie
    `PTAH_PROVIDER_BOOTSTRAP=ptah-provider-experimental-1`, stay as they are.
    Ptah 1.0 declares the newest 25.x minor stable. This is what ADRs 0021,
@@ -330,6 +330,17 @@ when the major stays 25. These are decided when the freeze is prepared:
    behind the SDK's client and server?
 4. Does the freeze wait for the gaps of Appendix B, or ship with them named
    as waivers?
+
+## Amendments
+
+- The SDK module is `ptah.run/provider-sdk`, under the project's own host, so
+  the Go import path that decision 2 keeps is
+  `ptah.run/provider-sdk/protocol/experimental`. The maintainers moved the
+  module before the freeze. Releases up to
+  `github.com/stokaro/ptah/provider-sdk@v0.39.0` declare the GitHub path, and
+  `provider-sdk/v0.40.0` is the first under the new one. The proto package,
+  the bootstrap and its cookie are unchanged, and the move changes no contract
+  version.
 
 ## Appendix A: the 62 two-way features at the freeze
 

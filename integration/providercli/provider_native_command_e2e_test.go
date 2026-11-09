@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	"github.com/stokaro/ptah/provider-sdk/provider"
 
 	"ptah.run/core/renderer"
 	"ptah.run/internal/atlasschema"
@@ -19,6 +18,7 @@ import (
 	"ptah.run/internal/testutils"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/safety"
+	"ptah.run/provider-sdk/provider"
 )
 
 func nativeCommandFixture(c *qt.C) providerCLI {

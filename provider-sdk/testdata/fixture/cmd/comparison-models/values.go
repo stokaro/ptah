@@ -6,9 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/stokaro/ptah/provider-sdk/modeljson"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"google.golang.org/protobuf/proto"
+
+	"ptah.run/provider-sdk/modeljson"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 func (p *comparer) NormalizeValues(ctx context.Context, request *protocol.NormalizeValuesRequest) (*protocol.NormalizedValues, error) {

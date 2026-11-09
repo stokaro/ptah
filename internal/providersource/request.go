@@ -3,7 +3,7 @@ package providersource
 import (
 	"slices"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // sourceRequest carries the negotiated profile with every frontend capture.

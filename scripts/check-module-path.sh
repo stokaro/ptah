@@ -103,6 +103,75 @@ while IFS= read -r modfile; do
 	esac
 done < <(corpus '*go.mod')
 
+# The provider SDK and the SQL syntax module are ptah.run/provider-sdk and
+# ptah.run/sqlsyntax. Their releases up to provider-sdk/v0.39.0 and
+# sqlsyntax/v0.1.0 declare paths under the repository's GitHub address, and the
+# go command still resolves those paths to this repository. So an import or a
+# requirement of one builds against a published copy of the module rather than
+# the tree being edited -- the failure the first check above exists for.
+#
+# An old path may still name one of those releases, because they exist only
+# there: the SDK's mixed-version tests build against two of them, and a reader
+# pinned to one needs the path it declares. So an occurrence passes only as a
+# release query, the module path or a package below it followed by @vX.Y.Z at
+# or below the last release under that path, with any package path after the
+# version (`<path>@v0.28.0/provider`). Every other spelling is refused: an
+# import, a requirement, a module declaration, the path escaped for a regexp,
+# a sentence that names it as current.
+#
+# The owner is assembled for the reason the retired token is: this file names no
+# old path in full, so the scan covers it too.
+old_owner="stokaro$(printf '\057')ptah"
+old_hits="$(corpus -z | xargs -0 grep -naE -- "${old_owner}/(provider-sdk|sqlsyntax)" 2>/dev/null |
+	awk -v owner="$old_owner" -v last='provider-sdk=0.39.0 sqlsyntax=0.1.0' '
+		BEGIN {
+			split(last, pairs, " ")
+			for (i in pairs) {
+				split(pairs[i], pair, "=")
+				limit[pair[1]] = pair[2]
+			}
+		}
+		# released reports whether token is a release query of an old path
+		# at or below the last release under it.
+		function released(token,   module, rest, version, want, have) {
+			if (index(token, "@") == 0) {
+				return 0
+			}
+			module = substr(token, length(owner) + 2)
+			sub(/[\/@].*/, "", module)
+			rest = token
+			sub(/^[^@]*@/, "", rest)
+			version = rest
+			sub(/\/.*/, "", version)
+			if (version !~ /^v0\.[0-9]+\.[0-9]+$/) {
+				return 0
+			}
+			split(substr(version, 2), have, ".")
+			split(limit[module], want, ".")
+			return have[2] + 0 < want[2] + 0 || (have[2] + 0 == want[2] + 0 && have[3] + 0 <= want[3] + 0)
+		}
+		{
+			rest = $0
+			refused = 0
+			while (match(rest, owner "/(provider-sdk|sqlsyntax)[A-Za-z0-9._/@+-]*")) {
+				if (!released(substr(rest, RSTART, RLENGTH))) {
+					refused = 1
+				}
+				rest = substr(rest, RSTART + RLENGTH)
+			}
+			if (refused) {
+				print
+			}
+		}
+	' || true)"
+if [ -n "$old_hits" ]; then
+	echo "check-module-path: an old path of the provider SDK or the SQL syntax module is named here:" >&2
+	echo "$old_hits" | sed 's/^/  /' >&2
+	echo "  import ${current_module}/provider-sdk and ${current_module}/sqlsyntax; an old path" >&2
+	echo "  names only a release that declares it, such as github$(printf '\056')com/${old_owner}/provider-sdk@v0.39.0" >&2
+	status=1
+fi
+
 # A scan for an absent string reports the same success whether it read the
 # repository or read nothing, so the corpus is asserted rather than assumed.
 files="$(corpus | wc -l | tr -d ' ')"

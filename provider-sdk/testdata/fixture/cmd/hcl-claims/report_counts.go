@@ -7,7 +7,8 @@ import (
 	"os"
 
 	"example.com/ptah-fixture-provider/backend"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // reportCountsEnabled reports whether the program declares and counts the

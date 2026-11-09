@@ -48,10 +48,10 @@ Create an empty module and add the provider SDK and the SQLite driver:
 ```bash
 mkdir ptah-tutorial-provider && cd ptah-tutorial-provider
 go mod init example.com/ptah-tutorial-provider
-go get github.com/stokaro/ptah/provider-sdk@v0.26.0 modernc.org/sqlite@v1.61.1
+go get ptah.run/provider-sdk@v0.40.0 modernc.org/sqlite@v1.61.1
 ```
 
-The SDK is a Go module of its own, `github.com/stokaro/ptah/provider-sdk`,
+The SDK is a Go module of its own, `ptah.run/provider-sdk`,
 released under tags named `provider-sdk/vX.Y.Z`. It imports nothing from Ptah,
 and your provider imports nothing else from Ptah either: the two meet only at
 the process boundary. The provider owns its database driver.
@@ -67,10 +67,10 @@ go 1.26.5
 
 require (
 	github.com/frankban/quicktest v1.14.6
-	github.com/stokaro/ptah/provider-sdk v0.26.0
 	google.golang.org/grpc v1.86.0-dev
 	google.golang.org/protobuf v1.36.12
 	modernc.org/sqlite v1.61.1
+	ptah.run/provider-sdk v0.40.0
 )
 ```
 

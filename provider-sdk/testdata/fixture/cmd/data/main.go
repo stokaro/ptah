@@ -10,8 +10,9 @@ import (
 	"strconv"
 
 	"example.com/ptah-fixture-provider/data"
-	"github.com/stokaro/ptah/provider-sdk/provider"
-	"github.com/stokaro/ptah/provider-sdk/runtime"
+
+	"ptah.run/provider-sdk/provider"
+	"ptah.run/provider-sdk/runtime"
 )
 
 func main() {

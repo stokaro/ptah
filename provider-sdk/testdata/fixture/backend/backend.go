@@ -19,11 +19,12 @@ import (
 	"strings"
 	"sync"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
 	"google.golang.org/protobuf/proto"
 	// The fixture owns its database driver; the SDK and host transport do not.
 	_ "modernc.org/sqlite"
+
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
 )
 
 // Provider owns isolated session pools for the fixture engine.

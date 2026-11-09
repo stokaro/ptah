@@ -22,7 +22,8 @@ retired_token="5$(printf '\170')5"
 retired_host="go$(printf '\056')${retired_token}$(printf '\056')cz"
 current_module="ptah$(printf '\056')run"
 # The repository's GitHub path, assembled like the needles above, so that no
-# line here spells a module path under it in full.
+# line here spells a module path under it in full: the gate refuses the old
+# paths of the provider SDK and the SQL syntax module.
 github_root="github$(printf '\056')com/stokaro/ptah"
 
 write_repo() {
@@ -118,6 +119,58 @@ printf 'module %s/provider-sdk\n\ngo 1.26.5\n' "$github_root" >"$work_dir/repo/p
 git -C "$work_dir/repo" add -A >/dev/null 2>&1
 assert_rejected "a module under the GitHub path" "every module here belongs to"
 
+# 5d. An import of the SDK's old path. The go command resolves it to this
+#     repository and builds against a published release instead of the tree.
+write_repo
+printf 'package a\n\nimport _ "%s/provider-sdk/provider"\n' "$github_root" >"$work_dir/repo/a.go"
+git -C "$work_dir/repo" add -A >/dev/null 2>&1
+assert_rejected "an import of the SDK's old path" "an old path of the provider SDK"
+
+# 5e. A requirement of the syntax module's old path, at a release that exists.
+#     Only a release query passes, and a go.mod line is not one.
+write_repo
+printf 'module %s/nested\n\ngo 1.26.5\n\nrequire %s/sqlsyntax v0.1.0\n' "$current_module" "$github_root" \
+	>"$work_dir/repo/nested/go.mod"
+git -C "$work_dir/repo" add -A >/dev/null 2>&1
+assert_rejected "a requirement of an old path" "an old path of the provider SDK"
+
+# 5f. The old path escaped for a regexp, as a test asserts what a binary linked.
+write_repo
+printf 'want := `\\s%s/provider-sdk\\s+v0.2.0`\n' "$(printf '%s' "$github_root" | sed 's/[.]/\\./g')" \
+	>"$work_dir/repo/linked.go"
+git -C "$work_dir/repo" add -A >/dev/null 2>&1
+assert_rejected "an old path escaped for a regexp" "an old path of the provider SDK"
+
+# 5g. A release query past the last release under the old path. No such release
+#     exists, so the line can only be a path that should have moved.
+write_repo
+printf 'go get %s/provider-sdk@v0.40.0\n' "$github_root" >"$work_dir/repo/note.md"
+git -C "$work_dir/repo" add -A >/dev/null 2>&1
+assert_rejected "an old path past its last release" "an old path of the provider SDK"
+write_repo
+printf 'go get %s/sqlsyntax@v0.1.1\n' "$github_root" >"$work_dir/repo/note.md"
+git -C "$work_dir/repo" add -A >/dev/null 2>&1
+assert_rejected "an old syntax path past its last release" "an old path of the provider SDK"
+
+# The control for 5d to 5g: release queries of releases that declare the old
+# paths, in each shape this repository writes them. A gate that refused every
+# mention would satisfy the rows above and fail here.
+write_repo
+{
+	printf 'go get %s/provider-sdk@v0.39.0\n' "$github_root"
+	printf 'go install %s/provider-sdk/cmd/ptah-provider-conformance@v0.26.0\n' "$github_root"
+	printf 'const release = "%s/provider-sdk@v0.2.0"\n' "$github_root"
+	printf 'https://pkg.go.dev/%s/provider-sdk@v0.28.0/protocol/experimental\n' "$github_root"
+	printf 'go get %s/sqlsyntax@v0.1.0\n' "$github_root"
+} >"$work_dir/repo/releases.md"
+git -C "$work_dir/repo" add -A >/dev/null 2>&1
+if ! (cd "$work_dir/repo" && bash scripts/check-module-path.sh) >"$work_dir/out" 2>"$work_dir/err"; then
+	echo 'module path self-test: a release query of an old release was rejected:' >&2
+	sed 's/^/  /' "$work_dir/err" >&2
+	exit 1
+fi
+printf '  %-46s accepted\n' "release queries of old releases"
+
 # 6. Not staged. Nothing here stages the fixture, which is the whole point.
 write_repo
 git -C "$work_dir/repo" add -A >/dev/null 2>&1
@@ -143,4 +196,4 @@ grep -qF "is not reporting on it" "$work_dir/err" || {
 }
 printf '  %-46s rejected\n' "a corpus too small to be this repository"
 
-echo "check-module-path-selftest: OK (9 broken rules each noticed, the control accepted)"
+echo "check-module-path-selftest: OK (14 broken rules each noticed, both controls accepted)"

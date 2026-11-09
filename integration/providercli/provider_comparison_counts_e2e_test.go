@@ -11,8 +11,6 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	"github.com/stokaro/ptah/provider-sdk/provider"
-	transport "github.com/stokaro/ptah/provider-sdk/runtime"
 
 	"ptah.run/core/coverage"
 	"ptah.run/core/objectidentity"
@@ -21,6 +19,8 @@ import (
 	"ptah.run/internal/providerhost"
 	"ptah.run/internal/testutils"
 	"ptah.run/migration/safety"
+	"ptah.run/provider-sdk/provider"
+	transport "ptah.run/provider-sdk/runtime"
 )
 
 const (

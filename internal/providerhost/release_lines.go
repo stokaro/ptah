@@ -1,9 +1,8 @@
 package providerhost
 
 import (
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-
 	"ptah.run/core/platform/capability"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // ReleaseLine is one release line a provider declares for an engine, with the

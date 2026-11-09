@@ -4,12 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-
 	"ptah.run/catalog"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacomparison"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // checkService asks the provider whether a declared CHECK and the CHECK a

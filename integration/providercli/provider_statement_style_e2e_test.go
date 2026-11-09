@@ -7,13 +7,13 @@ import (
 
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
-	"github.com/stokaro/ptah/provider-sdk/provider"
 
 	"ptah.run/core/difftypes"
 	"ptah.run/core/planext"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
 	"ptah.run/migration/planner"
+	"ptah.run/provider-sdk/provider"
 )
 
 // TestProviderStatementStyle_ExecutableOwnerHonorsExactAndAnnotated sends the

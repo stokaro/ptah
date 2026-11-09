@@ -1,11 +1,10 @@
 package providerhost
 
 import (
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-
 	"ptah.run/catalog"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemamodel"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 func copyPlanningPointer[T any](value *T) *T {

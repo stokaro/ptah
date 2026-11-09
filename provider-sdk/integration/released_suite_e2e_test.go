@@ -24,24 +24,28 @@ import (
 // in-tree SDK, and whose fixture provider the in-tree suite checks. It is the
 // oldest release that ships the suite, so the two sides of each run are as many
 // minors apart as the suite can measure. When the contract freezes as v1 it
-// names the first v1 release and stays there (ADR 0102).
-const suiteSDK = "v0.26.0"
+// names the first v1 release and stays there (ADR 0102). It is a module query,
+// under the module path that release declares.
+const suiteSDK = "github.com/stokaro/ptah/provider-sdk@v0.26.0"
 
 // suiteContract is the contract suiteSDK speaks, the one its suite reports.
 const suiteContract = "25.28"
 
-// conformanceCommand is the import path of the suite's command.
-const conformanceCommand = "github.com/stokaro/ptah/provider-sdk/cmd/ptah-provider-conformance"
+// conformanceCommand is the directory of the suite's command in the SDK module.
+const conformanceCommand = "cmd/ptah-provider-conformance"
 
 // buildReleasedSuite installs the conformance command of an SDK release into a
-// directory of its own. `go install` with a version builds the release's module
-// as published, outside any workspace, so nothing of the in-tree SDK reaches
-// it. GOFLAGS is cleared so that a flag set for the in-tree module, such as
-// -modfile, does not reach a build that has no module of its own.
-func buildReleasedSuite(c *qt.C, version string) string {
+// directory of its own. release is a module query, such as [suiteSDK]. `go
+// install` with a version builds the release's module as published, outside
+// any workspace, so nothing of the in-tree SDK reaches it. GOFLAGS is cleared
+// so that a flag set for the in-tree module, such as -modfile, does not reach a
+// build that has no module of its own.
+func buildReleasedSuite(c *qt.C, release string) string {
 	c.Helper()
+	module, version, ok := strings.Cut(release, "@")
+	c.Assert(ok, qt.IsTrue)
 	bin := c.TempDir()
-	install := exec.CommandContext(c.Context(), "go", "install", conformanceCommand+"@"+version) // #nosec G204 -- the command and the version are constants of this file
+	install := exec.CommandContext(c.Context(), "go", "install", module+"/"+conformanceCommand+"@"+version) // #nosec G204 -- the command and the release are constants of this file
 	install.Dir = c.TempDir()
 	install.Env = append(os.Environ(), "GOWORK=off", "GOFLAGS=", "GOBIN="+bin)
 	output, err := install.CombinedOutput()
@@ -50,7 +54,7 @@ func buildReleasedSuite(c *qt.C, version string) string {
 	c.Assert(err, qt.IsNil)
 	c.Assert(entries, qt.HasLen, 1)
 	binary := filepath.Join(bin, entries[0].Name())
-	assertLinkedSDK(c, install.Dir, binary, version)
+	assertLinkedSDK(c, install.Dir, binary, release)
 	return binary
 }
 

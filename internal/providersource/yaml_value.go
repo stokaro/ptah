@@ -8,11 +8,10 @@ import (
 	"strings"
 	"unicode/utf16"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
-
 	"ptah.run/core/yamlext"
 	"ptah.run/internal/yamlvalue"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
 )
 
 type yamlWalk struct {

@@ -11,7 +11,8 @@ import (
 
 	"example.com/ptah-fixture-provider/backend"
 	qt "github.com/frankban/quicktest"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 func openTransactionSession(c *qt.C, owner *backend.TransactionalProvider, address string) *protocol.Session {

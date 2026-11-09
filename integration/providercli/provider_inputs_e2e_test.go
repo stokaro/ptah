@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	"github.com/stokaro/ptah/provider-sdk/provider"
 
 	"ptah.run/core/plangraph"
 	"ptah.run/core/renderer"
@@ -17,6 +16,7 @@ import (
 	"ptah.run/internal/inputapproval"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
+	"ptah.run/provider-sdk/provider"
 )
 
 const executionInputName = "FIXTURE_EXECUTION_INPUT"

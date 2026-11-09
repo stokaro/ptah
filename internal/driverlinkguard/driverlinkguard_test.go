@@ -59,7 +59,7 @@ var permittedModules = []string{
 	"golang.org/x/sys",
 	// The lexical syntax of the PostgreSQL family, Ptah's own module with no
 	// dependency, which the shared lexer reads nested comments with.
-	"github.com/stokaro/ptah/sqlsyntax",
+	"ptah.run/sqlsyntax",
 }
 
 // TestPureRenderingPathsLinkNoDatabaseDriver is the invariant: none of the

@@ -7,12 +7,11 @@ import (
 	"slices"
 	"time"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-
 	"ptah.run/internal/embedbackend"
 	"ptah.run/internal/embedgen"
 	"ptah.run/internal/embedstore"
 	"ptah.run/internal/embedverify"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // verificationPage bounds the rows one page of the verification walk carries.

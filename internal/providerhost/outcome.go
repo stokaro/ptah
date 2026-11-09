@@ -4,9 +4,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/stokaro/ptah/provider-sdk/provider"
-
 	"ptah.run/core/ptaherr"
+	"ptah.run/provider-sdk/provider"
 )
 
 // nativeOutcomeError translates the provider contract at the host boundary so

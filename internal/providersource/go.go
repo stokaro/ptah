@@ -10,12 +10,12 @@ import (
 	"strconv"
 	"sync"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
 	"google.golang.org/protobuf/proto"
 
 	"ptah.run/core/annotation"
 	"ptah.run/internal/annotationmeta"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
 )
 
 // GoClaim is one Go directive a provider owns and the engine that declared it.

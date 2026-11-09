@@ -8,9 +8,6 @@ import (
 	"strings"
 	"sync"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
-	providerruntime "github.com/stokaro/ptah/provider-sdk/runtime"
 	"google.golang.org/protobuf/proto"
 
 	"ptah.run/internal/embedbackend"
@@ -20,6 +17,9 @@ import (
 	"ptah.run/internal/embedrun"
 	"ptah.run/internal/embedstore"
 	"ptah.run/internal/embedverify"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
+	providerruntime "ptah.run/provider-sdk/runtime"
 )
 
 // validateSource refuses a specification that cannot be scanned.

@@ -5,14 +5,13 @@ import (
 	"reflect"
 	"slices"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-
 	"ptah.run/core/ast"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/tableref"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // onlyFields makes the experimental projection fail closed when the host model

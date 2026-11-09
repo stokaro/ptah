@@ -9,12 +9,12 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
 
 	"ptah.run/catalog"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/featureplan"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
 )
 
 // uniquePlanner plans for a provider that owns the table lifecycle, reports

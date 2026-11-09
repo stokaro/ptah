@@ -8,11 +8,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaprojection"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // TestCommonTableCreations_TakeTheEnginesOwnFacts_HappyPath holds the facts the

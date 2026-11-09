@@ -3,11 +3,10 @@ package providerhost
 import (
 	"fmt"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-
 	"ptah.run/core/featureplan"
 	"ptah.run/core/plangraph"
 	"ptah.run/core/schemaext"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 func planningStepID(id plangraph.StepID) *protocol.StepIdentity {

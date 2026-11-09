@@ -9,7 +9,8 @@ import (
 	"strings"
 
 	"example.com/ptah-fixture-provider/backend"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // statementPrefix opens every statement the program's executor reads.

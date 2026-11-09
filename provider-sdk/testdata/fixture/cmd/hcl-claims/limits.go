@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 func sourceLimitsEnabled() bool { return os.Getenv("FIXTURE_SOURCE_LIMITS") == "1" }

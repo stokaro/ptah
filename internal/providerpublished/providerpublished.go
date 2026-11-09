@@ -26,13 +26,13 @@ import (
 	"slices"
 	"strings"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"google.golang.org/protobuf/encoding/protojson"
 
 	"ptah.run/core/annotation"
 	"ptah.run/core/lintext"
 	"ptah.run/core/schemaext"
 	"ptah.run/internal/providerhost"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // records holds one recorded description per file.

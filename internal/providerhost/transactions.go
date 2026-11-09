@@ -8,12 +8,11 @@ import (
 	"slices"
 	"sync"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
-
 	"ptah.run/catalog"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/renderer"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
 )
 
 func (t *target) supportsTransactions() bool {

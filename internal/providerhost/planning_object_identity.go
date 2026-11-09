@@ -1,8 +1,9 @@
 package providerhost
 
 import (
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"google.golang.org/protobuf/proto"
+
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // Empty identity database parts name the selected session database. Object

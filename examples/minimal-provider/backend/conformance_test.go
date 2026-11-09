@@ -4,8 +4,9 @@ import (
 	"testing"
 
 	"example.com/ptah-tutorial-provider/backend"
-	"github.com/stokaro/ptah/provider-sdk/conformance"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+
+	"ptah.run/provider-sdk/conformance"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // The offline part of the SDK's conformance suite, with the server in the

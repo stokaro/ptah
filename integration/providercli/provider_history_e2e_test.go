@@ -11,13 +11,13 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
-	"github.com/stokaro/ptah/provider-sdk/provider"
 
 	"ptah.run/catalog"
 	"ptah.run/core/ptaherr"
 	"ptah.run/dbschema"
 	"ptah.run/internal/execoutcome"
 	"ptah.run/migration/migrator"
+	"ptah.run/provider-sdk/provider"
 )
 
 func providerHistoryTable() dbschema.HistoryTable {

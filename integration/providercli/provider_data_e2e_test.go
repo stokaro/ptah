@@ -14,7 +14,6 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	"github.com/stokaro/ptah/provider-sdk/provider"
 	// The test reads the fixture's database file back through a driver of its
 	// own, so the answer does not pass through the provider the command used.
 	_ "modernc.org/sqlite"
@@ -23,6 +22,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/internal/providerhost"
 	"ptah.run/internal/testutils"
+	"ptah.run/provider-sdk/provider"
 )
 
 // The fixture's SQLite is the engine here: the provider reads, types and

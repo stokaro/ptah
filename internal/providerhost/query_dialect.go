@@ -4,9 +4,6 @@ import (
 	"fmt"
 	"slices"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
-
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/descriptor"
@@ -14,6 +11,8 @@ import (
 	"ptah.run/internal/capabilitysource"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/sqlident"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
 )
 
 // registerQueryDialects registers the query-builder spelling each engine

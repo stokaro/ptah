@@ -12,7 +12,6 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 
 	"ptah.run/catalog"
 	"ptah.run/core/difftypes"
@@ -28,6 +27,7 @@ import (
 	"ptah.run/core/schemavalidation"
 	"ptah.run/engine"
 	"ptah.run/migration/schemadiff"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 func ownedIndexRules() identifier.Semantics {

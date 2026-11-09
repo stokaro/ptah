@@ -10,12 +10,12 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"google.golang.org/protobuf/proto"
 
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/query"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // A value of each common case goes to the provider and comes back as the

@@ -6,13 +6,12 @@ import (
 	"slices"
 	"strconv"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-
 	"ptah.run/core/featureplan"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemavalidation"
 	"ptah.run/engine"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 type modelDeclarationPlanner struct {

@@ -8,7 +8,8 @@ import (
 	"strconv"
 
 	"example.com/ptah-fixture-provider/embeddings"
-	"github.com/stokaro/ptah/provider-sdk/runtime"
+
+	"ptah.run/provider-sdk/runtime"
 )
 
 func main() {

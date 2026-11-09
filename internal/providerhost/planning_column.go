@@ -3,10 +3,9 @@ package providerhost
 import (
 	"slices"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-
 	"ptah.run/core/ast"
 	"ptah.run/core/featureplan"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 func (c *planningCapture) commonStep(source featureplan.CommonStep) (*protocol.CommonPlanningStep, error) {

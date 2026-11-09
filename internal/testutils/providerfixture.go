@@ -19,12 +19,13 @@ const fixtureProviderDirectory = "provider-sdk/testdata/fixture/"
 // The build runs outside the checkout, against the host's published SDK
 // dependency: the module is copied from `git ls-files`, its local replacement
 // is dropped and the SDK version the host requires is pinned, so no workspace
-// or replacement can satisfy it. The dependency list of the command must name
-// no `ptah.run/` package, which is what makes the provider independent of the
-// host. command names a directory below cmd/ of the fixture module, such as
-// "provider". The build is reproducible: -trimpath keeps the path of the
-// temporary copy out of the executable, so two builds of one command with the
-// same settings have one digest.
+// or replacement can satisfy it. The command must link the SDK module and no
+// package of the host module, which is what makes the provider independent of
+// the host; the SDK shares the host's import path prefix, so the check reads
+// modules rather than import paths. command names a directory below cmd/ of
+// the fixture module, such as "provider". The build is reproducible: -trimpath
+// keeps the path of the temporary copy out of the executable, so two builds of
+// one command with the same settings have one digest.
 //
 // The caller's working directory must be inside the repository.
 func BuildFixtureProvider(c *qt.C, command string) string {
@@ -51,7 +52,7 @@ type FixtureRelease struct {
 // or two releases of one provider.
 func BuildFixtureProviderRelease(c *qt.C, command string, release FixtureRelease) string {
 	c.Helper()
-	repo := strings.TrimSpace(string(runBuildCommand(c, ".", "go", "list", "-m", "-f", "{{.Dir}}", "ptah.run")))
+	repo := strings.TrimSpace(string(runBuildCommand(c, ".", "go", "list", "-m", "-f", "{{.Dir}}", hostModule)))
 	dir := c.TempDir()
 	copyRoot, err := os.OpenRoot(dir)
 	c.Assert(err, qt.IsNil)
@@ -66,13 +67,14 @@ func BuildFixtureProviderRelease(c *qt.C, command string, release FixtureRelease
 		c.Assert(copyRoot.MkdirAll(filepath.Dir(relative), 0o700), qt.IsNil)
 		c.Assert(copyRoot.WriteFile(relative, data, 0o600), qt.IsNil)
 	}
-	const sdk = "github.com/stokaro/ptah/provider-sdk"
+	const sdk = "ptah.run/provider-sdk"
 	version := strings.TrimSpace(string(runBuildCommand(c, repo, "go", "list", "-m", "-f", "{{.Version}}", sdk)))
 	c.Assert(version, qt.Not(qt.Equals), "")
 	runBuildCommand(c, dir, "go", "mod", "edit", "-dropreplace="+sdk, "-require="+sdk+"@"+version)
 	runBuildCommand(c, dir, "go", "mod", "tidy")
-	dependencies := string(runBuildCommand(c, dir, "go", "list", "-deps", "-f", "{{.ImportPath}}", "./cmd/"+command))
-	c.Assert(dependencies, qt.Not(qt.Contains), "ptah.run/")
+	modules := strings.Fields(string(runBuildCommand(c, dir, "go", "list", "-deps", "-f", "{{with .Module}}{{.Path}}{{end}}", "./cmd/"+command)))
+	c.Assert(modules, qt.Contains, sdk)
+	c.Assert(modules, qt.Not(qt.Contains), hostModule)
 	var linkFlags []string
 	if release.Stripped {
 		linkFlags = append(linkFlags, "-s", "-w")
@@ -88,6 +90,10 @@ func BuildFixtureProviderRelease(c *qt.C, command string, release FixtureRelease
 	runBuildCommand(c, dir, "go", append(build, "./cmd/"+command)...)
 	return binary
 }
+
+// hostModule is the module path of Ptah itself, which an independent provider
+// must not link.
+const hostModule = "ptah.run"
 
 // fixtureVersionSymbol is the fixture variable that holds its release version.
 const fixtureVersionSymbol = "example.com/ptah-fixture-provider/backend.version"

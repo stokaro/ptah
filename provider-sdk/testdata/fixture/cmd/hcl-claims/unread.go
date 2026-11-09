@@ -5,9 +5,10 @@ import (
 	"encoding/hex"
 	"os"
 
-	"github.com/stokaro/ptah/provider-sdk/modeljson"
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"google.golang.org/protobuf/proto"
+
+	"ptah.run/provider-sdk/modeljson"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
 // legacyKind is a model of objects no HCL block of the program writes, which

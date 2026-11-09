@@ -11,13 +11,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	"github.com/stokaro/ptah/provider-sdk/provider"
 
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/providerhost"
 	"ptah.run/internal/testutils"
 	"ptah.run/migration/migrator"
+	"ptah.run/provider-sdk/provider"
 )
 
 // The error-reasons fixture applies nothing of a unit that names the table

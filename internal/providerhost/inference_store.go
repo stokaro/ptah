@@ -4,10 +4,9 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/stokaro/ptah/provider-sdk/provider"
-
 	"ptah.run/core/ptaherr"
 	"ptah.run/dbschema"
+	"ptah.run/provider-sdk/provider"
 )
 
 // EmbeddingStore is an engine's embedding store as its provider serves it

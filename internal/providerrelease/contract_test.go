@@ -4,9 +4,9 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	"github.com/stokaro/ptah/provider-sdk/provider"
 
 	"ptah.run/internal/providerrelease"
+	"ptah.run/provider-sdk/provider"
 )
 
 func TestMeets(t *testing.T) {

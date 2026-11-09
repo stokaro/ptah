@@ -6,8 +6,6 @@ import (
 	"slices"
 	"strings"
 
-	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
-	"github.com/stokaro/ptah/provider-sdk/provider"
 	"google.golang.org/protobuf/proto"
 
 	"ptah.run/core/objectidentity"
@@ -15,6 +13,8 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/selectext"
 	"ptah.run/internal/tableref"
+	protocol "ptah.run/provider-sdk/protocol/experimental"
+	"ptah.run/provider-sdk/provider"
 )
 
 // scopeSelections is how a command's scope names the provider's objects, as
