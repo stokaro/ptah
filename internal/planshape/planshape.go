@@ -21,6 +21,7 @@ import (
 	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/descriptor"
+	"ptah.run/internal/pgname"
 	"ptah.run/internal/pgtypealias"
 	"ptah.run/internal/planner/notnullname"
 )
@@ -379,7 +380,12 @@ func respellColumn(table string, column *ast.ColumnNode, spelling columnSpelling
 	if column == nil {
 		return
 	}
-	if column.NotNullConstraintName == unqualified(table)+"_"+column.Name+"_not_null" {
+	bareTable := unqualified(table)
+	implicitName := bareTable + "_" + column.Name + "_not_null"
+	if spelling == postgresSpelling {
+		implicitName = pgname.NotNull(bareTable, column.Name)
+	}
+	if column.NotNullConstraintName == implicitName {
 		// The name PostgreSQL gives a NOT NULL nobody named, which a catalog read
 		// reports and the community binary writes nowhere.
 		column.NotNullConstraintName = ""
