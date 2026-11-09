@@ -25,6 +25,11 @@ type Schemas struct {
 	// database. It excludes SchemaSelectionDatabase, whose URL can name a whole
 	// server.
 	ConnectedDatabaseOnly bool `json:"connected_database_only,omitempty"`
+	// StoredViewBodyNamesDatabase reports that a one-database catalog read
+	// returns view bodies with references qualified by the database that
+	// created the view. A dev database replay needs those references rebound
+	// to the target database before the bodies are compared.
+	StoredViewBodyNamesDatabase bool `json:"stored_view_body_names_database,omitempty"`
 }
 
 // SchemaSelection is how a database URL limits a run to one schema.
@@ -99,6 +104,10 @@ func (d Dialect) validateScope() error {
 	}
 	if d.Schemas.ConnectedDatabaseOnly && d.Schemas.Selection == SchemaSelectionDatabase {
 		return fmt.Errorf("%w: dialect %q: a URL that selects a database can name a whole server, so a run is not limited to the connected database",
+			ErrInvalidDescriptor, d.Name)
+	}
+	if d.Schemas.StoredViewBodyNamesDatabase && d.Schemas.Selection != SchemaSelectionDatabase {
+		return fmt.Errorf("%w: dialect %q: a stored view body can name its database only when a URL selects a database schema",
 			ErrInvalidDescriptor, d.Name)
 	}
 	if d.Roles.OutOfScope != "" && !slices.Contains(RoleScopes(), d.Roles.OutOfScope) {

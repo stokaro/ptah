@@ -128,3 +128,48 @@ func TestSchemaDiffRefusesAFileNamingTwoDatabasesE2E(t *testing.T) {
 		})
 	}
 }
+
+// A migration directory read from the dev database and a target database
+// describe the same view under different database names. The view belongs to
+// each URL's selected database, so the comparison must treat them as one.
+func TestSchemaDiffFromDirectoryWithViewIsSyncedE2E(t *testing.T) {
+	const schema = "CREATE TABLE t (id int PRIMARY KEY);\nCREATE VIEW v AS SELECT id FROM t;"
+	for _, engine := range mysqlServerEngines {
+		t.Run(engine.name, func(t *testing.T) {
+			c := qt.New(t)
+			scratch := newMySQLFamilyScratch(c, engine.admin)
+			_, targetURL := scratch.builtFrom(c, schema)
+			_, devURL := scratch.database(c, "dev")
+			dir, _ := writeRewrittenMigrationProject(c, schema, schema)
+
+			diff := runPtahIn(c, "schema", "diff", "--from", "file://"+dir,
+				"--to", targetURL, "--dev-url", devURL)
+
+			c.Assert(diff.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", diff.Stdout, diff.Stderr))
+			c.Assert(diff.Stdout, qt.Contains, "Schemas are synced")
+		})
+	}
+}
+
+// Rebasing the dev database's view body cannot hide a real target change.
+func TestSchemaDiffFromDirectoryWithChangedViewPlansReplacementE2E(t *testing.T) {
+	const source = "CREATE TABLE t (id int PRIMARY KEY);\nCREATE VIEW v AS SELECT id FROM t;"
+	const target = "CREATE TABLE t (id int PRIMARY KEY);\nCREATE VIEW v AS SELECT id + 1 AS id FROM t;"
+	for _, engine := range mysqlServerEngines {
+		t.Run(engine.name, func(t *testing.T) {
+			c := qt.New(t)
+			scratch := newMySQLFamilyScratch(c, engine.admin)
+			_, targetURL := scratch.builtFrom(c, target)
+			devName, devURL := scratch.database(c, "dev")
+			dir, _ := writeRewrittenMigrationProject(c, source, source)
+
+			diff := runPtahIn(c, "schema", "diff", "--from", "file://"+dir,
+				"--to", targetURL, "--dev-url", devURL)
+
+			c.Assert(diff.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", diff.Stdout, diff.Stderr))
+			c.Assert(diff.Stdout, qt.Contains, "CREATE OR REPLACE VIEW")
+			c.Assert(diff.Stdout, qt.Contains, "+ 1")
+			c.Assert(diff.Stdout, qt.Not(qt.Contains), devName)
+		})
+	}
+}

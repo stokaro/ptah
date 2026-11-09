@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -41,6 +42,7 @@ import (
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/servertarget"
 	"ptah.run/internal/sqlitevirtual"
+	"ptah.run/internal/tableref"
 	"ptah.run/internal/undecidednote"
 	"ptah.run/internal/unmodelednote"
 	"ptah.run/internal/valuecontext"
@@ -437,6 +439,8 @@ func diffResolvedStates(
 	sides devServerSides,
 	opts DiffOptions,
 ) (atlasreport.SchemaDiff, *difftypes.SchemaDiff, error) {
+	fromState = rebaseDevViewBodies(fromState, toState, dialect)
+	toState = rebaseDevViewBodies(toState, fromState, dialect)
 	// The dev-server scope comes first: it refuses what CE refuses on a dev
 	// server, in CE's words, and narrows a one-schema document to the one
 	// database. The one-database rule then reads the narrowed sides.
@@ -585,6 +589,41 @@ func diffResolvedStates(
 	return atlasreport.NewSchemaDiff(atlasreport.SchemaDiffOptions{
 		Dialect: dialect, From: from, To: to, Changes: changes,
 	}), diff, nil
+}
+
+// A one-database catalog read records the database on each view, and MySQL and
+// MariaDB qualify relations in its stored body with that database. A migration
+// directory replayed on a dev database therefore reads the same view under a
+// different name from the target. Rebind the stored body and leave the view
+// unqualified for comparison; the replay and its cleanup stay in the dev
+// database.
+func rebaseDevViewBodies(state, database atlassource.State, dialect string) atlassource.State {
+	if !described(dialect).Schemas.StoredViewBodyNamesDatabase ||
+		state.Kind == atlassource.KindDatabase ||
+		state.DB == nil || state.Schema == nil || state.WholeServer ||
+		database.Kind != atlassource.KindDatabase || database.WholeServer ||
+		state.DefaultSchema == "" || database.DefaultSchema == "" ||
+		state.DefaultSchema == database.DefaultSchema || len(state.DB.Views) == 0 {
+		return state
+	}
+	previous, target := state.DefaultSchema, database.DefaultSchema
+	observed := *state.DB
+	observed.Views = slices.Clone(state.DB.Views)
+	for i := range observed.Views {
+		observed.Views[i].Body = rewriteSchemaNames(observed.Views[i].Body, dialect, previous, target)
+		observed.Views[i].Schema = ""
+	}
+	declared := *state.Schema
+	declared.Views = slices.Clone(state.Schema.Views)
+	for i := range declared.Views {
+		declared.Views[i].Body = rewriteSchemaNames(declared.Views[i].Body, dialect, previous, target)
+		if ref, ok := tableref.Parse(declared.Views[i].Name); ok && ref.Qualified && ref.Schema == previous {
+			declared.Views[i].Name = tableref.Canonical("", ref.Name)
+		}
+	}
+	state.DB, state.Schema = &observed, &declared
+	state.DefaultSchema = target
+	return state
 }
 
 // plannedDiffChanges is the statements of diff's plan, each carrying the comment
