@@ -5167,6 +5167,10 @@ in place of a dialect's name:
   migration file whose dialect is unknown, the session settings a migration
   replay restores, and whether a value added to an existing enum type has to
   commit before a statement uses it.
+- `DDLTransactions` and `AtomicIndexCreation`: whether schema statements
+  commit the file transaction, and whether a refused `CREATE INDEX` on the
+  required table engine leaves no new index. A lost server reply remains
+  uncertain.
 - `Savepoint`: how the engine spells a savepoint inside a transaction.
   `migration/seeder` brackets each seed file in one, and a schema-scoped
   cleanup each drop on a server that rolls schema changes back as a unit

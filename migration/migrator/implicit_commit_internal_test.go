@@ -839,6 +839,7 @@ func TestMySQLIndexFailureUsesTheServerAnswer(t *testing.T) {
 		want      bool
 	}{
 		{name: "MySQL duplicate unique index", dialect: "mysql", statement: "CREATE UNIQUE INDEX by_value ON jobs (value)", failure: &mysql.MySQLError{Number: 1062, Message: "duplicate entry"}},
+		{name: "MySQL socket alias", dialect: "mysql+unix", statement: "CREATE UNIQUE INDEX by_value ON jobs (value)", failure: &mysql.MySQLError{Number: 1062, Message: "duplicate entry"}},
 		{name: "MySQL rejected ordinary index", dialect: "mysql", statement: "CREATE INDEX by_value ON jobs (value)", failure: &mysql.MySQLError{Number: 1061, Message: "duplicate key name"}},
 		{name: "MySQL unclassified error", dialect: "mysql", statement: "CREATE UNIQUE INDEX by_value ON jobs (value)", failure: errors.New("index outcome not classified"), want: true},
 		{name: "MySQL lost its reply", dialect: "mysql", statement: "CREATE UNIQUE INDEX by_value ON jobs (value)", failure: io.ErrUnexpectedEOF, want: true},

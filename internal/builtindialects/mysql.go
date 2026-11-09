@@ -72,8 +72,9 @@ func mysql() descriptor.Dialect {
 		OnlineAlter: descriptor.OnlineAlterAlgorithmLock,
 
 		// Migrations: what the migrator reads.
-		DDLTransactions: "implicit_commit",
-		RevisionTable:   mysqlFamilyRevisionTable(),
+		DDLTransactions:     "implicit_commit",
+		AtomicIndexCreation: true,
+		RevisionTable:       mysqlFamilyRevisionTable(),
 
 		Schemas: descriptor.Schemas{Selection: descriptor.SchemaSelectionDatabase},
 		// mysql.user is server-wide, and a read lists every role in it.
