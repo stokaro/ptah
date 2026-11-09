@@ -7,13 +7,54 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/atlasfilter"
+	"ptah.run/internal/builtintest"
 	"ptah.run/migration/schemadiff"
 )
+
+func TestCompareWithDatabaseInfoKeepsOwnDefinerAfterExclude(t *testing.T) {
+	for _, dialect := range []string{"mysql", "mariadb"} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+			diff, err := compareDefinerAfterExclude(t, dialect, "migrator_a@%")
+			c.Assert(err, qt.IsNil)
+			c.Assert(diff.FunctionsModified, qt.HasLen, 1)
+		})
+	}
+}
+
+func TestCompareWithDatabaseInfoRefusesForeignDefinerAfterExclude(t *testing.T) {
+	for _, dialect := range []string{"mysql", "mariadb"} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+			diff, err := compareDefinerAfterExclude(t, dialect, "owner_a@%")
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+			c.Assert(diff, qt.IsNil)
+		})
+	}
+}
+
+func compareDefinerAfterExclude(t *testing.T, dialect, definer string) (*difftypes.SchemaDiff, error) {
+	t.Helper()
+	current := mysqlDefinerCurrent("RETURN 1", "DEFINER", definer, "migrator_a@%")
+	filtered, err := atlasfilter.ScopeDatabase(current, atlasfilter.Scope{
+		Selections:    builtintest.Runtime().Selections(),
+		Exclude:       []string{"nothing"},
+		DefaultSchema: "app",
+	})
+	qt.New(t).Assert(err, qt.IsNil)
+
+	return schemadiff.CompareWithDatabaseInfo(
+		t.Context(), mysqlDefinerDesired("RETURN 2", "DEFINER"), filtered,
+		mysqlDefinerInfo(dialect), nil, must.Must(builtin.New()),
+	)
+}
 
 // TestCompareWithDatabaseInfoRefusesAForeignDefinerReplacement is the
 // regression for the unanswered review on stokaro/ptah#1461. MySQL and

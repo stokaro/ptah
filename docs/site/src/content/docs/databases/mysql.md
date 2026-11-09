@@ -60,7 +60,8 @@ SQL:
   planned when its catalog `DEFINER` differs from the connected
   `CURRENT_USER()`. Connect as that definer, change the desired routine to
   `SQL SECURITY INVOKER`, or leave the foreign routine unchanged. Missing
-  ownership facts fail closed too.
+  ownership facts fail closed too. An unrelated `--exclude` selector does not
+  change the connected account used for this check.
 - Routines have no overloads. A schema that declares two functions, or two
   procedures, of one name with different parameters is refused before any
   statement is planned. Applied, the second `CREATE` fails with Error 1304 and
