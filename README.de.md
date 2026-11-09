@@ -243,6 +243,9 @@ vollständige Atlas-Parität. Die
 [Kompatibilitätsübersicht](https://docs.ptah.run/edge/atlas/overview/)
 und die [Konformitätsergebnisse](https://docs.ptah.run/edge/atlas/conformance/)
 beschreiben den gemessenen Umfang und die Unterschiede.
+Der [Vergleich von Atlas und Ptah](https://blog.ptah.run/posts/atlas-vs-ptah-open-source/)
+erläutert Lizenzen, Arbeitsabläufe, unterstützte Datenbanken und die
+Unterschiede zwischen den Werkzeugen.
 
 ## Lizenz und Hilfe
 

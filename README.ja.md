@@ -235,6 +235,8 @@ Go プロジェクトは、文書化されたパッケージを組み込み、�
 主張しません。測定された対応範囲と相違点は
 [互換性の概要](https://docs.ptah.run/edge/atlas/overview/)と
 [適合性の測定結果](https://docs.ptah.run/edge/atlas/conformance/)に書かれています。
+[Atlas と Ptah の比較](https://blog.ptah.run/posts/atlas-vs-ptah-open-source/)では、
+ライセンス、作業手順、対応データベース、両ツールの違いを説明します。
 
 ## ライセンスとサポート
 
