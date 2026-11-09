@@ -1497,7 +1497,7 @@ func (p *Planner) addNewIndexes(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
 	include func(difftypes.IndexRef) bool,
-) ([]ast.Node, error) {
+) []ast.Node {
 	indexRemovals := indexscope.NewConflictSetWithSemantics(
 		diff.EffectiveIdentifierSemantics(p.targetDialect()),
 		diff.IndexRemovals(),
@@ -1544,7 +1544,7 @@ func (p *Planner) addNewIndexes(
 			p.capabilities().Has(capability.CreateIndexConcurrently)
 		result = append(result, indexNode)
 	}
-	return result, nil
+	return result
 }
 
 func (p *Planner) removeIndexes(
@@ -2093,14 +2093,8 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	result = p.addNewViewLikeObjects(result, diff, relationPlaced, rebuild)
 	result = p.modifyExistingViews(result, diff, rebuild)
 	lateViewRebuild := rebuildReadsRemovedColumn(diff, rebuild)
-	lateIndex := func(ref difftypes.IndexRef) bool {
-		return lateViewRebuild && rebuild.lateMaterializedRelation(ref.TableName, diff.EffectiveIdentifierSemantics(p.targetDialect()))
-	}
-	if !lateViewRebuild {
-		result = p.createRebuiltViewLikes(result, diff, rebuild, relationPlaced)
-		result = p.addNewTriggers(result, diff)
-		result = p.modifyExistingTriggers(result, diff)
-	}
+	lateIndex := p.lateViewIndexFilter(diff, rebuild, lateViewRebuild)
+	result = p.createEarlyRebuiltViewLikes(result, diff, rebuild, relationPlaced, lateViewRebuild)
 
 	// 7. Modify existing roles (must be done before RLS policies that reference them)
 	result = p.modifyExistingRoles(result, diff)
@@ -2118,27 +2112,18 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// 9.1. Comments on objects that already existed, after every step that
 	// creates, replaces or recreates one of them. The policies are the last
 	// of those.
-	if !lateViewRebuild {
-		result = p.changeObjectComments(result, diff)
-	}
+	result = p.changeEarlyObjectComments(result, diff, lateViewRebuild)
 
 	// 9.5. Add role privilege grants after roles and target objects exist.
-	if !lateViewRebuild {
-		result = p.addNewGrants(result, diff, rebuild)
-	}
+	result = p.addEarlyGrants(result, diff, rebuild, lateViewRebuild)
 
 	// 10. Add new indexes
-	result, err = p.addNewIndexes(result, diff, func(ref difftypes.IndexRef) bool { return !lateIndex(ref) })
-	if err != nil {
-		return nil, err
-	}
+	result = p.addNewIndexes(result, diff, func(ref difftypes.IndexRef) bool { return !lateIndex(ref) })
 
 	// 10.1. Comments on the indexes the plan keeps. An index the plan
 	// creates writes its own comment above, and one it drops takes its
 	// comment with it.
-	if !lateViewRebuild {
-		result = changeIndexComments(result, diff)
-	}
+	result = changeEarlyIndexComments(result, diff, lateViewRebuild)
 
 	// 10.5. Add new constraints (must be done after tables and columns exist)
 	result, err = p.addNewConstraints(result, earlyConstraints, droppedAhead)
@@ -2202,19 +2187,7 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 
 	// 12. Remove table columns (must be done after removing RLS policies that depend on columns)
 	result = p.removeTableColumns(result, diff, earlyColumns, ahead, droppedPolicies)
-	if lateViewRebuild {
-		result = p.createRebuiltViewLikes(result, diff, rebuild, relationPlaced)
-		result, err = p.addNewIndexes(result, diff, lateIndex)
-		if err != nil {
-			return nil, err
-		}
-		result = changeIndexComments(result, diff)
-		result = p.addNewTriggers(result, diff)
-		result = p.modifyExistingTriggers(result, diff)
-		result = p.changeObjectComments(result, diff)
-		result = p.addNewGrants(result, diff, rebuild)
-		result = p.revokeLateViewGrantOptions(result, diff, rebuild)
-	}
+	result = p.createLateRebuiltViewLikes(result, diff, rebuild, relationPlaced, lateViewRebuild, lateIndex)
 
 	// 12.5. Remove constraints (must be done before removing tables)
 	result = p.removeConstraints(result, diff, releasedConstraints, constraintsAfterColumns)
@@ -3058,6 +3031,65 @@ func rebuildReadsRemovedColumn(diff *difftypes.SchemaDiff, rebuild viewRebuild) 
 	return slices.ContainsFunc(rebuild.recreate, func(object deporder.ViewLike) bool {
 		return !object.Materialized && viewStarReadsRemovedColumn(diff, object.Body)
 	})
+}
+
+func (p *Planner) lateViewIndexFilter(diff *difftypes.SchemaDiff, rebuild viewRebuild, late bool) func(difftypes.IndexRef) bool {
+	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
+	return func(ref difftypes.IndexRef) bool {
+		return late && rebuild.lateMaterializedRelation(ref.TableName, semantics)
+	}
+}
+
+func (p *Planner) createEarlyRebuiltViewLikes(
+	result []ast.Node, diff *difftypes.SchemaDiff, rebuild viewRebuild, routines relationRoutines, late bool,
+) []ast.Node {
+	if late {
+		return result
+	}
+	result = p.createRebuiltViewLikes(result, diff, rebuild, routines)
+	result = p.addNewTriggers(result, diff)
+	return p.modifyExistingTriggers(result, diff)
+}
+
+func (p *Planner) changeEarlyObjectComments(result []ast.Node, diff *difftypes.SchemaDiff, late bool) []ast.Node {
+	if late {
+		return result
+	}
+	return p.changeObjectComments(result, diff)
+}
+
+func (p *Planner) addEarlyGrants(result []ast.Node, diff *difftypes.SchemaDiff, rebuild viewRebuild, late bool) []ast.Node {
+	if late {
+		return result
+	}
+	return p.addNewGrants(result, diff, rebuild)
+}
+
+func changeEarlyIndexComments(result []ast.Node, diff *difftypes.SchemaDiff, late bool) []ast.Node {
+	if late {
+		return result
+	}
+	return changeIndexComments(result, diff)
+}
+
+// createLateRebuiltViewLikes restores objects held back until a removed
+// column leaves. Their indexes, triggers, comments and grants need the same
+// late placement because the target relation did not exist earlier.
+func (p *Planner) createLateRebuiltViewLikes(
+	result []ast.Node, diff *difftypes.SchemaDiff, rebuild viewRebuild, routines relationRoutines,
+	late bool, lateIndex func(difftypes.IndexRef) bool,
+) []ast.Node {
+	if !late {
+		return result
+	}
+	result = p.createRebuiltViewLikes(result, diff, rebuild, routines)
+	result = p.addNewIndexes(result, diff, lateIndex)
+	result = changeIndexComments(result, diff)
+	result = p.addNewTriggers(result, diff)
+	result = p.modifyExistingTriggers(result, diff)
+	result = p.changeObjectComments(result, diff)
+	result = p.addNewGrants(result, diff, rebuild)
+	return p.revokeLateViewGrantOptions(result, diff, rebuild)
 }
 
 // removedViewOrder is the views and materialized views the declaration no
