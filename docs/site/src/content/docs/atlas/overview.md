@@ -25,6 +25,11 @@ Ptah serves two migration paths. New projects use the native `ptah` command
 tree. Existing Atlas scripts use the separate `ptah-compat` binary, which keeps
 Atlas-shaped commands and configuration while executing Ptah behavior.
 
+If you are choosing between the products, read the
+[Atlas vs Ptah comparison](https://blog.ptah.run/posts/atlas-vs-ptah-open-source/)
+for licensing, feature availability, database coverage, and a reproducible
+schema-change example. This page explains Ptah's compatibility surfaces.
+
 ## Choose a surface
 
 | Situation | Surface | What it promises |
