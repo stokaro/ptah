@@ -268,7 +268,7 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return err
 	}
-	output, err := planner.GenerateSchemaDiffSQLWithOptions(
+	plan, err := planner.GenerateSchemaDiffTextPlan(
 		cmd.Context(), runtime,
 		diff, info.Dialect, planext.Options{
 			Capabilities:      info.Capabilities,
@@ -280,12 +280,30 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return fmt.Errorf("error generating schema diff SQL: %w", err)
 	}
-	writeComparison(cmd.Context(), out, cmd.ErrOrStderr(), diff, undecided, dbSchema.UnmodeledObjects, output, info.Dialect)
+	statements, err := comparisonStatements(plan)
+	if err != nil {
+		return fmt.Errorf("error generating schema diff SQL: %w", err)
+	}
+	writeComparison(cmd.Context(), out, cmd.ErrOrStderr(), diff, undecided, dbSchema.UnmodeledObjects, statements, info.Dialect)
 
 	if opts.exitOnDiff {
 		return nonEmptyDiffExitCode(diff, undecided)
 	}
 	return nil
+}
+
+// comparisonStatements keeps the delimiters the ordinary renderer wrote.
+// Provider execution units need separate lines in the human report because
+// joining their exact fragments can place adjacent statements on one line.
+func comparisonStatements(plan planner.RenderedPlan) ([]string, error) {
+	if plan.Result.ExecutableUnits {
+		return plan.Statements()
+	}
+	sql, err := plan.SQL()
+	if err != nil {
+		return nil, err
+	}
+	return []string{sql}, nil
 }
 
 // writeComparison reports the comparison result: first the change categories
@@ -314,7 +332,8 @@ func writeComparison(
 	diff *difftypes.SchemaDiff,
 	undecided schemadiff.Diagnostics,
 	unmodeled []catalog.UnmodeledObject,
-	sql, dialect string,
+	statements []string,
+	dialect string,
 ) {
 	undecidednote.Report(ctx, errOut, undecided, "the database", "the desired schema")
 	reportSkipped(errOut, diff)
@@ -331,7 +350,7 @@ func writeComparison(
 		fmt.Fprintln(out, "No schema differences detected.")
 		return
 	default:
-		writeDifferences(out, errOut, categories, sql, dialect)
+		writeDifferences(out, errOut, categories, statements, dialect)
 		if !undecided.Empty() {
 			fmt.Fprintln(out)
 			fmt.Fprintf(out, "Undecided (%d):\n", undecided.Count())
@@ -357,7 +376,7 @@ func writeUnmodeled(out io.Writer, unmodeled []catalog.UnmodeledObject) {
 // modified tables it writes the old and new value of each changed column. That
 // is the report's to say: the statements are the ones a migration would run, and
 // they hold the new value only.
-func writeDifferences(out, errOut io.Writer, categories []diffreport.Category, sql, dialect string) {
+func writeDifferences(out, errOut io.Writer, categories []diffreport.Category, statements []string, dialect string) {
 	fmt.Fprintf(out, "Differences detected (%d %s):\n", len(categories), pluralize("category", "categories", len(categories)))
 	for _, category := range categories {
 		fmt.Fprintf(out, "  %s (%d): %s\n", category.Name, category.Count(), strings.Join(category.Objects, ", "))
@@ -367,7 +386,7 @@ func writeDifferences(out, errOut io.Writer, categories []diffreport.Category, s
 	}
 	fmt.Fprintln(out)
 
-	if strings.TrimSpace(sql) == "" {
+	if strings.TrimSpace(strings.Join(statements, "")) == "" {
 		fmt.Fprintln(out, "Reconciling SQL: none.")
 		fmt.Fprintf(
 			errOut,
@@ -379,7 +398,9 @@ func writeDifferences(out, errOut io.Writer, categories []diffreport.Category, s
 	}
 
 	fmt.Fprintln(out, "Reconciling SQL:")
-	fmt.Fprint(out, sql)
+	for _, statement := range statements {
+		fmt.Fprintln(out, strings.TrimRight(statement, "\r\n"))
+	}
 }
 
 // writeUndecided names each undecided object by kind and name, sorted here so

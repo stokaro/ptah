@@ -129,9 +129,8 @@ The changefeed is part of the `orders` table's facet, so it arrives with the
 table addition rather than as a change of its own.
 
 Ptah v0.24.1 prints the transfer's line with an internal address in place of
-its name; later releases print the name, as above. The report then shows the
-statements a plan would run, under "Reconciling SQL", without line breaks
-between the provider's statements (stokaro/ptah#5812).
+its name; later releases print the name, as above. The current command shows
+each planned statement on its own line under "Reconciling SQL".
 
 ## Review and apply
 
