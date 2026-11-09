@@ -66,6 +66,9 @@ type outside the search path: `m app.mood`, `m "app"."Mood"[]`,
 database reports by schema and name. A column moved to a type of the same name
 in another schema plans the change.
 
+A PostgreSQL column can declare `bit varying(8)` in a SQL schema file.
+`varying` is read as part of the column type.
+
 See [PostgreSQL defaults](../../databases/postgresql/#how-a-declaration-is-compared-with-what-the-server-stored).
 
 ## Render it

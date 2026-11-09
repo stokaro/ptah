@@ -4122,6 +4122,11 @@ func TestParser_ParseMultiWordTypes(t *testing.T) {
 			expectedType: "CHARACTER VARYING(255)",
 		},
 		{
+			name:         "BIT VARYING",
+			sql:          "CREATE TABLE test (flags BIT VARYING(8) NOT NULL);",
+			expectedType: "BIT VARYING(8)",
+		},
+		{
 			name:         "DOUBLE PRECISION with default",
 			sql:          "CREATE TABLE test (value DOUBLE PRECISION DEFAULT 0.0);",
 			expectedType: "DOUBLE PRECISION",
