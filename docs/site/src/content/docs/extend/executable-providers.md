@@ -731,17 +731,18 @@ names no metric adds no gauge, and a metric named like a common one, such as
 model, such as a YDB vector index, and the count adds to the indexes Ptah read.
 
 An engine can declare its release lines in the description. Each line names a
-support level and, for a line that claims testing, the image that runs it. An
-engine that runs inside the provider's process, such as DuckDB, has no image:
-with `engine.linked-release-lines` its certified line names the version of the
-library the provider links instead, which the provider's own tests run. A line
-the provider keeps without running it is best effort and carries the reason.
-The host refuses a description that claims testing nothing runs.
-`ptah providers check` prints the lines a provider declares, and
-`ptah db capabilities` certifies a server against them: the line its version
-names gives the preset its name, which is the line's label, and the support
-level, and the line's facts are the baseline the server's own answers are
-compared with. The release line prints as the line alone.
+support level. A line that claims testing names a server image. An engine that
+runs inside the provider's process, such as DuckDB, can instead use
+`engine.linked-release-lines` to name the version of the library it links. The
+provider is responsible for testing that version. A best-effort line may state
+why the provider does not test it in `unprobed`. The host requires an image or
+linked engine for a line that claims testing. It cannot verify that tests run.
+
+`ptah providers check --json` lists the lines a provider declares; the text
+output reports the provider's status. `ptah db capabilities` reports the line
+that matches a server's version. Its label names the preset, its support level
+names the provider's claim, and its facts are the baseline compared with the
+server's own answers. The release line prints as the line alone.
 
 [Issue #4204](https://github.com/stokaro/ptah/issues/4204)
 owns official provider extraction, installation, and the eventual stable contract.

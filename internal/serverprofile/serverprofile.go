@@ -390,17 +390,13 @@ type DeclaredLine struct {
 	Note    string
 }
 
-// WithDeclaredLines returns the profile of a server of an engine an
-// executable provider serves, certified against the release lines the
-// provider declares, as [For] certifies a built-in dialect against the lines
-// this repository declares. The line the server's version names gives the
-// preset its name, the line's label, and the certification its level and
-// reason: the line's note, or the level's meaning when it has none. The label
-// names the preset, as a built-in line's preset name does, so the
-// certification carries no label of its own and the release line prints as
-// the line alone. A
-// version that names no declared line, such as one newer than all of them,
-// keeps the best-effort certification For gave it.
+// WithDeclaredLines attaches a provider's declared support level to a server
+// profile. The line selected by the server's version gives the preset its
+// name, from the line's label, and gives the certification its level and
+// reason. A note supplies the reason; without one, the reason attributes the
+// level to the provider. The certification carries no separate label, and the
+// release line prints as the line alone. A version that names no declared
+// line keeps the best-effort certification [For] gave it.
 //
 // The line is the one capability.ProvidedReleaseLine resolves, so the profile
 // and the capability facts For read cannot name two different lines. A
@@ -418,7 +414,7 @@ func (p Profile) WithDeclaredLines(lines []DeclaredLine) Profile {
 		p.Preset.Name = cmp.Or(line.Label, line.Line)
 		reason := line.Note
 		if reason == "" {
-			reason = line.Support.Doc()
+			reason = "The provider declares support level " + string(line.Support) + " for this release line."
 		}
 		p.Certification = Certification{Level: line.Support, Line: line.Line, Reason: reason}
 		return p

@@ -3867,7 +3867,7 @@ none.
 | `support` | The support level, from the table below. |
 | `image` | The image that runs the line. The host reports it and never starts it. |
 | `unprobed` | Why the provider keeps the line without running it. |
-| `note` | The reason `ptah db capabilities` prints with the level. Without a note it prints the level's general meaning. For `CERTIFIED` that sentence names Ptah's own CI, so give a certified line a note. |
+| `note` | The reason `ptah db capabilities` prints with the level. Without a note it states the level the provider declares, without claiming that Ptah tests it. |
 | `capabilities` | The line's capability facts; see [Offline capabilities](#offline-capabilities). |
 | `linked` | The version of the engine's library the provider executable links, for an engine that runs in the provider's process; see [Linked release lines](#linked-release-lines). |
 
