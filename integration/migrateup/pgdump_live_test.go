@@ -3,30 +3,22 @@
 package migrateup_test
 
 import (
-	"context"
 	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/dbschema"
 	"ptah.run/internal/cli/migrateup"
 	"ptah.run/internal/dbtarget"
 )
 
 func TestMigrateUpCommandPgDumpHookWritesArtifact(t *testing.T) {
 	c := qt.New(t)
-	dbURL := requiredPgDumpPostgresURL(t)
-	tableName := fmt.Sprintf("ptah_preflight_pg_dump_%d", time.Now().UnixNano())
-	conn, err := dbschema.ConnectToDatabase(t.Context(), dbURL)
-	c.Assert(err, qt.IsNil)
-	defer dbschema.CloseAndWarn(conn)
-	dropPgDumpTable(conn, tableName)
-	defer dropPgDumpTable(conn, tableName)
+	dbURL := newRollbackTarget(c, dbtarget.PostgreSQL).url
+	const tableName = "ptah_preflight_pg_dump_guarded"
 
 	dir := t.TempDir()
 	writePgDumpMigration(c, dir, "0000000001_create_dump_guarded.up.sql", fmt.Sprintf("CREATE TABLE %s (id BIGINT);\n", tableName))
@@ -82,16 +74,7 @@ printf 'fake custom dump\n' > "$out"
 	c.Assert(string(argsData), qt.Not(qt.Contains), password)
 }
 
-func requiredPgDumpPostgresURL(t *testing.T) string {
-	t.Helper()
-	return dbtarget.URL(t, dbtarget.PostgreSQL)
-}
-
 func writePgDumpMigration(c *qt.C, dir, name, content string) {
 	c.Helper()
 	c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
-}
-
-func dropPgDumpTable(conn *dbschema.DatabaseConnection, tableName string) {
-	_, _ = conn.ExecContext(context.Background(), "DROP TABLE IF EXISTS "+tableName+" CASCADE")
 }
