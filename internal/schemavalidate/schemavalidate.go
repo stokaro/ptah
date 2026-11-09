@@ -105,7 +105,7 @@ func CollectWithOptions(
 	if err != nil {
 		return nil, err
 	}
-	problems := append(collectIndexProblems(scoped, dialect), collectParentProblems(scoped, dialect)...)
+	problems := append(CollectIndexProblems(scoped, dialect), collectParentProblems(scoped, dialect)...)
 	target := selected.Name()
 	result, err := schemavalidation.Validate(ctx, service, schemavalidation.Request{
 		Target: target, Schema: scoped, Capabilities: caps,
@@ -120,13 +120,13 @@ func CollectWithOptions(
 	return problems, nil
 }
 
-// collectIndexProblems checks every index against the relation it belongs to.
+// CollectIndexProblems checks every index against the relation it belongs to.
 //
-// This is the check the renderer does not make. An index whose owner resolves
-// to nothing falls back to the Go struct name and renders as `ON "Struct"`,
-// which the server answers at apply time; an index naming a column the table
-// does not declare renders and fails the same way.
-func collectIndexProblems(database *schemamodel.Database, dialect string) []Problem {
+// Validation and the command-line comparisons share this check. An index whose
+// owner resolves to nothing would otherwise fall back to the Go struct name
+// and render as `ON "Struct"`; the server would reject it at apply time. The
+// same is true of an index naming a column the table does not declare.
+func CollectIndexProblems(database *schemamodel.Database, dialect string) []Problem {
 	if len(database.Indexes) == 0 {
 		return nil
 	}
