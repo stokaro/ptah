@@ -119,12 +119,10 @@ measured answers are `22001` on PostgreSQL for a name that is too long, `1406` o
 MySQL and MariaDB, `3988` on MySQL and `1366` on MariaDB for a character the
 charset cannot hold.
 
-A MySQL or MariaDB session whose `sql_mode` is not strict is the exception, and
-Ptah cannot see it. The server stores the name shortened to 256 characters or with
-`?` in place of the character, and answers success, so the entry counts as written
-and the record is wrong. Measured with `sql_mode=''` on MySQL 8.4 for a long name
-and on MariaDB 12.3 for a character the charset cannot hold. Keep the mode strict,
-which is the default on both, on a database whose log you rely on.
+MySQL and MariaDB log inserts use strict mode for that statement, even when the
+connection's `sql_mode` is not strict. The server then refuses a name it would
+shorten or change, and `migration_log.lost` reports the entry. Migration SQL
+still runs with the connection's chosen mode.
 
 ## What this is not
 

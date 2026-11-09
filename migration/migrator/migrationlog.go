@@ -143,10 +143,9 @@ func (a MigrationLogAttempt) StartLost() bool {
 // had nothing to record or lost everything it tried to record, and this report
 // is what tells the two apart.
 //
-// It counts what the database accepted, which is not always what it stored. A
-// MySQL or MariaDB session whose sql_mode is not strict shortens a value too long
-// for its column, or replaces a character its charset cannot hold, and answers
-// success, so such an entry counts as written.
+// MySQL and MariaDB log writes use strict mode for their own INSERT, even when
+// the session is non-strict. A value the column would shorten or replace is
+// refused and counted as lost; the mode of migration SQL is unchanged.
 type MigrationLogReport struct {
 	// Written counts the entries the database accepted. Zero with nothing in
 	// Lost is a run that had nothing to record.
@@ -511,9 +510,17 @@ func (m *Migrator) writeMigrationLogEntry(ctx context.Context, entry MigrationLo
 		return m.appendProviderLog(ctx, store, entry)
 	}
 
-	query := sqlutil.Rebind(m.conn.Info().Dialect, fmt.Sprintf(
-		`INSERT INTO %s (run_id, seq, operation, version, state, actor, actor_source, checksum, logged_at, error)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, m.migrationLogTable()))
+	// A non-strict MySQL-family session can answer success after truncating an
+	// actor or replacing a character its column cannot store. The log write
+	// alone needs strict mode; migration SQL retains the caller's session mode.
+	dialect := m.connectionDialect()
+	insert := m.revisionTable().LogInsertPrefix
+	if insert == "" {
+		insert = "INSERT"
+	}
+	query := sqlutil.Rebind(dialect, fmt.Sprintf(
+		`%s INTO %s (run_id, seq, operation, version, state, actor, actor_source, checksum, logged_at, error)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, insert, m.migrationLogTable()))
 	return executeSQLOn(ctx, m.conn, query,
 		entry.RunID, entry.Seq, entry.Operation, entry.Version, string(entry.State),
 		m.nullableText(entry.Actor), string(entry.ActorSource), m.nullableText(entry.Checksum),

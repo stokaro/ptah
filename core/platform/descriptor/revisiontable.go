@@ -37,6 +37,10 @@ type RevisionTable struct {
 	CreateTags string `json:"create_tags"`
 	// CreateLog creates the append-only operation log.
 	CreateLog string `json:"create_log"`
+	// LogInsertPrefix is the SQL before INTO when the migrator appends an
+	// operation log entry. Empty uses INSERT. An engine can use this prefix to
+	// make only the log write strict without changing the migration session.
+	LogInsertPrefix string `json:"log_insert_prefix,omitempty"`
 	// CreateSchema creates the schema a configured revision table lives in
 	// when it is absent. Empty means the migrator creates no schema: the
 	// engine has none, a schema is something the migrator must not create,

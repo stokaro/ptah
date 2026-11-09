@@ -65,7 +65,7 @@ func mariaDB() descriptor.Dialect {
 
 		// Migrations: what the migrator reads.
 		DDLTransactions: "implicit_commit",
-		RevisionTable:   mysqlFamilyRevisionTable(),
+		RevisionTable:   mysqlFamilyRevisionTable("SET STATEMENT sql_mode='STRICT_ALL_TABLES' FOR INSERT"),
 
 		Schemas: descriptor.Schemas{
 			Selection:                   descriptor.SchemaSelectionDatabase,

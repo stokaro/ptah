@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	mysqldriver "github.com/go-sql-driver/mysql"
 
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasurl"
@@ -366,6 +368,70 @@ func TestCheckpointAcceptsUnicodeStatementOnLatin1DatabaseE2E(t *testing.T) {
 			c.Assert(value, qt.Equals, "🚀")
 		})
 	}
+}
+
+// A non-strict session must not turn a changed log value into a successful
+// write. Strictness applies to the log statement alone: the migration body
+// still runs with the mode the caller selected.
+func TestNonStrictSessionDoesNotFalsifyMigrationLogE2E(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		engine       dbtarget.Engine
+		charsetState string
+		charsetCode  int
+	}{
+		{name: "mysql", engine: dbtarget.MySQLAdmin, charsetState: "HY000", charsetCode: 3988},
+		{name: "mariadb", engine: dbtarget.MariaDBAdmin, charsetState: "22007", charsetCode: 1366},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Run("long actor", func(t *testing.T) {
+				c := qt.New(t)
+				name := fmt.Sprintf("non_strict_body_%d", time.Now().UnixNano())
+				run := newLostLogRun(c, nonStrictSQLModeURL(c, charsetDatabaseURL(c, test.engine, "latin1")),
+					fmt.Sprintf("CREATE TABLE %s (v VARCHAR(3)); INSERT INTO %s VALUES ('abcdef');\n", name, name))
+
+				result, document := run.up(c, "--actor", tooLongActor)
+				c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", result.Stderr))
+				c.Assert(document.Outcome, qt.Equals, migrator.RunOutcomeApplied)
+				c.Assert(lostEntries(c, document.MigrationLog), qt.DeepEquals, []migrator.MigrationLogLoss{
+					loss(1, migrator.MigrationLogStarted, "22001", 1406),
+					loss(1, migrator.MigrationLogApplied, "22001", 1406),
+				})
+				c.Assert(document.MigrationLog.Written, qt.Equals, 0)
+				c.Assert(run.logRows(c), qt.HasLen, 0)
+				var bodyValue string
+				c.Assert(run.conn.QueryRowContext(c.Context(), "SELECT v FROM "+name).Scan(&bodyValue), qt.IsNil)
+				c.Assert(bodyValue, qt.Equals, "abc")
+			})
+			t.Run("unrepresentable actor", func(t *testing.T) {
+				c := qt.New(t)
+				run := newLostLogRun(c, nonStrictSQLModeURL(c, charsetDatabaseURL(c, test.engine, "latin1")), "")
+
+				result, document := run.up(c, "--actor", "release-🚀-bot")
+				c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", result.Stderr))
+				c.Assert(document.Outcome, qt.Equals, migrator.RunOutcomeApplied)
+				c.Assert(lostEntries(c, document.MigrationLog), qt.DeepEquals, []migrator.MigrationLogLoss{
+					loss(1, migrator.MigrationLogStarted, test.charsetState, test.charsetCode),
+					loss(1, migrator.MigrationLogApplied, test.charsetState, test.charsetCode),
+				})
+				c.Assert(document.MigrationLog.Written, qt.Equals, 0)
+				c.Assert(run.logRows(c), qt.HasLen, 0)
+			})
+		})
+	}
+}
+
+func nonStrictSQLModeURL(c *qt.C, raw string) string {
+	c.Helper()
+	scheme, dsn, found := strings.Cut(raw, "://")
+	c.Assert(found, qt.IsTrue)
+	config, err := mysqldriver.ParseDSN(dsn)
+	c.Assert(err, qt.IsNil)
+	params := make(map[string]string, len(config.Params)+1)
+	maps.Copy(params, config.Params)
+	config.Params = params
+	config.Params["sql_mode"] = "''"
+	return scheme + "://" + config.FormatDSN()
 }
 
 // `down` prints no document, so its report is the closing notice. The rollback

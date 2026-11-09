@@ -74,7 +74,7 @@ func mysql() descriptor.Dialect {
 		// Migrations: what the migrator reads.
 		DDLTransactions:     "implicit_commit",
 		AtomicIndexCreation: true,
-		RevisionTable:       mysqlFamilyRevisionTable(),
+		RevisionTable:       mysqlFamilyRevisionTable("INSERT /*+ SET_VAR(sql_mode='STRICT_ALL_TABLES') */"),
 
 		Schemas: descriptor.Schemas{
 			Selection:                   descriptor.SchemaSelectionDatabase,
@@ -316,7 +316,7 @@ func mysql() descriptor.Dialect {
 // being InnoDB: it records that a migration was applied even when the
 // statement around it fails. The Atlas version column is binary-collated, so
 // two tokens that differ only in case stay two revisions.
-func mysqlFamilyRevisionTable() descriptor.RevisionTable {
+func mysqlFamilyRevisionTable(logInsertPrefix string) descriptor.RevisionTable {
 	return descriptor.RevisionTable{
 		Create: createRevisions + " DEFAULT CHARSET=utf8mb4",
 		CreateAtlas: `CREATE TABLE IF NOT EXISTS {table} (
@@ -333,15 +333,16 @@ func mysqlFamilyRevisionTable() descriptor.RevisionTable {
     partial_hashes JSON NULL,
     operator_version VARCHAR(255) NOT NULL
 ){engine} DEFAULT CHARSET=utf8mb4`,
-		CreateTags:     createTags + " ENGINE=InnoDB",
-		CreateLog:      createLog,
-		CreateSchema:   createSchema,
-		EngineClause:   " ENGINE=InnoDB",
-		RequiredEngine: "InnoDB",
-		FirstRow:       "limit",
-		RowLock:        "for-update",
-		Update:         updateRevision,
-		Respell:        respellRevision(),
+		CreateTags:      createTags + " ENGINE=InnoDB",
+		CreateLog:       createLog,
+		LogInsertPrefix: logInsertPrefix,
+		CreateSchema:    createSchema,
+		EngineClause:    " ENGINE=InnoDB",
+		RequiredEngine:  "InnoDB",
+		FirstRow:        "limit",
+		RowLock:         "for-update",
+		Update:          updateRevision,
+		Respell:         respellRevision(),
 		Conflict: `ON DUPLICATE KEY UPDATE
 description = VALUES(description),
 applied_at = VALUES(applied_at),
