@@ -138,9 +138,6 @@ type Comparison struct {
 	// and converts by its affinity, so two spellings with one affinity are
 	// one type and a width is no distinction.
 	TypeAffinity bool `json:"type_affinity,omitempty"`
-	// SingleStringType reports that the engine has one string type, so the
-	// unbounded spellings of it are one type and only a width distinguishes.
-	SingleStringType bool `json:"single_string_type,omitempty"`
 	// MapsDeclaredTypes reports that the renderer maps most declared type
 	// names to types of the engine's own, as internal/oracletype does, so a
 	// declaration is compared in the renderer's spelling.

@@ -948,3 +948,9 @@ v0.21.0 ptah.run/core/ast
 # Embedder API with the engine. Pre-v1, so no compatibility is owed.
 v0.22.1 ptah.run/core/platform
 v0.22.1 ptah.run/core/platform/capability
+
+# No built-in dialect sets Comparison.SingleStringType. The Spanner provider
+# owns its type comparison, so this unused fact cannot affect a built-in plan.
+# Remove the field and its unreachable comparison branch together. This changes
+# the public descriptor type; pre-v1, so no compatibility is owed.
+v0.25.0 ptah.run/core/platform/descriptor
