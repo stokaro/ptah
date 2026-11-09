@@ -19,9 +19,8 @@ import (
 // revision row records the statements the file's COMMIT made permanent and a
 // retry resumes after them.
 //
-// Under the default runner the migrator wraps the file: PostgreSQL ignores its
-// BEGIN with a warning, its COMMIT commits the migrator's transaction too, and
-// the failure is recorded as nothing applied while the table stays.
+// Under the default runner the migrator refuses the file before that file
+// runs, because its COMMIT would end the transaction Ptah owns.
 
 // runnerMigrations writes a migration directory whose second version opens
 // and commits a transaction of its own and then fails, and returns it.
@@ -66,37 +65,61 @@ func builtPtah(t *testing.T, c *qt.C) string {
 	return binary
 }
 
-func TestMigrationsUpRunnerAppliesTheFileOwnTransactionsE2E(t *testing.T) {
+func runOwnTransactionFiles(c *qt.C, binary, config string, flags ...string) (target, output string, err error) {
+	c.Helper()
+	dir := runnerMigrations(c, ownTransactionFiles)
+	workdir := c.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(workdir, "ptah.yaml"), []byte(config), 0o600), qt.IsNil) // #nosec G703 -- the path is c.TempDir() plus a constant name
+	target, _ = scratchReplayDatabase(c)
+	output, err = runPtahInDir(c.Context(), workdir, binary,
+		append([]string{"migrations", "up", "--migrations-dir", dir, "--db-url", target}, flags...)...)
+	return target, output, err
+}
+
+func TestMigrationsUpRunnerRefusesWrappedTransactionControlE2E(t *testing.T) {
 	binary := builtPtah(t, qt.New(t))
-	tests := []struct {
-		name        string
-		config      string
-		flags       []string
-		wantApplied int
+	for _, test := range []struct {
+		name   string
+		config string
+		flags  []string
 	}{
-		{name: "the default runner wraps the file", wantApplied: 0},
-		{name: "golang-migrate named by the flag", flags: []string{"--runner", "golang-migrate"}, wantApplied: 3},
-		{name: "golang-migrate named in ptah.yaml", config: "migration:\n  runner: golang-migrate\n", wantApplied: 3},
-		{
-			name: "the flag over ptah.yaml", config: "migration:\n  runner: golang-migrate\n",
-			flags: []string{"--runner", "ptah"}, wantApplied: 0,
-		},
-	}
-	for _, test := range tests {
+		{name: "the default runner"},
+		{name: "the flag over ptah.yaml", config: "migration:\n  runner: golang-migrate\n", flags: []string{"--runner", "ptah"}},
+	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			dir := runnerMigrations(c, ownTransactionFiles)
-			workdir := c.TempDir()
-			c.Assert(os.WriteFile(filepath.Join(workdir, "ptah.yaml"), []byte(test.config), 0o600), qt.IsNil) // #nosec G703 -- the path is c.TempDir() plus a constant name
-			target, _ := scratchReplayDatabase(c)
+			target, out, err := runOwnTransactionFiles(c, binary, test.config, test.flags...)
+			c.Assert(err, qt.ErrorMatches, "exit status 2", qt.Commentf("%s", out))
+			c.Assert(out, qt.Contains, "controls transaction state")
+			conn, err := dbschema.ConnectToDatabase(c.Context(), target)
+			c.Assert(err, qt.IsNil)
+			defer dbschema.CloseAndWarn(conn)
+			var created bool
+			c.Assert(conn.QueryRowContext(c.Context(), "SELECT to_regclass('base') IS NOT NULL").Scan(&created), qt.IsNil)
+			c.Assert(created, qt.IsTrue)
+			c.Assert(conn.QueryRowContext(c.Context(), "SELECT to_regclass('t2') IS NOT NULL").Scan(&created), qt.IsNil)
+			c.Assert(created, qt.IsFalse)
+		})
+	}
+}
 
-			out, err := runPtahInDir(c.Context(), workdir, binary,
-				append([]string{"migrations", "up", "--migrations-dir", dir, "--db-url", target}, test.flags...)...)
-
+func TestMigrationsUpRunnerAppliesTheFileOwnTransactionsE2E(t *testing.T) {
+	binary := builtPtah(t, qt.New(t))
+	for _, test := range []struct {
+		name   string
+		config string
+		flags  []string
+	}{
+		{name: "golang-migrate named by the flag", flags: []string{"--runner", "golang-migrate"}},
+		{name: "golang-migrate named in ptah.yaml", config: "migration:\n  runner: golang-migrate\n"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			target, out, err := runOwnTransactionFiles(c, binary, test.config, test.flags...)
 			c.Assert(err, qt.ErrorMatches, "exit status 2", qt.Commentf("%s", out))
 			c.Assert(out, qt.Contains, `relation "missing_table" does not exist`)
 			applied, created := revisionApplied(c, target, 2, "t2")
-			c.Assert(applied, qt.Equals, test.wantApplied)
+			c.Assert(applied, qt.Equals, 3)
 			c.Assert(created, qt.IsTrue)
 		})
 	}

@@ -22,11 +22,9 @@ import (
 // the revision row records what committed. A file that holds one CREATE INDEX
 // CONCURRENTLY runs without a transaction, as golang-migrate sends it.
 //
-// Wrapped in the migrator's transaction, the first file nests: PostgreSQL
-// ignores its BEGIN with a warning, its COMMIT commits the migrator's
-// transaction too, and when a later statement fails the run treats the file as
-// rolled back and drops its revision row while the table stays. The community
-// binary nests the same way; that is a defect it has, not a contract.
+// A directory that asks Ptah to wrap the file is refused before execution if
+// the file also controls the transaction. The community binary may commit the
+// wrapped transaction early, leaving work behind without a revision record.
 
 // applyGolangMigrateDirectory hashes files as a golang-migrate directory,
 // applies it to a fresh database and returns that database, the command's
