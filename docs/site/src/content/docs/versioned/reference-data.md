@@ -243,12 +243,16 @@ What the plan carries is decided by what the declaration owns:
   beside the managed ones survives reconciliation untouched;
 - a repeated reconciliation over converged rows plans nothing, including a date
   or timestamp column: the driver returns a moment where the declaration wrote
-  text, and the two are compared as the instant they name. In a text column both
-  spellings stay separate values. A declared number or boolean is compared the
-  same way with the text a driver returns for a numeric column, which is how the
-  Oracle driver reads `NUMBER`: `30` meets `"30"` and `true` meets `"1"`. On YDB
-  each value is compared in its column's type, so a declared `12.50` meets the
-  `12.5` a `Decimal` stores, and an upper-case UUID the lower-case one.
+  text, and the two are compared as the instant they name. MySQL and MariaDB
+  `DATETIME` columns are compared by their wall clock instead. This works with
+  or without `parseTime` and does not depend on the connection's `loc` setting.
+  A declared RFC 3339 value is written in the SQL form the column accepts,
+  without its offset. In a text column both timestamp spellings stay separate
+  values. A declared number or boolean is compared the same way with the text
+  a driver returns for a numeric column, which is how the Oracle driver reads
+  `NUMBER`: `30` meets `"30"` and `true` meets `"1"`. On YDB each value is
+  compared in its column's type, so a declared `12.50` meets the `12.5` a
+  `Decimal` stores, and an upper-case UUID the lower-case one.
 
 The plan orders the statements the way the migration body does, from the same
 dependency rank: every `INSERT` and `UPDATE` parents-first, then every `DELETE`

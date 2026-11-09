@@ -21,9 +21,10 @@
 // back as bytes. One pair is compared as values rather than as strings: a
 // time.Time the driver returned against the text a declaration carries, which
 // otherwise can never pair and leaves a date column planning the same UPDATE
-// forever. Two texts stay two texts, so a text column keeps both spellings of
-// one instant. A declared number or boolean and the text a driver returned are
-// paired the same way, because Oracle's driver scans a NUMBER column as text: a
+// forever. ComputeWithOptions also compares a MySQL-family DATETIME by its wall
+// clock, whether the driver returns text or time.Time. Two texts in a text
+// column keep both spellings of one instant. A declared number or boolean pairs
+// with the text a driver returned, because Oracle scans a NUMBER column as text: a
 // declared 30 meets "30", and a declared true meets the "1" a NUMBER(1) column
 // holds. It remains only approximate across dialects for the "V" form: numeric
 // scale and decimal precision differences between PostgreSQL, MySQL, and others
@@ -35,10 +36,13 @@ package datadiff
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
+
+	"ptah.run/core/platform"
 )
 
 // Row is a single table row keyed by column name. It matches the shape returned
@@ -71,8 +75,8 @@ type DataDiff struct {
 	Table  string
 	Keys   []string
 	// ColumnTypes maps a column to the type its table declares for it. Compute
-	// leaves it empty; a caller that knows the declaration sets it before
-	// [Render], which reads it where a dialect refuses the literal a value would
+	// leaves it empty; ComputeWithOptions takes it from its caller. [Render]
+	// reads it where a dialect refuses the literal a value would
 	// otherwise take: declared text for an Oracle DATE or TIMESTAMP column. A
 	// column the map does not name renders from its Go value alone.
 	//
@@ -107,23 +111,42 @@ type DataDiff struct {
 // If two rows on the same side share a composite key, the later one in input
 // order wins; keys should be chosen so this does not occur.
 func Compute(schema, table string, keys []string, desired, live []Row) (*DataDiff, error) {
+	return ComputeWithOptions(schema, table, keys, desired, live, ComputeOptions{})
+}
+
+// ComputeOptions supplies the column types and dialect needed to compare
+// values whose database representation differs from their declared spelling.
+// A MySQL-family DATETIME has no time zone: its wall clock is compared even
+// when the driver reads it as text or assigns a connection location to it.
+type ComputeOptions struct {
+	Dialect     string
+	ColumnTypes map[string]string
+}
+
+// ComputeWithOptions computes the same row diff as [Compute], using the
+// declared column types where the database's value needs type-aware matching.
+// The returned diff carries ColumnTypes for [Render].
+func ComputeWithOptions(schema, table string, keys []string, desired, live []Row, options ComputeOptions) (*DataDiff, error) {
 	if len(keys) == 0 {
 		return nil, errors.New("datadiff: keys must be non-empty")
 	}
+	described, _ := platform.Lookup(options.Dialect)
+	comparison := columnComparison{types: options.ColumnTypes, mysqlFamily: described.Family == "mysql"}
 
-	desiredByKey, err := indexByKey(keys, desired, "desired")
+	desiredByKey, err := indexByKey(keys, desired, "desired", comparison)
 	if err != nil {
 		return nil, err
 	}
-	liveByKey, err := indexByKey(keys, live, "live")
+	liveByKey, err := indexByKey(keys, live, "live", comparison)
 	if err != nil {
 		return nil, err
 	}
 
 	diff := &DataDiff{
-		Schema: schema,
-		Table:  table,
-		Keys:   slices.Clone(keys),
+		Schema:      schema,
+		Table:       table,
+		Keys:        slices.Clone(keys),
+		ColumnTypes: maps.Clone(options.ColumnTypes),
 	}
 
 	for _, k := range sortedKeys(desiredByKey) {
@@ -133,7 +156,7 @@ func Compute(schema, table string, keys []string, desired, live []Row) (*DataDif
 			diff.Inserts = append(diff.Inserts, desiredRow)
 			continue
 		}
-		if managedColumnsDiffer(desiredRow, liveRow) {
+		if managedColumnsDiffer(desiredRow, liveRow, comparison) {
 			diff.Updates = append(diff.Updates, RowUpdate{
 				Key:     keyValues(keys, desiredRow),
 				Desired: desiredRow,
@@ -151,12 +174,26 @@ func Compute(schema, table string, keys []string, desired, live []Row) (*DataDif
 	return diff, nil
 }
 
+type columnComparison struct {
+	types       map[string]string
+	mysqlFamily bool
+}
+
+func (c columnComparison) mysqlDateTime(column string) bool {
+	return c.mysqlFamily && mysqlDateTimeType(c.types[column])
+}
+
+func mysqlDateTimeType(declaredType string) bool {
+	declared := strings.ToUpper(strings.TrimSpace(declaredType))
+	return declared == "DATETIME" || strings.HasPrefix(declared, "DATETIME(")
+}
+
 // indexByKey builds a map from composite-key string to row. side ("desired" or
 // "live") is used only to make missing-key errors point at the offending input.
-func indexByKey(keys []string, rows []Row, side string) (map[string]Row, error) {
+func indexByKey(keys []string, rows []Row, side string, comparison columnComparison) (map[string]Row, error) {
 	out := make(map[string]Row, len(rows))
 	for i, row := range rows {
-		k, err := keyString(keys, row)
+		k, err := keyString(keys, row, comparison)
 		if err != nil {
 			return nil, fmt.Errorf("datadiff: %s row %d: %w", side, i, err)
 		}
@@ -168,14 +205,14 @@ func indexByKey(keys []string, rows []Row, side string) (map[string]Row, error) 
 // keyString builds a collision-free composite key from the key columns of row.
 // Each normalized key value is length-prefixed and NUL-terminated so that no
 // combination of values can produce the same string as a different tuple.
-func keyString(keys []string, row Row) (string, error) {
+func keyString(keys []string, row Row, comparison columnComparison) (string, error) {
 	var b strings.Builder
 	for _, k := range keys {
 		v, ok := row[k]
 		if !ok {
 			return "", fmt.Errorf("missing key column %q", k)
 		}
-		n := normalizeValue(v)
+		n := comparison.normalize(k, v)
 		b.WriteString(strconv.Itoa(len(n)))
 		b.WriteByte(':')
 		b.WriteString(n)
@@ -197,13 +234,46 @@ func keyValues(keys []string, row Row) map[string]any {
 // different normalized value than the same column in live. Columns present only
 // in live are ignored, so a live row that is a superset of the managed columns
 // does not spuriously register as an update.
-func managedColumnsDiffer(desired, live Row) bool {
+func managedColumnsDiffer(desired, live Row, comparison columnComparison) bool {
 	for col, desiredValue := range desired {
-		if !valuesEqual(desiredValue, live[col]) {
+		if !comparison.equal(col, desiredValue, live[col]) {
 			return true
 		}
 	}
 	return false
+}
+
+func (c columnComparison) equal(column string, desired, live any) bool {
+	if !c.mysqlDateTime(column) {
+		return valuesEqual(desired, live)
+	}
+	// A DATETIME stores a wall clock. An offset on the declared text and the
+	// location the driver assigned to a time.Time do not change those fields.
+	return c.normalize(column, desired) == c.normalize(column, live)
+}
+
+func (c columnComparison) normalize(column string, value any) string {
+	if c.mysqlDateTime(column) {
+		if wall, ok := dateTimeWallClock(value); ok {
+			return "D" + wall
+		}
+	}
+	return normalizeValue(value)
+}
+
+func dateTimeWallClock(value any) (string, bool) {
+	moment, ok := value.(time.Time)
+	if !ok {
+		text, isText := textValue(value)
+		if !isText {
+			return "", false
+		}
+		moment, ok = parseMoment(text)
+		if !ok {
+			return "", false
+		}
+	}
+	return moment.Format("2006-01-02 15:04:05.999999999"), true
 }
 
 // valuesEqual answers whether a declared value and the value the database

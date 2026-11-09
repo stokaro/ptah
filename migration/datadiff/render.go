@@ -278,11 +278,12 @@ func updateStmt(t target, table string, types map[string]string, keys []string, 
 // carries a materialized _block_number column, which a reference table does
 // not; DELETE needs no such arm (stokaro/ptah#3281).
 type target struct {
-	dialect  string
-	name     string
-	literals descriptor.Literals
-	managed  descriptor.ManagedData
-	services dataext.Services
+	dialect     string
+	name        string
+	mysqlFamily bool
+	literals    descriptor.Literals
+	managed     descriptor.ManagedData
+	services    dataext.Services
 }
 
 // newTarget reads the descriptor of dialect from the process registry. A
@@ -298,11 +299,12 @@ func newTarget(dialect string, services dataext.Services) (target, error) {
 				"pass the services engine.Runtime.DataServices returns for the dialect", described.Name)
 	}
 	return target{
-		dialect:  dialect,
-		name:     described.Name,
-		literals: described.Literals,
-		managed:  described.ManagedData,
-		services: services,
+		dialect:     dialect,
+		name:        described.Name,
+		mysqlFamily: described.Family == "mysql",
+		literals:    described.Literals,
+		managed:     described.ManagedData,
+		services:    services,
 	}, nil
 }
 
@@ -386,6 +388,13 @@ func renderColumnLiteral(t target, declaredType string, v any) (string, error) {
 		}
 	}
 	text, isText := textValue(v)
+	if isText && t.mysqlFamily && mysqlDateTimeType(declaredType) {
+		moment, ok := parseMoment(text)
+		if !ok {
+			return "", fmt.Errorf("%q is not a valid %s value", text, declaredType)
+		}
+		return timeLiteral(t, moment), nil
+	}
 	if !isText || declaredType == "" || t.services.Columns == nil || !t.services.Columns.HoldsMoment(declaredType) {
 		return renderLiteral(t, v)
 	}
