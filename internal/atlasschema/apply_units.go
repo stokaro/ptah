@@ -7,9 +7,11 @@ import (
 	"slices"
 
 	"ptah.run/catalog"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
 	"ptah.run/dbschema"
+	"ptah.run/internal/migratorext/builtin"
 	"ptah.run/internal/sqliterebuild"
 	"ptah.run/migration/migrator"
 )
@@ -46,7 +48,14 @@ func applyUnits(ctx context.Context, conn *dbschema.DatabaseConnection, mode mig
 			if rollbackErr := tx.Rollback(); rollbackErr != nil {
 				return errors.Join(err, rollbackErr)
 			}
-			return &rolledBackApplyError{err: err}
+			// Engines with rollback-survivor logic can leave schema changes
+			// behind even when Rollback itself succeeds.
+			if conn.Info().Capabilities.Has(capability.TransactionalDDL) &&
+				builtin.Lookup(conn.Info().Dialect).RollbackSurvivors == nil &&
+				!errors.Is(err, ptaherr.ErrOutcomeUnknown) {
+				return &rolledBackApplyError{err: err}
+			}
+			return err
 		}
 		if err := tx.Commit(); err != nil {
 			failed := &failedCommitError{statements: len(prepared), err: err}
@@ -58,8 +67,8 @@ func applyUnits(ctx context.Context, conn *dbschema.DatabaseConnection, mode mig
 	}
 }
 
-// rolledBackApplyError records that the transaction undid every dispatched
-// unit after an execution error. It keeps the original error for diagnostics.
+// rolledBackApplyError records that a target with transactional DDL undid every
+// dispatched unit after an execution error. It keeps the original error for diagnostics.
 type rolledBackApplyError struct{ err error }
 
 func (e *rolledBackApplyError) Error() string { return e.err.Error() }

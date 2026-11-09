@@ -127,9 +127,9 @@ the database and finish the migration by hand, then record it with
 A server can turn this off. CockroachDB 24.3 keeps `autocommit_before_ddl` off, and
 a YugabyteDB server started with `ysql_yb_ddl_transaction_block_enabled` rolls schema
 statements back. Ptah reads the answer from the server in both cases, so a failure
-there reports `failed`, 0 of 2, with no table. `schema apply` reports `unknown` for a
-plan that stopped after it was sent, on every engine, because it keeps no count: see
-[The apply document](../../direct/apply/#the-apply-document).
+there reports `failed`, 0 of 2, with no table. `schema apply` reports `failed`
+after a confirmed rollback and `unknown` when the rollback cannot prove that it
+undid the plan. See [The apply document](../../direct/apply/#the-apply-document).
 
 ## Scoped schema clean
 

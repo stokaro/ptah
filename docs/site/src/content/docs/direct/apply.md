@@ -539,7 +539,7 @@ format.
 
 `unknown` is the outcome a caller must not retry from. The operations were
 sent, and `failure` says where the run stopped, not what the database holds: a
-transaction's rollback may be unconfirmed, a run without one may have left some,
+transaction's rollback may not undo DDL, a run without one may have left some,
 and a lost connection hides even that. Read the database before deciding. A lock
 session that fails after every operation committed is reported this way too,
 rather than as `applied`.
