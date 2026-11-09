@@ -1948,6 +1948,9 @@ that lists the feature declares at least one rule.
 | `applies_to_down` | Whether the rule also judges the rollback half of a migration. The request holds down files either way, and the host does not filter findings by this field, so the owner applies it. |
 | `subsumes` | The rules whose finding on the same statement this rule's finding replaces. |
 
+The fixture's `FX101` rule checks a down file only when its published rule sets
+`applies_to_down`.
+
 `ValidateDescription` refuses a rule that breaks these shapes, a rule that
 subsumes itself and a code declared twice in the description
 (`TestLintDescriptionDeclaresRules_FailurePath`). The host holds every

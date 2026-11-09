@@ -164,6 +164,30 @@ func TestMigrationsLintOfTheNamedDialectReportsTheProvidersFindings(t *testing.T
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"BC103", "DS101", "DS107", "FX101", "FX102"})
 }
 
+func TestMigrationsLintAppliesAProviderRuleToDownOnlyWhenPublished(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		environment []string
+		wantFX101   bool
+		wantCode    int
+	}{
+		{name: "default rule skips rollback"},
+		{name: "published rule checks rollback", environment: []string{`PTAH_FIXTURE_LINT_RULES=[{"code":"FX101","title":"DROP TABLE loses rows","severity":"error","applies_to_down":true},{"code":"FX102","title":"target the check names","severity":"info"}]`}, wantFX101: true, wantCode: 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			f := newLintProvider(c, "ydb-lint", ydbProviderID, "ydb", test.environment...)
+			dir := lintDirectory(c, "CREATE TABLE records (id Uint64, PRIMARY KEY (id));\n", "SELECT 1;\n")
+			c.Assert(os.WriteFile(filepath.Join(dir, "0000000002_drop.down.sql"), []byte("DROP TABLE records;\n"), 0o600), qt.IsNil)
+
+			findings, diagnostics, code := f.lint(c, dir, "--dialect", "ydb")
+
+			c.Assert(code, qt.Equals, test.wantCode, qt.Commentf("%s", diagnostics))
+			c.Assert(slices.Contains(rulesOf(findings), "FX101"), qt.Equals, test.wantFX101)
+		})
+	}
+}
+
 // A provider's rule about transaction control learns who opens each file's
 // transaction, from the --runner the run names. An engine that does not list
 // the feature judges every file as one its migrator wraps, whatever the runner.

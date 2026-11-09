@@ -24,7 +24,10 @@ func LintRules() []*protocol.LintRule {
 // Linter is the fixture's migration lint: a statement ends at a semicolon and
 // carries its words, a DROP TABLE loses rows, and FX102 reports the server
 // version and the capabilities a check carries.
-type Linter struct{}
+type Linter struct {
+	// Rules is the catalog the fixture command publishes. The zero value uses LintRules.
+	Rules []*protocol.LintRule
+}
 
 // splitLint cuts text after every semicolon, the whole fixture dialect.
 func splitLint(text string) []*protocol.LintStatement {
@@ -130,16 +133,24 @@ func (Linter) AnnotateLintStatements(ctx context.Context, request *protocol.Anno
 	return result, nil
 }
 
-// CheckLintMigrations reports FX101 on every DROP TABLE and FX102 once per
-// run, on the first file, each only where the request enables it.
-func (Linter) CheckLintMigrations(ctx context.Context, request *protocol.CheckLintRequest) (*protocol.CheckedLint, error) {
+// CheckLintMigrations reports FX101 on DROP TABLE and FX102 once per run,
+// where the published rule permits the file and the request enables the rule.
+func (l Linter) CheckLintMigrations(ctx context.Context, request *protocol.CheckLintRequest) (*protocol.CheckedLint, error) {
 	result := &protocol.CheckedLint{Complete: true}
-	if slices.Contains(request.Codes, "FX102") && len(request.Files) > 0 {
-		result.Findings = append(result.Findings, &protocol.LintFinding{Code: "FX102", File: 0, Statement: -1, Message: checkedTarget(request)})
+	if slices.Contains(request.Codes, "FX102") {
+		for i, file := range request.Files {
+			if l.ruleAppliesToFile("FX102", file) {
+				result.Findings = append(result.Findings, &protocol.LintFinding{Code: "FX102", File: lintPosition(i), Statement: -1, Message: checkedTarget(request)})
+				break
+			}
+		}
 	}
 	for i, file := range request.Files {
 		if err := ctx.Err(); err != nil {
 			return nil, err
+		}
+		if !l.ruleAppliesToFile("FX101", file) {
+			continue
 		}
 		for j, statement := range file.Statements {
 			if slices.Contains(request.Codes, "FX101") && dropsTable(statement) {
@@ -148,6 +159,25 @@ func (Linter) CheckLintMigrations(ctx context.Context, request *protocol.CheckLi
 		}
 	}
 	return result, nil
+}
+
+func (l Linter) ruleAppliesToFile(code string, file *protocol.LintFile) bool {
+	if file.Up {
+		return true
+	}
+	if !file.Down {
+		return false
+	}
+	rules := l.Rules
+	if rules == nil {
+		rules = LintRules()
+	}
+	for _, rule := range rules {
+		if rule.Code == code {
+			return rule.AppliesToDown
+		}
+	}
+	return false
 }
 
 // checkedTarget spells the target a check names: the engine, the server
