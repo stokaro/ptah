@@ -240,6 +240,14 @@ the read makes every plan reading that privilege stale, on this database, becaus
 the new user now holds it. On a target that compares memberships, which is YDB,
 the plan covers all of them.
 
+On MySQL and MariaDB, the read lists every role on the server. The plan covers
+the attributes of roles it names or reaches through privileges, ownership, or
+memberships. Creating an unrelated role leaves the plan valid. On PostgreSQL 16
+and later, the read also records each membership's `INHERIT` and `SET` options.
+A change to an option on a membership the plan depends on makes it stale. An
+`ADMIN`-only membership with both options false does not tie an unrelated role
+to the plan.
+
 When an embedding application selects an executable provider, the native JSON
 plan also records `provider`: the provider ID, its release version and the
 major version of the provider contract, plus a digest of the server version,
@@ -627,17 +635,14 @@ plan, so this control is worth what review of that file is worth.
 - A plan file carries the fingerprint of the database it was computed against.
   Applying it to a database in a different state refuses on that fingerprint,
   whether or not the approval verifies.
-- The fingerprint reads memberships as the server's catalog lists them. On
-  PostgreSQL that leaves out the reserved `pg_` roles and the bootstrap
-  superuser, and the `INHERIT` and `SET` options of a membership, so changing
-  those does not make a plan stale.
+- The fingerprint omits PostgreSQL's reserved `pg_` roles and bootstrap
+  superuser. PostgreSQL 16 and later report each membership's `INHERIT` and
+  `SET` options, so a change to an option the plan depends on makes it stale.
 - A role without superuser that creates another role on PostgreSQL 16 or later
-  receives an `ADMIN` membership in it, and on MariaDB any creator holds the role
-  it created. Both count as memberships, so a plan run by the creator is stale
-  after the role appears, and after that role joins a group.
-- On MySQL and MariaDB a read lists every role on the server, and the fingerprint
-  covers that list. `CREATE ROLE` anywhere on the server makes a plan stale, and
-  `CREATE USER` does not.
+  receives an `ADMIN` membership without `INHERIT` or `SET`. That edge alone
+  leaves an unrelated plan valid. A plan that names the new role still covers it.
+- MySQL and MariaDB list every role on the server, but a plan covers only roles
+  it names or reaches. Creating an unrelated role leaves the plan valid.
 
 ## Next steps
 

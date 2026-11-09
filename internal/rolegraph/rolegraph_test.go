@@ -17,6 +17,63 @@ func edge(role, member string) catalog.RoleMembership {
 	return catalog.RoleMembership{Role: role, Member: member}
 }
 
+// TestForPlanRoles keeps a server-wide role list from replacing an unrelated
+// plan while retaining attributes for a role the plan names or reaches.
+func TestForPlanRoles(t *testing.T) {
+	database := &catalog.Database{
+		ConnectedRole: "runner",
+		Roles: []catalog.Role{
+			{Name: "runner"}, {Name: "group"}, {Name: "recipient"}, {Name: "outside"},
+		},
+		RoleMemberships: []catalog.RoleMembership{edge("group", "runner")},
+	}
+	for _, test := range []struct {
+		name       string
+		statements []string
+		scope      descriptor.RoleScope
+		want       []catalog.Role
+	}{
+		{name: "unrelated server role", scope: descriptor.RoleScopeNone,
+			want: database.Roles[:2]},
+		{name: "statement recipient", scope: descriptor.RoleScopeNone,
+			statements: []string{`GRANT SELECT ON t TO recipient`},
+			want:       database.Roles[:3]},
+		{name: "scoped role read", scope: descriptor.RoleScopeReferenced,
+			want: database.Roles},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(rolegraph.ForPlanRoles(database, test.statements, test.scope, capability.Of(nil)), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestForPlanMembershipOptions distinguishes a grant that conveys access from
+// a creator's ADMIN-only membership. A statement naming the created role still
+// binds the plan to that membership.
+func TestForPlanMembershipOptions(t *testing.T) {
+	no, yes := false, true
+	adminOnly := catalog.RoleMembership{Role: "created", Member: "runner", AdminOption: true,
+		InheritOption: &no, SetOption: &no}
+	reader := catalog.RoleMembership{Role: "reader", Member: "runner",
+		InheritOption: &yes, SetOption: &no}
+	database := &catalog.Database{ConnectedRole: "runner", RoleMemberships: []catalog.RoleMembership{adminOnly, reader}}
+	for _, test := range []struct {
+		name       string
+		statements []string
+		want       []catalog.RoleMembership
+	}{
+		{name: "unrelated creator membership", want: []catalog.RoleMembership{reader}},
+		{name: "plan names the created role", statements: []string{`DROP ROLE created`},
+			want: []catalog.RoleMembership{adminOnly, reader}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(rolegraph.ForPlan(database, test.statements, descriptor.RoleScopeReferenced, capability.Of(nil)), qt.DeepEquals, test.want)
+		})
+	}
+}
+
 // graph is the shape the rows walk. `app` belongs to `group`, which belongs to
 // `top`. `reader` and `writer` hold `app` through `app_users`. `peer` is another
 // member of `group`, and `apart` and `apart_group` have no path to `app`.

@@ -1022,8 +1022,9 @@ func SchemaFingerprint(ctx context.Context, schema *catalog.Database, runtime sc
 }
 
 // planSourceFingerprint is the fingerprint a saved plan records and
-// [VerifyPlanTarget] recomputes: current as a whole, with its role memberships
-// narrowed to the ones this plan depends on; see [rolegraph.ForPlan].
+// [VerifyPlanTarget] recomputes: current with server-wide roles and role
+// memberships narrowed to the ones this plan depends on; see
+// [rolegraph.ForPlan] and [rolegraph.ForPlanRoles].
 //
 // The statements are an input because a plan can name a role nothing in the
 // database refers to yet. Both halves read them from the plan itself, which is
@@ -1042,7 +1043,9 @@ func planSourceFingerprint(ctx context.Context,
 		bodies = append(bodies, sqlutil.StripCommentsForDialect(statement.SQL, info.Dialect))
 	}
 	scoped := *current
-	scoped.RoleMemberships = rolegraph.ForPlan(current, bodies, described(info.Dialect).Roles.OutOfScope, info.Capabilities)
+	roleScope := described(info.Dialect).Roles.OutOfScope
+	scoped.RoleMemberships = rolegraph.ForPlan(current, bodies, roleScope, info.Capabilities)
+	scoped.Roles = rolegraph.ForPlanRoles(current, bodies, roleScope, info.Capabilities)
 	return SchemaFingerprint(ctx, &scoped, runtime)
 }
 

@@ -18,6 +18,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 	mysqldriver "github.com/go-sql-driver/mysql"
 
+	"ptah.run/catalog"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
@@ -438,6 +439,64 @@ func TestPlanRoleScopeLive_AnUnrelatedMembershipKeepsThePlan(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A server-wide role read includes accounts from other databases. Creating
+// one must not replace a plan that neither names nor reaches that role.
+func TestPlanRoleScopeLive_AnUnrelatedRoleKeepsThePlan(t *testing.T) {
+	ctx := context.Background()
+	for _, engine := range roleScopeEngines()[3:5] {
+		t.Run(engine.name, func(t *testing.T) {
+			c := qt.New(t)
+			f := newRoleScopeFixture(c, ctx, engine)
+			before := f.wholeFingerprint(c, ctx)
+			name := f.name("fresh")
+			c.Assert(f.exec(ctx, fmt.Sprintf(engine.createRole, name)), qt.IsNil)
+			c.Cleanup(func() { c.Check(f.exec(context.Background(), fmt.Sprintf(engine.dropRole, name)), qt.IsNil) })
+			c.Assert(f.wholeFingerprint(c, ctx), qt.Not(qt.Equals), before)
+			c.Assert(f.verify(ctx), qt.IsNil)
+		})
+	}
+}
+
+// PostgreSQL grants the creator ADMIN on a new role without giving it access
+// to that role. The plan remains valid unless one of its statements names it.
+func TestPlanRoleScopeLive_AdminOnlyCreatorMembershipKeepsThePlan(t *testing.T) {
+	ctx := context.Background()
+	c := qt.New(t)
+	engine := roleScopePostgres()
+	engine.createRunner = "CREATE ROLE %s LOGIN CREATEROLE PASSWORD '" + roleScopeRunnerPassword + "'"
+	f := newRoleScopeFixture(c, ctx, engine)
+	name := f.name("fresh")
+	_, err := f.conn.ExecContext(ctx, "CREATE ROLE "+name)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { c.Check(f.exec(context.Background(), fmt.Sprintf(engine.dropRole, name)), qt.IsNil) })
+	current, err := dbschema.ReadSchemaWithSchemasContext(ctx, f.conn, nil)
+	c.Assert(err, qt.IsNil)
+	edgeAt := slices.IndexFunc(current.RoleMemberships, func(edge catalog.RoleMembership) bool {
+		return edge.Role == name && edge.Member == f.name("run")
+	})
+	c.Assert(edgeAt >= 0, qt.IsTrue)
+	edge := current.RoleMemberships[edgeAt]
+	c.Assert(edge.AdminOption, qt.IsTrue)
+	c.Assert(edge.InheritOption, qt.DeepEquals, new(false))
+	c.Assert(edge.SetOption, qt.DeepEquals, new(false))
+	c.Assert(f.verify(ctx), qt.IsNil)
+}
+
+// A change to the inheritance option changes the privileges available to the
+// role that will apply the plan, even when the two role names stay the same.
+func TestPlanRoleScopeLive_InheritOptionReplacesThePlan(t *testing.T) {
+	ctx := context.Background()
+	c := qt.New(t)
+	f := newRoleScopeFixture(c, ctx, roleScopePostgres())
+	grant := fmt.Sprintf("GRANT %s TO %s WITH INHERIT FALSE", f.name("rung"), f.name("run"))
+	c.Assert(f.exec(ctx, grant), qt.IsNil)
+	c.Cleanup(func() {
+		c.Check(f.exec(context.Background(), fmt.Sprintf("GRANT %s TO %s WITH INHERIT TRUE", f.name("rung"), f.name("run"))), qt.IsNil)
+	})
+	var stale *atlasschema.StalePlanError
+	c.Assert(f.verify(ctx), qt.ErrorAs, &stale)
 }
 
 func TestPlanRoleScopeLive_ARelatedMembershipReplacesThePlan(t *testing.T) {
