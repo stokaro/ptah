@@ -1090,6 +1090,10 @@ func declaredColumnTypeChange(genCol schemamodel.Field, dbRawType, dialect strin
 // which may hold a normalized spelling with the precision gone. ClickHouse's change is
 // the exception, since it holds the canonical types and the raw ones may not be.
 func typeChangeNarrows(change, dbRawType, renderedType, dialect string) bool {
+	if comparisonOf(dialect).BitStoresBoolean && strings.EqualFold(strings.TrimSpace(renderedType), "bit") &&
+		typechange.IsInteger(dbRawType) {
+		return true
+	}
 	if comparisonOf(dialect).NullableTypes {
 		before, after, _ := strings.Cut(change, " -> ")
 		return typeEngineOf(dialect).Narrows(before, after)

@@ -1897,7 +1897,9 @@ type ColumnDiff struct {
 	// PreviousType is the type the column holds, as the catalog spells it. The `type`
 	// entry of Changes may hold a folded spelling with the size gone, which is no input
 	// to a rule about sizes: `varchar -> char(10)` reads as a narrowing whatever the
-	// varchar held.
+	// varchar held. A nonempty value also means the comparison evaluated
+	// TypeNarrows for this engine, including a false answer; safety uses the
+	// displayed transition only when no such answer is available.
 	PreviousType string `json:"previous_type,omitempty"`
 
 	// CommentChange carries the column's comment transition, and is nil when

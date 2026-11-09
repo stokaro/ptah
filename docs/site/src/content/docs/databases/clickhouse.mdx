@@ -482,6 +482,8 @@ written as `DateTime64(3)`, so a live `DateTime` column declared `DATETIME` is
 planned as a change. A ClickHouse type name, spelled the way ClickHouse spells
 it, is written as it stands: `Int8` is an 8-bit column and `DateTime` a
 second-precision one, while the portable `INT8` is `Int64`.
+The safety report rates a live `DateTime` declared `timestamp` as a warning:
+the plan adds temporal precision.
 
 A narrowing is planned as well. Measured on 24.10 and 26.9, the server accepts
 `MODIFY COLUMN d Int32` over an `Int64` column and stores a value that does not

@@ -152,6 +152,9 @@ type Comparison struct {
 	// a portable name that also names one of the engine's own types matches that type
 	// too, since the server builds it from the same word.
 	MapsPortableTypes bool `json:"maps_portable_types,omitempty"`
+	// BitStoresBoolean reports that BIT holds only false or true, so changing
+	// an integer column to BIT can collapse distinct stored values.
+	BitStoresBoolean bool `json:"bit_stores_boolean,omitempty"`
 	// CatalogTypeNames reports that the catalog names the string and byte
 	// types STRING and BYTES, as internal/cockroachtype spells them, and an
 	// unsized INT resolves to the width the session's default_int_size gives.
