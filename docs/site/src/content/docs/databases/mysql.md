@@ -499,7 +499,9 @@ SQL:
   every operation. MariaDB takes it on `DROP INDEX`, `DROP KEY`,
   `DROP FOREIGN KEY`, `DROP CONSTRAINT`, `DROP COLUMN` and `ADD COLUMN`, and
   Ptah reads it there. MariaDB has no `DROP CHECK` at all, so under
-  `--dialect mariadb` a schema file drops a check with `DROP CONSTRAINT`.
+  `--dialect mariadb` a schema file drops a table-level check with
+  `DROP CONSTRAINT`. A column-level check is changed with `MODIFY COLUMN`:
+  MariaDB refuses `DROP CONSTRAINT` for that check.
 - A schema file's `USE app` selects the database the table names after it are
   in, as the server reads it, so a file for a whole server can write
   `USE app;` and then unqualified tables. The table a `REFERENCES` clause
@@ -892,7 +894,8 @@ and a member an `enum` or a `set` stops naming.
 On MariaDB a `json` column is a `longtext` with `CHECK (json_valid(c))` under the column's
 own name, and a column declared `json` plans nothing against that shape. A `longtext` with
 no such `CHECK` plans the `ADD CONSTRAINT`, and any other type plans a `MODIFY COLUMN` that
-writes the `CHECK` with the type.
+writes the `CHECK` with the type. Declaring a checked `int` as plain `int`, or a `json`
+as plain `longtext`, removes the column's check with `MODIFY COLUMN`.
 
 ## Making a column NOT NULL
 

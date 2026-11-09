@@ -51,6 +51,7 @@ func (r *Reader) SetSchemas(names []string) {
 type checkConstraintClauses struct {
 	byTableName map[constraintKey]string
 	byName      map[string]string
+	columnLevel map[constraintKey]bool
 }
 
 // constraintKey identifies one constraint within a read.
@@ -1438,6 +1439,12 @@ func (r *Reader) readConstraints(ctx context.Context, dbName string, foreignSche
 				},
 				checkClauses,
 			)
+			if checkClauses.columnLevel[checkClauseKey(tableName, constraintName)] && constraintType == checkConstraintType {
+				// MariaDB identifies a column CHECK by its column name. Its
+				// KEY_COLUMN_USAGE row has no column, so retain this catalog fact.
+				constraint.ColumnName = constraintName
+				constraint.ColumnLevelCheck = true
+			}
 			if constraint.ForeignTable != nil {
 				constraint.ForeignSchema = foreignSchema(referencedSchema)
 			}
@@ -1568,6 +1575,7 @@ func (r *Reader) readCheckConstraintClauses(ctx context.Context, dbName string) 
 	clauses := checkConstraintClauses{
 		byTableName: make(map[constraintKey]string),
 		byName:      make(map[string]string),
+		columnLevel: make(map[constraintKey]bool),
 	}
 	if !r.catalogNamesCheckConstraintTables() {
 		// The target's set says TABLE_NAME is not there, so asking for it would
@@ -1581,7 +1589,7 @@ func (r *Reader) readCheckConstraintClauses(ctx context.Context, dbName string) 
 		return clauses, err
 	}
 
-	err := r.readTableAwareCheckConstraintClauses(ctx, dbName, clauses.byTableName)
+	err := r.readTableAwareCheckConstraintClauses(ctx, dbName, &clauses)
 	if err == nil {
 		return clauses, nil
 	}
@@ -1635,9 +1643,9 @@ func isMissingCheckConstraintsTable(err error) bool {
 	return strings.Contains(strings.ToUpper(mysqlErr.Message), "CHECK_CONSTRAINTS")
 }
 
-func (r *Reader) readTableAwareCheckConstraintClauses(ctx context.Context, dbName string, clauses map[constraintKey]string) error {
+func (r *Reader) readTableAwareCheckConstraintClauses(ctx context.Context, dbName string, clauses *checkConstraintClauses) error {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT CONSTRAINT_NAME, TABLE_NAME, CHECK_CLAUSE
+		SELECT CONSTRAINT_NAME, TABLE_NAME, CHECK_CLAUSE, LEVEL
 		FROM information_schema.CHECK_CONSTRAINTS
 		WHERE CONSTRAINT_SCHEMA = ?`, dbName)
 	if err != nil {
@@ -1646,11 +1654,13 @@ func (r *Reader) readTableAwareCheckConstraintClauses(ctx context.Context, dbNam
 	defer rows.Close()
 
 	for rows.Next() {
-		var constraintName, tableName, checkClause string
-		if err := rows.Scan(&constraintName, &tableName, &checkClause); err != nil {
+		var constraintName, tableName, checkClause, level string
+		if err := rows.Scan(&constraintName, &tableName, &checkClause, &level); err != nil {
 			return err
 		}
-		clauses[checkClauseKey(tableName, constraintName)] = checkClause
+		key := checkClauseKey(tableName, constraintName)
+		clauses.byTableName[key] = checkClause
+		clauses.columnLevel[key] = strings.EqualFold(level, "Column")
 	}
 	return rows.Err()
 }

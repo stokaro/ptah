@@ -100,6 +100,9 @@ type Comparison struct {
 	// ConstraintComments reports that a constraint carries a comment the
 	// catalog reports, so a changed comment is a changed constraint.
 	ConstraintComments bool `json:"constraint_comments,omitempty"`
+	// ColumnCheckDropByModify reports that a column-level CHECK cannot be
+	// dropped as a constraint and is removed by restating its column instead.
+	ColumnCheckDropByModify bool `json:"column_check_drop_by_modify,omitempty"`
 	// RoutineNamesFold reports that the server folds the case of a routine
 	// name it is given, so two spellings that fold together name one routine.
 	RoutineNamesFold bool `json:"routine_names_fold,omitempty"`

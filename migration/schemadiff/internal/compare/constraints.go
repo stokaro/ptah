@@ -110,6 +110,9 @@ func ConstraintsWithSemantics(
 	cov := removalCoverage(desired, semantics)
 	for constraintKey, dbConstraint := range dbConstraints {
 		if _, exists := genConstraints[constraintKey]; !exists && cov.PlansRemovalIn(dbConstraint.Schema) {
+			if mariaDBColumnCheckChange(desired, database, diff, dbConstraint, nil, dialect, semantics) {
+				continue
+			}
 			diff.ConstraintsRemoved = appendConstraintRemoval(diff.ConstraintsRemoved, dbConstraint, semantics)
 			diff.ForeignKeysRemovedWithTables = appendForeignKeyRemoval(diff.ForeignKeysRemovedWithTables, dbConstraint, semantics)
 		}
@@ -123,6 +126,9 @@ func ConstraintsWithSemantics(
 	for constraintKey, genConstraint := range genConstraints {
 		if dbConstraint, exists := dbConstraints[constraintKey]; exists {
 			if constraintDefinitionsChanged(genConstraint, dbConstraint, dialect, semantics, opts) || underRemovedKey[constraintKey] {
+				if mariaDBColumnCheckChange(desired, database, diff, dbConstraint, &genConstraint, dialect, semantics) {
+					continue
+				}
 				// For now, treat modified constraints as removed + added
 				// In the future, we could add a ConstraintsModified field to SchemaDiff
 				diff.ConstraintsRemoved = appendConstraintRemoval(diff.ConstraintsRemoved, dbConstraint, semantics)
@@ -138,6 +144,11 @@ func ConstraintsWithSemantics(
 				})
 			}
 		}
+	}
+	if comparisonOf(dialect).ColumnCheckDropByModify {
+		slices.SortFunc(diff.TablesModified, func(a, b difftypes.TableDiff) int {
+			return strings.Compare(a.TableName, b.TableName)
+		})
 	}
 	slices.SortFunc(diff.ConstraintsValidated, func(a, b difftypes.ConstraintValidation) int {
 		return cmp.Or(strings.Compare(a.TableName, b.TableName), strings.Compare(a.Name, b.Name))

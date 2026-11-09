@@ -105,3 +105,23 @@ func TestReadCheckConstraintClauses_CapabilityChoosesTheFirstSpelling(t *testing
 		})
 	}
 }
+
+func TestReadCheckConstraintClauses_MariaDBKeepsTheCheckLevel(t *testing.T) {
+	c := qt.New(t)
+	db := dbtest.Open(c, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
+		c.Assert(query, qt.Contains, "CHECK_CLAUSE, LEVEL")
+		return dbtest.QueryResult{
+			Columns: []string{"CONSTRAINT_NAME", "TABLE_NAME", "CHECK_CLAUSE", "LEVEL"},
+			Rows: [][]driver.Value{
+				{"c", "t", "`c` > 0", "Column"},
+				{"table_check", "t", "`c` < 10", "Table"},
+			},
+		}, nil
+	})
+	reader := NewMySQLReaderWithCapabilities(db.SQL, "app", capability.MariaDB1011())
+	clauses, err := reader.readCheckConstraintClauses(t.Context(), "app")
+	c.Assert(err, qt.IsNil)
+	c.Assert(clauses.byTableName[checkClauseKey("t", "c")], qt.Equals, "`c` > 0")
+	c.Assert(clauses.columnLevel[checkClauseKey("t", "c")], qt.IsTrue)
+	c.Assert(clauses.columnLevel[checkClauseKey("t", "table_check")], qt.IsFalse)
+}

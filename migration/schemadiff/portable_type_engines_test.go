@@ -110,7 +110,7 @@ func TestComparePortableType_ASerialColumnIsNotNull(t *testing.T) {
 func heldMariaDBJSONColumn(check *string) *catalog.Database {
 	held := heldTemporalColumn("longtext")
 	held.Constraints = []catalog.Constraint{{
-		Name: "c", TableName: "t", Type: "CHECK", ColumnName: "c", ColumnNames: []string{"c"}, CheckClause: check,
+		Name: "c", TableName: "t", Type: "CHECK", ColumnName: "c", ColumnNames: []string{"c"}, ColumnLevelCheck: true, CheckClause: check,
 	}}
 	return held
 }
@@ -141,8 +141,10 @@ func TestComparePortableType_MariaDBHoldsJSONAsCheckedText(t *testing.T) {
 
 	dropped, err := schemadiff.CompareWithDialect(c.Context(), temporalDeclaration("longtext"), heldMariaDBJSONColumn(&valid), "mariadb", runtime)
 	c.Assert(err, qt.IsNil)
-	c.Assert(dropped.TablesModified, qt.HasLen, 0)
-	c.Assert(dropped.ConstraintsRemoved, qt.HasLen, 1)
+	c.Assert(dropped.TablesModified, qt.HasLen, 1)
+	c.Assert(dropped.TablesModified[0].ColumnsModified, qt.HasLen, 1)
+	c.Assert(dropped.TablesModified[0].ColumnsModified[0].Changes["check"], qt.Equals, "json_valid(`c`) -> ")
+	c.Assert(dropped.ConstraintsRemoved, qt.HasLen, 0)
 }
 
 // TestComparePortableType_MySQLHasNoSuchCheck holds the same comparison on the engine with a
