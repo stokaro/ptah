@@ -823,21 +823,60 @@ func columnDefaultChange(
 		//
 		// It changes nothing where the two types agree, which is every
 		// comparison that does not already report a type change.
-		normalizedDbDefault := normalize.DefaultValue(dbDefault, genType)
-
 		idxName := "default"
 		if normalize.IsDefaultExpr(dbDefault) {
 			idxName = "default_expr"
 		}
-
-		normalizeGenDefaultFn := normalize.DefaultValue(genDefault, genType)
-
-		if normalizeGenDefaultFn != normalizedDbDefault {
+		if !columnDefaultsEqual(genDefault, dbDefault, genType, dialect,
+			genCol.Default == "" && genCol.DefaultExpr != "") {
 			return idxName, fmt.Sprintf("%s -> %s", dbDefault, genDefault)
 		}
 	}
 
 	return "", ""
+}
+
+// columnDefaultsEqual compares both values under the desired column type.
+// SQL Server's temporal functions are compared before general normalization
+// so an expression cannot match a quoted string with the same spelling.
+func columnDefaultsEqual(declared, reported, typeName, dialect string, declaredIsExpression bool) bool {
+	if same, recognized := compareTemporalDefaultFunctions(declared, reported, typeName, dialect, declaredIsExpression); recognized {
+		return same
+	}
+	return normalize.DefaultValue(declared, typeName) == normalize.DefaultValue(reported, typeName)
+}
+
+// compareTemporalDefaultFunctions compares SQL Server's current-time defaults
+// by function identity. A quoted string is never the function it spells.
+func compareTemporalDefaultFunctions(declared, reported, typeName, dialect string, declaredIsExpression bool) (same, recognized bool) {
+	if !comparisonOf(dialect).TemporalDefaultFunctions || !isTemporalDefaultType(typeName) {
+		return false, false
+	}
+	left, leftKnown := temporalDefaultFunction(declared)
+	leftKnown = leftKnown && declaredIsExpression
+	right, rightKnown := temporalDefaultFunction(reported)
+	return leftKnown && rightKnown && left == right, leftKnown || rightKnown
+}
+
+func isTemporalDefaultType(typeName string) bool {
+	base, _, _ := strings.Cut(strings.ToLower(strings.TrimSpace(typeName)), "(")
+	switch base {
+	case "date", "time", "datetime", "datetime2", "datetimeoffset", "smalldatetime":
+		return true
+	default:
+		return false
+	}
+}
+
+func temporalDefaultFunction(expression string) (string, bool) {
+	switch strings.ToUpper(strings.TrimSpace(expression)) {
+	case "GETDATE()", "CURRENT_TIMESTAMP":
+		return "getdate", true
+	case "SYSDATETIME()":
+		return "sysdatetime", true
+	default:
+		return "", false
+	}
 }
 
 // primaryKeyImpliesNotNull reports whether the dialect makes a primary key

@@ -138,6 +138,7 @@ END`,
 		// neither backs the other.
 		Comparison: descriptor.Comparison{
 			TimePrecision:                  descriptor.TimePrecision{Compared: true, Default: 7},
+			TemporalDefaultFunctions:       true,
 			BareTypes:                      descriptor.BareTypes{Stated: true, DecimalPrecision: 18, VariableLength: 1, FloatBits: 53, RealBits: 24},
 			DeclaredSchemas:                true,
 			MapsPortableTypes:              true,
@@ -181,7 +182,7 @@ END`,
 		// table before its timing. A column is an identity column through the
 		// IDENTITY property, which is how `db read` describes one.
 		Grammar: descriptor.Grammar{
-			Columns:    descriptor.ColumnGrammar{IdentityProperty: true},
+			Columns:    descriptor.ColumnGrammar{IdentityProperty: true, CurrentTimestampNiladic: true},
 			Keys:       descriptor.KeyGrammar{IndexKeywords: []string{"KEY", "INDEX"}},
 			Indexes:    descriptor.IndexGrammar{DropNamesTable: true, Nonclustered: true},
 			AlterTable: descriptor.AlterTableGrammar{AlterColumnDefinition: true},

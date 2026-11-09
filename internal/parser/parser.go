@@ -3697,13 +3697,8 @@ func (p *Parser) handleFunctionCallOrKeyword() (*ast.DefaultValue, error) {
 		}
 		return &ast.DefaultValue{Expression: value + casts}, nil
 	}
-
-	// PostgreSQL's current-time keywords are expressions without an empty
-	// argument list. CURRENT_TIMESTAMP() is invalid there. A precision such
-	// as CURRENT_TIMESTAMP(3) was already read by parseDefaultFunctionCall.
-	if p.target.grammar.Columns.CurrentTimeKeywords && slices.Contains([]string{
-		"CURRENT_TIMESTAMP", "CURRENT_DATE", "CURRENT_TIME", "LOCALTIMESTAMP", "LOCALTIME",
-	}, upperValue) {
+	// A precision such as CURRENT_TIMESTAMP(3) was already read as a call.
+	if p.isNiladicCurrentTimeKeyword(upperValue) {
 		return &ast.DefaultValue{Expression: value}, nil
 	}
 
@@ -3732,6 +3727,17 @@ func (p *Parser) handleFunctionCallOrKeyword() (*ast.DefaultValue, error) {
 
 	// Regular identifier/keyword
 	return &ast.DefaultValue{Value: value, ValueSet: true}, nil
+}
+
+// isNiladicCurrentTimeKeyword keeps the SQL Server CURRENT_TIMESTAMP rule
+// separate from engines that accept the whole current-time keyword family.
+func (p *Parser) isNiladicCurrentTimeKeyword(value string) bool {
+	if value == "CURRENT_TIMESTAMP" && p.target.grammar.Columns.CurrentTimestampNiladic {
+		return true
+	}
+	return p.target.grammar.Columns.CurrentTimeKeywords && slices.Contains([]string{
+		"CURRENT_TIMESTAMP", "CURRENT_DATE", "CURRENT_TIME", "LOCALTIMESTAMP", "LOCALTIME",
+	}, value)
 }
 
 // parseDefaultFunctionCall reads a function call in a default, from the name

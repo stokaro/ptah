@@ -96,6 +96,7 @@ func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 		},
 		"sqlserver": {
 			TimePrecision:                  descriptor.TimePrecision{Compared: true, Default: 7},
+			TemporalDefaultFunctions:       true,
 			BareTypes:                      descriptor.BareTypes{Stated: true, DecimalPrecision: 18, VariableLength: 1, FloatBits: 53, RealBits: 24},
 			DeclaredSchemas:                true,
 			MapsPortableTypes:              true,

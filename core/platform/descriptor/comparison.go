@@ -123,6 +123,10 @@ type Comparison struct {
 	// TimePrecision says how the engine reads a temporal column's fractional-seconds
 	// precision. The zero value compares none.
 	TimePrecision TimePrecision `json:"time_precision,omitzero"`
+	// TemporalDefaultFunctions reports that GETDATE() and CURRENT_TIMESTAMP
+	// are one default expression, while SYSDATETIME() keeps its higher precision.
+	// Function names are compared without regard to case.
+	TemporalDefaultFunctions bool `json:"temporal_default_functions,omitempty"`
 	// BareTypes says what a column holds whose type declares no length, precision or
 	// scale. The zero value states nothing, and such a type is compared by its name.
 	BareTypes BareTypes `json:"bare_types,omitzero"`

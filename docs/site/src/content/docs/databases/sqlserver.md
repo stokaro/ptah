@@ -390,6 +390,11 @@ statement without the `ADD DEFAULT`. The safety report treats the drop as a
 default change rather than as the removal of a constraint that protects data:
 a removed default is a warning, and a replaced one is safe.
 
+For temporal columns, the comparison ignores case in `GETDATE()` and
+`SYSDATETIME()`. It treats `CURRENT_TIMESTAMP` as `GETDATE()` because both
+return the same value. `SYSDATETIME()` remains distinct because it returns
+more fractional-second digits.
+
 SQL Server refuses to change the data type of a column that has a default, so
 a plan that changes the type drops the default first and sets it again after
 the `ALTER COLUMN`. It does this for a longer length of the same type too,

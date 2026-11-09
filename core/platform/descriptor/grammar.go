@@ -54,6 +54,10 @@ type ColumnGrammar struct {
 	// TimestampLocalTimeZone reports that TIMESTAMP accepts WITH LOCAL TIME ZONE,
 	// including after an explicit fractional precision.
 	TimestampLocalTimeZone bool `json:"timestamp_local_time_zone,omitempty"`
+	// CurrentTimestampNiladic reports that CURRENT_TIMESTAMP is a keyword
+	// without parentheses, while the other current-time names do not share
+	// that grammar. SQL Server accepts it as a default expression.
+	CurrentTimestampNiladic bool `json:"current_timestamp_niladic,omitempty"`
 	// CurrentTimeKeywords reports that CURRENT_TIMESTAMP, CURRENT_DATE,
 	// CURRENT_TIME, LOCALTIMESTAMP and LOCALTIME are keywords that take no
 	// empty argument list, so a default written with one of them is kept as
