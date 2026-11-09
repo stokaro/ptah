@@ -51,6 +51,9 @@ type Grammar struct {
 
 // ColumnGrammar states how the engine reads a column definition.
 type ColumnGrammar struct {
+	// TimestampLocalTimeZone reports that TIMESTAMP accepts WITH LOCAL TIME ZONE,
+	// including after an explicit fractional precision.
+	TimestampLocalTimeZone bool `json:"timestamp_local_time_zone,omitempty"`
 	// CurrentTimeKeywords reports that CURRENT_TIMESTAMP, CURRENT_DATE,
 	// CURRENT_TIME, LOCALTIMESTAMP and LOCALTIME are keywords that take no
 	// empty argument list, so a default written with one of them is kept as

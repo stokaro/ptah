@@ -3365,7 +3365,7 @@ func (p *Parser) appendIntervalFields(typeName string) string {
 
 // handleTimeZoneBehindPrecision reads the zone qualifier where a precision puts it,
 // behind the parentheses: `timestamp(3) with time zone`, which is how pg_dump writes
-// every such column.
+// every such column, and Oracle's `timestamp(3) with local time zone`.
 func (p *Parser) handleTimeZoneBehindPrecision(typeName string) string {
 	base, _, hasPrecision := strings.Cut(typeName, "(")
 	if name := strings.ToUpper(base); !hasPrecision || (name != "TIME" && name != "TIMESTAMP") {
@@ -3379,7 +3379,7 @@ func (p *Parser) handleTimeZoneBehindPrecision(typeName string) string {
 }
 
 // appendTimeZoneQualifier consumes `WITH TIME ZONE` or `WITHOUT TIME ZONE` onto
-// a TIME or TIMESTAMP.
+// a TIME or TIMESTAMP. Oracle's TIMESTAMP also takes `WITH LOCAL TIME ZONE`.
 //
 // The words go on the END, which is where SQL puts them. This prepended them:
 // `timestamp with time zone` parsed to `with timestamp time zone`, which is not
@@ -3390,9 +3390,17 @@ func (p *Parser) handleTimeZoneBehindPrecision(typeName string) string {
 // TIME and TIMESTAMP share this rather than carrying a copy each. They had a
 // copy each, both wrong the same way, which is how a fix reaches one of them.
 func (p *Parser) appendTimeZoneQualifier(typeName string) string {
+	base, _, _ := strings.Cut(typeName, "(")
+	withLocal := p.current.MatchIdentifierValue("WITH") &&
+		p.target.grammar.Columns.TimestampLocalTimeZone && strings.EqualFold(base, "TIMESTAMP")
 	typeName += " " + p.current.Value
 	p.advance()
 	p.skipWhitespace()
+	if withLocal && p.current.MatchIdentifierValue("LOCAL") {
+		typeName += " " + p.current.Value
+		p.advance()
+		p.skipWhitespace()
+	}
 
 	if !p.current.MatchIdentifierValue("TIME") {
 		return typeName

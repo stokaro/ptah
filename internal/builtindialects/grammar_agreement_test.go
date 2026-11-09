@@ -210,6 +210,7 @@ var oldParserSwitches = map[string]descriptor.Grammar{
 		},
 	},
 	platform.Oracle: {
+		Columns:    descriptor.ColumnGrammar{TimestampLocalTimeZone: true},
 		Keys:       descriptor.KeyGrammar{IndexKeywords: []string{"INDEX"}},
 		AlterTable: descriptor.AlterTableGrammar{Modify: descriptor.ModifyOther},
 		Statements: descriptor.StatementGrammar{UserTypes: true},
@@ -217,8 +218,8 @@ var oldParserSwitches = map[string]descriptor.Grammar{
 }
 
 // TestDescriptors_GrammarAgreesWithTheParserSwitches pins every built-in
-// descriptor's grammar, through every spelling that selects it, to what the
-// parser's dialect switches answered.
+// descriptor's grammar, through every spelling that selects it, to the
+// migrated parser switches and subsequent grammar additions.
 func TestDescriptors_GrammarAgreesWithTheParserSwitches(t *testing.T) {
 	c := qt.New(t)
 	c.Assert(builtindialects.Descriptors(), qt.HasLen, len(oldParserSwitches))

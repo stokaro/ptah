@@ -192,7 +192,8 @@ its fractional precision, an `INTERVAL` its two precisions, and a `VARCHAR2` or
 catalog names the time zone forms `TIMESTAMP WITH TZ` and
 `TIMESTAMP WITH LOCAL TZ`, which no statement accepts, and the read writes
 them out as `TIMESTAMP(6) WITH TIME ZONE` and
-`TIMESTAMP(6) WITH LOCAL TIME ZONE`.
+`TIMESTAMP(6) WITH LOCAL TIME ZONE`. SQL schema files accept the full local
+time zone spelling with or without an explicit fractional precision.
 
 The read describes the subset the model can carry, and records the rest as
 found and not described rather than flattening it:
