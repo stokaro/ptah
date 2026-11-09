@@ -597,7 +597,7 @@ func diffResolvedStates(
 // the stored body and the default schema for comparison; the replay and its
 // cleanup stay inside the dev database.
 func rebaseDevViewBodies(state, database atlassource.State, dialect string) atlassource.State {
-	if described(dialect).Driver != "mysql" || !schemaScopeNamesDatabase(dialect) ||
+	if !described(dialect).Schemas.StoredViewBodyNamesDatabase ||
 		state.Kind == atlassource.KindDatabase ||
 		state.DB == nil || state.Schema == nil || state.WholeServer ||
 		database.Kind != atlassource.KindDatabase || database.WholeServer ||
