@@ -273,7 +273,8 @@ var migrationRuleMeta = map[string]ruleMeta{
 		YDBNote:   "`DROP TABLE`",
 	},
 	"DS110P": {
-		Summary: "a column a view or routine reads is dropped, and the finding names what breaks",
+		Summary: "a column a view or routine still reads is dropped, and the finding names what breaks; " +
+			"a view dropped or rebuilt with a plain projection before the column drop is left out",
 		YDB:     YDBNeedsDevDatabase,
 		YDBNote: "what reads a column comes from a dev database replay",
 	},
