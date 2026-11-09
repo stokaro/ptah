@@ -713,9 +713,9 @@ var viewRebuildForwardCases = []viewRebuildCase{
 			"relation order_report options= acl= comment=",
 			"relation order_totals options= acl= comment=",
 			"populated order_totals=true",
-			// Restoring the old owner's EXECUTE materializes the default
-			// PUBLIC grant in proacl, without changing who may execute it.
-			"routine report_total() strict=false parallel=u definer=false config= acl==X/{owner} comment=",
+			// A new routine already gives its owner EXECUTE and PUBLIC the
+			// default EXECUTE, so the rebuild needs no redundant GRANT.
+			"routine report_total() strict=false parallel=u definer=false config= acl=default comment=",
 		},
 	},
 	{
