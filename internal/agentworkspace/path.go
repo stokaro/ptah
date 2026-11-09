@@ -5,6 +5,8 @@ import (
 	"path"
 	"slices"
 	"strings"
+
+	"ptah.run/internal/pathguard"
 )
 
 // reservedWindowsNames are the device names Win32 resolves before it ever
@@ -66,14 +68,18 @@ func validateRelativePath(raw string) (string, error) {
 
 // refuseUnsafeSpelling catches the whole-string properties.
 func refuseUnsafeSpelling(raw string) error {
-	if strings.HasPrefix(raw, "/") {
-		return fmt.Errorf("path %q is absolute: %w", raw, ErrUnsafePath)
+	if pathguard.StartsAtRoot(raw) {
+		switch {
+		case strings.HasPrefix(raw, "/"):
+			return fmt.Errorf("path %q is absolute: %w", raw, ErrUnsafePath)
+		case strings.HasPrefix(raw, `\`):
+			return fmt.Errorf("path %q contains a backslash: %w", raw, ErrUnsafePath)
+		default:
+			return fmt.Errorf("path %q names a drive: %w", raw, ErrUnsafePath)
+		}
 	}
 	if strings.ContainsRune(raw, '\\') {
 		return fmt.Errorf("path %q contains a backslash: %w", raw, ErrUnsafePath)
-	}
-	if hasDriveLetter(raw) {
-		return fmt.Errorf("path %q names a drive: %w", raw, ErrUnsafePath)
 	}
 	for _, char := range raw {
 		if char < 0x20 || char == 0x7f {
@@ -81,17 +87,6 @@ func refuseUnsafeSpelling(raw string) error {
 		}
 	}
 	return nil
-}
-
-// hasDriveLetter reports a `C:` prefix, which is a drive on Windows and an
-// ordinary directory name on Linux -- so a repository written on one is
-// unusable on the other.
-func hasDriveLetter(raw string) bool {
-	if len(raw) < 2 || raw[1] != ':' {
-		return false
-	}
-	letter := raw[0]
-	return (letter >= 'a' && letter <= 'z') || (letter >= 'A' && letter <= 'Z')
 }
 
 // validateSegment catches the per-component properties.
