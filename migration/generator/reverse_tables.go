@@ -368,6 +368,7 @@ func tableGrantsFromRemovals(
 		}
 		ref := difftypes.GrantRef{
 			Role:       strings.TrimSpace(grant.Role),
+			GrantedBy:  strings.TrimSpace(grant.GrantedBy),
 			Privilege:  strings.ToUpper(strings.TrimSpace(grant.Privilege)),
 			ObjectType: "TABLE",
 			ObjectName: grant.QualifiedTarget(),

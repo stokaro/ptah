@@ -86,6 +86,7 @@ func reverseSchemaDiffWithPrior(
 	}
 	reversed := &difftypes.SchemaDiff{
 		IdentifierSemantics: cloneIdentifierSemantics(diff.IdentifierSemantics),
+		ConnectedRole:       diff.ConnectedRole,
 		TablePreparation:    cloneTablePreparation(diff.TablePreparation),
 
 		// Reverse table operations.

@@ -33,6 +33,7 @@ type refusedFixture struct {
 }
 
 var supplementalDiffCategories = map[string]string{
+	"ConnectedRole":                   "the connection role used to read PostgreSQL grants; it decides whether a planned REVOKE can remove the observed grant but renders no statement alone",
 	"DeclaredTables":                  "every table the declaration holds, carried so a foreign key can be resolved to the table it references -- usually one this diff does not touch. It is an INPUT to rendering rather than a change: on its own it creates no operation, and a fixture would assert that a list of tables plans nothing (stokaro/ptah#2315)",
 	"DeclaredForeignKeys":             "every foreign key the schema the plan runs against holds, carried so the MySQL family can drop a column's keys before MODIFY and put them back. PostgreSQL changes a column type in place and touches no key doing it, so this planner reads the field nowhere; a fixture here would assert that a list of foreign keys plans nothing (stokaro/ptah#2315)",
 	"DeclaredFunctions":               "the declaration order and call graph of the declared functions, carried so the additions can be ordered caller-after-callee. The bodies travel with the additions and it renders nothing of its own; TestPlanner_GenerateMigrationAST_OrdersFunctionsByDependencies drives it through FunctionsAdded, which is the only way it can be exercised (stokaro/ptah#2315)",
