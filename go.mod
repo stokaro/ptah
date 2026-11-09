@@ -50,7 +50,7 @@ require (
 	golang.org/x/sys v0.50.0
 	golang.org/x/term v0.47.0
 	golang.org/x/text v0.43.0
-	golang.org/x/tools v0.52.1-0.20261106210606-4f7264d11672
+	golang.org/x/tools v0.52.1-0.20261109152204-fe606802c0cd
 	google.golang.org/protobuf v1.36.12
 	modernc.org/sqlite v1.62.0
 	oras.land/oras-go/v2 v2.7.0
