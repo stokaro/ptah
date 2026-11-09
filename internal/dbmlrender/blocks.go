@@ -122,10 +122,10 @@ func column(field schemamodel.Field, key primaryKey) string {
 	return line + " [" + strings.Join(settings, ", ") + "]"
 }
 
-// columnType is the column's declared type, quoted when it names an enum so a
-// reader can tell a type name from a keyword.
+// columnType quotes enum names and types with whitespace so DBML reads each
+// type as one name.
 func columnType(field schemamodel.Field) string {
-	if len(field.Enum) > 0 {
+	if len(field.Enum) > 0 || strings.ContainsAny(field.Type, " \t\r\n") {
 		return quote(field.Type)
 	}
 	return field.Type

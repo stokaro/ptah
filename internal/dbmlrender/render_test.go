@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/dbmlparse"
 	"ptah.run/internal/dbmlrender"
 )
 
@@ -48,6 +49,26 @@ Table "public"."users" {
 
 Ref "posts_author_fk": "public"."posts"."author_id" > "public"."users"."id" [delete: cascade]
 `)
+}
+
+// TestRender_ATypeWithSpacesReadsBack preserves the SQL type and its column
+// setting through the DBML document shown by schema inspect.
+func TestRender_ATypeWithSpacesReadsBack(t *testing.T) {
+	c := qt.New(t)
+	db := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Event", Name: "events"}},
+		Fields: []schemamodel.Field{{StructName: "Event", Name: "recorded_at", Type: "timestamp with time zone"}},
+	}
+
+	result, err := renderDBML(c, db, dbmlrender.Options{})
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.DBML, qt.Contains, `"recorded_at" "timestamp with time zone" [not null]`)
+
+	parsed, err := dbmlparse.Parse(result.DBML, dbmlparse.Options{})
+	c.Assert(err, qt.IsNil)
+	c.Assert(parsed.Fields, qt.HasLen, 1)
+	c.Assert(parsed.Fields[0].Type, qt.Equals, "timestamp with time zone")
+	c.Assert(parsed.Fields[0].Nullable, qt.IsFalse)
 }
 
 // TestRender_IsByteDeterministic is the canonical-output contract.
