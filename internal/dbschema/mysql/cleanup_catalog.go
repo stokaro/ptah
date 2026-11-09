@@ -2,8 +2,11 @@ package mysql
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
+
+	mysqldriver "github.com/go-sql-driver/mysql"
 
 	"ptah.run/core/platform"
 	"ptah.run/internal/dbreset"
@@ -19,12 +22,11 @@ func (w *Writer) CleanupCatalog() dbreset.CleanupCatalog {
 	if described, _ := platform.Lookup(w.dialect); !described.Cleanup.StoredObjects {
 		return nil
 	}
-	return mysqlCleanupCatalog{}
+	return mysqlCleanupCatalog{dialect: w.dialect}
 }
 
-// mysqlCleanupCatalog reads the MySQL family's information_schema for a
-// cleanup plan.
-type mysqlCleanupCatalog struct{}
+// mysqlCleanupCatalog reads the MySQL family's catalogs for a cleanup plan.
+type mysqlCleanupCatalog struct{ dialect string }
 
 // userDatabasesQuery lists the user databases of a whole server, one
 // SCHEMA_NAME per row in name order. It is the list a cleanup of the server
@@ -129,15 +131,51 @@ func cleanupCrossDatabaseForeignKeys(ctx context.Context, q dbreset.Querier) ([]
 
 // Objects reports the stored programs and MariaDB sequences that the
 // writer's listCleanupObjects returns but the reader never records:
-// information_schema.routines, information_schema.events, and the SEQUENCE
-// rows of information_schema.tables.
+// information_schema.routines, the event catalog, and the SEQUENCE rows of
+// information_schema.tables.
 //
 // The scope mirrors the writer's cleanupSchema: schema when the connection
 // pins one, otherwise the session's current database. An object names no
 // schema, as the writer's cleanup drops it from that scope.
-func (mysqlCleanupCatalog) Objects(ctx context.Context, q dbreset.Querier, schema string) ([]dbreset.CleanupObject, error) {
+func (c mysqlCleanupCatalog) Objects(ctx context.Context, q dbreset.Querier, schema string) ([]dbreset.CleanupObject, error) {
 	schema = strings.TrimSpace(schema)
-	rows, err := q.QueryContext(ctx, `
+	objects, err := readStoredObjects(ctx, q, schema, storedObjectsQuery)
+	if err == nil || c.dialect != platform.MariaDB || ctx.Err() != nil {
+		return objects, err
+	}
+	var mysqlErr *mysqldriver.MySQLError
+	if !errors.As(err, &mysqlErr) || mysqlErr.Number != 1577 || !eventSchedulerDisabled(ctx, q) {
+		return nil, err
+	}
+	// A disabled MariaDB event scheduler refuses information_schema.EVENTS,
+	// including an empty result. mysql.event still lists existing events, so
+	// the dry-run plan can name them without treating the kind as empty.
+	objects, err = readStoredObjects(ctx, q, schema, disabledMariaDBStoredObjectsQuery)
+	if err != nil {
+		return nil, fmt.Errorf("inspect MariaDB events with disabled scheduler: %w", err)
+	}
+	return objects, nil
+}
+
+// MariaDB also uses error 1577 for damaged event tables. Only a confirmed
+// disabled scheduler permits reading mysql.event instead of the normal view.
+func eventSchedulerDisabled(ctx context.Context, q dbreset.Querier) bool {
+	rows, err := q.QueryContext(ctx, "SELECT @@event_scheduler")
+	if err != nil {
+		return false
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return false
+	}
+	var state string
+	if rows.Scan(&state) != nil || rows.Next() || rows.Err() != nil {
+		return false
+	}
+	return strings.EqualFold(state, "DISABLED")
+}
+
+const storedObjectsQuery = `
 		SELECT object_name, object_kind
 		FROM (
 			SELECT routine_name AS object_name, routine_type AS object_kind
@@ -157,9 +195,34 @@ func (mysqlCleanupCatalog) Objects(ctx context.Context, q dbreset.Querier, schem
 			WHERE table_schema = COALESCE(NULLIF(?, ''), DATABASE())
 			  AND table_type = 'SEQUENCE'
 		) AS cleanup_objects
-		ORDER BY object_kind, object_name`,
-		schema, schema, schema,
-	)
+		ORDER BY object_kind, object_name`
+
+// The disabled scheduler makes information_schema.EVENTS fail even for an
+// empty database. mysql.event is the same persisted event list on MariaDB.
+const disabledMariaDBStoredObjectsQuery = `
+		SELECT object_name, object_kind
+		FROM (
+			SELECT routine_name AS object_name, routine_type AS object_kind
+			FROM information_schema.routines
+			WHERE routine_schema = COALESCE(NULLIF(?, ''), DATABASE())
+
+			UNION ALL
+
+			SELECT name, 'EVENT'
+			FROM mysql.event
+			WHERE db = COALESCE(NULLIF(?, ''), DATABASE())
+
+			UNION ALL
+
+			SELECT table_name, 'SEQUENCE'
+			FROM information_schema.tables
+			WHERE table_schema = COALESCE(NULLIF(?, ''), DATABASE())
+			  AND table_type = 'SEQUENCE'
+		) AS cleanup_objects
+		ORDER BY object_kind, object_name`
+
+func readStoredObjects(ctx context.Context, q dbreset.Querier, schema, query string) ([]dbreset.CleanupObject, error) {
+	rows, err := q.QueryContext(ctx, query, schema, schema, schema)
 	if err != nil {
 		return nil, fmt.Errorf("inspect stored objects: %w", err)
 	}

@@ -785,6 +785,12 @@ or trigger because its body can reference the cleanup realm without a catalog
 dependency. Grant these privileges only to credentials used with a dedicated
 disposable dev database.
 
+When MariaDB runs with `event_scheduler=DISABLED`, `db drop-all --dry-run`
+reads event names from `mysql.event` if `information_schema.EVENTS` refuses the
+query. Existing events remain in the plan. MariaDB also refuses `DROP EVENT`
+while the scheduler is disabled, so executing that plan requires a server that
+can drop the events.
+
 A dev server, a `--dev-url` that names no database, is emptied database by
 database and needs none of these. The run found no user database there before
 it replayed, so it drops only the databases the session sees, which are the

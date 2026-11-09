@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	mysqldriver "github.com/go-sql-driver/mysql"
 
 	"ptah.run/core/platform"
 	"ptah.run/internal/dbreset"
@@ -73,6 +74,94 @@ func TestCleanupCatalog_Objects_FailurePath(t *testing.T) {
 
 	c.Assert(err, qt.ErrorMatches, `inspect stored objects: unsupported object kind "TRIGGER"`)
 	c.Assert(objects, qt.IsNil)
+}
+
+// MariaDB reports the disabled scheduler at the end of a result set, even
+// when the database holds an event. The fallback must discard that incomplete
+// result and read the event from mysql.event.
+func TestCleanupCatalog_Objects_UsesMariaDBEventTableWhenSchedulerDisabled(t *testing.T) {
+	c := qt.New(t)
+	refused := &mysqldriver.MySQLError{Number: 1577, Message: "Cannot proceed, because event scheduler is disabled"}
+	queries := []string{"FROM information_schema.events", "SELECT @@event_scheduler", "FROM mysql.event"}
+	argCounts := []int{3, 0, 3}
+	results := []dbtest.QueryResult{
+		{Columns: []string{"object_name", "object_kind"}, TerminalErr: refused},
+		{Columns: []string{"@@event_scheduler"}, Rows: [][]driver.Value{{"DISABLED"}}},
+		{Columns: []string{"object_name", "object_kind"}, Rows: [][]driver.Value{
+			{"e_tick", "EVENT"},
+			{"f_one", "FUNCTION"},
+		}},
+	}
+	next := 0
+	db := dbtest.Open(c, func(query string, args []driver.NamedValue) (dbtest.QueryResult, error) {
+		c.Assert(query, qt.Contains, queries[next])
+		c.Assert(args, qt.HasLen, argCounts[next])
+		result := results[next]
+		next++
+		return result, nil
+	})
+
+	objects, err := mysql.NewMySQLWriter(nil, "", platform.MariaDB).CleanupCatalog().Objects(c.Context(), db.SQL, "app")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(objects, qt.DeepEquals, []dbreset.CleanupObject{
+		{Kind: "event", Name: "e_tick"},
+		{Kind: "function", Name: "f_one"},
+	})
+	c.Assert(db.QueryCount(), qt.Equals, 3)
+}
+
+func TestCleanupCatalog_Objects_DoesNotHideDamagedEventTable(t *testing.T) {
+	c := qt.New(t)
+	refused := &mysqldriver.MySQLError{Number: 1577, Message: "system tables used by Event Scheduler were found damaged"}
+	queries := []string{"FROM information_schema.events", "SELECT @@event_scheduler"}
+	results := []dbtest.QueryResult{
+		{Columns: []string{"object_name", "object_kind"}, TerminalErr: refused},
+		{Columns: []string{"@@event_scheduler"}, Rows: [][]driver.Value{{"ON"}}},
+	}
+	next := 0
+	db := dbtest.Open(c, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
+		c.Assert(query, qt.Contains, queries[next])
+		result := results[next]
+		next++
+		return result, nil
+	})
+
+	objects, err := mysql.NewMySQLWriter(nil, "", platform.MariaDB).CleanupCatalog().Objects(c.Context(), db.SQL, "app")
+
+	c.Assert(err, qt.ErrorMatches, `iterate stored objects: Error 1577: system tables used by Event Scheduler were found damaged`)
+	c.Assert(objects, qt.IsNil)
+	c.Assert(db.QueryCount(), qt.Equals, 2)
+}
+
+func TestCleanupCatalog_Objects_DoesNotRetryOtherEventFailures(t *testing.T) {
+	c := qt.New(t)
+	refused := &mysqldriver.MySQLError{Number: 1142, Message: "access denied"}
+	db := dbtest.Open(c, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
+		c.Assert(query, qt.Contains, "FROM information_schema.events")
+		return dbtest.QueryResult{Columns: []string{"object_name", "object_kind"}, TerminalErr: refused}, nil
+	})
+
+	objects, err := mysql.NewMySQLWriter(nil, "", platform.MariaDB).CleanupCatalog().Objects(c.Context(), db.SQL, "app")
+
+	c.Assert(err, qt.ErrorMatches, `iterate stored objects: Error 1142: access denied`)
+	c.Assert(objects, qt.IsNil)
+	c.Assert(db.QueryCount(), qt.Equals, 1)
+}
+
+func TestCleanupCatalog_Objects_DoesNotUseMariaDBEventTableForMySQL(t *testing.T) {
+	c := qt.New(t)
+	refused := &mysqldriver.MySQLError{Number: 1577, Message: "event catalog unavailable"}
+	db := dbtest.Open(c, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
+		c.Assert(query, qt.Contains, "FROM information_schema.events")
+		return dbtest.QueryResult{Columns: []string{"object_name", "object_kind"}, TerminalErr: refused}, nil
+	})
+
+	objects, err := mysql.NewMySQLWriter(nil, "", platform.MySQL).CleanupCatalog().Objects(c.Context(), db.SQL, "app")
+
+	c.Assert(err, qt.ErrorMatches, `iterate stored objects: Error 1577: event catalog unavailable`)
+	c.Assert(objects, qt.IsNil)
+	c.Assert(db.QueryCount(), qt.Equals, 1)
 }
 
 // TestCleanupCatalog_OrdersAndLocksNothing pins the two answers the MySQL
