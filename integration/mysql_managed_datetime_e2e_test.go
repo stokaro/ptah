@@ -52,7 +52,7 @@ type Event struct {
 				parseTime bool
 				location  string
 			}{
-				{name: "driver text"},
+				{name: "driver text", location: "UTC"},
 				{name: "parsed UTC", parseTime: true, location: "UTC"},
 				{name: "parsed Tokyo", parseTime: true, location: "Asia/Tokyo"},
 			} {
@@ -63,10 +63,8 @@ type Event struct {
 					config, err := mysqldriver.ParseDSN(dsn)
 					c.Assert(err, qt.IsNil)
 					config.ParseTime = setting.parseTime
-					if setting.location != "" {
-						config.Loc, err = time.LoadLocation(setting.location)
-						c.Assert(err, qt.IsNil)
-					}
+					config.Loc, err = time.LoadLocation(setting.location)
+					c.Assert(err, qt.IsNil)
 					address := scheme + "://" + config.FormatDSN()
 					result := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: root},
 						"migrations", "data", "--db-url", address, "--root-dir", root,
