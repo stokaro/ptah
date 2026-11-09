@@ -148,6 +148,7 @@ func sqlServerStatementForms() descriptor.StatementForms {
 func sqliteStatementForms() descriptor.StatementForms {
 	return descriptor.StatementForms{
 		Drops: []descriptor.Drop{
+			{Kind: descriptor.DropKindTable},
 			{Kind: descriptor.DropKindView, IfExists: true},
 			{Kind: descriptor.DropKindTrigger, IfExists: true},
 		},

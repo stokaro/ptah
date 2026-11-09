@@ -625,9 +625,11 @@ func ruleDisabled(ruleID string, disabled []string) bool {
 // The statement is read by the dialect's lexical rules, as the splitter that
 // cut it read the file: by the SQL standard's, a PostgreSQL comment that holds
 // a comment ends at the first */, and its text reads as the statement's first
-// word (stokaro/ptah#5586).
+// word (stokaro/ptah#5586). A query in leading parentheses is still an
+// unread SELECT or WITH statement; the outer parentheses are not a SQL error.
 func firstKeyword(statement, dialect string) (keyword string, offset int) {
 	l := lexer.NewLexerWithOptions(statement, dialectlexer.Options(dialect))
+	opening := -1
 	for {
 		token := l.NextToken()
 		switch token.Type {
@@ -636,8 +638,18 @@ func firstKeyword(statement, dialect string) (keyword string, offset int) {
 		case lexer.TokenWhitespace, lexer.TokenComment:
 			continue
 		case lexer.TokenIdentifier:
-			return strings.ToUpper(token.Value), token.Start
+			word := strings.ToUpper(token.Value)
+			if opening >= 0 && word != "SELECT" && word != "WITH" {
+				return "", opening
+			}
+			return word, token.Start
 		default:
+			if token.Type == lexer.TokenOperator && token.Value == "(" {
+				if opening < 0 {
+					opening = token.Start
+				}
+				continue
+			}
 			return "", token.Start
 		}
 	}

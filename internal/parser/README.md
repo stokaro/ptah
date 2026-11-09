@@ -84,6 +84,10 @@ drop the rest.
 - `CREATE VIEW ... AS SELECT ...`
 - `CREATE OR REPLACE VIEW ... AS SELECT ...`
 
+A `SQL SECURITY` clause between the view name and `AS` is reported as
+unsupported. The shared view model does not retain that clause, so accepting
+it here would silently discard the selected security mode.
+
 ### CREATE FUNCTION
 - PostgreSQL-style `CREATE FUNCTION ... RETURNS ... AS $...$ LANGUAGE ...`
 - PostgreSQL-style `CREATE OR REPLACE FUNCTION ... AS '...' LANGUAGE ...`
