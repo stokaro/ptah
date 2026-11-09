@@ -366,6 +366,10 @@ func TestCheckpointAcceptsUnicodeStatementOnLatin1DatabaseE2E(t *testing.T) {
 			var value string
 			c.Assert(run.conn.QueryRowContext(c.Context(), "SELECT v FROM "+name).Scan(&value), qt.IsNil)
 			c.Assert(value, qt.Equals, "🚀")
+		})
+	}
+}
+
 // A non-strict session must not turn a changed log value into a successful
 // write. Strictness applies to the log statement alone: the migration body
 // still runs with the mode the caller selected.
