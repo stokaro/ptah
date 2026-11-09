@@ -1734,9 +1734,11 @@ func cloneDatabase(schema *catalog.Database) *catalog.Database {
 		// Where the database is does not change with what a filter keeps of
 		// it, and a YDB plan names a Serial column's sequence by that path.
 		DatabasePath: schema.DatabasePath,
-		// Who read it does not change either, and a saved plan's fingerprint
-		// follows this role's memberships whatever the filter keeps.
-		ConnectedRole: schema.ConnectedRole,
+		// Who read it does not change either. Routine replacement checks its
+		// definer against this account, and a saved plan's fingerprint follows
+		// this role's memberships whatever the filter keeps.
+		CurrentAccount: schema.CurrentAccount,
+		ConnectedRole:  schema.ConnectedRole,
 		// A table the read found and left out is still in the database, and a
 		// filter cannot change that: dropping the record would let a declared
 		// table at it plan a CREATE TABLE the database rejects.
