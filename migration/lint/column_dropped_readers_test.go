@@ -15,9 +15,13 @@ import (
 // the caller resolved from the state that version starts from.
 func dropEmailAnalysis(c *qt.C, dependents []lintext.BaselineDependent) lint.Analysis {
 	c.Helper()
+	return columnReaderAnalysis(c, "ALTER TABLE users DROP COLUMN email;", dependents)
+}
 
+func columnReaderAnalysis(c *qt.C, sql string, dependents []lintext.BaselineDependent) lint.Analysis {
+	c.Helper()
 	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{
-		"1_drop.sql": "ALTER TABLE users DROP COLUMN email;",
+		"1_drop.sql": sql,
 	}), lint.Options{
 		Dialect:            "postgres",
 		DirFormat:          migrationfile.DirFormatAtlas,
@@ -25,6 +29,67 @@ func dropEmailAnalysis(c *qt.C, dependents []lintext.BaselineDependent) lint.Ana
 	})
 	c.Assert(err, qt.IsNil)
 	return analysis
+}
+
+// TestColumnDroppedWithReaders_UsesTheViewAtTheDropStatement checks a view
+// rebuilt within the same file against the column it reads at that point.
+func TestColumnDroppedWithReaders_UsesTheViewAtTheDropStatement(t *testing.T) {
+	dependents := []lintext.BaselineDependent{
+		{Version: 1, Table: "users", Column: "email", Dependent: "active_users", Kind: "view"},
+	}
+	tests := []struct {
+		name, sql string
+		want      int
+	}{
+		{
+			name: "view rebuilt without the column",
+			sql:  "DROP VIEW active_users; CREATE VIEW active_users AS SELECT name FROM users; ALTER TABLE users DROP COLUMN email;",
+		},
+		{
+			name: "view remains dropped",
+			sql:  "DROP VIEW active_users; ALTER TABLE users DROP COLUMN email;",
+		},
+		{
+			name: "quoted view and column names",
+			sql:  `DROP VIEW "active_users"; CREATE VIEW "active_users" AS SELECT "name" FROM "users"; ALTER TABLE "users" DROP COLUMN "email";`,
+		},
+		{
+			name: "one view in a drop list is rebuilt",
+			sql:  "DROP VIEW IF EXISTS other_users, active_users; CREATE VIEW active_users AS SELECT name FROM users; ALTER TABLE users DROP COLUMN email;",
+		},
+		{
+			name: "replacement still reads the column",
+			sql:  "DROP VIEW active_users; CREATE VIEW active_users AS SELECT email FROM users; ALTER TABLE users DROP COLUMN email;",
+			want: 1,
+		},
+		{
+			name: "replacement selects every column",
+			sql:  "DROP VIEW active_users; CREATE VIEW active_users AS SELECT * FROM users; ALTER TABLE users DROP COLUMN email;",
+			want: 1,
+		},
+		{
+			name: "replacement has an unproved clause",
+			sql:  "DROP VIEW active_users; CREATE VIEW active_users AS SELECT name FROM users WHERE name <> ''; ALTER TABLE users DROP COLUMN email;",
+			want: 1,
+		},
+		{
+			name: "replacement selects the whole row",
+			sql:  "DROP VIEW active_users; CREATE VIEW active_users AS SELECT users FROM users; ALTER TABLE users DROP COLUMN email;",
+			want: 1,
+		},
+		{
+			name: "another view was rebuilt",
+			sql:  "DROP VIEW other_users; CREATE VIEW other_users AS SELECT name FROM users; ALTER TABLE users DROP COLUMN email;",
+			want: 1,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			analysis := columnReaderAnalysis(c, test.sql, dependents)
+			c.Assert(messagesFor(analysis, "DS110P"), qt.HasLen, test.want)
+		})
+	}
 }
 
 // messagesFor returns the messages one rule reported across the analysis.

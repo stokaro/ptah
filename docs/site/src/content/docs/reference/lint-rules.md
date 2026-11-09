@@ -274,7 +274,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 | `DS107` | dropping a schema, type, extension, function, procedure, trigger, role, policy, or YDB user, group, topic, transfer, async replication, coordination node, or streaming query removes behavior or data | both | Ptah |
 | `DS108` | TRUNCATE deletes every row in the table | both | Ptah |
 | `DS109` | DISABLE ROW LEVEL SECURITY removes an access-control protection | both | Ptah |
-| `DS110P` | a column a view or routine reads is dropped, and the finding names what breaks | both | Ptah |
+| `DS110P` | a column a view or routine still reads is dropped, and the finding names what breaks; a view dropped or rebuilt with a plain projection before the column drop is left out | both | Ptah |
 | `DS111P` | NO FORCE ROW LEVEL SECURITY exempts the table owner from every policy on the table | both | Ptah |
 | `MF101` | a unique index built over existing rows fails on the first duplicate | both | Atlas |
 | `MF101P` | no matching .down.sql exists, so a failed deploy cannot be rolled back mechanically | both | Ptah |

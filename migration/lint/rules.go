@@ -552,7 +552,8 @@ func droppedColumnStatements(file *File) []int {
 func droppedColumnReaderFindings(file *File, stmt *Statement, index int) []Finding {
 	var findings []Finding
 	for _, subject := range droppedColumnSubjects(stmt.Words, stmt.sourceWords) {
-		readers := file.dependents.readers(lintkit.NormalizeIdent(subject.Parent), lintkit.NormalizeIdent(subject.Name))
+		readers := readersAtColumnDrop(file, index, subject.Name,
+			file.dependents.readers(lintkit.NormalizeIdent(subject.Parent), lintkit.NormalizeIdent(subject.Name)))
 		if len(readers) == 0 {
 			continue
 		}
