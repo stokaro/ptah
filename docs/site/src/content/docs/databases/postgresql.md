@@ -744,8 +744,8 @@ PostgreSQL 18 names every `NOT NULL`. So `schema diff --from <17> --to <18>` see
 a name on every column, most of which nobody wrote.
 
 - **The name the server gives.** `<table>_<column>_not_null`, cut to 63 bytes as
-  the server cuts it, asks for nothing. The plan writes `NOT NULL`, and the next
-  plan reads synced.
+  the server cuts it, asks for nothing. The plan writes `NOT NULL` without a
+  constraint name, including on `ptah-compat`, and the next plan reads synced.
 - **Any other name on a column the plan adds or creates** is refused, because the
   target would lose it. A name the server numbered, such as `t_c_not_null1`, is
   refused too: the catalog does not say who wrote a name, so it reads as written.

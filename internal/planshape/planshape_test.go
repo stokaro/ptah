@@ -835,20 +835,28 @@ func TestApply_TheColumnsOfAKey_HappyPath(t *testing.T) {
 // name the author chose stays in it.
 func TestApply_TheNameOfANotNull_HappyPath(t *testing.T) {
 	tests := []struct {
-		name  string
-		table string
-		named string
-		want  string
+		name   string
+		table  string
+		column string
+		named  string
+		want   string
 	}{
-		{name: "the server's own name", table: "t", named: "t_c_not_null", want: ""},
-		{name: "the server's own name, of a quoted table", table: "Tbl", named: "Tbl_c_not_null", want: ""},
-		{name: "the server's own name, in a schema", table: "app.t", named: "t_c_not_null", want: ""},
-		{name: "the author's name", table: "t", named: "c_required", want: "c_required"},
+		{name: "the server's own name", table: "t", column: "c", named: "t_c_not_null", want: ""},
+		{name: "the server's own name, of a quoted table", table: "Tbl", column: "c", named: "Tbl_c_not_null", want: ""},
+		{name: "the server's own name, in a schema", table: "app.t", column: "c", named: "t_c_not_null", want: ""},
+		{
+			name:   "the server's cut name for a long column",
+			table:  "t",
+			column: "a_column_name_that_is_much_longer_than_fifty_four_bytes_x",
+			named:  "t_a_column_name_that_is_much_longer_than_fifty_four_by_not_null",
+			want:   "",
+		},
+		{name: "the author's name", table: "t", column: "c", named: "c_required", want: "c_required"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			column := ast.NewColumn("c", "int")
+			column := ast.NewColumn(test.column, "int")
 			column.NotNullConstraintName = test.named
 
 			planshape.Apply(platform.Postgres, []ast.Node{ast.NewCreateTable(test.table).AddColumn(column)}, nil)
@@ -856,6 +864,20 @@ func TestApply_TheNameOfANotNull_HappyPath(t *testing.T) {
 			c.Assert(column.NotNullConstraintName, qt.Equals, test.want)
 		})
 	}
+}
+
+func TestApply_AddColumnOmitsTheServerCutNotNullName(t *testing.T) {
+	c := qt.New(t)
+	const columnName = "a_column_name_that_is_much_longer_than_fifty_four_bytes_x"
+	column := ast.NewColumn(columnName, "text").SetNotNull()
+	column.NotNullConstraintName = "t_a_column_name_that_is_much_longer_than_fifty_four_by_not_null"
+	alter := &ast.AlterTableNode{Name: "t", Operations: []ast.AlterOperation{&ast.AddColumnOperation{Column: column}}}
+
+	nodes := planshape.Apply(platform.Postgres, []ast.Node{alter}, nil)
+	got := must.Must(builtin.RenderSQL(platform.Postgres, nodes...))
+
+	wantComment := `-- POSTGRES: ADD COLUMN "` + columnName + `" fails if "t" holds any row; the column is NOT NULL and declares no default to fill it with.` + "\n"
+	c.Assert(got, qt.Equals, wantComment+`ALTER TABLE "t" ADD COLUMN "`+columnName+`" text NOT NULL;`+"\n\n")
 }
 
 // Constraints of one kind read by name, as a catalog lists them.
