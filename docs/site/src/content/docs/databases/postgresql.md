@@ -2161,6 +2161,10 @@ created nor dropped, even when your schema declares it, and never appears in a
 diff. Embedders can replace or extend the ignore list through the
 Go API — see [Reusable components](../../extend/components/).
 
+A foreign table can use a server backed by an extension's foreign data wrapper.
+Ptah does not manage foreign tables, so a plan to drop that extension refuses
+early and names the dependent table.
+
 Set the annotation's `schema` attribute, or the equivalent HCL/YAML field, to
 install an extension outside the default schema. Ptah creates the schema first
 and renders `CREATE EXTENSION ... WITH SCHEMA ...`; live inspection preserves

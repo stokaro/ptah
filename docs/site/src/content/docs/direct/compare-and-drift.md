@@ -334,10 +334,6 @@ has and the declaration does not, and plans `DROP EXTENSION`. That statement is
 destructive, so `--check-destructive` fails on it and a drift gate reports it on
 every run.
 
-On PostgreSQL, a foreign table may use a server backed by an extension's foreign
-data wrapper. Ptah cannot remove the foreign table from a schema document. A
-plan to drop that extension refuses early and names the dependent foreign table.
-
 Declaring the extension is not the way out. Declaring it hands Ptah the object,
 and that includes removing it; the server refuses that while anything uses it,
 and `CREATE EXTENSION IF NOT EXISTS` has no safe reverse.
