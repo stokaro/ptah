@@ -246,6 +246,9 @@ Ptah ne revendique pas une parité complète avec Atlas.
 La [présentation de la compatibilité](https://docs.ptah.run/edge/atlas/overview/)
 et les [résultats de conformité](https://docs.ptah.run/edge/atlas/conformance/)
 précisent la couverture mesurée et les différences.
+Le [comparatif Atlas et Ptah](https://blog.ptah.run/posts/atlas-vs-ptah-open-source/)
+présente les licences, les procédures, les bases de données prises en charge
+et les différences entre les outils.
 
 ## Licence et aide
 

@@ -237,6 +237,8 @@ claim full Atlas parity. The
 [compatibility overview](https://docs.ptah.run/edge/atlas/overview/)
 and [conformance results](https://docs.ptah.run/edge/atlas/conformance/)
 state the measured coverage and differences.
+The [Atlas vs Ptah comparison](https://blog.ptah.run/posts/atlas-vs-ptah-open-source/)
+explains licensing, workflows, database coverage, and where the tools differ.
 
 ## License and help
 
