@@ -120,7 +120,7 @@ func TestClickHouseIndexKeyComparisonE2E_FailurePath(t *testing.T) {
 	changed, changedErr, err := runPtahSplitStreams(ctx, []string{
 		"schema", "apply", "--schema-file", to, "--db-url", dbURL, "--auto-approve",
 	})
-	c.Assert(err, qt.ErrorMatches, `.*index "i_k" reads column "sx", which table t does not declare; .*`,
+	c.Assert(err, qt.ErrorMatches, `clickhouse: index "i_k": names column "sx", which table "t" does not declare`,
 		qt.Commentf("stdout:\n%s\nstderr:\n%s", changed, changedErr))
 
 	kept, keptErr, err := runPtahSplitStreams(ctx, []string{
