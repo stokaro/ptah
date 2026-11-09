@@ -228,17 +228,18 @@ through a chain of groups:
 - a role a statement in the plan names, such as the role it grants to or
   creates. A table with the same name as a role counts too.
 
-The chain is followed in the two directions privileges travel: what such a role
-holds, and who holds it. So a new member of a role the plan grants to makes the
-plan stale, and so does a group joining the groups of the role that runs it. A
-new member of a group the running role merely belongs to does not, because the
-running role holds nothing more.
+The fingerprint follows what a relevant role holds and who holds it. A new
+member of a role the plan grants to, or a new group of the applying role, makes
+the plan stale. Another member of a group the applying role already belongs to
+does not. A credential rotation outside those paths leaves the plan valid. YDB
+compares every membership, so its plans cover the whole graph.
 
-A credential rotation that creates a user and grants it a group with no tie to
-the plan leaves the plan valid. One that grants a group holding a privilege in
-the read makes every plan reading that privilege stale, on this database, because
-the new user now holds it. On a target that compares memberships, which is YDB,
-the plan covers all of them.
+MySQL and MariaDB list every role on the server, but a plan covers only roles
+it names or reaches through privileges, ownership, or memberships. Creating an
+unrelated role leaves it valid. PostgreSQL 16 and later capture each
+membership's `INHERIT` and `SET` options; changing a relevant option makes the
+plan stale. An `ADMIN`-only edge with both options false leaves an unrelated
+plan valid.
 
 When an embedding application selects an executable provider, the native JSON
 plan also records `provider`: the provider ID, its release version and the
@@ -627,17 +628,14 @@ plan, so this control is worth what review of that file is worth.
 - A plan file carries the fingerprint of the database it was computed against.
   Applying it to a database in a different state refuses on that fingerprint,
   whether or not the approval verifies.
-- The fingerprint reads memberships as the server's catalog lists them. On
-  PostgreSQL that leaves out the reserved `pg_` roles and the bootstrap
-  superuser, and the `INHERIT` and `SET` options of a membership, so changing
-  those does not make a plan stale.
+- The fingerprint omits PostgreSQL's reserved `pg_` roles and bootstrap
+  superuser. PostgreSQL 16 and later report each membership's `INHERIT` and
+  `SET` options, so a change to an option the plan depends on makes it stale.
 - A role without superuser that creates another role on PostgreSQL 16 or later
-  receives an `ADMIN` membership in it, and on MariaDB any creator holds the role
-  it created. Both count as memberships, so a plan run by the creator is stale
-  after the role appears, and after that role joins a group.
-- On MySQL and MariaDB a read lists every role on the server, and the fingerprint
-  covers that list. `CREATE ROLE` anywhere on the server makes a plan stale, and
-  `CREATE USER` does not.
+  receives an `ADMIN` membership without `INHERIT` or `SET`. That edge alone
+  leaves an unrelated plan valid. A plan that names the new role still covers it.
+- MySQL and MariaDB list every role on the server, but a plan covers only roles
+  it names or reaches. Creating an unrelated role leaves the plan valid.
 
 ## Next steps
 

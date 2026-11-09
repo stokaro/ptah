@@ -1465,8 +1465,8 @@ type ObjectOwner struct {
 	OwnerCanLogin *bool `json:"owner_can_login"`
 }
 
-// RoleMembership is one role-in-role edge: Member holds everything Role
-// grants, subject to Role's inheritance setting.
+// RoleMembership is one role-in-role edge. The membership options determine
+// whether Member inherits Role's privileges or may switch to Role.
 //
 // Either endpoint may be outside the roles Ptah manages. Keeping the edge
 // lets access analysis follow privileges without declaring those principals.
@@ -1477,6 +1477,10 @@ type RoleMembership struct {
 	Member string `json:"member"`
 	// AdminOption reports whether Member may grant Role onward.
 	AdminOption bool `json:"admin_option"`
+	// InheritOption and SetOption report the per-membership options on
+	// PostgreSQL 16 and later. Nil means the server did not report an option.
+	InheritOption *bool `json:"inherit_option,omitempty"`
+	SetOption     *bool `json:"set_option,omitempty"`
 }
 
 // Grant represents a privilege grant read from the database.

@@ -1,5 +1,5 @@
-// Package rolegraph follows the role-in-role edges a database read reports, and
-// selects the ones a saved plan depends on.
+// Package rolegraph follows the role-in-role edges a database read reports,
+// and selects the memberships and role attributes a saved plan depends on.
 //
 // A read reports the whole graph, because access analysis has to follow a
 // privilege through roles the read does not describe. A plan's source
@@ -37,6 +37,8 @@ import (
 // [capability.RoleMembership] compares memberships, so any edge can change the
 // plan. A read that does not say which role it ran as leaves the role running
 // the plan unknown.
+// An edge known to allow neither inheritance nor SET ROLE joins the plan only
+// when a statement names one of its roles.
 //
 // scope is the dialect's [descriptor.Roles.OutOfScope]. Under
 // [descriptor.RoleScopeNone] the listed roles are the whole server's, so being
@@ -45,6 +47,55 @@ func ForPlan(database *catalog.Database, statements []string, scope descriptor.R
 	if database.ConnectedRole == "" || capabilities.Has(capability.RoleMembership) {
 		return database.RoleMemberships
 	}
+	// PostgreSQL can give a role ADMIN without allowing inheritance or SET
+	// ROLE. Such an edge cannot change a plan that never names the role.
+	effective := make([]catalog.RoleMembership, 0, len(database.RoleMemberships))
+	for _, edge := range database.RoleMemberships {
+		if optionEnabled(edge.InheritOption) || optionEnabled(edge.SetOption) {
+			effective = append(effective, edge)
+		}
+	}
+	related := Related(effective, planRoles(database, statements, scope))
+	// A plan that names a role can depend on its ADMIN-only memberships too,
+	// for example when dropping that role.
+	related = append(related, Related(database.RoleMemberships, Named(database.RoleMemberships, statements))...)
+	return sortMemberships(related)
+}
+
+// An unreported option stays eligible. Only a known false/false pair proves
+// the edge conveys no privilege and no ability to switch roles.
+func optionEnabled(option *bool) bool { return option == nil || *option }
+
+// ForPlanRoles keeps the role attributes a saved plan can depend on. A reader
+// with server-wide roles reports unrelated accounts too; creating one of them
+// must not replace a plan for another database. A role named by the plan, a
+// privilege, an owner, or a relevant membership still changes the fingerprint.
+func ForPlanRoles(database *catalog.Database, statements []string, scope descriptor.RoleScope, capabilities capability.Capabilities) []catalog.Role {
+	if scope != descriptor.RoleScopeNone || database.ConnectedRole == "" || capabilities.Has(capability.RoleMembership) {
+		return database.Roles
+	}
+	needed := make(map[string]bool)
+	for _, name := range planRoles(database, statements, scope) {
+		needed[name] = true
+	}
+	for _, edge := range ForPlan(database, statements, scope, capabilities) {
+		needed[edge.Role], needed[edge.Member] = true, true
+	}
+	for _, name := range NamedRoles(database.Roles, statements) {
+		needed[name] = true
+	}
+	var roles []catalog.Role
+	for _, role := range database.Roles {
+		if needed[role.Name] {
+			roles = append(roles, role)
+		}
+	}
+	return roles
+}
+
+// planRoles collects the roles whose attributes or privileges can affect a
+// plan. The same roots select memberships and server-wide role attributes.
+func planRoles(database *catalog.Database, statements []string, scope descriptor.RoleScope) []string {
 	roles := []string{database.ConnectedRole}
 	if scope != descriptor.RoleScopeNone {
 		for _, role := range database.Roles {
@@ -61,7 +112,16 @@ func ForPlan(database *catalog.Database, statements []string, scope descriptor.R
 		roles = append(roles, accountUser(function.Definer))
 	}
 	roles = append(roles, Named(database.RoleMemberships, statements)...)
-	return Related(database.RoleMemberships, roles)
+	return roles
+}
+
+// NamedRoles returns listed roles whose names appear in a statement body.
+func NamedRoles(roles []catalog.Role, statements []string) []string {
+	names := make([]string, 0, len(roles))
+	for _, role := range roles {
+		names = append(names, role.Name)
+	}
+	return namesInStatements(names, statements)
 }
 
 // accountUser is the user part of a `user@host` account, which is how a
@@ -96,14 +156,38 @@ func Related(memberships []catalog.RoleMembership, roles []string) []catalog.Rol
 			related = append(related, edge)
 		}
 	}
-	slices.SortFunc(related, func(left, right catalog.RoleMembership) int {
+	return sortMemberships(related)
+}
+
+func sortMemberships(memberships []catalog.RoleMembership) []catalog.RoleMembership {
+	slices.SortFunc(memberships, func(left, right catalog.RoleMembership) int {
 		return cmp.Or(
 			strings.Compare(left.Role, right.Role),
 			strings.Compare(left.Member, right.Member),
 			compareBool(left.AdminOption, right.AdminOption),
+			compareOptionalBool(left.InheritOption, right.InheritOption),
+			compareOptionalBool(left.SetOption, right.SetOption),
 		)
 	})
-	return slices.Compact(related)
+	return slices.CompactFunc(memberships, func(left, right catalog.RoleMembership) bool {
+		return left.Role == right.Role && left.Member == right.Member && left.AdminOption == right.AdminOption &&
+			compareOptionalBool(left.InheritOption, right.InheritOption) == 0 &&
+			compareOptionalBool(left.SetOption, right.SetOption) == 0
+	})
+}
+
+func compareOptionalBool(left, right *bool) int {
+	if left == nil || right == nil {
+		switch {
+		case left == nil && right == nil:
+			return 0
+		case left == nil:
+			return -1
+		default:
+			return 1
+		}
+	}
+	return compareBool(*left, *right)
 }
 
 func compareBool(left, right bool) int {
@@ -150,13 +234,17 @@ func reach(memberships []catalog.RoleMembership, roles []string, step func(catal
 // case, because a server folds an unquoted name and the statement's spelling
 // need not be the catalog's. A caller strips comments first.
 func Named(memberships []catalog.RoleMembership, statements []string) []string {
-	lowered := make([]string, len(statements))
-	for i, statement := range statements {
-		lowered[i] = strings.ToLower(statement)
-	}
 	roles := make([]string, 0, 2*len(memberships))
 	for _, edge := range memberships {
 		roles = append(roles, edge.Role, edge.Member)
+	}
+	return namesInStatements(roles, statements)
+}
+
+func namesInStatements(roles, statements []string) []string {
+	lowered := make([]string, len(statements))
+	for i, statement := range statements {
+		lowered[i] = strings.ToLower(statement)
 	}
 	slices.Sort(roles)
 	var named []string

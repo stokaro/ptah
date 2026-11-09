@@ -4382,11 +4382,18 @@ func (r *Reader) readObjectOwners(ctx context.Context) ([]catalog.ObjectOwner, e
 // [pgreservedrole.ExcludeSQL] the role read uses, so the two lists cannot come to
 // disagree about what "reserved" means (stokaro/ptah#1950).
 func (r *Reader) readRoleMemberships(ctx context.Context) ([]catalog.RoleMembership, error) {
+	options := `NULL::boolean AS inherit_option, NULL::boolean AS set_option`
+	if r.dialect == platform.Postgres {
+		// PostgreSQL 16 adds these keys. Reading the row as JSON gives NULL
+		// for either key on older servers without a version-dependent query.
+		options = `(to_jsonb(m)->>'inherit_option')::boolean, (to_jsonb(m)->>'set_option')::boolean`
+	}
 	query := `
 		SELECT
 			role.rolname AS role_name,
 			member.rolname AS member_name,
-			m.admin_option
+			m.admin_option,
+			` + options + `
 		FROM pg_auth_members m
 		JOIN pg_roles role ON role.oid = m.roleid
 		JOIN pg_roles member ON member.oid = m.member
@@ -4403,8 +4410,15 @@ func (r *Reader) readRoleMemberships(ctx context.Context) ([]catalog.RoleMembers
 	memberships := make([]catalog.RoleMembership, 0)
 	for rows.Next() {
 		var membership catalog.RoleMembership
-		if err := rows.Scan(&membership.Role, &membership.Member, &membership.AdminOption); err != nil {
+		var inheritOption, setOption sql.NullBool
+		if err := rows.Scan(&membership.Role, &membership.Member, &membership.AdminOption, &inheritOption, &setOption); err != nil {
 			return nil, fmt.Errorf("failed to scan role membership: %w", err)
+		}
+		if inheritOption.Valid {
+			membership.InheritOption = new(inheritOption.Bool)
+		}
+		if setOption.Valid {
+			membership.SetOption = new(setOption.Bool)
 		}
 		memberships = append(memberships, membership)
 	}
