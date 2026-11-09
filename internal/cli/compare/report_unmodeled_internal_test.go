@@ -23,12 +23,12 @@ func TestWriteComparisonNamesWhatItDidNotCompare(t *testing.T) {
 	event := []catalog.UnmodeledObject{{Kind: "event", Name: "e_tick", Reason: "nothing compares it"}}
 	withheld := schemadiff.Diagnostics{Common: []coverage.Object{undecidedRole("reporter")}}
 	tests := []struct {
-		name      string
-		diff      *difftypes.SchemaDiff
-		undecided schemadiff.Diagnostics
-		unmodeled []catalog.UnmodeledObject
-		sql       string
-		want      string
+		name       string
+		diff       *difftypes.SchemaDiff
+		undecided  schemadiff.Diagnostics
+		unmodeled  []catalog.UnmodeledObject
+		statements []string
+		want       string
 	}{
 		{
 			name:      "nothing differs",
@@ -44,10 +44,10 @@ func TestWriteComparisonNamesWhatItDidNotCompare(t *testing.T) {
 			want: "No schema differences detected.\n",
 		},
 		{
-			name:      "a difference",
-			diff:      &difftypes.SchemaDiff{TablesAdded: difftypes.TableChanges{{Name: "users"}}},
-			unmodeled: event,
-			sql:       "CREATE TABLE users (id INT);\n",
+			name:       "a difference",
+			diff:       &difftypes.SchemaDiff{TablesAdded: difftypes.TableChanges{{Name: "users"}}},
+			unmodeled:  event,
+			statements: []string{"CREATE TABLE users (id INT);\n"},
 			want: `Differences detected (1 category):
   tables_added (1): users
 
@@ -77,7 +77,7 @@ Not compared (1):
 			c := qt.New(t)
 			var stdout, stderr bytes.Buffer
 
-			writeComparison(c.Context(), &stdout, &stderr, test.diff, test.undecided, test.unmodeled, test.sql, "mysql")
+			writeComparison(c.Context(), &stdout, &stderr, test.diff, test.undecided, test.unmodeled, test.statements, "mysql")
 
 			c.Assert(stdout.String(), qt.Equals, test.want)
 		})

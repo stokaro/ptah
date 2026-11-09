@@ -1,7 +1,7 @@
 package compare
 
-// White-box testing required: validates nonEmptyDiffExitCode, which is the
-// package-local adapter between schema diff results and CLI exit codes.
+// White-box testing required: validates the package-local comparison report
+// adapter and the schema diff to CLI exit-code mapping.
 
 import (
 	"testing"
@@ -10,9 +10,38 @@ import (
 
 	"ptah.run/core/coverage"
 	"ptah.run/core/difftypes"
+	"ptah.run/core/renderer"
 	"ptah.run/internal/cli/internal/exitcode"
+	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
 )
+
+func TestComparisonStatementsKeepRendererBoundaries(t *testing.T) {
+	c := qt.New(t)
+	fragments := renderer.SQLFragments([]string{"SELECT 1;", "SELECT 2;"})
+	plan := planner.RenderedPlan{
+		Result:  renderer.Result{Complete: true, ExecutableUnits: true, Fragments: fragments},
+		Dialect: "external",
+	}
+
+	statements, err := comparisonStatements(plan)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements, qt.DeepEquals, []string{"SELECT 1;", "SELECT 2;"})
+}
+
+func TestComparisonStatementsKeepBuiltInDelimiters(t *testing.T) {
+	c := qt.New(t)
+	plan := planner.RenderedPlan{Result: renderer.Result{
+		Complete:  true,
+		Fragments: renderer.SQLFragments([]string{"DROP TABLE t;\n", "DROP TABLE u;\n"}),
+	}}
+
+	statements, err := comparisonStatements(plan)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements, qt.DeepEquals, []string{"DROP TABLE t;\nDROP TABLE u;\n"})
+}
 
 func TestCompareExitCode_EmptyDiff(t *testing.T) {
 	c := qt.New(t)
