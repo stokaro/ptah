@@ -122,7 +122,7 @@ statements the row records as applied, and what the database holds afterward:
 A `partial` row is resumed with `ptah migrations up --allow-dirty`, which skips the
 statements the row counts. An `unknown` row has no statement to resume from. Inspect
 the database and finish the migration by hand, then record it with
-`ptah migrations repair --version <version>`.
+`ptah migrations repair --version <version> --force`.
 
 A server can turn this off. CockroachDB 24.3 keeps `autocommit_before_ddl` off, and
 a YugabyteDB server started with `ysql_yb_ddl_transaction_block_enabled` rolls schema

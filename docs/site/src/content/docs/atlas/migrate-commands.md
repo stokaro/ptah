@@ -305,14 +305,16 @@ Restore the reviewed source file or repair the recorded history explicitly; a
 different pending file cannot supply the missing body or committed-prefix
 contract.
 
-Automatic resume refuses and names `ptah migrations repair --version <v>` when
+Automatic resume refuses and names metadata repair when
 a run was interrupted mid-statement, the statement count changed, the committed
 source prefix changed, or `partial_hashes` is malformed or disagrees with
 `applied`. It also refuses negative `applied` or `total` values and
 `applied > total`. Legacy Atlas rows without `partial_hashes` may resume only
 while the stored full-file hash still matches. Revision listing, status, and
 version operations reject the same invalid counters instead of classifying an
-equal negative pair as clean.
+equal negative pair as clean. Inspect the database and finish any missing SQL
+before `ptah migrations repair --version <v> --force` records an incomplete up
+migration applied.
 
 ## Rolling back
 

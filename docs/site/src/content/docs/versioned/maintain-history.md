@@ -215,7 +215,7 @@ same way, because no count describes what stayed; see
 [What a failed migration leaves](../../databases/distributed/#what-a-failed-migration-leaves).
 
 Inspect the database, apply what is missing yourself, then
-`ptah migrations repair --version <version>` records the result. A rollback
+`ptah migrations repair --version <version> --force` records the result. A rollback
 interrupted the same way is recorded with `--force` once you restore what it
 reverted, or with `ptah migrations set --version <previous>` if you finish the
 rollback by hand — version 0 where the migration is the oldest one in the
@@ -244,8 +244,8 @@ marker instead of replacing it with an ordinary failure.
 If the process exits between those writes, the statement may or may not have
 committed. Inspect the database before changing the revision row. Ptah rejects
 `--resume-from` while the unknown-outcome marker is present because automatic
-replay could duplicate committed SQL. Repair without `--resume-from` only after
-you have reconciled the schema by hand.
+replay could duplicate committed SQL. Use `repair --force` without
+`--resume-from` only after you have reconciled the schema by hand.
 
 Fix the migration file (it is unapplied, so `edit` applies), re-hash, and
 repair. On a `direction=up` row, `--resume-from` executes the remaining up
@@ -292,8 +292,10 @@ Repaired migration 5
 ```
 
 Status then reports the version as applied and the directory continues
-normally. Without `--resume-from`, `repair` resolves the revision row for
-state you have already fixed by hand in the database.
+normally. Plain `repair` refuses to mark an incomplete up migration applied
+without running its remaining SQL. Use `--resume-from` to run a verified
+suffix, or use `--force` only after you have run or reconciled the missing SQL
+yourself. A metadata-only repair reports that no migration SQL ran.
 
 Repairing a version that is not dirty is refused (exit `2`):
 
@@ -301,8 +303,9 @@ Repairing a version that is not dirty is refused (exit `2`):
 error: migration 1 is not dirty; rerun with --force to rewrite it
 ```
 
-`--force` rewrites (or creates) the revision row anyway — a last resort for
-reconciling revision metadata that no longer matches reality.
+`--force` rewrites (or creates) the revision row anyway. For an up migration,
+it records the migration applied without running SQL. Use it only to reconcile
+revision metadata with database work you have verified yourself.
 
 ### Repair over a half-built concurrent index
 

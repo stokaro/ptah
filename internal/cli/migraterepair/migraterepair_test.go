@@ -25,6 +25,7 @@ func TestMigrateRepairCommand_Creation(t *testing.T) {
 	c.Assert(cmd.Flag("migrations-dir"), qt.IsNotNil)
 	c.Assert(cmd.Flag("version"), qt.IsNotNil)
 	c.Assert(cmd.Flag("force"), qt.IsNotNil)
+	c.Assert(cmd.Flag("force").Usage, qt.Contains, "record an incomplete up migration applied without running SQL")
 	c.Assert(cmd.Flag("resume-from"), qt.IsNotNil)
 }
 
@@ -58,7 +59,7 @@ func TestMigrateRepairCommand_AtlasFormatUsesRepairSemantics(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", output.String()))
-	c.Assert(output.String(), qt.Equals, "Repaired migration 1\n")
+	c.Assert(output.String(), qt.Equals, "Updated migration 1 revision metadata; no migration SQL ran\n")
 	db, err := sql.Open("sqlite", dbPath)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() {
@@ -77,4 +78,7 @@ WHERE version = '1'`,
 	c.Assert(applied, qt.Equals, 1)
 	c.Assert(total, qt.Equals, 1)
 	c.Assert(partialHashes, qt.Equals, "null")
+	var created int
+	c.Assert(db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'users'`).Scan(&created), qt.IsNil)
+	c.Assert(created, qt.Equals, 0)
 }

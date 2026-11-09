@@ -52,6 +52,10 @@ func NewMigrateRepairCommand() *cobra.Command {
 half-applied migration manually, or resume the migration from a specific
 statement.
 
+Without --resume-from, repair runs no migration SQL. An incomplete up
+migration requires --force to record it applied after you have run or
+reconciled the missing SQL yourself.
+
 The revision records which direction left it dirty, and repair follows it. A
 migration that failed on the way up resumes its up statements and is recorded
 applied. A rollback that stopped partway resumes its down statements and its
@@ -77,7 +81,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringVar(&opts.version, versionFlag, "", "Migration version to repair (required)")
 	flags.StringVar(&opts.dirFormat, dirFormatFlag, string(migrationfile.DirFormatAuto), "Migration directory format: auto, ptah, or atlas")
 	flags.StringVar(&opts.atlasEnv, atlasEnvFlag, "", "Value exposed as .Env when rendering Atlas SQL template migrations")
-	flags.BoolVar(&opts.force, forceFlag, false, "Rewrite or create the revision row even when it is not dirty")
+	flags.BoolVar(&opts.force, forceFlag, false, "Allow metadata-only repair: record an incomplete up migration applied without running SQL, or rewrite or create its revision row")
 	flags.StringVar(&opts.resumeFrom, resumeFromFlag, "", "Execute the remaining statements of the body that failed, starting from this 1-based statement number. An up migration is then marked applied; a rollback's revision is removed")
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
 	dbcli.RegisterMigrationsSchemaFlag(flags, &opts.migrationsSchema)
@@ -177,7 +181,11 @@ func migrateRepairCommand(cmd *cobra.Command, opts *options) error {
 		return err
 	}
 
-	fmt.Fprintf(cmd.OutOrStdout(), "Repaired migration %d\n", version)
+	if resumeFrom == 0 {
+		fmt.Fprintf(cmd.OutOrStdout(), "Updated migration %d revision metadata; no migration SQL ran\n", version)
+	} else {
+		fmt.Fprintf(cmd.OutOrStdout(), "Repaired migration %d\n", version)
+	}
 	return nil
 }
 

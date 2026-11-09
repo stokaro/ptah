@@ -727,12 +727,14 @@ and pipelines share a directory:
   describe the original pre-migration state. Automatic continuation is
   up-direction only: a row left dirty by an interrupted rollback is refused so
   up SQL cannot be resumed from a down-statement offset. Use
-  `ptah migrations repair` when the row cannot be resumed automatically: an
+  `ptah migrations repair` after inspecting the database when the row cannot
+  be resumed automatically: an
   interrupted rollback, a process whose last statement has an unknown outcome,
   changed or unverifiable committed-prefix metadata, an edit that changed the
   file's statement count, or a dirty row for a migration whose file was rebased
   away. Legacy dirty rows without prefix metadata may resume only while their
-  full-file checksum still matches.
+  full-file checksum still matches. Repairing an incomplete up row without
+  running its missing SQL requires `--force` after manual reconciliation.
 - **Version bound** (`--to-version`): apply pending migrations up to and
   including one exact version, and stop there. An approved plan names the
   versions it covers before the run starts, and this is how the run is held to

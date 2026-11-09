@@ -368,15 +368,20 @@ func TestRollbackThatLeavesNoCountIsEndedByHandE2E_FailurePath(t *testing.T) {
 	_, retried := target.runUp(c, dir, "--allow-dirty")
 	resumed := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: c.TempDir()},
 		"migrations", "repair", "--db-url", target.url, "--migrations-dir", dir, "--version", "1", "--resume-from", "2")
-	repaired := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: c.TempDir()},
+	plainRepair := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: c.TempDir()},
 		"migrations", "repair", "--db-url", target.url, "--migrations-dir", dir, "--version", "1")
+	repaired := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: c.TempDir()},
+		"migrations", "repair", "--db-url", target.url, "--migrations-dir", dir, "--version", "1", "--force")
 
 	c.Assert(retried.Outcome, qt.Equals, migrator.RunOutcomeUnknown)
 	c.Assert(retried.Error.Message, qt.Matches, `(?s).*left some statements in place and undid others; inspect the database.*`)
 	c.Assert(resumed.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", resumed.Stdout, resumed.Stderr))
 	c.Assert(resumed.Stderr, qt.Contains, "omit --resume-from")
 	c.Assert(target.rowsIn(c, "absent"), qt.Equals, 0)
+	c.Assert(plainRepair.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", plainRepair.Stdout, plainRepair.Stderr))
+	c.Assert(plainRepair.Stderr, qt.Contains, "unknown statement outcome")
 	c.Assert(repaired.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", repaired.Stdout, repaired.Stderr))
+	c.Assert(repaired.Stdout, qt.Contains, "no migration SQL ran")
 	c.Assert(target.dirtyRow(c, dir), qt.IsNil)
 }
 

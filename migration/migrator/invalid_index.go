@@ -146,8 +146,8 @@ func samePostgresIndexIdentity(left, right migratorext.IndexState) bool {
 // The probe is PostgreSQL-only by nature -- see
 // [Migrator.postgresIndexStatesCreatedBySQLOn]. This deliberately ignores
 // opts.Force.
-// --force is documented as "Rewrite or create the revision row even when it is
-// not dirty" -- it relaxes a precondition about the metadata, not a fact about
+// --force is documented as metadata-only repair: it relaxes a precondition
+// about the revision row, not a fact about
 // the database. The escape hatch is REINDEX INDEX CONCURRENTLY, which fixes the
 // database rather than the bookkeeping about it. No flag on any surface relaxes
 // either refusal, for the same reason: a flag can only change what Ptah records
