@@ -96,7 +96,7 @@ func TestNoTransactionRepair_ClickHouseAtlasRevisionAfterManualReconciliation(t 
 		SETTINGS mutations_sync = 1`)
 	c.Assert(err, qt.IsNil)
 
-	err = mig.RepairMigration(t.Context(), migrator.RepairMigrationOptions{Version: 1})
+	err = mig.RepairMigration(t.Context(), migrator.RepairMigrationOptions{Version: 1, Force: true})
 	c.Assert(err, qt.IsNil)
 	var applied, total int
 	var failure string
