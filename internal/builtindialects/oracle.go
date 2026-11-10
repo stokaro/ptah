@@ -252,7 +252,18 @@ BEGIN
 EXCEPTION
     WHEN already_exists THEN NULL;
 END;`,
-		CreateTags: createTags,
+		CreateTags: `DECLARE
+    already_exists EXCEPTION;
+    PRAGMA EXCEPTION_INIT(already_exists, -955);
+BEGIN
+    EXECUTE IMMEDIATE 'CREATE TABLE {table_escaped} (
+    tag VARCHAR2(255) NOT NULL PRIMARY KEY,
+    version NUMBER(19) NOT NULL,
+    recorded_at TIMESTAMP NOT NULL
+)';
+EXCEPTION
+    WHEN already_exists THEN NULL;
+END;`,
 		CreateLog: `DECLARE
     already_exists EXCEPTION;
     PRAGMA EXCEPTION_INIT(already_exists, -955);
@@ -277,7 +288,12 @@ END;`,
 		EmptyStringIsNull: true,
 		Update:            updateRevision,
 		Respell:           respellRevision(),
-		UpsertTag:         upsertTagOnDuplicateKey,
+		UpsertTag: `MERGE INTO {table} target
+USING (SELECT ? tag, ? version, ? recorded_at FROM dual) source
+ON (target.tag = source.tag)
+WHEN MATCHED THEN UPDATE SET target.version = source.version, target.recorded_at = source.recorded_at
+WHEN NOT MATCHED THEN INSERT (tag, version, recorded_at)
+VALUES (source.tag, source.version, source.recorded_at)`,
 		// Oracle has no BIGINT: `CAST('12' AS BIGINT)` answers ORA-00902.
 		VersionCast:       "NUMBER(19)",
 		VersionLiteral:    "standard",
