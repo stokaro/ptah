@@ -3,6 +3,7 @@ package dbvulnerabilities
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -22,6 +23,7 @@ type options struct {
 	suppressions string
 	format       string
 	failOn       string
+	deployment   string
 }
 
 // NewCommand returns the native `db vulnerabilities` command.
@@ -33,8 +35,9 @@ func NewCommand() *cobra.Command {
 		Long: `Read a database's product and version, then match a pinned local advisory
 snapshot. PostgreSQL core and selected bundled contrib modules are covered.
 Unsupported products, unrecognized builds, stale advisories, and installed
-extensions without a reviewed matcher are reported as incomplete. The command
-does not contact an advisory service or upload database inventory.`,
+extensions without a reviewed matcher are reported as incomplete. A managed
+deployment is reported as not applicable to operator-managed server patching.
+The command does not contact an advisory service or upload database inventory.`,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return run(cmd, opts)
@@ -46,6 +49,7 @@ does not contact an advisory service or upload database inventory.`,
 	flags.StringVar(&opts.suppressions, "suppressions", "", "Local JSON file of scoped advisory suppressions")
 	flags.StringVar(&opts.format, "format", "table", "Output format: table or json")
 	flags.StringVar(&opts.failOn, "fail-on", "both", "CI policy: findings, incomplete, both, or none")
+	flags.StringVar(&opts.deployment, "deployment", "self-managed", "Server patch responsibility: self-managed or managed")
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	return cmd
 }
@@ -60,29 +64,30 @@ func run(cmd *cobra.Command, opts options) error {
 	if opts.failOn != "findings" && opts.failOn != "incomplete" && opts.failOn != "both" && opts.failOn != "none" {
 		return cmdutil.Fail(cmd, fmt.Errorf("--fail-on must be findings, incomplete, both, or none"))
 	}
-	snapshot, err := vulnerability.ReadSnapshot(opts.advisories)
-	if err != nil {
+	if opts.deployment != "self-managed" && opts.deployment != "managed" {
+		return cmdutil.Fail(cmd, fmt.Errorf("--deployment must be self-managed or managed"))
+	}
+	if err := vulnerability.ValidateAdvisoryInput(opts.advisories); err != nil {
 		printFailure(cmd, opts.format, "invalid", "advisory snapshot is unavailable or invalid")
 		return cmdutil.Fail(cmd, err)
 	}
 	now := time.Now().UTC()
-	suppressions, err := vulnerability.ReadSuppressions(opts.suppressions, snapshot, now)
-	if err != nil {
-		printFailure(cmd, opts.format, "not_assessed", "suppression file is unavailable or invalid")
-		return cmdutil.Fail(cmd, err)
-	}
 	conn, err := dbschema.ConnectToDatabase(cmd.Context(), opts.dbURL)
 	if err != nil {
 		printFailure(cmd, opts.format, "not_assessed", "database connection failed")
 		return cmdutil.Fail(cmd, fmt.Errorf("connect to --db-url: %w", err))
 	}
 	defer func() { _ = conn.Close() }()
-	inventory, err := vulnerability.Collect(cmd.Context(), conn)
+	report, err := vulnerability.Scan(cmd.Context(), conn, opts.advisories, opts.suppressions, now, opts.deployment)
 	if err != nil {
-		printFailure(cmd, opts.format, "not_assessed", "database inventory is unreadable")
+		var scanErr *vulnerability.ScanError
+		if errors.As(err, &scanErr) && scanErr.Stage == "advisory snapshot" {
+			printFailure(cmd, opts.format, "invalid", "advisory snapshot is unavailable or invalid")
+		} else {
+			printFailure(cmd, opts.format, "not_assessed", "database inventory or suppression file is unreadable")
+		}
 		return cmdutil.Fail(cmd, err)
 	}
-	report := vulnerability.Evaluate(inventory, snapshot, suppressions, now)
 	if opts.format == "json" {
 		encoder := json.NewEncoder(cmd.OutOrStdout())
 		encoder.SetIndent("", "  ")
@@ -115,8 +120,8 @@ func printFailure(cmd *cobra.Command, format, status, message string) {
 }
 
 func writeTable(w io.Writer, report vulnerability.Report) error {
-	if _, err := fmt.Fprintf(w, "Product: %s\nServer: %s\nAdvisories: %s (source SHA-256 %s; %d days old; %s)\nSnapshot SHA-256: %s\n",
-		report.Inventory.Product, report.Inventory.ServerBanner, report.Source.URL,
+	if _, err := fmt.Fprintf(w, "Product: %s\nServer: %s\nDeployment: %s (%s)\nAdvisories: %s (source SHA-256 %s; %d days old; %s)\nSnapshot SHA-256: %s\n",
+		report.Inventory.Product, report.Inventory.ServerBanner, report.Deployment, report.Applicability, report.Source.URL,
 		report.Source.SHA256, report.Source.AgeDays, report.Source.Status, report.Source.SnapshotSHA256); err != nil {
 		return err
 	}

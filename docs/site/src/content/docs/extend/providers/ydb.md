@@ -42,6 +42,10 @@ newest release this Ptah can run with `ptah providers install ydb`, or a chosen
 one with `--version`. A command that names a `ydb://` or `ydbs://` URL or the
 `ydb` dialect then selects the installed copy without a flag or a manifest; a
 manifest entry, described below, overrides it.
+The provider also advertises server vulnerability scanning. Use
+[`ptah db vulnerabilities`](../../../operate/vulnerability-scan/) to match a
+self-managed YDB version against pinned server advisories. Select
+`--deployment managed` when the service operator controls patching.
 The [install procedure](../../executable-providers/#install-an-official-provider)
 covers how a release is chosen, the checks, and where the file is stored.
 Remaining work on official providers is tracked in

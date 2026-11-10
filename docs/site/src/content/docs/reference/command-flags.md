@@ -322,6 +322,7 @@ Read the columns as follows.
 | --- | --- | --- | --- | --- |
 | `--advisories` | `string` | — | `PTAH_ADVISORIES` | — |
 | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--deployment` | `string` | `self-managed` | `PTAH_DEPLOYMENT` | — |
 | `--fail-on` | `string` | `both` | `PTAH_FAIL_ON` | — |
 | `--format` | `string` | `table` | `PTAH_FORMAT` | — |
 | `--provider-config` | `string` | — | — | — |

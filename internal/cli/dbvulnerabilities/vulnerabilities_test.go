@@ -24,23 +24,40 @@ func run(t *testing.T, args ...string) (stdoutText, stderrText string, err error
 	return stdout.String(), stderr.String(), err
 }
 
-func TestCommand_UnsupportedProductRemainsIncomplete(t *testing.T) {
+func TestCommand_EmbeddedEngineIsNotApplicable(t *testing.T) {
 	c := qt.New(t)
 	url := "sqlite://" + filepath.Join(t.TempDir(), "scan.db")
 	stdout, stderr, err := run(t, "--db-url", url, "--format", "json")
-	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+	c.Assert(err, qt.IsNil)
 	c.Assert(stderr, qt.Equals, "")
 	var report vulnerability.Report
 	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
 	c.Assert(report.Inventory.Product, qt.Equals, "sqlite")
-	c.Assert(report.Source.Status, qt.Equals, "current")
-	c.Assert(report.IsIncomplete(), qt.IsTrue)
+	c.Assert(report.Source.Status, qt.Equals, "not_assessed")
+	c.Assert(report.Applicability, qt.Equals, "not_applicable")
+	c.Assert(report.IsIncomplete(), qt.IsFalse)
 	stdout, _, err = run(t, "--db-url", url, "--format", "json", "--fail-on", "none")
 	c.Assert(err, qt.IsNil)
-	c.Assert(stdout, qt.Contains, "database product has no reviewed advisory matcher")
+	c.Assert(stdout, qt.Contains, "not_applicable")
 	stdout, _, err = run(t, "--db-url", url, "--fail-on", "none")
 	c.Assert(err, qt.IsNil)
 	c.Assert(stdout, qt.Contains, "Snapshot SHA-256:")
+}
+
+func TestCommand_ManagedDeploymentDoesNotClaimServerFindings(t *testing.T) {
+	c := qt.New(t)
+	url := "sqlite://" + filepath.Join(t.TempDir(), "scan.db")
+	stdout, stderr, err := run(t, "--db-url", url, "--format", "json", "--deployment", "managed")
+	c.Assert(err, qt.IsNil)
+	c.Assert(stderr, qt.Equals, "")
+	var report vulnerability.Report
+	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
+	c.Assert(report.Applicability, qt.Equals, "not_applicable")
+	c.Assert(report.Source.Status, qt.Equals, "not_assessed")
+	c.Assert(report.HasFindings(), qt.IsFalse)
+	c.Assert(report.IsIncomplete(), qt.IsFalse)
+	_, _, err = run(t, "--db-url", url, "--deployment", "other")
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
 }
 
 func TestCommand_MissingAdvisoriesFailRegardlessOfPolicy(t *testing.T) {

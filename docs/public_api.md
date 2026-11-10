@@ -15,6 +15,13 @@ this distinction. Membership edges can name principals outside the managed
 role list; `coverage.RoleMembership` and `coverage.ObjectOwner` track these
 observations independently.
 
+`dbschema.DatabaseConnection.VulnerabilityScanState` reports the connected
+engine's server scan state. Built-in engines declare it in their dialect
+descriptor. A native provider advertises `security.vulnerability-scan` or
+`security.vulnerability-scan-not-applicable` at both provider and engine scope.
+The state does not establish that a reviewed source covers the current release
+or that the operator controls server patching.
+
 A PostgreSQL or YugabyteDB read reports what an object's owner holds by default in
 `catalog.Database.Grants`, one row per privilege with `Grant.Implicit` set, whether
 the object's ACL is NULL or spells it out. `Grant.OwnerDefault` and

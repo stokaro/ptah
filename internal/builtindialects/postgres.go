@@ -17,7 +17,8 @@ func postgres() descriptor.Dialect {
 			TableNames:     "exact",
 			ColumnNames:    "exact",
 		},
-		Placeholder: descriptor.PlaceholderDollar,
+		Placeholder:       descriptor.PlaceholderDollar,
+		VulnerabilityScan: "supported",
 
 		// The ladder reads the first dotted number, which a PostgreSQL banner
 		// carries first: "PostgreSQL 16.3 (Debian ...)". Every major up to the

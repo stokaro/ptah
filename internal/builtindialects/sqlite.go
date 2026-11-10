@@ -6,9 +6,10 @@ import "ptah.run/core/platform/descriptor"
 // SQLite's schema semantics over its own transport (#1615).
 func sqlite() descriptor.Dialect {
 	return descriptor.Dialect{
-		Name:          "sqlite",
-		Aliases:       []string{"sqlite3", "libsql", "libsql+ws"},
-		DefaultSchema: "main",
+		Name:              "sqlite",
+		VulnerabilityScan: "not_applicable",
+		Aliases:           []string{"sqlite3", "libsql", "libsql+ws"},
+		DefaultSchema:     "main",
 		Identifiers: descriptor.Identifiers{
 			IndexNamespace: "schema",
 			IndexNames:     "ascii_case_insensitive",

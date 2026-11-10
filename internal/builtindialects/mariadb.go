@@ -11,9 +11,10 @@ import (
 // there.
 func mariaDB() descriptor.Dialect {
 	return descriptor.Dialect{
-		Name:    "mariadb",
-		Aliases: []string{"maria", "mariadb+unix", "maria+unix"},
-		Family:  "mysql",
+		Name:              "mariadb",
+		VulnerabilityScan: "supported",
+		Aliases:           []string{"maria", "mariadb+unix", "maria+unix"},
+		Family:            "mysql",
 		Identifiers: descriptor.Identifiers{
 			IndexNamespace: "table",
 			IndexNames:     "ascii_folded_non_ascii_unknown",

@@ -10,8 +10,9 @@ import (
 // to their table, and no default schema.
 func clickHouse() descriptor.Dialect {
 	return descriptor.Dialect{
-		Name:    "clickhouse",
-		Aliases: []string{"ch"},
+		Name:              "clickhouse",
+		VulnerabilityScan: "supported",
+		Aliases:           []string{"ch"},
 		Identifiers: descriptor.Identifiers{
 			IndexNamespace: "table",
 			IndexNames:     "exact",

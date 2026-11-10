@@ -76,6 +76,10 @@ type Dialect struct {
 	// Capabilities states how a capability preset is chosen for the dialect,
 	// offline and from a server's version string.
 	Capabilities Capabilities `json:"capabilities,omitzero"`
+	// VulnerabilityScan is "supported" when Ptah can match this engine's
+	// server version, "not_applicable" when the engine exposes no server
+	// version under the operator's patch control, and empty otherwise.
+	VulnerabilityScan string `json:"vulnerability_scan,omitempty"`
 	// IdentifierLimit is the longest identifier the engine accepts.
 	IdentifierLimit IdentifierLimit `json:"identifier_limit,omitzero"`
 	// GrantOptionPerObject reports that a WITH GRANT OPTION grant belongs to
