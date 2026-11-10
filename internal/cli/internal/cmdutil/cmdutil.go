@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/internal/cli/internal/exitcode"
+	"ptah.run/internal/dburldisplay"
 )
 
 const (
@@ -71,6 +72,7 @@ func NormalizeCommandError(cmd *cobra.Command, err error, fallback int) error {
 	if err == nil {
 		return nil
 	}
+	err = dburldisplay.RedactRecordedError(cmd.Context(), err)
 	// Before the exit-code policy and before anything is printed, because this
 	// is the one boundary every command reaches: ConfigureCommandArgs wraps the
 	// root's RunE alone, so a subcommand's failure never passes through
@@ -176,6 +178,7 @@ func AdoptErrorPrefixPolicy(target, source *cobra.Command) func() {
 // already out. See [asCancellation] for what it replaces and why.
 func printDiagnostic(cmd *cobra.Command, err error) error {
 	err = asCancellation(cmd.Context(), err)
+	err = dburldisplay.RedactRecordedError(cmd.Context(), err)
 	fmt.Fprintf(cmd.ErrOrStderr(), "%s: %s\n", ErrorPrefix(cmd), err)
 	return err
 }

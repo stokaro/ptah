@@ -8,6 +8,7 @@ import (
 	"ptah.run/internal/cli/cliobs"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/exitcode"
+	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/rundiag"
 )
 
@@ -33,6 +34,7 @@ import (
 // logger; see [rundiag], [rundiag.UseLogger], [cmdutil.SetDiagnosticsListing]
 // and [cliobs.JSONLog].
 func RunContext(ctx context.Context, cmd *cobra.Command, args ...string) int {
+	ctx = dburldisplay.WithErrorRedaction(ctx)
 	report := rundiag.New(rundiag.Options{
 		Stream: cmd.ErrOrStderr(), Listing: cmdutil.DiagnosticsListing(cmd), Records: cliobs.JSONLog(),
 	})
