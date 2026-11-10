@@ -1,6 +1,6 @@
 package atlasschema
 
-// This test exercises the saved-plan fingerprint after role graph selection.
+// White-box testing required: this test exercises the saved-plan fingerprint after role graph selection.
 // A helper-only test cannot show whether the selected rows change the plan's
 // digest or whether a plan that names the role still binds to it.
 
