@@ -1,0 +1,42 @@
+name: Go runtime patch watch
+
+# The Windows jobs patch their Go toolchain with an upstream fix for
+# golang/go#81238 that has not merged (scripts/go-runtime-patch). Whatever ends
+# that arrangement happens upstream, where no pull request here shows it: the
+# toolchain gains the fix, the change gains a patch set, or upstream chooses
+# something else. This compares the vendored patch with upstream once a day and
+# opens an issue when the repository has to act.
+#
+# The step that patches already turns itself off on a toolchain that carries the
+# fix. What this adds is the record that the workaround can be deleted, and the
+# alarm when the patch the jobs run is no longer the one upstream reviews.
+on:
+  schedule:
+    - cron: '17 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: go-runtime-patch-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    name: Compare the runtime patch with upstream
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Compare the runtime patch with upstream
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: scripts/go-runtime-patch/watch.sh --open-issue
