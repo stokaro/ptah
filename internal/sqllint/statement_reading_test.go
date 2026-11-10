@@ -42,6 +42,7 @@ func TestLintSource_ValidSQLIsNotAnError(t *testing.T) {
 	}{
 		{name: "a dropped view", dialect: platform.SQLite, sql: "DROP VIEW v;", want: []string{notAnalyzed + "DROP VIEW in this file"}},
 		{name: "a dropped view on PostgreSQL", dialect: platform.Postgres, sql: "DROP VIEW IF EXISTS v, w CASCADE;", want: []string{notAnalyzed + "DROP VIEW in this file"}},
+		{name: "a provider view security clause", dialect: "spanner", sql: "CREATE VIEW v SQL SECURITY INVOKER AS SELECT 1;", want: []string{notAnalyzed + "CREATE VIEW in this file"}},
 		{name: "a dropped trigger", dialect: platform.MySQL, sql: "DROP TRIGGER IF EXISTS t;", want: []string{notAnalyzed + "DROP TRIGGER in this file"}},
 		{name: "a dropped function", dialect: platform.Postgres, sql: "DROP FUNCTION f(int);", want: []string{notAnalyzed + "DROP FUNCTION in this file"}},
 		{name: "a dropped procedure", dialect: platform.Postgres, sql: "DROP PROCEDURE p;", want: []string{notAnalyzed + "DROP PROCEDURE in this file"}},
@@ -83,7 +84,6 @@ func TestLintSource_WhatNothingReadStaysAnError(t *testing.T) {
 		{name: "a word it cannot tell from a mistake", dialect: platform.Postgres, sql: "CREATE TABLE b BOGUS;", want: []string{nothingRead + "unsupported table option: BOGUS"}},
 		{name: "valid SQL it cannot tell from one", dialect: platform.ClickHouse, sql: "DROP TABLE t ON CLUSTER c;", want: []string{nothingRead + "unsupported DROP TABLE clause: ON"}},
 		{name: "a clause another engine has", dialect: platform.Postgres, sql: "DROP VIEW v SYNC;", want: []string{nothingRead + "unsupported DROP VIEW clause: SYNC"}},
-		{name: "a provider view security clause", dialect: "spanner", sql: "CREATE VIEW v SQL SECURITY INVOKER AS SELECT 1;", want: []string{nothingRead + "unsupported CREATE VIEW clause: SQL SECURITY"}},
 		{name: "a statement the dialect has no form of", dialect: platform.SQLite, sql: "TRUNCATE t;", want: []string{nothingRead + "unsupported SQL statement: TRUNCATE"}},
 		{name: "a kind the dialect has no form of", dialect: platform.MySQL, sql: "DROP MATERIALIZED VIEW m;", want: []string{nothingRead + "unsupported DROP target: MATERIALIZED"}},
 	}

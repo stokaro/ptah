@@ -84,9 +84,10 @@ drop the rest.
 - `CREATE VIEW ... AS SELECT ...`
 - `CREATE OR REPLACE VIEW ... AS SELECT ...`
 
-A `SQL SECURITY` clause between the view name and `AS` is reported as
-unsupported. The shared view model does not retain that clause, so accepting
-it here would silently discard the selected security mode.
+A provider dialect without a shared grammar can place `SQL SECURITY DEFINER`
+or `SQL SECURITY INVOKER` between the view name and `AS`. The parser retains
+the selected mode on the view. Built-in dialects refuse this placement when
+their grammar does not support it.
 
 ### CREATE FUNCTION
 - PostgreSQL-style `CREATE FUNCTION ... RETURNS ... AS $...$ LANGUAGE ...`
