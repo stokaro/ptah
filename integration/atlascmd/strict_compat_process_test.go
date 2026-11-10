@@ -1669,7 +1669,7 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 			"--dev-url", replayDevURL,
 		)
 		c.Assert(code, qt.Equals, 0, qt.Commentf("stdout=%q stderr=%q", stdout, stderr))
-		c.Assert(stderr, qt.Equals, "")
+		c.Assert(stderr, qt.Equals, `warning: collation "`+collationName+`" in --from is left out: Ptah does not compare this object kind`+"\n")
 	})
 
 	t.Run("migrate diff live desired source", func(t *testing.T) {
