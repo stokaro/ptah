@@ -270,23 +270,23 @@ func schemaChanges(statements []string) []SchemaChange {
 	return changes
 }
 
-func (r SchemaDiff) MarshalSQL(indent ...string) (string, error) {
+func (d SchemaDiff) MarshalSQL(indent ...string) (string, error) {
 	if len(indent) > 1 {
 		return "", fmt.Errorf("unexpected number of arguments: %d", len(indent))
 	}
 	spell := capitalized
-	if r.commentsAsWritten {
+	if d.commentsAsWritten {
 		spell = asWritten
 	}
-	end := statementEnd(r.dialect)
-	if r.foreignLayout {
+	end := statementEnd(d.dialect)
+	if d.foreignLayout {
 		end = sqlscript.Terminator
 	}
-	sql := schemaChangesSQLText(r.Changes, spell, end)
+	sql := schemaChangesSQLText(d.Changes, spell, end)
 	if len(indent) == 0 || indent[0] == "" || sql == "" {
 		return sql, nil
 	}
-	return schemaIndentSQL(r.dialect, sql, indent[0]), nil
+	return schemaIndentSQL(d.dialect, sql, indent[0]), nil
 }
 
 func schemaDiffSQL(result SchemaDiff, indent ...string) (string, error) {
