@@ -4,12 +4,14 @@ package providercli_test
 
 import (
 	"database/sql"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/catalog"
 	"ptah.run/internal/testutils"
 )
 
@@ -89,6 +91,30 @@ func TestProviderNotDescribedHeaderReadsBack_HappyPath(t *testing.T) {
 
 	c.Assert(code, qt.Equals, 0, qt.Commentf("%s%s", stdout, stderr))
 	c.Assert(stdout+stderr, qt.Contains, "Schema is synced, no changes to be made.")
+}
+
+// A drift check over an exact exported schema still has to say that the
+// provider's change-stream-like kind was outside its comparison.
+func TestProviderNotDescribedKindAppearsInDrift(t *testing.T) {
+	c := qt.New(t)
+	f := notDescribedFixture(c, "fixture_stream")
+	exported := f.success(c, "inspect", "--format", "hcl")
+	path := filepath.Join(c.TempDir(), "schema.hcl")
+	c.Assert(os.WriteFile(path, []byte(exported), 0o600), qt.IsNil)
+
+	stdout, stderr, code := f.run(c, c.Context(), "drift", "--schema-file", path, "--format", "json")
+	var report struct {
+		Drift       bool                      `json:"drift"`
+		Failed      bool                      `json:"failed"`
+		NotCompared []catalog.UnmodeledObject `json:"not_compared"`
+	}
+	c.Assert(code, qt.Equals, 0, qt.Commentf("%s", stderr))
+	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil, qt.Commentf("%s", stdout))
+	c.Assert(report.Drift, qt.IsFalse)
+	c.Assert(report.Failed, qt.IsFalse)
+	c.Assert(report.NotCompared, qt.DeepEquals, []catalog.UnmodeledObject{{
+		Kind: "fixture stream", Reason: "the provider does not describe this object kind",
+	}})
 }
 
 // A kind the engine declares belongs to it alone, so the host refuses one that

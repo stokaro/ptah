@@ -205,8 +205,8 @@ at `warning` severity. The default threshold fails on it, and
 `--severity destructive` counts only established destructive changes. A missing
 observation does not establish that a withheld operation is safe.
 
-A MySQL or MariaDB event is named under `not_compared` and is not a finding; see
-[Events](../../databases/mysql/#events).
+Unmodeled objects appear under `not_compared`; see
+[Drift findings](../../reference/drift-findings/#kinds-of-object).
 
 The JSON report carries common-object limits in `undecided.common` and feature limits in
 `undecided.features`, with `drift` false and `failed` set by the threshold.
@@ -627,7 +627,8 @@ database URLs; schema files alone still require `--dev-url` (a disposable
 database that is reset destructively). `--format json` emits a stable
 document, described below, and `--schemas`, `--include`, and
 `--exclude` scope both sides. Synced states print
-`Schemas are synced, no changes to be made.`
+`Schemas are synced, no changes to be made.` Unmodeled objects are named on
+standard error; no SQL is planned.
 
 ### The JSON document
 

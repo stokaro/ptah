@@ -26,9 +26,12 @@ schema does not declare, and `<kind>_modified` the objects both hold that
 differ. Every difference the comparison reports is counted under a category, so
 a report whose `drift` is true has at least one finding.
 
-An object of a kind Ptah does not model, such as a MySQL event, is not a difference
-and has no category. The report names it under `not_compared`; see
-[Events](../../databases/mysql/#events).
+An object of a kind Ptah does not model is not a difference and has no category.
+The report names it under `not_compared`. PostgreSQL lists aggregates,
+collations, event triggers, foreign tables, and publications by name there.
+MySQL and MariaDB list events; see [Events](../../databases/mysql/#events).
+A provider that cannot list a kind reports the whole kind without a name,
+such as Spanner change streams.
 
 The categories are not disjoint: a change that has a category of its own, such
 as a removal that takes a UNIQUE constraint's enforcement with it, is counted

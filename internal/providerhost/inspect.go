@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
@@ -80,6 +81,16 @@ func notDescribed(result *catalog.Database, snapshot *protocol.Schema) {
 	for _, record := range snapshot.GetNotDescribed() {
 		result.NotDescribed = result.NotDescribed.With(coverage.Object{Kind: coverage.Kind(record.GetKind()), Name: record.GetName(),
 			Reason: coverage.Reason(record.GetReason()), Provenance: coverage.Provenance(record.GetProvenance())})
+		// A provider's whole-kind limit outside the common schema vocabulary
+		// names a kind the host has no object model for. Drift must say it did
+		// not compare that kind even when no declared object needs a decision.
+		if record.GetName() == "" {
+			if _, err := coverage.ParseKind(record.GetKind()); err != nil {
+				result.UnmodeledObjects = append(result.UnmodeledObjects, catalog.UnmodeledObject{
+					Kind: strings.ReplaceAll(record.GetKind(), "_", " "), Reason: "the provider does not describe this object kind",
+				})
+			}
+		}
 	}
 }
 
