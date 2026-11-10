@@ -12,6 +12,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
+	"ptah.run/core/coverage"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/planext"
 	"ptah.run/core/platform"
@@ -588,7 +589,39 @@ func diffResolvedStates(
 	}
 	return atlasreport.NewSchemaDiff(atlasreport.SchemaDiffOptions{
 		Dialect: dialect, From: from, To: to, Changes: changes,
+		Limits: diffComparisonLimits(fromState, toState, fromSide.database, toSide.database),
 	}), diff, nil
+}
+
+// diffComparisonLimits names the source coverage a SQL diff cannot infer from
+// an empty plan. A whole-server MySQL-family read sees the databases visible
+// to its account; a refused role read cannot compare grants even when neither
+// side declares a role. Neither limitation is a schema change.
+func diffComparisonLimits(fromState, toState atlassource.State, from, to *catalog.Database) []atlasreport.SchemaDiffLimit {
+	var limits []atlasreport.SchemaDiffLimit
+	for _, side := range []struct {
+		name  string
+		state atlassource.State
+		read  *catalog.Database
+	}{
+		{name: "--from", state: fromState, read: from},
+		{name: "--to", state: toState, read: to},
+	} {
+		if side.state.DB == nil || side.read == nil {
+			continue
+		}
+		if _, limited := side.read.NotDescribed.Limit(coverage.Role); limited {
+			limits = append(limits, atlasreport.SchemaDiffLimit{
+				Side: side.name, Kind: "roles and grants", Reason: "the source did not describe this kind",
+			})
+		}
+		if side.state.WholeServer {
+			limits = append(limits, atlasreport.SchemaDiffLimit{
+				Side: side.name, Kind: "database list", Reason: "only databases visible to the connected account were read",
+			})
+		}
+	}
+	return limits
 }
 
 // A one-database catalog read records the database on each view, and MySQL and
