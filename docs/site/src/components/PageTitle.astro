@@ -40,6 +40,7 @@ const ancestors = breadcrumbs.filter((crumb) => !crumb.current);
 const badge = pageTypeBadge(entry);
 const searchAliases = entry.data.searchAliases ?? [];
 const description = entry.data.description?.trim();
+const edge = import.meta.env.BASE_URL.split('/').filter(Boolean).at(-1) === 'edge';
 /* A description may quote a command or a file in backticks (Markdown's inline
  * code); the lede renders those as inline code, the way the concept draws
  * `ptah schema export` in its lede. The frontmatter value itself stays as it
@@ -122,6 +123,13 @@ const source = actionsInRail
   >{entry.data.title}</h1>
   {description && (
     <p class="ptah-lede">{ledeParts.map((part, index) => (index % 2 ? <code>{part}</code> : part))}</p>
+  )}
+  {edge && (
+    <p class="ptah-edge-note" data-pagefind-ignore>
+      Edge documents the current development build and may describe unreleased behavior.
+      To use those commands, <a href={`${siteTitleHref}start/install-options/#build-from-a-checkout`}>build Ptah from master</a>.
+      For an installed release, select its version in the header.
+    </p>
   )}
 </div>
 
@@ -210,6 +218,18 @@ const source = actionsInRail
   }
   .page-heading > .ptah-lede {
     margin: 0;
+  }
+  .ptah-edge-note {
+    margin: 0;
+    padding: 0.65rem 0.85rem;
+    border-inline-start: 3px solid var(--sl-color-accent);
+    background: var(--sl-color-accent-low);
+    font-size: var(--sl-text-sm);
+    line-height: 1.5;
+  }
+  .ptah-edge-note a {
+    font-weight: 600;
+    text-decoration: underline;
   }
 
   /* 13px sans in gray-3: orientation, not a control. The badge sits on the

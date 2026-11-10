@@ -185,6 +185,11 @@ build and every check that builds the inventory.
 
 ## Reader-journey report
 
+The version selector separates current development documentation under `edge`
+from the newest released documentation under `latest`. Edge pages give readers
+the source-build path for unreleased commands; readers with an installed binary
+can select its release before following a guide.
+
 The paths below are editorial acceptance criteria. Their entry and canonical
 pages are verified against the current sidebar and link graph; runnable
 tutorials have separate acceptance checks for commands and stable results.

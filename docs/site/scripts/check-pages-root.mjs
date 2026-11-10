@@ -69,6 +69,7 @@ import {
 import { indexProblems } from './gen-versions.mjs';
 import { archiveBannerProblems } from './lib/archive-version-banner.mjs';
 import { latestAliasProblems } from './lib/latest-docs.mjs';
+import { sitemapProblems } from './lib/sitemap-publication.mjs';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const siteRoot = join(scriptDir, '..');
@@ -455,6 +456,7 @@ function checkAssembledSite(siteDir) {
     problems.push(...indexProblems(versions));
     problems.push(...latestAliasProblems(siteDir, versions.latest));
     problems.push(...archiveBannerProblems(siteDir));
+    problems.push(...sitemapProblems(siteDir));
   }
   return problems;
 }
@@ -512,7 +514,7 @@ function selftest() {
       published: `irm ${InstallURL('install.ps1')} | iex`,
     },
   ];
-  const generated = ['versions.json', 'index.html'];
+  const generated = GENERATED_ROOT_FILES;
   const redirects = [
     { path: 'moved/page/', target: 'https://elsewhere.example/page/', title: 'Moved page' },
   ];
@@ -546,6 +548,8 @@ function selftest() {
     assembled: new Map([
       ['versions.json', '{}\n'],
       ['index.html', '<!doctype html>\n'],
+      ['robots.txt', 'User-agent: *\nAllow: /\n'],
+      ['sitemap-index.xml', '<?xml version="1.0"?><sitemapindex/>\n'],
       ['moved/page/index.html', renderRedirect(redirects[0])],
       ['install.sh', '#!/bin/sh\n'],
       ['install.ps1', "Write-Output 'ptah'\n"],
@@ -604,6 +608,9 @@ function selftest() {
     analyze(missingGenerated).some((problem) => problem.includes('produced no versions.json')),
     'the version index is a root file too',
   );
+  const missingSitemap = healthy();
+  missingSitemap.assembled.delete('sitemap-index.xml');
+  assert(analyze(missingSitemap).some((problem) => problem.includes('produced no sitemap-index.xml')), 'sitemap discovery is a root file');
 
   const differentBytes = healthy();
   differentBytes.assembled.set('install.sh', '#!/bin/sh\n# stale\n');
@@ -754,6 +761,8 @@ function selftest() {
     fetched: new Map([
       ['versions.json', { status: 200, text: '{}\n' }],
       ['index.html', { status: 200, text: '<!doctype html>\n' }],
+      ['robots.txt', { status: 200, text: 'User-agent: *\nAllow: /\n' }],
+      ['sitemap-index.xml', { status: 200, text: '<?xml version="1.0"?><sitemapindex/>\n' }],
       ['moved/page/', { status: 200, text: renderRedirect(redirects[0]) }],
       ['install.sh', { status: 200, text: '#!/bin/sh\n' }],
       ['install.ps1', { status: 200, text: "Write-Output 'ptah'\n" }],

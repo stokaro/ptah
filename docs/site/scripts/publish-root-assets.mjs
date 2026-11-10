@@ -38,6 +38,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { archiveBannerSelftest, publishArchiveBanners } from './lib/archive-version-banner.mjs';
+import { publishSitemaps, sitemapSelftest } from './lib/sitemap-publication.mjs';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const defaultRepoRoot = join(scriptDir, '..', '..', '..');
@@ -188,14 +189,16 @@ export function redirectTarget(html) {
   return match ? match[1] : null;
 }
 
-// GENERATED_ROOT_FILES names what the other producer writes into the same
-// directory: gen-versions.mjs writes the version index and the apex stub. This
-// script does not write either, and says so here because this list, the assets
-// and the redirects together are the whole Pages root: check-pages-root.mjs
+// GENERATED_ROOT_FILES names the generated files at the Pages root.
+// gen-versions.mjs writes the version index and apex redirect; this script
+// writes sitemap discovery. This list, the assets, and the redirects are the
+// whole Pages root: check-pages-root.mjs
 // compares that union against what an assembly actually produces.
 export const GENERATED_ROOT_FILES = [
   'versions.json',
   'index.html',
+  'robots.txt',
+  'sitemap-index.xml',
 ];
 
 // advertisedAddress is where a reader is told to find one root asset. It is
@@ -211,7 +214,7 @@ export function sourcePath(asset, repoRoot = defaultRepoRoot) {
 }
 
 // publish copies the root assets, writes root redirects, and renders archive
-// warnings and latest canonicals into the assembled pages. It returns the root
+// warnings, canonicals, and sitemaps into the assembled pages. It returns the root
 // files it wrote.
 //
 // A missing or empty source throws rather than being skipped. The deploy step
@@ -243,11 +246,14 @@ export function publish(siteDir, repoRoot = defaultRepoRoot) {
     written.push(redirectFile(redirect));
   }
   publishArchiveBanners(siteDir);
+  publishSitemaps(siteDir);
+  written.push('robots.txt', 'sitemap-index.xml');
   return written;
 }
 
 function selftest() {
   archiveBannerSelftest();
+  sitemapSelftest();
   const assert = (condition, message) => {
     if (!condition) throw new Error(message);
   };
@@ -267,7 +273,7 @@ function selftest() {
     mkdirSync(join(site, 'edge'), { recursive: true });
     writeFileSync(join(site, 'versions.json'), JSON.stringify({ versions: [{ slug: 'edge' }] }));
     const written = publish(site, fakeRepo);
-    const expected = ROOT_ASSETS.length + ROOT_REDIRECTS.length;
+    const expected = ROOT_ASSETS.length + ROOT_REDIRECTS.length + 2;
     assert(written.length === expected, `publish wrote ${written.length} of ${expected}`);
     for (const asset of ROOT_ASSETS) {
       assert(existsSync(join(site, asset.name)), `${asset.name} is not in the site root`);
