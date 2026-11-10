@@ -22,6 +22,8 @@ type targetGrammar struct {
 	// checkOwnColumnOnly is the descriptor's Columns.CheckOwnColumnOnly: a
 	// CHECK written on a column may name that column alone.
 	checkOwnColumnOnly bool
+	// viewSQLSecurity reports that CREATE VIEW accepts a SQL SECURITY mode.
+	viewSQLSecurity bool
 	// family is the descriptor's Family, whose head's string rules a routine
 	// of the quoted-body grammar is read with.
 	family string
@@ -42,6 +44,7 @@ var targetGrammars = descriptortable.New(func(described descriptor.Dialect) targ
 		grammar:            described.Grammar,
 		nullableTypes:      described.Comparison.NullableTypes,
 		checkOwnColumnOnly: described.Columns.CheckOwnColumnOnly,
+		viewSQLSecurity:    described.Comparison.ViewSQLSecurity,
 		family:             described.Family,
 		defaultSchema:      described.DefaultSchema,
 		batches:            described.Scripts.BatchSeparator != "",

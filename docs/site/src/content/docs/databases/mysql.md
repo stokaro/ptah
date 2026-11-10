@@ -724,7 +724,9 @@ or `security: INVOKER` on a YAML view, to run it with its caller's privileges.
 The read keeps `information_schema.VIEWS.SECURITY_TYPE`. A view held as
 `INVOKER` and declared without `security` reports a change and plans
 `CREATE OR REPLACE VIEW`, which selects the server's `DEFINER` default.
-The replacement records the connected account as its definer.
+The replacement records the connected account as its definer. A SQL schema file
+can declare `CREATE [OR REPLACE] SQL SECURITY DEFINER VIEW` or `CREATE [OR
+REPLACE] SQL SECURITY INVOKER VIEW`; reading the file preserves that mode.
 
 ### Roles and grants
 

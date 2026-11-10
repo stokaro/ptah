@@ -167,7 +167,7 @@ func TestSchemaDiffFromDirectoryWithChangedViewPlansReplacementE2E(t *testing.T)
 				"--to", targetURL, "--dev-url", devURL)
 
 			c.Assert(diff.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", diff.Stdout, diff.Stderr))
-			c.Assert(diff.Stdout, qt.Contains, "CREATE OR REPLACE VIEW")
+			c.Assert(diff.Stdout, qt.Contains, "CREATE OR REPLACE SQL SECURITY DEFINER VIEW")
 			c.Assert(diff.Stdout, qt.Contains, "+ 1")
 			c.Assert(diff.Stdout, qt.Not(qt.Contains), devName)
 		})
