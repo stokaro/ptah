@@ -143,11 +143,9 @@ func TestScopedCleanupRefusedDropRollsBackLive_FailurePath(t *testing.T) {
 }
 
 // TestScopedCleanupRefusedDropOnYugabyteDBLive_FailurePath is the plan of
-// [refusedFixture] on YugabyteDB, measured on 2026.1.2. The plan runs in one
-// transaction, as on PostgreSQL, and the transaction rolls back. The free
-// table stays dropped anyway: yb_ddl_transaction_block_enabled defaults to
-// off, so the server does not roll back a DROP TABLE run in a transaction
-// block. The error does not say so.
+// [refusedFixture] on YugabyteDB. The server commits each DDL statement at its
+// default setting, so the plan runs drops separately and reports earlier drops
+// when a later one fails.
 func TestScopedCleanupRefusedDropOnYugabyteDBLive_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	ctx := c.Context()
@@ -159,7 +157,7 @@ func TestScopedCleanupRefusedDropOnYugabyteDBLive_FailurePath(t *testing.T) {
 	err := schemaclean.ApplyPlan(ctx, conn, refusedPlan(conn.Info().Dialect))
 
 	c.Assert(err, qt.ErrorMatches, `(?s)drop schema object enum "mood": .*\(SQLSTATE 2BP01\).*`)
-	c.Assert(err, qt.Not(qt.ErrorMatches), `(?s).*dropped before the failure.*`)
+	c.Assert(err, qt.ErrorMatches, `(?s).*dropped before the failure: table "free_t".*`)
 	c.Assert(scopedRelations(c, ctx, conn), qt.DeepEquals, []string{"keep_t"})
 }
 

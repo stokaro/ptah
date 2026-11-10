@@ -44,7 +44,7 @@ func TestRuntimePolicies_ReachEveryTargetTheirCapabilityClaims(t *testing.T) {
 		// known; here there is none, and promising a rollback that may not
 		// happen is the worse of the two errors.
 		{dialect: platform.CockroachDB, wantLockTimeout: true, wantStatementTimeout: true, wantTxAll: false},
-		{dialect: platform.YugabyteDB, wantLockTimeout: true, wantStatementTimeout: true, wantTxAll: true},
+		{dialect: platform.YugabyteDB, wantLockTimeout: true, wantStatementTimeout: true, wantTxAll: false},
 		// The MySQL family sets and restores session variables, and commits
 		// DDL as it runs -- so it carries one policy and not the other.
 		{dialect: platform.MySQL, wantLockTimeout: true, wantStatementTimeout: true, wantTxAll: false},

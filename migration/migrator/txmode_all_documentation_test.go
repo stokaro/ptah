@@ -116,6 +116,7 @@ var txModeAllTargets = []struct {
 	{dialect: platform.ClickHouse, pageName: "ClickHouse"},
 	{dialect: platform.Oracle, pageName: "Oracle"},
 	{dialect: platform.CockroachDB, pageName: "CockroachDB"},
+	{dialect: platform.YugabyteDB, pageName: "YugabyteDB"},
 }
 
 // TestTxModeAllDocumentation_CensusMatchesEveryPreset holds the other end of the

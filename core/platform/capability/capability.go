@@ -4512,6 +4512,10 @@ var presetYugabyteDB25 = sync.OnceValue(buildYugabyteDB25)
 // buildYugabyteDB25 builds the [YugabyteDB25] set; the preset builds it once and shares it.
 func buildYugabyteDB25() Capabilities {
 	return Postgres16().
+		// The default server runs DDL in separate transactions. A transaction
+		// around a migration body cannot roll its schema changes back as a
+		// unit, so tx-mode all must not promise that rollback.
+		With(TransactionalDDL, false).
 		// Measured on 2026.1.2: `DEFERRABLE unique constraints are not
 		// supported yet`, and `DEFERRABLE primary key constraints are not
 		// supported yet` for a table-level or added key. A foreign key defers.
