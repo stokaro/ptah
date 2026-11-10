@@ -2100,9 +2100,8 @@ Whether a failed scoped plan undoes its earlier drops depends on the server:
   `autocommit_before_ddl` is on by default. The plan runs each drop on its own
   and tries a refused drop again after the others. A plan that still fails
   keeps the drops that ran before the failure, and the error names them.
-- YugabyteDB 2026.1 runs the plan in one transaction, but with
-  `yb_ddl_transaction_block_enabled` at its default, off, the server does not
-  roll back a drop when the transaction rolls back.
+- YugabyteDB runs each selected drop separately at its default setting. A
+  refused plan keeps earlier drops, and the error names them.
 
 An implicit sequence is not independently selectable: including it without its
 owning table, or excluding it while the table remains selected, is refused

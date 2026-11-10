@@ -81,17 +81,18 @@ func TestCockroachTransactionalDDLFollowsTheMeasuredReleases(t *testing.T) {
 	}
 }
 
-// TestPostgresKeepsTransactionalDDL is the family control: the boundary above
-// belongs to CockroachDB, and moving it must not take PostgreSQL with it.
-func TestPostgresKeepsTransactionalDDL(t *testing.T) {
+// The PostgreSQL wire protocol does not determine whether DDL rolls back.
+func TestPostgresWireTargetsHaveTheirOwnTransactionCapability(t *testing.T) {
 	rows := []struct {
 		name    string
 		dialect string
 		banner  string
+		want    bool
 	}{{
 		name:    "postgresql",
 		dialect: "postgres",
 		banner:  "PostgreSQL 18.4 on x86_64-pc-linux-gnu",
+		want:    true,
 	}, {
 		name:    "yugabytedb",
 		dialect: "yugabytedb",
@@ -102,7 +103,7 @@ func TestPostgresKeepsTransactionalDDL(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 			resolved := capability.ResolveServerVersion(row.dialect, row.banner)
-			c.Assert(resolved.Capabilities.Has(capability.TransactionalDDL), qt.IsTrue,
+			c.Assert(resolved.Capabilities.Has(capability.TransactionalDDL), qt.Equals, row.want,
 				qt.Commentf("banner=%q", row.banner))
 		})
 	}

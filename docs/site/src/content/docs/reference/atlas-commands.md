@@ -1902,9 +1902,8 @@ server:
 - CockroachDB 25 and later commit each schema statement as it runs, so each
   drop runs on its own. The drops that ran before the refusal stay, and the
   error names them.
-- YugabyteDB runs the plan in one transaction, but with
-  `yb_ddl_transaction_block_enabled` at its default, off, the server does not
-  roll back a drop when the transaction rolls back.
+- YugabyteDB runs each selected drop separately at its default setting. A
+  refused plan keeps earlier drops, and the error names them.
 
 PostgreSQL `SERIAL` and identity sequences are recognized as implicit table
 children, execute after their parent table, and are not reported as forbidden

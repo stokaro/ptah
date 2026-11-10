@@ -318,7 +318,6 @@ func TestFailedResumeCountsFromWhereItStartedE2E_FailurePath(t *testing.T) {
 // TestFailedCommitReportsWhatStayedE2E_FailurePath fails at the commit, on a
 // constraint the transaction deferred. Every statement ran, the schema statements
 // of YugabyteDB stay, and the data goes with the commit. PostgreSQL is the control.
-// One transaction for the run has one row and no count for what stayed.
 func TestFailedCommitReportsWhatStayedE2E_FailurePath(t *testing.T) {
 	const body = "CREATE TABLE parent (id INT PRIMARY KEY);\n" +
 		"CREATE TABLE child (id INT PRIMARY KEY, parent_id INT REFERENCES parent (id) DEFERRABLE INITIALLY DEFERRED);\n" +
@@ -333,7 +332,6 @@ func TestFailedCommitReportsWhatStayedE2E_FailurePath(t *testing.T) {
 	}{
 		{name: "postgresql", engine: dbtarget.PostgreSQL, txMode: "file", wantOutcome: migrator.RunOutcomeFailed, wantChild: -1},
 		{name: "yugabytedb", engine: dbtarget.YugabyteDB, txMode: "file", wantOutcome: migrator.RunOutcomePartial, wantApplied: 2},
-		{name: "yugabytedb, one transaction", engine: dbtarget.YugabyteDB, txMode: "all", wantOutcome: migrator.RunOutcomeUnknown},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -423,37 +421,33 @@ func TestFailedRollbackReportsWhatStayedE2E_FailurePath(t *testing.T) {
 	}
 }
 
-// TestOneTransactionForTheRunReportsWhatStayedE2E_FailurePath runs two migrations
-// under --tx-mode all. YugabyteDB takes the mode and keeps the schema statements of
-// both migrations, and one row cannot count them, so the outcome is unknown. The
-// row PostgreSQL leaves is the control.
+// TestOneTransactionForTheRunReportsWhatStayedE2E_FailurePath runs two
+// migrations under --tx-mode all on PostgreSQL, which rolls both back.
 func TestOneTransactionForTheRunReportsWhatStayedE2E_FailurePath(t *testing.T) {
-	tests := []struct {
-		name        string
-		engine      dbtarget.Engine
-		wantOutcome migrator.RunOutcome
-		wantCreated int
-		wantOther   int
-	}{
-		{name: "postgresql", engine: dbtarget.PostgreSQL, wantOutcome: migrator.RunOutcomeFailed, wantCreated: -1, wantOther: -1},
-		{name: "yugabytedb", engine: dbtarget.YugabyteDB, wantOutcome: migrator.RunOutcomeUnknown},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			target := newRollbackTarget(c, test.engine)
-			dir := migrationsDir(c, "SELECT 1;\n", createCreated, "CREATE TABLE other (id INT PRIMARY KEY);\n"+insertAbsent)
+	c := qt.New(t)
+	target := newRollbackTarget(c, dbtarget.PostgreSQL)
+	dir := migrationsDir(c, "SELECT 1;\n", createCreated, "CREATE TABLE other (id INT PRIMARY KEY);\n"+insertAbsent)
+	result, document := target.runUp(c, dir, "--tx-mode", "all")
+	c.Assert(result.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", result.Stdout, result.Stderr))
+	c.Assert(document.Outcome, qt.Equals, migrator.RunOutcomeFailed, qt.Commentf("stdout:\n%s", result.Stdout))
+	c.Assert(document.Status.DirtyRevision.Version, qt.Equals, int64(2))
+	c.Assert(document.Status.DirtyRevision.Applied, qt.Equals, 0)
+	c.Assert(target.rowsIn(c, "created"), qt.Equals, -1)
+	c.Assert(target.rowsIn(c, "other"), qt.Equals, -1)
+}
 
-			result, document := target.runUp(c, dir, "--tx-mode", "all")
-
-			c.Assert(result.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", result.Stdout, result.Stderr))
-			c.Assert(document.Outcome, qt.Equals, test.wantOutcome, qt.Commentf("stdout:\n%s", result.Stdout))
-			c.Assert(document.Status.DirtyRevision.Version, qt.Equals, int64(2))
-			c.Assert(document.Status.DirtyRevision.Applied, qt.Equals, 0)
-			c.Assert(target.rowsIn(c, "created"), qt.Equals, test.wantCreated)
-			c.Assert(target.rowsIn(c, "other"), qt.Equals, test.wantOther)
-		})
-	}
+// YugabyteDB commits DDL separately at its default setting, so one transaction
+// cannot guarantee rollback of the run and the mode is refused before SQL runs.
+func TestOneTransactionForTheRunRefusesYugabyteDBE2E_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	target := newRollbackTarget(c, dbtarget.YugabyteDB)
+	dir := migrationsDir(c, "SELECT 1;\n", createCreated)
+	result, document := target.runUp(c, dir, "--tx-mode", "all")
+	c.Assert(result.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", result.Stdout, result.Stderr))
+	c.Assert(document.Outcome, qt.Equals, migrator.RunOutcomeFailed)
+	c.Assert(result.Stderr, qt.Contains, `tx-mode all is not supported for dialect "yugabytedb"`)
+	c.Assert(document.Status.DirtyRevision, qt.IsNil)
+	c.Assert(target.rowsIn(c, "created"), qt.Equals, -1)
 }
 
 // TestNoTransactionKeepsItsCountE2E_FailurePath is the control on --tx-mode none,

@@ -150,10 +150,9 @@ SQL: DROP TYPE IF EXISTS "mood" RESTRICT
 the server commits each drop as it runs; dropped before the failure: table "free_t"
 ```
 
-YugabyteDB runs the plan in one transaction, each drop under a savepoint. With
-`yb_ddl_transaction_block_enabled` at its default, off, the server does not roll
-back a drop when the transaction rolls back. Measured on 2026.1.2, a refused
-plan leaves the earlier drops in place, and the error does not name them.
+YugabyteDB runs each selected drop separately because its default setting does
+not roll schema changes back with the transaction. A refused plan leaves the
+earlier drops in place, and the error names them.
 
 ## CockroachDB row-level TTL
 

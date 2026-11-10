@@ -817,16 +817,16 @@ The first row is the engine rather than a Ptah policy, and it is decided by the
 target's transactional-DDL capability rather than by a list of dialect names.
 MySQL, MariaDB, ClickHouse and Oracle commit DDL as it runs, and Spanner and
 YDB, which their providers serve, refuse DDL inside a transaction at all.
+YugabyteDB commits schema statements separately at its default setting, so
+Ptah also refuses `--tx-mode all` there. Use the default per-file mode to run
+migrations on YugabyteDB. Ptah does not inspect the server's transactional-DDL
+flag, so the refusal also applies when that flag is enabled.
+
 CockroachDB refuses for a narrower reason: a target named with no server version
 in hand resolves to the newest measured line, where a schema statement inside a
 transaction commits itself first, so the rollback has nothing left to undo. A
 connected CockroachDB server on an older line reaches the capability through the
 version ladder and is accepted.
-
-YugabyteDB takes `--tx-mode all`, and with `yb_ddl_transaction_block_enabled` off
-the rollback still leaves every schema statement of every migration in the run.
-One revision row cannot count those, so a failed run that left any of them
-reports `unknown`.
 
 Timeouts themselves are not tied to that capability. Each has a capability of
 its own, `migration_lock_timeout` and `migration_statement_timeout`, and a
