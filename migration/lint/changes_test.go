@@ -1,6 +1,7 @@
 package lint_test
 
 import (
+	"cmp"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -35,10 +36,14 @@ func fileByName(c *qt.C, analysis lint.Analysis, name string) lint.File {
 }
 
 func analyzeSQLite(c *qt.C, files map[string]string) lint.Analysis {
+	return analyzeChangeDialect(c, files, "sqlite")
+}
+
+func analyzeChangeDialect(c *qt.C, files map[string]string, dialect string) lint.Analysis {
 	c.Helper()
 	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(files), lint.Options{
 		DirFormat: migrationfile.DirFormatAtlas,
-		Dialect:   "sqlite",
+		Dialect:   dialect,
 	})
 	c.Assert(err, qt.IsNil)
 	return analysis
@@ -49,9 +54,10 @@ func analyzeSQLite(c *qt.C, files map[string]string) lint.Analysis {
 // semantic schema changes.
 func TestAnalyzeFS_SchemaChangeCardinality(t *testing.T) {
 	tests := []struct {
-		name string
-		sql  string
-		want []changeProjection
+		name    string
+		sql     string
+		dialect string
+		want    []changeProjection
 	}{
 		{
 			name: "single create is one change",
@@ -64,8 +70,9 @@ func TestAnalyzeFS_SchemaChangeCardinality(t *testing.T) {
 			want: []changeProjection{{lint.SchemaChangeDrop, "users"}},
 		},
 		{
-			name: "one statement dropping several tables is several changes",
-			sql:  "DROP TABLE a, b, c;",
+			name:    "one statement dropping several tables is several changes",
+			sql:     "DROP TABLE a, b, c;",
+			dialect: "postgres",
 			want: []changeProjection{
 				{lint.SchemaChangeDrop, "a"},
 				{lint.SchemaChangeDrop, "b"},
@@ -122,7 +129,7 @@ func TestAnalyzeFS_SchemaChangeCardinality(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
-			analysis := analyzeSQLite(c, map[string]string{"1_change.sql": tc.sql})
+			analysis := analyzeChangeDialect(c, map[string]string{"1_change.sql": tc.sql}, cmp.Or(tc.dialect, "sqlite"))
 			file := fileByName(c, analysis, "1_change.sql")
 			c.Assert(projectChanges(file.Changes), qt.DeepEquals, tc.want)
 		})

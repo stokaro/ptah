@@ -74,14 +74,16 @@ func TestLintSource_WhatNothingReadStaysAnError(t *testing.T) {
 		want    []string
 	}{
 		{name: "a statement that writes rows", dialect: platform.Postgres, sql: "SELECT @@@;", want: []string{"SQL002 error ptah sql lint does not lint SELECT statements yet"}},
+		{name: "a parenthesized query", dialect: platform.Postgres, sql: "(SELECT 1);", want: []string{"SQL002 error ptah sql lint does not lint SELECT statements yet"}},
 		{name: "an INSERT", dialect: platform.SQLite, sql: "INSERT INTO t VALUES (1);", want: []string{"SQL002 error ptah sql lint does not lint INSERT statements yet"}},
 		{name: "REPLACE, as INSERT", dialect: platform.MySQL, sql: "REPLACE INTO t VALUES (1);", want: []string{"SQL002 error ptah sql lint does not lint REPLACE statements yet"}},
 		{name: "UPSERT, as INSERT", dialect: platform.CockroachDB, sql: "UPSERT INTO t VALUES (1);", want: []string{"SQL002 error ptah sql lint does not lint UPSERT statements yet"}},
 		{name: "a target the parser does not model", dialect: platform.Postgres, sql: "DROP AGGREGATE a(int);", want: []string{nothingRead + "unsupported DROP target: AGGREGATE"}},
 		{name: "a CREATE the parser does not model", dialect: platform.Postgres, sql: "CREATE COLLATION c (locale = 'C');", want: []string{nothingRead + "unsupported CREATE target: COLLATION"}},
 		{name: "a word it cannot tell from a mistake", dialect: platform.Postgres, sql: "CREATE TABLE b BOGUS;", want: []string{nothingRead + "unsupported table option: BOGUS"}},
-		{name: "valid SQL it cannot tell from one", dialect: platform.ClickHouse, sql: "DROP TABLE t ON CLUSTER c;", want: []string{nothingRead + "unsupported SQL statement: ON"}},
+		{name: "valid SQL it cannot tell from one", dialect: platform.ClickHouse, sql: "DROP TABLE t ON CLUSTER c;", want: []string{nothingRead + "unsupported DROP TABLE clause: ON"}},
 		{name: "a clause another engine has", dialect: platform.Postgres, sql: "DROP VIEW v SYNC;", want: []string{nothingRead + "unsupported DROP VIEW clause: SYNC"}},
+		{name: "a provider view security clause", dialect: "spanner", sql: "CREATE VIEW v SQL SECURITY INVOKER AS SELECT 1;", want: []string{nothingRead + "unsupported CREATE VIEW clause: SQL SECURITY"}},
 		{name: "a statement the dialect has no form of", dialect: platform.SQLite, sql: "TRUNCATE t;", want: []string{nothingRead + "unsupported SQL statement: TRUNCATE"}},
 		{name: "a kind the dialect has no form of", dialect: platform.MySQL, sql: "DROP MATERIALIZED VIEW m;", want: []string{nothingRead + "unsupported DROP target: MATERIALIZED"}},
 	}
@@ -109,6 +111,7 @@ func TestLintSource_WhatIsNoSQLIsSaidToBe(t *testing.T) {
 		{name: "punctuation for a keyword", sql: "@@@ x;", want: []string{"SQL001 error expected SQL keyword, got Operator"}},
 		{name: "a name that is none", sql: "DROP VIEW @@@;", want: []string{"SQL001 error expected view name: expected identifier, got Operator"}},
 		{name: "a list where one name is taken", sql: "DROP TRIGGER t, u;", want: []string{"SQL001 error expected the end of DROP TRIGGER, got Operator"}},
+		{name: "SQLite refuses a list of tables", sql: "DROP TABLE t, t2;", want: []string{"SQL001 error expected the end of DROP TABLE, got Operator"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -117,4 +120,10 @@ func TestLintSource_WhatIsNoSQLIsSaidToBe(t *testing.T) {
 			c.Assert(lintOne(c, platform.SQLite, test.sql), qt.DeepEquals, test.want)
 		})
 	}
+}
+
+func TestLintSource_DropTableRefusesTrailingStatement(t *testing.T) {
+	c := qt.New(t)
+	c.Assert(lintOne(c, platform.Postgres, "DROP TABLE t SELECT 1;"), qt.DeepEquals,
+		[]string{nothingRead + "unsupported DROP TABLE clause: SELECT"})
 }

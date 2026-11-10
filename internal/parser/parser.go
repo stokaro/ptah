@@ -1886,6 +1886,9 @@ func (p *Parser) parseCreateViewNode() (*ast.CreateViewNode, error) {
 	if err != nil {
 		return nil, err
 	}
+	if p.current.MatchIdentifierValue("SQL") && p.nextIsWord("SECURITY") {
+		return nil, ptaherr.At(p.current.Start, fmt.Errorf("unsupported CREATE VIEW clause: SQL SECURITY"))
+	}
 
 	if err := p.expect(lexer.TokenIdentifier, "AS"); err != nil {
 		return nil, fmt.Errorf("expected AS after view name: %w", err)
@@ -5569,7 +5572,11 @@ func (p *Parser) parseDropTable() (*ast.DropTableNode, error) {
 		ifExists = true
 	}
 
-	tableNames, err := p.parseDropTableNames()
+	form, described := p.dropForm(descriptor.DropKindTable)
+	if !described {
+		form.List = true
+	}
+	tableNames, err := p.parseDropTableNames(form)
 	if err != nil {
 		return nil, err
 	}
@@ -5583,19 +5590,19 @@ func (p *Parser) parseDropTable() (*ast.DropTableNode, error) {
 	if p.current.MatchIdentifierValue("CASCADE") {
 		dropTable.SetCascade()
 		p.advance()
-		return dropTable, nil
-	}
-	if p.current.MatchIdentifierValue("RESTRICT") {
+	} else if p.current.MatchIdentifierValue("RESTRICT") {
 		p.advance()
-		return dropTable, nil
 	}
-	if form, reads := p.dropForm(descriptor.DropKindTable); reads {
+	if described {
 		p.parseDropSync(form)
+	}
+	if err := p.endStatement("DROP TABLE"); err != nil {
+		return nil, err
 	}
 	return dropTable, nil
 }
 
-func (p *Parser) parseDropTableNames() ([]string, error) {
+func (p *Parser) parseDropTableNames(form descriptor.Drop) ([]string, error) {
 	var names []string
 	for {
 		tableName, err := p.parseTableName("table name")
@@ -5605,7 +5612,7 @@ func (p *Parser) parseDropTableNames() ([]string, error) {
 		names = append(names, tableName)
 
 		p.skipWhitespace()
-		if !p.current.MatchOperatorValue(",") {
+		if !form.List || !p.current.MatchOperatorValue(",") {
 			return names, nil
 		}
 		p.advance()

@@ -346,8 +346,8 @@ type StatementGrammar struct {
 type StatementForms struct {
 	// Drops states how DROP reads each kind of object it takes beyond a table
 	// and an index, which every engine's grammar has. A [DropKindTable] entry
-	// states the one clause a DROP TABLE adds on the engine. A kind not listed
-	// is refused.
+	// states whether DROP TABLE takes a list and the clauses it adds. A kind
+	// other than TABLE that is not listed is refused.
 	Drops []Drop `json:"drops,omitempty"`
 	// Operations are the statements the engine runs that change no schema
 	// object and that the parser reads to their end, each written as the
@@ -391,7 +391,8 @@ type Drop struct {
 // The kinds of object a [Drop] states.
 const (
 	// DropKindTable is DROP TABLE, which the parser reads on every engine. An
-	// entry for it states only [Drop.Sync].
+	// entry for it states whether a list of tables is accepted and whether
+	// the statement takes [Drop.Sync].
 	DropKindTable = "TABLE"
 	// DropKindView is DROP VIEW.
 	DropKindView = "VIEW"
