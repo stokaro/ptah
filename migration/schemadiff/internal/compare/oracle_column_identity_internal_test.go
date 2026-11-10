@@ -92,6 +92,28 @@ func TestShouldReportSizedTypeChange_KeepsAWidthChangeVisible(t *testing.T) {
 	}
 }
 
+func TestDeclaredColumnTypeChange_OracleCharacterLengthUnit(t *testing.T) {
+	tests := []struct {
+		name     string
+		declared string
+		catalog  string
+		want     string
+	}{
+		{name: "byte to characters", declared: "VARCHAR2(100 CHAR)", catalog: "VARCHAR2(100)", want: "VARCHAR2(100) -> VARCHAR2(100 CHAR)"},
+		{name: "characters to byte", declared: "VARCHAR2(100)", catalog: "VARCHAR2(100 CHAR)", want: "VARCHAR2(100 CHAR) -> VARCHAR2(100)"},
+		{name: "portable varchar to characters", declared: "VARCHAR(100 CHAR)", catalog: "VARCHAR2(100)", want: "VARCHAR2(100) -> VARCHAR(100 CHAR)"},
+		{name: "same character unit", declared: "VARCHAR2(100 CHAR)", catalog: "VARCHAR2(100 CHAR)"},
+		{name: "same byte unit", declared: "VARCHAR2(100)", catalog: "VARCHAR2(100)"},
+		{name: "explicit byte matches bare", declared: "VARCHAR2(100 BYTE)", catalog: "VARCHAR2(100)"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(declaredColumnTypeChange(schemamodel.Field{Type: test.declared}, test.catalog, platform.Oracle), qt.Equals, test.want)
+		})
+	}
+}
+
 // TestRenderedDefaultForDialect_FollowsTheTypeTheDefaultLandedOn pins the other
 // half of the same question.
 //

@@ -1060,6 +1060,12 @@ func nationalCharCollationMatches(collation, charset string) bool {
 
 // declaredColumnTypeChange compares a catalog type with a declared one, as written.
 func declaredColumnTypeChange(genCol schemamodel.Field, dbRawType, dialect string) string {
+	if comparisonOf(dialect).MapsDeclaredTypes && oracleCharacterUnitChanged(dbRawType, oracletype.Map(genCol.Type)) {
+		return fmt.Sprintf("%s -> %s", dbRawType, genCol.Type)
+	}
+	if comparisonOf(dialect).MapsPortableTypes && sqlServerCharacterWidthChanged(dbRawType, genCol.Type) {
+		return fmt.Sprintf("%s -> %s", dbRawType, genCol.Type)
+	}
 	// A type spelled with its size and one spelled without it name what the engine builds
 	// for both, as `char` and `char(1)` do everywhere and `float` and `float(53)` do on
 	// PostgreSQL. Compared as words, each plans a statement that changes nothing on every
@@ -1083,6 +1089,40 @@ func declaredColumnTypeChange(genCol schemamodel.Field, dbRawType, dialect strin
 		return fmt.Sprintf("%s -> %s", dbRawType, genCol.Type)
 	}
 	return ""
+}
+
+var oracleCharacterLength = regexp.MustCompile(`(?i)^\s*(VARCHAR2|CHAR)\s*\(\s*[0-9]+\s*(CHAR|BYTE)?\s*\)\s*$`)
+
+// oracleCharacterUnitChanged keeps byte and character lengths distinct even
+// when their numeric width matches. Oracle records the unit in CHAR_USED.
+func oracleCharacterUnitChanged(current, rendered string) bool {
+	old := oracleCharacterLength.FindStringSubmatch(current)
+	newType := oracleCharacterLength.FindStringSubmatch(rendered)
+	return old != nil && newType != nil &&
+		strings.EqualFold(old[2], "CHAR") != strings.EqualFold(newType[2], "CHAR")
+}
+
+// sqlServerCharacterWidthChanged distinguishes Unicode from byte-oriented
+// character types. The generic type engine groups both spellings by length.
+func sqlServerCharacterWidthChanged(current, rendered string) bool {
+	oldFamily, oldUnicode := sqlServerCharacterFamily(current)
+	newFamily, newUnicode := sqlServerCharacterFamily(rendered)
+	return oldFamily != "" && oldFamily == newFamily && oldUnicode != newUnicode
+}
+
+func sqlServerCharacterFamily(typeName string) (family string, unicode bool) {
+	switch sqlservertype.Base(typeName) {
+	case "VARCHAR", "CHARACTER VARYING":
+		return "varying", false
+	case "NVARCHAR":
+		return "varying", true
+	case "CHAR", "CHARACTER":
+		return "fixed", false
+	case "NCHAR":
+		return "fixed", true
+	default:
+		return "", false
+	}
 }
 
 // typeChangeNarrows reports whether a value the column holds may not fit its declared

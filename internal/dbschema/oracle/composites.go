@@ -206,7 +206,7 @@ func formatAttributeType(dataType string, length, precision, scale sql.NullInt64
 			return fmt.Sprintf("%s(%d CHAR)", dataType, length.Int64)
 		}
 	}
-	return formatColumnType(dataType, sql.NullString{}, length, precision, scale)
+	return formatColumnType(dataType, sql.NullString{}, length, precision, scale, "")
 }
 
 // parenthesized is a catalog number in parentheses, or nothing for NULL.
