@@ -3,6 +3,7 @@
 package mysqlaccount_test
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -416,11 +417,7 @@ func TestAnAccountWithoutEventHearsItOnlyFromAReportE2E(t *testing.T) {
 
 					comment := qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr)
 					c.Assert(got.ExitCode, qt.Equals, 0, comment)
-					wantStdout := surface.wantStdout
-					if surface.wantLimitedStdout != "" {
-						wantStdout = surface.wantLimitedStdout
-					}
-					c.Assert(got.Stdout, qt.Contains, wantStdout, comment)
+					c.Assert(got.Stdout, qt.Contains, cmp.Or(surface.wantLimitedStdout, surface.wantStdout), comment)
 					c.Assert(got.Stderr, qt.Not(qt.Contains), "left out", comment)
 					c.Assert(got.Stderr, qt.Not(qt.Contains), "EVENT", comment)
 				})
