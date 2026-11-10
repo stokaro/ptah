@@ -57,6 +57,10 @@ type ObservedExtension struct {
 	// keyword when a type of the extension in its signature answers for it.
 	// Empty means the read did not measure it.
 	Provides []string `json:"provides,omitempty"`
+	// DependentForeignTables names foreign tables using a server whose foreign
+	// data wrapper belongs to this extension. Ptah cannot drop these tables,
+	// so a removal must refuse before PostgreSQL rejects DROP EXTENSION.
+	DependentForeignTables []string `json:"dependent_foreign_tables,omitempty"`
 }
 
 // Kind returns the model identity.
@@ -117,6 +121,7 @@ func (v *ObservedExtension) Copy() *ObservedExtension {
 		copied.Comment = new(*v.Comment)
 	}
 	copied.Provides = slices.Clone(v.Provides)
+	copied.DependentForeignTables = slices.Clone(v.DependentForeignTables)
 	return &copied
 }
 
@@ -141,7 +146,8 @@ func (v *ObservedExtension) Equal(other schemaext.Value) bool {
 		return ok && v == nil && w == nil
 	}
 	return v.Schema == w.Schema && v.Version == w.Version && v.Relocatable == w.Relocatable &&
-		equalComment(v.Comment, w.Comment) && slices.Equal(sortedMembers(v.Provides), sortedMembers(w.Provides))
+		equalComment(v.Comment, w.Comment) && slices.Equal(sortedMembers(v.Provides), sortedMembers(w.Provides)) &&
+		slices.Equal(sortedMembers(v.DependentForeignTables), sortedMembers(w.DependentForeignTables))
 }
 
 // sortedMembers returns the members in their canonical order, without
@@ -243,6 +249,9 @@ func ValidateObserved(v *ObservedExtension) error {
 		return modelError(ExtensionKind, schemaext.Observed, err)
 	}
 	if err := validMembers(v.Provides); err != nil {
+		return modelError(ExtensionKind, schemaext.Observed, err)
+	}
+	if err := validMembers(v.DependentForeignTables); err != nil {
 		return modelError(ExtensionKind, schemaext.Observed, err)
 	}
 	return nil

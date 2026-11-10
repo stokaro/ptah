@@ -210,6 +210,10 @@ func refuse(target string, subject objectidentity.ID, change *pgextension.Change
 	hosts := extensionrender.HostsAlterations(target)
 	normalized := platform.NormalizeDialect(target)
 	switch {
+	case change.After == nil && len(change.Before.DependentForeignTables) > 0:
+		table := change.Before.DependentForeignTables[0]
+		return &schemavalidation.Diagnostic{Code: schemavalidation.UnsupportedFeature, Kind: string(pgextension.ChangeKind), Object: extension,
+			Feature: "DROP EXTENSION", Message: fmt.Sprintf("cannot drop extension %q: foreign table %q depends on it; drop the foreign table first", extension, table)}
 	case change.Before == nil && change.After.Schema != "" && !hosts:
 		return &schemavalidation.Diagnostic{Code: schemavalidation.UnsupportedFeature, Kind: string(pgextension.ChangeKind), Object: extension,
 			Feature: "PostgreSQL extension installation schemas",

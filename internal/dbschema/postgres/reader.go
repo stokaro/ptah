@@ -2743,8 +2743,16 @@ func (r *Reader) readExtensions(ctx context.Context) ([]installedExtension, erro
 	if err != nil {
 		return nil, err
 	}
+	var foreignTables map[string][]string
+	if r.dialect == platform.Postgres {
+		foreignTables, err = r.readExtensionForeignTables(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
 	for i := range extensions {
 		extensions[i].observed.Provides = provides[extensions[i].name]
+		extensions[i].observed.DependentForeignTables = foreignTables[extensions[i].name]
 	}
 
 	return extensions, nil

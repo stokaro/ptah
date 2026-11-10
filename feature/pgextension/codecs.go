@@ -13,7 +13,8 @@ const (
 		`"provides":{"type":"array","minItems":1,"uniqueItems":true,"items":{"type":"string","minLength":1}}}}`
 	observedDefinition = `{"type":"object","required":["schema","version","relocatable"],"additionalProperties":false,"properties":{` +
 		`"schema":{"type":"string"},"version":{"type":"string"},"relocatable":{"type":"boolean"},` +
-		`"comment":{"type":"string"},"provides":{"type":"array","minItems":1,"uniqueItems":true,"items":{"type":"string","minLength":1}}}}`
+		`"comment":{"type":"string"},"provides":{"type":"array","minItems":1,"uniqueItems":true,"items":{"type":"string","minLength":1}},` +
+		`"dependent_foreign_tables":{"type":"array","minItems":1,"uniqueItems":true,"items":{"type":"string","minLength":1}}}}`
 )
 
 // The wire shapes. A key the encoder leaves out while it is empty is
@@ -23,8 +24,8 @@ var (
 		Allowed:  []string{"schema", "version", "comment", "if_not_exists", "provides"},
 		NonEmpty: []string{"schema", "version", "comment", "if_not_exists", "provides"}}
 	observedShape = schemaext.ObjectShape{Name: "extension",
-		Allowed:  []string{"schema", "version", "relocatable", "comment", "provides"},
-		Required: []string{"schema", "version", "relocatable"}, NonEmpty: []string{"provides"}}
+		Allowed:  []string{"schema", "version", "relocatable", "comment", "provides", "dependent_foreign_tables"},
+		Required: []string{"schema", "version", "relocatable"}, NonEmpty: []string{"provides", "dependent_foreign_tables"}}
 )
 
 // Codecs returns the version-one desired and observed codecs of the
@@ -57,8 +58,12 @@ func shape(object schemaext.ObjectShape) func(json.RawMessage) error {
 func canonicalObserved(value *ObservedExtension) *ObservedExtension {
 	canonical := value.Copy()
 	canonical.Provides = sortedMembers(canonical.Provides)
+	canonical.DependentForeignTables = sortedMembers(canonical.DependentForeignTables)
 	if len(canonical.Provides) == 0 {
 		canonical.Provides = nil
+	}
+	if len(canonical.DependentForeignTables) == 0 {
+		canonical.DependentForeignTables = nil
 	}
 	return canonical
 }
