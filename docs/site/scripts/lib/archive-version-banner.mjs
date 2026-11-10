@@ -13,26 +13,48 @@ const END = '<!-- ptah-archive-banner:end -->';
 const INSERTED = /<!-- ptah-archive-banner:start -->[\s\S]*?<!-- ptah-archive-banner:end -->/g;
 const STYLESHEET = '<link rel="stylesheet" href="/version-picker.css">';
 const CANONICAL = /<link\b(?=[^>]*\brel=["']canonical["'])[^>]*>\s*/gi;
+const REFRESH = /<meta\b(?=[^>]*http-equiv=["']refresh["'])[^>]*content=["'][^"']*?url=([^"']+)["']/i;
+const NOINDEX = /<meta\b(?=[^>]*\bname=["']robots["'])(?=[^>]*\bcontent=["'][^"']*\bnoindex\b)[^>]*>/i;
 
-function isArticle(html, path) {
-  return path !== '404.html' && MAIN.test(html);
+export function isArticle(html, path) {
+  return !/(^|\/)404\.html$/.test(path) && MAIN.test(html) && !REFRESH.test(html) && !NOINDEX.test(html);
 }
 
 function latestTarget(path, latestPaths) {
   return latestPaths instanceof Map ? latestPaths.get(path) : latestPaths.has(path) ? path : undefined;
 }
 
-function pageRoute(path) {
+export function pageRoute(path) {
   return path.replace(/(^|\/)index\.html$/, '$1').split('/').map(encodeURIComponent).join('/');
 }
 
-export function canonicalForLatest(html, path, latestPaths) {
+function articleBody(html) {
+  const start = MAIN.exec(html);
+  if (!start) return undefined;
+  const end = html.indexOf('</main>', start.index + start[0].length);
+  return end < 0 ? undefined : html.slice(start.index + start[0].length, end).replace(INSERTED, '');
+}
+
+function equivalentArticle(left, right) {
+  const title = /<title\b[^>]*>[\s\S]*?<\/title>/i;
+  const body = articleBody(left);
+  const leftTitle = left.match(title)?.[0];
+  return body !== undefined && Boolean(leftTitle) && body === articleBody(right) &&
+    leftTitle === right.match(title)?.[0];
+}
+
+function canonicalForPage(html, { version, latest, path, latestFiles }) {
   const clean = html.replace(CANONICAL, '');
-  const target = latestTarget(path, latestPaths);
-  if (!target) return clean;
-  const canonical = `<link rel="canonical" href="${Origin}/${LATEST}/${pageRoute(target)}">`;
+  if (!isArticle(clean, path)) return clean;
+  const latestHtml = latestFiles.get(path);
+  // A numbered latest release is copied into /latest/. An older release only
+  // shares that URL when the rendered title and article body are byte-identical.
+  const equivalent = latestHtml && isArticle(latestHtml, path) &&
+    (version === latest || (olderRelease(version, latest) && equivalentArticle(clean, latestHtml)));
+  const destination = equivalent ? LATEST : version;
+  const canonical = `<link rel="canonical" href="${Origin}/${destination}/${pageRoute(path)}">`;
   if (clean.includes('</head>')) return clean.replace('</head>', `${canonical}</head>`);
-  // Astro's redirect stubs have an implicit head ending at <body>.
+  // A real article without an explicit closing head can still have a body.
   if (/<body\b/.test(clean)) return clean.replace(/<body\b/, `${canonical}<body`);
   throw new Error(`${path} has no head boundary for its canonical URL`);
 }
@@ -53,18 +75,19 @@ function bannerMarkup(version, latest, path, latestPaths) {
 
 // Render the warning into the HTML so it works without JavaScript or a picker.
 // The picker recognizes the same class and leaves this warning in place.
-export function decorateArchivePage(html, { version, latest, path, latestPaths }) {
+export function decorateArchivePage(html, page) {
+  const { version, latest, path, latestPaths } = page;
   const clean = html.replace(INSERTED, '');
-  if (!isArticle(clean, path) || !olderRelease(version, latest)) return canonicalForLatest(clean, path, latestPaths);
+  if (!isArticle(clean, path) || !olderRelease(version, latest)) return canonicalForPage(clean, page);
   let decorated = clean.replace(MAIN, (main) => main + bannerMarkup(version, latest, path, latestPaths));
   if (!decorated.includes('href="/version-picker.css"')) {
     if (!decorated.includes('</head>')) throw new Error(`${version}/${path} has no closing head for the archive stylesheet`);
     decorated = decorated.replace('</head>', `${STYLESHEET}</head>`);
   }
-  return canonicalForLatest(decorated, path, latestPaths);
+  return canonicalForPage(decorated, page);
 }
 
-function htmlPaths(root) {
+export function htmlPaths(root) {
   const paths = [];
   function walk(directory) {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
@@ -79,7 +102,7 @@ function htmlPaths(root) {
   return paths;
 }
 
-function* archivePages(siteDir) {
+export function* archivePages(siteDir) {
   const index = JSON.parse(readFileSync(join(siteDir, 'versions.json'), 'utf8'));
   const versions = index.versions?.map((version) => version.slug);
   if (!Array.isArray(versions) || versions.some((version) => !isVersionFolder(version))) {
@@ -95,17 +118,21 @@ function* archivePages(siteDir) {
     }
   }
   const latestPaths = new Map();
-  // Follow retired-route redirects to an actual latest page. A missing,
-  // external, or cyclic target supplies neither a canonical nor a page link.
+  // Follow retired-route redirects to an actual latest article. A missing,
+  // external, cyclic, or error-page target supplies no newer-page link.
   function resolveTarget(path, seen = new Set()) {
     if (seen.has(path) || !latestFiles.has(path)) return undefined;
     const html = latestFiles.get(path);
-    const refresh = html.match(/<meta\b(?=[^>]*http-equiv=["']refresh["'])[^>]*content=["'][^"']*?url=([^"']+)["']/i);
-    if (!refresh) return path;
-    const url = new URL(refresh[1], `${Origin}/${LATEST}/${pageRoute(path)}`);
-    if (url.origin !== Origin || !url.pathname.startsWith(`/${LATEST}/`)) return undefined;
-    const route = decodeURIComponent(url.pathname.slice(`/${LATEST}/`.length));
-    return resolveTarget(route.endsWith('/') || !route ? `${route}index.html` : route, new Set([...seen, path]));
+    const refresh = html.match(REFRESH);
+    if (!refresh) return isArticle(html, path) ? path : undefined;
+    try {
+      const url = new URL(refresh[1], `${Origin}/${LATEST}/${pageRoute(path)}`);
+      if (url.origin !== Origin || !url.pathname.startsWith(`/${LATEST}/`)) return undefined;
+      const route = decodeURIComponent(url.pathname.slice(`/${LATEST}/`.length));
+      return resolveTarget(route.endsWith('/') || !route ? `${route}index.html` : route, new Set([...seen, path]));
+    } catch {
+      return undefined;
+    }
   }
   for (const path of latestFiles.keys()) latestPaths.set(path, resolveTarget(path));
   for (const version of versions) {
@@ -115,7 +142,7 @@ function* archivePages(siteDir) {
       const file = join(root, path);
       const html = readFileSync(file, 'utf8');
       if (isArticle(html, path)) documents += 1;
-      yield { file, html, version, latest: newest, path, latestPaths };
+      yield { file, html, version, latest: newest, path, latestPaths, latestFiles };
     }
     if (olderRelease(version, newest) && documents === 0) {
       throw new Error(`${version} has no documentation pages to warn on`);
@@ -143,7 +170,7 @@ export function archiveBannerProblems(siteDir) {
       problems.push(`${page.version}/${page.path} has ${bannerCount} archive warnings, want ${expectedCount}`);
     }
     if (decorateArchivePage(page.html, page) !== page.html) {
-      problems.push(`${page.version}/${page.path} has an incorrect latest canonical, archive warning, or stylesheet`);
+      problems.push(`${page.version}/${page.path} has an incorrect canonical, archive warning, or stylesheet`);
     }
   }
   return problems;
@@ -162,36 +189,57 @@ export function archiveBannerSelftest() {
   try {
     writeFileSync(join(site, 'versions.json'), JSON.stringify({ latest: 'v0.12.0', versions: versions.map((slug) => ({ slug })) }));
     for (const version of versions) put(version, 'index.html', article);
+    put('edge', 'only/index.html', article);
     put('v0.2.0', 'atlas/project-config/index.html', article);
     put('v0.2.0', 'gone/index.html', article);
+    put('v0.2.0', 'changed/index.html', article);
+    put(LATEST, 'changed/index.html', article.replace('Original content', 'New content'));
     put('v0.12.0', 'atlas/project-config/index.html', article);
     put(LATEST, 'atlas/project-config/index.html', article);
     put('v0.2.0', 'retired/index.html', article);
     put(LATEST, 'retired/index.html', '<!doctype html><title>Redirect</title><meta http-equiv="refresh" content="0;url=/latest/atlas/project-config/"><body>Redirecting</body>');
     put('v0.2.0', 'cyclic/index.html', article);
     put(LATEST, 'cyclic/index.html', '<html><head><meta http-equiv="refresh" content="0;url=/latest/cyclic/"></head></html>');
+    put('v0.2.0', 'external/index.html', article);
+    put(LATEST, 'external/index.html', '<html><head><meta http-equiv="refresh" content="0;url=https://example.com/"></head></html>');
+    put('v0.2.0', 'error/index.html', article);
+    put(LATEST, 'error/index.html', '<html><head><meta http-equiv="refresh" content="0;url=/latest/404.html"></head></html>');
+    put('v0.2.0', 'noindex/index.html', article);
+    put(LATEST, 'noindex/index.html', article.replace('<title>Docs</title>', '<title>Docs</title><meta name="robots" content="noindex">'));
+    put('v0.2.0', 'malformed/index.html', article);
+    put(LATEST, 'malformed/index.html', '<html><head><meta http-equiv="refresh" content="0;url=http://["></head></html>');
     put('v0.2.0', 'redirect/index.html', '<html><head><meta http-equiv="refresh" content="0;url=../"></head></html>');
     put('v0.2.0', 'samples/index.html', '<main><h1>Standalone sample</h1></main>');
     put('v0.2.0', '404.html', article);
     put(LATEST, '404.html', article);
     assert(archiveBannerProblems(site).length > 0, 'an archive without warnings passed');
-    assert(publishArchiveBanners(site) === 15, 'not every old release article received a warning');
+    assert(publishArchiveBanners(site) === 20, 'not every old release article received a warning');
     assert(archiveBannerProblems(site).length === 0, 'published warnings failed the gate');
     const file = join(site, 'v0.2.0', 'atlas/project-config/index.html');
     const html = readFileSync(file, 'utf8');
     assert(html.includes('This page documents v0.2.0, an older release.'), 'the warning does not identify the historical version');
     assert(html.includes('href="/latest/atlas/project-config/"'), 'the matching latest page was not linked');
-    assert(html.includes(`rel="canonical" href="${Origin}/latest/atlas/project-config/"`), 'the historical page does not canonicalize to latest');
+    assert(html.includes(`rel="canonical" href="${Origin}/latest/atlas/project-config/"`), 'equivalent historical content did not canonicalize to latest');
     const gone = readFileSync(join(site, 'v0.2.0', 'gone/index.html'), 'utf8');
-    assert(gone.includes('href="/latest/"') && !gone.includes('rel="canonical"'), 'a missing latest page has a canonical or the warning does not link home');
+    assert(gone.includes('href="/latest/"') && gone.includes(`${Origin}/v0.2.0/gone/`), 'a missing latest page lost its historical canonical or home link');
+    const changed = readFileSync(join(site, 'v0.2.0', 'changed/index.html'), 'utf8');
+    assert(changed.includes('href="/latest/changed/"') && changed.includes(`${Origin}/v0.2.0/changed/`), 'different article content canonicalized to latest');
     const retired = readFileSync(join(site, 'v0.2.0', 'retired/index.html'), 'utf8');
-    assert(retired.includes('href="/latest/atlas/project-config/"') && retired.includes(`${Origin}/latest/atlas/project-config/`), 'retired routes do not use the final latest page');
+    assert(retired.includes('href="/latest/atlas/project-config/"') && retired.includes(`${Origin}/v0.2.0/retired/`), 'a retired latest route changed the historical canonical');
     const cyclic = readFileSync(join(site, 'v0.2.0', 'cyclic/index.html'), 'utf8');
-    assert(cyclic.includes('href="/latest/"') && !cyclic.includes('rel="canonical"'), 'a cyclic redirect supplied a canonical or a broken banner link');
+    assert(cyclic.includes('href="/latest/"') && cyclic.includes(`${Origin}/v0.2.0/cyclic/`), 'a cyclic redirect supplied a broken banner link');
+    for (const route of ['external', 'error', 'noindex', 'malformed']) {
+      const page = readFileSync(join(site, 'v0.2.0', route, 'index.html'), 'utf8');
+      assert(page.includes('href="/latest/"') && page.includes(`${Origin}/v0.2.0/${route}/`), `${route} supplied a broken banner link`);
+    }
     assert(!readFileSync(join(site, 'edge', 'index.html'), 'utf8').includes(START), 'edge received an archive warning');
-    assert(readFileSync(join(site, 'edge', 'index.html'), 'utf8').includes(`${Origin}/latest/`), 'edge does not canonicalize to latest');
+    assert(readFileSync(join(site, 'edge', 'index.html'), 'utf8').includes(`${Origin}/edge/`), 'edge does not canonicalize to itself');
+    assert(readFileSync(join(site, 'edge', 'only/index.html'), 'utf8').includes(`${Origin}/edge/only/`), 'an edge-only article has no self canonical');
+    assert(readFileSync(join(site, LATEST, 'index.html'), 'utf8').includes(`${Origin}/latest/`), 'latest does not canonicalize to itself');
+    assert(readFileSync(join(site, 'v0.12.0', 'index.html'), 'utf8').includes(`${Origin}/latest/`), 'the newest numbered release does not consolidate with latest');
     assert(!readFileSync(join(site, 'v0.12.0', 'index.html'), 'utf8').includes(START), 'the latest release received an archive warning');
     assert(!readFileSync(join(site, 'v0.2.0', 'samples/index.html'), 'utf8').includes(START), 'a standalone sample was decorated');
+    assert(!readFileSync(join(site, 'v0.2.0', 'redirect/index.html'), 'utf8').includes('rel="canonical"'), 'a redirect retained a canonical');
     assert(!readFileSync(join(site, 'v0.2.0', '404.html'), 'utf8').includes('rel="canonical"'), 'a 404 page retained a canonical');
     publishArchiveBanners(site);
     assert(readFileSync(file, 'utf8') === html, 'a second publication changed or duplicated the warning');
@@ -200,7 +248,7 @@ export function archiveBannerSelftest() {
       assert(archiveBannerProblems(site).length > 0, 'an incomplete or incorrect warning passed');
     }
     writeFileSync(file, html);
-    assert(!decorateArchivePage(article, { version: 'v0.10.0', latest: 'v0.9.0', path: 'index.html', latestPaths: new Set() }).includes(START), 'release comparison is lexical');
+    assert(!decorateArchivePage(article, { version: 'v0.10.0', latest: 'v0.9.0', path: 'index.html', latestPaths: new Set(), latestFiles: new Map() }).includes(START), 'release comparison is lexical');
     rmSync(join(site, 'v0.1.0', 'index.html'));
     let refused = false;
     try { publishArchiveBanners(site); } catch (error) { refused = /no documentation pages/.test(error.message); }

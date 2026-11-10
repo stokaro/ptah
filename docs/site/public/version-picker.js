@@ -287,7 +287,8 @@
     link.appendChild(mark);
     link.appendChild(element('span', 'ptah-version-picker__slug', version.label));
     if (version.latest) link.appendChild(element('span', 'ptah-version-picker__badge', 'latest'));
-    var meta = version.slug === EDGE ? 'tracks master' : version.slug === LATEST ? version.release : version.released;
+    var meta = version.slug === EDGE ? 'Unreleased development docs' :
+      version.slug === LATEST ? 'Released as ' + version.release : version.released;
     if (meta) {
       var detail = element('span', 'ptah-version-picker__meta', meta);
       if (version.released) {

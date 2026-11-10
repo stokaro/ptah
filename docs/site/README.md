@@ -466,6 +466,8 @@ at the root itself and address the site as a whole:
 | --- | --- | --- |
 | `versions.json` | `scripts/gen-versions.mjs` | The version list the picker reads: each version, each release's date, and the latest release |
 | `index.html` | `scripts/gen-versions.mjs` | The redirect from the root to the default version |
+| `robots.txt` | `scripts/publish-root-assets.mjs` | Discovery links for the edge and latest sitemap indexes |
+| `sitemap-index.xml` | `scripts/publish-root-assets.mjs` | The root index of active documentation sitemaps |
 | `install.sh` | `scripts/publish-root-assets.mjs` | The shell installer, from `public/install.sh` |
 | `install.ps1` | `scripts/publish-root-assets.mjs` | The PowerShell installer, from `public/install.ps1` |
 | `version-picker.js` | `scripts/publish-root-assets.mjs` | The version picker every version loads, from `public/version-picker.js` |
@@ -598,7 +600,11 @@ has to exist in the oldest of them. That is why it imports nothing, and why the
 picker's markup and styles live in the root files rather than here.
 
 The button opens a panel that lists `edge`, `latest`, then the releases newest
-first. `latest` serves the newest tagged release at a stable `/latest/` address;
+first. It labels edge as development documentation that may describe unreleased
+behavior and names the release served by latest. Edge pages link to the source
+build instructions.
+
+`latest` serves the newest tagged release at a stable `/latest/` address;
 `gen-versions.mjs` copies that release's build and rebases documentation links
 and assets. Its source ref and commit remain those of the tag. Each
 release shows the day its tag was made, and the newest carries a `latest` badge;
@@ -648,11 +654,28 @@ release to carry the mount point and to load the picker from the root.
 every release and to name the newest one latest. It verifies the archive
 warning, latest-page link, placement, and stylesheet on every built article.
 
-Every versioned page uses the matching `/latest/` page as its canonical URL.
-This includes edge and numbered releases. A page absent from `latest` has no
-canonical link; its archive warning links to `/latest/` instead. A retired
-route that redirects within `latest` uses the destination page for both links.
-The deployment gate checks these links in the assembled HTML.
+Real edge and latest articles have absolute self-referencing canonicals. The
+newest numbered release uses the equivalent latest article, copied from that
+release. An older release uses latest only when its rendered title and article
+body are byte-identical after the archive warning is removed. This rule deliberately
+does not infer equivalence from a matching route or a redirect. When the body
+differs, the latest route is absent, or the latest route redirects, the older
+article keeps its own canonical. Its archive warning may still link to a
+resolved latest article as navigation. Error pages and redirect stubs have no
+article canonical.
+
+The final publication step rebuilds each version's sitemap from real articles
+whose canonical is that version's own URL. It removes stale sitemap shards,
+and publishes both `/edge/sitemap-index.xml` and `/latest/sitemap-index.xml`
+through the root index and `robots.txt`. The assembled-site gate checks the
+HTML, sitemap entries, and discovery files together.
+
+After deployment, submit or confirm both active indexes in Google Search
+Console. Inspect an edge article, a latest article, an equivalent older
+article, and an older article with different content. Record the inspection
+date, crawl status, user-declared canonical, and Google-selected canonical.
+Google may select a different canonical and indexing takes time; the deployed
+HTML and sitemap output are the immediate publication checks.
 
 ## Brand assets
 

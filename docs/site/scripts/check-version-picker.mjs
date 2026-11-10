@@ -21,8 +21,8 @@
 //   - a choice that lands on the same page in the other version, and one that
 //     lands on that version's home page because the page does not exist there;
 //   - scripting disabled, where the mount point shows the version as text;
-//   - static archive warnings without a picker or scripting, latest canonicals
-//     for matching pages, and no canonical for a removed page;
+//   - static archive warnings without a picker or scripting, self canonicals
+//     for edge and removed historical pages, and latest for equivalent pages;
 //   - the banner a page from an older release shows at the top of <main>:
 //     present on such a page, linking to the same page in the latest release
 //     or to its home page when the page does not exist there, and absent on
@@ -96,6 +96,13 @@ export function pickerBehaviorProblems(readings) {
   expect('the version marked as the page\'s own', panel.current, [version]);
   expect('the versions badged latest', panel.latest, [WITH_PAGE]);
   expect('the release dates', panel.dates, RELEASED);
+  expect('the edge guide notice', readings.edgeNotice, {
+    text: 'Edge documents the current development build and may describe unreleased behavior. To use those commands, build Ptah from master. For an installed release, select its version in the header.',
+    href: '/edge/start/install-options/#build-from-a-checkout',
+  });
+  expect('active channel descriptions', panel.channels, {
+    edge: 'Unreleased development docs', latest: `Released as ${WITH_PAGE}`,
+  });
   expect(`the filter "${WITHOUT_PAGE}" leaves`, readings.filtered, [WITHOUT_PAGE]);
   expect('the first Escape', readings.escaped.once, { open: true, filter: '', shown: LISTED.length });
   expect('the second Escape', readings.escaped.twice, { open: false, focus: 'button' });
@@ -116,7 +123,7 @@ export function pickerBehaviorProblems(readings) {
   expect('the archive warning with the picker running', readings.archive.modern, ARCHIVED_BANNER);
   expect('the archive warning on a phone without scripting', readings.archive.mobile, LEGACY_BANNER);
   expect('canonical URLs in the assembled pages', readings.canonicals, {
-    legacy: `/latest/${PAGE}`, gone: null, edge: `/latest/${PAGE}`, alias: `/latest/${PAGE}`, release: `/latest/${PAGE}`,
+    legacy: `/latest/${PAGE}`, gone: `/${LEGACY}/${GONE}`, edge: `/edge/${PAGE}`, alias: `/latest/${PAGE}`, release: `/latest/${PAGE}`,
   });
   expect('accessibility violations in the open panel', readings.violations, []);
   expect('page errors', readings.errors, []);
@@ -143,6 +150,11 @@ function selftest() {
       current: ['edge'],
       latest: [WITH_PAGE],
       dates: RELEASED,
+      channels: { edge: 'Unreleased development docs', latest: `Released as ${WITH_PAGE}` },
+    },
+    edgeNotice: {
+      text: 'Edge documents the current development build and may describe unreleased behavior. To use those commands, build Ptah from master. For an installed release, select its version in the header.',
+      href: '/edge/start/install-options/#build-from-a-checkout',
     },
     filtered: [WITHOUT_PAGE],
     escaped: { once: { open: true, filter: '', shown: LISTED.length }, twice: { open: false, focus: 'button' } },
@@ -152,7 +164,7 @@ function selftest() {
     latestPage: `/latest/${PAGE}`,
     banner: { older: BANNER_SAME_PAGE, gone: BANNER_HOME, edge: null, latest: null, newer: null, missing: null },
     archive: { legacy: LEGACY_BANNER, gone: LEGACY_HOME, modern: ARCHIVED_BANNER, mobile: LEGACY_BANNER },
-    canonicals: { legacy: `/latest/${PAGE}`, gone: null, edge: `/latest/${PAGE}`, alias: `/latest/${PAGE}`, release: `/latest/${PAGE}` },
+    canonicals: { legacy: `/latest/${PAGE}`, gone: `/${LEGACY}/${GONE}`, edge: `/edge/${PAGE}`, alias: `/latest/${PAGE}`, release: `/latest/${PAGE}` },
     violations: [],
     errors: [],
   };
@@ -197,9 +209,11 @@ function selftest() {
     ['a missing latest page linked without scripting', (r) => { r.archive.gone.href = `/${WITH_PAGE}/${GONE}`; }],
     ['the picker duplicating the static archive warning', (r) => { r.archive.modern.count = 2; }],
     ['an archive warning hidden on a phone', (r) => { r.archive.mobile.visible = false; }],
-    ['a numbered canonical on an archive page', (r) => { r.canonicals.legacy = `/${LEGACY}/${PAGE}`; }],
+    ['an incorrect canonical on an equivalent archive page', (r) => { r.canonicals.legacy = `/${LEGACY}/${PAGE}`; }],
     ['a home-page canonical on a removed page', (r) => { r.canonicals.gone = '/latest/'; }],
-    ['an edge canonical instead of latest', (r) => { r.canonicals.edge = `/edge/${PAGE}`; }],
+    ['a latest canonical on edge', (r) => { r.canonicals.edge = `/latest/${PAGE}`; }],
+    ['an unlabeled development channel', (r) => { r.panel.channels.edge = ''; }],
+    ['an edge guide without a build path', (r) => { r.edgeNotice.href = ''; }],
     ['an accessibility violation', (r) => { r.violations = ['color-contrast: .ptah-version-picker__meta']; }],
     ['a page error', (r) => { r.errors = ['boom']; }],
   ];
@@ -264,6 +278,8 @@ function readPanel(tab) {
       dates: Object.fromEntries(
         rows.filter((row) => row.querySelector('time')).map((row) => [row.dataset.version, row.querySelector('time').dateTime]),
       ),
+      channels: Object.fromEntries(rows.filter((row) => ['edge', 'latest'].includes(row.dataset.version))
+        .map((row) => [row.dataset.version, row.querySelector('.ptah-version-picker__meta')?.textContent ?? ''])),
     };
   });
 }
@@ -298,6 +314,7 @@ async function main() {
     }
     return { status: 200, type: 'text/html', body: decorateArchivePage(body, {
       version: slug, latest: WITH_PAGE, path: `${path}index.html`, latestPaths: new Set([`${PAGE}index.html`]),
+      latestFiles: new Map(path === PAGE ? [[`${PAGE}index.html`, body]] : []),
     }) };
   };
   const others = new Map([
@@ -362,6 +379,13 @@ async function main() {
 
     await load(LISTED);
     const listed = await readPicker(tab);
+    const edgeNotice = await tab.evaluate(() => {
+      const notice = document.querySelector('.ptah-edge-note');
+      return notice ? {
+        text: notice.textContent.replace(/\s+/g, ' ').trim(),
+        href: notice.querySelector('a')?.getAttribute('href') ?? '',
+      } : null;
+    });
     const panel = await openPanel();
     await tab.keyboard.type(WITHOUT_PAGE);
     const filtered = (await readPanel(tab)).slugs;
@@ -435,6 +459,7 @@ async function main() {
       unlisted,
       missing,
       panel,
+      edgeNotice,
       filtered,
       escaped: {
         once: { open: once.open, filter, shown: once.slugs.length },
