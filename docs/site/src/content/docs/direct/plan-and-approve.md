@@ -222,8 +222,9 @@ Atlas `.plan.hcl` format, which has no place for them, refuses a plan that does.
 others. A membership counts when it connects to one of these roles, directly or
 through a chain of groups:
 
-- a role the read names: a holder or grantor of a privilege, the owner of an
-  object, or the definer of a routine;
+- a role the read names: a privilege holder or grantor, object owner, routine
+  definer, policy target, or another role a referenced-scope read ties to the
+  inspected schema;
 - the role the connection runs as;
 - a role a statement in the plan names, such as the role it grants to or
   creates. A table with the same name as a role counts too.
