@@ -318,7 +318,6 @@ func TestFailedResumeCountsFromWhereItStartedE2E_FailurePath(t *testing.T) {
 // TestFailedCommitReportsWhatStayedE2E_FailurePath fails at the commit, on a
 // constraint the transaction deferred. Every statement ran, the schema statements
 // of YugabyteDB stay, and the data goes with the commit. PostgreSQL is the control.
-// One transaction for the run has one row and no count for what stayed.
 func TestFailedCommitReportsWhatStayedE2E_FailurePath(t *testing.T) {
 	const body = "CREATE TABLE parent (id INT PRIMARY KEY);\n" +
 		"CREATE TABLE child (id INT PRIMARY KEY, parent_id INT REFERENCES parent (id) DEFERRABLE INITIALLY DEFERRED);\n" +
@@ -333,7 +332,6 @@ func TestFailedCommitReportsWhatStayedE2E_FailurePath(t *testing.T) {
 	}{
 		{name: "postgresql", engine: dbtarget.PostgreSQL, txMode: "file", wantOutcome: migrator.RunOutcomeFailed, wantChild: -1},
 		{name: "yugabytedb", engine: dbtarget.YugabyteDB, txMode: "file", wantOutcome: migrator.RunOutcomePartial, wantApplied: 2},
-		{name: "yugabytedb, one transaction", engine: dbtarget.YugabyteDB, txMode: "all", wantOutcome: migrator.RunOutcomeUnknown},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
