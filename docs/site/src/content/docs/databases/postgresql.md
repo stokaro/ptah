@@ -278,7 +278,9 @@ expands a `*` into the column list when it creates the view, so
 `*` of a view that reads one table into that table's declared columns before it
 compares, so the declaration and its read-back match. Because the declared
 columns are used, a view created before its table gained a column is replaced,
-and the new column appears in it. A `*` over a join, over a function or inside
+and the new column appears in it. When a declared table loses a column that
+the view captured through `SELECT *`, Ptah drops the view before the column
+and creates it again afterward. A `*` over a join, over a function or inside
 a subquery is compared as written, so such a view is replaced on every plan;
 list its columns instead.
 
@@ -1336,9 +1338,10 @@ parameter`, and CockroachDB answers a syntax error.
 
 ## What a view rebuild keeps
 
-Three changes drop a view or a materialized view and create it again: a column
-type change under it, a change to a materialized view, and a view change
-`CREATE OR REPLACE VIEW` cannot make, such as a column that moves. Each object
+Ptah drops a view or materialized view and creates it again when a column
+type changes under it, a materialized view changes, or `CREATE OR REPLACE VIEW`
+cannot make the requested change. A view with `SELECT *` is also rebuilt when
+its table loses a captured column. Each object
 that depends on a dropped one goes with it:
 
 - the views and materialized views that read it, directly or through another
@@ -1350,7 +1353,7 @@ that depends on a dropped one goes with it:
 
 The plan drops each of them by name before the column step, after everything
 that depends on it in the database, so no drop needs `CASCADE` for a dependent
-the schema declares. It creates them again after the view step, in dependency
+the schema declares. It creates them again after the column step, in dependency
 order, from the declaration. The drop order reads the definitions the database
 holds, and the creation order reads the declaration. So when two changed views
 swap which one reads the other, the plan first drops the one that reads the
