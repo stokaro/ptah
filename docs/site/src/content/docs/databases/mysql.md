@@ -621,6 +621,14 @@ list, so a caller need not read the sentence.
 [Why a command failed](../../reference/exit-codes/#why-a-command-failed) gives the
 fields.
 
+Ptah reads `SHOW GRANTS` for the connecting account before it decides which
+objects the account can see. If the server or proxy rejects this statement, the
+read fails. The privilege visibility described below was measured on direct
+MySQL and MariaDB servers. It has not been verified on AWS RDS, Aurora, Google
+Cloud SQL, Azure Database for MySQL, ProxySQL, or Vitess. If one of these
+services gives a different result, open an issue with the product and version,
+account grants, and a reproducible read failure.
+
 What each kind of object takes, measured on MySQL 8.4 and 26.10 and on MariaDB
 11.8 and 12.3:
 
