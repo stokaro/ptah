@@ -261,6 +261,9 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	if err := r.leaveOutExtensionOwnedRelations(ctx, schema); err != nil {
 		return nil, err
 	}
+	if err := r.readUnmodeledObjects(ctx, schema); err != nil {
+		return nil, err
+	}
 
 	// Enhance tables with constraint information
 	r.enhanceTablesWithConstraints(schema.Tables, schema.Constraints)
