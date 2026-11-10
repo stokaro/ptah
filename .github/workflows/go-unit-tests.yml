@@ -133,12 +133,17 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # The patch below is in the cache key: it changes the runtime, and so the
+      # build ID of every package that links it. Restored from a stock-runtime
+      # cache, the job would rebuild the whole graph on every run.
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
-          cache-dependency-path: go.sum
+          cache-dependency-path: |
+            go.sum
+            scripts/go-runtime-patch/cl828724.patch
 
       - name: Install dependencies
         run: go mod download
@@ -191,12 +196,17 @@ jobs:
 
       - uses: actions/checkout@v7
 
+      # The patch below is in the cache key: it changes the runtime, and so the
+      # build ID of every package that links it. Restored from a stock-runtime
+      # cache, the job would rebuild the whole graph on every run.
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
-          cache-dependency-path: go.sum
+          cache-dependency-path: |
+            go.sum
+            scripts/go-runtime-patch/cl828724.patch
 
       - name: Install dependencies
         run: go mod download
