@@ -303,17 +303,19 @@ func TestEverySurfaceThatReadsNamesAnEventE2E(t *testing.T) {
 
 // surface is one verb that reads a database through the path that lists events.
 type surface struct {
-	name       string
-	binary     clirun.Target
-	args       func(url, atlas, file string) []string
-	wantStdout string
-	wantStderr string
+	name              string
+	binary            clirun.Target
+	args              func(url, atlas, file string) []string
+	wantStdout        string
+	wantLimitedStdout string
+	wantStderr        string
 }
 
 // surfacesThatWarn are the verbs whose answer has no place for an event, each with
 // what it says over a database that holds one, to an account that can see it.
 func surfacesThatWarn() []surface {
 	const leftOut = "event \"e_tick\" in the database is left out: Ptah does not model events"
+	const limitedRoles = "No changes found in the visible scope. Comparison limits:\n- --from roles and grants: the source did not describe this kind\n- --to roles and grants: the source did not describe this kind"
 	return []surface{
 		{
 			name:       "schema inspect",
@@ -330,11 +332,12 @@ func surfacesThatWarn() []surface {
 			wantStderr: leftOut,
 		},
 		{
-			name:       "schema diff of a database with itself",
-			binary:     clirun.Ptah,
-			args:       func(u, _, _ string) []string { return []string{"schema", "diff", "--from", u, "--to", u} },
-			wantStdout: "Schemas are synced",
-			wantStderr: "2 objects were left out: event \"e_tick\" in --from, event \"e_tick\" in --to (Ptah does not model events",
+			name:              "schema diff of a database with itself",
+			binary:            clirun.Ptah,
+			args:              func(u, _, _ string) []string { return []string{"schema", "diff", "--from", u, "--to", u} },
+			wantStdout:        "Schemas are synced",
+			wantLimitedStdout: limitedRoles,
+			wantStderr:        "2 objects were left out: event \"e_tick\" in --from, event \"e_tick\" in --to (Ptah does not model events",
 		},
 		{
 			name:   "schema apply",
@@ -380,11 +383,12 @@ func surfacesThatWarn() []surface {
 			wantStderr: leftOut,
 		},
 		{
-			name:       "ptah-compat schema diff",
-			binary:     clirun.Compat,
-			args:       func(_, a, _ string) []string { return []string{"schema", "diff", "--from", a, "--to", a} },
-			wantStdout: "Schemas are synced",
-			wantStderr: "2 objects were left out: event \"e_tick\" in --from, event \"e_tick\" in --to (Ptah does not model events",
+			name:              "ptah-compat schema diff",
+			binary:            clirun.Compat,
+			args:              func(_, a, _ string) []string { return []string{"schema", "diff", "--from", a, "--to", a} },
+			wantStdout:        "Schemas are synced",
+			wantLimitedStdout: limitedRoles,
+			wantStderr:        "2 objects were left out: event \"e_tick\" in --from, event \"e_tick\" in --to (Ptah does not model events",
 		},
 	}
 }
@@ -412,7 +416,11 @@ func TestAnAccountWithoutEventHearsItOnlyFromAReportE2E(t *testing.T) {
 
 					comment := qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr)
 					c.Assert(got.ExitCode, qt.Equals, 0, comment)
-					c.Assert(got.Stdout, qt.Contains, surface.wantStdout, comment)
+					wantStdout := surface.wantStdout
+					if surface.wantLimitedStdout != "" {
+						wantStdout = surface.wantLimitedStdout
+					}
+					c.Assert(got.Stdout, qt.Contains, wantStdout, comment)
 					c.Assert(got.Stderr, qt.Not(qt.Contains), "left out", comment)
 					c.Assert(got.Stderr, qt.Not(qt.Contains), "EVENT", comment)
 				})

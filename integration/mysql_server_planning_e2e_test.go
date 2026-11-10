@@ -180,7 +180,7 @@ func (s mysqlScratch) tablesOf(c *qt.C, database string) string {
 }
 
 // TestSchemaDiffFindsAMySQLServerSyncedWithItselfE2E compares a whole server
-// with itself, databases included: nothing to plan.
+// with itself, databases included: nothing to plan within the visible scope.
 func TestSchemaDiffFindsAMySQLServerSyncedWithItselfE2E(t *testing.T) {
 	for _, engine := range mysqlServerEngines {
 		t.Run(engine.name, func(t *testing.T) {
@@ -193,8 +193,10 @@ func TestSchemaDiffFindsAMySQLServerSyncedWithItselfE2E(t *testing.T) {
 				"--schemas", server.first+","+server.second)
 
 			c.Assert(err, qt.IsNil, qt.Commentf("%s", compat))
-			c.Assert(compat, qt.Contains, "Schemas are synced")
-			c.Assert(native, qt.Contains, "synced")
+			for _, output := range []string{compat, native} {
+				c.Assert(output, qt.Contains, "No changes found in the visible scope")
+				c.Assert(output, qt.Contains, "only databases visible to the connected account were read")
+			}
 		})
 	}
 }
