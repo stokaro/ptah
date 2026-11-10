@@ -95,7 +95,7 @@ func ForPlanRoles(database *catalog.Database, statements []string, scope descrip
 // plan. The same roots select memberships and server-wide role attributes.
 func planRoles(database *catalog.Database, statements []string, scope descriptor.RoleScope) []string {
 	roles := []string{database.ConnectedRole}
-	if scope != descriptor.RoleScopeNone {
+	if scope == descriptor.RoleScopeReferenced {
 		for _, role := range database.Roles {
 			if !adminOnlyCreatorRole(database, role.Name) {
 				roles = append(roles, role.Name)

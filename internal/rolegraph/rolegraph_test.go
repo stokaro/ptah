@@ -38,6 +38,8 @@ func TestForPlanRoles(t *testing.T) {
 	}{
 		{name: "unrelated server role", scope: descriptor.RoleScopeNone,
 			want: database.Roles[:2]},
+		{name: "unrelated user-made role", scope: descriptor.RoleScopeUserMade,
+			want: database.Roles[:2]},
 		{name: "statement recipient", scope: descriptor.RoleScopeNone,
 			statements: []string{`GRANT SELECT ON t TO recipient`},
 			want:       database.Roles[:3]},
@@ -339,6 +341,14 @@ func TestForPlan_HappyPath(t *testing.T) {
 				database.Roles = []catalog.Role{{Name: "peer"}}
 			}),
 			scope: descriptor.RoleScopeNone,
+			want:  nil,
+		},
+		{
+			name: "a listed role in a user-made read is no tie to the plan",
+			database: described(func(database *catalog.Database) {
+				database.Roles = []catalog.Role{{Name: "peer"}}
+			}),
+			scope: descriptor.RoleScopeUserMade,
 			want:  nil,
 		},
 		{
