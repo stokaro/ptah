@@ -66,15 +66,16 @@ const (
 )
 
 var (
-	commentLine   = regexp.MustCompile(`--[^\n]*`)
-	createTable   = regexp.MustCompile(`(?is)^CREATE\s+` + orReplace + tableModifiers + `TABLE\s+` + notExists + `(` + qualified + `)`)
-	createIndex   = regexp.MustCompile(`(?is)^CREATE\s+` + indexModifiers + `INDEX\s+(?:CONCURRENTLY\s+)?` + notExists + `(` + qualified + `)`)
-	addNamed      = regexp.MustCompile(`(?is)^ALTER\s+TABLE\s+(?:ONLY\s+|IF\s+EXISTS\s+)*(` + qualified + `)\s+ADD\s+CONSTRAINT\s+(` + qualified + `)`)
-	inlineNamed   = regexp.MustCompile(`(?is)\bCONSTRAINT\s+(` + qualified + `)`)
-	createOther   = regexp.MustCompile(`(?is)^CREATE\s+` + orReplace + `(?:` + namedObjectKind + `)\s+` + notExists + `(` + qualified + `)`)
-	createKind    = regexp.MustCompile(`(?is)^CREATE\s+` + orReplace + `(` + namedObjectKind + `)\b`)
-	guardedCreate = regexp.MustCompile(`(?is)\bCREATE\s+` + orReplace + indexModifiers + tableModifiers + `(?:` + anyObjectKind + `)\b`)
-	collapseGaps  = regexp.MustCompile(`\s+`)
+	commentLine       = regexp.MustCompile(`--[^\n]*`)
+	createTable       = regexp.MustCompile(`(?is)^CREATE\s+` + orReplace + tableModifiers + `TABLE\s+` + notExists + `(` + qualified + `)`)
+	createIndex       = regexp.MustCompile(`(?is)^CREATE\s+` + indexModifiers + `INDEX\s+(?:CONCURRENTLY\s+)?` + notExists + `(` + qualified + `)`)
+	createSecuredView = regexp.MustCompile(`(?is)^CREATE\s+` + orReplace + `SQL\s+SECURITY\s+(?:DEFINER|INVOKER)\s+VIEW\s+` + notExists + `(` + qualified + `)`)
+	addNamed          = regexp.MustCompile(`(?is)^ALTER\s+TABLE\s+(?:ONLY\s+|IF\s+EXISTS\s+)*(` + qualified + `)\s+ADD\s+CONSTRAINT\s+(` + qualified + `)`)
+	inlineNamed       = regexp.MustCompile(`(?is)\bCONSTRAINT\s+(` + qualified + `)`)
+	createOther       = regexp.MustCompile(`(?is)^CREATE\s+` + orReplace + `(?:` + namedObjectKind + `)\s+` + notExists + `(` + qualified + `)`)
+	createKind        = regexp.MustCompile(`(?is)^CREATE\s+` + orReplace + `(` + namedObjectKind + `)\b`)
+	guardedCreate     = regexp.MustCompile(`(?is)\bCREATE\s+` + orReplace + indexModifiers + tableModifiers + `(?:` + anyObjectKind + `)\b`)
+	collapseGaps      = regexp.MustCompile(`\s+`)
 )
 
 // EmissionsOf reads what a render's statements create.
@@ -123,6 +124,10 @@ func (e *Emissions) take(statement string) {
 	}
 	if match := createIndex.FindStringSubmatch(statement); match != nil {
 		e.Objects = append(e.Objects, Emission{Kind: "index", Name: normalizeName(match[1])})
+		return
+	}
+	if match := createSecuredView.FindStringSubmatch(statement); match != nil {
+		e.Objects = append(e.Objects, Emission{Kind: "view", Name: normalizeName(match[1])})
 		return
 	}
 	if match := createOther.FindStringSubmatch(statement); match != nil {
