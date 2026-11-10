@@ -49,7 +49,7 @@ require (
 	golang.org/x/oauth2 v0.38.0
 	golang.org/x/sys v0.50.0
 	golang.org/x/term v0.48.0
-	golang.org/x/text v0.43.0
+	golang.org/x/text v0.44.0
 	golang.org/x/tools v0.52.1-0.20261109192614-d40593d2ea48
 	google.golang.org/protobuf v1.36.12
 	modernc.org/sqlite v1.62.0
