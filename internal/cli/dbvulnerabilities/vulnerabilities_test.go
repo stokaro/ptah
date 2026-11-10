@@ -24,21 +24,21 @@ func run(t *testing.T, args ...string) (stdoutText, stderrText string, err error
 	return stdout.String(), stderr.String(), err
 }
 
-func TestCommand_EmbeddedEngineIsNotApplicable(t *testing.T) {
+func TestCommand_UnsupportedProductRemainsIncomplete(t *testing.T) {
 	c := qt.New(t)
 	url := "sqlite://" + filepath.Join(t.TempDir(), "scan.db")
 	stdout, stderr, err := run(t, "--db-url", url, "--format", "json")
-	c.Assert(err, qt.IsNil)
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
 	c.Assert(stderr, qt.Equals, "")
 	var report vulnerability.Report
 	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
 	c.Assert(report.Inventory.Product, qt.Equals, "sqlite")
-	c.Assert(report.Source.Status, qt.Equals, "not_assessed")
-	c.Assert(report.Applicability, qt.Equals, "not_applicable")
-	c.Assert(report.IsIncomplete(), qt.IsFalse)
+	c.Assert(report.Source.Status, qt.Equals, "unavailable")
+	c.Assert(report.Applicability, qt.Equals, "unassessed")
+	c.Assert(report.IsIncomplete(), qt.IsTrue)
 	stdout, _, err = run(t, "--db-url", url, "--format", "json", "--fail-on", "none")
 	c.Assert(err, qt.IsNil)
-	c.Assert(stdout, qt.Contains, "not_applicable")
+	c.Assert(stdout, qt.Contains, "engine does not declare server vulnerability scanning")
 	stdout, _, err = run(t, "--db-url", url, "--fail-on", "none")
 	c.Assert(err, qt.IsNil)
 	c.Assert(stdout, qt.Contains, "Snapshot SHA-256:")
