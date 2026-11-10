@@ -114,7 +114,10 @@ Transactions, revision storage, the migration log and locks back the migration c
 
 ### Tables and the common model
 
-These features decide how an engine's tables, columns, indexes and common objects reach Ptah's comparison.
+The SDK [Table policies](https://github.com/stokaro/ptah/blob/provider-sdk/v0.40.0/provider-sdk/README.md#table-policies)
+section defines who interprets an engine's tables and which feature combinations
+are refused. The features below carry tables, columns, indexes and common objects
+into Ptah's comparison.
 
 | Feature | Service | README section | ADR |
 | --- | --- | --- | --- |
