@@ -430,6 +430,10 @@ declaration writes `nvarchar(n)`. A declared timestamp precision is preserved:
 `timestamp(3) with time zone` write `datetimeoffset(3)`. Each plans nothing
 against the type it writes.
 
+A native `sql("VARCHAR(50)")` declaration differs from an `NVARCHAR(50)` column.
+An `NVARCHAR(50)` declaration differs from a `VARCHAR(50)` column. The portable
+`VARCHAR(50)` declaration still writes `NVARCHAR(50)`.
+
 A word the server also takes as a type of its own matches the column it builds from that word too:
 `text` over `text`, `char(5)` over `char(5)`, and `varchar(50)` over `varchar(50)`. Any
 other column plans a change: `varchar(max)` declared `text`, `tinyint` declared `boolean`,

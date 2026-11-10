@@ -53,14 +53,14 @@ func answeringIdentityCatalog(query string, _ []driver.NamedValue) (dbtest.Query
 	}
 	return dbtest.QueryResult{
 		Columns: []string{
-			"TABLE_NAME", "COLUMN_NAME", "DATA_TYPE", "VECTOR_INFO", "CHAR_LENGTH",
+			"TABLE_NAME", "COLUMN_NAME", "DATA_TYPE", "VECTOR_INFO", "CHAR_LENGTH", "CHAR_USED",
 			"DATA_PRECISION", "DATA_SCALE", "NULLABLE", "COLUMN_ID",
 			"IDENTITY_COLUMN", "VIRTUAL_COLUMN", "DATA_DEFAULT", "COMMENTS", "GENERATION_TYPE",
 		},
 		Rows: [][]driver.Value{
-			{"ORDERS", "ID", "NUMBER", nil, nil, int64(10), int64(0), "N", int64(1), "YES", "NO", `"APP"."ISEQ$$_1".nextval`, nil, "ALWAYS"},
-			{"ORDERS", "SEQ", "NUMBER", nil, nil, int64(10), int64(0), "N", int64(2), "YES", "NO", `"APP"."ISEQ$$_2".nextval`, nil, "BY DEFAULT"},
-			{"ORDERS", "CODE", "VARCHAR2", nil, int64(40), nil, nil, "N", int64(3), "NO", "NO", nil, nil, nil},
+			{"ORDERS", "ID", "NUMBER", nil, nil, nil, int64(10), int64(0), "N", int64(1), "YES", "NO", `"APP"."ISEQ$$_1".nextval`, nil, "ALWAYS"},
+			{"ORDERS", "SEQ", "NUMBER", nil, nil, nil, int64(10), int64(0), "N", int64(2), "YES", "NO", `"APP"."ISEQ$$_2".nextval`, nil, "BY DEFAULT"},
+			{"ORDERS", "CODE", "VARCHAR2", nil, int64(40), "B", nil, nil, "N", int64(3), "NO", "NO", nil, nil, nil},
 		},
 	}, nil
 }

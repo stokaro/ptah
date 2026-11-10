@@ -74,6 +74,10 @@ stops the same way with a row in place. `BLOB` declared `RAW(50)` answers `ORA-2
 is compared by its bytes, and a lower length runs if the row fits. See
 [how a column change is rated](../../direct/plan-and-approve/#how-a-column-change-is-rated).
 
+The column read uses `CHAR_USED` to keep `VARCHAR2(100)` and `VARCHAR2(100 CHAR)`
+distinct. A change between byte and character length semantics is reported even
+when the numeric length matches.
+
 ## What the 23 and 21 lines do differently
 
 The `IF [NOT] EXISTS` guards are a 23-line feature. On 21 they are refused, and

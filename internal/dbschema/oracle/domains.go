@@ -313,7 +313,7 @@ func formatDomainType(dataType string, length, charLength, precision, scale sql.
 			return "BOOLEAN"
 		}
 	}
-	return formatColumnType(dataType, sql.NullString{}, length, precision, scale)
+	return formatColumnType(dataType, sql.NullString{}, length, precision, scale, "")
 }
 
 // domainCheck is one CHECK constraint of a domain: the name the catalog
