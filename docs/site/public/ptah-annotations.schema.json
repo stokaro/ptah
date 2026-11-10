@@ -2409,6 +2409,10 @@
               "description": "Target schema/namespace.",
               "type": "string"
             },
+            "security": {
+              "description": "MySQL and MariaDB view SQL SECURITY mode: `DEFINER` or `INVOKER`. Empty uses `DEFINER`.",
+              "type": "string"
+            },
             "with_check": {
               "description": "The view's check option: `true` or `cascaded` for WITH CHECK OPTION, `local` for WITH LOCAL CHECK OPTION, `false` for none.",
               "type": "string"

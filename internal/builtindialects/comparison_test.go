@@ -30,6 +30,7 @@ func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 		RoutineNamesFold:               true,
 		RoutineTypeAliases:             "mysqlroutine",
 		ViewPredicatesAsIntegers:       true,
+		ViewSQLSecurity:                true,
 		AutoIncrementFlag:              true,
 		DefaultGeneratedKind:           "VIRTUAL",
 		ServerDatabases:                true,
