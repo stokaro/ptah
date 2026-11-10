@@ -84,7 +84,7 @@ func TestDescriptors_SchemaFileFactsAgreeWithTheSwitchesTheyReplace(t *testing.T
 			columns:     descriptor.Columns{NationalCharAsChar: true, NationalCharCharset: "utf8mb3"},
 			statements:  descriptor.Statements{DropViewIfExistsSkipsOtherKinds: true},
 		},
-		{dialect: platform.ClickHouse},
+		{dialect: platform.ClickHouse, statements: descriptor.Statements{DropTableReachesViews: true}},
 		{
 			dialect: platform.SQLite,
 			names:   descriptor.Names{Lookup: "ascii_case_insensitive"},

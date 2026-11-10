@@ -716,9 +716,9 @@ before adopting them:
   ClickHouse 25.x and later accept a materialized view with no storage clause
   and supply `MergeTree ORDER BY tuple()` themselves; 24.x rejects it with
   `ORDER BY or PRIMARY KEY clause is missing`.
-- The drop is spelled `DROP VIEW`. `DROP MATERIALIZED VIEW` is a syntax error on
-  ClickHouse, and `DROP VIEW` removes the view together with the inner table
-  that stores its result.
+- Ptah generates `DROP VIEW`. `DROP MATERIALIZED VIEW` is a syntax error on
+  ClickHouse. A SQL schema file may also use `DROP TABLE` to remove a view or
+  materialized view. Either form removes its inner storage table.
 - `POPULATE` is never emitted, so a materialized view starts empty and fills
   from inserts into its source rather than from the rows already there.
   `POPULATE` is a one-shot argument that leaves no trace in the catalog, so

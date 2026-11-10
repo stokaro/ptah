@@ -163,6 +163,9 @@ type Statements struct {
 	// ViewsBlockDropTable reports that a plain DROP TABLE is refused while a
 	// view or a materialized view reads the table.
 	ViewsBlockDropTable bool `json:"views_block_drop_table,omitempty"`
+	// DropTableReachesViews reports that DROP TABLE also removes a view or a
+	// materialized view holding the name.
+	DropTableReachesViews bool `json:"drop_table_reaches_views,omitempty"`
 	// DropViewIfExistsSkipsOtherKinds reports that DROP VIEW IF EXISTS does nothing
 	// when another kind of object holds the name. Without it the server refuses the
 	// statement, as it refuses one with no IF EXISTS.

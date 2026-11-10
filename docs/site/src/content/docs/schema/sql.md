@@ -310,6 +310,9 @@ an undeclared object without `IF EXISTS`, a table a foreign key or a PostgreSQL
 view still reads, a view another view reads there, the index behind a
 constraint, and the last index a MySQL or MariaDB foreign key needs.
 
+On ClickHouse, `DROP TABLE` also removes a declared view or materialized view.
+The SQL schema reader removes that view from the desired schema.
+
 `DROP TRIGGER`, `DROP FUNCTION`, `DROP PROCEDURE`, `DROP SEQUENCE` and `DROP TYPE`
 are refused by name: the model does not follow them, and stepping over one would
 keep an object the script removes. `TRUNCATE`, `LOCK`, `SAVEPOINT` and the other
