@@ -64,6 +64,10 @@ names, or UTC without one. `ptah migrations log`, `ptah migrations status` and
 `ptah migrations tag` print the same values with or without the parameter. Measured
 on MySQL 8.4 and 26.10 and on MariaDB 10.11 and 12.3.
 
+ClickHouse keeps tag changes in a `ReplacingMergeTree` table. Tag reads use
+`FINAL`, so a move or removal is visible before background merges finish.
+Oracle stores tag versions as `NUMBER(19)` and moves a tag with `MERGE`.
+
 Under `tx-mode all` the whole batch is one transaction, so every migration in it
 gets an entry opened before the transaction starts and they all settle with the
 same outcome. Recording one of them applied when a later one rolls the batch

@@ -121,7 +121,11 @@ func (m *Migrator) RecordMigrationTag(ctx context.Context, tag string, version i
 	}
 	now := time.Now().UTC()
 	statement := sqlutil.Rebind(m.connectionDialect(), m.upsertMigrationTagSQL())
-	if _, err := m.conn.ExecContext(ctx, statement, normalized, version, now); err != nil {
+	args := []any{normalized, version}
+	if !m.revisionTable().TagServerTime {
+		args = append(args, now)
+	}
+	if _, err := m.conn.ExecContext(ctx, statement, args...); err != nil {
 		return fmt.Errorf("record migration tag %q: %w", normalized, err)
 	}
 	return nil
@@ -159,7 +163,7 @@ func (m *Migrator) ResolveMigrationTag(ctx context.Context, tag string) (int64, 
 	}
 	var version int64
 	query := sqlutil.Rebind(m.connectionDialect(),
-		fmt.Sprintf("SELECT version FROM %s WHERE tag = ?", m.qualifiedMigrationTagsTable()))
+		fmt.Sprintf("SELECT version FROM %s%s WHERE tag = ?", m.qualifiedMigrationTagsTable(), m.revisionTable().TagReadSuffix))
 	switch err := m.conn.QueryRowContext(ctx, query, normalized).Scan(&version); {
 	case errors.Is(err, sql.ErrNoRows):
 		return 0, fmt.Errorf("%w: %q", ErrMigrationTagNotFound, normalized)
@@ -190,8 +194,8 @@ func (m *Migrator) MigrationTags(ctx context.Context) ([]MigrationTag, error) {
 	if !exists {
 		return nil, nil
 	}
-	query := fmt.Sprintf("SELECT tag, version, recorded_at FROM %s ORDER BY tag",
-		m.qualifiedMigrationTagsTable())
+	query := fmt.Sprintf("SELECT tag, version, recorded_at FROM %s%s ORDER BY tag",
+		m.qualifiedMigrationTagsTable(), m.revisionTable().TagReadSuffix)
 	rows, err := m.conn.QueryContext(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("read migration tags: %w", err)
@@ -238,6 +242,21 @@ func (m *Migrator) DeleteMigrationTag(ctx context.Context, tag string) error {
 	}
 	if !exists {
 		return fmt.Errorf("%w: %q", ErrMigrationTagNotFound, normalized)
+	}
+	if statement := m.revisionTable().TagTombstone; statement != "" {
+		if _, err := m.ResolveMigrationTag(ctx, normalized); err != nil {
+			return err
+		}
+		statement = strings.ReplaceAll(statement, "{table}", m.qualifiedMigrationTagsTable())
+		statement = sqlutil.Rebind(m.connectionDialect(), statement)
+		args := []any{normalized}
+		if !m.revisionTable().TagServerTime {
+			args = append(args, time.Now().UTC())
+		}
+		if _, err := m.conn.ExecContext(ctx, statement, args...); err != nil {
+			return fmt.Errorf("delete migration tag %q: %w", normalized, err)
+		}
+		return nil
 	}
 	if m.revisionTable().DeleteCountsKeys {
 		return m.deleteCountedMigrationTag(ctx, normalized)

@@ -94,9 +94,20 @@ type RevisionTable struct {
 	// ConflictAtlas is Conflict for Atlas's layout.
 	ConflictAtlas string `json:"conflict_atlas,omitempty"`
 	// UpsertTag points a tag at a version whether or not the tag exists. It
-	// binds the tag, the version and the time, in that order, and its one
-	// placeholder is {table}.
+	// binds the tag, the version and, unless TagServerTime is set, the time.
+	// Its one template placeholder is {table}.
 	UpsertTag string `json:"upsert_tag"`
+	// TagServerTime makes tag writes and tombstones take their ordering time
+	// from the server. It avoids client clock skew when a replacing table
+	// decides which write is current. The SQL binds no time in this mode.
+	TagServerTime bool `json:"tag_server_time,omitempty"`
+	// TagReadSuffix follows the tag table name in lookup and list queries.
+	// ReplacingMergeTree uses FINAL to return one current row before merges run.
+	TagReadSuffix string `json:"tag_read_suffix,omitempty"`
+	// TagTombstone records a deletion in an append-only tag table. Empty uses
+	// DELETE instead. The statement binds the tag and, unless TagServerTime
+	// is set, the deletion time. It expands {table}.
+	TagTombstone string `json:"tag_tombstone,omitempty"`
 	// VersionCast is the type an Atlas version token is cast to for numeric
 	// comparison, such as "BIGINT".
 	VersionCast string `json:"version_cast"`
