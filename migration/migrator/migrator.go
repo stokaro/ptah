@@ -2758,6 +2758,9 @@ func (m *Migrator) validateUpTransactionMode(ctx context.Context, migrations []*
 		if _, err := m.resolveUpMigrationTxMode(migration); err != nil {
 			return err
 		}
+		if err := m.validateManagedTransactionSQL(migration, MigrationDirectionUp, MigrationTxModeAll); err != nil {
+			return err
+		}
 		if !resolvedTimeouts[migration].IsZero() {
 			return fmt.Errorf(
 				"migration %d declares timeouts, which cannot run with tx-mode all: "+
@@ -2843,7 +2846,7 @@ func (m *Migrator) applyUpMigrationObserved(
 	}()
 
 	m.logger.Info("Applying migration", "version", migration.Version, "description", migration.Description)
-	own, err := m.upOwnTransactionMode(migration, txMode)
+	own, err := m.validatedUpTransactionMode(migration, txMode)
 	if err != nil {
 		return false, err
 	}
@@ -3364,6 +3367,9 @@ func (m *Migrator) rollbackMigrationObserved(ctx context.Context, migration *Mig
 			return err
 		}
 		return m.rollbackMigrationNoTransaction(ctx, migration, startedAt, deleteSQL)
+	}
+	if err := m.validateManagedTransactionSQL(migration, MigrationDirectionDown, txMode); err != nil {
+		return err
 	}
 	usesWitness := usesTransactionalProgressWitness(m.connectionDialect(), txMode)
 	if usesWitness {

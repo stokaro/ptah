@@ -645,10 +645,9 @@ and pipelines share a directory:
   transactions as written, a file of one statement runs without a
   transaction, and a failed file records the statements its own `COMMIT` made
   permanent, so a retry with `--allow-dirty` resumes after them. Under the
-  default, PostgreSQL ignores such a file's `BEGIN` with a warning, its
-  `COMMIT` commits the migrator's transaction too, and a failure after it is
-  recorded as nothing applied while the committed work stays. The apply gate
-  and `ptah migrations lint --runner` judge `TX201` by the same runner.
+  default, Ptah refuses a file that controls the transaction it owns before
+  running that file. The apply gate and `ptah migrations lint --runner`
+  judge `TX201` by the same runner.
   [Transactions in a golang-migrate directory](../../atlas/migrate-commands/#transactions-in-a-golang-migrate-directory)
   describes how such a file runs.
 
@@ -684,9 +683,12 @@ and pipelines share a directory:
   the complete body and pins its physical session before changing revision
   metadata, so either failure leaves a new version absent and preserves an
   existing dirty row unchanged.
-  MySQL and MariaDB also reject transaction-control statements in `file` mode:
-  Ptah owns that file transaction, and changing `autocommit` inside the body
-  would make a post-DDL checkpoint ambiguous. Their revision metadata, default
+  A `file` or `all` body also cannot control the transaction Ptah owns. Ptah
+  validates each up body before running it, or the whole batch before `all`
+  runs, and validates a down body before changing its revision row. On MySQL
+  and MariaDB, changing
+  `autocommit` inside a `file` body can also make a post-DDL checkpoint
+  ambiguous. Their revision metadata, default
   storage engine, and every existing base table in the selected database must
   use InnoDB. A migration that explicitly selects another storage engine,
   resets an engine setting to `DEFAULT`, or inherits one through

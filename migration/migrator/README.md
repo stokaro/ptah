@@ -1007,7 +1007,14 @@ rejects that combination before running the migration body or changing its
 revision row, so fixing the directives and retrying does not require dirty-state
 repair.
 
-Top-level transaction-control statements such as `BEGIN`, `START TRANSACTION`,
+Top-level transaction-control statements are also rejected when Ptah owns the
+file or batch transaction. Each up body is checked before it runs, and `all`
+checks the whole batch before any body runs. A down body is checked before its
+applied revision changes. A
+directory configured with `WithOwnTransactions` may run a file's own balanced
+transactions instead.
+
+Statements such as `BEGIN`, `START TRANSACTION`,
 `COMMIT`, `ROLLBACK`, savepoint commands, MySQL or MariaDB `SET autocommit`, and
 SQL Server `SET IMPLICIT_TRANSACTIONS` are also rejected in a
 `no_transaction` body. Ptah performs this validation and successfully pins the

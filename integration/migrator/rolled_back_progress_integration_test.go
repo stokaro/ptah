@@ -1764,7 +1764,7 @@ func runRejectsTransactionControl(t *testing.T, dbURL, dialect string) {
 			// reports success and loses the first note, and both symptoms are
 			// worth seeing in the same failure.
 			c.Check(err, qt.ErrorMatches,
-				`.*migration 1 cannot run tx-mode file statement 2 because it controls transaction state.*`)
+				`.*migration 1 cannot run tx-mode file up statement 2 because it controls transaction state.*`)
 			c.Check(issue887LedgerNotes(t, conn, names), qt.DeepEquals, make([]string, 0))
 			c.Check(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
 		})
