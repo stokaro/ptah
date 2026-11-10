@@ -1,7 +1,6 @@
 package extensionplan_test
 
 import (
-	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -27,5 +26,5 @@ func TestPlanFeatures_RefusesDropWithForeignTable(t *testing.T) {
 	c.Assert(result.Contributions, qt.HasLen, 0)
 	c.Assert(result.Diagnostics, qt.HasLen, 1)
 	c.Assert(result.Diagnostics[0].Problem.Code, qt.Equals, schemavalidation.UnsupportedFeature)
-	c.Assert(strings.Contains(result.Diagnostics[0].Problem.Message, "public.external_events"), qt.IsTrue)
+	c.Assert(result.Diagnostics[0].Problem.Message, qt.Contains, "public.external_events")
 }

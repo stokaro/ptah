@@ -5,7 +5,6 @@ package postgres
 
 import (
 	"database/sql/driver"
-	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -16,8 +15,8 @@ import (
 func TestReadExtensionForeignTables_FindsWrapperDependents(t *testing.T) {
 	c := qt.New(t)
 	db := dbtest.Open(t, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
-		c.Assert(strings.Contains(query, "JOIN pg_foreign_table ft"), qt.IsTrue)
-		c.Assert(strings.Contains(query, "d.deptype = 'e'"), qt.IsTrue)
+		c.Assert(query, qt.Contains, "JOIN pg_foreign_table ft")
+		c.Assert(query, qt.Contains, "d.deptype = 'e'")
 		return dbtest.QueryResult{Columns: []string{"extension", "schema", "table"}, Rows: [][]driver.Value{
 			{"postgres_fdw", "public", "external_events"},
 			{"postgres_fdw", "archive", "old_events"},
