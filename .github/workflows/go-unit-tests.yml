@@ -199,6 +199,11 @@ jobs:
       # The patch below is in the cache key: it changes the runtime, and so the
       # build ID of every package that links it. Restored from a stock-runtime
       # cache, the job would rebuild the whole graph on every run.
+      #
+      # This workflow file is in the key too, to keep it apart from
+      # windows-publication's. That job builds a fraction of the graph and
+      # finishes first, so with one key between them its cache wins the save
+      # and this job's save fails with "another job may be creating this cache".
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
@@ -207,6 +212,7 @@ jobs:
           cache-dependency-path: |
             go.sum
             scripts/go-runtime-patch/cl828724.patch
+            .github/workflows/go-unit-tests.yml
 
       - name: Install dependencies
         run: go mod download
