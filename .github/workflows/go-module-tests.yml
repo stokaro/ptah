@@ -23,10 +23,26 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
+      # The runtime patch below is in the cache key: on Windows it changes the
+      # build ID of every package that links the runtime, so a stock-runtime
+      # cache would rebuild the whole graph on every run. Ubuntu shares the key
+      # list and pays one cold run when the patch changes.
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-          cache-dependency-path: '**/go.sum'
+          cache-dependency-path: |
+            **/go.sum
+            scripts/go-runtime-patch/cl828724.patch
+      # Windows dispatches a hardware exception on the faulting goroutine's own
+      # stack, and on the hosted pool's Intel hosts with AMX the frame overruns
+      # the 4 KiB the runtime reserves below it. A test that recovers a nil
+      # dereference then corrupts the heap, and the job dies later in the
+      # collector (stokaro/ptah#2365). The step applies the approved upstream
+      # fix until the toolchain carries it, and skips itself from then on.
+      - name: Patch the Go runtime (golang/go#81238)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: scripts/go-runtime-patch/apply.sh
       - name: Build and test every nested module
         shell: bash
         env:

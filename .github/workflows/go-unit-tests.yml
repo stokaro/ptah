@@ -133,15 +133,30 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # The patch below is in the cache key: it changes the runtime, and so the
+      # build ID of every package that links it. Restored from a stock-runtime
+      # cache, the job would rebuild the whole graph on every run.
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
-          cache-dependency-path: go.sum
+          cache-dependency-path: |
+            go.sum
+            scripts/go-runtime-patch/cl828724.patch
 
       - name: Install dependencies
         run: go mod download
+
+      # Windows dispatches a hardware exception on the faulting goroutine's own
+      # stack, and on the hosted pool's Intel hosts with AMX the frame overruns
+      # the 4 KiB the runtime reserves below it. A test that recovers a nil
+      # dereference then corrupts the heap, and the job dies later in the
+      # collector (stokaro/ptah#2365). The step applies the approved upstream
+      # fix until the toolchain carries it, and skips itself from then on.
+      - name: Patch the Go runtime (golang/go#81238)
+        shell: bash
+        run: scripts/go-runtime-patch/apply.sh
 
       - name: Run Windows rooted publication primitive tests
         run: go test -v -count=1 ./internal/fsdurable ./internal/pathguard -timeout 5m
@@ -181,15 +196,36 @@ jobs:
 
       - uses: actions/checkout@v7
 
+      # The patch below is in the cache key: it changes the runtime, and so the
+      # build ID of every package that links it. Restored from a stock-runtime
+      # cache, the job would rebuild the whole graph on every run.
+      #
+      # This workflow file is in the key too, to keep it apart from
+      # windows-publication's. That job builds a fraction of the graph and
+      # finishes first, so with one key between them its cache wins the save
+      # and this job's save fails with "another job may be creating this cache".
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
-          cache-dependency-path: go.sum
+          cache-dependency-path: |
+            go.sum
+            scripts/go-runtime-patch/cl828724.patch
+            .github/workflows/go-unit-tests.yml
 
       - name: Install dependencies
         run: go mod download
+
+      # Windows dispatches a hardware exception on the faulting goroutine's own
+      # stack, and on the hosted pool's Intel hosts with AMX the frame overruns
+      # the 4 KiB the runtime reserves below it. A test that recovers a nil
+      # dereference then corrupts the heap, and the job dies later in the
+      # collector (stokaro/ptah#2365). The step applies the approved upstream
+      # fix until the toolchain carries it, and skips itself from then on.
+      - name: Patch the Go runtime (golang/go#81238)
+        shell: bash
+        run: scripts/go-runtime-patch/apply.sh
 
       # A package timeout can print thousands of goroutine lines. Keep the raw
       # log in the job and put the actionable package, timing, timeout, and

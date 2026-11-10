@@ -168,6 +168,18 @@ jobs:
       - name: Check the nightly failure report
         run: scripts/report-nightly-failure-selftest.sh
 
+      # The Windows jobs patch the Go runtime until the toolchain carries the
+      # fix, and a nightly watch reports when upstream moves. The skip happens
+      # on one pull request and the report on one night, so both rules are
+      # driven here: the skip and the refusal against built toolchain trees, the
+      # patch against the go.mod toolchain's source, and the report with stubs
+      # in place of Gerrit, GitHub and gh.
+      - name: Check the Go runtime patch rules
+        run: |
+          set -euo pipefail
+          scripts/go-runtime-patch/apply-selftest.sh
+          scripts/go-runtime-patch/watch-selftest.sh
+
       # The restart runs only when a matrix server died, which no pull request
       # shows, so its rule is driven here with stubs in place of docker and the
       # driver.

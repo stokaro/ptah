@@ -176,6 +176,13 @@ raising `toolchain`, never `go`. `scripts/check-go-toolchain-single-source.sh`
 enforces this; `.github/actions/ptah/action.yml` is its one exemption and
 says why.
 
+The Windows jobs that run Go tests patch the toolchain's runtime with the
+approved, unmerged upstream fix for golang/go#81238 (`scripts/go-runtime-patch`,
+stokaro/ptah#2365). The step skips a toolchain that carries the fix and fails
+the job when the patch does not apply, so a Windows failure that names CL 828724
+is about that step, not the change under test. `go-runtime-patch-watch.yml`
+opens an issue when upstream moves.
+
 ## Compatibility Policy
 
 Ptah aims to be a drop-in replacement for the Atlas CLI under three rules;
