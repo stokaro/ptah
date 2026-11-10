@@ -960,6 +960,9 @@ type View struct {
 	Body       string           // SELECT query used as the view body
 	WithCheck  bool             // Whether to add WITH CHECK OPTION where supported
 	Comment    string           // Optional comment for documentation
+	// Security is MySQL and MariaDB's SQL SECURITY mode. Empty requests the
+	// server default, DEFINER. INVOKER runs the view as its caller.
+	Security string `json:",omitempty"`
 
 	// LocalCheck narrows WithCheck to the LOCAL level: a row written through
 	// the view is checked against this view's own condition, and not against

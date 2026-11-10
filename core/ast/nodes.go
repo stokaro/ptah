@@ -1699,6 +1699,9 @@ type CreateViewNode struct {
 	// A node built from a model takes it from
 	// [ptah.run/core/schemamodel.View.LocalCheck].
 	LocalCheck bool
+	// Security is the MySQL or MariaDB SQL SECURITY mode. Other renderers
+	// refuse a view that declares it.
+	Security string
 	// Comment is an optional comment emitted as a SQL comment above the
 	// statement.
 	Comment string

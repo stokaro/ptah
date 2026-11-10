@@ -340,6 +340,9 @@ func (r *renderer) renderViews() {
 		case view.WithCheck:
 			r.rawAttr(1, "check_option", "CASCADED")
 		}
+		if view.Security != "" {
+			r.rawAttr(1, "security", strings.ToUpper(view.Security))
+		}
 		r.renderViewSecurity(view)
 		r.stringAttr(1, "comment", view.Comment)
 		r.line("}")

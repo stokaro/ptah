@@ -70,3 +70,13 @@ func LocalCheck(dialect string, view *ast.CreateViewNode) error {
 		"%w: %s: view %s asks for WITH LOCAL CHECK OPTION, and this target's check option has no LOCAL level",
 		ptaherr.ErrUnsupportedFeature, dialect, view.Name)
 }
+
+// Security refuses a MySQL view security mode on a target that cannot write
+// that clause. Dropping it would change whose privileges run the view.
+func Security(dialect string, view *ast.CreateViewNode) error {
+	if strings.TrimSpace(view.Security) == "" {
+		return nil
+	}
+	return fmt.Errorf("%w: %s: view %s declares SQL SECURITY %s, which only MySQL and MariaDB views support",
+		ptaherr.ErrUnsupportedFeature, dialect, view.Name, view.Security)
+}

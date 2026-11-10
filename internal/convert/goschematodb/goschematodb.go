@@ -803,6 +803,7 @@ func toDBViews(views []schemamodel.View) []catalog.View {
 			Schema:      schema,
 			Body:        view.Body,
 			CheckOption: checkOption,
+			Security:    view.Security,
 			Comment:     view.Comment,
 			// The view's own WITH clause, which the comparison compares.
 			// Without it, a view declaring SCHEMABINDING compared with its

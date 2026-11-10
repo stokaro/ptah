@@ -1276,6 +1276,7 @@ func FromView(view schemamodel.View) *ast.CreateViewNode {
 		SetWithCheck(view.WithCheck).
 		SetComment(view.Comment)
 	viewNode.LocalCheck = view.WithCheck && view.LocalCheck
+	viewNode.Security = view.Security
 	viewNode.Attributes = view.Attributes
 	viewNode.Options = slices.Clone(view.Options)
 	return viewNode

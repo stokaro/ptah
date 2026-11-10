@@ -774,7 +774,7 @@ func enhanceTablesWithPrimaryKeys(tables []catalog.Table, constraints []catalog.
 
 func (r *Reader) readViews(ctx context.Context, dbName string) ([]catalog.View, error) {
 	query := `
-		SELECT TABLE_NAME, VIEW_DEFINITION, CHECK_OPTION
+		SELECT TABLE_NAME, VIEW_DEFINITION, CHECK_OPTION, SECURITY_TYPE
 		FROM information_schema.VIEWS
 		WHERE TABLE_SCHEMA = ?
 		AND TABLE_NAME NOT IN (` + revisiontable.NativeSQLNames + `)
@@ -789,7 +789,7 @@ func (r *Reader) readViews(ctx context.Context, dbName string) ([]catalog.View, 
 	var views []catalog.View
 	for rows.Next() {
 		var view catalog.View
-		err := rows.Scan(&view.Name, &view.Body, &view.CheckOption)
+		err := rows.Scan(&view.Name, &view.Body, &view.CheckOption, &view.Security)
 		if err != nil {
 			return nil, err
 		}

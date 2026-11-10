@@ -716,6 +716,16 @@ that came back without a body is still refused, because it has another definer.
 database even when the dev and target databases have different names. A view
 whose body is the same reports no change; a changed body still produces a plan.
 
+### View security
+
+MySQL and MariaDB run a view with `SQL SECURITY DEFINER` when the declaration
+omits `security`. Set `security="INVOKER"` on a `//ptah:schema:view` annotation,
+or `security: INVOKER` on a YAML view, to run it with its caller's privileges.
+The read keeps `information_schema.VIEWS.SECURITY_TYPE`. A view held as
+`INVOKER` and declared without `security` reports a change and plans
+`CREATE OR REPLACE VIEW`, which selects the server's `DEFINER` default.
+The replacement records the connected account as its definer.
+
 ### Roles and grants
 
 Reading roles and the grants on them needs `SELECT` on the `mysql` database, which
