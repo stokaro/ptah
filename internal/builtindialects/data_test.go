@@ -33,9 +33,10 @@ func TestDescriptors_DataAgreesWithTheRetiredSwitches(t *testing.T) {
 		savepoint:   portableSavepoint,
 	}
 	mysqlFamily := data{
-		literals:  descriptor.Literals{NumericBool: true, BackslashEscapes: true, BinaryPrefix: "X'", BinarySuffix: "'"},
-		seeds:     descriptor.Seeds{Transactional: true, TablesQuery: mysqlTables},
-		savepoint: portableSavepoint,
+		literals:    descriptor.Literals{NumericBool: true, BackslashEscapes: true, BinaryPrefix: "X'", BinarySuffix: "'"},
+		managedData: descriptor.ManagedData{DateTimeWallClock: true},
+		seeds:       descriptor.Seeds{Transactional: true, TablesQuery: mysqlTables},
+		savepoint:   portableSavepoint,
 	}
 	want := map[string]data{
 		platform.Postgres:    postgresFamily,

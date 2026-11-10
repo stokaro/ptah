@@ -178,7 +178,8 @@ func Compare(
 		}
 		columnTypes, desired, live = typed.ColumnTypes, typed.Desired, typed.Live
 	}
-	diff, err := datadiff.Compute(declaration.Schema, declaration.Table, declaration.Keys, desired, live)
+	diff, err := datadiff.ComputeWithOptions(declaration.Schema, declaration.Table, declaration.Keys, desired, live,
+		datadiff.ComputeOptions{Dialect: conn.Info().Dialect, ColumnTypes: columnTypes})
 	if err != nil {
 		return nil, fmt.Errorf("compare declared rows of %s: %w", qualified, err)
 	}
@@ -186,7 +187,6 @@ func Compare(
 	// reference a row of its own table -- a category tree, an org chart -- and
 	// that order is inside one table, so it is decided here: parents first to
 	// write, children first to remove (stokaro/ptah#3266).
-	diff.ColumnTypes = columnTypes
 	diff.Inserts = dataorder.Rows(diff.Inserts, declaration.Keys, references)
 	diff.Deletes = dataorder.Rows(diff.Deletes, declaration.Keys, references)
 	slices.Reverse(diff.Deletes)
