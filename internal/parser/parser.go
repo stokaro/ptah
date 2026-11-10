@@ -1923,8 +1923,23 @@ func (p *Parser) parseCreateViewNode() (*ast.CreateViewNode, error) {
 	if err != nil {
 		return nil, err
 	}
+	security := ""
 	if p.current.MatchIdentifierValue("SQL") && p.nextIsWord("SECURITY") {
-		return nil, ptaherr.At(p.current.Start, fmt.Errorf("unsupported CREATE VIEW clause: SQL SECURITY"))
+		if p.target.known {
+			return nil, ptaherr.At(p.current.Start, fmt.Errorf("unsupported CREATE VIEW clause: SQL SECURITY"))
+		}
+		p.advance()
+		p.skipWhitespace()
+		if err := p.expect(lexer.TokenIdentifier, "SECURITY"); err != nil {
+			return nil, err
+		}
+		p.skipWhitespace()
+		security = strings.ToUpper(p.current.Value)
+		if p.current.Type != lexer.TokenIdentifier || (security != "DEFINER" && security != "INVOKER") {
+			return nil, ptaherr.At(p.current.Start, fmt.Errorf("expected DEFINER or INVOKER after SQL SECURITY, got %s", p.current.Value))
+		}
+		p.advance()
+		p.skipWhitespace()
 	}
 
 	if err := p.expect(lexer.TokenIdentifier, "AS"); err != nil {
@@ -1947,6 +1962,7 @@ func (p *Parser) parseCreateViewNode() (*ast.CreateViewNode, error) {
 	view := ast.NewCreateView(viewName).SetBody(body).SetWithCheck(check != viewCheckNone)
 	view.LocalCheck = check == viewCheckLocal
 	view.Options = options
+	view.Security = security
 	return view, nil
 }
 

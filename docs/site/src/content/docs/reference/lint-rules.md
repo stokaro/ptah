@@ -211,9 +211,9 @@ there. The parser tells two of the failures apart:
 
 | The statement | Example | Finding | Exit code |
 | --- | --- | --- | --- |
-| Reads to its end | `DROP VIEW v`, `TRUNCATE t` | `SQL004` at `info`, for no rule looked at it | 0 |
+| Reads to its end | `DROP VIEW v`, `TRUNCATE t`, Spanner `CREATE VIEW v SQL SECURITY INVOKER AS SELECT 1` | `SQL004` at `info`, for no rule looked at it | 0 |
 | Opens with words no engine has, or is malformed | `DROP TABEL t`, `DROP VIEW @@@`, SQLite `DROP TABLE t, u` | `SQL001` | 1 |
-| Nothing read it, and a server may accept it | `CREATE COLLATION c (...)`, `CREATE TABLE b BOGUS`, `(SELECT 1)`, Spanner `CREATE VIEW v SQL SECURITY INVOKER AS SELECT 1` | `SQL002` | 1 |
+| Nothing read it, and a server may accept it | `CREATE COLLATION c (...)`, `CREATE TABLE b BOGUS`, `(SELECT 1)` | `SQL002` | 1 |
 
 `SQL002` keeps the exit code because nothing checked the statement. A form the parser
 does not hold is also where a real mistake sits, and only a server can tell them apart.
