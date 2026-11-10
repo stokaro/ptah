@@ -67,3 +67,18 @@ func TestGrantsWithSemantics_KeepsForeignGrantorForOptionRevoke(t *testing.T) {
 	c.Assert(diff.GrantOptionsRevoked, qt.HasLen, 1)
 	c.Assert(diff.GrantOptionsRevoked[0].GrantedBy, qt.Equals, "owner")
 }
+
+func TestGrantsWithSemantics_SuperuserKeepsNonownerGrantor(t *testing.T) {
+	owner := catalog.Grant{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", Schema: "public", ObjectName: "events", GrantedBy: "owner", ObjectOwner: "owner"}
+	delegate := owner
+	delegate.GrantedBy = "delegate"
+	for _, grants := range [][]catalog.Grant{{owner, delegate}, {delegate, owner}} {
+		c := qt.New(t)
+		desired := &schemamodel.Database{Roles: []schemamodel.Role{{Name: "reader"}}}
+		database := &catalog.Database{ConnectedRole: "admin", ConnectedRoleSuperuser: true, Grants: grants}
+		diff := &difftypes.SchemaDiff{}
+		compare.GrantsWithSemantics(desired, database, diff, identifier.ForDialect("postgres"))
+		c.Assert(diff.GrantsRemoved, qt.HasLen, 1)
+		c.Assert(diff.GrantsRemoved[0].GrantedBy, qt.Equals, "delegate")
+	}
+}

@@ -204,9 +204,9 @@ func routineGrantsForRestoredFunction(function catalog.Function, observed []cata
 	arguments := function.Signature()
 	// A routine privilege names no column, so the column is the read's,
 	// which is empty.
-	target := func(role, privilege, column, grantor string, withOption bool) difftypes.GrantRef {
+	target := func(role, privilege, column, grantor, owner string, withOption bool) difftypes.GrantRef {
 		return difftypes.GrantRef{Role: role, Privilege: privilege, ObjectType: objectType,
-			ObjectName: function.QualifiedName(), Arguments: arguments, Column: column, GrantedBy: grantor, WithOption: withOption}
+			ObjectName: function.QualifiedName(), Arguments: arguments, Column: column, GrantedBy: grantor, ObjectOwner: owner, WithOption: withOption}
 	}
 	publicExecutes := false
 	grantsObserved := false
@@ -228,17 +228,17 @@ func routineGrantsForRestoredFunction(function catalog.Function, observed []cata
 			// routine belongs to the migrator. A blank privilege records
 			// that the ACL was read and the owner revoked EXECUTE.
 			if privilege != "" {
-				granted = append(granted, target(role, privilege, "", "", false))
+				granted = append(granted, target(role, privilege, "", "", "", false))
 			}
 			continue
 		}
 		if grant.Implicit || strings.EqualFold(role, strings.TrimSpace(grant.GrantedBy)) {
 			continue
 		}
-		granted = append(granted, target(role, privilege, strings.TrimSpace(grant.Column), strings.TrimSpace(grant.GrantedBy), grant.WithOption))
+		granted = append(granted, target(role, privilege, strings.TrimSpace(grant.Column), strings.TrimSpace(grant.GrantedBy), strings.TrimSpace(grant.ObjectOwner), grant.WithOption))
 	}
 	if grantsObserved && !publicExecutes {
-		revoked = append(revoked, target("PUBLIC", "EXECUTE", "", "", false))
+		revoked = append(revoked, target("PUBLIC", "EXECUTE", "", "", "", false))
 	}
 	return granted, revoked
 }

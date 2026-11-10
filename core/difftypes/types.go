@@ -1268,6 +1268,8 @@ type SchemaDiff struct {
 	// planner checks it before revoking grants made by another role. An offline
 	// comparison leaves it empty, and it is not part of a report or saved plan.
 	ConnectedRole string `json:"-"`
+	// ConnectedRoleSuperuser means a PostgreSQL REVOKE runs as the object owner.
+	ConnectedRoleSuperuser bool `json:"-"`
 
 	// ConstraintsAdded is the table-qualified definition of every constraint
 	// this diff creates.
@@ -3449,6 +3451,9 @@ type GrantRef struct {
 	// GrantedBy is the grantor reported by a live database read. A declaration
 	// does not specify it, and an offline comparison may leave it empty.
 	GrantedBy string `json:"granted_by,omitempty"`
+	// ObjectOwner is the target owner's role in the live read. It is planning
+	// context and is absent from an offline declaration.
+	ObjectOwner string `json:"-"`
 }
 
 // OnRelation reports a grant on a table or a view: an engine names a view as

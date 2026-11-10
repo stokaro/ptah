@@ -151,6 +151,7 @@ func GrantsWithOptions(
 ) {
 	objects := options.Objects
 	diff.ConnectedRole = database.ConnectedRole
+	diff.ConnectedRoleSuperuser = database.ConnectedRoleSuperuser
 	sequences := newColumnSequences(desired, database, semantics)
 	generatedGrantMap := make(map[grantIdentity]difftypes.GrantRef)
 	generatedGrantRoles := make(map[string]bool)
@@ -247,7 +248,7 @@ func (read grantRead) maps() (additions, removals map[grantIdentity]difftypes.Gr
 		if read.managedRoles[ref.Role] || read.generatedRoles[ref.Role] {
 			previous, exists := additions[key]
 			if !exists || (ref.WithOption && !previous.WithOption) ||
-				(ref.WithOption == previous.WithOption && preferForeignGrantor(previous, ref, read.database.ConnectedRole)) {
+				(ref.WithOption == previous.WithOption && preferForeignGrantor(previous, ref, read.database.ConnectedRole, read.database.ConnectedRoleSuperuser)) {
 				additions[key] = ref
 			}
 		}
@@ -269,7 +270,7 @@ func (read grantRead) maps() (additions, removals map[grantIdentity]difftypes.Gr
 		if (read.removable(ref) && !grant.Implicit && grantRemovalPlanned(read.coverage, grant) && read.objects.describes(grant)) ||
 			read.revoked[key] || read.revoked[key.onWholeObject()] {
 			previous, exists := removals[key]
-			if !exists || preferForeignGrantor(previous, ref, read.database.ConnectedRole) {
+			if !exists || preferForeignGrantor(previous, ref, read.database.ConnectedRole, read.database.ConnectedRoleSuperuser) {
 				removals[key] = ref
 			}
 		}
@@ -652,23 +653,25 @@ func grantRefFromDatabase(grant catalog.Grant) difftypes.GrantRef {
 		objectName = grant.ObjectName
 	}
 	return difftypes.GrantRef{
-		Role:       strings.TrimSpace(grant.Role),
-		Privilege:  strings.ToUpper(strings.TrimSpace(grant.Privilege)),
-		ObjectType: objectType,
-		ObjectName: objectName,
-		Arguments:  grant.Arguments,
-		Column:     strings.TrimSpace(grant.Column),
-		WithOption: grant.WithOption,
-		GrantedBy:  strings.TrimSpace(grant.GrantedBy),
+		Role:        strings.TrimSpace(grant.Role),
+		Privilege:   strings.ToUpper(strings.TrimSpace(grant.Privilege)),
+		ObjectType:  objectType,
+		ObjectName:  objectName,
+		Arguments:   grant.Arguments,
+		Column:      strings.TrimSpace(grant.Column),
+		WithOption:  grant.WithOption,
+		GrantedBy:   strings.TrimSpace(grant.GrantedBy),
+		ObjectOwner: strings.TrimSpace(grant.ObjectOwner),
 	}
 }
 
 // preferForeignGrantor keeps a row the connected role cannot reliably revoke
 // when several grantors gave the same privilege to one grantee. The planner
 // must see that row and refuse before writing a REVOKE that leaves it in place.
-func preferForeignGrantor(previous, next difftypes.GrantRef, connectedRole string) bool {
+func preferForeignGrantor(previous, next difftypes.GrantRef, connectedRole string, superuser bool) bool {
 	foreign := func(ref difftypes.GrantRef) bool {
-		return ref.GrantedBy != "" && ref.GrantedBy != connectedRole
+		return ref.GrantedBy != "" && ref.GrantedBy != connectedRole &&
+			!(superuser && ref.ObjectOwner != "" && ref.GrantedBy == ref.ObjectOwner)
 	}
 	return foreign(next) && !foreign(previous)
 }

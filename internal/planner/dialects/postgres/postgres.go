@@ -2488,6 +2488,9 @@ func (p *Planner) refuseForeignGrantRevokes(diff *difftypes.SchemaDiff, rebuild 
 		if grant.GrantedBy == "" || diff.ConnectedRole == "" || grant.GrantedBy == diff.ConnectedRole {
 			continue
 		}
+		if diff.ConnectedRoleSuperuser && grant.ObjectOwner != "" && grant.GrantedBy == grant.ObjectOwner {
+			continue
+		}
 		return fmt.Errorf("%w: cannot revoke %s on %s %s from %s: grantor %q differs from connected role %q; connect as the grantor before planning",
 			ptaherr.ErrUnsupportedFeature, grant.Privilege, grant.ObjectType, grant.ObjectName, grant.Role,
 			grant.GrantedBy, diff.ConnectedRole)

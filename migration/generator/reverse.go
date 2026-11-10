@@ -85,9 +85,10 @@ func reverseSchemaDiffWithPrior(
 		tableGrants = tableGrantsFromRemovals(diff.TablesRemoved.Names(), dbSchema, diff.GrantsRemoved, semantics)
 	}
 	reversed := &difftypes.SchemaDiff{
-		IdentifierSemantics: cloneIdentifierSemantics(diff.IdentifierSemantics),
-		ConnectedRole:       diff.ConnectedRole,
-		TablePreparation:    cloneTablePreparation(diff.TablePreparation),
+		IdentifierSemantics:    cloneIdentifierSemantics(diff.IdentifierSemantics),
+		ConnectedRole:          diff.ConnectedRole,
+		ConnectedRoleSuperuser: diff.ConnectedRoleSuperuser,
+		TablePreparation:       cloneTablePreparation(diff.TablePreparation),
 
 		// Reverse table operations.
 		//

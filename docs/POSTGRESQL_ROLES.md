@@ -220,8 +220,9 @@ REVOKE DELETE ON TABLE users FROM app_writer;
 
 For a live PostgreSQL plan, Ptah refuses to revoke a privilege or grant option
 when its grantor differs from the connected role. PostgreSQL may accept that
-`REVOKE` without removing the privilege. Connect as the named grantor and
-generate a new plan.
+`REVOKE` without removing the privilege. A superuser can revoke a grant made
+by the object's owner because PostgreSQL runs its `REVOKE` as that owner.
+For another grantor, connect as the named grantor and generate a new plan.
 
 ### Role Removal
 

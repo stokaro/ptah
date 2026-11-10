@@ -241,6 +241,9 @@ type Database struct {
 	// CurrentAccount, it is never serialized: the same database read by another
 	// role describes the same schema.
 	ConnectedRole string `json:"-"`
+	// ConnectedRoleSuperuser reports whether the PostgreSQL connection acts as
+	// the owner when it revokes an object's privileges.
+	ConnectedRoleSuperuser bool `json:"-"`
 }
 
 // VirtualTable identifies one SQLite virtual table and the module that owns
@@ -1492,6 +1495,9 @@ type Grant struct {
 	ObjectName string `json:"object_name"`          // Target table, schema, or routine name
 	WithOption bool   `json:"with_option"`          // Whether the grant has WITH GRANT OPTION
 	GrantedBy  string `json:"granted_by,omitempty"` // Grantor role
+	// ObjectOwner is the owner observed for this grant's target. It is reading
+	// context for deciding which grantor a superuser can revoke.
+	ObjectOwner string `json:"-"`
 
 	// Arguments are a routine target's input argument types as the catalog
 	// spells them (oidvectortypes of pg_proc.proargtypes), such as

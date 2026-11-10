@@ -51,3 +51,24 @@ func TestPlanner_RevokesGrantMadeByConnectedRole(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 1)
 }
+
+func TestPlanner_RevokesOwnerGrantAsSuperuser(t *testing.T) {
+	c := qt.New(t)
+	diff := &difftypes.SchemaDiff{ConnectedRole: "admin", ConnectedRoleSuperuser: true, GrantsRemoved: []difftypes.GrantRef{{
+		Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "public.events",
+		GrantedBy: "owner", ObjectOwner: "owner",
+	}}}
+	nodes, err := postgres.New().GenerateMigrationAST(t.Context(), must.Must(builtin.New()), diff)
+	c.Assert(err, qt.IsNil)
+	c.Assert(nodes, qt.HasLen, 1)
+}
+
+func TestPlanner_RefusesOtherGrantorEvenAsSuperuser(t *testing.T) {
+	c := qt.New(t)
+	diff := &difftypes.SchemaDiff{ConnectedRole: "admin", ConnectedRoleSuperuser: true, GrantsRemoved: []difftypes.GrantRef{{
+		Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "public.events",
+		GrantedBy: "delegate", ObjectOwner: "owner",
+	}}}
+	_, err := postgres.New().GenerateMigrationAST(t.Context(), must.Must(builtin.New()), diff)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+}
