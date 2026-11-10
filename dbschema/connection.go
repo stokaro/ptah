@@ -114,6 +114,7 @@ func admitted(
 // what a driver read out of it, so it reaches the caller without the secrets the
 // address holds.
 func connect(ctx context.Context, dbURL string, scope ConnectionScope) (*DatabaseConnection, error) {
+	dburldisplay.RecordErrorAddress(ctx, dbURL)
 	connection, err := open(ctx, dbURL, scope)
 	return connection, dburldisplay.RedactError(dbURL, err)
 }

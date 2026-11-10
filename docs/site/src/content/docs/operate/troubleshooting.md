@@ -27,6 +27,9 @@ Inference migration failures have their own
 [symptom index](../../inference/troubleshooting/). MCP and patch-workflow
 failures are under [AI agent troubleshooting](../ai-agent-troubleshooting/).
 
+When a command reports a SQL statement error after connecting, it masks
+passwords and other secrets from the connected database URL in the diagnostic.
+
 ## SVG output says Graphviz is required
 
 **Symptom**
