@@ -452,7 +452,7 @@ func (p *Parser) parseCreateModifier(target string, statementStart int) (ast.Nod
 	case "OR":
 		return p.parseCreateOrReplaceStatement(statementStart)
 	case "SQL":
-		return p.parseCreateSQLSecurityView(false)
+		return p.parseCreateSQLSecurityView()
 	case "TEMP", "TEMPORARY":
 		return p.parseCreateTemporary(target, statementStart)
 	case "UNIQUE":
@@ -665,7 +665,11 @@ func (p *Parser) parseCreateOrReplaceStatement(statementStart int) (ast.Node, er
 		return p.parseCreateOrReplaceView()
 	}
 	if p.current.MatchIdentifierValue("SQL") {
-		return p.parseCreateSQLSecurityView(true)
+		view, err := p.parseCreateSQLSecurityView()
+		if err != nil {
+			return nil, err
+		}
+		return view.SetReplace(), nil
 	}
 	if p.current.MatchIdentifierValue("FUNCTION") {
 		return replacingRoutine(p.parseCreateRoutine("FUNCTION", statementStart))
@@ -996,7 +1000,7 @@ func (p *Parser) parseCreateOrReplaceView() (*ast.CreateViewNode, error) {
 
 // parseCreateSQLSecurityView reads the MySQL-family modifier before VIEW and
 // keeps it on the node so a schema file can round-trip inspected view SQL.
-func (p *Parser) parseCreateSQLSecurityView(replace bool) (*ast.CreateViewNode, error) {
+func (p *Parser) parseCreateSQLSecurityView() (*ast.CreateViewNode, error) {
 	if p.target.known && !p.target.viewSQLSecurity {
 		return nil, ptaherr.At(p.current.Start, fmt.Errorf("unsupported CREATE VIEW SQL SECURITY for %s", p.dialect))
 	}
@@ -1019,9 +1023,6 @@ func (p *Parser) parseCreateSQLSecurityView(replace bool) (*ast.CreateViewNode, 
 		return nil, err
 	}
 	view.Security = security
-	if replace {
-		view.SetReplace()
-	}
 	return view, nil
 }
 
