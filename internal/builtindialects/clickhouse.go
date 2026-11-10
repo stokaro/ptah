@@ -65,7 +65,8 @@ func clickHouse() descriptor.Dialect {
 				"with the materialized _block_number column, which a statement cannot declare; use " +
 				"ALTER TABLE … UPDATE, or enable enable_block_number_column on the table",
 		},
-		Scripts: descriptor.Scripts{ClientDelimiters: true},
+		Scripts:    descriptor.Scripts{ClientDelimiters: true},
+		Statements: descriptor.Statements{DropTableReachesViews: true},
 
 		// Migrations: what the migrator reads.
 		DDLTransactions: "no_transaction",
