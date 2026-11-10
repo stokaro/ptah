@@ -6,6 +6,7 @@ import (
 
 	"ptah.run/internal/cli/dbcapabilities"
 	"ptah.run/internal/cli/dbverify"
+	"ptah.run/internal/cli/dbvulnerabilities"
 	"ptah.run/internal/cli/dropall"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/readdb"
@@ -15,8 +16,8 @@ import (
 func NewDBCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "db",
-		Short: "Work with live database schemas",
-		Long: `Work with live database schemas.
+		Short: "Inspect and manage live databases",
+		Long: `Inspect and manage live databases.
 
 This is Ptah's native live-database namespace. Atlas-compatible spellings live
 in the separate ptah-compat binary.`,
@@ -46,5 +47,6 @@ in the separate ptah-compat binary.`,
 	cmd.AddCommand(capabilitiesCmd)
 
 	cmd.AddCommand(dbverify.NewVerifyCommand())
+	cmd.AddCommand(dbvulnerabilities.NewCommand())
 	return cmd
 }

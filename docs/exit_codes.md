@@ -250,6 +250,7 @@ root-level command spellings are removed instead of preserved.
 | `ptah schema export` | Schema exported. | Not used. | Usage, path, parse, render, write, cleanup, empty-export, or Protobuf compatibility failure. See details below. |
 | `ptah viz` | Schema diagram rendered. | Not used. | Usage error, invalid paths, parse error, unsupported format/theme, missing Graphviz for SVG, SVG render error, or write error. |
 | `ptah db read` | Schema read and printed. | Not used. | Usage error, connection failure, or schema-read failure. |
+| `ptah db vulnerabilities` | The scan completed and no result meets `--fail-on`. | Unsuppressed findings or incomplete coverage meet `--fail-on`. | Usage error, invalid or missing advisory or suppression input, connection failure, unreadable inventory, or report error. |
 | `ptah db capabilities` | Capability profile printed as text or JSON. | Not used. | Usage error (missing `--db-url`, an invalid `--format` value, an unparsable `--connect-timeout`, or an unknown flag), or connection failure. |
 | `ptah db drop-all` | Objects dropped, dry-run output printed, or operation canceled by the user. | Not used. | Usage error, connection failure, input read error, or drop failure. |
 | `ptah db verify` | Every assertion ran and held. | An assertion ran and did not hold, or the checks path holds no assertions: nothing was verified, which is not a pass. | Usage error, connection failure, an unreadable or malformed checks path, or an assertion that could not run. |

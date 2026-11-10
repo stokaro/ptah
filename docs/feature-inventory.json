@@ -13,7 +13,7 @@
   ],
   "generator": "scripts/check-feature-inventory.sh --write",
   "claimed_floor": 79,
-  "claimed": 97,
+  "claimed": 98,
   "rows": [
     {
       "id": "cli-ptah-assist-context",
@@ -110,6 +110,12 @@
       "kind": "native-verb",
       "surface": "ptah db verify",
       "claimed_by": "docs/site/src/content/docs/operate/verify-a-release.md"
+    },
+    {
+      "id": "cli-ptah-db-vulnerabilities",
+      "kind": "native-verb",
+      "surface": "ptah db vulnerabilities",
+      "claimed_by": "docs/site/src/content/docs/operate/vulnerability-scan.md"
     },
     {
       "id": "cli-ptah-help",

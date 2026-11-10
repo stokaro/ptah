@@ -130,6 +130,7 @@
   "/operate/trace-migrations/",
   "/operate/troubleshooting/",
   "/operate/verify-a-release/",
+  "/operate/vulnerability-scan/",
   "/operate/zero-downtime-changes/",
   "/reference/atlas-commands/",
   "/reference/atlas-docs-coverage/",

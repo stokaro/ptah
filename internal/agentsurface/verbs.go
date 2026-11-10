@@ -82,6 +82,8 @@ var verbs = map[string]Verb{
 		"drops every schema object in the database it is given"},
 	"db read": {TargetReads, ScratchNone,
 		"introspects the database and prints what it found"},
+	"db vulnerabilities": {TargetReads, ScratchNone,
+		"reads the database product, server version and installed extensions, then matches them against a local advisory snapshot"},
 	"db verify": {TargetReads, ScratchNone,
 		"evaluates release assertions against the database it is given; every assertion is " +
 			"proved to be a read-only SELECT before it is sent, and the session is opened " +
