@@ -627,9 +627,8 @@ database URLs; schema files alone still require `--dev-url` (a disposable
 database that is reset destructively). `--format json` emits a stable
 document, described below, and `--schemas`, `--include`, and
 `--exclude` scope both sides. Synced states print
-`Schemas are synced, no changes to be made.` for the compared objects. A live
-read that finds an unmodeled object, such as a PostgreSQL collation, names it on
-standard error; the diff plans no SQL for it.
+`Schemas are synced, no changes to be made.` Unmodeled objects are named on
+standard error; no SQL is planned.
 
 ### The JSON document
 
