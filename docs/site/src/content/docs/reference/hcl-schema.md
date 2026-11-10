@@ -113,7 +113,7 @@ for the message and the flag it names.
 | `default_privilege` | Ptah block: a PostgreSQL default privilege, with `for_role`, `schema`, `object_type`, `to`, `privileges`, `grantable`, `revoked` (privileges the grantee must not hold by default) and `comment`. Without `schema` it is the global default, which applies in every schema. |
 | `function` | PostgreSQL metadata and raw body, with Atlas-style `arg` blocks or a Ptah raw `params` string. Its `set` holds the [routine's settings](#routine-settings). |
 | `procedure` | The same shape as `function` without `return`, which a procedure does not have. Ptah block: the Atlas community CLI has no procedure block and ignores this one. |
-| `view` / `materialized` | SQL body plus schema and comments. A `materialized` block accepts a ClickHouse `refresh` clause. |
+| `view` / `materialized` | SQL body plus schema and comments. MySQL and MariaDB views accept `security = DEFINER` or `security = INVOKER`. A `materialized` block accepts a ClickHouse `refresh` clause. |
 | `trigger` | Trigger timing and every event its timing block sets (`insert`, `update`, `delete`, `truncate`), target, execution mode, function body, and comments. |
 | `policy` | PostgreSQL RLS policy fields. |
 | `row_policy` | ClickHouse `on`, `using`, `to`, and `as`. See [row policies](../../databases/clickhouse/#row-policies). |

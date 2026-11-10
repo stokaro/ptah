@@ -401,6 +401,9 @@ func (r *Renderer) renderDropSequence(node *ast.DropSequenceNode) error {
 }
 
 func (r *Renderer) renderCreateView(node *ast.CreateViewNode) error {
+	if err := viewrefusal.Security(DialectName, node); err != nil {
+		return err
+	}
 	if err := viewrefusal.Attributes(DialectName, node.Name, node.Attributes); err != nil {
 		return err
 	}

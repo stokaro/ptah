@@ -18,6 +18,7 @@ import (
 	"ptah.run/engine/builtin/internal/dialects/internal/viewrefusal"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/mysqlroutine"
+	"ptah.run/internal/mysqlviewsecurity"
 	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/sqlscript"
@@ -679,13 +680,21 @@ func (r *Renderer) renderCreateView(node *ast.CreateViewNode) error {
 	if err := viewrefusal.Options(r.dialect, "view", node.Name, node.Options); err != nil {
 		return err
 	}
+	securityClause, err := mysqlviewsecurity.Clause(node.Security)
+	if err != nil {
+		return fmt.Errorf("view %s: %w", node.Name, err)
+	}
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
-	create := "CREATE VIEW"
+	create := "CREATE"
 	if node.Replace {
-		create = "CREATE OR REPLACE VIEW"
+		create += " OR REPLACE"
 	}
+	if securityClause != "" {
+		create += " " + securityClause
+	}
+	create += " VIEW"
 	r.w.WriteLinef("%s %s AS", create, escapeQualifiedIdentifier(node.Name))
 	body := strings.TrimSpace(node.Body)
 	if node.WithCheck {

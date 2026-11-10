@@ -116,7 +116,7 @@ Top-level objects are maps. Their keys are used as default object names when a
 | `enums` | Standalone enum types and values. |
 | `extensions` | PostgreSQL extension declarations. |
 | `functions` | PostgreSQL-style function metadata and SQL bodies. |
-| `views` | View definitions, with PostgreSQL `options` and a check option in `with_check`: `true` or `cascaded`, `local`, or `false`. |
+| `views` | View definitions, with PostgreSQL `options`, a check option in `with_check` (`true`, `cascaded`, `local`, or `false`), and MySQL/MariaDB `security` (`DEFINER` or `INVOKER`). |
 | `matviews` / `materialized_views` | Materialized view definitions, with PostgreSQL storage parameters in `options` and a ClickHouse `refresh` clause. |
 | `triggers` | Trigger definitions. |
 | `rls_policies` | Row-level security policies, with the attributes of `//ptah:schema:rls:policy`, `as` included. An entry and an `rls_enabled_tables` entry take `dialects`: without it, or scoped to the PostgreSQL family, it is PostgreSQL row-level security and other targets refuse it. An entry scoped to ClickHouse is refused. |

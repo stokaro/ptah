@@ -79,12 +79,12 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-484 fields are reachable from the desired schema, and each one carries
+485 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 387 | reaches rendered SQL on at least one target |
+| `ddl` | 388 | reaches rendered SQL on at least one target |
 | `comparison` | 36 | read when two schemas are compared, and written into no statement |
 | `planning` | 6 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
@@ -734,6 +734,7 @@ migration nobody asked for.
 | `schemamodel.View.LocalCheck` | `ddl` | — |
 | `schemamodel.View.Name` | `ddl` | — |
 | `schemamodel.View.Options` | `ddl` | — |
+| `schemamodel.View.Security` | `ddl` | — |
 | `schemamodel.View.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
 | `schemamodel.View.WithCheck` | `ddl` | — |
 | `sqlitetable.DesiredTable.Options` | `ddl` | — |

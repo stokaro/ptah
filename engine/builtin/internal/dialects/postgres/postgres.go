@@ -3069,6 +3069,9 @@ func (r *Renderer) renderCreateView(node *ast.CreateViewNode) error {
 	if r.refuses(capability.Views, "view", node.Name) {
 		return nil
 	}
+	if err := viewrefusal.Security(r.dialect, node); err != nil {
+		return err
+	}
 	if err := viewrefusal.Attributes(r.dialect, node.Name, node.Attributes); err != nil {
 		return err
 	}

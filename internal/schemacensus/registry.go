@@ -507,6 +507,7 @@ var registry = []Entry{
 	{Field: "schemamodel.View.LocalCheck", Disposition: DDL},
 	{Field: "schemamodel.View.Name", Disposition: DDL},
 	{Field: "schemamodel.View.Options", Disposition: DDL},
+	{Field: "schemamodel.View.Security", Disposition: DDL},
 	{Field: "schemamodel.View.StructName", Disposition: SourceOrigin, Reason: "the Go struct the declaration was read from; the object's own name is its identity"},
 	{Field: "schemamodel.View.WithCheck", Disposition: DDL},
 }

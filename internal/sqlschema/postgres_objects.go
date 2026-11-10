@@ -103,6 +103,7 @@ func toView(node *ast.CreateViewNode, sourcePlatform string) (schemamodel.View, 
 		Body:       strings.TrimSpace(node.Body),
 		WithCheck:  node.WithCheck,
 		LocalCheck: node.WithCheck && node.LocalCheck,
+		Security:   node.Security,
 		Comment:    node.Comment,
 		Options:    options,
 	}, nil

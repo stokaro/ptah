@@ -809,6 +809,7 @@ Declares a database view.
 | `name` | Yes | View name. |
 | `options` | No | Comma-separated PostgreSQL view options, `name=value`, such as `security_invoker=true`; a bare name is true. PostgreSQL family. |
 | `schema` | No | Target schema/namespace. |
+| `security` | No | MySQL and MariaDB SQL SECURITY mode: `DEFINER` (the default) or `INVOKER`. |
 | `with_check` | No | The view's check option: `true` or `cascaded` for WITH CHECK OPTION, `local` for WITH LOCAL CHECK OPTION, `false` for none. Any other value is refused. |
 
 `options` states every option the view holds. The plan removes a false option

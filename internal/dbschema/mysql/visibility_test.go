@@ -55,7 +55,7 @@ func (v visibleCatalog) answer(query string, args []driver.NamedValue) (dbtest.Q
 		}
 		return dbtest.QueryResult{Columns: []string{"TABLE_NAME", "TABLE_TYPE", "TABLE_COMMENT", "TABLE_COLLATION", "ROW_FORMAT"}, Rows: rows}, nil
 	case strings.Contains(query, "FROM information_schema.VIEWS"):
-		return dbtest.QueryResult{Columns: []string{"TABLE_NAME", "VIEW_DEFINITION", "CHECK_OPTION"}, Rows: v.views}, nil
+		return dbtest.QueryResult{Columns: []string{"TABLE_NAME", "VIEW_DEFINITION", "CHECK_OPTION", "SECURITY_TYPE"}, Rows: v.views}, nil
 	case strings.Contains(query, "FROM information_schema.TRIGGERS"):
 		return dbtest.QueryResult{Columns: []string{
 			"TRIGGER_NAME", "EVENT_OBJECT_TABLE", "ACTION_TIMING", "EVENT_MANIPULATION", "ACTION_ORIENTATION", "ACTION_STATEMENT",
@@ -84,7 +84,7 @@ func fullCatalog() visibleCatalog {
 	return visibleCatalog{
 		selected: "fx",
 		tables:   []string{"child", "parent"},
-		views:    [][]driver.Value{{"v_child", "select 1", "NONE"}},
+		views:    [][]driver.Value{{"v_child", "select 1", "NONE", "DEFINER"}},
 		triggers: [][]driver.Value{triggerRow("trg_child", "SET NEW.n = 1")},
 		routines: [][]driver.Value{procedureRow("p_noop", "SELECT 1")},
 	}
@@ -115,7 +115,7 @@ const (
 // row scripts is what the server listed to an account with those grants.
 func TestReader_RefusesWhatTheAccountCannotSee_FailurePath(t *testing.T) {
 	selectOnly := func(c visibleCatalog) visibleCatalog {
-		c.views = [][]driver.Value{{"v_child", "", "NONE"}}
+		c.views = [][]driver.Value{{"v_child", "", "NONE", "DEFINER"}}
 		c.triggers = nil
 		c.routines = nil
 		return c
@@ -288,7 +288,7 @@ func TestReader_ReportsWhatTheAccountLacks_FailurePath(t *testing.T) {
 			catalog: visibleCatalog{
 				selected: "fx",
 				tables:   []string{"child", "parent"},
-				views:    [][]driver.Value{{"v_child", "", "NONE"}},
+				views:    [][]driver.Value{{"v_child", "", "NONE", "DEFINER"}},
 				routines: [][]driver.Value{procedureRow("p_noop", nil)},
 			},
 			want: []errorkind.MissingPrivilege{
@@ -472,7 +472,7 @@ func TestReader_AnswersWhenTheAccountSeesWhatTheRunNeeds_HappyPath(t *testing.T)
 			grants:  []string{"GRANT SELECT, TRIGGER, EXECUTE ON `fx`.* TO `app`@`%`"},
 			catalog: func() visibleCatalog {
 				c := fullCatalog()
-				c.views = [][]driver.Value{{"v_child", "", "NONE"}}
+				c.views = [][]driver.Value{{"v_child", "", "NONE", "DEFINER"}}
 				return c
 			}(),
 			without: []readscope.Kind{readscope.Views},
@@ -554,7 +554,7 @@ func TestReader_LeavingAKindOutLeavesTheOthers_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			catalog := fullCatalog()
-			catalog.views = [][]driver.Value{{"v_child", "", "NONE"}}
+			catalog.views = [][]driver.Value{{"v_child", "", "NONE", "DEFINER"}}
 			catalog.triggers, catalog.routines = nil, nil
 			db := dbtest.Open(t, dbtest.MySQLSession(dbtest.MySQLVersion, []string{"GRANT SELECT ON `fx`.* TO `app`@`%`"}, catalog.answer))
 			ctx := readscope.Without(context.Background(), test.without...)
@@ -708,7 +708,7 @@ func TestReader_AnswersForWhatTheRunCreated_HappyPath(t *testing.T) {
 // creator is not shown columns without a privilege that lists them.
 func TestReader_AnswersForWhatTheRunCreated_FailurePath(t *testing.T) {
 	withEmptyView := fullCatalog()
-	withEmptyView.views = [][]driver.Value{{"v_child", "", "NONE"}}
+	withEmptyView.views = [][]driver.Value{{"v_child", "", "NONE", "DEFINER"}}
 	withEmptyTrigger := fullCatalog()
 	withEmptyTrigger.triggers = [][]driver.Value{triggerRow("trg_child", nil)}
 	withHiddenRoutine := fullCatalog()

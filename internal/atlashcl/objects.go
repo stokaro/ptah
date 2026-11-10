@@ -22,6 +22,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/matviewrefresh"
+	"ptah.run/internal/mysqlviewsecurity"
 	"ptah.run/internal/routinesetting"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/triggerdef"
@@ -305,12 +306,21 @@ func (p *parser) parseView(block *hclsyntax.Block) error {
 	if err != nil {
 		return err
 	}
+	var security string
+	if attr := block.Body.Attributes["security"]; attr != nil {
+		value := p.exprString(attr)
+		security, err = mysqlviewsecurity.Parse(value)
+		if err != nil || security == "" {
+			return p.attributeError(attr, "view %q security must be DEFINER or INVOKER, got %q", name, value)
+		}
+	}
 	dependsOn := p.objectRefListAttr(block, "depends_on")
 	p.db.Views = append(p.db.Views, schemamodel.View{
 		Name:       tableref.Canonical(schema, name),
 		Body:       body,
 		WithCheck:  withCheck,
 		LocalCheck: localCheck,
+		Security:   security,
 		Comment:    p.optionalString(block.Body.Attributes["comment"]),
 		Attributes: attributes,
 		Options:    options,
@@ -1084,6 +1094,7 @@ func (p *parser) rejectUnsupportedViewAttrs(block *hclsyntax.Block) error {
 		"schema":       true,
 		"as":           true,
 		"check_option": true,
+		"security":     true,
 		"comment":      true,
 		"attributes":   true,
 		"depends_on":   true,

@@ -24,6 +24,7 @@ import (
 	"ptah.run/internal/annotationmeta"
 	"ptah.run/internal/constraintkind"
 	"ptah.run/internal/dialectscope"
+	"ptah.run/internal/mysqlviewsecurity"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/routinesetting"
 	"ptah.run/internal/tableref"
@@ -1669,12 +1670,21 @@ func (s *schemaParseState) parseViewComment(comment *ast.Comment, structName str
 	if err != nil {
 		return err
 	}
+	security, err := mysqlviewsecurity.Parse(kv["security"])
+	if err != nil {
+		return &ptaherr.ParseError{
+			File: ctx.file, Line: ctx.line, Directive: strings.TrimPrefix(ctx.directive, "//"),
+			Attribute: "security", Err: ptaherr.ErrInvalidAttributeValue,
+			Message: fmt.Sprintf("invalid %q value %q on %s at %s: %s", "security", kv["security"], ctx.directive, ctx.location, err),
+		}
+	}
 	s.views = append(s.views, schemamodel.View{
 		StructName: structName,
 		Name:       qualifiedObjectName(kv),
 		Body:       kv["body"],
 		WithCheck:  withCheck,
 		LocalCheck: localCheck,
+		Security:   security,
 		Comment:    kv["comment"],
 		Options:    options,
 		DependsOn:  splitDependsOn(kv["depends_on"]),

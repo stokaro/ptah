@@ -17,6 +17,7 @@ import (
 	"ptah.run/core/sqlutil"
 	"ptah.run/internal/exprkey"
 	"ptah.run/internal/mysqlroutine"
+	"ptah.run/internal/mysqlviewsecurity"
 	"ptah.run/internal/oracleroutine"
 	"ptah.run/internal/pgtypealias"
 	"ptah.run/internal/routineargs"
@@ -866,6 +867,15 @@ func viewDefinitions(genView schemamodel.View, dbView catalog.View, dialect stri
 	held := checkOptionLevel(sqlutil.CheckOptionRequestsCheck(dbView.CheckOption), sqlutil.CheckOptionIsLocal(dbView.CheckOption))
 	if declared := checkOptionLevel(genView.WithCheck, genView.LocalCheck); declared != held {
 		viewDiff.Changes["with_check"] = held + " -> " + declared
+	}
+	if comparisonOf(dialect).ViewSQLSecurity {
+		declared := mysqlviewsecurity.Effective(genView.Security)
+		held := mysqlviewsecurity.Effective(dbView.Security)
+		if declared != held {
+			viewDiff.Changes["security"] = held + " -> " + declared
+		}
+	} else if genView.Security != "" {
+		viewDiff.Changes["security"] = "(unsupported) -> " + genView.Security
 	}
 
 	// The view's own WITH clause. A view that gains or loses SCHEMABINDING is a

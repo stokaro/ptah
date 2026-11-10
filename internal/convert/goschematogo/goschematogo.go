@@ -416,6 +416,7 @@ func (ctx *renderContext) writeGlobalObjects(w *sourceWriter) {
 			attr{name: "name", value: view.Name, set: true},
 			attr{name: "body", value: view.Body, set: true},
 			attr{name: "with_check", value: viewcheck.Spell(view.WithCheck, view.LocalCheck), set: view.WithCheck},
+			attr{name: "security", value: view.Security, set: view.Security != ""},
 			attr{name: "options", value: strings.Join(view.Options, ","), set: len(view.Options) > 0},
 			attr{name: "comment", value: view.Comment, set: view.Comment != ""},
 			dialectsAttr(view.Dialects),

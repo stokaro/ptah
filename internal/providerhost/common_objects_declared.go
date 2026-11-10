@@ -44,6 +44,9 @@ func (t *target) commonKinds() map[protocol.CommonObjectSupport_Kind]bool {
 func (t *target) declaredViews(source *schemamodel.Database) ([]*protocol.SQLView, error) {
 	var views []*protocol.SQLView
 	for _, view := range source.Views {
+		if view.Security != "" {
+			return nil, unsupported(fmt.Sprintf("SQL SECURITY %s of view %q", view.Security, view.Name))
+		}
 		if !view.Facets.IsZero() {
 			return nil, unsupported(fmt.Sprintf("settings of view %q", view.Name))
 		}

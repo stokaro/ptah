@@ -1302,6 +1302,8 @@ type View struct {
 	Body        string           `json:"body"`         // SELECT query used as the view definition
 	CheckOption string           `json:"check_option"` // NONE, LOCAL, CASCADED, or dialect equivalent
 	Comment     string           `json:"comment"`      // View comment/description
+	// Security is the MySQL or MariaDB view's SQL SECURITY mode.
+	Security string `json:"security,omitempty"`
 	// Attributes carries the view's own WITH clause -- SQL Server's
 	// SCHEMABINDING and VIEW_METADATA -- uppercased, in the order the server
 	// wrote them.

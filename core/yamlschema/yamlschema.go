@@ -86,6 +86,7 @@ import (
 	"ptah.run/core/yamlext"
 	"ptah.run/internal/dialectscope"
 	"ptah.run/internal/matviewrefresh"
+	"ptah.run/internal/mysqlviewsecurity"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/routinesetting"
 	"ptah.run/internal/viewcheck"
@@ -352,6 +353,7 @@ type viewSpec struct {
 	// WithCheck is the view's check option, read by [viewcheck.Parse]: true
 	// or cascaded, local, or false.
 	WithCheck stringScalar `yaml:"with_check"`
+	Security  stringScalar `yaml:"security"`
 	// Options are the view's PostgreSQL options, each `name=value`.
 	Options []stringScalar `yaml:"options"`
 	Comment stringScalar   `yaml:"comment"`
@@ -1076,12 +1078,17 @@ func (d document) addViews(db *schemamodel.Database) error {
 		if err != nil {
 			return fmt.Errorf("view %q: with_check: %w", key, err)
 		}
+		security, err := mysqlviewsecurity.Parse(string(spec.Security))
+		if err != nil {
+			return fmt.Errorf("view %q: security: %w", key, err)
+		}
 		db.Views = append(db.Views, schemamodel.View{
 			StructName: string(spec.StructName),
 			Name:       valueOrDefault(spec.Name, key),
 			Body:       string(spec.Body),
 			WithCheck:  withCheck,
 			LocalCheck: localCheck,
+			Security:   security,
 			Comment:    string(spec.Comment),
 			Options:    options,
 		})

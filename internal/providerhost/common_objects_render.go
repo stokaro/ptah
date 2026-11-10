@@ -51,6 +51,9 @@ func (t *target) relationOperation(node ast.Node) (*protocol.CommonObjectChange,
 	engine := t.engine.GetId()
 	switch typed := node.(type) {
 	case *ast.CreateViewNode:
+		if typed.Security != "" {
+			return nil, nil, unsupported(fmt.Sprintf("SQL SECURITY %s of view %q", typed.Security, typed.Name))
+		}
 		// The common view carries no PostgreSQL options, so a view that
 		// declares some is refused rather than created without them.
 		if len(typed.Options) > 0 {

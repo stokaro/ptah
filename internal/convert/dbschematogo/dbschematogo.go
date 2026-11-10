@@ -512,6 +512,7 @@ func convertViews(database *schemamodel.Database, dbViews []catalog.View) {
 			Body:       dbView.Body,
 			WithCheck:  sqlutil.CheckOptionRequestsCheck(dbView.CheckOption),
 			LocalCheck: sqlutil.CheckOptionIsLocal(dbView.CheckOption),
+			Security:   dbView.Security,
 			Comment:    dbView.Comment,
 			Attributes: dbView.Attributes,
 			Options:    slices.Clone(dbView.Options),

@@ -24,8 +24,9 @@ func TestPlanner_GenerateMigrationAST_ViewsAndTriggersModified(t *testing.T) {
 
 	desired := &schemamodel.Database{
 		Views: []schemamodel.View{{
-			Name: "active_users",
-			Body: "SELECT id FROM users WHERE deleted_at IS NULL",
+			Name:     "active_users",
+			Body:     "SELECT id FROM users WHERE deleted_at IS NULL",
+			Security: "INVOKER",
 		}},
 		Triggers: []schemamodel.Trigger{{
 			Name:   "set_updated_at",
@@ -38,7 +39,7 @@ func TestPlanner_GenerateMigrationAST_ViewsAndTriggersModified(t *testing.T) {
 	diff := &difftypes.SchemaDiff{
 		ViewsModified: []difftypes.ViewDiff{{ViewName: "active_users",
 			Desired: schemamodel.View{Name: "active_users",
-				Body: "SELECT id FROM users WHERE deleted_at IS NULL"}, Changes: map[string]string{"body": "old -> new"}}},
+				Body: "SELECT id FROM users WHERE deleted_at IS NULL", Security: "INVOKER"}, Changes: map[string]string{"security": "DEFINER -> INVOKER"}}},
 		TriggersModified: []difftypes.TriggerDiff{{
 			TriggerName: "set_updated_at", TableName: "users",
 			Changes: map[string]string{"body": "old -> new"},
@@ -54,7 +55,7 @@ func TestPlanner_GenerateMigrationAST_ViewsAndTriggersModified(t *testing.T) {
 	sql, err := builtin.RenderSQL("mysql", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
-	c.Assert(sql, qt.Contains, "CREATE OR REPLACE VIEW active_users")
+	c.Assert(sql, qt.Contains, "CREATE OR REPLACE SQL SECURITY INVOKER VIEW active_users")
 	c.Assert(sql, qt.Contains, "DROP TRIGGER IF EXISTS set_updated_at;")
 	c.Assert(sql, qt.Contains, "CREATE TRIGGER set_updated_at BEFORE UPDATE ON users FOR EACH ROW SET NEW.updated_at = NOW();")
 }

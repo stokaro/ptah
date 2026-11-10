@@ -451,6 +451,8 @@ func (p *Parser) parseCreateModifier(target string, statementStart int) (ast.Nod
 		return p.parseCreateIndexAfterKeyword(target)
 	case "OR":
 		return p.parseCreateOrReplaceStatement(statementStart)
+	case "SQL":
+		return p.parseCreateSQLSecurityView()
 	case "TEMP", "TEMPORARY":
 		return p.parseCreateTemporary(target, statementStart)
 	case "UNIQUE":
@@ -661,6 +663,13 @@ func (p *Parser) parseCreateOrReplaceStatement(statementStart int) (ast.Node, er
 	}
 	if p.current.MatchIdentifierValue("VIEW") {
 		return p.parseCreateOrReplaceView()
+	}
+	if p.current.MatchIdentifierValue("SQL") {
+		view, err := p.parseCreateSQLSecurityView()
+		if err != nil {
+			return nil, err
+		}
+		return view.SetReplace(), nil
 	}
 	if p.current.MatchIdentifierValue("FUNCTION") {
 		return replacingRoutine(p.parseCreateRoutine("FUNCTION", statementStart))
@@ -986,6 +995,34 @@ func (p *Parser) parseCreateOrReplaceView() (*ast.CreateViewNode, error) {
 		return nil, err
 	}
 	view.SetReplace()
+	return view, nil
+}
+
+// parseCreateSQLSecurityView reads the MySQL-family modifier before VIEW and
+// keeps it on the node so a schema file can round-trip inspected view SQL.
+func (p *Parser) parseCreateSQLSecurityView() (*ast.CreateViewNode, error) {
+	if p.target.known && !p.target.viewSQLSecurity {
+		return nil, ptaherr.At(p.current.Start, fmt.Errorf("unsupported CREATE VIEW SQL SECURITY for %s", p.dialect))
+	}
+	if err := p.expect(lexer.TokenIdentifier, "SQL"); err != nil {
+		return nil, err
+	}
+	p.skipWhitespace()
+	if err := p.expect(lexer.TokenIdentifier, "SECURITY"); err != nil {
+		return nil, err
+	}
+	p.skipWhitespace()
+	security := strings.ToUpper(p.current.Value)
+	if p.current.Type != lexer.TokenIdentifier || (security != "DEFINER" && security != "INVOKER") {
+		return nil, ptaherr.At(p.current.Start, fmt.Errorf("expected DEFINER or INVOKER after SQL SECURITY, got %s", p.current.Value))
+	}
+	p.advance()
+	p.skipWhitespace()
+	view, err := p.parseCreateViewNode()
+	if err != nil {
+		return nil, err
+	}
+	view.Security = security
 	return view, nil
 }
 

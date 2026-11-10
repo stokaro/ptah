@@ -139,6 +139,7 @@ func corpus() []Fixture {
 		{Name: "enum", Schema: enumFixture()},
 		{Name: "sequence", Schema: sequenceFixture()},
 		{Name: "view", Schema: viewFixture()},
+		{Name: "view-security", Schema: viewSecurityFixture()},
 		{Name: "view-attributes", Schema: viewAttributesFixture()},
 		{Name: "view-options", Schema: viewOptionsFixture()},
 		{Name: "view-local-check", Schema: viewLocalCheckFixture()},
@@ -1194,6 +1195,16 @@ func viewFixture() schemamodel.Database {
 		StructName: "V", Name: "recent", Comment: "recent rows",
 		Body: "SELECT id FROM t", WithCheck: true,
 		Dialects: []string{"postgres", "cockroachdb", "yugabytedb", "sqlserver"},
+	}}
+	return db
+}
+
+// viewSecurityFixture keeps the MySQL view's execution mode in the census.
+// Other targets refuse this clause, so it needs its own fixture.
+func viewSecurityFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	db.Views = []schemamodel.View{{
+		Name: "invoker_view", Body: "SELECT id FROM t", Security: "INVOKER",
 	}}
 	return db
 }
