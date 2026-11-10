@@ -117,6 +117,9 @@ type Comparison struct {
 	// ViewPredicatesAsIntegers reports that the server stores a view's
 	// boolean predicate as an integer comparison.
 	ViewPredicatesAsIntegers bool `json:"view_predicates_as_integers,omitempty"`
+	// ViewSQLSecurity reports that a view has a SQL SECURITY mode in the
+	// catalog. An omitted declaration uses the server's DEFINER default.
+	ViewSQLSecurity bool `json:"view_sql_security,omitempty"`
 	// QualifiedTypeNames reports that the catalog names a column of a
 	// schema-qualified user type by its type schema and name.
 	QualifiedTypeNames bool `json:"qualified_type_names,omitempty"`

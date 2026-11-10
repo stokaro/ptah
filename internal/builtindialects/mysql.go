@@ -170,6 +170,7 @@ func mysql() descriptor.Dialect {
 			RoutineNamesFold:               true,
 			RoutineTypeAliases:             "mysqlroutine",
 			ViewPredicatesAsIntegers:       true,
+			ViewSQLSecurity:                true,
 			AutoIncrementFlag:              true,
 			// A whole server compares its databases too.
 			ServerDatabases: true,

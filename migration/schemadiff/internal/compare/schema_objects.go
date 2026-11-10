@@ -11,7 +11,6 @@ import (
 	"ptah.run/config"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/objectidentity"
-	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemamodel"
@@ -869,7 +868,7 @@ func viewDefinitions(genView schemamodel.View, dbView catalog.View, dialect stri
 	if declared := checkOptionLevel(genView.WithCheck, genView.LocalCheck); declared != held {
 		viewDiff.Changes["with_check"] = held + " -> " + declared
 	}
-	if dialect == platform.MySQL || dialect == platform.MariaDB {
+	if comparisonOf(dialect).ViewSQLSecurity {
 		declared := mysqlviewsecurity.Effective(genView.Security)
 		held := mysqlviewsecurity.Effective(dbView.Security)
 		if declared != held {
