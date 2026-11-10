@@ -670,8 +670,8 @@ func grantRefFromDatabase(grant catalog.Grant) difftypes.GrantRef {
 // must see that row and refuse before writing a REVOKE that leaves it in place.
 func preferForeignGrantor(previous, next difftypes.GrantRef, connectedRole string, superuser bool) bool {
 	foreign := func(ref difftypes.GrantRef) bool {
-		return ref.GrantedBy != "" && ref.GrantedBy != connectedRole &&
-			!(superuser && ref.ObjectOwner != "" && ref.GrantedBy == ref.ObjectOwner)
+		ownerGrant := superuser && ref.ObjectOwner != "" && ref.GrantedBy == ref.ObjectOwner
+		return ref.GrantedBy != "" && ref.GrantedBy != connectedRole && !ownerGrant
 	}
 	return foreign(next) && !foreign(previous)
 }
