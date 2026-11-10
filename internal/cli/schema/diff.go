@@ -254,6 +254,9 @@ type schemaDiffDocument struct {
 	// [schemaext.EncodedChange]: its subject and an envelope naming the owner,
 	// the namespaced kind and the codec version.
 	Changes *difftypes.SchemaDiff `json:"changes"`
+	// ComparisonLimits name source coverage that an empty statement list does
+	// not establish, including unread grants and account-visible databases.
+	ComparisonLimits []atlasreport.SchemaDiffLimit `json:"comparison_limits,omitempty"`
 }
 
 // schemaDiffFormatVersion is the version stamped on the document above.
@@ -268,9 +271,10 @@ func writeSchemaDiffJSON(cmd *cobra.Command, report atlasreport.SchemaDiff, chan
 		statements = append(statements, change.Cmd)
 	}
 	document, err := featurejson.MarshalIndent(cmd.Context(), codecs, schemaext.Desired, schemaDiffDocument{
-		FormatVersion: schemaDiffFormatVersion,
-		Statements:    statements,
-		Changes:       changes,
+		FormatVersion:    schemaDiffFormatVersion,
+		Statements:       statements,
+		Changes:          changes,
+		ComparisonLimits: report.Limits,
 	}, "", "  ")
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("render schema diff JSON: %w", err))

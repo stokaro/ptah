@@ -21,6 +21,20 @@ func TestSchemaDiffDefaultFormatReportsSyncedSchemas(t *testing.T) {
 	c.Assert(out.String(), qt.Equals, "Schemas are synced, no changes to be made.\n")
 }
 
+func TestSchemaDiffDefaultFormatNamesIncompleteCoverage(t *testing.T) {
+	c := qt.New(t)
+	var out bytes.Buffer
+	report := atlasreport.NewSchemaDiff(atlasreport.SchemaDiffOptions{Limits: []atlasreport.SchemaDiffLimit{{
+		Side: "--from", Kind: "roles and grants", Reason: "the source did not describe this kind",
+	}}})
+
+	err := atlasreport.WriteSchemaDiff(t.Context(), &out, atlasreport.NormalizeSchemaDiffFormat(""), report, schemaext.Registry{})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Equals, "No changes found in the visible scope. Comparison limits:\n"+
+		"- --from roles and grants: the source did not describe this kind\n")
+}
+
 func TestSchemaDiffCustomSQLTemplate(t *testing.T) {
 	c := qt.New(t)
 	var out bytes.Buffer

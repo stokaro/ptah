@@ -678,7 +678,8 @@ Where a grant applies decides what it proves:
   privilege.
 - **A URL that names no database** covers the databases the account can see, and each
   of them is held to this table. A database the account holds nothing on is outside the
-  comparison, and two servers that differ only by one answer `Schemas are synced`.
+  comparison. `schema diff` names this visible-scope limit instead of claiming
+  that two servers are fully synced.
   `SHOW DATABASES` lists every database, so an account that holds it has to see them
   all or name the ones it reads with `--schemas`.
 
@@ -740,9 +741,11 @@ REPLACE] SQL SECURITY INVOKER VIEW`; reading the file preserves that mode.
 
 Reading roles and the grants on them needs `SELECT` on the `mysql` database, which
 ordinary schema work does not. An account without it records them as not described
-and is not refused, so a comparison decides nothing about them in either direction:
-two databases that differ only by a grant to a role answer `Schemas are synced` for
-that account. An account that compares grants needs `SELECT` on `mysql.*`.
+and is not refused, so a comparison decides nothing about them in either direction.
+When a SQL diff finds no changes in the readable objects, it names roles and
+grants as a comparison limit instead of claiming the schemas are fully synced.
+Native `schema diff --format json` includes these limits in `comparison_limits`.
+An account that compares grants needs `SELECT` on `mysql.*`.
 
 ### Events
 

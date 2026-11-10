@@ -39,7 +39,7 @@ var schemaDiffTemplateHelpers = envbool.New(SchemaDiffTemplateHelpersEnvVar, fal
 const schemaDiffDefaultFormat = `{{- with .Changes -}}
 {{ sql $ }}
 {{- else -}}
-Schemas are synced, no changes to be made.
+{{ .NoChangesText -}}
 {{ end -}}
 `
 
@@ -49,6 +49,7 @@ type SchemaDiff struct {
 	From    *schemamodel.Database
 	To      *schemamodel.Database
 	Changes []SchemaDiffChange
+	Limits  []SchemaDiffLimit
 
 	// dialect is the dialect the statements were planned for, which the `sql`
 	// helper reads them as when it indents them. It is unexported because
@@ -59,6 +60,28 @@ type SchemaDiff struct {
 	commentsAsWritten bool
 	// foreignLayout is [SchemaDiffOptions.ForeignLayout].
 	foreignLayout bool
+}
+
+// SchemaDiffLimit names a part of one database source that a diff could not
+// establish. A limit is informational; it does not produce a SQL statement.
+type SchemaDiffLimit struct {
+	Side   string `json:"side"`
+	Kind   string `json:"kind"`
+	Reason string `json:"reason"`
+}
+
+// NoChangesText avoids claiming full agreement when the read covered only a
+// visible subset or could not read one kind.
+func (d SchemaDiff) NoChangesText() string {
+	if len(d.Limits) == 0 {
+		return "Schemas are synced, no changes to be made.\n"
+	}
+	var text strings.Builder
+	text.WriteString("No changes found in the visible scope. Comparison limits:\n")
+	for _, limit := range d.Limits {
+		fmt.Fprintf(&text, "- %s %s: %s\n", limit.Side, limit.Kind, limit.Reason)
+	}
+	return text.String()
 }
 
 // SchemaChange is one planned statement. Its fields are those of the community
@@ -92,6 +115,8 @@ type SchemaDiffOptions struct {
 	// Changes is the ordered plan with the comment that names each change.
 	// It is read in place of Statements when it is set.
 	Changes []SchemaChange
+	// Limits are the parts of a database source the diff could not establish.
+	Limits []SchemaDiffLimit
 	// CommentsAsWritten makes the `sql` helper write each change's comment
 	// as the change carries it. Without it the helper writes the comment's
 	// first letter in upper case, as the community binary's helper does:
@@ -122,6 +147,7 @@ func NewSchemaDiff(opts SchemaDiffOptions) SchemaDiff {
 		From:              opts.From,
 		To:                opts.To,
 		Changes:           changes,
+		Limits:            opts.Limits,
 		dialect:           opts.Dialect,
 		commentsAsWritten: opts.CommentsAsWritten,
 		foreignLayout:     opts.ForeignLayout,
@@ -244,23 +270,23 @@ func schemaChanges(statements []string) []SchemaChange {
 	return changes
 }
 
-func (r SchemaDiff) MarshalSQL(indent ...string) (string, error) {
+func (d SchemaDiff) MarshalSQL(indent ...string) (string, error) {
 	if len(indent) > 1 {
 		return "", fmt.Errorf("unexpected number of arguments: %d", len(indent))
 	}
 	spell := capitalized
-	if r.commentsAsWritten {
+	if d.commentsAsWritten {
 		spell = asWritten
 	}
-	end := statementEnd(r.dialect)
-	if r.foreignLayout {
+	end := statementEnd(d.dialect)
+	if d.foreignLayout {
 		end = sqlscript.Terminator
 	}
-	sql := schemaChangesSQLText(r.Changes, spell, end)
+	sql := schemaChangesSQLText(d.Changes, spell, end)
 	if len(indent) == 0 || indent[0] == "" || sql == "" {
 		return sql, nil
 	}
-	return schemaIndentSQL(r.dialect, sql, indent[0]), nil
+	return schemaIndentSQL(d.dialect, sql, indent[0]), nil
 }
 
 func schemaDiffSQL(result SchemaDiff, indent ...string) (string, error) {
