@@ -205,11 +205,8 @@ at `warning` severity. The default threshold fails on it, and
 `--severity destructive` counts only established destructive changes. A missing
 observation does not establish that a withheld operation is safe.
 
-Objects that Ptah cannot model are named under `not_compared` and are not
-findings. PostgreSQL readers name aggregates, collations, event triggers, foreign
-tables, and publications there. A provider that cannot list a kind, such as
-Spanner change streams, names the whole kind without an object name. MySQL and
-MariaDB events appear there too; see [Events](../../databases/mysql/#events).
+Unmodeled objects appear under `not_compared`; see
+[Drift findings](../../reference/drift-findings/#kinds-of-object).
 
 The JSON report carries common-object limits in `undecided.common` and feature limits in
 `undecided.features`, with `drift` false and `failed` set by the threshold.
