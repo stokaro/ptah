@@ -1,6 +1,7 @@
 package rolegraph_test
 
 import (
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -30,22 +31,43 @@ func TestForPlanRoles(t *testing.T) {
 	for _, test := range []struct {
 		name       string
 		statements []string
+		policies   []catalog.RLSPolicy
 		scope      descriptor.RoleScope
+		capability capability.Capabilities
 		want       []catalog.Role
 	}{
 		{name: "unrelated server role", scope: descriptor.RoleScopeNone,
 			want: database.Roles[:2]},
+		{name: "unrelated user-made role", scope: descriptor.RoleScopeUserMade,
+			want: database.Roles[:2]},
 		{name: "statement recipient", scope: descriptor.RoleScopeNone,
 			statements: []string{`GRANT SELECT ON t TO recipient`},
 			want:       database.Roles[:3]},
-		{name: "scoped role read", scope: descriptor.RoleScopeReferenced,
+		{name: "policy target", scope: descriptor.RoleScopeNone,
+			policies: []catalog.RLSPolicy{{ToRoles: "recipient, PUBLIC"}},
+			want:     database.Roles[:3]},
+		{name: "membership capability does not include unrelated roles", scope: descriptor.RoleScopeNone,
+			capability: capability.Of(map[capability.Capability]bool{capability.RoleMembership: true}),
+			want:       database.Roles[:2]},
+		{name: "referenced-scope reader lists related roles", scope: descriptor.RoleScopeReferenced,
 			want: database.Roles},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(rolegraph.ForPlanRoles(database, test.statements, test.scope, capability.Of(nil)), qt.DeepEquals, test.want)
+			read := *database
+			read.RLSPolicies = test.policies
+			c.Assert(rolegraph.ForPlanRoles(&read, test.statements, test.scope, test.capability), qt.DeepEquals, test.want)
 		})
 	}
+	no := false
+	read := *database
+	read.Roles = append(slices.Clone(database.Roles), catalog.Role{Name: "created"})
+	read.RoleMemberships = append(slices.Clone(database.RoleMemberships), catalog.RoleMembership{
+		Role: "created", Member: "runner", AdminOption: true, InheritOption: &no, SetOption: &no,
+	})
+	c := qt.New(t)
+	c.Assert(rolegraph.ForPlanRoles(&read, nil, descriptor.RoleScopeReferenced, capability.Of(nil)),
+		qt.DeepEquals, database.Roles)
 }
 
 // TestForPlanMembershipOptions distinguishes a grant that conveys access from
@@ -304,7 +326,6 @@ func TestForPlan_HappyPath(t *testing.T) {
 		{
 			name:     "nothing ties the plan to the graph",
 			database: described(func(*catalog.Database) {}),
-			scope:    descriptor.RoleScopeReferenced,
 			want:     nil,
 		},
 		{
@@ -312,26 +333,10 @@ func TestForPlan_HappyPath(t *testing.T) {
 			database: described(func(database *catalog.Database) {
 				database.ConnectedRole = "peer"
 			}),
-			scope: descriptor.RoleScopeReferenced,
-			want:  peerEdges,
-		},
-		{
-			name: "a role a referenced-scope read lists",
-			database: described(func(database *catalog.Database) {
-				database.Roles = []catalog.Role{{Name: "peer"}}
-			}),
-			scope: descriptor.RoleScopeReferenced,
-			want:  peerEdges,
-		},
-		{
-			name: "a role the read lists under the scope the zero value means",
-			database: described(func(database *catalog.Database) {
-				database.Roles = []catalog.Role{{Name: "peer"}}
-			}),
 			want: peerEdges,
 		},
 		{
-			name: "a listed role is no tie where the read lists every role",
+			name: "a listed role in a server-wide read is no tie to the plan",
 			database: described(func(database *catalog.Database) {
 				database.Roles = []catalog.Role{{Name: "peer"}}
 			}),
@@ -339,42 +344,60 @@ func TestForPlan_HappyPath(t *testing.T) {
 			want:  nil,
 		},
 		{
+			name: "a listed role in a user-made read is no tie to the plan",
+			database: described(func(database *catalog.Database) {
+				database.Roles = []catalog.Role{{Name: "peer"}}
+			}),
+			scope: descriptor.RoleScopeUserMade,
+			want:  nil,
+		},
+		{
+			name: "a listed role in a referenced read is tied to the plan",
+			database: described(func(database *catalog.Database) {
+				database.Roles = []catalog.Role{{Name: "peer"}}
+			}),
+			scope: descriptor.RoleScopeReferenced,
+			want:  peerEdges,
+		},
+		{
 			name: "a privilege holder where the read lists every role",
 			database: described(func(database *catalog.Database) {
 				database.Grants = []catalog.Grant{{Role: "peer"}}
 			}),
-			scope: descriptor.RoleScopeNone,
-			want:  peerEdges,
+			want: peerEdges,
 		},
 		{
 			name: "a grantor",
 			database: described(func(database *catalog.Database) {
 				database.Grants = []catalog.Grant{{Role: "PUBLIC", GrantedBy: "peer"}}
 			}),
-			scope: descriptor.RoleScopeNone,
-			want:  peerEdges,
+			want: peerEdges,
 		},
 		{
 			name: "an object owner",
 			database: described(func(database *catalog.Database) {
 				database.ObjectOwners = []catalog.ObjectOwner{{Kind: "table", Name: "t", Owner: "peer"}}
 			}),
-			scope: descriptor.RoleScopeNone,
-			want:  peerEdges,
+			want: peerEdges,
 		},
 		{
 			name: "a routine definer, in its account spelling",
 			database: described(func(database *catalog.Database) {
 				database.Functions = []catalog.Function{{Name: "f", Definer: "peer@%"}}
 			}),
-			scope: descriptor.RoleScopeNone,
-			want:  peerEdges,
+			want: peerEdges,
+		},
+		{
+			name: "a policy target",
+			database: described(func(database *catalog.Database) {
+				database.RLSPolicies = []catalog.RLSPolicy{{ToRoles: "peer, PUBLIC"}}
+			}),
+			want: peerEdges,
 		},
 		{
 			name:       "a role a statement names",
 			database:   described(func(*catalog.Database) {}),
 			statements: []string{`GRANT SELECT ON t TO "peer"`},
-			scope:      descriptor.RoleScopeNone,
 			want:       peerEdges,
 		},
 	}

@@ -23,9 +23,7 @@ import (
 // ForPlan returns the memberships a saved plan's source fingerprint covers:
 // those [Related] finds from the roles the plan depends on, which are
 //
-//   - the roles the read's description names: privilege holders, grantors,
-//     object owners, routine definers and, where the read lists only the roles
-//     its schemas refer to, every listed role;
+//   - privilege holders, grantors, object owners, routine definers and policy targets;
 //   - the role the read ran as, which is the role that runs the plan through
 //     that connection;
 //   - the roles whose names appear in statements, the plan's statement bodies,
@@ -40,9 +38,9 @@ import (
 // An edge known to allow neither inheritance nor SET ROLE joins the plan only
 // when a statement names one of its roles.
 //
-// scope is the dialect's [descriptor.Roles.OutOfScope]. Under
-// [descriptor.RoleScopeNone] the listed roles are the whole server's, so being
-// listed is no tie to the plan and only the other sources count.
+// A referenced-scope read ties listed roles to the inspected schema. A
+// server-wide read does not, and an ADMIN-only creator edge can add a role to
+// a referenced read without giving the creator access to it.
 func ForPlan(database *catalog.Database, statements []string, scope descriptor.RoleScope, capabilities capability.Capabilities) []catalog.RoleMembership {
 	if database.ConnectedRole == "" || capabilities.Has(capability.RoleMembership) {
 		return database.RoleMemberships
@@ -71,7 +69,7 @@ func optionEnabled(option *bool) bool { return option == nil || *option }
 // must not replace a plan for another database. A role named by the plan, a
 // privilege, an owner, or a relevant membership still changes the fingerprint.
 func ForPlanRoles(database *catalog.Database, statements []string, scope descriptor.RoleScope, capabilities capability.Capabilities) []catalog.Role {
-	if scope != descriptor.RoleScopeNone || database.ConnectedRole == "" || capabilities.Has(capability.RoleMembership) {
+	if database.ConnectedRole == "" {
 		return database.Roles
 	}
 	needed := make(map[string]bool)
@@ -97,9 +95,11 @@ func ForPlanRoles(database *catalog.Database, statements []string, scope descrip
 // plan. The same roots select memberships and server-wide role attributes.
 func planRoles(database *catalog.Database, statements []string, scope descriptor.RoleScope) []string {
 	roles := []string{database.ConnectedRole}
-	if scope != descriptor.RoleScopeNone {
+	if scope == descriptor.RoleScopeReferenced {
 		for _, role := range database.Roles {
-			roles = append(roles, role.Name)
+			if !adminOnlyCreatorRole(database, role.Name) {
+				roles = append(roles, role.Name)
+			}
 		}
 	}
 	for _, grant := range database.Grants {
@@ -111,8 +111,24 @@ func planRoles(database *catalog.Database, statements []string, scope descriptor
 	for _, function := range database.Functions {
 		roles = append(roles, accountUser(function.Definer))
 	}
+	policyTargets := make([]string, 0, len(database.RLSPolicies))
+	for _, policy := range database.RLSPolicies {
+		policyTargets = append(policyTargets, policy.ToRoles)
+	}
+	roles = append(roles, NamedRoles(database.Roles, policyTargets)...)
+	roles = append(roles, Named(database.RoleMemberships, policyTargets)...)
 	roles = append(roles, Named(database.RoleMemberships, statements)...)
 	return roles
+}
+
+func adminOnlyCreatorRole(database *catalog.Database, name string) bool {
+	for _, edge := range database.RoleMemberships {
+		if edge.Role == name && edge.Member == database.ConnectedRole && edge.AdminOption &&
+			!optionEnabled(edge.InheritOption) && !optionEnabled(edge.SetOption) {
+			return true
+		}
+	}
+	return false
 }
 
 // NamedRoles returns listed roles whose names appear in a statement body.
