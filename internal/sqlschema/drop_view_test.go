@@ -57,6 +57,7 @@ func TestRead_DropView_HappyPath(t *testing.T) {
 		{name: "SQL Server", dialect: "sqlserver", sql: viewFixture + "DROP VIEW v;", wantViews: []string{"w"}},
 		{name: "CockroachDB", dialect: "cockroachdb", sql: viewFixture + "DROP VIEW v;", wantViews: []string{"w"}},
 		{name: "YugabyteDB", dialect: "yugabytedb", sql: viewFixture + "DROP VIEW v;", wantViews: []string{"w"}},
+		{name: "ClickHouse DROP TABLE removes a view", dialect: "clickhouse", sql: viewFixture + "DROP TABLE v;", wantViews: []string{"w"}},
 		{name: "two views in one statement", dialect: "postgres", sql: viewFixture + "DROP VIEW v, w;", wantViews: make([]string, 0)},
 		{name: "the name folds as the server folds it", dialect: "postgres", sql: viewFixture + "DROP VIEW V;", wantViews: []string{"w"}},
 		{name: "the default schema is the bare name", dialect: "postgres", sql: viewFixture + "DROP VIEW public.v;", wantViews: []string{"w"}},
@@ -124,6 +125,7 @@ func TestRead_DropMaterializedView_HappyPath(t *testing.T) {
 		{name: "IF EXISTS of one nothing declares", dialect: "postgres", sql: matViewFixture + "DROP MATERIALIZED VIEW IF EXISTS nope;", wantMats: []string{"m", "n"}},
 		{name: "ClickHouse drops one with DROP VIEW", dialect: "clickhouse", sql: chMatViewBody + "DROP VIEW m;", wantMats: make([]string, 0)},
 		{name: "and with SYNC", dialect: "clickhouse", sql: chMatViewBody + "DROP VIEW IF EXISTS m SYNC;", wantMats: make([]string, 0)},
+		{name: "ClickHouse DROP TABLE removes a materialized view", dialect: "clickhouse", sql: chMatViewBody + "DROP TABLE m;", wantMats: make([]string, 0)},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -198,6 +200,7 @@ func TestRead_DropView_FailurePath(t *testing.T) {
 		{name: "a table under IF EXISTS, PostgreSQL", dialect: "postgres", sql: viewFixture + "DROP VIEW IF EXISTS t;", wantErr: `line 4, column 1: DROP VIEW t: the schema declares t as another kind of object`},
 		{name: "a table under IF EXISTS, SQLite", dialect: "sqlite", sql: viewFixture + "DROP VIEW IF EXISTS t;", wantErr: `line 4, column 1: DROP VIEW t: the schema declares t as another kind of object`},
 		{name: "a table under IF EXISTS, SQL Server", dialect: "sqlserver", sql: viewFixture + "DROP VIEW IF EXISTS t;", wantErr: `line 4, column 1: DROP VIEW t: the schema declares t as another kind of object`},
+		{name: "a view by DROP TABLE, PostgreSQL", dialect: "postgres", sql: viewFixture + "DROP TABLE v;", wantErr: `line 4, column 1: DROP TABLE v names a table this schema does not declare`},
 		{name: "a table with no IF EXISTS, MySQL", dialect: "mysql", sql: viewFixture + "DROP VIEW t;", wantErr: `line 4, column 1: DROP VIEW t: the schema declares t as another kind of object`},
 		{name: "a materialized view by DROP VIEW", dialect: "postgres", sql: matViewFixture + "DROP VIEW m;", wantErr: `line 4, column 1: DROP VIEW m: the schema declares m as another kind of object`},
 		{name: "a view by DROP MATERIALIZED VIEW", dialect: "postgres", sql: viewFixture + "DROP MATERIALIZED VIEW v;", wantErr: `line 4, column 1: DROP MATERIALIZED VIEW v: the schema declares v as another kind of object`},

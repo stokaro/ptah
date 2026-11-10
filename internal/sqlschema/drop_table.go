@@ -59,6 +59,18 @@ func applyDropTable(
 				"which a schema file does not list; drop them by name",
 			strings.Join(names, ", "))
 	}
+	if factsOf(sourcePlatform).statements.DropTableReachesViews && len(names) == 1 {
+		name := names[0]
+		if _, tableDeclared := findAlterTarget(database, base, name, sourcePlatform); !tableDeclared {
+			declared := declaredViews(declaredIn(database, document), sourcePlatform)
+			viewName := unqualified(normalizeSQLTableReference(sourcePlatform, name), sourcePlatform)
+			if resolveDeclaredName(sourcePlatform, viewName, declared.names) >= 0 {
+				return applyViewDrop(ctx, database, document, viewDrop{
+					statement: "DROP TABLE", written: name, ifExists: node.IfExists,
+				}, sourcePlatform)
+			}
+		}
+	}
 	var targets []alterTarget
 	for _, name := range names {
 		target, declared := findAlterTarget(database, base, name, sourcePlatform)

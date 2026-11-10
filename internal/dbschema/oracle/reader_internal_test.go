@@ -26,6 +26,7 @@ func TestFormatColumnType_ComposesTheDeclaredSpelling(t *testing.T) {
 		dataType   string
 		vectorInfo sql.NullString
 		charLength sql.NullInt64
+		charUsed   string
 		precision  sql.NullInt64
 		scale      sql.NullInt64
 		want       string
@@ -43,7 +44,9 @@ func TestFormatColumnType_ComposesTheDeclaredSpelling(t *testing.T) {
 		{name: "no precision and a scale", dataType: "NUMBER", scale: number(0), want: "NUMBER(*,0)"},
 		{name: "no precision and a real scale", dataType: "NUMBER", scale: number(2), want: "NUMBER(*,2)"},
 		{name: "varchar2", dataType: "VARCHAR2", charLength: number(200), want: "VARCHAR2(200)"},
+		{name: "varchar2 character length", dataType: "VARCHAR2", charLength: number(100), charUsed: "C", want: "VARCHAR2(100 CHAR)"},
 		{name: "char", dataType: "CHAR", charLength: number(3), want: "CHAR(3)"},
+		{name: "char character length", dataType: "CHAR", charLength: number(3), charUsed: "C", want: "CHAR(3 CHAR)"},
 		{name: "raw", dataType: "RAW", charLength: number(16), want: "RAW(16)"},
 		{name: "clob carries no width", dataType: "CLOB", want: "CLOB"},
 		{name: "json carries no width", dataType: "JSON", want: "JSON"},
@@ -67,7 +70,7 @@ func TestFormatColumnType_ComposesTheDeclaredSpelling(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			got := formatColumnType(test.dataType, test.vectorInfo, test.charLength, test.precision, test.scale)
+			got := formatColumnType(test.dataType, test.vectorInfo, test.charLength, test.precision, test.scale, test.charUsed)
 			c.Assert(got, qt.Equals, test.want)
 		})
 	}

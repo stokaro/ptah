@@ -276,7 +276,8 @@ SELECT c.table_name,
        `
 
 const columnQueryTail = `,
-       CASE c.data_type WHEN 'RAW' THEN c.data_length ELSE c.char_length END,
+       CASE WHEN c.data_type = 'RAW' OR c.char_used = 'B' THEN c.data_length ELSE c.char_length END,
+       c.char_used,
        c.data_precision,
        c.data_scale,
        c.nullable,
@@ -327,6 +328,7 @@ func (r *Reader) readColumns(ctx context.Context) (map[string][]catalog.Column, 
 			table      string
 			column     catalog.Column
 			charLength sql.NullInt64
+			charUsed   sql.NullString
 			precision  sql.NullInt64
 			scale      sql.NullInt64
 			nullable   string
@@ -338,7 +340,7 @@ func (r *Reader) readColumns(ctx context.Context) (map[string][]catalog.Column, 
 			vectorInfo sql.NullString
 			generation sql.NullString
 		)
-		if err := rows.Scan(&table, &column.Name, &column.DataType, &vectorInfo, &charLength,
+		if err := rows.Scan(&table, &column.Name, &column.DataType, &vectorInfo, &charLength, &charUsed,
 			&precision, &scale, &nullable, &position, &identity, &virtual, &def,
 			&comment, &generation); err != nil {
 			return nil, err
@@ -351,7 +353,7 @@ func (r *Reader) readColumns(ctx context.Context) (map[string][]catalog.Column, 
 		// and the raw catalog spelling is not one. Filling it with DATA_TYPE
 		// made the comparison read `number` where the composed type says
 		// `NUMBER(10)`, so a live schema did not match itself.
-		column.DataType = formatColumnType(column.DataType, vectorInfo, charLength, precision, scale)
+		column.DataType = formatColumnType(column.DataType, vectorInfo, charLength, precision, scale, charUsed.String)
 		column.IsNullable = nullableWord(nullable)
 		column.OrdinalPosition = int(position.Int64)
 		column.IsAutoIncrement = identity == "YES"
@@ -785,7 +787,7 @@ func (r *Reader) readMaterializedViews(ctx context.Context) ([]catalog.Materiali
 // the arms that append anything, so both come back whole. A guard was written
 // here first and removed: reverting it changed no answer, which is the
 // definition of dead code.
-func formatColumnType(dataType string, vectorInfo sql.NullString, charLength, precision, scale sql.NullInt64) string {
+func formatColumnType(dataType string, vectorInfo sql.NullString, charLength, precision, scale sql.NullInt64, charUsed string) string {
 	switch dataType {
 	case "VECTOR":
 		// The catalog completes what a declaration left out and reports the
@@ -812,6 +814,9 @@ func formatColumnType(dataType string, vectorInfo sql.NullString, charLength, pr
 	case "VARCHAR2", "NVARCHAR2", "CHAR", "NCHAR", "RAW":
 		if !charLength.Valid || charLength.Int64 == 0 {
 			return dataType
+		}
+		if (dataType == "VARCHAR2" || dataType == "CHAR") && charUsed == "C" {
+			return fmt.Sprintf("%s(%d CHAR)", dataType, charLength.Int64)
 		}
 		return fmt.Sprintf("%s(%d)", dataType, charLength.Int64)
 	default:
