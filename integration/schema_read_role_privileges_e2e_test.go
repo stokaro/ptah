@@ -145,7 +145,9 @@ const (
 // with no table privileges finds no table, and pg_read_all_data no constraint or
 // grant, and a read through it answers `Schemas are synced` at exit 0. The answer
 // is pinned to what the owner's side holds, and to the admin connection's output,
-// so a read that loses an object for every role at once fails too.
+// so a read that loses an object for every role at once fails too. A role that
+// cannot revoke the owner's grant still sees the same schema, but its reverse
+// plan is refused before it can issue a REVOKE that leaves the grant in place.
 func TestSchemaDiffAnswersTheSameForEveryConnectingRoleE2E(t *testing.T) {
 	c := qt.New(t)
 	roles := newConnectingRoles(c)
@@ -178,7 +180,8 @@ func TestSchemaDiffAnswersTheSameForEveryConnectingRoleE2E(t *testing.T) {
 			from, to := connectedAs(c, left, row.role), connectedAs(c, right, row.role)
 
 			c.Assert(runPtahNative(c, "schema", "diff", "--from", from, "--to", to), qt.Equals, wantLeftToRight)
-			c.Assert(runPtahNative(c, "schema", "diff", "--from", to, "--to", from), qt.Equals, wantRightToLeft)
+			_, err := runPtahNativeWithError("schema", "diff", "--from", to, "--to", from)
+			c.Assert(err, qt.ErrorMatches, `(?s).*grantor "`+roles.owner+`" differs from connected role "`+row.role+`".*`)
 		})
 	}
 }

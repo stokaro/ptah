@@ -79,3 +79,24 @@ func TestReadObjectOwners_ReadsEveryInspectedSchema(t *testing.T) {
 	c.Assert(seen, qt.HasLen, 2)
 	c.Assert(owners, qt.HasLen, 0)
 }
+
+func TestAttachGrantObjectOwners(t *testing.T) {
+	c := qt.New(t)
+	r := NewPostgreSQLReaderWithCapabilities(nil, "public", capability.Postgres16())
+	schema := &catalog.Database{
+		ObjectOwners: []catalog.ObjectOwner{
+			{Kind: "table", Schema: "public", Name: "t", Owner: "table_owner"},
+			{Kind: "schema", Name: "public", Owner: "schema_owner"},
+		},
+		Grants: []catalog.Grant{
+			{ObjectType: "TABLE", ObjectName: "t", GrantedBy: "delegate"},
+			{ObjectType: "SCHEMA", ObjectName: "public", GrantedBy: "schema_owner"},
+			{ObjectType: "FUNCTION", ObjectName: "f", Arguments: "integer", Role: "function_owner", Implicit: true},
+			{ObjectType: "FUNCTION", ObjectName: "f", Arguments: "integer", Role: "reader", GrantedBy: "function_owner"},
+		},
+	}
+	r.attachGrantObjectOwners(schema)
+	c.Assert(schema.Grants[0].ObjectOwner, qt.Equals, "table_owner")
+	c.Assert(schema.Grants[1].ObjectOwner, qt.Equals, "schema_owner")
+	c.Assert(schema.Grants[3].ObjectOwner, qt.Equals, "function_owner")
+}

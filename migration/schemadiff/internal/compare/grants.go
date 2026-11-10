@@ -150,6 +150,8 @@ func GrantsWithOptions(
 	options GrantOptions,
 ) {
 	objects := options.Objects
+	diff.ConnectedRole = database.ConnectedRole
+	diff.ConnectedRoleSuperuser = database.ConnectedRoleSuperuser
 	sequences := newColumnSequences(desired, database, semantics)
 	generatedGrantMap := make(map[grantIdentity]difftypes.GrantRef)
 	generatedGrantRoles := make(map[string]bool)
@@ -176,10 +178,50 @@ func GrantsWithOptions(
 		}
 	}
 
-	cov := removalCoverage(desired, semantics)
-	databaseGrantMapForAdditions := make(map[grantIdentity]difftypes.GrantRef)
-	databaseGrantMapForRemovals := make(map[grantIdentity]difftypes.GrantRef)
-	for _, grant := range database.Grants {
+	read := grantRead{
+		database: database, sequences: sequences, semantics: semantics,
+		managedRoles: managedRoles, generatedRoles: generatedGrantRoles,
+		revoked: revokedGrants, removable: removable,
+		coverage: removalCoverage(desired, semantics), objects: objects,
+	}
+	databaseGrantMapForAdditions, databaseGrantMapForRemovals := read.maps()
+
+	planGrantAdditions(generatedGrantMap, databaseGrantMapForAdditions, managedRoles, diff)
+	diff.GrantsAdded = append(diff.GrantsAdded, ownerPrivilegesToGrantBack(options.DesiredRead, database, sequences, semantics)...)
+	if options.DesiredRead == nil {
+		diff.UnmanagedOwnerPrivileges = unmanagedOwnerPrivileges(desired, database, generatedGrantMap, revokedGrants, sequences, semantics)
+	}
+	sequences.nameAsDatabase(diff.GrantsAdded, semantics)
+	sequences.nameAsDatabase(diff.GrantOptionsAdded, semantics)
+	for key, ref := range databaseGrantMapForRemovals {
+		if !declaredGrant(key, generatedGrantMap) {
+			diff.GrantsRemoved = append(diff.GrantsRemoved, ref)
+		}
+	}
+	revokeOnCreatedTargets(desired, database, databaseGrantMapForRemovals, diff, semantics)
+
+	sortGrantRefs(diff.GrantsAdded)
+	sortGrantRefs(diff.GrantsRemoved)
+	sortGrantRefs(diff.GrantOptionsAdded)
+	sortGrantRefs(diff.GrantOptionsRevoked)
+}
+
+type grantRead struct {
+	database       *catalog.Database
+	sequences      columnSequences
+	semantics      identifier.Semantics
+	managedRoles   map[string]bool
+	generatedRoles map[string]bool
+	revoked        map[grantIdentity]bool
+	removable      func(difftypes.GrantRef) bool
+	coverage       Coverage
+	objects        OwnedObjects
+}
+
+func (read grantRead) maps() (additions, removals map[grantIdentity]difftypes.GrantRef) {
+	additions = make(map[grantIdentity]difftypes.GrantRef)
+	removals = make(map[grantIdentity]difftypes.GrantRef)
+	for _, grant := range read.database.Grants {
 		if grant.Privilege == "" {
 			// An implicit routine-owner row with no privilege records that
 			// its ACL was inspected after the owner revoked EXECUTE.
@@ -202,9 +244,13 @@ func GrantsWithOptions(
 			continue
 		}
 		ref := grantRefFromDatabase(grant)
-		key := sequences.databaseKey(newGrantIdentity(ref, semantics))
-		if managedRoles[ref.Role] || generatedGrantRoles[ref.Role] {
-			databaseGrantMapForAdditions[key] = ref
+		key := read.sequences.databaseKey(newGrantIdentity(ref, read.semantics))
+		if read.managedRoles[ref.Role] || read.generatedRoles[ref.Role] {
+			previous, exists := additions[key]
+			if !exists || (ref.WithOption && !previous.WithOption) ||
+				(ref.WithOption == previous.WithOption && preferForeignGrantor(previous, ref, read.database.ConnectedRole, read.database.ConnectedRoleSuperuser)) {
+				additions[key] = ref
+			}
 		}
 		// A revoke of a table privilege takes it off every column too, as
 		// PostgreSQL does, so it reaches the column rows. A column the schema
@@ -221,30 +267,15 @@ func GrantsWithOptions(
 		// object is, and so is a grant on an owner's object the desired
 		// source does not describe. A revoke the desired state writes out is
 		// still planned.
-		if (removable(ref) && !grant.Implicit && grantRemovalPlanned(cov, grant) && objects.describes(grant)) ||
-			revokedGrants[key] || revokedGrants[key.onWholeObject()] {
-			databaseGrantMapForRemovals[key] = ref
+		if (read.removable(ref) && !grant.Implicit && grantRemovalPlanned(read.coverage, grant) && read.objects.describes(grant)) ||
+			read.revoked[key] || read.revoked[key.onWholeObject()] {
+			previous, exists := removals[key]
+			if !exists || preferForeignGrantor(previous, ref, read.database.ConnectedRole, read.database.ConnectedRoleSuperuser) {
+				removals[key] = ref
+			}
 		}
 	}
-
-	planGrantAdditions(generatedGrantMap, databaseGrantMapForAdditions, managedRoles, diff)
-	diff.GrantsAdded = append(diff.GrantsAdded, ownerPrivilegesToGrantBack(options.DesiredRead, database, sequences, semantics)...)
-	if options.DesiredRead == nil {
-		diff.UnmanagedOwnerPrivileges = unmanagedOwnerPrivileges(desired, database, generatedGrantMap, revokedGrants, sequences, semantics)
-	}
-	sequences.nameAsDatabase(diff.GrantsAdded, semantics)
-	sequences.nameAsDatabase(diff.GrantOptionsAdded, semantics)
-	for key, ref := range databaseGrantMapForRemovals {
-		if !declaredGrant(key, generatedGrantMap) {
-			diff.GrantsRemoved = append(diff.GrantsRemoved, ref)
-		}
-	}
-	revokeOnCreatedTargets(desired, database, databaseGrantMapForRemovals, diff, semantics)
-
-	sortGrantRefs(diff.GrantsAdded)
-	sortGrantRefs(diff.GrantsRemoved)
-	sortGrantRefs(diff.GrantOptionsAdded)
-	sortGrantRefs(diff.GrantOptionsRevoked)
+	return additions, removals
 }
 
 // publicExecuteByDefault reports whether the grant ref is PUBLIC's EXECUTE on a
@@ -622,14 +653,27 @@ func grantRefFromDatabase(grant catalog.Grant) difftypes.GrantRef {
 		objectName = grant.ObjectName
 	}
 	return difftypes.GrantRef{
-		Role:       strings.TrimSpace(grant.Role),
-		Privilege:  strings.ToUpper(strings.TrimSpace(grant.Privilege)),
-		ObjectType: objectType,
-		ObjectName: objectName,
-		Arguments:  grant.Arguments,
-		Column:     strings.TrimSpace(grant.Column),
-		WithOption: grant.WithOption,
+		Role:        strings.TrimSpace(grant.Role),
+		Privilege:   strings.ToUpper(strings.TrimSpace(grant.Privilege)),
+		ObjectType:  objectType,
+		ObjectName:  objectName,
+		Arguments:   grant.Arguments,
+		Column:      strings.TrimSpace(grant.Column),
+		WithOption:  grant.WithOption,
+		GrantedBy:   strings.TrimSpace(grant.GrantedBy),
+		ObjectOwner: strings.TrimSpace(grant.ObjectOwner),
 	}
+}
+
+// preferForeignGrantor keeps a row the connected role cannot reliably revoke
+// when several grantors gave the same privilege to one grantee. The planner
+// must see that row and refuse before writing a REVOKE that leaves it in place.
+func preferForeignGrantor(previous, next difftypes.GrantRef, connectedRole string, superuser bool) bool {
+	foreign := func(ref difftypes.GrantRef) bool {
+		ownerGrant := superuser && ref.ObjectOwner != "" && ref.GrantedBy == ref.ObjectOwner
+		return ref.GrantedBy != "" && ref.GrantedBy != connectedRole && !ownerGrant
+	}
+	return foreign(next) && !foreign(previous)
 }
 
 // grantRemovalPlanned reports whether a grant the desired state leaves out is

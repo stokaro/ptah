@@ -367,12 +367,14 @@ func tableGrantsFromRemovals(
 			continue
 		}
 		ref := difftypes.GrantRef{
-			Role:       strings.TrimSpace(grant.Role),
-			Privilege:  strings.ToUpper(strings.TrimSpace(grant.Privilege)),
-			ObjectType: "TABLE",
-			ObjectName: grant.QualifiedTarget(),
-			Column:     strings.TrimSpace(grant.Column),
-			WithOption: grant.WithOption,
+			Role:        strings.TrimSpace(grant.Role),
+			GrantedBy:   strings.TrimSpace(grant.GrantedBy),
+			ObjectOwner: strings.TrimSpace(grant.ObjectOwner),
+			Privilege:   strings.ToUpper(strings.TrimSpace(grant.Privilege)),
+			ObjectType:  "TABLE",
+			ObjectName:  grant.QualifiedTarget(),
+			Column:      strings.TrimSpace(grant.Column),
+			WithOption:  grant.WithOption,
 		}
 		if !slices.ContainsFunc(revoked, func(planned difftypes.GrantRef) bool { return sameTableGrant(planned, ref, semantics) }) {
 			granted = append(granted, ref)

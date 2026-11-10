@@ -4373,6 +4373,43 @@ func (r *Reader) readObjectOwners(ctx context.Context) ([]catalog.ObjectOwner, e
 	return owners, nil
 }
 
+type grantOwnerTarget struct {
+	kind, schema, name, arguments string
+}
+
+// attachGrantObjectOwners gives the planner the owner of each observed grant.
+// Routine owner observation rows already carry that fact, including when the
+// owner revoked its own EXECUTE. Relation and schema owners come from the
+// catalog's object ownership read.
+func (r *Reader) attachGrantObjectOwners(schema *catalog.Database) {
+	owners := make(map[grantOwnerTarget]string, len(schema.ObjectOwners)+len(schema.Grants))
+	for _, owner := range schema.ObjectOwners {
+		kind := "TABLE"
+		switch owner.Kind {
+		case "schema":
+			kind = "SCHEMA"
+		case "sequence":
+			kind = "SEQUENCE"
+		case "table", "view", "materialized view":
+		default:
+			continue
+		}
+		key := grantOwnerTarget{kind: kind, schema: r.outputSchema(owner.Schema), name: owner.Name}
+		owners[key] = owner.Owner
+	}
+	for _, grant := range schema.Grants {
+		if grant.Implicit && grant.Role != "PUBLIC" && (grant.ObjectType == "FUNCTION" || grant.ObjectType == "PROCEDURE") {
+			key := grantOwnerTarget{kind: grant.ObjectType, schema: grant.Schema, name: grant.ObjectName, arguments: grant.Arguments}
+			owners[key] = grant.Role
+		}
+	}
+	for i := range schema.Grants {
+		grant := &schema.Grants[i]
+		key := grantOwnerTarget{kind: grant.ObjectType, schema: grant.Schema, name: grant.ObjectName, arguments: grant.Arguments}
+		grant.ObjectOwner = owners[key]
+	}
+}
+
 // readRoleMemberships reads the role-in-role edges between the roles Ptah
 // manages.
 //
@@ -5046,8 +5083,10 @@ func (r *Reader) readRoleManagedObjects(ctx context.Context, schema *catalog.Dat
 	}
 	schema.RoleMemberships = memberships
 
-	// No row leaves the role unknown, and a plan then covers every membership.
-	if err := r.db.QueryRowContext(ctx, `SELECT current_user`).Scan(&schema.ConnectedRole); err != nil && !errors.Is(err, sql.ErrNoRows) {
+	// The superuser bit decides whether a REVOKE runs as the object's owner.
+	if err := r.db.QueryRowContext(ctx, `SELECT rolname, rolsuper FROM pg_roles WHERE rolname = current_user`).Scan(
+		&schema.ConnectedRole, &schema.ConnectedRoleSuperuser,
+	); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("failed to read the connected role: %w", err)
 	}
 
@@ -5056,6 +5095,7 @@ func (r *Reader) readRoleManagedObjects(ctx context.Context, schema *catalog.Dat
 		return fmt.Errorf("failed to read object owners: %w", err)
 	}
 	schema.ObjectOwners = owners
+	r.attachGrantObjectOwners(schema)
 
 	if defaultACL != defaultACLReadable {
 		return nil

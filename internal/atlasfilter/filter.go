@@ -1743,8 +1743,9 @@ func cloneDatabase(schema *catalog.Database) *catalog.Database {
 		// Who read it does not change either. Routine replacement checks its
 		// definer against this account, and a saved plan's fingerprint follows
 		// this role's memberships whatever the filter keeps.
-		CurrentAccount: schema.CurrentAccount,
-		ConnectedRole:  schema.ConnectedRole,
+		CurrentAccount:         schema.CurrentAccount,
+		ConnectedRole:          schema.ConnectedRole,
+		ConnectedRoleSuperuser: schema.ConnectedRoleSuperuser,
 		// A table the read found and left out is still in the database, and a
 		// filter cannot change that: dropping the record would let a declared
 		// table at it plan a CREATE TABLE the database rejects.
