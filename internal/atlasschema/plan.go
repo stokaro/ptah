@@ -1043,9 +1043,8 @@ func planSourceFingerprint(ctx context.Context,
 		bodies = append(bodies, sqlutil.StripCommentsForDialect(statement.SQL, info.Dialect))
 	}
 	scoped := *current
-	roleScope := described(info.Dialect).Roles.OutOfScope
-	scoped.RoleMemberships = rolegraph.ForPlan(current, bodies, roleScope, info.Capabilities)
-	scoped.Roles = rolegraph.ForPlanRoles(current, bodies, roleScope, info.Capabilities)
+	scoped.RoleMemberships = rolegraph.ForPlan(current, bodies, info.Capabilities)
+	scoped.Roles = rolegraph.ForPlanRoles(current, bodies, info.Capabilities)
 	return SchemaFingerprint(ctx, &scoped, runtime)
 }
 

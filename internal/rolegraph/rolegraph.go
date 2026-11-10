@@ -17,15 +17,12 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/platform/descriptor"
 )
 
 // ForPlan returns the memberships a saved plan's source fingerprint covers:
 // those [Related] finds from the roles the plan depends on, which are
 //
-//   - the roles the read's description names: privilege holders, grantors,
-//     object owners, routine definers and, where the read lists only the roles
-//     its schemas refer to, every listed role;
+//   - privilege holders, grantors, object owners and routine definers;
 //   - the role the read ran as, which is the role that runs the plan through
 //     that connection;
 //   - the roles whose names appear in statements, the plan's statement bodies,
@@ -40,10 +37,9 @@ import (
 // An edge known to allow neither inheritance nor SET ROLE joins the plan only
 // when a statement names one of its roles.
 //
-// scope is the dialect's [descriptor.Roles.OutOfScope]. Under
-// [descriptor.RoleScopeNone] the listed roles are the whole server's, so being
-// listed is no tie to the plan and only the other sources count.
-func ForPlan(database *catalog.Database, statements []string, scope descriptor.RoleScope, capabilities capability.Capabilities) []catalog.RoleMembership {
+// A listed role alone is no tie to the plan: a reader may include a new role
+// because the connected account created it, even if no object refers to it.
+func ForPlan(database *catalog.Database, statements []string, capabilities capability.Capabilities) []catalog.RoleMembership {
 	if database.ConnectedRole == "" || capabilities.Has(capability.RoleMembership) {
 		return database.RoleMemberships
 	}
@@ -55,7 +51,7 @@ func ForPlan(database *catalog.Database, statements []string, scope descriptor.R
 			effective = append(effective, edge)
 		}
 	}
-	related := Related(effective, planRoles(database, statements, scope))
+	related := Related(effective, planRoles(database, statements))
 	// A plan that names a role can depend on its ADMIN-only memberships too,
 	// for example when dropping that role.
 	related = append(related, Related(database.RoleMemberships, Named(database.RoleMemberships, statements))...)
@@ -70,15 +66,15 @@ func optionEnabled(option *bool) bool { return option == nil || *option }
 // with server-wide roles reports unrelated accounts too; creating one of them
 // must not replace a plan for another database. A role named by the plan, a
 // privilege, an owner, or a relevant membership still changes the fingerprint.
-func ForPlanRoles(database *catalog.Database, statements []string, scope descriptor.RoleScope, capabilities capability.Capabilities) []catalog.Role {
-	if scope != descriptor.RoleScopeNone || database.ConnectedRole == "" || capabilities.Has(capability.RoleMembership) {
+func ForPlanRoles(database *catalog.Database, statements []string, capabilities capability.Capabilities) []catalog.Role {
+	if database.ConnectedRole == "" {
 		return database.Roles
 	}
 	needed := make(map[string]bool)
-	for _, name := range planRoles(database, statements, scope) {
+	for _, name := range planRoles(database, statements) {
 		needed[name] = true
 	}
-	for _, edge := range ForPlan(database, statements, scope, capabilities) {
+	for _, edge := range ForPlan(database, statements, capabilities) {
 		needed[edge.Role], needed[edge.Member] = true, true
 	}
 	for _, name := range NamedRoles(database.Roles, statements) {
@@ -95,13 +91,8 @@ func ForPlanRoles(database *catalog.Database, statements []string, scope descrip
 
 // planRoles collects the roles whose attributes or privileges can affect a
 // plan. The same roots select memberships and server-wide role attributes.
-func planRoles(database *catalog.Database, statements []string, scope descriptor.RoleScope) []string {
+func planRoles(database *catalog.Database, statements []string) []string {
 	roles := []string{database.ConnectedRole}
-	if scope != descriptor.RoleScopeNone {
-		for _, role := range database.Roles {
-			roles = append(roles, role.Name)
-		}
-	}
 	for _, grant := range database.Grants {
 		roles = append(roles, grant.Role, grant.GrantedBy)
 	}

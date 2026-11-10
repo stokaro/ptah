@@ -7,7 +7,6 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform/capability"
-	"ptah.run/core/platform/descriptor"
 	"ptah.run/internal/rolegraph"
 )
 
@@ -30,20 +29,21 @@ func TestForPlanRoles(t *testing.T) {
 	for _, test := range []struct {
 		name       string
 		statements []string
-		scope      descriptor.RoleScope
+		capability capability.Capabilities
 		want       []catalog.Role
 	}{
-		{name: "unrelated server role", scope: descriptor.RoleScopeNone,
+		{name: "unrelated server role",
 			want: database.Roles[:2]},
-		{name: "statement recipient", scope: descriptor.RoleScopeNone,
+		{name: "statement recipient",
 			statements: []string{`GRANT SELECT ON t TO recipient`},
 			want:       database.Roles[:3]},
-		{name: "scoped role read", scope: descriptor.RoleScopeReferenced,
-			want: database.Roles},
+		{name: "membership capability does not include unrelated roles",
+			capability: capability.Of(map[capability.Capability]bool{capability.RoleMembership: true}),
+			want:       database.Roles[:2]},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(rolegraph.ForPlanRoles(database, test.statements, test.scope, capability.Of(nil)), qt.DeepEquals, test.want)
+			c.Assert(rolegraph.ForPlanRoles(database, test.statements, test.capability), qt.DeepEquals, test.want)
 		})
 	}
 }
@@ -69,7 +69,7 @@ func TestForPlanMembershipOptions(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(rolegraph.ForPlan(database, test.statements, descriptor.RoleScopeReferenced, capability.Of(nil)), qt.DeepEquals, test.want)
+			c.Assert(rolegraph.ForPlan(database, test.statements, capability.Of(nil)), qt.DeepEquals, test.want)
 		})
 	}
 }
@@ -298,13 +298,11 @@ func TestForPlan_HappyPath(t *testing.T) {
 		name       string
 		database   *catalog.Database
 		statements []string
-		scope      descriptor.RoleScope
 		want       []catalog.RoleMembership
 	}{
 		{
 			name:     "nothing ties the plan to the graph",
 			database: described(func(*catalog.Database) {}),
-			scope:    descriptor.RoleScopeReferenced,
 			want:     nil,
 		},
 		{
@@ -312,69 +310,47 @@ func TestForPlan_HappyPath(t *testing.T) {
 			database: described(func(database *catalog.Database) {
 				database.ConnectedRole = "peer"
 			}),
-			scope: descriptor.RoleScopeReferenced,
-			want:  peerEdges,
-		},
-		{
-			name: "a role a referenced-scope read lists",
-			database: described(func(database *catalog.Database) {
-				database.Roles = []catalog.Role{{Name: "peer"}}
-			}),
-			scope: descriptor.RoleScopeReferenced,
-			want:  peerEdges,
-		},
-		{
-			name: "a role the read lists under the scope the zero value means",
-			database: described(func(database *catalog.Database) {
-				database.Roles = []catalog.Role{{Name: "peer"}}
-			}),
 			want: peerEdges,
 		},
 		{
-			name: "a listed role is no tie where the read lists every role",
+			name: "a listed role is no tie to the plan",
 			database: described(func(database *catalog.Database) {
 				database.Roles = []catalog.Role{{Name: "peer"}}
 			}),
-			scope: descriptor.RoleScopeNone,
-			want:  nil,
+			want: nil,
 		},
 		{
 			name: "a privilege holder where the read lists every role",
 			database: described(func(database *catalog.Database) {
 				database.Grants = []catalog.Grant{{Role: "peer"}}
 			}),
-			scope: descriptor.RoleScopeNone,
-			want:  peerEdges,
+			want: peerEdges,
 		},
 		{
 			name: "a grantor",
 			database: described(func(database *catalog.Database) {
 				database.Grants = []catalog.Grant{{Role: "PUBLIC", GrantedBy: "peer"}}
 			}),
-			scope: descriptor.RoleScopeNone,
-			want:  peerEdges,
+			want: peerEdges,
 		},
 		{
 			name: "an object owner",
 			database: described(func(database *catalog.Database) {
 				database.ObjectOwners = []catalog.ObjectOwner{{Kind: "table", Name: "t", Owner: "peer"}}
 			}),
-			scope: descriptor.RoleScopeNone,
-			want:  peerEdges,
+			want: peerEdges,
 		},
 		{
 			name: "a routine definer, in its account spelling",
 			database: described(func(database *catalog.Database) {
 				database.Functions = []catalog.Function{{Name: "f", Definer: "peer@%"}}
 			}),
-			scope: descriptor.RoleScopeNone,
-			want:  peerEdges,
+			want: peerEdges,
 		},
 		{
 			name:       "a role a statement names",
 			database:   described(func(*catalog.Database) {}),
 			statements: []string{`GRANT SELECT ON t TO "peer"`},
-			scope:      descriptor.RoleScopeNone,
 			want:       peerEdges,
 		},
 	}
@@ -382,7 +358,7 @@ func TestForPlan_HappyPath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			got := rolegraph.ForPlan(test.database, test.statements, test.scope, capability.Of(nil))
+			got := rolegraph.ForPlan(test.database, test.statements, capability.Of(nil))
 			c.Assert(got, qt.DeepEquals, test.want)
 		})
 	}
@@ -413,7 +389,7 @@ func TestForPlan_KeepsEveryMembershipItCannotNarrow(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			got := rolegraph.ForPlan(test.database, nil, descriptor.RoleScopeReferenced, test.capabilities)
+			got := rolegraph.ForPlan(test.database, nil, test.capabilities)
 			c.Assert(got, qt.DeepEquals, unsorted)
 		})
 	}
