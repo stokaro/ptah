@@ -238,6 +238,11 @@ message Engine {
   // schema.not-described, and sent only to a host that lists it. Contract
   // 25.41.
   repeated string not_described_kinds = 29;
+  // A reviewed, offline server advisory snapshot owned by this engine's
+  // provider. Present exactly when the engine lists
+  // security.advisory-snapshot, and sent only to a host that lists it.
+  // Contract 25.42.
+  bytes advisory_snapshot_json = 30;
 }
 // EnumColumns is how an engine builds a column a source declares as an enum:
 // one typed ENUM with its values, such as a Go field with enum="a,b,c", or one

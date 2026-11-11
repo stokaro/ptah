@@ -5000,8 +5000,13 @@ type Engine struct {
 	// schema.not-described, and sent only to a host that lists it. Contract
 	// 25.41.
 	NotDescribedKinds []string `protobuf:"bytes,29,rep,name=not_described_kinds,json=notDescribedKinds,proto3" json:"not_described_kinds,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// A reviewed, offline server advisory snapshot owned by this engine's
+	// provider. Present exactly when the engine lists
+	// security.advisory-snapshot, and sent only to a host that lists it.
+	// Contract 25.42.
+	AdvisorySnapshotJson []byte `protobuf:"bytes,30,opt,name=advisory_snapshot_json,json=advisorySnapshotJson,proto3" json:"advisory_snapshot_json,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *Engine) Reset() {
@@ -5233,6 +5238,13 @@ func (x *Engine) GetConnectionCapabilitySource() string {
 func (x *Engine) GetNotDescribedKinds() []string {
 	if x != nil {
 		return x.NotDescribedKinds
+	}
+	return nil
+}
+
+func (x *Engine) GetAdvisorySnapshotJson() []byte {
+	if x != nil {
+		return x.AdvisorySnapshotJson
 	}
 	return nil
 }
@@ -36487,7 +36499,7 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\x11semantic_identity\x18\x04 \x01(\tR\x10semanticIdentity\x12<\n" +
 	"\aengines\x18\x05 \x03(\v2\".ptah.provider.experimental.EngineR\aengines\x12\x1a\n" +
 	"\bfeatures\x18\x06 \x03(\tR\bfeatures\x12N\n" +
-	"\fmin_contract\x18\a \x01(\v2+.ptah.provider.experimental.ContractVersionR\vminContract\"\xaa\x10\n" +
+	"\fmin_contract\x18\a \x01(\v2+.ptah.provider.experimental.ContractVersionR\vminContract\"\xe0\x10\n" +
 	"\x06Engine\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
 	"\aaliases\x18\x02 \x03(\tR\aaliases\x12%\n" +
@@ -36524,7 +36536,8 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\x12model_predecessors\x18\x1a \x03(\v2,.ptah.provider.experimental.ModelPredecessorR\x11modelPredecessors\x12J\n" +
 	"\fenum_columns\x18\x1b \x01(\v2'.ptah.provider.experimental.EnumColumnsR\venumColumns\x12@\n" +
 	"\x1cconnection_capability_source\x18\x1c \x01(\tR\x1aconnectionCapabilitySource\x12.\n" +
-	"\x13not_described_kinds\x18\x1d \x03(\tR\x11notDescribedKinds\x1aF\n" +
+	"\x13not_described_kinds\x18\x1d \x03(\tR\x11notDescribedKinds\x124\n" +
+	"\x16advisory_snapshot_json\x18\x1e \x01(\fR\x14advisorySnapshotJson\x1aF\n" +
 	"\x18DefaultCapabilitiesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\bR\x05value:\x028\x01\"\xb5\x01\n" +
