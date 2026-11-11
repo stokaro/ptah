@@ -16,7 +16,7 @@ import (
 // counts the compatible additions within the major Revision. A host built
 // with this SDK announces Revision.ContractMinor, and a provider built with it
 // may require at most that minor from its host.
-const ContractMinor uint32 = 41
+const ContractMinor uint32 = 42
 
 // The features below each enable an addition to an existing message. An
 // addition is used only when both sides list its feature: the provider in its
@@ -57,7 +57,7 @@ func TwoWayFeatures() []string {
 		EnumColumnsFeature, ObservedUniqueConstraintsFeature, ColumnCollationsFeature, ViewCheckOptionsFeature, DeclaredRelationsFeature,
 		TableOwnershipFeature, DeclaredObjectsFeature, RenderOmissionsFeature, TableGrantsFeature, SQLRolePasswordsFeature, SQLStatementFactsFeature,
 		QueryLexicalFeature, ConnectionCapabilitySourceFeature, OmissionCountsFeature, ViewQueryContextFeature, DeclaredFacetsFeature,
-		SQLUndeclaredFeature, RemovalBlockersFeature, CurrentContextFeature, NotDescribedFeature}
+		SQLUndeclaredFeature, RemovalBlockersFeature, CurrentContextFeature, NotDescribedFeature, SecurityAdvisorySnapshotFeature}
 }
 
 // ContractError reports a host and a provider that cannot work together:
@@ -183,6 +183,9 @@ func NegotiatedDescription(description *protocol.Description, hostFeatures []str
 	negotiated.Features = slices.DeleteFunc(negotiated.Features, unlisted)
 	for _, engine := range negotiated.GetEngines() {
 		engine.Features = slices.DeleteFunc(engine.Features, unlisted)
+		if !slices.Contains(hostFeatures, SecurityAdvisorySnapshotFeature) {
+			engine.AdvisorySnapshotJson = nil
+		}
 		if !slices.Contains(hostFeatures, QueryDialectFeature) {
 			engine.QueryDialect = nil
 		}

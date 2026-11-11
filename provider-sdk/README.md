@@ -78,7 +78,7 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.41. Each released SDK speaks one contract:
+speaks contract 25.42. Each released SDK speaks one contract:
 
 | SDK release | Contract |
 | --- | --- |
@@ -205,6 +205,7 @@ returns to 0.
   Contract 25.39 adds [removal blockers](#removal-blockers).
   Contract 25.40 adds [current context](#current-context).
   Contract 25.41 adds [not-described kinds](#not-described-kinds).
+  Contract 25.42 adds [provider-owned server advisories](#provider-owned-server-advisories).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -3240,6 +3241,22 @@ runs. The SDK refuses a list without negotiation, a kind that is not a token,
 a blank name or one with a control character, an object listed twice for one
 table, a column the table does not have or one named twice, and a list in a
 CHECK comparison's held table.
+
+## Provider-owned server advisories
+
+An engine that lists `security.vulnerability-scan` can also list
+`security.advisory-snapshot` at both provider and engine scope. It then puts a
+reviewed, offline JSON snapshot in `Engine.advisory_snapshot_json`. The snapshot
+uses schema version 2 and names the engine ID as its product. The SDK checks
+that the payload is present, valid JSON, and at most 1 MiB; the host validates
+its advisory evidence and product before matching a server version. The host
+receives the field only when it lists `security.advisory-snapshot` in its
+features. A provider built without this field remains usable, but a host
+without an operator-selected source reports the scan as unassessed.
+
+The provider repository owns the snapshot and its source update workflow.
+Neither the provider nor the host downloads advisories during a scan. Changed
+vendor content needs review before the provider publishes new affected ranges.
 
 ## Not-described kinds
 
