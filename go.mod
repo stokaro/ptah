@@ -55,7 +55,7 @@ require (
 	google.golang.org/protobuf v1.36.12
 	modernc.org/sqlite v1.62.0
 	oras.land/oras-go/v2 v2.7.0
-	ptah.run/provider-sdk v0.40.0
+	ptah.run/provider-sdk v0.41.0
 	ptah.run/sqlsyntax v0.2.0
 )
 
