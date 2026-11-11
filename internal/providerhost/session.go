@@ -86,13 +86,21 @@ func (s *session) Info() catalog.ServerInfo { return s.info }
 
 // VulnerabilityScanState returns the engine's advertised server scan policy.
 func (s *session) VulnerabilityScanState() string {
-	if s.target.offers("security.vulnerability-scan") {
+	if s.target.offers(provider.VulnerabilityScanFeature) {
 		return "supported"
 	}
 	if s.target.offers("security.vulnerability-scan-not-applicable") {
 		return "not_applicable"
 	}
 	return "unassessed"
+}
+
+// ServerAdvisorySnapshot returns the provider's negotiated reviewed source.
+func (s *session) ServerAdvisorySnapshot() []byte {
+	if !s.target.offers(provider.SecurityAdvisorySnapshotFeature) {
+		return nil
+	}
+	return slices.Clone(s.target.engine.GetAdvisorySnapshotJson())
 }
 func (s *session) Reader(schemas []string) catalog.SchemaReader {
 	return reader{session: s, schemas: slices.Clone(schemas)}

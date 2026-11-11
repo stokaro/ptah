@@ -45,7 +45,7 @@ The command does not contact an advisory service or upload database inventory.`,
 	}
 	flags := cmd.Flags()
 	flags.StringVar(&opts.dbURL, "db-url", "", "Database URL to scan (required)")
-	flags.StringVar(&opts.advisories, "advisories", "", "Local advisory snapshot JSON; empty uses the pinned built-in snapshot")
+	flags.StringVar(&opts.advisories, "advisories", "", "Local advisory snapshot JSON; empty uses the engine's pinned snapshot")
 	flags.StringVar(&opts.suppressions, "suppressions", "", "Local JSON file of scoped advisory suppressions")
 	flags.StringVar(&opts.format, "format", "table", "Output format: table or json")
 	flags.StringVar(&opts.failOn, "fail-on", "both", "CI policy: findings, incomplete, both, or none")

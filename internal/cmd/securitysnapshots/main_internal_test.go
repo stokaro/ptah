@@ -20,61 +20,35 @@ import (
 func TestChangedVersionedSourceRequiresReview(t *testing.T) {
 	c := qt.New(t)
 	t.Chdir(t.TempDir())
-	source := []byte("---\nrevision: sample\n---\n# Security changelog\nCVE-2026-10549\nCVE-2023-45825\nCVE-2027-12345\nCVE-2027-12345\n")
+	source := []byte("CVE-2026-107823\nCVE-2026-107822\nCVE-2027-12345\nCVE-2027-12345\n")
 	now := time.Date(2027, 1, 2, 12, 0, 0, 0, time.UTC)
-	c.Assert(updateVersioned("ydb", source, now), qt.IsNil)
-	data, err := os.ReadFile(filepath.Join("internal", "vulnerability", "review", "ydb.json"))
+	c.Assert(updateVersioned("mariadb", source, now), qt.IsNil)
+	data, err := os.ReadFile(filepath.Join("internal", "vulnerability", "review", "mariadb.json"))
 	c.Assert(err, qt.IsNil)
 	var pending review
 	c.Assert(json.Unmarshal(data, &pending), qt.IsNil)
-	current, err := vulnerability.ReadVersionedSnapshot("ydb", "")
+	current, err := vulnerability.ReadVersionedSnapshot("mariadb", "")
 	c.Assert(err, qt.IsNil)
 	digest := sha256.Sum256(source)
 	c.Assert(pending.ReviewedSHA, qt.Equals, current.SourceSHA256)
 	c.Assert(pending.ObservedSHA, qt.Equals, hex.EncodeToString(digest[:]))
 	c.Assert(pending.AddedIDs, qt.DeepEquals, []string{"CVE-2027-12345"})
-	c.Assert(pending.MissingIDs, qt.DeepEquals, []string{"CVE-2022-28228"})
-	c.Assert(pending.ObservedIDs, qt.DeepEquals, []string{"CVE-2023-45825", "CVE-2026-10549", "CVE-2027-12345"})
-	c.Assert(updateVersioned("ydb", source, now.Add(24*time.Hour)), qt.IsNil)
-	second, err := os.ReadFile(filepath.Join("internal", "vulnerability", "review", "ydb.json"))
+	c.Assert(pending.MissingIDs, qt.DeepEquals, []string{"CVE-2026-107821"})
+	c.Assert(pending.ObservedIDs, qt.DeepEquals, []string{"CVE-2026-107822", "CVE-2026-107823", "CVE-2027-12345"})
+	c.Assert(updateVersioned("mariadb", source, now.Add(24*time.Hour)), qt.IsNil)
+	second, err := os.ReadFile(filepath.Join("internal", "vulnerability", "review", "mariadb.json"))
 	c.Assert(err, qt.IsNil)
 	c.Assert(second, qt.DeepEquals, data)
-	_, err = os.Stat(filepath.Join("internal", "vulnerability", "ydb.json"))
+	_, err = os.Stat(filepath.Join("internal", "vulnerability", "mariadb.json"))
 	c.Assert(err, qt.IsNotNil)
 }
 
 func TestSourceReviewRefusesEmptyCVEList(t *testing.T) {
 	c := qt.New(t)
-	current, err := vulnerability.ReadVersionedSnapshot("ydb", "")
+	current, err := vulnerability.ReadVersionedSnapshot("mariadb", "")
 	c.Assert(err, qt.IsNil)
-	_, err = buildReview(current, []byte("---\nrevision: sample\n---\n# Security changelog\nVendor page without advisory records"), "abc", time.Now())
+	_, err = buildReview(current, []byte("Vendor page without advisory records"), "abc", time.Now())
 	c.Assert(err, qt.ErrorMatches, `changed source contains no CVE IDs`)
-}
-
-func TestYDBDocumentationRevisionDoesNotChangeAdvisoryContent(t *testing.T) {
-	c := qt.New(t)
-	before := []byte("---\nrevision: first\n---\n# Security changelog\n## Fixed in YDB 25.3.1.25\nCVE-2026-10549\n")
-	after := []byte("---\nrevision: second\n---\n# Security changelog\n## Fixed in YDB 25.3.1.25\nCVE-2026-10549\n")
-	changed := []byte("---\nrevision: second\n---\n# Security changelog\n## Fixed in YDB 25.3.1.26\nCVE-2026-10549\n")
-	contentBefore, err := advisoryContent("ydb", before)
-	c.Assert(err, qt.IsNil)
-	contentAfter, err := advisoryContent("ydb", after)
-	c.Assert(err, qt.IsNil)
-	contentChanged, err := advisoryContent("ydb", changed)
-	c.Assert(err, qt.IsNil)
-	beforeSHA := sha256.Sum256(before)
-	afterSHA := sha256.Sum256(after)
-	contentSHA := sha256.Sum256(contentBefore)
-	afterContentSHA := sha256.Sum256(contentAfter)
-	changedContentSHA := sha256.Sum256(contentChanged)
-	current := vulnerability.VersionedSnapshot{
-		SourceSHA256:          hex.EncodeToString(beforeSHA[:]),
-		AdvisoryContentSHA256: hex.EncodeToString(contentSHA[:]),
-	}
-	c.Assert(sameReviewedContent(current, hex.EncodeToString(afterSHA[:]), hex.EncodeToString(afterContentSHA[:])), qt.IsTrue)
-	c.Assert(sameReviewedContent(current, hex.EncodeToString(afterSHA[:]), hex.EncodeToString(changedContentSHA[:])), qt.IsFalse)
-	_, err = advisoryContent("ydb", []byte("vendor page without the security heading"))
-	c.Assert(err, qt.ErrorMatches, `YDB security changelog heading missing`)
 }
 
 func TestRecentSourceNeedsPastRetrievalWithinRefreshInterval(t *testing.T) {
