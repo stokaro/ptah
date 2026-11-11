@@ -492,6 +492,21 @@ func (dc *DatabaseConnection) VulnerabilityScanState() string {
 	return "unassessed"
 }
 
+// ServerAdvisorySnapshot returns the selected provider's reviewed, offline
+// server advisory data. The second result says whether a provider owns this
+// connection, even when it supplies no snapshot. The returned bytes do not
+// share storage with the connection.
+func (dc *DatabaseConnection) ServerAdvisorySnapshot() ([]byte, bool) {
+	if dc.native == nil {
+		return nil, false
+	}
+	owner, ok := dc.native.(interface{ ServerAdvisorySnapshot() []byte })
+	if !ok {
+		return nil, true
+	}
+	return slices.Clone(owner.ServerAdvisorySnapshot()), true
+}
+
 // Reader returns the connection's schema reader -- one shared instance, the
 // same for every caller. Use it for plain unscoped reads. When a schema
 // allow-list is needed, use [ReadSchemaWithSchemasContext] instead, which

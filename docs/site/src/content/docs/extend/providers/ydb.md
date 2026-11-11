@@ -44,7 +44,7 @@ one with `--version`. A command that names a `ydb://` or `ydbs://` URL or the
 manifest entry, described below, overrides it.
 The provider also advertises server vulnerability scanning. Use
 [`ptah db vulnerabilities`](../../../operate/vulnerability-scan/) to match a
-self-managed YDB version against pinned server advisories. Select
+self-managed YDB version against the provider's pinned server advisories. Select
 `--deployment managed` when the service operator controls patching.
 The [install procedure](../../executable-providers/#install-an-official-provider)
 covers how a release is chosen, the checks, and where the file is stored.

@@ -123,7 +123,7 @@ jobs:
           cat >"$RUNNER_TEMP/security-body.md" <<'BODY'
           The daily task checked the official server advisory pages and prepared a local snapshot update.
 
-          Review changed PostgreSQL advisory rows and supported release lines. For YDB, MariaDB, and ClickHouse, a changed source produces `internal/vulnerability/review/<engine>.json`. The file lists CVE IDs found on the page; it does **not** establish affected or fixed versions. Check each server advisory and its version ranges against the vendor source, update the reviewed snapshot, and remove the review file before merging.
+          Review changed PostgreSQL advisory rows and supported release lines. For MariaDB and ClickHouse, a changed source produces `internal/vulnerability/review/<engine>.json`. The file lists CVE IDs found on the page; it does **not** establish affected or fixed versions. Check each server advisory and its version ranges against the vendor source, update the reviewed snapshot, and remove the review file before merging. Provider repositories own their own advisory snapshots.
 
           Unchanged versioned sources can refresh their retrieval time after 14 days. Partial coverage remains partial. The scanner itself makes no network request. The new binary includes the snapshot after this PR is merged and released.
 

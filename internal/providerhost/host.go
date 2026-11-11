@@ -92,6 +92,9 @@ type target struct {
 // acting on it: an addition the list does not name stays out of every
 // exchange with the provider.
 var hostFeatures = []string{
+	// A server scan reads the provider's reviewed snapshot rather than a copy
+	// maintained in the host; see session.ServerAdvisorySnapshot.
+	provider.SecurityAdvisorySnapshotFeature,
 	// Rendered units retain approved input references; execution discovers the
 	// same references again and binds values only for the dispatch RPC.
 	provider.SensitiveInputsFeature,
