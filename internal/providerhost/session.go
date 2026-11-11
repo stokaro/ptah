@@ -83,6 +83,17 @@ func (t *target) sessionInfo(remote *protocol.Session) (catalog.ServerInfo, erro
 }
 
 func (s *session) Info() catalog.ServerInfo { return s.info }
+
+// VulnerabilityScanState returns the engine's advertised server scan policy.
+func (s *session) VulnerabilityScanState() string {
+	if s.target.offers("security.vulnerability-scan") {
+		return "supported"
+	}
+	if s.target.offers("security.vulnerability-scan-not-applicable") {
+		return "not_applicable"
+	}
+	return "unassessed"
+}
 func (s *session) Reader(schemas []string) catalog.SchemaReader {
 	return reader{session: s, schemas: slices.Clone(schemas)}
 }

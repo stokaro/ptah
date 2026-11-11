@@ -474,6 +474,24 @@ func (dc *DatabaseConnection) Info() catalog.ServerInfo {
 	return info
 }
 
+// VulnerabilityScanState reports "supported", "not_applicable", or
+// "unassessed" for this connection's engine. The deployment and advisory
+// source are separate scan decisions.
+func (dc *DatabaseConnection) VulnerabilityScanState() string {
+	if dc.native != nil {
+		service, ok := dc.native.(interface{ VulnerabilityScanState() string })
+		if ok {
+			return service.VulnerabilityScanState()
+		}
+		return "unassessed"
+	}
+	dialect, ok := platform.Lookup(dc.info.Dialect)
+	if ok && dialect.VulnerabilityScan != "" {
+		return dialect.VulnerabilityScan
+	}
+	return "unassessed"
+}
+
 // Reader returns the connection's schema reader -- one shared instance, the
 // same for every caller. Use it for plain unscoped reads. When a schema
 // allow-list is needed, use [ReadSchemaWithSchemasContext] instead, which

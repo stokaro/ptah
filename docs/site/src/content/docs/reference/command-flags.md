@@ -314,6 +314,24 @@ Read the columns as follows.
 
 </div>
 
+**`ptah db vulnerabilities`**
+
+<div class="ptah-wide-table">
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--advisories` | `string` | — | `PTAH_ADVISORIES` | — |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--deployment` | `string` | `self-managed` | `PTAH_DEPLOYMENT` | — |
+| `--fail-on` | `string` | `both` | `PTAH_FAIL_ON` | — |
+| `--format` | `string` | `table` | `PTAH_FORMAT` | — |
+| `--provider-config` | `string` | — | — | — |
+| `--provider-engine` | `string` | — | — | — |
+| `--provider-exchanges` | `string` | — | — | — |
+| `--suppressions` | `string` | — | `PTAH_SUPPRESSIONS` | — |
+
+</div>
+
 **`ptah inference abandon`**
 
 <div class="ptah-wide-table">

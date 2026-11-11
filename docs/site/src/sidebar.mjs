@@ -257,6 +257,7 @@ export const sidebar = [
       { slug: 'operate/deliver' },
       { slug: 'operate/zero-downtime-changes' },
       { slug: 'operate/verify-a-release' },
+      { slug: 'operate/vulnerability-scan' },
       { slug: 'operate/trace-migrations' },
       { slug: 'operate/oci-registry', label: 'Use OCI registries' },
       { slug: 'operate/git-sources', label: 'Pull from Git' },

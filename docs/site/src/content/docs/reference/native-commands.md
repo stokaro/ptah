@@ -71,11 +71,12 @@ rather than a person.
 | `ptah completion fish` | Writes a fish completion script to stdout, generated from the command tree; it opens no database and writes no file | — |
 | `ptah completion powershell` | Writes a PowerShell completion script to stdout, generated from the command tree; it opens no database and writes no file | — |
 | `ptah completion zsh` | Writes a zsh completion script to stdout, generated from the command tree; it opens no database and writes no file | — |
-| `ptah db` | Work with live database schemas | group |
+| `ptah db` | Inspect and manage live databases | group |
 | `ptah db capabilities` | Reads the server's version and catalogs to report the capability profile Ptah resolves | — |
 | `ptah db drop-all` | Drops every schema object in the database it is given | — |
 | `ptah db read` | Introspects the database and prints what it found | — |
 | `ptah db verify` | Evaluates release assertions against the database it is given; every assertion is proved to be a read-only SELECT before it is sent, and the session is opened read-only wherever the engine has such a mode | — |
+| `ptah db vulnerabilities` | Reads the database product, server version and installed extensions, then matches them against a local advisory snapshot | — |
 | `ptah help` | Prints the help text of the verb it names, or of the root when it names none; the verb itself is not run and nothing is opened | — |
 | `ptah inference` | Plan, run and cut over embedding-generation migrations | group |
 | `ptah inference abandon` | Ends one run and releases its position in shared outbox history; the run-state row is written, and this command does not delete the generation or its vectors | — |

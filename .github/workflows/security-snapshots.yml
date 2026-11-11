@@ -1,0 +1,138 @@
+name: Server advisory snapshots
+
+on:
+  schedule:
+    - cron: '23 7 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: security-snapshots
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    name: Check upstream server advisories
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      # Keep one open review branch. Merge master into it so an in-progress
+      # review and its comments stay attached to the same pull request.
+      - name: Select review branch
+        id: branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh pr list --state open --limit 200 --json number,headRefName >"$RUNNER_TEMP/security-prs.json"
+          count="$(jq '[.[] | select(.headRefName | startswith("automation/cve-refresh-"))] | length' "$RUNNER_TEMP/security-prs.json")"
+          if [ "$count" -gt 1 ]; then
+            echo "More than one advisory refresh pull request is open" >&2
+            exit 1
+          fi
+          if [ "$count" -eq 1 ]; then
+            branch="$(jq -r '.[] | select(.headRefName | startswith("automation/cve-refresh-")) | .headRefName' "$RUNNER_TEMP/security-prs.json")"
+            number="$(jq -r '.[] | select(.headRefName | startswith("automation/cve-refresh-")) | .number' "$RUNNER_TEMP/security-prs.json")"
+            git fetch origin "refs/heads/$branch:refs/remotes/origin/$branch"
+            git checkout -q -B "$branch" "origin/$branch"
+            git merge --no-edit -q origin/master
+            echo "number=$number" >>"$GITHUB_OUTPUT"
+          else
+            branch="automation/cve-refresh-$(date -u +%Y%m%d)-${GITHUB_RUN_ID}"
+            git checkout -q -b "$branch" origin/master
+            echo 'number=' >>"$GITHUB_OUTPUT"
+          fi
+          echo "name=$branch" >>"$GITHUB_OUTPUT"
+
+      - name: Check source pages and prepare snapshot changes
+        id: update
+        run: |
+          set -euo pipefail
+          go run ./internal/cmd/securitysnapshots | tee "$RUNNER_TEMP/security-snapshots.log"
+          git add -A -- internal/vulnerability/
+          if git diff --cached --quiet; then
+            echo 'changed=false' >>"$GITHUB_OUTPUT"
+          else
+            echo 'changed=true' >>"$GITHUB_OUTPUT"
+            git diff --cached --stat
+          fi
+
+      - name: Summarize source checks
+        run: |
+          {
+            printf '## Server advisory source check\n\n'
+            printf 'The scan binary uses only bundled or operator-selected local snapshots.\n\n'
+            sed 's/^/- /' "$RUNNER_TEMP/security-snapshots.log"
+          } >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Mint a GitHub App token
+        id: app-token
+        if: steps.update.outputs.changed == 'true' && vars.CAPABILITY_MATRIX_APP_ID != ''
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.CAPABILITY_MATRIX_APP_ID }}
+          private-key: ${{ secrets.CAPABILITY_MATRIX_APP_KEY }}
+
+      # Pull requests opened with GITHUB_TOKEN do not run the ordinary PR
+      # checks. Require an independent credential before publishing a diff.
+      - name: Resolve pull request credential
+        id: credential
+        if: steps.update.outputs.changed == 'true'
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          AUTOMATION_TOKEN: ${{ secrets.CAPABILITY_MATRIX_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -n "$APP_TOKEN" ]; then
+            echo "::add-mask::$APP_TOKEN"
+            echo "value=$APP_TOKEN" >>"$GITHUB_OUTPUT"
+          elif [ -n "$AUTOMATION_TOKEN" ]; then
+            echo "::add-mask::$AUTOMATION_TOKEN"
+            echo "value=$AUTOMATION_TOKEN" >>"$GITHUB_OUTPUT"
+          else
+            echo 'Advisory changes need a GitHub App or CAPABILITY_MATRIX_TOKEN so the PR runs checks.' >&2
+            exit 1
+          fi
+
+      - name: Publish review pull request
+        if: steps.update.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ steps.credential.outputs.value }}
+          BRANCH: ${{ steps.branch.outputs.name }}
+          NUMBER: ${{ steps.branch.outputs.number }}
+        run: |
+          set -euo pipefail
+          git config user.name 'ptah-automation'
+          git config user.email 'ptah-automation@users.noreply.github.com'
+          git commit -m 'chore(security): refresh reviewed server advisories'
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/$BRANCH"
+          cat >"$RUNNER_TEMP/security-body.md" <<'BODY'
+          The daily task checked the official server advisory pages and prepared a local snapshot update.
+
+          Review changed PostgreSQL advisory rows and supported release lines. For YDB, MariaDB, and ClickHouse, a changed source produces `internal/vulnerability/review/<engine>.json`. The file lists CVE IDs found on the page; it does **not** establish affected or fixed versions. Check each server advisory and its version ranges against the vendor source, update the reviewed snapshot, and remove the review file before merging.
+
+          Unchanged versioned sources can refresh their retrieval time after 14 days. Partial coverage remains partial. The scanner itself makes no network request. The new binary includes the snapshot after this PR is merged and released.
+
+          This refresh supports #5828. The security scan PR owns issue closure.
+          BODY
+          if [ -n "$NUMBER" ]; then
+            gh pr edit "$NUMBER" --body-file "$RUNNER_TEMP/security-body.md"
+          else
+            gh pr create --draft --base master --head "$BRANCH" \
+              --title 'chore(security): refresh server advisory snapshots' \
+              --body-file "$RUNNER_TEMP/security-body.md"
+          fi
