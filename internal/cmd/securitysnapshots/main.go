@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -126,16 +127,26 @@ func updateVersioned(product string, source []byte, now time.Time) error {
 	}
 	digest := sha256.Sum256(source)
 	observedSHA := hex.EncodeToString(digest[:])
+	content, err := advisoryContent(product, source)
+	if err != nil {
+		return err
+	}
+	contentDigest := sha256.Sum256(content)
+	observedContentSHA := hex.EncodeToString(contentDigest[:])
 	reviewPath := filepath.Join("internal", "vulnerability", "review", product+".json")
-	if observedSHA == current.SourceSHA256 {
+	if sameReviewedContent(current, observedSHA, observedContentSHA) {
 		if err := os.Remove(reviewPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
 		if recent(current.RetrievedAt, now) {
-			fmt.Printf("%s: source unchanged; snapshot remains current\n", product)
+			fmt.Printf("%s: advisory content unchanged; snapshot remains current\n", product)
 			return nil
 		}
 		current.RetrievedAt = now
+		current.SourceSHA256 = observedSHA
+		if current.AdvisoryContentSHA256 != "" {
+			current.AdvisoryContentSHA256 = observedContentSHA
+		}
 		if err := writeJSON(filepath.Join("internal", "vulnerability", product+".json"), current); err != nil {
 			return err
 		}
@@ -169,15 +180,22 @@ func updateVersioned(product string, source []byte, now time.Time) error {
 }
 
 func buildReview(current vulnerability.VersionedSnapshot, source []byte, observedSHA string, now time.Time) (review, error) {
-	observed := cveID.FindAllString(string(source), -1)
+	content, err := advisoryContent(current.Product, source)
+	if err != nil {
+		return review{}, err
+	}
+	observed := cveID.FindAllString(string(content), -1)
 	slices.Sort(observed)
 	observed = slices.Compact(observed)
 	if len(observed) == 0 {
 		return review{}, errors.New("changed source contains no CVE IDs")
 	}
-	known := make([]string, 0, len(current.Advisories))
+	known := make([]string, 0, len(current.Advisories)+len(current.OutOfScope))
 	for _, advisory := range current.Advisories {
 		known = append(known, advisory.ID)
+	}
+	for _, excluded := range current.OutOfScope {
+		known = append(known, excluded.ID)
 	}
 	slices.Sort(known)
 	return review{
@@ -185,6 +203,23 @@ func buildReview(current vulnerability.VersionedSnapshot, source []byte, observe
 		ReviewedSHA: current.SourceSHA256, ObservedSHA: observedSHA, ObservedIDs: observed,
 		AddedIDs: difference(observed, known), MissingIDs: difference(known, observed),
 	}, nil
+}
+
+func advisoryContent(product string, source []byte) ([]byte, error) {
+	if product != "ydb" {
+		return source, nil
+	}
+	const heading = "\n# Security changelog\n"
+	index := bytes.Index(source, []byte(heading))
+	if index < 0 {
+		return nil, errors.New("YDB security changelog heading missing")
+	}
+	return source[index+1:], nil
+}
+
+func sameReviewedContent(current vulnerability.VersionedSnapshot, rawSHA, contentSHA string) bool {
+	return rawSHA == current.SourceSHA256 ||
+		(current.AdvisoryContentSHA256 != "" && contentSHA == current.AdvisoryContentSHA256)
 }
 
 func difference(left, right []string) []string {
