@@ -312,7 +312,8 @@ var Cells = []Cell{
 	{
 		Dialect: platform.Postgres, Line: "14",
 		Preset: capability.Postgres14, PresetName: "Postgres14",
-		Refinement: RefinedByVersion, Support: capability.Certified, Image: "postgres:14",
+		Refinement: RefinedByVersion, Support: capability.BestEffort, Image: "postgres:14",
+		Unprobed: "upstream support ended on 2026-11-12 (endoflife.date/postgresql)",
 		Note: "final PostgreSQL 14 release is November 2026. The line took Postgres16 until the " +
 			"probe measured unique_nulls_distinct_clause: the clause arrived in PostgreSQL 15, " +
 			"so 14 answered `preset says true, server does false` and now has a preset of its " +
