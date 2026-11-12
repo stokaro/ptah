@@ -13,9 +13,9 @@ sourceOfTruth:
 generated: true
 generator: internal/cmd/capmatrix
 editSource: internal/capabilityprobe/cells.go
-lastVerified: "2026-11-05"
+lastVerified: "2026-11-12"
 evidence:
-  - "https://github.com/stokaro/ptah/actions/runs/42046604672"
+  - "https://github.com/stokaro/ptah/actions/runs/43210830235"
 searchAliases:
   - database capability status
   - which database versions pass
@@ -31,11 +31,11 @@ What the tier 2 capability matrix measured, one row per declared
 release line, in the run named below. Regenerate it with `capmatrix status`
 over that run's cell results.
 
-- Measured: 2026-11-05T14:36:14Z
-- Commit: `21a3a31d36920742978bf9058860199b1db896c4`
-- Run: [42046604672](https://github.com/stokaro/ptah/actions/runs/42046604672)
-- Declared release lines: 33. Runnable cells: 30. Results received: 30.
-- 30 passed, 0 capability disagreements, 0 suite failures, 0 missing.
+- Measured: 2026-11-12T11:38:03Z
+- Commit: `b2a57bab9316f8b904482274069faecd6ebbff85`
+- Run: [43210830235](https://github.com/stokaro/ptah/actions/runs/43210830235)
+- Declared release lines: 34. Runnable cells: 31. Results received: 31.
+- 31 passed, 0 capability disagreements, 0 suite failures, 0 missing.
 
 | Cell | Engine | Line | Verdict |
 | --- | --- | --- | --- |
@@ -62,6 +62,7 @@ over that run's cell results.
 | `sqlserver-15-0` | sqlserver | 15.0 | PASS |
 | `oracle-23` | oracle | 23 | PASS |
 | `oracle-21` | oracle | 21 | PASS |
+| `cockroachdb-26-4` | cockroachdb | 26.4 | PASS |
 | `cockroachdb-26-3` | cockroachdb | 26.3 | PASS |
 | `cockroachdb-26-2` | cockroachdb | 26.2 | PASS |
 | `cockroachdb-25-4` | cockroachdb | 25.4 | PASS |

@@ -102,6 +102,7 @@ the declared set cannot say one thing here and another in a workflow file.
 | `sqlserver` | 15.0 (SQL Server 2019) | certified | `SQLServer2022` | yes |
 | `oracle` | 23 | certified | `Oracle23` | yes |
 | `oracle` | 21 | certified | `Oracle21` | yes |
+| `cockroachdb` | 26.4 | certified | `CockroachDB263` | yes |
 | `cockroachdb` | 26.3 | certified | `CockroachDB263` | yes |
 | `cockroachdb` | 26.2 | certified | `CockroachDB26` | yes |
 | `cockroachdb` | 25.4 | certified | `CockroachDB25` | yes |
@@ -113,9 +114,9 @@ the declared set cannot say one thing here and another in a workflow file.
 | `clickhouse` | 26.7 | best-effort | `ClickHouse2411` | no |
 | `clickhouse` | 25.8 | best-effort | `ClickHouse2411` | no |
 
-Declared release lines: 33. Probed on every pull request: 30.
+Declared release lines: 34. Probed on every pull request: 31.
 
-Support levels across the 33 declared lines: 28 certified, 2 legacy-tested, 3 best-effort.
+Support levels across the 34 declared lines: 29 certified, 2 legacy-tested, 3 best-effort.
 
 Lines that are declared and not probed, and why:
 
@@ -130,6 +131,7 @@ Lines whose container tag does not name the line, so which patch it resolves to 
 - `sqlserver` 15.0, pinned as `mcr.microsoft.com/mssql/server:2019-latest`.
 - `oracle` 23, pinned as `gvenzl/oracle-free:slim`.
 - `oracle` 21, pinned as `gvenzl/oracle-xe:21-slim`.
+- `cockroachdb` 26.4, pinned as `cockroachdb/cockroach:v26.4.0`.
 <!-- END GENERATED VERSION MATRIX -->
 
 ## Interpret the result

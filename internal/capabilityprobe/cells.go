@@ -618,8 +618,14 @@ var Cells = []Cell{
 	// the policy page has already retired, so the policy page is the one to
 	// read. YugabyteDB's release table gives 2026.1 (STS) maintenance to
 	// 2027-06-29 and 2025.2 (LTS) to 2027-12-11 — the newer line is the
-	// shorter track, so "newer" is not "supported longer" here. All four are
-	// supported and certified.
+	// shorter track, so "newer" is not "supported longer" here.
+	{
+		Dialect: platform.CockroachDB, Line: capabilityline.CockroachDB264,
+		Preset: capability.CockroachDB263, PresetName: "CockroachDB263",
+		Refinement: RefinedByVersion, Support: capability.Certified, Image: "cockroachdb/cockroach:v26.4.0",
+		Note: "measured live on CockroachDB CCL v26.4.0: 127 decidable rows agree with " +
+			"CockroachDB263, with 22 rows undecidable and no disagreements",
+	},
 	{
 		Dialect: platform.CockroachDB, Line: capabilityline.CockroachDB263,
 		Preset: capability.CockroachDB263, PresetName: "CockroachDB263",
