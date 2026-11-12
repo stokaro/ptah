@@ -639,7 +639,7 @@ func TestCells_CertificationMatchesWhatContinuousIntegrationRuns(t *testing.T) {
 	}
 }
 
-// TestCells_BestEffortLinesAreExactlyTheUnmeasuredOnes pins the five today, so
+// TestCells_BestEffortLinesAreExactlyTheUnmeasuredOnes pins today's list, so
 // that a line quietly losing its coverage shows up as this list growing rather
 // than as a level nobody re-read. The previous test proves the rule; this one
 // records the current answer, which is the part a reader of the support matrix
@@ -677,6 +677,10 @@ func TestCells_BestEffortLinesAreExactlyTheUnmeasuredOnes(t *testing.T) {
 		// MySQL 26.7 too: upstream support ended on 2026-10-20, when 26.10
 		// was released, and the integration suite starts 26.10 in its place.
 		"mysql-26-7",
+		// PostgreSQL 14 as well: upstream support ended on 2026-11-12, and the
+		// integration suite starts PostgreSQL 18, so the probe was the only job
+		// measuring it.
+		"postgres-14",
 		// Neither Oracle line is here any more. The 23 line left when the
 		// tagged integration contour started its image, and 21 left when the
 		// matrix gained a launch recipe, which is what #1875 asks for: a

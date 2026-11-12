@@ -314,10 +314,16 @@ var Cells = []Cell{
 		Preset: capability.Postgres14, PresetName: "Postgres14",
 		Refinement: RefinedByVersion, Support: capability.BestEffort, Image: "postgres:14",
 		Unprobed: "upstream support ended on 2026-11-12 (endoflife.date/postgresql)",
-		Note: "final PostgreSQL 14 release is November 2026. The line took Postgres16 until the " +
-			"probe measured unique_nulls_distinct_clause: the clause arrived in PostgreSQL 15, " +
-			"so 14 answered `preset says true, server does false` and now has a preset of its " +
-			"own that differs from Postgres16 in that one key (stokaro/ptah#2820)",
+		Note: "upstream support ended 2026-11-12, and the integration suite starts PostgreSQL 18 " +
+			"rather than this line, so it declares best-effort and no probe job is spent on it. The " +
+			"preset stands on the last live measurement, taken on 14.24 by probe run 43210830235: " +
+			"149 rows, 127 agreements, 0 disagreements, and the cell's floor of 127 met against " +
+			"Postgres14. The line took Postgres16 until the probe measured " +
+			"unique_nulls_distinct_clause: the clause arrived in PostgreSQL 15, so 14 answered " +
+			"`preset says true, server does false` and has a preset of its own that differs from " +
+			"Postgres16 in that one key (stokaro/ptah#2820). A server on this line is operated " +
+			"exactly as any other, and what it loses is the guarantee -- nothing here measures it " +
+			"against the code as that moves",
 	},
 	{
 		Dialect: platform.Postgres, Line: "13",
