@@ -255,6 +255,6 @@ func TestResume_RetryFailedReadsNoVariable(t *testing.T) {
 
 	flag := resume.Flags().Lookup("retry-failed")
 
-	c.Assert(flag, qt.Not(qt.IsNil))
+	c.Assert(flag, qt.IsNotNil)
 	c.Assert(flag.Annotations["ptah.env.disabled"], qt.DeepEquals, []string{"true"})
 }
