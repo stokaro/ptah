@@ -4448,8 +4448,7 @@ func buildCockroachDB26() Capabilities {
 
 // CockroachDB263 is the first CockroachDB line that carries CREATE DOMAIN.
 //
-// Measured 2026-08-21 on v26.3.0, published 2026-07-28 and the newest release
-// at the time, with CREATE TYPE ... AS ENUM as the control. The domain is a
+// Measured on v26.3.0 with CREATE TYPE ... AS ENUM as the control. The domain is a
 // working one rather than an accepted statement: `CREATE DOMAIN pos AS INT NOT
 // NULL DEFAULT 1 CHECK (VALUE > 0)` takes a column, refuses -5 with 23514,
 // refuses NULL with 23502, applies the default, and reads back through Ptah's

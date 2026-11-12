@@ -601,30 +601,34 @@ func TestResolveServerVersionReportsSaturation(t *testing.T) {
 		{"postgres empty", "postgres", "", capability.Postgres17(), false, false, ""},
 		{
 			"cockroachdb 26.2 selects its measured preset",
-			"postgres", "CockroachDB CCL v26.2.4 (x86_64-pc-linux-gnu)", capability.CockroachDB26(), true, false, "26.3",
+			"postgres", "CockroachDB CCL v26.2.4 (x86_64-pc-linux-gnu)", capability.CockroachDB26(), true, false, "26.4",
 		},
 		{
 			"cockroachdb 26.1 is not claimed as its measured 26.2 sibling",
-			"postgres", "CockroachDB CCL v26.1.4 (x86_64-pc-linux-gnu)", capability.CockroachDB25(), false, false, "26.3",
+			"postgres", "CockroachDB CCL v26.1.4 (x86_64-pc-linux-gnu)", capability.CockroachDB25(), false, false, "26.4",
 		},
 		{
 			// 26.3 stopped being a version above the ladder when it was
 			// published and measured: it is the line that carries CREATE
 			// DOMAIN (stokaro/ptah#1735).
 			"cockroachdb 26.3 selects the line that carries CREATE DOMAIN",
-			"postgres", "CockroachDB CCL v26.3.0 (x86_64-pc-linux-gnu)", capability.CockroachDB263(), true, false, "26.3",
+			"postgres", "CockroachDB CCL v26.3.0 (x86_64-pc-linux-gnu)", capability.CockroachDB263(), true, false, "26.4",
 		},
 		{
-			"cockroachdb 26.4 saturates above the measured 26.3 line",
-			"postgres", "CockroachDB CCL v26.4.0 (x86_64-pc-linux-gnu)", capability.CockroachDB263(), false, true, "26.3",
+			"cockroachdb 26.4 selects the measured 26.4 line",
+			"postgres", "CockroachDB CCL v26.4.0 (x86_64-pc-linux-gnu)", capability.CockroachDB263(), true, false, "26.4",
+		},
+		{
+			"cockroachdb 26.5 saturates above the measured 26.4 line",
+			"postgres", "CockroachDB CCL v26.5.0 (x86_64-pc-linux-gnu)", capability.CockroachDB263(), false, true, "26.4",
 		},
 		{
 			"cockroachdb 25.4 selects its measured preset",
-			"postgres", "CockroachDB CCL v25.4.5 (x86_64-pc-linux-gnu)", capability.CockroachDB25(), true, false, "26.3",
+			"postgres", "CockroachDB CCL v25.4.5 (x86_64-pc-linux-gnu)", capability.CockroachDB25(), true, false, "26.4",
 		},
 		{
 			"cockroachdb 25.5 uses the conservative preset without claiming measurement",
-			"postgres", "CockroachDB CCL v25.5.1 (x86_64-pc-linux-gnu)", capability.CockroachDB25(), false, false, "26.3",
+			"postgres", "CockroachDB CCL v25.5.1 (x86_64-pc-linux-gnu)", capability.CockroachDB25(), false, false, "26.4",
 		},
 		// YugabyteDB gained a ladder in stokaro/ptah#916, and the number it
 		// climbs is the one AFTER the "-YB-" marker: the 15.2 in front of it is

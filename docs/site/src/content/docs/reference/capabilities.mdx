@@ -78,18 +78,16 @@ materialized view and `create_or_replace_view` presuppose a view, and
 are validated.
 
 `sequences`, `role_management`, and `row_level_security` use the same named
-skip when a PostgreSQL-family preset disables them. They used to fail the
-render instead, and an error is not something a plan can carry, so the
-migration planner dropped roles, grants, and row-level security from the plan
-before they reached a visitor, without saying so.
+skip when a PostgreSQL-family preset disables them. An error cannot be carried
+in a plan, so a named skip keeps roles, grants, and row-level security visible.
 
 No built-in PostgreSQL-family preset disables those three categories:
-CockroachDB 25.4, 26.2 and 26.3 plus YugabyteDB 2026.1 were measured with live
-servers and accept them, so their presets enable them. A capability set that
+CockroachDB 25.4, 26.2, 26.3, and 26.4 plus YugabyteDB 2026.1 were measured
+with live servers and accept them, so their presets enable them. A capability set that
 disables one still writes a role, grant, sequence, row-level security
 enablement, or policy as a named `-- <DIALECT>: ... skipped.` diagnostic
-instead of dropping it from a plan in silence. CockroachDB's three measured resolver arms differ in two places: the 25.4
-server refuses generic and guarded `DROP CONSTRAINT` and
+instead of dropping it from a plan in silence. CockroachDB's measured resolver
+arms differ in two places: the 25.4 server refuses generic and guarded `DROP CONSTRAINT` and
 `CREATE OR REPLACE TRIGGER`, and 26.3 is the first line to accept
 `CREATE DOMAIN`.
 

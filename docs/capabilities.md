@@ -560,13 +560,13 @@ The newest measured line per refined dialect:
 | MySQL | 26.7 (`MySQL84()`) | 26.7 |
 | MariaDB | 12.3 (`MariaDB1011()`) | 12.3 |
 | PostgreSQL | 18.x (`Postgres17()`) | 18 |
-| CockroachDB | 26.2 (`CockroachDB26()`) | 26.2 |
+| CockroachDB | 26.4 (`CockroachDB263()`) | 26.4 |
 
 The matrix measured PostgreSQL 18.4, MySQL 26.7.0, MariaDB 12.3.2, and both
-CockroachDB 25.4 and 26.2 before promoting those lines. MySQL, MariaDB, and
-CockroachDB match exact major/minor lines: an unmeasured sibling such as MySQL
-26.6, MariaDB 12.2, or CockroachDB 26.1 is not reported as a line-specific
-match. A sibling above the newest measurement saturates. The resolver uses a
+CockroachDB 25.4, 26.2, 26.3, and 26.4 before promoting those lines. MySQL,
+MariaDB, and CockroachDB match exact major/minor lines: an unmeasured sibling
+such as MySQL 26.6, MariaDB 12.2, or CockroachDB 26.1 is not reported as a
+line-specific match. A sibling above the newest measurement saturates. The resolver uses a
 conservative preset between measured lines.
 
 Raising one of those numbers is the deliberate act of claiming a newer server
@@ -947,6 +947,7 @@ nightly, from the workflow's Run button, or when somebody comments
 | `sqlserver` | 15.0 (SQL Server 2019) | certified | `SQLServer2022` | version-ladder | `mcr.microsoft.com/mssql/server:2019-latest` | no | yes |
 | `oracle` | 23 | certified | `Oracle23` | version-ladder | `gvenzl/oracle-free:slim` | no | yes |
 | `oracle` | 21 | certified | `Oracle21` | version-ladder | `gvenzl/oracle-xe:21-slim` | no | yes |
+| `cockroachdb` | 26.4 | certified | `CockroachDB263` | version-ladder | `cockroachdb/cockroach:v26.4.0` | no | yes |
 | `cockroachdb` | 26.3 | certified | `CockroachDB263` | version-ladder | `cockroachdb/cockroach:latest-v26.3` | yes | yes |
 | `cockroachdb` | 26.2 | certified | `CockroachDB26` | version-ladder | `cockroachdb/cockroach:latest-v26.2` | yes | yes |
 | `cockroachdb` | 25.4 | certified | `CockroachDB25` | version-ladder | `cockroachdb/cockroach:latest-v25.4` | yes | yes |
