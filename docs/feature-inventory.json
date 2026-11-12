@@ -13,7 +13,7 @@
   ],
   "generator": "scripts/check-feature-inventory.sh --write",
   "claimed_floor": 79,
-  "claimed": 98,
+  "claimed": 101,
   "rows": [
     {
       "id": "cli-ptah-assist-context",
@@ -344,6 +344,24 @@
       "kind": "native-verb",
       "surface": "ptah migrations rm",
       "claimed_by": "docs/site/src/content/docs/versioned/maintain-history.md"
+    },
+    {
+      "id": "cli-ptah-migrations-rollout-plan",
+      "kind": "native-verb",
+      "surface": "ptah migrations rollout plan",
+      "claimed_by": "docs/site/src/content/docs/operate/staged-rollout.md"
+    },
+    {
+      "id": "cli-ptah-migrations-rollout-resume",
+      "kind": "native-verb",
+      "surface": "ptah migrations rollout resume",
+      "claimed_by": "docs/site/src/content/docs/operate/staged-rollout.md"
+    },
+    {
+      "id": "cli-ptah-migrations-rollout-run",
+      "kind": "native-verb",
+      "surface": "ptah migrations rollout run",
+      "claimed_by": "docs/site/src/content/docs/operate/staged-rollout.md"
     },
     {
       "id": "cli-ptah-migrations-set",

@@ -593,6 +593,22 @@ Three outcomes stay distinct, because they call for different actions:
 
 [Plan and approve changes](../../direct/plan-and-approve/) is the guide.
 
+## Staged rollouts
+
+`ptah migrations rollout` applies one versioned migration release to the
+databases a rollout definition lists, in stages:
+
+| Verb | What it does |
+| --- | --- |
+| `plan` | Validates the definition and prints its stages, contacting nothing. |
+| `run` | Binds the release, writes a new state file, and runs `ptah migrations up --json` for each target in a process of its own. |
+| `resume` | Reads every started target back from its revision table and continues the recorded run. |
+
+`run` and `resume` exit `0` when every stage succeeded and `1` when a stage
+failed or was blocked. [Roll a release out in stages](../../operate/staged-rollout/)
+is the guide, and [Rollout definition and state](../rollout-definition/) lists
+every key and status.
+
 ## Column lineage
 
 `ptah schema lineage` derives column-to-column dependencies from the view and

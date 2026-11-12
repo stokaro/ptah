@@ -257,6 +257,7 @@ export const sidebar = [
       { slug: 'operate/deliver' },
       { slug: 'operate/zero-downtime-changes' },
       { slug: 'operate/verify-a-release' },
+      { slug: 'operate/staged-rollout' },
       { slug: 'operate/vulnerability-scan' },
       { slug: 'operate/trace-migrations' },
       { slug: 'operate/oci-registry', label: 'Use OCI registries' },
@@ -345,6 +346,7 @@ export const sidebar = [
         label: 'Format reference',
         items: [
           { slug: 'reference/configuration' },
+          { slug: 'reference/rollout-definition' },
           { slug: 'reference/go-annotations' },
           { slug: 'reference/hcl-schema' },
           { slug: 'reference/yaml-schema' },

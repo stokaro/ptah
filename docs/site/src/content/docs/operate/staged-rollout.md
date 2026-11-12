@@ -57,9 +57,8 @@ they do when you run `ptah migrations up` against it by hand.
   no external orchestrator. A CI job or a scheduled task that runs the commands
   below is enough.
 
-The commands below are the ones
-[the staged rollout example](https://github.com/stokaro/ptah/tree/master/examples/staged-rollout)
-runs against five SQLite files.
+[The staged rollout example](https://github.com/stokaro/ptah/tree/master/examples/staged-rollout)
+runs the same workflow against five SQLite files.
 
 ## Write the definition
 
@@ -100,11 +99,12 @@ every other stage has to depend on it, directly or through another stage.
 `wave-2` start when at least two of its three targets succeed.
 
 `expect_sequence` is an approval for one target: the migrations its run must
-select under its migration lock, in the format `ptah migrations up
---expect-sequence` reads. Approvals are per target on purpose, and so is
-`allow_destructive`. There is no setting that approves a migration for the
-whole rollout. [Rollout definition and state](../../reference/rollout-definition/)
-lists every key.
+select under its migration lock, in the format that
+`ptah migrations up --expect-sequence` reads. Approvals are per target on
+purpose, and so is `allow_destructive`. There is no setting that approves a
+migration for the whole rollout.
+[Rollout definition and state](../../reference/rollout-definition/) lists every
+key.
 
 ## Check the plan
 
@@ -117,7 +117,7 @@ ptah migrations rollout plan --definition rollout.yaml
 ```
 
 ```text
-Rollout plan sha256:05e9aaed681e153fe1807e09252b7d5be9bfb8321a322276e3b5bfb4a2b3de81
+Rollout plan sha256:05e9aaed…
 
 Stage 1: canary (canary)
   concurrency: 1, on failure: stop, requires: all (1 of 1)
@@ -133,7 +133,8 @@ Stage 2: wave-1
 Every rule a definition breaks is reported in one run: a repeated target, a
 stage naming a target that is not in the inventory, a target in two stages or in
 none, a dependency cycle with its path, and a stage that could start before the
-canary succeeds. Run `plan` in the pull request that changes the definition.
+canary succeeds. `plan` reads the variables `url_env` names, so run it where
+they are set, such as the job that runs the rollout, before the rollout starts.
 
 ## Run the rollout
 
@@ -165,8 +166,8 @@ Stage wave-1: running, at most 2 at once
 
 The command exits `0` when every stage succeeded, and `1` when the rollout ran
 and a stage failed or was blocked. Exit `2` means it refused before running
-any target: an invalid definition, a release that does not match the state, or
-a state file that already exists.
+any target, for an invalid definition or a state file that already exists, for
+example.
 
 ## Read the outcome
 
@@ -199,9 +200,10 @@ still runs.
 
 The target's error is in the state file. Decide what it needs before resuming:
 
-- A refusal before anything ran, such as a stale approval, a destructive
-  migration the lint gate stopped, or a lock held by another runner, leaves a
-  clean revision table. Fix the cause and resume with `--retry-failed`.
+- A refusal before anything ran, such as a stale approval, a pre-migration
+  check, a destructive migration the lint gate stopped, or a lock held by
+  another runner, leaves a clean revision table. Fix the cause and resume with
+  `--retry-failed`.
 - A migration that failed leaves a dirty revision row in that target's revision
   table. The rollout never retries it. Recover that database by hand, with
   `ptah migrations up --allow-dirty` for a verified retry or
@@ -212,7 +214,8 @@ The rollout does not roll anything back. Rolling a target back is
 
 ## Resume
 
-Pass the same three flags to `resume`:
+Pass the same flags to `resume`. Add `--retry-failed` only to run a failed
+target again:
 
 ```bash
 ptah migrations rollout resume \
@@ -298,6 +301,15 @@ every target at once refuses the rollout instead: `PTAH_ALLOW_DIRTY`,
 `PTAH_SKIP_CHECKS`, `PTAH_ALLOW_DESTRUCTIVE`, `PTAH_EXPECT_SEQUENCE`,
 `PTAH_DRY_RUN`, `PTAH_LIMIT` and `PTAH_TO_VERSION`. Unset it, and set the
 per-target key where one target needs it.
+
+## Coverage
+
+| Area | Covered |
+| --- | --- |
+| Engines | Every engine `ptah migrations up` applies to, since each target runs it. |
+| Releases | A local migration directory in any format `ptah migrations up` reads, or an `oci://` artifact. |
+| Component versions | One `ptah` binary runs the rollout and every target of an invocation; the state file records its version in `ptah_version`, and a resume records the binary that ran it. |
+| Kubernetes | Ptah Operator reconciles each database resource on its own and is not involved; run the rollout from a Job or a CI step. |
 
 ## Limitations
 

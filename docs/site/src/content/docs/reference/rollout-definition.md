@@ -16,9 +16,11 @@ overlaps:
 disposition: keep
 ---
 
-This page lists what `ptah migrations rollout` reads from a definition file and
-writes to a state file. [Roll a release out in stages](../../operate/staged-rollout/)
-is the workflow.
+A `ptah migrations rollout` definition names the target databases and the
+stages that group them, and the state file records what happened to each. Look
+up a definition key, a validation rule, the order targets run in, or what a
+status means. [Roll a release out in stages](../../operate/staged-rollout/) is
+the workflow.
 
 ## Definition file
 
@@ -136,7 +138,7 @@ after every change, so a process that dies leaves the last thing it recorded.
 | `plan` | The plan digest: a SHA-256 over every stage and target setting, with each URL in its display form. |
 | `release` | `kind` (`directory` or `oci`), `source` as named, `digest`, and for an artifact the digest-pinned `reference`. |
 | `ptah_version` | The version of the `ptah` binary of the last invocation. Every target run of an invocation uses that binary. |
-| `invocations` | The run and its resumptions. |
+| `invocations` | How many times the run was started or resumed. |
 | `stages` | Every stage in execution order, with its settings, `status`, `succeeded`, `blocked_by` and `targets`. |
 
 Each target carries its settings, `status`, `attempts`, `started_at` and
