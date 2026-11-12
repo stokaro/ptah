@@ -114,10 +114,71 @@ for leftover in ptah-tutorial-provider providers.json change.plan.json app.db; d
 	fi
 done
 
+# The staged rollout example, run the way the minimal provider example is: the
+# first bash block of its Run, Verify and Cleanup sections, in one shell, in a
+# copy of the example with this tree's ptah first on PATH. The rollout starts a
+# ptah process per target, so the binary on PATH is also the one every target
+# runs.
+rollout_work="$work_dir/staged-rollout"
+mkdir -p "$rollout_work/example"
+(cd examples/staged-rollout && git ls-files -z --cached --others --exclude-standard -- . | tar --null -T - -cf -) |
+	tar -xf - -C "$rollout_work/example"
+: >"$rollout_work/readme.sh"
+for section in Run Verify Cleanup; do
+	awk -v section="## $section" '
+		/^## / { inside = ($0 == section) }
+		inside && /^```bash$/ { capture = 1; next }
+		capture && /^```$/ { exit }
+		capture { print }
+	' examples/staged-rollout/README.md >"$rollout_work/$section.sh"
+	if [ ! -s "$rollout_work/$section.sh" ]; then
+		echo "check-examples: examples/staged-rollout/README.md has no bash block under $section" >&2
+		exit 1
+	fi
+	cat "$rollout_work/$section.sh" >>"$rollout_work/readme.sh"
+	echo "echo '--- end of $section'" >>"$rollout_work/readme.sh"
+done
+(
+	cd "$rollout_work/example"
+	env PATH="$provider_work/bin:$PATH" bash -eu "$rollout_work/readme.sh"
+) >"$rollout_work/readme.txt" 2>&1 || {
+	echo 'check-examples: the README blocks of examples/staged-rollout failed:' >&2
+	cat "$rollout_work/readme.txt" >&2
+	exit 1
+}
+for expected in \
+	'Stage 3: wave-2' \
+	'rollout exit status: 1' \
+	'Stage wave-1: blocked by canary' \
+	'Stage wave-1: succeeded: 3 of 3 targets succeeded, 2 required' \
+	'Rollout succeeded' \
+	'--- end of Run' \
+	'Current Version: 2' \
+	'--- end of Verify' \
+	'--- end of Cleanup'; do
+	grep -qF -- "$expected" "$rollout_work/readme.txt" || {
+		echo "check-examples: the README blocks of examples/staged-rollout did not print $expected" >&2
+		cat "$rollout_work/readme.txt" >&2
+		exit 1
+	}
+done
+awk '/^--- end of Run$/ { verify = 1; next } verify && /^--- end of Verify$/ { exit } verify && /^[0-9]+$/ { print }' \
+	"$rollout_work/readme.txt" | grep -qx 9 || {
+	echo 'check-examples: the staged rollout state did not record nine successes' >&2
+	cat "$rollout_work/readme.txt" >&2
+	exit 1
+}
+for leftover in databases approvals rollout-state.json rollout-state.json.lock; do
+	if [ -e "$rollout_work/example/$leftover" ]; then
+		echo "check-examples: the Cleanup block of examples/staged-rollout/README.md left $leftover" >&2
+		exit 1
+	fi
+done
+
 # The Kubernetes manifests need a cluster, so what is checked here is that every
 # `ptah` argv in them names a verb this build registers and flags that verb
 # accepts. That is the drift that actually happens: a flag renamed in the code
 # and an example still naming the old spelling.
 run_go test ./internal/cli/inference -run TestKubernetesExample -count=1
 
-echo 'check-examples: OK (5 executed examples, viz artifacts, Kubernetes manifests, and 2 provider fixtures)'
+echo 'check-examples: OK (6 executed examples, viz artifacts, Kubernetes manifests, and 2 provider fixtures)'
