@@ -332,7 +332,7 @@ jobs:
           # renovate: datasource=docker depName=cockroachdb/cockroach
           docker run --detach --name ptah-cockroachdb \
             --publish 26257:26257 \
-            cockroachdb/cockroach:v26.3.5 \
+            cockroachdb/cockroach:v26.4.0 \
             start-single-node --insecure --advertise-addr=localhost:26257
 
           # renovate: datasource=docker depName=yugabytedb/yugabyte
