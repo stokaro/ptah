@@ -241,3 +241,119 @@ func TestDescribe(t *testing.T) {
 		})
 	}
 }
+
+func TestSecurityOptions(t *testing.T) {
+	c := qt.New(t)
+	c.Assert(viewoptions.SecurityOptions(), qt.DeepEquals, []string{"security_barrier", "security_invoker"})
+}
+
+// TestSecurityOn_HappyPath pins the value PostgreSQL applies: a security option
+// a view does not hold is off.
+func TestSecurityOn_HappyPath(t *testing.T) {
+	tests := []struct {
+		name    string
+		options []string
+		option  string
+		want    bool
+	}{
+		{name: "not held", options: nil, option: "security_invoker", want: false},
+		{name: "held on", options: []string{"security_invoker=true"}, option: "security_invoker", want: true},
+		{name: "held on in the spelling the server stores", options: []string{"security_barrier=ON"}, option: "security_barrier", want: true},
+		{name: "a bare name is on", options: []string{"security_barrier"}, option: "security_barrier", want: true},
+		{name: "held off", options: []string{"security_invoker=0"}, option: "security_invoker", want: false},
+		{name: "another option held on", options: []string{"security_barrier=true"}, option: "security_invoker", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			on, ok := viewoptions.SecurityOn(test.options, test.option)
+			c.Assert(ok, qt.IsTrue)
+			c.Assert(on, qt.Equals, test.want)
+		})
+	}
+}
+
+// TestSecurityOn_FailurePath pins the answers that are unknown rather than off.
+func TestSecurityOn_FailurePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		options []string
+		option  string
+	}{
+		{name: "an option that is not a security option", options: nil, option: "fillfactor"},
+		{name: "a value that is not a boolean", options: []string{"security_invoker=maybe"}, option: "security_invoker"},
+		{name: "a list Normalize refuses", options: []string{"check_option=local", "security_invoker=true"}, option: "security_invoker"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			on, ok := viewoptions.SecurityOn(test.options, test.option)
+			c.Assert(ok, qt.IsFalse)
+			c.Assert(on, qt.IsFalse)
+		})
+	}
+}
+
+// TestApply_HappyPath pins what ALTER VIEW ... SET and RESET leave a view
+// holding.
+func TestApply_HappyPath(t *testing.T) {
+	tests := []struct {
+		name        string
+		held, set   []string
+		reset, want []string
+	}{
+		{name: "an option set", held: nil, set: []string{"security_invoker=true"}, want: []string{"security_invoker=true"}},
+		{name: "a value replaced in place", held: []string{"security_invoker=on", "security_barrier=true"},
+			set: []string{"SECURITY_INVOKER = false"}, want: []string{"security_invoker=false", "security_barrier=true"}},
+		{name: "an option reset", held: []string{"security_invoker=true", "security_barrier=true"},
+			reset: []string{"security_invoker"}, want: []string{"security_barrier=true"}},
+		{name: "the last option reset", held: []string{"security_invoker=true"}, reset: []string{"Security_Invoker"}},
+		{name: "a reset of an option not held", held: []string{"security_invoker=true"},
+			reset: []string{"security_barrier"}, want: []string{"security_invoker=true"}},
+		{name: "a bare name set", held: []string{"fillfactor=70"}, set: []string{"security_barrier"},
+			want: []string{"fillfactor=70", "security_barrier=true"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			got, err := viewoptions.Apply(test.held, test.set, test.reset)
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestApply_RoundTripsChanges pins that Apply reaches the declared options from
+// the held ones through the changes Changes computes, which is what an option
+// change planned in place does.
+func TestApply_RoundTripsChanges(t *testing.T) {
+	held := []string{"security_invoker=on", "fillfactor=70", "autovacuum_enabled=off"}
+	declared := []string{"security_invoker=false", "fillfactor=70", "security_barrier=true"}
+	c := qt.New(t)
+	set, reset := viewoptions.Changes(held, declared)
+	got, err := viewoptions.Apply(held, set, reset)
+	c.Assert(err, qt.IsNil)
+	c.Assert(viewoptions.Equal(got, declared), qt.IsTrue, qt.Commentf("got %v", got))
+}
+
+func TestApply_FailurePath(t *testing.T) {
+	tests := []struct {
+		name       string
+		held, set  []string
+		wantErrMsg string
+	}{
+		{name: "a held list Normalize refuses", held: []string{"check_option=local"},
+			wantErrMsg: `invalid view option: check_option is a view's check option; declare it as WITH CHECK OPTION`},
+		{name: "a set list Normalize refuses", set: []string{"=true"},
+			wantErrMsg: `invalid view option: "=true" is not an option name: .*`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			got, err := viewoptions.Apply(test.held, test.set, nil)
+			c.Assert(err, qt.ErrorIs, viewoptions.ErrInvalidOption)
+			c.Assert(err, qt.ErrorMatches, test.wantErrMsg)
+			c.Assert(got, qt.IsNil)
+		})
+	}
+}

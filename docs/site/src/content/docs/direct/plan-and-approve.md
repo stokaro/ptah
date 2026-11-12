@@ -132,6 +132,10 @@ statement also carries `access` -- `widens`, `narrows`, `unchanged` or
 statement destructive. Each owner operation is planned on its own, so its
 verdict reaches the statements it rendered and no others.
 
+A statement Ptah can describe also records `effects`: the value of each
+property it reports before and after the statement, such as a view's
+`security_invoker`. See [Statement effects](../../reference/statement-effects/).
+
 A target served by an [executable provider](../../extend/executable-providers/)
 can plan native operations that have no SQL. The file then records such a
 statement with a `native` object in place of `sql`: the operation kind, its
@@ -160,13 +164,13 @@ approval. The Atlas `.plan.hcl` format refuses positioned notes because it
 cannot preserve this distinction.
 
 An `--edit` that leaves the statements as they were, comments and whitespace
-aside, keeps every recorded verdict. After any other edit, a statement whose
-text the plan recorded keeps the strongest verdict recorded for that text, so a
-copy of a destructive statement is destructive too. When the plan has an
-`owned` statement, every `owned` statement and every statement the edit
-introduced becomes destructive with an unknown access effect: SQL text cannot
-say what they do, and an owner judged each statement beside the others, which
-the edit changed. A known widening stays a widening, and the reason each
+aside, keeps every recorded verdict and effect. After any other edit, a
+statement whose text the plan recorded keeps the strongest verdict recorded for
+that text, so a copy of a destructive statement is destructive too. When the
+plan has an `owned` statement, every `owned` statement and every statement the
+edit introduced becomes destructive with an unknown access effect: SQL text
+cannot say what they do, and an owner judged each statement beside the others,
+which the edit changed. A known widening stays a widening, and the reason each
 statement had stays beside the new one. Plan again to get fresh verdicts. The
 Atlas `.plan.hcl` format stores only the SQL, so a plan read back from it
 carries the text's verdict alone.
@@ -270,9 +274,8 @@ With `--json` the command says so in a document rather than a sentence:
 a typed refusal code when planning refuses, and `ptah schema apply --json`
 reports the apply the same way; see
 [Read the result in a script](../apply/#read-the-result-in-a-script). The
-digest covers the bytes of the file `--output` writes, and the document carries
-the plan's content rather than those bytes, so the file is what gets approved
-and applied.
+document carries the plan's content, not the file's bytes, so the file is what
+gets approved and applied.
 
 ### How a column change is rated
 

@@ -66,6 +66,7 @@ func (p PlanFile) UnitReports() []ApplyUnitReport {
 		units[i].SQL = statement.SQL
 		units[i].Inputs = slices.Clone(statement.Inputs)
 		units[i].Change = statement.Change
+		units[i].Effects = slices.Clone(statement.Effects)
 		if statement.Native != nil {
 			units[i].Native = &NativeUnitReport{
 				Kind: statement.Native.Kind, Subject: statement.Native.Subject,

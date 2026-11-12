@@ -356,6 +356,7 @@ export const sidebar = [
           { slug: 'reference/capabilities' },
           { slug: 'reference/lint-rules' },
           { slug: 'reference/drift-findings' },
+          { slug: 'reference/statement-effects' },
           { slug: 'reference/exit-codes' },
           { slug: 'reference/mcp-tools' },
         ],

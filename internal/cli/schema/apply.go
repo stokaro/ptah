@@ -612,6 +612,10 @@ func runSchemaApplyOnLockedSession(
 	if err != nil {
 		return "", err
 	}
+	units, err := plan.SQLUnitReports()
+	if err != nil {
+		return "", err
+	}
 	if opts.edit {
 		edited, err := editSchemaApplySQL(ctx, sqlText)
 		if err != nil {
@@ -619,9 +623,12 @@ func runSchemaApplyOnLockedSession(
 		}
 		sqlText = edited
 		statements = atlasschema.SplitApplyStatements(sqlText, conn.Info().Dialect)
+		// An edited statement may do something other than what was planned, so
+		// the edited units carry no effects.
+		units = atlasschema.SQLApplyUnitReports(statements)
 	}
 	printSchemaApplyPlan(run.human, sqlText)
-	run.evidence.Units = atlasschema.SQLApplyUnitReports(statements)
+	run.evidence.Units = units
 	if err := plan.PreflightExecution(sqlText); err != nil {
 		return "", err
 	}

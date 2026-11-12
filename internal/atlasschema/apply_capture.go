@@ -9,10 +9,12 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/ast"
 	"ptah.run/core/renderer"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlaschange"
+	"ptah.run/internal/planeffect"
 	"ptah.run/internal/txrequire"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/planner"
@@ -33,14 +35,22 @@ func captureApplyTarget(info catalog.ServerInfo) (ApplyPlan, error) {
 // do not replace the captured connection facts. Callers approve omissions and
 // verify target state before execution.
 func CaptureApplyPlan(info catalog.ServerInfo, rendered planner.RenderedPlan) (ApplyPlan, error) {
-	return captureApplyPlan(info, rendered, renderer.Result{})
+	return captureApplyPlan(info, rendered, renderer.Result{}, nil)
 }
 
 // captureApplyPlan is CaptureApplyPlan with text, the plan's nodes rendered in
 // [renderer.FormText], or the zero Result when there is none: a native unit
 // whose node text renders as SQL keeps that SQL for display (see
 // [ApplyPlan.texts]).
-func captureApplyPlan(info catalog.ServerInfo, rendered planner.RenderedPlan, text renderer.Result) (ApplyPlan, error) {
+//
+// effects is what describing each unit reads, or nil to describe none; see
+// describeUnits.
+func captureApplyPlan(
+	info catalog.ServerInfo,
+	rendered planner.RenderedPlan,
+	text renderer.Result,
+	effects *planeffect.Target,
+) (ApplyPlan, error) {
 	if rendered.Request.Target != info.Dialect {
 		return ApplyPlan{}, fmt.Errorf("%w: rendered plan target differs from the connection", renderer.ErrInvalidResult)
 	}
@@ -109,7 +119,19 @@ func captureApplyPlan(info catalog.ServerInfo, rendered planner.RenderedPlan, te
 	if err != nil {
 		return ApplyPlan{}, err
 	}
+	plan.effects = describeUnits(effects, plan.provider, rendered.Request.Nodes, indexes)
 	return plan, nil
+}
+
+// describeUnits is [planeffect.Describe] of the captured units, where units
+// holds the index in nodes of each unit's node. It is nil without a target to
+// read, and for a plan an executable provider renders: the description follows
+// the statements Ptah's own renderers write for a node.
+func describeUnits(target *planeffect.Target, provider *PlanProviderBinding, nodes []ast.Node, units []int) [][]planeffect.Effect {
+	if target == nil || provider != nil {
+		return nil
+	}
+	return planeffect.Describe(*target, nodes, units)
 }
 
 // Preflight verifies the selected provider, captured base capabilities, complete

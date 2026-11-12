@@ -6,6 +6,7 @@ import (
 
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
+	"ptah.run/internal/planeffect"
 	"ptah.run/migration/safety"
 )
 
@@ -19,6 +20,9 @@ type ApplyUnitReport struct {
 	// above it. It is a display projection for the compatibility surface, which
 	// writes it through [WriteNamedUnitReports]; the JSON evidence does not carry it.
 	Change string `json:"-"`
+	// Effects is [PlanStatement.Effects] for this unit: what it does to the
+	// objects it changes, and empty where the plan does not describe it.
+	Effects []planeffect.Effect `json:"effects,omitempty"`
 }
 
 // NativeUnitReport describes the owner and effects without publishing opaque
@@ -48,6 +52,24 @@ func SQLApplyUnitReports(statements []string) []ApplyUnitReport {
 	return units
 }
 
+// SQLUnitReports lists the planned SQL statements in order, each with the
+// effects the plan computed for it. A plan holding a native operation returns
+// [renderer.ErrNativeSQL], as [ApplyRuntimePlan.Statements] does; use
+// [ApplyRuntimePlan.ReportUnits] for it.
+func (p ApplyRuntimePlan) SQLUnitReports() ([]ApplyUnitReport, error) {
+	statements, err := p.Statements()
+	if err != nil {
+		return nil, err
+	}
+	units := SQLApplyUnitReports(statements)
+	for i := range units {
+		if i < len(p.plan.effects) {
+			units[i].Effects = slices.Clone(p.plan.effects[i])
+		}
+	}
+	return units, nil
+}
+
 // ReportUnits describes the captured batch without rendering it again. It
 // records no native bytes that a reader could mistake for an executable plan:
 // a native unit carries the owner's text form of it, captured with the plan,
@@ -67,6 +89,9 @@ func (p ApplyRuntimePlan) ReportUnits(ctx context.Context, runtime safety.Runtim
 		report[i].Inputs = slices.Clone(unit.Inputs)
 		if i < len(p.plan.changes) {
 			report[i].Change = p.plan.changes[i]
+		}
+		if i < len(p.plan.effects) {
+			report[i].Effects = slices.Clone(p.plan.effects[i])
 		}
 		if unit.Native != nil {
 			assessment := assessments[i]

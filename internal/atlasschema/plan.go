@@ -27,6 +27,7 @@ import (
 	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/errorkind"
+	"ptah.run/internal/planeffect"
 	"ptah.run/internal/providerurl"
 	"ptah.run/internal/readscope"
 	"ptah.run/internal/rolegraph"
@@ -83,6 +84,12 @@ type PlanStatement struct {
 	Owned        bool             `json:"owned,omitempty"`
 	Access       schemaext.Access `json:"access,omitempty"`
 	AccessReason string           `json:"access_reason,omitempty"`
+	// Effects says what the statement does to the objects it changes, as the
+	// plan computed it from the database it read; see [planeffect.Effect]. It
+	// is empty for a statement the plan does not describe, which says nothing
+	// about what the statement changes, and for every statement of a plan whose
+	// statements were edited or read back from SQL.
+	Effects []planeffect.Effect `json:"effects,omitempty"`
 }
 
 // PlanFile is the local pre-approved declarative migration plan document.
@@ -366,6 +373,9 @@ func PreparePlanFileReportingUndecided(
 		statements[i].Transactions = slices.Clone(computation.transactions[i])
 		statements[i].Inputs = slices.Clone(computation.units[i].Inputs)
 		statements[i].Change = computation.changes[i]
+		if i < len(computation.effects) {
+			statements[i].Effects = slices.Clone(computation.effects[i])
+		}
 	}
 	statements = insertDataStatements(statements, computation)
 	destructive = destructive || slices.ContainsFunc(computation.dataStatements, func(declared dataStatement) bool {
@@ -698,6 +708,10 @@ func (p PlanFile) WithStatementsFromSQL(ctx context.Context, runtime safety.Runt
 	if sameStatementSequence(p.Statements, statements, p.Dialect) {
 		for i := range statements {
 			raisePlanStatement(&statements[i], p.Statements[i])
+			// The statements run as they were planned, so each still does what
+			// the plan recorded. After any other edit a statement may run
+			// against a state the plan did not compute, and none carries one.
+			statements[i].Effects = slices.Clone(p.Statements[i].Effects)
 			destructive = destructive || statements[i].Severity == safety.Destructive
 		}
 		p.Statements, p.Destructive = statements, destructive
