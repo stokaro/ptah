@@ -1,0 +1,5 @@
+# Written by the README's Run section and removed by its Cleanup section.
+/approvals/
+/databases/
+/rollout-state.json
+/rollout-state.json.lock
