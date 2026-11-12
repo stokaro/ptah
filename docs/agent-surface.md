@@ -137,6 +137,9 @@ to rule out — so they are named here, where a claim nothing measures belongs.
 | `migrations rebase` | reads | none | `--db-url` | re-timestamps a migration to the end of history and re-hashes the directory; the target is read to check whether the migration has been applied |
 | `migrations repair` | **writes** | none | `--db-url` | rewrites revision metadata in the target's tracking table |
 | `migrations rm` | reads | none | `--db-url` | deletes a migration's file pair and re-hashes the directory; the target is read to check whether the migration has been applied |
+| `migrations rollout plan` | none | none | — | validates a rollout definition and prints its stages and targets; no database and no registry is opened |
+| `migrations rollout resume` | **writes** | none | — | reads back every target a recorded rollout started, then runs pending migrations against the targets it still owes, each as `ptah migrations up` runs them |
+| `migrations rollout run` | **writes** | none | — | runs pending migrations against every target a rollout definition lists, stage by stage, each as `ptah migrations up` runs them |
 | `migrations set` | **writes** | none | `--db-url` | sets the revision boundary in the target's tracking table to a named version |
 | `migrations show` | none | none | — | prints the SQL of one or more migration files, reading nothing but the files |
 | `migrations status` | reads | none | `--db-url` | reads the target's tracking table and reports which migrations are applied |
@@ -234,6 +237,7 @@ permission.
 | `migrations push` | uploads a migration directory from disk to an OCI registry |
 | `migrations rebase` | re-timestamps a migration to the end of history and re-hashes the directory; the target is read to check whether the migration has been applied |
 | `migrations rm` | deletes a migration's file pair and re-hashes the directory; the target is read to check whether the migration has been applied |
+| `migrations rollout plan` | validates a rollout definition and prints its stages and targets; no database and no registry is opened |
 | `migrations show` | prints the SQL of one or more migration files, reading nothing but the files |
 | `migrations status` | reads the target's tracking table and reports which migrations are applied |
 | `oci capabilities` | asks the registry behind a reference which features it supports, and prints them |

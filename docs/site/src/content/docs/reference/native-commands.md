@@ -117,6 +117,10 @@ rather than a person.
 | `ptah migrations rebase` | Re-timestamps a migration to the end of history and re-hashes the directory; the target is read to check whether the migration has been applied | — |
 | `ptah migrations repair` | Rewrites revision metadata in the target's tracking table | — |
 | `ptah migrations rm` | Deletes a migration's file pair and re-hashes the directory; the target is read to check whether the migration has been applied | — |
+| `ptah migrations rollout` | Roll a migration release out to many databases in stages | group |
+| `ptah migrations rollout plan` | Validates a rollout definition and prints its stages and targets; no database and no registry is opened | — |
+| `ptah migrations rollout resume` | Reads back every target a recorded rollout started, then runs pending migrations against the targets it still owes, each as `ptah migrations up` runs them | — |
+| `ptah migrations rollout run` | Runs pending migrations against every target a rollout definition lists, stage by stage, each as `ptah migrations up` runs them | — |
 | `ptah migrations set` | Sets the revision boundary in the target's tracking table to a named version | — |
 | `ptah migrations show` | Prints the SQL of one or more migration files, reading nothing but the files | — |
 | `ptah migrations status` | Reads the target's tracking table and reports which migrations are applied | — |
@@ -765,6 +769,8 @@ named beside it:
 | `ptah migrations ls` | `--migrations-dir` | migration directory |
 | `ptah migrations show` | `--migrations-dir` | migration directory |
 | `ptah migrations down` | `--migrations-dir` | migration directory |
+| `ptah migrations rollout run` | `--migrations-dir` | migration directory |
+| `ptah migrations rollout resume` | `--migrations-dir` | migration directory |
 | `ptah migrations lint` | `--dir` | migration directory |
 | `ptah migrations validate` | `--dir` | migration directory |
 | `ptah schema render` | `--schema-file` | desired schema |

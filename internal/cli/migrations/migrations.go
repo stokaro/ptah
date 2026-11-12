@@ -19,6 +19,7 @@ import (
 	"ptah.run/internal/cli/migraterebase"
 	"ptah.run/internal/cli/migraterepair"
 	"ptah.run/internal/cli/migraterm"
+	"ptah.run/internal/cli/migraterollout"
 	"ptah.run/internal/cli/migrateset"
 	"ptah.run/internal/cli/migrateshow"
 	"ptah.run/internal/cli/migratestatus"
@@ -61,6 +62,7 @@ separate ptah-compat binary.`,
 	cmd.AddCommand(migrationCommand(migrationspull.NewMigrationsPullCommand(), "Pull a migration directory from an OCI registry", "Pull and reconstruct a migration directory from an OCI-compliant registry."))
 	cmd.AddCommand(providerMigrationCommand(migrateup.NewMigrateUpCommand(), "Run pending migrations", "Run pending migrations against a live database."))
 	cmd.AddCommand(providerMigrationCommand(migratedown.NewMigrateDownCommand(), "Roll back migrations", "Roll back migrations against a live database."))
+	cmd.AddCommand(migraterollout.NewRolloutCommand())
 	cmd.AddCommand(providerMigrationCommand(migratestatus.NewMigrateStatusCommand(), "Show migration status", "Show migration status for a live database and migrations directory."))
 	cmd.AddCommand(migrationCommand(migratels.NewMigrateLsCommand(), "List the migration files in a directory", "List the migration files a migration directory holds, without contacting a database."))
 	cmd.AddCommand(migrationCommand(migrateshow.NewMigrateShowCommand(), "Print the SQL of one or more migrations", "Print the SQL a migration directory stores, without contacting a database."))
