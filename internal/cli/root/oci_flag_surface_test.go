@@ -97,22 +97,31 @@ func invocation(c *qt.C, row ociSourceVerb, reference string) []string {
 	return args
 }
 
-// rolloutFiles writes a one-target rollout definition and returns the flags
-// naming it and a state file beside it. A resume reads its state before it
-// binds the release, so withState also writes a state the reader accepts.
-func rolloutFiles(withState bool) func(c *qt.C) []string {
-	return func(c *qt.C) []string {
-		c.Helper()
-		dir := c.TempDir()
-		definition := filepath.Join(dir, "rollout.yaml")
-		state := filepath.Join(dir, "state.json")
-		c.Assert(os.WriteFile(definition, []byte("targets: [{name: only, url: \"sqlite://:memory:\"}]\n"+
-			"stages: [{name: only, targets: [only]}]\n"), 0o600), qt.IsNil)
-		if withState {
-			c.Assert(os.WriteFile(state, []byte(`{"contract_version": 1}`), 0o600), qt.IsNil)
-		}
-		return []string{"--definition", definition, "--state-file", state}
+// rolloutRunFiles writes a one-target rollout definition and returns the flags
+// naming it and a state file beside it that does not exist yet.
+func rolloutRunFiles(c *qt.C) []string {
+	c.Helper()
+	return writeRolloutFiles(c, nil)
+}
+
+// rolloutResumeFiles is rolloutRunFiles with a state the reader accepts, since a
+// resume reads its state before it binds the release.
+func rolloutResumeFiles(c *qt.C) []string {
+	c.Helper()
+	return writeRolloutFiles(c, []byte(`{"contract_version": 1}`))
+}
+
+func writeRolloutFiles(c *qt.C, stateContent []byte) []string {
+	c.Helper()
+	dir := c.TempDir()
+	definition := filepath.Join(dir, "rollout.yaml")
+	state := filepath.Join(dir, "state.json")
+	c.Assert(os.WriteFile(definition, []byte("targets: [{name: only, url: \"sqlite://:memory:\"}]\n"+
+		"stages: [{name: only, targets: [only]}]\n"), 0o600), qt.IsNil)
+	if stateContent != nil {
+		c.Assert(os.WriteFile(state, stateContent, 0o600), qt.IsNil)
 	}
+	return []string{"--definition", definition, "--state-file", state}
 }
 
 // ociSchemaSourceVerbs enumerates the commands that resolve an oci:// SCHEMA
@@ -418,14 +427,14 @@ func ociMigrationDirVerbs() []ociSourceVerb {
 			args: func(reference string) []string {
 				return []string{"migrations", "rollout", "run", "--migrations-dir", reference, "--plain-http"}
 			},
-			files: rolloutFiles(false),
+			files: rolloutRunFiles,
 		},
 		{
 			verb: "migrations rollout resume",
 			args: func(reference string) []string {
 				return []string{"migrations", "rollout", "resume", "--migrations-dir", reference, "--plain-http"}
 			},
-			files: rolloutFiles(true),
+			files: rolloutResumeFiles,
 		},
 		{
 			verb: "migrations show",
