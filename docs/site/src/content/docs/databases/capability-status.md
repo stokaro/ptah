@@ -15,7 +15,7 @@ generator: internal/cmd/capmatrix
 editSource: internal/capabilityprobe/cells.go
 lastVerified: "2026-11-12"
 evidence:
-  - "https://github.com/stokaro/ptah/actions/runs/43210830235"
+  - "https://github.com/stokaro/ptah/actions/runs/43262252524"
 searchAliases:
   - database capability status
   - which database versions pass
@@ -31,11 +31,11 @@ What the tier 2 capability matrix measured, one row per declared
 release line, in the run named below. Regenerate it with `capmatrix status`
 over that run's cell results.
 
-- Measured: 2026-11-12T11:38:03Z
-- Commit: `b2a57bab9316f8b904482274069faecd6ebbff85`
-- Run: [43210830235](https://github.com/stokaro/ptah/actions/runs/43210830235)
-- Declared release lines: 34. Runnable cells: 31. Results received: 31.
-- 31 passed, 0 capability disagreements, 0 suite failures, 0 missing.
+- Measured: 2026-11-12T16:46:09Z
+- Commit: `4a09c280f060e0cbc7830ba9276a57a2c1d28f66`
+- Run: [43262252524](https://github.com/stokaro/ptah/actions/runs/43262252524)
+- Declared release lines: 34. Runnable cells: 30. Results received: 30.
+- 30 passed, 0 capability disagreements, 0 suite failures, 0 missing.
 
 | Cell | Engine | Line | Verdict |
 | --- | --- | --- | --- |
@@ -43,7 +43,6 @@ over that run's cell results.
 | `postgres-17` | postgres | 17 | PASS |
 | `postgres-16` | postgres | 16 | PASS |
 | `postgres-15` | postgres | 15 | PASS |
-| `postgres-14` | postgres | 14 | PASS |
 | `postgres-13` | postgres | 13 | PASS |
 | `mysql-26-10` | mysql | 26.10 | PASS |
 | `mysql-9-7` | mysql | 9.7 | PASS |
@@ -73,6 +72,7 @@ over that run's cell results.
 
 ## Declared lines this tier cannot run
 
+- `postgres-14` (postgres 14) — upstream support ended on 2026-11-12 (endoflife.date/postgresql)
 - `mysql-26-7` (mysql 26.7) — upstream support ended on 2026-10-20 (endoflife.date/mysql)
 - `clickhouse-26-7` (clickhouse 26.7) — upstream support ended on 2026-10-24 (endoflife.date/clickhouse)
 - `clickhouse-25-8` (clickhouse 25.8) — upstream support ended on 2026-08-29 (endoflife.date/clickhouse)

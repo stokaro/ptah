@@ -928,7 +928,6 @@ nightly, from the workflow's Run button, or when somebody comments
 | `postgres` | 17 | certified | `Postgres17` | version-ladder | `postgres:17` | yes | yes |
 | `postgres` | 16 | certified | `Postgres16` | version-ladder | `postgres:16` | yes | yes |
 | `postgres` | 15 | certified | `Postgres16` | version-ladder | `postgres:15` | yes | yes |
-| `postgres` | 14 | certified | `Postgres14` | version-ladder | `postgres:14` | yes | yes |
 | `postgres` | 13 | legacy-tested | `Postgres13` | version-ladder | `postgres:13` | yes | yes |
 | `mysql` | 26.10 | certified | `MySQL84` | version-ladder | `mysql:26.10` | yes | yes |
 | `mysql` | 9.7 | certified | `MySQL84` | version-ladder | `mysql:9.7` | yes | yes |
@@ -955,6 +954,7 @@ nightly, from the workflow's Run button, or when somebody comments
 | `yugabytedb` | 2025.2 | certified | `YugabyteDB25` | measured-release-line | `yugabytedb/yugabyte:2025.2` | yes | yes |
 | `yugabytedb` | 2024.2 | certified | `YugabyteDB24` | version-ladder | `yugabytedb/yugabyte:2024.2` | yes | yes |
 | `sqlite` | 3 | certified | `SQLite3` | version-ladder | none | n/a | yes |
+| `postgres` | 14 | best-effort | `Postgres14` | version-ladder | `postgres:14` | yes | no: upstream support ended on 2026-11-12 (endoflife.date/postgresql) |
 | `mysql` | 26.7 | best-effort | `MySQL84` | version-ladder | `mysql:26.7` | yes | no: upstream support ended on 2026-10-20 (endoflife.date/mysql) |
 | `clickhouse` | 26.7 | best-effort | `ClickHouse2411` | version-ladder | `clickhouse/clickhouse-server:26.7` | yes | no: upstream support ended on 2026-10-24 (endoflife.date/clickhouse) |
 | `clickhouse` | 25.8 | best-effort | `ClickHouse2411` | version-ladder | `clickhouse/clickhouse-server:25.8` | yes | no: upstream support ended on 2026-08-29 (endoflife.date/clickhouse) |

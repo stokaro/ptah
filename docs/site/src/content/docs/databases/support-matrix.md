@@ -83,7 +83,6 @@ the declared set cannot say one thing here and another in a workflow file.
 | `postgres` | 17 | certified | `Postgres17` | yes |
 | `postgres` | 16 | certified | `Postgres16` | yes |
 | `postgres` | 15 | certified | `Postgres16` | yes |
-| `postgres` | 14 | certified | `Postgres14` | yes |
 | `postgres` | 13 | legacy-tested | `Postgres13` | yes |
 | `mysql` | 26.10 | certified | `MySQL84` | yes |
 | `mysql` | 9.7 | certified | `MySQL84` | yes |
@@ -110,16 +109,18 @@ the declared set cannot say one thing here and another in a workflow file.
 | `yugabytedb` | 2025.2 | certified | `YugabyteDB25` | yes |
 | `yugabytedb` | 2024.2 | certified | `YugabyteDB24` | yes |
 | `sqlite` | 3 | certified | `SQLite3` | yes |
+| `postgres` | 14 | best-effort | `Postgres14` | no |
 | `mysql` | 26.7 | best-effort | `MySQL84` | no |
 | `clickhouse` | 26.7 | best-effort | `ClickHouse2411` | no |
 | `clickhouse` | 25.8 | best-effort | `ClickHouse2411` | no |
 
-Declared release lines: 34. Probed on every pull request: 31.
+Declared release lines: 34. Probed on every pull request: 30.
 
-Support levels across the 34 declared lines: 29 certified, 2 legacy-tested, 3 best-effort.
+Support levels across the 34 declared lines: 28 certified, 2 legacy-tested, 4 best-effort.
 
 Lines that are declared and not probed, and why:
 
+- `postgres` 14 — upstream support ended on 2026-11-12 (endoflife.date/postgresql).
 - `mysql` 26.7 — upstream support ended on 2026-10-20 (endoflife.date/mysql).
 - `clickhouse` 26.7 — upstream support ended on 2026-10-24 (endoflife.date/clickhouse).
 - `clickhouse` 25.8 — upstream support ended on 2026-08-29 (endoflife.date/clickhouse).
