@@ -93,6 +93,9 @@ type MigrationLogEntry struct {
 	Actor string
 	// ActorSource says where Actor came from. See [ActorSource].
 	ActorSource ActorSource
+	// ActorOrigin is the caller's own word for where a provided Actor came
+	// from, empty when it gave none. See [Migrator.WithActorOrigin].
+	ActorOrigin string
 	// Checksum is the migration's content hash, so a later reader can tell
 	// which bytes ran.
 	Checksum string
@@ -100,6 +103,10 @@ type MigrationLogEntry struct {
 	At time.Time
 	// Error is the failure message, empty on every other state.
 	Error string
+	// RunReference is the caller's identifier for the run, empty when it gave
+	// none or the entry was written where none is stored. See
+	// [Migrator.WithRunReference].
+	RunReference string
 }
 
 // MigrationLogAttempt is one attempt, read back as the pair of entries that
@@ -153,6 +160,12 @@ type MigrationLogReport struct {
 	// Lost names the entries the database did not accept, in the order they were
 	// tried. Each attempt writes two entries, so one migration can appear twice.
 	Lost []MigrationLogLoss `json:"lost,omitempty"`
+	// RunReference is the caller's reference the written entries carry, as
+	// [Migrator.WithRunReference] set it. It is empty when the run was given
+	// none, when no entry was written, and when the log is kept by an
+	// executable provider, whose store holds no reference: the entries were
+	// written without one.
+	RunReference string `json:"run_reference,omitempty"`
 }
 
 // MigrationLogLoss is one entry the log should hold and does not.
@@ -192,15 +205,36 @@ type MigrationLogLoss struct {
 type migrationLogTally struct {
 	mu     sync.Mutex
 	report MigrationLogReport
+	// unreferenced latches the warning that a store dropped the run's
+	// reference, so it is given once per run rather than per entry.
+	unreferenced bool
 }
 
-func (t *migrationLogTally) wrote() {
+// wrote counts one accepted entry. reference is the run reference the entry
+// carries in the store, empty when it carries none.
+func (t *migrationLogTally) wrote(reference string) {
 	if t == nil {
 		return
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.report.Written++
+	if reference != "" {
+		t.report.RunReference = reference
+	}
+}
+
+// firstUnreferenced reports whether this is the first entry the store wrote
+// without the run's reference.
+func (t *migrationLogTally) firstUnreferenced() bool {
+	if t == nil {
+		return false
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	first := !t.unreferenced
+	t.unreferenced = true
+	return first
 }
 
 func (t *migrationLogTally) lost(loss MigrationLogLoss) {
@@ -215,7 +249,7 @@ func (t *migrationLogTally) lost(loss MigrationLogLoss) {
 func (t *migrationLogTally) snapshot() MigrationLogReport {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return MigrationLogReport{Written: t.report.Written, Lost: slices.Clone(t.report.Lost)}
+	return MigrationLogReport{Written: t.report.Written, Lost: slices.Clone(t.report.Lost), RunReference: t.report.RunReference}
 }
 
 // MigrationLogReport returns what this migrator's writes to the log have come
@@ -392,26 +426,44 @@ func (m *Migrator) logMigrationEvent(
 		return
 	}
 	entry := MigrationLogEntry{
-		RunID:       m.migrationLogRunID,
-		Seq:         m.nextMigrationLogSeq(),
-		Operation:   operation,
-		Version:     migration.Version,
-		State:       state,
-		Actor:       m.actor,
-		ActorSource: m.actorSource,
-		Checksum:    migrationRevisionHash(migration),
-		At:          time.Now().UTC(),
+		RunID:        m.migrationLogRunID,
+		Seq:          m.nextMigrationLogSeq(),
+		Operation:    operation,
+		Version:      migration.Version,
+		State:        state,
+		Actor:        m.actor,
+		ActorSource:  m.actorSource,
+		ActorOrigin:  m.loggedActorOrigin(),
+		Checksum:     migrationRevisionHash(migration),
+		At:           time.Now().UTC(),
+		RunReference: m.runReference,
 	}
 	if failure != nil {
 		entry.Error = failure.Error()
 	}
-	if err := m.writeMigrationLogEntry(ctx, entry); err != nil {
+	stored, err := m.writeMigrationLogEntry(ctx, entry)
+	if err != nil {
 		m.logger.Warn("Could not append to the migration log",
 			"version", migration.Version, "operation", operation, "state", string(state), "error", err)
 		m.reportLostLogEntry(lost, err)
 		return
 	}
-	m.migrationLogTally.wrote()
+	if entry.RunReference != "" && stored.RunReference == "" && m.migrationLogTally.firstUnreferenced() {
+		m.logger.Warn("The migration log of an executable provider stores no run reference, so this run's entries carry none",
+			"runReference", entry.RunReference)
+	}
+	m.migrationLogTally.wrote(stored.RunReference)
+}
+
+// loggedActorOrigin is the origin an entry records: the caller's word, beside
+// a name the caller supplied and nothing else. A name read from the operating
+// system has Ptah's own provenance, and the caller's word does not describe
+// it.
+func (m *Migrator) loggedActorOrigin() string {
+	if m.actorSource != ActorProvided {
+		return ""
+	}
+	return m.actorOrigin
 }
 
 // migrationLogTableExists reports whether the log table is there.
@@ -488,7 +540,33 @@ func (m *Migrator) ensureMigrationLogTable(ctx context.Context) error {
 	if err := m.refuseForeignMetadataTable(ctx, m.migrationsTableName()+migrationLogTableSuffix); err != nil {
 		return m.latchLogTableRefusal(err)
 	}
+	if err := m.ensureMigrationLogColumns(ctx); err != nil {
+		return err
+	}
 	m.migrationLogReady.Store(true)
+	return nil
+}
+
+// migrationLogAddedColumns are the columns the log gained after its first
+// layout, with the definition each takes where the engine's descriptor states
+// none. A table an older release created has the rest, and every write adds
+// these before it writes, so the INSERT can name them.
+var migrationLogAddedColumns = []struct{ name, definition string }{
+	{name: "run_reference", definition: "VARCHAR(255) NULL"},
+	{name: "actor_origin", definition: "VARCHAR(64) NULL"},
+}
+
+// ensureMigrationLogColumns adds to a log table an older release created the
+// columns it lacks. Both are nullable and every existing row reads them as
+// NULL, which is what an entry written without a reference or an origin
+// holds. A failure loses the entry like a failed create does: the run goes on.
+func (m *Migrator) ensureMigrationLogColumns(ctx context.Context) error {
+	table := m.migrationsTableName() + migrationLogTableSuffix
+	for _, column := range migrationLogAddedColumns {
+		if err := m.ensureMetadataColumn(ctx, table, column.name, column.definition); err != nil {
+			return fmt.Errorf("add column %s to the migration log table: %w", column.name, err)
+		}
+	}
 	return nil
 }
 
@@ -501,13 +579,17 @@ func (m *Migrator) latchLogTableRefusal(err error) error {
 	return err
 }
 
-func (m *Migrator) writeMigrationLogEntry(ctx context.Context, entry MigrationLogEntry) error {
+// writeMigrationLogEntry appends entry and returns it as the store holds it: a
+// provider's store holds no run reference or actor origin, so those come back
+// empty from it.
+func (m *Migrator) writeMigrationLogEntry(ctx context.Context, entry MigrationLogEntry) (MigrationLogEntry, error) {
 	store, err := m.conn.MigrationLogStore()
 	if err != nil {
-		return err
+		return MigrationLogEntry{}, err
 	}
 	if store != nil {
-		return m.appendProviderLog(ctx, store, entry)
+		entry.RunReference, entry.ActorOrigin = "", ""
+		return entry, m.appendProviderLog(ctx, store, entry)
 	}
 
 	// A non-strict MySQL-family session can answer success after truncating an
@@ -519,12 +601,12 @@ func (m *Migrator) writeMigrationLogEntry(ctx context.Context, entry MigrationLo
 		insert = "INSERT"
 	}
 	query := sqlutil.Rebind(dialect, fmt.Sprintf(
-		`%s INTO %s (run_id, seq, operation, version, state, actor, actor_source, checksum, logged_at, error)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, insert, m.migrationLogTable()))
-	return executeSQLOn(ctx, m.conn, query,
+		`%s INTO %s (run_id, seq, operation, version, state, actor, actor_source, checksum, logged_at, error, run_reference, actor_origin)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, insert, m.migrationLogTable()))
+	return entry, executeSQLOn(ctx, m.conn, query,
 		entry.RunID, entry.Seq, entry.Operation, entry.Version, string(entry.State),
 		m.nullableText(entry.Actor), string(entry.ActorSource), m.nullableText(entry.Checksum),
-		entry.At, m.nullableText(entry.Error))
+		entry.At, m.nullableText(entry.Error), m.nullableText(entry.RunReference), m.nullableText(entry.ActorOrigin))
 }
 
 // nullableText writes an empty string as NULL, because Oracle reads one back
@@ -641,9 +723,19 @@ func (m *Migrator) MigrationLog(ctx context.Context, limit int) ([]MigrationLogA
 }
 
 func (m *Migrator) readMigrationLogEntries(ctx context.Context) ([]MigrationLogEntry, error) {
+	// A read changes nothing, so a table an older release created is read as
+	// it stands: a column it lacks is one no entry in it ever had.
+	added, err := m.presentMigrationLogColumns(ctx)
+	if err != nil {
+		return nil, err
+	}
+	columns := "run_id, seq, operation, version, state, actor, actor_source, checksum, logged_at, error"
+	for _, column := range added {
+		columns += ", " + column
+	}
 	query := fmt.Sprintf(
-		`SELECT run_id, seq, operation, version, state, actor, actor_source, checksum, logged_at, error
-FROM %s ORDER BY logged_at DESC, run_id DESC, seq DESC`, m.migrationLogTable())
+		`SELECT %s
+FROM %s ORDER BY logged_at DESC, run_id DESC, seq DESC`, columns, m.migrationLogTable())
 	rows, err := m.conn.QueryContext(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("read the migration log: %w", err)
@@ -651,7 +743,7 @@ FROM %s ORDER BY logged_at DESC, run_id DESC, seq DESC`, m.migrationLogTable())
 	defer func() { _ = rows.Close() }()
 	var entries []MigrationLogEntry
 	for rows.Next() {
-		entry, scanErr := m.scanMigrationLogEntry(rows)
+		entry, scanErr := m.scanMigrationLogEntry(rows, added)
 		if scanErr != nil {
 			return nil, scanErr
 		}
@@ -700,13 +792,31 @@ func migrationLogAttemptKey(entry MigrationLogEntry) string {
 	return entry.RunID + "\x00" + entry.Operation + "\x00" + strconv.FormatInt(entry.Version, 10)
 }
 
+// presentMigrationLogColumns returns which of [migrationLogAddedColumns] the
+// log table has, in that order.
+func (m *Migrator) presentMigrationLogColumns(ctx context.Context) ([]string, error) {
+	table := m.migrationsTableName() + migrationLogTableSuffix
+	var present []string
+	for _, column := range migrationLogAddedColumns {
+		exists, err := m.metadataColumnExists(ctx, table, column.name)
+		if err != nil {
+			return nil, fmt.Errorf("read the migration log: %w", err)
+		}
+		if exists {
+			present = append(present, column.name)
+		}
+	}
+	return present, nil
+}
+
 // scanMigrationLogEntry reads one row, turning the nullable text columns back
-// into empty strings.
+// into empty strings. added names the columns of [migrationLogAddedColumns]
+// the row carries, in the order the query selected them.
 //
 // Oracle stores an empty string as NULL, so a column Ptah wrote empty comes
 // back NULL there and non-NULL everywhere else. Reading through a nullable
 // type on every engine is what keeps one written value one read value.
-func (m *Migrator) scanMigrationLogEntry(rows *sql.Rows) (MigrationLogEntry, error) {
+func (m *Migrator) scanMigrationLogEntry(rows *sql.Rows, added []string) (MigrationLogEntry, error) {
 	var (
 		entry       MigrationLogEntry
 		state       string
@@ -716,11 +826,24 @@ func (m *Migrator) scanMigrationLogEntry(rows *sql.Rows) (MigrationLogEntry, err
 		loggedAt    any
 		failure     sql.NullString
 	)
-	if err := rows.Scan(
+	extra := make(map[string]*sql.NullString, len(added))
+	destinations := []any{
 		&entry.RunID, &entry.Seq, &entry.Operation, &entry.Version, &state,
 		&actor, &actorSource, &checksum, &loggedAt, &failure,
-	); err != nil {
+	}
+	for _, column := range added {
+		value := new(sql.NullString)
+		extra[column] = value
+		destinations = append(destinations, value)
+	}
+	if err := rows.Scan(destinations...); err != nil {
 		return MigrationLogEntry{}, fmt.Errorf("read a migration log row: %w", err)
+	}
+	if value, ok := extra["run_reference"]; ok {
+		entry.RunReference = value.String
+	}
+	if value, ok := extra["actor_origin"]; ok {
+		entry.ActorOrigin = value.String
 	}
 	at, err := m.parseStoredTime("logged_at", loggedAt)
 	if err != nil {

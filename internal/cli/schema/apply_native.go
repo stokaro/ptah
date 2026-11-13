@@ -17,7 +17,14 @@ import (
 
 // applyNativeSchemaPlan preserves the captured batch through approval and
 // execution. Native payloads never enter a SQL editor or a SQL rehearsal.
-func applyNativeSchemaPlan(ctx context.Context, cmd *cobra.Command, opts schemaApplyOptions, plan atlasschema.ApplyRuntimePlan, run *applyRun) (atlasschema.ApplyOutcome, error) {
+func applyNativeSchemaPlan(
+	ctx context.Context,
+	cmd *cobra.Command,
+	opts schemaApplyOptions,
+	conn *dbschema.DatabaseConnection,
+	plan atlasschema.ApplyRuntimePlan,
+	run *applyRun,
+) (atlasschema.ApplyOutcome, error) {
 	if opts.edit {
 		if plan.HasInputReferences() {
 			return "", fmt.Errorf("%w: approved execution inputs cannot be edited as SQL; edit the desired schema and plan again", ptaherr.ErrUnsupportedFeature)
@@ -57,7 +64,7 @@ func applyNativeSchemaPlan(ctx context.Context, cmd *cobra.Command, opts schemaA
 	if !approved {
 		return atlasschema.ApplyOutcomeCanceled, nil
 	}
-	if err := plan.Execute(run.dispatching(ctx)); err != nil {
+	if err := plan.Execute(run.dispatching(ctx, conn)); err != nil {
 		return "", fmt.Errorf("apply schema changes: %w", err)
 	}
 	return atlasschema.ApplyOutcomeApplied, nil
@@ -101,7 +108,7 @@ func runSchemaApplyNativePlanFile(
 		return atlasschema.ApplyOutcomeCanceled, nil
 	}
 	conn.SchemaWriter().SetDryRun(false)
-	if err := execution.Execute(run.dispatching(ctx), conn, txMode); err != nil {
+	if err := execution.Execute(run.dispatching(ctx, conn), conn, txMode); err != nil {
 		return "", fmt.Errorf("apply schema changes: %w", err)
 	}
 	return atlasschema.ApplyOutcomeApplied, nil

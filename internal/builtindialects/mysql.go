@@ -337,6 +337,7 @@ func mysqlFamilyRevisionTable(logInsertPrefix string) descriptor.RevisionTable {
 ){engine} DEFAULT CHARSET=utf8mb4`,
 		CreateTags:      createTags + " ENGINE=InnoDB",
 		CreateLog:       createLog,
+		CreateApplyLog:  createApplyLog,
 		LogInsertPrefix: logInsertPrefix,
 		CreateSchema:    createSchema,
 		EngineClause:    " ENGINE=InnoDB",

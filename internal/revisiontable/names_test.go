@@ -39,6 +39,7 @@ func TestIsNative(t *testing.T) {
 		{name: "schema_migrations", want: true},
 		{name: "schema_migrations_log", want: true},
 		{name: "ptah_migration_tags", want: true},
+		{name: "ptah_schema_apply_log", want: true},
 		{name: "atlas_schema_revisions", want: false},
 		{name: "custom_revs", want: false},
 		{name: "SCHEMA_MIGRATIONS", want: false},
@@ -61,6 +62,7 @@ func TestIsDefault(t *testing.T) {
 		{name: "schema_migrations_log", want: true},
 		{name: "atlas_schema_revisions", want: true},
 		{name: "ptah_migration_tags", want: true},
+		{name: "ptah_schema_apply_log", want: true},
 		{name: "custom_revs", want: false},
 	}
 	for _, test := range tests {

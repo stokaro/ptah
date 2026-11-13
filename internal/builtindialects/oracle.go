@@ -279,11 +279,41 @@ BEGIN
     checksum VARCHAR2(64) NULL,
     logged_at TIMESTAMP NOT NULL,
     error CLOB NULL,
+    run_reference VARCHAR2(255) NULL,
+    actor_origin VARCHAR2(64) NULL,
     PRIMARY KEY (run_id, seq)
 )';
 EXCEPTION
     WHEN already_exists THEN NULL;
 END;`,
+		CreateApplyLog: `DECLARE
+    already_exists EXCEPTION;
+    PRAGMA EXCEPTION_INIT(already_exists, -955);
+BEGIN
+    EXECUTE IMMEDIATE 'CREATE TABLE {table_escaped} (
+    run_id VARCHAR2(64) NOT NULL,
+    seq NUMBER(19) NOT NULL,
+    run_reference VARCHAR2(255) NULL,
+    state VARCHAR2(32) NOT NULL,
+    actor VARCHAR2(256) NULL,
+    actor_source VARCHAR2(32) NOT NULL,
+    actor_origin VARCHAR2(64) NULL,
+    plan_name VARCHAR2(255) NULL,
+    plan_digest VARCHAR2(80) NULL,
+    statement_count NUMBER(10) NOT NULL,
+    error_position NUMBER(10) NULL,
+    logged_at TIMESTAMP NOT NULL,
+    error CLOB NULL,
+    error_stmt CLOB NULL,
+    PRIMARY KEY (run_id, seq)
+)';
+EXCEPTION
+    WHEN already_exists THEN NULL;
+END;`,
+		AddedColumns: map[string]string{
+			"run_reference": "VARCHAR2(255) NULL",
+			"actor_origin":  "VARCHAR2(64) NULL",
+		},
 		FirstRow:          "fetch",
 		EmptyStringIsNull: true,
 		Update:            updateRevision,

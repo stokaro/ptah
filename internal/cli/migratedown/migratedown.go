@@ -97,6 +97,8 @@ type options struct {
 	migrationsTable      string
 	migrationsEngine     string
 	actor                string
+	actorOrigin          string
+	runReference         string
 	revisionTableFormat  string
 	logFormat            string
 	logLevel             string
@@ -190,7 +192,9 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	dbcli.RegisterMigrationsSchemaFlag(flags, &opts.migrationsSchema)
 	dbcli.RegisterMigrationsTableFlag(flags, &opts.migrationsTable)
 	dbcli.RegisterMigrationsEngineFlag(flags, &opts.migrationsEngine)
-	dbcli.RegisterActorFlag(flags, &opts.actor)
+	dbcli.RegisterActorFlag(flags, &opts.actor, "migration log")
+	dbcli.RegisterActorOriginFlag(flags, &opts.actorOrigin, "migration log")
+	dbcli.RegisterRunReferenceFlag(flags, &opts.runReference, "migration log")
 	dbcli.RegisterRevisionTableFormatFlag(flags, &opts.revisionTableFormat)
 }
 
@@ -309,6 +313,9 @@ var errJSONNeedsConfirmation = fmt.Errorf("--%s needs --%s or --%s: a run that p
 func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.Document) error {
 	if opts.jsonOutput && !opts.skipConfirm && !opts.dryRun {
 		return errJSONNeedsConfirmation
+	}
+	if err := dbcli.CheckRunAttribution(opts.actor, opts.actorOrigin, opts.runReference); err != nil {
+		return err
 	}
 	integrityPolicy, err := migrationintegrity.Resolve()
 	if err != nil {
@@ -484,6 +491,8 @@ func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.
 	mig = mig.WithMigrationsTable(migrationsSchema, migrationsTable).
 		WithMigrationsEngine(opts.migrationsEngine).
 		WithActor(opts.actor).
+		WithActorOrigin(opts.actorOrigin).
+		WithRunReference(opts.runReference).
 		WithMigrationLog(projectCfg.Migration.MigrationLogEnabled()).
 		WithRevisionTableFormat(revisionFormat).
 		WithSkipChecks(resolvedOpts.skipChecks).

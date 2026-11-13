@@ -55,6 +55,12 @@ const (
 	// SQLite, PostgreSQL 18 and MySQL 8.4.
 	Tags = "ptah_migration_tags"
 
+	// ApplyLog is the table `ptah schema apply` records the plans it applied
+	// in. No setting renames it, so it is in [NativeNames] and every reader
+	// leaves it out: read as a table no declaration has, the next apply would
+	// plan to drop the record of every apply before it.
+	ApplyLog = "ptah_schema_apply_log"
+
 	// Seeds is the ledger `ptah seed` records the seed files it applied in,
 	// on every built-in engine. It is Ptah's own bookkeeping as [Tags] is, so
 	// it is in [NativeNames] and every reader leaves it out: read as a table
@@ -86,7 +92,8 @@ const (
 
 // DefaultNames returns the migrator's bookkeeping tables for every supported
 // revision-table format, when no explicit table name is configured: the
-// revision tables of both formats, the native operation log and [Tags].
+// revision tables of both formats, the native operation log, [Tags],
+// [ApplyLog] and [Seeds].
 //
 // Callers that enumerate bookkeeping tables in a live database must iterate all
 // of them rather than picking the one matching the current configuration: a
@@ -98,15 +105,15 @@ const (
 // only these can go missing from a schema snapshot; a custom name is
 // read back as an ordinary table and needs no restoring.
 func DefaultNames() []string {
-	return []string{Atlas, Ptah, PtahLog, Tags, Seeds}
+	return []string{Atlas, Ptah, PtahLog, Tags, ApplyLog, Seeds}
 }
 
 // NativeNames returns the tables Ptah's own bookkeeping writes under their
 // default names: the native revision table, its operation log, [Tags], which
-// either revision format writes and which only Ptah knows, and the seed
-// ledger [Seeds].
+// either revision format writes and which only Ptah knows, the schema apply
+// log [ApplyLog], and the seed ledger [Seeds].
 func NativeNames() []string {
-	return []string{Ptah, PtahLog, Tags, Seeds}
+	return []string{Ptah, PtahLog, Tags, ApplyLog, Seeds}
 }
 
 // IsNative reports whether name is one of [NativeNames].
@@ -139,11 +146,11 @@ func IsDefault(name string) bool {
 // for a reader that leaves them out in its catalog query:
 // `name NOT IN (` + NativeSQLNames + `)`. It is a constant so a query declared
 // as one can use it; TestSQLNamesMatchTheNameLists keeps it equal to the list.
-const NativeSQLNames = "'" + Ptah + "', '" + PtahLog + "', '" + Tags + "', '" + Seeds + "'"
+const NativeSQLNames = "'" + Ptah + "', '" + PtahLog + "', '" + Tags + "', '" + ApplyLog + "', '" + Seeds + "'"
 
 // DefaultSQLNames is [DefaultNames] as SQL string literals separated by commas,
 // as [NativeSQLNames] is for the native set.
-const DefaultSQLNames = "'" + Atlas + "', '" + Ptah + "', '" + PtahLog + "', '" + Tags + "', '" + Seeds + "'"
+const DefaultSQLNames = "'" + Atlas + "', '" + Ptah + "', '" + PtahLog + "', '" + Tags + "', '" + ApplyLog + "', '" + Seeds + "'"
 
 // Configured returns the bookkeeping tables a migrator configured with format
 // and table writes: the revision table, for Ptah's native format the operation

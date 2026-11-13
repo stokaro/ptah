@@ -229,10 +229,13 @@ func clickHouseRevisionTable() descriptor.RevisionTable {
     recorded_at DateTime64(9, 'UTC'),
     deleted UInt8
 ) ENGINE = ReplacingMergeTree(recorded_at, deleted) ORDER BY tag`,
-		CreateLog:    createLog,
-		CreateSchema: createSchema,
-		EngineClause: " ENGINE = MergeTree",
-		FirstRow:     "limit",
+		CreateLog:      createLog,
+		CreateApplyLog: createApplyLog,
+		CreateSchema:   createSchema,
+		EngineClause:   " ENGINE = MergeTree",
+		// ALTER TABLE ... ADD without COLUMN is a syntax error here.
+		AddColumn: "ADD COLUMN",
+		FirstRow:  "limit",
 		Update: `ALTER TABLE {table}
 UPDATE {assignments}
 WHERE version = ?

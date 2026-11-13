@@ -105,6 +105,8 @@ type options struct {
 	migrationsTable      string
 	migrationsEngine     string
 	actor                string
+	actorOrigin          string
+	runReference         string
 	revisionTableFormat  string
 	logFormat            string
 	logLevel             string
@@ -306,7 +308,9 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	dbcli.RegisterMigrationsSchemaFlag(flags, &opts.migrationsSchema)
 	dbcli.RegisterMigrationsTableFlag(flags, &opts.migrationsTable)
 	dbcli.RegisterMigrationsEngineFlag(flags, &opts.migrationsEngine)
-	dbcli.RegisterActorFlag(flags, &opts.actor)
+	dbcli.RegisterActorFlag(flags, &opts.actor, "migration log")
+	dbcli.RegisterActorOriginFlag(flags, &opts.actorOrigin, "migration log")
+	dbcli.RegisterRunReferenceFlag(flags, &opts.runReference, "migration log")
 	dbcli.RegisterRevisionTableFormatFlag(flags, &opts.revisionTableFormat)
 }
 
@@ -461,6 +465,9 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *migraterun.Do
 	// ValidateFlagGroups reads Changed, which an exported PTAH_LIMIT sets and a
 	// typed `--limit 0` sets too.
 	if err := cmdflags.ExclusiveValues(cmd.Flags(), limitFlag, toVersionFlag); err != nil {
+		return err
+	}
+	if err := dbcli.CheckRunAttribution(opts.actor, opts.actorOrigin, opts.runReference); err != nil {
 		return err
 	}
 	// Read before anything connects, so a sequence that cannot be parsed is
@@ -1038,6 +1045,8 @@ func newUpMigrator(in upMigratorOptions) (*migrator.Migrator, error) {
 	return mig.WithMigrationsTable(in.migrationsSchema, in.migrationsTable).
 		WithMigrationsEngine(in.opts.migrationsEngine).
 		WithActor(in.opts.actor).
+		WithActorOrigin(in.opts.actorOrigin).
+		WithRunReference(in.opts.runReference).
 		WithMigrationLog(in.projectCfg.Migration.MigrationLogEnabled()).
 		WithRevisionTableFormat(in.settings.revisionFormat).
 		WithDefaultTimeouts(in.timeouts).

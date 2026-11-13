@@ -221,6 +221,7 @@ func sqliteRevisionTable() descriptor.RevisionTable {
 		CreateAtlas:    createAtlasRevisions,
 		CreateTags:     createTags,
 		CreateLog:      createLog,
+		CreateApplyLog: createApplyLog,
 		FirstRow:       "limit",
 		Update:         updateRevision,
 		Respell:        respellRevision(),

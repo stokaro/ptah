@@ -281,6 +281,28 @@ BEGIN
         checksum NVARCHAR(64) NULL,
         logged_at DATETIME2 NOT NULL,
         error NVARCHAR(MAX) NULL,
+        run_reference NVARCHAR(255) NULL,
+        actor_origin NVARCHAR(64) NULL,
+        PRIMARY KEY (run_id, seq)
+    )
+END`,
+		CreateApplyLog: `IF OBJECT_ID({object}, N'U') IS NULL
+BEGIN
+    CREATE TABLE {table} (
+        run_id NVARCHAR(64) NOT NULL,
+        seq BIGINT NOT NULL,
+        run_reference NVARCHAR(255) NULL,
+        state NVARCHAR(32) NOT NULL,
+        actor NVARCHAR(256) NULL,
+        actor_source NVARCHAR(32) NOT NULL,
+        actor_origin NVARCHAR(64) NULL,
+        plan_name NVARCHAR(255) NULL,
+        plan_digest NVARCHAR(80) NULL,
+        statement_count INT NOT NULL,
+        error_position INT NULL,
+        logged_at DATETIME2 NOT NULL,
+        error NVARCHAR(MAX) NULL,
+        error_stmt NVARCHAR(MAX) NULL,
         PRIMARY KEY (run_id, seq)
     )
 END`,
@@ -291,6 +313,9 @@ END`,
 			"error":      "NVARCHAR(MAX) NULL",
 			"error_stmt": "NVARCHAR(MAX) NULL",
 			"checksum":   "NVARCHAR(64) NOT NULL DEFAULT ''",
+			// The operation log's.
+			"run_reference": "NVARCHAR(255) NULL",
+			"actor_origin":  "NVARCHAR(64) NULL",
 		},
 		FirstRow: "top",
 		RowLock:  "table-hint",

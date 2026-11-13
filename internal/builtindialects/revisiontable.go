@@ -69,7 +69,8 @@ const createTags = `CREATE TABLE IF NOT EXISTS {table} (
 // createLog is the operation log. The primary key is (run_id, seq) rather
 // than a generated identity, because every engine spells auto-increment
 // differently and the order the log needs is the order the migrator wrote
-// its entries in.
+// its entries in. run_reference and actor_origin come last because the
+// migrator adds them there to a log an older layout created.
 const createLog = `CREATE TABLE IF NOT EXISTS {table} (
     run_id VARCHAR(64) NOT NULL,
     seq BIGINT NOT NULL,
@@ -81,6 +82,28 @@ const createLog = `CREATE TABLE IF NOT EXISTS {table} (
     checksum VARCHAR(64) NULL,
     logged_at TIMESTAMP NOT NULL,
     error TEXT NULL,
+    run_reference VARCHAR(255) NULL,
+    actor_origin VARCHAR(64) NULL,
+    PRIMARY KEY (run_id, seq)
+){engine}`
+
+// createApplyLog is the log `ptah schema apply` keeps, keyed as the operation
+// log is: one run writes a start and an outcome under one run_id.
+const createApplyLog = `CREATE TABLE IF NOT EXISTS {table} (
+    run_id VARCHAR(64) NOT NULL,
+    seq BIGINT NOT NULL,
+    run_reference VARCHAR(255) NULL,
+    state VARCHAR(32) NOT NULL,
+    actor VARCHAR(256) NULL,
+    actor_source VARCHAR(32) NOT NULL,
+    actor_origin VARCHAR(64) NULL,
+    plan_name VARCHAR(255) NULL,
+    plan_digest VARCHAR(80) NULL,
+    statement_count INTEGER NOT NULL,
+    error_position INTEGER NULL,
+    logged_at TIMESTAMP NOT NULL,
+    error TEXT NULL,
+    error_stmt TEXT NULL,
     PRIMARY KEY (run_id, seq)
 ){engine}`
 
@@ -147,6 +170,7 @@ func postgresFamilyRevisionTable() descriptor.RevisionTable {
     recorded_at TIMESTAMPTZ NOT NULL
 )`,
 		CreateLog:      createLog,
+		CreateApplyLog: createApplyLog,
 		CreateSchema:   createSchema,
 		FirstRow:       "limit",
 		RowLock:        "for-update",
@@ -171,6 +195,7 @@ func GenericRevisionTable() descriptor.RevisionTable {
 		CreateAtlas:    createAtlasRevisions,
 		CreateTags:     createTags,
 		CreateLog:      createLog,
+		CreateApplyLog: createApplyLog,
 		CreateSchema:   createSchema,
 		FirstRow:       "limit",
 		Update:         updateRevision,
