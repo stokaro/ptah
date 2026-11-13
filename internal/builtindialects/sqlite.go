@@ -81,8 +81,9 @@ func sqlite() descriptor.Dialect {
 
 		// Lint: what migration lint reads.
 		Lint: descriptor.Lint{
-			Analyzed:           true,
-			SetNotNullRebuilds: true,
+			Analyzed:               true,
+			SetNotNullRebuilds:     true,
+			AtlasRebuildColumnDiff: true,
 		},
 
 		// How a schema file's names are read, and how unnamed indexes and CHECKs are named.
