@@ -55,7 +55,7 @@ type pool struct {
 // refuses the URL's `search_path` startup parameter is asked again without it;
 // see reconnectCarryingSearchPath.
 func (Service) Open(ctx context.Context, request connector.Request) (*connector.Pool, error) {
-	db, err := openPostgresWireDB(request.Dialect.Driver, request.URL)
+	db, err := connector.OpenDB(request.Dialect.Driver, convertPostgresWireURL(request.URL))
 	if err != nil {
 		return nil, err
 	}
@@ -69,29 +69,6 @@ func (Service) Open(ctx context.Context, request connector.Request) (*connector.
 		return nil, err
 	}
 	return &connector.Pool{DB: retried, Native: pool{carried: true}}, nil
-}
-
-// openPostgresWireDB avoids named prepared statements by default. An embedded
-// server that multiplexes clients over one backend session can otherwise
-// report 42P05 when two clients cache the same statement name. DescribeExec
-// retains parameter type information, including JSONB, without a statement
-// cache. The URL's explicit query execution mode still takes precedence.
-func openPostgresWireDB(driverName, rawURL string) (*sql.DB, error) {
-	return connector.OpenDB(driverName, postgresWireDSN(rawURL))
-}
-
-func postgresWireDSN(rawURL string) string {
-	converted := convertPostgresWireURL(rawURL)
-	parsed, err := url.Parse(converted)
-	if err != nil {
-		return converted
-	}
-	query := parsed.Query()
-	if !query.Has("default_query_exec_mode") {
-		query.Set("default_query_exec_mode", "describe_exec")
-		parsed.RawQuery = query.Encode()
-	}
-	return parsed.String()
 }
 
 // convertPostgresWireURL turns a PostgreSQL-wire URL into the one pgx reads: the pool

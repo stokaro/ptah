@@ -9,23 +9,34 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-func TestPostgresWireConfigDefaultsToUnnamedStatements(t *testing.T) {
+func TestPostgresWireConfigPreservesExecutionModeAndEncodedValues(t *testing.T) {
 	tests := []struct {
 		name string
 		url  string
 		want pgx.QueryExecMode
 	}{
-		{name: "default", url: "postgres://localhost/app?sslmode=disable", want: pgx.QueryExecModeDescribeExec},
-		{name: "explicit cache mode", url: "postgres://localhost/app?sslmode=disable&default_query_exec_mode=cache_statement", want: pgx.QueryExecModeCacheStatement},
+		{name: "PostgreSQL default", url: "postgres://localhost/app?sslmode=disable", want: pgx.QueryExecModeCacheStatement},
+		{name: "CockroachDB default", url: "cockroachdb://localhost/app?sslmode=disable", want: pgx.QueryExecModeCacheStatement},
+		{name: "YugabyteDB default", url: "yugabytedb://localhost/app?sslmode=disable", want: pgx.QueryExecModeCacheStatement},
+		{name: "explicit PGlite mode", url: "postgres://localhost/app?sslmode=disable&default_query_exec_mode=describe_exec", want: pgx.QueryExecModeDescribeExec},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			config, err := pgx.ParseConfig(postgresWireDSN(test.url))
+			config, err := pgx.ParseConfig(convertPostgresWireURL(test.url))
 			c.Assert(err, qt.IsNil)
 			c.Assert(config.DefaultQueryExecMode, qt.Equals, test.want)
 		})
 	}
+
+	c := qt.New(t)
+	raw := "postgres://localhost/app?options=-c%20search_path%3Dextra&password=two%20words&pool_max_conns=4"
+	converted := convertPostgresWireURL(raw)
+	c.Assert(converted, qt.Equals, "postgres://localhost/app?options=-c%20search_path%3Dextra&password=two%20words")
+	config, err := pgx.ParseConfig(converted)
+	c.Assert(err, qt.IsNil)
+	c.Assert(config.Password, qt.Equals, "two words")
+	c.Assert(config.RuntimeParams["options"], qt.Equals, "-c search_path=extra")
 }
 
 func TestConvertPostgresWireURL(t *testing.T) {
