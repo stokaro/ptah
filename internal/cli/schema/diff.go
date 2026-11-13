@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -172,6 +173,9 @@ func runSchemaDiff(cmd *cobra.Command, opts schemaDiffOptions) error {
 		Diagnostics:         cmd.ErrOrStderr(),
 		DevServerDisposable: devServerDisposable,
 	})
+	if errors.Is(err, atlasschema.ErrDevURLRequired) {
+		err = dbcli.MissingProjectValue(projectCfg, err)
+	}
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
