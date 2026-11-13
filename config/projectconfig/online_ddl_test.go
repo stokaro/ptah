@@ -115,10 +115,24 @@ env:
 	c.Assert(cfg.OnlineDDL.Enabled(), qt.IsFalse)
 }
 
-func TestParsePtahOnlineDDLSelectsImplicitSingleEnv(t *testing.T) {
-	c := qt.New(t)
+// TestParsePtahOnlineDDLEnvSelection holds that an env's online_ddl block
+// overrides the top-level one when the env is named, and that a lone env is
+// not applied when it is not.
+func TestParsePtahOnlineDDLEnvSelection(t *testing.T) {
+	tests := []struct {
+		name          string
+		envName       string
+		wantTool      string
+		wantThreshold int64
+	}{
+		{name: "named env", envName: "local", wantTool: projectconfig.OnlineDDLToolPTOSC, wantThreshold: 200},
+		{name: "no env named", wantTool: projectconfig.OnlineDDLToolGhost, wantThreshold: 100},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 
-	cfg, err := projectconfig.ParsePtah([]byte(`online_ddl:
+			cfg, err := projectconfig.ParsePtah([]byte(`online_ddl:
   tool: ghost
   threshold_rows: 100
 env:
@@ -126,12 +140,14 @@ env:
     online_ddl:
       tool: pt-osc
       threshold_rows: 200
-`), "ptah.yaml", "")
+`), "ptah.yaml", test.envName)
 
-	c.Assert(err, qt.IsNil)
-	c.Assert(cfg.EnvName, qt.Equals, "local")
-	c.Assert(cfg.OnlineDDL.Tool, qt.Equals, projectconfig.OnlineDDLToolPTOSC)
-	c.Assert(cfg.OnlineDDL.ThresholdRows, qt.Equals, int64(200))
+			c.Assert(err, qt.IsNil)
+			c.Assert(cfg.EnvName, qt.Equals, test.envName)
+			c.Assert(cfg.OnlineDDL.Tool, qt.Equals, test.wantTool)
+			c.Assert(cfg.OnlineDDL.ThresholdRows, qt.Equals, test.wantThreshold)
+		})
+	}
 }
 
 func TestParsePtahOnlineDDLValidationFailures(t *testing.T) {

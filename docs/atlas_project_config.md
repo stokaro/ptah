@@ -729,12 +729,15 @@ with no `--env` parses the named file, evaluates its variables, locals and
 top-level `lint` and `diff` blocks, and evaluates no `env` block. An empty
 `--env ""` selects no env, and `--var` names no file.
 
-The native `ptah` binary selects the only `env` block of a file that declares
-one. When a native command needs project values and the file declares several
-envs, it returns:
+The native `ptah` binary selects an `env` block the same way: only when
+`--env` (or `PTAH_ENV`) names it. A file that declares one env does not make it
+the default, and a file that declares several needs no tie-break. Without
+`--env`, a native command reads `./atlas.hcl`, evaluates its variables, locals
+and top-level blocks, and applies no env. A command that then lacks a value
+says so and names the envs the file declares:
 
 ```text
-atlas.hcl contains multiple env blocks; pass --env
+error: database URL is required: no --env given; atlas.hcl declares env "prod"
 ```
 
 An env block can expand into several instances with `for_each`. Labeled and

@@ -58,7 +58,7 @@ func TestParseAtlasProjectConfig(t *testing.T) {
 }
 `)
 
-	cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "")
+	cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "local")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(cfg.EnvName, qt.Equals, "local")
@@ -88,7 +88,7 @@ func TestParseAtlasProjectConfigGolden_HappyPath(t *testing.T) {
 			name:    "complete local environment",
 			input:   "complete.hcl",
 			golden:  "complete.golden.json",
-			envName: "",
+			envName: "local",
 		},
 		{
 			name:    "selected production environment",
@@ -646,7 +646,7 @@ func TestParseAtlasProjectConfigAcceptsSingleSource(t *testing.T) {
 }
 `)
 
-	cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "")
+	cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "local")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(cfg.SchemaSources, qt.DeepEquals, []string{"file://schema.hcl"})
@@ -1219,8 +1219,10 @@ env "prod" {
 	c.Assert(cfg.EnvName, qt.Equals, "prod")
 	c.Assert(cfg.DatabaseURL, qt.Equals, "postgres://prod/db")
 
-	_, err = projectconfig.ParseAtlas(raw, "atlas.hcl", "")
-	c.Assert(err, qt.ErrorMatches, `atlas\.hcl contains multiple env blocks; pass --env`)
+	cfg, err = projectconfig.ParseAtlas(raw, "atlas.hcl", "")
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.EnvName, qt.Equals, "")
+	c.Assert(cfg.DatabaseURL, qt.Equals, "")
 }
 
 func TestParseAtlasProjectConfigSkipsUnselectedEnvEvaluation(t *testing.T) {
@@ -1372,27 +1374,33 @@ func TestLoadAtlasProjectConfigEmptyEnvURLOverridesPtahFallback(t *testing.T) {
 	c.Assert(cfg.DatabaseURL, qt.Equals, "")
 }
 
-func TestParseAtlasProjectConfigUsesSingleUnlabeledEnv(t *testing.T) {
+// TestParseAtlasProjectConfigSelectsUnlabeledEnvByName holds that an unlabeled
+// env whose name reads atlas.env is reached by naming it, as a labeled one is.
+func TestParseAtlasProjectConfigSelectsUnlabeledEnvByName(t *testing.T) {
 	c := qt.New(t)
 	raw := []byte(`env {
-  url = "postgres://default/db"
+  name = atlas.env
+  url  = "postgres://default/db"
   migration {
     dir = "file://migrations"
   }
 }
 `)
 
-	cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "")
+	cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "local")
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(cfg.EnvName, qt.Equals, "")
+	c.Assert(cfg.EnvName, qt.Equals, "local")
 	c.Assert(cfg.DatabaseURL, qt.Equals, "postgres://default/db")
 	c.Assert(cfg.Migration.Dir, qt.Equals, "migrations")
 	c.Assert(cfg.Migration.Format, qt.Equals, "atlas")
 	c.Assert(cfg.Migration.RevisionFormat, qt.Equals, "atlas")
 }
 
-func TestParseAtlasProjectConfigRequiresEnvWhenMultipleBlocksExist(t *testing.T) {
+// TestParseAtlasProjectConfigSelectsNoEnvWithoutAName holds that an unlabeled
+// env block is not a default either: with no name, neither it nor the labeled
+// block beside it is selected.
+func TestParseAtlasProjectConfigSelectsNoEnvWithoutAName(t *testing.T) {
 	c := qt.New(t)
 	raw := []byte(`env {
   url = "postgres://default/db"
@@ -1402,9 +1410,11 @@ env "prod" {
 }
 `)
 
-	_, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "")
+	cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "")
 
-	c.Assert(err, qt.ErrorMatches, `atlas\.hcl contains multiple env blocks; pass --env`)
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.EnvName, qt.Equals, "")
+	c.Assert(cfg.DatabaseURL, qt.Equals, "")
 }
 
 // TestParseAtlasProjectConfigToleratesConstructsCEIgnores covers atlas.hcl names
@@ -1821,7 +1831,7 @@ locals {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			_, err := projectconfig.ParseAtlas([]byte(tt.raw), "atlas.hcl", "")
+			_, err := projectconfig.ParseAtlas([]byte(tt.raw), "atlas.hcl", "local")
 
 			c.Assert(err, qt.ErrorMatches, tt.err)
 		})
@@ -1856,6 +1866,7 @@ migration:
 	cfg, err := projectconfig.Load(projectconfig.LoadOptions{
 		PtahPath:  ptahPath,
 		AtlasPath: atlasPath,
+		EnvName:   "local",
 	})
 
 	c.Assert(err, qt.IsNil)

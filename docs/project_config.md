@@ -18,8 +18,9 @@ it selected, and the native command does not open `ptah.yaml` or `atlas.hcl`
 itself. `migrate down` receives the merged IR, and merges `ptah.yaml` only when
 `--env` names an environment. Other adapters evaluate Atlas project
 configuration once, map supported values to explicit native command arguments,
-and hand the native command an empty configuration, so it cannot select an
-environment the adapter did not select. An explicit
+and hand the native command an empty configuration, so it cannot apply a
+setting the adapter did not select, a top-level `ptah.yaml` `url` among them.
+An explicit
 `--config` path must exist; the conventional `./ptah.yaml` remains optional.
 
 ## Named environments
@@ -61,16 +62,21 @@ env:
       concurrent_index: true
 ```
 
-Select an environment with `--env <name>` when a command needs project
-configuration from one of multiple environments. If `ptah.yaml` contains
-exactly one environment, Ptah selects it automatically; `ptah-compat` selects
-an environment only when `--env` names it, as the Atlas community binary does.
-A command whose required inputs are all explicit does not need to select an
-environment. If project values are required and multiple environments remain
-ambiguous, Ptah fails instead of guessing.
+An environment applies only when `--env <name>` (or `PTAH_ENV`) names it. A
+file that declares exactly one environment does not make it the default:
+without `--env`, no environment's values apply, on `ptah` and `ptah-compat`
+alike. A command whose required inputs are all explicit does not need to
+select an environment. A command that lacks a value and selected none says so
+and names the environments the project files declare:
 
-Top-level settings are allowed and are merged as defaults for every named
-environment:
+```text
+error: database URL is required: no --env given; ptah.yaml declares env "prod"
+```
+
+Top-level settings apply whether or not an environment is selected, and are
+merged as defaults for every named environment. A top-level `url` is the
+project's default target, so a command that reaches a database reaches that
+one when neither `--db-url` nor an environment names another:
 
 ```yaml
 migration:

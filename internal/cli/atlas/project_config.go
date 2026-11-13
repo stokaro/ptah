@@ -423,14 +423,11 @@ func atlasProjectLoadOptions(
 ) projectconfig.AtlasLoadOptions {
 	return projectconfig.AtlasLoadOptions{
 		Context: ctx,
-		EnvName: flags.envName,
-		// The community binary selects an env only by name. A --config with
-		// no --env reads the file's top-level blocks and evaluates no env,
-		// however many the file declares; measured, a lone
-		// `env "prod" { url = nosuch() }` named this way exits 0. Both
-		// policies take this: an env applied without being named is the
-		// looser direction, and no capability lives behind it.
-		NoImplicitEnv:        true,
+		// The community binary selects an env only by name, and so does the
+		// loader: a --config with no --env reads the file's top-level blocks
+		// and evaluates no env, however many the file declares. Measured, a
+		// lone `env "prod" { url = nosuch() }` named this way exits 0.
+		EnvName:              flags.envName,
 		Vars:                 flags.vars,
 		RejectListMapForEach: policy.IsStrictCE(),
 		// The pinned community binary has no handler for this data source and
@@ -500,10 +497,9 @@ func openAtlasProjectSource(flags atlasProjectFlagValues) (atlasProjectSource, b
 // ./ptah.yaml settings under it, for a forwarded native command that consumes
 // project configuration itself.
 //
-// ptah.yaml is read only when --env names an environment. Its loader selects
-// a lone env block when it is given no name, and a --config with no --env
-// selects no env on this surface, so reading it there would apply exactly the
-// env values the name was withheld from.
+// ptah.yaml is read only when --env names an environment. The community binary
+// reads no ptah.yaml, and without --env its top-level settings, a `url` among
+// them, would reach a command whose flags named no database.
 func openMergedProjectConfigWithPolicy(
 	ctx context.Context,
 	flags atlasProjectFlagValues,

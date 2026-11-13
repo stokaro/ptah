@@ -229,11 +229,13 @@ one selected instance and return an error rather than discarding the others.
 tuple, object, and set expansion while refusing Ptah's list/map extension. Its
 zero value keeps the complete dynamic-environment capability.
 
-`AtlasLoadOptions.NoImplicitEnv` makes an empty `EnvName` select no env
-block: the top-level blocks, variables and locals are evaluated and no env
-block is. A compatibility adapter selects it for the community binary's
-`--config` without `--env`; its zero value selects the only env block of a
-file that declares one.
+An env is selected only by name. An empty `EnvName` in `LoadOptions` or
+`AtlasLoadOptions`, or an empty name passed to `ParsePtah`, `LoadPtahFile`,
+`ParseAtlas` or `LoadAtlasFile`, selects no env block however many the files
+declare: the top-level settings, variables and locals are evaluated and no env
+block is. `Config.DeclaredEnvs` lists the env blocks the loaded files declare,
+with the declaring file, so a caller that lacks a value and selected none can
+name the envs that could have supplied it.
 
 `AtlasLoadOptions.RejectCompositeSchema` refuses a `data "composite_schema"`
 block with the community binary's own message; its zero value evaluates the

@@ -72,6 +72,11 @@ type Config struct {
 	exporters map[string]string
 	// EnvName is the selected project env name, when the source had one.
 	EnvName string
+	// DeclaredEnvs lists the env blocks the loaded files declare, whether or
+	// not one was selected. A load selects an env only by name, so a caller
+	// that lacks a value and selected none reads this to say which envs could
+	// have supplied it.
+	DeclaredEnvs []DeclaredEnv
 	// DatabaseURL is the target database URL used by migration commands.
 	DatabaseURL string
 	// DevURL is the disposable dev/shadow database URL.
@@ -145,6 +150,15 @@ func (c Config) SchemaSourceVars(rawURL string) (map[string]string, bool) {
 		return nil, false
 	}
 	return maps.Clone(values), true
+}
+
+// DeclaredEnv is one env block a project file declares.
+type DeclaredEnv struct {
+	// File is the path of the declaring file as the loader was given it.
+	File string
+	// Name is the env's name. It is empty for an atlas.hcl env block with no
+	// label, whose name comes from its `name` attribute.
+	Name string
 }
 
 // MigrationDirectorySource is the rendered filesystem and source path behind
@@ -920,9 +934,9 @@ func appendDisabledMode(patterns []string, option ConfigBool, pattern string) []
 // marked present wins even when it is empty; a programmatic value with no
 // loader metadata wins only when it is non-zero.
 //
-// Diagnostic metadata survives the merge: the result's IgnoredConstructs
-// keeps the entries of both inputs rather than letting the override's list
-// replace the base's. The exporter and migration-directory maps are copied
+// Diagnostic metadata survives the merge: the result's IgnoredConstructs and
+// DeclaredEnvs keep the entries of both inputs rather than letting the
+// override's list replace the base's. The exporter and migration-directory maps are copied
 // into fresh maps rather than shared, so one merged env instance cannot write
 // into a map the base and its sibling instances read (stokaro/ptah#1620).
 func Merge(base, override Config) Config {
@@ -942,6 +956,7 @@ func Merge(base, override Config) Config {
 	}
 	result.compositeSchemas = mergeCompositeSchemas(base.compositeSchemas, override.compositeSchemas)
 	result.IgnoredConstructs = slices.Concat(base.IgnoredConstructs, override.IgnoredConstructs)
+	result.DeclaredEnvs = slices.Concat(base.DeclaredEnvs, override.DeclaredEnvs)
 	result.presence = base.presence.clone()
 	result.EnvName = mergeStringValue(
 		base.EnvName,

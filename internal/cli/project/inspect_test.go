@@ -35,6 +35,50 @@ func runInspect(c *qt.C, args ...string) (stdout, stderr string, err error) {
 	return out.String(), errOut.String(), err
 }
 
+// A run that names no env applies none, so the report names the envs the file
+// declares. Without the line, every setting reads "not set" and the report looks
+// like a file Ptah does not read.
+func TestProjectInspect_NamesTheEnvsARunWithoutEnvLeavesOut(t *testing.T) {
+	c := qt.New(t)
+	path := projectFile(c, `
+env "local" {
+  url = "postgres://localhost:5432/app?sslmode=disable"
+}
+`)
+
+	stdout, _, err := runInspect(c, "inspect", "--atlas-config", path)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(stdout, qt.Contains, "Environment: none selected; "+path+` declares env "local". Pass --env to resolve one.`)
+	c.Assert(stdout, qt.Contains, "database url     (not set)")
+	c.Assert(stdout, qt.Not(qt.Contains), "postgres://localhost:5432/app")
+}
+
+// The JSON form names the same envs, with the file that declares each.
+func TestProjectInspect_JSONNamesTheEnvsARunWithoutEnvLeavesOut(t *testing.T) {
+	c := qt.New(t)
+	path := projectFile(c, `
+env "local" {
+  url = "postgres://localhost:5432/app?sslmode=disable"
+}
+env "prod" {
+  url = "postgres://db.example:5432/app?sslmode=disable"
+}
+`)
+
+	stdout, _, err := runInspect(c, "inspect", "--atlas-config", path, "--format", "json")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(stdout, qt.Contains, `"unselected_envs": [`)
+	var report project.Report
+	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
+	c.Assert(report.Env, qt.Equals, "")
+	c.Assert(report.UnselectedEnvs, qt.DeepEquals, []project.DeclaredEnv{
+		{File: path, Name: "local"},
+		{File: path, Name: "prod"},
+	})
+}
+
 // The verb reports what Ptah acts on.
 func TestProjectInspect_ReportsWhatIsCarried(t *testing.T) {
 	c := qt.New(t)
@@ -50,6 +94,7 @@ env "local" {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(stdout, qt.Contains, "Environment: local")
+	c.Assert(stdout, qt.Not(qt.Contains), "none selected")
 	c.Assert(stdout, qt.Contains, "postgres://localhost:5432/app")
 	c.Assert(stdout, qt.Contains, "docker://postgres/17/dev")
 	c.Assert(stdout, qt.Contains, "public, app")
@@ -169,6 +214,7 @@ env "local" {
 	var report project.Report
 	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
 	c.Assert(report.Env, qt.Equals, "local")
+	c.Assert(report.UnselectedEnvs, qt.IsNil)
 	c.Assert(report.Ignored, qt.HasLen, 1)
 	c.Assert(report.Ignored[0].Name, qt.Equals, "frobnicate")
 	c.Assert(report.Ignored[0].Line, qt.Equals, 4)

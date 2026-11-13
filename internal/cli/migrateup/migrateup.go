@@ -507,7 +507,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *migraterun.Do
 	emit := cliobs.NewEmitter(humanOutput(cmd, opts), runtime)
 
 	if dbURL == "" {
-		return fmt.Errorf("database URL is required")
+		return dbcli.MissingProjectValue(projectCfg, fmt.Errorf("database URL is required"))
 	}
 
 	lockRequest := migratelock.Request{
@@ -521,7 +521,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *migraterun.Do
 	}
 
 	if migrationsDir == "" {
-		return fmt.Errorf("migrations directory is required")
+		return dbcli.MissingProjectValue(projectCfg, fmt.Errorf("migrations directory is required"))
 	}
 	requestedMigrationsDir := migrationsDir
 	settings, err := parseMigrationSettings(resolvedOpts)

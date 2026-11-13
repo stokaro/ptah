@@ -1061,8 +1061,15 @@ whole configuration: beside a file whose only env names a database,
 leaves that database alone. `--config` with no `--env` evaluates the file's
 variables, locals and top-level `lint` and `diff` blocks, and no `env` block.
 
-The native `ptah` binary selects the only `env` block of a file that declares
-one, named or unnamed. Several envs and no `--env` fail instead of guessing.
+The native `ptah` binary selects an `env` block the same way: only when
+`--env` (or `PTAH_ENV`) names it. A file that declares one env does not make it
+the default. Without `--env`, a native command evaluates the file's variables,
+locals and top-level blocks and applies no env, and a command that then lacks a
+value names the envs the file declares:
+
+```text
+error: database URL is required: no --env given; atlas.hcl declares env "prod"
+```
 
 ### Expand one environment into several targets
 

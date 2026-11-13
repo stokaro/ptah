@@ -59,7 +59,8 @@ No lint findings.
 There is no `--migrations` flag in that command: the directory came from the
 `migration { dir }` block in `atlas.hcl`. Native verbs that read project
 configuration take `--env` to select an env block from `ptah.yaml` **or**
-`atlas.hcl`.
+`atlas.hcl`. An env applies only when `--env` names it, on both binaries, so a
+file with one env does not make that env the default.
 
 This is the step most projects can stop at. HCL is a supported project language
 in its own right, not an import format, and the supported Atlas HCL subset and
@@ -82,8 +83,11 @@ flags and environment variables included.
 ## Step 3 — ask what adoption would take
 
 ```console
-$ ptah project adopt --check
+$ ptah project adopt --check --env local
 ```
+
+The analysis covers the env `--env` names. A project file that declares envs is
+refused without the flag, because no env applies to a run that names none.
 
 Every construct the project file declares is put in one of three classes:
 
@@ -115,7 +119,7 @@ database whose history was written in the Atlas-compatible layout reads as
 again.
 
 ```console
-$ ptah project adopt --check --preflight
+$ ptah project adopt --check --preflight --env local
 ```
 
 The preflight reads the revision history in the database the project points at
@@ -158,7 +162,7 @@ the rows is a choice, not a requirement.
 ## Step 5 — normalize the file, if you want to
 
 ```console
-$ ptah project adopt
+$ ptah project adopt --env local
 ```
 
 Without `--check`, the compat-only spellings are rewritten in place and
@@ -187,7 +191,7 @@ instead of inventing a repository.
 
 | Question | Verb |
 | --- | --- |
-| Which of my settings does Ptah act on, and which does it ignore? | `ptah project inspect` |
-| What would adoption take, and is this project native-ready? | `ptah project adopt --check` |
-| May native Ptah take over this database's history? | `ptah project adopt --check --preflight` |
-| Rewrite the compat-only spellings. | `ptah project adopt` |
+| Which of my settings does Ptah act on, and which does it ignore? | `ptah project inspect --env <name>` |
+| What would adoption take, and is this project native-ready? | `ptah project adopt --check --env <name>` |
+| May native Ptah take over this database's history? | `ptah project adopt --check --preflight --env <name>` |
+| Rewrite the compat-only spellings. | `ptah project adopt --env <name>` |

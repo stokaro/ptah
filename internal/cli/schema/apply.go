@@ -416,7 +416,7 @@ func applySchema(
 	)
 
 	if strings.TrimSpace(opts.dbURL) == "" {
-		return "", fmt.Errorf("database URL is required")
+		return "", dbcli.MissingProjectValue(projectCfg, fmt.Errorf("database URL is required"))
 	}
 	if dialect, dialectErr := atlasurl.DialectFromURL(opts.dbURL); dialectErr == nil {
 		if err := sqlitevirtual.ValidateToggle(dialect); err != nil {

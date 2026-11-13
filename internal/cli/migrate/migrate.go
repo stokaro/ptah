@@ -151,7 +151,7 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	)
 
 	if dbURL == "" {
-		return fmt.Errorf("database URL is required")
+		return dbcli.MissingProjectValue(projectCfg, fmt.Errorf("database URL is required"))
 	}
 	if reportFormat != "text" && reportFormat != "html" && reportFormat != "json" {
 		return fmt.Errorf("unsupported report format %q", reportFormat)

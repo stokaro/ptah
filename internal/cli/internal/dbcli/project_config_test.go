@@ -71,36 +71,60 @@ func TestEffectiveStringUsesDefaultWhenConfigValueIsAbsent(t *testing.T) {
 	c.Assert(got, qt.Equals, "./migrations")
 }
 
+// TestLoadProjectConfigReadsAtlasEnvAndPtahFallback holds both halves of the
+// selection rule: --env merges the atlas.hcl env over ptah.yaml, and a run with
+// no --env leaves the env alone and keeps the ptah.yaml top-level settings.
 func TestLoadProjectConfigReadsAtlasEnvAndPtahFallback(t *testing.T) {
-	c := qt.New(t)
-	dir := t.TempDir()
-	c.Assert(os.WriteFile(filepath.Join(dir, projectconfig.PtahFileName), []byte(`url: postgres://ptah/db
+	tests := []struct {
+		name               string
+		args               []string
+		wantURL            string
+		wantDir            string
+		wantFormat         string
+		wantRevisionFormat string
+	}{
+		{
+			name:               "--env names the env",
+			args:               []string{"--env", "local"},
+			wantURL:            "postgres://atlas/db",
+			wantDir:            "atlas-migrations",
+			wantFormat:         "atlas",
+			wantRevisionFormat: "atlas",
+		},
+		{
+			name:    "no --env",
+			wantURL: "postgres://ptah/db",
+			wantDir: "./ptah-migrations",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			t.Chdir(t.TempDir())
+			c.Assert(os.WriteFile(projectconfig.PtahFileName, []byte(`url: postgres://ptah/db
 migration:
   dir: ./ptah-migrations
 `), 0o600), qt.IsNil)
-	c.Assert(os.WriteFile(filepath.Join(dir, projectconfig.AtlasFileName), []byte(`env "local" {
+			c.Assert(os.WriteFile(projectconfig.AtlasFileName, []byte(`env "local" {
   url = "postgres://atlas/db"
   migration {
     dir = "file://atlas-migrations"
   }
 }
 `), 0o600), qt.IsNil)
-	originalWD, err := os.Getwd()
-	c.Assert(err, qt.IsNil)
-	c.Assert(os.Chdir(dir), qt.IsNil)
-	defer func() {
-		c.Assert(os.Chdir(originalWD), qt.IsNil)
-	}()
 
-	cmd := &cobra.Command{Use: "test"}
-	cmd.Flags().String(dbcli.EnvFlagName, "", "")
-	cfg, err := dbcli.LoadProjectConfig(cmd, "")
+			cmd := &cobra.Command{Use: "test"}
+			cmd.Flags().String(dbcli.EnvFlagName, "", "")
+			c.Assert(cmd.Flags().Parse(test.args), qt.IsNil)
+			cfg, err := dbcli.LoadProjectConfig(cmd, "")
 
-	c.Assert(err, qt.IsNil)
-	c.Assert(cfg.DatabaseURL, qt.Equals, "postgres://atlas/db")
-	c.Assert(cfg.Migration.Dir, qt.Equals, "atlas-migrations")
-	c.Assert(cfg.Migration.Format, qt.Equals, "atlas")
-	c.Assert(cfg.Migration.RevisionFormat, qt.Equals, "atlas")
+			c.Assert(err, qt.IsNil)
+			c.Assert(cfg.DatabaseURL, qt.Equals, test.wantURL)
+			c.Assert(cfg.Migration.Dir, qt.Equals, test.wantDir)
+			c.Assert(cfg.Migration.Format, qt.Equals, test.wantFormat)
+			c.Assert(cfg.Migration.RevisionFormat, qt.Equals, test.wantRevisionFormat)
+		})
+	}
 }
 
 func TestLoadProjectConfigReportsIgnoredAtlasConstructs(t *testing.T) {

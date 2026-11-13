@@ -2,6 +2,7 @@ package project
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"slices"
@@ -13,6 +14,7 @@ import (
 	"ptah.run/internal/adoptpreflight"
 	"ptah.run/internal/atlasregistry"
 	"ptah.run/internal/cli/internal/cmdutil"
+	"ptah.run/internal/cli/internal/dbcli"
 )
 
 // The adoption classes.
@@ -114,6 +116,9 @@ operated by native Ptah as it stands, without its file being rewritten.
 spellings are rewritten in place; a project declaring anything unsupported is
 refused rather than half-converted. Neither form contacts a database.
 
+The analysis covers one env, the one --env names. No env applies to a run that
+names none, so a project file that declares envs is refused without the flag.
+
 --preflight adds the database half: it reads the revision history the project's
 own database holds and reports whether native Ptah may take it over. It writes
 nothing there either -- not the revision table it looks for, and not the layout
@@ -126,7 +131,7 @@ than converted.`,
 	flags := cmd.Flags()
 	flags.StringVar(&opts.atlasPath, "atlas-config", "", "Path to atlas.hcl (default: ./atlas.hcl when present)")
 	flags.StringVar(&opts.ptahPath, "config", "", "Path to ptah.yaml (default: ./ptah.yaml when present)")
-	flags.StringVar(&opts.envName, "env", "", "Project environment to resolve")
+	flags.StringVar(&opts.envName, "env", "", "Project env to analyze; required when the project file declares envs")
 	flags.StringVar(&opts.format, "format", inspectFormatText, "Output format: text or json")
 	flags.BoolVar(&opts.check, "check", false,
 		"Report the analysis without changing anything")
@@ -150,6 +155,12 @@ func runAdopt(cmd *cobra.Command, opts adoptOptions) error {
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
+	}
+	if config.EnvName == "" && len(config.DeclaredEnvs) > 0 {
+		// No env applies to a run that names none, so the analysis would cover
+		// the top-level settings alone. A project whose settings live in its env
+		// blocks would read as declaring nothing, and --check would pass it.
+		return cmdutil.Fail(cmd, dbcli.MissingProjectValue(config, errors.New("project adopt analyzes one env")))
 	}
 
 	report := adoptionReportFor(config)

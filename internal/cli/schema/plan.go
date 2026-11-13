@@ -204,7 +204,7 @@ func planSchema(cmd *cobra.Command, opts schemaPlanOptions, human io.Writer) (at
 	}
 
 	if strings.TrimSpace(opts.dbURL) == "" {
-		return atlasschema.PlanEvidence{}, fmt.Errorf("database URL is required")
+		return atlasschema.PlanEvidence{}, dbcli.MissingProjectValue(projectCfg, fmt.Errorf("database URL is required"))
 	}
 	if dialect, dialectErr := atlasurl.DialectFromURL(opts.dbURL); dialectErr == nil {
 		if err := sqlitevirtual.ValidateToggle(dialect); err != nil {

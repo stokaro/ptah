@@ -319,8 +319,8 @@ env "local" {
 }
 ```
 
-A `.ptah-lint.yaml` `naming` section takes precedence over the project file's
-block, the way `rules` entries do.
+The block applies under `--env local`. A `.ptah-lint.yaml` `naming` section
+takes precedence over it, the way `rules` entries do.
 
 ## Declare a rule of your own
 
@@ -338,7 +338,8 @@ rules:
     message: use text, not varchar(n) — postgres stores them identically
 ```
 
-The same rule in `atlas.hcl`, where `match` is written as a bare expression:
+The same rule in an `atlas.hcl` env, read under `--env local`, where `match` is
+a bare expression:
 
 ```hcl
 env "local" {

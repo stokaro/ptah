@@ -232,7 +232,7 @@ func runDrift(cmd *cobra.Command, opts runOptions) error {
 	)
 
 	if dbURL == "" {
-		return fail(cmd, opts.format, errors.New("database URL is required"))
+		return fail(cmd, opts.format, dbcli.MissingProjectValue(projectCfg, errors.New("database URL is required")))
 	}
 
 	ignoredTables, err := parseIgnoredTables(opts.ignored)

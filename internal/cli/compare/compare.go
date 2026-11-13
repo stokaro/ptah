@@ -150,7 +150,7 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 	)
 
 	if dbURL == "" {
-		return fmt.Errorf("database URL is required")
+		return dbcli.MissingProjectValue(projectCfg, fmt.Errorf("database URL is required"))
 	}
 	dialect, err := providerurl.Dialect(cmd.Context(), dbURL)
 	if err != nil {

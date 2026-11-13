@@ -431,28 +431,32 @@ env "ci" {
 	c.Assert(cfg.Lint.GitBase, qt.Equals, "")
 }
 
-func TestMergeUnlabeledAtlasEnvClearsPtahEnvName(t *testing.T) {
+// TestMergeAtlasWithoutEnvKeepsPtahEnvName holds that an atlas.hcl declaring
+// no env leaves the env ptah.yaml selected in place: the name is present on
+// one side only, so the merge has nothing to override it with.
+func TestMergeAtlasWithoutEnvKeepsPtahEnvName(t *testing.T) {
 	c := qt.New(t)
 	ptah, err := projectconfig.ParsePtah([]byte(`
 env:
   prod:
     url: postgres://prod/db
-`), "ptah.yaml", "")
+`), "ptah.yaml", "prod")
 	c.Assert(err, qt.IsNil)
 	atlas, err := projectconfig.ParseAtlas([]byte(`
-env {
-  url = "postgres://atlas/db"
+lint {
+  latest = 1
 }
-`), "atlas.hcl", "")
+`), "atlas.hcl", "prod")
 	c.Assert(err, qt.IsNil)
 
 	cfg := projectconfig.Merge(ptah, atlas)
 
-	c.Assert(cfg.EnvName, qt.Equals, "")
+	c.Assert(cfg.EnvName, qt.Equals, "prod")
+	c.Assert(cfg.DatabaseURL, qt.Equals, "postgres://prod/db")
 	c.Assert(
 		cfg.StringValue(projectconfig.StringEnvName),
 		qt.DeepEquals,
-		projectconfig.Value[string]{Present: true},
+		projectconfig.Value[string]{Value: "prod", Present: true},
 	)
 }
 

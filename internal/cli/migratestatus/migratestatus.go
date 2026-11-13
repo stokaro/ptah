@@ -254,11 +254,11 @@ func migrateStatusCommand(cmd *cobra.Command, opts *options, document *statusDoc
 	emit := cliobs.NewEmitter(cmd.OutOrStdout(), runtime)
 
 	if dbURL == "" {
-		return fmt.Errorf("database URL is required")
+		return dbcli.MissingProjectValue(projectCfg, fmt.Errorf("database URL is required"))
 	}
 
 	if migrationsDir == "" {
-		return fmt.Errorf("migrations directory is required")
+		return dbcli.MissingProjectValue(projectCfg, fmt.Errorf("migrations directory is required"))
 	}
 
 	dirFormat, err := migrationfile.ParseDirFormat(dirFormatValue)

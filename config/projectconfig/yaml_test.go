@@ -288,32 +288,28 @@ env:
 	c.Assert(cfg.Lint.DisabledRules, qt.DeepEquals, make([]string, 0))
 }
 
-func TestParsePtahProjectConfigSelectsSingleEnv(t *testing.T) {
-	c := qt.New(t)
-	raw := []byte(`env:
-  local:
-    url: postgres://local/db
-`)
+// TestParsePtahProjectConfigSelectsNoEnvWithoutAName holds the rule of
+// stokaro/ptah#5999 for ptah.yaml: a lone env is not a default, and neither is
+// one of several. Only a name selects an env.
+func TestParsePtahProjectConfigSelectsNoEnvWithoutAName(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+	}{
+		{name: "a lone env", raw: "env:\n  local:\n    url: postgres://local/db\n"},
+		{name: "two envs", raw: "env:\n  dev:\n    url: postgres://dev/db\n  prod:\n    url: postgres://prod/db\n"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 
-	cfg, err := projectconfig.ParsePtah(raw, "ptah.yaml", "")
+			cfg, err := projectconfig.ParsePtah([]byte(test.raw), "ptah.yaml", "")
 
-	c.Assert(err, qt.IsNil)
-	c.Assert(cfg.EnvName, qt.Equals, "local")
-	c.Assert(cfg.DatabaseURL, qt.Equals, "postgres://local/db")
-}
-
-func TestParsePtahProjectConfigRequiresEnvWhenMultipleEnvsExist(t *testing.T) {
-	c := qt.New(t)
-	raw := []byte(`env:
-  dev:
-    url: postgres://dev/db
-  prod:
-    url: postgres://prod/db
-`)
-
-	_, err := projectconfig.ParsePtah(raw, "ptah.yaml", "")
-
-	c.Assert(err, qt.ErrorMatches, `ptah\.yaml contains multiple env blocks; pass --env`)
+			c.Assert(err, qt.IsNil)
+			c.Assert(cfg.EnvName, qt.Equals, "")
+			c.Assert(cfg.DatabaseURL, qt.Equals, "")
+		})
+	}
 }
 
 func TestParsePtahProjectConfigMissingEnv(t *testing.T) {
