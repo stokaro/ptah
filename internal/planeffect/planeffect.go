@@ -21,7 +21,6 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/identifier"
-	"ptah.run/internal/objectlookup"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/viewoptions"
 )
@@ -188,7 +187,8 @@ const (
 
 // viewState is one view the plan reaches.
 type viewState struct {
-	// name is the name objectlookup matches a statement's name against.
+	// name is the name a statement's name is matched against, by identity
+	// under [viewStates.semantics].
 	name     string
 	object   Object
 	presence presence
@@ -199,11 +199,20 @@ type viewState struct {
 // far leave it.
 type viewStates struct {
 	target Target
-	views  []viewState
+	// semantics is the target's, with its default schema replaced by the
+	// connection's: an unqualified name in a statement is resolved by the server
+	// through the connection, so `v` under a connection to schema app is app.v
+	// whatever the dialect's default.
+	semantics identifier.Semantics
+	views     []viewState
 }
 
 func newViewStates(target Target) *viewStates {
-	states := &viewStates{target: target}
+	semantics := target.Semantics.Clone()
+	if target.DefaultSchema != "" {
+		semantics.DefaultSchema = target.DefaultSchema
+	}
+	states := &viewStates{target: target, semantics: semantics}
 	if target.Current == nil {
 		return states
 	}
@@ -355,10 +364,18 @@ func (v *viewState) held() (*[]string, bool) {
 // resolve returns the view a statement names. A name that resolves to no view
 // the plan has reached becomes a view of its own, in an unknown state, so the
 // next statement that names it finds it again.
+//
+// It matches by identity alone, an unqualified name taken in the connection's
+// schema. The comparison also pairs an unqualified name with a view of another
+// schema when only one view has that name; here that would read the options of
+// a view the statement does not touch, and an effect would claim an unchanged
+// option on a view whose option the statement changes.
 func (s *viewStates) resolve(name string) *viewState {
-	view := objectlookup.Find(s.views, name, s.target.Semantics, func(view viewState) string { return view.name })
-	if view != nil {
-		return view
+	key := s.semantics.QualifiedTableIdentityKey(name)
+	for i := range s.views {
+		if s.semantics.QualifiedTableIdentityKey(s.views[i].name) == key {
+			return &s.views[i]
+		}
 	}
 	reference, parsed := tableref.Parse(name)
 	if !parsed {

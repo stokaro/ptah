@@ -234,6 +234,63 @@ func TestDescribe_NewView(t *testing.T) {
 	}
 }
 
+// TestDescribe_UnqualifiedNameIsTheConnectionSchemas pins what an unqualified
+// view name refers to: the view in the schema the connection resolves it in,
+// as the server reads the statement, and never a view of the same name in
+// another schema. Reading the other view's options would mark an option the
+// statement changes as unchanged.
+func TestDescribe_UnqualifiedNameIsTheConnectionSchemas(t *testing.T) {
+	inPublic := catalog.View{Schema: "public", Name: "v", Body: "SELECT 1", Options: []string{"security_invoker=true"}}
+	inApp := catalog.View{Schema: "app", Name: "v", Body: "SELECT 1"}
+	connectedToApp := func(views ...catalog.View) planeffect.Target {
+		described := target(views...)
+		described.DefaultSchema = "app"
+		return described
+	}
+	replace := func(name string) *ast.CreateViewNode {
+		return &ast.CreateViewNode{Name: name, Body: "SELECT 2", Replace: true, Options: []string{"security_invoker=true"}}
+	}
+	tests := []struct {
+		name   string
+		target planeffect.Target
+		node   ast.Node
+		want   [][]planeffect.Effect
+	}{
+		{
+			name:   "the connection's view, beside one of the same name in public",
+			target: connectedToApp(inPublic, inApp),
+			node:   replace("v"),
+			want: [][]planeffect.Effect{{{
+				Version: planeffect.Version, Action: planeffect.ActionReplace,
+				Object:     planeffect.Object{Kind: planeffect.KindView, Schema: "app", Name: "v"},
+				Properties: security(kept(false), moved(false, true)),
+			}}},
+		},
+		{
+			name:   "a name that states public",
+			target: connectedToApp(inPublic, inApp),
+			node:   replace("public.v"),
+			want: [][]planeffect.Effect{{{
+				Version: planeffect.Version, Action: planeffect.ActionReplace,
+				Object:     planeffect.Object{Kind: planeffect.KindView, Schema: "public", Name: "v"},
+				Properties: security(kept(false), kept(true)),
+			}}},
+		},
+		// The database the plan read holds no app.v, so what the replace finds
+		// there is unknown, and it carries no effect rather than public.v's.
+		{name: "a view only public holds", target: connectedToApp(inPublic), node: replace("v")},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got := planeffect.Describe(test.target, []ast.Node{test.node}, []int{0})
+
+			c.Assert(got, qt.DeepEquals, test.want)
+		})
+	}
+}
+
 // TestDescribe_Undescribed pins the statements that carry no effect: the
 // description says nothing it cannot establish, and a consumer reads the SQL of
 // such a statement instead.
