@@ -376,9 +376,9 @@ func parseToVersion(value string) (int64, error) {
 	return version, nil
 }
 
-// resolveProjectOptions merges the project config under the flags. A command
-// hook the config supplies is checked against the program policy here, before
-// the command opens the database.
+// resolveProjectOptions merges the project config under the flags. The run's
+// attribution, and a command hook the config supplies, are checked here,
+// before the command opens the database.
 func resolveProjectOptions(cmd *cobra.Command, opts options, projectCfg projectconfig.Config) (options, error) {
 	effectiveString := func(flagName, flagValue string, field projectconfig.StringField) string {
 		return dbcli.EffectiveString(cmd, flagName, flagValue, projectCfg.StringValue(field))
@@ -427,6 +427,9 @@ func resolveProjectOptions(cmd *cobra.Command, opts options, projectCfg projectc
 		opts.connectTimeout,
 		projectconfig.StringMigrationConnectTimeout,
 	)
+	if err := dbcli.CheckRunAttribution(opts.actor, opts.actorOrigin, opts.runReference); err != nil {
+		return opts, err
+	}
 	// After the shadow database is resolved, so a project dev_url satisfies
 	// --check-drift, and before the hook is authorized for a run it refuses.
 	if err := validateDriftFlags(
@@ -465,9 +468,6 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *migraterun.Do
 	// ValidateFlagGroups reads Changed, which an exported PTAH_LIMIT sets and a
 	// typed `--limit 0` sets too.
 	if err := cmdflags.ExclusiveValues(cmd.Flags(), limitFlag, toVersionFlag); err != nil {
-		return err
-	}
-	if err := dbcli.CheckRunAttribution(opts.actor, opts.actorOrigin, opts.runReference); err != nil {
 		return err
 	}
 	// Read before anything connects, so a sequence that cannot be parsed is
