@@ -25,7 +25,20 @@ const (
 		"DROP TABLE \"items\";\n" +
 		"ALTER TABLE \"new_items\" RENAME TO \"items\";\n" +
 		"PRAGMA foreign_keys = on;\n"
+
+	// sqliteRebuildAddingFlag is the rebuild that also adds flag, which the
+	// copy fills with a constant: items has no flag column to lose.
+	sqliteRebuildAddingFlag = "CREATE TABLE \"new_items\" (\"id\" INTEGER PRIMARY KEY, \"n\" TEXT NOT NULL, \"label\" TEXT, \"flag\" INTEGER);\n" +
+		"INSERT INTO \"new_items\" (\"id\", \"n\", \"label\", \"flag\") SELECT \"id\", \"n\", \"label\", 0 FROM \"items\";\n" +
+		"DROP TABLE \"items\";\n" +
+		"ALTER TABLE \"new_items\" RENAME TO \"items\";\n"
 )
+
+// sqliteCopy is the copy step of sqliteRebuild with its SELECT list
+// replaced.
+func sqliteCopy(selectList string) string {
+	return strings.Replace(sqliteRebuild, `SELECT "id", "n", "label" FROM`, "SELECT "+selectList+" FROM", 1)
+}
 
 // rebuildCase is a directory whose second version is the statement sequence
 // under test.
@@ -67,6 +80,15 @@ func TestTableRebuild_IsNotADrop(t *testing.T) {
 			name: "SQLite, with the dev database's columns", dialect: "sqlite", first: sqliteItems, second: sqliteRebuild,
 			baseline: []string{"id", "n", "label"},
 		},
+		{
+			name: "a copy qualified by an alias", dialect: "sqlite", first: sqliteItems,
+			second:   strings.Replace(sqliteCopy(`i."id", i."n", i."label"`), `FROM "items";`, `FROM "items" AS i;`, 1),
+			baseline: []string{"id", "n", "label"},
+		},
+		{
+			name: "a copy that fills a column the dev database shows is new", dialect: "sqlite", first: sqliteItems,
+			second: sqliteRebuildAddingFlag, baseline: []string{"id", "n", "label"},
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -94,6 +116,32 @@ func TestTableRebuild_ReportsWhatIsNotARebuild(t *testing.T) {
 					`("id", "n", "label") SELECT "id", "n", "label"`, `("id", "n") SELECT "id", "n"`, 1),
 				baseline: []string{"id", "n", "label"}},
 			want: []string{"0000000002_change.up.sql:9:BC103", "0000000002_change.up.sql:9:DS101"},
+		},
+		{
+			rebuildCase: rebuildCase{name: "a copy that writes NULL into a column the dev database shows",
+				dialect: "sqlite", first: sqliteItems, second: sqliteCopy(`"id", "n", NULL`),
+				baseline: []string{"id", "n", "label"}},
+			want: []string{"0000000002_change.up.sql:9:BC103", "0000000002_change.up.sql:9:DS101"},
+		},
+		{
+			rebuildCase: rebuildCase{name: "a copy that writes NULL into a column, without a dev database",
+				dialect: "sqlite", first: sqliteItems, second: sqliteCopy(`"id", "n", NULL`)},
+			want: []string{"0000000002_change.up.sql:9:BC103", "0000000002_change.up.sql:9:DS101"},
+		},
+		{
+			rebuildCase: rebuildCase{name: "a copy that swaps two columns", dialect: "sqlite", first: sqliteItems,
+				second: sqliteCopy(`"id", "label", "n"`), baseline: []string{"id", "n", "label"}},
+			want: []string{"0000000002_change.up.sql:9:BC103", "0000000002_change.up.sql:9:DS101"},
+		},
+		{
+			rebuildCase: rebuildCase{name: "a copy that writes a constant into a column", dialect: "sqlite", first: sqliteItems,
+				second: sqliteCopy(`"id", "n", 'x'`), baseline: []string{"id", "n", "label"}},
+			want: []string{"0000000002_change.up.sql:9:BC103", "0000000002_change.up.sql:9:DS101"},
+		},
+		{
+			rebuildCase: rebuildCase{name: "a copy that fills a column with a constant, without a dev database to show it is new",
+				dialect: "sqlite", first: sqliteItems, second: sqliteRebuildAddingFlag},
+			want: []string{"0000000002_change.up.sql:3:BC103", "0000000002_change.up.sql:3:DS101"},
 		},
 		{
 			rebuildCase: rebuildCase{name: "a copy that keeps some rows", dialect: "sqlite", first: sqliteItems,
@@ -156,6 +204,13 @@ func TestTableRebuild_AsksForTheStartingStateItCannotRead(t *testing.T) {
 			rebuildCase: rebuildCase{name: "SQLite with the dev database's columns", dialect: "sqlite", first: sqliteItems,
 				second: sqliteRebuild, baseline: []string{"id", "n", "label"}},
 		},
+		{
+			// Only the old table's columns show that flag is new, so the drop
+			// the text reports still asks for them.
+			rebuildCase: rebuildCase{name: "a copy that fills a column with a constant, without a dev database",
+				dialect: "sqlite", first: sqliteItems, second: sqliteRebuildAddingFlag},
+			want: []string{"DS101"},
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -203,6 +258,11 @@ func TestTableRebuild_AtlasSQLiteReportsOnlyLostColumns(t *testing.T) {
 			`("id", "n", "label") SELECT "id", "n", "label"`,
 			`("id", "n") SELECT "id", "n"`, 1),
 			want: []string{"0000000002_change.up.sql:3:DS102"}},
+		{name: "NULL written into label", second: sqliteCopy(`"id", "n", NULL`),
+			want: []string{"0000000002_change.up.sql:3:DS102"}},
+		{name: "n and label swapped", second: sqliteCopy(`"id", "label", "n"`),
+			want: []string{"0000000002_change.up.sql:3:DS102", "0000000002_change.up.sql:3:DS102"}},
+		{name: "a new column filled with a constant", second: sqliteRebuildAddingFlag},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

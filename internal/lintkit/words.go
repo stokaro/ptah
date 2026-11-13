@@ -332,8 +332,14 @@ func CreatedTableRef(w []string) string {
 // author spelled it and normalized, or the zero value for any other statement.
 // Temporary-table modifiers and IF NOT EXISTS are skipped.
 func CreatedTable(w, sourceWords []string) TableReference {
+	ref, _ := createdTableAt(w, sourceWords)
+	return ref
+}
+
+// createdTableAt is [CreatedTable] and the index past the table's name.
+func createdTableAt(w, sourceWords []string) (TableReference, int) {
 	if len(w) == 0 || w[0] != "CREATE" {
-		return TableReference{}
+		return TableReference{}, 0
 	}
 	j := 1
 	for j < len(w) {
@@ -345,14 +351,13 @@ func CreatedTable(w, sourceWords []string) TableReference {
 		break
 	}
 	if j >= len(w) || w[j] != "TABLE" {
-		return TableReference{}
+		return TableReference{}, 0
 	}
 	j++
 	if j+2 < len(w) && w[j] == "IF" && w[j+1] == "NOT" && w[j+2] == "EXISTS" {
 		j += 3
 	}
-	ref, _ := TableRefAt(w, sourceWords, j)
-	return ref
+	return TableRefAt(w, sourceWords, j)
 }
 
 // TableRefAt reads a possibly schema-qualified table reference at w[j] and
