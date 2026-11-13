@@ -20,17 +20,21 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net"
+	"net/url"
 	"reflect"
 	"strings"
 	"sync"
 	"time"
 
 	"ptah.run/catalog"
+	"ptah.run/core/dataext"
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
 	"ptah.run/internal/dblockext"
 	"ptah.run/internal/dblockext/builtin"
 	"ptah.run/internal/envbool"
+	"ptah.run/internal/pglitelock"
 )
 
 // DefaultReleaseTimeout bounds the deferred release of an advisory lock so a
@@ -458,6 +462,9 @@ func acquireSessionLock(
 	name string,
 	timeout time.Duration,
 ) (*Lock, error) {
+	if lock, handled, err := acquirePGliteLock(ctx, session, session.Info(), name, timeout); handled {
+		return lock, err
+	}
 	if lock, handled, err := nativeLock(ctx, session, name, timeout); handled {
 		return lock, err
 	}
@@ -472,6 +479,9 @@ func acquirePreviewLock(
 	name string,
 	timeout time.Duration,
 ) (*Lock, error) {
+	if lock, handled, err := acquirePGliteLock(ctx, session, session.Info(), name, timeout); handled {
+		return lock, err
+	}
 	if lock, handled, err := nativePreviewLock(session, dialect, name); handled {
 		return lock, err
 	}
@@ -527,6 +537,18 @@ func Acquire(
 	if err != nil {
 		return nil, err
 	}
+	if lock, handled, err := acquirePGliteLock(ctx, sqlConnQueryer{session}, conn.Info(), name, timeout); handled {
+		if err != nil {
+			return nil, closeAfterFailedAcquisition(session, err)
+		}
+		// The file, not this database session, holds the lock. Return the
+		// connection to the pool so a single-session server can reuse it while
+		// the guarded operation runs.
+		if err := session.Close(); err != nil {
+			return nil, errors.Join(err, lock.Release(context.Background()))
+		}
+		return lock, nil
+	}
 
 	lock, acquireErr := acquireOnSession(ctx, dblockext.SQLSession{Conn: session}, conn, dialect, name, timeout, false)
 	if acquireErr != nil {
@@ -537,6 +559,48 @@ func Acquire(
 	lock.release = hold.release
 	lock.holding = hold
 	return lock, nil
+}
+
+type pgliteIdentityQueryer interface {
+	QueryRowContext(context.Context, string, ...any) dataext.Row
+}
+
+type sqlConnQueryer struct{ *sql.Conn }
+
+func (q sqlConnQueryer) QueryRowContext(ctx context.Context, query string, args ...any) dataext.Row {
+	return q.Conn.QueryRowContext(ctx, query, args...)
+}
+
+// acquirePGliteLock uses an OS file lock for a local embedded PGlite server.
+// PGlite multiplexes clients over one backend session, so a PostgreSQL
+// advisory lock is reentrant across them and cannot serialize two Ptah runs.
+// A non-local PGlite endpoint is refused because a local file cannot protect
+// clients running on another host.
+func acquirePGliteLock(ctx context.Context, conn pgliteIdentityQueryer, info catalog.ServerInfo, name string, timeout time.Duration) (*Lock, bool, error) {
+	if platform.NormalizeDialect(info.Dialect) != platform.Postgres || !strings.Contains(info.Version, "(PGlite ") {
+		return nil, false, nil
+	}
+	parsed, err := url.Parse(info.URL)
+	if err != nil {
+		return nil, true, fmt.Errorf("identify local PGlite endpoint: %w", err)
+	}
+	host := strings.TrimSuffix(strings.ToLower(parsed.Hostname()), ".")
+	ip := net.ParseIP(host)
+	if host != "localhost" && (ip == nil || !ip.IsLoopback()) {
+		return nil, true, fmt.Errorf("PGlite advisory locks are not exclusive across clients; a local file lock requires a loopback endpoint")
+	}
+	var cluster, database string
+	if err := conn.QueryRowContext(ctx, "SELECT system_identifier::text, current_database() FROM pg_control_system()").Scan(&cluster, &database); err != nil {
+		return nil, true, fmt.Errorf("identify PGlite lock realm: %w", err)
+	}
+	fileLock, err := pglitelock.Acquire(ctx, cluster, database, name, timeout)
+	if errors.Is(err, pglitelock.ErrHeld) {
+		return nil, true, &TimeoutError{Dialect: info.Dialect, Name: name, Timeout: timeout}
+	}
+	if err != nil {
+		return nil, true, fmt.Errorf("acquire local PGlite lock: %w", err)
+	}
+	return &Lock{name: name, dialect: info.Dialect, release: func(context.Context) error { return fileLock.Release() }}, true, nil
 }
 
 // isNil reports whether conn is nil or holds a nil pointer, such as a nil

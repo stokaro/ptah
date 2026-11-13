@@ -55,7 +55,7 @@ func reconnectCarryingSearchPath(
 		"selection", schemaselection.FromURL(dbURL).Raw,
 	)
 
-	db, err := sql.Open(driverName, convertPostgresWireURL(retryURL))
+	db, err := openPostgresWireDB(driverName, retryURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database connection: %w", err)
 	}

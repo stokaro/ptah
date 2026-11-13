@@ -6,7 +6,27 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/jackc/pgx/v5"
 )
+
+func TestPostgresWireConfigDefaultsToUnnamedStatements(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+		want pgx.QueryExecMode
+	}{
+		{name: "default", url: "postgres://localhost/app?sslmode=disable", want: pgx.QueryExecModeDescribeExec},
+		{name: "explicit cache mode", url: "postgres://localhost/app?sslmode=disable&default_query_exec_mode=cache_statement", want: pgx.QueryExecModeCacheStatement},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			config, err := pgx.ParseConfig(postgresWireDSN(test.url))
+			c.Assert(err, qt.IsNil)
+			c.Assert(config.DefaultQueryExecMode, qt.Equals, test.want)
+		})
+	}
+}
 
 func TestConvertPostgresWireURL(t *testing.T) {
 	tests := []struct {

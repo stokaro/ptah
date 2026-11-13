@@ -827,6 +827,8 @@ Verifies the directory's `atlas.sum`, replays the selected migration layout on
 layout. `atlas.sum` updates only after every file was written; a failed write
 rolls the whole generation back.
 
+Full Ptah compatibility mode accepts `--exclude` selectors on this command. They remove selected objects from both sides of the diff, so a caller can leave externally managed policies, functions, or triggers intact. Excluding every policy also leaves row-security switches under the caller's control. Strict Community Edition mode omits the flag.
+
 For a project `migration.dir` backed by `data.template_dir`, replay uses the
 immutable rendered snapshot while publication writes the new root SQL files and
 `atlas.sum` to the template source directory. Existing templates are not
