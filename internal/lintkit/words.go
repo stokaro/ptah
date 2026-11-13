@@ -328,6 +328,13 @@ func CreatedTableRef(w []string) string {
 	return CreatedTable(w, w).Normalized
 }
 
+// CreatesTableIfNotExists reports a CREATE TABLE IF NOT EXISTS statement: one
+// that may find the table already there, holding rows.
+func CreatesTableIfNotExists(w []string) bool {
+	ref, end := createdTableAt(w, w)
+	return ref.Normalized != "" && HasWordSeq(w[:end], "IF", "NOT", "EXISTS")
+}
+
 // CreatedTable returns the table a CREATE TABLE statement creates, as the
 // author spelled it and normalized, or the zero value for any other statement.
 // Temporary-table modifiers and IF NOT EXISTS are skipped.

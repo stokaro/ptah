@@ -249,12 +249,15 @@ func tableDroppedRule() Rule {
 		Severity: SeverityError,
 		// The text recognizes a table rebuild, whose copy keeps the rows
 		// (see [fileRebuilds]); the dev database's starting state refines
-		// that, by showing a column the copy leaves out.
+		// that, by showing a column the copy leaves out, and by showing that
+		// a DROP TABLE IF EXISTS names a table that is not there.
 		Input:            InputBaselineRefinement,
-		BaselineSubjects: rebuildBaselineSubjects,
+		BaselineSubjects: tableDropBaselineSubjects,
 		// File-level: dropping a table this same migration created (the
 		// create-staging/backfill/drop pattern) destroys no pre-existing
-		// data and is exempt, and so is the drop that ends a table rebuild.
+		// data and is exempt, and so is the drop that ends a table rebuild,
+		// and an IF EXISTS drop of a table that is absent
+		// ([withoutAbsentTables]).
 		CheckFile: func(file *File) []Finding {
 			if !file.IsUp {
 				return nil
@@ -264,7 +267,7 @@ func tableDroppedRule() Rule {
 			created := make(map[string]bool)
 			for i := range file.Statements {
 				stmt := &file.Statements[i]
-				if ref := lintkit.CreatedTableRef(stmt.Words); ref != "" {
+				if ref := newTable(file, i); ref != "" {
 					created[ref] = true
 					continue
 				}
@@ -282,6 +285,7 @@ func tableDroppedRule() Rule {
 					continue
 				}
 				unsafeTables, complete := lintkit.DroppedTablesNotCreated(stmt.Words, stmt.sourceWords, created)
+				unsafeTables = withoutAbsentTables(file, i, unsafeTables)
 				if complete && len(unsafeTables) == 0 {
 					continue
 				}
@@ -457,29 +461,31 @@ const columnDroppedAdvice = "deploy readers that no longer use the column first,
 // [renamedNames]) cannot drift into prescribing different remediations.
 const renameRetiredNameAdvice = "application versions deployed against the old name fail instantly; prefer add-new/backfill/drop-old across releases"
 
-// columnDroppedRule is file-level rather than statement-level only so that the
-// rename form can consult the tables this file created; a plain DROP COLUMN is
-// reported exactly as before, with no create-then-drop exemption of its own.
-// Whether DROP COLUMN should gain that exemption is a separate question -- the
-// analyzer this tool is compatible with does exempt it, so Ptah is stricter
-// there today -- and relaxing a destructive check is not something to do as a
-// side effect of a rename change.
+// columnDroppedRule reports DS102 on a DROP COLUMN. It is file-level because a
+// drop of a column the same file added, or of a column of a table it created,
+// deletes no value that existed before the file ran, and the rename form
+// consults the tables the file created; see [newColumnDrops].
 func columnDroppedRule() Rule {
 	return Rule{
 		Code:     "DS102",
 		Title:    "column dropped",
 		Severity: SeverityError,
+		// The starting state shows a CREATE TABLE IF NOT EXISTS of a table
+		// that is new, whose columns hold nothing yet ([newTable]).
+		Input:            InputBaselineRefinement,
+		BaselineSubjects: ifNotExistsCreates,
 		CheckFile: func(file *File) []Finding {
 			if !file.IsUp {
 				return nil
 			}
 			var findings []Finding
+			own := newColumnDrops(file)
 			for i := range file.Statements {
 				stmt := &file.Statements[i]
 				if !lintkit.IsAlterTable(stmt.Words) {
 					continue
 				}
-				subjects := droppedColumnSubjects(stmt.Words, stmt.sourceWords)
+				subjects := withoutNewColumns(droppedColumnSubjects(stmt.Words, stmt.sourceWords), own[i])
 				if len(subjects) == 0 {
 					continue
 				}
@@ -1044,8 +1050,10 @@ func dataDependentRules() []Rule {
 			// the stronger of the two inputs is what puts this rule's files in
 			// [Analysis.BaselineVersions] and, on a run that supplies no
 			// baseline, in [Analysis.UnmetInputs].
-			Input:            InputBaselineSchema,
-			BaselineSubjects: renameAddSideStatements,
+			Input: InputBaselineSchema,
+			BaselineSubjects: func(file *File) []int {
+				return unionSubjects(file, renameAddSideStatements, ifNotExistsCreates)
+			},
 		},
 	}
 }
@@ -1058,7 +1066,7 @@ func notNullWithoutDefaultFindings(file *File) []Finding {
 	created := make(map[string]bool)
 	for i := range file.Statements {
 		stmt := &file.Statements[i]
-		if ref := lintkit.CreatedTableRef(stmt.Words); ref != "" {
+		if ref := newTable(file, i); ref != "" {
 			created[ref] = true
 			continue
 		}
@@ -1258,6 +1266,10 @@ func compatibilityRules() []Rule {
 			Code:     "BC101",
 			Title:    "rename breaks deployed code",
 			Severity: SeverityWarning,
+			// The starting state shows a CREATE TABLE IF NOT EXISTS of a
+			// table that is new, which no deployed client read ([newTable]).
+			Input:            InputBaselineRefinement,
+			BaselineSubjects: ifNotExistsCreates,
 			// File-level so the same-file-created exemption in [fileRenames]
 			// applies: renaming an object this migration itself introduced
 			// breaks no deployed reader. One finding per statement regardless of

@@ -424,22 +424,15 @@ func TestAnalyzeFS_RenameIsSuppressedByTheDestructiveSelectorOnly(t *testing.T) 
 	}
 }
 
-// TestAnalyzeFS_DropColumnStillReportsOnASameFileCreatedTable is a
-// non-interference control for moving DS102 from a statement rule to a file
-// rule. The rename form needed file scope to see what this file created; a
-// plain DROP COLUMN must not pick up that exemption as a side effect, because
-// relaxing a destructive check is not something to do accidentally.
-//
-// This control cannot be validated by reverting the change -- it passes on
-// master by construction. It was validated with the inverse mutant instead:
-// extending the exemption to droppedColumnSubjects turns the first row into
-// []string(nil) and leaves the second row green.
-//
-// The rows also pin where BC104 does and does not agree with DS102. It takes
-// the exemption this rule refuses, because a column on a table created in this
-// same migration was never in a schema any deployed version queried, and it is
-// native-only, so the compatibility column is DS102 alone on both rows.
-func TestAnalyzeFS_DropColumnStillReportsOnASameFileCreatedTable(t *testing.T) {
+// TestAnalyzeFS_DropColumnOfAColumnTheFileBroughtIn holds the exemption both
+// drop-column rules share: a column of a table the same file created, or one an
+// earlier ADD of the file added, held no value before the file ran, and no
+// deployed version read it. The community binary compares the schema a file
+// starts from with the one it ends with and reports nothing for either, and so
+// do DS102 and BC104. A column the file did not bring in is reported on both
+// surfaces, and a column it re-added with IF NOT EXISTS, or renamed into, may
+// carry old values, so it is reported too.
+func TestAnalyzeFS_DropColumnOfAColumnTheFileBroughtIn(t *testing.T) {
 	tests := []struct {
 		name       string
 		sql        string
@@ -449,8 +442,56 @@ func TestAnalyzeFS_DropColumnStillReportsOnASameFileCreatedTable(t *testing.T) {
 		{
 			name:       "table created in the same file",
 			sql:        "CREATE TABLE users (id int, nick text);\nALTER TABLE users DROP COLUMN nick;",
-			wantNative: []string{"DS102"},
+			wantNative: make([]string, 0),
+			wantAtlas:  make([]string, 0),
+		},
+		{
+			name:       "column added earlier in the same file",
+			sql:        "ALTER TABLE users ADD COLUMN nick text;\nALTER TABLE users DROP COLUMN nick;",
+			wantNative: make([]string, 0),
+			wantAtlas:  make([]string, 0),
+		},
+		{
+			name:       "column added earlier, qualified one way and dropped another",
+			sql:        "ALTER TABLE public.users ADD COLUMN nick text;\nALTER TABLE users DROP COLUMN nick;",
+			wantNative: make([]string, 0),
+			wantAtlas:  make([]string, 0),
+		},
+		{
+			name:       "one column added, another dropped",
+			sql:        "ALTER TABLE users ADD COLUMN nick text;\nALTER TABLE users DROP COLUMN name;",
+			wantNative: []string{"BC104", "DS102"},
 			wantAtlas:  []string{"DS102"},
+		},
+		{
+			name:       "the column added to another table",
+			sql:        "ALTER TABLE accounts ADD COLUMN nick text;\nALTER TABLE users DROP COLUMN nick;",
+			wantNative: []string{"BC104", "DS102"},
+			wantAtlas:  []string{"DS102"},
+		},
+		{
+			name:       "the column added with IF NOT EXISTS",
+			sql:        "ALTER TABLE users ADD COLUMN IF NOT EXISTS nick text;\nALTER TABLE users DROP COLUMN nick;",
+			wantNative: []string{"BC104", "DS102"},
+			wantAtlas:  []string{"DS102"},
+		},
+		{
+			name:       "a column renamed into the added column's name",
+			sql:        "ALTER TABLE users ADD COLUMN nick text;\nALTER TABLE users DROP COLUMN nick;\nALTER TABLE users RENAME COLUMN name TO nick;\nALTER TABLE users DROP COLUMN nick;",
+			wantNative: []string{"BC101", "BC104", "DS102"},
+			wantAtlas:  []string{"DS102", "DS102"},
+		},
+		{
+			name:       "the column dropped twice, the second time after it was dropped",
+			sql:        "ALTER TABLE users ADD COLUMN nick text;\nALTER TABLE users DROP COLUMN nick;\nALTER TABLE users DROP COLUMN nick;",
+			wantNative: []string{"BC104", "DS102"},
+			wantAtlas:  []string{"DS102"},
+		},
+		{
+			name:       "another table renamed into a created table's name",
+			sql:        "CREATE TABLE t (id int, nick text);\nDROP TABLE t;\nALTER TABLE users RENAME TO t;\nALTER TABLE t DROP COLUMN nick;",
+			wantNative: []string{"BC101", "BC104", "DS102"},
+			wantAtlas:  []string{"DS101", "DS102"},
 		},
 		{
 			name:       "table not created in this file",

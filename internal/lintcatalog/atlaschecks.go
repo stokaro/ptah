@@ -105,7 +105,7 @@ var atlasChecks = []AtlasCheck{
 	},
 	{
 		Code: "BC104", Meaning: "dropping a column", PtahRules: []string{"BC104"}, Status: StatusCovered,
-		Note: "as BC103, beside DS102, and reported on the same surface; a column of a table this migration itself created is exempt, which DS102 is deliberately not",
+		Note: "as BC103, beside DS102, and reported on the same surface; a column the migration created or added earlier is exempt from both, since no deployed client read it",
 	},
 
 	{Code: "MY101", Meaning: "adding a non-nullable column without a DEFAULT to an existing table", PtahRules: []string{"DD101"}, Status: StatusCovered, Note: "DD101 applies to every dialect"},

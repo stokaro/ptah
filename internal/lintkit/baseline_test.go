@@ -89,6 +89,40 @@ func TestState_TableLookups(t *testing.T) {
 	c.Assert(found, qt.IsFalse)
 }
 
+// LacksTable answers true only where the state was read and no table it holds
+// can be the one named. A schema the state does not hold, and any qualifier
+// against a state that names no schema, leave the answer open.
+func TestState_LacksTable(t *testing.T) {
+	// dotted names no schema and holds a table whose name carries a dot, so
+	// only the state's lack of schemas keeps OTHER. from reading as a schema
+	// it holds.
+	dotted := lintkit.NewStates(lintext.Baseline{
+		Columns: []lintext.BaselineColumn{{Version: 1, Table: "other.x", Name: "id"}},
+	})[1]
+	for _, test := range []struct {
+		name  string
+		state lintkit.State
+		table string
+		want  bool
+	}{
+		{"absent, qualified by a held schema", states()[1], "PUBLIC.MISSING", true},
+		{"absent, bare", states()[1], "MISSING", true},
+		{"present, qualified", states()[1], "PUBLIC.USERS", false},
+		{"present, bare in two schemas", states()[1], "USERS", false},
+		{"a schema the state does not hold", states()[1], "OTHER.MISSING", false},
+		{"no reference", states()[1], "", false},
+		{"absent, bare, against no schema", states()[2], "MISSING", true},
+		{"qualified, against no schema", states()[2], "PUBLIC.MISSING", false},
+		{"qualified, against no schema and a dotted table name", dotted, "OTHER.MISSING", false},
+		{"a version never read", states()[3], "MISSING", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(test.state.LacksTable(test.table), qt.Equals, test.want)
+		})
+	}
+}
+
 // A key over whole columns names them; a prefix, an expression or a part the
 // reader could not name keys something else.
 func TestWholeKeyColumns(t *testing.T) {

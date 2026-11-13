@@ -143,6 +143,35 @@ itself may be one of the old table's, and so may a column `SELECT *` moves, so
 from the directory's earlier migrations and reports a copy that leaves one
 out; it does not read the `SELECT` list.
 
+A drop of something that never held data destroys nothing and retires no name a
+deployed client read. The community binary compares the schema a version starts
+from with the one it ends with and reports nothing for it, and the drop rules
+leave it alone on both surfaces:
+
+- `DS102` and `BC104` skip a column of a table the same migration created, and
+  a column an earlier `ALTER TABLE ... ADD` of the migration added. A column
+  added with `IF NOT EXISTS` may have been there already, and a rename may give
+  a table or a column a name that held data, so neither is skipped.
+- `DS101` and `BC103` skip a `DROP TABLE IF EXISTS` of a table the starting
+  state does not hold. The summary of `ptah-compat migrate lint` counts no
+  schema change for it. A schema the state does not hold, and a qualified name
+  against a state that names no schema, leave the drop reported.
+
+The rules that exempt a table the migration created (`DS101`, `DS102`,
+`BC101`, `BC103`, `BC104`, `DD101`, `MF101` and `MF102`) count a
+`CREATE TABLE IF NOT EXISTS` as a creation only when the starting state holds
+no such table, since the statement may find the table there already, holding
+rows. Where the state holds it, the summary counts no schema change for the
+statement.
+
+Both answers about a table's absence come from the dev database, so without
+one the statement is reported as any other and the notice above names the
+rules. They also need the name to be untouched before the statement: an
+earlier statement that names the table may have created it or renamed another
+table to it, and a statement whose effect its words do not show, such as a
+`DO` block, a `CALL`, a prepared statement or a `SET` of the search path, may
+have done either out of sight. After either, the statement is reported too.
+
 ## How identifiers are spelled
 
 An identifier is a two- or three-letter family prefix and a number. The prefix
@@ -531,7 +560,7 @@ Every check code in the reviewed snapshot of the [Atlas analyzer documentation](
 | `BC101` | renaming a table | no | `BC101` | covered |
 | `BC102` | renaming a column | no | `BC101` | covered — one rule reports both object kinds |
 | `BC103` | dropping a table | no | `BC103` | covered — the rollout break, not the row loss DS101 reports on the same statement, and separately suppressible: accepting the data loss is not accepting deployed clients failing. Native `ptah migrations lint` only; no apply gate |
-| `BC104` | dropping a column | no | `BC104` | covered — as BC103, beside DS102, and reported on the same surface; a column of a table this migration itself created is exempt, which DS102 is deliberately not |
+| `BC104` | dropping a column | no | `BC104` | covered — as BC103, beside DS102, and reported on the same surface; a column the migration created or added earlier is exempt from both, since no deployed client read it |
 | `MY101` | adding a non-nullable column without a DEFAULT to an existing table | no | `DD101` | covered — DD101 applies to every dialect |
 | `MY102` | an inline REFERENCES clause in ADD COLUMN has no effect | no | `MY102` | covered |
 | `MY110` | removing enum values from a column requires a table copy | no | `MY110` | covered |

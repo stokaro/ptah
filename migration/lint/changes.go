@@ -67,6 +67,9 @@ type SchemaChange struct {
 // so a single construct the parser does not model (for example GRANT) cannot
 // suppress the changes of its neighbors. Down migrations and files without
 // parsed statements yield no changes.
+// A DROP TABLE IF EXISTS of a table the starting state shows is absent, and a
+// CREATE TABLE IF NOT EXISTS of one it shows is present, change nothing, so
+// they count no change; see [withoutNoopChanges].
 // Changes to objects outside scope are dropped: the dev database the run
 // compares against does not contain them, so they express no change to the
 // state under review. Measured against the pinned community binary v1.3.0 with
@@ -85,7 +88,7 @@ func extractSchemaChanges(file *File, dialect string, scope schemaScope) ([]Sche
 	excluded := make(map[int]bool)
 	for i := range file.Statements {
 		stmtChanges, out := statementSchemaChanges(file, file.Statements[i], dialect, scope)
-		changes = append(changes, stmtChanges...)
+		changes = append(changes, withoutNoopChanges(file, i, stmtChanges)...)
 		if out {
 			excluded[file.Statements[i].Index] = true
 		}
