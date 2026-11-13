@@ -34,9 +34,11 @@ type Lint struct {
 	// SetNotNullRebuilds reports that the engine enforces NOT NULL on
 	// existing nullable data only through a staged rebuild and backfill.
 	SetNotNullRebuilds bool `json:"set_not_null_rebuilds,omitempty"`
-	// AtlasRebuildColumnDiff reports that Atlas-compatible lint compares the
-	// old and replacement table columns, so a lost column is a column-drop
-	// finding rather than a table-drop finding. It needs a dev baseline.
+	// AtlasRebuildColumnDiff reports that Atlas-compatible lint reads a table
+	// replacement as one change to the replaced table, as the community
+	// binary's analyzer for the engine does. A lost column is then a
+	// column-drop finding rather than a table-drop finding, which needs a dev
+	// baseline, and the summary counts the replacement as one schema change.
 	AtlasRebuildColumnDiff bool `json:"atlas_rebuild_column_diff,omitempty"`
 	// OnlineMeasured reports that the online lint mode has a measurement for
 	// the dialect behind it.

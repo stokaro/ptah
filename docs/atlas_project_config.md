@@ -302,6 +302,17 @@ list to inspect a table replacement. A copy that keeps every column produces
 no destructive finding. If the replacement omits a column, the report names
 that column as Atlas `DS103` at the replacement table's `CREATE TABLE` line.
 Without a dev database, Ptah cannot establish which old columns the copy lost.
+The summary follows the community binary's count. A replacement that creates
+`new_<table>`, runs one statement, drops `<table>` and renames `new_<table>`
+to `<table>` is one schema change, when each name is spelled as the server
+spells the table. The steps of any other copy count one by one.
+
+The findings deliberately differ from the community binary, which recognizes a
+replacement by the `new_` name alone. Ptah reads the copy instead. A complete
+copy under another name produces no finding, where the community binary
+reports `DS102` for the old table. A `new_<table>` replacement whose copy
+leaves a column's values or the rows behind is reported, where the community
+binary reports nothing.
 
 The supported mappings are `destructive` to the `DS` family, `data_depend` to
 the `DD` family, `incompatible` to the `BC` family, `concurrent_index` to

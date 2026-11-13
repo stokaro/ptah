@@ -6,6 +6,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/schemaext"
+	"ptah.run/internal/lintkit"
 	"ptah.run/internal/parser"
 	"ptah.run/internal/sqlsyntax"
 )
@@ -90,6 +91,44 @@ func extractSchemaChanges(file *File, dialect string, scope schemaScope) ([]Sche
 		}
 	}
 	return changes, excluded
+}
+
+// foldAtlasReplacements counts a SQLite table replacement the way the
+// community binary's SQLite analyzer does: as one change to the replaced
+// table, at the CREATE TABLE line. Measured against the pinned community
+// binary v1.3.0, the summary of `CREATE TABLE new_users ...; INSERT ...; DROP
+// TABLE users; ALTER TABLE new_users RENAME TO users;` says one schema change
+// where the statements alone say four, and the same steps under the name
+// users_tmp say four.
+//
+// The fold follows the statements, not what the parser modeled of them: the
+// analyzer reads the changes the dev database shows, which do not depend on
+// Ptah's grammar. A replacement whose statements the scope removed entirely
+// contributes no change, as it does there.
+func foldAtlasReplacements(file *File, changes []SchemaChange) []SchemaChange {
+	// spans maps every statement of a replacement to it.
+	spans := make(map[int]lintkit.AtlasReplacement)
+	for _, replacement := range lintkit.AtlasReplacements(file.contract, file.baseline) {
+		for index := replacement.Create; index <= replacement.Rename; index++ {
+			spans[index] = replacement
+		}
+	}
+	folded := make([]SchemaChange, 0, len(changes))
+	counted := make(map[int]bool)
+	for _, change := range changes {
+		replacement, inSpan := spans[change.StatementIndex]
+		switch {
+		case !inSpan:
+			folded = append(folded, change)
+		case !counted[replacement.Create]:
+			counted[replacement.Create] = true
+			create := file.Statements[replacement.Create]
+			change.StatementIndex, change.Line = create.Index, create.Line
+			change.Kind, change.Object = SchemaChangeModify, replacement.Table
+			folded = append(folded, change)
+		}
+	}
+	return folded
 }
 
 // statementSchemaChanges returns the changes a statement makes and reports

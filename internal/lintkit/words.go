@@ -325,8 +325,15 @@ func ScanSetNotNull(w []string) bool {
 // TABLE statement creates, or "" for any other statement. Temporary-table
 // modifiers and IF NOT EXISTS are skipped.
 func CreatedTableRef(w []string) string {
+	return CreatedTable(w, w).Normalized
+}
+
+// CreatedTable returns the table a CREATE TABLE statement creates, as the
+// author spelled it and normalized, or the zero value for any other statement.
+// Temporary-table modifiers and IF NOT EXISTS are skipped.
+func CreatedTable(w, sourceWords []string) TableReference {
 	if len(w) == 0 || w[0] != "CREATE" {
-		return ""
+		return TableReference{}
 	}
 	j := 1
 	for j < len(w) {
@@ -338,14 +345,14 @@ func CreatedTableRef(w []string) string {
 		break
 	}
 	if j >= len(w) || w[j] != "TABLE" {
-		return ""
+		return TableReference{}
 	}
 	j++
 	if j+2 < len(w) && w[j] == "IF" && w[j+1] == "NOT" && w[j+2] == "EXISTS" {
 		j += 3
 	}
-	ref, _ := TableRefAt(w, w, j)
-	return ref.Normalized
+	ref, _ := TableRefAt(w, sourceWords, j)
+	return ref
 }
 
 // TableRefAt reads a possibly schema-qualified table reference at w[j] and

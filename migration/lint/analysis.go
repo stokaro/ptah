@@ -960,6 +960,9 @@ func attachStatements(
 		next++
 		if file.IsUp {
 			file.Changes, file.scopeExcluded = extractSchemaChanges(file, dialect, scope)
+			if compatibility == CompatibilityProfileAtlas && lintOf(dialect).AtlasRebuildColumnDiff {
+				file.Changes = foldAtlasReplacements(file, file.Changes)
+			}
 		}
 	}
 }

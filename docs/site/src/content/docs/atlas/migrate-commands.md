@@ -2107,16 +2107,20 @@ selecting `--latest` versions, replaying migrations, and rendering reports.
 Checksum status, findings, statement metadata, and formatted output therefore
 describe the same immutable inputs.
 
-The `Replay Migration Files` step reports the number of semantic schema changes
-the selected migrations express, recovered from Ptah's dialect-aware parse of
-their DDL — the same parser the replay and planner use — not a count of
+The `Replay Migration Files` step reports how many selected migration files
+the dev database replayed, as the community binary does:
+`Loaded 2 changes on dev database` names two files, whatever they contain.
+
+The summary's schema-change count is recovered from Ptah's dialect-aware parse
+of the DDL, the parser the replay and planner use, and is not a count of
 statements or files. One statement can contribute zero changes (an operational
 `INSERT`/`SELECT` or a construct outside the DDL grammar), exactly one (a single
 `CREATE`), or several (a multi-action `ALTER TABLE`, or a `DROP TABLE` naming
-several tables), so this change count and the new-migration-file count differ in
-general. A table rename counts as two changes — the old name stops naming an
-object and the new one starts — while a column rename counts as one, because the
-table it modifies stays the same object.
+several tables). A table rename counts as two changes, because the old name
+stops naming an object and the new one starts, while a column rename counts as
+one, because the table it modifies stays the same object. On SQLite, a table
+replacement through a `new_<table>` copy counts as one change, as the community
+binary's SQLite analyzer counts it.
 
 Ptah also validates and fully loads the migration provider, including Atlas
 templates, before dropping any objects from the dev database. A malformed

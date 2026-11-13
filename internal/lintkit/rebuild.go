@@ -2,6 +2,7 @@ package lintkit
 
 import (
 	"slices"
+	"strings"
 
 	"ptah.run/core/lintext"
 )
@@ -101,6 +102,89 @@ func RebuildChanges(statements []lintext.Statement, columns Columns) map[int]Reb
 	return changes
 }
 
+// atlasReplacementPrefix is the name prefix the community binary's SQLite
+// analyzer reads a replacement table by. A copy under any other name is not
+// folded there.
+const atlasReplacementPrefix = "new_"
+
+// AtlasReplacement is a SQLite table replacement in the shape the community
+// binary folds into one table change: `CREATE TABLE new_t`, any one statement,
+// `DROP TABLE t`, then `ALTER TABLE new_t RENAME TO t`, each a statement of its
+// own and in that order.
+type AtlasReplacement struct {
+	// Create, Drop and Rename are statement indexes.
+	Create int
+	Drop   int
+	Rename int
+	// Table is the replaced table as the DROP TABLE spells it.
+	Table string
+}
+
+// AtlasReplacements finds the table replacements the community binary's
+// SQLite analyzer folds, in order. Two cannot overlap: no statement of one
+// can begin another. baseline is the schema state before the statements run.
+//
+// The shape is that analyzer's, not [Rebuilds]': it keys on the `new_` prefix
+// as spelled, which [Rebuilds] does not, and it does not read the statement
+// between the CREATE and the DROP, where [Rebuilds] requires a full copy. A
+// match says what the summary counts, never whether a row was lost.
+func AtlasReplacements(statements []lintext.Statement, baseline State) []AtlasReplacement {
+	var replacements []AtlasReplacement
+	for create := range statements {
+		if replacement, ok := atlasReplacementAt(statements, create, baseline); ok {
+			replacements = append(replacements, replacement)
+		}
+	}
+	return replacements
+}
+
+// atlasReplacementAt matches the replacement whose CREATE TABLE is the
+// statement at create.
+//
+// The analyzer compares table names exactly, as the server spells them: the
+// copy as its CREATE TABLE writes it, the old table as the baseline reports
+// it, and the copy's new name as the rename writes it. A server resolves a
+// name in any case, so `ALTER TABLE NEW_USERS RENAME TO users` still renames
+// new_users, but `RENAME TO USERS` leaves a table the analyzer does not
+// recognize as users.
+func atlasReplacementAt(statements []lintext.Statement, create int, baseline State) (AtlasReplacement, bool) {
+	replacement := AtlasReplacement{Create: create, Drop: create + 2, Rename: create + 3}
+	if replacement.Rename >= len(statements) {
+		return AtlasReplacement{}, false
+	}
+	scratch := CreatedTable(statements[create].Words, statements[create].SourceWords)
+	table, ok := strings.CutPrefix(spelledName(scratch), atlasReplacementPrefix)
+	if !ok || table == "" {
+		return AtlasReplacement{}, false
+	}
+	dropped, ok := singleDroppedTable(&statements[replacement.Drop])
+	if !ok || serverSpelling(dropped, baseline) != table {
+		return AtlasReplacement{}, false
+	}
+	from, to, ok := tableRenameOf(&statements[replacement.Rename])
+	if !ok || !sameTableRef(from.Normalized, scratch.Normalized) || spelledName(to) != table {
+		return AtlasReplacement{}, false
+	}
+	replacement.Table = dropped.Name
+	return replacement, true
+}
+
+// spelledName is a table reference's name as written, past any schema and
+// without its quotes.
+func spelledName(ref TableReference) string {
+	unqualified := ref.Name[strings.LastIndex(ref.Name, ".")+1:]
+	return strings.Trim(unqualified, "`\"[]")
+}
+
+// serverSpelling is the name of the table ref names as the baseline reports
+// it, and as ref writes it where the baseline does not know the table.
+func serverSpelling(ref TableReference, baseline State) string {
+	if columns := baseline.TableColumns(ref.Normalized); len(columns) > 0 {
+		return columns[0].Table
+	}
+	return spelledName(ref)
+}
+
 // rebuildMatch is one rebuild: the statement that drops the replaced table and
 // the renames that swap the copy in.
 type rebuildMatch struct {
@@ -150,11 +234,11 @@ func rebuildSteps(statements []lintext.Statement, index int) []int {
 // the copy takes its name.
 func sqliteSwap(statements []lintext.Statement, steps []int, scratch, old string) (rebuildMatch, bool) {
 	dropped, ok := singleDroppedTable(&statements[steps[0]])
-	if !ok || !sameTableRef(dropped, old) {
+	if !ok || !sameTableRef(dropped.Normalized, old) {
 		return rebuildMatch{}, false
 	}
 	from, to, ok := tableRenameOf(&statements[steps[1]])
-	if !ok || !sameTableRef(from, scratch) || !sameTableRef(to, old) {
+	if !ok || !sameTableRef(from.Normalized, scratch) || !sameTableRef(to.Normalized, old) {
 		return rebuildMatch{}, false
 	}
 	return rebuildMatch{drop: steps[0], renames: []int{steps[1]}}, true
@@ -168,14 +252,14 @@ func ydbSwap(statements []lintext.Statement, steps []int, scratch, old string) (
 		return rebuildMatch{}, false
 	}
 	aside, replaced, ok := tableRenameOf(&statements[steps[0]])
-	if !ok || !sameTableRef(aside, old) {
+	if !ok || !sameTableRef(aside.Normalized, old) {
 		return rebuildMatch{}, false
 	}
 	from, to, ok := tableRenameOf(&statements[steps[1]])
-	if !ok || !sameTableRef(from, scratch) || !sameTableRef(to, old) {
+	if !ok || !sameTableRef(from.Normalized, scratch) || !sameTableRef(to.Normalized, old) {
 		return rebuildMatch{}, false
 	}
-	if dropped, ok := singleDroppedTable(&statements[steps[2]]); !ok || !sameTableRef(dropped, replaced) {
+	if dropped, ok := singleDroppedTable(&statements[steps[2]]); !ok || !sameTableRef(dropped.Normalized, replaced.Normalized) {
 		return rebuildMatch{}, false
 	}
 	return rebuildMatch{drop: steps[2], renames: []int{steps[0], steps[1]}}, true
@@ -285,33 +369,33 @@ func copiedTable(stmt *lintext.Statement, j int) (string, bool) {
 }
 
 // singleDroppedTable reads a DROP TABLE of one table.
-func singleDroppedTable(stmt *lintext.Statement) (string, bool) {
+func singleDroppedTable(stmt *lintext.Statement) (TableReference, bool) {
 	if !HasWordPrefix(stmt.Words, "DROP", "TABLE") {
-		return "", false
+		return TableReference{}, false
 	}
 	tables, complete := DroppedTablesNotCreated(stmt.Words, stmt.SourceWords, nil)
 	if !complete || len(tables) != 1 {
-		return "", false
+		return TableReference{}, false
 	}
-	return tables[0].Normalized, true
+	return tables[0], true
 }
 
 // tableRenameOf reads `ALTER TABLE from RENAME TO to`, the one clause of its
 // statement.
-func tableRenameOf(stmt *lintext.Statement) (from, to string, ok bool) {
+func tableRenameOf(stmt *lintext.Statement) (from, to TableReference, ok bool) {
 	w := stmt.Words
 	if !HasWordPrefix(w, "ALTER", "TABLE") {
-		return "", "", false
+		return TableReference{}, TableReference{}, false
 	}
 	table, j := TableRefAt(w, stmt.SourceWords, SkipIfExists(w, 2))
 	if table.Normalized == "" || j+1 >= len(w) || w[j] != "RENAME" || w[j+1] != "TO" {
-		return "", "", false
+		return TableReference{}, TableReference{}, false
 	}
 	target, next := TableRefAt(w, stmt.SourceWords, j+2)
 	if target.Normalized == "" || next != len(w) {
-		return "", "", false
+		return TableReference{}, TableReference{}, false
 	}
-	return table.Normalized, target.Normalized, true
+	return table, target, true
 }
 
 // sameTableRef reports whether two folded references name one table: equal,

@@ -130,7 +130,7 @@ func NewMigrateLint(opts MigrateLintOptions) (MigrateLint, error) {
 		Schema: opts.Schema,
 	}
 	if opts.Integrity.Failed() {
-		result.Steps = migrateLintSteps(nil, 0, 0, opts.Integrity, "")
+		result.Steps = migrateLintSteps(nil, 0, opts.Integrity, "")
 		result.Files = []MigrateLintFile{
 			{
 				Name:  migratesum.AtlasFileName,
@@ -143,9 +143,9 @@ func NewMigrateLint(opts MigrateLintOptions) (MigrateLint, error) {
 	if opts.Analysis == nil {
 		return MigrateLint{}, fmt.Errorf("migration lint analysis is required")
 	}
-	files, total, changes := migrateLintFiles(*opts.Analysis)
+	files, total := migrateLintFiles(*opts.Analysis)
 	files = attachMigrateLintFindings(files, opts.Analysis.Findings())
-	result.Steps = migrateLintSteps(files, total, changes, opts.Integrity, opts.Error)
+	result.Steps = migrateLintSteps(files, total, opts.Integrity, opts.Error)
 	result.Files = files
 	return result, nil
 }
@@ -193,13 +193,9 @@ func (i MigrateLintIntegrity) Failed() bool {
 	return i.Checked && i.Error != ""
 }
 
-// migrateLintFiles returns the selected up-migration files, the count of new
-// up-migration files considered, and the total number of semantic schema
-// changes those selected files express. The change count is sourced from the
-// dialect-aware replay/planning pipeline (see migrationlint.SchemaChange), not
-// from re-parsing SQL here, so one statement can contribute zero, one, or
-// several changes.
-func migrateLintFiles(analysis migrationlint.Analysis) (files []MigrateLintFile, total, changes int) {
+// migrateLintFiles returns the selected up-migration files and the count of
+// new up-migration files considered.
+func migrateLintFiles(analysis migrationlint.Analysis) (files []MigrateLintFile, total int) {
 	prepared := analysis.Files()
 	maxVersion := migrateLintMaxVersion(prepared)
 	slices.SortStableFunc(prepared, func(a, b migrationlint.File) int {
@@ -214,14 +210,13 @@ func migrateLintFiles(analysis migrationlint.Analysis) (files []MigrateLintFile,
 		if !file.Selected {
 			continue
 		}
-		changes += len(file.Changes)
 		files = append(files, MigrateLintFile{
 			Name:       file.Name,
 			Text:       file.Source,
 			sourcePath: file.Path,
 		})
 	}
-	return files, total, changes
+	return files, total
 }
 
 func migrateLintVersionKey(file migrationlint.File, revisionVersions map[int64]string) string {
@@ -363,8 +358,7 @@ func atlasMigrateLintFinding(finding migrationlint.Finding) migrationlint.Findin
 
 func migrateLintSteps(
 	files []MigrateLintFile,
-	total,
-	changes int,
+	total int,
 	integrity MigrateLintIntegrity,
 	errText string,
 ) []MigrateLintStep {
@@ -392,9 +386,11 @@ func migrateLintSteps(
 			Error: errText,
 		})
 	}
+	// The community binary counts the files it replayed here, not their
+	// schema changes: a version that creates two tables loads one.
 	steps = append(steps, MigrateLintStep{
 		Name: "Replay Migration Files",
-		Text: fmt.Sprintf("Loaded %d changes on dev database", changes),
+		Text: fmt.Sprintf("Loaded %d changes on dev database", len(files)),
 	})
 	for _, file := range files {
 		steps = append(steps, MigrateLintStep{
