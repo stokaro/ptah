@@ -1,6 +1,7 @@
 package migrator_test
 
 import (
+	"maps"
 	"path/filepath"
 	"testing"
 	"testing/fstest"
@@ -63,10 +64,7 @@ func TestAppliedHistoryHappyPath(t *testing.T) {
 }
 
 func TestAppliedHistoryFailurePathRefusesAHistoryThatCannotBeReplayed(t *testing.T) {
-	withoutOrders := fstest.MapFS{}
-	for name, file := range appliedHistoryFixture {
-		withoutOrders[name] = file
-	}
+	withoutOrders := maps.Clone(appliedHistoryFixture)
 	delete(withoutOrders, "0000000002_orders.up.sql")
 	delete(withoutOrders, "0000000002_orders.down.sql")
 

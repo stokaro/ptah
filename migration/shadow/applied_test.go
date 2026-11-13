@@ -200,58 +200,55 @@ func TestVerifyAppliedFailurePathReportsDrift(t *testing.T) {
 	}
 }
 
-func TestVerifyAppliedFailurePathCannotCompare(t *testing.T) {
+// assertCannotCompare holds a verification that could not compare to its stage
+// and kind, with no result.
+func assertCannotCompare(c *qt.C, result shadow.AppliedResult, err error, stage, kind string) {
+	c.Helper()
+	c.Assert(result, qt.DeepEquals, shadow.AppliedResult{})
+	var verification *shadow.VerificationError
+	c.Assert(err, qt.ErrorAs, &verification)
+	c.Assert(err, qt.ErrorMatches, `(?s)applied history shadow check failed: .*`)
+	c.Assert(verification.Result.Stage, qt.Equals, stage)
+	c.Assert(verification.Result.Mismatches[0].Kind, qt.Equals, kind)
+}
+
+func TestVerifyAppliedFailurePathRefusesTheTargetAsShadow(t *testing.T) {
+	c := qt.New(t)
+	target, targetURL, history := appliedTarget(c, 2)
+
+	result, err := shadow.VerifyApplied(t.Context(), appliedOptions(target, history, targetURL, nil))
+
+	assertCannotCompare(c, result, err, "realm-check", "target_shadow_same_realm")
+	c.Assert(sqliteTables(c, targetURL), qt.DeepEquals, []string{"orders", "schema_migrations", "schema_migrations_log", "users"})
+}
+
+func TestVerifyAppliedFailurePathRefusesAShadowThatHoldsATable(t *testing.T) {
+	c := qt.New(t)
+	target, _, history := appliedTarget(c, 2)
+	shadowDatabase := newShadow(c, "CREATE TABLE keep_me (id INTEGER PRIMARY KEY)")
+
+	result, err := shadow.VerifyApplied(t.Context(), appliedOptions(target, history, shadowDatabase, nil))
+
+	assertCannotCompare(c, result, err, "claim", "not_clean")
+	c.Assert(sqliteTables(c, shadowDatabase), qt.DeepEquals, []string{"keep_me"})
+}
+
+func TestVerifyAppliedFailurePathReportsAFailedReplay(t *testing.T) {
+	c := qt.New(t)
 	broken := must.Must(migrator.NewFSMigrationProvider(fstest.MapFS{
 		"0000000001_users.up.sql":    {Data: []byte("CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT NOT NULL);")},
 		"0000000001_users.down.sql":  {Data: []byte("DROP TABLE users;")},
 		"0000000002_broken.up.sql":   {Data: []byte("CREATE TABLE orders (id INTEGER PRIMARY KEY REFERENCES;")},
 		"0000000002_broken.down.sql": {Data: []byte("DROP TABLE orders;")},
 	}))
-	for _, test := range []struct {
-		name string
-		// shadow is the shadow database's URL, given the target's.
-		shadow func(c *qt.C, targetURL string) string
-		edit   func(*shadow.AppliedVerifyOptions)
-		stage  string
-		kind   string
-		// left is what the shadow database holds afterwards.
-		left []string
-	}{
-		{
-			name:   "the target given as the shadow database",
-			shadow: func(_ *qt.C, targetURL string) string { return targetURL },
-			stage:  "realm-check", kind: "target_shadow_same_realm",
-			left: []string{"orders", "schema_migrations", "schema_migrations_log", "users"},
-		},
-		{
-			name:   "a shadow database that holds a table",
-			shadow: func(c *qt.C, _ string) string { return newShadow(c, "CREATE TABLE keep_me (id INTEGER PRIMARY KEY)") },
-			stage:  "claim", kind: "not_clean",
-			left: []string{"keep_me"},
-		},
-		{
-			name:   "a history whose replay fails",
-			shadow: func(c *qt.C, _ string) string { return newShadow(c) },
-			edit:   func(opts *shadow.AppliedVerifyOptions) { opts.Migrations = broken.Migrations() },
-			stage:  "replay", kind: "replay_error",
-		},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			target, targetURL, history := appliedTarget(c, 2)
-			shadowDatabase := test.shadow(c, targetURL)
+	target, _, history := appliedTarget(c, 2)
+	shadowDatabase := newShadow(c)
 
-			result, err := shadow.VerifyApplied(t.Context(), appliedOptions(target, history, shadowDatabase, test.edit))
+	result, err := shadow.VerifyApplied(t.Context(), appliedOptions(target, history, shadowDatabase,
+		func(opts *shadow.AppliedVerifyOptions) { opts.Migrations = broken.Migrations() }))
 
-			c.Assert(result, qt.DeepEquals, shadow.AppliedResult{})
-			var verification *shadow.VerificationError
-			c.Assert(err, qt.ErrorAs, &verification)
-			c.Assert(err, qt.ErrorMatches, `(?s)applied history shadow check failed: .*`)
-			c.Assert(verification.Result.Stage, qt.Equals, test.stage)
-			c.Assert(verification.Result.Mismatches[0].Kind, qt.Equals, test.kind)
-			c.Assert(sqliteTables(c, shadowDatabase), qt.DeepEquals, test.left)
-		})
-	}
+	assertCannotCompare(c, result, err, "replay", "replay_error")
+	c.Assert(sqliteTables(c, shadowDatabase), qt.HasLen, 0)
 }
 
 // A target bootstrapped from an Atlas checkpoint replays from that checkpoint,

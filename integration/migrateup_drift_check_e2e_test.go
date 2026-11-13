@@ -106,8 +106,14 @@ func (r driftCheckRun) scalar(c *qt.C, url, query string) int {
 }
 
 // shadowObjects counts what the shadow database holds in public afterwards.
+// publicObjects counts the relations in the public schema of the database at
+// url.
+func (r driftCheckRun) publicObjects(c *qt.C, url string) int {
+	return r.scalar(c, url, "SELECT COUNT(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public'")
+}
+
 func (r driftCheckRun) shadowObjects(c *qt.C) int {
-	return r.scalar(c, r.shadowURL, "SELECT COUNT(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public'")
+	return r.publicObjects(c, r.shadowURL)
 }
 
 func (r driftCheckRun) appliedVersion(c *qt.C) int {
@@ -197,69 +203,51 @@ func TestMigrateUpCheckDriftLiveFailurePathRefusesDrift(t *testing.T) {
 	}
 }
 
-func TestMigrateUpCheckDriftLiveFailurePathCannotCheck(t *testing.T) {
-	for _, test := range []struct {
-		name    string
-		version string
-		// prepare changes the run before the check.
-		prepare func(c *qt.C, run *driftCheckRun)
-		stage   string
-		reason  string
-		// shadowLeft is what the shadow database holds in public afterwards,
-		// given what the target held before.
-		shadowLeft func(before int) int
-		want       int
-	}{
-		{
-			name: "the target given as the shadow database", version: "1",
-			prepare: func(_ *qt.C, run *driftCheckRun) { run.shadowURL = run.targetURL },
-			stage:   "realm-check", reason: "target_shadow_same_realm",
-			// The shadow is the target, which keeps everything it held.
-			shadowLeft: func(before int) int { return before },
-			want:       1,
-		},
-		{
-			name: "a shadow database that holds a table", version: "1",
-			prepare: func(c *qt.C, run *driftCheckRun) {
-				run.exec(c, run.shadowURL, "CREATE TABLE keep_me (id BIGINT PRIMARY KEY)")
-			},
-			stage: "claim", reason: "not_clean",
-			// keep_me and its primary key's index.
-			shadowLeft: func(int) int { return 2 },
-			want:       1,
-		},
-		{
-			// A replay applies versions in order, so it cannot reproduce a
-			// history that ran a lower version after a higher one.
-			name: "a history applied out of order", version: "2",
-			prepare: func(c *qt.C, run *driftCheckRun) {
-				run.exec(c, run.targetURL, "UPDATE schema_migrations SET applied_at = applied_at + interval '1 hour' WHERE version = 1")
-			},
-			stage: "history", reason: migrator.UnreplayableOutOfOrder,
-			shadowLeft: func(int) int { return 0 },
-			want:       2,
-		},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			run := newDriftCheckRun(c, t, test.version)
-			before := run.scalar(c, run.targetURL,
-				"SELECT COUNT(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public'")
-			test.prepare(c, &run)
+// assertCannotCheck runs the check and holds it to a refusal at stage for
+// reason that left the target as it was: holding the objects it held before,
+// its row, and the version it had.
+func (r driftCheckRun) assertCannotCheck(c *qt.C, stage, reason string, before, version int) {
+	c.Helper()
+	result, stderr, code := r.check(c)
 
-			result, stderr, code := run.check(c)
+	c.Assert(code, qt.Equals, 2, qt.Commentf("%s", stderr))
+	c.Assert(stderr, qt.Contains, "the drift check could not compare the database with its applied history")
+	c.Assert(result.DriftCheck.Outcome, qt.Equals, migrator.DriftUnable)
+	c.Assert(result.DriftCheck.Stage, qt.Equals, stage)
+	c.Assert(result.DriftCheck.Reason, qt.Equals, reason)
+	c.Assert(r.publicObjects(c, r.targetURL), qt.Equals, before)
+	c.Assert(r.scalar(c, r.targetURL, "SELECT COUNT(*) FROM drift_users"), qt.Equals, 1)
+	c.Assert(r.appliedVersion(c), qt.Equals, version)
+}
 
-			c.Assert(code, qt.Equals, 2, qt.Commentf("%s", stderr))
-			c.Assert(stderr, qt.Contains, "the drift check could not compare the database with its applied history")
-			c.Assert(result.DriftCheck.Outcome, qt.Equals, migrator.DriftUnable)
-			c.Assert(result.DriftCheck.Stage, qt.Equals, test.stage)
-			c.Assert(result.DriftCheck.Reason, qt.Equals, test.reason)
-			c.Assert(run.scalar(c, run.targetURL,
-				"SELECT COUNT(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public'"),
-				qt.Equals, before)
-			c.Assert(run.scalar(c, run.targetURL, "SELECT COUNT(*) FROM drift_users"), qt.Equals, 1)
-			c.Assert(run.appliedVersion(c), qt.Equals, test.want)
-			c.Assert(run.shadowObjects(c), qt.Equals, test.shadowLeft(before))
-		})
-	}
+func TestMigrateUpCheckDriftLiveFailurePathRefusesTheTargetAsShadow(t *testing.T) {
+	c := qt.New(t)
+	run := newDriftCheckRun(c, t, "1")
+	before := run.publicObjects(c, run.targetURL)
+	run.shadowURL = run.targetURL
+
+	run.assertCannotCheck(c, "realm-check", "target_shadow_same_realm", before, 1)
+}
+
+func TestMigrateUpCheckDriftLiveFailurePathRefusesAShadowThatHoldsATable(t *testing.T) {
+	c := qt.New(t)
+	run := newDriftCheckRun(c, t, "1")
+	before := run.publicObjects(c, run.targetURL)
+	run.exec(c, run.shadowURL, "CREATE TABLE keep_me (id BIGINT PRIMARY KEY)")
+
+	run.assertCannotCheck(c, "claim", "not_clean", before, 1)
+	// keep_me and its primary key's index.
+	c.Assert(run.shadowObjects(c), qt.Equals, 2)
+}
+
+// A replay applies versions in order, so it cannot reproduce a history that
+// ran a lower version after a higher one.
+func TestMigrateUpCheckDriftLiveFailurePathRefusesAnOutOfOrderHistory(t *testing.T) {
+	c := qt.New(t)
+	run := newDriftCheckRun(c, t, "2")
+	before := run.publicObjects(c, run.targetURL)
+	run.exec(c, run.targetURL, "UPDATE schema_migrations SET applied_at = applied_at + interval '1 hour' WHERE version = 1")
+
+	run.assertCannotCheck(c, "history", migrator.UnreplayableOutOfOrder, before, 2)
+	c.Assert(run.shadowObjects(c), qt.Equals, 0)
 }

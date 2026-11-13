@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -207,7 +206,7 @@ func TestMigrateUpCheckDriftFailurePathRefusesAnIgnoredSetting(t *testing.T) {
 			out, code := runUpExit(c, append([]string{"--db-url", "sqlite://" + dbPath, "--migrations-dir", migrationsDir}, test.args...)...)
 
 			c.Assert(code, qt.Equals, 2)
-			c.Assert(strings.Contains(out, test.refusal), qt.IsTrue, qt.Commentf("%s", out))
+			c.Assert(out, qt.Contains, test.refusal)
 			c.Assert(countRevisionTables(c, dbPath), qt.Equals, 0)
 		})
 	}

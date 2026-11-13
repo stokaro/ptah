@@ -423,6 +423,13 @@ func resolveProjectOptions(cmd *cobra.Command, opts options, projectCfg projectc
 		opts.connectTimeout,
 		projectconfig.StringMigrationConnectTimeout,
 	)
+	// After the shadow database is resolved, so a project dev_url satisfies
+	// --check-drift, and before the hook is authorized for a run it refuses.
+	if err := validateDriftFlags(
+		opts.checkDrift, cmd.Flags().Changed(shadowDBFlag), cmd.Flags().Changed(driftExcludeFlag), opts.shadowDB,
+	); err != nil {
+		return opts, err
+	}
 	if !opts.dryRun {
 		if err := dbcli.AuthorizeConfiguredHook(cmd.Context(), opts.preUpHookOrigin); err != nil {
 			return opts, err
@@ -472,11 +479,6 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *migraterun.Do
 	}
 	resolvedOpts, err := resolveProjectOptions(cmd, *opts, projectCfg)
 	if err != nil {
-		return err
-	}
-	if err := validateDriftFlags(
-		resolvedOpts.checkDrift, cmd.Flags().Changed(shadowDBFlag), cmd.Flags().Changed(driftExcludeFlag), resolvedOpts.shadowDB,
-	); err != nil {
 		return err
 	}
 	dbURL := resolvedOpts.dbURL

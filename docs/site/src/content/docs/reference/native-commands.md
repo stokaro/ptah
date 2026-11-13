@@ -126,7 +126,7 @@ rather than a person.
 | `ptah migrations status` | Reads the target's tracking table and reports which migrations are applied | — |
 | `ptah migrations tag` | Records, lists or removes a tag in the target's tracking table; two of the three write | — |
 | `ptah migrations test` | Runs declarative test cases against the database named by `--db-url`, whose own help calls it a "Throwaway database URL": the cases run raw SQL and apply schemas there | — |
-| `ptah migrations up` | Runs pending migrations against the target | — |
+| `ptah migrations up` | Runs pending migrations against the target; with `--check-drift` it first replays the applied history into an ephemeral shadow database and compares the target with it | — |
 | `ptah migrations validate` | Validates the directory against its integrity file; the dev database it names is "used to clean and replay migrations for SQL validation" | — |
 | `ptah oci` | Inspect Ptah artifacts in OCI registries | group |
 | `ptah oci capabilities` | Asks the registry behind a reference which features it supports, and prints them | — |

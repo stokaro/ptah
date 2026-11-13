@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
-
 	"ptah.run/dbschema"
 	"ptah.run/engine"
 	"ptah.run/internal/atlasschema"
@@ -206,8 +206,7 @@ func reportDriftCheck(cmd *cobra.Command, emit cliobs.Emitter, drift *driftCheck
 // result, and leaves every other error to the root, which prints it and exits
 // 2. writeDriftReport has printed the drift.
 func driftExitStatus(err error) error {
-	var drifted *DriftError
-	if errors.As(err, &drifted) {
+	if _, drifted := errors.AsType[*DriftError](err); drifted {
 		return exitcode.New(1, err)
 	}
 	return err
@@ -230,8 +229,7 @@ func (d *driftCheck) run(ctx context.Context) (migrator.DriftCheck, error) {
 	history, err := d.mig.AppliedHistory(ctx)
 	if err != nil {
 		check := migrator.DriftCheck{Outcome: migrator.DriftUnable, Stage: "history", Reason: "history_read_error", Message: err.Error()}
-		var unreplayable *migrator.UnreplayableHistoryError
-		if errors.As(err, &unreplayable) {
+		if unreplayable, ok := errors.AsType[*migrator.UnreplayableHistoryError](err); ok {
 			check.Reason = unreplayable.Reason
 		}
 		return check, &DriftCheckUnavailableError{Check: check, Err: err}
@@ -256,8 +254,7 @@ func (d *driftCheck) run(ctx context.Context) (migrator.DriftCheck, error) {
 	})
 	if err != nil {
 		check.Outcome, check.Stage, check.Reason, check.Message = migrator.DriftUnable, "shadow", "verification_error", err.Error()
-		var verification *shadow.VerificationError
-		if errors.As(err, &verification) {
+		if verification, ok := errors.AsType[*shadow.VerificationError](err); ok {
 			check.Stage = verification.Result.Stage
 			if len(verification.Result.Mismatches) > 0 {
 				check.Reason = verification.Result.Mismatches[0].Kind
