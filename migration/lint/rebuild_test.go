@@ -197,7 +197,7 @@ func TestTableRebuild_AtlasSQLiteReportsOnlyLostColumns(t *testing.T) {
 		second string
 		want   []string
 	}{
-		{name: "full copy", second: sqliteRebuild},
+		{name: "full copy", second: sqliteRebuild, want: []string{}},
 		{name: "lost label", second: strings.Replace(sqliteRebuild,
 			`("id", "n", "label") SELECT "id", "n", "label"`,
 			`("id", "n") SELECT "id", "n"`, 1),
