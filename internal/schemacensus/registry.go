@@ -491,6 +491,7 @@ var registry = []Entry{
 	{Field: "schemamodel.Trigger.Dialects", Disposition: DDL},
 	{Field: "schemamodel.Trigger.Event", Disposition: DDL},
 	{Field: "schemamodel.Trigger.ExecuteFunction", Disposition: DDL},
+	{Field: "schemamodel.Trigger.FunctionArguments", Disposition: DDL},
 	{Field: "schemamodel.Trigger.ForEach", Disposition: DDL},
 	{Field: "schemamodel.Trigger.Name", Disposition: DDL},
 	{Field: "schemamodel.Trigger.NewTable", Disposition: DDL},

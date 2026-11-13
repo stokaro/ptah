@@ -277,7 +277,25 @@ func stripTypeCasts(expression string) string {
 // expression[start], the `::` included.
 func skipTypeCast(expression string, start int) int {
 	i := start + 2
-	for i < len(expression) && isTypeCastCharacter(expression[i]) {
+	for i < len(expression) {
+		if expression[i] == '"' {
+			// PostgreSQL prints its internal char type as ::"char".
+			// A quoted type name can also contain doubled quotes.
+			i++
+			for i < len(expression) {
+				if expression[i] == '"' {
+					i++
+					if i >= len(expression) || expression[i] != '"' {
+						break
+					}
+				}
+				i++
+			}
+			continue
+		}
+		if !isTypeCastCharacter(expression[i]) {
+			break
+		}
 		i++
 	}
 	if i >= len(expression) || expression[i] != '(' {

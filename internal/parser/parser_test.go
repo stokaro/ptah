@@ -526,7 +526,7 @@ CREATE INDEX idx_users_name ON users (name);`
 	c.Assert(index.Name, qt.Equals, "idx_users_name")
 }
 
-func TestParser_ParsePostgresExecuteFunctionTriggerAsRawSQL(t *testing.T) {
+func TestParser_ParsePostgresTriggerFunctionArguments(t *testing.T) {
 	c := qt.New(t)
 
 	sql := `CREATE TRIGGER set_updated_at BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION touch_updated_at('updated_at');
@@ -537,10 +537,11 @@ CREATE TABLE audit_log (id INTEGER);`
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 2)
 
-	raw, ok := statements.Statements[0].(*ast.RawSQLNode)
+	trigger, ok := statements.Statements[0].(*ast.CreateTriggerNode)
 	c.Assert(ok, qt.IsTrue)
-	c.Assert(raw.SQL, qt.Contains, "CREATE TRIGGER set_updated_at")
-	c.Assert(raw.SQL, qt.Contains, "EXECUTE FUNCTION touch_updated_at('updated_at')")
+	c.Assert(trigger.Name, qt.Equals, "set_updated_at")
+	c.Assert(trigger.FunctionName, qt.Equals, "touch_updated_at")
+	c.Assert(trigger.FunctionArguments(), qt.DeepEquals, []string{"updated_at"})
 
 	table, ok := statements.Statements[1].(*ast.CreateTableNode)
 	c.Assert(ok, qt.IsTrue)

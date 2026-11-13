@@ -847,9 +847,10 @@ func toDBTriggers(triggers []schemamodel.Trigger, tables map[string]schemamodel.
 			Body:    trigger.Body,
 			Comment: trigger.Comment,
 
-			When:     trigger.When,
-			OldTable: trigger.OldTable,
-			NewTable: trigger.NewTable,
+			When:              trigger.When,
+			OldTable:          trigger.OldTable,
+			NewTable:          trigger.NewTable,
+			FunctionArguments: slices.Clone(trigger.FunctionArguments),
 		})
 	}
 	return out

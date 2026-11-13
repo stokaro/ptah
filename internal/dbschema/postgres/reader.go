@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -3565,6 +3566,7 @@ func (r *Reader) readTriggersForSchema(ctx context.Context, schemaName string) (
 			CASE WHEN (trg.tgtype & 1) <> 0 THEN 'ROW' ELSE 'STATEMENT' END AS for_each,
 			p.prosrc AS body,
 			p.proname AS execute_function,
+			encode(trg.tgargs, 'hex') AS function_arguments_hex,
 			COALESCE(obj_description(trg.oid, 'pg_trigger'), '') AS comment,
 			` + definition + ` AS definition,
 			COALESCE(trg.tgoldtable, '') AS old_table,
@@ -3588,6 +3590,7 @@ func (r *Reader) readTriggersForSchema(ctx context.Context, schemaName string) (
 	for rows.Next() {
 		var trigger catalog.Trigger
 		var definition string
+		var argumentsHex string
 		err := rows.Scan(
 			&trigger.Schema,
 			&trigger.Table,
@@ -3597,6 +3600,7 @@ func (r *Reader) readTriggersForSchema(ctx context.Context, schemaName string) (
 			&trigger.ForEach,
 			&trigger.Body,
 			&trigger.ExecuteFunction,
+			&argumentsHex,
 			&trigger.Comment,
 			&definition,
 			&trigger.OldTable,
@@ -3604,6 +3608,13 @@ func (r *Reader) readTriggersForSchema(ctx context.Context, schemaName string) (
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan trigger: %w", err)
+		}
+		arguments, err := hex.DecodeString(argumentsHex)
+		if err != nil || len(arguments) > 0 && arguments[len(arguments)-1] != 0 {
+			return nil, fmt.Errorf("invalid trigger arguments for %s.%s: %q", trigger.Table, trigger.Name, argumentsHex)
+		}
+		if len(arguments) > 0 {
+			trigger.FunctionArguments = strings.Split(string(arguments[:len(arguments)-1]), "\x00")
 		}
 		// The WHEN condition is read out of the definition; see
 		// [triggerdef.When] for why the catalog column cannot be printed.

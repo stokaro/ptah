@@ -37,6 +37,7 @@ func TestReadTriggersForSchema_ReportsTheFunctionItRuns(t *testing.T) {
 	// carry: with only the source, the two are indistinguishable from two
 	// triggers that happen to have identical bodies.
 	c.Assert(triggers[0].ExecuteFunction, qt.Equals, "audit_fn")
+	c.Assert(triggers[0].FunctionArguments, qt.DeepEquals, []string{"updated_at"})
 	c.Assert(triggers[1].ExecuteFunction, qt.Equals, "audit_fn")
 	c.Assert(triggers[0].Body, qt.Contains, "INSERT INTO audit_log")
 }
@@ -65,13 +66,13 @@ func answeringTriggerFunctions(query string, _ []driver.NamedValue) (dbtest.Quer
 	return dbtest.QueryResult{
 		Columns: []string{
 			"schema_name", "table_name", "trigger_name",
-			"timing", "event", "for_each", "body", "execute_function", "comment",
+			"timing", "event", "for_each", "body", "execute_function", "function_arguments_hex", "comment",
 			"definition", "old_table", "new_table",
 		},
 		Rows: [][]driver.Value{
-			{"public", "a", "trg_a", "AFTER", "INSERT", "ROW", body, "audit_fn", "",
+			{"public", "a", "trg_a", "AFTER", "INSERT", "ROW", body, "audit_fn", "757064617465645f617400", "",
 				"CREATE TRIGGER trg_a AFTER INSERT ON public.a FOR EACH ROW EXECUTE FUNCTION audit_fn()", "", ""},
-			{"public", "b", "trg_b", "AFTER", "INSERT", "ROW", body, "audit_fn", "",
+			{"public", "b", "trg_b", "AFTER", "INSERT", "ROW", body, "audit_fn", "", "",
 				"CREATE TRIGGER trg_b AFTER INSERT ON public.b FOR EACH ROW EXECUTE FUNCTION audit_fn()", "", ""},
 		},
 	}, nil

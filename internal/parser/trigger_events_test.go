@@ -178,6 +178,11 @@ func TestParseCreateTrigger_PostgresEventForms_FailurePath(t *testing.T) {
 			sql:     `CREATE TRIGGER t BEFORE UPDATE ON x FOR EACH ROW WHEN new.a > 0 EXECUTE FUNCTION f();`,
 			wantErr: `(?s).*trigger WHEN condition.*`,
 		},
+		{
+			name:    "a function call cannot silently become a trigger argument",
+			sql:     `CREATE TRIGGER t BEFORE UPDATE ON x FOR EACH ROW EXECUTE FUNCTION f(now());`,
+			wantErr: `(?s).*expected ',' between trigger function arguments.*`,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

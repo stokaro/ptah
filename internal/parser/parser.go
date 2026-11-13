@@ -1608,7 +1608,7 @@ func (p *Parser) parseCreateTrigger(statementStart int) (ast.Node, error) {
 		SetWhen(when)
 
 	if p.current.MatchIdentifierValue("EXECUTE") {
-		return p.parseTriggerExecuteClause(trigger, statementStart)
+		return p.parseTriggerExecuteClause(trigger)
 	}
 
 	body, err := p.collectTriggerBody()
@@ -1621,12 +1621,10 @@ func (p *Parser) parseCreateTrigger(statementStart int) (ast.Node, error) {
 // parseTriggerExecuteClause reads the PostgreSQL
 // EXECUTE FUNCTION|PROCEDURE name() tail of a CREATE TRIGGER.
 //
-// A call with no arguments becomes a CreateTriggerNode that references the
-// named function, which is what lets Ptah read back the trigger it renders
-// (issue #932). A call that passes arguments stays raw SQL: CreateTriggerNode
-// has nowhere to keep them, and dropping them would change what the trigger
-// does.
-func (p *Parser) parseTriggerExecuteClause(trigger *ast.CreateTriggerNode, statementStart int) (ast.Node, error) {
+// The argument list contains text values, separate from the function's own
+// parameter list. Keeping them on the node prevents schema reads from
+// treating an existing argument-bearing trigger as absent (issue #5978).
+func (p *Parser) parseTriggerExecuteClause(trigger *ast.CreateTriggerNode) (ast.Node, error) {
 	p.advance()
 	p.skipWhitespace()
 	if !p.current.MatchIdentifierValue("FUNCTION") && !p.current.MatchIdentifierValue("PROCEDURE") {
@@ -1645,16 +1643,36 @@ func (p *Parser) parseTriggerExecuteClause(trigger *ast.CreateTriggerNode, state
 	}
 	p.advance()
 	p.skipWhitespace()
-	if !p.current.MatchOperatorValue(")") {
-		sql, err := p.collectRawStatement(statementStart, "CREATE TRIGGER statement")
-		if err != nil {
-			return nil, err
+	var arguments []string
+	for !p.current.MatchOperatorValue(")") {
+		if p.current.Type != lexer.TokenString && p.current.Type != lexer.TokenIdentifier {
+			return nil, ptaherr.At(p.current.Start, fmt.Errorf("expected a trigger function argument, got %s %q", p.current.Type, p.current.Value))
 		}
-		return ast.NewRawSQL(sql), nil
+		value := p.current.Value
+		if p.current.Type == lexer.TokenString {
+			var ok bool
+			value, ok = lexer.StringValue(value, p.stringLiteralOptions())
+			if !ok {
+				return nil, ptaherr.At(p.current.Start, fmt.Errorf("invalid trigger function string argument"))
+			}
+		}
+		arguments = append(arguments, value)
+		p.advance()
+		p.skipWhitespace()
+		if p.current.MatchOperatorValue(")") {
+			break
+		}
+		if err := p.expect(lexer.TokenOperator, ","); err != nil {
+			return nil, fmt.Errorf("expected ',' between trigger function arguments: %w", err)
+		}
+		p.skipWhitespace()
+		if p.current.MatchOperatorValue(")") {
+			return nil, ptaherr.At(p.current.Start, fmt.Errorf("missing trigger function argument after ','"))
+		}
 	}
 	p.advance()
 
-	return trigger.SetFunctionName(functionName).SetExternalFunction(), nil
+	return trigger.SetFunctionName(functionName).SetFunctionArguments(arguments).SetExternalFunction(), nil
 }
 
 func (p *Parser) parseTriggerIfNotExists() error {

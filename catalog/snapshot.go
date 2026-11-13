@@ -42,6 +42,12 @@ func (c Constraint) Clone() Constraint {
 	return c
 }
 
+// Clone returns a trigger with an independent function argument list.
+func (t Trigger) Clone() Trigger {
+	t.FunctionArguments = slices.Clone(t.FunctionArguments)
+	return t
+}
+
 // Clone returns an ownership observation with independent login knowledge.
 func (o ObjectOwner) Clone() ObjectOwner {
 	o.OwnerCanLogin = cloneScalar(o.OwnerCanLogin)

@@ -23,6 +23,25 @@ CREATE TRIGGER t_when BEFORE UPDATE ON x FOR EACH ROW WHEN (NEW.a IS DISTINCT FR
 CREATE TRIGGER t_tables AFTER UPDATE ON x REFERENCING OLD TABLE AS "Old Rows" NEW TABLE NewRows
   FOR EACH STATEMENT EXECUTE FUNCTION f();`
 
+func TestSQLSchema_TriggerFunctionArgumentsRoundTrip(t *testing.T) {
+	c := qt.New(t)
+	source := `CREATE TABLE x (id int);
+CREATE FUNCTION f() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$;
+CREATE TRIGGER t BEFORE UPDATE ON x FOR EACH ROW EXECUTE FUNCTION f('updated_at', 'it''s here');`
+	database, _, err := sqlschema.Read([]byte(source), platform.Postgres)
+	c.Assert(err, qt.IsNil)
+	c.Assert(database.Triggers, qt.HasLen, 1)
+	c.Assert(database.Triggers[0].FunctionArguments, qt.DeepEquals, []string{"updated_at", "it's here"})
+
+	statements, err := builtin.GetOrderedCreateStatements(&database, platform.Postgres)
+	c.Assert(err, qt.IsNil)
+	rendered := strings.Join(statements, "\n")
+	c.Assert(rendered, qt.Contains, `EXECUTE FUNCTION "f"('updated_at', 'it''s here')`)
+	reread, _, err := sqlschema.Read([]byte(rendered), platform.Postgres)
+	c.Assert(err, qt.IsNil)
+	c.Assert(reread.Triggers[0].FunctionArguments, qt.DeepEquals, database.Triggers[0].FunctionArguments)
+}
+
 func postgresTriggerClausesDatabase(c *qt.C) schemamodel.Database {
 	statements, err := parser.NewParser(triggerClausesSchema, parser.WithDialect(platform.Postgres)).Parse()
 	c.Assert(err, qt.IsNil)

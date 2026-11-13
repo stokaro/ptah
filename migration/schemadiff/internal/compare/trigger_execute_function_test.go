@@ -75,3 +75,13 @@ func TestTriggerDefinitions_TwoSchemasAreTwoFunctions(t *testing.T) {
 		})
 	}
 }
+
+func TestTriggerDefinitions_FunctionArgumentsAreCompared(t *testing.T) {
+	c := qt.New(t)
+	desired := schemamodel.Trigger{Name: "t", Table: "app.t", ExecuteFunction: "app.touch", FunctionArguments: []string{"updated_at"}}
+	current := catalog.Trigger{Name: "t", Table: "app.t", ExecuteFunction: "touch", FunctionArguments: []string{"updated_at"}}
+	semantics := identifier.ForDialect(platform.Postgres)
+	c.Assert(compare.TriggerDefinitions(desired, current, semantics).Changes, qt.HasLen, 0)
+	current.FunctionArguments = []string{"created_at"}
+	c.Assert(compare.TriggerDefinitions(desired, current, semantics).Changes["arguments"], qt.Not(qt.Equals), "")
+}

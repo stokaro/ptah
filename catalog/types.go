@@ -1393,6 +1393,8 @@ type Trigger struct {
 	// function shared by several triggers was described once per trigger and
 	// replayed as that many copies (stokaro/ptah#2210).
 	ExecuteFunction string `json:"execute_function,omitempty"`
+	// FunctionArguments are the text values stored in pg_trigger.tgargs.
+	FunctionArguments []string `json:"function_arguments,omitempty"`
 }
 
 // QualifiedTable returns schema.table when Schema is set, or Table otherwise.
