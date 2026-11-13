@@ -298,15 +298,14 @@ applied.
 
 ## Check the schema against its history
 
-The checksums `up` verifies prove that the files are the ones the database ran.
-They say nothing about the schema itself: a column added by hand, or an index
-dropped during an incident, leaves every checksum intact. `--check-drift`
-compares the schema.
+Checksums prove the files are the ones the database ran, but a column added by
+hand or an index dropped during an incident leaves every checksum intact.
+`--check-drift` compares the schema.
 
-With the flag, `up` takes the migration lock, reads the history and selects what
-is pending, as it always does. Before anything runs, it replays the migrations
-the revision table records as applied on the `--shadow-db` database, reads that
-schema and the target's, and compares them. The baseline is the applied
+Under the migration lock, after reading the history and selecting what is
+pending, `up` replays the migrations the revision table records as applied on
+the `--shadow-db` database and compares that schema with the target's, before
+anything runs. The baseline is the applied
 history, not the directory, so what a pending migration is about to create is
 not drift. The revision table and its log, under the names this run is
 configured with, are left out of the comparison.
@@ -351,20 +350,19 @@ An Atlas baseline stands for every file at or below it, and those files are
 replayed. A database bootstrapped from a checkpoint replays from that
 checkpoint.
 
-The shadow database must be empty when the check starts, and the check empties
-it again when it ends. It must be a different database from the target: the
-check compares the two connections' realms and refuses the same one under
-another URL. A `docker://` URL starts a disposable container for the run, and a
-project's `dev_url` is the default. `--shadow-db` and `--drift-exclude` without
-`--check-drift` are refused, since the run would ignore them.
+The shadow database must be empty and must not be the target, which the check
+recognizes under another URL too, and the check empties it again when it ends.
+A `docker://` URL starts a disposable container for the run, and a project's
+`dev_url` is the default. `--shadow-db` and `--drift-exclude` without
+`--check-drift` are refused.
 
-Objects the migrations deliberately do not manage, such as a table another tool
-owns, are left out with `--drift-exclude`, which takes the selectors
-`schema diff --exclude` takes and can be repeated.
+`--drift-exclude`, which can be repeated, leaves out objects the migrations do
+not manage, such as a table another tool owns, with the selectors
+`schema diff --exclude` takes.
 
-The migration lock is what keeps a cooperating runner from moving the history
-between the check and the apply. It does not stop DDL from a session that does
-not take it, which can still land after the check. The check never repairs
+The lock keeps a cooperating runner from moving the history between the check
+and the apply; DDL from a session that does not take it can still land after
+the check. The check never repairs
 drift. `--dry-run` runs the check against the shadow database too, without the
 lock, since a dry run takes none, and changes nothing on the target.
 
