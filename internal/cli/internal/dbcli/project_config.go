@@ -57,7 +57,7 @@ const (
 // tree instead of from a hand-kept list of packages.
 const ProjectConfigEnvAnnotation = "ptah_project_config_env"
 
-const projectEnvFlagUsage = "Project env name to read from ptah.yaml or atlas.hcl"
+const projectEnvFlagUsage = "Project env to read from ptah.yaml or atlas.hcl; without it no env applies"
 
 type projectConfigContextKey struct{}
 

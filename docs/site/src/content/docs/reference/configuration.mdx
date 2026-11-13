@@ -347,10 +347,22 @@ The two files are not interchangeable everywhere: `--config` names a
 config is discovered as `./atlas.hcl` and selected with `--env`. Where both
 exist, `atlas.hcl` wins — see the precedence table above.
 
-If a command needs project values from a config file with multiple
-environments, pass `--env`. Commands whose required inputs are all explicit do
-not need to select an environment. Ptah fails instead of guessing only when
-project values are required and the environment remains ambiguous.
+An environment applies only when `--env` or `PTAH_ENV` names it. A file that
+declares one environment does not make it the default: without `--env`, no
+environment's values apply, and only the top-level settings do. A top-level
+`url` in `ptah.yaml` is the project's default target, so a command reaches it
+when neither `--db-url` nor an environment names another database. Commands
+whose required inputs are all explicit do not need to select an environment. A
+command that lacks a value and selected none says so and names the
+environments the project files declare:
+
+```text
+error: database URL is required: no --env given; ptah.yaml declares env "dev"
+```
+
+`ptah project inspect` without `--env` reports the top-level settings and names
+the same environments in its first line, so a report of unset values does not
+read like a file Ptah ignored.
 
 ## Operational settings
 

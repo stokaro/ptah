@@ -11,6 +11,7 @@ import (
 
 	"ptah.run/config/projectconfig"
 	"ptah.run/internal/cli/internal/cmdutil"
+	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/dburldisplay"
 )
 
@@ -36,10 +37,22 @@ type Setting struct {
 	Carried bool `json:"carried"`
 }
 
+// DeclaredEnv is an env a project file declares.
+type DeclaredEnv struct {
+	// File is the declaring file, as the loader was given it.
+	File string `json:"file"`
+	// Name is the env's name, empty for an atlas.hcl env block with no label.
+	Name string `json:"name,omitempty"`
+}
+
 // Report is what `project inspect` answers.
 type Report struct {
-	// Env is the selected environment, empty when the file has none.
+	// Env is the selected environment, empty when the run named none.
 	Env string `json:"env,omitempty"`
+	// UnselectedEnvs lists the envs the project files declare when the run
+	// named none. No env applies to such a run, so its settings may all read
+	// "not set" while the files hold values; this says where they are.
+	UnselectedEnvs []DeclaredEnv `json:"unselected_envs,omitempty"`
 	// Carried are the settings Ptah acts on.
 	Carried []Setting `json:"carried"`
 	// Ignored are the names the file declares that Ptah read and did nothing
@@ -75,7 +88,7 @@ This command reads files and contacts no database.`,
 	flags := cmd.Flags()
 	flags.StringVar(&opts.atlasPath, "atlas-config", "", "Path to atlas.hcl (default: ./atlas.hcl when present)")
 	flags.StringVar(&opts.ptahPath, "config", "", "Path to ptah.yaml (default: ./ptah.yaml when present)")
-	flags.StringVar(&opts.envName, "env", "", "Project environment to resolve")
+	flags.StringVar(&opts.envName, "env", "", "Project environment to resolve; without it no env applies")
 	flags.StringVar(&opts.format, "format", inspectFormatText, "Output format: text or json")
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	return cmd
@@ -115,8 +128,9 @@ func runInspect(cmd *cobra.Command, opts inspectOptions) error {
 // with this project", and an absent target database is part of that answer.
 func reportFor(config projectconfig.Config) Report {
 	report := Report{
-		Env:     config.EnvName,
-		Ignored: slices.Clone(config.IgnoredConstructs),
+		Env:            config.EnvName,
+		UnselectedEnvs: unselectedEnvs(config),
+		Ignored:        slices.Clone(config.IgnoredConstructs),
 		Carried: []Setting{
 			{Name: "database url", Value: dburldisplay.Format(config.DatabaseURL)},
 			{Name: "dev url", Value: dburldisplay.Format(config.DevURL)},
@@ -144,6 +158,28 @@ func reportFor(config projectconfig.Config) Report {
 	return report
 }
 
+// unselectedEnvs returns the envs the project files declare when the run named
+// none, and nil when it named one.
+func unselectedEnvs(config projectconfig.Config) []DeclaredEnv {
+	if config.EnvName != "" || len(config.DeclaredEnvs) == 0 {
+		return nil
+	}
+	envs := make([]DeclaredEnv, 0, len(config.DeclaredEnvs))
+	for _, env := range config.DeclaredEnvs {
+		envs = append(envs, DeclaredEnv{File: env.File, Name: env.Name})
+	}
+	return envs
+}
+
+// describeUnselected names the envs as a refusal does.
+func describeUnselected(envs []DeclaredEnv) string {
+	declared := make([]projectconfig.DeclaredEnv, 0, len(envs))
+	for _, env := range envs {
+		declared = append(declared, projectconfig.DeclaredEnv{File: env.File, Name: env.Name})
+	}
+	return dbcli.DescribeDeclaredEnvs(declared)
+}
+
 // displayedSources are schema sources as a report shows them: a source may be a
 // database URL.
 func displayedSources(sources []string) []string {
@@ -157,6 +193,10 @@ func displayedSources(sources []string) []string {
 func writeText(out io.Writer, report Report) {
 	if report.Env != "" {
 		fmt.Fprintf(out, "Environment: %s\n\n", report.Env)
+	}
+	if len(report.UnselectedEnvs) > 0 {
+		fmt.Fprintf(out, "Environment: none selected; %s. Pass --env to resolve one.\n\n",
+			describeUnselected(report.UnselectedEnvs))
 	}
 
 	fmt.Fprintln(out, "Carried by Ptah:")

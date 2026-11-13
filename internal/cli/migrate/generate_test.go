@@ -88,6 +88,7 @@ func TestMigrateGenerateProjectConfigPrecedence(t *testing.T) {
 	c.Assert(shadowDB, qt.Equals, "postgres://localhost/flag_shadow")
 
 	cmd = migrate.NewMigrateGenerateCommand()
+	c.Assert(cmd.ParseFlags([]string{"--env", "local"}), qt.IsNil)
 	cfg, err = dbcli.LoadProjectConfig(cmd, "")
 	c.Assert(err, qt.IsNil)
 	shadowDB = dbcli.EffectiveString(
@@ -97,6 +98,19 @@ func TestMigrateGenerateProjectConfigPrecedence(t *testing.T) {
 		cfg.StringValue(projectconfig.StringDevURL),
 	)
 	c.Assert(shadowDB, qt.Equals, "postgres://localhost/atlas_shadow")
+
+	// With no --env the atlas.hcl env is not selected, so the ptah.yaml
+	// top-level value is the one left.
+	cmd = migrate.NewMigrateGenerateCommand()
+	cfg, err = dbcli.LoadProjectConfig(cmd, "")
+	c.Assert(err, qt.IsNil)
+	shadowDB = dbcli.EffectiveString(
+		cmd,
+		"shadow-db",
+		"",
+		cfg.StringValue(projectconfig.StringDevURL),
+	)
+	c.Assert(shadowDB, qt.Equals, "postgres://localhost/ptah_shadow")
 }
 
 func TestMigratePlanCommandRejectsAtlasApplyAtRoot(t *testing.T) {

@@ -1440,10 +1440,10 @@ func resolveAtlasVerbProject(
 	resolved.projectFlags = project.flags
 	// The native target reads the project configuration this adapter selected
 	// and nothing else. Left to itself it would discover ./atlas.hcl and
-	// ./ptah.yaml and select a lone env from either, so a command that named
-	// no --env would run against that env's database: the decision made here
-	// that no project applies would be overwritten by the target's own
-	// discovery. A verb that consumes project configuration natively gets the
+	// ./ptah.yaml and apply their top-level settings, a ptah.yaml `url` among
+	// them, so a command whose flags named no database could run against one:
+	// the decision made here that no project applies would be overwritten by
+	// the target's own discovery. A verb that consumes project configuration natively gets the
 	// merged snapshot below; every other verb, and every run that selects no
 	// project, gets an empty one.
 	resolved.context = dbcli.WithProjectConfig(resolved.context, projectconfig.Config{})

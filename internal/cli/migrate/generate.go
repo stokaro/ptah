@@ -567,14 +567,14 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 			return err
 		}
 		if strings.TrimSpace(devURL) == "" {
-			return fmt.Errorf("--%s is required with --%s", generateDevURLFlag, generateReplayFlag)
+			return dbcli.MissingProjectValue(projectCfg, fmt.Errorf("--%s is required with --%s", generateDevURLFlag, generateReplayFlag))
 		}
 	} else {
 		if err := validateGenerateIntrospectMode(cmd); err != nil {
 			return err
 		}
 		if dbURL == "" {
-			return fmt.Errorf("database URL is required")
+			return dbcli.MissingProjectValue(projectCfg, fmt.Errorf("database URL is required"))
 		}
 	}
 
@@ -614,7 +614,7 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	if migrationsDir == "" {
-		return fmt.Errorf("migrations directory is required")
+		return dbcli.MissingProjectValue(projectCfg, fmt.Errorf("migrations directory is required"))
 	}
 	migrationsDir, err = pathguard.ResolveCLIPath(migrationsDir)
 	if err != nil {

@@ -2,13 +2,17 @@ package projectconfig
 
 import "context"
 
-// LoadOptions selects project config files and the Atlas env.
+// LoadOptions selects project config files and the env read from them.
 type LoadOptions struct {
 	// Context governs Atlas data-source evaluation. A nil context uses
 	// context.Background.
 	Context   context.Context
 	PtahPath  string
 	AtlasPath string
+	// EnvName names the env selected from both files. An empty EnvName selects
+	// none, however many envs the files declare, so the result holds their
+	// top-level settings alone; [Config.DeclaredEnvs] lists the envs either
+	// way.
 	EnvName   string
 	AtlasVars []string
 	// Verb names the command doing the load, so a refusal can say which one

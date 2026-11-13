@@ -291,10 +291,11 @@ the registry side in full.
 
 Nothing so far required native Ptah, and nothing below changes the project.
 `ptah project adopt --check` reads the same `atlas.hcl` and reports what a
-native Ptah would make of every construct in it.
+native Ptah would make of every construct in it. Like `ptah-compat`, it applies
+an env only when `--env` names it.
 
 ```console
-ptah project adopt --check
+ptah project adopt --check --env local
 ```
 
 Expected output includes, on standard output:
@@ -309,7 +310,7 @@ Add `--preflight` and the same command reads the revision history the database
 holds, which is the half a verdict about a file cannot cover:
 
 ```console exits=2
-ptah project adopt --check --preflight
+ptah project adopt --check --preflight --env local
 ```
 
 Expected output includes, on standard output:

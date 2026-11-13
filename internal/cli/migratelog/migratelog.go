@@ -104,7 +104,7 @@ func runMigrateLog(cmd *cobra.Command, opts options) error {
 		opts.connectTimeout, projectCfg.StringValue(projectconfig.StringMigrationConnectTimeout))
 
 	if strings.TrimSpace(opts.dbURL) == "" {
-		return cmdutil.Fail(cmd, fmt.Errorf("database URL is required"))
+		return cmdutil.Fail(cmd, dbcli.MissingProjectValue(projectCfg, fmt.Errorf("database URL is required")))
 	}
 	if opts.limit < 0 {
 		return cmdutil.Fail(cmd, fmt.Errorf("--%s must not be negative", limitFlag))

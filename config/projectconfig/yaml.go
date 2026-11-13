@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"slices"
 
@@ -108,8 +109,9 @@ type yamlMigrateGenerateConfig struct {
 	ShadowDatabaseURL *string `yaml:"shadow_db"`
 }
 
-// LoadPtahFile loads Ptah's project config file. A missing file returns an
-// empty config, and so does a file that sets nothing; see [ParsePtah].
+// LoadPtahFile loads Ptah's project config file and the env envName names; an
+// empty envName selects none. A missing file returns an empty config, and so
+// does a file that sets nothing; see [ParsePtah].
 func LoadPtahFile(path, envName string) (Config, error) {
 	return loadPtahFile(path, envName, discoveredPtahConfig)
 }
@@ -139,10 +141,12 @@ func loadPtahFile(path, envName string, source ptahConfigSource) (Config, error)
 // The file is one YAML document: a later document that sets anything is
 // refused, since it would not be read. One that sets nothing is accepted.
 //
-// filename is used in diagnostics only and may be empty. envName selects one
-// env block and merges it over the top-level settings; with an empty envName,
-// a document holding a lone env block selects it implicitly and one holding
-// several is refused. The online_ddl block is validated here
+// filename is used in diagnostics and [Config.DeclaredEnvs] only and may be
+// empty. envName selects one env block and merges it over the top-level
+// settings. An empty envName selects no env block, however many the document
+// declares, and the result holds the top-level settings alone; an env's
+// values reach a run only when the run names it. The online_ddl block is
+// validated here
 // through [OnlineDDLConfig.Validate], so a malformed policy fails at parse
 // time rather than at migration execution.
 func ParsePtah(data []byte, filename, envName string) (Config, error) {
@@ -167,7 +171,7 @@ func parsePtah(data []byte, filename, envName string, source ptahConfigSource) (
 	if err := refuseLaterDocuments(decoder, filename, source); err != nil {
 		return Config{}, err
 	}
-	cfg, err := selectPtahEnv(doc, envName)
+	cfg, err := selectPtahEnv(doc, filename, envName)
 	if err != nil {
 		return Config{}, err
 	}
@@ -224,38 +228,42 @@ func documentSettings(document *yaml.Node) (int, bool) {
 	return content.Line, !empty
 }
 
-func selectPtahEnv(doc yamlDocument, envName string) (Config, error) {
+// selectPtahEnv merges the env envName names over the top-level settings. An
+// empty envName selects no env, however many the document declares: an env's
+// values apply only to a run that names it, so a lone env is not taken for the
+// project default.
+func selectPtahEnv(doc yamlDocument, filename, envName string) (Config, error) {
 	base, err := doc.yamlSettings.projectConfig()
 	if err != nil {
 		return Config{}, err
 	}
-	if len(doc.Env) == 0 {
+	base.DeclaredEnvs = declaredPtahEnvs(doc.Env, filename)
+	if envName == "" || len(doc.Env) == 0 {
 		return base, nil
 	}
-	if envName != "" {
-		env, ok := doc.Env[envName]
-		if !ok {
-			return Config{}, fmt.Errorf("ptah env %q not found", envName)
-		}
-		selected, err := env.projectConfig()
-		if err != nil {
-			return Config{}, err
-		}
-		selected.EnvName = envName
-		return Merge(base, selected), nil
+	env, ok := doc.Env[envName]
+	if !ok {
+		return Config{}, fmt.Errorf("ptah env %q not found", envName)
 	}
-	if len(doc.Env) > 1 {
-		return Config{}, fmt.Errorf("ptah.yaml contains multiple env blocks; pass --env")
+	selected, err := env.projectConfig()
+	if err != nil {
+		return Config{}, err
 	}
-	for name, env := range doc.Env {
-		selected, err := env.projectConfig()
-		if err != nil {
-			return Config{}, err
-		}
-		selected.EnvName = name
-		return Merge(base, selected), nil
+	selected.EnvName = envName
+	return Merge(base, selected), nil
+}
+
+// declaredPtahEnvs lists the env blocks of a ptah.yaml document in name order,
+// since a decoded mapping keeps no order of its own.
+func declaredPtahEnvs(envs map[string]yamlSettings, filename string) []DeclaredEnv {
+	if len(envs) == 0 {
+		return nil
 	}
-	return base, nil
+	declared := make([]DeclaredEnv, 0, len(envs))
+	for _, name := range slices.Sorted(maps.Keys(envs)) {
+		declared = append(declared, DeclaredEnv{File: filename, Name: name})
+	}
+	return declared
 }
 
 func (c yamlSettings) projectConfig() (Config, error) {

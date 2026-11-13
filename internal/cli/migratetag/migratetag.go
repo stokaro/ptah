@@ -99,7 +99,7 @@ func runMigrateTag(cmd *cobra.Command, opts options, args []string) error {
 		opts.connectTimeout, projectCfg.StringValue(projectconfig.StringMigrationConnectTimeout))
 
 	if strings.TrimSpace(opts.dbURL) == "" {
-		return cmdutil.Fail(cmd, fmt.Errorf("database URL is required"))
+		return cmdutil.Fail(cmd, dbcli.MissingProjectValue(projectCfg, fmt.Errorf("database URL is required")))
 	}
 	name := ""
 	if len(args) == 1 {

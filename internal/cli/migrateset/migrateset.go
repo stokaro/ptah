@@ -143,10 +143,10 @@ func runMigrateSet(cmd *cobra.Command, opts options) error {
 	)
 
 	if strings.TrimSpace(opts.dbURL) == "" {
-		return cmdutil.Fail(cmd, fmt.Errorf("database URL is required"))
+		return cmdutil.Fail(cmd, dbcli.MissingProjectValue(projectCfg, fmt.Errorf("database URL is required")))
 	}
 	if strings.TrimSpace(opts.migrationsDir) == "" {
-		return cmdutil.Fail(cmd, fmt.Errorf("migrations directory is required"))
+		return cmdutil.Fail(cmd, dbcli.MissingProjectValue(projectCfg, fmt.Errorf("migrations directory is required")))
 	}
 	version, err := parseSetVersion(opts.version)
 	if err != nil {

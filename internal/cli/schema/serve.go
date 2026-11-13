@@ -109,7 +109,7 @@ func runSchemaServe(cmd *cobra.Command, opts schemaServeOptions) error {
 	dbURL := dbcli.EffectiveString(cmd, serveDBURLFlag, opts.dbURL,
 		projectCfg.StringValue(projectconfig.StringDatabaseURL))
 	if dbURL == "" {
-		return cmdutil.Fail(cmd, errors.New("database URL is required"))
+		return cmdutil.Fail(cmd, dbcli.MissingProjectValue(projectCfg, errors.New("database URL is required")))
 	}
 	schemasValue := dbcli.EffectiveString(cmd, dbcli.SchemasFlagName, opts.schemasRaw,
 		dbcli.JoinSchemasValue(projectCfg.SchemasValue()))

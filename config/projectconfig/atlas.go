@@ -34,19 +34,13 @@ type AtlasLoadOptions struct {
 	// subprocesses. A nil context uses context.Background.
 	Context context.Context
 	// EnvName selects the env block, or the instances of one, whose settings
-	// are merged over the top-level blocks. With an empty EnvName, a file
-	// holding one env block selects it, and a file holding several is refused,
-	// unless NoImplicitEnv is set.
+	// are merged over the top-level blocks. An empty EnvName selects no env
+	// block, however many the file declares: the file is parsed, its
+	// variables, locals and top-level blocks are evaluated, and the result
+	// holds the top-level settings alone. Atlas Community Edition reads a file
+	// named with --config and no --env the same way.
 	EnvName string
 	Vars    []string
-	// NoImplicitEnv makes an empty EnvName select no env block. The file is
-	// still parsed and its top-level blocks, variables and locals are
-	// evaluated, but no env block is evaluated, so the result holds the
-	// top-level settings only. Atlas Community Edition reads a project file
-	// named with --config and no --env this way; a compatibility adapter
-	// selects this option for that contract. The zero value selects the only
-	// env block of a file that declares one.
-	NoImplicitEnv bool
 	// RejectListMapForEach refuses dynamic env expansion over list and map
 	// values. Atlas Community Edition accepts tuple, object and set values but
 	// refuses list and map values; compatibility adapters select this option
@@ -134,8 +128,9 @@ func LoadAtlasFileCollectionWithOptions(
 // ParseAtlas parses the supported subset of an Atlas project config file,
 // selecting envName. It is [ParseAtlasWithOptions] with default options, and
 // the same confinement contract applies: file() and fileset() read nothing
-// outside the directory that holds filename. envName must select exactly one
-// instance; an env whose for_each expands to several is refused -- use
+// outside the directory that holds filename. An empty envName selects no env
+// block, as [AtlasLoadOptions.EnvName] says. A named env must select exactly
+// one instance; an env whose for_each expands to several is refused -- use
 // [ParseAtlasCollectionWithOptions] for those.
 func ParseAtlas(data []byte, filename, envName string) (Config, error) {
 	return ParseAtlasWithOptions(data, filename, AtlasLoadOptions{EnvName: envName})
@@ -250,7 +245,6 @@ func ParseAtlasFSCollectionWithOptions(
 	p.rejectCompositeSchema = opts.RejectCompositeSchema
 	p.rejectExternalSchema = opts.RejectExternalSchema
 	p.ignoreDockerBlocks = opts.IgnoreDockerBlocks
-	p.noImplicitEnv = opts.NoImplicitEnv
 	return p.parseCollection(body, opts.EnvName)
 }
 
@@ -315,8 +309,6 @@ type atlasParser struct {
 	rejectListMapForEach bool
 	// ignoreDockerBlocks is [AtlasLoadOptions.IgnoreDockerBlocks].
 	ignoreDockerBlocks bool
-	// noImplicitEnv is [AtlasLoadOptions.NoImplicitEnv].
-	noImplicitEnv bool
 	// externalSchemas holds the declared data.external_schema sources by name.
 	externalSchemas map[string]externalSchemaDataSource
 	// migrationDirectories holds immutable data.template_dir filesystems by
@@ -444,15 +436,28 @@ func newAtlasParser(
 	}, nil
 }
 
-// selectEnvs returns the env blocks a parse evaluates. A file with no env block
-// selects none, and so does an empty envName when the caller asked for the
-// top-level settings alone with AtlasLoadOptions.NoImplicitEnv. Otherwise an
-// empty envName selects the only env block of the file.
-func (p atlasParser) selectEnvs(envs []atlasEnvBlock, envName string) ([]atlasEnvBlock, error) {
-	if len(envs) == 0 || (envName == "" && p.noImplicitEnv) {
+// selectEnvs returns the env blocks a parse evaluates. An empty envName selects
+// none, however many the file declares: an env's values apply only to a run
+// that names it, so a lone env is not taken for the project default.
+func selectEnvs(envs []atlasEnvBlock, envName string) ([]atlasEnvBlock, error) {
+	if envName == "" || len(envs) == 0 {
 		return nil, nil
 	}
 	return selectAtlasEnvBlocks(envs, envName)
+}
+
+// declaredAtlasEnvs lists the env blocks of an atlas.hcl in the order the file
+// declares them. An unlabeled block is listed with an empty name, because its
+// name is an expression only a selection evaluates.
+func declaredAtlasEnvs(envs []atlasEnvBlock) []DeclaredEnv {
+	if len(envs) == 0 {
+		return nil
+	}
+	declared := make([]DeclaredEnv, 0, len(envs))
+	for _, env := range envs {
+		declared = append(declared, DeclaredEnv{File: env.block.DefRange().Filename, Name: env.name})
+	}
+	return declared
 }
 
 func (p atlasParser) parseCollection(body *hclsyntax.Body, envName string) ([]Config, error) {
@@ -468,10 +473,11 @@ func (p atlasParser) parseCollection(body *hclsyntax.Body, envName string) ([]Co
 	if err := p.validateAtlasEnvStructures(blocks.envs); err != nil {
 		return nil, err
 	}
-	selected, err := p.selectEnvs(blocks.envs, envName)
+	selected, err := selectEnvs(blocks.envs, envName)
 	if err != nil {
 		return nil, err
 	}
+	base.DeclaredEnvs = declaredAtlasEnvs(blocks.envs)
 	if err := p.configureEvalContext(
 		blocks.variables,
 		blocks.locals,
@@ -512,9 +518,9 @@ func (p atlasParser) parseCollection(body *hclsyntax.Body, envName string) ([]Co
 	if err := p.parseSingleAtlasBlock(blocks.globalLint, &base, p.parseLint); err != nil {
 		return nil, err
 	}
-	// No env selected: either the file declares none, or the caller asked for
-	// the top-level settings alone. selectAtlasEnvBlocks never returns an empty
-	// selection without an error, so these are the only two ways here.
+	// No env selected: either the file declares none, or the caller named
+	// none. selectAtlasEnvBlocks never returns an empty selection without an
+	// error, so these are the only two ways here.
 	if len(selected) == 0 {
 		base.migrationDirectories = cloneMigrationDirectories(p.migrationDirectories)
 		base.compositeSchemas = mergeCompositeSchemas(p.compositeSchemas, nil)
@@ -2866,33 +2872,30 @@ func (p atlasParser) hclSchemaVarsAttr(attr *hclsyntax.Attribute) (map[string]st
 	return values, nil
 }
 
+// selectAtlasEnvBlocks returns the blocks a non-empty envName selects: the
+// blocks labeled with it, or else the unlabeled blocks whose name reads
+// atlas.env.
 func selectAtlasEnvBlocks(envs []atlasEnvBlock, envName string) ([]atlasEnvBlock, error) {
-	if envName != "" {
-		labeled := make([]atlasEnvBlock, 0, 1)
-		for _, env := range envs {
-			if env.labeled() && env.name == envName {
-				labeled = append(labeled, env)
-			}
+	labeled := make([]atlasEnvBlock, 0, 1)
+	for _, env := range envs {
+		if env.labeled() && env.name == envName {
+			labeled = append(labeled, env)
 		}
-		if len(labeled) > 0 {
-			return labeled, nil
-		}
+	}
+	if len(labeled) > 0 {
+		return labeled, nil
+	}
 
-		dynamic := make([]atlasEnvBlock, 0, 1)
-		for _, env := range envs {
-			if !env.labeled() && atlasEnvNameUsesSelection(env) {
-				dynamic = append(dynamic, env)
-			}
+	dynamic := make([]atlasEnvBlock, 0, 1)
+	for _, env := range envs {
+		if !env.labeled() && atlasEnvNameUsesSelection(env) {
+			dynamic = append(dynamic, env)
 		}
-		if len(dynamic) > 0 {
-			return dynamic, nil
-		}
-		return nil, fmt.Errorf("atlas env %q not found", envName)
 	}
-	if len(envs) == 1 {
-		return envs, nil
+	if len(dynamic) > 0 {
+		return dynamic, nil
 	}
-	return nil, fmt.Errorf("atlas.hcl contains multiple env blocks; pass --env")
+	return nil, fmt.Errorf("atlas env %q not found", envName)
 }
 
 func atlasEnvNameUsesSelection(env atlasEnvBlock) bool {

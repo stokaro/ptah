@@ -172,7 +172,7 @@ func runSchemaInspect(cmd *cobra.Command, opts schemaInspectOptions) error {
 		opts.schemaFiles = materialized
 	}
 
-	sourceURLs, err := resolveInspectSources(opts)
+	sourceURLs, err := resolveInspectSources(opts, projectCfg)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -406,7 +406,7 @@ func trimmedSchemaFiles(opts schemaInspectOptions) []string {
 	return trimmed
 }
 
-func resolveInspectSources(opts schemaInspectOptions) ([]string, error) {
+func resolveInspectSources(opts schemaInspectOptions, projectCfg projectconfig.Config) ([]string, error) {
 	switch {
 	case strings.TrimSpace(opts.migrationsDir) != "":
 		dir, err := pathguard.ResolveCLIPath(opts.migrationsDir)
@@ -431,9 +431,9 @@ func resolveInspectSources(opts schemaInspectOptions) ([]string, error) {
 	case strings.TrimSpace(opts.dbURL) != "":
 		return []string{strings.TrimSpace(opts.dbURL)}, nil
 	default:
-		return nil, fmt.Errorf(
+		return nil, dbcli.MissingProjectValue(projectCfg, fmt.Errorf(
 			"an inspection source is required: pass --%s, --%s, or --%s",
-			inspectDBURLFlag, inspectSchemaFileFlag, inspectMigrationsDirFlag)
+			inspectDBURLFlag, inspectSchemaFileFlag, inspectMigrationsDirFlag))
 	}
 }
 
