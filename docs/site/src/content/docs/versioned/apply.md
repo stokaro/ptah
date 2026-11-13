@@ -22,7 +22,9 @@ owns:
 
 You have a hashed migration directory and a database that needs to catch up.
 Preview the apply, run it with integrity verification, read the resulting state
-in scripts and CI, and add the operational controls the target needs.
+in scripts and CI, and add the operational controls the target needs. To apply
+one release to many databases, a canary first and the rest in stages, see
+[Roll a release out in stages](../../operate/staged-rollout/).
 
 ## Prerequisites
 

@@ -1143,6 +1143,46 @@ Read the columns as follows.
 
 </div>
 
+**`ptah migrations rollout plan`**
+
+<div class="ptah-wide-table">
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--definition` | `string` | — | `PTAH_DEFINITION` | — |
+| `--json` | `bool` | `false` | `PTAH_JSON` | — |
+
+</div>
+
+**`ptah migrations rollout resume`**
+
+<div class="ptah-wide-table">
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--definition` | `string` | — | `PTAH_DEFINITION` | — |
+| `--json` | `bool` | `false` | `PTAH_JSON` | — |
+| `--migrations-dir` | `string` | — | `PTAH_MIGRATIONS_DIR` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--retry-failed` | `bool` | `false` | — | — |
+| `--state-file` | `string` | — | `PTAH_STATE_FILE` | — |
+
+</div>
+
+**`ptah migrations rollout run`**
+
+<div class="ptah-wide-table">
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--definition` | `string` | — | `PTAH_DEFINITION` | — |
+| `--json` | `bool` | `false` | `PTAH_JSON` | — |
+| `--migrations-dir` | `string` | — | `PTAH_MIGRATIONS_DIR` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--state-file` | `string` | — | `PTAH_STATE_FILE` | — |
+
+</div>
+
 **`ptah migrations set`**
 
 <div class="ptah-wide-table">

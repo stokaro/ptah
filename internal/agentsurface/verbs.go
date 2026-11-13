@@ -187,6 +187,14 @@ var verbs = map[string]Verb{
 	"migrations rebase": {TargetReads, ScratchNone,
 		"re-timestamps a migration to the end of history and re-hashes the directory; the " +
 			"target is read to check whether the migration has been applied"},
+	"migrations rollout plan": {TargetNone, ScratchNone,
+		"validates a rollout definition and prints its stages and targets; no database and no registry is opened"},
+	"migrations rollout resume": {TargetWrites, ScratchNone,
+		"reads back every target a recorded rollout started, then runs pending migrations against the targets it still " +
+			"owes, each as `ptah migrations up` runs them"},
+	"migrations rollout run": {TargetWrites, ScratchNone,
+		"runs pending migrations against every target a rollout definition lists, stage by stage, each as " +
+			"`ptah migrations up` runs them"},
 	"migrations repair": {TargetWrites, ScratchNone,
 		"rewrites revision metadata in the target's tracking table"},
 	"migrations rm": {TargetReads, ScratchNone,

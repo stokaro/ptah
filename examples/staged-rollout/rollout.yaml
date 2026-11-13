@@ -1,0 +1,29 @@
+# A staged rollout of the release in migrations/ to five databases: a canary,
+# then a wave of three, then the last target. Every target is a SQLite file
+# under databases/, created by the first run that opens it.
+targets:
+  - name: canary
+    url: sqlite://databases/canary.db
+    # The migrations this target may run, approved for it alone.
+    expect_sequence: approvals/canary.json
+  - name: tenant-a
+    url: sqlite://databases/tenant-a.db
+  - name: tenant-b
+    url: sqlite://databases/tenant-b.db
+  - name: tenant-c
+    url: sqlite://databases/tenant-c.db
+  - name: tenant-d
+    url: sqlite://databases/tenant-d.db
+stages:
+  - name: canary
+    canary: true
+    targets: [canary]
+  - name: wave-1
+    depends_on: [canary]
+    targets: [tenant-a, tenant-b, tenant-c]
+    concurrency: 2
+    on_failure: continue
+    require: 2
+  - name: wave-2
+    depends_on: [wave-1]
+    targets: [tenant-d]

@@ -117,6 +117,10 @@ rather than a person.
 | `ptah migrations rebase` | Re-timestamps a migration to the end of history and re-hashes the directory; the target is read to check whether the migration has been applied | — |
 | `ptah migrations repair` | Rewrites revision metadata in the target's tracking table | — |
 | `ptah migrations rm` | Deletes a migration's file pair and re-hashes the directory; the target is read to check whether the migration has been applied | — |
+| `ptah migrations rollout` | Roll a migration release out to many databases in stages | group |
+| `ptah migrations rollout plan` | Validates a rollout definition and prints its stages and targets; no database and no registry is opened | — |
+| `ptah migrations rollout resume` | Reads back every target a recorded rollout started, then runs pending migrations against the targets it still owes, each as `ptah migrations up` runs them | — |
+| `ptah migrations rollout run` | Runs pending migrations against every target a rollout definition lists, stage by stage, each as `ptah migrations up` runs them | — |
 | `ptah migrations set` | Sets the revision boundary in the target's tracking table to a named version | — |
 | `ptah migrations show` | Prints the SQL of one or more migration files, reading nothing but the files | — |
 | `ptah migrations status` | Reads the target's tracking table and reports which migrations are applied | — |
@@ -589,6 +593,22 @@ Three outcomes stay distinct, because they call for different actions:
 
 [Plan and approve changes](../../direct/plan-and-approve/) is the guide.
 
+## Staged rollouts
+
+`ptah migrations rollout` applies one versioned migration release to the
+databases a rollout definition lists, in stages:
+
+| Verb | What it does |
+| --- | --- |
+| `plan` | Validates the definition and prints its stages, contacting nothing. |
+| `run` | Binds the release, writes a new state file, and runs `ptah migrations up --json` for each target in a process of its own. |
+| `resume` | Reads every started target back from its revision table and continues the recorded run. |
+
+`run` and `resume` exit `0` when every stage succeeded and `1` when a stage
+failed or was blocked. [Roll a release out in stages](../../operate/staged-rollout/)
+is the guide, and [Rollout definition and state](../rollout-definition/) lists
+every key and status.
+
 ## Column lineage
 
 `ptah schema lineage` derives column-to-column dependencies from the view and
@@ -765,6 +785,8 @@ named beside it:
 | `ptah migrations ls` | `--migrations-dir` | migration directory |
 | `ptah migrations show` | `--migrations-dir` | migration directory |
 | `ptah migrations down` | `--migrations-dir` | migration directory |
+| `ptah migrations rollout run` | `--migrations-dir` | migration directory |
+| `ptah migrations rollout resume` | `--migrations-dir` | migration directory |
 | `ptah migrations lint` | `--dir` | migration directory |
 | `ptah migrations validate` | `--dir` | migration directory |
 | `ptah schema render` | `--schema-file` | desired schema |

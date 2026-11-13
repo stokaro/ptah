@@ -1090,7 +1090,9 @@ and set values.
 
 `ptah-compat migrate apply --env local` runs every selected target sequentially
 and stops at the first failure. A formatted run emits one document per attempted
-target with one newline between adjacent documents. Commands that require one
+target with one newline between adjacent documents. Stages, a concurrency limit,
+a failure policy and a resumable record across many databases are the native
+[staged rollout](../../operate/staged-rollout/). Commands that require one
 project instance reject a multi-instance selection instead of choosing one.
 
 ## Structural validation and ignored names

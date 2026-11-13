@@ -66,11 +66,17 @@ const (
 // flag that disagreed with it would report confidently about a history the
 // project does not target.
 //
+// `migrations rollout run` and `resume` are the other two. Their targets are
+// the inventory a rollout definition lists, many databases rather than one, so
+// a single URL flag has nothing to name.
+//
 // This is a list rather than a field on [Verb] so that the classifications stay
 // positional literals, and a list rather than a relaxed guard so that every
 // other verb keeps the bidirectional check.
 var targetFromProject = map[string]struct{}{
-	"project adopt": {},
+	"project adopt":             {},
+	"migrations rollout run":    {},
+	"migrations rollout resume": {},
 }
 
 // TargetFromProject reports whether a verb reaches its target through the

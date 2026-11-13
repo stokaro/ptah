@@ -82,6 +82,46 @@ type ociSourceVerb struct {
 	// registry, so the error under test is the dial and not a missing
 	// companion flag.
 	args func(reference string) []string
+	// files, when set, writes the files a row's invocation reads under a
+	// test's temporary directory and returns the flags naming them.
+	files func(c *qt.C) []string
+}
+
+// invocation is a row's full argument list for reference.
+func invocation(c *qt.C, row ociSourceVerb, reference string) []string {
+	c.Helper()
+	args := row.args(reference)
+	if row.files != nil {
+		args = append(args, row.files(c)...)
+	}
+	return args
+}
+
+// rolloutRunFiles writes a one-target rollout definition and returns the flags
+// naming it and a state file beside it that does not exist yet.
+func rolloutRunFiles(c *qt.C) []string {
+	c.Helper()
+	return writeRolloutFiles(c, nil)
+}
+
+// rolloutResumeFiles is rolloutRunFiles with a state the reader accepts, since a
+// resume reads its state before it binds the release.
+func rolloutResumeFiles(c *qt.C) []string {
+	c.Helper()
+	return writeRolloutFiles(c, []byte(`{"contract_version": 1}`))
+}
+
+func writeRolloutFiles(c *qt.C, stateContent []byte) []string {
+	c.Helper()
+	dir := c.TempDir()
+	definition := filepath.Join(dir, "rollout.yaml")
+	state := filepath.Join(dir, "state.json")
+	c.Assert(os.WriteFile(definition, []byte("targets: [{name: only, url: \"sqlite://:memory:\"}]\n"+
+		"stages: [{name: only, targets: [only]}]\n"), 0o600), qt.IsNil)
+	if stateContent != nil {
+		c.Assert(os.WriteFile(state, stateContent, 0o600), qt.IsNil)
+	}
+	return []string{"--definition", definition, "--state-file", state}
 }
 
 // ociSchemaSourceVerbs enumerates the commands that resolve an oci:// SCHEMA
@@ -383,6 +423,20 @@ func ociMigrationDirVerbs() []ociSourceVerb {
 			},
 		},
 		{
+			verb: "migrations rollout run",
+			args: func(reference string) []string {
+				return []string{"migrations", "rollout", "run", "--migrations-dir", reference, "--plain-http"}
+			},
+			files: rolloutRunFiles,
+		},
+		{
+			verb: "migrations rollout resume",
+			args: func(reference string) []string {
+				return []string{"migrations", "rollout", "resume", "--migrations-dir", reference, "--plain-http"}
+			},
+			files: rolloutResumeFiles,
+		},
+		{
 			verb: "migrations show",
 			args: func(reference string) []string {
 				return []string{
@@ -509,7 +563,7 @@ func TestOCIMigrationDirVerbs_ReachTheRegistryWithPlainHTTP(t *testing.T) {
 	for _, row := range ociMigrationDirVerbs() {
 		t.Run(row.verb, func(t *testing.T) {
 			c := qt.New(t)
-			out, err := runNative(row.args(reference)...)
+			out, err := runNative(invocation(c, row, reference)...)
 			combined := out + errorText(err)
 
 			c.Check(combined, qt.Not(qt.Contains), "unknown flag: --plain-http")
@@ -536,7 +590,7 @@ func TestOCIMigrationDirVerbs_WithoutPlainHTTPUseTLS(t *testing.T) {
 	for _, row := range ociMigrationDirVerbs() {
 		t.Run(row.verb, func(t *testing.T) {
 			c := qt.New(t)
-			args := slices.DeleteFunc(row.args(reference), func(arg string) bool {
+			args := slices.DeleteFunc(invocation(c, row, reference), func(arg string) bool {
 				return arg == "--plain-http"
 			})
 			out, err := runNative(args...)
