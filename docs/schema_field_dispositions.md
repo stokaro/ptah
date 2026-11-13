@@ -79,12 +79,12 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-485 fields are reachable from the desired schema, and each one carries
+486 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 388 | reaches rendered SQL on at least one target |
+| `ddl` | 389 | reaches rendered SQL on at least one target |
 | `comparison` | 36 | read when two schemas are compared, and written into no statement |
 | `planning` | 6 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
@@ -718,6 +718,7 @@ migration nobody asked for.
 | `schemamodel.Trigger.ExecuteFunction` | `ddl` | — |
 | `schemamodel.Trigger.Facets` | `ddl` | — |
 | `schemamodel.Trigger.ForEach` | `ddl` | — |
+| `schemamodel.Trigger.FunctionArguments` | `ddl` | — |
 | `schemamodel.Trigger.Name` | `ddl` | — |
 | `schemamodel.Trigger.NewTable` | `ddl` | — |
 | `schemamodel.Trigger.OldTable` | `ddl` | — |
