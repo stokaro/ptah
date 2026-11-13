@@ -55,6 +55,34 @@ func TestAtlasFailureError(t *testing.T) {
 			want:    "failed to execute migration SQL: something",
 		},
 		{
+			// The PostgreSQL writer takes a role password out of the server's
+			// message and wraps the server's error, which still quotes it. The
+			// innermost error is that one, and the row is readable by anyone
+			// who reads the revisions.
+			name: "a writer's redaction is recorded, never the text it rewrote",
+			failure: fmt.Errorf("failed to apply migration 1: %w", sentStatementError(
+				fmt.Errorf("failed to execute migration SQL: %w", fmt.Errorf("SQL execution failed: %w\nSQL: %s",
+					rewrittenTextError{
+						err:  errors.New(`ERROR: syntax error at or near "E'hunter2zz'" (SQLSTATE 42601)`),
+						text: `ERROR: syntax error at or near "E'[secret]'" (SQLSTATE 42601)`,
+					},
+					alterRoleStatement,
+				)),
+				alterRoleStatement, 1, 1,
+			)),
+			want: `ERROR: syntax error at or near "E'[secret]'" (SQLSTATE 42601)`,
+		},
+		{
+			// A writer that does not end its message with the statement, as a
+			// provider's does not, leaves the statement error to append it.
+			name: "the statement line the statement error appends is dropped",
+			failure: fmt.Errorf("failed to apply migration 1: %w", sentStatementError(
+				fmt.Errorf("failed to execute migration SQL: %w", driverFailure),
+				"INSERT INTO missing_table (id) VALUES (1)", 1, 1,
+			)),
+			want: "SQL logic error: no such table: missing_table (1)",
+		},
+		{
 			// A driver whose message arrives padded, which is why the recorded
 			// value is trimmed rather than passed through.
 			name:    "surrounding whitespace is trimmed",
@@ -72,6 +100,20 @@ func TestAtlasFailureError(t *testing.T) {
 		})
 	}
 }
+
+// alterRoleStatement is a statement whose password the writer expands from a
+// variable before it sends it.
+const alterRoleStatement = "ALTER ROLE app SET PASSWORD $PTAH_SECRET_PASSWORD_APP"
+
+// rewrittenTextError rewrites the text of the error it wraps, the way the
+// PostgreSQL writer's redaction of a role password does.
+type rewrittenTextError struct {
+	err  error
+	text string
+}
+
+func (e rewrittenTextError) Error() string { return e.text }
+func (e rewrittenTextError) Unwrap() error { return e.err }
 
 // paddedError stands in for a driver that pads its own message. Written as a
 // type rather than errors.New because the linter reads a padded literal as a

@@ -546,9 +546,13 @@ pinned community binary v1.3.0   no such table: missing_table
 ptah-compat                      SQL logic error: no such table: missing_table (1)
 ```
 
-The column carries the innermost error and nothing else — no Ptah-authored
-prefix, and no repetition of the statement, which the adjacent `error_stmt`
-column already holds in full. `error_stmt` matches byte for byte, terminating
+The column carries the error the database answered with and nothing else — no
+Ptah-authored prefix, and no repetition of the statement, which the adjacent
+`error_stmt` column already holds in full. Where Ptah rewrote the database's
+message, the column records the rewritten text: a role password the PostgreSQL
+writer took out of the server's message is recorded as `[secret]`, and a
+provider's failure is recorded with the outcome and reason the provider
+reported. `error_stmt` matches byte for byte, terminating
 semicolon included. A statement carrying bytes that are not valid UTF-8 is the
 exception: those bytes are recorded as `\xFF` escapes, because the revision
 table's text columns hold UTF-8 and the MySQL family refuses anything else.
