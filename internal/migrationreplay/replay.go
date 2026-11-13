@@ -14,6 +14,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
+	"ptah.run/internal/dbanswer"
 	"ptah.run/internal/devclean"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/devlock"
@@ -463,7 +464,7 @@ func newMigrationError(migration *migrator.Migration, err error) *MigrationError
 		failure.Statement = &FailedStatement{
 			SQL:    statement.Statement,
 			Index:  statement.StatementIndex,
-			Answer: answerOf(statement.Err),
+			Answer: dbanswer.Of(statement.Err),
 		}
 	}
 	return failure
@@ -477,35 +478,6 @@ func (e *MigrationError) Error() string {
 
 func (e *MigrationError) Unwrap() error {
 	return e.Err
-}
-
-// answerOf follows err's chain down through the wrappers that only put context
-// in front of the error they wrap, to the error that answered.
-//
-// A wrapper is passed through when its message is the wrapped error's message
-// with words of its own before it, and possibly after it, or the same message
-// unchanged. That is how the migrator and every built-in dialect writer wrap a
-// driver error. The walk stops at any other shape, because then the wrapper's
-// own message is the one that may be shown:
-//
-//   - a wrapper whose message does not contain the wrapped error's, such as a
-//     redaction that took a secret out of the driver's text, or a provider's
-//     execution error, which unwraps to a sentinel that classifies it;
-//   - a wrapper whose message starts with the wrapped error's, which is how a
-//     sentinel is attached in front of the cause it classifies;
-//   - a branch, such as a join, which has no single error below it.
-func answerOf(err error) error {
-	for {
-		next := errors.Unwrap(err)
-		if next == nil {
-			return err
-		}
-		outer, inner := err.Error(), next.Error()
-		if outer != inner && (inner == "" || strings.Index(outer, inner) <= 0) {
-			return err
-		}
-		err = next
-	}
 }
 
 // captureReplaySessionState reads the session settings the engine's

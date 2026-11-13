@@ -1,9 +1,9 @@
 package migrator
 
 import (
-	"errors"
 	"strings"
 
+	"ptah.run/internal/dbanswer"
 	"ptah.run/internal/revisiontext"
 )
 
@@ -21,12 +21,25 @@ import (
 // Ptah's own: the wrapping prefix, and a `SQL:` line repeating a statement the
 // adjacent `error_stmt` column already holds in full.
 //
-// Unwrapping to the innermost error drops both. What is left is the driver's
-// message, which still differs from that binary's — ours is a different SQLite
-// driver and spells the same condition `SQL logic error: … (1)`. That residue
-// is a driver difference rather than a Ptah one and is recorded in the gap
-// register; no amount of string surgery here would close it without inventing
-// per-driver rewrites (stokaro/ptah#1196 item 1).
+// Stepping down the chain past the wrappers that only add context drops both.
+// What is left is the driver's message, which still differs from that
+// binary's — ours is a different SQLite driver and spells the same condition
+// `SQL logic error: … (1)`. That residue is a driver difference rather than a
+// Ptah one and is recorded in the gap register; no amount of string surgery
+// here would close it without inventing per-driver rewrites
+// (stokaro/ptah#1196 item 1).
+//
+// The walk is [dbanswer.Of], the one a replayed migration reads its answer
+// through, and it stops at a wrapper that rewrote the text it wraps. The
+// PostgreSQL writer takes a role password out of the server's message that
+// way, and the server's own error below it still quotes the password, so the
+// innermost error would put the password in a table anyone who reads the
+// revisions can read (stokaro/ptah#5993).
+//
+// The statement error is the one wrapper the walk can stop at that adds
+// nothing worth keeping: when the writer did not end its message with the
+// statement, [MigrationExecutionError] appends it, and `error_stmt` holds it
+// already. The walk goes on below it.
 //
 // The native revision format is untouched. This runs only where the revision
 // table is Atlas-shaped, and Ptah's own surface keeps the context it added.
@@ -34,15 +47,15 @@ func atlasFailureError(failure error) string {
 	if failure == nil {
 		return ""
 	}
-	innermost := failure
+	answer := dbanswer.Of(failure)
 	for {
-		unwrapped := errors.Unwrap(innermost)
-		if unwrapped == nil {
+		statement, ok := answer.(*MigrationExecutionError)
+		if !ok || statement.Err == nil {
 			break
 		}
-		innermost = unwrapped
+		answer = dbanswer.Of(statement.Err)
 	}
-	return revisiontext.ValidUTF8(strings.TrimSpace(innermost.Error()))
+	return revisiontext.ValidUTF8(strings.TrimSpace(answer.Error()))
 }
 
 // atlasFailureStatement is what the `error_stmt` column records: the failing

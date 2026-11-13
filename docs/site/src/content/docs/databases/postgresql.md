@@ -1588,6 +1588,10 @@ Ptah sets no other password. Ptah writes a value only after `PASSWORD` in
 variable anywhere else. Two roles whose names give one variable, such as `App`
 and `app`, are refused.
 
+When the server's answer to such a statement quotes the password it was sent,
+Ptah writes `[secret]` in its place. That holds for the error a command prints
+and for the error a revision table records for a failed migration.
+
 A `password` written as a reference, `$PTAH_SECRET_` and a name in upper case
 such as `$PTAH_SECRET_APP_PASSWORD`, names that variable instead of holding a
 value. The statements name it, and every run reads it from the environment,

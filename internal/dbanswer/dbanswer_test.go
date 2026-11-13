@@ -1,10 +1,4 @@
-package migrationreplay
-
-// White-box testing required: answerOf decides which error of a failed
-// statement's chain a report may show, and the shapes it must stop at -- a
-// PostgreSQL writer's password redaction, a provider's classified execution
-// error -- are produced by engines a replay test on the bundled SQLite cannot
-// reach, while the one it passes through is the only shape SQLite produces.
+package dbanswer_test
 
 import (
 	"errors"
@@ -12,6 +6,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"ptah.run/internal/dbanswer"
 )
 
 // rewrittenError rewrites the text of the error it wraps, the way a writer
@@ -46,10 +42,16 @@ func migratorWraps(writer error) error {
 	return fmt.Errorf("failed to execute migration SQL: %w", writer)
 }
 
-func TestAnswerOf(t *testing.T) {
+// writerWraps wraps a driver's error the way a built-in dialect writer does:
+// context in front of the message and the statement after it.
+func writerWraps(driver error, statement string) error {
+	return fmt.Errorf("SQL execution failed: %w\nSQL: %s", driver, statement)
+}
+
+func TestOf(t *testing.T) {
 	const statement = "ALTER TABLE users RENAME COLUMN nope TO x"
 	driver := errors.New(`SQL logic error: no such column: "nope" (1)`)
-	secret := errors.New(`password "hunter2" does not meet the policy`)
+	quoted := errors.New(`ERROR: syntax error at or near "E'hunter2zz'" (SQLSTATE 42601)`)
 	sentinel := errors.New("operation refused")
 
 	tests := []struct {
@@ -58,15 +60,25 @@ func TestAnswerOf(t *testing.T) {
 		want string
 	}{
 		{
+			name: "an error that wraps nothing is the answer",
+			err:  driver,
+			want: `SQL logic error: no such column: "nope" (1)`,
+		},
+		{
 			name: "a dialect writer's context is passed through to the driver's error",
-			err:  migratorWraps(fmt.Errorf("sqlite: SQL execution failed: %w\nSQL: %s", passThrough{err: driver}, statement)),
+			err:  migratorWraps(writerWraps(passThrough{err: driver}, statement)),
 			want: `SQL logic error: no such column: "nope" (1)`,
 		},
 		{
 			name: "a redaction is kept, so the secret it removed stays removed",
-			err: migratorWraps(fmt.Errorf("SQL execution failed: %w\nSQL: %s",
-				rewrittenError{err: secret, text: `password "[secret]" does not meet the policy`}, statement)),
-			want: `password "[secret]" does not meet the policy`,
+			err: migratorWraps(writerWraps(
+				rewrittenError{err: quoted, text: `ERROR: syntax error at or near "E'[secret]'" (SQLSTATE 42601)`}, statement)),
+			want: `ERROR: syntax error at or near "E'[secret]'" (SQLSTATE 42601)`,
+		},
+		{
+			name: "a redaction that found nothing to take out is passed through",
+			err:  migratorWraps(writerWraps(rewrittenError{err: driver, text: driver.Error()}, statement)),
+			want: `SQL logic error: no such column: "nope" (1)`,
 		},
 		{
 			name: "a classification is kept rather than the sentinel it unwraps to",
@@ -87,11 +99,29 @@ func TestAnswerOf(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			c := qt.New(t)
 
-			got := answerOf(test.err)
+			got := dbanswer.Of(test.err)
 
 			c.Assert(got.Error(), qt.Equals, test.want)
 		})
 	}
+}
+
+// The answer is an error of the chain rather than a copy of its text, so a
+// caller that classifies it still reaches what is below it.
+func TestOf_AnswerStillUnwrapsToTheDriversError(t *testing.T) {
+	c := qt.New(t)
+	quoted := errors.New(`ERROR: syntax error at or near "E'hunter2zz'" (SQLSTATE 42601)`)
+
+	got := dbanswer.Of(migratorWraps(rewrittenError{err: quoted, text: "ERROR: [secret]"}))
+
+	c.Assert(got, qt.ErrorIs, quoted)
+}
+
+func TestOf_NilIsNil(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(dbanswer.Of(nil), qt.IsNil)
 }
