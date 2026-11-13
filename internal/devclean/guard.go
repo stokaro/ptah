@@ -120,8 +120,9 @@ func NewDevReplayGuardFor(conn *dbschema.DatabaseConnection) *ReplayGuard {
 }
 
 // WithSessionScope returns a guard for a replay that owns one pinned physical
-// session and discards it on success, failure, and cancellation. The caller
-// must enforce that lifecycle. Database and server confinement remain in force.
+// session and discards it on success, failure, and cancellation, or drops its
+// session objects with [SessionObjects] where the database keeps that session.
+// The caller must enforce that lifecycle. Database and server confinement remain in force.
 func (g *ReplayGuard) WithSessionScope() *ReplayGuard {
 	guard := *g
 	guard.session = true

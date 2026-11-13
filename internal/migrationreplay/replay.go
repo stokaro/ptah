@@ -389,6 +389,20 @@ func replayMigrations(
 	if err := devclean.DatabaseRealmKeeping(ctx, conn, baseline); err != nil {
 		return fmt.Errorf("clean dev database: %w", err)
 	}
+	// The first cleanup refuses a session that already holds objects of its
+	// own, so what the session holds from here on was created by this replay.
+	// Registered after it, so a refused session keeps what it had, and run
+	// before the realm cleanup, which refuses the replay's own session
+	// objects. It runs without the lock check: the objects belong to this
+	// connection, not to the realm, and a database that keeps its only
+	// connection would hand them to the next replay.
+	defer func() {
+		sessionCtx, releaseSession := devclean.CleanupContext(ctx, devclean.CleanupGrace)
+		defer releaseSession()
+		if sessionErr := devclean.SessionObjects(sessionCtx, conn); sessionErr != nil {
+			resultErr = errors.Join(resultErr, fmt.Errorf("drop session objects after replay: %w", sessionErr))
+		}
+	}()
 	for _, migration := range migrations {
 		versionLabel := replayMigrationVersionLabel(migration.RevisionVersion())
 		if hooks.observeVersion != nil {

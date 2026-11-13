@@ -8,7 +8,7 @@ import (
 	"ptah.run/internal/lexer"
 )
 
-func validateSQLiteReplayStatement(tokens []lexer.Token) error {
+func validateSQLiteReplayStatement(tokens []lexer.Token, scope replay.Scope) error {
 	if len(tokens) == 0 {
 		return nil
 	}
@@ -18,7 +18,7 @@ func validateSQLiteReplayStatement(tokens []lexer.Token) error {
 	case "ATTACH", "DETACH":
 		return replay.Refuse(platform.SQLite, first)
 	case "CREATE":
-		if createsSQLiteTemporaryObject(tokens) {
+		if createsSQLiteTemporaryObject(tokens) && (!scope.Session || !createsSQLiteTemporaryTable(tokens)) {
 			return replay.Refuse(platform.SQLite, "TEMP object")
 		}
 	case "PRAGMA":
@@ -46,6 +46,14 @@ func createsSQLiteTemporaryObject(tokens []lexer.Token) bool {
 	}
 	modifier := replay.NormalizedIdentifier(tokens[1])
 	return modifier == "TEMP" || modifier == "TEMPORARY"
+}
+
+// createsSQLiteTemporaryTable reports CREATE TEMP TABLE and CREATE TEMPORARY
+// TABLE. A TEMP view or trigger is not confined the same way: a TEMP view can
+// read, and a TEMP trigger can fire on, an object of the main schema, and
+// the realm cleanup refuses a connection that holds a TEMP view.
+func createsSQLiteTemporaryTable(tokens []lexer.Token) bool {
+	return len(tokens) > 2 && replay.NormalizedIdentifier(tokens[2]) == "TABLE"
 }
 
 func isRestorableSQLitePragma(tokens []lexer.Token) bool {

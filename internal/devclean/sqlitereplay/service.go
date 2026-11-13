@@ -1,6 +1,6 @@
 // Package sqlitereplay is the SQLite owner's migration replay guard: it
 // refuses a SQLite statement whose effects reach past the dev database file,
-// such as ATTACH, a TEMP object or load_extension. internal/devclean asks it
+// such as ATTACH, a TEMP object outside a session scope or load_extension. internal/devclean asks it
 // through the internal/devclean/replay contract.
 package sqlitereplay
 
@@ -17,9 +17,11 @@ func Services() []replay.Service {
 
 type guard struct{}
 
-// Validate refuses a statement that reaches past the dev database file. The
-// scope does not widen what SQLite accepts: the database is one file, and a
-// server realm has nothing more to give it.
-func (guard) Validate(stmt string, _ replay.Scope) error {
-	return validateSQLiteReplayStatement(replay.Tokens(stmt, dialectlexer.Options(platform.SQLite)))
+// Validate refuses a statement that reaches past the dev database file. A
+// session scope admits CREATE TEMP TABLE: the table lives in the pinned
+// session's temp schema, and the connection layer drops it when the session
+// ends, on every outcome. A TEMP view or trigger, and any statement that
+// names the temp schema as its target, stays refused.
+func (guard) Validate(stmt string, scope replay.Scope) error {
+	return validateSQLiteReplayStatement(replay.Tokens(stmt, dialectlexer.Options(platform.SQLite)), scope)
 }
