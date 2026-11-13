@@ -318,6 +318,30 @@ func mysql() descriptor.Dialect {
 // being InnoDB: it records that a migration was applied even when the
 // statement around it fails. The Atlas version column is binary-collated, so
 // two tokens that differ only in case stay two revisions.
+// mysqlCreateApplyLog is the schema apply log on the MySQL family. TEXT holds
+// 65,535 bytes, and in strict mode a longer value fails the insert, so the
+// outcome entry of a run that stopped at a long statement would be the one
+// entry lost: error and error_stmt are LONGTEXT. The table states utf8mb4, as
+// the revision table does, so a statement's non-ASCII text is stored on a
+// server whose default character set is narrower.
+const mysqlCreateApplyLog = `CREATE TABLE IF NOT EXISTS {table} (
+    run_id VARCHAR(64) NOT NULL,
+    seq BIGINT NOT NULL,
+    run_reference VARCHAR(255) NULL,
+    state VARCHAR(32) NOT NULL,
+    actor VARCHAR(256) NULL,
+    actor_source VARCHAR(32) NOT NULL,
+    actor_origin VARCHAR(64) NULL,
+    plan_name VARCHAR(255) NULL,
+    plan_digest VARCHAR(80) NULL,
+    statement_count INTEGER NOT NULL,
+    error_position INTEGER NULL,
+    logged_at TIMESTAMP NOT NULL,
+    error LONGTEXT NULL,
+    error_stmt LONGTEXT NULL,
+    PRIMARY KEY (run_id, seq)
+){engine} DEFAULT CHARSET=utf8mb4`
+
 func mysqlFamilyRevisionTable(logInsertPrefix string) descriptor.RevisionTable {
 	return descriptor.RevisionTable{
 		Create: createRevisions + " DEFAULT CHARSET=utf8mb4",
@@ -337,7 +361,7 @@ func mysqlFamilyRevisionTable(logInsertPrefix string) descriptor.RevisionTable {
 ){engine} DEFAULT CHARSET=utf8mb4`,
 		CreateTags:      createTags + " ENGINE=InnoDB",
 		CreateLog:       createLog,
-		CreateApplyLog:  createApplyLog,
+		CreateApplyLog:  mysqlCreateApplyLog,
 		LogInsertPrefix: logInsertPrefix,
 		CreateSchema:    createSchema,
 		EngineClause:    " ENGINE=InnoDB",

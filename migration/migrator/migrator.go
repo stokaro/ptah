@@ -1306,6 +1306,11 @@ func (m *Migrator) ensureMigrationsRevisionColumn(ctx context.Context, name, def
 // ensureMetadataColumn adds column to the metadata table named table when an
 // older layout created the table without it. fallback is the definition the
 // column takes where the engine's descriptor lists none in AddedColumns.
+//
+// The column is spelled as the CREATE statements and the writes spell it,
+// bare where the engine folds a bare name. On Oracle a quoted "actor_origin"
+// is a column no statement names: every write asks for ACTOR_ORIGIN, and
+// measured on Oracle Free 23 each one failed with ORA-00904.
 func (m *Migrator) ensureMetadataColumn(ctx context.Context, table, column, fallback string) error {
 	exists, err := m.metadataColumnExists(ctx, table, column)
 	if err != nil {
@@ -1324,7 +1329,7 @@ func (m *Migrator) ensureMetadataColumn(ctx context.Context, table, column, fall
 		clause = "ADD"
 	}
 	query := fmt.Sprintf("ALTER TABLE %s %s %s %s",
-		m.qualifiedMetadataTable(table), clause, m.quoteIdentifier(column), definition)
+		m.qualifiedMetadataTable(table), clause, sqlident.Ident(m.connectionDialect(), column), definition)
 	_, err = m.conn.ExecContext(ctx, query)
 	return err
 }
