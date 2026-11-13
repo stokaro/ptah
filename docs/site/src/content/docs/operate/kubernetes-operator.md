@@ -38,6 +38,14 @@ the pending sequence, applies it once approved, and reads the history again. It
 is a separate resource with its own API and state machine: one database can have
 both, and the two serialize against each other through the same lock.
 
+An executor that runs `ptah migrations up --check-drift --json` gets the drift
+check's answer in the run document's `drift_check`: `clean`, `drifted` or
+`unable`, with the replayed versions and each difference by object. It runs
+under the migration lock before any pending migration, and exit status 1 means
+the run applied nothing because the schema drifted.
+[Apply migrations](../../versioned/apply/#check-the-schema-against-its-history)
+says what each outcome means.
+
 Database work runs in short-lived Jobs. The controller itself has no permission
 to read database Secrets, and registry and database credentials are kept apart
 from each other. Destructive plans are disabled by default, and enabling them

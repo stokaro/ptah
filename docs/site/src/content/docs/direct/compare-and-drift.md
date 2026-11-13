@@ -141,7 +141,11 @@ look is not proof that nothing drifted.
 ## Drift: the difference as a check
 
 `ptah schema drift` evaluates the same difference as a pass/fail check with
-severity-classified findings. With the extra model column still in place:
+severity-classified findings. It compares the database with a declared desired
+schema. A database managed by versioned migrations is checked against the
+history it recorded instead, by `ptah migrations up --check-drift`, which
+[Apply migrations](../../versioned/apply/#check-the-schema-against-its-history)
+describes. With the extra model column still in place:
 
 ```console exits=1
 ptah schema drift --schema-file schema.sql --db-url "sqlite://app.db"

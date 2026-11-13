@@ -201,15 +201,12 @@ func TestVerifyAppliedFailurePathReportsDrift(t *testing.T) {
 }
 
 func TestVerifyAppliedFailurePathCannotCompare(t *testing.T) {
-	broken, err := migrator.NewFSMigrationProvider(fstest.MapFS{
+	broken := must.Must(migrator.NewFSMigrationProvider(fstest.MapFS{
 		"0000000001_users.up.sql":    {Data: []byte("CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT NOT NULL);")},
 		"0000000001_users.down.sql":  {Data: []byte("DROP TABLE users;")},
 		"0000000002_broken.up.sql":   {Data: []byte("CREATE TABLE orders (id INTEGER PRIMARY KEY REFERENCES;")},
 		"0000000002_broken.down.sql": {Data: []byte("DROP TABLE orders;")},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	}))
 	for _, test := range []struct {
 		name string
 		// shadow is the shadow database's URL, given the target's.

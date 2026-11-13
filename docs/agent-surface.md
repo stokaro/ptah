@@ -145,7 +145,7 @@ to rule out — so they are named here, where a claim nothing measures belongs.
 | `migrations status` | reads | none | `--db-url` | reads the target's tracking table and reports which migrations are applied |
 | `migrations tag` | **writes** | none | `--db-url` | records, lists or removes a tag in the target's tracking table; two of the three write |
 | `migrations test` | **writes** | none | `--db-url` | runs declarative test cases against the database named by `--db-url`, whose own help calls it a "Throwaway database URL": the cases run raw SQL and apply schemas there |
-| `migrations up` | **writes** | none | `--db-url` | runs pending migrations against the target |
+| `migrations up` | **writes** | none | `--db-url`, `--shadow-db` | runs pending migrations against the target |
 | `migrations validate` | none | **rewrites** | `--dev-url` | validates the directory against its integrity file; the dev database it names is "used to clean and replay migrations for SQL validation" |
 | `oci capabilities` | none | none | — | asks the registry behind a reference which features it supports, and prints them |
 | `oci copy` | none | none | — | copies an artifact between two registry repositories without rebuilding it |
