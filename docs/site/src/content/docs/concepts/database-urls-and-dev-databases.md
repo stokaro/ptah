@@ -258,7 +258,8 @@ proven to stay inside the disposable realm:
 - ClickHouse remote, distributed, replicated, and unknown table engines,
   external dictionary sources, and `FREEZE`/`UNFREEZE`. Tables and standalone
   materialized views must select an explicitly allowlisted engine.
-- SQLite `ATTACH`, `DETACH`, temporary objects, and non-restorable pragmas.
+- SQLite `ATTACH`, `DETACH`, temporary views and triggers, any statement that names
+  the `temp` schema, and non-restorable pragmas.
 - YDB, through its provider's replay guard, writes whose target is an absolute
   path, climbs out of the dev realm
   with `..`, is named through a `$` expression or names a cluster,
@@ -281,6 +282,13 @@ replay's pinned physical session. Later statements and migrations can use those
 tables, including through `pg_temp`. Ptah discards that session after success,
 failure, or cancellation. Explicit `pg_temp_<number>` targets remain protected;
 the replay cannot take ownership of another session's temporary tables.
+
+SQLite `CREATE TEMP TABLE` and `CREATE TEMPORARY TABLE` are accepted too. Later
+statements and migrations can use the table. A SQLite temporary table lives on
+the connection, and an in-memory dev database keeps its only connection, so Ptah
+drops the replay's temporary objects after success, failure, or cancellation
+instead of discarding the session. A statement that names the `temp` schema, such
+as `CREATE TABLE temp.t`, remains refused.
 
 A PostgreSQL-family `COMMENT ON SCHEMA` is accepted when the dev URL pins no
 schema. The reset that ends the replay returns each schema it keeps to the comment

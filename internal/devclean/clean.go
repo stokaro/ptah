@@ -18,6 +18,26 @@ import (
 	"ptah.run/internal/readscope"
 )
 
+type sessionObjectDropper interface {
+	DropSessionObjects(context.Context) error
+}
+
+// SessionObjects removes the objects the pinned session of conn holds for
+// itself, such as SQLite's TEMP tables, and does nothing for an engine whose
+// session holds none a replay could create. A replay that admits session
+// objects (see [ReplayGuard.WithSessionScope]) calls it before it cleans the
+// realm and on every outcome, because a database that keeps its only
+// connection would hand them to the next caller.
+func SessionObjects(ctx context.Context, conn *dbschema.DatabaseConnection) error {
+	if conn == nil {
+		return fmt.Errorf("drop session objects: nil database connection")
+	}
+	if dropper, ok := conn.SchemaWriter().(sessionObjectDropper); ok {
+		return dropper.DropSessionObjects(ctx)
+	}
+	return nil
+}
+
 type databaseRealmCleaner interface {
 	DropDatabaseRealm(context.Context) error
 }

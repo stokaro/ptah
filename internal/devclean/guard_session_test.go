@@ -63,11 +63,59 @@ func TestReplayGuardSessionScope_OriginalGuardStillRefusesTemporaryTables(t *tes
 }
 
 func TestReplayGuardSessionScope_OtherEnginesStillRefuseTemporaryTables(t *testing.T) {
-	for _, dialect := range []string{platform.CockroachDB, platform.YugabyteDB, platform.MySQL, platform.SQLite} {
+	for _, dialect := range []string{platform.CockroachDB, platform.YugabyteDB, platform.MySQL} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 			guard := devclean.NewReplayGuard(catalog.ServerInfo{Dialect: dialect}, devclean.ReplayRealmDatabase).WithSessionScope()
 			c.Assert(guard.ValidateStatement("CREATE TEMP TABLE scratch (id integer)"), qt.IsNotNil)
+		})
+	}
+}
+
+func TestReplayGuardSQLiteSessionScope_HappyPath(t *testing.T) {
+	for _, statement := range []string{
+		"CREATE TEMP TABLE scratch (id int)",
+		"CREATE TEMPORARY TABLE scratch (id int)",
+		"CREATE TEMP TABLE IF NOT EXISTS scratch AS SELECT id FROM users",
+		"INSERT INTO scratch SELECT id FROM users",
+		"DROP TABLE scratch",
+	} {
+		t.Run(statement, func(t *testing.T) {
+			c := qt.New(t)
+			guard := devclean.NewReplayGuard(catalog.ServerInfo{Dialect: platform.SQLite}, devclean.ReplayRealmDatabase).WithSessionScope()
+			c.Assert(guard.ValidateStatement(statement), qt.IsNil)
+		})
+	}
+}
+
+func TestReplayGuardSQLiteSessionScope_FailurePath(t *testing.T) {
+	for _, test := range []struct {
+		statement string
+		operation string
+	}{
+		{`CREATE TEMP VIEW scratch AS SELECT 1`, `TEMP object`},
+		{`CREATE TEMPORARY TRIGGER scratch AFTER INSERT ON users BEGIN SELECT 1; END`, `TEMP object`},
+		{`CREATE TEMP TABLE temp.scratch (id int)`, `TEMP schema target`},
+		{`INSERT INTO temp.scratch SELECT 1`, `TEMP schema target`},
+		{`ATTACH DATABASE 'other.db' AS other`, `ATTACH`},
+	} {
+		t.Run(test.statement, func(t *testing.T) {
+			c := qt.New(t)
+			guard := devclean.NewReplayGuard(catalog.ServerInfo{Dialect: platform.SQLite}, devclean.ReplayRealmDatabase).WithSessionScope()
+			c.Assert(guard.ValidateStatement(test.statement), qt.ErrorMatches, `sqlite migration replay rejects `+test.operation+` .*`)
+		})
+	}
+}
+
+func TestReplayGuardSQLiteWithoutSessionScope_FailurePath(t *testing.T) {
+	for _, statement := range []string{
+		"CREATE TEMP TABLE scratch (id int)",
+		"CREATE TEMPORARY TABLE scratch (id int)",
+	} {
+		t.Run(statement, func(t *testing.T) {
+			c := qt.New(t)
+			guard := devclean.NewReplayGuard(catalog.ServerInfo{Dialect: platform.SQLite}, devclean.ReplayRealmDatabase)
+			c.Assert(guard.ValidateStatement(statement), qt.ErrorMatches, `sqlite migration replay rejects TEMP object .*`)
 		})
 	}
 }
