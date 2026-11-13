@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"ptah.run/dbschema"
 )
 
 // TestSchemaApplyPreservesAndChangesTriggerArgumentsLive starts with an
@@ -16,12 +18,15 @@ import (
 // it, and changing its argument must change the trigger's actual behavior.
 func TestSchemaApplyPreservesAndChangesTriggerArgumentsLive(t *testing.T) {
 	c := qt.New(t)
-	target, conn := scratchReplayDatabase(c)
+	target, _ := scratchReplayDatabase(c)
+	conn, err := dbschema.ConnectToDatabase(c.Context(), target)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
 	const prefix = `CREATE TABLE x (id integer PRIMARY KEY, value text);
 CREATE FUNCTION f() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW.value := TG_ARGV[0]; RETURN NEW; END $$;
 `
 	before := prefix + `CREATE TRIGGER t BEFORE UPDATE ON x FOR EACH ROW EXECUTE FUNCTION f('updated_at');`
-	_, err := conn.ExecContext(c.Context(), before)
+	_, err = conn.ExecContext(c.Context(), before)
 	c.Assert(err, qt.IsNil)
 	path := filepath.Join(c.TempDir(), "schema.sql")
 	c.Assert(os.WriteFile(path, []byte(before), 0o600), qt.IsNil)
