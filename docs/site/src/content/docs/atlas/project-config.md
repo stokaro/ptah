@@ -245,7 +245,8 @@ that block is ignored, as it is on Atlas CE, and reported at `WARN` rather than
 dropped in silence.
 
 Project config precedence is explicit CLI flags, environment variables,
-`atlas.hcl`, `ptah.yaml`, then built-in defaults. Project-file merging
+`atlas.hcl`, `ptah.yaml`, then built-in defaults. For `ptah-compat`, a project
+file takes part only when `--env` or `--config` names it. Project-file merging
 preserves source presence. For a supported field, an explicitly present value
 replaces the lower-precedence value instead of being treated as absent. This
 includes an empty string, zero, `false`, or an empty list when the field

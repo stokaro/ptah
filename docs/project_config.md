@@ -65,10 +65,9 @@ Select an environment with `--env <name>` when a command needs project
 configuration from one of multiple environments. If `ptah.yaml` contains
 exactly one environment, Ptah selects it automatically; `ptah-compat` selects
 an environment only when `--env` names it, as the Atlas community binary does.
-A command whose
-required inputs are all explicit does not need to select an environment. If
-project values are required and multiple environments remain ambiguous, Ptah
-fails instead of guessing.
+A command whose required inputs are all explicit does not need to select an
+environment. If project values are required and multiple environments remain
+ambiguous, Ptah fails instead of guessing.
 
 Top-level settings are allowed and are merged as defaults for every named
 environment:
