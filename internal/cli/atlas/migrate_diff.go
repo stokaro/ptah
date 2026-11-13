@@ -168,11 +168,7 @@ func runAtlasMigrateDiff(
 	// atlas.hcl cannot answer the question at all.
 	dirURLSpelled := opts.dirURL
 	policy := atlasschema.DiffPolicy{}
-	mode := ignoreMissingEnvSelection
-	if needsAtlasMigrateDiffConfig(cmd) {
-		mode = reportMissingEnvSelection
-	}
-	project, loaded, err := openAtlasProjectForCommand(cmd, mode)
+	project, loaded, err := openAtlasProjectForCommand(cmd)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -577,11 +573,6 @@ func migrateDiffWriterRoot(
 	dir atlasargs.LocalDir,
 ) *pathguard.OpenedDirectory {
 	return project.localOptions(dir).Root
-}
-
-func needsAtlasMigrateDiffConfig(cmd *cobra.Command) bool {
-	return !cmd.Flags().Changed("to") ||
-		!cmd.Flags().Changed("dev-url")
 }
 
 // prepareAtlasMigrateDiffSource validates the desired-state flags and the

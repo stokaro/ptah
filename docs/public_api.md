@@ -228,6 +228,13 @@ one selected instance and return an error rather than discarding the others.
 `AtlasLoadOptions.RejectListMapForEach` lets a compatibility adapter retain
 tuple, object, and set expansion while refusing Ptah's list/map extension. Its
 zero value keeps the complete dynamic-environment capability.
+
+`AtlasLoadOptions.NoImplicitEnv` makes an empty `EnvName` select no env
+block: the top-level blocks, variables and locals are evaluated and no env
+block is. A compatibility adapter selects it for the community binary's
+`--config` without `--env`; its zero value selects the only env block of a
+file that declares one.
+
 `AtlasLoadOptions.RejectCompositeSchema` refuses a `data "composite_schema"`
 block with the community binary's own message; its zero value evaluates the
 block. `Config.CompositeSchema` returns the parts behind a

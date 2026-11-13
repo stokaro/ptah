@@ -37,24 +37,38 @@ const (
 	atlasVarFlagName    = "var"
 )
 
-type atlasProjectRequirement int
-
-const (
-	optionalAtlasProject atlasProjectRequirement = iota
-	requiredAtlasProject
-)
-
 type atlasProjectFlagValues struct {
 	configPath string
-	envName    string
-	vars       []string
+	// configNamed reports that --config (or PTAH_CONFIG) named the project
+	// file, as opposed to configPath holding the default ./atlas.hcl.
+	configNamed bool
+	envName     string
+	vars        []string
+}
+
+// readsProject reports whether the invocation reads a project file at all.
+//
+// The pinned community binary v1.3.0 reads one only when --env or --config
+// names it. Without either, the flags and their defaults are the whole
+// configuration: an ./atlas.hcl beside the command is not opened, so its env
+// blocks, its top-level blocks and even a syntax error in it change nothing.
+// --var supplies values to a file and selects none. Measured with an atlas.hcl
+// holding only `env "prod" { url = "sqlite://prod.db" }`:
+//
+//	migrate apply --dir file://migrations           -> exit 1, required flag "url" not set
+//	migrate apply --dir file://migrations --var x=1 -> exit 1, required flag "url" not set
+//	migrate apply --dir file://migrations --env ""  -> exit 1, required flag "url" not set
+//
+// A file that is read is always required: a named --config or --env with no
+// file behind it is an error on both binaries.
+func (f atlasProjectFlagValues) readsProject() bool {
+	return f.configNamed || f.envName != ""
 }
 
 type atlasProjectArgValues struct {
-	flags         atlasProjectFlagValues
-	changed       bool
-	configChanged bool
-	envChanged    bool
+	flags      atlasProjectFlagValues
+	changed    bool
+	envChanged bool
 }
 
 type atlasProject struct {
@@ -344,19 +358,17 @@ func registerAtlasProjectFlags(flags *pflag.FlagSet, target *atlasProjectFlagVal
 func openAtlasProject(
 	ctx context.Context,
 	flags atlasProjectFlagValues,
-	requirement atlasProjectRequirement,
 ) (atlasProject, bool, error) {
-	return openAtlasProjectWithPolicy(ctx, flags, requirement, atlascompatpolicy.Full(), "")
+	return openAtlasProjectWithPolicy(ctx, flags, atlascompatpolicy.Full(), "")
 }
 
 func openAtlasProjectWithPolicy(
 	ctx context.Context,
 	flags atlasProjectFlagValues,
-	requirement atlasProjectRequirement,
 	policy atlascompatpolicy.Policy,
 	verb string,
 ) (atlasProject, bool, error) {
-	source, loaded, err := openAtlasProjectSource(flags, requirement)
+	source, loaded, err := openAtlasProjectSource(flags)
 	if err != nil || !loaded {
 		return atlasProject{}, loaded, err
 	}
@@ -377,10 +389,9 @@ func openAtlasProjectWithPolicy(
 func openAtlasProjectsWithPolicy(
 	ctx context.Context,
 	flags atlasProjectFlagValues,
-	requirement atlasProjectRequirement,
 	policy atlascompatpolicy.Policy,
 ) (atlasProjectSet, bool, error) {
-	source, loaded, err := openAtlasProjectSource(flags, requirement)
+	source, loaded, err := openAtlasProjectSource(flags)
 	if err != nil || !loaded {
 		return atlasProjectSet{}, loaded, err
 	}
@@ -411,8 +422,15 @@ func atlasProjectLoadOptions(
 	verb string,
 ) projectconfig.AtlasLoadOptions {
 	return projectconfig.AtlasLoadOptions{
-		Context:              ctx,
-		EnvName:              flags.envName,
+		Context: ctx,
+		EnvName: flags.envName,
+		// The community binary selects an env only by name. A --config with
+		// no --env reads the file's top-level blocks and evaluates no env,
+		// however many the file declares; measured, a lone
+		// `env "prod" { url = nosuch() }` named this way exits 0. Both
+		// policies take this: an env applied without being named is the
+		// looser direction, and no capability lives behind it.
+		NoImplicitEnv:        true,
 		Vars:                 flags.vars,
 		RejectListMapForEach: policy.IsStrictCE(),
 		// The pinned community binary has no handler for this data source and
@@ -433,8 +451,8 @@ func atlasProjectLoadOptions(
 }
 
 // openAtlasProjectSource reads the project file for one command, and reports
-// `false` instead of an error when the file is absent and the command did not
-// ask for one.
+// `false` when the invocation names no project file. See
+// [atlasProjectFlagValues.readsProject].
 //
 // The environment is refused FIRST, before the path is even spelled, and that
 // ordering is the point. This function is the compatibility adapter's own
@@ -448,12 +466,12 @@ func atlasProjectLoadOptions(
 // holding none it exited 0 and described the database. A boolean `PTAH_*`
 // variable is a property of the environment, so the presence of a file it says
 // nothing about may not choose the answer.
-func openAtlasProjectSource(
-	flags atlasProjectFlagValues,
-	requirement atlasProjectRequirement,
-) (atlasProjectSource, bool, error) {
+func openAtlasProjectSource(flags atlasProjectFlagValues) (atlasProjectSource, bool, error) {
 	if err := projectconfig.ValidateAtlasEnvironmentVariables(); err != nil {
 		return atlasProjectSource{}, false, err
+	}
+	if !flags.readsProject() {
+		return atlasProjectSource{}, false, nil
 	}
 	path, err := atlasConfigPathValue(flags.configPath)
 	if err != nil {
@@ -468,10 +486,6 @@ func openAtlasProjectSource(
 		return atlasProjectSource{}, false, fmt.Errorf("open atlas config directory %s: %w", filepath.Dir(path), err)
 	}
 	raw, err := fs.ReadFile(root.FS(), filepath.Base(absolute))
-	if errors.Is(err, fs.ErrNotExist) && requirement == optionalAtlasProject {
-		closeErr := root.Close()
-		return atlasProjectSource{}, false, closeErr
-	}
 	if err != nil {
 		closeErr := root.Close()
 		return atlasProjectSource{}, false, errors.Join(
@@ -482,22 +496,37 @@ func openAtlasProjectSource(
 	return atlasProjectSource{path: path, raw: raw, root: root}, true, nil
 }
 
-func openRequiredMergedProjectConfigWithPolicy(
+// openMergedProjectConfigWithPolicy opens the project file and merges the
+// ./ptah.yaml settings under it, for a forwarded native command that consumes
+// project configuration itself.
+//
+// ptah.yaml is read only when --env names an environment. Its loader selects
+// a lone env block when it is given no name, and a --config with no --env
+// selects no env on this surface, so reading it there would apply exactly the
+// env values the name was withheld from.
+func openMergedProjectConfigWithPolicy(
 	ctx context.Context,
 	flags atlasProjectFlagValues,
 	policy atlascompatpolicy.Policy,
 	verbPath string,
-) (project atlasProject, mergedConfig projectconfig.Config, err error) {
-	project, _, err = openAtlasProjectWithPolicy(ctx, flags, requiredAtlasProject, policy, verbPath)
-	if err != nil {
-		return atlasProject{}, projectconfig.Config{}, err
+) (selectedAtlasProject, error) {
+	project, loaded, err := openAtlasProjectWithPolicy(ctx, flags, policy, verbPath)
+	if err != nil || !loaded {
+		return selectedAtlasProject{}, err
+	}
+	if flags.envName == "" {
+		return selectedAtlasProject{project: project, targetConfig: project.Config, loaded: true}, nil
 	}
 	ptah, err := projectconfig.LoadPtahFile(projectconfig.PtahFileName, flags.envName)
 	if err != nil {
 		closeErr := project.Close()
-		return atlasProject{}, projectconfig.Config{}, errors.Join(err, closeErr)
+		return selectedAtlasProject{}, errors.Join(err, closeErr)
 	}
-	return project, projectconfig.Merge(ptah, project.Config), nil
+	return selectedAtlasProject{
+		project:      project,
+		targetConfig: projectconfig.Merge(ptah, project.Config),
+		loaded:       true,
+	}, nil
 }
 
 func atlasConfigPathValue(value string) (string, error) {
@@ -515,12 +544,6 @@ func atlasConfigPathValue(value string) (string, error) {
 		return "", fmt.Errorf("unsupported atlas --config URL %q: only local file:// config files are supported", value)
 	}
 	return value, nil
-}
-
-func loadOptionalAtlasProjectConfigForCommand(
-	cmd *cobra.Command,
-) (projectconfig.Config, bool, error) {
-	return loadAtlasProjectConfigForCommand(cmd, ignoreMissingEnvSelection)
 }
 
 func atlasProjectConfigSchemaURLs(cmd *cobra.Command, raw []string) ([]string, error) {
@@ -584,18 +607,8 @@ func atlasRowFileRoots(cmd *cobra.Command) []string {
 	return append(roots, schemaroot.Of([]string{baseDir})...)
 }
 
-type missingAtlasEnvSelectionMode int
-
-const (
-	ignoreMissingEnvSelection missingAtlasEnvSelectionMode = iota
-	reportMissingEnvSelection
-)
-
-func loadAtlasProjectConfigForCommand(
-	cmd *cobra.Command,
-	mode missingAtlasEnvSelectionMode,
-) (projectconfig.Config, bool, error) {
-	project, loaded, err := openAtlasProjectForCommand(cmd, mode)
+func loadAtlasProjectConfigForCommand(cmd *cobra.Command) (projectconfig.Config, bool, error) {
+	project, loaded, err := openAtlasProjectForCommand(cmd)
 	if err != nil {
 		return projectconfig.Config{}, false, err
 	}
@@ -603,29 +616,18 @@ func loadAtlasProjectConfigForCommand(
 	return project.Config, loaded, closeErr
 }
 
-func openAtlasProjectForCommand(
-	cmd *cobra.Command,
-	mode missingAtlasEnvSelectionMode,
-) (atlasProject, bool, error) {
-	flags, changed, err := atlasProjectFlagsFromCommand(cmd)
+func openAtlasProjectForCommand(cmd *cobra.Command) (atlasProject, bool, error) {
+	flags, _, err := atlasProjectFlagsFromCommand(cmd)
 	if err != nil {
 		return atlasProject{}, false, err
-	}
-	requirement := optionalAtlasProject
-	if changed {
-		requirement = requiredAtlasProject
 	}
 	project, loaded, err := openAtlasProjectWithPolicy(
 		cmd.Context(),
 		flags,
-		requirement,
 		atlasCompatibilityPolicy(cmd),
 		cmd.CommandPath(),
 	)
 	if err != nil {
-		if isAtlasEnvSelectionRequired(err) && mode == ignoreMissingEnvSelection {
-			return atlasProject{}, false, nil
-		}
 		return atlasProject{}, false, err
 	}
 	if loaded {
@@ -639,28 +641,17 @@ func openAtlasProjectForCommand(
 	return project, loaded, nil
 }
 
-func openAtlasProjectsForCommand(
-	cmd *cobra.Command,
-	mode missingAtlasEnvSelectionMode,
-) (atlasProjectSet, bool, error) {
-	flags, changed, err := atlasProjectFlagsFromCommand(cmd)
+func openAtlasProjectsForCommand(cmd *cobra.Command) (atlasProjectSet, bool, error) {
+	flags, _, err := atlasProjectFlagsFromCommand(cmd)
 	if err != nil {
 		return atlasProjectSet{}, false, err
-	}
-	requirement := optionalAtlasProject
-	if changed {
-		requirement = requiredAtlasProject
 	}
 	projects, loaded, err := openAtlasProjectsWithPolicy(
 		cmd.Context(),
 		flags,
-		requirement,
 		atlasCompatibilityPolicy(cmd),
 	)
 	if err != nil {
-		if isAtlasEnvSelectionRequired(err) && mode == ignoreMissingEnvSelection {
-			return atlasProjectSet{}, false, nil
-		}
 		return atlasProjectSet{}, false, err
 	}
 	if loaded && len(projects.projects) > 0 {
@@ -685,23 +676,23 @@ func atlasProjectFlagsFromCommand(cmd *cobra.Command) (atlasProjectFlagValues, b
 	changed := false
 	if flag := cmd.Flags().Lookup(atlasConfigFlagName); flag != nil {
 		flags.configPath = flag.Value.String()
+		flags.configNamed = flag.Changed
 		changed = changed || flag.Changed
 	}
 	if flag := cmd.Flags().Lookup(dbcli.EnvFlagName); flag != nil {
 		flags.envName = flag.Value.String()
 		changed = changed || flag.Changed
 	}
-	// --var deliberately does NOT contribute to `changed`, which is what makes
-	// the project file REQUIRED. Measured on the pinned Atlas community binary
-	// v1.3.0 in a directory holding no atlas.hcl:
+	// --var deliberately does NOT contribute to `changed`: it supplies values
+	// to a project file and selects none, so it neither requires nor opens one
+	// (see [atlasProjectFlagValues.readsProject]). Measured on the pinned
+	// Atlas community binary v1.3.0 in a directory holding no atlas.hcl:
 	//
 	//	schema diff --from file://empty.hcl --to file://v.hcl --var status=live
 	//	  -> exit 0, DEFAULT 'live'
 	//
-	// Ptah answered `failed to read atlas config atlas.hcl: no such file or
-	// directory` at exit 1, because --var reached only config/projectconfig and
-	// dragged the project requirement along with it. The values are still
-	// carried below, so an atlas.hcl that IS present still gets them.
+	// The values are still carried below, so a file that --env or --config
+	// names gets them, and so do the HCL schema files the command loads.
 	values, err := atlasVarFlagValues(cmd)
 	if err != nil {
 		return atlasProjectFlagValues{}, false, err
@@ -1066,7 +1057,7 @@ func extractAtlasProjectArgs(args []string) (atlasProjectArgValues, []string, er
 		if value, ok := strings.CutPrefix(arg, "--config="); ok {
 			project.flags.configPath = value
 			project.changed = true
-			project.configChanged = true
+			project.flags.configNamed = true
 			continue
 		}
 		if arg == "--config" || arg == "-c" {
@@ -1076,20 +1067,20 @@ func extractAtlasProjectArgs(args []string) (atlasProjectArgValues, []string, er
 			}
 			project.flags.configPath = value
 			project.changed = true
-			project.configChanged = true
+			project.flags.configNamed = true
 			i = next
 			continue
 		}
 		if value, ok := strings.CutPrefix(arg, "-c="); ok {
 			project.flags.configPath = value
 			project.changed = true
-			project.configChanged = true
+			project.flags.configNamed = true
 			continue
 		}
 		if value, ok := strings.CutPrefix(arg, "-c"); ok && value != "" {
 			project.flags.configPath = value
 			project.changed = true
-			project.configChanged = true
+			project.flags.configNamed = true
 			continue
 		}
 		if value, ok := strings.CutPrefix(arg, "--env="); ok {
@@ -1110,9 +1101,9 @@ func extractAtlasProjectArgs(args []string) (atlasProjectArgValues, []string, er
 			continue
 		}
 		// --var collects its value but deliberately does NOT set `changed`,
-		// so it cannot make the project file REQUIRED. This is the same rule
-		// atlasProjectFlagsFromCommand applies to the parsed-flag surface; the
-		// two paths differ only in where the flag arrives, and a flag whose
+		// so it can neither require nor open a project file. This is the same
+		// rule atlasProjectFlagsFromCommand applies to the parsed-flag surface;
+		// the two paths differ only in where the flag arrives, and a flag whose
 		// meaning depends on that is a flag with two meanings.
 		//
 		// Measured on the pinned Atlas community binary v1.3.0, in a directory
@@ -1127,9 +1118,8 @@ func extractAtlasProjectArgs(args []string) (atlasProjectArgValues, []string, er
 		// migrate hash, validate, new, down, checkpoint, edit, rebase, rm,
 		// test and schema test (stokaro/ptah#1241 item 12).
 		//
-		// The values are still carried, and resolveAtlasVerbProject loads an
-		// atlas.hcl that IS present, so `--var` keeps feeding a project file
-		// the caller actually has.
+		// The values are still carried, so `--var` keeps feeding a project file
+		// that --env or --config names.
 		//
 		// The SYNTAX is checked here all the same. Not requiring a project file
 		// is not the same as not reading the flag: the pinned binary refuses a
@@ -1181,8 +1171,9 @@ func mergeAtlasProjectArgs(
 		parent.flags.vars = vars
 		return parent
 	}
-	if !raw.configChanged {
+	if !raw.flags.configNamed {
 		raw.flags.configPath = parent.flags.configPath
+		raw.flags.configNamed = parent.flags.configNamed
 	}
 	if !raw.envChanged {
 		raw.flags.envName = parent.flags.envName
@@ -1494,14 +1485,16 @@ func atlasFlagShorthand(flags []atlasargs.Flag, name string) string {
 	return ""
 }
 
-func isAtlasEnvSelectionRequired(err error) bool {
-	return strings.Contains(err.Error(), "contains multiple env blocks; pass --env")
-}
-
 // atlasSourceProjectEnv packages the evaluated atlas.hcl environment for the
 // desired-state URL resolver, so env:// references expand with the selected
 // env's values and relative paths resolve against the config directory.
 // Callers pass the zero ProjectEnv instead when no configuration was loaded.
+//
+// A file --config names without --env is loaded with no env selected, and it
+// returns the zero value too: an env:// reference has no environment to read,
+// so it takes the same refusal as a run with no project file. The pinned
+// community binary v1.3.0 refuses it as well, with `cannot use env://
+// variables without selecting an environment`.
 func atlasSourceProjectEnv(
 	cmd *cobra.Command,
 	cfg projectconfig.Config,
@@ -1509,6 +1502,9 @@ func atlasSourceProjectEnv(
 	flags, _, err := atlasProjectFlagsFromCommand(cmd)
 	if err != nil {
 		return atlassource.ProjectEnv{}, err
+	}
+	if flags.envName == "" {
+		return atlassource.ProjectEnv{}, nil
 	}
 	baseDir, err := atlasProjectConfigBaseDir(flags)
 	if err != nil {

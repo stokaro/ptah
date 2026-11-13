@@ -170,11 +170,7 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 		return cmdutil.Fail(cmd, err)
 	}
 	formatConfigured := cmd.Flags().Changed("format")
-	mode := ignoreMissingEnvSelection
-	if needsAtlasSchemaInspectConfig(cmd) {
-		mode = reportMissingEnvSelection
-	}
-	projectCfg, loaded, err := loadAtlasProjectConfigForCommand(cmd, mode)
+	projectCfg, loaded, err := loadAtlasProjectConfigForCommand(cmd)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -326,10 +322,6 @@ func atlasInspectOmitsRefusedBlocks() (bool, error) {
 		return false, err
 	}
 	return !keep, nil
-}
-
-func needsAtlasSchemaInspectConfig(cmd *cobra.Command) bool {
-	return !cmd.Flags().Changed("url")
 }
 
 // validateAtlasSchemaInspectOptions settles this verb's --url before any source

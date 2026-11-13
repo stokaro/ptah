@@ -2497,6 +2497,7 @@ table "old_users" {
 	cmd.SetErr(&errOut)
 	cmd.SetArgs([]string{
 		"schema", "diff",
+		"--env", "local",
 		"--from", "file://" + from,
 		"--to", "file://" + to,
 		"--dev-url", "sqlite://dev.db",
@@ -3166,6 +3167,7 @@ func TestCompatCommand_MigrateApplyUsesAtlasProjectDefaultsWithExplicitTargetFla
 	cmd.SetErr(&out)
 	cmd.SetArgs([]string{
 		"migrate", "apply",
+		"--env", "local",
 		"--url", "sqlite://" + dbPath,
 		"--dir", "file://" + migrationsDir,
 	})
@@ -3759,6 +3761,7 @@ CREATE TABLE old_users (
 	cmd.SetErr(&errOut)
 	cmd.SetArgs([]string{
 		"migrate", "diff",
+		"--env", "local",
 		"--dev-url", "sqlite://" + filepath.Join(dir, "dev.db"),
 		"--dir", "file://" + migrationsDir,
 		"--to", "file://" + schemaPath,

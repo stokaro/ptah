@@ -298,6 +298,7 @@ func TestSchemaApplyUsesAtlasProjectDefaultsWithExplicitTargetFlags(t *testing.T
 	cmd.SetErr(&out)
 	cmd.SetArgs([]string{
 		"schema", "apply",
+		"--env", "local",
 		"--url", "sqlite://" + dbPath,
 		"--to", "schema.sql",
 		"--auto-approve",

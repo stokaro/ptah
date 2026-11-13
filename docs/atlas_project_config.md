@@ -651,13 +651,9 @@ Atlas-compatible commands under `ptah-compat schema ...` and
 
 `-c` and `--env` **select** a project file, so naming either one and having no
 `atlas.hcl` is an error on both binaries. `--var` only **supplies values** to a
-project file, so it does not require one: with no `atlas.hcl` present the
-command runs with no project at all. This holds on every verb. It previously
-held only on the verbs whose flags Cobra parses, and `migrate hash`,
-`migrate validate`, `migrate new`, `migrate down`, `migrate checkpoint`,
-`migrate edit`, `migrate rebase`, `migrate rm`, `migrate test` and
-`schema test` answered `failed to read atlas config atlas.hcl: …` at exit 1
-where the pinned Atlas community binary v1.3.0 exits 0
+project file and names none: with `--var` and neither `-c` nor `--env`, the
+command reads no project file, whether or not `./atlas.hcl` exists. This holds
+on every verb, as on the pinned Atlas community binary v1.3.0
 ([#1241](https://github.com/stokaro/ptah/issues/1241) item 12).
 
 Not requiring a project file is not the same as not reading the flag. The
@@ -723,11 +719,19 @@ Cloud-specific sources outside the recognized lazy set, still fail explicitly.
 
 ## Env selection
 
-Use `--env <name>` when a command needs values from one of multiple
-`atlas.hcl` `env` blocks. When the file contains exactly one `env` block, Ptah
-selects it automatically. Atlas-compatible `migrate apply` does not need to
-select an environment when both `--url` and `--dir` are explicit. If project
-values are required and multiple envs remain ambiguous, Ptah returns:
+`ptah-compat` evaluates an `env` block only when `--env` names it, as the
+Atlas community binary does. It reads `./atlas.hcl` only when `--env` or
+`--config` names a project file, so a file that no flag names is not parsed.
+With neither flag, the command flags are the whole configuration: beside a
+file whose only env names a database, `migrate apply` with no `--url` fails
+with `required flag "url" not set` and leaves that database alone. `--config`
+with no `--env` parses the named file, evaluates its variables, locals and
+top-level `lint` and `diff` blocks, and evaluates no `env` block. An empty
+`--env ""` selects no env, and `--var` names no file.
+
+The native `ptah` binary selects the only `env` block of a file that declares
+one. When a native command needs project values and the file declares several
+envs, it returns:
 
 ```text
 atlas.hcl contains multiple env blocks; pass --env

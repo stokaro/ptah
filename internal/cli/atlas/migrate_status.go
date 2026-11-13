@@ -56,11 +56,7 @@ func runAtlasMigrateStatus(
 	opts atlasMigrateStatusOptions,
 ) (runErr error) {
 	formatOutput := cmd.Flags().Changed("format")
-	mode := ignoreMissingEnvSelection
-	if needsAtlasMigrateStatusConfig(cmd) {
-		mode = reportMissingEnvSelection
-	}
-	project, loaded, err := openAtlasProjectForCommand(cmd, mode)
+	project, loaded, err := openAtlasProjectForCommand(cmd)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -237,10 +233,6 @@ func runAtlasMigrateStatus(
 		return cmdutil.Fail(cmd, err)
 	}
 	return nil
-}
-
-func needsAtlasMigrateStatusConfig(cmd *cobra.Command) bool {
-	return !cmd.Flags().Changed("url")
 }
 
 // validateAtlasMigrateStatusOptions deliberately does not require --url.

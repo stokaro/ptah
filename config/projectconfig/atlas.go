@@ -33,8 +33,20 @@ type AtlasLoadOptions struct {
 	// Context governs data-source connections, runtime-variable reads, and
 	// subprocesses. A nil context uses context.Background.
 	Context context.Context
+	// EnvName selects the env block, or the instances of one, whose settings
+	// are merged over the top-level blocks. With an empty EnvName, a file
+	// holding one env block selects it, and a file holding several is refused,
+	// unless NoImplicitEnv is set.
 	EnvName string
 	Vars    []string
+	// NoImplicitEnv makes an empty EnvName select no env block. The file is
+	// still parsed and its top-level blocks, variables and locals are
+	// evaluated, but no env block is evaluated, so the result holds the
+	// top-level settings only. Atlas Community Edition reads a project file
+	// named with --config and no --env this way; a compatibility adapter
+	// selects this option for that contract. The zero value selects the only
+	// env block of a file that declares one.
+	NoImplicitEnv bool
 	// RejectListMapForEach refuses dynamic env expansion over list and map
 	// values. Atlas Community Edition accepts tuple, object and set values but
 	// refuses list and map values; compatibility adapters select this option
@@ -238,6 +250,7 @@ func ParseAtlasFSCollectionWithOptions(
 	p.rejectCompositeSchema = opts.RejectCompositeSchema
 	p.rejectExternalSchema = opts.RejectExternalSchema
 	p.ignoreDockerBlocks = opts.IgnoreDockerBlocks
+	p.noImplicitEnv = opts.NoImplicitEnv
 	return p.parseCollection(body, opts.EnvName)
 }
 
@@ -302,6 +315,8 @@ type atlasParser struct {
 	rejectListMapForEach bool
 	// ignoreDockerBlocks is [AtlasLoadOptions.IgnoreDockerBlocks].
 	ignoreDockerBlocks bool
+	// noImplicitEnv is [AtlasLoadOptions.NoImplicitEnv].
+	noImplicitEnv bool
 	// externalSchemas holds the declared data.external_schema sources by name.
 	externalSchemas map[string]externalSchemaDataSource
 	// migrationDirectories holds immutable data.template_dir filesystems by
@@ -429,6 +444,17 @@ func newAtlasParser(
 	}, nil
 }
 
+// selectEnvs returns the env blocks a parse evaluates. A file with no env block
+// selects none, and so does an empty envName when the caller asked for the
+// top-level settings alone with AtlasLoadOptions.NoImplicitEnv. Otherwise an
+// empty envName selects the only env block of the file.
+func (p atlasParser) selectEnvs(envs []atlasEnvBlock, envName string) ([]atlasEnvBlock, error) {
+	if len(envs) == 0 || (envName == "" && p.noImplicitEnv) {
+		return nil, nil
+	}
+	return selectAtlasEnvBlocks(envs, envName)
+}
+
 func (p atlasParser) parseCollection(body *hclsyntax.Body, envName string) ([]Config, error) {
 	p.ctx.Variables["atlas"] = cty.ObjectVal(map[string]cty.Value{
 		"env": cty.StringVal(envName),
@@ -442,12 +468,9 @@ func (p atlasParser) parseCollection(body *hclsyntax.Body, envName string) ([]Co
 	if err := p.validateAtlasEnvStructures(blocks.envs); err != nil {
 		return nil, err
 	}
-	var selected []atlasEnvBlock
-	if len(blocks.envs) > 0 {
-		selected, err = selectAtlasEnvBlocks(blocks.envs, envName)
-		if err != nil {
-			return nil, err
-		}
+	selected, err := p.selectEnvs(blocks.envs, envName)
+	if err != nil {
+		return nil, err
 	}
 	if err := p.configureEvalContext(
 		blocks.variables,
@@ -489,7 +512,10 @@ func (p atlasParser) parseCollection(body *hclsyntax.Body, envName string) ([]Co
 	if err := p.parseSingleAtlasBlock(blocks.globalLint, &base, p.parseLint); err != nil {
 		return nil, err
 	}
-	if len(blocks.envs) == 0 {
+	// No env selected: either the file declares none, or the caller asked for
+	// the top-level settings alone. selectAtlasEnvBlocks never returns an empty
+	// selection without an error, so these are the only two ways here.
+	if len(selected) == 0 {
 		base.migrationDirectories = cloneMigrationDirectories(p.migrationDirectories)
 		base.compositeSchemas = mergeCompositeSchemas(p.compositeSchemas, nil)
 		base.IgnoredConstructs = p.ignoredConstructs()

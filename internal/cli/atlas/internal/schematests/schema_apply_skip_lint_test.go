@@ -50,7 +50,8 @@ func schemaApplySkipLintFixture(c *qt.C, policy string) (dir, dbPath string) {
 }
 
 // runSchemaApplyInDir runs `atlas schema apply --dry-run` with dir as the
-// working directory, so the optional atlas.hcl beside it is the one that loads.
+// working directory, so a `--config file://atlas.hcl` in extra names the file
+// beside it.
 func runSchemaApplyInDir(c *qt.C, dir, dbPath string, extra ...string) (string, error) {
 	c.Helper()
 	cmd := atlas.NewCompatCommand("atlas")
@@ -74,6 +75,10 @@ func runSchemaApplyInDir(c *qt.C, dir, dbPath string, extra ...string) (string, 
 // Reverted, the --skip-lint rows fail with `unknown flag: --skip-lint` and the
 // "policy refuses" row fails because nothing lints the plan, so a destructive
 // apply that the project rated as an error succeeds silently.
+//
+// The policy is a top-level block, so it is read only from a file --config
+// names: without --env or --config the pinned community binary opens no
+// project file, and the "unnamed policy" row holds that.
 func TestSchemaApplySkipLint(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -86,13 +91,14 @@ func TestSchemaApplySkipLint(t *testing.T) {
 		{
 			name:    "error policy refuses the destructive plan",
 			policy:  destructiveLintPolicy,
+			extra:   []string{"--config", "file://atlas.hcl"},
 			wantErr: true,
 			want:    "DS101",
 		},
 		{
 			name:    "skip-lint applies the same plan",
 			policy:  destructiveLintPolicy,
-			extra:   []string{"--skip-lint"},
+			extra:   []string{"--config", "file://atlas.hcl", "--skip-lint"},
 			wantErr: false,
 			want:    `DROP TABLE "users"`,
 			absent:  "DS101",
@@ -100,6 +106,14 @@ func TestSchemaApplySkipLint(t *testing.T) {
 		{
 			name:    "warning policy does not block",
 			policy:  warningLintPolicy,
+			extra:   []string{"--config", "file://atlas.hcl"},
+			wantErr: false,
+			want:    `DROP TABLE "users"`,
+			absent:  "DS101",
+		},
+		{
+			name:    "an error policy no flag names is not read",
+			policy:  destructiveLintPolicy,
 			wantErr: false,
 			want:    `DROP TABLE "users"`,
 			absent:  "DS101",

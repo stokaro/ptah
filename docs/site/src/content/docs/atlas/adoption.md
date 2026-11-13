@@ -69,8 +69,11 @@ using one is no longer a project Atlas reads.
 
 ### Both files, if you want both
 
-`ptah.yaml` and `atlas.hcl` are both read when both are present, and merged.
-Where the two name the same setting, **`atlas.hcl` wins**. That makes an
+Native `ptah` reads `ptah.yaml` and `atlas.hcl` when both are present, and
+merges them. Where the two name the same setting, **`atlas.hcl` wins**.
+`ptah-compat` reads a project file only when `--env` or `--config` names one,
+as the community binary does, and merges `ptah.yaml` in only for
+`migrate down --env`. That makes an
 incremental move possible in either direction: settings Ptah alone needs can go
 in `ptah.yaml` while `atlas.hcl` stays authoritative for everything it declares.
 [Configuration](../../reference/configuration/) has the full precedence table,
