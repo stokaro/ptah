@@ -905,6 +905,15 @@ Atlas:
   normalized database identity;
 - dialects without a safe dev-database lock fail before cleanup.
 
+Local PGlite Socket clients share one PostgreSQL session, so a PostgreSQL
+advisory lock cannot exclude another client. Ptah uses a local file lock for
+PGlite migration operations. Set `default_query_exec_mode=describe_exec` in
+the target and dev PGlite URLs to avoid named statement collisions; Ptah keeps
+pgx's normal execution mode for other PostgreSQL connections. The file lock
+serializes Ptah processes on the same host, not application queries. PGlite
+Socket [may interleave concurrent extended-protocol batches](https://github.com/electric-sql/pglite/issues/1046),
+so coordinate schema changes with application traffic.
+
 A session advisory lock lives on a database session of its own while the
 replay runs on other connections. When the server ends that session, the
 replay stops and the command fails with the lost lock, because another run may
