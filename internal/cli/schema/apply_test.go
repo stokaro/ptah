@@ -84,7 +84,7 @@ func TestSchemaApplyAppliesSchemaFileWithAutoApprove(t *testing.T) {
 	c.Assert(out, qt.Contains, "Planned schema changes:")
 	c.Assert(out, qt.Contains, `CREATE TABLE "orders"`)
 	c.Assert(out, qt.Contains, "Schema apply completed successfully.")
-	c.Assert(listSQLiteTables(c, dbPath), qt.DeepEquals, []string{"orders", "users"})
+	c.Assert(listSQLiteTables(c, dbPath), qt.DeepEquals, []string{"orders", "ptah_schema_apply_log", "users"})
 }
 
 func TestSchemaApplyDeclinedConfirmationAppliesNothing(t *testing.T) {
@@ -245,7 +245,7 @@ func TestSchemaApplyDevSimulationRunsBeforeTarget(t *testing.T) {
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, "Schema apply completed successfully.")
-	c.Assert(listSQLiteTables(c, dbPath), qt.DeepEquals, []string{"orders", "users"})
+	c.Assert(listSQLiteTables(c, dbPath), qt.DeepEquals, []string{"orders", "ptah_schema_apply_log", "users"})
 	// The dev database rehearsed the plan and was then handed back with
 	// nothing in it, the way the pinned community binary leaves its own dev
 	// database. A dev URL stays reusable by the next command.
@@ -291,7 +291,7 @@ func TestSchemaApplyPlanFileExecutesAndRefusesStaleTarget(t *testing.T) {
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, "Schema apply completed successfully.")
-	c.Assert(listSQLiteTables(c, dbPath), qt.DeepEquals, []string{"orders", "users"})
+	c.Assert(listSQLiteTables(c, dbPath), qt.DeepEquals, []string{"orders", "ptah_schema_apply_log", "users"})
 }
 
 // TestSchemaApplyPlanFileRejectsAtlasHCLPlanByName pins the native tree's
@@ -406,7 +406,7 @@ func TestSchemaApplyPlanFileHonorsTheTxModeDirective_HappyPath(t *testing.T) {
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, "-- atlas:txmode none")
-	c.Assert(listSQLiteTables(c, dbPath), qt.DeepEquals, []string{"orders", "users"})
+	c.Assert(listSQLiteTables(c, dbPath), qt.DeepEquals, []string{"orders", "ptah_schema_apply_log", "users"})
 }
 
 // TestSchemaApplyPlanFileHonorsTheTxModeDirective_FailurePath is

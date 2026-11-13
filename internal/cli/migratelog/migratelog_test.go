@@ -113,3 +113,37 @@ func TestLogJSON_NamesAnAttemptWhoseStartWasLost(t *testing.T) {
 	c.Assert(whole["started_at"], qt.Not(qt.Equals), nil)
 	c.Assert(whole["version"], qt.Equals, float64(1))
 }
+
+// The document carries the caller's reference and origin where the run gave
+// them, and leaves both out where it gave none, as the attempt from a release
+// that stored neither reads.
+func TestLogJSON_CarriesTheRunReference_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+	url := "sqlite://" + filepath.Join(c.TempDir(), "reference.db")
+	conn, err := dbschema.ConnectToDatabase(ctx, url)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { _ = conn.Close() })
+	first := migrator.CreateMigrationFromSQL(1, "create_a", "CREATE TABLE a (id INTEGER PRIMARY KEY);\n", "DROP TABLE a;\n")
+	second := migrator.CreateMigrationFromSQL(2, "create_b", "CREATE TABLE b (id INTEGER PRIMARY KEY);\n", "DROP TABLE b;\n")
+	c.Assert(migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(first)).
+		WithActor("release-bot").MigrateUp(ctx), qt.IsNil)
+	provider := migrator.NewRegisteredMigrationProvider(first, second)
+	c.Assert(migrator.NewMigrator(conn, provider).WithActor("alice@example.com").WithActorOrigin("admission").
+		WithRunReference("sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef").MigrateUp(ctx), qt.IsNil)
+
+	stdout := runLog(c, "--db-url", url, "--json")
+
+	var records []map[string]any
+	c.Assert(json.Unmarshal([]byte(stdout), &records), qt.IsNil, qt.Commentf("%s", stdout))
+	c.Assert(records, qt.HasLen, 2)
+	referenced, unreferenced := records[0], records[1]
+	c.Assert(referenced["version"], qt.Equals, float64(2))
+	c.Assert(referenced["run_reference"], qt.Equals, "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+	c.Assert(referenced["actor_origin"], qt.Equals, "admission")
+	c.Assert(unreferenced["version"], qt.Equals, float64(1))
+	_, hasReference := unreferenced["run_reference"]
+	c.Assert(hasReference, qt.IsFalse)
+	_, hasOrigin := unreferenced["actor_origin"]
+	c.Assert(hasOrigin, qt.IsFalse)
+}

@@ -85,6 +85,12 @@ type schemaApplyOptions struct {
 	connectTimeout  string
 	configPath      string
 	envName         string
+	actor           string
+	actorOrigin     string
+	runReference    string
+	// keepLog reports that the run writes the schema apply log: the project
+	// did not turn it off, and the run is not a dry run.
+	keepLog bool
 	// devServerDisposable is what [devdocker.DisposableServerDeclared]
 	// resolved for this run.
 	devServerDisposable bool
@@ -190,16 +196,25 @@ subtracts from the result. An --include selection that matches neither the targe
 schema refuses the apply rather than reporting a synced schema for work that
 did not happen.
 
+An apply that sends a statement records itself in the ptah_schema_apply_log
+table of the target: a started entry just before the first statement leaves,
+and its outcome once the apply returns, each with the plan file's name and
+digest, the --actor (unverified, with the caller's --actor-origin beside it),
+and the caller's --run-reference. An apply that sent nothing writes nothing,
+and a write the database refuses never fails the apply. Set schema_apply.log
+to false in ptah.yaml to keep no such table.
+
 --json prints one versioned JSON document on standard output once the run
 starts, on success and on failure: the outcome, the statements the run listed,
 the plan file's name and digest with --plan, a typed refusal code when the
-apply refused before anything reached the database, and the position and the
-server's code when a statement or the commit failed. Everything written for a
-person, including the confirmation prompt, goes to standard error. A command
-line refused before the run starts -- an unknown flag, a flag value that does
-not parse, flags that cannot be combined, a positional argument -- prints no
-document. --json reads no environment variable and cannot be combined with
---edit.`,
+apply refused before anything reached the database, the position and the
+server's code when a statement or the commit failed, and what the writes to
+the schema apply log came to, with the run reference they carry. Everything
+written for a person, including the confirmation prompt, goes to standard
+error. A command line refused before the run starts -- an unknown flag, a flag
+value that does not parse, flags that cannot be combined, a positional
+argument -- prints no document. --json reads no environment variable and
+cannot be combined with --edit.`,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := runSchemaApply(cmd, opts); err != nil {
@@ -244,6 +259,9 @@ document. --json reads no environment variable and cannot be combined with
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
 	dbcli.RegisterConfigFlag(flags, &opts.configPath)
 	dbcli.RegisterEnvFlag(flags, &opts.envName)
+	dbcli.RegisterActorFlag(flags, &opts.actor, applyLogName)
+	dbcli.RegisterActorOriginFlag(flags, &opts.actorOrigin, applyLogName)
+	dbcli.RegisterRunReferenceFlag(flags, &opts.runReference, applyLogName)
 	// Approval is the one thing an environment must not be able to grant. Every
 	// other flag on every native verb binds to a PTAH_* variable, which is what
 	// lets a container be configured entirely through env -- and is exactly why
@@ -306,6 +324,7 @@ func runSchemaApplyWithLockSession(
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			run.evidence.Err = cmdutil.InternalError(recovered)
+			run.evidence.ApplyLog = run.log.Report()
 			document.writeOnPanic(atlasschema.NewApplyReport(run.evidence))
 			panic(recovered)
 		}
@@ -316,6 +335,7 @@ func runSchemaApplyWithLockSession(
 	}
 	run.evidence.Completed = outcome
 	run.evidence.Err = err
+	run.evidence.ApplyLog = run.log.Report()
 	if writeErr := document.write(atlasschema.NewApplyReport(run.evidence)); writeErr != nil && err == nil {
 		err = writeErr
 	}
@@ -325,18 +345,87 @@ func runSchemaApplyWithLockSession(
 	return nil
 }
 
-// applyRun is where one apply writes for a person, and the evidence its --json
-// document reports.
+// applyLogName is what the flags call the log `schema apply` writes.
+const applyLogName = "schema apply log"
+
+// applyRun is where one apply writes for a person, the evidence its --json
+// document reports, and the log it keeps in the target.
 type applyRun struct {
 	human    io.Writer
 	evidence atlasschema.ApplyEvidence
+	// log is the schema apply log of this run, nil until the target is
+	// connected and for a run that keeps none.
+	log *migrator.SchemaApplyLog
+}
+
+// openLog opens the schema apply log over conn, the connection the outcome is
+// written on, when the run keeps one.
+func (r *applyRun) openLog(conn *dbschema.DatabaseConnection, opts schemaApplyOptions) {
+	if !opts.keepLog {
+		return
+	}
+	r.log = migrator.NewSchemaApplyLog(conn, migrator.SchemaApplyLogOptions{
+		Actor:        opts.actor,
+		ActorOrigin:  opts.actorOrigin,
+		RunReference: opts.runReference,
+	})
 }
 
 // dispatching returns the context the plan executes under, which records in the
 // evidence when the first statement leaves for the database. A rehearsal on the
 // dev database runs under another context, so its statements do not count.
-func (r *applyRun) dispatching(ctx context.Context) context.Context {
+//
+// It writes the apply log's started entry first, over session, the connection
+// the plan executes on. Every path that executes a plan asks for its context
+// here, so none of them can send a statement the log has not been told of.
+func (r *applyRun) dispatching(ctx context.Context, session *dbschema.DatabaseConnection) context.Context {
+	r.log.Start(ctx, session, migrator.SchemaApplyLogPlan{
+		Name:       r.evidence.PlanName,
+		Digest:     r.evidence.PlanDigest,
+		Statements: len(r.evidence.Units),
+	})
 	return dispatchwitness.With(ctx, func() { r.evidence.Dispatched = true })
+}
+
+// finishLog writes the apply log's outcome entry, as the run's document will
+// classify the run, for a run whose plan started executing. The lock session
+// has returned by now, so the entry goes over the connection the log was
+// opened with.
+func (r *applyRun) finishLog(ctx context.Context, outcome atlasschema.ApplyOutcome, err error) {
+	if r.log == nil {
+		return
+	}
+	evidence := r.evidence
+	evidence.Completed, evidence.Err = outcome, err
+	r.log.Finish(ctx, applyLogOutcome(atlasschema.NewApplyReport(evidence)))
+}
+
+// applyLogOutcome is the outcome entry for a run its document reports as
+// report. An outcome other than applied or failed is unknown: once a statement
+// has left, nothing else is confirmed.
+func applyLogOutcome(report atlasschema.ApplyReport) migrator.SchemaApplyLogOutcome {
+	var entry migrator.SchemaApplyLogOutcome
+	switch report.Outcome {
+	case atlasschema.ApplyOutcomeApplied:
+		entry.State = migrator.SchemaApplyLogApplied
+	case atlasschema.ApplyOutcomeFailed:
+		entry.State = migrator.SchemaApplyLogFailed
+	default:
+		entry.State = migrator.SchemaApplyLogUnknown
+	}
+	if report.Error != nil {
+		entry.Error = report.Error.Message
+	}
+	if report.Failure == nil || report.Failure.Statement < 1 || report.Failure.Statement > len(report.Units) {
+		return entry
+	}
+	entry.Position = report.Failure.Statement
+	unit := report.Units[entry.Position-1]
+	entry.Statement = unit.SQL
+	if unit.Native != nil {
+		entry.Statement = unit.Native.Text
+	}
+	return entry
 }
 
 // refuseEditWithJSON refuses --edit under --json. The document is for a
@@ -385,10 +474,14 @@ func applySchema(
 	if err := refuseEditWithJSON(cmd, opts); err != nil {
 		return "", err
 	}
+	if err := dbcli.CheckRunAttribution(opts.actor, opts.actorOrigin, opts.runReference); err != nil {
+		return "", err
+	}
 	projectCfg, err := dbcli.LoadProjectConfig(cmd, opts.configPath)
 	if err != nil {
 		return "", err
 	}
+	opts.keepLog = projectCfg.SchemaApply.LogEnabled() && !opts.dryRun
 	schemaSourceEnv, err := dbcli.SchemaSourceProjectEnv(cmd, projectCfg)
 	if err != nil {
 		return "", err
@@ -506,6 +599,7 @@ func applySchema(
 		return "", fmt.Errorf("connect to --%s: %w", applyDBURLFlag, errorkind.TargetConnection(err))
 	}
 	defer dbschema.CloseAndWarn(conn)
+	run.openLog(conn, opts)
 
 	if err := decideSchemaApplyLockForConnection(cmd, opts.dbURL, conn); err != nil {
 		return "", err
@@ -548,6 +642,7 @@ func applySchema(
 		},
 	)
 	warnSchemaApplyLockRelease(cmd, releaseErr)
+	run.finishLog(cmd.Context(), outcome, runErr)
 	if runErr != nil {
 		return "", runErr
 	}
@@ -601,7 +696,7 @@ func runSchemaApplyOnLockedSession(
 	}
 
 	if plan.HasNativeUnits() || plan.HasInputReferences() {
-		return applyNativeSchemaPlan(ctx, cmd, opts, plan, run)
+		return applyNativeSchemaPlan(ctx, cmd, opts, conn, plan, run)
 	}
 
 	sqlText, err := plan.SQL()
@@ -669,7 +764,7 @@ func runSchemaApplyOnLockedSession(
 		return atlasschema.ApplyOutcomeCanceled, nil
 	}
 
-	if err := plan.ExecuteSQL(run.dispatching(ctx), sqlText); err != nil {
+	if err := plan.ExecuteSQL(run.dispatching(ctx, conn), sqlText); err != nil {
 		return "", fmt.Errorf("apply schema changes: %w", err)
 	}
 	return atlasschema.ApplyOutcomeApplied, nil
@@ -741,6 +836,7 @@ func applySchemaPlanFile(
 		return "", fmt.Errorf("connect to --%s: %w", applyDBURLFlag, errorkind.TargetConnection(err))
 	}
 	defer dbschema.CloseAndWarn(conn)
+	run.openLog(conn, opts)
 
 	if err := decideSchemaApplyLockForConnection(cmd, opts.dbURL, conn); err != nil {
 		return "", err
@@ -762,6 +858,7 @@ func applySchemaPlanFile(
 		},
 	)
 	warnSchemaApplyLockRelease(cmd, releaseErr)
+	run.finishLog(cmd.Context(), outcome, runErr)
 	if runErr != nil {
 		return "", runErr
 	}
@@ -815,7 +912,7 @@ func runSchemaApplyPlanFileOnLockedSession(
 	}
 
 	conn.SchemaWriter().SetDryRun(false)
-	if err := plan.Execute(run.dispatching(ctx), conn, txMode); err != nil {
+	if err := plan.Execute(run.dispatching(ctx, conn), conn, txMode); err != nil {
 		return "", fmt.Errorf("apply schema changes: %w", err)
 	}
 	return atlasschema.ApplyOutcomeApplied, nil

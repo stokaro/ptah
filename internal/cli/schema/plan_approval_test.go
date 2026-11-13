@@ -15,6 +15,7 @@ import (
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/internal/cli/schema"
 	"ptah.run/internal/errorkind"
+	"ptah.run/migration/migrator"
 	"ptah.run/migration/safety"
 )
 
@@ -222,8 +223,9 @@ func TestSchemaApplyRequireApprovalExecutesTheBytesItVerified(t *testing.T) {
 		PlanName:        plan.Name,
 		PlanDigest:      digest.FromBytes(approved).String(),
 		Units:           atlasschema.SQLApplyUnitReports(plan.StatementSQL()),
+		ApplyLog:        &migrator.SchemaApplyLogReport{Written: 2},
 	})
-	c.Assert(listSQLiteTables(c, f.dbPath), qt.DeepEquals, []string{"orders", "users"})
+	c.Assert(listSQLiteTables(c, f.dbPath), qt.DeepEquals, []string{"orders", "ptah_schema_apply_log", "users"})
 }
 
 // TestSchemaApplyJSONReportsAnUnapprovedPlanAsFailed is the gate's refusal in

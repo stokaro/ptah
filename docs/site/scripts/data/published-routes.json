@@ -30,6 +30,7 @@
   "/databases/support-matrix/",
   "/databases/support-policy/",
   "/databases/ydb/",
+  "/direct/apply-log/",
   "/direct/apply/",
   "/direct/compare-and-drift/",
   "/direct/inspect/",

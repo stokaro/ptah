@@ -167,13 +167,13 @@ func TestSchemaApplyRatingLeavesTheRestOfTheRunAlone(t *testing.T) {
 			name:       "auto-approval",
 			flags:      []string{"--auto-approve"},
 			wantStdout: planned + "Auto-approval enabled; applying schema changes.\n" + done,
-			wantTables: []string{"users"},
+			wantTables: []string{"ptah_schema_apply_log", "users"},
 		},
 		{
 			name:       "YES",
 			input:      "YES\n",
 			wantStdout: destructivePlanOutput + "\n" + done,
-			wantTables: []string{"users"},
+			wantTables: []string{"ptah_schema_apply_log", "users"},
 		},
 		{
 			name:       "a dry run",

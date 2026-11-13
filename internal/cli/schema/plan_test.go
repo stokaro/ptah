@@ -212,7 +212,7 @@ func TestSchemaPlanRecordsTheSchemasSelection(t *testing.T) {
 
 			c.Assert(plan.Schemas, qt.DeepEquals, test.want)
 			c.Assert(err, qt.IsNil, qt.Commentf("%s", applied))
-			c.Assert(listSQLiteTables(c, dbPath), qt.DeepEquals, []string{"orders", "users"})
+			c.Assert(listSQLiteTables(c, dbPath), qt.DeepEquals, []string{"orders", "ptah_schema_apply_log", "users"})
 		})
 	}
 }

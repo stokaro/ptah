@@ -37,6 +37,9 @@ type RevisionTable struct {
 	CreateTags string `json:"create_tags"`
 	// CreateLog creates the append-only operation log.
 	CreateLog string `json:"create_log"`
+	// CreateApplyLog creates the append-only log `ptah schema apply` keeps of
+	// the plans it applied.
+	CreateApplyLog string `json:"create_apply_log"`
 	// LogInsertPrefix is the SQL before INTO when the migrator appends an
 	// operation log entry. Empty uses INSERT. An engine can use this prefix to
 	// make only the log write strict without changing the migration session.
@@ -58,9 +61,13 @@ type RevisionTable struct {
 	// exists.
 	QualifiedByDefault bool `json:"qualified_by_default,omitempty"`
 	// AddedColumns are the definitions the migrator gives a column it adds
-	// to a revision table an older layout created, keyed by column. A column
-	// it lists no definition for takes the generic one.
+	// to a revision table or an operation log an older layout created, keyed
+	// by column. A column it lists no definition for takes the generic one.
 	AddedColumns map[string]string `json:"added_columns,omitempty"`
+	// AddColumn is the clause of ALTER TABLE that adds such a column:
+	// "ADD COLUMN" where the engine requires the word COLUMN, as ClickHouse
+	// does. Empty uses ADD, which Oracle and SQL Server require.
+	AddColumn string `json:"add_column,omitempty"`
 	// FirstRow is how a read limits itself to its first row: "limit"
 	// (LIMIT 1), "fetch" (FETCH FIRST 1 ROWS ONLY) or "top" (SELECT TOP (1)).
 	FirstRow string `json:"first_row"`

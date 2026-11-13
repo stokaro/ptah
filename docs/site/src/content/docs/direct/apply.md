@@ -25,9 +25,7 @@ owns:
 Direct application ships natively as `ptah schema apply`. The separate
 `ptah-compat` drop-in binary exposes the same engine to scripts that expect an
 Atlas-style executable (`ptah-compat schema apply`); the plan, the approval prompt,
-the plan files, and the fingerprint checks behave identically. This page
-covers the workflow, the saved plan files that separate review from execution,
-and the hybrid patterns that combine a native drift gate with a direct apply.
+the plan files, and the fingerprint checks behave identically.
 
 Prerequisites:
 
@@ -255,8 +253,7 @@ Schema apply completed successfully.
 ```
 
 `--edit` opens the planned SQL in `$VISUAL`/`$EDITOR` before approval, and the
-edited SQL is what gets applied. It is refused together with `--json`, whose
-standard output belongs to a program rather than to an editor.
+edited SQL is what gets applied.
 
 Prepared plans and saved JSON plans also retain owner transaction requirements.
 Apply checks them before rehearsal, approval, or execution. A required transaction
@@ -454,7 +451,7 @@ reads as no kind.
 `command` names the command that wrote the document, `schema plan` or `schema
 apply`, so a consumer can refuse a document it did not ask for.
 
-A run that fails carries `error`, an object with two fields. `message` is the
+A run that fails carries `error`. `message` is the
 sentence printed on standard error. It can quote the database, so a consumer
 that must not publish what the database said reads `kind` and `failure`. `kind`
 says why the target database could not be opened or read, from a closed list:
@@ -524,6 +521,7 @@ the saved SQL plan format.
 | `refusal` | Why the apply refused; see below |
 | `error` | The failure, for `refused`, `failed` and `unknown`: `message`, printed on standard error, and `kind` when the target database could not be opened or the account cannot see what the command reads there |
 | `failure` | [Where a run stopped](../../reference/exit-codes/#where-a-run-stopped), after a dispatched statement or commit fails: a position in `units` and the server's codes, and no text |
+| `apply_log` | What the run's writes to [the schema apply log](../apply-log/) came to: `written`, any `lost` entries, and the `run_reference` they carry. Absent when the run sent no statement |
 | `schema_diagnostics` | As in the plan document |
 
 | Outcome | Meaning |
@@ -654,6 +652,8 @@ refuse a URL that names none.
 
 ## Next steps
 
+- Find out which plan changed a database and how it ended:
+  [The schema apply log](../apply-log/).
 - Not sure direct changes fit your project:
   [Choose a workflow](../../start/choose-a-workflow/).
 - Ship the change to shared environments as a reviewed file:

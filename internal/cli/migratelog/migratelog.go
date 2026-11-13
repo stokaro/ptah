@@ -168,6 +168,8 @@ type logRecord struct {
 	StartLost    bool       `json:"start_lost"`
 	Actor        string     `json:"actor,omitempty"`
 	ActorSource  string     `json:"actor_source"`
+	ActorOrigin  string     `json:"actor_origin,omitempty"`
+	RunReference string     `json:"run_reference,omitempty"`
 	Checksum     string     `json:"checksum,omitempty"`
 	Error        string     `json:"error,omitempty"`
 }
@@ -193,6 +195,8 @@ func newLogRecord(attempt migrator.MigrationLogAttempt) logRecord {
 		StartLost:    attempt.StartLost(),
 		Actor:        entry.Actor,
 		ActorSource:  string(entry.ActorSource),
+		ActorOrigin:  entry.ActorOrigin,
+		RunReference: entry.RunReference,
 		Checksum:     entry.Checksum,
 		Error:        attempt.Outcome.Error,
 	}

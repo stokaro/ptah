@@ -638,6 +638,7 @@ entry was lost, and a rerun cannot bring it back.
 | absent | The run keeps no log: `migration.log` is `false`, the revision format is the Atlas-compatible one, the run is a dry run, or it failed before the migrator ran, such as one that could not open the target |
 | `{ "written": 0 }` | The run had nothing to record |
 | `{ "written": 4 }` | The server accepted all four entries the run tried to write |
+| `{ "written": 4, "run_reference": "sha256:…" }` | As above, and every written entry carries the caller's `--run-reference`. See [the run reference](../migration-log/#the-run-reference) |
 | `{ "written": 2, "lost": [ … ] }` | The server accepted two entries, and `lost` names the rest |
 
 Each attempt tries to write two entries, one when it starts and one when it ends,

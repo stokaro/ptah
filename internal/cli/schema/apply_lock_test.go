@@ -228,7 +228,7 @@ func TestSchemaApplyWithoutLockTimeoutStillAppliesOnUnlockedDialect(t *testing.T
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, "Schema apply completed successfully.")
 	c.Assert(out, qt.Not(qt.Contains), "schema apply lock")
-	c.Assert(listSQLiteTables(c, dbPath), qt.DeepEquals, []string{"orders", "users"})
+	c.Assert(listSQLiteTables(c, dbPath), qt.DeepEquals, []string{"orders", "ptah_schema_apply_log", "users"})
 }
 
 // TestSchemaApplyKeepsLockTimeoutOnLockingDialect is the second control: the

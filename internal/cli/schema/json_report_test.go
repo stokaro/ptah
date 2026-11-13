@@ -19,6 +19,7 @@ import (
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/internal/cli/schema"
 	"ptah.run/internal/errorkind"
+	"ptah.run/migration/migrator"
 	"ptah.run/migration/safety"
 )
 
@@ -304,8 +305,9 @@ func TestSchemaApplyJSONReportsAnAppliedPlan(t *testing.T) {
 		PlanName:        plan.Name,
 		PlanDigest:      fileDigest(c, planPath),
 		Units:           atlasschema.SQLApplyUnitReports(plan.StatementSQL()),
+		ApplyLog:        &migrator.SchemaApplyLogReport{Written: 2},
 	})
-	c.Assert(listSQLiteTables(c, f.dbPath), qt.DeepEquals, []string{"orders", "users"})
+	c.Assert(listSQLiteTables(c, f.dbPath), qt.DeepEquals, []string{"orders", "ptah_schema_apply_log", "users"})
 	c.Assert(stderr, qt.Contains, "Schema apply completed successfully.")
 }
 
@@ -466,9 +468,10 @@ func TestSchemaApplyJSONReportsAConfirmedRollbackAsFailed(t *testing.T) {
 		Units:           atlasschema.SQLApplyUnitReports(plan.StatementSQL()),
 		Error:           &errorkind.Report{Message: err.Error()},
 		Failure:         &atlasschema.ApplyFailure{Statement: 2, Statements: 2},
+		ApplyLog:        &migrator.SchemaApplyLogReport{Written: 2},
 	})
 	c.Assert(stderr, qt.Not(qt.Contains), "Schema apply completed successfully.")
-	c.Assert(listSQLiteTables(c, f.dbPath), qt.DeepEquals, []string{"users"})
+	c.Assert(listSQLiteTables(c, f.dbPath), qt.DeepEquals, []string{"ptah_schema_apply_log", "users"})
 }
 
 func TestSchemaApplyJSONReportsAFailureBeforeDispatch(t *testing.T) {
@@ -527,7 +530,7 @@ func TestSchemaApplyJSONReportsAComputedPlanRollbackAsFailed(t *testing.T) {
 	c.Assert(report.Error, qt.DeepEquals, &errorkind.Report{Message: err.Error()})
 	c.Assert(report.Units, qt.Any(qt.DeepEquals), atlasschema.ApplyUnitReport{SQL: `INSERT INTO "new_users" ("id", "age") SELECT "id", "age" FROM "users"`})
 	c.Assert(stderr, qt.Not(qt.Contains), "Schema apply completed successfully.")
-	c.Assert(listSQLiteTables(c, dbPath), qt.DeepEquals, []string{"users"})
+	c.Assert(listSQLiteTables(c, dbPath), qt.DeepEquals, []string{"ptah_schema_apply_log", "users"})
 }
 
 // TestSchemaApplyJSONRefusesEdit keeps the editor off a run whose standard

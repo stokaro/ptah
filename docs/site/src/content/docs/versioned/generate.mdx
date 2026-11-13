@@ -220,8 +220,9 @@ catalog. Such a file keeps its lock and statement timeouts.
 
 The comparison leaves out the tables `migrations up` keeps its history in, so a
 generated file never drops them. Ptah's own `schema_migrations`,
-`schema_migrations_log` and the `ptah_migration_tags` table that `migrations
-tag` records in are left out on every dialect, by every command that reads a
+`schema_migrations_log`, the `ptah_migration_tags` table that `migrations
+tag` records in and the `ptah_schema_apply_log` table that `schema apply`
+records in are left out on every dialect, by every command that reads a
 database. A revision table under
 another name, or in the Atlas format, is left out when `generate` and
 `migrations plan` get the same `--migrations-table` and `--revision-format` that

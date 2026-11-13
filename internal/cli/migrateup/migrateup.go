@@ -105,6 +105,8 @@ type options struct {
 	migrationsTable      string
 	migrationsEngine     string
 	actor                string
+	actorOrigin          string
+	runReference         string
 	revisionTableFormat  string
 	logFormat            string
 	logLevel             string
@@ -306,7 +308,9 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	dbcli.RegisterMigrationsSchemaFlag(flags, &opts.migrationsSchema)
 	dbcli.RegisterMigrationsTableFlag(flags, &opts.migrationsTable)
 	dbcli.RegisterMigrationsEngineFlag(flags, &opts.migrationsEngine)
-	dbcli.RegisterActorFlag(flags, &opts.actor)
+	dbcli.RegisterActorFlag(flags, &opts.actor, "migration log")
+	dbcli.RegisterActorOriginFlag(flags, &opts.actorOrigin, "migration log")
+	dbcli.RegisterRunReferenceFlag(flags, &opts.runReference, "migration log")
 	dbcli.RegisterRevisionTableFormatFlag(flags, &opts.revisionTableFormat)
 }
 
@@ -372,9 +376,9 @@ func parseToVersion(value string) (int64, error) {
 	return version, nil
 }
 
-// resolveProjectOptions merges the project config under the flags. A command
-// hook the config supplies is checked against the program policy here, before
-// the command opens the database.
+// resolveProjectOptions merges the project config under the flags. The run's
+// attribution, and a command hook the config supplies, are checked here,
+// before the command opens the database.
 func resolveProjectOptions(cmd *cobra.Command, opts options, projectCfg projectconfig.Config) (options, error) {
 	effectiveString := func(flagName, flagValue string, field projectconfig.StringField) string {
 		return dbcli.EffectiveString(cmd, flagName, flagValue, projectCfg.StringValue(field))
@@ -423,6 +427,9 @@ func resolveProjectOptions(cmd *cobra.Command, opts options, projectCfg projectc
 		opts.connectTimeout,
 		projectconfig.StringMigrationConnectTimeout,
 	)
+	if err := dbcli.CheckRunAttribution(opts.actor, opts.actorOrigin, opts.runReference); err != nil {
+		return opts, err
+	}
 	// After the shadow database is resolved, so a project dev_url satisfies
 	// --check-drift, and before the hook is authorized for a run it refuses.
 	if err := validateDriftFlags(
@@ -1038,6 +1045,8 @@ func newUpMigrator(in upMigratorOptions) (*migrator.Migrator, error) {
 	return mig.WithMigrationsTable(in.migrationsSchema, in.migrationsTable).
 		WithMigrationsEngine(in.opts.migrationsEngine).
 		WithActor(in.opts.actor).
+		WithActorOrigin(in.opts.actorOrigin).
+		WithRunReference(in.opts.runReference).
 		WithMigrationLog(in.projectCfg.Migration.MigrationLogEnabled()).
 		WithRevisionTableFormat(in.settings.revisionFormat).
 		WithDefaultTimeouts(in.timeouts).

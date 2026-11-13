@@ -95,6 +95,8 @@ type Config struct {
 	Schema SchemaConfig
 	// Migration holds migration-directory and runtime settings.
 	Migration MigrationConfig
+	// SchemaApply holds the settings of `ptah schema apply`.
+	SchemaApply SchemaApplyConfig
 	// OnlineDDL configures automatic online-DDL routing.
 	OnlineDDL OnlineDDLConfig
 	// Lint holds migration-lint settings.
@@ -735,6 +737,20 @@ func (c MigrationConfig) MigrationLogEnabled() bool {
 	return !c.Log.Set || c.Log.Value
 }
 
+// SchemaApplyConfig is the schema_apply section of the project config IR.
+type SchemaApplyConfig struct {
+	// Log is the append-only record `ptah schema apply` keeps of the plans it
+	// applied. It is a tri-state so an explicit false can turn off what is on
+	// by default.
+	Log ConfigBool
+}
+
+// LogEnabled reports whether the project keeps the schema apply log. It is on
+// unless the project turned it off.
+func (c SchemaApplyConfig) LogEnabled() bool {
+	return !c.Log.Set || c.Log.Value
+}
+
 // LintConfig is the lint section of the project config IR.
 type LintConfig struct {
 	Dialect       string
@@ -1021,6 +1037,7 @@ func Merge(base, override Config) Config {
 		override.presence,
 		&result.presence,
 	)
+	result.SchemaApply.Log = mergeBool(result.SchemaApply.Log, override.SchemaApply.Log)
 	result.OnlineDDL = mergeOnlineDDL(
 		result.OnlineDDL,
 		override.OnlineDDL,

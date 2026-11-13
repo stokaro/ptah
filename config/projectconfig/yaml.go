@@ -31,6 +31,7 @@ type yamlSettings struct {
 	// an unset value.
 	IgnoreExtensions *[]string          `yaml:"ignore_extensions"`
 	Migration        yamlMigration      `yaml:"migration"`
+	SchemaApply      yamlSchemaApply    `yaml:"schema_apply"`
 	Lint             yamlLint           `yaml:"lint"`
 	Migrate          yamlMigrateConfig  `yaml:"migrate"`
 	OnlineDDL        yamlOnlineDDL      `yaml:"online_ddl"`
@@ -85,6 +86,13 @@ type yamlMigration struct {
 	// Log turns the append-only record of migration operations off. It is on
 	// by default: a database that cannot say what happened to it is the gap
 	// the log exists to close, and one nobody turned on closes nothing.
+	Log *bool `yaml:"log"`
+}
+
+// yamlSchemaApply is the ptah.yaml schema_apply block. Log turns off the
+// record `ptah schema apply` keeps in the target of the plans it applied, on
+// by default for the reason migration.log is.
+type yamlSchemaApply struct {
 	Log *bool `yaml:"log"`
 }
 
@@ -364,6 +372,9 @@ func (c yamlSettings) projectConfig() (Config, error) {
 	)
 	if c.Migration.Log != nil {
 		cfg.Migration.Log = ConfigBool{Value: *c.Migration.Log, Set: true}
+	}
+	if c.SchemaApply.Log != nil {
+		cfg.SchemaApply.Log = ConfigBool{Value: *c.SchemaApply.Log, Set: true}
 	}
 	applyYAMLString(c.Lint.Dialect, &cfg.Lint.Dialect, fieldLintDialect, &cfg.presence)
 	if c.Lint.Latest != nil {

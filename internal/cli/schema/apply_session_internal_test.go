@@ -6,6 +6,12 @@ package schema
 // path, but cannot distinguish using the outer pool from using the callback
 // session. These tests redirect that callback to a second database so any
 // accidental outer-connection inspection or DDL becomes observable.
+//
+// The schema apply log's started entry, and the table it creates, go through
+// the session, so the session database holds ptah_schema_apply_log. Its
+// outcome entry goes over the outer connection on purpose, once the lock
+// session has returned; here that connection reaches another database, which
+// has no such table, so the entry is lost and nothing is created there.
 
 import (
 	"bytes"
@@ -79,7 +85,7 @@ func TestSchemaApplyNormalPathUsesLockCallbackSession(t *testing.T) {
 	c.Assert(redirect.root, qt.Not(qt.Equals), redirect.session)
 	c.Assert(output.String(), qt.Contains, "Schema apply completed successfully.")
 	c.Assert(listApplySessionSQLiteTables(c, rootPath), qt.DeepEquals, []string{"root_only"})
-	c.Assert(listApplySessionSQLiteTables(c, targetPath), qt.DeepEquals, []string{"orders", "users"})
+	c.Assert(listApplySessionSQLiteTables(c, targetPath), qt.DeepEquals, []string{"orders", "ptah_schema_apply_log", "users"})
 }
 
 func TestSchemaApplyPlanFilePathUsesLockCallbackSession(t *testing.T) {
@@ -116,7 +122,7 @@ func TestSchemaApplyPlanFilePathUsesLockCallbackSession(t *testing.T) {
 	c.Assert(redirect.root, qt.Not(qt.Equals), redirect.session)
 	c.Assert(output.String(), qt.Contains, "Schema apply completed successfully.")
 	c.Assert(listApplySessionSQLiteTables(c, rootPath), qt.DeepEquals, []string{"root_only"})
-	c.Assert(listApplySessionSQLiteTables(c, targetPath), qt.DeepEquals, []string{"orders", "users"})
+	c.Assert(listApplySessionSQLiteTables(c, targetPath), qt.DeepEquals, []string{"orders", "ptah_schema_apply_log", "users"})
 }
 
 func TestSchemaApplyAcquisitionFailureKeepsDiagnosticAndExitCode(t *testing.T) {
@@ -208,7 +214,7 @@ func testSchemaApplySessionLoss(t *testing.T, setup applySessionLossSetup) {
 	c.Assert(output.String(), qt.Not(qt.Contains), "Schema apply completed successfully.")
 	c.Assert(strings.Count(output.String(), "error: "+sessionFailure.Error()+"\n"), qt.Equals, 1)
 	c.Assert(listApplySessionSQLiteTables(c, rootPath), qt.DeepEquals, []string{"root_only"})
-	c.Assert(listApplySessionSQLiteTables(c, targetPath), qt.DeepEquals, []string{"orders", "users"})
+	c.Assert(listApplySessionSQLiteTables(c, targetPath), qt.DeepEquals, []string{"orders", "ptah_schema_apply_log", "users"})
 }
 
 // TestSchemaApplyJSONReportsSessionLossAsUnknown is the evidence rule at the
@@ -264,7 +270,7 @@ func testSchemaApplyJSONSessionLoss(t *testing.T, setup applySessionLossSetup) {
 	c.Assert(report.Error.Message, qt.Contains, sessionFailure.Error())
 	c.Assert(report.Units, qt.HasLen, 1)
 	c.Assert(stderr.String(), qt.Not(qt.Contains), "Schema apply completed successfully.")
-	c.Assert(listApplySessionSQLiteTables(c, targetPath), qt.DeepEquals, []string{"orders", "users"})
+	c.Assert(listApplySessionSQLiteTables(c, targetPath), qt.DeepEquals, []string{"orders", "ptah_schema_apply_log", "users"})
 }
 
 // TestSchemaApplyJSONReportsAPanicAfterDispatchAsUnknown is the document a
@@ -324,7 +330,7 @@ func testSchemaApplyJSONPanicAfterDispatch(t *testing.T, setup applySessionLossS
 	c.Assert(report.Error, qt.DeepEquals, &errorkind.Report{Message: "internal error: lock session lost its connection"})
 	c.Assert(report.Units, qt.HasLen, 1)
 	c.Assert(stderr.String(), qt.Not(qt.Contains), "Schema apply completed successfully.")
-	c.Assert(listApplySessionSQLiteTables(c, targetPath), qt.DeepEquals, []string{"orders", "users"})
+	c.Assert(listApplySessionSQLiteTables(c, targetPath), qt.DeepEquals, []string{"orders", "ptah_schema_apply_log", "users"})
 }
 
 // TestSchemaApplyJSONReportsAPanicBeforeDispatchAsFailed is the control for

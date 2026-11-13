@@ -42,6 +42,9 @@ const probeSchema = `CREATE TABLE lock_probe (
 // probeTable is the table probeSchema declares, read back by name.
 const probeTable = "lock_probe"
 
+// applyLogTable is the record an apply that ran keeps beside what it created.
+const applyLogTable = "ptah_schema_apply_log"
+
 // refusalMessage is the part of the refusal that carries the finding: the
 // dialect named is the one the server reported, not the one the URL spelled.
 const refusalMessage = `--lock-timeout requested a schema apply lock, and dialect "cockroachdb" has none`
@@ -126,7 +129,7 @@ func TestSchemaApplyWithoutLockTimeoutOnPostgresWireTargetE2E_HappyPath(t *testi
 	c.Assert(applied.ExitCode, qt.Equals, 0,
 		qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
 	c.Assert(applied.Stderr, qt.Not(qt.Contains), refusalMessage)
-	c.Assert(tableNames(c, c.Context(), dbURL), qt.DeepEquals, []string{probeTable})
+	c.Assert(tableNames(c, c.Context(), dbURL), qt.DeepEquals, []string{probeTable, applyLogTable})
 }
 
 // TestSchemaApplyEnvironmentLockTimeoutOnPostgresWireTargetE2E_HappyPath keeps
@@ -150,7 +153,7 @@ func TestSchemaApplyEnvironmentLockTimeoutOnPostgresWireTargetE2E_HappyPath(t *t
 	c.Assert(applied.ExitCode, qt.Equals, 0,
 		qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
 	c.Assert(strings.Count(applied.Stderr, ignoredNote), qt.Equals, 1)
-	c.Assert(tableNames(c, c.Context(), dbURL), qt.DeepEquals, []string{probeTable})
+	c.Assert(tableNames(c, c.Context(), dbURL), qt.DeepEquals, []string{probeTable, applyLogTable})
 }
 
 // TestSchemaApplyEnvironmentLockTimeoutOnAliasTargetE2E_HappyPath is the other
@@ -175,7 +178,7 @@ func TestSchemaApplyEnvironmentLockTimeoutOnAliasTargetE2E_HappyPath(t *testing.
 	c.Assert(applied.ExitCode, qt.Equals, 0,
 		qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
 	c.Assert(strings.Count(applied.Stderr, ignoredNote), qt.Equals, 1)
-	c.Assert(tableNames(c, c.Context(), wireURL), qt.DeepEquals, []string{probeTable})
+	c.Assert(tableNames(c, c.Context(), wireURL), qt.DeepEquals, []string{probeTable, applyLogTable})
 }
 
 // writeProbeSchema puts the desired schema where the command can read it and

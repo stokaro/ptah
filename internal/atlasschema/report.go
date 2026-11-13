@@ -316,6 +316,13 @@ type ApplyReport struct {
 	ProviderDiagnostic *providerdiagnostic.Diagnostic `json:"provider_diagnostic,omitempty"`
 	// SchemaDiagnostics is [PlanReport.SchemaDiagnostics] for this run.
 	SchemaDiagnostics []providerdiagnostic.SchemaDiagnostic `json:"schema_diagnostics,omitempty"`
+	// ApplyLog is what the run's writes to the schema apply log came to, and
+	// the run reference its entries carry. It is present once the plan began
+	// executing, which is when the log's first entry is written, and absent
+	// for a run that tried to write none: one that stopped before that, a dry
+	// run, a run whose project turned the log off, and a target served by an
+	// executable provider, which keeps no such log.
+	ApplyLog *migrator.SchemaApplyLogReport `json:"apply_log,omitempty"`
 }
 
 // ApplyFailure identifies the unit or the commit a dispatched apply stopped at,
@@ -378,6 +385,9 @@ type ApplyEvidence struct {
 	Completed ApplyOutcome
 	// Err is the run's error, and nil when it returned cleanly.
 	Err error
+	// ApplyLog is [migrator.SchemaApplyLog.Report] for the run, nil when it
+	// keeps no log.
+	ApplyLog *migrator.SchemaApplyLogReport
 }
 
 // NewApplyReport classifies one apply run from its evidence.
@@ -401,6 +411,7 @@ func NewApplyReport(evidence ApplyEvidence) ApplyReport {
 		Annotations:     slices.Clone(evidence.Annotations),
 		Undecided:       evidence.Undecided.Clone(),
 		Outcome:         evidence.Completed,
+		ApplyLog:        evidence.ApplyLog,
 	}
 	if evidence.Err == nil {
 		return report

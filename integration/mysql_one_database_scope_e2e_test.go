@@ -57,7 +57,7 @@ func TestSchemaVerbsRefuseATableOutsideTheURLDatabaseE2E(t *testing.T) {
 
 // TestSchemaApplyTakesATableQualifiedWithTheURLDatabaseE2E is the control: a
 // table qualified with the database the URL names is that database's, and is
-// created there.
+// created there, beside the run's record.
 func TestSchemaApplyTakesATableQualifiedWithTheURLDatabaseE2E(t *testing.T) {
 	for _, engine := range mysqlServerEngines {
 		t.Run(engine.name, func(t *testing.T) {
@@ -70,7 +70,7 @@ func TestSchemaApplyTakesATableQualifiedWithTheURLDatabaseE2E(t *testing.T) {
 			out, err := runPtahNativeWithError("schema", "apply", "--db-url", url, "--schema-file", schema, "--auto-approve")
 
 			c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-			c.Assert(scratch.tablesOf(c, name), qt.Equals, "t")
+			c.Assert(scratch.tablesOf(c, name), qt.Equals, "ptah_schema_apply_log,t")
 		})
 	}
 }

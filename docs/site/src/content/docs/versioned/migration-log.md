@@ -20,7 +20,8 @@ yesterday and is on 42 today reads exactly like one that never reached 43.
 
 The migration log answers the second question. It is an append-only table
 beside the revision table, written by `ptah migrations up` and `ptah migrations
-down`, and read by `ptah migrations log`.
+down`, and read by `ptah migrations log`. `ptah schema apply` keeps a log of its
+own, [the schema apply log](../../direct/apply-log/).
 
 ```bash
 ptah migrations log --db-url "$DATABASE_URL"
@@ -91,6 +92,48 @@ it:
 
 Storing an unverified name and an observed one the same way is how a log
 becomes evidence for something it cannot support.
+
+`--actor-origin` is the caller's word for where the name came from, such as
+`admission` for a name an admission controller stamped, so a stamped name reads
+differently from a typed one. It is stored in `actor_origin`, only beside a name
+the caller supplied, and it needs `--actor`. Ptah checks its shape and nothing
+else: one lowercase word of up to 64 characters, letters, digits, `.`, `_`, `:`
+and `-`.
+
+## The run reference
+
+`run_id` is Ptah's own name for a run, such as `28-dmth8umhdwq7`, and a caller
+has no way to know it in advance. `--run-reference` stores the caller's
+identifier for the run on every entry the run writes, beside `run_id`. Ptah
+Operator passes its operation ID, `sha256:` and 64 hex digits, so a row joins
+the operator's record of the change instead of being matched by version, actor
+and time.
+
+Any string of up to 255 visible ASCII characters is accepted. A longer one, or
+one holding a space or a character outside ASCII, is refused before the command
+connects: a reference the column shortened, or a charset replaced, would name
+another run.
+
+The run document reports the reference the written entries carry as
+`migration_log.run_reference`, and `ptah migrations log --json` reports
+`run_reference` and `actor_origin` on each attempt. A run given no reference
+stores none, and neither document names one.
+
+A migration log kept by an executable provider has no column for either value.
+The entries are written without them, the run warns once, and the run document
+leaves `migration_log.run_reference` out rather than report a reference the log
+does not hold.
+
+## A log an older release created
+
+Ptah v0.26.0 and earlier created the log without `run_reference` and
+`actor_origin`. The first run that writes an entry adds both, as nullable
+columns, before the entry. The rows already there keep their values and read
+back with neither. Reading never alters the table, so an account that may only
+read runs `ptah migrations log` against an old table as it stands. An account
+that may not alter the table loses the run's entries, and the run reports them
+as it reports any lost entry. Measured on PostgreSQL 18, MySQL 26.10, MariaDB
+12.3, ClickHouse 26.10, CockroachDB 26.3, YugabyteDB 2026.1 and Oracle Free 23.
 
 ## When an entry cannot be written
 

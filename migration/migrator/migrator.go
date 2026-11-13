@@ -276,8 +276,14 @@ type Migrator struct {
 	migrationLogTally *migrationLogTally
 	// actor is the name the log records for this run, and actorSource says
 	// what that name is worth. See [ActorSource].
-	actor                    string
-	actorSource              ActorSource
+	actor       string
+	actorSource ActorSource
+	// actorOrigin is the caller's word for where a provided actor came from.
+	// See [Migrator.WithActorOrigin].
+	actorOrigin string
+	// runReference is the caller's identifier for this run, stored on every
+	// log entry beside migrationLogRunID. See [Migrator.WithRunReference].
+	runReference             string
 	observer                 Observer
 	skipChecks               bool
 	metadataAvailable        bool
@@ -352,6 +358,36 @@ func (m *Migrator) WithMigrationLog(enabled bool) *Migrator {
 func (m *Migrator) WithActor(name string) *Migrator {
 	tmp := *m
 	tmp.actor, tmp.actorSource = resolveActor(name)
+	return &tmp
+}
+
+// WithActorOrigin returns a copy of the migrator that records origin beside a
+// provided actor: the caller's own word for where the name came from, such as
+// "admission" for a name an admission controller stamped, so it reads
+// differently from a name somebody typed.
+//
+// It is the caller's claim, recorded as given and checked by nothing, and it
+// describes only a name the caller supplied: an entry whose actor is the
+// process user, or nobody, records no origin. Empty records none.
+// [ValidateActorOrigin] says which words the log can store as given.
+func (m *Migrator) WithActorOrigin(origin string) *Migrator {
+	tmp := *m
+	tmp.actorOrigin = origin
+	return &tmp
+}
+
+// WithRunReference returns a copy of the migrator that stores reference on
+// every entry it writes to the operation log, beside the run identifier the
+// migrator generates. A caller that keeps its own record of the run, such as
+// an operator's operation ID, joins the two through it.
+//
+// Empty stores none. [ValidateRunReference] says which references the log can
+// store as given; a reference the database refuses loses the entry, as any
+// refused value does. A log kept by an executable provider stores no
+// reference, and [MigrationLogReport.RunReference] then names none.
+func (m *Migrator) WithRunReference(reference string) *Migrator {
+	tmp := *m
+	tmp.runReference = reference
 	return &tmp
 }
 
@@ -1261,39 +1297,52 @@ func (m *Migrator) ensureMigrationsRevisionColumns(ctx context.Context) error {
 }
 
 func (m *Migrator) ensureMigrationsRevisionColumn(ctx context.Context, name, definition string) error {
-	exists, err := m.migrationsColumnExists(ctx, name)
+	if err := m.ensureMetadataColumn(ctx, m.migrationsTableName(), name, definition); err != nil {
+		return fmt.Errorf("failed to add migrations metadata column %s: %w", name, err)
+	}
+	return nil
+}
+
+// ensureMetadataColumn adds column to the metadata table named table when an
+// older layout created the table without it. fallback is the definition the
+// column takes where the engine's descriptor lists none in AddedColumns.
+//
+// The column is spelled as the CREATE statements and the writes spell it,
+// bare where the engine folds a bare name. On Oracle a quoted "actor_origin"
+// is a column no statement names: every write asks for ACTOR_ORIGIN, and
+// measured on Oracle Free 23 each one failed with ORA-00904.
+func (m *Migrator) ensureMetadataColumn(ctx context.Context, table, column, fallback string) error {
+	exists, err := m.metadataColumnExists(ctx, table, column)
 	if err != nil {
 		return err
 	}
 	if exists {
 		return nil
 	}
-	query := fmt.Sprintf(
-		"ALTER TABLE %s ADD %s %s",
-		m.qualifiedMigrationsTable(),
-		m.quoteIdentifier(name),
-		m.migrationsRevisionColumnDefinition(name, definition),
-	)
-	if _, err := m.conn.ExecContext(ctx, query); err != nil {
-		return fmt.Errorf("failed to add migrations metadata column %s: %w", name, err)
+	described := m.revisionTable()
+	definition, ok := described.AddedColumns[column]
+	if !ok {
+		definition = fallback
 	}
-	return nil
+	clause := described.AddColumn
+	if clause == "" {
+		clause = "ADD"
+	}
+	query := fmt.Sprintf("ALTER TABLE %s %s %s %s",
+		m.qualifiedMetadataTable(table), clause, sqlident.Ident(m.connectionDialect(), column), definition)
+	_, err = m.conn.ExecContext(ctx, query)
+	return err
 }
 
-func (m *Migrator) migrationsRevisionColumnDefinition(name, fallback string) string {
-	if definition, ok := m.revisionTable().AddedColumns[name]; ok {
-		return definition
-	}
-	return fallback
-}
-
-func (m *Migrator) migrationsColumnExists(ctx context.Context, name string) (bool, error) {
-	table := m.metadataTable(m.migrationsTableName())
+// metadataColumnExists reports whether the metadata table named table has
+// column, asking the engine's catalog.
+func (m *Migrator) metadataColumnExists(ctx context.Context, table, column string) (bool, error) {
+	described := m.metadataTable(table)
 	if metadataCatalog := m.services().Catalog; metadataCatalog != nil {
-		return metadataCatalog.ColumnExists(ctx, m.conn, table, name)
+		return metadataCatalog.ColumnExists(ctx, m.conn, described, column)
 	}
 	query := sqlutil.Rebind(m.connectionDialect(), migratorext.InformationSchemaColumnsQuery)
-	return migratorext.InformationSchemaColumnExists(ctx, m.conn, query, table.ConfiguredSchema, table, name)
+	return migratorext.InformationSchemaColumnExists(ctx, m.conn, query, described.ConfiguredSchema, described, column)
 }
 
 // ensureMigrationsVersionColumn widens the version column of a revision table
