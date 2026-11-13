@@ -260,7 +260,7 @@ func TestNativeSchemaApplyConnectsThroughASocketE2E(t *testing.T) {
 				"--schema-file", writeMySQLSocketSchema(c),
 				"--auto-approve")
 
-			c.Assert(scratch.tables(c, target), qt.Equals, "widgets")
+			c.Assert(scratch.tables(c, target), qt.Equals, "ptah_schema_apply_log,widgets")
 		})
 	}
 }

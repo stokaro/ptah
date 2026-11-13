@@ -142,7 +142,8 @@ func TestMigrationsGenerateDoesNotCreateTheConnectedSchemaE2E(t *testing.T) {
 
 // TestApplyCreatesTheSchemaTheDatabaseLacksE2E applies the two-schema document
 // and reads both tables back: the schema the plan does create is still
-// created, ahead of the table that needs it.
+// created, ahead of the table that needs it. The run's record lands in the
+// connected schema, not in the one the plan creates.
 func TestApplyCreatesTheSchemaTheDatabaseLacksE2E(t *testing.T) {
 	c := qt.New(t)
 	database := newEmptyReadScopeDatabase(c, "connected")
@@ -151,7 +152,7 @@ func TestApplyCreatesTheSchemaTheDatabaseLacksE2E(t *testing.T) {
 		"--schema-file", writeConnectedSchemaDocument(c, connectedSchemaDocument), "--auto-approve")
 
 	c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
-	c.Assert(connectedSchemaTables(c, database), qt.Equals, "app.accounts, public.users")
+	c.Assert(connectedSchemaTables(c, database), qt.Equals, "app.accounts, public.ptah_schema_apply_log, public.users")
 }
 
 // TestApplyNeedsNoDatabasePrivilegeForTheConnectedSchemaE2E applies the
@@ -159,7 +160,7 @@ func TestApplyCreatesTheSchemaTheDatabaseLacksE2E(t *testing.T) {
 // create schemas in the database. PostgreSQL checks CREATE on the database
 // before it looks for the schema, so CREATE SCHEMA IF NOT EXISTS "public" is
 // refused to that role with SQLSTATE 42501 even though public exists; the
-// plan carries none, and the table is created.
+// plan carries none, and the table is created, beside the run's record.
 func TestApplyNeedsNoDatabasePrivilegeForTheConnectedSchemaE2E(t *testing.T) {
 	c := qt.New(t)
 	adminURL := dbtarget.URL(c, dbtarget.PostgreSQL)
@@ -182,7 +183,7 @@ func TestApplyNeedsNoDatabasePrivilegeForTheConnectedSchemaE2E(t *testing.T) {
 
 	c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
 	c.Assert(applied.Stdout, qt.Not(qt.Contains), connectedSchemaCreatesPublic)
-	c.Assert(connectedSchemaTables(c, database), qt.Equals, "public.users")
+	c.Assert(connectedSchemaTables(c, database), qt.Equals, "public.ptah_schema_apply_log, public.users")
 }
 
 // writeConnectedSchemaDocument writes document to an HCL file and returns its

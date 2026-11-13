@@ -15,8 +15,10 @@ const (
 	typeHoldersGone = "CREATE TABLE gone (id bigint PRIMARY KEY);\nCREATE TYPE wrap AS (r gone);\n"
 	// typeHoldersUndeclared is a reader of gone in a schema the run leaves out.
 	typeHoldersUndeclared = "CREATE SCHEMA reporting;\nCREATE VIEW reporting.v AS SELECT id FROM public.gone;\nINSERT INTO public.gone VALUES (7);\n"
-	// typeHoldersLeft counts the relations, types and routines public holds besides keep.
-	typeHoldersLeft = "SELECT (SELECT count(*) FROM pg_class WHERE relnamespace = 'public'::regnamespace AND relkind IN ('r', 'v', 'm', 'c') AND relname NOT IN ('keep', 'keep_pkey')) + " +
+	// typeHoldersLeft counts the relations, types and routines public holds
+	// besides keep and the record schema apply keeps of its runs, which a run
+	// that fails still writes.
+	typeHoldersLeft = "SELECT (SELECT count(*) FROM pg_class WHERE relnamespace = 'public'::regnamespace AND relkind IN ('r', 'v', 'm', 'c') AND relname NOT IN ('keep', 'keep_pkey', 'ptah_schema_apply_log')) + " +
 		"(SELECT count(*) FROM pg_type WHERE typnamespace = 'public'::regnamespace AND typtype = 'd') + " +
 		"(SELECT count(*) FROM pg_proc WHERE pronamespace = 'public'::regnamespace)"
 )

@@ -76,7 +76,7 @@ func TestSchemaPlanWithoutASelectionWarnsAboutTheDropsE2E(t *testing.T) {
 // TestSchemaApplyRunsASelectionPlanAtItsScopeE2E applies the plan saved at
 // --schemas public. A table created in crm after planning is outside the
 // selection, so the plan is not stale, and the apply creates accounts and
-// leaves every crm table in place.
+// its own record and leaves every crm table in place.
 func TestSchemaApplyRunsASelectionPlanAtItsScopeE2E(t *testing.T) {
 	c := qt.New(t)
 	database := newUndescribedSchemaDatabase(c)
@@ -88,7 +88,7 @@ func TestSchemaApplyRunsASelectionPlanAtItsScopeE2E(t *testing.T) {
 
 	c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
 	c.Assert(schemaPlanSelectionTables(c, database), qt.DeepEquals, []string{
-		"crm.customers", "crm.invoices", "crm.orders", "public.accounts", "public.users",
+		"crm.customers", "crm.invoices", "crm.orders", "public.accounts", "public.ptah_schema_apply_log", "public.users",
 	})
 }
 

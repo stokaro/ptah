@@ -18,8 +18,10 @@ const (
 	removedCallerReader = "CREATE FUNCTION a_fn() RETURNS bigint LANGUAGE SQL RETURN (SELECT count(*) FROM gone);\n"
 	// removedCallerUndeclared is a reader of gone in a schema the run leaves out.
 	removedCallerUndeclared = "CREATE SCHEMA reporting;\nCREATE VIEW reporting.v AS SELECT id FROM public.gone;\nINSERT INTO public.gone VALUES (7);\n"
-	// removedCallerRelations counts what public holds besides keep.
-	removedCallerRelations = "SELECT count(*) FROM pg_class WHERE relnamespace = 'public'::regnamespace AND relkind IN ('r', 'v', 'm') AND relname <> 'keep'"
+	// removedCallerRelations counts what public holds besides keep and the
+	// record schema apply keeps of its runs, which a run that fails still
+	// writes.
+	removedCallerRelations = "SELECT count(*) FROM pg_class WHERE relnamespace = 'public'::regnamespace AND relkind IN ('r', 'v', 'm') AND relname NOT IN ('keep', 'ptah_schema_apply_log')"
 )
 
 // removedCallerRows are removals of a routine that has something calling it, and
@@ -254,7 +256,7 @@ func TestSchemaApplyRemovedRoutineCallersE2E_OnCockroachDB(t *testing.T) {
 			c.Assert(run.Stdout, qt.Not(qt.Contains), "CASCADE")
 			c.Assert(run.Stdout, qt.Contains, test.plan)
 			c.Assert(readInt(c, target, "SELECT count(*) FROM information_schema.routines WHERE routine_schema = 'public'"), qt.Equals, 0)
-			c.Assert(readInt(c, target, "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name <> 'keep'"), qt.Equals, 0)
+			c.Assert(readInt(c, target, "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name NOT IN ('keep', 'ptah_schema_apply_log')"), qt.Equals, 0)
 			again := runPtahIn(c, "schema", "apply", "--db-url", target, "--schema-file", schema, "--schemas", "public", "--auto-approve")
 			c.Assert(again.Stdout, qt.Contains, "Schema is synced")
 		})
