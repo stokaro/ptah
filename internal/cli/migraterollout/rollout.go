@@ -319,7 +319,7 @@ func runTargets(
 			location:        bound.location,
 			plainHTTP:       opts.plainHTTP,
 			allowConfigExec: execpolicy.From(cmd.Context()).Mode == execpolicy.RunSelected,
-			environ:         childEnvironment(os.Environ()),
+			environ:         childEnvironment(os.Environ(), plan),
 			workDir:         workDir,
 			relay:           diagnostics,
 		},

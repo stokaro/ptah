@@ -173,6 +173,7 @@ func TestRun_RefusesAGroupBypassInTheEnvironment(t *testing.T) {
 		"PTAH_DRY_RUN",
 		"PTAH_LIMIT",
 		"PTAH_TO_VERSION",
+		"PTAH_EXEC_ORDER",
 	}
 	for _, variable := range variables {
 		t.Run(variable, func(t *testing.T) {

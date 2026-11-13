@@ -126,7 +126,7 @@ func (e *startError) Unwrap() error { return e.err }
 // to stop once; see interruptProcess.
 func (e *processExecutor) run(ctx context.Context, target migrationrollout.Target, args []string) ([]byte, error) {
 	cmd := exec.Command(e.program, args...) // #nosec G204 -- the program is this ptah binary, and args are flags it defines
-	cmd.Env = append(slices.Clone(e.environ), envbinding.Name(envPrefix, "db-url")+"="+target.URL)
+	cmd.Env = targetEnvironment(e.environ, target)
 	cmd.Dir = e.workDir
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
@@ -145,12 +145,34 @@ func (e *processExecutor) run(ctx context.Context, target migrationrollout.Targe
 }
 
 // childEnvironment is the environment every target run starts from: this
-// process's, without the database URL the run would otherwise inherit.
-func childEnvironment(environ []string) []string {
-	dbURL := envbinding.Name(envPrefix, "db-url") + "="
+// process's, without the database URL the run would otherwise inherit and
+// without any variable a target's url_env names. A run, and every hook or
+// config program it starts, would otherwise hold the credentials of every
+// other target in the plan; [targetEnvironment] gives each run back its own.
+func childEnvironment(environ []string, plan migrationrollout.Plan) []string {
+	dropped := []string{envbinding.Name(envPrefix, "db-url")}
+	for _, stage := range plan.Stages {
+		for _, target := range stage.Targets {
+			if target.URLEnv != "" {
+				dropped = append(dropped, target.URLEnv)
+			}
+		}
+	}
 	return slices.DeleteFunc(slices.Clone(environ), func(entry string) bool {
-		return strings.HasPrefix(entry, dbURL)
+		name, _, _ := strings.Cut(entry, "=")
+		return slices.Contains(dropped, name)
 	})
+}
+
+// targetEnvironment is the environment of one run against target: base, the
+// database URL, and the target's own url_env variable when it has one, so a
+// hook or config that reads it finds the value the rollout resolved.
+func targetEnvironment(base []string, target migrationrollout.Target) []string {
+	environ := append(slices.Clone(base), envbinding.Name(envPrefix, "db-url")+"="+target.URL)
+	if target.URLEnv != "" {
+		environ = append(environ, target.URLEnv+"="+target.URL)
+	}
+	return environ
 }
 
 // decodeDocument reads the one JSON document a run printed.

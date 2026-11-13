@@ -14,8 +14,10 @@ import (
 // Each one either waives a guard a target owes its own evidence for -- a dirty
 // revision row, a pre-migration check, the destructive lint gate, the approved
 // sequence -- or changes what a target run does in a way the rollout's
-// outcomes do not describe: a dry run, or a run that stops short of the
-// release. The per-target spellings in the definition, expect_sequence and
+// outcomes do not describe: a dry run, a run that stops short of the
+// release, or an execution order that applies or skips a migration below the
+// current version, which waives the ordering guard every target run applies.
+// The per-target spellings in the definition, expect_sequence and
 // allow_destructive, are the ones a rollout reads.
 var groupBypassFlags = []string{
 	"allow-dirty",
@@ -25,6 +27,7 @@ var groupBypassFlags = []string{
 	"dry-run",
 	"limit",
 	"to-version",
+	"exec-order",
 }
 
 // refuseGroupBypasses refuses a rollout started with any of the variables
