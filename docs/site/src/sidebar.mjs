@@ -127,6 +127,7 @@ export const sidebar = [
       { slug: 'direct/compare-and-drift' },
       { slug: 'direct/plan-and-approve' },
       { slug: 'direct/apply' },
+      { slug: 'direct/apply-log' },
     ],
   },
   {

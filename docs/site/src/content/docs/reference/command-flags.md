@@ -795,6 +795,7 @@ Read the columns as follows.
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--actor` | `string` | — | `PTAH_ACTOR` | — |
+| `--actor-origin` | `string` | — | `PTAH_ACTOR_ORIGIN` | — |
 | `--atlas-env` | `string` | — | `PTAH_ATLAS_ENV` | — |
 | `--atlas-project-config` | `string` | — | `PTAH_ATLAS_PROJECT_CONFIG` | hidden |
 | `--atlas-project-var` | `stringArray` | `[]` | `PTAH_ATLAS_PROJECT_VAR` | hidden |
@@ -825,6 +826,7 @@ Read the columns as follows.
 | `--provider-engine` | `string` | — | — | — |
 | `--provider-exchanges` | `string` | — | — | — |
 | `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
+| `--run-reference` | `string` | — | `PTAH_RUN_REFERENCE` | — |
 | `--shadow-db` | `string` | — | `PTAH_SHADOW_DB` | — |
 | `--skip-checks` | `bool` | `false` | `PTAH_SKIP_CHECKS` | — |
 | `--statement-timeout` | `string` | — | `PTAH_STATEMENT_TIMEOUT` | — |
@@ -1310,6 +1312,7 @@ Read the columns as follows.
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--actor` | `string` | — | `PTAH_ACTOR` | — |
+| `--actor-origin` | `string` | — | `PTAH_ACTOR_ORIGIN` | — |
 | `--allow-destructive` | `bool` | `false` | `PTAH_ALLOW_DESTRUCTIVE` | — |
 | `--allow-dirty` | `bool` | `false` | `PTAH_ALLOW_DIRTY` | — |
 | `--atlas-env` | `string` | — | `PTAH_ATLAS_ENV` | — |
@@ -1342,6 +1345,7 @@ Read the columns as follows.
 | `--provider-engine` | `string` | — | — | — |
 | `--provider-exchanges` | `string` | — | — | — |
 | `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
+| `--run-reference` | `string` | — | `PTAH_RUN_REFERENCE` | — |
 | `--runner` | `string` | `ptah` | `PTAH_RUNNER` | — |
 | `--shadow-db` | `string` | — | `PTAH_SHADOW_DB` | — |
 | `--skip-checks` | `bool` | `false` | `PTAH_SKIP_CHECKS` | — |
@@ -1583,6 +1587,8 @@ Read the columns as follows.
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
+| `--actor` | `string` | — | `PTAH_ACTOR` | — |
+| `--actor-origin` | `string` | — | `PTAH_ACTOR_ORIGIN` | — |
 | `--allow-table-rebuild` | `bool` | `false` | — | — |
 | `--allowed-signers` | `string` | — | `PTAH_ALLOWED_SIGNERS` | — |
 | `--auto-approve` | `bool` | `false` | — | — |
@@ -1606,6 +1612,7 @@ Read the columns as follows.
 | `--require-approval` | `bool` | `false` | `PTAH_REQUIRE_APPROVAL` | — |
 | `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
 | `--rotate-secret` | `stringArray` | `[]` | — | — |
+| `--run-reference` | `string` | — | `PTAH_RUN_REFERENCE` | — |
 | `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
 | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
 | `--signer` | `string` | — | `PTAH_SIGNER` | — |
