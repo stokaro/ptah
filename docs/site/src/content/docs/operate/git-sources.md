@@ -8,14 +8,15 @@ readerQuestion: "How do I pull a desired schema or a migration directory straigh
 goal: "Pull a schema file or a migration directory from a pinned commit and check it against its content digest."
 sourceOfTruth:
   - "internal/gitsource"
-  - "internal/cli/internal/gitpull"
+  - "internal/cli/internal/sourcepull"
   - "internal/sourcecontent"
 generated: false
 searchAliases:
   - "Git schema source"
   - "git+https"
   - "git+ssh"
-overlaps: []
+overlaps:
+  - /operate/https-sources/
 disposition: keep
 ---
 
