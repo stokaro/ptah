@@ -493,9 +493,42 @@ func columnDroppedRule() Rule {
 					Context:  statementFindingContext(i, subjects...),
 				})
 			}
+			findings = append(findings, rebuildColumnLossFindings(file)...)
 			return append(findings, columnRenamedFindings(file)...)
 		},
 	}
+}
+
+// rebuildColumnLossFindings reports columns a SQLite table copy omits. Atlas
+// compares the resulting schema, so the DROP TABLE in a replacement stands
+// for a column drop when the dev database supplies the old column list.
+func rebuildColumnLossFindings(file *File) []Finding {
+	if file.compatibility != CompatibilityProfileAtlas || !lintOf(file.dialect).AtlasRebuildColumnDiff {
+		return nil
+	}
+	var findings []Finding
+	losses := lintkit.RebuildChanges(file.contract, baselineColumns(file))
+	for index := range file.Statements {
+		loss, ok := losses[index]
+		if !ok {
+			continue
+		}
+		drop := &file.Statements[index]
+		tables, _ := lintkit.DroppedTablesNotCreated(drop.Words, drop.sourceWords, nil)
+		if len(tables) != 1 {
+			continue
+		}
+		for _, name := range loss.LostColumns {
+			create := &file.Statements[loss.Create]
+			findings = append(findings, Finding{
+				Rule: "DS102", Title: "column dropped", Severity: SeverityError,
+				File: file.Path, Line: create.Line,
+				Message: "DROP COLUMN permanently deletes the column's data; " + columnDroppedAdvice,
+				Context: statementFindingContext(loss.Create, Subject{Kind: SubjectColumn, Name: name, Parent: tables[0].Normalized}),
+			})
+		}
+	}
+	return findings
 }
 
 // columnDroppedWithReadersRule names what breaks when a column goes.

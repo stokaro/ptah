@@ -190,3 +190,41 @@ func TestTableRebuild_IsADropOnTheCompatibilitySurface(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(findingSites(findings), qt.Contains, "0000000002_change.up.sql:9:DS101")
 }
+
+func TestTableRebuild_AtlasSQLiteReportsOnlyLostColumns(t *testing.T) {
+	tests := []struct {
+		name   string
+		second string
+		want   []string
+	}{
+		{name: "full copy", second: sqliteRebuild},
+		{name: "lost label", second: strings.Replace(sqliteRebuild,
+			`("id", "n", "label") SELECT "id", "n", "label"`,
+			`("id", "n") SELECT "id", "n"`, 1),
+			want: []string{"0000000002_change.up.sql:3:DS102"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{
+				"0000000001_items.up.sql":  sqliteItems,
+				"0000000002_change.up.sql": test.second,
+			}), lint.Options{
+				Dialect: "sqlite", Compatibility: lint.CompatibilityProfileAtlas,
+				Baseline: []lintext.BaselineColumn{
+					{Version: 2, Table: "items", Name: "id"},
+					{Version: 2, Table: "items", Name: "n"},
+					{Version: 2, Table: "items", Name: "label"},
+				},
+			})
+			c.Assert(err, qt.IsNil)
+			got := slices.DeleteFunc(findingSites(analysis.Findings()), func(site string) bool {
+				return !strings.HasPrefix(site, "0000000002_change.up.sql:") ||
+					(!strings.HasSuffix(site, ":DS101") && !strings.HasSuffix(site, ":DS102") &&
+						!strings.HasSuffix(site, ":BC101") && !strings.HasSuffix(site, ":BC103"))
+			})
+			got = append([]string{}, got...)
+			c.Assert(got, qt.DeepEquals, test.want)
+		})
+	}
+}

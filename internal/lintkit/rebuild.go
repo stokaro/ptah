@@ -64,6 +64,43 @@ func Rebuilds(statements []lintext.Statement, columns Columns) RebuildSteps {
 	return steps
 }
 
+// RebuildChange describes a table replacement whose old columns are known.
+type RebuildChange struct {
+	Create      int
+	LostColumns []string
+	Renames     []int
+}
+
+// RebuildChanges reports complete table replacements with known old columns.
+// The key is the DROP TABLE statement index. An unknown old table is omitted
+// because the copy alone cannot establish whether it loses a column.
+func RebuildChanges(statements []lintext.Statement, columns Columns) map[int]RebuildChange {
+	changes := make(map[int]RebuildChange)
+	for i := range statements {
+		match, ok := matchRebuild(statements, i, nil)
+		if !ok {
+			continue
+		}
+		steps := rebuildSteps(statements, i)
+		copied, ok := tableCopyOf(&statements[steps[0]])
+		if !ok {
+			continue
+		}
+		if columns == nil {
+			continue
+		}
+		if _, known := columns(i, copied.from); !known {
+			continue
+		}
+		changes[match.drop] = RebuildChange{
+			Create:      i,
+			LostColumns: lostColumns(i, copied.from, copied, columns),
+			Renames:     match.renames,
+		}
+	}
+	return changes
+}
+
 // rebuildMatch is one rebuild: the statement that drops the replaced table and
 // the renames that swap the copy in.
 type rebuildMatch struct {

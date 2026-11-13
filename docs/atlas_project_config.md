@@ -297,6 +297,12 @@ Ptah lint severity only where the analyzer has a matching Ptah rule family.
 `error = true` sets the mapped findings to error severity; `error = false`
 sets them to warning severity.
 
+On SQLite, `ptah-compat migrate lint` uses the dev database's starting column
+list to inspect a table replacement. A copy that keeps every column produces
+no destructive finding. If the replacement omits a column, the report names
+that column as Atlas `DS103` at the replacement table's `CREATE TABLE` line.
+Without a dev database, Ptah cannot establish which old columns the copy lost.
+
 The supported mappings are `destructive` to the `DS` family, `data_depend` to
 the `DD` family, `incompatible` to the `BC` family, `concurrent_index` to
 `PG101` and `PG103`, `nestedtx` to `TX201`, and `condrop` to the `CD` family

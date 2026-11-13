@@ -11,10 +11,9 @@ import (
 // what only the host knows: the surface it reports on, and where the old
 // table's columns come from.
 
-// fileRebuilds finds the table rebuilds of an up migration on the native
-// surface. Only the native surface recognizes them: the compatibility surface
-// reports what the analyzer it is compatible with reports, which was not
-// measured for this shape.
+// fileRebuilds finds the table rebuilds of an up migration. SQLite's Atlas
+// profile recognizes a replacement only when the old columns are known: a
+// partial copy is reported as a column loss by columnDroppedRule.
 //
 // Where the run's split judged the rebuild facts, the owner's effects are the
 // answer. Whether a copy keeps every column depends on what the old table
@@ -24,7 +23,19 @@ import (
 // reported.
 func fileRebuilds(file *File) lintkit.RebuildSteps {
 	steps := lintkit.RebuildSteps{Drops: make(map[int]bool), Renames: make(map[int]bool)}
-	if !file.IsUp || file.compatibility == CompatibilityProfileAtlas {
+	if !file.IsUp {
+		return steps
+	}
+	if file.compatibility == CompatibilityProfileAtlas {
+		if !lintOf(file.dialect).AtlasRebuildColumnDiff {
+			return steps
+		}
+		for index, change := range lintkit.RebuildChanges(file.contract, baselineColumns(file)) {
+			steps.Drops[index] = true
+			for _, rename := range change.Renames {
+				steps.Renames[rename] = true
+			}
+		}
 		return steps
 	}
 	if !rebuildsJudged(file) {
@@ -69,6 +80,15 @@ func baselineColumns(file *File) lintkit.Columns {
 func rebuildBaselineSubjects(file *File) []int {
 	if rebuildsJudged(file) {
 		return nil
+	}
+	if file.compatibility == CompatibilityProfileAtlas && lintOf(file.dialect).AtlasRebuildColumnDiff {
+		steps := lintkit.Rebuilds(file.contract, nil)
+		subjects := make([]int, 0, len(steps.Drops))
+		for index := range steps.Drops {
+			subjects = append(subjects, index)
+		}
+		slices.Sort(subjects)
+		return subjects
 	}
 	steps := fileRebuilds(file)
 	subjects := make([]int, 0, len(steps.Drops))
