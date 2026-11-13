@@ -1088,6 +1088,8 @@ type Trigger struct {
 	// alternatives: when ExecuteFunction is set, Ptah does not render a
 	// function definition for the trigger.
 	ExecuteFunction string
+	// FunctionArguments are the text values passed to the trigger function.
+	FunctionArguments []string `json:",omitempty"`
 
 	// Dialects scopes this declaration to the named target dialects. See
 	// [ScopeToTarget].

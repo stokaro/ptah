@@ -3379,7 +3379,17 @@ func (r *Renderer) renderCreateTrigger(node *ast.CreateTriggerNode) error {
 	if forEach == "" {
 		forEach = "ROW"
 	}
-	r.w.WriteLinef("%s %s %s %s ON %s%s FOR EACH %s%s EXECUTE FUNCTION %s();",
+	arguments := make([]string, len(node.FunctionArguments))
+	for i, value := range node.FunctionArguments {
+		quoted := strings.ReplaceAll(value, "'", "''")
+		if strings.Contains(value, `\`) {
+			quoted = strings.ReplaceAll(quoted, `\`, `\\`)
+			arguments[i] = "E'" + quoted + "'"
+		} else {
+			arguments[i] = "'" + quoted + "'"
+		}
+	}
+	r.w.WriteLinef("%s %s %s %s ON %s%s FOR EACH %s%s EXECUTE FUNCTION %s(%s);",
 		create,
 		r.escapeIdentifier(node.Name),
 		node.Timing,
@@ -3388,7 +3398,7 @@ func (r *Renderer) renderCreateTrigger(node *ast.CreateTriggerNode) error {
 		r.triggerReferencingClause(node),
 		forEach,
 		triggerWhenClause(node),
-		r.escapeQualifiedIdentifier(functionName))
+		r.escapeQualifiedIdentifier(functionName), strings.Join(arguments, ", "))
 	r.writeCreatedObjectComment(ast.CommentedTrigger, r.scopedCommentTarget(node.Name, node.Table),
 		node.Name+" on "+node.Table, node.Comment)
 	return nil

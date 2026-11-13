@@ -109,6 +109,9 @@ func (o TableObservation) Clone() TableObservation {
 		o.Constraints[i] = o.Constraints[i].Clone()
 	}
 	o.Triggers = slices.Clone(o.Triggers)
+	for i := range o.Triggers {
+		o.Triggers[i] = o.Triggers[i].Clone()
+	}
 	o.Grants = slices.Clone(o.Grants)
 	o.RemovalBlockers = slices.Clone(o.RemovalBlockers)
 	for i := range o.RemovalBlockers {

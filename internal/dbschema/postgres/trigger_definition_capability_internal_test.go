@@ -78,11 +78,11 @@ func oneTrigger(definition string) dbtest.QueryResult {
 	return dbtest.QueryResult{
 		Columns: []string{
 			"schema_name", "table_name", "trigger_name",
-			"timing", "event", "for_each", "body", "execute_function", "comment",
+			"timing", "event", "for_each", "body", "execute_function", "function_arguments_hex", "comment",
 			"definition", "old_table", "new_table",
 		},
 		Rows: [][]driver.Value{
-			{"public", "a", "trg_a", "BEFORE", "INSERT OR UPDATE", "ROW", "BEGIN RETURN NEW; END", "f", "",
+			{"public", "a", "trg_a", "BEFORE", "INSERT OR UPDATE", "ROW", "BEGIN RETURN NEW; END", "f", "", "",
 				definition, "", "new_rows"},
 		},
 	}

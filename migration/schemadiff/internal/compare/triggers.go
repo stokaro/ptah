@@ -2,6 +2,7 @@ package compare
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -256,6 +257,9 @@ func TriggerDefinitions(
 		genTrigger.NewTable != strings.TrimSpace(dbTrigger.NewTable) {
 		triggerDiff.Changes["referencing"] = fmt.Sprintf("old=%s new=%s -> old=%s new=%s",
 			dbTrigger.OldTable, dbTrigger.NewTable, genTrigger.OldTable, genTrigger.NewTable)
+	}
+	if !slices.Equal(genTrigger.FunctionArguments, dbTrigger.FunctionArguments) {
+		triggerDiff.Changes["arguments"] = fmt.Sprintf("%q -> %q", dbTrigger.FunctionArguments, genTrigger.FunctionArguments)
 	}
 
 	// A trigger either carries a body Ptah owns or names a function somebody

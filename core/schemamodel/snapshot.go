@@ -42,8 +42,9 @@ func (e Enum) Clone() Enum {
 	return e
 }
 
-// Clone returns a trigger with an independent target list.
+// Clone returns a trigger with independent argument and target lists.
 func (t Trigger) Clone() Trigger {
+	t.FunctionArguments = slices.Clone(t.FunctionArguments)
 	t.Dialects = slices.Clone(t.Dialects)
 	return t
 }

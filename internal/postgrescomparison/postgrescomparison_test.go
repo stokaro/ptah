@@ -114,6 +114,8 @@ func TestGeneratedExpressions_Spelling(t *testing.T) {
 		{name: "what the catalog prints", expression: `("Price" * (quantity)::numeric)`, want: "(price*quantity)"},
 		{name: "a cast with arguments", expression: "amount::numeric(10, 2) + 1", want: "amount+1"},
 		{name: "a cast to a multi-word type", expression: "code::character varying", want: "code"},
+		{name: "a PostgreSQL internal char cast", expression: `setweight(to_tsvector('simple', title), 'B'::"char")`, want: `setweight(to_tsvector('simple',title),'B')`},
+		{name: "a quoted type with doubled quotes", expression: `value::"my""type" + 1`, want: "value+1"},
 		{name: "a cast inside a string is text", expression: "'a::b' || name", want: "'a::b'||name"},
 		{name: "a double-quoted token is a name", expression: `"Total" + 1`, want: "total+1"},
 	}

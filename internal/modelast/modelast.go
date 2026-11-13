@@ -1400,6 +1400,7 @@ func FromTrigger(trigger schemamodel.Trigger) *ast.CreateTriggerNode {
 		SetWhen(trigger.When).
 		SetBody(trigger.Body).
 		SetFunctionName(functionName).
+		SetFunctionArguments(trigger.FunctionArguments).
 		SetComment(trigger.Comment)
 	if trigger.ExecuteFunction != "" {
 		triggerNode.SetExternalFunction()

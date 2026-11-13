@@ -209,6 +209,7 @@ func corpus() []Fixture {
 		{Name: "index-host-table-only", Schema: indexHostTableOnlyFixture()},
 		{Name: "trigger-body-only", Schema: triggerBodyOnlyFixture()},
 		{Name: "trigger-foreach-statement", Schema: triggerForEachStatementFixture()},
+		{Name: "trigger-function-arguments", Schema: triggerFunctionArgumentsFixture()},
 		{Name: "trigger-transition-tables", Schema: triggerTransitionTablesFixture()},
 		{Name: "function-procedure", Schema: functionProcedureFixture()},
 		{Name: "partition-expression", Schema: partitionExpressionFixture()},
@@ -497,6 +498,20 @@ func triggerForEachStatementFixture() schemamodel.Database {
 	db.Triggers = []schemamodel.Trigger{{
 		StructName: "TR", Name: "t_touch", Table: "t", Timing: "AFTER", Event: "UPDATE",
 		ForEach: "STATEMENT", ExecuteFunction: "touch()",
+	}}
+	return db
+}
+
+func triggerFunctionArgumentsFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	db.Functions = []schemamodel.Function{{
+		StructName: "F", Name: "touch", Returns: "trigger", Language: "plpgsql",
+		Body: "BEGIN RETURN NEW; END;", Dialects: []string{"postgres"},
+	}}
+	db.Triggers = []schemamodel.Trigger{{
+		StructName: "TR", Name: "t_touch", Table: "t", Timing: "BEFORE", Event: "UPDATE",
+		ForEach: "ROW", ExecuteFunction: "touch", FunctionArguments: []string{"updated_at"},
+		Dialects: []string{"postgres"},
 	}}
 	return db
 }
