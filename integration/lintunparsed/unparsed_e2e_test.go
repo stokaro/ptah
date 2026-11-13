@@ -171,15 +171,15 @@ func atlasDirectory(c *qt.C, sql string) string {
 }
 
 // TestCompatLint_WithADevDatabase holds the parity half. The community binary is the
-// contract here, so a statement the server runs reports nothing and a statement it
-// refuses ends the run with the exit code it always had.
+// contract here, so a statement the server runs reports nothing, and a statement it
+// refuses is reported on stdout with the server's message and ends the run with
+// exit 1, with nothing on stderr.
 func TestCompatLint_WithADevDatabase(t *testing.T) {
 	tests := []struct {
 		name       string
 		sql        string
 		wantExit   int
 		wantStdout string
-		wantStderr string
 	}{
 		{
 			name: "the server accepts SQL the parser does not model", sql: validUnmodeled,
@@ -187,7 +187,7 @@ func TestCompatLint_WithADevDatabase(t *testing.T) {
 		},
 		{
 			name: "the server refuses text that is no SQL", sql: garbage,
-			wantExit: 1, wantStderr: "near \"BOGUS\": syntax error",
+			wantExit: 1, wantStdout: "near \"BOGUS\": syntax error",
 		},
 	}
 	for _, test := range tests {
@@ -198,8 +198,8 @@ func TestCompatLint_WithADevDatabase(t *testing.T) {
 			)
 			c.Assert(run.ExitCode, qt.Equals, test.wantExit, qt.Commentf("stdout: %s\nstderr: %s", run.Stdout, run.Stderr))
 			c.Assert(run.Stdout, qt.Contains, test.wantStdout)
-			c.Assert(run.Stderr, qt.Contains, test.wantStderr)
-			c.Assert(run.Stdout+run.Stderr, qt.Not(qt.Contains), "AC102")
+			c.Assert(run.Stderr, qt.Equals, "")
+			c.Assert(run.Stdout, qt.Not(qt.Contains), "AC102")
 		})
 	}
 }
