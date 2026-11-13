@@ -43,7 +43,8 @@ type Lock struct {
 // SameRealm reports whether two live connections select the same destructive
 // database realm. Network endpoints are intentionally excluded from the
 // identity: aliases and replicated members cannot be proven independent before
-// cleanup, so equal live database/catalog names fail closed across hosts. A
+// cleanup, so equal live database/catalog names fail closed across hosts unless
+// PostgreSQL reports different cluster identifiers. A
 // YDB database is named by its path and the moment its server created it, so
 // two servers that each serve /local are two realms; see writerIdentity.
 //
@@ -87,7 +88,27 @@ func SameRealm(
 	if err != nil {
 		return false, err
 	}
-	return leftIdentity == rightIdentity, nil
+	if leftIdentity != rightIdentity || leftDialect != platform.Postgres {
+		return leftIdentity == rightIdentity, nil
+	}
+	// Separate PostgreSQL clusters commonly select the same default database.
+	// A cluster identifier can prove them distinct; an unavailable identifier
+	// cannot, so keep the conservative refusal in that case. Replicas and
+	// physical copies retain the identifier and remain protected.
+	leftCluster, leftOK := postgresClusterIdentity(ctx, left)
+	rightCluster, rightOK := postgresClusterIdentity(ctx, right)
+	if leftOK && rightOK && leftCluster != rightCluster {
+		return false, nil
+	}
+	return true, nil
+}
+
+func postgresClusterIdentity(ctx context.Context, conn *dbschema.DatabaseConnection) (string, bool) {
+	var identity sql.NullString
+	if err := conn.QueryRowContext(ctx, "SELECT system_identifier::text FROM pg_control_system()").Scan(&identity); err != nil {
+		return "", false
+	}
+	return identity.String, identity.Valid && identity.String != ""
 }
 
 // Acquire locks the selected disposable database realm. A zero timeout waits

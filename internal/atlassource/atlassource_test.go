@@ -522,7 +522,7 @@ func TestSetEnsureDevIsolation_RejectsAliasedDatabase(t *testing.T) {
 		`--to database must differ from --dev-url because the dev database is reset during planning`)
 }
 
-func TestSetEnsureDevIsolation_RejectsPotentialHostAlias(t *testing.T) {
+func TestSetEnsureDevIsolation_DefersPostgresHostAliasToLiveCheck(t *testing.T) {
 	c := qt.New(t)
 	set, err := atlassource.ClassifySet(
 		"--to",
@@ -533,8 +533,8 @@ func TestSetEnsureDevIsolation_RejectsPotentialHostAlias(t *testing.T) {
 
 	err = set.EnsureDevIsolation(c.Context(), "postgres://dev.example/app")
 
-	c.Assert(err, qt.ErrorMatches,
-		`--to database must differ from --dev-url because the dev database is reset during planning`)
+	c.Assert(err, qt.IsNil)
+	c.Assert(set.DevProtected(), qt.HasLen, 1)
 }
 
 func TestSetEnsureDevIsolation_AllowsIndependentDatabase(t *testing.T) {

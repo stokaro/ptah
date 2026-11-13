@@ -323,7 +323,7 @@ func refuseDevURLAliases(ctx context.Context, devURL, targetURL string, desiredU
 		return nil
 	}
 	for _, target := range urlAliasCandidates(devURL, []string{targetURL}) {
-		sameTarget, err := atlasurl.MayAddressSameDatabase(devURL, target)
+		sameTarget, err := atlasurl.MayAddressSameDatabaseBeforeLiveCheck(devURL, target)
 		if err != nil {
 			return fmt.Errorf("compare --dev-url with target database: %w", err)
 		}
@@ -398,7 +398,7 @@ func sameDirectDatabaseURL(databaseURL, candidate string) (bool, error) {
 	if !isDirectDatabaseURL(candidate) {
 		return false, nil
 	}
-	return atlasurl.MayAddressSameDatabase(databaseURL, candidate)
+	return atlasurl.MayAddressSameDatabaseBeforeLiveCheck(databaseURL, candidate)
 }
 
 // isDirectDatabaseURL reports whether a desired-state value is a database URL
