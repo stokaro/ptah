@@ -271,7 +271,7 @@ func (r *Runner) runStage(ctx context.Context, state *State, run *stageRun) {
 		r.start(state, run, targetState)
 		workers.Go(func() {
 			result := r.Executor.Apply(ctx, target)
-			r.finishTarget(state, run, targetState, target, result)
+			r.finishTarget(ctx, state, run, targetState, target, result)
 			// Released after the outcome is recorded, so a failure that sets
 			// the stop flag is seen before the slot lets another target in.
 			<-slots
@@ -323,9 +323,10 @@ func (r *Runner) start(state *State, run *stageRun, target *TargetState) {
 	})
 }
 
-func (r *Runner) finishTarget(state *State, run *stageRun, targetState *TargetState, target Target, result Result) {
+func (r *Runner) finishTarget(ctx context.Context, state *State, run *stageRun, targetState *TargetState, target Target, result Result) {
 	r.update(state, func() Event {
 		recordResult(targetState, target, result)
+		interrupted(ctx, targetState)
 		finished := r.now()
 		targetState.FinishedAt = &finished
 		if run.stage.OnFailure == FailureStop && targetState.Status.Failure() {
@@ -334,6 +335,26 @@ func (r *Runner) finishTarget(state *State, run *stageRun, targetState *TargetSt
 		run.state.Succeeded = countSuccesses(run.state)
 		return Event{Kind: EventTargetFinished, Stage: cloneStage(run.state), Target: *targetState}
 	})
+}
+
+// interrupted records a target that ended in failure after the rollout was
+// interrupted as unknown. The interrupt reaches the target's own run, so its
+// failure may be the interrupt's rather than the migration's: a pre-flight
+// hook killed by the signal reports failed exactly as one that refused. A
+// recorded failure waits for a resume that retries failed targets, which would
+// leave a plain resume unable to continue what an interrupt stopped. Unknown
+// sends the target to its revision table instead, where a dirty row still
+// stops it and a clean table with pending migrations runs again.
+func interrupted(ctx context.Context, target *TargetState) {
+	if ctx.Err() == nil || (target.Status != TargetFailed && target.Status != TargetPartial) {
+		return
+	}
+	note := fmt.Sprintf("the rollout was interrupted while the target ran, so its %s outcome may be the interrupt's; "+
+		"a resumed rollout reads the revision table", target.Status)
+	if target.Note != "" {
+		note += ": " + target.Note
+	}
+	target.Status, target.Note = TargetUnknown, note
 }
 
 // closeStage decides a stage whose every member has an outcome. A stage an

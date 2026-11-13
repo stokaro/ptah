@@ -295,6 +295,33 @@ func TestRun_InterruptStopsStartingTargets(t *testing.T) {
 	c.Assert(stageStatuses(state)["wave-2"], qt.Equals, migrationrollout.StageNotStarted)
 }
 
+// A target that fails once the rollout is interrupted is recorded as unknown,
+// since the interrupt reaches its run too, and a plain resume continues it
+// from its revision table rather than waiting for --retry-failed.
+func TestRun_FailureAfterAnInterruptIsUnknown(t *testing.T) {
+	c := qt.New(t)
+	plan := mustPlan(c, replaceOnce(c, canaryAndWavesDefinition, "concurrency: 2", "concurrency: 1"), nil)
+	state := newState(plan)
+	ctx, cancel := context.WithCancel(context.Background())
+	c.Cleanup(cancel)
+	interrupting := &fakeExecutor{
+		interruptAt: map[string]context.CancelFunc{"t1": cancel},
+		results:     map[string]migrationrollout.Result{"t1": failed("pre-flight custom command hook failed: signal: killed")},
+	}
+
+	runErr := (&migrationrollout.Runner{Executor: interrupting}).Run(ctx, plan, state)
+	t1 := targetState(c, state, "t1")
+	resuming := &fakeExecutor{inspections: map[string]inspection{"canary": cleanAt("2"), "t1": cleanPending()}}
+	resumeErr := (&migrationrollout.Runner{Executor: resuming}).Resume(context.Background(), plan, state, migrationrollout.ResumeOptions{})
+
+	c.Assert(runErr, qt.ErrorIs, context.Canceled)
+	c.Assert(t1.Status, qt.Equals, migrationrollout.TargetUnknown)
+	c.Assert(t1.Note, qt.Matches, `the rollout was interrupted while the target ran, so its failed outcome may be the interrupt's; .*`)
+	c.Assert(resumeErr, qt.IsNil)
+	c.Assert(sortedNames(resuming.appliedTargets()), qt.DeepEquals, []string{"t1", "t2", "t3", "t4", "t5"})
+	c.Assert(state.Status, qt.Equals, migrationrollout.RunSucceeded)
+}
+
 // A state that cannot be saved starts nothing further: a run whose outcomes
 // cannot be recorded is not one to continue.
 func TestRun_SaveFailureHalts(t *testing.T) {
