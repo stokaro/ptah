@@ -60,8 +60,10 @@ such a character raw is refused, and the error says so.
 Ptah never repeats a password. Output, errors and reports show an address with
 its password as `***` and the value of a secret parameter, such as `sslpassword`,
 `authToken` or `TOKEN`, as `redacted`, in every form an engine takes: a URL, a
-Go-driver DSN with or without a scheme, and a keyword, ADO or ODBC string. The
-rest of the address stays, so the line still says which database it means.
+Go-driver DSN with or without a scheme, and a keyword, ADO or ODBC string. A
+secret-named run-time parameter that PostgreSQL's `options` setting passes,
+such as `-c app.jwt_secret=...`, is shown as `redacted` too. The rest of the
+address stays, so the line still says which database it means.
 
 ## The four database roles
 

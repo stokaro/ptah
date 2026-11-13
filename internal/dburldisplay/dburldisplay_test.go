@@ -743,6 +743,13 @@ var secretSettings = []struct {
 	{name: "a DSN's parameter", address: "mysql://app@tcp(db.internal:3306)/shop?password=VALUE", keeps: "tcp(db.internal:3306)/shop"},
 	{name: "libpq keyword", address: "host=db.internal password=VALUE dbname=shop", keeps: "host=db.internal"},
 	{name: "libpq sslpassword", address: "host=db.internal sslpassword=VALUE dbname=shop", keeps: "host=db.internal"},
+	{name: "a server option", address: "postgres://db.internal/shop?options=-c%20app.jwt_secret%3DVALUE", keeps: "db.internal/shop"},
+	{
+		name:    "a server option after one that is no secret",
+		address: "postgres://db.internal/shop?options=-c%20search_path%3Dapp%20--app.api_key%3DVALUE",
+		keeps:   "search_path%3Dapp",
+	},
+	{name: "a libpq server option", address: "host=db.internal options='-c app.jwt_secret=VALUE' dbname=shop", keeps: "host=db.internal"},
 	{name: "ADO password", address: "server=db.internal;user id=app;password=VALUE;database=shop", keeps: "server=db.internal"},
 	{name: "ODBC pwd", address: "odbc:server=db.internal;uid=app;pwd={VALUE};database=shop", keeps: "server=db.internal"},
 }
@@ -778,6 +785,8 @@ func TestFormat_KeepsAParameterThatIsNoSecret(t *testing.T) {
 		{name: "a user", address: "clickhouse://db.internal/shop?username=app"},
 		{name: "a database", address: "sqlserver://db.internal?database=shop"},
 		{name: "parseTime", address: "mysql://app@tcp(db.internal:3306)/shop?parseTime=true"},
+		{name: "a server option", address: "postgres://db.internal/shop?options=-c+statement_timeout%3D5s"},
+		{name: "a libpq server option", address: "host=db.internal options='-c statement_timeout=5s' dbname=shop"},
 	}
 
 	for _, test := range tests {
@@ -976,6 +985,7 @@ func TestSecrets(t *testing.T) {
 		{name: "a parameter, escaped", address: "postgres://localhost/shop?password=a%40b", want: []string{"a@b"}},
 		{name: "two secrets, the longer first", address: "postgres://app:ab@localhost/shop?password=abcd", want: []string{"abcd", "ab"}},
 		{name: "an escaped password", address: "mysql+unix://app:p%2Fss@/tmp/m.sock", want: []string{"p/ss"}},
+		{name: "a server option", address: "postgres://localhost/shop?options=-c%20app.jwt_secret%3Dabc123", want: []string{"abc123"}},
 	}
 
 	for _, test := range tests {
