@@ -484,7 +484,7 @@ Against a database whose password the URL gets wrong, the plan reports:
 | `outcome` | `changes`, `no-changes`, `refused` or `failed` |
 | `plan_digest` | SHA-256 of the plan file, as `sha256:<hex>`: the bytes `--save` and `--output` write and `--dry-run` prints without `--json` |
 | `plan_path` | Where `--save` or `--output` wrote the file |
-| `plan` | The plan file itself, with each statement's `sql`, `severity` and `reason`, the plan-level `destructive` flag, and the `name` and fingerprints that identify it |
+| `plan` | The plan file itself, with each statement's `sql`, `severity`, `reason` and [`effects`](../../reference/statement-effects/), the plan-level `destructive` flag, and the `name` and fingerprints that identify it |
 | `undecided` | The declared objects the comparison could not check; see [Undecided objects](#undecided-objects) |
 | `command` | `schema plan` |
 | `refusal` | Why planning refused; see below |
@@ -510,15 +510,14 @@ pass them to `ptah schema apply --plan`, runs `ptah schema plan --output <path>
 
 Apply reports use contract version `4`, and plan reports contract version `3`.
 Native summaries describe captured operations without exposing provider
-payloads; they cannot be passed back as an executable plan. SQL and native
-entries share one ordered `units` list. Plan reports keep the saved SQL plan
-format.
+payloads; they cannot be passed back as an executable plan. Plan reports keep
+the saved SQL plan format.
 
 | Field | Meaning |
 | --- | --- |
 | `outcome` | How the run ended; see the next table |
 | `plan_name`, `plan_digest` | The `name` the `--plan` file records, and the SHA-256 of the bytes that were read. The file is read once, so with `--require-approval` these are also the bytes the signature was checked against |
-| `units` | The planned operations in order. Each entry has `sql` or a `native` summary with its kind, subject, severity, reason, and access assessment |
+| `units` | The planned operations in order. Each entry has `sql` or a `native` summary with its kind, subject, severity, reason, and access assessment, and [`effects`](../../reference/statement-effects/) where Ptah describes it |
 | `annotations` | Non-executable notes with `text` and a zero-based `before` position in `units`. A position equal to the unit count is a trailing note |
 | `undecided` | The declared objects the comparison could not check; see [Undecided objects](#undecided-objects). Absent with `--plan` |
 | `command` | `schema apply` |

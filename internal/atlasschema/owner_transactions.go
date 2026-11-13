@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
 	"ptah.run/dbschema"
+	"ptah.run/internal/planeffect"
 	"ptah.run/internal/rolepassword"
 	"ptah.run/internal/sqliterebuild"
 	"ptah.run/internal/txrequire"
@@ -148,12 +149,18 @@ func (p PlanFile) Execute(ctx context.Context, conn *dbschema.DatabaseConnection
 
 // captureRenderedUnits snapshots the same operation contract used by execution,
 // and the text form of its native units for display (see nativeTextForm).
-func (c *applyComputation) captureRenderedUnits(ctx context.Context, service renderer.Service, info catalog.ServerInfo, plan planner.RenderedPlan) error {
+func (c *applyComputation) captureRenderedUnits(
+	ctx context.Context,
+	service renderer.Service,
+	info catalog.ServerInfo,
+	plan planner.RenderedPlan,
+	effects planeffect.Target,
+) error {
 	text, err := nativeTextForm(ctx, service, plan)
 	if err != nil {
 		return fmt.Errorf("generate schema apply operations: %w", err)
 	}
-	captured, err := captureApplyPlan(info, plan, text)
+	captured, err := captureApplyPlan(info, plan, text, &effects)
 	if err != nil {
 		return err
 	}

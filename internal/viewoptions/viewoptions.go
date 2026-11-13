@@ -16,6 +16,7 @@ package viewoptions
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -220,6 +221,74 @@ func LostSecurity(held, declared []string) []SecurityLoss {
 	}
 	slices.SortFunc(lost, func(a, b SecurityLoss) int { return strings.Compare(a.Name, b.Name) })
 	return lost
+}
+
+// SecurityOptions returns the names of the options that decide what a view's
+// reader can see, sorted: security_barrier and security_invoker.
+func SecurityOptions() []string {
+	names := slices.Collect(maps.Keys(securityEffects))
+	slices.Sort(names)
+	return names
+}
+
+// SecurityOn reports whether options turn the security option name on, as
+// PostgreSQL reads them. Both security options are off unless a view holds
+// them, so a list that does not hold name answers false. ok is false when name
+// is not a security option, when [Normalize] refuses the list, and when the
+// value is not one PostgreSQL reads as a boolean: the answer is then unknown,
+// which is not the same as off.
+func SecurityOn(options []string, name string) (on, ok bool) {
+	if _, security := securityEffects[name]; !security {
+		return false, false
+	}
+	values, err := byName(options)
+	if err != nil {
+		return false, false
+	}
+	value, held := values[name]
+	if !held {
+		return false, true
+	}
+	return Bool(value)
+}
+
+// Apply returns the options a view holds after ALTER VIEW ... SET sets the
+// options in set and ALTER VIEW ... RESET removes the ones reset names. A set
+// option takes the place of the held option of its name, or follows the held
+// ones when none has it. A reset name the view does not hold changes nothing,
+// as PostgreSQL accepts it. The result is in the form [Normalize] returns, and
+// nil when nothing is left. It refuses, wrapping [ErrInvalidOption], a held or
+// set list [Normalize] refuses.
+func Apply(held, set, reset []string) ([]string, error) {
+	result, err := Normalize(held)
+	if err != nil {
+		return nil, err
+	}
+	setting, err := Normalize(set)
+	if err != nil {
+		return nil, err
+	}
+	nameOf := func(option string) string {
+		name, _, _ := strings.Cut(option, "=")
+		return name
+	}
+	for _, option := range setting {
+		index := slices.IndexFunc(result, func(kept string) bool { return nameOf(kept) == nameOf(option) })
+		if index < 0 {
+			result = append(result, option)
+			continue
+		}
+		result[index] = option
+	}
+	removed := make(map[string]bool, len(reset))
+	for _, name := range reset {
+		removed[strings.ToLower(strings.TrimSpace(name))] = true
+	}
+	result = slices.DeleteFunc(result, func(option string) bool { return removed[nameOf(option)] })
+	if len(result) == 0 {
+		return nil, nil
+	}
+	return result, nil
 }
 
 // Describe spells options for a change message: sorted, joined by commas, and

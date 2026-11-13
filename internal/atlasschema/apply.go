@@ -33,6 +33,7 @@ import (
 	"ptah.run/internal/errorkind"
 	"ptah.run/internal/featureselect"
 	"ptah.run/internal/pgsystemschema"
+	"ptah.run/internal/planeffect"
 	"ptah.run/internal/planrefusal"
 	"ptah.run/internal/planstyle"
 	"ptah.run/internal/protectedtable"
@@ -189,6 +190,10 @@ type ApplyPlan struct {
 	// above a statement, and is empty for a unit nothing names. It is a display
 	// projection like texts, and only the compatibility surface reads it.
 	changes []string
+	// effects holds, position for position with units, what each unit does to
+	// the objects it changes; see [planeffect.Describe]. It is nil when no unit
+	// is described.
+	effects [][]planeffect.Effect
 }
 
 // ApplyRuntimeOptions configures Atlas schema apply planning and execution.
@@ -605,7 +610,13 @@ func computeApplyPlan(
 		if err != nil {
 			return applyComputation{}, fmt.Errorf("generate schema apply operations: %w", err)
 		}
-		if err := computation.captureRenderedUnits(ctx, opts.Runtime, info, plan); err != nil {
+		effects := planeffect.Target{
+			Current:       current,
+			DefaultSchema: defaultSchemaOf(info),
+			Semantics:     compared.EffectiveIdentifierSemantics(info.Dialect),
+			ViewOptions:   info.Capabilities.Has(capability.ViewOptions),
+		}
+		if err := computation.captureRenderedUnits(ctx, opts.Runtime, info, plan, effects); err != nil {
 			return applyComputation{}, err
 		}
 	}
@@ -1472,7 +1483,17 @@ func (c applyComputation) executionPlan() ApplyPlan {
 	plan.annotations = c.executionAnnotations()
 	plan.texts = c.executionTexts()
 	plan.changes = c.executionChanges()
+	plan.effects = c.executionEffects()
 	return plan
+}
+
+// executionEffects aligns the effects with executionUnits: a data statement
+// writes rows and is not described.
+func (c applyComputation) executionEffects() [][]planeffect.Effect {
+	if len(c.effects) == 0 {
+		return nil
+	}
+	return slices.Insert(slices.Clone(c.effects), c.dataIndex(), make([][]planeffect.Effect, len(c.dataStatements))...)
 }
 
 // executionChanges aligns the change names with executionUnits: a data statement
