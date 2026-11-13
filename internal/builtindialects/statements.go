@@ -33,6 +33,11 @@ func postgresStatementForms() descriptor.StatementForms {
 			{Kind: descriptor.DropKindType, IfExists: true, List: true, Behavior: true},
 		},
 		Operations: []string{postgresTruncate, savepointForm, releaseForm, postgresLock},
+		OwnerTo: []string{
+			descriptor.OwnerKindTable, descriptor.OwnerKindSchema, descriptor.OwnerKindType, descriptor.OwnerKindDomain,
+			descriptor.OwnerKindFunction, descriptor.OwnerKindProcedure, descriptor.OwnerKindSequence,
+			descriptor.OwnerKindView, descriptor.OwnerKindMaterializedView,
+		},
 	}
 }
 

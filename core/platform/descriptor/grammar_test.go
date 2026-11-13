@@ -78,6 +78,7 @@ func TestNewRegistry_Grammar_HappyPath(t *testing.T) {
 			Operations:       []string{"TRUNCATE [TABLE] <names>"},
 			UnreadStatements: []string{"REPLACE"},
 			RenameTable:      true,
+			OwnerTo:          []string{descriptor.OwnerKindSchema},
 		},
 		Routines: descriptor.RoutineGrammar{
 			Body:                   descriptor.RoutineQuotedBody,
@@ -140,6 +141,18 @@ func TestNewRegistry_Grammar_FailurePath(t *testing.T) {
 				g.Forms.Drops = []descriptor.Drop{{Kind: descriptor.DropKindView}, {Kind: descriptor.DropKindView}}
 			}),
 			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: DROP kind "VIEW" is written twice`,
+		},
+		{
+			name:    "an OWNER TO kind no parser reads",
+			dialect: with(func(g *descriptor.Grammar) { g.Forms.OwnerTo = []string{"COLLATION"} }),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: OWNER TO kind "COLLATION" is not one of .*`,
+		},
+		{
+			name: "an OWNER TO kind stated twice",
+			dialect: with(func(g *descriptor.Grammar) {
+				g.Forms.OwnerTo = []string{descriptor.OwnerKindSchema, descriptor.OwnerKindSchema}
+			}),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: OWNER TO kind "SCHEMA" is written twice`,
 		},
 		{
 			name:    "a statement form a parser could not read",
