@@ -3,6 +3,7 @@ package migraterollout_test
 import (
 	"bytes"
 	"encoding/json"
+	"io/fs"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -200,7 +201,11 @@ func TestRun_StateFileRules(t *testing.T) {
 
 	c.Assert(runErr, qt.ErrorMatches, `the state file .*state\.json already records a rollout; `+
 		`continue it with "ptah migrations rollout resume", or name a new --state-file to start another`)
-	c.Assert(resumeErr, qt.ErrorMatches, `read rollout state: .*absent\.json: no such file or directory`)
+	// The clause after the path is the operating system's wording, which
+	// differs on Windows, so the absence is asserted as fs.ErrNotExist and
+	// only the Ptah-authored prefix is matched.
+	c.Assert(resumeErr, qt.ErrorIs, fs.ErrNotExist)
+	c.Assert(resumeErr, qt.ErrorMatches, `(?s)read rollout state: .*absent\.json: .*`)
 	content, err := os.ReadFile(ws.state)
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(content), qt.Equals, "{}")
