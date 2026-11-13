@@ -64,7 +64,8 @@ definition before anything runs, and report every broken rule in one error:
 - a target sets exactly one of `url` and `url_env`, and the variable is set;
 - `config` and `expect_sequence` name files that exist;
 - two targets do not address one database endpoint with the same connection
-  options and the same `config`; credentials do not count;
+  options and the same `config`; credentials do not count, and two spellings
+  of one endpoint, such as `postgres://` and `postgresql://`, count as two;
 - a stage names only targets in the inventory, and names at least one;
 - every target belongs to exactly one stage;
 - `depends_on` names existing stages, never the stage itself, and forms no
@@ -164,9 +165,14 @@ is the same release.
 Each target's run inherits the rollout's environment and working directory. The
 rollout refuses to start while any of these is set, whatever its value:
 `PTAH_ALLOW_DIRTY`, `PTAH_SKIP_CHECKS`, `PTAH_ALLOW_DESTRUCTIVE`,
-`PTAH_EXPECT_SEQUENCE`, `PTAH_DRY_RUN`, `PTAH_LIMIT` and `PTAH_TO_VERSION`.
-Each would waive a target's guard or change what its run does for every target
-at once.
+`PTAH_EXPECT_SEQUENCE`, `PTAH_DRY_RUN`, `PTAH_LIMIT`, `PTAH_TO_VERSION` and
+`PTAH_EXEC_ORDER`. Each would waive a target's guard or change what its run
+does for every target at once.
+
+A target's run does not inherit the variables other targets' `url_env` name,
+nor `PTAH_DB_URL`. It receives its own URL as `PTAH_DB_URL`, and under its own
+`url_env` name when it has one, so a hook or config program it starts holds no
+other target's credentials.
 
 The rollout passes the database URL in the run's environment rather than on its
 command line, and passes `--migrations-dir`, `--json`, `--log-format=text` and

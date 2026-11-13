@@ -239,8 +239,8 @@ revision table with `ptah migrations status`:
 | Every migration of the release applied | Counts the target as succeeded and does not run it, whatever was recorded |
 | A dirty revision row | Records `failed`, `partial` or `unknown` as the row says, and does not run it |
 | Nothing readable | Records `unknown`, and does not run it |
-| Pending migrations after a recorded failure | Runs it again only with `--retry-failed` |
-| Pending migrations after any other status | Runs it again |
+| Pending migrations after a recorded `failed` or `partial` | Runs it again only with `--retry-failed` |
+| Pending migrations after any other status, `unknown` included | Runs it again |
 
 A run that is started again selects only the migrations its revision table does
 not record, under its migration lock, so no statement runs twice. A target the
@@ -257,7 +257,15 @@ as Ctrl-C asks `ptah migrations up`, and stops at a safe point. On Windows the
 rollout sends a run nothing: a Ctrl-C in the console reaches it directly, and
 otherwise it finishes. The outcomes of the runs in progress are recorded, the
 state file says `interrupted`, and the command exits with the signal status.
-`resume` continues from there.
+A run that fails once the interrupt has arrived is recorded as `unknown`, not
+`failed`, because the interrupt reaches the run too: a pre-migration hook it
+stops reports a failure. `resume` continues from there, and reads each such
+target back from its revision table.
+
+A second Ctrl-C, or a rollout killed outright, does not stop the target runs
+in progress: on Linux and macOS each runs in a process group of its own and
+finishes or stops at its own safe point unobserved. `resume` reads back what
+they left.
 
 Two rollouts on one state file at a time are refused: the first holds a lock
 file beside the state, `rollout-state.json.lock`. A process killed outright
@@ -284,9 +292,13 @@ set it for a single run, in the target's project config or with
 `PTAH_MIGRATION_LOCK_TIMEOUT`, and size `concurrency` to the number of
 simultaneous schema changes the server can carry.
 
-Two targets that name one database with the same connection options and config
-are refused as duplicates. A different `search_path`, or a config that names
-another revision table, makes them two targets.
+Two targets whose URLs name one database with the same connection options and
+config are refused as duplicates. The comparison reads the URL as written
+after cleaning its path and the case of its host, so two spellings of one
+database, such as `postgres://` and `postgresql://` or a default port written
+out, are not caught; their runs then take one migration lock in turn. A
+different `search_path`, or a config that names another revision table, makes
+them two targets.
 
 ## What a rollout passes to each target
 
@@ -294,13 +306,15 @@ A target's run starts with the rollout's environment and working directory, so
 `./ptah.yaml`, `PTAH_LOCK_TIMEOUT` and the other settings of
 `ptah migrations up` reach every target. The rollout sets the database URL,
 `--migrations-dir`, `--json` and text logs itself, and adds a target's `config`,
-`expect_sequence` and `allow_destructive` from the definition.
+`expect_sequence` and `allow_destructive` from the definition. The variables
+the other targets' `url_env` name are taken out of a run's environment, so a
+run, and any hook it starts, holds only its own target's URL.
 
 A variable that would waive a target's guard, or change what its run does, for
 every target at once refuses the rollout instead: `PTAH_ALLOW_DIRTY`,
 `PTAH_SKIP_CHECKS`, `PTAH_ALLOW_DESTRUCTIVE`, `PTAH_EXPECT_SEQUENCE`,
-`PTAH_DRY_RUN`, `PTAH_LIMIT` and `PTAH_TO_VERSION`. Unset it, and set the
-per-target key where one target needs it.
+`PTAH_DRY_RUN`, `PTAH_LIMIT`, `PTAH_TO_VERSION` and `PTAH_EXEC_ORDER`. Unset
+it, and set the per-target key where one target needs it.
 
 ## Coverage
 
