@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"ptah.run/core/lintext"
 	"ptah.run/internal/builtintest"
@@ -223,8 +224,9 @@ func TestTableRebuild_AtlasSQLiteReportsOnlyLostColumns(t *testing.T) {
 					(!strings.HasSuffix(site, ":DS101") && !strings.HasSuffix(site, ":DS102") &&
 						!strings.HasSuffix(site, ":BC101") && !strings.HasSuffix(site, ":BC103"))
 			})
-			got = append([]string{}, got...)
-			c.Assert(got, qt.DeepEquals, test.want)
+			// DeleteFunc leaves an empty slice where nothing is kept, and a row
+			// that wants no finding says so with nil.
+			c.Assert(got, qt.CmpEquals(cmpopts.EquateEmpty()), test.want)
 		})
 	}
 }
