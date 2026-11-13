@@ -331,11 +331,29 @@ func runAtlasMigrateLint(
 		); noticeErr != nil {
 			return cmdutil.Fail(cmd, noticeErr)
 		}
-		if formatOutput {
-			if err := writeAtlasMigrateLintReplayError(
-				cmd, opts, dir, report, integrity, revisionVersions, err,
-			); err != nil {
-				return cmdutil.Fail(cmd, err)
+		// A replay that stopped inside a migration is report content, the
+		// way the pinned community binary reports it: the one file and its
+		// error, on stdout, exit 1 and nothing on stderr. What the analysis
+		// found in the files the replay never reached is not reported, since
+		// that binary never analyzes them.
+		replayFailure := atlasreport.NewMigrateLintReplayFailure(
+			report.Analysis, revisionVersions, report.Dialect, err,
+		)
+		switch {
+		case formatOutput:
+			if writeErr := writeAtlasMigrateLintReplayError(
+				cmd, opts, dir, report, integrity, revisionVersions, replayFailure, err,
+			); writeErr != nil {
+				return cmdutil.Fail(cmd, writeErr)
+			}
+			return exitcode.New(1, err)
+		case replayFailure != nil:
+			if writeErr := atlasreport.WriteMigrateLintText(cmd.OutOrStdout(), atlasreport.MigrateLintOptions{
+				Analysis:         &report.Analysis,
+				RevisionVersions: revisionVersions,
+				ReplayFailure:    replayFailure,
+			}); writeErr != nil {
+				return cmdutil.Fail(cmd, writeErr)
 			}
 			return exitcode.New(1, err)
 		}
@@ -424,6 +442,7 @@ func writeAtlasMigrateLintReplayError(
 	report migrationlintreport.Report,
 	integrity atlasreport.MigrateLintIntegrity,
 	revisionVersions map[int64]string,
+	replayFailure *atlasreport.MigrateLintReplayFailure,
 	replayErr error,
 ) error {
 	driver, err := providerurl.Dialect(cmd.Context(), opts.devURL)
@@ -437,6 +456,7 @@ func writeAtlasMigrateLintReplayError(
 		Analysis:         &report.Analysis,
 		Integrity:        integrity,
 		Error:            replayErr.Error(),
+		ReplayFailure:    replayFailure,
 		RevisionVersions: revisionVersions,
 		Schema: atlasreport.MigrateLintSchema{
 			Current: report.SchemaCurrent,

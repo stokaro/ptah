@@ -1830,13 +1830,19 @@ func TestCompatCommand_MigrateLintFormatRendersReplayFailure(t *testing.T) {
 		"--dir", "file://" + dir,
 		"--dev-url", "sqlite://" + dbPath,
 		"--latest", "1",
-		"--format", "{{ len .Steps }}|{{ (index .Steps 1).Text }}|{{ (index .Steps 1).Error }}",
+		"--format", "{{ len .Steps }}|{{ (index .Steps 1).Text }}|{{ (index .Steps 1).Error }}" +
+			"{{ range .Files }}|{{ .Name }}|{{ .Error }}{{ end }}",
 	})
 
 	err := cmd.Execute()
 
+	// The report names the one file the replay stopped at, in the community
+	// binary's words, and quotes the statement as the file spells it; the
+	// error a caller receives keeps the whole chain.
+	const failure = "executing statement: SELECT * FROM missing_table;: SQL logic error: no such table: missing_table (1)"
 	c.Assert(err, qt.ErrorMatches, `(?s)error validating migration SQL on dev database: .*`)
-	c.Assert(out.String(), qt.Contains, "2|Failed loading changes on dev database|error validating migration SQL on dev database:")
+	c.Assert(out.String(), qt.Equals, "2|Failed loading changes on dev database|"+failure+
+		"|20260723120000_init.sql|"+failure)
 }
 
 func TestCompatCommand_MigrateLintFormatReportsInvalidAtlasSum(t *testing.T) {

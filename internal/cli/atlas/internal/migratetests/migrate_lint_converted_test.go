@@ -8,6 +8,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/cli/atlas/internal/atlastest"
+	"ptah.run/internal/cli/internal/exitcode"
 )
 
 // These tests pin stokaro/ptah#1013 section 1 on `ptah-compat migrate lint`: a
@@ -152,30 +153,41 @@ func TestCompatMigrateLint_FlywayReportUsesExactSourceTokens(t *testing.T) {
 	c.Assert(stdout, qt.Contains, "-- analyzing version 2")
 }
 
+// TestCompatMigrateLint_FlywayReplayFailureUsesExactSourceToken pins that a
+// failed replay of a converted Flyway directory never shows the key the
+// conversion orders by. The report names the version by its source token in
+// its header, the step carries the community binary's words, and the error a
+// caller receives names the migration by the same token.
 func TestCompatMigrateLint_FlywayReplayFailureUsesExactSourceToken(t *testing.T) {
 	t.Parallel()
 	c := qt.New(t)
 	dir := writeHashedFlywayDir(c, []setFlywayMigration{
 		{name: "V1.5__broken.sql", body: "INSERT INTO missing_lint_table VALUES (1);\n"},
 	})
+	const failure = "executing statement: INSERT INTO missing_lint_table VALUES (1);: " +
+		"SQL logic error: no such table: missing_lint_table (1)"
 
 	stdout, stderr, err := runLint(c, dir, []string{"--dir-format", "flyway"}, "1")
-	c.Assert(err, qt.IsNotNil)
-	c.Assert(stdout+stderr+errorText(err), qt.Contains, "replay migration 1.5")
-	c.Assert(stdout+stderr+errorText(err), qt.Not(qt.Contains), "4611686018427471935")
-	c.Assert(stdout+stderr+errorText(err), qt.Not(qt.Contains), "461168")
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+	c.Assert(err, qt.ErrorMatches, `(?s).*replay migration 1\.5 on dev database: .*`)
+	c.Assert(stdout, qt.Contains, "Analyzing changes until version 1.5 (1 migration in total):\n\n  Error: "+failure+"\n")
+	c.Assert(stderr, qt.Equals, "")
+	c.Assert(stdout+errorText(err), qt.Not(qt.Contains), "461168")
 
 	stdout, stderr, err = runLint(c, dir, []string{
 		"--dir-format", "flyway",
 		"--format", `{{ range .Steps }}{{ .Error }}{{ end }}`,
 	}, "1")
-	c.Assert(err, qt.IsNotNil)
-	c.Assert(stdout, qt.Contains, "replay migration 1.5")
-	c.Assert(stdout, qt.Not(qt.Contains), "4611686018427471935")
-	c.Assert(stdout, qt.Not(qt.Contains), "461168")
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+	c.Assert(err, qt.ErrorMatches, `(?s).*replay migration 1\.5 on dev database: .*`)
+	c.Assert(stdout, qt.Equals, failure)
 	c.Assert(stderr, qt.Equals, "")
 }
 
+// TestCompatMigrateLint_FlywayReplayFailureNamesExactEmptySourceToken pins
+// the repeatable's token, which is the empty string. The report's header has
+// no version to name, as the community binary's has none, and the error a
+// caller receives quotes the token rather than printing a blank.
 func TestCompatMigrateLint_FlywayReplayFailureNamesExactEmptySourceToken(t *testing.T) {
 	t.Parallel()
 	c := qt.New(t)
@@ -185,17 +197,19 @@ func TestCompatMigrateLint_FlywayReplayFailureNamesExactEmptySourceToken(t *test
 	}})
 
 	stdout, stderr, err := runLint(c, dir, []string{"--dir-format", "flyway"}, "1")
-	c.Assert(err, qt.IsNotNil)
-	c.Assert(stdout+stderr+errorText(err), qt.Contains, `replay migration "" on dev database`)
-	c.Assert(stdout+stderr+errorText(err), qt.Not(qt.Contains), "replay migration  on dev database")
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+	c.Assert(err, qt.ErrorMatches, `(?s).*replay migration "" on dev database: .*`)
+	c.Assert(stdout, qt.Contains, "Analyzing changes (1 migration in total):\n\n  Error: executing statement: ")
+	c.Assert(stderr, qt.Equals, "")
 
 	stdout, stderr, err = runLint(c, dir, []string{
 		"--dir-format", "flyway",
 		"--format", `{{ range .Steps }}{{ .Error }}{{ end }}`,
 	}, "1")
-	c.Assert(err, qt.IsNotNil)
-	c.Assert(stdout, qt.Contains, `replay migration "" on dev database`)
-	c.Assert(stdout, qt.Not(qt.Contains), "replay migration  on dev database")
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+	c.Assert(err, qt.ErrorMatches, `(?s).*replay migration "" on dev database: .*`)
+	c.Assert(stdout, qt.Equals, "executing statement: INSERT INTO missing_empty_lint_table VALUES (1);: "+
+		"SQL logic error: no such table: missing_empty_lint_table (1)")
 	c.Assert(stderr, qt.Equals, "")
 }
 

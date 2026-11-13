@@ -26,7 +26,8 @@ const lintWrapWidth = 88
 // WriteMigrateLintText renders the measured Atlas-compatible migration-analysis
 // text report. The native `ptah migrations lint` command uses its own report
 // renderer and retains Ptah's more detailed diagnostic prose. The report is
-// written even when findings fail; the caller is responsible for the exit code.
+// written even when findings fail, and in place of the analysis when
+// opts.ReplayFailure is set; the caller is responsible for the exit code.
 func WriteMigrateLintText(w io.Writer, opts MigrateLintOptions) error {
 	return writeMigrateLintText(w, opts, time.Now)
 }
@@ -38,6 +39,9 @@ func WriteMigrateLintText(w io.Writer, opts MigrateLintOptions) error {
 func writeMigrateLintText(w io.Writer, opts MigrateLintOptions, now func() time.Time) error {
 	if opts.Analysis == nil {
 		return fmt.Errorf("migration lint analysis is required")
+	}
+	if opts.ReplayFailure != nil {
+		return writeMigrateLintTextReplayFailure(w, *opts.Analysis, opts.RevisionVersions, *opts.ReplayFailure, now)
 	}
 	model := buildMigrateLintText(*opts.Analysis, opts.RevisionVersions)
 	if model.analyzedCount == 0 {

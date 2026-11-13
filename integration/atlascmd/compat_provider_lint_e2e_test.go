@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -183,9 +184,9 @@ func TestCompatMigrateLintReplaysOnTheProvidersDevDatabase(t *testing.T) {
 
 // TestCompatMigrateLintReplayFailsOnTheProvidersDevDatabase_FailurePath holds
 // the two refusals of a replay on a provider's dev database: a statement the
-// dev database refuses fails the lint in the replay, and a dev database the
-// provider lists an object in is refused before anything runs and keeps the
-// object.
+// dev database refuses fails the lint in the replay and is reported as the
+// error of the file it belongs to, and a dev database the provider lists an
+// object in is refused before anything runs and keeps the object.
 func TestCompatMigrateLintReplayFailsOnTheProvidersDevDatabase_FailurePath(t *testing.T) {
 	t.Run("a statement the dev database refuses", func(t *testing.T) {
 		c := qt.New(t)
@@ -195,9 +196,15 @@ func TestCompatMigrateLintReplayFailsOnTheProvidersDevDatabase_FailurePath(t *te
 		out, stderr, code := f.run(f.withManifest(), "migrate", "lint", "--dir", f.migrationsURL, "--dev-url", f.fixtureURL("dev.db"), "--latest", "1")
 
 		c.Assert(code, qt.Equals, 1, qt.Commentf("%s", stderr))
-		c.Assert(out, qt.Equals, "")
-		c.Assert(stderr, qt.Contains, "Error: error validating migration SQL on dev database: replay migration 20240102000000 on dev database: ")
-		c.Assert(stderr, qt.Contains, "\nSQL: DROP TABLE \"gadgets\"\n")
+		c.Assert(stderr, qt.Equals, "")
+		c.Assert(out, qt.Matches, regexp.QuoteMeta(
+			"Analyzing changes from version 20240101000000 to 20240102000000 (1 migration in total):\n"+
+				"\n"+
+				"  Error: executing statement: DROP TABLE \"gadgets\";: "+
+				"operation outcome is unknown: provider execution: UNKNOWN (0 units confirmed applied)\n"+
+				"\n"+
+				"  -------------------------\n"+
+				"  -- ")+`[^\n]+`+regexp.QuoteMeta("\n  -- 1 version with errors\n"))
 		c.Assert(sqliteTables(c, filepath.Join(f.dir, "dev.db")), qt.HasLen, 0)
 		f.assertStopped(c)
 	})

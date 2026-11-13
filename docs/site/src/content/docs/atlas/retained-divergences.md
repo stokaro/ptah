@@ -145,6 +145,7 @@ own measurement conditions.
 | [A YDB database URL](#a-ydb-database-url) | serves it through the YDB provider in the default profile, and refuses it in the binary's words under `PTAH_ATLAS_STRICT_COMPAT=1` | has no YDB driver: `sql/sqlclient: unknown driver "ydb"` |
 | [A realm beside one database on a dev server](#a-realm-beside-one-database-on-a-dev-server) | refuses the pair on `schema diff`, with the binary's own `schema apply` sentence for it | plans databases the one-database side never read |
 | [A golang-migrate file that runs its own transaction](#a-golang-migrate-file-that-runs-its-own-transaction) | runs it as golang-migrate does, outside the migrator's transaction, and exits `0` | nests it in a transaction of its own and exits `1` with `pq: unexpected transaction status idle` |
+| [A statement the bundled SQLite refuses](#a-statement-the-bundled-sqlite-refuses) | replays on the SQLite it bundles, reports the refusal as a replay error of the file, and exits `1` | replays on an older SQLite that accepts the statement, and lints the selection |
 
 ## A `--config` selection naming more than one file
 
@@ -1215,6 +1216,32 @@ binaries; [Transactions in a golang-migrate directory](../migrate-commands/#tran
 has the rules.
 
 **Evidence.** [`stokaro/ptah#4962`](https://github.com/stokaro/ptah/issues/4962)
+
+## A statement the bundled SQLite refuses
+
+**Type.** Deliberate divergence
+
+**Current boundary.** `ptah-compat migrate lint` replays a SQLite directory on
+the SQLite Ptah bundles. SQLite 3.54 refuses to rename a column to `oid`,
+`rowid` or `_rowid_`, with `cannot rename to rowid alias`, and the SQLite in the
+pinned community binary v1.3.0, 3.49.1, renames it. The binary's own fixture
+`cli-migrate-lint-project.txtar` has such a rename in its base. Measured on
+2026-11-13 with that fixture's directory and project file, each exit status read
+from an unpiped invocation:
+
+| Run | Binary | `ptah-compat` |
+| --- | --- | --- |
+| `migrate lint --env log_name` | prints `3.sql`, exit `0` | prints `1.sql`, exit `1` |
+| `migrate lint --env log_count` | prints `2`, exit `0` | prints `1`, exit `1` |
+| `migrate lint --latest 1` | analyzes version `3` and reports its `DROP TABLE`, exit `1` | reports `Error: executing statement: SQL logic error: cannot rename to rowid alias: oid (1)`, exit `1` |
+| `migrate apply` on a new database | applies the three migrations, exit `0` | refuses the rename in migration `1`, exit `1` |
+
+Ptah reports the refusal in the binary's shape for a replay error rather than
+skipping the statement or emulating the older engine. The refusal is SQLite's
+own, and the apply refuses the same statement on the same engine, so a lint that
+accepted it would pass a directory Ptah cannot apply.
+
+**Evidence.** `integration/atlas_migrate_lint_replay_failure_e2e_test.go`
 
 ## Not on this page
 

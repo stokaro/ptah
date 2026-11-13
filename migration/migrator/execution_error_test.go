@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
 )
 
@@ -87,4 +89,52 @@ func countStatementLines(rendered string) int {
 		}
 	}
 	return count
+}
+
+// TestMigrationExecutionError_SentSeparatesAnAnswerFromARefusal pins what Sent
+// tells apart: a statement the executor ran and that failed there, and a
+// statement a validator refused before anything ran it. Both name the same
+// statement, so only Sent says whether the error is an answer.
+func TestMigrationExecutionError_SentSeparatesAnAnswerFromARefusal(t *testing.T) {
+	const statement = "ATTACH DATABASE 'other.db' AS aux"
+	cause := errors.New("refused")
+
+	tests := []struct {
+		name     string
+		option   migrator.FSProviderOption
+		wantSent bool
+	}{
+		{
+			name:     "the executor that runs the statement failed it",
+			option:   migrator.WithStatementInterceptor(&recordingInterceptor{err: cause}),
+			wantSent: true,
+		},
+		{
+			name:     "a validator refused it before it ran",
+			option:   migrator.WithStatementValidator(&statementValidatorRecorder{reject: statement, err: cause}),
+			wantSent: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			provider, err := migrator.NewFSMigrationProvider(
+				fstest.MapFS{"1_attach.sql": {Data: []byte(statement + ";\n")}},
+				migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
+				test.option,
+			)
+			c.Assert(err, qt.IsNil)
+			migrations := provider.Migrations()
+			c.Assert(migrations, qt.HasLen, 1)
+
+			err = migrations[0].Up(t.Context(), nil)
+
+			c.Assert(err, qt.ErrorIs, cause)
+			execErr, ok := errors.AsType[*migrator.MigrationExecutionError](err)
+			c.Assert(ok, qt.IsTrue)
+			c.Assert(execErr.Statement, qt.Equals, statement)
+			c.Assert(execErr.Sent(), qt.Equals, test.wantSent)
+		})
+	}
 }

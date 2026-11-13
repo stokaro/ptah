@@ -1379,6 +1379,15 @@ func (e *MigrationExecutionError) Unwrap() error {
 	return e.Err
 }
 
+// Sent reports whether the statement reached the database, or the executor
+// that runs it there, and failed. A refusal raised before any statement ran,
+// such as a statement validator's or the transaction preflight's, names a
+// statement too and reports false, so Err is then a refusal the database never
+// saw rather than an answer it gave.
+func (e *MigrationExecutionError) Sent() bool {
+	return e.sent
+}
+
 // StatementObservationError reports a post-execution observer failure. The
 // statement in Event was applied before the observer returned Err.
 type StatementObservationError struct {
