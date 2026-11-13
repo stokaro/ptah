@@ -284,6 +284,27 @@ func TestDescribe_Undescribed(t *testing.T) {
 			},
 			units: []int{0, 1},
 		},
+		// The description reads the Cascade flag of any node rather than a list
+		// of node types, so the drops below, which no list named, also leave the
+		// view in a state it cannot report.
+		{
+			name:   "a replace after a sequence drop that cascades",
+			target: target(invoker),
+			nodes:  []ast.Node{&ast.DropSequenceNode{Name: "orders_seq", Cascade: true}, replace},
+			units:  []int{0, 1},
+		},
+		{
+			name:   "a replace after an index drop that cascades",
+			target: target(invoker),
+			nodes:  []ast.Node{&ast.DropIndexNode{Name: "orders_total_idx", Cascade: true}, replace},
+			units:  []int{0, 1},
+		},
+		{
+			name:   "a replace after a trigger drop that cascades",
+			target: target(invoker),
+			nodes:  []ast.Node{&ast.DropTriggerNode{Name: "orders_audit", Table: "orders", Cascade: true}, replace},
+			units:  []int{0, 1},
+		},
 		{
 			name:   "a materialized view's storage parameters",
 			target: target(invoker),
