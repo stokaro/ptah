@@ -107,15 +107,15 @@ row for a migration decision.
 
 ## At a glance
 
-Across the 199 capabilities below:
+Across the 200 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 185 |
+| Ptah supports it fully | 186 |
 | Ptah supports it with a stated limitation | 3 |
 | Ptah does not implement it | 0 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 11 |
-| Ptah and Atlas CE both support it | 65 |
+| Ptah and Atlas CE both support it | 66 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 54 |
 | Ptah has it and neither Atlas edition does | 28 |
 | Atlas CE has it and Ptah does not, or only in part | 0 |
@@ -264,6 +264,7 @@ seven of them as open capabilities regardless.
 | --- | :-: | :-: | :-: | --- |
 | `migrate lint` requires `--latest` or `--git-base` | ✅ | ✅ | ✅ | Refused before the directory is read and before `--dev-url` is contacted. `PTAH_ATLAS_LINT_ALL_VERSIONS=1` restores linting the whole directory here; native `ptah migrations lint` needs no scope. |
 | `schema apply --skip-lint` | ✅ | ❌ | ✅ | With an atlas.hcl `lint` policy, the planned SQL is linted against the rules it names and an error-rated finding refuses the apply; `--skip-lint` applies anyway. No policy, no lint pass, as in CE. |
+| A `migrate lint` replay the dev database refuses | ✅ | ✅ | ✅ | Reported as CE reports it: the failing file alone, with the error, exit 1. The bundled SQLite refuses a column renamed to a rowid alias, which the older SQLite in CE accepts. |
 | Analyzers that need a dev-database schema diff | ✅ | ✅ | ✅ | Rules declare whether they read migration SQL or the replayed dev schema; the versions read come from that declaration, and a rule that asks and gets nothing says so on stderr. |
 | Apply-time destructive-change gate | ✅ | ❌ | ➖ | migrations up refuses destructive pending files; .ptah-lint.yaml disabled-rules reopens the gate and ptah.sum does not hash that file. |
 | Atlas Pro analyzer code coverage | ✅ | ➖ | ✅ | Measured against a reviewed snapshot of the analyzer page rather than the page itself; the generated lint-rules reference carries the verdict for every code in it. |

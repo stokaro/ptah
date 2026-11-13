@@ -855,6 +855,15 @@
     "evidence": "Measured 2026-08-08 against the pinned Atlas CE v1.3.0, each cell in its own directory with the exit status read on its own line after a redirect (stokaro/ptah#1241, the shape adjacent to item 7). `migrate lint --dir file://migrations --dev-url ...` with no `--latest` and no `--git-base` is CE 1 with `--latest or --git-base is required` and ptah-compat 0 before the check, on an empty directory and on one holding a hashed migration alike, and on `sqlite://file?mode=memory`, `postgres://...` and `mysql://...`. It is not only an exit code: against a MySQL 9.7 dev schema holding table `canary_l1241`, CE refuses before connecting and the table survives, ptah-compat exited 0 and DROPPED it; after the check the table survives there too. After: exit 1 with CE's wording byte-identically. Discriminating controls, all still passing: `--latest 1` on an empty directory stays 0 with zero bytes on both streams (the fix this must not undo), `--latest 1` on a populated directory still lints, `--git-base <ref>` reaches the Git resolution rather than the refusal, an `atlas.hcl` supplying `lint { latest = 1 }` still lints at exit 0 on both binaries, and `PTAH_ATLAS_LINT_ALL_VERSIONS=1` lints every version at exit 0. Ordering measured against CE on the same fixture: a scheme-less `--dir`, a missing `--dev-url` and an unknown `--dir-format` all answer before this refusal, while a broken `--format` template and a corrupt `atlas.sum` answer after it. Ptah now matches every one except one ordering-only divergence: a scheme-less `--dir` with no scope answers with this refusal rather than `missing scheme for dir url`; both exit 1."
   },
   {
+    "area": "Migration linting",
+    "feature": "A `migrate lint` replay the dev database refuses",
+    "ptah": "yes",
+    "atlas_oss": "yes",
+    "atlas_pro": "yes",
+    "note": "Reported as CE reports it: the failing file alone, with the error, exit 1. The bundled SQLite refuses a column renamed to a rowid alias, which the older SQLite in CE accepts.",
+    "evidence": "Measured 2026-11-13 against the pinned CE binary v1.3.0 on SQLite. `migrate lint --latest 1` over a base renaming a column the table lacks prints the header, `Error: executing statement: no such column: \"nope\"` and `1 version with errors` on stdout, nothing on stderr, exit 1; ptah-compat prints the same bytes except the driver message (`SQL logic error: no such column: \"nope\" (1)`) and the durations. A failing statement in a selected file is quoted with its terminator on both binaries, and `.Files` is exactly the failing file. On the binary's own fixture cli-migrate-lint-project.txtar, whose base renames a column to oid, CE prints 3.sql and 2 at exit 0 while ptah-compat prints 1.sql and 1 at exit 1: SQLite 3.54 refuses the rename and CE bundles 3.49.1. integration/atlas_migrate_lint_replay_failure_e2e_test.go; internal/atlasreport/migrate_lint_replay.go; docs/site/src/content/docs/atlas/retained-divergences.md#a-statement-the-bundled-sqlite-refuses (stokaro/ptah#5952)."
+  },
+  {
     "area": "Versioned migrations — revision state",
     "feature": "Set revision state to a version",
     "ptah": "yes",

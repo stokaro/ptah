@@ -1870,6 +1870,51 @@ per-object finding names its object in the native message, which is also what
 keeps each SARIF result's fingerprint distinct when several of them share a
 rule, a file, and a line.
 
+### A statement the dev database refuses
+
+The replay stops at the first statement the dev database refuses, and
+`ptah-compat migrate lint` reports the file that holds it the way the pinned
+binary reports a replay error: exit `1`, nothing on stderr, and a report about
+that file alone. The files after it were never replayed, so none of them is
+analyzed and no diagnostic or schema change is counted.
+
+```text
+Analyzing changes from version 1 to 2 (1 migration in total):
+
+  Error: executing statement: ALTER TABLE users RENAME COLUMN nope TO x;: SQL logic error: no such column: "nope" (1)
+
+  -------------------------
+  -- 41.25µs
+  -- 1 version with errors
+```
+
+A template sees the same failure. `.Files` holds one entry, the failing file,
+whose `.Error` is the text after `Error:`, and the `Replay Migration Files` step
+fails with `Failed loading changes on dev database`. A statement in a file the
+run selected is quoted as the file spells it, terminator included. A statement
+in the base, the files before the selection, is not quoted, as on the pinned
+binary. A statement the replay refuses before it reaches the database, such as
+an `ATTACH`, carries Ptah's reason in place of a database answer.
+
+The database's answer at the end of the error is the driver's message, so it
+differs from the pinned binary's wherever the two drivers word an error
+differently. On SQLite, Ptah's driver writes
+`SQL logic error: no such column: "nope" (1)` where the pinned binary's writes
+`no such column: "nope"`.
+
+On SQLite the dev database is the SQLite Ptah bundles, and a newer SQLite
+refuses some statements an older one accepts. SQLite 3.54 refuses to rename a
+column to `oid`, `rowid` or `_rowid_`; the SQLite in the pinned binary, 3.49.1,
+renames it. A directory holding such a rename lints on that binary, and here it
+fails the replay at the file with the rename. Ptah keeps the refusal rather
+than emulating the older engine: `ptah-compat migrate apply` runs on the same
+SQLite and refuses the same statement, so a lint that accepted it would pass a
+directory the apply cannot run. See
+[a statement the bundled SQLite refuses](../retained-divergences/#a-statement-the-bundled-sqlite-refuses).
+
+Native `ptah migrations lint` reports a replay failure as an error on stderr
+and exits `2`, with Ptah's own context around the driver's message.
+
 ### Transaction blocks in a golang-migrate directory
 
 `TX201` reports a `BEGIN` or `START TRANSACTION` in a migration that a

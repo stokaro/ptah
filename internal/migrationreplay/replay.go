@@ -396,7 +396,7 @@ func replayMigrations(
 			}
 		}
 		if err := migration.UpForReplay(ctx, conn); err != nil {
-			return fmt.Errorf("replay migration %s on dev database: %w", versionLabel, err)
+			return newMigrationError(migration, err)
 		}
 	}
 	if hooks.consume != nil {
@@ -413,6 +413,99 @@ func replayMigrationVersionLabel(version string) string {
 		return strconv.Quote(version)
 	}
 	return version
+}
+
+// MigrationError reports the migration a replay stopped at: a statement of it
+// failed on the dev database or was refused before it ran, or its body could
+// not be run at all. A failure before the first migration or after the last
+// one, such as a connection, a lock or a cleanup that failed, is not one.
+//
+// It is how a caller that reports a failed replay per file finds the file,
+// without reading the message, which is written for a person.
+type MigrationError struct {
+	// Version is the migration's version as the replayed directory orders it,
+	// and VersionKey its exact revision identity, as
+	// [migrator.Migration.RevisionVersion] spells it. A converted directory
+	// orders by a key of its own, so the two can differ.
+	Version    int64
+	VersionKey string
+	// Statement is the statement the dev database answered with an error. It
+	// is nil when the migration stopped at anything else: a statement refused
+	// before it ran, or a body that could not be prepared or committed.
+	Statement *FailedStatement
+	// Err is why the migration stopped.
+	Err error
+}
+
+// FailedStatement is a statement of a replayed migration that the dev database
+// answered with an error.
+type FailedStatement struct {
+	// SQL is the statement as it was sent, without its terminator.
+	SQL string
+	// Index is the statement's 1-based position among the statements of the
+	// migration body.
+	Index int
+	// Answer is what the database answered, without the context the migrator
+	// and the dialect writer add in front of it: for a built-in engine, the
+	// error its driver returned, so its message differs between two drivers of
+	// one engine. A wrapper that rewrote the driver's text, such as one that
+	// took a secret out of it, is kept, and so is its rewritten text.
+	Answer error
+}
+
+func newMigrationError(migration *migrator.Migration, err error) *MigrationError {
+	failure := &MigrationError{
+		Version:    migration.Version,
+		VersionKey: migration.RevisionVersion(),
+		Err:        err,
+	}
+	if statement, ok := errors.AsType[*migrator.MigrationExecutionError](err); ok && statement.Sent() {
+		failure.Statement = &FailedStatement{
+			SQL:    statement.Statement,
+			Index:  statement.StatementIndex,
+			Answer: answerOf(statement.Err),
+		}
+	}
+	return failure
+}
+
+// Error names the migration by its revision identity, quoted when that is
+// the empty string a Flyway repeatable records, so the label is never blank.
+func (e *MigrationError) Error() string {
+	return fmt.Sprintf("replay migration %s on dev database: %v", replayMigrationVersionLabel(e.VersionKey), e.Err)
+}
+
+func (e *MigrationError) Unwrap() error {
+	return e.Err
+}
+
+// answerOf follows err's chain down through the wrappers that only put context
+// in front of the error they wrap, to the error that answered.
+//
+// A wrapper is passed through when its message is the wrapped error's message
+// with words of its own before it, and possibly after it, or the same message
+// unchanged. That is how the migrator and every built-in dialect writer wrap a
+// driver error. The walk stops at any other shape, because then the wrapper's
+// own message is the one that may be shown:
+//
+//   - a wrapper whose message does not contain the wrapped error's, such as a
+//     redaction that took a secret out of the driver's text, or a provider's
+//     execution error, which unwraps to a sentinel that classifies it;
+//   - a wrapper whose message starts with the wrapped error's, which is how a
+//     sentinel is attached in front of the cause it classifies;
+//   - a branch, such as a join, which has no single error below it.
+func answerOf(err error) error {
+	for {
+		next := errors.Unwrap(err)
+		if next == nil {
+			return err
+		}
+		outer, inner := err.Error(), next.Error()
+		if outer != inner && (inner == "" || strings.Index(outer, inner) <= 0) {
+			return err
+		}
+		err = next
+	}
 }
 
 // captureReplaySessionState reads the session settings the engine's

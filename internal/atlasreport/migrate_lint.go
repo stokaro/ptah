@@ -23,6 +23,11 @@ type MigrateLintOptions struct {
 	Analysis  *migrationlint.Analysis
 	Integrity MigrateLintIntegrity
 	Error     string
+	// ReplayFailure is the file a failed dev-database replay stopped at, nil
+	// when the replay did not stop inside a migration. When set, the report
+	// carries that one file and the failed replay step in place of the
+	// analysis, and Error is not read.
+	ReplayFailure *MigrateLintReplayFailure
 	// RevisionVersions maps converted execution-order keys to exact source
 	// identities for the version labels in the text report.
 	RevisionVersions map[int64]string
@@ -142,6 +147,12 @@ func NewMigrateLint(opts MigrateLintOptions) (MigrateLint, error) {
 
 	if opts.Analysis == nil {
 		return MigrateLint{}, fmt.Errorf("migration lint analysis is required")
+	}
+	if failure := opts.ReplayFailure; failure != nil {
+		selected, total := migrateLintFiles(*opts.Analysis)
+		result.Steps = migrateLintSteps(selected, total, opts.Integrity, failure.Error)
+		result.Files = []MigrateLintFile{{Name: failure.File, Error: failure.Error}}
+		return result, nil
 	}
 	files, total := migrateLintFiles(*opts.Analysis)
 	files = attachMigrateLintFindings(files, opts.Analysis.Findings())

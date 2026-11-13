@@ -344,6 +344,16 @@ prints Ptah's compatibility report with per-version diagnostics, mapped rule
 IDs, and a summary. Diagnostic prose is Ptah-owned. The native `ptah migrations
 lint` output is unchanged.
 
+A `lint.log` or `format.migrate.lint` template also renders a replay that
+failed on the dev database. Its `.Files` then holds only the file the replay
+stopped at, with the error in `.Error`, and the command exits `1`, as the pinned
+community binary does. On SQLite the replay runs on the SQLite Ptah bundles,
+which refuses a column rename to `oid`, `rowid` or `_rowid_` that the pinned
+binary's older SQLite accepts; a template over such a directory lists the file
+with the rename. The
+[migrate lint reference](./site/src/content/docs/atlas/migrate-commands.md#a-statement-the-dev-database-refuses)
+has the report shape.
+
 `migration.tx_mode` accepts `file`, `all`, and `none`, matching
 `ptah-compat migrate apply --tx-mode`. A leading `-- atlas:txmode file` or
 `-- atlas:txmode none` header overrides global `file` or `none` for that file.
