@@ -144,3 +144,20 @@ func TestAppliedHistoryFailurePathRefusesAnAppliedRepeatable(t *testing.T) {
 	c.Assert(unreplayable.Reason, qt.Equals, migrator.UnreplayableRepeatable)
 	c.Assert(unreplayable.Version, qt.Equals, int64(2))
 }
+
+// A database bootstrapped from a checkpoint records only the checkpoint, so its
+// history is the checkpoint and what came after it, and the files before the
+// checkpoint are no part of it.
+func TestAppliedHistoryHappyPathStartsAtABootstrapCheckpoint(t *testing.T) {
+	c := qt.New(t)
+	files := atlasCheckpointDirFiles()
+	files["20260801100400_add_posts.sql"] = "CREATE TABLE posts (id INTEGER PRIMARY KEY);\n"
+	conn := newAtlasCheckpointConn(c)
+	mig := newAtlasFormatMigrator(c, conn, atlasCheckpointFS(c, files))
+	c.Assert(mig.MigrateUp(c.Context()), qt.IsNil)
+
+	history, err := mig.AppliedHistory(c.Context())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(history.Versions(), qt.DeepEquals, []int64{atlasCheckpointVersion, atlasCheckpointPostVersion})
+}

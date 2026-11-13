@@ -134,9 +134,10 @@ type DriftError struct {
 }
 
 func (e *DriftError) Error() string {
-	return fmt.Sprintf("the database schema differs from the one its %d applied migrations produce, in %d %s, "+
+	return fmt.Sprintf("the database schema differs from the schema its %s, in %d %s, "+
 		"so no pending migration was run; first: %s",
-		len(e.Check.Replayed), len(e.Check.Findings), plural(len(e.Check.Findings), "place", "places"), e.Check.Findings[0].Message)
+		appliedMigrations(len(e.Check.Replayed)), len(e.Check.Findings), plural(len(e.Check.Findings), "place", "places"),
+		e.Check.Findings[0].Message)
 }
 
 // DriftCheckUnavailableError is a drift check that could not decide whether
@@ -195,8 +196,7 @@ func reportDriftCheck(cmd *cobra.Command, emit cliobs.Emitter, drift *driftCheck
 	switch {
 	case check == nil:
 	case check.Outcome == migrator.DriftClean:
-		emit.Printf("Drift check: the database matches the schema its %d applied %s produce\n",
-			len(check.Replayed), plural(len(check.Replayed), "migration", "migrations"))
+		emit.Printf("Drift check: the database matches the schema its %s\n", appliedMigrations(len(check.Replayed)))
 	case check.Outcome == migrator.DriftDrifted:
 		writeDriftReport(cmd.ErrOrStderr(), *check)
 	}
@@ -312,13 +312,17 @@ func driftFindings(mismatches []shadow.Mismatch) []migrator.DriftFinding {
 // difference. The run returns its own exit status for drift, so this is the
 // diagnostic the root does not print.
 func writeDriftReport(out io.Writer, check migrator.DriftCheck) {
-	_, _ = fmt.Fprintf(out, "Drift check: the database differs from the schema its %d applied %s produce:\n",
-		len(check.Replayed), plural(len(check.Replayed), "migration", "migrations"))
+	_, _ = fmt.Fprintf(out, "Drift check: the database differs from the schema its %s:\n", appliedMigrations(len(check.Replayed)))
 	for _, finding := range check.Findings {
 		_, _ = fmt.Fprintf(out, "  - %s\n", finding.Message)
 	}
 	_, _ = fmt.Fprintln(out, "No pending migration was run. Bring the database back to its history, "+
 		"or record the change in a migration, then run again.")
+}
+
+// appliedMigrations is "N applied migrations produce", agreed in number.
+func appliedMigrations(count int) string {
+	return fmt.Sprintf("%d applied %s", count, plural(count, "migration produces", "migrations produce"))
 }
 
 func plural(count int, one, many string) string {

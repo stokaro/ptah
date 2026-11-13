@@ -14,6 +14,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/revisiontable"
+	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/shadow"
 )
@@ -254,4 +255,33 @@ func TestVerifyAppliedFailurePathCannotCompare(t *testing.T) {
 			c.Assert(sqliteTables(c, shadowDatabase), qt.DeepEquals, test.left)
 		})
 	}
+}
+
+// A target bootstrapped from an Atlas checkpoint replays from that checkpoint,
+// and the files before it, which never ran there, are not compared.
+func TestVerifyAppliedHappyPathReplaysFromABootstrapCheckpoint(t *testing.T) {
+	c := qt.New(t)
+	fsys := fstest.MapFS{
+		"20250801000001_users.sql":      {Data: []byte("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL);\n")},
+		"20250801000002_email.sql":      {Data: []byte("ALTER TABLE users ADD COLUMN email TEXT NULL;\n")},
+		"20260801100335_checkpoint.sql": {Data: []byte("-- atlas:checkpoint\n\nCREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL, email TEXT NULL);\n")},
+		"20260801100400_posts.sql":      {Data: []byte("CREATE TABLE posts (id INTEGER PRIMARY KEY);\n")},
+	}
+	target, err := dbschema.ConnectToDatabase(c.Context(), "sqlite://"+filepath.Join(c.TempDir(), "target.db"))
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { dbschema.CloseAndWarn(target) })
+	mig, err := migrator.NewFSMigrator(target, fsys, migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas))
+	c.Assert(err, qt.IsNil)
+	c.Assert(mig.MigrateUp(c.Context()), qt.IsNil)
+	history, err := mig.AppliedHistory(c.Context())
+	c.Assert(err, qt.IsNil)
+	shadowDatabase := newShadow(c)
+
+	result, err := shadow.VerifyApplied(t.Context(), appliedOptions(target, history, shadowDatabase,
+		func(opts *shadow.AppliedVerifyOptions) { opts.MetadataTables = revisiontable.Configured("atlas", "") }))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result, qt.DeepEquals, shadow.AppliedResult{})
+	c.Assert(history.Versions(), qt.DeepEquals, []int64{20260801100335, 20260801100400})
+	c.Assert(sqliteTables(c, shadowDatabase), qt.HasLen, 0)
 }
