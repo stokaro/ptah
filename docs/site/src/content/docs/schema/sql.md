@@ -512,8 +512,8 @@ target refuses the statement by name.
 
 ## Start from a `pg_dump` file
 
-On PostgreSQL, a file written by `pg_dump --schema-only` reads as it is, with
-the ownership statements `pg_dump` writes after each object it dumps:
+On PostgreSQL, the reader takes the ownership statements `pg_dump --schema-only`
+writes after each object it dumps:
 
 ```sql
 ALTER SCHEMA app OWNER TO postgres;
@@ -531,8 +531,14 @@ of these kinds, such as `ALTER SCHEMA ... RENAME TO`, and a role missing after
 `OWNER TO` are refused by name. Every target other than PostgreSQL refuses the
 statement, because its server has no `OWNER TO`.
 
-`ALTER SEQUENCE ... OWNED BY` ties a sequence to a column. It is a different
-statement, and the reader refuses it.
+A dump holds other statements the reader still refuses, each by name, so a
+dump with one of them does not read as it is:
+
+- `ALTER SEQUENCE ... OWNED BY`, which `pg_dump` writes for the sequence of a
+  `serial` column;
+- `ALTER TABLE ... ALTER COLUMN ... ADD GENERATED ... AS IDENTITY`, which it
+  writes for an identity column;
+- `ALTER TABLE ... REPLICA IDENTITY`.
 
 ## API export metadata
 

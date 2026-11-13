@@ -1009,8 +1009,8 @@ partition, and `ALTER INDEX parent_index ATTACH PARTITION copy` for each copy:
 - The `ALTER ... OWNER TO` line after each object, which plans nothing. [Start from a
   `pg_dump` file](../../schema/sql/#start-from-a-pg_dump-file) has the kinds it takes.
 
-YugabyteDB reads a dump the same way, and `ALTER INDEX ... RENAME TO` as PostgreSQL
-does.
+YugabyteDB reads a dump the same way, except the `ALTER ... OWNER TO` lines, which
+it refuses, and reads `ALTER INDEX ... RENAME TO` as PostgreSQL does.
 
 HCL, DBML, YAML and Go annotations have no spelling for a partition. A source in one
 of them compares the table as it declares it and claims nothing about its parent or
