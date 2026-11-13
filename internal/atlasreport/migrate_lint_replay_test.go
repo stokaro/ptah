@@ -195,6 +195,37 @@ func TestNewMigrateLintReplayFailure_HappyPath(t *testing.T) {
 	}
 }
 
+// TestNewMigrateLintReplayFailure_BlamesTheUpFile pins that a down file, which
+// shares its version and revision key with the up file, is never the file a
+// replay failure blames: the replay runs only the up file.
+func TestNewMigrateLintReplayFailure_BlamesTheUpFile(t *testing.T) {
+	c := qt.New(t)
+	analysis, err := migrationlint.AnalyzeFS(c.Context(), builtintest.Runtime(), fstest.MapFS{
+		"0000000001_init.down.sql": {Data: []byte("DROP TABLE users;\n")},
+		"0000000001_init.up.sql":   {Data: []byte("CREATE TABLE users (id int);\n\nALTER TABLE users RENAME COLUMN nope TO x;\n")},
+	}, migrationlint.Options{
+		Compatibility: migrationlint.CompatibilityProfileAtlas,
+		DirFormat:     migrationfile.DirFormatPtah,
+		Dialect:       "sqlite",
+		Selection:     migrationlint.VersionSelection{Versions: []int64{1}, Restricted: true},
+	})
+	c.Assert(err, qt.IsNil)
+
+	got := atlasreport.NewMigrateLintReplayFailure(analysis, nil, "sqlite", lintReplayError(&migrationreplay.MigrationError{
+		Version:    1,
+		VersionKey: "1",
+		Statement: &migrationreplay.FailedStatement{
+			SQL:    "ALTER TABLE users RENAME COLUMN nope TO x",
+			Index:  2,
+			Answer: errors.New(replayAnswer),
+		},
+	}))
+
+	c.Assert(got, qt.IsNotNil)
+	c.Assert(got.File, qt.Equals, "0000000001_init.up.sql")
+	c.Assert(got.Error, qt.Equals, "executing statement: ALTER TABLE users RENAME COLUMN nope TO x;: "+replayAnswer)
+}
+
 // TestNewMigrateLintReplayFailure_FailurePath pins the replays that name no
 // file of the analysis: those keep the error a caller already reports, rather
 // than a report that blames a file.
