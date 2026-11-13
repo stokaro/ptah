@@ -49,4 +49,9 @@ func TestMigrateApplyRolePasswordErrorRedactedInRevisionLive(t *testing.T) {
 	c.Assert(applied, qt.Equals, 0)
 	c.Assert(failure, qt.Not(qt.Contains), password)
 	c.Assert(failure, qt.Equals, `ERROR: syntax error at or near "E'[secret]'" (SQLSTATE 42601)`)
+	var statement string
+	c.Assert(db.QueryRowContext(c.Context(),
+		"SELECT COALESCE(error_stmt, '') FROM atlas_schema_revisions.atlas_schema_revisions WHERE version = $1", "20240901000000",
+	).Scan(&statement), qt.IsNil)
+	c.Assert(statement, qt.Equals, "ALTER ROLE app SET PASSWORD $PTAH_SECRET_PASSWORD_APP;")
 }

@@ -552,10 +552,10 @@ Ptah-authored prefix, and no repetition of the statement, which the adjacent
 message, the column records the rewritten text: a role password the PostgreSQL
 writer took out of the server's message is recorded as `[secret]`, and a
 provider's failure is recorded with the outcome and reason the provider
-reported. `error_stmt` matches byte for byte, terminating
-semicolon included. A statement carrying bytes that are not valid UTF-8 is the
-exception: those bytes are recorded as `\xFF` escapes, because the revision
-table's text columns hold UTF-8 and the MySQL family refuses anything else.
+reported. `error_stmt` matches byte for byte, terminating semicolon included.
+A statement carrying bytes that are not valid UTF-8 is the exception: those
+bytes are recorded as `\xFF` escapes, because the revision table's text
+columns hold UTF-8 and the MySQL family refuses anything else.
 
 What is left is `modernc.org/sqlite`'s wording. Closing it would mean rewriting
 driver messages per driver and per dialect to match a different driver's
