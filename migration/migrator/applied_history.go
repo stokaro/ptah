@@ -27,6 +27,12 @@ func (h AppliedHistory) Versions() []int64 {
 	return migrationVersions(h.Migrations)
 }
 
+// VersionKeys lists the identities the revision table records the history's
+// migrations under, in the order of [AppliedHistory.Versions].
+func (h AppliedHistory) VersionKeys() []string {
+	return migrationVersionKeys(h.Migrations)
+}
+
 // Reasons an [UnreplayableHistoryError] gives.
 const (
 	// UnreplayableDirty is a revision that is not cleanly applied: a failed or
