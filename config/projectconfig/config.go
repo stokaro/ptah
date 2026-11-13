@@ -952,9 +952,10 @@ func appendDisabledMode(patterns []string, option ConfigBool, pattern string) []
 //
 // Diagnostic metadata survives the merge: the result's IgnoredConstructs and
 // DeclaredEnvs keep the entries of both inputs rather than letting the
-// override's list replace the base's. The exporter and migration-directory maps are copied
-// into fresh maps rather than shared, so one merged env instance cannot write
-// into a map the base and its sibling instances read (stokaro/ptah#1620).
+// override's list replace the base's. The exporter and migration-directory
+// maps are copied into fresh maps rather than shared, so one merged env
+// instance cannot write into a map the base and its sibling instances read
+// (stokaro/ptah#1620).
 func Merge(base, override Config) Config {
 	result := base
 	// Exporters are copied rather than shared, so an env instance cannot write

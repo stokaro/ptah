@@ -88,6 +88,16 @@ func TestNativeCommandsSelectNoEnvWithoutEnvFlag_FailurePath(t *testing.T) {
 			wantStderr: "error: database URL is required" + hint,
 		},
 		{
+			name:       "migrations log",
+			args:       []string{"migrations", "log"},
+			wantStderr: "error: database URL is required" + hint,
+		},
+		{
+			name:       "migrations set",
+			args:       []string{"migrations", "set", "--version", "1"},
+			wantStderr: "error: database URL is required" + hint,
+		},
+		{
 			name:       "migrations plan",
 			args:       []string{"migrations", "plan", "--schema-file", "schema.sql"},
 			wantStderr: "error: database URL is required" + hint,
@@ -111,6 +121,21 @@ func TestNativeCommandsSelectNoEnvWithoutEnvFlag_FailurePath(t *testing.T) {
 			name:       "schema compare",
 			args:       []string{"schema", "compare", "--schema-file", "schema.sql"},
 			wantStderr: "error: database URL is required" + hint,
+		},
+		{
+			name:       "schema serve",
+			args:       []string{"schema", "serve"},
+			wantStderr: "error: database URL is required" + hint,
+		},
+		{
+			name:       "schema drift",
+			args:       []string{"schema", "drift"},
+			wantStderr: "Error: database URL is required" + hint,
+		},
+		{
+			name:       "schema diff of two schema files",
+			args:       []string{"schema", "diff", "--from", "file://schema.sql", "--to", "file://schema.sql"},
+			wantStderr: "error: --dev-url is required for local schema file diffing" + hint,
 		},
 		{
 			name:       "schema inspect",
@@ -138,6 +163,38 @@ func TestNativeCommandsSelectNoEnvWithoutEnvFlag_FailurePath(t *testing.T) {
 
 			c.Assert(code, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
 			c.Assert(stderr, qt.Equals, test.wantStderr)
+			c.Assert(prodTables(c), qt.HasLen, 0)
+		})
+	}
+}
+
+// TestNativeCommandsNameTheEnvsForAMissingMigrationDirectory_FailurePath is the
+// same rule for the migration directory. The top-level url of ptah.yaml applies
+// without --env, so each command has its database and lacks only the directory
+// the env declares; the refusal names the env all the same, and prod.db holds
+// no table.
+func TestNativeCommandsNameTheEnvsForAMissingMigrationDirectory_FailurePath(t *testing.T) {
+	const want = `error: migrations directory is required: no --env given; ptah.yaml declares env "prod"` + "\n"
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "migrations up", args: []string{"migrations", "up"}},
+		{name: "migrations down", args: []string{"migrations", "down"}},
+		{name: "migrations status", args: []string{"migrations", "status"}},
+		{name: "migrations set", args: []string{"migrations", "set", "--version", "1"}},
+		{name: "migrations generate", args: []string{"migrations", "generate", "--schema-file", "schema.sql"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			t.Chdir(c.TempDir())
+			writeEnvProject(c, "ptah.yaml", "url: sqlite://prod.db\nenv:\n  prod:\n    migration:\n      dir: ./migrations\n")
+
+			stdout, stderr, code := runRoot(c, test.args...)
+
+			c.Assert(code, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+			c.Assert(stderr, qt.Equals, want)
 			c.Assert(prodTables(c), qt.HasLen, 0)
 		})
 	}

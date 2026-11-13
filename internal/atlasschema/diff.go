@@ -2,6 +2,7 @@ package atlasschema
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -379,6 +380,10 @@ func diffCapabilities(
 // opened, so one that cannot be opened within devVersionTimeout answers nil:
 // the comparison it would have informed runs as it does with no dev database,
 // and a declaration the default cannot plan is refused by name there.
+// ErrDevURLRequired is returned by a diff whose sources are all local files and
+// that has no dev database to load them into, so no source names the dialect.
+var ErrDevURLRequired = errors.New("--dev-url is required for local schema file diffing")
+
 func devServerCapabilities(ctx context.Context, dialect, devURL string, timeout time.Duration) capability.Capabilities {
 	devURL = strings.TrimSpace(devURL)
 	if devURL == "" {
@@ -1158,7 +1163,7 @@ func prepareDiffSources(ctx context.Context, opts DiffOptions) (preparedDiffSour
 		return preparedDiffSources{}, err
 	}
 	if dialect == "" {
-		return preparedDiffSources{}, fmt.Errorf("--dev-url is required for local schema file diffing")
+		return preparedDiffSources{}, ErrDevURLRequired
 	}
 	return preparedDiffSources{
 		from:        fromSet,
