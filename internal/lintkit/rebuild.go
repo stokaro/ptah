@@ -3,6 +3,8 @@ package lintkit
 import (
 	"slices"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"ptah.run/core/lintext"
 )
@@ -26,13 +28,28 @@ import (
 //
 // The shape is matched strictly, as consecutive statements: a write to t
 // between the copy and the drop would be lost, a copy with a WHERE, a join,
-// DISTINCT or anything after its FROM leaves rows behind, and a copy into a
-// table other than the one created just before it is not a rebuild. The
-// statements a YDB rebuild writes beside its steps are skipped, because each
-// writes no row and moves no table (see [rebuildAside]). A column
-// the copy leaves out is lost too, which the text alone cannot see: where the
-// old table's columns are known a copy that leaves one out is not a rebuild,
-// and DS101 reports the drop.
+// DISTINCT or anything after its FROM but an alias leaves rows behind, and a
+// copy into a table other than the one created just before it is not a
+// rebuild. The statements a YDB rebuild writes beside its steps are skipped,
+// because each writes no row and moves no table (see [rebuildAside]).
+//
+// A copy that keeps every row still loses a column whose values it does not
+// write into the column of the same name. The INSERT pairs its columns with
+// the SELECT list by position, so the item at each place has to carry the old
+// column the INSERT names there (see [tableCopy.carried]). NULL, a constant,
+// another column or an expression in that place loses every value of the
+// column. SQLite's planner writes each item as the column itself, or as
+// IFNULL(column, default) for a column it makes NOT NULL with a default, and
+// both carry it. SELECT * with no column list copies every column.
+//
+// Which columns the copy has to carry depends on the old table, which the
+// text alone does not show. Where its columns are known, a copy that loses
+// one, or leaves one out entirely, is not a rebuild, and DS101 reports the
+// drop. Where they are not known, any column the copy writes from something
+// other than itself may be one of them, so that copy is not a rebuild either;
+// a column it leaves out cannot be seen there. The YDB provider recognizes
+// the rebuilds its own plans write, whose items convert a column through CAST
+// and Unwrap, and a host reads its answer instead of this one.
 
 // RebuildSteps are the statements of a file that belong to a table rebuild.
 type RebuildSteps struct {
@@ -49,20 +66,37 @@ type RebuildSteps struct {
 // knows the table at all. Indexes arrive in increasing order.
 type Columns func(index int, table string) ([]string, bool)
 
-// Rebuilds finds the table rebuilds of a file's statements. columns, which may
-// be nil, says what the old table holds, so a copy that leaves a column out is
-// not taken for one.
+// Rebuilds finds the table rebuilds of a file's statements whose copy loses
+// no column. columns says what the old table holds; nil knows no table, and
+// a copy is then a rebuild only when it writes each column it names from
+// the old column of the same name.
 func Rebuilds(statements []lintext.Statement, columns Columns) RebuildSteps {
 	steps := RebuildSteps{Drops: make(map[int]bool), Renames: make(map[int]bool)}
 	for i := range statements {
-		if rebuild, ok := matchRebuild(statements, i, columns); ok {
-			steps.Drops[rebuild.drop] = true
-			for _, index := range rebuild.renames {
-				steps.Renames[index] = true
-			}
+		rebuild, copied, ok := matchRebuild(statements, i)
+		if !ok || copyLoses(i, copied, columns) {
+			continue
+		}
+		steps.Drops[rebuild.drop] = true
+		for _, index := range rebuild.renames {
+			steps.Renames[index] = true
 		}
 	}
 	return steps
+}
+
+// RebuildCandidates returns, in order, the DROP TABLE statements that end the
+// steps of a table rebuild, whatever its copy writes: the drops the old
+// table's columns decide, which [Rebuilds] keeps or reports.
+func RebuildCandidates(statements []lintext.Statement) []int {
+	var drops []int
+	for i := range statements {
+		if rebuild, _, ok := matchRebuild(statements, i); ok {
+			drops = append(drops, rebuild.drop)
+		}
+	}
+	slices.Sort(drops)
+	return drops
 }
 
 // RebuildChange describes a table replacement whose old columns are known.
@@ -73,29 +107,27 @@ type RebuildChange struct {
 }
 
 // RebuildChanges reports complete table replacements with known old columns.
-// The key is the DROP TABLE statement index. An unknown old table is omitted
-// because the copy alone cannot establish whether it loses a column.
+// The key is the DROP TABLE statement index. LostColumns are the old columns
+// whose values the copy does not write into the column of the same name, in
+// the order columns reports them. An unknown old table is omitted because the
+// copy alone cannot establish whether it loses a column.
 func RebuildChanges(statements []lintext.Statement, columns Columns) map[int]RebuildChange {
 	changes := make(map[int]RebuildChange)
+	if columns == nil {
+		return changes
+	}
 	for i := range statements {
-		match, ok := matchRebuild(statements, i, nil)
+		match, copied, ok := matchRebuild(statements, i)
 		if !ok {
 			continue
 		}
-		steps := rebuildSteps(statements, i)
-		copied, ok := tableCopyOf(&statements[steps[0]])
+		known, ok := columns(i, copied.from)
 		if !ok {
-			continue
-		}
-		if columns == nil {
-			continue
-		}
-		if _, known := columns(i, copied.from); !known {
 			continue
 		}
 		changes[match.drop] = RebuildChange{
 			Create:      i,
-			LostColumns: lostColumns(i, copied.from, copied, columns),
+			LostColumns: copied.lost(known),
 			Renames:     match.renames,
 		}
 	}
@@ -192,29 +224,27 @@ type rebuildMatch struct {
 	renames []int
 }
 
-// matchRebuild reports whether the statements from index on are a rebuild,
-// in either order.
-func matchRebuild(statements []lintext.Statement, index int, columns Columns) (rebuildMatch, bool) {
+// matchRebuild reports whether the statements from index on have the steps
+// of a rebuild, in either order, and returns its copy. Whether the copy loses
+// a column is the caller's question.
+func matchRebuild(statements []lintext.Statement, index int) (rebuildMatch, tableCopy, bool) {
 	scratch := CreatedTableRef(statements[index].Words)
 	if scratch == "" {
-		return rebuildMatch{}, false
+		return rebuildMatch{}, tableCopy{}, false
 	}
 	steps := rebuildSteps(statements, index)
 	if len(steps) < 3 {
-		return rebuildMatch{}, false
+		return rebuildMatch{}, tableCopy{}, false
 	}
 	copied, ok := tableCopyOf(&statements[steps[0]])
 	if !ok || !sameTableRef(copied.into, scratch) || sameTableRef(copied.from, scratch) {
-		return rebuildMatch{}, false
+		return rebuildMatch{}, tableCopy{}, false
 	}
-	old := copied.from
-	if len(lostColumns(index, old, copied, columns)) > 0 {
-		return rebuildMatch{}, false
+	match, ok := sqliteSwap(statements, steps[1:], scratch, copied.from)
+	if !ok {
+		match, ok = ydbSwap(statements, steps[1:], scratch, copied.from)
 	}
-	if match, ok := sqliteSwap(statements, steps[1:], scratch, old); ok {
-		return match, true
-	}
-	return ydbSwap(statements, steps[1:], scratch, old)
+	return match, copied, ok
 }
 
 // rebuildSteps are the indexes of the four statements after the one at
@@ -300,17 +330,24 @@ func rebuildAside(stmt *lintext.Statement) bool {
 // table.
 type tableCopy struct {
 	into, from string
+	// alias is the name the SELECT gives the copied table, folded; empty when
+	// it gives none.
+	alias string
 	// columns are the columns the INSERT names, folded; empty when it names
 	// none.
 	columns []string
+	// carries holds, for each item of the SELECT list, the column of the
+	// copied table, folded, whose every value the item writes, and "" for an
+	// item that writes anything else.
+	carries []string
 	// star reports a SELECT * with no column list, which copies every column.
 	star bool
 }
 
 // tableCopyOf reads a statement that copies every row of one table into
-// another: `INSERT INTO s [(columns)] SELECT ... FROM t`, with nothing after
-// the table, so no WHERE, join, grouping or limit leaves a row behind, and no
-// DISTINCT folds two rows into one.
+// another: `INSERT INTO s [(columns)] SELECT ... FROM t [[AS] alias]`, with
+// nothing after the table but its alias, so no WHERE, join, grouping or limit
+// leaves a row behind, and no DISTINCT folds two rows into one.
 func tableCopyOf(stmt *lintext.Statement) (tableCopy, bool) {
 	w := stmt.Words
 	if !HasWordPrefix(w, "INSERT", "INTO") {
@@ -330,7 +367,10 @@ func tableCopyOf(stmt *lintext.Statement) (tableCopy, bool) {
 	if !ok {
 		return tableCopy{}, false
 	}
-	copied.from = from
+	copied.from, copied.alias = from.table, from.alias
+	for _, item := range selectItems(w, j+1, from.at) {
+		copied.carries = append(copied.carries, copied.carried(stmt, item[0], item[1]))
+	}
 	return copied, true
 }
 
@@ -349,9 +389,16 @@ func copyColumns(w []string, j int) ([]string, int) {
 	return columns, j + 1
 }
 
+// copySource is the table a copy's SELECT reads, folded, the alias it gives
+// it, and where its FROM is.
+type copySource struct {
+	table, alias string
+	at           int
+}
+
 // copiedTable reads the table the SELECT from w[j] on reads: the one after
-// its FROM, outside any parentheses, with nothing after it.
-func copiedTable(stmt *lintext.Statement, j int) (string, bool) {
+// its FROM, outside any parentheses, with nothing after it but an alias.
+func copiedTable(stmt *lintext.Statement, j int) (copySource, bool) {
 	w := stmt.Words
 	depth := 0
 	for ; j < len(w); j++ {
@@ -362,10 +409,220 @@ func copiedTable(stmt *lintext.Statement, j int) (string, bool) {
 			depth--
 		case depth == 0 && w[j] == "FROM":
 			from, next := TableRefAt(w, stmt.SourceWords, j+1)
-			return from.Normalized, from.Normalized != "" && next == len(w)
+			alias, end := tableAlias(stmt, next)
+			return copySource{table: from.Normalized, alias: alias, at: j}, from.Normalized != "" && end == len(w)
 		}
 	}
-	return "", false
+	return copySource{}, false
+}
+
+// tableAlias reads the alias `[AS] name` at w[j], folded, and returns it and
+// the index past it, or no alias and j where there is none. ClickHouse's
+// FINAL is not an alias: it folds the rows a key holds twice into one.
+func tableAlias(stmt *lintext.Statement, j int) (string, int) {
+	w := stmt.Words
+	k := j
+	if k < len(w) && w[k] == "AS" {
+		k++
+	}
+	if k == j && k < len(w) && w[k] == "FINAL" {
+		return "", j
+	}
+	alias, next, ok := IdentifierAt(w, stmt.SourceWords, k)
+	if !ok {
+		return "", j
+	}
+	return alias.Normalized, next
+}
+
+// selectItems splits the SELECT list w[j:end] at its top-level commas, as
+// [start, end) index pairs.
+func selectItems(w []string, j, end int) [][2]int {
+	var items [][2]int
+	depth := 0
+	for k, start := j, j; k <= end; k++ {
+		switch {
+		case k == end || (depth == 0 && w[k] == ","):
+			items = append(items, [2]int{start, k})
+			start = k + 1
+		case w[k] == "(":
+			depth++
+		case w[k] == ")":
+			depth--
+		}
+	}
+	return items
+}
+
+// carried reads the item w[start:end] of the copy's SELECT list and returns
+// the column of the copied table, folded, whose every value it writes: the
+// column itself, bare or qualified by the table or its alias, or the column
+// passed through IFNULL or COALESCE, which replace a NULL and nothing else.
+// The item's own alias does not matter, since the INSERT pairs items with its
+// columns by position. Any other item returns "": NULL, a constant, an
+// expression, and a CAST too, which can turn a value it cannot convert into
+// another one.
+//
+// A name compares as the copy's column list compares with the old table's
+// columns, without its quotes and in one case. A table holding two columns
+// whose names differ only in case, which PostgreSQL allows, is read as
+// holding one.
+func (c tableCopy) carried(stmt *lintext.Statement, start, end int) string {
+	// The item's words alone, so that nothing read here runs into the next
+	// item or past the FROM.
+	item := stmt.Words[:end]
+	var column string
+	var next int
+	if start+1 < end && (item[start] == "IFNULL" || item[start] == "COALESCE") && item[start+1] == "(" {
+		column, next = c.firstArgument(item, stmt.SourceWords, start+1)
+	} else {
+		column, next = c.columnAt(item, stmt.SourceWords, start)
+	}
+	if column == "" || !itemAlias(item, stmt.SourceWords, next) {
+		return ""
+	}
+	return column
+}
+
+// firstArgument reads a column of the copied table as the first argument of
+// the call whose parenthesis is w[open], and returns it and the index past
+// the call.
+func (c tableCopy) firstArgument(w, sourceWords []string, open int) (string, int) {
+	column, next := c.columnAt(w, sourceWords, open+1)
+	closing := closingParen(w, open)
+	if column == "" || closing < 0 || next > closing || (next < closing && w[next] != ",") {
+		return "", open
+	}
+	return column, closing + 1
+}
+
+// closingParen returns the index of the parenthesis that closes w[open], or
+// -1 where none does.
+func closingParen(w []string, open int) int {
+	depth := 0
+	for k := open; k < len(w); k++ {
+		switch w[k] {
+		case "(":
+			depth++
+		case ")":
+			depth--
+			if depth == 0 {
+				return k
+			}
+		}
+	}
+	return -1
+}
+
+// columnAt reads a column of the copied table at w[k], bare or qualified by
+// the table or its alias, and returns it, folded, and the index past it; ""
+// where the words there are anything else.
+func (c tableCopy) columnAt(w, sourceWords []string, k int) (string, int) {
+	var parts []string
+	for {
+		if k >= len(w) || !columnWord(w[k]) {
+			return "", k
+		}
+		part, next, ok := IdentifierAt(w, sourceWords, k)
+		if !ok {
+			return "", k
+		}
+		parts = append(parts, part.Normalized)
+		k = next
+		if k >= len(w) || w[k] != "." {
+			break
+		}
+		k++
+	}
+	if qualifier := strings.Join(parts[:len(parts)-1], "."); qualifier != "" && !c.names(qualifier) {
+		return "", k
+	}
+	return parts[len(parts)-1], k
+}
+
+// columnWord reports whether a word in a SELECT list can name a column: not
+// a number, and not a bare word the SQL standard reads as a value, such as
+// NULL, CURRENT_TIMESTAMP or USER. A quoted word always can.
+func columnWord(word string) bool {
+	switch word {
+	case "NULL", "TRUE", "FALSE",
+		"CURRENT_DATE", "CURRENT_TIME", "CURRENT_TIMESTAMP", "LOCALTIME", "LOCALTIMESTAMP",
+		"USER", "CURRENT_USER", "SESSION_USER", "SYSTEM_USER", "CURRENT_ROLE":
+		return false
+	}
+	r, _ := utf8.DecodeRuneInString(word)
+	return !unicode.IsDigit(r)
+}
+
+// names reports whether a column's qualifier names the copied table: its
+// alias where the SELECT gives it one, and the table otherwise.
+func (c tableCopy) names(qualifier string) bool {
+	if c.alias != "" {
+		return qualifier == c.alias
+	}
+	return sameTableRef(qualifier, c.from)
+}
+
+// itemAlias reports whether the words of an item from w[k] on are nothing or
+// the item's alias: `AS name` or a bare name.
+func itemAlias(w, sourceWords []string, k int) bool {
+	if k >= len(w) {
+		return k == len(w)
+	}
+	if w[k] == "AS" {
+		k++
+	}
+	_, next, ok := IdentifierAt(w, sourceWords, k)
+	return ok && next == len(w)
+}
+
+// kept returns the columns the INSERT names, folded, that receive every value
+// of the copied table's column of the same name. A SELECT list of another
+// length than the column list keeps none, since the statement fails.
+func (c tableCopy) kept() []string {
+	if len(c.carries) != len(c.columns) {
+		return nil
+	}
+	var kept []string
+	for i, column := range c.columns {
+		if c.carries[i] == column {
+			kept = append(kept, column)
+		}
+	}
+	return kept
+}
+
+// lost returns the old table's columns, as known spells them, whose values
+// the copy does not write into the column of the same name.
+func (c tableCopy) lost(known []string) []string {
+	if c.star {
+		return nil
+	}
+	kept := c.kept()
+	var lost []string
+	for _, column := range known {
+		if !slices.Contains(kept, NormalizeIdent(column)) {
+			lost = append(lost, column)
+		}
+	}
+	return lost
+}
+
+// copyLoses reports whether the copy may leave a value of the old table
+// behind. Where the old table's columns are known, that is a column the copy
+// loses. Where they are not, it is any column the copy names and writes from
+// something other than itself, and a copy that names no column and is no
+// SELECT *, since either may be one the old table holds.
+func copyLoses(index int, copied tableCopy, columns Columns) bool {
+	if copied.star {
+		return false
+	}
+	if columns != nil {
+		if known, ok := columns(index, copied.from); ok {
+			return len(copied.lost(known)) > 0
+		}
+	}
+	return len(copied.columns) == 0 || len(copied.kept()) < len(copied.columns)
 }
 
 // singleDroppedTable reads a DROP TABLE of one table.
@@ -403,23 +660,4 @@ func tableRenameOf(stmt *lintext.Statement) (from, to TableReference, ok bool) {
 // comparison DS101's own exemption makes.
 func sameTableRef(a, b string) bool {
 	return RefersToCreated(map[string]bool{b: true}, a)
-}
-
-// lostColumns returns the columns of the copied table that the copy leaves
-// out, where its columns are known; none where they are not.
-func lostColumns(index int, old string, copied tableCopy, columns Columns) []string {
-	if columns == nil || copied.star {
-		return nil
-	}
-	known, ok := columns(index, old)
-	if !ok {
-		return nil
-	}
-	var lost []string
-	for _, column := range known {
-		if !slices.Contains(copied.columns, NormalizeIdent(column)) {
-			lost = append(lost, column)
-		}
-	}
-	return lost
 }

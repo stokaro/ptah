@@ -13,7 +13,8 @@ import (
 
 // fileRebuilds finds the table rebuilds of an up migration. SQLite's Atlas
 // profile recognizes a replacement only when the old columns are known: a
-// partial copy is reported as a column loss by columnDroppedRule.
+// copy that leaves a column out, or fills it from anything but the old column
+// of its name, is reported as a column loss by columnDroppedRule.
 //
 // Where the run's split judged the rebuild facts, the owner's effects are the
 // answer. Whether a copy keeps every column depends on what the old table
@@ -77,24 +78,18 @@ func baselineColumns(file *File) lintkit.Columns {
 // rebuildBaselineSubjects are the rebuild drops whose copy the dev database
 // would check against the old table's columns. A rebuild the run's split
 // judged needs no dev database.
+//
+// Every drop that ends a rebuild's steps is one, whatever its copy writes: a
+// copy that fills a column with a constant loses nothing when the old table
+// has no such column, and only the starting state shows that. Asking only
+// about the drops [lintkit.Rebuilds] keeps without the state would leave that
+// copy reported as a drop on a run that had a dev database.
 func rebuildBaselineSubjects(file *File) []int {
-	if rebuildsJudged(file) {
+	if !file.IsUp || rebuildsJudged(file) {
 		return nil
 	}
-	if file.compatibility == CompatibilityProfileAtlas && lintOf(file.dialect).AtlasRebuildColumnDiff {
-		steps := lintkit.Rebuilds(file.contract, nil)
-		subjects := make([]int, 0, len(steps.Drops))
-		for index := range steps.Drops {
-			subjects = append(subjects, index)
-		}
-		slices.Sort(subjects)
-		return subjects
+	if file.compatibility == CompatibilityProfileAtlas && !lintOf(file.dialect).AtlasRebuildColumnDiff {
+		return nil
 	}
-	steps := fileRebuilds(file)
-	subjects := make([]int, 0, len(steps.Drops))
-	for index := range steps.Drops {
-		subjects = append(subjects, index)
-	}
-	slices.Sort(subjects)
-	return subjects
+	return lintkit.RebuildCandidates(file.contract)
 }
