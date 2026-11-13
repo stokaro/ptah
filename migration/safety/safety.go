@@ -743,7 +743,10 @@ func destructiveDrop(node ast.Node) (subject, reason string, dropped bool) {
 	case *ast.DropTableNode:
 		return n.Name, "DROP TABLE removes the table and all rows", true
 	case *ast.DropFunctionNode:
-		return n.Name, "DROP FUNCTION removes executable database behavior", true
+		if n.IsProcedure() {
+			return n.Name, dropProcedureReason, true
+		}
+		return n.Name, dropFunctionReason, true
 	case *ast.DropRoleNode:
 		return n.Name, "DROP ROLE removes an existing database principal", true
 	case *ast.DropPolicyNode:
@@ -1344,7 +1347,8 @@ var destructivePrefixes = []struct {
 	{words: []string{"REPLACE", "TABLE"}, reason: replaceTableReason},
 	{words: []string{"DROP", "TYPE"}, reason: "DROP TYPE removes an existing database type"},
 	{words: []string{"DROP", "EXTENSION"}, reason: "DROP EXTENSION removes database objects owned by the extension"},
-	{words: []string{"DROP", "FUNCTION"}, reason: "DROP FUNCTION removes executable database behavior"},
+	{words: []string{"DROP", "FUNCTION"}, reason: dropFunctionReason},
+	{words: []string{"DROP", "PROCEDURE"}, reason: dropProcedureReason},
 	{words: []string{"DROP", "ROLE"}, reason: "DROP ROLE removes an existing database principal"},
 	{words: []string{"DROP", "POLICY"}, reason: "DROP POLICY removes an access-control protection"},
 	{words: []string{"DROP", "SEQUENCE"}, reason: dropSequenceReason},
@@ -1376,6 +1380,8 @@ const noForceReason = "NO FORCE ROW LEVEL SECURITY exempts the table owner from 
 // creates the view or the trigger again (see [replacements]); a privilege and
 // a membership hold nothing stored, so taking one away is a warning.
 const (
+	dropFunctionReason         = "DROP FUNCTION removes executable database behavior"
+	dropProcedureReason        = "DROP PROCEDURE removes executable database behavior, and every caller of the procedure fails"
 	dropSequenceReason         = "DROP SEQUENCE removes the sequence and its position; one created again can hand out a key a row already holds"
 	dropViewReason             = "DROP VIEW removes a definition the plan cannot restore, and every query that reads the view fails"
 	dropMaterializedViewReason = "DROP MATERIALIZED VIEW removes the view and the rows it holds"

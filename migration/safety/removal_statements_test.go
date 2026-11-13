@@ -25,6 +25,7 @@ const (
 	dropMaterializedViewReason = "DROP MATERIALIZED VIEW removes the view and the rows it holds"
 	dropTriggerReason          = "DROP TRIGGER removes executable behavior from every write to its table"
 	dropFunctionReason         = "DROP FUNCTION removes executable database behavior"
+	dropProcedureReason        = "DROP PROCEDURE removes executable database behavior, and every caller of the procedure fails"
 	revokeReason               = "REVOKE takes away access a role may rely on"
 	revokeMembershipReason     = "removing a member from a role takes away the privileges it held through the role"
 	replacedViewReason         = "DROP VIEW is followed by CREATE VIEW of the same view: the plan replaces the view rather than removing it"
@@ -57,6 +58,10 @@ func TestAssess_RatesEachRemoval(t *testing.T) {
 			want: verdict{safety.Destructive, dropMaterializedViewReason}},
 		{name: "DROP TRIGGER", node: ast.NewDropTrigger("audit", "users"), subject: "audit",
 			want: verdict{safety.Destructive, dropTriggerReason}},
+		{name: "DROP FUNCTION", node: ast.NewDropFunction("total"), subject: "total",
+			want: verdict{safety.Destructive, dropFunctionReason}},
+		{name: "DROP PROCEDURE", node: ast.NewDropFunction("archive").SetKind("procedure"), subject: "archive",
+			want: verdict{safety.Destructive, dropProcedureReason}},
 		{name: "REVOKE", node: ast.NewRevokePrivilege("reader", "TABLE", "users", []string{"SELECT"}), subject: "users",
 			want: verdict{safety.Warning, revokeReason}},
 		{name: "a membership removed", node: ast.NewRevokeRoleMembership("readers", "app"), subject: "readers",
@@ -109,6 +114,10 @@ func TestAssessRendered_RatesEachRemovalPerEngine(t *testing.T) {
 		{dialect: "mariadb", node: ast.NewDropTrigger("audit", "users").SetIfExists(), want: trigger},
 		{dialect: "sqlite", node: ast.NewDropTrigger("audit", "users").SetIfExists(), want: trigger},
 		{dialect: "sqlserver", node: ast.NewDropTrigger("audit", "users").SetIfExists(), want: trigger},
+		{dialect: "postgres", node: ast.NewDropFunction("archive").SetKind("procedure").SetIfExists(), want: []verdict{{safety.Destructive, dropProcedureReason}}},
+		{dialect: "mysql", node: ast.NewDropFunction("archive").SetKind("procedure").SetIfExists(), want: []verdict{{safety.Destructive, dropProcedureReason}}},
+		{dialect: "mariadb", node: ast.NewDropFunction("archive").SetKind("procedure").SetIfExists(), want: []verdict{{safety.Destructive, dropProcedureReason}}},
+		{dialect: "sqlserver", node: ast.NewDropFunction("archive").SetKind("procedure").SetIfExists(), want: []verdict{{safety.Destructive, dropProcedureReason}}},
 		{dialect: "postgres", node: ast.NewRevokePrivilege("reader", "TABLE", "users", []string{"SELECT"}), want: []verdict{{safety.Warning, revokeReason}}},
 		{dialect: "mysql", node: ast.NewRevokePrivilege("reader", "TABLE", "users", []string{"SELECT"}), want: []verdict{{safety.Warning, revokeReason}}},
 		{dialect: "mariadb", node: ast.NewRevokePrivilege("reader", "TABLE", "users", []string{"SELECT"}), want: []verdict{{safety.Warning, revokeReason}}},
@@ -148,6 +157,10 @@ func TestAssessSQL_RatesEachRemovalPerEngine(t *testing.T) {
 		{dialect: "mysql", statement: "DROP TRIGGER IF EXISTS `audit`", want: verdict{safety.Destructive, dropTriggerReason}},
 		{dialect: "sqlite", statement: `DROP TRIGGER IF EXISTS "audit"`, want: verdict{safety.Destructive, dropTriggerReason}},
 		{dialect: "sqlserver", statement: "DROP TRIGGER [dbo].[audit]", want: verdict{safety.Destructive, dropTriggerReason}},
+		{dialect: "postgres", statement: `DROP PROCEDURE "archive"()`, want: verdict{safety.Destructive, dropProcedureReason}},
+		{dialect: "mysql", statement: "DROP PROCEDURE `app`.`archive`", want: verdict{safety.Destructive, dropProcedureReason}},
+		{dialect: "mariadb", statement: "drop procedure if exists `archive`", want: verdict{safety.Destructive, dropProcedureReason}},
+		{dialect: "sqlserver", statement: "DROP PROCEDURE [dbo].[archive]", want: verdict{safety.Destructive, dropProcedureReason}},
 		{dialect: "postgres", statement: `REVOKE SELECT ON TABLE "users" FROM "reader"`, want: verdict{safety.Warning, revokeReason}},
 		{dialect: "postgres", statement: `REVOKE GRANT OPTION FOR SELECT ON TABLE "users" FROM "reader"`, want: verdict{safety.Warning, revokeReason}},
 		{dialect: "postgres", statement: `REVOKE "readers" FROM "app"`, want: verdict{safety.Warning, revokeReason}},
