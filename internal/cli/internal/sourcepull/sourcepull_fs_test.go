@@ -1,4 +1,4 @@
-package gitpull_test
+package sourcepull_test
 
 import (
 	"os"
@@ -7,8 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/internal/cli/internal/gitpull"
-	"ptah.run/internal/gitsource"
+	"ptah.run/internal/cli/internal/sourcepull"
 	"ptah.run/internal/sourcecontent"
 )
 
@@ -17,7 +16,7 @@ func TestWriteFile_HappyPath(t *testing.T) {
 	out := filepath.Join(c.TempDir(), "nested", "schema.sql")
 	data := []byte("CREATE TABLE t (id int);\r\n")
 
-	written, err := gitpull.WriteFile(gitsource.Result{Files: []sourcecontent.File{{Path: "schema.sql", Data: data}}}, out)
+	written, err := sourcepull.WriteFile([]sourcecontent.File{{Path: "schema.sql", Data: data}}, out)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sameFile(c, written, out), qt.IsTrue, qt.Commentf("wrote %s, not %s", written, out))
@@ -31,7 +30,7 @@ func TestWriteFile_FailurePath(t *testing.T) {
 	out := filepath.Join(c.TempDir(), "schema.sql")
 	c.Assert(os.WriteFile(out, []byte("mine"), 0o600), qt.IsNil)
 
-	written, err := gitpull.WriteFile(gitsource.Result{Files: []sourcecontent.File{{Path: "schema.sql", Data: []byte("theirs")}}}, out)
+	written, err := sourcepull.WriteFile([]sourcecontent.File{{Path: "schema.sql", Data: []byte("theirs")}}, out)
 
 	c.Assert(err, qt.ErrorMatches, `the output already exists: .*`)
 	c.Assert(written, qt.Equals, "")
@@ -48,7 +47,7 @@ func TestWriteDirectory_HappyPath(t *testing.T) {
 		{Path: "data/seed.sql", Data: []byte("INSERT INTO t VALUES (1);\n")},
 	}
 
-	written, err := gitpull.WriteDirectory(gitsource.Result{Files: files}, out)
+	written, err := sourcepull.WriteDirectory(files, out)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sameFile(c, written, out), qt.IsTrue, qt.Commentf("wrote %s, not %s", written, out))
@@ -69,7 +68,7 @@ func TestWriteDirectory_FailurePath(t *testing.T) {
 		{Path: "0001_create.up.sql", Data: []byte("again")},
 	}
 
-	written, err := gitpull.WriteDirectory(gitsource.Result{Files: files}, out)
+	written, err := sourcepull.WriteDirectory(files, out)
 
 	c.Assert(err, qt.ErrorMatches, `create 0001_create.up.sql: .*`)
 	c.Assert(written, qt.Equals, "")

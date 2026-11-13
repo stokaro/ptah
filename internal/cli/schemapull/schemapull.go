@@ -1,5 +1,5 @@
-// Package schemapull implements desired-schema retrieval from OCI registries
-// and Git repositories.
+// Package schemapull implements desired-schema retrieval from OCI registries,
+// Git repositories and HTTPS URLs.
 package schemapull
 
 import (
@@ -13,8 +13,7 @@ import (
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/engineruntime"
-	"ptah.run/internal/cli/internal/gitpull"
-	"ptah.run/internal/gitsource"
+	"ptah.run/internal/cli/internal/sourcepull"
 	"ptah.run/internal/ociartifact"
 	"ptah.run/internal/schemaartifact"
 )
@@ -22,9 +21,9 @@ import (
 // skipParseFlag writes an OCI artifact without reading its schema.
 const skipParseFlag = "skip-parse"
 
-// ociOnlyFlags mean nothing for a Git reference: its file is fetched over Git's
-// own transport, and its bytes are written unchanged, so there is no parse to
-// skip.
+// ociOnlyFlags mean nothing for a Git or an HTTPS reference: its file is
+// fetched over its own transport, and its bytes are written unchanged, so there
+// is no parse to skip.
 var ociOnlyFlags = []string{dbcli.PlainHTTPFlagName, skipParseFlag}
 
 type options struct {
@@ -32,15 +31,15 @@ type options struct {
 	plainHTTP bool
 	json      bool
 	skipParse bool
-	git       gitpull.Flags
+	source    sourcepull.Flags
 }
 
 // NewSchemaPullCommand returns the schema pull command.
 func NewSchemaPullCommand() *cobra.Command {
 	opts := &options{}
 	cmd := &cobra.Command{
-		Use:   "pull <oci-reference | git-reference>",
-		Short: "Pull a desired schema from an OCI registry or a Git repository",
+		Use:   "pull <oci-reference | git-reference | https-url>",
+		Short: "Pull a desired schema from an OCI registry, a Git repository or an HTTPS URL",
 		Long: `Pull a desired schema and write it to a new local file.
 
 An oci:// reference names a Ptah desired-schema artifact, which is validated
@@ -62,7 +61,16 @@ submodule or LFS step. The commit and the content digest are reported; with
 --commit and --expect-digest, other content is refused. HTTPS authenticates
 with PTAH_GIT_USERNAME and PTAH_GIT_PASSWORD (a token goes in the password),
 SSH with the unencrypted key PTAH_GIT_SSH_KEY_FILE names, and SSH requires
---known-hosts-file.`,
+--known-hosts-file.
+
+An https:// reference names one download, which --expect-download-digest pins
+by the SHA-256 of its exact bytes; nothing is read from it before that digest
+matches. --format says whether the download is the schema file itself (file,
+with --path the name it is given) or an archive (tar.gz or zip, with --path the
+member to read). The file's bytes are written unchanged, and the download and
+content digests are reported; with --expect-digest, other content is refused.
+Basic authentication comes from PTAH_HTTPS_USERNAME and PTAH_HTTPS_PASSWORD, a
+Bearer token from PTAH_HTTPS_TOKEN.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return run(cmd, args[0], opts)
 		},
@@ -75,32 +83,27 @@ SSH with the unencrypted key PTAH_GIT_SSH_KEY_FILE names, and SSH requires
 	flags.BoolVar(&opts.skipParse, skipParseFlag, false,
 		"OCI: write the artifact without reading its schema; the next command that reads the file reports what it cannot read")
 	dbcli.RegisterPlainHTTPFlag(flags, &opts.plainHTTP)
-	gitpull.Register(flags, &opts.git, "schema file")
+	sourcepull.Register(flags, &opts.source, sourcepull.File)
 	return cmd
 }
 
 func run(cmd *cobra.Command, reference string, opts *options) error {
-	if gitsource.IsReference(reference) {
+	source := sourcepull.SourceOf(reference)
+	if err := sourcepull.RefuseFlags(cmd.Flags(), source); err != nil {
+		return err
+	}
+	if source != sourcepull.OCI {
 		for _, name := range ociOnlyFlags {
 			if cmd.Flags().Changed(name) {
 				return fmt.Errorf("--%s is for an oci:// reference", name)
 			}
 		}
-		result, err := gitpull.Fetch(cmd.Context(), reference, opts.git, gitsource.File)
-		if err != nil {
-			return err
-		}
-		written, err := gitpull.WriteFile(result, opts.output)
-		if err != nil {
-			return err
-		}
-		if opts.json {
-			return gitpull.PrintJSON(cmd.OutOrStdout(), reference, opts.git.Path, result, written)
-		}
-		return gitpull.PrintText(cmd.OutOrStdout(), reference, result, written)
 	}
-	if err := gitpull.RefuseOnOtherSource(cmd.Flags()); err != nil {
-		return err
+	switch source {
+	case sourcepull.Git:
+		return pullGit(cmd, reference, opts)
+	case sourcepull.HTTPS:
+		return pullHTTPS(cmd, reference, opts)
 	}
 	// An unparsed pull resolves no runtime: the runtime is what a parse reads the
 	// schema with.
@@ -127,6 +130,36 @@ func run(cmd *cobra.Command, reference string, opts *options) error {
 		return err
 	}
 	return printOCIReport(cmd, opts, artifact.Reference, artifact.Descriptor, written)
+}
+
+func pullGit(cmd *cobra.Command, reference string, opts *options) error {
+	result, err := sourcepull.FetchGit(cmd.Context(), reference, opts.source, sourcepull.File)
+	if err != nil {
+		return err
+	}
+	written, err := sourcepull.WriteFile(result.Files, opts.output)
+	if err != nil {
+		return err
+	}
+	if opts.json {
+		return sourcepull.PrintGitJSON(cmd.OutOrStdout(), reference, opts.source.Path, result, written)
+	}
+	return sourcepull.PrintGitText(cmd.OutOrStdout(), reference, result, written)
+}
+
+func pullHTTPS(cmd *cobra.Command, reference string, opts *options) error {
+	result, err := sourcepull.FetchHTTPS(cmd.Context(), reference, opts.source, sourcepull.File)
+	if err != nil {
+		return err
+	}
+	written, err := sourcepull.WriteFile(result.Files, opts.output)
+	if err != nil {
+		return err
+	}
+	if opts.json {
+		return sourcepull.PrintHTTPSJSON(cmd.OutOrStdout(), reference, opts.source, result, written)
+	}
+	return sourcepull.PrintHTTPSText(cmd.OutOrStdout(), reference, result, written)
 }
 
 func printOCIReport(cmd *cobra.Command, opts *options, reference ociartifact.Reference, descriptor ocispec.Descriptor, written []string) error {

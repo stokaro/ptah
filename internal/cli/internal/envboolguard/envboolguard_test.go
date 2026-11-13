@@ -69,6 +69,9 @@ var nonBooleanPtahVars = []string{
 	"PTAH_GIT_PASSWORD",          // Git password or token for a git+https pull, used with PTAH_GIT_USERNAME
 	"PTAH_GIT_SSH_KEY_FILE",      // file of the unencrypted key a git+ssh pull authenticates with
 	"PTAH_GIT_USERNAME",          // Git username for a git+https pull
+	"PTAH_HTTPS_PASSWORD",        // password for an https:// pull, used with PTAH_HTTPS_USERNAME
+	"PTAH_HTTPS_TOKEN",           // Bearer token for an https:// pull
+	"PTAH_HTTPS_USERNAME",        // username for an https:// pull
 	"PTAH_LOG_FORMAT",            // log format name
 	"PTAH_LOG_LEVEL",             // log level name
 	"PTAH_MIGRATIONS_DIR",        // native migration directory path

@@ -27,7 +27,7 @@ func TestNewSchemaPullCommand_Help(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(output.String(), qt.Contains, "pull <oci-reference | git-reference>")
+	c.Assert(output.String(), qt.Contains, "pull <oci-reference | git-reference | https-url>")
 	c.Assert(output.String(), qt.Contains, "--out")
 	c.Assert(output.String(), qt.Contains, "--plain-http")
 	c.Assert(output.String(), qt.Contains, "--skip-parse")
@@ -151,23 +151,26 @@ func TestDefaultPull_JSONDoesNotMentionParsing(t *testing.T) {
 	c.Assert(report.Written, qt.HasLen, 1)
 }
 
-// A Git pull writes the file's bytes and parses nothing, so the flag would state
-// something the command does not do. Both are refused before any network access:
-// the address does not resolve.
-func TestOCIOnlyFlags_RefusedOnAGitReference(t *testing.T) {
+// A Git or an HTTPS pull writes the file's bytes and parses nothing, so the flag
+// would state something the command does not do. Each is refused before any
+// network access: the address does not resolve.
+func TestOCIOnlyFlags_RefusedOnAGitOrHTTPSReference(t *testing.T) {
 	tests := []struct {
-		name    string
-		flag    string
-		wantErr string
+		name      string
+		reference string
+		flag      string
+		wantErr   string
 	}{
-		{name: "skip-parse", flag: "--skip-parse", wantErr: `--skip-parse is for an oci:// reference`},
-		{name: "plain-http", flag: "--plain-http", wantErr: `--plain-http is for an oci:// reference`},
+		{name: "git skip-parse", reference: "git+https://git.invalid/acme/app.git", flag: "--skip-parse", wantErr: `--skip-parse is for an oci:// reference`},
+		{name: "git plain-http", reference: "git+https://git.invalid/acme/app.git", flag: "--plain-http", wantErr: `--plain-http is for an oci:// reference`},
+		{name: "https skip-parse", reference: "https://artifacts.invalid/app/schema.hcl", flag: "--skip-parse", wantErr: `--skip-parse is for an oci:// reference`},
+		{name: "https plain-http", reference: "https://artifacts.invalid/app/schema.hcl", flag: "--plain-http", wantErr: `--plain-http is for an oci:// reference`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			stdout, err := runPull(c, "git+https://git.invalid/acme/app.git", "--path", "schema.hcl",
+			stdout, err := runPull(c, tt.reference, "--path", "schema.hcl",
 				"--out", filepath.Join(c.TempDir(), "schema.hcl"), tt.flag)
 
 			c.Assert(err, qt.ErrorMatches, tt.wantErr)

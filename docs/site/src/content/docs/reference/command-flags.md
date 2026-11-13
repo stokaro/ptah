@@ -1046,6 +1046,8 @@ Read the columns as follows.
 | `--ca-file` | `string` | — | `PTAH_CA_FILE` | — |
 | `--commit` | `string` | — | `PTAH_COMMIT` | — |
 | `--expect-digest` | `string` | — | `PTAH_EXPECT_DIGEST` | — |
+| `--expect-download-digest` | `string` | — | `PTAH_EXPECT_DOWNLOAD_DIGEST` | — |
+| `--format` | `string` | — | `PTAH_FORMAT` | — |
 | `--json` | `bool` | `false` | `PTAH_JSON` | — |
 | `--known-hosts-file` | `string` | — | `PTAH_KNOWN_HOSTS_FILE` | — |
 | `--out` | `string` | — | `PTAH_OUT` | — |
@@ -1847,6 +1849,8 @@ Read the columns as follows.
 | `--ca-file` | `string` | — | `PTAH_CA_FILE` | — |
 | `--commit` | `string` | — | `PTAH_COMMIT` | — |
 | `--expect-digest` | `string` | — | `PTAH_EXPECT_DIGEST` | — |
+| `--expect-download-digest` | `string` | — | `PTAH_EXPECT_DOWNLOAD_DIGEST` | — |
+| `--format` | `string` | — | `PTAH_FORMAT` | — |
 | `--json` | `bool` | `false` | `PTAH_JSON` | — |
 | `--known-hosts-file` | `string` | — | `PTAH_KNOWN_HOSTS_FILE` | — |
 | `--out` | `string` | — | `PTAH_OUT` | — |
