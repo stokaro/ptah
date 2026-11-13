@@ -729,10 +729,9 @@ func (m *Migrator) readMigrationLogEntries(ctx context.Context) ([]MigrationLogE
 	if err != nil {
 		return nil, err
 	}
-	columns := "run_id, seq, operation, version, state, actor, actor_source, checksum, logged_at, error"
-	for _, column := range added {
-		columns += ", " + column
-	}
+	columns := strings.Join(append([]string{
+		"run_id", "seq", "operation", "version", "state", "actor", "actor_source", "checksum", "logged_at", "error",
+	}, added...), ", ")
 	query := fmt.Sprintf(
 		`SELECT %s
 FROM %s ORDER BY logged_at DESC, run_id DESC, seq DESC`, columns, m.migrationLogTable())

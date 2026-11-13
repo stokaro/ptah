@@ -128,7 +128,6 @@ func TestSchemaApplyLogRecordsWhereAFailedPlanStoppedE2E(t *testing.T) {
 			stopped.ErrorStatement = failing
 			c.Assert(rows, qt.HasLen, 2)
 			c.Assert(rows[0], qt.DeepEquals, started)
-			c.Assert(len(rows[1].ErrorStatement), qt.Equals, len(failing))
 			c.Assert(rows[1], qt.DeepEquals, stopped)
 			c.Assert(target.tableExists(c, third), qt.IsFalse)
 		})
