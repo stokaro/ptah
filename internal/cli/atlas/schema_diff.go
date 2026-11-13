@@ -147,11 +147,7 @@ func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 	}
 	formatConfigured := cmd.Flags().Changed("format")
 	policy := atlasschema.DiffPolicy{}
-	mode := ignoreMissingEnvSelection
-	if needsAtlasSchemaDiffConfig(cmd) {
-		mode = reportMissingEnvSelection
-	}
-	projectCfg, loaded, err := loadAtlasProjectConfigForCommand(cmd, mode)
+	projectCfg, loaded, err := loadAtlasProjectConfigForCommand(cmd)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -294,10 +290,6 @@ func validateAtlasSchemaDiffSQLiteToggle(opts atlasSchemaDiffOptions) error {
 		}
 	}
 	return nil
-}
-
-func needsAtlasSchemaDiffConfig(cmd *cobra.Command) bool {
-	return !cmd.Flags().Changed("to")
 }
 
 func validateAtlasSchemaDiffOptions(

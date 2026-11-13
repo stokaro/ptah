@@ -1438,33 +1438,33 @@ func resolveAtlasVerbProject(
 	project = mergeAtlasProjectArgs(parentProject, project)
 	resolved.args = remaining
 	resolved.projectFlags = project.flags
-	// -c and --env SELECT a project file, so naming either one makes it
-	// required. --var only supplies values to a file the caller may or may not
-	// have, so it makes the file OPTIONAL: present, it is loaded and the
-	// variables reach it; absent, the command runs with no project at all,
-	// which is what the pinned community binary v1.3.0 does
-	// (stokaro/ptah#1241 item 12).
-	requirement := requiredAtlasProject
-	if !project.changed {
-		if len(project.flags.vars) == 0 {
-			return resolved, nil
-		}
-		requirement = optionalAtlasProject
-	}
+	// The native target reads the project configuration this adapter selected
+	// and nothing else. Left to itself it would discover ./atlas.hcl and
+	// ./ptah.yaml and select a lone env from either, so a command that named
+	// no --env would run against that env's database: the decision made here
+	// that no project applies would be overwritten by the target's own
+	// discovery. A verb that consumes project configuration natively gets the
+	// merged snapshot below; every other verb, and every run that selects no
+	// project, gets an empty one.
+	resolved.context = dbcli.WithProjectConfig(resolved.context, projectconfig.Config{})
 
 	compatibilityPolicy := atlasCompatibilityPolicy(cmd)
-	selected, err := loadAtlasAdapterProjectConfig(
-		resolved.context,
-		verb,
-		project.flags,
-		requirement,
-		compatibilityPolicy,
-		cmd.CommandPath(),
-	)
-	if err != nil {
-		return atlasVerbArgs{}, err
+	var selected selectedAtlasProject
+	if project.flags.readsProject() {
+		selected, err = loadAtlasAdapterProjectConfig(
+			resolved.context,
+			verb,
+			project.flags,
+			compatibilityPolicy,
+			cmd.CommandPath(),
+		)
+		if err != nil {
+			return atlasVerbArgs{}, err
+		}
 	}
 	if !selected.loaded {
+		// With no project the verb's applier still runs: schema test forwards
+		// --var to the HCL schema file it loads, which needs no project file.
 		if verb.projectConfig == nil {
 			return resolved, nil
 		}
@@ -1533,8 +1533,8 @@ func withAtlasProjectMigrationRoot(
 }
 
 // selectedAtlasProject is the outcome of resolving one adapter invocation's
-// project file. loaded is false when no project was selected at all, which is
-// a normal outcome for an optional requirement and never an error.
+// project file. loaded is false when the invocation selected no project file,
+// which is a normal outcome and never an error.
 type selectedAtlasProject struct {
 	project      atlasProject
 	targetConfig projectconfig.Config
@@ -1550,35 +1550,14 @@ func loadAtlasAdapterProjectConfig(
 	ctx context.Context,
 	verb atlasVerb,
 	flags atlasProjectFlagValues,
-	requirement atlasProjectRequirement,
 	policy atlascompatpolicy.Policy,
 	verbPath string,
 ) (selectedAtlasProject, error) {
 	if !verb.nativeProjectConfig {
-		project, loaded, err := openAtlasProjectWithPolicy(ctx, flags, requirement, policy, verbPath)
+		project, loaded, err := openAtlasProjectWithPolicy(ctx, flags, policy, verbPath)
 		return selectedAtlasProject{project: project, loaded: loaded}, err
 	}
-	if requirement == requiredAtlasProject {
-		project, targetConfig, err := openRequiredMergedProjectConfigWithPolicy(ctx, flags, policy, verbPath)
-		return selectedAtlasProject{
-			project:      project,
-			targetConfig: targetConfig,
-			loaded:       err == nil,
-		}, err
-	}
-	project, loaded, err := openAtlasProjectWithPolicy(ctx, flags, optionalAtlasProject, policy, verbPath)
-	if err != nil || !loaded {
-		return selectedAtlasProject{}, err
-	}
-	ptah, err := projectconfig.LoadPtahFile(projectconfig.PtahFileName, flags.envName)
-	if err != nil {
-		return selectedAtlasProject{}, errors.Join(err, project.Close())
-	}
-	return selectedAtlasProject{
-		project:      project,
-		targetConfig: projectconfig.Merge(ptah, project.Config),
-		loaded:       true,
-	}, nil
+	return openMergedProjectConfigWithPolicy(ctx, flags, policy, verbPath)
 }
 
 func rejectNativeOnlyAtlasFlags(group string, verb atlasVerb, args []string) error {
@@ -1826,13 +1805,15 @@ func logFormatWritesReportDirectly(args []string) bool {
 //
 // Verbs other than `schema test` are returned untouched, and so is a run that
 // selected no environment: with nothing selected there is no attribute to read,
-// and the mapper's own refusal still names the scheme and the attribute.
+// and the mapper's own refusal still names the scheme and the attribute. A file
+// --config names without --env is loaded with no environment in it, so it is
+// such a run too, as it is for --to.
 func atlasEnvAwareSourceFlags(
 	group string,
 	verb atlasVerb,
 	project atlasVerbArgs,
 ) ([]atlasargs.Flag, error) {
-	if group != "schema" || verb.use != "test" || !project.projectLoaded {
+	if group != "schema" || verb.use != "test" || !project.projectLoaded || project.projectFlags.envName == "" {
 		return verb.flags, nil
 	}
 	baseDir, err := atlasProjectConfigBaseDir(project.projectFlags)

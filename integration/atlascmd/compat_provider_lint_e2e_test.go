@@ -119,7 +119,8 @@ func TestCompatMigrateLintSelectsTheProviderOfTheDevURL(t *testing.T) {
 
 // TestCompatSchemaApplyLintsThroughTheProvider plans a drop on a database the
 // fixture provider serves, under an atlas.hcl policy that rates destructive
-// changes as errors. The lint pass runs in the runtime the verb planned with,
+// changes as errors. --config names the file, because a project file no flag
+// names is not read. The lint pass runs in the runtime the verb planned with,
 // so the provider splits the planned statements: DS107 reports the drop
 // because the fixture marked it as one that loses state, and the bundled
 // runtime has no splitter for the fixture engine at all.
@@ -132,7 +133,10 @@ func TestCompatSchemaApplyLintsThroughTheProvider(t *testing.T) {
 	c.Assert(os.WriteFile(filepath.Join(f.dir, "schema.yaml"), []byte("tables:\n  widgets:\n    columns:\n      id:\n        type: INTEGER\n"), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(f.dir, "atlas.hcl"), []byte("lint {\n  destructive {\n    error = true\n  }\n}\n"), 0o600), qt.IsNil)
 
-	out, stderr, code := f.run(f.withManifest(), "schema", "apply", "--url", address, "--to", "file://schema.yaml", "--dry-run")
+	out, stderr, code := f.run(
+		f.withManifest(),
+		"schema", "apply", "--url", address, "--to", "file://schema.yaml", "--dry-run", "--config", "file://atlas.hcl",
+	)
 
 	c.Assert(code, qt.Equals, 1, qt.Commentf("%s", stderr))
 	c.Assert(out, qt.Equals, "Planned schema changes:\n-- Drop \"gadgets\" table\nDROP TABLE \"gadgets\";\n", qt.Commentf("%s", stderr))

@@ -453,11 +453,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	}
 	formatOutput := cmd.Flags().Changed("format")
 	policy := atlasschema.DiffPolicy{}
-	mode := ignoreMissingEnvSelection
-	if needsAtlasSchemaApplyConfig(cmd) {
-		mode = reportMissingEnvSelection
-	}
-	projectCfg, loaded, err := loadAtlasProjectConfigForCommand(cmd, mode)
+	projectCfg, loaded, err := loadAtlasProjectConfigForCommand(cmd)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -737,18 +733,6 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		}
 		return "Schema apply completed successfully.", nil
 	})
-}
-
-func needsAtlasSchemaApplyConfig(cmd *cobra.Command) bool {
-	if !cmd.Flags().Changed("url") {
-		return true
-	}
-	// A pre-approved plan file fixes the desired state, so no schema source is
-	// needed from flags or atlas.hcl.
-	if cmd.Flags().Changed("plan") {
-		return false
-	}
-	return !cmd.Flags().Changed("to") && !cmd.Flags().Changed(atlasFileFlagName)
 }
 
 // atlasSchemaApplyDesiredSources is the desired state of a run, as sources.

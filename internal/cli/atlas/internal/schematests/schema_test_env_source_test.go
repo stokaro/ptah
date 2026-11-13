@@ -92,16 +92,39 @@ func TestSchemaTestEnvSrcAppliesTheSchemaTheEnvNames(t *testing.T) {
 
 // TestSchemaTestEnvSrcMatchesTheDesiredStateFlags is the parity check the
 // issue asks for: -u must answer an env:// reference the way --to does, so a
-// run that names no env resolves on both or on neither.
+// run that names no env resolves on both or on neither. A file --config names
+// without --env selects no environment, so it resolves on neither, as on the
+// pinned community binary v1.3.0, which refuses `--to env://src` there with
+// `cannot use env:// variables without selecting an environment`.
 func TestSchemaTestEnvSrcMatchesTheDesiredStateFlags(t *testing.T) {
 	c := qt.New(t)
 
 	baseDir := writeSchemaTestEnvProject(c)
 
-	out, err := runSchemaTest(c, baseDir, "-u", "env://src")
+	_, testErr := runSchemaTest(c, baseDir, "-u", "env://src")
+	diffErr := runSchemaDiffToWithConfig(c, baseDir, "env://src")
 
-	c.Assert(err, qt.IsNil)
-	c.Assert(out, qt.Contains, "1 cases, 1 passed, 0 failed")
+	c.Assert(testErr, qt.ErrorMatches, `.*does not support env reference desired-state sources.*`)
+	c.Assert(diffErr, qt.ErrorMatches, `.*env:// desired-state references require an evaluated atlas.hcl project configuration.*`)
+}
+
+// runSchemaDiffToWithConfig runs `schema diff --to to` against the project
+// file in baseDir, named with --config and no --env.
+func runSchemaDiffToWithConfig(c *qt.C, baseDir, to string) error {
+	cmd := atlas.NewCompatCommand("atlas")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"schema", "diff",
+		"--config", "file://" + filepath.Join(baseDir, "atlas.hcl"),
+		"--from", "file://" + filepath.Join(baseDir, "desired.sql"),
+		"--to", to,
+		"--dev-url", "sqlite://file?mode=memory",
+	})
+	err := cmd.Execute()
+	c.Logf("schema diff output:\n%s", out.String())
+	return err
 }
 
 // TestSchemaTestUnknownEnvAttributeIsStillNamed is the negative control: the

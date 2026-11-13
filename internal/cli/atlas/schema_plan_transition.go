@@ -105,11 +105,7 @@ func resolveAtlasSchemaPlanTransitionConfig(
 	in atlasSchemaPlanTransitionFlags,
 ) (atlasSchemaPlanTransitionFlags, atlasschema.DiffPolicy, error) {
 	policy := atlasschema.DiffPolicy{}
-	mode := ignoreMissingEnvSelection
-	if needsAtlasSchemaPlanConfig(cmd) {
-		mode = reportMissingEnvSelection
-	}
-	projectCfg, loaded, err := loadAtlasProjectConfigForCommand(cmd, mode)
+	projectCfg, loaded, err := loadAtlasProjectConfigForCommand(cmd)
 	if err != nil {
 		return in, policy, err
 	}

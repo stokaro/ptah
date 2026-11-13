@@ -125,9 +125,10 @@ func TestAtlasProjectCaptureLocalPreservesProjectRoot(t *testing.T) {
 }
 `), 0o600), qt.IsNil)
 	project, _, err := openAtlasProject(context.Background(), atlasProjectFlagValues{
-		configPath: "file://" + filepath.ToSlash(filepath.Join(projectDir, "atlas.hcl")),
-		envName:    "local",
-	}, requiredAtlasProject)
+		configPath:  "file://" + filepath.ToSlash(filepath.Join(projectDir, "atlas.hcl")),
+		configNamed: true,
+		envName:     "local",
+	})
 	c.Assert(err, qt.IsNil)
 
 	preservedDir := filepath.Join(parentDir, "preserved")
@@ -183,8 +184,9 @@ func TestAtlasMigrateDownFormatPreservesProjectRoot(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	project, err := applyAtlasMigrateDownFormatProjectConfig(context.Background(), io.Discard, opts, atlasProjectArgValues{
 		flags: atlasProjectFlagValues{
-			configPath: "file://" + filepath.ToSlash(filepath.Join(projectDir, "atlas.hcl")),
-			envName:    "local",
+			configPath:  "file://" + filepath.ToSlash(filepath.Join(projectDir, "atlas.hcl")),
+			configNamed: true,
+			envName:     "local",
 		},
 		changed: true,
 	})

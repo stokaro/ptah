@@ -459,10 +459,6 @@ func atlasSchemaPlanOutputModeFor(outputPath string) atlasSchemaPlanOutputMode {
 	return atlasSchemaPlanDefaultOutput
 }
 
-func needsAtlasSchemaPlanConfig(cmd *cobra.Command) bool {
-	return !cmd.Flags().Changed(atlasFromFlagName) || !cmd.Flags().Changed("to")
-}
-
 func validateAtlasSchemaPlanOptions(cmd *cobra.Command, opts atlasSchemaPlanOptions) error {
 	if err := validateAtlasSchemaPlanTransition(
 		cmd, opts.verb, opts.atlasSchemaPlanTransitionFlags); err != nil {

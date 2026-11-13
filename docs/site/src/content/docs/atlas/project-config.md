@@ -1052,10 +1052,16 @@ interpolated into a URL or path can still appear in downstream errors that
 print that URL or path. `validation` blocks remain unsupported and fail
 explicitly.
 
-If an `atlas.hcl` file has exactly one `env` block, named or unnamed, Ptah can
-use it as the default. Atlas-compatible `migrate apply` does not need to select
-an environment when both `--url` and `--dir` are explicit. Other ambiguous or
-unsupported environment layouts fail instead of guessing.
+`ptah-compat` evaluates an `env` block only when `--env` names it, as the
+Atlas community binary does, and reads `./atlas.hcl` only when `--env` or
+`--config` names a project file. With neither flag, the command flags are the
+whole configuration: beside a file whose only env names a database,
+`migrate apply` with no `--url` fails with `required flag "url" not set` and
+leaves that database alone. `--config` with no `--env` evaluates the file's
+variables, locals and top-level `lint` and `diff` blocks, and no `env` block.
+
+The native `ptah` binary selects the only `env` block of a file that declares
+one, named or unnamed. Several envs and no `--env` fail instead of guessing.
 
 ### Expand one environment into several targets
 

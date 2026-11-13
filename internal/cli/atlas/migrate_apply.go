@@ -169,11 +169,7 @@ func runAtlasMigrateApply(
 	opts atlasMigrateApplyOptions,
 	args []string,
 ) (runErr error) {
-	mode := ignoreMissingEnvSelection
-	if needsAtlasMigrateApplyConfig(cmd) {
-		mode = reportMissingEnvSelection
-	}
-	projects, loaded, err := openAtlasProjectsForCommand(cmd, mode)
+	projects, loaded, err := openAtlasProjectsForCommand(cmd)
 	if err != nil {
 		return err
 	}
@@ -899,11 +895,6 @@ func resolveAtlasApplySkipChecks(cmd *cobra.Command) (bool, error) {
 		)
 	}
 	return skip, nil
-}
-
-func needsAtlasMigrateApplyConfig(cmd *cobra.Command) bool {
-	return !cmd.Flags().Changed("url") ||
-		!cmd.Flags().Changed("dir")
 }
 
 func writeAtlasMigrateApplyFormat(

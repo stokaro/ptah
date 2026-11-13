@@ -13,11 +13,13 @@ the operator expected.
 Each command reads `ptah.yaml` once into the typed project configuration IR.
 Database settings, migration settings, and online-DDL execution policy
 therefore come from the same file generation. When an Atlas-compatible adapter
-delegates to a native command that also consumes project configuration, the
-adapter passes the merged IR instead of letting that command reopen
-`ptah.yaml` or `atlas.hcl`. This snapshot path currently applies to
-`migrate down`; other adapters evaluate Atlas project configuration once and
-map supported values to explicit native command arguments. An explicit
+delegates to a native command, it hands that command the project configuration
+it selected, and the native command does not open `ptah.yaml` or `atlas.hcl`
+itself. `migrate down` receives the merged IR, and merges `ptah.yaml` only when
+`--env` names an environment. Other adapters evaluate Atlas project
+configuration once, map supported values to explicit native command arguments,
+and hand the native command an empty configuration, so it cannot select an
+environment the adapter did not select. An explicit
 `--config` path must exist; the conventional `./ptah.yaml` remains optional.
 
 ## Named environments
@@ -61,7 +63,9 @@ env:
 
 Select an environment with `--env <name>` when a command needs project
 configuration from one of multiple environments. If `ptah.yaml` contains
-exactly one environment, Ptah selects it automatically. A command whose
+exactly one environment, Ptah selects it automatically; `ptah-compat` selects
+an environment only when `--env` names it, as the Atlas community binary does.
+A command whose
 required inputs are all explicit does not need to select an environment. If
 project values are required and multiple environments remain ambiguous, Ptah
 fails instead of guessing.

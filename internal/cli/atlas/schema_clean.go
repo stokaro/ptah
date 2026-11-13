@@ -126,7 +126,7 @@ func runAtlasSchemaClean(
 		return cmdutil.Fail(cmd, err)
 	}
 	formatOutput := cmd.Flags().Changed("format")
-	projectCfg, loaded, err := loadOptionalAtlasProjectConfigForCommand(cmd)
+	projectCfg, loaded, err := loadAtlasProjectConfigForCommand(cmd)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}

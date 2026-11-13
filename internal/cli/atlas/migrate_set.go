@@ -176,11 +176,7 @@ func prepareAtlasMigrateSet(
 	prepared atlasMigrateSetPreparation,
 	returnErr error,
 ) {
-	mode := ignoreMissingEnvSelection
-	if !cmd.Flags().Changed("url") {
-		mode = reportMissingEnvSelection
-	}
-	project, loaded, err := openAtlasProjectForCommand(cmd, mode)
+	project, loaded, err := openAtlasProjectForCommand(cmd)
 	if err != nil {
 		return atlasMigrateSetPreparation{}, err
 	}

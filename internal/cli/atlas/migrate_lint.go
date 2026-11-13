@@ -121,7 +121,7 @@ func runAtlasMigrateLint(
 		return cmdutil.Fail(cmd, err)
 	}
 	formatOutput := cmd.Flags().Changed("format")
-	project, loaded, err := openAtlasProjectForCommand(cmd, ignoreMissingEnvSelection)
+	project, loaded, err := openAtlasProjectForCommand(cmd)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
