@@ -211,8 +211,9 @@ var verbs = map[string]Verb{
 	"migrations test": {TargetWrites, ScratchNone,
 		"runs declarative test cases against the database named by `--db-url`, whose own help " +
 			"calls it a \"Throwaway database URL\": the cases run raw SQL and apply schemas there"},
-	"migrations up": {TargetWrites, ScratchNone,
-		"runs pending migrations against the target"},
+	"migrations up": {TargetWrites, ScratchRewrites,
+		"runs pending migrations against the target; with `--check-drift` it first replays the " +
+			"applied history into an ephemeral shadow database and compares the target with it"},
 	"migrations validate": {TargetNone, ScratchRewrites,
 		"validates the directory against its integrity file; the dev database it names is " +
 			"\"used to clean and replay migrations for SQL validation\""},

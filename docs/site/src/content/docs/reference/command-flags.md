@@ -1313,10 +1313,12 @@ Read the columns as follows.
 | `--allow-destructive` | `bool` | `false` | `PTAH_ALLOW_DESTRUCTIVE` | — |
 | `--allow-dirty` | `bool` | `false` | `PTAH_ALLOW_DIRTY` | — |
 | `--atlas-env` | `string` | — | `PTAH_ATLAS_ENV` | — |
+| `--check-drift` | `bool` | `false` | `PTAH_CHECK_DRIFT` | — |
 | `--config` | `string` | — | `PTAH_CONFIG` | — |
 | `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
 | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
 | `--dir-format` | `string` | `auto` | `PTAH_DIR_FORMAT` | — |
+| `--drift-exclude` | `stringArray` | `[]` | `PTAH_DRIFT_EXCLUDE` | — |
 | `--dry-run` | `bool` | `false` | `PTAH_DRY_RUN` | — |
 | `--env` | `string` | — | `PTAH_ENV` | — |
 | `--exec-order` | `string` | `linear` | `PTAH_EXEC_ORDER` | — |
@@ -1341,6 +1343,7 @@ Read the columns as follows.
 | `--provider-exchanges` | `string` | — | — | — |
 | `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
 | `--runner` | `string` | `ptah` | `PTAH_RUNNER` | — |
+| `--shadow-db` | `string` | — | `PTAH_SHADOW_DB` | — |
 | `--skip-checks` | `bool` | `false` | `PTAH_SKIP_CHECKS` | — |
 | `--skip-report` | `bool` | `false` | `PTAH_SKIP_REPORT` | — |
 | `--statement-timeout` | `string` | — | `PTAH_STATEMENT_TIMEOUT` | — |

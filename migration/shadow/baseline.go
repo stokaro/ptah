@@ -231,24 +231,50 @@ func validateBaselineTargetIdentifierSemantics(
 	shadowConn *dbschema.DatabaseConnection,
 	opts BaselineVerifyOptions,
 ) (*catalog.Database, error) {
-	targetSchema, err := dbschema.ReadSchemaWithSchemasContext(ctx, opts.TargetConn, opts.Schemas)
+	targetSchema, err := readTargetSchema(ctx, shadowConn, targetRead{
+		conn: opts.TargetConn, runtime: opts.Runtime, compare: opts.CompareOptions, dialect: opts.Dialect, schemas: opts.Schemas,
+	})
 	if err != nil {
-		return nil, baselineError("target-introspect", "target_introspection_error", "read target schema", err)
+		return nil, wrapBaselineError(err)
 	}
-	targetGenerated, err := dbschematogo.ConvertDBSchemaToGoSchema(ctx, targetSchema, opts.TargetConn.Info().Dialect, opts.Runtime)
+	return targetSchema, nil
+}
+
+// targetRead is what [readTargetSchema] reads the target with.
+type targetRead struct {
+	conn    *dbschema.DatabaseConnection
+	runtime schemadiff.DatabaseRuntime
+	compare *config.CompareOptions
+	dialect string
+	schemas []string
+}
+
+// readTargetSchema reads the target and refuses a shadow database whose
+// identifier semantics differ from the target's catalog: a comparison between
+// the two would then report names that only fold differently.
+func readTargetSchema(
+	ctx context.Context,
+	shadowConn *dbschema.DatabaseConnection,
+	target targetRead,
+) (*catalog.Database, *VerificationError) {
+	targetSchema, err := dbschema.ReadSchemaWithSchemasContext(ctx, target.conn, target.schemas)
 	if err != nil {
-		return nil, baselineError("target-introspect", "conversion_error", "convert target schema", err)
+		return nil, newVerificationError("target-introspect", "target_introspection_error", "read target schema", err)
+	}
+	targetGenerated, err := dbschematogo.ConvertDBSchemaToGoSchema(ctx, targetSchema, target.conn.Info().Dialect, target.runtime)
+	if err != nil {
+		return nil, newVerificationError("target-introspect", "conversion_error", "convert target schema", err)
 	}
 	targetDiff, err := schemadiff.CompareWithDatabase(
 		ctx,
-		opts.TargetConn,
+		target.conn,
 		targetGenerated,
 		targetSchema,
-		opts.CompareOptions,
-		opts.Runtime,
+		target.compare,
+		target.runtime,
 	)
 	if err != nil {
-		return nil, baselineError(
+		return nil, newVerificationError(
 			"identifier-semantics-check",
 			"target_identifier_semantics_resolution_error",
 			"resolve target identifier semantics",
@@ -258,11 +284,11 @@ func validateBaselineTargetIdentifierSemantics(
 	identifierSemanticsMatch, err := identifierSemanticsAgree(
 		ctx,
 		shadowConn,
-		opts.Dialect,
+		target.dialect,
 		*targetDiff.IdentifierSemantics,
 	)
 	if err != nil {
-		return nil, baselineError(
+		return nil, newVerificationError(
 			"identifier-semantics-check",
 			"identifier_semantics_resolution_error",
 			"resolve shadow identifier semantics",
@@ -270,12 +296,12 @@ func validateBaselineTargetIdentifierSemantics(
 		)
 	}
 	if !identifierSemanticsMatch {
-		return nil, baselineError(
+		return nil, newVerificationError(
 			"identifier-semantics-check",
 			"identifier_semantics_mismatch",
 			fmt.Sprintf(
 				"shadow database identifier semantics do not match target %s catalog semantics",
-				opts.Dialect,
+				target.dialect,
 			),
 			nil,
 		)

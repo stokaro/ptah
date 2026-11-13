@@ -36,6 +36,15 @@ func newBaselineMismatchError(diff *difftypes.SchemaDiff, undecided schemadiff.D
 	if diff.HasChanges() {
 		mismatches = collectMismatches(diff)
 	}
+	mismatches = append(mismatches, undecidedMismatches(undecided)...)
+	return &VerificationError{Result: VerificationResult{Stage: "schema-match", Mismatches: mismatches}}
+}
+
+// undecidedMismatches is one "undecided_object" or "undecided_feature"
+// mismatch for each declared object the comparison withheld because the
+// target read did not describe its kind.
+func undecidedMismatches(undecided schemadiff.Diagnostics) []Mismatch {
+	var mismatches []Mismatch
 	for _, object := range undecidednote.Entries(schemadiff.Diagnostics{Common: undecided.Common}, "the target database") {
 		mismatches = append(mismatches, Mismatch{
 			Kind:   "undecided_object",
@@ -49,7 +58,7 @@ func newBaselineMismatchError(diff *difftypes.SchemaDiff, undecided schemadiff.D
 		mismatches = append(mismatches, Mismatch{Kind: "undecided_feature", FeatureLimit: &diagnostic,
 			Object: row.Name, Message: fmt.Sprintf("undecided %s %s: %s", row.Kind, row.Name, row.Reason)})
 	}
-	return &VerificationError{Result: VerificationResult{Stage: "schema-match", Mismatches: mismatches}}
+	return mismatches
 }
 
 func collectModifiedTableMismatches(table difftypes.TableDiff) []Mismatch {

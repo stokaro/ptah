@@ -296,6 +296,105 @@ error: error running migrations: the migrations selected under the migration loc
 With `--json`, the document records the refusal as a `failed` run with nothing
 applied.
 
+## Check the schema against its history
+
+Checksums prove the files are the ones the database ran, but a column added by
+hand or an index dropped during an incident leaves every checksum intact.
+`--check-drift` compares the schema.
+
+Under the migration lock, after reading the history and selecting what is
+pending, `up` replays the migrations the revision table records as applied on
+the `--shadow-db` database and compares that schema with the target's, before
+anything runs. The baseline is the applied
+history, not the directory, so what a pending migration is about to create is
+not drift. The revision table and its log, under the names this run is
+configured with, are left out of the comparison.
+
+Run it against the database this page migrated, with a shadow database that
+does not exist yet:
+
+```console
+ptah migrations up --db-url "sqlite://app.db" --migrations-dir ./migrations --check-drift --shadow-db "sqlite://shadow.db"
+```
+
+Expected output on standard output:
+
+```text
+Drift check: the database matches the schema its 1 applied migration produces
+```
+
+A clean check lets the run go on and apply what is pending. A target that
+differs stops the run before any pending migration, and the command exits with
+status 1. Standard error lists each difference by object, and never a row:
+
+```text
+Drift check: the database differs from the schema its 1 applied migration produces:
+  - extra column users.nickname
+No pending migration was run. Bring the database back to its history, or record the change in a migration, then run again.
+```
+
+A check that cannot decide is never reported as clean. It exits with status 2
+and applies nothing, when:
+
+- the history cannot be replayed: an applied revision whose file is gone, an
+  applied repeatable migration, whose row records only its last run, or a
+  history that applied a lower version after a higher one;
+- the shadow database cannot be used: it is the target under another name, it
+  is not empty, or the replay of the applied migrations fails on it;
+- the target read cannot describe an object the applied migrations create, so
+  whether the target holds it is unknown.
+
+A dirty revision stops `up` before the check, as it always does. With
+`--allow-dirty`, the check reports the dirty row as a history it cannot replay.
+An Atlas baseline stands for every file at or below it, and those files are
+replayed. A database bootstrapped from a checkpoint replays from that
+checkpoint.
+
+The shadow database must be empty and must not be the target, which the check
+recognizes under another URL too, and the check empties it again when it ends.
+A `docker://` URL starts a disposable container for the run, and a project's
+`dev_url` is the default. `--shadow-db` and `--drift-exclude` without
+`--check-drift` are refused.
+
+`--drift-exclude`, which can be repeated, leaves out objects the migrations do
+not manage, such as a table another tool owns, with the selectors
+`schema diff --exclude` takes.
+
+The lock keeps a cooperating runner from moving the history between the check
+and the apply; DDL from a session that does not take it can still land after
+the check. The check never repairs
+drift. `--dry-run` runs the check against the shadow database too, without the
+lock, since a dry run takes none, and changes nothing on the target.
+
+With `--json`, the run document carries the result in `drift_check`. Its
+`outcome` is `clean`, `drifted` or `unable`; `replayed` lists the versions the
+check replayed, `findings` the differences, and an `unable` check names its
+`stage` and `reason`:
+
+```json
+{
+  "outcome": "failed",
+  "drift_check": {
+    "outcome": "drifted",
+    "replayed": [1785255952],
+    "replayed_keys": ["1785255952"],
+    "findings": [
+      {
+        "kind": "extra_column",
+        "object": "users.nickname",
+        "table": "users",
+        "column": "nickname",
+        "message": "extra column users.nickname"
+      }
+    ]
+  }
+}
+```
+
+`ptah schema drift` answers a different question: whether a database matches a
+declared desired schema. `--check-drift` asks whether it matches the history it
+claims to have run.
+
 ## Check status
 
 ```console

@@ -111,6 +111,9 @@ type options struct {
 	metricsAddr          string
 	jsonOutput           bool
 	expectSequence       string
+	checkDrift           bool
+	shadowDB             string
+	driftExclude         []string
 }
 
 type parsedMigrationSettings struct {
@@ -254,6 +257,26 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 		"Path to a JSON file naming the ordered migrations this run must select under the migration lock; "+
 			"any other selection is refused before the schema or the revision table changes",
 	)
+	flags.BoolVar(
+		&opts.checkDrift,
+		checkDriftFlag,
+		false,
+		"Before any pending migration, replay the applied history on --"+shadowDBFlag+" under the migration lock "+
+			"and refuse to run if the database schema differs from it",
+	)
+	flags.StringVar(
+		&opts.shadowDB,
+		shadowDBFlag,
+		"",
+		"Disposable database the applied history is replayed on for --"+checkDriftFlag+"; it must be empty and "+
+			"distinct from the target, and it is emptied again afterwards",
+	)
+	flags.StringArrayVar(
+		&opts.driftExclude,
+		driftExcludeFlag,
+		nil,
+		"Schema objects --"+checkDriftFlag+" leaves out of the comparison, as `schema diff --exclude` selects them",
+	)
 	flags.Uint64Var(&opts.limit, limitFlag, 0, "Apply only the first N pending migrations (0 applies all)")
 	// A string rather than an int64: a migration version is written the way the
 	// file name writes it, and a zero-padded 0000000002 has to reach the same
@@ -358,6 +381,7 @@ func resolveProjectOptions(cmd *cobra.Command, opts options, projectCfg projectc
 	}
 	opts.dbURL = effectiveString(dbURLFlag, opts.dbURL, projectconfig.StringDatabaseURL)
 	opts.migrationsDir = effectiveString(migrationsFlag, opts.migrationsDir, projectconfig.StringMigrationDir)
+	opts.shadowDB = effectiveString(shadowDBFlag, opts.shadowDB, projectconfig.StringDevURL)
 	opts.dirFormat = effectiveString(dirFormatFlag, opts.dirFormat, projectconfig.StringMigrationFormat)
 	opts.atlasEnv = effectiveString(atlasEnvFlag, opts.atlasEnv, projectconfig.StringEnvName)
 	opts.execOrder = effectiveString(execOrderFlag, opts.execOrder, projectconfig.StringMigrationExecOrder)
@@ -399,6 +423,13 @@ func resolveProjectOptions(cmd *cobra.Command, opts options, projectCfg projectc
 		opts.connectTimeout,
 		projectconfig.StringMigrationConnectTimeout,
 	)
+	// After the shadow database is resolved, so a project dev_url satisfies
+	// --check-drift, and before the hook is authorized for a run it refuses.
+	if err := validateDriftFlags(
+		opts.checkDrift, cmd.Flags().Changed(shadowDBFlag), cmd.Flags().Changed(driftExcludeFlag), opts.shadowDB,
+	); err != nil {
+		return opts, err
+	}
 	if !opts.dryRun {
 		if err := dbcli.AuthorizeConfiguredHook(cmd.Context(), opts.preUpHookOrigin); err != nil {
 			return opts, err
@@ -583,6 +614,12 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *migraterun.Do
 	}
 	document.Migrator = mig
 
+	drift, releaseShadow, err := prepareDriftCheck(cmd.Context(), resolvedOpts, dbURL, settings, conn, mig)
+	if err != nil {
+		return err
+	}
+	defer releaseShadow()
+
 	status, err := readStatusWithoutInitializing(cmd.Context(), conn, mig)
 	if err != nil {
 		return fmt.Errorf("error getting migration status: %w", err)
@@ -608,8 +645,9 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *migraterun.Do
 	//
 	// Nor does a run with an expected sequence, for the same reason: the
 	// comparison is with what the migrator selects under its lock, and an
-	// unlocked "nothing pending" is not that selection.
-	if !status.HasPendingChanges && toVersion == 0 && expected == nil {
+	// unlocked "nothing pending" is not that selection. A drift check runs
+	// under that lock too, and an up-to-date database can still have drifted.
+	if !status.HasPendingChanges && toVersion == 0 && expected == nil && drift == nil {
 		// An applied migration whose file no longer accounts for the checksum
 		// the database recorded is neither a pending change nor a dirty
 		// revision, so both fields above are silent about it and this shortcut
@@ -671,7 +709,8 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *migraterun.Do
 
 	// Run migrations
 	startedAt := time.Now()
-	outcome := applyPendingMigrations(cmd, conn, mig, opts, toVersion, preflightHook, expected, document)
+	outcome := applyPendingMigrations(cmd, conn, mig, opts, toVersion, preflightHook, planGuards{expected, drift}, document)
+	reportDriftCheck(cmd, emit, drift)
 	// A pre-migration hook is work a run does before applying something, so a
 	// selection that came out empty passes none of them, the report above
 	// included. That report is what says why nothing was applied, and a bounded
@@ -682,7 +721,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *migraterun.Do
 	}
 	finalStatus := outcome.status
 	if err := outcome.err(); err != nil {
-		return err
+		return driftExitStatus(err)
 	}
 	checksDeferred := outcome.checksDeferred
 	publishDeploymentReportIfNeeded(cmd.Context(), runtime, emit, deploymentReportPublication{
@@ -887,7 +926,7 @@ func applyPendingMigrations(
 	opts *options,
 	toVersion int64,
 	preflightHook migrator.PreMigrationHook,
-	expected *expectedSequence,
+	guards planGuards,
 	document *migraterun.Document,
 ) migrateUpOutcome {
 	outcome := migrateUpOutcome{}
@@ -916,10 +955,11 @@ func applyPendingMigrations(
 		ChecksDeferredObserver: func(_ context.Context, versions []int64) {
 			outcome.checksDeferred = versions
 		},
-		// Nil when --expect-sequence was not given. It runs right after the
-		// plan observer and before the preflight hook, so no dump, lint or
-		// external command acts on a selection nobody approved.
-		PlanGuard: expected.guard(),
+		// Nil when neither --expect-sequence nor --check-drift was given. It
+		// runs right after the plan observer and before the preflight hook, so
+		// no dump, lint or external command acts on a selection nobody
+		// approved or on a database that drifted.
+		PlanGuard: guards.guard(),
 	})
 
 	// The status read does not inherit the cancelation: after an interrupt it
@@ -931,10 +971,11 @@ func applyPendingMigrations(
 	}
 	outcome.status = status
 	if err := document.Write(migrator.RunEvidence{
-		Plan:   outcome.plan,
-		After:  status,
-		Err:    outcome.runErr,
-		DryRun: opts.dryRun,
+		Plan:       outcome.plan,
+		After:      status,
+		Err:        outcome.runErr,
+		DryRun:     opts.dryRun,
+		DriftCheck: guards.drift.found(),
 	}); err != nil && outcome.runErr == nil {
 		outcome.runErr = err
 	}

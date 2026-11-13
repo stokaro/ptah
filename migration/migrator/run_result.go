@@ -105,6 +105,11 @@ type RunResult struct {
 	// was asked and what the database now holds. It is absent when the status
 	// could not be read, which is itself why the outcome is unknown.
 	Status *MigrationStatus `json:"status,omitempty"`
+	// DriftCheck is what the check of the target against its applied history
+	// found, present only when the run was asked to check. The check runs under
+	// the migration lock before any pending statement, so a run whose check did
+	// not come back clean applied nothing.
+	DriftCheck *DriftCheck `json:"drift_check,omitempty"`
 }
 
 // ErrorReport is the error a run document reports.
@@ -182,6 +187,9 @@ type RunEvidence struct {
 	// [Migrator.MigrationLogReport] returned it. It is nil when the run keeps no
 	// log.
 	MigrationLog *MigrationLogReport
+	// DriftCheck is what the run's drift check found, and nil when it was not
+	// asked for or never ran.
+	DriftCheck *DriftCheck
 }
 
 // NewRunResult classifies one run from its own evidence.
@@ -197,6 +205,7 @@ func NewRunResult(evidence RunEvidence) RunResult {
 		Direction:       evidence.Direction,
 		MigrationLog:    evidence.MigrationLog,
 		Status:          evidence.After,
+		DriftCheck:      evidence.DriftCheck,
 	}
 	if result.Direction == "" {
 		result.Direction = MigrationDirectionUp
