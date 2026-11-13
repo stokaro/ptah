@@ -23,5 +23,6 @@ func TestCreateTriggerNode_FunctionArgumentsCopy(t *testing.T) {
 	copiedNode.SetFunctionArguments([]string{"created_at"})
 	c.Assert(node.FunctionArguments(), qt.DeepEquals, []string{"updated_at"})
 	c.Assert(copiedNode.FunctionArguments(), qt.DeepEquals, []string{"created_at"})
-	c.Assert(*node == copiedNode, qt.IsFalse)
+	same := *node == copiedNode
+	c.Assert(same, qt.IsFalse)
 }
