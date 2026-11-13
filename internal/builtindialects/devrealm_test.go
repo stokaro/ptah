@@ -26,7 +26,7 @@ func TestDescriptors_DevDatabases(t *testing.T) {
 		schemaIsDatabase bool
 	}{
 		{dialect: platform.Postgres, want: descriptor.DevRealm{
-			Identity: "query", Query: currentDatabase, ScratchDatabase: true,
+			Identity: "query", Query: currentDatabase, ClusterQuery: "SELECT system_identifier::text FROM pg_control_system()", ScratchDatabase: true,
 			DropSchema: "DROP SCHEMA IF EXISTS %s CASCADE",
 		}},
 		{dialect: platform.CockroachDB, want: descriptor.DevRealm{

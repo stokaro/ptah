@@ -416,14 +416,14 @@ func MayAddressSameDatabase(left, right string) (bool, error) {
 
 // MayAddressSameDatabaseBeforeLiveCheck is the URL guard for callers that
 // compare both live connections before resetting a dev or shadow database.
-// PostgreSQL databases with the same name on different endpoints may belong
-// to independent clusters; their cluster identifiers decide that live.
+// Databases whose dialect describes a cluster query may have the same name
+// on independent clusters; their cluster identifiers decide that live.
 func MayAddressSameDatabaseBeforeLiveCheck(left, right string) (bool, error) {
 	dialect, err := DialectFromURL(left)
 	if err != nil {
 		return false, err
 	}
-	if platform.NormalizeDialect(dialect) == platform.Postgres {
+	if described, ok := platform.Lookup(dialect); ok && described.DevRealm.ClusterQuery != "" {
 		return SameDatabaseEndpoint(left, right)
 	}
 	return MayAddressSameDatabase(left, right)

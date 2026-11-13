@@ -577,7 +577,7 @@ func (q sqlConnQueryer) QueryRowContext(ctx context.Context, query string, args 
 // A non-local PGlite endpoint is refused because a local file cannot protect
 // clients running on another host.
 func acquirePGliteLock(ctx context.Context, conn pgliteIdentityQueryer, info catalog.ServerInfo, name string, timeout time.Duration) (*Lock, bool, error) {
-	if platform.NormalizeDialect(info.Dialect) != platform.Postgres || !strings.Contains(info.Version, "(PGlite ") {
+	if !strings.Contains(info.Version, "(PGlite ") {
 		return nil, false, nil
 	}
 	parsed, err := url.Parse(info.URL)

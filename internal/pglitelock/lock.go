@@ -1,3 +1,5 @@
+//go:build !js
+
 // Package pglitelock serializes schema changes against a local PGlite server.
 // Its clients share one backend session, so PostgreSQL advisory locks are
 // reentrant across those clients and cannot prove exclusion.

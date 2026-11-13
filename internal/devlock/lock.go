@@ -44,7 +44,7 @@ type Lock struct {
 // database realm. Network endpoints are intentionally excluded from the
 // identity: aliases and replicated members cannot be proven independent before
 // cleanup, so equal live database/catalog names fail closed across hosts unless
-// PostgreSQL reports different cluster identifiers. A
+// the engine reports different cluster identifiers. A
 // YDB database is named by its path and the moment its server created it, so
 // two servers that each serve /local are two realms; see writerIdentity.
 //
@@ -88,24 +88,24 @@ func SameRealm(
 	if err != nil {
 		return false, err
 	}
-	if leftIdentity != rightIdentity || leftDialect != platform.Postgres {
+	if leftIdentity != rightIdentity || leftRealm.ClusterQuery == "" {
 		return leftIdentity == rightIdentity, nil
 	}
-	// Separate PostgreSQL clusters commonly select the same default database.
+	// Separate clusters can select the same default database.
 	// A cluster identifier can prove them distinct; an unavailable identifier
 	// cannot, so keep the conservative refusal in that case. Replicas and
 	// physical copies retain the identifier and remain protected.
-	leftCluster, leftOK := postgresClusterIdentity(ctx, left)
-	rightCluster, rightOK := postgresClusterIdentity(ctx, right)
+	leftCluster, leftOK := clusterIdentity(ctx, left, leftRealm.ClusterQuery)
+	rightCluster, rightOK := clusterIdentity(ctx, right, rightRealm.ClusterQuery)
 	if leftOK && rightOK && leftCluster != rightCluster {
 		return false, nil
 	}
 	return true, nil
 }
 
-func postgresClusterIdentity(ctx context.Context, conn *dbschema.DatabaseConnection) (string, bool) {
+func clusterIdentity(ctx context.Context, conn *dbschema.DatabaseConnection, query string) (string, bool) {
 	var identity sql.NullString
-	if err := conn.QueryRowContext(ctx, "SELECT system_identifier::text FROM pg_control_system()").Scan(&identity); err != nil {
+	if err := conn.QueryRowContext(ctx, query).Scan(&identity); err != nil {
 		return "", false
 	}
 	return identity.String, identity.Valid && identity.String != ""
