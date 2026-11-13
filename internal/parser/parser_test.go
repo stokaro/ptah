@@ -541,7 +541,7 @@ CREATE TABLE audit_log (id INTEGER);`
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(trigger.Name, qt.Equals, "set_updated_at")
 	c.Assert(trigger.FunctionName, qt.Equals, "touch_updated_at")
-	c.Assert(trigger.FunctionArguments, qt.DeepEquals, []string{"updated_at"})
+	c.Assert(trigger.FunctionArguments(), qt.DeepEquals, []string{"updated_at"})
 
 	table, ok := statements.Statements[1].(*ast.CreateTableNode)
 	c.Assert(ok, qt.IsTrue)

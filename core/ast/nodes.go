@@ -1973,9 +1973,9 @@ type CreateTriggerNode struct {
 	// deterministically from Table and Name; see ExternalFunction for
 	// referencing a function that already exists.
 	FunctionName string
-	// FunctionArguments are the text values passed as trigger arguments to
-	// the function. PostgreSQL stores these separately from function parameters.
-	FunctionArguments []string
+	// Keep the argument list behind a pointer so CreateTriggerNode remains
+	// comparable for callers of the public AST package.
+	functionArguments *[]string
 	// ExternalFunction reports that FunctionName refers to a function that
 	// already exists rather than one rendered from Body. PostgreSQL keeps
 	// trigger code in a function, so renderers normally emit that function
@@ -2062,9 +2062,24 @@ func (n *CreateTriggerNode) SetFunctionName(functionName string) *CreateTriggerN
 	return n
 }
 
-// SetFunctionArguments sets the values passed by the trigger to its function.
+// FunctionArguments returns a copy of the text values passed to the trigger
+// function. PostgreSQL stores these separately from function parameters.
+func (n *CreateTriggerNode) FunctionArguments() []string {
+	if n.functionArguments == nil {
+		return nil
+	}
+	return slices.Clone(*n.functionArguments)
+}
+
+// SetFunctionArguments copies the values passed by the trigger to its
+// function and returns the node for chaining.
 func (n *CreateTriggerNode) SetFunctionArguments(arguments []string) *CreateTriggerNode {
-	n.FunctionArguments = arguments
+	if len(arguments) == 0 {
+		n.functionArguments = nil
+		return n
+	}
+	values := slices.Clone(arguments)
+	n.functionArguments = &values
 	return n
 }
 

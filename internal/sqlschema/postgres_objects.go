@@ -185,7 +185,7 @@ func toTrigger(node *ast.CreateTriggerNode, sourcePlatform string) schemamodel.T
 		// folds it, because the catalog reports it folded.
 		OldTable:          normalizeSQLIdentifier(sourcePlatform, node.OldTable),
 		NewTable:          normalizeSQLIdentifier(sourcePlatform, node.NewTable),
-		FunctionArguments: node.FunctionArguments,
+		FunctionArguments: node.FunctionArguments(),
 	}
 	trigger.Canonicalize()
 	if node.ExternalFunction && node.FunctionName != "" {

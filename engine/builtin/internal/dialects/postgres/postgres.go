@@ -3379,8 +3379,9 @@ func (r *Renderer) renderCreateTrigger(node *ast.CreateTriggerNode) error {
 	if forEach == "" {
 		forEach = "ROW"
 	}
-	arguments := make([]string, len(node.FunctionArguments))
-	for i, value := range node.FunctionArguments {
+	functionArguments := node.FunctionArguments()
+	arguments := make([]string, len(functionArguments))
+	for i, value := range functionArguments {
 		quoted := strings.ReplaceAll(value, "'", "''")
 		if strings.Contains(value, `\`) {
 			quoted = strings.ReplaceAll(quoted, `\`, `\\`)
