@@ -15,6 +15,7 @@
 package planeffect
 
 import (
+	"reflect"
 	"slices"
 
 	"ptah.run/catalog"
@@ -394,23 +395,36 @@ func (s *viewStates) mayHaveDropped() {
 
 // cascades reports whether node drops what depends on the object it drops. A
 // view can be among it.
+//
+// It reads the Cascade flag of whatever node or table operation it is given
+// rather than naming the node types that carry one. A list of types misses the
+// next node that gains the flag, and a cascade it misses leaves a dropped view
+// described as present: a CREATE OR REPLACE VIEW after it then claims an
+// unchanged option on a view the server creates anew.
 func cascades(node ast.Node) bool {
-	switch node := node.(type) {
-	case *ast.DropTableNode:
-		return node.Cascade
-	case *ast.DropMaterializedViewNode:
-		return node.Cascade
-	case *ast.DropTypeNode:
-		return node.Cascade
-	case *ast.DropFunctionNode:
-		return node.Cascade
-	case *ast.AlterTableNode:
-		return slices.ContainsFunc(node.Operations, func(operation ast.AlterOperation) bool {
-			drop, isDrop := operation.(*ast.DropColumnOperation)
-			return isDrop && drop.Cascade
+	if alter, isAlter := node.(*ast.AlterTableNode); isAlter {
+		return slices.ContainsFunc(alter.Operations, func(operation ast.AlterOperation) bool {
+			return cascadeFlag(operation)
 		})
 	}
-	return false
+	return cascadeFlag(node)
+}
+
+// cascadeFlag reports whether value is, or points to, a struct whose Cascade
+// field is a set boolean.
+func cascadeFlag(value any) bool {
+	reflected := reflect.ValueOf(value)
+	for reflected.Kind() == reflect.Pointer || reflected.Kind() == reflect.Interface {
+		if reflected.IsNil() {
+			return false
+		}
+		reflected = reflected.Elem()
+	}
+	if reflected.Kind() != reflect.Struct {
+		return false
+	}
+	flag := reflected.FieldByName("Cascade")
+	return flag.IsValid() && flag.Kind() == reflect.Bool && flag.Bool()
 }
 
 // effect is the effect of a statement that leaves object holding after, nil

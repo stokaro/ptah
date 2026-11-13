@@ -102,6 +102,12 @@ ahead of it leave, so a plan that drops a view and creates it again records a
 `ALTER VIEW ... RESET` that follows an `ALTER VIEW ... SET` starts from the
 options the `SET` left.
 
+`changed` alone does not say that a view gains an option. A `create` of a view
+that sets no option records `security_invoker` with `after: false` and
+`changed: true`, because the view did not exist before. A reviewer that holds
+a plan when a view starts reading with its readers' rights tests for `after`
+being `true` where `before` is absent or `false`.
+
 ## What Ptah describes
 
 Ptah describes views on a target that keeps view options: PostgreSQL, and the
