@@ -3,7 +3,6 @@
 package integration_test
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -60,21 +59,17 @@ func newDriftCheckRun(c *qt.C, t *testing.T, version string, outOfBand ...string
 
 // up runs `ptah migrations up` against the target and returns its standard
 // output, its standard error and its exit status.
-func (r driftCheckRun) up(c *qt.C, args ...string) (string, string, int) {
+func (r driftCheckRun) up(c *qt.C, args ...string) (stdout, stderr string, code int) {
 	c.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, r.binary,
+	stdout, stderr, err := runLintE2EBinary(ctx, r.binary,
 		append([]string{"migrations", "up", "--db-url", r.targetURL, "--migrations-dir", r.migrationsDir}, args...)...)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	err := cmd.Run()
-	var exit *exec.ExitError
-	if errors.As(err, &exit) {
-		return stdout.String(), stderr.String(), exit.ExitCode()
+	if exit, ok := errors.AsType[*exec.ExitError](err); ok {
+		return stdout, stderr, exit.ExitCode()
 	}
 	c.Assert(err, qt.IsNil)
-	return stdout.String(), stderr.String(), 0
+	return stdout, stderr, 0
 }
 
 // check runs with --check-drift and --json and decodes the run document.
