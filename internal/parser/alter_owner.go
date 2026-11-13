@@ -3,6 +3,8 @@ package parser
 import (
 	"fmt"
 	"slices"
+	"unicode"
+	"unicode/utf8"
 
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/ptaherr"
@@ -73,8 +75,26 @@ func (p *Parser) readOwnerTo(statement string) error {
 		return fmt.Errorf("expected TO after %s OWNER: %w", statement, err)
 	}
 	p.skipWhitespace()
-	if _, err := p.expectIdentifier(); err != nil {
-		return ptaherr.At(p.current.Start, fmt.Errorf("expected the role after %s OWNER TO: %w", statement, err))
+	role := p.current
+	if !isRoleName(role) {
+		return ptaherr.At(role.Start, fmt.Errorf("expected the role after %s OWNER TO, got %q", statement, role.Value))
 	}
+	p.advance()
 	return p.endStatement(statement + " OWNER TO")
+}
+
+// isRoleName reports a token PostgreSQL reads as the role of OWNER TO: a
+// double-quoted name, or an unquoted one that starts with a letter or an
+// underscore. CURRENT_USER, CURRENT_ROLE and SESSION_USER are such names. A
+// number, or a name in SQL Server's brackets, is a syntax error on the server,
+// and a reader that took it would accept a file the server refuses.
+func isRoleName(token lexer.Token) bool {
+	if isDoubleQuotedIdentifierToken(token) {
+		return true
+	}
+	if token.Type != lexer.TokenIdentifier || token.Value == "" {
+		return false
+	}
+	first, _ := utf8.DecodeRuneInString(token.Value)
+	return first == '_' || unicode.IsLetter(first)
 }

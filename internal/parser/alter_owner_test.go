@@ -68,6 +68,8 @@ func TestParse_AlterOwnerTo_FailurePath(t *testing.T) {
 	}{
 		{name: "table, no TO", sql: "ALTER TABLE t OWNER postgres;", wantErr: `(?s).*expected TO after ALTER TABLE OWNER.*`},
 		{name: "table, no role", sql: "ALTER TABLE t OWNER TO;", wantErr: `(?s).*expected the role after ALTER TABLE OWNER TO.*`},
+		{name: "table, a number for the role", sql: "ALTER TABLE t OWNER TO 1;", wantErr: `(?s).*expected the role after ALTER TABLE OWNER TO, got "1".*`},
+		{name: "table, a bracketed role", sql: "ALTER TABLE t OWNER TO [r];", wantErr: `(?s).*expected the role after ALTER TABLE OWNER TO, got "\[".*`},
 		{name: "table, clause after the role", sql: "ALTER TABLE t OWNER TO r SET SCHEMA s;", wantErr: `(?s).*unsupported ALTER TABLE OWNER TO clause: SET`},
 		{name: "table, owner in a list of actions", sql: "ALTER TABLE t OWNER TO r, ADD COLUMN b int;", wantErr: `(?s).*expected the end of ALTER TABLE OWNER TO.*`},
 		{name: "schema, no role", sql: "ALTER SCHEMA app OWNER TO;", wantErr: `(?s).*expected the role after ALTER SCHEMA OWNER TO.*`},
