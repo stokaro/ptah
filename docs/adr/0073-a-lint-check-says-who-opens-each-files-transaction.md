@@ -16,8 +16,9 @@ A rule about transaction control has to know who opens the transaction a
 migration file runs in. A `BEGIN` nests inside the transaction of a migrator
 that wraps each file. Under a tool that opens none, such as golang-migrate, the
 same `BEGIN` is the file's only transaction. `lintext.CheckRequest.TransactionOwner`
-states this, and the bundled PostgreSQL owner reads it: `TX201` is not reported
-when the file opens its own transaction.
+states this, and `TX201` reads it: where the file opens its own transaction,
+the rule reads a PostgreSQL up file with the reading the migrator applies it
+with, and judges every other file as one the migrator wraps.
 
 The provider wire does not carry the field. A provider-served engine therefore
 judges every file as one its migrator wraps. No provider publishes a rule that

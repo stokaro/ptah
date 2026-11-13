@@ -218,14 +218,31 @@ statement is SQL at all — see `AC101`, `AC102` and `SQL004`, which exist to ke
 those apart.
 
 `TX201` judges a file by its directory's layout. In Atlas's and Ptah's layouts
-the migrator opens a transaction around each file, and a `BEGIN` cannot nest
-inside it, so the rule reports every one. A golang-migrate directory is applied
-without one: golang-migrate sends each file as it is, and
-`ptah-compat migrate apply` runs a file that opens and closes its own
-transaction as written. There `ptah-compat migrate lint` reports no `TX201` for
-a block the file opens and closes, warns about a `BEGIN` inside a block the
-file has not closed, which PostgreSQL ignores with a warning, and `PG103`
-passes over a file of one statement, which runs without a transaction;
+the migrator opens a transaction around each file, or runs the file without one
+when it carries `-- atlas:txmode none`, and refuses a statement that controls
+transaction state in either mode: `BEGIN`, `START TRANSACTION`, `COMMIT`,
+`ROLLBACK`, `SAVEPOINT`, `SET TRANSACTION` and the like. The rule reports the
+statement that opens each such block, in an up file and in a down file, on every
+engine the migrator applies, so the failure shows before a deploy. A run that
+names no dialect reads the statements with the generic grammar and reports
+them the same way. The pinned Atlas community binary v1.3.0 lints
+such a file clean and applies a `txmode none` one, so `ptah-compat` is stricter
+here ([Compatibility differences](../../atlas/retained-divergences/#a-txmode-none-file-that-controls-its-own-transaction)).
+
+golang-migrate opens no transaction around a file, and on PostgreSQL the
+migrator runs an up file of its directory with the transactions the file opens
+itself, and `TX201` reads such a file the same way. It reports a form the
+migrator refuses before any migration runs, such as `ROLLBACK` or a block the
+file leaves open, and a `BEGIN` inside an open block, which PostgreSQL ignores.
+A block the file opens and closes is not reported. `PG103` passes over a file
+of one statement, which runs without a transaction.
+
+On every other engine, and for every down file, the migrator keeps its
+transaction around the file, so `TX201` reports a block there as in any other
+layout. A run that names no dialect judges every file that way; name
+`--dialect postgres` for the PostgreSQL reading. Lint does not see the run's
+transaction mode, and an apply with `--tx-mode all` refuses every file that
+opens its own transaction;
 [Transaction blocks in a golang-migrate directory](../../atlas/migrate-commands/#transaction-blocks-in-a-golang-migrate-directory)
 has the measurement. Every other layout is judged as one whose tool wraps each
 file.
@@ -420,13 +437,18 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 | `PG401P` | a name longer than the 63 bytes PostgreSQL keeps, which the server cuts with a notice and stores under its first bytes | native only | Ptah |
 | `PG402P` | a name PostgreSQL cuts to a name already in use where it refuses the second declaration, so the migration fails when it runs | native only | Ptah |
 | `TX101` | the migration mixes statements that cannot share one transaction | both | Atlas |
-| `TX201` | an explicit BEGIN/COMMIT block fights the transaction the migrator opens around each file; in a golang-migrate directory, which opens none, only a block opened inside another | both | Atlas |
 
 ### postgres, cockroachdb, yugabytedb
 
 | Rule | Meaning | Surface | Origin |
 | --- | --- | --- | --- |
 | `PG303` | SET NOT NULL scans the table to validate existing rows | both | Atlas |
+
+### postgres, mysql, mariadb, clickhouse, sqlite, sqlserver, cockroachdb, yugabytedb
+
+| Rule | Meaning | Surface | Origin |
+| --- | --- | --- | --- |
+| `TX201` | a statement that controls transaction state, which the migrator refuses in a wrapped file and in one that runs without a transaction; a golang-migrate up file on PostgreSQL is read as the migrator runs it | both | Atlas |
 
 ### spanner
 
@@ -617,7 +639,7 @@ Every check code in the reviewed snapshot of the [Atlas analyzer documentation](
 | `CD102` | a check constraint was dropped | yes | `CD102` | covered |
 | `CD103` | a primary-key constraint was dropped | yes | `CD103` | covered |
 | `TX101` | statements cannot run in a single transaction | yes | `TX101` | covered |
-| `TX201` | a nested transaction was detected | yes | `TX201` | covered — in a golang-migrate directory, whose tool opens no transaction around a file, only a block opened inside another |
+| `TX201` | a nested transaction was detected | yes | `TX201` | covered — reported on every engine the migrator applies, because the migrator refuses the file; a golang-migrate up file on PostgreSQL is read as the migrator runs its own transactions |
 | `NM101` | a schema name violates the naming convention | no | `NM101` | covered — needs a configured naming convention |
 | `NM102` | a table name violates the naming convention | no | `NM102` | covered — needs a configured naming convention |
 | `NM103` | a column name violates the naming convention | no | `NM103` | covered — needs a configured naming convention |

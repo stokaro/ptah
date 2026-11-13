@@ -1917,18 +1917,36 @@ and exits `2`, with Ptah's own context around the driver's message.
 
 ### Transaction blocks in a golang-migrate directory
 
-`TX201` reports a `BEGIN` or `START TRANSACTION` in a migration that a
-migrator wraps in a transaction of its own, which the block cannot nest in.
-Atlas runs files that way, and so does Ptah's own migrator. The fix the rule
-names is to remove `BEGIN`/`COMMIT`: the migrator already runs the file in one
-transaction. Marking the file non-transactional is no fix, because apply
-refuses transaction control in a file that runs without a transaction.
+`TX201` reports a statement that controls transaction state, such as `BEGIN`,
+`START TRANSACTION`, `COMMIT` or `SAVEPOINT`, in a migration that a migrator
+wraps in a transaction of its own, which the block cannot nest in. Atlas runs
+files that way, and so does Ptah's own migrator, which refuses such a statement
+before it runs the file. The fix the rule names is to remove the transaction
+control: the migrator already runs the file in one transaction. Marking the
+file `-- atlas:txmode none` is no fix, because apply refuses transaction
+control in a file that runs without a transaction too, and `TX201` reports it
+there as well, on every engine and in a down file as in an up file
+([A `txmode none` file that controls its own transaction](../retained-divergences/#a-txmode-none-file-that-controls-its-own-transaction)).
 
-golang-migrate opens no transaction around a file, so in a directory of its
-layout `TX201` is not reported for a block the file opens and closes. It warns
-about a `BEGIN` inside a block the file has not closed, which PostgreSQL
-ignores with a warning; `migrate apply` runs such a file as golang-migrate
-does. This holds for each way of selecting the layout:
+golang-migrate opens no transaction around a file. On PostgreSQL,
+`migrate apply` runs an up file of its layout with the transactions the file
+opens itself, as golang-migrate does, and `TX201` reads the file with the same
+reading:
+
+- A block the file opens and closes, a `COMMIT` outside every block and a
+  savepoint inside a block are not reported.
+- A form the migrator refuses before any migration runs is reported:
+  `ROLLBACK` or `ABORT`, `COMMIT AND CHAIN`, `PREPARE TRANSACTION`, a savepoint
+  outside a block, a block the file leaves open, and a block in a file whose
+  `-- atlas:txmode file` asks for a transaction around it.
+- A `BEGIN` inside a block the file has not closed draws a warning, since
+  PostgreSQL ignores it with a warning.
+
+On every other engine the migrator keeps its transaction around each file, and
+it runs every down file inside one, so there `TX201` reports a block as it does
+in any other layout. `migrate apply --tx-mode all` refuses every file that
+opens its own transaction, which lint cannot see. This holds for each way of
+selecting the layout:
 `?format=golang-migrate`, `--dir-format golang-migrate`, or
 `format = golang-migrate` in `atlas.hcl`. Measured with golang-migrate v4.20.1
 on PostgreSQL 15.19, through the `postgres://` and `pgx5://` drivers alike:
@@ -1961,10 +1979,8 @@ transaction refuses the mix as a migrator's transaction does; with
 `x-multi-statement=true` the statements are sent one by one and the mix
 applies.
 
-Native `ptah migrations lint` has no golang-migrate layout. It reads a
-golang-migrate directory as one of its own layouts, whose file names match, and
-keeps `TX201` there
-([stokaro/ptah#4955](https://github.com/stokaro/ptah/issues/4955)).
+Native `ptah migrations lint --runner golang-migrate`, or `migration.runner:
+golang-migrate` in `ptah.yaml`, judges the directory the same way.
 
 ### Which objects are under review
 
