@@ -62,8 +62,9 @@ type RebuildSteps struct {
 }
 
 // Columns answers what a rebuild matcher knows of a table's columns just
-// before the statement at index runs, folded or as written, and whether it
-// knows the table at all. Indexes arrive in increasing order.
+// before the statement at index runs, folded or as written, in the order the
+// table declares them, and whether it knows the table at all. Indexes arrive
+// in increasing order.
 type Columns func(index int, table string) ([]string, bool)
 
 // Rebuilds finds the table rebuilds of a file's statements whose copy loses
@@ -240,6 +241,11 @@ func matchRebuild(statements []lintext.Statement, index int) (rebuildMatch, tabl
 	if !ok || !sameTableRef(copied.into, scratch) || sameTableRef(copied.from, scratch) {
 		return rebuildMatch{}, tableCopy{}, false
 	}
+	if len(copied.columns) == 0 {
+		// An INSERT that names no column fills the scratch table's columns in
+		// the order its CREATE TABLE declares them.
+		copied.columns = createdColumns(&statements[index])
+	}
 	match, ok := sqliteSwap(statements, steps[1:], scratch, copied.from)
 	if !ok {
 		match, ok = ydbSwap(statements, steps[1:], scratch, copied.from)
@@ -333,14 +339,16 @@ type tableCopy struct {
 	// alias is the name the SELECT gives the copied table, folded; empty when
 	// it gives none.
 	alias string
-	// columns are the columns the INSERT names, folded; empty when it names
-	// none.
+	// columns are the columns the INSERT fills, folded, in order: those it
+	// names, or, where it names none, those the scratch table's CREATE TABLE
+	// declares. Empty where neither can be read.
 	columns []string
 	// carries holds, for each item of the SELECT list, the column of the
 	// copied table, folded, whose every value the item writes, and "" for an
 	// item that writes anything else.
 	carries []string
-	// star reports a SELECT * with no column list, which copies every column.
+	// star reports a SELECT * with no column list, which writes the old
+	// table's columns into the scratch table's by position.
 	star bool
 }
 
@@ -389,6 +397,68 @@ func copyColumns(w []string, j int) ([]string, int) {
 	return columns, j + 1
 }
 
+// createdColumns reads the columns a CREATE TABLE statement declares, folded,
+// in order: the first word of each element of its body that opens no table
+// constraint. It returns none where the body cannot be read that way: no body,
+// as in CREATE TABLE ... AS SELECT, or an element that starts with no name.
+func createdColumns(stmt *lintext.Statement) []string {
+	w := stmt.Words
+	_, open := createdTableAt(w, stmt.SourceWords)
+	if open == 0 || open >= len(w) || w[open] != "(" {
+		return nil
+	}
+	var columns []string
+	depth := 0
+	for k := open; k < len(w); k++ {
+		switch w[k] {
+		case "(":
+			depth++
+			if depth > 1 {
+				continue
+			}
+		case ")":
+			depth--
+			if depth == 0 {
+				return columns
+			}
+			continue
+		case ",":
+			if depth > 1 {
+				continue
+			}
+		default:
+			continue
+		}
+		// k opens the body or ends an element at depth one: an element starts
+		// after it.
+		column, ok := tableElementColumn(stmt, k+1)
+		if !ok {
+			return nil
+		}
+		if column != "" {
+			columns = append(columns, column)
+		}
+	}
+	return nil
+}
+
+// tableElementColumn reads the CREATE TABLE element at w[k]: the column it
+// declares, folded, or "" for a table constraint. It reports false for an
+// element that starts with no name.
+func tableElementColumn(stmt *lintext.Statement, k int) (string, bool) {
+	w := stmt.Words
+	if k >= len(w) {
+		return "", false
+	}
+	switch w[k] {
+	case "CONSTRAINT", "PRIMARY", "FOREIGN", "CHECK", "UNIQUE", "EXCLUDE",
+		"PERIOD", "INDEX", "KEY", "FULLTEXT", "SPATIAL":
+		return "", true
+	}
+	column, _, ok := IdentifierAt(w, stmt.SourceWords, k)
+	return column.Normalized, ok
+}
+
 // copySource is the table a copy's SELECT reads, folded, the alias it gives
 // it, and where its FROM is.
 type copySource struct {
@@ -425,7 +495,7 @@ func tableAlias(stmt *lintext.Statement, j int) (string, int) {
 	if k < len(w) && w[k] == "AS" {
 		k++
 	}
-	if k == j && k < len(w) && w[k] == "FINAL" {
+	if k == j && k < len(w) && (w[k] == "FINAL" || notAnAlias(w[k])) {
 		return "", j
 	}
 	alias, next, ok := IdentifierAt(w, stmt.SourceWords, k)
@@ -433,6 +503,21 @@ func tableAlias(stmt *lintext.Statement, j int) (string, int) {
 		return "", j
 	}
 	return alias.Normalized, next
+}
+
+// notAnAlias reports whether a bare word, read where an alias may stand, is an
+// operator or a clause instead: `label ISNULL` is the expression
+// `label IS NULL`, which writes 0 or 1 where the value was, and `users WHERE`
+// opens a clause. A quoted word is always a name.
+func notAnAlias(word string) bool {
+	switch word {
+	case "ISNULL", "NOTNULL", "COLLATE", "ESCAPE",
+		"WHERE", "GROUP", "HAVING", "WINDOW", "ORDER", "LIMIT", "OFFSET", "FETCH",
+		"UNION", "EXCEPT", "INTERSECT", "RETURNING",
+		"NATURAL", "JOIN", "LEFT", "RIGHT", "INNER", "OUTER", "CROSS", "FULL", "ON", "USING":
+		return true
+	}
+	return false
 }
 
 // selectItems splits the SELECT list w[j:end] at its top-level commas, as
@@ -564,13 +649,15 @@ func (c tableCopy) names(qualifier string) bool {
 }
 
 // itemAlias reports whether the words of an item from w[k] on are nothing or
-// the item's alias: `AS name` or a bare name.
+// the item's alias: `AS name` or a bare name that is no operator.
 func itemAlias(w, sourceWords []string, k int) bool {
 	if k >= len(w) {
 		return k == len(w)
 	}
 	if w[k] == "AS" {
 		k++
+	} else if notAnAlias(w[k]) {
+		return false
 	}
 	_, next, ok := IdentifierAt(w, sourceWords, k)
 	return ok && next == len(w)
@@ -592,13 +679,30 @@ func (c tableCopy) kept() []string {
 	return kept
 }
 
+// starKept returns the columns a SELECT * copy keeps: those the scratch table
+// declares in the place where the old table, as known spells it, holds the
+// column of the same name, since the copy pairs them by position. A scratch
+// table of another width keeps none, since the statement fails.
+func (c tableCopy) starKept(known []string) []string {
+	if len(known) != len(c.columns) {
+		return nil
+	}
+	var kept []string
+	for i, column := range c.columns {
+		if NormalizeIdent(known[i]) == column {
+			kept = append(kept, column)
+		}
+	}
+	return kept
+}
+
 // lost returns the old table's columns, as known spells them, whose values
 // the copy does not write into the column of the same name.
 func (c tableCopy) lost(known []string) []string {
-	if c.star {
-		return nil
-	}
 	kept := c.kept()
+	if c.star {
+		kept = c.starKept(known)
+	}
 	var lost []string
 	for _, column := range known {
 		if !slices.Contains(kept, NormalizeIdent(column)) {
@@ -610,13 +714,12 @@ func (c tableCopy) lost(known []string) []string {
 
 // copyLoses reports whether the copy may leave a value of the old table
 // behind. Where the old table's columns are known, that is a column the copy
-// loses. Where they are not, it is any column the copy names and writes from
-// something other than itself, and a copy that names no column and is no
-// SELECT *, since either may be one the old table holds.
+// loses. Where they are not, it is any column the copy fills from something
+// other than itself, since it may be one the old table holds, and a copy
+// whose columns cannot be read. A SELECT * is one of those: its item names no
+// column, and only the old table's order says which of its columns lands
+// where.
 func copyLoses(index int, copied tableCopy, columns Columns) bool {
-	if copied.star {
-		return false
-	}
 	if columns != nil {
 		if known, ok := columns(index, copied.from); ok {
 			return len(copied.lost(known)) > 0

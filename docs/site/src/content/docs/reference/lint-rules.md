@@ -127,15 +127,19 @@ A copy that keeps every row can still lose a column's values. The `INSERT`
 pairs its columns with the `SELECT` list by position, so each item has to be
 the old column the `INSERT` names in that place: bare, qualified by the table
 or its alias, or inside `IFNULL` or `COALESCE`, which replace only a `NULL`.
-`SELECT *` with no column list copies every column. An item that writes
-`NULL`, a constant, another column, a `CAST` or any other expression loses the
-column, and so does a column the copy leaves out.
+An `INSERT` with no column list fills the copy's columns in the order its
+`CREATE TABLE` declares them. `SELECT *` fills them in the old table's order,
+so it keeps a column only where the copy declares it in the same place. An
+item that writes `NULL`, a constant, another column, a `CAST` or any other
+expression loses the column, and so does a column the copy leaves out. A word
+after a column is read as its alias only when it is a name: `label ISNULL` is
+the expression `label IS NULL`.
 
 Only the old table's columns show which columns the copy has to carry:
 `DS101` reads them from the starting state and reports the drop when the copy
 loses one. Without a dev database, a column the copy fills from anything but
-itself may be one of the old table's, so `DS101` reports that drop too, and the
-notice above names `DS101`. On YDB the provider reads the old table's columns
+itself may be one of the old table's, and so may a column `SELECT *` moves, so
+`DS101` reports that drop too, and the notice above names `DS101`. On YDB the provider reads the old table's columns
 from the directory's earlier migrations and reports a copy that leaves one
 out; it does not read the `SELECT` list.
 

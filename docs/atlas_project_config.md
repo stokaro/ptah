@@ -301,7 +301,10 @@ On SQLite, `ptah-compat migrate lint` uses the dev database's starting column
 list to inspect a table replacement. A copy that keeps every column produces
 no destructive finding. A copy keeps a column when the `SELECT` item in the
 place of that column in the `INSERT` column list reads the old column of the
-same name, or passes it through `IFNULL` or `COALESCE`. If the replacement
+same name, or passes it through `IFNULL` or `COALESCE`. With no column list,
+the places are the replacement table's columns in `CREATE TABLE` order, and
+`SELECT *` keeps a column only where the replacement declares it in the place
+the old table does. If the replacement
 omits a column, or fills it with `NULL`, a constant, another column or any
 other expression, the report names that column as Atlas `DS103` at the
 replacement table's `CREATE TABLE` line.
