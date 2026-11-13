@@ -76,6 +76,16 @@ func atlasGapDroppedTableRule() Rule {
 		Code:     "BC103",
 		Title:    "dropped table breaks deployed code",
 		Severity: SeverityWarning,
+		// The starting state shows a DROP TABLE IF EXISTS of a table that is
+		// not there, which retires no name ([withoutAbsentTables]), and a
+		// CREATE TABLE IF NOT EXISTS of one that is new ([newTable]).
+		Input: InputBaselineRefinement,
+		BaselineSubjects: func(file *File) []int {
+			if !atlasGapReportsOnThisSurface(file) {
+				return nil
+			}
+			return unionSubjects(file, ifExistsTableDrops, ifNotExistsCreates)
+		},
 		CheckFile: func(file *File) []Finding {
 			if !atlasGapReportsOnThisSurface(file) {
 				return nil
@@ -85,7 +95,7 @@ func atlasGapDroppedTableRule() Rule {
 			created := make(map[string]bool)
 			for i := range file.Statements {
 				stmt := &file.Statements[i]
-				if ref := lintkit.CreatedTableRef(stmt.Words); ref != "" {
+				if ref := newTable(file, i); ref != "" {
 					created[ref] = true
 					continue
 				}
@@ -106,8 +116,9 @@ func atlasGapDroppedTableRule() Rule {
 //
 // Every decision here is DS101's, taken from DS101's own implementation rather
 // than reproduced: the target extraction, the create-then-drop exemption, the
-// logical-name ordering, and the subject-less fail-closed finding for a target
-// list that could not be read to the end. The two rules report the same
+// exemption of an absent table an IF EXISTS skips, the logical-name ordering,
+// and the subject-less fail-closed finding for a target list that could not be
+// read to the end. The two rules report the same
 // statements for different consequences, so a statement one of them recognizes
 // and the other does not would be a silent hole in whichever ran second.
 func atlasGapDroppedTableFindings(file *File, stmt *Statement, index int, created map[string]bool) []Finding {
@@ -115,6 +126,7 @@ func atlasGapDroppedTableFindings(file *File, stmt *Statement, index int, create
 		return nil
 	}
 	tables, complete := lintkit.DroppedTablesNotCreated(stmt.Words, stmt.sourceWords, created)
+	tables = withoutAbsentTables(file, index, tables)
 	if complete && len(tables) == 0 {
 		return nil
 	}
@@ -158,28 +170,32 @@ const atlasGapDroppedTableAdvice = "application versions already deployed agains
 // atlasGapDroppedColumnRule reports BC104: a dropped column retires a name
 // deployed clients still select and insert.
 //
-// It differs from DS102 in one place, and the difference is the question rather
-// than an oversight: a column on a table this migration itself created is
-// exempt here and reported there. No deployed application version ever saw that
-// table, so nothing can break on the name -- while the rows DS102 speaks for
-// are its own question, which that rule answers for itself.
+// It exempts what DS102 exempts, through the same [newColumnDrops]: a column
+// of a table this migration created, and a column it added earlier. No
+// deployed application version ever saw either, so nothing can break on the
+// name.
 func atlasGapDroppedColumnRule() Rule {
 	return Rule{
 		Code:     "BC104",
 		Title:    "dropped column breaks deployed code",
 		Severity: SeverityWarning,
+		// The starting state shows a CREATE TABLE IF NOT EXISTS of a table
+		// that is new, whose columns no deployed client read ([newTable]).
+		Input: InputBaselineRefinement,
+		BaselineSubjects: func(file *File) []int {
+			if !atlasGapReportsOnThisSurface(file) {
+				return nil
+			}
+			return ifNotExistsCreates(file)
+		},
 		CheckFile: func(file *File) []Finding {
 			if !atlasGapReportsOnThisSurface(file) {
 				return nil
 			}
 			var findings []Finding
-			created := make(map[string]bool)
+			own := newColumnDrops(file)
 			for i := range file.Statements {
 				stmt := &file.Statements[i]
-				if ref := lintkit.CreatedTableRef(stmt.Words); ref != "" {
-					created[ref] = true
-					continue
-				}
 				if !lintkit.IsAlterTable(stmt.Words) {
 					continue
 				}
@@ -187,12 +203,8 @@ func atlasGapDroppedColumnRule() Rule {
 				// reports is reported here: MySQL's `DROP col` without the
 				// keyword, the IF EXISTS and ONLY forms, and a comma list,
 				// which stays one finding carrying every retired name.
-				subjects := droppedColumnSubjects(stmt.Words, stmt.sourceWords)
+				subjects := withoutNewColumns(droppedColumnSubjects(stmt.Words, stmt.sourceWords), own[i])
 				if len(subjects) == 0 {
-					continue
-				}
-				owner := lintkit.AlterTableReference(stmt.Words, stmt.sourceWords)
-				if owner.Normalized != "" && lintkit.RefersToCreated(created, owner.Normalized) {
 					continue
 				}
 				findings = append(findings, Finding{

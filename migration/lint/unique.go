@@ -132,7 +132,7 @@ func columnsAddedBefore(file *File, index int, table lintkit.TableReference) map
 func tablesCreatedBefore(file *File, index int) map[string]bool {
 	created := make(map[string]bool)
 	for i := 0; i < index && i < len(file.Statements); i++ {
-		if ref := lintkit.CreatedTableRef(file.Statements[i].Words); ref != "" {
+		if ref := newTable(file, i); ref != "" {
 			created[ref] = true
 		}
 	}
@@ -284,11 +284,13 @@ func riskIsSettled(risk uniqueRisk) bool {
 
 func uniqueIndexAddedRule() Rule {
 	return Rule{
-		Code:             "MF101",
-		Title:            "unique index over existing rows may fail",
-		Severity:         SeverityWarning,
-		Input:            InputBaselineRefinement,
-		BaselineSubjects: uniqueIndexStatements,
+		Code:     "MF101",
+		Title:    "unique index over existing rows may fail",
+		Severity: SeverityWarning,
+		Input:    InputBaselineRefinement,
+		BaselineSubjects: func(file *File) []int {
+			return unionSubjects(file, uniqueIndexStatements, ifNotExistsCreates)
+		},
 		CheckFile: func(file *File) []Finding {
 			if !file.IsUp {
 				return nil
@@ -310,12 +312,14 @@ func uniqueIndexAddedRule() Rule {
 
 func indexMadeUniqueRule() Rule {
 	return Rule{
-		Code:             "MF102",
-		Title:            "index rebuilt as unique may fail",
-		Severity:         SeverityWarning,
-		Subsumes:         []string{"MF101"},
-		Input:            InputBaselineRefinement,
-		BaselineSubjects: uniqueIndexStatements,
+		Code:     "MF102",
+		Title:    "index rebuilt as unique may fail",
+		Severity: SeverityWarning,
+		Subsumes: []string{"MF101"},
+		Input:    InputBaselineRefinement,
+		BaselineSubjects: func(file *File) []int {
+			return unionSubjects(file, uniqueIndexStatements, ifNotExistsCreates)
+		},
 		CheckFile: func(file *File) []Finding {
 			if !file.IsUp {
 				return nil

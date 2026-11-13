@@ -184,7 +184,7 @@ func fileRenames(file *File) []statementRename {
 	created := make(map[string]bool)
 	for i := range file.Statements {
 		stmt := &file.Statements[i]
-		if ref := lintkit.CreatedTableRef(stmt.Words); ref != "" {
+		if ref := newTable(file, i); ref != "" {
 			created[ref] = true
 			continue
 		}

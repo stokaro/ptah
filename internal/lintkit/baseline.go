@@ -309,6 +309,36 @@ func SubsetOf(inner, outer []string) bool {
 	return true
 }
 
+// LacksTable reports whether the state was read and holds no table tableRef
+// can name, so a statement that drops the table only if it exists drops
+// nothing. It answers false wherever the state cannot say: a version the run
+// never read, and a schema-qualified reference to a schema the state does not
+// hold, which a reader scoped to another schema leaves out. A state of one
+// schema whose reader named none cannot tell its schema from another, so it
+// answers false for every qualified reference.
+//
+// The state reads tables through their columns, so a table with no column is
+// not one it holds.
+func (b State) LacksTable(tableRef string) bool {
+	if b.Empty() || tableRef == "" || len(b.byTable[tableRef]) > 0 {
+		return false
+	}
+	dot := strings.LastIndex(tableRef, ".")
+	if dot < 0 {
+		return true
+	}
+	if b.schemaless {
+		return false
+	}
+	prefix := tableRef[:dot+1]
+	for key := range b.byTable {
+		if strings.HasPrefix(key, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // Empty reports that this state resolves nothing, which is what a version
 // the run never read from a dev database gets.
 func (b State) Empty() bool {
