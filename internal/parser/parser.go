@@ -5526,6 +5526,8 @@ func (p *Parser) parseAlterStatement() (ast.Node, error) {
 			return p.parseCockroachAlterIndex()
 		}
 		return nil, ptaherr.At(p.current.Start, fmt.Errorf("unsupported ALTER target: %s", target))
+	case "SCHEMA", "TYPE", "DOMAIN", "FUNCTION", "PROCEDURE", "SEQUENCE", "VIEW", "MATERIALIZED":
+		return nil, p.parseAlterOwnerTo(target)
 	default:
 		return nil, p.refuseHead(p.current.Start, "ALTER", target, "unsupported ALTER target: %s")
 	}
@@ -5550,6 +5552,11 @@ func (p *Parser) parseAlterTable() (ast.Node, error) {
 	tableName, err := p.parseTableName("table name")
 	if err != nil {
 		return nil, err
+	}
+
+	p.skipWhitespace()
+	if p.current.MatchIdentifierValue("OWNER") && p.readsOwnerTo(descriptor.OwnerKindTable) {
+		return nil, p.readOwnerTo("ALTER TABLE")
 	}
 
 	alterNode := &ast.AlterTableNode{

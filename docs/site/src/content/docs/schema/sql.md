@@ -510,6 +510,30 @@ partitions](../../databases/postgresql/#table-partitions) has the bound forms, h
 bound is compared, how a dump reads, and the forms that are refused. Every other
 target refuses the statement by name.
 
+## Start from a `pg_dump` file
+
+On PostgreSQL, a file written by `pg_dump --schema-only` reads as it is, with
+the ownership statements `pg_dump` writes after each object it dumps:
+
+```sql
+ALTER SCHEMA app OWNER TO postgres;
+ALTER TABLE app.t OWNER TO postgres;
+ALTER FUNCTION app.f(integer) OWNER TO postgres;
+```
+
+The reader takes `ALTER ... OWNER TO` for a table, schema, type, domain,
+function, procedure, sequence, view or materialized view, and a function or
+procedure may carry its argument list. A statement of this form declares
+nothing: Ptah describes no ownership, so the role is not a role of the schema,
+the statement plans no `CREATE ROLE`, `GRANT` or `OWNER TO`, and the file plans
+exactly as the same dump written with `--no-owner` does. Another action on one
+of these kinds, such as `ALTER SCHEMA ... RENAME TO`, and a role missing after
+`OWNER TO` are refused by name. Every target other than PostgreSQL refuses the
+statement, because its server has no `OWNER TO`.
+
+`ALTER SEQUENCE ... OWNED BY` ties a sequence to a column. It is a different
+statement, and the reader refuses it.
+
 ## API export metadata
 
 SQL DDL cannot author Ptah's export-only `api_name`, `openapi_name`,

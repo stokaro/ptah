@@ -367,6 +367,11 @@ type StatementForms struct {
 	// RenameTable reports that RENAME TABLE a TO b, with further pairs after a
 	// comma, renames a table, as ALTER TABLE a RENAME TO b does.
 	RenameTable bool `json:"rename_table,omitempty"`
+	// OwnerTo states the kinds of object whose owner `ALTER <kind> <name>
+	// OWNER TO <role>` changes, each one of [OwnerKinds]. The parser reads the
+	// statement to its end and contributes no node: the schema model describes
+	// objects, not who owns them. A kind that is not listed is refused.
+	OwnerTo []string `json:"owner_to,omitempty"`
 }
 
 // Drop states how DROP reads one kind of object.
@@ -417,6 +422,38 @@ func DropKinds() []string {
 	return []string{
 		DropKindTable, DropKindView, DropKindMaterializedView, DropKindTrigger,
 		DropKindFunction, DropKindProcedure, DropKindProc, DropKindSequence, DropKindType,
+	}
+}
+
+// The kinds of object an [StatementForms.OwnerTo] entry may name.
+const (
+	// OwnerKindTable is ALTER TABLE ... OWNER TO.
+	OwnerKindTable = "TABLE"
+	// OwnerKindSchema is ALTER SCHEMA ... OWNER TO.
+	OwnerKindSchema = "SCHEMA"
+	// OwnerKindType is ALTER TYPE ... OWNER TO.
+	OwnerKindType = "TYPE"
+	// OwnerKindDomain is ALTER DOMAIN ... OWNER TO.
+	OwnerKindDomain = "DOMAIN"
+	// OwnerKindFunction is ALTER FUNCTION ... OWNER TO, which may carry an
+	// argument list.
+	OwnerKindFunction = "FUNCTION"
+	// OwnerKindProcedure is ALTER PROCEDURE ... OWNER TO, which may carry an
+	// argument list.
+	OwnerKindProcedure = "PROCEDURE"
+	// OwnerKindSequence is ALTER SEQUENCE ... OWNER TO.
+	OwnerKindSequence = "SEQUENCE"
+	// OwnerKindView is ALTER VIEW ... OWNER TO.
+	OwnerKindView = "VIEW"
+	// OwnerKindMaterializedView is ALTER MATERIALIZED VIEW ... OWNER TO.
+	OwnerKindMaterializedView = "MATERIALIZED VIEW"
+)
+
+// OwnerKinds returns the values an entry of [StatementForms.OwnerTo] may be.
+func OwnerKinds() []string {
+	return []string{
+		OwnerKindTable, OwnerKindSchema, OwnerKindType, OwnerKindDomain, OwnerKindFunction,
+		OwnerKindProcedure, OwnerKindSequence, OwnerKindView, OwnerKindMaterializedView,
 	}
 }
 
@@ -627,6 +664,9 @@ func validateStatementForms(grammar Grammar) error {
 		kinds = append(kinds, drop.Kind)
 	}
 	if err := validateWords("DROP kind", kinds, DropKinds()); err != nil {
+		return err
+	}
+	if err := validateWords("OWNER TO kind", statements.OwnerTo, OwnerKinds()); err != nil {
 		return err
 	}
 	openings := make([]string, 0, len(statements.Operations))
