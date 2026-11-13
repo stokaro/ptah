@@ -57,6 +57,13 @@ var assignmentName = regexp.MustCompile(`(?i)(?:^|[;&\s:])\s*([a-z_][a-z0-9_ ]*?
 // string, with where its value starts and ends.
 var keywordValuePair = regexp.MustCompile(`^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*('(?:[^'\\]|\\.)*'|(?:[^\s'\\]|\\.)*)`)
 
+// serverOption is one run-time parameter in the value of libpq's `options`
+// setting, `-c name=value` or `--name=value`, at its start, after a space, or
+// after the quote a keyword/value string opens the setting with. Its value runs
+// to the next space or quote that no backslash escapes, as libpq splits the
+// setting.
+var serverOption = regexp.MustCompile(`(?:^|[\s'])(?:-c\s*|--)([A-Za-z_][A-Za-z0-9_.$-]*)=((?:\\.|[^\s\\'])*)`)
+
 // fileSchemes are the schemes of a URL that names a file
 // (descriptor.URLs.FileSchemes), whose text may hold an "@" and a ":" with no
 // credentials near them.
@@ -417,6 +424,10 @@ func (h *hiddenText) keywordValue(dsn string) (string, bool) {
 		case IsSecretParameter(rest[match[2]:match[3]]):
 			secrets = append(secrets, value)
 			out.WriteString(rest[:match[4]] + redactedQueryValue)
+		case strings.EqualFold(rest[match[2]:match[3]], serverOptionsSetting):
+			shown, hidden := serverOptions(value)
+			secrets = append(secrets, hidden...)
+			out.WriteString(rest[:match[4]] + shown)
 		case strings.ContainsAny(value, ";&"):
 			return "", false
 		default:
@@ -536,6 +547,14 @@ func (h *hiddenText) rawQuery(rawQuery string, urlValued func(key string) bool) 
 				h.hide(values[idx])
 				values[idx] = redactedQueryValue
 			}
+		case strings.EqualFold(key, serverOptionsSetting):
+			for idx := range values {
+				shown, hidden := serverOptions(values[idx])
+				for _, secret := range hidden {
+					h.hide(secret)
+				}
+				values[idx] = shown
+			}
 		case urlValued(key):
 			for idx := range values {
 				values[idx] = h.userInfo(values[idx])
@@ -543,6 +562,30 @@ func (h *hiddenText) rawQuery(rawQuery string, urlValued func(key string) bool) 
 		}
 	}
 	return query.Encode()
+}
+
+// serverOptionsSetting is libpq's setting that passes run-time parameters to
+// the server, in a URL's query or a keyword/value string.
+const serverOptionsSetting = "options"
+
+// serverOptions returns the value of libpq's `options` setting with the value
+// of every secret-named parameter in it hidden, and the values it hid.
+// PostgreSQL takes a custom parameter there, such as
+// `-c app.jwt_secret=...`, and a parameter is a secret by its name as a
+// query parameter is, by [IsSecretParameter].
+func serverOptions(value string) (shown string, hidden []string) {
+	var out strings.Builder
+	last := 0
+	for _, match := range serverOption.FindAllStringSubmatchIndex(value, -1) {
+		if match[4] == match[5] || !IsSecretParameter(value[match[2]:match[3]]) {
+			continue
+		}
+		hidden = append(hidden, value[match[4]:match[5]])
+		out.WriteString(value[last:match[4]] + redactedQueryValue)
+		last = match[5]
+	}
+	out.WriteString(value[last:])
+	return out.String(), hidden
 }
 
 // urlValuedParameter reports, for a URL of the given scheme, which query
