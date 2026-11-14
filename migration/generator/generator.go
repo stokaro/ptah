@@ -17,6 +17,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasmigrate"
 	"ptah.run/internal/devclean"
 	"ptah.run/internal/fsnapshot"
@@ -82,6 +83,34 @@ type GenerateMigrationOptions struct {
 	// custom revision table or the Atlas-format one is then compared as an
 	// ordinary table.
 	RevisionTables []string
+	// Exclude keeps the objects these selectors name out of both sides of the
+	// comparison, so the migration neither creates nor drops them. It filters
+	// the desired schema, the read of the database the plan is made against
+	// (DBConn may be a dev database a migration directory was replayed on),
+	// and the shadow verification's read-back, through
+	// [ptah.run/migration/shadow.MigrationVerifyOptions.Exclude].
+	//
+	// The selectors take the grammar `ptah schema diff --exclude` takes:
+	// Atlas-style globs over an object's name, optionally qualified by its
+	// schema and narrowed by type, such as "audit_log", "public.legacy_*" or
+	// "*[type=policy]", repeated or comma-separated. A provider names its own
+	// object types to them through [ptah.run/core/selectext]. A selector that
+	// excludes every policy, such as "*[type=policy]", also leaves each
+	// table's row-security switch out of both sides, so the migration neither
+	// enables nor disables it; one that names a single policy does not. On
+	// MySQL and MariaDB a selector that excludes a whole kind also spares the
+	// read the privilege that kind needs.
+	//
+	// Nil excludes nothing, and so does a list holding only blanks and commas.
+	// Otherwise Runtime must implement [ptah.run/core/selectext.Runtime], as
+	// *ptah.run/engine.Runtime does. [PlanMigration] refuses a Runtime that
+	// does not with an error wrapping [ptah.run/core/selectext.ErrUnselected],
+	// and a selector the grammar rejects, before it connects. A selector with
+	// more parts than the connection's scope allows is refused once the
+	// connection says which scope it reads, before any file is written. A
+	// selector that matched nothing on either side is reported as one warning
+	// line to Diagnostics.
+	Exclude []string
 	// EnvironmentExtensions names extensions the database held before the
 	// current state was built and that the desired schema does not own: a dev
 	// database's own, which the replay that built the current state kept. The
@@ -296,14 +325,11 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 	if err := schemaext.RequireRuntime(ctx, opts.Runtime); err != nil {
 		return nil, err
 	}
-	opts, err := normalizeGenerateMigrationOptions(opts)
+	prepared, err := preparePlan(opts)
 	if err != nil {
 		return nil, err
 	}
-	authorizedPriorMigrations, err := captureAuthorizedPriorMigrations(opts.PriorMigrationsFS)
-	if err != nil {
-		return nil, err
-	}
+	opts = prepared.opts
 
 	// 1. Determine the desired schema: use a pre-merged one when provided (for a
 	// composite desired-state assembled from several sources), otherwise parse the
@@ -322,7 +348,7 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 		defer dbschema.CloseAndWarn(conn)
 	}
 
-	dbSchema, err := readPlanTarget(ctx, conn, desired, opts)
+	desired, dbSchema, err := readExcludedPlanStates(ctx, conn, desired, prepared.exclusion, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -398,11 +424,42 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 		outputDir:                    opts.OutputDir,
 		dir:                          writer,
 		plannedContents:              plannedContents,
-		authorizedPriorMigrations:    authorizedPriorMigrations,
+		authorizedPriorMigrations:    prepared.authorizedPriorMigrations,
 		hasAuthorizedPriorMigrations: opts.PriorMigrationsFS != nil,
 		reportFormat:                 opts.ReportFormat,
 		specs:                        specs,
 	}, nil
+}
+
+// readExcludedPlanStates reads the database a migration is planned against and
+// returns it beside desired, both without what exclusion names, and warns
+// about a selector that named nothing on either.
+//
+// The desired schema is filtered before the read, because the schemas a read
+// covers are resolved from what the desired schema declares: an excluded
+// object does not bring its schema into the read.
+func readExcludedPlanStates(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	desired *schemamodel.Database,
+	exclusion atlasfilter.Exclusion,
+	opts GenerateMigrationOptions,
+) (*schemamodel.Database, *catalog.Database, error) {
+	defaultSchema := conn.Info().Schema
+	desired, desiredReport, err := exclusion.Desired(desired, defaultSchema)
+	if err != nil {
+		return nil, nil, fmt.Errorf("apply exclude selectors to the desired schema: %w", err)
+	}
+	dbSchema, err := readPlanTarget(exclusion.ReadContext(ctx), conn, desired, opts)
+	if err != nil {
+		return nil, nil, err
+	}
+	dbSchema, observedReport, err := exclusion.Observed(dbSchema, defaultSchema)
+	if err != nil {
+		return nil, nil, fmt.Errorf("apply exclude selectors to the database schema: %w", err)
+	}
+	atlasfilter.ReportUnmatched(opts.Diagnostics, desiredReport, observedReport)
+	return desired, dbSchema, nil
 }
 
 // readPlanTarget reads the database a migration is planned against, at the

@@ -18,7 +18,9 @@ import (
 	"ptah.run/core/planext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/fsnapshot"
 	"ptah.run/internal/pathguard"
 	"ptah.run/internal/rolepassword"
 	"ptah.run/internal/sqlitevirtual"
@@ -63,6 +65,7 @@ func verifyPlannedShadowMigration(
 		Generated:   desired,
 		CompareOpts: opts.CompareOptions,
 		Schemas:     opts.Schemas,
+		Exclude:     opts.Exclude,
 	})
 }
 
@@ -135,6 +138,35 @@ func resolveDesiredSchema(opts GenerateMigrationOptions) (*schemamodel.Database,
 		return nil, fmt.Errorf("error parsing Go entities: %w", err)
 	}
 	return desired, nil
+}
+
+// planPreconditions are what PlanMigration settles before it parses the
+// desired schema or connects: the normalized options, the prior migrations
+// the plan is authorized against, and the exclusion every compared state is
+// read under.
+type planPreconditions struct {
+	opts                      GenerateMigrationOptions
+	authorizedPriorMigrations fsnapshot.Snapshot
+	exclusion                 atlasfilter.Exclusion
+}
+
+// preparePlan normalizes opts, captures the prior migrations and resolves the
+// exclude selectors, so a malformed option or selector is refused before
+// anything is read.
+func preparePlan(opts GenerateMigrationOptions) (planPreconditions, error) {
+	opts, err := normalizeGenerateMigrationOptions(opts)
+	if err != nil {
+		return planPreconditions{}, err
+	}
+	authorized, err := captureAuthorizedPriorMigrations(opts.PriorMigrationsFS)
+	if err != nil {
+		return planPreconditions{}, err
+	}
+	exclusion, err := atlasfilter.NewExclusion(opts.Runtime, opts.Exclude)
+	if err != nil {
+		return planPreconditions{}, fmt.Errorf("invalid exclude selectors: %w", err)
+	}
+	return planPreconditions{opts: opts, authorizedPriorMigrations: authorized, exclusion: exclusion}, nil
 }
 
 func normalizeGenerateMigrationOptions(opts GenerateMigrationOptions) (GenerateMigrationOptions, error) {

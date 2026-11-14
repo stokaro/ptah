@@ -187,3 +187,83 @@ func TestAtlasCompatMigrateDiffReadsTheEnvExclude_HappyPathE2E(t *testing.T) {
 		})
 	}
 }
+
+// migrateDiffReplayRoot writes a migration directory whose history created
+// `widgets` and `manual`, a desired schema that adds a column to `widgets` and
+// declares no `manual`, and an atlas.hcl whose env excludes `manual`.
+func migrateDiffReplayRoot(c *qt.C) string {
+	c.Helper()
+	root := c.TempDir()
+	c.Assert(os.MkdirAll(filepath.Join(root, "migrations"), 0o755), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(root, "migrations", "20200101000000_init.sql"), []byte(
+		"CREATE TABLE widgets (id INTEGER PRIMARY KEY);\nCREATE TABLE manual (id INTEGER PRIMARY KEY);\n",
+	), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(root, "schema.sql"), []byte(
+		"CREATE TABLE widgets (id INTEGER PRIMARY KEY, name TEXT);\n",
+	), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(root, "atlas.hcl"), []byte(`env "local" {
+  src     = "file://schema.sql"
+  dev     = "sqlite://file?mode=memory"
+  exclude = ["manual"]
+  migration {
+    dir = "file://migrations"
+  }
+}
+`), 0o600), qt.IsNil)
+	hashed := clirun.Run(c, clirun.Compat, clirun.Options{Dir: root, Env: environmentWithoutPtahVariables()},
+		"migrate", "hash", "--dir", "file://migrations")
+	c.Assert(hashed.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", hashed.Stderr))
+	return root
+}
+
+// migrateDiffAddedFile returns the body of the migration named "add" under
+// root.
+func migrateDiffAddedFile(c *qt.C, root string) string {
+	c.Helper()
+	files, err := filepath.Glob(filepath.Join(root, "migrations", "*_add.sql"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(files, qt.HasLen, 1)
+	contents, err := os.ReadFile(files[0])
+	c.Assert(err, qt.IsNil)
+	return string(contents)
+}
+
+// TestAtlasCompatMigrateDiffEnvExcludeReachesTheReplay_HappyPathE2E covers the
+// current side of `migrate diff`, the replay of the migration directory. The
+// history created `manual` and the desired schema no longer declares it, so
+// the env's exclusion is what keeps the next migration from dropping it; the
+// replay is filtered by the exclusion native `migrations generate --replay`
+// applies. The run without the env is the control, and drops the table.
+func TestAtlasCompatMigrateDiffEnvExcludeReachesTheReplay_HappyPathE2E(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "no env",
+			args: migrateDiffExcludeArgs,
+			want: "-- Add column \"name\" to table: \"widgets\"\n" +
+				"ALTER TABLE \"widgets\" ADD COLUMN \"name\" text NULL;\n" +
+				"-- Drop \"manual\" table\n" +
+				"DROP TABLE \"manual\";\n",
+		},
+		{
+			name: "the env excludes the replayed table",
+			args: []string{"--env", "local"},
+			want: "-- Add column \"name\" to table: \"widgets\"\n" +
+				"ALTER TABLE \"widgets\" ADD COLUMN \"name\" text NULL;\n",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			root := migrateDiffReplayRoot(c)
+
+			result := clirun.Run(c, clirun.Compat, clirun.Options{Dir: root, Env: environmentWithoutPtahVariables()},
+				append([]string{"migrate", "diff", "add"}, test.args...)...)
+
+			c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", result.Stderr))
+			c.Assert(migrateDiffAddedFile(c, root), qt.Equals, test.want)
+		})
+	}
+}

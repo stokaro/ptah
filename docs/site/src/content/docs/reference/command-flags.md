@@ -882,6 +882,7 @@ Read the columns as follows.
 | `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
 | `--dir-format` | `string` | `auto` | `PTAH_DIR_FORMAT` | — |
 | `--env` | `string` | — | `PTAH_ENV` | — |
+| `--exclude` | `stringArray` | `[]` | `PTAH_EXCLUDE` | — |
 | `--ignore-extension` | `stringArray` | `[]` | `PTAH_IGNORE_EXTENSION` | — |
 | `--migrations-dir` | `string` | — | `PTAH_MIGRATIONS_DIR` | — |
 | `--migrations-table` | `string` | — | `PTAH_MIGRATIONS_TABLE` | — |
@@ -1021,6 +1022,7 @@ Read the columns as follows.
 | `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
 | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
 | `--env` | `string` | — | `PTAH_ENV` | — |
+| `--exclude` | `stringArray` | `[]` | `PTAH_EXCLUDE` | — |
 | `--ignore-extension` | `stringArray` | `[]` | `PTAH_IGNORE_EXTENSION` | — |
 | `--migrations-table` | `string` | — | `PTAH_MIGRATIONS_TABLE` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |

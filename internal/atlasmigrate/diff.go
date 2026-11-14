@@ -261,6 +261,9 @@ type preparedDiff struct {
 	opts    DiffOptions
 	schemas []string
 	format  string
+	// exclusion is the one native `migrations generate` applies, so both
+	// surfaces plan a migration that names the same objects.
+	exclusion atlasfilter.Exclusion
 }
 
 func GenerateDiff(
@@ -297,7 +300,8 @@ func generateDiff(
 	opts = prepared.opts
 	schemas := prepared.schemas
 	format := prepared.format
-	ctx = readscope.Without(ctx, atlasfilter.KindsLeftOut(opts.Runtime.Selections(), opts.Exclude, nil)...)
+	exclusion := prepared.exclusion
+	ctx = exclusion.ReadContext(ctx)
 
 	if err := ensureMigrationDirParent(opts.Root, opts.Dir); err != nil {
 		return DiffResult{}, err
@@ -346,10 +350,7 @@ func generateDiff(
 	if desiredDefaultSchema == "" {
 		desiredDefaultSchema = devDefaultSchema
 	}
-	desired, err := filterDiffDesired(ctx, desiredState.Schema, atlasfilter.Scope{
-		Selections: opts.Runtime.Selections(), Schemas: schemas,
-		Exclude: opts.Exclude, DefaultSchema: desiredDefaultSchema,
-	})
+	desired, err := filterDiffDesired(ctx, desiredState.Schema, opts.Runtime.Selections(), schemas, exclusion, desiredDefaultSchema)
 	if err != nil {
 		return DiffResult{}, err
 	}
@@ -377,7 +378,7 @@ func generateDiff(
 		func(replayConn *dbschema.DatabaseConnection, baseline devclean.Baseline) error {
 			current, diff, err := compareReplayedState(
 				ctx, replayConn, runtime, schemas, devDefaultSchema, desired, baseline,
-				opts.Exclude, opts.Diagnostics, opts.ValidateLiveObject, opts.Policy, opts.Runtime,
+				exclusion, opts.Diagnostics, opts.ValidateLiveObject, opts.Policy, opts.Runtime,
 			)
 			if err != nil {
 				return err
@@ -568,10 +569,14 @@ func prepareDiff(
 	if err := opts.Qualifier.ValidateScope(conn.Info().Dialect, schemas); err != nil {
 		return preparedDiff{}, err
 	}
+	exclusion, err := atlasfilter.NewExclusion(opts.Runtime, opts.Exclude)
+	if err != nil {
+		return preparedDiff{}, err
+	}
 	if err := ctx.Err(); err != nil {
 		return preparedDiff{}, err
 	}
-	return preparedDiff{opts: opts, schemas: schemas, format: format}, nil
+	return preparedDiff{opts: opts, schemas: schemas, format: format, exclusion: exclusion}, nil
 }
 
 func resolveDesiredState(
@@ -778,7 +783,7 @@ func compareReplayedState(
 	defaultSchema string,
 	desired *schemamodel.Database,
 	baseline devclean.Baseline,
-	exclude []string,
+	exclusion atlasfilter.Exclusion,
 	diagnostics io.Writer,
 	validateLiveObject func(atlasschema.LiveSchemaObject) error,
 	policy atlasschema.DiffPolicy,
@@ -800,7 +805,7 @@ func compareReplayedState(
 	if err != nil {
 		return nil, nil, err
 	}
-	replayed, err = atlasfilter.ExcludeDatabaseWithDefaultSchema(selected.Selections(), replayed, exclude, defaultSchema)
+	replayed, _, err = exclusion.Observed(replayed, defaultSchema)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -845,12 +850,22 @@ func compareReplayedState(
 	return replayed, diff, nil
 }
 
-func filterDiffDesired(ctx context.Context, desired *schemamodel.Database, scope atlasfilter.Scope) (*schemamodel.Database, error) {
-	filtered, err := schemascope.FilterGeneratedWithDefaultSchema(ctx, scope.Selections, desired, scope.Schemas, scope.DefaultSchema)
+// filterDiffDesired scopes the desired state to schemas and leaves out what
+// exclusion names. defaultSchema owns the objects it leaves unqualified.
+func filterDiffDesired(
+	ctx context.Context,
+	desired *schemamodel.Database,
+	selections selectext.Set,
+	schemas []string,
+	exclusion atlasfilter.Exclusion,
+	defaultSchema string,
+) (*schemamodel.Database, error) {
+	filtered, err := schemascope.FilterGeneratedWithDefaultSchema(ctx, selections, desired, schemas, defaultSchema)
 	if err != nil {
 		return nil, err
 	}
-	return atlasfilter.ExcludeGeneratedWithDefaultSchema(scope.Selections, filtered, scope.Exclude, scope.DefaultSchema)
+	filtered, _, err = exclusion.Desired(filtered, defaultSchema)
+	return filtered, err
 }
 
 // readReplayedSchema reads the state the migration directory replayed, which

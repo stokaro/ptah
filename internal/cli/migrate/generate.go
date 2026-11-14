@@ -13,8 +13,10 @@ import (
 	"ptah.run/config/projectconfig"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemasource"
+	"ptah.run/core/selectext"
 	"ptah.run/dbschema"
 	"ptah.run/engine"
+	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasmigrate"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
@@ -55,6 +57,7 @@ const (
 	generateDevURLFlag           = "dev-url"
 	generateDirFormatFlag        = "dir-format"
 	generateQualifierFlag        = "qualifier"
+	generateExcludeFlag          = "exclude"
 )
 
 func NewMigrateGenerateCommand() *cobra.Command {
@@ -73,7 +76,12 @@ database: the existing migration directory is replayed on the disposable
 --dev-url database (which is reset destructively first), and the next
 migration is generated from the difference between that replayed state and
 the desired schema sources. This lets CI generate the next migration from the
-repository alone.`,
+repository alone.
+
+--exclude leaves the objects it selects out of the desired schema, out of the
+current state, whether read from --db-url or replayed, and out of the shadow
+verification, so the migration neither creates nor drops them. It takes the
+selectors schema diff --exclude takes.`,
 		RunE: migrateGenerateCommand,
 	}
 
@@ -104,6 +112,7 @@ repository alone.`,
 	)
 	flags.StringArray(dbcli.IgnoreExtensionFlagName, nil,
 		"Database extension the comparison must leave alone, neither created nor dropped (repeatable; adds to the defaults)")
+	flags.StringArray(generateExcludeFlag, nil, "Schema objects to exclude from the generated migration (Atlas-style selectors)")
 	dbcli.RegisterExternalSchemaOptInFlag(flags)
 	dbcli.RegisterMigrationsTableFlag(flags, new(string))
 	dbcli.RegisterRevisionTableFormatFlag(flags, new(string))
@@ -112,6 +121,27 @@ repository alone.`,
 
 	cmdutil.ConfigureCommand(cmd)
 	return cmd
+}
+
+// generateComparisonScope reads the flags that narrow what the comparison
+// holds: the extensions it leaves alone, and the exclude selectors. A
+// malformed selector is refused here, under the scope selections of the run's
+// runtime, before the integrity gate or a replay reaches a database. The
+// generator applies the selectors to the desired schema, to the read of the
+// target or of the replayed directory, and to the shadow verification.
+func generateComparisonScope(cmd *cobra.Command, selections selectext.Set) (ignoreExtensions, exclude []string, err error) {
+	ignoreExtensions, err = cmd.Flags().GetStringArray(dbcli.IgnoreExtensionFlagName)
+	if err != nil {
+		return nil, nil, err
+	}
+	exclude, err = cmd.Flags().GetStringArray(generateExcludeFlag)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := atlasfilter.ValidateExcludeSelectors(exclude, selections); err != nil {
+		return nil, nil, fmt.Errorf("invalid --%s: %w", generateExcludeFlag, err)
+	}
+	return ignoreExtensions, exclude, nil
 }
 
 // revisionTables names the bookkeeping tables `migrations up` writes under the
@@ -613,6 +643,10 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+	ignoreExtensions, exclude, err := generateComparisonScope(cmd, runtime.Selections())
+	if err != nil {
+		return err
+	}
 	if migrationsDir == "" {
 		return dbcli.MissingProjectValue(projectCfg, fmt.Errorf("migrations directory is required"))
 	}
@@ -645,11 +679,6 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	// directory before any database is reached (stokaro/ptah#3952).
 	loadDesired, loadShadowDesired := desiredLoaders(cmd, runtime, rootDirs, schemaFiles, commands, shadowDB)
 
-	ignoreExtensions, err := cmd.Flags().GetStringArray(dbcli.IgnoreExtensionFlagName)
-	if err != nil {
-		return err
-	}
-
 	generateOpts := generator.GenerateMigrationOptions{
 		Runtime: runtime,
 		CompareOptions: dbcli.CompareOptionsIgnoringExtensions(
@@ -660,6 +689,7 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 		OutputDir:         migrationsDir,
 		Schemas:           dbcli.ParseSchemas(schemasValue),
 		RevisionTables:    revisionTables,
+		Exclude:           exclude,
 		CheckDestructive:  checkDestructive,
 		AllowDestructive:  allowDestructive,
 		ReportFormat:      reportFormat,
