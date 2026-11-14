@@ -121,8 +121,11 @@ none or nothing was written.
 **It is not an audit trail.** The account that applies a plan can rewrite every
 row of the record that it did. Tamper evidence is the database's own audit.
 
-**It is not part of the schema.** Every reader leaves the table out, so
-`ptah schema inspect` does not show it and the next plan does not drop it.
+**It is not part of the schema.** Every reader leaves the table out, together
+with its owner and what a default privilege grants on it. `ptah schema inspect`
+does not show it, `ptah schema drift` and `ptah schema security` do not report
+it, and the next plan does not drop it. A plan saved before a run created the
+table still applies after that run, a run that failed included.
 `ptah db drop-all` names it beside the revision tables and drops it with them.
 
 **It keeps everything.** Nothing prunes it. A deployment that needs a retention

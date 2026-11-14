@@ -946,6 +946,11 @@ var mssqlOwnerKinds = map[string]string{
 // NONE and cannot be authenticated as either, so neither is somebody whose
 // password could be held. Measured on SQL Server 2025: dbo reports INSTANCE,
 // `guest` and a `CREATE USER ... WITHOUT LOGIN` user both report NONE.
+//
+// The schema apply log is left out, as the table read leaves it out. Its owner
+// is part of a saved plan's source fingerprint otherwise, and a schema apply
+// creates the log before its first statement, a run that fails included, so
+// every plan saved before that run would read stale after it.
 func (r *Reader) readObjectOwners(ctx context.Context) ([]catalog.ObjectOwner, error) {
 	query := `
 		SELECT o.type AS kind, s.name AS schema_name, o.name AS object_name,
@@ -956,6 +961,7 @@ func (r *Reader) readObjectOwners(ctx context.Context) ([]catalog.ObjectOwner, e
 		JOIN sys.database_principals AS owner
 			ON owner.principal_id = COALESCE(o.principal_id, s.principal_id)
 		WHERE o.type IN ('U', 'V', 'SO') AND o.is_ms_shipped = 0
+			AND NOT (o.type = 'U' AND o.name = N'` + revisiontable.ApplyLog + `')
 		UNION ALL
 		SELECT 'schema' AS kind, '' AS schema_name, s.name AS object_name,
 		       owner.name AS owner_name,

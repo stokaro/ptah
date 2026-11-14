@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -145,6 +146,32 @@ func TestSchemaApplyRecordsWhereAFailedApplyStopped_FailurePath(t *testing.T) {
 		PlanName: plan.Name, PlanDigest: digest.FromBytes(document).String(), StatementCount: 2,
 		ErrorPosition: 2, ErrorStatement: plan.StatementSQL()[1], Error: err.Error(),
 	})
+}
+
+// A plan saved before any run created the log still applies after a failed run
+// left one: retrying it is the same plan against the same schema, and the log
+// is not part of that schema.
+func TestSchemaApplyAppliesAPlanSavedBeforeTheLogExisted_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	f := newPlanFixture(c)
+	planPath := f.savePlan(c)
+	failing, err := atlasschema.ReadPlanFile(planPath)
+	c.Assert(err, qt.IsNil)
+	failing.Statements = append(slices.Clone(failing.Statements), failing.Statements[0])
+	document, err := atlasschema.MarshalPlanFile(failing)
+	c.Assert(err, qt.IsNil)
+	failingPath := filepath.Join(f.dir, "failing.plan.json")
+	c.Assert(os.WriteFile(failingPath, document, 0o600), qt.IsNil)
+	_, stderr, err := runSchemaStreams("apply", "--db-url", f.dbURL, "--plan", failingPath, "--auto-approve", "--json")
+	c.Assert(err, qt.ErrorMatches, "(?s)apply schema changes: .*", qt.Commentf("stderr:\n%s", stderr))
+	c.Assert(listSQLiteTables(c, f.dbPath), qt.DeepEquals, []string{"ptah_schema_apply_log", "users"})
+
+	stdout, stderr, err := runSchemaStreams("apply", "--db-url", f.dbURL, "--plan", planPath, "--auto-approve", "--json")
+
+	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr))
+	report := decodeOneDocument[atlasschema.ApplyReport](c, stdout)
+	c.Assert(report.Outcome, qt.Equals, atlasschema.ApplyOutcomeApplied)
+	c.Assert(listSQLiteTables(c, f.dbPath), qt.DeepEquals, []string{"orders", "ptah_schema_apply_log", "users"})
 }
 
 // A run that sent no statement reached nothing, so it writes no entry, creates
