@@ -124,7 +124,6 @@ func TestLintFS_TransactionControl_ReportsAWrappedFileUnderARunnerThatOpensItsOw
 		{"MySQL", "mysql", "START TRANSACTION;\nINSERT INTO users VALUES (1);\nCOMMIT;\n"},
 		{"SQL Server", "sqlserver", "BEGIN TRAN;\nINSERT INTO users VALUES (1);\nCOMMIT TRAN;\n"},
 		{"CockroachDB", "cockroachdb", block},
-		{"no dialect, which names no engine that reads a file's own transactions", "", block},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -352,6 +351,36 @@ func TestLintFS_TransactionControl_MessageNamesTheModeUnderARunnerThatOpensItsOw
 
 			c.Assert(findingSites(findings), qt.DeepEquals, []string{atlasFile + ":1:TX201"})
 			c.Assert(findings[0].Message, qt.Contains, test.want)
+		})
+	}
+}
+
+// A run that names no dialect cannot know the engine, and reads an up file of
+// a golang-migrate directory the way PostgreSQL's migrator runs it: a block
+// the file opens and closes is not reported, a form that reading refuses is,
+// and a down file keeps the wrapped reading.
+func TestLintFS_TransactionControl_NoDialectReadsAGolangMigrateFileAsPostgreSQLDoes(t *testing.T) {
+	tests := []struct {
+		name  string
+		files map[string]string
+		want  []string
+	}{
+		{"a block the file opens and closes", map[string]string{nativeUp: "BEGIN;\nINSERT INTO users VALUES (1);\nCOMMIT;\n"},
+			make([]string, 0)},
+		{"a block opened inside another", map[string]string{nativeUp: "BEGIN;\nBEGIN;\nCOMMIT;\n"},
+			[]string{nativeUp + ":2:TX201"}},
+		{"a block ended by ROLLBACK", map[string]string{nativeUp: "BEGIN;\nINSERT INTO users VALUES (1);\nROLLBACK;\n"},
+			[]string{nativeUp + ":3:TX201"}},
+		{"a down file", map[string]string{nativeUp: "CREATE TABLE t (id int);\n", nativeDown: "BEGIN;\nDROP TABLE t;\nCOMMIT;\n"},
+			[]string{nativeDown + ":1:TX201"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			findings := transactionControlFindings(c, "", migrationfile.DirFormatAuto, lintext.TransactionOwnerFile, test.files)
+
+			c.Assert(findingSites(findings), qt.DeepEquals, test.want)
 		})
 	}
 }
