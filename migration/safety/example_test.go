@@ -113,8 +113,8 @@ func ExampleAssessRendered() {
 
 // ExampleRenderText writes the compact text table an operator reads in a
 // terminal — the same rendering `ptah migrations plan --report text` prints.
-// The subject column falls back to the node type when a statement names no
-// subject.
+// The subject column names the object each statement acts on, and prints `-`
+// for a statement that names none.
 func ExampleRenderText() {
 	assessments := safety.Assess([]ast.Node{
 		ast.NewDropTable("legacy_sessions"),

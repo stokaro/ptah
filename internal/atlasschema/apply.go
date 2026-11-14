@@ -63,6 +63,10 @@ type ApplyOptions struct {
 	Shape   planext.StatementShape
 	ToURLs  []string
 	Exclude []string
+	// ExcludeSources names where the run read each Exclude selector, for the
+	// diagnostic about one that matched nothing; see
+	// [atlasfilter.ExcludeSources]. Nil names every selector as --exclude's.
+	ExcludeSources atlasfilter.ExcludeSources
 	// ProjectRoots bounds the files a desired state may make this process read.
 	//
 	// A declaration names the file that carries its rows, and a schema is not
@@ -205,6 +209,10 @@ type ApplyRuntimeOptions struct {
 	DevURL  string
 	ToURLs  []string
 	Exclude []string
+	// ExcludeSources names where the run read each Exclude selector, for the
+	// diagnostic about one that matched nothing; see
+	// [atlasfilter.ExcludeSources]. Nil names every selector as --exclude's.
+	ExcludeSources atlasfilter.ExcludeSources
 	// DevServerDisposable is the operator's declaration that the server
 	// DevURL names is the run's own; see
 	// [ptah.run/internal/migrationreplay.Options.DevServerDisposable].
@@ -664,11 +672,11 @@ func selectApplyStates(ctx context.Context, dialect string, current *catalog.Dat
 	// say so instead.
 	unmatched := atlasfilter.UnmatchedAcrossStates(currentReports.Exclude, desiredReports.Exclude)
 	if opts.RefuseUnmatchedExclude {
-		if err := refuseUnmatchedExclude(unmatched); err != nil {
+		if err := refuseUnmatchedExclude(unmatched, opts.ExcludeSources); err != nil {
 			return nil, nil, err
 		}
 	} else {
-		reportUnmatchedExclude(opts.Diagnostics, unmatched)
+		reportUnmatchedExclude(opts.Diagnostics, unmatched, opts.ExcludeSources)
 	}
 	// An --include selection that matched neither the database nor the desired
 	// state leaves nothing to apply. Reported as a synced schema it is a verb
@@ -1107,6 +1115,7 @@ func PrepareApply(
 		ProjectRoots:              opts.ProjectRoots,
 		ToURLs:                    opts.ToURLs,
 		Exclude:                   opts.Exclude,
+		ExcludeSources:            opts.ExcludeSources,
 		Schemas:                   opts.Schemas,
 		Include:                   opts.Include,
 		Policy:                    opts.Policy,

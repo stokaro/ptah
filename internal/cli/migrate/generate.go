@@ -125,9 +125,21 @@ replaces it.`,
 	return cmd
 }
 
+// comparisonScope is what narrows the comparison `migrations generate` makes.
+type comparisonScope struct {
+	// ignoreExtensions names the extensions the comparison leaves alone.
+	ignoreExtensions []string
+	// exclude holds the project's exclude list and the flag's together.
+	exclude []string
+	// excludeSources records where the run read each exclude selector, so a
+	// selector that matched nothing is reported under its own source.
+	excludeSources atlasfilter.ExcludeSources
+}
+
 // generateComparisonScope reads the flags that narrow what the comparison
 // holds: the extensions it leaves alone, and the exclude selectors, which are
-// the project's exclude list and the flag's together. A malformed selector is
+// the project's exclude list and the flag's together, with where the run read
+// each selector. A malformed selector is
 // refused here, under the scope selections of the run's runtime, before the
 // integrity gate or a replay reaches a database. The generator applies the
 // selectors to the desired schema, to the read of the target or of the
@@ -136,23 +148,23 @@ func generateComparisonScope(
 	cmd *cobra.Command,
 	projectCfg projectconfig.Config,
 	selections selectext.Set,
-) (ignoreExtensions, exclude []string, err error) {
-	ignoreExtensions, err = cmd.Flags().GetStringArray(dbcli.IgnoreExtensionFlagName)
+) (comparisonScope, error) {
+	ignoreExtensions, err := cmd.Flags().GetStringArray(dbcli.IgnoreExtensionFlagName)
 	if err != nil {
-		return nil, nil, err
+		return comparisonScope{}, err
 	}
-	exclude, err = cmd.Flags().GetStringArray(generateExcludeFlag)
+	exclude, err := cmd.Flags().GetStringArray(generateExcludeFlag)
 	if err != nil {
-		return nil, nil, err
+		return comparisonScope{}, err
 	}
-	exclude, err = dbcli.EffectiveExclude(projectCfg, exclude, selections)
+	exclude, excludeSources, err := dbcli.EffectiveExclude(cmd, generateExcludeFlag, exclude, projectCfg, selections)
 	if err != nil {
-		return nil, nil, err
+		return comparisonScope{}, err
 	}
 	if err := atlasfilter.ValidateExcludeSelectors(exclude, selections); err != nil {
-		return nil, nil, fmt.Errorf("invalid --%s: %w", generateExcludeFlag, err)
+		return comparisonScope{}, fmt.Errorf("invalid --%s: %w", generateExcludeFlag, err)
 	}
-	return ignoreExtensions, exclude, nil
+	return comparisonScope{ignoreExtensions: ignoreExtensions, exclude: exclude, excludeSources: excludeSources}, nil
 }
 
 // revisionTables names the bookkeeping tables `migrations up` writes under the
@@ -654,7 +666,7 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	ignoreExtensions, exclude, err := generateComparisonScope(cmd, projectCfg, runtime.Selections())
+	scope, err := generateComparisonScope(cmd, projectCfg, runtime.Selections())
 	if err != nil {
 		return err
 	}
@@ -693,14 +705,15 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	generateOpts := generator.GenerateMigrationOptions{
 		Runtime: runtime,
 		CompareOptions: dbcli.CompareOptionsIgnoringExtensions(
-			cmd, ignoreExtensions, projectCfg, nil,
+			cmd, scope.ignoreExtensions, projectCfg, nil,
 		),
 		DatabaseURL:       targetURL,
 		MigrationName:     name,
 		OutputDir:         migrationsDir,
 		Schemas:           dbcli.ParseSchemas(schemasValue),
 		RevisionTables:    revisionTables,
-		Exclude:           exclude,
+		Exclude:           scope.exclude,
+		ExcludeSources:    scope.excludeSources,
 		CheckDestructive:  checkDestructive,
 		AllowDestructive:  allowDestructive,
 		ReportFormat:      reportFormat,

@@ -191,10 +191,18 @@ error: invalid exclude in ptah.yaml: invalid Atlas exclude glob "us[ers": syntax
 ```
 
 A selector that matches nothing in any state the run reads is handled as one
-from `--exclude`, and the diagnostic names `--exclude`: `schema apply` refuses
-it unless `PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE=1`, and the other verbs that take
-`--exclude` warn. `schema serve`, `migrations up --check-drift` and
-`migrations down --plan` do not report it.
+from `--exclude`: `schema apply` refuses it unless
+`PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE=1`, and the other verbs that take
+`--exclude` warn. The diagnostic names the file that lists the selector, as the
+run spelled the path:
+
+```text
+Warning: the exclude selection from ptah.yaml matched no objects: "nosuch_table".
+```
+
+A selector the command line adds is named as `--exclude`'s, and one that
+`PTAH_EXCLUDE` adds is named by the variable. `schema serve`,
+`migrations up --check-drift` and `migrations down --plan` do not report it.
 
 Verbs that compare nothing do not apply the list, among them `schema render`,
 `schema validate`, `migrations lint`, `migrations status`, and `migrations up`
@@ -362,7 +370,7 @@ Boolean `PTAH_*` variables — flag twins and direct feature toggles alike —
 follow one rule: absence selects the documented default, a present value must
 parse as a boolean, and anything else fails the command before it does work.
 The accepted spellings and the error shape are documented once, in the
-[Configuration reference](site/src/content/docs/reference/configuration.mdxx).
+[Configuration reference](site/src/content/docs/reference/configuration.mdx).
 
 Project-file merging preserves source presence. For a supported field, an
 explicitly present value replaces the lower-precedence value instead of being
