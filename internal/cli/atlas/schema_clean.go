@@ -144,7 +144,9 @@ func runAtlasSchemaClean(
 		// the destructive one too. Ignoring it here is the dangerous direction:
 		// an operator who excluded a table from their schema workflow would
 		// still watch this command drop it.
-		opts.exclude = effectiveAtlasExclude(cmd, opts.exclude, projectCfg)
+		// schema clean reports no unmatched selector, so it has no use for the
+		// sources.
+		opts.exclude, _ = effectiveAtlasExclude(cmd, opts.exclude, projectCfg)
 	}
 	if policy.IsStrictCE() && formatOutput {
 		return failAtlasStrictCompatGate(cmd, "ptah-compat schema clean --format")

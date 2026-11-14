@@ -125,7 +125,7 @@ func scopeGeneratedSide(
 	}
 	filtered, report, err := atlasfilter.ExcludeGeneratedScopeReport(db, scope)
 	if err != nil {
-		return nil, atlasfilter.ScopeReports{}, fmt.Errorf("apply --exclude to %s: %w", side, err)
+		return nil, atlasfilter.ScopeReports{}, fmt.Errorf("apply exclude selectors to %s: %w", side, err)
 	}
 	return filtered, atlasfilter.ScopeReports{Exclude: report}, nil
 }
@@ -150,7 +150,7 @@ func scopeDatabaseSide(
 	}
 	filtered, report, err := atlasfilter.ExcludeDatabaseScopeReport(db, scope)
 	if err != nil {
-		return nil, atlasfilter.ScopeReports{}, fmt.Errorf("apply --exclude to %s: %w", side, err)
+		return nil, atlasfilter.ScopeReports{}, fmt.Errorf("apply exclude selectors to %s: %w", side, err)
 	}
 	return filtered, atlasfilter.ScopeReports{Exclude: report}, nil
 }

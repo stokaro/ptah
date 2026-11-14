@@ -395,7 +395,10 @@ func readPlanStates(
 	defaultSchema := conn.Info().Schema
 	desired, desiredReport, err := exclusion.Desired(desired, defaultSchema)
 	if err != nil {
-		return planStates{}, fmt.Errorf("apply --%s to the desired schema: %w", excludeFlag, err)
+		// The selectors may come from the project file or PTAH_EXCLUDE as well
+		// as the flag, so the wrap names none of them, as `migrations
+		// generate` words the same failure.
+		return planStates{}, fmt.Errorf("apply exclude selectors to the desired schema: %w", err)
 	}
 	schemas, err := schemascope.ComparisonReadNames(cmd.Context(), conn.Info(), requested, conn, desired)
 	if err != nil {
@@ -408,7 +411,7 @@ func readPlanStates(
 	current = revisiontable.Without(current, bookkeeping)
 	current, currentReport, err := exclusion.Observed(current, defaultSchema)
 	if err != nil {
-		return planStates{}, fmt.Errorf("apply --%s to the database schema: %w", excludeFlag, err)
+		return planStates{}, fmt.Errorf("apply exclude selectors to the database schema: %w", err)
 	}
 	atlasfilter.ReportUnmatched(cmd.ErrOrStderr(), excludeSources, desiredReport, currentReport)
 	return planStates{desired: desired, current: current, schemas: schemas}, nil

@@ -201,6 +201,99 @@ func TestAtlasMigrateApplyReportShapeE2E_Parity(t *testing.T) {
 			wantCode:   1,
 		},
 		{
+			name:   "a golang-migrate directory names each file as it holds it",
+			format: "?format=golang-migrate",
+			added: map[string]string{
+				"1_a.up.sql": "CREATE TABLE a (id int);\n", "1_a.down.sql": "DROP TABLE a;\n",
+				"2_b.up.sql": "CREATE TABLE b (id int);\n", "2_b.down.sql": "DROP TABLE b;\n",
+			},
+			args: jsonFormat,
+			wantStdout: `{` + applyReportShapeURL + `,"Dir":"file://migrations?format=golang-migrate",` +
+				`"Pending":[{"Name":"1_a.up.sql","Version":"1","Description":"a"},{"Name":"2_b.up.sql","Version":"2","Description":"b"}],` +
+				`"Applied":[{"Name":"1_a.up.sql","Version":"1","Description":"a","Start":"T","End":"T","Applied":["CREATE TABLE a (id int);"]},` +
+				`{"Name":"2_b.up.sql","Version":"2","Description":"b","Start":"T","End":"T","Applied":["CREATE TABLE b (id int);"]}],` +
+				`"Target":"2","Start":"T","End":"T","Message":"Migrated to version 2 from  (2 migrations in total)"}`,
+		},
+		{
+			name:   "a golang-migrate file out of order",
+			format: "?format=golang-migrate",
+			applied: map[string]string{
+				"1_a.up.sql": "CREATE TABLE a (id int);\n", "1_a.down.sql": "DROP TABLE a;\n",
+				"3_c.up.sql": "CREATE TABLE c (id int);\n", "3_c.down.sql": "DROP TABLE c;\n",
+			},
+			added:      map[string]string{"2_b.up.sql": "CREATE TABLE b (id int);\n", "2_b.down.sql": "DROP TABLE b;\n"},
+			wantStderr: "Error: migration file 2_b.up.sql was added out of order." + applyReportShapeNonLinear,
+			wantCode:   1,
+		},
+		{
+			name:   "a golang-migrate file out of order under --format",
+			format: "?format=golang-migrate",
+			applied: map[string]string{
+				"1_a.up.sql": "CREATE TABLE a (id int);\n", "1_a.down.sql": "DROP TABLE a;\n",
+				"3_c.up.sql": "CREATE TABLE c (id int);\n", "3_c.down.sql": "DROP TABLE c;\n",
+			},
+			added:      map[string]string{"2_b.up.sql": "CREATE TABLE b (id int);\n", "2_b.down.sql": "DROP TABLE b;\n"},
+			args:       jsonFormat,
+			wantStderr: "Error: migration file 2_b.up.sql was added out of order." + applyReportShapeNonLinear,
+			wantCode:   1,
+		},
+		{
+			name:       "an amount that is not a number",
+			added:      map[string]string{"1_a.sql": "CREATE TABLE a (id int);\n"},
+			args:       []string{"x"},
+			wantStderr: `Error: invalid amount argument "x" (invalid syntax). Omit the argument or pass a valid integer instead` + "\n",
+			wantCode:   1,
+		},
+		{
+			name:       "an amount that is not a number under --format",
+			added:      map[string]string{"1_a.sql": "CREATE TABLE a (id int);\n"},
+			args:       append([]string{"x"}, jsonFormat...),
+			wantStderr: `Error: invalid amount argument "x" (invalid syntax). Omit the argument or pass a valid integer instead` + "\n",
+			wantCode:   1,
+		},
+		{
+			name:       "an amount of zero",
+			added:      map[string]string{"1_a.sql": "CREATE TABLE a (id int);\n"},
+			args:       []string{"0"},
+			wantStderr: "Error: cannot apply '0' migration files\n",
+			wantCode:   1,
+		},
+		{
+			name:       "a negative amount under --format",
+			added:      map[string]string{"1_a.sql": "CREATE TABLE a (id int);\n"},
+			args:       append(slices.Clone(jsonFormat), "--", "-1"),
+			wantStderr: "Error: cannot apply '-1' migration files\n",
+			wantCode:   1,
+		},
+		{
+			name:       "two amounts",
+			added:      map[string]string{"1_a.sql": "CREATE TABLE a (id int);\n"},
+			args:       []string{"1", "2"},
+			wantStderr: "Error: accepts at most 1 arg(s), received 2\n",
+			wantCode:   1,
+		},
+		{
+			name:       "a baseline the directory does not hold",
+			added:      map[string]string{"1_a.sql": "CREATE TABLE a (id int);\n"},
+			args:       []string{"--baseline", "7"},
+			wantStderr: `Error: baseline version "7" not found` + "\n",
+			wantCode:   1,
+		},
+		{
+			name:       "a baseline the directory does not hold under --format",
+			added:      map[string]string{"1_a.sql": "CREATE TABLE a (id int);\n"},
+			args:       append([]string{"--baseline", "7"}, jsonFormat...),
+			wantStderr: `Error: baseline version "7" not found` + "\n",
+			wantCode:   1,
+		},
+		{
+			name:       "a baseline spelled with a leading zero",
+			added:      map[string]string{"1_a.sql": "CREATE TABLE a (id int);\n"},
+			args:       []string{"--baseline", "01"},
+			wantStderr: `Error: baseline version "01" not found` + "\n",
+			wantCode:   1,
+		},
+		{
 			name:    "an interval and a textual insertion in a Flyway directory",
 			format:  "?format=flyway",
 			applied: map[string]string{"V1__a.sql": "CREATE TABLE a (id int);\n", "V3__b.sql": "CREATE TABLE b (id int);\n"},

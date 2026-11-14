@@ -18,6 +18,7 @@ import (
 	"ptah.run/config/projectconfig"
 	"ptah.run/internal/atlasargs"
 	"ptah.run/internal/atlascompatpolicy"
+	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasprojectpath"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/atlassource"
@@ -1556,9 +1557,31 @@ func atlasProjectSchemaFileSources(cfg projectconfig.Config, urls []string) []sc
 // effectiveAtlasExclude resolves a command's exclusion from its --exclude
 // values and the selected env: the flag replaces `env.exclude` when it carries
 // a value, and [withAtlasSchemaModeExcludes] adds what `schema.mode` implies.
-func effectiveAtlasExclude(cmd *cobra.Command, flagValues []string, cfg projectconfig.Config) []string {
+//
+// The sources map each selector the env's list supplied to the project file,
+// as the run spelled its path, so the warning or the refusal for one that
+// matched nothing names the file the operator wrote it in rather than a flag
+// nobody typed. A selector the flag supplied stays unmapped, which names
+// --exclude.
+func effectiveAtlasExclude(
+	cmd *cobra.Command,
+	flagValues []string,
+	cfg projectconfig.Config,
+) ([]string, atlasfilter.ExcludeSources) {
 	values := effectiveStringArray(cmd, "exclude", flagValues, cfg.Exclude)
-	return withAtlasSchemaModeExcludes(values, cfg)
+	sources := atlasfilter.ExcludeSources{}
+	if projectListStandsIn(cmd, "exclude", cfg.Exclude) {
+		sources.Add(atlasExcludeOrigin(cfg), cfg.Exclude...)
+	}
+	return withAtlasSchemaModeExcludes(values, cfg), sources
+}
+
+// atlasExcludeOrigin names the project file an env's exclude list came from.
+func atlasExcludeOrigin(cfg projectconfig.Config) string {
+	if cfg.ExcludeOrigin != "" {
+		return cfg.ExcludeOrigin
+	}
+	return projectconfig.AtlasFileName
 }
 
 // withAtlasSchemaModeExcludes returns a copy of values followed by the

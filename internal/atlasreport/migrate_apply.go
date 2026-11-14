@@ -66,6 +66,39 @@ type MigrateApplySourceFile struct {
 	Description string
 }
 
+// RenamedMigrateApplySourceFiles keys the source files of a converted
+// directory by the execution-order version of the file each one became, for
+// [MigrateApplyResultOptions.SourceFiles]. renamed maps a file of fsys to the
+// file of the operator's directory it was converted from, as
+// [ptah.run/internal/atlasmigrate.ConvertedApplySource] reports it. A
+// golang-migrate `1_a.up.sql` executes as `1_a.sql`, and the community binary
+// names it `1_a.up.sql`; the description is the converted file's, which is
+// the one the binary reads from the source name.
+//
+// A file of renamed that fsys does not hold as an up migration is left out.
+// It returns an error when fsys cannot be read.
+func RenamedMigrateApplySourceFiles(fsys fs.FS, renamed map[string]string) (map[int64]MigrateApplySourceFile, error) {
+	if len(renamed) == 0 {
+		return nil, nil
+	}
+	discovered, err := migrationfile.Discover(fsys, migrationfile.DirFormatAtlas)
+	if err != nil {
+		return nil, fmt.Errorf("discover Atlas migration files: %w", err)
+	}
+	files := make(map[int64]MigrateApplySourceFile, len(renamed))
+	for _, file := range discovered {
+		source, found := renamed[file.Path]
+		if !found || file.Direction != "up" {
+			continue
+		}
+		files[file.Version] = MigrateApplySourceFile{
+			Name:        source,
+			Description: atlasMigrationFileDescription(file.Path),
+		}
+	}
+	return files, nil
+}
+
 type atlasMigrateApplyEnv struct {
 	Driver string           `json:"Driver,omitempty"`
 	URL    atlasTemplateURL `json:"URL,omitzero"`

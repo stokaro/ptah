@@ -16,8 +16,10 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
+	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/engine/builtin"
 	"ptah.run/feature/pgpolicy"
+	"ptah.run/feature/synonym"
 	"ptah.run/migration/safety"
 )
 
@@ -105,6 +107,30 @@ var namedSubjects = []subjectRow{
 	{node: &ast.ExtensionStatement{Payload: &pgpolicy.TableStateOperation{Schema: "app", Table: "orders", Change: pgpolicy.TableStateChange{
 		Before: &pgpolicy.ObservedTableState{Enabled: true}, After: &pgpolicy.DesiredTableState{},
 	}}}, subject: "app.orders"},
+	{node: synonymOperation(synonym.Create, "Sales", "OrdersAlias"), subject: "Sales.OrdersAlias"},
+	{node: synonymOperation(synonym.Drop, "", "orders_alias"), subject: "orders_alias"},
+	{node: synonymOperation(synonym.Retarget, "dbo", "orders_alias"), subject: "dbo.orders_alias"},
+	{node: propertyOperation(mssqlproperty.Add, mssqlproperty.Property{Schema: "dbo", Table: "Orders", Column: "Id"}), subject: "dbo.Orders.Id"},
+	{node: propertyOperation(mssqlproperty.Update, mssqlproperty.Property{Schema: "dbo", Table: "orders"}), subject: "dbo.orders"},
+	{node: propertyOperation(mssqlproperty.Drop, mssqlproperty.Property{Schema: "sales"}), subject: "sales"},
+}
+
+// synonymOperation is the statement that creates, drops or retargets the
+// synonym schema.name.
+func synonymOperation(action synonym.Action, schema, name string) ast.Node {
+	return &ast.ExtensionStatement{Payload: &synonym.Operation{Action: action, Synonym: synonym.DesiredSynonym{
+		Synonym: synonym.Synonym{Schema: schema, Name: name, Target: "dbo.orders"},
+	}}}
+}
+
+// propertyOperation is the statement that runs action for an MS_Description
+// property on the object address names by its schema, table and column.
+func propertyOperation(action mssqlproperty.Action, address mssqlproperty.Property) ast.Node {
+	address.Name, address.Value = "MS_Description", "documented"
+	return &ast.ExtensionStatement{Payload: &mssqlproperty.Operation{
+		Action:   action,
+		Property: mssqlproperty.DesiredProperty{Property: address},
+	}}
 }
 
 // namelessSubjects holds a row for every statement node kind that names no
@@ -120,6 +146,7 @@ var namelessSubjects = []subjectRow{
 	{node: &ast.ExtensionStatement{}},
 	{node: &ast.ExtensionStatement{Payload: &unknownPayload{}}},
 	{node: &ast.ExtensionAlterOperation{Payload: (*changePayload)(nil)}},
+	{node: propertyOperation(mssqlproperty.Add, mssqlproperty.Property{})},
 	{node: (*ast.CreateTableNode)(nil)},
 	{node: (*ast.AlterTableNode)(nil)},
 	{node: nil},

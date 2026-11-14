@@ -110,18 +110,10 @@ func TestMigrateApplyBaselineFlagWinsOverProject(t *testing.T) {
 // TestMigrateApplyProjectBaselineNotFound pins the refusal, which is the arm
 // that shows the value is resolved against the directory rather than stored.
 // Measured with `migrate apply --env local` against a hashed directory that
-// does not hold the named version, exit codes read directly from unpiped
-// invocations:
-//
-//	pinned binary:  1  Error: baseline version "20200101000000" not found
-//	ptah-compat:    1  Error: error baselining migrations: baseline version
-//	                          "20200101000000" not found
-//
-// The wrapping prefix is not this change's: the SAME two lines come out of
-// `--baseline 20200101000000` on a live apply, measured with no atlas.hcl
-// baseline at all, and both binaries answer the bare sentence under --dry-run.
-// The invariant worth pinning here is that the config spelling reaches exactly
-// the flag's resolution, so the assertion matches the flag's own text.
+// does not hold the named version, the pinned binary exits 1 with
+// `Error: baseline version "20200101000000" not found`, and so does
+// ptah-compat. The config spelling reaches exactly the flag's resolution, so
+// the assertion is the flag's own line.
 func TestMigrateApplyProjectBaselineNotFound(t *testing.T) {
 	c := qt.New(t)
 	root := t.TempDir()
@@ -134,7 +126,7 @@ func TestMigrateApplyProjectBaselineNotFound(t *testing.T) {
 
 	output, err := atlastest.RunCompatOutput("migrate", "apply", "--env", "local")
 
-	c.Assert(err, qt.ErrorMatches, `.*baseline version "20200101000000" not found`,
+	c.Assert(err, qt.ErrorMatches, `baseline version "20200101000000" not found`,
 		qt.Commentf("command output:\n%s", output))
 }
 

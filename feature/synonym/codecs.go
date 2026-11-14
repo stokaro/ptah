@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 )
 
@@ -184,6 +185,17 @@ type Operation struct {
 
 // Kind returns the stable operation identity.
 func (*Operation) Kind() schemaext.Kind { return OperationKind }
+
+// Subject is the identity of the synonym the statements create or drop, see
+// [Synonym.Ref]; a nil operation has the zero identity. The migration safety
+// report names the statement by its schema and name as the declaration
+// spells them.
+func (v *Operation) Subject() objectidentity.ID {
+	if v == nil {
+		return objectidentity.ID{}
+	}
+	return v.Synonym.Ref()
+}
 
 // CloneExtension returns an independent operation; a nil receiver remains
 // typed nil.

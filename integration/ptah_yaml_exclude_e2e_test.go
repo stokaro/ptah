@@ -542,6 +542,42 @@ func TestPtahYAMLExcludeSchemaApply_FailurePathE2E(t *testing.T) {
 	})
 }
 
+// TestPtahYAMLExcludeTooManyParts_FailurePathE2E refuses a project selector
+// with more parts than the connection's scope allows. The refusal names the
+// exclude selectors rather than --exclude, which the command line does not
+// carry.
+func TestPtahYAMLExcludeTooManyParts_FailurePathE2E(t *testing.T) {
+	const reason = `too many parts in pattern "main.widgets.name": this connection is bound to schema "main", ` +
+		`so a pattern names object or object.child; write "widgets.name"` + "\n"
+	tests := []struct {
+		name       string
+		args       []string
+		wantStderr string
+	}{
+		{
+			name:       "migrations plan",
+			args:       []string{"migrations", "plan"},
+			wantStderr: "error: apply exclude selectors to the desired schema: " + reason,
+		},
+		{
+			name:       "schema drift",
+			args:       []string{"schema", "drift"},
+			wantStderr: "Error: apply exclude selectors to current schema: " + reason,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			fixture := writeYAMLExcludeFixture(c, "exclude: [main.widgets.name]\n")
+
+			result := fixture.run(c, nil, append(test.args, "--db-url", fixture.targetURL, "--schema-file", "schema.sql")...)
+
+			c.Assert(result.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", result.Stdout, result.Stderr))
+			c.Assert(result.Stderr, qt.Equals, test.wantStderr)
+		})
+	}
+}
+
 // TestPtahYAMLExcludeSchemaApplyAllowsAnUnmatchedSelector_HappyPathE2E is
 // the control for the refusal above: the variable that relaxes it for
 // --exclude relaxes it for the project list, and the run applies the plan.

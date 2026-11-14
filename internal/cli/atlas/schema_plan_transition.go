@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"ptah.run/config/projectconfig"
+	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/schemafile"
@@ -53,6 +54,9 @@ type atlasSchemaPlanTransitionFlags struct {
 	// and rejectUnimplementedAtlasSchemaPlanFlags decides which of them acts on
 	// it; see atlasSchemaPlanVerbsImplementingFormat.
 	format string
+	// excludeSources names the project file for the exclude selectors the
+	// env supplied; see [effectiveAtlasExclude].
+	excludeSources atlasfilter.ExcludeSources
 }
 
 // atlasSchemaPlanSources is the desired state of a plan verb, as sources.
@@ -121,7 +125,7 @@ func resolveAtlasSchemaPlanTransitionConfig(
 			in.devURL,
 			projectCfg.StringValue(projectconfig.StringDevURL),
 		)
-		in.exclude = effectiveAtlasExclude(cmd, in.exclude, projectCfg)
+		in.exclude, in.excludeSources = effectiveAtlasExclude(cmd, in.exclude, projectCfg)
 		in.schemas = effectiveAtlasSchemas(cmd, in.schemas, projectCfg)
 		policy, err = atlasDiffPolicy(projectCfg)
 		if err != nil {

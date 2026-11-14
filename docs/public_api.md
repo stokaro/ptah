@@ -2919,6 +2919,10 @@ scope keeps or leaves it with the table. `mssqlproperty.Selections` names a
 property by the selector type `extended_property`, in its schema or, for one
 on the database, by its name alone.
 
+`mssqlproperty.Operation.Subject` is the object a planned property statement
+acts on, the column, table or schema the property is on, and the safety report
+names the statement by it; a property on the database has no subject.
+
 `feature/pgextension` owns the PostgreSQL extension model. An extension is a
 database-wide feature object of `ExtensionKind`, identified by its exact name
 through `Ref`; no folding makes two spellings one extension. `DesiredExtension`
@@ -3103,6 +3107,9 @@ absent schema read as the default schema. `DeclaredObject` binds a declaration t
 Server and Oracle. The package holds every stage's service: `CompareService`,
 `PlanService`, which joins the host's dependent window, `ReverseService`,
 `ConvertService`, `ReportService` and the render `Handlers` for both targets.
+
+`synonym.Operation.Subject` is the synonym a planned statement creates or
+drops, and the safety report names the statement by it.
 
 `feature/oratype` owns Oracle's user-defined types: domains (`DomainKind`),
 which Oracle 23 creates with CREATE DOMAIN, and object types
