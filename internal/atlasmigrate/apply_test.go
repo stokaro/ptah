@@ -637,7 +637,8 @@ func TestPrepareApplyExecute_ReturnsPlannedResultOnApplyError(t *testing.T) {
 // A statement the migrator refused before sending it was never executed, so
 // the run keeps Ptah's wording rather than the community binary's line, which
 // claims it was. SQLite runs VACUUM only outside a transaction, and the
-// migrator refuses it in a transactional file before the body starts.
+// migrator refuses it in a transactional file before the run applies any
+// file, so the report lists none as applied.
 func TestPrepareApplyExecute_RefusalBeforeAStatementRanKeepsPtahsWording(t *testing.T) {
 	c := qt.New(t)
 	ctx := context.Background()
@@ -656,8 +657,9 @@ func TestPrepareApplyExecute_RefusalBeforeAStatementRanKeepsPtahsWording(t *test
 
 	result, err := plan.Execute(ctx)
 
-	c.Assert(err, qt.ErrorMatches, `(?s)error applying migrations: failed to apply migration 1: 1_vacuum.sql cannot run inside a transaction: .*VACUUM.*`)
-	c.Assert(result.ErrorText, qt.Matches, `(?s)failed to apply migration 1: 1_vacuum.sql cannot run inside a transaction: .*`)
+	c.Assert(err, qt.ErrorMatches, `(?s)error applying migrations: 1_vacuum.sql cannot run inside a transaction: .*VACUUM.*`)
+	c.Assert(result.ErrorText, qt.Matches, `(?s)1_vacuum.sql cannot run inside a transaction: .*`)
+	c.Assert(result.Applied, qt.IsFalse)
 	c.Assert(sqliteTableExists(c, conn, "apply_vacuum"), qt.IsFalse)
 }
 

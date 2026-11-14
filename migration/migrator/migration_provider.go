@@ -649,6 +649,7 @@ func setMigrationUp(migration *Migration, up sqlMigrationFile) {
 	migration.upSQLFunc = up.fn
 	migration.upInterceptor = up.interceptor
 	migration.upOwnsTransactions = up.ownsTransactions
+	migration.upRefuseInsideTransaction = up.refuseInsideTransaction
 	migration.UpSQL = up.sql
 	migration.atlasCheckFiles = up.checkFiles
 	migration.UpTimeouts = up.timeouts

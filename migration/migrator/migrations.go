@@ -714,10 +714,12 @@ type Migration struct {
 	// closes itself; see [TransactionBoundaryValidator]. It is nil for a
 	// migration loaded without such a validator.
 	upOwnsTransactions func(conn *dbschema.DatabaseConnection) (bool, error)
-	// downRefuseInsideTransaction refuses the down file when a statement of
-	// it cannot run inside the transaction a rollback opens around the file.
-	// It is nil for a migration built in code, whose body is not checked
-	// before it runs either.
+	// upRefuseInsideTransaction and downRefuseInsideTransaction refuse the
+	// file of their direction when a statement of it cannot run inside the
+	// transaction the run opens around the file; see
+	// [Migration.refuseInsideTransaction]. Each is nil for a migration built in
+	// code, whose body is not checked before it runs either.
+	upRefuseInsideTransaction   func(conn *dbschema.DatabaseConnection) error
 	downRefuseInsideTransaction func(conn *dbschema.DatabaseConnection) error
 	// ownTransactions marks a migration of a directory written for a runner
 	// that opens no transaction around a file; see [WithOwnTransactions].
@@ -1054,6 +1056,16 @@ func (m *Migration) executeDown(ctx context.Context, conn *dbschema.DatabaseConn
 		return onlineAlterRefusal(m.Version, m.downSQLFunc(ctx, conn, mode))
 	}
 	return onlineAlterRefusal(m.Version, m.Down(ctx, conn))
+}
+
+// refuseInsideTransaction is the check that refuses the file of direction
+// when a statement of it cannot run inside a transaction, or nil when the
+// migration carries none.
+func (m *Migration) refuseInsideTransaction(direction MigrationDirection) func(conn *dbschema.DatabaseConnection) error {
+	if direction == MigrationDirectionDown {
+		return m.downRefuseInsideTransaction
+	}
+	return m.upRefuseInsideTransaction
 }
 
 // CreateMigrationFromSQL creates a programmatic migration from up and down SQL

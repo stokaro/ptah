@@ -963,9 +963,10 @@ changes that migration's transaction mode.
 ### A transactional file is checked before it runs
 
 A file that is about to run inside a transaction is classified first, and one
-that cannot run there is refused before its first statement is sent. Two shapes
-are caught, and both used to reach the database and fail there with the
-server's own SQLSTATE after the earlier statements had already run:
+that cannot run there is refused before a statement of any file of the run is
+sent. Two shapes are caught. Without the check, both reach the database and
+fail there with the server's own SQLSTATE, after the earlier statements have
+run:
 
 ```text
 0000000001_a.up.sql cannot run inside a transaction: line 2 CREATE or DROP
@@ -998,9 +999,17 @@ A `no_transaction` file is not checked at all. Each of its statements runs in
 its own transaction, where both shapes are legal, and checking it would refuse
 the workflow the directive exists for.
 
-A rollback asks this of every down file in the run before it rolls back the
-first, so a refused file leaves each revision of the run as it was rather than
-dirty with nothing applied.
+An up run asks this of every up file in the run before it applies the first,
+and a rollback asks it of every down file before it rolls back the first. A
+refused file therefore leaves the schema and every revision of the run as they
+were. Without the early check, the files before it in the run are applied and
+its own revision is left failed, with nothing applied. A file that runs without
+a transaction around it is not asked: one marked `no_transaction` or
+`-- atlas:txmode none`, and every file of a `none` run. In a directory loaded
+with `WithOwnTransactions`, a file that opens its own transactions is not asked
+either, nor is a file of one statement the runner sends alone: any one
+statement on PostgreSQL, and on another engine a statement it refuses inside a
+transaction.
 
 The same classification backs `migrate lint`'s `TX101`, so the two surfaces
 cannot disagree about one file.
