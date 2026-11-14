@@ -250,6 +250,7 @@ func clearDeclaredEnvironment(t *testing.T) {
 	}
 	envbooltest.Unset("PTAH_LOG_FORMAT")(t)
 	envbooltest.Unset("PTAH_PROVIDER_CONFIG")(t)
+	envbooltest.Unset("PTAH_RUNNER")(t)
 }
 
 // assertStrictRefuses expects the policy to name the variable it refused.

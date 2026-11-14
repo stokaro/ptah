@@ -97,6 +97,7 @@ var nonBooleanPtahVars = []string{
 	"PTAH_PROVIDER_",            // reserved bootstrap namespace checked against explicit environment entries
 	"PTAH_PROVIDER_BOOTSTRAP",   // experimental protocol bootstrap cookie
 	"PTAH_PROVIDER_PARENT_PID",  // parent process identity for provider lifetime monitoring
+	"PTAH_RUNNER",               // runner name, the twin of --runner
 	"PTAH_SQLSERVER_TEST_URL",   // SQL Server address for the live test contour
 	"PTAH_TARGET_VERSION",       // migration version, passed to preflight hooks
 	"PTAH_TO_TAG",               // tag name, an Atlas capability Ptah refuses

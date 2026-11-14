@@ -866,7 +866,9 @@ reaches the native rollback `migrate down` forwards to, and `migrate down
 --format`, which rolls back without forwarding, reads it too. On both, the
 `--dev-url` replay runs each down file the same way. `ptah-compat` takes no
 `--runner` flag of its own, and a value that names no runner is refused before
-the directory is read.
+the directory is read. `PTAH_ATLAS_STRICT_COMPAT=1` refuses `PTAH_RUNNER` on
+every command, whatever its value, because the community binary has no runner
+to select.
 
 The pinned community binary v1.3.0 wraps these files in a transaction of its
 own, and a file with its own block nests in it. Measured on PostgreSQL 18: over
