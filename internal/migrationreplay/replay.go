@@ -19,6 +19,7 @@ import (
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/devlock"
 	"ptah.run/internal/migrationsnapshot"
+	"ptah.run/internal/sourcestatement"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
 )
@@ -411,7 +412,7 @@ func replayMigrations(
 			}
 		}
 		if err := migration.UpForReplay(ctx, conn); err != nil {
-			return newMigrationError(migration, err)
+			return newMigrationError(migration, conn.Info().Dialect, err)
 		}
 	}
 	if hooks.consume != nil {
@@ -457,6 +458,10 @@ type MigrationError struct {
 type FailedStatement struct {
 	// SQL is the statement as it was sent, without its terminator.
 	SQL string
+	// Written is the statement as the migration body spells it, terminator
+	// included, read by [sourcestatement.Written]. It is SQL where the body's
+	// own text at Index is not the statement that was sent.
+	Written string
 	// Index is the statement's 1-based position among the statements of the
 	// migration body.
 	Index int
@@ -468,7 +473,7 @@ type FailedStatement struct {
 	Answer error
 }
 
-func newMigrationError(migration *migrator.Migration, err error) *MigrationError {
+func newMigrationError(migration *migrator.Migration, dialect string, err error) *MigrationError {
 	failure := &MigrationError{
 		Version:    migration.Version,
 		VersionKey: migration.RevisionVersion(),
@@ -476,9 +481,10 @@ func newMigrationError(migration *migrator.Migration, err error) *MigrationError
 	}
 	if statement, ok := errors.AsType[*migrator.MigrationExecutionError](err); ok && statement.Sent() {
 		failure.Statement = &FailedStatement{
-			SQL:    statement.Statement,
-			Index:  statement.StatementIndex,
-			Answer: dbanswer.Of(statement.Err),
+			SQL:     statement.Statement,
+			Written: sourcestatement.Written(migration.UpSQL, dialect, statement.StatementIndex, statement.Statement),
+			Index:   statement.StatementIndex,
+			Answer:  dbanswer.Of(statement.Err),
 		}
 	}
 	return failure

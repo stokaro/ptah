@@ -553,6 +553,12 @@ func atlasMigrateApplyExactIdentityError(
 	keys []string,
 	migrations []*migrator.Migration,
 ) error {
+	// The community binary's line already names the exact identity, and the
+	// rest of it is the statement and the database's answer, whose numbers
+	// are data rather than runtime versions.
+	if _, executed := errors.AsType[*atlasreport.ExecutingStatementError](err); executed {
+		return err
+	}
 	return remapAtlasExactIdentityError(
 		err,
 		atlasMigrateApplyRevisionIdentities(versions, keys, migrations),
@@ -904,7 +910,7 @@ func writeAtlasMigrateApplyFormat(
 	conn *dbschema.DatabaseConnection,
 	result atlasmigrate.ApplyResult,
 ) error {
-	if result.ErrorText != "" {
+	if _, executed := errors.AsType[*atlasreport.ExecutingStatementError](result.ApplyError); !executed && result.ErrorText != "" {
 		result.ErrorText = atlasMigrateApplyExactIdentityError(
 			errors.New(result.ErrorText),
 			result.SelectedVersions,

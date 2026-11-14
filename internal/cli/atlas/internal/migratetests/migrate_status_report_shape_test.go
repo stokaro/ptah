@@ -134,8 +134,8 @@ func TestCompatMigrateStatus_MirrorsTheAtlasReportShape(t *testing.T) {
 			name:   "half-applied second migration",
 			second: statusShapeSecondFailing,
 			seeds:  [][]string{{"migrate", "apply", "--tx-mode", "none"}},
-			wantSeedErr: `(?s)error applying migrations: failed to apply migration ` +
-				statusShapeVersionTwo + `: .*table ss_one already exists.*`,
+			wantSeedErr: `sql/migrate: executing statement "CREATE TABLE ss_one \(id INTEGER PRIMARY KEY\);" from version "` +
+				statusShapeVersionTwo + `": .*table ss_one already exists.*`,
 			wantStdout: "Migration Status: PENDING\n" +
 				"  -- Current Version: " + statusShapeVersionTwo + " (1 statements applied)\n" +
 				"  -- Next Version:    " + statusShapeVersionTwo + " (1 statements left)\n" +

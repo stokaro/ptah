@@ -111,6 +111,7 @@ func TestWriteMigrateApplyFormat_ConvertedFailureAttachesToExactIdentity(t *test
 
 	fsys := fstest.MapFS{
 		"10_dotted.sql": {Data: []byte("INVALID SQL;")},
+		"20_next.sql":   {Data: []byte("CREATE TABLE t (id int);")},
 	}
 	provider, err := migrator.NewFSMigrationProvider(
 		fsys,
@@ -118,31 +119,37 @@ func TestWriteMigrateApplyFormat_ConvertedFailureAttachesToExactIdentity(t *test
 		migrator.WithAtlasRevisionVersions(map[int64]string{10: "1.5"}),
 	)
 	c.Assert(err, qt.IsNil)
-	applyErr := fmt.Errorf("failed to apply migration 10: %w", &migrator.MigrationExecutionError{
-		Err:            errors.New("syntax error"),
-		Statement:      "INVALID SQL",
-		StatementIndex: 1,
-		Total:          1,
+	// The failed migration is the first of two selected, so a run that took
+	// the last selected one for the failure attaches it to the wrong file.
+	applyErr := fmt.Errorf("context: %w", &migrator.FailedMigrationError{
+		Version:    10,
+		VersionKey: "1.5",
+		Err: &migrator.MigrationExecutionError{
+			Err:            errors.New("syntax error"),
+			Statement:      "INVALID SQL",
+			StatementIndex: 1,
+			Total:          1,
+		},
 	})
 	var out bytes.Buffer
 
 	err = atlasreport.WriteMigrateApplyFormat(
 		&out,
-		`{{ range .Applied }}{{ printf "%q:%s" .Version .Error.Text }}{{ end }}`,
+		`{{ range .Applied }}{{ printf "%q" .Version }}{{ with .Error }}:{{ .Text }}{{ end }};{{ end }}`,
 		atlasreport.MigrateApplyResultOptions{
 			Conn:             conn,
 			FS:               fsys,
 			Status:           &migrator.MigrationStatus{},
 			Migrations:       provider.Migrations(),
-			SelectedVersions: []int64{10},
-			SelectedKeys:     []string{"1.5"},
+			SelectedVersions: []int64{10, 20},
+			SelectedKeys:     []string{"1.5", "20"},
 			ApplyError:       applyErr,
 			Applied:          true,
 		},
 	)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Equals, `"1.5":syntax error`)
+	c.Assert(out.String(), qt.Equals, `"1.5":syntax error;`)
 }
 
 func TestWriteMigrateApplyFormat_JSONNoopMessage(t *testing.T) {

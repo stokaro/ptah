@@ -251,9 +251,10 @@ func TestCompatMigrateValidateConvertedDevURL_FailurePath(t *testing.T) {
 		_, stderr, err := runCompatExit(
 			"migrate", "validate", "--dir", "file://"+dir+"?format=goose", "--dev-url", "sqlite://"+devDBPath)
 
-		c.Assert(err, qt.ErrorMatches, "(?s)error validating migration SQL on dev database: .*")
+		c.Assert(err, qt.ErrorMatches, `replaying the migration directory: sql/migrate: read migration directory state: `+
+			`sql/migrate: executing statement "THIS IS NOT SQL;" from version "1": .*syntax error.*`)
 		c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
-		c.Assert(stderr, qt.Contains, "error validating migration SQL on dev database")
+		c.Assert(stderr, qt.Contains, `executing statement "THIS IS NOT SQL;" from version "1"`)
 	})
 
 	t.Run("integrity is checked before the dev database is touched", func(t *testing.T) {

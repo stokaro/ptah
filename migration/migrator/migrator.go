@@ -3605,22 +3605,35 @@ func (m *Migrator) failRollbackWithDirtyStateWithMode(
 	)
 }
 
-// failedMigrationError names the migration a failure belongs to, so the run
-// document can say which one failed without reading the message. It adds
-// nothing to the message.
-type failedMigrationError struct {
-	version    int64
-	versionKey string
-	err        error
+// FailedMigrationError names the migration a failed run stopped at.
+//
+// It adds nothing to the message: Error returns the text of Err. A caller reads
+// it with [errors.As] to learn which migration failed without parsing the
+// message. When a statement of that migration is what failed, a
+// [MigrationExecutionError] is further down the chain.
+//
+// [NewRunResult] reads it to fill [RunResult.Failure]. A failure that names no
+// migration, such as a lock that could not be taken, carries none.
+type FailedMigrationError struct {
+	// Version is the version of the migration that failed.
+	Version int64
+	// VersionKey is that migration's exact revision identity,
+	// [Migration.RevisionVersion], spelled as [RunFailure.VersionKey] spells
+	// it.
+	VersionKey string
+	// Err is the failure.
+	Err error
 }
 
-func (e *failedMigrationError) Error() string { return e.err.Error() }
+// Error returns the text of e.Err.
+func (e *FailedMigrationError) Error() string { return e.Err.Error() }
 
-func (e *failedMigrationError) Unwrap() error { return e.err }
+// Unwrap returns e.Err.
+func (e *FailedMigrationError) Unwrap() error { return e.Err }
 
 // newFailedMigrationError names migration as the one failure belongs to.
-func newFailedMigrationError(migration *Migration, failure error) *failedMigrationError {
-	return &failedMigrationError{version: migration.Version, versionKey: migration.RevisionVersion(), err: failure}
+func newFailedMigrationError(migration *Migration, failure error) *FailedMigrationError {
+	return &FailedMigrationError{Version: migration.Version, VersionKey: migration.RevisionVersion(), Err: failure}
 }
 
 func (m *Migrator) failMigrationWithDirtyStateWithMode(

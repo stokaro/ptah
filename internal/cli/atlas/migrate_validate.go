@@ -13,6 +13,7 @@ import (
 	"ptah.run/internal/atlascompatpolicy"
 	"ptah.run/internal/atlasmigrate"
 	"ptah.run/internal/atlasmigrateimport"
+	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/devsnapshot"
 	"ptah.run/internal/cli/migratevalidate"
@@ -182,6 +183,11 @@ func replayAtlasMigrateSource(
 		OwnTransactions: source.format.TransactionOwner() == lintext.TransactionOwnerFile,
 	})
 	if err != nil {
+		// A statement the dev database answered, in the community binary's
+		// one line, as the forwarded Atlas directory reports it.
+		if executed := atlasreport.NewValidateStatementError(err); executed != nil {
+			return cmdutil.Fail(cmd, executed)
+		}
 		return cmdutil.Fail(cmd, fmt.Errorf("error validating migration SQL on dev database: %w", err))
 	}
 	return nil

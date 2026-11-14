@@ -366,18 +366,18 @@ func appliedFromPlan(planned []int64, plannedKeys []string, after *MigrationStat
 // statement too, but the database never saw it, so it is not a failure the
 // database answered.
 func runFailure(err error) *RunFailure {
-	migration, ok := errors.AsType[*failedMigrationError](err)
+	migration, ok := errors.AsType[*FailedMigrationError](err)
 	if !ok {
 		return nil
 	}
-	failure := &RunFailure{Version: migration.version, VersionKey: migration.versionKey}
-	if commit, ok := errors.AsType[*failedCommitError](migration.err); ok {
+	failure := &RunFailure{Version: migration.Version, VersionKey: migration.VersionKey}
+	if commit, ok := errors.AsType[*failedCommitError](migration.Err); ok {
 		failure.Statements = commit.statements
 		failure.Commit = true
 		failure.SQLState, failure.ErrorNumber = servercode.Read(commit.err)
 		return failure
 	}
-	statement, ok := errors.AsType[*MigrationExecutionError](migration.err)
+	statement, ok := errors.AsType[*MigrationExecutionError](migration.Err)
 	if !ok || !statement.sent {
 		return nil
 	}

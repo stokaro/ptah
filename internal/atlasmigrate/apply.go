@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"ptah.run/dbschema"
+	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
@@ -113,6 +114,7 @@ type ApplyPlan struct {
 	StartedAt                time.Time
 
 	mig                    *migrator.Migrator
+	dialect                string
 	opts                   ApplyOptions
 	assumedAppliedVersions []int64
 	assumedAppliedKeys     []string
@@ -225,6 +227,7 @@ func PrepareApply(ctx context.Context, conn *dbschema.DatabaseConnection, opts A
 		DryRun:                   opts.DryRun,
 		StartedAt:                startedAt,
 		mig:                      mig,
+		dialect:                  conn.Info().Dialect,
 		opts:                     opts,
 		assumedAppliedVersions:   assumedAppliedVersions,
 		assumedAppliedKeys:       assumedAppliedKeys,
@@ -350,6 +353,14 @@ func (p ApplyPlan) execute(ctx context.Context, hook migrator.PreMigrationHook) 
 		result.ErrorText = err.Error()
 		if txModeErr, ok := errors.AsType[*migrationfile.AtlasTxModeDirectiveError](err); ok {
 			return result, txModeErr
+		}
+		// A statement the database answered is reported in the community
+		// binary's one line, which names it as the file spells it and the
+		// version it belongs to; every other failure keeps Ptah's chain.
+		if executed := atlasreport.NewApplyStatementError(err, p.Migrations, p.dialect); executed != nil {
+			result.ApplyError = executed
+			result.ErrorText = executed.Error()
+			return result, executed
 		}
 		return result, fmt.Errorf("error applying migrations: %w", err)
 	}

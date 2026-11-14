@@ -427,6 +427,31 @@ measured Atlas checkpoint semantics — a fresh database applies only the
 latest checkpoint plus later migrations, and a database that already applied
 pre-checkpoint history skips the checkpoint silently.
 
+### A statement the database refuses
+
+A statement the database answers with an error stops the run with exit `1` and
+the pinned binary's one line:
+
+```text
+Error: sql/migrate: executing statement "INSERT INTO nosuch VALUES (1);" from version "2": SQL logic error: no such table: nosuch (1)
+```
+
+The statement is quoted as the file spells it, terminator included where the
+file wrote one. It is quoted as Go quotes a string, so a statement that spans
+lines stays on one line. A comment above the statement is left out and one
+inside it is kept. Under `--format`, `.Error` is the same line, and the failed
+file's `.Error` holds the statement as `.Stmt` and the database's answer as
+`.Text`.
+
+The answer is the driver's message. On SQLite, Ptah's driver writes
+`SQL logic error: no such table: nosuch (1)` where the pinned binary's writes
+`no such table: nosuch`. A statement interrupted by a lost connection or a
+canceled run is reported in the same line, with the driver's error as the
+answer. A failure that is not a statement sent to the database, such as a failed
+commit, a pre-migration check or a statement the migrator refused before sending
+it, keeps Ptah's own text. Native `ptah migrations up` reports every failure
+with Ptah's own context.
+
 ### Adopting a database that already has objects
 
 `migrate apply` refuses to adopt a database that already holds objects no
@@ -1751,6 +1776,14 @@ table is refused before anything is dropped, as the pinned binary refuses it:
 snapshot: sql/migrate: connected database is not clean: found table "t"`. If
 integrity drift is found, Ptah reports the drift and does not connect to the dev
 database.
+
+A statement the dev database refuses ends the replay with exit `1` and the line
+[`migrate apply`](#a-statement-the-database-refuses) prints, behind the
+replay's prefix:
+
+```text
+Error: replaying the migration directory: sql/migrate: read migration directory state: sql/migrate: executing statement "INSERT INTO nosuch VALUES (1);" from version "2": SQL logic error: no such table: nosuch (1)
+```
 
 A successful validation is silent, including a successful `--dev-url` replay.
 Checksum mismatches exit `1`, print Atlas-compatible recovery guidance to

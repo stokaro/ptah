@@ -67,9 +67,10 @@ func TestNewMigrateLintReplayFailure_HappyPath(t *testing.T) {
 				Version:    1,
 				VersionKey: "1",
 				Statement: &migrationreplay.FailedStatement{
-					SQL:    "ALTER TABLE users RENAME COLUMN nope TO oid2",
-					Index:  3,
-					Answer: errors.New(replayAnswer),
+					SQL:     "ALTER TABLE users RENAME COLUMN nope TO oid2",
+					Written: "ALTER TABLE users RENAME COLUMN nope TO oid2;",
+					Index:   3,
+					Answer:  errors.New(replayAnswer),
 				},
 			},
 			wantFile:  "1.sql",
@@ -83,67 +84,14 @@ func TestNewMigrateLintReplayFailure_HappyPath(t *testing.T) {
 				Version:    1,
 				VersionKey: "1",
 				Statement: &migrationreplay.FailedStatement{
-					SQL:    "ALTER TABLE users RENAME COLUMN nope TO oid2",
-					Index:  3,
-					Answer: errors.New(replayAnswer),
+					SQL:     "ALTER TABLE users RENAME COLUMN nope TO oid2",
+					Written: "ALTER TABLE users RENAME COLUMN nope TO oid2;",
+					Index:   3,
+					Answer:  errors.New(replayAnswer),
 				},
 			},
 			wantFile:  "1.sql",
 			wantError: "executing statement: ALTER TABLE users RENAME COLUMN nope TO oid2;: " + replayAnswer,
-		},
-		{
-			name: "a terminator on a line of its own stays where the file put it",
-			files: fstest.MapFS{
-				"1.sql": {Data: []byte("CREATE TABLE users (id int);\n")},
-				"2.sql": {Data: []byte("ALTER TABLE users\n  RENAME COLUMN nope TO x\n;\n")},
-			},
-			selected: []int64{2},
-			failed: migrationreplay.MigrationError{
-				Version:    2,
-				VersionKey: "2",
-				Statement: &migrationreplay.FailedStatement{
-					SQL:    "ALTER TABLE users\n  RENAME COLUMN nope TO x",
-					Index:  1,
-					Answer: errors.New(replayAnswer),
-				},
-			},
-			wantFile:  "2.sql",
-			wantError: "executing statement: ALTER TABLE users\n  RENAME COLUMN nope TO x\n;: " + replayAnswer,
-		},
-		{
-			name:     "a position that names another statement quotes the statement as sent",
-			files:    replayFixture(),
-			selected: []int64{1, 2, 3},
-			failed: migrationreplay.MigrationError{
-				Version:    1,
-				VersionKey: "1",
-				Statement: &migrationreplay.FailedStatement{
-					SQL:    "ALTER TABLE users RENAME COLUMN nope TO oid2",
-					Index:  2,
-					Answer: errors.New(replayAnswer),
-				},
-			},
-			wantFile:  "1.sql",
-			wantError: "executing statement: ALTER TABLE users RENAME COLUMN nope TO oid2: " + replayAnswer,
-		},
-		{
-			name: "a last statement with no terminator is quoted as sent",
-			files: fstest.MapFS{
-				"1.sql": {Data: []byte("CREATE TABLE users (id int);\n")},
-				"2.sql": {Data: []byte("ALTER TABLE users RENAME COLUMN nope TO x\n")},
-			},
-			selected: []int64{2},
-			failed: migrationreplay.MigrationError{
-				Version:    2,
-				VersionKey: "2",
-				Statement: &migrationreplay.FailedStatement{
-					SQL:    "ALTER TABLE users RENAME COLUMN nope TO x",
-					Index:  1,
-					Answer: errors.New(replayAnswer),
-				},
-			},
-			wantFile:  "2.sql",
-			wantError: "executing statement: ALTER TABLE users RENAME COLUMN nope TO x: " + replayAnswer,
 		},
 		{
 			name:     "a statement refused before it ran keeps the reason it was refused",
@@ -168,9 +116,10 @@ func TestNewMigrateLintReplayFailure_HappyPath(t *testing.T) {
 				Version:    10,
 				VersionKey: "1.5",
 				Statement: &migrationreplay.FailedStatement{
-					SQL:    "INSERT INTO missing VALUES (1)",
-					Index:  1,
-					Answer: errors.New("SQL logic error: no such table: missing (1)"),
+					SQL:     "INSERT INTO missing VALUES (1)",
+					Written: "INSERT INTO missing VALUES (1);",
+					Index:   1,
+					Answer:  errors.New("SQL logic error: no such table: missing (1)"),
 				},
 			},
 			wantFile:  "10_b.sql",
@@ -186,7 +135,7 @@ func TestNewMigrateLintReplayFailure_HappyPath(t *testing.T) {
 				Restricted: true,
 			})
 
-			got := atlasreport.NewMigrateLintReplayFailure(analysis, test.revisionVersions, "sqlite", lintReplayError(&test.failed))
+			got := atlasreport.NewMigrateLintReplayFailure(analysis, test.revisionVersions, lintReplayError(&test.failed))
 
 			c.Assert(got, qt.IsNotNil)
 			c.Assert(got.File, qt.Equals, test.wantFile)
@@ -211,13 +160,14 @@ func TestNewMigrateLintReplayFailure_BlamesTheUpFile(t *testing.T) {
 	})
 	c.Assert(err, qt.IsNil)
 
-	got := atlasreport.NewMigrateLintReplayFailure(analysis, nil, "sqlite", lintReplayError(&migrationreplay.MigrationError{
+	got := atlasreport.NewMigrateLintReplayFailure(analysis, nil, lintReplayError(&migrationreplay.MigrationError{
 		Version:    1,
 		VersionKey: "1",
 		Statement: &migrationreplay.FailedStatement{
-			SQL:    "ALTER TABLE users RENAME COLUMN nope TO x",
-			Index:  2,
-			Answer: errors.New(replayAnswer),
+			SQL:     "ALTER TABLE users RENAME COLUMN nope TO x",
+			Written: "ALTER TABLE users RENAME COLUMN nope TO x;",
+			Index:   2,
+			Answer:  errors.New(replayAnswer),
 		},
 	}))
 
@@ -256,7 +206,7 @@ func TestNewMigrateLintReplayFailure_FailurePath(t *testing.T) {
 				"10_b.sql": {Data: []byte("INSERT INTO missing VALUES (1);\n")},
 			}, migrationlint.VersionSelection{})
 
-			got := atlasreport.NewMigrateLintReplayFailure(analysis, map[int64]string{10: "1.5"}, "sqlite", test.err)
+			got := atlasreport.NewMigrateLintReplayFailure(analysis, map[int64]string{10: "1.5"}, test.err)
 
 			c.Assert(got, qt.IsNil)
 		})

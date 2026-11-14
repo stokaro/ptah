@@ -79,7 +79,7 @@ func TestCompatCommand_MigrateApplyAllowDirtyRecoversAfterBodyFailure(t *testing
 		"--tx-mode", "none",
 	)
 	c.Assert(err, qt.IsNotNil)
-	c.Assert(err.Error(), qt.Contains, "failed to apply migration "+dirtyRetryVersionTwo)
+	c.Assert(err.Error(), qt.Contains, `from version "`+dirtyRetryVersionTwo+`"`)
 	c.Assert(atlastest.CompatTableNames(c, dbPath), qt.Contains, "dr_two")
 
 	// Without the flag the dirty guard still refuses, so --allow-dirty is doing

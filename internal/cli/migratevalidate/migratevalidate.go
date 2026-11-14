@@ -15,6 +15,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/devsnapshot"
@@ -178,6 +179,7 @@ func runAtlasValidate(cmd *cobra.Command, src *source) error {
 	checked, err := validate(cmd.Context(), src)
 	result := checked.result
 	var notClean *migrateclean.NotCleanError
+	executed := atlasreport.NewValidateStatementError(err)
 	switch {
 	case errors.Is(err, migratesum.ErrSumFileMissing):
 		empty, emptyErr := DirectoryHoldsNoSQLFiles(src.dir)
@@ -216,6 +218,9 @@ func runAtlasValidate(cmd *cobra.Command, src *source) error {
 		// The replay refused a dev database that holds something its reset
 		// would drop, before it reset it. The binary's sentence names the step it was in.
 		return cmdutil.Fail(cmd, devsnapshot.Replay.Wrap(notClean))
+	case executed != nil:
+		// A statement the dev database answered, in the binary's one line.
+		return cmdutil.Fail(cmd, executed)
 	case err != nil:
 		return cmdutil.Fail(cmd, AtlasDirectoryError(src.dir, err))
 	}

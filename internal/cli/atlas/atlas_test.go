@@ -3352,7 +3352,7 @@ func TestCompatCommand_MigrateApplyWritesFormatOnApplyError(t *testing.T) {
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `(?s)error applying migrations: .*missing_table.*`)
+	c.Assert(err, qt.ErrorMatches, `sql/migrate: executing statement "SELECT \* FROM missing_table;" from version "1": .*no such table: missing_table.*`)
 	var result atlasMigrateApplyJSONResult
 	c.Assert(json.Unmarshal(out.Bytes(), &result), qt.IsNil)
 	c.Assert(result.Error, qt.Contains, "missing_table")
@@ -3362,7 +3362,7 @@ func TestCompatCommand_MigrateApplyWritesFormatOnApplyError(t *testing.T) {
 		"CREATE TABLE error_before (id INTEGER PRIMARY KEY)",
 	})
 	c.Assert(result.Applied[0].Error.Text, qt.Contains, "missing_table")
-	c.Assert(result.Applied[0].Error.Stmt, qt.Equals, "SELECT * FROM missing_table")
+	c.Assert(result.Applied[0].Error.Stmt, qt.Equals, "SELECT * FROM missing_table;")
 	assertSQLiteTableMissing(c, dbPath, "error_before")
 }
 

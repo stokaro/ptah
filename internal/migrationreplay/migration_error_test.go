@@ -16,8 +16,8 @@ import (
 
 // TestReplay_MigrationErrorNamesTheStatementTheEngineRefused pins what a
 // replay that stopped inside a migration says about it as data: which
-// migration, which statement, and the driver's own answer with nothing Ptah
-// wrapped around it.
+// migration, which statement, as sent and as the file spells it, and the
+// driver's own answer with nothing Ptah wrapped around it.
 //
 // The second row is the bundled engine deciding. SQLite 3.54 refuses to rename
 // a column to a rowid alias, so `RENAME COLUMN id TO oid` stops the replay
@@ -29,6 +29,7 @@ func TestReplay_MigrationErrorNamesTheStatementTheEngineRefused(t *testing.T) {
 		wantVersion int64
 		wantKey     string
 		wantSQL     string
+		wantWritten string
 		wantIndex   int
 		wantAnswer  string
 		wantMessage string
@@ -42,6 +43,7 @@ func TestReplay_MigrationErrorNamesTheStatementTheEngineRefused(t *testing.T) {
 			wantVersion: 2,
 			wantKey:     "2",
 			wantSQL:     "ALTER TABLE users RENAME COLUMN nope TO x",
+			wantWritten: "ALTER TABLE users RENAME COLUMN nope TO x;",
 			wantIndex:   2,
 			wantAnswer:  `SQL logic error: no such column: "nope" (1)`,
 			wantMessage: `(?s)replay migration 2 on dev database: failed to execute migration SQL: ` +
@@ -57,6 +59,7 @@ func TestReplay_MigrationErrorNamesTheStatementTheEngineRefused(t *testing.T) {
 			wantVersion: 1,
 			wantKey:     "1",
 			wantSQL:     "ALTER TABLE users RENAME COLUMN id TO oid",
+			wantWritten: "ALTER TABLE users RENAME COLUMN id TO oid;",
 			wantIndex:   2,
 			wantAnswer:  "SQL logic error: cannot rename to rowid alias: oid (1)",
 			wantMessage: `(?s)replay migration 1 on dev database: failed to execute migration SQL: .*`,
@@ -80,6 +83,7 @@ func TestReplay_MigrationErrorNamesTheStatementTheEngineRefused(t *testing.T) {
 			c.Assert(failed.VersionKey, qt.Equals, test.wantKey)
 			c.Assert(failed.Statement, qt.IsNotNil)
 			c.Assert(failed.Statement.SQL, qt.Equals, test.wantSQL)
+			c.Assert(failed.Statement.Written, qt.Equals, test.wantWritten)
 			c.Assert(failed.Statement.Index, qt.Equals, test.wantIndex)
 			c.Assert(failed.Statement.Answer.Error(), qt.Equals, test.wantAnswer)
 			c.Assert(errors.Unwrap(failed.Statement.Answer), qt.IsNil)
