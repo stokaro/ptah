@@ -28,8 +28,8 @@ func TestMigrateApplyExecutesAtlasRepeatableMigration(t *testing.T) {
 	)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(output, qt.Contains, "Migrating to version 2R from 2 pending migrations.")
-	c.Assert(output, qt.Contains, "Migration complete. Current version: 2R")
+	c.Assert(output, qt.Contains, "Migrating to version 2R (2 migrations in total):\n")
+	c.Assert(output, qt.Contains, "\n  -- migrating version 2R\n")
 	assertRepeatableSQLiteTableExists(c, dbPath, "users")
 	assertRepeatableSQLiteTableExists(c, dbPath, "active_users")
 	c.Assert(repeatableSQLiteAtlasAppliedVersions(c, dbPath), qt.DeepEquals, []string{"1", "2R"})
@@ -51,8 +51,8 @@ func TestMigrateApplyExecutesAtlasBareRepeatableMigration(t *testing.T) {
 	)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(output, qt.Contains, "Migrating to version R from 1 pending migrations.")
-	c.Assert(output, qt.Contains, "Migration complete. Current version: R")
+	c.Assert(output, qt.Contains, "Migrating to version R (1 migrations in total):\n")
+	c.Assert(output, qt.Contains, "\n  -- migrating version R\n")
 	assertRepeatableSQLiteTableExists(c, dbPath, "repeatable_bootstrap")
 	c.Assert(repeatableSQLiteAtlasAppliedVersions(c, dbPath), qt.DeepEquals, []string{"R"})
 }
@@ -73,7 +73,7 @@ func TestMigrateApplyDoesNotReapplyAtlasRepeatableOnChecksumChange(t *testing.T)
 		"--dir", "file://"+migrationsDir,
 	)
 	c.Assert(firstErr, qt.IsNil)
-	c.Assert(firstOutput, qt.Contains, "Migration complete. Current version: 2R")
+	c.Assert(firstOutput, qt.Contains, "Migrating to version 2R (2 migrations in total):\n")
 
 	atlastest.WriteAtlasApplyProjectMigration(c, migrationsDir, "2R_repeatable.sql", "CREATE TABLE repeatable_changed (id INTEGER PRIMARY KEY);\n")
 	atlastest.WriteAtlasApplyProjectSum(c, migrationsDir)

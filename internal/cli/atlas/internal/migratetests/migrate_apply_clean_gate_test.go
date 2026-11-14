@@ -137,7 +137,7 @@ func TestCompatCommand_MigrateApplyDryRunRefusesUncleanDatabase(t *testing.T) {
 		"sql/migrate: connected database is not clean: found multiple tables: 2. "+
 			"baseline version or allow-dirty is required",
 	)
-	c.Assert(stdout, qt.Not(qt.Contains), "Would have applied")
+	c.Assert(stdout, qt.Equals, "")
 }
 
 // The gate is unconditional on how much work there is: the binary refuses even
@@ -209,7 +209,7 @@ func TestCompatCommand_MigrateApplyDryRunBaselineAcceptsUncleanDatabase(t *testi
 		"--baseline", cleanGateVersionOne, "--dry-run")
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(stdout, qt.Contains, "Would have applied 1 migrations.")
+	c.Assert(stdout, qt.Contains, "Migrating to version "+cleanGateVersionTwo+" from "+cleanGateVersionOne+" (1 migrations in total):\n")
 	c.Assert(atlastest.CompatTableNames(c, dbPath), qt.Not(qt.Contains), "cg_orders")
 }
 
@@ -270,7 +270,7 @@ func TestCompatCommand_MigrateApplyAcceptsCleanDatabases(t *testing.T) {
 			stdout, err := runCleanGateApply(c, migrationsDir, dbPath)
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(stdout, qt.Contains, "Migration complete. Current version: "+cleanGateVersionTwo)
+			c.Assert(stdout, qt.Contains, "Migrating to version "+cleanGateVersionTwo+" (2 migrations in total):\n")
 			c.Assert(atlastest.CompatTableNames(c, dbPath), qt.Contains, "cg_users")
 		})
 	}
@@ -297,7 +297,7 @@ func TestCompatCommand_MigrateApplyAcceptsLoneEmptyRevisionsTable(t *testing.T) 
 	stdout, err := runCleanGateApply(c, migrationsDir, dbPath)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(stdout, qt.Contains, "Migration complete. Current version: "+cleanGateVersionTwo)
+	c.Assert(stdout, qt.Contains, "Migrating to version "+cleanGateVersionTwo+" (2 migrations in total):\n")
 	c.Assert(atlastest.CompatTableNames(c, dbPath), qt.Contains, "cg_users")
 }
 
@@ -318,6 +318,6 @@ func TestCompatCommand_MigrateApplyIgnoresDriftOnAnAdoptedDatabase(t *testing.T)
 	stdout, err := runCleanGateApply(c, migrationsDir, dbPath)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(stdout, qt.Contains, "Migration complete. Current version: "+cleanGateVersionTwo)
+	c.Assert(stdout, qt.Contains, "Migrating to version "+cleanGateVersionTwo+" from "+cleanGateVersionOne+" (1 migrations in total):\n")
 	c.Assert(atlastest.CompatTableNames(c, dbPath), qt.Contains, "cg_orders")
 }

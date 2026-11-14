@@ -135,7 +135,7 @@ func TestCompatMigrateApply_ExecutesOnlyTheCoveredSet(t *testing.T) {
 				{name: "sub/2_b.sql", body: coveredSetNestedSQL},
 			},
 			tamperAfterHash: []coveredSetFile{{name: "sub/2_b.sql", body: coveredSetTamperSQL}},
-			wantStdout:      "Migrating to version 1 from 1 pending migrations.",
+			wantStdout:      "Migrating to version 1 (1 migrations in total):\n",
 			wantStderr:      coveredSetNestedWarn,
 			wantTables:      []string{"a"},
 		},
@@ -149,7 +149,7 @@ func TestCompatMigrateApply_ExecutesOnlyTheCoveredSet(t *testing.T) {
 		{
 			name:       "top-level only is unchanged",
 			files:      []coveredSetFile{{name: "1_a.sql", body: coveredSetTopLevelSQL}},
-			wantStdout: "Migrating to version 1 from 1 pending migrations.",
+			wantStdout: "Migrating to version 1 (1 migrations in total):\n",
 			wantStderr: "",
 			wantTables: []string{"a"},
 		},
@@ -167,7 +167,7 @@ func TestCompatMigrateApply_ExecutesOnlyTheCoveredSet(t *testing.T) {
 				{name: "1_a.sql", body: coveredSetTopLevelSQL},
 				{name: "2_c.SQL", body: "CREATE TABLE c (id INTEGER PRIMARY KEY);\n"},
 			},
-			wantStdout: "Migrating to version 1 from 1 pending migrations.",
+			wantStdout: "Migrating to version 1 (1 migrations in total):\n",
 			wantStderr: "warning: 2_c.SQL is not covered by atlas.sum and will not run; " +
 				"Atlas migrations are top-level files named *.sql\n",
 			wantTables: []string{"a"},
@@ -178,7 +178,7 @@ func TestCompatMigrateApply_ExecutesOnlyTheCoveredSet(t *testing.T) {
 				{name: "1_a.sql", body: coveredSetTopLevelSQL},
 				{name: "sub/1_a.sql", body: coveredSetNestedSQL},
 			},
-			wantStdout: "Migrating to version 1 from 1 pending migrations.",
+			wantStdout: "Migrating to version 1 (1 migrations in total):\n",
 			wantStderr: "warning: sub/1_a.sql is not covered by atlas.sum and will not run; " +
 				"Atlas migrations are top-level files named *.sql\n",
 			wantTables: []string{"a"},

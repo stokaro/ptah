@@ -52,7 +52,6 @@ type atlasMigrateApplyOptions struct {
 type atlasMigrateApplyRunOptions struct {
 	amount          uint64
 	baselineVersion int64
-	baselineLabel   string
 	baselineSource  atlasMigrateApplyOperandSource
 	toVersion       int64
 	toVersionSource atlasMigrateApplyOperandSource
@@ -411,31 +410,17 @@ func runAtlasMigrateApplyTarget(
 
 	noteAtlasMigrateApplyLockUnsupported(cmd, opts.lock, plan, conn.Info().Dialect)
 
-	out := cmd.OutOrStdout()
-	emitApplyStart := func([]int64, []string) {}
-	if !formatOutput {
-		emitApplyStart = func(selectedVersions []int64, selectedKeys []string) {
-			emitAtlasMigrateApplyStart(
-				out,
-				opts,
-				runOpts.baselineVersion,
-				runOpts.baselineLabel,
-				selectedVersions,
-				selectedKeys,
-			)
-		}
-	}
 	result, err := plan.ExecuteWithPreflight(
 		cmd.Context(),
 		func(_ context.Context, lockedPlan migrator.MigrationPlan) error {
 			dbcli.ReportMigrationInputs(cmd.PrintErrf, lockedPlan)
-			emitApplyStart(lockedPlan.Versions, lockedPlan.VersionKeys)
 			return nil
 		},
 	)
 	if err != nil {
 		if formatOutput && result.ApplyError != nil {
-			writeErr := writeAtlasMigrateApplyFormat(cmd, opts, report, conn, result)
+			data := atlasMigrateApplyReportData(opts, report, conn, result)
+			writeErr := atlasmigratereport.WriteApplyFormat(cmd.OutOrStdout(), opts.format, data)
 			if writeErr != nil {
 				return formatOutput, fmt.Errorf("%w; additionally failed to write --format output: %v", err, writeErr)
 			}
@@ -444,30 +429,35 @@ func runAtlasMigrateApplyTarget(
 			// bypasses the generic command diagnostic without losing exit status.
 			return formatOutput, exitcode.New(atlasErrorExitCode, err)
 		}
-		return formatOutput, atlasMigrateApplyExactIdentityError(
+		applyErr := atlasMigrateApplyExactIdentityError(
 			err,
 			result.SelectedVersions,
 			result.SelectedKeys,
 			result.Migrations,
 		)
+		// The default report describes a run that reached its migrations,
+		// and the error line still follows it on stderr, as on the community
+		// binary. A run refused before its first migration prints the line
+		// alone.
+		if !formatOutput && result.Executed {
+			data := atlasMigrateApplyReportData(opts, report, conn, result)
+			writeErr := atlasmigratereport.WriteApplyText(cmd.OutOrStdout(), data)
+			if writeErr != nil {
+				return formatOutput, fmt.Errorf("%w; additionally failed to write the apply report: %v", applyErr, writeErr)
+			}
+		}
+		return formatOutput, applyErr
 	}
-	if handled, err := finishAtlasMigrateApplyFreshNoop(cmd, opts, report, conn, result); handled || err != nil {
-		return formatOutput, err
-	}
-
 	if opts.dryRun {
 		emitAtlasMigrateApplyDeferredChecks(cmd, result.ChecksDeferred, result.ChecksDeferredKeys)
-		if formatOutput {
-			return formatOutput, writeAtlasMigrateApplyFormat(cmd, opts, report, conn, result)
-		}
-		fmt.Fprintf(out, "Would have applied %d migrations.\n", len(result.SelectedVersions))
-		return formatOutput, nil
 	}
+	data := atlasMigrateApplyReportData(opts, report, conn, result)
 	if formatOutput {
-		return formatOutput, writeAtlasMigrateApplyFormat(cmd, opts, report, conn, result)
+		return formatOutput, atlasmigratereport.WriteApplyFormat(cmd.OutOrStdout(), opts.format, data)
 	}
-	fmt.Fprintf(out, "Migration complete. Current version: %s\n", atlasApplyCurrentVersionLabel(result.FinalStatus))
-	return formatOutput, nil
+	// With nothing to apply, the default report is the line
+	// `No migration files to execute`.
+	return formatOutput, atlasmigratereport.WriteApplyText(cmd.OutOrStdout(), data)
 }
 
 func resolveAtlasMigrateApplyProjectOptions(
@@ -628,51 +618,6 @@ func emitAtlasMigrateApplyDeferredChecks(cmd *cobra.Command, versions []int64, k
 	)
 }
 
-func finishAtlasMigrateApplyFreshNoop(
-	cmd *cobra.Command,
-	opts atlasMigrateApplyOptions,
-	report atlasMigrateApplyReportSource,
-	conn *dbschema.DatabaseConnection,
-	result atlasmigrate.ApplyResult,
-) (bool, error) {
-	if len(result.SelectedVersions) != 0 || result.Applied {
-		return false, nil
-	}
-	if opts.format != "" {
-		return true, writeAtlasMigrateApplyFormat(cmd, opts, report, conn, result)
-	}
-	// No trailing period: the pinned community binary v1.3.0 writes
-	// `No migration files to execute\n` on stdout for the same run, 30 bytes,
-	// verified byte for byte with xxd on 2026-08-08 against a directory both
-	// binaries had already applied. Ptah wrote 31 (stokaro/ptah#1235 finding
-	// 9.3). The report model in internal/atlasreport already spells it without
-	// the period, so this line was also the odd one out inside Ptah.
-	fmt.Fprintln(cmd.OutOrStdout(), "No migration files to execute")
-	return true, nil
-}
-
-func emitAtlasMigrateApplyStart(
-	out io.Writer,
-	opts atlasMigrateApplyOptions,
-	baselineVersion int64,
-	baselineLabel string,
-	selectedVersions []int64,
-	selectedKeys []string,
-) {
-	if opts.dryRun {
-		fmt.Fprintln(out, "Dry run mode: no changes will be made.")
-	}
-	if opts.dryRun && baselineVersion > 0 {
-		fmt.Fprintf(out, "Would baseline migrations at version %s.\n", baselineLabel)
-	}
-	if len(selectedVersions) > 0 {
-		fmt.Fprintf(out, "Migrating to version %s from %d pending migrations.\n",
-			atlasApplyVersionKeyAt(selectedVersions, selectedKeys, len(selectedVersions)-1),
-			len(selectedVersions),
-		)
-	}
-}
-
 func newAtlasMigrateApplyVersionTokens(
 	captured fs.FS,
 	format atlasmigrateimport.Format,
@@ -697,7 +642,7 @@ func resolveAtlasMigrateApplyNumericVersions(
 		return nil
 	}
 	var err error
-	runOpts.baselineVersion, runOpts.baselineLabel, err = resolveAtlasMigrateApplyVersion(
+	runOpts.baselineVersion, err = resolveAtlasMigrateApplyVersion(
 		"baseline",
 		opts.baseline,
 		runOpts.baselineSource,
@@ -706,7 +651,7 @@ func resolveAtlasMigrateApplyNumericVersions(
 	if err != nil {
 		return err
 	}
-	runOpts.toVersion, _, err = resolveAtlasMigrateApplyVersion(
+	runOpts.toVersion, err = resolveAtlasMigrateApplyVersion(
 		"to-version",
 		opts.toVersion,
 		runOpts.toVersionSource,
@@ -732,7 +677,7 @@ func resolveAtlasMigrateApplyFlywayVersions(
 	if err != nil {
 		return flywayVersionTokens{}, fmt.Errorf("atlas migrate apply --dir: %w", err)
 	}
-	runOpts.baselineVersion, runOpts.baselineLabel, err = resolveAtlasMigrateApplyVersion(
+	runOpts.baselineVersion, err = resolveAtlasMigrateApplyVersion(
 		"baseline",
 		opts.baseline,
 		runOpts.baselineSource,
@@ -741,7 +686,7 @@ func resolveAtlasMigrateApplyFlywayVersions(
 	if err != nil {
 		return flywayVersionTokens{}, err
 	}
-	runOpts.toVersion, _, err = resolveAtlasMigrateApplyVersion(
+	runOpts.toVersion, err = resolveAtlasMigrateApplyVersion(
 		"to-version",
 		opts.toVersion,
 		runOpts.toVersionSource,
@@ -758,25 +703,21 @@ func resolveAtlasMigrateApplyVersion(
 	value string,
 	source atlasMigrateApplyOperandSource,
 	tokens flywayVersionTokens,
-) (int64, string, error) {
+) (int64, error) {
 	if value == "" && (source != atlasMigrateApplyOperandExplicit || !tokens.translates()) {
-		return 0, "", nil
+		return 0, nil
 	}
 	if tokens.translates() {
 		version, ok := tokens.resolve(value)
 		if !ok {
 			if name == "baseline" {
-				return 0, "", fmt.Errorf("baseline version %q not found", value)
+				return 0, fmt.Errorf("baseline version %q not found", value)
 			}
-			return 0, "", fmt.Errorf("target version %q was not found in the migration provider", value)
+			return 0, fmt.Errorf("target version %q was not found in the migration provider", value)
 		}
-		return version, value, nil
+		return version, nil
 	}
-	version, err := atlasmigrate.ParseMigrationVersionFlag(name, value)
-	if err != nil {
-		return 0, "", err
-	}
-	return version, strconv.FormatInt(version, 10), nil
+	return atlasmigrate.ParseMigrationVersionFlag(name, value)
 }
 
 func atlasApplyVersionKeyAt(versions []int64, keys []string, index int) string {
@@ -784,13 +725,6 @@ func atlasApplyVersionKeyAt(versions []int64, keys []string, index int) string {
 		return keys[index]
 	}
 	return strconv.FormatInt(versions[index], 10)
-}
-
-func atlasApplyCurrentVersionLabel(status *migrator.MigrationStatus) string {
-	if status.CurrentVersionKeySet {
-		return atlasExactIdentityLabel(status.CurrentVersionKey)
-	}
-	return strconv.FormatInt(status.CurrentVersion, 10)
 }
 
 // verifyAtlasApplyChecksum enforces the atlas.sum integrity gate on the
@@ -912,7 +846,7 @@ func resolveAtlasApplySkipChecks(cmd *cobra.Command) (bool, error) {
 	return skip, nil
 }
 
-// atlasMigrateApplyReportSource is the directory a --format report describes:
+// atlasMigrateApplyReportSource is the directory a report describes:
 // the converted filesystem the run executed, and the file each converted
 // execution-order key came from where conversion renamed it.
 type atlasMigrateApplyReportSource struct {
@@ -920,13 +854,15 @@ type atlasMigrateApplyReportSource struct {
 	files map[int64]atlasreport.MigrateApplySourceFile
 }
 
-func writeAtlasMigrateApplyFormat(
-	cmd *cobra.Command,
+// atlasMigrateApplyReportData is what both reports of a run render: the
+// --format template, and the default report that reproduces the community
+// binary's. One source for both keeps the two from drifting apart.
+func atlasMigrateApplyReportData(
 	opts atlasMigrateApplyOptions,
 	report atlasMigrateApplyReportSource,
 	conn *dbschema.DatabaseConnection,
 	result atlasmigrate.ApplyResult,
-) error {
+) atlasmigratereport.ApplyFormatOptions {
 	if _, executed := errors.AsType[*atlasreport.ExecutingStatementError](result.ApplyError); !executed && result.ErrorText != "" {
 		result.ErrorText = atlasMigrateApplyExactIdentityError(
 			errors.New(result.ErrorText),
@@ -935,14 +871,14 @@ func writeAtlasMigrateApplyFormat(
 			result.Migrations,
 		).Error()
 	}
-	return atlasmigratereport.WriteApplyFormat(cmd.OutOrStdout(), opts.format, atlasmigratereport.ApplyFormatOptions{
+	return atlasmigratereport.ApplyFormatOptions{
 		Conn:        conn,
 		FS:          report.fs,
 		SourceFiles: report.files,
 		Dir:         opts.dir,
 		URL:         opts.url,
 		Result:      result,
-	})
+	}
 }
 
 // flywayLinearityOperands returns everything the linear guard needs from a

@@ -237,7 +237,10 @@ func TestMigrateApplyDryRunChecksDeferChecksOnLaterMigrations(t *testing.T) {
 			stdout, stderr, err := previewDryRunChecks(c, test.first, test.second, test.extraArgs...)
 
 			c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
-			c.Assert(stdout, qt.Contains, "Would have applied 2 migrations.")
+			c.Assert(stdout, qt.Contains, "Migrating to version 20260101000002 (2 migrations in total):\n")
+			c.Assert(stdout, qt.Contains, "\n  -- migrating version 20260101000002\n")
+			// The report does not show a check it never evaluated as passed.
+			c.Assert(stdout, qt.Not(qt.Contains), "pre-migration checks of version 20260101000002")
 			c.Assert(stderr, qt.Contains, test.wantNote)
 			// The note is a human-facing aside; stdout stays clean.
 			c.Assert(stdout, qt.Not(qt.Contains), dryRunChecksDeferredNote)

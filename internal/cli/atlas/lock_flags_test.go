@@ -173,7 +173,7 @@ func TestMigrateApplyNamedLockReachesMigrator(t *testing.T) {
 			out, err := runCompatLockCommand(args)
 
 			c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-			c.Assert(out, qt.Contains, "Migration complete. Current version: 20260101000001")
+			c.Assert(out, qt.Contains, "Migrating to version 20260101000001 (1 migrations in total):\n")
 			c.Assert(strings.Contains(out, migrateApplyNamedLockNote), qt.Equals, tt.wantNote,
 				qt.Commentf("output:\n%s", out))
 			c.Assert(atlastest.SqliteTableCount(c, dbPath, "lock_flag_users"), qt.Equals, 1)

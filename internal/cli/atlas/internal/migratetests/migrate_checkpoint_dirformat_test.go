@@ -230,7 +230,7 @@ func TestCompatCommand_MigrateCheckpointAtlasRoundTrip(t *testing.T) {
 	freshDB := filepath.Join(c.TempDir(), "fresh.db")
 	freshOut, _, err := compatApply(dir, freshDB)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", freshOut))
-	c.Assert(freshOut, qt.Contains, "Migrating to version "+version+" from 1 pending migrations.")
+	c.Assert(freshOut, qt.Contains, "Migrating to version "+version+" (1 migrations in total):\n")
 	c.Assert(compatRevisionRows(c, freshDB), qt.DeepEquals, []compatRevisionRow{
 		{Version: version, Description: "checkpoint", Type: 2, Applied: 1, Total: 1},
 	})

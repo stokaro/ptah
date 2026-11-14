@@ -102,7 +102,8 @@ func TestCompatCommand_MigrateApplyAllowDirtyRecoversAfterBodyFailure(t *testing
 		"--allow-dirty",
 	)
 	c.Assert(retryErr, qt.IsNil)
-	c.Assert(stdout, qt.Contains, "Migration complete. Current version: "+dirtyRetryVersionTwo)
+	c.Assert(stdout, qt.Contains, "\n  -- migrating version "+dirtyRetryVersionTwo+"\n")
+	c.Assert(stdout, qt.Contains, "\n  -- 1 migration\n")
 	c.Assert(atlastest.CompatTableNames(c, dbPath), qt.Contains, "dr_two")
 	c.Assert(atlastest.CompatTableNames(c, dbPath), qt.Contains, "dr_three")
 	// One row per version: the retry reused the dirty row instead of adding one.

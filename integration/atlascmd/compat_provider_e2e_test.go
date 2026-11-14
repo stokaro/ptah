@@ -150,7 +150,8 @@ func TestCompatProviderE2E_HappyPath(t *testing.T) {
 
 		out, stderr, code := f.run(f.withManifest(), "migrate", "apply", "--dir", f.migrationsURL, "--url", f.address)
 		c.Assert(code, qt.Equals, 0, qt.Commentf("%s", stderr))
-		c.Assert(out, qt.Contains, "Migration complete. Current version: 20240101000000")
+		c.Assert(out, qt.Contains, "Migrating to version 20240101000000 (1 migrations in total):\n")
+		c.Assert(out, qt.Contains, "\n  -- 1 migration\n")
 		f.assertStopped(c)
 
 		out, stderr, code = f.run(f.withManifest(), "migrate", "status", "--dir", f.migrationsURL, "--url", f.address)

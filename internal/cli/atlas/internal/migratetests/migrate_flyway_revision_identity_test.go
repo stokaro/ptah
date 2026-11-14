@@ -389,8 +389,7 @@ func TestCompatMigrateApply_FlywayBaselineResolvesExactToken(t *testing.T) {
 	)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
-	c.Assert(stdout, qt.Contains, "Would baseline migrations at version 1.5.\n")
-	c.Assert(stdout, qt.Contains, "Migrating to version 2 from 1 pending migrations.\n")
+	c.Assert(stdout, qt.Contains, "Migrating to version 2 from 1.5 (1 migrations in total):\n")
 	c.Assert(stdout, qt.Not(qt.Contains), "461168")
 	c.Assert(userTables(c, dbPath), qt.HasLen, 0)
 }
@@ -539,7 +538,7 @@ func TestCompatMigrateApply_FlywayToVersionResolvesExactToken(t *testing.T) {
 	)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
-	c.Assert(stdout, qt.Contains, "Migrating to version 1.5 from 2 pending migrations.\n")
+	c.Assert(stdout, qt.Contains, "Migrating to version 1.5 (2 migrations in total):\n")
 	c.Assert(revisionVersions(c, dbPath), qt.DeepEquals, []string{"1", "1.5"})
 	c.Assert(userTables(c, dbPath), qt.DeepEquals, []string{"exact_bound_half", "exact_bound_one"})
 }
@@ -622,9 +621,8 @@ func TestCompatMigrateApply_FlywayOnlyRepeatableNeverLeaksOrderKey(t *testing.T)
 	stdout, stderr, err := compatApplyConverted(dir, "flyway", dbPath)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
-	c.Assert(stdout, qt.Contains, "Migrating to version  from 1 pending migrations.\n")
-	c.Assert(stdout, qt.Contains, "Migration complete. Current version: \"\"\n")
-	c.Assert(stdout, qt.Not(qt.Contains), "Migration complete. Current version: \n")
+	c.Assert(stdout, qt.Contains, "Migrating to version  (1 migrations in total):\n")
+	c.Assert(stdout, qt.Contains, "\n  -- migrating version \n")
 	c.Assert(stdout, qt.Not(qt.Contains), repeatableOrderKey)
 
 	stdout, stderr, err = runCompatExit(

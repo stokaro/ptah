@@ -61,6 +61,7 @@ func TestWriteApplyFormat_CustomTemplate(t *testing.T) {
 				},
 				SelectedVersions: []int64{1},
 				Applied:          true,
+				Executed:         true,
 				StartedAt:        startedAt,
 				EndedAt:          endedAt,
 			},

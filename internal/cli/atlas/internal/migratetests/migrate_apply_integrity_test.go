@@ -89,7 +89,7 @@ func TestCompatMigrateApply_CheckpointFreshDatabase(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", stdout))
 	// Measured Atlas: "Migrating to version 20260801100335 (1 migrations in
 	// total)" — only the checkpoint runs on a fresh database.
-	c.Assert(stdout, qt.Contains, "Migrating to version "+compatCheckpointVersion+" from 1 pending migrations.")
+	c.Assert(stdout, qt.Contains, "Migrating to version "+compatCheckpointVersion+" (1 migrations in total):\n")
 	c.Assert(atlastest.SqliteTableCount(c, dbPath, "users"), qt.Equals, 1)
 
 	// Measured revision row: `20260801100335|checkpoint|2|1|1`, and nothing

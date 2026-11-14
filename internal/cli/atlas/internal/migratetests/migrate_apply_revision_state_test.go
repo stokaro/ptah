@@ -59,8 +59,8 @@ func TestMigrateApplyTxModeAllChecksHonorDryRun(t *testing.T) {
 			// without the database -- tx-mode is all, the migration declares
 			// checks, checks are not skipped -- so the real apply above fails
 			// deterministically. A preview that answered 0 here would report
-			// "Would have applied 2 migrations." with an empty stderr for a run
-			// that cannot succeed, which is worse than not previewing at all.
+			// two migrations with an empty stderr for a run that cannot
+			// succeed, which is worse than not previewing at all.
 			name:    "dry run refuses it the same way",
 			args:    []string{"--dry-run"},
 			wantErr: `error applying migrations: migration 2 declares pre-migration checks, which cannot run with tx-mode all: .*`,

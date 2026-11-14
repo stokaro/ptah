@@ -573,7 +573,8 @@ func TestProviderMigrationUnits(t *testing.T) {
 		out, diagnostics, code := runCompat(c, "migrate", "apply", "--dir", dirURL, "--url", database.address)
 
 		c.Assert(code, qt.Equals, 0, qt.Commentf("%s", diagnostics))
-		c.Assert(out, qt.Contains, "Migration complete. Current version: 20240101000000")
+		c.Assert(out, qt.Contains, "Migrating to version 20240101000000 (1 migrations in total):\n")
+		c.Assert(out, qt.Contains, "\n  -- 1 migration\n")
 		c.Assert(rowCount(c, database, "items"), qt.Equals, int64(1))
 		reader, err := migrator.NewFSMigrator(fixture.connect(c, database), os.DirFS(dir), migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas))
 		c.Assert(err, qt.IsNil)

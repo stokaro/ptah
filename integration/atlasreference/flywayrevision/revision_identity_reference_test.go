@@ -1046,7 +1046,7 @@ func TestFlywayContinuesAtlasCEHistoryWithoutHandover(t *testing.T) {
 				"migrate", "apply", "--dir", "file://"+extended+"?format=flyway", "--url", "sqlite://"+dbPath)
 			c.Assert(applyNew.code, qt.Equals, 0,
 				qt.Commentf("stdout: %s\nstderr: %s", applyNew.stdout, applyNew.stderr))
-			c.Assert(applyNew.stdout, qt.Contains, "1 pending migrations")
+			c.Assert(applyNew.stdout, qt.Contains, " (1 migrations in total):\n")
 			c.Assert(readSQLiteRevisionRows(c, dbPath), qt.HasLen, len(applied)+1)
 
 			// 7: and a second apply performs no SQL.

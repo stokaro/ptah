@@ -2935,8 +2935,8 @@ func TestCompatCommand_MigrateApplyAmountSQLite(t *testing.T) {
 	err := first.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(firstOut.String(), qt.Contains, "Migrating to version 2 from 2 pending migrations.")
-	c.Assert(firstOut.String(), qt.Contains, "Migration complete. Current version: 2")
+	c.Assert(firstOut.String(), qt.Contains, "Migrating to version 2 (2 migrations in total):\n")
+	c.Assert(firstOut.String(), qt.Contains, "\n  -- 2 migrations\n  -- 2 sql statements\n")
 	assertSQLiteTableExists(c, dbPath, "apply_one")
 	assertSQLiteTableExists(c, dbPath, "apply_two")
 	assertSQLiteTableMissing(c, dbPath, "apply_three")
@@ -2955,8 +2955,8 @@ func TestCompatCommand_MigrateApplyAmountSQLite(t *testing.T) {
 	err = second.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(secondOut.String(), qt.Contains, "Migrating to version 3 from 1 pending migrations.")
-	c.Assert(secondOut.String(), qt.Contains, "Migration complete. Current version: 3")
+	c.Assert(secondOut.String(), qt.Contains, "Migrating to version 3 from 2 (1 migrations in total):\n")
+	c.Assert(secondOut.String(), qt.Contains, "\n  -- 1 migration\n  -- 1 sql statement\n")
 	assertSQLiteTableExists(c, dbPath, "apply_three")
 }
 
@@ -2983,7 +2983,7 @@ func TestCompatCommand_MigrateApplyBaselineUsesAtlasRevisions(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "Migrating to version 3 from 1 pending migrations.")
+	c.Assert(out.String(), qt.Contains, "Migrating to version 3 from 2 (1 migrations in total):\n")
 	assertSQLiteTableMissing(c, dbPath, "baseline_one")
 	assertSQLiteTableMissing(c, dbPath, "baseline_two")
 	assertSQLiteTableExists(c, dbPath, "baseline_three")
@@ -3014,9 +3014,9 @@ func TestCompatCommand_MigrateApplyDryRunBaselinePlansRemainingMigrations(t *tes
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "Would baseline migrations at version 2.")
-	c.Assert(out.String(), qt.Contains, "Migrating to version 3 from 1 pending migrations.")
-	c.Assert(out.String(), qt.Contains, "Would have applied 1 migrations.")
+	c.Assert(out.String(), qt.Contains, "Migrating to version 3 from 2 (1 migrations in total):\n\n"+
+		"  -- migrating version 3\n"+
+		"    -> CREATE TABLE dry_baseline_three (id INTEGER PRIMARY KEY);\n")
 	assertSQLiteTableMissing(c, dbPath, "dry_baseline_one")
 	assertSQLiteTableMissing(c, dbPath, "dry_baseline_two")
 	assertSQLiteTableMissing(c, dbPath, "dry_baseline_three")
@@ -3052,7 +3052,7 @@ CREATE TABLE format_json_posts (id INTEGER PRIMARY KEY);
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Not(qt.Contains), "Migrating to version")
-	c.Assert(out.String(), qt.Not(qt.Contains), "Migration complete")
+	c.Assert(out.String(), qt.Not(qt.Contains), "-------------------------")
 
 	var result atlasMigrateApplyJSONResult
 	c.Assert(json.Unmarshal(out.Bytes(), &result), qt.IsNil)
@@ -3207,9 +3207,10 @@ func TestCompatCommand_MigrateApplyFormatsDryRunResult(t *testing.T) {
 	var result atlasMigrateApplyJSONResult
 	c.Assert(json.Unmarshal(out.Bytes(), &result), qt.IsNil)
 	c.Assert(result.Target, qt.Equals, "1")
-	c.Assert(result.Message, qt.Equals, "")
+	c.Assert(result.Message, qt.Equals, "Migrated to version 1 from  (1 migrations in total)")
 	c.Assert(result.Pending, qt.HasLen, 1)
-	c.Assert(result.Applied, qt.HasLen, 0)
+	c.Assert(result.Applied, qt.HasLen, 1)
+	c.Assert(result.Applied[0].Applied, qt.DeepEquals, []string{"CREATE TABLE format_dry_run (id INTEGER PRIMARY KEY);"})
 	assertSQLiteTableMissing(c, dbPath, "format_dry_run")
 }
 
@@ -3244,7 +3245,8 @@ func TestCompatCommand_MigrateApplyFormatsDryRunBaselineResult(t *testing.T) {
 	c.Assert(result.Target, qt.Equals, "3")
 	c.Assert(result.Pending, qt.HasLen, 1)
 	c.Assert(result.Pending[0].Name, qt.Equals, "3_three.sql")
-	c.Assert(result.Applied, qt.HasLen, 0)
+	c.Assert(result.Applied, qt.HasLen, 1)
+	c.Assert(result.Applied[0].Name, qt.Equals, "3_three.sql")
 	assertSQLiteTableMissing(c, dbPath, "format_dry_baseline_one")
 	assertSQLiteTableMissing(c, dbPath, "format_dry_baseline_two")
 	assertSQLiteTableMissing(c, dbPath, "format_dry_baseline_three")

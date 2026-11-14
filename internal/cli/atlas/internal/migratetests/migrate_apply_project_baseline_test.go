@@ -25,8 +25,8 @@ import (
 //	baseline = "20260719010000"  0  "Migrating to version 20260719010101 from
 //	                                20260719010000 (1 migrations in total)"
 //
-// ptah-compat answered "2 pending migrations" to BOTH before the wiring, at
-// exit 0, with `warning: atlas.hcl attribute "baseline" ... has no effect`.
+// Without the wiring, ptah-compat migrates both files in BOTH rows, at exit 0,
+// with `warning: atlas.hcl attribute "baseline" ... has no effect`.
 //
 // The no-baseline row is carried here as the control subtest rather than as
 // prose. Both binaries agree there, so a run that applied one migration in both

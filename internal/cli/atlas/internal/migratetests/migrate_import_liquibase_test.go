@@ -134,7 +134,8 @@ SELECT 11 WHERE (SELECT count(*) FROM ordered_steps) = 10;
 
 	applyOut, applyErrOut, applyErr := compatApply(target, dbPath)
 	c.Assert(applyErr, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", applyOut, applyErrOut))
-	c.Assert(applyOut, qt.Contains, "Migration complete. Current version: 11")
+	c.Assert(applyOut, qt.Contains, "Migrating to version 11 (11 migrations in total):\n")
+	c.Assert(applyOut, qt.Contains, "\n  -- 11 migrations\n")
 	c.Assert(atlastest.SQLiteRowCount(c, dbPath, "ordered_steps"), qt.Equals, 11)
 	// The rows keep the padding the import wrote, as Atlas records them: the
 	// width is what makes 09 sort before 10 as a string.

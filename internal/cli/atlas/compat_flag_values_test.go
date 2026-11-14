@@ -162,14 +162,14 @@ func TestCompatLockTimeout_HappyPath(t *testing.T) {
 			args: func(fx flagValueFixture) []string {
 				return []string{"migrate", "apply", "--url", fx.targetDB, "--dir", fx.dir, "--lock-timeout", "0"}
 			},
-			wantStdout: "Migration complete.",
+			wantStdout: "\n  -- 1 migration\n  -- 1 sql statement\n",
 		},
 		{
 			name: "migrate apply, a negative duration",
 			args: func(fx flagValueFixture) []string {
 				return []string{"migrate", "apply", "--url", fx.targetDB, "--dir", fx.dir, "--lock-timeout", "-1s"}
 			},
-			wantStdout: "Migration complete.",
+			wantStdout: "\n  -- 1 migration\n  -- 1 sql statement\n",
 		},
 		{
 			name: "migrate diff, zero",
@@ -230,7 +230,7 @@ func TestCompatLockTimeoutFromProject_HappyPath(t *testing.T) {
 			stdout, stderr, err := atlastest.RunCompat("migrate", "apply", "--config", config, "--env", "local")
 
 			c.Assert(err, qt.IsNil, qt.Commentf("stderr=%q", stderr))
-			c.Assert(stdout, qt.Contains, "Migration complete.")
+			c.Assert(stdout, qt.Contains, "\n  -- 1 migration\n  -- 1 sql statement\n")
 		})
 	}
 }
