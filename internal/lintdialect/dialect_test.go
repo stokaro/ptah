@@ -429,10 +429,14 @@ func TestBuiltInRules_PostgresFamilyMembersAreNamedOnlyWhereMeasured(t *testing.
 	c := qt.New(t)
 
 	// The rules measured on the wire-compatible engines, and the engines each
-	// was measured on (stokaro/ptah#2958: SET NOT NULL fails on a NULL row on
-	// CockroachDB v25.2 and YugabyteDB 2025.1 alike).
+	// was measured on. PG303: SET NOT NULL fails on a NULL row on CockroachDB
+	// v25.2 and YugabyteDB 2025.1 alike (stokaro/ptah#2958). TX201 reports
+	// what Ptah's migrator refuses before a statement reaches the server, on
+	// every engine it applies, so its claim is the migrator's and not
+	// PostgreSQL's (stokaro/ptah#6004).
 	measured := []string{
 		"PG303=" + strings.Join([]string{platform.CockroachDB, platform.YugabyteDB}, ","),
+		"TX201=" + strings.Join([]string{platform.CockroachDB, platform.YugabyteDB}, ","),
 	}
 
 	postgresFamily := slices.DeleteFunc(ruleFamilyCoverage(c), func(cov ruleDialectCoverage) bool {
