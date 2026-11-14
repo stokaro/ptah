@@ -257,11 +257,17 @@ func rollBack(c *qt.C, binary string, r rollback) (target, output string, err er
 // test applied it.
 func rollBackApplied(c *qt.C, binary, dir, target string, r rollback) (string, error) {
 	c.Helper()
+	return runConfigured(c, binary, r,
+		"migrations", "down", "--migrations-dir", dir, "--db-url", target, "--target", "1", "--confirm")
+}
+
+// runConfigured runs the binary with args from a directory that holds r's
+// ptah.yaml, in an environment that carries no PTAH_ variable but r's.
+func runConfigured(c *qt.C, binary string, r rollback, args ...string) (string, error) {
+	c.Helper()
 	workdir := c.TempDir()
 	c.Assert(os.WriteFile(filepath.Join(workdir, "ptah.yaml"), []byte(r.config), 0o600), qt.IsNil) // #nosec G703 -- the path is c.TempDir() plus a constant name
-	cmd := exec.CommandContext(c.Context(), binary, append([]string{
-		"migrations", "down", "--migrations-dir", dir, "--db-url", target, "--target", "1", "--confirm",
-	}, r.flags...)...) // #nosec G204 -- the binary is built by the test and the arguments are its own
+	cmd := exec.CommandContext(c.Context(), binary, append(args, r.flags...)...)                   // #nosec G204 -- the binary is built by the test and the arguments are its own
 	cmd.Dir = workdir
 	cmd.Env = append(environmentWithoutPtahVariables(), r.env...)
 	output, err := cmd.CombinedOutput()

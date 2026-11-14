@@ -355,20 +355,31 @@ dirty revision, the statements that stayed committed. Here a down file differs
 from an up file of the same directory. A retry of a failed up file with
 `--allow-dirty` resumes after its committed statements; a rollback never
 resumes, so the dirty revision stops the next one, and the way out depends on
-what committed. Measured on PostgreSQL 17:
+what committed. `ptah migrations status` names it. `ptah migrations repair`
+takes the runner the same way, `--runner`, `PTAH_RUNNER` or
+`migration.runner`, and reads the file with its transactions under
+golang-migrate. Measured on PostgreSQL 17:
 
 | down file | after the failure | the way out |
 | --- | --- | --- |
 | `BEGIN; DROP TABLE a; INSERT INTO missing ...; COMMIT;` | `a` is still there, `applied=0` | `ptah migrations repair --version <version>` records the migration applied, and the next rollback runs the whole file |
 | `DROP TABLE a; INSERT INTO missing ...; BEGIN; DROP TABLE b; COMMIT;` | `a` and `b` are still there, `applied=0`: the statements before `BEGIN` run in its transaction | the same |
-| `BEGIN; DROP TABLE a; COMMIT; INSERT INTO missing ...;` | `a` is gone, `applied=3` | finish the rollback by hand, then `ptah migrations set --version <previous>` |
+| `BEGIN; DROP TABLE a; COMMIT; INSERT INTO missing ...;` | `a` is gone, `applied=3` | finish the rollback by hand, then `ptah migrations set --version <previous>`; or restore `a`, then `ptah migrations repair --version <version> --force --runner golang-migrate` |
+| `BEGIN; DROP TABLE a; COMMIT; DROP TABLE b;`, and the revision write after the last statement fails | `a` and `b` are gone, `applied=4`, every statement | `ptah migrations repair --version <version> --runner golang-migrate` removes the revision |
 
-After a transaction of the file committed, `repair` refuses to record the
-migration applied, with `--force` too, and refuses `--resume-from`, because a
-resume would run the rest of the file without the transactions it opens. A
-failure after the file's last statement committed, such as a revision write
-that did not reach the database, records every statement applied and keeps the
-revision; `migrations set` ends it the same way.
+After a transaction of the file committed, a plain `repair` refuses to record
+the migration applied, and `--resume-from` is refused, because a resume would
+run the rest of the file without the transactions it opens. Both refusals name
+the two endings in the table. `--force` records the migration applied, for the
+operator who restored what the rollback reverted. A failure after the file's
+last statement committed, such as a revision write that did not reach the
+database, records every statement applied and keeps the revision. A repair
+without `--resume-from` removes it, as a rollback that recorded its end does.
+
+Without the golang-migrate runner, a repair that has to read such a file reads
+it one statement at a time, refuses its `BEGIN`, and says to repair with
+`--runner golang-migrate`. On every other engine the runner refuses the
+`BEGIN` too, so neither the refusal nor the hint names it there.
 
 A [checkpoint](../checkpoints/) adds one more boundary: history squashed
 below a checkpoint no longer has individually applied migrations to reverse,
@@ -391,6 +402,10 @@ body back — and the row carries `direction=down`. So:
 - `ptah migrations repair` has a row to act on, and follows its direction.
 - A later `ptah migrations up` refuses to run over the unfinished rollback
   instead of stacking new work on unknown state.
+- A later `ptah migrations down` refuses it too, whatever its target, and
+  names the command that ends the row. The dirty row is not applied, so the
+  version already reads as the target of the failed rollback, and a rollback
+  that read only the version would report itself done.
 
 ### The document a rollback leaves
 
@@ -548,6 +563,14 @@ bookkeeping.
   `Status: ❌ Dirty migration state detected`. Fix the down file and repair
   the revision state — see
   [Maintain migration history](../maintain-history/).
+- **A previous rollback left a dirty revision.** The command exits `2` before
+  it plans or prompts, whatever the target, and names the repair that ends
+  the row:
+
+  ```text
+  error: error running down migrations: migration 2 is dirty: state=failed applied=0/1 error="..." error_stmt="DROP TABLE not_there"
+  No down statement of this rollback committed, so the migration is still applied. Run 'ptah migrations repair --version 2' to record it applied, then roll it back again.
+  ```
 - **Shadow verification fails.** The target is untouched; the error names the
   migration whose down could not be replayed.
 - **Data does not come back.** Rolling back a `DROP`-ing down file deletes

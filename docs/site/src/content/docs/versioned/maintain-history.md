@@ -197,8 +197,9 @@ That reading of `applied=0/N` holds wherever the count is a witness. On
 ClickHouse and Oracle every statement is durable the moment it runs,
 so Ptah writes no per-statement witness and zero says only that nothing was
 recorded: the body may have run in full, in part, or not at all. The hint says
-so there, repair does not refuse, and what ends the row is to finish the body
-by hand and then record it. The MySQL family is not in that group -- it keeps
+so there and offers no retry. What ends the row is to finish the body by hand
+and then record it with `ptah migrations repair --version <version> --force`,
+the command the hint names. The MySQL family is not in that group -- it keeps
 its DDL and loses its DML on a rollback, which is why it carries a witness
 statement by statement and reads zero the same way PostgreSQL does. Neither is
 YDB: each query there is durable as it runs, and Ptah records a witness around
@@ -226,6 +227,12 @@ example on this page is `direction=up`; for `direction=down` see
 [Finishing an interrupted rollback](../rollback/#finishing-an-interrupted-rollback),
 where `--resume-from` runs the remaining *down* statements and a finished
 rollback removes the revision instead of marking it applied.
+
+Where the file that left the row opens and closes its own transactions, as a
+file written for golang-migrate does on PostgreSQL, every command the hint
+names carries `--runner golang-migrate`, and none of them is a `--resume-from`;
+see
+[A directory written for golang-migrate](../rollback/#a-directory-written-for-golang-migrate).
 
 The statement is recorded as it was written. Where one carries bytes that are
 not valid UTF-8, such as a binary value written as a text literal, each of those
@@ -277,6 +284,17 @@ top-level transaction-control statements. Recovery executes resumed SQL as
 independent autocommit statements, so accepting a nested `BEGIN`, `COMMIT`,
 `ROLLBACK`, savepoint, autocommit toggle, or implicit-transaction toggle would
 make its durable progress counters untrustworthy.
+
+`--runner golang-migrate` is the exception, on PostgreSQL, for a body that
+opens and closes its own transactions. `PTAH_RUNNER` and `migration.runner` in
+`ptah.yaml` select it too, in that order below the flag. Repair then reads the
+body with its transactions, as `ptah migrations up` and `ptah migrations down`
+run it under that runner. A repair that runs none of its SQL records the
+revision the way a run that reached the end of the body does, and
+`--resume-from` is refused, because the rest of the body would run outside the
+transactions it opens. An up body that stopped partway is finished by
+`ptah migrations up --allow-dirty --runner golang-migrate`, which resumes after
+the transactions that committed.
 
 `RepairMigration` acquires the same session advisory lock as migration up and
 down. It holds the lock across revision inspection, resumed SQL, safety checks,

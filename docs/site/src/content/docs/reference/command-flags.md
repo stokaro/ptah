@@ -1108,9 +1108,11 @@ Read the columns as follows.
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--atlas-env` | `string` | — | `PTAH_ATLAS_ENV` | — |
+| `--config` | `string` | — | `PTAH_CONFIG` | — |
 | `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
 | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
 | `--dir-format` | `string` | `auto` | `PTAH_DIR_FORMAT` | — |
+| `--env` | `string` | — | `PTAH_ENV` | — |
 | `--force` | `bool` | `false` | `PTAH_FORCE` | — |
 | `--migrations-dir` | `string` | — | `PTAH_MIGRATIONS_DIR` | — |
 | `--migrations-engine` | `string` | — | `PTAH_MIGRATIONS_ENGINE` | — |
@@ -1121,6 +1123,8 @@ Read the columns as follows.
 | `--provider-exchanges` | `string` | — | — | — |
 | `--resume-from` | `string` | — | `PTAH_RESUME_FROM` | — |
 | `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
+| `--runner` | `string` | `ptah` | `PTAH_RUNNER` | — |
+| `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
 | `--version` | `string` | — | `PTAH_VERSION` | — |
 
 </div>

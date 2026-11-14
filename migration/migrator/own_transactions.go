@@ -67,7 +67,50 @@ func (m *Migration) bodyOwnTransactions(
 	conn *dbschema.DatabaseConnection,
 	direction MigrationDirection,
 ) (filetx.Blocks, []string, error) {
-	if !m.ownTransactions || !m.hasSQLExecutor(direction) {
+	if !m.ownTransactions {
+		return filetx.Blocks{}, nil, nil
+	}
+	return m.readOwnTransactions(conn, direction)
+}
+
+// RevisionBodyOpensOwnTransactions reports whether the body the run that left
+// revision executed opens and closes transactions of its own that a directory
+// loaded with [WithOwnTransactions] runs as written, as a file written for
+// golang-migrate does: the down file of the revision's migration when a
+// rollback left the revision, and the up file otherwise. The answer is the
+// same whatever this migrator was loaded with.
+//
+// [Migrator.RepairMigration] reads such a body with its transactions only
+// under [WithOwnTransactions], and never resumes it from a statement, because
+// a resume runs the rest of the body one statement at a time, outside the
+// transactions the body opens. It reports false when the migrator holds no
+// migration of the revision's version, on an engine whose migrator reads no
+// body as one with transactions of its own, and for a body whose transaction
+// control that reading refuses.
+func (m *Migrator) RevisionBodyOpensOwnTransactions(revision MigrationRevision) bool {
+	migration := m.migrationByVersion(revision.Version)
+	if migration == nil {
+		return false
+	}
+	return migration.runnerReadsOwnTransactions(m.conn, repairMigrationDirection(&revision))
+}
+
+// runnerReadsOwnTransactions reports whether the body of direction would run
+// with transactions of its own if its directory were loaded with
+// [WithOwnTransactions]: the reading [Migration.bodyOwnTransactions] makes
+// accepts the body and finds at least one.
+func (m *Migration) runnerReadsOwnTransactions(conn *dbschema.DatabaseConnection, direction MigrationDirection) bool {
+	blocks, _, err := m.readOwnTransactions(conn, direction)
+	return err == nil && !blocks.Empty()
+}
+
+// readOwnTransactions is the reading of [Migration.bodyOwnTransactions],
+// made whatever directory the migration was loaded from.
+func (m *Migration) readOwnTransactions(
+	conn *dbschema.DatabaseConnection,
+	direction MigrationDirection,
+) (filetx.Blocks, []string, error) {
+	if !m.hasSQLExecutor(direction) {
 		return filetx.Blocks{}, nil, nil
 	}
 	read := builtin.Lookup(databaseConnectionDialect(conn)).OwnTransactions

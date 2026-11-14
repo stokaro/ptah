@@ -749,8 +749,9 @@ and pipelines share a directory:
   permanent, so a retry with `--allow-dirty` resumes after them. Under the
   default, Ptah refuses a file that controls the transaction it owns before
   running that file. The apply gate and `ptah migrations lint --runner`
-  judge `TX201` by the same runner, and `ptah migrations down` rolls a down
-  file back by it
+  judge `TX201` by the same runner, `ptah migrations down` rolls a down
+  file back by it, and `ptah migrations repair` reads the file a dirty
+  revision names by it
   ([A directory written for golang-migrate](../rollback/#a-directory-written-for-golang-migrate)).
   [Transactions in a golang-migrate directory](../../atlas/migrate-commands/#transactions-in-a-golang-migrate-directory)
   describes how such a file runs.

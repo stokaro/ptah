@@ -5,9 +5,12 @@ package migraterepair
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 
+	"ptah.run/config/projectconfig"
+	"ptah.run/core/lintext"
 	"ptah.run/dbschema"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
@@ -36,7 +39,10 @@ type options struct {
 	atlasEnv            string
 	force               bool
 	resumeFrom          string
+	runner              string
 	connectTimeout      string
+	configPath          string
+	envName             string
 	migrationsSchema    string
 	migrationsTable     string
 	migrationsEngine    string
@@ -63,7 +69,15 @@ revision is removed, because a finished rollback means the migration is no
 longer applied; without --resume-from, a rollback that already committed a
 statement is refused rather than recorded applied over a schema it changed.
 Repair holds the migration advisory lock across inspection, resumed SQL, and
-the final metadata write.`,
+the final metadata write.
+
+With --runner golang-migrate, a file that opens and closes its own
+transactions is read with those transactions, as "migrations up" and
+"migrations down" run it. A revision whose every statement committed is
+finished without running SQL: an up migration is recorded applied, and a
+rollback's revision is removed. Such a file is never resumed from a
+statement, because a resume would run the rest of it outside the
+transactions it opens; the refusal names what ends the revision instead.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return migrateRepairCommand(cmd, &opts)
 		},
@@ -83,11 +97,40 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringVar(&opts.atlasEnv, atlasEnvFlag, "", "Value exposed as .Env when rendering Atlas SQL template migrations")
 	flags.BoolVar(&opts.force, forceFlag, false, "Allow metadata-only repair: record an incomplete up migration applied without running SQL, or rewrite or create its revision row")
 	flags.StringVar(&opts.resumeFrom, resumeFromFlag, "", "Execute the remaining statements of the body that failed, starting from this 1-based statement number. An up migration is then marked applied; a rollback's revision is removed")
+	dbcli.RegisterRunnerFlag(flags, &opts.runner)
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
+	dbcli.RegisterConfigFlag(flags, &opts.configPath)
+	dbcli.RegisterEnvFlag(flags, &opts.envName)
 	dbcli.RegisterMigrationsSchemaFlag(flags, &opts.migrationsSchema)
 	dbcli.RegisterMigrationsTableFlag(flags, &opts.migrationsTable)
 	dbcli.RegisterMigrationsEngineFlag(flags, &opts.migrationsEngine)
 	dbcli.RegisterRevisionTableFormatFlag(flags, &opts.revisionTableFormat)
+}
+
+// resolveProjectOptions merges ptah.yaml under the flags, the way
+// `migrations set` reads it, and resolves the runner as `migrations up` and
+// `migrations down` do.
+func resolveProjectOptions(cmd *cobra.Command, opts options, projectCfg projectconfig.Config) (options, migrateflags.Runner, error) {
+	effectiveString := func(flagName, flagValue string, field projectconfig.StringField) string {
+		return dbcli.EffectiveString(cmd, flagName, flagValue, projectCfg.StringValue(field))
+	}
+	opts.dbURL = effectiveString(dbURLFlag, opts.dbURL, projectconfig.StringDatabaseURL)
+	opts.migrationsDir = effectiveString(migrationsFlag, opts.migrationsDir, projectconfig.StringMigrationDir)
+	opts.dirFormat = effectiveString(dirFormatFlag, opts.dirFormat, projectconfig.StringMigrationFormat)
+	opts.atlasEnv = effectiveString(atlasEnvFlag, opts.atlasEnv, projectconfig.StringEnvName)
+	opts.migrationsSchema = effectiveString(
+		dbcli.MigrationsSchemaFlagName, opts.migrationsSchema, projectconfig.StringMigrationRevisionsSchema)
+	opts.migrationsTable = effectiveString(
+		dbcli.MigrationsTableFlagName, opts.migrationsTable, projectconfig.StringMigrationRevisionsTable)
+	opts.revisionTableFormat = effectiveString(
+		dbcli.RevisionTableFormatFlagName, opts.revisionTableFormat, projectconfig.StringMigrationRevisionFormat)
+	opts.connectTimeout = effectiveString(
+		dbcli.ConnectTimeoutFlagName, opts.connectTimeout, projectconfig.StringMigrationConnectTimeout)
+	runner, err := dbcli.ResolveRunner(cmd, opts.runner, projectCfg)
+	if err != nil {
+		return options{}, "", err
+	}
+	return opts, runner, nil
 }
 
 func migrateRepairCommand(cmd *cobra.Command, opts *options) error {
@@ -95,11 +138,22 @@ func migrateRepairCommand(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return err
 	}
-	if opts.dbURL == "" {
-		return fmt.Errorf("database URL is required")
+	projectCfg, err := dbcli.LoadProjectConfig(cmd, opts.configPath)
+	if err != nil {
+		return err
 	}
-	if opts.migrationsDir == "" {
-		return fmt.Errorf("migrations directory is required")
+	// Before the early returns, so a runner that names no tool is refused on
+	// every invocation, as `migrations up` and `migrations down` refuse it.
+	resolved, runner, err := resolveProjectOptions(cmd, *opts, projectCfg)
+	if err != nil {
+		return err
+	}
+	opts = &resolved
+	if strings.TrimSpace(opts.dbURL) == "" {
+		return dbcli.MissingProjectValue(projectCfg, fmt.Errorf("database URL is required"))
+	}
+	if strings.TrimSpace(opts.migrationsDir) == "" {
+		return dbcli.MissingProjectValue(projectCfg, fmt.Errorf("migrations directory is required"))
 	}
 	if opts.version == "" {
 		return fmt.Errorf("migration version is required")
@@ -149,11 +203,17 @@ func migrateRepairCommand(cmd *cobra.Command, opts *options) error {
 			return err
 		}
 	}
-	provider, err := migrator.NewFSMigrationProvider(
-		source.FileSystem,
+	providerOptions := []migrator.FSProviderOption{
 		migrator.WithMigrationDirFormat(dirFormat),
 		migrator.WithAtlasTemplateData(migrationfile.AtlasTemplateData{Env: opts.atlasEnv}),
-	)
+	}
+	// The directory is read the way its runner runs it, so a file that opens
+	// its own transactions is repaired with them, as it was applied or
+	// rolled back.
+	if runner.TransactionOwner() == lintext.TransactionOwnerFile {
+		providerOptions = append(providerOptions, migrator.WithOwnTransactions())
+	}
+	provider, err := migrator.NewFSMigrationProvider(source.FileSystem, providerOptions...)
 	if err != nil {
 		return fmt.Errorf("error registering migrations: %w", err)
 	}
