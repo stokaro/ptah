@@ -133,6 +133,49 @@ func TestResolveStrictCERejectsTheProviderManifestVariable_FailurePath(t *testin
 	}
 }
 
+func TestResolveStrictCERejectsTheRunnerVariable_FailurePath(t *testing.T) {
+	for _, value := range []string{"", "ptah", "golang-migrate"} {
+		t.Run("value "+value, func(t *testing.T) {
+			c := qt.New(t)
+			t.Setenv(atlascompatpolicy.StrictCompatEnvVar, "1")
+			// The community binary wraps every file in a transaction of its own
+			// and has no runner to select. Presence alone is the refusal, so
+			// the default runner's name is refused too.
+			t.Setenv("PTAH_RUNNER", value)
+
+			_, err := atlascompatpolicy.Resolve()
+
+			c.Assert(err, qt.ErrorMatches,
+				`PTAH_ATLAS_STRICT_COMPAT does not allow PTAH_RUNNER`)
+		})
+	}
+}
+
+// TestResolveStrictCEDoesNotRefuseTheRunnerNameByPrefix is the control for the
+// refusal above: the variable is refused by its name, so a longer PTAH_RUNNER_*
+// name, which an atlas.hcl getenv may read, still resolves.
+func TestResolveStrictCEDoesNotRefuseTheRunnerNameByPrefix_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv(atlascompatpolicy.StrictCompatEnvVar, "1")
+	t.Setenv("PTAH_RUNNER_POOL", "x")
+
+	policy, err := atlascompatpolicy.Resolve()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(policy.IsStrictCE(), qt.IsTrue)
+}
+
+func TestResolveFullCompatibilityAcceptsTheRunnerVariable_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv(atlascompatpolicy.StrictCompatEnvVar, "false")
+	t.Setenv("PTAH_RUNNER", "golang-migrate")
+
+	policy, err := atlascompatpolicy.Resolve()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(policy.IsStrictCE(), qt.IsFalse)
+}
+
 // TestResolveStrictCEDoesNotRefuseTheProviderNamespaceByPrefix is the control
 // for the refusal above: the variable is refused by its name, so another
 // PTAH_PROVIDER_* name, which an atlas.hcl getenv may read, still resolves.
