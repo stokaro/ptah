@@ -87,6 +87,9 @@ type atlasSchemaApplyOptions struct {
 	// devServerDisposable is what devdocker.DisposableServerDeclared resolved
 	// for this run.
 	devServerDisposable bool
+	// excludeSources names the project file for the exclude selectors the
+	// env supplied; see [effectiveAtlasExclude].
+	excludeSources atlasfilter.ExcludeSources
 }
 
 type atlasSchemaApplyDisplayError struct {
@@ -474,7 +477,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 			projectCfg.StringValue(projectconfig.StringDevURL),
 		)
 		opts.toURLs = effectiveStringArray(cmd, "to", opts.toURLs, projectCfg.SchemaSources)
-		opts.exclude = effectiveAtlasExclude(cmd, opts.exclude, projectCfg)
+		opts.exclude, opts.excludeSources = effectiveAtlasExclude(cmd, opts.exclude, projectCfg)
 		opts.schemas = effectiveAtlasSchemas(cmd, opts.schemas, projectCfg)
 		formatValue := projectCfg.StringValue(projectconfig.StringFormatSchemaApply)
 		opts.format = dbcli.EffectiveString(cmd, "format", opts.format, formatValue)
@@ -626,6 +629,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 			DevURL:                  opts.devURL,
 			ToURLs:                  opts.toURLs,
 			Exclude:                 opts.exclude,
+			ExcludeSources:          opts.excludeSources,
 			Schemas:                 opts.schemas,
 			Include:                 opts.include,
 			Policy:                  policy,
@@ -1376,11 +1380,23 @@ func editAtlasSchemaApplySQL(ctx context.Context, sqlText string) (string, error
 	return editAtlasSQL(ctx, "schema apply", sqlText)
 }
 
+// effectiveStringArray is the list a run uses for flagName: the project
+// file's list when [projectListStandsIn] says it stands in for the flag,
+// and the flag's values otherwise.
 func effectiveStringArray(cmd *cobra.Command, flagName string, flagValues, configValues []string) []string {
-	if cmd.Flags().Changed(flagName) || len(configValues) == 0 {
+	if !projectListStandsIn(cmd, flagName, configValues) {
 		return flagValues
 	}
 	return slices.Clone(configValues)
+}
+
+// projectListStandsIn reports whether a list the project file sets replaces
+// flagName: the command line did not pass the flag, and the file sets at
+// least one value. [effectiveAtlasExclude] names the file as the source of
+// the selectors exactly when this holds, so the list a run uses and the
+// source a diagnostic names come from one decision.
+func projectListStandsIn(cmd *cobra.Command, flagName string, configValues []string) bool {
+	return !cmd.Flags().Changed(flagName) && len(configValues) > 0
 }
 
 func validateAtlasSchemaApplyOptions(

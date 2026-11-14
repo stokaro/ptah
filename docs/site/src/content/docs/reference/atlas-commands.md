@@ -284,7 +284,14 @@ and Atlas revision bookkeeping by default. With `--env`, reads `env.url`,
 
 Executes every Atlas OSS directory format selected by `migration.format` or a
 `?format=` directory URL query; non-`atlas` formats are converted in memory to
-up-only migrations.
+up-only migrations. A report names each converted file as the directory holds
+it, so a golang-migrate file is `2_b.up.sql` in `--format` output and in the
+out-of-order refusal.
+
+The positional amount is a base-10 integer of at least `1`, and `--baseline`
+names a file by the exact version its name spells; both are refused with the
+pinned community binary's lines, such as `cannot apply '0' migration files` and
+`baseline version "01" not found`.
 
 Honors the `-- atlas:checkpoint` file directive: a fresh database applies
 only the latest checkpoint plus post-checkpoint migrations, and a database

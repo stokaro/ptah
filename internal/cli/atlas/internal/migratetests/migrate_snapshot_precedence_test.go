@@ -10,9 +10,42 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/cli/atlas"
+	"ptah.run/internal/cli/atlas/internal/atlastest"
 )
 
-func TestMigrateApplyValidatesBaselineBeforeCapturingDirectory(t *testing.T) {
+// TestMigrateApplyResolvesBaselineBeforeConnecting refuses a --baseline no
+// file of the directory spells with the pinned binary's line, and creates no
+// database: the operand names a file, so it is resolved against the captured
+// directory before the connection opens.
+func TestMigrateApplyResolvesBaselineBeforeConnecting(t *testing.T) {
+	c := qt.New(t)
+	dir := filepath.Join(t.TempDir(), "migrations")
+	atlastest.WriteAtlasApplyProjectMigration(c, dir, "1_a.sql", "CREATE TABLE a (id INTEGER PRIMARY KEY);\n")
+	atlastest.WriteAtlasApplyProjectSum(c, dir)
+	dbPath := filepath.Join(t.TempDir(), "must-not-exist.db")
+	cmd := atlas.NewCompatCommand("atlas")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "apply",
+		"--url", "sqlite://" + dbPath,
+		"--dir", "file://" + dir,
+		"--baseline", "invalid",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `baseline version "invalid" not found`)
+	_, statErr := os.Stat(dbPath)
+	c.Assert(statErr, qt.ErrorIs, fs.ErrNotExist)
+}
+
+// TestMigrateApplyRefusesTheDirectoryBeforeTheBaseline reports a directory the
+// capture refuses before it reads --baseline against it. The pinned binary
+// also refuses such a directory first, with a checksum error, and never
+// reaches the baseline.
+func TestMigrateApplyRefusesTheDirectoryBeforeTheBaseline(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	c.Assert(os.WriteFile(filepath.Join(dir, "ATLAS.SUM"), []byte("metadata\n"), 0o600), qt.IsNil)
@@ -30,7 +63,7 @@ func TestMigrateApplyValidatesBaselineBeforeCapturingDirectory(t *testing.T) {
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `--baseline "invalid" is not a valid migration version: .*`)
+	c.Assert(err, qt.ErrorMatches, `.*capture migration directory: migration metadata file "ATLAS.SUM" must use canonical name "atlas.sum"`)
 	_, statErr := os.Stat(dbPath)
 	c.Assert(statErr, qt.ErrorIs, fs.ErrNotExist)
 }

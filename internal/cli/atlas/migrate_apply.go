@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"net/url"
 	"strconv"
 	"strings"
@@ -335,12 +336,14 @@ func runAtlasMigrateApplyTarget(
 		return formatOutput, err
 	}
 
-	migrationFS, err := atlasmigrate.ConvertApplySource(captured, dir, resolvedDirFormat)
+	converted, err := atlasmigrate.ConvertApplySource(captured, dir, resolvedDirFormat)
 	if err != nil {
 		return formatOutput, fmt.Errorf("atlas migrate apply --dir: %w", err)
 	}
-	versionTokens, err := resolveAtlasMigrateApplyFlywayVersions(
+	migrationFS := converted.FS
+	versionTokens, err := resolveAtlasMigrateApplyDirVersions(
 		captured,
+		migrationFS,
 		resolvedDirFormat,
 		opts,
 		&runOpts,
@@ -348,7 +351,11 @@ func runAtlasMigrateApplyTarget(
 	if err != nil {
 		return formatOutput, err
 	}
-	report := atlasMigrateApplyReportSource{fs: migrationFS, files: versionTokens.sourceFiles()}
+	reportFiles, err := atlasMigrateApplyReportFiles(converted, versionTokens)
+	if err != nil {
+		return formatOutput, fmt.Errorf("atlas migrate apply --dir: %w", err)
+	}
+	report := atlasMigrateApplyReportSource{fs: migrationFS, files: reportFiles}
 
 	if err := atlasDatabaseURLDiagnostic(contextOrBackground(cmd), opts.url); err != nil {
 		return formatOutput, err
@@ -649,23 +656,16 @@ func resolveAtlasMigrateApplyNumericVersions(
 	opts atlasMigrateApplyOptions,
 	runOpts *atlasMigrateApplyRunOptions,
 ) error {
-	// Native Atlas and every numeric-prefix foreign layout validate version
-	// operands before touching the directory. Preserve that precedence. Flyway
-	// is the one exception because the opaque token can only be resolved from
-	// the captured source itself.
+	// Native Atlas and every numeric-prefix foreign layout validate
+	// --to-version before touching the directory. Flyway is the exception
+	// because the opaque token can only be resolved from the captured source
+	// itself. --baseline names a file in every layout, so
+	// [resolveAtlasMigrateApplyDirVersions] resolves it against the converted
+	// directory.
 	if format == atlasmigrateimport.FormatFlyway {
 		return nil
 	}
 	var err error
-	runOpts.baselineVersion, err = resolveAtlasMigrateApplyVersion(
-		"baseline",
-		opts.baseline,
-		runOpts.baselineSource,
-		flywayVersionTokens{},
-	)
-	if err != nil {
-		return err
-	}
 	runOpts.toVersion, err = resolveAtlasMigrateApplyVersion(
 		"to-version",
 		opts.toVersion,
@@ -675,29 +675,38 @@ func resolveAtlasMigrateApplyNumericVersions(
 	return err
 }
 
-// resolveAtlasMigrateApplyFlywayVersions resolves the version operands of a
-// Flyway directory against its exact tokens, and returns the tokens for the
-// report to name the directory's files by. It returns the zero value, which
-// translates nothing, for every other layout.
-func resolveAtlasMigrateApplyFlywayVersions(
-	captured fs.FS,
+// resolveAtlasMigrateApplyDirVersions resolves the version operands that
+// name files of the directory. A Flyway directory resolves both against its
+// exact tokens, and returns the tokens for the report to name the directory's
+// files by. Every other layout, and a Flyway directory that holds no file the
+// tokens cover, resolves --baseline against the converted directory byte for
+// byte, see [atlasmigrate.ResolveApplyBaseline]; the zero tokens returned for
+// another layout translate nothing.
+func resolveAtlasMigrateApplyDirVersions(
+	captured, converted fs.FS,
 	format atlasmigrateimport.Format,
 	opts atlasMigrateApplyOptions,
 	runOpts *atlasMigrateApplyRunOptions,
 ) (flywayVersionTokens, error) {
 	if format != atlasmigrateimport.FormatFlyway {
-		return flywayVersionTokens{}, nil
+		var err error
+		runOpts.baselineVersion, err = atlasmigrate.ResolveApplyBaseline(converted, opts.baseline)
+		return flywayVersionTokens{}, err
 	}
 	versionTokens, err := newAtlasMigrateApplyVersionTokens(captured, format)
 	if err != nil {
 		return flywayVersionTokens{}, fmt.Errorf("atlas migrate apply --dir: %w", err)
 	}
-	runOpts.baselineVersion, err = resolveAtlasMigrateApplyVersion(
-		"baseline",
-		opts.baseline,
-		runOpts.baselineSource,
-		versionTokens,
-	)
+	if versionTokens.translates() {
+		runOpts.baselineVersion, err = resolveAtlasMigrateApplyVersion(
+			"baseline",
+			opts.baseline,
+			runOpts.baselineSource,
+			versionTokens,
+		)
+	} else {
+		runOpts.baselineVersion, err = atlasmigrate.ResolveApplyBaseline(converted, opts.baseline)
+	}
 	if err != nil {
 		return flywayVersionTokens{}, err
 	}
@@ -867,6 +876,27 @@ func resolveAtlasApplySkipChecks(cmd *cobra.Command) (bool, error) {
 type atlasMigrateApplyReportSource struct {
 	fs    fs.FS
 	files map[int64]atlasreport.MigrateApplySourceFile
+}
+
+// atlasMigrateApplyReportFiles names each file the conversion renamed as the
+// operator's directory holds it, so the report and the out-of-order refusal
+// say `1_a.up.sql` for a golang-migrate file, as the community binary does,
+// rather than the `1_a.sql` the run executes. A Flyway file takes the name and
+// the description its version token carries.
+func atlasMigrateApplyReportFiles(
+	converted atlasmigrate.ConvertedApplySource,
+	tokens flywayVersionTokens,
+) (map[int64]atlasreport.MigrateApplySourceFile, error) {
+	files, err := atlasreport.RenamedMigrateApplySourceFiles(converted.FS, converted.Renamed)
+	if err != nil {
+		return nil, err
+	}
+	flyway := tokens.sourceFiles()
+	if len(files) == 0 {
+		return flyway, nil
+	}
+	maps.Copy(files, flyway)
+	return files, nil
 }
 
 // atlasMigrateApplyReportData is what both reports of a run render: the

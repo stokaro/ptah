@@ -215,7 +215,7 @@ CREATE TABLE orders (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES
 		{
 			name:  "an exclude too deep for this run's scope",
 			flags: []string{"--exclude", "a.b.c"},
-			want:  `apply --exclude to current schema: too many parts in pattern "a\.b\.c".*`,
+			want:  `apply exclude selectors to current schema: too many parts in pattern "a\.b\.c".*`,
 		},
 	}
 

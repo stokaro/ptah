@@ -414,6 +414,21 @@ positional `amount` applies only the first N pending migrations. Use
 `--baseline` to mark earlier migration files as applied without executing their
 SQL bodies before applying the remaining pending migrations.
 
+The amount is read as the pinned community binary v1.3.0 reads it: a base-10
+integer of at least `1` that fits in 64 bits, with an optional sign. `+1` and
+`01` apply one migration. Anything else exits `1` before the database is
+opened, with the binary's line: `0` and `-1` with
+`Error: cannot apply '0' migration files`, and `x`, ` 1`, `1.5` or `0x1` with
+`Error: invalid amount argument "x" (invalid syntax). Omit the argument or pass a valid integer instead`.
+Pass a negative amount after `--`, as in `migrate apply -- -1`, or the flag
+parser reads it as a flag.
+
+`--baseline` names a file by the version its file name spells, byte for byte.
+On a directory holding `1_a.sql`, `--baseline 1` names that file, and `01`,
+`+1` and ` 1` name nothing: each exits `1` with
+`Error: baseline version "01" not found`, as the binary does. A golang-migrate
+`000001_a.up.sql` is named by `000001`.
+
 The directory's integrity is checked before anything executes, matching
 official Atlas:
 
@@ -778,6 +793,11 @@ shares format parsers and up/down semantics with `ptah-compat migrate import`.
 Conventional Liquibase import adds a persistence adapter that splits changesets
 into numeric Atlas files; direct apply retains its numbered-file requirement and
 source-file boundary.
+
+A report still names each file as the source directory holds it: a
+golang-migrate `2_b.up.sql` runs as `2_b.sql`, and the `--format` report's
+`Pending` and `Applied` records and the out-of-order refusal name it
+`2_b.up.sql`, as the binary does.
 
 An explicit `?format=` query on the effective directory URL, from either
 `migration.dir` or CLI `--dir`, overrides the `migration.format` project
