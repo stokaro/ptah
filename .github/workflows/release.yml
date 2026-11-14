@@ -117,14 +117,17 @@ jobs:
           version="$(jq -r .version dist/metadata.json)"
           node npm/scripts/stage.mjs --version "$version" --assets dist --output dist/npm
           root_tarball="$(npm pack dist/npm/ptah --pack-destination dist/npm --silent)"
+          compat_tarball="$(npm pack dist/npm/ptah-compat --pack-destination dist/npm --silent)"
           platform_tarball="$(npm pack dist/npm/ptah-linux-x64 --pack-destination dist/npm --silent)"
           mkdir dist/npm-smoke
           cd dist/npm-smoke
           npm install --offline --ignore-scripts --no-save \
             "../npm/${root_tarball}" \
+            "../npm/${compat_tarball}" \
             "../npm/${platform_tarball}"
           npx --no @stokaro/ptah version | grep -F "Version: ${version}"
-          npx --no --package=@stokaro/ptah ptah-compat version | grep -F "Version: ${version}"
+          npx --no @stokaro/ptah-compat version | grep -F "Version: ${version}"
+          npx --no atlas version | grep -F "Version: ${version}"
           npx --no --package=@stokaro/ptah ptah-ls --version | grep -F "Version: ${version}"
 
   release-check-gate:
@@ -340,5 +343,5 @@ jobs:
           node npm/scripts/stage.mjs --version "$version" \
             --assets "$RUNNER_TEMP/ptah-assets" --output "$RUNNER_TEMP/ptah-npm"
 
-      - name: Publish platform packages before the CLI package
+      - name: Publish platform packages and CLI packages
         run: node npm/scripts/publish.mjs --staged "$RUNNER_TEMP/ptah-npm"

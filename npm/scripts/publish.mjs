@@ -62,6 +62,11 @@ function main() {
       publish(directory, packed);
     }
     publish(join(staged, 'ptah'), packed);
+    const compat = manifest(join(staged, 'ptah-compat'));
+    if (compat.name !== '@stokaro/ptah-compat' || compat.version !== root.version || compat.dependencies?.['@stokaro/ptah'] !== root.version) {
+      throw new Error('Compatibility package does not match @stokaro/ptah');
+    }
+    publish(join(staged, 'ptah-compat'), packed);
   } finally {
     rmSync(packed, { recursive: true, force: true });
   }
