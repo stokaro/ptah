@@ -1,0 +1,29 @@
+{
+  "name": "@stokaro/ptah",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Ptah database migration CLI",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/stokaro/ptah.git",
+    "directory": "npm"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "bin": {
+    "ptah": "bin/ptah.mjs",
+    "ptah-compat": "bin/ptah-compat.mjs",
+    "ptah-ls": "bin/ptah-ls.mjs"
+  },
+  "files": [
+    "bin",
+    "LICENSE",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

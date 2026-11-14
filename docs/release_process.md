@@ -62,6 +62,40 @@ waiting on one is a reason to cut it rather than a note on its own backlog
   itself. The generated formula is removed from the tap once, and
   `Formula/ptah-edge.rb`, which is hand-written, stays.
 - The release workflow must pass on the release commit before tagging.
+- The npm organization or user scope `@stokaro` must exist before publishing
+  `@stokaro/ptah`. The publisher needs permission to create seven public
+  packages: the CLI package and one binary package for each supported host.
+  npm access is not needed to build or verify the packages.
+
+## npm CLI Distribution
+
+`npm/scripts/stage.mjs` verifies the checksums of the six GoReleaser archives
+and packages their `ptah`, `ptah-compat`, and `ptah-ls` binaries. The small
+`@stokaro/ptah` package selects the matching platform package at runtime.
+Installation runs no lifecycle script and downloads nothing outside npm.
+
+The first npm release needs an interactive npm login because a trusted
+publisher cannot be configured until the packages exist. Cut a new Ptah
+release from the commit that contains this packaging code. Download that
+release's six platform archives and `checksums.txt`, verify the checksum
+signature as in the workflow, then run:
+
+```bash
+node npm/scripts/stage.mjs --version X.Y.Z --assets ./release-assets --output ./npm-staged
+node npm/scripts/publish.mjs --staged ./npm-staged
+```
+
+The publisher checks a published version's tarball integrity before skipping
+it, so the command can resume after a partial upload. It publishes the six
+binary packages before the CLI package. Do not reuse a Ptah version tag to
+repair a different npm tarball.
+
+After the first publish, configure npm trusted publishing for each of the
+seven packages: GitHub repository `stokaro/ptah`, workflow `release.yml`, and
+permission to run `npm publish`. Then set the repository variable
+`PTAH_NPM_PUBLISH=true`. Later release tags publish from signed GoReleaser
+assets through the `Publish npm CLI packages` job. Until the variable is set,
+that job stays skipped and npm is not a release channel.
 
 ## Cut A Release
 
@@ -161,6 +195,15 @@ waiting on one is a reason to cut it rather than a note on its own backlog
    ptah version
    ptah-ls --version
    ptah-compat migrate --help
+   ```
+
+9. When `PTAH_NPM_PUBLISH=true`, verify all three npm commands from a fresh
+   project. Pin the tag's version rather than using npm's `latest` tag:
+
+   ```bash
+   npx @stokaro/ptah@X.Y.Z version
+   npx --package=@stokaro/ptah@X.Y.Z ptah-compat version
+   npx --package=@stokaro/ptah@X.Y.Z ptah-ls --version
    ```
 
 ## The Tap Holds A Cask And A Formula
