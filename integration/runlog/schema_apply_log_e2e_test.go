@@ -3,6 +3,7 @@
 package runlog_test
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -19,7 +20,8 @@ const longStatement = 70_000
 // A plan that ran is recorded as its start and its outcome, each with the
 // caller's attribution and reference, the plan's name and the digest of the
 // file the run read. No reader takes the log for a table of the schema, so
-// drift against the table the plan created finds nothing.
+// a drift report against the table the plan created names neither the log
+// nor that table.
 func TestSchemaApplyLogRecordsAPlanThatRanE2E(t *testing.T) {
 	for _, engine := range runLogEngines {
 		t.Run(engine.name, func(t *testing.T) {
@@ -47,9 +49,21 @@ func TestSchemaApplyLogRecordsAPlanThatRanE2E(t *testing.T) {
 			inspected := strings.ToLower(target.inspect(c))
 			c.Assert(inspected, qt.Contains, notes)
 			c.Assert(inspected, qt.Not(qt.Contains), "ptah_schema_apply_log")
+			// An Oracle target shares its schema with other tests' tables,
+			// which drift reports as removed, so the row holds the report to
+			// its claim: it names neither the log nor the plan's table.
 			drift := target.drift(c, target.createTable(notes))
-			c.Assert(drift.ExitCode, qt.Equals, 0, qt.Commentf("%s\n%s", drift.Stdout, drift.Stderr))
-			c.Assert(strings.ToLower(drift.Stdout), qt.Not(qt.Contains), "ptah_schema_apply_log")
+			c.Assert(drift.ExitCode == 0 || drift.ExitCode == 1, qt.IsTrue,
+				qt.Commentf("exit code %d\n%s\n%s", drift.ExitCode, drift.Stdout, drift.Stderr))
+			var report struct {
+				Command string          `json:"command"`
+				Diff    json.RawMessage `json:"diff"`
+			}
+			c.Assert(json.Unmarshal([]byte(drift.Stdout), &report), qt.IsNil, qt.Commentf("%s", drift.Stdout))
+			c.Assert(report.Command, qt.Equals, "schema drift")
+			diff := strings.ToLower(string(report.Diff))
+			c.Assert(diff, qt.Not(qt.Contains), "ptah_schema_apply_log")
+			c.Assert(diff, qt.Not(qt.Contains), strings.ToLower(notes))
 		})
 	}
 }
