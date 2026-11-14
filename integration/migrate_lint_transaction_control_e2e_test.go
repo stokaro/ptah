@@ -167,7 +167,9 @@ func TestMigrateLintTransactionControlE2E_AFileWithoutControlIsClean(t *testing.
 // body's own transactions keeps the transaction around each file, in the up
 // and the down half alike, so the up of a file holding a block is refused, and
 // so is the rollback of a down file holding one, under the same runner. Lint
-// reports both before an apply or a rollback does.
+// reports both before an apply or a rollback does. Version 1 is applied on its
+// own first, because the full run refuses before any file runs and the
+// rollback needs version 1 in place.
 func TestMigrateLintTransactionControlE2E_NativeGolangMigrateDirectory(t *testing.T) {
 	c := qt.New(t)
 	root := c.TempDir()
@@ -182,6 +184,8 @@ func TestMigrateLintTransactionControlE2E_NativeGolangMigrateDirectory(t *testin
 
 	lint := clirun.Run(c, clirun.Ptah, options, "migrations", "lint", "--dir", "migrations",
 		"--runner", "golang-migrate", "--dialect", "sqlite", "--fail-on", "any")
+	first := clirun.Run(c, clirun.Ptah, options, "migrations", "up", "--migrations-dir", "migrations",
+		"--db-url", database, "--runner", "golang-migrate", "--to-version", "1")
 	up := clirun.Run(c, clirun.Ptah, options, "migrations", "up", "--migrations-dir", "migrations",
 		"--db-url", database, "--runner", "golang-migrate")
 	down := clirun.Run(c, clirun.Ptah, options, "migrations", "down", "--migrations-dir", "migrations",
@@ -192,6 +196,7 @@ func TestMigrateLintTransactionControlE2E_NativeGolangMigrateDirectory(t *testin
 		"transaction and refuses a statement that controls transaction state, so the rollback stops at this BEGIN")
 	c.Assert(lint.Stdout, qt.Contains, "migrations/2_b.up.sql:1 [warning] TX201: "+transactionControlWrapMessage)
 	c.Assert(lint.Stdout, qt.Contains, "2 finding(s).")
+	c.Assert(first.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", first.Stdout, first.Stderr))
 	c.Assert(up.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", up.Stdout, up.Stderr))
 	c.Assert(up.Stderr, qt.Contains, "migration 2 cannot run tx-mode file up statement 1 because it controls transaction state")
 	c.Assert(down.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", down.Stdout, down.Stderr))
