@@ -1251,6 +1251,20 @@ to both sides of the authoring comparison. Every migration still replays in
 full. An excluded table is outside this comparison, so verify its definition
 with a separate live comparison when another workflow owns its changes.
 
+`migrate diff` has no `--exclude` flag, as in Atlas; the environment's
+`exclude` list is the Atlas spelling of the selection. In full compatibility
+mode, `PTAH_ATLAS_MIGRATE_DIFF_EXCLUDE` supplies the same selectors,
+comma-separated, and replaces that list when it names at least one selector:
+
+```bash
+PTAH_ATLAS_MIGRATE_DIFF_EXCLUDE='*[type=policy]' ptah-compat migrate diff add_orders \
+  --dir file://migrations \
+  --to file://schema.sql \
+  --dev-url "$DEV_DATABASE_URL"
+```
+
+Strict mode refuses the variable; the `exclude` list works in both profiles.
+
 Use an Atlas migration directory as the desired state:
 
 ```bash

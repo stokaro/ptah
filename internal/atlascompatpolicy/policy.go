@@ -830,6 +830,14 @@ var gatedPresenceEnvVars = []string{
 	// leaves that command out; the variable is refused by name all the same,
 	// so a command that comes to read it cannot carry it into a strict run.
 	"PTAH_RUNNER",
+	// Names the objects `migrate diff` keeps out of both sides of the
+	// comparison, the spelling of the --exclude flag that command does not
+	// register. The pinned community binary has no such flag on `migrate diff`
+	// and no such variable; it selects the same objects only through the
+	// env's `exclude` list, which strict mode keeps. It is refused by name, so
+	// the PTAH_EXCLUDE twin of the CE --exclude flag on the schema commands is
+	// a different variable and keeps its own rule.
+	"PTAH_ATLAS_MIGRATE_DIFF_EXCLUDE",
 }
 
 // validateStrictEnvironment applies the strict rule to every boolean `PTAH_*`

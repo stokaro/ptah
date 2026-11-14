@@ -2197,7 +2197,6 @@ Read the columns as follows.
 | `--dir-format` | `string` | `atlas` | `PTAH_DIR_FORMAT` | — |
 | `--dry-run` | `bool` | `false` | `PTAH_DRY_RUN` | hidden |
 | `--edit` | `bool` | `false` | `PTAH_EDIT` | — |
-| `--exclude` | `stringArray` | `[]` | `PTAH_EXCLUDE` | — |
 | `--format` | `string` | — | `PTAH_FORMAT` | — |
 | `--lock-timeout` | `duration` | `10s` | `PTAH_LOCK_TIMEOUT` | — |
 | `--qualifier` | `string` | — | `PTAH_QUALIFIER` | — |

@@ -59,6 +59,12 @@ has no driver for. It is not a boolean, so it is refused by presence and by
 name, and a strict run starts no provider. See
 [Executable providers](../../extend/executable-providers/#use-a-provider-from-ptah-compat).
 
+`PTAH_ATLAS_MIGRATE_DIFF_EXCLUDE` names the objects `migrate diff` leaves out
+of its comparison in full compatibility mode, where no Atlas edition has an
+`--exclude` flag on that command. It is refused by presence and by name too.
+The selected env's `exclude` list selects the same objects and stays available
+in strict mode.
+
 An engine no Atlas edition has a driver for is refused in the pinned binary's
 own words: a URL with `sql/sqlclient: unknown driver "<scheme>"`, and a
 `docker://` dev URL with `unsupported docker image "<engine>"`. That covers

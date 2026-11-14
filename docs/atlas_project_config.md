@@ -88,7 +88,7 @@ The supported attributes map to Ptah settings as follows:
 | `env.src` | `ptah-compat schema apply --to` default |
 | `env.schema.src` | `ptah-compat schema apply --to`, `ptah-compat schema diff --to`, or `ptah-compat migrate diff --to` default |
 | `env.schema.mode.<object>` | Atlas-style exclusion defaults for supported object kinds |
-| `env.exclude` | `ptah-compat schema inspect --exclude`, `ptah-compat schema apply --exclude`, or `ptah-compat schema diff --exclude` default |
+| `env.exclude` | `ptah-compat schema inspect --exclude`, `ptah-compat schema apply --exclude`, or `ptah-compat schema diff --exclude` default; the `ptah-compat migrate diff` exclusion (in full compatibility mode, `PTAH_ATLAS_MIGRATE_DIFF_EXCLUDE` replaces it) |
 | `migration.baseline` | `ptah-compat migrate apply --baseline` default; the flag still wins when passed |
 | `migration.dir` | `--migrations-dir` or `--dir` default |
 | `migration.format` | `--dir-format` default where the command exposes that flag; safety gate for `ptah-compat migrate apply` |

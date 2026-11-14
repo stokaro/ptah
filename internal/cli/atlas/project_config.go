@@ -1553,8 +1553,18 @@ func atlasProjectSchemaFileSources(cfg projectconfig.Config, urls []string) []sc
 	return sources
 }
 
+// effectiveAtlasExclude resolves a command's exclusion from its --exclude
+// values and the selected env: the flag replaces `env.exclude` when it carries
+// a value, and [withAtlasSchemaModeExcludes] adds what `schema.mode` implies.
 func effectiveAtlasExclude(cmd *cobra.Command, flagValues []string, cfg projectconfig.Config) []string {
 	values := effectiveStringArray(cmd, "exclude", flagValues, cfg.Exclude)
+	return withAtlasSchemaModeExcludes(values, cfg)
+}
+
+// withAtlasSchemaModeExcludes returns a copy of values followed by the
+// patterns a disabled `schema.mode` implies, which every exclusion a command
+// resolves from the selected env carries.
+func withAtlasSchemaModeExcludes(values []string, cfg projectconfig.Config) []string {
 	return append(slices.Clone(values), cfg.Schema.Mode.ExcludePatterns()...)
 }
 
