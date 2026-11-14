@@ -77,7 +77,7 @@ func TestParse_AlterOwnerTo_FailurePath(t *testing.T) {
 		{name: "function, role missing after the arguments", sql: "ALTER FUNCTION app.f(integer) OWNER TO;", wantErr: `(?s).*expected the role after ALTER FUNCTION OWNER TO.*`},
 		{name: "schema, another action", sql: "ALTER SCHEMA app RENAME TO other;", wantErr: `(?s).*unsupported ALTER target: SCHEMA`},
 		{name: "type, another action", sql: "ALTER TYPE app.mood ADD VALUE 'x';", wantErr: `(?s).*unsupported ALTER target: TYPE`},
-		{name: "sequence, OWNED BY", sql: "ALTER SEQUENCE app.seq OWNED BY app.t.id;", wantErr: `(?s).*unsupported ALTER target: SEQUENCE`},
+		{name: "sequence, another action", sql: "ALTER SEQUENCE app.seq RENAME TO other;", wantErr: `(?s).*unsupported ALTER target: SEQUENCE`},
 		{name: "view, another action", sql: "ALTER VIEW app.v RENAME TO w;", wantErr: `(?s).*unsupported ALTER target: VIEW`},
 		{name: "materialized without view", sql: "ALTER MATERIALIZED mv OWNER TO r;", wantErr: `(?s).*unsupported ALTER target: MATERIALIZED`},
 		{name: "a kind that is not read", sql: "ALTER COLLATION app.c OWNER TO r;", wantErr: `(?s).*unsupported ALTER target: COLLATION`},

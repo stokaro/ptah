@@ -230,6 +230,8 @@ func applyAlterColumn(target alterTarget, operation *ast.AlterColumnOperation) e
 		field.NotNullConstraintName = ""
 	case ast.AlterColumnSetType:
 		field.Type = operation.Type
+	case ast.AlterColumnAddIdentity:
+		return applyAddIdentity(target, field, operation)
 	default:
 		return fmt.Errorf("%w: ALTER TABLE %s ALTER COLUMN %s %s",
 			ErrUnmodeledStatement, target.written, operation.ColumnName, operation.Action)

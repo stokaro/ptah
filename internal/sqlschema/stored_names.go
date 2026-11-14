@@ -987,6 +987,12 @@ func (s *storedNames) alterOperation(table *relation, operation ast.AlterOperati
 	case *ast.AddConstraintOperation:
 		return s.constraint(*table, op.Constraint)
 	case *ast.AlterColumnOperation:
+		if op.Action == ast.AlterColumnAddIdentity {
+			added := *table
+			identity := &ast.ColumnNode{Name: op.ColumnName, IdentityGeneration: op.IdentityGeneration, IdentityOptions: op.IdentityOptions}
+			s.derived = append(s.derived, func() { s.claimColumnSequence(added, identity) })
+			return nil
+		}
 		if op.NotNullConstraintName != "" {
 			_, err := s.declareOwned(constraintSpace, owner, "not-null constraint", op.NotNullConstraintName, skipExisting,
 				ownership{table: owner, columns: []string{s.storedColumn(op.ColumnName)}})

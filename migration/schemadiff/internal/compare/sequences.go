@@ -201,14 +201,18 @@ func sequenceOwnedBy(sequence catalog.Sequence, table catalog.Table, column stri
 // where the comparison takes the column's default away: a serial column the declaration
 // writes as a plain type. With its default gone the reader reports such a sequence as
 // one of its own, so a plan that left it would drop it on the next run.
+//
+// A sequence is matched as the sequence comparison matches one, with a schema left
+// out read as the default schema: a dump writes `public.t_id_seq`, and the reader
+// reports a table of the default schema with no schema.
 func ColumnSequencesLeaving(database *catalog.Database, diff *difftypes.SchemaDiff, semantics identifier.Semantics) {
 	if database == nil {
 		return
 	}
 	declared := func(schema, name string) bool {
+		owned := newObjectIdentity(objectidentity.KindSequence, schema, name, semantics)
 		return slices.ContainsFunc(diff.SequencesAdded, func(sequence schemamodel.Sequence) bool {
-			return semantics.IndexIdentityKey(sequence.Name) == semantics.IndexIdentityKey(name) &&
-				semantics.TableIdentityKey(sequence.Schema) == semantics.TableIdentityKey(schema)
+			return newObjectIdentity(objectidentity.KindSequence, sequence.Schema, sequence.Name, semantics) == owned
 		})
 	}
 	for _, tableDiff := range diff.TablesModified {
@@ -228,11 +232,12 @@ func ColumnSequencesLeaving(database *catalog.Database, diff *difftypes.SchemaDi
 		}
 	}
 	diff.SequencesAdded = slices.DeleteFunc(diff.SequencesAdded, func(sequence schemamodel.Sequence) bool {
+		added := newObjectIdentity(objectidentity.KindSequence, sequence.Schema, sequence.Name, semantics)
 		return slices.ContainsFunc(database.Tables, func(table catalog.Table) bool {
-			return semantics.TableIdentityKey(table.Schema) == semantics.TableIdentityKey(sequence.Schema) &&
-				slices.ContainsFunc(table.Columns, func(column catalog.Column) bool {
-					return column.OwnedSequence != "" && semantics.IndexIdentityKey(column.OwnedSequence) == semantics.IndexIdentityKey(sequence.Name)
-				})
+			return slices.ContainsFunc(table.Columns, func(column catalog.Column) bool {
+				return column.OwnedSequence != "" &&
+					newObjectIdentity(objectidentity.KindSequence, table.Schema, column.OwnedSequence, semantics) == added
+			})
 		})
 	})
 }

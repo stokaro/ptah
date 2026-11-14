@@ -5544,7 +5544,9 @@ func (p *Parser) parseAlterStatement() (ast.Node, error) {
 			return p.parseCockroachAlterIndex()
 		}
 		return nil, ptaherr.At(p.current.Start, fmt.Errorf("unsupported ALTER target: %s", target))
-	case "SCHEMA", "TYPE", "DOMAIN", "FUNCTION", "PROCEDURE", "SEQUENCE", "VIEW", "MATERIALIZED":
+	case "SEQUENCE":
+		return p.parseAlterSequence()
+	case "SCHEMA", "TYPE", "DOMAIN", "FUNCTION", "PROCEDURE", "VIEW", "MATERIALIZED":
 		return nil, p.parseAlterOwnerTo(target)
 	default:
 		return nil, p.refuseHead(p.current.Start, "ALTER", target, "unsupported ALTER target: %s")
@@ -5884,6 +5886,11 @@ func (p *Parser) parseAlterOperation(table string) ([]ast.AlterOperation, error)
 		return oneOperation(p.parseRenameOperation())
 	case "VALIDATE":
 		return oneOperation(p.parseValidateConstraintOperation())
+	case "REPLICA":
+		if _, after, _ := p.namedWords(0, 1); len(after) == 1 && strings.EqualFold(after[0], "IDENTITY") {
+			return nil, p.refuseReplicaIdentity(table)
+		}
+		return nil, ptaherr.At(p.current.Start, fmt.Errorf("unsupported ALTER operation: %s", operation))
 	default:
 		return nil, ptaherr.At(p.current.Start, fmt.Errorf("unsupported ALTER operation: %s", operation))
 	}
@@ -6602,10 +6609,11 @@ var alterColumnActionWords = map[string]bool{
 
 // parseAlterColumnAction reads the one action after ALTER COLUMN name.
 //
-// The default, the NOT NULL and the type are read, because each is part of a
-// column's declaration. The rest -- statistics, storage, compression, identity,
-// generation, options -- are refused by name: a schema file that states them
-// here would otherwise parse and change nothing.
+// The default, the NOT NULL, the type and an added identity are read, because
+// each is part of a column's declaration. The rest -- statistics, storage,
+// compression, a change to an identity, generation, options -- are refused by
+// name: a schema file that states them here would otherwise parse and change
+// nothing.
 func (p *Parser) parseAlterColumnAction(columnName string) (ast.AlterOperation, error) {
 	start := p.current.Start
 	first := strings.ToUpper(p.current.Value)
@@ -6634,6 +6642,10 @@ func (p *Parser) parseAlterColumnAction(columnName string) (ast.AlterOperation, 
 				return nil, fmt.Errorf("expected SET DATA TYPE: %w", err)
 			}
 			return p.parseAlterColumnType(columnName)
+		}
+	case "ADD":
+		if p.current.MatchIdentifierValue("GENERATED") && (!p.target.known || p.target.identityColumns) {
+			return p.parseAlterColumnAddIdentity(columnName)
 		}
 	case "DROP":
 		switch {
