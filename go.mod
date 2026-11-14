@@ -51,7 +51,7 @@ require (
 	golang.org/x/sys v0.50.0
 	golang.org/x/term v0.48.0
 	golang.org/x/text v0.44.0
-	golang.org/x/tools v0.52.1-0.20261113184526-6f740e161342
+	golang.org/x/tools v0.52.1-0.20261113204035-cba9b8046c90
 	google.golang.org/protobuf v1.36.12
 	modernc.org/sqlite v1.62.0
 	oras.land/oras-go/v2 v2.7.0
