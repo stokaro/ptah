@@ -81,9 +81,9 @@ func ParseMigrationTxMode(value string) (migrator.MigrationTxMode, error) {
 	}
 }
 
-// RunnerFlag is the flag `migrations lint` and `migrations up` read a
-// [Runner] from, and RunnerUsage its help; `migration.runner` in ptah.yaml is
-// its project default.
+// RunnerFlag is the flag `migrations lint`, `migrations up` and `migrations
+// down` read a [Runner] from, and RunnerUsage its help; `migration.runner` in
+// ptah.yaml is its project default.
 const (
 	RunnerFlag  = "runner"
 	RunnerUsage = "Tool the migration directory is written for: ptah, which runs each file in a transaction of its own, " +
@@ -92,8 +92,8 @@ const (
 
 // Runner is the tool a migration directory is written for, which decides who
 // opens the transaction each of its files runs in. `migrations lint` judges a
-// file's transaction control against it, and `migrations up` applies each file
-// the way it runs one.
+// file's transaction control against it, and `migrations up` and `migrations
+// down` apply and roll back each file the way it runs one.
 type Runner string
 
 const (

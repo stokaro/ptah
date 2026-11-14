@@ -19,8 +19,9 @@ import (
 // WithOwnTransactions loads a directory written for a runner that opens no
 // transaction around a file and sends each file as it is, as golang-migrate
 // does. Such a file decides its own transactions, and every loaded migration
-// is applied, and replayed on a dev database, the way that runner runs it, in
-// place of the per-file transaction:
+// is applied, rolled back, and replayed on a dev database, the way that runner
+// runs it, in place of the per-file transaction. An up file and a down file
+// are read the same way:
 //
 //   - A file that opens and closes its own transactions runs on one session,
 //     outside any transaction of the migrator's, in the transactions
@@ -30,9 +31,12 @@ import (
 //     for no transaction, each statement outside the file's transactions
 //     commits on its own instead, as golang-migrate's x-multi-statement mode
 //     runs it. Progress is recorded where a transaction commits, and the
-//     revision after the file's last statement. A file that fails is rolled
-//     back on that session, and the failure records the statements that
-//     stayed committed; a retry resumes after them. Which files qualify, and
+//     revision after the file's last statement: an up file records the
+//     migration applied, and a down file removes its revision. A file that
+//     fails is rolled back on that session, and the failure records the
+//     statements that stayed committed. A retry of an up file resumes after
+//     them. A failed down file leaves its revision dirty, as every failed
+//     rollback does, for `migrations repair` to end. Which files qualify, and
 //     which forms of transaction control are refused before anything runs, is
 //     the engine's reading; only PostgreSQL offers one.
 //   - A file of one statement runs without a transaction, as if it carried the
@@ -41,37 +45,46 @@ import (
 //     refuses inside a transaction, such as CREATE INDEX CONCURRENTLY. A file
 //     that names a transaction mode keeps it.
 //
-// Every other file keeps the per-file transaction. A file that opens its own
-// transaction cannot run with tx-mode all, and one that also asks for a
-// transaction around the file is refused; either refusal comes before any
-// migration runs. Without this option the migrator wraps each file, which is
-// the contract of Ptah's and Atlas's layouts, where a file opts out with a
-// directive.
+// Every other file keeps the per-file transaction. An up file that opens its
+// own transaction cannot run with tx-mode all, and a file that also asks for
+// a transaction around it is refused; either refusal comes before any
+// migration of the run runs. Without this option the migrator wraps each
+// file, which is the contract of Ptah's and Atlas's layouts, where a file opts
+// out with a directive.
 func WithOwnTransactions() FSProviderOption {
 	return func(p *FSMigrationProvider) {
 		p.ownTransactions = true
 	}
 }
 
-// upOwnTransactions reads the up body for the transactions it opens and closes
-// itself, when its directory runs such bodies as written, with the statements
-// the reading indexes. The engine's services offer the reading; an engine that
-// offers none reads no body as one with transactions of its own.
-func (m *Migration) upOwnTransactions(conn *dbschema.DatabaseConnection) (filetx.Blocks, []string, error) {
-	if !m.ownTransactions || m.upSQLFunc == nil {
+// bodyOwnTransactions reads the body of direction for the transactions it
+// opens and closes itself, when its directory runs such bodies as written,
+// with the statements the reading indexes. The engine's services offer the
+// reading; an engine that offers none reads no body as one with transactions
+// of its own. An up body and a down body are read alike, because the runner
+// sends both as they are.
+func (m *Migration) bodyOwnTransactions(
+	conn *dbschema.DatabaseConnection,
+	direction MigrationDirection,
+) (filetx.Blocks, []string, error) {
+	if !m.ownTransactions || !m.hasSQLExecutor(direction) {
 		return filetx.Blocks{}, nil, nil
 	}
 	read := builtin.Lookup(databaseConnectionDialect(conn)).OwnTransactions
 	if read == nil {
 		return filetx.Blocks{}, nil, nil
 	}
-	statements := splitSQLStatementsForConnection(conn, m.UpSQL)
+	statements := splitSQLStatementsForConnection(conn, migrationSQLForDirection(m, direction))
 	blocks, err := read(statements)
 	if err == nil {
 		return blocks, statements, nil
 	}
+	subject := fmt.Sprintf("migration %d", m.Version)
+	if direction == MigrationDirectionDown {
+		subject = "rollback of " + subject
+	}
 	failure := &MigrationExecutionError{
-		Err:            fmt.Errorf("migration %d: %w", m.Version, err),
+		Err:            fmt.Errorf("%s: %w", subject, err),
 		StatementIndex: 1,
 		Total:          len(statements),
 	}
@@ -82,9 +95,11 @@ func (m *Migration) upOwnTransactions(conn *dbschema.DatabaseConnection) (filetx
 	return filetx.Blocks{}, nil, failure
 }
 
-// upRunsAloneOutsideATransaction reports a body of a directory that runs such
-// bodies as written, naming no transaction mode, that holds one statement
-// ([filetx.RunsAlone]), the predicate lint and the writer of new files ask too.
+// runsAloneOutsideATransaction reports a body of direction, of a directory
+// that runs such bodies as written, naming no transaction mode, that holds one
+// statement ([filetx.RunsAlone]), the predicate lint and the writer of new
+// files ask too. The runner sends a down file the way it sends an up file, so
+// a rollback such as a lone DROP INDEX CONCURRENTLY runs on its own as well.
 //
 // golang-migrate sends such a file on its own, and PostgreSQL runs a statement
 // sent on its own outside a transaction block, whatever the statement:
@@ -94,15 +109,15 @@ func (m *Migration) upOwnTransactions(conn *dbschema.DatabaseConnection) (filetx
 // the reading of a body's own transactions is the one this was measured on.
 // On any other engine only a statement it refuses inside a transaction leaves
 // the per-file transaction ([txrequire.AloneOutsideATransaction]).
-func (m *Migration) upRunsAloneOutsideATransaction(conn *dbschema.DatabaseConnection) bool {
-	if !m.ownTransactions || m.upSQLFunc == nil {
+func (m *Migration) runsAloneOutsideATransaction(conn *dbschema.DatabaseConnection, direction MigrationDirection) bool {
+	if !m.ownTransactions || !m.hasSQLExecutor(direction) {
 		return false
 	}
 	dialect := databaseConnectionDialect(conn)
-	if m.parsedUpTxModeForDialect(dialect).Mode != migrationfile.FileTxModeUnspecified {
+	if m.parsedTxModeForDialect(direction, dialect).Mode != migrationfile.FileTxModeUnspecified {
 		return false
 	}
-	statements := splitSQLStatementsForConnection(conn, m.UpSQL)
+	statements := splitSQLStatementsForConnection(conn, migrationSQLForDirection(m, direction))
 	if !filetx.RunsAlone(statements) {
 		return false
 	}
@@ -113,27 +128,33 @@ func (m *Migration) upRunsAloneOutsideATransaction(conn *dbschema.DatabaseConnec
 	return txrequire.AloneOutsideATransaction(info.Dialect, info.Capabilities, statements)
 }
 
-// validateUpOwnTransactions refuses, before any migration runs, a body whose
-// transaction control the migrator cannot follow, and one that opens its own
-// transaction where the run would wrap it in one anyway: under tx-mode all, or
-// with a directive asking for a transaction around the file.
-func (m *Migrator) validateUpOwnTransactions(migrations []*Migration) error {
+// validateOwnTransactions refuses, before any migration of a run in direction
+// runs, a body whose transaction control the migrator cannot follow, and one
+// that opens its own transaction where the run would wrap it in one anyway:
+// an up run under tx-mode all, or a file whose directive asks for a
+// transaction around it. A rollback takes no run-wide transaction mode, so
+// only the directive can ask for one there.
+func (m *Migrator) validateOwnTransactions(migrations []*Migration, direction MigrationDirection) error {
 	for _, migration := range migrations {
-		blocks, _, err := migration.upOwnTransactions(m.conn)
+		blocks, _, err := migration.bodyOwnTransactions(m.conn, direction)
 		if err != nil {
 			return err
 		}
 		if blocks.Empty() {
 			continue
 		}
-		if m.txMode == MigrationTxModeAll {
+		if direction == MigrationDirectionUp && m.txMode == MigrationTxModeAll {
 			return fmt.Errorf(
 				"migration %d opens and closes its own transaction, which tx-mode all would nest in the one transaction "+
 					"it runs every migration in; apply the directory with tx-mode file", migration.Version)
 		}
-		txMode := migration.parsedUpTxModeForDialect(m.connectionDialect())
+		txMode := migration.parsedTxModeForDialect(direction, m.connectionDialect())
 		if txMode.Source != 0 && txMode.Mode == migrationfile.FileTxModeFile {
-			return fmt.Errorf("migration %d asks for a transaction around the file and opens its own", migration.Version)
+			file := "the file"
+			if direction == MigrationDirectionDown {
+				file = "its down file"
+			}
+			return fmt.Errorf("migration %d asks for a transaction around %s and opens its own", migration.Version, file)
 		}
 	}
 	return nil
@@ -155,16 +176,20 @@ type ownTransactionRun struct {
 	mode MigrationTxMode
 }
 
-// upOwnTransactionMode decides how migration runs when its directory runs
-// bodies the way a runner that wraps none does: as written, with the
-// transactions it opens itself, or in a mode. A migration of another
+// ownTransactionMode decides how the body of direction runs when its
+// directory runs bodies the way a runner that wraps none does: as written,
+// with the transactions it opens itself, or in a mode. A migration of another
 // directory, and every migration under tx-mode all, keep mode.
-func (m *Migrator) upOwnTransactionMode(migration *Migration, mode MigrationTxMode) (ownTransactionRun, error) {
+func (m *Migrator) ownTransactionMode(
+	migration *Migration,
+	mode MigrationTxMode,
+	direction MigrationDirection,
+) (ownTransactionRun, error) {
 	kept := ownTransactionRun{mode: mode}
 	if !migration.ownTransactions || mode == MigrationTxModeAll {
 		return kept, nil
 	}
-	blocks, statements, err := migration.upOwnTransactions(m.conn)
+	blocks, statements, err := migration.bodyOwnTransactions(m.conn, direction)
 	if err != nil {
 		return kept, err
 	}
@@ -176,7 +201,7 @@ func (m *Migrator) upOwnTransactionMode(migration *Migration, mode MigrationTxMo
 		}
 		return run, nil
 	}
-	if mode == MigrationTxModeFile && migration.upRunsAloneOutsideATransaction(m.conn) {
+	if mode == MigrationTxModeFile && migration.runsAloneOutsideATransaction(m.conn, direction) {
 		return ownTransactionRun{mode: MigrationTxModeNone}, nil
 	}
 	return kept, nil
@@ -242,12 +267,12 @@ func (m *Migrator) applyUpMigrationOwnTransactionsOnSession(
 			ctx, migration, startedAt, err, migration.UpSQL, prefix, MigrationTxModeNone, MigrationDirectionUp)
 	}
 	session := &ownTransactionSession{conn: executionConn, transactions: run.transactions, oneQuery: run.oneQuery}
-	executionCtx := m.withOwnTransactionProgress(ctx, migration, startedAt, run, session)
+	executionCtx := m.withOwnTransactionProgress(ctx, migration, startedAt, run, session, MigrationDirectionUp)
 	executionCtx = session.withBeginCommitter(executionCtx)
 	executionCtx = m.withPostgresIndexObservation(executionCtx, executionConn)
 	err := migration.executeUp(executionCtx, executionConn, migrationExecutionNoTransaction)
 	if err == nil {
-		err = m.commitOneQueryEnd(executionCtx, migration, startedAt, session, run.statements)
+		err = m.commitOneQueryEnd(executionCtx, migration, startedAt, session, run.statements, MigrationDirectionUp)
 	}
 	if err != nil {
 		failure := m.ownTransactionFailure(ctx, migration.Version, err, run.transactions)
@@ -272,6 +297,90 @@ func (m *Migrator) applyUpMigrationOwnTransactionsOnSession(
 	return nil
 }
 
+// rollbackMigrationOwnTransactions runs a down body that opens and closes its
+// own transactions, on one session the run pins, outside any transaction of
+// the migrator's; see [WithOwnTransactions].
+//
+// It is [Migrator.applyUpMigrationOwnTransactions] for a rollback, and records
+// the same progress: a mark before the statement that closes one of the
+// body's transactions, naming the transaction's first statement, and a
+// checkpoint after it. The revision is removed only once the body's last
+// statement committed and the session's timeouts are back. A failure rolls
+// back what the session holds open and records, on a revision left dirty, the
+// statements that stayed committed.
+//
+// Unlike an up run, a rollback does not resume a dirty revision: every failed
+// rollback stops at it, and `migrations repair` ends it. So this runs the body
+// from its first statement, and the prefix of an earlier attempt is never
+// replayed here.
+func (m *Migrator) rollbackMigrationOwnTransactions(
+	ctx context.Context,
+	migration *Migration,
+	startedAt time.Time,
+	deleteSQL string,
+	run ownTransactionRun,
+) error {
+	timeouts, err := m.effectiveDownTimeouts(migration)
+	if err != nil {
+		return err
+	}
+	return m.withNoTransactionSession(ctx, func(scoped *Migrator) error {
+		boundedCtx, restoreTimeouts, err := scoped.applySessionTimeouts(ctx, migration, timeouts)
+		if err != nil {
+			return err
+		}
+		if err := scoped.beginRollbackRevision(ctx, migration, startedAt); err != nil {
+			failure := fmt.Errorf("failed to record pending rollback %d: %w", migration.Version, err)
+			return scoped.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, failure)
+		}
+		return scoped.rollbackMigrationOwnTransactionsOnSession(boundedCtx, migration, startedAt, deleteSQL, restoreTimeouts, run)
+	})
+}
+
+func (m *Migrator) rollbackMigrationOwnTransactionsOnSession(
+	ctx context.Context,
+	migration *Migration,
+	startedAt time.Time,
+	deleteSQL string,
+	restoreTimeouts restoreTimeoutsFunc,
+	run ownTransactionRun,
+) error {
+	executionConn := m.noTransactionConnection()
+	fail := func(err error, prefix string) error {
+		return m.failRollbackWithDirtyStateWithMode(ctx, migration, startedAt, err, migration.DownSQL, prefix, MigrationTxModeNone)
+	}
+	m.startPostgresIndexObservation()
+	session := &ownTransactionSession{conn: executionConn, transactions: run.transactions, oneQuery: run.oneQuery}
+	executionCtx := m.withOwnTransactionProgress(ctx, migration, startedAt, run, session, MigrationDirectionDown)
+	executionCtx = session.withBeginCommitter(executionCtx)
+	executionCtx = m.withPostgresIndexObservation(executionCtx, executionConn)
+	err := migration.executeDown(executionCtx, executionConn, migrationExecutionNoTransaction)
+	if err == nil {
+		err = m.commitOneQueryEnd(executionCtx, migration, startedAt, session, run.statements, MigrationDirectionDown)
+	}
+	if err != nil {
+		failure := m.ownTransactionFailure(ctx, migration.Version, err, run.transactions)
+		failure = fail(failure, fmt.Sprintf("failed to revert migration %d", migration.Version))
+		return m.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, failure)
+	}
+	if err := m.restoreTimeouts(ctx, migration.Version, restoreTimeouts); err != nil {
+		return fail(&committedProgressFailure{err: err, applied: len(run.statements)}, "")
+	}
+	if err := m.refuseRollbackCompletionOverUnsafeIndexOn(ctx, executionConn, migration); err != nil {
+		return fail(
+			completedMigrationIndexObservationError(migration, m.connectionDialect(), MigrationDirectionDown, err),
+			fmt.Sprintf("failed to verify rollback of migration %d", migration.Version),
+		)
+	}
+	recordCtx, cancelRecord := durableRevisionWriteContext(ctx)
+	defer cancelRecord()
+	if err := m.deleteMigrationRevisionOn(recordCtx, m.conn, migration, deleteSQL); err != nil {
+		return fmt.Errorf("failed to record migration reversion %d: %w", migration.Version, err)
+	}
+	m.logger.Info("Rolled back migration that runs its own transactions", "version", migration.Version, "description", migration.Description)
+	return nil
+}
+
 // withOwnTransactionProgress installs the progress recorders of a body that
 // runs its own transactions, the transactions run.transactions names. A
 // statement outside them is recorded as the no-transaction path records it.
@@ -281,13 +390,16 @@ func (m *Migrator) applyUpMigrationOwnTransactionsOnSession(
 // and checkpointed once it commits, so an interrupted run's mark says the
 // transaction from that statement on may or may not have committed. session,
 // when the body runs as one query, opens the transaction a statement joins
-// before the statement runs.
+// before the statement runs. direction is the body's, so the marks and the
+// checkpoints land on the revision the way the run of that direction reads
+// them.
 func (m *Migrator) withOwnTransactionProgress(
 	ctx context.Context,
 	migration *Migration,
 	startedAt time.Time,
 	run ownTransactionRun,
 	session *ownTransactionSession,
+	direction MigrationDirection,
 ) context.Context {
 	return withStatementProgressRecorder(
 		ctx,
@@ -303,14 +415,14 @@ func (m *Migrator) withOwnTransactionProgress(
 				event.Index = opened + 1
 				event.Statement = strings.TrimSpace(run.statements[opened])
 			}
-			return m.markMigrationStatementInFlight(ctx, migration, startedAt, event, MigrationDirectionUp)
+			return m.markMigrationStatementInFlight(ctx, migration, startedAt, event, direction)
 		},
 		func(ctx context.Context, event StatementEvent) error {
 			session.after(ctx, event)
 			if run.transactions.Inside(event.Index - 1) {
 				return nil
 			}
-			return m.checkpointMigrationRevision(ctx, migration, startedAt, event, MigrationDirectionUp)
+			return m.checkpointMigrationRevision(ctx, migration, startedAt, event, direction)
 		},
 	)
 }
@@ -319,13 +431,15 @@ func (m *Migrator) withOwnTransactionProgress(
 // transaction the statements after its last COMMIT ran in, the way the end of
 // the query commits it. It records the commit as the statement that closes one
 // of the body's transactions is recorded: a mark naming the transaction's
-// first statement before, and a checkpoint after.
+// first statement before, and a checkpoint after, both for the body of
+// direction.
 func (m *Migrator) commitOneQueryEnd(
 	ctx context.Context,
 	migration *Migration,
 	startedAt time.Time,
 	session *ownTransactionSession,
 	statements []string,
+	direction MigrationDirection,
 ) error {
 	if !session.open {
 		return nil
@@ -342,14 +456,14 @@ func (m *Migrator) commitOneQueryEnd(
 		}}
 	}
 	mark := StatementEvent{Statement: first, Index: start + 1, Total: total}
-	if err := m.markMigrationStatementInFlight(ctx, migration, startedAt, mark, MigrationDirectionUp); err != nil {
+	if err := m.markMigrationStatementInFlight(ctx, migration, startedAt, mark, direction); err != nil {
 		return failed("before", err)
 	}
 	if err := session.finish(ctx); err != nil {
 		return failed("commit", markedStatementFailure(ctx, &failedCommitError{statements: total, err: err}))
 	}
 	checkpoint := StatementEvent{Statement: first, Index: total, Total: total}
-	if err := m.checkpointMigrationRevision(ctx, migration, startedAt, checkpoint, MigrationDirectionUp); err != nil {
+	if err := m.checkpointMigrationRevision(ctx, migration, startedAt, checkpoint, direction); err != nil {
 		return failed("after", err)
 	}
 	return nil

@@ -333,6 +333,9 @@ inside one; see
 `LOCK TABLE` is accepted for the same reason as `SET LOCAL`; a lock on a table in
 a protected namespace is refused.
 
+A rollback that `ptah migrations down --runner golang-migrate --shadow-db`
+verifies runs each down file on the shadow database the same way.
+
 Three parameters stay refused even for one transaction. `search_path` (and its
 alias `SET SCHEMA`) decides where an unqualified name lands, which would let a
 `CREATE FUNCTION` reach `pg_catalog`. `role` and `session_authorization` change

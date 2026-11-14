@@ -231,17 +231,17 @@ here ([Compatibility differences](../../atlas/retained-divergences/#a-txmode-non
 
 golang-migrate opens no transaction around a file, and on PostgreSQL the
 migrator runs an up file of its directory with the transactions the file opens
-itself, and `TX201` reads such a file the same way. It reports a form the
-migrator refuses before any migration runs, such as `ROLLBACK` or a block the
-file leaves open, and a `BEGIN` inside an open block, which PostgreSQL ignores.
-A block the file opens and closes is not reported. `PG103` passes over a file
-of one statement, which runs without a transaction.
+itself, and rolls a down file back the same way. `TX201` reads either file the
+same way. It reports a form the migrator refuses before any migration runs or
+is rolled back, such as `ROLLBACK` or a block the file leaves open, and a
+`BEGIN` inside an open block, which PostgreSQL ignores. A block the file opens
+and closes is not reported. `PG103` passes over a file of one statement, which
+runs without a transaction.
 
-On every other engine, and for every down file, the migrator keeps its
-transaction around the file, so `TX201` reports a block there as in any other
-layout. A run that names no dialect reads an up file the PostgreSQL way, since
-it cannot know the engine; name the dialect to judge the file for another
-engine. Lint does not see the run's
+On every other engine the migrator keeps its transaction around the file, so
+`TX201` reports a block there as in any other layout. A run that names no
+dialect reads a file the PostgreSQL way, since it cannot know the engine; name
+the dialect to judge the file for another engine. Lint does not see the run's
 transaction mode, and an apply with `--tx-mode all` refuses every file that
 opens its own transaction;
 [Transaction blocks in a golang-migrate directory](../../atlas/migrate-commands/#transaction-blocks-in-a-golang-migrate-directory)
@@ -449,7 +449,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 
 | Rule | Meaning | Surface | Origin |
 | --- | --- | --- | --- |
-| `TX201` | a statement that controls transaction state, which the migrator refuses in a wrapped file and in one that runs without a transaction; a golang-migrate up file on PostgreSQL is read as the migrator runs it | both | Atlas |
+| `TX201` | a statement that controls transaction state, which the migrator refuses in a wrapped file and in one that runs without a transaction; a golang-migrate file on PostgreSQL, up or down, is read as the migrator runs it | both | Atlas |
 
 ### spanner
 
@@ -640,7 +640,7 @@ Every check code in the reviewed snapshot of the [Atlas analyzer documentation](
 | `CD102` | a check constraint was dropped | yes | `CD102` | covered |
 | `CD103` | a primary-key constraint was dropped | yes | `CD103` | covered |
 | `TX101` | statements cannot run in a single transaction | yes | `TX101` | covered |
-| `TX201` | a nested transaction was detected | yes | `TX201` | covered — reported on every engine the migrator applies, because the migrator refuses the file; a golang-migrate up file on PostgreSQL is read as the migrator runs its own transactions |
+| `TX201` | a nested transaction was detected | yes | `TX201` | covered — reported on every engine the migrator applies, because the migrator refuses the file; a golang-migrate file on PostgreSQL, up or down, is read as the migrator runs its own transactions |
 | `NM101` | a schema name violates the naming convention | no | `NM101` | covered — needs a configured naming convention |
 | `NM102` | a table name violates the naming convention | no | `NM102` | covered — needs a configured naming convention |
 | `NM103` | a column name violates the naming convention | no | `NM103` | covered — needs a configured naming convention |

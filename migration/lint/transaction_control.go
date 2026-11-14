@@ -37,16 +37,17 @@ func transactionControlRules() []Rule {
 // the statements the block holds are the same mistake.
 //
 // A run whose files run in transactions they open themselves, as with
-// golang-migrate, is judged by the same reading the migrator applies such a
-// directory with: see [ownTransactionFindings]. Only an up file on an engine
-// whose migrator services read a body's own transactions is applied that way.
-// A down file, and an up file on any other engine, keeps the transaction around
-// the file, and is judged as above.
+// golang-migrate, is judged by the same reading the migrator applies and rolls
+// back such a directory with: see [ownTransactionFindings]. The runner sends a
+// down file as it sends an up file, and the migrator runs both halves that way
+// on an engine whose migrator services read a body's own transactions. On any
+// other engine either half keeps the transaction around the file, and is
+// judged as above.
 func checkTransactionControl(file *File) []Finding {
 	if !file.IsUp && !file.IsDown {
 		return nil
 	}
-	if file.transactionOwner == lintext.TransactionOwnerFile && file.IsUp {
+	if file.transactionOwner == lintext.TransactionOwnerFile {
 		if read := ownTransactionReading(file.dialect); read != nil {
 			return ownTransactionFindings(file, read)
 		}
@@ -99,8 +100,8 @@ func ownTransactionReading(dialect string) func(statements []string) (filetx.Blo
 	return builtin.Lookup(dialect).OwnTransactions
 }
 
-// ownTransactionFindings judges an up file the migrator applies with the
-// transactions the file opens itself.
+// ownTransactionFindings judges a file the migrator applies, or rolls back,
+// with the transactions the file opens itself.
 //
 // read is the reading the migrator applies the file with. A form it refuses
 // is refused before any migration runs, and is reported on the statement the
@@ -118,20 +119,31 @@ func ownTransactionFindings(file *File, read func(statements []string) (filetx.B
 	blocks, err := read(statements)
 	if structure, ok := errors.AsType[*filetx.StructureError](err); ok {
 		return []Finding{transactionControlFinding(file, structure.Index, fmt.Sprintf(
-			"the migrator runs the transactions this file opens itself and refuses the file before any migration "+
-				"runs: %s; remove the transaction control or change it to a form the file can run",
-			structure.Reason))}
+			"the migrator runs the transactions this file opens itself and refuses the file %s: %s; remove the "+
+				"transaction control or change it to a form the file can run",
+			beforeAnyMigrationRuns(file), structure.Reason))}
 	}
 	if blocks.Empty() {
 		return wrappedTransactionControl(file)
 	}
 	if file.txModeNamed && !file.NoTransaction {
 		first := blocks.Controls()[0]
-		return []Finding{transactionControlFinding(file, first,
-			"the file asks for a transaction around it and opens its own, which the migrator refuses before any "+
-				"migration runs; remove the transaction mode directive or the file's own transaction control")}
+		return []Finding{transactionControlFinding(file, first, fmt.Sprintf(
+			"the file asks for a transaction around it and opens its own, which the migrator refuses %s; remove "+
+				"the transaction mode directive or the file's own transaction control", beforeAnyMigrationRuns(file)))}
 	}
 	return nestedTransactionBlocks(file)
+}
+
+// beforeAnyMigrationRuns says when the migrator refuses a file it would run
+// with the file's own transactions: it reads every file of the run before the
+// first one runs, so an apply refuses before any migration is applied and a
+// rollback before any is rolled back.
+func beforeAnyMigrationRuns(file *File) string {
+	if file.IsUp {
+		return "before any migration runs"
+	}
+	return "before any migration is rolled back"
 }
 
 // transactionControlMessage says what the migrator does with the file where it

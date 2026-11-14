@@ -618,7 +618,7 @@ var migrationRuleMeta = map[string]ruleMeta{
 		AtlasCode: "TX101",
 	},
 	"TX201": {
-		Summary:   "a statement that controls transaction state, which the migrator refuses in a wrapped file and in one that runs without a transaction; a golang-migrate up file on PostgreSQL is read as the migrator runs it",
+		Summary:   "a statement that controls transaction state, which the migrator refuses in a wrapped file and in one that runs without a transaction; a golang-migrate file on PostgreSQL, up or down, is read as the migrator runs it",
 		AtlasCode: "TX201",
 	},
 	"SP101": {

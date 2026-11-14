@@ -14,7 +14,6 @@ import (
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/cli/internal/exitcode"
-	"ptah.run/internal/cli/internal/migrateflags"
 	"ptah.run/internal/cli/internal/migrationsource"
 	"ptah.run/internal/cli/internal/serverversion"
 	"ptah.run/internal/devdocker"
@@ -106,7 +105,7 @@ Rules can be disabled per code or family via --disable or .ptah-lint.yaml.`,
 
 	cmd.Flags().StringVar(&dir, "dir", "./migrations", "Local directory or oci:// reference containing migration files")
 	cmd.Flags().StringVar(&dirFormat, "dir-format", string(migrationfile.DirFormatAuto), "Migration directory format: auto, ptah, or atlas")
-	cmd.Flags().StringVar(&runner, migrateflags.RunnerFlag, string(migrateflags.RunnerPtah), migrateflags.RunnerUsage)
+	dbcli.RegisterRunnerFlag(cmd.Flags(), &runner)
 	cmd.Flags().StringVar(&dialect, "dialect", "", "Target dialect gating dialect-specific rules: "+lintdialect.Expected+" (empty runs every rule)")
 	serverversion.Register(cmd.Flags(), &serverVersion)
 	cmd.Flags().StringVar(&format, "format", formatText, "Output format: text, json, github-actions, sarif, gitlab")
@@ -181,8 +180,7 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 	requested.Runtime = runtime
 	// The transaction rules judge a file by the tool that applies the
 	// directory, which the directory's layout does not say.
-	runner, err := migrateflags.ParseRunner(dbcli.EffectiveString(
-		cmd, migrateflags.RunnerFlag, opts.runner, projectCfg.StringValue(projectconfig.StringMigrationRunner)))
+	runner, err := dbcli.ResolveRunner(cmd, opts.runner, projectCfg)
 	if err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
 	}

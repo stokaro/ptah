@@ -827,6 +827,7 @@ Read the columns as follows.
 | `--provider-exchanges` | `string` | — | — | — |
 | `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
 | `--run-reference` | `string` | — | `PTAH_RUN_REFERENCE` | — |
+| `--runner` | `string` | `ptah` | `PTAH_RUNNER` | — |
 | `--shadow-db` | `string` | — | `PTAH_SHADOW_DB` | — |
 | `--skip-checks` | `bool` | `false` | `PTAH_SKIP_CHECKS` | — |
 | `--statement-timeout` | `string` | — | `PTAH_STATEMENT_TIMEOUT` | — |

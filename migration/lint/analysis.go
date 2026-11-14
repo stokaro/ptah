@@ -822,18 +822,18 @@ func prepareFile(
 }
 
 // markAloneOutsideATransaction marks, in a run whose files run in
-// transactions they open themselves, each up file that names no transaction
-// mode and holds one statement ([filetx.RunsAlone]) as one that runs without a
-// transaction. Its runner sends the statement on its own, and the migrator
-// applies and replays it the same way on PostgreSQL, the engine whose rules
-// read the mark.
+// transactions they open themselves, each up or down file that names no
+// transaction mode and holds one statement ([filetx.RunsAlone]) as one that
+// runs without a transaction. Its runner sends the statement on its own, and
+// the migrator applies, rolls back and replays it the same way on PostgreSQL,
+// the engine whose rules read the mark.
 func markAloneOutsideATransaction(files []File, opts Options) {
 	if opts.TransactionOwner != lintext.TransactionOwnerFile {
 		return
 	}
 	for i := range files {
 		file := &files[i]
-		if !file.IsUp || file.NoTransaction || file.txModeNamed {
+		if (!file.IsUp && !file.IsDown) || file.NoTransaction || file.txModeNamed {
 			continue
 		}
 		statements := make([]string, 0, len(file.Statements))

@@ -853,6 +853,15 @@ migration runs, naming the statement:
   leaves the version dirty, while `pgx5://` commits it together with the
   version.
 
+`ptah-compat migrate down` does not roll a golang-migrate directory back: it
+refuses `?format=golang-migrate` and `format = golang-migrate`. Native
+`ptah migrations down --runner golang-migrate` rolls a down file back the way
+this section applies an up file; see
+[Roll back migrations](../../versioned/rollback/#a-directory-written-for-golang-migrate).
+`PTAH_RUNNER=golang-migrate` reaches the native rollback `migrate down`
+forwards to, so a directory in Atlas's layout whose down files open their own
+transactions rolls back the same way.
+
 The pinned community binary v1.3.0 wraps these files in a transaction of its
 own, and a file with its own block nests in it. Measured on PostgreSQL 18: over
 `BEGIN; CREATE TABLE t1 (id int); INSERT INTO t1 VALUES (1); COMMIT;` the
@@ -1980,9 +1989,11 @@ reading:
 - A `BEGIN` inside a block the file has not closed draws a warning, since
   PostgreSQL ignores it with a warning.
 
-On every other engine the migrator keeps its transaction around each file, and
-it runs every down file inside one, so there `TX201` reports a block as it does
-in any other layout. `migrate apply --tx-mode all` refuses every file that
+A down file is read the same way, since native `ptah migrations down --runner
+golang-migrate` rolls it back with the transactions it opens itself. On every
+other engine the migrator keeps its transaction around each file, so there
+`TX201` reports a block as it does in any other layout.
+`migrate apply --tx-mode all` refuses every file that
 opens its own transaction, which lint cannot see. This holds for each way of
 selecting the layout:
 `?format=golang-migrate`, `--dir-format golang-migrate`, or

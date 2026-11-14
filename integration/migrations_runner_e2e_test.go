@@ -3,6 +3,7 @@
 package integration_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -21,6 +22,11 @@ import (
 //
 // Under the default runner the migrator refuses the file before that file
 // runs, because its COMMIT would end the transaction Ptah owns.
+//
+// `ptah migrations down` takes the same runner, resolved the same way, and
+// rolls a down file back the way the up file is applied. A failed rollback
+// records the statements the file's COMMIT made permanent and leaves the
+// revision dirty, as every failed rollback does.
 
 // runnerMigrations writes a migration directory whose second version opens
 // and commits a transaction of its own and then fails, and returns it.
@@ -192,6 +198,140 @@ func TestMigrationsLintRunnerDecidesTheReplayE2E(t *testing.T) {
 			c.Assert(exitStatus(err), qt.Equals, test.wantCode, qt.Commentf("%s", out))
 		})
 	}
+}
+
+// ownTransactionDownFiles is a directory whose second version rolls back in a
+// transaction of its own, followed by a statement that fails when down is the
+// failing variant.
+func ownTransactionDownFiles(down string) map[string]string {
+	return map[string]string{
+		"0000000001_init.up.sql":       "CREATE TABLE base (id int);\n",
+		"0000000001_init.down.sql":     "DROP TABLE base;\n",
+		"0000000002_backfill.up.sql":   "CREATE TABLE t2 (id int);\nCREATE TABLE t3 (id int);\n",
+		"0000000002_backfill.down.sql": down,
+	}
+}
+
+// downOwnTransactionsBody drops both tables of the second version, one in a
+// transaction the file opens and commits itself.
+const downOwnTransactionsBody = "BEGIN;\nDROP TABLE t2;\nCOMMIT;\nDROP TABLE t3;\n"
+
+// rollBackOwnTransactionFiles applies the directory down describes and rolls
+// its second version back with the down command's flags, from a working
+// directory holding config as ptah.yaml.
+func rollBackOwnTransactionFiles(c *qt.C, binary, config, down string, flags ...string) (target, output string, err error) {
+	c.Helper()
+	dir := runnerMigrations(c, ownTransactionDownFiles(down))
+	workdir := c.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(workdir, "ptah.yaml"), []byte(config), 0o600), qt.IsNil) // #nosec G703 -- the path is c.TempDir() plus a constant name
+	target, _ = scratchReplayDatabase(c)
+	out, err := runPtahInDir(c.Context(), c.TempDir(), binary, "migrations", "up", "--migrations-dir", dir, "--db-url", target)
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	output, err = runPtahInDir(c.Context(), workdir, binary,
+		append([]string{"migrations", "down", "--migrations-dir", dir, "--db-url", target, "--target", "1", "--confirm"},
+			flags...)...)
+	return target, output, err
+}
+
+// revisionCensus is the revision rows of version, read from the database at
+// url, and which of tables exist.
+func revisionCensus(c *qt.C, url string, version int64, tables ...string) (int, []string) {
+	c.Helper()
+	conn, err := dbschema.ConnectToDatabase(c.Context(), url)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	var rows int
+	c.Assert(conn.QueryRowContext(c.Context(), "SELECT count(*) FROM schema_migrations WHERE version = $1", version).Scan(&rows),
+		qt.IsNil)
+	existing := make([]string, 0, len(tables))
+	for _, table := range tables {
+		var exists bool
+		c.Assert(conn.QueryRowContext(c.Context(), "SELECT to_regclass($1) IS NOT NULL", table).Scan(&exists), qt.IsNil)
+		existing = append(existing, fmt.Sprintf("%s=%t", table, exists))
+	}
+	return rows, existing
+}
+
+func TestMigrationsDownRunnerRollsBackTheFileOwnTransactionsE2E(t *testing.T) {
+	binary := builtPtah(t, qt.New(t))
+	for _, test := range []struct {
+		name   string
+		config string
+		flags  []string
+	}{
+		{name: "golang-migrate named by the flag", flags: []string{"--runner", "golang-migrate"}},
+		{name: "golang-migrate named in ptah.yaml", config: "migration:\n  runner: golang-migrate\n"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			target, out, err := rollBackOwnTransactionFiles(c, binary, test.config, downOwnTransactionsBody, test.flags...)
+			c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+			rows, tables := revisionCensus(c, target, 2, "base", "t2", "t3")
+			c.Assert(rows, qt.Equals, 0)
+			c.Assert(tables, qt.DeepEquals, []string{"base=true", "t2=false", "t3=false"})
+		})
+	}
+}
+
+// --shadow-db replays the rollback the way the target runs it, so a down file
+// that opens its own transactions is verified on the shadow database and then
+// rolled back on the target.
+func TestMigrationsDownRunnerVerifiesOnTheShadowDatabaseE2E(t *testing.T) {
+	c := qt.New(t)
+	binary := builtPtah(t, c)
+	shadow, _ := scratchReplayDatabase(c)
+
+	target, out, err := rollBackOwnTransactionFiles(c, binary, "", downOwnTransactionsBody,
+		"--runner", "golang-migrate", "--shadow-db", shadow)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	rows, tables := revisionCensus(c, target, 2, "base", "t2", "t3")
+	c.Assert(rows, qt.Equals, 0)
+	c.Assert(tables, qt.DeepEquals, []string{"base=true", "t2=false", "t3=false"})
+}
+
+// Under the default runner, and with --runner ptah over a ptah.yaml that names
+// golang-migrate, the migrator wraps the down file and refuses its
+// transaction control before the file runs: both tables stay, and so does the
+// revision.
+func TestMigrationsDownRunnerRefusesWrappedTransactionControlE2E(t *testing.T) {
+	binary := builtPtah(t, qt.New(t))
+	for _, test := range []struct {
+		name   string
+		config string
+		flags  []string
+	}{
+		{name: "the default runner"},
+		{name: "the flag over ptah.yaml", config: "migration:\n  runner: golang-migrate\n", flags: []string{"--runner", "ptah"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			target, out, err := rollBackOwnTransactionFiles(c, binary, test.config, downOwnTransactionsBody, test.flags...)
+			c.Assert(err, qt.ErrorMatches, "exit status 2", qt.Commentf("%s", out))
+			c.Assert(out, qt.Contains, "controls transaction state")
+			rows, tables := revisionCensus(c, target, 2, "base", "t2", "t3")
+			c.Assert(rows, qt.Equals, 1)
+			c.Assert(tables, qt.DeepEquals, []string{"base=true", "t2=true", "t3=true"})
+		})
+	}
+}
+
+// A down file that fails after its own transaction committed leaves that
+// transaction's work in place, and the revision row records it: three
+// statements applied, on a row the next rollback refuses as dirty.
+func TestMigrationsDownRunnerRecordsTheCommittedTransactionE2E(t *testing.T) {
+	c := qt.New(t)
+	binary := builtPtah(t, c)
+	target, out, err := rollBackOwnTransactionFiles(c, binary, "",
+		"BEGIN;\nDROP TABLE t2;\nCOMMIT;\nINSERT INTO missing_table VALUES (1);\nDROP TABLE t3;\n", "--runner", "golang-migrate")
+
+	c.Assert(err, qt.ErrorMatches, "exit status 2", qt.Commentf("%s", out))
+	c.Assert(out, qt.Contains, `relation "missing_table" does not exist`)
+	applied, dropped := revisionApplied(c, target, 2, "t2")
+	c.Assert(applied, qt.Equals, 3)
+	c.Assert(dropped, qt.IsFalse)
+	_, tables := revisionCensus(c, target, 2, "t3")
+	c.Assert(tables, qt.DeepEquals, []string{"t3=true"})
 }
 
 // exitStatus is the process error's text, empty for a run that exited 0.

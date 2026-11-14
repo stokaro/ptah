@@ -310,10 +310,11 @@ type Options struct {
 	// transaction control read. The zero value is a migrator that wraps each
 	// file, which is what Ptah's and Atlas's do; a caller that knows the
 	// directory is applied by a tool that opens none, such as golang-migrate,
-	// sets [lintext.TransactionOwnerFile]. Such a run also judges an up file
-	// that names no transaction mode and holds one statement the engine
-	// refuses inside a transaction as one that runs without a transaction
-	// ([File.NoTransaction]), as the migrator applies it.
+	// sets [lintext.TransactionOwnerFile]. Such a run also judges an up or
+	// down file that names no transaction mode and holds one statement the
+	// engine refuses inside a transaction as one that runs without a
+	// transaction ([File.NoTransaction]), as the migrator applies and rolls
+	// it back.
 	TransactionOwner lintext.TransactionOwner
 	// AtlasTemplateData supplies data for Atlas SQL template migrations.
 	// When nil, templates render with migrationfile.AtlasTemplateData{}.
