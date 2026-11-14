@@ -1008,9 +1008,17 @@ partition, and `ALTER INDEX parent_index ATTACH PARTITION copy` for each copy:
   declare nothing, and the reader skips them. Any other psql command is refused.
 - The `ALTER ... OWNER TO` line after each object, which plans nothing. [Start from a
   `pg_dump` file](../../schema/sql/#start-from-a-pg_dump-file) has the kinds it takes.
+- The statements a `serial` column and an identity column are written as: `CREATE
+  SEQUENCE`, `ALTER SEQUENCE ... OWNED BY` and `SET DEFAULT nextval(...)` for the
+  first, `ADD GENERATED ... AS IDENTITY` for the second. Each reads as the column.
+  [Serial and identity columns](../../schema/sql/#serial-and-identity-columns) has
+  the rule, and the `REPLICA IDENTITY` line the reader refuses.
 
-YugabyteDB reads a dump the same way, except the `ALTER ... OWNER TO` lines, which
-it refuses, and reads `ALTER INDEX ... RENAME TO` as PostgreSQL does.
+YugabyteDB reads a dump the same way, except the `ALTER ... OWNER TO` lines and
+`ADD GENERATED ... AS IDENTITY`, which it refuses, and reads `ALTER INDEX ...
+RENAME TO` as PostgreSQL does. The sequence of a `serial` column stays a sequence
+the column owns, and a plan against a database that holds it does not create it
+again.
 
 HCL, DBML, YAML and Go annotations have no spelling for a partition. A source in one
 of them compares the table as it declares it and claims nothing about its parent or

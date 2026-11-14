@@ -1075,13 +1075,12 @@ func (r *Renderer) renderAlterTableStatements(node *ast.AlterTableNode, operatio
 			}
 			dropSQL += fmt.Sprintf(" %s", r.escapeIdentifier(op.ConstraintName))
 			r.w.WriteLinef("%s;", dropSQL)
-		case *ast.DropColumnOperation, *ast.AlterColumnOperation:
-			// One arm for both, so this switch keeps its complexity budget;
-			// writeColumnOperation re-selects between them.
-			r.writeColumnOperation(node.Name, operation)
-		case *ast.ModifyColumnOperation:
-			// PostgreSQL uses different syntax for modifying columns
-			r.renderPostgreSQLModifyColumn(node.Name, op)
+		case *ast.DropColumnOperation, *ast.AlterColumnOperation, *ast.ModifyColumnOperation:
+			// One arm for the three, so this switch keeps its complexity
+			// budget; writeColumnOperation re-selects between them.
+			if err := r.writeColumnOperation(node.Name, operation); err != nil {
+				return err
+			}
 		case *ast.AlterGeneratedColumnExpressionOperation:
 			if !r.capabilities().Has(capability.AlterGeneratedColumnExpression) {
 				// Name the capability, not the version. The gate is the
@@ -1138,10 +1137,14 @@ func (r *Renderer) renderAlterTableStatements(node *ast.AlterTableNode, operatio
 	return nil
 }
 
-// writeColumnOperation renders a DROP COLUMN or one ALTER COLUMN action.
-func (r *Renderer) writeColumnOperation(tableName string, operation ast.AlterOperation) {
+// writeColumnOperation renders a DROP COLUMN, one ALTER COLUMN action, or a
+// MODIFY COLUMN in PostgreSQL's spelling.
+func (r *Renderer) writeColumnOperation(tableName string, operation ast.AlterOperation) error {
 	table := r.escapeQualifiedIdentifier(tableName)
 	switch op := operation.(type) {
+	case *ast.ModifyColumnOperation:
+		// PostgreSQL uses different syntax for modifying columns
+		r.renderPostgreSQLModifyColumn(tableName, op)
 	case *ast.DropColumnOperation:
 		dropSQL := fmt.Sprintf("ALTER TABLE %s DROP COLUMN", table)
 		if op.IfExists {
@@ -1156,10 +1159,30 @@ func (r *Renderer) writeColumnOperation(tableName string, operation ast.AlterOpe
 		if op.NotNullConstraintName != "" {
 			r.w.WriteLinef("ALTER TABLE %s ADD CONSTRAINT %s NOT NULL %s;", table,
 				r.escapeIdentifier(op.NotNullConstraintName), r.escapeIdentifier(op.ColumnName))
-			return
+			return nil
+		}
+		if op.Action == ast.AlterColumnAddIdentity {
+			return r.writeAddIdentity(table, op)
 		}
 		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s %s;", table, r.escapeIdentifier(op.ColumnName), r.alterColumnAction(op))
 	}
+	return nil
+}
+
+// writeAddIdentity renders ADD GENERATED ... AS IDENTITY with the identity
+// clause a column definition carries, its options as the operation holds them.
+func (r *Renderer) writeAddIdentity(table string, op *ast.AlterColumnOperation) error {
+	identity, err := r.renderIdentity(&ast.ColumnNode{
+		IdentityGeneration: op.IdentityGeneration,
+		IdentityStart:      op.IdentityStart,
+		IdentityIncrement:  op.IdentityIncrement,
+		IdentityOptions:    op.IdentityOptions,
+	})
+	if err != nil {
+		return fmt.Errorf("ALTER TABLE %s ALTER COLUMN %s: %w", table, op.ColumnName, err)
+	}
+	r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s ADD %s;", table, r.escapeIdentifier(op.ColumnName), identity)
+	return nil
 }
 
 // alterColumnAction spells the action of one ALTER COLUMN clause.

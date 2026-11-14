@@ -730,7 +730,8 @@ func appendFamilyStatement(
 
 // changeDeclared applies a statement that changes or removes an object an
 // earlier statement declared, rather than declaring one: ALTER TABLE, ALTER
-// INDEX, COMMENT ON and DROP. handled is false for any other statement.
+// INDEX, ALTER SEQUENCE, COMMENT ON and DROP. handled is false for any other
+// statement.
 func changeDeclared(
 	ctx context.Context, database *schemamodel.Database, document *Document, stmt ast.Node, sourcePlatform string,
 ) (handled bool, err error) {
@@ -755,6 +756,8 @@ func changeDeclared(
 		return true, refuseDrop(strings.ToUpper(node.Kind), node.Name)
 	case *ast.DropSequenceNode:
 		return true, refuseDrop("SEQUENCE", node.Name)
+	case *ast.AlterSequenceNode:
+		return true, applyAlterSequence(database, document, node, sourcePlatform)
 	case *ast.DropTypeNode:
 		return true, refuseDrop("TYPE", node.Name)
 	default:

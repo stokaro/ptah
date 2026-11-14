@@ -33,6 +33,12 @@ type targetGrammar struct {
 	// batches reports the descriptor's Scripts.BatchSeparator: a client sends a
 	// batch of statements, and a statement needs no semicolon after it.
 	batches bool
+	// ownedSequences is the descriptor's Conversion.OwnedSequences: a column
+	// owns a sequence, so ALTER SEQUENCE ... OWNED BY names one.
+	ownedSequences bool
+	// identityColumns is the descriptor's Comparison.IdentityColumns: ALTER
+	// COLUMN adds an identity, so ALTER COLUMN ... ADD GENERATED is read.
+	identityColumns bool
 }
 
 // targetGrammars derives each dialect's grammar once per registry. A parser is
@@ -48,6 +54,8 @@ var targetGrammars = descriptortable.New(func(described descriptor.Dialect) targ
 		family:             described.Family,
 		defaultSchema:      described.DefaultSchema,
 		batches:            described.Scripts.BatchSeparator != "",
+		ownedSequences:     described.Conversion.OwnedSequences,
+		identityColumns:    described.Comparison.IdentityColumns,
 	}
 })
 

@@ -1015,6 +1015,12 @@ func validateAlterColumnOperation(dialect string, operation *ast.AlterColumnOper
 		if strings.TrimSpace(operation.Type) == "" {
 			return invalid("SET DATA TYPE carries no type")
 		}
+	case ast.AlterColumnAddIdentity:
+		generation := strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(operation.IdentityGeneration), " ", "_"))
+		if generation != "ALWAYS" && generation != "BY_DEFAULT" {
+			return invalid(fmt.Sprintf("ADD GENERATED carries the generation %q, which is neither ALWAYS nor BY DEFAULT",
+				operation.IdentityGeneration))
+		}
 	case ast.AlterColumnDropDefault, ast.AlterColumnSetNotNull, ast.AlterColumnDropNotNull:
 	default:
 		return invalid(fmt.Sprintf("unknown action %q", operation.Action))

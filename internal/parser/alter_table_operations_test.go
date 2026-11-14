@@ -190,11 +190,6 @@ func TestParse_AlterTableOperations_FailurePath(t *testing.T) {
 			wantErr: `line \d+, column \d+: unsupported ALTER COLUMN a SET STATISTICS: a schema file may set a column's default, NOT NULL or type this way; declare anything else on the column itself`,
 		},
 		{
-			name: "identity added later", dialect: "postgres",
-			sql:     "ALTER TABLE t ALTER COLUMN a ADD GENERATED ALWAYS AS IDENTITY;",
-			wantErr: `line \d+, column \d+: unsupported ALTER COLUMN a ADD GENERATED: .*`,
-		},
-		{
 			name: "a collation in a type change", dialect: "postgres",
 			sql:     `ALTER TABLE t ALTER COLUMN a TYPE text COLLATE "C";`,
 			wantErr: `line \d+, column \d+: unsupported COLLATE in ALTER COLUMN a TYPE: declare the collation on the column itself`,

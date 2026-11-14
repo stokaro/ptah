@@ -36,6 +36,10 @@ type readingFacts struct {
 	// routines is the routine grammar the dialect writes its routines in,
 	// which says how a routine node's header converts.
 	routines string
+	// serialOwnsSequence is the descriptor's Comparison.SerialOwnsSequence: a
+	// column of a serial type draws from a sequence it owns; see
+	// [Document.foldColumnSequences].
+	serialOwnsSequence bool
 }
 
 // readingFactsCache keeps each dialect name's facts once read. A read asks
@@ -78,6 +82,7 @@ func factsOf(sourcePlatform string) readingFacts {
 		statements:          described.Statements,
 		grammarDrops:        described.Grammar.Forms.Drops,
 		routines:            described.Grammar.Routines.Body,
+		serialOwnsSequence:  described.Comparison.SerialOwnsSequence,
 	}
 	readingFactsCache.Store(sourcePlatform, facts)
 	return facts

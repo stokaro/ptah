@@ -202,6 +202,10 @@ const (
 	AlterColumnDropNotNull AlterColumnAction = "DROP NOT NULL"
 	// AlterColumnSetType changes the column's type to Type.
 	AlterColumnSetType AlterColumnAction = "SET DATA TYPE"
+	// AlterColumnAddIdentity makes the column an identity column, generated as
+	// IdentityGeneration says: PostgreSQL's ADD GENERATED ... AS IDENTITY,
+	// which pg_dump writes for every identity column.
+	AlterColumnAddIdentity AlterColumnAction = "ADD GENERATED"
 )
 
 // AlterColumnOperation is one action of ALTER TABLE ... ALTER [COLUMN] name:
@@ -233,6 +237,18 @@ type AlterColumnOperation struct {
 	// USING keyword, or empty. It says how existing rows are converted, which
 	// a desired schema does not describe.
 	Using string
+	// IdentityGeneration is the generation [AlterColumnAddIdentity] gives the
+	// column, ALWAYS or BY_DEFAULT, spelled as [ColumnNode.IdentityGeneration]
+	// is. It is empty for every other action.
+	IdentityGeneration string
+	// IdentityStart, IdentityIncrement and IdentityOptions are the sequence
+	// options of [AlterColumnAddIdentity], as [ColumnNode] carries the options
+	// of an identity declared on the column: the START WITH and INCREMENT BY
+	// values, and the text between the parentheses, kept as written. Each is
+	// empty where the statement does not state it.
+	IdentityStart     string
+	IdentityIncrement string
+	IdentityOptions   string
 }
 
 // Accept implements the Node interface for AlterColumnOperation.

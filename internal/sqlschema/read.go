@@ -248,6 +248,7 @@ func convertStatements(
 	if err := document.settleAttachedPartitions(&database); err != nil {
 		return schemamodel.Database{}, err
 	}
+	document.foldColumnSequences(&database, dialect)
 	if err := document.applyOwnedComments(ctx, &database, dialect, owners); err != nil {
 		return schemamodel.Database{}, err
 	}

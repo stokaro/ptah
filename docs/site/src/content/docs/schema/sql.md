@@ -531,14 +531,51 @@ of these kinds, such as `ALTER SCHEMA ... RENAME TO`, and a role missing after
 `OWNER TO` are refused by name. Every target other than PostgreSQL refuses the
 statement, because its server has no `OWNER TO`.
 
-A dump holds other statements the reader still refuses, each by name, so a
-dump with one of them does not read as it is:
+### Serial and identity columns
 
-- `ALTER SEQUENCE ... OWNED BY`, which `pg_dump` writes for the sequence of a
-  `serial` column;
-- `ALTER TABLE ... ALTER COLUMN ... ADD GENERATED ... AS IDENTITY`, which it
-  writes for an identity column;
-- `ALTER TABLE ... REPLICA IDENTITY`.
+`pg_dump` writes a `serial` column as four statements, and the reader reads
+them as the one column `id serial` declares:
+
+```sql
+CREATE TABLE public.orders (id integer NOT NULL);
+CREATE SEQUENCE public.orders_id_seq AS integer START WITH 1 INCREMENT BY 1 NO MINVALUE NO MAXVALUE CACHE 1;
+ALTER SEQUENCE public.orders_id_seq OWNED BY public.orders.id;
+ALTER TABLE ONLY public.orders ALTER COLUMN id SET DEFAULT nextval('public.orders_id_seq'::regclass);
+```
+
+The sequence is part of the column, as a read of the database reports it, so
+a plan from the dump creates no sequence the database already holds. The
+reader folds a sequence into its column only where `serial` builds it as the
+dump states it:
+
+- the column is `NOT NULL` or in the primary key, its type is `smallint`,
+  `integer` or `bigint`, and its default is `nextval` of the sequence it owns;
+- the sequence has the column's type, the name `<table>_<column>_seq`, the
+  options `serial` gives it and no comment.
+
+Any other sequence stays a sequence of its own, with its owner and its
+options: one whose increment was changed after the table was created, one with
+another name, or one with a comment. `ALTER SEQUENCE ... OWNED BY NONE` takes
+the owner away, and any other action of `ALTER SEQUENCE` is refused by name. On
+CockroachDB and YugabyteDB, the reader keeps the sequence as a sequence the
+column owns, and a plan against a database that holds it does not create it
+again.
+
+An identity column is the column, `NOT NULL`, and an `ALTER TABLE ... ALTER
+COLUMN ... ADD GENERATED ... AS IDENTITY` after it. The reader reads the
+statement as the same clause written on the column, with the generation and
+the options as the dump writes them. As for the clause on the column, a plan
+compares the generation with the database and not the options. It refuses the statement where the server
+refuses it: on a column that is an identity already, one with a default, a
+nullable one outside the primary key, and one of a type other than `smallint`,
+`integer` or `bigint`. CockroachDB reads the statement too; YugabyteDB refuses
+it.
+
+`ALTER TABLE ... REPLICA IDENTITY`, which `pg_dump` writes for a table whose
+replica identity is not the default, is refused by name. Ptah does not model a
+table's replica identity, and `pg_dump` has no option that leaves the
+statement out. Delete the statement from the dump, and set the replica
+identity in a migration where a database needs it.
 
 ## API export metadata
 
