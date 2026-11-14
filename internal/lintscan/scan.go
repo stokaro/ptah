@@ -44,6 +44,13 @@ type Mode struct {
 	dollarQuotes bool
 	// nestedComments lets block comments nest (PostgreSQL).
 	nestedComments bool
+	// escapeStrings reads E'...' as one string in which a backslash escapes
+	// the next character, for a dialect whose descriptor states it
+	// (descriptor.Lexical.EscapeStrings), the field the migrator's lexer
+	// reads too. Read as a word E and a standard string, E'a\';COMMIT;'
+	// ends at the escaped quote, and the COMMIT inside it splits off as a
+	// statement the server never runs.
+	escapeStrings bool
 	// yql reads the text with the YQL lexer of internal/lexer instead of
 	// this file's scanner (YDB). YQL's strings, names and comments share
 	// little with the other dialects -- a double-quoted "x" is a string,
@@ -84,7 +91,11 @@ type Mode struct {
 // The mode is the one the dialect's descriptor states as its lint scanner.
 func ForDialect(dialect string) Mode {
 	described, _ := platform.Lookup(dialect)
-	mode := Mode{dialect: dialect, batchSeparator: described.Scripts.BatchSeparator}
+	mode := Mode{
+		dialect:        dialect,
+		batchSeparator: described.Scripts.BatchSeparator,
+		escapeStrings:  described.Lexical.EscapeStrings,
+	}
 	switch described.Lint.Scanner {
 	case "hash":
 		mode.hashComments, mode.backslashEscapes, mode.execComments = true, true, true
@@ -170,6 +181,8 @@ func nextLintToken(input string, i int, mode Mode, execDepth int) (kind lintToke
 	switch {
 	case isSpaceByte(c):
 		return tokWhitespace, whitespaceEnd(input, i), execDepth
+	case mode.escapeStrings && (c == 'E' || c == 'e') && i+1 < len(input) && input[i+1] == '\'':
+		return tokString, quotedEnd(input, i+2, '\'', true), execDepth
 	case isWordByte(c):
 		return tokWord, wordEnd(input, i), execDepth
 	case c == '\'':

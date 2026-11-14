@@ -104,11 +104,21 @@ func HasWordSeq(w []string, seq ...string) bool {
 	return false
 }
 
+// StringLiteral reports whether a word is a string literal: 'text', or
+// E'text', the escape string of a dialect whose scanner reads one, which the
+// scanner keeps as one word.
+func StringLiteral(word string) bool {
+	if len(word) > 2 && (word[0] == 'E' || word[0] == 'e') && word[1] == '\'' {
+		word = word[1:]
+	}
+	return len(word) >= 2 && word[0] == '\'' && word[len(word)-1] == '\''
+}
+
 // IdentLike reports whether a word can name a column or table: a quoted
 // identifier, or a bare word starting with a letter, underscore, or digit.
-// Single-quoted string literals are values, never identifiers.
+// String literals are values, never identifiers.
 func IdentLike(word string) bool {
-	if word == "" {
+	if word == "" || StringLiteral(word) {
 		return false
 	}
 	switch word[0] {

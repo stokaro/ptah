@@ -90,3 +90,28 @@ func TestNormalizeIdent(t *testing.T) {
 		})
 	}
 }
+
+// A word is a string literal when the scanner kept a quoted string as it, an
+// escape string included, and a string literal never names a column or table.
+func TestStringLiteral(t *testing.T) {
+	for _, test := range []struct {
+		word          string
+		literal, name bool
+	}{
+		{"'a'", true, false},
+		{"''", true, false},
+		{`E'it\'s'`, true, false},
+		{"e'a'", true, false},
+		{"E", false, true},
+		{"E'", false, true},
+		{"users", false, true},
+		{`"users"`, false, true},
+		{"'", false, false},
+	} {
+		t.Run(test.word, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(lintkit.StringLiteral(test.word), qt.Equals, test.literal)
+			c.Assert(lintkit.IdentLike(test.word), qt.Equals, test.name)
+		})
+	}
+}

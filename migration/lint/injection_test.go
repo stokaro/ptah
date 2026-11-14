@@ -131,6 +131,11 @@ func TestSQLInjectionRule_StaysQuietWhereTheTextIsQuotedOrFixed(t *testing.T) {
 			sql:     "CREATE FUNCTION f(tbl text, v text) RETURNS void AS $$ BEGIN EXECUTE 'DELETE FROM ' || quote_ident(tbl) || ' WHERE a = ' || quote_literal(v); END $$ LANGUAGE plpgsql;",
 		},
 		{
+			name:    "an escape string literal",
+			dialect: "postgres",
+			sql:     `CREATE FUNCTION f() RETURNS void AS $$ BEGIN EXECUTE 'DELETE FROM t WHERE a = ' || E'it\'s'; END $$ LANGUAGE plpgsql;`,
+		},
+		{
 			name:    "format() with %I and %L only",
 			dialect: "postgres",
 			sql:     "CREATE FUNCTION f(tbl text, v text) RETURNS void AS $$ BEGIN EXECUTE format('DELETE FROM %I WHERE a = %L AND b = 100%%', tbl, v); END $$ LANGUAGE plpgsql;",
