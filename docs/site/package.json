@@ -97,7 +97,7 @@
     "diagrams:docker": "node scripts/render-journey-diagrams-linux.mjs"
   },
   "dependencies": {
-    "@astrojs/starlight": "0.43.0",
+    "@astrojs/starlight": "0.43.1",
     "@astrojs/starlight-tailwind": "5.0.0",
     "@tailwindcss/vite": "4.3.5",
     "astro": "7.4.12",
