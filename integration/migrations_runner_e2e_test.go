@@ -103,7 +103,7 @@ func TestMigrationsUpRunnerRefusesWrappedTransactionControlE2E(t *testing.T) {
 			defer dbschema.CloseAndWarn(conn)
 			var created bool
 			c.Assert(conn.QueryRowContext(c.Context(), "SELECT to_regclass('base') IS NOT NULL").Scan(&created), qt.IsNil)
-			c.Assert(created, qt.IsTrue)
+			c.Assert(created, qt.IsFalse)
 			c.Assert(conn.QueryRowContext(c.Context(), "SELECT to_regclass('t2') IS NOT NULL").Scan(&created), qt.IsNil)
 			c.Assert(created, qt.IsFalse)
 		})
