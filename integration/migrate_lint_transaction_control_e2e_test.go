@@ -167,7 +167,9 @@ func TestMigrateLintTransactionControlE2E_AFileWithoutControlIsClean(t *testing.
 // body's own transactions keeps the transaction around each file, in the up
 // and the down half alike, so the up of a file holding a block is refused, and
 // so is the rollback of a down file holding one, under the same runner. Lint
-// reports both before an apply or a rollback does.
+// reports both before an apply or a rollback does. Version 1 is applied on its
+// own first, because the full run refuses before any file runs and the
+// rollback needs version 1 in place.
 func TestMigrateLintTransactionControlE2E_NativeGolangMigrateDirectory(t *testing.T) {
 	c := qt.New(t)
 	root := c.TempDir()
