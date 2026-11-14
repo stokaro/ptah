@@ -1,6 +1,10 @@
 package migrator
 
-import "fmt"
+import (
+	"fmt"
+
+	"ptah.run/internal/txcontrol"
+)
 
 func (m *Migrator) validatedUpTransactionMode(migration *Migration, mode MigrationTxMode) (ownTransactionRun, error) {
 	own, err := m.upOwnTransactionMode(migration, mode)
@@ -26,7 +30,7 @@ func (m *Migrator) validateManagedTransactionSQL(
 	}
 	statements := splitSQLStatementsForConnection(m.conn, migrationSQLForDirection(migration, direction))
 	for i, statement := range statements {
-		if !isTransactionControlStatement(statement, m.connectionDialect()) {
+		if !txcontrol.Controls(statement, m.connectionDialect()) {
 			continue
 		}
 		return fmt.Errorf(

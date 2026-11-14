@@ -112,6 +112,7 @@ func excludeDatabase(
 	// left, and that answer has to exist before the first object is judged.
 	filtered.Schemas = state.filterSchemas(filtered.Schemas)
 	filtered.Tables = state.filterTables(filtered.Tables)
+	state.excludeObservedRowSecurity(filtered.Tables)
 	filtered.FeatureObjects, filtered.FeatureCoverage, err = bindings.Select(filtered.FeatureObjects, filtered.FeatureCoverage, func(schema, table string) bool {
 		return !state.tableExcluded(schema, table)
 	}, state.vocabulary.independentKinds()...)
@@ -265,6 +266,7 @@ func excludeGenerated(
 	filtered.Triggers = state.filterGeneratedTriggers(tableByStruct, filtered.Triggers)
 	filtered.RLSPolicies = state.filterGeneratedRLSPolicies(tableByStruct, filtered.RLSPolicies)
 	filtered.RLSEnabledTables = state.filterGeneratedRLSEnabledTables(tableByStruct, filtered.RLSEnabledTables)
+	state.excludeDesiredRowSecurity(filtered)
 	filtered.Roles = state.filterGeneratedRoles(filtered.Roles)
 	excluded := excludedObjects(schema.FeatureObjects, filtered.FeatureObjects)
 	filtered.Grants = state.filterGeneratedGrants(filtered.Grants, excluded)

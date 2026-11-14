@@ -21,9 +21,11 @@ func ExampleService() {
 
 	request := lintext.CheckRequest{
 		Target: lintext.Target{Name: "postgres"},
-		Codes:  []string{"TX201"},
+		Codes:  []string{"TX101"},
 		Files: []lintext.File{{Name: "0000000001_add.up.sql", Version: 1, Up: true, Statements: []lintext.Statement{
-			{Start: 0, End: 5, Line: 1, SQL: "BEGIN", Words: []string{"BEGIN"}},
+			{Start: 0, End: 24, Line: 1, SQL: "CREATE TABLE t (id int);", Words: []string{"CREATE", "TABLE", "t", "(", "id", "int", ")"}},
+			{Start: 25, End: 65, Line: 2, SQL: "CREATE INDEX CONCURRENTLY i ON t (id);",
+				Words: []string{"CREATE", "INDEX", "CONCURRENTLY", "i", "ON", "t", "(", "id", ")"}},
 		}}},
 	}
 	result, err := pglint.Service{}.CheckMigrations(context.Background(), request)
@@ -36,6 +38,5 @@ func ExampleService() {
 	}
 	// Output:
 	// TX101 warning transactional and non-transactional statements mixed
-	// TX201 warning transaction block embedded in migration
-	// TX201 0000000001_add.up.sql statement 0
+	// TX101 0000000001_add.up.sql statement 1
 }

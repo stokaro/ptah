@@ -14,8 +14,15 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/dbschema"
+	"ptah.run/internal/atlascompatpolicy"
 	"ptah.run/internal/atlasmigrate"
 )
+
+func TestMigrateDiffCommand_StrictModeOmitsExcludeFlag(t *testing.T) {
+	c := qt.New(t)
+	cmd := newAtlasMigrateDiffCommandWithPolicyAndRunner(atlascompatpolicy.StrictCE(), atlasmigrate.GenerateDiff)
+	c.Assert(cmd.Flags().Lookup("exclude"), qt.IsNil)
+}
 
 func TestMigrateDiffCommand_RoutesDiagnosticsToCobraStderr(t *testing.T) {
 	c := qt.New(t)
@@ -35,6 +42,7 @@ func TestMigrateDiffCommand_RoutesDiagnosticsToCobraStderr(t *testing.T) {
 		opts atlasmigrate.DiffOptions,
 	) (atlasmigrate.DiffResult, error) {
 		called++
+		c.Assert(opts.Exclude, qt.DeepEquals, []string{"*[type=policy]"})
 		_, err := fmt.Fprint(opts.Diagnostics, "migrate diff diagnostic\n")
 		return atlasmigrate.DiffResult{Synced: true}, err
 	})
@@ -46,6 +54,7 @@ func TestMigrateDiffCommand_RoutesDiagnosticsToCobraStderr(t *testing.T) {
 		"--dev-url", "sqlite://" + filepath.Join(dir, "dev.db"),
 		"--dir", "file://" + migrationsDir,
 		"--to", "file://" + desiredPath,
+		"--exclude", "*[type=policy]",
 		"diagnostics",
 	})
 

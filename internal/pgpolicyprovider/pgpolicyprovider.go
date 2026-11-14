@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/selectext"
 	"ptah.run/core/sqlext"
 	"ptah.run/core/yamlext"
 	"ptah.run/engine"
@@ -38,6 +39,7 @@ func Provider() engine.Provider {
 	provider := engine.Provider{
 		ID:          pgpolicy.Owner,
 		Codecs:      slices.Concat(pgpolicy.Codecs(), pgpolicy.ChangeCodecs(), pgpolicy.OperationCodecs()),
+		Selections:  []selectext.Extension{pgpolicy.Selections()},
 		Annotations: []annotation.Extension{pgpolicysource.Annotations()},
 		YAML:        []yamlext.Extension{pgpolicysource.YAML()},
 		HCL:         []hclext.Extension{pgpolicysource.HCL()},

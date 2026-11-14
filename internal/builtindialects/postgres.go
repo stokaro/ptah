@@ -135,6 +135,7 @@ func postgres() descriptor.Dialect {
 		DevRealm: descriptor.DevRealm{
 			Identity:        "query",
 			Query:           "SELECT current_database()",
+			ClusterQuery:    "SELECT system_identifier::text FROM pg_control_system()",
 			ScratchDatabase: true,
 			DropSchema:      "DROP SCHEMA IF EXISTS %s CASCADE",
 		},

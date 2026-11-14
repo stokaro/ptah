@@ -18,10 +18,37 @@ import (
 
 // Services returns SQL Server's services.
 func Services() dburlext.Services {
-	return dburlext.Services{Dialects: []string{platform.SQLServer}, Endpoints: endpoints{}}
+	return dburlext.Services{Dialects: []string{platform.SQLServer}, Endpoints: endpoints{}, Rename: renamer{}}
 }
 
 type endpoints struct{}
+
+type renamer struct{}
+
+// Rename changes the database query parameter. The URL path names an instance,
+// so replacing it would leave the connection on the original database.
+func (renamer) Rename(parsed *url.URL, name string) (string, error) {
+	changed := *parsed
+	var pairs []string
+	if changed.RawQuery != "" {
+		pairs = strings.Split(changed.RawQuery, "&")
+	}
+	found := false
+	for i, pair := range pairs {
+		rawKey, _, _ := strings.Cut(pair, "=")
+		key, err := url.QueryUnescape(rawKey)
+		if err != nil || !strings.EqualFold(key, "database") {
+			continue
+		}
+		pairs[i] = rawKey + "=" + url.QueryEscape(name)
+		found = true
+	}
+	if !found {
+		pairs = append(pairs, "database="+url.QueryEscape(name))
+	}
+	changed.RawQuery = strings.Join(pairs, "&")
+	return changed.String(), nil
+}
 
 // Select reads the URL under the dialect's name, the scheme msdsn reads, so
 // an mssql:// URL is read as the sqlserver:// URL it is. An instance name is

@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 
+	"ptah.run/internal/connector"
 	"ptah.run/internal/schemaselection"
 )
 
@@ -55,7 +56,7 @@ func reconnectCarryingSearchPath(
 		"selection", schemaselection.FromURL(dbURL).Raw,
 	)
 
-	db, err := sql.Open(driverName, convertPostgresWireURL(retryURL))
+	db, err := connector.OpenDB(driverName, convertPostgresWireURL(retryURL))
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database connection: %w", err)
 	}

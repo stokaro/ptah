@@ -15,11 +15,11 @@ import (
 // named engines, written out as they stood when these services replaced them:
 // networkDatabaseIdentity read the PostgreSQL family with pgconn, SQL Server
 // with msdsn and ClickHouse with clickhouse-go; SameDatabaseEndpoint compared
-// SQLite by file. No built-in engine renames the database of a URL.
+// SQLite by file. SQL Server's database lives in the URL query, not the path.
 var (
 	switchEndpoints = []string{"postgres", "cockroachdb", "yugabytedb", "sqlserver", "clickhouse"}
 	switchDatabases = []string{"sqlite"}
-	switchRename    []string
+	switchRename    = []string{"sqlserver"}
 )
 
 func TestLookup_ServesTheArmsOfTheSwitchesItReplaces(t *testing.T) {

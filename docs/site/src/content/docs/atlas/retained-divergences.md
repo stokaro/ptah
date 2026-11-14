@@ -11,7 +11,7 @@ sourceOfTruth:
   - "internal/cli/atlas"
   - "internal/atlascompatpolicy"
 generated: false
-lastVerified: "2026-11-04"
+lastVerified: "2026-11-13"
 evidence:
   - "internal/cli/atlas/compat_1241_retained_divergence_test.go"
   - "stokaro/ptah#1241"
@@ -145,6 +145,7 @@ own measurement conditions.
 | [A YDB database URL](#a-ydb-database-url) | serves it through the YDB provider in the default profile, and refuses it in the binary's words under `PTAH_ATLAS_STRICT_COMPAT=1` | has no YDB driver: `sql/sqlclient: unknown driver "ydb"` |
 | [A realm beside one database on a dev server](#a-realm-beside-one-database-on-a-dev-server) | refuses the pair on `schema diff`, with the binary's own `schema apply` sentence for it | plans databases the one-database side never read |
 | [A golang-migrate file that runs its own transaction](#a-golang-migrate-file-that-runs-its-own-transaction) | runs it as golang-migrate does, outside the migrator's transaction, and exits `0` | nests it in a transaction of its own and exits `1` with `pq: unexpected transaction status idle` |
+| [A `txmode none` file that controls its own transaction](#a-txmode-none-file-that-controls-its-own-transaction) | lint reports `TX201` for each such block, and apply refuses the file before running a statement, exit `1` | lint reports nothing, and apply runs the file as written, exit `0` |
 | [A statement the bundled SQLite refuses](#a-statement-the-bundled-sqlite-refuses) | replays on the SQLite it bundles, reports the refusal as a replay error of the file, and exits `1` | replays on an older SQLite that accepts the statement, and lints the selection |
 
 ## A `--config` selection naming more than one file
@@ -1220,6 +1221,56 @@ binaries; [Transactions in a golang-migrate directory](../migrate-commands/#tran
 has the rules.
 
 **Evidence.** [`stokaro/ptah#4962`](https://github.com/stokaro/ptah/issues/4962)
+
+## A `txmode none` file that controls its own transaction
+
+**Type.** Deliberate divergence
+
+**Current boundary.** A migration that carries `-- atlas:txmode none` and holds
+its own `BEGIN` and `COMMIT` is refused by `ptah-compat migrate apply`, and
+`ptah-compat migrate lint` reports it as `TX201`. Without a transaction, Ptah
+records the progress of each statement in the revision table. A `BEGIN` in the
+file would put that record outside the file's transaction, so the migrator
+refuses any statement that controls transaction state, on every engine and in
+the up and the down half. The pinned community binary v1.3.0 runs the file as
+written and lints it clean. The lint rule reads the same statements the
+migrator refuses, so a directory that lints without a `TX201` finding is not
+one the migrator stops at for this reason.
+
+Measured on 2026-11-13 over SQLite, with `1.sql` holding
+`CREATE TABLE users (id int);` and `2.sql` holding the lines below, each exit
+status read from an unpiped invocation:
+
+```text
+-- atlas:txmode none
+
+BEGIN;
+INSERT INTO users VALUES (1);
+COMMIT;
+```
+
+| Run | Binary | `ptah-compat` |
+| --- | --- | --- |
+| `migrate lint --dev-url 'sqlite://dev?mode=memory' --latest 1` | `1 version ok`, no diagnostics, exit `0` | `L3 [TX201]` as a warning, `1 version with warnings`, exit `0` |
+| `migrate apply --url sqlite://t.db` | applies both files, exit `0` | stops at migration `2` with `cannot run up statement 1 without a transaction because "BEGIN" controls transaction state`, exit `1` |
+
+The same file without the directive runs inside the transaction each migrator
+opens around a file. The binary's lint is clean and its apply fails with
+`cannot start a transaction within a transaction`; `ptah-compat migrate apply`
+refuses it with `cannot run tx-mode file up statement 1 because it controls
+transaction state`, and a lint that replays it on a dev database fails the same
+way as the apply.
+
+The refusal is stricter than the binary on purpose. A file that runs half of
+its own transaction and then fails leaves the database and the revision table
+disagreeing about what was applied, which is the shape the rule exists to keep
+out. The way forward is to remove the transaction control, or to run the file
+with a runner that opens its own transactions, as
+[A golang-migrate file that runs its own transaction](#a-golang-migrate-file-that-runs-its-own-transaction)
+describes.
+
+**Evidence.** `integration/migrate_lint_transaction_control_e2e_test.go`,
+[`stokaro/ptah#6004`](https://github.com/stokaro/ptah/issues/6004)
 
 ## A statement the bundled SQLite refuses
 

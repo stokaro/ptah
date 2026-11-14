@@ -414,6 +414,21 @@ func MayAddressSameDatabase(left, right string) (bool, error) {
 	return strings.EqualFold(leftIdentity.database, rightIdentity.database), nil
 }
 
+// MayAddressSameDatabaseBeforeLiveCheck is the URL guard for callers that
+// compare both live connections before resetting a dev or shadow database.
+// Databases whose dialect describes a cluster query may have the same name
+// on independent clusters; their cluster identifiers decide that live.
+func MayAddressSameDatabaseBeforeLiveCheck(left, right string) (bool, error) {
+	dialect, err := DialectFromURL(left)
+	if err != nil {
+		return false, err
+	}
+	if described, ok := platform.Lookup(dialect); ok && described.DevRealm.ClusterQuery != "" {
+		return SameDatabaseEndpoint(left, right)
+	}
+	return MayAddressSameDatabase(left, right)
+}
+
 type databaseIdentity struct {
 	dialect  string
 	endpoint string

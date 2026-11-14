@@ -11,7 +11,7 @@ import (
 
 // MayAddressSameDatabase reports whether candidate, a shadow or dev database
 // URL, may name the database target is connected to, as
-// [atlasurl.MayAddressSameDatabase] reads two URLs.
+// [atlasurl.MayAddressSameDatabaseBeforeLiveCheck] reads two URLs.
 //
 // A URL an executable provider serves is not read: the provider owns the
 // grammar of its addresses, and the host reads none of them. Such a pair
@@ -21,7 +21,7 @@ func MayAddressSameDatabase(ctx context.Context, target *dbschema.DatabaseConnec
 	if !target.Info().Provider.IsZero() || providerServes(ctx, candidate) {
 		return false, nil
 	}
-	return atlasurl.MayAddressSameDatabase(target.Info().URL, candidate)
+	return atlasurl.MayAddressSameDatabaseBeforeLiveCheck(target.Info().URL, candidate)
 }
 
 // providerServes reports whether an executable provider serves the scheme of

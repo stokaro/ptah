@@ -32,10 +32,11 @@ func lintPair(c *qt.C, upSQL, downSQL string) []string {
 // rollback is normally made of -- including the one Ptah generates itself
 // whenever the forward statement was not a concurrent build -- was reported as
 // clean (stokaro/ptah#997). PG106 now opts in, and the opt-in is what is under
-// test: the second and third rows are the discriminating controls. An
-// implementation that simply ran every statement rule on every file would
-// report PG101 for the down file's CREATE INDEX and TX201 for its BEGIN, and
-// both rows would fail.
+// test: the second row is the discriminating control. An implementation that
+// simply ran every statement rule on every file would report PG101 for the
+// down file's CREATE INDEX, and the row would fail. TX201 reads the rollback
+// half in the third row because the migrator refuses transaction control in a
+// down body as it does in an up body.
 func TestLintFS_DownDirectionHazards(t *testing.T) {
 	tests := []struct {
 		name string
@@ -59,10 +60,10 @@ func TestLintFS_DownDirectionHazards(t *testing.T) {
 			want: make([]string, 0),
 		},
 		{
-			name: "a second rule that did not opt in stays silent on the down file",
+			name: "transaction control in the rollback is reported because the migrator refuses it",
 			up:   "ALTER TABLE t ADD COLUMN c INT;\n",
 			down: "BEGIN;\nALTER TABLE t DROP COLUMN c;\nCOMMIT;\n",
-			want: make([]string, 0),
+			want: []string{"TX201 0000000001_x.down.sql"},
 		},
 		{
 			name: "a concurrent rollback without the marker cannot execute",

@@ -6,6 +6,7 @@ import (
 
 	"ptah.run/internal/ddltx"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/txcontrol"
 )
 
 // implicitCommitDialect reports whether the server commits an open transaction
@@ -115,7 +116,7 @@ func (m *Migrator) validateTransactionalProgressSQL(
 				i+1,
 			)
 		}
-		if isTransactionControlStatement(statement, m.connectionDialect()) {
+		if txcontrol.Controls(statement, m.connectionDialect()) {
 			return fmt.Errorf(
 				"migration %d cannot run tx-mode file statement %d because it controls transaction state; "+
 					"remove the transaction control and let Ptah manage the file transaction",
