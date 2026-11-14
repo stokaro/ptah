@@ -2,6 +2,7 @@ package migratetests_test
 
 import (
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -35,10 +36,15 @@ import (
 //	V01          V2               0, executed                         executed
 //	V2, V10      (none)           0, no pending files                 no-op
 //
-// Every refusing row above exited 0 here before the change and executed the
-// file — that is the defect, and it is what those rows print if the change is
-// reverted. The executing rows are green either way: their job is to fail if
-// the new comparison starts refusing ordinary sequences.
+// Each refusing row's error is the pinned binary's line byte for byte, such
+// as `migration file V10__sq10.sql was added out of order. See:
+// https://atlasgo.io/versioned/apply#non-linear-error`, which names the file
+// as the directory holds it. The one row whose named set differs says so.
+//
+// Without the source-order comparison every refusing row above exits 0 and
+// executes the file, which is the defect those rows exist to catch. The
+// executing rows are green either way: their job is to fail if the comparison
+// starts refusing ordinary sequences.
 //
 // The last two rows are the surviving-baseline pair, and they are the one place
 // this file diverges from the pinned binary rather than matching it:
@@ -80,18 +86,15 @@ type flywaySourceOrderRow struct {
 }
 
 func TestCompatMigrateApplyFlywaySourceVersionOrder(t *testing.T) {
-	// refused asserts the refusal names both the mark it compared against and
-	// the migration it refused, by SOURCE version, and that the listed tables
-	// are exactly the ones the first apply left — nothing ran, because the
-	// refusal is raised while the migration set is selected.
-	refused := func(tables []string, sourceVersions ...string) func(*qt.C, string, flywaySourceOrderOutput) {
+	// refused asserts the refusal is the pinned binary's line for the file it
+	// refused, named as the directory holds it, and that the listed tables are
+	// exactly the ones the first apply left — nothing ran, because the refusal
+	// is raised while the migration set is selected.
+	refused := func(tables []string, file string) func(*qt.C, string, flywaySourceOrderOutput) {
 		return func(c *qt.C, dbPath string, out flywaySourceOrderOutput) {
-			c.Assert(out.err, qt.IsNotNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", out.stdout, out.stderr))
-			c.Assert(out.text(), qt.Contains, "out-of-order pending migrations for current version")
-			for _, source := range sourceVersions {
-				c.Assert(out.text(), qt.Contains, `"`+source+`"`)
-			}
-			c.Assert(out.text(), qt.Not(qt.Contains), "461168")
+			c.Assert(out.err, qt.ErrorMatches, regexp.QuoteMeta("migration file "+file+
+				" was added out of order. See: https://atlasgo.io/versioned/apply#non-linear-error"))
+			c.Assert(out.stdout, qt.Equals, "")
 			c.Assert(userTables(c, dbPath), qt.DeepEquals, tables)
 		}
 	}
@@ -110,7 +113,7 @@ func TestCompatMigrateApplyFlywaySourceVersionOrder(t *testing.T) {
 			name:    "a tenth migration added under an applied second",
 			applied: []string{"V2__sq2.sql"},
 			added:   []string{"V10__sq10.sql"},
-			assert:  refused([]string{"sq2"}, "2", "10"),
+			assert:  refused([]string{"sq2"}, "V10__sq10.sql"),
 		},
 		{
 			// Reverted: exit 0, tables sq2 and sq10. Separates "two digits" from
@@ -119,7 +122,7 @@ func TestCompatMigrateApplyFlywaySourceVersionOrder(t *testing.T) {
 			name:    "a tenth migration added under an applied ninth",
 			applied: []string{"V9__sq2.sql"},
 			added:   []string{"V10__sq10.sql"},
-			assert:  refused([]string{"sq2"}, "9", "10"),
+			assert:  refused([]string{"sq2"}, "V10__sq10.sql"),
 		},
 		{
 			// Reverted: exit 0, tables sq2 and sq100. Three digits reach the
@@ -127,7 +130,7 @@ func TestCompatMigrateApplyFlywaySourceVersionOrder(t *testing.T) {
 			name:    "a hundredth migration added under an applied second",
 			applied: []string{"V2__sq2.sql"},
 			added:   []string{"V100__sq100.sql"},
-			assert:  refused([]string{"sq2"}, "2", "100"),
+			assert:  refused([]string{"sq2"}, "V100__sq100.sql"),
 		},
 		{
 			// Atlas CE gives every repeatable the empty version string, which
@@ -138,7 +141,7 @@ func TestCompatMigrateApplyFlywaySourceVersionOrder(t *testing.T) {
 			name:    "a repeatable added to recorded history",
 			applied: []string{"V2__sq2.sql"},
 			added:   []string{"R__sqr.sql"},
-			assert:  refused([]string{"sq2"}, "2", ""),
+			assert:  refused([]string{"sq2"}, "R__sqr.sql"),
 		},
 		{
 			// The token is Atlas CE's version STRING for the file, not the
@@ -150,7 +153,7 @@ func TestCompatMigrateApplyFlywaySourceVersionOrder(t *testing.T) {
 			name:    "a repeatable whose own token sorts high is still refused",
 			applied: []string{"V2__sq2.sql"},
 			added:   []string{"R9__sqr.sql"},
-			assert:  refused([]string{"sq2"}, "2", ""),
+			assert:  refused([]string{"sq2"}, "R9__sqr.sql"),
 		},
 		{
 			// The mark is the highest applied TOKEN, not the token of the
@@ -163,7 +166,7 @@ func TestCompatMigrateApplyFlywaySourceVersionOrder(t *testing.T) {
 			name:    "a fifteenth migration under applied second and tenth",
 			applied: []string{"V2__sq2.sql", "V10__sq10.sql"},
 			added:   []string{"V15__sq15.sql"},
-			assert:  refused([]string{"sq10", "sq2"}, "10", "15"),
+			assert:  refused([]string{"sq10", "sq2"}, "V15__sq15.sql"),
 		},
 		{
 			// The control for the row above: same applied pair, and "20" sorts
@@ -182,12 +185,7 @@ func TestCompatMigrateApplyFlywaySourceVersionOrder(t *testing.T) {
 			name:    "an ordinary migration under an applied two-digit version",
 			applied: []string{"V2__sq2.sql", "V10__sq10.sql"},
 			added:   []string{"V3__sq3.sql"},
-			assert: func(c *qt.C, dbPath string, out flywaySourceOrderOutput) {
-				c.Assert(out.err, qt.IsNotNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", out.stdout, out.stderr))
-				c.Assert(out.text(), qt.Contains, `"3"`)
-				c.Assert(out.text(), qt.Not(qt.Contains), "461168")
-				c.Assert(userTables(c, dbPath), qt.DeepEquals, []string{"sq10", "sq2"})
-			},
+			assert:  refused([]string{"sq10", "sq2"}, "V3__sq3.sql"),
 		},
 		{
 			// Control. Reverted: green, unchanged — its job is to fail if the
@@ -269,13 +267,13 @@ func TestCompatMigrateApplyFlywaySourceVersionOrder(t *testing.T) {
 			applied: []string{"V2__sq2.sql"},
 			added:   []string{"V10__sq10.sql"},
 			args:    []string{"--dry-run"},
-			assert:  refused([]string{"sq2"}, "2", "10"),
+			assert:  refused([]string{"sq2"}, "V10__sq10.sql"),
 		},
 		{
 			// THE MARK SURVIVES THE SQUASH. B3 retires V2__sq2.sql from the
 			// covered set, and with it the only token any applied version had.
-			// The comparison then has no mark at all and passes everything —
-			// which is how this exact input exited 0 here while the pinned
+			// Without a recovered mark the comparison has none at all and
+			// passes everything, so this exact input exits 0 while the pinned
 			// binary exits 1 with `migration files B3__sqb3.sql, R__sqr.sql
 			// were added out of order`. Nine such cells were measured across
 			// baseline-plus-repeatable shapes, all of them compat looser than
@@ -285,13 +283,15 @@ func TestCompatMigrateApplyFlywaySourceVersionOrder(t *testing.T) {
 			// version 9223372036854775807 with two migrations, tables sq2,
 			// sqb3 and sqr.
 			//
-			// The pinned binary names both added files; this names only the
-			// repeatable, because B3 is a surviving baseline and exempt. Exit
-			// code and executed set match; the named set is narrower.
+			// The pinned binary names both added files, `migration files
+			// B3__sqb3.sql, R__sqr.sql were added out of order`; this names
+			// only the repeatable, because B3 is a surviving baseline and
+			// exempt. Exit code and executed set match; the named set is
+			// narrower.
 			name:    "a repeatable added beside a baseline that squashes the applied migration",
 			applied: []string{"V2__sq2.sql"},
 			added:   []string{"B3__sqb3.sql", "R__sqr.sql"},
-			assert:  refused([]string{"sq2"}, "2", ""),
+			assert:  refused([]string{"sq2"}, "R__sqr.sql"),
 		},
 		{
 			// The control for the row above, and the one that keeps the
@@ -335,7 +335,7 @@ func TestCompatMigrateApplyFlywaySourceVersionOrder(t *testing.T) {
 			assert: func(c *qt.C, dbPath string, out flywaySourceOrderOutput) {
 				c.Assert(out.err, qt.IsNotNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", out.stdout, out.stderr))
 				c.Assert(out.text(), qt.Contains, "is a Flyway baseline and this database already has migration history")
-				c.Assert(out.text(), qt.Not(qt.Contains), "out-of-order pending migrations")
+				c.Assert(out.text(), qt.Not(qt.Contains), "was added out of order")
 				c.Assert(userTables(c, dbPath), qt.DeepEquals, []string{"sq2"})
 			},
 		},

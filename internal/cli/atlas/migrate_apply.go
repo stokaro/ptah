@@ -418,6 +418,27 @@ func runAtlasMigrateApplyTarget(
 		},
 	)
 	if err != nil {
+		// The community binary refuses an out-of-order file before it runs
+		// anything and writes no --format report for it: the refusal goes to
+		// stderr alone, with or without --format.
+		outOfOrder, nameErr := atlasreport.NewMigrateApplyOutOfOrderError(err, report.fs, report.files)
+		if outOfOrder != nil {
+			return formatOutput, outOfOrder
+		}
+		applyErr := atlasMigrateApplyExactIdentityError(
+			err,
+			result.SelectedVersions,
+			result.SelectedKeys,
+			result.Migrations,
+		)
+		if nameErr != nil {
+			return formatOutput, errors.Join(applyErr, nameErr)
+		}
+		// Every other failure is reported inside the --format report. That
+		// includes the refusals Ptah makes before a file's first statement,
+		// such as VACUUM inside a transaction: the community binary sends that
+		// file and reports the database's answer in the document, so the
+		// document still arrives, with Ptah's refusal and no statement in it.
 		if formatOutput && result.ApplyError != nil {
 			data := atlasMigrateApplyReportData(opts, report, conn, result)
 			writeErr := atlasmigratereport.WriteApplyFormat(cmd.OutOrStdout(), opts.format, data)
@@ -429,12 +450,6 @@ func runAtlasMigrateApplyTarget(
 			// bypasses the generic command diagnostic without losing exit status.
 			return formatOutput, exitcode.New(atlasErrorExitCode, err)
 		}
-		applyErr := atlasMigrateApplyExactIdentityError(
-			err,
-			result.SelectedVersions,
-			result.SelectedKeys,
-			result.Migrations,
-		)
 		// The default report describes a run that reached its migrations,
 		// and the error line still follows it on stderr, as on the community
 		// binary. A run refused before its first migration prints the line
@@ -553,7 +568,7 @@ func atlasMigrateApplyExactIdentityError(
 	}
 	return remapAtlasExactIdentityError(
 		err,
-		atlasMigrateApplyRevisionIdentities(versions, keys, migrations),
+		atlasreport.MigrateApplyRevisionIdentities(versions, keys, migrations),
 	)
 }
 

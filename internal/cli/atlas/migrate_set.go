@@ -12,6 +12,7 @@ import (
 	"ptah.run/internal/atlasargs"
 	"ptah.run/internal/atlasmigrate"
 	"ptah.run/internal/atlasmigrateimport"
+	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/revisiontable"
@@ -330,7 +331,7 @@ func writeAtlasMigrateSetResult(
 	if _, err := fmt.Fprintf(
 		out,
 		"Current version is %s (%s):\n\n",
-		atlasExactIdentityLabel(tokens.render(result.CurrentVersion)),
+		atlasreport.RevisionIdentityLabel(tokens.render(result.CurrentVersion)),
 		strings.Join(changes, ", "),
 	); err != nil {
 		return fmt.Errorf("write migrate set summary: %w", err)
@@ -361,7 +362,7 @@ func writeAtlasMigrateSetRevision(
 	if version == "" {
 		version = tokens.render(revision.Version)
 	}
-	version = atlasExactIdentityLabel(version)
+	version = atlasreport.RevisionIdentityLabel(version)
 	if revision.Description == "" {
 		if _, err := fmt.Fprintf(out, "  %s %s\n", action, version); err != nil {
 			return fmt.Errorf("write migrate set revision: %w", err)

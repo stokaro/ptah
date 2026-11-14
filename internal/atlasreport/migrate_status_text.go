@@ -146,8 +146,6 @@ func migrateStatusPendingField(report MigrateStatus) string {
 func writeMigrateStatusOutOfOrder(w io.Writer, report MigrateStatus) {
 	for _, file := range report.OutOfOrder {
 		fmt.Fprintln(w)
-		fmt.Fprintf(w,
-			"  ERROR: migration file %s was added out of order. See: https://atlasgo.io/versioned/apply#non-linear-error\n",
-			file.Name)
+		fmt.Fprintf(w, "  ERROR: migration file %s was added out of order. See: %s\n", file.Name, atlasNonLinearErrorDocs)
 	}
 }

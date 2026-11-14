@@ -11,7 +11,7 @@ sourceOfTruth:
   - "internal/cli/atlas"
   - "internal/atlascompatpolicy"
 generated: false
-lastVerified: "2026-11-13"
+lastVerified: "2026-11-14"
 evidence:
   - "internal/cli/atlas/compat_1241_retained_divergence_test.go"
   - "stokaro/ptah#1241"
@@ -119,7 +119,8 @@ own measurement conditions.
 | --- | --- | --- |
 | [A trailing positional argument](#a-trailing-positional-argument) | refuses one on a verb that defines none, naming the flag the value belongs to | accepts it and discards it without a word |
 | [An edited already-applied migration file](#an-edited-already-applied-migration-file) | compares each applied migration against the checksum recorded when it ran, and refuses on a mismatch | records the same value and never compares it |
-| [A prefix migration inserted below the oldest applied revision](#a-prefix-migration-inserted-below-the-oldest-applied-revision) | refuses at the default `--exec-order linear` and names both ways forward | exits `0` with `No migration files to execute`, saying nothing about the file it passed over |
+| [A prefix migration inserted below the oldest applied revision](#a-prefix-migration-inserted-below-the-oldest-applied-revision) | refuses at the default `--exec-order linear` with the binary's own out-of-order line | exits `0` with `No migration files to execute`, saying nothing about the file it passed over |
+| [A file `--exec-order linear-skip` leaves pending](#a-file---exec-order-linear-skip-leaves-pending) | writes one warning per skipped file on stderr | skips it without a word |
 | [A dirty revision left by a non-transactional body](#a-dirty-revision-left-by-a-non-transactional-body) | discards the revision row only where it observed the rollback, so `--tx-mode none` needs `--allow-dirty` | keeps the row in both cases and resumes from it |
 | [A project migration directory outside its root](#a-project-migration-directory-outside-its-root) | confines a project `migration.dir` to the directory holding `atlas.hcl` | writes the migration and `atlas.sum` wherever the project file points |
 | [`sql()` inside `check.expr` and `index.where`](#sql-inside-checkexpr-and-indexwhere) | reduces `sql()` to the SQL it carries, in both attributes | refuses both with `incorrect type raw` |
@@ -275,9 +276,11 @@ involved.
 
 **Current boundary.** This entry covers a prefix migration that sorts below
 every applied revision. `ptah-compat migrate apply` refuses at its default
-`--exec-order linear` and names both ways forward. `--exec-order linear-skip`
-leaves the insertion unapplied; `--exec-order non-linear` applies it. Those are
-that binary's own flag and its own three values, not a Ptah addition.
+`--exec-order linear` with the line that binary prints for an interval
+insertion, and the page that line links describes both ways forward.
+`--exec-order linear-skip` leaves the insertion unapplied; `--exec-order
+non-linear` applies it. Those are that binary's own flag and its own three
+values, not a Ptah addition.
 
 An insertion between two applied revisions is a different observable state.
 Measured on SQLite and PostgreSQL 17.10 on 2026-08-10, both binaries refuse
@@ -294,7 +297,7 @@ exits `0`.
 | step | pinned community binary v1.3.0 | `ptah-compat` |
 | --- | --- | --- |
 | apply `dirA` | exit `0`, later migration applied | exit `0`, later migration applied |
-| apply `dirB`, default order | exit `0`, `No migration files to execute` | exit `1`, names the version and both remedies |
+| apply `dirB`, default order | exit `0`, `No migration files to execute` | exit `1`, `migration file <early>.sql was added out of order` |
 | apply `dirB`, `--exec-order linear-skip` | — | exit `0`, insertion left unapplied |
 | apply `dirB`, `--exec-order non-linear` | — | exit `0`, insertion applied |
 
@@ -308,10 +311,29 @@ of its migrations never ran and never will.
 
 That is the argument for the refusal, and it is not a strictness preference.
 Reproducing an exit `0` that discards an operator's migration silently is the
-kind of defect the parity rule declines to copy. The refusal names the version
-it will not apply and both flags that resolve it, so the operator chooses
-between skipping and applying rather than having the choice made and not
-reported.
+kind of defect the parity rule declines to copy. The refusal names the file it
+will not apply, in the wording the binary uses for an interval insertion, so
+the operator chooses between skipping and applying rather than having the
+choice made and not reported.
+
+A history whose newest file was removed from the directory takes the same
+answer. The recorded revision still orders the history, so a file added below
+it is refused where the binary prints `No migration files to execute` and exits
+`0`.
+
+A Flyway directory shows the same boundary inside one refusal. Measured on
+2026-11-14 over SQLite, with `V2__a.sql` applied and `V1.5__c.sql` and
+`V10__b.sql` added, the binary names only `V10__b.sql`, whose token sorts below
+`2` as text, and passes over the prefix file without a word. `ptah-compat`
+names both:
+
+```text
+Error: migration files V1.5__c.sql, V10__b.sql were added out of order. See: https://atlasgo.io/versioned/apply#non-linear-error
+```
+
+With `V1__a.sql` and `V3__b.sql` applied and `V2.5__c.sql` and `V10__d.sql`
+added, neither file is a prefix, and both binaries print the same line naming
+both files.
 
 Nothing is removed by refusing it as the default. The third row is the pinned
 binary's own outcome, reachable on request through its own flag, and it is
@@ -327,6 +349,35 @@ applied migration above it. The value is an ordering key, not a content
 identity, and the message claimed otherwise. That is fixed; the diagnostic now
 describes the ordering fact it actually found. The genuine content-change case
 keeps the checksum wording and is the section above.
+
+## A file `--exec-order linear-skip` leaves pending
+
+**Type.** Deliberate divergence
+
+**Current boundary.** `ptah-compat migrate apply --exec-order linear-skip`
+leaves each out-of-order file pending, as the pinned community binary v1.3.0
+does, and writes one warning per skipped file on stderr. The binary writes
+nothing. Stdout, the database and the exit status are the same on both.
+
+Measured on 2026-11-14 over SQLite, with `1_a.sql` and `3_c.sql` applied and
+`2_b.sql` added, each exit status read from an unpiped invocation:
+
+| Run | Binary | `ptah-compat` |
+| --- | --- | --- |
+| `migrate apply --exec-order linear-skip` | `No migration files to execute`, empty stderr, exit `0` | `No migration files to execute`, one warning on stderr, exit `0` |
+| the same, with `--format '{{ json . }}'` | the report, empty stderr, exit `0` | the same report, one warning on stderr, exit `0` |
+
+```text
+level=WARN msg="Skipping out-of-order migration" version=2 currentVersion=3
+```
+
+The warning stays because it is the only output that names the file. Stdout
+reports nothing to execute while `2_b.sql` is still pending, and the binary's
+answer gives an operator no sign that a migration of theirs was passed over. A
+Flyway directory names each version by its source token, such as `version=1.5
+currentVersion=2`, never by the numeric key its conversion runs under.
+
+**Evidence.** `integration/atlas_migrate_apply_report_shape_e2e_test.go`
 
 ## A dirty revision left by a non-transactional body
 
@@ -1324,7 +1375,17 @@ statement in a
 [golang-migrate directory](#a-golang-migrate-file-that-runs-its-own-transaction),
 which that runner sends alone.
 
-**Evidence.** `integration/migrations_up_transaction_preflight_e2e_test.go`
+Under `--format` the refusal is reported in the document. Measured on
+2026-11-14 over SQLite, with `1_a.sql` creating `t1` and `2_b.sql` holding
+`CREATE TABLE t2 (id int);` and `VACUUM;`: the binary applies `1_a.sql`, sends
+both statements of `2_b.sql`, and writes a report whose version `2` carries
+SQLite's `cannot VACUUM from within a transaction`, exit `1`, leaving `t1`
+behind. `ptah-compat` writes a report whose `Error` is the refusal and which
+lists no applied file, because the refusal comes before the first file runs,
+exit `1`. Neither table is created.
+
+**Evidence.** `integration/migrations_up_transaction_preflight_e2e_test.go`,
+`integration/atlas_migrate_apply_report_shape_e2e_test.go`
 
 ## A file that controls the transaction it runs in
 

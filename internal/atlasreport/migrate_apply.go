@@ -74,32 +74,36 @@ type atlasMigrateApplyEnv struct {
 
 type atlasMigrateApplyResult struct {
 	atlasMigrateApplyEnv
-	Env        atlasMigrateApplyEnv            `json:"-"`
-	Pending    []atlasMigrateApplyFile         `json:"Pending,omitempty"`
-	Applied    []*atlasMigrateApplyAppliedFile `json:"Applied,omitempty"`
-	Current    string                          `json:"Current,omitempty"`
-	Target     string                          `json:"Target,omitempty"`
-	Start      time.Time
-	End        time.Time
-	Error      string `json:"Error,omitempty"`
-	currentSet bool
-	targetSet  bool
+	Env     atlasMigrateApplyEnv            `json:"-"`
+	Pending []atlasMigrateApplyFile         `json:"Pending,omitempty"`
+	Applied []*atlasMigrateApplyAppliedFile `json:"Applied,omitempty"`
+	Current string                          `json:"Current,omitempty"`
+	Target  string                          `json:"Target,omitempty"`
+	Start   time.Time
+	End     time.Time
+	Error   string `json:"Error,omitempty"`
 }
 
+// atlasMigrateApplyFile is a migration file a report names. A Flyway
+// repeatable has no version, and its entry leaves Version out, as the
+// community binary's does.
 type atlasMigrateApplyFile struct {
 	Name        string `json:"Name,omitempty"`
-	Version     string `json:"Version"`
+	Version     string `json:"Version,omitempty"`
 	Description string `json:"Description,omitempty"`
 }
 
+// atlasMigrateApplyAppliedFile is one entry of `.Applied`. An entry leaves out
+// a count, a list and an error it has none of, as the community binary's
+// entries do.
 type atlasMigrateApplyAppliedFile struct {
 	atlasMigrateApplyFile
 	Start   time.Time
 	End     time.Time
-	Skipped int
-	Applied []string
-	Checks  []*atlasMigrateApplyFileChecks
-	Error   *atlasMigrateApplyStatementError
+	Skipped int                              `json:"Skipped,omitempty"`
+	Applied []string                         `json:"Applied,omitempty"`
+	Checks  []*atlasMigrateApplyFileChecks   `json:"Checks,omitempty"`
+	Error   *atlasMigrateApplyStatementError `json:"Error,omitempty"`
 	// errorListed reports that Applied ends with the statement Error names,
 	// because the statement reached the database before it failed.
 	errorListed bool
@@ -159,32 +163,18 @@ func buildAtlasMigrateApplyResult(opts MigrateApplyResultOptions) (atlasMigrateA
 		URL:    atlasRedactedURL(opts.URL),
 		Dir:    opts.Dir,
 	}
-	current := atlasMigrateApplyCurrentVersion(opts)
-	currentSet := atlasMigrateApplyCurrentVersionSet(opts)
 	result := atlasMigrateApplyResult{
 		atlasMigrateApplyEnv: env,
 		Env:                  env,
 		Pending:              atlasMigrateApplyPendingFiles(files, opts.SelectedVersions, opts.SelectedKeys),
-		Current:              current,
-		Target:               atlasMigrateApplyTargetVersion(current, opts.SelectedVersions, opts.SelectedKeys),
+		Current:              atlasMigrateApplyCurrentVersion(opts),
+		Target:               atlasMigrateApplyTargetVersion(opts.SelectedVersions, opts.SelectedKeys),
 		Start:                opts.StartedAt,
 		End:                  opts.EndedAt,
 		Error:                opts.ErrorText,
-		currentSet:           currentSet,
-		targetSet:            currentSet || len(opts.SelectedVersions) > 0,
 	}
 	if opts.Applied {
-		result.Applied = atlasMigrateApplyAppliedFiles(
-			files,
-			migrationsByVersion,
-			opts.SelectedVersions,
-			opts.SelectedKeys,
-			opts.Conn.Info().Dialect,
-			opts.ApplyError,
-			opts.ChecksNotRun,
-			opts.StartedAt,
-			opts.EndedAt,
-		)
+		result.Applied = atlasMigrateApplyAppliedFiles(files, migrationsByVersion, opts)
 	}
 	return result, nil
 }
@@ -233,19 +223,23 @@ func atlasMigrateApplyPendingFiles(
 	return pending
 }
 
+// atlasMigrateApplyAppliedFiles is the `.Applied` list of a run that reached
+// its migrations: each selected file up to the one a failure stopped at.
+//
+// A failure Ptah words is read with the identities of the run, so it names a
+// migration as the rest of the report names it. Without that, a Flyway
+// `V1.5__b.sql` refused by a check is reported under the numeric key its
+// conversion executes it as, while the run's own `.Error` names `1.5`.
 func atlasMigrateApplyAppliedFiles(
 	files atlasMigrateApplyFiles,
 	migrations map[string]*migrator.Migration,
-	versions []int64,
-	keys []string,
-	dialect string,
-	applyErr error,
-	checksNotRun []int64,
-	startedAt,
-	endedAt time.Time,
+	opts MigrateApplyResultOptions,
 ) []*atlasMigrateApplyAppliedFile {
+	versions, keys := opts.SelectedVersions, opts.SelectedKeys
+	dialect := opts.Conn.Info().Dialect
+	identities := MigrateApplyRevisionIdentities(versions, keys, opts.Migrations)
 	applied := make([]*atlasMigrateApplyAppliedFile, 0, len(versions))
-	failedVersion, failedVersionSet := atlasMigrateApplyFailedVersion(applyErr, versions, keys)
+	failedVersion, failedVersionSet := atlasMigrateApplyFailedVersion(opts.ApplyError, versions, keys)
 	for index := range versions {
 		version := atlasMigrateApplyVersionKeyAt(versions, keys, index)
 		file, ok := atlasMigrateApplyFileForVersion(files, versions, keys, index)
@@ -254,8 +248,8 @@ func atlasMigrateApplyAppliedFiles(
 		}
 		appliedFile := &atlasMigrateApplyAppliedFile{
 			atlasMigrateApplyFile: file,
-			Start:                 startedAt,
-			End:                   endedAt,
+			Start:                 opts.StartedAt,
+			End:                   opts.EndedAt,
 		}
 		migration := migrations[version]
 		if migration == nil {
@@ -263,12 +257,12 @@ func atlasMigrateApplyAppliedFiles(
 			continue
 		}
 		appliedFile.Applied = atlasMigrateApplyWrittenStatements(migration.UpSQL, dialect)
-		if !slices.Contains(checksNotRun, migration.Version) {
-			appliedFile.Checks = atlasMigrateApplyChecks(migration, dialect, applyErr)
+		if !slices.Contains(opts.ChecksNotRun, migration.Version) {
+			appliedFile.Checks = atlasMigrateApplyChecks(migration, dialect, opts.ApplyError, identities)
 		}
 		applied = append(applied, appliedFile)
 		if failedVersionSet && version == failedVersion {
-			recordAtlasMigrateApplyFailure(appliedFile, migration, dialect, applyErr)
+			recordAtlasMigrateApplyFailure(appliedFile, migration, dialect, opts.ApplyError, identities)
 			break
 		}
 	}
@@ -282,6 +276,7 @@ func recordAtlasMigrateApplyFailure(
 	migration *migrator.Migration,
 	dialect string,
 	applyErr error,
+	identities map[int64]string,
 ) {
 	execErr := atlasMigrateApplyExecutionError(applyErr)
 	if execErr == nil {
@@ -292,7 +287,7 @@ func recordAtlasMigrateApplyFailure(
 	}
 	appliedFile.Error = &atlasMigrateApplyStatementError{
 		Stmt: execErr.Statement,
-		Text: execErr.Unwrap().Error(),
+		Text: NameRevisionIdentities(execErr.Unwrap().Error(), identities),
 	}
 	// A statement the database answered is reported as the file spells it,
 	// with the database's answer alone, as the line the run prints names it.
@@ -387,14 +382,6 @@ func atlasMigrateApplyCurrentVersion(opts MigrateApplyResultOptions) string {
 	return atlasMigrateApplyVersionString(opts.Status.CurrentVersion)
 }
 
-func atlasMigrateApplyCurrentVersionSet(opts MigrateApplyResultOptions) bool {
-	if opts.CurrentKeySet || opts.CurrentVersion > 0 {
-		return true
-	}
-	return opts.Status != nil &&
-		(opts.Status.CurrentVersionKeySet || opts.Status.CurrentVersion > 0)
-}
-
 // atlasMigrateApplyFiles is the migration files a report can name: the
 // converted files by revision identity, and the source file of each converted
 // execution-order key where conversion renamed it.
@@ -425,9 +412,12 @@ func atlasMigrateApplyFileForVersion(
 	return file, true
 }
 
-func atlasMigrateApplyTargetVersion(current string, selectedVersions []int64, selectedKeys []string) string {
+// atlasMigrateApplyTargetVersion is the version the run moves to: the last
+// migration it selected, and none when it selected nothing, as the community
+// binary reports a run with nothing to execute.
+func atlasMigrateApplyTargetVersion(selectedVersions []int64, selectedKeys []string) string {
 	if len(selectedVersions) == 0 {
-		return current
+		return ""
 	}
 	return atlasMigrateApplyVersionKeyAt(selectedVersions, selectedKeys, len(selectedVersions)-1)
 }
@@ -496,20 +486,18 @@ func newAtlasGoTemplate(wording templateWording, format string) (*template.Templ
 	return tmpl, nil
 }
 
+// MarshalJSON writes the report as the community binary's `{{ json . }}`
+// does, the run's message included. A version the run has none of, such as
+// the current version of a database with nothing applied or the target of a
+// run with nothing to execute, is left out, and so is the empty version of a
+// Flyway repeatable.
 func (r atlasMigrateApplyResult) MarshalJSON() ([]byte, error) {
-	var current, target *string
-	if r.currentSet {
-		current = &r.Current
-	}
-	if r.targetSet {
-		target = &r.Target
-	}
 	value := struct {
 		atlasMigrateApplyEnv
 		Pending []atlasMigrateApplyFile         `json:"Pending,omitempty"`
 		Applied []*atlasMigrateApplyAppliedFile `json:"Applied,omitempty"`
-		Current *string                         `json:"Current,omitempty"`
-		Target  *string                         `json:"Target,omitempty"`
+		Current string                          `json:"Current,omitempty"`
+		Target  string                          `json:"Target,omitempty"`
 		Start   time.Time
 		End     time.Time
 		Error   string `json:"Error,omitempty"`
@@ -518,8 +506,8 @@ func (r atlasMigrateApplyResult) MarshalJSON() ([]byte, error) {
 		atlasMigrateApplyEnv: r.atlasMigrateApplyEnv,
 		Pending:              r.Pending,
 		Applied:              r.Applied,
-		Current:              current,
-		Target:               target,
+		Current:              r.Current,
+		Target:               r.Target,
 		Start:                r.Start,
 		End:                  r.End,
 		Error:                r.Error,
@@ -538,31 +526,6 @@ func (r atlasMigrateApplyResult) MarshalJSON() ([]byte, error) {
 		)
 	}
 	return json.Marshal(value)
-}
-
-func (f *atlasMigrateApplyAppliedFile) MarshalJSON() ([]byte, error) {
-	type appliedFile struct {
-		Name        string                           `json:"Name,omitempty"`
-		Version     string                           `json:"Version"`
-		Description string                           `json:"Description,omitempty"`
-		Start       time.Time                        `json:"Start"`
-		End         time.Time                        `json:"End"`
-		Skipped     int                              `json:"Skipped"`
-		Applied     []string                         `json:"Applied"`
-		Checks      []*atlasMigrateApplyFileChecks   `json:"Checks"`
-		Error       *atlasMigrateApplyStatementError `json:"Error"`
-	}
-	return json.Marshal(appliedFile{
-		Name:        f.Name,
-		Version:     f.Version,
-		Description: f.Description,
-		Start:       f.Start,
-		End:         f.End,
-		Skipped:     f.Skipped,
-		Applied:     f.Applied,
-		Checks:      f.Checks,
-		Error:       f.Error,
-	})
 }
 
 func atlasTemplateIndentLines(input string, indent int) string {
@@ -633,6 +596,7 @@ func atlasMigrateApplyChecks(
 	migration *migrator.Migration,
 	dialect string,
 	applyErr error,
+	identities map[int64]string,
 ) []*atlasMigrateApplyFileChecks {
 	groups := make([]*atlasMigrateApplyFileChecks, 0, len(migration.AtlasCheckFiles())+1)
 	for _, file := range migration.AtlasCheckFiles() {
@@ -653,7 +617,7 @@ func atlasMigrateApplyChecks(
 	if len(groups) == 0 {
 		return nil
 	}
-	markAtlasMigrateApplyCheckFailure(groups, migration.Version, applyErr)
+	markAtlasMigrateApplyCheckFailure(groups, migration.Version, applyErr, identities)
 	return groups
 }
 
@@ -671,11 +635,13 @@ func atlasMigrateApplyCheckStatements(statements []string) []*atlasMigrateApplyC
 //
 // A failed assertion identifies its group by name and its statement by text, so
 // the mark lands on the exact entry. A group refusal -- an Atlas oneof file
-// where nothing passed -- names only the file, so it marks the group.
+// where nothing passed -- names only the file, so it marks the group. Either
+// refusal names its migration by the identity identities gives it.
 func markAtlasMigrateApplyCheckFailure(
 	groups []*atlasMigrateApplyFileChecks,
 	version int64,
 	applyErr error,
+	identities map[int64]string,
 ) {
 	var checkErr *migrator.CheckFailedError
 	if errors.As(applyErr, &checkErr) && checkErr.Version == version {
@@ -683,10 +649,10 @@ func markAtlasMigrateApplyCheckFailure(
 		if group == nil {
 			return
 		}
-		group.Error = &atlasMigrateApplyStatementError{Stmt: checkErr.Assert, Text: checkErr.Error()}
+		text := NameRevisionIdentities(checkErr.Error(), identities)
+		group.Error = &atlasMigrateApplyStatementError{Stmt: checkErr.Assert, Text: text}
 		for _, check := range group.Stmts {
 			if check.Stmt == checkErr.Assert {
-				text := checkErr.Error()
 				check.Error = &text
 			}
 		}
@@ -696,7 +662,7 @@ func markAtlasMigrateApplyCheckFailure(
 	if errors.As(applyErr, &groupErr) && groupErr.Version == version {
 		for _, group := range groups {
 			if group.Name == groupErr.Name {
-				group.Error = &atlasMigrateApplyStatementError{Text: groupErr.Error()}
+				group.Error = &atlasMigrateApplyStatementError{Text: NameRevisionIdentities(groupErr.Error(), identities)}
 				return
 			}
 		}

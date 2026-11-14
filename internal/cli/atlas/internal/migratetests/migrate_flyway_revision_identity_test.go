@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"testing"
 
@@ -351,9 +352,15 @@ func assertCompatFlywayRemovedHistoryRemainsReadable(
 		"CREATE TABLE retired_history_must_guard_order (id INTEGER PRIMARY KEY);\n")
 	hashConvertedApplyDir(c, dir, "flyway")
 	stdout, stderr, err = compatApplyConverted(dir, "flyway", dbPath)
-	c.Assert(err, qt.IsNotNil, qt.Commentf("stdout:\n%s", stdout))
-	c.Assert(errorText(err)+stderr, qt.Contains, "out-of-order pending migrations")
-	c.Assert(errorText(err)+stderr, qt.Contains, `current version "`+retiredToken+`"`)
+	// The retired file's identity still orders the history, so the older file
+	// is refused, named as the directory holds it. The pinned binary answers
+	// this input with "No migration files to execute" at exit 0 and never
+	// runs the older file; refusing is the strict direction.
+	refusal := "migration file " + olderFile +
+		" was added out of order. See: https://atlasgo.io/versioned/apply#non-linear-error"
+	c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(refusal))
+	c.Assert(stdout, qt.Equals, "")
+	c.Assert(stderr, qt.Equals, "Error: "+refusal+"\n")
 	c.Assert(userTables(c, dbPath), qt.DeepEquals, []string{table})
 	c.Assert(revisionVersions(c, dbPath), qt.DeepEquals, []string{compatAtlasCloudIdentifierVersion, retiredToken})
 }
@@ -612,10 +619,14 @@ func TestCompatMigrateApply_FlywayOnlyRepeatableNeverLeaksOrderKey(t *testing.T)
 		"--format", `{{ json . }}`,
 	)
 	c.Assert(formattedErr, qt.IsNil, qt.Commentf("formatted apply stderr: %s", formattedStderr))
+	// A repeatable has no version, and the community binary names it by Name
+	// alone: no Version member, and no Target for a run that ends on one.
 	c.Assert(formattedStdout, qt.Contains,
-		`"Pending":[{"Name":"R__only.sql","Version":""`)
+		`"Pending":[{"Name":"R__only.sql","Description":"only"}]`)
 	c.Assert(formattedStdout, qt.Contains,
-		`"Applied":[{"Name":"R__only.sql","Version":""`)
+		`"Applied":[{"Name":"R__only.sql","Description":"only","Start":`)
+	c.Assert(formattedStdout, qt.Not(qt.Contains), `"Version"`)
+	c.Assert(formattedStdout, qt.Not(qt.Contains), `"Target"`)
 	c.Assert(formattedStdout, qt.Not(qt.Contains), repeatableOrderKey)
 
 	stdout, stderr, err := compatApplyConverted(dir, "flyway", dbPath)
@@ -651,7 +662,9 @@ func TestCompatMigrateApply_FlywayOnlyRepeatableNeverLeaksOrderKey(t *testing.T)
 		"--format", `{{ json . }}`,
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("formatted apply stderr: %s", stderr))
-	c.Assert(stdout, qt.Contains, `"Current":"","Target":""`)
+	c.Assert(stdout, qt.Contains, `"Message":"No migration files to execute"`)
+	c.Assert(stdout, qt.Not(qt.Contains), `"Current"`)
+	c.Assert(stdout, qt.Not(qt.Contains), `"Target"`)
 	c.Assert(stdout, qt.Not(qt.Contains), repeatableOrderKey)
 }
 

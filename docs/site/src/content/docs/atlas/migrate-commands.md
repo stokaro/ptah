@@ -470,8 +470,10 @@ The answer is the driver's message. On SQLite, Ptah's driver writes
 canceled run is reported in the same line, with the driver's error as the
 answer. A failure that is not a statement sent to the database, such as a failed
 commit, a pre-migration check or a statement the migrator refused before sending
-it, keeps Ptah's own text. Native `ptah migrations up` reports every failure
-with Ptah's own context.
+it, keeps Ptah's own text. That text names the migration by the version its
+directory holds, `1.5` for a Flyway `V1.5__b.sql`, and never by the numeric key
+a converted directory runs under. Native `ptah migrations up` reports every
+failure with Ptah's own context.
 
 ### Adopting a database that already has objects
 
@@ -597,10 +599,37 @@ revision rows and include only migrations that a real apply would select. They
 also run the same dirty-state, checksum, execution-order, and transaction-mode
 validations as a real apply.
 
+As on the pinned binary, the JSON leaves out a member that has no value:
+`Current` for a database with nothing applied, `Target` for a run with nothing
+to execute, `Version` for a Flyway repeatable, and an applied file's `Skipped`,
+`Applied`, `Checks` and `Error` when it has none. A template reads `Current`,
+`Target` and `Version` as empty strings there.
+
+An out-of-order refusal writes no document, as on the pinned binary: stdout
+stays empty and the error goes to stderr, exit `1`. A failure inside the run is
+reported in the document's `Error`. That includes a file Ptah refuses before
+sending its first statement, such as `VACUUM` inside a transaction, which the
+pinned binary sends and reports with the database's answer; Ptah's document
+carries the refusal and lists no statement for that file.
+
 ### Apply an inserted migration out of order
 
 The default `--exec-order linear` refuses a pending migration below the current
-version. Use non-linear order when the insertion is intentional:
+version, with the pinned binary's line. A refusal of several files names each
+of them, as `migration files 2_b.sql, 3_c.sql were added out of order`:
+
+```text
+Error: migration file 2_b.sql was added out of order. See: https://atlasgo.io/versioned/apply#non-linear-error
+```
+
+`--exec-order linear-skip` leaves the file pending and writes one warning per
+skipped file on stderr, which the pinned binary does not:
+
+```text
+level=WARN msg="Skipping out-of-order migration" version=2 currentVersion=3
+```
+
+Use non-linear order when the insertion is intentional:
 
 ```bash
 ptah-compat migrate apply \
@@ -998,15 +1027,13 @@ project's tenth migration added beside an already-applied `V2__x.sql` is refused
 rather than executed:
 
 ```text
-Error: error applying migrations: out-of-order pending migrations for current
-version "2": "10" (use --exec-order=non-linear to apply or
---exec-order=linear-skip to ignore)
+Error: migration file V10__y.sql was added out of order. See: https://atlasgo.io/versioned/apply#non-linear-error
 ```
 
-The refusal names only the exact **source version**; normal direct-operation
-output does not expose the internal numeric order key as the active migration
-identity. `--exec-order=non-linear` runs the migration, `--exec-order=linear-skip`
-leaves it pending, and a directory with no recorded history is unaffected —
+The refusal names the Flyway file, and the `linear-skip` warning names its
+exact **source version**; neither exposes the internal numeric order key. `--exec-order=non-linear` runs the migration,
+`--exec-order=linear-skip` leaves it pending, and a directory with no recorded
+history is unaffected —
 applying `V2__x.sql` and `V10__y.sql` together for the first time runs both, in
 that order. A repeatable (`R__`) is version `""` to Atlas, which sorts below
 every token, so one added to a database that already has history is refused by
