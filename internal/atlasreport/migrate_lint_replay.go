@@ -28,6 +28,23 @@ type MigrateLintReplayFailure struct {
 	File string
 	// Error is the report's account of why the file failed.
 	Error string
+	// version is the failing file's execution-order key, the key
+	// [MigrateLintOptions.FileNames] renames a converted file by. A failure
+	// built as a literal has none and keeps File as written.
+	version    int64
+	hasVersion bool
+}
+
+// reportedName is the name the report gives the failing file: the name it has
+// in the operator's directory when its layout was converted, File otherwise.
+func (f MigrateLintReplayFailure) reportedName(names map[int64]string) string {
+	if !f.hasVersion {
+		return f.File
+	}
+	if name, ok := names[f.version]; ok {
+		return name
+	}
+	return f.File
 }
 
 // NewMigrateLintReplayFailure reads the migration a failed dev-database replay
@@ -66,8 +83,10 @@ func NewMigrateLintReplayFailure(
 		return nil
 	}
 	return &MigrateLintReplayFailure{
-		File:  file.Name,
-		Error: migrateLintReplayErrorText(file, dialect, failed),
+		File:       file.Name,
+		Error:      migrateLintReplayErrorText(file, dialect, failed),
+		version:    file.Version,
+		hasVersion: true,
 	}
 }
 
