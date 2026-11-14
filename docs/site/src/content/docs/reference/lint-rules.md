@@ -239,8 +239,9 @@ of one statement, which runs without a transaction.
 
 On every other engine, and for every down file, the migrator keeps its
 transaction around the file, so `TX201` reports a block there as in any other
-layout. A run that names no dialect judges every file that way; name
-`--dialect postgres` for the PostgreSQL reading. Lint does not see the run's
+layout. A run that names no dialect reads an up file the PostgreSQL way, since
+it cannot know the engine; name the dialect to judge the file for another
+engine. Lint does not see the run's
 transaction mode, and an apply with `--tx-mode all` refuses every file that
 opens its own transaction;
 [Transaction blocks in a golang-migrate directory](../../atlas/migrate-commands/#transaction-blocks-in-a-golang-migrate-directory)

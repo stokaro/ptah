@@ -83,10 +83,19 @@ func wrappedTransactionControl(file *File) []Finding {
 // migrator applies a directory of dialect with when the directory's files open
 // their own, or nil where it keeps the transaction around each file. It is the
 // field of the engine's migrator services the migrator reads, so the two cannot
-// name different engines. A run that names no dialect gets none: every engine
-// but the one that offers a reading refuses such a file at apply, so the
-// wrapped reading is the one that misses no refusal.
+// name different engines.
+//
+// A run that names no dialect reads a body the way the one engine that offers
+// a reading does, [filetx.ReadUnwrapped]. Such a run cannot know the engine,
+// and a golang-migrate directory that opens its own transactions is written
+// for PostgreSQL far more often than for any other: read as wrapped, every
+// such file of it would be reported, as ptah-compat's lint without a dev
+// database does for a directory shaped like OpenMeter's (stokaro/ptah#4953).
+// A run that names another engine is judged for it.
 func ownTransactionReading(dialect string) func(statements []string) (filetx.Blocks, error) {
+	if dialect == "" {
+		return filetx.ReadUnwrapped
+	}
 	return builtin.Lookup(dialect).OwnTransactions
 }
 
