@@ -16,10 +16,13 @@ import (
 type ApplyFormatOptions struct {
 	Conn *dbschema.DatabaseConnection
 	// FS is the immutable migration filesystem that was applied.
-	FS     fs.FS
-	Dir    string
-	URL    string
-	Result atlasmigrate.ApplyResult
+	FS fs.FS
+	// SourceFiles names the files of a layout whose conversion renamed them;
+	// see [atlasreport.MigrateApplyResultOptions.SourceFiles].
+	SourceFiles map[int64]atlasreport.MigrateApplySourceFile
+	Dir         string
+	URL         string
+	Result      atlasmigrate.ApplyResult
 }
 
 // WriteApplyFormat renders Atlas migrate apply format output from the runtime
@@ -32,6 +35,7 @@ func WriteApplyFormat(w io.Writer, format string, opts ApplyFormatOptions) error
 	return atlasreport.WriteMigrateApplyFormat(w, format, atlasreport.MigrateApplyResultOptions{
 		Conn:             opts.Conn,
 		FS:               opts.FS,
+		SourceFiles:      opts.SourceFiles,
 		Dir:              opts.Dir,
 		URL:              opts.URL,
 		Status:           result.Status,

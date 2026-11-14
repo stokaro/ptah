@@ -94,7 +94,7 @@ func buildAtlasMigrateDownResult(opts MigrateDownResultOptions) (atlasMigrateDow
 	result := atlasMigrateDownResult{
 		atlasEnv: env,
 		Env:      env,
-		Planned:  atlasMigrateApplyPendingFiles(filesByVersion, opts.PlannedVersions, nil),
+		Planned:  atlasMigrateApplyPendingFiles(atlasMigrateApplyFiles{byVersion: filesByVersion}, opts.PlannedVersions, nil),
 		Current:  atlasMigrateApplyVersionString(opts.CurrentVersion),
 		Target:   atlasMigrateDownTarget(opts),
 		Total:    len(opts.PlannedVersions),
@@ -164,13 +164,23 @@ func atlasMigrateDownRevertedFiles(
 	}
 	if migration := migrations[failedVersion]; migration != nil {
 		statements := atlasMigrateApplySplitStatements(migration.DownSQL, dialect)
-		failedFile.Applied = appliedStatementsBeforeError(statements, execErr.StatementIndex)
+		failedFile.Applied = revertedStatementsBeforeError(statements, execErr.StatementIndex)
 	}
 	failedFile.Error = &atlasMigrateApplyStatementError{
 		Stmt: execErr.Statement,
 		Text: execErr.Unwrap().Error(),
 	}
 	return append(reverted, failedFile)
+}
+
+// revertedStatementsBeforeError is the statements of a failed down file that
+// ran before the one that failed.
+func revertedStatementsBeforeError(statements []string, failedIndex int) []string {
+	reverted := min(failedIndex-1, len(statements))
+	if reverted <= 0 {
+		return nil
+	}
+	return statements[:reverted]
 }
 
 // atlasMigrateDownFailedVersion extracts the failing version from the down

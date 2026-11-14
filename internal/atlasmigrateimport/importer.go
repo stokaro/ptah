@@ -1671,6 +1671,11 @@ type FlywayCoveredSourceVersion struct {
 	// Version is the Atlas version the converted entry executes and is
 	// recorded under.
 	Version int64
+	// Description is Atlas CE's description for the file: what follows the
+	// first "__" of its base name, as the file name spells it, so "a b" for
+	// V1__a b.sql and "" for V1.sql. Conversion rewrites it into an Atlas file
+	// name, and a report that prints a description has to print this one.
+	Description string
 }
 
 // FlywayCoveredSourceVersions reports both spellings for every Flyway migration
@@ -1703,9 +1708,10 @@ func FlywayCoveredSourceVersions(fsys fs.FS, format Format) ([]FlywayCoveredSour
 	out := make([]FlywayCoveredSourceVersion, len(covered))
 	for i, file := range covered {
 		out[i] = FlywayCoveredSourceVersion{
-			Source:  file.name,
-			Token:   flywayCEVersion(file),
-			Version: versions[i],
+			Source:      file.name,
+			Token:       flywayCEVersion(file),
+			Version:     versions[i],
+			Description: file.description,
 		}
 	}
 	return out, nil

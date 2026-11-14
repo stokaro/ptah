@@ -330,7 +330,7 @@ func TestWriteMigrateApplyFormat_JSONShape(t *testing.T) {
 	c.Assert(got.Applied[0].Version, qt.Equals, "1")
 	c.Assert(got.Applied[0].Description, qt.Equals, "create_users")
 	c.Assert(got.Applied[0].Skipped, qt.Equals, 0)
-	c.Assert(got.Applied[0].Applied, qt.DeepEquals, []string{"CREATE TABLE users (id INTEGER PRIMARY KEY)"})
+	c.Assert(got.Applied[0].Applied, qt.DeepEquals, []string{"CREATE TABLE users (id INTEGER PRIMARY KEY);"})
 	c.Assert(got.Applied[0].Checks, qt.IsNil)
 	c.Assert(got.Applied[0].Error, qt.IsNil)
 	c.Assert(got.Current, qt.Equals, "")

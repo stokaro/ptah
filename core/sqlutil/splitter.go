@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"ptah.run/core/platform"
+	"ptah.run/internal/clientdelimiter"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/lexerext"
@@ -218,11 +219,19 @@ func splitSQLStatements(sql, dialect string) []string {
 // rules or not at all, and no YDB client writes a delimiter directive. A blank
 // or unknown dialect honors them.
 func normalizeClientDelimitersFor(sql, dialect string) string {
+	normalized, _ := clientDelimitersFor(sql, dialect)
+	return normalized
+}
+
+// clientDelimitersFor is [normalizeClientDelimitersFor] with where each part
+// of the rewrite stands in sql. The origins are the identity where nothing was
+// rewritten.
+func clientDelimitersFor(sql, dialect string) (string, clientdelimiter.Origins) {
 	described, ok := platform.Lookup(dialect)
 	if ok && !described.Scripts.ClientDelimiters || !ok && lexerext.Provided(dialect) != nil {
-		return sql
+		return sql, nil
 	}
-	return NormalizeClientDelimiters(sql)
+	return clientdelimiter.Normalize(sql)
 }
 
 // batchSeparator is the word that ends a batch in the dialect's scripts

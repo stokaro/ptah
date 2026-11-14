@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"maps"
+	"slices"
 	"strconv"
 	"strings"
 	"text/template"
@@ -15,13 +16,21 @@ import (
 
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
+	"ptah.run/internal/sourcestatement"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
 )
 
 type MigrateApplyResultOptions struct {
-	Conn             *dbschema.DatabaseConnection
-	FS               fs.FS
+	Conn *dbschema.DatabaseConnection
+	FS   fs.FS
+	// SourceFiles maps converted execution-order keys to the file each one
+	// came from, for a layout whose conversion renames its files. A Flyway
+	// `V1.5__b.sql` executes as a numeric Atlas file, and the report names it
+	// `V1.5__b.sql` with the description Flyway gives it, as the community
+	// binary does. A key the map lacks keeps the converted file's name and the
+	// description read from it.
+	SourceFiles      map[int64]MigrateApplySourceFile
 	Dir              string
 	URL              string
 	Status           *migrator.MigrationStatus
@@ -36,6 +45,16 @@ type MigrateApplyResultOptions struct {
 	Applied          bool
 	StartedAt        time.Time
 	EndedAt          time.Time
+}
+
+// MigrateApplySourceFile is a migration file as the operator's directory holds
+// it.
+type MigrateApplySourceFile struct {
+	// Name is the file's path relative to the migration directory, such as
+	// `V1.5__b.sql` or `sub/V2__c.sql`.
+	Name string
+	// Description is the description the directory's layout gives the file.
+	Description string
 }
 
 type atlasMigrateApplyEnv struct {
@@ -121,6 +140,7 @@ func buildAtlasMigrateApplyResult(opts MigrateApplyResultOptions) (atlasMigrateA
 	if err != nil {
 		return atlasMigrateApplyResult{}, err
 	}
+	files := atlasMigrateApplyFiles{byVersion: filesByVersion, sources: opts.SourceFiles}
 	migrationsByVersion := atlasMigrateApplyMigrationsByVersion(opts.Migrations)
 	env := atlasMigrateApplyEnv{
 		Driver: opts.Conn.Info().Dialect,
@@ -132,7 +152,7 @@ func buildAtlasMigrateApplyResult(opts MigrateApplyResultOptions) (atlasMigrateA
 	result := atlasMigrateApplyResult{
 		atlasMigrateApplyEnv: env,
 		Env:                  env,
-		Pending:              atlasMigrateApplyPendingFiles(filesByVersion, opts.SelectedVersions, opts.SelectedKeys),
+		Pending:              atlasMigrateApplyPendingFiles(files, opts.SelectedVersions, opts.SelectedKeys),
 		Current:              current,
 		Target:               atlasMigrateApplyTargetVersion(current, opts.SelectedVersions, opts.SelectedKeys),
 		Start:                opts.StartedAt,
@@ -143,7 +163,7 @@ func buildAtlasMigrateApplyResult(opts MigrateApplyResultOptions) (atlasMigrateA
 	}
 	if opts.Applied {
 		result.Applied = atlasMigrateApplyAppliedFiles(
-			filesByVersion,
+			files,
 			migrationsByVersion,
 			opts.SelectedVersions,
 			opts.SelectedKeys,
@@ -187,7 +207,7 @@ func atlasMigrateApplyMigrationsByVersion(input []*migrator.Migration) map[strin
 }
 
 func atlasMigrateApplyPendingFiles(
-	files map[string]atlasMigrateApplyFile,
+	files atlasMigrateApplyFiles,
 	versions []int64,
 	keys []string,
 ) []atlasMigrateApplyFile {
@@ -201,7 +221,7 @@ func atlasMigrateApplyPendingFiles(
 }
 
 func atlasMigrateApplyAppliedFiles(
-	files map[string]atlasMigrateApplyFile,
+	files atlasMigrateApplyFiles,
 	migrations map[string]*migrator.Migration,
 	versions []int64,
 	keys []string,
@@ -224,7 +244,7 @@ func atlasMigrateApplyAppliedFiles(
 			End:                   endedAt,
 		}
 		if migration := migrations[version]; migration != nil {
-			appliedFile.Applied = atlasMigrateApplySplitStatements(migration.UpSQL, dialect)
+			appliedFile.Applied = atlasMigrateApplyWrittenStatements(migration.UpSQL, dialect)
 			appliedFile.Checks = atlasMigrateApplyChecks(migration, dialect, applyErr)
 			if failedVersionSet && version == failedVersion {
 				execErr := atlasMigrateApplyExecutionError(applyErr)
@@ -234,7 +254,6 @@ func atlasMigrateApplyAppliedFiles(
 						Statement: "",
 					}
 				}
-				appliedFile.Applied = appliedStatementsBeforeError(appliedFile.Applied, execErr.StatementIndex)
 				appliedFile.Error = &atlasMigrateApplyStatementError{
 					Stmt: execErr.Statement,
 					Text: execErr.Unwrap().Error(),
@@ -248,6 +267,7 @@ func atlasMigrateApplyAppliedFiles(
 						Text: executed.Answer.Error(),
 					}
 				}
+				appliedFile.Applied = atlasMigrateApplySentStatements(appliedFile.Applied, execErr, appliedFile.Error.Stmt)
 				applied = append(applied, appliedFile)
 				break
 			}
@@ -277,15 +297,33 @@ func atlasMigrateApplyExecutionError(err error) *migrator.MigrationExecutionErro
 	return nil
 }
 
-func appliedStatementsBeforeError(statements []string, failedIndex int) []string {
-	appliedCount := failedIndex - 1
-	if appliedCount <= 0 {
+// atlasMigrateApplySentStatements is the part of a failed file's statements
+// the run sent: every statement before the failure, and refused, the failed
+// statement as the report's error quotes it, when it reached the database. The
+// community binary lists a statement as it sends it, so the statement the
+// database refused is the file's last entry. It is the error's text rather
+// than the entry at its position, so the two agree where the migrator numbered
+// the body's statements differently, as a provider's query units do. A
+// statement Ptah refused before sending it, and a failure that names none, add
+// nothing the database saw.
+func atlasMigrateApplySentStatements(statements []string, failure *migrator.MigrationExecutionError, refused string) []string {
+	before := min(max(failure.StatementIndex-1, 0), len(statements))
+	listed := slices.Clip(statements[:before])
+	if failure.Sent() {
+		listed = append(listed, refused)
+	}
+	if len(listed) == 0 {
 		return nil
 	}
-	if appliedCount > len(statements) {
-		appliedCount = len(statements)
-	}
-	return statements[:appliedCount]
+	return listed
+}
+
+// atlasMigrateApplyWrittenStatements is each statement of a migration body as
+// the file spells it, terminator included where the file wrote one, which is
+// how the community binary lists the statements a file executed. A comment
+// above a statement is left out and one inside it is kept.
+func atlasMigrateApplyWrittenStatements(body, dialect string) []string {
+	return sourcestatement.Each(body, dialect, atlasMigrateApplySplitStatements(body, dialect))
 }
 
 func atlasMigrateApplySplitStatements(sql, dialect string) []string {
@@ -328,21 +366,34 @@ func atlasMigrateApplyCurrentVersionSet(opts MigrateApplyResultOptions) bool {
 		(opts.Status.CurrentVersionKeySet || opts.Status.CurrentVersion > 0)
 }
 
+// atlasMigrateApplyFiles is the migration files a report can name: the
+// converted files by revision identity, and the source file of each converted
+// execution-order key where conversion renamed it.
+type atlasMigrateApplyFiles struct {
+	byVersion map[string]atlasMigrateApplyFile
+	sources   map[int64]MigrateApplySourceFile
+}
+
 func atlasMigrateApplyFileForVersion(
-	files map[string]atlasMigrateApplyFile,
+	files atlasMigrateApplyFiles,
 	versions []int64,
 	keys []string,
 	index int,
 ) (atlasMigrateApplyFile, bool) {
 	key := atlasMigrateApplyVersionKeyAt(versions, keys, index)
-	file, ok := files[key]
+	file, ok := files.byVersion[key]
 	if !ok {
-		file, ok = files[strconv.FormatInt(versions[index], 10)]
+		file, ok = files.byVersion[strconv.FormatInt(versions[index], 10)]
 	}
-	if ok {
-		file.Version = key
+	if !ok {
+		return file, false
 	}
-	return file, ok
+	file.Version = key
+	if source, renamed := files.sources[versions[index]]; renamed {
+		file.Name = source.Name
+		file.Description = source.Description
+	}
+	return file, true
 }
 
 func atlasMigrateApplyTargetVersion(current string, selectedVersions []int64, selectedKeys []string) string {

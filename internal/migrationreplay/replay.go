@@ -458,9 +458,10 @@ type MigrationError struct {
 type FailedStatement struct {
 	// SQL is the statement as it was sent, without its terminator.
 	SQL string
-	// Written is the statement as the migration body spells it, terminator
-	// included, read by [sourcestatement.Written]. It is SQL where the body's
-	// own text at Index is not the statement that was sent.
+	// Written is the statement as the migration body spells it, a semicolon
+	// the body wrote after it included and a delimiter the body declared left
+	// out, read by [sourcestatement.Written]. It is SQL where the body's own
+	// text at Index is not the statement that was sent.
 	Written string
 	// Index is the statement's 1-based position among the statements of the
 	// migration body.

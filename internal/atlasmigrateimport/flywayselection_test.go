@@ -363,6 +363,34 @@ func TestFlywayCoveredRepeatableVersionsDistinguishesEmptyOrdinaryToken(t *testi
 	c.Assert(repeatable, qt.DeepEquals, []int64{9223372036854775807})
 }
 
+// Each covered file carries the name, version token and description Atlas CE
+// reports it by, in execution order, measured on the pinned community binary
+// v1.3.0: the description is what follows the first "__" exactly as the file
+// name spells it, and a nested file keeps its path. Conversion rewrites both the name and
+// the description, so a report has nothing else to read them from.
+func TestFlywayCoveredSourceVersionsCarriesTheSourceDescription(t *testing.T) {
+	c := qt.New(t)
+
+	covered, err := atlasmigrateimport.FlywayCoveredSourceVersions(
+		flywaySource("V1__a__b.sql", "V1.5__space here.sql", "V3.sql", "R__view.sql", "sub/V2__nested.sql"),
+		atlasmigrateimport.FormatFlyway,
+	)
+
+	c.Assert(err, qt.IsNil)
+	type source struct{ Name, Token, Description string }
+	got := make([]source, 0, len(covered))
+	for _, file := range covered {
+		got = append(got, source{Name: file.Source, Token: file.Token, Description: file.Description})
+	}
+	c.Assert(got, qt.DeepEquals, []source{
+		{Name: "V1__a__b.sql", Token: "1", Description: "a__b"},
+		{Name: "V1.5__space here.sql", Token: "1.5", Description: "space here"},
+		{Name: "sub/V2__nested.sql", Token: "2", Description: "nested"},
+		{Name: "V3.sql", Token: "3", Description: ""},
+		{Name: "R__view.sql", Token: "", Description: "view"},
+	})
+}
+
 // TestLoadFSFlywayCoveredSetIsNotEmptyForTheseShapes guards the test above from
 // passing vacuously. LoadFS reports an error on an empty result, so a shape
 // whose covered set were empty would fail rather than silently compare two empty

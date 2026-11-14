@@ -3,6 +3,7 @@ package sqlutil
 import (
 	"strings"
 
+	"ptah.run/internal/clientdelimiter"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/sqlcompound"
@@ -19,6 +20,12 @@ type SourceStatement struct {
 	// Terminated reports whether a semicolon closed the statement, as opposed
 	// to the input ending.
 	Terminated bool
+	// ClientDelimited reports whether a client delimiter the script declared
+	// closed the statement, such as `$$` after `-- atlas:delimiter $$` or `//`
+	// after `DELIMITER //`. Text then ends in the semicolon that delimiter is
+	// read as, which the script does not hold. It is false for a semicolon the
+	// script wrote, and for a statement the input ended.
+	ClientDelimited bool
 }
 
 // SplitSourceStatements returns each statement's source text.
@@ -38,7 +45,7 @@ func SplitSourceStatements(sql, dialect string) []SourceStatement {
 		return nil
 	}
 
-	normalized := normalizeClientDelimitersFor(sql, dialect)
+	normalized, origins := clientDelimitersFor(sql, dialect)
 	lexr := lexer.NewLexerWithOptions(normalized, dialectlexer.Options(dialect))
 	state := sqlcompound.New(dialect)
 
@@ -50,7 +57,11 @@ func SplitSourceStatements(sql, dialect string) []SourceStatement {
 			break
 		}
 		if token.Type == lexer.TokenSemicolon && !state.KeepSemicolonInsideStatement() {
-			statements = appendSourceStatement(statements, current.String()+token.Value, true)
+			statements = appendSourceStatement(statements, SourceStatement{
+				Text:            current.String() + token.Value,
+				Terminated:      true,
+				ClientDelimited: standsForClientDelimiter(sql, origins, token.Start),
+			})
 			current.Reset()
 			state.Reset()
 			continue
@@ -58,7 +69,15 @@ func SplitSourceStatements(sql, dialect string) []SourceStatement {
 		observeToken(&state, token)
 		current.WriteString(token.Value)
 	}
-	return appendSourceStatement(statements, current.String(), false)
+	return appendSourceStatement(statements, SourceStatement{Text: current.String()})
+}
+
+// standsForClientDelimiter reports whether the semicolon at offset of the
+// rewritten text replaced a client delimiter: the written text holds something
+// other than a semicolon at the place origins maps it to.
+func standsForClientDelimiter(sql string, origins clientdelimiter.Origins, offset int) bool {
+	written := origins.Of(offset)
+	return written < 0 || written >= len(sql) || sql[written] != ';'
 }
 
 // appendSourceStatement trims the leading trivia off one accumulated statement
@@ -67,15 +86,15 @@ func SplitSourceStatements(sql, dialect string) []SourceStatement {
 // Only the leading side is trimmed. The trailing side is the whole point: the
 // bytes between the last token of the body and the terminator are part of what
 // was written.
-func appendSourceStatement(statements []SourceStatement, raw string, terminated bool) []SourceStatement {
-	text := trimLeadingSQLTrivia(raw)
+func appendSourceStatement(statements []SourceStatement, raw SourceStatement) []SourceStatement {
+	raw.Text = trimLeadingSQLTrivia(raw.Text)
 	// A terminated statement whose body is empty -- a stray `;`, or one
 	// following nothing but a comment -- is trivia too, so the terminator alone
 	// does not make it content.
-	if strings.TrimSpace(strings.TrimSuffix(text, ";")) == "" {
+	if strings.TrimSpace(strings.TrimSuffix(raw.Text, ";")) == "" {
 		return statements
 	}
-	return append(statements, SourceStatement{Text: text, Terminated: terminated})
+	return append(statements, raw)
 }
 
 // trimLeadingSQLTrivia drops leading whitespace and comments, returning "" when
