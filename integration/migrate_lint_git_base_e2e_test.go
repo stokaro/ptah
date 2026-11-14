@@ -70,6 +70,69 @@ func TestMigrateLintGitBaseE2E(t *testing.T) {
 		c.Check(stderr, qt.Equals, "Error: git diff: exit status 128\n")
 	})
 
+	// --format renders a replay that stopped inside a file as a report, and
+	// nothing else: an error that is no replay of a file goes to stderr as it
+	// does without the flag, as the pinned binary prints it. Rendered as a
+	// report, it read as a failed replay over a directory of no new files.
+	formatErrors := []struct {
+		name   string
+		format string
+		devURL string
+		base   string
+		stderr string
+	}{
+		{"an unresolvable --git-base under a JSON template", "{{ json . }}", "sqlite://file?mode=memory&_fk=1",
+			"nosuchbranch", "Error: git diff: exit status 128\n"},
+		{"an unresolvable --git-base under a template that prints no step", "{{ range .Files }}{{ .Name }}{{ end }}",
+			"sqlite://file?mode=memory&_fk=1", "nosuchbranch", "Error: git diff: exit status 128\n"},
+	}
+	for _, test := range formatErrors {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			stdout, stderr, err := runCLIProcess(ctx, dir, compatBinary,
+				"migrate", "lint",
+				"--dir", "file://migrations",
+				"--dev-url", test.devURL,
+				"--git-base", test.base,
+				"--format", test.format,
+			)
+
+			c.Check(exitStatusOf(c, err), qt.Equals, 1)
+			c.Check(stdout, qt.Equals, "")
+			c.Check(stderr, qt.Equals, test.stderr)
+		})
+	}
+
+	t.Run("a dev database nothing answers at is an error under --format", func(t *testing.T) {
+		c := qt.New(t)
+		stdout, stderr, err := runCLIProcess(ctx, dir, compatBinary,
+			"migrate", "lint",
+			"--dir", "file://migrations",
+			"--dev-url", "postgres://fixture@127.0.0.1:1/dev?sslmode=disable&connect_timeout=5",
+			"--git-base", "main",
+			"--format", "{{ range .Files }}{{ .Name }}{{ end }}",
+		)
+
+		c.Check(exitStatusOf(c, err), qt.Equals, 1)
+		c.Check(stdout, qt.Equals, "")
+		c.Check(stderr, qt.Matches, `(?s)Error: .*error connecting to dev database: .*`)
+	})
+
+	t.Run("a resolvable --git-base renders the template", func(t *testing.T) {
+		c := qt.New(t)
+		stdout, stderr, err := runCLIProcess(ctx, dir, compatBinary,
+			"migrate", "lint",
+			"--dir", "file://migrations",
+			"--dev-url", "sqlite://file?mode=memory&_fk=1",
+			"--git-base", "main",
+			"--format", "{{ range .Files }}{{ .Name }}{{ end }}",
+		)
+
+		c.Check(err, qt.IsNil)
+		c.Check(stderr, qt.Equals, "")
+		c.Check(stdout, qt.Equals, "20240102000000_add_email.sql")
+	})
+
 	t.Run("native lint keeps the reproducible invocation", func(t *testing.T) {
 		c := qt.New(t)
 		stdout, stderr, err := runCLIProcess(ctx, dir, nativeBinary,
