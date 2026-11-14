@@ -248,7 +248,15 @@ type File struct {
 	// dropped its change. Without it the two disagreed: a rule that attaches no
 	// subject produced a finding for a statement the scope had already removed
 	// from the counts (stokaro/ptah#1249).
-	scopeExcluded   map[int]bool
+	scopeExcluded map[int]bool
+	// stateDecided holds the statement indexes whose change only the
+	// starting state decides, which a count that reads that state asks for
+	// ([ChangeCount]).
+	stateDecided []int
+	// reviewed is the schema the run reviews, which tells the predicates that
+	// read the starting state which qualifier names the schema it was read
+	// from ([stateRef]).
+	reviewed        schemaScope
 	suppressedRules []atlaslint.Target
 	// compatibility is the profile this run was started with. A rule reads it
 	// when the two command surfaces model the same statement differently; see
@@ -414,6 +422,7 @@ func cloneFile(file File) File {
 	file.suppressedRules = slices.Clone(file.suppressedRules)
 	file.Changes = slices.Clone(file.Changes)
 	file.scopeExcluded = maps.Clone(file.scopeExcluded)
+	file.stateDecided = slices.Clone(file.stateDecided)
 	file.contract = slices.Clone(file.contract)
 	file.judged = slices.Clone(file.judged)
 	statements := file.Statements
@@ -456,6 +465,9 @@ func ValidateOptions(runtime lintext.Runtime, opts Options) error {
 
 func validateOptions(runtime lintext.Runtime, opts Options) (migrationfile.DirFormat, []Rule, error) {
 	if err := validateCompatibilityProfile(opts.Compatibility); err != nil {
+		return "", nil, err
+	}
+	if err := validateChangeCount(opts.ChangeCount); err != nil {
 		return "", nil, err
 	}
 	rules, err := rulesForOptions(runtime, opts)
@@ -530,7 +542,7 @@ func AnalyzeFS(ctx context.Context, runtime Runtime, fsys fs.FS, opts Options) (
 		Columns:     opts.Baseline,
 		Indexes:     opts.BaselineIndexes,
 		Hypertables: opts.BaselineHypertables,
-	})
+	}, opts.BaselineRead)
 	dependents := newBaselineDependentIndex(opts.BaselineDependents)
 	registered := registeredCodes(rules)
 	// Validated above, so a second compile cannot fail here.
@@ -567,7 +579,7 @@ func AnalyzeFS(ctx context.Context, runtime Runtime, fsys fs.FS, opts Options) (
 		return Analysis{}, err
 	}
 	withOwners(files, runtime.SQL())
-	attachStatements(files, split, opts.Dialect, target, opts.Compatibility, registered, scope, opts.Unparsed)
+	attachStatements(files, split, opts, target, registered, scope)
 	markAloneOutsideATransaction(files, opts)
 	owners, err := checkOwnedRules(ctx, runtime, files, rules, opts, target, registered)
 	if err != nil {
@@ -921,13 +933,13 @@ func unjudgedStatements(files []File, split splitOutcome) []UnjudgedStatement {
 func attachStatements(
 	files []File,
 	split splitOutcome,
-	dialect string,
+	opts Options,
 	target Target,
-	compatibility CompatibilityProfile,
 	registered map[string]struct{},
 	scope schemaScope,
-	unparsed UnparsedScope,
 ) {
+	dialect, compatibility, unparsed := opts.Dialect, opts.Compatibility, opts.Unparsed
+	opening := openingFile(files)
 	next := 0
 	for i := range files {
 		file := &files[i]
@@ -962,11 +974,10 @@ func attachStatements(
 			})
 		}
 		next++
+		file.reviewed = scope
 		if file.IsUp {
-			file.Changes, file.scopeExcluded = extractSchemaChanges(file, dialect, scope)
-			if compatibility == CompatibilityProfileAtlas && lintOf(dialect).AtlasRebuildColumnDiff {
-				file.Changes = foldAtlasReplacements(file, file.Changes)
-			}
+			file.Changes, file.scopeExcluded, file.stateDecided = fileSchemaChanges(
+				file, dialect, scope, compatibility, opts.ChangeCount, i == opening)
 		}
 	}
 }

@@ -2181,6 +2181,44 @@ Ptah's linter reads SQL text. That is why it reports `TRUNCATE` and
 nothing and exits 0, on the one surface where no other tool can be consulted
 about whether that is right.
 
+### The schema-change count
+
+The summary's schema-change count is recovered from Ptah's dialect-aware parse
+of the DDL, the parser the replay and planner use, and is not a count of
+statements or files. One statement can contribute zero changes (an operational
+`INSERT`/`SELECT` or a construct outside the DDL grammar), exactly one (a single
+`CREATE`), or several (a multi-action `ALTER TABLE`, or a `DROP TABLE` naming
+several tables). A table rename counts as two changes, because the old name
+stops naming an object and the new one starts, while a column rename counts as
+one, because the table it modifies stays the same object. On SQLite, a table
+replacement through a `new_<table>` copy counts as one change, as the community
+binary's SQLite analyzer counts it.
+
+A statement the dev database shows to change nothing counts no change: an
+`IF EXISTS` drop of a table, an index or a column that is not there, or an
+`IF NOT EXISTS` creation of one that is. The first version starts from the
+empty dev database, so the same holds there. The state a file starts from
+answers only until something changes it, so such a statement is counted where
+an earlier statement of the same file names the object or its table, drops or
+alters a schema, or cascades. It is counted too where the state cannot be
+matched against the qualifier the statement writes, such as `main.` on SQLite
+or another database on MySQL.
+
+A directory's first file counts differently when it holds more than ten
+statements. It counts one change per table, or other object that stands on its
+own, that it leaves behind: twelve statements that create the tables `t1` to
+`t10`, then create and drop `tmp`, are 10 schema changes, where the same twelve
+in a later file are 12. An index, a column or a comment in that file counts
+with its table, and an object it creates and drops again counts nothing. This
+is the count the pinned community binary prints, whatever `--latest` selects.
+
+The default surface counts a change to every kind of object Ptah models, so a
+view, a trigger, a routine, a sequence, a policy or a privilege counts as one.
+The community binary counts only what it reads off the dev database: tables
+with their columns, constraints, indexes and comments, schemas, and enum types.
+Under `PTAH_ATLAS_STRICT_COMPAT=1` the count is that one. Native
+`ptah migrations lint` prints no count.
+
 ### Renames
 
 A rename retires one logical name and introduces another. The two surfaces
@@ -2265,17 +2303,6 @@ the dev database replayed, as the community binary does:
 Each `Analyze <file>` step counts that file's reports, one per analyzer that
 raised anything: two destructive drops in one file are `1 reports were found
 in analysis`, as on the community binary.
-
-The summary's schema-change count is recovered from Ptah's dialect-aware parse
-of the DDL, the parser the replay and planner use, and is not a count of
-statements or files. One statement can contribute zero changes (an operational
-`INSERT`/`SELECT` or a construct outside the DDL grammar), exactly one (a single
-`CREATE`), or several (a multi-action `ALTER TABLE`, or a `DROP TABLE` naming
-several tables). A table rename counts as two changes, because the old name
-stops naming an object and the new one starts, while a column rename counts as
-one, because the table it modifies stays the same object. On SQLite, a table
-replacement through a `new_<table>` copy counts as one change, as the community
-binary's SQLite analyzer counts it.
 
 Ptah also validates and fully loads the migration provider, including Atlas
 templates, before dropping any objects from the dev database. A malformed
@@ -2733,8 +2760,8 @@ Ptah-native migrations instead; see
   before and after the analyzed versions. Both are empty, and `{{ json .Schema }}`
   prints `{}`, when the run stops at `atlas.sum` or in the replay.
 - `.TotalFiles` counts the migration files in `.Files`, so it is `0` after an
-  `atlas.sum` failure. `.TotalChanges` counts schema changes per statement, as
-  the text report's summary does. `.DiagnosticsCount` counts the diagnostics in
+  `atlas.sum` failure. `.TotalChanges` is the schema-change count of the text
+  report's summary. `.DiagnosticsCount` counts the diagnostics in
   every report.
 - Each step entry: `.Name`, `.Text`, `.Error`, and `.Result`.
 - Each file entry: `.Name`, `.Text`, `.Reports`, `.Error`, `.Findings`,

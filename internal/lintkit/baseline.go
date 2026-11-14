@@ -10,10 +10,14 @@ import (
 // State is one version's starting state, indexed for lookup by the
 // source-spelled references the linter reads out of SQL.
 //
-// The zero value resolves nothing, which is what every run without a dev
-// database gets and what keeps a rename reported exactly as it was before this
-// existed.
+// The zero value is a state nobody read, which is what every run without a dev
+// database gets: it resolves nothing and answers no question about absence. A
+// state that was read and holds nothing is not the zero value; see
+// [NewStates].
 type State struct {
+	// read reports that the run read this state, so an object it does not
+	// hold is absent rather than unknown.
+	read  bool
 	byRef map[string][]lintext.BaselineColumn
 	// byTable holds every column of a table under the same reference
 	// spellings byRef uses, in catalog order, for the rules whose subject is
@@ -25,6 +29,10 @@ type State struct {
 	// hypertables holds every TimescaleDB hypertable under the same reference
 	// spellings, one entry per schema that carries the name.
 	hypertables map[string][]lintext.BaselineHypertable
+	// byIndexName holds every index under the spellings of its own name,
+	// bare and qualified by its schema, for the lookups that name an index
+	// without its table.
+	byIndexName map[string][]lintext.BaselineIndex
 	// schemaless reports that no column in this state names a schema. A reader
 	// scoped to one schema does not repeat that schema's name on every table, so
 	// a migration writing `ALTER TABLE public.users` has a qualifier the state
@@ -38,12 +46,17 @@ type State struct {
 // version whose starting state each describes. A row no lookup can use -- a
 // column or an index without a table or a name, a hypertable without a
 // table -- is left out, so it cannot make a reference look ambiguous. The
-// dependents are not indexed here. A version with no rows has the zero State.
-func NewStates(baseline lintext.Baseline) map[int64]State {
+// dependents are not indexed here.
+//
+// read names the versions whose state the caller read. A version it names
+// that has no row is a state that was read and holds nothing: the version
+// starts from an empty schema. A version with rows was read whether or not
+// read names it. Any other version has the zero State.
+func NewStates(baseline lintext.Baseline, read []int64) map[int64]State {
 	columns := normalizeColumns(baseline.Columns)
 	indexes := normalizeIndexes(baseline.Indexes)
 	hypertables := normalizeHypertables(baseline.Hypertables)
-	if len(columns) == 0 && len(indexes) == 0 && len(hypertables) == 0 {
+	if len(columns) == 0 && len(indexes) == 0 && len(hypertables) == 0 && len(read) == 0 {
 		return nil
 	}
 	index := make(map[int64]State)
@@ -51,14 +64,19 @@ func NewStates(baseline lintext.Baseline) map[int64]State {
 		state, ok := index[version]
 		if !ok {
 			state = State{
+				read:           true,
 				byRef:          make(map[string][]lintext.BaselineColumn),
 				byTable:        make(map[string][]lintext.BaselineColumn),
 				byTableIndexes: make(map[string][]lintext.BaselineIndex),
 				hypertables:    make(map[string][]lintext.BaselineHypertable),
+				byIndexName:    make(map[string][]lintext.BaselineIndex),
 				schemaless:     true,
 			}
 		}
 		return state
+	}
+	for _, version := range read {
+		index[version] = stateOf(version)
 	}
 	for _, column := range columns {
 		state := stateOf(column.Version)
@@ -80,6 +98,9 @@ func NewStates(baseline lintext.Baseline) map[int64]State {
 		}
 		for _, key := range baselineTableKeys(idx.Schema, idx.Table) {
 			state.byTableIndexes[key] = append(state.byTableIndexes[key], idx)
+		}
+		for _, key := range baselineTableKeys(idx.Schema, idx.Name) {
+			state.byIndexName[key] = append(state.byIndexName[key], idx)
 		}
 		index[idx.Version] = state
 	}
@@ -320,17 +341,34 @@ func SubsetOf(inner, outer []string) bool {
 // The state reads tables through their columns, so a table with no column is
 // not one it holds.
 func (b State) LacksTable(tableRef string) bool {
-	if b.Empty() || tableRef == "" || len(b.byTable[tableRef]) > 0 {
+	return lacks(b, b.byTable, tableRef)
+}
+
+// LacksIndex reports whether the state was read and holds no index the
+// reference indexRef can name, in any table, so a statement that drops the
+// index only if it exists drops nothing. indexRef is the index's own name,
+// qualified by a schema or not, in the linter's normalized form. It answers
+// false wherever the state cannot say, as [State.LacksTable] does.
+func (b State) LacksIndex(indexRef string) bool {
+	return lacks(b, b.byIndexName, indexRef)
+}
+
+// lacks is the answer [State.LacksTable] and [State.LacksIndex] share over
+// the entries of one kind, keyed by the spellings of their names.
+func lacks[V any](b State, byName map[string][]V, ref string) bool {
+	if b.Unread() || ref == "" || len(byName[ref]) > 0 {
 		return false
 	}
-	dot := strings.LastIndex(tableRef, ".")
+	dot := strings.LastIndex(ref, ".")
 	if dot < 0 {
 		return true
 	}
 	if b.schemaless {
 		return false
 	}
-	prefix := tableRef[:dot+1]
+	// The schema is held when any table of the state carries it: a table is
+	// what every row of the state hangs off.
+	prefix := ref[:dot+1]
 	for key := range b.byTable {
 		if strings.HasPrefix(key, prefix) {
 			return true
@@ -339,10 +377,19 @@ func (b State) LacksTable(tableRef string) bool {
 	return false
 }
 
-// Empty reports that this state resolves nothing, which is what a version
-// the run never read from a dev database gets.
-func (b State) Empty() bool {
-	return len(b.byRef) == 0
+// NamesSchemas reports a state that was read and whose rows name the schema
+// each belongs to, so a reference qualified by a schema is matched as it is
+// written. A state read from one schema names none, and neither does one that
+// holds nothing.
+func (b State) NamesSchemas() bool {
+	return b.read && !b.schemaless
+}
+
+// Unread reports that the run read no state for this version, which is what
+// a version a run without a dev database gets. A state that was read and holds
+// nothing is not unread: the version starts from an empty schema.
+func (b State) Unread() bool {
+	return !b.read
 }
 
 // Column returns the baseline state of one column of one table.

@@ -95,11 +95,11 @@ func (s schemaScope) allowsFinding(finding Finding) bool {
 // routine body, a COMMENT ON target) is kept, for the same reason an unparsable
 // reference is. The reference is not always the object the change names: see
 // [nodeScopeReference].
-func (s schemaScope) keepChange(change SchemaChange, reference string) ([]SchemaChange, bool) {
+func (s schemaScope) keepChange(change countedChange, reference string) ([]countedChange, bool) {
 	if !s.allowsObject(reference) {
 		return nil, true
 	}
-	return []SchemaChange{change}, false
+	return []countedChange{change}, false
 }
 
 // keepFindings returns the findings that name an object under review, in the

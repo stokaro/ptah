@@ -4176,7 +4176,11 @@ column subjects can also carry the parent table and declared data type. Each
 prepared up-migration file also carries the semantic schema changes it
 expresses (`File.Changes`, typed `SchemaChange`), recovered from Ptah's
 dialect-aware SQL parser so one statement can map to zero, one, or several
-changes.
+changes. `Options.ChangeCount` selects how they are counted: the zero value
+counts each statement's changes, and the Atlas counts match the community
+binary's `migrate lint` summary. `Options.BaselineRead` names the versions whose
+starting state the caller read, so a version the dev database showed empty
+starts from an empty schema rather than from an unread one.
 
 Atlas-ignored files are marked explicitly without changing version selection.
 Compatibility-specific directive behavior must be selected explicitly; native

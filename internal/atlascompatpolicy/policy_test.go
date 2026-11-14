@@ -22,6 +22,7 @@ import (
 	"ptah.run/feature/pgtype"
 	"ptah.run/internal/atlascompatpolicy"
 	"ptah.run/internal/envbool/envbooltest"
+	migrationlint "ptah.run/migration/lint"
 )
 
 func TestResolveDefaultsToFullCompatibility(t *testing.T) {
@@ -640,6 +641,14 @@ func TestStrictCENullBackfillPolicy(t *testing.T) {
 	c := qt.New(t)
 	c.Assert(atlascompatpolicy.StrictCE().FillsNullRowsWithDefault(), qt.IsFalse)
 	c.Assert(atlascompatpolicy.Full().FillsNullRowsWithDefault(), qt.IsTrue)
+}
+
+// Both policies count the `migrate lint` summary the way the community binary
+// does; strict CE mode also leaves out the kinds of object it does not read.
+func TestLintChangeCountPolicy(t *testing.T) {
+	c := qt.New(t)
+	c.Assert(atlascompatpolicy.StrictCE().LintChangeCount(), qt.Equals, migrationlint.ChangeCountAtlasCommunity)
+	c.Assert(atlascompatpolicy.Full().LintChangeCount(), qt.Equals, migrationlint.ChangeCountAtlas)
 }
 
 func TestStrictCERejectsProSchemaInspectTemplateFunctions(t *testing.T) {

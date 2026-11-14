@@ -50,7 +50,7 @@ func typeChangeStatements(file *File) []int {
 // establishes every type clause of the statement as a restatement of the
 // column's current type.
 func typeUnchangedByState(file *File, index int) bool {
-	if file.baseline.Empty() {
+	if file.baseline.Unread() {
 		return false
 	}
 	stmt := &file.Statements[index]

@@ -67,9 +67,6 @@ type SchemaChange struct {
 // so a single construct the parser does not model (for example GRANT) cannot
 // suppress the changes of its neighbors. Down migrations and files without
 // parsed statements yield no changes.
-// A DROP TABLE IF EXISTS of a table the starting state shows is absent, and a
-// CREATE TABLE IF NOT EXISTS of one it shows is present, change nothing, so
-// they count no change; see [withoutNoopChanges].
 // Changes to objects outside scope are dropped: the dev database the run
 // compares against does not contain them, so they express no change to the
 // state under review. Measured against the pinned community binary v1.3.0 with
@@ -77,18 +74,20 @@ type SchemaChange struct {
 // app2.t (id int); CREATE TABLE keep (id int);` counts one schema change, not
 // three, and a version that drops two `app` tables counts none.
 //
-// The second return names the statements the scope removed entirely, keyed by
-// statement index, so a finding about one of them is dropped by the same
-// decision that dropped its change.
-func extractSchemaChanges(file *File, dialect string, scope schemaScope) ([]SchemaChange, map[int]bool) {
+// The changes are every one the statements express, including those the
+// starting state may show change nothing; [fileSchemaChanges] decides which
+// count. The second return names the statements the scope removed entirely,
+// keyed by statement index, so a finding about one of them is dropped by the
+// same decision that dropped its change.
+func extractSchemaChanges(file *File, dialect string, scope schemaScope) ([]countedChange, map[int]bool) {
 	if !file.IsUp || len(file.Statements) == 0 {
 		return nil, nil
 	}
-	var changes []SchemaChange
+	var changes []countedChange
 	excluded := make(map[int]bool)
 	for i := range file.Statements {
 		stmtChanges, out := statementSchemaChanges(file, file.Statements[i], dialect, scope)
-		changes = append(changes, withoutNoopChanges(file, i, stmtChanges)...)
+		changes = append(changes, stmtChanges...)
 		if out {
 			excluded[file.Statements[i].Index] = true
 		}
@@ -138,18 +137,18 @@ func foldAtlasReplacements(file *File, changes []SchemaChange) []SchemaChange {
 // whether the scope excluded the statement outright.
 //
 // The second return is what keeps the reported counts and the reported findings
-// describing the same set. Before it existed, an `ALTER TABLE app.users ADD
-// CONSTRAINT ...` under a run reviewing `public` contributed no change and still
-// produced a finding, because the rule that fired attaches no subject and
-// [schemaScope.allowsFinding] deliberately keeps a finding it cannot place
-// (stokaro/ptah#1249).
+// describing the same set: a statement the scope excluded has its findings
+// dropped as well as its changes. An `ALTER TABLE app.users ADD CONSTRAINT ...`
+// under a run reviewing `public` contributes no change, and the rule that fires
+// on it attaches no subject, which [schemaScope.allowsFinding] deliberately
+// keeps (stokaro/ptah#1249).
 //
 // A statement is excluded only when the scope rejected something it named and
 // nothing it named survived. A statement the parser cannot model, one whose
 // nodes name no object at all, and one the scope rejected nothing of are all
 // left alone -- silence there is absence of evidence, and it must not be able to
 // drop a finding.
-func statementSchemaChanges(file *File, stmt Statement, dialect string, scope schemaScope) ([]SchemaChange, bool) {
+func statementSchemaChanges(file *File, stmt Statement, dialect string, scope schemaScope) ([]countedChange, bool) {
 	list, err := parseStatement(file, stmt.SQL, dialect)
 	if err != nil || list == nil {
 		// A statement Ptah's parser cannot model contributes no structural
@@ -158,7 +157,7 @@ func statementSchemaChanges(file *File, stmt Statement, dialect string, scope sc
 		// change count.
 		return nil, false
 	}
-	var changes []SchemaChange
+	var changes []countedChange
 	scopedOut := false
 	for _, node := range list.Statements {
 		nodeChanges, out := nodeSchemaChanges(file, stmt, node, scope)
@@ -179,15 +178,18 @@ func parseStatement(file *File, sql, dialect string) (*ast.StatementList, error)
 // rejected an object the node named. A node that names nothing, and a node whose
 // objects are all under review, report false: neither was scoped out, which is
 // what lets the caller tell "removed by the scope" from "modeled as no change".
-func nodeSchemaChanges(file *File, stmt Statement, node ast.Node, scope schemaScope) ([]SchemaChange, bool) {
-	change := func(kind SchemaChangeKind, object string) SchemaChange {
-		return SchemaChange{
-			Version:        file.Version,
-			File:           file.Path,
-			StatementIndex: stmt.Index,
-			Line:           stmt.Line,
-			Kind:           kind,
-			Object:         object,
+func nodeSchemaChanges(file *File, stmt Statement, node ast.Node, scope schemaScope) ([]countedChange, bool) {
+	change := func(kind SchemaChangeKind, object string, on objectKind) countedChange {
+		return countedChange{
+			SchemaChange: SchemaChange{
+				Version:        file.Version,
+				File:           file.Path,
+				StatementIndex: stmt.Index,
+				Line:           stmt.Line,
+				Kind:           kind,
+				Object:         object,
+			},
+			on: on,
 		}
 	}
 	// DROP TABLE and ALTER TABLE are the two constructs where one statement can
@@ -199,17 +201,17 @@ func nodeSchemaChanges(file *File, stmt Statement, node ast.Node, scope schemaSc
 		if !scope.allowsSchema(n.Name) {
 			return nil, true
 		}
-		return []SchemaChange{change(SchemaChangeAdd, n.Name)}, false
+		return []countedChange{change(SchemaChangeAdd, n.Name, kindSchema)}, false
 	case *ast.DropTableNode:
 		names := n.TableNames()
-		out := make([]SchemaChange, 0, len(names))
+		out := make([]countedChange, 0, len(names))
 		scopedOut := false
 		for _, name := range names {
 			if !scope.allowsObject(name) {
 				scopedOut = true
 				continue
 			}
-			out = append(out, change(SchemaChangeDrop, name))
+			out = append(out, change(SchemaChangeDrop, name, kindTable))
 		}
 		return out, scopedOut
 	case *ast.AlterTableNode:
@@ -222,7 +224,7 @@ func nodeSchemaChanges(file *File, stmt Statement, node ast.Node, scope schemaSc
 			// though it still contributes no change there.
 			return nil, !slices.ContainsFunc(alterReferencedTables(n), scope.allowsObject)
 		}
-		out := make([]SchemaChange, 0, len(n.Operations))
+		out := make([]countedChange, 0, len(n.Operations))
 		for _, op := range n.Operations {
 			// A table rename is two changes, not one: the old name stops
 			// naming anything and the new name starts. Measured -- one
@@ -231,27 +233,42 @@ func nodeSchemaChanges(file *File, stmt Statement, node ast.Node, scope schemaSc
 			// TO b` counts as one.
 			if rename, ok := op.(*ast.RenameTableOperation); ok {
 				out = append(out,
-					change(SchemaChangeDrop, n.Name),
-					change(SchemaChangeAdd, rename.NewName),
+					change(SchemaChangeDrop, n.Name, kindTable),
+					change(SchemaChangeAdd, rename.NewName, kindTable),
 				)
 				continue
 			}
 			kind, object := alterOperationChange(n, op)
-			out = append(out, change(kind, object))
+			counted := change(kind, object, alterOperationObject(op))
+			counted.parent = lintkit.NormalizeReference(n.Name)
+			counted.guarded = alterOperationGuarded(op)
+			out = append(out, counted)
 		}
 		return out, false
+	case *ast.IndexNode:
+		counted := change(SchemaChangeAdd, n.Name, kindIndex)
+		counted.parent, counted.guarded = lintkit.NormalizeReference(n.Table), n.IfNotExists
+		return scope.keepChange(counted, nodeScopeReference(node, n.Name))
+	case *ast.DropIndexNode:
+		counted := change(SchemaChangeDrop, n.Name, kindIndex)
+		counted.parent, counted.guarded = lintkit.NormalizeReference(n.Table), n.IfExists
+		return scope.keepChange(counted, nodeScopeReference(node, n.Name))
+	case *ast.CommentNode:
+		// A COMMENT ON … statement modifies an object's comment. Bare SQL
+		// comments never reach here; the scanner drops them before parsing.
+		return []countedChange{change(SchemaChangeModify, "", commentObject(stmt.Words))}, false
 	}
 	if kind, object, ok := ownerStatementChange(node); ok {
-		return scope.keepChange(change(kind, object), object)
+		return scope.keepChange(change(kind, object, kindOwnerStatement), object)
 	}
-	if object, ok := addNodeObject(node); ok {
-		return scope.keepChange(change(SchemaChangeAdd, object), nodeScopeReference(node, object))
+	if object, on, ok := addNodeObject(node); ok {
+		return scope.keepChange(change(SchemaChangeAdd, object, on), nodeScopeReference(node, object))
 	}
-	if object, ok := dropNodeObject(node); ok {
-		return scope.keepChange(change(SchemaChangeDrop, object), nodeScopeReference(node, object))
+	if object, on, ok := dropNodeObject(node); ok {
+		return scope.keepChange(change(SchemaChangeDrop, object, on), nodeScopeReference(node, object))
 	}
-	if object, ok := modifyNodeObject(node); ok {
-		return scope.keepChange(change(SchemaChangeModify, object), nodeScopeReference(node, object))
+	if object, on, ok := modifyNodeObject(node); ok {
+		return scope.keepChange(change(SchemaChangeModify, object, on), nodeScopeReference(node, object))
 	}
 	// Operational nodes (INSERT/SELECT wrappers, DO blocks, raw SQL) and any
 	// construct Ptah does not model as a schema object contribute nothing.
@@ -335,39 +352,37 @@ func nodeScopeReference(node ast.Node, object string) string {
 	return object
 }
 
-// addNodeObject reports the object a CREATE (or GRANT) node adds.
-func addNodeObject(node ast.Node) (object string, ok bool) {
+// addNodeObject reports the object a CREATE (or GRANT) node adds, and the
+// kind of object the change lands on. CREATE INDEX is handled by the caller,
+// which also records the table the index is on.
+func addNodeObject(node ast.Node) (object string, on objectKind, ok bool) {
 	switch n := node.(type) {
 	case *ast.CreateTableNode:
-		return n.Name, true
+		return n.Name, kindTable, true
 	case *ast.EnumNode:
-		return n.Name, true
+		return n.Name, kindType, true
 	case *ast.CreateTypeNode:
-		return n.Name, true
-	case *ast.IndexNode:
-		return n.Name, true
+		return n.Name, kindType, true
 	case *ast.CreateSequenceNode:
-		return n.Name, true
-	case *ast.CreateSchemaNode:
-		return n.Name, true
+		return n.Name, kindSequence, true
 	case *ast.CreateDatabaseNode:
-		return n.Name, true
+		return n.Name, kindSchema, true
 	case *ast.CreateViewNode:
-		return n.Name, true
+		return n.Name, kindView, true
 	case *ast.CreateMaterializedViewNode:
-		return n.Name, true
+		return n.Name, kindMaterializedView, true
 	case *ast.CreateTriggerNode:
-		return n.Name, true
+		return n.Name, kindTrigger, true
 	case *ast.CreateFunctionNode:
-		return n.Name, true
+		return n.Name, kindRoutine, true
 	case *ast.CreatePolicyNode:
-		return n.Name, true
+		return n.Name, kindPolicy, true
 	case *ast.CreateRoleNode:
-		return n.Name, true
+		return n.Name, kindRole, true
 	case *ast.GrantPrivilegeNode:
-		return n.ObjectName, true
+		return n.ObjectName, kindPrivilege, true
 	case *ast.RoutineNode:
-		return n.Name, true
+		return n.Name, kindRoutine, true
 	case *ast.OpaqueRoutineNode:
 		// The one routine node with no name to give: it is the fallback the
 		// parser preserves verbatim when no dialect path claimed the statement,
@@ -375,65 +390,62 @@ func addNodeObject(node ast.Node) (object string, ok bool) {
 		// above does carry one, and returning "" for it handed the change
 		// model a routine creation with no object name at all -- so a finding
 		// about a routine could not say which routine (stokaro/ptah#1270).
-		return "", true
+		return "", kindRoutine, true
 	default:
-		return "", false
+		return "", 0, false
 	}
 }
 
-// dropNodeObject reports the object a DROP (or REVOKE) node removes. DROP TABLE
-// is handled by the caller because it can name several tables at once.
-func dropNodeObject(node ast.Node) (object string, ok bool) {
+// dropNodeObject reports the object a DROP (or REVOKE) node removes, and the
+// kind of object the change lands on. DROP TABLE is handled by the caller
+// because it can name several tables at once, and DROP INDEX because the
+// caller records the table the index is on.
+func dropNodeObject(node ast.Node) (object string, on objectKind, ok bool) {
 	switch n := node.(type) {
 	case *ast.DropTypeNode:
-		return n.Name, true
-	case *ast.DropIndexNode:
-		return n.Name, true
+		return n.Name, kindType, true
 	case *ast.DropSequenceNode:
-		return n.Name, true
+		return n.Name, kindSequence, true
 	case *ast.DropViewNode:
-		return n.Name, true
+		return n.Name, kindView, true
 	case *ast.DropMaterializedViewNode:
-		return n.Name, true
+		return n.Name, kindMaterializedView, true
 	case *ast.DropTriggerNode:
-		return n.Name, true
+		return n.Name, kindTrigger, true
 	case *ast.DropFunctionNode:
-		return n.Name, true
+		return n.Name, kindRoutine, true
 	case *ast.DropPolicyNode:
-		return n.Name, true
+		return n.Name, kindPolicy, true
 	case *ast.DropRoleNode:
-		return n.Name, true
+		return n.Name, kindRole, true
 	case *ast.RevokePrivilegeNode:
-		return n.ObjectName, true
+		return n.ObjectName, kindPrivilege, true
 	default:
-		return "", false
+		return "", 0, false
 	}
 }
 
-// modifyNodeObject reports the object an in-place ALTER (or COMMENT ON) node
-// mutates.
-func modifyNodeObject(node ast.Node) (object string, ok bool) {
+// modifyNodeObject reports the object an in-place ALTER node mutates, and the
+// kind of object the change lands on. COMMENT ON is handled by the caller,
+// which reads the kind of its target off the statement.
+func modifyNodeObject(node ast.Node) (object string, on objectKind, ok bool) {
 	switch n := node.(type) {
 	case *ast.AlterTypeNode:
-		return n.Name, true
+		return n.Name, kindType, true
 	case *ast.AlterSequenceNode:
-		return n.Name, true
+		return n.Name, kindSequence, true
 	case *ast.RefreshMaterializedViewNode:
-		return n.Name, true
+		return n.Name, kindMaterializedView, true
 	case *ast.AlterRoleNode:
-		return n.Name, true
+		return n.Name, kindRole, true
 	case *ast.AlterTableEnableRLSNode:
-		return n.Table, true
+		return n.Table, kindRowSecurity, true
 	case *ast.AlterTableDisableRLSNode:
-		return n.Table, true
+		return n.Table, kindRowSecurity, true
 	case *ast.AlterTableForceRLSNode:
-		return n.Table, true
-	case *ast.CommentNode:
-		// A COMMENT ON … statement modifies an object's comment. Bare SQL
-		// comments never reach here; the scanner drops them before parsing.
-		return "", true
+		return n.Table, kindRowSecurity, true
 	default:
-		return "", false
+		return "", 0, false
 	}
 }
 
