@@ -104,9 +104,9 @@ func TestCompatMigrateApplyFlywaySourceVersionOrder(t *testing.T) {
 
 	tests := []flywaySourceOrderRow{
 		{
-			// The issue's shape. Reverted: exit 0, "Migrating to version
-			// 4611686018427836747 from 1 pending migrations.", tables sq2 and
-			// sq10 — the migration the oracle refuses, executed.
+			// The issue's shape. Reverted: exit 0, a report migrating to
+			// version 4611686018427836747, tables sq2 and sq10 — the
+			// migration the oracle refuses, executed.
 			name:    "a tenth migration added under an applied second",
 			applied: []string{"V2__sq2.sql"},
 			added:   []string{"V10__sq10.sql"},
@@ -263,8 +263,8 @@ func TestCompatMigrateApplyFlywaySourceVersionOrder(t *testing.T) {
 		},
 		{
 			// A preview must not report work a real apply refuses. The pinned
-			// binary refuses the dry run too. Reverted: exit 0 and
-			// "Would have applied 1 migrations."
+			// binary refuses the dry run too. Reverted: exit 0 and a report
+			// of one migration.
 			name:    "a dry run refuses rather than previewing the refused migration",
 			applied: []string{"V2__sq2.sql"},
 			added:   []string{"V10__sq10.sql"},
@@ -281,8 +281,8 @@ func TestCompatMigrateApplyFlywaySourceVersionOrder(t *testing.T) {
 			// baseline-plus-repeatable shapes, all of them compat looser than
 			// the oracle.
 			//
-			// Reverted (the recovery removed): exit 0, "Migrating to version
-			// 9223372036854775807 from 2 pending migrations.", tables sq2,
+			// Reverted (the recovery removed): exit 0, a report migrating to
+			// version 9223372036854775807 with two migrations, tables sq2,
 			// sqb3 and sqr.
 			//
 			// The pinned binary names both added files; this names only the
@@ -321,11 +321,10 @@ func TestCompatMigrateApplyFlywaySourceVersionOrder(t *testing.T) {
 			// with the worse message.
 			//
 			// Reverted — that is, with #1003's refusal removed for this shape —
-			// this row prints exit 0, "Migrating to version 448844 from 1
-			// pending migrations." / "Migration complete. Current version:
-			// 4611686018427510315", and tables sq2 AND sqbase: the squash
-			// executed on top of the history it squashes. That was this row's
-			// expectation before the rebase, and #1003 decided against it.
+			// this row exits 0 with a report migrating one migration, and
+			// tables sq2 AND sqbase: the squash executed on top of the history
+			// it squashes, which the refusal exists to prevent
+			// (stokaro/ptah#1003).
 			//
 			// The pinned binary answers this input with "No migration files to
 			// execute" at exit 0, running nothing. Refusing is the strict

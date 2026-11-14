@@ -147,11 +147,27 @@ No flag named the database. `--env local` selected the env block, and the
 ptah-compat migrate apply --env local
 ```
 
-Expected output on standard output:
+The report is the one Atlas prints: each migration with the statements it ran,
+then a summary. Each migration and the summary also print a duration, which
+changes from run to run, so those lines are left out here.
+
+Expected output includes, on standard output:
 
 ```text
-Migrating to version 20240102000000 from 2 pending migrations.
-Migration complete. Current version: 20240102000000
+Migrating to version 20240102000000 (2 migrations in total):
+
+  -- migrating version 20240101000000
+    -> CREATE TABLE users (
+           id    INTEGER PRIMARY KEY,
+           email TEXT NOT NULL
+       );
+
+  -- migrating version 20240102000000
+    -> CREATE UNIQUE INDEX users_email_idx ON users (email);
+
+  -------------------------
+  -- 2 migrations
+  -- 2 sql statements
 ```
 
 ```console

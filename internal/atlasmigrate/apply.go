@@ -138,6 +138,14 @@ type ApplyResult struct {
 	EndedAt          time.Time
 	ErrorText        string
 	ApplyError       error
+	// Executed reports that the run reached the selected migrations: it ran
+	// them, or a dry run went through them without writing. Applied holds
+	// only for the first, and neither holds for a run refused before its
+	// first migration.
+	Executed bool
+	// ChecksSkipped reports that the run bypassed every pre-migration check,
+	// as [ApplyOptions.SkipChecks] asked.
+	ChecksSkipped bool
 	// ChecksDeferred lists versions whose checks were parsed and statically
 	// validated but not evaluated, because a dry run cannot produce the state
 	// they assert on. Empty outside a dry run.
@@ -315,6 +323,7 @@ func (p ApplyPlan) execute(ctx context.Context, hook migrator.PreMigrationHook) 
 		CurrentKeySet:    p.CurrentKeySet,
 		DryRun:           p.DryRun,
 		StartedAt:        p.StartedAt,
+		ChecksSkipped:    p.opts.SkipChecks,
 	}
 	executionStarted := false
 	lockedPlanObserved := false
@@ -347,6 +356,7 @@ func (p ApplyPlan) execute(ctx context.Context, hook migrator.PreMigrationHook) 
 		},
 	})
 	result.EndedAt = time.Now()
+	result.Executed = executionStarted
 	if err != nil {
 		result.Applied = executionStarted && !p.DryRun
 		result.ApplyError = err

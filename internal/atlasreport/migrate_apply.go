@@ -42,9 +42,18 @@ type MigrateApplyResultOptions struct {
 	CurrentKeySet    bool
 	ErrorText        string
 	ApplyError       error
-	Applied          bool
 	StartedAt        time.Time
 	EndedAt          time.Time
+	// Applied reports that the run reached the selected migrations: it
+	// executed them, or a dry run went through them without writing. The
+	// report lists them under `.Applied` only then, and a dry run lists every
+	// statement, as the community binary does.
+	Applied bool
+	// ChecksNotRun is the versions whose pre-migration checks the run did not
+	// evaluate: a dry run defers them, and PTAH_SKIP_CHECKS bypasses them.
+	// Their checks are left out of the report, which would otherwise show
+	// them as passed.
+	ChecksNotRun []int64
 }
 
 // MigrateApplySourceFile is a migration file as the operator's directory holds
@@ -91,6 +100,9 @@ type atlasMigrateApplyAppliedFile struct {
 	Applied []string
 	Checks  []*atlasMigrateApplyFileChecks
 	Error   *atlasMigrateApplyStatementError
+	// errorListed reports that Applied ends with the statement Error names,
+	// because the statement reached the database before it failed.
+	errorListed bool
 }
 
 type atlasMigrateApplyFileChecks struct {
@@ -169,6 +181,7 @@ func buildAtlasMigrateApplyResult(opts MigrateApplyResultOptions) (atlasMigrateA
 			opts.SelectedKeys,
 			opts.Conn.Info().Dialect,
 			opts.ApplyError,
+			opts.ChecksNotRun,
 			opts.StartedAt,
 			opts.EndedAt,
 		)
@@ -227,6 +240,7 @@ func atlasMigrateApplyAppliedFiles(
 	keys []string,
 	dialect string,
 	applyErr error,
+	checksNotRun []int64,
 	startedAt,
 	endedAt time.Time,
 ) []*atlasMigrateApplyAppliedFile {
@@ -243,38 +257,53 @@ func atlasMigrateApplyAppliedFiles(
 			Start:                 startedAt,
 			End:                   endedAt,
 		}
-		if migration := migrations[version]; migration != nil {
-			appliedFile.Applied = atlasMigrateApplyWrittenStatements(migration.UpSQL, dialect)
+		migration := migrations[version]
+		if migration == nil {
+			applied = append(applied, appliedFile)
+			continue
+		}
+		appliedFile.Applied = atlasMigrateApplyWrittenStatements(migration.UpSQL, dialect)
+		if !slices.Contains(checksNotRun, migration.Version) {
 			appliedFile.Checks = atlasMigrateApplyChecks(migration, dialect, applyErr)
-			if failedVersionSet && version == failedVersion {
-				execErr := atlasMigrateApplyExecutionError(applyErr)
-				if execErr == nil {
-					execErr = &migrator.MigrationExecutionError{
-						Err:       applyErr,
-						Statement: "",
-					}
-				}
-				appliedFile.Error = &atlasMigrateApplyStatementError{
-					Stmt: execErr.Statement,
-					Text: execErr.Unwrap().Error(),
-				}
-				// A statement the database answered is reported as the file
-				// spells it, with the database's answer alone, as the line the
-				// run prints names it.
-				if executed := NewApplyStatementError(applyErr, []*migrator.Migration{migration}, dialect); executed != nil {
-					appliedFile.Error = &atlasMigrateApplyStatementError{
-						Stmt: executed.Statement,
-						Text: executed.Answer.Error(),
-					}
-				}
-				appliedFile.Applied = atlasMigrateApplySentStatements(appliedFile.Applied, execErr, appliedFile.Error.Stmt)
-				applied = append(applied, appliedFile)
-				break
-			}
 		}
 		applied = append(applied, appliedFile)
+		if failedVersionSet && version == failedVersion {
+			recordAtlasMigrateApplyFailure(appliedFile, migration, dialect, applyErr)
+			break
+		}
 	}
 	return applied
+}
+
+// recordAtlasMigrateApplyFailure marks the file a failed run stopped at with
+// the failure, and cuts its statements down to the ones the run sent.
+func recordAtlasMigrateApplyFailure(
+	appliedFile *atlasMigrateApplyAppliedFile,
+	migration *migrator.Migration,
+	dialect string,
+	applyErr error,
+) {
+	execErr := atlasMigrateApplyExecutionError(applyErr)
+	if execErr == nil {
+		execErr = &migrator.MigrationExecutionError{
+			Err:       applyErr,
+			Statement: "",
+		}
+	}
+	appliedFile.Error = &atlasMigrateApplyStatementError{
+		Stmt: execErr.Statement,
+		Text: execErr.Unwrap().Error(),
+	}
+	// A statement the database answered is reported as the file spells it,
+	// with the database's answer alone, as the line the run prints names it.
+	if executed := NewApplyStatementError(applyErr, []*migrator.Migration{migration}, dialect); executed != nil {
+		appliedFile.Error = &atlasMigrateApplyStatementError{
+			Stmt: executed.Statement,
+			Text: executed.Answer.Error(),
+		}
+	}
+	appliedFile.Applied = atlasMigrateApplySentStatements(appliedFile.Applied, execErr, appliedFile.Error.Stmt)
+	appliedFile.errorListed = execErr.Sent()
 }
 
 // atlasMigrateApplyFailedVersion is the revision identity of the migration a
@@ -650,18 +679,16 @@ func markAtlasMigrateApplyCheckFailure(
 ) {
 	var checkErr *migrator.CheckFailedError
 	if errors.As(applyErr, &checkErr) && checkErr.Version == version {
-		for _, group := range groups {
-			if group.Name != checkErr.Name {
-				continue
-			}
-			group.Error = &atlasMigrateApplyStatementError{Stmt: checkErr.Assert, Text: checkErr.Error()}
-			for _, check := range group.Stmts {
-				if check.Stmt == checkErr.Assert {
-					text := checkErr.Error()
-					check.Error = &text
-				}
-			}
+		group := atlasMigrateApplyCheckGroup(groups, checkErr.Name)
+		if group == nil {
 			return
+		}
+		group.Error = &atlasMigrateApplyStatementError{Stmt: checkErr.Assert, Text: checkErr.Error()}
+		for _, check := range group.Stmts {
+			if check.Stmt == checkErr.Assert {
+				text := checkErr.Error()
+				check.Error = &text
+			}
 		}
 		return
 	}
@@ -674,4 +701,22 @@ func markAtlasMigrateApplyCheckFailure(
 			}
 		}
 	}
+}
+
+// atlasMigrateApplyCheckGroup is the group a failed check belongs to. The
+// migrator names a txtar check after its file and position, `checks.sql#2`,
+// and names a `-- +ptah check` directive as the directive does, so a name
+// that no file claims belongs to the unnamed group of directives.
+func atlasMigrateApplyCheckGroup(groups []*atlasMigrateApplyFileChecks, name string) *atlasMigrateApplyFileChecks {
+	for _, group := range groups {
+		if group.Name != "" && (name == group.Name || strings.HasPrefix(name, group.Name+"#")) {
+			return group
+		}
+	}
+	for _, group := range groups {
+		if group.Name == "" {
+			return group
+		}
+	}
+	return nil
 }

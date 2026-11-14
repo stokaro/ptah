@@ -28,11 +28,33 @@ type ApplyFormatOptions struct {
 // WriteApplyFormat renders Atlas migrate apply format output from the runtime
 // result produced by internal/atlasmigrate.
 func WriteApplyFormat(w io.Writer, format string, opts ApplyFormatOptions) error {
+	report, err := applyReportOptions(opts)
+	if err != nil {
+		return err
+	}
+	return atlasreport.WriteMigrateApplyFormat(w, format, report)
+}
+
+// WriteApplyText renders the default `migrate apply` report, the one printed
+// without --format, from the same runtime result [WriteApplyFormat] reads.
+func WriteApplyText(w io.Writer, opts ApplyFormatOptions) error {
+	report, err := applyReportOptions(opts)
+	if err != nil {
+		return err
+	}
+	return atlasreport.WriteMigrateApplyText(w, report)
+}
+
+func applyReportOptions(opts ApplyFormatOptions) (atlasreport.MigrateApplyResultOptions, error) {
 	if opts.FS == nil {
-		return fmt.Errorf("migrate apply format requires migration filesystem")
+		return atlasreport.MigrateApplyResultOptions{}, fmt.Errorf("migrate apply format requires migration filesystem")
 	}
 	result := opts.Result
-	return atlasreport.WriteMigrateApplyFormat(w, format, atlasreport.MigrateApplyResultOptions{
+	checksNotRun := result.ChecksDeferred
+	if result.ChecksSkipped {
+		checksNotRun = result.SelectedVersions
+	}
+	return atlasreport.MigrateApplyResultOptions{
 		Conn:             opts.Conn,
 		FS:               opts.FS,
 		SourceFiles:      opts.SourceFiles,
@@ -47,8 +69,9 @@ func WriteApplyFormat(w io.Writer, format string, opts ApplyFormatOptions) error
 		CurrentKeySet:    result.CurrentKeySet,
 		ErrorText:        result.ErrorText,
 		ApplyError:       result.ApplyError,
-		Applied:          result.Applied,
+		Applied:          result.Executed,
+		ChecksNotRun:     checksNotRun,
 		StartedAt:        result.StartedAt,
 		EndedAt:          result.EndedAt,
-	})
+	}, nil
 }

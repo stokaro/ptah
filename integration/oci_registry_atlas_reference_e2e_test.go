@@ -82,7 +82,8 @@ func TestOCIRegistryAtlasReferenceE2E(t *testing.T) {
 		"--dir", fmt.Sprintf("atlas://%s?tag=prod", repository),
 		"--url", "sqlite://" + filepath.ToSlash(databasePath),
 	})
-	c.Assert(applyOut, qt.Contains, "Migration complete")
+	c.Assert(applyOut, qt.Contains, "Migrating to version 1775000000 (1 migrations in total):\n")
+	c.Assert(applyOut, qt.Contains, "\n  -- 1 migration\n")
 
 	// 5. A tag MOVES and a version does not. Pushing a second directory to the
 	// same tag changes what the tag resolves to, and leaves the version

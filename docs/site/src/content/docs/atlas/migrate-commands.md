@@ -162,9 +162,28 @@ ptah-compat migrate status \
 Expected output includes:
 
 ```text
-Migrating to version 20260721120000 from 1 pending migrations.
-Migration complete. Current version: 20260721120000
+Migrating to version 20260721120000 (1 migrations in total):
+
+  -- migrating version 20260721120000
+    -> CREATE TABLE users (
+         id integer PRIMARY KEY,
+         email text NOT NULL UNIQUE
+       );
+  -- ok (8.420708ms)
+
+  -------------------------
+  -- 8.420708ms
+  -- 1 migration
+  -- 1 sql statement
 ```
+
+`migrate apply` prints the report the Atlas community binary prints: each
+migration with the statements it ran, then a summary. The durations change from
+run to run. When the database refuses a statement, the report ends at that
+statement with the database's answer under it, the summary counts the
+migrations and statements that failed, and the error goes to standard error.
+`--dry-run` prints the same report for the statements it would run, and a
+database with nothing pending prints `No migration files to execute`.
 
 ```text
 Migration Status: OK
@@ -2403,8 +2422,8 @@ SQL that checkpoint body already contains. `migrate rebase` moves a migration to
 the END of history, so a version sorting below the newest one would not move it
 at all. Into a directory holding `20200101000000_users.sql` and
 `29991231235959_archived.sql`, checkpoint wrote `30000101000000_squash.sql`;
-`migrate apply` against an empty database then reported `1 pending migrations`
-and produced both tables; and `migrate new` into that same directory took today's
+`migrate apply` against an empty database then ran that one migration and
+produced both tables; and `migrate new` into that same directory took today's
 second, sorting below the 2999 migration. One binary, two rules, on the one
 directory shape that separates them.
 

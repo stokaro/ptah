@@ -346,7 +346,9 @@ func TestMigrateApplySkipChecksEnvRestoresDryRunOnEvaluatedCheck(t *testing.T) {
 	)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("command output:\n%s", out))
-	c.Assert(out, qt.Contains, "Would have applied 1 migrations.")
+	c.Assert(out, qt.Contains, "Migrating to version 20260801000002 from 20260801000001 (1 migrations in total):\n")
+	// The checks the run bypassed are not reported as passed.
+	c.Assert(out, qt.Not(qt.Contains), "pre-migration checks of version")
 	// Dry run stays a dry run: the bypass must not turn a preview into an apply.
 	c.Assert(sqliteUsersEmailColumnCount(c, enforcedDB), qt.Equals, 0)
 }

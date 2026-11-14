@@ -685,7 +685,8 @@ func TestStrictCompatRefusesExtendedMigrationContentBeforeDatabaseWork(t *testin
 
 			stdout, stderr, code = runAtlasBinary(compat, nil, args...)
 			c.Assert(code, qt.Equals, 0, qt.Commentf("stdout=%q stderr=%q", stdout, stderr))
-			c.Assert(stdout, qt.Contains, "Migration complete.")
+			c.Assert(stdout, qt.Contains, "Migrating to version 20260811000001 (1 migrations in total):\n")
+			c.Assert(stdout, qt.Contains, "\n  -- 1 migration\n")
 			c.Assert(stderr, qt.Equals, "")
 			_, statErr = os.Stat(databasePath)
 			c.Assert(statErr, qt.IsNil)

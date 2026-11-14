@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -29,6 +30,19 @@ import (
 //
 // These pins hold both halves of the contract: nothing extra on the combined
 // stream, and failures still reported — quiet must not mean silent.
+
+var (
+	applyOkDurationRe    = regexp.MustCompile(`-- ok \([^)]+\)`)
+	applyTotalDurationRe = regexp.MustCompile(`(?m)^(  -------------------------\n  -- ).+$`)
+)
+
+// redactApplyDurations replaces the elapsed durations in the default
+// `migrate apply` report with "DUR", so the rest of the report can be asserted
+// exactly. Output without a report passes through unchanged.
+func redactApplyDurations(s string) string {
+	s = applyOkDurationRe.ReplaceAllString(s, "-- ok (DUR)")
+	return applyTotalDurationRe.ReplaceAllString(s, "${1}DUR")
+}
 
 // dryRunQuietDir writes an Atlas-format migration directory with a matching
 // down migration and seals it with atlas.sum.
@@ -186,9 +200,16 @@ func TestCompatBinaryDryRunDefaultFormatKeepsStderrEmpty(t *testing.T) {
 					"--dry-run",
 				}
 			},
-			wantStdout: "Dry run mode: no changes will be made.\n" +
-				"Migrating to version 1 from 1 pending migrations.\n" +
-				"Would have applied 1 migrations.\n",
+			wantStdout: "Migrating to version 1 (1 migrations in total):\n" +
+				"\n" +
+				"  -- migrating version 1\n" +
+				"    -> CREATE TABLE quiet_users (id INTEGER PRIMARY KEY);\n" +
+				"  -- ok (DUR)\n" +
+				"\n" +
+				"  -------------------------\n" +
+				"  -- DUR\n" +
+				"  -- 1 migration\n" +
+				"  -- 1 sql statement\n",
 		},
 		{
 			name: "schema apply",
@@ -220,7 +241,7 @@ func TestCompatBinaryDryRunDefaultFormatKeepsStderrEmpty(t *testing.T) {
 
 			c.Assert(err, qt.IsNil, qt.Commentf("stderr=%s", stderr.String()))
 			c.Assert(stderr.String(), qt.Equals, "")
-			c.Assert(stdout.String(), qt.Equals, tt.wantStdout)
+			c.Assert(redactApplyDurations(stdout.String()), qt.Equals, tt.wantStdout)
 		})
 	}
 }
@@ -415,7 +436,7 @@ func TestCompatBinaryDryRunPinNoWriterNarration(t *testing.T) {
 				"--dir", "file://" + migrationsDir,
 				"--dry-run",
 			},
-			wantPlanned: "Would have applied 1 migrations.",
+			wantPlanned: "\n  -- migrating version 1\n",
 		},
 		{
 			name: "apply go template",

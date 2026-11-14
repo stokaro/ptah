@@ -62,8 +62,8 @@ func TestCompatCommand_MigrateApplyToVersionAppliesBoundedPrefix(t *testing.T) {
 	)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(stdout, qt.Contains, "Migrating to version "+toVersionTwo+" from 2 pending migrations.")
-	c.Assert(stdout, qt.Contains, "Migration complete. Current version: "+toVersionTwo)
+	c.Assert(stdout, qt.Contains, "Migrating to version "+toVersionTwo+" (2 migrations in total):\n")
+	c.Assert(stdout, qt.Contains, "\n  -- 2 migrations\n")
 	// Exactly two of the three ran: the third migration's table is absent.
 	c.Assert(atlastest.CompatTableNames(c, dbPath), qt.Contains, "tv_one")
 	c.Assert(atlastest.CompatTableNames(c, dbPath), qt.Contains, "tv_two")
@@ -91,7 +91,7 @@ func TestCompatCommand_MigrateApplyToVersionAppliesBoundedPrefix(t *testing.T) {
 		"--to-version", toVersionThree,
 	)
 	c.Assert(finishErr, qt.IsNil)
-	c.Assert(finishOut, qt.Contains, "Migration complete. Current version: "+toVersionThree)
+	c.Assert(finishOut, qt.Contains, "Migrating to version "+toVersionThree+" from "+toVersionTwo+" (1 migrations in total):\n")
 	c.Assert(atlastest.CompatTableNames(c, dbPath), qt.Contains, "tv_three")
 }
 
@@ -112,8 +112,8 @@ func TestCompatCommand_MigrateApplyToVersionDryRunPreviewsTheSamePrefix(t *testi
 	)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(stdout, qt.Contains, "Dry run mode: no changes will be made.")
-	c.Assert(stdout, qt.Contains, "Would have applied 2 migrations.")
+	c.Assert(stdout, qt.Contains, "Migrating to version "+toVersionTwo+" (2 migrations in total):\n")
+	c.Assert(stdout, qt.Contains, "\n  -- 2 migrations\n")
 	c.Assert(atlastest.CompatTableNames(c, dbPath), qt.Not(qt.Contains), "tv_one")
 }
 

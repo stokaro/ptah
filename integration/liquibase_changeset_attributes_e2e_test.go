@@ -123,7 +123,8 @@ func TestLiquibaseChangesetAttributesCompatE2E_HappyPath(t *testing.T) {
 			"migrate", "apply", "--dir", "file://legacy?format=liquibase", "--url", "sqlite://app.db")
 
 		c.Assert(exitStatusOf(c, err), qt.Equals, 0, qt.Commentf("apply: %s", stderr))
-		c.Assert(stdout, qt.Contains, "Migration complete. Current version: 2\n")
+		c.Assert(stdout, qt.Contains, "Migrating to version 2 (2 migrations in total):\n")
+		c.Assert(stdout, qt.Contains, "\n  -- 2 migrations\n")
 	})
 
 	t.Run("ignored changeset is left out and named", func(t *testing.T) {
