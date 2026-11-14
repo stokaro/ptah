@@ -149,6 +149,48 @@ func mergeOutOfOrderVersions(numeric, source []int64) []int64 {
 	return slices.Compact(merged)
 }
 
+// sourceVersionLabel is how a log line names version: by the source tool's
+// own token for a directory read through a foreign layout, and by the number
+// otherwise. The int64 of a converted directory appears in no file name and in
+// no Atlas output, so a line naming it names nothing anyone can look up.
+func sourceVersionLabel(version int64, sourceVersions map[int64]string) any {
+	if source, ok := sourceVersions[version]; ok {
+		return source
+	}
+	return version
+}
+
+// currentSourceVersionLabel names the mark the out-of-order verdict compared
+// against, as [sourceVersionLabel] names a version.
+func (m *Migrator) currentSourceVersionLabel(
+	currentVersion int64,
+	applied []int64,
+	appliedIdentities migrationIdentitySet,
+) any {
+	if len(m.sourceVersions) == 0 {
+		return currentVersion
+	}
+	if source, ok := m.retiredCurrentSourceVersion(currentVersion, applied, appliedIdentities); ok {
+		return source
+	}
+	return sourceVersionLabel(currentVersion, m.sourceVersions)
+}
+
+// retiredCurrentSourceVersion is the token naming a current version the
+// directory no longer maps, such as one a squash retired: the highest token
+// applied, which is the mark the source comparison used. The refusal and the
+// skip warning both name the mark this way, so they name the same one.
+func (m *Migrator) retiredCurrentSourceVersion(
+	currentVersion int64,
+	applied []int64,
+	appliedIdentities migrationIdentitySet,
+) (string, bool) {
+	if _, mapped := m.sourceVersions[currentVersion]; mapped {
+		return "", false
+	}
+	return highestAppliedSourceVersion(applied, appliedIdentities.revisionKeys(), m.sourceVersions)
+}
+
 // OutOfOrderError reports pending migrations that linear execution refuses.
 type OutOfOrderError struct {
 	CurrentVersion int64

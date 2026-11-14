@@ -112,9 +112,8 @@ func TestCompatCommand_AnEditedAppliedFileIsRefused(t *testing.T) {
 // The late migration is byte-identical in both directories; only a migration
 // before it was inserted. The default linear order still refuses with
 //
-//	out-of-order pending migrations below current version 20240102000000:
-//	[20240101000000] (use --exec-order=non-linear to apply or
-//	--exec-order=linear-skip to ignore)
+//	migration file 20240101000000_early.sql was added out of order. See:
+//	https://atlasgo.io/versioned/apply#non-linear-error
 //
 // With --exec-order non-linear, Ptah proves the late row against the applied
 // directory projection, applies the insertion, and reconciles both clean rows
@@ -146,8 +145,8 @@ func TestCompatCommand_APrefixInsertionRequiresNonLinear(t *testing.T) {
 		"--dir", "file://"+bothFiles,
 	)
 	c.Assert(insertErr, qt.IsNotNil)
-	c.Assert(insertErr.Error(), qt.Contains, "out-of-order pending migrations")
-	c.Assert(insertErr.Error(), qt.Contains, retainedVersionEarly)
+	c.Assert(insertErr, qt.ErrorMatches, "migration file "+retainedVersionEarly+"_early.sql was added out of order. "+
+		"See: https://atlasgo.io/versioned/apply#non-linear-error")
 	c.Assert(atlastest.CompatTableNames(c, dbPath), qt.Not(qt.Contains), "rt_early")
 	c.Assert(atlastest.SqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{retainedVersionLate})
 

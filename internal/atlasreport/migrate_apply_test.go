@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/url"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -152,6 +154,54 @@ func TestWriteMigrateApplyFormat_ConvertedFailureAttachesToExactIdentity(t *test
 	c.Assert(out.String(), qt.Equals, `"1.5":syntax error;`)
 }
 
+func TestWriteMigrateApplyFormat_ConvertedCheckFailureNamesExactIdentity(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "converted-check.db")
+	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	const key = 4611686018427471935
+	fsys := fstest.MapFS{
+		"4611686018427471935_b.sql": {Data: []byte("-- +ptah check assert=\"SELECT 0\"\nCREATE TABLE b (id int);\n")},
+	}
+	provider, err := migrator.NewFSMigrationProvider(
+		fsys,
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
+		migrator.WithAtlasRevisionVersions(map[int64]string{key: "1.5"}),
+	)
+	c.Assert(err, qt.IsNil)
+	applyErr := fmt.Errorf("pre-migration check failed for migration %d: %w", int64(key), &migrator.FailedMigrationError{
+		Version:    key,
+		VersionKey: "1.5",
+		Err:        &migrator.CheckFailedError{Version: key, Assert: "SELECT 0"},
+	})
+	var out bytes.Buffer
+
+	err = atlasreport.WriteMigrateApplyFormat(
+		&out,
+		`{{ range .Applied }}{{ .Error.Text }}|{{ range .Checks }}{{ .Error.Text }}|{{ range .Stmts }}{{ .Error }}{{ end }}{{ end }}{{ end }}`,
+		atlasreport.MigrateApplyResultOptions{
+			Conn:             conn,
+			FS:               fsys,
+			Status:           &migrator.MigrationStatus{},
+			Migrations:       provider.Migrations(),
+			SelectedVersions: []int64{key},
+			SelectedKeys:     []string{"1.5"},
+			ApplyError:       applyErr,
+			Applied:          true,
+		},
+	)
+
+	// The converted key appears in no file name; every text names the
+	// migration by the version the directory holds.
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Equals, "pre-migration check failed for migration 1.5: "+
+		"pre-migration check (unnamed) for migration 1.5 was not satisfied (assert: SELECT 0)|"+
+		"pre-migration check (unnamed) for migration 1.5 was not satisfied (assert: SELECT 0)|"+
+		"pre-migration check (unnamed) for migration 1.5 was not satisfied (assert: SELECT 0)")
+}
+
 func TestWriteMigrateApplyFormat_JSONNoopMessage(t *testing.T) {
 	c := qt.New(t)
 	dbPath := filepath.Join(t.TempDir(), "noop.db")
@@ -183,7 +233,7 @@ func TestWriteMigrateApplyFormat_JSONNoopMessage(t *testing.T) {
 	c.Assert(out.String(), qt.Contains, `"Driver":"sqlite"`)
 }
 
-func TestWriteMigrateApplyFormat_JSONPreservesExactEmptyCurrentAndTarget(t *testing.T) {
+func TestWriteMigrateApplyFormat_JSONOmitsEmptyRevisionIdentity(t *testing.T) {
 	c := qt.New(t)
 	dbPath := filepath.Join(t.TempDir(), "empty-identity.db")
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
@@ -204,27 +254,67 @@ func TestWriteMigrateApplyFormat_JSONPreservesExactEmptyCurrentAndTarget(t *test
 		},
 	)
 
+	// A Flyway repeatable carries the empty revision identity. The community
+	// binary names it by Name alone, and a run that ends on one reports no
+	// Current and no Target.
 	c.Assert(err, qt.IsNil)
 	var got struct {
-		Current *string
-		Target  *string
-		Pending []struct{ Version *string }
-		Applied []struct{ Version *string }
+		Pending []map[string]json.RawMessage
+		Applied []map[string]json.RawMessage
 	}
 	c.Assert(json.Unmarshal(out.Bytes(), &got), qt.IsNil)
-	c.Assert(got.Current, qt.IsNotNil)
-	c.Assert(*got.Current, qt.Equals, "")
-	c.Assert(got.Target, qt.IsNotNil)
-	c.Assert(*got.Target, qt.Equals, "")
+	var top map[string]json.RawMessage
+	c.Assert(json.Unmarshal(out.Bytes(), &top), qt.IsNil)
+	c.Assert(top["Current"], qt.IsNil)
+	c.Assert(top["Target"], qt.IsNil)
 	c.Assert(got.Pending, qt.HasLen, 1)
-	c.Assert(got.Pending[0].Version, qt.IsNotNil)
-	c.Assert(*got.Pending[0].Version, qt.Equals, "")
+	c.Assert(got.Pending[0]["Version"], qt.IsNil)
+	c.Assert(string(got.Pending[0]["Name"]), qt.Equals, `"10_only.sql"`)
 	c.Assert(got.Applied, qt.HasLen, 1)
-	c.Assert(got.Applied[0].Version, qt.IsNotNil)
-	c.Assert(*got.Applied[0].Version, qt.Equals, "")
+	c.Assert(got.Applied[0]["Version"], qt.IsNil)
+	c.Assert(string(got.Applied[0]["Name"]), qt.Equals, `"10_only.sql"`)
 }
 
-func TestWriteMigrateApplyFormat_JSONCurrentPresenceIsAuthoritative(t *testing.T) {
+func TestWriteMigrateApplyFormat_JSONAppliedFileOmitsEmptyMembers(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "applied-members.db")
+	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	fsys := fstest.MapFS{
+		"1_a.sql":     {Data: []byte("CREATE TABLE a (id int);\n")},
+		"2_empty.sql": {Data: []byte("-- nothing here\n")},
+	}
+	provider, err := migrator.NewFSMigrationProvider(fsys, migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas))
+	c.Assert(err, qt.IsNil)
+	var out bytes.Buffer
+	err = atlasreport.WriteMigrateApplyFormat(
+		&out,
+		`{{ json .Applied }}`,
+		atlasreport.MigrateApplyResultOptions{
+			Conn:             conn,
+			FS:               fsys,
+			Migrations:       provider.Migrations(),
+			Status:           &migrator.MigrationStatus{},
+			SelectedVersions: []int64{1, 2},
+			Applied:          true,
+		},
+	)
+
+	// Measured on the community binary v1.3.0: a file with statements carries
+	// Applied and no Skipped, Checks or Error member, and a file with none
+	// carries neither Applied.
+	c.Assert(err, qt.IsNil)
+	var got []map[string]json.RawMessage
+	c.Assert(json.Unmarshal(out.Bytes(), &got), qt.IsNil)
+	c.Assert(got, qt.HasLen, 2)
+	c.Assert(slices.Sorted(maps.Keys(got[0])), qt.DeepEquals, []string{"Applied", "Description", "End", "Name", "Start", "Version"})
+	c.Assert(string(got[0]["Applied"]), qt.Equals, `["CREATE TABLE a (id int);"]`)
+	c.Assert(slices.Sorted(maps.Keys(got[1])), qt.DeepEquals, []string{"Description", "End", "Name", "Start", "Version"})
+}
+
+func TestWriteMigrateApplyFormat_JSONCurrentAndTargetPresence(t *testing.T) {
 	c := qt.New(t)
 	dbPath := filepath.Join(t.TempDir(), "current-presence.db")
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
@@ -255,14 +345,25 @@ func TestWriteMigrateApplyFormat_JSONCurrentPresenceIsAuthoritative(t *testing.T
 		SelectedKeys:     []string{""},
 	})
 	c.Assert(targetOnly["Current"], qt.IsNil)
-	c.Assert(string(targetOnly["Target"]), qt.Equals, `""`)
+	c.Assert(targetOnly["Target"], qt.IsNil)
 
-	nonempty := render(atlasreport.MigrateApplyResultOptions{
+	// Nothing pending: the community binary reports where the database is
+	// and no Target, as `{{ .Target }}` reads "" there.
+	nothingPending := render(atlasreport.MigrateApplyResultOptions{
 		CurrentKey:    "1.5",
 		CurrentKeySet: true,
 	})
-	c.Assert(string(nonempty["Current"]), qt.Equals, `"1.5"`)
-	c.Assert(string(nonempty["Target"]), qt.Equals, `"1.5"`)
+	c.Assert(string(nothingPending["Current"]), qt.Equals, `"1.5"`)
+	c.Assert(nothingPending["Target"], qt.IsNil)
+
+	selected := render(atlasreport.MigrateApplyResultOptions{
+		CurrentKey:       "1.5",
+		CurrentKeySet:    true,
+		SelectedVersions: []int64{20},
+		SelectedKeys:     []string{"2"},
+	})
+	c.Assert(string(selected["Current"]), qt.Equals, `"1.5"`)
+	c.Assert(string(selected["Target"]), qt.Equals, `"2"`)
 }
 
 func TestWriteMigrateApplyFormat_JSONShape(t *testing.T) {

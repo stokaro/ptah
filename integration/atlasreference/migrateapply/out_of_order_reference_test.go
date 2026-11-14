@@ -69,7 +69,10 @@ func TestReferenceDistinguishesPrefixAndIntervalInsertions(t *testing.T) {
 		c.Assert(firstCompat.code, qt.Equals, 0, qt.Commentf("ptah-compat output: %s", firstCompat.output))
 		secondCompat := runApply(c, compat, compatDB, prefixed)
 		c.Assert(secondCompat.code, qt.Equals, 1, qt.Commentf("ptah-compat output: %s", secondCompat.output))
-		c.Assert(secondCompat.output, qt.Contains, "out-of-order pending migrations")
+		// The refusal is worded as the pinned binary words the interval
+		// refusal below, so the one answer it does not share reads the same.
+		c.Assert(secondCompat.output, qt.Equals, "Error: migration file "+earlyVersion+"_early.sql was added out of order. "+
+			"See: https://atlasgo.io/versioned/apply#non-linear-error\n")
 		assertMigrationState(c, compatDB, []string{"reference_late"}, []string{lateVersion})
 	})
 
@@ -100,7 +103,7 @@ func TestReferenceDistinguishesPrefixAndIntervalInsertions(t *testing.T) {
 		c.Assert(firstCompat.code, qt.Equals, 0, qt.Commentf("ptah-compat output: %s", firstCompat.output))
 		secondCompat := runApply(c, compat, compatDB, withMiddle)
 		c.Assert(secondCompat.code, qt.Equals, 1, qt.Commentf("ptah-compat output: %s", secondCompat.output))
-		c.Assert(secondCompat.output, qt.Contains, "out-of-order pending migrations")
+		c.Assert(secondCompat.output, qt.Equals, secondReference.output)
 		assertMigrationState(c, compatDB,
 			[]string{"reference_early", "reference_late"},
 			[]string{earlyVersion, lateVersion})

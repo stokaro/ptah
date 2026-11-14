@@ -3292,10 +3292,14 @@ func TestCompatCommand_MigrateApplyFormatsNoopResult(t *testing.T) {
 	var result atlasMigrateApplyJSONResult
 	c.Assert(json.Unmarshal(out.Bytes(), &result), qt.IsNil)
 	c.Assert(result.Current, qt.Equals, "1")
-	c.Assert(result.Target, qt.Equals, "1")
 	c.Assert(result.Message, qt.Equals, "No migration files to execute")
 	c.Assert(result.Pending, qt.HasLen, 0)
 	c.Assert(result.Applied, qt.HasLen, 0)
+	// With nothing pending there is no target: the community binary leaves
+	// the member out, and `{{ .Target }}` reads "".
+	var members map[string]json.RawMessage
+	c.Assert(json.Unmarshal(out.Bytes(), &members), qt.IsNil)
+	c.Assert(members["Target"], qt.IsNil)
 }
 
 func TestCompatCommand_MigrateApplyRejectsEmptyFormat(t *testing.T) {

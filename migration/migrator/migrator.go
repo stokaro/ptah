@@ -3717,15 +3717,9 @@ func (m *Migrator) migrationsToApply(
 
 	if execOrder == ExecOrderLinear && len(outOfOrderVersions) > 0 {
 		err := newOutOfOrderSourceError(currentVersion, outOfOrderVersions, m.sourceVersions)
-		if _, mappedCurrent := m.sourceVersions[currentVersion]; !mappedCurrent {
-			if currentSource, ok := highestAppliedSourceVersion(
-				applied,
-				appliedIdentities.revisionKeys(),
-				m.sourceVersions,
-			); ok {
-				err.currentSourceVersion = currentSource
-				err.currentSourceVersionSet = true
-			}
+		if currentSource, ok := m.retiredCurrentSourceVersion(currentVersion, applied, appliedIdentities); ok {
+			err.currentSourceVersion = currentSource
+			err.currentSourceVersionSet = true
 		}
 		return upSelection{}, err
 	}
@@ -3734,6 +3728,10 @@ func (m *Migrator) migrationsToApply(
 		apply:     make([]*Migration, 0, len(pendingMigrationList)),
 		execOrder: execOrder,
 	}
+	var currentLabel any
+	if execOrder == ExecOrderLinearSkip && len(outOfOrderVersions) > 0 {
+		currentLabel = m.currentSourceVersionLabel(currentVersion, applied, appliedIdentities)
+	}
 	for _, migration := range pendingMigrationList {
 		// linear-skip leaves unapplied exactly what linear refuses, so it reads
 		// the verdict computed above instead of re-deriving it. Re-deriving is
@@ -3741,7 +3739,10 @@ func (m *Migrator) migrationsToApply(
 		// linear refused, and execute a migration the source tool leaves
 		// pending.
 		if execOrder == ExecOrderLinearSkip && slices.Contains(outOfOrderVersions, migration.Version) {
-			m.logger.Warn("Skipping out-of-order migration", "version", migration.Version, "currentVersion", currentVersion)
+			m.logger.Warn("Skipping out-of-order migration",
+				"version", sourceVersionLabel(migration.Version, m.sourceVersions),
+				"currentVersion", currentLabel,
+			)
 			selection.skipped = append(selection.skipped, migration.Version)
 			continue
 		}
