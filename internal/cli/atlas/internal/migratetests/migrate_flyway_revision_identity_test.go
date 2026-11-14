@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -264,7 +265,8 @@ THIS IS A FAILING STATEMENT;
 
 	stdout, stderr, err := compatApplyConverted(dir, "flyway", dbPath, "--tx-mode", "none")
 	c.Assert(err, qt.IsNotNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
-	c.Assert(errorText(err)+stderr, qt.Contains, "failed to apply migration")
+	c.Assert(errorText(err)+stderr, qt.Contains,
+		`executing statement "THIS IS A FAILING STATEMENT;" from version `+strconv.Quote(retiredIdentity))
 	c.Assert(userTables(c, dbPath), qt.DeepEquals, []string{"retired_partial"})
 
 	db, err := sql.Open("sqlite", dbPath)
@@ -800,7 +802,7 @@ func TestCompatMigrateApply_FlywayFormatFailureNamesExactToken(t *testing.T) {
 		"--format", `{{ .Error }}`,
 	)
 	c.Assert(err, qt.IsNotNil)
-	c.Assert(stdout, qt.Contains, "failed to apply migration 1.5")
+	c.Assert(stdout, qt.Contains, `executing statement "INVALID SQL;" from version "1.5"`)
 	c.Assert(stdout, qt.Not(qt.Contains), "4611686018427471935")
 	c.Assert(stdout, qt.Not(qt.Contains), "461168")
 	c.Assert(stderr, qt.Equals, "")
@@ -813,8 +815,8 @@ func TestCompatMigrateApply_FlywayFormatFailureNamesExactToken(t *testing.T) {
 	)
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(stdout, qt.Contains, `"Version":"1.5"`)
-	c.Assert(stdout, qt.Contains, `"Error":"failed to apply migration 1.5`)
-	c.Assert(stdout, qt.Not(qt.Contains), `"Error":"failed to apply migration 4611686018427471935`)
+	c.Assert(stdout, qt.Contains, `"Error":"sql/migrate: executing statement \"INVALID SQL;\" from version \"1.5\": `)
+	c.Assert(stdout, qt.Not(qt.Contains), `from version \"4611686018427471935`)
 	c.Assert(stderr, qt.Equals, "")
 }
 
@@ -829,8 +831,8 @@ func TestCompatMigrateApply_ExactIdentityMappingPreservesNumericSQLObject(t *tes
 
 	stdout, stderr, err := compatApplyConverted(dir, "flyway", dbPath)
 	c.Assert(err, qt.IsNotNil)
-	c.Assert(stdout+stderr+errorText(err), qt.Contains, "failed to apply migration 1.5")
-	c.Assert(stdout+stderr+errorText(err), qt.Contains, runtime)
+	c.Assert(stdout+stderr+errorText(err), qt.Contains, `from version "1.5"`)
+	c.Assert(stdout+stderr+errorText(err), qt.Contains, `INSERT INTO \"`+runtime+`\" VALUES (1);`)
 }
 
 // TestCompatMigrateApply_ConvertedRowSpelledApartFromItsFileRefuses covers a

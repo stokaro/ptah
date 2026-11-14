@@ -386,13 +386,14 @@ func TestMigrateLintFileNames_HappyPath(t *testing.T) {
 func TestMigrateLintFileNames_ReplayFailure(t *testing.T) {
 	c := qt.New(t)
 	analysis := analyzeTemplateData(c, templateDataTwoFiles(), migrationlint.Options{Dialect: "sqlite"}, 2)
-	failure := atlasreport.NewMigrateLintReplayFailure(analysis, nil, "sqlite", lintReplayError(&migrationreplay.MigrationError{
+	failure := atlasreport.NewMigrateLintReplayFailure(analysis, nil, lintReplayError(&migrationreplay.MigrationError{
 		Version:    2,
 		VersionKey: "2",
 		Statement: &migrationreplay.FailedStatement{
-			SQL:    "CREATE TABLE t2 (id int)",
-			Index:  1,
-			Answer: errors.New(replayAnswer),
+			SQL:     "CREATE TABLE t2 (id int)",
+			Written: "CREATE TABLE t2 (id int);",
+			Index:   1,
+			Answer:  errors.New(replayAnswer),
 		},
 	}))
 	c.Assert(failure, qt.IsNotNil)

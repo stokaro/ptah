@@ -8,7 +8,6 @@ import (
 	"io"
 	"io/fs"
 	"maps"
-	"regexp"
 	"strconv"
 	"strings"
 	"text/template"
@@ -19,8 +18,6 @@ import (
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
 )
-
-var atlasMigrateApplyFailedVersionRe = regexp.MustCompile(`failed to apply migration ([0-9]+)`)
 
 type MigrateApplyResultOptions struct {
 	Conn             *dbschema.DatabaseConnection
@@ -242,6 +239,15 @@ func atlasMigrateApplyAppliedFiles(
 					Stmt: execErr.Statement,
 					Text: execErr.Unwrap().Error(),
 				}
+				// A statement the database answered is reported as the file
+				// spells it, with the database's answer alone, as the line the
+				// run prints names it.
+				if executed := NewApplyStatementError(applyErr, []*migrator.Migration{migration}, dialect); executed != nil {
+					appliedFile.Error = &atlasMigrateApplyStatementError{
+						Stmt: executed.Statement,
+						Text: executed.Answer.Error(),
+					}
+				}
 				applied = append(applied, appliedFile)
 				break
 			}
@@ -251,21 +257,15 @@ func atlasMigrateApplyAppliedFiles(
 	return applied
 }
 
+// atlasMigrateApplyFailedVersion is the revision identity of the migration a
+// failed run stopped at, and the last selected one when the failure names
+// none.
 func atlasMigrateApplyFailedVersion(err error, versions []int64, keys []string) (string, bool) {
 	if err == nil || len(versions) == 0 {
 		return "", false
 	}
-	matches := atlasMigrateApplyFailedVersionRe.FindStringSubmatch(err.Error())
-	if len(matches) == 2 {
-		version, parseErr := strconv.ParseInt(matches[1], 10, 64)
-		if parseErr == nil {
-			for index, selected := range versions {
-				if selected == version {
-					return atlasMigrateApplyVersionKeyAt(versions, keys, index), true
-				}
-			}
-			return strconv.FormatInt(version, 10), true
-		}
+	if failed, ok := errors.AsType[*migrator.FailedMigrationError](err); ok {
+		return failed.VersionKey, true
 	}
 	return atlasMigrateApplyVersionKeyAt(versions, keys, len(versions)-1), true
 }

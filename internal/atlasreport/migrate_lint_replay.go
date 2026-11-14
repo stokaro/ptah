@@ -4,10 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strings"
 	"time"
 
-	"ptah.run/core/sqlutil"
 	"ptah.run/internal/migrationreplay"
 	migrationlint "ptah.run/migration/lint"
 )
@@ -71,7 +69,6 @@ func (f MigrateLintReplayFailure) reportedName(names map[int64]string) string {
 func NewMigrateLintReplayFailure(
 	analysis migrationlint.Analysis,
 	revisionVersions map[int64]string,
-	dialect string,
 	err error,
 ) *MigrateLintReplayFailure {
 	failed, ok := errors.AsType[*migrationreplay.MigrationError](err)
@@ -84,7 +81,7 @@ func NewMigrateLintReplayFailure(
 	}
 	return &MigrateLintReplayFailure{
 		File:       file.Name,
-		Error:      migrateLintReplayErrorText(file, dialect, failed),
+		Error:      migrateLintReplayErrorText(file, failed),
 		version:    file.Version,
 		hasVersion: true,
 	}
@@ -108,11 +105,7 @@ func replayedLintFile(
 	return migrationlint.File{}, false
 }
 
-func migrateLintReplayErrorText(
-	file migrationlint.File,
-	dialect string,
-	failed *migrationreplay.MigrationError,
-) string {
+func migrateLintReplayErrorText(file migrationlint.File, failed *migrationreplay.MigrationError) string {
 	statement := failed.Statement
 	if statement == nil {
 		return failed.Err.Error()
@@ -120,38 +113,7 @@ func migrateLintReplayErrorText(
 	if !file.Selected {
 		return "executing statement: " + statement.Answer.Error()
 	}
-	return "executing statement: " + writtenStatement(file, dialect, statement) + ": " + statement.Answer.Error()
-}
-
-// writtenStatement is the failed statement as the file spells it, terminator
-// included, which is how the community binary quotes it.
-//
-// The replay sent the statement trimmed, and its position counts the
-// statements the migrator split the body into. The file's own text at that
-// position is used only when it is the same statement once its terminator is
-// set aside, so a body the migrator split differently -- a template, a
-// directive -- quotes the statement as it was sent rather than a neighbor.
-func writtenStatement(
-	file migrationlint.File,
-	dialect string,
-	statement *migrationreplay.FailedStatement,
-) string {
-	body := file.SQL
-	if body == "" {
-		body = file.Source
-	}
-	written := sqlutil.SplitSourceStatements(body, dialect)
-	if statement.Index < 1 || statement.Index > len(written) {
-		return statement.SQL
-	}
-	candidate := written[statement.Index-1]
-	if !candidate.Terminated {
-		return statement.SQL
-	}
-	if strings.TrimSpace(strings.TrimSuffix(candidate.Text, ";")) != strings.TrimSpace(statement.SQL) {
-		return statement.SQL
-	}
-	return candidate.Text
+	return "executing statement: " + statement.Written + ": " + statement.Answer.Error()
 }
 
 // writeMigrateLintTextReplayFailure renders the text report of a run whose

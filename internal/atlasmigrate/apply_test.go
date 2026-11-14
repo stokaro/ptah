@@ -624,7 +624,7 @@ func TestPrepareApplyExecute_ReturnsPlannedResultOnApplyError(t *testing.T) {
 
 	result, err := plan.Execute(ctx)
 
-	c.Assert(err, qt.ErrorMatches, `(?s)error applying migrations: .*missing_table.*`)
+	c.Assert(err, qt.ErrorMatches, `sql/migrate: executing statement "SELECT \* FROM missing_table;" from version "1": .*no such table: missing_table.*`)
 	c.Assert(result.Applied, qt.IsTrue)
 	c.Assert(result.ApplyError, qt.IsNotNil)
 	c.Assert(result.ErrorText, qt.Contains, "missing_table")

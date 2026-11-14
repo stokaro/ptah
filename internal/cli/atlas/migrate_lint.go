@@ -345,7 +345,7 @@ func runAtlasMigrateLint(
 		// prints it: rendered as a report, it read as a replay step that
 		// failed over a directory of no new files.
 		replayFailure := atlasreport.NewMigrateLintReplayFailure(
-			report.Analysis, revisionVersions, report.Dialect, err,
+			report.Analysis, revisionVersions, err,
 		)
 		switch {
 		case replayFailure != nil && formatOutput:
