@@ -472,9 +472,10 @@ func columnDroppedRule() Rule {
 		Title:    "column dropped",
 		Severity: SeverityError,
 		// The starting state shows a CREATE TABLE IF NOT EXISTS of a table
-		// that is new, whose columns hold nothing yet ([newTable]).
+		// that is new, whose columns hold nothing yet ([newTable]), and a DROP
+		// COLUMN IF EXISTS of a column that is not there ([skipsColumn]).
 		Input:            InputBaselineRefinement,
-		BaselineSubjects: ifNotExistsCreates,
+		BaselineSubjects: columnDropBaselineSubjects,
 		CheckFile: func(file *File) []Finding {
 			if !file.IsUp {
 				return nil
@@ -975,13 +976,52 @@ func databaseObjectDroppedRule() Rule {
 		Code:     "DS107",
 		Title:    "database object dropped",
 		Severity: SeverityError,
-		CheckStatement: func(stmt *Statement) (bool, string) {
-			if !scanDestructiveObjectDrop(stmt.Words) && !stmt.hasEffect(lintext.FactStatefulDrop) && !scanPrincipalDrop(stmt.Words, stmt.Target) {
-				return false, ""
+		// The starting state shows an IF EXISTS drop of an object that is not
+		// there, which removes nothing ([skipsStatement]).
+		Input:            InputBaselineRefinement,
+		BaselineSubjects: objectDropBaselineSubjects,
+		CheckFile: func(file *File) []Finding {
+			if !file.IsUp {
+				return nil
 			}
-			return true, "dropping a database object removes existing schema behavior, principals or data; verify all dependent code and data paths are retired first"
+			var findings []Finding
+			for i := range file.Statements {
+				stmt := &file.Statements[i]
+				if !dropsDatabaseObject(stmt) || skipsStatement(file, i) {
+					continue
+				}
+				findings = append(findings, Finding{
+					Rule:     "DS107",
+					Title:    "database object dropped",
+					Severity: SeverityError,
+					File:     file.Path,
+					Line:     stmt.Line,
+					Message:  "dropping a database object removes existing schema behavior, principals or data; verify all dependent code and data paths are retired first",
+					Context:  statementFindingContext(i),
+				})
+			}
+			return findings
 		},
 	}
+}
+
+// dropsDatabaseObject reports a statement DS107 reports: a drop of an object
+// whose loss removes behavior, principals or data.
+func dropsDatabaseObject(stmt *Statement) bool {
+	return scanDestructiveObjectDrop(stmt.Words) || stmt.hasEffect(lintext.FactStatefulDrop) || scanPrincipalDrop(stmt.Words, stmt.Target)
+}
+
+// objectDropBaselineSubjects are the statements DS107 reads the starting state
+// for: the drops it reports that hold a change only that state decides
+// ([stateMayDecide]).
+func objectDropBaselineSubjects(file *File) []int {
+	var subjects []int
+	for _, change := range file.changed {
+		if dropsDatabaseObject(&file.Statements[change.StatementIndex]) && stateMayDecide(file, change) {
+			subjects = append(subjects, change.StatementIndex)
+		}
+	}
+	return slices.Compact(subjects)
 }
 
 func tableTruncatedRule() Rule {

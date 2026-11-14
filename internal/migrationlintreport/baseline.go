@@ -8,11 +8,15 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/coverage"
 	"ptah.run/core/lintext"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/dbschema"
 	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/dialect/timescaledb/tsschema"
+	"ptah.run/feature/pgtype"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/schemalineage"
 )
@@ -31,6 +35,9 @@ type baselineState struct {
 	indexes     []lintext.BaselineIndex
 	dependents  []lintext.BaselineDependent
 	hypertables []lintext.BaselineHypertable
+	objects     []lintext.BaselineObject
+	// read names the version and the kinds of object the read lists in full.
+	read lintext.BaselineRead
 }
 
 // readBaselineState records the schema state one migration version starts
@@ -57,12 +64,143 @@ func readBaselineState(ctx context.Context,
 	if err != nil {
 		return baselineState{}, fmt.Errorf("convert dev database baseline: %w", err)
 	}
+	info := conn.Info()
+	listed := listedObjectKinds(schema, info.Dialect)
 	return baselineState{
 		columns:     baselineColumnsOf(schema, version),
 		indexes:     baselineIndexesOf(schema, version),
 		dependents:  dependents,
 		hypertables: baselineHypertablesOf(schema, version),
+		objects:     baselineObjectsOf(schema, version, info.Schema, listed),
+		read:        lintext.BaselineRead{Version: version, Listed: listed},
 	}, nil
+}
+
+// listedObjectKinds are the kinds of object the read lists in full: those the
+// dev database's dialect names in [descriptor.Lint.ListedObjects], less the
+// types where this read did not describe every domain, composite type and
+// range type. A kind the dialect names that the linter does not know is left
+// out, which keeps every drop of it judged as a drop of something there.
+func listedObjectKinds(schema *catalog.Database, dialect string) []lintext.BaselineObjectKind {
+	described, _ := platform.Lookup(dialect)
+	var listed []lintext.BaselineObjectKind
+	for _, kind := range lintext.BaselineObjectKinds() {
+		if !slices.Contains(described.Lint.ListedObjects, string(kind)) {
+			continue
+		}
+		if kind == lintext.BaselineType && !typesDescribed(schema) {
+			continue
+		}
+		listed = append(listed, kind)
+	}
+	return listed
+}
+
+// typesDescribed reports a read that described every user-defined type a DROP
+// TYPE can name: the enums, which a read takes from the core catalog, and the
+// domains, composite types and range types the type owner models, which a
+// server without catalog dependencies does not let the read reach.
+func typesDescribed(schema *catalog.Database) bool {
+	for _, kind := range []coverage.Kind{coverage.Domain, coverage.Composite, coverage.Range} {
+		if !schema.NotDescribed.Describes(kind) {
+			return false
+		}
+	}
+	for _, kind := range pgtype.Kinds() {
+		if schema.FeatureCoverage.Lookup(kind, objectidentity.ID{Kind: objectidentity.Kind(kind)}).State != schemaext.Complete {
+			return false
+		}
+	}
+	return true
+}
+
+// baselineObjectsOf lists the objects of the read schema, of the kinds listed,
+// as the state version starts from.
+//
+// An object of own, the schema the connection resolves unqualified names
+// against, is written with no schema, the way the readers write the tables
+// beside it. The MySQL reader names the database on a view and on no table,
+// and a state with a schema on one row and none on the others reads as a state
+// of several schemas, which matches no qualified reference to the tables.
+func baselineObjectsOf(schema *catalog.Database, version int64, own string, listed []lintext.BaselineObjectKind) []lintext.BaselineObject {
+	var objects []lintext.BaselineObject
+	for _, kind := range listed {
+		for _, object := range objectsOfKind(schema, kind) {
+			if object.Schema == own {
+				object.Schema = ""
+			}
+			object.Version, object.Kind = version, kind
+			objects = append(objects, object)
+		}
+	}
+	return objects
+}
+
+// objectsOfKind lists every object of one kind the read schema holds, with no
+// version and no kind set.
+//
+// Two kinds are not read off one list. A continuous aggregate is dropped with
+// DROP MATERIALIZED VIEW, and the reader keeps it out of both view lists and
+// records it as a TimescaleDB object. A sequence that a serial or identity
+// column owns is described on that column ([catalog.Column.OwnedSequence])
+// and not in [catalog.Database.Sequences]; DROP SEQUENCE ... CASCADE drops
+// it and the column's default with it. Without either source, the state shows
+// the object absent, and its IF EXISTS drop reads as a statement that changes
+// nothing.
+func objectsOfKind(schema *catalog.Database, kind lintext.BaselineObjectKind) []lintext.BaselineObject {
+	var objects []lintext.BaselineObject
+	switch kind {
+	case lintext.BaselineType:
+		for _, enum := range schema.Enums {
+			objects = append(objects, lintext.BaselineObject{Schema: enum.Schema, Name: enum.Name, Enum: true, Values: slices.Clone(enum.Values)})
+		}
+		objects = append(objects, featureObjectsOf(schema, pgtype.Kinds()...)...)
+	case lintext.BaselineView:
+		for _, view := range schema.Views {
+			objects = append(objects, lintext.BaselineObject{Schema: view.Schema, Name: view.Name})
+		}
+	case lintext.BaselineMaterializedView:
+		for _, view := range schema.MatViews {
+			objects = append(objects, lintext.BaselineObject{Schema: view.Schema, Name: view.Name})
+		}
+		objects = append(objects, featureObjectsOf(schema, tsschema.ContinuousAggregateKind)...)
+	case lintext.BaselineTrigger:
+		for _, trigger := range schema.Triggers {
+			objects = append(objects, lintext.BaselineObject{Schema: trigger.Schema, Table: trigger.Table, Name: trigger.Name})
+		}
+	case lintext.BaselineSequence:
+		for _, sequence := range schema.Sequences {
+			objects = append(objects, lintext.BaselineObject{Schema: sequence.Schema, Name: sequence.Name})
+		}
+		objects = append(objects, columnSequencesOf(schema)...)
+	}
+	return objects
+}
+
+// featureObjectsOf lists the extension objects of the read schema whose kind
+// is one of kinds.
+func featureObjectsOf(schema *catalog.Database, kinds ...schemaext.Kind) []lintext.BaselineObject {
+	var objects []lintext.BaselineObject
+	for _, ref := range schema.FeatureObjects.Refs() {
+		if slices.Contains(kinds, schemaext.Kind(ref.Kind)) {
+			objects = append(objects, lintext.BaselineObject{Schema: ref.Schema.Authored(), Name: ref.Name.Source})
+		}
+	}
+	return objects
+}
+
+// columnSequencesOf lists the sequences the columns of the read schema own.
+// Such a sequence is in its column's schema.
+func columnSequencesOf(schema *catalog.Database) []lintext.BaselineObject {
+	var objects []lintext.BaselineObject
+	for _, table := range schema.Tables {
+		for _, column := range table.Columns {
+			if column.OwnedSequence != "" {
+				objects = append(objects, lintext.BaselineObject{Schema: table.Schema, Name: column.OwnedSequence})
+			}
+		}
+	}
+	return objects
 }
 
 // baselineHypertablesOf lists the TimescaleDB hypertables of the read schema as

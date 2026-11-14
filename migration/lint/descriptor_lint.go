@@ -1,6 +1,9 @@
 package lint
 
 import (
+	"slices"
+
+	"ptah.run/core/lintext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/descriptor"
 )
@@ -22,4 +25,21 @@ func lintDialects(states func(descriptor.Lint) bool) []string {
 		}
 	}
 	return names
+}
+
+// soleSchema returns the one namespace of an engine that has no other, such as
+// SQLite's main, and "" for an engine whose URL can select among several.
+func soleSchema(dialect string) string {
+	described, _ := platform.Lookup(dialect)
+	if described.Schemas.Selection != descriptor.SchemaSelectionSingle {
+		return ""
+	}
+	return described.DefaultSchema
+}
+
+// listsObjects reports whether a read of dialect's dev database lists the
+// objects of kind in full ([descriptor.Lint.ListedObjects]), so the starting
+// state can show one absent.
+func listsObjects(dialect string, kind lintext.BaselineObjectKind) bool {
+	return slices.Contains(lintOf(dialect).ListedObjects, string(kind))
 }

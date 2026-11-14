@@ -279,7 +279,7 @@ var migrationRuleMeta = map[string]ruleMeta{
 		YDBNote: "what reads a column comes from a dev database replay",
 	},
 	"DS102": {
-		Summary:   "DROP COLUMN destroys the column and every value stored in it",
+		Summary:   "DROP COLUMN destroys the column and every value stored in it; an IF EXISTS drop of a column the dev database shows absent is not reported",
 		AtlasCode: "DS103",
 		YDB:       YDBApplies,
 		YDBNote:   "`ALTER TABLE ... DROP COLUMN`",
@@ -311,8 +311,9 @@ var migrationRuleMeta = map[string]ruleMeta{
 		// DROP TRANSFER, DROP ASYNC REPLICATION ... CASCADE and DROP
 		// COORDINATION NODE, so the rule is ours even though it covers the
 		// Atlas one.
-		Summary: "dropping a schema, type, extension, function, procedure, trigger, role, policy, or YDB user, group, topic, transfer, async replication, coordination node, or streaming query removes behavior or data",
-		YDB:     YDBApplies,
+		Summary: "dropping a schema, type, extension, function, procedure, trigger, role, policy, or YDB user, group, topic, transfer, async replication, coordination node, or streaming query removes behavior or data; " +
+			"an IF EXISTS drop of a type or a trigger the dev database shows absent removes nothing and is not reported",
+		YDB: YDBApplies,
 		YDBNote: "Drops YDB users, groups, topics, transfers, replication replica tables with CASCADE, " +
 			"coordination nodes and streaming queries. Topic positions, streaming checkpoints and " +
 			"coordination resources are lost with their objects",

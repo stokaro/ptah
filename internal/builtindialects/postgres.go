@@ -115,6 +115,17 @@ func postgres() descriptor.Dialect {
 			OnlineMeasured:   true,
 			TypeRestatements: "pgtype",
 			AtlasAnalyzer:    "PG",
+			// The read lists every enum, domain, composite and range type,
+			// view, materialized view, trigger and sequence of the schemas it
+			// reads. Lint takes a continuous aggregate, which the read records
+			// as a TimescaleDB object, as a materialized view, and a serial or
+			// identity sequence off the column that owns it. What the read
+			// leaves out is what a drop cannot reach: a type or a function an
+			// extension owns, an internal constraint trigger, a partition's
+			// copy of its parent's trigger. Routines are not listed: the read
+			// leaves out aggregates and Ptah's own trigger functions, which
+			// DROP FUNCTION can drop.
+			ListedObjects: []string{"type", "view", "materialized_view", "trigger", "sequence"},
 		},
 
 		// How a schema file's names are read, and how unnamed indexes and CHECKs are named.

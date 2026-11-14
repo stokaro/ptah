@@ -84,6 +84,8 @@ func sqlite() descriptor.Dialect {
 			Analyzed:               true,
 			SetNotNullRebuilds:     true,
 			AtlasRebuildColumnDiff: true,
+			// The read lists every view and trigger of the main database.
+			ListedObjects: []string{"view", "trigger"},
 		},
 
 		// How a schema file's names are read, and how unnamed indexes and CHECKs are named.

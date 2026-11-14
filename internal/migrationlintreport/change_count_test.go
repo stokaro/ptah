@@ -118,3 +118,33 @@ func TestBuild_ChangeCountReadsTheStateItDecidesWith(t *testing.T) {
 		})
 	}
 }
+
+// absentObjectDrops is a directory whose second version drops, IF EXISTS, a
+// view, a trigger and an index that are not there, and a view and a trigger
+// that are.
+var absentObjectDrops = map[string]string{
+	"1_init.sql": "CREATE TABLE users (id int);\nCREATE VIEW v AS SELECT id FROM users;\n" +
+		"CREATE TRIGGER audit AFTER INSERT ON users BEGIN SELECT 1; END;\n",
+	"2_head.sql": "DROP VIEW IF EXISTS gone_view;\nDROP TRIGGER IF EXISTS gone_trigger;\nDROP INDEX IF EXISTS main.gone_index;\n" +
+		"DROP VIEW IF EXISTS v;\nDROP TRIGGER IF EXISTS audit;\n",
+}
+
+// The dev database, replayed to the state a version starts from, lists its
+// views and triggers, so an IF EXISTS drop of one that is not there is neither
+// counted nor reported, and the drop of one that is there is both.
+func TestBuild_DevURLListsTheViewsAndTriggersAVersionStartsFrom(t *testing.T) {
+	c := qt.New(t)
+	report := buildCount(c, writeMigrations(c, absentObjectDrops), lint.ChangeCountAtlas, freshDevURL(c))
+	c.Assert(changesIn(c, report, "2_head.sql"), qt.Equals, 2)
+	c.Assert(lintRules(report), qt.DeepEquals, []string{"DS107"})
+	c.Assert(report.Analysis.UnmetInputs(), qt.HasLen, 0)
+}
+
+// The control: without a dev database every drop is counted, and both
+// trigger drops are reported.
+func TestBuild_WithoutADevURLEveryObjectDropCounts(t *testing.T) {
+	c := qt.New(t)
+	report := buildCount(c, writeMigrations(c, absentObjectDrops), lint.ChangeCountAtlas, "")
+	c.Assert(changesIn(c, report, "2_head.sql"), qt.Equals, 5)
+	c.Assert(lintRules(report), qt.DeepEquals, []string{"DS107", "DS107"})
+}

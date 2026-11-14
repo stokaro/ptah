@@ -954,3 +954,11 @@ v0.22.1 ptah.run/core/platform/capability
 # Remove the field and its unreachable comparison branch together. This changes
 # the public descriptor type; pre-v1, so no compatibility is owed.
 v0.25.0 ptah.run/core/platform/descriptor
+
+# A dialect's lint descriptor names the kinds of object a read of its dev
+# database lists in full (Lint.ListedObjects), which is what lets lint show an
+# IF EXISTS drop of a missing type, view or trigger to drop nothing. The slice
+# field makes Lint no longer comparable with ==, as the descriptor's other
+# sections that hold lists already are; nothing in Ptah compares it by value.
+# Pre-v1, so no compatibility is owed.
+v0.28.0 ptah.run/core/platform/descriptor

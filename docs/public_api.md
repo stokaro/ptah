@@ -4147,8 +4147,8 @@ finding. `Options.ExtraRules` adds in-process rules to one run; there is no
 process-wide registry. `Options.TransactionOwner` is sent to the owners as
 `CheckRequest.TransactionOwner`; a caller that lints a directory written for a
 tool that opens no transaction around a file sets it. The baseline types a run is handed (`BaselineColumn`,
-`BaselineIndex`, `BaselineHypertable`, `BaselineDependent`) are
-`core/lintext`'s, because the owners read the same values.
+`BaselineIndex`, `BaselineHypertable`, `BaselineDependent`, `BaselineObject`,
+`BaselineRead`) are `core/lintext`'s, because the owners read the same values.
 
 `lint.Target` is the server an analysis plans against, and every prepared
 `File` and `Statement` carries it, so a rule whose verdict depends on the
@@ -4178,9 +4178,14 @@ expresses (`File.Changes`, typed `SchemaChange`), recovered from Ptah's
 dialect-aware SQL parser so one statement can map to zero, one, or several
 changes. `Options.ChangeCount` selects how they are counted: the zero value
 counts each statement's changes, and the Atlas counts match the community
-binary's `migrate lint` summary. `Options.BaselineRead` names the versions whose
-starting state the caller read, so a version the dev database showed empty
-starts from an empty schema rather than from an unread one.
+binary's `migrate lint` summary.
+
+`Options.BaselineRead` names the versions whose starting state the caller read,
+so a version the dev database showed empty starts from an empty schema rather
+than from an unread one. Each read says which kinds of `Options.BaselineObjects`
+it lists in full. Only a listed kind can show an object absent, which is what
+lets an `IF EXISTS` drop of a missing type, view or trigger count nothing and
+report nothing; a kind left unlisted is judged as if the object were there.
 
 Atlas-ignored files are marked explicitly without changing version selection.
 Compatibility-specific directive behavior must be selected explicitly; native

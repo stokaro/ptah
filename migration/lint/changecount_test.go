@@ -284,9 +284,29 @@ func TestIfExistsIndexOrColumnStatement_Counts(t *testing.T) {
 			columns: usersAt(""), want: []changeProjection{{Kind: lint.SchemaChangeDrop, Object: "users_name_idx"}},
 		},
 		{
-			name: "drop qualified against a state that names no schema", dialect: "sqlite",
+			name: "drop qualified by SQLite's one schema against a state that names none", dialect: "sqlite",
 			statement: "DROP INDEX IF EXISTS main.users_name_idx;", columns: usersAt(""),
+			want: make([]changeProjection, 0),
+		},
+		{
+			name: "drop of a present index qualified by SQLite's one schema", dialect: "sqlite",
+			statement: "DROP INDEX IF EXISTS main.users_name_idx;", columns: usersAt(""), indexes: usersIndexAt(),
 			want: []changeProjection{{Kind: lint.SchemaChangeDrop, Object: "main.users_name_idx"}},
+		},
+		{
+			name: "drop qualified by an attached SQLite database", dialect: "sqlite",
+			statement: "DROP INDEX IF EXISTS aux.users_name_idx;", columns: usersAt(""),
+			want: []changeProjection{{Kind: lint.SchemaChangeDrop, Object: "aux.users_name_idx"}},
+		},
+		{
+			name: "drop qualified by SQLite's temp schema", dialect: "sqlite",
+			statement: "DROP INDEX IF EXISTS temp.users_name_idx;", columns: usersAt(""),
+			want: []changeProjection{{Kind: lint.SchemaChangeDrop, Object: "temp.users_name_idx"}},
+		},
+		{
+			name: "drop qualified against a state that names no schema, on an engine of several", dialect: "postgres",
+			statement: "DROP INDEX IF EXISTS public.users_name_idx;", columns: usersAt(""),
+			want: []changeProjection{{Kind: lint.SchemaChangeDrop, Object: "public.users_name_idx"}},
 		},
 		{
 			name: "drop of an index the file created", dialect: "sqlite",
@@ -464,7 +484,7 @@ func TestAnalyzeFS_ReadEmptyStartingState(t *testing.T) {
 	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(firstFileDrop), lint.Options{
 		Dialect:      "sqlite",
 		ChangeCount:  lint.ChangeCountAtlas,
-		BaselineRead: []int64{1},
+		BaselineRead: []lintext.BaselineRead{{Version: 1}},
 	})
 	c.Assert(err, qt.IsNil)
 	c.Assert(projectChanges(fileByName(c, analysis, "0000000001_init.up.sql").Changes), qt.DeepEquals, []changeProjection{
@@ -504,7 +524,7 @@ func TestAnalyzeFS_ReadEmptyStartingStateOfAQualifiedDrop(t *testing.T) {
 				Dialect:      "postgres",
 				ChangeCount:  lint.ChangeCountAtlas,
 				SchemaScope:  test.scope,
-				BaselineRead: []int64{1},
+				BaselineRead: []lintext.BaselineRead{{Version: 1}},
 			})
 			c.Assert(err, qt.IsNil)
 			c.Assert(projectChanges(fileByName(c, analysis, "0000000001_init.up.sql").Changes), qt.DeepEquals, test.want)

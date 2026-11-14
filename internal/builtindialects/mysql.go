@@ -126,6 +126,8 @@ func mysql() descriptor.Dialect {
 			OnlineMeasured:   true,
 			TypeRestatements: "mytype",
 			AtlasAnalyzer:    "MY",
+			// The read lists every view and trigger of the database it reads.
+			ListedObjects: []string{"view", "trigger"},
 		},
 
 		// How a schema file's names are read, and how unnamed indexes and CHECKs are named.

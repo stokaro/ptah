@@ -604,6 +604,7 @@ func lintDirectory(
 	lintOptions.BaselineIndexes = baseline.indexes
 	lintOptions.BaselineDependents = baseline.dependents
 	lintOptions.BaselineHypertables = baseline.hypertables
+	lintOptions.BaselineObjects = baseline.objects
 	lintOptions.BaselineRead = baseline.read
 	// The second pass re-reads the same files with the baseline facts in hand;
 	// it does not replay, so the schema pair the replay captured is still the
@@ -848,10 +849,14 @@ type baselineCollector struct {
 	dependents []lintext.BaselineDependent
 	// hypertables are the TimescaleDB hypertables of the same read.
 	hypertables []lintext.BaselineHypertable
+	// objects are the types, views, triggers and sequences of the same read,
+	// of the kinds each read lists in full.
+	objects []lintext.BaselineObject
 	// read lists every version whose state was read, a version whose state
-	// held nothing among them: the first version of a directory starts from
-	// the empty dev database, and that is an answer, not a missing read.
-	read []int64
+	// held nothing among them, with the kinds of object each read lists in
+	// full: the first version of a directory starts from the empty dev
+	// database, and that is an answer, not a missing read.
+	read []lintext.BaselineRead
 }
 
 func newBaselineCollector(versions []int64, devURL string, runtime baselineRuntime) *baselineCollector {
@@ -890,7 +895,8 @@ func (c *baselineCollector) observe(
 	c.indexes = append(c.indexes, state.indexes...)
 	c.dependents = append(c.dependents, state.dependents...)
 	c.hypertables = append(c.hypertables, state.hypertables...)
-	c.read = append(c.read, version)
+	c.objects = append(c.objects, state.objects...)
+	c.read = append(c.read, state.read)
 	return nil
 }
 

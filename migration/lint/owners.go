@@ -130,14 +130,26 @@ func checkFiles(files []File) []lintext.File {
 // requestBaseline is the schema state the run was handed, nil when it was
 // handed none: the first of the two calls a baseline rule is served in.
 func requestBaseline(opts Options) *lintext.Baseline {
-	if len(opts.Baseline) == 0 && len(opts.BaselineIndexes) == 0 && len(opts.BaselineHypertables) == 0 && len(opts.BaselineDependents) == 0 {
+	if len(opts.Baseline) == 0 && len(opts.BaselineIndexes) == 0 && len(opts.BaselineHypertables) == 0 &&
+		len(opts.BaselineDependents) == 0 && len(opts.BaselineObjects) == 0 && len(opts.BaselineRead) == 0 {
 		return nil
+	}
+	var reads []lintext.BaselineRead
+	for _, read := range opts.BaselineRead {
+		reads = append(reads, lintext.BaselineRead{Version: read.Version, Listed: slices.Clone(read.Listed)})
+	}
+	var objects []lintext.BaselineObject
+	for _, object := range opts.BaselineObjects {
+		object.Values = slices.Clone(object.Values)
+		objects = append(objects, object)
 	}
 	return &lintext.Baseline{
 		Columns:     slices.Clone(opts.Baseline),
 		Indexes:     slices.Clone(opts.BaselineIndexes),
 		Hypertables: slices.Clone(opts.BaselineHypertables),
 		Dependents:  slices.Clone(opts.BaselineDependents),
+		Objects:     objects,
+		Reads:       reads,
 	}
 }
 

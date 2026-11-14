@@ -15,6 +15,84 @@ type Baseline struct {
 	// Dependents are the views and routines that read each column of the
 	// same states.
 	Dependents []BaselineDependent `json:"dependents,omitempty"`
+	// Objects are the objects of the same states that stand apart from a
+	// table's columns and indexes, from the same read, of the kinds each
+	// read lists in [BaselineRead.Listed].
+	Objects []BaselineObject `json:"objects,omitempty"`
+	// Reads lists every version whose state the host read, a version whose
+	// state held nothing among them. A listed version with no row starts
+	// from an empty schema; a version with rows was read whether or not it
+	// is listed, though only a listed one says which kinds of object its
+	// read lists in full. Any other version is a state nobody read, about
+	// which a rule assumes nothing.
+	Reads []BaselineRead `json:"reads,omitempty"`
+}
+
+// BaselineRead is one version whose starting state a host read.
+type BaselineRead struct {
+	// Version is the migration version whose starting state was read.
+	Version int64 `json:"version"`
+	// Listed are the kinds of object the read lists in full, so one the
+	// state does not hold is absent from the database. Tables, their columns
+	// and their indexes are always listed. A kind not named here may hold
+	// objects the read did not report, so its absence from the state shows
+	// nothing.
+	Listed []BaselineObjectKind `json:"listed,omitempty"`
+}
+
+// BaselineObjectKind is a kind of [BaselineObject].
+type BaselineObjectKind string
+
+const (
+	// BaselineType is a user-defined type: an enum, a domain, a composite
+	// type or a range type.
+	BaselineType BaselineObjectKind = "type"
+	// BaselineView is a view.
+	BaselineView BaselineObjectKind = "view"
+	// BaselineMaterializedView is a materialized view.
+	BaselineMaterializedView BaselineObjectKind = "materialized_view"
+	// BaselineTrigger is a trigger, which belongs to a table.
+	BaselineTrigger BaselineObjectKind = "trigger"
+	// BaselineSequence is a sequence.
+	BaselineSequence BaselineObjectKind = "sequence"
+)
+
+// BaselineObjectKinds returns every kind of [BaselineObject], in a fixed
+// order.
+func BaselineObjectKinds() []BaselineObjectKind {
+	return []BaselineObjectKind{BaselineType, BaselineView, BaselineMaterializedView, BaselineTrigger, BaselineSequence}
+}
+
+// BaselineObject is one object of the schema state a migration version starts
+// from that stands apart from a table's columns and indexes, read from the
+// dev database beside [BaselineColumn].
+//
+// It is what shows a statement written IF EXISTS to drop nothing: `DROP
+// TRIGGER IF EXISTS audit ON users` removes no behavior when the state the
+// version starts from holds no such trigger, and the text alone cannot say
+// which.
+type BaselineObject struct {
+	// Version is the migration version whose starting state this object
+	// belongs to: the state read BEFORE that version is applied.
+	Version int64 `json:"version"`
+	// Kind is what the object is.
+	Kind BaselineObjectKind `json:"kind"`
+	// Schema is the object's schema, as the server spells it, or empty for an
+	// object in the schema the dev connection resolves unqualified names
+	// against, the way the readers write the tables of that schema. A state
+	// that writes that schema on some rows and leaves it empty on others reads
+	// as a state of several schemas, and a qualified reference then misses the
+	// rows written without it.
+	Schema string `json:"schema,omitempty"`
+	// Table is the table a trigger belongs to, as the server spells it, and
+	// empty for an object that stands on its own.
+	Table string `json:"table,omitempty"`
+	// Name is the object's name, as the server spells it.
+	Name string `json:"name"`
+	// Enum reports an enum type, whose labels are Values in their declared
+	// order.
+	Enum   bool     `json:"enum,omitempty"`
+	Values []string `json:"values,omitempty"`
 }
 
 // BaselineSubject names the statements of one file that one rule would judge

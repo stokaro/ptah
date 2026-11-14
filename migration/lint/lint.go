@@ -376,14 +376,22 @@ type Options struct {
 	// [lintext.BaselineHypertable].
 	BaselineHypertables []lintext.BaselineHypertable
 
+	// BaselineObjects carries the types, views, materialized views,
+	// triggers and sequences of the state each version starts from, read in
+	// the same catalog read as Baseline, of the kinds each entry of
+	// BaselineRead lists in full. They show an IF EXISTS drop of one to drop
+	// nothing. See [lintext.BaselineObject].
+	BaselineObjects []lintext.BaselineObject
+
 	// BaselineRead lists the versions whose starting state the caller read,
-	// normally every version [Analysis.BaselineVersions] asked for. A listed
-	// version with no row in the Baseline fields starts from an empty schema,
-	// which is what a directory's first version meets on a clean dev
-	// database. A version with no row that is not listed is a state nobody
-	// read, about which the rules assume nothing. A version with rows was read
-	// whether or not it is listed.
-	BaselineRead []int64
+	// normally every version [Analysis.BaselineVersions] asked for, with the
+	// kinds of object each read lists in full. A listed version with no row
+	// in the Baseline fields starts from an empty schema, which is what a
+	// directory's first version meets on a clean dev database. A version with
+	// no row that is not listed is a state nobody read, about which the rules
+	// assume nothing. A version with rows was read whether or not it is
+	// listed, and lists no kind of object in full. See [lintext.BaselineRead].
+	BaselineRead []lintext.BaselineRead
 
 	// Naming is the naming convention the NM rules enforce, normally the
 	// `naming` section of .ptah-lint.yaml or the `lint { naming { } }` block
