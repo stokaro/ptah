@@ -42,6 +42,10 @@ type flywayVersionTokens struct {
 	byToken map[string]int64
 	// byVersion renders a numeric order key as the exact revision identity.
 	byVersion map[int64]string
+	// names gives a numeric order key the file name it has in the directory.
+	// Conversion renames `V1.5__b.sql` to a numeric Atlas file, and a report
+	// that names files has to name the one the repository holds.
+	names map[int64]string
 }
 
 // newFlywayVersionTokens indexes the covered migrations of a converted Flyway
@@ -64,10 +68,12 @@ func newFlywayVersionTokens(covered []atlasmigrateimport.FlywayCoveredSourceVers
 	tokens := flywayVersionTokens{
 		byToken:   make(map[string]int64, len(covered)),
 		byVersion: make(map[int64]string, len(covered)),
+		names:     make(map[int64]string, len(covered)),
 	}
 	for _, migration := range covered {
 		tokens.byVersion[migration.Version] = migration.Token
 		tokens.byToken[migration.Token] = migration.Version
+		tokens.names[migration.Version] = migration.Source
 	}
 	return tokens
 }
@@ -110,6 +116,7 @@ func (t flywayVersionTokens) withHistory(versions map[int64]string) flywayVersio
 	result := flywayVersionTokens{
 		byToken:   t.byToken,
 		byVersion: maps.Clone(t.byVersion),
+		names:     t.names,
 	}
 	if result.byVersion == nil {
 		result.byVersion = make(map[int64]string, len(versions))
@@ -124,4 +131,11 @@ func (t flywayVersionTokens) withHistory(versions map[int64]string) flywayVersio
 // command-local state with it.
 func (t flywayVersionTokens) revisionVersions() map[int64]string {
 	return maps.Clone(t.byVersion)
+}
+
+// fileNames returns the directory's file name for each numeric order key the
+// converted Atlas filesystem uses. It covers the migrations of the directory
+// only: a row a baseline squashed has no file.
+func (t flywayVersionTokens) fileNames() map[int64]string {
+	return maps.Clone(t.names)
 }

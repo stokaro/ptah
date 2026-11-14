@@ -2176,6 +2176,9 @@ describe the same immutable inputs.
 The `Replay Migration Files` step reports how many selected migration files
 the dev database replayed, as the community binary does:
 `Loaded 2 changes on dev database` names two files, whatever they contain.
+Each `Analyze <file>` step counts that file's reports, one per analyzer that
+raised anything: two destructive drops in one file are `1 reports were found
+in analysis`, as on the community binary.
 
 The summary's schema-change count is recovered from Ptah's dialect-aware parse
 of the DDL, the parser the replay and planner use, and is not a count of
@@ -2624,9 +2627,37 @@ Ptah-native migrations instead; see
 
 **`ptah-compat migrate lint --format`**
 
-- Top level: `.Env.Driver`, `.Env.URL`, `.Env.Dir`, `.Steps`, and `.Files`.
+- Top level: `.Env.Driver`, `.Env.URL`, `.Env.Dir`, `.URL`, `.Schema`,
+  `.Steps`, `.Files`, `.TotalFiles`, `.TotalChanges`, and `.DiagnosticsCount`.
+- `.Env.Dir` is the directory as given, cleaned. `file://migrations` and
+  `file://./migrations` both give `migrations`; an absolute path stays
+  absolute.
+- `.URL` is the address of a published report. Ptah publishes none, so it is
+  empty.
+- `.Schema.Current` and `.Schema.Desired` are the dev database's schema in HCL
+  before and after the analyzed versions. Both are empty, and `{{ json .Schema }}`
+  prints `{}`, when the run stops at `atlas.sum` or in the replay.
+- `.TotalFiles` counts the migration files in `.Files`, so it is `0` after an
+  `atlas.sum` failure. `.TotalChanges` counts schema changes per statement, as
+  the text report's summary does. `.DiagnosticsCount` counts the diagnostics in
+  every report.
 - Each step entry: `.Name`, `.Text`, `.Error`, and `.Result`.
-- Each file entry: `.Name`, `.Text`, `.Error`, and `.Findings`.
+- Each file entry: `.Name`, `.Text`, `.Reports`, `.Error`, `.Findings`,
+  `.Line`, and `.SuggestedFixes`. In a Flyway directory `.Name` is the file
+  name the directory holds, such as `V1.5__b.sql`.
+- A file's `.Error` is the replay error, or the headline of each report that
+  holds an error, joined with `; `. A `DROP TABLE` gives
+  `destructive changes detected`.
+- `.Line N` is the line of `.Text` that byte offset `N` falls on, so
+  `{{ $file.Line .Pos }}` turns a diagnostic's position into a line number. An
+  offset outside `.Text` fails the template and the run exits `1`.
+- `.SuggestedFixes` lists the fixes of every diagnostic in the file, each with
+  `.Message` and `.TextEdit`. No fix Ptah suggests carries a text edit, so
+  `.TextEdit` is empty.
+- Each report: `.Text` and `.Diagnostics`. Each diagnostic: `.Pos`, `.Text`,
+  `.Code`, and `.SuggestedFixes`.
+- `.Findings` is Ptah's own record of each finding. The pinned binary has no
+  such field.
 
 **`ptah-compat migrate status --format`**
 

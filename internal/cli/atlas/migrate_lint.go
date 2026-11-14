@@ -246,7 +246,9 @@ func runAtlasMigrateLint(
 	if err != nil {
 		return cmdutil.Fail(cmd, atlasMigrateLintDirCaptureError(localDir.Path, localDir.AllowedRoot, err))
 	}
-	dir := source.Display
+	// dir is the directory as the report names it in `.Env.Dir`. The analysis
+	// reads source.Display, the path the directory was captured at.
+	dir := atlasMigrateLintEnvDir(opts.dir, source.Display)
 	lintOptions := atlasMigrateLintReportOptions(cmd, opts, format, devServerDisposable, formatOutput)
 	// The changeset selection is required, and requireAtlasMigrateLintScope
 	// above is the one place that asks. Asking again here, through
@@ -294,7 +296,7 @@ func runAtlasMigrateLint(
 	// A foreign layout is rebuilt here as up-only Atlas migrations, so what the
 	// analyzers replay is the Atlas layout on either branch and the native
 	// directory format below stays atlas for both.
-	snapshot, err := captured.migrationFS(dir)
+	snapshot, err := captured.migrationFS(source.Display)
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate lint --dir: %w", err))
 	}
@@ -303,7 +305,8 @@ func runAtlasMigrateLint(
 		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate lint --dir: %w", err))
 	}
 	revisionVersions := tokens.revisionVersions()
-	lintOptions.Dir = dir
+	fileNames := tokens.fileNames()
+	lintOptions.Dir = source.Display
 	lintOptions.FS = snapshot
 	lintOptions.RevisionVersions = revisionVersions
 	if err := devsnapshot.Refuse(cmd.Context(), opts.devURL, devsnapshot.Lint); err != nil {
@@ -347,7 +350,7 @@ func runAtlasMigrateLint(
 		switch {
 		case replayFailure != nil && formatOutput:
 			if writeErr := writeAtlasMigrateLintReplayError(
-				cmd, opts, dir, report, integrity, revisionVersions, replayFailure, err,
+				cmd, opts, dir, report, integrity, revisionVersions, fileNames, replayFailure, err,
 			); writeErr != nil {
 				return cmdutil.Fail(cmd, writeErr)
 			}
@@ -373,6 +376,7 @@ func runAtlasMigrateLint(
 			Integrity:        integrity,
 			Error:            report.Error,
 			RevisionVersions: revisionVersions,
+			FileNames:        fileNames,
 			Schema: atlasreport.MigrateLintSchema{
 				Current: report.SchemaCurrent,
 				Desired: report.SchemaDesired,
@@ -446,7 +450,7 @@ func writeAtlasMigrateLintReplayError(
 	dir string,
 	report migrationlintreport.Report,
 	integrity atlasreport.MigrateLintIntegrity,
-	revisionVersions map[int64]string,
+	revisionVersions, fileNames map[int64]string,
 	replayFailure *atlasreport.MigrateLintReplayFailure,
 	replayErr error,
 ) error {
@@ -463,11 +467,31 @@ func writeAtlasMigrateLintReplayError(
 		Error:            replayErr.Error(),
 		ReplayFailure:    replayFailure,
 		RevisionVersions: revisionVersions,
+		FileNames:        fileNames,
 		Schema: atlasreport.MigrateLintSchema{
 			Current: report.SchemaCurrent,
 			Desired: report.SchemaDesired,
 		},
 	})
+}
+
+// atlasMigrateLintEnvDir is the migration directory as a `--format` template
+// reads it in `.Env.Dir`: the path the operator gave, cleaned, so a relative
+// directory stays relative. The pinned community binary v1.3.0 prints
+// `migrations` for `file://migrations`, `file://./migrations` and an atlas.hcl
+// `dir = "file://migrations"` alike, and an absolute path for an absolute
+// --dir. Printing the captured absolute path instead hands a pull-request
+// comment the runner's working directory.
+//
+// A directory that is not a file:// URL -- a registry reference, a rendered
+// template directory -- has no local path to give, and keeps display, which is
+// the reference as given.
+func atlasMigrateLintEnvDir(raw, display string) string {
+	given, err := atlasargs.ParseLocalDir(raw)
+	if err != nil || given.Path == "" {
+		return display
+	}
+	return given.Path
 }
 
 func validateAtlasMigrateLintOptions(opts atlasMigrateLintOptions) error {

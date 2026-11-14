@@ -31,9 +31,16 @@ type MigrateLintOptions struct {
 	// RevisionVersions maps converted execution-order keys to exact source
 	// identities for the version labels in the text report.
 	RevisionVersions map[int64]string
+	// FileNames maps converted execution-order keys to the name the file has in
+	// the operator's directory, for a layout whose conversion renames its files.
+	// A Flyway `V1.5__b.sql` is analyzed as a numeric Atlas file, and a template
+	// that prints `.Name` has to get the file the repository holds. A key the
+	// map lacks keeps the analyzed name.
+	FileNames map[int64]string
 	// Schema carries the dev-database state the analyzed versions start from
-	// and end at, rendered as HCL. The zero value renders as two empty strings,
-	// which is what a run that never reached a dev database has to report.
+	// and end at, rendered as HCL. The report carries it only when the replay
+	// finished: a run that stopped at an integrity failure or inside the replay
+	// reports an empty schema whatever this holds.
 	Schema MigrateLintSchema
 }
 
@@ -43,14 +50,19 @@ type MigrateLintIntegrity struct {
 }
 
 type MigrateLint struct {
+	// URL is the address of a report published elsewhere. Ptah publishes no
+	// report, so it is always empty. It exists because the pinned community
+	// binary v1.3.0 hands a template the same empty field, and a template that
+	// names `.URL` must evaluate rather than fail the run.
+	URL string   `json:"URL,omitempty"`
 	Env atlasEnv `json:"Env"`
 	// Schema is the before/after HCL of the dev database the analyzed versions
 	// were replayed on. It is a value and not a pointer so that a template
 	// naming `.Schema.Current` evaluates on every run: the pinned community
-	// binary v1.3.0 populates the field whenever it reaches a dev database --
-	// measured non-empty even on an empty migration directory -- and a nil
-	// pointer here would fail template execution and exit 1 where that binary
-	// exits 0, which is the whole subject of stokaro/ptah#1241.
+	// binary v1.3.0 populates the field whenever a replay finishes -- measured
+	// non-empty even on an empty migration directory -- and a nil pointer here
+	// would fail template execution and exit 1 where that binary exits 0, which
+	// is the whole subject of stokaro/ptah#1241.
 	Schema MigrateLintSchema `json:"Schema"`
 	Steps  []MigrateLintStep `json:"Steps,omitempty"`
 	Files  []MigrateLintFile `json:"Files,omitempty"`
@@ -58,10 +70,15 @@ type MigrateLint struct {
 
 // MigrateLintSchema is the dev-database state a lint run analyzed across:
 // Current is the schema the first analyzed version starts from, Desired the
-// schema left after the last one was replayed. Both are HCL.
+// schema left after the last one was replayed. Both are HCL without Ptah's
+// generated-code marker, framed the way `schema inspect` frames its document
+// on this surface. Both are empty when the replay did not finish, and JSON
+// leaves an empty field out: the pinned community binary v1.3.0 prints `{}`
+// for `{{ json .Schema }}` after an atlas.sum failure and after a replay that
+// failed.
 type MigrateLintSchema struct {
-	Current string `json:"Current"`
-	Desired string `json:"Desired"`
+	Current string `json:"Current,omitempty"`
+	Desired string `json:"Desired,omitempty"`
 }
 
 type MigrateLintStep struct {
@@ -79,10 +96,21 @@ type MigrateLintFile struct {
 	// template. Findings below is Ptah's own richer per-finding record and is
 	// kept alongside it: compatibility adds the documented model, it does not
 	// remove a capability (AGENTS.md).
-	Reports    []MigrateLintReport     `json:"Reports,omitempty"`
+	Reports []MigrateLintReport `json:"Reports,omitempty"`
+	// Error says why the file failed: the replay error a failed replay stopped
+	// at, or the headline of every report that holds an error-severity
+	// diagnostic, joined with "; ". The second is how the pinned community
+	// binary v1.3.0 words an analyzer error: `destructive changes detected` for
+	// a DROP TABLE.
 	Error      string                  `json:"Error,omitempty"`
 	Findings   []migrationlint.Finding `json:"Findings,omitempty"`
 	sourcePath string
+	// changes is the number of schema changes the analysis found in the file,
+	// counted per statement as the text report's summary counts them.
+	changes int
+	// checksum marks the atlas.sum entry of an integrity failure, which is not
+	// a migration file.
+	checksum bool
 }
 
 // MigrateLintReport groups one file's diagnostics by the analyzer that raised
@@ -111,6 +139,86 @@ type MigrateLintDiagnostic struct {
 // MigrateLintSuggestedFix is one remediation a diagnostic offers.
 type MigrateLintSuggestedFix struct {
 	Message string `json:"Message"`
+	// TextEdit is the change the fix makes to the file. Every fix Ptah suggests
+	// is advice and makes none, so it is nil. The field is part of the model a
+	// template reads: `{{ .SuggestedFixes }}` prints it as `<nil>` on the pinned
+	// community binary v1.3.0, and a template that names `.TextEdit` evaluates.
+	TextEdit *MigrateLintTextEdit `json:"TextEdit,omitempty"`
+}
+
+// MigrateLintTextEdit is the change a suggested fix makes to a file: lines Line
+// to End, replaced with NewText. No fix Ptah suggests carries one; see
+// [MigrateLintSuggestedFix.TextEdit].
+type MigrateLintTextEdit struct {
+	Line    int    `json:"Line"`
+	End     int    `json:"End"`
+	NewText string `json:"NewText"`
+}
+
+// TotalFiles reports how many migration files the report covers: the analyzed
+// files, or the one file a failed replay stopped at. The atlas.sum entry of an
+// integrity failure is not a migration file and is not counted. Measured on the
+// pinned community binary v1.3.0, it prints 0 after an integrity failure and 1
+// after a failed replay.
+func (r MigrateLint) TotalFiles() int {
+	total := 0
+	for _, file := range r.Files {
+		if !file.checksum {
+			total++
+		}
+	}
+	return total
+}
+
+// TotalChanges reports how many schema changes the analyzed files carry,
+// counted per statement. It is the count the text report's summary prints, so
+// the two renderings of a run agree. A file a failed replay stopped at counts
+// none.
+func (r MigrateLint) TotalChanges() int {
+	total := 0
+	for _, file := range r.Files {
+		total += file.changes
+	}
+	return total
+}
+
+// DiagnosticsCount reports how many diagnostics the reports of every file hold.
+func (r MigrateLint) DiagnosticsCount() int {
+	total := 0
+	for _, file := range r.Files {
+		for _, report := range file.Reports {
+			total += len(report.Diagnostics)
+		}
+	}
+	return total
+}
+
+// Line reports the 1-based line of Text that the byte offset pos falls on,
+// which is how a template turns a diagnostic's Pos into a line number:
+// `{{ $file.Line .Pos }}`. An offset of len(Text) is the end of the text and
+// is accepted. An offset outside Text is an error, so the template fails and
+// the run exits 1, as on the pinned community binary v1.3.0. That binary words
+// the failure as the Go runtime's slice-bounds panic; this one names the
+// offset and the file.
+func (f MigrateLintFile) Line(pos int) (int, error) {
+	if pos < 0 || pos > len(f.Text) {
+		return 0, fmt.Errorf("position %d is outside the %d bytes of %s", pos, len(f.Text), f.Name)
+	}
+	return strings.Count(f.Text[:pos], "\n") + 1, nil
+}
+
+// SuggestedFixes returns every fix the file's diagnostics suggest, in report
+// and diagnostic order, or nil when none does. A nil result prints as `[]` and
+// encodes as `null`, which is what the pinned community binary v1.3.0 prints
+// for a file with no fix.
+func (f MigrateLintFile) SuggestedFixes() []MigrateLintSuggestedFix {
+	var fixes []MigrateLintSuggestedFix
+	for _, report := range f.Reports {
+		for _, diagnostic := range report.Diagnostics {
+			fixes = append(fixes, diagnostic.SuggestedFixes...)
+		}
+	}
+	return fixes
 }
 
 func WriteMigrateLintFormat(w io.Writer, format string, opts MigrateLintOptions) error {
@@ -132,14 +240,14 @@ func NewMigrateLint(opts MigrateLintOptions) (MigrateLint, error) {
 			URL:    atlasRedactedURL(opts.URL),
 			Dir:    opts.Dir,
 		},
-		Schema: opts.Schema,
 	}
 	if opts.Integrity.Failed() {
 		result.Steps = migrateLintSteps(nil, 0, opts.Integrity, "")
 		result.Files = []MigrateLintFile{
 			{
-				Name:  migratesum.AtlasFileName,
-				Error: opts.Integrity.Error,
+				Name:     migratesum.AtlasFileName,
+				Error:    opts.Integrity.Error,
+				checksum: true,
 			},
 		}
 		return result, nil
@@ -149,15 +257,21 @@ func NewMigrateLint(opts MigrateLintOptions) (MigrateLint, error) {
 		return MigrateLint{}, fmt.Errorf("migration lint analysis is required")
 	}
 	if failure := opts.ReplayFailure; failure != nil {
-		selected, total := migrateLintFiles(*opts.Analysis)
+		selected, total := migrateLintFiles(*opts.Analysis, opts.FileNames)
 		result.Steps = migrateLintSteps(selected, total, opts.Integrity, failure.Error)
-		result.Files = []MigrateLintFile{{Name: failure.File, Error: failure.Error}}
+		result.Files = []MigrateLintFile{{Name: failure.reportedName(opts.FileNames), Error: failure.Error}}
 		return result, nil
 	}
-	files, total := migrateLintFiles(*opts.Analysis)
+	files, total := migrateLintFiles(*opts.Analysis, opts.FileNames)
 	files = attachMigrateLintFindings(files, opts.Analysis.Findings())
 	result.Steps = migrateLintSteps(files, total, opts.Integrity, opts.Error)
 	result.Files = files
+	if opts.Error == "" {
+		result.Schema = MigrateLintSchema{
+			Current: frameCompatibilityHCL(opts.Schema.Current),
+			Desired: frameCompatibilityHCL(opts.Schema.Desired),
+		}
+	}
 	return result, nil
 }
 
@@ -205,8 +319,12 @@ func (i MigrateLintIntegrity) Failed() bool {
 }
 
 // migrateLintFiles returns the selected up-migration files and the count of
-// new up-migration files considered.
-func migrateLintFiles(analysis migrationlint.Analysis) (files []MigrateLintFile, total int) {
+// new up-migration files considered. names renames a file whose layout was
+// converted; see [MigrateLintOptions.FileNames].
+func migrateLintFiles(
+	analysis migrationlint.Analysis,
+	names map[int64]string,
+) (files []MigrateLintFile, total int) {
 	prepared := analysis.Files()
 	maxVersion := migrateLintMaxVersion(prepared)
 	slices.SortStableFunc(prepared, func(a, b migrationlint.File) int {
@@ -222,12 +340,23 @@ func migrateLintFiles(analysis migrationlint.Analysis) (files []MigrateLintFile,
 			continue
 		}
 		files = append(files, MigrateLintFile{
-			Name:       file.Name,
+			Name:       migrateLintFileName(file, names),
 			Text:       file.Source,
 			sourcePath: file.Path,
+			changes:    len(file.Changes),
 		})
 	}
 	return files, total
+}
+
+// migrateLintFileName is the name a report gives an analyzed file: the name it
+// has in the operator's directory when its layout was converted, the analyzed
+// name otherwise.
+func migrateLintFileName(file migrationlint.File, names map[int64]string) string {
+	if name, ok := names[file.Version]; ok {
+		return name
+	}
+	return file.Name
 }
 
 func migrateLintVersionKey(file migrationlint.File, revisionVersions map[int64]string) string {
@@ -285,8 +414,35 @@ func attachMigrateLintFindings(
 	}
 	for i := range files {
 		files[i].Reports = migrateLintReports(files[i].Text, owned[i])
+		files[i].Error = migrateLintAnalyzerError(owned[i])
 	}
 	return files
+}
+
+// migrateLintAnalyzerError words the analyzer errors of one file: the headline
+// of every report group that holds an error-severity finding, in report order,
+// joined with "; ". It is empty when every finding is a warning.
+//
+// The headline is the analyzer's error because that is how the pinned community
+// binary v1.3.0 reports one. An analyzer configured to fail returns its report
+// text as the error, the runner joins the errors of one file with "; ", and a
+// template reads them in `.Files[].Error` and in the Result of the file's step.
+// Measured on a `DROP TABLE` migration, both read `destructive changes
+// detected` and the run exits 1.
+func migrateLintAnalyzerError(findings []migrationlint.Finding) string {
+	diags := make([]migrateLintTextDiag, 0, len(findings))
+	for _, finding := range findings {
+		diags = append(diags, compatibilityDiagnostic(finding))
+	}
+	var errs []string
+	for _, group := range groupDiagnostics(diags) {
+		if slices.ContainsFunc(group.diags, func(diag migrateLintTextDiag) bool {
+			return diag.severity == migrationlint.SeverityError
+		}) {
+			errs = append(errs, group.label+" detected")
+		}
+	}
+	return strings.Join(errs, "; ")
 }
 
 // migrateLintReports renders one file's findings as the analyzer-grouped report
@@ -404,9 +560,11 @@ func migrateLintSteps(
 		Text: fmt.Sprintf("Loaded %d changes on dev database", len(files)),
 	})
 	for _, file := range files {
+		// The community binary counts the reports here, one per analyzer that
+		// raised anything, not the diagnostics inside them.
 		steps = append(steps, MigrateLintStep{
 			Name:   "Analyze " + file.Name,
-			Text:   strconv.Itoa(len(file.Findings)) + " reports were found in analysis",
+			Text:   strconv.Itoa(len(file.Reports)) + " reports were found in analysis",
 			Result: &file,
 		})
 	}
