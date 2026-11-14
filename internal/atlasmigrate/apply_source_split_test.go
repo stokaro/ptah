@@ -210,7 +210,52 @@ func TestConvertApplySourceReadsOnlyTheCapture(t *testing.T) {
 	converted, err := atlasmigrate.ConvertApplySource(captured, dir, atlasmigrateimport.FormatGoose)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(snapshotPaths(c, converted), qt.DeepEquals, []string{"1_init.sql"})
+	c.Assert(snapshotPaths(c, converted.FS), qt.DeepEquals, []string{"1_init.sql"})
+}
+
+// TestConvertApplySourceNamesTheRenamedFiles pins that a conversion which
+// renames a file says which source file each converted name came from, so a
+// report can name the file as the directory holds it.
+func TestConvertApplySourceNamesTheRenamedFiles(t *testing.T) {
+	tests := []struct {
+		name        string
+		format      atlasmigrateimport.Format
+		files       map[string]string
+		wantPaths   []string
+		wantRenamed map[string]string
+	}{
+		{
+			name:   "golang-migrate",
+			format: atlasmigrateimport.FormatGolangMigrate,
+			files: map[string]string{
+				"1_a.up.sql":   "CREATE TABLE a (id int);\n",
+				"1_a.down.sql": "DROP TABLE a;\n",
+			},
+			wantPaths:   []string{"1_a.sql"},
+			wantRenamed: map[string]string{"1_a.sql": "1_a.up.sql"},
+		},
+		{
+			name:        "atlas",
+			format:      atlasmigrateimport.FormatAtlas,
+			files:       map[string]string{"1_a.sql": "CREATE TABLE a (id int);\n"},
+			wantPaths:   []string{"1_a.sql"},
+			wantRenamed: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := writeSplitFixture(c, tt.files)
+			captured, err := atlasmigrate.CaptureApplySource(os.DirFS(dir), tt.format)
+			c.Assert(err, qt.IsNil)
+
+			converted, err := atlasmigrate.ConvertApplySource(captured, dir, tt.format)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(snapshotPaths(c, converted.FS), qt.DeepEquals, tt.wantPaths)
+			c.Assert(converted.Renamed, qt.DeepEquals, tt.wantRenamed)
+		})
+	}
 }
 
 // TestConvertApplySourceReportsSourceParseFailures pins that the parse failure
@@ -252,7 +297,7 @@ func TestResolveApplySourceForFormatStillComposesTheHalves(t *testing.T) {
 	split, err := atlasmigrate.ConvertApplySource(captured, dir, atlasmigrateimport.FormatGoose)
 	c.Assert(err, qt.IsNil)
 
-	c.Assert(composed.Equal(split), qt.IsTrue)
+	c.Assert(composed.Equal(split.FS), qt.IsTrue)
 }
 
 func TestCaptureApplySourceRejectsNilFilesystem(t *testing.T) {

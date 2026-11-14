@@ -181,7 +181,7 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return err
 	}
-	exclude, err := dbcli.EffectiveExclude(projectCfg, opts.exclude, runtime.Selections())
+	exclude, excludeSources, err := dbcli.EffectiveExclude(cmd, excludeFlag, opts.exclude, projectCfg, runtime.Selections())
 	if err != nil {
 		return err
 	}
@@ -243,7 +243,7 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 		return fmt.Errorf("--attach requires exactly one OCI --schema-file source")
 	}
 	requested := dbcli.ParseSchemas(schemasValue)
-	states, err := readPlanStates(cmd, conn, loadResult.Database, requested, bookkeeping, exclusion)
+	states, err := readPlanStates(cmd, conn, loadResult.Database, requested, bookkeeping, exclusion, excludeSources)
 	if err != nil {
 		return err
 	}
@@ -378,7 +378,8 @@ type planStates struct {
 // readPlanStates reads the database at the scope a comparison with desired
 // reads, leaves the revision tables out of it, and returns it beside desired,
 // both without what exclusion names. A selector that named nothing on either
-// side is a warning on standard error.
+// side is a warning on standard error, naming the source excludeSources records
+// for it.
 //
 // The desired schema is filtered before the read, because the scope is
 // resolved from what it declares: an excluded object does not bring its schema
@@ -389,11 +390,15 @@ func readPlanStates(
 	desired *schemamodel.Database,
 	requested, bookkeeping []string,
 	exclusion atlasfilter.Exclusion,
+	excludeSources atlasfilter.ExcludeSources,
 ) (planStates, error) {
 	defaultSchema := conn.Info().Schema
 	desired, desiredReport, err := exclusion.Desired(desired, defaultSchema)
 	if err != nil {
-		return planStates{}, fmt.Errorf("apply --%s to the desired schema: %w", excludeFlag, err)
+		// The selectors may come from the project file or PTAH_EXCLUDE as well
+		// as the flag, so the wrap names none of them, as `migrations
+		// generate` words the same failure.
+		return planStates{}, fmt.Errorf("apply exclude selectors to the desired schema: %w", err)
 	}
 	schemas, err := schemascope.ComparisonReadNames(cmd.Context(), conn.Info(), requested, conn, desired)
 	if err != nil {
@@ -406,9 +411,9 @@ func readPlanStates(
 	current = revisiontable.Without(current, bookkeeping)
 	current, currentReport, err := exclusion.Observed(current, defaultSchema)
 	if err != nil {
-		return planStates{}, fmt.Errorf("apply --%s to the database schema: %w", excludeFlag, err)
+		return planStates{}, fmt.Errorf("apply exclude selectors to the database schema: %w", err)
 	}
-	atlasfilter.ReportUnmatched(cmd.ErrOrStderr(), desiredReport, currentReport)
+	atlasfilter.ReportUnmatched(cmd.ErrOrStderr(), excludeSources, desiredReport, currentReport)
 	return planStates{desired: desired, current: current, schemas: schemas}, nil
 }
 

@@ -247,7 +247,7 @@ func TestMigratePlanExclude_FailurePath(t *testing.T) {
 
 		stdout, stderr, err := runPlan("--db-url", fixture.targetURL, "--schema-file", fixture.schemaFile, "--exclude", "main.widgets.name")
 
-		c.Assert(err, qt.ErrorMatches, `apply --exclude to the desired schema: too many parts in pattern "main\.widgets\.name": .*`, qt.Commentf("%s", stderr))
+		c.Assert(err, qt.ErrorMatches, `apply exclude selectors to the desired schema: too many parts in pattern "main\.widgets\.name": .*`, qt.Commentf("%s", stderr))
 		c.Assert(stdout, qt.Not(qt.Contains), "=== MIGRATION SQL ===")
 	})
 }

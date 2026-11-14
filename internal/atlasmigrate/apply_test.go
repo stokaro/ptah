@@ -4,7 +4,9 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"regexp"
 	"testing"
+	"testing/fstest"
 
 	qt "github.com/frankban/quicktest"
 
@@ -728,27 +730,19 @@ func TestPrepareApply_FailurePath(t *testing.T) {
 	})
 }
 
+// TestParseApplyAmount_HappyPath reads each amount the pinned community binary
+// applies, measured on SQLite: a sign and a leading zero are allowed.
 func TestParseApplyAmount_HappyPath(t *testing.T) {
 	tests := []struct {
 		name string
 		args []string
 		want uint64
 	}{
-		{
-			name: "empty",
-			args: nil,
-			want: 0,
-		},
-		{
-			name: "positive amount",
-			args: []string{"2"},
-			want: 2,
-		},
-		{
-			name: "trimmed amount",
-			args: []string{" 3 "},
-			want: 3,
-		},
+		{name: "empty", args: nil, want: 0},
+		{name: "positive amount", args: []string{"2"}, want: 2},
+		{name: "plus sign", args: []string{"+1"}, want: 1},
+		{name: "leading zero", args: []string{"01"}, want: 1},
+		{name: "largest signed 64-bit integer", args: []string{"9223372036854775807"}, want: 9223372036854775807},
 	}
 
 	for _, tt := range tests {
@@ -761,20 +755,134 @@ func TestParseApplyAmount_HappyPath(t *testing.T) {
 	}
 }
 
+// TestParseApplyAmount_FailurePath refuses each amount the pinned community
+// binary refuses, with the line it prints, measured on SQLite.
 func TestParseApplyAmount_FailurePath(t *testing.T) {
-	t.Run("too many arguments", func(t *testing.T) {
-		c := qt.New(t)
-		got, err := atlasmigrate.ParseApplyAmount([]string{"1", "2"})
-		c.Assert(err, qt.ErrorMatches, "accepts at most one amount argument")
-		c.Assert(got, qt.Equals, uint64(0))
-	})
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr string
+	}{
+		{
+			name:    "too many arguments",
+			args:    []string{"1", "2"},
+			wantErr: "accepts at most 1 arg(s), received 2",
+		},
+		{
+			name:    "not a number",
+			args:    []string{"x"},
+			wantErr: `invalid amount argument "x" (invalid syntax). Omit the argument or pass a valid integer instead`,
+		},
+		{
+			name:    "empty argument",
+			args:    []string{""},
+			wantErr: `invalid amount argument "" (invalid syntax). Omit the argument or pass a valid integer instead`,
+		},
+		{
+			name:    "surrounding space",
+			args:    []string{" 1"},
+			wantErr: `invalid amount argument " 1" (invalid syntax). Omit the argument or pass a valid integer instead`,
+		},
+		{
+			name:    "fraction",
+			args:    []string{"1.5"},
+			wantErr: `invalid amount argument "1.5" (invalid syntax). Omit the argument or pass a valid integer instead`,
+		},
+		{
+			name:    "hexadecimal",
+			args:    []string{"0x1"},
+			wantErr: `invalid amount argument "0x1" (invalid syntax). Omit the argument or pass a valid integer instead`,
+		},
+		{
+			name:    "past 64 bits",
+			args:    []string{"9223372036854775808"},
+			wantErr: `invalid amount argument "9223372036854775808" (value out of range). Omit the argument or pass a valid integer instead`,
+		},
+		{
+			name:    "zero",
+			args:    []string{"0"},
+			wantErr: "cannot apply '0' migration files",
+		},
+		{
+			name:    "negative zero",
+			args:    []string{"-0"},
+			wantErr: "cannot apply '0' migration files",
+		},
+		{
+			name:    "negative",
+			args:    []string{"-1"},
+			wantErr: "cannot apply '-1' migration files",
+		},
+	}
 
-	t.Run("invalid unsigned integer", func(t *testing.T) {
-		c := qt.New(t)
-		got, err := atlasmigrate.ParseApplyAmount([]string{"nope"})
-		c.Assert(err, qt.ErrorMatches, `amount argument "nope" is not a valid unsigned integer: .*`)
-		c.Assert(got, qt.Equals, uint64(0))
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			got, err := atlasmigrate.ParseApplyAmount(tt.args)
+			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(tt.wantErr))
+			c.Assert(got, qt.Equals, uint64(0))
+		})
+	}
+}
+
+// TestResolveApplyBaseline_HappyPath resolves each operand that spells a file's
+// version byte for byte, as the pinned community binary matches it.
+func TestResolveApplyBaseline_HappyPath(t *testing.T) {
+	dir := fstest.MapFS{
+		"1_a.sql":      {Data: []byte("CREATE TABLE a (id int);\n")},
+		"000002_b.sql": {Data: []byte("CREATE TABLE b (id int);\n")},
+	}
+	tests := []struct {
+		name  string
+		value string
+		want  int64
+	}{
+		{name: "no baseline", value: "", want: 0},
+		{name: "plain version", value: "1", want: 1},
+		{name: "version spelled with leading zeros", value: "000002", want: 2},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			got, err := atlasmigrate.ResolveApplyBaseline(dir, tt.value)
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.Equals, tt.want)
+		})
+	}
+}
+
+// TestResolveApplyBaseline_FailurePath refuses each operand no file name
+// spells, with the line the pinned community binary prints, whether or not it
+// is a number that equals a file's version.
+func TestResolveApplyBaseline_FailurePath(t *testing.T) {
+	dir := fstest.MapFS{
+		"1_a.sql":      {Data: []byte("CREATE TABLE a (id int);\n")},
+		"000002_b.sql": {Data: []byte("CREATE TABLE b (id int);\n")},
+	}
+	tests := []struct {
+		name    string
+		value   string
+		wantErr string
+	}{
+		{name: "absent version", value: "7", wantErr: `baseline version "7" not found`},
+		{name: "not a number", value: "abc", wantErr: `baseline version "abc" not found`},
+		{name: "zero", value: "0", wantErr: `baseline version "0" not found`},
+		{name: "negative", value: "-1", wantErr: `baseline version "-1" not found`},
+		{name: "leading zero", value: "01", wantErr: `baseline version "01" not found`},
+		{name: "plus sign", value: "+1", wantErr: `baseline version "+1" not found`},
+		{name: "surrounding space", value: " 1", wantErr: `baseline version " 1" not found`},
+		{name: "version without its leading zeros", value: "2", wantErr: `baseline version "2" not found`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			got, err := atlasmigrate.ResolveApplyBaseline(dir, tt.value)
+			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(tt.wantErr))
+			c.Assert(got, qt.Equals, int64(0))
+		})
+	}
 }
 
 func TestParseMigrationVersionFlag_HappyPath(t *testing.T) {
@@ -803,7 +911,7 @@ func TestParseMigrationVersionFlag_HappyPath(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			got, err := atlasmigrate.ParseMigrationVersionFlag("baseline", tt.value)
+			got, err := atlasmigrate.ParseMigrationVersionFlag("to-version", tt.value)
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.Equals, tt.want)
 		})
@@ -813,22 +921,22 @@ func TestParseMigrationVersionFlag_HappyPath(t *testing.T) {
 func TestParseMigrationVersionFlag_FailurePath(t *testing.T) {
 	t.Run("invalid integer", func(t *testing.T) {
 		c := qt.New(t)
-		got, err := atlasmigrate.ParseMigrationVersionFlag("baseline", "nope")
-		c.Assert(err, qt.ErrorMatches, `--baseline "nope" is not a valid migration version: .*`)
+		got, err := atlasmigrate.ParseMigrationVersionFlag("to-version", "nope")
+		c.Assert(err, qt.ErrorMatches, `--to-version "nope" is not a valid migration version: .*`)
 		c.Assert(got, qt.Equals, int64(0))
 	})
 
 	t.Run("zero", func(t *testing.T) {
 		c := qt.New(t)
-		got, err := atlasmigrate.ParseMigrationVersionFlag("baseline", "0")
-		c.Assert(err, qt.ErrorMatches, "--baseline must be greater than zero")
+		got, err := atlasmigrate.ParseMigrationVersionFlag("to-version", "0")
+		c.Assert(err, qt.ErrorMatches, "--to-version must be greater than zero")
 		c.Assert(got, qt.Equals, int64(0))
 	})
 
 	t.Run("negative", func(t *testing.T) {
 		c := qt.New(t)
-		got, err := atlasmigrate.ParseMigrationVersionFlag("baseline", "-1")
-		c.Assert(err, qt.ErrorMatches, "--baseline must be greater than zero")
+		got, err := atlasmigrate.ParseMigrationVersionFlag("to-version", "-1")
+		c.Assert(err, qt.ErrorMatches, "--to-version must be greater than zero")
 		c.Assert(got, qt.Equals, int64(0))
 	})
 }

@@ -75,6 +75,7 @@ type schemaApplyOptions struct {
 	schemas         string
 	include         []string
 	exclude         []string
+	excludeSources  atlasfilter.ExcludeSources
 	protectedTables []string
 	planPath        string
 	requireApproval bool
@@ -535,7 +536,7 @@ func applySchema(
 	}
 	// After the --plan branch above, which runs under the selection the plan
 	// file recorded when `schema plan` computed it.
-	opts.exclude, err = dbcli.EffectiveExclude(projectCfg, opts.exclude, opts.runtime.Selections())
+	opts.exclude, opts.excludeSources, err = dbcli.EffectiveExclude(cmd, applyExcludeFlag, opts.exclude, projectCfg, opts.runtime.Selections())
 	if err != nil {
 		return "", err
 	}
@@ -679,6 +680,7 @@ func runSchemaApplyOnLockedSession(
 		Desired:             desired,
 		DesiredFor:          opts.desiredFor,
 		Exclude:             opts.exclude,
+		ExcludeSources:      opts.excludeSources,
 		Schemas:             dbcli.ParseSchemas(opts.schemas),
 		Include:             opts.include,
 		Policy:              policy,

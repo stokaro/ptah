@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 )
 
@@ -170,6 +171,32 @@ type Operation struct {
 
 // Kind returns the stable operation identity.
 func (*Operation) Kind() schemaext.Kind { return OperationKind }
+
+// Subject is the object the property is on, spelled as the declaration
+// spells it: the column, the table or the schema. A database property names
+// no object below the database, so its subject is the zero identity, as is a
+// nil operation's. The migration safety report names the statement by it.
+func (v *Operation) Subject() objectidentity.ID {
+	if v == nil {
+		return objectidentity.ID{}
+	}
+	property := v.Property.Property
+	switch {
+	case property.Column != "":
+		return objectidentity.ID{
+			Kind:   objectidentity.KindColumn,
+			Schema: part(property.Schema),
+			Parent: part(property.Table),
+			Name:   part(property.Column),
+		}
+	case property.Table != "":
+		return objectidentity.ID{Kind: objectidentity.KindTable, Schema: part(property.Schema), Name: part(property.Table)}
+	case property.Schema != "":
+		return objectidentity.ID{Kind: objectidentity.KindSchema, Name: part(property.Schema)}
+	default:
+		return objectidentity.ID{}
+	}
+}
 
 // CloneExtension returns an independent operation; a nil receiver remains
 // typed nil.

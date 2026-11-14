@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
-	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 )
 
@@ -150,23 +149,4 @@ func applyExtensionVerdict(target *StatementAssessment, verdict extensionVerdict
 		target.Severity, target.Reason = verdict.severity, verdict.reason
 	}
 	combineAccess(target, verdict.access.Access, verdict.access.Reason)
-}
-
-// extensionSubject reads an owner's structured identity after snapshotting the
-// payload. Its name stays a literal component rather than being split on dots.
-func extensionSubject(node ast.Node) string {
-	envelope, ok := node.(*ast.ExtensionStatement)
-	if !ok || envelope == nil {
-		return ""
-	}
-	payload, err := ast.CloneExtensionPayload(envelope.Payload)
-	if err != nil {
-		return ""
-	}
-	source, ok := payload.(interface{ Subject() objectidentity.ID })
-	if !ok {
-		return ""
-	}
-	subject := source.Subject()
-	return strings.TrimPrefix(subject.String(), string(subject.Kind)+" ")
 }

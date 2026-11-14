@@ -398,6 +398,13 @@ whether that was the schema or the selector. Ptah always says which:
   and a selector written to keep an object out of the plan that named nothing
   leaves the plan free to change it.
 
+A selector from an `atlas.hcl` env's `exclude` list is named by that file
+rather than by the flag, as in
+`Warning: the exclude selection from atlas.hcl matched no objects: "<selector>".`.
+The file is spelled as `--config` names it, and the `schema apply` refusal
+names it the same way. An `--exclude` on the command line replaces the env's
+list, so its selectors are the flag's.
+
 A selector counts as matched when it names an object in **any** state the
 command filtered. Naming an object that exists on only one side of a comparison
 is ordinary — that is what a CREATE or a DROP looks like — so only a selector
@@ -416,10 +423,11 @@ something false. The same rule covers children of a parent another selector
 already removed — `--exclude users --exclude users.id` names two objects that
 both exist, so it is accepted even though the column leaves with its table.
 
-This is a deliberate divergence. The pinned Atlas community binary v1.3.0 exits
-0 and prints no diagnostic for `--exclude nosuchobject`; matching is the floor
-rather than the ceiling, and a silent scope failure is the one answer Ptah
-declines to reproduce.
+This is a [deliberate divergence](../retained-divergences/#an-exclude-selector-that-matches-nothing).
+The pinned Atlas community binary v1.3.0 exits 0 and prints no diagnostic for
+`--exclude nosuchobject`, or for the same selector in an `atlas.hcl` env;
+matching is the floor rather than the ceiling, and a silent scope failure is the
+one answer Ptah declines to reproduce.
 
 Reusing one exclude list across environments where some of the objects are
 absent is a real workflow, so the permissive behavior stays reachable on this

@@ -416,23 +416,66 @@ func runApplyPreflight(
 	return hook(ctx, plan)
 }
 
-// ParseApplyAmount parses the optional Atlas migrate apply amount argument.
+// ParseApplyAmount parses the optional amount argument of `migrate apply`:
+// how many pending migrations the run applies. It returns 0, which applies
+// every pending migration, when args is empty.
+//
+// The argument is read the way the pinned community binary v1.3.0 reads it,
+// measured on SQLite: a base-10 integer that fits in 64 bits, with an optional
+// sign and no surrounding space. `+1` and `01` apply one migration, while
+// ` 1`, `1.5` and `0x1` are refused, and so is an amount below one: `0`,
+// `-0` and `-1` would otherwise apply every pending migration where the
+// binary applies none. The refusals are worded as the binary words them.
 func ParseApplyAmount(args []string) (uint64, error) {
 	if len(args) == 0 {
 		return 0, nil
 	}
 	if len(args) > 1 {
-		return 0, errors.New("accepts at most one amount argument")
+		return 0, fmt.Errorf("accepts at most 1 arg(s), received %d", len(args))
 	}
-	value, err := strconv.ParseUint(strings.TrimSpace(args[0]), 10, 64)
+	amount, err := strconv.ParseInt(args[0], 10, 64)
 	if err != nil {
-		return 0, fmt.Errorf("amount argument %q is not a valid unsigned integer: %w", args[0], err)
+		reason := err
+		if numErr, ok := errors.AsType[*strconv.NumError](err); ok {
+			reason = numErr.Err
+		}
+		return 0, fmt.Errorf("invalid amount argument %q (%v). Omit the argument or pass a valid integer instead", args[0], reason)
 	}
-	return value, nil
+	if amount < 1 {
+		return 0, fmt.Errorf("cannot apply '%d' migration files", amount)
+	}
+	return uint64(amount), nil
+}
+
+// ResolveApplyBaseline resolves the `--baseline` operand of `migrate apply`
+// against fsys, a directory in the Atlas layout, to the version the migrator
+// records. An empty operand selects no baseline and resolves to 0.
+//
+// The operand names a file by the version its name spells, byte for byte, as
+// the pinned community binary v1.3.0 matches it, measured on SQLite: on a
+// directory holding `1_a.sql`, `1` names that file and `01`, `+1` and ` 1` do
+// not, and a golang-migrate `000001_a.up.sql` is named by `000001` alone.
+// Reading the operand as a number would baseline a file the binary refuses to.
+// An operand no file spells is refused with the binary's line, such as
+// `baseline version "7" not found`, whether it is a number or not.
+func ResolveApplyBaseline(fsys fs.FS, value string) (int64, error) {
+	if value == "" {
+		return 0, nil
+	}
+	discovered, err := migrationfile.Discover(fsys, migrationfile.DirFormatAtlas)
+	if err != nil {
+		return 0, fmt.Errorf("discover Atlas migration files: %w", err)
+	}
+	for _, file := range discovered {
+		if file.Direction == "up" && file.Version > 0 && file.RevisionVersion() == value {
+			return file.Version, nil
+		}
+	}
+	return 0, fmt.Errorf("baseline version %q not found", value)
 }
 
 // ParseMigrationVersionFlag parses positive Atlas migration version flags such
-// as --baseline.
+// as --to-version.
 func ParseMigrationVersionFlag(name, value string) (int64, error) {
 	value = strings.TrimSpace(value)
 	if value == "" {

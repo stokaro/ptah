@@ -5,10 +5,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/spf13/cobra"
 
 	"ptah.run/config/projectconfig"
 	"ptah.run/core/selectext"
+	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/builtintest"
+	"ptah.run/internal/cli/internal/cmdflags"
 	"ptah.run/internal/cli/internal/dbcli"
 )
 
@@ -92,7 +95,7 @@ func TestEffectiveExclude_HappyPath(t *testing.T) {
 			project := cmp.Or(test.project, excludeProject)
 			cfg := parseExcludeProject(c, project, test.env)
 
-			got, err := dbcli.EffectiveExclude(cfg, test.flag, builtintest.Runtime().Selections())
+			got, _, err := dbcli.EffectiveExclude(nil, "exclude", test.flag, cfg, builtintest.Runtime().Selections())
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.DeepEquals, test.want)
@@ -119,7 +122,7 @@ func TestEffectiveExclude_NothingToAdd(t *testing.T) {
 			c := qt.New(t)
 			cfg := parseExcludeProject(c, test.project, "")
 
-			got, err := dbcli.EffectiveExclude(cfg, test.flag, selectext.Set{})
+			got, _, err := dbcli.EffectiveExclude(nil, "exclude", test.flag, cfg, selectext.Set{})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.DeepEquals, test.flag)
@@ -132,16 +135,17 @@ func TestEffectiveExclude_FailurePath(t *testing.T) {
 		c := qt.New(t)
 		cfg := parseExcludeProject(c, "exclude: [\"us[ers\"]\n", "")
 
-		got, err := dbcli.EffectiveExclude(cfg, []string{"tmp_*"}, builtintest.Runtime().Selections())
+		got, sources, err := dbcli.EffectiveExclude(nil, "exclude", []string{"tmp_*"}, cfg, builtintest.Runtime().Selections())
 
 		c.Assert(err, qt.ErrorMatches, `invalid exclude in ptah\.yaml: invalid Atlas exclude glob "us\[ers": syntax error in pattern`)
 		c.Assert(got, qt.IsNil)
+		c.Assert(sources, qt.IsNil)
 	})
 	t.Run("a list with no recorded file names the project config", func(t *testing.T) {
 		c := qt.New(t)
 
-		got, err := dbcli.EffectiveExclude(
-			projectconfig.Config{Exclude: []string{"us[ers"}}, nil, builtintest.Runtime().Selections(),
+		got, _, err := dbcli.EffectiveExclude(
+			nil, "", nil, projectconfig.Config{Exclude: []string{"us[ers"}}, builtintest.Runtime().Selections(),
 		)
 
 		c.Assert(err, qt.ErrorMatches, `invalid exclude in the project config: invalid Atlas exclude glob .*`)
@@ -150,9 +154,87 @@ func TestEffectiveExclude_FailurePath(t *testing.T) {
 	t.Run("a runtime that serves no selections", func(t *testing.T) {
 		c := qt.New(t)
 
-		got, err := dbcli.EffectiveExclude(parseExcludeProject(c, excludeProject, ""), nil, selectext.Set{})
+		got, _, err := dbcli.EffectiveExclude(nil, "", nil, parseExcludeProject(c, excludeProject, ""), selectext.Set{})
 
 		c.Assert(err, qt.ErrorIs, selectext.ErrUnselected)
 		c.Assert(got, qt.IsNil)
 	})
+}
+
+// excludeCommand is a command with one exclude flag called flag, its
+// arguments parsed and its PTAH_* binding applied, as a native verb sees them
+// when it runs.
+func excludeCommand(c *qt.C, flag string, args ...string) *cobra.Command {
+	c.Helper()
+	cmd := &cobra.Command{Use: "verb"}
+	cmd.Flags().StringArray(flag, nil, "Schema objects to exclude")
+	c.Assert(cmd.ParseFlags(args), qt.IsNil)
+	c.Assert(cmdflags.InitializeEnv("PTAH", cmd), qt.IsNil)
+	return cmd
+}
+
+// TestEffectiveExclude_NamesTheSourceOfEachSelector records where each
+// selector came from, so a warning about one that matched nothing names the
+// file or the flag the operator wrote it in rather than always --exclude.
+func TestEffectiveExclude_NamesTheSourceOfEachSelector(t *testing.T) {
+	tests := []struct {
+		name    string
+		project string
+		flag    string
+		args    []string
+		want    atlasfilter.ExcludeSources
+	}{
+		{
+			name: "the project file, and the typed flag for what only it adds",
+			flag: "exclude",
+			args: []string{"--exclude", "tmp_*, audit_log"},
+			want: atlasfilter.ExcludeSources{"audit_log": "ptah.yaml", "legacy_*": "ptah.yaml", "tmp_*": "--exclude"},
+		},
+		{
+			name:    "a typed flag beside no project list",
+			project: "url: sqlite://app.db\n",
+			flag:    "exclude",
+			args:    []string{"--exclude", "tmp_*"},
+			want:    atlasfilter.ExcludeSources{"tmp_*": "--exclude"},
+		},
+		{
+			name: "a flag of another name",
+			flag: "drift-exclude",
+			args: []string{"--drift-exclude", "tmp_*"},
+			want: atlasfilter.ExcludeSources{"audit_log": "ptah.yaml", "legacy_*": "ptah.yaml", "tmp_*": "--drift-exclude"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			cfg := parseExcludeProject(c, cmp.Or(test.project, excludeProject), "")
+			cmd := excludeCommand(c, test.flag, test.args...)
+			values, err := cmd.Flags().GetStringArray(test.flag)
+			c.Assert(err, qt.IsNil)
+
+			_, sources, err := dbcli.EffectiveExclude(cmd, test.flag, values, cfg, builtintest.Runtime().Selections())
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(sources, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestEffectiveExclude_NamesTheVariableThatSetTheFlag attributes a value the
+// flag's PTAH_* variable supplied to that variable: an operator who exported
+// it in a CI job finds no --exclude on any command line.
+func TestEffectiveExclude_NamesTheVariableThatSetTheFlag(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_EXCLUDE", "tmp_*")
+	cfg := parseExcludeProject(c, excludeProject, "")
+	cmd := excludeCommand(c, "exclude")
+	values, err := cmd.Flags().GetStringArray("exclude")
+	c.Assert(err, qt.IsNil)
+
+	got, sources, err := dbcli.EffectiveExclude(cmd, "exclude", values, cfg, builtintest.Runtime().Selections())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.DeepEquals, []string{"audit_log", "legacy_*", "tmp_*"})
+	c.Assert(sources, qt.DeepEquals, atlasfilter.ExcludeSources{"audit_log": "ptah.yaml", "legacy_*": "ptah.yaml", "tmp_*": "PTAH_EXCLUDE"})
 }
