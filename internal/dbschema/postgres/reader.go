@@ -39,6 +39,10 @@ import (
 	"ptah.run/internal/triggerdef"
 )
 
+// The apply log can appear between planning and execution. Keep its metadata
+// out of the catalog without hiding explicit grants on older revision tables.
+const applyLogSQLName = "'" + revisiontable.ApplyLog + "'"
+
 // Reader reads schema from PostgreSQL databases
 type Reader struct {
 	db      sqlrunner.Runner
@@ -3821,7 +3825,7 @@ func (r *Reader) rolesInScopeClauses(defaultACL defaultACLAccess, defaultPrivile
 			JOIN pg_class c ON c.oid = pol.polrelid
 			JOIN scope s ON s.oid = c.relnamespace
 			CROSS JOIN LATERAL unnest(pol.polroles) AS policyrole
-			WHERE c.relname NOT IN (`+revisiontable.NativeSQLNames+`)`)
+			WHERE c.relname <> `+applyLogSQLName)
 	}
 	if defaultACL == defaultACLReadable {
 		// The role a default privilege in scope applies to
@@ -3878,17 +3882,17 @@ func (r *Reader) grantRolesInScopeClauses() []string {
 			JOIN scope s ON s.oid = c.relnamespace
 			CROSS JOIN LATERAL aclexplode(c.relacl) acl
 			WHERE acl.grantee <> c.relowner
-			AND c.relname NOT IN (` + revisiontable.NativeSQLNames + `)`,
+			AND c.relname <> ` + applyLogSQLName,
 		// Granted a privilege on a relation in scope (pg_class.relacl).
 		`SELECT acl.grantor FROM pg_class c
 			JOIN scope s ON s.oid = c.relnamespace
 			CROSS JOIN LATERAL aclexplode(c.relacl) acl
 			WHERE acl.grantee <> c.relowner
-			AND c.relname NOT IN (` + revisiontable.NativeSQLNames + `)`,
+			AND c.relname <> ` + applyLogSQLName,
 		// Owns a relation in scope and revoked a privilege on it from itself.
 		ownerRevokedPrivilegeRoles(
 			`pg_class c JOIN scope s ON s.oid = c.relnamespace AND c.relkind IN `+ownerPrivilegeRelationKinds+
-				` AND c.relname NOT IN (`+revisiontable.NativeSQLNames+`)`,
+				` AND c.relname <> `+applyLogSQLName,
 			relationDefaultACL("c"), "c.relowner", "c.relacl",
 		),
 		// Holds a privilege on a schema in scope (pg_namespace.nspacl).
@@ -3909,14 +3913,14 @@ func (r *Reader) grantRolesInScopeClauses() []string {
 			JOIN pg_class c ON c.oid = a.attrelid
 			JOIN scope s ON s.oid = c.relnamespace
 			CROSS JOIN LATERAL aclexplode(a.attacl) acl
-			WHERE ` + columnGrantPredicate + ` AND c.relname NOT IN (` + revisiontable.NativeSQLNames + `)`,
+			WHERE ` + columnGrantPredicate + ` AND c.relname <> ` + applyLogSQLName,
 		// Granted a privilege on a column of a relation in scope
 		// (pg_attribute.attacl).
 		`SELECT acl.grantor FROM pg_attribute a
 			JOIN pg_class c ON c.oid = a.attrelid
 			JOIN scope s ON s.oid = c.relnamespace
 			CROSS JOIN LATERAL aclexplode(a.attacl) acl
-			WHERE ` + columnGrantPredicate + ` AND c.relname NOT IN (` + revisiontable.NativeSQLNames + `)`,
+			WHERE ` + columnGrantPredicate + ` AND c.relname <> ` + applyLogSQLName,
 	}
 	if !routines {
 		return clauses
@@ -4352,7 +4356,7 @@ func (r *Reader) readObjectOwners(ctx context.Context) ([]catalog.ObjectOwner, e
 		JOIN pg_roles owner ON owner.oid = c.relowner
 		WHERE n.nspname IN (` + list + `)
 		  AND c.relkind IN ('r', 'p', 'v', 'm', 'S')
-		  AND c.relname NOT IN (` + revisiontable.NativeSQLNames + `)
+		  AND c.relname <> ` + applyLogSQLName + `
 		UNION ALL
 		SELECT 'schema' AS kind, '' AS schema_name, n.nspname AS object_name,
 		       owner.rolname AS owner_name, owner.rolcanlogin AS owner_can_login
@@ -4677,7 +4681,7 @@ func (r *Reader) readColumnGrantsForSchema(ctx context.Context, schemaName strin
 		LEFT JOIN pg_roles grantor ON grantor.oid = acl.grantor
 		WHERE n.nspname = $1
 		AND ` + columnGrantPredicate + `
-		AND c.relname NOT IN (` + revisiontable.NativeSQLNames + `)
+		AND c.relname <> ` + applyLogSQLName + `
 		AND COALESCE(grantee.rolname, 'PUBLIC') != 'postgres'
 		ORDER BY c.relname, a.attname, 1, 2`
 
@@ -4714,7 +4718,7 @@ func (r *Reader) readTableGrantsForSchema(ctx context.Context, schemaName string
 			COALESCE(grantor, '') AS grantor
 		FROM (` + pgcatalogview.TableGrants + `) g
 		WHERE table_schema = $1
-		AND table_name NOT IN (` + revisiontable.NativeSQLNames + `)
+		AND table_name <> ` + applyLogSQLName + `
 		AND grantee != 'postgres'
 		-- Not the owner's own entry. The source reports it whether or not
 		-- pg_class.relacl is null, and the first GRANT on a relation writes it
@@ -4750,7 +4754,7 @@ func (r *Reader) readTableGrantsForSchema(ctx context.Context, schemaName string
 		JOIN pg_roles grantor ON grantor.oid = acl.grantor
 		WHERE n.nspname = $1
 		AND c.relkind IN ('r', 'v', 'f', 'p')
-		AND c.relname NOT IN (` + revisiontable.NativeSQLNames + `)
+		AND c.relname <> ` + applyLogSQLName + `
 		AND acl.privilege_type = 'MAINTAIN'
 		AND acl.grantee <> c.relowner
 		AND COALESCE(grantee.rolname, 'PUBLIC') != 'postgres'
@@ -4772,7 +4776,7 @@ func (r *Reader) readTableGrantsForSchema(ctx context.Context, schemaName string
 		JOIN pg_roles grantor ON grantor.oid = acl.grantor
 		WHERE n.nspname = $1
 		AND c.relkind = 'm'
-		AND c.relname NOT IN (` + revisiontable.NativeSQLNames + `)
+		AND c.relname <> ` + applyLogSQLName + `
 		AND acl.grantee <> c.relowner
 		AND COALESCE(grantee.rolname, 'PUBLIC') != 'postgres'
 		ORDER BY 3, 4, 1, 2`
