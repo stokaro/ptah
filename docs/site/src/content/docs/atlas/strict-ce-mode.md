@@ -37,9 +37,15 @@ Enable it for one process:
 PTAH_ATLAS_STRICT_COMPAT=1 ptah-compat schema inspect --help
 ```
 
-The selector is an environment variable rather than a flag because the strict
-command surface is measured against Atlas CE. Adding a Ptah-only flag would
-change the very surface being compared.
+The selector is an environment variable rather than a flag because a flag
+would change the surface it selects. Neither profile registers a flag Atlas
+lacks. The full compatibility surface registers each command's CE flags and the
+flags Atlas Pro adds to the same command, such as `--include` on
+`schema inspect`. The strict surface registers the CE flags alone. A capability
+that no Atlas edition offers is selected with a `PTAH_*` variable, never with a
+flag. The conformance CLI surface probe compares the full surface with the
+pinned CE binary and a closed list of those Pro flags, and reports any other
+flag.
 
 ## What changes before dispatch
 
