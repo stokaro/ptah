@@ -827,7 +827,21 @@ Verifies the directory's `atlas.sum`, replays the selected migration layout on
 layout. `atlas.sum` updates only after every file was written; a failed write
 rolls the whole generation back.
 
-Full Ptah compatibility mode accepts `--exclude` selectors on this command. They remove selected objects from both sides of the diff, so a caller can leave externally managed policies, functions, or triggers intact. Excluding every policy also leaves row-security switches under the caller's control. Strict Community Edition mode omits the flag.
+Atlas registers no `--exclude` flag on this command, and neither profile of
+`ptah-compat` does. The selected env's `exclude` list removes the objects it
+selects from both sides of the diff in both profiles, so a caller can leave
+externally managed policies, functions, or triggers intact. Excluding every
+policy also leaves row-security switches under the caller's control. In full
+Ptah compatibility mode, `PTAH_ATLAS_MIGRATE_DIFF_EXCLUDE` takes the same
+selectors, comma-separated. A value naming at least one selector replaces the
+env's list; an empty value, or one of nothing but commas and spaces, leaves it
+in place. `PTAH_EXCLUDE` does not apply here: it is the twin of `--exclude` on
+the commands that register the flag. Strict Community Edition mode refuses
+`PTAH_ATLAS_MIGRATE_DIFF_EXCLUDE`, even when it is empty.
+
+Strict mode applies the env's `exclude` list deliberately. Measured on SQLite,
+Atlas CE v1.3.0 accepts the list on this command and still writes the objects
+it names; applying it keeps what the project author wrote.
 
 For a project `migration.dir` backed by `data.template_dir`, replay uses the
 immutable rendered snapshot while publication writes the new root SQL files and
@@ -883,7 +897,7 @@ each session selected.
 | `--format` | Renders generated SQL with `sql` and `.MarshalSQL` templates. The default is Atlas's `{{ sql . "  " }}`: statements at the first column, inner lines two spaces in. |
 | `--schema`/`-s` | Narrows the current and desired schemas used for comparison and output. |
 | `--edit` | Opens the generated migrations in `$VISUAL`/`$EDITOR` before `atlas.sum` is finalized. |
-| `--env` | Reads `env.schema.src`, `env.dev`, `migration.dir`, `format.migrate.diff`, and supported `diff` policy from `atlas.hcl`. |
+| `--env` | Reads `env.schema.src`, `env.dev`, `migration.dir`, `env.exclude`, `env.schema.mode`, `format.migrate.diff`, and supported `diff` policy from `atlas.hcl`. |
 
 `--schema` narrows comparison only: migration replay and cleanup still own the
 complete [dev database realm](../../concepts/database-urls-and-dev-databases/).

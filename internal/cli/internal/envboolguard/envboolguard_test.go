@@ -108,6 +108,10 @@ var nonBooleanPtahVars = []string{
 	// list.
 	"PTAH_CONFORMANCE_ADDRESS",            // database the suite may change
 	"PTAH_CONFORMANCE_CREDENTIAL_ADDRESS", // address carrying the suite's canary as its credential
+
+	// `ptah-compat migrate diff` registers no --exclude flag, so its exclusion
+	// has a variable of its own rather than a flag twin.
+	"PTAH_ATLAS_MIGRATE_DIFF_EXCLUDE", // selectors to exclude, comma-separated
 }
 
 // ptahVarPattern finds a variable name anywhere inside a string literal, so

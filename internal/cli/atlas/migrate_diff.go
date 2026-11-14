@@ -88,8 +88,6 @@ found. Use a disposable dev database. --to accepts local .hcl, .yaml, .yml,
 migration directory, or one env://<attribute> reference resolved through the
 evaluated atlas.hcl env. A database used as --to must differ from --dev-url.
 Use --schema to limit the comparison to selected schema names.
-In Ptah's full compatibility mode, --exclude keeps selected objects out of
-both sides of the comparison. Strict Community Edition mode omits this flag.
 --qualifier prefixes every object in the generated statements with a custom
 schema qualifier when working on a single schema. When the atlas.hcl env
 enables diff.concurrent_index.create, new indexes are planned as CREATE INDEX
@@ -108,7 +106,7 @@ is refused for any other engine.
 When --env is set, the selected atlas.hcl env
 can provide schema.src, dev, migration.dir, exclude, schema.mode,
 format.migrate.diff, and supported
-diff policy values.`,
+diff policy values.` + atlasMigrateDiffExcludeHelp(policy),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := "migration"
 			if len(args) == 1 {
@@ -124,9 +122,6 @@ diff policy values.`,
 	flags.StringVar(&opts.dirFormat, "dir-format", "atlas", "Migration directory format")
 	flags.StringVar(&opts.format, "format", "", "Atlas Go template output format")
 	registerAtlasSchemaFlag(flags, &opts.schemas, "Schemas to diff")
-	if !policy.IsStrictCE() {
-		flags.StringArrayVar(&opts.exclude, "exclude", nil, "Objects to exclude from both sides of the diff")
-	}
 	registerAtlasLockTimeoutFlag(flags, &opts.lockTimeout, "Timeout for acquiring Atlas migration directory locks; zero or less tries them once")
 	flags.StringVar(&opts.qualifier, "qualifier", "", "Qualify tables with a custom qualifier when working on a single schema")
 	flags.BoolVar(&opts.edit, "edit", false, "Edit the generated migration files")
@@ -155,6 +150,10 @@ func runAtlasMigrateDiff(
 	// on the dev database, and a malformed declaration must not wait for a run
 	// that gets that far.
 	devServerDisposable, err := devdocker.DisposableServerDeclared()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	opts.exclude, err = atlasMigrateDiffExcludeFromEnv(opts.policy)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -203,7 +202,7 @@ func runAtlasMigrateDiff(
 			projectCfg.StringValue(projectconfig.StringMigrationFormat),
 		)
 		opts.schemas = effectiveAtlasSchemas(cmd, opts.schemas, projectCfg)
-		opts.exclude = effectiveAtlasExclude(cmd, opts.exclude, projectCfg)
+		opts.exclude = atlasMigrateDiffExclude(opts.exclude, projectCfg)
 		formatValue := projectCfg.StringValue(projectconfig.StringFormatMigrateDiff)
 		opts.format = dbcli.EffectiveString(cmd, "format", opts.format, formatValue)
 		formatConfigured = formatConfigured || formatValue.Present
