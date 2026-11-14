@@ -2,7 +2,6 @@ package sqlserver_test
 
 import (
 	"net/url"
-	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -33,7 +32,7 @@ func TestRename_SelectsDatabaseWithoutChangingInstanceOrOtherParameters(t *testi
 			c.Assert(config.Instance, qt.Equals, original.Instance)
 			c.Assert(must.Must(url.Parse(got)).Path, qt.Equals, parsed.Path)
 			c.Assert(must.Must(url.Parse(got)).Query().Get("app name"), qt.Equals, "one two")
-			c.Assert(strings.Contains(got, "app+name=one+two"), qt.IsTrue)
+			c.Assert(got, qt.Contains, "app+name=one+two")
 		})
 	}
 }
