@@ -3070,9 +3070,11 @@ CREATE TABLE format_json_posts (id INTEGER PRIMARY KEY);
 	c.Assert(result.Pending[0].Description, qt.Equals, "create_users")
 	c.Assert(result.Applied, qt.HasLen, 1)
 	c.Assert(result.Applied[0].Name, qt.Equals, "1_create_users.sql")
+	// The statements are listed as the file spells them, terminator included,
+	// the way the community binary lists them.
 	c.Assert(result.Applied[0].Applied, qt.DeepEquals, []string{
-		"CREATE TABLE format_json_users (id INTEGER PRIMARY KEY)",
-		"CREATE TABLE format_json_posts (id INTEGER PRIMARY KEY)",
+		"CREATE TABLE format_json_users (id INTEGER PRIMARY KEY);",
+		"CREATE TABLE format_json_posts (id INTEGER PRIMARY KEY);",
 	})
 	assertSQLiteTableExists(c, dbPath, "format_json_users")
 	assertSQLiteTableExists(c, dbPath, "format_json_posts")
@@ -3358,8 +3360,11 @@ func TestCompatCommand_MigrateApplyWritesFormatOnApplyError(t *testing.T) {
 	c.Assert(result.Error, qt.Contains, "missing_table")
 	c.Assert(result.Pending, qt.HasLen, 1)
 	c.Assert(result.Applied, qt.HasLen, 1)
+	// The statement the database refused is listed last, as the community
+	// binary lists it.
 	c.Assert(result.Applied[0].Applied, qt.DeepEquals, []string{
-		"CREATE TABLE error_before (id INTEGER PRIMARY KEY)",
+		"CREATE TABLE error_before (id INTEGER PRIMARY KEY);",
+		"SELECT * FROM missing_table;",
 	})
 	c.Assert(result.Applied[0].Error.Text, qt.Contains, "missing_table")
 	c.Assert(result.Applied[0].Error.Stmt, qt.Equals, "SELECT * FROM missing_table;")

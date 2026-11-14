@@ -77,6 +77,27 @@ func TestSplitSourceStatements(t *testing.T) {
 			sql:  "INSERT INTO t (v) VALUES ('a;b');\n",
 			want: []sqlutil.SourceStatement{{Text: "INSERT INTO t (v) VALUES ('a;b');", Terminated: true}},
 		},
+		{
+			name: "a declared delimiter is read as the semicolon the text ends in",
+			sql:  "-- atlas:delimiter $$\nCREATE TABLE a (id int)$$\nCREATE TABLE b (id int)\n$$\n",
+			want: []sqlutil.SourceStatement{
+				{Text: "CREATE TABLE a (id int);", Terminated: true, ClientDelimited: true},
+				{Text: "CREATE TABLE b (id int)\n;", Terminated: true, ClientDelimited: true},
+			},
+		},
+		{
+			name: "a semicolon written before a declared delimiter is the script's",
+			sql:  "-- atlas:delimiter $$\nCREATE TABLE a (id int);$$\n",
+			want: []sqlutil.SourceStatement{{Text: "CREATE TABLE a (id int);", Terminated: true}},
+		},
+		{
+			name: "a semicolon after the delimiter is set back is the script's",
+			sql:  "DELIMITER //\nCREATE TABLE c (id int)//\nDELIMITER ;\nCREATE TABLE d (id int);\n",
+			want: []sqlutil.SourceStatement{
+				{Text: "CREATE TABLE c (id int);", Terminated: true, ClientDelimited: true},
+				{Text: "CREATE TABLE d (id int);", Terminated: true},
+			},
+		},
 	}
 
 	for _, test := range tests {

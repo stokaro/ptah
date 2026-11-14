@@ -614,9 +614,10 @@ func TestCompatMigrateApply_FlywayOnlyRepeatableNeverLeaksOrderKey(t *testing.T)
 	)
 	c.Assert(formattedErr, qt.IsNil, qt.Commentf("formatted apply stderr: %s", formattedStderr))
 	c.Assert(formattedStdout, qt.Contains,
-		`"Pending":[{"Name":"9223372036854775807_only.sql","Version":""`)
+		`"Pending":[{"Name":"R__only.sql","Version":""`)
 	c.Assert(formattedStdout, qt.Contains,
-		`"Applied":[{"Name":"9223372036854775807_only.sql","Version":""`)
+		`"Applied":[{"Name":"R__only.sql","Version":""`)
+	c.Assert(formattedStdout, qt.Not(qt.Contains), repeatableOrderKey)
 
 	stdout, stderr, err := compatApplyConverted(dir, "flyway", dbPath)
 

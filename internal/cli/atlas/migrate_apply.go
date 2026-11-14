@@ -340,14 +340,16 @@ func runAtlasMigrateApplyTarget(
 	if err != nil {
 		return formatOutput, fmt.Errorf("atlas migrate apply --dir: %w", err)
 	}
-	if err := resolveAtlasMigrateApplyFlywayVersions(
+	versionTokens, err := resolveAtlasMigrateApplyFlywayVersions(
 		captured,
 		resolvedDirFormat,
 		opts,
 		&runOpts,
-	); err != nil {
+	)
+	if err != nil {
 		return formatOutput, err
 	}
+	report := atlasMigrateApplyReportSource{fs: migrationFS, files: versionTokens.sourceFiles()}
 
 	if err := atlasDatabaseURLDiagnostic(contextOrBackground(cmd), opts.url); err != nil {
 		return formatOutput, err
@@ -433,7 +435,7 @@ func runAtlasMigrateApplyTarget(
 	)
 	if err != nil {
 		if formatOutput && result.ApplyError != nil {
-			writeErr := writeAtlasMigrateApplyFormat(cmd, opts, migrationFS, conn, result)
+			writeErr := writeAtlasMigrateApplyFormat(cmd, opts, report, conn, result)
 			if writeErr != nil {
 				return formatOutput, fmt.Errorf("%w; additionally failed to write --format output: %v", err, writeErr)
 			}
@@ -449,20 +451,20 @@ func runAtlasMigrateApplyTarget(
 			result.Migrations,
 		)
 	}
-	if handled, err := finishAtlasMigrateApplyFreshNoop(cmd, opts, migrationFS, conn, result); handled || err != nil {
+	if handled, err := finishAtlasMigrateApplyFreshNoop(cmd, opts, report, conn, result); handled || err != nil {
 		return formatOutput, err
 	}
 
 	if opts.dryRun {
 		emitAtlasMigrateApplyDeferredChecks(cmd, result.ChecksDeferred, result.ChecksDeferredKeys)
 		if formatOutput {
-			return formatOutput, writeAtlasMigrateApplyFormat(cmd, opts, migrationFS, conn, result)
+			return formatOutput, writeAtlasMigrateApplyFormat(cmd, opts, report, conn, result)
 		}
 		fmt.Fprintf(out, "Would have applied %d migrations.\n", len(result.SelectedVersions))
 		return formatOutput, nil
 	}
 	if formatOutput {
-		return formatOutput, writeAtlasMigrateApplyFormat(cmd, opts, migrationFS, conn, result)
+		return formatOutput, writeAtlasMigrateApplyFormat(cmd, opts, report, conn, result)
 	}
 	fmt.Fprintf(out, "Migration complete. Current version: %s\n", atlasApplyCurrentVersionLabel(result.FinalStatus))
 	return formatOutput, nil
@@ -629,7 +631,7 @@ func emitAtlasMigrateApplyDeferredChecks(cmd *cobra.Command, versions []int64, k
 func finishAtlasMigrateApplyFreshNoop(
 	cmd *cobra.Command,
 	opts atlasMigrateApplyOptions,
-	migrationFS fs.FS,
+	report atlasMigrateApplyReportSource,
 	conn *dbschema.DatabaseConnection,
 	result atlasmigrate.ApplyResult,
 ) (bool, error) {
@@ -637,7 +639,7 @@ func finishAtlasMigrateApplyFreshNoop(
 		return false, nil
 	}
 	if opts.format != "" {
-		return true, writeAtlasMigrateApplyFormat(cmd, opts, migrationFS, conn, result)
+		return true, writeAtlasMigrateApplyFormat(cmd, opts, report, conn, result)
 	}
 	// No trailing period: the pinned community binary v1.3.0 writes
 	// `No migration files to execute\n` on stdout for the same run, 30 bytes,
@@ -713,18 +715,22 @@ func resolveAtlasMigrateApplyNumericVersions(
 	return err
 }
 
+// resolveAtlasMigrateApplyFlywayVersions resolves the version operands of a
+// Flyway directory against its exact tokens, and returns the tokens for the
+// report to name the directory's files by. It returns the zero value, which
+// translates nothing, for every other layout.
 func resolveAtlasMigrateApplyFlywayVersions(
 	captured fs.FS,
 	format atlasmigrateimport.Format,
 	opts atlasMigrateApplyOptions,
 	runOpts *atlasMigrateApplyRunOptions,
-) error {
+) (flywayVersionTokens, error) {
 	if format != atlasmigrateimport.FormatFlyway {
-		return nil
+		return flywayVersionTokens{}, nil
 	}
 	versionTokens, err := newAtlasMigrateApplyVersionTokens(captured, format)
 	if err != nil {
-		return fmt.Errorf("atlas migrate apply --dir: %w", err)
+		return flywayVersionTokens{}, fmt.Errorf("atlas migrate apply --dir: %w", err)
 	}
 	runOpts.baselineVersion, runOpts.baselineLabel, err = resolveAtlasMigrateApplyVersion(
 		"baseline",
@@ -733,7 +739,7 @@ func resolveAtlasMigrateApplyFlywayVersions(
 		versionTokens,
 	)
 	if err != nil {
-		return err
+		return flywayVersionTokens{}, err
 	}
 	runOpts.toVersion, _, err = resolveAtlasMigrateApplyVersion(
 		"to-version",
@@ -741,7 +747,10 @@ func resolveAtlasMigrateApplyFlywayVersions(
 		runOpts.toVersionSource,
 		versionTokens,
 	)
-	return err
+	if err != nil {
+		return flywayVersionTokens{}, err
+	}
+	return versionTokens, nil
 }
 
 func resolveAtlasMigrateApplyVersion(
@@ -903,10 +912,18 @@ func resolveAtlasApplySkipChecks(cmd *cobra.Command) (bool, error) {
 	return skip, nil
 }
 
+// atlasMigrateApplyReportSource is the directory a --format report describes:
+// the converted filesystem the run executed, and the file each converted
+// execution-order key came from where conversion renamed it.
+type atlasMigrateApplyReportSource struct {
+	fs    fs.FS
+	files map[int64]atlasreport.MigrateApplySourceFile
+}
+
 func writeAtlasMigrateApplyFormat(
 	cmd *cobra.Command,
 	opts atlasMigrateApplyOptions,
-	migrationFS fs.FS,
+	report atlasMigrateApplyReportSource,
 	conn *dbschema.DatabaseConnection,
 	result atlasmigrate.ApplyResult,
 ) error {
@@ -919,11 +936,12 @@ func writeAtlasMigrateApplyFormat(
 		).Error()
 	}
 	return atlasmigratereport.WriteApplyFormat(cmd.OutOrStdout(), opts.format, atlasmigratereport.ApplyFormatOptions{
-		Conn:   conn,
-		FS:     migrationFS,
-		Dir:    opts.dir,
-		URL:    opts.url,
-		Result: result,
+		Conn:        conn,
+		FS:          report.fs,
+		SourceFiles: report.files,
+		Dir:         opts.dir,
+		URL:         opts.url,
+		Result:      result,
 	})
 }
 

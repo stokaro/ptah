@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"ptah.run/internal/atlasmigrateimport"
+	"ptah.run/internal/atlasreport"
 )
 
 // flywayVersionTokens is the two-way dictionary between the exact revision
@@ -42,10 +43,11 @@ type flywayVersionTokens struct {
 	byToken map[string]int64
 	// byVersion renders a numeric order key as the exact revision identity.
 	byVersion map[int64]string
-	// names gives a numeric order key the file name it has in the directory.
-	// Conversion renames `V1.5__b.sql` to a numeric Atlas file, and a report
-	// that names files has to name the one the repository holds.
-	names map[int64]string
+	// files gives a numeric order key the file it came from: its name in the
+	// directory and its Flyway description. Conversion renames `V1.5__b c.sql`
+	// to a numeric Atlas file with a rewritten description, and a report that
+	// names files has to name the one the repository holds.
+	files map[int64]atlasreport.MigrateApplySourceFile
 }
 
 // newFlywayVersionTokens indexes the covered migrations of a converted Flyway
@@ -68,12 +70,15 @@ func newFlywayVersionTokens(covered []atlasmigrateimport.FlywayCoveredSourceVers
 	tokens := flywayVersionTokens{
 		byToken:   make(map[string]int64, len(covered)),
 		byVersion: make(map[int64]string, len(covered)),
-		names:     make(map[int64]string, len(covered)),
+		files:     make(map[int64]atlasreport.MigrateApplySourceFile, len(covered)),
 	}
 	for _, migration := range covered {
 		tokens.byVersion[migration.Version] = migration.Token
 		tokens.byToken[migration.Token] = migration.Version
-		tokens.names[migration.Version] = migration.Source
+		tokens.files[migration.Version] = atlasreport.MigrateApplySourceFile{
+			Name:        migration.Source,
+			Description: migration.Description,
+		}
 	}
 	return tokens
 }
@@ -116,7 +121,7 @@ func (t flywayVersionTokens) withHistory(versions map[int64]string) flywayVersio
 	result := flywayVersionTokens{
 		byToken:   t.byToken,
 		byVersion: maps.Clone(t.byVersion),
-		names:     t.names,
+		files:     t.files,
 	}
 	if result.byVersion == nil {
 		result.byVersion = make(map[int64]string, len(versions))
@@ -137,5 +142,20 @@ func (t flywayVersionTokens) revisionVersions() map[int64]string {
 // converted Atlas filesystem uses. It covers the migrations of the directory
 // only: a row a baseline squashed has no file.
 func (t flywayVersionTokens) fileNames() map[int64]string {
-	return maps.Clone(t.names)
+	if t.files == nil {
+		return nil
+	}
+	names := make(map[int64]string, len(t.files))
+	for version, file := range t.files {
+		names[version] = file.Name
+	}
+	return names
+}
+
+// sourceFiles returns the directory's file name and description for each
+// numeric order key the converted Atlas filesystem uses, which is what the
+// `migrate apply` report names a file by. Like [flywayVersionTokens.fileNames]
+// it covers the migrations of the directory only.
+func (t flywayVersionTokens) sourceFiles() map[int64]atlasreport.MigrateApplySourceFile {
+	return maps.Clone(t.files)
 }

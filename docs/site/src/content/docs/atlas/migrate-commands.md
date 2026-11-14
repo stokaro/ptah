@@ -439,9 +439,11 @@ Error: sql/migrate: executing statement "INSERT INTO nosuch VALUES (1);" from ve
 The statement is quoted as the file spells it, terminator included where the
 file wrote one. It is quoted as Go quotes a string, so a statement that spans
 lines stays on one line. A comment above the statement is left out and one
-inside it is kept. Under `--format`, `.Error` is the same line, and the failed
-file's `.Error` holds the statement as `.Stmt` and the database's answer as
-`.Text`.
+inside it is kept. A delimiter the file declared, such as `$$` after
+`-- atlas:delimiter $$`, ends the statement and is not part of the quote. Under
+`--format`, `.Error` is the same line, and the failed file's `.Error` holds the
+statement as `.Stmt` and the database's answer as `.Text`. The failed file's
+`.Applied` lists the statements it sent, the refused one last.
 
 The answer is the driver's message. On SQLite, Ptah's driver writes
 `SQL logic error: no such table: nosuch (1)` where the pinned binary's writes
@@ -1937,10 +1939,11 @@ Analyzing changes from version 1 to 2 (1 migration in total):
 A template sees the same failure. `.Files` holds one entry, the failing file,
 whose `.Error` is the text after `Error:`, and the `Replay Migration Files` step
 fails with `Failed loading changes on dev database`. A statement in a file the
-run selected is quoted as the file spells it, terminator included. A statement
-in the base, the files before the selection, is not quoted, as on the pinned
-binary. A statement the replay refuses before it reaches the database, such as
-an `ATTACH`, carries Ptah's reason in place of a database answer.
+run selected is quoted as the file spells it, terminator included, and without
+a delimiter the file declared, such as `$$` after `-- atlas:delimiter $$`. A
+statement in the base, the files before the selection, is not quoted, as on the
+pinned binary. A statement the replay refuses before it reaches the database,
+such as an `ATTACH`, carries Ptah's reason in place of a database answer.
 
 Only a replay that stops inside a file is report content. Any other error, such
 as a `--git-base` the repository does not hold or a dev database that does not
@@ -2666,6 +2669,15 @@ Ptah-native migrations instead; see
 - Each `.Pending` and `.Applied` entry: `.Name`, `.Version`, `.Description`.
   Applied entries also expose `.Applied`, `.Skipped`, `.Checks`, and statement
   `.Error`.
+- In a Flyway directory `.Name` is the file name the directory holds, such as
+  `V1.5__b.sql` or `sub/V2__c.sql`, `.Version` is the exact Flyway token, and
+  `.Description` is the text after the first `__` as the file name spells it.
+- `.Applied` on an applied entry lists each statement the file sent, as the
+  file spells it: a comment above the statement is left out, a comment inside
+  it is kept, and the terminating `;` is kept where the file wrote one. A
+  delimiter the file declared with `-- atlas:delimiter` or `DELIMITER` is left
+  out. A file that failed lists the statement the database refused last, and
+  that entry is the same text as the file's `.Error.Stmt`.
 
 **`ptah-compat migrate diff --format`**
 
