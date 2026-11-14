@@ -99,3 +99,35 @@ func TestExcludeGeneratedTakesAPolicyWithTheTableItNames(t *testing.T) {
 	c.Assert(got.Tables[0].Name, qt.Equals, "orders")
 	c.Assert(got.FeatureObjects.Refs(), qt.HasLen, 0)
 }
+
+func TestExcludePoliciesLeavesRowSecurityUnderTheCaller(t *testing.T) {
+	c := qt.New(t)
+	observed := &catalog.Database{
+		Tables: []catalog.Table{{Name: "tasks", RLSEnabled: true, Facets: must.Must(schemaext.NewFacets(&pgpolicy.ObservedTableState{Enabled: true}))}},
+		FeatureObjects: must.Must(schemaext.NewObjects(must.Must(pgpolicy.ObservedPolicyObject(
+			pgpolicy.PolicyRef("", "tasks", "admin_read"), pgpolicy.ObservedPolicy{Command: pgpolicy.CommandSelect, Composition: pgpolicy.Permissive, Roles: []pgpolicy.RoleSelector{{Keyword: pgpolicy.Public}}},
+		)))),
+		FeatureCoverage: must.Must(pgpolicy.CompleteCoverage(schemaext.Observed)),
+	}
+	desired := &schemamodel.Database{
+		Tables:           []schemamodel.Table{{Name: "tasks", StructName: "Tasks", Facets: must.Must(schemaext.NewFacets(&pgpolicy.DesiredTableState{Enabled: true}))}},
+		RLSEnabledTables: []schemamodel.RLSEnabledTable{{StructName: "Tasks", Table: "tasks"}},
+		FeatureObjects: must.Must(schemaext.NewObjects(must.Must(pgpolicy.DesiredPolicyObject(
+			pgpolicy.PolicyRef("", "tasks", "admin_read"), pgpolicy.DesiredPolicy{Command: pgpolicy.CommandSelect},
+		)))),
+	}
+	patterns := []string{"*[type=policy]"}
+	current, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(ownerSelections(), observed, patterns, "public")
+	c.Assert(err, qt.IsNil)
+	declared, err := atlasfilter.ExcludeGeneratedWithDefaultSchema(ownerSelections(), desired, patterns, "public")
+	c.Assert(err, qt.IsNil)
+	c.Assert(current.FeatureObjects.Refs(), qt.HasLen, 0)
+	c.Assert(declared.FeatureObjects.Refs(), qt.HasLen, 0)
+	c.Assert(current.Tables[0].RLSEnabled, qt.IsFalse)
+	c.Assert(current.Tables[0].Facets.Kinds(), qt.HasLen, 0)
+	c.Assert(declared.Tables[0].Facets.Kinds(), qt.HasLen, 0)
+	c.Assert(declared.RLSEnabledTables, qt.HasLen, 0)
+	c.Assert(observed.Tables[0].RLSEnabled, qt.IsTrue)
+	c.Assert(observed.Tables[0].Facets.Kinds(), qt.HasLen, 1)
+	c.Assert(desired.Tables[0].Facets.Kinds(), qt.HasLen, 1)
+}

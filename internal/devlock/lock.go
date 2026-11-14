@@ -43,7 +43,8 @@ type Lock struct {
 // SameRealm reports whether two live connections select the same destructive
 // database realm. Network endpoints are intentionally excluded from the
 // identity: aliases and replicated members cannot be proven independent before
-// cleanup, so equal live database/catalog names fail closed across hosts. A
+// cleanup, so equal live database/catalog names fail closed across hosts unless
+// the engine reports different cluster identifiers. A
 // YDB database is named by its path and the moment its server created it, so
 // two servers that each serve /local are two realms; see writerIdentity.
 //
@@ -87,7 +88,27 @@ func SameRealm(
 	if err != nil {
 		return false, err
 	}
-	return leftIdentity == rightIdentity, nil
+	if leftIdentity != rightIdentity || leftRealm.ClusterQuery == "" {
+		return leftIdentity == rightIdentity, nil
+	}
+	// Separate clusters can select the same default database.
+	// A cluster identifier can prove them distinct; an unavailable identifier
+	// cannot, so keep the conservative refusal in that case. Replicas and
+	// physical copies retain the identifier and remain protected.
+	leftCluster, leftOK := clusterIdentity(ctx, left, leftRealm.ClusterQuery)
+	rightCluster, rightOK := clusterIdentity(ctx, right, rightRealm.ClusterQuery)
+	if leftOK && rightOK && leftCluster != rightCluster {
+		return false, nil
+	}
+	return true, nil
+}
+
+func clusterIdentity(ctx context.Context, conn *dbschema.DatabaseConnection, query string) (string, bool) {
+	var identity sql.NullString
+	if err := conn.QueryRowContext(ctx, query).Scan(&identity); err != nil {
+		return "", false
+	}
+	return identity.String, identity.Valid && identity.String != ""
 }
 
 // Acquire locks the selected disposable database realm. A zero timeout waits

@@ -501,6 +501,27 @@ func TestMayAddressSameDatabase_HappyPath(t *testing.T) {
 	}
 }
 
+func TestMayAddressSameDatabaseBeforeLiveCheck(t *testing.T) {
+	tests := []struct {
+		name  string
+		left  string
+		right string
+		want  bool
+	}{
+		{name: "same PostgreSQL endpoint", left: "postgres://alice@db-a:5432/app", right: "postgresql://bob@db-a:5432/app", want: true},
+		{name: "separate PostgreSQL endpoints await live identity", left: "postgres://db-a:5432/postgres", right: "postgres://db-b:5432/postgres", want: false},
+		{name: "MySQL aliases still fail closed", left: "mysql://db-a/app", right: "mysql://db-b/app", want: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			got, err := atlasurl.MayAddressSameDatabaseBeforeLiveCheck(test.left, test.right)
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.Equals, test.want)
+		})
+	}
+}
+
 // TestDatabaseIdentity_ReadsAWindowsAddressEverywhereThisPackageParsesOne pins
 // that the Windows rule this package exports applies to the addresses it reads
 // itself.

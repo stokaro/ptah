@@ -538,7 +538,8 @@ func (s Set) EnsureDevDatabase(devURL string) error {
 // EnsureDevIsolation rejects a database desired-state source that identifies
 // the same database as devURL. Destructive dev workflows must snapshot the
 // desired state before resetting the dev database, and an aliased source would
-// still destroy the user's desired state after that snapshot.
+// still destroy the user's desired state after that snapshot. PostgreSQL
+// endpoints with the same database name are compared live before reset.
 //
 // A `docker://` devURL names a container that does not exist yet, so it cannot
 // be the source, and the question is not asked of it. Skipping is not a
@@ -573,7 +574,7 @@ func (s Set) EnsureDevIsolation(ctx context.Context, devURL string) error {
 	if namesAWholeMySQLServer(s.Sources[0].Raw) || namesAWholeMySQLServer(devURL) {
 		return nil
 	}
-	same, err := atlasurl.MayAddressSameDatabase(s.Sources[0].Raw, devURL)
+	same, err := atlasurl.MayAddressSameDatabaseBeforeLiveCheck(s.Sources[0].Raw, devURL)
 	if err != nil {
 		return fmt.Errorf("compare %s database identity with --dev-url: %w", s.Flag, err)
 	}

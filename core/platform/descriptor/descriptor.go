@@ -340,6 +340,10 @@ type DevRealm struct {
 	// holds a whole server rather than one database. Empty means no
 	// connection to the engine holds a whole server.
 	ServerQuery string `json:"server_query,omitempty"`
+	// ClusterQuery selects a stable identifier shared by databases in one
+	// physical cluster. A different value proves two same-name databases live
+	// in distinct clusters; an unavailable value proves nothing.
+	ClusterQuery string `json:"cluster_query,omitempty"`
 	// FileLock is how runs are serialized where the server takes no advisory
 	// lock: "local" with a lock file on this machine, and "loopback" with one
 	// too, refused unless the URL names this machine, since a file lock
