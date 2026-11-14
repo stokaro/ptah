@@ -152,7 +152,7 @@ td.stmt pre { color: var(--text-dim); }
 <tr>
 <td class="num">1</td>
 <td><span class="tag safe">safe</span></td>
-<td class="name">*ast.RawSQLNode</td>
+<td class="name">foreign_keys</td>
 <td class="comment">does not remove data or tighten constraints</td>
 <td class="stmt"><pre>PRAGMA foreign_keys = off</pre></td>
 </tr>
@@ -160,7 +160,7 @@ td.stmt pre { color: var(--text-dim); }
 <tr>
 <td class="num">2</td>
 <td><span class="tag safe">safe</span></td>
-<td class="name">*ast.CreateTableNode</td>
+<td class="name">new_products</td>
 <td class="comment">does not remove data or tighten constraints</td>
 <td class="stmt"><pre>CREATE TABLE &#34;new_products&#34; (
   &#34;id&#34; INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -173,7 +173,7 @@ td.stmt pre { color: var(--text-dim); }
 <tr>
 <td class="num">3</td>
 <td><span class="tag safe">safe</span></td>
-<td class="name">*ast.RawSQLNode</td>
+<td class="name">new_products</td>
 <td class="comment">does not remove data or tighten constraints</td>
 <td class="stmt"><pre>INSERT INTO &#34;new_products&#34; (&#34;id&#34;, &#34;sku&#34;, &#34;name&#34;, &#34;price_cents&#34;) SELECT &#34;id&#34;, &#34;sku&#34;, &#34;name&#34;, &#34;price_cents&#34; FROM &#34;products&#34;</pre></td>
 </tr>
@@ -189,7 +189,7 @@ td.stmt pre { color: var(--text-dim); }
 <tr>
 <td class="num">5</td>
 <td><span class="tag warning">warning</span></td>
-<td class="name">*ast.RawSQLNode</td>
+<td class="name">new_products</td>
 <td class="comment">rename can break deployed readers and writers</td>
 <td class="stmt"><pre>ALTER TABLE &#34;new_products&#34; RENAME TO &#34;products&#34;</pre></td>
 </tr>
@@ -205,7 +205,7 @@ td.stmt pre { color: var(--text-dim); }
 <tr>
 <td class="num">7</td>
 <td><span class="tag safe">safe</span></td>
-<td class="name">*ast.RawSQLNode</td>
+<td class="name">foreign_keys</td>
 <td class="comment">does not remove data or tighten constraints</td>
 <td class="stmt"><pre>PRAGMA foreign_keys = on</pre></td>
 </tr>

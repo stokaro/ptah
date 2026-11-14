@@ -150,7 +150,7 @@ func runSchemaDiff(cmd *cobra.Command, opts schemaDiffOptions) error {
 	if err := validateSchemaDiffSources(opts, runtime.Selections(), dbschema.NativeSources(cmd.Context())); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	exclude, err := dbcli.EffectiveExclude(projectCfg, opts.exclude, runtime.Selections())
+	exclude, excludeSources, err := dbcli.EffectiveExclude(cmd, diffExcludeFlag, opts.exclude, projectCfg, runtime.Selections())
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -172,6 +172,7 @@ func runSchemaDiff(cmd *cobra.Command, opts schemaDiffOptions) error {
 		DevURL:              opts.devURL,
 		ServerVersion:       opts.serverVersion,
 		Exclude:             exclude,
+		ExcludeSources:      excludeSources,
 		Schemas:             dbcli.ParseSchemas(opts.schemas),
 		Include:             opts.include,
 		Policy:              policy,

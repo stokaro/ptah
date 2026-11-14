@@ -311,6 +311,12 @@ jobs:
           # where the check that holds a translation to its source belongs.
           node docs/site/scripts/check-translations.mjs --selftest
           node docs/site/scripts/check-translations.mjs
+          # The site build runs this gate for the pages. Its other half reads
+          # the relative links of README.md, docs/*.md and the other repository
+          # Markdown, which a change can touch without triggering that build,
+          # so it runs here as well.
+          node docs/site/scripts/check-links.mjs --selftest
+          node docs/site/scripts/check-links.mjs
           node docs/site/scripts/check-limitations.mjs --selftest
           node docs/site/scripts/check-limitations.mjs
           node docs/site/scripts/check-implementation-chronology.mjs --selftest

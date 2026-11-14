@@ -301,11 +301,11 @@ func (e *EmptySelectionError) Error() string {
 	return "the --include selection matched no objects: " + quoteSelectors(e.Selectors)
 }
 
-// UnmatchedExcludeError reports --exclude selectors that named no object in
-// any state the command filtered.
+// UnmatchedExcludeError reports exclude selectors that named no object in any
+// state the command filtered.
 //
-// An exclude pattern carries no match requirement, so before this signal a
-// selector that named nothing subtracted nothing and every verb reported
+// An exclude pattern carries no match requirement, so without this signal a
+// selector that named nothing subtracts nothing and every verb reports
 // success with the object still present. That is a scoping flag failing open,
 // which is worse than one that refuses: the pinned community binary v1.3.0
 // also exits 0 and says nothing for `--exclude nosuchobject`, and this is the
@@ -316,13 +316,68 @@ func (e *EmptySelectionError) Error() string {
 // [EmptySelectionError]: schema apply refuses, while schema diff and schema
 // inspect keep their exit status and report it out of band.
 type UnmatchedExcludeError struct {
-	// Selectors are the --exclude selectors as written, split and trimmed the
+	// Selectors are the exclude selectors as written, split and trimmed the
 	// way the parser splits them.
 	Selectors []string
+	// Sources names where the run read each selector. The message names that
+	// source, and a selector it does not map is named as --exclude's.
+	Sources ExcludeSources
 }
 
+// Error names the selectors grouped by their source, in the order each source
+// first appears among Selectors.
 func (e *UnmatchedExcludeError) Error() string {
-	return "the --exclude selection matched no objects: " + quoteSelectors(e.Selectors)
+	var selections []string
+	grouped := make(map[string][]string)
+	for _, selector := range e.Selectors {
+		selection := e.Sources.selection(selector)
+		if _, seen := grouped[selection]; !seen {
+			selections = append(selections, selection)
+		}
+		grouped[selection] = append(grouped[selection], selector)
+	}
+	parts := make([]string, 0, len(selections))
+	for _, selection := range selections {
+		parts = append(parts, selection+" matched no objects: "+quoteSelectors(grouped[selection]))
+	}
+	return strings.Join(parts, "; ")
+}
+
+// ExcludeSources names where a run read each of its exclude selectors, so a
+// diagnostic about a selector that matched nothing points at the place the
+// operator wrote it. A selector maps to its source as the operator spelled it:
+// a flag with its dashes, such as `--drift-exclude`, the environment variable
+// that set the flag, or the project file that lists the selector. The zero
+// value maps nothing, and an unmapped selector is named as --exclude's.
+type ExcludeSources map[string]string
+
+// Add maps each selector values hold, split on commas and trimmed the way the
+// parser splits them, to source. A selector Add mapped already keeps its first
+// source, so values are added in the order the run applies them.
+func (s ExcludeSources) Add(source string, values ...string) {
+	for _, value := range values {
+		for part := range strings.SplitSeq(value, ",") {
+			selector := strings.TrimSpace(part)
+			if _, mapped := s[selector]; selector == "" || mapped {
+				continue
+			}
+			s[selector] = source
+		}
+	}
+}
+
+// selection is the phrase that names the source of selector: the flag's own
+// selection, or the selection from a variable or a file.
+func (s ExcludeSources) selection(selector string) string {
+	source := s[selector]
+	switch {
+	case source == "":
+		return "the --exclude selection"
+	case strings.HasPrefix(source, "-"):
+		return "the " + source + " selection"
+	default:
+		return "the exclude selection from " + source
+	}
 }
 
 func quoteSelectors(selectors []string) string {

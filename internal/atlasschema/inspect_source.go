@@ -59,6 +59,10 @@ type InspectSourceOptions struct {
 	Include []string
 	// Exclude filters inspected resources with Atlas-style selectors.
 	Exclude []string
+	// ExcludeSources names where the run read each Exclude selector, for the
+	// diagnostic about one that matched nothing; see
+	// [atlasfilter.ExcludeSources]. Nil names every selector as --exclude's.
+	ExcludeSources atlasfilter.ExcludeSources
 	// Format is the Atlas --format value or Go template.
 	Format string
 	// NativeJSON preserves the scoped desired model through its feature codecs
@@ -273,6 +277,7 @@ func InspectSource(ctx context.Context, opts InspectSourceOptions) (InspectResul
 		Schemas:                  opts.Schemas,
 		Include:                  opts.Include,
 		Exclude:                  opts.Exclude,
+		ExcludeSources:           opts.ExcludeSources,
 		Format:                   opts.Format,
 		NativeJSON:               opts.NativeJSON,
 		Diagnostics:              opts.Diagnostics,

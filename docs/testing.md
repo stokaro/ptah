@@ -482,5 +482,5 @@ authorized history for every `migrate_to` step; when it is nil, the engine opens
 Render the returned `Report` and check `Report.Failed`.
 
 See [Public Go API](public_api.md) for the compatibility contract and the
-[testing workflow](site/src/content/docs/testing/migrations-and-schema.md) for CI-oriented
+[testing workflow](site/src/content/docs/testing/migrations-and-schema.mdx) for CI-oriented
 guidance.
