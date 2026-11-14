@@ -10,6 +10,7 @@ import (
 
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/cli/atlas"
+	"ptah.run/internal/cli/atlas/internal/atlastest"
 )
 
 // writeUnmatchedExcludeSchema writes the one-table desired schema every case
@@ -252,4 +253,66 @@ func TestSchemaInspectWarnsWhenAnExcludeSelectorMatchedNothing(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(stderr.String(), qt.Contains, `the --exclude selection matched no objects: "nosuch_object"`)
 	c.Assert(out.String(), qt.Contains, "exclude_keep")
+}
+
+// writeUnmatchedExcludeProject writes the desired schema and an atlas.hcl whose
+// env "local" carries `exclude = ["nosuch_object"]` into the working
+// directory, which the test has made a scratch directory.
+func writeUnmatchedExcludeProject(c *qt.C) {
+	c.Helper()
+	writeUnmatchedExcludeSchema(c, ".")
+	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
+  url     = "sqlite://apply.db"
+  dev     = "sqlite://file?mode=memory"
+  src     = "file://schema.sql"
+  exclude = ["nosuch_object"]
+}
+`), 0o600), qt.IsNil)
+}
+
+// TestSchemaCommandsNameTheProjectFileOfAnUnmatchedExcludeSelector reports a
+// selector an atlas.hcl env lists as coming from that file rather than from
+// --exclude, which the command line does not carry. The warning and the
+// refusal are kept; the pinned binary says nothing about such a selector.
+func TestSchemaCommandsNameTheProjectFileOfAnUnmatchedExcludeSelector(t *testing.T) {
+	t.Chdir(t.TempDir())
+	c := qt.New(t)
+	writeUnmatchedExcludeProject(c)
+
+	inspectOut, inspectErr, inspectRun := atlastest.RunCompat("schema", "inspect", "--env", "local")
+	_, applyErr, applyRun := atlastest.RunCompat("schema", "apply", "--env", "local", "--dry-run")
+
+	c.Assert(inspectRun, qt.IsNil, qt.Commentf("stderr:\n%s", inspectErr))
+	c.Assert(inspectErr, qt.Equals, `Warning: the exclude selection from atlas.hcl matched no objects: "nosuch_object".`+"\n")
+	c.Assert(inspectOut, qt.Not(qt.Equals), "")
+	c.Assert(applyRun, qt.ErrorMatches,
+		`the exclude selection from atlas\.hcl matched no objects: "nosuch_object"; schema apply refuses a selection that protects nothing.*`,
+		qt.Commentf("stderr:\n%s", applyErr))
+}
+
+// TestSchemaCommandsNameTheConfigFlagSpellingOfTheProjectFile names the
+// project file as --config spells it.
+func TestSchemaCommandsNameTheConfigFlagSpellingOfTheProjectFile(t *testing.T) {
+	t.Chdir(t.TempDir())
+	c := qt.New(t)
+	writeUnmatchedExcludeProject(c)
+
+	_, stderr, err := atlastest.RunCompat("schema", "inspect", "--env", "local", "--config", "file://./atlas.hcl")
+
+	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr))
+	c.Assert(stderr, qt.Equals, `Warning: the exclude selection from ./atlas.hcl matched no objects: "nosuch_object".`+"\n")
+}
+
+// TestSchemaCommandsNameTheFlagThatReplacesTheProjectExclude is the control:
+// an --exclude on the command line replaces the env's list, so its selector is
+// reported as the flag's.
+func TestSchemaCommandsNameTheFlagThatReplacesTheProjectExclude(t *testing.T) {
+	t.Chdir(t.TempDir())
+	c := qt.New(t)
+	writeUnmatchedExcludeProject(c)
+
+	_, stderr, err := atlastest.RunCompat("schema", "inspect", "--env", "local", "--exclude", "other_object")
+
+	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr))
+	c.Assert(stderr, qt.Equals, `Warning: the --exclude selection matched no objects: "other_object".`+"\n")
 }

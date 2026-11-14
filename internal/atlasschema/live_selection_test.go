@@ -155,7 +155,7 @@ func TestLiveSelection_ApplyCountsAPatternAgainstTheConnection(t *testing.T) {
 
 	_, _, err = selection.Apply(c.Context(), must.Must(builtin.New()), pinnedInfo, current, desired)
 
-	c.Assert(err, qt.ErrorMatches, `apply --exclude to current schema: too many parts in pattern .*`)
+	c.Assert(err, qt.ErrorMatches, `apply exclude selectors to current schema: too many parts in pattern .*`)
 }
 
 // TestLiveSelection_ApplyWithoutASelectorChangesNothing is the control for the

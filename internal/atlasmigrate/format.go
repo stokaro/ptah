@@ -62,7 +62,11 @@ func ResolveApplySourceForFormat(
 	if err != nil {
 		return fsnapshot.Snapshot{}, err
 	}
-	return ConvertApplySource(captured, display, format)
+	converted, err := ConvertApplySource(captured, display, format)
+	if err != nil {
+		return fsnapshot.Snapshot{}, err
+	}
+	return converted.FS, nil
 }
 
 // CaptureApplySource captures the immutable source snapshot for a migration
@@ -95,6 +99,18 @@ func CaptureApplySource(
 	return snapshot, nil
 }
 
+// ConvertedApplySource is a source directory converted for the Atlas apply
+// migrator.
+type ConvertedApplySource struct {
+	// FS is the filesystem the migrator executes.
+	FS fsnapshot.Snapshot
+	// Renamed maps the name of each file of FS whose name the conversion
+	// changed to the file of the source directory it came from, so a report
+	// can name the file as the directory holds it. It is nil when the
+	// conversion renamed nothing, and always for a native Atlas directory.
+	Renamed map[string]string
+}
+
 // ConvertApplySource converts an already-captured source snapshot into the
 // filesystem the Atlas apply migrator executes. It is the second half of
 // [ResolveApplySourceForFormat] and reads only the captured bytes, never the
@@ -106,19 +122,19 @@ func ConvertApplySource(
 	captured fsnapshot.Snapshot,
 	display string,
 	format atlasmigrateimport.Format,
-) (fsnapshot.Snapshot, error) {
+) (ConvertedApplySource, error) {
 	if format == atlasmigrateimport.FormatAtlas {
-		return captured, nil
+		return ConvertedApplySource{FS: captured}, nil
 	}
 	loaded, err := atlasmigrateimport.LoadFS(captured, display, format)
 	if err != nil {
-		return fsnapshot.Snapshot{}, err
+		return ConvertedApplySource{}, err
 	}
 	converted, err := migrationsnapshot.Capture(loaded.FS())
 	if err != nil {
-		return fsnapshot.Snapshot{}, fmt.Errorf("capture converted migration directory: %w", err)
+		return ConvertedApplySource{}, fmt.Errorf("capture converted migration directory: %w", err)
 	}
-	return converted, nil
+	return ConvertedApplySource{FS: converted, Renamed: loaded.RenamedSources()}, nil
 }
 
 // ReadsNativeAtlasDir reports whether format selects a native Atlas directory

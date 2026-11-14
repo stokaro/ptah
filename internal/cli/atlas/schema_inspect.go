@@ -11,6 +11,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/config/projectconfig"
 	"ptah.run/internal/atlascompatpolicy"
+	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/atlassource"
@@ -28,6 +29,10 @@ type atlasSchemaInspectOptions struct {
 	format  string
 	output  string
 	policy  atlascompatpolicy.Policy
+
+	// excludeSources names the project file for the exclude selectors the
+	// env supplied; see [effectiveAtlasExclude].
+	excludeSources atlasfilter.ExcludeSources
 }
 
 func newAtlasSchemaInspectCommand(policy atlascompatpolicy.Policy) *cobra.Command {
@@ -188,7 +193,7 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 			opts.devURL,
 			projectCfg.StringValue(projectconfig.StringDevURL),
 		)
-		opts.exclude = effectiveAtlasExclude(cmd, opts.exclude, projectCfg)
+		opts.exclude, opts.excludeSources = effectiveAtlasExclude(cmd, opts.exclude, projectCfg)
 		opts.schemas = effectiveAtlasSchemas(cmd, opts.schemas, projectCfg)
 		formatValue := projectCfg.StringValue(projectconfig.StringFormatSchemaInspect)
 		opts.format = dbcli.EffectiveString(cmd, "format", opts.format, formatValue)
@@ -235,6 +240,7 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 		Schemas:        opts.schemas,
 		Include:        opts.include,
 		Exclude:        opts.exclude,
+		ExcludeSources: opts.excludeSources,
 		Format:         opts.format,
 		Diagnostics:    cmd.ErrOrStderr(),
 		ProjectEnv:     projectEnv,

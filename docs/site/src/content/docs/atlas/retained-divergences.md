@@ -133,6 +133,7 @@ own measurement conditions.
 | [A migration that would be recorded over an invalid index](#a-migration-that-would-be-recorded-over-an-invalid-index) | refuses while `pg_index` reports the index unusable, and names `REINDEX` | applies the migration and records it over the unusable index |
 | [`schema inspect --include`](#schema-inspect---include) | positively selects top-level resources through the apply and diff engine | does not register the flag: `Error: unknown flag: --include` |
 | [Exclude field selectors](#exclude-field-selectors) | honors the suffixes it can carry out and refuses the rest | accepts every such suffix and honors none of them |
+| [An exclude selector that matches nothing](#an-exclude-selector-that-matches-nothing) | warns on `schema inspect` and `schema diff`, refuses `schema apply`, and names the flag or the `atlas.hcl` the selector came from | exits `0` and says nothing |
 | [Leading schema type selector](#leading-schema-type-selector) | keeps the literal answer on every schema source | gives source-dependent answers, leaving the named table in a file diff's plan |
 | [One version spelled two ways](#one-version-spelled-two-ways) | refuses the directory and names both files | applies both files as two revisions |
 | [A revision spelled apart from its file](#a-revision-spelled-apart-from-its-file) | refuses the history and prints the statements that respell the rows | compares versions as text and leaves a new file unapplied |
@@ -796,6 +797,35 @@ binary quotes the prefixed pattern,
 the one that was typed. On a URL that names no schema the pattern is
 realm-relative, `public` fills the schema slot itself, and both binaries accept
 it. Measured on both URLs against the same PostgreSQL 17 database.
+
+**Tracking.** [`stokaro/ptah#933`](https://github.com/stokaro/ptah/issues/933)
+
+## An exclude selector that matches nothing
+
+**Type.** Deliberate divergence
+
+**Current boundary.** A selector that matches no object protects nothing, and
+reads exactly like one that worked. The pinned community binary v1.3.0 exits
+`0` and prints nothing for such a selector, whether `--exclude` or an `atlas.hcl`
+env's `exclude` list carries it. `ptah-compat` reports it. `schema inspect` and
+`schema diff` keep their exit status and write a warning on stderr. `schema
+apply` refuses the run, because a selector that named nothing leaves the plan
+free to change the object it was written to keep out;
+`PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE=1` turns the refusal back into a warning.
+
+Each line names where the selector came from, since the command line may not
+carry it. Measured on SQLite with an `atlas.hcl` env holding
+`exclude = ["nosuch_object"]`:
+
+| invocation | pinned community binary v1.3.0 | `ptah-compat` |
+| --- | --- | --- |
+| `schema inspect --env local` | exit `0`, empty stderr | exit `0`, `Warning: the exclude selection from atlas.hcl matched no objects: "nosuch_object".` |
+| `schema apply --env local --dry-run` | exit `0`, plan printed | exit `1`, `Error: the exclude selection from atlas.hcl matched no objects: "nosuch_object"; schema apply refuses a selection that protects nothing, …` |
+| `schema inspect --env local --exclude other_object` | exit `0`, empty stderr | exit `0`, `Warning: the --exclude selection matched no objects: "other_object".` |
+
+A project file named with `--config file://./atlas.hcl` is named as `--config`
+spells it, `./atlas.hcl`. An `--exclude` flag replaces the env's list, so the
+last row reports the flag.
 
 **Tracking.** [`stokaro/ptah#933`](https://github.com/stokaro/ptah/issues/933)
 

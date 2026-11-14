@@ -192,5 +192,9 @@ func (c atlasDirCapture) migrationFS(display string) (fs.FS, error) {
 	if atlasmigrate.ReadsNativeAtlasDir(c.format) {
 		return c.source, nil
 	}
-	return atlasmigrate.ConvertApplySource(c.captured, display, c.format)
+	converted, err := atlasmigrate.ConvertApplySource(c.captured, display, c.format)
+	if err != nil {
+		return nil, err
+	}
+	return converted.FS, nil
 }

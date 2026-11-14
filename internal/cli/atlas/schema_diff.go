@@ -36,6 +36,10 @@ type atlasSchemaDiffOptions struct {
 	exclude  []string
 	format   string
 	policy   atlascompatpolicy.Policy
+
+	// excludeSources names the project file for the exclude selectors the
+	// env supplied; see [effectiveAtlasExclude].
+	excludeSources atlasfilter.ExcludeSources
 }
 
 func newAtlasSchemaDiffCommand(policy atlascompatpolicy.Policy) *cobra.Command {
@@ -159,7 +163,7 @@ func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 			opts.devURL,
 			projectCfg.StringValue(projectconfig.StringDevURL),
 		)
-		opts.exclude = effectiveAtlasExclude(cmd, opts.exclude, projectCfg)
+		opts.exclude, opts.excludeSources = effectiveAtlasExclude(cmd, opts.exclude, projectCfg)
 		opts.schemas = effectiveAtlasSchemas(cmd, opts.schemas, projectCfg)
 		formatValue := projectCfg.StringValue(projectconfig.StringFormatSchemaDiff)
 		opts.format = dbcli.EffectiveString(cmd, "format", opts.format, formatValue)
@@ -236,6 +240,7 @@ func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 		ToURLs:         opts.toURLs,
 		DevURL:         opts.devURL,
 		Exclude:        opts.exclude,
+		ExcludeSources: opts.excludeSources,
 		Schemas:        opts.schemas,
 		Include:        opts.include,
 		Policy:         policy,

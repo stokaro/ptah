@@ -90,6 +90,11 @@ type localDirURL struct {
 type Entry struct {
 	Name string
 	Data []byte
+	// Source is the path of the file the entry was converted from, relative
+	// to the source directory, such as "1_init.up.sql" for a golang-migrate
+	// file. It is empty for a Liquibase entry, which is one changeset rather
+	// than one file.
+	Source string
 }
 
 // DroppedRollback is one rollback an import into the Atlas single-file layout
@@ -121,6 +126,25 @@ type Loaded struct {
 	// DroppedRollbacks are the rollbacks the entries do not carry. Only the
 	// import reports them, so only it fills this.
 	DroppedRollbacks []DroppedRollback
+}
+
+// RenamedSources maps the name of each converted entry to the file it was
+// converted from, for the entries whose name differs from that file's: a
+// golang-migrate `1_a.up.sql` executes as `1_a.sql`, and a Flyway
+// `V1.5__b.sql` as a numeric Atlas file. A report names such a file as the
+// directory holds it. It returns nil when the conversion renamed nothing.
+func (l *Loaded) RenamedSources() map[string]string {
+	var renamed map[string]string
+	for _, entry := range l.Entries {
+		if entry.Source == "" || entry.Source == entry.Name {
+			continue
+		}
+		if renamed == nil {
+			renamed = make(map[string]string)
+		}
+		renamed[entry.Name] = entry.Source
+	}
+	return renamed
 }
 
 // FS returns an in-memory fs.FS containing the converted Atlas single-file
@@ -1079,7 +1103,7 @@ func loadAtlasEntries(fsys fs.FS, files []fs.DirEntry) ([]Entry, error) {
 		if err != nil {
 			return nil, err
 		}
-		entries = append(entries, Entry{Name: file.Name(), Data: data})
+		entries = append(entries, Entry{Name: file.Name(), Data: data, Source: file.Name()})
 	}
 	sortEntries(entries)
 	return entries, nil
@@ -1105,7 +1129,7 @@ func loadGolangMigrateEntries(fsys fs.FS, files []fs.DirEntry) ([]Entry, error) 
 		if err != nil {
 			return nil, err
 		}
-		entries = append(entries, Entry{Name: match[1] + "_" + match[2] + ".sql", Data: data})
+		entries = append(entries, Entry{Name: match[1] + "_" + match[2] + ".sql", Data: data, Source: file.Name()})
 	}
 	sortEntries(entries)
 	return entries, nil
@@ -1148,7 +1172,7 @@ func loadDirectiveSectionEntries(
 		if err != nil {
 			return nil, err
 		}
-		entries = append(entries, Entry{Name: file.Name(), Data: up})
+		entries = append(entries, Entry{Name: file.Name(), Data: up, Source: file.Name()})
 	}
 	sortEntries(entries)
 	return entries, nil
@@ -1191,7 +1215,7 @@ func loadFlywayEntries(fsys fs.FS) ([]Entry, error) {
 		if err != nil {
 			return nil, err
 		}
-		entries = append(entries, Entry{Name: flywayEntryName(versions[i], file.description), Data: data})
+		entries = append(entries, Entry{Name: flywayEntryName(versions[i], file.description), Data: data, Source: file.name})
 	}
 	return entries, nil
 }
