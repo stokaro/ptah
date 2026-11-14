@@ -66,6 +66,9 @@ func TestSplit_FollowsTheDialect(t *testing.T) {
 			[]string{`SELECT 'C:\'`, "DROP TABLE t"}},
 		{"a word ending in E before a string", "postgres", `SELECT typE'a\'; DROP TABLE t;`,
 			[]string{`SELECT typE'a\'`, "DROP TABLE t"}},
+		{"a number before an escape string", "postgres", `SELECT 1E'a\'; COMMIT;'; DROP TABLE t;`,
+			[]string{`SELECT 1E'a\'; COMMIT;'`, "DROP TABLE t"}},
+		{"a number before E on SQLite", "sqlite", `SELECT 1E'a\'; DROP TABLE t;`, []string{`SELECT 1E'a\'`, "DROP TABLE t"}},
 		{"E on SQLite", "sqlite", `SELECT E'a\'; DROP TABLE t;`, []string{`SELECT E'a\'`, "DROP TABLE t"}},
 		{"E with no dialect", "", `SELECT E'a\'; DROP TABLE t;`, []string{`SELECT E'a\'`, "DROP TABLE t"}},
 	} {
