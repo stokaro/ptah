@@ -410,6 +410,12 @@ selection leaves out is refused with exit `2`, and the diagnostic names both. An
 account that cannot see a whole kind on MySQL or MariaDB
 [can leave the kind out](../../databases/mysql/#a-run-that-does-not-depend-on-a-kind).
 
+`ptah migrations plan` and `ptah migrations generate` take `--exclude` with the
+same meaning. The selection reaches the desired schema, the current state read
+from the database or replayed from the migration directory, and the shadow
+check; [Generate migrations](../../versioned/generate/#leave-objects-out-with---exclude)
+describes it.
+
 ## What a machine reads, and from where
 
 Every verb that has a machine-readable format writes that document to

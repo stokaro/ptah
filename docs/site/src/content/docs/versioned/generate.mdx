@@ -144,6 +144,42 @@ are planned for removal; to keep them, pin search_path in the URL or pass
 print the same line. The connection's own schema, usually `public`, is not
 reported, because every scope reads it.
 
+### Leave objects out with `--exclude`
+
+`--exclude` names objects that `plan` and `generate` leave alone, such as a
+table another tool owns. It takes the selectors `ptah schema diff --exclude`
+takes: a name such as `audit_log`, a glob such as `public.legacy_*`, or a kind
+such as `*[type=policy]`. Repeat the flag or separate selectors with commas.
+`PTAH_EXCLUDE` sets the same list.
+
+The selection applies to both sides of the comparison. A declared object it
+names is not created, and an object the database holds is not dropped or
+altered, in the up file and in the down file. The current state is filtered the
+same way whether it is read from `--db-url` or replayed with `--replay`, and
+`--shadow-db` leaves the same objects out when it compares the shadow database
+with the desired schema. A table the migrations never touch can stay in the
+database and in the replayed history without the shadow check reporting it.
+The shadow check reads each selector as the plan read it: on MySQL and MariaDB,
+`appdb.audit_log` names the table in the target database `appdb` and the table
+the replay created in the shadow database.
+
+`*[type=policy]` leaves every policy out, and with them the row-security
+switch of each table: a migration that kept the policies and disabled row
+security would show every row they hide. A selector that names one policy,
+such as `admin_read[type=policy]`, keeps the switch in the comparison.
+
+A selector that matches nothing on either side prints one warning on standard
+error, such as `Warning: the --exclude selection matched no objects:
+"audit_log".`, and the run goes on. A selector with a syntax error, such as an
+unclosed `[`, is a usage error, exit `2`, before Ptah connects to a database. A
+selector with more parts than the connection's scope allows, such as
+`main.widgets.name` on SQLite, exits `2` once the connection says which scope
+it reads; with `--replay` that is after the dev database was reset. Neither
+writes a migration file. On MySQL and MariaDB a selector that leaves out a
+whole kind also relieves the account of the privilege a read of that kind
+needs; see
+[A run that does not depend on a kind](../../databases/mysql/#a-run-that-does-not-depend-on-a-kind).
+
 ### Send the plan verdict to CI
 
 Use `--report json` when automation needs the safety verdict:

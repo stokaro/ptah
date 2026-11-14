@@ -11,11 +11,14 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"ptah.run/catalog"
 	"ptah.run/config/projectconfig"
 	"ptah.run/core/planext"
 	"ptah.run/core/renderer"
+	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
+	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/engineruntime"
@@ -47,6 +50,7 @@ const (
 	reportFormatFlag     = "report"
 	attachFlag           = "attach"
 	plainHTTPFlag        = "plain-http"
+	excludeFlag          = "exclude"
 )
 
 type options struct {
@@ -63,6 +67,7 @@ type options struct {
 	connectTimeout   string
 	schemas          string
 	ignoreExtensions []string
+	exclude          []string
 }
 
 func NewMigrateCommand() *cobra.Command {
@@ -75,7 +80,11 @@ func NewMigrateCommand() *cobra.Command {
 The desired schema may come from repeatable SQL, YAML, HCL, or DBML files,
 directories of Go annotations, an OCI schema artifact, or an external program.
 The command prints the statements and their safety classification without
-writing migration files.`,
+writing migration files.
+
+--exclude leaves the objects it selects out of both the desired schema and the
+database read, so the plan neither creates nor drops them. It takes the
+selectors schema diff --exclude takes.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return migrateCommandWithOptions(cmd, &opts)
 		},
@@ -103,6 +112,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
 	dbcli.RegisterURLScopedDatabaseSchemasFlag(flags, &opts.schemas)
 	dbcli.RegisterIgnoreExtensionFlag(flags, &opts.ignoreExtensions)
+	flags.StringArrayVar(&opts.exclude, excludeFlag, nil, "Schema objects to exclude from planning (Atlas-style selectors)")
 	dbcli.RegisterMigrationsTableFlag(flags, new(string))
 	dbcli.RegisterRevisionTableFormatFlag(flags, new(string))
 	tablerebuild.Register(cmd)
@@ -169,6 +179,10 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return err
 	}
+	exclusion, err := atlasfilter.NewExclusion(runtime, opts.exclude)
+	if err != nil {
+		return fmt.Errorf("invalid --%s: %w", excludeFlag, err)
+	}
 	connectTimeout, err := dbcli.ParseConnectTimeout(opts.connectTimeout)
 	if err != nil {
 		return err
@@ -222,18 +236,12 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	if opts.attach && loadResult.OCI == nil {
 		return fmt.Errorf("--attach requires exactly one OCI --schema-file source")
 	}
-	result := loadResult.Database
-
 	requested := dbcli.ParseSchemas(schemasValue)
-	schemas, err := schemascope.ComparisonReadNames(cmd.Context(), conn.Info(), requested, conn, result)
+	states, err := readPlanStates(cmd, conn, loadResult.Database, requested, bookkeeping, exclusion)
 	if err != nil {
-		return fmt.Errorf("error reading database schema: %w", err)
+		return err
 	}
-	dbSchema, err := dbschema.ReadSchemaWithSchemasContext(cmd.Context(), conn, schemas)
-	if err != nil {
-		return fmt.Errorf("error reading database schema: %w", err)
-	}
-	dbSchema = revisiontable.Without(dbSchema, bookkeeping)
+	result, dbSchema, schemas := states.desired, states.current, states.schemas
 
 	// 3. Compare schemas (dialect-aware: MySQL/MariaDB RESTRICT == NO ACTION)
 	info := conn.Info()
@@ -351,6 +359,51 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	fmt.Fprintln(out, "⚠️  Review the SQL carefully before executing!")
 
 	return nil
+}
+
+// planStates are the two sides `migrations plan` compares, and the schemas the
+// database was read at.
+type planStates struct {
+	desired *schemamodel.Database
+	current *catalog.Database
+	schemas []string
+}
+
+// readPlanStates reads the database at the scope a comparison with desired
+// reads, leaves the revision tables out of it, and returns it beside desired,
+// both without what exclusion names. A selector that named nothing on either
+// side is a warning on standard error.
+//
+// The desired schema is filtered before the read, because the scope is
+// resolved from what it declares: an excluded object does not bring its schema
+// into the read. The same order holds in [ptah.run/migration/generator.PlanMigration].
+func readPlanStates(
+	cmd *cobra.Command,
+	conn *dbschema.DatabaseConnection,
+	desired *schemamodel.Database,
+	requested, bookkeeping []string,
+	exclusion atlasfilter.Exclusion,
+) (planStates, error) {
+	defaultSchema := conn.Info().Schema
+	desired, desiredReport, err := exclusion.Desired(desired, defaultSchema)
+	if err != nil {
+		return planStates{}, fmt.Errorf("apply --%s to the desired schema: %w", excludeFlag, err)
+	}
+	schemas, err := schemascope.ComparisonReadNames(cmd.Context(), conn.Info(), requested, conn, desired)
+	if err != nil {
+		return planStates{}, fmt.Errorf("error reading database schema: %w", err)
+	}
+	current, err := dbschema.ReadSchemaWithSchemasContext(exclusion.ReadContext(cmd.Context()), conn, schemas)
+	if err != nil {
+		return planStates{}, fmt.Errorf("error reading database schema: %w", err)
+	}
+	current = revisiontable.Without(current, bookkeeping)
+	current, currentReport, err := exclusion.Observed(current, defaultSchema)
+	if err != nil {
+		return planStates{}, fmt.Errorf("apply --%s to the database schema: %w", excludeFlag, err)
+	}
+	atlasfilter.ReportUnmatched(cmd.ErrOrStderr(), desiredReport, currentReport)
+	return planStates{desired: desired, current: current, schemas: schemas}, nil
 }
 
 func countRenderedStatements(sql string) int {

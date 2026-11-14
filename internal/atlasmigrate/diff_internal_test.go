@@ -29,6 +29,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/feature/pgextension"
+	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasmigrateimport"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/atlassource"
@@ -111,7 +112,7 @@ func TestCompareReplayedState_CarriesTheDropPolicyIntoTheVirtualTableGuard(t *te
 			_, _, err := compareReplayedState(
 				c.Context(), conn, runtime, nil, conn.Info().Schema,
 				&schemamodel.Database{FeatureCoverage: must.Must(sqlitetable.VirtualCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))},
-				devclean.Baseline{}, tt.exclude, nil, nil, tt.policy, selectedRuntime(c),
+				devclean.Baseline{}, must.Must(atlasfilter.NewExclusion(selectedRuntime(c), tt.exclude)), nil, nil, tt.policy, selectedRuntime(c),
 			)
 
 			c.Assert(err != nil, qt.Equals, tt.wantErr)
@@ -154,7 +155,7 @@ func TestCompareReplayedState_SchemaScopeKeepsDatabaseWideExtensionSynced(t *tes
 	}
 
 	replayed, diff, err := compareReplayedState(
-		c.Context(), conn, runtime, schemas, "public", desired, devclean.Baseline{}, nil, nil, nil,
+		c.Context(), conn, runtime, schemas, "public", desired, devclean.Baseline{}, atlasfilter.Exclusion{}, nil, nil,
 		atlasschema.DiffPolicy{}, selectedRuntime(c),
 	)
 
@@ -184,7 +185,7 @@ func TestCompareReplayedState_ReportsUndecidedAddition(t *testing.T) {
 	_, diff, err := compareReplayedState(
 		c.Context(), conn, runtime, nil, conn.Info().Schema,
 		&schemamodel.Database{Sequences: []schemamodel.Sequence{{Name: "order_seq"}}},
-		devclean.Baseline{}, nil, diagnostics, nil, atlasschema.DiffPolicy{}, selectedRuntime(c),
+		devclean.Baseline{}, atlasfilter.Exclusion{}, diagnostics, nil, atlasschema.DiffPolicy{}, selectedRuntime(c),
 	)
 
 	c.Assert(err, qt.ErrorIs, schemadiff.ErrIncompleteComparison)
