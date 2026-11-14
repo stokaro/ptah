@@ -102,6 +102,7 @@ func builtinRules() []Rule {
 	rules = append(rules, namingRules()...)
 	rules = append(rules, injectionRules()...)
 	rules = append(rules, sqliteRules()...)
+	rules = append(rules, transactionControlRules()...)
 	rules = append(rules, atlasGapRules()...)
 	return rules
 }

@@ -87,9 +87,10 @@ func codesOf(rules []lint.Rule) []string {
 	return codes
 }
 
-// The bundled runtime's owners publish the transaction family, which this
-// package no longer checks itself.
-func TestRules_TheBundledOwnersPublishTheTransactionFamily(t *testing.T) {
+// The bundled runtime's PostgreSQL owner publishes TX101, which this package
+// does not check itself. TX201 is checked here, for every dialect lint
+// analyzes, and no owner publishes it.
+func TestRules_TheBundledOwnersPublishTheTransactionMix(t *testing.T) {
 	c := qt.New(t)
 	codes := codesOf(must.Must(lint.Rules(builtintest.Runtime())))
 	own := codesOf(must.Must(lint.Rules(must.Must(engine.New()))))
@@ -97,7 +98,7 @@ func TestRules_TheBundledOwnersPublishTheTransactionFamily(t *testing.T) {
 	c.Assert(codes, qt.Contains, "TX101")
 	c.Assert(codes, qt.Contains, "TX201")
 	c.Assert(own, qt.Not(qt.Contains), "TX101")
-	c.Assert(own, qt.Not(qt.Contains), "TX201")
+	c.Assert(own, qt.Contains, "TX201")
 }
 
 func TestRules_FailurePath(t *testing.T) {

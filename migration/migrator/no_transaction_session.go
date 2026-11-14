@@ -11,6 +11,7 @@ import (
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/migratorext"
 	"ptah.run/internal/migratorext/builtin"
+	"ptah.run/internal/txcontrol"
 )
 
 type noTransactionPrefixAction uint8
@@ -259,7 +260,7 @@ func (m *Migrator) validateNoTransactionSQL(migration *Migration, direction Migr
 	statements := splitSQLStatementsForConnection(m.conn, sqlText)
 	for i, statement := range statements {
 		statement = strings.TrimSpace(statement)
-		if statement == "" || !isTransactionControlStatement(statement, m.connectionDialect()) {
+		if statement == "" || !txcontrol.Controls(statement, m.connectionDialect()) {
 			continue
 		}
 		return fmt.Errorf(
@@ -272,63 +273,6 @@ func (m *Migrator) validateNoTransactionSQL(migration *Migration, direction Migr
 		)
 	}
 	return nil
-}
-
-func isTransactionControlStatement(statement, dialect string) bool {
-	tokens := significantSQLTokens(statement, dialect)
-	if len(tokens) == 0 {
-		return false
-	}
-	services := builtin.Lookup(dialect)
-	return isPrimaryTransactionControl(tokens, services) ||
-		isSetTransactionControl(statement, dialect, tokens, services)
-}
-
-// isPrimaryTransactionControl reports whether a statement opens, ends or marks
-// a transaction. Where the engine's BEGIN and END delimit a block, only BEGIN
-// TRAN, BEGIN TRANSACTION and BEGIN DISTRIBUTED open one.
-func isPrimaryTransactionControl(tokens []lexer.Token, services migratorext.Services) bool {
-	first := tokens[0]
-	if matchesAnyKeyword(first, "COMMIT", "ROLLBACK", "SAVEPOINT", "ABORT") {
-		return true
-	}
-	if first.MatchIdentifierValue("END") && !services.BlockBegin {
-		return true
-	}
-	if first.MatchIdentifierValue("XA") {
-		return true
-	}
-	if first.MatchIdentifierValue("SAVE") {
-		return len(tokens) > 1 && matchesAnyKeyword(tokens[1], "TRAN", "TRANSACTION")
-	}
-	if first.MatchIdentifierValue("PREPARE") {
-		return len(tokens) > 1 && tokens[1].MatchIdentifierValue("TRANSACTION")
-	}
-	if first.MatchIdentifierValue("RELEASE") {
-		return len(tokens) > 1 && tokens[1].MatchIdentifierValue("SAVEPOINT")
-	}
-	if first.MatchIdentifierValue("START") {
-		return len(tokens) > 1 && tokens[1].MatchIdentifierValue("TRANSACTION")
-	}
-	if first.MatchIdentifierValue("BEGIN") {
-		if !services.BlockBegin {
-			return true
-		}
-		return len(tokens) > 1 && matchesAnyKeyword(tokens[1], "TRAN", "TRANSACTION", "DISTRIBUTED")
-	}
-	return false
-}
-
-func isSetTransactionControl(statement, dialect string, tokens []lexer.Token, services migratorext.Services) bool {
-	first := tokens[0]
-	if !first.MatchIdentifierValue("SET") {
-		return false
-	}
-	if containsIdentifierSequence(statement, dialect, "TRANSACTION") ||
-		containsIdentifierSequence(statement, dialect, "IMPLICIT_TRANSACTIONS") {
-		return true
-	}
-	return services.AutocommitControl && containsIdentifierSequence(statement, dialect, "AUTOCOMMIT")
 }
 
 func createsTemporaryObject(tokens []lexer.Token, services migratorext.Services) bool {

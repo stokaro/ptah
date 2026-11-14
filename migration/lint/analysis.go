@@ -257,6 +257,9 @@ type File struct {
 	// dialect is the target the run was started with, for the rules whose
 	// measured answer differs between the two engines of one family.
 	dialect string
+	// transactionOwner is who opens the transaction the file runs in; see
+	// [Options.TransactionOwner].
+	transactionOwner lintext.TransactionOwner
 	// owners are the owners whose syntax the file's statements carry, the
 	// SQL set of the run's runtime.
 	owners sqlext.Set
@@ -556,6 +559,7 @@ func AnalyzeFS(ctx context.Context, runtime Runtime, fsys fs.FS, opts Options) (
 		if err != nil {
 			return Analysis{}, err
 		}
+		file.transactionOwner = opts.TransactionOwner
 		files = append(files, file)
 	}
 	split, err := splitFiles(ctx, runtime, opts.Dialect, files)
