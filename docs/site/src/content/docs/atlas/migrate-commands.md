@@ -2183,15 +2183,15 @@ diagnostics under every scope:
   renders SQL Server index drops as `DROP INDEX idx ON t`, which is read
   exactly.
 
-Three constructs are still measured by a name that carries no schema, because
+Two constructs are still measured by a name that carries no schema, because
 Ptah's parser records none for them. Measured on PostgreSQL 17.10 under
-`search_path=public`, `CREATE SEQUENCE app.s;` counts one schema change,
-`CREATE TRIGGER trg … ON app.t;` counts one and raises `PG308`, and
-`CREATE POLICY p ON app.t;` counts one — where the pinned community binary
-v1.3.0 counts no schema change and raises no diagnostic for all three. They
-over-report rather than under-report, and each is a warning at exit 0, so a
-scoped run is never told less than the truth about its database. They are listed
-here rather than left to be discovered.
+`search_path=public`, `CREATE TRIGGER trg … ON app.t;` counts one schema change
+and raises `PG308`, and `CREATE POLICY p ON app.t;` counts one, where the pinned
+community binary v1.3.0 counts no schema change and raises no diagnostic for
+either. They over-report rather than under-report, and each is a warning at
+exit 0, so a scoped run is never told less than the truth about its database.
+They are listed here rather than left to be discovered. A sequence is measured
+by its schema: `CREATE SEQUENCE app.s;` counts no schema change there.
 
 The boundary applies to `ptah-compat migrate lint` only. Native
 `ptah migrations lint` keeps every object under review, whatever the dev URL
@@ -2221,30 +2221,45 @@ one, because the table it modifies stays the same object. On SQLite, a table
 replacement through a `new_<table>` copy counts as one change, as the community
 binary's SQLite analyzer counts it.
 
-A statement the dev database shows to change nothing counts no change: an
-`IF EXISTS` drop of a table, an index or a column that is not there, or an
-`IF NOT EXISTS` creation of one that is. The first version starts from the
-empty dev database, so the same holds there. The state a file starts from
-answers only until something changes it, so such a statement is counted where
-an earlier statement of the same file names the object or its table, drops or
-alters a schema, or cascades. It is counted too where the state cannot be
-matched against the qualifier the statement writes, such as `main.` on SQLite
-or another database on MySQL.
+A statement the dev database shows to change nothing counts no change:
+
+- an `IF EXISTS` drop of a table, an index or a column that is not there, or an
+  `IF NOT EXISTS` creation of one that is;
+- an `IF EXISTS` drop of a view or a trigger that is not there, and on
+  PostgreSQL also of a type, a materialized view or a sequence;
+- an enum label added `IF NOT EXISTS` that the type already has.
+
+A drop of a kind the dev database read does not list in full, such as a
+routine, a policy or an extension, is counted. The first version starts from
+the empty dev database, so the same holds there.
+
+The state a file starts from answers only until something changes it, so such a
+statement is counted where an earlier statement of the same file names the
+object or its table, drops or alters a schema, or cascades. It is counted too
+where the state cannot be matched against the qualifier the statement writes,
+such as an attached database on SQLite or another database on MySQL. SQLite's
+`main.` names the schema the run reads, and so does the schema a PostgreSQL dev
+URL's `search_path` reviews.
 
 A directory's first file counts differently when it holds more than ten
 statements. It counts one change per table, or other object that stands on its
 own, that it leaves behind: twelve statements that create the tables `t1` to
 `t10`, then create and drop `tmp`, are 10 schema changes, where the same twelve
 in a later file are 12. An index, a column or a comment in that file counts
-with its table, and an object it creates and drops again counts nothing. This
-is the count the pinned community binary prints, whatever `--latest` selects.
+with its table, and an object it creates and drops again counts nothing, under
+the bare name or one qualified by the schema the run reads: `CREATE TABLE
+public.a` followed by `DROP TABLE a` leaves nothing behind. This is the count
+the pinned community binary prints, whatever `--latest` selects.
 
 The default surface counts a change to every kind of object Ptah models, so a
 view, a trigger, a routine, a sequence, a policy or a privilege counts as one.
 The community binary counts only what it reads off the dev database: tables
 with their columns, constraints, indexes and comments, schemas, and enum types.
-Under `PTAH_ATLAS_STRICT_COMPAT=1` the count is that one. Native
-`ptah migrations lint` prints no count.
+The drop of a type the dev database holds as a composite or a range type counts
+nothing there. Under `PTAH_ATLAS_STRICT_COMPAT=1` the count is that one, with
+one gap: `DROP SEQUENCE … CASCADE` of a sequence a column default draws from
+also removes that default, and the community binary counts the changed table,
+where strict mode counts nothing. Native `ptah migrations lint` prints no count.
 
 ### Renames
 

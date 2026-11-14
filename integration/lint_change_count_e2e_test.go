@@ -290,6 +290,14 @@ var postgresChangeCountRows = []struct {
 		community: "", communityTotal: "0", full: "-- 1 schema change",
 	},
 	{
+		name: "a sequence outside the reviewed schema",
+		files: map[string]string{
+			"1_base.sql": "CREATE SCHEMA app;\n" + postgresCountBase,
+			"2_head.sql": "CREATE SEQUENCE app.s;\n",
+		},
+		community: "", communityTotal: "0", full: "",
+	},
+	{
 		name:      "control: an enum type",
 		files:     map[string]string{"1_base.sql": postgresCountBase, "2_head.sql": "CREATE TYPE mood AS ENUM ('a', 'b');\n"},
 		community: "-- 1 schema change", communityTotal: "1", full: "-- 1 schema change",

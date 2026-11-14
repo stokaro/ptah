@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/lintext"
 	"ptah.run/internal/lintkit"
 )
 
@@ -101,6 +102,27 @@ func (k objectKind) standalone() bool {
 	}
 }
 
+// baselineKind is the kind of [lintext.BaselineObject] the starting state
+// reads an object of this kind as, and false for a kind it does not read on its
+// own: a table, a column and an index have their own rows, and the rest are
+// not read at all.
+func (k objectKind) baselineKind() (lintext.BaselineObjectKind, bool) {
+	switch k {
+	case kindType:
+		return lintext.BaselineType, true
+	case kindView:
+		return lintext.BaselineView, true
+	case kindMaterializedView:
+		return lintext.BaselineMaterializedView, true
+	case kindTrigger:
+		return lintext.BaselineTrigger, true
+	case kindSequence:
+		return lintext.BaselineSequence, true
+	default:
+		return "", false
+	}
+}
+
 // communityInspects reports a kind of object the community binary reads off
 // the dev database, so a change to one counts in its summary. Measured against
 // the pinned community binary v1.3.0, one statement per version after a
@@ -119,6 +141,18 @@ func (k objectKind) communityInspects() bool {
 	default:
 		return false
 	}
+}
+
+// communityCounts reports a change the community binary counts: one to a kind
+// of object it reads off the dev database ([objectKind.communityInspects]),
+// and not the drop of a type the starting state holds as anything but an enum
+// ([dropsNonEnumType]). Of the types, the binary reads only enums, so the drop
+// of a composite or a range type changes nothing it sees; measured on the
+// pinned community binary v1.3.0 against PostgreSQL, `DROP TYPE pair` of a
+// composite type counts no change, where `DROP TYPE mood` of an enum counts
+// one.
+func communityCounts(file *File, change countedChange) bool {
+	return change.on.communityInspects() && !dropsNonEnumType(file, change)
 }
 
 // countedChange is a schema change and what the counts read about the object
@@ -193,9 +227,22 @@ func commentObject(w []string) objectKind {
 // holding only a SELECT.
 const largeFileStatements = 10
 
-// fileSchemaChanges returns the schema changes an up file counts under count,
-// the statements the scope removed entirely, and the statements whose change
-// only the starting state decides.
+// fileChanges is what [fileSchemaChanges] reads off an up file.
+type fileChanges struct {
+	// counted are the schema changes the file counts.
+	counted []SchemaChange
+	// excluded are the statements the scope removed entirely.
+	excluded map[int]bool
+	// decided are the statements whose change only the starting state
+	// decides, which the count asks that state for.
+	decided []int
+	// all are the changes the file's statements make inside the scope, before
+	// the starting state or the count leaves any out.
+	all []countedChange
+}
+
+// fileSchemaChanges returns what an up file changes, and what it counts under
+// count.
 //
 // opensDirectory reports the file whose version comes first in the directory,
 // which starts from an empty schema.
@@ -206,23 +253,23 @@ func fileSchemaChanges(
 	compatibility CompatibilityProfile,
 	count ChangeCount,
 	opensDirectory bool,
-) ([]SchemaChange, map[int]bool, []int) {
-	changes, excluded := extractSchemaChanges(file, dialect, scope)
+) fileChanges {
+	all, excluded := extractSchemaChanges(file, dialect, scope)
 	leaves := count.readsStartingState() && opensDirectory && len(file.Statements) > largeFileStatements
 	var decided []int
 	if !leaves {
-		decided = stateDecidedStatements(file, changes)
+		decided = stateDecidedStatements(file, all, count)
 	}
-	changes = slices.DeleteFunc(changes, func(change countedChange) bool {
+	changes := slices.DeleteFunc(slices.Clone(all), func(change countedChange) bool {
 		return changesNothing(file, change)
 	})
 	if count == ChangeCountAtlasCommunity {
 		changes = slices.DeleteFunc(changes, func(change countedChange) bool {
-			return !change.on.communityInspects()
+			return !communityCounts(file, change)
 		})
 	}
 	if leaves {
-		changes = leftBehind(changes)
+		changes = leftBehind(file, changes)
 	}
 	counted := make([]SchemaChange, 0, len(changes))
 	for _, change := range changes {
@@ -231,7 +278,7 @@ func fileSchemaChanges(
 	if compatibility == CompatibilityProfileAtlas && lintOf(dialect).AtlasRebuildColumnDiff && !leaves {
 		counted = foldAtlasReplacements(file, counted)
 	}
-	return counted, excluded, decided
+	return fileChanges{counted: counted, excluded: excluded, decided: decided, all: all}
 }
 
 // leftBehind returns, for a file that starts from an empty schema, one change
@@ -248,7 +295,13 @@ func fileSchemaChanges(
 // SEQUENCE and a CREATE FUNCTION say 10 as well, kinds
 // [objectKind.communityInspects] leaves out, and a CREATE TYPE ... AS ENUM on
 // PostgreSQL says 11.
-func leftBehind(changes []countedChange) []countedChange {
+//
+// A qualifier naming the schema an unqualified name resolves to in the run
+// ([namesRunSchema]) names the same object as no qualifier: `CREATE TABLE
+// public.a` and a later `DROP TABLE a` leave nothing behind, and the pinned
+// binary counts nothing for the pair on PostgreSQL under search_path=public and
+// on SQLite under main.
+func leftBehind(file *File, changes []countedChange) []countedChange {
 	type identity struct {
 		on   objectKind
 		name string
@@ -259,7 +312,7 @@ func leftBehind(changes []countedChange) []countedChange {
 		if !change.on.standalone() {
 			continue
 		}
-		id := identity{on: change.on, name: lintkit.NormalizeReference(change.Object)}
+		id := identity{on: change.on, name: runReference(file, lintkit.NormalizeReference(change.Object))}
 		if id.name == "" {
 			// An object the parser gave no name is its own object.
 			id.name = "\x00" + strconv.Itoa(change.StatementIndex)

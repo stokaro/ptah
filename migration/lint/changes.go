@@ -152,9 +152,13 @@ func statementSchemaChanges(file *File, stmt Statement, dialect string, scope sc
 	list, err := parseStatement(file, stmt.SQL, dialect)
 	if err != nil || list == nil {
 		// A statement Ptah's parser cannot model contributes no structural
-		// change here. A dev-database replay runs it, and a run with no replay
-		// reports it under AC102, so it is only excluded from the semantic
-		// change count.
+		// change here, unless its words alone say which change it makes
+		// ([wordSchemaChange]). A dev-database replay runs it, and a run with
+		// no replay reports it under AC102, so it is only excluded from the
+		// semantic change count.
+		if counted, ok := wordSchemaChange(file, stmt); ok {
+			return scope.keepChange(counted, counted.Object)
+		}
 		return nil, false
 	}
 	var changes []countedChange
@@ -265,7 +269,9 @@ func nodeSchemaChanges(file *File, stmt Statement, node ast.Node, scope schemaSc
 		return scope.keepChange(change(SchemaChangeAdd, object, on), nodeScopeReference(node, object))
 	}
 	if object, on, ok := dropNodeObject(node); ok {
-		return scope.keepChange(change(SchemaChangeDrop, object, on), nodeScopeReference(node, object))
+		counted := change(SchemaChangeDrop, object, on)
+		counted.guarded, counted.parent = dropNodeGuard(node)
+		return scope.keepChange(counted, nodeScopeReference(node, object))
 	}
 	if object, on, ok := modifyNodeObject(node); ok {
 		return scope.keepChange(change(SchemaChangeModify, object, on), nodeScopeReference(node, object))
@@ -364,7 +370,7 @@ func addNodeObject(node ast.Node) (object string, on objectKind, ok bool) {
 	case *ast.CreateTypeNode:
 		return n.Name, kindType, true
 	case *ast.CreateSequenceNode:
-		return n.Name, kindSequence, true
+		return qualifiedName(n.Schema, n.Name), kindSequence, true
 	case *ast.CreateDatabaseNode:
 		return n.Name, kindSchema, true
 	case *ast.CreateViewNode:
@@ -405,7 +411,7 @@ func dropNodeObject(node ast.Node) (object string, on objectKind, ok bool) {
 	case *ast.DropTypeNode:
 		return n.Name, kindType, true
 	case *ast.DropSequenceNode:
-		return n.Name, kindSequence, true
+		return qualifiedName(n.Schema, n.Name), kindSequence, true
 	case *ast.DropViewNode:
 		return n.Name, kindView, true
 	case *ast.DropMaterializedViewNode:
@@ -425,6 +431,63 @@ func dropNodeObject(node ast.Node) (object string, on objectKind, ok bool) {
 	}
 }
 
+// dropNodeGuard reports a drop node written IF EXISTS, which the engine skips
+// when the object is absent, and the folded reference of the table a trigger is
+// dropped from where the statement names one, as PostgreSQL's DROP TRIGGER ...
+// ON does.
+func dropNodeGuard(node ast.Node) (guarded bool, parent string) {
+	switch n := node.(type) {
+	case *ast.DropTypeNode:
+		return n.IfExists, ""
+	case *ast.DropSequenceNode:
+		return n.IfExists, ""
+	case *ast.DropViewNode:
+		return n.IfExists, ""
+	case *ast.DropMaterializedViewNode:
+		return n.IfExists, ""
+	case *ast.DropTriggerNode:
+		return n.IfExists, lintkit.NormalizeReference(n.Table)
+	case *ast.DropFunctionNode:
+		return n.IfExists, ""
+	default:
+		return false, ""
+	}
+}
+
+// qualifiedName joins the schema a node keeps apart from its name back onto
+// the name, so a sequence is named the way every other object is: an object
+// measured by its bare name would be in every schema's scope at once.
+func qualifiedName(schema, name string) string {
+	if schema == "" {
+		return name
+	}
+	return schema + "." + name
+}
+
+// wordSchemaChange returns the change a statement the parser cannot model
+// makes, where the statement's words alone say which: an ALTER TYPE ... ADD
+// VALUE or RENAME VALUE of a PostgreSQL enum ([lintkit.AlterEnumValue]). The
+// parser reads no ALTER TYPE, and the community binary counts each of the two
+// as one change to the type, which its dev database reads as an enum.
+func wordSchemaChange(file *File, stmt Statement) (countedChange, bool) {
+	value, ok := lintkit.AlterEnumValue(stmt.Words, stmt.sourceWords)
+	if !ok {
+		return countedChange{}, false
+	}
+	return countedChange{
+		SchemaChange: SchemaChange{
+			Version:        file.Version,
+			File:           file.Path,
+			StatementIndex: stmt.Index,
+			Line:           stmt.Line,
+			Kind:           SchemaChangeModify,
+			Object:         value.Type.Name,
+		},
+		on:      kindType,
+		guarded: value.IfNotExists,
+	}, true
+}
+
 // modifyNodeObject reports the object an in-place ALTER node mutates, and the
 // kind of object the change lands on. COMMENT ON is handled by the caller,
 // which reads the kind of its target off the statement.
@@ -433,7 +496,7 @@ func modifyNodeObject(node ast.Node) (object string, on objectKind, ok bool) {
 	case *ast.AlterTypeNode:
 		return n.Name, kindType, true
 	case *ast.AlterSequenceNode:
-		return n.Name, kindSequence, true
+		return qualifiedName(n.Schema, n.Name), kindSequence, true
 	case *ast.RefreshMaterializedViewNode:
 		return n.Name, kindMaterializedView, true
 	case *ast.AlterRoleNode:

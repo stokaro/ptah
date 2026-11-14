@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strings"
 
+	"ptah.run/core/lintext"
 	"ptah.run/internal/lintkit"
 )
 
@@ -56,10 +57,12 @@ func withoutAbsentTables(file *File, index int, tables []lintkit.TableReference)
 // statement is written IF EXISTS or IF NOT EXISTS and the starting state shows
 // the engine skips it: the drop of a table [skipsAbsentTable] reports, the
 // creation a CREATE TABLE IF NOT EXISTS skips because the starting state holds
-// the table ([skipsPresentTable]), and the same two answers for an index and
-// for a column ([skipsIndex], [skipsColumn]). The community binary counts the
-// changes the replay makes to the dev database, and a skipped statement makes
-// none.
+// the table ([skipsPresentTable]), the same two answers for an index and for a
+// column ([skipsIndex], [skipsColumn]), the drop of a type, a view, a
+// materialized view, a trigger or a sequence that is not there
+// ([skipsAbsentObject]), and an enum label added IF NOT EXISTS that the type
+// already has ([skipsEnumLabel]). The community binary counts the changes the
+// replay makes to the dev database, and a skipped statement makes none.
 func changesNothing(file *File, change countedChange) bool {
 	index, ref := change.StatementIndex, lintkit.NormalizeReference(change.Object)
 	switch change.on {
@@ -69,35 +72,142 @@ func changesNothing(file *File, change countedChange) bool {
 		return skipsIndex(file, change, ref)
 	case kindColumn:
 		return skipsColumn(file, change, ref)
+	case kindType:
+		return skipsAbsentObject(file, change, ref) || skipsEnumLabel(file, change, ref)
+	case kindView, kindMaterializedView, kindTrigger, kindSequence:
+		return skipsAbsentObject(file, change, ref)
 	default:
 		return false
 	}
 }
 
-// stateDecidedStatements are the statements of an up file whose change only
-// the starting state decides: an IF EXISTS drop or an IF NOT EXISTS creation
-// of a table, an index or a column that no earlier statement can have
-// touched ([unseenBefore]). A count that skips what such a statement skips
+// stateDecidedStatements are the statements of an up file holding a change
+// only the starting state decides ([stateMayDecide]), and for the community
+// count also a type drop the state may show the binary does not see
+// ([typeDropStateDecides]). A count that skips what such a statement skips
 // asks for that state.
-func stateDecidedStatements(file *File, changes []countedChange) []int {
+func stateDecidedStatements(file *File, changes []countedChange, count ChangeCount) []int {
 	var decided []int
 	for _, change := range changes {
-		index, ref := change.StatementIndex, lintkit.NormalizeReference(change.Object)
-		w := file.Statements[index].Words
-		var decides bool
-		switch change.on {
-		case kindTable:
-			decides = mayBeAbsent(file, index, ref) ||
-				lintkit.CreatesTableIfNotExists(w) && lintkit.CreatedTableRef(w) == ref && unseenBefore(file, index, ref)
-		case kindIndex, kindColumn:
-			decides = change.guarded && unseenWithTable(file, index, ref, change.parent)
-		default:
-		}
-		if decides {
-			decided = append(decided, index)
+		if stateMayDecide(file, change) || count == ChangeCountAtlasCommunity && typeDropStateDecides(file, change) {
+			decided = append(decided, change.StatementIndex)
 		}
 	}
 	return slices.Compact(decided)
+}
+
+// typeDropStateDecides reports the drop of a type, written IF EXISTS or not,
+// that the starting state can show to be an enum or not: the dialect's read
+// lists types in full and nothing before it in the file names the type
+// ([unseenBefore]). [dropsNonEnumType] answers it.
+func typeDropStateDecides(file *File, change countedChange) bool {
+	return change.on == kindType && change.Kind == SchemaChangeDrop &&
+		listsObjects(file.dialect, lintext.BaselineType) &&
+		unseenBefore(file, change.StatementIndex, lintkit.NormalizeReference(change.Object))
+}
+
+// dropsNonEnumType reports a type drop [typeDropStateDecides] lets the
+// starting state decide, of a type the state holds as anything but an enum: a
+// composite or a range type.
+func dropsNonEnumType(file *File, change countedChange) bool {
+	if !typeDropStateDecides(file, change) {
+		return false
+	}
+	lookup, ok := stateRef(file, lintkit.NormalizeReference(change.Object))
+	if !ok {
+		return false
+	}
+	typed, held := file.baseline.Object(lintext.BaselineType, lookup)
+	return held && !typed.Enum
+}
+
+// stateMayDecide reports a change whose making only the starting state
+// decides, which is the set [changesNothing] can answer for: an IF EXISTS drop
+// or an IF NOT EXISTS creation of a table, an index or a column, an IF EXISTS
+// drop of an object of a kind the dialect's read lists in full, and an enum
+// label added IF NOT EXISTS, each with nothing before it in the file that can
+// have touched the object ([unseenBefore]).
+func stateMayDecide(file *File, change countedChange) bool {
+	index, ref := change.StatementIndex, lintkit.NormalizeReference(change.Object)
+	w := file.Statements[index].Words
+	switch change.on {
+	case kindTable:
+		return mayBeAbsent(file, index, ref) ||
+			lintkit.CreatesTableIfNotExists(w) && lintkit.CreatedTableRef(w) == ref && unseenBefore(file, index, ref)
+	case kindIndex, kindColumn:
+		return change.guarded && unseenWithTable(file, index, ref, change.parent)
+	default:
+		kind, ok := change.on.baselineKind()
+		if !ok || !change.guarded || !listsObjects(file.dialect, kind) {
+			return false
+		}
+		switch change.Kind {
+		case SchemaChangeDrop:
+			return unseenWithTable(file, index, ref, change.parent)
+		case SchemaChangeModify:
+			return change.on == kindType && unseenBefore(file, index, ref)
+		default:
+			return false
+		}
+	}
+}
+
+// skipsStatement reports a statement of an up file that makes a change inside
+// the scope and whose every such change the starting state shows the engine
+// skips ([changesNothing]), so the statement changes nothing at all.
+func skipsStatement(file *File, index int) bool {
+	skipped := false
+	for _, change := range file.changed {
+		if change.StatementIndex != index {
+			continue
+		}
+		if !changesNothing(file, change) {
+			return false
+		}
+		skipped = true
+	}
+	return skipped
+}
+
+// skipsAbsentObject reports an IF EXISTS drop of a type, a view, a
+// materialized view, a trigger or a sequence that the engine skips, with
+// nothing before it in the file that names the object or the table a trigger is
+// dropped from ([unseenWithTable]): the starting state lists objects of that
+// kind in full and holds none the reference names. A trigger dropped ON a
+// table, as PostgreSQL writes it, is looked for on that table.
+func skipsAbsentObject(file *File, change countedChange, ref string) bool {
+	kind, ok := change.on.baselineKind()
+	if !ok || change.Kind != SchemaChangeDrop || !change.guarded ||
+		!unseenWithTable(file, change.StatementIndex, ref, change.parent) {
+		return false
+	}
+	if change.parent == "" {
+		lookup, ok := stateRef(file, ref)
+		return ok && file.baseline.LacksObject(kind, lookup, "")
+	}
+	table, ok := stateRef(file, change.parent)
+	return ok && file.baseline.LacksObject(kind, ref, table)
+}
+
+// skipsEnumLabel reports an ALTER TYPE ... ADD VALUE IF NOT EXISTS that the
+// engine skips, with nothing before it in the file that names the type
+// ([unseenBefore]): the starting state holds the type as an enum that already
+// has the label.
+func skipsEnumLabel(file *File, change countedChange, ref string) bool {
+	if change.Kind != SchemaChangeModify || !change.guarded || !unseenBefore(file, change.StatementIndex, ref) {
+		return false
+	}
+	stmt := &file.Statements[change.StatementIndex]
+	value, ok := lintkit.AlterEnumValue(stmt.Words, stmt.sourceWords)
+	if !ok || !value.Adds {
+		return false
+	}
+	lookup, ok := stateRef(file, ref)
+	if !ok {
+		return false
+	}
+	labels, isEnum := file.baseline.EnumValues(lookup)
+	return isEnum && slices.Contains(labels, value.Label)
 }
 
 // skipsIndex reports an index change written IF EXISTS or IF NOT EXISTS that
@@ -172,18 +282,41 @@ func unseenWithTable(file *File, index int, ref, table string) bool {
 // reference, or one against a state whose rows name their schema, is looked up
 // as it is. A state that names no schema was read from one schema, or from an
 // engine without them, so a qualifier can be dropped only where it names the
-// schema the run reviews: any other may name a schema the state never read, a
-// MySQL database, or a file attached to SQLite, and the answer there would be
-// a guess.
+// schema an unqualified name resolves to ([namesRunSchema]): any other may
+// name a schema the state never read, a MySQL database, or a file attached to
+// SQLite, and the answer there would be a guess.
 func stateRef(file *File, ref string) (string, bool) {
 	dot := strings.LastIndex(ref, ".")
 	if dot < 0 || file.baseline.NamesSchemas() {
 		return ref, true
 	}
-	if !file.reviewed.unrestricted() && file.reviewed.allowsSchema(lastComponent(ref[:dot])) {
+	if namesRunSchema(file, lastComponent(ref[:dot])) {
 		return ref[dot+1:], true
 	}
 	return "", false
+}
+
+// namesRunSchema reports whether qualifier names the schema an unqualified
+// name resolves to in the run: the schema the run reviews, or, where the run
+// reviews no one schema, the one namespace of an engine that has no other
+// ([soleSchema]), SQLite's main. A run that reviews every schema of an engine
+// with several cannot say which of them an unqualified name lands in. SQLite's
+// temp is a namespace of its own, which this does not name.
+func namesRunSchema(file *File, qualifier string) bool {
+	if !file.reviewed.unrestricted() {
+		return file.reviewed.allowsSchema(qualifier)
+	}
+	sole := soleSchema(file.dialect)
+	return sole != "" && strings.EqualFold(qualifier, sole)
+}
+
+// runReference is the folded reference ref without a qualifier that
+// [namesRunSchema] reports, which names the same object as no qualifier.
+func runReference(file *File, ref string) string {
+	if dot := strings.LastIndex(ref, "."); dot >= 0 && namesRunSchema(file, lastComponent(ref[:dot])) {
+		return ref[dot+1:]
+	}
+	return ref
 }
 
 // skipsPresentTable reports whether the statement at index is a CREATE TABLE
@@ -350,9 +483,10 @@ func tableDropBaselineSubjects(file *File) []int {
 
 // newColumnDrops returns, for each ALTER TABLE statement of an up file that
 // drops columns, the folded names of those that hold no value from before the
-// file ran: a column of a table the file created, and a column an earlier
-// ALTER TABLE ... ADD of the file added. No deployed version of the
-// application ever read either.
+// file ran: a column of a table the file created, a column an earlier ALTER
+// TABLE ... ADD of the file added, and a column a DROP COLUMN IF EXISTS drops
+// that the starting state shows the table does not have ([skipsColumn]). No
+// deployed version of the application ever read any of them.
 //
 // A column added with IF NOT EXISTS may have been there already, so it is not
 // one. A statement that renames, a RENAME or a MySQL CHANGE clause, may give a
@@ -384,9 +518,10 @@ func newColumnDrops(file *File) map[int]map[string]bool {
 		if owner == "" {
 			continue
 		}
+		absent := absentColumnDrops(file, i)
 		for _, subject := range droppedColumnSubjects(stmt.Words, stmt.sourceWords) {
 			column := lintkit.NormalizeIdent(subject.Name)
-			if lintkit.RefersToCreated(created, owner) || lintkit.RefersToCreated(added[column], owner) {
+			if absent[column] || lintkit.RefersToCreated(created, owner) || lintkit.RefersToCreated(added[column], owner) {
 				if drops[i] == nil {
 					drops[i] = make(map[string]bool)
 				}
@@ -402,6 +537,41 @@ func newColumnDrops(file *File) map[int]map[string]bool {
 		}
 	}
 	return drops
+}
+
+// absentColumnDrops returns the folded names of the columns the ALTER TABLE at
+// index drops IF EXISTS that the starting state shows the table does not have
+// ([skipsColumn]).
+func absentColumnDrops(file *File, index int) map[string]bool {
+	absent := make(map[string]bool)
+	for _, change := range file.changed {
+		if change.StatementIndex == index && change.on == kindColumn && change.Kind == SchemaChangeDrop &&
+			changesNothing(file, change) {
+			absent[lintkit.NormalizeReference(change.Object)] = true
+		}
+	}
+	return absent
+}
+
+// guardedColumnDrops are the ALTER TABLE statements of an up file holding a
+// DROP COLUMN IF EXISTS whose column only the starting state can show to be
+// absent ([stateMayDecide]).
+func guardedColumnDrops(file *File) []int {
+	var subjects []int
+	for _, change := range file.changed {
+		if change.on == kindColumn && change.Kind == SchemaChangeDrop && stateMayDecide(file, change) {
+			subjects = append(subjects, change.StatementIndex)
+		}
+	}
+	return slices.Compact(subjects)
+}
+
+// columnDropBaselineSubjects are the statements DS102 and BC104 read the
+// starting state for: the CREATE TABLE IF NOT EXISTS statements, whose table it
+// may show to be new, and the DROP COLUMN IF EXISTS statements, whose column it
+// may show to be absent.
+func columnDropBaselineSubjects(file *File) []int {
+	return unionSubjects(file, ifNotExistsCreates, guardedColumnDrops)
 }
 
 // renames reports a statement that may move a name: a RENAME, or a MySQL

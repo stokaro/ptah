@@ -115,7 +115,7 @@ func (r Rules) CheckMigrations(ctx context.Context, request lintext.CheckRequest
 	}
 	var states map[int64]State
 	if request.Baseline != nil {
-		states = NewStates(*request.Baseline, nil)
+		states = NewStates(*request.Baseline)
 	}
 	files := make([]File, len(request.Files))
 	for index := range request.Files {

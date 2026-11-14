@@ -253,6 +253,11 @@ type File struct {
 	// starting state decides, which a count that reads that state asks for
 	// ([ChangeCount]).
 	stateDecided []int
+	// changed holds every change the statements of an up file make inside the
+	// scope, before the starting state or the count leaves any out, for the
+	// rules that pass over a statement the state shows to change nothing
+	// ([skipsStatement]).
+	changed []countedChange
 	// reviewed is the schema the run reviews, which tells the predicates that
 	// read the starting state which qualifier names the schema it was read
 	// from ([stateRef]).
@@ -423,6 +428,7 @@ func cloneFile(file File) File {
 	file.Changes = slices.Clone(file.Changes)
 	file.scopeExcluded = maps.Clone(file.scopeExcluded)
 	file.stateDecided = slices.Clone(file.stateDecided)
+	file.changed = slices.Clone(file.changed)
 	file.contract = slices.Clone(file.contract)
 	file.judged = slices.Clone(file.judged)
 	statements := file.Statements
@@ -542,7 +548,9 @@ func AnalyzeFS(ctx context.Context, runtime Runtime, fsys fs.FS, opts Options) (
 		Columns:     opts.Baseline,
 		Indexes:     opts.BaselineIndexes,
 		Hypertables: opts.BaselineHypertables,
-	}, opts.BaselineRead)
+		Objects:     opts.BaselineObjects,
+		Reads:       opts.BaselineRead,
+	})
 	dependents := newBaselineDependentIndex(opts.BaselineDependents)
 	registered := registeredCodes(rules)
 	// Validated above, so a second compile cannot fail here.
@@ -976,8 +984,9 @@ func attachStatements(
 		next++
 		file.reviewed = scope
 		if file.IsUp {
-			file.Changes, file.scopeExcluded, file.stateDecided = fileSchemaChanges(
-				file, dialect, scope, compatibility, opts.ChangeCount, i == opening)
+			changes := fileSchemaChanges(file, dialect, scope, compatibility, opts.ChangeCount, i == opening)
+			file.Changes, file.scopeExcluded = changes.counted, changes.excluded
+			file.stateDecided, file.changed = changes.decided, changes.all
 		}
 	}
 }

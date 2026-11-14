@@ -1,10 +1,13 @@
 package builtindialects_test
 
 import (
+	"reflect"
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/lintext"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/internal/builtindialects"
 )
@@ -18,12 +21,15 @@ func TestLint_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 	want := map[string]struct {
 		analyzed, notNull, byType, rebuilds, online bool
 		scanner, dynamicSQL, types, atlas           string
+		listed                                      []string
 	}{
-		"postgres":    {analyzed: true, scanner: "dollar", dynamicSQL: "execute", online: true, types: "pgtype", atlas: "PG"},
-		"mysql":       {analyzed: true, scanner: "hash", dynamicSQL: "prepare-from", notNull: true, online: true, types: "mytype", atlas: "MY"},
+		"postgres": {analyzed: true, scanner: "dollar", dynamicSQL: "execute", online: true, types: "pgtype", atlas: "PG",
+			listed: []string{"type", "view", "materialized_view", "trigger", "sequence"}},
+		"mysql": {analyzed: true, scanner: "hash", dynamicSQL: "prepare-from", notNull: true, online: true, types: "mytype", atlas: "MY",
+			listed: []string{"view", "trigger"}},
 		"mariadb":     {analyzed: true, scanner: "hash", dynamicSQL: "prepare-from", notNull: true, online: true, types: "mytype", atlas: "MY"},
 		"clickhouse":  {analyzed: true, notNull: true, byType: true},
-		"sqlite":      {analyzed: true, rebuilds: true},
+		"sqlite":      {analyzed: true, rebuilds: true, listed: []string{"view", "trigger"}},
 		"sqlserver":   {analyzed: true, dynamicSQL: "exec", notNull: true, types: "restated"},
 		"cockroachdb": {analyzed: true},
 		"yugabytedb":  {analyzed: true},
@@ -48,6 +54,27 @@ func TestLint_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 			c.Assert(lint.OnlineMeasured, qt.Equals, row.online)
 			c.Assert(lint.TypeRestatements, qt.Equals, row.types)
 			c.Assert(lint.AtlasAnalyzer, qt.Equals, row.atlas)
+			c.Assert(lint.ListedObjects, qt.DeepEquals, row.listed)
+		})
+	}
+}
+
+// Every kind of object a descriptor says its read lists is one a lint
+// baseline names, once: lint looks a kind up by that name, so a misspelled one
+// would list nothing and read as a decision not to.
+func TestLint_ListedObjectsAreBaselineKinds(t *testing.T) {
+	var kinds []string
+	for _, kind := range lintext.BaselineObjectKinds() {
+		kinds = append(kinds, string(kind))
+	}
+	for _, dialect := range builtindialects.Descriptors() {
+		t.Run(dialect.Name, func(t *testing.T) {
+			c := qt.New(t)
+			listed := dialect.Lint.ListedObjects
+			for _, kind := range listed {
+				c.Assert(kinds, qt.Contains, kind)
+			}
+			c.Assert(slices.Compact(slices.Sorted(slices.Values(listed))), qt.HasLen, len(listed))
 		})
 	}
 }
@@ -58,7 +85,7 @@ func TestLint_AnUnanalyzedDialectStatesNothing(t *testing.T) {
 	for _, dialect := range builtindialects.Descriptors() {
 		t.Run(dialect.Name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(dialect.Lint.Analyzed || dialect.Lint == (descriptor.Lint{}), qt.IsTrue)
+			c.Assert(dialect.Lint.Analyzed || reflect.DeepEqual(dialect.Lint, descriptor.Lint{}), qt.IsTrue)
 		})
 	}
 }

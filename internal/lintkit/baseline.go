@@ -33,7 +33,17 @@ type State struct {
 	// bare and qualified by its schema, for the lookups that name an index
 	// without its table.
 	byIndexName map[string][]lintext.BaselineIndex
-	// schemaless reports that no column in this state names a schema. A reader
+	// byObject holds every object that stands apart from a table, under its
+	// kind and the spellings of its name, and a trigger under its table's
+	// spellings and its name as well.
+	byObject map[objectKey][]lintext.BaselineObject
+	// listed are the kinds of object the read lists in full, so an object of
+	// one of them the state does not hold is absent.
+	listed map[lintext.BaselineObjectKind]bool
+	// schemas holds every schema a row of the state names, in the linter's
+	// normalized form.
+	schemas map[string]bool
+	// schemaless reports that no row in this state names a schema. A reader
 	// scoped to one schema does not repeat that schema's name on every table, so
 	// a migration writing `ALTER TABLE public.users` has a qualifier the state
 	// cannot match literally. Nothing in the state can contradict that qualifier
@@ -42,21 +52,30 @@ type State struct {
 	schemaless bool
 }
 
-// NewStates indexes a baseline's columns, indexes and hypertables by the
-// version whose starting state each describes. A row no lookup can use -- a
-// column or an index without a table or a name, a hypertable without a
-// table -- is left out, so it cannot make a reference look ambiguous. The
-// dependents are not indexed here.
+// objectKey is where [State] files a [lintext.BaselineObject]: its kind and
+// one spelling of its name, or of its table and its name for a trigger.
+type objectKey struct {
+	kind lintext.BaselineObjectKind
+	ref  string
+}
+
+// NewStates indexes a baseline's columns, indexes, hypertables and objects by
+// the version whose starting state each describes. A row no lookup can use --
+// a column or an index without a table or a name, a hypertable without a
+// table, an object without a kind or a name -- is left out, so it cannot make
+// a reference look ambiguous. The dependents are not indexed here.
 //
-// read names the versions whose state the caller read. A version it names
-// that has no row is a state that was read and holds nothing: the version
-// starts from an empty schema. A version with rows was read whether or not
-// read names it. Any other version has the zero State.
-func NewStates(baseline lintext.Baseline, read []int64) map[int64]State {
+// A version [lintext.Baseline.Reads] lists that has no row is a state that was
+// read and holds nothing: the version starts from an empty schema. A version
+// with rows was read whether or not it is listed, though it lists no kind of
+// object in full unless its read says so. Any other version has the zero
+// State.
+func NewStates(baseline lintext.Baseline) map[int64]State {
 	columns := normalizeColumns(baseline.Columns)
 	indexes := normalizeIndexes(baseline.Indexes)
 	hypertables := normalizeHypertables(baseline.Hypertables)
-	if len(columns) == 0 && len(indexes) == 0 && len(hypertables) == 0 && len(read) == 0 {
+	objects := normalizeObjects(baseline.Objects)
+	if len(columns) == 0 && len(indexes) == 0 && len(hypertables) == 0 && len(objects) == 0 && len(baseline.Reads) == 0 {
 		return nil
 	}
 	index := make(map[int64]State)
@@ -70,19 +89,32 @@ func NewStates(baseline lintext.Baseline, read []int64) map[int64]State {
 				byTableIndexes: make(map[string][]lintext.BaselineIndex),
 				hypertables:    make(map[string][]lintext.BaselineHypertable),
 				byIndexName:    make(map[string][]lintext.BaselineIndex),
+				byObject:       make(map[objectKey][]lintext.BaselineObject),
+				listed:         make(map[lintext.BaselineObjectKind]bool),
+				schemas:        make(map[string]bool),
 				schemaless:     true,
 			}
 		}
 		return state
 	}
-	for _, version := range read {
-		index[version] = stateOf(version)
+	// nameSchema records the schema a row names, which is what the state
+	// takes a qualified reference to that schema as read from.
+	nameSchema := func(state *State, schema string) {
+		if schema != "" {
+			state.schemaless = false
+			state.schemas[NormalizeIdent(schema)] = true
+		}
+	}
+	for _, read := range baseline.Reads {
+		state := stateOf(read.Version)
+		for _, kind := range read.Listed {
+			state.listed[kind] = true
+		}
+		index[read.Version] = state
 	}
 	for _, column := range columns {
 		state := stateOf(column.Version)
-		if column.Schema != "" {
-			state.schemaless = false
-		}
+		nameSchema(&state, column.Schema)
 		for _, key := range baselineKeys(column) {
 			state.byRef[key] = append(state.byRef[key], column)
 		}
@@ -93,9 +125,7 @@ func NewStates(baseline lintext.Baseline, read []int64) map[int64]State {
 	}
 	for _, idx := range indexes {
 		state := stateOf(idx.Version)
-		if idx.Schema != "" {
-			state.schemaless = false
-		}
+		nameSchema(&state, idx.Schema)
 		for _, key := range baselineTableKeys(idx.Schema, idx.Table) {
 			state.byTableIndexes[key] = append(state.byTableIndexes[key], idx)
 		}
@@ -106,15 +136,39 @@ func NewStates(baseline lintext.Baseline, read []int64) map[int64]State {
 	}
 	for _, hypertable := range hypertables {
 		state := stateOf(hypertable.Version)
-		if hypertable.Schema != "" {
-			state.schemaless = false
-		}
+		nameSchema(&state, hypertable.Schema)
 		for _, key := range baselineTableKeys(hypertable.Schema, hypertable.Table) {
 			state.hypertables[key] = append(state.hypertables[key], hypertable)
 		}
 		index[hypertable.Version] = state
 	}
+	for _, object := range objects {
+		state := stateOf(object.Version)
+		nameSchema(&state, object.Schema)
+		for _, key := range objectKeys(object) {
+			state.byObject[key] = append(state.byObject[key], object)
+		}
+		index[object.Version] = state
+	}
 	return index
+}
+
+// objectKeys are the places [State] files one object under: the spellings of
+// its name, and for a trigger on a table the spellings of that table joined to
+// its name, since PostgreSQL names a trigger only within its table.
+func objectKeys(object lintext.BaselineObject) []objectKey {
+	var keys []objectKey
+	for _, ref := range baselineTableKeys(object.Schema, object.Name) {
+		keys = append(keys, objectKey{kind: object.Kind, ref: ref})
+	}
+	if object.Table == "" {
+		return keys
+	}
+	name := NormalizeIdent(object.Name)
+	for _, table := range baselineTableKeys(object.Schema, object.Table) {
+		keys = append(keys, objectKey{kind: object.Kind, ref: table + "\x00" + name})
+	}
+	return keys
 }
 
 // baselineKeys are the reference spellings that resolve to one column.
@@ -341,7 +395,7 @@ func SubsetOf(inner, outer []string) bool {
 // The state reads tables through their columns, so a table with no column is
 // not one it holds.
 func (b State) LacksTable(tableRef string) bool {
-	return lacks(b, b.byTable, tableRef)
+	return lacks(b, b.byTable, tableRef, tableRef)
 }
 
 // LacksIndex reports whether the state was read and holds no index the
@@ -350,31 +404,86 @@ func (b State) LacksTable(tableRef string) bool {
 // qualified by a schema or not, in the linter's normalized form. It answers
 // false wherever the state cannot say, as [State.LacksTable] does.
 func (b State) LacksIndex(indexRef string) bool {
-	return lacks(b, b.byIndexName, indexRef)
+	return lacks(b, b.byIndexName, indexRef, indexRef)
 }
 
-// lacks is the answer [State.LacksTable] and [State.LacksIndex] share over
-// the entries of one kind, keyed by the spellings of their names.
-func lacks[V any](b State, byName map[string][]V, ref string) bool {
-	if b.Unread() || ref == "" || len(byName[ref]) > 0 {
+// LacksObject reports whether the state was read, its read lists objects of
+// kind in full, and it holds no such object the reference ref can name, so a
+// statement that drops the object only if it exists drops nothing. ref is the
+// object's name in the linter's normalized form. tableRef is the table a
+// trigger is named within, as PostgreSQL writes `DROP TRIGGER name ON table`,
+// and empty where the object is named on its own; a qualifier belongs to
+// tableRef then, and to ref otherwise. It answers false wherever the state
+// cannot say, as [State.LacksTable] does, and for every kind the read does
+// not list in full.
+func (b State) LacksObject(kind lintext.BaselineObjectKind, ref, tableRef string) bool {
+	if !b.listed[kind] || ref == "" {
 		return false
 	}
-	dot := strings.LastIndex(ref, ".")
+	if tableRef == "" {
+		return lacks(b, b.byObject, objectKey{kind: kind, ref: ref}, ref)
+	}
+	return lacks(b, b.byObject, objectKey{kind: kind, ref: tableRef + "\x00" + ref}, tableRef)
+}
+
+// Object returns the object of kind that the reference ref names, resolving
+// the reference the way [State.TableColumns] does and failing closed on the
+// same ambiguity. The object is a copy the caller may change. It reports
+// false for an object the state does not hold, which shows the object absent
+// only where [State.LacksObject] says so. A trigger is found by its name
+// alone.
+func (b State) Object(kind lintext.BaselineObjectKind, ref string) (lintext.BaselineObject, bool) {
+	if ref == "" {
+		return lintext.BaselineObject{}, false
+	}
+	object, ok := b.exactObject(kind, ref)
+	if !ok && b.schemaless {
+		if dot := strings.LastIndex(ref, "."); dot >= 0 {
+			object, ok = b.exactObject(kind, ref[dot+1:])
+		}
+	}
+	object.Values = slices.Clone(object.Values)
+	return object, ok
+}
+
+// EnumValues returns the labels of the enum type typeRef names, in their
+// declared order, resolving the reference as [State.Object] does. It reports
+// false for a type the state does not hold as an enum.
+func (b State) EnumValues(typeRef string) ([]string, bool) {
+	typed, ok := b.Object(lintext.BaselineType, typeRef)
+	if !ok || !typed.Enum {
+		return nil, false
+	}
+	return typed.Values, true
+}
+
+// exactObject is the one object of kind indexed under exactly ref.
+func (b State) exactObject(kind lintext.BaselineObjectKind, ref string) (lintext.BaselineObject, bool) {
+	matches := b.byObject[objectKey{kind: kind, ref: ref}]
+	if len(matches) != 1 {
+		return lintext.BaselineObject{}, false
+	}
+	return matches[0], true
+}
+
+// lacks is the answer [State.LacksTable], [State.LacksIndex] and
+// [State.LacksObject] share over the entries of one kind, filed under key.
+// qualified is the reference whose schema qualifier, if any, decides whether
+// the state read the schema the entry would belong to.
+func lacks[K comparable, V any](b State, byName map[K][]V, key K, qualified string) bool {
+	if b.Unread() || qualified == "" || len(byName[key]) > 0 {
+		return false
+	}
+	dot := strings.LastIndex(qualified, ".")
 	if dot < 0 {
 		return true
 	}
 	if b.schemaless {
 		return false
 	}
-	// The schema is held when any table of the state carries it: a table is
-	// what every row of the state hangs off.
-	prefix := ref[:dot+1]
-	for key := range b.byTable {
-		if strings.HasPrefix(key, prefix) {
-			return true
-		}
-	}
-	return false
+	// The schema is held when any row of the state names it: the reader that
+	// produced the row read every object of that schema.
+	return b.schemas[qualified[:dot]]
 }
 
 // NamesSchemas reports a state that was read and whose rows name the schema
@@ -462,6 +571,19 @@ func normalizeIndexes(indexes []lintext.BaselineIndex) []lintext.BaselineIndex {
 			continue
 		}
 		kept = append(kept, idx)
+	}
+	return kept
+}
+
+// normalizeObjects drops the entries no lookup can use, for the same reason
+// [normalizeColumns] does.
+func normalizeObjects(objects []lintext.BaselineObject) []lintext.BaselineObject {
+	var kept []lintext.BaselineObject
+	for _, object := range objects {
+		if object.Kind == "" || strings.TrimSpace(object.Name) == "" {
+			continue
+		}
+		kept = append(kept, object)
 	}
 	return kept
 }

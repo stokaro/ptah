@@ -171,22 +171,24 @@ const atlasGapDroppedTableAdvice = "application versions already deployed agains
 // deployed clients still select and insert.
 //
 // It exempts what DS102 exempts, through the same [newColumnDrops]: a column
-// of a table this migration created, and a column it added earlier. No
-// deployed application version ever saw either, so nothing can break on the
-// name.
+// of a table this migration created, a column it added earlier, and a column
+// an IF EXISTS drop finds absent. No deployed application version ever saw
+// any of them, so nothing can break on the name.
 func atlasGapDroppedColumnRule() Rule {
 	return Rule{
 		Code:     "BC104",
 		Title:    "dropped column breaks deployed code",
 		Severity: SeverityWarning,
 		// The starting state shows a CREATE TABLE IF NOT EXISTS of a table
-		// that is new, whose columns no deployed client read ([newTable]).
+		// that is new, whose columns no deployed client read ([newTable]),
+		// and a DROP COLUMN IF EXISTS of a column that is not there, which
+		// retires no name ([skipsColumn]).
 		Input: InputBaselineRefinement,
 		BaselineSubjects: func(file *File) []int {
 			if !atlasGapReportsOnThisSurface(file) {
 				return nil
 			}
-			return ifNotExistsCreates(file)
+			return columnDropBaselineSubjects(file)
 		},
 		CheckFile: func(file *File) []Finding {
 			if !atlasGapReportsOnThisSurface(file) {

@@ -53,4 +53,13 @@ type Lint struct {
 	// "pgtype" or "mytype" under internal/lintkit, "restated" for an ALTER COLUMN that
 	// names the type with no word before it, compared as written, or empty for none.
 	TypeRestatements string `json:"type_restatements,omitempty"`
+	// ListedObjects are the kinds of object, besides tables with their
+	// columns and indexes, that a read of the engine's dev database lists in
+	// full, named as a lint baseline names them ("type", "view",
+	// "materialized_view", "trigger", "sequence"). Lint reads one the state
+	// does not hold as absent, so an IF EXISTS drop of it drops nothing. A
+	// kind the read leaves out, or lists only in part, must not be named:
+	// lint would then pass over the drop of an object that was there. Empty
+	// names none, and every such drop is judged as if the object existed.
+	ListedObjects []string `json:"listed_objects,omitempty"`
 }
