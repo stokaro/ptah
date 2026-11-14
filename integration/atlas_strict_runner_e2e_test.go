@@ -9,14 +9,14 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/dbschema"
 	"ptah.run/internal/clirun"
 )
 
-// PTAH_RUNNER selects the runner the native apply, lint and rollback judge a
-// directory by, and `ptah-compat` forwards to those commands with the
-// variable's binding in place. The community binary has no runner to select,
-// so strict mode refuses the variable by name before a command runs.
+// PTAH_RUNNER selects the runner a directory is applied, rolled back and
+// linted by. The community binary has no runner to select, so strict mode
+// refuses the variable by name before any command runs, whatever the command.
+// Of the compatibility commands only `migrate down` reads it, and the control
+// below proves that it does.
 
 // strictRunnerDirectory writes and hashes an Atlas directory of one file in a
 // new project root, and names a SQLite database in that root that nothing has
@@ -33,18 +33,23 @@ func strictRunnerDirectory(c *qt.C) (root, database string) {
 	return root, filepath.Join(root, "app.db")
 }
 
+// The rollback row carries a value that names no runner: the refusal it gets
+// is strict mode's, so the variable was refused before `migrate down` could
+// read it.
 func TestAtlasStrictCompatRefusesTheRunnerVariable_FailurePathE2E(t *testing.T) {
 	for _, test := range []struct {
-		name string
-		args []string
+		name   string
+		runner string
+		args   []string
 	}{
-		{name: "apply", args: []string{"migrate", "apply", "--dir", "file://m", "--url", "sqlite://app.db"}},
-		{name: "lint", args: []string{"migrate", "lint", "--dir", "file://m", "--dev-url", "sqlite://app.db", "--latest", "1"}},
+		{name: "apply", runner: "golang-migrate", args: []string{"migrate", "apply", "--dir", "file://m", "--url", "sqlite://app.db"}},
+		{name: "lint", runner: "golang-migrate", args: []string{"migrate", "lint", "--dir", "file://m", "--dev-url", "sqlite://app.db", "--latest", "1"}},
+		{name: "down", runner: "flyway", args: []string{"migrate", "down", "--dir", "file://m", "--url", "sqlite://app.db"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			root, database := strictRunnerDirectory(c)
-			env := append(environmentWithoutPtahVariables(), "PTAH_ATLAS_STRICT_COMPAT=1", "PTAH_RUNNER=golang-migrate")
+			env := append(environmentWithoutPtahVariables(), "PTAH_ATLAS_STRICT_COMPAT=1", "PTAH_RUNNER="+test.runner)
 
 			result := clirun.Run(c, clirun.Compat, clirun.Options{Dir: root, Env: env}, test.args...)
 
@@ -57,22 +62,21 @@ func TestAtlasStrictCompatRefusesTheRunnerVariable_FailurePathE2E(t *testing.T) 
 	}
 }
 
-// The control for the refusal above: outside strict mode the variable is a
-// Ptah extension like any other, and the same apply runs and creates the table.
-func TestAtlasStrictCompatRefusesTheRunnerVariable_HappyPathE2E(t *testing.T) {
+// TestAtlasCompatMigrateDownReadsTheRunnerVariable_FailurePathE2E is the
+// control for the refusal above: outside strict mode the same rollback reads
+// the variable and refuses the value as `migrations down --runner flyway`
+// would, so the strict refusal is not a refusal of a variable nothing reads.
+func TestAtlasCompatMigrateDownReadsTheRunnerVariable_FailurePathE2E(t *testing.T) {
 	c := qt.New(t)
 	root, database := strictRunnerDirectory(c)
-	env := append(environmentWithoutPtahVariables(), "PTAH_RUNNER=golang-migrate")
+	env := append(environmentWithoutPtahVariables(), "PTAH_RUNNER=flyway")
 
 	result := clirun.Run(c, clirun.Compat, clirun.Options{Dir: root, Env: env},
-		"migrate", "apply", "--dir", "file://m", "--url", "sqlite://app.db")
+		"migrate", "down", "--dir", "file://m", "--url", "sqlite://app.db")
 
-	c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("%s%s", result.Stdout, result.Stderr))
-	conn, err := dbschema.ConnectToDatabase(c.Context(), "sqlite://"+filepath.ToSlash(database))
-	c.Assert(err, qt.IsNil)
-	defer dbschema.CloseAndWarn(conn)
-	var tables int
-	c.Assert(conn.QueryRowContext(c.Context(),
-		"SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 't1'").Scan(&tables), qt.IsNil)
-	c.Assert(tables, qt.Equals, 1)
+	c.Assert(result.ExitCode, qt.Equals, 1)
+	c.Assert(result.Stdout, qt.Equals, "")
+	c.Assert(result.Stderr, qt.Equals, "Error: invalid runner \"flyway\": expected ptah or golang-migrate\n")
+	_, err := os.Stat(database)
+	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
 }

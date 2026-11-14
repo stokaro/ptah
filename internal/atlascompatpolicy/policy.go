@@ -822,12 +822,13 @@ var gatedPresenceEnvVars = []string{
 	// identifies a file and authorizes nothing by itself; strict mode refuses
 	// it by name and never starts a provider.
 	"PTAH_PROVIDER_CONFIG",
-	// Selects the runner whose transaction rules apply and lint judge a
-	// directory by, the environment twin of native --runner. With
-	// golang-migrate, a file runs in the transactions it opens itself, where
-	// the community binary wraps every file in one of its own. The forwarded
-	// apply, lint and rollback read it through their flag binding, so strict
-	// mode refuses it by name before any of them runs.
+	// Selects the runner a directory is applied, rolled back and linted by,
+	// the environment twin of native --runner. With golang-migrate, a file runs
+	// in the transactions it opens itself, where the community binary wraps
+	// every file in one of its own and has no runner to select. Of the
+	// compatibility commands only `migrate down` reads it, and strict mode
+	// leaves that command out; the variable is refused by name all the same,
+	// so a command that comes to read it cannot carry it into a strict run.
 	"PTAH_RUNNER",
 }
 

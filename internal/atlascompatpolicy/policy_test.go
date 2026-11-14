@@ -151,6 +151,20 @@ func TestResolveStrictCERejectsTheRunnerVariable_FailurePath(t *testing.T) {
 	}
 }
 
+// TestResolveStrictCEDoesNotRefuseTheRunnerNameByPrefix is the control for the
+// refusal above: the variable is refused by its name, so a longer PTAH_RUNNER_*
+// name, which an atlas.hcl getenv may read, still resolves.
+func TestResolveStrictCEDoesNotRefuseTheRunnerNameByPrefix_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv(atlascompatpolicy.StrictCompatEnvVar, "1")
+	t.Setenv("PTAH_RUNNER_POOL", "x")
+
+	policy, err := atlascompatpolicy.Resolve()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(policy.IsStrictCE(), qt.IsTrue)
+}
+
 func TestResolveFullCompatibilityAcceptsTheRunnerVariable_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	t.Setenv(atlascompatpolicy.StrictCompatEnvVar, "false")
