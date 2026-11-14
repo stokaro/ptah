@@ -634,6 +634,33 @@ func TestPrepareApplyExecute_ReturnsPlannedResultOnApplyError(t *testing.T) {
 	c.Assert(sqliteTableExists(c, conn, "apply_error_before"), qt.IsFalse)
 }
 
+// A statement the migrator refused before sending it was never executed, so
+// the run keeps Ptah's wording rather than the community binary's line, which
+// claims it was. SQLite runs VACUUM only outside a transaction, and the
+// migrator refuses it in a transactional file before the body starts.
+func TestPrepareApplyExecute_RefusalBeforeAStatementRanKeepsPtahsWording(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	writeAtlasApplyMigrationFile(c, migrationsDir, "1_vacuum.sql", "CREATE TABLE apply_vacuum (id INTEGER PRIMARY KEY);\nVACUUM;\n")
+	conn := connectSQLite(c, filepath.Join(dir, "vacuum.db"))
+	defer dbschema.CloseAndWarn(conn)
+	plan, err := atlasmigrate.PrepareApply(ctx, conn, atlasmigrate.ApplyOptions{
+		Dir:       migrationsDir,
+		FS:        os.DirFS(migrationsDir),
+		ExecOrder: migrator.ExecOrderLinear,
+		TxMode:    migrator.MigrationTxModeFile,
+	})
+	c.Assert(err, qt.IsNil)
+
+	result, err := plan.Execute(ctx)
+
+	c.Assert(err, qt.ErrorMatches, `(?s)error applying migrations: failed to apply migration 1: 1_vacuum.sql cannot run inside a transaction: .*VACUUM.*`)
+	c.Assert(result.ErrorText, qt.Matches, `(?s)failed to apply migration 1: 1_vacuum.sql cannot run inside a transaction: .*`)
+	c.Assert(sqliteTableExists(c, conn, "apply_vacuum"), qt.IsFalse)
+}
+
 func TestPrepareApply_FailurePath(t *testing.T) {
 	t.Run("nil database connection", func(t *testing.T) {
 		c := qt.New(t)

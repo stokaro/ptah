@@ -820,6 +820,26 @@ func TestCompatMigrateApply_FlywayFormatFailureNamesExactToken(t *testing.T) {
 	c.Assert(stderr, qt.Equals, "")
 }
 
+// The community binary's line already names the exact identity, and the rest
+// of it is the statement and the answer. A number there that a label happens
+// to precede is data: remapping it as a runtime version would rewrite what the
+// file says.
+func TestCompatMigrateApply_ExactIdentityMappingLeavesTheStatementLineAlone(t *testing.T) {
+	t.Parallel()
+	c := qt.New(t)
+	const runtime = "4611686018427471935"
+	dir := writeHashedFlywayDir(c, []setFlywayMigration{
+		{name: "V1.5__broken.sql", body: `INSERT INTO missing VALUES ('version ` + runtime + `');`},
+	})
+	dbPath := filepath.Join(c.TempDir(), "labeled-number-error.db")
+
+	_, stderr, err := compatApplyConverted(dir, "flyway", dbPath)
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(stderr, qt.Contains,
+		`executing statement "INSERT INTO missing VALUES ('version `+runtime+`');" from version "1.5"`)
+}
+
 func TestCompatMigrateApply_ExactIdentityMappingPreservesNumericSQLObject(t *testing.T) {
 	t.Parallel()
 	c := qt.New(t)

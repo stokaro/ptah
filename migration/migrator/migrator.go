@@ -3617,8 +3617,9 @@ func (m *Migrator) failRollbackWithDirtyStateWithMode(
 type FailedMigrationError struct {
 	// Version is the version of the migration that failed.
 	Version int64
-	// VersionKey is that migration's exact revision identity, spelled as
-	// [RunFailure.VersionKey] spells it.
+	// VersionKey is that migration's exact revision identity,
+	// [Migration.RevisionVersion], spelled as [RunFailure.VersionKey] spells
+	// it.
 	VersionKey string
 	// Err is the failure.
 	Err error

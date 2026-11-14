@@ -26,6 +26,10 @@ import (
 // than a neighbor. A last statement with no semicolon after it is quoted as
 // sent, which is the same text. Written returns sent whenever index is out of
 // range.
+//
+// The split is the dialect's plain statement split. Where the migrator splits a
+// body into query units instead, a unit's position need not name the same
+// statement here, and the check above then quotes sent.
 func Written(body, dialect string, index int, sent string) string {
 	written := sqlutil.SplitSourceStatements(body, dialect)
 	if index < 1 || index > len(written) {

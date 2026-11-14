@@ -445,9 +445,12 @@ file's `.Error` holds the statement as `.Stmt` and the database's answer as
 
 The answer is the driver's message. On SQLite, Ptah's driver writes
 `SQL logic error: no such table: nosuch (1)` where the pinned binary's writes
-`no such table: nosuch`. A failure that is not a statement the database
-answered, such as a failed commit or a pre-migration check, keeps Ptah's own
-text. Native `ptah migrations up` reports every failure with Ptah's own context.
+`no such table: nosuch`. A statement interrupted by a lost connection or a
+canceled run is reported in the same line, with the driver's error as the
+answer. A failure that is not a statement sent to the database, such as a failed
+commit, a pre-migration check or a statement the migrator refused before sending
+it, keeps Ptah's own text. Native `ptah migrations up` reports every failure
+with Ptah's own context.
 
 ### Adopting a database that already has objects
 
