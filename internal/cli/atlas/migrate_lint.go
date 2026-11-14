@@ -333,14 +333,19 @@ func runAtlasMigrateLint(
 		}
 		// A replay that stopped inside a migration is report content, the
 		// way the pinned community binary reports it: the one file and its
-		// error, on stdout, exit 1 and nothing on stderr. What the analysis
-		// found in the files the replay never reached is not reported, since
-		// that binary never analyzes them.
+		// error, on stdout, exit 1 and nothing on stderr, in the text report
+		// and through --format alike. What the analysis found in the files
+		// the replay never reached is not reported, since that binary never
+		// analyzes them. Any other error, such as a --git-base the repository
+		// does not hold or a dev database nothing answers at, is no replay of
+		// a file, and goes to stderr with or without --format, as that binary
+		// prints it: rendered as a report, it read as a replay step that
+		// failed over a directory of no new files.
 		replayFailure := atlasreport.NewMigrateLintReplayFailure(
 			report.Analysis, revisionVersions, report.Dialect, err,
 		)
 		switch {
-		case formatOutput:
+		case replayFailure != nil && formatOutput:
 			if writeErr := writeAtlasMigrateLintReplayError(
 				cmd, opts, dir, report, integrity, revisionVersions, replayFailure, err,
 			); writeErr != nil {

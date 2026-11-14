@@ -1896,6 +1896,11 @@ in the base, the files before the selection, is not quoted, as on the pinned
 binary. A statement the replay refuses before it reaches the database, such as
 an `ATTACH`, carries Ptah's reason in place of a database answer.
 
+Only a replay that stops inside a file is report content. Any other error, such
+as a `--git-base` the repository does not hold or a dev database that does not
+answer, goes to stderr with exit `1` and leaves stdout empty, with or without
+`--format`, as on the pinned binary.
+
 The database's answer at the end of the error is the driver's message, so it
 differs from the pinned binary's wherever the two drivers word an error
 differently. On SQLite, Ptah's driver writes
