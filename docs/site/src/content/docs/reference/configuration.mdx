@@ -36,6 +36,10 @@ environment twin, including when that environment value is malformed. An empty
 value remains unset for every flag type except boolean, where it is rejected;
 see [Boolean environment variables](#boolean-environment-variables).
 
+`exclude` is the one key the table does not order: `--exclude` and
+`PTAH_EXCLUDE` add to the project list rather than replace it, as
+[Objects another tool owns](#objects-another-tool-owns) describes.
+
 ## The flags with no environment variable
 
 A few flags do **not** bind to a `PTAH_*` variable. They have to be typed, or
@@ -364,6 +368,71 @@ error: database URL is required: no --env given; ptah.yaml declares env "dev"
 the same environments in its first line, so a report of unset values does not
 read like a file Ptah ignored.
 
+## Objects another tool owns
+
+`exclude` names the objects Ptah leaves alone: a table another service
+writes, a log an extension keeps, a declared table another tool creates. Each
+value is a selector in the grammar `--exclude` takes.
+
+```yaml
+exclude: [external_audit, "legacy_*"]
+
+env:
+  reporting:
+    exclude: [reporting_cache]
+  everything:
+    exclude: []
+```
+
+The list in effect is the top-level list, or the selected environment's list
+when that environment sets `exclude`. With `--env reporting` only
+`reporting_cache` is left out, and with `--env everything` nothing is. An
+`exclude` in the selected `atlas.hcl` environment replaces the `ptah.yaml`
+list the same way.
+
+The native verbs that compare a desired schema with a database apply the
+list. The objects it selects leave every state the verb reads, and so the
+plan and the report:
+
+- `schema diff`, `schema plan`, `schema apply`, `schema inspect`,
+  `schema compare` and `schema drift`;
+- `migrations generate` and `migrations plan`;
+- `migrations up --check-drift` and `migrations down --plan`;
+- `schema serve`, which takes no `--config` or `--env`, and so applies the
+  top-level list of `./ptah.yaml`.
+
+`--exclude`, and `PTAH_EXCLUDE` when the flag is not typed, add selectors to
+the list and never replace it. A selector both name counts once. To compare an
+object the project excludes, select an environment whose `exclude` is empty,
+or name another file with `--config`. `schema apply --plan` applies the
+selection recorded in the plan file, which `schema plan` wrote from the list
+and the flag together.
+
+The Atlas community binary replaces `env.exclude` with `--exclude`. Measured
+on v1.3.0 with `exclude = ["t1"]` in the selected environment,
+`schema apply --exclude t3` plans `DROP TABLE` for `t1`. A one-off selector
+would then undo every object the file protects, so the native verbs combine
+the two. `ptah-compat` keeps the Atlas rule for `atlas.hcl`.
+
+The list is checked before the run plans anything. A malformed selector is
+refused with exit status 2, and the message names the file:
+
+```text
+error: invalid exclude in ptah.yaml: invalid Atlas exclude glob "us[ers": syntax error in pattern
+```
+
+A selector that matches nothing in any state the run reads is handled as one
+from `--exclude`, and the diagnostic names `--exclude`: `schema apply` refuses
+it unless `PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE=1`, and the other verbs that
+take `--exclude` warn. `schema serve`, `migrations up --check-drift` and
+`migrations down --plan` do not report it.
+
+The verbs that compare nothing do not apply the list: `schema render`,
+`schema validate`, `migrations lint`, `migrations status`, and
+`migrations up` and `migrations down` without `--check-drift` or `--plan`,
+which run the migration files as written. `ptah project inspect` and
+`ptah project adopt` print it.
+
 ## Operational settings
 
 Project config can also define timeouts, revision table layout, migration
@@ -375,7 +444,7 @@ the shadow rehearsal that `migrations down` performs before touching its target.
 
 | Setting area | Example keys |
 | --- | --- |
-| Database target | `url`, `src`, `schema.src`, `dev`, `schemas` |
+| Database target | `url`, `src`, `schema.src`, `dev`, `schemas`, `exclude` |
 | External desired schema | `external_schema.program`, `external_schema.format`, `external_schema.working_dir`, `external_schema.env` |
 | Migration directory and revisions | `migration.dir`, `migration.format`, `migration.runner`, `migration.revisions_table`, `migration.revision_format` |
 | Safety and operations | `migration.pre_up_hook`, `migration.pg_dump_to`, `migration.webhook`, `migration.exec_order`, `migration.tx_mode` |

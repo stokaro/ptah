@@ -84,7 +84,9 @@ object by default, or grouped with --split schema|type.
 
 --schemas, --include, and --exclude select what is inspected, in that order:
 --schemas names the schema universe, --include picks top-level resources
-inside it with Atlas-style selectors, and --exclude subtracts from the result.
+inside it with Atlas-style selectors, and --exclude subtracts from the result,
+together with exclude in ptah.yaml or atlas.hcl, which the flag adds to and
+never replaces.
 Child resources ride along with their parent and cannot be selected on their
 own: the [type=column] spelling fails before the database is contacted. A
 positional spelling such as table.column is not refused on its shape, because
@@ -185,6 +187,10 @@ func runSchemaInspect(cmd *cobra.Command, opts schemaInspectOptions) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	exclude, err := dbcli.EffectiveExclude(projectCfg, opts.exclude, runtime.Selections())
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	rendered, err := atlasschema.InspectSource(cmd.Context(), atlasschema.InspectSourceOptions{
 		Runtime:             runtime,
 		URLs:                sourceURLs,
@@ -192,7 +198,7 @@ func runSchemaInspect(cmd *cobra.Command, opts schemaInspectOptions) error {
 		DevURL:              opts.devURL,
 		Schemas:             dbcli.ParseSchemas(opts.schemas),
 		Include:             opts.include,
-		Exclude:             opts.exclude,
+		Exclude:             exclude,
 		Format:              locals.format,
 		NativeJSON:          true,
 		Diagnostics:         cmd.ErrOrStderr(),
@@ -325,11 +331,15 @@ func materializeOCISchemaFiles(
 	if _, err := resolveInspectLocals(cmd, opts, projectCfg); err != nil {
 		return nil, nil, err
 	}
+	exclude, err := dbcli.EffectiveExclude(projectCfg, opts.exclude, owners.Selections())
+	if err != nil {
+		return nil, nil, err
+	}
 	if err := atlasschema.ValidateNonDatabaseInspectPreconditions(cmd.Context(), atlasschema.InspectSourceOptions{
 		Runtime: owners,
 		Format:  opts.format,
 		Include: opts.include,
-		Exclude: opts.exclude,
+		Exclude: exclude,
 		DevURL:  opts.devURL,
 	}); err != nil {
 		return nil, nil, err

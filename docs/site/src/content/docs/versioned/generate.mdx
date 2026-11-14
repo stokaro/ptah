@@ -152,6 +152,19 @@ takes: a name such as `audit_log`, a glob such as `public.legacy_*`, or a kind
 such as `*[type=policy]`. Repeat the flag or separate selectors with commas.
 `PTAH_EXCLUDE` sets the same list.
 
+An `exclude` list in `ptah.yaml`, or in the environment `--env` selects, leaves
+its objects out the same way, and the flag adds to it rather than replacing
+it:
+
+```yaml
+exclude: [external_audit]
+```
+
+With that file, `ptah migrations generate --exclude reporting_cache ...` leaves
+out both tables. [Objects another tool owns](../../reference/configuration/#objects-another-tool-owns)
+says how an environment replaces the list and how to compare an excluded
+object.
+
 The selection applies to both sides of the comparison. A declared object it
 names is not created, and an object the database holds is not dropped or
 altered, in the up file and in the down file. The current state is filtered the

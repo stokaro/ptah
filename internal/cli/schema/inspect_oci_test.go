@@ -3,6 +3,8 @@ package schema_test
 import (
 	"bytes"
 	"net"
+	"os"
+	"path/filepath"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -221,6 +223,26 @@ func TestSchemaInspect_AnswersLocalArgumentErrorsBeforeReachingTheRegistry(t *te
 			c.Check(combined, qt.Not(qt.Contains), "fetch OCI manifest")
 		})
 	}
+}
+
+// TestSchemaInspect_AnswersAMalformedProjectExcludeBeforeReachingTheRegistry
+// is the project-file twin of the --exclude rows above: the exclude list of
+// ptah.yaml is a local input too, so a selector in it that can never be honored
+// is refused, naming the file --config gave, before the registry is dialed.
+func TestSchemaInspect_AnswersAMalformedProjectExcludeBeforeReachingTheRegistry(t *testing.T) {
+	c := qt.New(t)
+	config := filepath.Join(c.TempDir(), "ptah.yaml")
+	c.Assert(os.WriteFile(config, []byte("exclude: [\"us[ers\"]\n"), 0o600), qt.IsNil)
+
+	out, err := runCommand(schema.NewSchemaCommand(),
+		"inspect", "--schema-file", closedRegistryReference(c), "--plain-http",
+		"--dev-url", "sqlite://:memory:", "--config", config)
+	combined := out + errorText(err)
+
+	c.Assert(err, qt.IsNotNil, qt.Commentf("output:\n%s", combined))
+	c.Check(combined, qt.Contains, "invalid exclude in "+config+`: invalid Atlas exclude glob "us[ers"`)
+	c.Check(combined, qt.Not(qt.Contains), testutils.RefusedConnection)
+	c.Check(combined, qt.Not(qt.Contains), "fetch OCI manifest")
 }
 
 // TestSchemaInspect_ProvisionableDockerDevURLReachesTheRegistry is the other

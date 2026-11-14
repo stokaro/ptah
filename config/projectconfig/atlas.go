@@ -245,7 +245,16 @@ func ParseAtlasFSCollectionWithOptions(
 	p.rejectCompositeSchema = opts.RejectCompositeSchema
 	p.rejectExternalSchema = opts.RejectExternalSchema
 	p.ignoreDockerBlocks = opts.IgnoreDockerBlocks
-	return p.parseCollection(body, opts.EnvName)
+	configs, err := p.parseCollection(body, opts.EnvName)
+	if err != nil {
+		return nil, err
+	}
+	for i := range configs {
+		if configs[i].presence.has(fieldExclude) {
+			configs[i].ExcludeOrigin = filename
+		}
+	}
+	return configs, nil
 }
 
 // singularAtlasConfig narrows a selection to the one instance a verb can take.

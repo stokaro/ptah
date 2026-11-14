@@ -11,11 +11,13 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/catalog"
+	"ptah.run/config/projectconfig"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/engine"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/cli/cliobs"
+	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/internal/devdocker"
@@ -58,9 +60,14 @@ type driftCheck struct {
 // prepareDriftCheck is the check --check-drift asks for, with its shadow
 // database provisioned when the URL is a docker:// one, or nil when it was not
 // asked for. The release function is always safe to call.
+//
+// The check leaves out the project's exclude list together with
+// --drift-exclude, as `schema drift` leaves out the list with its --exclude:
+// an object the project leaves to another tool is not drift.
 func prepareDriftCheck(
 	ctx context.Context,
 	opts options,
+	projectCfg projectconfig.Config,
 	dbURL string,
 	settings parsedMigrationSettings,
 	conn *dbschema.DatabaseConnection,
@@ -70,6 +77,10 @@ func prepareDriftCheck(
 		return nil, func() {}, nil
 	}
 	runtime, err := engineruntime.Resolve(ctx, engineruntime.DatabaseURL(dbURL))
+	if err != nil {
+		return nil, func() {}, err
+	}
+	opts.driftExclude, err = dbcli.EffectiveExclude(projectCfg, opts.driftExclude, runtime.Selections())
 	if err != nil {
 		return nil, func() {}, err
 	}

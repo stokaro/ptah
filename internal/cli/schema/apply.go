@@ -192,7 +192,8 @@ only through the same provider. --plan refuses
 plan is computed, so pass it to "ptah schema plan", which refuses to save a
 plan that would change a fenced table. --schemas, or schemas in ptah.yaml,
 and --include positively select what both comparison sides see; --exclude
-subtracts from the result. An --include selection that matches neither the target nor the desired
+subtracts from the result, together with exclude in ptah.yaml or atlas.hcl,
+which the flag adds to and never replaces. An --include selection that matches neither the target nor the desired
 schema refuses the apply rather than reporting a synced schema for work that
 did not happen.
 
@@ -530,6 +531,12 @@ func applySchema(
 			applyRootDirFlag, applySchemaFileFlag, applyToFlag)
 	}
 	if err := atlasfilter.ValidateIncludeSelectors(opts.include, opts.runtime.Selections()); err != nil {
+		return "", err
+	}
+	// After the --plan branch above, which runs under the selection the plan
+	// file recorded when `schema plan` computed it.
+	opts.exclude, err = dbcli.EffectiveExclude(projectCfg, opts.exclude, opts.runtime.Selections())
+	if err != nil {
 		return "", err
 	}
 	if len(opts.toURLs) > 0 {

@@ -81,7 +81,9 @@ repository alone.
 --exclude leaves the objects it selects out of the desired schema, out of the
 current state, whether read from --db-url or replayed, and out of the shadow
 verification, so the migration neither creates nor drops them. It takes the
-selectors schema diff --exclude takes.`,
+selectors schema diff --exclude takes. Exclude in ptah.yaml or atlas.hcl
+leaves its objects out the same way, and the flag adds to that list and never
+replaces it.`,
 		RunE: migrateGenerateCommand,
 	}
 
@@ -124,17 +126,26 @@ selectors schema diff --exclude takes.`,
 }
 
 // generateComparisonScope reads the flags that narrow what the comparison
-// holds: the extensions it leaves alone, and the exclude selectors. A
-// malformed selector is refused here, under the scope selections of the run's
-// runtime, before the integrity gate or a replay reaches a database. The
-// generator applies the selectors to the desired schema, to the read of the
-// target or of the replayed directory, and to the shadow verification.
-func generateComparisonScope(cmd *cobra.Command, selections selectext.Set) (ignoreExtensions, exclude []string, err error) {
+// holds: the extensions it leaves alone, and the exclude selectors, which are
+// the project's exclude list and the flag's together. A malformed selector is
+// refused here, under the scope selections of the run's runtime, before the
+// integrity gate or a replay reaches a database. The generator applies the
+// selectors to the desired schema, to the read of the target or of the
+// replayed directory, and to the shadow verification.
+func generateComparisonScope(
+	cmd *cobra.Command,
+	projectCfg projectconfig.Config,
+	selections selectext.Set,
+) (ignoreExtensions, exclude []string, err error) {
 	ignoreExtensions, err = cmd.Flags().GetStringArray(dbcli.IgnoreExtensionFlagName)
 	if err != nil {
 		return nil, nil, err
 	}
 	exclude, err = cmd.Flags().GetStringArray(generateExcludeFlag)
+	if err != nil {
+		return nil, nil, err
+	}
+	exclude, err = dbcli.EffectiveExclude(projectCfg, exclude, selections)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -643,7 +654,7 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	ignoreExtensions, exclude, err := generateComparisonScope(cmd, runtime.Selections())
+	ignoreExtensions, exclude, err := generateComparisonScope(cmd, projectCfg, runtime.Selections())
 	if err != nil {
 		return err
 	}

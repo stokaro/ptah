@@ -84,7 +84,9 @@ writing migration files.
 
 --exclude leaves the objects it selects out of both the desired schema and the
 database read, so the plan neither creates nor drops them. It takes the
-selectors schema diff --exclude takes.`,
+selectors schema diff --exclude takes. Exclude in ptah.yaml or atlas.hcl
+leaves its objects out the same way, and the flag adds to that list and never
+replaces it.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return migrateCommandWithOptions(cmd, &opts)
 		},
@@ -179,7 +181,11 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return err
 	}
-	exclusion, err := atlasfilter.NewExclusion(runtime, opts.exclude)
+	exclude, err := dbcli.EffectiveExclude(projectCfg, opts.exclude, runtime.Selections())
+	if err != nil {
+		return err
+	}
+	exclusion, err := atlasfilter.NewExclusion(runtime, exclude)
 	if err != nil {
 		return fmt.Errorf("invalid --%s: %w", excludeFlag, err)
 	}

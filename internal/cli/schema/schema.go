@@ -129,8 +129,9 @@ func orList(values []string) string {
 // [ptah.run/internal/atlasschema.LiveSelection].
 const comparisonSelectionHelp = `--include and --exclude take the selectors "schema diff" takes. --include
 positively selects what both comparison sides see, and --exclude subtracts from
-the result. Beside either of them --schemas selects too, so an object outside
-the named schemas leaves both sides. Under --include or --schemas, a selected
+the result, together with exclude in ptah.yaml or atlas.hcl, which the flag
+adds to and never replaces. Beside either of them --schemas selects too, so an
+object outside the named schemas leaves both sides. Under --include or --schemas, a selected
 object that depends on an unselected object is refused with an explicit
 diagnostic. An --exclude selection that matches nothing warns on standard error.
 An --include selection that matches nothing on either side is refused instead of

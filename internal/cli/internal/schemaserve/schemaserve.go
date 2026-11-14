@@ -57,6 +57,11 @@ type Options struct {
 	SchemaFiles []string
 	// Schemas limits the read to named schemas.
 	Schemas []string
+	// Exclude leaves the objects its selectors name out of both sides of every
+	// comparison, as `ptah schema diff --exclude` does. A selector that
+	// matches nothing writes no warning, since the page is regenerated on
+	// every request.
+	Exclude []string
 	// Title heads the page.
 	Title string
 	// Refresh is how often the page reloads itself. Zero means never, which is
@@ -180,6 +185,7 @@ func (s *server) observe(ctx context.Context) observation {
 		SchemaFiles:    s.opts.SchemaFiles,
 		DatabaseURL:    s.opts.DatabaseURL,
 		Schemas:        s.opts.Schemas,
+		Exclude:        s.opts.Exclude,
 		ConnectTimeout: s.opts.ConnectTimeout,
 	})
 	if err != nil {

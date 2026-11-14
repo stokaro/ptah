@@ -358,7 +358,8 @@ A `docker://` URL starts a disposable container for the run, and a project's
 
 `--drift-exclude`, which can be repeated, leaves out objects the migrations do
 not manage, such as a table another tool owns, with the selectors
-`schema diff --exclude` takes.
+`schema diff --exclude` takes. The `exclude` list of `ptah.yaml` leaves its
+objects out of the check too, and `--drift-exclude` adds to it.
 
 The lock keeps a cooperating runner from moving the history between the check
 and the apply; DDL from a session that does not take it can still land after

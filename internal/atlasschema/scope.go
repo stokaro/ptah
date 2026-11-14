@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"slices"
-	"strings"
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
@@ -79,9 +78,9 @@ func (s LiveSelection) Apply(
 		RealmRelativePatterns: ConnectionIsRealmScoped(info),
 		Selections:            runtime.Selections(),
 	}
-	if !slices.ContainsFunc(s.Schemas, isSelector) &&
-		!slices.ContainsFunc(s.Include, isSelector) &&
-		!slices.ContainsFunc(s.Exclude, isSelector) {
+	if !slices.ContainsFunc(s.Schemas, atlasfilter.NamesSelector) &&
+		!slices.ContainsFunc(s.Include, atlasfilter.NamesSelector) &&
+		!slices.ContainsFunc(s.Exclude, atlasfilter.NamesSelector) {
 		return current, desired, nil
 	}
 	scoped, err := projectLiveStates(ctx, runtime, info.Dialect, current, desired, scope)
@@ -94,11 +93,6 @@ func (s LiveSelection) Apply(
 	}
 	applyExtensionSupportCoverage(scoped.desired, scoped.currentReports.Selection, scoped.desiredReports.Selection)
 	return scoped.current, scoped.desired, nil
-}
-
-// isSelector reports whether a selector flag's value says anything.
-func isSelector(value string) bool {
-	return strings.Trim(value, ", \t") != ""
 }
 
 // scopeGeneratedSide filters one generated-schema comparison side. Positive

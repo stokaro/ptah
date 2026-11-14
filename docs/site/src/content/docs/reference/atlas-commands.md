@@ -813,7 +813,10 @@ a version's schema is the accumulation of every migration up to it.
 Ptah's own revision and tag tables are excluded from the comparison. The live
 database and the dev replay can name them differently, and a table one side has
 and the other does not otherwise looks exactly like a table the rollback should
-drop.
+drop. So are the objects the selected environment's exclude list names, from
+`env.exclude` or from the `exclude` of `ptah.yaml` merged under it: a table
+another tool created after the target version reads as one the rollback should
+drop, and the list is what says it should not.
 
 A derived plan is an inference about structure, while a down file is a statement
 of intent. A down body can preserve data a derived `DROP` will not, and can order

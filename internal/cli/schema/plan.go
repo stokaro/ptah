@@ -82,7 +82,8 @@ document without saving it.
 see, as it does for "ptah schema apply", and the plan file records the
 selection: applying the plan reads the same schemas to verify the fingerprint,
 so a schema the plan never read cannot make it stale. --exclude subtracts from
-the result and is recorded too.
+the result, together with exclude in ptah.yaml or atlas.hcl, which the flag
+adds to and never replaces, and the plan file records both.
 
 --json prints one versioned JSON document on standard output once the run
 starts, on success and on failure: whether the plan holds changes, the plan
@@ -240,6 +241,12 @@ func planSchema(cmd *cobra.Command, opts schemaPlanOptions, human io.Writer) (at
 		return atlasschema.PlanEvidence{}, err
 	}
 	owners, err := engineruntime.Resolve(cmd.Context())
+	if err != nil {
+		return atlasschema.PlanEvidence{}, err
+	}
+	// The plan file records the result, so `schema apply --plan` runs under
+	// the selection the plan was computed with.
+	opts.exclude, err = dbcli.EffectiveExclude(projectCfg, opts.exclude, owners.Selections())
 	if err != nil {
 		return atlasschema.PlanEvidence{}, err
 	}

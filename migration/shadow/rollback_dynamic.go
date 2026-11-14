@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dbschema"
 	"ptah.run/engine"
+	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/devlock"
 	"ptah.run/migration/internal/shadowdb"
@@ -43,6 +44,12 @@ type DynamicRollbackOptions struct {
 	// RevisionsTable names the revision table this run was configured with, so
 	// a non-default one is excluded from the comparison alongside the defaults.
 	RevisionsTable string
+	// Exclude names objects the comparison leaves out of both the live
+	// database and the replayed target state, in the selector grammar of
+	// `ptah schema diff --exclude`, so the plan neither drops nor creates them.
+	// A malformed selector fails the planning before the dev database is
+	// opened.
+	Exclude []string
 }
 
 // PlanDynamicRollback computes the statements that take the live database back
@@ -90,6 +97,12 @@ func PlanDynamicRollback(ctx context.Context, opts DynamicRollbackOptions) (stat
 	}
 	if opts.FS == nil {
 		return nil, fmt.Errorf("dynamic rollback planning failed: a migration filesystem is required")
+	}
+	// A selector that can never be honored is refused before the dev database
+	// is reset and the directory replayed into it, since the comparison that
+	// would refuse it runs last.
+	if _, err := atlasfilter.NewExclusion(opts.Runtime, opts.Exclude); err != nil {
+		return nil, fmt.Errorf("dynamic rollback planning failed: invalid exclude: %w", err)
 	}
 	devConn, err := openDistinctDevDatabase(ctx, opts)
 	if err != nil {
@@ -142,7 +155,7 @@ func PlanDynamicRollback(ctx context.Context, opts DynamicRollbackOptions) (stat
 		ToURLs:   []string{opts.DevDatabaseURL},
 		// Both sides are databases, so no third database is needed to
 		// materialize either one.
-		Exclude:        migrationMetadataExclusions(opts.RevisionsTable),
+		Exclude:        append(migrationMetadataExclusions(opts.RevisionsTable), opts.Exclude...),
 		ConnectTimeout: opts.ConnectTimeout,
 		// The dev database holds what the directory makes at TargetVersion,
 		// not the target's environment: a grant the target holds and the

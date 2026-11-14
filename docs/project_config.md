@@ -98,7 +98,7 @@ env:
 | `url` | Default target database URL for migration commands |
 | `dev` | Disposable dev/shadow database URL for `migrations generate` and rollback verification in `migrations down`; replay resets this database, and rollback verification requires a different live database/catalog realm from `url` |
 | `schemas` | Default schemas to introspect when the command supports schema scoping |
-| `exclude` | Project-level exclude patterns for config consumers |
+| `exclude` | Selectors of objects the comparison verbs leave out; `--exclude` adds to the list (see [Excluded objects](#excluded-objects)) |
 | `external_schema.program` | External schema command as an explicit argument list; the first item is the executable |
 | `external_schema.format` | Command stdout format: `sql` (default), `hcl`, or `yaml` |
 | `external_schema.working_dir` | Working directory for the external schema command |
@@ -144,6 +144,62 @@ Custom pre-flight hook commands receive the raw `PTAH_DB_URL`, `PTAH_DIALECT`,
 high-precision UTC timestamp. Webhooks have a 30-second timeout and redirects
 are not followed. Dry-run migration commands do not execute hooks because
 backups and webhooks are side effects.
+
+## Excluded objects
+
+`exclude` names the objects Ptah leaves alone, such as a table another
+service writes. Each value is a selector in the grammar `--exclude` takes.
+
+```yaml
+exclude: [external_audit, "legacy_*"]
+
+env:
+  reporting:
+    exclude: [reporting_cache]
+  everything:
+    exclude: []
+```
+
+The list in effect is the top-level list, or the selected environment's list
+when that environment sets `exclude`, an empty list included. An `exclude` in
+the selected `atlas.hcl` environment replaces the `ptah.yaml` list.
+
+These native verbs leave the objects the list selects out of every state they
+read, and so out of the plan and the report: `schema diff`, `schema plan`, `schema apply`, `schema inspect`,
+`schema compare`, `schema drift`, `schema serve`, `migrations generate`,
+`migrations plan`, `migrations up --check-drift` and `migrations down --plan`.
+`schema serve` takes no `--config` or `--env`, so it applies the top-level list
+of `./ptah.yaml`. `schema apply --plan` applies the selection the plan file
+records.
+
+The effective selection is the project list followed by `--exclude`, or by
+`PTAH_EXCLUDE` when the flag is not typed, with each selector kept once. The
+flag adds to the list and never replaces it, so a one-off selector cannot bring
+back an object the file protects. To compare an excluded object, select an
+environment whose `exclude` is empty, or name another file with `--config`.
+
+The Atlas community binary replaces `env.exclude` with `--exclude`: measured on
+v1.3.0, an environment with `exclude = ["t1"]` and `schema apply --exclude t3`
+plans `DROP TABLE` for `t1`. `ptah-compat` keeps that rule for `atlas.hcl`;
+the native verbs do not copy it.
+
+A malformed selector in the list is refused before the run plans anything,
+with exit status 2:
+
+```text
+error: invalid exclude in ptah.yaml: invalid Atlas exclude glob "us[ers": syntax error in pattern
+```
+
+A selector that matches nothing in any state the run reads is handled as one
+from `--exclude`, and the diagnostic names `--exclude`: `schema apply` refuses
+it unless `PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE=1`, and the other verbs that take
+`--exclude` warn. `schema serve`, `migrations up --check-drift` and
+`migrations down --plan` do not report it.
+
+Verbs that compare nothing do not apply the list, among them `schema render`,
+`schema validate`, `migrations lint`, `migrations status`, and `migrations up`
+and `migrations down` without `--check-drift` or `--plan`. `project inspect`
+and `project adopt` print it.
 
 ## External desired schema
 
@@ -312,7 +368,9 @@ Project-file merging preserves source presence. For a supported field, an
 explicitly present value replaces the lower-precedence value instead of being
 treated as absent. This includes an empty string, zero, `false`, or an empty
 list when the field accepts that type. Thus `atlas.hcl` wins over `ptah.yaml`,
-while environment variables and explicit CLI flags still win.
+while environment variables and explicit CLI flags still win. `exclude` is the
+exception to the order above: `--exclude` and `PTAH_EXCLUDE` add to the
+project list rather than replace it.
 After project sources are merged, a command applies its built-in default only
 when a field is absent. An explicitly present empty or zero value instead
 reaches the command's normal validation. Fields that do not accept empty values

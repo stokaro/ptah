@@ -85,8 +85,17 @@ type Config struct {
 	SchemaSources []string
 	// Schemas restricts database introspection to selected schemas.
 	Schemas []string
-	// Exclude lists schema patterns excluded by project config.
+	// Exclude lists the exclude selectors of the project config: the
+	// top-level or selected env `exclude` of ptah.yaml, or the selected env's
+	// `exclude` in atlas.hcl. The native comparison verbs leave the objects it
+	// selects out of every state they compare, beside the selectors of their
+	// own --exclude.
 	Exclude []string
+	// ExcludeOrigin names the config file that supplied Exclude, as the
+	// caller spelled its path, or is empty when no file set the list. A
+	// diagnostic about a selector in the list uses it to point at the file
+	// that holds it.
+	ExcludeOrigin string
 	// IgnoredExtensions names database extensions the comparison must leave
 	// alone. It appends to Ptah's own default list rather than replacing it,
 	// so plpgsql stays ignored whatever a project writes here.
@@ -1031,6 +1040,11 @@ func Merge(base, override Config) Config {
 		override.presence,
 		&result.presence,
 	)
+	// The origin follows the list, so a diagnostic names the file whose list
+	// the run applies.
+	if override.presence.has(fieldExclude) || len(override.Exclude) > 0 {
+		result.ExcludeOrigin = override.ExcludeOrigin
+	}
 	result.Schema = mergeSchema(result.Schema, override.Schema, override.presence, &result.presence)
 	result.Migration = mergeMigration(
 		result.Migration,

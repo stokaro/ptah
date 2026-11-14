@@ -87,8 +87,8 @@ The supported attributes map to Ptah settings as follows:
 | `env.dev` | Disposable replay database default for `migrations generate --shadow-db`, `migrations down --shadow-db`, and compatible `--dev-url` workflows; rollback verification resets it and requires it to identify a different database from `env.url` |
 | `env.src` | `ptah-compat schema apply --to` default |
 | `env.schema.src` | `ptah-compat schema apply --to`, `ptah-compat schema diff --to`, or `ptah-compat migrate diff --to` default |
-| `env.schema.mode.<object>` | Atlas-style exclusion defaults for supported object kinds |
-| `env.exclude` | `ptah-compat schema inspect --exclude`, `ptah-compat schema apply --exclude`, or `ptah-compat schema diff --exclude` default; the `ptah-compat migrate diff` exclusion (in full compatibility mode, `PTAH_ATLAS_MIGRATE_DIFF_EXCLUDE` replaces it) |
+| `env.schema.mode.<object>` | Atlas-style exclusion defaults for supported object kinds on the `ptah-compat` schema verbs; the native verbs do not read it |
+| `env.exclude` | `ptah-compat schema inspect --exclude`, `ptah-compat schema apply --exclude`, or `ptah-compat schema diff --exclude` default; the `ptah-compat migrate diff` exclusion (in full compatibility mode, `PTAH_ATLAS_MIGRATE_DIFF_EXCLUDE` replaces it); also read by `ptah-compat migrate down --plan` and the native verbs ([Excluded objects](project_config.md#excluded-objects)) |
 | `migration.baseline` | `ptah-compat migrate apply --baseline` default; the flag still wins when passed |
 | `migration.dir` | `--migrations-dir` or `--dir` default |
 | `migration.format` | `--dir-format` default where the command exposes that flag; safety gate for `ptah-compat migrate apply` |
