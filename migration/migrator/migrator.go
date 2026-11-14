@@ -2775,7 +2775,7 @@ func (m *Migrator) validateUpTransactionMode(ctx context.Context, migrations []*
 	if err := m.refuseUpPlacements(migrations); err != nil {
 		return err
 	}
-	if err := m.validateUpOwnTransactions(migrations); err != nil {
+	if err := m.validateOwnTransactions(migrations, MigrationDirectionUp); err != nil {
 		return err
 	}
 	resolvedTimeouts := make(map[*Migration]migrationfile.Timeouts, len(migrations))
@@ -3411,6 +3411,16 @@ func (m *Migrator) rollbackMigrationObserved(ctx context.Context, migration *Mig
 	if err != nil {
 		return err
 	}
+	// A down file of a directory whose runner wraps no file runs the way that
+	// runner sends it, as its up file does; see [WithOwnTransactions].
+	own, err := m.ownTransactionMode(migration, txMode, MigrationDirectionDown)
+	if err != nil {
+		return err
+	}
+	if !own.blocks.Empty() {
+		return m.rollbackMigrationOwnTransactions(ctx, migration, startedAt, deleteSQL, own)
+	}
+	txMode = own.mode
 	if txMode == MigrationTxModeNone {
 		if err := m.validateNoTransactionSQL(migration, MigrationDirectionDown); err != nil {
 			return err
@@ -3935,6 +3945,9 @@ func (m *Migrator) validateDownMigrations(ctx context.Context, migrations []*Mig
 		return err
 	}
 	if err := m.refuseUnsplittableMigrations(ctx, migrations, MigrationDirectionDown); err != nil {
+		return err
+	}
+	if err := m.validateOwnTransactions(migrations, MigrationDirectionDown); err != nil {
 		return err
 	}
 	for _, migration := range migrations {

@@ -4224,22 +4224,24 @@ an unspecified down value as `file`.
 
 The `migrator.WithOwnTransactions` provider option loads a directory written
 for a runner that opens no transaction around a file, as golang-migrate does,
-and the migrator applies and replays its files the way that runner runs them.
-The option is off by default. With it:
+and the migrator applies, rolls back and replays its files the way that runner
+runs them. The option is off by default. With it:
 
-- An up body that opens and closes its own PostgreSQL transaction runs outside
-  any transaction of the migrator's. Under tx-mode file it runs in the
+- An up or down body that opens and closes its own PostgreSQL transaction runs
+  outside any transaction of the migrator's. Under tx-mode file it runs in the
   transactions the body sent as one query runs in, as golang-migrate's default
   mode runs it. Under tx-mode none each statement outside its transactions
-  commits on its own. Progress is recorded where a transaction commits, and a
-  retry resumes after the committed statements.
+  commits on its own. Progress is recorded where a transaction commits. A
+  retry of an up body resumes after the committed statements; a failed down
+  body leaves its revision dirty, as every failed rollback does.
 - A body of one statement runs without a transaction, unless the file names a
   transaction mode. On PostgreSQL that is any such body, as golang-migrate
   sends it on its own; on another engine only one whose statement the engine
   refuses inside a transaction.
-- A body whose transaction control the migrator cannot follow, or one that
-  opens its own transaction under tx-mode all or with a directive asking for a
-  transaction around the file, is refused before any migration runs.
+- A body whose transaction control the migrator cannot follow, an up body that
+  opens its own transaction under tx-mode all, and one with a directive asking
+  for a transaction around the file, are refused before any migration of the
+  run runs.
 
 Atlas transaction-mode directive validation errors expose
 `migrationfile.AtlasTxModeDirectiveError` through `errors.As`. The leaf error

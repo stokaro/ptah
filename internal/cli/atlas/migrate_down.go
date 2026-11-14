@@ -14,12 +14,14 @@ import (
 	"github.com/spf13/pflag"
 
 	"ptah.run/config/projectconfig"
+	"ptah.run/core/lintext"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasargs"
 	"ptah.run/internal/atlascompatpolicy"
 	"ptah.run/internal/atlasmigrate"
 	"ptah.run/internal/atlasmigrateimport"
 	"ptah.run/internal/atlasreport"
+	"ptah.run/internal/cli/internal/cmdflags"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/migrateflags"
 	"ptah.run/internal/cli/internal/migrationsource"
@@ -132,6 +134,13 @@ func runAtlasMigrateDownFormat(
 	if err != nil {
 		return err
 	}
+	runner, err := atlasDownRunnerFromEnv()
+	if err != nil {
+		return err
+	}
+	// A golang-migrate file runs the way golang-migrate runs it, which opens no
+	// transaction around a file, on the target and on the dev database alike.
+	ownTransactions := runner.TransactionOwner() == lintext.TransactionOwnerFile
 	parentFlags, parentChanged, err := atlasProjectFlagsFromCommand(cmd)
 	if err != nil {
 		return err
@@ -248,6 +257,7 @@ func runAtlasMigrateDownFormat(
 		RevisionsSchema:      revisiontable.Schema(opts.revisionsSchema, opts.url),
 		MigrationLockTimeout: migrationLockTimeout,
 		SkipChecks:           opts.skipChecks,
+		OwnTransactions:      ownTransactions,
 	})
 	if err != nil {
 		return err
@@ -264,17 +274,21 @@ func runAtlasMigrateDownFormat(
 		}
 		defer releaseDev()
 
+		providerOptions := []migrator.FSProviderOption{
+			migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
+		}
+		if ownTransactions {
+			providerOptions = append(providerOptions, migrator.WithOwnTransactions())
+		}
 		err := shadow.VerifyRollback(cmd.Context(), shadow.RollbackVerifyOptions{
 			TargetConnection:  conn,
 			ShadowDatabaseURL: devURL,
 			FS:                source.FileSystem,
 			CurrentVersion:    plan.CurrentVersion,
 			TargetVersion:     targetVersion,
-			ProviderOptions: []migrator.FSProviderOption{
-				migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
-			},
-			ConnectTimeout: dbcli.DefaultConnectTimeout,
-			SkipChecks:     opts.skipChecks,
+			ProviderOptions:   providerOptions,
+			ConnectTimeout:    dbcli.DefaultConnectTimeout,
+			SkipChecks:        opts.skipChecks,
 		})
 		if err != nil {
 			return err
@@ -305,6 +319,24 @@ func runAtlasMigrateDownFormat(
 		return execErr
 	}
 	return writeErr
+}
+
+// atlasDownRunnerFromEnv is the runner the formatted rollback reads from
+// PTAH_RUNNER, the environment twin of the native --runner flag.
+//
+// Without --format, `migrate down` forwards to native `migrations down`, which
+// reads the variable through its flag binding. With --format this command
+// builds its own migrator, so it reads the variable itself: an output flag
+// must not change what a rollback runs. The compatibility surface takes no
+// --runner flag of its own. An absent or empty value is the ptah runner, and
+// a value that names no runner is refused before the directory is read, with
+// the refusal the forwarded rollback prints.
+func atlasDownRunnerFromEnv() (migrateflags.Runner, error) {
+	value, ok := os.LookupEnv(cmdflags.EnvName(atlasNativeEnvPrefix, migrateflags.RunnerFlag))
+	if !ok {
+		return migrateflags.RunnerPtah, nil
+	}
+	return migrateflags.ParseRunner(value)
 }
 
 // parseAtlasMigrateDownFormatArgs parses the Atlas down flag surface for the

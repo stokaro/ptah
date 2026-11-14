@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/config/projectconfig"
+	"ptah.run/core/lintext"
 	"ptah.run/dbschema"
 	"ptah.run/engine"
 	"ptah.run/internal/atlasmigrate"
@@ -80,6 +81,7 @@ type options struct {
 	skipConfirm          bool
 	jsonOutput           bool
 	execOrder            string
+	runner               string
 	migrationLockTimeout string
 	lockTimeout          string
 	statementTimeout     string
@@ -103,6 +105,8 @@ type options struct {
 	logFormat            string
 	logLevel             string
 	metricsAddr          string
+	// resolvedRunner is what runner names once ptah.yaml is merged under it.
+	resolvedRunner migrateflags.Runner
 }
 
 func NewMigrateDownCommand() *cobra.Command {
@@ -117,7 +121,9 @@ version. All migrations with versions higher than the target version will be
 rolled back in reverse order.
 
 Each migration rollback is run in a transaction, so if any rollback fails, it will
-be rolled back and the migration process will stop.
+be rolled back and the migration process will stop. With --runner golang-migrate,
+a down file runs the way golang-migrate runs it: on PostgreSQL in the transactions
+it opens itself, and a file of one statement without a transaction.
 
 ⚠️  WARNING: This operation can result in data loss! Make sure you have backups
 before running down migrations in production.`,
@@ -164,6 +170,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 		panic(err)
 	}
 	flags.StringVar(&opts.execOrder, execOrderFlag, string(migrator.ExecOrderLinear), "Execution order policy for pending migrations below the current version: linear, linear-skip, or non-linear")
+	dbcli.RegisterRunnerFlag(flags, &opts.runner)
 	flags.StringVar(&opts.migrationLockTimeout, migrationLockTimeoutFlag, "", "Timeout for acquiring the session-level migration advisory lock, such as 10s or 2m; "+
 		"refused against a dialect that takes no such lock")
 	flags.StringVar(&opts.lockTimeout, lockTimeoutFlag, "", "Default per-migration lock timeout, such as 3s or 500ms")
@@ -211,6 +218,15 @@ func resolveProjectOptions(cmd *cobra.Command, opts options, projectCfg projectc
 	opts.dirFormat = effectiveString(dirFormatFlag, opts.dirFormat, projectconfig.StringMigrationFormat)
 	opts.atlasEnv = effectiveString(atlasEnvFlag, opts.atlasEnv, projectconfig.StringEnvName)
 	opts.execOrder = effectiveString(execOrderFlag, opts.execOrder, projectconfig.StringMigrationExecOrder)
+	// The runner decides how each down file runs, as it decides how
+	// `migrations up` runs each up file, and both take it from one place. It
+	// is parsed here, before the source is resolved, so a value that names no
+	// runner is refused before an OCI reference is fetched.
+	runner, err := dbcli.ResolveRunner(cmd, opts.runner, projectCfg)
+	if err != nil {
+		return opts, err
+	}
+	opts.resolvedRunner = runner
 	opts.migrationLockTimeout = effectiveString(
 		migrationLockTimeoutFlag,
 		opts.migrationLockTimeout,
@@ -256,13 +272,16 @@ func resolveProjectOptions(cmd *cobra.Command, opts options, projectCfg projectc
 }
 
 // rollbackSettingValues carries the flag strings one rollback parses, so the
-// four parsers are one call at the call site rather than four error checks.
+// parsers are one call at the call site rather than an error check each.
 type rollbackSettingValues struct {
 	lockTimeout          string
 	statementTimeout     string
 	execOrder            string
 	migrationLockTimeout string
 	connectTimeout       string
+	// runner is parsed already, with the project options, and decides the
+	// provider options.
+	runner migrateflags.Runner
 }
 
 // parsedRollbackSettings is what those strings mean to the migrator.
@@ -271,6 +290,9 @@ type parsedRollbackSettings struct {
 	execOrder            migrator.ExecOrder
 	migrationLockTimeout time.Duration
 	connectTimeout       time.Duration
+	// providerOptions load the directory the way its runner runs it, the same
+	// for the rollback and for its verification on --shadow-db.
+	providerOptions []migrator.FSProviderOption
 }
 
 // parseRollbackSettings turns the flag strings into migrator values, refusing
@@ -293,11 +315,16 @@ func parseRollbackSettings(values rollbackSettingValues) (parsedRollbackSettings
 	if err != nil {
 		return parsedRollbackSettings{}, err
 	}
+	var providerOptions []migrator.FSProviderOption
+	if values.runner.TransactionOwner() == lintext.TransactionOwnerFile {
+		providerOptions = append(providerOptions, migrator.WithOwnTransactions())
+	}
 	return parsedRollbackSettings{
 		timeouts:             timeouts,
 		execOrder:            execOrder,
 		migrationLockTimeout: migrationLockTimeout,
 		connectTimeout:       connectTimeout,
+		providerOptions:      providerOptions,
 	}, nil
 }
 
@@ -428,6 +455,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.
 		execOrder:            resolvedOpts.execOrder,
 		migrationLockTimeout: resolvedOpts.migrationLockTimeout,
 		connectTimeout:       resolvedOpts.connectTimeout,
+		runner:               resolvedOpts.resolvedRunner,
 	})
 	if err != nil {
 		return err
@@ -481,9 +509,11 @@ func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.
 	mig, err := migrator.NewFSMigrator(
 		conn,
 		migrationsFS,
-		migrator.WithStatementInterceptor(interceptor),
-		migrator.WithMigrationDirFormat(dirFormat),
-		migrator.WithAtlasTemplateData(migrationfile.AtlasTemplateData{Env: resolvedOpts.atlasEnv}),
+		append([]migrator.FSProviderOption{
+			migrator.WithStatementInterceptor(interceptor),
+			migrator.WithMigrationDirFormat(dirFormat),
+			migrator.WithAtlasTemplateData(migrationfile.AtlasTemplateData{Env: resolvedOpts.atlasEnv}),
+		}, settings.providerOptions...)...,
 	)
 	if err != nil {
 		return fmt.Errorf("error registering migrations: %w", err)
@@ -556,6 +586,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.
 		atlasEnv:         resolvedOpts.atlasEnv,
 		connectTimeout:   settings.connectTimeout,
 		skipChecks:       resolvedOpts.skipChecks,
+		providerOptions:  settings.providerOptions,
 	}, emit); err != nil {
 		return err
 	}
@@ -577,6 +608,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.
 			targetVersion: targetVersion, dirFormat: dirFormat, atlasEnv: resolvedOpts.atlasEnv,
 			connectTimeout: settings.connectTimeout, migrationsSchema: migrationsSchema,
 			migrationsTable: migrationsTable, revisionFormat: revisionFormat,
+			providerOptions: settings.providerOptions,
 		},
 	})
 }
@@ -827,6 +859,9 @@ type shadowVerification struct {
 	atlasEnv         string
 	connectTimeout   time.Duration
 	skipChecks       bool
+	// providerOptions are the rollback's own, so the shadow database runs each
+	// file the way the target will.
+	providerOptions []migrator.FSProviderOption
 }
 
 // verifyRollbackOnShadow replays the rollback plan on a disposable shadow
@@ -855,10 +890,10 @@ func verifyRollbackOnShadow(
 		FS:                v.migrationsFS,
 		CurrentVersion:    v.currentVersion,
 		TargetVersion:     v.targetVersion,
-		ProviderOptions: []migrator.FSProviderOption{
+		ProviderOptions: append([]migrator.FSProviderOption{
 			migrator.WithMigrationDirFormat(v.dirFormat),
 			migrator.WithAtlasTemplateData(migrationfile.AtlasTemplateData{Env: v.atlasEnv}),
-		},
+		}, v.providerOptions...),
 		ConnectTimeout: v.connectTimeout,
 		SkipChecks:     v.skipChecks,
 	})
@@ -1023,6 +1058,10 @@ type dynamicRollback struct {
 	connectTimeout time.Duration
 	dryRun         bool
 	revisionsOpts  atlasmigrate.SetOptions
+	// providerOptions are the rollback's own. The target schema is built on
+	// the dev database by running the up files, and a runner that leaves a
+	// file its own transactions runs them that way there too.
+	providerOptions []migrator.FSProviderOption
 }
 
 // runDynamicRollback derives the rollback from the schema difference and
@@ -1052,10 +1091,10 @@ func runDynamicRollback(cmd *cobra.Command, r rollbackExecution, emit cliobs.Emi
 		DevDatabaseURL:   devURL,
 		FS:               r.migrationsFS,
 		TargetVersion:    r.targetVersion,
-		ProviderOptions: []migrator.FSProviderOption{
+		ProviderOptions: append([]migrator.FSProviderOption{
 			migrator.WithMigrationDirFormat(r.dirFormat),
 			migrator.WithAtlasTemplateData(migrationfile.AtlasTemplateData{Env: r.atlasEnv}),
-		},
+		}, r.providerOptions...),
 		ConnectTimeout: r.connectTimeout,
 		RevisionsTable: r.revisionsOpts.RevisionsTable,
 	})
@@ -1137,6 +1176,7 @@ type rollbackInputs struct {
 	migrationsSchema string
 	migrationsTable  string
 	revisionFormat   migrator.RevisionTableFormat
+	providerOptions  []migrator.FSProviderOption
 }
 
 func buildRollbackExecution(
@@ -1152,16 +1192,17 @@ func buildRollbackExecution(
 		migrator:      mig,
 		preflightHook: hook,
 		dynamicRollback: dynamicRollback{
-			runtime:        resolved.featureRuntime,
-			conn:           conn,
-			devURL:         resolved.shadowDB,
-			migrationsFS:   in.migrationsFS,
-			migrationsDir:  in.migrationsDir,
-			targetVersion:  in.targetVersion,
-			dirFormat:      in.dirFormat,
-			atlasEnv:       in.atlasEnv,
-			connectTimeout: in.connectTimeout,
-			dryRun:         opts.dryRun,
+			runtime:         resolved.featureRuntime,
+			conn:            conn,
+			devURL:          resolved.shadowDB,
+			migrationsFS:    in.migrationsFS,
+			migrationsDir:   in.migrationsDir,
+			targetVersion:   in.targetVersion,
+			dirFormat:       in.dirFormat,
+			atlasEnv:        in.atlasEnv,
+			connectTimeout:  in.connectTimeout,
+			dryRun:          opts.dryRun,
+			providerOptions: in.providerOptions,
 			revisionsOpts: atlasmigrate.SetOptions{
 				Dir:             in.migrationsDir,
 				FS:              in.migrationsFS,

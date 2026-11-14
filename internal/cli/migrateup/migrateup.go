@@ -116,6 +116,8 @@ type options struct {
 	checkDrift           bool
 	shadowDB             string
 	driftExclude         []string
+	// resolvedRunner is what runner names once ptah.yaml is merged under it.
+	resolvedRunner migrateflags.Runner
 }
 
 type parsedMigrationSettings struct {
@@ -221,7 +223,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringVar(&opts.atlasEnv, atlasEnvFlag, "", "Value exposed as .Env when rendering Atlas SQL template migrations")
 	flags.StringVar(&opts.execOrder, execOrderFlag, string(migrator.ExecOrderLinear), "Execution order policy for pending migrations below the current version: linear, linear-skip, or non-linear")
 	flags.StringVar(&opts.txMode, txModeFlag, string(migrator.MigrationTxModeFile), "Transaction mode for pending migrations: file, all, or none")
-	flags.StringVar(&opts.runner, migrateflags.RunnerFlag, string(migrateflags.RunnerPtah), migrateflags.RunnerUsage)
+	dbcli.RegisterRunnerFlag(flags, &opts.runner)
 	flags.StringVar(&opts.migrationLockTimeout, migrationLockTimeoutFlag, "", "Timeout for acquiring the session-level migration advisory lock, such as 10s or 2m; "+
 		"refused against a dialect that takes no such lock")
 	flags.StringVar(&opts.lockTimeout, lockTimeoutFlag, "", "Default per-migration lock timeout, such as 3s or 500ms")
@@ -341,10 +343,6 @@ func parseMigrationSettings(opts options) (parsedMigrationSettings, error) {
 	if err != nil {
 		return parsedMigrationSettings{}, err
 	}
-	runner, err := migrateflags.ParseRunner(opts.runner)
-	if err != nil {
-		return parsedMigrationSettings{}, err
-	}
 	return parsedMigrationSettings{
 		dirFormat:            dirFormat,
 		revisionFormat:       revisionFormat,
@@ -352,7 +350,7 @@ func parseMigrationSettings(opts options) (parsedMigrationSettings, error) {
 		txMode:               txMode,
 		migrationLockTimeout: migrationLockTimeout,
 		connectTimeout:       connectTimeout,
-		runner:               runner,
+		runner:               opts.resolvedRunner,
 	}, nil
 }
 
@@ -390,7 +388,13 @@ func resolveProjectOptions(cmd *cobra.Command, opts options, projectCfg projectc
 	opts.atlasEnv = effectiveString(atlasEnvFlag, opts.atlasEnv, projectconfig.StringEnvName)
 	opts.execOrder = effectiveString(execOrderFlag, opts.execOrder, projectconfig.StringMigrationExecOrder)
 	opts.txMode = effectiveString(txModeFlag, opts.txMode, projectconfig.StringMigrationTxMode)
-	opts.runner = effectiveString(migrateflags.RunnerFlag, opts.runner, projectconfig.StringMigrationRunner)
+	// Parsed here, before the source is resolved, so a value that names no
+	// runner is refused before an OCI reference is fetched.
+	runner, err := dbcli.ResolveRunner(cmd, opts.runner, projectCfg)
+	if err != nil {
+		return opts, err
+	}
+	opts.resolvedRunner = runner
 	opts.migrationLockTimeout = effectiveString(
 		migrationLockTimeoutFlag,
 		opts.migrationLockTimeout,

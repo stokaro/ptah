@@ -114,7 +114,7 @@ env:
 | `migration.migration_lock_timeout` | Session-level migration advisory lock timeout |
 | `migration.exec_order` | Pending migration execution policy |
 | `migration.tx_mode` | Migration transaction mode: `file`, `all`, or `none` |
-| `migration.runner` | Tool the directory is written for, read by `migrations lint` and `migrations up`: `ptah` (default), whose migrator wraps each file in a transaction, or `golang-migrate`, which opens none and runs a file's own transactions |
+| `migration.runner` | Tool the directory is written for, read by `migrations lint`, `migrations up` and `migrations down`: `ptah` (default), whose migrator wraps each file in a transaction, or `golang-migrate`, which opens none and runs a file's own transactions |
 | `migration.pre_up_hook` | Shell command that must succeed before `migrations up` changes the schema |
 | `migration.pre_down_hook` | Shell command that must succeed before `migrations down` changes the schema |
 | `migration.pg_dump_to` | Directory for a PostgreSQL-compatible pre-migration custom-format dump |

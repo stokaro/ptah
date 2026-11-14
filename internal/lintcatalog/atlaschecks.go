@@ -303,7 +303,7 @@ var atlasChecks = []AtlasCheck{
 
 	{Code: "TX101", Meaning: "statements cannot run in a single transaction", Pro: true, PtahRules: []string{"TX101"}, Status: StatusCovered},
 	{Code: "TX201", Meaning: "a nested transaction was detected", Pro: true, PtahRules: []string{"TX201"}, Status: StatusCovered,
-		Note: "reported on every engine the migrator applies, because the migrator refuses the file; a golang-migrate up file on PostgreSQL is read as the migrator runs its own transactions"},
+		Note: "reported on every engine the migrator applies, because the migrator refuses the file; a golang-migrate file on PostgreSQL, up or down, is read as the migrator runs its own transactions"},
 
 	// The six naming rules read the convention a project configures, as the
 	// `naming` section of .ptah-lint.yaml or the `lint { naming { } }` block

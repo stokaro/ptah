@@ -7,7 +7,7 @@ import (
 )
 
 func (m *Migrator) validatedUpTransactionMode(migration *Migration, mode MigrationTxMode) (ownTransactionRun, error) {
-	own, err := m.upOwnTransactionMode(migration, mode)
+	own, err := m.ownTransactionMode(migration, mode, MigrationDirectionUp)
 	if err != nil {
 		return ownTransactionRun{}, err
 	}

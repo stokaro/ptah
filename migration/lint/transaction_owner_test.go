@@ -58,3 +58,43 @@ func TestLintFS_EmbeddedTransactionFollowsTheTransactionOwner(t *testing.T) {
 		})
 	}
 }
+
+// TestLintFS_DownFileFollowsTheTransactionOwner is the rollback half of
+// TestLintFS_EmbeddedTransactionFollowsTheTransactionOwner, in a golang-migrate
+// directory: the runner sends a down file as it sends an up file, and the
+// migrator rolls it back the same way, so a lone concurrent drop runs without
+// a transaction and PG103 does not apply, unless the file names a transaction
+// mode, and a block the file opens and closes is not TX201.
+func TestLintFS_DownFileFollowsTheTransactionOwner(t *testing.T) {
+	const up = "CREATE TABLE t (id int);\n"
+	const drop = "DROP INDEX CONCURRENTLY idx;\n"
+	const block = "BEGIN;\nDROP TABLE t;\nCOMMIT;\n"
+	const down = "0000000001_x.down.sql"
+	for _, test := range []struct {
+		name  string
+		owner lintext.TransactionOwner
+		sql   string
+		want  []string
+	}{
+		{"a lone concurrent drop the migrator wraps", lintext.TransactionOwnerMigrator, drop,
+			[]string{down + ":1:PG103"}},
+		{"a lone concurrent drop in a file that opens its own", lintext.TransactionOwnerFile, drop, make([]string, 0)},
+		{"a lone concurrent drop in a file that asks for a transaction", lintext.TransactionOwnerFile,
+			"-- atlas:txmode file\n\n" + drop, []string{down + ":3:PG103"}},
+		{"a block the migrator wraps", lintext.TransactionOwnerMigrator, block, []string{down + ":1:TX201"}},
+		{"a block in a file that opens its own", lintext.TransactionOwnerFile, block, make([]string, 0)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			fsys := fixture(map[string]string{"0000000001_x.up.sql": up, down: test.sql})
+
+			findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
+				Dialect:          "postgres",
+				TransactionOwner: test.owner,
+			})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(findingSites(findings), qt.DeepEquals, test.want)
+		})
+	}
+}

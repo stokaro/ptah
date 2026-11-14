@@ -141,9 +141,10 @@ func TestLintFS_TransactionControl_ReportsAWrappedFileUnderARunnerThatOpensItsOw
 }
 
 // The rollback half is judged too: the migrator refuses transaction control in
-// a down body as it does in an up body, and it runs a down body inside its
-// transaction whoever opens the up body's, so a runner that opens its own
-// transactions changes nothing for a down file.
+// a down body it runs inside its transaction as it does in an up body. It does
+// so wherever it opens the transaction around the file, which on an engine
+// whose migrator reads no file's own transactions includes a runner that
+// opens its own.
 func TestLintFS_TransactionControl_ReadsTheRollbackHalf(t *testing.T) {
 	files := map[string]string{
 		nativeUp:   "CREATE TABLE t (id int);\n",
@@ -156,7 +157,7 @@ func TestLintFS_TransactionControl_ReadsTheRollbackHalf(t *testing.T) {
 	}{
 		{"SQLite, the migrator wraps the file", "sqlite", lintext.TransactionOwnerMigrator},
 		{"SQLite, the file opens its own", "sqlite", lintext.TransactionOwnerFile},
-		{"PostgreSQL, the file opens its own", "postgres", lintext.TransactionOwnerFile},
+		{"PostgreSQL, the migrator wraps the file", "postgres", lintext.TransactionOwnerMigrator},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -168,6 +169,53 @@ func TestLintFS_TransactionControl_ReadsTheRollbackHalf(t *testing.T) {
 			c.Assert(findings[0].Message, qt.Contains, "the rollback stops at this BEGIN")
 		})
 	}
+}
+
+// Under a runner that opens no transaction around a file, PostgreSQL's
+// migrator rolls a down file back in the transactions the file opens itself,
+// as it applies an up file, and refuses the same forms before any migration is
+// rolled back. The down file is judged by that reading.
+func TestLintFS_TransactionControl_ReadsTheRollbackHalfAsTheMigratorRollsItBack(t *testing.T) {
+	const up = "CREATE TABLE t (id int);\n"
+	tests := []struct {
+		name string
+		down string
+		want []string
+	}{
+		{"a block the file opens and closes", "BEGIN;\nDROP TABLE t;\nCOMMIT;\n", make([]string, 0)},
+		{"two blocks", "BEGIN;\nDROP TABLE t;\nCOMMIT;\nBEGIN;\nSELECT 1;\nCOMMIT;\n", make([]string, 0)},
+		{"a block ended by ROLLBACK", "BEGIN;\nDROP TABLE t;\nROLLBACK;\n", []string{nativeDown + ":3:TX201"}},
+		{"a block left open", "BEGIN;\nDROP TABLE t;\n", []string{nativeDown + ":1:TX201"}},
+		{"a block opened inside another", "BEGIN;\nBEGIN;\nDROP TABLE t;\nCOMMIT;\n", []string{nativeDown + ":2:TX201"}},
+		{"a block in a file that asks for a transaction around it", "-- atlas:txmode file\n\nBEGIN;\nDROP TABLE t;\nCOMMIT;\n",
+			[]string{nativeDown + ":3:TX201"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			findings := transactionControlFindings(c, "postgres", migrationfile.DirFormatAuto, lintext.TransactionOwnerFile,
+				map[string]string{nativeUp: up, nativeDown: test.down})
+
+			c.Assert(findingSites(findings), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// A down file the reading refuses is reported for the rollback it stops,
+// where an up file's finding names the apply.
+func TestLintFS_TransactionControl_RefusedDownFileNamesTheRollback(t *testing.T) {
+	c := qt.New(t)
+
+	findings := transactionControlFindings(c, "postgres", migrationfile.DirFormatAuto, lintext.TransactionOwnerFile,
+		map[string]string{
+			nativeUp:   "BEGIN;\nCREATE TABLE t (id int);\nROLLBACK;\n",
+			nativeDown: "BEGIN;\nDROP TABLE t;\nROLLBACK;\n",
+		})
+
+	c.Assert(findingSites(findings), qt.DeepEquals, []string{nativeDown + ":3:TX201", nativeUp + ":3:TX201"})
+	c.Assert(findings[0].Message, qt.Contains, "refuses the file before any migration is rolled back: ")
+	c.Assert(findings[1].Message, qt.Contains, "refuses the file before any migration runs: ")
 }
 
 // The message says what the migrator does in the mode the file runs in.
@@ -357,10 +405,10 @@ func TestLintFS_TransactionControl_MessageNamesTheModeUnderARunnerThatOpensItsOw
 	}
 }
 
-// A run that names no dialect cannot know the engine, and reads an up file of
-// a golang-migrate directory the way PostgreSQL's migrator runs it: a block
-// the file opens and closes is not reported, a form that reading refuses is,
-// and a down file keeps the wrapped reading.
+// A run that names no dialect cannot know the engine, and reads a file of a
+// golang-migrate directory the way PostgreSQL's migrator runs it: a block the
+// file opens and closes is not reported, in an up file or a down file, and a
+// form that reading refuses is.
 func TestLintFS_TransactionControl_NoDialectReadsAGolangMigrateFileAsPostgreSQLDoes(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -374,7 +422,9 @@ func TestLintFS_TransactionControl_NoDialectReadsAGolangMigrateFileAsPostgreSQLD
 		{"a block ended by ROLLBACK", map[string]string{nativeUp: "BEGIN;\nINSERT INTO users VALUES (1);\nROLLBACK;\n"},
 			[]string{nativeUp + ":3:TX201"}},
 		{"a down file", map[string]string{nativeUp: "CREATE TABLE t (id int);\n", nativeDown: "BEGIN;\nDROP TABLE t;\nCOMMIT;\n"},
-			[]string{nativeDown + ":1:TX201"}},
+			make([]string, 0)},
+		{"a down file ended by ROLLBACK", map[string]string{nativeUp: "CREATE TABLE t (id int);\n",
+			nativeDown: "BEGIN;\nDROP TABLE t;\nROLLBACK;\n"}, []string{nativeDown + ":3:TX201"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

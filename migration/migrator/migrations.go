@@ -827,6 +827,15 @@ func (m *Migration) parsedDownTxModeForDialect(dialect string) migrationfile.Par
 	}
 }
 
+// parsedTxModeForDialect is the transaction mode the body of direction names
+// for dialect.
+func (m *Migration) parsedTxModeForDialect(direction MigrationDirection, dialect string) migrationfile.ParsedFileTxMode {
+	if direction == MigrationDirectionDown {
+		return m.parsedDownTxModeForDialect(dialect)
+	}
+	return m.parsedUpTxModeForDialect(dialect)
+}
+
 func (m *Migration) upTimeoutsForDialect(dialect string) (migrationfile.Timeouts, error) {
 	if m.upTimeoutsFromSQL && m.UpTimeouts == m.upParsedTimeouts {
 		return migrationfile.ParseTimeoutsForDialect(m.UpSQL, dialect)
@@ -897,7 +906,7 @@ func (m *Migration) UpForReplay(ctx context.Context, conn *dbschema.DatabaseConn
 	}
 	// The same file a migrate apply of its directory runs without a
 	// transaction; see [WithOwnTransactions].
-	if mode == migrationExecutionTransactional && m.upRunsAloneOutsideATransaction(conn) {
+	if mode == migrationExecutionTransactional && m.runsAloneOutsideATransaction(conn, MigrationDirectionUp) {
 		mode = migrationExecutionNoTransaction
 	}
 	return m.replayInExecutionMode(ctx, conn, mode, func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
@@ -930,7 +939,7 @@ func (m *Migration) replayOwnTransactions(
 		return fmt.Errorf("migration %d asks for a transaction around the file and opens its own", m.Version)
 	}
 	var session *ownTransactionSession
-	blocks, statements, err := m.upOwnTransactions(conn)
+	blocks, statements, err := m.bodyOwnTransactions(conn, MigrationDirectionUp)
 	if err != nil {
 		return err
 	}

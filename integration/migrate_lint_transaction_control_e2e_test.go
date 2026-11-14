@@ -164,10 +164,10 @@ func TestMigrateLintTransactionControlE2E_AFileWithoutControlIsClean(t *testing.
 }
 
 // A directory written for golang-migrate on an engine whose migrator reads no
-// body's own transactions keeps the transaction around each file, so the up of
-// a file holding a block is refused, and a down file is refused on every
-// engine because a rollback always runs in the migrator's transaction. Lint
-// reports both before an apply does.
+// body's own transactions keeps the transaction around each file, in the up
+// and the down half alike, so the up of a file holding a block is refused, and
+// so is the rollback of a down file holding one, under the same runner. Lint
+// reports both before an apply or a rollback does.
 func TestMigrateLintTransactionControlE2E_NativeGolangMigrateDirectory(t *testing.T) {
 	c := qt.New(t)
 	root := c.TempDir()
@@ -185,7 +185,7 @@ func TestMigrateLintTransactionControlE2E_NativeGolangMigrateDirectory(t *testin
 	up := clirun.Run(c, clirun.Ptah, options, "migrations", "up", "--migrations-dir", "migrations",
 		"--db-url", database, "--runner", "golang-migrate")
 	down := clirun.Run(c, clirun.Ptah, options, "migrations", "down", "--migrations-dir", "migrations",
-		"--db-url", database, "--target", "0", "--confirm")
+		"--db-url", database, "--target", "0", "--confirm", "--runner", "golang-migrate")
 
 	c.Assert(lint.ExitCode, qt.Equals, 1, qt.Commentf("stdout:\n%s\nstderr:\n%s", lint.Stdout, lint.Stderr))
 	c.Assert(lint.Stdout, qt.Contains, "migrations/1_a.down.sql:1 [warning] TX201: the migrator runs this file in one "+

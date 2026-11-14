@@ -318,6 +318,58 @@ reverse runs nothing carries the directive: one with nothing to undo, and one
 whose rollback leaves what the up file changed, such as a secret value the server
 never returns, which keeps a comment saying what stays.
 
+### A directory written for golang-migrate
+
+golang-migrate opens no transaction around a file. `--runner golang-migrate`,
+or `migration.runner: golang-migrate` in `ptah.yaml`, rolls a down file back
+the way `ptah migrations up` applies an up file under the same runner. The flag
+wins over `PTAH_RUNNER`, and either wins over `ptah.yaml`, as for `migrations
+up` and `migrations lint`. A value that names no runner is refused before the
+migration directory is read.
+
+- On PostgreSQL, a down file that opens and closes its own transactions runs
+  on one session, outside any transaction of the migrator's, in the
+  transactions PostgreSQL runs it in when it is sent as one query, as
+  golang-migrate sends it. The revision is removed after the file's last
+  statement.
+- On PostgreSQL, a down file of one statement runs without a transaction, so a
+  file whose only statement is `DROP INDEX CONCURRENTLY` rolls back.
+- A form the migrator does not run is refused before any migration is rolled
+  back: `ROLLBACK`, a block the file leaves open, and a block in a file whose
+  `-- atlas:txmode file` asks for a transaction around it. The schema and
+  every revision stay as they were.
+- On every other engine a down file keeps the transaction around it, so its
+  transaction control is refused as under the default runner.
+- `--shadow-db` verifies the rollback by running each down file the same way,
+  and `--plan` builds the target version there by running each up file the way
+  `migrations up` runs it. `--dry-run` prints the rollback and leaves the
+  schema and the revisions as they were.
+
+[Transactions in a golang-migrate directory](../../atlas/migrate-commands/#transactions-in-a-golang-migrate-directory)
+describes the transactions a file runs in. `ptah migrations lint --runner
+golang-migrate` judges a down file by the same reading
+([`TX201`](../../reference/lint-rules/)).
+
+A failed rollback rolls back the transaction it interrupted and records, on a
+dirty revision, the statements that stayed committed. Here a down file differs
+from an up file of the same directory. A retry of a failed up file with
+`--allow-dirty` resumes after its committed statements; a rollback never
+resumes, so the dirty revision stops the next one, and the way out depends on
+what committed. Measured on PostgreSQL 17:
+
+| down file | after the failure | the way out |
+| --- | --- | --- |
+| `BEGIN; DROP TABLE a; INSERT INTO missing ...; COMMIT;` | `a` is still there, `applied=0` | `ptah migrations repair --version <version>` records the migration applied, and the next rollback runs the whole file |
+| `DROP TABLE a; INSERT INTO missing ...; BEGIN; DROP TABLE b; COMMIT;` | `a` and `b` are still there, `applied=0`: the statements before `BEGIN` run in its transaction | the same |
+| `BEGIN; DROP TABLE a; COMMIT; INSERT INTO missing ...;` | `a` is gone, `applied=3` | finish the rollback by hand, then `ptah migrations set --version <previous>` |
+
+After a transaction of the file committed, `repair` refuses to record the
+migration applied, with `--force` too, and refuses `--resume-from`, because a
+resume would run the rest of the file without the transactions it opens. A
+failure after the file's last statement committed, such as a revision write
+that did not reach the database, records every statement applied and keeps the
+revision; `migrations set` ends it the same way.
+
 A [checkpoint](../checkpoints/) adds one more boundary: history squashed
 below a checkpoint no longer has individually applied migrations to reverse,
 so a rollback target between the checkpoint and the squashed history fails

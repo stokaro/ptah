@@ -115,7 +115,7 @@ assert it explicitly (`golang-migrate`, `goose`, `flyway`, `liquibase`,
 
 | Tool | Notes |
 | --- | --- |
-| golang-migrate | `NNN_name.up.sql` / `.down.sql` pairs. A file's own `BEGIN` and `COMMIT` are copied as written; set `migration.runner: golang-migrate` in `ptah.yaml` so on PostgreSQL `migrations up` runs an up file's as golang-migrate does and `migrations lint` does not report them as `TX201`. A down file runs in the migrator's transaction, which refuses them. |
+| golang-migrate | `NNN_name.up.sql` / `.down.sql` pairs. A file's own `BEGIN` and `COMMIT` are copied as written; set `migration.runner: golang-migrate` in `ptah.yaml` so on PostgreSQL `migrations up` and `migrations down` run a file's as golang-migrate does and `migrations lint` does not report them as `TX201`. |
 | Goose | Annotated single files (`-- +goose Up` / `-- +goose Down`); the exact whole-file line `-- +goose NO TRANSACTION` becomes `-- +ptah no_transaction` on both imported directions. |
 | Flyway | Including dotted versions, undo `U__` scripts, and repeatable `R__` scripts. |
 | Liquibase | Formatted-SQL changelogs (`--changeset` / `--rollback`), and XML, YAML or JSON changesets that carry SQL. Typed changes such as `createTable` convert with `--dialect`; a changeset carrying a selector, or a change type Ptah does not convert, is refused by name. |

@@ -68,7 +68,9 @@ func TestRunLint_RunnerDecidesTX201(t *testing.T) {
 }
 
 // A runner Ptah does not model is a usage error, from the flag or from
-// ptah.yaml, before any file is read.
+// ptah.yaml, before any file is read. The directory linted here does not
+// exist, so a refusal that came after the source would name the directory
+// instead.
 func TestRunLint_RunnerRefusesAnUnknownTool(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -81,7 +83,7 @@ func TestRunLint_RunnerRefusesAnUnknownTool(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			dir := ownTransactionDirectory(t, c, test.config)
+			dir := filepath.Join(filepath.Dir(ownTransactionDirectory(t, c, test.config)), "missing")
 
 			stdout, stderr, err := execute(append([]string{"--dir", dir, "--dialect", "postgres"}, test.flags...)...)
 
