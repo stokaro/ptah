@@ -145,8 +145,10 @@ own measurement conditions.
 | [A YDB database URL](#a-ydb-database-url) | serves it through the YDB provider in the default profile, and refuses it in the binary's words under `PTAH_ATLAS_STRICT_COMPAT=1` | has no YDB driver: `sql/sqlclient: unknown driver "ydb"` |
 | [A realm beside one database on a dev server](#a-realm-beside-one-database-on-a-dev-server) | refuses the pair on `schema diff`, with the binary's own `schema apply` sentence for it | plans databases the one-database side never read |
 | [A golang-migrate file that runs its own transaction](#a-golang-migrate-file-that-runs-its-own-transaction) | runs it as golang-migrate does, outside the migrator's transaction, and exits `0` | nests it in a transaction of its own and exits `1` with `pq: unexpected transaction status idle` |
-| [A `txmode none` file that controls its own transaction](#a-txmode-none-file-that-controls-its-own-transaction) | lint reports `TX201` for each such block, and apply refuses the file before running a statement, exit `1` | lint reports nothing, and apply runs the file as written, exit `0` |
+| [A `txmode none` file that controls its own transaction](#a-txmode-none-file-that-controls-its-own-transaction) | lint reports `TX201` for each such block, and apply refuses the run before it applies the first file, exit `1` | lint reports nothing, and apply runs the file as written, exit `0` |
 | [A file its transaction would refuse](#a-file-its-transaction-would-refuse) | refuses the run before it applies the first file, in a dry run too, exit `1` | applies the files before it and exits `1` with PostgreSQL's error; its dry run exits `0` |
+| [A file that controls the transaction it runs in](#a-file-that-controls-the-transaction-it-runs-in) | refuses the run before it applies the first file, in a dry run too, exit `1` | applies the files before it and exits `1` with the engine's error; its dry run exits `0` |
+| [A MySQL file the transaction witness refuses](#a-mysql-file-the-transaction-witness-refuses) | refuses the run before it applies the first file, in a dry run too, exit `1` | applies every file, exit `0` |
 | [A statement the bundled SQLite refuses](#a-statement-the-bundled-sqlite-refuses) | replays on the SQLite it bundles, reports the refusal as a replay error of the file, and exits `1` | replays on an older SQLite that accepts the statement, and lints the selection |
 
 ## A `--config` selection naming more than one file
@@ -1238,7 +1240,7 @@ written and lints it clean. The lint rule reads the same statements the
 migrator refuses, so a directory that lints without a `TX201` finding is not
 one the migrator stops at for this reason.
 
-Measured on 2026-11-13 over SQLite, with `1.sql` holding
+Measured on 2026-11-14 over SQLite, with `1.sql` holding
 `CREATE TABLE users (id int);` and `2.sql` holding the lines below, each exit
 status read from an unpiped invocation:
 
@@ -1253,14 +1255,15 @@ COMMIT;
 | Run | Binary | `ptah-compat` |
 | --- | --- | --- |
 | `migrate lint --dev-url 'sqlite://dev?mode=memory' --latest 1` | `1 version ok`, no diagnostics, exit `0` | `L3 [TX201]` as a warning, `1 version with warnings`, exit `0` |
-| `migrate apply --url sqlite://t.db` | applies both files, exit `0` | stops at migration `2` with `cannot run up statement 1 without a transaction because "BEGIN" controls transaction state`, exit `1` |
+| `migrate apply --url sqlite://t.db` | applies both files, exit `0` | refuses the run before it applies migration `1`, with `migration 2 cannot run up statement 1 without a transaction because "BEGIN" controls transaction state`, and records no revision, exit `1` |
 
 The same file without the directive runs inside the transaction each migrator
 opens around a file. The binary's lint is clean and its apply fails with
-`cannot start a transaction within a transaction`; `ptah-compat migrate apply`
-refuses it with `cannot run tx-mode file up statement 1 because it controls
-transaction state`, and a lint that replays it on a dev database fails the same
-way as the apply.
+`cannot start a transaction within a transaction` after it applied the first
+file; `ptah-compat migrate apply` refuses it before the first file, as
+[A file that controls the transaction it runs in](#a-file-that-controls-the-transaction-it-runs-in)
+records, and a lint that replays it on a dev database fails the same way as the
+apply.
 
 The refusal is stricter than the binary on purpose. A file that runs half of
 its own transaction and then fails leaves the database and the revision table
@@ -1322,6 +1325,87 @@ statement in a
 which that runner sends alone.
 
 **Evidence.** `integration/migrations_up_transaction_preflight_e2e_test.go`
+
+## A file that controls the transaction it runs in
+
+**Type.** Deliberate divergence
+
+**Current boundary.** `ptah-compat migrate apply` reads every file of the run
+before it applies the first. A file that holds its own `BEGIN` and `COMMIT`
+under the default `--tx-mode file` controls the transaction the migrator runs
+it in, and the run is refused: no file is applied and no revision row is
+written. A dry run is refused the same way. The pinned community binary v1.3.0
+applies the files before it, then sends the `BEGIN` inside the transaction it
+opened for the file and exits `1` with the engine's error. Its dry run sends
+nothing and reports every file `ok`.
+
+Measured on 2026-11-14 over SQLite, with `1_base.sql` holding
+`CREATE TABLE base (id int);` and `2_two.sql` holding the lines below, each run
+on a fresh database, each exit status read from an unpiped invocation:
+
+```text
+BEGIN;
+CREATE TABLE b (id int);
+COMMIT;
+```
+
+| Run | Binary | `ptah-compat` |
+| --- | --- | --- |
+| `migrate apply --url sqlite://db.sqlite` | applies and records version `1`, then fails version `2` with `cannot start a transaction within a transaction`, exit `1` | refuses the run, creates nothing and records no revision, exit `1` |
+| `migrate apply --url sqlite://db.sqlite --dry-run` | lists both versions as `ok`, exit `0` | refuses the run, exit `1` |
+
+`ptah-compat` names the migration and the statement before anything runs:
+
+```text
+Error: error applying migrations: migration 2 cannot run tx-mode file up statement 1 because it controls transaction state; remove the transaction control and let Ptah manage the transaction
+```
+
+The refusal is stricter than the binary on purpose, for the reason
+[A file its transaction would refuse](#a-file-its-transaction-would-refuse)
+gives: the binary's run cannot reach its target, and that is known before it
+starts. The change to the directory is the same on both binaries: remove the
+transaction control, because the migrator already runs the file in one
+transaction. Marking the file `-- atlas:txmode none` is no fix on `ptah-compat`;
+[A `txmode none` file that controls its own transaction](#a-txmode-none-file-that-controls-its-own-transaction)
+says why.
+
+**Evidence.** `integration/migrations_up_text_refusal_e2e_test.go`
+
+## A MySQL file the transaction witness refuses
+
+**Type.** Deliberate divergence
+
+**Current boundary.** On MySQL and MariaDB, `ptah-compat migrate apply` runs a
+file under the default `--tx-mode file` with Ptah's transaction witness, which
+refuses a statement whose effect it cannot tie to the file's transaction, such
+as a table on a non-transactional storage engine.
+[Recovering from a migration body that failed part-way](../migrate-commands/#recovering-from-a-migration-body-that-failed-part-way)
+lists the forms. The refusal reads the file alone, so the run is refused before
+it applies the first file, in a dry run too. The pinned community binary v1.3.0
+runs the file as written.
+
+Measured on 2026-11-14 on MySQL 8.4, with `1_base.sql` holding
+`CREATE TABLE base (id int);` and `2_two.sql` holding
+`CREATE TABLE b (id int) ENGINE=MyISAM;`, each run on a fresh database, each
+exit status read from an unpiped invocation:
+
+| Run | Binary | `ptah-compat` |
+| --- | --- | --- |
+| `migrate apply` | applies and records both versions, exit `0` | refuses the run, creates nothing and records no revision, exit `1` |
+| `migrate apply --dry-run` | lists both versions as `ok`, exit `0` | refuses the run, exit `1` |
+
+```text
+Error: error applying migrations: migration 2 statement 1 selects non-transactional storage engine MyISAM; tx-mode file requires InnoDB on MySQL-family databases
+```
+
+The refusal is stricter than the binary on purpose. MySQL commits around DDL,
+so a file in `--tx-mode file` can fail with part of it committed, and the
+witness is how Ptah records which part. A MyISAM table's writes do not share
+the transaction the witness is written in, so that record could not be
+trusted. The same file marked `-- atlas:txmode none` applies on both binaries,
+measured the same way.
+
+**Evidence.** `integration/migrations_up_text_refusal_e2e_test.go`
 
 ## A statement the bundled SQLite refuses
 

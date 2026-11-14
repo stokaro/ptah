@@ -2798,16 +2798,13 @@ func (m *Migrator) validateUpTransactionMode(ctx context.Context, migrations []*
 				return err
 			}
 		}
-		return m.refuseUpWhatTransactionsRefuse(migrations)
+		return m.refuseUpWhatFilesRefuse(migrations)
 	}
 	if err := m.validateTxModeAllDialect(); err != nil {
 		return err
 	}
 	for _, migration := range migrations {
 		if _, err := m.resolveUpMigrationTxMode(migration); err != nil {
-			return err
-		}
-		if err := m.validateManagedTransactionSQL(migration, MigrationDirectionUp, MigrationTxModeAll); err != nil {
 			return err
 		}
 		if !resolvedTimeouts[migration].IsZero() {
@@ -2819,21 +2816,23 @@ func (m *Migrator) validateUpTransactionMode(ctx context.Context, migrations []*
 			return err
 		}
 	}
-	return m.refuseUpWhatTransactionsRefuse(migrations)
+	return m.refuseUpWhatFilesRefuse(migrations)
 }
 
-// refuseUpWhatTransactionsRefuse applies [Migrator.refuseWhatATransactionRefuses]
-// to every migration of an up run, in the mode each resolves to. It comes after
-// every other refusal of [Migrator.validateUpTransactionMode], so those keep
-// their precedence. A migration whose mode does not resolve is left to the step
-// that runs it, which reports why.
-func (m *Migrator) refuseUpWhatTransactionsRefuse(migrations []*Migration) error {
+// refuseUpWhatFilesRefuse applies [Migrator.refuseWhatAFileRefuses] to every
+// migration of an up run, in run order and in the mode each resolves to. It
+// comes after every other refusal of [Migrator.validateUpTransactionMode], so
+// under tx-mode all a batch refusal of a later file, such as a declared
+// timeout, is reported before the transaction control of an earlier one. A
+// migration whose mode does not resolve is left to the step that runs it,
+// which reports why.
+func (m *Migrator) refuseUpWhatFilesRefuse(migrations []*Migration) error {
 	for _, migration := range migrations {
 		mode, err := m.resolveUpMigrationTxMode(migration)
 		if err != nil {
 			continue
 		}
-		if err := m.refuseWhatATransactionRefuses(migration, MigrationDirectionUp, mode); err != nil {
+		if err := m.refuseWhatAFileRefuses(migration, MigrationDirectionUp, mode); err != nil {
 			return err
 		}
 	}
@@ -2913,20 +2912,15 @@ func (m *Migrator) applyUpMigrationObserved(
 	}()
 
 	m.logger.Info("Applying migration", "version", migration.Version, "description", migration.Description)
-	own, err := m.validatedUpTransactionMode(migration, txMode)
+	own, err := m.ownTransactionMode(migration, txMode, MigrationDirectionUp)
 	if err != nil {
 		return false, err
 	}
-	txMode = own.mode
-	if txMode == MigrationTxModeNone && own.blocks.Empty() {
-		if err := m.validateNoTransactionSQL(migration, MigrationDirectionUp); err != nil {
-			return false, err
-		}
+	if err := m.refuseBodyForItsMode(migration, MigrationDirectionUp, own); err != nil {
+		return false, err
 	}
+	txMode = own.mode
 	if usesTransactionalProgressWitness(m.connectionDialect(), txMode) {
-		if err := m.validateTransactionalProgressSQL(migration, MigrationDirectionUp); err != nil {
-			return false, err
-		}
 		if err := m.requireTransactionalTargetEngines(ctx); err != nil {
 			return false, err
 		}
@@ -3435,24 +3429,18 @@ func (m *Migrator) rollbackMigrationObserved(ctx context.Context, migration *Mig
 	if err != nil {
 		return err
 	}
+	if err := m.refuseBodyForItsMode(migration, MigrationDirectionDown, own); err != nil {
+		return err
+	}
 	if !own.blocks.Empty() {
 		return m.rollbackMigrationOwnTransactions(ctx, migration, startedAt, deleteSQL, own)
 	}
 	txMode = own.mode
 	if txMode == MigrationTxModeNone {
-		if err := m.validateNoTransactionSQL(migration, MigrationDirectionDown); err != nil {
-			return err
-		}
 		return m.rollbackMigrationNoTransaction(ctx, migration, startedAt, deleteSQL)
-	}
-	if err := m.validateManagedTransactionSQL(migration, MigrationDirectionDown, txMode); err != nil {
-		return err
 	}
 	usesWitness := usesTransactionalProgressWitness(m.connectionDialect(), txMode)
 	if usesWitness {
-		if err := m.validateTransactionalProgressSQL(migration, MigrationDirectionDown); err != nil {
-			return err
-		}
 		if err := m.requireTransactionalTargetEngines(ctx); err != nil {
 			return err
 		}
@@ -3992,21 +3980,56 @@ func (m *Migrator) validateDownMigrations(ctx context.Context, migrations []*Mig
 		if err := m.refusePlacement(migration, MigrationDirectionDown, mode); err != nil {
 			return err
 		}
-		if err := m.refuseWhatATransactionRefuses(migration, MigrationDirectionDown, mode); err != nil {
+		if err := m.refuseWhatAFileRefuses(migration, MigrationDirectionDown, mode); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// refuseWhatATransactionRefuses refuses a file of direction that holds a
-// statement the engine refuses inside the transaction the run opens around
-// the file, such as a lone CREATE or DROP INDEX CONCURRENTLY under the
+// refuseWhatAFileRefuses asks of a file of direction, run in mode, every
+// refusal the step that runs it makes from the file's text and the run's
+// options alone, in the order that step asks them: what the way the file runs
+// cannot carry ([Migrator.refuseBodyForItsMode]), what the hooks installed for
+// it reject ([refuseWhatTheHooksRefuse]), and what the transaction around it
+// would refuse ([Migrator.refuseWhatATransactionRefuses]). A run asks it of
+// every file before the first of them runs: [Migrator.validateUpTransactionMode]
+// for an up run and [Migrator.validateDownMigrations] for a rollback.
+//
+// Without it a run reaches the refusal once the files before the refused one
+// have run, and an invalid directive or a refused statement comes after the
+// run marked the file's revision pending, so it leaves the file failed with
+// nothing applied. Each refusal keeps its own predicate; this only asks them
+// earlier. What needs the database's answer, such as a pre-migration check or
+// the storage engines the MySQL-family witness verifies, is asked when the
+// file runs, of the database the files before it left.
+func (m *Migrator) refuseWhatAFileRefuses(
+	migration *Migration,
+	direction MigrationDirection,
+	mode MigrationTxMode,
+) error {
+	own, err := m.ownTransactionMode(migration, mode, direction)
+	if err != nil {
+		return err
+	}
+	if err := m.refuseBodyForItsMode(migration, direction, own); err != nil {
+		return err
+	}
+	if refuse := migration.refuseByHooks(direction); refuse != nil {
+		if err := refuse(m.conn); err != nil {
+			return err
+		}
+	}
+	return m.refuseWhatATransactionRefuses(migration, direction, own)
+}
+
+// refuseWhatATransactionRefuses refuses a file of direction, run in own, that
+// holds a statement the engine refuses inside the transaction the run opens
+// around the file, such as a lone CREATE or DROP INDEX CONCURRENTLY under the
 // per-file transaction, or anywhere under tx-mode all. It is the refusal
 // [executeMigrationFileSQL] makes before the file's first statement, asked of
-// every file of the run before the first of them runs: by
-// [Migrator.validateUpTransactionMode] for an up run and by
-// [Migrator.validateDownMigrations] for a rollback.
+// every file of the run before the first of them runs by
+// [Migrator.refuseWhatAFileRefuses].
 //
 // Without it the refusal comes once the run has marked the file's revision
 // pending, so it leaves the migration failed with nothing applied, and the
@@ -4017,17 +4040,10 @@ func (m *Migrator) validateDownMigrations(ctx context.Context, migrations []*Mig
 func (m *Migrator) refuseWhatATransactionRefuses(
 	migration *Migration,
 	direction MigrationDirection,
-	mode MigrationTxMode,
+	own ownTransactionRun,
 ) error {
 	refuse := migration.refuseInsideTransaction(direction)
-	if refuse == nil {
-		return nil
-	}
-	own, err := m.ownTransactionMode(migration, mode, direction)
-	if err != nil {
-		return err
-	}
-	if !own.blocks.Empty() || own.mode == MigrationTxModeNone {
+	if refuse == nil || !own.blocks.Empty() || own.mode == MigrationTxModeNone {
 		return nil
 	}
 	return refuse(m.conn)

@@ -1100,6 +1100,15 @@ A file that runs without a transaction around it is not refused: one marked
 `--tx-mode none`, and, under `--runner golang-migrate`, a file of one
 statement, which that runner sends alone.
 
+The other refusals Ptah makes from a file's text stop the run before it starts
+in the same way, in both directions and in a dry run: transaction control such
+as `BEGIN` or `COMMIT` in a file Ptah runs in a transaction or without one, an
+`online_ddl_tool` or `online_ddl_fallback` value Ptah does not know, and on
+MySQL and MariaDB under `--tx-mode file`, a statement the transaction witness
+refuses, such as a table on a non-InnoDB engine. What needs the database's
+answer, such as a pre-migration check or the storage engines the witness
+verifies, is asked when the run reaches the file.
+
 **A migration failed partway.** The revision table records a dirty state and
 every later run refuses to continue until it is repaired — see
 [Maintain migration history](../maintain-history/). A failed *rollback* records

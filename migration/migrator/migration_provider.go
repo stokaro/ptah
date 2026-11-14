@@ -650,6 +650,7 @@ func setMigrationUp(migration *Migration, up sqlMigrationFile) {
 	migration.upInterceptor = up.interceptor
 	migration.upOwnsTransactions = up.ownsTransactions
 	migration.upRefuseInsideTransaction = up.refuseInsideTransaction
+	migration.upRefuseByHooks = up.refuseByHooks
 	migration.UpSQL = up.sql
 	migration.atlasCheckFiles = up.checkFiles
 	migration.UpTimeouts = up.timeouts
@@ -679,6 +680,7 @@ func setMigrationDown(migration *Migration, down sqlMigrationFile) {
 	migration.downSQLFunc = down.fn
 	migration.downInterceptor = down.interceptor
 	migration.downRefuseInsideTransaction = down.refuseInsideTransaction
+	migration.downRefuseByHooks = down.refuseByHooks
 	migration.DownSQL = down.sql
 	migration.DownTimeouts = down.timeouts
 	migration.downParsedTimeouts = down.timeouts
