@@ -109,6 +109,11 @@ type ConvertedApplySource struct {
 	// can name the file as the directory holds it. It is nil when the
 	// conversion renamed nothing, and always for a native Atlas directory.
 	Renamed map[string]string
+	// Entries are the migrations the conversion wrote, in execution order,
+	// each naming the source file it was read from, for a caller that reports
+	// a converted migration in the terms of its source. A native Atlas
+	// directory is not converted and has none.
+	Entries []atlasmigrateimport.Entry
 }
 
 // ConvertApplySource converts an already-captured source snapshot into the
@@ -134,7 +139,7 @@ func ConvertApplySource(
 	if err != nil {
 		return ConvertedApplySource{}, fmt.Errorf("capture converted migration directory: %w", err)
 	}
-	return ConvertedApplySource{FS: converted, Renamed: loaded.RenamedSources()}, nil
+	return ConvertedApplySource{FS: converted, Renamed: loaded.RenamedSources(), Entries: loaded.Entries}, nil
 }
 
 // ReadsNativeAtlasDir reports whether format selects a native Atlas directory

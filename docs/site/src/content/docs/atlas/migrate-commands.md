@@ -2276,10 +2276,28 @@ view, a trigger, a routine, a sequence, a policy or a privilege counts as one.
 The community binary counts only what it reads off the dev database: tables
 with their columns, constraints, indexes and comments, schemas, and enum types.
 The drop of a type the dev database holds as a composite or a range type counts
-nothing there. Under `PTAH_ATLAS_STRICT_COMPAT=1` the count is that one, with
-one gap: `DROP SEQUENCE … CASCADE` of a sequence a column default draws from
-also removes that default, and the community binary counts the changed table,
-where strict mode counts nothing. Native `ptah migrations lint` prints no count.
+nothing there. Under `PTAH_ATLAS_STRICT_COMPAT=1` the count is that one.
+Native `ptah migrations lint` prints no count.
+
+On PostgreSQL, `DROP SEQUENCE ... CASCADE` also removes every column default
+that calls `nextval` on the sequence, a `SERIAL` column's default among them.
+Each table that loses a default counts as one change on both surfaces, however
+many of its columns the cascade reaches, so under strict mode the drop counts
+the tables and not the sequence. A sequence outside the reviewed schema counts
+nothing itself, and the tables inside it still count.
+
+The defaults are read from the state the dev database holds before the file.
+The count leaves a table out where the file may have changed its defaults
+before the drop, or where that state cannot be matched against the drop, and
+the community binary counts the table in each of these cases:
+
+- an earlier statement of the file names the table;
+- an earlier statement of the file names the sequence;
+- an earlier statement hides its effect, such as a `DO` block or a `CASCADE`
+  other than a sequence's;
+- the drop qualifies the sequence by its schema and the dev URL sets no
+  `search_path`: the read returns the sequence a default calls unqualified,
+  and the run cannot tell which schema that is.
 
 ### Renames
 
@@ -2827,8 +2845,13 @@ Ptah-native migrations instead; see
   every report.
 - Each step entry: `.Name`, `.Text`, `.Error`, and `.Result`.
 - Each file entry: `.Name`, `.Text`, `.Reports`, `.Error`, `.Findings`,
-  `.Line`, and `.SuggestedFixes`. In a Flyway directory `.Name` is the file
-  name the directory holds, such as `V1.5__b.sql`.
+  `.Line`, and `.SuggestedFixes`. In a directory of another layout a file
+  entry is the source file the directory holds: `.Name` is its name, such as
+  `V1.5__b.sql` or `2_b.up.sql`, `.Text` is the file as written, and each
+  diagnostic's `.Pos` is an offset into that text. The text report's
+  `-- L<n>:` is the line of that file too. In a goose or dbmate file this
+  differs from the pinned binary; see
+  [A finding in a goose or dbmate file](../retained-divergences/#a-finding-in-a-goose-or-dbmate-file).
 - A file's `.Error` is the replay error, or the headline of each report that
   holds an error, joined with `; `. A `DROP TABLE` gives
   `destructive changes detected`.

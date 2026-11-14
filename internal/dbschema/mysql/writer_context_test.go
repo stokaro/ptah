@@ -11,6 +11,7 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	mysqldriver "github.com/go-sql-driver/mysql"
 
 	"ptah.run/core/platform"
 	"ptah.run/internal/dbschema/dbtest"
@@ -599,6 +600,128 @@ func TestWriterDropAllTables_ReturnsImmediateViewDropFailure(t *testing.T) {
 	})
 }
 
+// A view whose table a migration dropped cannot be opened, so the lock that
+// protects every view refuses it. The view is dropped on its own, and the views
+// that lock still go through the protected handoff with the tables.
+func TestWriterDropAllTables_DropsUnopenableViewsBeforeTheHandoff(t *testing.T) {
+	c := qt.New(t)
+	recorder := &mysqlCleanupRecorder{
+		foreignKeyChecks: 1,
+		viewDropStarted:  make(chan struct{}),
+		unopenableViews:  []string{"stale_users"},
+		objects: [][]driver.Value{
+			{"active_users", "VIEW"},
+			{"stale_users", "VIEW"},
+			{"users", "TABLE"},
+		},
+	}
+	db := dbtest.OpenWithExec(t, recorder.query, recorder.exec)
+	writer := mysql.NewMySQLWriterWithServerVersion(db.SQL, "test", platform.MySQL, "8.0.13")
+
+	err := writer.DropAllTables(t.Context())
+
+	c.Assert(err, qt.IsNil)
+	statements := recorder.statements()
+	c.Assert(statements, qt.HasLen, 11)
+	c.Assert(statements[:6], qt.DeepEquals, []string{
+		"LOCK TABLES `test`.`active_users` WRITE, `test`.`stale_users` WRITE, `test`.`users` WRITE",
+		"LOCK TABLES `test`.`active_users` WRITE",
+		"LOCK TABLES `test`.`stale_users` WRITE",
+		"UNLOCK TABLES",
+		"DROP VIEW IF EXISTS `test`.`stale_users`",
+		"LOCK TABLES `test`.`active_users` WRITE, `test`.`users` WRITE",
+	})
+	// The handoff runs the DROP VIEW on a connection of its own, so it and the
+	// UNLOCK that releases it arrive in either order.
+	c.Assert(statements[6:], qt.ContentEquals, []string{
+		"DROP VIEW IF EXISTS `test`.`active_users`",
+		"UNLOCK TABLES",
+		"LOCK TABLES `test`.`users` WRITE",
+		"DROP TABLE IF EXISTS `test`.`users`",
+		"UNLOCK TABLES",
+	})
+}
+
+// The migration that dropped the table leaves only the view behind, which is
+// what a lint replay of `DROP TABLE t` under `CREATE VIEW v AS SELECT ... FROM
+// t` hands the cleanup. Nothing is left to lock.
+func TestWriterDropAllTables_DropsTheOnlyViewWhenItCannotBeOpened(t *testing.T) {
+	c := qt.New(t)
+	recorder := &mysqlCleanupRecorder{
+		foreignKeyChecks: 1,
+		unopenableViews:  []string{"stale_users"},
+		objects: [][]driver.Value{
+			{"stale_users", "VIEW"},
+		},
+	}
+	db := dbtest.OpenWithExec(t, recorder.query, recorder.exec)
+	writer := mysql.NewMySQLWriterWithServerVersion(db.SQL, "test", platform.MariaDB, "10.11.15-MariaDB")
+
+	err := writer.DropAllTables(t.Context())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(recorder.statements(), qt.DeepEquals, []string{
+		"LOCK TABLES `test`.`stale_users` WRITE",
+		"LOCK TABLES `test`.`stale_users` WRITE",
+		"UNLOCK TABLES",
+		"DROP VIEW IF EXISTS `test`.`stale_users`",
+	})
+}
+
+// The view that cannot be opened is dropped outside the handoff, so the
+// external-view check runs again right before that drop.
+func TestWriterDropAllTables_RejectsViewCreatedBeforeUnopenableViewDrop(t *testing.T) {
+	c := qt.New(t)
+	recorder := &mysqlCleanupRecorder{
+		foreignKeyChecks:   1,
+		externalViewCounts: []int{0, 1},
+		unopenableViews:    []string{"stale_users"},
+		objects: [][]driver.Value{
+			{"stale_users", "VIEW"},
+		},
+	}
+	db := dbtest.OpenWithExec(t, recorder.query, recorder.exec)
+	writer := mysql.NewMySQLWriterWithServerVersion(db.SQL, "test", platform.MySQL, "8.0.13")
+
+	err := writer.DropAllTables(t.Context())
+
+	c.Assert(err, qt.ErrorMatches,
+		`mysql: refusing to clean database "test": 1 views from other databases reference it`,
+	)
+	c.Assert(recorder.statements(), qt.DeepEquals, []string{
+		"LOCK TABLES `test`.`stale_users` WRITE",
+		"LOCK TABLES `test`.`stale_users` WRITE",
+		"UNLOCK TABLES",
+	})
+}
+
+// Only error 1356 says a view cannot be opened. Any other refusal of the lock
+// stops the cleanup before anything is dropped.
+func TestWriterDropAllTables_StopsWhenTheLockFailsForAnotherReason(t *testing.T) {
+	c := qt.New(t)
+	lockErr := &mysqldriver.MySQLError{Number: 1044, Message: "Access denied for user 'ptah'@'%' to database 'test'"}
+	recorder := &mysqlCleanupRecorder{
+		foreignKeyChecks: 1,
+		lockErr:          lockErr,
+		objects: [][]driver.Value{
+			{"active_users", "VIEW"},
+			{"users", "TABLE"},
+		},
+	}
+	db := dbtest.OpenWithExec(t, recorder.query, recorder.exec)
+	writer := mysql.NewMySQLWriterWithServerVersion(db.SQL, "test", platform.MySQL, "8.0.13")
+
+	err := writer.DropAllTables(t.Context())
+
+	c.Assert(err, qt.ErrorIs, lockErr)
+	c.Assert(err, qt.ErrorMatches,
+		`mysql: lock cleanup views and tables: Error 1044: Access denied for user 'ptah'@'%' to database 'test'`,
+	)
+	c.Assert(recorder.statements(), qt.DeepEquals, []string{
+		"LOCK TABLES `test`.`active_users` WRITE, `test`.`users` WRITE",
+	})
+}
+
 func TestWriterDropAllTables_AcceptsImmediateViewDropCompletion(t *testing.T) {
 	c := qt.New(t)
 	recorder := &mysqlCleanupRecorder{
@@ -793,6 +916,8 @@ type mysqlCleanupRecorder struct {
 	viewDropRelease            chan struct{}
 	viewDropReleaseOnce        sync.Once
 	viewDropErr                error
+	unopenableViews            []string
+	lockErr                    error
 	otherMetadataLockWaiters   int
 	enableErr                  error
 	foreignKeyDropErr          error
@@ -969,6 +1094,8 @@ func (rec *mysqlCleanupRecorder) exec(
 	switch {
 	case statement == "SET FOREIGN_KEY_CHECKS = 1" && enableErr != nil:
 		return nil, enableErr
+	case strings.HasPrefix(statement, "LOCK TABLES"):
+		return driver.RowsAffected(0), rec.lockError(statement)
 	case strings.HasPrefix(statement, "DROP VIEW"):
 		rec.waitForViewDropRelease()
 		return driver.RowsAffected(0), viewDropErr
@@ -987,6 +1114,22 @@ func (rec *mysqlCleanupRecorder) exec(
 	default:
 		return driver.RowsAffected(0), nil
 	}
+}
+
+// lockError is how the server answers a LOCK TABLES: error 1356 when it names
+// a view the server cannot open, as MySQL and MariaDB answer it, otherwise
+// lockErr.
+func (rec *mysqlCleanupRecorder) lockError(statement string) error {
+	for _, view := range rec.unopenableViews {
+		if strings.Contains(statement, "`"+view+"` WRITE") {
+			return &mysqldriver.MySQLError{
+				Number: 1356,
+				Message: "View 'test." + view + "' references invalid table(s) or column(s) or function(s) " +
+					"or definer/invoker of view lack rights to use them",
+			}
+		}
+	}
+	return rec.lockErr
 }
 
 func (rec *mysqlCleanupRecorder) recordViewDropStart(statement string) {

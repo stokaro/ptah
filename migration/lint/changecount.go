@@ -27,7 +27,9 @@ const (
 	// per object it leaves behind, rather than one per change each statement
 	// makes. It also asks for the starting state of every version holding a
 	// statement that state may show to change nothing, through
-	// [Analysis.BaselineVersions].
+	// [Analysis.BaselineVersions]. A PostgreSQL DROP SEQUENCE ... CASCADE
+	// counts the sequence and one change per table whose column defaults the
+	// cascade removes, which that state names.
 	ChangeCountAtlas ChangeCount = "atlas"
 	// ChangeCountAtlasCommunity counts as [ChangeCountAtlas] does, and only
 	// the changes to kinds of object the community Atlas binary reads off the
@@ -35,7 +37,8 @@ const (
 	// comments, schemas, and enum types. A change to a view, a materialized
 	// view, a trigger, a routine, a sequence, a policy, a role, a privilege,
 	// row-level security, or an object an engine owner's statement adds
-	// counts nothing.
+	// counts nothing, so a DROP SEQUENCE ... CASCADE counts only the tables
+	// whose defaults it removes.
 	ChangeCountAtlasCommunity ChangeCount = "atlas-community"
 )
 
@@ -63,8 +66,8 @@ type objectKind uint8
 const (
 	// kindTablePart is a part of a table other than a column or an index: a
 	// constraint, an ALTER TABLE action Ptah models no further, an engine
-	// owner's operation inside ALTER TABLE, or a comment on the table or one
-	// of its columns.
+	// owner's operation inside ALTER TABLE, a comment on the table or one of
+	// its columns, or a column default a DROP SEQUENCE ... CASCADE removes.
 	kindTablePart objectKind = iota
 	kindTable
 	kindColumn
@@ -167,6 +170,14 @@ type countedChange struct {
 	// guarded reports a change written IF EXISTS or IF NOT EXISTS, which the
 	// engine skips when the object is already absent or present.
 	guarded bool
+	// cascades is the folded reference of the sequence a DROP SEQUENCE ...
+	// CASCADE drops, which takes every column default that names it along;
+	// empty for every other change.
+	cascades string
+	// outside reports a cascading drop of a sequence outside the scope. No
+	// count reads the drop itself, and it is kept for the tables its cascade
+	// changes, which the scope may hold.
+	outside bool
 }
 
 // alterOperationObject is the kind of object an ALTER TABLE action other than
@@ -255,6 +266,7 @@ func fileSchemaChanges(
 	opensDirectory bool,
 ) fileChanges {
 	all, excluded := extractSchemaChanges(file, dialect, scope)
+	inside := slices.DeleteFunc(slices.Clone(all), func(change countedChange) bool { return change.outside })
 	leaves := count.readsStartingState() && opensDirectory && len(file.Statements) > largeFileStatements
 	var decided []int
 	if !leaves {
@@ -263,6 +275,10 @@ func fileSchemaChanges(
 	changes := slices.DeleteFunc(slices.Clone(all), func(change countedChange) bool {
 		return changesNothing(file, change)
 	})
+	if count.readsStartingState() && !leaves {
+		changes = withCascadedDefaults(file, changes)
+	}
+	changes = slices.DeleteFunc(changes, func(change countedChange) bool { return change.outside })
 	if count == ChangeCountAtlasCommunity {
 		changes = slices.DeleteFunc(changes, func(change countedChange) bool {
 			return !communityCounts(file, change)
@@ -278,7 +294,7 @@ func fileSchemaChanges(
 	if compatibility == CompatibilityProfileAtlas && lintOf(dialect).AtlasRebuildColumnDiff && !leaves {
 		counted = foldAtlasReplacements(file, counted)
 	}
-	return fileChanges{counted: counted, excluded: excluded, decided: decided, all: all}
+	return fileChanges{counted: counted, excluded: excluded, decided: decided, all: inside}
 }
 
 // leftBehind returns, for a file that starts from an empty schema, one change

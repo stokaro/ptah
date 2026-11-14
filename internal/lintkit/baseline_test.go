@@ -336,6 +336,30 @@ func TestState_Object_ReturnsACopy(t *testing.T) {
 	c.Assert(again, qt.DeepEquals, []string{"happy", "sad"})
 }
 
+// Columns lists every usable column of one version, of every table and
+// schema, in baseline order, and nothing for a version read empty or never
+// read.
+func TestState_Columns(t *testing.T) {
+	for _, test := range []struct {
+		version int64
+		want    []lintext.BaselineColumn
+	}{
+		{version: 1, want: []lintext.BaselineColumn{
+			{Version: 1, Schema: "public", Table: "users", Name: "id", DataType: "integer", NotNull: true, TablePartitioned: true},
+			{Version: 1, Schema: "public", Table: "users", Name: "email", DataType: "text", TablePartitioned: true},
+			{Version: 1, Schema: "audit", Table: "users", Name: "id", DataType: "bigint"},
+		}},
+		{version: 2, want: []lintext.BaselineColumn{{Version: 2, Table: "users", Name: "id", DataType: "integer"}}},
+		{version: 3, want: nil},
+		{version: 4, want: nil},
+	} {
+		t.Run(fmt.Sprintf("version %d", test.version), func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(states()[test.version].Columns(), qt.DeepEquals, test.want)
+		})
+	}
+}
+
 // A state names schemas when it was read and a row names one. Version 1 does;
 // version 2 was read from one schema; version 4 was read and holds nothing;
 // version 3 was never read.

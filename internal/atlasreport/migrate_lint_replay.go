@@ -133,7 +133,7 @@ func writeMigrateLintTextReplayFailure(
 	now func() time.Time,
 ) error {
 	start := now()
-	header := buildMigrateLintText(analysis, revisionVersions).header
+	header := buildMigrateLintText(analysis, revisionVersions, nil).header
 	if header == "" {
 		header = "Analyzing changes (1 migration in total):"
 	}

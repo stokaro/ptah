@@ -171,6 +171,13 @@ type BaselineColumn struct {
 	NotNull bool `json:"not_null,omitempty"`
 	// HasDefault reports whether the column carries a DEFAULT expression.
 	HasDefault bool `json:"has_default,omitempty"`
+	// Default is the column's DEFAULT expression as the host read it, which
+	// on the PostgreSQL family is the server's own spelling, such as
+	// `nextval('s'::regclass)`. The server writes a sequence such a constant
+	// names bare where the search path the read ran with finds it, and
+	// qualified otherwise. Empty for a column without a default, and where the
+	// host does not report the expression.
+	Default string `json:"default,omitempty"`
 }
 
 // BaselineDependent is one object that reads a column in the schema state a

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"path"
 	"slices"
 	"strconv"
@@ -37,11 +38,38 @@ type MigrateLintOptions struct {
 	// that prints `.Name` has to get the file the repository holds. A key the
 	// map lacks keeps the analyzed name.
 	FileNames map[int64]string
+	// Sources maps converted execution-order keys to the file each converted
+	// migration was read from, for a layout converted in memory. A report gives
+	// such a file the source file's name where FileNames names none, its text,
+	// and the source line of every finding and diagnostic position, which is
+	// how the pinned community binary v1.3.0 reports a Liquibase, Flyway or
+	// golang-migrate directory. A key the map lacks is reported as analyzed.
+	Sources map[int64]MigrateLintSource
 	// Schema carries the dev-database state the analyzed versions start from
 	// and end at, rendered as HCL. The report carries it only when the replay
 	// finished: a run that stopped at an integrity failure or inside the replay
 	// reports an empty schema whatever this holds.
 	Schema MigrateLintSchema
+}
+
+// MigrateLintSource is the file a converted migration was read from.
+type MigrateLintSource struct {
+	// Name is the file's name in the operator's directory.
+	Name string
+	// Text is the file as read.
+	Text string
+	// Lines maps the converted migration's lines to Text's: element i is the
+	// 1-based line of Text that converted line i+1 stands for.
+	Lines []int
+}
+
+// line is the source line a converted line stands for, 0 for a line the
+// converted migration does not have.
+func (s MigrateLintSource) line(converted int) int {
+	if converted < 1 || converted > len(s.Lines) {
+		return 0
+	}
+	return s.Lines[converted-1]
 }
 
 type MigrateLintIntegrity struct {
@@ -256,14 +284,15 @@ func NewMigrateLint(opts MigrateLintOptions) (MigrateLint, error) {
 	if opts.Analysis == nil {
 		return MigrateLint{}, fmt.Errorf("migration lint analysis is required")
 	}
+	names := reportedFileNames(opts.FileNames, opts.Sources)
 	if failure := opts.ReplayFailure; failure != nil {
-		selected, total := migrateLintFiles(*opts.Analysis, opts.FileNames)
+		selected, total := migrateLintFiles(*opts.Analysis, names, opts.Sources)
 		result.Steps = migrateLintSteps(selected, total, opts.Integrity, failure.Error)
-		result.Files = []MigrateLintFile{{Name: failure.reportedName(opts.FileNames), Error: failure.Error}}
+		result.Files = []MigrateLintFile{{Name: failure.reportedName(names), Error: failure.Error}}
 		return result, nil
 	}
-	files, total := migrateLintFiles(*opts.Analysis, opts.FileNames)
-	files = attachMigrateLintFindings(files, opts.Analysis.Findings())
+	files, total := migrateLintFiles(*opts.Analysis, names, opts.Sources)
+	files = attachMigrateLintFindings(files, sourcedFindings(*opts.Analysis, opts.Sources))
 	result.Steps = migrateLintSteps(files, total, opts.Integrity, opts.Error)
 	result.Files = files
 	if opts.Error == "" {
@@ -320,10 +349,12 @@ func (i MigrateLintIntegrity) Failed() bool {
 
 // migrateLintFiles returns the selected up-migration files and the count of
 // new up-migration files considered. names renames a file whose layout was
-// converted; see [MigrateLintOptions.FileNames].
+// converted, and sources gives it the text of its source file; see
+// [MigrateLintOptions.FileNames] and [MigrateLintOptions.Sources].
 func migrateLintFiles(
 	analysis migrationlint.Analysis,
 	names map[int64]string,
+	sources map[int64]MigrateLintSource,
 ) (files []MigrateLintFile, total int) {
 	prepared := analysis.Files()
 	maxVersion := migrateLintMaxVersion(prepared)
@@ -339,14 +370,54 @@ func migrateLintFiles(
 		if !file.Selected {
 			continue
 		}
+		text := file.Source
+		if source, ok := sources[file.Version]; ok {
+			text = source.Text
+		}
 		files = append(files, MigrateLintFile{
 			Name:       migrateLintFileName(file, names),
-			Text:       file.Source,
+			Text:       text,
 			sourcePath: file.Path,
 			changes:    len(file.Changes),
 		})
 	}
 	return files, total
+}
+
+// reportedFileNames is the name a report gives each converted file: the one
+// names gives it, and otherwise the name of its source file.
+func reportedFileNames(names map[int64]string, sources map[int64]MigrateLintSource) map[int64]string {
+	if len(sources) == 0 {
+		return names
+	}
+	reported := make(map[int64]string, len(names)+len(sources))
+	for version, source := range sources {
+		reported[version] = source.Name
+	}
+	maps.Copy(reported, names)
+	return reported
+}
+
+// sourcedFindings returns the findings of analysis, each in a converted file
+// placed on the line of the source file it stands for; see
+// [MigrateLintOptions.Sources].
+func sourcedFindings(analysis migrationlint.Analysis, sources map[int64]MigrateLintSource) []migrationlint.Finding {
+	findings := analysis.Findings()
+	if len(sources) == 0 {
+		return findings
+	}
+	byPath := make(map[string]MigrateLintSource, len(sources))
+	for _, file := range analysis.Files() {
+		if source, ok := sources[file.Version]; ok {
+			byPath[path.Clean(file.Path)] = source
+		}
+	}
+	for i := range findings {
+		if source, ok := byPath[path.Clean(findings[i].File)]; ok {
+			findings[i].Line = source.line(findings[i].Line)
+		}
+	}
+	return findings
 }
 
 // migrateLintFileName is the name a report gives an analyzed file: the name it
