@@ -677,6 +677,7 @@ func setMigrationDown(migration *Migration, down sqlMigrationFile) {
 	}
 	migration.downSQLFunc = down.fn
 	migration.downInterceptor = down.interceptor
+	migration.downRefuseInsideTransaction = down.refuseInsideTransaction
 	migration.DownSQL = down.sql
 	migration.DownTimeouts = down.timeouts
 	migration.downParsedTimeouts = down.timeouts

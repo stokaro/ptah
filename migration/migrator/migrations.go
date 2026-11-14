@@ -415,6 +415,11 @@ type sqlMigrationFile struct {
 	// transaction, as the validator installed for it reads the file. It is nil
 	// when no validator that reads boundaries was installed.
 	ownsTransactions func(conn *dbschema.DatabaseConnection) (bool, error)
+	// refuseInsideTransaction is the check [executeMigrationFileSQL] makes
+	// before the file's first statement when it runs the file inside a
+	// transaction, so a run can ask it before it marks anything; see
+	// [Migrator.refuseWhatATransactionRefuses].
+	refuseInsideTransaction func(conn *dbschema.DatabaseConnection) error
 	// checkFiles are the raw Atlas txtar checks.sql and checks/*.sql sections.
 	// They remain unsplit until execution, when the target dialect is known.
 	checkFiles []migrationfile.AtlasTxtarCheckFile
@@ -608,6 +613,12 @@ func migrationFuncFromSQLStringWithMetadata(filename, sql string, hooks statemen
 		ownsTransactions: func(conn *dbschema.DatabaseConnection) (bool, error) {
 			return fileOwnsTransactions(conn, filename, sql, hooks.validator)
 		},
+		refuseInsideTransaction: func(conn *dbschema.DatabaseConnection) error {
+			statements := splitSQLStatementsForConnection(conn, sql)
+			return preflightTransactionRequirements(
+				conn, filename, sql, statements, migrationExecutionTransactional, hooks.refusalRemedy(),
+			)
+		},
 	}, nil
 }
 
@@ -703,6 +714,11 @@ type Migration struct {
 	// closes itself; see [TransactionBoundaryValidator]. It is nil for a
 	// migration loaded without such a validator.
 	upOwnsTransactions func(conn *dbschema.DatabaseConnection) (bool, error)
+	// downRefuseInsideTransaction refuses the down file when a statement of
+	// it cannot run inside the transaction a rollback opens around the file.
+	// It is nil for a migration built in code, whose body is not checked
+	// before it runs either.
+	downRefuseInsideTransaction func(conn *dbschema.DatabaseConnection) error
 	// ownTransactions marks a migration of a directory written for a runner
 	// that opens no transaction around a file; see [WithOwnTransactions].
 	ownTransactions bool

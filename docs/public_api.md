@@ -4213,6 +4213,11 @@ use cumulative `partial_hashes`. A failure after changing transaction mode
 cannot reduce the recorded applied count below that verified prefix.
 `RepairMigration` holds the session advisory lock across revision inspection,
 resumed SQL, safety checks, and the final metadata write.
+`Migrator.RefuseDirtyRevision` returns the `*DirtyMigrationError` a run issues
+before it applies or rolls back anything, for a caller that decides from the
+applied version alone whether a run has work to do: a revision a failed
+rollback left is not applied, so the version reads as already rolled back over
+it.
 
 Programmatic migrations use `Migration.UpTxMode` and `Migration.DownTxMode`
 with `migrationfile.FileTxModeUnspecified`, `migrationfile.FileTxModeFile`, or
@@ -4242,6 +4247,15 @@ runs them. The option is off by default. With it:
   opens its own transaction under tx-mode all, and one with a directive asking
   for a transaction around the file, are refused before any migration of the
   run runs.
+- `RepairMigration` records the end a body reached once every statement of it
+  committed: a rollback's revision is removed and an apply's is recorded
+  applied. It never resumes a body that opens its own transactions from a
+  statement, because a resume runs the rest outside them, and it refuses a
+  plain repair of an up body that stopped partway, naming the retry that
+  resumes it. `Force` records the migration applied for an operator who
+  finished the body by hand. Without the option, repair refuses such a body
+  and names the runner that reads it. `Migrator.RevisionBodyOpensOwnTransactions`
+  reports which bodies these are, for a caller that words the next step.
 
 Atlas transaction-mode directive validation errors expose
 `migrationfile.AtlasTxModeDirectiveError` through `errors.As`. The leaf error

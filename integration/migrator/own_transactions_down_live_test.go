@@ -111,33 +111,25 @@ func TestMigrateDownOwnTransactions_LoneConcurrentDropLive(t *testing.T) {
 }
 
 // Without the option the migrator wraps the down file, so transaction control
-// in it, and a concurrent drop alone in it, are refused before a statement of
-// the file runs, and nothing is dropped. The refusal of transaction control
-// leaves the migration applied; the concurrent drop is refused once the
-// rollback started, and leaves it dirty with nothing applied.
+// in it, and a concurrent drop alone in it, are refused before the rollback
+// marks the revision, and nothing is dropped. The revision row still records
+// the migration applied, with every statement of its up file.
 func TestMigrateDownOwnTransactions_WithoutTheOptionLive(t *testing.T) {
 	tests := []struct {
 		name    string
 		down    string
 		wantErr string
-		// wantState and wantApplied are what the revision row records.
-		wantState   string
-		wantApplied int
 	}{
 		{
-			name:        "a file that opens its own transaction",
-			down:        "BEGIN;\nDROP TABLE owntx_a_%[1]s;\nCOMMIT;\n",
-			wantErr:     `(?s).*migration 2 cannot run tx-mode file down statement 1 because it controls transaction state.*`,
-			wantState:   "applied",
-			wantApplied: 3,
+			name:    "a file that opens its own transaction",
+			down:    "BEGIN;\nDROP TABLE owntx_a_%[1]s;\nCOMMIT;\n",
+			wantErr: `(?s).*migration 2 cannot run tx-mode file down statement 1 because it controls transaction state.*`,
 		},
 		{
 			name: "a lone concurrent drop",
 			down: "DROP INDEX CONCURRENTLY owntx_a_%[1]s_id_idx;\n",
-			wantErr: `(?s).*cannot run inside a transaction: line \d+ CREATE or DROP INDEX CONCURRENTLY is refused ` +
-				`inside a transaction block.*`,
-			wantState:   "failed:down",
-			wantApplied: 0,
+			wantErr: `(?s)0000000002_body\.down\.sql cannot run inside a transaction: line 1 CREATE or DROP INDEX ` +
+				`CONCURRENTLY is refused inside a transaction block.*`,
 		},
 	}
 	for _, test := range tests {
@@ -149,11 +141,39 @@ func TestMigrateDownOwnTransactions_WithoutTheOptionLive(t *testing.T) {
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(run.tables(c), qt.DeepEquals, []string{"a", "b", "c"})
-			c.Assert(run.revisionState(c), qt.Equals, test.wantState)
-			applied, _ := run.revision(c)
-			c.Assert(applied, qt.Equals, test.wantApplied)
+			c.Assert(run.revisionState(c), qt.Equals, "applied")
+			applied, failure := run.revision(c)
+			c.Assert(applied, qt.Equals, 3)
+			c.Assert(failure, qt.Equals, "")
 		})
 	}
+}
+
+// Under the default runner a lone DROP INDEX CONCURRENTLY is refused before
+// any migration of the run is rolled back, as transaction control is: the
+// third migration, whose rollback runs first, keeps its table d and its
+// applied revision, and the index is still there.
+func TestMigrateDownOwnTransactions_ConcurrentDropRefusedBeforeTheFirstRollbackLive(t *testing.T) {
+	c := qt.New(t)
+	run := newOwnTransactionsRun(c, postgresTestURL(t), ownTransactionsDownUp)
+	run.fsys["0000000002_body.down.sql"] = &fstest.MapFile{
+		Data: fmt.Appendf(nil, "DROP INDEX CONCURRENTLY owntx_a_%s_id_idx;\n", run.suffix),
+	}
+	run.fsys["0000000003_d.up.sql"] = &fstest.MapFile{Data: fmt.Appendf(nil, "CREATE TABLE owntx_d_%s (id int);\n", run.suffix)}
+	run.fsys["0000000003_d.down.sql"] = &fstest.MapFile{Data: fmt.Appendf(nil, "DROP TABLE owntx_d_%s;\n", run.suffix)}
+	c.Assert(run.migrator(c).MigrateUp(context.Background()), qt.IsNil)
+	run.exec(c, "CREATE INDEX owntx_a_"+run.suffix+"_id_idx ON owntx_a_"+run.suffix+" (id)")
+
+	err := run.migrator(c).MigrateDownTo(context.Background(), 0)
+
+	c.Assert(err, qt.ErrorMatches, `(?s)0000000002_body\.down\.sql cannot run inside a transaction: .*`)
+	c.Assert(run.tables(c), qt.DeepEquals, []string{"a", "b", "c", "d"})
+	c.Assert(run.texts(c, "SELECT version || ':' || state FROM "+run.table+" ORDER BY version"), qt.DeepEquals,
+		[]string{"1:applied", "2:applied", "3:applied"})
+	var indexes int
+	c.Assert(run.conn.QueryRowContext(context.Background(),
+		"SELECT count(*) FROM pg_class WHERE relname = $1", "owntx_a_"+run.suffix+"_id_idx").Scan(&indexes), qt.IsNil)
+	c.Assert(indexes, qt.Equals, 1)
 }
 
 // A down file whose transaction control the migrator does not run, and one
@@ -342,41 +362,112 @@ func TestMigrateDownOwnTransactions_InterruptedInsideTheFilesTransactionLive(t *
 	c.Assert(run.revisionState(c), qt.Equals, "applied")
 }
 
+// committedProgressDown is a down file whose own transaction drops table a
+// and commits before a statement that fails, so a failed rollback leaves three
+// of its six statements committed.
+const committedProgressDown = "BEGIN;\nDROP TABLE owntx_a_%[1]s;\nCOMMIT;\nINSERT INTO owntx_missing_%[1]s VALUES (1);\n" +
+	"DROP TABLE owntx_b_%[1]s;\nDROP TABLE owntx_c_%[1]s;\n"
+
+// newCommittedProgressRun rolls committedProgressDown back and watches the
+// rollback fail after its transaction committed.
+func newCommittedProgressRun(c *qt.C, dbURL string) *ownTransactionsRun {
+	c.Helper()
+	run := newOwnTransactionsDownRun(c, dbURL, committedProgressDown)
+	c.Assert(run.rollBack(c, migrator.WithOwnTransactions()), qt.ErrorMatches, `(?s).*does not exist.*`)
+	applied, _ := run.revision(c)
+	c.Assert(applied, qt.Equals, 3)
+	return run
+}
+
 // Once a transaction of the down file committed, the database holds neither
 // the migration nor its rollback, and no repair guesses which one the
 // operator wants. Recording the migration applied is refused, and so is
 // resuming the file, because a resume runs the rest of the file without the
-// transactions it opens. The operator finishes the rollback by hand and sets
-// the revision, which removes the row.
-func TestMigrateDownOwnTransactions_CommittedProgressIsNotGuessedLive(t *testing.T) {
-	c := qt.New(t)
-	run := newOwnTransactionsDownRun(c, postgresTestURL(t),
-		"BEGIN;\nDROP TABLE owntx_a_%[1]s;\nCOMMIT;\nINSERT INTO owntx_missing_%[1]s VALUES (1);\nDROP TABLE owntx_b_%[1]s;\n"+
-			"DROP TABLE owntx_c_%[1]s;\n")
-	c.Assert(run.rollBack(c, migrator.WithOwnTransactions()), qt.ErrorMatches, `(?s).*does not exist.*`)
-	applied, _ := run.revision(c)
-	c.Assert(applied, qt.Equals, 3)
-
-	for _, opts := range []migrator.RepairMigrationOptions{
-		{Version: 2},
-		{Version: 2, Force: true},
-		{Version: 2, ResumeFrom: 4},
-	} {
-		err := run.migrator(c, migrator.WithOwnTransactions()).RepairMigration(context.Background(), opts)
-
-		c.Assert(err, qt.ErrorMatches, `(?s)migration 2 cannot be repaired safely: .*"BEGIN" controls transaction state.*`,
-			qt.Commentf("%+v", opts))
-		c.Assert(run.tables(c), qt.DeepEquals, []string{"b", "c"})
-		c.Assert(run.revisionState(c), qt.Equals, "failed:down")
+// transactions it opens. Each refusal names the two endings that work. Read
+// one statement at a time, as a migrator without the option reads it, the
+// file's BEGIN is refused, and the refusal names the runner that reads it.
+func TestMigrateDownOwnTransactions_CommittedProgressIsNotGuessed_FailurePathLive(t *testing.T) {
+	const endings = `finish the rollback by hand and run "ptah migrations set --version <previous>" ` +
+		`\(version 0 where this is the oldest migration in the directory\), or restore what it reverted and repair ` +
+		`with --force to record the migration applied`
+	tests := []struct {
+		name    string
+		options []migrator.FSProviderOption
+		repair  migrator.RepairMigrationOptions
+		wantErr string
+	}{
+		{
+			name:    "a plain repair",
+			options: []migrator.FSProviderOption{migrator.WithOwnTransactions()},
+			repair:  migrator.RepairMigrationOptions{Version: 2},
+			wantErr: `migration 2 stopped while rolling back: 3 of 6 down statements committed, in transactions its ` +
+				`down file opens itself, and a resume would run the rest outside them; ` + endings,
+		},
+		{
+			name:    "a resume",
+			options: []migrator.FSProviderOption{migrator.WithOwnTransactions()},
+			repair:  migrator.RepairMigrationOptions{Version: 2, ResumeFrom: 4},
+			wantErr: `migration 2 cannot be resumed: its down file opens and closes its own transactions, and a ` +
+				`resume would run the rest of it one statement at a time, outside them; ` + endings,
+		},
+		{
+			name:   "a forced repair without the option",
+			repair: migrator.RepairMigrationOptions{Version: 2, Force: true},
+			wantErr: `(?s)migration 2 cannot be repaired safely: .*"BEGIN" controls transaction state.*; a directory ` +
+				`written for golang-migrate, whose files open their own transactions, is repaired with ` +
+				`--runner golang-migrate`,
+		},
 	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			run := newCommittedProgressRun(c, postgresTestURL(t))
 
-	run.exec(c, "DROP TABLE owntx_b_"+run.suffix)
-	run.exec(c, "DROP TABLE owntx_c_"+run.suffix)
-	_, err := run.migrator(c, migrator.WithOwnTransactions()).SetRevision(context.Background(), 1)
+			err := run.migrator(c, test.options...).RepairMigration(context.Background(), test.repair)
 
-	c.Assert(err, qt.IsNil)
-	applied, _ = run.revision(c)
-	c.Assert(applied, qt.Equals, -1)
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(run.tables(c), qt.DeepEquals, []string{"b", "c"})
+			c.Assert(run.revisionState(c), qt.Equals, "failed:down")
+			applied, _ := run.revision(c)
+			c.Assert(applied, qt.Equals, 3)
+		})
+	}
+}
+
+// The endings the refusals name each end the revision. The operator who
+// finishes the rollback by hand sets the revision, which removes the row; the
+// one who restores what it reverted repairs with --force, which records the
+// migration applied, and the next rollback runs the whole file again.
+func TestMigrateDownOwnTransactions_CommittedProgressIsNotGuessed_HappyPathLive(t *testing.T) {
+	t.Run("the rollback finished by hand", func(t *testing.T) {
+		c := qt.New(t)
+		run := newCommittedProgressRun(c, postgresTestURL(t))
+		run.exec(c, "DROP TABLE owntx_b_"+run.suffix)
+		run.exec(c, "DROP TABLE owntx_c_"+run.suffix)
+
+		_, err := run.migrator(c, migrator.WithOwnTransactions()).SetRevision(context.Background(), 1)
+
+		c.Assert(err, qt.IsNil)
+		applied, _ := run.revision(c)
+		c.Assert(applied, qt.Equals, -1)
+	})
+
+	t.Run("the migration restored by hand", func(t *testing.T) {
+		c := qt.New(t)
+		run := newCommittedProgressRun(c, postgresTestURL(t))
+		run.exec(c, "CREATE TABLE owntx_a_"+run.suffix+" (id int)")
+
+		err := run.migrator(c, migrator.WithOwnTransactions()).RepairMigration(context.Background(),
+			migrator.RepairMigrationOptions{Version: 2, Force: true})
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(run.revisionState(c), qt.Equals, "applied")
+		run.exec(c, "CREATE TABLE owntx_missing_"+run.suffix+" (id int)")
+		c.Assert(run.rollBack(c, migrator.WithOwnTransactions()), qt.IsNil)
+		c.Assert(run.tables(c), qt.IsNil)
+		applied, _ := run.revision(c)
+		c.Assert(applied, qt.Equals, -1)
+	})
 }
 
 // The mark written before the COMMIT of the down file's transaction names the

@@ -27,6 +27,7 @@ var projectEnvCommandPaths = []string{
 	"ptah migrations lint",
 	"ptah migrations log",
 	"ptah migrations plan",
+	"ptah migrations repair",
 	"ptah migrations set",
 	"ptah migrations status",
 	"ptah migrations tag",

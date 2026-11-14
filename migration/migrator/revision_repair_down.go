@@ -34,9 +34,10 @@ func (m *Migrator) repairRolledBackMigration(
 	migration *Migration,
 	revision *MigrationRevision,
 	opts RepairMigrationOptions,
+	own ownTransactionRun,
 ) error {
 	if opts.ResumeFrom <= 0 {
-		return m.repairRolledBackMigrationWithoutResume(ctx, migration, revision, opts)
+		return m.repairRolledBackMigrationWithoutResume(ctx, migration, revision, opts, own)
 	}
 	return m.withNoTransactionSession(ctx, func(scoped *Migrator) error {
 		if err := refuseUnknownStatementOutcomeResume(migration, revision); err != nil {
@@ -60,12 +61,13 @@ func (m *Migrator) repairRolledBackMigrationWithoutResume(
 	migration *Migration,
 	revision *MigrationRevision,
 	opts RepairMigrationOptions,
+	own ownTransactionRun,
 ) error {
 	if revision.Applied == revision.Total {
-		return m.finalizeCompletedRollback(ctx, migration, revision)
+		return m.finalizeCompletedRollback(ctx, migration, revision, own)
 	}
 	if !opts.Force && rollbackChangedSchema(revision) {
-		return rollbackRepairNeedsDirectionError(migration, revision)
+		return rollbackRepairNeedsDirectionError(migration, revision, own)
 	}
 	if err := m.refuseRepairOverUnsafeIndex(ctx, migration); err != nil {
 		return err
@@ -73,10 +75,17 @@ func (m *Migrator) repairRolledBackMigrationWithoutResume(
 	return m.forceAppliedMigration(ctx, migration)
 }
 
+// finalizeCompletedRollback removes the revision of a rollback whose every
+// down statement committed, as a rollback that recorded its end does. It
+// mirrors [Migrator.repairCompletedUpMigration]: the committed prefix is
+// verified, and where the index guard has to read what the body left, the
+// session the committed statements left is restored first, read the way the
+// body runs its own transactions (own).
 func (m *Migrator) finalizeCompletedRollback(
 	ctx context.Context,
 	migration *Migration,
 	revision *MigrationRevision,
+	own ownTransactionRun,
 ) error {
 	if err := m.verifyCommittedPrefix(*revision, migration, MigrationDirectionDown, "finalize the rollback"); err != nil {
 		return err
@@ -85,11 +94,12 @@ func (m *Migrator) finalizeCompletedRollback(
 		return m.deleteRolledBackRevision(ctx, migration)
 	}
 	return m.withNoTransactionSession(ctx, func(scoped *Migrator) error {
-		if err := scoped.restoreNoTransactionSessionPrefix(
+		if err := scoped.restoreSessionPrefix(
 			ctx,
 			migration,
 			MigrationDirectionDown,
 			revision.Total+1,
+			own,
 		); err != nil {
 			return err
 		}
@@ -111,8 +121,14 @@ func rollbackChangedSchema(revision *MigrationRevision) bool {
 // half-finished rollback should end. It reports how far the rollback got and
 // names every lever that ends it, with the numbers the operator needs to choose
 // between them. --resume-from is offered only when the row can say which
-// statement to resume from.
-func rollbackRepairNeedsDirectionError(migration *Migration, revision *MigrationRevision) error {
+// statement to resume from, and the body can be resumed: a down file that
+// runs in transactions it opens itself (own) cannot (see
+// [ownTransactionsResumeError]).
+func rollbackRepairNeedsDirectionError(
+	migration *Migration,
+	revision *MigrationRevision,
+	own ownTransactionRun,
+) error {
 	const endings = "--force to record it applied if the schema it reverted was restored, " +
 		"or run \"ptah migrations set --version <previous>\" if the rollback was finished by hand " +
 		"(version 0 where this is the oldest migration in the directory)"
@@ -130,6 +146,9 @@ func rollbackRepairNeedsDirectionError(migration *Migration, revision *Migration
 			migration.Version,
 			revision.ErrorStatement,
 		)
+	}
+	if !own.blocks.Empty() {
+		return ownTransactionsDownRepairError(migration, revision)
 	}
 	return fmt.Errorf(
 		"migration %d stopped while rolling back: %d of %d down statements committed; "+

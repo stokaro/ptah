@@ -3974,6 +3974,34 @@ func (m *Migrator) validateDownMigrations(ctx context.Context, migrations []*Mig
 		if err := m.refusePlacement(migration, MigrationDirectionDown, mode); err != nil {
 			return err
 		}
+		if err := m.refuseWhatATransactionRefuses(migration, mode); err != nil {
+			return err
+		}
 	}
 	return nil
+}
+
+// refuseWhatATransactionRefuses refuses a down file that holds a statement the
+// engine refuses inside the transaction the rollback opens around the file,
+// such as a lone DROP INDEX CONCURRENTLY under the per-file transaction. It is
+// the refusal [executeMigrationFileSQL] makes before the file's first
+// statement, asked before any migration of the run is rolled back.
+//
+// Without it the refusal comes once the rollback has marked the revision
+// pending, so it leaves the migration dirty with nothing applied, and the
+// rollbacks of the migrations above it in the run have already run. A file
+// that runs without a transaction around it, by its directive or because the
+// runner sends it as it is (see [Migrator.ownTransactionMode]), is not asked.
+func (m *Migrator) refuseWhatATransactionRefuses(migration *Migration, mode MigrationTxMode) error {
+	if migration.downRefuseInsideTransaction == nil {
+		return nil
+	}
+	own, err := m.ownTransactionMode(migration, mode, MigrationDirectionDown)
+	if err != nil {
+		return err
+	}
+	if !own.blocks.Empty() || own.mode == MigrationTxModeNone {
+		return nil
+	}
+	return migration.downRefuseInsideTransaction(m.conn)
 }

@@ -23,6 +23,7 @@ import (
 	"ptah.run/internal/cli/internal/cmdflags"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
+	"ptah.run/internal/cli/internal/dirtyhint"
 	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/cli/internal/migrateflags"
 	"ptah.run/internal/cli/internal/migratelock"
@@ -533,14 +534,10 @@ func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.
 		WithObserver(runtime.Observer())
 	document.Migrator = mig
 
-	// Get migration status before running
-	status, err := mig.GetMigrationStatus(cmd.Context())
+	status, err := rollbackStatus(cmd.Context(), mig, emit, conn.Info().Dialect)
 	if err != nil {
-		return fmt.Errorf("error getting migration status: %w", err)
+		return err
 	}
-
-	emit.Printf("Current version: %d\n", status.CurrentVersion)
-	emit.Printf("Total migrations: %d\n", status.TotalMigrations)
 
 	if status.CurrentVersion <= targetVersion {
 		if err := finishDownAtOrBelowTarget(cmd.Context(), downNoopInputs{
@@ -817,6 +814,44 @@ type downNoopInputs struct {
 	dialect        string
 	currentVersion int64
 	targetVersion  int64
+}
+
+// rollbackStatus reads and prints the migration status a rollback starts
+// from, and refuses a rollback over a revision a failed or interrupted run
+// left, with the command that ends that revision, before the version decides
+// anything.
+//
+// A revision a rollback left dirty is not applied, so the version reads as
+// already rolled back over it, and the branch that answers a database at or
+// below its target would report the rollback done. The refusal is the
+// migrator's, the one every run issues, so this branch and the rollback refuse
+// the same rows.
+func rollbackStatus(
+	ctx context.Context,
+	mig *migrator.Migrator,
+	emit cliobs.Emitter,
+	dialect string,
+) (*migrator.MigrationStatus, error) {
+	status, err := mig.GetMigrationStatus(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("error getting migration status: %w", err)
+	}
+	emit.Printf("Current version: %d\n", status.CurrentVersion)
+	emit.Printf("Total migrations: %d\n", status.TotalMigrations)
+
+	err = mig.RefuseDirtyRevision(ctx)
+	if err == nil {
+		return status, nil
+	}
+	dirty, ok := errors.AsType[*migrator.DirtyMigrationError](err)
+	if !ok {
+		return nil, fmt.Errorf("error reading the migration revisions: %w", err)
+	}
+	return nil, fmt.Errorf("error running down migrations: %w\n%s", err, dirtyhint.Recovery(dirtyhint.Revision{
+		Revision:        &dirty.Revision,
+		Dialect:         dialect,
+		OwnTransactions: mig.RevisionBodyOpensOwnTransactions(dirty.Revision),
+	}))
 }
 
 // finishDownAtOrBelowTarget answers the run whose database is already at or

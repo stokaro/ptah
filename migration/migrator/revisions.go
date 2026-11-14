@@ -1470,6 +1470,23 @@ func atlasRevisionState(revision MigrationRevision) string {
 	return migrationStateApplied
 }
 
+// RefuseDirtyRevision returns the refusal every run of this migrator issues
+// before it applies or rolls back anything: a [*DirtyMigrationError] naming
+// the first revision row a failed or interrupted run left. It returns nil when
+// no such row exists, and when the metadata table cannot record one: a dry run
+// finds no table, or the table is a legacy one with no run state. Like every
+// other read, it creates or upgrades the table first outside a dry run.
+//
+// A caller that decides from the applied version alone whether a run has
+// anything to do asks this first. A revision a rollback left dirty is not
+// applied, so the version reads as already rolled back over it.
+func (m *Migrator) RefuseDirtyRevision(ctx context.Context) error {
+	if err := m.Initialize(ctx); err != nil {
+		return fmt.Errorf("failed to initialize migrations table: %w", err)
+	}
+	return m.failIfDirty(ctx)
+}
+
 func (m *Migrator) failIfDirty(ctx context.Context) error {
 	if !m.metadataAvailable || m.legacyRevisionTable {
 		return nil
@@ -3270,13 +3287,14 @@ func (m *Migrator) repairMigrationLocked(ctx context.Context, opts RepairMigrati
 		return fmt.Errorf("migration %d is not dirty; rerun with --force to rewrite it", opts.Version)
 	}
 	direction := repairMigrationDirection(revision)
-	if err := m.validateRepairMigrationSQL(migration, revision, opts, direction); err != nil {
+	own, err := m.validateRepairMigrationSQL(migration, revision, opts, direction)
+	if err != nil {
 		return err
 	}
 	if direction == MigrationDirectionDown {
-		return m.repairRolledBackMigration(ctx, migration, revision, opts)
+		return m.repairRolledBackMigration(ctx, migration, revision, opts, own)
 	}
-	return m.repairUpMigration(ctx, migration, revision, opts)
+	return m.repairUpMigration(ctx, migration, revision, opts, own)
 }
 
 func repairMigrationDirection(revision *MigrationRevision) MigrationDirection {
@@ -3286,24 +3304,46 @@ func repairMigrationDirection(revision *MigrationRevision) MigrationDirection {
 	return MigrationDirectionUp
 }
 
+// validateRepairMigrationSQL refuses a repair that would read or run the body
+// of direction in a way the body cannot be run, and returns how the body runs
+// its own transactions, which a repair over committed progress reads the
+// committed statements by.
+//
+// A repair that runs no statement of the body and reads none of its committed
+// statements reads nothing, and is not refused here. Every other repair reads
+// the body one statement at a time, outside any transaction, the way a resume
+// runs it, unless the migrator was loaded with [WithOwnTransactions] and the
+// body opens its own transactions. Such a body is read with those
+// transactions, and only a resume is refused, because it would run the rest of
+// the body outside them.
 func (m *Migrator) validateRepairMigrationSQL(
 	migration *Migration,
 	revision *MigrationRevision,
 	opts RepairMigrationOptions,
 	direction MigrationDirection,
-) error {
+) (ownTransactionRun, error) {
 	txMode, err := m.resolveRepairMigrationTxMode(migration, direction)
 	if err != nil {
-		return err
+		return ownTransactionRun{}, err
 	}
 	committedProgress := revision != nil && revision.Dirty && revision.Applied > 0
 	if opts.ResumeFrom <= 0 && txMode != MigrationTxModeNone && !committedProgress {
-		return nil
+		return ownTransactionRun{}, nil
+	}
+	own, err := m.ownTransactionMode(migration, txMode, direction)
+	if err != nil {
+		return ownTransactionRun{}, fmt.Errorf("migration %d cannot be repaired safely: %w", migration.Version, err)
+	}
+	if !own.blocks.Empty() {
+		if opts.ResumeFrom > 0 {
+			return ownTransactionRun{}, ownTransactionsResumeError(migration, revision, direction)
+		}
+		return own, nil
 	}
 	if err := m.validateNoTransactionSQL(migration, direction); err != nil {
-		return fmt.Errorf("migration %d cannot be repaired safely: %w", migration.Version, err)
+		return ownTransactionRun{}, m.unwrappedRepairError(migration, direction, err)
 	}
-	return nil
+	return own, nil
 }
 
 // revisionProvesNothingRan reports whether this dirty revision is evidence that
@@ -3345,6 +3385,7 @@ func (m *Migrator) repairUpMigration(
 	migration *Migration,
 	revision *MigrationRevision,
 	opts RepairMigrationOptions,
+	own ownTransactionRun,
 ) error {
 	if opts.ResumeFrom > 0 {
 		return m.withNoTransactionSession(ctx, func(scoped *Migrator) error {
@@ -3358,7 +3399,7 @@ func (m *Migrator) repairUpMigration(
 		})
 	}
 	if revision != nil && revision.Dirty && revision.Applied == revision.Total && revision.Total > 0 {
-		return m.repairCompletedUpMigration(ctx, migration, revision)
+		return m.repairCompletedUpMigration(ctx, migration, revision, own)
 	}
 	// What is left here would be recorded applied without running. Require an
 	// explicit force for an incomplete body, after the operator has reconciled
@@ -3372,6 +3413,9 @@ func (m *Migrator) repairUpMigration(
 				"migration %d has an unknown statement outcome; repair without --resume-from would record unverified SQL as applied without running it: inspect the database and rerun with --force only after reconciling the migration yourself",
 				migration.Version,
 			)
+		}
+		if !own.blocks.Empty() {
+			return ownTransactionsUpRepairError(migration, revision)
 		}
 		return fmt.Errorf(
 			"migration %d recorded %d of %d applied statements; repair without --resume-from would mark the rest applied without running them: rerun with --resume-from %d to run the rest, or with --force only after running them yourself",
@@ -3397,10 +3441,15 @@ func (m *Migrator) resolveRepairMigrationTxMode(
 	return m.resolveUpMigrationTxMode(migration)
 }
 
+// repairCompletedUpMigration records applied a migration whose every statement
+// committed. Where the index guard has to read what the body left, the session
+// the committed statements left is restored first, read the way the body runs
+// its own transactions (own), as a retry restores it.
 func (m *Migrator) repairCompletedUpMigration(
 	ctx context.Context,
 	migration *Migration,
 	revision *MigrationRevision,
+	own ownTransactionRun,
 ) error {
 	if err := m.verifyCommittedPrefix(*revision, migration, MigrationDirectionUp, "finalize the migration"); err != nil {
 		return err
@@ -3409,11 +3458,12 @@ func (m *Migrator) repairCompletedUpMigration(
 		return m.forceAppliedMigration(ctx, migration)
 	}
 	return m.withNoTransactionSession(ctx, func(scoped *Migrator) error {
-		if err := scoped.restoreNoTransactionSessionPrefix(
+		if err := scoped.restoreSessionPrefix(
 			ctx,
 			migration,
 			MigrationDirectionUp,
 			revision.Total+1,
+			own,
 		); err != nil {
 			return err
 		}

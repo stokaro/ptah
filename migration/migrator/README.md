@@ -998,6 +998,10 @@ A `no_transaction` file is not checked at all. Each of its statements runs in
 its own transaction, where both shapes are legal, and checking it would refuse
 the workflow the directive exists for.
 
+A rollback asks this of every down file in the run before it rolls back the
+first, so a refused file leaves each revision of the run as it was rather than
+dirty with nothing applied.
+
 The same classification backs `migrate lint`'s `TX101`, so the two surfaces
 cannot disagree about one file.
 
