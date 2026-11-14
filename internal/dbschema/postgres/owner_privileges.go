@@ -87,6 +87,7 @@ func (r *Reader) readOwnerPrivilegesForSchema(ctx context.Context, schemaName st
 			JOIN pg_namespace n ON n.oid = c.relnamespace
 			WHERE n.nspname = $1
 			AND c.relkind IN ` + ownerPrivilegeRelationKinds + `
+			AND c.relname <> ` + applyLogSQLName + `
 			UNION ALL
 			SELECT 'SCHEMA', n.nspname, n.nspowner, n.nspacl, ` + schemaDefaultACL("n") + `
 			FROM pg_namespace n

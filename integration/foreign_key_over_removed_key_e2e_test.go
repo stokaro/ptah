@@ -28,16 +28,17 @@ const (
 	keyMoveHeld = "CREATE TABLE parent (id bigint PRIMARY KEY, code bigint NOT NULL);\n"
 )
 
-// keyMoveDefinitions reads every constraint of the public schema but NOT NULL and
-// those of the revision tables, as the server prints it, by table and name.
+// keyMoveDefinitions reads the fixture tables' constraints, as the server prints
+// them, by table and name. Ptah's metadata tables are outside this fixture.
 func keyMoveDefinitions(c *qt.C, target string) []string {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(c.Context(), target)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
 	var definitions string
-	c.Assert(conn.QueryRowContext(c.Context(), `SELECT string_agg(conname || ': ' || pg_get_constraintdef(oid), '|' ORDER BY conrelid::regclass::text, conname)
-FROM pg_constraint WHERE connamespace = 'public'::regnamespace AND contype <> 'n' AND conrelid::regclass::text NOT LIKE 'schema_migrations%'`).Scan(&definitions), qt.IsNil)
+	c.Assert(conn.QueryRowContext(c.Context(), `SELECT string_agg(conname || ': ' || pg_get_constraintdef(pg_constraint.oid), '|' ORDER BY conrelid::regclass::text, conname)
+FROM pg_constraint JOIN pg_class ON pg_class.oid = conrelid
+WHERE connamespace = 'public'::regnamespace AND contype <> 'n' AND pg_class.relname IN ('parent', 'child')`).Scan(&definitions), qt.IsNil)
 	return strings.Split(definitions, "|")
 }
 
